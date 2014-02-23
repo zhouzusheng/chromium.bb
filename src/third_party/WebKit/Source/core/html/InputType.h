@@ -49,12 +49,12 @@ class Color;
 class DateComponents;
 class DragData;
 class Event;
+class ExceptionState;
 class FileList;
 class FormDataList;
 class HTMLElement;
 class HTMLFormElement;
 class HTMLInputElement;
-class Icon;
 class KeyboardEvent;
 class MouseEvent;
 class Node;
@@ -62,11 +62,9 @@ class RenderObject;
 class RenderStyle;
 class TouchEvent;
 
-typedef int ExceptionCode;
-
 struct ClickHandlingState {
     WTF_MAKE_FAST_ALLOCATED;
-  
+
 public:
     bool checked;
     bool indeterminate;
@@ -137,10 +135,10 @@ public:
     virtual String fallbackValue() const; // Checked last, if both internal storage and value attribute are missing.
     virtual String defaultValue() const; // Checked after even fallbackValue, only when the valueWithDefault function is called.
     virtual double valueAsDate() const;
-    virtual void setValueAsDate(double, ExceptionCode&) const;
+    virtual void setValueAsDate(double, ExceptionState&) const;
     virtual double valueAsDouble() const;
-    virtual void setValueAsDouble(double, TextFieldEventBehavior, ExceptionCode&) const;
-    virtual void setValueAsDecimal(const Decimal&, TextFieldEventBehavior, ExceptionCode&) const;
+    virtual void setValueAsDouble(double, TextFieldEventBehavior, ExceptionState&) const;
+    virtual void setValueAsDecimal(const Decimal&, TextFieldEventBehavior, ExceptionState&) const;
 
     // Validation functions
     virtual String validationMessage() const;
@@ -165,7 +163,7 @@ public:
     bool stepMismatch(const String&) const;
     virtual bool getAllowedValueStep(Decimal*) const;
     virtual StepRange createStepRange(AnyStepHandling) const;
-    virtual void stepUp(int, ExceptionCode&);
+    virtual void stepUp(int, ExceptionState&);
     virtual void stepUpFromRenderer(int);
     virtual String badInputText() const;
     virtual String typeMismatchText() const;
@@ -194,10 +192,10 @@ public:
     virtual bool shouldSubmitImplicitly(Event*);
     virtual PassRefPtr<HTMLFormElement> formForSubmission() const;
     virtual bool hasCustomFocusLogic() const;
-    virtual bool isKeyboardFocusable(KeyboardEvent*) const;
-    virtual bool isMouseFocusable() const;
+    virtual bool isKeyboardFocusable() const;
+    virtual bool shouldShowFocusRingOnMouseFocus() const;
     virtual bool shouldUseInputMethod() const;
-    virtual void handleFocusEvent(Node* oldFocusedNode, FocusDirection);
+    virtual void handleFocusEvent(Element* oldFocusedElement, FocusDirection);
     virtual void handleBlurEvent();
     virtual void accessKeyAction(bool sendMouseEvents);
     virtual bool canBeSuccessfulSubmitButton();
@@ -210,17 +208,15 @@ public:
 
     virtual void createShadowSubtree();
     virtual void destroyShadowSubtree();
-    Element* elementById(const AtomicString& id) const;
 
     virtual HTMLElement* containerElement() const { return 0; }
     virtual HTMLElement* innerBlockElement() const { return 0; }
     virtual HTMLElement* innerTextElement() const { return 0; }
     virtual HTMLElement* innerSpinButtonElement() const { return 0; }
-    virtual HTMLElement* searchDecorationElement() const { return 0; }
-    virtual HTMLElement* cancelButtonElement() const { return 0; }
 #if ENABLE(INPUT_SPEECH)
     virtual HTMLElement* speechButtonElement() const { return 0; }
 #endif
+    virtual HTMLElement* passwordGeneratorButtonElement() const { return 0; }
     virtual HTMLElement* sliderThumbElement() const { return 0; }
     virtual HTMLElement* sliderTrackElement() const { return 0; }
     virtual HTMLElement* placeholderElement() const;
@@ -242,7 +238,6 @@ public:
     // Should return true if the given DragData has more than one dropped files.
     virtual bool receiveDroppedFiles(const DragData*);
     virtual String droppedFileSystemId();
-    virtual Icon* icon() const;
     // Should return true if the corresponding renderer for a type can display a suggested value.
     virtual bool canSetSuggestedValue();
     virtual bool shouldSendChangeEventAfterCheckedChanged();
@@ -290,6 +285,8 @@ public:
 
     virtual bool supportsIndeterminateAppearance() const;
 
+    virtual bool supportsInputModeAttribute() const;
+
     virtual bool supportsSelectionAPI() const;
 
     // Gets width and height of the input element if the type of the
@@ -308,7 +305,7 @@ protected:
 
 private:
     // Helper for stepUp()/stepDown(). Adds step value * count to the current value.
-    void applyStep(int count, AnyStepHandling, TextFieldEventBehavior, ExceptionCode&);
+    void applyStep(int count, AnyStepHandling, TextFieldEventBehavior, ExceptionState&);
 
     // Raw pointer because the HTMLInputElement object owns this InputType object.
     HTMLInputElement* m_element;

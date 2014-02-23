@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,13 +9,12 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/process_util.h"
 #include "base/sequenced_task_runner_helpers.h"
 #if defined(OS_WIN)
-#include "base/shared_memory.h"
+#include "base/memory/shared_memory.h"
 #endif
 #include "base/values.h"
-#include "content/common/browser_plugin/browser_plugin_message_enums.h"
+#include "content/public/common/browser_plugin_permission_type.h"
 #include "content/renderer/browser_plugin/browser_plugin_backing_store.h"
 #include "content/renderer/browser_plugin/browser_plugin_bindings.h"
 #include "content/renderer/mouse_lock_dispatcher.h"
@@ -25,7 +24,7 @@
 struct BrowserPluginHostMsg_AutoSize_Params;
 struct BrowserPluginHostMsg_ResizeGuest_Params;
 struct BrowserPluginMsg_Attach_ACK_Params;
-struct BrowserPluginMsg_LoadCommit_Params;
+struct BrowserPluginMsg_BuffersSwapped_Params;
 struct BrowserPluginMsg_UpdateRect_Params;
 
 namespace content {
@@ -41,7 +40,6 @@ class CONTENT_EXPORT BrowserPlugin :
   RenderViewImpl* render_view() const { return render_view_.get(); }
   int render_view_routing_id() const { return render_view_routing_id_; }
   int guest_instance_id() const { return guest_instance_id_; }
-  int instance_id() const { return instance_id_; }
 
   static BrowserPlugin* FromContainer(WebKit::WebPluginContainer* container);
 
@@ -66,8 +64,6 @@ class CONTENT_EXPORT BrowserPlugin :
   std::string GetSrcAttribute() const;
   // Parse the src attribute value of the BrowserPlugin instance.
   bool ParseSrcAttribute(std::string* error_message);
-  // Get the Api attribute value.
-  std::string GetApiAttribute() const;
   // Get the autosize attribute value.
   bool GetAutoSizeAttribute() const;
   // Parses the autosize attribute value.
@@ -108,11 +104,6 @@ class CONTENT_EXPORT BrowserPlugin :
   static bool AttachWindowTo(const WebKit::WebNode& node,
                              int window_id);
 
-  // Query whether the guest can navigate back to the previous entry.
-  bool CanGoBack() const;
-  // Query whether the guest can navigation forward to the next entry.
-  bool CanGoForward() const;
-
   // Informs the guest of an updated focus state.
   void UpdateGuestFocusState();
   // Indicates whether the guest should be focused.
@@ -122,30 +113,12 @@ class CONTENT_EXPORT BrowserPlugin :
   // renderer.
   void UpdateDeviceScaleFactor(float device_scale_factor);
 
-  // Tells the BrowserPlugin to tell the guest to navigate to the previous
-  // navigation entry in the navigation history.
-  void Back();
-  // Tells the BrowserPlugin to tell the guest to navigate to the next
-  // navigation entry in the navigation history.
-  void Forward();
-  // Tells the BrowserPlugin to tell the guest to navigate to a position
-  // relative to the current index in its navigation history.
-  void Go(int relativeIndex);
-  // Tells the BrowserPlugin to terminate the guest process.
-  void TerminateGuest();
-
-  // A request from JavaScript has been made to stop the loading of the page.
-  void Stop();
-  // A request from JavaScript has been made to reload the page.
-  void Reload();
   // A request to enable hardware compositing.
   void EnableCompositing(bool enable);
-  // A request from content client to track lifetime of a JavaScript object
-  // related to a permission request object.
-  // This is used to clean up hanging permission request objects.
-  void PersistRequestObject(const NPVariant* request,
-                            const std::string& type,
-                            int id);
+  // A request from content client to track lifetime of a JavaScript object.
+  // This is used to track permission request objects, and new window API
+  // window objects.
+  void TrackObjectLifetime(const NPVariant* request, int id);
 
   // Returns true if |point| lies within the bounds of the plugin rectangle.
   // Not OK to use this function for making security-sensitive decision since it
@@ -154,15 +127,13 @@ class CONTENT_EXPORT BrowserPlugin :
   bool InBounds(const gfx::Point& point) const;
 
   gfx::Point ToLocalCoordinates(const gfx::Point& point) const;
-  // Called by browser plugin binding.
-  void OnEmbedderDecidedPermission(int request_id, bool allow);
 
-  // Attaches this BrowserPlugin to a guest with the provided |instance_id|.
-  // If the |instance_id| is not yet associated with a guest, a new guest
-  // will be created. If the |instance_id| has not yet been allocated or the
-  // embedder is not permitted access to that particular guest, then the
-  // embedder will be killed.
-  void Attach(int instance_id);
+  // Called when a guest instance ID has been allocated by the browser process.
+  void OnInstanceIDAllocated(int guest_instance_id);
+  // Provided that a guest instance ID has been allocated, this method attaches
+  // this BrowserPlugin instance to that guest. |extra_params| are parameters
+  // passed in by the content embedder to the browser process.
+  void Attach(scoped_ptr<base::DictionaryValue> extra_params);
 
   // Notify the plugin about a compositor commit so that frame ACKs could be
   // sent, if needed.
@@ -240,8 +211,7 @@ class CONTENT_EXPORT BrowserPlugin :
   BrowserPlugin(
       RenderViewImpl* render_view,
       WebKit::WebFrame* frame,
-      const WebKit::WebPluginParams& params,
-      int instance_id);
+      const WebKit::WebPluginParams& params);
 
   virtual ~BrowserPlugin();
 
@@ -262,6 +232,8 @@ class CONTENT_EXPORT BrowserPlugin :
 
   // Virtual to allow for mocking in tests.
   virtual float GetDeviceScaleFactor() const;
+
+  void ShowSadGraphic();
 
   // Parses the attributes of the browser plugin from the element's attributes
   // and sets them appropriately.
@@ -311,71 +283,28 @@ class CONTENT_EXPORT BrowserPlugin :
   bool UsesPendingDamageBuffer(
       const BrowserPluginMsg_UpdateRect_Params& params);
 
-  void AddPermissionRequestToMap(int request_id,
-                                 BrowserPluginPermissionType type);
-
-  // Informs the BrowserPlugin that the guest's permission request has been
-  // allowed or denied by the embedder.
-  void RespondPermission(BrowserPluginPermissionType permission_type,
-                         int request_id,
-                         bool allow);
-
-  // Handles the response to the pointerLock permission request.
-  void RespondPermissionPointerLock(bool allow);
-
-  // If the request with id |request_id| is pending then informs the
-  // BrowserPlugin that the guest's permission request has been allowed or
-  // denied by the embedder.
-  void RespondPermissionIfRequestIsPending(int request_id, bool allow);
-  // Cleans up pending permission request once the associated event.request
-  // object goes out of scope in JavaScript.
-  void OnRequestObjectGarbageCollected(int request_id);
+  // Called when the tracked object of |id| ID becomes unreachable in
+  // JavaScript.
+  void OnTrackedObjectGarbageCollected(int id);
   // V8 garbage collection callback for |object|.
-  static void WeakCallbackForPersistObject(v8::Isolate* isolate,
+  static void WeakCallbackForTrackedObject(v8::Isolate* isolate,
                                            v8::Persistent<v8::Value>* object,
                                            void* param);
 
   // IPC message handlers.
   // Please keep in alphabetical order.
-  void OnAddMessageToConsole(
-      int instance_id,
-      const base::DictionaryValue& message_info);
   void OnAdvanceFocus(int instance_id, bool reverse);
   void OnAttachACK(int instance_id,
                    const BrowserPluginMsg_Attach_ACK_Params& ack_params);
   void OnBuffersSwapped(int instance_id,
-                        const gfx::Size& size,
-                        std::string mailbox_name,
-                        int gpu_route_id,
-                        int gpu_host_id);
-  void OnClose(int instance_id);
+                        const BrowserPluginMsg_BuffersSwapped_Params& params);
   void OnCompositorFrameSwapped(const IPC::Message& message);
   void OnGuestContentWindowReady(int instance_id,
                                  int content_window_routing_id);
-  void OnGuestGone(int instance_id, int process_id, int status);
-  void OnGuestResponsive(int instance_id, int process_id);
-  void OnGuestUnresponsive(int instance_id, int process_id);
-  void OnLoadAbort(int instance_id,
-                   const GURL& url,
-                   bool is_top_level,
-                   const std::string& type);
-  void OnLoadCommit(int instance_id,
-                    const BrowserPluginMsg_LoadCommit_Params& params);
-  void OnLoadHandlerCalled(int instance_id);
-  void OnLoadRedirect(int instance_id,
-                      const GURL& old_url,
-                      const GURL& new_url,
-                      bool is_top_level);
-  void OnLoadStart(int instance_id, const GURL& url, bool is_top_level);
-  void OnLoadStop(int instance_id);
-  // Requests permission from the embedder.
-  void OnRequestPermission(int instance_id,
-                           BrowserPluginPermissionType permission_type,
-                           int request_id,
-                           const base::DictionaryValue& request_info);
+  void OnGuestGone(int instance_id);
   void OnSetCursor(int instance_id, const WebCursor& cursor);
+  void OnSetMouseLock(int instance_id, bool enable);
   void OnShouldAcceptTouchEvents(int instance_id, bool accept);
-  void OnUnlockMouse(int instance_id);
   void OnUpdatedName(int instance_id, const std::string& name);
   void OnUpdateRect(int instance_id,
                     const BrowserPluginMsg_UpdateRect_Params& params);
@@ -383,9 +312,6 @@ class CONTENT_EXPORT BrowserPlugin :
   // This is the browser-process-allocated instance ID that uniquely identifies
   // a guest WebContents.
   int guest_instance_id_;
-  // This is a render-process-allocated instance ID that uniquely identifies a
-  // BrowserPlugin.
-  int instance_id_;
   base::WeakPtr<RenderViewImpl> render_view_;
   // We cache the |render_view_|'s routing ID because we need it on destruction.
   // If the |render_view_| is destroyed before the BrowserPlugin is destroyed
@@ -419,34 +345,15 @@ class CONTENT_EXPORT BrowserPlugin :
   gfx::Size last_view_size_;
   bool size_changed_in_flight_;
   bool before_first_navigation_;
+  bool mouse_locked_;
 
-  // Each permission request item in the map is a pair of request id and
-  // permission type.
-  typedef std::map<int, BrowserPluginPermissionType> PendingPermissionRequests;
-  PendingPermissionRequests pending_permission_requests_;
-
-  typedef std::pair<int, base::WeakPtr<BrowserPlugin> >
-      AliveV8PermissionRequestItem;
-  std::map<int, AliveV8PermissionRequestItem*>
-      alive_v8_permission_request_objects_;
+  typedef std::pair<int, base::WeakPtr<BrowserPlugin> > TrackedV8ObjectID;
+  std::map<int, TrackedV8ObjectID*> tracked_v8_objects_;
 
   // BrowserPlugin outlives RenderViewImpl in Chrome Apps and so we need to
   // store the BrowserPlugin's BrowserPluginManager in a member variable to
   // avoid accessing the RenderViewImpl.
   scoped_refptr<BrowserPluginManager> browser_plugin_manager_;
-
-  // Important: Do not add more history state here.
-  // We strongly discourage storing additional history state (such as page IDs)
-  // in the embedder process, at the risk of having incorrect information that
-  // can lead to broken back/forward logic in apps.
-  // It's also important that this state does not get modified by any logic in
-  // the embedder process. It should only be updated in response to navigation
-  // events in the guest.  No assumptions should be made about how the index
-  // will change after a navigation (e.g., for back, forward, or go), because
-  // the changes are not always obvious.  For example, there is a maximum
-  // number of entries and earlier ones will automatically be pruned.
-  int current_nav_entry_index_;
-  int nav_entry_count_;
 
   // Used for HW compositing.
   bool compositing_enabled_;

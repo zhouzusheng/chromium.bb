@@ -6,13 +6,13 @@
  * are met:
  *
  * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer. 
+ *     notice, this list of conditions and the following disclaimer.
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution. 
+ *     documentation and/or other materials provided with the distribution.
  * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission. 
+ *     from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -32,17 +32,16 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/DOMStringList.h"
 #include "core/page/DOMWindowProperty.h"
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 class DOMWindow;
+class ExceptionState;
 class Frame;
 class KURL;
-
-typedef int ExceptionCode;
 
 class Location : public ScriptWrappable, public RefCounted<Location>, public DOMWindowProperty {
 public:
@@ -55,7 +54,7 @@ public:
     void replace(DOMWindow* activeWindow, DOMWindow* firstWindow, const String&);
     void reload(DOMWindow* activeWindow);
 
-    void setProtocol(DOMWindow* activeWindow, DOMWindow* firstWindow, const String&, ExceptionCode&);
+    void setProtocol(DOMWindow* activeWindow, DOMWindow* firstWindow, const String&, ExceptionState&);
     String protocol() const;
     void setHost(DOMWindow* activeWindow, DOMWindow* firstWindow, const String&);
     String host() const;

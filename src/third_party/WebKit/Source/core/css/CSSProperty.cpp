@@ -21,9 +21,8 @@
 #include "config.h"
 #include "core/css/CSSProperty.h"
 
+#include "StylePropertyShorthand.h"
 #include "core/css/CSSValueList.h"
-#include "core/css/StylePropertyShorthand.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/rendering/style/RenderStyleConstants.h"
 
 namespace WebCore {
@@ -309,9 +308,8 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyStrokeWidth:
     case CSSPropertyTabSize:
     case CSSPropertyTextAlign:
+    case CSSPropertyTextAlignLast:
     case CSSPropertyTextAnchor:
-    case CSSPropertyTextDecoration:
-    case CSSPropertyTextDecorationLine:
     case CSSPropertyTextIndent:
     case CSSPropertyTextRendering:
     case CSSPropertyTextShadow:
@@ -329,10 +327,6 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitLocale:
     case CSSPropertyWebkitHighlight:
     case CSSPropertyWebkitHyphenateCharacter:
-    case CSSPropertyWebkitHyphenateLimitAfter:
-    case CSSPropertyWebkitHyphenateLimitBefore:
-    case CSSPropertyWebkitHyphenateLimitLines:
-    case CSSPropertyWebkitHyphens:
     case CSSPropertyWebkitLineAlign:
     case CSSPropertyWebkitLineBoxContain:
     case CSSPropertyWebkitLineBreak:
@@ -344,7 +338,6 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitTapHighlightColor:
     case CSSPropertyWebkitTextCombine:
 #if ENABLE(CSS3_TEXT)
-    case CSSPropertyWebkitTextAlignLast:
     case CSSPropertyWebkitTextUnderlinePosition:
 #endif // CSS3_TEXT
     case CSSPropertyWebkitTextDecorationsInEffect:
@@ -475,6 +468,8 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyStopColor:
     case CSSPropertyStopOpacity:
     case CSSPropertyTableLayout:
+    case CSSPropertyTextDecoration:
+    case CSSPropertyTextDecorationLine:
     case CSSPropertyTextDecorationStyle:
     case CSSPropertyTextDecorationColor:
     case CSSPropertyTextLineThroughColor:
@@ -572,18 +567,19 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyFlexShrink:
     case CSSPropertyFlexWrap:
     case CSSPropertyWebkitFontSizeDelta:
-    case CSSPropertyGridAfter:
+    case CSSPropertyGridArea:
     case CSSPropertyGridAutoColumns:
     case CSSPropertyGridAutoFlow:
     case CSSPropertyGridAutoRows:
-    case CSSPropertyGridBefore:
     case CSSPropertyGridColumn:
-    case CSSPropertyGridColumns:
-    case CSSPropertyGridEnd:
+    case CSSPropertyGridColumnEnd:
+    case CSSPropertyGridColumnStart:
+    case CSSPropertyGridDefinitionColumns:
+    case CSSPropertyGridDefinitionRows:
     case CSSPropertyGridRow:
-    case CSSPropertyGridRows:
-    case CSSPropertyGridStart:
-    case CSSPropertyGridArea:
+    case CSSPropertyGridRowEnd:
+    case CSSPropertyGridRowStart:
+    case CSSPropertyGridTemplate:
     case CSSPropertyJustifyContent:
     case CSSPropertyWebkitLineClamp:
     case CSSPropertyWebkitLogicalHeight:
@@ -657,7 +653,6 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitShapePadding:
     case CSSPropertyWebkitShapeInside:
     case CSSPropertyWebkitShapeOutside:
-    case CSSPropertyWebkitSvgShadow:
     case CSSPropertyWebkitWrapThrough:
     case CSSPropertyWebkitAppRegion:
     case CSSPropertyWidth:
@@ -674,13 +669,6 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     }
     ASSERT_NOT_REACHED();
     return false;
-}
-
-void CSSProperty::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_value, "value");
-    info.ignoreMember(m_metadata);
 }
 
 } // namespace WebCore

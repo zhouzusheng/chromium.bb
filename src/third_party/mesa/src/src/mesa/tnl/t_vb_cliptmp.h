@@ -114,8 +114,8 @@ do {									\
 
 /* Clip a line against the viewport and user clip planes.
  */
-static INLINE void
-TAG(clip_line)( GLcontext *ctx, GLuint v0, GLuint v1, GLubyte mask )
+static inline void
+TAG(clip_line)( struct gl_context *ctx, GLuint v0, GLuint v1, GLubyte mask )
 {
    TNLcontext *tnl = TNL_CONTEXT(ctx);
    struct vertex_buffer *VB = &tnl->vb;
@@ -183,8 +183,8 @@ TAG(clip_line)( GLcontext *ctx, GLuint v0, GLuint v1, GLubyte mask )
 
 /* Clip a triangle against the viewport and user clip planes.
  */
-static INLINE void
-TAG(clip_tri)( GLcontext *ctx, GLuint v0, GLuint v1, GLuint v2, GLubyte mask )
+static inline void
+TAG(clip_tri)( struct gl_context *ctx, GLuint v0, GLuint v1, GLuint v2, GLubyte mask )
 {
    TNLcontext *tnl = TNL_CONTEXT(ctx);
    struct vertex_buffer *VB = &tnl->vb;
@@ -262,8 +262,8 @@ TAG(clip_tri)( GLcontext *ctx, GLuint v0, GLuint v1, GLuint v2, GLubyte mask )
 
 /* Clip a quad against the viewport and user clip planes.
  */
-static INLINE void
-TAG(clip_quad)( GLcontext *ctx, GLuint v0, GLuint v1, GLuint v2, GLuint v3,
+static inline void
+TAG(clip_quad)( struct gl_context *ctx, GLuint v0, GLuint v1, GLuint v2, GLuint v3,
                 GLubyte mask )
 {
    TNLcontext *tnl = TNL_CONTEXT(ctx);

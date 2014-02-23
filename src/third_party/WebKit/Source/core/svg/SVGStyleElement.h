@@ -23,12 +23,10 @@
 
 #include "core/dom/StyleElement.h"
 #include "core/svg/SVGElement.h"
-#include "core/svg/SVGLangSpace.h"
 
 namespace WebCore {
 
 class SVGStyleElement FINAL : public SVGElement
-                            , public SVGLangSpace
                             , public StyleElement {
 public:
     static PassRefPtr<SVGStyleElement> create(const QualifiedName&, Document*, bool createdByParser);
@@ -38,7 +36,7 @@ public:
 
     bool disabled() const;
     void setDisabled(bool);
-                          
+
     virtual const AtomicString& type() const;
     void setType(const AtomicString&);
 
@@ -59,6 +57,7 @@ private:
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
 
     virtual void finishParsingChildren();
+    virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE { return false; }
 
     virtual bool isLoading() const { return StyleElement::isLoading(); }
     virtual bool sheetLoaded() { return StyleElement::sheetLoaded(document()); }

@@ -27,12 +27,11 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
- 
+
 #ifndef TimelineRecordFactory_h
 #define TimelineRecordFactory_h
 
 #include "core/platform/JSONValues.h"
-#include "core/platform/graphics/LayoutRect.h"
 #include "weborigin/KURL.h"
 #include "wtf/Forward.h"
 #include "wtf/text/WTFString.h"

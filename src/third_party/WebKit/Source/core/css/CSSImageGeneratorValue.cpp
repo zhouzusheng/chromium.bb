@@ -29,19 +29,7 @@
 #include "core/css/CSSCanvasValue.h"
 #include "core/css/CSSCrossfadeValue.h"
 #include "core/css/CSSGradientValue.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/platform/graphics/Image.h"
-#include "wtf/MemoryInstrumentationHashCountedSet.h"
-#include "wtf/MemoryInstrumentationHashMap.h"
-
-
-namespace WTF {
-
-template<> struct SequenceMemoryInstrumentationTraits<const WebCore::RenderObject*> {
-    template <typename I> static void reportMemoryUsage(I, I, MemoryClassInfo&) { }
-};
-
-}
 
 namespace WebCore {
 
@@ -116,14 +104,6 @@ Image* CSSImageGeneratorValue::getImage(RenderObject* renderer, const IntSize& s
 void CSSImageGeneratorValue::putImage(const IntSize& size, PassRefPtr<Image> image)
 {
     m_images.add(size, image);
-}
-
-void CSSImageGeneratorValue::reportBaseClassMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_sizes, "sizes");
-    info.addMember(m_clients, "clients");
-    info.addMember(m_images, "images");
 }
 
 PassRefPtr<Image> CSSImageGeneratorValue::image(RenderObject* renderer, const IntSize& size)
@@ -211,20 +191,20 @@ bool CSSImageGeneratorValue::knownToBeOpaque(const RenderObject* renderer) const
     return false;
 }
 
-void CSSImageGeneratorValue::loadSubimages(CachedResourceLoader* cachedResourceLoader)
+void CSSImageGeneratorValue::loadSubimages(ResourceFetcher* fetcher)
 {
     switch (classType()) {
     case CrossfadeClass:
-        static_cast<CSSCrossfadeValue*>(this)->loadSubimages(cachedResourceLoader);
+        static_cast<CSSCrossfadeValue*>(this)->loadSubimages(fetcher);
         break;
     case CanvasClass:
-        static_cast<CSSCanvasValue*>(this)->loadSubimages(cachedResourceLoader);
+        static_cast<CSSCanvasValue*>(this)->loadSubimages(fetcher);
         break;
     case LinearGradientClass:
-        static_cast<CSSLinearGradientValue*>(this)->loadSubimages(cachedResourceLoader);
+        static_cast<CSSLinearGradientValue*>(this)->loadSubimages(fetcher);
         break;
     case RadialGradientClass:
-        static_cast<CSSRadialGradientValue*>(this)->loadSubimages(cachedResourceLoader);
+        static_cast<CSSRadialGradientValue*>(this)->loadSubimages(fetcher);
         break;
     default:
         ASSERT_NOT_REACHED();

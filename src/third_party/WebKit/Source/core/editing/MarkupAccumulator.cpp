@@ -48,11 +48,11 @@ using namespace HTMLNames;
 
 void MarkupAccumulator::appendCharactersReplacingEntities(StringBuilder& result, const String& source, unsigned offset, unsigned length, EntityMask entityMask)
 {
-    DEFINE_STATIC_LOCAL(const String, ampReference, (ASCIILiteral("&amp;")));
-    DEFINE_STATIC_LOCAL(const String, ltReference, (ASCIILiteral("&lt;")));
-    DEFINE_STATIC_LOCAL(const String, gtReference, (ASCIILiteral("&gt;")));
-    DEFINE_STATIC_LOCAL(const String, quotReference, (ASCIILiteral("&quot;")));
-    DEFINE_STATIC_LOCAL(const String, nbspReference, (ASCIILiteral("&nbsp;")));
+    DEFINE_STATIC_LOCAL(const String, ampReference, ("&amp;"));
+    DEFINE_STATIC_LOCAL(const String, ltReference, ("&lt;"));
+    DEFINE_STATIC_LOCAL(const String, gtReference, ("&gt;"));
+    DEFINE_STATIC_LOCAL(const String, quotReference, ("&quot;"));
+    DEFINE_STATIC_LOCAL(const String, nbspReference, ("&nbsp;"));
 
     static const EntityDescription entityMaps[] = {
         { '&', ampReference, EntityAmp },
@@ -256,14 +256,12 @@ bool MarkupAccumulator::shouldAddNamespaceElement(const Element* element)
     if (prefix.isEmpty())
         return !element->hasAttribute(xmlnsAtom);
 
-    DEFINE_STATIC_LOCAL(String, xmlnsWithColon, (ASCIILiteral("xmlns:")));
+    DEFINE_STATIC_LOCAL(String, xmlnsWithColon, ("xmlns:"));
     return !element->hasAttribute(xmlnsWithColon + prefix);
 }
 
 bool MarkupAccumulator::shouldAddNamespaceAttribute(const Attribute& attribute, Namespaces& namespaces)
 {
-    namespaces.checkConsistency();
-
     // Don't add namespace attributes twice
     if (attribute.name() == XMLNSNames::xmlnsAttr) {
         namespaces.set(emptyAtom.impl(), attribute.value().impl());
@@ -281,13 +279,12 @@ bool MarkupAccumulator::shouldAddNamespaceAttribute(const Attribute& attribute, 
 
 void MarkupAccumulator::appendNamespace(StringBuilder& result, const AtomicString& prefix, const AtomicString& namespaceURI, Namespaces& namespaces)
 {
-    namespaces.checkConsistency();
     if (namespaceURI.isEmpty())
         return;
 
     // Use emptyAtoms's impl() for both null and empty strings since the HashMap can't handle 0 as a key
-    AtomicStringImpl* pre = prefix.isEmpty() ? emptyAtom.impl() : prefix.impl();
-    AtomicStringImpl* foundNS = namespaces.get(pre);
+    StringImpl* pre = prefix.isEmpty() ? emptyAtom.impl() : prefix.impl();
+    StringImpl* foundNS = namespaces.get(pre);
     if (foundNS != namespaceURI.impl()) {
         namespaces.set(pre, namespaceURI.impl());
         result.append(' ');
@@ -483,9 +480,6 @@ void MarkupAccumulator::appendCDATASection(StringBuilder& result, const String& 
 
 void MarkupAccumulator::appendStartMarkup(StringBuilder& result, const Node* node, Namespaces* namespaces)
 {
-    if (namespaces)
-        namespaces->checkConsistency();
-
     switch (node->nodeType()) {
     case Node::TEXT_NODE:
         appendText(result, toText(const_cast<Node*>(node)));

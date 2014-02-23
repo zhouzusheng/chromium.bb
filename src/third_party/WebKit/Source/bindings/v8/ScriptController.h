@@ -34,12 +34,13 @@
 #include "bindings/v8/ScriptInstance.h"
 #include "bindings/v8/ScriptValue.h"
 
-#include <v8.h>
+#include "core/loader/CrossOriginAccessControl.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 #include "wtf/text/TextPosition.h"
+#include <v8.h>
 
 struct NPObject;
 
@@ -64,6 +65,10 @@ enum ReasonForCallingCanExecuteScripts {
     NotAboutToExecuteScript
 };
 
+enum IsolatedWorldConstants {
+    EmbedderWorldIdLimit = (1 << 29)
+};
+
 class ScriptController {
 public:
     ScriptController(Frame*);
@@ -77,7 +82,7 @@ public:
     ScriptValue executeScript(const String& script, bool forceUserGesture = false);
 
     // Evaluate JavaScript in the main world.
-    ScriptValue executeScriptInMainWorld(const ScriptSourceCode&);
+    ScriptValue executeScriptInMainWorld(const ScriptSourceCode&, AccessControlStatus = NotSharableCrossOrigin);
 
     // Executes JavaScript in an isolated world. The script gets its own global scope,
     // its own prototypes for intrinsic JavaScript objects (String, Array, and so-on),
@@ -92,7 +97,7 @@ public:
     // Returns true if argument is a JavaScript URL.
     bool executeScriptIfJavaScriptURL(const KURL&);
 
-    v8::Local<v8::Value> compileAndRunScript(const ScriptSourceCode&);
+    v8::Local<v8::Value> compileAndRunScript(const ScriptSourceCode&, AccessControlStatus = NotSharableCrossOrigin);
 
     v8::Local<v8::Value> callFunction(v8::Handle<v8::Function>, v8::Handle<v8::Object>, int argc, v8::Handle<v8::Value> argv[]);
     ScriptValue callFunctionEvenIfScriptDisabled(v8::Handle<v8::Function>, v8::Handle<v8::Object>, int argc, v8::Handle<v8::Value> argv[]);
@@ -160,6 +165,7 @@ public:
 
 private:
     typedef HashMap<int, OwnPtr<V8WindowShell> > IsolatedWorldMap;
+    typedef HashMap<Widget*, NPObject*> PluginObjectMap;
 
     void clearForClose(bool destroyGlobal);
 
@@ -172,21 +178,13 @@ private:
 
     bool m_paused;
 
-    typedef HashMap<Widget*, NPObject*> PluginObjectMap;
-
     // A mapping between Widgets and their corresponding script object.
     // This list is used so that when the plugin dies, we can immediately
     // invalidate all sub-objects which are associated with that plugin.
     // The frame keeps a NPObject reference for each item on the list.
     PluginObjectMap m_pluginObjects;
-    // The window script object can get destroyed while there are outstanding
-    // references to it. Please refer to ScriptController::clearScriptObjects
-    // for more information as to why this is necessary. To avoid crashes due
-    // to calls on the destroyed window object, we return a proxy NPObject
-    // which wraps the underlying window object. The wrapped window object
-    // pointer in this object is cleared out when the window object is
-    // destroyed.
-    NPObject* m_wrappedWindowScriptNPObject;
+
+    NPObject* m_windowScriptNPObject;
 };
 
 } // namespace WebCore

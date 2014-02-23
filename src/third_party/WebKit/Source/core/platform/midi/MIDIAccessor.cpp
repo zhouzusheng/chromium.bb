@@ -56,9 +56,9 @@ MIDIAccessor::MIDIAccessor(MIDIAccessorClient* client)
     ASSERT(m_accessor);
 }
 
-void MIDIAccessor::requestAccess(bool access)
+void MIDIAccessor::startSession()
 {
-    m_accessor->requestAccess(access);
+    m_accessor->startSession();
 }
 
 void MIDIAccessor::sendMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp)
@@ -76,14 +76,9 @@ void MIDIAccessor::didAddOutputPort(const WebString& id, const WebString& manufa
     m_client->didAddOutputPort(id, manufacturer, name, version);
 }
 
-void MIDIAccessor::didAllowAccess()
+void MIDIAccessor::didStartSession()
 {
-    m_client->didAllowAccess();
-}
-
-void MIDIAccessor::didBlockAccess()
-{
-    m_client->didBlockAccess();
+    m_client->didStartSession();
 }
 
 void MIDIAccessor::didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp)

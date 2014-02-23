@@ -28,10 +28,14 @@
 #include "main/glheader.h"
 #include "main/bufferobj.h"
 #include "main/compiler.h"
+#include "main/context.h"
 #include "main/enums.h"
+#include "main/mfeatures.h"
 #include "main/state.h"
+#include "main/vtxfmt.h"
 
 #include "vbo_context.h"
+#include "vbo_noop.h"
 
 
 #if FEATURE_beginend
@@ -154,28 +158,28 @@ vbo_copy_vertices( struct vbo_exec_context *exec )
 /* TODO: populate these as the vertex is defined:
  */
 static void
-vbo_exec_bind_arrays( GLcontext *ctx )
+vbo_exec_bind_arrays( struct gl_context *ctx )
 {
    struct vbo_context *vbo = vbo_context(ctx);
    struct vbo_exec_context *exec = &vbo->exec;
    struct gl_client_array *arrays = exec->vtx.arrays;
    const GLuint count = exec->vtx.vert_count;
-   const GLubyte *data = (GLubyte *) exec->vtx.buffer_map;
    const GLuint *map;
    GLuint attr;
-   GLbitfield varying_inputs = 0x0;
+   GLbitfield64 varying_inputs = 0x0;
 
    /* Install the default (ie Current) attributes first, then overlay
     * all active ones.
     */
    switch (get_program_mode(exec->ctx)) {
    case VP_NONE:
-      for (attr = 0; attr < 16; attr++) {
-         exec->vtx.inputs[attr] = &vbo->legacy_currval[attr];
+      for (attr = 0; attr < VERT_ATTRIB_FF_MAX; attr++) {
+         exec->vtx.inputs[attr] = &vbo->currval[VBO_ATTRIB_POS+attr];
       }
       for (attr = 0; attr < MAT_ATTRIB_MAX; attr++) {
-         ASSERT(attr + 16 < Elements(exec->vtx.inputs));
-         exec->vtx.inputs[attr + 16] = &vbo->mat_currval[attr];
+         ASSERT(VERT_ATTRIB_GENERIC(attr) < Elements(exec->vtx.inputs));
+         exec->vtx.inputs[VERT_ATTRIB_GENERIC(attr)] =
+            &vbo->currval[VBO_ATTRIB_MAT_FRONT_AMBIENT+attr];
       }
       map = vbo->map_vp_none;
       break;
@@ -185,10 +189,13 @@ vbo_exec_bind_arrays( GLcontext *ctx )
        * occurred.  NV vertex programs cannot access material values,
        * nor attributes greater than VERT_ATTRIB_TEX7.  
        */
-      for (attr = 0; attr < 16; attr++) {
-         exec->vtx.inputs[attr] = &vbo->legacy_currval[attr];
-         ASSERT(attr + 16 < Elements(exec->vtx.inputs));
-         exec->vtx.inputs[attr + 16] = &vbo->generic_currval[attr];
+      for (attr = 0; attr < VERT_ATTRIB_FF_MAX; attr++) {
+         exec->vtx.inputs[attr] = &vbo->currval[VBO_ATTRIB_POS+attr];
+      }
+      for (attr = 0; attr < VERT_ATTRIB_GENERIC_MAX; attr++) {
+         ASSERT(VERT_ATTRIB_GENERIC(attr) < Elements(exec->vtx.inputs));
+         exec->vtx.inputs[VERT_ATTRIB_GENERIC(attr)] =
+            &vbo->currval[VBO_ATTRIB_GENERIC0+attr];
       }
       map = vbo->map_vp_arb;
 
@@ -198,9 +205,9 @@ vbo_exec_bind_arrays( GLcontext *ctx )
        */
       if ((ctx->VertexProgram._Current->Base.InputsRead & VERT_BIT_POS) == 0 &&
           (ctx->VertexProgram._Current->Base.InputsRead & VERT_BIT_GENERIC0)) {
-         exec->vtx.inputs[16] = exec->vtx.inputs[0];
-         exec->vtx.attrsz[16] = exec->vtx.attrsz[0];
-         exec->vtx.attrptr[16] = exec->vtx.attrptr[0];
+         exec->vtx.inputs[VERT_ATTRIB_GENERIC0] = exec->vtx.inputs[0];
+         exec->vtx.attrsz[VERT_ATTRIB_GENERIC0] = exec->vtx.attrsz[0];
+         exec->vtx.attrptr[VERT_ATTRIB_GENERIC0] = exec->vtx.attrptr[0];
          exec->vtx.attrsz[0] = 0;
       }
       break;
@@ -208,13 +215,13 @@ vbo_exec_bind_arrays( GLcontext *ctx )
       assert(0);
    }
 
-   /* Make all active attributes (including edgeflag) available as
-    * arrays of floats.
-    */
    for (attr = 0; attr < VERT_ATTRIB_MAX ; attr++) {
       const GLuint src = map[attr];
 
       if (exec->vtx.attrsz[src]) {
+	 GLsizeiptr offset = (GLbyte *)exec->vtx.attrptr[src] -
+	    (GLbyte *)exec->vtx.vertex;
+
          /* override the default array set above */
          ASSERT(attr < Elements(exec->vtx.inputs));
          ASSERT(attr < Elements(exec->vtx.arrays)); /* arrays[] */
@@ -222,53 +229,52 @@ vbo_exec_bind_arrays( GLcontext *ctx )
 
          if (_mesa_is_bufferobj(exec->vtx.bufferobj)) {
             /* a real buffer obj: Ptr is an offset, not a pointer*/
-            GLsizeiptr offset;
             assert(exec->vtx.bufferobj->Pointer);  /* buf should be mapped */
-            offset = (GLbyte *) data -
-	       (GLbyte *) exec->vtx.bufferobj->Pointer +
-	       exec->vtx.bufferobj->Offset;
             assert(offset >= 0);
-            arrays[attr].Ptr = (void *) offset;
+            arrays[attr].Ptr = (GLubyte *)exec->vtx.bufferobj->Offset + offset;
          }
          else {
             /* Ptr into ordinary app memory */
-            arrays[attr].Ptr = (void *) data;
+            arrays[attr].Ptr = (GLubyte *)exec->vtx.buffer_map + offset;
          }
 	 arrays[attr].Size = exec->vtx.attrsz[src];
 	 arrays[attr].StrideB = exec->vtx.vertex_size * sizeof(GLfloat);
 	 arrays[attr].Stride = exec->vtx.vertex_size * sizeof(GLfloat);
-	 arrays[attr].Type = GL_FLOAT;
+	 arrays[attr].Type = exec->vtx.attrtype[src];
+	 arrays[attr].Integer =
+               vbo_attrtype_to_integer_flag(exec->vtx.attrtype[src]);
          arrays[attr].Format = GL_RGBA;
 	 arrays[attr].Enabled = 1;
+         arrays[attr]._ElementSize = arrays[attr].Size * sizeof(GLfloat);
          _mesa_reference_buffer_object(ctx,
                                        &arrays[attr].BufferObj,
                                        exec->vtx.bufferobj);
 	 arrays[attr]._MaxElement = count; /* ??? */
 
-	 data += exec->vtx.attrsz[src] * sizeof(GLfloat);
-         varying_inputs |= 1 << attr;
+         varying_inputs |= VERT_BIT(attr);
       }
    }
 
    _mesa_set_varying_vp_inputs( ctx, varying_inputs );
+   ctx->NewDriverState |= ctx->DriverFlags.NewArray;
 }
 
 
+/**
+ * Unmap the VBO.  This is called before drawing.
+ */
 static void
 vbo_exec_vtx_unmap( struct vbo_exec_context *exec )
 {
-   GLenum target = GL_ARRAY_BUFFER_ARB;
-
    if (_mesa_is_bufferobj(exec->vtx.bufferobj)) {
-      GLcontext *ctx = exec->ctx;
+      struct gl_context *ctx = exec->ctx;
       
       if (ctx->Driver.FlushMappedBufferRange) {
          GLintptr offset = exec->vtx.buffer_used - exec->vtx.bufferobj->Offset;
          GLsizeiptr length = (exec->vtx.buffer_ptr - exec->vtx.buffer_map) * sizeof(float);
 
          if (length)
-            ctx->Driver.FlushMappedBufferRange(ctx, target,
-                                               offset, length,
+            ctx->Driver.FlushMappedBufferRange(ctx, offset, length,
                                                exec->vtx.bufferobj);
       }
 
@@ -278,7 +284,7 @@ vbo_exec_vtx_unmap( struct vbo_exec_context *exec )
       assert(exec->vtx.buffer_used <= VBO_VERT_BUFFER_SIZE);
       assert(exec->vtx.buffer_ptr != NULL);
       
-      ctx->Driver.UnmapBuffer(ctx, target, exec->vtx.bufferobj);
+      ctx->Driver.UnmapBuffer(ctx, exec->vtx.bufferobj);
       exec->vtx.buffer_map = NULL;
       exec->vtx.buffer_ptr = NULL;
       exec->vtx.max_vert = 0;
@@ -286,12 +292,13 @@ vbo_exec_vtx_unmap( struct vbo_exec_context *exec )
 }
 
 
+/**
+ * Map the vertex buffer to begin storing glVertex, glColor, etc data.
+ */
 void
 vbo_exec_vtx_map( struct vbo_exec_context *exec )
 {
-   GLcontext *ctx = exec->ctx;
-   const GLenum target = GL_ARRAY_BUFFER_ARB;
-   const GLenum access = GL_READ_WRITE_ARB; /* for MapBuffer */
+   struct gl_context *ctx = exec->ctx;
    const GLenum accessRange = GL_MAP_WRITE_BIT |  /* for MapBufferRange */
                               GL_MAP_INVALIDATE_RANGE_BIT |
                               GL_MAP_UNSYNCHRONIZED_BIT |
@@ -302,44 +309,60 @@ vbo_exec_vtx_map( struct vbo_exec_context *exec )
    if (!_mesa_is_bufferobj(exec->vtx.bufferobj))
       return;
 
-   if (exec->vtx.buffer_map != NULL) {
-      assert(0);
-      exec->vtx.buffer_map = NULL;
-      exec->vtx.buffer_ptr = NULL;
-   }
+   assert(!exec->vtx.buffer_map);
+   assert(!exec->vtx.buffer_ptr);
 
-   if (VBO_VERT_BUFFER_SIZE > exec->vtx.buffer_used + 1024 &&
-       ctx->Driver.MapBufferRange) {
-      exec->vtx.buffer_map = 
-         (GLfloat *)ctx->Driver.MapBufferRange(ctx, 
-                                               target, 
-                                               exec->vtx.buffer_used,
-                                               (VBO_VERT_BUFFER_SIZE - 
-                                                exec->vtx.buffer_used),
-                                               accessRange,
-                                               exec->vtx.bufferobj);
-      exec->vtx.buffer_ptr = exec->vtx.buffer_map;
+   if (VBO_VERT_BUFFER_SIZE > exec->vtx.buffer_used + 1024) {
+      /* The VBO exists and there's room for more */
+      if (exec->vtx.bufferobj->Size > 0) {
+         exec->vtx.buffer_map =
+            (GLfloat *)ctx->Driver.MapBufferRange(ctx, 
+                                                  exec->vtx.buffer_used,
+                                                  (VBO_VERT_BUFFER_SIZE - 
+                                                   exec->vtx.buffer_used),
+                                                  accessRange,
+                                                  exec->vtx.bufferobj);
+         exec->vtx.buffer_ptr = exec->vtx.buffer_map;
+      }
+      else {
+         exec->vtx.buffer_ptr = exec->vtx.buffer_map = NULL;
+      }
    }
    
    if (!exec->vtx.buffer_map) {
+      /* Need to allocate a new VBO */
       exec->vtx.buffer_used = 0;
 
-      ctx->Driver.BufferData(ctx, target, 
-                             VBO_VERT_BUFFER_SIZE, 
-                             NULL, usage, exec->vtx.bufferobj);
-
-
-      if (ctx->Driver.MapBufferRange)
-         exec->vtx.buffer_map = 
-            (GLfloat *)ctx->Driver.MapBufferRange(ctx, target,
+      if (ctx->Driver.BufferData(ctx, GL_ARRAY_BUFFER_ARB,
+                                  VBO_VERT_BUFFER_SIZE, 
+                                  NULL, usage, exec->vtx.bufferobj)) {
+         /* buffer allocation worked, now map the buffer */
+         exec->vtx.buffer_map =
+            (GLfloat *)ctx->Driver.MapBufferRange(ctx,
                                                   0, VBO_VERT_BUFFER_SIZE,
                                                   accessRange,
                                                   exec->vtx.bufferobj);
-      if (!exec->vtx.buffer_map)
-         exec->vtx.buffer_map =
-            (GLfloat *)ctx->Driver.MapBuffer(ctx, target, access, exec->vtx.bufferobj);
-      assert(exec->vtx.buffer_map);
-      exec->vtx.buffer_ptr = exec->vtx.buffer_map;
+      }
+      else {
+         _mesa_error(ctx, GL_OUT_OF_MEMORY, "VBO allocation");
+         exec->vtx.buffer_map = NULL;
+      }
+   }
+
+   exec->vtx.buffer_ptr = exec->vtx.buffer_map;
+
+   if (!exec->vtx.buffer_map) {
+      /* out of memory */
+      _mesa_install_exec_vtxfmt( ctx, &exec->vtxfmt_noop );
+   }
+   else {
+      if (_mesa_using_noop_vtxfmt(ctx->Exec)) {
+         /* The no-op functions are installed so switch back to regular
+          * functions.  We do this test just to avoid frequent and needless
+          * calls to _mesa_install_exec_vtxfmt().
+          */
+         _mesa_install_exec_vtxfmt(ctx, &exec->vtxfmt);
+      }
    }
 
    if (0)
@@ -350,9 +373,10 @@ vbo_exec_vtx_map( struct vbo_exec_context *exec )
 
 /**
  * Execute the buffer and save copied verts.
+ * \param keep_unmapped  if true, leave the VBO unmapped when we're done.
  */
 void
-vbo_exec_vtx_flush( struct vbo_exec_context *exec, GLboolean unmap )
+vbo_exec_vtx_flush(struct vbo_exec_context *exec, GLboolean keepUnmapped)
 {
    if (0)
       vbo_exec_debug_verts( exec );
@@ -363,9 +387,9 @@ vbo_exec_vtx_flush( struct vbo_exec_context *exec, GLboolean unmap )
       exec->vtx.copied.nr = vbo_copy_vertices( exec ); 
 
       if (exec->vtx.copied.nr != exec->vtx.vert_count) {
-	 GLcontext *ctx = exec->ctx;
+	 struct gl_context *ctx = exec->ctx;
 	 
-	 /* Before the update_state() as this may raise _NEW_ARRAY
+	 /* Before the update_state() as this may raise _NEW_VARYING_VP_INPUTS
           * from _mesa_set_varying_vp_inputs().
 	  */
 	 vbo_exec_bind_arrays( ctx );
@@ -382,17 +406,17 @@ vbo_exec_vtx_flush( struct vbo_exec_context *exec, GLboolean unmap )
 		   exec->vtx.vert_count);
 
 	 vbo_context(ctx)->draw_prims( ctx, 
-				       exec->vtx.inputs, 
-				       exec->vtx.prim, 
+				       exec->vtx.prim,
 				       exec->vtx.prim_count,
 				       NULL,
 				       GL_TRUE,
 				       0,
-				       exec->vtx.vert_count - 1);
+				       exec->vtx.vert_count - 1,
+				       NULL);
 
 	 /* If using a real VBO, get new storage -- unless asked not to.
           */
-         if (_mesa_is_bufferobj(exec->vtx.bufferobj) && !unmap) {
+         if (_mesa_is_bufferobj(exec->vtx.bufferobj) && !keepUnmapped) {
             vbo_exec_vtx_map( exec );
          }
       }
@@ -400,14 +424,13 @@ vbo_exec_vtx_flush( struct vbo_exec_context *exec, GLboolean unmap )
 
    /* May have to unmap explicitly if we didn't draw:
     */
-   if (unmap && 
+   if (keepUnmapped &&
        _mesa_is_bufferobj(exec->vtx.bufferobj) &&
        exec->vtx.buffer_map) {
       vbo_exec_vtx_unmap( exec );
    }
 
-
-   if (unmap || exec->vtx.vertex_size == 0)
+   if (keepUnmapped || exec->vtx.vertex_size == 0)
       exec->vtx.max_vert = 0;
    else
       exec->vtx.max_vert = ((VBO_VERT_BUFFER_SIZE - exec->vtx.buffer_used) / 

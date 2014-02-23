@@ -279,7 +279,7 @@ HttpStreamFactoryImpl::Request::RemoveRequestFromHttpPipeliningRequestMap() {
 
 void HttpStreamFactoryImpl::Request::OnNewSpdySessionReady(
     Job* job,
-    scoped_refptr<SpdySession> spdy_session,
+    const base::WeakPtr<SpdySession>& spdy_session,
     bool direct) {
   DCHECK(job);
   DCHECK(job->using_spdy());
@@ -311,8 +311,8 @@ void HttpStreamFactoryImpl::Request::OnNewSpdySessionReady(
     delegate_->OnWebSocketStreamReady(
         job->server_ssl_config(),
         job->proxy_info(),
-        websocket_stream_factory_->CreateSpdyStream(
-            spdy_session, use_relative_url));
+        websocket_stream_factory_->CreateSpdyStream(spdy_session,
+                                                    use_relative_url));
   } else {
     bool use_relative_url = direct || url().SchemeIs("https");
     delegate_->OnStreamReady(
@@ -321,9 +321,14 @@ void HttpStreamFactoryImpl::Request::OnNewSpdySessionReady(
         new SpdyHttpStream(spdy_session, use_relative_url));
   }
   // |this| may be deleted after this point.
-  factory->OnNewSpdySessionReady(
-      spdy_session, direct, used_ssl_config, used_proxy_info,
-      was_npn_negotiated, protocol_negotiated, using_spdy, net_log);
+  factory->OnNewSpdySessionReady(spdy_session,
+                                 direct,
+                                 used_ssl_config,
+                                 used_proxy_info,
+                                 was_npn_negotiated,
+                                 protocol_negotiated,
+                                 using_spdy,
+                                 net_log);
 }
 
 void HttpStreamFactoryImpl::Request::OrphanJobsExcept(Job* job) {

@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2010 Google Inc. All rights reserved.
+ * Copyright (C) 2013 Samsung Electronics. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -31,13 +32,14 @@
 #ifndef SyncCallbackHelper_h
 #define SyncCallbackHelper_h
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/fileapi/FileError.h"
-#include "core/fileapi/FileException.h"
 #include "core/html/VoidCallback.h"
 #include "modules/filesystem/DirectoryEntry.h"
+#include "modules/filesystem/DirectoryReaderSync.h"
 #include "modules/filesystem/EntriesCallback.h"
-#include "modules/filesystem/EntryArraySync.h"
 #include "modules/filesystem/EntryCallback.h"
+#include "modules/filesystem/EntrySync.h"
 #include "modules/filesystem/ErrorCallback.h"
 #include "modules/filesystem/FileEntry.h"
 #include "modules/filesystem/FileSystemCallback.h"
@@ -47,13 +49,32 @@
 
 namespace WebCore {
 
-class AsyncFileSystem;
-class DirectoryEntrySync;
-class EntryArraySync;
-class EntrySync;
-class FileEntrySync;
+template <typename ResultType, typename CallbackArg>
+struct HelperResultType {
+    typedef PassRefPtr<ResultType> ReturnType;
+    typedef RefPtr<ResultType> StorageType;
 
-typedef int ExceptionCode;
+    static ReturnType createFromCallbackArg(CallbackArg argument)
+    {
+        return ResultType::create(argument);
+    }
+};
+
+template <>
+struct HelperResultType<EntrySyncVector, const EntryVector&> {
+    typedef EntrySyncVector ReturnType;
+    typedef EntrySyncVector StorageType;
+
+    static EntrySyncVector createFromCallbackArg(const EntryVector& entries)
+    {
+        EntrySyncVector result;
+        size_t entryCount = entries.size();
+        result.reserveInitialCapacity(entryCount);
+        for (size_t i = 0; i < entryCount; ++i)
+            result.uncheckedAppend(EntrySync::create(entries[i].get()));
+        return result;
+    }
+};
 
 // A helper template for FileSystemSync implementation.
 template <typename SuccessCallback, typename ObserverType, typename CallbackArg, typename ResultType>
@@ -61,27 +82,33 @@ class SyncCallbackHelper {
     WTF_MAKE_NONCOPYABLE(SyncCallbackHelper);
 public:
     typedef SyncCallbackHelper<SuccessCallback, ObserverType, CallbackArg, ResultType> HelperType;
+    typedef HelperResultType<ResultType, CallbackArg> ResultTypeTrait;
+    typedef typename ResultTypeTrait::StorageType ResultStorageType;
+    typedef typename ResultTypeTrait::ReturnType ResultReturnType;
+
     SyncCallbackHelper(ObserverType* observer = 0)
         : m_observer(observer)
         , m_successCallback(SuccessCallbackImpl::create(this))
         , m_errorCallback(ErrorCallbackImpl::create(this))
-        , m_exceptionCode(0)
+        , m_errorCode(FileError::OK)
         , m_completed(false)
     {
     }
 
-    PassRefPtr<ResultType> getResult(ExceptionCode& ec)
+    ResultReturnType getResult(ExceptionState& es)
     {
         if (m_observer) {
             while (!m_completed) {
                 if (!m_observer->waitForOperationToComplete()) {
-                    m_exceptionCode = FileException::ABORT_ERR;
+                    m_errorCode = FileError::ABORT_ERR;
                     break;
                 }
             }
         }
-        ec = m_exceptionCode;
-        return m_result.release();
+        if (m_errorCode)
+            FileError::throwDOMException(es, m_errorCode);
+
+        return m_result;
     }
 
     PassRefPtr<SuccessCallback> successCallback() { return m_successCallback; }
@@ -97,13 +124,13 @@ private:
 
         virtual bool handleEvent()
         {
-            m_helper->setError(0);
+            m_helper->setError(FileError::OK);
             return true;
         }
 
-        virtual bool handleEvent(CallbackArg* arg)
+        virtual bool handleEvent(CallbackArg arg)
         {
-            m_helper->setResult(ResultType::create(arg));
+            m_helper->setResult(arg);
             return true;
         }
 
@@ -140,23 +167,23 @@ private:
     friend class SuccessCallbackImpl;
     friend class ErrorCallbackImpl;
 
-    void setError(int code)
+    void setError(FileError::ErrorCode code)
     {
-        m_exceptionCode = FileException::ErrorCodeToExceptionCode(code);
+        m_errorCode = code;
         m_completed = true;
     }
 
-    void setResult(PassRefPtr<ResultType> result)
+    void setResult(CallbackArg result)
     {
-        m_result = result;
+        m_result = ResultTypeTrait::createFromCallbackArg(result);
         m_completed = true;
     }
 
     ObserverType* m_observer;
     RefPtr<SuccessCallbackImpl> m_successCallback;
     RefPtr<ErrorCallbackImpl> m_errorCallback;
-    RefPtr<ResultType> m_result;
-    ExceptionCode m_exceptionCode;
+    ResultStorageType m_result;
+    FileError::ErrorCode m_errorCode;
     bool m_completed;
 };
 
@@ -174,11 +201,11 @@ struct EmptyObserverType {
     }
 };
 
-typedef SyncCallbackHelper<EntryCallback, AsyncFileSystem, Entry, EntrySync> EntrySyncCallbackHelper;
-typedef SyncCallbackHelper<EntriesCallback, AsyncFileSystem, EntryArray, EntryArraySync> EntriesSyncCallbackHelper;
-typedef SyncCallbackHelper<MetadataCallback, AsyncFileSystem, Metadata, Metadata> MetadataSyncCallbackHelper;
-typedef SyncCallbackHelper<VoidCallback, AsyncFileSystem, EmptyType, EmptyType> VoidSyncCallbackHelper;
-typedef SyncCallbackHelper<FileSystemCallback, EmptyObserverType, DOMFileSystem, DOMFileSystemSync> FileSystemSyncCallbackHelper;
+typedef SyncCallbackHelper<EntryCallback, AsyncFileSystem, Entry*, EntrySync> EntrySyncCallbackHelper;
+typedef SyncCallbackHelper<EntriesCallback, AsyncFileSystem, const EntryVector&, EntrySyncVector> EntriesSyncCallbackHelper;
+typedef SyncCallbackHelper<MetadataCallback, AsyncFileSystem, Metadata*, Metadata> MetadataSyncCallbackHelper;
+typedef SyncCallbackHelper<VoidCallback, AsyncFileSystem, EmptyType*, EmptyType> VoidSyncCallbackHelper;
+typedef SyncCallbackHelper<FileSystemCallback, EmptyObserverType, DOMFileSystem*, DOMFileSystemSync> FileSystemSyncCallbackHelper;
 
 } // namespace WebCore
 

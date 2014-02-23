@@ -39,11 +39,10 @@
 #define WEBTESTRUNNER_NEW_HISTORY_CAPTURE
 
 namespace WebKit {
+class WebDeviceMotionData;
 class WebFrame;
 class WebGamepads;
 class WebHistoryItem;
-class WebMediaPlayer;
-class WebMediaPlayerClient;
 struct WebRect;
 struct WebSize;
 struct WebURLError;
@@ -64,6 +63,8 @@ public:
 
     // Set the gamepads to return from Platform::sampleGamepads().
     virtual void setGamepadData(const WebKit::WebGamepads&) = 0;
+
+    virtual void setDeviceMotionData(const WebKit::WebDeviceMotionData&) = 0;
 
     // Add a message to the text dump for the layout test.
     virtual void printMessage(const std::string& message) = 0;
@@ -93,9 +94,6 @@ public:
     // Manages the settings to used for layout tests.
     virtual WebPreferences* preferences() = 0;
     virtual void applyPreferences() = 0;
-
-    // Returns a textual description of given error.
-    virtual std::string makeURLErrorDescription(const WebKit::WebURLError&) = 0;
 
     // Resizes the WebView to the given size.
     virtual void setClientWindowRect(const WebKit::WebRect&) = 0;
@@ -148,6 +146,8 @@ public:
     // Invoked when the embedder should close all but the main WebView.
     virtual void closeRemainingWindows() = 0;
 
+    virtual void deleteAllCookies() = 0;
+
     // Returns the length of the back/forward history of the main WebView.
     virtual int navigationEntryCount() = 0;
 
@@ -162,9 +162,6 @@ public:
     // Returns the back/forward history for the WebView associated with the
     // given WebTestProxyBase as well as the index of the current entry.
     virtual void captureHistoryForWindow(WebTestProxyBase*, WebKit::WebVector<WebKit::WebHistoryItem>*, size_t* currentEntryIndex) = 0;
-
-    // Returns a media player corresponding to |url| as src.
-    virtual WebKit::WebMediaPlayer* createWebMediaPlayer(WebKit::WebFrame*, const WebKit::WebURL&, WebKit::WebMediaPlayerClient*) = 0;
 };
 
 }

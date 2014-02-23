@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef EventHandler_h
@@ -33,15 +33,13 @@
 #include "core/page/FocusDirection.h"
 #include "core/platform/Cursor.h"
 #include "core/platform/PlatformMouseEvent.h"
-#include "core/platform/PlatformWheelEvent.h"
 #include "core/platform/ScrollTypes.h"
 #include "core/platform/Timer.h"
 #include "core/platform/graphics/LayoutPoint.h"
 #include "core/rendering/HitTestRequest.h"
-#include <wtf/Forward.h>
-#include <wtf/HashMap.h>
-#include <wtf/OwnPtr.h>
-#include <wtf/RefPtr.h>
+#include "wtf/Forward.h"
+#include "wtf/HashMap.h"
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
@@ -52,7 +50,7 @@ class Event;
 class EventTarget;
 class FloatPoint;
 class FloatQuad;
-class FullscreenController;
+class FullscreenElementStack;
 class Frame;
 class HTMLFrameSetElement;
 class HitTestRequest;
@@ -100,7 +98,7 @@ public:
     Node* mousePressNode() const;
     void setMousePressNode(PassRefPtr<Node>);
 
-#if ENABLE(PAN_SCROLLING)
+#if OS(WINDOWS)
     void startPanScrolling(RenderObject*);
 #endif
 
@@ -141,7 +139,6 @@ public:
     bool logicalScrollRecursively(ScrollLogicalDirection, ScrollGranularity, Node* startingNode = 0);
 
     bool mouseMoved(const PlatformMouseEvent&);
-    bool passMouseMovedEventToScrollbars(const PlatformMouseEvent&);
 
     void lostMouseCapture();
 
@@ -201,7 +198,7 @@ public:
 private:
     static DragState& dragState();
     static const double TextDragDelay;
-    
+
     PassRefPtr<Clipboard> createDraggingClipboard() const;
 
     bool updateSelectionForMouseDownDispatchingSelectStart(Node*, const VisibleSelection&, TextGranularity);
@@ -222,7 +219,7 @@ private:
     void hoverTimerFired(Timer<EventHandler>*);
 
     bool logicalScrollOverflow(ScrollLogicalDirection, ScrollGranularity, Node* startingNode = 0);
-    
+
     bool shouldTurnVerticalTicksIntoHorizontal(const HitTestResult&, const PlatformWheelEvent&) const;
     bool mouseDownMayStartSelect() const { return m_mouseDownMayStartSelect; }
 
@@ -240,10 +237,10 @@ private:
     void invalidateClick();
 
     Node* nodeUnderMouse() const;
-    
+
     void updateMouseEventTargetNode(Node*, const PlatformMouseEvent&, bool fireMouseOverOut);
     void fireMouseOverOut(bool fireMouseOver = true, bool fireMouseOut = true, bool updateLastNodeUnderMouse = true);
-    
+
     MouseEventWithHitTestResults prepareMouseEvent(const HitTestRequest&, const PlatformMouseEvent&);
 
     bool dispatchMouseEvent(const AtomicString& eventType, Node* target, bool cancelable, int clickCount, const PlatformMouseEvent&, bool setUnder);
@@ -252,6 +249,7 @@ private:
     void freeClipboard();
 
     bool handleDrag(const MouseEventWithHitTestResults&, CheckDragHysteresis);
+    bool tryStartDrag(const MouseEventWithHitTestResults&);
     bool handleMouseUp(const MouseEventWithHitTestResults&);
     void clearDragState();
 
@@ -282,12 +280,12 @@ private:
     void updateSelectionForMouseDrag(const HitTestResult&);
 
     void updateLastScrollbarUnderMouse(Scrollbar*, bool);
-    
+
     void setFrameWasScrolledByUser();
 
     bool capturesDragging() const { return m_capturesDragging; }
 
-    bool isKeyEventAllowedInFullScreen(FullscreenController*, const PlatformKeyboardEvent&) const;
+    bool isKeyEventAllowedInFullScreen(FullscreenElementStack*, const PlatformKeyboardEvent&) const;
 
     bool handleGestureTapDown();
 
@@ -301,7 +299,7 @@ private:
     bool panScrollInProgress() const;
     void setLastKnownMousePosition(const PlatformMouseEvent&);
 
-    Frame* m_frame;
+    Frame* const m_frame;
 
     bool m_mousePressed;
     bool m_capturesDragging;
@@ -333,7 +331,7 @@ private:
 
     RefPtr<Node> m_capturingMouseEventsNode;
     bool m_eventHandlerWillResetCapturingMouseEventsNode;
-    
+
     RefPtr<Node> m_nodeUnderMouse;
     RefPtr<Node> m_lastNodeUnderMouse;
     RefPtr<Frame> m_lastMouseMoveEventSubframe;
@@ -345,11 +343,11 @@ private:
 
     RefPtr<Node> m_dragTarget;
     bool m_shouldOnlyFireDragOverEvent;
-    
+
     RefPtr<HTMLFrameSetElement> m_frameSetBeingResized;
 
     LayoutSize m_offsetFromResizeCorner; // In the coords of m_resizeLayer.
-    
+
     bool m_mousePositionIsUnknown;
     IntPoint m_lastKnownMousePosition;
     IntPoint m_lastKnownMouseGlobalPosition;

@@ -100,20 +100,20 @@ void HTMLBodyElement::parseAttribute(const QualifiedName& name, const AtomicStri
     if (name == vlinkAttr || name == alinkAttr || name == linkAttr) {
         if (value.isNull()) {
             if (name == linkAttr)
-                document()->resetLinkColor();
+                document()->textLinkColors().resetLinkColor();
             else if (name == vlinkAttr)
-                document()->resetVisitedLinkColor();
+                document()->textLinkColors().resetVisitedLinkColor();
             else
-                document()->resetActiveLinkColor();
+                document()->textLinkColors().resetActiveLinkColor();
         } else {
             RGBA32 color;
             if (CSSParser::parseColor(color, value, !document()->inQuirksMode())) {
                 if (name == linkAttr)
-                    document()->setLinkColor(color);
+                    document()->textLinkColors().setLinkColor(color);
                 else if (name == vlinkAttr)
-                    document()->setVisitedLinkColor(color);
+                    document()->textLinkColors().setVisitedLinkColor(color);
                 else
-                    document()->setActiveLinkColor(color);
+                    document()->textLinkColors().setActiveLinkColor(color);
             }
         }
 
@@ -311,7 +311,7 @@ int HTMLBodyElement::scrollHeight()
     Document* document = this->document();
     document->updateLayoutIgnorePendingStylesheets();
     FrameView* view = document->view();
-    return view ? adjustForZoom(view->contentsHeight(), document) : 0;    
+    return view ? adjustForZoom(view->contentsHeight(), document) : 0;
 }
 
 int HTMLBodyElement::scrollWidth()
@@ -320,7 +320,7 @@ int HTMLBodyElement::scrollWidth()
     Document* document = this->document();
     document->updateLayoutIgnorePendingStylesheets();
     FrameView* view = document->view();
-    return view ? adjustForZoom(view->contentsWidth(), document) : 0;    
+    return view ? adjustForZoom(view->contentsWidth(), document) : 0;
 }
 
 void HTMLBodyElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const

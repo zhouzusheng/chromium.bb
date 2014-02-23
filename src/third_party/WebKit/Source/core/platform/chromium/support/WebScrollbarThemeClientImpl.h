@@ -40,6 +40,7 @@ public:
     // Caller must retain ownership of this pointer and ensure that its lifetime
     // exceeds this instance.
     WebScrollbarThemeClientImpl(WebKit::WebScrollbar*);
+    ~WebScrollbarThemeClientImpl();
 
     // Implement ScrollbarThemeClient interface
     virtual int x() const OVERRIDE;
@@ -67,8 +68,6 @@ public:
     virtual int totalSize() const OVERRIDE;
     virtual int maximum() const OVERRIDE;
     virtual ScrollbarControlSize controlSize() const OVERRIDE;
-    virtual int lineStep() const OVERRIDE;
-    virtual int pageStep() const OVERRIDE;
     virtual ScrollbarPart pressedPart() const OVERRIDE;
     virtual ScrollbarPart hoveredPart() const OVERRIDE;
     virtual void styleChanged() OVERRIDE;

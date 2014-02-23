@@ -32,7 +32,7 @@
 #include "core/platform/graphics/Image.h"
 #include "core/platform/graphics/ImageBuffer.h"
 #include "core/platform/graphics/IntSize.h"
-#include <wtf/RefPtr.h>
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
@@ -50,14 +50,15 @@ public:
         m_cacheTimer.stop();
     }
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
-
 protected:
     virtual void draw(GraphicsContext*, const FloatRect&, const FloatRect&,
         CompositeOperator, BlendMode) OVERRIDE;
     virtual void drawPattern(GraphicsContext*, const FloatRect&,
         const FloatSize&, const FloatPoint&, CompositeOperator,
         const FloatRect&, BlendMode) OVERRIDE;
+
+    void drawPatternWithoutCache(GraphicsContext*, const FloatRect&, const FloatSize&,
+        const FloatPoint&, CompositeOperator, const FloatRect&, BlendMode);
 
     void invalidateCacheTimerFired(DeferrableOneShotTimer<GeneratorGeneratedImage>*);
 

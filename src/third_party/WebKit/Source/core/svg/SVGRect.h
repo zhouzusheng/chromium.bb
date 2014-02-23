@@ -22,14 +22,16 @@
 
 #include "core/platform/graphics/FloatRect.h"
 #include "core/svg/properties/SVGPropertyTraits.h"
-#include <wtf/text/StringBuilder.h>
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
+typedef FloatRect SVGRect;
+
 template<>
-struct SVGPropertyTraits<FloatRect> {
-    static FloatRect initialValue() { return FloatRect(); }
-    static String toString(const FloatRect& type)
+struct SVGPropertyTraits<SVGRect> {
+    static SVGRect initialValue() { return SVGRect(); }
+    static String toString(const SVGRect& type)
     {
         StringBuilder builder;
         builder.append(String::number(type.x()));

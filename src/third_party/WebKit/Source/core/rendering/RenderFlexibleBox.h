@@ -31,6 +31,7 @@
 #ifndef RenderFlexibleBox_h
 #define RenderFlexibleBox_h
 
+#include "core/rendering/OrderIterator.h"
 #include "core/rendering/RenderBlock.h"
 
 namespace WebCore {
@@ -59,7 +60,6 @@ public:
 
 protected:
     virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const OVERRIDE;
-    virtual void computePreferredLogicalWidths() OVERRIDE;
 
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
 
@@ -72,26 +72,6 @@ private:
     enum PositionedLayoutMode {
         FlipForRowReverse,
         NoFlipForRowReverse,
-    };
-
-    struct OrderHashTraits;
-    typedef HashSet<int, DefaultHash<int>::Hash, OrderHashTraits> OrderHashSet;
-
-    class OrderIterator {
-        WTF_MAKE_NONCOPYABLE(OrderIterator);
-    public:
-        OrderIterator(const RenderFlexibleBox*);
-        void setOrderValues(const OrderHashSet&);
-        RenderBox* currentChild() const { return m_currentChild; }
-        RenderBox* first();
-        RenderBox* next();
-        void reset();
-
-    private:
-        const RenderFlexibleBox* m_flexibleBox;
-        RenderBox* m_currentChild;
-        Vector<int> m_orderValues;
-        Vector<int>::const_iterator m_orderValuesIterator;
     };
 
     typedef HashMap<const RenderBox*, LayoutUnit> InflexibleFlexItemSize;
@@ -154,9 +134,10 @@ private:
     LayoutUnit marginBoxAscentForChild(RenderBox*);
 
     LayoutUnit computeChildMarginValue(Length margin, RenderView*);
-    void computeMainAxisPreferredSizes(OrderHashSet&);
+    void prepareOrderIteratorAndMargins();
     LayoutUnit adjustChildSizeForMinAndMax(RenderBox*, LayoutUnit childSize);
-    bool computeNextFlexLine(OrderedFlexItemList& orderedChildren, LayoutUnit& preferredMainAxisExtent, double& totalFlexGrow, double& totalWeightedFlexShrink, LayoutUnit& minMaxAppliedMainAxisExtent, bool& hasInfiniteLineLength);
+    // The hypothetical main size of an item is the flex base size clamped according to its min and max main size properties
+    bool computeNextFlexLine(OrderedFlexItemList& orderedChildren, LayoutUnit& sumFlexBaseSize, double& totalFlexGrow, double& totalWeightedFlexShrink, LayoutUnit& sumHypotheticalMainSize, bool& hasInfiniteLineLength);
 
     bool resolveFlexibleLengths(FlexSign, const OrderedFlexItemList&, LayoutUnit& availableFreeSpace, double& totalFlexGrow, double& totalWeightedFlexShrink, InflexibleFlexItemSize&, Vector<LayoutUnit>& childSizes, bool hasInfiniteLineLength);
     void freezeViolations(const Vector<Violation>&, LayoutUnit& availableFreeSpace, double& totalFlexGrow, double& totalWeightedFlexShrink, InflexibleFlexItemSize&, bool hasInfiniteLineLength);

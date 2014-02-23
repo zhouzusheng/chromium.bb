@@ -32,7 +32,7 @@
 #define MeterShadowElement_h
 
 #include "core/html/HTMLDivElement.h"
-#include <wtf/Forward.h>
+#include "wtf/Forward.h"
 
 namespace WebCore {
 
@@ -70,7 +70,7 @@ class MeterValueElement FINAL : public MeterShadowElement {
 public:
     static PassRefPtr<MeterValueElement> create(Document*);
     void setWidthPercentage(double);
-    void updatePseudo() { setPseudo(valuePseudoId()); }
+    void updatePseudo() { setPart(valuePseudoId()); }
 
 private:
     MeterValueElement(Document*);

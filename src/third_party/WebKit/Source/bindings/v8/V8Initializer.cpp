@@ -26,16 +26,23 @@
 #include "config.h"
 #include "bindings/v8/V8Initializer.h"
 
+#include "V8ErrorEvent.h"
 #include "V8History.h"
 #include "V8Location.h"
 #include "V8Window.h"
+#include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/ScriptCallStackFactory.h"
+#include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptProfiler.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8GCController.h"
+#include "bindings/v8/V8HiddenPropertyName.h"
 #include "bindings/v8/V8PerContextData.h"
 #include "core/dom/Document.h"
+#include "core/dom/ExceptionCode.h"
 #include "core/inspector/ScriptCallStack.h"
+#include "core/page/ConsoleTypes.h"
+#include "core/page/ContentSecurityPolicy.h"
 #include "core/page/DOMWindow.h"
 #include "core/page/Frame.h"
 #include "core/platform/MemoryUsageSupport.h"
@@ -91,7 +98,22 @@ static void messageHandlerInMainThread(v8::Handle<v8::Message> message, v8::Hand
     v8::Handle<v8::Value> resourceName = message->GetScriptResourceName();
     bool shouldUseDocumentURL = resourceName.IsEmpty() || !resourceName->IsString();
     String resource = shouldUseDocumentURL ? firstWindow->document()->url() : toWebCoreString(resourceName);
-    firstWindow->document()->reportException(errorMessage, message->GetLineNumber(), resource, callStack);
+    RefPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, resource, message->GetLineNumber(), message->GetStartColumn());
+
+    // messageHandlerInMainThread can be called while we're creating a new context.
+    // Since we cannot create a wrapper in the intermediate timing, we need to skip
+    // creating a wrapper for |event|.
+    DOMWrapperWorld* world = DOMWrapperWorld::current();
+    Frame* frame = firstWindow->document()->frame();
+    if (world && frame && frame->script()->existingWindowShell(world)) {
+        v8::Local<v8::Value> wrappedEvent = toV8(event.get(), v8::Handle<v8::Object>(), v8::Isolate::GetCurrent());
+        if (!wrappedEvent.IsEmpty()) {
+            ASSERT(wrappedEvent->IsObject());
+            v8::Local<v8::Object>::Cast(wrappedEvent)->SetHiddenValue(V8HiddenPropertyName::error(), data);
+        }
+    }
+    AccessControlStatus corsStatus = message->IsSharedCrossOrigin() ? SharableCrossOrigin : NotSharableCrossOrigin;
+    firstWindow->document()->reportException(event.release(), callStack, corsStatus);
 }
 
 static void failedAccessCheckCallbackInMainThread(v8::Local<v8::Object> host, v8::AccessType type, v8::Local<v8::Value> data)
@@ -99,8 +121,18 @@ static void failedAccessCheckCallbackInMainThread(v8::Local<v8::Object> host, v8
     Frame* target = findFrame(host, data, v8::Isolate::GetCurrent());
     if (!target)
         return;
-    DOMWindow* targetWindow = target->document()->domWindow();
-    targetWindow->printErrorMessage(targetWindow->crossDomainAccessErrorMessage(activeDOMWindow()));
+    DOMWindow* targetWindow = target->domWindow();
+
+    setDOMException(SecurityError, targetWindow->crossDomainAccessErrorMessage(activeDOMWindow()), v8::Isolate::GetCurrent());
+}
+
+static bool codeGenerationCheckCallbackInMainThread(v8::Local<v8::Context> context)
+{
+    if (ScriptExecutionContext* scriptExecutionContext = toScriptExecutionContext(context)) {
+        if (ContentSecurityPolicy* policy = toDocument(scriptExecutionContext)->contentSecurityPolicy())
+            return policy->allowEval(ScriptState::forContext(context));
+    }
+    return false;
 }
 
 static void initializeV8Common()
@@ -126,6 +158,7 @@ void V8Initializer::initializeMainThreadIfNeeded(v8::Isolate* isolate)
     v8::V8::SetFatalErrorHandler(reportFatalErrorInMainThread);
     v8::V8::AddMessageListener(messageHandlerInMainThread);
     v8::V8::SetFailedAccessCheckCallbackFunction(failedAccessCheckCallbackInMainThread);
+    v8::V8::SetAllowCodeGenerationFromStringsCallback(codeGenerationCheckCallbackInMainThread);
     ScriptProfiler::initialize();
     V8PerIsolateData::ensureInitialized(isolate);
 }
@@ -140,7 +173,7 @@ static void messageHandlerInWorker(v8::Handle<v8::Message> message, v8::Handle<v
 {
     static bool isReportingException = false;
     // Exceptions that occur in error handler should be ignored since in that case
-    // WorkerContext::reportException will send the exception to the worker object.
+    // WorkerGlobalScope::reportException will send the exception to the worker object.
     if (isReportingException)
         return;
     isReportingException = true;
@@ -148,9 +181,15 @@ static void messageHandlerInWorker(v8::Handle<v8::Message> message, v8::Handle<v
     // During the frame teardown, there may not be a valid context.
     if (ScriptExecutionContext* context = getScriptExecutionContext()) {
         String errorMessage = toWebCoreString(message->Get());
-        int lineNumber = message->GetLineNumber();
         String sourceURL = toWebCoreString(message->GetScriptResourceName());
-        context->reportException(errorMessage, lineNumber, sourceURL, 0);
+        RefPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, sourceURL, message->GetLineNumber(), message->GetStartColumn());
+        v8::Local<v8::Value> wrappedEvent = toV8(event.get(), v8::Handle<v8::Object>(), v8::Isolate::GetCurrent());
+        if (!wrappedEvent.IsEmpty()) {
+            ASSERT(wrappedEvent->IsObject());
+            v8::Local<v8::Object>::Cast(wrappedEvent)->SetHiddenValue(V8HiddenPropertyName::error(), data);
+        }
+        AccessControlStatus corsStatus = message->IsSharedCrossOrigin() ? SharableCrossOrigin : NotSharableCrossOrigin;
+        context->reportException(event.release(), 0, corsStatus);
     }
 
     isReportingException = false;

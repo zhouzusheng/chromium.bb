@@ -33,8 +33,6 @@
  * a dereference chain.
  */
 
-/* The use of inttypes.h seems to be unnecessary and causes problems on Windows. */
-/* #include <inttypes.h> */
 #include "ir.h"
 #include "ir_hierarchical_visitor.h"
 #include "program/hash_table.h"
@@ -60,7 +58,8 @@ public:
 
    virtual ir_visitor_status visit(ir_variable *v);
    virtual ir_visitor_status visit(ir_dereference_variable *ir);
-   virtual ir_visitor_status visit(ir_if *ir);
+
+   virtual ir_visitor_status visit_enter(ir_if *ir);
 
    virtual ir_visitor_status visit_leave(ir_loop *ir);
    virtual ir_visitor_status visit_enter(ir_function *ir);
@@ -68,8 +67,10 @@ public:
    virtual ir_visitor_status visit_enter(ir_function_signature *ir);
 
    virtual ir_visitor_status visit_leave(ir_expression *ir);
+   virtual ir_visitor_status visit_leave(ir_swizzle *ir);
 
    virtual ir_visitor_status visit_enter(ir_assignment *ir);
+   virtual ir_visitor_status visit_enter(ir_call *ir);
 
    static void validate_ir(ir_instruction *ir, void *data);
 
@@ -101,7 +102,7 @@ ir_validate::visit(ir_dereference_variable *ir)
 }
 
 ir_visitor_status
-ir_validate::visit(ir_if *ir)
+ir_validate::visit_enter(ir_if *ir)
 {
    if (ir->condition->type != glsl_type::bool_type) {
       printf("ir_if condition %s type instead of bool.\n",
@@ -119,7 +120,7 @@ ir_visitor_status
 ir_validate::visit_leave(ir_loop *ir)
 {
    if (ir->counter != NULL) {
-      if ((ir->from == NULL) || (ir->from == NULL) || (ir->increment == NULL)) {
+      if ((ir->from == NULL) || (ir->to == NULL) || (ir->increment == NULL)) {
 	 printf("ir_loop has invalid loop controls:\n"
 		"    counter:   %p\n"
 		"    from:      %p\n"
@@ -135,7 +136,7 @@ ir_validate::visit_leave(ir_loop *ir)
 	 abort();
       }
    } else {
-      if ((ir->from != NULL) || (ir->from != NULL) || (ir->increment != NULL)) {
+      if ((ir->from != NULL) || (ir->to != NULL) || (ir->increment != NULL)) {
 	 printf("ir_loop has invalid loop controls:\n"
 		"    counter:   %p\n"
 		"    from:      %p\n"
@@ -173,13 +174,26 @@ ir_validate::visit_enter(ir_function *ir)
 
    this->validate_ir(ir, this->data);
 
+   /* Verify that all of the things stored in the list of signatures are,
+    * in fact, function signatures.
+    */
+   foreach_list(node, &ir->signatures) {
+      ir_instruction *sig = (ir_instruction *) node;
+
+      if (sig->ir_type != ir_type_function_signature) {
+	 printf("Non-signature in signature list of function `%s'\n",
+		ir->name);
+	 abort();
+      }
+   }
+
    return visit_continue;
 }
 
 ir_visitor_status
 ir_validate::visit_leave(ir_function *ir)
 {
-   assert(talloc_parent(ir->name) == ir);
+   assert(ralloc_parent(ir->name) == ir);
 
    this->current_function = NULL;
    return visit_continue;
@@ -195,6 +209,12 @@ ir_validate::visit_enter(ir_function_signature *ir)
 	     (void *) ir,
 	     this->current_function->name, (void *) this->current_function,
 	     ir->function_name(), (void *) ir->function());
+      abort();
+   }
+
+   if (ir->return_type == NULL) {
+      printf("Function signature %p for function %s has NULL return type.\n",
+	     (void *) ir, ir->function_name());
       abort();
    }
 
@@ -236,6 +256,10 @@ ir_validate::visit_leave(ir_expression *ir)
       assert(ir->operands[0]->type->base_type == GLSL_TYPE_FLOAT);
       assert(ir->type->base_type == GLSL_TYPE_INT);
       break;
+   case ir_unop_f2u:
+      assert(ir->operands[0]->type->base_type == GLSL_TYPE_FLOAT);
+      assert(ir->type->base_type == GLSL_TYPE_UINT);
+      break;
    case ir_unop_i2f:
       assert(ir->operands[0]->type->base_type == GLSL_TYPE_INT);
       assert(ir->type->base_type == GLSL_TYPE_FLOAT);
@@ -260,6 +284,30 @@ ir_validate::visit_leave(ir_expression *ir)
       assert(ir->operands[0]->type->base_type == GLSL_TYPE_UINT);
       assert(ir->type->base_type == GLSL_TYPE_FLOAT);
       break;
+   case ir_unop_i2u:
+      assert(ir->operands[0]->type->base_type == GLSL_TYPE_INT);
+      assert(ir->type->base_type == GLSL_TYPE_UINT);
+      break;
+   case ir_unop_u2i:
+      assert(ir->operands[0]->type->base_type == GLSL_TYPE_UINT);
+      assert(ir->type->base_type == GLSL_TYPE_INT);
+      break;
+   case ir_unop_bitcast_i2f:
+      assert(ir->operands[0]->type->base_type == GLSL_TYPE_INT);
+      assert(ir->type->base_type == GLSL_TYPE_FLOAT);
+      break;
+   case ir_unop_bitcast_f2i:
+      assert(ir->operands[0]->type->base_type == GLSL_TYPE_FLOAT);
+      assert(ir->type->base_type == GLSL_TYPE_INT);
+      break;
+   case ir_unop_bitcast_u2f:
+      assert(ir->operands[0]->type->base_type == GLSL_TYPE_UINT);
+      assert(ir->type->base_type == GLSL_TYPE_FLOAT);
+      break;
+   case ir_unop_bitcast_f2u:
+      assert(ir->operands[0]->type->base_type == GLSL_TYPE_FLOAT);
+      assert(ir->type->base_type == GLSL_TYPE_UINT);
+      break;
 
    case ir_unop_any:
       assert(ir->operands[0]->type->base_type == GLSL_TYPE_BOOL);
@@ -267,11 +315,14 @@ ir_validate::visit_leave(ir_expression *ir)
       break;
 
    case ir_unop_trunc:
+   case ir_unop_round_even:
    case ir_unop_ceil:
    case ir_unop_floor:
    case ir_unop_fract:
    case ir_unop_sin:
    case ir_unop_cos:
+   case ir_unop_sin_reduced:
+   case ir_unop_cos_reduced:
    case ir_unop_dFdx:
    case ir_unop_dFdy:
       assert(ir->operands[0]->type->base_type == GLSL_TYPE_FLOAT);
@@ -331,14 +382,31 @@ ir_validate::visit_leave(ir_expression *ir)
 
    case ir_binop_lshift:
    case ir_binop_rshift:
+      assert(ir->operands[0]->type->is_integer() &&
+             ir->operands[1]->type->is_integer());
+      if (ir->operands[0]->type->is_scalar()) {
+          assert(ir->operands[1]->type->is_scalar());
+      }
+      if (ir->operands[0]->type->is_vector() &&
+          ir->operands[1]->type->is_vector()) {
+          assert(ir->operands[0]->type->components() ==
+                 ir->operands[1]->type->components());
+      }
+      assert(ir->type == ir->operands[0]->type);
+      break;
+
    case ir_binop_bit_and:
    case ir_binop_bit_xor:
    case ir_binop_bit_or:
-      assert(ir->operands[0]->type == ir->operands[1]->type);
-      assert(ir->type == ir->operands[0]->type);
-      assert(ir->type->base_type == GLSL_TYPE_INT ||
-	     ir->type->base_type == GLSL_TYPE_UINT);
-      break;
+       assert(ir->operands[0]->type->base_type ==
+              ir->operands[1]->type->base_type);
+       assert(ir->type->is_integer());
+       if (ir->operands[0]->type->is_vector() &&
+           ir->operands[1]->type->is_vector()) {
+           assert(ir->operands[0]->type->vector_elements ==
+                  ir->operands[1]->type->vector_elements);
+       }
+       break;
 
    case ir_binop_logic_and:
    case ir_binop_logic_xor:
@@ -355,11 +423,74 @@ ir_validate::visit_leave(ir_expression *ir)
       assert(ir->operands[0]->type == ir->operands[1]->type);
       break;
 
-   case ir_binop_cross:
-      assert(ir->operands[0]->type == glsl_type::vec3_type);
-      assert(ir->operands[1]->type == glsl_type::vec3_type);
-      assert(ir->type == glsl_type::vec3_type);
+   case ir_binop_ubo_load:
+      assert(ir->operands[0]->as_constant());
+      assert(ir->operands[0]->type == glsl_type::uint_type);
+
+      assert(ir->operands[1]->type == glsl_type::uint_type);
       break;
+
+   case ir_quadop_vector:
+      /* The vector operator collects some number of scalars and generates a
+       * vector from them.
+       *
+       *  - All of the operands must be scalar.
+       *  - Number of operands must matche the size of the resulting vector.
+       *  - Base type of the operands must match the base type of the result.
+       */
+      assert(ir->type->is_vector());
+      switch (ir->type->vector_elements) {
+      case 2:
+	 assert(ir->operands[0]->type->is_scalar());
+	 assert(ir->operands[0]->type->base_type == ir->type->base_type);
+	 assert(ir->operands[1]->type->is_scalar());
+	 assert(ir->operands[1]->type->base_type == ir->type->base_type);
+	 assert(ir->operands[2] == NULL);
+	 assert(ir->operands[3] == NULL);
+	 break;
+      case 3:
+	 assert(ir->operands[0]->type->is_scalar());
+	 assert(ir->operands[0]->type->base_type == ir->type->base_type);
+	 assert(ir->operands[1]->type->is_scalar());
+	 assert(ir->operands[1]->type->base_type == ir->type->base_type);
+	 assert(ir->operands[2]->type->is_scalar());
+	 assert(ir->operands[2]->type->base_type == ir->type->base_type);
+	 assert(ir->operands[3] == NULL);
+	 break;
+      case 4:
+	 assert(ir->operands[0]->type->is_scalar());
+	 assert(ir->operands[0]->type->base_type == ir->type->base_type);
+	 assert(ir->operands[1]->type->is_scalar());
+	 assert(ir->operands[1]->type->base_type == ir->type->base_type);
+	 assert(ir->operands[2]->type->is_scalar());
+	 assert(ir->operands[2]->type->base_type == ir->type->base_type);
+	 assert(ir->operands[3]->type->is_scalar());
+	 assert(ir->operands[3]->type->base_type == ir->type->base_type);
+	 break;
+      default:
+	 /* The is_vector assertion above should prevent execution from ever
+	  * getting here.
+	  */
+	 assert(!"Should not get here.");
+	 break;
+      }
+   }
+
+   return visit_continue;
+}
+
+ir_visitor_status
+ir_validate::visit_leave(ir_swizzle *ir)
+{
+   unsigned int chans[4] = {ir->mask.x, ir->mask.y, ir->mask.z, ir->mask.w};
+
+   for (unsigned int i = 0; i < ir->type->vector_elements; i++) {
+      if (chans[i] >= ir->val->type->vector_elements) {
+	 printf("ir_swizzle @ %p specifies a channel not present "
+		"in the value.\n", (void *) ir);
+	 ir->print();
+	 abort();
+      }
    }
 
    return visit_continue;
@@ -374,9 +505,31 @@ ir_validate::visit(ir_variable *ir)
     * declared before it is dereferenced.
     */
    if (ir->name)
-      assert(talloc_parent(ir->name) == ir);
+      assert(ralloc_parent(ir->name) == ir);
 
    hash_table_insert(ht, ir, ir);
+
+
+   /* If a variable is an array, verify that the maximum array index is in
+    * bounds.  There was once an error in AST-to-HIR conversion that set this
+    * to be out of bounds.
+    */
+   if (ir->type->array_size() > 0) {
+      if (ir->max_array_access >= ir->type->length) {
+	 printf("ir_variable has maximum access out of bounds (%d vs %d)\n",
+		ir->max_array_access, ir->type->length - 1);
+	 ir->print();
+	 abort();
+      }
+   }
+
+   if (ir->constant_initializer != NULL && !ir->has_initializer) {
+      printf("ir_variable didn't have an initializer, but has a constant "
+	     "initializer value.\n");
+      ir->print();
+      abort();
+   }
+
    return visit_continue;
 }
 
@@ -412,6 +565,67 @@ ir_validate::visit_enter(ir_assignment *ir)
    return visit_continue;
 }
 
+ir_visitor_status
+ir_validate::visit_enter(ir_call *ir)
+{
+   ir_function_signature *const callee = ir->callee;
+
+   if (callee->ir_type != ir_type_function_signature) {
+      printf("IR called by ir_call is not ir_function_signature!\n");
+      abort();
+   }
+
+   if (ir->return_deref) {
+      if (ir->return_deref->type != callee->return_type) {
+	 printf("callee type %s does not match return storage type %s\n",
+	        callee->return_type->name, ir->return_deref->type->name);
+	 abort();
+      }
+   } else if (callee->return_type != glsl_type::void_type) {
+      printf("ir_call has non-void callee but no return storage\n");
+      abort();
+   }
+
+   const exec_node *formal_param_node = callee->parameters.head;
+   const exec_node *actual_param_node = ir->actual_parameters.head;
+   while (true) {
+      if (formal_param_node->is_tail_sentinel()
+          != actual_param_node->is_tail_sentinel()) {
+         printf("ir_call has the wrong number of parameters:\n");
+         goto dump_ir;
+      }
+      if (formal_param_node->is_tail_sentinel()) {
+         break;
+      }
+      const ir_variable *formal_param
+         = (const ir_variable *) formal_param_node;
+      const ir_rvalue *actual_param
+         = (const ir_rvalue *) actual_param_node;
+      if (formal_param->type != actual_param->type) {
+         printf("ir_call parameter type mismatch:\n");
+         goto dump_ir;
+      }
+      if (formal_param->mode == ir_var_out
+          || formal_param->mode == ir_var_inout) {
+         if (!actual_param->is_lvalue()) {
+            printf("ir_call out/inout parameters must be lvalues:\n");
+            goto dump_ir;
+         }
+      }
+      formal_param_node = formal_param_node->next;
+      actual_param_node = actual_param_node->next;
+   }
+
+   return visit_continue;
+
+dump_ir:
+   ir->print();
+   printf("callee:\n");
+   callee->print();
+   abort();
+   return visit_stop;
+}
+
 void
 ir_validate::validate_ir(ir_instruction *ir, void *data)
 {
@@ -435,7 +649,9 @@ check_node_type(ir_instruction *ir, void *data)
       printf("Instruction node with unset type\n");
       ir->print(); printf("\n");
    }
-   assert(ir->type != glsl_type::error_type);
+   ir_rvalue *value = ir->as_rvalue();
+   if (value != NULL)
+      assert(value->type != glsl_type::error_type);
 }
 
 void

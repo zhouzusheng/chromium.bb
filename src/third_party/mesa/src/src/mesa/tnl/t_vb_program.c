@@ -35,6 +35,7 @@
 #include "main/colormac.h"
 #include "main/macros.h"
 #include "main/imports.h"
+#include "main/samplerobj.h"
 #include "math/m_xform.h"
 #include "program/prog_instruction.h"
 #include "program/prog_statevars.h"
@@ -48,7 +49,7 @@
 
 #ifdef NAN_CHECK
 /** Check for NaNs and very large values */
-static INLINE void
+static inline void
 check_float(float x)
 {
    assert(!IS_INF_OR_NAN(x));
@@ -67,6 +68,10 @@ struct vp_stage_data {
    GLvector4f ndcCoords;              /**< normalized device coords */
    GLubyte *clipmask;                 /**< clip flags */
    GLubyte ormask, andmask;           /**< for clipping */
+
+   GLboolean vertex_textures;
+
+   struct gl_program_machine machine;
 };
 
 
@@ -74,7 +79,7 @@ struct vp_stage_data {
 
 
 static void
-userclip( GLcontext *ctx,
+userclip( struct gl_context *ctx,
           GLvector4f *clip,
           GLubyte *clipmask,
           GLubyte *clipormask,
@@ -120,7 +125,7 @@ userclip( GLcontext *ctx,
 
 
 static GLboolean
-do_ndc_cliptest(GLcontext *ctx, struct vp_stage_data *store)
+do_ndc_cliptest(struct gl_context *ctx, struct vp_stage_data *store)
 {
    TNLcontext *tnl = TNL_CONTEXT(ctx);
    struct vertex_buffer *VB = &tnl->vb;
@@ -187,13 +192,14 @@ do_ndc_cliptest(GLcontext *ctx, struct vp_stage_data *store)
  * moved into main/ someday.
  */
 static void
-vp_fetch_texel(GLcontext *ctx, const GLfloat texcoord[4], GLfloat lambda,
+vp_fetch_texel(struct gl_context *ctx, const GLfloat texcoord[4], GLfloat lambda,
                GLuint unit, GLfloat color[4])
 {
    SWcontext *swrast = SWRAST_CONTEXT(ctx);
 
    /* XXX use a float-valued TextureSample routine here!!! */
-   swrast->TextureSample[unit](ctx, ctx->Texture.Unit[unit]._Current,
+   swrast->TextureSample[unit](ctx, _mesa_get_samplerobj(ctx, unit),
+                               ctx->Texture.Unit[unit]._Current,
                                1, (const GLfloat (*)[4]) texcoord,
                                &lambda,  (GLfloat (*)[4]) color);
 }
@@ -204,7 +210,7 @@ vp_fetch_texel(GLcontext *ctx, const GLfloat texcoord[4], GLfloat lambda,
  * string has been parsed.
  */
 GLboolean
-_tnl_program_string(GLcontext *ctx, GLenum target, struct gl_program *program)
+_tnl_program_string(struct gl_context *ctx, GLenum target, struct gl_program *program)
 {
    /* No-op.
     * If we had derived anything from the program that was private to this
@@ -218,7 +224,8 @@ _tnl_program_string(GLcontext *ctx, GLenum target, struct gl_program *program)
  * Initialize virtual machine state prior to executing vertex program.
  */
 static void
-init_machine(GLcontext *ctx, struct gl_program_machine *machine)
+init_machine(struct gl_context *ctx, struct gl_program_machine *machine,
+             GLuint instID)
 {
    /* Input registers get initialized from the current vertex attribs */
    memcpy(machine->VertAttribs, ctx->Current.Attrib,
@@ -254,6 +261,8 @@ init_machine(GLcontext *ctx, struct gl_program_machine *machine)
    machine->FetchTexelDeriv = NULL; /* not used by vertex programs */
 
    machine->Samplers = ctx->VertexProgram._Current->Base.SamplerUnits;
+
+   machine->SystemValues[SYSTEM_VALUE_INSTANCE_ID][0] = (GLfloat) instID;
 }
 
 
@@ -261,19 +270,16 @@ init_machine(GLcontext *ctx, struct gl_program_machine *machine)
  * Map the texture images which the vertex program will access (if any).
  */
 static void
-map_textures(GLcontext *ctx, const struct gl_vertex_program *vp)
+map_textures(struct gl_context *ctx, const struct gl_vertex_program *vp)
 {
    GLuint u;
-
-   if (!ctx->Driver.MapTexture)
-      return;
 
    for (u = 0; u < ctx->Const.MaxVertexTextureImageUnits; u++) {
       if (vp->Base.TexturesUsed[u]) {
          /* Note: _Current *should* correspond to the target indicated
           * in TexturesUsed[u].
           */
-         ctx->Driver.MapTexture(ctx, ctx->Texture.Unit[u]._Current);
+         _swrast_map_texture(ctx, ctx->Texture.Unit[u]._Current);
       }
    }
 }
@@ -283,19 +289,16 @@ map_textures(GLcontext *ctx, const struct gl_vertex_program *vp)
  * Unmap the texture images which were used by the vertex program (if any).
  */
 static void
-unmap_textures(GLcontext *ctx, const struct gl_vertex_program *vp)
+unmap_textures(struct gl_context *ctx, const struct gl_vertex_program *vp)
 {
    GLuint u;
-
-   if (!ctx->Driver.MapTexture)
-      return;
 
    for (u = 0; u < ctx->Const.MaxVertexTextureImageUnits; u++) {
       if (vp->Base.TexturesUsed[u]) {
          /* Note: _Current *should* correspond to the target indicated
           * in TexturesUsed[u].
           */
-         ctx->Driver.UnmapTexture(ctx, ctx->Texture.Unit[u]._Current);
+         _swrast_unmap_texture(ctx, ctx->Texture.Unit[u]._Current);
       }
    }
 }
@@ -305,13 +308,13 @@ unmap_textures(GLcontext *ctx, const struct gl_vertex_program *vp)
  * This function executes vertex programs
  */
 static GLboolean
-run_vp( GLcontext *ctx, struct tnl_pipeline_stage *stage )
+run_vp( struct gl_context *ctx, struct tnl_pipeline_stage *stage )
 {
    TNLcontext *tnl = TNL_CONTEXT(ctx);
    struct vp_stage_data *store = VP_STAGE_DATA(stage);
    struct vertex_buffer *VB = &tnl->vb;
    struct gl_vertex_program *program = ctx->VertexProgram._Current;
-   struct gl_program_machine machine;
+   struct gl_program_machine *machine = &store->machine;
    GLuint outputs[VERT_RESULT_MAX], numOutputs;
    GLuint i, j;
 
@@ -334,12 +337,23 @@ run_vp( GLcontext *ctx, struct tnl_pipeline_stage *stage )
       }
    }
 
+   /* Allocate result vectors.  We delay this until now to avoid allocating
+    * memory that would never be used if we don't run the software tnl pipeline.
+    */
+   if (!store->results[0].storage) {
+      for (i = 0; i < VERT_RESULT_MAX; i++) {
+         assert(!store->results[i].storage);
+         _mesa_vector4f_alloc( &store->results[i], 0, VB->Size, 32 );
+         store->results[i].size = 4;
+      }
+   }
+
    map_textures(ctx, program);
 
    for (i = 0; i < VB->Count; i++) {
       GLuint attr;
 
-      init_machine(ctx, &machine);
+      init_machine(ctx, machine, tnl->CurInstance);
 
 #if 0
       printf("Input  %d: %f, %f, %f, %f\n", i,
@@ -361,7 +375,7 @@ run_vp( GLcontext *ctx, struct tnl_pipeline_stage *stage )
 
       /* the vertex array case */
       for (attr = 0; attr < VERT_ATTRIB_MAX; attr++) {
-	 if (program->Base.InputsRead & (1 << attr)) {
+	 if (program->Base.InputsRead & BITFIELD64_BIT(attr)) {
 	    const GLubyte *ptr = (const GLubyte*) VB->AttribPtr[attr]->data;
 	    const GLuint size = VB->AttribPtr[attr]->size;
 	    const GLuint stride = VB->AttribPtr[attr]->stride;
@@ -372,23 +386,23 @@ run_vp( GLcontext *ctx, struct tnl_pipeline_stage *stage )
             check_float(data[2]);
             check_float(data[3]);
 #endif
-	    COPY_CLEAN_4V(machine.VertAttribs[attr], size, data);
+	    COPY_CLEAN_4V(machine->VertAttribs[attr], size, data);
 	 }
       }
 
       /* execute the program */
-      _mesa_execute_program(ctx, &program->Base, &machine);
+      _mesa_execute_program(ctx, &program->Base, machine);
 
       /* copy the output registers into the VB->attribs arrays */
       for (j = 0; j < numOutputs; j++) {
          const GLuint attr = outputs[j];
 #ifdef NAN_CHECK
-         check_float(machine.Outputs[attr][0]);
-         check_float(machine.Outputs[attr][1]);
-         check_float(machine.Outputs[attr][2]);
-         check_float(machine.Outputs[attr][3]);
+         check_float(machine->Outputs[attr][0]);
+         check_float(machine->Outputs[attr][1]);
+         check_float(machine->Outputs[attr][2]);
+         check_float(machine->Outputs[attr][3]);
 #endif
-         COPY_4V(store->results[attr].data[i], machine.Outputs[attr]);
+         COPY_4V(store->results[attr].data[i], machine->Outputs[attr]);
       }
 
       /* FOGC is a special case.  Fragment shader expects (f,0,0,1) */
@@ -398,14 +412,14 @@ run_vp( GLcontext *ctx, struct tnl_pipeline_stage *stage )
          store->results[VERT_RESULT_FOGC].data[i][3] = 1.0;
       }
 #ifdef NAN_CHECK
-      ASSERT(machine.Outputs[0][3] != 0.0F);
+      ASSERT(machine->Outputs[0][3] != 0.0F);
 #endif
 #if 0
       printf("HPOS: %f %f %f %f\n",
-             machine.Outputs[0][0], 
-             machine.Outputs[0][1], 
-             machine.Outputs[0][2], 
-             machine.Outputs[0][3]);
+             machine->Outputs[0][0], 
+             machine->Outputs[0][1], 
+             machine->Outputs[0][2], 
+             machine->Outputs[0][3]);
 #endif
    }
 
@@ -493,24 +507,17 @@ run_vp( GLcontext *ctx, struct tnl_pipeline_stage *stage )
  * allocate data until the first time the stage is run.
  */
 static GLboolean
-init_vp(GLcontext *ctx, struct tnl_pipeline_stage *stage)
+init_vp(struct gl_context *ctx, struct tnl_pipeline_stage *stage)
 {
    TNLcontext *tnl = TNL_CONTEXT(ctx);
    struct vertex_buffer *VB = &(tnl->vb);
    struct vp_stage_data *store;
    const GLuint size = VB->Size;
-   GLuint i;
 
-   stage->privatePtr = MALLOC(sizeof(*store));
+   stage->privatePtr = CALLOC(sizeof(*store));
    store = VP_STAGE_DATA(stage);
    if (!store)
       return GL_FALSE;
-
-   /* Allocate arrays of vertex output values */
-   for (i = 0; i < VERT_RESULT_MAX; i++) {
-      _mesa_vector4f_alloc( &store->results[i], 0, size, 32 );
-      store->results[i].size = 4;
-   }
 
    /* a few other misc allocations */
    _mesa_vector4f_alloc( &store->ndcCoords, 0, size, 32 );
@@ -546,7 +553,7 @@ dtr(struct tnl_pipeline_stage *stage)
 
 
 static void
-validate_vp_stage(GLcontext *ctx, struct tnl_pipeline_stage *stage)
+validate_vp_stage(struct gl_context *ctx, struct tnl_pipeline_stage *stage)
 {
    if (ctx->VertexProgram._Current) {
       _swrast_update_texture_samplers(ctx);

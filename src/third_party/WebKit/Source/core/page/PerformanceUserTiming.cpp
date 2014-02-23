@@ -26,11 +26,12 @@
 #include "config.h"
 #include "core/page/PerformanceUserTiming.h"
 
+#include "bindings/v8/ExceptionState.h"
+#include "core/dom/ExceptionCode.h"
 #include "core/page/Performance.h"
 #include "core/page/PerformanceMark.h"
 #include "core/page/PerformanceMeasure.h"
-#include <wtf/dtoa/utils.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -97,11 +98,10 @@ static void clearPeformanceEntries(PerformanceEntryMap& performanceEntryMap, con
         performanceEntryMap.remove(name);
 }
 
-void UserTiming::mark(const String& markName, ExceptionCode& ec)
+void UserTiming::mark(const String& markName, ExceptionState& es)
 {
-    ec = 0;
     if (restrictedKeyMap().contains(markName)) {
-        ec = SYNTAX_ERR;
+        es.throwDOMException(SyntaxError, "'" + markName + "' is part of the PerformanceTiming interface, and cannot be used as a mark name.");
         return;
     }
 
@@ -114,27 +114,25 @@ void UserTiming::clearMarks(const String& markName)
     clearPeformanceEntries(m_marksMap, markName);
 }
 
-double UserTiming::findExistingMarkStartTime(const String& markName, ExceptionCode& ec)
+double UserTiming::findExistingMarkStartTime(const String& markName, ExceptionState& es)
 {
-    ec = 0;
-
     if (m_marksMap.contains(markName))
         return m_marksMap.get(markName).last()->startTime();
 
     if (restrictedKeyMap().contains(markName)) {
         double value = static_cast<double>((m_performance->timing()->*(restrictedKeyMap().get(markName)))());
         if (!value) {
-            ec = INVALID_ACCESS_ERR;
+            es.throwDOMException(InvalidAccessError, "'" + markName + "' is empty: either the event hasn't happened yet, or it would provide cross-origin timing information.");
             return 0.0;
         }
         return value - m_performance->timing()->navigationStart();
     }
 
-    ec = SYNTAX_ERR;
+    es.throwDOMException(SyntaxError, "The mark '" + markName + "' does not exist.");
     return 0.0;
 }
 
-void UserTiming::measure(const String& measureName, const String& startMark, const String& endMark, ExceptionCode& ec)
+void UserTiming::measure(const String& measureName, const String& startMark, const String& endMark, ExceptionState& es)
 {
     double startTime = 0.0;
     double endTime = 0.0;
@@ -143,15 +141,15 @@ void UserTiming::measure(const String& measureName, const String& startMark, con
         endTime = m_performance->now();
     else if (endMark.isNull()) {
         endTime = m_performance->now();
-        startTime = findExistingMarkStartTime(startMark, ec);
-        if (ec)
+        startTime = findExistingMarkStartTime(startMark, es);
+        if (es.hadException())
             return;
     } else {
-        endTime = findExistingMarkStartTime(endMark, ec);
-        if (ec)
+        endTime = findExistingMarkStartTime(endMark, es);
+        if (es.hadException())
             return;
-        startTime = findExistingMarkStartTime(startMark, ec);
-        if (ec)
+        startTime = findExistingMarkStartTime(startMark, es);
+        if (es.hadException())
             return;
     }
 

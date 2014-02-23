@@ -46,13 +46,13 @@
           'target_name': 'content',
           'type': 'none',
           'dependencies': [
-            'content_app',
+            'content_app_browser',
             'content_browser',
             'content_child',
             'content_common',
           ],
           'conditions': [
-            ['OS != "ios" and chrome_split_dll != 1', {
+            ['OS != "ios"', {
               'dependencies': [
                 'content_gpu',
                 'content_plugin',
@@ -65,7 +65,43 @@
           ],
         },
         {
-          'target_name': 'content_app',
+          'target_name': 'content_app_browser',
+          'type': 'static_library',
+          'variables': { 'enable_wexit_time_destructors': 1, },
+          'includes': [
+            'content_app.gypi',
+          ],
+          'dependencies': [
+            'content_common',
+          ],
+          'conditions': [
+            ['chrome_multiple_dll', {
+              'defines': [
+                'CHROME_MULTIPLE_DLL_BROWSER',
+              ],
+            }],
+          ],
+        },
+        {
+          'target_name': 'content_app_child',
+          'type': 'static_library',
+          'variables': { 'enable_wexit_time_destructors': 1, },
+          'includes': [
+            'content_app.gypi',
+          ],
+          'dependencies': [
+            'content_common',
+          ],
+          'conditions': [
+            ['chrome_multiple_dll', {
+              'defines': [
+                'CHROME_MULTIPLE_DLL_CHILD',
+              ],
+            }],
+          ],
+        },
+        {
+          'target_name': 'content_app_both',
           'type': 'static_library',
           'variables': { 'enable_wexit_time_destructors': 1, },
           'includes': [
@@ -87,15 +123,10 @@
             'content_resources.gyp:content_resources',
           ],
           'conditions': [
-            ['OS != "ios" and chrome_split_dll != 1', {
+            ['OS != "ios" and chrome_multiple_dll != 1', {
               'dependencies': [
                 'content_gpu',
-                'content_renderer',
-              ],
-            }],
-            ['chrome_split_dll', {
-              'dependencies': [
-                'content_gpu',
+                'content_utility',
               ],
             }],
             ['java_bridge==1', {
@@ -152,6 +183,7 @@
                 'content_gpu.gypi',
               ],
               'dependencies': [
+                'content_child',
                 'content_common',
               ],
             },
@@ -205,6 +237,7 @@
                 'content_utility.gypi',
               ],
               'dependencies': [
+                'content_child',
                 'content_common',
               ],
             },
@@ -268,9 +301,19 @@
           },
         },
         {
-          'target_name': 'content_app',
+          'target_name': 'content_app_browser',
           'type': 'none',
           'dependencies': ['content', 'content_browser'],
+        },
+        {
+          'target_name': 'content_app_child',
+          'type': 'none',
+          'dependencies': ['content', 'content_child'],
+        },
+        {
+          'target_name': 'content_app_both',
+          'type': 'none',
+          'dependencies': ['content'],
         },
         {
           'target_name': 'content_browser',

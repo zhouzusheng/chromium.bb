@@ -1,10 +1,10 @@
 /*
  * Copyright (c) 2006,2007,2008, Google Inc. All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  *     * Redistributions of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
  *     * Redistributions in binary form must reproduce the above
@@ -14,7 +14,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -90,7 +90,7 @@ SkXfermode::Mode WebCoreCompositeToSkiaComposite(CompositeOperator op, BlendMode
     }
 
     const CompositOpToXfermodeMode* table = gMapCompositOpsToXfermodeModes;
-    
+
     for (unsigned i = 0; i < SK_ARRAY_COUNT(gMapCompositOpsToXfermodeModes); i++) {
         if (table[i].mCompositOp == op)
             return (SkXfermode::Mode)table[i].m_xfermodeMode;
@@ -115,13 +115,13 @@ SkColor SkPMColorToColor(SkPMColor pm)
         // A zero alpha value when there are non-zero R, G, or B channels is an
         // invalid premultiplied color (since all channels should have been
         // multiplied by 0 if a=0).
-        SkASSERT(false); 
+        SkASSERT(false);
         // In production, return 0 to protect against division by zero.
         return 0;
     }
-    
+
     uint32_t scale = (255 << 16) / a;
-    
+
     return SkColorSetARGB(a,
                           InvScaleByte(SkGetPackedR32(pm), scale),
                           InvScaleByte(SkGetPackedG32(pm), scale),
@@ -139,9 +139,9 @@ void ClipRectToCanvas(const GraphicsContext* context, const SkRect& srcRect, SkR
         destRect->setEmpty();
 }
 
-bool SkPathContainsPoint(SkPath* originalPath, const FloatPoint& point, SkPath::FillType ft)
+bool SkPathContainsPoint(const SkPath& originalPath, const FloatPoint& point, SkPath::FillType ft)
 {
-    SkRect bounds = originalPath->getBounds();
+    SkRect bounds = originalPath.getBounds();
 
     // We can immediately return false if the point is outside the bounding
     // rect.  We don't use bounds.contains() here, since it would exclude
@@ -164,24 +164,20 @@ bool SkPathContainsPoint(SkPath* originalPath, const FloatPoint& point, SkPath::
     const SkScalar kMaxCoordinate = SkIntToScalar(1 << 15);
     SkScalar scale = SkScalarDiv(kMaxCoordinate, biggestCoord);
 
-    SkRegion rgn;  
+    SkRegion rgn;
     SkRegion clip;
     SkMatrix m;
-    SkPath scaledPath;
+    SkPath scaledPath(originalPath);
 
-    SkPath::FillType originalFillType = originalPath->getFillType();
-    originalPath->setFillType(ft);
-
+    scaledPath.setFillType(ft);
     m.setScale(scale, scale);
-    originalPath->transform(m, &scaledPath);
+    scaledPath.transform(m, 0);
 
     int x = static_cast<int>(floorf(0.5f + point.x() * scale));
     int y = static_cast<int>(floorf(0.5f + point.y() * scale));
     clip.setRect(x - 1, y - 1, x + 1, y + 1);
 
-    bool contains = rgn.setPath(scaledPath, clip);
-    originalPath->setFillType(originalFillType);
-    return contains;
+    return rgn.setPath(scaledPath, clip);
 }
 
 }  // namespace WebCore

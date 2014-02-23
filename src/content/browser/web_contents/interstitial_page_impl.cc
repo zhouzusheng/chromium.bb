@@ -8,11 +8,11 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
-#include "content/browser/dom_storage/dom_storage_context_impl.h"
+#include "content/browser/dom_storage/dom_storage_context_wrapper.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
@@ -77,10 +77,10 @@ class InterstitialPageImpl::InterstitialPageRVHDelegateView
                              int item_height,
                              double item_font_size,
                              int selected_item,
-                             const std::vector<WebMenuItem>& items,
+                             const std::vector<MenuItem>& items,
                              bool right_aligned,
                              bool allow_multiple_selection) OVERRIDE;
-  virtual void StartDragging(const WebDropData& drop_data,
+  virtual void StartDragging(const DropData& drop_data,
                              WebDragOperationsMask operations_allowed,
                              const gfx::ImageSkia& image,
                              const gfx::Vector2d& image_offset,
@@ -371,7 +371,8 @@ void InterstitialPageImpl::DidNavigate(
     DontProceed();
     return;
   }
-  if (params.transition == PAGE_TRANSITION_AUTO_SUBFRAME) {
+  if (PageTransitionCoreTypeIs(params.transition,
+                               PAGE_TRANSITION_AUTO_SUBFRAME)) {
     // No need to handle navigate message from iframe in the interstitial page.
     return;
   }
@@ -489,10 +490,11 @@ RenderViewHost* InterstitialPageImpl::CreateRenderViewHost() {
   BrowserContext* browser_context = web_contents()->GetBrowserContext();
   scoped_refptr<SiteInstance> site_instance =
       SiteInstance::Create(browser_context);
-  DOMStorageContextImpl* dom_storage_context =
-      static_cast<DOMStorageContextImpl*>(BrowserContext::GetStoragePartition(
-          browser_context, site_instance.get())->GetDOMStorageContext());
-  SessionStorageNamespaceImpl* session_storage_namespace_impl =
+  DOMStorageContextWrapper* dom_storage_context =
+      static_cast<DOMStorageContextWrapper*>(
+          BrowserContext::GetStoragePartition(
+              browser_context, site_instance.get())->GetDOMStorageContext());
+  session_storage_namespace_ =
       new SessionStorageNamespaceImpl(dom_storage_context);
 
   RenderViewHostImpl* render_view_host =
@@ -501,8 +503,7 @@ RenderViewHost* InterstitialPageImpl::CreateRenderViewHost() {
                              this,
                              MSG_ROUTING_NONE,
                              MSG_ROUTING_NONE,
-                             false,
-                             session_storage_namespace_impl);
+                             false);
   web_contents_->RenderViewForInterstitialPageCreated(render_view_host);
   return render_view_host;
 }
@@ -703,6 +704,11 @@ void InterstitialPageImpl::ShowCreatedFullscreenWidget(int route_id) {
       << "InterstitialPage does not support showing full screen popups.";
 }
 
+SessionStorageNamespace* InterstitialPageImpl::GetSessionStorageNamespace(
+    SiteInstance* instance) {
+  return session_storage_namespace_.get();
+}
+
 void InterstitialPageImpl::Disable() {
   enabled_ = false;
 }
@@ -768,14 +774,14 @@ void InterstitialPageImpl::InterstitialPageRVHDelegateView::ShowPopupMenu(
     int item_height,
     double item_font_size,
     int selected_item,
-    const std::vector<WebMenuItem>& items,
+    const std::vector<MenuItem>& items,
     bool right_aligned,
     bool allow_multiple_selection) {
   NOTREACHED() << "InterstitialPage does not support showing popup menus.";
 }
 
 void InterstitialPageImpl::InterstitialPageRVHDelegateView::StartDragging(
-    const WebDropData& drop_data,
+    const DropData& drop_data,
     WebDragOperationsMask allowed_operations,
     const gfx::ImageSkia& image,
     const gfx::Vector2d& image_offset,

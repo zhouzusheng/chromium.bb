@@ -16,6 +16,7 @@
 #include "cc/resources/managed_tile_state.h"
 #include "cc/resources/memory_history.h"
 #include "cc/resources/picture_pile_impl.h"
+#include "cc/resources/prioritized_tile_set.h"
 #include "cc/resources/raster_worker_pool.h"
 #include "cc/resources/resource_pool.h"
 #include "cc/resources/tile.h"
@@ -25,12 +26,20 @@ class ResourceProvider;
 
 class CC_EXPORT TileManagerClient {
  public:
-  virtual void DidInitializeVisibleTile() = 0;
   virtual void NotifyReadyToActivate() = 0;
 
  protected:
   virtual ~TileManagerClient() {}
 };
+
+struct RasterTaskCompletionStats {
+  RasterTaskCompletionStats();
+
+  size_t completed_count;
+  size_t canceled_count;
+};
+scoped_ptr<base::Value> RasterTaskCompletionStatsAsValue(
+    const RasterTaskCompletionStats& stats);
 
 // This class manages tiles, deciding which should get rasterized and which
 // should no longer have any memory assigned to them. Tile objects are "owned"
@@ -42,7 +51,6 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
       TileManagerClient* client,
       ResourceProvider* resource_provider,
       size_t num_raster_threads,
-      bool use_color_estimator,
       RenderingStatsInstrumentation* rendering_stats_instrumentation,
       bool use_map_image);
   virtual ~TileManager();
@@ -53,7 +61,9 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
   void SetGlobalState(const GlobalStateThatImpactsTilePriority& state);
 
   void ManageTiles();
-  void CheckForCompletedTileUploads();
+
+  // Returns true when visible tiles have been initialized.
+  bool UpdateVisibleTiles();
 
   scoped_ptr<base::Value> BasicStateAsValue() const;
   scoped_ptr<base::Value> AllTilesAsValue() const;
@@ -66,8 +76,7 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
   }
 
   bool AreTilesRequiredForActivationReady() const {
-    return all_tiles_required_for_activation_have_been_initialized_ &&
-        all_tiles_required_for_activation_have_memory_;
+    return all_tiles_required_for_activation_have_been_initialized_;
   }
 
  protected:
@@ -75,7 +84,6 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
               ResourceProvider* resource_provider,
               scoped_ptr<RasterWorkerPool> raster_worker_pool,
               size_t num_raster_threads,
-              bool use_color_estimator,
               RenderingStatsInstrumentation* rendering_stats_instrumentation,
               GLenum texture_format);
 
@@ -87,11 +95,10 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
   // Overriden from RasterWorkerPoolClient:
   virtual bool ShouldForceTasksRequiredForActivationToComplete() const
       OVERRIDE;
-  virtual void DidFinishedRunningTasks() OVERRIDE;
-  virtual void DidFinishedRunningTasksRequiredForActivation() OVERRIDE;
+  virtual void DidFinishRunningTasks() OVERRIDE;
+  virtual void DidFinishRunningTasksRequiredForActivation() OVERRIDE;
 
   typedef std::vector<Tile*> TileVector;
-  typedef std::vector<scoped_refptr<Tile> > TileRefVector;
   typedef std::set<Tile*> TileSet;
 
   // Virtual for test
@@ -99,11 +106,10 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
       const TileVector& tiles_that_need_to_be_rasterized);
 
   void AssignGpuMemoryToTiles(
-      const TileRefVector& sorted_tiles,
+      PrioritizedTileSet* tiles,
       TileVector* tiles_that_need_to_be_rasterized);
-  void AssignBinsToTiles(TileRefVector* tiles);
-  void SortTiles(TileRefVector* tiles);
-  void GetSortedTiles(TileRefVector* tiles);
+  void GetTilesWithAssignedBins(PrioritizedTileSet* tiles);
+  void GetPrioritizedTileSet(PrioritizedTileSet* tiles);
 
  private:
   void OnImageDecodeTaskCompleted(
@@ -135,17 +141,17 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
   typedef base::hash_map<Tile::Id, Tile*> TileMap;
   TileMap tiles_;
 
-  TileRefVector sorted_tiles_;
+  PrioritizedTileSet prioritized_tiles_;
 
-  bool all_tiles_required_for_activation_have_been_initialized_;
+  bool all_tiles_that_need_to_be_rasterized_have_memory_;
   bool all_tiles_required_for_activation_have_memory_;
+  bool all_tiles_required_for_activation_have_been_initialized_;
 
   bool ever_exceeded_memory_budget_;
   MemoryHistory::Entry memory_stats_from_last_assign_;
 
   RenderingStatsInstrumentation* rendering_stats_instrumentation_;
 
-  bool use_color_estimator_;
   bool did_initialize_visible_tile_;
 
   GLenum texture_format_;
@@ -153,6 +159,8 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
   typedef base::hash_map<uint32_t, RasterWorkerPool::Task> PixelRefTaskMap;
   typedef base::hash_map<int, PixelRefTaskMap> LayerPixelRefTaskMap;
   LayerPixelRefTaskMap image_decode_tasks_;
+
+  RasterTaskCompletionStats update_visible_tiles_stats_;
 
   DISALLOW_COPY_AND_ASSIGN(TileManager);
 };

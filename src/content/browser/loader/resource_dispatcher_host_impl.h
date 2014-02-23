@@ -22,8 +22,8 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "content/browser/download/download_resource_handler.h"
 #include "content/browser/loader/global_routing_id.h"
 #include "content/browser/loader/offline_policy.h"
@@ -33,14 +33,15 @@
 #include "content/browser/loader/resource_scheduler.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/child_process_data.h"
-#include "content/public/browser/download_id.h"
+#include "content/public/browser/download_item.h"
+#include "content/public/browser/download_url_parameters.h"
 #include "content/public/browser/global_request_id.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "ipc/ipc_message.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/url_request/url_request.h"
-#include "webkit/glue/resource_type.h"
+#include "webkit/common/resource_type.h"
 
 class ResourceHandler;
 struct ResourceHostMsg_Request;
@@ -80,13 +81,14 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   virtual void SetAllowCrossOriginAuthPrompt(bool value) OVERRIDE;
   virtual net::Error BeginDownload(
       scoped_ptr<net::URLRequest> request,
+      const Referrer& referrer,
       bool is_content_initiated,
       ResourceContext* context,
       int child_id,
       int route_id,
       bool prefer_cache,
       scoped_ptr<DownloadSaveInfo> save_info,
-      content::DownloadId download_id,
+      uint32 download_id,
       const DownloadStartedCallback& started_callback) OVERRIDE;
   virtual void ClearLoginDelegateForRequest(net::URLRequest* request) OVERRIDE;
   virtual void BlockRequestsForRoute(int child_id, int route_id) OVERRIDE;
@@ -130,7 +132,8 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
 
   // Marks the request as "parked". This happens if a request is
   // redirected cross-site and needs to be resumed by a new render view.
-  void MarkAsTransferredNavigation(const GlobalRequestID& id);
+  void MarkAsTransferredNavigation(const GlobalRequestID& id,
+                                   const GURL& target_url);
 
   // Resumes the request without transferring it to a new render view.
   void ResumeDeferredNavigation(const GlobalRequestID& id);
@@ -207,15 +210,15 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
 
   // Must be called after the ResourceRequestInfo has been created
   // and associated with the request.
-  // |id| should be |DownloadId()| (null) to request automatic
+  // |id| should be |content::DownloadItem::kInvalidId| to request automatic
   // assignment.
   scoped_ptr<ResourceHandler> CreateResourceHandlerForDownload(
       net::URLRequest* request,
       bool is_content_initiated,
       bool must_download,
-      DownloadId id,
+      uint32 id,
       scoped_ptr<DownloadSaveInfo> save_info,
-      const DownloadResourceHandler::OnStartedCallback& started_cb);
+      const DownloadUrlParameters::OnStartedCallback& started_cb);
 
   // Must be called after the ResourceRequestInfo has been created
   // and associated with the request.
@@ -378,15 +381,16 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
       ResourceContext* context);
 
   // Relationship of resource being authenticated with the top level page.
-  enum HttpAuthResourceType {
-    HTTP_AUTH_RESOURCE_TOP,            // Top-level page itself
-    HTTP_AUTH_RESOURCE_SAME_DOMAIN,    // Sub-content from same domain
-    HTTP_AUTH_RESOURCE_BLOCKED_CROSS,  // Blocked Sub-content from cross domain
-    HTTP_AUTH_RESOURCE_ALLOWED_CROSS,  // Allowed Sub-content per command line
-    HTTP_AUTH_RESOURCE_LAST
+  enum HttpAuthRelationType {
+    HTTP_AUTH_RELATION_TOP,            // Top-level page itself
+    HTTP_AUTH_RELATION_SAME_DOMAIN,    // Sub-content from same domain
+    HTTP_AUTH_RELATION_BLOCKED_CROSS,  // Blocked Sub-content from cross domain
+    HTTP_AUTH_RELATION_ALLOWED_CROSS,  // Allowed Sub-content per command line
+    HTTP_AUTH_RELATION_LAST
   };
 
-  HttpAuthResourceType HttpAuthResourceTypeOf(net::URLRequest* request);
+  HttpAuthRelationType HttpAuthRelationTypeOf(const GURL& request_url,
+                                              const GURL& first_party);
 
   // Returns whether the URLRequest identified by |transferred_request_id| is
   // currently in the process of being transferred to a different renderer.
@@ -404,6 +408,10 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
                                        ResourceMessageDelegate* delegate);
   void UnregisterResourceMessageDelegate(const GlobalRequestID& id,
                                          ResourceMessageDelegate* delegate);
+
+  int BuildLoadFlagsForRequest(const ResourceHostMsg_Request& request_data,
+                               int child_id,
+                               bool is_sync_load);
 
   LoaderMap pending_loaders_;
 

@@ -17,7 +17,6 @@ namespace switches {
 
 // Switches for the renderer compositor only.
 CC_EXPORT extern const char kBackgroundColorInsteadOfCheckerboard[];
-CC_EXPORT extern const char kDisableColorEstimator[];
 CC_EXPORT extern const char kDisableImplSidePainting[];
 CC_EXPORT extern const char kDisableThreadedAnimation[];
 CC_EXPORT extern const char kDisableCompositedAntialiasing[];
@@ -65,7 +64,6 @@ CC_EXPORT extern const char kUIShowNonOccludingRects[];
 
 // Unit test related.
 CC_EXPORT extern const char kCCLayerTreeTestNoTimeout[];
-CC_EXPORT extern const char kCCUnittestsTraceEventsToVLOG[];
 
 CC_EXPORT bool IsImplSidePaintingEnabled();
 

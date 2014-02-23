@@ -375,11 +375,6 @@ bool SecurityOrigin::canDisplay(const KURL& url) const
     return true;
 }
 
-bool SecurityOrigin::canAccessStorage(const SecurityOrigin* topOrigin) const
-{
-    return !isUnique();
-}
-
 SecurityOrigin::Policy SecurityOrigin::canShowNotifications() const
 {
     if (m_universalAccess)
@@ -387,20 +382,6 @@ SecurityOrigin::Policy SecurityOrigin::canShowNotifications() const
     if (isUnique())
         return AlwaysDeny;
     return Ask;
-}
-
-bool SecurityOrigin::isThirdParty(const SecurityOrigin* child) const
-{
-    if (child->m_universalAccess)
-        return false;
-
-    if (this == child)
-        return false;
-
-    if (isUnique() || child->isUnique())
-        return true;
-
-    return !isSameSchemeHostPort(child);
 }
 
 void SecurityOrigin::grantLoadLocalResources()
@@ -464,7 +445,7 @@ PassRefPtr<SecurityOrigin> SecurityOrigin::createFromString(const String& origin
 PassRefPtr<SecurityOrigin> SecurityOrigin::create(const String& protocol, const String& host, int port)
 {
     if (port < 0 || port > MaxAllowedPort)
-        createUnique();
+        return createUnique();
     String decodedHost = decodeURLEscapeSequences(host);
     return create(KURL(KURL(), protocol + "://" + host + ":" + String::number(port) + "/"));
 }
@@ -506,7 +487,7 @@ bool SecurityOrigin::isSameSchemeHostPort(const SecurityOrigin* other) const
 const String& SecurityOrigin::urlWithUniqueSecurityOrigin()
 {
     ASSERT(isMainThread());
-    DEFINE_STATIC_LOCAL(const String, uniqueSecurityOriginURL, (ASCIILiteral("data:,")));
+    DEFINE_STATIC_LOCAL(const String, uniqueSecurityOriginURL, ("data:,"));
     return uniqueSecurityOriginURL;
 }
 

@@ -6,6 +6,7 @@
 #define WEBKIT_RENDERER_COMPOSITOR_BINDINGS_WEB_LAYER_IMPL_H_
 
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "third_party/WebKit/public/platform/WebAnimation.h"
 #include "third_party/WebKit/public/platform/WebColor.h"
 #include "third_party/WebKit/public/platform/WebCompositingReasons.h"
@@ -25,13 +26,14 @@ namespace cc { class Layer; }
 class SkImageFilter;
 
 namespace WebKit {
-class WebAnimationDelegate;
 class WebFilterOperations;
-class WebLayerScrollClient;
+class WebLayerClient;
 struct WebFloatRect;
 }
 
 namespace webkit {
+
+class WebToCCAnimationDelegateAdapter;
 
 class WebLayerImpl : public WebKit::WebLayer {
  public:
@@ -116,14 +118,18 @@ class WebLayerImpl : public WebKit::WebLayer {
   virtual WebKit::WebLayerPositionConstraint positionConstraint() const;
   virtual void setScrollClient(WebKit::WebLayerScrollClient* client);
   virtual bool isOrphan() const;
+  virtual void setWebLayerClient(WebKit::WebLayerClient* client);
 
  protected:
   scoped_refptr<cc::Layer> layer_;
+  WebKit::WebLayerClient* web_layer_client_;
 
  private:
+  scoped_ptr<WebToCCAnimationDelegateAdapter> animation_delegate_adapter_;
+
   DISALLOW_COPY_AND_ASSIGN(WebLayerImpl);
 };
 
-}  // namespace WebKit
+}  // namespace webkit
 
 #endif  // WEBKIT_RENDERER_COMPOSITOR_BINDINGS_WEB_LAYER_IMPL_H_

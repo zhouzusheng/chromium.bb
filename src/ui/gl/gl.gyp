@@ -72,6 +72,8 @@
         'gl_image_android.cc',
         'gl_image_mac.cc',
         'gl_image_ozone.cc',
+        'gl_image_shm.cc',
+        'gl_image_shm.h',
         'gl_image_stub.cc',
         'gl_image_stub.h',
         'gl_image_win.cc',
@@ -79,6 +81,8 @@
         'gl_implementation.cc',
         'gl_implementation.h',
         'gl_implementation_android.cc',
+        'gl_implementation_linux.cc',
+        'gl_implementation_linux.h',
         'gl_implementation_ozone.cc',
         'gl_implementation_mac.cc',
         'gl_implementation_win.cc',
@@ -129,13 +133,7 @@
           'action_name': 'generate_gl_bindings',
           'variables': {
             'generator_path': 'generate_bindings.py',
-            'conditions': [
-              ['use_system_mesa==0', {
-                'header_paths': '../../third_party/mesa/src/include:../../third_party/khronos',
-              }, { # use_system_mesa==1
-                'header_paths': '/usr/include',
-              }],
-            ],
+            'header_paths': '../../third_party/mesa/src/include:../../third_party/khronos',
           },
           'inputs': [
             '<(generator_path)',
@@ -291,7 +289,6 @@
         'gl_binding_output_dir': '<(SHARED_INTERMEDIATE_DIR)/ui/gl',
       },
       'dependencies': [
-        '../../testing/gmock.gyp:gmock',
         '../../third_party/khronos/khronos.gyp:khronos_headers',
         'gl',
       ],
@@ -305,8 +302,6 @@
         ],
       },
       'sources': [
-        'gl_image_mock.cc',
-        'gl_image_mock.h',
         'gl_mock.h',
         'gl_mock.cc',
         '<(gl_binding_output_dir)/gl_mock_autogen_gl.h',
@@ -316,15 +311,6 @@
   'conditions': [
     ['OS=="android"' , {
       'targets': [
-        {
-          'target_name': 'surface_texture_jni_headers',
-          'type': 'none',
-          'variables': {
-            'jni_gen_package': 'ui/gl',
-            'input_java_class': 'android/graphics/SurfaceTexture.class',
-          },
-          'includes': [ '../../build/jar_file_jni_generator.gypi' ],
-        },
         {
           'target_name': 'surface_jni_headers',
           'type': 'none',
@@ -338,10 +324,10 @@
           'target_name': 'gl_jni_headers',
           'type': 'none',
           'dependencies': [
-            'surface_texture_jni_headers',
             'surface_jni_headers',
           ],
           'sources': [
+            '../android/java/src/org/chromium/ui/gfx/SurfaceTextureBridge.java',
             '../android/java/src/org/chromium/ui/gfx/SurfaceTextureListener.java',
           ],
           'variables': {

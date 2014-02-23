@@ -31,7 +31,6 @@
 #include "config.h"
 #include "bindings/v8/ScriptProfiler.h"
 
-#include "V8ArrayBufferView.h"
 #include "V8Node.h"
 #include "V8Window.h"
 #include "bindings/v8/RetainedDOMInfo.h"
@@ -40,7 +39,6 @@
 #include "bindings/v8/V8DOMWrapper.h"
 #include "bindings/v8/WrapperTypeInfo.h"
 #include "core/dom/Document.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/inspector/BindingVisitors.h"
 
 #include <v8-profiler.h>
@@ -286,7 +284,7 @@ void ScriptProfiler::visitNodeWrappers(WrappedNodeVisitor* visitor)
             // Casting to Handle is safe here, since the Persistent cannot get
             // GCd during visiting.
             v8::Handle<v8::Object>* wrapper = reinterpret_cast<v8::Handle<v8::Object>*>(value);
-            ASSERT(V8Node::HasInstance(*wrapper, m_isolate, worldType(m_isolate)));
+            ASSERT(V8Node::HasInstanceInAnyWorld(*wrapper, m_isolate));
             ASSERT((*wrapper)->IsObject());
             m_visitor->visitNode(V8Node::toNative(*wrapper));
         }
@@ -297,55 +295,6 @@ void ScriptProfiler::visitNodeWrappers(WrappedNodeVisitor* visitor)
     } wrapperVisitor(visitor, isolate);
 
     v8::V8::VisitHandlesWithClassIds(&wrapperVisitor);
-}
-
-void ScriptProfiler::visitExternalStrings(ExternalStringVisitor* visitor)
-{
-    V8PerIsolateData::current()->visitExternalStrings(visitor);
-}
-
-void ScriptProfiler::visitExternalArrays(ExternalArrayVisitor* visitor)
-{
-    class DOMObjectWrapperVisitor : public v8::PersistentHandleVisitor {
-    public:
-        explicit DOMObjectWrapperVisitor(ExternalArrayVisitor* visitor)
-            : m_visitor(visitor)
-        {
-        }
-
-        virtual void VisitPersistentHandle(v8::Persistent<v8::Value>* value, uint16_t classId) OVERRIDE
-        {
-            if (classId != v8DOMObjectClassId)
-                return;
-            // Casting to Handle is safe here, since the Persistent cannot get
-            // GCd during visiting.
-            ASSERT((*reinterpret_cast<v8::Handle<v8::Value>*>(value))->IsObject());
-            v8::Handle<v8::Object>* wrapper = reinterpret_cast<v8::Handle<v8::Object>*>(value);
-            if (!toWrapperTypeInfo(*wrapper)->isSubclass(&V8ArrayBufferView::info))
-                return;
-            m_visitor->visitJSExternalArray(V8ArrayBufferView::toNative(*wrapper));
-        }
-
-    private:
-        ExternalArrayVisitor* m_visitor;
-    } wrapperVisitor(visitor);
-
-    v8::V8::VisitHandlesWithClassIds(&wrapperVisitor);
-}
-
-void ScriptProfiler::collectBindingMemoryInfo(MemoryInstrumentation* instrumentation)
-{
-    V8PerIsolateData* data = V8PerIsolateData::current();
-    instrumentation->addRootObject(data);
-}
-
-size_t ScriptProfiler::profilerSnapshotsSize()
-{
-    v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    v8::HeapProfiler* profiler = isolate->GetHeapProfiler();
-    if (!profiler)
-        return 0;
-    return profiler->GetProfilerMemorySize();
 }
 
 ProfileNameIdleTimeMap* ScriptProfiler::currentProfileNameIdleTimeMap()

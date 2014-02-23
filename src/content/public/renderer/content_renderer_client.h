@@ -26,10 +26,12 @@ class MessageLoop;
 }
 
 namespace WebKit {
+class WebAudioDevice;
 class WebClipboard;
+class WebCrypto;
 class WebFrame;
-class WebHyphenator;
-class WebMediaPlayerClient;
+class WebMIDIAccessor;
+class WebMIDIAccessorClient;
 class WebMediaStreamCenter;
 class WebMediaStreamCenterClient;
 class WebPlugin;
@@ -45,23 +47,11 @@ struct WebPluginParams;
 struct WebURLError;
 }
 
-namespace webkit {
-namespace ppapi {
-class PpapiInterfaceFactoryManager;
-}
-struct WebPluginInfo;
-}
-
-namespace webkit_media {
-class WebMediaPlayerDelegate;
-class WebMediaPlayerImpl;
-class WebMediaPlayerParams;
-}
-
 namespace content {
 
 class RenderView;
 class SynchronousCompositor;
+struct WebPluginInfo;
 
 // Embedder API for participating in renderer logic.
 class CONTENT_EXPORT ContentRendererClient {
@@ -124,14 +114,11 @@ class CONTENT_EXPORT ContentRendererClient {
       std::string* error_html,
       string16* error_description) {}
 
-  // Allows embedder to override creating a WebMediaPlayerImpl. If it returns
-  // NULL the content layer will create the media player.
-  virtual webkit_media::WebMediaPlayerImpl* OverrideCreateWebMediaPlayer(
-      RenderView* render_view,
-      WebKit::WebFrame* frame,
-      WebKit::WebMediaPlayerClient* client,
-      base::WeakPtr<webkit_media::WebMediaPlayerDelegate> delegate,
-      const webkit_media::WebMediaPlayerParams& params);
+  // Allows the embedder to control when media resources are loaded. Embedders
+  // can run |closure| immediately if they don't wish to defer media resource
+  // loading.
+  virtual void DeferMediaLoad(RenderView* render_view,
+                              const base::Closure& closure);
 
   // Allows the embedder to override creating a WebMediaStreamCenter. If it
   // returns NULL the content layer will create the stream center.
@@ -144,13 +131,19 @@ class CONTENT_EXPORT ContentRendererClient {
   OverrideCreateWebRTCPeerConnectionHandler(
       WebKit::WebRTCPeerConnectionHandlerClient* client);
 
+  // Allows the embedder to override creating a WebMIDIAccessor.  If it
+  // returns NULL the content layer will create the MIDI accessor.
+  virtual WebKit::WebMIDIAccessor* OverrideCreateMIDIAccessor(
+      WebKit::WebMIDIAccessorClient* client);
+
+  // Allows the embedder to override creating a WebAudioDevice.  If it
+  // returns NULL the content layer will create the audio device.
+  virtual WebKit::WebAudioDevice* OverrideCreateAudioDevice(
+      double sample_rate);
+
   // Allows the embedder to override the WebKit::WebClipboard used. If it
   // returns NULL the content layer will handle clipboard interactions.
   virtual WebKit::WebClipboard* OverrideWebClipboard();
-
-  // Allows the embedder to override the WebKit::WebHyphenator used. If it
-  // returns NULL the content layer will handle hyphenation.
-  virtual WebKit::WebHyphenator* OverrideWebHyphenator();
 
   // Allows the embedder to override the WebThemeEngine used. If it returns NULL
   // the content layer will provide an engine.
@@ -160,6 +153,10 @@ class CONTENT_EXPORT ContentRendererClient {
   // If it returns NULL the content layer will provide an engine.
   virtual WebKit::WebSpeechSynthesizer* OverrideSpeechSynthesizer(
       WebKit::WebSpeechSynthesizerClient* client);
+
+  // Allows the embedder to override the WebCrypto used.
+  // If it returns NULL the content layer will handle crypto.
+  virtual WebKit::WebCrypto* OverrideWebCrypto();
 
   // Returns true if the renderer process should schedule the idle handler when
   // all widgets are hidden.
@@ -209,11 +206,10 @@ class CONTENT_EXPORT ContentRendererClient {
   virtual unsigned long long VisitedLinkHash(const char* canonical_url,
                                              size_t length);
   virtual bool IsLinkVisited(unsigned long long link_hash);
-  virtual void PrefetchHostName(const char* hostname, size_t length) {}
   virtual WebKit::WebPrescientNetworking* GetPrescientNetworking();
   virtual bool ShouldOverridePageVisibilityState(
       const RenderView* render_view,
-      WebKit::WebPageVisibilityState* override_state) const;
+      WebKit::WebPageVisibilityState* override_state);
 
   // Return true if the GetCookie request will be handled by the embedder.
   // Cookies are returned in the cookie parameter.
@@ -229,19 +225,24 @@ class CONTENT_EXPORT ContentRendererClient {
                                       const GURL& first_party_for_cookies,
                                       const std::string& value);
 
-  virtual void RegisterPPAPIInterfaceFactories(
-      webkit::ppapi::PpapiInterfaceFactoryManager* factory_manager) {}
+  // Allows an embedder to return custom PPAPI interfaces.
+  virtual const void* CreatePPAPIInterface(
+      const std::string& interface_name);
+
+  // Returns true if the given Pepper plugin is external (requiring special
+  // startup steps).
+  virtual bool IsExternalPepperPlugin(const std::string& module_name);
 
   // Returns true if plugin living in the container can use
   // pp::FileIO::RequestOSFileHandle.
   virtual bool IsPluginAllowedToCallRequestOSFileHandle(
-      WebKit::WebPluginContainer* container) const;
+      WebKit::WebPluginContainer* container);
 
   // Returns whether BrowserPlugin should be allowed within the |container|.
-  virtual bool AllowBrowserPlugin(WebKit::WebPluginContainer* container) const;
+  virtual bool AllowBrowserPlugin(WebKit::WebPluginContainer* container);
 
   // Returns true if the page at |url| can use Pepper MediaStream APIs.
-  virtual bool AllowPepperMediaStreamAPI(const GURL& url) const;
+  virtual bool AllowPepperMediaStreamAPI(const GURL& url);
 };
 
 }  // namespace content

@@ -7,9 +7,9 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
-#include "base/strings/stringprintf.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "net/spdy/spdy_buffer_producer.h"
 #include "net/spdy/spdy_http_utils.h"
@@ -78,8 +78,8 @@ class SpdyStream::SynStreamBufferProducer : public SpdyBufferProducer {
 };
 
 SpdyStream::SpdyStream(SpdyStreamType type,
-                       SpdySession* session,
-                       const std::string& path,
+                       const base::WeakPtr<SpdySession>& session,
+                       const GURL& url,
                        RequestPriority priority,
                        int32 initial_send_window_size,
                        int32 initial_recv_window_size,
@@ -89,7 +89,7 @@ SpdyStream::SpdyStream(SpdyStreamType type,
       in_do_loop_(false),
       continue_buffering_data_(type_ == SPDY_PUSH_STREAM),
       stream_id_(0),
-      path_(path),
+      url_(url),
       priority_(priority),
       slot_(0),
       send_stalled_by_flow_control_(false),
@@ -108,7 +108,6 @@ SpdyStream::SpdyStream(SpdyStreamType type,
       net_log_(net_log),
       send_bytes_(0),
       recv_bytes_(0),
-      domain_bound_cert_type_(CLIENT_CERT_INVALID_TYPE),
       just_completed_frame_type_(DATA),
       just_completed_frame_size_(0) {
   CHECK(type_ == SPDY_BIDIRECTIONAL_STREAM ||
@@ -132,10 +131,6 @@ void SpdyStream::SetDelegate(Delegate* delegate) {
         FROM_HERE,
         base::Bind(&SpdyStream::PushedStreamReplayData, GetWeakPtr()));
   }
-}
-
-SpdyStream::Delegate* SpdyStream::GetDelegate() {
-  return delegate_;
 }
 
 void SpdyStream::PushedStreamReplayData() {
@@ -634,6 +629,10 @@ bool SpdyStream::IsIdle() const {
   return io_state_ == STATE_IDLE;
 }
 
+NextProto SpdyStream::GetProtocol() const {
+  return session_->protocol();
+}
+
 bool SpdyStream::GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const {
   if (stream_id_ == 0)
     return false;
@@ -641,7 +640,7 @@ bool SpdyStream::GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const {
   return session_->GetLoadTimingInfo(stream_id_, load_timing_info);
 }
 
-GURL SpdyStream::GetUrl() const {
+GURL SpdyStream::GetUrlFromHeaders() const {
   if (type_ != SPDY_PUSH_STREAM && !request_headers_)
     return GURL();
 
@@ -651,8 +650,8 @@ GURL SpdyStream::GetUrl() const {
                                type_ == SPDY_PUSH_STREAM);
 }
 
-bool SpdyStream::HasUrl() const {
-  return !GetUrl().is_empty();
+bool SpdyStream::HasUrlFromHeaders() const {
+  return !GetUrlFromHeaders().is_empty();
 }
 
 void SpdyStream::OnGetDomainBoundCertComplete(int result) {
@@ -724,14 +723,14 @@ int SpdyStream::DoLoop(int result) {
 int SpdyStream::DoGetDomainBoundCert() {
   CHECK(request_headers_);
   DCHECK_NE(type_, SPDY_PUSH_STREAM);
-  GURL url = GetUrl();
+  GURL url = GetUrlFromHeaders();
   if (!session_->NeedsCredentials() || !url.SchemeIs("https")) {
     // Proceed directly to sending the request headers
     io_state_ = STATE_SEND_REQUEST_HEADERS;
     return OK;
   }
 
-  slot_ = session_->credential_state()->FindCredentialSlot(GetUrl());
+  slot_ = session_->credential_state()->FindCredentialSlot(GetUrlFromHeaders());
   if (slot_ != SpdyCredentialState::kNoEntry) {
     // Proceed directly to sending the request headers
     io_state_ = STATE_SEND_REQUEST_HEADERS;
@@ -741,11 +740,10 @@ int SpdyStream::DoGetDomainBoundCert() {
   io_state_ = STATE_GET_DOMAIN_BOUND_CERT_COMPLETE;
   ServerBoundCertService* sbc_service = session_->GetServerBoundCertService();
   DCHECK(sbc_service != NULL);
-  std::vector<uint8> requested_cert_types;
-  requested_cert_types.push_back(CLIENT_CERT_ECDSA_SIGN);
   int rv = sbc_service->GetDomainBoundCert(
-      url.GetOrigin().host(), requested_cert_types,
-      &domain_bound_cert_type_, &domain_bound_private_key_, &domain_bound_cert_,
+      url.GetOrigin().host(),
+      &domain_bound_private_key_,
+      &domain_bound_cert_,
       base::Bind(&SpdyStream::OnGetDomainBoundCertComplete, GetWeakPtr()),
       &domain_bound_cert_request_handle_);
   return rv;
@@ -757,7 +755,7 @@ int SpdyStream::DoGetDomainBoundCertComplete(int result) {
     return result;
 
   io_state_ = STATE_SEND_DOMAIN_BOUND_CERT;
-  slot_ =  session_->credential_state()->SetHasCredential(GetUrl());
+  slot_ =  session_->credential_state()->SetHasCredential(GetUrlFromHeaders());
   return OK;
 }
 
@@ -766,13 +764,16 @@ int SpdyStream::DoSendDomainBoundCert() {
   DCHECK_NE(type_, SPDY_PUSH_STREAM);
   io_state_ = STATE_SEND_DOMAIN_BOUND_CERT_COMPLETE;
 
-  std::string origin = GetUrl().GetOrigin().spec();
+  std::string origin = GetUrlFromHeaders().GetOrigin().spec();
   DCHECK(origin[origin.length() - 1] == '/');
   origin.erase(origin.length() - 1);  // Trim trailing slash.
   scoped_ptr<SpdyFrame> frame;
   int rv = session_->CreateCredentialFrame(
-      origin, domain_bound_cert_type_, domain_bound_private_key_,
-      domain_bound_cert_, priority_, &frame);
+      origin,
+      domain_bound_private_key_,
+      domain_bound_cert_,
+      priority_,
+      &frame);
   if (rv != OK) {
     DCHECK_NE(rv, ERR_IO_PENDING);
     return rv;

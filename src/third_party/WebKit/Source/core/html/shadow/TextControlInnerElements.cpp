@@ -35,6 +35,7 @@
 #include "core/dom/TextEvent.h"
 #include "core/dom/TextEventInputType.h"
 #include "core/html/HTMLInputElement.h"
+#include "core/html/shadow/ShadowElementNames.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Frame.h"
 #include "core/page/SpeechInput.h"
@@ -56,10 +57,10 @@ PassRefPtr<TextControlInnerContainer> TextControlInnerContainer::create(Document
 {
     return adoptRef(new TextControlInnerContainer(document));
 }
-    
+
 RenderObject* TextControlInnerContainer::createRenderer(RenderStyle*)
 {
-    return new (document()->renderArena()) RenderTextControlInnerContainer(this);
+    return new RenderTextControlInnerContainer(this);
 }
 
 TextControlInnerElement::TextControlInnerElement(Document* document)
@@ -113,7 +114,7 @@ void TextControlInnerTextElement::defaultEventHandler(Event* event)
 
 RenderObject* TextControlInnerTextElement::createRenderer(RenderStyle*)
 {
-    return new (document()->renderArena()) RenderTextControlInnerBlock(this);
+    return new RenderTextControlInnerBlock(this);
 }
 
 PassRefPtr<RenderStyle> TextControlInnerTextElement::customStyleForRenderer()
@@ -131,10 +132,12 @@ inline SearchFieldDecorationElement::SearchFieldDecorationElement(Document* docu
 
 PassRefPtr<SearchFieldDecorationElement> SearchFieldDecorationElement::create(Document* document)
 {
-    return adoptRef(new SearchFieldDecorationElement(document));
+    RefPtr<SearchFieldDecorationElement> element = adoptRef(new SearchFieldDecorationElement(document));
+    element->setAttribute(idAttr, ShadowElementNames::searchDecoration());
+    return element.release();
 }
 
-const AtomicString& SearchFieldDecorationElement::shadowPseudoId() const
+const AtomicString& SearchFieldDecorationElement::part() const
 {
     DEFINE_STATIC_LOCAL(AtomicString, resultsDecorationId, ("-webkit-search-results-decoration", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, decorationId, ("-webkit-search-decoration", AtomicString::ConstructFromLiteral));
@@ -180,7 +183,8 @@ inline SearchFieldCancelButtonElement::SearchFieldCancelButtonElement(Document* 
 PassRefPtr<SearchFieldCancelButtonElement> SearchFieldCancelButtonElement::create(Document* document)
 {
     RefPtr<SearchFieldCancelButtonElement> element = adoptRef(new SearchFieldCancelButtonElement(document));
-    element->setPseudo(AtomicString("-webkit-search-cancel-button", AtomicString::ConstructFromLiteral));
+    element->setPart(AtomicString("-webkit-search-cancel-button", AtomicString::ConstructFromLiteral));
+    element->setAttribute(idAttr, ShadowElementNames::clearButton());
     return element.release();
 }
 
@@ -268,7 +272,7 @@ InputFieldSpeechButtonElement::~InputFieldSpeechButtonElement()
 PassRefPtr<InputFieldSpeechButtonElement> InputFieldSpeechButtonElement::create(Document* document)
 {
     RefPtr<InputFieldSpeechButtonElement> element = adoptRef(new InputFieldSpeechButtonElement(document));
-    element->setPseudo(AtomicString("-webkit-input-speech-button", AtomicString::ConstructFromLiteral));
+    element->setPart(AtomicString("-webkit-input-speech-button", AtomicString::ConstructFromLiteral));
     return element.release();
 }
 

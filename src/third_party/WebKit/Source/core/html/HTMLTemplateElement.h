@@ -31,10 +31,12 @@
 #ifndef HTMLTemplateElement_h
 #define HTMLTemplateElement_h
 
-#include "core/dom/DocumentFragment.h"
 #include "core/html/HTMLElement.h"
 
 namespace WebCore {
+
+class DocumentFragment;
+class TemplateContentDocumentFragment;
 
 class HTMLTemplateElement FINAL : public HTMLElement {
 public:
@@ -44,12 +46,12 @@ public:
     DocumentFragment* content() const;
 
 private:
-    virtual PassRefPtr<Node> cloneNode(bool deep) OVERRIDE;
+    virtual PassRefPtr<Node> cloneNode(bool deep = true) OVERRIDE;
     virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
 
     HTMLTemplateElement(const QualifiedName&, Document*);
 
-    mutable RefPtr<DocumentFragment> m_content;
+    mutable RefPtr<TemplateContentDocumentFragment> m_content;
 };
 
 const HTMLTemplateElement* toHTMLTemplateElement(const Node*);

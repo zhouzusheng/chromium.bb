@@ -14,6 +14,7 @@
 #include "content/renderer/pepper/pepper_file_system_host.h"
 #include "content/renderer/pepper/pepper_graphics_2d_host.h"
 #include "content/renderer/pepper/pepper_truetype_font_host.h"
+#include "content/renderer/pepper/pepper_url_loader_host.h"
 #include "content/renderer/pepper/pepper_video_capture_host.h"
 #include "content/renderer/pepper/pepper_video_destination_host.h"
 #include "content/renderer/pepper/pepper_video_source_host.h"
@@ -32,9 +33,10 @@ using ppapi::host::ResourceHost;
 using ppapi::proxy::SerializedTrueTypeFontDesc;
 using ppapi::UnpackMessage;
 
+namespace content {
 namespace {
 
-bool CanUseMediaStreamAPI(const content::RendererPpapiHost* host,
+bool CanUseMediaStreamAPI(const RendererPpapiHost* host,
                           PP_Instance instance) {
   WebKit::WebPluginContainer* container =
       host->GetContainerForInstance(instance);
@@ -42,14 +44,12 @@ bool CanUseMediaStreamAPI(const content::RendererPpapiHost* host,
     return false;
 
   GURL document_url = container->element().document().url();
-  content::ContentRendererClient* content_renderer_client =
-      content::GetContentClient()->renderer();
+  ContentRendererClient* content_renderer_client =
+      GetContentClient()->renderer();
   return content_renderer_client->AllowPepperMediaStreamAPI(document_url);
 }
 
 }
-
-namespace content {
 
 ContentRendererPepperHostFactory::ContentRendererPepperHostFactory(
     RendererPpapiHostImpl* host)
@@ -97,6 +97,9 @@ scoped_ptr<ResourceHost> ContentRendererPepperHostFactory::CreateResourceHost(
           PepperGraphics2DHost::Create(host_, instance, params.pp_resource(),
                                        size, is_always_opaque));
     }
+    case PpapiHostMsg_URLLoader_Create::ID:
+      return scoped_ptr<ResourceHost>(new PepperURLLoaderHost(
+          host_, false, instance, params.pp_resource()));
     case PpapiHostMsg_WebSocket_Create::ID:
       return scoped_ptr<ResourceHost>(new PepperWebSocketHost(
           host_, instance, params.pp_resource()));

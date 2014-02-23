@@ -8,9 +8,9 @@
 #include <winsock2.h>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
-#include "base/win/object_watcher.h"
+#include "base/message_loop/message_loop.h"
 #include "base/threading/non_thread_safe.h"
+#include "base/win/object_watcher.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_log.h"
 #include "net/socket/server_socket.h"
@@ -29,7 +29,6 @@ class NET_EXPORT_PRIVATE TCPServerSocketWin
   ~TCPServerSocketWin();
 
   // net::ServerSocket implementation.
-  virtual void AllowAddressReuse() OVERRIDE;
   virtual int Listen(const net::IPEndPoint& address, int backlog) OVERRIDE;
   virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
   virtual int Accept(scoped_ptr<StreamSocket>* socket,
@@ -50,8 +49,6 @@ class NET_EXPORT_PRIVATE TCPServerSocketWin
 
   scoped_ptr<StreamSocket>* accept_socket_;
   CompletionCallback accept_callback_;
-
-  bool reuse_address_;
 
   BoundNetLog net_log_;
 };

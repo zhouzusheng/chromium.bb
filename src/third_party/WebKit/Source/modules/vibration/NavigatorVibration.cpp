@@ -21,19 +21,20 @@
 #include "modules/vibration/NavigatorVibration.h"
 
 #include "core/page/Frame.h"
+#include "core/page/Navigator.h"
 #include "core/page/Page.h"
+#include "core/page/PageVisibilityState.h"
 #include "public/platform/Platform.h"
+#include "public/platform/WebVibration.h"
 
 namespace WebCore {
-
-// Maximum duration of a vibration is 10 seconds.
-const unsigned kVibrationDurationMax = 10000;
 
 // Maximum number of entries in a vibration pattern.
 const unsigned kVibrationPatternLengthMax = 99;
 
-NavigatorVibration::NavigatorVibration()
-    : m_timerStart(this, &NavigatorVibration::timerStartFired)
+NavigatorVibration::NavigatorVibration(Page* page)
+    : PageLifecycleObserver(page)
+    , m_timerStart(this, &NavigatorVibration::timerStartFired)
     , m_timerStop(this, &NavigatorVibration::timerStopFired)
     , m_isVibrating(false)
 {
@@ -55,7 +56,7 @@ bool NavigatorVibration::vibrate(const VibrationPattern& pattern)
 
     // If any pattern entry is too long then abort.
     for (size_t i = 0; i < length; ++i) {
-        if (pattern[i] > kVibrationDurationMax)
+        if (pattern[i] > WebKit::kVibrationDurationMax)
             return false;
     }
 
@@ -97,23 +98,6 @@ void NavigatorVibration::cancelVibration()
     }
 }
 
-void NavigatorVibration::suspendVibration()
-{
-    if (!m_isVibrating)
-        return;
-
-    m_pattern.insert(0, m_timerStop.nextFireInterval());
-    m_timerStop.stop();
-    cancelVibration();
-}
-
-void NavigatorVibration::resumeVibration()
-{
-    ASSERT(!m_timerStart.isActive());
-
-    m_timerStart.startOneShot(0);
-}
-
 void NavigatorVibration::timerStartFired(Timer<NavigatorVibration>* timer)
 {
     ASSERT_UNUSED(timer, timer == &m_timerStart);
@@ -138,6 +122,19 @@ void NavigatorVibration::timerStopFired(Timer<NavigatorVibration>* timer)
     }
 }
 
+void NavigatorVibration::pageVisibilityChanged()
+{
+    if (page()->visibilityState() != PageVisibilityStateVisible)
+        cancelVibration();
+}
+
+void NavigatorVibration::didCommitLoad(Frame* frame)
+{
+    // A new load has been committed, which means the current page will be
+    // unloaded. Cancel all running vibrations.
+    cancelVibration();
+}
+
 bool NavigatorVibration::vibrate(Navigator* navigator, unsigned time)
 {
     VibrationPattern pattern;
@@ -147,21 +144,22 @@ bool NavigatorVibration::vibrate(Navigator* navigator, unsigned time)
 
 bool NavigatorVibration::vibrate(Navigator* navigator, const VibrationPattern& pattern)
 {
-    if (!navigator->frame()->page())
+    Page* page = navigator->frame()->page();
+    if (!page)
         return false;
 
-    if (navigator->frame()->page()->visibilityState() != PageVisibilityStateVisible)
+    if (page->visibilityState() != PageVisibilityStateVisible)
         return false;
 
-    return NavigatorVibration::from(navigator)->vibrate(pattern);
+    return NavigatorVibration::from(page)->vibrate(pattern);
 }
 
-NavigatorVibration* NavigatorVibration::from(Navigator* navigator)
+NavigatorVibration* NavigatorVibration::from(Page* page)
 {
-    NavigatorVibration* navigatorVibration = static_cast<NavigatorVibration*>(Supplement<Navigator>::from(navigator, supplementName()));
+    NavigatorVibration* navigatorVibration = static_cast<NavigatorVibration*>(Supplement<Page>::from(page, supplementName()));
     if (!navigatorVibration) {
-        navigatorVibration = new NavigatorVibration();
-        Supplement<Navigator>::provideTo(navigator, supplementName(), adoptPtr(navigatorVibration));
+        navigatorVibration = new NavigatorVibration(page);
+        Supplement<Page>::provideTo(page, supplementName(), adoptPtr(navigatorVibration));
     }
     return navigatorVibration;
 }

@@ -22,7 +22,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "sync/base/sync_export.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/engine/model_safe_worker.h"
@@ -101,25 +101,21 @@ class SYNC_EXPORT_PRIVATE SyncSession {
     virtual ~Delegate() {}
   };
 
-  // Build a session with a nudge tracker.  Used for sync cycles with origin of
-  // GU_TRIGGER (ie. notification, local change, and/or refresh request)
-  static SyncSession* BuildForNudge(SyncSessionContext* context,
-                                    Delegate* delegate,
-                                    const SyncSourceInfo& source,
-                                    const NudgeTracker* nudge_tracker);
-
   // Build a session without a nudge tracker.  Used for poll or configure type
   // sync cycles.
   static SyncSession* Build(SyncSessionContext* context,
-                            Delegate* delegate,
-                            const SyncSourceInfo& source);
-
+                            Delegate* delegate);
   ~SyncSession();
 
   // Builds a thread-safe and read-only copy of the current session state.
   SyncSessionSnapshot TakeSnapshot() const;
+  SyncSessionSnapshot TakeSnapshotWithSource(
+      sync_pb::GetUpdatesCallerInfo::GetUpdatesSource legacy_updates_source)
+      const;
 
   // Builds and sends a snapshot to the session context's listeners.
+  void SendSyncCycleEndEventNotification(
+      sync_pb::GetUpdatesCallerInfo::GetUpdatesSource source);
   void SendEventNotification(SyncEngineEvent::EventCause cause);
 
   // TODO(akalin): Split this into context() and mutable_context().
@@ -132,29 +128,17 @@ class SYNC_EXPORT_PRIVATE SyncSession {
     return status_controller_.get();
   }
 
-  const SyncSourceInfo& source() const { return source_; }
-
-  const NudgeTracker* nudge_tracker() const { return nudge_tracker_; }
-
  private:
-  SyncSession(SyncSessionContext* context,
-              Delegate* delegate,
-              const SyncSourceInfo& source,
-              const NudgeTracker* nudge_tracker);
+  SyncSession(SyncSessionContext* context, Delegate* delegate);
 
   // The context for this session, guaranteed to outlive |this|.
   SyncSessionContext* const context_;
-
-  // The source for initiating this sync session.
-  SyncSourceInfo source_;
 
   // The delegate for this session, must never be NULL.
   Delegate* const delegate_;
 
   // Our controller for various status and error counters.
   scoped_ptr<StatusController> status_controller_;
-
-  const NudgeTracker* nudge_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncSession);
 };

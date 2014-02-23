@@ -31,9 +31,9 @@
 #ifndef MemoryUsageSupport_h
 #define MemoryUsageSupport_h
 
-#include <wtf/Forward.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/Forward.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -46,16 +46,6 @@ public:
     // Same as above, but always returns actual value, without any
     // caches.
     static int actualMemoryUsageMB();
-
-    // If memory usage is below this threshold, do not bother forcing GC.
-    static int lowMemoryUsageMB();
-
-    // If memory usage is above this threshold, force GC more aggressively.
-    static int highMemoryUsageMB();
-
-    // Delta of memory usage growth (vs. last actualMemoryUsageMB())
-    // to force GC when memory usage is high.
-    static int highUsageDeltaMB();
 
     // Returns private and shared usage, in bytes. Private bytes is the amount of
     // memory currently allocated to this process that cannot be shared. Returns
@@ -72,17 +62,6 @@ public:
     // Requests private and shared usage, in bytes. Private bytes is the amount of
     // memory currently allocated to this process that cannot be shared.
     static void requestProcessMemorySizes(PassOwnPtr<ProcessMemorySizesCallback> requestCallback);
-
-    class ComponentInfo {
-    public:
-        ComponentInfo(const String& name, size_t size) : m_name(name), m_sizeInBytes(size) { }
-
-        const String m_name;
-        size_t m_sizeInBytes;
-    };
-
-    // Reports private memory used by components in bytes.
-    static void memoryUsageByComponents(Vector<ComponentInfo>&);
 };
 
 } // namespace WebCore

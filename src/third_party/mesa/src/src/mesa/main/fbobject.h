@@ -26,50 +26,102 @@
 #ifndef FBOBJECT_H
 #define FBOBJECT_H
 
-#include "mtypes.h"
+#include "compiler.h"
+#include "glheader.h"
+
+struct gl_context;
+struct gl_texture_object;
+
+
+/**
+ * Is the given FBO a user-created FBO?
+ */
+static inline GLboolean
+_mesa_is_user_fbo(const struct gl_framebuffer *fb)
+{
+   return fb->Name != 0;
+}
+
+
+/**
+ * Is the given FBO a window system FBO (like an X window)?
+ */
+static inline GLboolean
+_mesa_is_winsys_fbo(const struct gl_framebuffer *fb)
+{
+   return fb->Name == 0;
+}
+
+
 
 extern void
-_mesa_init_fbobjects(GLcontext *ctx);
+_mesa_init_fbobjects(struct gl_context *ctx);
 
 extern struct gl_framebuffer *
 _mesa_get_incomplete_framebuffer(void);
 
 extern struct gl_renderbuffer *
-_mesa_lookup_renderbuffer(GLcontext *ctx, GLuint id);
+_mesa_lookup_renderbuffer(struct gl_context *ctx, GLuint id);
 
 extern struct gl_framebuffer *
-_mesa_lookup_framebuffer(GLcontext *ctx, GLuint id);
+_mesa_lookup_framebuffer(struct gl_context *ctx, GLuint id);
 
 extern struct gl_renderbuffer_attachment *
-_mesa_get_attachment(GLcontext *ctx, struct gl_framebuffer *fb,
+_mesa_get_attachment(struct gl_context *ctx, struct gl_framebuffer *fb,
                      GLenum attachment);
 
 
+/** Return the texture image for a renderbuffer attachment */
+static inline struct gl_texture_image *
+_mesa_get_attachment_teximage(struct gl_renderbuffer_attachment *att)
+{
+   assert(att->Type == GL_TEXTURE);
+   return att->Texture->Image[att->CubeMapFace][att->TextureLevel];
+}
+
+
+/** Return the (const) texture image for a renderbuffer attachment */
+static inline const struct gl_texture_image *
+_mesa_get_attachment_teximage_const(const struct gl_renderbuffer_attachment *att)
+{
+   assert(att->Type == GL_TEXTURE);
+   return att->Texture->Image[att->CubeMapFace][att->TextureLevel];
+}
+
+
 extern void
-_mesa_remove_attachment(GLcontext *ctx,
+_mesa_remove_attachment(struct gl_context *ctx,
                         struct gl_renderbuffer_attachment *att);
 
 extern void
-_mesa_set_texture_attachment(GLcontext *ctx,
+_mesa_set_texture_attachment(struct gl_context *ctx,
                              struct gl_framebuffer *fb,
                              struct gl_renderbuffer_attachment *att,
                              struct gl_texture_object *texObj,
                              GLenum texTarget, GLuint level, GLuint zoffset);
 
 extern void
-_mesa_set_renderbuffer_attachment(GLcontext *ctx,
+_mesa_set_renderbuffer_attachment(struct gl_context *ctx,
                                   struct gl_renderbuffer_attachment *att,
                                   struct gl_renderbuffer *rb);
 
 extern void
-_mesa_framebuffer_renderbuffer(GLcontext *ctx, struct gl_framebuffer *fb,
+_mesa_framebuffer_renderbuffer(struct gl_context *ctx,
+                               struct gl_framebuffer *fb,
                                GLenum attachment, struct gl_renderbuffer *rb);
 
 extern void
-_mesa_test_framebuffer_completeness(GLcontext *ctx, struct gl_framebuffer *fb);
+_mesa_validate_framebuffer(struct gl_context *ctx, struct gl_framebuffer *fb);
+
+extern void
+_mesa_test_framebuffer_completeness(struct gl_context *ctx,
+                                    struct gl_framebuffer *fb);
+
+extern GLboolean
+_mesa_is_legal_color_format(const struct gl_context *ctx, GLenum baseFormat);
 
 extern GLenum
-_mesa_base_fbo_format(GLcontext *ctx, GLenum internalFormat);
+_mesa_base_fbo_format(struct gl_context *ctx, GLenum internalFormat);
 
 extern GLboolean GLAPIENTRY
 _mesa_IsRenderbufferEXT(GLuint renderbuffer);
@@ -161,5 +213,14 @@ extern void GLAPIENTRY
 _mesa_FramebufferTextureFaceARB(GLenum target, GLenum attachment,
                                 GLuint texture, GLint level, GLenum face);
 
+
+extern void GLAPIENTRY
+_mesa_InvalidateSubFramebuffer(GLenum target, GLsizei numAttachments,
+                               const GLenum *attachments, GLint x, GLint y,
+                               GLsizei width, GLsizei height);
+
+extern void GLAPIENTRY
+_mesa_InvalidateFramebuffer(GLenum target, GLsizei numAttachments,
+                            const GLenum *attachments);
 
 #endif /* FBOBJECT_H */

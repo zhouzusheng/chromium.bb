@@ -32,18 +32,19 @@
 
 #include "core/workers/DedicatedWorkerThread.h"
 
-#include "core/workers/DedicatedWorkerContext.h"
+#include "core/workers/DedicatedWorkerGlobalScope.h"
 #include "core/workers/WorkerObjectProxy.h"
+#include "core/workers/WorkerThreadStartupData.h"
 
 namespace WebCore {
 
-PassRefPtr<DedicatedWorkerThread> DedicatedWorkerThread::create(const KURL& scriptURL, const String& userAgent, const GroupSettings* settings, const String& sourceCode, WorkerLoaderProxy& workerLoaderProxy, WorkerObjectProxy& workerObjectProxy, WorkerThreadStartMode startMode, const String& contentSecurityPolicy, ContentSecurityPolicy::HeaderType contentSecurityPolicyType, const SecurityOrigin* topOrigin, double timeOrigin)
+PassRefPtr<DedicatedWorkerThread> DedicatedWorkerThread::create(WorkerLoaderProxy& workerLoaderProxy, WorkerObjectProxy& workerObjectProxy, double timeOrigin, PassOwnPtr<WorkerThreadStartupData> startupData)
 {
-    return adoptRef(new DedicatedWorkerThread(scriptURL, userAgent, settings, sourceCode, workerLoaderProxy, workerObjectProxy, startMode, contentSecurityPolicy, contentSecurityPolicyType, topOrigin, timeOrigin));
+    return adoptRef(new DedicatedWorkerThread(workerLoaderProxy, workerObjectProxy, timeOrigin, startupData));
 }
 
-DedicatedWorkerThread::DedicatedWorkerThread(const KURL& url, const String& userAgent, const GroupSettings* settings, const String& sourceCode, WorkerLoaderProxy& workerLoaderProxy, WorkerObjectProxy& workerObjectProxy, WorkerThreadStartMode startMode, const String& contentSecurityPolicy, ContentSecurityPolicy::HeaderType contentSecurityPolicyType, const SecurityOrigin* topOrigin, double timeOrigin)
-    : WorkerThread(url, userAgent, settings, sourceCode, workerLoaderProxy, workerObjectProxy, startMode, contentSecurityPolicy, contentSecurityPolicyType, topOrigin)
+DedicatedWorkerThread::DedicatedWorkerThread(WorkerLoaderProxy& workerLoaderProxy, WorkerObjectProxy& workerObjectProxy, double timeOrigin, PassOwnPtr<WorkerThreadStartupData> startupData)
+    : WorkerThread(workerLoaderProxy, workerObjectProxy, startupData)
     , m_workerObjectProxy(workerObjectProxy)
     , m_timeOrigin(timeOrigin)
 {
@@ -53,15 +54,15 @@ DedicatedWorkerThread::~DedicatedWorkerThread()
 {
 }
 
-PassRefPtr<WorkerContext> DedicatedWorkerThread::createWorkerContext(const KURL& url, const String& userAgent, PassOwnPtr<GroupSettings> settings, const String& contentSecurityPolicy, ContentSecurityPolicy::HeaderType contentSecurityPolicyType, PassRefPtr<SecurityOrigin> topOrigin)
+PassRefPtr<WorkerGlobalScope> DedicatedWorkerThread::createWorkerGlobalScope(PassOwnPtr<WorkerThreadStartupData> startupData)
 {
-    return DedicatedWorkerContext::create(url, userAgent, settings, this, contentSecurityPolicy, contentSecurityPolicyType, topOrigin, m_timeOrigin);
+    return DedicatedWorkerGlobalScope::create(this, startupData, m_timeOrigin);
 }
 
 void DedicatedWorkerThread::runEventLoop()
 {
     // Notify the parent object of our current active state before calling the superclass to run the event loop.
-    m_workerObjectProxy.reportPendingActivity(workerContext()->hasPendingActivity());
+    m_workerObjectProxy.reportPendingActivity(workerGlobalScope()->hasPendingActivity());
     WorkerThread::runEventLoop();
 }
 

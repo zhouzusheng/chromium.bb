@@ -10,13 +10,14 @@
 
 #include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/platform_thread.h"
 #include "build/build_config.h"
 #include "content/child/child_process.h"
+#include "content/common/content_constants_internal.h"
 #include "content/common/gpu/gpu_config.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/sandbox_linux.h"
@@ -39,7 +40,6 @@
 #include "sandbox/win/src/sandbox.h"
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
 #include "content/common/gpu/media/exynos_video_decode_accelerator.h"
-#include "content/common/gpu/media/omx_video_decode_accelerator.h"
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY) && defined(USE_X11)
 #include "content/common/gpu/media/vaapi_wrapper.h"
 #endif
@@ -84,6 +84,9 @@ bool GpuProcessLogMessageHandler(int severity,
 // Main function for starting the Gpu process.
 int GpuMain(const MainFunctionParams& parameters) {
   TRACE_EVENT0("gpu", "GpuMain");
+  base::debug::TraceLog::GetInstance()->SetProcessName("GPU Process");
+  base::debug::TraceLog::GetInstance()->SetProcessSortIndex(
+      kTraceEventGpuProcessSortIndex);
 
   const CommandLine& command_line = parameters.command_line;
   if (command_line.HasSwitch(switches::kGpuStartupDialog)) {
@@ -290,6 +293,9 @@ int GpuMain(const MainFunctionParams& parameters) {
 
   gpu_process.set_main_thread(child_thread);
 
+  if (watchdog_thread)
+    watchdog_thread->AddPowerObserver();
+
   {
     TRACE_EVENT0("gpu", "Run Message Loop");
     main_message_loop.Run();
@@ -349,10 +355,7 @@ bool WarmUpSandbox(const CommandLine& command_line) {
   }
 
 #if defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kUseExynosVda))
-    ExynosVideoDecodeAccelerator::PreSandboxInitialization();
-  else
-    OmxVideoDecodeAccelerator::PreSandboxInitialization();
+  ExynosVideoDecodeAccelerator::PreSandboxInitialization();
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY) && defined(USE_X11)
   VaapiWrapper::PreSandboxInitialization();
 #endif

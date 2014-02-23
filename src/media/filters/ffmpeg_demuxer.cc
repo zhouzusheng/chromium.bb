@@ -13,17 +13,19 @@
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/task_runner_util.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/bind_to_loop.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/decrypt_config.h"
 #include "media/base/limits.h"
+#include "media/base/media_log.h"
 #include "media/base/media_switches.h"
 #include "media/base/video_decoder_config.h"
 #include "media/ffmpeg/ffmpeg_common.h"
@@ -137,20 +139,20 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
         encryption_key_id_.size()));
     if (!config)
       LOG(ERROR) << "Creation of DecryptConfig failed.";
-    buffer->SetDecryptConfig(config.Pass());
+    buffer->set_decrypt_config(config.Pass());
   }
 
-  buffer->SetTimestamp(ConvertStreamTimestamp(
+  buffer->set_timestamp(ConvertStreamTimestamp(
       stream_->time_base, packet->pts));
-  buffer->SetDuration(ConvertStreamTimestamp(
+  buffer->set_duration(ConvertStreamTimestamp(
       stream_->time_base, packet->duration));
-  if (buffer->GetTimestamp() != kNoTimestamp() &&
+  if (buffer->timestamp() != kNoTimestamp() &&
       last_packet_timestamp_ != kNoTimestamp() &&
-      last_packet_timestamp_ < buffer->GetTimestamp()) {
-    buffered_ranges_.Add(last_packet_timestamp_, buffer->GetTimestamp());
+      last_packet_timestamp_ < buffer->timestamp()) {
+    buffered_ranges_.Add(last_packet_timestamp_, buffer->timestamp());
     demuxer_->NotifyBufferingChanged();
   }
-  last_packet_timestamp_ = buffer->GetTimestamp();
+  last_packet_timestamp_ = buffer->timestamp();
 
   buffer_queue_.Push(buffer);
   SatisfyPendingRead();
@@ -285,7 +287,8 @@ base::TimeDelta FFmpegDemuxerStream::ConvertStreamTimestamp(
 FFmpegDemuxer::FFmpegDemuxer(
     const scoped_refptr<base::MessageLoopProxy>& message_loop,
     DataSource* data_source,
-    const FFmpegNeedKeyCB& need_key_cb)
+    const FFmpegNeedKeyCB& need_key_cb,
+    const scoped_refptr<MediaLog>& media_log)
     : host_(NULL),
       message_loop_(message_loop),
       weak_factory_(this),
@@ -293,6 +296,7 @@ FFmpegDemuxer::FFmpegDemuxer(
       pending_read_(false),
       pending_seek_(false),
       data_source_(data_source),
+      media_log_(media_log),
       bitrate_(0),
       start_time_(kNoTimestamp()),
       audio_disabled_(false),
@@ -488,8 +492,12 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
   // partial playback. At least one audio or video stream must be playable.
   AVFormatContext* format_context = glue_->format_context();
   streams_.resize(format_context->nb_streams);
-  bool found_audio_stream = false;
-  bool found_video_stream = false;
+
+  AVStream* audio_stream = NULL;
+  AudioDecoderConfig audio_config;
+
+  AVStream* video_stream = NULL;
+  VideoDecoderConfig video_config;
 
   base::TimeDelta max_duration;
   for (size_t i = 0; i < format_context->nb_streams; ++i) {
@@ -498,31 +506,32 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
     AVMediaType codec_type = codec_context->codec_type;
 
     if (codec_type == AVMEDIA_TYPE_AUDIO) {
-      if (found_audio_stream)
+      if (audio_stream)
         continue;
+
       // Log the codec detected, whether it is supported or not.
       UMA_HISTOGRAM_SPARSE_SLOWLY("Media.DetectedAudioCodec",
                                   codec_context->codec_id);
       // Ensure the codec is supported. IsValidConfig() also checks that the
       // channel layout and sample format are valid.
-      AudioDecoderConfig audio_config;
       AVStreamToAudioDecoderConfig(stream, &audio_config, false);
       if (!audio_config.IsValidConfig())
         continue;
-      found_audio_stream = true;
+      audio_stream = stream;
     } else if (codec_type == AVMEDIA_TYPE_VIDEO) {
-      if (found_video_stream)
+      if (video_stream)
         continue;
+
       // Log the codec detected, whether it is supported or not.
       UMA_HISTOGRAM_SPARSE_SLOWLY("Media.DetectedVideoCodec",
                                   codec_context->codec_id);
       // Ensure the codec is supported. IsValidConfig() also checks that the
       // frame size and visible size are valid.
-      VideoDecoderConfig video_config;
       AVStreamToVideoDecoderConfig(stream, &video_config, false);
+
       if (!video_config.IsValidConfig())
         continue;
-      found_video_stream = true;
+      video_stream = stream;
     } else {
       continue;
     }
@@ -538,7 +547,7 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
     }
   }
 
-  if (!found_audio_stream && !found_video_stream) {
+  if (!audio_stream && !video_stream) {
     status_cb.Run(DEMUXER_ERROR_NO_SUPPORTED_STREAMS);
     return;
   }
@@ -575,6 +584,59 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
   bitrate_ = CalculateBitrate(format_context, max_duration, filesize_in_bytes);
   if (bitrate_ > 0)
     data_source_->SetBitrate(bitrate_);
+
+  // Audio logging
+  if (audio_stream) {
+    AVCodecContext* audio_codec = audio_stream->codec;
+    media_log_->SetBooleanProperty("found_audio_stream", true);
+
+    SampleFormat sample_format = audio_config.sample_format();
+    std::string sample_name = SampleFormatToString(sample_format);
+
+    media_log_->SetStringProperty("audio_sample_format", sample_name);
+
+    media_log_->SetStringProperty("audio_codec_name",
+                                  audio_codec->codec_name);
+    media_log_->SetIntegerProperty("audio_sample_rate",
+                                   audio_codec->sample_rate);
+    media_log_->SetIntegerProperty("audio_channels_count",
+                                   audio_codec->channels);
+    media_log_->SetIntegerProperty("audio_samples_per_second",
+                                   audio_config.samples_per_second());
+  } else {
+    media_log_->SetBooleanProperty("found_audio_stream", false);
+  }
+
+  // Video logging
+  if (video_stream) {
+    AVCodecContext* video_codec = video_stream->codec;
+    media_log_->SetBooleanProperty("found_video_stream", true);
+    media_log_->SetStringProperty("video_codec_name", video_codec->codec_name);
+    media_log_->SetIntegerProperty("width", video_codec->width);
+    media_log_->SetIntegerProperty("height", video_codec->height);
+    media_log_->SetIntegerProperty("coded_width",
+                                   video_codec->coded_width);
+    media_log_->SetIntegerProperty("coded_height",
+                                   video_codec->coded_height);
+    media_log_->SetStringProperty(
+        "time_base",
+        base::StringPrintf("%d/%d",
+                           video_codec->time_base.num,
+                           video_codec->time_base.den));
+    media_log_->SetStringProperty(
+        "video_format", VideoFrame::FormatToString(video_config.format()));
+    media_log_->SetBooleanProperty("video_is_encrypted",
+                                   video_config.is_encrypted());
+  } else {
+    media_log_->SetBooleanProperty("found_video_stream", false);
+  }
+
+
+  media_log_->SetDoubleProperty("max_duration", max_duration.InSecondsF());
+  media_log_->SetDoubleProperty("start_time", start_time_.InSecondsF());
+  media_log_->SetDoubleProperty("filesize_in_bytes",
+                                static_cast<double>(filesize_in_bytes));
+  media_log_->SetIntegerProperty("bitrate", bitrate_);
 
   status_cb.Run(PIPELINE_OK);
 }

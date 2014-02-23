@@ -23,14 +23,14 @@
 #ifndef SVGAnimateElement_h
 #define SVGAnimateElement_h
 
-#include "core/svg/SVGAnimatedType.h"
-#include "core/svg/SVGAnimatedTypeAnimator.h"
 #include "core/svg/SVGAnimationElement.h"
-#include <wtf/OwnPtr.h>
+#include "wtf/OwnPtr.h"
 
 namespace WebCore {
-    
+
 class SVGAnimatedProperty;
+class SVGAnimatedType;
+class SVGAnimatedTypeAnimator;
 
 class SVGAnimateElement : public SVGAnimationElement {
 public:
@@ -38,7 +38,7 @@ public:
     virtual ~SVGAnimateElement();
 
     AnimatedPropertyType determineAnimatedPropertyType(SVGElement*) const;
-    
+
 protected:
     SVGAnimateElement(const QualifiedName&, Document*);
 

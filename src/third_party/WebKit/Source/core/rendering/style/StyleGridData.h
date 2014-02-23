@@ -26,12 +26,13 @@
 #ifndef StyleGridData_h
 #define StyleGridData_h
 
+#include "core/rendering/style/GridCoordinate.h"
 #include "core/rendering/style/GridTrackSize.h"
 #include "core/rendering/style/RenderStyleConstants.h"
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/Vector.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/Vector.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -44,7 +45,7 @@ public:
 
     bool operator==(const StyleGridData& o) const
     {
-        return m_gridColumns == o.m_gridColumns && m_gridRows == o.m_gridRows && m_gridAutoFlow == o.m_gridAutoFlow && m_gridAutoRows == o.m_gridAutoRows && m_gridAutoColumns == o.m_gridAutoColumns && m_namedGridColumnLines == o.m_namedGridColumnLines && m_namedGridRowLines == o.m_namedGridRowLines;
+        return m_gridDefinitionColumns == o.m_gridDefinitionColumns && m_gridDefinitionRows == o.m_gridDefinitionRows && m_gridAutoFlow == o.m_gridAutoFlow && m_gridAutoRows == o.m_gridAutoRows && m_gridAutoColumns == o.m_gridAutoColumns && m_namedGridColumnLines == o.m_namedGridColumnLines && m_namedGridRowLines == o.m_namedGridRowLines && m_namedGridArea == o.m_namedGridArea && m_namedGridArea == o.m_namedGridArea && m_namedGridAreaRowCount == o.m_namedGridAreaRowCount && m_namedGridAreaColumnCount == o.m_namedGridAreaColumnCount;
     }
 
     bool operator!=(const StyleGridData& o) const
@@ -52,9 +53,8 @@ public:
         return !(*this == o);
     }
 
-    // FIXME: Update the naming of the following variables.
-    Vector<GridTrackSize> m_gridColumns;
-    Vector<GridTrackSize> m_gridRows;
+    Vector<GridTrackSize> m_gridDefinitionColumns;
+    Vector<GridTrackSize> m_gridDefinitionRows;
 
     NamedGridLinesMap m_namedGridColumnLines;
     NamedGridLinesMap m_namedGridRowLines;
@@ -63,6 +63,12 @@ public:
 
     GridTrackSize m_gridAutoRows;
     GridTrackSize m_gridAutoColumns;
+
+    NamedGridAreaMap m_namedGridArea;
+    // Because m_namedGridArea doesn't store the unnamed grid areas, we need to keep track
+    // of the explicit grid size defined by both named and unnamed grid areas.
+    size_t m_namedGridAreaRowCount;
+    size_t m_namedGridAreaColumnCount;
 
 private:
     StyleGridData();

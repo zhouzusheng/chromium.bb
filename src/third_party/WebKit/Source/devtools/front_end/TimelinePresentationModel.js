@@ -995,7 +995,7 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
     },
 
     /**
-     * @param {number} nodeId
+     * @param {?DOMAgent.NodeId} nodeId
      */
     _setRelatedNode: function(nodeId)
     {
@@ -1092,6 +1092,7 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
 
             case recordTypes.PaintSetup:
             case recordTypes.Rasterize:
+            case recordTypes.ScrollLayer:
                 if (this._relatedNode)
                     contentHelper.appendElementRow(WebInspector.UIString("Layer root"), this._createNodeAnchor(this._relatedNode));
                 break;
@@ -1147,7 +1148,7 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
             if (this.usedHeapSizeDelta) {
                 var sign = this.usedHeapSizeDelta > 0 ? "+" : "-";
                 contentHelper.appendTextRow(WebInspector.UIString("Used Heap Size"),
-                    WebInspector.UIString("%s (%s%s)", Number.bytesToString(this.usedHeapSize), sign, Number.bytesToString(this.usedHeapSizeDelta)));
+                    WebInspector.UIString("%s (%s%s)", Number.bytesToString(this.usedHeapSize), sign, Number.bytesToString(Math.abs(this.usedHeapSizeDelta))));
             } else if (this.category === WebInspector.TimelinePresentationModel.categories().scripting)
                 contentHelper.appendTextRow(WebInspector.UIString("Used Heap Size"), Number.bytesToString(this.usedHeapSize));
         }

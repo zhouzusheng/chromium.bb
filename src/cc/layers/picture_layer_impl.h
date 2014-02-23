@@ -66,8 +66,7 @@ class CC_EXPORT PictureLayerImpl
   void SyncTiling(const PictureLayerTiling* tiling);
   void UpdateTwinLayer();
 
-  void CreateTilingSet();
-  void TransferTilingSet(scoped_ptr<PictureLayerTilingSet> tilings);
+  void CreateTilingSetIfNeeded();
 
   // Mask-related functions
   void SetIsMask(bool is_mask);
@@ -90,7 +89,7 @@ class CC_EXPORT PictureLayerImpl
   void CleanUpTilingsOnActiveLayer(
       std::vector<PictureLayerTiling*> used_tilings);
   float MinimumContentsScale() const;
-  void UpdateLCDTextStatus();
+  void UpdateLCDTextStatus(bool new_status);
   void ResetRasterScale();
   void MarkVisibleResourcesAsRequired() const;
 

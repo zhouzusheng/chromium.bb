@@ -21,6 +21,12 @@ using base::win::ScopedComPtr;
 namespace media {
 namespace {
 
+// In Windows device identifiers, the USB VID and PID are preceded by the string
+// "vid_" or "pid_".  The identifiers are each 4 bytes long.
+const char kVidPrefix[] = "vid_";  // Also contains '\0'.
+const char kPidPrefix[] = "pid_";  // Also contains '\0'.
+const size_t kVidPidSize = 4;
+
 class MFInitializerSingleton {
  public:
   MFInitializerSingleton() { MFStartup(MF_VERSION, MFSTARTUP_LITE); }
@@ -97,30 +103,37 @@ bool GetFrameSize(IMFMediaType* type, int* width, int* height) {
   return true;
 }
 
-bool GetFrameRate(IMFMediaType* type, int* frame_rate) {
+bool GetFrameRate(IMFMediaType* type,
+                  int* frame_rate_numerator,
+                  int* frame_rate_denominator) {
   UINT32 numerator, denominator;
   if (FAILED(MFGetAttributeRatio(type, MF_MT_FRAME_RATE, &numerator,
-                                 &denominator))) {
+                                 &denominator))||
+      !denominator) {
     return false;
   }
-
-  *frame_rate = denominator ? numerator / denominator : 0;
-
+  *frame_rate_numerator = numerator;
+  *frame_rate_denominator = denominator;
   return true;
 }
 
 bool FillCapabilitiesFromType(IMFMediaType* type,
-                              VideoCaptureCapability* capability) {
+                              VideoCaptureCapabilityWin* capability) {
   GUID type_guid;
   if (FAILED(type->GetGUID(MF_MT_SUBTYPE, &type_guid)) ||
       !FormatFromGuid(type_guid, &capability->color) ||
       !GetFrameSize(type, &capability->width, &capability->height) ||
-      !GetFrameRate(type, &capability->frame_rate)) {
+      !GetFrameRate(type,
+                    &capability->frame_rate_numerator,
+                    &capability->frame_rate_denominator)) {
     return false;
   }
+  // Keep the integer version of the frame_rate for (potential) returns.
+  capability->frame_rate =
+      capability->frame_rate_numerator / capability->frame_rate_denominator;
 
   capability->expected_capture_delay = 0;  // Currently not used.
-  capability->interlaced = false;  // Currently not used.
+  capability->interlaced = false;          // Currently not used.
 
   return true;
 }
@@ -268,15 +281,34 @@ void VideoCaptureDeviceMFWin::GetDeviceNames(Names* device_names) {
             MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK, &id,
             &id_size))) {
       std::wstring name_w(name, name_size), id_w(id, id_size);
-      Name device;
-      device.device_name = base::SysWideToUTF8(name_w);
-      device.unique_id = base::SysWideToUTF8(id_w);
+      Name device(base::SysWideToUTF8(name_w), base::SysWideToUTF8(id_w),
+          Name::MEDIA_FOUNDATION);
       device_names->push_back(device);
     } else {
       DLOG(WARNING) << "GetAllocatedString failed: " << std::hex << hr;
     }
     devices[i]->Release();
   }
+}
+
+const std::string VideoCaptureDevice::Name::GetModel() const {
+  const size_t vid_prefix_size = sizeof(kVidPrefix) - 1;
+  const size_t pid_prefix_size = sizeof(kPidPrefix) - 1;
+  const size_t vid_location = unique_id_.find(kVidPrefix);
+  if (vid_location == std::string::npos ||
+      vid_location + vid_prefix_size + kVidPidSize > unique_id_.size()) {
+    return "";
+  }
+  const size_t pid_location = unique_id_.find(kPidPrefix);
+  if (pid_location == std::string::npos ||
+      pid_location + pid_prefix_size + kVidPidSize > unique_id_.size()) {
+    return "";
+  }
+  std::string id_vendor =
+      unique_id_.substr(vid_location + vid_prefix_size, kVidPidSize);
+  std::string id_product =
+      unique_id_.substr(pid_location + pid_prefix_size, kVidPidSize);
+  return id_vendor + ":" + id_product;
 }
 
 VideoCaptureDeviceMFWin::VideoCaptureDeviceMFWin(const Name& device_name)
@@ -293,7 +325,7 @@ bool VideoCaptureDeviceMFWin::Init() {
   DCHECK(!reader_);
 
   ScopedComPtr<IMFMediaSource> source;
-  if (!CreateVideoCaptureDevice(name_.unique_id.c_str(), source.Receive()))
+  if (!CreateVideoCaptureDevice(name_.id().c_str(), source.Receive()))
     return false;
 
   ScopedComPtr<IMFAttributes> attributes;
@@ -308,9 +340,7 @@ bool VideoCaptureDeviceMFWin::Init() {
 }
 
 void VideoCaptureDeviceMFWin::Allocate(
-    int width,
-    int height,
-    int frame_rate,
+    const VideoCaptureCapability& capture_format,
     VideoCaptureDevice::EventHandler* observer) {
   DCHECK(CalledOnValidThread());
 
@@ -332,7 +362,13 @@ void VideoCaptureDeviceMFWin::Allocate(
   }
 
   const VideoCaptureCapabilityWin& found_capability =
-      capabilities.GetBestMatchedCapability(width, height, frame_rate);
+      capabilities.GetBestMatchedCapability(capture_format.width,
+                                            capture_format.height,
+                                            capture_format.frame_rate);
+  DLOG(INFO) << "Chosen capture format= (" << found_capability.width << "x"
+             << found_capability.height << ")@("
+             << found_capability.frame_rate_numerator << "/"
+             << found_capability.frame_rate_denominator << ")fps";
 
   ScopedComPtr<IMFMediaType> type;
   if (FAILED(hr = reader_->GetNativeMediaType(

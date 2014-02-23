@@ -37,11 +37,12 @@
 #include "core/dom/Document.h"
 #include "core/html/track/TextTrack.h"
 #include "core/platform/graphics/FloatPoint.h"
-#include <wtf/PassOwnPtr.h>
-#include <wtf/RefCounted.h>
+#include "wtf/PassOwnPtr.h"
+#include "wtf/RefCounted.h"
 
 namespace WebCore {
 
+class ExceptionState;
 class HTMLDivElement;
 class TextTrackCueBox;
 
@@ -61,25 +62,25 @@ public:
     void setId(const String&);
 
     double width() const { return m_width; }
-    void setWidth(double, ExceptionCode&);
+    void setWidth(double, ExceptionState&);
 
     long height() const { return m_heightInLines; }
-    void setHeight(long, ExceptionCode&);
+    void setHeight(long, ExceptionState&);
 
     double regionAnchorX() const { return m_regionAnchor.x(); }
-    void setRegionAnchorX(double, ExceptionCode&);
+    void setRegionAnchorX(double, ExceptionState&);
 
     double regionAnchorY() const { return m_regionAnchor.y(); }
-    void setRegionAnchorY(double, ExceptionCode&);
+    void setRegionAnchorY(double, ExceptionState&);
 
     double viewportAnchorX() const { return m_viewportAnchor.x(); }
-    void setViewportAnchorX(double, ExceptionCode&);
+    void setViewportAnchorX(double, ExceptionState&);
 
     double viewportAnchorY() const { return m_viewportAnchor.y(); }
-    void setViewportAnchorY(double, ExceptionCode&);
+    void setViewportAnchorY(double, ExceptionState&);
 
     const AtomicString scroll() const;
-    void setScroll(const AtomicString&, ExceptionCode&);
+    void setScroll(const AtomicString&, ExceptionState&);
 
     void updateParametersFromRegion(TextTrackRegion*);
 

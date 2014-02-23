@@ -26,8 +26,8 @@
 #include "config.h"
 #include "core/platform/text/DateTimeFormat.h"
 
-#include <wtf/ASCIICType.h>
-#include <wtf/text/StringBuilder.h>
+#include "wtf/ASCIICType.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -254,7 +254,7 @@ void DateTimeFormat::quoteAndAppendLiteral(const String& literal, StringBuilder&
         buffer.append(literal);
         return;
     }
-    
+
     if (literal.find('\'') == notFound) {
         buffer.append("'");
         buffer.append(literal);
@@ -267,7 +267,7 @@ void DateTimeFormat::quoteAndAppendLiteral(const String& literal, StringBuilder&
             buffer.append("''");
         else {
             String escaped = literal.substring(i);
-            escaped.replace(ASCIILiteral("'"), ASCIILiteral("''"));
+            escaped.replace("'", "''");
             buffer.append("'");
             buffer.append(escaped);
             buffer.append("'");

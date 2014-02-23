@@ -29,8 +29,6 @@
  */
 
 #include "config.h"
-
-
 #include "core/inspector/InjectedScriptCanvasModule.h"
 
 #include "InjectedScriptCanvasModuleSource.h"
@@ -39,10 +37,10 @@
 
 using WebCore::TypeBuilder::Array;
 using WebCore::TypeBuilder::Canvas::ResourceId;
-using WebCore::TypeBuilder::Canvas::ResourceInfo;
 using WebCore::TypeBuilder::Canvas::ResourceState;
 using WebCore::TypeBuilder::Canvas::TraceLog;
 using WebCore::TypeBuilder::Canvas::TraceLogId;
+using WebCore::TypeBuilder::Runtime::RemoteObject;
 
 namespace WebCore {
 
@@ -152,7 +150,7 @@ void InjectedScriptCanvasModule::traceLog(ErrorString* errorString, const TraceL
     *traceLog = TraceLog::runtimeCast(resultValue);
 }
 
-void InjectedScriptCanvasModule::replayTraceLog(ErrorString* errorString, const TraceLogId& traceLogId, int stepNo, RefPtr<ResourceState>* result)
+void InjectedScriptCanvasModule::replayTraceLog(ErrorString* errorString, const TraceLogId& traceLogId, int stepNo, RefPtr<ResourceState>* result, double* replayTime)
 {
     ScriptFunctionCall function(injectedScriptObject(), "replayTraceLog");
     function.appendArgument(traceLogId);
@@ -164,21 +162,15 @@ void InjectedScriptCanvasModule::replayTraceLog(ErrorString* errorString, const 
             *errorString = "Internal error: replayTraceLog";
         return;
     }
-    *result = ResourceState::runtimeCast(resultValue);
-}
-
-void InjectedScriptCanvasModule::resourceInfo(ErrorString* errorString, const ResourceId& resourceId, RefPtr<ResourceInfo>* result)
-{
-    ScriptFunctionCall function(injectedScriptObject(), "resourceInfo");
-    function.appendArgument(resourceId);
-    RefPtr<JSONValue> resultValue;
-    makeCall(function, &resultValue);
-    if (!resultValue || resultValue->type() != JSONValue::TypeObject) {
-        if (!resultValue->asString(errorString))
-            *errorString = "Internal error: resourceInfo";
+    RefPtr<JSONObject> resultObject = resultValue->asObject();
+    RefPtr<JSONObject> resourceStateObject = resultObject->getObject("resourceState");
+    if (!resourceStateObject) {
+        *errorString = "Internal error: replayTraceLog: no resourceState";
         return;
     }
-    *result = ResourceInfo::runtimeCast(resultValue);
+    *result = ResourceState::runtimeCast(resourceStateObject);
+    if (!resultObject->getNumber("replayTime", replayTime))
+        *errorString = "Internal error: replayTraceLog: no replayTime";
 }
 
 void InjectedScriptCanvasModule::resourceState(ErrorString* errorString, const TraceLogId& traceLogId, const ResourceId& resourceId, RefPtr<ResourceState>* result)
@@ -196,5 +188,29 @@ void InjectedScriptCanvasModule::resourceState(ErrorString* errorString, const T
     *result = ResourceState::runtimeCast(resultValue);
 }
 
-} // namespace WebCore
+void InjectedScriptCanvasModule::evaluateTraceLogCallArgument(ErrorString* errorString, const TraceLogId& traceLogId, int callIndex, int argumentIndex, const String& objectGroup, RefPtr<RemoteObject>* result, RefPtr<ResourceState>* resourceState)
+{
+    ScriptFunctionCall function(injectedScriptObject(), "evaluateTraceLogCallArgument");
+    function.appendArgument(traceLogId);
+    function.appendArgument(callIndex);
+    function.appendArgument(argumentIndex);
+    function.appendArgument(objectGroup);
+    RefPtr<JSONValue> resultValue;
+    makeCall(function, &resultValue);
+    if (!resultValue || resultValue->type() != JSONValue::TypeObject) {
+        if (!resultValue->asString(errorString))
+            *errorString = "Internal error: evaluateTraceLogCallArgument";
+        return;
+    }
+    RefPtr<JSONObject> resultObject = resultValue->asObject();
+    RefPtr<JSONObject> remoteObject = resultObject->getObject("result");
+    if (remoteObject)
+        *result = RemoteObject::runtimeCast(remoteObject);
+    RefPtr<JSONObject> resourceStateObject = resultObject->getObject("resourceState");
+    if (resourceStateObject)
+        *resourceState = ResourceState::runtimeCast(resourceStateObject);
+    if (!remoteObject && !resourceStateObject)
+        *errorString = "Internal error: no result and no resource state";
+}
 
+} // namespace WebCore

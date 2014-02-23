@@ -29,18 +29,18 @@
  */
 
 #include "config.h"
-
 #include "core/fileapi/FileReader.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/CrossThreadTask.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ProgressEvent.h"
 #include "core/dom/ScriptExecutionContext.h"
 #include "core/fileapi/File.h"
 #include "core/platform/Logging.h"
-#include <wtf/ArrayBuffer.h>
-#include <wtf/CurrentTime.h>
-#include <wtf/text/CString.h>
+#include "wtf/ArrayBuffer.h"
+#include "wtf/CurrentTime.h"
+#include "wtf/text/CString.h"
 
 namespace WebCore {
 
@@ -70,7 +70,7 @@ PassRefPtr<FileReader> FileReader::create(ScriptExecutionContext* context)
 FileReader::FileReader(ScriptExecutionContext* context)
     : ActiveDOMObject(context)
     , m_state(EMPTY)
-    , m_aborting(false)
+    , m_loadingState(LoadingStateNone)
     , m_readType(FileReaderLoader::ReadAsBinaryString)
     , m_lastProgressNotificationTimeMS(0)
 {
@@ -98,27 +98,27 @@ void FileReader::stop()
     terminate();
 }
 
-void FileReader::readAsArrayBuffer(Blob* blob, ExceptionCode& ec)
+void FileReader::readAsArrayBuffer(Blob* blob, ExceptionState& es)
 {
     if (!blob)
         return;
 
     LOG(FileAPI, "FileReader: reading as array buffer: %s %s\n", utf8BlobURL(blob).data(), utf8FilePath(blob).data());
 
-    readInternal(blob, FileReaderLoader::ReadAsArrayBuffer, ec);
+    readInternal(blob, FileReaderLoader::ReadAsArrayBuffer, es);
 }
 
-void FileReader::readAsBinaryString(Blob* blob, ExceptionCode& ec)
+void FileReader::readAsBinaryString(Blob* blob, ExceptionState& es)
 {
     if (!blob)
         return;
 
     LOG(FileAPI, "FileReader: reading as binary: %s %s\n", utf8BlobURL(blob).data(), utf8FilePath(blob).data());
 
-    readInternal(blob, FileReaderLoader::ReadAsBinaryString, ec);
+    readInternal(blob, FileReaderLoader::ReadAsBinaryString, es);
 }
 
-void FileReader::readAsText(Blob* blob, const String& encoding, ExceptionCode& ec)
+void FileReader::readAsText(Blob* blob, const String& encoding, ExceptionState& es)
 {
     if (!blob)
         return;
@@ -126,29 +126,29 @@ void FileReader::readAsText(Blob* blob, const String& encoding, ExceptionCode& e
     LOG(FileAPI, "FileReader: reading as text: %s %s\n", utf8BlobURL(blob).data(), utf8FilePath(blob).data());
 
     m_encoding = encoding;
-    readInternal(blob, FileReaderLoader::ReadAsText, ec);
+    readInternal(blob, FileReaderLoader::ReadAsText, es);
 }
 
-void FileReader::readAsText(Blob* blob, ExceptionCode& ec)
+void FileReader::readAsText(Blob* blob, ExceptionState& es)
 {
-    readAsText(blob, String(), ec);
+    readAsText(blob, String(), es);
 }
 
-void FileReader::readAsDataURL(Blob* blob, ExceptionCode& ec)
+void FileReader::readAsDataURL(Blob* blob, ExceptionState& es)
 {
     if (!blob)
         return;
 
     LOG(FileAPI, "FileReader: reading as data URL: %s %s\n", utf8BlobURL(blob).data(), utf8FilePath(blob).data());
 
-    readInternal(blob, FileReaderLoader::ReadAsDataURL, ec);
+    readInternal(blob, FileReaderLoader::ReadAsDataURL, es);
 }
 
-void FileReader::readInternal(Blob* blob, FileReaderLoader::ReadType type, ExceptionCode& ec)
+void FileReader::readInternal(Blob* blob, FileReaderLoader::ReadType type, ExceptionState& es)
 {
-    // If multiple concurrent read methods are called on the same FileReader, INVALID_STATE_ERR should be thrown when the state is LOADING.
+    // If multiple concurrent read methods are called on the same FileReader, InvalidStateError should be thrown when the state is LOADING.
     if (m_state == LOADING) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
 
@@ -157,12 +157,13 @@ void FileReader::readInternal(Blob* blob, FileReaderLoader::ReadType type, Excep
     m_blob = blob;
     m_readType = type;
     m_state = LOADING;
+    m_loadingState = LoadingStateLoading;
     m_error = 0;
 
     m_loader = adoptPtr(new FileReaderLoader(m_readType, this));
     m_loader->setEncoding(m_encoding);
     m_loader->setDataType(m_blob->type());
-    m_loader->start(scriptExecutionContext(), m_blob.get());
+    m_loader->start(scriptExecutionContext(), *m_blob);
 }
 
 static void delayedAbort(ScriptExecutionContext*, FileReader* reader)
@@ -174,9 +175,9 @@ void FileReader::abort()
 {
     LOG(FileAPI, "FileReader: aborting\n");
 
-    if (m_aborting || m_state != LOADING)
+    if (m_loadingState != LoadingStateLoading)
         return;
-    m_aborting = true;
+    m_loadingState = LoadingStateAborted;
 
     // Schedule to have the abort done later since abort() might be called from the event handler and we do not want the resource loading code to be in the stack.
     scriptExecutionContext()->postTask(
@@ -188,7 +189,6 @@ void FileReader::doAbort()
     ASSERT(m_state != DONE);
 
     terminate();
-    m_aborting = false;
 
     m_error = FileError::create(FileError::ABORT_ERR);
 
@@ -207,6 +207,7 @@ void FileReader::terminate()
         m_loader = nullptr;
     }
     m_state = DONE;
+    m_loadingState = LoadingStateNone;
 }
 
 void FileReader::didStartLoading()
@@ -228,8 +229,10 @@ void FileReader::didReceiveData()
 
 void FileReader::didFinishLoading()
 {
-    if (m_aborting)
+    if (m_loadingState == LoadingStateAborted)
         return;
+    ASSERT(m_loadingState == LoadingStateLoading);
+    m_loadingState = LoadingStateNone;
 
     ASSERT(m_state != DONE);
     m_state = DONE;
@@ -237,16 +240,17 @@ void FileReader::didFinishLoading()
     fireEvent(eventNames().progressEvent);
     fireEvent(eventNames().loadEvent);
     fireEvent(eventNames().loadendEvent);
-    
+
     // All possible events have fired and we're done, no more pending activity.
     unsetPendingActivity(this);
 }
 
-void FileReader::didFail(int errorCode)
+void FileReader::didFail(FileError::ErrorCode errorCode)
 {
-    // If we're aborting, do not proceed with normal error handling since it is covered in aborting code.
-    if (m_aborting)
+    if (m_loadingState == LoadingStateAborted)
         return;
+    ASSERT(m_loadingState == LoadingStateLoading);
+    m_loadingState = LoadingStateNone;
 
     ASSERT(m_state != DONE);
     m_state = DONE;
@@ -254,7 +258,7 @@ void FileReader::didFail(int errorCode)
     m_error = FileError::create(static_cast<FileError::ErrorCode>(errorCode));
     fireEvent(eventNames().errorEvent);
     fireEvent(eventNames().loadendEvent);
-    
+
     // All possible events have fired and we're done, no more pending activity.
     unsetPendingActivity(this);
 }

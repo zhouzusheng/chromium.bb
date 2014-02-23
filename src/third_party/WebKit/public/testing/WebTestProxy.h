@@ -38,6 +38,7 @@
 #include "public/platform/WebURLRequest.h"
 #include "public/web/WebAccessibilityNotification.h"
 #include "public/web/WebDOMMessageEvent.h"
+#include "public/web/WebDataSource.h"
 #include "public/web/WebDragOperation.h"
 #include "public/web/WebEditingAction.h"
 #include "public/web/WebIconURL.h"
@@ -52,6 +53,7 @@
 
 namespace WebKit {
 class WebAccessibilityObject;
+class WebAudioDevice;
 class WebCachedURLRequest;
 class WebColorChooser;
 class WebColorChooserClient;
@@ -63,8 +65,8 @@ class WebFrame;
 class WebGeolocationClient;
 class WebGeolocationClientMock;
 class WebImage;
-class WebMediaPlayer;
-class WebMediaPlayerClient;
+class WebMIDIAccessor;
+class WebMIDIAccessorClient;
 class WebNode;
 class WebNotificationPresenter;
 class WebPlugin;
@@ -170,7 +172,6 @@ protected:
     void didStopLoading();
     void showContextMenu(WebKit::WebFrame*, const WebKit::WebContextMenuData&);
     WebKit::WebUserMediaClient* userMediaClient();
-    WebKit::WebMediaPlayer* createMediaPlayer(WebKit::WebFrame*, const WebKit::WebURL&, WebKit::WebMediaPlayerClient*);
     void printPage(WebKit::WebFrame*);
     WebKit::WebNotificationPresenter* notificationPresenter();
     WebKit::WebGeolocationClient* geolocationClient();
@@ -189,8 +190,6 @@ protected:
     bool runModalPromptDialog(WebKit::WebFrame*, const WebKit::WebString& message, const WebKit::WebString& defaultValue, WebKit::WebString* actualValue);
     bool runModalBeforeUnloadDialog(WebKit::WebFrame*, const WebKit::WebString&);
 
-    void willPerformClientRedirect(WebKit::WebFrame*, const WebKit::WebURL& from, const WebKit::WebURL& to, double interval, double fire_time);
-    void didCancelClientRedirect(WebKit::WebFrame*);
     void didStartProvisionalLoad(WebKit::WebFrame*);
     void didReceiveServerRedirectForProvisionalLoad(WebKit::WebFrame*);
     bool didFailProvisionalLoad(WebKit::WebFrame*, const WebKit::WebURLError&);
@@ -202,19 +201,15 @@ protected:
     void didFailLoad(WebKit::WebFrame*, const WebKit::WebURLError&);
     void didFinishLoad(WebKit::WebFrame*);
     void didChangeLocationWithinPage(WebKit::WebFrame*);
-    void didDisplayInsecureContent(WebKit::WebFrame*);
-    void didRunInsecureContent(WebKit::WebFrame*, const WebKit::WebSecurityOrigin&, const WebKit::WebURL& insecureURL);
     void didDetectXSS(WebKit::WebFrame*, const WebKit::WebURL& insecureURL, bool didBlockEntirePage);
+    void didDispatchPingLoader(WebKit::WebFrame*, const WebKit::WebURL&);
     void willRequestResource(WebKit::WebFrame*, const WebKit::WebCachedURLRequest&);
-    WebKit::WebURLError cannotHandleRequestError(WebKit::WebFrame*, const WebKit::WebURLRequest&);
     void didCreateDataSource(WebKit::WebFrame*, WebKit::WebDataSource*);
     void willSendRequest(WebKit::WebFrame*, unsigned identifier, WebKit::WebURLRequest&, const WebKit::WebURLResponse& redirectResponse);
     void didReceiveResponse(WebKit::WebFrame*, unsigned identifier, const WebKit::WebURLResponse&);
     void didChangeResourcePriority(WebKit::WebFrame*, unsigned identifier, const WebKit::WebURLRequest::Priority&);
     void didFinishResourceLoad(WebKit::WebFrame*, unsigned identifier);
-    void didFailResourceLoad(WebKit::WebFrame*, unsigned identifier, const WebKit::WebURLError&);
-    void unableToImplementPolicyWithError(WebKit::WebFrame*, const WebKit::WebURLError&);
-    WebKit::WebNavigationPolicy decidePolicyForNavigation(WebKit::WebFrame*, const WebKit::WebURLRequest&, WebKit::WebNavigationType, WebKit::WebNavigationPolicy defaultPolicy, bool isRedirect);
+    WebKit::WebNavigationPolicy decidePolicyForNavigation(WebKit::WebFrame*, WebKit::WebDataSource::ExtraData*, const WebKit::WebURLRequest&, WebKit::WebNavigationType, WebKit::WebNavigationPolicy defaultPolicy, bool isRedirect);
     bool willCheckAndDispatchMessageEvent(WebKit::WebFrame* sourceFrame, WebKit::WebFrame* targetFrame, WebKit::WebSecurityOrigin target, WebKit::WebDOMMessageEvent);
     void resetInputMethod();
 
@@ -378,13 +373,6 @@ public:
             return 0;
         return Base::createView(creator, request, features, frameName, policy);
     }
-    WebKit::WebPlugin* createPlugin(WebKit::WebFrame* frame, const WebKit::WebPluginParams& params)
-    {
-        WebKit::WebPlugin* plugin = WebTestProxyBase::createPlugin(frame, params);
-        if (plugin)
-            return plugin;
-        return Base::createPlugin(frame, params);
-    }
     virtual void setStatusText(const WebKit::WebString& text)
     {
         WebTestProxyBase::setStatusText(text);
@@ -403,10 +391,6 @@ public:
     virtual WebKit::WebUserMediaClient* userMediaClient()
     {
         return WebTestProxyBase::userMediaClient();
-    }
-    virtual WebKit::WebMediaPlayer* createMediaPlayer(WebKit::WebFrame* frame, const WebKit::WebURL& url, WebKit::WebMediaPlayerClient* client)
-    {
-        return WebTestProxyBase::createMediaPlayer(frame, url, client);
     }
     virtual void printPage(WebKit::WebFrame* frame)
     {
@@ -464,17 +448,6 @@ public:
         WebTestProxyBase::resetInputMethod();
     }
 
-    // WebFrameClient implementation.
-    virtual void willPerformClientRedirect(WebKit::WebFrame* frame, const WebKit::WebURL& from, const WebKit::WebURL& to, double interval, double fireTime)
-    {
-        WebTestProxyBase::willPerformClientRedirect(frame, from, to, interval, fireTime);
-        Base::willPerformClientRedirect(frame, from, to, interval, fireTime);
-    }
-    virtual void didCancelClientRedirect(WebKit::WebFrame* frame)
-    {
-        WebTestProxyBase::didCancelClientRedirect(frame);
-        Base::didCancelClientRedirect(frame);
-    }
     virtual void didStartProvisionalLoad(WebKit::WebFrame* frame)
     {
         WebTestProxyBase::didStartProvisionalLoad(frame);
@@ -528,21 +501,6 @@ public:
         WebTestProxyBase::didFinishLoad(frame);
         Base::didFinishLoad(frame);
     }
-    virtual void didChangeLocationWithinPage(WebKit::WebFrame* frame)
-    {
-        WebTestProxyBase::didChangeLocationWithinPage(frame);
-        Base::didChangeLocationWithinPage(frame);
-    }
-    virtual void didDisplayInsecureContent(WebKit::WebFrame* frame)
-    {
-        WebTestProxyBase::didDisplayInsecureContent(frame);
-        Base::didDisplayInsecureContent(frame);
-    }
-    virtual void didRunInsecureContent(WebKit::WebFrame* frame, const WebKit::WebSecurityOrigin& origin, const WebKit::WebURL& insecureURL)
-    {
-        WebTestProxyBase::didRunInsecureContent(frame, origin, insecureURL);
-        Base::didRunInsecureContent(frame, origin, insecureURL);
-    }
     virtual void didDetectXSS(WebKit::WebFrame* frame, const WebKit::WebURL& insecureURL, bool didBlockEntirePage)
     {
         WebTestProxyBase::didDetectXSS(frame, insecureURL, didBlockEntirePage);
@@ -552,10 +510,6 @@ public:
     {
         WebTestProxyBase::willRequestResource(frame, request);
         Base::willRequestResource(frame, request);
-    }
-    virtual WebKit::WebURLError cannotHandleRequestError(WebKit::WebFrame* frame, const WebKit::WebURLRequest& request)
-    {
-        return WebTestProxyBase::cannotHandleRequestError(frame, request);
     }
     virtual void didCreateDataSource(WebKit::WebFrame* frame, WebKit::WebDataSource* ds)
     {
@@ -582,16 +536,6 @@ public:
         WebTestProxyBase::didFinishResourceLoad(frame, identifier);
         Base::didFinishResourceLoad(frame, identifier);
     }
-    virtual void didFailResourceLoad(WebKit::WebFrame* frame, unsigned identifier, const WebKit::WebURLError& error)
-    {
-        WebTestProxyBase::didFailResourceLoad(frame, identifier, error);
-        Base::didFailResourceLoad(frame, identifier, error);
-    }
-    virtual void unableToImplementPolicyWithError(WebKit::WebFrame* frame, const WebKit::WebURLError& error)
-    {
-        WebTestProxyBase::unableToImplementPolicyWithError(frame, error);
-        Base::unableToImplementPolicyWithError(frame, error);
-    }
     virtual void didAddMessageToConsole(const WebKit::WebConsoleMessage& message, const WebKit::WebString& sourceName, unsigned sourceLine)
     {
         WebTestProxyBase::didAddMessageToConsole(message, sourceName, sourceLine);
@@ -616,12 +560,12 @@ public:
     {
         return WebTestProxyBase::runModalBeforeUnloadDialog(frame, message);
     }
-    virtual WebKit::WebNavigationPolicy decidePolicyForNavigation(WebKit::WebFrame* frame, const WebKit::WebURLRequest& request, WebKit::WebNavigationType type, WebKit::WebNavigationPolicy defaultPolicy, bool isRedirect)
+    virtual WebKit::WebNavigationPolicy decidePolicyForNavigation(WebKit::WebFrame* frame, WebKit::WebDataSource::ExtraData* extraData, const WebKit::WebURLRequest& request, WebKit::WebNavigationType type, WebKit::WebNavigationPolicy defaultPolicy, bool isRedirect)
     {
-        WebKit::WebNavigationPolicy policy = WebTestProxyBase::decidePolicyForNavigation(frame, request, type, defaultPolicy, isRedirect);
+        WebKit::WebNavigationPolicy policy = WebTestProxyBase::decidePolicyForNavigation(frame, extraData, request, type, defaultPolicy, isRedirect);
         if (policy == WebKit::WebNavigationPolicyIgnore)
             return policy;
-        return Base::decidePolicyForNavigation(frame, request, type, defaultPolicy, isRedirect);
+        return Base::decidePolicyForNavigation(frame, extraData, request, type, defaultPolicy, isRedirect);
     }
     virtual bool willCheckAndDispatchMessageEvent(WebKit::WebFrame* sourceFrame, WebKit::WebFrame* targetFrame, WebKit::WebSecurityOrigin target, WebKit::WebDOMMessageEvent event)
     {

@@ -13,7 +13,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
-#include "base/process_util.h"
+#include "base/process/kill.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/site_instance_impl.h"
@@ -63,7 +63,6 @@ namespace content {
 
 class ChildProcessSecurityPolicyImpl;
 class PageState;
-class PowerSaveBlocker;
 class RenderFrameHostImpl;
 class RenderViewHostObserver;
 class RenderWidgetHostDelegate;
@@ -124,8 +123,7 @@ class CONTENT_EXPORT RenderViewHostImpl
       RenderWidgetHostDelegate* widget_delegate,
       int routing_id,
       int main_frame_routing_id,
-      bool swapped_out,
-      SessionStorageNamespace* session_storage_namespace);
+      bool swapped_out);
   virtual ~RenderViewHostImpl();
 
   // RenderViewHost implementation.
@@ -153,7 +151,7 @@ class CONTENT_EXPORT RenderViewHostImpl
       int client_x, int client_y, int screen_x, int screen_y) OVERRIDE;
   virtual void DragSourceSystemDragEnded() OVERRIDE;
   virtual void DragTargetDragEnter(
-      const WebDropData& drop_data,
+      const DropData& drop_data,
       const gfx::Point& client_pt,
       const gfx::Point& screen_pt,
       WebKit::WebDragOperationsMask operations_allowed,
@@ -192,7 +190,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   virtual void FirePageBeforeUnload(bool for_cross_site_transition) OVERRIDE;
   virtual void FilesSelectedInChooser(
       const std::vector<ui::SelectedFileInfo>& files,
-      int permissions) OVERRIDE;
+      FileChooserParams::Mode permissions) OVERRIDE;
   virtual RenderViewHostDelegate* GetDelegate() const OVERRIDE;
   virtual int GetEnabledBindings() const OVERRIDE;
   virtual SiteInstance* GetSiteInstance() const OVERRIDE;
@@ -491,7 +489,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnShowFullscreenWidget(int route_id);
   void OnRunModal(int opener_id, IPC::Message* reply_msg);
   void OnRenderViewReady();
-  void OnRenderViewGone(int status, int error_code);
+  void OnRenderProcessGone(int status, int error_code);
   void OnDidStartProvisionalLoadForFrame(int64 frame_id,
                                          int64 parent_frame_id,
                                          bool main_frame,
@@ -543,7 +541,7 @@ class CONTENT_EXPORT RenderViewHostImpl
                                 const string16& message,
                                 bool is_reload,
                                 IPC::Message* reply_msg);
-  void OnStartDragging(const WebDropData& drop_data,
+  void OnStartDragging(const DropData& drop_data,
                        WebKit::WebDragOperationsMask operations_allowed,
                        const SkBitmap& bitmap,
                        const gfx::Vector2d& bitmap_offset_in_dip,
@@ -568,10 +566,6 @@ class CONTENT_EXPORT RenderViewHostImpl
       const std::vector<AccessibilityHostMsg_NotificationParams>& params);
   void OnScriptEvalResponse(int id, const base::ListValue& result);
   void OnDidZoomURL(double zoom_level, bool remember, const GURL& url);
-  void OnMediaNotification(int64 player_cookie,
-                           bool has_video,
-                           bool has_audio,
-                           bool is_playing);
   void OnRequestDesktopNotificationPermission(const GURL& origin,
                                               int callback_id);
   void OnShowDesktopNotification(
@@ -594,8 +588,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   // Sets whether this RenderViewHost is swapped out in favor of another,
   // and clears any waiting state that is no longer relevant.
   void SetSwappedOut(bool is_swapped_out);
-
-  void ClearPowerSaveBlockers();
 
   bool CanAccessFilesOfPageState(const PageState& state) const;
 
@@ -648,8 +640,8 @@ class CONTENT_EXPORT RenderViewHostImpl
   bool is_subframe_;
 
   // The frame id of the main (top level) frame. This value is set on the
-  // initial navigation of a RenderView and reset when the RenderView is
-  // terminated (in RenderViewGone).
+  // initial navigation of a RenderView and reset when the RenderView's
+  // process is terminated (in RenderProcessGone).
   int64 main_frame_id_;
 
   // If we were asked to RunModal, then this will hold the reply_msg that we
@@ -695,16 +687,8 @@ class CONTENT_EXPORT RenderViewHostImpl
   // True if the render view can be shut down suddenly.
   bool sudden_termination_allowed_;
 
-  // The session storage namespace to be used by the associated render view.
-  scoped_refptr<SessionStorageNamespaceImpl> session_storage_namespace_;
-
   // The termination status of the last render view that terminated.
   base::TerminationStatus render_view_termination_status_;
-
-  // Holds PowerSaveBlockers for the media players in use. Key is the
-  // player_cookie passed to OnMediaNotification, value is the PowerSaveBlocker.
-  typedef std::map<int64, PowerSaveBlocker*> PowerSaveBlockerMap;
-  PowerSaveBlockerMap power_save_blockers_;
 
   // A list of observers that filter messages.  Weak references.
   ObserverList<RenderViewHostObserver> observers_;

@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -48,8 +48,8 @@ bool RenderHTMLCanvas::requiresLayer() const
 {
     if (RenderReplaced::requiresLayer())
         return true;
-    
-    HTMLCanvasElement* canvas = static_cast<HTMLCanvasElement*>(node());
+
+    HTMLCanvasElement* canvas = toHTMLCanvasElement(node());
     return canvas && canvas->renderingContext() && canvas->renderingContext()->isAccelerated();
 }
 
@@ -66,12 +66,12 @@ void RenderHTMLCanvas::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& pa
     }
 
     bool useLowQualityScale = style()->imageRendering() == ImageRenderingOptimizeContrast;
-    static_cast<HTMLCanvasElement*>(node())->paint(paintInfo.context, rect, useLowQualityScale);
+    toHTMLCanvasElement(node())->paint(paintInfo.context, rect, useLowQualityScale);
 }
 
 void RenderHTMLCanvas::canvasSizeChanged()
 {
-    IntSize canvasSize = static_cast<HTMLCanvasElement*>(node())->size();
+    IntSize canvasSize = toHTMLCanvasElement(node())->size();
     LayoutSize zoomedSize(canvasSize.width() * style()->effectiveZoom(), canvasSize.height() * style()->effectiveZoom());
 
     if (zoomedSize == intrinsicSize())
@@ -92,7 +92,7 @@ void RenderHTMLCanvas::canvasSizeChanged()
         return;
 
     if (!selfNeedsLayout())
-        setNeedsLayout(true);
+        setNeedsLayout();
 }
 
 } // namespace WebCore

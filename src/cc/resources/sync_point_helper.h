@@ -20,10 +20,18 @@ class CC_EXPORT SyncPointHelper {
   // If the |context3d| is destroyed or lost before the callback fires, then
   // AbortBecauseDidLoseOrDestroyContext() must be called to clean up the
   // callback's resources.
-  static void SignalSyncPoint(
-      WebKit::WebGraphicsContext3D* context3d,
-      unsigned sync_point,
-      const base::Closure& closure);
+  static void SignalSyncPoint(WebKit::WebGraphicsContext3D* context3d,
+                              unsigned sync_point,
+                              const base::Closure& closure);
+
+  // Requests a callback to |closure| when the results for |query| is available.
+  //
+  // If the |context3d| is destroyed or lost before the callback fires, then
+  // AbortBecauseDidLoseOrDestroyContext() must be called to clean up the
+  // callback's resources.
+  static void SignalQuery(WebKit::WebGraphicsContext3D* context3d,
+                          unsigned int query,
+                          const base::Closure& closure);
 
  private:
   SyncPointHelper();

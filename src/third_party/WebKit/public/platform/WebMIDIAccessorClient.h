@@ -40,8 +40,7 @@ public:
     virtual void didAddInputPort(const WebString& id, const WebString& manufacturer, const WebString& name, const WebString& version) = 0;
     virtual void didAddOutputPort(const WebString& id, const WebString& manufacturer, const WebString& name, const WebString& version) = 0;
 
-    virtual void didAllowAccess() = 0;
-    virtual void didBlockAccess() = 0;
+    virtual void didStartSession() = 0;
 
     // |timeStamp| is in milliseconds according to the Web MIDI API.
     virtual void didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp) = 0;

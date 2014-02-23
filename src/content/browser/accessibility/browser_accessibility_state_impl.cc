@@ -6,7 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
@@ -129,7 +129,10 @@ void BrowserAccessibilityStateImpl::SetAccessibilityMode(
     return;
   accessibility_mode_ = mode;
 
-  RenderWidgetHost::List widgets = RenderWidgetHost::GetRenderWidgetHosts();
+  // Iterate over all RenderWidgetHosts, even swapped out ones in case
+  // they become active again.
+  RenderWidgetHost::List widgets =
+      RenderWidgetHostImpl::GetAllRenderWidgetHosts();
   for (size_t i = 0; i < widgets.size(); ++i) {
     // Ignore processes that don't have a connection, such as crashed tabs.
     if (!widgets[i]->GetProcess()->HasConnection())

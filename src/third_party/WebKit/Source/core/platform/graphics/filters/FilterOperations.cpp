@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -60,13 +60,13 @@ bool FilterOperations::operator==(const FilterOperations& o) const
 {
     if (m_operations.size() != o.m_operations.size())
         return false;
-        
+
     unsigned s = m_operations.size();
     for (unsigned i = 0; i < s; i++) {
         if (*m_operations[i] != *o.m_operations[i])
             return false;
     }
-    
+
     return true;
 }
 
@@ -76,7 +76,7 @@ bool FilterOperations::operationsMatch(const FilterOperations& other) const
     // If the sizes of the function lists don't match, the lists don't match
     if (numOperations != other.operations().size())
         return false;
-    
+
     // If the types of each function are not the same, the lists don't match
     for (size_t i = 0; i < numOperations; ++i) {
         if (!operations()[i]->isSameType(*other.operations()[i]))
@@ -142,9 +142,9 @@ FilterOutsets FilterOperations::outsets() const
         }
         case FilterOperation::REFERENCE: {
             ReferenceFilterOperation* referenceOperation = static_cast<ReferenceFilterOperation*>(filterOperation);
-            if (referenceOperation->filterEffect()) {
+            if (referenceOperation->filter() && referenceOperation->filter()->lastEffect()) {
                 FloatRect outsetRect(0, 0, 1, 1);
-                outsetRect = referenceOperation->filterEffect()->mapRectRecursive(outsetRect);
+                outsetRect = referenceOperation->filter()->lastEffect()->mapRectRecursive(outsetRect);
                 FilterOutsets outsets(
                     std::max(0.0f, -outsetRect.y()),
                     std::max(0.0f, outsetRect.x() + outsetRect.width() - 1),

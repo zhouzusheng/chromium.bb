@@ -27,7 +27,7 @@
 #ifndef ResourceError_h
 #define ResourceError_h
 
-#include <wtf/text/WTFString.h>
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -35,6 +35,8 @@ extern const char* const errorDomainWebKitInternal; // Used for errors that won'
 
 class ResourceError {
 public:
+    static ResourceError cancelledError(const String& failingURL);
+
     ResourceError()
         : m_errorCode(0)
         , m_isNull(true)

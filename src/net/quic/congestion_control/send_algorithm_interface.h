@@ -69,7 +69,8 @@ class NET_EXPORT_PRIVATE SendAlgorithmInterface {
   virtual QuicTime::Delta TimeUntilSend(
       QuicTime now,
       Retransmission is_retransmission,
-      HasRetransmittableData has_retransmittable_data) = 0;
+      HasRetransmittableData has_retransmittable_data,
+      IsHandshake handshake) = 0;
 
   // What's the current estimated bandwidth in bytes per second.
   // Returns 0 when it does not have an estimate.
@@ -77,6 +78,11 @@ class NET_EXPORT_PRIVATE SendAlgorithmInterface {
 
   // TODO(satyamshekhar): Monitor MinRtt.
   virtual QuicTime::Delta SmoothedRtt() = 0;
+
+  // Get the send algorithm specific retransmission delay, called RTO in TCP,
+  // Note 1: the caller is responsible for sanity checking this value.
+  // Note 2: this will return zero if we don't have enough data for an estimate.
+  virtual QuicTime::Delta RetransmissionDelay() = 0;
 };
 
 }  // namespace net

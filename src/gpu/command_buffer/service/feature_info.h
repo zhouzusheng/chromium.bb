@@ -27,6 +27,9 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     FeatureFlags();
 
     bool chromium_framebuffer_multisample;
+    bool multisampled_render_to_texture;
+    // Use the IMG GLenum values and functions rather than EXT.
+    bool use_img_for_multisampled_render_to_texture;
     bool oes_standard_derivatives;
     bool oes_egl_image_external;
     bool npot_ok;
@@ -45,6 +48,7 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     bool enable_samplers;
     bool ext_draw_buffers;
     bool ext_frag_depth;
+    bool use_async_readpixels;
   };
 
   struct Workarounds {

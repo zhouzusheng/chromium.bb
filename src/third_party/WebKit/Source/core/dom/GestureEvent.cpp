@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/dom/Element.h"
 #include "core/dom/GestureEvent.h"
-#include <wtf/text/AtomicString.h>
+#include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
@@ -84,8 +84,10 @@ void GestureEvent::initGestureEvent(const AtomicString& type, PassRefPtr<Abstrac
 
 const AtomicString& GestureEvent::interfaceName() const
 {
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("TBDInterface"));
-    return name;
+    // FIXME: when a GestureEvent.idl interface is defined, return the string "GestureEvent".
+    // Until that happens, do not advertise an interface that does not exist, since it will
+    // trip up the bindings integrity checks.
+    return UIEvent::interfaceName();
 }
 
 GestureEvent::GestureEvent()

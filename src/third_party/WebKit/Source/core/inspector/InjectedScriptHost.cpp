@@ -39,10 +39,8 @@
 #include "core/inspector/InspectorDebuggerAgent.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/platform/JSONValues.h"
-#include "core/platform/Pasteboard.h"
 
 #include "wtf/RefPtr.h"
-#include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
 
 using namespace std;
@@ -91,11 +89,6 @@ void InjectedScriptHost::clearConsoleMessages()
         ErrorString error;
         consoleAgent->clearMessages(&error);
     }
-}
-
-void InjectedScriptHost::copyText(const String& text)
-{
-    Pasteboard::generalPasteboard()->writePlainText(text, Pasteboard::CannotSmartReplace);
 }
 
 ScriptValue InjectedScriptHost::InspectableObject::get(ScriptState*)

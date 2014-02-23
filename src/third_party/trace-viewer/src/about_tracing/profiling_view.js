@@ -8,7 +8,9 @@
  * @fileoverview ProfilingView glues the View control to
  * TracingController.
  */
+base.requireStylesheet('ui.trace_viewer');
 base.requireStylesheet('about_tracing.profiling_view');
+base.requireStylesheet('ui.trace_viewer');
 base.require('about_tracing.tracing_controller');
 base.require('tracing.timeline_view');
 base.require('tracing.record_selection_dialog');
@@ -63,50 +65,37 @@ base.exportTo('about_tracing', function() {
       this.timelineView_.leftControls.appendChild(this.loadBn_);
       this.appendChild(this.timelineView_);
 
-      this.onKeypressBoundToThis_ = this.onKeypress_.bind(this);
-      document.addEventListener('keypress', this.onKeypressBoundToThis_);
+      this.onKeypress_ = this.onKeypress_.bind(this);
+      document.addEventListener('keypress', this.onKeypress_);
 
-      this.onCategoriesCollectedBoundToThis_ =
-          this.onCategoriesCollected_.bind(this);
-      this.onTraceEndedBoundToThis_ = this.onTraceEnded_.bind(this);
+      this.onCategoriesCollected_ = this.onCategoriesCollected_.bind(this);
+      this.onTraceEnded_ = this.onTraceEnded_.bind(this);
 
-      this.dropHandlerBoundToThis_ = this.dropHandler_.bind(this);
-      this.ignoreHandlerBoundToThis_ = this.ignoreHandler_.bind(this);
-      document.addEventListener(
-          'dragstart', this.ignoreHandlerBoundToThis_, false);
-      document.addEventListener(
-          'dragend', this.ignoreHandlerBoundToThis_, false);
-      document.addEventListener(
-          'dragenter', this.ignoreHandlerBoundToThis_, false);
-      document.addEventListener(
-          'dragleave', this.ignoreHandlerBoundToThis_, false);
-      document.addEventListener(
-          'dragover', this.ignoreHandlerBoundToThis_, false);
-      document.addEventListener(
-          'drop', this.dropHandlerBoundToThis_, false);
+      this.dropHandler_ = this.dropHandler_.bind(this);
+      this.ignoreHandler_ = this.ignoreHandler_.bind(this);
+      document.addEventListener('dragstart', this.ignoreHandler_, false);
+      document.addEventListener('dragend', this.ignoreHandler_, false);
+      document.addEventListener('dragenter', this.ignoreHandler_, false);
+      document.addEventListener('dragleave', this.ignoreHandler_, false);
+      document.addEventListener('dragover', this.ignoreHandler_, false);
+      document.addEventListener('drop', this.dropHandler_, false);
 
       this.selectingCategories = false;
 
-      this.refresh_();
+      this.addEventListener('tracingControllerChange',
+          this.refresh_.bind(this), true);
     },
 
     // Detach all document event listeners. Without this the tests can get
     // confused as the element may still be listening when the next test runs.
     detach_: function() {
-      document.removeEventListener('keypress', this.onKeypressBoundToThis_);
-      document.removeEventListener('dragstart', this.ignoreHandlerBoundToThis_);
-      document.removeEventListener('dragend', this.ignoreHandlerBoundToThis_);
-      document.removeEventListener('dragenter', this.ignoreHandlerBoundToThis_);
-      document.removeEventListener('dragleave', this.ignoreHandlerBoundToThis_);
-      document.removeEventListener('dragover', this.ignoreHandlerBoundToThis_);
-      document.removeEventListener('drop', this.dropHandlerBoundToThis_);
-    },
-
-    didSetTracingController_: function(value, oldValue) {
-      if (oldValue)
-        throw new Error('Can only set tracing controller once.');
-
-      this.refresh_();
+      document.removeEventListener('keypress', this.onKeypress_);
+      document.removeEventListener('dragstart', this.ignoreHandler_);
+      document.removeEventListener('dragend', this.ignoreHandler_);
+      document.removeEventListener('dragenter', this.ignoreHandler_);
+      document.removeEventListener('dragleave', this.ignoreHandler_);
+      document.removeEventListener('dragover', this.ignoreHandler_);
+      document.removeEventListener('drop', this.dropHandler_);
     },
 
     refresh_: function() {
@@ -162,14 +151,23 @@ base.exportTo('about_tracing', function() {
       return this.timelineView_;
     },
 
+    get tracingController() {
+      return this.tracingController_;
+    },
+
+    set tracingController(newValue) {
+      if (this.tracingController_)
+        throw new Error('Can only set tracing controller once.');
+      base.setPropertyAndDispatchChange(this, 'tracingController', newValue);
+    },
+
     ///////////////////////////////////////////////////////////////////////////
 
     onSelectCategories_: function() {
       this.selectingCategories = true;
       var tc = this.tracingController;
       tc.collectCategories();
-      tc.addEventListener('categoriesCollected',
-                          this.onCategoriesCollectedBoundToThis_);
+      tc.addEventListener('categoriesCollected', this.onCategoriesCollected_);
     },
 
     onCategoriesCollected_: function(event) {
@@ -200,7 +198,7 @@ base.exportTo('about_tracing', function() {
 
       setTimeout(function() {
         tc.removeEventListener('categoriesCollected',
-                               this.onCategoriesCollectedBoundToThis_);
+                               this.onCategoriesCollected_);
       }, 0);
     },
 
@@ -215,9 +213,10 @@ base.exportTo('about_tracing', function() {
       this.timelineView_.viewTitle = '-_-';
       tc.beginTracing(this.recordSelectionDialog_.isSystemTracingEnabled(),
                       this.recordSelectionDialog_.isContinuousTracingEnabled(),
+                      this.recordSelectionDialog_.isSamplingEnabled(),
                       categories);
 
-      tc.addEventListener('traceEnded', this.onTraceEndedBoundToThis_);
+      tc.addEventListener('traceEnded', this.onTraceEnded_);
     },
 
     onTraceEnded_: function() {
@@ -225,7 +224,7 @@ base.exportTo('about_tracing', function() {
       this.timelineView_.viewTitle = '^_^';
       this.refresh_();
       setTimeout(function() {
-        tc.removeEventListener('traceEnded', this.onTraceEndedBoundToThis_);
+        tc.removeEventListener('traceEnded', this.onTraceEnded_);
       }, 0);
     },
 
@@ -325,9 +324,6 @@ base.exportTo('about_tracing', function() {
       return false;
     }
   };
-
-  base.defineProperty(ProfilingView, 'tracingController', base.PropertyKind.JS,
-      ProfilingView.prototype.didSetTracingController_);
 
   return {
     ProfilingView: ProfilingView

@@ -1,10 +1,10 @@
 /*
  * Copyright (C) 2009 Google Inc. All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  *     * Redistributions of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
  *     * Redistributions in binary form must reproduce the above
@@ -14,7 +14,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -44,20 +44,10 @@
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLImageElement.h"
-#include "core/platform/MemoryUsageSupport.h"
 #include "core/platform/chromium/TraceEvent.h"
 #include <algorithm>
 
 namespace WebCore {
-
-inline static ShadowRoot* oldestShadowRootFor(const Node* node)
-{
-    if (!node->isElementNode())
-        return 0;
-    if (ElementShadow* shadow = toElement(node)->shadow())
-        return shadow->oldestShadowRoot();
-    return 0;
-}
 
 // FIXME: This should use opaque GC roots.
 static void addReferencesForNodeWithEventListeners(v8::Isolate* isolate, Node* node, const v8::Persistent<v8::Object>& wrapper)
@@ -88,7 +78,7 @@ Node* V8GCController::opaqueRootForGC(Node* node, v8::Isolate*)
         return node->document();
 
     if (node->isAttributeNode()) {
-        Node* ownerElement = static_cast<Attr*>(node)->ownerElement();
+        Node* ownerElement = toAttr(node)->ownerElement();
         if (!ownerElement)
             return node;
         node = ownerElement;
@@ -180,14 +170,14 @@ private:
                 node->setV8CollectableDuringMinorGC(false);
                 newSpaceNodes->append(node);
             }
-            if (node->isShadowRoot()) {
-                if (ShadowRoot* youngerShadowRoot = toShadowRoot(node)->youngerShadowRoot()) {
-                    if (!traverseTree(youngerShadowRoot, newSpaceNodes))
+            if (ShadowRoot* shadowRoot = node->youngestShadowRoot()) {
+                if (!traverseTree(shadowRoot, newSpaceNodes))
+                    return false;
+            } else if (node->isShadowRoot()) {
+                if (ShadowRoot* shadowRoot = toShadowRoot(node)->olderShadowRoot()) {
+                    if (!traverseTree(shadowRoot, newSpaceNodes))
                         return false;
                 }
-            } else if (ShadowRoot* oldestShadowRoot = oldestShadowRootFor(node)) {
-                if (!traverseTree(oldestShadowRoot, newSpaceNodes))
-                    return false;
             }
         }
         return true;
@@ -338,102 +328,75 @@ private:
 
 void V8GCController::gcPrologue(v8::GCType type, v8::GCCallbackFlags flags)
 {
-    // It would be nice if the GC callbacks passed the Isolate directly....
+    // FIXME: It would be nice if the GC callbacks passed the Isolate directly....
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
     if (type == v8::kGCTypeScavenge)
-        minorGCPrologue(v8::Isolate::GetCurrent());
+        minorGCPrologue(isolate);
     else if (type == v8::kGCTypeMarkSweepCompact)
-        majorGCPrologue(flags & v8::kGCCallbackFlagConstructRetainedObjectInfos);
+        majorGCPrologue(flags & v8::kGCCallbackFlagConstructRetainedObjectInfos, isolate);
 }
 
 void V8GCController::minorGCPrologue(v8::Isolate* isolate)
 {
     TRACE_EVENT_BEGIN0("v8", "minorGC");
-    TraceEvent::SamplingState0Scope("V8\0V8MinorGC");
-
     if (isMainThread()) {
-        v8::HandleScope scope;
-
-        MinorGCWrapperVisitor visitor(isolate);
-        v8::V8::VisitHandlesForPartialDependence(isolate, &visitor);
-        visitor.notifyFinished();
+        {
+            TRACE_EVENT_SCOPED_SAMPLING_STATE("Blink", "MinorGC");
+            v8::HandleScope scope(isolate);
+            MinorGCWrapperVisitor visitor(isolate);
+            v8::V8::VisitHandlesForPartialDependence(isolate, &visitor);
+            visitor.notifyFinished();
+        }
+        V8PerIsolateData::from(isolate)->setPreviousSamplingState(TRACE_EVENT_GET_SAMPLING_STATE());
+        TRACE_EVENT_SET_SAMPLING_STATE("V8", "MinorGC");
     }
 }
 
 // Create object groups for DOM tree nodes.
-void V8GCController::majorGCPrologue(bool constructRetainedObjectInfos)
+void V8GCController::majorGCPrologue(bool constructRetainedObjectInfos, v8::Isolate* isolate)
 {
+    v8::HandleScope scope(isolate);
     TRACE_EVENT_BEGIN0("v8", "majorGC");
-    TraceEvent::SamplingState0Scope("V8\0V8MajorGC");
-
-    v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    v8::HandleScope scope;
-
-    MajorGCWrapperVisitor visitor(isolate, constructRetainedObjectInfos);
-    v8::V8::VisitHandlesWithClassIds(&visitor);
-    visitor.notifyFinished();
-
-    V8PerIsolateData::from(isolate)->stringCache()->clearOnGC();
-}
-
-static int workingSetEstimateMB = 0;
-
-static Mutex& workingSetEstimateMBMutex()
-{
-    AtomicallyInitializedStatic(Mutex&, mutex = *new Mutex);
-    return mutex;
+    if (isMainThread()) {
+        {
+            TRACE_EVENT_SCOPED_SAMPLING_STATE("Blink", "MajorGC");
+            MajorGCWrapperVisitor visitor(isolate, constructRetainedObjectInfos);
+            v8::V8::VisitHandlesWithClassIds(&visitor);
+            visitor.notifyFinished();
+        }
+        V8PerIsolateData::from(isolate)->setPreviousSamplingState(TRACE_EVENT_GET_SAMPLING_STATE());
+        TRACE_EVENT_SET_SAMPLING_STATE("V8", "MajorGC");
+    } else {
+        MajorGCWrapperVisitor visitor(isolate, constructRetainedObjectInfos);
+        v8::V8::VisitHandlesWithClassIds(&visitor);
+        visitor.notifyFinished();
+    }
 }
 
 void V8GCController::gcEpilogue(v8::GCType type, v8::GCCallbackFlags flags)
 {
+    // FIXME: It would be nice if the GC callbacks passed the Isolate directly....
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
     if (type == v8::kGCTypeScavenge)
-        minorGCEpilogue();
+        minorGCEpilogue(isolate);
     else if (type == v8::kGCTypeMarkSweepCompact)
-        majorGCEpilogue();
+        majorGCEpilogue(isolate);
 }
 
-void V8GCController::minorGCEpilogue()
+void V8GCController::minorGCEpilogue(v8::Isolate* isolate)
 {
-    TRACE_EVENT_END0("v8", "GC");
+    TRACE_EVENT_END0("v8", "minorGC");
+    if (isMainThread())
+        TRACE_EVENT_SET_NONCONST_SAMPLING_STATE(V8PerIsolateData::from(isolate)->previousSamplingState());
 }
 
-void V8GCController::majorGCEpilogue()
+void V8GCController::majorGCEpilogue(v8::Isolate* isolate)
 {
-    v8::HandleScope scope;
+    v8::HandleScope scope(isolate);
 
-    // The GC can happen on multiple threads in case of dedicated workers which run in-process.
-    {
-        MutexLocker locker(workingSetEstimateMBMutex());
-        workingSetEstimateMB = MemoryUsageSupport::actualMemoryUsageMB();
-    }
-
-    TRACE_EVENT_END0("v8", "GC");
-}
-
-void V8GCController::checkMemoryUsage()
-{
-    const int lowMemoryUsageMB = MemoryUsageSupport::lowMemoryUsageMB();
-    const int highMemoryUsageMB = MemoryUsageSupport::highMemoryUsageMB();
-    const int highUsageDeltaMB = MemoryUsageSupport::highUsageDeltaMB();
-    int memoryUsageMB = MemoryUsageSupport::memoryUsageMB();
-    int workingSetEstimateMBCopy;
-    {
-        MutexLocker locker(workingSetEstimateMBMutex());
-        workingSetEstimateMBCopy = workingSetEstimateMB;
-    }
-    if (memoryUsageMB > lowMemoryUsageMB && memoryUsageMB > 2 * workingSetEstimateMBCopy) {
-        // Memory usage is large and doubled since the last GC.
-        // Check if we need to send low memory notification.
-        v8::HeapStatistics heapStatistics;
-        v8::Isolate::GetCurrent()->GetHeapStatistics(&heapStatistics);
-        int heapSizeMB = heapStatistics.total_heap_size() >> 20;
-        // Do not send low memory notification if V8 heap size is more than 7/8
-        // of total memory usage. Let V8 to schedule GC itself in this case.
-        if (heapSizeMB < memoryUsageMB / 8 * 7)
-            v8::V8::LowMemoryNotification();
-    } else if (memoryUsageMB > highMemoryUsageMB && memoryUsageMB > workingSetEstimateMBCopy + highUsageDeltaMB) {
-        // We are approaching OOM and memory usage increased by highUsageDeltaMB since the last GC.
-        v8::V8::LowMemoryNotification();
-    }
+    TRACE_EVENT_END0("v8", "majorGC");
+    if (isMainThread())
+        TRACE_EVENT_SET_NONCONST_SAMPLING_STATE(V8PerIsolateData::from(isolate)->previousSamplingState());
 }
 
 void V8GCController::hintForCollectGarbage()

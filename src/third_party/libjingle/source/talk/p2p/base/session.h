@@ -140,7 +140,8 @@ class TransportProxy : public sigslot::has_slots<>,
   bool SetupMux(TransportProxy* proxy);
 
   // Simple functions that thunk down to the same functions on Transport.
-  void SetRole(TransportRole role);
+  void SetIceRole(IceRole role);
+  void SetIdentity(talk_base::SSLIdentity* identity);
   bool SetLocalTransportDescription(const TransportDescription& description,
                                     ContentAction action);
   bool SetRemoteTransportDescription(const TransportDescription& description,
@@ -364,13 +365,16 @@ class BaseSession : public sigslot::has_slots<>,
   // Returns stats for all channels of all transports.
   // This avoids exposing the internal structures used to track them.
   virtual bool GetStats(SessionStats* stats);
+
+  talk_base::SSLIdentity* identity() { return identity_; }
+
  protected:
+  // Specifies the identity to use in this session.
+  bool SetIdentity(talk_base::SSLIdentity* identity);
+
   bool PushdownTransportDescription(ContentSource source,
                                     ContentAction action);
   void set_initiator(bool initiator) { initiator_ = initiator; }
-
-  // Specifies the identity to use in this session.
-  void set_identity(talk_base::SSLIdentity* identity) { identity_ = identity; }
 
   const TransportMap& transport_proxies() const { return transports_; }
   // Get a TransportProxy by content_name or transport. NULL if not found.

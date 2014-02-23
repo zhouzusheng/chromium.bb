@@ -18,7 +18,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/stats_table.h"
 #include "base/path_service.h"
-#include "base/process_util.h"
+#include "base/process/launch.h"
+#include "base/process/memory.h"
+#include "base/process/process_handle.h"
 #include "base/profiler/alternate_timer.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -66,7 +68,7 @@
 #elif defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
 #if !defined(OS_IOS)
-#include "base/power_monitor/power_monitor.h"
+#include "base/power_monitor/power_monitor_device_source.h"
 #include "content/browser/mach_broker_mac.h"
 #include "content/common/sandbox_init_mac.h"
 #endif  // !OS_IOS
@@ -165,14 +167,14 @@ namespace content {
 
 base::LazyInstance<ContentBrowserClient>
     g_empty_content_browser_client = LAZY_INSTANCE_INITIALIZER;
-#if !defined(OS_IOS)
+#if !defined(OS_IOS) && !defined(CHROME_MULTIPLE_DLL_BROWSER)
 base::LazyInstance<ContentPluginClient>
     g_empty_content_plugin_client = LAZY_INSTANCE_INITIALIZER;
 base::LazyInstance<ContentRendererClient>
     g_empty_content_renderer_client = LAZY_INSTANCE_INITIALIZER;
 base::LazyInstance<ContentUtilityClient>
     g_empty_content_utility_client = LAZY_INSTANCE_INITIALIZER;
-#endif  // !OS_IOS
+#endif  // !OS_IOS && !CHROME_MULTIPLE_DLL_BROWSER
 
 #if defined(OS_WIN)
 
@@ -292,7 +294,7 @@ class ContentClientInitializer {
         content_client->browser_ = &g_empty_content_browser_client.Get();
     }
 
-#if !defined(OS_IOS)
+#if !defined(OS_IOS) && !defined(CHROME_MULTIPLE_DLL_BROWSER)
     if (process_type == switches::kPluginProcess ||
         process_type == switches::kPpapiPluginProcess) {
       if (delegate)
@@ -307,14 +309,18 @@ class ContentClientInitializer {
         content_client->renderer_ = delegate->CreateContentRendererClient();
       if (!content_client->renderer_)
         content_client->renderer_ = &g_empty_content_renderer_client.Get();
-    } else if (process_type == switches::kUtilityProcess) {
+    }
+
+    if (process_type == switches::kUtilityProcess ||
+        CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kSingleProcess)) {
       if (delegate)
         content_client->utility_ = delegate->CreateContentUtilityClient();
       // TODO(scottmg): http://crbug.com/237249 Should be in _child.
       if (!content_client->utility_)
         content_client->utility_ = &g_empty_content_utility_client.Get();
     }
-#endif  // !OS_IOS
+#endif  // !OS_IOS && !CHROME_MULTIPLE_DLL_BROWSER
   }
 };
 
@@ -402,16 +408,20 @@ int RunNamedProcessTypeMain(
     const MainFunctionParams& main_function_params,
     ContentMainDelegate* delegate) {
   static const MainFunction kMainFunctions[] = {
+#if !defined(CHROME_MULTIPLE_DLL_CHILD)
     { "",                            BrowserMain },
+#endif
+#if !defined(CHROME_MULTIPLE_DLL_BROWSER)
 #if defined(ENABLE_PLUGINS)
     { switches::kPluginProcess,      PluginMain },
     { switches::kWorkerProcess,      WorkerMain },
     { switches::kPpapiPluginProcess, PpapiPluginMain },
     { switches::kPpapiBrokerProcess, PpapiBrokerMain },
-#endif
+#endif  // ENABLE_PLUGINS
     { switches::kUtilityProcess,     UtilityMain },
     { switches::kRendererProcess,    RendererMain },
     { switches::kGpuProcess,         GpuMain },
+#endif  // !CHROME_MULTIPLE_DLL_BROWSER
   };
 
   for (size_t i = 0; i < arraysize(kMainFunctions); ++i) {
@@ -653,7 +663,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
         process_type == switches::kWorkerProcess ||
         (delegate &&
          delegate->ProcessRegistersWithSystemProcess(process_type))) {
-      base::PowerMonitor::AllocateSystemIOPorts();
+      base::PowerMonitorDeviceSource::AllocateSystemIOPorts();
     }
 
     if (!process_type.empty() &&
@@ -664,7 +674,6 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     // This must be done early enough since some helper functions like
     // IsTouchEnabled, needed to load resources, may call into the theme dll.
     EnableThemeSupportOnAllWindowStations();
-    ui::EnableHighDPISupport();
     SetupCRT(command_line);
 #endif
 

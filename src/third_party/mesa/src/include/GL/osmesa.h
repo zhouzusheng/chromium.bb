@@ -101,11 +101,9 @@ extern "C" {
 typedef struct osmesa_context *OSMesaContext;
 
 
-// Disabled this because __QUICKDRAW__ is defined on Mac and gcc does not
-// support the pragma.
-//#if defined(__BEOS__) || defined(__QUICKDRAW__)
-//#pragma export on
-//#endif
+#if defined(__QUICKDRAW__)
+#pragma export on
+#endif
 
 
 /*
@@ -276,14 +274,6 @@ OSMesaGetProcAddress( const char *funcName );
  */
 GLAPI void GLAPIENTRY
 OSMesaColorClamp(GLboolean enable);
-
-
-// Disabled this because __QUICKDRAW__ is defined on Mac and gcc does not
-// support the pragma.
-//#if defined(__BEOS__) || defined(__QUICKDRAW__)
-//#pragma export off
-//#endif
-
 
 #ifdef __cplusplus
 }

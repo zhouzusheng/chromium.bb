@@ -76,7 +76,8 @@ WebInspector.CSSStyleModel.Events = {
     MediaQueryResultChanged: "MediaQueryResultChanged",
     NamedFlowCreated: "NamedFlowCreated",
     NamedFlowRemoved: "NamedFlowRemoved",
-    RegionLayoutUpdated: "RegionLayoutUpdated"
+    RegionLayoutUpdated: "RegionLayoutUpdated",
+    RegionOversetChanged: "RegionOversetChanged"
 }
 
 WebInspector.CSSStyleModel.MediaTypes = ["all", "braille", "embossed", "handheld", "print", "projection", "screen", "speech", "tty", "tv"];
@@ -411,8 +412,13 @@ WebInspector.CSSStyleModel.prototype = {
         var url = styleSheetHeader.resourceURL();
         if (!this._styleSheetIdsForURL[url])
             this._styleSheetIdsForURL[url] = {};
-        var styleSheetIdsForFrame = this._styleSheetIdsForURL[url];
-        styleSheetIdsForFrame[styleSheetHeader.frameId] = styleSheetHeader.id;
+        var frameIdToStyleSheetIds = this._styleSheetIdsForURL[url];
+        var styleSheetIds = frameIdToStyleSheetIds[styleSheetHeader.frameId];
+        if (!styleSheetIds) {
+            styleSheetIds = [];
+            frameIdToStyleSheetIds[styleSheetHeader.frameId] = styleSheetIds;
+        }
+        styleSheetIds.push(styleSheetHeader.id);
         this.dispatchEventToListeners(WebInspector.CSSStyleModel.Events.StyleSheetAdded, styleSheetHeader);
     },
 
@@ -425,10 +431,13 @@ WebInspector.CSSStyleModel.prototype = {
         console.assert(header);
         delete this._styleSheetIdToHeader[id];
         var url = header.resourceURL();
-        var styleSheetIdsForFrame = this._styleSheetIdsForURL[url];
-        delete styleSheetIdsForFrame[header.frameId];
-        if (!Object.keys(styleSheetIdsForFrame).length)
-            delete this._styleSheetIdsForURL[url];
+        var frameIdToStyleSheetIds = this._styleSheetIdsForURL[url];
+        frameIdToStyleSheetIds[header.frameId].remove(id);
+        if (!frameIdToStyleSheetIds[header.frameId].length) {
+            delete frameIdToStyleSheetIds[header.frameId];
+            if (!Object.keys(this._styleSheetIdsForURL[url]).length)
+                delete this._styleSheetIdsForURL[url];
+        }
         this.dispatchEventToListeners(WebInspector.CSSStyleModel.Events.StyleSheetRemoved, header);
     },
 
@@ -438,15 +447,19 @@ WebInspector.CSSStyleModel.prototype = {
      */
     styleSheetIdsForURL: function(url)
     {
-        var styleSheetIdsForFrame = this._styleSheetIdsForURL[url];
-        if (!styleSheetIdsForFrame)
+        var frameIdToStyleSheetIds = this._styleSheetIdsForURL[url];
+        if (!frameIdToStyleSheetIds)
             return [];
-        return Object.values(styleSheetIdsForFrame);
+
+        var result = [];
+        for (var frameId in frameIdToStyleSheetIds)
+            result = result.concat(frameIdToStyleSheetIds[frameId]);
+        return result;
     },
 
     /**
      * @param {string} url
-     * @return {Object.<NetworkAgent.FrameId, string>}
+     * @return {Object.<NetworkAgent.FrameId, Array.<CSSAgent.StyleSheetId>>}
      */
     styleSheetIdsByFrameIdForURL: function(url)
     {
@@ -502,6 +515,21 @@ WebInspector.CSSStyleModel.prototype = {
     },
 
     /**
+     * @param {CSSAgent.NamedFlow} namedFlowPayload
+     */
+    _regionOversetChanged: function(namedFlowPayload)
+    {
+        var namedFlow = WebInspector.NamedFlow.parsePayload(namedFlowPayload);
+        var namedFlowCollection = this._namedFlowCollections[namedFlow.documentNodeId];
+
+         if (!namedFlowCollection)
+            return;
+
+        namedFlowCollection._appendNamedFlow(namedFlow);
+        this.dispatchEventToListeners(WebInspector.CSSStyleModel.Events.RegionOversetChanged, namedFlow);
+    },
+
+    /**
      * @param {CSSAgent.StyleSheetId} styleSheetId
      * @param {string} newText
      * @param {boolean} majorChange
@@ -539,7 +567,7 @@ WebInspector.CSSStyleModel.prototype = {
 
     _resetStyleSheets: function()
     {
-        /** @type {!Object.<string, !Object.<NetworkAgent.FrameId, !CSSAgent.StyleSheetId>>} */
+        /** @type {!Object.<string, !Object.<NetworkAgent.FrameId, !Array.<!CSSAgent.StyleSheetId>>>} */
         this._styleSheetIdsForURL = {};
         /** @type {!Object.<CSSAgent.StyleSheetId, !WebInspector.CSSStyleSheetHeader>} */
         this._styleSheetIdToHeader = {};
@@ -579,10 +607,12 @@ WebInspector.CSSStyleModel.prototype = {
      */
     rawLocationToUILocation: function(rawLocation)
     {
-        var frameIdToSheetId = this._styleSheetIdsForURL[rawLocation.url];
-        if (!frameIdToSheetId)
+        var frameIdToSheetIds = this._styleSheetIdsForURL[rawLocation.url];
+        if (!frameIdToSheetIds)
             return null;
-        var styleSheetIds = Object.values(frameIdToSheetId);
+        var styleSheetIds = [];
+        for (var frameId in frameIdToSheetIds)
+            styleSheetIds = styleSheetIds.concat(frameIdToSheetIds[frameId]);
         var uiLocation;
         for (var i = 0; !uiLocation && i < styleSheetIds.length; ++i) {
             var header = this.styleSheetHeaderForId(styleSheetIds[i]);
@@ -904,9 +934,9 @@ WebInspector.CSSRule = function(payload, matchingSelectors)
     this.origin = payload.origin;
     this.style = WebInspector.CSSStyleDeclaration.parsePayload(payload.style);
     this.style.parentRule = this;
-    this._setRawLocationAndFrameId();
     if (payload.media)
-        this.media = WebInspector.CSSMedia.parseMediaArrayPayload(payload.media, this.frameId);
+        this.media = WebInspector.CSSMedia.parseMediaArrayPayload(payload.media);
+    this._setRawLocationAndFrameId();
 }
 
 /**
@@ -1199,15 +1229,14 @@ WebInspector.CSSProperty.prototype = {
 /**
  * @constructor
  * @param {CSSAgent.CSSMedia} payload
- * @param {!NetworkAgent.FrameId} frameId
  */
-WebInspector.CSSMedia = function(payload, frameId)
+WebInspector.CSSMedia = function(payload)
 {
     this.text = payload.text;
     this.source = payload.source;
     this.sourceURL = payload.sourceURL || "";
     this.range = payload.range;
-    this.frameId = frameId;
+    this.parentStyleSheetId = payload.parentStyleSheetId;
 }
 
 WebInspector.CSSMedia.Source = {
@@ -1219,12 +1248,23 @@ WebInspector.CSSMedia.Source = {
 
 /**
  * @param {CSSAgent.CSSMedia} payload
- * @param {!NetworkAgent.FrameId} frameId
  * @return {WebInspector.CSSMedia}
  */
-WebInspector.CSSMedia.parsePayload = function(payload, frameId)
+WebInspector.CSSMedia.parsePayload = function(payload)
 {
-    return new WebInspector.CSSMedia(payload, frameId);
+    return new WebInspector.CSSMedia(payload);
+}
+
+/**
+ * @param {Array.<CSSAgent.CSSMedia>} payload
+ * @return {Array.<WebInspector.CSSMedia>}
+ */
+WebInspector.CSSMedia.parseMediaArrayPayload = function(payload)
+{
+    var result = [];
+    for (var i = 0; i < payload.length; ++i)
+        result.push(WebInspector.CSSMedia.parsePayload(payload[i]));
+    return result;
 }
 
 WebInspector.CSSMedia.prototype = {
@@ -1259,27 +1299,8 @@ WebInspector.CSSMedia.prototype = {
      */
     header: function()
     {
-        var styleSheetIdsByFrameId = WebInspector.cssModel.styleSheetIdsByFrameIdForURL(this.sourceURL);
-        if (!styleSheetIdsByFrameId)
-            return null;
-        var mediaHeaderId = styleSheetIdsByFrameId[this.frameId];
-        if (!mediaHeaderId)
-            return null;
-        return WebInspector.cssModel.styleSheetHeaderForId(mediaHeaderId);
+        return this.parentStyleSheetId ? WebInspector.cssModel.styleSheetHeaderForId(this.parentStyleSheetId) : null;
     }
-}
-
-/**
- * @param {Array.<CSSAgent.CSSMedia>} payload
- * @param {!NetworkAgent.FrameId} frameId
- * @return {Array.<WebInspector.CSSMedia>}
- */
-WebInspector.CSSMedia.parseMediaArrayPayload = function(payload, frameId)
-{
-    var result = [];
-    for (var i = 0; i < payload.length; ++i)
-        result.push(WebInspector.CSSMedia.parsePayload(payload[i], frameId));
-    return result;
 }
 
 /**
@@ -1300,7 +1321,9 @@ WebInspector.CSSStyleSheetHeader = function(payload)
     this.isInline = payload.isInline;
     this.startLine = payload.startLine;
     this.startColumn = payload.startColumn;
+    /** @type {!Set.<!WebInspector.CSSStyleModel.LiveLocation>} */
     this._locations = new Set();
+    /** @type {!Array.<!WebInspector.SourceMapping>} */
     this._sourceMappings = [];
 }
 
@@ -1356,7 +1379,7 @@ WebInspector.CSSStyleSheetHeader.prototype = {
     },
 
     /**
-     * @param {WebInspector.SourceMapping} sourceMapping
+     * @param {!WebInspector.SourceMapping} sourceMapping
      */
     pushSourceMapping: function(sourceMapping)
     {
@@ -1591,6 +1614,14 @@ WebInspector.CSSDispatcher.prototype = {
     regionLayoutUpdated: function(namedFlowPayload)
     {
         this._cssModel._regionLayoutUpdated(namedFlowPayload);
+    },
+
+    /**
+     * @param {CSSAgent.NamedFlow} namedFlowPayload
+     */
+    regionOversetChanged: function(namedFlowPayload)
+    {
+        this._cssModel._regionOversetChanged(namedFlowPayload);
     }
 }
 

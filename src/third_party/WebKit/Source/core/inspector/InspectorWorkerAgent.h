@@ -32,16 +32,15 @@
 #define InspectorWorkerAgent_h
 
 #include "core/inspector/InspectorBaseAgent.h"
-#include <wtf/Forward.h>
-#include <wtf/HashMap.h>
+#include "wtf/Forward.h"
+#include "wtf/HashMap.h"
 
 namespace WebCore {
 class InspectorFrontend;
-class InspectorState;
 class InstrumentingAgents;
 class JSONObject;
 class KURL;
-class WorkerContextProxy;
+class WorkerGlobalScopeProxy;
 
 typedef String ErrorString;
 
@@ -56,8 +55,8 @@ public:
 
     // Called from InspectorInstrumentation
     bool shouldPauseDedicatedWorkerOnStart();
-    void didStartWorkerContext(WorkerContextProxy*, const KURL&);
-    void workerContextTerminated(WorkerContextProxy*);
+    void didStartWorkerGlobalScope(WorkerGlobalScopeProxy*, const KURL&);
+    void workerGlobalScopeTerminated(WorkerGlobalScopeProxy*);
 
     // Called from InspectorBackendDispatcher
     virtual void enable(ErrorString*);
@@ -71,7 +70,7 @@ public:
 private:
     InspectorWorkerAgent(InstrumentingAgents*, InspectorCompositeState*);
     void createWorkerFrontendChannelsForExistingWorkers();
-    void createWorkerFrontendChannel(WorkerContextProxy*, const String& url);
+    void createWorkerFrontendChannel(WorkerGlobalScopeProxy*, const String& url);
     void destroyWorkerFrontendChannels();
 
     InspectorFrontend* m_inspectorFrontend;
@@ -79,7 +78,7 @@ private:
     class WorkerFrontendChannel;
     typedef HashMap<int, WorkerFrontendChannel*> WorkerChannels;
     WorkerChannels m_idToChannel;
-    typedef HashMap<WorkerContextProxy*, String> DedicatedWorkers;
+    typedef HashMap<WorkerGlobalScopeProxy*, String> DedicatedWorkers;
     DedicatedWorkers m_dedicatedWorkers;
 };
 

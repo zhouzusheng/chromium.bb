@@ -10,8 +10,9 @@
 
 #include "webrtc/video_engine/vie_encoder.h"
 
+#include <assert.h>
+
 #include <algorithm>
-#include <cassert>
 
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/pacing/include/paced_sender.h"
@@ -57,6 +58,7 @@ static const int kTransmissionMaxBitrateMultiplier = 2;
 class QMVideoSettingsCallback : public VCMQMSettingsCallback {
  public:
   explicit QMVideoSettingsCallback(VideoProcessingModule* vpm);
+
   ~QMVideoSettingsCallback();
 
   // Update VPM with QM (quality modes: frame size & frame rate) settings.
@@ -73,6 +75,7 @@ class ViEBitrateObserver : public BitrateObserver {
   explicit ViEBitrateObserver(ViEEncoder* owner)
       : owner_(owner) {
   }
+  virtual ~ViEBitrateObserver() {}
   // Implements BitrateObserver.
   virtual void OnNetworkChanged(const uint32_t bitrate_bps,
                                 const uint8_t fraction_lost,
@@ -88,6 +91,7 @@ class ViEPacedSenderCallback : public PacedSender::Callback {
   explicit ViEPacedSenderCallback(ViEEncoder* owner)
       : owner_(owner) {
   }
+  virtual ~ViEPacedSenderCallback() {}
   virtual bool TimeToSendPacket(uint32_t ssrc, uint16_t sequence_number,
                                 int64_t capture_time_ms) {
     return owner_->TimeToSendPacket(ssrc, sequence_number, capture_time_ms);
@@ -132,7 +136,6 @@ ViEEncoder::ViEEncoder(int32_t engine_id,
     picture_id_sli_(0),
     has_received_rpsi_(false),
     picture_id_rpsi_(0),
-    file_recorder_(channel_id),
     qm_callback_(NULL) {
   WEBRTC_TRACE(webrtc::kTraceMemory, webrtc::kTraceVideo,
                ViEId(engine_id, channel_id),
@@ -382,7 +385,6 @@ int32_t ViEEncoder::SetEncoder(const webrtc::VideoCodec& video_codec) {
                ViEId(engine_id_, channel_id_),
                "%s: CodecType: %d, width: %u, height: %u", __FUNCTION__,
                video_codec.codecType, video_codec.width, video_codec.height);
-
   // Setting target width and height for VPM.
   if (vpm_.SetTargetResolution(video_codec.width, video_codec.height,
                                video_codec.maxFramerate) != VPM_OK) {
@@ -567,10 +569,8 @@ void ViEEncoder::DeliverFrame(int id,
       kMsToRtpTimestamp *
       static_cast<uint32_t>(video_frame->render_time_ms());
 
-  TRACE_EVENT2("webrtc", "VE::DeliverFrame",
-               "timestamp", time_stamp,
-               "render_time", video_frame->render_time_ms());
-
+  TRACE_EVENT_ASYNC_STEP0("webrtc", "Video", video_frame->render_time_ms(),
+                          "Encode");
   video_frame->set_timestamp(time_stamp);
   {
     CriticalSectionScoped cs(callback_cs_.get());
@@ -587,8 +587,6 @@ void ViEEncoder::DeliverFrame(int id,
                                 video_frame->height());
     }
   }
-  // Record raw frame.
-  file_recorder_.RecordVideoFrame(*video_frame);
 
   // Make sure the CSRC list is correct.
   if (num_csrcs > 0) {
@@ -663,7 +661,6 @@ void ViEEncoder::DelayChanged(int id, int frame_delay) {
                frame_delay);
 
   default_rtp_rtcp_->SetCameraDelay(frame_delay);
-  file_recorder_.SetFrameDelay(frame_delay);
 }
 
 int ViEEncoder::GetPreferedFrameSettings(int* width,
@@ -1053,10 +1050,6 @@ int32_t ViEEncoder::RegisterEffectFilter(ViEEffectFilter* effect_filter) {
   }
   effect_filter_ = effect_filter;
   return 0;
-}
-
-ViEFileRecorder& ViEEncoder::GetOutgoingFileRecorder() {
-  return file_recorder_;
 }
 
 int ViEEncoder::StartDebugRecording(const char* fileNameUTF8) {

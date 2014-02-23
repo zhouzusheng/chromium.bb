@@ -29,6 +29,7 @@
 
 #include "wtf/ArrayBufferDeallocationObserver.h"
 #include "wtf/Noncopyable.h"
+#include "wtf/PartitionAlloc.h"
 #include "wtf/WTFExport.h"
 
 namespace WTF {
@@ -44,6 +45,11 @@ public:
     ArrayBufferContents();
     ArrayBufferContents(unsigned numElements, unsigned elementByteSize, ArrayBufferContents::InitializationPolicy);
 
+    // Use with care. data must be allocated with allocateMemory.
+    // ArrayBufferContents will take ownership of the data and free it (using freeMemorY)
+    // upon destruction.
+    ArrayBufferContents(void* data, unsigned sizeInBytes);
+
     ~ArrayBufferContents();
 
     void clear();
@@ -55,6 +61,10 @@ public:
     void setDeallocationObserver(ArrayBufferDeallocationObserver* observer) { m_deallocationObserver = observer; }
 
     void transfer(ArrayBufferContents& other);
+    void copyTo(ArrayBufferContents& other);
+
+    static void allocateMemory(size_t, InitializationPolicy, void*&);
+    static void freeMemory(void*, size_t);
 
 private:
     void* m_data;

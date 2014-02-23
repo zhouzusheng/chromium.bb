@@ -30,9 +30,9 @@
 #include "core/platform/text/TextStream.h"
 #include "core/rendering/RenderTreeAsText.h"
 
-#include <wtf/OwnArrayPtr.h>
-#include <wtf/ParallelJobs.h>
-#include <wtf/Uint8ClampedArray.h>
+#include "wtf/OwnArrayPtr.h"
+#include "wtf/ParallelJobs.h"
+#include "wtf/Uint8ClampedArray.h"
 
 #include "SkMatrixConvolutionImageFilter.h"
 #include "core/platform/graphics/filters/SkiaImageFilterBuilder.h"
@@ -79,17 +79,17 @@ void FEConvolveMatrix::setKernelSize(const IntSize& kernelSize)
 
 const Vector<float>& FEConvolveMatrix::kernel() const
 {
-    return m_kernelMatrix; 
+    return m_kernelMatrix;
 }
 
 void FEConvolveMatrix::setKernel(const Vector<float>& kernel)
 {
-    m_kernelMatrix = kernel; 
+    m_kernelMatrix = kernel;
 }
 
 float FEConvolveMatrix::divisor() const
 {
-    return m_divisor; 
+    return m_divisor;
 }
 
 bool FEConvolveMatrix::setDivisor(float divisor)
@@ -103,7 +103,7 @@ bool FEConvolveMatrix::setDivisor(float divisor)
 
 float FEConvolveMatrix::bias() const
 {
-    return m_bias; 
+    return m_bias;
 }
 
 bool FEConvolveMatrix::setBias(float bias)
@@ -116,7 +116,7 @@ bool FEConvolveMatrix::setBias(float bias)
 
 IntPoint FEConvolveMatrix::targetOffset() const
 {
-    return m_targetOffset; 
+    return m_targetOffset;
 }
 
 bool FEConvolveMatrix::setTargetOffset(const IntPoint& targetOffset)
@@ -142,7 +142,7 @@ bool FEConvolveMatrix::setEdgeMode(EdgeModeType edgeMode)
 
 FloatPoint FEConvolveMatrix::kernelUnitLength() const
 {
-    return m_kernelUnitLength; 
+    return m_kernelUnitLength;
 }
 
 bool FEConvolveMatrix::setKernelUnitLength(const FloatPoint& kernelUnitLength)
@@ -157,7 +157,7 @@ bool FEConvolveMatrix::setKernelUnitLength(const FloatPoint& kernelUnitLength)
 
 bool FEConvolveMatrix::preserveAlpha() const
 {
-    return m_preserveAlpha; 
+    return m_preserveAlpha;
 }
 
 bool FEConvolveMatrix::setPreserveAlpha(bool preserveAlpha)
@@ -516,9 +516,9 @@ SkMatrixConvolutionImageFilter::TileMode toSkiaTileMode(WebCore::EdgeModeType ed
 
 namespace WebCore {
 
-SkImageFilter* FEConvolveMatrix::createImageFilter(SkiaImageFilterBuilder* builder)
+PassRefPtr<SkImageFilter> FEConvolveMatrix::createImageFilter(SkiaImageFilterBuilder* builder)
 {
-    SkAutoTUnref<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
+    RefPtr<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
 
     SkISize kernelSize(SkISize::Make(m_kernelSize.width(), m_kernelSize.height()));
     int numElements = kernelSize.width() * kernelSize.height();
@@ -530,7 +530,7 @@ SkImageFilter* FEConvolveMatrix::createImageFilter(SkiaImageFilterBuilder* build
     OwnArrayPtr<SkScalar> kernel = adoptArrayPtr(new SkScalar[numElements]);
     for (int i = 0; i < numElements; ++i)
         kernel[i] = SkFloatToScalar(m_kernelMatrix[numElements - 1 - i]);
-    return new SkMatrixConvolutionImageFilter(kernelSize, kernel.get(), gain, bias, target, tileMode, convolveAlpha, input);
+    return adoptRef(new SkMatrixConvolutionImageFilter(kernelSize, kernel.get(), gain, bias, target, tileMode, convolveAlpha, input.get()));
 }
 
 static TextStream& operator<<(TextStream& ts, const EdgeModeType& type)

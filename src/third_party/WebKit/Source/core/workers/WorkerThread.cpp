@@ -29,10 +29,11 @@
 #include "core/workers/WorkerThread.h"
 
 #include "bindings/v8/ScriptSourceCode.h"
-#include "bindings/v8/ScriptValue.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/platform/ThreadGlobalData.h"
-#include "core/workers/DedicatedWorkerContext.h"
+#include "core/workers/DedicatedWorkerGlobalScope.h"
+#include "core/workers/WorkerClients.h"
+#include "core/workers/WorkerThreadStartupData.h"
 #include "modules/webdatabase/DatabaseManager.h"
 #include "modules/webdatabase/DatabaseTask.h"
 #include "public/platform/Platform.h"
@@ -63,49 +64,11 @@ unsigned WorkerThread::workerThreadCount()
     return workerThreads().size();
 }
 
-struct WorkerThreadStartupData {
-    WTF_MAKE_NONCOPYABLE(WorkerThreadStartupData); WTF_MAKE_FAST_ALLOCATED;
-public:
-    static PassOwnPtr<WorkerThreadStartupData> create(const KURL& scriptURL, const String& userAgent, const GroupSettings* settings, const String& sourceCode, WorkerThreadStartMode startMode, const String& contentSecurityPolicy, ContentSecurityPolicy::HeaderType contentSecurityPolicyType, const SecurityOrigin* topOrigin)
-    {
-        return adoptPtr(new WorkerThreadStartupData(scriptURL, userAgent, settings, sourceCode, startMode, contentSecurityPolicy, contentSecurityPolicyType, topOrigin));
-    }
-
-    KURL m_scriptURL;
-    String m_userAgent;
-    OwnPtr<GroupSettings> m_groupSettings;
-    String m_sourceCode;
-    WorkerThreadStartMode m_startMode;
-    String m_contentSecurityPolicy;
-    ContentSecurityPolicy::HeaderType m_contentSecurityPolicyType;
-    RefPtr<SecurityOrigin> m_topOrigin;
-private:
-    WorkerThreadStartupData(const KURL& scriptURL, const String& userAgent, const GroupSettings*, const String& sourceCode, WorkerThreadStartMode, const String& contentSecurityPolicy, ContentSecurityPolicy::HeaderType contentSecurityPolicyType, const SecurityOrigin* topOrigin);
-};
-
-WorkerThreadStartupData::WorkerThreadStartupData(const KURL& scriptURL, const String& userAgent, const GroupSettings* settings, const String& sourceCode, WorkerThreadStartMode startMode, const String& contentSecurityPolicy, ContentSecurityPolicy::HeaderType contentSecurityPolicyType, const SecurityOrigin* topOrigin)
-    : m_scriptURL(scriptURL.copy())
-    , m_userAgent(userAgent.isolatedCopy())
-    , m_sourceCode(sourceCode.isolatedCopy())
-    , m_startMode(startMode)
-    , m_contentSecurityPolicy(contentSecurityPolicy.isolatedCopy())
-    , m_contentSecurityPolicyType(contentSecurityPolicyType)
-    , m_topOrigin(topOrigin ? topOrigin->isolatedCopy() : 0)
-{
-    if (!settings)
-        return;
-
-    m_groupSettings = GroupSettings::create();
-    m_groupSettings->setLocalStorageQuotaBytes(settings->localStorageQuotaBytes());
-    m_groupSettings->setIndexedDBQuotaBytes(settings->indexedDBQuotaBytes());
-    m_groupSettings->setIndexedDBDatabasePath(settings->indexedDBDatabasePath().isolatedCopy());
-}
-
-WorkerThread::WorkerThread(const KURL& scriptURL, const String& userAgent, const GroupSettings* settings, const String& sourceCode, WorkerLoaderProxy& workerLoaderProxy, WorkerReportingProxy& workerReportingProxy, WorkerThreadStartMode startMode, const String& contentSecurityPolicy, ContentSecurityPolicy::HeaderType contentSecurityPolicyType, const SecurityOrigin* topOrigin)
+WorkerThread::WorkerThread(WorkerLoaderProxy& workerLoaderProxy, WorkerReportingProxy& workerReportingProxy, PassOwnPtr<WorkerThreadStartupData> startupData)
     : m_threadID(0)
     , m_workerLoaderProxy(workerLoaderProxy)
     , m_workerReportingProxy(workerReportingProxy)
-    , m_startupData(WorkerThreadStartupData::create(scriptURL, userAgent, settings, sourceCode, startMode, contentSecurityPolicy, contentSecurityPolicyType, topOrigin))
+    , m_startupData(startupData)
 #if ENABLE(NOTIFICATIONS) || ENABLE(LEGACY_NOTIFICATIONS)
     , m_notificationClient(0)
 #endif
@@ -141,37 +104,38 @@ void WorkerThread::workerThreadStart(void* thread)
 
 void WorkerThread::workerThread()
 {
+    KURL scriptURL = m_startupData->m_scriptURL;
+    String sourceCode = m_startupData->m_sourceCode;
+    WorkerThreadStartMode startMode = m_startupData->m_startMode;
+
     {
         MutexLocker lock(m_threadCreationMutex);
-        m_workerContext = createWorkerContext(m_startupData->m_scriptURL, m_startupData->m_userAgent, m_startupData->m_groupSettings.release(), m_startupData->m_contentSecurityPolicy, m_startupData->m_contentSecurityPolicyType, m_startupData->m_topOrigin.release());
+
+        m_workerGlobalScope = createWorkerGlobalScope(m_startupData.release());
 
         if (m_runLoop.terminated()) {
             // The worker was terminated before the thread had a chance to run. Since the context didn't exist yet,
             // forbidExecution() couldn't be called from stop().
-           m_workerContext->script()->forbidExecution();
+            m_workerGlobalScope->script()->forbidExecution();
         }
     }
     // The corresponding call to didStopWorkerRunLoop is in
     // ~WorkerScriptController.
     WebKit::Platform::current()->didStartWorkerRunLoop(WebKit::WebWorkerRunLoop(&m_runLoop));
 
-    WorkerScriptController* script = m_workerContext->script();
-    InspectorInstrumentation::willEvaluateWorkerScript(workerContext(), m_startupData->m_startMode);
-    script->evaluate(ScriptSourceCode(m_startupData->m_sourceCode, m_startupData->m_scriptURL));
-    // Free the startup data to cause its member variable deref's happen on the worker's thread (since
-    // all ref/derefs of these objects are happening on the thread at this point). Note that
-    // WorkerThread::~WorkerThread happens on a different thread where it was created.
-    m_startupData.clear();
+    WorkerScriptController* script = m_workerGlobalScope->script();
+    InspectorInstrumentation::willEvaluateWorkerScript(workerGlobalScope(), startMode);
+    script->evaluate(ScriptSourceCode(sourceCode, scriptURL));
 
     runEventLoop();
 
     ThreadIdentifier threadID = m_threadID;
 
-    ASSERT(m_workerContext->hasOneRef());
+    ASSERT(m_workerGlobalScope->hasOneRef());
 
     // The below assignment will destroy the context, which will in turn notify messaging proxy.
     // We cannot let any objects survive past thread exit, because no other thread will run GC or otherwise destroy them.
-    m_workerContext = 0;
+    m_workerGlobalScope = 0;
 
     // Clean up WebCore::ThreadGlobalData before WTF::WTFThreadData goes away!
     threadGlobalData().destroy();
@@ -183,7 +147,7 @@ void WorkerThread::workerThread()
 void WorkerThread::runEventLoop()
 {
     // Does not return until terminated.
-    m_runLoop.run(m_workerContext.get());
+    m_runLoop.run(m_workerGlobalScope.get());
 }
 
 class WorkerThreadShutdownFinishTask : public ScriptExecutionContext::Task {
@@ -195,11 +159,10 @@ public:
 
     virtual void performTask(ScriptExecutionContext *context)
     {
-        ASSERT_WITH_SECURITY_IMPLICATION(context->isWorkerContext());
-        WorkerContext* workerContext = static_cast<WorkerContext*>(context);
-        workerContext->clearInspector();
+        WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
+        workerGlobalScope->clearInspector();
         // It's not safe to call clearScript until all the cleanup tasks posted by functions initiated by WorkerThreadShutdownStartTask have completed.
-        workerContext->clearScript();
+        workerGlobalScope->clearScript();
     }
 
     virtual bool isCleanupTask() const { return true; }
@@ -214,20 +177,19 @@ public:
 
     virtual void performTask(ScriptExecutionContext *context)
     {
-        ASSERT_WITH_SECURITY_IMPLICATION(context->isWorkerContext());
-        WorkerContext* workerContext = static_cast<WorkerContext*>(context);
+        WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
 
         // FIXME: Should we stop the databases as part of stopActiveDOMObjects() below?
         DatabaseTaskSynchronizer cleanupSync;
-        DatabaseManager::manager().stopDatabases(workerContext, &cleanupSync);
+        DatabaseManager::manager().stopDatabases(workerGlobalScope, &cleanupSync);
 
-        workerContext->stopActiveDOMObjects();
+        workerGlobalScope->stopActiveDOMObjects();
 
-        workerContext->notifyObserversOfStop();
+        workerGlobalScope->notifyObserversOfStop();
 
         // Event listeners would keep DOMWrapperWorld objects alive for too long. Also, they have references to JS objects,
         // which become dangling once Heap is destroyed.
-        workerContext->removeAllEventListeners();
+        workerGlobalScope->removeAllEventListeners();
 
         // We wait for the database thread to clean up all its stuff so that we
         // can do more stringent leak checks as we exit.
@@ -235,7 +197,7 @@ public:
 
         // Stick a shutdown command at the end of the queue, so that we deal
         // with all the cleanup tasks the databases post first.
-        workerContext->postTask(WorkerThreadShutdownFinishTask::create());
+        workerGlobalScope->postTask(WorkerThreadShutdownFinishTask::create());
     }
 
     virtual bool isCleanupTask() const { return true; }
@@ -247,10 +209,10 @@ void WorkerThread::stop()
     MutexLocker lock(m_threadCreationMutex);
 
     // Ensure that tasks are being handled by thread event loop. If script execution weren't forbidden, a while(1) loop in JS could keep the thread alive forever.
-    if (m_workerContext) {
-        m_workerContext->script()->scheduleExecutionTermination();
+    if (m_workerGlobalScope) {
+        m_workerGlobalScope->script()->scheduleExecutionTermination();
 
-        DatabaseManager::manager().interruptAllDatabasesForContext(m_workerContext.get());
+        DatabaseManager::manager().interruptAllDatabasesForContext(m_workerGlobalScope.get());
         m_runLoop.postTaskAndTerminate(WorkerThreadShutdownStartTask::create());
         return;
     }

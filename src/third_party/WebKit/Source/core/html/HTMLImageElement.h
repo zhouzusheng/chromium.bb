@@ -32,7 +32,7 @@ namespace WebCore {
 
 class HTMLFormElement;
 
-class HTMLImageElement : public HTMLElement {
+class HTMLImageElement FINAL : public HTMLElement {
     friend class HTMLFormElement;
 public:
     static PassRefPtr<HTMLImageElement> create(Document*);
@@ -53,8 +53,8 @@ public:
 
     CompositeOperator compositeOperator() const { return m_compositeOperator; }
 
-    CachedImage* cachedImage() const { return m_imageLoader.image(); }
-    void setCachedImage(CachedImage* i) { m_imageLoader.setImage(i); };
+    ImageResource* cachedImage() const { return m_imageLoader.image(); }
+    void setImageResource(ImageResource* i) { m_imageLoader.setImage(i); };
 
     void setLoadManually(bool loadManually) { m_imageLoader.setLoadManually(loadManually); }
 
@@ -76,7 +76,8 @@ public:
 
     virtual bool canContainRangeEndPoint() const { return false; }
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
+    void addClient(ImageLoaderClient* client) { m_imageLoader.addClient(client); }
+    void removeClient(ImageLoaderClient* client) { m_imageLoader.removeClient(client); }
 
 protected:
     HTMLImageElement(const QualifiedName&, Document*, HTMLFormElement* = 0);
@@ -105,6 +106,8 @@ private:
     virtual void removedFrom(ContainerNode*) OVERRIDE;
     virtual bool shouldRegisterAsNamedItem() const OVERRIDE { return true; }
     virtual bool shouldRegisterAsExtraNamedItem() const OVERRIDE { return true; }
+
+    virtual Image* imageContents() OVERRIDE;
 
     HTMLImageLoader m_imageLoader;
     HTMLFormElement* m_form;

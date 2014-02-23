@@ -44,11 +44,13 @@
 #ifndef _GLAPI_H
 #define _GLAPI_H
 
+#include "glapi/glthread.h"
 
-/* opengl.dll does not export _glapi_* */
-#if defined(_WIN32)
-#define _GLAPI_NO_EXPORTS
+
+#ifdef __cplusplus
+extern "C" {
 #endif
+
 
 #ifdef _GLAPI_NO_EXPORTS
 #  define _GLAPI_EXPORT
@@ -77,8 +79,6 @@
 #define _glapi_Context _mglapi_Context
 #endif
 
-#include "glapi/glthread.h"
-
 typedef void (*_glapi_proc)(void);
 struct _glapi_table;
 
@@ -95,7 +95,7 @@ _GLAPI_EXPORT extern const struct _glapi_table *_glapi_Dispatch;
 _GLAPI_EXPORT extern const void *_glapi_Context;
 
 # define GET_DISPATCH() _glapi_tls_Dispatch
-# define GET_CURRENT_CONTEXT(C)  GLcontext *C = (GLcontext *) _glapi_tls_Context
+# define GET_CURRENT_CONTEXT(C)  struct gl_context *C = (struct gl_context *) _glapi_tls_Context
 
 #else
 
@@ -107,13 +107,13 @@ _GLAPI_EXPORT extern void *_glapi_Context;
 #  define GET_DISPATCH() \
      (likely(_glapi_Dispatch) ? _glapi_Dispatch : _glapi_get_dispatch())
 
-#  define GET_CURRENT_CONTEXT(C)  GLcontext *C = (GLcontext *) \
+#  define GET_CURRENT_CONTEXT(C)  struct gl_context *C = (struct gl_context *) \
      (likely(_glapi_Context) ? _glapi_Context : _glapi_get_context())
 
 # else
 
 #  define GET_DISPATCH() _glapi_Dispatch
-#  define GET_CURRENT_CONTEXT(C)  GLcontext *C = (GLcontext *) _glapi_Context
+#  define GET_CURRENT_CONTEXT(C)  struct gl_context *C = (struct gl_context *) _glapi_Context
 
 # endif
 
@@ -164,6 +164,10 @@ _GLAPI_EXPORT const char *
 _glapi_get_proc_name(unsigned int offset);
 
 
+_GLAPI_EXPORT struct _glapi_table *
+_glapi_create_table_from_handle(void *handle, const char *symbol_prefix);
+
+
 _GLAPI_EXPORT unsigned long
 _glthread_GetID(void);
 
@@ -178,5 +182,9 @@ _glapi_noop_enable_warnings(unsigned char enable);
 _GLAPI_EXPORT void
 _glapi_set_warning_func(_glapi_proc func);
 
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _GLAPI_H */

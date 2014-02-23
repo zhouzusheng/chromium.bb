@@ -7,12 +7,15 @@
 
 #include "SkBitmapProcState_opts_SSE2.h"
 #include "SkBitmapProcState_opts_SSSE3.h"
+#include "SkBitmapFilter_opts_SSE2.h"
 #include "SkBlitMask.h"
 #include "SkBlitRow.h"
 #include "SkBlitRect_opts_SSE2.h"
 #include "SkBlitRow_opts_SSE2.h"
 #include "SkUtils_opts_SSE2.h"
 #include "SkUtils.h"
+
+#include "SkRTConf.h"
 
 #if defined(_MSC_VER) && defined(_WIN64)
 #include <intrin.h>
@@ -102,10 +105,20 @@ static bool cachedHasSSSE3() {
     return gHasSSSE3;
 }
 
+SK_CONF_DECLARE( bool, c_hqfilter_sse, "bitmap.filter.highQualitySSE", false, "Use SSE optimized version of high quality image filters");
+
+void SkBitmapProcState::platformConvolutionProcs() {
+    if (cachedHasSSE2()) {
+        fConvolutionProcs->fExtraHorizontalReads = 3;
+        fConvolutionProcs->fConvolveVertically = &convolveVertically_SSE2;
+        fConvolutionProcs->fConvolve4RowsHorizontally = &convolve4RowsHorizontally_SSE2;
+        fConvolutionProcs->fConvolveHorizontally = &convolveHorizontally_SSE2;
+        fConvolutionProcs->fApplySIMDPadding = &applySIMDPadding_SSE2;
+    }
+}
+
 void SkBitmapProcState::platformProcs() {
     if (cachedHasSSSE3()) {
-#if !defined(SK_BUILD_FOR_ANDROID)
-        // Disable SSSE3 optimization for Android x86
         if (fSampleProc32 == S32_opaque_D32_filter_DX) {
             fSampleProc32 = S32_opaque_D32_filter_DX_SSSE3;
         } else if (fSampleProc32 == S32_alpha_D32_filter_DX) {
@@ -117,7 +130,6 @@ void SkBitmapProcState::platformProcs() {
         } else if (fSampleProc32 == S32_alpha_D32_filter_DXDY) {
             fSampleProc32 = S32_alpha_D32_filter_DXDY_SSSE3;
         }
-#endif
     } else if (cachedHasSSE2()) {
         if (fSampleProc32 == S32_opaque_D32_filter_DX) {
             fSampleProc32 = S32_opaque_D32_filter_DX_SSE2;
@@ -142,6 +154,11 @@ void SkBitmapProcState::platformProcs() {
         } else if (fMatrixProc == ClampX_ClampY_nofilter_affine) {
             fMatrixProc = ClampX_ClampY_nofilter_affine_SSE2;
         }
+        if (c_hqfilter_sse) {
+            if (fShaderProc32 == highQualityFilter) {
+                fShaderProc32 = highQualityFilter_SSE2;
+            }
+        }
     }
 }
 
@@ -151,10 +168,6 @@ static SkBlitRow::Proc32 platform_32_procs[] = {
     S32A_Opaque_BlitRow32_SSE2,         // S32A_Opaque
     S32A_Blend_BlitRow32_SSE2,          // S32A_Blend,
 };
-
-SkBlitRow::Proc SkBlitRow::PlatformProcs4444(unsigned flags) {
-    return NULL;
-}
 
 SkBlitRow::Proc SkBlitRow::PlatformProcs565(unsigned flags) {
     return NULL;

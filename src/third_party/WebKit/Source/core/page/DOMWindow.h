@@ -21,7 +21,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef DOMWindow_h
@@ -31,6 +31,7 @@
 #include "core/dom/EventTarget.h"
 #include "core/page/FrameDestructionObserver.h"
 #include "core/platform/Supplementable.h"
+
 #include "wtf/Forward.h"
 
 namespace WebCore {
@@ -48,6 +49,7 @@ namespace WebCore {
     class Document;
     class Element;
     class EventListener;
+    class ExceptionState;
     class FloatRect;
     class Frame;
     class History;
@@ -74,8 +76,6 @@ namespace WebCore {
     struct WindowFeatures;
 
     typedef Vector<RefPtr<MessagePort>, 1> MessagePortArray;
-
-    typedef int ExceptionCode;
 
     enum SetLocationLocking { LockHistoryBasedOnGestureState, LockHistoryAndBackForwardList };
 
@@ -106,9 +106,6 @@ namespace WebCore {
         PassRefPtr<MediaQueryList> matchMedia(const String&);
 
         unsigned pendingUnloadEventListeners() const;
-
-        static bool dispatchAllPendingBeforeUnloadEvents();
-        static void dispatchAllPendingUnloadEvents();
 
         static FloatRect adjustWindowRect(Page*, const FloatRect& pendingChanges);
 
@@ -154,8 +151,6 @@ namespace WebCore {
         void alert(const String& message);
         bool confirm(const String& message);
         String prompt(const String& message, const String& defaultValue);
-        String btoa(const String& stringToEncode, ExceptionCode&);
-        String atob(const String& encodedString, ExceptionCode&);
 
         bool find(const String&, bool caseSensitive, bool backwards, bool wrap, bool wholeWord, bool searchInFrames, bool showDialog) const;
 
@@ -226,7 +221,7 @@ namespace WebCore {
         void printErrorMessage(const String&);
         String crossDomainAccessErrorMessage(DOMWindow* activeWindow);
 
-        void postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray*, const String& targetOrigin, DOMWindow* source, ExceptionCode&);
+        void postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray*, const String& targetOrigin, DOMWindow* source, ExceptionState&);
         void postMessageTimerFired(PassOwnPtr<PostMessageTimer>);
         void dispatchMessageEventWithOriginCheck(SecurityOrigin* intendedTargetOrigin, PassRefPtr<Event>, PassRefPtr<ScriptCallStack>);
 
@@ -239,10 +234,6 @@ namespace WebCore {
 
         void resizeBy(float x, float y) const;
         void resizeTo(float width, float height) const;
-
-        // Timers
-        void clearTimeout(int timeoutId);
-        void clearInterval(int timeoutId);
 
         // WebKit animation extensions
         int requestAnimationFrame(PassRefPtr<RequestAnimationFrameCallback>);
@@ -295,6 +286,8 @@ namespace WebCore {
         DEFINE_ATTRIBUTE_EVENT_LISTENER(loadstart);
         DEFINE_ATTRIBUTE_EVENT_LISTENER(message);
         DEFINE_ATTRIBUTE_EVENT_LISTENER(mousedown);
+        DEFINE_ATTRIBUTE_EVENT_LISTENER(mouseenter);
+        DEFINE_ATTRIBUTE_EVENT_LISTENER(mouseleave);
         DEFINE_ATTRIBUTE_EVENT_LISTENER(mousemove);
         DEFINE_ATTRIBUTE_EVENT_LISTENER(mouseout);
         DEFINE_ATTRIBUTE_EVENT_LISTENER(mouseover);
@@ -344,8 +337,8 @@ namespace WebCore {
         DEFINE_ATTRIBUTE_EVENT_LISTENER(deviceorientation);
 
         // HTML 5 key/value storage
-        Storage* sessionStorage(ExceptionCode&) const;
-        Storage* localStorage(ExceptionCode&) const;
+        Storage* sessionStorage(ExceptionState&) const;
+        Storage* localStorage(ExceptionState&) const;
         Storage* optionalSessionStorage() const { return m_sessionStorage.get(); }
         Storage* optionalLocalStorage() const { return m_localStorage.get(); }
 
@@ -366,8 +359,6 @@ namespace WebCore {
         DEFINE_ATTRIBUTE_EVENT_LISTENER(touchend);
         DEFINE_ATTRIBUTE_EVENT_LISTENER(touchcancel);
 
-        void reportMemoryUsage(MemoryObjectInfo*) const;
-
         Performance* performance() const;
 
         // FIXME: When this DOMWindow is no longer the active DOMWindow (i.e.,
@@ -378,6 +369,8 @@ namespace WebCore {
 
         void willDetachDocumentFromFrame();
         DOMWindow* anonymousIndexedGetter(uint32_t);
+
+        bool isInsecureScriptAccess(DOMWindow* activeWindow, const String& urlString);
 
     private:
         explicit DOMWindow(Frame*);
@@ -391,11 +384,6 @@ namespace WebCore {
         virtual void derefEventTarget() { deref(); }
         virtual EventTargetData* eventTargetData();
         virtual EventTargetData* ensureEventTargetData();
-
-        static Frame* createWindow(const String& urlString, const AtomicString& frameName, const WindowFeatures&,
-            DOMWindow* activeWindow, Frame* firstFrame, Frame* openerFrame,
-            PrepareDialogFunction = 0, void* functionContext = 0);
-        bool isInsecureScriptAccess(DOMWindow* activeWindow, const String& urlString);
 
         void resetDOMWindowProperties();
         void willDestroyDocumentInFrame();
@@ -441,7 +429,7 @@ namespace WebCore {
     inline String DOMWindow::defaultStatus() const
     {
         return m_defaultStatus;
-    } 
+    }
 
 } // namespace WebCore
 

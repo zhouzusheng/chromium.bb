@@ -10,9 +10,10 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/process.h"
-#include "base/timer.h"
+#include "base/process/process.h"
+#include "base/timer/timer.h"
 #include "content/browser/child_process_launcher.h"
+#include "content/browser/power_monitor_message_broadcaster.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/global_request_id.h"
 #include "content/public/browser/gpu_data_manager_observer.h"
@@ -263,8 +264,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // This is used to clear our cache five seconds after the last use.
   base::DelayTimer<RenderProcessHostImpl> cached_dibs_cleaner_;
 
+#if !defined(CHROME_MULTIPLE_DLL)
   // Used in single-process mode.
   scoped_ptr<RendererMainThread> in_process_renderer_;
+#endif
 
   // True after Init() has been called. We can't just check channel_ because we
   // also reset that in the case of process termination.
@@ -317,6 +320,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Prevents the class from being added as a GpuDataManagerImpl observer more
   // than once.
   bool gpu_observer_registered_;
+
+  // Forwards power state messages to the renderer process.
+  PowerMonitorMessageBroadcaster power_monitor_broadcaster_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderProcessHostImpl);
 };

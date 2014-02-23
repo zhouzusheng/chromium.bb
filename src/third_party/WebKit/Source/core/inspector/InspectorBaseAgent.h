@@ -32,9 +32,9 @@
 #define InspectorBaseAgent_h
 
 #include "InspectorBackendDispatcher.h"
-#include <wtf/Forward.h>
-#include <wtf/Vector.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/Forward.h"
+#include "wtf/Vector.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -56,8 +56,6 @@ public:
 
     String name() { return m_name; }
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
-
 protected:
     InstrumentingAgents* m_instrumentingAgents;
     InspectorState* m_state;
@@ -75,8 +73,6 @@ public:
     void restore();
     void registerInDispatcher(InspectorBackendDispatcher*);
     void discardAgents();
-
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     Vector<OwnPtr<InspectorBaseAgentInterface> > m_agents;

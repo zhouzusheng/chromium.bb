@@ -58,6 +58,9 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
     // id contains the server config id for the resulting config. If empty, a
     // random id is generated.
     std::string id;
+    // orbit contains the kOrbitSize bytes of the orbit value for the server
+    // config. If |orbit| is empty then a random orbit is generated.
+    std::string orbit;
   };
 
   // |source_address_token_secret|: secret key material used for encrypting and
@@ -113,6 +116,8 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
   // an error code is returned.
   //
   // client_hello: the incoming client hello message.
+  // version: the QUIC version for the connection. TODO(wtc): Remove once
+  //     QUIC_VERSION_7 and before are removed.
   // guid: the GUID for the connection, which is used in key derivation.
   // client_ip: the IP address of the client, which is used to generate and
   //     validate source-address tokens.
@@ -124,6 +129,7 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
   // out: the resulting handshake message (either REJ or SHLO)
   // error_details: used to store a string describing any error.
   QuicErrorCode ProcessClientHello(const CryptoHandshakeMessage& client_hello,
+                                   QuicVersion version,
                                    QuicGuid guid,
                                    const IPEndPoint& client_ip,
                                    const QuicClock* clock,
@@ -195,8 +201,10 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
    public:
     Config();
 
-    // serialized contains the bytes of this server config, suitable for sending
-    // on the wire.
+    // TODO(rtenneti): since this is a class, we should probably do
+    // getters/setters here.
+    // |serialized| contains the bytes of this server config, suitable for
+    // sending on the wire.
     std::string serialized;
     // id contains the SCID of this server config.
     std::string id;
@@ -254,6 +262,7 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
 
   // BuildRejection sets |out| to be a REJ message in reply to |client_hello|.
   void BuildRejection(
+      QuicVersion version,
       const scoped_refptr<Config>& config,
       const CryptoHandshakeMessage& client_hello,
       const ClientHelloInfo& info,

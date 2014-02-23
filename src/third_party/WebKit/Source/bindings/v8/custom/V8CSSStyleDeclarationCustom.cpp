@@ -32,15 +32,14 @@
 #include "V8CSSStyleDeclaration.h"
 
 #include "CSSPropertyNames.h"
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/V8Binding.h"
 #include "core/css/CSSParser.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSStyleDeclaration.h"
 #include "core/css/CSSValue.h"
 #include "core/dom/EventTarget.h"
 #include "core/page/RuntimeCSSEnabled.h"
-
-#include "bindings/v8/V8Binding.h"
-
 #include "wtf/ASCIICType.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -86,7 +85,6 @@ static bool hasCSSPropertyNamePrefix(const String& propertyName, const char* pre
 class CSSPropertyInfo {
 public:
     CSSPropertyID propID;
-    bool hadPixelOrPosPrefix;
 };
 
 // When getting properties on CSSStyleDeclarations, the name used from
@@ -97,9 +95,7 @@ public:
 //
 // Example: 'backgroundPositionY' -> 'background-position-y'
 //
-// Also, certain prefixes such as 'pos', 'css-' and 'pixel-' are stripped
-// and the hadPixelOrPosPrefix out parameter is used to indicate whether or
-// not the property name was prefixed with 'pos-' or 'pixel-'.
+// Also, certain prefixes such as 'css-' are stripped.
 static CSSPropertyInfo* cssPropertyInfo(v8::Handle<v8::String> v8PropertyName)
 {
     String propertyName = toWebCoreString(v8PropertyName);
@@ -108,7 +104,6 @@ static CSSPropertyInfo* cssPropertyInfo(v8::Handle<v8::String> v8PropertyName)
     CSSPropertyInfo* propInfo = map.get(propertyName);
     if (!propInfo) {
         unsigned length = propertyName.length();
-        bool hadPixelOrPosPrefix = false;
         if (!length)
             return 0;
 
@@ -119,13 +114,7 @@ static CSSPropertyInfo* cssPropertyInfo(v8::Handle<v8::String> v8PropertyName)
 
         if (hasCSSPropertyNamePrefix(propertyName, "css"))
             i += 3;
-        else if (hasCSSPropertyNamePrefix(propertyName, "pixel")) {
-            i += 5;
-            hadPixelOrPosPrefix = true;
-        } else if (hasCSSPropertyNamePrefix(propertyName, "pos")) {
-            i += 3;
-            hadPixelOrPosPrefix = true;
-        } else if (hasCSSPropertyNamePrefix(propertyName, "webkit"))
+        else if (hasCSSPropertyNamePrefix(propertyName, "webkit"))
             builder.append('-');
         else if (isASCIIUpper(propertyName[0]))
             return 0;
@@ -146,7 +135,6 @@ static CSSPropertyInfo* cssPropertyInfo(v8::Handle<v8::String> v8PropertyName)
         CSSPropertyID propertyID = cssPropertyID(propName);
         if (propertyID && RuntimeCSSEnabled::isCSSPropertyEnabled(propertyID)) {
             propInfo = new CSSPropertyInfo();
-            propInfo->hadPixelOrPosPrefix = hadPixelOrPosPrefix;
             propInfo->propID = propertyID;
             map.add(propertyName, propInfo);
         }
@@ -206,13 +194,7 @@ void V8CSSStyleDeclaration::namedPropertyGetterCustom(v8::Local<v8::String> name
     CSSStyleDeclaration* imp = V8CSSStyleDeclaration::toNative(info.Holder());
     RefPtr<CSSValue> cssValue = imp->getPropertyCSSValueInternal(static_cast<CSSPropertyID>(propInfo->propID));
     if (cssValue) {
-        if (propInfo->hadPixelOrPosPrefix
-            && cssValue->isPrimitiveValue()) {
-            v8SetReturnValue(info, static_cast<CSSPrimitiveValue*>(
-                cssValue.get())->getFloatValue(CSSPrimitiveValue::CSS_PX));
-            return;
-        }
-        v8SetReturnValue(info, v8StringOrNull(cssValue->cssText(), info.GetIsolate()));
+        v8SetReturnValueStringOrNull(info, cssValue->cssText(), info.GetIsolate());
         return;
     }
 
@@ -220,7 +202,7 @@ void V8CSSStyleDeclaration::namedPropertyGetterCustom(v8::Local<v8::String> name
     if (result.isNull())
         result = ""; // convert null to empty string.
 
-    v8SetReturnValue(info, v8String(result, info.GetIsolate()));
+    v8SetReturnValueString(info, result, info.GetIsolate());
 }
 
 void V8CSSStyleDeclaration::namedPropertySetterCustom(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<v8::Value>& info)
@@ -231,16 +213,12 @@ void V8CSSStyleDeclaration::namedPropertySetterCustom(v8::Local<v8::String> name
         return;
 
     String propertyValue = toWebCoreStringWithNullCheck(value);
-    if (propInfo->hadPixelOrPosPrefix)
-        propertyValue.append("px");
 
-    ExceptionCode ec = 0;
-    imp->setPropertyInternal(static_cast<CSSPropertyID>(propInfo->propID), propertyValue, false, ec);
+    ExceptionState es(info.GetIsolate());
+    imp->setPropertyInternal(static_cast<CSSPropertyID>(propInfo->propID), propertyValue, false, es);
 
-    if (ec) {
-        setDOMException(ec, info.GetIsolate());
+    if (es.throwIfNeeded())
         return;
-    }
 
     v8SetReturnValue(info, value);
 }

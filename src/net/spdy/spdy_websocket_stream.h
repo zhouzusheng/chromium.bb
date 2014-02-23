@@ -10,7 +10,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/completion_callback.h"
 #include "net/base/request_priority.h"
 #include "net/spdy/spdy_framer.h"
@@ -58,7 +58,8 @@ class NET_EXPORT_PRIVATE SpdyWebSocketStream
     virtual ~Delegate() {}
   };
 
-  SpdyWebSocketStream(SpdySession* spdy_session, Delegate* delegate);
+  SpdyWebSocketStream(const base::WeakPtr<SpdySession>& spdy_session,
+                      Delegate* delegate);
   virtual ~SpdyWebSocketStream();
 
   // Initializes SPDY stream for the WebSocket.
@@ -82,17 +83,15 @@ class NET_EXPORT_PRIVATE SpdyWebSocketStream
   virtual void OnClose(int status) OVERRIDE;
 
  private:
-  friend class SpdyWebSocketStreamSpdy2Test;
-  friend class SpdyWebSocketStreamSpdy3Test;
-  FRIEND_TEST_ALL_PREFIXES(SpdyWebSocketStreamSpdy2Test, Basic);
-  FRIEND_TEST_ALL_PREFIXES(SpdyWebSocketStreamSpdy3Test, Basic);
+  friend class SpdyWebSocketStreamTest;
+  FRIEND_TEST_ALL_PREFIXES(SpdyWebSocketStreamTest, Basic);
 
   void OnSpdyStreamCreated(int status);
 
   base::WeakPtrFactory<SpdyWebSocketStream> weak_ptr_factory_;
   SpdyStreamRequest stream_request_;
   base::WeakPtr<SpdyStream> stream_;
-  scoped_refptr<SpdySession> spdy_session_;
+  const base::WeakPtr<SpdySession> spdy_session_;
   size_t pending_send_data_length_;
   Delegate* delegate_;
 

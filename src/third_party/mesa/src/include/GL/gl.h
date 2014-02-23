@@ -55,11 +55,7 @@
 #  if (defined(_MSC_VER) || defined(__MINGW32__)) && defined(BUILD_GL32) /* tag specify we're building mesa as a DLL */
 #    define GLAPI __declspec(dllexport)
 #  elif (defined(_MSC_VER) || defined(__MINGW32__)) && defined(_DLL) /* tag specifying we're building for DLL runtime support */
-// We always retrieve the entry points dynamically via GetProcAddress or
-// OSMesaGetProcAddress. This works around an issue where using the MSVC
-// multi-threaded runtime library, which defines _DLL.
-//#    define GLAPI __declspec(dllimport)
-#    define GLAPI
+#    define GLAPI __declspec(dllimport)
 #  else /* for use with static link lib build of Win32 edition only */
 #    define GLAPI extern
 #  endif /* _STATIC_MESA support */
@@ -71,16 +67,14 @@
 #elif defined(__CYGWIN__) && defined(USE_OPENGL32) /* use native windows opengl32 */
 #  define GLAPI extern
 #  define GLAPIENTRY __stdcall
-#elif defined(__GNUC__)	|| (defined(__SUNPRO_C) && (__SUNPRO_C >= 0x590))
+#elif (defined(__GNUC__) && __GNUC__ >= 4) || (defined(__SUNPRO_C) && (__SUNPRO_C >= 0x590))
 #  define GLAPI __attribute__((visibility("default")))
 #  define GLAPIENTRY
 #endif /* WIN32 && !CYGWIN */
 
-// Disabled this because __QUICKDRAW__ is defined on Mac and gcc does not
-// support the pragma.
-//#if (defined(__BEOS__) && defined(__POWERPC__)) || defined(__QUICKDRAW__)
-//#  define PRAGMA_EXPORT_SUPPORTED		1
-//#endif
+#if (defined(__BEOS__) && defined(__POWERPC__)) || defined(__QUICKDRAW__)
+#  define PRAGMA_EXPORT_SUPPORTED		1
+#endif
 
 /*
  * WINDOWS: Include windows.h here to define APIENTRY.
@@ -95,12 +89,6 @@
 #define WIN32_LEAN_AND_MEAN 1
 #endif
 #include <windows.h>
-#endif
-
-#if defined(_WIN32) && !defined(_WINGDI_) && !defined(_WIN32_WCE) \
-     && !defined(_GNU_H_WINDOWS32_DEFINES) && !defined(OPENSTEP) \
-     && !defined(__CYGWIN__) || defined(__MINGW32__)
-#include <GL/mesa_wgl.h>
 #endif
 
 #if defined(macintosh) && PRAGMA_IMPORT_SUPPORTED
@@ -661,6 +649,8 @@ typedef double		GLclampd;	/* double precision float in [0,1] */
 #define GL_TEXTURE_ENV_COLOR			0x2201
 #define GL_TEXTURE_GEN_S			0x0C60
 #define GL_TEXTURE_GEN_T			0x0C61
+#define GL_TEXTURE_GEN_R			0x0C62
+#define GL_TEXTURE_GEN_Q			0x0C63
 #define GL_TEXTURE_GEN_MODE			0x2500
 #define GL_TEXTURE_BORDER_COLOR			0x1004
 #define GL_TEXTURE_WIDTH			0x1000
@@ -691,8 +681,6 @@ typedef double		GLclampd;	/* double precision float in [0,1] */
 #define GL_T					0x2001
 #define GL_R					0x2002
 #define GL_Q					0x2003
-#define GL_TEXTURE_GEN_R			0x0C62
-#define GL_TEXTURE_GEN_Q			0x0C63
 
 /* Utility */
 #define GL_VENDOR				0x1F00

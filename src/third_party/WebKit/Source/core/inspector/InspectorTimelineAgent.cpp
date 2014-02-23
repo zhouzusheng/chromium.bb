@@ -55,7 +55,7 @@
 #include "core/rendering/RenderView.h"
 #include "core/xml/XMLHttpRequest.h"
 
-#include <wtf/CurrentTime.h>
+#include "wtf/CurrentTime.h"
 
 namespace WebCore {
 
@@ -153,7 +153,8 @@ static bool eventHasListeners(const AtomicString& eventType, DOMWindow* window, 
 
 void TimelineTimeConverter::reset()
 {
-    m_startOffset = monotonicallyIncreasingTime() - currentTime();
+    m_startTimeMs = currentTime() * 1000;
+    m_timestampsBaseMs = monotonicallyIncreasingTime() * 1000;
 }
 
 void InspectorTimelineAgent::pushGCEventRecords()
@@ -164,9 +165,9 @@ void InspectorTimelineAgent::pushGCEventRecords()
     GCEvents events = m_gcEvents;
     m_gcEvents.clear();
     for (GCEvents::iterator i = events.begin(); i != events.end(); ++i) {
-        RefPtr<JSONObject> record = TimelineRecordFactory::createGenericRecord(m_timeConverter.fromMonotonicallyIncreasingTime(i->startTime), m_maxCallStackDepth, TimelineRecordType::GCEvent);
+        RefPtr<JSONObject> record = TimelineRecordFactory::createGenericRecord(m_timeConverter.toProtocolTimestamp(i->startTime), m_maxCallStackDepth, TimelineRecordType::GCEvent);
         record->setObject("data", TimelineRecordFactory::createGCEventData(i->collectedBytes));
-        record->setNumber("endTime", m_timeConverter.fromMonotonicallyIncreasingTime(i->endTime));
+        record->setNumber("endTime", m_timeConverter.toProtocolTimestamp(i->endTime));
         addRecordToTimeline(record.release());
     }
 }
@@ -218,6 +219,7 @@ void InspectorTimelineAgent::start(ErrorString*, const int* maxCallStackDepth, c
     m_state->setBoolean(TimelineAgentState::includeDomCounters, includeDomCounters && *includeDomCounters);
     m_state->setBoolean(TimelineAgentState::includeNativeMemoryStatistics, includeNativeMemoryStatistics && *includeNativeMemoryStatistics);
     m_timeConverter.reset();
+    m_frontend->timelineStarted(m_timeConverter.timestampsBaseMs(), m_timeConverter.startTimeMs());
 
     m_instrumentingAgents->setInspectorTimelineAgent(this);
     ScriptGCEvent::addEventListener(this);
@@ -381,9 +383,9 @@ void InspectorTimelineAgent::didPaint(RenderObject* renderer, GraphicsContext*, 
     didCompleteCurrentRecord(TimelineRecordType::Paint);
 }
 
-void InspectorTimelineAgent::willScrollLayer(Frame* frame)
+void InspectorTimelineAgent::willScrollLayer(RenderObject* renderer)
 {
-    pushCurrentRecord(JSONObject::create(), TimelineRecordType::ScrollLayer, false, frame);
+    pushCurrentRecord(TimelineRecordFactory::createLayerData(idForNode(renderer->generatingNode())), TimelineRecordType::ScrollLayer, false, renderer->frame());
 }
 
 void InspectorTimelineAgent::didScrollLayer()
@@ -499,7 +501,7 @@ void InspectorTimelineAgent::didScheduleResourceRequest(Document* document, cons
     appendRecord(TimelineRecordFactory::createScheduleResourceRequestData(url), TimelineRecordType::ScheduleResourceRequest, true, document->frame());
 }
 
-void InspectorTimelineAgent::willSendRequest(unsigned long identifier, DocumentLoader* loader, const ResourceRequest& request, const ResourceResponse&, const CachedResourceInitiatorInfo&)
+void InspectorTimelineAgent::willSendRequest(unsigned long identifier, DocumentLoader* loader, const ResourceRequest& request, const ResourceResponse&, const FetchInitiatorInfo&)
 {
     String requestId = IdentifiersFactory::requestId(identifier);
     appendRecord(TimelineRecordFactory::createResourceSendRequestData(requestId, request), TimelineRecordType::ResourceSendRequest, true, loader->frame());
@@ -645,7 +647,6 @@ void InspectorTimelineAgent::innerAddRecordToTimeline(PassRefPtr<JSONObject> prp
     RefPtr<TypeBuilder::Timeline::TimelineEvent> record = TypeBuilder::Timeline::TimelineEvent::runtimeCast(prpRecord);
 
     if (m_recordStack.isEmpty()) {
-        setNativeHeapStatistics(record.get());
         sendEvent(record.release());
     } else {
         setDOMCounters(record.get());
@@ -681,24 +682,6 @@ void InspectorTimelineAgent::setDOMCounters(TypeBuilder::Timeline::TimelineEvent
     }
 }
 
-void InspectorTimelineAgent::setNativeHeapStatistics(TypeBuilder::Timeline::TimelineEvent* record)
-{
-    if (!m_memoryAgent)
-        return;
-    if (!m_state->getBoolean(TimelineAgentState::includeNativeMemoryStatistics))
-        return;
-    HashMap<String, size_t> map;
-    m_memoryAgent->getProcessMemoryDistributionMap(&map);
-    RefPtr<JSONObject> stats = JSONObject::create();
-    for (HashMap<String, size_t>::iterator it = map.begin(); it != map.end(); ++it)
-        stats->setNumber(it->key, it->value);
-    size_t privateBytes = 0;
-    size_t sharedBytes = 0;
-    MemoryUsageSupport::processMemorySizesInBytes(&privateBytes, &sharedBytes);
-    stats->setNumber("PrivateBytes", privateBytes);
-    record->setNativeHeapStatistics(stats.release());
-}
-
 void InspectorTimelineAgent::setFrameIdentifier(JSONObject* record, Frame* frame)
 {
     if (!frame || !m_pageAgent)
@@ -726,7 +709,7 @@ void InspectorTimelineAgent::didCompleteCurrentRecord(const String& type)
         entry.record->setObject("data", entry.data);
         entry.record->setArray("children", entry.children);
         entry.record->setNumber("endTime", timestamp());
-        size_t usedHeapSizeDelta = getUsedHeapSize() - entry.usedHeapSizeAtStart;
+        ptrdiff_t usedHeapSizeDelta = getUsedHeapSize() - entry.usedHeapSizeAtStart;
         if (usedHeapSizeDelta)
             entry.record->setNumber("usedHeapSizeDelta", usedHeapSizeDelta);
         addRecordToTimeline(entry.record);
@@ -746,6 +729,7 @@ InspectorTimelineAgent::InspectorTimelineAgent(InstrumentingAgents* instrumentin
     , m_client(client)
     , m_weakFactory(this)
     , m_styleRecalcElementCounter(0)
+    , m_layerTreeId(0)
 {
 }
 
@@ -782,7 +766,7 @@ void InspectorTimelineAgent::commitFrameRecord()
 {
     if (!m_pendingFrameRecord)
         return;
-    
+
     m_pendingFrameRecord->setObject("data", JSONObject::create());
     innerAddRecordToTimeline(m_pendingFrameRecord.release());
 }
@@ -821,9 +805,9 @@ void InspectorTimelineAgent::releaseNodeIds()
         m_domAgent->releaseBackendNodeIds(&unused, BackendNodeIdGroup);
 }
 
-double InspectorTimelineAgent::timestamp()
+double InspectorTimelineAgent::timestamp() const
 {
-    return m_timeConverter.fromMonotonicallyIncreasingTime(WTF::monotonicallyIncreasingTime());
+    return m_timeConverter.toProtocolTimestamp(WTF::monotonicallyIncreasingTime());
 }
 
 Page* InspectorTimelineAgent::page()

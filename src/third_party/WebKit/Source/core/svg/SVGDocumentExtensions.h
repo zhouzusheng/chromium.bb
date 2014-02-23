@@ -21,12 +21,10 @@
 #ifndef SVGDocumentExtensions_h
 #define SVGDocumentExtensions_h
 
-#include <wtf/Forward.h>
-#include <wtf/HashMap.h>
-#include <wtf/HashSet.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/text/AtomicStringHash.h>
-#include <wtf/text/StringImpl.h>
+#include "wtf/Forward.h"
+#include "wtf/HashMap.h"
+#include "wtf/HashSet.h"
+#include "wtf/text/AtomicStringHash.h"
 
 namespace WebCore {
 
@@ -47,7 +45,7 @@ public:
     typedef HashSet<Element*> SVGPendingElements;
     SVGDocumentExtensions(Document*);
     ~SVGDocumentExtensions();
-    
+
     void addTimeContainer(SVGSVGElement*);
     void removeTimeContainer(SVGSVGElement*);
 

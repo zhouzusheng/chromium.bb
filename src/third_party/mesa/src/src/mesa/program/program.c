@@ -32,6 +32,7 @@
 #include "main/glheader.h"
 #include "main/context.h"
 #include "main/hash.h"
+#include "main/mfeatures.h"
 #include "program.h"
 #include "prog_cache.h"
 #include "prog_parameter.h"
@@ -49,7 +50,7 @@ struct gl_program _mesa_DummyProgram;
  * Init context's vertex/fragment program state
  */
 void
-_mesa_init_program(GLcontext *ctx)
+_mesa_init_program(struct gl_context *ctx)
 {
    GLuint i;
 
@@ -70,11 +71,14 @@ _mesa_init_program(GLcontext *ctx)
    ASSERT(ctx->Const.VertexProgram.MaxUniformComponents <= 4 * MAX_UNIFORMS);
    ASSERT(ctx->Const.FragmentProgram.MaxUniformComponents <= 4 * MAX_UNIFORMS);
 
+   ASSERT(ctx->Const.VertexProgram.MaxAddressOffset <= (1 << INST_INDEX_BITS));
+   ASSERT(ctx->Const.FragmentProgram.MaxAddressOffset <= (1 << INST_INDEX_BITS));
+
    /* If this fails, increase prog_instruction::TexSrcUnit size */
-   ASSERT(MAX_TEXTURE_UNITS < (1 << 5));
+   ASSERT(MAX_TEXTURE_UNITS <= (1 << 5));
 
    /* If this fails, increase prog_instruction::TexSrcTarget size */
-   ASSERT(NUM_TEXTURE_TARGETS < (1 << 3));
+   ASSERT(NUM_TEXTURE_TARGETS <= (1 << 4));
 
    ctx->Program.ErrorPos = -1;
    ctx->Program.ErrorString = _mesa_strdup("");
@@ -128,7 +132,7 @@ _mesa_init_program(GLcontext *ctx)
  * Free a context's vertex/fragment program state
  */
 void
-_mesa_free_program_data(GLcontext *ctx)
+_mesa_free_program_data(struct gl_context *ctx)
 {
 #if FEATURE_NV_vertex_program || FEATURE_ARB_vertex_program
    _mesa_reference_vertprog(ctx, &ctx->VertexProgram.Current, NULL);
@@ -136,7 +140,7 @@ _mesa_free_program_data(GLcontext *ctx)
 #endif
 #if FEATURE_NV_fragment_program || FEATURE_ARB_fragment_program
    _mesa_reference_fragprog(ctx, &ctx->FragmentProgram.Current, NULL);
-   _mesa_delete_program_cache(ctx, ctx->FragmentProgram.Cache);
+   _mesa_delete_shader_cache(ctx, ctx->FragmentProgram.Cache);
 #endif
 #if FEATURE_ARB_geometry_shader4
    _mesa_reference_geomprog(ctx, &ctx->GeometryProgram.Current, NULL);
@@ -161,26 +165,23 @@ _mesa_free_program_data(GLcontext *ctx)
  * shared state.
  */
 void
-_mesa_update_default_objects_program(GLcontext *ctx)
+_mesa_update_default_objects_program(struct gl_context *ctx)
 {
 #if FEATURE_NV_vertex_program || FEATURE_ARB_vertex_program
    _mesa_reference_vertprog(ctx, &ctx->VertexProgram.Current,
-                            (struct gl_vertex_program *)
                             ctx->Shared->DefaultVertexProgram);
    assert(ctx->VertexProgram.Current);
 #endif
 
 #if FEATURE_NV_fragment_program || FEATURE_ARB_fragment_program
    _mesa_reference_fragprog(ctx, &ctx->FragmentProgram.Current,
-                            (struct gl_fragment_program *)
                             ctx->Shared->DefaultFragmentProgram);
    assert(ctx->FragmentProgram.Current);
 #endif
 
 #if FEATURE_ARB_geometry_shader4
    _mesa_reference_geomprog(ctx, &ctx->GeometryProgram.Current,
-                            (struct gl_geometry_program *)
-                            ctx->Shared->DefaultGeometryProgram);
+                      ctx->Shared->DefaultGeometryProgram);
 #endif
 
    /* XXX probably move this stuff */
@@ -203,7 +204,7 @@ _mesa_update_default_objects_program(GLcontext *ctx)
  * This is generally called from within the parsers.
  */
 void
-_mesa_set_program_error(GLcontext *ctx, GLint pos, const char *string)
+_mesa_set_program_error(struct gl_context *ctx, GLint pos, const char *string)
 {
    ctx->Program.ErrorPos = pos;
    free((void *) ctx->Program.ErrorString);
@@ -260,7 +261,7 @@ _mesa_find_line_column(const GLubyte *string, const GLubyte *pos,
  * Initialize a new vertex/fragment program object.
  */
 static struct gl_program *
-_mesa_init_program_struct( GLcontext *ctx, struct gl_program *prog,
+_mesa_init_program_struct( struct gl_context *ctx, struct gl_program *prog,
                            GLenum target, GLuint id)
 {
    (void) ctx;
@@ -286,7 +287,7 @@ _mesa_init_program_struct( GLcontext *ctx, struct gl_program *prog,
  * Initialize a new fragment program object.
  */
 struct gl_program *
-_mesa_init_fragment_program( GLcontext *ctx, struct gl_fragment_program *prog,
+_mesa_init_fragment_program( struct gl_context *ctx, struct gl_fragment_program *prog,
                              GLenum target, GLuint id)
 {
    if (prog)
@@ -300,7 +301,7 @@ _mesa_init_fragment_program( GLcontext *ctx, struct gl_fragment_program *prog,
  * Initialize a new vertex program object.
  */
 struct gl_program *
-_mesa_init_vertex_program( GLcontext *ctx, struct gl_vertex_program *prog,
+_mesa_init_vertex_program( struct gl_context *ctx, struct gl_vertex_program *prog,
                            GLenum target, GLuint id)
 {
    if (prog)
@@ -314,7 +315,7 @@ _mesa_init_vertex_program( GLcontext *ctx, struct gl_vertex_program *prog,
  * Initialize a new geometry program object.
  */
 struct gl_program *
-_mesa_init_geometry_program( GLcontext *ctx, struct gl_geometry_program *prog,
+_mesa_init_geometry_program( struct gl_context *ctx, struct gl_geometry_program *prog,
                              GLenum target, GLuint id)
 {
    if (prog)
@@ -337,7 +338,7 @@ _mesa_init_geometry_program( GLcontext *ctx, struct gl_geometry_program *prog,
  * \return  pointer to new program object
  */
 struct gl_program *
-_mesa_new_program(GLcontext *ctx, GLenum target, GLuint id)
+_mesa_new_program(struct gl_context *ctx, GLenum target, GLuint id)
 {
    struct gl_program *prog;
    switch (target) {
@@ -372,7 +373,7 @@ _mesa_new_program(GLcontext *ctx, GLenum target, GLuint id)
  * by a device driver function.
  */
 void
-_mesa_delete_program(GLcontext *ctx, struct gl_program *prog)
+_mesa_delete_program(struct gl_context *ctx, struct gl_program *prog)
 {
    (void) ctx;
    ASSERT(prog);
@@ -384,16 +385,11 @@ _mesa_delete_program(GLcontext *ctx, struct gl_program *prog)
    if (prog->String)
       free(prog->String);
 
-   _mesa_free_instructions(prog->Instructions, prog->NumInstructions);
-
+   if (prog->Instructions) {
+      _mesa_free_instructions(prog->Instructions, prog->NumInstructions);
+   }
    if (prog->Parameters) {
       _mesa_free_parameter_list(prog->Parameters);
-   }
-   if (prog->Varying) {
-      _mesa_free_parameter_list(prog->Varying);
-   }
-   if (prog->Attributes) {
-      _mesa_free_parameter_list(prog->Attributes);
    }
 
    free(prog);
@@ -406,7 +402,7 @@ _mesa_delete_program(GLcontext *ctx, struct gl_program *prog)
  * casts elsewhere.
  */
 struct gl_program *
-_mesa_lookup_program(GLcontext *ctx, GLuint id)
+_mesa_lookup_program(struct gl_context *ctx, GLuint id)
 {
    if (id)
       return (struct gl_program *) _mesa_HashLookup(ctx->Shared->Programs, id);
@@ -417,12 +413,15 @@ _mesa_lookup_program(GLcontext *ctx, GLuint id)
 
 /**
  * Reference counting for vertex/fragment programs
+ * This is normally only called from the _mesa_reference_program() macro
+ * when there's a real pointer change.
  */
 void
-_mesa_reference_program(GLcontext *ctx,
-                        struct gl_program **ptr,
-                        struct gl_program *prog)
+_mesa_reference_program_(struct gl_context *ctx,
+                         struct gl_program **ptr,
+                         struct gl_program *prog)
 {
+#ifndef NDEBUG
    assert(ptr);
    if (*ptr && prog) {
       /* sanity check */
@@ -434,9 +433,8 @@ _mesa_reference_program(GLcontext *ctx,
       else if ((*ptr)->Target == MESA_GEOMETRY_PROGRAM)
          ASSERT(prog->Target == MESA_GEOMETRY_PROGRAM);
    }
-   if (*ptr == prog) {
-      return;  /* no change */
-   }
+#endif
+
    if (*ptr) {
       GLboolean deleteFlag;
 
@@ -486,7 +484,7 @@ _mesa_reference_program(GLcontext *ctx,
  * made by a device driver.
  */
 struct gl_program *
-_mesa_clone_program(GLcontext *ctx, const struct gl_program *prog)
+_mesa_clone_program(struct gl_context *ctx, const struct gl_program *prog)
 {
    struct gl_program *clone;
 
@@ -515,10 +513,6 @@ _mesa_clone_program(GLcontext *ctx, const struct gl_program *prog)
    if (prog->Parameters)
       clone->Parameters = _mesa_clone_parameter_list(prog->Parameters);
    memcpy(clone->LocalParams, prog->LocalParams, sizeof(clone->LocalParams));
-   if (prog->Varying)
-      clone->Varying = _mesa_clone_parameter_list(prog->Varying);
-   if (prog->Attributes)
-      clone->Attributes = _mesa_clone_parameter_list(prog->Attributes);
    memcpy(clone->LocalParams, prog->LocalParams, sizeof(clone->LocalParams));
    clone->IndirectRegisterFiles = prog->IndirectRegisterFiles;
    clone->NumInstructions = prog->NumInstructions;
@@ -541,29 +535,26 @@ _mesa_clone_program(GLcontext *ctx, const struct gl_program *prog)
    switch (prog->Target) {
    case GL_VERTEX_PROGRAM_ARB:
       {
-         const struct gl_vertex_program *vp
-            = (const struct gl_vertex_program *) prog;
-         struct gl_vertex_program *vpc = (struct gl_vertex_program *) clone;
+         const struct gl_vertex_program *vp = gl_vertex_program_const(prog);
+         struct gl_vertex_program *vpc = gl_vertex_program(clone);
          vpc->IsPositionInvariant = vp->IsPositionInvariant;
          vpc->IsNVProgram = vp->IsNVProgram;
       }
       break;
    case GL_FRAGMENT_PROGRAM_ARB:
       {
-         const struct gl_fragment_program *fp
-            = (const struct gl_fragment_program *) prog;
-         struct gl_fragment_program *fpc = (struct gl_fragment_program *) clone;
-         fpc->FogOption = fp->FogOption;
+         const struct gl_fragment_program *fp = gl_fragment_program_const(prog);
+         struct gl_fragment_program *fpc = gl_fragment_program(clone);
          fpc->UsesKill = fp->UsesKill;
+         fpc->UsesDFdy = fp->UsesDFdy;
          fpc->OriginUpperLeft = fp->OriginUpperLeft;
          fpc->PixelCenterInteger = fp->PixelCenterInteger;
       }
       break;
    case MESA_GEOMETRY_PROGRAM:
       {
-         const struct gl_geometry_program *gp
-            = (const struct gl_geometry_program *) prog;
-         struct gl_geometry_program *gpc = (struct gl_geometry_program *) clone;
+         const struct gl_geometry_program *gp = gl_geometry_program_const(prog);
+         struct gl_geometry_program *gpc = gl_geometry_program(clone);
          gpc->VerticesOut = gp->VerticesOut;
          gpc->InputType = gp->InputType;
          gpc->OutputType = gp->OutputType;
@@ -729,7 +720,7 @@ adjust_param_indexes(struct prog_instruction *inst, GLuint numInst,
  * the first program go to the inputs of the second program.
  */
 struct gl_program *
-_mesa_combine_programs(GLcontext *ctx,
+_mesa_combine_programs(struct gl_context *ctx,
                        const struct gl_program *progA,
                        const struct gl_program *progB)
 {
@@ -741,7 +732,7 @@ _mesa_combine_programs(GLcontext *ctx,
    const GLuint newLength = lenA + lenB;
    GLboolean usedTemps[MAX_PROGRAM_TEMPS];
    GLuint firstTemp = 0;
-   GLbitfield inputsB;
+   GLbitfield64 inputsB;
    GLuint i;
 
    ASSERT(progA->Target == progB->Target);
@@ -767,15 +758,17 @@ _mesa_combine_programs(GLcontext *ctx,
                              usedTemps, MAX_PROGRAM_TEMPS);
 
    if (newProg->Target == GL_FRAGMENT_PROGRAM_ARB) {
-      struct gl_fragment_program *fprogA, *fprogB, *newFprog;
-      GLbitfield progB_inputsRead = progB->InputsRead;
+      const struct gl_fragment_program *fprogA, *fprogB;
+      struct gl_fragment_program *newFprog;
+      GLbitfield64 progB_inputsRead = progB->InputsRead;
       GLint progB_colorFile, progB_colorIndex;
 
-      fprogA = (struct gl_fragment_program *) progA;
-      fprogB = (struct gl_fragment_program *) progB;
-      newFprog = (struct gl_fragment_program *) newProg;
+      fprogA = gl_fragment_program_const(progA);
+      fprogB = gl_fragment_program_const(progB);
+      newFprog = gl_fragment_program(newProg);
 
       newFprog->UsesKill = fprogA->UsesKill || fprogB->UsesKill;
+      newFprog->UsesDFdy = fprogA->UsesDFdy || fprogB->UsesDFdy;
 
       /* We'll do a search and replace for instances
        * of progB_colorFile/progB_colorIndex below...
@@ -796,7 +789,7 @@ _mesa_combine_programs(GLcontext *ctx,
          if (p->Type == PROGRAM_STATE_VAR &&
              p->StateIndexes[0] == STATE_INTERNAL &&
              p->StateIndexes[1] == STATE_CURRENT_ATTRIB &&
-             p->StateIndexes[2] == VERT_ATTRIB_COLOR0) {
+             (int) p->StateIndexes[2] == (int) VERT_ATTRIB_COLOR0) {
             progB_inputsRead |= FRAG_BIT_COL0;
             progB_colorFile = PROGRAM_STATE_VAR;
             progB_colorIndex = i;
@@ -807,7 +800,7 @@ _mesa_combine_programs(GLcontext *ctx,
       /* Connect color outputs of fprogA to color inputs of fprogB, via a
        * new temporary register.
        */
-      if ((progA->OutputsWritten & (1 << FRAG_RESULT_COLOR)) &&
+      if ((progA->OutputsWritten & BITFIELD64_BIT(FRAG_RESULT_COLOR)) &&
           (progB_inputsRead & FRAG_BIT_COL0)) {
          GLint tempReg = _mesa_find_free_register(usedTemps, MAX_PROGRAM_TEMPS,
                                                   firstTemp);
@@ -830,7 +823,7 @@ _mesa_combine_programs(GLcontext *ctx,
 
       /* compute combined program's InputsRead */
       inputsB = progB_inputsRead;
-      if (progA->OutputsWritten & (1 << FRAG_RESULT_COLOR)) {
+      if (progA->OutputsWritten & BITFIELD64_BIT(FRAG_RESULT_COLOR)) {
          inputsB &= ~(1 << FRAG_ATTRIB_COL0);
       }
       newProg->InputsRead = progA->InputsRead | inputsB;
@@ -917,19 +910,117 @@ _mesa_find_free_register(const GLboolean used[],
 }
 
 
+
+/**
+ * Check if the given register index is valid (doesn't exceed implementation-
+ * dependent limits).
+ * \return GL_TRUE if OK, GL_FALSE if bad index
+ */
+GLboolean
+_mesa_valid_register_index(const struct gl_context *ctx,
+                           gl_shader_type shaderType,
+                           gl_register_file file, GLint index)
+{
+   const struct gl_program_constants *c;
+
+   switch (shaderType) {
+   case MESA_SHADER_VERTEX:
+      c = &ctx->Const.VertexProgram;
+      break;
+   case MESA_SHADER_FRAGMENT:
+      c = &ctx->Const.FragmentProgram;
+      break;
+   case MESA_SHADER_GEOMETRY:
+      c = &ctx->Const.GeometryProgram;
+      break;
+   default:
+      _mesa_problem(ctx,
+                    "unexpected shader type in _mesa_valid_register_index()");
+      return GL_FALSE;
+   }
+
+   switch (file) {
+   case PROGRAM_UNDEFINED:
+      return GL_TRUE;  /* XXX or maybe false? */
+
+   case PROGRAM_TEMPORARY:
+      return index >= 0 && index < c->MaxTemps;
+
+   case PROGRAM_ENV_PARAM:
+      return index >= 0 && index < c->MaxEnvParams;
+
+   case PROGRAM_LOCAL_PARAM:
+      return index >= 0 && index < c->MaxLocalParams;
+
+   case PROGRAM_NAMED_PARAM:
+      return index >= 0 && index < c->MaxParameters;
+
+   case PROGRAM_UNIFORM:
+   case PROGRAM_STATE_VAR:
+      /* aka constant buffer */
+      return index >= 0 && index < c->MaxUniformComponents / 4;
+
+   case PROGRAM_CONSTANT:
+      /* constant buffer w/ possible relative negative addressing */
+      return (index > (int) c->MaxUniformComponents / -4 &&
+              index < c->MaxUniformComponents / 4);
+
+   case PROGRAM_INPUT:
+      if (index < 0)
+         return GL_FALSE;
+
+      switch (shaderType) {
+      case MESA_SHADER_VERTEX:
+         return index < VERT_ATTRIB_GENERIC0 + c->MaxAttribs;
+      case MESA_SHADER_FRAGMENT:
+         return index < FRAG_ATTRIB_VAR0 + ctx->Const.MaxVarying;
+      case MESA_SHADER_GEOMETRY:
+         return index < GEOM_ATTRIB_VAR0 + ctx->Const.MaxVarying;
+      default:
+         return GL_FALSE;
+      }
+
+   case PROGRAM_OUTPUT:
+      if (index < 0)
+         return GL_FALSE;
+
+      switch (shaderType) {
+      case MESA_SHADER_VERTEX:
+         return index < VERT_RESULT_VAR0 + ctx->Const.MaxVarying;
+      case MESA_SHADER_FRAGMENT:
+         return index < FRAG_RESULT_DATA0 + ctx->Const.MaxDrawBuffers;
+      case MESA_SHADER_GEOMETRY:
+         return index < GEOM_RESULT_VAR0 + ctx->Const.MaxVarying;
+      default:
+         return GL_FALSE;
+      }
+
+   case PROGRAM_ADDRESS:
+      return index >= 0 && index < c->MaxAddressRegs;
+
+   default:
+      _mesa_problem(ctx,
+                    "unexpected register file in _mesa_valid_register_index()");
+      return GL_FALSE;
+   }
+}
+
+
+
 /**
  * "Post-process" a GPU program.  This is intended to be used for debugging.
  * Example actions include no-op'ing instructions or changing instruction
  * behaviour.
  */
 void
-_mesa_postprocess_program(GLcontext *ctx, struct gl_program *prog)
+_mesa_postprocess_program(struct gl_context *ctx, struct gl_program *prog)
 {
    static const GLfloat white[4] = { 0.5, 0.5, 0.5, 0.5 };
    GLuint i;
    GLuint whiteSwizzle;
    GLint whiteIndex = _mesa_add_unnamed_constant(prog->Parameters,
-                                                 white, 4, &whiteSwizzle);
+                                                 (gl_constant_value *) white,
+                                                 4, &whiteSwizzle);
 
    (void) whiteIndex;
 

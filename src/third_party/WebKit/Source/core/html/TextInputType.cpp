@@ -33,7 +33,7 @@
 
 #include "core/html/HTMLInputElement.h"
 #include "core/html/InputTypeNames.h"
-#include <wtf/PassOwnPtr.h>
+#include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
@@ -60,6 +60,11 @@ const AtomicString& TextInputType::formControlType() const
 }
 
 bool TextInputType::shouldRespectSpeechAttribute()
+{
+    return true;
+}
+
+bool TextInputType::supportsInputModeAttribute() const
 {
     return true;
 }

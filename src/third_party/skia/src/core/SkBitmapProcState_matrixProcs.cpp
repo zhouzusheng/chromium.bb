@@ -112,24 +112,12 @@ extern const SkBitmapProcState::MatrixProc RepeatX_RepeatY_Procs_neon[];
 
 static inline U16CPU fixed_clamp(SkFixed x)
 {
-#ifdef SK_CPU_HAS_CONDITIONAL_INSTR
-    if (x < 0)
+    if (x < 0) {
         x = 0;
-    if (x >> 16)
-        x = 0xFFFF;
-#else
-    if (x >> 16)
-    {
-#if 0   // is this faster?
-        x = (~x >> 31) & 0xFFFF;
-#else
-        if (x < 0)
-            x = 0;
-        else
-            x = 0xFFFF;
-#endif
     }
-#endif
+    if (x >> 16) {
+        x = 0xFFFF;
+    }
     return x;
 }
 
@@ -185,20 +173,12 @@ static SkBitmapProcState::FixedTileLowBitsProc choose_tile_lowbits_proc(unsigned
 }
 
 static inline U16CPU int_clamp(int x, int n) {
-#ifdef SK_CPU_HAS_CONDITIONAL_INSTR
-    if (x >= n)
+    if (x >= n) {
         x = n - 1;
-    if (x < 0)
-        x = 0;
-#else
-    if ((unsigned)x >= (unsigned)n) {
-        if (x < 0) {
-            x = 0;
-        } else {
-            x = n - 1;
-        }
     }
-#endif
+    if (x < 0) {
+        x = 0;
+    }
     return x;
 }
 
@@ -311,7 +291,7 @@ static void fill_sequential(uint16_t xptr[], int start, int count) {
 static int nofilter_trans_preamble(const SkBitmapProcState& s, uint32_t** xy,
                                    int x, int y) {
     SkPoint pt;
-    s.fInvProc(*s.fInvMatrix, SkIntToScalar(x) + SK_ScalarHalf,
+    s.fInvProc(s.fInvMatrix, SkIntToScalar(x) + SK_ScalarHalf,
                SkIntToScalar(y) + SK_ScalarHalf, &pt);
     **xy = s.fIntTileProcY(SkScalarToFixed(pt.fY) >> 16,
                            s.fBitmap->height());
@@ -472,7 +452,7 @@ SkBitmapProcState::chooseMatrixProc(bool trivial_matrix) {
 //    test_int_tileprocs();
     // check for our special case when there is no scale/affine/perspective
     if (trivial_matrix) {
-        SkASSERT(!fDoFilter);
+        SkASSERT(SkPaint::kNone_FilterLevel == fFilterLevel);
         fIntTileProcY = choose_int_tile_proc(fTileModeY);
         switch (fTileModeX) {
             case SkShader::kClamp_TileMode:
@@ -485,7 +465,7 @@ SkBitmapProcState::chooseMatrixProc(bool trivial_matrix) {
     }
 
     int index = 0;
-    if (fDoFilter) {
+    if (fFilterLevel != SkPaint::kNone_FilterLevel) {
         index = 1;
     }
     if (fInvType & SkMatrix::kPerspective_Mask) {

@@ -30,7 +30,6 @@
 
 #include "V8AudioBuffer.h"
 #include "bindings/v8/V8Binding.h"
-#include "core/dom/ExceptionCode.h"
 #include "modules/webaudio/AudioBuffer.h"
 #include "modules/webaudio/AudioBufferSourceNode.h"
 
@@ -49,7 +48,7 @@ void V8AudioBufferSourceNode::bufferAttrSetterCustom(v8::Local<v8::String> name,
             return;
         }
     }
-    
+
     if (!buffer) {
         throwTypeError("Value is not of type AudioBuffer", info.GetIsolate());
         return;

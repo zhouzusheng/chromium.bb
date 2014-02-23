@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2010, Google Inc. All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
@@ -31,7 +31,7 @@
 #ifndef JPEGImageEncoder_h
 #define JPEGImageEncoder_h
 
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 class SkBitmap;
 

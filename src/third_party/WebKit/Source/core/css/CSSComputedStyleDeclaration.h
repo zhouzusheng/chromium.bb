@@ -22,15 +22,22 @@
 #define CSSComputedStyleDeclaration_h
 
 #include "core/css/CSSStyleDeclaration.h"
+#include "core/css/StyleColor.h"
 #include "core/rendering/style/RenderStyleConstants.h"
-#include <wtf/RefPtr.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/HashMap.h"
+#include "wtf/RefPtr.h"
+#include "wtf/text/AtomicString.h"
+#include "wtf/text/AtomicStringHash.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 class CSSPrimitiveValue;
 class CSSValueList;
 class Color;
+class CustomFilterNumberParameter;
+class CustomFilterParameter;
+class ExceptionState;
 class MutableStylePropertySet;
 class Node;
 class RenderObject;
@@ -39,9 +46,6 @@ class SVGPaint;
 class ShadowData;
 class StylePropertySet;
 class StylePropertyShorthand;
-
-class CustomFilterNumberParameter;
-class CustomFilterParameter;
 
 enum EUpdateLayout { DoNotUpdateLayout = false, UpdateLayout = true };
 
@@ -69,8 +73,6 @@ public:
 
     PassRefPtr<MutableStylePropertySet> copyPropertiesInSet(const Vector<CSSPropertyID>&) const;
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
-
 private:
     CSSComputedStyleDeclaration(PassRefPtr<Node>, bool allowVisitedStyle, const String&);
 
@@ -85,23 +87,32 @@ private:
     virtual CSSRule* parentRule() const;
     virtual unsigned length() const;
     virtual String item(unsigned index) const;
+    PassRefPtr<RenderStyle> computeRenderStyle(CSSPropertyID) const;
     virtual PassRefPtr<CSSValue> getPropertyCSSValue(const String& propertyName);
     virtual String getPropertyValue(const String& propertyName);
     virtual String getPropertyPriority(const String& propertyName);
     virtual String getPropertyShorthand(const String& propertyName);
     virtual bool isPropertyImplicit(const String& propertyName);
-    virtual void setProperty(const String& propertyName, const String& value, const String& priority, ExceptionCode&);
-    virtual String removeProperty(const String& propertyName, ExceptionCode&);
+    virtual void setProperty(const String& propertyName, const String& value, const String& priority, ExceptionState&);
+    virtual String removeProperty(const String& propertyName, ExceptionState&);
     virtual String cssText() const;
-    virtual void setCssText(const String&, ExceptionCode&);
+    virtual void setCssText(const String&, ExceptionState&);
     virtual PassRefPtr<CSSValue> getPropertyCSSValueInternal(CSSPropertyID);
     virtual String getPropertyValueInternal(CSSPropertyID);
-    virtual void setPropertyInternal(CSSPropertyID, const String& value, bool important, ExceptionCode&);
+    virtual void setPropertyInternal(CSSPropertyID, const String& value, bool important, ExceptionState&);
+
+    const HashMap<AtomicString, String>* variableMap() const;
+    virtual unsigned variableCount() const OVERRIDE;
+    virtual String variableValue(const AtomicString& name) const OVERRIDE;
+    virtual void setVariableValue(const AtomicString& name, const String& value, ExceptionState&) OVERRIDE;
+    virtual bool removeVariable(const AtomicString& name) OVERRIDE;
+    virtual void clearVariables(ExceptionState&) OVERRIDE;
 
     virtual bool cssPropertyMatches(CSSPropertyID, const CSSValue*) const OVERRIDE;
 
-    PassRefPtr<CSSValue> valueForShadow(const ShadowData*, CSSPropertyID, const RenderStyle*) const;
-    PassRefPtr<CSSPrimitiveValue> currentColorOrValidColor(RenderStyle*, const Color&) const;
+    PassRefPtr<CSSValue> valueForShadow(const RenderObject*, const ShadowData*, CSSPropertyID, const RenderStyle*) const;
+    PassRefPtr<CSSPrimitiveValue> currentColorOrValidColor(RenderStyle*, const StyleColor&) const;
+    PassRefPtr<CSSPrimitiveValue> currentColorOrValidColor(const RenderObject*, const RenderStyle*, int colorProperty) const;
     PassRefPtr<SVGPaint> adjustSVGPaintForCurrentColor(PassRefPtr<SVGPaint>, RenderStyle*) const;
 
     PassRefPtr<CSSValue> valueForFilter(const RenderObject*, const RenderStyle*) const;

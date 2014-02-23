@@ -29,10 +29,10 @@
  */
 
 #include "config.h"
-
 #include "V8SQLTransactionSync.h"
 
 #include "V8SQLResultSet.h"
+#include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8Binding.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/platform/sql/SQLValue.h"
@@ -47,7 +47,7 @@ namespace WebCore {
 void V8SQLTransactionSync::executeSqlMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     if (!args.Length()) {
-        setDOMException(SYNTAX_ERR, args.GetIsolate());
+        setDOMException(SyntaxError, args.GetIsolate());
         return;
     }
 
@@ -57,7 +57,7 @@ void V8SQLTransactionSync::executeSqlMethodCustom(const v8::FunctionCallbackInfo
 
     if (args.Length() > 1 && !isUndefinedOrNull(args[1])) {
         if (!args[1]->IsObject()) {
-            setDOMException(TYPE_MISMATCH_ERR, args.GetIsolate());
+            setDOMException(TypeMismatchError, args.GetIsolate());
             return;
         }
 
@@ -88,9 +88,10 @@ void V8SQLTransactionSync::executeSqlMethodCustom(const v8::FunctionCallbackInfo
 
     SQLTransactionSync* transaction = V8SQLTransactionSync::toNative(args.Holder());
 
-    ExceptionCode ec = 0;
-    v8::Handle<v8::Value> result = toV8Fast(transaction->executeSQL(statement, sqlValues, ec), args, transaction);
-    setDOMException(ec, args.GetIsolate());
+    ExceptionState es(args.GetIsolate());
+    v8::Handle<v8::Value> result = toV8Fast(transaction->executeSQL(statement, sqlValues, es), args, transaction);
+    if (es.throwIfNeeded())
+        return;
 
     v8SetReturnValue(args, result);
 }

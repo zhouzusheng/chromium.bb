@@ -27,11 +27,12 @@
 #define ContentSecurityPolicy_h
 
 #include "bindings/v8/ScriptState.h"
-#include <wtf/PassOwnPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/TextPosition.h>
-#include <wtf/text/WTFString.h>
-#include <wtf/Vector.h>
+#include "wtf/HashSet.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/Vector.h"
+#include "wtf/text/StringHash.h"
+#include "wtf/text/TextPosition.h"
+#include "wtf/text/WTFString.h"
 
 namespace WTF {
 class OrdinalNumber;
@@ -39,8 +40,10 @@ class OrdinalNumber;
 
 namespace WebCore {
 
+class ContentSecurityPolicyResponseHeaders;
 class CSPDirectiveList;
 class DOMStringList;
+class JSONObject;
 class KURL;
 class ScriptExecutionContext;
 class SecurityOrigin;
@@ -80,6 +83,7 @@ public:
         BlockReflectedXSS
     };
 
+    void didReceiveHeaders(const ContentSecurityPolicyResponseHeaders&);
     void didReceiveHeader(const String&, HeaderType);
 
     // These functions are wrong because they assume that there is only one header.
@@ -124,7 +128,7 @@ public:
     void reportInvalidReflectedXSS(const String&) const;
     void reportMissingReportURI(const String&) const;
     void reportUnsupportedDirective(const String&) const;
-    void reportViolation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, const Vector<KURL>& reportURIs, const String& header, const String& contextURL = String(), const WTF::OrdinalNumber& contextLine = WTF::OrdinalNumber::beforeFirst(), ScriptState* = 0) const;
+    void reportViolation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, const Vector<KURL>& reportURIs, const String& header, const String& contextURL = String(), const WTF::OrdinalNumber& contextLine = WTF::OrdinalNumber::beforeFirst(), ScriptState* = 0);
 
     void reportBlockedScriptExecutionToInspector(const String& directiveText) const;
 
@@ -142,10 +146,16 @@ private:
     explicit ContentSecurityPolicy(ScriptExecutionContext*);
 
     void logToConsole(const String& message, const String& contextURL = String(), const WTF::OrdinalNumber& contextLine = WTF::OrdinalNumber::beforeFirst(), ScriptState* = 0) const;
+    void addPolicyFromHeaderValue(const String&, HeaderType);
+
+    bool shouldSendViolationReport(const String&) const;
+    void didSendViolationReport(const String&);
 
     ScriptExecutionContext* m_scriptExecutionContext;
     bool m_overrideInlineStyleAllowed;
     CSPDirectiveListVector m_policies;
+
+    HashSet<unsigned, AlreadyHashed> m_violationReportsSent;
 };
 
 }

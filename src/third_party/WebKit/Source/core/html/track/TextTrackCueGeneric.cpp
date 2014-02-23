@@ -24,11 +24,11 @@
  */
 
 #include "config.h"
-
 #include "core/html/track/TextTrackCueGeneric.h"
 
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/html/track/TextTrackCue.h"
 
@@ -40,9 +40,9 @@ public:
     {
         return adoptRef(new TextTrackCueGenericBoxElement(document, cue));
     }
-    
+
     virtual void applyCSSProperties(const IntSize&) OVERRIDE;
-    
+
 private:
     TextTrackCueGenericBoxElement(Document*, TextTrackCue*);
 };
@@ -56,12 +56,12 @@ void TextTrackCueGenericBoxElement::applyCSSProperties(const IntSize& videoSize)
 {
     setInlineStyleProperty(CSSPropertyPosition, CSSValueAbsolute);
     setInlineStyleProperty(CSSPropertyUnicodeBidi, CSSValueWebkitPlaintext);
-    
+
     TextTrackCueGeneric* cue = static_cast<TextTrackCueGeneric*>(getCue());
 
     float size = static_cast<float>(cue->getCSSSize());
     if (cue->useDefaultPosition()) {
-        setInlineStyleProperty(CSSPropertyBottom, "0");
+        setInlineStyleProperty(CSSPropertyBottom, 0.0, CSSPrimitiveValue::CSS_PX);
         setInlineStyleProperty(CSSPropertyMarginBottom, 1.0, CSSPrimitiveValue::CSS_PERCENTAGE);
     } else {
         setInlineStyleProperty(CSSPropertyLeft, static_cast<float>(cue->position()), CSSPrimitiveValue::CSS_PERCENTAGE);
@@ -73,10 +73,10 @@ void TextTrackCueGenericBoxElement::applyCSSProperties(const IntSize& videoSize)
             setInlineStyleProperty(CSSPropertyHeight, size,  CSSPrimitiveValue::CSS_PERCENTAGE);
     }
 
-    if (cue->foregroundColor().isValid())
+    if (cue->foregroundColor().alpha())
         setInlineStyleProperty(CSSPropertyColor, cue->foregroundColor().serialized());
-    
-    if (cue->backgroundColor().isValid())
+
+    if (cue->backgroundColor().alpha())
         cue->element()->setInlineStyleProperty(CSSPropertyBackgroundColor, cue->backgroundColor().serialized());
 
     if (cue->getWritingDirection() == TextTrackCue::Horizontal)
@@ -88,7 +88,7 @@ void TextTrackCueGenericBoxElement::applyCSSProperties(const IntSize& videoSize)
         double fontSize = videoSize.height() * cue->baseFontSizeRelativeToVideoHeight() / 100;
         if (cue->fontSizeMultiplier())
             fontSize *= cue->fontSizeMultiplier() / 100;
-        setInlineStyleProperty(CSSPropertyFontSize, String::number(fontSize) + "px");
+        setInlineStyleProperty(CSSPropertyFontSize, fontSize, CSSPrimitiveValue::CSS_PX);
     }
 
     if (cue->getAlignment() == TextTrackCue::Middle)
@@ -116,16 +116,16 @@ PassRefPtr<TextTrackCueBox> TextTrackCueGeneric::createDisplayTree()
     return TextTrackCueGenericBoxElement::create(ownerDocument(), this);
 }
 
-void TextTrackCueGeneric::setLine(int line, ExceptionCode& ec)
+void TextTrackCueGeneric::setLine(int line, ExceptionState& es)
 {
     m_defaultPosition = false;
-    TextTrackCue::setLine(line, ec);
+    TextTrackCue::setLine(line, es);
 }
 
-void TextTrackCueGeneric::setPosition(int position, ExceptionCode& ec)
+void TextTrackCueGeneric::setPosition(int position, ExceptionState& es)
 {
     m_defaultPosition = false;
-    TextTrackCue::setPosition(position, ec);
+    TextTrackCue::setPosition(position, es);
 }
 
 void TextTrackCueGeneric::videoSizeDidChange(const IntSize& videoSize)
@@ -137,7 +137,7 @@ void TextTrackCueGeneric::videoSizeDidChange(const IntSize& videoSize)
         double fontSize = videoSize.height() * baseFontSizeRelativeToVideoHeight() / 100;
         if (fontSizeMultiplier())
             fontSize *= fontSizeMultiplier() / 100;
-        displayTreeInternal()->setInlineStyleProperty(CSSPropertyFontSize, String::number(fontSize) + "px");
+        displayTreeInternal()->setInlineStyleProperty(CSSPropertyFontSize, fontSize, CSSPrimitiveValue::CSS_PX);
     }
 
 }
@@ -162,6 +162,6 @@ bool TextTrackCueGeneric::operator==(const TextTrackCue& cue) const
 
     return TextTrackCue::operator==(cue);
 }
-    
+
 } // namespace WebCore
 

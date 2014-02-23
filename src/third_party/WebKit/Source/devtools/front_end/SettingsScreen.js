@@ -156,8 +156,9 @@ WebInspector.SettingsTab.prototype = {
     /**
      * @param {boolean=} omitParagraphElement
      * @param {Element=} inputElement
+     * @param {string=} tooltip
      */
-    _createCheckboxSetting: function(name, setting, omitParagraphElement, inputElement)
+    _createCheckboxSetting: function(name, setting, omitParagraphElement, inputElement, tooltip)
     {
         var input = inputElement || document.createElement("input");
         input.type = "checkbox";
@@ -173,6 +174,9 @@ WebInspector.SettingsTab.prototype = {
         var label = document.createElement("label");
         label.appendChild(input);
         label.appendChild(document.createTextNode(name));
+        if (tooltip)
+            label.title = tooltip;
+
         if (omitParagraphElement)
             return label;
 
@@ -209,50 +213,13 @@ WebInspector.SettingsTab.prototype = {
         return p;
     },
 
-    _createRadioSetting: function(name, options, setting)
-    {
-        var pp = document.createElement("p");
-        var fieldsetElement = document.createElement("fieldset");
-        var legendElement = document.createElement("legend");
-        legendElement.textContent = name;
-        fieldsetElement.appendChild(legendElement);
-
-        function clickListener(e)
-        {
-            setting.set(e.target.value);
-        }
-
-        var settingValue = setting.get();
-        for (var i = 0; i < options.length; ++i) {
-            var p = document.createElement("p");
-            var label = document.createElement("label");
-            p.appendChild(label);
-
-            var input = document.createElement("input");
-            input.type = "radio";
-            input.name = setting.name;
-            input.value = options[i][0];
-            input.addEventListener("click", clickListener, false);
-            if (settingValue == input.value)
-                input.checked = true;
-
-            label.appendChild(input);
-            label.appendChild(document.createTextNode(options[i][1]));
-
-            fieldsetElement.appendChild(p);
-        }
-
-        pp.appendChild(fieldsetElement);
-        return pp;
-    },
-
     /**
      * @param {string} label
      * @param {WebInspector.Setting} setting
      * @param {boolean} numeric
      * @param {number=} maxLength
      * @param {string=} width
-     * @param {function(string):boolean=} validatorCallback
+     * @param {function(string):?string=} validatorCallback
      */
     _createInputSetting: function(label, setting, numeric, maxLength, width, validatorCallback)
     {
@@ -269,13 +236,21 @@ WebInspector.SettingsTab.prototype = {
             inputElement.maxLength = maxLength;
         if (width)
             inputElement.style.width = width;
+        if (validatorCallback) {
+            var errorMessageLabel = labelElement.createChild("div");
+            errorMessageLabel.addStyleClass("field-error-message");
+            errorMessageLabel.style.color = "DarkRed";
+            inputElement.oninput = function()
+            {
+                var error = validatorCallback(inputElement.value);
+                if (!error)
+                    error = "";
+                errorMessageLabel.textContent = error;
+            };
+        }
 
         function onBlur()
         {
-            if (validatorCallback && !validatorCallback(inputElement.value)) {
-                inputElement.value = setting.get();
-                return;
-            }
             setting.set(numeric ? Number(inputElement.value) : inputElement.value);
         }
         inputElement.addEventListener("blur", onBlur, false);
@@ -312,15 +287,17 @@ WebInspector.GenericSettingsTab = function()
     this._updateScriptDisabledCheckbox();
 
     p = this._appendSection(WebInspector.UIString("Appearance"));
-    p.appendChild(this._createCheckboxSetting(WebInspector.UIString("Show toolbar icons"), WebInspector.settings.showToolbarIcons));
     p.appendChild(this._createCheckboxSetting(WebInspector.UIString("Split panels vertically when docked to right"), WebInspector.settings.splitVerticallyWhenDockedToRight));
 
     p = this._appendSection(WebInspector.UIString("Elements"));
-    p.appendChild(this._createRadioSetting(WebInspector.UIString("Color format"), [
-        [ WebInspector.Color.Format.Original, WebInspector.UIString("As authored") ],
-        [ WebInspector.Color.Format.HEX, "HEX: #DAC0DE" ],
-        [ WebInspector.Color.Format.RGB, "RGB: rgb(128, 255, 255)" ],
-        [ WebInspector.Color.Format.HSL, "HSL: hsl(300, 80%, 90%)" ] ], WebInspector.settings.colorFormat));
+    var colorFormatElement = this._createSelectSetting(WebInspector.UIString("Color format"), [
+            [ WebInspector.UIString("As authored"), WebInspector.Color.Format.Original ],
+            [ "HEX: #DAC0DE", WebInspector.Color.Format.HEX ],
+            [ "RGB: rgb(128, 255, 255)", WebInspector.Color.Format.RGB ],
+            [ "HSL: hsl(300, 80%, 90%)", WebInspector.Color.Format.HSL ]
+        ], WebInspector.settings.colorFormat);
+    p.appendChild(colorFormatElement);
+    colorFormatElement.firstChild.className = "toplevel";
     p.appendChild(this._createCheckboxSetting(WebInspector.UIString("Show user agent styles"), WebInspector.settings.showUserAgentStyles));
     p.appendChild(this._createCheckboxSetting(WebInspector.UIString("Word wrap"), WebInspector.settings.domWordWrap));
     p.appendChild(this._createCheckboxSetting(WebInspector.UIString("Show Shadow DOM"), WebInspector.settings.showShadowDOM));
@@ -338,14 +315,22 @@ WebInspector.GenericSettingsTab = function()
     this._compositingModeSettings.appendChild(this._createCheckboxSetting(WebInspector.UIString("Show FPS meter"), WebInspector.settings.showFPSCounter, false, this._showFPSCheckbox));
     this._continousPaintingCheckbox = document.createElement("input");
     this._compositingModeSettings.appendChild(this._createCheckboxSetting(WebInspector.UIString("Enable continuous page repainting"), WebInspector.settings.continuousPainting, false, this._continousPaintingCheckbox));
+    this._showScrollBottleneckRectsCheckbox = document.createElement("input");
+    var tooltip = WebInspector.UIString("Shows areas of the page that slow down scrolling:\nTouch and mousewheel event listeners can delay scrolling.\nSome areas need to repaint their content when scrolled.");
+    this._compositingModeSettings.appendChild(this._createCheckboxSetting(WebInspector.UIString("Show potential scroll bottlenecks"), WebInspector.settings.showScrollBottleneckRects, false, this._showScrollBottleneckRectsCheckbox, tooltip));
     this._forceCompositingModeChanged();
 
     p = this._appendSection(WebInspector.UIString("Sources"));
     p.appendChild(this._createCheckboxSetting(WebInspector.UIString("Search in content scripts"), WebInspector.settings.searchInContentScripts));
-    p.appendChild(this._createCheckboxSetting(WebInspector.UIString("Enable source maps"), WebInspector.settings.sourceMapsEnabled));
-    if (WebInspector.experimentsSettings.isEnabled("sass"))
-        p.appendChild(this._createCSSAutoReloadControls());
-    var indentationElement = this._createSelectSetting(WebInspector.UIString("Indentation"), [
+    p.appendChild(this._createCheckboxSetting(WebInspector.UIString("Enable JS source maps"), WebInspector.settings.jsSourceMapsEnabled));
+    p.appendChild(this._createCheckboxSetting(WebInspector.UIString("Enable CSS source maps"), WebInspector.settings.cssSourceMapsEnabled));
+    WebInspector.settings.cssSourceMapsEnabled.addChangeListener(this._cssSourceMapsEnablementChanged, this);
+    this._cssSourceMapSettings = p.createChild("fieldset");
+    var autoReloadCSSCheckbox = this._cssSourceMapSettings.createChild("input");
+    this._cssSourceMapSettings.appendChild(this._createCheckboxSetting(WebInspector.UIString("Auto-reload generated CSS"), WebInspector.settings.cssReloadEnabled, false, autoReloadCSSCheckbox));
+    this._cssSourceMapsEnablementChanged();
+
+    var indentationElement = this._createSelectSetting(WebInspector.UIString("Default indentation"), [
             [ WebInspector.UIString("2 spaces"), WebInspector.TextUtils.Indent.TwoSpaces ],
             [ WebInspector.UIString("4 spaces"), WebInspector.TextUtils.Indent.FourSpaces ],
             [ WebInspector.UIString("8 spaces"), WebInspector.TextUtils.Indent.EightSpaces ],
@@ -353,12 +338,15 @@ WebInspector.GenericSettingsTab = function()
         ], WebInspector.settings.textEditorIndent);
     indentationElement.firstChild.className = "toplevel";
     p.appendChild(indentationElement);
+    p.appendChild(this._createCheckboxSetting(WebInspector.UIString("Detect indentation"), WebInspector.settings.textEditorAutoDetectIndent));
     p.appendChild(this._createCheckboxSetting(WebInspector.UIString("Show whitespace characters"), WebInspector.settings.showWhitespacesInEditor));
+    if (WebInspector.experimentsSettings.frameworksDebuggingSupport.isEnabled())
+        p.appendChild(this._createSkipStackFrameSetting());
+    WebInspector.settings.skipStackFramesSwitch.addChangeListener(this._skipStackFramesSwitchOrPatternChanged, this);
+    WebInspector.settings.skipStackFramesPattern.addChangeListener(this._skipStackFramesSwitchOrPatternChanged, this);
 
     p = this._appendSection(WebInspector.UIString("Profiler"));
-    p.appendChild(this._createCheckboxSetting(WebInspector.UIString("Show objects' hidden properties"), WebInspector.settings.showHeapSnapshotObjectsHiddenProperties));
-    if (WebInspector.experimentsSettings.nativeMemorySnapshots.isEnabled())
-        p.appendChild(this._createCheckboxSetting(WebInspector.UIString("Show uninstrumented native memory"), WebInspector.settings.showNativeSnapshotUninstrumentedSize));
+    p.appendChild(this._createCheckboxSetting(WebInspector.UIString("Show advanced heap snapshot properties"), WebInspector.settings.showAdvancedHeapSnapshotProperties));
 
     p = this._appendSection(WebInspector.UIString("Timeline"));
     var checkbox = this._createCheckboxSetting(WebInspector.UIString("Limit number of captured JS stack frames"), WebInspector.settings.timelineLimitStackFramesFlag);
@@ -397,11 +385,22 @@ WebInspector.GenericSettingsTab.prototype = {
             this._showFPSCheckbox.checked = false;
             this._continousPaintingCheckbox.checked = false;
             this._showCompositedLayersBordersCheckbox.checked = false;
+            this._showScrollBottleneckRectsCheckbox.checked = false;
             WebInspector.settings.showFPSCounter.set(false);
             WebInspector.settings.continuousPainting.set(false);
             WebInspector.settings.showDebugBorders.set(false);
+            WebInspector.settings.showScrollBottleneckRects.set(false);
         }
         this._forceCompositingModeCheckbox.checked = compositing;
+    },
+
+    /**
+     * @param {WebInspector.Event=} event
+     */
+    _cssSourceMapsEnablementChanged: function(event)
+    {
+        var cssSourceMapsEnabled = event ? /** @type {boolean} */ (event.data) : WebInspector.settings.cssSourceMapsEnabled.get();
+        this._cssSourceMapSettings.disabled = !cssSourceMapsEnabled;
     },
 
     /**
@@ -442,31 +441,46 @@ WebInspector.GenericSettingsTab.prototype = {
         PageAgent.setScriptExecutionDisabled(WebInspector.settings.javaScriptDisabled.get(), this._updateScriptDisabledCheckbox.bind(this));
     },
 
-    _createCSSAutoReloadControls: function()
+    _skipStackFramesSwitchOrPatternChanged: function()
+    {
+        WebInspector.DebuggerModel.applySkipStackFrameSettings();
+    },
+
+    _createSkipStackFrameSetting: function()
     {
         var fragment = document.createDocumentFragment();
         var labelElement = fragment.createChild("label");
         var checkboxElement = labelElement.createChild("input");
         checkboxElement.type = "checkbox";
-        checkboxElement.checked = WebInspector.settings.cssReloadEnabled.get();
+        checkboxElement.checked = WebInspector.settings.skipStackFramesSwitch.get();
         checkboxElement.addEventListener("click", checkboxClicked, false);
-        labelElement.appendChild(document.createTextNode(WebInspector.UIString("Auto-reload CSS upon Sass save")));
-
-        var fieldsetElement = this._createInputSetting(WebInspector.UIString("Timeout (ms)"), WebInspector.settings.cssReloadTimeout, true, 8, "60px", validateReloadTimeout);
+        labelElement.appendChild(document.createTextNode(WebInspector.UIString("Skip stepping through sources with particular names")));
+        var fieldsetElement = this._createInputSetting(WebInspector.UIString("Pattern"), WebInspector.settings.skipStackFramesPattern, false, 1000, "100px", regExpValidator);
         fieldsetElement.disabled = !checkboxElement.checked;
         fragment.appendChild(fieldsetElement);
         return fragment;
 
-        function checkboxClicked()
+        /**
+         * @param {string} text
+         * @return {?string}
+         */
+        function regExpValidator(text)
         {
-            var reloadEnabled = checkboxElement.checked;
-            WebInspector.settings.cssReloadEnabled.set(reloadEnabled);
-            fieldsetElement.disabled = !reloadEnabled;
+            try {
+                var unused = new RegExp(text);
+                // Keep closure compiler happy.
+                unused.unused = unused;
+                return null;
+            } catch (e) {
+                return "Invalid pattern";
+            }
         }
 
-        function validateReloadTimeout(value)
+        function checkboxClicked()
         {
-            return isFinite(value) && value > 0;
+            var enabled = checkboxElement.checked;
+            fieldsetElement.disabled = !checkboxElement.checked;
+            WebInspector.settings.skipStackFramesSwitch.set(enabled);
         }
     },
 
@@ -601,17 +615,18 @@ WebInspector.WorkspaceSettingsTab.prototype = {
 
         const maxTotalPathLength = 60;
         const maxFolderNameLength = 30;
-        var lastIndexOfSlash = fileSystemPath.lastIndexOf("/");
+
+        var lastIndexOfSlash = fileSystemPath.lastIndexOf(WebInspector.isWin() ? "\\" : "/");
         var folderName = fileSystemPath.substr(lastIndexOfSlash + 1);
-        var folderPath = fileSystemPath.substr(0, lastIndexOfSlash);
+        var folderPath = fileSystemPath.substr(0, lastIndexOfSlash + 1);
         folderPath = folderPath.trimMiddle(maxTotalPathLength - Math.min(maxFolderNameLength, folderName.length));
         folderName = folderName.trimMiddle(maxFolderNameLength);
 
-        var nameElement = pathElement.createChild("span", "file-system-path-name");
-        nameElement.textContent = folderName;
-
         var folderPathElement = pathElement.createChild("span");
         folderPathElement.textContent = folderPath;
+
+        var nameElement = pathElement.createChild("span", "file-system-path-name");
+        nameElement.textContent = folderName;
     },
 
     /**
@@ -1322,9 +1337,9 @@ WebInspector.EditableSettingsList = function(columns, valuesProvider, itemRemove
     this._validateHandler = validateHandler;
     this._editHandler = editHandler;
     this._valuesProvider = valuesProvider;
-    /** @type {Object.<string, HTMLInputElement>} */
+    /** @type {!Object.<string, HTMLInputElement>} */
     this._addInputElements = {};
-    /** @type {Object.<string, Object.<string, HTMLInputElement>>} */
+    /** @type {!Object.<string, !Object.<string, HTMLInputElement>>} */
     this._editInputElements = {};
     /** @type {Object.<string, Object.<string, HTMLSpanElement>>} */
     this._textElements = {};

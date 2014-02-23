@@ -12,8 +12,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
 #include "google_apis/gaia/google_service_auth_error.h"
-#include "googleurl/src/gurl.h"
 #include "net/url_request/url_fetcher_delegate.h"
+#include "url/gurl.h"
 
 // Authenticate a user against the Google Accounts ClientLogin API
 // with various capabilities and return results to a GaiaAuthConsumer.
@@ -102,8 +102,8 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
 
   // Start a request to revoke |auth_token|.
   //
-  // Either OnRevokeOAuth2TokenSuccess or OnRevokeOAuth2TokenSuccess will be
-  // called on the consumer on the original thread.
+  // OnOAuth2RevokeTokenCompleted will be called on the consumer on the original
+  // thread.
   void StartRevokeOAuth2Token(const std::string& auth_token);
 
   // Start a request to exchange the cookies of a signed-in user session

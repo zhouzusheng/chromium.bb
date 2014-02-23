@@ -26,8 +26,13 @@
 #ifndef V8ArrayBufferCustom_h
 #define V8ArrayBufferCustom_h
 
-#include <v8.h>
+#include "bindings/v8/V8Binding.h"
+#include "bindings/v8/V8DOMWrapper.h"
+#include "bindings/v8/WrapperTypeInfo.h"
+
 #include "wtf/ArrayBuffer.h"
+
+#include <v8.h>
 
 namespace WebCore {
 
@@ -40,6 +45,95 @@ public:
     static V8ArrayBufferDeallocationObserver* instance();
 };
 
+class V8ArrayBuffer {
+public:
+    static bool HasInstance(v8::Handle<v8::Value>, v8::Isolate*, WrapperWorldType);
+    static bool HasInstanceInAnyWorld(v8::Handle<v8::Value>, v8::Isolate*);
+    static ArrayBuffer* toNative(v8::Handle<v8::Object>);
+    static void derefObject(void*);
+    static WrapperTypeInfo info;
+    static const int internalFieldCount = v8DefaultWrapperInternalFieldCount;
+    static void installPerContextProperties(v8::Handle<v8::Object>, ArrayBuffer*, v8::Isolate*) { }
+    static void installPerContextPrototypeProperties(v8::Handle<v8::Object>, v8::Isolate*) { }
+
+    static inline void* toInternalPointer(ArrayBuffer* impl)
+    {
+        return impl;
+    }
+
+    static inline ArrayBuffer* fromInternalPointer(void* impl)
+    {
+        return static_cast<ArrayBuffer*>(impl);
+    }
+
+private:
+    friend v8::Handle<v8::Object> wrap(ArrayBuffer*, v8::Handle<v8::Object> creationContext, v8::Isolate*);
+    static v8::Handle<v8::Object> createWrapper(PassRefPtr<ArrayBuffer>, v8::Handle<v8::Object> creationContext, v8::Isolate*);
+};
+
+template<>
+class WrapperTypeTraits<ArrayBuffer > {
+public:
+    static WrapperTypeInfo* info() { return &V8ArrayBuffer::info; }
+};
+
+
+inline v8::Handle<v8::Object> wrap(ArrayBuffer* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+{
+    ASSERT(impl);
+    ASSERT(DOMDataStore::getWrapper<V8ArrayBuffer>(impl, isolate).IsEmpty());
+    return V8ArrayBuffer::createWrapper(impl, creationContext, isolate);
 }
+
+inline v8::Handle<v8::Value> toV8(ArrayBuffer* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+{
+    if (UNLIKELY(!impl))
+        return v8NullWithCheck(isolate);
+    v8::Handle<v8::Value> wrapper = DOMDataStore::getWrapper<V8ArrayBuffer>(impl, isolate);
+    if (!wrapper.IsEmpty())
+        return wrapper;
+    return wrap(impl, creationContext, isolate);
+}
+
+inline v8::Handle<v8::Value> toV8ForMainWorld(ArrayBuffer* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+{
+    ASSERT(worldType(isolate) == MainWorld);
+    if (UNLIKELY(!impl))
+        return v8NullWithCheck(isolate);
+    v8::Handle<v8::Value> wrapper = DOMDataStore::getWrapperForMainWorld<V8ArrayBuffer>(impl);
+    if (!wrapper.IsEmpty())
+        return wrapper;
+    return wrap(impl, creationContext, isolate);
+}
+
+template<class CallbackInfo, class Wrappable>
+inline v8::Handle<v8::Value> toV8Fast(ArrayBuffer* impl, const CallbackInfo& callbackInfo, Wrappable* wrappable)
+{
+    if (UNLIKELY(!impl))
+        return v8::Null(callbackInfo.GetIsolate());
+    v8::Handle<v8::Object> wrapper = DOMDataStore::getWrapperFast<V8ArrayBuffer>(impl, callbackInfo, wrappable);
+    if (!wrapper.IsEmpty())
+        return wrapper;
+    return wrap(impl, callbackInfo.Holder(), callbackInfo.GetIsolate());
+}
+
+template<class CallbackInfo, class Wrappable>
+inline v8::Handle<v8::Value> toV8Fast(PassRefPtr< ArrayBuffer > impl, const CallbackInfo& callbackInfo, Wrappable* wrappable)
+{
+    return toV8Fast(impl.get(), callbackInfo, wrappable);
+}
+
+inline v8::Handle<v8::Value> toV8(PassRefPtr< ArrayBuffer > impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+{
+    return toV8(impl.get(), creationContext, isolate);
+}
+
+template<class CallbackInfo, class Wrappable>
+inline v8::Handle<v8::Value> toV8ForMainWorld(PassRefPtr< ArrayBuffer > impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+{
+    return toV8ForMainWorld(impl.get(), creationContext, isolate);
+}
+
+} // namespace WebCore
 
 #endif // V8ArrayBufferCustom_h

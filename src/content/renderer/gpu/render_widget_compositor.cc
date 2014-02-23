@@ -11,7 +11,7 @@
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/synchronization/lock.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "cc/base/switches.h"
 #include "cc/debug/layer_tree_debug_state.h"
 #include "cc/layers/layer.h"
@@ -79,9 +79,10 @@ bool GetSwitchValueAsFloat(
 
 // static
 scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
-      RenderWidget* widget) {
+    RenderWidget* widget,
+    bool threaded) {
   scoped_ptr<RenderWidgetCompositor> compositor(
-      new RenderWidgetCompositor(widget));
+      new RenderWidgetCompositor(widget, threaded));
 
   CommandLine* cmd = CommandLine::ForCurrentProcess();
 
@@ -103,11 +104,6 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       !cmd->HasSwitch(cc::switches::kDisableThreadedAnimation);
   settings.force_direct_layer_drawing =
       cmd->HasSwitch(cc::switches::kForceDirectLayerDrawing);
-
-  // Android WebView does not support forced draw and this is to prevent
-  // crashes. Adding support for forced draw is tracked in crbug.com/250909.
-  settings.timeout_and_draw_when_animation_checkerboards =
-      !widget->UsingSynchronousRendererCompositor();
 
   int default_tile_width = settings.default_tile_size.width();
   if (cmd->HasSwitch(switches::kDefaultTileWidth)) {
@@ -139,8 +135,6 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
                                            max_untiled_layer_height);
 
   settings.impl_side_painting = cc::switches::IsImplSidePaintingEnabled();
-  settings.use_color_estimator =
-      !cmd->HasSwitch(cc::switches::kDisableColorEstimator);
 
   settings.calculate_top_controls_position =
       cmd->HasSwitch(cc::switches::kEnableTopControlsPositionCalculation);
@@ -274,9 +268,22 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   settings.max_partial_texture_updates = 0;
   settings.use_linear_fade_scrollbar_animator = true;
   settings.solid_color_scrollbars = true;
-  settings.solid_color_scrollbar_color = SkColorSetARGB(128, 128, 128, 128);
+  settings.solid_color_scrollbar_color =
+      cmd->HasSwitch(switches::kHideScrollbars)
+          ? SK_ColorTRANSPARENT
+          : SkColorSetARGB(128, 128, 128, 128);
   settings.solid_color_scrollbar_thickness_dip = 3;
   settings.highp_threshold_min = 2048;
+  // Android WebView handles root layer flings itself.
+  settings.ignore_root_layer_flings =
+      widget->UsingSynchronousRendererCompositor();
+#elif !defined(OS_MACOSX)
+  if (cmd->HasSwitch(switches::kEnableOverlayScrollbars)) {
+    settings.use_linear_fade_scrollbar_animator = true;
+    settings.solid_color_scrollbars = true;
+    settings.solid_color_scrollbar_color = SkColorSetARGB(128, 128, 128, 128);
+    settings.solid_color_scrollbar_thickness_dip = 3;
+  }
 #endif
 
   if (!compositor->initialize(settings))
@@ -285,9 +292,11 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   return compositor.Pass();
 }
 
-RenderWidgetCompositor::RenderWidgetCompositor(RenderWidget* widget)
-  : suppress_schedule_composite_(false),
-    widget_(widget) {
+RenderWidgetCompositor::RenderWidgetCompositor(RenderWidget* widget,
+                                               bool threaded)
+    : threaded_(threaded),
+      suppress_schedule_composite_(false),
+      widget_(widget) {
 }
 
 RenderWidgetCompositor::~RenderWidgetCompositor() {}
@@ -332,10 +341,6 @@ void RenderWidgetCompositor::GetRenderingStats(cc::RenderingStats* stats) {
   layer_tree_host_->CollectRenderingStats(stats);
 }
 
-skia::RefPtr<SkPicture> RenderWidgetCompositor::CapturePicture() {
-  return layer_tree_host_->CapturePicture();
-}
-
 void RenderWidgetCompositor::UpdateTopControlsState(
     cc::TopControlsState constraints,
     cc::TopControlsState current,
@@ -357,6 +362,14 @@ void RenderWidgetCompositor::SetNeedsRedrawRect(gfx::Rect damage_rect) {
 void RenderWidgetCompositor::SetLatencyInfo(
     const ui::LatencyInfo& latency_info) {
   layer_tree_host_->SetLatencyInfo(latency_info);
+}
+
+int RenderWidgetCompositor::GetLayerTreeId() const {
+  return layer_tree_host_->id();
+}
+
+void RenderWidgetCompositor::NotifyInputThrottledUntilCommit() {
+  layer_tree_host_->NotifyInputThrottledUntilCommit();
 }
 
 bool RenderWidgetCompositor::initialize(cc::LayerTreeSettings settings) {
@@ -503,6 +516,14 @@ void RenderWidgetCompositor::setContinuousPaintingEnabled(bool enabled) {
   layer_tree_host_->SetDebugState(debug_state);
 }
 
+void RenderWidgetCompositor::setShowScrollBottleneckRects(bool show) {
+  cc::LayerTreeDebugState debug_state = layer_tree_host_->debug_state();
+  debug_state.show_touch_event_handler_rects = show;
+  debug_state.show_wheel_event_handler_rects = show;
+  debug_state.show_non_fast_scrollable_rects = show;
+  layer_tree_host_->SetDebugState(debug_state);
+}
+
 void RenderWidgetCompositor::WillBeginFrame() {
   widget_->InstrumentWillBeginFrame();
   widget_->willBeginCompositorFrame();
@@ -525,8 +546,9 @@ void RenderWidgetCompositor::ApplyScrollAndScale(gfx::Vector2d scroll_delta,
   widget_->webwidget()->applyScrollAndScale(scroll_delta, page_scale);
 }
 
-scoped_ptr<cc::OutputSurface> RenderWidgetCompositor::CreateOutputSurface() {
-  return widget_->CreateOutputSurface();
+scoped_ptr<cc::OutputSurface> RenderWidgetCompositor::CreateOutputSurface(
+    bool fallback) {
+  return widget_->CreateOutputSurface(fallback);
 }
 
 void RenderWidgetCompositor::DidInitializeOutputSurface(bool success) {

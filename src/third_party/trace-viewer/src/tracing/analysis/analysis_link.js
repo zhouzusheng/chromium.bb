@@ -6,6 +6,7 @@
 
 base.requireStylesheet('tracing.analysis.analysis_link');
 
+base.require('base.events');
 base.require('tracing.selection');
 base.require('tracing.analysis.util');
 base.require('ui');
@@ -50,6 +51,7 @@ base.exportTo('tracing.analysis', function() {
     __proto__: AnalysisLink.prototype,
 
     decorate: function() {
+      AnalysisLink.prototype.decorate.apply(this);
     },
 
     set objectSnapshot(snapshot) {
@@ -74,6 +76,7 @@ base.exportTo('tracing.analysis', function() {
     __proto__: AnalysisLink.prototype,
 
     decorate: function() {
+      AnalysisLink.prototype.decorate.apply(this);
     },
 
     set objectInstance(instance) {

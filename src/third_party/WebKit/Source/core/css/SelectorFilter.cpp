@@ -30,7 +30,7 @@
 #include "core/css/SelectorFilter.h"
 
 #include "core/css/CSSSelector.h"
-#include "core/dom/StyledElement.h"
+#include "core/dom/Element.h"
 
 namespace WebCore {
 
@@ -42,9 +42,8 @@ static inline void collectElementIdentifierHashes(const Element* element, Vector
     identifierHashes.append(element->localName().impl()->existingHash() * TagNameSalt);
     if (element->hasID())
         identifierHashes.append(element->idForStyleResolution().impl()->existingHash() * IdAttributeSalt);
-    const StyledElement* styledElement = element->isStyledElement() ? static_cast<const StyledElement*>(element) : 0;
-    if (styledElement && styledElement->hasClass()) {
-        const SpaceSplitString& classNames = styledElement->classNames();
+    if (element->isStyledElement() && element->hasClass()) {
+        const SpaceSplitString& classNames = element->classNames();
         size_t count = classNames.size();
         for (size_t i = 0; i < count; ++i)
             identifierHashes.append(classNames[i].impl()->existingHash() * ClassAttributeSalt);
@@ -135,7 +134,7 @@ void SelectorFilter::collectIdentifierHashes(const CSSSelector* selector, unsign
     unsigned* hash = identifierHashes;
     unsigned* end = identifierHashes + maximumIdentifierCount;
     CSSSelector::Relation relation = selector->relation();
-    bool relationIsForShadowDistributed = selector->relationIsForShadowDistributed();
+    bool relationIsAffectedByPseudoContent = selector->relationIsAffectedByPseudoContent();
 
     // Skip the topmost selector. It is handled quickly by the rule hashes.
     bool skipOverSubselectors = true;
@@ -153,7 +152,7 @@ void SelectorFilter::collectIdentifierHashes(const CSSSelector* selector, unsign
             break;
         case CSSSelector::Descendant:
         case CSSSelector::Child:
-            if (relationIsForShadowDistributed) {
+            if (relationIsAffectedByPseudoContent) {
                 skipOverSubselectors = true;
                 break;
             }
@@ -164,7 +163,7 @@ void SelectorFilter::collectIdentifierHashes(const CSSSelector* selector, unsign
         if (hash == end)
             return;
         relation = selector->relation();
-        relationIsForShadowDistributed = selector->relationIsForShadowDistributed();
+        relationIsAffectedByPseudoContent = selector->relationIsAffectedByPseudoContent();
     }
     *hash = 0;
 }

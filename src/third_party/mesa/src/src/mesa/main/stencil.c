@@ -56,7 +56,7 @@
 
 
 static GLboolean
-validate_stencil_op(GLcontext *ctx, GLenum op)
+validate_stencil_op(struct gl_context *ctx, GLenum op)
 {
    switch (op) {
    case GL_KEEP:
@@ -65,13 +65,9 @@ validate_stencil_op(GLcontext *ctx, GLenum op)
    case GL_INCR:
    case GL_DECR:
    case GL_INVERT:
+   case GL_INCR_WRAP:
+   case GL_DECR_WRAP:
       return GL_TRUE;
-   case GL_INCR_WRAP_EXT:
-   case GL_DECR_WRAP_EXT:
-      if (ctx->Extensions.EXT_stencil_wrap) {
-         return GL_TRUE;
-      }
-      /* FALL-THROUGH */
    default:
       return GL_FALSE;
    }
@@ -79,7 +75,7 @@ validate_stencil_op(GLcontext *ctx, GLenum op)
 
 
 static GLboolean
-validate_stencil_func(GLcontext *ctx, GLenum func)
+validate_stencil_func(struct gl_context *ctx, GLenum func)
 {
    switch (func) {
    case GL_NEVER:
@@ -119,10 +115,6 @@ _mesa_ClearStencil( GLint s )
 
    FLUSH_VERTICES(ctx, _NEW_STENCIL);
    ctx->Stencil.Clear = (GLuint) s;
-
-   if (ctx->Driver.ClearStencil) {
-      ctx->Driver.ClearStencil( ctx, s );
-   }
 }
 
 
@@ -137,7 +129,7 @@ _mesa_ClearStencil( GLint s )
  * \sa glStencilFunc().
  *
  * Verifies the parameters and updates the respective values in
- * __GLcontextRec::Stencil. On change flushes the vertices and notifies the
+ * __struct gl_contextRec::Stencil. On change flushes the vertices and notifies the
  * driver via the dd_function_table::StencilFunc callback.
  */
 void GLAPIENTRY
@@ -146,6 +138,9 @@ _mesa_StencilFuncSeparateATI( GLenum frontfunc, GLenum backfunc, GLint ref, GLui
    GET_CURRENT_CONTEXT(ctx);
    const GLint stencilMax = (1 << ctx->DrawBuffer->Visual.stencilBits) - 1;
    ASSERT_OUTSIDE_BEGIN_END(ctx);
+
+   if (MESA_VERBOSE & VERBOSE_API)
+      _mesa_debug(ctx, "glStencilFuncSeparateATI()\n");
 
    if (!validate_stencil_func(ctx, frontfunc)) {
       _mesa_error(ctx, GL_INVALID_ENUM,
@@ -192,7 +187,7 @@ _mesa_StencilFuncSeparateATI( GLenum frontfunc, GLenum backfunc, GLint ref, GLui
  * \sa glStencilFunc().
  *
  * Verifies the parameters and updates the respective values in
- * __GLcontextRec::Stencil. On change flushes the vertices and notifies the
+ * __struct gl_contextRec::Stencil. On change flushes the vertices and notifies the
  * driver via the dd_function_table::StencilFunc callback.
  */
 void GLAPIENTRY
@@ -202,6 +197,9 @@ _mesa_StencilFunc( GLenum func, GLint ref, GLuint mask )
    const GLint stencilMax = (1 << ctx->DrawBuffer->Visual.stencilBits) - 1;
    const GLint face = ctx->Stencil.ActiveFace;
    ASSERT_OUTSIDE_BEGIN_END(ctx);
+
+   if (MESA_VERBOSE & VERBOSE_API)
+      _mesa_debug(ctx, "glStencilFunc()\n");
 
    if (!validate_stencil_func(ctx, func)) {
       _mesa_error(ctx, GL_INVALID_ENUM, "glStencilFunc(func)");
@@ -267,6 +265,9 @@ _mesa_StencilMask( GLuint mask )
    GET_CURRENT_CONTEXT(ctx);
    const GLint face = ctx->Stencil.ActiveFace;
 
+   if (MESA_VERBOSE & VERBOSE_API)
+      _mesa_debug(ctx, "glStencilMask()\n");
+
    ASSERT_OUTSIDE_BEGIN_END(ctx);
 
    if (face != 0) {
@@ -312,7 +313,7 @@ _mesa_StencilMask( GLuint mask )
  * \sa glStencilOp().
  * 
  * Verifies the parameters and updates the respective fields in
- * __GLcontextRec::Stencil. On change flushes the vertices and notifies the
+ * __struct gl_contextRec::Stencil. On change flushes the vertices and notifies the
  * driver via the dd_function_table::StencilOp callback.
  */
 void GLAPIENTRY
@@ -320,6 +321,9 @@ _mesa_StencilOp(GLenum fail, GLenum zfail, GLenum zpass)
 {
    GET_CURRENT_CONTEXT(ctx);
    const GLint face = ctx->Stencil.ActiveFace;
+
+   if (MESA_VERBOSE & VERBOSE_API)
+      _mesa_debug(ctx, "glStencilOp()\n");
 
    ASSERT_OUTSIDE_BEGIN_END(ctx);
 
@@ -386,6 +390,9 @@ _mesa_ActiveStencilFaceEXT(GLenum face)
    GET_CURRENT_CONTEXT(ctx);
    ASSERT_OUTSIDE_BEGIN_END(ctx);
 
+   if (MESA_VERBOSE & VERBOSE_API)
+      _mesa_debug(ctx, "glActiveStencilFaceEXT()\n");
+
    if (!ctx->Extensions.EXT_stencil_two_side) {
       _mesa_error(ctx, GL_INVALID_OPERATION, "glActiveStencilFaceEXT");
       return;
@@ -415,6 +422,9 @@ _mesa_StencilOpSeparate(GLenum face, GLenum sfail, GLenum zfail, GLenum zpass)
    GLboolean set = GL_FALSE;
    GET_CURRENT_CONTEXT(ctx);
    ASSERT_OUTSIDE_BEGIN_END(ctx);
+
+   if (MESA_VERBOSE & VERBOSE_API)
+      _mesa_debug(ctx, "glStencilOpSeparate()\n");
 
    if (!validate_stencil_op(ctx, sfail)) {
       _mesa_error(ctx, GL_INVALID_ENUM, "glStencilOpSeparate(sfail)");
@@ -471,6 +481,9 @@ _mesa_StencilFuncSeparate(GLenum face, GLenum func, GLint ref, GLuint mask)
    const GLint stencilMax = (1 << ctx->DrawBuffer->Visual.stencilBits) - 1;
    ASSERT_OUTSIDE_BEGIN_END(ctx);
 
+   if (MESA_VERBOSE & VERBOSE_API)
+      _mesa_debug(ctx, "glStencilFuncSeparate()\n");
+
    if (face != GL_FRONT && face != GL_BACK && face != GL_FRONT_AND_BACK) {
       _mesa_error(ctx, GL_INVALID_ENUM, "glStencilFuncSeparate(face)");
       return;
@@ -509,6 +522,9 @@ _mesa_StencilMaskSeparate(GLenum face, GLuint mask)
    GET_CURRENT_CONTEXT(ctx);
    ASSERT_OUTSIDE_BEGIN_END(ctx);
 
+   if (MESA_VERBOSE & VERBOSE_API)
+      _mesa_debug(ctx, "glStencilMaskSeparate()\n");
+
    if (face != GL_FRONT && face != GL_BACK && face != GL_FRONT_AND_BACK) {
       _mesa_error(ctx, GL_INVALID_ENUM, "glStencilaMaskSeparate(face)");
       return;
@@ -532,7 +548,7 @@ _mesa_StencilMaskSeparate(GLenum face, GLuint mask)
  * Update derived stencil state.
  */
 void
-_mesa_update_stencil(GLcontext *ctx)
+_mesa_update_stencil(struct gl_context *ctx)
 {
    const GLint face = ctx->Stencil._BackFace;
 
@@ -556,10 +572,10 @@ _mesa_update_stencil(GLcontext *ctx)
  *
  * \param ctx GL context.
  *
- * Initializes __GLcontextRec::Stencil attribute group.
+ * Initializes __struct gl_contextRec::Stencil attribute group.
  */
 void
-_mesa_init_stencil(GLcontext *ctx)
+_mesa_init_stencil(struct gl_context *ctx)
 {
    ctx->Stencil.Enabled = GL_FALSE;
    ctx->Stencil.TestTwoSide = GL_FALSE;

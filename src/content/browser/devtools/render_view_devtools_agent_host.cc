@@ -10,6 +10,7 @@
 #include "content/browser/devtools/devtools_manager_impl.h"
 #include "content/browser/devtools/devtools_protocol.h"
 #include "content/browser/devtools/devtools_protocol_constants.h"
+#include "content/browser/devtools/devtools_tracing_handler.h"
 #include "content/browser/devtools/renderer_overrides_handler.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -96,27 +97,6 @@ bool DevToolsAgentHost::IsDebuggerAttached(WebContents* web_contents) {
   return false;
 }
 
-// static
-std::string DevToolsAgentHost::DisconnectRenderViewHost(RenderViewHost* rvh) {
-  RenderViewDevToolsAgentHost* agent_host = FindAgentHost(rvh);
-  if (!agent_host)
-    return std::string();
-  agent_host->DisconnectRenderViewHost();
-  return agent_host->GetId();
-}
-
-// static
-void DevToolsAgentHost::ConnectRenderViewHost(const std::string& cookie,
-                                              RenderViewHost* rvh) {
-  for (Instances::iterator it = g_instances.Get().begin();
-       it != g_instances.Get().end(); ++it) {
-    if (cookie == (*it)->GetId()) {
-      (*it)->ConnectRenderViewHost(rvh, true);
-      break;
-    }
-  }
-}
-
 //static
 std::vector<RenderViewHost*> DevToolsAgentHost::GetValidRenderViewHosts() {
   std::vector<RenderViewHost*> result;
@@ -129,10 +109,6 @@ std::vector<RenderViewHost*> DevToolsAgentHost::GetValidRenderViewHosts() {
       continue;
 
     RenderViewHost* rvh = RenderViewHost::From(widgets[i]);
-    // Don't report swapped out views.
-    if (static_cast<RenderViewHostImpl*>(rvh)->is_swapped_out())
-      continue;
-
     WebContents* web_contents = WebContents::FromRenderViewHost(rvh);
     // Don't report a RenderViewHost if it is not the current RenderViewHost
     // for some WebContents.
@@ -148,15 +124,24 @@ std::vector<RenderViewHost*> DevToolsAgentHost::GetValidRenderViewHosts() {
 void RenderViewDevToolsAgentHost::OnCancelPendingNavigation(
     RenderViewHost* pending,
     RenderViewHost* current) {
-  std::string cookie = DevToolsAgentHost::DisconnectRenderViewHost(pending);
-  if (cookie != std::string())
-    DevToolsAgentHost::ConnectRenderViewHost(cookie, current);
+  RenderViewDevToolsAgentHost* agent_host = FindAgentHost(pending);
+  if (!agent_host)
+    return;
+  agent_host->DisconnectRenderViewHost();
+  agent_host->ConnectRenderViewHost(current);
 }
 
 RenderViewDevToolsAgentHost::RenderViewDevToolsAgentHost(
     RenderViewHost* rvh)
-    : overrides_handler_(new RendererOverridesHandler(this)) {
-  ConnectRenderViewHost(rvh, false);
+    : overrides_handler_(new RendererOverridesHandler(this)),
+      tracing_handler_(new DevToolsTracingHandler())
+ {
+  SetRenderViewHost(rvh);
+  DevToolsProtocol::Notifier notifier(base::Bind(
+      &RenderViewDevToolsAgentHost::OnDispatchOnInspectorFrontend,
+      base::Unretained(this)));
+  overrides_handler_->SetNotifier(notifier);
+  tracing_handler_->SetNotifier(notifier);
   g_instances.Get().push_back(this);
   RenderViewHostDelegate* delegate = render_view_host_->GetDelegate();
   if (delegate && delegate->GetAsWebContents())
@@ -171,13 +156,17 @@ RenderViewHost* RenderViewDevToolsAgentHost::GetRenderViewHost() {
 void RenderViewDevToolsAgentHost::DispatchOnInspectorBackend(
     const std::string& message) {
   std::string error_message;
-  scoped_ptr<DevToolsProtocol::Command> command(
-      DevToolsProtocol::ParseCommand(message, &error_message));
+  scoped_refptr<DevToolsProtocol::Command> command =
+      DevToolsProtocol::ParseCommand(message, &error_message);
+
   if (command) {
-    scoped_ptr<DevToolsProtocol::Response> overridden_response(
-        overrides_handler_->HandleCommand(command.get()));
+    scoped_refptr<DevToolsProtocol::Response> overridden_response =
+        overrides_handler_->HandleCommand(command);
+    if (!overridden_response)
+      overridden_response = tracing_handler_->HandleCommand(command);
     if (overridden_response) {
-      OnDispatchOnInspectorFrontend(overridden_response->Serialize());
+      if (!overridden_response->is_async_promise())
+        OnDispatchOnInspectorFrontend(overridden_response->Serialize());
       return;
     }
   }
@@ -198,6 +187,10 @@ void RenderViewDevToolsAgentHost::OnClientAttached() {
 
   ChildProcessSecurityPolicyImpl::GetInstance()->GrantReadRawCookies(
       render_view_host_->GetProcess()->GetID());
+
+  // TODO(kaznacheev): Move this call back to DevToolsManagerImpl when
+  // ExtensionProcessManager no longer relies on this notification.
+  DevToolsManagerImpl::GetInstance()->NotifyObservers(this, true);
 }
 
 void RenderViewDevToolsAgentHost::OnClientDetached() {
@@ -220,6 +213,10 @@ void RenderViewDevToolsAgentHost::OnClientDetached() {
     ChildProcessSecurityPolicyImpl::GetInstance()->RevokeReadRawCookies(
         render_process_host->GetID());
   }
+
+  // TODO(kaznacheev): Move this call back to DevToolsManagerImpl when
+  // ExtensionProcessManager no longer relies on this notification.
+  DevToolsManagerImpl::GetInstance()->NotifyObservers(this, false);
 }
 
 RenderViewDevToolsAgentHost::~RenderViewDevToolsAgentHost() {
@@ -240,10 +237,10 @@ void RenderViewDevToolsAgentHost::AboutToNavigateRenderView(
               base::TERMINATION_STATUS_STILL_RUNNING)
     return;
   DisconnectRenderViewHost();
-  ConnectRenderViewHost(dest_rvh, true);
+  ConnectRenderViewHost(dest_rvh);
 }
 
-void RenderViewDevToolsAgentHost::RenderViewGone(
+void RenderViewDevToolsAgentHost::RenderProcessGone(
     base::TerminationStatus status) {
   switch(status) {
     case base::TERMINATION_STATUS_ABNORMAL_TERMINATION:
@@ -256,11 +253,27 @@ void RenderViewDevToolsAgentHost::RenderViewGone(
   }
 }
 
-void RenderViewDevToolsAgentHost::ConnectRenderViewHost(RenderViewHost* rvh,
-                                                        bool reattach) {
+void RenderViewDevToolsAgentHost::DidAttachInterstitialPage() {
+  if (!render_view_host_)
+    return;
+  // The rvh set in AboutToNavigateRenderView turned out to be interstitial.
+  // Connect back to the real one.
+  WebContents* web_contents =
+    WebContents::FromRenderViewHost(render_view_host_);
+  if (!web_contents)
+    return;
+  DisconnectRenderViewHost();
+  ConnectRenderViewHost(web_contents->GetRenderViewHost());
+}
+
+void RenderViewDevToolsAgentHost::SetRenderViewHost(RenderViewHost* rvh) {
   render_view_host_ = rvh;
   rvh_observer_.reset(new DevToolsAgentHostRvhObserver(rvh, this));
-  if (reattach)
+}
+
+void RenderViewDevToolsAgentHost::ConnectRenderViewHost(RenderViewHost* rvh) {
+  SetRenderViewHost(rvh);
+  if (IsAttached())
     Reattach(state_);
 }
 
@@ -280,9 +293,9 @@ void RenderViewDevToolsAgentHost::RenderViewHostDestroyed(
 }
 
 void RenderViewDevToolsAgentHost::RenderViewCrashed() {
-  scoped_ptr<DevToolsProtocol::Notification> notification(
+  scoped_refptr<DevToolsProtocol::Notification> notification =
       DevToolsProtocol::CreateNotification(
-          devtools::Inspector::targetCrashed::kName, NULL));
+          devtools::Inspector::targetCrashed::kName, NULL);
   DevToolsManagerImpl::GetInstance()->
       DispatchOnInspectorFrontend(this, notification->Serialize());
 }

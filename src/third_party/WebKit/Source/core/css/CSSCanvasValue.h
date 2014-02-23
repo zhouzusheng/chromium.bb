@@ -45,11 +45,9 @@ public:
     IntSize fixedSize(const RenderObject*);
 
     bool isPending() const { return false; }
-    void loadSubimages(CachedResourceLoader*) { }
+    void loadSubimages(ResourceFetcher*) { }
 
     bool equals(const CSSCanvasValue&) const;
-
-    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     CSSCanvasValue(const String& name)

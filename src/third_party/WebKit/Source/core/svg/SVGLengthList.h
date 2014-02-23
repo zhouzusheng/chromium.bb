@@ -22,7 +22,7 @@
 #define SVGLengthList_h
 
 #include "core/svg/SVGLength.h"
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -30,8 +30,12 @@ class SVGLengthList : public Vector<SVGLength> {
 public:
     SVGLengthList() { }
 
-    void parse(const String& value, SVGLengthMode); 
+    void parse(const String& value, SVGLengthMode);
     String valueAsString() const;
+
+private:
+    template<typename CharType>
+    void parseInternal(const CharType*& ptr, const CharType* end, SVGLengthMode);
 };
 
 template<>

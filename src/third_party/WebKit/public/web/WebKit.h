@@ -53,6 +53,15 @@ WEBKIT_EXPORT void initializeWithoutV8(Platform*);
 // terminated by the time this function returns.
 WEBKIT_EXPORT void shutdown();
 
+// Once shutdown, the Platform passed to initializeWithoutV8 will no longer
+// be accessed. No other WebKit objects should be in use when this function is
+// called. Any background threads created by WebKit are promised to be
+// terminated by the time this function returns.
+//
+// If initializeWithoutV8() was used to initialize WebKit, shutdownWithoutV8
+// must be called to shut it down again.
+WEBKIT_EXPORT void shutdownWithoutV8();
+
 // Alters the rendering of content to conform to a fixed set of rules.
 WEBKIT_EXPORT void setLayoutTestMode(bool);
 WEBKIT_EXPORT bool layoutTestMode();

@@ -48,9 +48,6 @@
 #include "core/platform/network/ResourceResponse.h"
 #include "core/rendering/RenderTheme.h"
 #include "modules/filesystem/DOMFileSystem.h"
-#include <wtf/StdLibExtras.h>
-
-using namespace std;
 
 namespace WebCore {
 
@@ -277,13 +274,13 @@ String InspectorFrontendHost::loadResourceSynchronously(const String& url)
 String InspectorFrontendHost::getSelectionBackgroundColor()
 {
     Color color = m_frontendPage->theme()->activeSelectionBackgroundColor();
-    return color.isValid() ? color.serialized() : "";
+    return color != Color::transparent ? color.serialized() : "";
 }
 
 String InspectorFrontendHost::getSelectionForegroundColor()
 {
     Color color = m_frontendPage->theme()->activeSelectionForegroundColor();
-    return color.isValid() ? color.serialized() : "";
+    return color != Color::transparent ? color.serialized() : "";
 }
 
 bool InspectorFrontendHost::supportsFileSystems()
@@ -313,6 +310,24 @@ PassRefPtr<DOMFileSystem> InspectorFrontendHost::isolatedFileSystem(const String
 {
     ScriptExecutionContext* context = m_frontendPage->mainFrame()->document();
     return DOMFileSystem::create(context, fileSystemName, FileSystemTypeIsolated, KURL(ParsedURLString, rootURL), AsyncFileSystem::create());
+}
+
+void InspectorFrontendHost::indexPath(int requestId, const String& fileSystemPath)
+{
+    if (m_client)
+        m_client->indexPath(requestId, fileSystemPath);
+}
+
+void InspectorFrontendHost::stopIndexing(int requestId)
+{
+    if (m_client)
+        m_client->stopIndexing(requestId);
+}
+
+void InspectorFrontendHost::searchInPath(int requestId, const String& fileSystemPath, const String& query)
+{
+    if (m_client)
+        m_client->searchInPath(requestId, fileSystemPath, query);
 }
 
 bool InspectorFrontendHost::isUnderTest()

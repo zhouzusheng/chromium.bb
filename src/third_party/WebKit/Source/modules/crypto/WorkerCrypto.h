@@ -38,8 +38,6 @@
 
 namespace WebCore {
 
-typedef int ExceptionCode;
-
 class WorkerCrypto : public ScriptWrappable, public RefCounted<WorkerCrypto> {
 public:
     static PassRefPtr<WorkerCrypto> create() { return adoptRef(new WorkerCrypto()); }

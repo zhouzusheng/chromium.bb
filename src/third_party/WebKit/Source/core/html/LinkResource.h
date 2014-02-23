@@ -31,7 +31,7 @@
 #ifndef LinkResource_h
 #define LinkResource_h
 
-#include "core/loader/cache/CachedResourceRequest.h"
+#include "core/loader/cache/FetchRequest.h"
 #include "weborigin/KURL.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
@@ -53,6 +53,7 @@ public:
     virtual Type type() const = 0;
     virtual void process() = 0;
     virtual void ownerRemoved() = 0;
+    virtual bool hasLoaded() const = 0;
 
 protected:
     HTMLLinkElement* m_owner;
@@ -65,7 +66,7 @@ public:
     bool isValid() const { return !m_url.isEmpty() && m_url.isValid(); }
     const KURL& url() const { return m_url; }
     const String& charset() const { return m_charset; }
-    CachedResourceRequest build(bool blocking) const;
+    FetchRequest build(bool blocking) const;
 
 private:
     HTMLLinkElement* m_owner;

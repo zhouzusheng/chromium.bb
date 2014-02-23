@@ -16,8 +16,10 @@
       'type': '<(component)',
       'dependencies': [
         '../base/base.gyp:base',
+        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../third_party/khronos/khronos.gyp:khronos_headers',
         '../ui/gl/gl.gyp:gl',
+        '../ui/ui.gyp:ui',
         'command_buffer/command_buffer.gyp:gles2_utils',
         'gles2_cmd_helper',
       ],
@@ -26,6 +28,8 @@
       ],
       'sources': [
         '<@(gles2_implementation_source_files)',
+        'command_buffer/client/gl_in_process_context.h',
+        'command_buffer/client/gl_in_process_context.cc',
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [4267, ],
@@ -119,9 +123,8 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
-        '<(angle_path)/src/build_angle.gyp:translator_glsl',
+        '../third_party/angle_dx11/src/build_angle.gyp:translator_glsl',
         '../ui/gl/gl.gyp:gl',
         '../ui/ui.gyp:ui',
         'command_buffer/command_buffer.gyp:gles2_utils',
@@ -195,7 +198,6 @@
         'command_buffer/service/program_manager_unittest.cc',
         'command_buffer/service/query_manager_unittest.cc',
         'command_buffer/service/renderbuffer_manager_unittest.cc',
-        'command_buffer/service/program_cache_lru_helper_unittest.cc',
         'command_buffer/service/program_cache_unittest.cc',
         'command_buffer/service/shader_manager_unittest.cc',
         'command_buffer/service/shader_translator_unittest.cc',
@@ -247,9 +249,8 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
-        '<(angle_path)/src/build_angle.gyp:translator_glsl',
+        '../third_party/angle_dx11/src/build_angle.gyp:translator_glsl',
         '../ui/ui.gyp:ui',
         'command_buffer/command_buffer.gyp:gles2_utils',
         'command_buffer_client',
@@ -267,10 +268,7 @@
       ],
       'sources': [
         '<@(gles2_c_lib_source_files)',
-        'command_buffer/client/gpu_memory_buffer_mock.cc',
-        'command_buffer/client/gpu_memory_buffer_mock.h',
-        'command_buffer/client/image_factory_mock.cc',
-        'command_buffer/client/image_factory_mock.h',
+        'command_buffer/tests/compressed_texture_test.cc',
         'command_buffer/tests/gl_bind_uniform_location_unittest.cc',
         'command_buffer/tests/gl_chromium_framebuffer_multisample_unittest.cc',
         'command_buffer/tests/gl_copy_texture_CHROMIUM_unittest.cc',
@@ -309,7 +307,6 @@
       'target_name': 'gpu_unittest_utils',
       'type': 'static_library',
       'dependencies': [
-        '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../third_party/khronos/khronos.gyp:khronos_headers',
         '../ui/gl/gl.gyp:gl_unittest_utils',

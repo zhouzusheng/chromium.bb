@@ -45,7 +45,7 @@ RenderReplica::RenderReplica()
 
 RenderReplica* RenderReplica::createAnonymous(Document* document)
 {
-    RenderReplica* renderer = new (document->renderArena()) RenderReplica();
+    RenderReplica* renderer = new RenderReplica();
     renderer->setDocumentForAnonymous(document);
     return renderer;
 }
@@ -53,13 +53,13 @@ RenderReplica* RenderReplica::createAnonymous(Document* document)
 RenderReplica::~RenderReplica()
 {
 }
-    
+
 void RenderReplica::layout()
 {
     StackStats::LayoutCheckPoint layoutCheckPoint;
     setFrameRect(parentBox()->borderBoxRect());
     updateLayerTransform();
-    setNeedsLayout(false);
+    clearNeedsLayout();
 }
 
 void RenderReplica::computePreferredLogicalWidths()
@@ -75,7 +75,7 @@ void RenderReplica::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 
     if (paintInfo.phase != PaintPhaseForeground && paintInfo.phase != PaintPhaseMask)
         return;
- 
+
     LayoutPoint adjustedPaintOffset = paintOffset + location();
 
     if (paintInfo.phase == PaintPhaseForeground) {

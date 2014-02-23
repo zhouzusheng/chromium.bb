@@ -15,9 +15,15 @@
 
 namespace webrtc {
 
+// Used to estimate rolling average of packets per frame.
+static const float kFastConvergeMultiplier = 0.4f;
+static const float kNormalConvergeMultiplier = 0.2f;
+
 enum { kMaxNumberOfFrames     = 300 };
 enum { kStartNumberOfFrames   = 6 };
 enum { kMaxVideoDelayMs       = 10000 };
+enum { kPacketsPerFrameMultiplier = 5 };
+enum { kFastConvergeThreshold = 5};
 
 enum VCMJitterBufferEnum {
   kMaxConsecutiveOldFrames        = 60,
@@ -43,11 +49,9 @@ enum VCMFrameBufferEnum {
 };
 
 enum VCMFrameBufferStateEnum {
-  kStateFree,               // Unused frame in the JB
   kStateEmpty,              // frame popped by the RTP receiver
   kStateIncomplete,         // frame that have one or more packet(s) stored
   kStateComplete,           // frame that have all packets
-  kStateDecoding,           // frame popped by the decoding thread
   kStateDecodable           // Hybrid mode - frame can be decoded
 };
 

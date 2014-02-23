@@ -40,15 +40,6 @@ bool FakeWebGraphicsContext3D::isGLES2Compliant() {
   return false;
 }
 
-bool FakeWebGraphicsContext3D::readBackFramebuffer(
-    unsigned char* pixels,
-    size_t buffer_size,
-    WebGLId framebuffer,
-    int width,
-    int height) {
-  return false;
-}
-
 WebGLId FakeWebGraphicsContext3D::getPlatformTextureId() {
   return 0;
 }
@@ -125,6 +116,8 @@ void FakeWebGraphicsContext3D::getIntegerv(
     WebKit::WGC3Dint* value) {
   if (pname == GL_MAX_TEXTURE_SIZE)
     *value = 1024;
+  else if (pname == GL_ACTIVE_TEXTURE)
+    *value = GL_TEXTURE0;
 }
 
 void FakeWebGraphicsContext3D::getProgramiv(

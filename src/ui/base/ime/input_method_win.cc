@@ -41,12 +41,13 @@ bool InputMethodWin::DispatchKeyEvent(
     const base::NativeEvent& native_key_event) {
   if (native_key_event.message == WM_CHAR) {
     BOOL handled;
-    OnChar(native_key_event.message, native_key_event.wParam,
-           native_key_event.lParam, &handled);
+    OnChar(native_key_event.hwnd, native_key_event.message,
+           native_key_event.wParam, native_key_event.lParam, &handled);
     return !!handled;  // Don't send WM_CHAR for post event processing.
   }
   // Handles ctrl-shift key to change text direction and layout alignment.
-  if (ui::ImeInput::IsRTLKeyboardLayoutInstalled() && !IsTextInputTypeNone()) {
+  if (ui::IMM32Manager::IsRTLKeyboardLayoutInstalled() &&
+      !IsTextInputTypeNone()) {
     // TODO: shouldn't need to generate a KeyEvent here.
     const ui::KeyEvent key(native_key_event,
                            native_key_event.message == WM_CHAR);
@@ -54,7 +55,7 @@ bool InputMethodWin::DispatchKeyEvent(
     if (key.type() == ui::ET_KEY_PRESSED) {
       if (code == ui::VKEY_SHIFT) {
         base::i18n::TextDirection dir;
-        if (ui::ImeInput::IsCtrlShiftPressed(&dir))
+        if (ui::IMM32Manager::IsCtrlShiftPressed(&dir))
           pending_requested_direction_ = dir;
       } else if (code != ui::VKEY_CONTROL) {
         pending_requested_direction_ = base::i18n::UNKNOWN_DIRECTION;
@@ -89,9 +90,9 @@ bool InputMethodWin::DispatchFabricatedKeyEvent(const ui::KeyEvent& event) {
 }
 
 void InputMethodWin::OnInputLocaleChanged() {
-  active_ = ime_input_.SetInputLanguage();
-  locale_ = ime_input_.GetInputLanguageName();
-  direction_ = ime_input_.GetTextDirection();
+  active_ = imm32_manager_.SetInputLanguage();
+  locale_ = imm32_manager_.GetInputLanguageName();
+  direction_ = imm32_manager_.GetTextDirection();
   OnInputMethodChanged();
 }
 
@@ -135,7 +136,8 @@ LRESULT InputMethodWin::OnImeRequest(UINT message,
   }
 }
 
-LRESULT InputMethodWin::OnChar(UINT message,
+LRESULT InputMethodWin::OnChar(HWND window_handle,
+                               UINT message,
                                WPARAM wparam,
                                LPARAM lparam,
                                BOOL* handled) {
@@ -148,13 +150,11 @@ LRESULT InputMethodWin::OnChar(UINT message,
                                      ui::GetModifiersFromKeyState());
   }
 
-  HWND attached_window = GetAttachedWindowHandle(GetTextInputClient());
-
   // Explicitly show the system menu at a good location on [Alt]+[Space].
   // Note: Setting |handled| to FALSE for DefWindowProc triggering of the system
   //       menu causes undesirable titlebar artifacts in the classic theme.
-  if (message == WM_SYSCHAR && wparam == VK_SPACE && IsWindow(attached_window))
-    ui::ShowSystemMenu(attached_window);
+  if (message == WM_SYSCHAR && wparam == VK_SPACE)
+    ui::ShowSystemMenu(window_handle);
 
   return 0;
 }

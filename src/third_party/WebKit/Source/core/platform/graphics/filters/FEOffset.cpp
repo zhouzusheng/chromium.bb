@@ -34,6 +34,7 @@
 #include "core/platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "core/platform/text/TextStream.h"
 #include "core/rendering/RenderTreeAsText.h"
+#include "third_party/skia/include/core/SkDevice.h"
 
 namespace WebCore {
 
@@ -151,16 +152,17 @@ void FEOffset::applySoftware()
     resultImage->context()->drawImageBuffer(in->asImageBuffer(), drawingRegion);
 }
 
-SkImageFilter* FEOffset::createImageFilter(SkiaImageFilterBuilder* builder)
+PassRefPtr<SkImageFilter> FEOffset::createImageFilter(SkiaImageFilterBuilder* builder)
 {
-    SkAutoTUnref<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
-    return new OffsetImageFilter(SkFloatToScalar(m_dx), SkFloatToScalar(m_dy), input);
+    RefPtr<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
+    Filter* filter = this->filter();
+    return adoptRef(new OffsetImageFilter(SkFloatToScalar(filter->applyHorizontalScale(m_dx)), SkFloatToScalar(filter->applyVerticalScale(m_dy)), input.get()));
 }
 
 TextStream& FEOffset::externalRepresentation(TextStream& ts, int indent) const
 {
     writeIndent(ts, indent);
-    ts << "[feOffset"; 
+    ts << "[feOffset";
     FilterEffect::externalRepresentation(ts);
     ts << " dx=\"" << dx() << "\" dy=\"" << dy() << "\"]\n";
     inputEffect(0)->externalRepresentation(ts, indent + 1);

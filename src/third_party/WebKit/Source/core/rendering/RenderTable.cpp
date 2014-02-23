@@ -28,6 +28,7 @@
 
 #include "HTMLNames.h"
 #include "core/dom/Document.h"
+#include "core/html/HTMLTableElement.h"
 #include "core/page/FrameView.h"
 #include "core/rendering/AutoTableLayout.h"
 #include "core/rendering/FixedTableLayout.h"
@@ -66,7 +67,7 @@ RenderTable::RenderTable(Element* element)
 {
     setChildrenInline(false);
     m_columnPos.fill(0, 1);
-    
+
 }
 
 RenderTable::~RenderTable()
@@ -127,7 +128,7 @@ void RenderTable::addChild(RenderObject* child, RenderObject* beforeChild)
                     m_head = toRenderTableSection(child);
                 } else {
                     resetSectionPointerIfNotBefore(m_firstBody, beforeChild);
-                    if (!m_firstBody) 
+                    if (!m_firstBody)
                         m_firstBody = toRenderTableSection(child);
                 }
                 wrapInAnonymousSection = false;
@@ -324,7 +325,7 @@ LayoutUnit RenderTable::convertStyleLogicalWidthToComputedWidth(const Length& st
 
     // HTML tables' width styles already include borders and paddings, but CSS tables' width styles do not.
     LayoutUnit borders = 0;
-    bool isCSSTable = !node() || !node()->hasTagName(tableTag);
+    bool isCSSTable = !node() || !isHTMLTableElement(node());
     if (isCSSTable && styleLogicalWidth.isSpecified() && styleLogicalWidth.isPositive() && style()->boxSizing() == CONTENT_BOX)
         borders = borderStart() + borderEnd() + (collapseBorders() ? LayoutUnit() : paddingStart() + paddingEnd());
 
@@ -341,7 +342,7 @@ LayoutUnit RenderTable::convertStyleLogicalHeightToComputedHeight(const Length& 
         // HTML tables size as though CSS height includes border/padding, CSS tables do not.
         LayoutUnit borders = LayoutUnit();
         // FIXME: We cannot apply box-sizing: content-box on <table> which other browsers allow.
-        if ((node() && node()->hasTagName(tableTag)) || style()->boxSizing() == BORDER_BOX) {
+        if ((node() && isHTMLTableElement(node())) || style()->boxSizing() == BORDER_BOX) {
             borders = borderAndPadding;
         }
         computedLogicalHeight = styleLogicalHeight.value() - borders;
@@ -410,20 +411,20 @@ void RenderTable::layout()
     // FIXME: We should do this recalc lazily in borderStart/borderEnd so that we don't have to make sure
     // to call this before we call borderStart/borderEnd to avoid getting a stale value.
     recalcBordersInRowDirection();
-        
+
     LayoutRepainter repainter(*this, checkForRepaintDuringLayout());
     LayoutStateMaintainer statePusher(view(), this, locationOffset(), style()->isFlippedBlocksWritingMode());
 
     setLogicalHeight(0);
 
     initMaxMarginValues();
-    
+
     LayoutUnit oldLogicalWidth = logicalWidth();
     updateLogicalWidth();
 
     if (logicalWidth() != oldLogicalWidth) {
         for (unsigned i = 0; i < m_captions.size(); i++)
-            m_captions[i]->setNeedsLayout(true, MarkOnlyThis);
+            m_captions[i]->setNeedsLayout(MarkOnlyThis);
     }
     // FIXME: The optimisation below doesn't work since the internal table
     // layout could have changed.  we need to add a flag to the table
@@ -443,7 +444,7 @@ void RenderTable::layout()
         if (child->isTableSection()) {
             RenderTableSection* section = toRenderTableSection(child);
             if (m_columnLogicalWidthChanged)
-                section->setChildNeedsLayout(true, MarkOnlyThis);
+                section->setChildNeedsLayout(MarkOnlyThis);
             section->layoutIfNeeded();
             totalSectionLogicalHeight += section->calcRowLogicalHeight();
             if (collapsing)
@@ -483,11 +484,11 @@ void RenderTable::layout()
         updateLogicalHeight();
 
     LayoutUnit computedLogicalHeight = 0;
-    
+
     Length logicalHeightLength = style()->logicalHeight();
     if (logicalHeightLength.isIntrinsic() || (logicalHeightLength.isSpecified() && logicalHeightLength.isPositive()))
         computedLogicalHeight = convertStyleLogicalHeightToComputedHeight(logicalHeightLength);
-    
+
     Length logicalMaxHeightLength = style()->logicalMaxHeight();
     if (logicalMaxHeightLength.isIntrinsic() || (logicalMaxHeightLength.isSpecified() && !logicalMaxHeightLength.isNegative())) {
         LayoutUnit computedMaxLogicalHeight = convertStyleLogicalHeightToComputedHeight(logicalMaxHeightLength);
@@ -565,7 +566,7 @@ void RenderTable::layout()
     }
 
     m_columnLogicalWidthChanged = false;
-    setNeedsLayout(false);
+    clearNeedsLayout();
 }
 
 // Collect all the unique border values that we want to paint in a sorted list.
@@ -611,7 +612,7 @@ void RenderTable::addOverflowFromChildren()
     }
 
     // Add overflow from our caption.
-    for (unsigned i = 0; i < m_captions.size(); i++) 
+    for (unsigned i = 0; i < m_captions.size(); i++)
         addOverflowFromChild(m_captions[i]);
 
     // Add overflow from our sections.
@@ -636,7 +637,7 @@ void RenderTable::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
             return;
     }
 
-    bool pushedClip = pushContentsClip(paintInfo, adjustedPaintOffset);
+    bool pushedClip = pushContentsClip(paintInfo, adjustedPaintOffset, ForceContentsClip);
     paintObject(paintInfo, adjustedPaintOffset);
     if (pushedClip)
         popContentsClip(paintInfo, paintPhase, adjustedPaintOffset);
@@ -656,7 +657,7 @@ void RenderTable::paintObject(PaintInfo& paintInfo, const LayoutPoint& paintOffs
     // We're done.  We don't bother painting any children.
     if (paintPhase == PaintPhaseBlockBackground)
         return;
-    
+
     // We don't paint our own background, but we do let the kids paint their backgrounds.
     if (paintPhase == PaintPhaseChildBlockBackgrounds)
         paintPhase = PaintPhaseChildBlockBackground;
@@ -671,7 +672,7 @@ void RenderTable::paintObject(PaintInfo& paintInfo, const LayoutPoint& paintOffs
             child->paint(info, childPoint);
         }
     }
-    
+
     if (collapseBorders() && paintPhase == PaintPhaseChildBlockBackground && style()->visibility() == VISIBLE) {
         recalcCollapsedBorders();
         // Using our cached sorted styles, we then do individual passes,
@@ -953,7 +954,7 @@ void RenderTable::recalcSections() const
                 maxCols = sectionCols;
         }
     }
-    
+
     m_columns.resize(maxCols);
     m_columnPos.resize(maxCols + 1);
 
@@ -1302,7 +1303,7 @@ RenderTableCell* RenderTable::cellBefore(const RenderTableCell* cell) const
     unsigned effCol = colToEffCol(cell->col());
     if (!effCol)
         return 0;
-    
+
     // If we hit a colspan back up to a real cell.
     RenderTableSection::CellStruct& prevCell = section->cellAt(cell->rowIndex(), effCol - 1);
     return prevCell.primaryCell();
@@ -1369,7 +1370,7 @@ int RenderTable::firstLineBoxBaseline() const
 LayoutRect RenderTable::overflowClipRect(const LayoutPoint& location, RenderRegion* region, OverlayScrollbarSizeRelevancy relevancy)
 {
     LayoutRect rect = RenderBlock::overflowClipRect(location, region, relevancy);
-    
+
     // If we have a caption, expand the clip to include the caption.
     // FIXME: Technically this is wrong, but it's virtually impossible to fix this
     // for real until captions have been re-written.
@@ -1420,7 +1421,7 @@ bool RenderTable::nodeAtPoint(const HitTestRequest& request, HitTestResult& resu
 RenderTable* RenderTable::createAnonymousWithParentRenderer(const RenderObject* parent)
 {
     RefPtr<RenderStyle> newStyle = RenderStyle::createAnonymousStyleWithDisplay(parent->style(), TABLE);
-    RenderTable* newTable = new (parent->renderArena()) RenderTable(0);
+    RenderTable* newTable = new RenderTable(0);
     newTable->setDocumentForAnonymous(parent->document());
     newTable->setStyle(newStyle.release());
     return newTable;

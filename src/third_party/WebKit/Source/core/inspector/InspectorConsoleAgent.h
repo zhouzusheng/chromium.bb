@@ -31,11 +31,11 @@
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "core/page/ConsoleTypes.h"
-#include <wtf/Forward.h>
-#include <wtf/HashMap.h>
-#include <wtf/Noncopyable.h>
-#include <wtf/text/StringHash.h>
-#include <wtf/Vector.h>
+#include "wtf/Forward.h"
+#include "wtf/HashMap.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/Vector.h"
+#include "wtf/text/StringHash.h"
 
 namespace WebCore {
 
@@ -44,7 +44,6 @@ class DocumentLoader;
 class DOMWindow;
 class Frame;
 class InspectorFrontend;
-class InspectorState;
 class InjectedScriptManager;
 class InstrumentingAgents;
 class ResourceError;
@@ -74,7 +73,7 @@ public:
     virtual void restore();
 
     void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String& message, ScriptState*, PassRefPtr<ScriptArguments>, unsigned long requestIdentifier = 0);
-    void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String& message, const String& scriptId, unsigned lineNumber, ScriptState* = 0, unsigned long requestIdentifier = 0);
+    void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String& message, const String& scriptId, unsigned lineNumber, unsigned columnNumber = 0, ScriptState* = 0, unsigned long requestIdentifier = 0);
 
     // FIXME: Remove once we no longer generate stacks outside of Inspector.
     void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String& message, PassRefPtr<ScriptCallStack>, unsigned long requestIdentifier = 0);

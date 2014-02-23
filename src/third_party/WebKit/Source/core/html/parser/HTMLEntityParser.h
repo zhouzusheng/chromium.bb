@@ -21,7 +21,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef HTMLEntityParser_h
@@ -31,7 +31,37 @@
 
 namespace WebCore {
 
-bool consumeHTMLEntity(SegmentedString&, StringBuilder& decodedEntity, bool& notEnoughCharacters, UChar additionalAllowedCharacter = '\0');
+class DecodedHTMLEntity {
+private:
+    // HTML entities contain at most four UTF-16 code units.
+    static const unsigned kMaxLength = 4;
+
+public:
+    DecodedHTMLEntity() : length(0) { }
+
+    bool isEmpty() const { return !length; }
+
+    void append(UChar c)
+    {
+        RELEASE_ASSERT(length < kMaxLength);
+        data[length++] = c;
+    }
+
+    void append(UChar32 c)
+    {
+        if (U_IS_BMP(c)) {
+            append(static_cast<UChar>(c));
+            return;
+        }
+        append(U16_LEAD(c));
+        append(U16_TRAIL(c));
+    }
+
+    unsigned length;
+    UChar data[kMaxLength];
+};
+
+bool consumeHTMLEntity(SegmentedString&, DecodedHTMLEntity& decodedEntity, bool& notEnoughCharacters, UChar additionalAllowedCharacter = '\0');
 
 // Used by the XML parser.  Not suitable for use in HTML parsing.  Use consumeHTMLEntity instead.
 size_t decodeNamedEntityToUCharArray(const char*, UChar result[4]);

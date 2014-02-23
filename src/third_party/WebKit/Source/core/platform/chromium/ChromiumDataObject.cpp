@@ -1,10 +1,10 @@
 /*
  * Copyright (c) 2008, 2009, 2012 Google Inc. All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  *     * Redistributions of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
  *     * Redistributions in binary form must reproduce the above
@@ -14,7 +14,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -31,12 +31,12 @@
 #include "config.h"
 #include "core/platform/chromium/ChromiumDataObject.h"
 
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/DataTransferItem.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/platform/chromium/ClipboardMimeTypes.h"
 #include "core/platform/chromium/ClipboardUtilitiesChromium.h"
-
 #include "public/platform/Platform.h"
 #include "public/platform/WebClipboard.h"
 
@@ -90,10 +90,10 @@ void ChromiumDataObject::clearAll()
     m_itemList.clear();
 }
 
-void ChromiumDataObject::add(const String& data, const String& type, ExceptionCode& ec)
+void ChromiumDataObject::add(const String& data, const String& type, ExceptionState& es)
 {
     if (!internalAddStringItem(ChromiumDataObjectItem::createFromString(type, data)))
-        ec = NOT_SUPPORTED_ERR;
+        es.throwDOMException(NotSupportedError);
 }
 
 void ChromiumDataObject::add(PassRefPtr<File> file, ScriptExecutionContext* context)

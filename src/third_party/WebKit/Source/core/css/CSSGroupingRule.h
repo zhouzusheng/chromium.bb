@@ -25,10 +25,11 @@
 
 #include "core/css/CSSRule.h"
 #include "core/css/StyleRule.h"
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
+class ExceptionState;
 class CSSRuleList;
 
 class CSSGroupingRule : public CSSRule {
@@ -36,20 +37,19 @@ public:
     virtual ~CSSGroupingRule();
 
     virtual void reattach(StyleRuleBase*) OVERRIDE;
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
 
     CSSRuleList* cssRules() const;
 
-    unsigned insertRule(const String& rule, unsigned index, ExceptionCode&);
-    void deleteRule(unsigned index, ExceptionCode&);
-        
+    unsigned insertRule(const String& rule, unsigned index, ExceptionState&);
+    void deleteRule(unsigned index, ExceptionState&);
+
     // For CSSRuleList
     unsigned length() const;
     CSSRule* item(unsigned index) const;
 
 protected:
     CSSGroupingRule(StyleRuleGroup* groupRule, CSSStyleSheet* parent);
-    
+
     void appendCssTextForItems(StringBuilder&) const;
 
     RefPtr<StyleRuleGroup> m_groupRule;

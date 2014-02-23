@@ -20,16 +20,16 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
 #include "wtf/text/TextCodecUTF8.h"
 
 #include "wtf/text/TextCodecASCIIFastPath.h"
-#include <wtf/text/CString.h>
-#include <wtf/text/StringBuffer.h>
-#include <wtf/unicode/CharacterNames.h>
+#include "wtf/text/CString.h"
+#include "wtf/text/StringBuffer.h"
+#include "wtf/unicode/CharacterNames.h"
 
 using namespace WTF;
 using namespace WTF::Unicode;
@@ -260,7 +260,7 @@ bool TextCodecUTF8::handlePartialSequence<UChar>(UChar*& destination, const uint
 
     return false;
 }
-    
+
 String TextCodecUTF8::decode(const char* bytes, size_t length, bool flush, bool stopOnError, bool& sawError)
 {
     // Each input byte might turn into a character.
@@ -329,7 +329,7 @@ String TextCodecUTF8::decode(const char* bytes, size_t length, bool flush, bool 
                 sawError = true;
                 if (stopOnError)
                     break;
-                
+
                 goto upConvertTo16Bit;
             }
             if (character > 0xff)
@@ -366,7 +366,7 @@ upConvertTo16Bit:
             if (m_partialSequenceSize)
                 break;
         }
-        
+
         while (source < end) {
             if (isASCII(*source)) {
                 // Fast path for ASCII. Most UTF-8 text will be ASCII.
@@ -415,13 +415,14 @@ upConvertTo16Bit:
             destination16 = appendCharacter(destination16, character);
         }
     } while (flush && m_partialSequenceSize);
-    
+
     buffer16.shrink(destination16 - buffer16.characters());
-    
+
     return String::adopt(buffer16);
 }
 
-CString TextCodecUTF8::encode(const UChar* characters, size_t length, UnencodableHandling)
+template<typename CharType>
+CString TextCodecUTF8::encodeCommon(const CharType* characters, size_t length)
 {
     // The maximum number of UTF-8 bytes needed per UTF-16 code unit is 3.
     // BMP characters take only one UTF-16 code unit and can take up to 3 bytes (3x).
@@ -439,6 +440,16 @@ CString TextCodecUTF8::encode(const UChar* characters, size_t length, Unencodabl
     }
 
     return CString(reinterpret_cast<char*>(bytes.data()), bytesWritten);
+}
+
+CString TextCodecUTF8::encode(const UChar* characters, size_t length, UnencodableHandling)
+{
+    return encodeCommon(characters, length);
+}
+
+CString TextCodecUTF8::encode(const LChar* characters, size_t length, UnencodableHandling)
+{
+    return encodeCommon(characters, length);
 }
 
 } // namespace WTF

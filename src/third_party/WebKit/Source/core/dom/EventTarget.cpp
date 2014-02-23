@@ -25,7 +25,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -33,10 +33,12 @@
 #include "core/dom/EventTarget.h"
 
 #include "bindings/v8/DOMWrapperWorld.h"
+#include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScriptController.h"
 #include "core/dom/Event.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/page/DOMWindow.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/Vector.h"
 
@@ -63,6 +65,13 @@ Node* EventTarget::toNode()
 
 DOMWindow* EventTarget::toDOMWindow()
 {
+    return 0;
+}
+
+inline DOMWindow* EventTarget::executingWindow()
+{
+    if (ScriptExecutionContext* context = scriptExecutionContext())
+        return context->executingWindow();
     return 0;
 }
 
@@ -140,10 +149,10 @@ bool EventTarget::clearAttributeEventListener(const AtomicString& eventType, DOM
     return removeEventListener(eventType, listener, false);
 }
 
-bool EventTarget::dispatchEvent(PassRefPtr<Event> event, ExceptionCode& ec)
+bool EventTarget::dispatchEvent(PassRefPtr<Event> event, ExceptionState& es)
 {
     if (!event || event->type().isEmpty() || event->isBeingDispatched()) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return false;
     }
 
@@ -201,40 +210,45 @@ bool EventTarget::fireEventListeners(Event* event)
     }
 
     if (!prefixedTypeName.isEmpty()) {
-        ScriptExecutionContext* context = scriptExecutionContext();
-        if (context && context->isDocument()) {
-            Document* document = toDocument(context);
-            if (document->domWindow()) {
-                if (listenerPrefixedVector)
-                    if (listenerUnprefixedVector)
-                        UseCounter::count(document->domWindow(), UseCounter::PrefixedAndUnprefixedTransitionEndEvent);
-                    else
-                        UseCounter::count(document->domWindow(), UseCounter::PrefixedTransitionEndEvent);
-                else if (listenerUnprefixedVector)
-                    UseCounter::count(document->domWindow(), UseCounter::UnprefixedTransitionEndEvent);
+        if (DOMWindow* executingWindow = this->executingWindow()) {
+            if (listenerPrefixedVector) {
+                if (listenerUnprefixedVector)
+                    UseCounter::count(executingWindow, UseCounter::PrefixedAndUnprefixedTransitionEndEvent);
+                else
+                    UseCounter::count(executingWindow, UseCounter::PrefixedTransitionEndEvent);
+            } else if (listenerUnprefixedVector) {
+                UseCounter::count(executingWindow, UseCounter::UnprefixedTransitionEndEvent);
             }
         }
     }
 
     return !event->defaultPrevented();
 }
-        
+
 void EventTarget::fireEventListeners(Event* event, EventTargetData* d, EventListenerVector& entry)
 {
     RefPtr<EventTarget> protect = this;
 
     // Fire all listeners registered for this event. Don't fire listeners removed
     // during event dispatch. Also, don't fire event listeners added during event
-    // dispatch. Conveniently, all new event listeners will be added after 'end',
-    // so iterating to 'end' naturally excludes new event listeners.
+    // dispatch. Conveniently, all new event listeners will be added after or at
+    // index |size|, so iterating up to (but not including) |size| naturally excludes
+    // new event listeners.
+
+    if (event->type() == eventNames().beforeunloadEvent) {
+        if (DOMWindow* executingWindow = this->executingWindow()) {
+            if (executingWindow->top())
+                UseCounter::count(executingWindow, UseCounter::SubFrameBeforeUnloadFired);
+        }
+    }
 
     bool userEventWasHandled = false;
     size_t i = 0;
-    size_t end = entry.size();
+    size_t size = entry.size();
     if (!d->firingEventIterators)
         d->firingEventIterators = adoptPtr(new FiringEventIteratorVector);
-    d->firingEventIterators->append(FiringEventIterator(event->type(), i, end));
-    for ( ; i < end; ++i) {
+    d->firingEventIterators->append(FiringEventIterator(event->type(), i, size));
+    for ( ; i < size; ++i) {
         RegisteredEventListener& registeredListener = entry[i];
         if (event->eventPhase() == Event::CAPTURING_PHASE && !registeredListener.useCapture)
             continue;
@@ -257,11 +271,8 @@ void EventTarget::fireEventListeners(Event* event, EventTargetData* d, EventList
     }
     d->firingEventIterators->removeLast();
     if (userEventWasHandled) {
-        ScriptExecutionContext* context = scriptExecutionContext();
-        if (context && context->isDocument()) {
-            Document* document = toDocument(context);
-            document->resetLastHandledUserGestureTimestamp();
-        }
+        if (ScriptExecutionContext* context = scriptExecutionContext())
+            context->userEventWasHandled();
     }
 }
 

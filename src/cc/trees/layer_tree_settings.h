@@ -40,7 +40,6 @@ class CC_EXPORT LayerTreeSettings {
   SkColor solid_color_scrollbar_color;
   int solid_color_scrollbar_thickness_dip;
   bool calculate_top_controls_position;
-  bool use_color_estimator;
   bool use_memory_management;
   bool timeout_and_draw_when_animation_checkerboards;
   bool layer_transforms_should_scale_layer_contents;
@@ -64,6 +63,7 @@ class CC_EXPORT LayerTreeSettings {
   bool strict_layer_property_change_checking;
   bool use_map_image;
   std::string compositor_name;
+  bool ignore_root_layer_flings;
 
   LayerTreeDebugState initial_debug_state;
 };

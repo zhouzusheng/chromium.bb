@@ -56,6 +56,7 @@
 #include "public/platform/Platform.h"
 #include "public/platform/WebFallbackThemeEngine.h"
 #include "public/platform/WebRect.h"
+#include "wtf/text/StringBuilder.h"
 
 #if ENABLE(INPUT_SPEECH)
 #include "core/rendering/RenderInputSpeech.h"
@@ -67,9 +68,9 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-static Color& customFocusRingColor()
+static StyleColor& customFocusRingColor()
 {
-    DEFINE_STATIC_LOCAL(Color, color, ());
+    DEFINE_STATIC_LOCAL(StyleColor, color, ());
     return color;
 }
 
@@ -90,9 +91,10 @@ RenderTheme::RenderTheme()
     : m_theme(platformTheme())
 #endif
 {
+    m_selectionColorsValid = 0;
 }
 
-void RenderTheme::adjustStyle(RenderStyle* style, Element* e, bool UAHasAppearance, const BorderData& border, const FillLayer& background, const Color& backgroundColor)
+void RenderTheme::adjustStyle(RenderStyle* style, Element* e, const CachedUAStyle& uaStyle)
 {
     // Force inline and table display styles to be inline-block (except for table- which is block)
     ControlPart part = style->appearance();
@@ -104,7 +106,7 @@ void RenderTheme::adjustStyle(RenderStyle* style, Element* e, bool UAHasAppearan
     else if (style->display() == COMPACT || style->display() == RUN_IN || style->display() == LIST_ITEM || style->display() == TABLE)
         style->setDisplay(BLOCK);
 
-    if (UAHasAppearance && isControlStyled(style, border, background, backgroundColor)) {
+    if (uaStyle.hasAppearance && isControlStyled(style, uaStyle)) {
         if (part == MenulistPart) {
             style->setAppearance(MenulistButtonPart);
             part = MenulistButtonPart;
@@ -166,7 +168,7 @@ void RenderTheme::adjustStyle(RenderStyle* style, Element* e, bool UAHasAppearan
         // Whitespace
         if (m_theme->controlRequiresPreWhiteSpace(part))
             style->setWhiteSpace(PRE);
-            
+
         // Width / Height
         // The width and height here are affected by the zoom.
         // FIXME: Check is flawed, since it doesn't take min-width/max-width into account.
@@ -175,14 +177,14 @@ void RenderTheme::adjustStyle(RenderStyle* style, Element* e, bool UAHasAppearan
             style->setWidth(controlSize.width());
         if (controlSize.height() != style->height())
             style->setHeight(controlSize.height());
-                
+
         // Min-Width / Min-Height
         LengthSize minControlSize = m_theme->minimumControlSize(part, style->font(), style->effectiveZoom());
         if (minControlSize.width() != style->minWidth())
             style->setMinWidth(minControlSize.width());
         if (minControlSize.height() != style->minHeight())
             style->setMinHeight(minControlSize.height());
-                
+
         // Font
         FontDescription controlFont = m_theme->controlFont(part, style->font(), style->effectiveZoom());
         if (controlFont != style->font().fontDescription()) {
@@ -495,6 +497,7 @@ String RenderTheme::extraDefaultStyleSheet()
     if (RuntimeEnabledFeatures::dialogElementEnabled()) {
         runtimeCSS.appendLiteral("dialog:not([open]) { display: none; }");
         runtimeCSS.appendLiteral("dialog { position: absolute; left: 0; right: 0; margin: auto; border: solid; padding: 1em; background: white; color: black;}");
+        runtimeCSS.appendLiteral("dialog::backdrop { background: rgba(0,0,0,0.1); }");
     }
 
     return runtimeCSS.toString();
@@ -523,59 +526,88 @@ String RenderTheme::formatMediaControlsCurrentTime(float currentTime, float /*du
     return formatMediaControlsTime(currentTime);
 }
 
+namespace SelectionColors {
+enum {
+    ActiveBackground = 1,
+    InactiveBackground = 2,
+    ActiveForeground = 4,
+    InactiveForeground = 8,
+    ActiveListBoxBackground = 16,
+    InactiveListBoxBackground = 32,
+    ActiveListBoxForeground = 64,
+    InactiveListBoxForeground = 128
+};
+};
+
 Color RenderTheme::activeSelectionBackgroundColor() const
 {
-    if (!m_activeSelectionBackgroundColor.isValid())
+    if (!(m_selectionColorsValid & SelectionColors::ActiveBackground)) {
         m_activeSelectionBackgroundColor = platformActiveSelectionBackgroundColor().blendWithWhite();
+        m_selectionColorsValid |= SelectionColors::ActiveBackground;
+    }
     return m_activeSelectionBackgroundColor;
 }
 
 Color RenderTheme::inactiveSelectionBackgroundColor() const
 {
-    if (!m_inactiveSelectionBackgroundColor.isValid())
+    if (!(m_selectionColorsValid & SelectionColors::InactiveBackground)) {
         m_inactiveSelectionBackgroundColor = platformInactiveSelectionBackgroundColor().blendWithWhite();
+        m_selectionColorsValid |= SelectionColors::InactiveBackground;
+    }
     return m_inactiveSelectionBackgroundColor;
 }
 
 Color RenderTheme::activeSelectionForegroundColor() const
 {
-    if (!m_activeSelectionForegroundColor.isValid() && supportsSelectionForegroundColors())
+    if (!(m_selectionColorsValid & SelectionColors::ActiveForeground) && supportsSelectionForegroundColors()) {
         m_activeSelectionForegroundColor = platformActiveSelectionForegroundColor();
+        m_selectionColorsValid |= SelectionColors::ActiveForeground;
+    }
     return m_activeSelectionForegroundColor;
 }
 
 Color RenderTheme::inactiveSelectionForegroundColor() const
 {
-    if (!m_inactiveSelectionForegroundColor.isValid() && supportsSelectionForegroundColors())
+    if (!(m_selectionColorsValid & SelectionColors::InactiveForeground) && supportsSelectionForegroundColors()) {
         m_inactiveSelectionForegroundColor = platformInactiveSelectionForegroundColor();
+        m_selectionColorsValid |= SelectionColors::InactiveForeground;
+    }
     return m_inactiveSelectionForegroundColor;
 }
 
 Color RenderTheme::activeListBoxSelectionBackgroundColor() const
 {
-    if (!m_activeListBoxSelectionBackgroundColor.isValid())
+    if (!(m_selectionColorsValid & SelectionColors::ActiveListBoxBackground)) {
         m_activeListBoxSelectionBackgroundColor = platformActiveListBoxSelectionBackgroundColor();
+        m_selectionColorsValid |= SelectionColors::ActiveListBoxBackground;
+    }
     return m_activeListBoxSelectionBackgroundColor;
 }
 
 Color RenderTheme::inactiveListBoxSelectionBackgroundColor() const
 {
-    if (!m_inactiveListBoxSelectionBackgroundColor.isValid())
+    if (!(m_selectionColorsValid & SelectionColors::InactiveListBoxBackground)) {
         m_inactiveListBoxSelectionBackgroundColor = platformInactiveListBoxSelectionBackgroundColor();
+        m_selectionColorsValid |= SelectionColors::InactiveListBoxBackground;
+    }
     return m_inactiveListBoxSelectionBackgroundColor;
 }
 
 Color RenderTheme::activeListBoxSelectionForegroundColor() const
 {
-    if (!m_activeListBoxSelectionForegroundColor.isValid() && supportsListBoxSelectionForegroundColors())
+    if (!(m_selectionColorsValid & SelectionColors::ActiveListBoxForeground) && supportsListBoxSelectionForegroundColors()) {
         m_activeListBoxSelectionForegroundColor = platformActiveListBoxSelectionForegroundColor();
+        m_selectionColorsValid |= SelectionColors::ActiveListBoxForeground;
+    }
     return m_activeListBoxSelectionForegroundColor;
 }
 
 Color RenderTheme::inactiveListBoxSelectionForegroundColor() const
 {
-    if (!m_inactiveListBoxSelectionForegroundColor.isValid() && supportsListBoxSelectionForegroundColors())
+    if (!(m_selectionColorsValid & SelectionColors::InactiveListBoxForeground) && supportsListBoxSelectionForegroundColors()) {
         m_inactiveListBoxSelectionForegroundColor = platformInactiveListBoxSelectionForegroundColor();
+        m_selectionColorsValid |= SelectionColors::InactiveListBoxForeground;
+    }
     return m_inactiveListBoxSelectionForegroundColor;
 }
 
@@ -645,22 +677,22 @@ bool RenderTheme::isControlContainer(ControlPart appearance) const
     return appearance != CheckboxPart && appearance != RadioPart;
 }
 
-static bool isBackgroundOrBorderStyled(const RenderStyle& style, const BorderData& border, const FillLayer& background, const Color& backgroundColor)
+static bool isBackgroundOrBorderStyled(const RenderStyle& style, const CachedUAStyle& uaStyle)
 {
     // Code below excludes the background-repeat from comparison by resetting it
-    FillLayer backgroundCopy = background;
+    FillLayer backgroundCopy = uaStyle.backgroundLayers;
     FillLayer backgroundLayersCopy = *style.backgroundLayers();
     backgroundCopy.setRepeatX(NoRepeatFill);
     backgroundCopy.setRepeatY(NoRepeatFill);
     backgroundLayersCopy.setRepeatX(NoRepeatFill);
     backgroundLayersCopy.setRepeatY(NoRepeatFill);
     // Test the style to see if the UA border and background match.
-    return style.border() != border
+    return style.border() != uaStyle.border
         || backgroundLayersCopy != backgroundCopy
-        || style.visitedDependentColor(CSSPropertyBackgroundColor) != backgroundColor;
+        || style.visitedDependentColor(CSSPropertyBackgroundColor).color() != uaStyle.backgroundColor;
 }
 
-bool RenderTheme::isControlStyled(const RenderStyle* style, const BorderData& border, const FillLayer& background, const Color& backgroundColor) const
+bool RenderTheme::isControlStyled(const RenderStyle* style, const CachedUAStyle& uaStyle) const
 {
     switch (style->appearance()) {
     case PushButtonPart:
@@ -672,14 +704,14 @@ bool RenderTheme::isControlStyled(const RenderStyle* style, const BorderData& bo
     case ContinuousCapacityLevelIndicatorPart:
     case DiscreteCapacityLevelIndicatorPart:
     case RatingLevelIndicatorPart:
-        return isBackgroundOrBorderStyled(*style, border, background, backgroundColor);
+        return isBackgroundOrBorderStyled(*style, uaStyle);
 
     case ListboxPart:
     case MenulistPart:
     case SearchFieldPart:
     case TextAreaPart:
     case TextFieldPart:
-        return isBackgroundOrBorderStyled(*style, border, background, backgroundColor) || style->boxShadow();
+        return isBackgroundOrBorderStyled(*style, uaStyle) || style->boxShadow();
 
     case SliderHorizontalPart:
     case SliderVerticalPart:
@@ -698,6 +730,22 @@ void RenderTheme::adjustRepaintRect(const RenderObject* o, IntRect& r)
     UNUSED_PARAM(o);
     UNUSED_PARAM(r);
 #endif
+}
+
+bool RenderTheme::shouldDrawDefaultFocusRing(RenderObject* renderer) const
+{
+    if (supportsFocusRing(renderer->style()))
+        return false;
+    if (!renderer->style()->hasAppearance())
+        return true;
+    Node* node = renderer->node();
+    if (!node)
+        return true;
+    // We can't use RenderTheme::isFocused because outline:auto might be
+    // specified to non-:focus rulesets.
+    if (node->focused() && !node->shouldHaveFocusAppearance())
+        return false;
+    return true;
 }
 
 bool RenderTheme::supportsFocusRing(const RenderStyle* style) const
@@ -754,15 +802,11 @@ bool RenderTheme::isActive(const RenderObject* o) const
     if (!node)
         return false;
 
-    Frame* frame = node->document()->frame();
-    if (!frame)
-        return false;
-
-    Page* page = frame->page();
+    Page* page = node->document()->page();
     if (!page)
         return false;
 
-    return page->focusController()->isActive();
+    return page->focusController().isActive();
 }
 
 bool RenderTheme::isChecked(const RenderObject* o) const
@@ -796,7 +840,7 @@ bool RenderTheme::isFocused(const RenderObject* o) const
     node = node->focusDelegate();
     Document* document = node->document();
     Frame* frame = document->frame();
-    return node == document->focusedNode() && frame && frame->selection()->isFocusedAndActive();
+    return node == document->focusedElement() && node->shouldHaveFocusAppearance() && frame && frame->selection()->isFocusedAndActive();
 }
 
 bool RenderTheme::isPressed(const RenderObject* o) const
@@ -997,7 +1041,7 @@ void RenderTheme::paintSliderTicks(RenderObject* o, const PaintInfo& paintInfo, 
     }
     RefPtr<HTMLCollection> options = dataList->options();
     GraphicsContextStateSaver stateSaver(*paintInfo.context);
-    paintInfo.context->setFillColor(o->style()->visitedDependentColor(CSSPropertyColor));
+    paintInfo.context->setFillColor(o->resolveColor(CSSPropertyColor));
     for (unsigned i = 0; Node* node = options->item(i); i++) {
         ASSERT(node->hasTagName(optionTag));
         HTMLOptionElement* optionElement = toHTMLOptionElement(node);
@@ -1074,16 +1118,7 @@ void RenderTheme::adjustSearchFieldResultsDecorationStyle(RenderStyle*, Element*
 
 void RenderTheme::platformColorsDidChange()
 {
-    m_activeSelectionForegroundColor = Color();
-    m_inactiveSelectionForegroundColor = Color();
-    m_activeSelectionBackgroundColor = Color();
-    m_inactiveSelectionBackgroundColor = Color();
-
-    m_activeListBoxSelectionForegroundColor = Color();
-    m_inactiveListBoxSelectionForegroundColor = Color();
-    m_activeListBoxSelectionBackgroundColor = Color();
-    m_inactiveListBoxSelectionForegroundColor = Color();
-
+    m_selectionColorsValid = 0;
     Page::scheduleForcedStyleRecalcForAllPages();
 }
 
@@ -1188,7 +1223,7 @@ void RenderTheme::setCustomFocusRingColor(const Color& c)
 
 Color RenderTheme::focusRingColor()
 {
-    return customFocusRingColor().isValid() ? customFocusRingColor() : defaultTheme()->platformFocusRingColor();
+    return customFocusRingColor().isValid() ? customFocusRingColor().color() : defaultTheme()->platformFocusRingColor();
 }
 
 String RenderTheme::fileListDefaultLabel(bool multipleFilesAllowed) const

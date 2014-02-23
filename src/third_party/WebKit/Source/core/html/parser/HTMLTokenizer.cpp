@@ -22,7 +22,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -155,7 +155,7 @@ void HTMLTokenizer::restoreFromCheckpoint(const Checkpoint& checkpoint)
 inline bool HTMLTokenizer::processEntity(SegmentedString& source)
 {
     bool notEnoughCharacters = false;
-    StringBuilder decodedEntity;
+    DecodedHTMLEntity decodedEntity;
     bool success = consumeHTMLEntity(source, decodedEntity, notEnoughCharacters);
     if (notEnoughCharacters)
         return false;
@@ -163,8 +163,8 @@ inline bool HTMLTokenizer::processEntity(SegmentedString& source)
         ASSERT(decodedEntity.isEmpty());
         bufferCharacter('&');
     } else {
-        for (unsigned i = 0; i < decodedEntity.length(); ++i)
-            bufferCharacter(decodedEntity[i]);
+        for (unsigned i = 0; i < decodedEntity.length; ++i)
+            bufferCharacter(decodedEntity.data[i]);
     }
     return true;
 }
@@ -996,7 +996,7 @@ bool HTMLTokenizer::nextToken(SegmentedString& source, HTMLToken& token)
 
     HTML_BEGIN_STATE(CharacterReferenceInAttributeValueState) {
         bool notEnoughCharacters = false;
-        StringBuilder decodedEntity;
+        DecodedHTMLEntity decodedEntity;
         bool success = consumeHTMLEntity(source, decodedEntity, notEnoughCharacters, m_additionalAllowedCharacter);
         if (notEnoughCharacters)
             return haveBufferedCharacterToken();
@@ -1004,8 +1004,8 @@ bool HTMLTokenizer::nextToken(SegmentedString& source, HTMLToken& token)
             ASSERT(decodedEntity.isEmpty());
             m_token->appendToAttributeValue('&');
         } else {
-            for (unsigned i = 0; i < decodedEntity.length(); ++i)
-                m_token->appendToAttributeValue(decodedEntity[i]);
+            for (unsigned i = 0; i < decodedEntity.length; ++i)
+                m_token->appendToAttributeValue(decodedEntity.data[i]);
         }
         // We're supposed to switch back to the attribute value state that
         // we were in when we were switched into this state. Rather than
@@ -1072,9 +1072,9 @@ bool HTMLTokenizer::nextToken(SegmentedString& source, HTMLToken& token)
     END_STATE()
 
     HTML_BEGIN_STATE(MarkupDeclarationOpenState) {
-        DEFINE_STATIC_LOCAL(String, dashDashString, (ASCIILiteral("--")));
-        DEFINE_STATIC_LOCAL(String, doctypeString, (ASCIILiteral("doctype")));
-        DEFINE_STATIC_LOCAL(String, cdataString, (ASCIILiteral("[CDATA[")));
+        DEFINE_STATIC_LOCAL(String, dashDashString, ("--"));
+        DEFINE_STATIC_LOCAL(String, doctypeString, ("doctype"));
+        DEFINE_STATIC_LOCAL(String, cdataString, ("[CDATA["));
         if (cc == '-') {
             SegmentedString::LookAheadResult result = source.lookAhead(dashDashString);
             if (result == SegmentedString::DidMatch) {
@@ -1275,8 +1275,8 @@ bool HTMLTokenizer::nextToken(SegmentedString& source, HTMLToken& token)
             m_token->setForceQuirks();
             return emitAndReconsumeIn(source, HTMLTokenizer::DataState);
         } else {
-            DEFINE_STATIC_LOCAL(String, publicString, (ASCIILiteral("public")));
-            DEFINE_STATIC_LOCAL(String, systemString, (ASCIILiteral("system")));
+            DEFINE_STATIC_LOCAL(String, publicString, ("public"));
+            DEFINE_STATIC_LOCAL(String, systemString, ("system"));
             if (cc == 'P' || cc == 'p') {
                 SegmentedString::LookAheadResult result = source.lookAheadIgnoringCase(publicString);
                 if (result == SegmentedString::DidMatch) {

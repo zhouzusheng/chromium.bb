@@ -34,6 +34,7 @@
 #include "V8HTMLCollection.h"
 #include "V8Node.h"
 #include "bindings/v8/BindingSecurity.h"
+#include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScheduledAction.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptSourceCode.h"
@@ -55,6 +56,7 @@
 #include "core/page/ContentSecurityPolicy.h"
 #include "core/page/DOMTimer.h"
 #include "core/page/DOMWindow.h"
+#include "core/page/DOMWindowTimers.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/page/Location.h"
@@ -66,9 +68,12 @@
 #include "core/storage/Storage.h"
 #include "core/workers/SharedWorkerRepository.h"
 #include "wtf/ArrayBuffer.h"
+#include "wtf/OwnArrayPtr.h"
 
 namespace WebCore {
 
+// FIXME: There is a lot of duplication with SetTimeoutOrInterval() in V8WorkerGlobalScopeCustom.cpp.
+// We should refactor this.
 void WindowSetTimeoutImpl(const v8::FunctionCallbackInfo<v8::Value>& args, bool singleShot)
 {
     int argumentCount = args.Length();
@@ -80,12 +85,12 @@ void WindowSetTimeoutImpl(const v8::FunctionCallbackInfo<v8::Value>& args, bool 
     ScriptExecutionContext* scriptContext = static_cast<ScriptExecutionContext*>(imp->document());
 
     if (!scriptContext) {
-        setDOMException(INVALID_ACCESS_ERR, args.GetIsolate());
+        setDOMException(InvalidAccessError, args.GetIsolate());
         return;
     }
 
     v8::Handle<v8::Value> function = args[0];
-    WTF::String functionString;
+    String functionString;
     if (!function->IsFunction()) {
         if (function->IsString()) {
             functionString = toWebCoreString(function);
@@ -105,19 +110,15 @@ void WindowSetTimeoutImpl(const v8::FunctionCallbackInfo<v8::Value>& args, bool 
             return;
     }
 
-    int32_t timeout = 0;
-    if (argumentCount >= 2)
-        timeout = args[1]->Int32Value();
-
     if (!BindingSecurity::shouldAllowAccessToFrame(imp->frame()))
         return;
 
-    int id;
+    OwnPtr<ScheduledAction> action;
     if (function->IsFunction()) {
         int paramCount = argumentCount >= 2 ? argumentCount - 2 : 0;
-        v8::Local<v8::Value>* params = 0;
+        OwnArrayPtr<v8::Local<v8::Value> > params;
         if (paramCount > 0) {
-            params = new v8::Local<v8::Value>[paramCount];
+            params = adoptArrayPtr(new v8::Local<v8::Value>[paramCount]);
             for (int i = 0; i < paramCount; i++) {
                 // parameters must be globalized
                 params[i] = args[i+2];
@@ -126,20 +127,22 @@ void WindowSetTimeoutImpl(const v8::FunctionCallbackInfo<v8::Value>& args, bool 
 
         // params is passed to action, and released in action's destructor
         ASSERT(imp->frame());
-        OwnPtr<ScheduledAction> action = adoptPtr(new ScheduledAction(imp->frame()->script()->currentWorldContext(), v8::Handle<v8::Function>::Cast(function), paramCount, params, args.GetIsolate()));
-
-        // FIXME: We should use OwnArrayPtr for params.
-        delete[] params;
-
-        id = DOMTimer::install(scriptContext, action.release(), timeout, singleShot);
+        action = adoptPtr(new ScheduledAction(imp->frame()->script()->currentWorldContext(), v8::Handle<v8::Function>::Cast(function), paramCount, params.get(), args.GetIsolate()));
     } else {
         if (imp->document() && !imp->document()->contentSecurityPolicy()->allowEval()) {
             v8SetReturnValue(args, 0);
             return;
         }
         ASSERT(imp->frame());
-        id = DOMTimer::install(scriptContext, adoptPtr(new ScheduledAction(imp->frame()->script()->currentWorldContext(), functionString, KURL(), args.GetIsolate())), timeout, singleShot);
+        action = adoptPtr(new ScheduledAction(imp->frame()->script()->currentWorldContext(), functionString, KURL(), args.GetIsolate()));
     }
+
+    int32_t timeout = argumentCount >= 2 ? args[1]->Int32Value() : 0;
+    int timerId;
+    if (singleShot)
+        timerId = DOMWindowTimers::setTimeout(imp, action.release(), timeout);
+    else
+        timerId = DOMWindowTimers::setInterval(imp, action.release(), timeout);
 
     // Try to do the idle notification before the timeout expires to get better
     // use of any idle time. Aim for the middle of the interval for simplicity.
@@ -148,7 +151,7 @@ void WindowSetTimeoutImpl(const v8::FunctionCallbackInfo<v8::Value>& args, bool 
         V8GCForContextDispose::instance().notifyIdleSooner(maximumFireInterval);
     }
 
-    v8SetReturnValue(args, id);
+    v8SetReturnValue(args, timerId);
 }
 
 void V8Window::eventAttrGetterCustom(v8::Local<v8::String> name, const v8::PropertyCallbackInfo<v8::Value>& info)
@@ -232,60 +235,6 @@ void V8Window::openerAttrSetterCustom(v8::Local<v8::String> name, v8::Local<v8::
     info.This()->Set(name, value);
 }
 
-void V8Window::addEventListenerMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
-{
-    String eventType = toWebCoreString(args[0]);
-    bool useCapture = args[2]->BooleanValue();
-
-    DOMWindow* imp = V8Window::toNative(args.Holder());
-
-    if (!BindingSecurity::shouldAllowAccessToFrame(imp->frame()))
-        return;
-
-    Document* doc = imp->document();
-
-    if (!doc)
-        return;
-
-    // FIXME: Check if there is not enough arguments
-    if (!imp->frame())
-        return;
-
-    RefPtr<EventListener> listener = V8EventListenerList::getEventListener(args[1], false, ListenerFindOrCreate);
-
-    if (listener) {
-        imp->addEventListener(eventType, listener, useCapture);
-        createHiddenDependency(args.Holder(), args[1], eventListenerCacheIndex, args.GetIsolate());
-    }
-}
-
-
-void V8Window::removeEventListenerMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
-{
-    String eventType = toWebCoreString(args[0]);
-    bool useCapture = args[2]->BooleanValue();
-
-    DOMWindow* imp = V8Window::toNative(args.Holder());
-
-    if (!BindingSecurity::shouldAllowAccessToFrame(imp->frame()))
-        return;
-
-    Document* doc = imp->document();
-
-    if (!doc)
-        return;
-
-    if (!imp->frame())
-        return;
-
-    RefPtr<EventListener> listener = V8EventListenerList::getEventListener(args[1], false, ListenerFindOnly);
-
-    if (listener) {
-        imp->removeEventListener(eventType, listener.get(), useCapture);
-        removeHiddenDependency(args.Holder(), args[1], eventListenerCacheIndex, args.GetIsolate());
-    }
-}
-
 static bool isLegacyTargetOriginDesignation(v8::Handle<v8::Value> value)
 {
     if (value->IsString() || value->IsStringObject())
@@ -303,7 +252,7 @@ void V8Window::postMessageMethodCustom(const v8::FunctionCallbackInfo<v8::Value>
 
     // If called directly by WebCore we don't have a calling context.
     if (!source) {
-        throwTypeError(0, args.GetIsolate());
+        throwTypeError(args.GetIsolate());
         return;
     }
 
@@ -333,9 +282,9 @@ void V8Window::postMessageMethodCustom(const v8::FunctionCallbackInfo<v8::Value>
     if (didThrow)
         return;
 
-    ExceptionCode ec = 0;
-    window->postMessage(message.release(), &portArray, targetOrigin, source, ec);
-    setDOMException(ec, args.GetIsolate());
+    ExceptionState es(args.GetIsolate());
+    window->postMessage(message.release(), &portArray, targetOrigin, source, es);
+    es.throwIfNeeded();
 }
 
 // FIXME(fqian): returning string is cheating, and we should
@@ -444,7 +393,7 @@ void V8Window::namedPropertyGetterCustom(v8::Local<v8::String> name, const v8::P
     AtomicString propName = toWebCoreAtomicString(name);
     Frame* child = frame->tree()->scopedChild(propName);
     if (child) {
-        v8SetReturnValue(info, toV8Fast(child->document()->domWindow(), info, window));
+        v8SetReturnValue(info, toV8Fast(child->domWindow(), info, window));
         return;
     }
 
@@ -539,17 +488,21 @@ bool V8Window::indexedSecurityCheckCustom(v8::Local<v8::Object> host, uint32_t i
     Frame* target = targetWindow->frame();
     if (!target)
         return false;
-    Frame* childFrame =  target->tree()->scopedChild(index);
 
     // Notify the loader's client if the initial document has been accessed.
     if (target->loader()->stateMachine()->isDisplayingInitialEmptyDocument())
         target->loader()->didAccessInitialDocument();
 
+    Frame* childFrame =  target->tree()->scopedChild(index);
+
     // Notice that we can't call HasRealNamedProperty for ACCESS_HAS
     // because that would generate infinite recursion.
     if (type == v8::ACCESS_HAS && childFrame)
         return true;
-    if (type == v8::ACCESS_GET && childFrame && !host->HasRealIndexedProperty(index))
+    if (type == v8::ACCESS_GET
+        && childFrame
+        && !host->HasRealIndexedProperty(index)
+        && !window->HasRealIndexedProperty(index))
         return true;
 
     return BindingSecurity::shouldAllowAccessToFrame(target, DoNotReportSecurityError);

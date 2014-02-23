@@ -32,10 +32,8 @@
 
 #include "core/platform/audio/HRTFDatabaseLoader.h"
 
-#include "core/platform/PlatformMemoryInstrumentation.h"
 #include "core/platform/audio/HRTFDatabase.h"
 #include "wtf/MainThread.h"
-#include "wtf/MemoryInstrumentationHashMap.h"
 
 namespace WebCore {
 
@@ -47,7 +45,7 @@ PassRefPtr<HRTFDatabaseLoader> HRTFDatabaseLoader::createAndLoadAsynchronouslyIf
     ASSERT(isMainThread());
 
     RefPtr<HRTFDatabaseLoader> loader;
-    
+
     if (!s_loaderMap)
         s_loaderMap = adoptPtr(new LoaderMap()).leakPtr();
 
@@ -106,7 +104,7 @@ void HRTFDatabaseLoader::loadAsynchronously()
     ASSERT(isMainThread());
 
     MutexLocker locker(m_threadLock);
-    
+
     if (!m_hrtfDatabase.get() && !m_databaseLoaderThread) {
         // Start the asynchronous database loading process.
         m_databaseLoaderThread = createThread(databaseLoaderEntry, this, "HRTF database loader");
@@ -121,18 +119,11 @@ bool HRTFDatabaseLoader::isLoaded() const
 void HRTFDatabaseLoader::waitForLoaderThreadCompletion()
 {
     MutexLocker locker(m_threadLock);
-    
+
     // waitForThreadCompletion() should not be called twice for the same thread.
     if (m_databaseLoaderThread)
         waitForThreadCompletion(m_databaseLoaderThread);
     m_databaseLoaderThread = 0;
-}
-
-void HRTFDatabaseLoader::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::AudioSharedData);
-    info.addMember(m_hrtfDatabase, "hrtfDatabase");
-    info.addMember(s_loaderMap, "loaderMap", WTF::RetainingPointer);
 }
 
 } // namespace WebCore

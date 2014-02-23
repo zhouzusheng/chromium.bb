@@ -28,18 +28,7 @@
 
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8Utilities.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "wtf/MemoryInstrumentationHashMap.h"
-#include "wtf/MemoryInstrumentationSequence.h"
 #include "wtf/text/StringHash.h"
-
-namespace WTF {
-
-template<> struct SequenceMemoryInstrumentationTraits<v8::String*> {
-    template <typename I> static void reportMemoryUsage(I, I, MemoryClassInfo&) { }
-};
-
-}
 
 namespace WebCore {
 
@@ -60,35 +49,43 @@ static v8::Local<v8::String> makeExternalString(const String& string)
     return newString;
 }
 
-static void makeWeakCallback(v8::Isolate* isolate, v8::Persistent<v8::String>* wrapper, StringImpl* stringImpl)
-{
-    V8PerIsolateData::current()->stringCache()->remove(stringImpl);
-    wrapper->Dispose(isolate);
-    stringImpl->deref();
-}
-
-void StringCache::remove(StringImpl* stringImpl) 
-{
-    ASSERT(m_stringCache.contains(stringImpl));
-    m_stringCache.remove(stringImpl);
-    // Make sure that already disposed m_lastV8String is not used in
-    // StringCache::v8ExternalString().
-    clearOnGC();
-}
-
-v8::Handle<v8::String> StringCache::v8ExternalStringSlow(StringImpl* stringImpl, ReturnHandleType handleType, v8::Isolate* isolate)
+v8::Handle<v8::String> StringCache::v8ExternalStringSlow(StringImpl* stringImpl, v8::Isolate* isolate)
 {
     if (!stringImpl->length())
         return v8::String::Empty(isolate);
 
     UnsafePersistent<v8::String> cachedV8String = m_stringCache.get(stringImpl);
-    if (cachedV8String.isWeak()) {
+    if (!cachedV8String.isEmpty()) {
         m_lastStringImpl = stringImpl;
         m_lastV8String = cachedV8String;
-        if (handleType == ReturnUnsafeHandle)
-            return cachedV8String.handle();
         return cachedV8String.newLocal(isolate);
     }
+
+    return createStringAndInsertIntoCache(stringImpl, isolate);
+}
+
+void StringCache::setReturnValueFromStringSlow(v8::ReturnValue<v8::Value> returnValue, StringImpl* stringImpl)
+{
+    if (!stringImpl->length()) {
+        returnValue.SetEmptyString();
+        return;
+    }
+
+    UnsafePersistent<v8::String> cachedV8String = m_stringCache.get(stringImpl);
+    if (!cachedV8String.isEmpty()) {
+        m_lastStringImpl = stringImpl;
+        m_lastV8String = cachedV8String;
+        returnValue.Set(*cachedV8String.persistent());
+        return;
+    }
+
+    returnValue.Set(createStringAndInsertIntoCache(stringImpl, returnValue.GetIsolate()));
+}
+
+v8::Local<v8::String> StringCache::createStringAndInsertIntoCache(StringImpl* stringImpl, v8::Isolate* isolate)
+{
+    ASSERT(!m_stringCache.contains(stringImpl));
+    ASSERT(stringImpl->length());
 
     v8::Local<v8::String> newString = makeExternalString(String(stringImpl));
     if (newString.IsEmpty())
@@ -100,19 +97,21 @@ v8::Handle<v8::String> StringCache::v8ExternalStringSlow(StringImpl* stringImpl,
     wrapper.MarkIndependent(isolate);
     wrapper.MakeWeak(stringImpl, &makeWeakCallback);
     m_lastV8String = UnsafePersistent<v8::String>(wrapper);
-    m_stringCache.set(stringImpl, m_lastV8String);
-
     m_lastStringImpl = stringImpl;
+    m_stringCache.set(stringImpl, m_lastV8String);
 
     return newString;
 }
 
-void StringCache::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+void StringCache::makeWeakCallback(v8::Isolate* isolate, v8::Persistent<v8::String>* wrapper, StringImpl* stringImpl)
 {
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Binding);
-    info.addMember(m_stringCache, "stringCache");
-    info.ignoreMember(m_lastV8String);
-    info.addMember(m_lastStringImpl, "lastStringImpl");
+    StringCache* stringCache = V8PerIsolateData::from(isolate)->stringCache();
+    stringCache->m_lastStringImpl = 0;
+    stringCache->m_lastV8String.clear();
+    ASSERT(stringCache->m_stringCache.contains(stringImpl));
+    stringCache->m_stringCache.remove(stringImpl);
+    stringImpl->deref();
+    wrapper->Dispose(isolate);
 }
 
 } // namespace WebCore

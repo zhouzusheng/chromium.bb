@@ -44,7 +44,7 @@ void SVGTextLayoutAttributesBuilder::buildLayoutAttributesForTextRenderer(Render
         m_characterDataMap.clear();
 
         m_textLength = 0;
-        const UChar* lastCharacter = 0;
+        UChar lastCharacter = ' ';
         collectTextPositioningElements(textRoot, lastCharacter);
 
         if (!m_textLength)
@@ -64,7 +64,7 @@ bool SVGTextLayoutAttributesBuilder::buildLayoutAttributesForForSubtree(RenderSV
 
     if (m_textPositions.isEmpty()) {
         m_textLength = 0;
-        const UChar* lastCharacter = 0;
+        UChar lastCharacter = ' ';
         collectTextPositioningElements(textRoot, lastCharacter);
     }
 
@@ -82,18 +82,17 @@ void SVGTextLayoutAttributesBuilder::rebuildMetricsForTextRenderer(RenderSVGInli
     m_metricsBuilder.measureTextRenderer(text);
 }
 
-static inline void processRenderSVGInlineText(RenderSVGInlineText* text, unsigned& atCharacter, const UChar*& lastCharacter)
+static inline void processRenderSVGInlineText(RenderSVGInlineText* text, unsigned& atCharacter, UChar& lastCharacter)
 {
     if (text->style()->whiteSpace() == PRE) {
         atCharacter += text->textLength();
         return;
     }
 
-    const UChar* characters = text->characters();
-    unsigned textLength = text->textLength();    
+    unsigned textLength = text->textLength();
     for (unsigned textPosition = 0; textPosition < textLength; ++textPosition) {
-        const UChar* currentCharacter = characters + textPosition;
-        if (*currentCharacter == ' ' && (!lastCharacter || *lastCharacter == ' '))
+        UChar currentCharacter = text->characterAt(textPosition);
+        if (currentCharacter == ' ' && lastCharacter == ' ')
             continue;
 
         lastCharacter = currentCharacter;
@@ -101,11 +100,11 @@ static inline void processRenderSVGInlineText(RenderSVGInlineText* text, unsigne
     }
 }
 
-void SVGTextLayoutAttributesBuilder::collectTextPositioningElements(RenderObject* start, const UChar*& lastCharacter)
+void SVGTextLayoutAttributesBuilder::collectTextPositioningElements(RenderObject* start, UChar& lastCharacter)
 {
     ASSERT(!start->isSVGText() || m_textPositions.isEmpty());
 
-    for (RenderObject* child = start->firstChild(); child; child = child->nextSibling()) { 
+    for (RenderObject* child = start->firstChild(); child; child = child->nextSibling()) {
         if (child->isSVGInlineText()) {
             processRenderSVGInlineText(toRenderSVGInlineText(child), m_textLength, lastCharacter);
             continue;
@@ -155,7 +154,7 @@ void SVGTextLayoutAttributesBuilder::buildCharacterDataMap(RenderSVGText* textRo
             data.y = 0;
     }
 
-    // Fill character data map using child text positioning elements in top-down order. 
+    // Fill character data map using child text positioning elements in top-down order.
     unsigned size = m_textPositions.size();
     for (unsigned i = 0; i < size; ++i)
         fillCharacterDataMap(m_textPositions[i]);
@@ -172,18 +171,18 @@ static inline void updateCharacterData(unsigned i, float& lastRotation, SVGChara
     if (dyList)
         data.dy = dyList->at(i).value(lengthContext);
     if (rotateList) {
-        data.rotate = rotateList->at(i);
+        data.rotate = rotateList->at(i).value();
         lastRotation = data.rotate;
     }
 }
 
 void SVGTextLayoutAttributesBuilder::fillCharacterDataMap(const TextPosition& position)
 {
-    const SVGLengthList& xList = position.element->x();
-    const SVGLengthList& yList = position.element->y();
-    const SVGLengthList& dxList = position.element->dx();
-    const SVGLengthList& dyList = position.element->dy();
-    const SVGNumberList& rotateList = position.element->rotate();
+    const SVGLengthList& xList = position.element->xCurrentValue();
+    const SVGLengthList& yList = position.element->yCurrentValue();
+    const SVGLengthList& dxList = position.element->dxCurrentValue();
+    const SVGLengthList& dyList = position.element->dyCurrentValue();
+    const SVGNumberList& rotateList = position.element->rotateCurrentValue();
 
     unsigned xListSize = xList.size();
     unsigned yListSize = yList.size();

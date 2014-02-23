@@ -61,30 +61,34 @@ std::string DevToolsProtocol::Command::Serialize() {
   return json_command;
 }
 
-scoped_ptr<DevToolsProtocol::Response>
+scoped_refptr<DevToolsProtocol::Response>
 DevToolsProtocol::Command::SuccessResponse(base::DictionaryValue* result) {
-  return scoped_ptr<DevToolsProtocol::Response>(
-      new DevToolsProtocol::Response(id_, result));
+  return new DevToolsProtocol::Response(id_, result);
 }
 
-scoped_ptr<DevToolsProtocol::Response>
+scoped_refptr<DevToolsProtocol::Response>
 DevToolsProtocol::Command::InternalErrorResponse(const std::string& message) {
-  return scoped_ptr<DevToolsProtocol::Response>(
-      new DevToolsProtocol::Response(id_, kErrorInternalError, message));
+  return new DevToolsProtocol::Response(id_, kErrorInternalError, message);
 }
 
-scoped_ptr<DevToolsProtocol::Response>
+scoped_refptr<DevToolsProtocol::Response>
 DevToolsProtocol::Command::InvalidParamResponse(const std::string& param) {
   std::string message =
       base::StringPrintf("Missing or invalid '%s' parameter", param.c_str());
-  return scoped_ptr<DevToolsProtocol::Response>(
-      new DevToolsProtocol::Response(id_, kErrorInvalidParams, message));
+  return new DevToolsProtocol::Response(id_, kErrorInvalidParams, message);
 }
 
-scoped_ptr<DevToolsProtocol::Response>
+scoped_refptr<DevToolsProtocol::Response>
 DevToolsProtocol::Command::NoSuchMethodErrorResponse() {
-  return scoped_ptr<DevToolsProtocol::Response>(
-      new Response(id_, kErrorNoSuchMethod, "No such method"));
+  return new Response(id_, kErrorNoSuchMethod, "No such method");
+}
+
+scoped_refptr<DevToolsProtocol::Response>
+DevToolsProtocol::Command::AsyncResponsePromise() {
+  scoped_refptr<DevToolsProtocol::Response> promise =
+      new DevToolsProtocol::Response(0, NULL);
+  promise->is_async_promise_ = true;
+  return promise;
 }
 
 DevToolsProtocol::Command::Command(int id,
@@ -92,6 +96,9 @@ DevToolsProtocol::Command::Command(int id,
                                    base::DictionaryValue* params)
     : Message(method, params),
       id_(id) {
+}
+
+DevToolsProtocol::Response::~Response() {
 }
 
 std::string DevToolsProtocol::Response::Serialize() {
@@ -118,15 +125,17 @@ std::string DevToolsProtocol::Response::Serialize() {
 DevToolsProtocol::Response::Response(int id, base::DictionaryValue* result)
     : id_(id),
       result_(result),
-      error_code_(0) {
+      error_code_(0),
+      is_async_promise_(false) {
 }
 
 DevToolsProtocol::Response::Response(int id,
                                      int error_code,
                                      const std::string& error_message)
-    : id_(id), error_code_(error_code), error_message_(error_message) {}
-
-DevToolsProtocol::Response::~Response() {
+    : id_(id),
+      error_code_(error_code),
+      error_message_(error_message),
+      is_async_promise_(false) {
 }
 
 DevToolsProtocol::Notification::Notification(const std::string& method,
@@ -151,12 +160,12 @@ std::string DevToolsProtocol::Notification::Serialize() {
 DevToolsProtocol::Handler::~Handler() {
 }
 
-scoped_ptr<DevToolsProtocol::Response>
+scoped_refptr<DevToolsProtocol::Response>
 DevToolsProtocol::Handler::HandleCommand(
-    DevToolsProtocol::Command* command) {
+    scoped_refptr<DevToolsProtocol::Command> command) {
   CommandHandlers::iterator it = command_handlers_.find(command->method());
   if (it == command_handlers_.end())
-    return scoped_ptr<DevToolsProtocol::Response>();
+    return NULL;
   return (it->second).Run(command);
 }
 
@@ -176,9 +185,14 @@ void DevToolsProtocol::Handler::RegisterCommandHandler(
 void DevToolsProtocol::Handler::SendNotification(
     const std::string& method,
     base::DictionaryValue* params) {
-  DevToolsProtocol::Notification notification(method, params);
+  scoped_refptr<DevToolsProtocol::Notification> notification =
+      new DevToolsProtocol::Notification(method, params);
+  SendRawMessage(notification->Serialize());
+}
+
+void DevToolsProtocol::Handler::SendRawMessage(const std::string& message) {
   if (!notifier_.is_null())
-    notifier_.Run(notification.Serialize());
+    notifier_.Run(message);
 }
 
 static bool ParseMethod(base::DictionaryValue* command,
@@ -192,7 +206,7 @@ static bool ParseMethod(base::DictionaryValue* command,
 }
 
 // static
-DevToolsProtocol::Command* DevToolsProtocol::ParseCommand(
+scoped_refptr<DevToolsProtocol::Command> DevToolsProtocol::ParseCommand(
     const std::string& json,
     std::string* error_response) {
   scoped_ptr<base::DictionaryValue> command_dict(
@@ -205,8 +219,9 @@ DevToolsProtocol::Command* DevToolsProtocol::ParseCommand(
   bool ok = command_dict->GetInteger(kIdParam, &id) && id >= 0;
   ok = ok && ParseMethod(command_dict.get(), &method);
   if (!ok) {
-    Response response(kNoId, kErrorInvalidRequest, "No such method");
-    *error_response = response.Serialize();
+    scoped_refptr<Response> response =
+        new Response(kNoId, kErrorInvalidRequest, "No such method");
+    *error_response = response->Serialize();
     return NULL;
   }
 
@@ -216,7 +231,7 @@ DevToolsProtocol::Command* DevToolsProtocol::ParseCommand(
 }
 
 // static
-DevToolsProtocol::Notification*
+scoped_refptr<DevToolsProtocol::Notification>
 DevToolsProtocol::ParseNotification(const std::string& json) {
   scoped_ptr<base::DictionaryValue> dict(ParseMessage(json, NULL));
   if (!dict)
@@ -233,7 +248,8 @@ DevToolsProtocol::ParseNotification(const std::string& json) {
 }
 
 //static
-DevToolsProtocol::Notification* DevToolsProtocol::CreateNotification(
+scoped_refptr<DevToolsProtocol::Notification>
+DevToolsProtocol::CreateNotification(
     const std::string& method,
     base::DictionaryValue* params) {
   return new Notification(method, params);
@@ -250,9 +266,10 @@ base::DictionaryValue* DevToolsProtocol::ParseMessage(
           json, 0, &parse_error_code, &error_message));
 
   if (!message || !message->IsType(Value::TYPE_DICTIONARY)) {
-    Response response(0, kErrorParseError, error_message);
+    scoped_refptr<Response> response =
+        new Response(0, kErrorParseError, error_message);
     if (error_response)
-      *error_response = response.Serialize();
+      *error_response = response->Serialize();
     return NULL;
   }
 

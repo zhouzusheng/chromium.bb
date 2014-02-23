@@ -6,7 +6,7 @@
 #define CC_INPUT_INPUT_HANDLER_H_
 
 #include "base/basictypes.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "cc/base/cc_export.h"
 #include "cc/input/scrollbar.h"
 
@@ -23,6 +23,12 @@ namespace cc {
 
 class LayerScrollOffsetDelegate;
 
+struct DidOverscrollParams {
+  gfx::Vector2dF accumulated_overscroll;
+  gfx::Vector2dF latest_overscroll_delta;
+  gfx::Vector2dF current_fling_velocity;
+};
+
 class CC_EXPORT InputHandlerClient {
  public:
   virtual ~InputHandlerClient() {}
@@ -34,8 +40,7 @@ class CC_EXPORT InputHandlerClient {
   // Called when scroll deltas reaching the root scrolling layer go unused.
   // The accumulated overscroll is scoped by the most recent call to
   // InputHandler::ScrollBegin.
-  virtual void DidOverscroll(gfx::Vector2dF accumulated_overscroll,
-                             gfx::Vector2dF current_fling_velocity) = 0;
+  virtual void DidOverscroll(const DidOverscrollParams& params) = 0;
 
  protected:
   InputHandlerClient() {}

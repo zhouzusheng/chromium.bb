@@ -8,13 +8,13 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "rtp_dump_impl.h"
+#include "webrtc/modules/utility/source/rtp_dump_impl.h"
 
-#include <cassert>
+#include <assert.h>
 #include <stdio.h>
 
-#include "critical_section_wrapper.h"
-#include "trace.h"
+#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/interface/trace.h"
 
 #if defined(_WIN32)
 #include <Windows.h>
@@ -278,4 +278,4 @@ inline uint16_t RtpDumpImpl::RtpDumpHtons(uint16_t x) const
     return 0;
 #endif
 }
-} // namespace webrtc
+}  // namespace webrtc

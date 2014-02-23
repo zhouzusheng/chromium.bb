@@ -7,9 +7,8 @@
 #include "base/basictypes.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "third_party/WebKit/public/web/WebKit.h"
 #include "third_party/WebKit/public/web/WebSettings.h"
-#include "third_party/icu/public/common/unicode/uchar.h"
+#include "third_party/icu/source/common/unicode/uchar.h"
 
 using WebKit::WebSettings;
 
@@ -84,7 +83,6 @@ WebPreferences::WebPreferences()
       visual_word_movement_enabled(false),
       css_sticky_position_enabled(false),
       css_shaders_enabled(false),
-      css_grid_layout_enabled(false),
       lazy_layout_enabled(false),
       region_based_columns_enabled(false),
       touch_enabled(false),
@@ -128,7 +126,11 @@ WebPreferences::WebPreferences()
       double_tap_to_zoom_enabled(true),
       user_gesture_required_for_media_playback(true),
       support_deprecated_target_density_dpi(false),
-      use_wide_viewport(true)
+      use_legacy_background_size_shorthand_behavior(false),
+      wide_viewport_quirk(false),
+      use_wide_viewport(true),
+      viewport_meta_layout_size_quirk(false),
+      viewport_meta_zero_values_quirk(false)
 #endif
 {
   standard_font_family_map[webkit_glue::kCommonScript] =

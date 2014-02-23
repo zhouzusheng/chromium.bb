@@ -31,13 +31,14 @@
 #include "core/dom/Document.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/Element.h"
-#include "core/dom/ExceptionCode.h"
 #include "core/dom/TreeScope.h"
 #include "wtf/DoublyLinkedList.h"
 
 namespace WebCore {
 
 class ElementShadow;
+class ExceptionState;
+class InsertionPoint;
 class ScopeContentDistribution;
 
 class ShadowRoot FINAL : public DocumentFragment, public TreeScope, public DoublyLinkedListNode<ShadowRoot> {
@@ -59,16 +60,16 @@ public:
 
     void recalcStyle(StyleChange);
 
-    virtual bool applyAuthorStyles() const OVERRIDE { return m_applyAuthorStyles; }
+    bool applyAuthorStyles() const { return m_applyAuthorStyles; }
     void setApplyAuthorStyles(bool);
-    virtual bool resetStyleInheritance() const OVERRIDE { return m_resetStyleInheritance; }
+    bool resetStyleInheritance() const { return m_resetStyleInheritance; }
     void setResetStyleInheritance(bool);
 
     Element* host() const { return toElement(parentOrShadowHostNode()); }
     ElementShadow* owner() const { return host() ? host()->shadow() : 0; }
 
     String innerHTML() const;
-    void setInnerHTML(const String&, ExceptionCode&);
+    void setInnerHTML(const String&, ExceptionState&);
 
     Element* activeElement() const;
 
@@ -80,6 +81,7 @@ public:
 
     bool isYoungest() const { return !youngerShadowRoot(); }
     bool isOldest() const { return !olderShadowRoot(); }
+    bool isOldestAuthorShadowRoot() const;
 
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
 
@@ -93,11 +95,16 @@ public:
     const ScopeContentDistribution* scopeDistribution() const { return m_scopeDistribution.get(); }
     ScopeContentDistribution* ensureScopeDistribution();
 
+    bool containsShadowElements() const;
+    bool containsContentElements() const;
+    bool containsInsertionPoints() const { return containsShadowElements() || containsContentElements(); }
+    bool containsShadowRoots() const;
+    InsertionPoint* insertionPoint() const;
+
     ShadowRootType type() const { return static_cast<ShadowRootType>(m_type); }
 
-    PassRefPtr<Node> cloneNode(bool, ExceptionCode&);
-
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
+    PassRefPtr<Node> cloneNode(bool, ExceptionState&);
+    PassRefPtr<Node> cloneNode(ExceptionState& es) { return cloneNode(true, es); }
 
 private:
     ShadowRoot(Document*, ShadowRootType);
@@ -126,8 +133,8 @@ private:
 
 inline Element* ShadowRoot::activeElement() const
 {
-    if (Node* node = treeScope()->focusedNode())
-        return node->isElementNode() ? toElement(node) : 0;
+    if (Element* element = treeScope()->adjustedFocusedElement())
+        return element;
     return 0;
 }
 

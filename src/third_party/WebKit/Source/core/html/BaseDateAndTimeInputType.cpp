@@ -52,7 +52,7 @@ double BaseDateAndTimeInputType::valueAsDate() const
     return valueAsDouble();
 }
 
-void BaseDateAndTimeInputType::setValueAsDate(double value, ExceptionCode&) const
+void BaseDateAndTimeInputType::setValueAsDate(double value, ExceptionState&) const
 {
     element()->setValue(serializeWithMilliseconds(value));
 }
@@ -63,7 +63,7 @@ double BaseDateAndTimeInputType::valueAsDouble() const
     return value.isFinite() ? value.toDouble() : DateComponents::invalidMilliseconds();
 }
 
-void BaseDateAndTimeInputType::setValueAsDecimal(const Decimal& newValue, TextFieldEventBehavior eventBehavior, ExceptionCode&) const
+void BaseDateAndTimeInputType::setValueAsDecimal(const Decimal& newValue, TextFieldEventBehavior eventBehavior, ExceptionState&) const
 {
     element()->setValue(serialize(newValue), eventBehavior);
 }
@@ -109,7 +109,7 @@ bool BaseDateAndTimeInputType::parseToDateComponents(const String& source, DateC
     DateComponents ignoredResult;
     if (!out)
         out = &ignoredResult;
-    return parseToDateComponentsInternal(source.characters(), source.length(), out);
+    return parseToDateComponentsInternal(source, out);
 }
 
 String BaseDateAndTimeInputType::serialize(const Decimal& value) const
@@ -156,7 +156,7 @@ String BaseDateAndTimeInputType::visibleValue() const
 
 String BaseDateAndTimeInputType::sanitizeValue(const String& proposedValue) const
 {
-    return typeMismatchFor(proposedValue) ? String() : proposedValue;
+    return typeMismatchFor(proposedValue) ? emptyString() : proposedValue;
 }
 
 bool BaseDateAndTimeInputType::supportsReadOnly() const
@@ -172,6 +172,11 @@ bool BaseDateAndTimeInputType::shouldRespectListAttribute()
 bool BaseDateAndTimeInputType::valueMissing(const String& value) const
 {
     return element()->isRequired() && value.isEmpty();
+}
+
+bool BaseDateAndTimeInputType::shouldShowFocusRingOnMouseFocus() const
+{
+    return true;
 }
 
 } // namespace WebCore

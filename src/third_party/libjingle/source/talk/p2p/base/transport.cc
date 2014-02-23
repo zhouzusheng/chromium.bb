@@ -55,10 +55,11 @@ enum {
   MSG_CONNECTING = 13,
   MSG_CANDIDATEALLOCATIONCOMPLETE = 14,
   MSG_ROLECONFLICT = 15,
-  MSG_SETROLE = 16,
+  MSG_SETICEROLE = 16,
   MSG_SETLOCALDESCRIPTION = 17,
   MSG_SETREMOTEDESCRIPTION = 18,
-  MSG_GETSTATS = 19
+  MSG_GETSTATS = 19,
+  MSG_SETIDENTITY = 20,
 };
 
 struct ChannelParams : public talk_base::MessageData {
@@ -88,10 +89,10 @@ struct TransportDescriptionParams : public talk_base::MessageData {
   bool result;
 };
 
-struct TransportRoleParam : public talk_base::MessageData {
-  explicit TransportRoleParam(TransportRole role) : role(role) {}
+struct IceRoleParam : public talk_base::MessageData {
+  explicit IceRoleParam(IceRole role) : role(role) {}
 
-  TransportRole role;
+  IceRole role;
 };
 
 struct StatsParam : public talk_base::MessageData {
@@ -100,6 +101,13 @@ struct StatsParam : public talk_base::MessageData {
 
   TransportStats* stats;
   bool result;
+};
+
+struct IdentityParam : public talk_base::MessageData {
+  explicit IdentityParam(talk_base::SSLIdentity* identity)
+      : identity(identity) {}
+
+  talk_base::SSLIdentity* identity;
 };
 
 Transport::Transport(talk_base::Thread* signaling_thread,
@@ -117,7 +125,7 @@ Transport::Transport(talk_base::Thread* signaling_thread,
     writable_(TRANSPORT_STATE_NONE),
     was_writable_(false),
     connect_requested_(false),
-    role_(ROLE_UNKNOWN),
+    ice_role_(ICEROLE_UNKNOWN),
     tiebreaker_(0),
     protocol_(ICEPROTO_HYBRID),
     remote_ice_mode_(ICEMODE_FULL) {
@@ -128,9 +136,14 @@ Transport::~Transport() {
   ASSERT(destroyed_);
 }
 
-void Transport::SetRole(TransportRole role) {
-  TransportRoleParam param(role);
-  worker_thread()->Send(this, MSG_SETROLE, &param);
+void Transport::SetIceRole(IceRole role) {
+  IceRoleParam param(role);
+  worker_thread()->Send(this, MSG_SETICEROLE, &param);
+}
+
+void Transport::SetIdentity(talk_base::SSLIdentity* identity) {
+  IdentityParam params(identity);
+  worker_thread()->Send(this, MSG_SETIDENTITY, &params);
 }
 
 bool Transport::SetLocalTransportDescription(
@@ -179,8 +192,8 @@ TransportChannelImpl* Transport::CreateChannel_w(int component) {
   }
 
   // Push down our transport state to the new channel.
-  impl->SetRole(role_);
-  impl->SetTiebreaker(tiebreaker_);
+  impl->SetIceRole(ice_role_);
+  impl->SetIceTiebreaker(tiebreaker_);
   if (local_description_) {
     ApplyLocalTransportDescription_w(impl);
     if (remote_description_) {
@@ -562,7 +575,7 @@ void Transport::OnChannelCandidatesAllocationDone(
   talk_base::CritScope cs(&crit_);
   ChannelMap::iterator iter = channels_.find(channel->component());
   ASSERT(iter != channels_.end());
-  LOG(LS_INFO) << "Transport: " << content_name_ << ", component " 
+  LOG(LS_INFO) << "Transport: " << content_name_ << ", component "
                << channel->component() << " allocation complete";
   iter->second.set_candidates_allocated(true);
 
@@ -586,12 +599,12 @@ void Transport::OnRoleConflict(TransportChannelImpl* channel) {
   signaling_thread_->Post(this, MSG_ROLECONFLICT);
 }
 
-void Transport::SetRole_w(TransportRole role) {
+void Transport::SetIceRole_w(IceRole role) {
   talk_base::CritScope cs(&crit_);
-  role_ = role;
+  ice_role_ = role;
   for (ChannelMap::iterator iter = channels_.begin();
        iter != channels_.end(); ++iter) {
-    iter->second->SetRole(role_);
+    iter->second->SetIceRole(ice_role_);
   }
 }
 
@@ -651,7 +664,7 @@ bool Transport::ApplyLocalTransportDescription_w(TransportChannelImpl* ch) {
 
 bool Transport::ApplyRemoteTransportDescription_w(TransportChannelImpl* ch) {
   ch->SetRemoteIceCredentials(remote_description_->ice_ufrag,
-                              remote_description_->ice_ufrag);
+                              remote_description_->ice_pwd);
   return true;
 }
 
@@ -693,11 +706,11 @@ bool Transport::NegotiateTransportDescription_w(ContentAction local_role_) {
   }
   protocol_ = answer_proto == ICEPROTO_HYBRID ? ICEPROTO_GOOGLE : answer_proto;
 
-  // If transport is in ROLE_CONTROLLED and remote end point supports only
+  // If transport is in ICEROLE_CONTROLLED and remote end point supports only
   // ice_lite, this local end point should take CONTROLLING role.
-  if (role_ == ROLE_CONTROLLED &&
+  if (ice_role_ == ICEROLE_CONTROLLED &&
       remote_description_->ice_mode == ICEMODE_LITE) {
-    SetRole_w(ROLE_CONTROLLING);
+    SetIceRole_w(ICEROLE_CONTROLLING);
   }
 
   // Update remote ice_mode to all existing channels.
@@ -776,10 +789,10 @@ void Transport::OnMessage(talk_base::Message* msg) {
     case MSG_ROLECONFLICT:
       SignalRoleConflict();
       break;
-    case MSG_SETROLE: {
-        TransportRoleParam* param =
-            static_cast<TransportRoleParam*>(msg->pdata);
-        SetRole_w(param->role);
+    case MSG_SETICEROLE: {
+        IceRoleParam* param =
+            static_cast<IceRoleParam*>(msg->pdata);
+        SetIceRole_w(param->role);
       }
       break;
     case MSG_SETLOCALDESCRIPTION: {
@@ -799,6 +812,11 @@ void Transport::OnMessage(talk_base::Message* msg) {
     case MSG_GETSTATS: {
         StatsParam* params = static_cast<StatsParam*>(msg->pdata);
         params->result = GetStats_w(params->stats);
+      }
+      break;
+    case MSG_SETIDENTITY: {
+        IdentityParam* params = static_cast<IdentityParam*>(msg->pdata);
+        SetIdentity_w(params->identity);
       }
       break;
   }

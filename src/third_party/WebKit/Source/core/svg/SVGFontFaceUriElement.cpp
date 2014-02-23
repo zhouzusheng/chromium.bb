@@ -27,15 +27,15 @@
 #include "XLinkNames.h"
 #include "core/css/CSSFontFaceSrcValue.h"
 #include "core/dom/Document.h"
-#include "core/loader/cache/CachedFont.h"
-#include "core/loader/cache/CachedResourceLoader.h"
-#include "core/loader/cache/CachedResourceRequest.h"
+#include "core/loader/cache/FetchRequest.h"
+#include "core/loader/cache/FontResource.h"
+#include "core/loader/cache/ResourceFetcher.h"
 #include "core/svg/SVGFontFaceElement.h"
 
 namespace WebCore {
-    
+
 using namespace SVGNames;
-    
+
 inline SVGFontFaceUriElement::SVGFontFaceUriElement(const QualifiedName& tagName, Document* document)
     : SVGElement(tagName, document)
 {
@@ -50,8 +50,8 @@ PassRefPtr<SVGFontFaceUriElement> SVGFontFaceUriElement::create(const QualifiedN
 
 SVGFontFaceUriElement::~SVGFontFaceUriElement()
 {
-    if (m_cachedFont)
-        m_cachedFont->removeClient(this);
+    if (m_resource)
+        m_resource->removeClient(this);
 }
 
 PassRefPtr<CSSFontFaceSrcValue> SVGFontFaceUriElement::srcValue() const
@@ -76,10 +76,10 @@ void SVGFontFaceUriElement::childrenChanged(bool changedByParser, Node* beforeCh
 
     if (!parentNode() || !parentNode()->hasTagName(font_face_srcTag))
         return;
-    
+
     ContainerNode* grandparent = parentNode()->parentNode();
     if (grandparent && grandparent->hasTagName(font_faceTag))
-        static_cast<SVGFontFaceElement*>(grandparent)->rebuildFontFace();
+        toSVGFontFaceElement(grandparent)->rebuildFontFace();
 }
 
 Node::InsertionNotificationRequest SVGFontFaceUriElement::insertedInto(ContainerNode* rootParent)
@@ -90,20 +90,21 @@ Node::InsertionNotificationRequest SVGFontFaceUriElement::insertedInto(Container
 
 void SVGFontFaceUriElement::loadFont()
 {
-    if (m_cachedFont)
-        m_cachedFont->removeClient(this);
+    if (m_resource)
+        m_resource->removeClient(this);
 
     const AtomicString& href = getAttribute(XLinkNames::hrefAttr);
     if (!href.isNull()) {
-        CachedResourceLoader* cachedResourceLoader = document()->cachedResourceLoader();
-        CachedResourceRequest request(ResourceRequest(document()->completeURL(href)), localName());
-        m_cachedFont = cachedResourceLoader->requestFont(request);
-        if (m_cachedFont) {
-            m_cachedFont->addClient(this);
-            m_cachedFont->beginLoadIfNeeded(cachedResourceLoader);
+        ResourceFetcher* fetcher = document()->fetcher();
+        FetchRequest request(ResourceRequest(document()->completeURL(href)), localName());
+        m_resource = fetcher->requestFont(request);
+        if (m_resource) {
+            m_resource->addClient(this);
+            m_resource->beginLoadIfNeeded(fetcher);
         }
-    } else
-        m_cachedFont = 0;
+    } else {
+        m_resource = 0;
+    }
 }
 
 }

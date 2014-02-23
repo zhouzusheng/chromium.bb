@@ -22,10 +22,10 @@
 
 #include "core/platform/graphics/FloatRect.h"
 #include "core/rendering/svg/RenderSVGResourceContainer.h"
+#include "core/svg/SVGElement.h"
 #include "core/svg/SVGMarkerElement.h"
-#include "core/svg/SVGStyledElement.h"
 
-#include <wtf/HashSet.h>
+#include "wtf/HashSet.h"
 
 namespace WebCore {
 
@@ -59,7 +59,7 @@ public:
 
     FloatPoint referencePoint() const;
     float angle() const;
-    SVGMarkerUnitsType markerUnits() const { return static_cast<SVGMarkerElement*>(node())->markerUnits(); }
+    SVGMarkerUnitsType markerUnits() const { return toSVGMarkerElement(node())->markerUnitsCurrentValue(); }
 
     virtual RenderSVGResourceType resourceType() const { return s_resourceType; }
     static RenderSVGResourceType s_resourceType;

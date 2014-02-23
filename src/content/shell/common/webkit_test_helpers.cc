@@ -35,7 +35,6 @@ void ExportLayoutTestSpecificPreferences(
   to->application_cache_enabled = from.offlineWebApplicationCacheEnabled;
   to->tabs_to_links = from.tabsToLinks;
   to->experimental_webgl_enabled = from.experimentalWebGLEnabled;
-  to->css_grid_layout_enabled = from.experimentalCSSGridLayoutEnabled;
   // experimentalCSSRegionsEnabled is deprecated and ignored.
   to->hyperlink_auditing_enabled = from.hyperlinkAuditingEnabled;
   to->caret_browsing_enabled = from.caretBrowsingEnabled;
@@ -114,34 +113,7 @@ void ApplyLayoutTestDefaultPreferences(WebPreferences* prefs) {
 base::FilePath GetWebKitRootDirFilePath() {
   base::FilePath base_path;
   PathService::Get(base::DIR_SOURCE_ROOT, &base_path);
-  if (file_util::PathExists(
-          base_path.Append(FILE_PATH_LITERAL("third_party/WebKit")))) {
-    // We're in a WebKit-in-chrome checkout.
-    return base_path.Append(FILE_PATH_LITERAL("third_party/WebKit"));
-  } else if (file_util::PathExists(
-          base_path.Append(FILE_PATH_LITERAL("chromium")))) {
-    // We're in a WebKit-only checkout on Windows.
-    return base_path.Append(FILE_PATH_LITERAL("../.."));
-  } else if (file_util::PathExists(
-          base_path.Append(FILE_PATH_LITERAL("webkit/support")))) {
-    // We're in a WebKit-only/xcodebuild checkout on Mac
-    return base_path.Append(FILE_PATH_LITERAL("../../.."));
-  }
-  // We're in a WebKit-only, make-build, so the DIR_SOURCE_ROOT is already the
-  // WebKit root. That, or we have no idea where we are.
-  return base_path;
-}
-
-base::FilePath GetChromiumRootDirFilePath() {
-  base::FilePath webkit_path = GetWebKitRootDirFilePath();
-  if (file_util::PathExists(webkit_path.Append(
-          FILE_PATH_LITERAL("Source/WebKit/chromium/webkit/support")))) {
-    // We're in a WebKit-only checkout.
-    return webkit_path.Append(FILE_PATH_LITERAL("Source/WebKit/chromium"));
-  } else {
-    // We're in a Chromium checkout, and WebKit is in third_party/WebKit.
-    return webkit_path.Append(FILE_PATH_LITERAL("../.."));
-  }
+  return base_path.Append(FILE_PATH_LITERAL("third_party/WebKit"));
 }
 
 }  // namespace content

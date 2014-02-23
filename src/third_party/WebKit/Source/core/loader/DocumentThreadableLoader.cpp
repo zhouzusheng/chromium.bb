@@ -38,11 +38,10 @@
 #include "core/loader/CrossOriginPreflightResultCache.h"
 #include "core/loader/DocumentThreadableLoaderClient.h"
 #include "core/loader/FrameLoader.h"
-#include "core/loader/ResourceLoader.h"
 #include "core/loader/ThreadableLoaderClient.h"
-#include "core/loader/cache/CachedRawResource.h"
-#include "core/loader/cache/CachedResourceLoader.h"
-#include "core/loader/cache/CachedResourceRequest.h"
+#include "core/loader/cache/FetchRequest.h"
+#include "core/loader/cache/RawResource.h"
+#include "core/loader/cache/ResourceFetcher.h"
 #include "core/page/ContentSecurityPolicy.h"
 #include "core/page/Frame.h"
 #include "core/platform/network/ResourceError.h"
@@ -100,12 +99,14 @@ void DocumentThreadableLoader::makeCrossOriginAccessRequest(const ResourceReques
     ASSERT(m_options.crossOriginRequestPolicy == UseAccessControl);
 
     OwnPtr<ResourceRequest> crossOriginRequest = adoptPtr(new ResourceRequest(request));
-    updateRequestForAccessControl(*crossOriginRequest, securityOrigin(), m_options.allowCredentials);
 
-    if ((m_options.preflightPolicy == ConsiderPreflight && isSimpleCrossOriginAccessRequest(crossOriginRequest->httpMethod(), crossOriginRequest->httpHeaderFields())) || m_options.preflightPolicy == PreventPreflight)
+    if ((m_options.preflightPolicy == ConsiderPreflight && isSimpleCrossOriginAccessRequest(crossOriginRequest->httpMethod(), crossOriginRequest->httpHeaderFields())) || m_options.preflightPolicy == PreventPreflight) {
+        updateRequestForAccessControl(*crossOriginRequest, securityOrigin(), m_options.allowCredentials);
         makeSimpleCrossOriginAccessRequest(*crossOriginRequest);
-    else {
+    } else {
         m_simpleRequest = false;
+        // Do not set the Origin header for preflight requests.
+        updateRequestForAccessControl(*crossOriginRequest, 0, m_options.allowCredentials);
         m_actualRequest = crossOriginRequest.release();
 
         if (CrossOriginPreflightResultCache::shared().canSkipPreflight(securityOrigin()->toString(), m_actualRequest->url(), m_options.allowCredentials, m_actualRequest->httpMethod(), m_actualRequest->httpHeaderFields()))
@@ -173,16 +174,16 @@ void DocumentThreadableLoader::setDefersLoading(bool value)
 void DocumentThreadableLoader::clearResource()
 {
     // Script can cancel and restart a request reentrantly within removeClient(),
-    // which could lead to calling CachedResource::removeClient() multiple times for
+    // which could lead to calling Resource::removeClient() multiple times for
     // this DocumentThreadableLoader. Save off a copy of m_resource and clear it to
     // prevent the reentrancy.
-    if (CachedResourceHandle<CachedRawResource> resource = m_resource) {
+    if (ResourcePtr<RawResource> resource = m_resource) {
         m_resource = 0;
         resource->removeClient(this);
     }
 }
 
-void DocumentThreadableLoader::redirectReceived(CachedResource* resource, ResourceRequest& request, const ResourceResponse& redirectResponse)
+void DocumentThreadableLoader::redirectReceived(Resource* resource, ResourceRequest& request, const ResourceResponse& redirectResponse)
 {
     ASSERT(m_client);
     ASSERT_UNUSED(resource, resource == m_resource);
@@ -248,14 +249,14 @@ void DocumentThreadableLoader::redirectReceived(CachedResource* resource, Resour
     request = ResourceRequest();
 }
 
-void DocumentThreadableLoader::dataSent(CachedResource* resource, unsigned long long bytesSent, unsigned long long totalBytesToBeSent)
+void DocumentThreadableLoader::dataSent(Resource* resource, unsigned long long bytesSent, unsigned long long totalBytesToBeSent)
 {
     ASSERT(m_client);
     ASSERT_UNUSED(resource, resource == m_resource);
     m_client->didSendData(bytesSent, totalBytesToBeSent);
 }
 
-void DocumentThreadableLoader::dataDownloaded(CachedResource* resource, int dataLength)
+void DocumentThreadableLoader::dataDownloaded(Resource* resource, int dataLength)
 {
     ASSERT(m_client);
     ASSERT_UNUSED(resource, resource == m_resource);
@@ -264,7 +265,7 @@ void DocumentThreadableLoader::dataDownloaded(CachedResource* resource, int data
     m_client->didDownloadData(dataLength);
 }
 
-void DocumentThreadableLoader::responseReceived(CachedResource* resource, const ResourceResponse& response)
+void DocumentThreadableLoader::responseReceived(Resource* resource, const ResourceResponse& response)
 {
     ASSERT_UNUSED(resource, resource == m_resource);
     didReceiveResponse(m_resource->identifier(), response);
@@ -281,6 +282,11 @@ void DocumentThreadableLoader::didReceiveResponse(unsigned long identifier, cons
         InspectorInstrumentation::didReceiveResourceResponse(cookie, identifier, loader, response, 0);
 
         if (!passesAccessControlCheck(response, m_options.allowCredentials, securityOrigin(), accessControlErrorDescription)) {
+            preflightFailure(identifier, response.url().string(), accessControlErrorDescription);
+            return;
+        }
+
+        if (!passesPreflightStatusCheck(response, accessControlErrorDescription)) {
             preflightFailure(identifier, response.url().string(), accessControlErrorDescription);
             return;
         }
@@ -306,7 +312,7 @@ void DocumentThreadableLoader::didReceiveResponse(unsigned long identifier, cons
     }
 }
 
-void DocumentThreadableLoader::dataReceived(CachedResource* resource, const char* data, int dataLength)
+void DocumentThreadableLoader::dataReceived(Resource* resource, const char* data, int dataLength)
 {
     ASSERT_UNUSED(resource, resource == m_resource);
     didReceiveData(m_resource->identifier(), data, dataLength);
@@ -325,13 +331,13 @@ void DocumentThreadableLoader::didReceiveData(unsigned long identifier, const ch
     m_client->didReceiveData(data, dataLength);
 }
 
-void DocumentThreadableLoader::notifyFinished(CachedResource* resource)
+void DocumentThreadableLoader::notifyFinished(Resource* resource)
 {
     ASSERT(m_client);
     ASSERT_UNUSED(resource, resource == m_resource);
 
     m_timeoutTimer.stop();
-        
+
     if (m_resource->errorOccurred())
         didFail(m_resource->identifier(), m_resource->resourceError());
     else
@@ -413,9 +419,9 @@ void DocumentThreadableLoader::loadRequest(const ResourceRequest& request, Secur
         if (m_options.timeoutMilliseconds > 0)
             m_timeoutTimer.startOneShot(m_options.timeoutMilliseconds / 1000.0);
 
-        CachedResourceRequest newRequest(request, m_options.initiator, options);
+        FetchRequest newRequest(request, m_options.initiator, options);
         ASSERT(!m_resource);
-        m_resource = m_document->cachedResourceLoader()->requestRawResource(newRequest);
+        m_resource = m_document->fetcher()->requestRawResource(newRequest);
         if (m_resource) {
             if (m_resource->loader()) {
                 unsigned long identifier = m_resource->identifier();

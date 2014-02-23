@@ -35,12 +35,14 @@
 
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/Event.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/html/track/TextTrack.h"
 #include "core/html/track/TextTrackCueList.h"
+#include "core/html/track/TextTrackRegionList.h"
 #include "core/html/track/WebVTTElement.h"
 #include "core/html/track/WebVTTParser.h"
 #include "core/rendering/RenderTextTrackCue.h"
@@ -55,19 +57,19 @@ static const int autoSize = 0;
 
 static const String& startKeyword()
 {
-    DEFINE_STATIC_LOCAL(const String, start, (ASCIILiteral("start")));
+    DEFINE_STATIC_LOCAL(const String, start, ("start"));
     return start;
 }
 
 static const String& middleKeyword()
 {
-    DEFINE_STATIC_LOCAL(const String, middle, (ASCIILiteral("middle")));
+    DEFINE_STATIC_LOCAL(const String, middle, ("middle"));
     return middle;
 }
 
 static const String& endKeyword()
 {
-    DEFINE_STATIC_LOCAL(const String, end, (ASCIILiteral("end")));
+    DEFINE_STATIC_LOCAL(const String, end, ("end"));
     return end;
 }
 
@@ -78,13 +80,13 @@ static const String& horizontalKeyword()
 
 static const String& verticalGrowingLeftKeyword()
 {
-    DEFINE_STATIC_LOCAL(const String, verticalrl, (ASCIILiteral("rl")));
+    DEFINE_STATIC_LOCAL(const String, verticalrl, ("rl"));
     return verticalrl;
 }
 
 static const String& verticalGrowingRightKeyword()
 {
-    DEFINE_STATIC_LOCAL(const String, verticallr, (ASCIILiteral("lr")));
+    DEFINE_STATIC_LOCAL(const String, verticallr, ("lr"));
     return verticallr;
 }
 
@@ -94,7 +96,7 @@ TextTrackCueBox::TextTrackCueBox(Document* document, TextTrackCue* cue)
     : HTMLDivElement(divTag, document)
     , m_cue(cue)
 {
-    setPseudo(textTrackCueBoxShadowPseudoId());
+    setPart(textTrackCueBoxShadowPseudoId());
 }
 
 TextTrackCue* TextTrackCueBox::getCue() const
@@ -124,15 +126,15 @@ void TextTrackCueBox::applyCSSProperties(const IntSize&)
     setInlineStyleProperty(CSSPropertyDirection, m_cue->getCSSWritingDirection());
 
     // the 'writing-mode' property must be set to writing-mode
-    setInlineStyleProperty(CSSPropertyWebkitWritingMode, m_cue->getCSSWritingMode(), false);
+    setInlineStyleProperty(CSSPropertyWebkitWritingMode, m_cue->getCSSWritingMode());
 
     std::pair<float, float> position = m_cue->getCSSPosition();
 
     // the 'top' property must be set to top,
-    setInlineStyleProperty(CSSPropertyTop, static_cast<double>(position.second), CSSPrimitiveValue::CSS_PERCENTAGE);
+    setInlineStyleProperty(CSSPropertyTop, position.second, CSSPrimitiveValue::CSS_PERCENTAGE);
 
     // the 'left' property must be set to left
-    setInlineStyleProperty(CSSPropertyLeft, static_cast<double>(position.first), CSSPrimitiveValue::CSS_PERCENTAGE);
+    setInlineStyleProperty(CSSPropertyLeft, position.first, CSSPrimitiveValue::CSS_PERCENTAGE);
 
     // the 'width' property must be set to width, and the 'height' property  must be set to height
     if (m_cue->vertical() == horizontalKeyword()) {
@@ -180,7 +182,7 @@ const AtomicString& TextTrackCueBox::textTrackCueBoxShadowPseudoId()
 
 RenderObject* TextTrackCueBox::createRenderer(RenderStyle*)
 {
-    return new (document()->renderArena()) RenderTextTrackCue(this);
+    return new RenderTextTrackCue(this);
 }
 
 // ----------------------------
@@ -270,45 +272,45 @@ void TextTrackCue::setId(const String& id)
     cueDidChange();
 }
 
-void TextTrackCue::setStartTime(double value, ExceptionCode& ec)
+void TextTrackCue::setStartTime(double value, ExceptionState& es)
 {
     // NaN, Infinity and -Infinity values should trigger a TypeError.
     if (std::isinf(value) || std::isnan(value)) {
-        ec = TypeError;
+        es.throwTypeError();
         return;
     }
-    
+
     // TODO(93143): Add spec-compliant behavior for negative time values.
     if (m_startTime == value || value < 0)
         return;
-    
+
     cueWillChange();
     m_startTime = value;
     cueDidChange();
 }
-    
-void TextTrackCue::setEndTime(double value, ExceptionCode& ec)
+
+void TextTrackCue::setEndTime(double value, ExceptionState& es)
 {
     // NaN, Infinity and -Infinity values should trigger a TypeError.
     if (std::isinf(value) || std::isnan(value)) {
-        ec = TypeError;
+        es.throwTypeError();
         return;
     }
 
     // TODO(93143): Add spec-compliant behavior for negative time values.
     if (m_endTime == value || value < 0)
         return;
-    
+
     cueWillChange();
     m_endTime = value;
     cueDidChange();
 }
-    
+
 void TextTrackCue::setPauseOnExit(bool value)
 {
     if (m_pauseOnExit == value)
         return;
-    
+
     cueWillChange();
     m_pauseOnExit = value;
     cueDidChange();
@@ -317,7 +319,7 @@ void TextTrackCue::setPauseOnExit(bool value)
 const String& TextTrackCue::vertical() const
 {
     switch (m_writingDirection) {
-    case Horizontal: 
+    case Horizontal:
         return horizontalKeyword();
     case VerticalGrowingLeft:
         return verticalGrowingLeftKeyword();
@@ -329,14 +331,14 @@ const String& TextTrackCue::vertical() const
     }
 }
 
-void TextTrackCue::setVertical(const String& value, ExceptionCode& ec)
+void TextTrackCue::setVertical(const String& value, ExceptionState& es)
 {
     // http://www.whatwg.org/specs/web-apps/current-work/multipage/the-video-element.html#dom-texttrackcue-vertical
-    // On setting, the text track cue writing direction must be set to the value given 
-    // in the first cell of the row in the table above whose second cell is a 
+    // On setting, the text track cue writing direction must be set to the value given
+    // in the first cell of the row in the table above whose second cell is a
     // case-sensitive match for the new value, if any. If none of the values match, then
     // the user agent must instead throw a SyntaxError exception.
-    
+
     WritingDirection direction = m_writingDirection;
     if (value == horizontalKeyword())
         direction = Horizontal;
@@ -345,8 +347,8 @@ void TextTrackCue::setVertical(const String& value, ExceptionCode& ec)
     else if (value == verticalGrowingRightKeyword())
         direction = VerticalGrowingRight;
     else
-        ec = SYNTAX_ERR;
-    
+        es.throwDOMException(SyntaxError);
+
     if (direction == m_writingDirection)
         return;
 
@@ -359,19 +361,19 @@ void TextTrackCue::setSnapToLines(bool value)
 {
     if (m_snapToLines == value)
         return;
-    
+
     cueWillChange();
     m_snapToLines = value;
     cueDidChange();
 }
 
-void TextTrackCue::setLine(int position, ExceptionCode& ec)
+void TextTrackCue::setLine(int position, ExceptionState& es)
 {
     // http://www.whatwg.org/specs/web-apps/current-work/multipage/the-video-element.html#dom-texttrackcue-line
     // On setting, if the text track cue snap-to-lines flag is not set, and the new
     // value is negative or greater than 100, then throw an IndexSizeError exception.
     if (!m_snapToLines && (position < 0 || position > 100)) {
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
         return;
     }
 
@@ -385,39 +387,39 @@ void TextTrackCue::setLine(int position, ExceptionCode& ec)
     cueDidChange();
 }
 
-void TextTrackCue::setPosition(int position, ExceptionCode& ec)
+void TextTrackCue::setPosition(int position, ExceptionState& es)
 {
     // http://www.whatwg.org/specs/web-apps/current-work/multipage/the-video-element.html#dom-texttrackcue-position
     // On setting, if the new value is negative or greater than 100, then throw an IndexSizeError exception.
     // Otherwise, set the text track cue text position to the new value.
     if (position < 0 || position > 100) {
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
         return;
     }
-    
+
     // Otherwise, set the text track cue line position to the new value.
     if (m_textPosition == position)
         return;
-    
+
     cueWillChange();
     m_textPosition = position;
     cueDidChange();
 }
 
-void TextTrackCue::setSize(int size, ExceptionCode& ec)
+void TextTrackCue::setSize(int size, ExceptionState& es)
 {
     // http://www.whatwg.org/specs/web-apps/current-work/multipage/the-video-element.html#dom-texttrackcue-size
     // On setting, if the new value is negative or greater than 100, then throw an IndexSizeError
     // exception. Otherwise, set the text track cue size to the new value.
     if (size < 0 || size > 100) {
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
         return;
     }
-    
+
     // Otherwise, set the text track cue line position to the new value.
     if (m_cueSize == size)
         return;
-    
+
     cueWillChange();
     m_cueSize = size;
     cueDidChange();
@@ -438,14 +440,14 @@ const String& TextTrackCue::align() const
     }
 }
 
-void TextTrackCue::setAlign(const String& value, ExceptionCode& ec)
+void TextTrackCue::setAlign(const String& value, ExceptionState& es)
 {
     // http://www.whatwg.org/specs/web-apps/current-work/multipage/the-video-element.html#dom-texttrackcue-align
-    // On setting, the text track cue alignment must be set to the value given in the 
+    // On setting, the text track cue alignment must be set to the value given in the
     // first cell of the row in the table above whose second cell is a case-sensitive
     // match for the new value, if any. If none of the values match, then the user
     // agent must instead throw a SyntaxError exception.
-    
+
     CueAlignment alignment = m_cueAlignment;
     if (value == startKeyword())
         alignment = Start;
@@ -454,8 +456,8 @@ void TextTrackCue::setAlign(const String& value, ExceptionCode& ec)
     else if (value == endKeyword())
         alignment = End;
     else
-        ec = SYNTAX_ERR;
-    
+        es.throwDOMException(SyntaxError);
+
     if (alignment == m_cueAlignment)
         return;
 
@@ -463,12 +465,12 @@ void TextTrackCue::setAlign(const String& value, ExceptionCode& ec)
     m_cueAlignment = alignment;
     cueDidChange();
 }
-    
+
 void TextTrackCue::setText(const String& text)
 {
     if (m_content == text)
         return;
-    
+
     cueWillChange();
     // Clear the document fragment but don't bother to create it again just yet as we can do that
     // when it is requested.
@@ -606,7 +608,7 @@ static bool isCueParagraphSeparator(UChar character)
 
 void TextTrackCue::determineTextDirection()
 {
-    DEFINE_STATIC_LOCAL(const String, rtTag, (ASCIILiteral("rt")));
+    DEFINE_STATIC_LOCAL(const String, rtTag, ("rt"));
     createWebVTTNodeTree();
 
     // Apply the Unicode Bidirectional Algorithm's Paragraph Level steps to the
@@ -734,32 +736,32 @@ void TextTrackCue::calculateDisplayParameters()
     // is defined in terms of the other aspects of the cue.
     m_computedLinePosition = calculateComputedLinePosition();
 }
-    
+
 void TextTrackCue::markFutureAndPastNodes(ContainerNode* root, double previousTimestamp, double movieTime)
 {
-    DEFINE_STATIC_LOCAL(const String, timestampTag, (ASCIILiteral("timestamp")));
-    
+    DEFINE_STATIC_LOCAL(const String, timestampTag, ("timestamp"));
+
     bool isPastNode = true;
     double currentTimestamp = previousTimestamp;
     if (currentTimestamp > movieTime)
         isPastNode = false;
-    
+
     for (Node* child = root->firstChild(); child; child = NodeTraversal::next(child, root)) {
         if (child->nodeName() == timestampTag) {
             unsigned position = 0;
             String timestamp = child->nodeValue();
             double currentTimestamp = WebVTTParser::create(0, m_scriptExecutionContext)->collectTimeStamp(timestamp, &position);
             ASSERT(currentTimestamp != -1);
-            
+
             if (currentTimestamp > movieTime)
                 isPastNode = false;
         }
-        
+
         if (child->isWebVTTElement()) {
             toWebVTTElement(child)->setIsPastNode(isPastNode);
             // Make an elemenet id match a cue id for style matching purposes.
             if (!m_id.isEmpty())
-                toElement(child)->setIdAttribute(AtomicString(m_id.characters(), m_id.length()));
+                toElement(child)->setIdAttribute(m_id);
         }
     }
 }
@@ -802,7 +804,7 @@ PassRefPtr<TextTrackCueBox> TextTrackCue::getDisplayTree(const IntSize& videoSiz
     // background box.
 
     // Note: This is contained by default in m_cueBackgroundBox.
-    m_cueBackgroundBox->setPseudo(cueShadowPseudoId());
+    m_cueBackgroundBox->setPart(cueShadowPseudoId());
     displayTree->appendChild(m_cueBackgroundBox, ASSERT_NO_EXCEPTION, AttachLazily);
 
     // FIXME(BUG 79916): Runs of children of WebVTT Ruby Objects that are not
@@ -877,13 +879,13 @@ std::pair<double, double> TextTrackCue::getPositionCoordinates() const
 
 TextTrackCue::CueSetting TextTrackCue::settingName(const String& name)
 {
-    DEFINE_STATIC_LOCAL(const String, verticalKeyword, (ASCIILiteral("vertical")));
-    DEFINE_STATIC_LOCAL(const String, lineKeyword, (ASCIILiteral("line")));
-    DEFINE_STATIC_LOCAL(const String, positionKeyword, (ASCIILiteral("position")));
-    DEFINE_STATIC_LOCAL(const String, sizeKeyword, (ASCIILiteral("size")));
-    DEFINE_STATIC_LOCAL(const String, alignKeyword, (ASCIILiteral("align")));
+    DEFINE_STATIC_LOCAL(const String, verticalKeyword, ("vertical"));
+    DEFINE_STATIC_LOCAL(const String, lineKeyword, ("line"));
+    DEFINE_STATIC_LOCAL(const String, positionKeyword, ("position"));
+    DEFINE_STATIC_LOCAL(const String, sizeKeyword, ("size"));
+    DEFINE_STATIC_LOCAL(const String, alignKeyword, ("align"));
 #if ENABLE(WEBVTT_REGIONS)
-    DEFINE_STATIC_LOCAL(const String, regionIdKeyword, (ASCIILiteral("region")));
+    DEFINE_STATIC_LOCAL(const String, regionIdKeyword, ("region"));
 #endif
 
     if (name == verticalKeyword)
@@ -911,18 +913,18 @@ void TextTrackCue::setCueSettings(const String& input)
 
     while (position < input.length()) {
 
-        // The WebVTT cue settings part of a WebVTT cue consists of zero or more of the following components, in any order, 
-        // separated from each other by one or more U+0020 SPACE characters or U+0009 CHARACTER TABULATION (tab) characters. 
+        // The WebVTT cue settings part of a WebVTT cue consists of zero or more of the following components, in any order,
+        // separated from each other by one or more U+0020 SPACE characters or U+0009 CHARACTER TABULATION (tab) characters.
         while (position < input.length() && WebVTTParser::isValidSettingDelimiter(input[position]))
             position++;
         if (position >= input.length())
             break;
 
-        // When the user agent is to parse the WebVTT settings given by a string input for a text track cue cue, 
+        // When the user agent is to parse the WebVTT settings given by a string input for a text track cue cue,
         // the user agent must run the following steps:
         // 1. Let settings be the result of splitting input on spaces.
         // 2. For each token setting in the list settings, run the following substeps:
-        //    1. If setting does not contain a U+003A COLON character (:), or if the first U+003A COLON character (:) 
+        //    1. If setting does not contain a U+003A COLON character (:), or if the first U+003A COLON character (:)
         //       in setting is either the first or last character of setting, then jump to the step labeled next setting.
         unsigned endOfSetting = position;
         String setting = WebVTTParser::collectWord(input, &endOfSetting);
@@ -944,13 +946,13 @@ void TextTrackCue::setCueSettings(const String& input)
         case Vertical:
             {
             // If name is a case-sensitive match for "vertical"
-            // 1. If value is a case-sensitive match for the string "rl", then let cue's text track cue writing direction 
+            // 1. If value is a case-sensitive match for the string "rl", then let cue's text track cue writing direction
             //    be vertical growing left.
             String writingDirection = WebVTTParser::collectWord(input, &position);
             if (writingDirection == verticalGrowingLeftKeyword())
                 m_writingDirection = VerticalGrowingLeft;
-            
-            // 2. Otherwise, if value is a case-sensitive match for the string "lr", then let cue's text track cue writing 
+
+            // 2. Otherwise, if value is a case-sensitive match for the string "lr", then let cue's text track cue writing
             //    direction be vertical growing right.
             else if (writingDirection == verticalGrowingRightKeyword())
                 m_writingDirection = VerticalGrowingRight;
@@ -959,7 +961,7 @@ void TextTrackCue::setCueSettings(const String& input)
         case Line:
             {
             // 1-2 - Collect chars that are either '-', '%', or a digit.
-            // 1. If value contains any characters other than U+002D HYPHEN-MINUS characters (-), U+0025 PERCENT SIGN 
+            // 1. If value contains any characters other than U+002D HYPHEN-MINUS characters (-), U+0025 PERCENT SIGN
             //    characters (%), and characters in the range U+0030 DIGIT ZERO (0) to U+0039 DIGIT NINE (9), then jump
             //    to the step labeled next setting.
             StringBuilder linePositionBuilder;
@@ -968,9 +970,9 @@ void TextTrackCue::setCueSettings(const String& input)
             if (position < input.length() && !WebVTTParser::isValidSettingDelimiter(input[position]))
                 break;
 
-            // 2. If value does not contain at least one character in the range U+0030 DIGIT ZERO (0) to U+0039 DIGIT 
+            // 2. If value does not contain at least one character in the range U+0030 DIGIT ZERO (0) to U+0039 DIGIT
             //    NINE (9), then jump to the step labeled next setting.
-            // 3. If any character in value other than the first character is a U+002D HYPHEN-MINUS character (-), then 
+            // 3. If any character in value other than the first character is a U+002D HYPHEN-MINUS character (-), then
             //    jump to the step labeled next setting.
             // 4. If any character in value other than the last character is a U+0025 PERCENT SIGN character (%), then
             //    jump to the step labeled next setting.
@@ -978,23 +980,23 @@ void TextTrackCue::setCueSettings(const String& input)
             if (linePosition.find('-', 1) != notFound || linePosition.reverseFind("%", linePosition.length() - 2) != notFound)
                 break;
 
-            // 5. If the first character in value is a U+002D HYPHEN-MINUS character (-) and the last character in value is a 
+            // 5. If the first character in value is a U+002D HYPHEN-MINUS character (-) and the last character in value is a
             //    U+0025 PERCENT SIGN character (%), then jump to the step labeled next setting.
             if (linePosition[0] == '-' && linePosition[linePosition.length() - 1] == '%')
                 break;
 
-            // 6. Ignoring the trailing percent sign, if any, interpret value as a (potentially signed) integer, and 
-            //    let number be that number. 
+            // 6. Ignoring the trailing percent sign, if any, interpret value as a (potentially signed) integer, and
+            //    let number be that number.
             // NOTE: toInt ignores trailing non-digit characters, such as '%'.
             bool validNumber;
             int number = linePosition.toInt(&validNumber);
             if (!validNumber)
                 break;
 
-            // 7. If the last character in value is a U+0025 PERCENT SIGN character (%), but number is not in the range 
+            // 7. If the last character in value is a U+0025 PERCENT SIGN character (%), but number is not in the range
             //    0 ≤ number ≤ 100, then jump to the step labeled next setting.
             // 8. Let cue's text track cue line position be number.
-            // 9. If the last character in value is a U+0025 PERCENT SIGN character (%), then let cue's text track cue 
+            // 9. If the last character in value is a U+0025 PERCENT SIGN character (%), then let cue's text track cue
             //    snap-to-lines flag be false. Otherwise, let it be true.
             if (linePosition[linePosition.length() - 1] == '%') {
                 if (number < 0 || number > 100)
@@ -1009,7 +1011,7 @@ void TextTrackCue::setCueSettings(const String& input)
             break;
         case Position:
             {
-            // 1. If value contains any characters other than U+0025 PERCENT SIGN characters (%) and characters in the range 
+            // 1. If value contains any characters other than U+0025 PERCENT SIGN characters (%) and characters in the range
             //    U+0030 DIGIT ZERO (0) to U+0039 DIGIT NINE (9), then jump to the step labeled next setting.
             // 2. If value does not contain at least one character in the range U+0030 DIGIT ZERO (0) to U+0039 DIGIT NINE (9),
             //    then jump to the step labeled next setting.
@@ -1046,7 +1048,7 @@ void TextTrackCue::setCueSettings(const String& input)
             {
             // 1. If value contains any characters other than U+0025 PERCENT SIGN characters (%) and characters in the
             //    range U+0030 DIGIT ZERO (0) to U+0039 DIGIT NINE (9), then jump to the step labeled next setting.
-            // 2. If value does not contain at least one character in the range U+0030 DIGIT ZERO (0) to U+0039 DIGIT 
+            // 2. If value does not contain at least one character in the range U+0030 DIGIT ZERO (0) to U+0039 DIGIT
             //    NINE (9), then jump to the step labeled next setting.
             String cueSize = WebVTTParser::collectDigits(input, &position);
             if (cueSize.isEmpty())
@@ -1183,9 +1185,8 @@ bool TextTrackCue::operator==(const TextTrackCue& cue) const
         return false;
     if (align() != cue.align())
         return false;
-    
+
     return true;
 }
 
 } // namespace WebCore
-

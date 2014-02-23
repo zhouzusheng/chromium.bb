@@ -20,7 +20,6 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGDocumentExtensions.h"
 
 #include "XLinkNames.h"
@@ -29,7 +28,7 @@
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGSVGElement.h"
 #include "core/svg/animation/SMILTimeContainer.h"
-#include <wtf/text/AtomicString.h>
+#include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
@@ -92,7 +91,7 @@ void SVGDocumentExtensions::startAnimations()
     for (Vector<RefPtr<SVGSVGElement> >::iterator itr = timeContainers.begin(); itr != end; ++itr)
         (*itr)->timeContainer()->begin();
 }
-    
+
 void SVGDocumentExtensions::pauseAnimations()
 {
     HashSet<SVGSVGElement*>::iterator end = m_timeContainers.end();
@@ -140,6 +139,7 @@ void SVGDocumentExtensions::reportError(const String& message)
 void SVGDocumentExtensions::addPendingResource(const AtomicString& id, Element* element)
 {
     ASSERT(element);
+    ASSERT(element->inDocument());
 
     if (id.isEmpty())
         return;

@@ -8,11 +8,15 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "content/browser/devtools/devtools_protocol.h"
+
+class SkBitmap;
 
 namespace content {
 
 class DevToolsAgentHost;
+class DevToolsTracingHandler;
 
 // Overrides Inspector commands before they are sent to the renderer.
 // May override the implementation completely, ignore it, or handle
@@ -23,19 +27,26 @@ class RendererOverridesHandler : public DevToolsProtocol::Handler {
   virtual ~RendererOverridesHandler();
 
  private:
-  scoped_ptr<DevToolsProtocol::Response> GrantPermissionsForSetFileInputFiles(
-      DevToolsProtocol::Command* command);
-  scoped_ptr<DevToolsProtocol::Response> PageHandleJavaScriptDialog(
-      DevToolsProtocol::Command* command);
-  scoped_ptr<DevToolsProtocol::Response> PageNavigate(
-      DevToolsProtocol::Command* command);
-  scoped_ptr<DevToolsProtocol::Response> PageCaptureScreenshot(
-      DevToolsProtocol::Command* command);
+  scoped_refptr<DevToolsProtocol::Response>
+      GrantPermissionsForSetFileInputFiles(
+          scoped_refptr<DevToolsProtocol::Command> command);
+  scoped_refptr<DevToolsProtocol::Response> PageHandleJavaScriptDialog(
+      scoped_refptr<DevToolsProtocol::Command> command);
+  scoped_refptr<DevToolsProtocol::Response> PageNavigate(
+      scoped_refptr<DevToolsProtocol::Command> command);
+  scoped_refptr<DevToolsProtocol::Response> PageCaptureScreenshot(
+      scoped_refptr<DevToolsProtocol::Command> command);
 
-  bool CaptureScreenshot(std::string* base_64_data);
+  void ScreenshotCaptured(
+      scoped_refptr<DevToolsProtocol::Command> command,
+      const std::string& format,
+      int quality,
+      double scale,
+      bool success,
+      const SkBitmap& bitmap);
 
   DevToolsAgentHost* agent_;
-
+  base::WeakPtrFactory<RendererOverridesHandler> weak_factory_;
   DISALLOW_COPY_AND_ASSIGN(RendererOverridesHandler);
 };
 

@@ -15,8 +15,8 @@
 
 #include "base/files/file_path.h"
 #include "base/memory/linked_ptr.h"
+#include "base/memory/shared_memory.h"
 #include "base/sequenced_task_runner_helpers.h"
-#include "base/shared_memory.h"
 #include "base/strings/string16.h"
 #include "build/build_config.h"
 #include "content/common/pepper_renderer_instance_data.h"
@@ -64,19 +64,16 @@ class URLRequestContext;
 class URLRequestContextGetter;
 }
 
-namespace webkit {
-struct WebPluginInfo;
-}
-
 namespace content {
 class BrowserContext;
-class DOMStorageContextImpl;
+class DOMStorageContextWrapper;
 class MediaInternals;
 class PluginServiceImpl;
 class RenderWidgetHelper;
 class ResourceContext;
 class ResourceDispatcherHostImpl;
 struct Referrer;
+struct WebPluginInfo;
 
 // This class filters out incoming IPC messages for the renderer process on the
 // IPC thread.
@@ -84,13 +81,14 @@ class RenderMessageFilter : public BrowserMessageFilter {
  public:
   // Create the filter.
   RenderMessageFilter(int render_process_id,
+                      bool is_guest,
                       PluginServiceImpl * plugin_service,
                       BrowserContext* browser_context,
                       net::URLRequestContextGetter* request_context,
                       RenderWidgetHelper* render_widget_helper,
                       media::AudioManager* audio_manager,
                       MediaInternals* media_internals,
-                      DOMStorageContextImpl* dom_storage_context);
+                      DOMStorageContextWrapper* dom_storage_context);
 
   // IPC::ChannelProxy::MessageFilter methods:
   virtual void OnChannelClosing() OVERRIDE;
@@ -162,13 +160,13 @@ class RenderMessageFilter : public BrowserMessageFilter {
 
   void OnGetPlugins(bool refresh, IPC::Message* reply_msg);
   void GetPluginsCallback(IPC::Message* reply_msg,
-                          const std::vector<webkit::WebPluginInfo>& plugins);
+                          const std::vector<WebPluginInfo>& plugins);
   void OnGetPluginInfo(int routing_id,
                        const GURL& url,
                        const GURL& policy_url,
                        const std::string& mime_type,
                        bool* found,
-                       webkit::WebPluginInfo* info,
+                       WebPluginInfo* info,
                        std::string* actual_mime_type);
   void OnOpenChannelToPlugin(int routing_id,
                              const GURL& url,
@@ -186,7 +184,6 @@ class RenderMessageFilter : public BrowserMessageFilter {
                                              int32 pp_instance,
                                              bool is_external);
   void OnOpenChannelToPpapiBroker(int routing_id,
-                                  int request_id,
                                   const base::FilePath& path);
   void OnGenerateRoutingID(int* route_id);
   void OnDownloadUrl(const IPC::Message& message,
@@ -226,14 +223,10 @@ class RenderMessageFilter : public BrowserMessageFilter {
       const std::string& challenge_string,
       const GURL& url,
       IPC::Message* reply_msg);
-  void OnAsyncOpenFile(const IPC::Message& msg,
-                       const base::FilePath& path,
-                       int flags,
-                       int message_id);
-  void AsyncOpenFileOnFileThread(const base::FilePath& path,
-                                 int flags,
-                                 int message_id,
-                                 int routing_id);
+  void OnAsyncOpenPepperFile(int routing_id,
+                             const base::FilePath& path,
+                             int pp_open_flags,
+                             int message_id);
   void OnMediaLogEvents(const std::vector<media::MediaLogEvent>&);
 
   // Check the policy for getting cookies. Gets the cookies if allowed.
@@ -291,9 +284,11 @@ class RenderMessageFilter : public BrowserMessageFilter {
   // Initialized to 0, accessed on FILE thread only.
   base::TimeTicks last_plugin_refresh_time_;
 
-  scoped_refptr<DOMStorageContextImpl> dom_storage_context_;
+  scoped_refptr<DOMStorageContextWrapper> dom_storage_context_;
 
   int render_process_id_;
+
+  bool is_guest_;
 
   std::set<OpenChannelToNpapiPluginCallback*> plugin_host_clients_;
 

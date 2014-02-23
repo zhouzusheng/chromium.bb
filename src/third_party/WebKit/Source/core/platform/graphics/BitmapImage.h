@@ -29,6 +29,7 @@
 #define BitmapImage_h
 
 #include "core/platform/graphics/Color.h"
+#include "core/platform/graphics/FrameData.h"
 #include "core/platform/graphics/Image.h"
 #include "core/platform/graphics/ImageOrientation.h"
 #include "core/platform/graphics/ImageSource.h"
@@ -36,61 +37,9 @@
 #include "wtf/Forward.h"
 
 namespace WebCore {
-struct FrameData;
-}
-
-namespace WTF {
-template<> struct VectorTraits<WebCore::FrameData> : public SimpleClassVectorTraits {
-    static const bool canInitializeWithMemset = false; // Not all FrameData members initialize to 0.
-};
-}
-
-namespace WebCore {
 
 class NativeImageSkia;
 template <typename T> class Timer;
-
-// ================================================
-// FrameData Class
-// ================================================
-
-struct FrameData {
-    WTF_MAKE_NONCOPYABLE(FrameData);
-public:
-    FrameData()
-        : m_frame(0)
-        , m_orientation(DefaultImageOrientation)
-        , m_duration(0)
-        , m_haveMetadata(false)
-        , m_isComplete(false)
-        , m_hasAlpha(true)
-        , m_frameBytes(0)
-    {
-    }
-
-    ~FrameData()
-    {
-        clear(true);
-    }
-
-    // Clear the cached image data on the frame, and (optionally) the metadata.
-    // Returns whether there was cached image data to clear.
-    bool clear(bool clearMetadata);
-
-    void reportMemoryUsage(MemoryObjectInfo*) const;
-
-    RefPtr<NativeImageSkia> m_frame;
-    ImageOrientation m_orientation;
-    float m_duration;
-    bool m_haveMetadata : 1;
-    bool m_isComplete : 1;
-    bool m_hasAlpha : 1;
-    unsigned m_frameBytes;
-};
-
-// =================================================
-// BitmapImage Class
-// =================================================
 
 class BitmapImage : public Image {
     friend class GeneratedImage;
@@ -137,9 +86,9 @@ public:
     virtual bool notSolidColor() OVERRIDE;
 #endif
 
-    void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
-
 private:
+    friend class BitmapImageTest;
+
     void updateSize() const;
 
 protected:
@@ -168,10 +117,14 @@ protected:
     // Called before accessing m_frames[index]. Returns false on index out of bounds.
     bool ensureFrameIsCached(size_t index);
 
-    // Called to invalidate cached data. This is used while animating large
-    // images to keep memory footprint low. The decoder may preserve some frames
-    // to avoid redecoding the whole image on every frame.
-    virtual void destroyDecodedData() OVERRIDE;
+    // Called to invalidate cached data. When |destroyAll| is true, we wipe out
+    // the entire frame buffer cache and tell the image source to destroy
+    // everything; this is used when e.g. we want to free some room in the image
+    // cache. If |destroyAll| is false, we delete frames except the current
+    // frame; this is used while animating large images to keep memory footprint
+    // low; the decoder should preserve the current frame and may preserve some
+    // other frames to avoid redecoding the whole image on every frame.
+    virtual void destroyDecodedData(bool destroyAll) OVERRIDE;
 
     // If the image is large enough, calls destroyDecodedData().
     void destroyDecodedDataIfNecessary();

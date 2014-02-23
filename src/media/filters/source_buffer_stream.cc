@@ -469,6 +469,64 @@ bool SourceBufferStream::Append(
   return true;
 }
 
+void SourceBufferStream::Remove(base::TimeDelta start, base::TimeDelta end,
+                                base::TimeDelta duration) {
+  DCHECK(start >= base::TimeDelta()) << start.InSecondsF();
+  DCHECK(start < end) << "start " << start.InSecondsF()
+                      << " end " << end.InSecondsF();
+  DCHECK(duration != kNoTimestamp());
+
+  base::TimeDelta remove_end_timestamp = duration;
+  base::TimeDelta keyframe_timestamp = FindKeyframeAfterTimestamp(end);
+  if (keyframe_timestamp != kNoTimestamp()) {
+    remove_end_timestamp = keyframe_timestamp;
+  } else if (end < remove_end_timestamp) {
+    remove_end_timestamp = end;
+  }
+
+  RangeList::iterator itr = ranges_.begin();
+
+  while (itr != ranges_.end()) {
+    SourceBufferRange* range = *itr;
+    if (range->GetStartTimestamp() >= remove_end_timestamp)
+      break;
+
+    // Split off any remaining end piece and add it to |ranges_|.
+    SourceBufferRange* new_range =
+        range->SplitRange(remove_end_timestamp, false);
+    if (new_range) {
+      itr = ranges_.insert(++itr, new_range);
+      --itr;
+    }
+
+    // If the current range now is completely covered by the removal
+    // range then delete it and move on.
+    if (start <= range->GetStartTimestamp()) {
+      if (selected_range_ == range)
+          SetSelectedRange(NULL);
+
+        delete range;
+        itr = ranges_.erase(itr);
+        continue;
+    }
+
+    // Truncate the current range so that it only contains data before
+    // the removal range.
+    BufferQueue saved_buffers;
+    range->TruncateAt(start, &saved_buffers, false);
+
+    // Check to see if the current playback position was removed and
+    // update the selected range appropriately.
+    if (!saved_buffers.empty()) {
+      SetSelectedRange(NULL);
+      SetSelectedRangeIfNeeded(saved_buffers.front()->GetDecodeTimestamp());
+    }
+
+    // Move on to the next range.
+    ++itr;
+  }
+}
+
 void SourceBufferStream::ResetSeekState() {
   SetSelectedRange(NULL);
   track_buffer_.clear();
@@ -1061,12 +1119,12 @@ Ranges<base::TimeDelta> SourceBufferStream::GetBufferedTime() const {
   return ranges;
 }
 
-void SourceBufferStream::EndOfStream() {
+void SourceBufferStream::MarkEndOfStream() {
   DCHECK(!end_of_stream_);
   end_of_stream_ = true;
 }
 
-void SourceBufferStream::CancelEndOfStream() {
+void SourceBufferStream::UnmarkEndOfStream() {
   DCHECK(end_of_stream_);
   end_of_stream_ = false;
 }
@@ -1345,7 +1403,7 @@ void SourceBufferRange::AppendBuffersToEnd(const BufferQueue& new_buffers) {
        itr != new_buffers.end(); ++itr) {
     DCHECK((*itr)->GetDecodeTimestamp() != kNoTimestamp());
     buffers_.push_back(*itr);
-    size_in_bytes_ += (*itr)->GetDataSize();
+    size_in_bytes_ += (*itr)->data_size();
 
     if ((*itr)->IsKeyframe()) {
       keyframe_map_.insert(
@@ -1502,7 +1560,7 @@ int SourceBufferRange::DeleteGOPFromFront(BufferQueue* deleted_buffers) {
   // Delete buffers from the beginning of the buffered range up until (but not
   // including) the next keyframe.
   for (int i = 0; i < end_index; i++) {
-    int bytes_deleted = buffers_.front()->GetDataSize();
+    int bytes_deleted = buffers_.front()->data_size();
     size_in_bytes_ -= bytes_deleted;
     total_bytes_deleted += bytes_deleted;
     deleted_buffers->push_back(buffers_.front());
@@ -1542,7 +1600,7 @@ int SourceBufferRange::DeleteGOPFromBack(BufferQueue* deleted_buffers) {
 
   int total_bytes_deleted = 0;
   while (buffers_.size() != goal_size) {
-    int bytes_deleted = buffers_.back()->GetDataSize();
+    int bytes_deleted = buffers_.back()->data_size();
     size_in_bytes_ -= bytes_deleted;
     total_bytes_deleted += bytes_deleted;
     // We're removing buffers from the back, so push each removed buffer to the
@@ -1586,7 +1644,7 @@ void SourceBufferRange::FreeBufferRange(
     const BufferQueue::iterator& ending_point) {
   for (BufferQueue::iterator itr = starting_point;
        itr != ending_point; ++itr) {
-    size_in_bytes_ -= (*itr)->GetDataSize();
+    size_in_bytes_ -= (*itr)->data_size();
     DCHECK_GE(size_in_bytes_, 0);
   }
   buffers_.erase(starting_point, ending_point);
@@ -1729,7 +1787,7 @@ base::TimeDelta SourceBufferRange::GetEndTimestamp() const {
 
 base::TimeDelta SourceBufferRange::GetBufferedEndTimestamp() const {
   DCHECK(!buffers_.empty());
-  base::TimeDelta duration = buffers_.back()->GetDuration();
+  base::TimeDelta duration = buffers_.back()->duration();
   if (duration == kNoTimestamp() || duration == base::TimeDelta())
     duration = GetApproximateDuration();
   return GetEndTimestamp() + duration;

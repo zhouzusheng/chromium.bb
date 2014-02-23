@@ -4,6 +4,8 @@
 
 #include "cc/layers/scrollbar_layer_impl.h"
 
+#include <algorithm>
+
 #include "cc/animation/scrollbar_animation_controller.h"
 #include "cc/layers/layer.h"
 #include "cc/layers/quad_sink.h"
@@ -41,10 +43,6 @@ ScrollbarLayerImpl::ScrollbarLayerImpl(
       vertical_adjust_(0.f),
       visible_to_total_length_ratio_(1.f),
       scroll_layer_id_(Layer::INVALID_ID),
-      is_scrollable_area_active_(false),
-      is_scroll_view_scrollbar_(false),
-      enabled_(false),
-      is_custom_scrollbar_(false),
       is_overlay_scrollbar_(false) {}
 
 ScrollbarLayerImpl::~ScrollbarLayerImpl() {}
@@ -65,10 +63,11 @@ void ScrollbarLayerImpl::PushPropertiesTo(LayerImpl* layer) {
 
   ScrollbarLayerImpl* scrollbar_layer = static_cast<ScrollbarLayerImpl*>(layer);
 
-  scrollbar_layer->set_thumb_thickness(thumb_thickness_);
-  scrollbar_layer->set_thumb_length(thumb_length_);
-  scrollbar_layer->set_track_start(track_start_);
-  scrollbar_layer->set_track_length(track_length_);
+  scrollbar_layer->SetThumbThickness(thumb_thickness_);
+  scrollbar_layer->SetThumbLength(thumb_length_);
+  scrollbar_layer->SetTrackStart(track_start_);
+  scrollbar_layer->SetTrackLength(track_length_);
+  scrollbar_layer->set_is_overlay_scrollbar(is_overlay_scrollbar_);
 
   scrollbar_layer->set_track_resource_id(track_resource_id_);
   scrollbar_layer->set_thumb_resource_id(thumb_resource_id_);
@@ -76,9 +75,10 @@ void ScrollbarLayerImpl::PushPropertiesTo(LayerImpl* layer) {
 
 bool ScrollbarLayerImpl::WillDraw(DrawMode draw_mode,
                                   ResourceProvider* resource_provider) {
-  LayerImpl::WillDraw(draw_mode, resource_provider);
-  return draw_mode != DRAW_MODE_RESOURCELESS_SOFTWARE ||
-         layer_tree_impl()->settings().solid_color_scrollbars;
+  if (draw_mode == DRAW_MODE_RESOURCELESS_SOFTWARE &&
+      !layer_tree_impl()->settings().solid_color_scrollbars)
+    return false;
+  return LayerImpl::WillDraw(draw_mode, resource_provider);
 }
 
 void ScrollbarLayerImpl::AppendQuads(QuadSink* quad_sink,
@@ -117,6 +117,7 @@ void ScrollbarLayerImpl::AppendQuads(QuadSink* quad_sink,
                  premultipled_alpha,
                  uv_top_left,
                  uv_bottom_right,
+                 SK_ColorTRANSPARENT,
                  opacity,
                  flipped);
     quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
@@ -140,6 +141,7 @@ void ScrollbarLayerImpl::AppendQuads(QuadSink* quad_sink,
                  premultipled_alpha,
                  uv_top_left,
                  uv_bottom_right,
+                 SK_ColorTRANSPARENT,
                  opacity,
                  flipped);
     quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
@@ -166,6 +168,61 @@ gfx::Rect ScrollbarLayerImpl::ScrollbarLayerRectToContentRect(
                                            contents_scale_x(),
                                            contents_scale_y());
   return gfx::ToEnclosingRect(content_rect);
+}
+
+void ScrollbarLayerImpl::SetThumbThickness(int thumb_thickness) {
+  if (thumb_thickness_ == thumb_thickness)
+    return;
+  thumb_thickness_ = thumb_thickness;
+  NoteLayerPropertyChanged();
+}
+
+void ScrollbarLayerImpl::SetThumbLength(int thumb_length) {
+  if (thumb_length_ == thumb_length)
+    return;
+  thumb_length_ = thumb_length;
+  NoteLayerPropertyChanged();
+}
+void ScrollbarLayerImpl::SetTrackStart(int track_start) {
+  if (track_start_ == track_start)
+    return;
+  track_start_ = track_start;
+  NoteLayerPropertyChanged();
+}
+
+void ScrollbarLayerImpl::SetTrackLength(int track_length) {
+  if (track_length_ == track_length)
+    return;
+  track_length_ = track_length;
+  NoteLayerPropertyChanged();
+}
+
+void ScrollbarLayerImpl::SetVerticalAdjust(float vertical_adjust) {
+  if (vertical_adjust_ == vertical_adjust)
+    return;
+  vertical_adjust_ = vertical_adjust;
+  NoteLayerPropertyChanged();
+}
+
+void ScrollbarLayerImpl::SetVisibleToTotalLengthRatio(float ratio) {
+  if (visible_to_total_length_ratio_ == ratio)
+    return;
+  visible_to_total_length_ratio_ = ratio;
+  NoteLayerPropertyChanged();
+}
+
+void ScrollbarLayerImpl::SetCurrentPos(float current_pos) {
+  if (current_pos_ == current_pos)
+    return;
+  current_pos_ = current_pos;
+  NoteLayerPropertyChanged();
+}
+
+void ScrollbarLayerImpl::SetMaximum(int maximum) {
+  if (maximum_ == maximum)
+    return;
+  maximum_ = maximum;
+  NoteLayerPropertyChanged();
 }
 
 gfx::Rect ScrollbarLayerImpl::ComputeThumbQuadRect() const {
@@ -241,7 +298,9 @@ gfx::Rect ScrollbarLayerImpl::ComputeThumbQuadRect() const {
   }
 
   // With the length known, we can compute the thumb's position.
-  float ratio = current_pos_ / maximum_;
+  float clamped_current_pos =
+      std::min(std::max(current_pos_, 0.f), static_cast<float>(maximum_));
+  float ratio = clamped_current_pos / maximum_;
   float max_offset = track_length - thumb_length;
   int thumb_offset = static_cast<int>(ratio * max_offset) + track_start_;
 

@@ -31,13 +31,13 @@
 #include "SkTypes.h"
 #include "core/platform/graphics/chromium/DiscardablePixelRef.h"
 #include "core/platform/graphics/chromium/ThreadSafeDataTransport.h"
-#include <wtf/PassOwnPtr.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/RefPtr.h>
-#include <wtf/ThreadingPrimitives.h>
-#include <wtf/ThreadSafeRefCounted.h>
-#include <wtf/Vector.h>
+#include "wtf/PassOwnPtr.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/RefPtr.h"
+#include "wtf/ThreadingPrimitives.h"
+#include "wtf/ThreadSafeRefCounted.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -53,15 +53,15 @@ public:
 
 class ImageFrameGenerator : public ThreadSafeRefCounted<ImageFrameGenerator> {
 public:
-    static PassRefPtr<ImageFrameGenerator> create(const SkISize& fullSize, PassRefPtr<SharedBuffer> data, bool allDataReceived)
+    static PassRefPtr<ImageFrameGenerator> create(const SkISize& fullSize, PassRefPtr<SharedBuffer> data, bool allDataReceived, bool isMultiFrame = false)
     {
-        return adoptRef(new ImageFrameGenerator(fullSize, data, allDataReceived));
+        return adoptRef(new ImageFrameGenerator(fullSize, data, allDataReceived, isMultiFrame));
     }
 
-    ImageFrameGenerator(const SkISize& fullSize, PassRefPtr<SharedBuffer>, bool allDataReceived);
+    ImageFrameGenerator(const SkISize& fullSize, PassRefPtr<SharedBuffer>, bool allDataReceived, bool isMultiFrame);
     ~ImageFrameGenerator();
 
-    const ScaledImageFragment* decodeAndScale(const SkISize& scaledSize);
+    const ScaledImageFragment* decodeAndScale(const SkISize& scaledSize, size_t index = 0);
 
     void setData(PassRefPtr<SharedBuffer>, bool allDataReceived);
 
@@ -70,25 +70,33 @@ public:
 
     SkISize getFullSize() const { return m_fullSize; }
 
+    bool isMultiFrame() const { return m_isMultiFrame; }
+
     void setImageDecoderFactoryForTesting(PassOwnPtr<ImageDecoderFactory> factory) { m_imageDecoderFactory = factory; }
 
-    bool hasAlpha();
+    // FIXME: Return alpha state for each frame.
+    bool hasAlpha(size_t);
 
 private:
     // These methods are called while m_decodeMutex is locked.
-    const ScaledImageFragment* tryToLockCompleteCache(const SkISize& scaledSize);
-    const ScaledImageFragment* tryToScale(const ScaledImageFragment* fullSizeImage, const SkISize& scaledSize);
-    const ScaledImageFragment* tryToResumeDecodeAndScale(const SkISize& scaledSize);
-    const ScaledImageFragment* tryToDecodeAndScale(const SkISize& scaledSize);
+    const ScaledImageFragment* tryToLockCompleteCache(const SkISize& scaledSize, size_t index);
+    const ScaledImageFragment* tryToScale(const ScaledImageFragment* fullSizeImage, const SkISize& scaledSize, size_t index);
+    const ScaledImageFragment* tryToResumeDecodeAndScale(const SkISize& scaledSize, size_t index);
 
     // Use the given decoder to decode. If a decoder is not given then try to create one.
-    PassOwnPtr<ScaledImageFragment> decode(ImageDecoder**);
+    PassOwnPtr<ScaledImageFragment> decode(size_t index, ImageDecoder**);
+
+    // Return the next generation ID of a new image object. This is used
+    // to identify images of the same frame from different stages of
+    // progressive decode.
+    size_t nextGenerationId() { return m_decodeCount++; }
 
     SkISize m_fullSize;
     ThreadSafeDataTransport m_data;
+    bool m_isMultiFrame;
     bool m_decodeFailedAndEmpty;
-    bool m_hasAlpha;
-    int m_decodeCount;
+    Vector<bool> m_hasAlpha;
+    size_t m_decodeCount;
     DiscardablePixelRefAllocator m_allocator;
 
     OwnPtr<ImageDecoderFactory> m_imageDecoderFactory;

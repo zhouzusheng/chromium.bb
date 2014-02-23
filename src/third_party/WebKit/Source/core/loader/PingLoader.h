@@ -32,11 +32,11 @@
 #ifndef PingLoader_h
 #define PingLoader_h
 
+#include "core/loader/ResourceLoaderOptions.h"
 #include "core/platform/Timer.h"
-#include "core/platform/network/ResourceHandleClient.h"
-#include "core/platform/network/ResourceHandleTypes.h"
-#include <wtf/Noncopyable.h>
-#include <wtf/RefPtr.h>
+#include "public/platform/WebURLLoaderClient.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
@@ -45,32 +45,38 @@ class Frame;
 class KURL;
 class ResourceError;
 class ResourceHandle;
+class ResourceRequest;
 class ResourceResponse;
 
 // This class triggers asynchronous loads independent of Frame staying alive (i.e., auditing pingbacks).
 // Since nothing depends on resources loaded through this class, we just want
 // to allow the load to live long enough to ensure the message was actually sent.
-// Therefore, as soon as a callback is received from the ResourceHandle, this class 
+// Therefore, as soon as a callback is received from the ResourceHandle, this class
 // will cancel the load and delete itself.
-class PingLoader : private ResourceHandleClient {
+class PingLoader : private WebKit::WebURLLoaderClient {
     WTF_MAKE_NONCOPYABLE(PingLoader); WTF_MAKE_FAST_ALLOCATED;
 public:
+    enum ViolationReportType {
+        ContentSecurityPolicyViolationReport,
+        XSSAuditorViolationReport
+    };
+
     static void loadImage(Frame*, const KURL& url);
     static void sendPing(Frame*, const KURL& pingURL, const KURL& destinationURL);
-    static void sendViolationReport(Frame*, const KURL& reportURL, PassRefPtr<FormData> report);
+    static void sendViolationReport(Frame*, const KURL& reportURL, PassRefPtr<FormData> report, ViolationReportType);
 
     virtual ~PingLoader();
 
 private:
     PingLoader(Frame*, ResourceRequest&, StoredCredentials = AllowStoredCredentials);
 
-    virtual void didReceiveResponse(ResourceHandle*, const ResourceResponse&) OVERRIDE { delete this; }
-    virtual void didReceiveData(ResourceHandle*, const char*, int, int) OVERRIDE { delete this; }
-    virtual void didFinishLoading(ResourceHandle*, double) OVERRIDE { delete this; }
-    virtual void didFail(ResourceHandle*, const ResourceError&) OVERRIDE { delete this; }
+    virtual void didReceiveResponse(WebKit::WebURLLoader*, const WebKit::WebURLResponse&) OVERRIDE { delete this; }
+    virtual void didReceiveData(WebKit::WebURLLoader*, const char*, int, int) OVERRIDE { delete this; }
+    virtual void didFinishLoading(WebKit::WebURLLoader*, double) OVERRIDE { delete this; }
+    virtual void didFail(WebKit::WebURLLoader*, const WebKit::WebURLError&) OVERRIDE { delete this; }
     void timeout(Timer<PingLoader>*) { delete this; }
 
-    RefPtr<ResourceHandle> m_handle;
+    OwnPtr<WebKit::WebURLLoader> m_loader;
     Timer<PingLoader> m_timeout;
 };
 

@@ -11,19 +11,23 @@
 
 namespace media {
 
-// Alignment of each channel's data; use 8-byte alignment as that is bigger
-// than maximum size of a sample, and the minimum alignment.
-enum { kChannelAlignment = 8 };
+// Alignment of each channel's data; this must match what ffmpeg expects
+// (which may be 0, 16, or 32, depending on the processor). Selecting 32 in
+// order to work on all processors.
+enum { kChannelAlignment = 32 };
 
 AudioBuffer::AudioBuffer(SampleFormat sample_format,
                          int channel_count,
                          int frame_count,
+                         bool create_buffer,
                          const uint8* const* data,
                          const base::TimeDelta timestamp,
                          const base::TimeDelta duration)
     : sample_format_(sample_format),
       channel_count_(channel_count),
-      frame_count_(frame_count),
+      adjusted_frame_count_(frame_count),
+      trim_start_(0),
+      end_of_stream_(!create_buffer && data == NULL && frame_count == 0),
       timestamp_(timestamp),
       duration_(duration) {
   CHECK_GE(channel_count, 0);
@@ -34,10 +38,8 @@ AudioBuffer::AudioBuffer(SampleFormat sample_format,
   int data_size = frame_count * bytes_per_channel;
 
   // Empty buffer?
-  if (!data) {
-    CHECK_EQ(frame_count, 0);
+  if (!create_buffer)
     return;
-  }
 
   if (sample_format == kSampleFormatPlanarF32 ||
       sample_format == kSampleFormatPlanarS16) {
@@ -55,7 +57,8 @@ AudioBuffer::AudioBuffer(SampleFormat sample_format,
     // Copy each channel's data into the appropriate spot.
     for (int i = 0; i < channel_count; ++i) {
       channel_data_.push_back(data_.get() + i * block_size_per_channel);
-      memcpy(channel_data_[i], data[i], data_size);
+      if (data)
+        memcpy(channel_data_[i], data[i], data_size);
     }
     return;
   }
@@ -70,7 +73,8 @@ AudioBuffer::AudioBuffer(SampleFormat sample_format,
   data_size *= channel_count;
   data_.reset(
       static_cast<uint8*>(base::AlignedAlloc(data_size, kChannelAlignment)));
-  memcpy(data_.get(), data[0], data_size);
+  if (data)
+    memcpy(data_.get(), data[0], data_size);
 }
 
 AudioBuffer::~AudioBuffer() {}
@@ -84,15 +88,52 @@ scoped_refptr<AudioBuffer> AudioBuffer::CopyFrom(
     const base::TimeDelta timestamp,
     const base::TimeDelta duration) {
   // If you hit this CHECK you likely have a bug in a demuxer. Go fix it.
+  CHECK_GT(frame_count, 0);  // Otherwise looks like an EOF buffer.
   CHECK(data[0]);
-  return make_scoped_refptr(new AudioBuffer(
-      sample_format, channel_count, frame_count, data, timestamp, duration));
+  return make_scoped_refptr(new AudioBuffer(sample_format,
+                                            channel_count,
+                                            frame_count,
+                                            true,
+                                            data,
+                                            timestamp,
+                                            duration));
+}
+
+// static
+scoped_refptr<AudioBuffer> AudioBuffer::CreateBuffer(SampleFormat sample_format,
+                                                     int channel_count,
+                                                     int frame_count) {
+  CHECK_GT(frame_count, 0);  // Otherwise looks like an EOF buffer.
+  return make_scoped_refptr(new AudioBuffer(sample_format,
+                                            channel_count,
+                                            frame_count,
+                                            true,
+                                            NULL,
+                                            kNoTimestamp(),
+                                            kNoTimestamp()));
+}
+
+// static
+scoped_refptr<AudioBuffer> AudioBuffer::CreateEmptyBuffer(
+    int channel_count,
+    int frame_count,
+    const base::TimeDelta timestamp,
+    const base::TimeDelta duration) {
+  CHECK_GT(frame_count, 0);  // Otherwise looks like an EOF buffer.
+  // Since data == NULL, format doesn't matter.
+  return make_scoped_refptr(new AudioBuffer(kSampleFormatF32,
+                                            channel_count,
+                                            frame_count,
+                                            false,
+                                            NULL,
+                                            timestamp,
+                                            duration));
 }
 
 // static
 scoped_refptr<AudioBuffer> AudioBuffer::CreateEOSBuffer() {
   return make_scoped_refptr(new AudioBuffer(
-      kUnknownSampleFormat, 1, 0, NULL, kNoTimestamp(), kNoTimestamp()));
+      kUnknownSampleFormat, 1, 0, false, NULL, kNoTimestamp(), kNoTimestamp()));
 }
 
 // Convert int16 values in the range [kint16min, kint16max] to [-1.0, 1.0].
@@ -111,8 +152,17 @@ void AudioBuffer::ReadFrames(int frames_to_copy,
   // specified must be in range.
   DCHECK(!end_of_stream());
   DCHECK_EQ(dest->channels(), channel_count_);
-  DCHECK_LE(source_frame_offset + frames_to_copy, frame_count_);
+  DCHECK_LE(source_frame_offset + frames_to_copy, adjusted_frame_count_);
   DCHECK_LE(dest_frame_offset + frames_to_copy, dest->frames());
+
+  // Move the start past any frames that have been trimmed.
+  source_frame_offset += trim_start_;
+
+  if (!data_) {
+    // Special case for an empty buffer.
+    dest->ZeroFramesPartial(dest_frame_offset, frames_to_copy);
+    return;
+  }
 
   if (sample_format_ == kSampleFormatPlanarF32) {
     // Format is planar float32. Copy the data from each channel as a block.
@@ -166,6 +216,39 @@ void AudioBuffer::ReadFrames(int frames_to_copy,
   const uint8* source_data = data_.get() + source_frame_offset * frame_size;
   dest->FromInterleavedPartial(
       source_data, dest_frame_offset, frames_to_copy, bytes_per_channel);
+}
+
+void AudioBuffer::TrimStart(int frames_to_trim) {
+  CHECK_GE(frames_to_trim, 0);
+  CHECK_LE(frames_to_trim, adjusted_frame_count_);
+
+  // Adjust timestamp_ and duration_ to reflect the smaller number of frames.
+  double offset = static_cast<double>(duration_.InMicroseconds()) *
+                  frames_to_trim / adjusted_frame_count_;
+  base::TimeDelta offset_as_time =
+      base::TimeDelta::FromMicroseconds(static_cast<int64>(offset));
+  timestamp_ += offset_as_time;
+  duration_ -= offset_as_time;
+
+  // Finally adjust the number of frames in this buffer and where the start
+  // really is.
+  adjusted_frame_count_ -= frames_to_trim;
+  trim_start_ += frames_to_trim;
+}
+
+void AudioBuffer::TrimEnd(int frames_to_trim) {
+  CHECK_GE(frames_to_trim, 0);
+  CHECK_LE(frames_to_trim, adjusted_frame_count_);
+
+  // Adjust duration_ only to reflect the smaller number of frames.
+  double offset = static_cast<double>(duration_.InMicroseconds()) *
+                  frames_to_trim / adjusted_frame_count_;
+  base::TimeDelta offset_as_time =
+      base::TimeDelta::FromMicroseconds(static_cast<int64>(offset));
+  duration_ -= offset_as_time;
+
+  // Finally adjust the number of frames in this buffer.
+  adjusted_frame_count_ -= frames_to_trim;
 }
 
 }  // namespace media

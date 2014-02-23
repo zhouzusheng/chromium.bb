@@ -32,6 +32,7 @@
 #ifndef NotificationCenter_h
 #define NotificationCenter_h
 
+#include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ScriptExecutionContext.h"
@@ -55,28 +56,13 @@ public:
     static PassRefPtr<NotificationCenter> create(ScriptExecutionContext*, NotificationClient*);
 
 #if ENABLE(LEGACY_NOTIFICATIONS)
-    PassRefPtr<Notification> createHTMLNotification(const String& URI, ExceptionCode& ec)
+    PassRefPtr<Notification> createNotification(const String& iconURI, const String& title, const String& body, ExceptionState& es)
     {
         if (!client()) {
-            ec = INVALID_STATE_ERR;
+            es.throwDOMException(InvalidStateError);
             return 0;
         }
-        if (URI.isEmpty()) {
-            ec = SYNTAX_ERR;
-            return 0;
-        }
-        return Notification::create(scriptExecutionContext()->completeURL(URI), scriptExecutionContext(), ec, this);
-    }
-#endif
-
-#if ENABLE(LEGACY_NOTIFICATIONS)
-    PassRefPtr<Notification> createNotification(const String& iconURI, const String& title, const String& body, ExceptionCode& ec)
-    {
-        if (!client()) {
-            ec = INVALID_STATE_ERR;
-            return 0;
-        }
-        return Notification::create(title, body, iconURI, scriptExecutionContext(), ec, this);
+        return Notification::create(title, body, iconURI, scriptExecutionContext(), es, this);
     }
 #endif
 

@@ -27,15 +27,16 @@
 
 #include "CSSPropertyNames.h"
 #include "core/rendering/style/StyleInheritedData.h"
-#include <wtf/HashSet.h>
-#include <wtf/RefPtr.h>
-#include <wtf/text/AtomicString.h>
-#include <wtf/Vector.h>
+#include "wtf/HashSet.h"
+#include "wtf/RefPtr.h"
+#include "wtf/Vector.h"
+#include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
 class RenderObject;
 class RenderStyle;
+class StylePropertySet;
 
 class KeyframeValue {
 public:
@@ -45,6 +46,7 @@ public:
     {
     }
 
+    void addProperties(const StylePropertySet*);
     void addProperty(CSSPropertyID prop) { m_properties.add(prop); }
     bool containsProperty(CSSPropertyID prop) const { return m_properties.contains(prop); }
     const HashSet<CSSPropertyID>& properties() const { return m_properties; }
@@ -70,19 +72,19 @@ public:
         insert(KeyframeValue(1, 0));
     }
     ~KeyframeList();
-        
+
     bool operator==(const KeyframeList& o) const;
     bool operator!=(const KeyframeList& o) const { return !(*this == o); }
-    
+
     const AtomicString& animationName() const { return m_animationName; }
-    
+
     void insert(const KeyframeValue& keyframe);
-    
+
     void addProperty(CSSPropertyID prop) { m_properties.add(prop); }
     bool containsProperty(CSSPropertyID prop) const { return m_properties.contains(prop); }
     HashSet<CSSPropertyID>::const_iterator beginProperties() const { return m_properties.begin(); }
     HashSet<CSSPropertyID>::const_iterator endProperties() const { return m_properties.end(); }
-    
+
     void clear();
     bool isEmpty() const { return m_keyframes.isEmpty(); }
     size_t size() const { return m_keyframes.size(); }

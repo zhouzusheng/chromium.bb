@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/synchronization/lock.h"
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_errors.h"
@@ -25,6 +25,14 @@ namespace {
 bool IsMainThread() {
   return
       PpapiGlobals::Get()->GetMainThreadMessageLoop()->BelongsToCurrentThread();
+}
+
+int32_t RunCompletionTask(TrackedCallback::CompletionTask completion_task,
+                          int32_t result) {
+  int32_t task_result = completion_task.Run(result);
+  if (result != PP_ERROR_ABORTED)
+    result = task_result;
+  return result;
 }
 
 }  // namespace
@@ -128,11 +136,18 @@ void TrackedCallback::Run(int32_t result) {
       PostRun(result);
       return;
     }
-    // Copy |callback_| now, since |MarkAsCompleted()| may delete us.
+
+    // Copy callback fields now, since |MarkAsCompleted()| may delete us.
     PP_CompletionCallback callback = callback_;
-    // Do this before running the callback in case of reentrancy (which
-    // shouldn't happen, but avoid strange failures).
+    CompletionTask completion_task = completion_task_;
+    completion_task_.Reset();
+    // Do this before running the callback in case of reentrancy from running
+    // the completion task.
     MarkAsCompleted();
+
+    if (!completion_task.is_null())
+      result = RunCompletionTask(completion_task, result);
+
     // TODO(dmichael): Associate a message loop with the callback; if it's not
     // the same as the current thread's loop, then post it to the right loop.
     CallWhileUnlocked(PP_RunCompletionCallback, &callback, result);
@@ -164,12 +179,26 @@ void TrackedCallback::PostRun(int32_t result) {
   is_scheduled_ = true;
 }
 
+void TrackedCallback::set_completion_task(
+    const CompletionTask& completion_task) {
+  DCHECK(completion_task_.is_null());
+  completion_task_ = completion_task;
+}
+
 // static
 bool TrackedCallback::IsPending(
     const scoped_refptr<TrackedCallback>& callback) {
   if (!callback.get())
     return false;
+  if (callback->aborted())
+    return false;
   return !callback->completed();
+}
+
+// static
+bool TrackedCallback::IsScheduledToRun(
+    const scoped_refptr<TrackedCallback>& callback) {
+  return IsPending(callback) && callback->is_scheduled_;
 }
 
 int32_t TrackedCallback::BlockUntilComplete() {
@@ -187,6 +216,12 @@ int32_t TrackedCallback::BlockUntilComplete() {
 
   while (!completed())
     operation_completed_condvar_->Wait();
+
+  if (!completion_task_.is_null()) {
+    result_for_blocked_callback_ =
+        RunCompletionTask(completion_task_, result_for_blocked_callback_);
+    completion_task_.Reset();
+  }
   return result_for_blocked_callback_;
 }
 

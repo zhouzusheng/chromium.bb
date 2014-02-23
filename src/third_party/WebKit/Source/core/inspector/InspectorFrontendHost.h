@@ -6,13 +6,13 @@
  * are met:
  *
  * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer. 
+ *     notice, this list of conditions and the following disclaimer.
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution. 
+ *     documentation and/or other materials provided with the distribution.
  * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission. 
+ *     from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -30,12 +30,10 @@
 #define InspectorFrontendHost_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/page/ConsoleTypes.h"
-#include "core/page/ContextMenuProvider.h"
 #include "core/platform/ContextMenu.h"
-#include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
-#include <wtf/Vector.h>
+#include "wtf/RefCounted.h"
+#include "wtf/Vector.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -43,9 +41,7 @@ class ContextMenuItem;
 class DOMFileSystem;
 class Event;
 class FrontendMenuProvider;
-class InspectorClient;
 class InspectorFrontendClient;
-class Node;
 class Page;
 
 class InspectorFrontendHost : public RefCounted<InspectorFrontendHost>, public ScriptWrappable {
@@ -86,6 +82,9 @@ public:
     void addFileSystem();
     void removeFileSystem(const String& fileSystemPath);
     PassRefPtr<DOMFileSystem> isolatedFileSystem(const String& fileSystemName, const String& rootURL);
+    void indexPath(int requestId, const String& fileSystemPath);
+    void stopIndexing(int requestId);
+    void searchInPath(int requestId, const String& fileSystemPath, const String& query);
 
     bool isUnderTest();
 

@@ -36,7 +36,6 @@
 #include "bindings/v8/V8DOMWrapper.h"
 #include "bindings/v8/V8MutationCallback.h"
 #include "bindings/v8/V8Utilities.h"
-#include "core/dom/ExceptionCode.h"
 #include "core/dom/MutationObserver.h"
 
 namespace WebCore {
@@ -60,7 +59,7 @@ void V8MutationObserver::constructorCustom(const v8::FunctionCallbackInfo<v8::Va
     RefPtr<MutationCallback> callback = V8MutationCallback::create(v8::Handle<v8::Function>::Cast(arg), context, wrapper, args.GetIsolate());
     RefPtr<MutationObserver> observer = MutationObserver::create(callback.release());
 
-    V8DOMWrapper::associateObjectWithWrapper(observer.release(), &info, wrapper, args.GetIsolate(), WrapperConfiguration::Dependent);
+    V8DOMWrapper::associateObjectWithWrapper<V8MutationObserver>(observer.release(), &info, wrapper, args.GetIsolate(), WrapperConfiguration::Dependent);
     args.GetReturnValue().Set(wrapper);
 }
 

@@ -30,7 +30,7 @@
 #include "core/svg/SVGPolygonElement.h"
 #include "core/svg/SVGPolylineElement.h"
 #include "core/svg/SVGRectElement.h"
-#include <wtf/HashMap.h>
+#include "wtf/HashMap.h"
 
 namespace WebCore {
 
@@ -40,9 +40,9 @@ static void updatePathFromCircleElement(SVGElement* element, Path& path)
     SVGCircleElement* circle = static_cast<SVGCircleElement*>(element);
 
     SVGLengthContext lengthContext(element);
-    float r = circle->r().value(lengthContext);
+    float r = circle->rCurrentValue().value(lengthContext);
     if (r > 0)
-        path.addEllipse(FloatRect(circle->cx().value(lengthContext) - r, circle->cy().value(lengthContext) - r, r * 2, r * 2));
+        path.addEllipse(FloatRect(circle->cxCurrentValue().value(lengthContext) - r, circle->cyCurrentValue().value(lengthContext) - r, r * 2, r * 2));
 }
 
 static void updatePathFromEllipseElement(SVGElement* element, Path& path)
@@ -51,13 +51,13 @@ static void updatePathFromEllipseElement(SVGElement* element, Path& path)
     SVGEllipseElement* ellipse = static_cast<SVGEllipseElement*>(element);
 
     SVGLengthContext lengthContext(element);
-    float rx = ellipse->rx().value(lengthContext);
+    float rx = ellipse->rxCurrentValue().value(lengthContext);
     if (rx <= 0)
         return;
-    float ry = ellipse->ry().value(lengthContext);
+    float ry = ellipse->ryCurrentValue().value(lengthContext);
     if (ry <= 0)
         return;
-    path.addEllipse(FloatRect(ellipse->cx().value(lengthContext) - rx, ellipse->cy().value(lengthContext) - ry, rx * 2, ry * 2));
+    path.addEllipse(FloatRect(ellipse->cxCurrentValue().value(lengthContext) - rx, ellipse->cyCurrentValue().value(lengthContext) - ry, rx * 2, ry * 2));
 }
 
 static void updatePathFromLineElement(SVGElement* element, Path& path)
@@ -66,14 +66,13 @@ static void updatePathFromLineElement(SVGElement* element, Path& path)
     SVGLineElement* line = static_cast<SVGLineElement*>(element);
 
     SVGLengthContext lengthContext(element);
-    path.moveTo(FloatPoint(line->x1().value(lengthContext), line->y1().value(lengthContext)));
-    path.addLineTo(FloatPoint(line->x2().value(lengthContext), line->y2().value(lengthContext)));
+    path.moveTo(FloatPoint(line->x1CurrentValue().value(lengthContext), line->y1CurrentValue().value(lengthContext)));
+    path.addLineTo(FloatPoint(line->x2CurrentValue().value(lengthContext), line->y2CurrentValue().value(lengthContext)));
 }
 
 static void updatePathFromPathElement(SVGElement* element, Path& path)
 {
-    ASSERT(element->hasTagName(SVGNames::pathTag));
-    buildPathFromByteStream(static_cast<SVGPathElement*>(element)->pathByteStream(), path);
+    buildPathFromByteStream(toSVGPathElement(element)->pathByteStream(), path);
 }
 
 static void updatePathFromPolygonElement(SVGElement* element, Path& path)
@@ -112,31 +111,28 @@ static void updatePathFromPolylineElement(SVGElement* element, Path& path)
 
 static void updatePathFromRectElement(SVGElement* element, Path& path)
 {
-    ASSERT(element->hasTagName(SVGNames::rectTag));
-    SVGRectElement* rect = static_cast<SVGRectElement*>(element);
+    SVGRectElement* rect = toSVGRectElement(element);
 
     SVGLengthContext lengthContext(element);
-    float width = rect->width().value(lengthContext);
+    float width = rect->widthCurrentValue().value(lengthContext);
     if (width <= 0)
         return;
-    float height = rect->height().value(lengthContext);
+    float height = rect->heightCurrentValue().value(lengthContext);
     if (height <= 0)
         return;
-    float x = rect->x().value(lengthContext);
-    float y = rect->y().value(lengthContext);
-    bool hasRx = rect->rx().value(lengthContext) > 0;
-    bool hasRy = rect->ry().value(lengthContext) > 0;
+    float x = rect->xCurrentValue().value(lengthContext);
+    float y = rect->yCurrentValue().value(lengthContext);
+    bool hasRx = rect->rxCurrentValue().value(lengthContext) > 0;
+    bool hasRy = rect->ryCurrentValue().value(lengthContext) > 0;
     if (hasRx || hasRy) {
-        float rx = rect->rx().value(lengthContext);
-        float ry = rect->ry().value(lengthContext);
+        float rx = rect->rxCurrentValue().value(lengthContext);
+        float ry = rect->ryCurrentValue().value(lengthContext);
         if (!hasRx)
             rx = ry;
         else if (!hasRy)
             ry = rx;
-        // FIXME: We currently enforce using beziers here, as at least on CoreGraphics/Lion, as
-        // the native method uses a different line dash origin, causing svg/custom/dashOrigin.svg to fail.
-        // See bug https://bugs.webkit.org/show_bug.cgi?id=79932 which tracks this issue.
-        path.addRoundedRect(FloatRect(x, y, width, height), FloatSize(rx, ry), Path::PreferBezierRoundedRect);
+
+        path.addRoundedRect(FloatRect(x, y, width, height), FloatSize(rx, ry));
         return;
     }
 
@@ -149,9 +145,9 @@ void updatePathFromGraphicsElement(SVGElement* element, Path& path)
     ASSERT(path.isEmpty());
 
     typedef void (*PathUpdateFunction)(SVGElement*, Path&);
-    static HashMap<AtomicStringImpl*, PathUpdateFunction>* map = 0;
+    static HashMap<StringImpl*, PathUpdateFunction>* map = 0;
     if (!map) {
-        map = new HashMap<AtomicStringImpl*, PathUpdateFunction>;
+        map = new HashMap<StringImpl*, PathUpdateFunction>;
         map->set(SVGNames::circleTag.localName().impl(), updatePathFromCircleElement);
         map->set(SVGNames::ellipseTag.localName().impl(), updatePathFromEllipseElement);
         map->set(SVGNames::lineTag.localName().impl(), updatePathFromLineElement);

@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef TextCodecUTF8_h
@@ -39,8 +39,12 @@ private:
     static PassOwnPtr<TextCodec> create(const TextEncoding&, const void*);
     TextCodecUTF8() : m_partialSequenceSize(0) { }
 
-    virtual String decode(const char*, size_t length, bool flush, bool stopOnError, bool& sawError);
-    virtual CString encode(const UChar*, size_t length, UnencodableHandling);
+    virtual String decode(const char*, size_t length, bool flush, bool stopOnError, bool& sawError) OVERRIDE;
+    virtual CString encode(const UChar*, size_t length, UnencodableHandling) OVERRIDE;
+    virtual CString encode(const LChar*, size_t length, UnencodableHandling) OVERRIDE;
+
+    template<typename CharType>
+    CString encodeCommon(const CharType* characters, size_t length);
 
     template <typename CharType>
     bool handlePartialSequence(CharType*& destination, const uint8_t*& source, const uint8_t* end, bool flush, bool stopOnError, bool& sawError);
@@ -49,7 +53,7 @@ private:
 
     int m_partialSequenceSize;
     uint8_t m_partialSequence[U8_MAX_LENGTH];
-    
+
 };
 
 } // namespace WTF

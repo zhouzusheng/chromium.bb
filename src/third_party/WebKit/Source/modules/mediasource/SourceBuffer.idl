@@ -27,21 +27,26 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
- 
+
 [
     NoInterfaceObject,
     ActiveDOMObject,
-    EventTarget,
     EnabledAtRuntime=mediaSource
-] interface SourceBuffer {
+] interface SourceBuffer : EventTarget {
 
     readonly attribute boolean updating;
-  
+
     // Returns the time ranges buffered.
     [GetterRaisesException] readonly attribute TimeRanges buffered;
 
     // Applies an offset to media segment timestamps.
     [SetterRaisesException] attribute double timestampOffset;
+
+    // Presentation timestamp for the start of append window.
+    [SetterRaisesException] attribute double appendWindowStart;
+
+    // Presentation timestamp for the end of append window.
+    [SetterRaisesException] attribute double appendWindowEnd;
 
     // Append segment data.
     [RaisesException] void appendBuffer(ArrayBuffer data);
@@ -49,14 +54,6 @@
 
     // Abort the current segment append sequence.
     [RaisesException] void abort();
-
-    // EventTarget interface
-    void addEventListener(DOMString type,
-                          EventListener listener,
-                          optional boolean useCapture);
-    void removeEventListener(DOMString type,
-                             EventListener listener,
-                             optional boolean useCapture);
-    [RaisesException] boolean dispatchEvent(Event event);
+    [RaisesException] void remove(double start, double end);
 };
 

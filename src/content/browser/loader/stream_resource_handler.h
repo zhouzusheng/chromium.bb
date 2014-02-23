@@ -9,7 +9,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/browser/loader/resource_handler.h"
 #include "content/browser/streams/stream_write_observer.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace net {
 class URLRequest;
@@ -23,9 +23,12 @@ class StreamRegistry;
 class StreamResourceHandler : public StreamWriteObserver,
                               public ResourceHandler {
  public:
+  // |origin| will be used to construct the URL for the Stream. See
+  // WebCore::BlobURL and and WebCore::SecurityOrigin in Blink to understand
+  // how origin check is done on resource loading.
   StreamResourceHandler(net::URLRequest* request,
                         StreamRegistry* registry,
-                        const GURL& security_origin);
+                        const GURL& origin);
   virtual ~StreamResourceHandler();
 
   virtual bool OnUploadProgress(int request_id,
@@ -78,4 +81,3 @@ class StreamResourceHandler : public StreamWriteObserver,
 }  // namespace content
 
 #endif  // CONTENT_BROWSER_LOADER_STREAM_RESOURCE_HANDLER_H_
-

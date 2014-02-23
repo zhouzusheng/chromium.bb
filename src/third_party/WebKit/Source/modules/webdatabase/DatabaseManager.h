@@ -32,7 +32,7 @@
 #include "wtf/Assertions.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/Threading.h"
+#include "wtf/ThreadingPrimitives.h"
 
 namespace WebCore {
 
@@ -45,6 +45,8 @@ class DatabaseSync;
 class DatabaseTaskSynchronizer;
 class SecurityOrigin;
 class ScriptExecutionContext;
+
+typedef int ExceptionCode;
 
 class DatabaseManager {
     WTF_MAKE_NONCOPYABLE(DatabaseManager); WTF_MAKE_FAST_ALLOCATED;

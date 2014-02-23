@@ -22,6 +22,8 @@
       'sources': [
         'gurl.cc',
         'gurl.h',
+        'third_party/mozilla/url_parse.cc',
+        'third_party/mozilla/url_parse.h',
         'url_canon.h',
         'url_canon_etc.cc',
         'url_canon_filesystemurl.cc',
@@ -42,8 +44,6 @@
         'url_canon_stdstring.h',
         'url_canon_stdurl.cc',
         'url_file.h',
-        'url_parse.cc',
-        'url_parse.h',
         'url_parse_file.cc',
         'url_parse_internal.h',
         'url_util.cc',
@@ -94,65 +94,6 @@
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [4267, ],
-    },
-    {
-       # url_unittests was formerly named googleurl_unittests. While the build
-       # bots are being switched to use the new name we need to support both
-       # executables.
-       # TODO(tfarina): Remove this target when build bots are building and
-       # running url_unittests. crbug.com/229660
-      'target_name': 'googleurl_unittests',
-      'type': 'none',
-      'dependencies': [
-        'url_unittests',
-      ],
-      'conditions': [
-        ['OS != "ios"',
-          {
-            'actions': [
-              {
-                'message': 'TEMPORARY: Copying url_unittests to googleurl_unittests',
-                'action_name': 'copy_url_unittests',
-                'variables': {
-                  'source_file': '<(PRODUCT_DIR)/url_unittests<(EXECUTABLE_SUFFIX)',
-                  'dest_file': '<(PRODUCT_DIR)/googleurl_unittests<(EXECUTABLE_SUFFIX)',
-                },
-                'inputs': [
-                  '../build/cp.py',
-                  '<(source_file)',
-                ],
-                'outputs': [
-                  '<(dest_file)',
-                ],
-                'action': [
-                  'python', '../build/cp.py', '<(source_file)', '<(dest_file)',
-                ],
-              },
-            ],
-          }, {  # else OS == "ios"
-            'actions': [
-              {
-                'message': 'TEMPORARY: Copying url_unittests to googleurl_unittests',
-                'action_name': 'copy_url_unittests',
-                'variables': {
-                  'source_file': '<(PRODUCT_DIR)/url_unittests.app/',
-                  'dest_file': '<(PRODUCT_DIR)/googleurl_unittests.app',
-                },
-                'inputs': [
-                  '../build/cp.py',
-                  '<(source_file)',
-                ],
-                'outputs': [
-                  '<(dest_file)',
-                ],
-                'action': [
-                  'cp', '-R', '<(source_file)', '<(dest_file)',
-                ],
-              },
-            ],
-          }
-        ]
-      ],
     },
   ],
 }

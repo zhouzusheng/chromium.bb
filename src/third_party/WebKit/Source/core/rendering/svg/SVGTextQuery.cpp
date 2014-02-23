@@ -28,7 +28,7 @@
 #include "core/rendering/svg/SVGInlineTextBox.h"
 #include "core/rendering/svg/SVGTextMetrics.h"
 
-#include <wtf/MathExtras.h>
+#include "wtf/MathExtras.h"
 
 namespace WebCore {
 
@@ -99,7 +99,7 @@ void SVGTextQuery::collectTextBoxesInFlowBox(InlineFlowBox* flowBox)
         }
 
         if (child->isSVGInlineTextBox())
-            m_textBoxes.append(static_cast<SVGInlineTextBox*>(child));
+            m_textBoxes.append(toSVGInlineTextBox(child));
     }
 }
 
@@ -120,7 +120,7 @@ bool SVGTextQuery::executeQuery(Data* queryData, ProcessTextFragmentCallback fra
 
         queryData->isVerticalText = queryData->textRenderer->style()->svgStyle()->isVerticalWritingMode();
         const Vector<SVGTextFragment>& fragments = queryData->textBox->textFragments();
-    
+
         // Loop over all text fragments in this text box, firing a callback for each.
         unsigned fragmentCount = fragments.size();
         for (unsigned i = 0; i < fragmentCount; ++i) {
@@ -500,10 +500,10 @@ bool SVGTextQuery::extentOfCharacterCallback(Data* queryData, const SVGTextFragm
     return true;
 }
 
-FloatRect SVGTextQuery::extentOfCharacter(unsigned position) const
+SVGRect SVGTextQuery::extentOfCharacter(unsigned position) const
 {
     if (m_textBoxes.isEmpty())
-        return FloatRect();
+        return SVGRect();
 
     ExtentOfCharacterData data(position);
     executeQuery(&data, &SVGTextQuery::extentOfCharacterCallback);
@@ -541,7 +541,7 @@ bool SVGTextQuery::characterNumberAtPositionCallback(Data* queryData, const SVGT
     return false;
 }
 
-int SVGTextQuery::characterNumberAtPosition(const FloatPoint& position) const
+int SVGTextQuery::characterNumberAtPosition(const SVGPoint& position) const
 {
     if (m_textBoxes.isEmpty())
         return -1;

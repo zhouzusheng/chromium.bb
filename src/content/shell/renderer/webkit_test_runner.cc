@@ -10,14 +10,16 @@
 
 #include "base/base64.h"
 #include "base/debug/debugger.h"
+#include "base/files/file_path.h"
 #include "base/md5.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
+#include "content/public/common/url_constants.h"
 #include "content/public/renderer/history_item_serialization.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_visitor.h"
@@ -27,9 +29,7 @@
 
 #include "content/shell/common/shell_messages.h"
 #include "content/shell/common/webkit_test_helpers.h"
-#include "content/shell/renderer/shell_media_stream_client.h"
 #include "content/shell/renderer/shell_render_process_observer.h"
-#include "media/base/media_log.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "skia/ext/platform_canvas.h"
@@ -61,24 +61,19 @@
 #include "third_party/WebKit/public/web/WebTestingSupport.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/gfx/rect.h"
-#include "webkit/base/file_path_string_conversions.h"
 #include "webkit/common/webpreferences.h"
 #include "webkit/glue/webkit_glue.h"
-#include "webkit/renderer/media/webmediaplayer_impl.h"
-#include "webkit/renderer/media/webmediaplayer_ms.h"
-#include "webkit/renderer/media/webmediaplayer_params.h"
 
 using WebKit::Platform;
 using WebKit::WebArrayBufferView;
 using WebKit::WebContextMenuData;
 using WebKit::WebDevToolsAgent;
+using WebKit::WebDeviceMotionData;
 using WebKit::WebDeviceOrientation;
 using WebKit::WebElement;
 using WebKit::WebFrame;
 using WebKit::WebGamepads;
 using WebKit::WebHistoryItem;
-using WebKit::WebMediaPlayer;
-using WebKit::WebMediaPlayerClient;
 using WebKit::WebPoint;
 using WebKit::WebRect;
 using WebKit::WebScriptSource;
@@ -107,7 +102,7 @@ void InvokeTaskHelper(void* context) {
 #if !defined(OS_MACOSX)
 void MakeBitmapOpaque(SkBitmap* bitmap) {
   SkAutoLockPixels lock(*bitmap);
-  DCHECK(bitmap->config() == SkBitmap::kARGB_8888_Config);
+  DCHECK_EQ(bitmap->config(), SkBitmap::kARGB_8888_Config);
   for (int y = 0; y < bitmap->height(); ++y) {
     uint32_t* row = bitmap->getAddr32(0, y);
     for (int x = 0; x < bitmap->width(); ++x)
@@ -119,13 +114,13 @@ void MakeBitmapOpaque(SkBitmap* bitmap) {
 void CopyCanvasToBitmap(SkCanvas* canvas,  SkBitmap* snapshot) {
   SkDevice* device = skia::GetTopDevice(*canvas);
   const SkBitmap& bitmap = device->accessBitmap(false);
-  bitmap.copyTo(snapshot, SkBitmap::kARGB_8888_Config);
+  const bool success = bitmap.copyTo(snapshot, SkBitmap::kARGB_8888_Config);
+  DCHECK(success);
 
 #if !defined(OS_MACOSX)
   // Only the expected PNGs for Mac have a valid alpha channel.
   MakeBitmapOpaque(snapshot);
 #endif
-
 }
 
 class SyncNavigationStateVisitor : public RenderViewVisitor {
@@ -164,6 +159,7 @@ class ProxyToRenderViewVisitor : public RenderViewVisitor {
     }
     return true;
   }
+
  private:
   WebTestProxyBase* proxy_;
   RenderView* render_view_;
@@ -173,15 +169,15 @@ class ProxyToRenderViewVisitor : public RenderViewVisitor {
 
 class NavigateAwayVisitor : public RenderViewVisitor {
  public:
-  NavigateAwayVisitor(RenderView* main_render_view)
+  explicit NavigateAwayVisitor(RenderView* main_render_view)
       : main_render_view_(main_render_view) {}
   virtual ~NavigateAwayVisitor() {}
 
   virtual bool Visit(RenderView* render_view) OVERRIDE {
     if (render_view == main_render_view_)
       return true;
-    render_view->GetWebView()->mainFrame()
-        ->loadRequest(WebURLRequest(GURL("about:blank")));
+    render_view->GetWebView()->mainFrame()->loadRequest(
+        WebURLRequest(GURL(kAboutBlankURL)));
     return true;
   }
 
@@ -200,6 +196,8 @@ WebKitTestRunner::WebKitTestRunner(RenderView* render_view)
       focused_view_(NULL),
       is_main_window_(false),
       focus_on_next_commit_(false) {
+  // SHEZ: Remove test code.
+  // UseMockMediaStreams(render_view);
 }
 
 WebKitTestRunner::~WebKitTestRunner() {
@@ -221,6 +219,11 @@ void WebKitTestRunner::setGamepadData(const WebGamepads& gamepads) {
   //SetMockGamepads(gamepads);
 }
 
+void WebKitTestRunner::setDeviceMotionData(const WebDeviceMotionData& data) {
+  // SHEZ: Remove test code.
+  // SetMockDeviceMotionData(data);
+}
+
 void WebKitTestRunner::printMessage(const std::string& message) {
   Send(new ShellViewHostMsg_PrintMessage(routing_id(), message));
 }
@@ -240,7 +243,7 @@ WebString WebKitTestRunner::registerIsolatedFileSystem(
     const WebKit::WebVector<WebKit::WebString>& absolute_filenames) {
   std::vector<base::FilePath> files;
   for (size_t i = 0; i < absolute_filenames.size(); ++i)
-    files.push_back(webkit_base::WebStringToFilePath(absolute_filenames[i]));
+    files.push_back(base::FilePath::FromUTF16Unsafe(absolute_filenames[i]));
   std::string filesystem_id;
   Send(new ShellViewHostMsg_RegisterIsolatedFileSystem(
       routing_id(), files, &filesystem_id));
@@ -255,18 +258,14 @@ long long WebKitTestRunner::getCurrentTimeInMillisecond() {
 
 WebString WebKitTestRunner::getAbsoluteWebStringFromUTF8Path(
     const std::string& utf8_path) {
-#if defined(OS_WIN)
-  base::FilePath path(UTF8ToWide(utf8_path));
-#else
-  base::FilePath path(base::SysWideToNativeMB(base::SysUTF8ToWide(utf8_path)));
-#endif
+  base::FilePath path = base::FilePath::FromUTF8Unsafe(utf8_path);
   if (!path.IsAbsolute()) {
     GURL base_url =
         net::FilePathToFileURL(test_config_.current_working_directory.Append(
             FILE_PATH_LITERAL("foo")));
     net::FileURLToFilePath(base_url.Resolve(utf8_path), &path);
   }
-  return webkit_base::FilePathToWebString(path);
+  return path.AsUTF16Unsafe();
 }
 
 WebURL WebKitTestRunner::localFileToDataURL(const WebURL& file_url) {
@@ -477,6 +476,10 @@ void WebKitTestRunner::closeRemainingWindows() {
   Send(new ShellViewHostMsg_CloseRemainingWindows(routing_id()));
 }
 
+void WebKitTestRunner::deleteAllCookies() {
+  Send(new ShellViewHostMsg_DeleteAllCookies(routing_id()));
+}
+
 int WebKitTestRunner::navigationEntryCount() {
   // SHEZ: Disable the following (used for test only)
   return 0;//GetLocalSessionHistoryLength(render_view());
@@ -528,39 +531,6 @@ void WebKitTestRunner::captureHistoryForWindow(
         PageStateToHistoryItem(session_histories_[pos][entry]);
   }
   history->swap(result);
-}
-
-WebMediaPlayer* WebKitTestRunner::createWebMediaPlayer(
-    WebFrame* frame, const WebURL& url, WebMediaPlayerClient* client)
-{
-  if (!shell_media_stream_client_) {
-    shell_media_stream_client_.reset(new ShellMediaStreamClient());
-  }
-
-  if (shell_media_stream_client_->IsMediaStream(url)) {
-    return new webkit_media::WebMediaPlayerMS(
-        frame,
-        client,
-        base::WeakPtr<webkit_media::WebMediaPlayerDelegate>(),
-        shell_media_stream_client_.get(),
-        new media::MediaLog());
-  }
-
-#if defined(OS_ANDROID)
-  return NULL;
-#else
-  // TODO(scherkus): Use RenderViewImpl::createMediaPlayer() instead of
-  // duplicating code here, see http://crbug.com/239826
-  // SHEZ: disable the following: GetMediaThreadMessageLoopProxy is not defined
-  //webkit_media::WebMediaPlayerParams params(
-  //    GetMediaThreadMessageLoopProxy(), NULL, NULL, new media::MediaLog());
-  //return new webkit_media::WebMediaPlayerImpl(
-  //    frame,
-  //    client,
-  //    base::WeakPtr<webkit_media::WebMediaPlayerDelegate>(),
-  //    params);
-  return NULL;
-#endif
 }
 
 // RenderViewObserver  --------------------------------------------------------
@@ -717,8 +687,8 @@ void WebKitTestRunner::OnReset() {
   Reset();
   // Navigating to about:blank will make sure that no new loads are initiated
   // by the renderer.
-  render_view()->GetWebView()->mainFrame()
-      ->loadRequest(WebURLRequest(GURL("about:blank")));
+  render_view()->GetWebView()->mainFrame()->loadRequest(
+      WebURLRequest(GURL(kAboutBlankURL)));
   Send(new ShellViewHostMsg_ResetDone(routing_id()));
 }
 

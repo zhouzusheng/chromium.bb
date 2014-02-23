@@ -51,7 +51,6 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
     public SyncManager,
     public net::NetworkChangeNotifier::IPAddressObserver,
     public net::NetworkChangeNotifier::ConnectionTypeObserver,
-    public InvalidationHandler,
     public JsBackend,
     public SyncEngineEventListener,
     public ServerConnectionEventListener,
@@ -71,16 +70,15 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
       bool use_ssl,
       scoped_ptr<HttpPostProviderFactory> post_factory,
       const std::vector<ModelSafeWorker*>& workers,
-      ExtensionsActivityMonitor* extensions_activity_monitor,
+      ExtensionsActivity* extensions_activity,
       SyncManager::ChangeDelegate* change_delegate,
       const SyncCredentials& credentials,
-      scoped_ptr<Invalidator> invalidator,
       const std::string& invalidator_client_id,
       const std::string& restored_key_for_bootstrapping,
       const std::string& restored_keystore_key_for_bootstrapping,
-      scoped_ptr<InternalComponentsFactory> internal_components_factory,
+      InternalComponentsFactory* internal_components_factory,
       Encryptor* encryptor,
-      UnrecoverableErrorHandler* unrecoverable_error_handler,
+      scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
       ReportUnrecoverableErrorFunction
           report_unrecoverable_error_function,
       bool use_oauth2_token) OVERRIDE;
@@ -90,17 +88,6 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
       ModelTypeSet types) OVERRIDE;
   virtual bool PurgePartiallySyncedTypes() OVERRIDE;
   virtual void UpdateCredentials(const SyncCredentials& credentials) OVERRIDE;
-  virtual void UpdateEnabledTypes(ModelTypeSet enabled_types) OVERRIDE;
-  virtual void RegisterInvalidationHandler(
-      InvalidationHandler* handler) OVERRIDE;
-  virtual void UpdateRegisteredInvalidationIds(
-      InvalidationHandler* handler,
-      const ObjectIdSet& ids) OVERRIDE;
-  virtual void UnregisterInvalidationHandler(
-      InvalidationHandler* handler) OVERRIDE;
-  virtual void AcknowledgeInvalidation(
-      const invalidation::ObjectId& id,
-      const syncer::AckHandle& ack_handle) OVERRIDE;
   virtual void StartSyncingNormally(
       const ModelSafeRoutingInfo& routing_info) OVERRIDE;
   virtual void ConfigureSyncer(
@@ -112,11 +99,14 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
       const ModelSafeRoutingInfo& new_routing_info,
       const base::Closure& ready_task,
       const base::Closure& retry_task) OVERRIDE;
+  virtual void OnInvalidatorStateChange(InvalidatorState state) OVERRIDE;
+  virtual void OnIncomingInvalidation(
+      const ObjectIdInvalidationMap& invalidation_map) OVERRIDE;
   virtual void AddObserver(SyncManager::Observer* observer) OVERRIDE;
   virtual void RemoveObserver(SyncManager::Observer* observer) OVERRIDE;
   virtual SyncStatus GetDetailedStatus() const OVERRIDE;
   virtual void SaveChanges() OVERRIDE;
-  virtual void StopSyncingForShutdown(const base::Closure& callback) OVERRIDE;
+  virtual void StopSyncingForShutdown() OVERRIDE;
   virtual void ShutdownOnSyncThread() OVERRIDE;
   virtual UserShare* GetUserShare() OVERRIDE;
   virtual const std::string cache_guid() OVERRIDE;
@@ -176,11 +166,6 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
       const syncable::ImmutableWriteTransactionInfo& write_transaction_info,
       syncable::BaseTransaction* trans,
       std::vector<int64>* entries_changed) OVERRIDE;
-
-  // InvalidationHandler implementation.
-  virtual void OnInvalidatorStateChange(InvalidatorState state) OVERRIDE;
-  virtual void OnIncomingInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map) OVERRIDE;
 
   // Handle explicit requests to fetch updates for the given types.
   virtual void RefreshTypes(ModelTypeSet types) OVERRIDE;
@@ -336,9 +321,6 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   // Start()ed.
   scoped_ptr<SyncScheduler> scheduler_;
 
-  // The Invalidator which notifies us when updates need to be downloaded.
-  scoped_ptr<Invalidator> invalidator_;
-
   // A multi-purpose status watch object that aggregates stats from various
   // sync components.
   AllStatus allstatus_;
@@ -378,7 +360,7 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   TrafficRecorder traffic_recorder_;
 
   Encryptor* encryptor_;
-  UnrecoverableErrorHandler* unrecoverable_error_handler_;
+  scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler_;
   ReportUnrecoverableErrorFunction report_unrecoverable_error_function_;
 
   // Sync's encryption handler. It tracks the set of encrypted types, manages

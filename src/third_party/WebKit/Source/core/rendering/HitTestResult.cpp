@@ -30,11 +30,14 @@
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
 #include "core/html/HTMLAnchorElement.h"
+#include "core/html/HTMLAreaElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLMediaElement.h"
+#include "core/html/HTMLTextAreaElement.h"
+#include "core/html/HTMLVideoElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/loader/cache/CachedImage.h"
+#include "core/loader/cache/ImageResource.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameTree.h"
 #include "core/platform/Scrollbar.h"
@@ -142,7 +145,7 @@ void HitTestResult::setInnerNode(Node* n)
         n = n->parentOrShadowHostNode();
     m_innerNode = n;
 }
-    
+
 void HitTestResult::setInnerNonSharedNode(Node* n)
 {
     if (n && n->isPseudoElement())
@@ -150,9 +153,9 @@ void HitTestResult::setInnerNonSharedNode(Node* n)
     m_innerNonSharedNode = n;
 }
 
-void HitTestResult::setURLElement(Element* n) 
-{ 
-    m_innerURLElement = n; 
+void HitTestResult::setURLElement(Element* n)
+{
+    m_innerURLElement = n;
 }
 
 void HitTestResult::setScrollbar(Scrollbar* s)
@@ -200,7 +203,7 @@ String HitTestResult::spellingToolTip(TextDirection& dir) const
     // currently supply strings, but maybe someday markers associated with misspelled words will also.
     if (!m_innerNonSharedNode)
         return String();
-    
+
     DocumentMarker* marker = m_innerNonSharedNode->document()->markers()->markerContainingPoint(m_hitTestLocation.point(), DocumentMarker::Grammar);
     if (!marker)
         return String();
@@ -239,12 +242,12 @@ String HitTestResult::altDisplayString() const
 {
     if (!m_innerNonSharedNode)
         return String();
-    
+
     if (m_innerNonSharedNode->hasTagName(imgTag)) {
         HTMLImageElement* image = toHTMLImageElement(m_innerNonSharedNode.get());
         return displayString(image->getAttribute(altAttr), m_innerNonSharedNode.get());
     }
-    
+
     if (m_innerNonSharedNode->hasTagName(inputTag)) {
         HTMLInputElement* input = toHTMLInputElement(m_innerNonSharedNode.get());
         return displayString(input->alt(), m_innerNonSharedNode.get());
@@ -257,7 +260,7 @@ Image* HitTestResult::image() const
 {
     if (!m_innerNonSharedNode)
         return 0;
-    
+
     RenderObject* renderer = m_innerNonSharedNode->renderer();
     if (renderer && renderer->isImage()) {
         RenderImage* image = static_cast<WebCore::RenderImage*>(renderer);
@@ -287,7 +290,7 @@ KURL HitTestResult::absoluteImageURL() const
     if (m_innerNonSharedNode->hasTagName(embedTag)
         || m_innerNonSharedNode->hasTagName(imgTag)
         || m_innerNonSharedNode->hasTagName(inputTag)
-        || m_innerNonSharedNode->hasTagName(objectTag)    
+        || m_innerNonSharedNode->hasTagName(objectTag)
         || m_innerNonSharedNode->hasTagName(SVGNames::imageTag)
        ) {
         Element* element = toElement(m_innerNonSharedNode.get());
@@ -313,7 +316,7 @@ HTMLMediaElement* HitTestResult::mediaElement() const
     if (!(m_innerNonSharedNode->renderer() && m_innerNonSharedNode->renderer()->isMedia()))
         return 0;
 
-    if (m_innerNonSharedNode->hasTagName(HTMLNames::videoTag) || m_innerNonSharedNode->hasTagName(HTMLNames::audioTag))
+    if (isHTMLVideoElement(m_innerNonSharedNode.get()) || m_innerNonSharedNode->hasTagName(HTMLNames::audioTag))
         return static_cast<HTMLMediaElement*>(m_innerNonSharedNode.get());
     return 0;
 }
@@ -324,7 +327,7 @@ KURL HitTestResult::absoluteLinkURL() const
         return KURL();
 
     AtomicString urlString;
-    if (m_innerURLElement->hasTagName(aTag) || m_innerURLElement->hasTagName(areaTag) || m_innerURLElement->hasTagName(linkTag))
+    if (isHTMLAnchorElement(m_innerURLElement.get()) || isHTMLAreaElement(m_innerURLElement.get()) || m_innerURLElement->hasTagName(linkTag))
         urlString = m_innerURLElement->getAttribute(hrefAttr);
     else if (m_innerURLElement->hasTagName(SVGNames::aTag))
         urlString = m_innerURLElement->getAttribute(XLinkNames::hrefAttr);
@@ -339,8 +342,8 @@ bool HitTestResult::isLiveLink() const
     if (!(m_innerURLElement && m_innerURLElement->document()))
         return false;
 
-    if (m_innerURLElement->hasTagName(aTag))
-        return static_cast<HTMLAnchorElement*>(m_innerURLElement.get())->isLiveLink();
+    if (isHTMLAnchorElement(m_innerURLElement.get()))
+        return toHTMLAnchorElement(m_innerURLElement.get())->isLiveLink();
 
     if (m_innerURLElement->hasTagName(SVGNames::aTag))
         return m_innerURLElement->isLink();
@@ -363,7 +366,7 @@ String HitTestResult::titleDisplayString() const
 {
     if (!m_innerURLElement)
         return String();
-    
+
     return displayString(m_innerURLElement->title(), m_innerURLElement.get());
 }
 
@@ -376,14 +379,14 @@ String HitTestResult::textContent() const
 
 // FIXME: This function needs a better name and may belong in a different class. It's not
 // really isContentEditable(); it's more like needsEditingContextMenu(). In many ways, this
-// function would make more sense in the ContextMenu class, except that WebElementDictionary 
-// hooks into it. Anyway, we should architect this better. 
+// function would make more sense in the ContextMenu class, except that WebElementDictionary
+// hooks into it. Anyway, we should architect this better.
 bool HitTestResult::isContentEditable() const
 {
     if (!m_innerNonSharedNode)
         return false;
 
-    if (m_innerNonSharedNode->hasTagName(textareaTag))
+    if (isHTMLTextAreaElement(m_innerNonSharedNode.get()))
         return true;
 
     if (m_innerNonSharedNode->hasTagName(inputTag))
@@ -484,8 +487,7 @@ Node* HitTestResult::targetNode() const
 
 Element* HitTestResult::innerElement() const
 {
-    NodeRenderingTraversal::ParentDetails details;
-    for (Node* node = m_innerNode.get(); node; node = NodeRenderingTraversal::parent(node, &details))
+    for (Node* node = m_innerNode.get(); node; node = NodeRenderingTraversal::parent(node))
         if (node->isElementNode())
             return toElement(node);
 

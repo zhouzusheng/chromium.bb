@@ -27,7 +27,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 {
   'includes': [
-    '../WebKit/chromium/WinPrecompile.gypi',
+    '../build/win/precompile.gypi',
     '../core/features.gypi',
     'wtf.gypi',
   ],
@@ -127,7 +127,7 @@
             ['exclude', 'ThreadingPthreads\\.cpp$'],
           ],
           'include_dirs!': [
-            '<(SHARED_INTERMEDIATE_DIR)/webkit',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
           ],
           'conditions': [
             ['component=="shared_library"', {

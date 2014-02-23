@@ -123,7 +123,7 @@ public:
 
     // Identify key layers to the compositor when using the pinch virtual viewport.
     virtual void registerPinchViewportLayers(
-        const WebLayer* innerViewportClipLayer,
+        const WebLayer* innerViewportContainerLayer,
         const WebLayer* pageScaleLayerLayer,
         const WebLayer* innerViewportScrollLayer,
         const WebLayer* outerViewportScrollLayer,
@@ -144,6 +144,9 @@ public:
 
     // Toggles continuous painting
     virtual void setContinuousPaintingEnabled(bool) { }
+
+    // Toggles scroll bottleneck rects on the HUD layer
+    virtual void setShowScrollBottleneckRects(bool) { }
 };
 
 } // namespace WebKit

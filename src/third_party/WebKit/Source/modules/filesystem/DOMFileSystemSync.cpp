@@ -31,9 +31,10 @@
 #include "config.h"
 #include "modules/filesystem/DOMFileSystemSync.h"
 
+#include "bindings/v8/ExceptionState.h"
+#include "core/dom/ExceptionCode.h"
 #include "core/fileapi/File.h"
 #include "core/fileapi/FileError.h"
-#include "core/fileapi/FileException.h"
 #include "core/platform/AsyncFileSystem.h"
 #include "core/platform/FileMetadata.h"
 #include "modules/filesystem/AsyncFileWriter.h"
@@ -151,18 +152,17 @@ private:
 
 } // namespace
 
-PassRefPtr<File> DOMFileSystemSync::createFile(const FileEntrySync* fileEntry, ExceptionCode& ec)
+PassRefPtr<File> DOMFileSystemSync::createFile(const FileEntrySync* fileEntry, ExceptionState& es)
 {
-    ec = 0;
     KURL fileSystemURL = createFileSystemURL(fileEntry);
     RefPtr<CreateFileHelper::CreateFileResult> result(CreateFileHelper::CreateFileResult::create());
     m_asyncFileSystem->createSnapshotFileAndReadMetadata(fileSystemURL, CreateFileHelper::create(result, fileEntry->name(), fileSystemURL, type()));
     if (!m_asyncFileSystem->waitForOperationToComplete()) {
-        ec = FileException::ABORT_ERR;
+        es.throwDOMException(AbortError, FileError::abortErrorMessage);
         return 0;
     }
     if (result->m_failed) {
-        ec = result->m_code;
+        es.throwDOMException(result->m_code);
         return 0;
     }
     return result->m_file;
@@ -234,25 +234,27 @@ private:
 
 }
 
-PassRefPtr<FileWriterSync> DOMFileSystemSync::createWriter(const FileEntrySync* fileEntry, ExceptionCode& ec)
+PassRefPtr<FileWriterSync> DOMFileSystemSync::createWriter(const FileEntrySync* fileEntry, ExceptionState& es)
 {
     ASSERT(fileEntry);
-    ec = 0;
-
 
     RefPtr<FileWriterSync> fileWriter = FileWriterSync::create();
     RefPtr<ReceiveFileWriterCallback> successCallback = ReceiveFileWriterCallback::create();
     RefPtr<LocalErrorCallback> errorCallback = LocalErrorCallback::create();
 
     OwnPtr<FileWriterBaseCallbacks> callbacks = FileWriterBaseCallbacks::create(fileWriter, successCallback, errorCallback);
+    callbacks->setShouldBlockUntilCompletion(true);
+
     m_asyncFileSystem->createWriter(fileWriter.get(), createFileSystemURL(fileEntry), callbacks.release());
     if (!m_asyncFileSystem->waitForOperationToComplete()) {
-        ec = FileException::ABORT_ERR;
+        es.throwDOMException(AbortError, FileError::abortErrorMessage);
         return 0;
     }
     if (errorCallback->error()) {
         ASSERT(!successCallback->fileWriterBase());
-        ec = FileException::ErrorCodeToExceptionCode(errorCallback->error()->code());
+        FileError::ErrorCode errorCode = errorCallback->error()->code();
+        if (errorCode)
+            FileError::throwDOMException(es, errorCode);
         return 0;
     }
     ASSERT(successCallback->fileWriterBase());

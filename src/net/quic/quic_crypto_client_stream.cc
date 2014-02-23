@@ -4,14 +4,65 @@
 
 #include "net/quic/quic_crypto_client_stream.h"
 
+#include "net/base/completion_callback.h"
+#include "net/base/net_errors.h"
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/crypto/crypto_utils.h"
 #include "net/quic/crypto/null_encrypter.h"
 #include "net/quic/crypto/proof_verifier.h"
+#include "net/quic/crypto/proof_verifier_chromium.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_session.h"
+#include "net/ssl/ssl_connection_status_flags.h"
+#include "net/ssl/ssl_info.h"
 
 namespace net {
+
+namespace {
+
+// Copies CertVerifyResult from |verify_details| to |cert_verify_result|.
+void CopyCertVerifyResult(
+    const ProofVerifyDetails* verify_details,
+    scoped_ptr<CertVerifyResult>* cert_verify_result) {
+  const CertVerifyResult* cert_verify_result_other =
+      &(reinterpret_cast<const ProofVerifyDetailsChromium*>(
+          verify_details))->cert_verify_result;
+  CertVerifyResult* result_copy = new CertVerifyResult;
+  result_copy->CopyFrom(*cert_verify_result_other);
+  cert_verify_result->reset(result_copy);
+}
+
+}  // namespace
+
+QuicCryptoClientStream::ProofVerifierCallbackImpl::ProofVerifierCallbackImpl(
+    QuicCryptoClientStream* stream)
+    : stream_(stream) {}
+
+QuicCryptoClientStream::ProofVerifierCallbackImpl::
+    ~ProofVerifierCallbackImpl() {}
+
+void QuicCryptoClientStream::ProofVerifierCallbackImpl::Run(
+    bool ok,
+    const string& error_details,
+    scoped_ptr<ProofVerifyDetails>* details) {
+  if (stream_ == NULL) {
+    return;
+  }
+
+  stream_->verify_ok_ = ok;
+  stream_->verify_error_details_ = error_details;
+  stream_->verify_details_.reset(details->release());
+  stream_->proof_verify_callback_ = NULL;
+  stream_->DoHandshakeLoop(NULL);
+
+  // The ProofVerifier owns this object and will delete it when this method
+  // returns.
+}
+
+void QuicCryptoClientStream::ProofVerifierCallbackImpl::Cancel() {
+  stream_ = NULL;
+}
+
 
 QuicCryptoClientStream::QuicCryptoClientStream(
     const string& server_hostname,
@@ -21,10 +72,15 @@ QuicCryptoClientStream::QuicCryptoClientStream(
       next_state_(STATE_IDLE),
       num_client_hellos_(0),
       crypto_config_(crypto_config),
-      server_hostname_(server_hostname) {
+      server_hostname_(server_hostname),
+      generation_counter_(0),
+      proof_verify_callback_(NULL) {
 }
 
 QuicCryptoClientStream::~QuicCryptoClientStream() {
+  if (proof_verify_callback_) {
+    proof_verify_callback_->Cancel();
+  }
 }
 
 void QuicCryptoClientStream::OnHandshakeMessage(
@@ -40,6 +96,42 @@ bool QuicCryptoClientStream::CryptoConnect() {
 
 int QuicCryptoClientStream::num_sent_client_hellos() const {
   return num_client_hellos_;
+}
+
+// TODO(rtenneti): Add unittests for GetSSLInfo which exercise the various ways
+// we learn about SSL info (sync vs async vs cached).
+bool QuicCryptoClientStream::GetSSLInfo(SSLInfo* ssl_info) {
+  ssl_info->Reset();
+  if (!cert_verify_result_) {
+    return false;
+  }
+
+  ssl_info->cert_status = cert_verify_result_->cert_status;
+  ssl_info->cert = cert_verify_result_->verified_cert;
+
+  // TODO(rtenneti): Figure out what to set for the following.
+  // Temporarily hard coded cipher_suite as 0xc031 to represent
+  // TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 (from
+  // net/ssl/ssl_cipher_suite_names.cc) and encryption as 256.
+  int cipher_suite = 0xc02f;
+  int ssl_connection_status = 0;
+  ssl_connection_status |=
+      (cipher_suite & SSL_CONNECTION_CIPHERSUITE_MASK) <<
+       SSL_CONNECTION_CIPHERSUITE_SHIFT;
+  ssl_connection_status |=
+      (SSL_CONNECTION_VERSION_TLS1_2 & SSL_CONNECTION_VERSION_MASK) <<
+       SSL_CONNECTION_VERSION_SHIFT;
+
+  ssl_info->public_key_hashes = cert_verify_result_->public_key_hashes;
+  ssl_info->is_issued_by_known_root =
+      cert_verify_result_->is_issued_by_known_root;
+
+  ssl_info->connection_status = ssl_connection_status;
+  ssl_info->client_cert_sent = false;
+  ssl_info->channel_id_sent = false;
+  ssl_info->security_bits = 256;
+  ssl_info->handshake_type = SSLInfo::HANDSHAKE_FULL;
+  return true;
 }
 
 // kMaxClientHellos is the maximum number of times that we'll send a client
@@ -66,6 +158,8 @@ void QuicCryptoClientStream::DoHandshakeLoop(
     next_state_ = STATE_IDLE;
     switch (state) {
       case STATE_SEND_CHLO: {
+        // Send the client hello in plaintext.
+        session()->connection()->SetDefaultEncryptionLevel(ENCRYPTION_NONE);
         if (num_client_hellos_ > kMaxClientHellos) {
           CloseConnection(QUIC_CRYPTO_TOO_MANY_REJECTS);
           return;
@@ -96,6 +190,12 @@ void QuicCryptoClientStream::DoHandshakeLoop(
           cached->InvalidateServerConfig();
           CloseConnectionWithDetails(error, error_details);
           return;
+        }
+        if (cached->proof_verify_details()) {
+          CopyCertVerifyResult(cached->proof_verify_details(),
+                               &cert_verify_result_);
+        } else {
+          cert_verify_result_.reset();
         }
         next_state_ = STATE_RECV_SHLO;
         DVLOG(1) << "Client Sending: " << out.DebugString();
@@ -139,29 +239,67 @@ void QuicCryptoClientStream::DoHandshakeLoop(
           return;
         }
         if (!cached->proof_valid()) {
-          const ProofVerifier* verifier = crypto_config_->proof_verifier();
+          ProofVerifier* verifier = crypto_config_->proof_verifier();
           if (!verifier) {
             // If no verifier is set then we don't check the certificates.
             cached->SetProofValid();
           } else if (!cached->signature().empty()) {
-            // TODO(rtenneti): In Chromium, we will need to make VerifyProof()
-            // asynchronous.
-            if (!verifier->VerifyProof(server_hostname_,
-                                       cached->server_config(),
-                                       cached->certs(),
-                                       cached->signature(),
-                                       &error_details)) {
-              CloseConnectionWithDetails(QUIC_PROOF_INVALID,
-                                         "Proof invalid: " + error_details);
-              return;
-            }
-            cached->SetProofValid();
+            next_state_ = STATE_VERIFY_PROOF;
+            break;
           }
         }
-        // Send the subsequent client hello in plaintext.
-        session()->connection()->SetDefaultEncryptionLevel(
-            ENCRYPTION_NONE);
         next_state_ = STATE_SEND_CHLO;
+        break;
+      case STATE_VERIFY_PROOF: {
+        ProofVerifier* verifier = crypto_config_->proof_verifier();
+        DCHECK(verifier);
+        next_state_ = STATE_VERIFY_PROOF_COMPLETE;
+        generation_counter_ = cached->generation_counter();
+
+        ProofVerifierCallbackImpl* proof_verify_callback =
+            new ProofVerifierCallbackImpl(this);
+
+        verify_ok_ = false;
+
+        ProofVerifier::Status status = verifier->VerifyProof(
+            session()->connection()->version(),
+            server_hostname_,
+            cached->server_config(),
+            cached->certs(),
+            cached->signature(),
+            &verify_error_details_,
+            &verify_details_,
+            proof_verify_callback);
+
+        switch (status) {
+          case ProofVerifier::PENDING:
+            proof_verify_callback_ = proof_verify_callback;
+            DVLOG(1) << "Doing VerifyProof";
+            return;
+          case ProofVerifier::FAILURE:
+            break;
+          case ProofVerifier::SUCCESS:
+            verify_ok_ = true;
+            break;
+        }
+        break;
+      }
+      case STATE_VERIFY_PROOF_COMPLETE:
+        if (!verify_ok_) {
+          CopyCertVerifyResult(verify_details_.get(), &cert_verify_result_);
+          CloseConnectionWithDetails(
+              QUIC_PROOF_INVALID, "Proof invalid: " + verify_error_details_);
+          return;
+        }
+        // Check if generation_counter has changed between STATE_VERIFY_PROOF
+        // and STATE_VERIFY_PROOF_COMPLETE state changes.
+        if (generation_counter_ != cached->generation_counter()) {
+          next_state_ = STATE_VERIFY_PROOF;
+        } else {
+          cached->SetProofValid();
+          cached->SetProofVerifyDetails(verify_details_.release());
+          next_state_ = STATE_SEND_CHLO;
+        }
         break;
       case STATE_RECV_SHLO: {
         // We sent a CHLO that we expected to be accepted and now we're hoping

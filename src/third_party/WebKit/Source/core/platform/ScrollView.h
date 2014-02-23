@@ -21,7 +21,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef ScrollView_h
@@ -33,7 +33,7 @@
 #include "core/platform/Widget.h"
 #include "core/platform/graphics/IntRect.h"
 
-#include <wtf/HashSet.h>
+#include "wtf/HashSet.h"
 
 namespace WebCore {
 
@@ -46,10 +46,10 @@ public:
 
     // ScrollableArea functions.
     virtual int scrollSize(ScrollbarOrientation) const OVERRIDE;
-    virtual int scrollPosition(Scrollbar*) const OVERRIDE;
     virtual void setScrollOffset(const IntPoint&) OVERRIDE;
     virtual bool isScrollCornerVisible() const OVERRIDE;
     virtual void scrollbarStyleChanged(int newStyle, bool forceUpdate) OVERRIDE;
+    virtual bool userInputScrollable(ScrollbarOrientation) const OVERRIDE;
 
     virtual void notifyPageThatContentAreaWillPaint() const;
 
@@ -98,8 +98,6 @@ public:
     virtual void setCanHaveScrollbars(bool);
     bool canHaveScrollbars() const { return horizontalScrollbarMode() != ScrollbarAlwaysOff || verticalScrollbarMode() != ScrollbarAlwaysOff; }
 
-    virtual void setScrollbarOverlayStyle(ScrollbarOverlayStyle) OVERRIDE;
-
     // By default you only receive paint events for the area that is visible. In the case of using a
     // tiled backing store, this function can be set, so that the view paints the entire contents.
     bool paintsEntireContents() const { return m_paintsEntireContents; }
@@ -112,10 +110,6 @@ public:
 
     // Overridden by FrameView to create custom CSS scrollbars if applicable.
     virtual PassRefPtr<Scrollbar> createScrollbar(ScrollbarOrientation);
-
-    // If the prohibits scrolling flag is set, then all scrolling in the view (even programmatic scrolling) is turned off.
-    void setProhibitsScrolling(bool b) { m_prohibitsScrolling = b; }
-    bool prohibitsScrolling() const { return m_prohibitsScrolling; }
 
     // Whether or not a scroll view will blit visible contents when it is scrolled. Blitting is disabled in situations
     // where it would cause rendering glitches (such as with fixed backgrounds or when the view is partially transparent).
@@ -158,7 +152,7 @@ public:
     virtual IntPoint maximumScrollPosition() const OVERRIDE; // The maximum position we can be scrolled to.
     virtual IntPoint minimumScrollPosition() const OVERRIDE; // The minimum position we can be scrolled to.
     // Adjust the passed in scroll position to keep it between the minimum and maximum positions.
-    IntPoint adjustScrollPositionWithinRange(const IntPoint&) const; 
+    IntPoint adjustScrollPositionWithinRange(const IntPoint&) const;
     int scrollX() const { return scrollPosition().x(); }
     int scrollY() const { return scrollPosition().y(); }
 
@@ -201,7 +195,7 @@ public:
     // The purpose of this function is to answer whether or not the scroll view is currently visible. Animations and painting updates can be suspended if
     // we know that we are either not in a window right now or if that window is not visible.
     bool isOffscreen() const;
-    
+
     // These functions are used to enable scrollbars to avoid window resizer controls that overlap the scroll view. This happens on Mac
     // for example.
     virtual IntRect windowResizerRect() const { return IntRect(); }
@@ -213,7 +207,7 @@ public:
 
     // Called when our frame rect changes (or the rect/scroll position of an ancestor changes).
     virtual void frameRectsChanged();
-    
+
     // Widget override to update our scrollbars and notify our contents of the resize.
     virtual void setFrameRect(const IntRect&);
 
@@ -249,7 +243,7 @@ public:
     virtual void show();
     virtual void hide();
     virtual void setParentVisible(bool);
-    
+
     // Pan scrolling.
     static const int noPanScrollRadius = 15;
     void addPanScrollIcon(const IntPoint&);
@@ -310,8 +304,6 @@ private:
     bool m_horizontalScrollbarLock;
     bool m_verticalScrollbarLock;
 
-    bool m_prohibitsScrolling;
-
     HashSet<RefPtr<Widget> > m_children;
 
     // This bool is unused on Mac OS because we directly ask the platform widget
@@ -345,29 +337,10 @@ private:
     virtual void repaintFixedElementsAfterScrolling() { }
     virtual void updateFixedElementsAfterScrolling() { }
 
-    void platformInit();
-    void platformDestroy();
-    void platformAddChild(Widget*);
-    void platformRemoveChild(Widget*);
-    void platformSetScrollbarModes();
-    void platformScrollbarModes(ScrollbarMode& horizontal, ScrollbarMode& vertical) const;
-    void platformSetCanBlitOnScroll(bool);
-    bool platformCanBlitOnScroll() const;
-    IntRect platformVisibleContentRect(bool includeScrollbars) const;
-    void platformSetContentsSize();
-    IntRect platformContentsToScreen(const IntRect&) const;
-    IntPoint platformScreenToContents(const IntPoint&) const;
-    void platformSetScrollPosition(const IntPoint&);
-    bool platformScroll(ScrollDirection, ScrollGranularity);
-    void platformSetScrollbarsSuppressed(bool repaintOnUnsuppress);
-    void platformRepaintContentRectangle(const IntRect&);
-    bool platformIsOffscreen() const;
-    void platformSetScrollbarOverlayStyle(ScrollbarOverlayStyle);
-   
-    void platformSetScrollOrigin(const IntPoint&, bool updatePositionAtAll, bool updatePositionSynchronously);
-
     void calculateOverhangAreasForPainting(IntRect& horizontalOverhangRect, IntRect& verticalOverhangRect);
     void updateOverhangAreas();
+
+    int pageStep(ScrollbarOrientation) const;
 }; // class ScrollView
 
 inline ScrollView* toScrollView(Widget* widget)

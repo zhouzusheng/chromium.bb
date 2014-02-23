@@ -20,14 +20,14 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef SQLiteTransaction_h
 #define SQLiteTransaction_h
 
-#include <wtf/FastAllocBase.h>
-#include <wtf/Noncopyable.h>
+#include "wtf/FastAllocBase.h"
+#include "wtf/Noncopyable.h"
 
 namespace WebCore {
 
@@ -38,12 +38,12 @@ class SQLiteTransaction {
 public:
     SQLiteTransaction(SQLiteDatabase& db, bool readOnly = false);
     ~SQLiteTransaction();
-    
+
     void begin();
     void commit();
     void rollback();
     void stop();
-    
+
     bool inProgress() const { return m_inProgress; }
     bool wasRolledBackBySqlite() const;
 private:

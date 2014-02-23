@@ -35,9 +35,8 @@ class CC_EXPORT ScrollbarLayer : public ContentsScalingLayer {
   // Layer interface
   virtual void SetTexturePriorities(const PriorityCalculator& priority_calc)
       OVERRIDE;
-  virtual void Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker* occlusion,
-                      RenderingStats* stats) OVERRIDE;
+  virtual bool Update(ResourceUpdateQueue* queue,
+                      const OcclusionTracker* occlusion) OVERRIDE;
   virtual void SetLayerTreeHost(LayerTreeHost* host) OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
   virtual void CalculateContentsScale(float ideal_contents_scale,
@@ -56,11 +55,10 @@ class CC_EXPORT ScrollbarLayer : public ContentsScalingLayer {
   virtual ~ScrollbarLayer();
 
  private:
-  void UpdatePart(CachingBitmapContentLayerUpdater* painter,
+  bool UpdatePart(CachingBitmapContentLayerUpdater* painter,
                   LayerUpdater::Resource* resource,
                   gfx::Rect rect,
-                  ResourceUpdateQueue* queue,
-                  RenderingStats* stats);
+                  ResourceUpdateQueue* queue);
   void CreateUpdaterIfNeeded();
   gfx::Rect ScrollbarLayerRectToContentRect(gfx::Rect layer_rect) const;
   gfx::Rect OriginThumbRect() const;
@@ -75,6 +73,7 @@ class CC_EXPORT ScrollbarLayer : public ContentsScalingLayer {
   int thumb_thickness_;
   int thumb_length_;
   gfx::Rect track_rect_;
+  gfx::Point location_;
   int scroll_layer_id_;
 
   unsigned texture_format_;

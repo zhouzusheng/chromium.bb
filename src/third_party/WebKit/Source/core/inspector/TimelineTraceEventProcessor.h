@@ -35,8 +35,6 @@
 #include "core/inspector/InspectorTimelineAgent.h"
 #include "core/platform/JSONValues.h"
 #include "wtf/HashMap.h"
-#include "wtf/HashSet.h"
-#include "wtf/Noncopyable.h"
 #include "wtf/Threading.h"
 #include "wtf/Vector.h"
 #include "wtf/WeakPtr.h"
@@ -230,23 +228,26 @@ private:
     void registerHandler(const char* name, TraceEventPhase, TraceEventHandler);
 
     void onBeginFrame(const TraceEvent&);
-    void onPaintSetupBegin(const TraceEvent&);
-    void onPaintSetupEnd(const TraceEvent&);
+    void onUpdateLayerBegin(const TraceEvent&);
+    void onUpdateLayerEnd(const TraceEvent&);
     void onPaintLayerBegin(const TraceEvent&);
     void onPaintLayerEnd(const TraceEvent&);
+    void onPaintSetupBegin(const TraceEvent&);
+    void onPaintSetupEnd(const TraceEvent&);
     void onRasterTaskBegin(const TraceEvent&);
     void onRasterTaskEnd(const TraceEvent&);
+    void onPaint(const TraceEvent&);
     void onImageDecodeTaskBegin(const TraceEvent&);
     void onImageDecodeTaskEnd(const TraceEvent&);
     void onImageDecodeBegin(const TraceEvent&);
     void onImageDecodeEnd(const TraceEvent&);
     void onLayerDeleted(const TraceEvent&);
-    void onPaint(const TraceEvent&);
 
     WeakPtr<InspectorTimelineAgent> m_timelineAgent;
     TimelineTimeConverter m_timeConverter;
     InspectorClient* m_inspectorClient;
     unsigned long long m_pageId;
+    int m_layerTreeId;
 
     typedef HashMap<std::pair<String, int>, TraceEventHandler> HandlersMap;
     HandlersMap m_handlersByType;

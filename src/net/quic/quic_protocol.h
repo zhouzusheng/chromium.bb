@@ -63,9 +63,6 @@ const size_t kPublicResetNonceSize = 8;
 // Signifies that the QuicPacket will contain version of the protocol.
 const bool kIncludeVersion = true;
 
-// Returns true if |version| is a supported protocol version.
-NET_EXPORT_PRIVATE bool IsSupportedVersion(QuicTag version);
-
 // Index of the first byte in a QUIC packet which is used in hash calculation.
 const size_t kStartOfHashData = 0;
 
@@ -92,6 +89,11 @@ enum Retransmission {
 enum HasRetransmittableData {
   NO_RETRANSMITTABLE_DATA,
   HAS_RETRANSMITTABLE_DATA,
+};
+
+enum IsHandshake {
+  NOT_HANDSHAKE,
+  IS_HANDSHAKE
 };
 
 enum QuicFrameType {
@@ -124,30 +126,115 @@ enum QuicSequenceNumberLength {
   PACKET_6BYTE_SEQUENCE_NUMBER = 6
 };
 
+// The public flags are specified in one byte.
 enum QuicPacketPublicFlags {
   PACKET_PUBLIC_FLAGS_NONE = 0,
-  PACKET_PUBLIC_FLAGS_VERSION = 1 << 0,  // Packet header contains version info.
-  PACKET_PUBLIC_FLAGS_RST = 1 << 1,  // Packet is a public reset packet.
-  // Packet header guid length in bytes.
+
+  // Bit 0: Does the packet header contains version info?
+  PACKET_PUBLIC_FLAGS_VERSION = 1 << 0,
+
+  // Bit 1: Is this packet a public reset packet?
+  PACKET_PUBLIC_FLAGS_RST = 1 << 1,
+
+  // Bits 2 and 3 specify the length of the GUID as follows:
+  // ----00--: 0 bytes
+  // ----01--: 1 byte
+  // ----10--: 4 bytes
+  // ----11--: 8 bytes
   PACKET_PUBLIC_FLAGS_0BYTE_GUID = 0,
   PACKET_PUBLIC_FLAGS_1BYTE_GUID = 1 << 2,
   PACKET_PUBLIC_FLAGS_4BYTE_GUID = 1 << 3,
   PACKET_PUBLIC_FLAGS_8BYTE_GUID = 1 << 3 | 1 << 2,
-  // Packet sequence number length in bytes.
+
+  // Bits 4 and 5 describe the packet sequence number length as follows:
+  // --00----: 1 byte
+  // --01----: 2 bytes
+  // --10----: 4 bytes
+  // --11----: 6 bytes
   PACKET_PUBLIC_FLAGS_1BYTE_SEQUENCE = 0,
   PACKET_PUBLIC_FLAGS_2BYTE_SEQUENCE = 1 << 4,
   PACKET_PUBLIC_FLAGS_4BYTE_SEQUENCE = 1 << 5,
   PACKET_PUBLIC_FLAGS_6BYTE_SEQUENCE = 1 << 5 | 1 << 4,
-  PACKET_PUBLIC_FLAGS_MAX = (1 << 6) - 1  // All bits set.
+
+  // All bits set (bits 6 and 7 are not currently used): 00111111
+  PACKET_PUBLIC_FLAGS_MAX = (1 << 6) - 1
 };
 
+// The private flags are specified in one byte.
 enum QuicPacketPrivateFlags {
   PACKET_PRIVATE_FLAGS_NONE = 0,
+
+  // Bit 0: Does this packet contain an entropy bit?
   PACKET_PRIVATE_FLAGS_ENTROPY = 1 << 0,
-  PACKET_PRIVATE_FLAGS_FEC_GROUP = 1 << 1,  // Payload is part of an FEC group.
-  PACKET_PRIVATE_FLAGS_FEC = 1 << 2,  // Payload is FEC as opposed to frames.
-  PACKET_PRIVATE_FLAGS_MAX = (1 << 3) - 1  // All bits set.
+
+  // Bit 1: Payload is part of an FEC group?
+  PACKET_PRIVATE_FLAGS_FEC_GROUP = 1 << 1,
+
+  // Bit 2: Payload is FEC as opposed to frames?
+  PACKET_PRIVATE_FLAGS_FEC = 1 << 2,
+
+  // All bits set (bits 3-7 are not currently used): 00000111
+  PACKET_PRIVATE_FLAGS_MAX = (1 << 3) - 1
 };
+
+// The available versions of QUIC. Guaranteed that the integer value of the enum
+// will match the version number.
+// When adding a new version to this enum you should add it to
+// kSupportedQuicVersions (if appropriate), and also add a new case to the
+// helper methods QuicVersionToQuicTag, QuicTagToQuicVersion, and
+// QuicVersionToString.
+enum QuicVersion {
+  // Special case to indicate unknown/unsupported QUIC version.
+  QUIC_VERSION_UNSUPPORTED = 0,
+
+  QUIC_VERSION_7 = 7,
+  QUIC_VERSION_8 = 8,  // Current version.
+};
+
+// This vector contains QUIC versions which we currently support.
+// This should be ordered such that the highest supported version is the first
+// element, with subsequent elements in descending order (versions can be
+// skipped as necessary).
+static const QuicVersion kSupportedQuicVersions[] =
+    {QUIC_VERSION_8, QUIC_VERSION_7};
+
+typedef std::vector<QuicVersion> QuicVersionVector;
+
+// Upper limit on versions we support.
+NET_EXPORT_PRIVATE QuicVersion QuicVersionMax();
+
+// Lower limit on versions we support.
+NET_EXPORT_PRIVATE QuicVersion QuicVersionMin();
+
+// QuicTag is written to and read from the wire, but we prefer to use
+// the more readable QuicVersion at other levels.
+// Helper function which translates from a QuicVersion to a QuicTag. Returns 0
+// if QuicVersion is unsupported.
+NET_EXPORT_PRIVATE QuicTag QuicVersionToQuicTag(const QuicVersion version);
+
+// Returns appropriate QuicVersion from a QuicTag.
+// Returns QUIC_VERSION_UNSUPPORTED if version_tag cannot be understood.
+NET_EXPORT_PRIVATE QuicVersion QuicTagToQuicVersion(const QuicTag version_tag);
+
+// Helper function which translates from a QuicVersion to a string.
+// Returns strings corresponding to enum names (e.g. QUIC_VERSION_6).
+NET_EXPORT_PRIVATE std::string QuicVersionToString(const QuicVersion version);
+
+// Returns comma separated list of string representations of QuicVersion enum
+// values in the supplied QuicVersionArray.
+NET_EXPORT_PRIVATE std::string QuicVersionArrayToString(
+    const QuicVersion versions[], int num_versions);
+
+// Version and Crypto tags are written to the wire with a big-endian
+// representation of the name of the tag.  For example
+// the client hello tag (CHLO) will be written as the
+// following 4 bytes: 'C' 'H' 'L' 'O'.  Since it is
+// stored in memory as a little endian uint32, we need
+// to reverse the order of the bytes.
+
+// MakeQuicTag returns a value given the four bytes. For example:
+//   MakeQuicTag('C', 'H', 'L', 'O');
+NET_EXPORT_PRIVATE QuicTag MakeQuicTag(char a, char b, char c, char d);
 
 // Size in bytes of the data or fec packet header.
 NET_EXPORT_PRIVATE size_t GetPacketHeaderSize(QuicPacketHeader header);
@@ -297,27 +384,6 @@ enum QuicErrorCode {
   QUIC_LAST_ERROR,
 };
 
-// Version and Crypto tags are written to the wire with a big-endian
-// representation of the name of the tag.  For example
-// the client hello tag (CHLO) will be written as the
-// following 4 bytes: 'C' 'H' 'L' 'O'.  Since it is
-// stored in memory as a little endian uint32, we need
-// to reverse the order of the bytes.
-//
-// The TAG macro is used in header files to ensure that we don't create static
-// initialisers. In normal code, the MakeQuicTag function should be used.
-#define TAG(a, b, c, d) ((d << 24) + (c << 16) + (b << 8) + a)
-const QuicTag kUnsupportedVersion = -1;
-// Each time the wire format changes, this need needs to be incremented.
-// At some point, we will actually freeze the wire format and make an official
-// version number, but this works for now.
-const QuicTag kQuicVersion1 = TAG('Q', '0', '0', '6');
-#undef TAG
-
-// MakeQuicTag returns a value given the four bytes. For example:
-//   MakeQuicTag('C', 'H', 'L', 'O');
-uint32 NET_EXPORT_PRIVATE MakeQuicTag(char a, char b, char c, char d);
-
 struct NET_EXPORT_PRIVATE QuicPacketPublicHeader {
   QuicPacketPublicHeader();
   explicit QuicPacketPublicHeader(const QuicPacketPublicHeader& other);
@@ -331,7 +397,7 @@ struct NET_EXPORT_PRIVATE QuicPacketPublicHeader {
   bool reset_flag;
   bool version_flag;
   QuicSequenceNumberLength sequence_number_length;
-  QuicTagVector versions;
+  QuicVersionVector versions;
 };
 
 // Header for Data or FEC packets.
@@ -362,7 +428,15 @@ struct NET_EXPORT_PRIVATE QuicPublicResetPacket {
 
 enum QuicVersionNegotiationState {
   START_NEGOTIATION = 0,
-  SENT_NEGOTIATION_PACKET,
+  // Server-side this implies we've sent a version negotiation packet and are
+  // waiting on the client to select a compatible version.  Client-side this
+  // implies we've gotten a version negotiation packet, are retransmitting the
+  // initial packets with a supported version and are waiting for our first
+  // packet from the server.
+  NEGOTIATION_IN_PROGRESS,
+  // This indicates this endpoint has received a packet from the peer with a
+  // version this endpoint supports.  Version negotiation is complete, and the
+  // version number will no longer be sent with future packets.
   NEGOTIATED_VERSION
 };
 
@@ -463,7 +537,7 @@ struct NET_EXPORT_PRIVATE QuicAckFrame {
 };
 
 // Defines for all types of congestion feedback that will be negotiated in QUIC,
-// kTCP MUST be supported by all QUIC implementations to guarentee 100%
+// kTCP MUST be supported by all QUIC implementations to guarantee 100%
 // compatibility.
 enum CongestionFeedbackType {
   kTCP,  // Used to mimic TCP.

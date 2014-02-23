@@ -25,19 +25,42 @@
 
 #include "config.h"
 #include "core/dom/UserGestureIndicator.h"
+#include "wtf/CurrentTime.h"
 
 namespace WebCore {
 
 namespace {
+
+// User gestures timeout in 1 second.
+const double userGestureTimeout = 1.0;
+
+// For out of process tokens we allow a 10 second delay.
+const double userGestureOutOfProcessTimeout = 10.0;
 
 class GestureToken : public UserGestureToken {
 public:
     static PassRefPtr<UserGestureToken> create() { return adoptRef(new GestureToken); }
 
     virtual ~GestureToken() { }
-    virtual bool hasGestures() const OVERRIDE { return m_consumableGestures > 0; }
+    virtual bool hasGestures() const OVERRIDE
+    {
+        // Do not enforce timeouts for gestures which spawned javascript prompts.
+        if (m_consumableGestures < 1 || (WTF::currentTime() - m_timestamp > (m_outOfProcess ? userGestureOutOfProcessTimeout : userGestureTimeout) && !m_javascriptPrompt))
+            return false;
+        return true;
+    }
 
-    void addGesture() { m_consumableGestures++; }
+    void addGesture()
+    {
+        m_consumableGestures++;
+        m_timestamp = WTF::currentTime();
+    }
+
+    void resetTimestamp()
+    {
+        m_timestamp = WTF::currentTime();
+    }
+
     bool consumeGesture()
     {
         if (!m_consumableGestures)
@@ -46,13 +69,35 @@ public:
         return true;
     }
 
+    virtual void setOutOfProcess() OVERRIDE
+    {
+        if (WTF::currentTime() - m_timestamp > userGestureTimeout)
+            return;
+        if (hasGestures())
+            m_outOfProcess = true;
+    }
+
+    virtual void setJavascriptPrompt() OVERRIDE
+    {
+        if (WTF::currentTime() - m_timestamp > userGestureTimeout)
+            return;
+        if (hasGestures())
+            m_javascriptPrompt = true;
+    }
+
 private:
     GestureToken()
-        : m_consumableGestures(0)
+        : m_consumableGestures(0),
+        m_timestamp(0),
+        m_outOfProcess(false),
+        m_javascriptPrompt(false)
     {
     }
 
     size_t m_consumableGestures;
+    double m_timestamp;
+    bool m_outOfProcess;
+    bool m_javascriptPrompt;
 };
 
 }
@@ -88,14 +133,17 @@ UserGestureIndicator::UserGestureIndicator(ProcessingUserGestureState state)
 UserGestureIndicator::UserGestureIndicator(PassRefPtr<UserGestureToken> token)
     : m_previousState(s_state)
 {
-    if (token && static_cast<GestureToken*>(token.get())->hasGestures()) {
+    if (token) {
+        static_cast<GestureToken*>(token.get())->resetTimestamp();
         if (!s_topmostIndicator) {
             s_topmostIndicator = this;
             m_token = token;
         } else {
             m_token = s_topmostIndicator->currentToken();
-            static_cast<GestureToken*>(m_token.get())->addGesture();
-            static_cast<GestureToken*>(token.get())->consumeGesture();
+            if (static_cast<GestureToken*>(token.get())->hasGestures()) {
+                static_cast<GestureToken*>(m_token.get())->addGesture();
+                static_cast<GestureToken*>(token.get())->consumeGesture();
+            }
         }
         s_state = DefinitelyProcessingUserGesture;
     }

@@ -22,9 +22,9 @@
 #define Pair_h
 
 #include "core/css/CSSPrimitiveValue.h"
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/StringBuilder.h>
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -52,7 +52,7 @@ public:
 
     String cssText() const
     {
-    
+
         return generateCSSString(first()->cssText(), second()->cssText());
     }
 
@@ -63,7 +63,7 @@ public:
         return generateCSSString(first()->customSerializeResolvingVariables(variables),
                                  second()->customSerializeResolvingVariables(variables));
     }
-    
+
     bool hasVariableReference() const { return first()->hasVariableReference() || second()->hasVariableReference(); }
 
 private:

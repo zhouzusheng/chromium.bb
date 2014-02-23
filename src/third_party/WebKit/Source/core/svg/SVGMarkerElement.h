@@ -21,16 +21,16 @@
 #ifndef SVGMarkerElement_h
 #define SVGMarkerElement_h
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/svg/SVGAnimatedAngle.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGAnimatedPreserveAspectRatio.h"
 #include "core/svg/SVGAnimatedRect.h"
+#include "core/svg/SVGElement.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGFitToViewBox.h"
-#include "core/svg/SVGLangSpace.h"
-#include "core/svg/SVGStyledElement.h"
 
 namespace WebCore {
 
@@ -86,16 +86,15 @@ struct SVGPropertyTraits<SVGMarkerOrientType> {
         if (value == "auto")
             return SVGMarkerOrientAuto;
 
-        ExceptionCode ec = 0;
-        angle.setValueAsString(value, ec);
-        if (!ec)
+        TrackExceptionState es;
+        angle.setValueAsString(value, es);
+        if (!es.hadException())
             return SVGMarkerOrientAngle;
         return SVGMarkerOrientUnknown;
     }
 };
 
-class SVGMarkerElement FINAL : public SVGStyledElement,
-                               public SVGLangSpace,
+class SVGMarkerElement FINAL : public SVGElement,
                                public SVGExternalResourcesRequired,
                                public SVGFitToViewBox {
 public:
@@ -140,7 +139,7 @@ private:
 
     static const AtomicString& orientTypeIdentifier();
     static const AtomicString& orientAngleIdentifier();
- 
+
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGMarkerElement)
         DECLARE_ANIMATED_LENGTH(RefX, refX)
         DECLARE_ANIMATED_LENGTH(RefY, refY)
@@ -152,24 +151,24 @@ private:
         DECLARE_ANIMATED_RECT(ViewBox, viewBox)
         DECLARE_ANIMATED_PRESERVEASPECTRATIO(PreserveAspectRatio, preserveAspectRatio)
     END_DECLARE_ANIMATED_PROPERTIES
-  
+
 public:
     // Custom 'orientType' property.
     static void synchronizeOrientType(SVGElement* contextElement);
     static PassRefPtr<SVGAnimatedProperty> lookupOrCreateOrientTypeWrapper(SVGElement* contextElement);
-    SVGMarkerOrientType& orientType() const { return m_orientType.value; }
+    SVGMarkerOrientType& orientTypeCurrentValue() const { return m_orientType.value; }
     SVGMarkerOrientType& orientTypeBaseValue() const { return m_orientType.value; }
     void setOrientTypeBaseValue(const SVGMarkerOrientType& type) { m_orientType.value = type; }
-    PassRefPtr<SVGAnimatedEnumerationPropertyTearOff<SVGMarkerOrientType> > orientTypeAnimated();
+    PassRefPtr<SVGAnimatedEnumerationPropertyTearOff<SVGMarkerOrientType> > orientType();
 
 private:
     mutable SVGSynchronizableAnimatedProperty<SVGMarkerOrientType> m_orientType;
 };
 
-inline SVGMarkerElement* toSVGMarkerElement(SVGElement* element)
+inline SVGMarkerElement* toSVGMarkerElement(Node* node)
 {
-    ASSERT_WITH_SECURITY_IMPLICATION(!element || element->hasTagName(SVGNames::markerTag));
-    return static_cast<SVGMarkerElement*>(element);
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::markerTag));
+    return static_cast<SVGMarkerElement*>(node);
 }
 
 }

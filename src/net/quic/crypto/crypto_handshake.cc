@@ -28,6 +28,10 @@
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_utils.h"
 
+#if defined(OS_WIN)
+#include "base/win/windows_version.h"
+#endif
+
 using base::StringPiece;
 using base::StringPrintf;
 using std::map;
@@ -357,7 +361,8 @@ QuicCryptoClientConfig::~QuicCryptoClientConfig() {
 }
 
 QuicCryptoClientConfig::CachedState::CachedState()
-    : server_config_valid_(false) {}
+    : server_config_valid_(false),
+      generation_counter_(0) {}
 
 QuicCryptoClientConfig::CachedState::~CachedState() {}
 
@@ -429,7 +434,7 @@ QuicErrorCode QuicCryptoClientConfig::CachedState::SetServerConfig(
 
   if (!matches_existing) {
     server_config_ = server_config.as_string();
-    server_config_valid_ = false;
+    SetProofInvalid();
     scfg_.reset(new_scfg_storage.release());
   }
   return QUIC_NO_ERROR;
@@ -438,7 +443,7 @@ QuicErrorCode QuicCryptoClientConfig::CachedState::SetServerConfig(
 void QuicCryptoClientConfig::CachedState::InvalidateServerConfig() {
   server_config_.clear();
   scfg_.reset();
-  server_config_valid_ = false;
+  SetProofInvalid();
 }
 
 void QuicCryptoClientConfig::CachedState::SetProof(const vector<string>& certs,
@@ -460,13 +465,18 @@ void QuicCryptoClientConfig::CachedState::SetProof(const vector<string>& certs,
   }
 
   // If the proof has changed then it needs to be revalidated.
-  server_config_valid_ = false;
+  SetProofInvalid();
   certs_ = certs;
   server_config_sig_ = signature.as_string();
 }
 
 void QuicCryptoClientConfig::CachedState::SetProofValid() {
   server_config_valid_ = true;
+}
+
+void QuicCryptoClientConfig::CachedState::SetProofInvalid() {
+  server_config_valid_ = false;
+  ++generation_counter_;
 }
 
 const string& QuicCryptoClientConfig::CachedState::server_config() const {
@@ -490,9 +500,23 @@ bool QuicCryptoClientConfig::CachedState::proof_valid() const {
   return server_config_valid_;
 }
 
+uint64 QuicCryptoClientConfig::CachedState::generation_counter() const {
+  return generation_counter_;
+}
+
+const ProofVerifyDetails*
+QuicCryptoClientConfig::CachedState::proof_verify_details() const {
+  return proof_verify_details_.get();
+}
+
 void QuicCryptoClientConfig::CachedState::set_source_address_token(
     StringPiece token) {
   source_address_token_ = token.as_string();
+}
+
+void QuicCryptoClientConfig::CachedState::SetProofVerifyDetails(
+    ProofVerifyDetails* details) {
+  proof_verify_details_.reset(details);
 }
 
 void QuicCryptoClientConfig::SetDefaults() {
@@ -543,7 +567,25 @@ void QuicCryptoClientConfig::FillInchoateClientHello(
   }
 
   if (proof_verifier_.get()) {
-    out->SetTaglist(kPDMD, kX509, 0);
+    // Don't request ECDSA proofs on platforms that do not support ECDSA
+    // certificates.
+    bool disableECDSA = false;
+#if defined(OS_WIN)
+    if (base::win::GetVersion() < base::win::VERSION_VISTA)
+      disableECDSA = true;
+#endif
+    if (disableECDSA) {
+      out->SetTaglist(kPDMD, kX59R, 0);
+    } else {
+      out->SetTaglist(kPDMD, kX509, 0);
+    }
+
+    if (!cached->proof_valid()) {
+      // If we are expecting a certificate chain, double the size of the client
+      // hello so that the response from the server can be larger - hopefully
+      // including the whole certificate chain.
+      out->set_minimum_size(kClientHelloMinimumSize * 2);
+    }
   }
 
   if (common_cert_sets) {
@@ -836,7 +878,7 @@ QuicErrorCode QuicCryptoClientConfig::ProcessServerHello(
   return QUIC_NO_ERROR;
 }
 
-const ProofVerifier* QuicCryptoClientConfig::proof_verifier() const {
+ProofVerifier* QuicCryptoClientConfig::proof_verifier() const {
   return proof_verifier_.get();
 }
 

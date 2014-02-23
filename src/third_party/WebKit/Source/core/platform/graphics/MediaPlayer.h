@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef MediaPlayer_h
@@ -42,7 +42,7 @@ class IntRect;
 class IntSize;
 class KURL;
 class MediaPlayer;
-class MediaSourceBase;
+class HTMLMediaSource;
 class TimeRanges;
 
 class MediaPlayerClient {
@@ -84,10 +84,10 @@ public:
 #if ENABLE(ENCRYPTED_MEDIA_V2)
     virtual bool mediaPlayerKeyNeeded(Uint8Array*) = 0;
 #endif
-    
+
     virtual CORSMode mediaPlayerCORSMode() const = 0;
 
-    virtual void mediaPlayerNeedsStyleRecalc() = 0;
+    virtual void mediaPlayerScheduleLayerUpdate() = 0;
 
     virtual void mediaPlayerDidAddTrack(PassRefPtr<InbandTextTrackPrivate>) = 0;
     virtual void mediaPlayerDidRemoveTrack(PassRefPtr<InbandTextTrackPrivate>) = 0;
@@ -107,7 +107,7 @@ public:
     virtual ~MediaPlayer() { }
 
     virtual void load(const String& url) = 0;
-    virtual void load(const String& url, PassRefPtr<MediaSourceBase>) = 0;
+    virtual void load(const String& url, PassRefPtr<HTMLMediaSource>) = 0;
 
     virtual void prepareToPlay() = 0;
     virtual WebKit::WebLayer* platformLayer() const = 0;

@@ -28,28 +28,19 @@
 
 #include "CSSValueKeywords.h"
 #include "core/css/CSSCalculationValue.h"
-#include "core/css/resolver/StyleResolver.h"
 #include "core/dom/NodeRenderStyle.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
+#include "core/dom/TextLinkColors.h"
 #include "core/platform/graphics/GeneratorGeneratedImage.h"
 #include "core/platform/graphics/Gradient.h"
 #include "core/platform/graphics/Image.h"
 #include "core/platform/graphics/IntSize.h"
 #include "core/rendering/RenderObject.h"
-#include <wtf/MemoryInstrumentationVector.h>
-#include <wtf/text/StringBuilder.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/text/StringBuilder.h"
+#include "wtf/text/WTFString.h"
 
 using namespace std;
 
 namespace WebCore {
-
-void CSSGradientColorStop::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_position, "position");
-    info.addMember(m_color, "color");
-}
 
 PassRefPtr<Image> CSSGradientValue::image(RenderObject* renderer, const IntSize& size)
 {
@@ -114,11 +105,11 @@ struct GradientStop {
     { }
 };
 
-PassRefPtr<CSSGradientValue> CSSGradientValue::gradientWithStylesResolved(StyleResolver* styleResolver)
+PassRefPtr<CSSGradientValue> CSSGradientValue::gradientWithStylesResolved(const TextLinkColors& textLinkColors)
 {
     bool derived = false;
     for (unsigned i = 0; i < m_stops.size(); i++)
-        if (styleResolver->colorFromPrimitiveValueIsDerivedFromElement(m_stops[i].m_color.get())) {
+        if (m_stops[i].m_color->colorIsDerivedFromElement()) {
             m_stops[i].m_colorIsDerivedFromElement = true;
             derived = true;
             break;
@@ -137,7 +128,7 @@ PassRefPtr<CSSGradientValue> CSSGradientValue::gradientWithStylesResolved(StyleR
     }
 
     for (unsigned i = 0; i < result->m_stops.size(); i++)
-        result->m_stops[i].m_resolvedColor = styleResolver->colorFromPrimitiveValue(result->m_stops[i].m_color.get());
+        result->m_stops[i].m_resolvedColor = textLinkColors.colorFromPrimitiveValue(result->m_stops[i].m_color.get());
 
     return result.release();
 }
@@ -158,7 +149,7 @@ void CSSGradientValue::addStops(Gradient* gradient, RenderObject* renderer, Rend
             else
                 offset = stop.m_position->getFloatValue(CSSPrimitiveValue::CSS_NUMBER);
 
-            gradient->addColorStop(offset, stop.m_resolvedColor);
+            gradient->addColorStop(offset, renderer->resolveColor(stop.m_resolvedColor));
         }
 
         // The back end already sorted the stops.
@@ -183,7 +174,7 @@ void CSSGradientValue::addStops(Gradient* gradient, RenderObject* renderer, Rend
     for (size_t i = 0; i < numStops; ++i) {
         const CSSGradientColorStop& stop = m_stops[i];
 
-        stops[i].color = stop.m_resolvedColor;
+        stops[i].color = renderer->resolveColor(stop.m_resolvedColor);
 
         if (stop.m_position) {
             if (stop.m_position->isPercentage())
@@ -196,7 +187,7 @@ void CSSGradientValue::addStops(Gradient* gradient, RenderObject* renderer, Rend
                 float length;
                 if (stop.m_position->isLength())
                     length = stop.m_position->computeLength<float>(style, rootStyle, style->effectiveZoom());
-                else 
+                else
                     length = stop.m_position->cssCalcValue()->toCalcValue(style, rootStyle, style->effectiveZoom())->evaluate(gradientLength);
                 stops[i].offset = (gradientLength > 0) ? length / gradientLength : 0;
             } else {
@@ -472,17 +463,6 @@ bool CSSGradientValue::knownToBeOpaque(const RenderObject*) const
     return true;
 }
 
-void CSSGradientValue::reportBaseClassMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    CSSImageGeneratorValue::reportBaseClassMemoryUsage(memoryObjectInfo);
-    info.addMember(m_firstX, "firstX");
-    info.addMember(m_firstY, "firstY");
-    info.addMember(m_secondX, "secondX");
-    info.addMember(m_secondY, "secondY");
-    info.addMember(m_stops, "stops");
-}
-
 String CSSLinearGradientValue::customCssText() const
 {
     StringBuilder result;
@@ -583,7 +563,7 @@ String CSSLinearGradientValue::customCssText() const
                 result.append(stop.m_position->cssText());
             }
         }
-        
+
     }
 
     result.append(')');
@@ -651,7 +631,7 @@ static void endPointsFromAngle(float angleDeg, const IntSize& size, FloatPoint& 
     float endX = c / (slope - perpendicularSlope);
     float endY = perpendicularSlope * endX + c;
 
-    // We computed the end point, so set the second point, 
+    // We computed the end point, so set the second point,
     // taking into account the moved origin and the fact that we're in drawing space (+y = down).
     secondPoint.set(halfWidth + endX, halfHeight - endY);
     // Reflect around the center for the start point.
@@ -701,7 +681,7 @@ PassRefPtr<Gradient> CSSLinearGradientValue::createGradient(RenderObject* render
                 // Compute angle, and flip it back to "bearing angle" degrees.
                 float angle = 90 - rad2deg(atan2(rise, run));
                 endPointsFromAngle(angle, size, firstPoint, secondPoint, m_gradientType);
-            } else if (m_firstX || m_firstY) { 
+            } else if (m_firstX || m_firstY) {
                 secondPoint = computeEndPoint(m_firstX.get(), m_firstY.get(), renderer->style(), rootStyle, size);
                 if (m_firstX)
                     firstPoint.setX(size.width() - secondPoint.x());
@@ -756,13 +736,6 @@ bool CSSLinearGradientValue::equals(const CSSLinearGradientValue& other) const
         equalXorY = !other.m_firstX || !other.m_firstY;
 
     return equalXorY && m_stops == other.m_stops;
-}
-
-void CSSLinearGradientValue::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    CSSGradientValue::reportBaseClassMemoryUsage(memoryObjectInfo);
-    info.addMember(m_angle, "angle");
 }
 
 String CSSRadialGradientValue::customCssText() const
@@ -1195,18 +1168,6 @@ bool CSSRadialGradientValue::equals(const CSSRadialGradientValue& other) const
         equalHorizontalAndVerticalSize = !other.m_endHorizontalSize && !other.m_endVerticalSize;
     }
     return equalShape && equalSizingBehavior && equalHorizontalAndVerticalSize && m_stops == other.m_stops;
-}
-
-void CSSRadialGradientValue::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    CSSGradientValue::reportBaseClassMemoryUsage(memoryObjectInfo);
-    info.addMember(m_firstRadius, "firstRadius");
-    info.addMember(m_secondRadius, "secondRadius");
-    info.addMember(m_shape, "shape");
-    info.addMember(m_sizingBehavior, "sizingBehavior");
-    info.addMember(m_endHorizontalSize, "endHorizontalSize");
-    info.addMember(m_endVerticalSize, "endVerticalSize");
 }
 
 } // namespace WebCore

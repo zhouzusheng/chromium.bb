@@ -6,13 +6,13 @@
  * are met:
  *
  * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer. 
+ *     notice, this list of conditions and the following disclaimer.
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution. 
+ *     documentation and/or other materials provided with the distribution.
  * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission. 
+ *     from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -31,6 +31,7 @@
 
 #include "core/dom/Event.h"
 #include "core/loader/FrameLoaderTypes.h"
+#include "core/loader/NavigationPolicy.h"
 #include "core/platform/network/ResourceRequest.h"
 #include "weborigin/KURL.h"
 #include "wtf/Forward.h"
@@ -46,13 +47,11 @@ namespace WebCore {
         NavigationAction(const ResourceRequest&, NavigationType, PassRefPtr<Event>);
         NavigationAction(const ResourceRequest&, FrameLoadType, bool isFormSubmission, PassRefPtr<Event>);
 
-        bool isEmpty() const { return m_resourceRequest.url().isEmpty(); }
-
-        KURL url() const { return m_resourceRequest.url(); }
         const ResourceRequest& resourceRequest() const { return m_resourceRequest; }
-
         NavigationType type() const { return m_type; }
-        const Event* event() const { return m_event.get(); }
+        Event* event() const { return m_event.get(); }
+
+        bool specifiesNavigationPolicy(NavigationPolicy*) const;
 
     private:
         ResourceRequest m_resourceRequest;

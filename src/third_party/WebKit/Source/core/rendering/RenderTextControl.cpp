@@ -1,6 +1,6 @@
 /**
  * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
- *           (C) 2008 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/)  
+ *           (C) 2008 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/)
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -26,7 +26,7 @@
 #include "core/platform/ScrollbarTheme.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderTheme.h"
-#include <wtf/unicode/CharacterNames.h>
+#include "wtf/unicode/CharacterNames.h"
 
 using namespace std;
 
@@ -283,7 +283,7 @@ RenderObject* RenderTextControl::layoutSpecialExcludedChild(bool relayoutChildre
         // The markParents arguments should be false because this function is
         // called from layout() of the parent and the placeholder layout doesn't
         // affect the parent layout.
-        placeholderRenderer->setChildNeedsLayout(true, MarkOnlyThis);
+        placeholderRenderer->setChildNeedsLayout(MarkOnlyThis);
     }
     return placeholderRenderer;
 }

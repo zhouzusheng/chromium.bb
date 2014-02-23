@@ -46,18 +46,17 @@ public:
 
     virtual ~MIDIAccessor() { }
 
-    void requestAccess(bool access);
+    void startSession();
     void sendMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp);
 
     // WebKit::WebMIDIAccessorClient
     virtual void didAddInputPort(const WebKit::WebString& id, const WebKit::WebString& manufacturer, const WebKit::WebString& name, const WebKit::WebString& version) OVERRIDE;
     virtual void didAddOutputPort(const WebKit::WebString& id, const WebKit::WebString& manufacturer, const WebKit::WebString& name, const WebKit::WebString& version) OVERRIDE;
-    virtual void didAllowAccess() OVERRIDE;
-    virtual void didBlockAccess() OVERRIDE;
+    virtual void didStartSession() OVERRIDE;
     virtual void didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp) OVERRIDE;
 
 private:
-    MIDIAccessor(MIDIAccessorClient*);
+    explicit MIDIAccessor(MIDIAccessorClient*);
 
     MIDIAccessorClient* m_client;
     OwnPtr<WebKit::WebMIDIAccessor> m_accessor;

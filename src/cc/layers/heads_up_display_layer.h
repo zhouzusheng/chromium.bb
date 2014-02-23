@@ -7,17 +7,17 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
-#include "cc/layers/layer.h"
+#include "cc/layers/contents_scaling_layer.h"
 
 namespace cc {
 
-class CC_EXPORT HeadsUpDisplayLayer : public Layer {
+class CC_EXPORT HeadsUpDisplayLayer : public ContentsScalingLayer {
  public:
   static scoped_refptr<HeadsUpDisplayLayer> Create();
 
-  virtual void Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker* tracker,
-                      RenderingStats* stats) OVERRIDE;
+  void PrepareForCalculateDrawProperties(
+      gfx::Size device_viewport, float device_scale_factor);
+
   virtual bool DrawsContent() const OVERRIDE;
 
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)

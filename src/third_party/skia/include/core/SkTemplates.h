@@ -64,11 +64,6 @@ template <typename D, typename S> static D* SkTAddOffset(S* ptr, size_t byteOffs
     );
 }
 
-/** Returns true if the source value 's' will fit in the destination type 'D'. */
-template <typename D, typename S> inline bool SkTFitsIn(S s) {
-    return static_cast<D>(s) == s;
-}
-
 /** \class SkAutoTCallVProc
 
     Call a function when this goes out of scope. The template uses two
@@ -255,7 +250,9 @@ public:
         }
 
         if (fCount != count) {
-            if (count > N) {
+            if (fCount > N) {
+                // 'fArray' was allocated last time so free it now
+                SkASSERT((T*) fStorage != fArray);
                 sk_free(fArray);
             }
 
@@ -265,7 +262,6 @@ public:
                 fArray = (T*) fStorage;
             } else {
                 fArray = NULL;
-                return;
             }
 
             fCount = count;
@@ -327,7 +323,7 @@ public:
     /** Resize the memory area pointed to by the current ptr without preserving contents. */
     void reset(size_t count) {
         sk_free(fPtr);
-        fPtr = fPtr = (T*)sk_malloc_flags(count * sizeof(T), SK_MALLOC_THROW | SK_MALLOC_TEMP);
+        fPtr = (T*)sk_malloc_flags(count * sizeof(T), SK_MALLOC_THROW | SK_MALLOC_TEMP);
     }
 
     T* get() const { return fPtr; }

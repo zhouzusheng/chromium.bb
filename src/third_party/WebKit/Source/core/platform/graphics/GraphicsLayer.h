@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef GraphicsLayer_h
@@ -49,11 +49,6 @@
 #include "public/platform/WebLayerScrollClient.h"
 #include "public/platform/WebSolidColorLayer.h"
 
-enum DebugIDSpecialValues {
-    DebugIDNoPlatformLayer = -1,
-    DebugIDNoCompositedLayer = -2
-};
-
 namespace WebKit {
 class GraphicsLayerFactoryChromium;
 class WebLayer;
@@ -81,7 +76,7 @@ public:
         , m_timingFunction(timingFunction)
     {
     }
-    
+
     virtual ~AnimationValue() { }
 
     float keyTime() const { return m_keyTime; }
@@ -180,10 +175,10 @@ public:
 
     size_t size() const { return m_values.size(); }
     const AnimationValue* at(size_t i) const { return m_values.at(i).get(); }
-    
+
     // Insert, sorted by keyTime.
     void insert(PassOwnPtr<const AnimationValue>);
-    
+
 protected:
     Vector<OwnPtr<const AnimationValue> > m_values;
     AnimatedPropertyID m_property;
@@ -223,17 +218,14 @@ public:
     const String& name() const { return m_name; }
     void setName(const String&);
 
-    // Layer ID from platform-specific layer. Only used to identify layers in the compositor for debugging purposes.
-    int debugID() const;
-
     void setCompositingReasons(WebKit::WebCompositingReasons);
 
     GraphicsLayer* parent() const { return m_parent; };
     void setParent(GraphicsLayer*); // Internal use only.
-    
+
     // Returns true if the layer has the given layer as an ancestor (excluding self).
     bool hasAncestor(GraphicsLayer*) const;
-    
+
     const Vector<GraphicsLayer*>& children() const { return m_children; }
     // Returns true if the child list changed.
     bool setChildren(const Vector<GraphicsLayer*>&);
@@ -250,7 +242,7 @@ public:
 
     GraphicsLayer* maskLayer() const { return m_maskLayer; }
     void setMaskLayer(GraphicsLayer*);
-    
+
     // The given layer will replicate this layer and its children; the replica renders behind this layer.
     void setReplicatedByLayer(GraphicsLayer*);
     // Whether this layer is being replicated by another layer.
@@ -295,7 +287,7 @@ public:
 
     bool preserves3D() const { return m_preserves3D; }
     void setPreserves3D(bool);
-    
+
     bool masksToBounds() const { return m_masksToBounds; }
     void setMasksToBounds(bool);
 
@@ -322,7 +314,7 @@ public:
     void setOpacity(float);
 
     const FilterOperations& filters() const { return m_filters; }
-    
+
     // Returns true if filter can be rendered by the compositor
     bool setFilters(const FilterOperations&);
     void setBackgroundFilters(const FilterOperations&);
@@ -343,7 +335,7 @@ public:
 
     // Transitions are identified by a special animation name that cannot clash with a keyframe identifier.
     static String animationNameForTransition(AnimatedPropertyID);
-    
+
     // Return true if the animation is handled by the compositing system. If this returns
     // false, the animation will be run by AnimationController.
     // These methods handle both transitions and keyframe animations.
@@ -353,7 +345,7 @@ public:
 
     void suspendAnimations(double time);
     void resumeAnimations();
-    
+
     // Layer contents
     void setContentsToImage(Image*);
     bool shouldDirectlyCompositeImage(Image*) const { return true; }
@@ -370,7 +362,7 @@ public:
     void paintGraphicsLayerContents(GraphicsContext&, const IntRect& clip);
     // Callback from the underlying graphics system when the layer has been displayed
     void layerDidDisplay(WebKit::WebLayer*) { }
-    
+
     // For hosting this GraphicsLayer in a native layer hierarchy.
     WebKit::WebLayer* platformLayer() const;
 
@@ -382,18 +374,12 @@ public:
 
     void dumpLayer(TextStream&, int indent = 0, LayerTreeFlags = LayerTreeNormal) const;
 
-    void setShowDebugBorder(bool show) { m_showDebugBorder = show; }
-    bool isShowingDebugBorder() const { return m_showDebugBorder; }
-
     void setShowRepaintCounter(bool show) { m_showRepaintCounter = show; }
     bool isShowingRepaintCounter() const { return m_showRepaintCounter; }
 
     // FIXME: this is really a paint count.
     int repaintCount() const { return m_repaintCount; }
     int incrementRepaintCount() { return ++m_repaintCount; }
-
-    void setDebugBackgroundColor(const Color&) { }
-    void setDebugBorder(const Color&, float /*borderWidth*/) { }
 
     // z-position is the z-equivalent of position(). It's only used for debugging purposes.
     float zPosition() const { return m_zPosition; }
@@ -425,17 +411,13 @@ public:
     // Exposed for tests
     LinkHighlightClient* linkHighlight() { return m_linkHighlight; }
 
-    void setScrollableArea(ScrollableArea* scrollableArea) { m_scrollableArea = scrollableArea; }
+    void setScrollableArea(ScrollableArea*, bool isMainFrame);
     ScrollableArea* scrollableArea() const { return m_scrollableArea; }
 
     WebKit::WebContentLayer* contentLayer() const { return m_layer.get(); }
 
     // Exposed for tests. FIXME - name is too similar to contentLayer(), very error prone.
     WebKit::WebLayer* contentsLayer() const { return m_contentsLayer; }
-
-    void updateDebugIndicators();
-
-    void reportMemoryUsage(MemoryObjectInfo*) const;
 
     static void registerContentsLayer(WebKit::WebLayer*);
     static void unregisterContentsLayer(WebKit::WebLayer*);
@@ -466,7 +448,7 @@ protected:
     // Given a list of TransformAnimationValues, see if all the operations for each keyframe match. If so
     // return the index of the KeyframeValueList entry that has that list of operations (it may not be
     // the first entry because some keyframes might have an empty transform and those match any list).
-    // If the lists don't match return -1. On return, if hasBigRotation is true, functions contain 
+    // If the lists don't match return -1. On return, if hasBigRotation is true, functions contain
     // rotations of >= 180 degrees
     static int validateTransformOperations(const KeyframeValueList&, bool& hasBigRotation);
 
@@ -483,8 +465,6 @@ protected:
     void dumpProperties(TextStream&, int indent, LayerTreeFlags) const;
     void dumpAdditionalProperties(TextStream&, int /*indent*/, LayerTreeFlags) const { }
 
-    void getDebugBorderInfo(Color&, float& width) const;
-
     // Helper functions used by settors to keep layer's the state consistent.
     void updateNames();
     void updateChildList();
@@ -498,10 +478,10 @@ protected:
 
     GraphicsLayerClient* m_client;
     String m_name;
-    
+
     // Offset from the owning renderer
     IntSize m_offsetFromRenderer;
-    
+
     // Position is relative to the parent GraphicsLayer
     FloatPoint m_position;
     FloatPoint3D m_anchorPoint;
@@ -514,7 +494,7 @@ protected:
     Color m_backgroundColor;
     float m_opacity;
     float m_zPosition;
-    
+
     FilterOperations m_filters;
 
     bool m_contentsOpaque : 1;
@@ -523,9 +503,8 @@ protected:
     bool m_masksToBounds : 1;
     bool m_drawsContent : 1;
     bool m_contentsVisible : 1;
-    bool m_showDebugBorder : 1;
     bool m_showRepaintCounter : 1;
-    
+
     GraphicsLayerPaintingPhase m_paintingPhase;
     CompositingCoordinatesOrientation m_contentsOrientation; // affects orientation of layer contents
 

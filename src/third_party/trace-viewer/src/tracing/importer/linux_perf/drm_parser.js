@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /**
  * @fileoverview Parses drm driver events in the Linux event trace format.
  */
@@ -30,7 +32,7 @@ base.exportTo('tracing.importer.linux_perf', function() {
       var slice = new tracing.trace_model.Slice('', kthread.openSlice,
           tracing.getStringColorId(kthread.openSlice), ts, args, 0);
 
-      kthread.thread.pushSlice(slice);
+      kthread.thread.sliceGroup.pushSlice(slice);
     },
 
     /**

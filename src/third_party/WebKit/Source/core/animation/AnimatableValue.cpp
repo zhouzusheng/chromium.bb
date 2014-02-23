@@ -30,13 +30,44 @@
 
 #include "config.h"
 #include "core/animation/AnimatableValue.h"
+#include "core/animation/AnimatableNeutral.h"
+#include <algorithm>
 
 namespace WebCore {
 
-PassRefPtr<CSSValue> AnimatableValue::toCSSValue() const
+const AnimatableValue* AnimatableValue::neutralValue()
 {
-    ASSERT_NOT_REACHED();
-    return 0;
+    static AnimatableNeutral* neutralSentinelValue = AnimatableNeutral::create().leakRef();
+    return neutralSentinelValue;
+}
+
+PassRefPtr<AnimatableValue> AnimatableValue::interpolate(const AnimatableValue* left, const AnimatableValue* right, double fraction)
+{
+    ASSERT(left);
+    ASSERT(right);
+    ASSERT(!left->isNeutral());
+    ASSERT(!right->isNeutral());
+
+    if (fraction && fraction != 1 && left->isSameType(right))
+        return left->interpolateTo(right, fraction);
+
+    return defaultInterpolateTo(left, right, fraction);
+}
+
+PassRefPtr<AnimatableValue> AnimatableValue::add(const AnimatableValue* left, const AnimatableValue* right)
+{
+    ASSERT(left);
+    ASSERT(right);
+
+    if (left->isNeutral())
+        return takeConstRef(right);
+    if (right->isNeutral())
+        return takeConstRef(left);
+
+    if (left->isSameType(right))
+        return left->addWith(right);
+
+    return defaultAddWith(left, right);
 }
 
 } // namespace WebCore

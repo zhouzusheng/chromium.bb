@@ -30,6 +30,7 @@
 #include "config.h"
 #include "modules/crypto/Crypto.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "wtf/ArrayBufferView.h"
 #include "wtf/CryptographicallyRandomNumber.h"
@@ -58,14 +59,14 @@ Crypto::Crypto()
 }
 
 // Note: This implementation must be thread-safe, as it is used by workers.
-void Crypto::getRandomValues(ArrayBufferView* array, ExceptionCode& ec)
+void Crypto::getRandomValues(ArrayBufferView* array, ExceptionState& es)
 {
     if (!array || !isIntegerArray(array)) {
-        ec = TYPE_MISMATCH_ERR;
+        es.throwDOMException(TypeMismatchError);
         return;
     }
     if (array->byteLength() > 65536) {
-        ec = QUOTA_EXCEEDED_ERR;
+        es.throwDOMException(QuotaExceededError);
         return;
     }
     cryptographicallyRandomValues(array->baseAddress(), array->byteLength());

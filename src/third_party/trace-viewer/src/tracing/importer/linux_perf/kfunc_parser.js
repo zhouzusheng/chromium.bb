@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /**
  * @fileoverview Parses graph_ent and graph_ret events that were inserted by
  * the Linux kernel's function graph trace.
@@ -30,7 +32,7 @@ base.exportTo('tracing.importer.linux_perf', function() {
     this.ppids_ = {};
   }
 
-  TestExports = {};
+  var TestExports = {};
 
   var funcEnterRE = new RegExp('func=(.+)');
   TestExports.funcEnterRE = funcEnterRE;
@@ -54,13 +56,16 @@ base.exportTo('tracing.importer.linux_perf', function() {
         .getOrCreateThread(pid);
       thread.name = eventBase.threadName;
 
-      var slices = thread.kernelSlices;
+      var slices = thread.kernelSliceGroup;
       if (!slices.isTimestampValidForBeginOrEnd(ts)) {
-        this.model_.importErrors.push('Timestamps are moving backward.');
+        this.model_.importWarning({
+          type: 'parse_error',
+          message: 'Timestamps are moving backward.'
+        });
         return false;
       }
 
-      slice = slices.beginSlice(null, name, ts, {});
+      var slice = slices.beginSlice(null, name, ts, {});
 
       return true;
     },
@@ -76,9 +81,12 @@ base.exportTo('tracing.importer.linux_perf', function() {
         .getOrCreateThread(pid);
       thread.name = eventBase.threadName;
 
-      var slices = thread.kernelSlices;
+      var slices = thread.kernelSliceGroup;
       if (!slices.isTimestampValidForBeginOrEnd(ts)) {
-        this.model_.importErrors.push('Timestamps are moving backward.');
+        this.model_.importWarning({
+          type: 'parse_error',
+          message: 'Timestamps are moving backward.'
+        });
         return false;
       }
 

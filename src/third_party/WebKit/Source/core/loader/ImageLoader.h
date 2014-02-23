@@ -23,12 +23,24 @@
 #ifndef ImageLoader_h
 #define ImageLoader_h
 
-#include "core/loader/cache/CachedImage.h"
-#include "core/loader/cache/CachedImageClient.h"
-#include "core/loader/cache/CachedResourceHandle.h"
-#include <wtf/text/AtomicString.h>
+#include "core/loader/cache/ImageResource.h"
+#include "core/loader/cache/ImageResourceClient.h"
+#include "core/loader/cache/ResourcePtr.h"
+#include "wtf/HashSet.h"
+#include "wtf/text/AtomicString.h"
 
 namespace WebCore {
+
+class ImageLoaderClient {
+public:
+    virtual void notifyImageSourceChanged() = 0;
+
+    // Determines whether the observed ImageResource should have higher priority in the decoded resources cache.
+    virtual bool requestsHighLiveResourceCachePriority() { return false; }
+
+protected:
+    ImageLoaderClient() { }
+};
 
 class Element;
 class ImageLoader;
@@ -37,7 +49,7 @@ class RenderImageResource;
 template<typename T> class EventSender;
 typedef EventSender<ImageLoader> ImageEventSender;
 
-class ImageLoader : public CachedImageClient {
+class ImageLoader : public ImageResourceClient {
 public:
     explicit ImageLoader(Element*);
     virtual ~ImageLoader();
@@ -55,8 +67,8 @@ public:
     Element* element() const { return m_element; }
     bool imageComplete() const { return m_imageComplete; }
 
-    CachedImage* image() const { return m_image.get(); }
-    void setImage(CachedImage*); // Cancels pending beforeload and load events, and doesn't dispatch new ones.
+    ImageResource* image() const { return m_image.get(); }
+    void setImage(ImageResource*); // Cancels pending beforeload and load events, and doesn't dispatch new ones.
 
     void setLoadManually(bool loadManually) { m_loadManually = loadManually; }
 
@@ -69,10 +81,11 @@ public:
     static void dispatchPendingLoadEvents();
     static void dispatchPendingErrorEvents();
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
+    void addClient(ImageLoaderClient*);
+    void removeClient(ImageLoaderClient*);
 
 protected:
-    virtual void notifyFinished(CachedResource*);
+    virtual void notifyFinished(Resource*);
 
 private:
     virtual void dispatchLoadEvent() = 0;
@@ -87,13 +100,15 @@ private:
     RenderImageResource* renderImageResource();
     void updateRenderer();
 
-    void setImageWithoutConsideringPendingLoadEvent(CachedImage*);
+    void setImageWithoutConsideringPendingLoadEvent(ImageResource*);
+    void sourceImageChanged();
     void clearFailedLoadURL();
 
     void timerFired(Timer<ImageLoader>*);
 
     Element* m_element;
-    CachedResourceHandle<CachedImage> m_image;
+    ResourcePtr<ImageResource> m_image;
+    HashSet<ImageLoaderClient*> m_clients;
     Timer<ImageLoader> m_derefElementTimer;
     AtomicString m_failedLoadURL;
     bool m_hasPendingBeforeLoadEvent : 1;
@@ -102,6 +117,7 @@ private:
     bool m_imageComplete : 1;
     bool m_loadManually : 1;
     bool m_elementIsProtected : 1;
+    unsigned m_highPriorityClientCount;
 };
 
 }

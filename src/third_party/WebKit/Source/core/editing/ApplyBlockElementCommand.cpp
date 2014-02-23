@@ -28,6 +28,7 @@
 #include "core/editing/ApplyBlockElementCommand.h"
 
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/Text.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
@@ -63,13 +64,13 @@ void ApplyBlockElementCommand::doApply()
     if (visibleStart.isNull() || visibleStart.isOrphan() || visibleEnd.isNull() || visibleEnd.isOrphan())
         return;
 
-    // When a selection ends at the start of a paragraph, we rarely paint 
-    // the selection gap before that paragraph, because there often is no gap.  
-    // In a case like this, it's not obvious to the user that the selection 
-    // ends "inside" that paragraph, so it would be confusing if Indent/Outdent 
+    // When a selection ends at the start of a paragraph, we rarely paint
+    // the selection gap before that paragraph, because there often is no gap.
+    // In a case like this, it's not obvious to the user that the selection
+    // ends "inside" that paragraph, so it would be confusing if Indent/Outdent
     // operated on that paragraph.
-    // FIXME: We paint the gap before some paragraphs that are indented with left 
-    // margin/padding, but not others.  We should make the gap painting more consistent and 
+    // FIXME: We paint the gap before some paragraphs that are indented with left
+    // margin/padding, but not others.  We should make the gap painting more consistent and
     // then use a left margin/padding rule here.
     if (visibleEnd != visibleStart && isStartOfParagraph(visibleEnd))
         setEndingSelection(VisibleSelection(visibleStart, visibleEnd.previous(CannotCrossEditingBoundary), endingSelection().isDirectional()));
@@ -133,7 +134,7 @@ void ApplyBlockElementCommand::formatSelection(const VisiblePosition& startOfSel
 
         formatRange(start, end, m_endOfLastParagraph, blockquoteForNextIndent);
 
-        // Don't put the next paragraph in the blockquote we just created for this paragraph unless 
+        // Don't put the next paragraph in the blockquote we just created for this paragraph unless
         // the next paragraph is in the same cell.
         if (enclosingCell && enclosingCell != enclosingNodeOfType(endOfNextParagraph.deepEquivalent(), &isTableCell))
             blockquoteForNextIndent = 0;
@@ -160,9 +161,9 @@ static bool isNewLineAtPosition(const Position& position)
     if (!textNode || !textNode->isTextNode() || offset < 0 || offset >= textNode->maxCharacterOffset())
         return false;
 
-    ExceptionCode ec = 0;
-    String textAtPosition = toText(textNode)->substringData(offset, 1, ec);
-    if (ec)
+    TrackExceptionState es;
+    String textAtPosition = toText(textNode)->substringData(offset, 1, es);
+    if (es.hadException())
         return false;
 
     return textAtPosition[0] == '\n';

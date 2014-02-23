@@ -71,6 +71,8 @@ base.exportTo('cc', function() {
    * @constructor
    */
   function LayerSelection(layer) {
+    if (!layer)
+      throw new Error('Layer is required');
     this.layer_ = layer;
   }
 
@@ -122,12 +124,8 @@ base.exportTo('cc', function() {
       return this.tile_.layerId;
     },
 
-    get quadIfPending() {
-      return this.tile_.args.pendingPriority.currentScreenQuad;
-    },
-
-    get quadIfActive() {
-      return this.tile_.args.activePriority.currentScreenQuad;
+    get layerRect() {
+      return this.tile_.layerRect;
     },
 
     createAnalysis: function() {
@@ -163,19 +161,15 @@ base.exportTo('cc', function() {
     __proto__: Selection.prototype,
 
     get tile() {
-      return this.rasterTask_.args.metadata.tile_id;
+      return this.rasterTask_.args.data.tile_id;
     },
 
     get associatedLayerId() {
       return this.tile.layerId;
     },
 
-    get quadIfPending() {
-      return this.tile.args.pendingPriority.currentScreenQuad;
-    },
-
-    get quadIfActive() {
-      return this.tile.args.activePriority.currentScreenQuad;
+    get layerRect() {
+      return this.tile.layerRect;
     },
 
     createAnalysis: function() {

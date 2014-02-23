@@ -5,6 +5,8 @@
 #include "cc/quads/texture_draw_quad.h"
 
 #include "base/logging.h"
+#include "base/values.h"
+#include "cc/base/math_util.h"
 #include "ui/gfx/vector2d_f.h"
 
 namespace cc {
@@ -12,6 +14,7 @@ namespace cc {
 TextureDrawQuad::TextureDrawQuad()
     : resource_id(0),
       premultiplied_alpha(false),
+      background_color(SK_ColorTRANSPARENT),
       flipped(false) {
   this->vertex_opacity[0] = 0.f;
   this->vertex_opacity[1] = 0.f;
@@ -28,7 +31,9 @@ void TextureDrawQuad::SetNew(const SharedQuadState* shared_quad_state,
                              unsigned resource_id, bool premultiplied_alpha,
                              gfx::PointF uv_top_left,
                              gfx::PointF uv_bottom_right,
-                             const float vertex_opacity[4], bool flipped) {
+                             SkColor background_color,
+                             const float vertex_opacity[4],
+                             bool flipped) {
   gfx::Rect visible_rect = rect;
   bool needs_blending = vertex_opacity[0] != 1.0f || vertex_opacity[1] != 1.0f
       || vertex_opacity[2] != 1.0f || vertex_opacity[3] != 1.0f;
@@ -38,6 +43,7 @@ void TextureDrawQuad::SetNew(const SharedQuadState* shared_quad_state,
   this->premultiplied_alpha = premultiplied_alpha;
   this->uv_top_left = uv_top_left;
   this->uv_bottom_right = uv_bottom_right;
+  this->background_color = background_color;
   this->vertex_opacity[0] = vertex_opacity[0];
   this->vertex_opacity[1] = vertex_opacity[1];
   this->vertex_opacity[2] = vertex_opacity[2];
@@ -51,13 +57,16 @@ void TextureDrawQuad::SetAll(const SharedQuadState* shared_quad_state,
                              unsigned resource_id, bool premultiplied_alpha,
                              gfx::PointF uv_top_left,
                              gfx::PointF uv_bottom_right,
-                             const float vertex_opacity[4], bool flipped) {
+                             SkColor background_color,
+                             const float vertex_opacity[4],
+                             bool flipped) {
   DrawQuad::SetAll(shared_quad_state, DrawQuad::TEXTURE_CONTENT, rect,
                    opaque_rect, visible_rect, needs_blending);
   this->resource_id = resource_id;
   this->premultiplied_alpha = premultiplied_alpha;
   this->uv_top_left = uv_top_left;
   this->uv_bottom_right = uv_bottom_right;
+  this->background_color = background_color;
   this->vertex_opacity[0] = vertex_opacity[0];
   this->vertex_opacity[1] = vertex_opacity[1];
   this->vertex_opacity[2] = vertex_opacity[2];
@@ -147,6 +156,19 @@ bool TextureDrawQuad::PerformClipping() {
                    static_cast<int>(clipped_rect.width() + 0.5f),
                    static_cast<int>(clipped_rect.height() + 0.5f));
   return true;
+}
+
+void TextureDrawQuad::ExtendValue(base::DictionaryValue* value) const {
+  value->SetInteger("resource_id", resource_id);
+  value->SetBoolean("premultiplied_alpha", premultiplied_alpha);
+  value->Set("uv_top_left", MathUtil::AsValue(uv_top_left).release());
+  value->Set("uv_bottom_right", MathUtil::AsValue(uv_bottom_right).release());
+  value->SetInteger("background_color", background_color);
+  scoped_ptr<ListValue> vertex_opacity_value(new ListValue);
+  for (size_t i = 0; i < 4; ++i)
+    vertex_opacity_value->AppendDouble(vertex_opacity[i]);
+  value->Set("vertex_opacity", vertex_opacity_value.release());
+  value->SetBoolean("flipped", flipped);
 }
 
 }  // namespace cc

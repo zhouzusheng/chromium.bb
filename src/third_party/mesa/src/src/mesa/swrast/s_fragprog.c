@@ -24,18 +24,32 @@
 
 #include "main/glheader.h"
 #include "main/colormac.h"
+#include "main/samplerobj.h"
 #include "program/prog_instruction.h"
 
 #include "s_context.h"
 #include "s_fragprog.h"
 #include "s_span.h"
 
+/**
+ * \brief Should swrast use a fragment program?
+ *
+ * \return true if the current fragment program exists and is not the fixed
+ *         function fragment program
+ */
+GLboolean
+_swrast_use_fragment_program(struct gl_context *ctx)
+{
+   struct gl_fragment_program *fp = ctx->FragmentProgram._Current;
+   return fp && !(fp == ctx->FragmentProgram._TexEnvProgram
+                  && fp->Base.NumInstructions == 0);
+}
 
 /**
  * Apply texture object's swizzle (X/Y/Z/W/0/1) to incoming 'texel'
  * and return results in 'colorOut'.
  */
-static INLINE void
+static inline void
 swizzle_texel(const GLfloat texel[4], GLfloat colorOut[4], GLuint swizzle)
 {
    if (swizzle == SWIZZLE_NOOP) {
@@ -62,7 +76,7 @@ swizzle_texel(const GLfloat texel[4], GLfloat colorOut[4], GLuint swizzle)
  * Called via machine->FetchTexelLod()
  */
 static void
-fetch_texel_lod( GLcontext *ctx, const GLfloat texcoord[4], GLfloat lambda,
+fetch_texel_lod( struct gl_context *ctx, const GLfloat texcoord[4], GLfloat lambda,
                  GLuint unit, GLfloat color[4] )
 {
    const struct gl_texture_object *texObj = ctx->Texture.Unit[unit]._Current;
@@ -70,11 +84,12 @@ fetch_texel_lod( GLcontext *ctx, const GLfloat texcoord[4], GLfloat lambda,
    if (texObj) {
       SWcontext *swrast = SWRAST_CONTEXT(ctx);
       GLfloat rgba[4];
+      const struct gl_sampler_object *samp = _mesa_get_samplerobj(ctx, unit);
 
-      lambda = CLAMP(lambda, texObj->MinLod, texObj->MaxLod);
+      lambda = CLAMP(lambda, samp->MinLod, samp->MaxLod);
 
-      swrast->TextureSample[unit](ctx, texObj, 1,
-                                  (const GLfloat (*)[4]) texcoord,
+      swrast->TextureSample[unit](ctx, samp, ctx->Texture.Unit[unit]._Current,
+                                  1, (const GLfloat (*)[4]) texcoord,
                                   &lambda, &rgba);
       swizzle_texel(rgba, color, texObj->_Swizzle);
    }
@@ -92,7 +107,7 @@ fetch_texel_lod( GLcontext *ctx, const GLfloat texcoord[4], GLfloat lambda,
  *                 otherwise zero.
  */
 static void
-fetch_texel_deriv( GLcontext *ctx, const GLfloat texcoord[4],
+fetch_texel_deriv( struct gl_context *ctx, const GLfloat texcoord[4],
                    const GLfloat texdx[4], const GLfloat texdy[4],
                    GLfloat lodBias, GLuint unit, GLfloat color[4] )
 {
@@ -103,8 +118,11 @@ fetch_texel_deriv( GLcontext *ctx, const GLfloat texcoord[4],
    if (texObj) {
       const struct gl_texture_image *texImg =
          texObj->Image[0][texObj->BaseLevel];
-      const GLfloat texW = (GLfloat) texImg->WidthScale;
-      const GLfloat texH = (GLfloat) texImg->HeightScale;
+      const struct swrast_texture_image *swImg =
+         swrast_texture_image_const(texImg);
+      const struct gl_sampler_object *samp = _mesa_get_samplerobj(ctx, unit);
+      const GLfloat texW = (GLfloat) swImg->WidthScale;
+      const GLfloat texH = (GLfloat) swImg->HeightScale;
       GLfloat lambda;
       GLfloat rgba[4];
 
@@ -115,12 +133,12 @@ fetch_texel_deriv( GLcontext *ctx, const GLfloat texcoord[4],
                                       texcoord[0], texcoord[1], texcoord[3],
                                       1.0F / texcoord[3]);
 
-      lambda += lodBias + texUnit->LodBias + texObj->LodBias;
+      lambda += lodBias + texUnit->LodBias + samp->LodBias;
 
-      lambda = CLAMP(lambda, texObj->MinLod, texObj->MaxLod);
+      lambda = CLAMP(lambda, samp->MinLod, samp->MaxLod);
 
-      swrast->TextureSample[unit](ctx, texObj, 1,
-                                  (const GLfloat (*)[4]) texcoord,
+      swrast->TextureSample[unit](ctx, samp, ctx->Texture.Unit[unit]._Current,
+                                  1, (const GLfloat (*)[4]) texcoord,
                                   &lambda, &rgba);
       swizzle_texel(rgba, color, texObj->_Swizzle);
    }
@@ -140,7 +158,7 @@ fetch_texel_deriv( GLcontext *ctx, const GLfloat texcoord[4],
  * \param col  which element (column) of the span we'll operate on
  */
 static void
-init_machine(GLcontext *ctx, struct gl_program_machine *machine,
+init_machine(struct gl_context *ctx, struct gl_program_machine *machine,
              const struct gl_fragment_program *program,
              const SWspan *span, GLuint col)
 {
@@ -169,7 +187,7 @@ init_machine(GLcontext *ctx, struct gl_program_machine *machine,
    machine->Samplers = program->Base.SamplerUnits;
 
    /* if running a GLSL program (not ARB_fragment_program) */
-   if (ctx->Shader.CurrentProgram) {
+   if (ctx->Shader.CurrentFragmentProgram) {
       /* Store front/back facing value */
       machine->Attribs[FRAG_ATTRIB_FACE][col][0] = 1.0F - span->facing;
    }
@@ -194,7 +212,7 @@ init_machine(GLcontext *ctx, struct gl_program_machine *machine,
  * Run fragment program on the pixels in span from 'start' to 'end' - 1.
  */
 static void
-run_program(GLcontext *ctx, SWspan *span, GLuint start, GLuint end)
+run_program(struct gl_context *ctx, SWspan *span, GLuint start, GLuint end)
 {
    SWcontext *swrast = SWRAST_CONTEXT(ctx);
    const struct gl_fragment_program *program = ctx->FragmentProgram._Current;
@@ -235,7 +253,8 @@ run_program(GLcontext *ctx, SWspan *span, GLuint start, GLuint end)
                else if (depth >= 1.0)
                   span->array->z[i] = ctx->DrawBuffer->_DepthMax;
                else
-                  span->array->z[i] = IROUND(depth * ctx->DrawBuffer->_DepthMaxF);
+                  span->array->z[i] =
+                     (GLuint) (depth * ctx->DrawBuffer->_DepthMaxF + 0.5F);
             }
          }
          else {
@@ -253,7 +272,7 @@ run_program(GLcontext *ctx, SWspan *span, GLuint start, GLuint end)
  * in the given span.
  */
 void
-_swrast_exec_fragment_program( GLcontext *ctx, SWspan *span )
+_swrast_exec_fragment_program( struct gl_context *ctx, SWspan *span )
 {
    const struct gl_fragment_program *program = ctx->FragmentProgram._Current;
 

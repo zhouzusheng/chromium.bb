@@ -20,16 +20,16 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
-
 #include "core/html/TimeRanges.h"
 
-#include <math.h>
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
+#include <math.h>
 
 using namespace WebCore;
 using namespace std;
@@ -60,13 +60,15 @@ void TimeRanges::invert()
     if (!m_ranges.size())
         inverted->add(negInf, posInf);
     else {
-        if (double start = m_ranges.first().m_start != negInf)
+        double start = m_ranges.first().m_start;
+        if (start != negInf)
             inverted->add(negInf, start);
 
         for (size_t index = 0; index + 1 < m_ranges.size(); ++index)
             inverted->add(m_ranges[index].m_end, m_ranges[index + 1].m_start);
 
-        if (double end = m_ranges.last().m_end != posInf)
+        double end = m_ranges.last().m_end;
+        if (end != posInf)
             inverted->add(end, posInf);
     }
 
@@ -76,12 +78,16 @@ void TimeRanges::invert()
 void TimeRanges::intersectWith(const TimeRanges* other)
 {
     ASSERT(other);
-    RefPtr<TimeRanges> inverted = copy();
-    RefPtr<TimeRanges> invertedOther = other->copy();
-    inverted->unionWith(invertedOther.get());
-    inverted->invert();
 
-    m_ranges.swap(inverted->m_ranges);
+    if (other == this)
+        return;
+
+    RefPtr<TimeRanges> invertedOther = other->copy();
+    invertedOther->invert();
+
+    invert();
+    unionWith(invertedOther.get());
+    invert();
 }
 
 void TimeRanges::unionWith(const TimeRanges* other)
@@ -96,19 +102,19 @@ void TimeRanges::unionWith(const TimeRanges* other)
     m_ranges.swap(unioned->m_ranges);
 }
 
-double TimeRanges::start(unsigned index, ExceptionCode& ec) const
+double TimeRanges::start(unsigned index, ExceptionState& es) const
 {
     if (index >= length()) {
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
         return 0;
     }
     return m_ranges[index].m_start;
 }
 
-double TimeRanges::end(unsigned index, ExceptionCode& ec) const
+double TimeRanges::end(unsigned index, ExceptionState& es) const
 {
     if (index >= length()) {
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
         return 0;
     }
     return m_ranges[index].m_end;

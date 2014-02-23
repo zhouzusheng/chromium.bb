@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef DragController_h
@@ -58,40 +58,19 @@ namespace WebCore {
 
         static PassOwnPtr<DragController> create(Page*, DragClient*);
 
-        DragClient* client() const { return m_client; }
-
         DragSession dragEntered(DragData*);
         void dragExited(DragData*);
         DragSession dragUpdated(DragData*);
         bool performDrag(DragData*);
-        
-        // FIXME: It should be possible to remove a number of these accessors once all
-        // drag logic is in WebCore.
-        void setDidInitiateDrag(bool initiated) { m_didInitiateDrag = initiated; } 
-        bool didInitiateDrag() const { return m_didInitiateDrag; }
-        DragOperation sourceDragOperation() const { return m_sourceDragOperation; }
-        const KURL& draggingImageURL() const { return m_draggingImageURL; }
-        void setDragOffset(const IntPoint& offset) { m_dragOffset = offset; }
-        const IntPoint& dragOffset() const { return m_dragOffset; }
-        DragSourceAction dragSourceAction() const { return m_dragSourceAction; }
 
-        Document* documentUnderMouse() const { return m_documentUnderMouse.get(); }
-        DragDestinationAction dragDestinationAction() const { return m_dragDestinationAction; }
-        DragSourceAction delegateDragSourceAction();
-        
         Node* draggableNode(const Frame*, Node*, const IntPoint&, DragState&) const;
         void dragEnded();
-        
-        void placeDragCaret(const IntPoint&);
-        
-        bool startDrag(Frame* src, const DragState&, DragOperation srcOp, const PlatformMouseEvent& dragEvent, const IntPoint& dragOrigin);
-        static const IntSize& maxDragImageSize();
-        
-        static const int LinkDragBorderInset;
-        static const int MaxOriginalImageArea;
+
+        bool populateDragClipboard(Frame* src, const DragState&, const IntPoint& dragOrigin);
+        bool startDrag(Frame* src, const DragState&, const PlatformMouseEvent& dragEvent, const IntPoint& dragOrigin);
+
         static const int DragIconRightInset;
-        static const int DragIconBottomInset;        
-        static const float DragImageAlpha;
+        static const int DragIconBottomInset;
 
     private:
         DragController(Page*, DragClient*);
@@ -110,10 +89,7 @@ namespace WebCore {
 
         void mouseMovedIntoDocument(Document*);
 
-        IntRect selectionDraggingRect(Frame*);
-        bool doDrag(Frame* src, Clipboard*, DragImage*, const KURL& linkURL, const KURL& imageURL, Node*, IntPoint& dragLoc, IntPoint& dragImageOffset);
-        void doImageDrag(Element*, const IntPoint&, const IntRect&, Clipboard*, Frame*, IntPoint&);
-        void doSystemDrag(DragImage*, const IntPoint&, const IntPoint&, Clipboard*, Frame*, bool forLink);
+        void doSystemDrag(DragImage*, const IntPoint& dragLocation, const IntPoint& dragOrigin, Clipboard*, Frame*, bool forLink);
         void cleanupAfterSystemDrag();
 
         Page* m_page;
@@ -125,11 +101,7 @@ namespace WebCore {
         bool m_documentIsHandlingDrag;
 
         DragDestinationAction m_dragDestinationAction;
-        DragSourceAction m_dragSourceAction;
         bool m_didInitiateDrag;
-        DragOperation m_sourceDragOperation; // Set in startDrag when a drag starts from a mouse down within WebKit
-        IntPoint m_dragOffset;
-        KURL m_draggingImageURL;
     };
 
 }

@@ -5,7 +5,7 @@
 #ifndef CONTENT_PUBLIC_BROWSER_UTILITY_PROCESS_HOST_H_
 #define CONTENT_PUBLIC_BROWSER_UTILITY_PROCESS_HOST_H_
 
-#include "base/process_util.h"
+#include "base/process/launch.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_sender.h"
 
@@ -49,6 +49,9 @@ class UtilityProcessHost : public IPC::Sender,
   // Allows a directory to be opened through the sandbox, in case it's needed by
   // the operation.
   virtual void SetExposedDir(const base::FilePath& dir) = 0;
+
+  // Allows a mdns to use network in sandbox.
+  virtual void EnableMDns() = 0;
 
   // Make the process run without a sandbox.
   virtual void DisableSandbox() = 0;

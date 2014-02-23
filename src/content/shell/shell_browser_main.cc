@@ -12,7 +12,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
@@ -73,7 +73,7 @@ GURL GetURLForLayoutTest(const std::string& test_name,
 #else
     base::FilePath local_file(path_or_url);
 #endif
-    if (!file_util::PathExists(local_file)) {
+    if (!base::PathExists(local_file)) {
       local_file = content::GetWebKitRootDirFilePath()
           .Append(FILE_PATH_LITERAL("LayoutTests")).Append(local_file);
     }

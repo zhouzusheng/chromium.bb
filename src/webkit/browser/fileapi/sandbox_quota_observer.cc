@@ -7,7 +7,7 @@
 #include "base/sequenced_task_runner.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/file_system_usage_cache.h"
-#include "webkit/browser/fileapi/sandbox_mount_point_provider.h"
+#include "webkit/browser/fileapi/sandbox_context.h"
 #include "webkit/browser/fileapi/timed_task_helper.h"
 #include "webkit/browser/quota/quota_client.h"
 #include "webkit/browser/quota/quota_manager.h"
@@ -53,8 +53,8 @@ void SandboxQuotaObserver::OnUpdate(const FileSystemURL& url,
 
   pending_update_notification_[usage_file_path] += delta;
   if (!delayed_cache_update_helper_) {
-    delayed_cache_update_helper_.reset(new TimedTaskHelper(
-            update_notify_runner_));
+    delayed_cache_update_helper_.reset(
+        new TimedTaskHelper(update_notify_runner_.get()));
     delayed_cache_update_helper_->Start(
         FROM_HERE,
         base::TimeDelta(),  // No delay.
@@ -107,7 +107,7 @@ base::FilePath SandboxQuotaObserver::GetUsageCachePath(
   DCHECK(sandbox_file_util_);
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   base::FilePath path =
-      SandboxMountPointProvider::GetUsageCachePathForOriginAndType(
+      SandboxContext::GetUsageCachePathForOriginAndType(
           sandbox_file_util_, url.origin(), url.type(), &error);
   if (error != base::PLATFORM_FILE_OK) {
     LOG(WARNING) << "Could not get usage cache path for: "

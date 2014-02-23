@@ -7,13 +7,13 @@
  * are met:
  *
  * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer. 
+ *     notice, this list of conditions and the following disclaimer.
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution. 
+ *     documentation and/or other materials provided with the distribution.
  * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission. 
+ *     from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -33,20 +33,19 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/page/DOMWindowProperty.h"
-#include <wtf/Forward.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
+#include "wtf/Forward.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
 
 namespace WebCore {
 
+class ExceptionState;
 class Frame;
 class Node;
 class Position;
 class Range;
 class TreeScope;
 class VisibleSelection;
-
-typedef int ExceptionCode;
 
 class DOMSelection : public RefCounted<DOMSelection>, public ScriptWrappable, public DOMWindowProperty {
 public:
@@ -61,8 +60,8 @@ public:
     int baseOffset() const;
     int extentOffset() const;
     String type() const;
-    void setBaseAndExtent(Node* baseNode, int baseOffset, Node* extentNode, int extentOffset, ExceptionCode&);
-    void setPosition(Node*, int offset, ExceptionCode&);
+    void setBaseAndExtent(Node* baseNode, int baseOffset, Node* extentNode, int extentOffset, ExceptionState&);
+    void setPosition(Node*, int offset, ExceptionState&);
     void modify(const String& alter, const String& direction, const String& granularity);
 
     // Mozilla Selection Object API
@@ -77,16 +76,16 @@ public:
     int focusOffset() const;
     bool isCollapsed() const;
     int rangeCount() const;
-    void collapse(Node*, int offset, ExceptionCode&);
-    void collapseToEnd(ExceptionCode&);
-    void collapseToStart(ExceptionCode&);
-    void extend(Node*, int offset, ExceptionCode&);
-    PassRefPtr<Range> getRangeAt(int, ExceptionCode&);
+    void collapse(Node*, int offset, ExceptionState&);
+    void collapseToEnd(ExceptionState&);
+    void collapseToStart(ExceptionState&);
+    void extend(Node*, int offset, ExceptionState&);
+    PassRefPtr<Range> getRangeAt(int, ExceptionState&);
     void removeAllRanges();
     void addRange(Range*);
     void deleteFromDocument();
     bool containsNode(const Node*, bool partlyContained) const;
-    void selectAllChildren(Node*, ExceptionCode&);
+    void selectAllChildren(Node*, ExceptionState&);
 
     String toString();
 

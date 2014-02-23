@@ -21,14 +21,6 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#include <cstdlib>
-#include <cstdio>
-#include <cstdarg>
-
-extern "C" {
-#include <talloc.h>
-}
-
 #include "main/core.h"
 #include "glsl_symbol_table.h"
 #include "glsl_parser_extras.h"
@@ -39,7 +31,8 @@ extern "C" {
 
 static ir_function_signature *
 find_matching_signature(const char *name, const exec_list *actual_parameters,
-			gl_shader **shader_list, unsigned num_shaders);
+			gl_shader **shader_list, unsigned num_shaders,
+			bool use_builtin);
 
 class call_link_visitor : public ir_hierarchical_visitor {
 public:
@@ -75,7 +68,7 @@ public:
        * Doing so will modify the original shader.  This may prevent that
        * shader from being linkable in other programs.
        */
-      const ir_function_signature *const callee = ir->get_callee();
+      const ir_function_signature *const callee = ir->callee;
       assert(callee != NULL);
       const char *const name = callee->function_name();
 
@@ -83,9 +76,10 @@ public:
        * final linked shader.  If it does, use it as the target of the call.
        */
       ir_function_signature *sig =
-	 find_matching_signature(name, &callee->parameters, &linked, 1);
+	 find_matching_signature(name, &callee->parameters, &linked, 1,
+				 ir->use_builtin);
       if (sig != NULL) {
-	 ir->set_callee(sig);
+	 ir->callee = sig;
 	 return visit_continue;
       }
 
@@ -93,12 +87,12 @@ public:
        * linked.  If it's not found there, return an error.
        */
       sig = find_matching_signature(name, &ir->actual_parameters, shader_list,
-				    num_shaders);
+				    num_shaders, ir->use_builtin);
       if (sig == NULL) {
 	 /* FINISHME: Log the full signature of unresolved function.
 	  */
-	 linker_error_printf(this->prog, "unresolved reference to function "
-			     "`%s'\n", name);
+	 linker_error(this->prog, "unresolved reference to function `%s'\n",
+		      name);
 	 this->success = false;
 	 return visit_stop;
       }
@@ -107,12 +101,22 @@ public:
        * details that may be missing.
        */
       ir_function *f = linked->symbols->get_function(name);
-      if (f == NULL)
+      if (f == NULL) {
 	 f = new(linked) ir_function(name);
+
+	 /* Add the new function to the linked IR.  Put it at the end
+          * so that it comes after any global variable declarations
+          * that it refers to.
+	  */
+	 linked->symbols->add_function(f);
+	 linked->ir->push_tail(f);
+      }
 
       ir_function_signature *linked_sig =
 	 f->exact_matching_signature(&callee->parameters);
-      if (linked_sig == NULL) {
+      if ((linked_sig == NULL)
+	  || ((linked_sig != NULL)
+	      && (linked_sig->is_builtin != ir->use_builtin))) {
 	 linked_sig = new(linked) ir_function_signature(callee->return_type);
 	 f->add_signature(linked_sig);
       }
@@ -164,7 +168,7 @@ public:
        */
       linked_sig->accept(this);
 
-      ir->set_callee(linked_sig);
+      ir->callee = linked_sig;
 
       return visit_continue;
    }
@@ -183,8 +187,20 @@ public:
 	     * it to the linked shader.
 	     */
 	    var = ir->var->clone(linked, NULL);
-	    linked->symbols->add_variable(var->name, var);
+	    linked->symbols->add_variable(var);
 	    linked->ir->push_head(var);
+	 } else if (var->type->is_array()) {
+	    /* It is possible to have a global array declared in multiple
+	     * shaders without a size.  The array is implicitly sized by the
+	     * maximal access to it in *any* shader.  Because of this, we
+	     * need to track the maximal access to the array as linking pulls
+	     * more functions in that access the array.
+	     */
+	    var->max_array_access =
+	       MAX2(var->max_array_access, ir->var->max_array_access);
+
+	    if (var->type->length == 0 && ir->var->type->length != 0)
+	       var->type = ir->var->type;
 	 }
 
 	 ir->var = var;
@@ -231,7 +247,8 @@ private:
  */
 ir_function_signature *
 find_matching_signature(const char *name, const exec_list *actual_parameters,
-			gl_shader **shader_list, unsigned num_shaders)
+			gl_shader **shader_list, unsigned num_shaders,
+			bool use_builtin)
 {
    for (unsigned i = 0; i < num_shaders; i++) {
       ir_function *const f = shader_list[i]->symbols->get_function(name);
@@ -243,6 +260,13 @@ find_matching_signature(const char *name, const exec_list *actual_parameters,
 
       if ((sig == NULL) || !sig->is_defined)
 	 continue;
+
+      /* If this function expects to bind to a built-in function and the
+       * signature that we found isn't a built-in, keep looking.  Also keep
+       * looking if we expect a non-built-in but found a built-in.
+       */
+      if (use_builtin != sig->is_builtin)
+	    continue;
 
       return sig;
    }

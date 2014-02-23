@@ -5,6 +5,7 @@
 #include "net/disk_cache/cache_util.h"
 
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/location.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -41,7 +42,7 @@ base::FilePath GetTempCacheName(const base::FilePath& path,
   // We'll attempt to have up to kMaxOldFolders folders for deletion.
   for (int i = 0; i < kMaxOldFolders; i++) {
     base::FilePath to_delete = GetPrefixedName(path, name, i);
-    if (!file_util::PathExists(to_delete))
+    if (!base::PathExists(to_delete))
       return to_delete;
   }
   return base::FilePath();
@@ -50,6 +51,26 @@ base::FilePath GetTempCacheName(const base::FilePath& path,
 }  // namespace
 
 namespace disk_cache {
+
+void DeleteCache(const base::FilePath& path, bool remove_folder) {
+  if (remove_folder) {
+    if (!base::DeleteFile(path, /* recursive */ true))
+      LOG(WARNING) << "Unable to delete cache folder.";
+    return;
+  }
+
+  base::FileEnumerator iter(
+      path,
+      /* recursive */ false,
+      base::FileEnumerator::FILES | base::FileEnumerator::DIRECTORIES);
+  for (base::FilePath file = iter.Next(); !file.value().empty();
+       file = iter.Next()) {
+    if (!base::DeleteFile(file, /* recursive */ true)) {
+      LOG(WARNING) << "Unable to delete cache.";
+      return;
+    }
+  }
+}
 
 // In order to process a potentially large number of files, we'll rename the
 // cache directory to old_ + original_name + number, (located on the same parent

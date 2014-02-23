@@ -31,11 +31,7 @@
 #include "core/inspector/InspectorProfilerAgent.h"
 
 #include "InspectorFrontend.h"
-#include "bindings/v8/PageScriptDebugServer.h"
-#include "bindings/v8/ScriptObject.h"
 #include "bindings/v8/ScriptProfiler.h"
-#include "bindings/v8/WorkerScriptDebugServer.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptHost.h"
@@ -44,13 +40,8 @@
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/inspector/ScriptProfile.h"
-#include "core/page/Console.h"
 #include "core/page/ConsoleTypes.h"
-#include "core/page/Page.h"
-#include "core/platform/JSONValues.h"
 #include "wtf/CurrentTime.h"
-#include "wtf/MemoryInstrumentationHashMap.h"
-#include "wtf/OwnPtr.h"
 #include "wtf/text/StringConcatenate.h"
 
 namespace WebCore {
@@ -120,7 +111,6 @@ void InspectorProfilerAgent::addStartProfilingMessageToConsole(const String& tit
 PassRefPtr<TypeBuilder::Profiler::ProfileHeader> InspectorProfilerAgent::createProfileHeader(const ScriptProfile& profile)
 {
     return TypeBuilder::Profiler::ProfileHeader::create()
-        .setTypeId(TypeBuilder::Profiler::ProfileHeader::TypeId::CPU)
         .setUid(profile.uid())
         .setTitle(profile.title())
         .release();
@@ -149,7 +139,7 @@ String InspectorProfilerAgent::getCurrentUserInitiatedProfileName(bool increment
     if (incrementProfileNumber)
         m_currentUserInitiatedProfileNumber = m_nextUserInitiatedProfileNumber++;
 
-    return String(ASCIILiteral(userInitiatedProfileName)) + "." + String::number(m_currentUserInitiatedProfileNumber);
+    return String(userInitiatedProfileName) + "." + String::number(m_currentUserInitiatedProfileNumber);
 }
 
 void InspectorProfilerAgent::getProfileHeaders(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::Profiler::ProfileHeader> >& headers)
@@ -170,9 +160,11 @@ void InspectorProfilerAgent::getCPUProfile(ErrorString* errorString, int rawUid,
         *errorString = "Profile wasn't found";
         return;
     }
-    profileObject = TypeBuilder::Profiler::CPUProfile::create();
-    profileObject->setHead(it->value->buildInspectorObjectForHead());
-    profileObject->setIdleTime(it->value->idleTime());
+    profileObject = TypeBuilder::Profiler::CPUProfile::create()
+        .setHead(it->value->buildInspectorObjectForHead())
+        .setIdleTime(it->value->idleTime())
+        .setStartTime(it->value->startTime())
+        .setEndTime(it->value->endTime());
     profileObject->setSamples(it->value->buildInspectorObjectForSamples());
 }
 
@@ -271,17 +263,6 @@ void InspectorProfilerAgent::toggleRecordButton(bool isProfiling)
 {
     if (m_frontend)
         m_frontend->setRecordingProfile(isProfiling);
-}
-
-void InspectorProfilerAgent::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::InspectorProfilerAgent);
-    InspectorBaseAgent<InspectorProfilerAgent>::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_consoleAgent, "consoleAgent");
-    info.addMember(m_injectedScriptManager, "injectedScriptManager");
-    info.addWeakPointer(m_frontend);
-    info.addMember(m_profiles, "profiles");
-        info.addMember(m_profileNameIdleTimeMap, "profileNameIdleTimeMap");
 }
 
 void InspectorProfilerAgent::willProcessTask()

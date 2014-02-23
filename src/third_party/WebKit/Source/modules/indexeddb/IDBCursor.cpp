@@ -26,7 +26,9 @@
 #include "config.h"
 #include "modules/indexeddb/IDBCursor.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/IDBBindingUtilities.h"
+#include "core/dom/ExceptionCode.h"
 #include "core/dom/ScriptExecutionContext.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "modules/indexeddb/IDBAny.h"
@@ -91,49 +93,32 @@ IDBCursor::~IDBCursor()
 {
 }
 
-const String& IDBCursor::direction() const
-{
-    IDB_TRACE("IDBCursor::direction");
-    return directionToString(m_direction);
-}
-
-const ScriptValue& IDBCursor::key() const
-{
-    IDB_TRACE("IDBCursor::key");
-    return m_currentKeyValue;
-}
-
-const ScriptValue& IDBCursor::primaryKey() const
-{
-    IDB_TRACE("IDBCursor::primaryKey");
-    return m_currentPrimaryKeyValue;
-}
-
-const ScriptValue& IDBCursor::value() const
-{
-    IDB_TRACE("IDBCursor::value");
-    return m_currentValue;
-}
-
-IDBAny* IDBCursor::source() const
-{
-    return m_source.get();
-}
-
-PassRefPtr<IDBRequest> IDBCursor::update(ScriptState* state, ScriptValue& value, ExceptionCode& ec)
+PassRefPtr<IDBRequest> IDBCursor::update(ScriptState* state, ScriptValue& value, ExceptionState& es)
 {
     IDB_TRACE("IDBCursor::update");
 
-    if (!m_gotValue || isKeyCursor() || isDeleted()) {
-        ec = IDBDatabaseException::InvalidStateError;
+    if (!m_gotValue) {
+        es.throwDOMException(InvalidStateError, IDBDatabase::noValueErrorMessage);
+        return 0;
+    }
+    if (isKeyCursor()) {
+        es.throwDOMException(InvalidStateError, IDBDatabase::isKeyCursorErrorMessage);
+        return 0;
+    }
+    if (isDeleted()) {
+        es.throwDOMException(InvalidStateError, IDBDatabase::sourceDeletedErrorMessage);
+        return 0;
+    }
+    if (m_transaction->isFinished()) {
+        es.throwDOMException(TransactionInactiveError, IDBDatabase::transactionFinishedErrorMessage);
         return 0;
     }
     if (!m_transaction->isActive()) {
-        ec = IDBDatabaseException::TransactionInactiveError;
+        es.throwDOMException(TransactionInactiveError, IDBDatabase::transactionInactiveErrorMessage);
         return 0;
     }
     if (m_transaction->isReadOnly()) {
-        ec = IDBDatabaseException::ReadOnlyError;
+        es.throwDOMException(ReadOnlyError);
         return 0;
     }
 
@@ -143,30 +128,37 @@ PassRefPtr<IDBRequest> IDBCursor::update(ScriptState* state, ScriptValue& value,
     if (usesInLineKeys) {
         RefPtr<IDBKey> keyPathKey = createIDBKeyFromScriptValueAndKeyPath(m_request->requestState(), value, keyPath);
         if (!keyPathKey || !keyPathKey->isEqual(m_currentPrimaryKey.get())) {
-            ec = IDBDatabaseException::DataError;
+            es.throwDOMException(DataError, "The effective object store of this cursor uses in-line keys and evaluating the key path of the value parameter results in a different value than the cursor's effective key.");
             return 0;
         }
     }
 
-    return objectStore->put(IDBDatabaseBackendInterface::CursorUpdate, IDBAny::create(this), state, value, m_currentPrimaryKey, ec);
+    return objectStore->put(IDBDatabaseBackendInterface::CursorUpdate, IDBAny::create(this), state, value, m_currentPrimaryKey, es);
 }
 
-void IDBCursor::advance(unsigned long count, ExceptionCode& ec)
+void IDBCursor::advance(unsigned long count, ExceptionState& es)
 {
-    ec = 0;
     IDB_TRACE("IDBCursor::advance");
-    if (!m_gotValue || isDeleted()) {
-        ec = IDBDatabaseException::InvalidStateError;
+    if (!m_gotValue) {
+        es.throwDOMException(InvalidStateError, IDBDatabase::noValueErrorMessage);
+        return;
+    }
+    if (isDeleted()) {
+        es.throwDOMException(InvalidStateError, IDBDatabase::sourceDeletedErrorMessage);
         return;
     }
 
+    if (m_transaction->isFinished()) {
+        es.throwDOMException(TransactionInactiveError, IDBDatabase::transactionFinishedErrorMessage);
+        return;
+    }
     if (!m_transaction->isActive()) {
-        ec = IDBDatabaseException::TransactionInactiveError;
+        es.throwDOMException(TransactionInactiveError, IDBDatabase::transactionInactiveErrorMessage);
         return;
     }
 
     if (!count) {
-        ec = TypeError;
+        es.throwTypeError();
         return;
     }
 
@@ -175,29 +167,37 @@ void IDBCursor::advance(unsigned long count, ExceptionCode& ec)
     m_backend->advance(count, m_request);
 }
 
-void IDBCursor::continueFunction(ScriptExecutionContext* context, const ScriptValue& keyValue, ExceptionCode& ec)
+void IDBCursor::continueFunction(ScriptExecutionContext* context, const ScriptValue& keyValue, ExceptionState& es)
 {
     DOMRequestState requestState(context);
     RefPtr<IDBKey> key = keyValue.isUndefined() ? 0 : scriptValueToIDBKey(&requestState, keyValue);
-    continueFunction(key.release(), ec);
+    continueFunction(key.release(), es);
 }
 
-void IDBCursor::continueFunction(PassRefPtr<IDBKey> key, ExceptionCode& ec)
+void IDBCursor::continueFunction(PassRefPtr<IDBKey> key, ExceptionState& es)
 {
-    ec = 0;
     IDB_TRACE("IDBCursor::continue");
     if (key && !key->isValid()) {
-        ec = IDBDatabaseException::DataError;
+        es.throwDOMException(DataError, IDBDatabase::notValidKeyErrorMessage);
         return;
     }
 
+    if (m_transaction->isFinished()) {
+        es.throwDOMException(TransactionInactiveError, IDBDatabase::transactionFinishedErrorMessage);
+        return;
+    }
     if (!m_transaction->isActive()) {
-        ec = IDBDatabaseException::TransactionInactiveError;
+        es.throwDOMException(TransactionInactiveError, IDBDatabase::transactionInactiveErrorMessage);
         return;
     }
 
-    if (!m_gotValue || isDeleted()) {
-        ec = IDBDatabaseException::InvalidStateError;
+    if (!m_gotValue) {
+        es.throwDOMException(InvalidStateError, IDBDatabase::noValueErrorMessage);
+        return;
+    }
+
+    if (isDeleted()) {
+        es.throwDOMException(InvalidStateError, IDBDatabase::sourceDeletedErrorMessage);
         return;
     }
 
@@ -205,12 +205,12 @@ void IDBCursor::continueFunction(PassRefPtr<IDBKey> key, ExceptionCode& ec)
         ASSERT(m_currentKey);
         if (m_direction == IndexedDB::CursorNext || m_direction == IndexedDB::CursorNextNoDuplicate) {
             if (!m_currentKey->isLessThan(key.get())) {
-                ec = IDBDatabaseException::DataError;
+                es.throwDOMException(DataError, "The parameter is less than or equal to this cursor's position.");
                 return;
             }
         } else {
             if (!key->isLessThan(m_currentKey.get())) {
-                ec = IDBDatabaseException::DataError;
+                es.throwDOMException(DataError, "The parameter is greater than or equal to this cursor's position.");
                 return;
             }
         }
@@ -223,26 +223,37 @@ void IDBCursor::continueFunction(PassRefPtr<IDBKey> key, ExceptionCode& ec)
     m_backend->continueFunction(key, m_request);
 }
 
-PassRefPtr<IDBRequest> IDBCursor::deleteFunction(ScriptExecutionContext* context, ExceptionCode& ec)
+PassRefPtr<IDBRequest> IDBCursor::deleteFunction(ScriptExecutionContext* context, ExceptionState& es)
 {
-    ec = 0;
     IDB_TRACE("IDBCursor::delete");
+    if (m_transaction->isFinished()) {
+        es.throwDOMException(TransactionInactiveError, IDBDatabase::transactionFinishedErrorMessage);
+        return 0;
+    }
     if (!m_transaction->isActive()) {
-        ec = IDBDatabaseException::TransactionInactiveError;
+        es.throwDOMException(TransactionInactiveError, IDBDatabase::transactionInactiveErrorMessage);
         return 0;
     }
     if (m_transaction->isReadOnly()) {
-        ec = IDBDatabaseException::ReadOnlyError;
+        es.throwDOMException(ReadOnlyError);
         return 0;
     }
 
-    if (!m_gotValue || isKeyCursor() || isDeleted()) {
-        ec = IDBDatabaseException::InvalidStateError;
+    if (!m_gotValue) {
+        es.throwDOMException(InvalidStateError, IDBDatabase::noValueErrorMessage);
+        return 0;
+    }
+    if (isKeyCursor()) {
+        es.throwDOMException(InvalidStateError, IDBDatabase::isKeyCursorErrorMessage);
+        return 0;
+    }
+    if (isDeleted()) {
+        es.throwDOMException(InvalidStateError, IDBDatabase::sourceDeletedErrorMessage);
         return 0;
     }
 
-    RefPtr<IDBKeyRange> keyRange = IDBKeyRange::only(m_currentPrimaryKey, ec);
-    ASSERT(!ec);
+    RefPtr<IDBKeyRange> keyRange = IDBKeyRange::only(m_currentPrimaryKey, es);
+    ASSERT(!es.hadException());
 
     RefPtr<IDBRequest> request = IDBRequest::create(context, IDBAny::create(this), m_transaction.get());
     m_transaction->backendDB()->deleteRange(m_transaction->id(), effectiveObjectStore()->id(), keyRange, request);
@@ -251,16 +262,20 @@ PassRefPtr<IDBRequest> IDBCursor::deleteFunction(ScriptExecutionContext* context
 
 void IDBCursor::postSuccessHandlerCallback()
 {
-    m_backend->postSuccessHandlerCallback();
+    if (m_backend)
+        m_backend->postSuccessHandlerCallback();
 }
 
 void IDBCursor::close()
 {
+    // The notifier may be the last reference to this cursor.
+    RefPtr<IDBCursor> protect(this);
     m_transactionNotifier.cursorFinished();
     if (m_request) {
         m_request->finishCursor();
         m_request.clear();
     }
+    m_backend.clear();
 }
 
 void IDBCursor::setValueReady(DOMRequestState* state, PassRefPtr<IDBKey> key, PassRefPtr<IDBKey> primaryKey, ScriptValue& value)
@@ -271,7 +286,7 @@ void IDBCursor::setValueReady(DOMRequestState* state, PassRefPtr<IDBKey> key, Pa
     m_currentPrimaryKey = primaryKey;
     m_currentPrimaryKeyValue = idbKeyToScriptValue(state, m_currentPrimaryKey);
 
-    if (!isKeyCursor()) {
+    if (isCursorWithValue()) {
         RefPtr<IDBObjectStore> objectStore = effectiveObjectStore();
         const IDBObjectStoreMetadata metadata = objectStore->metadata();
         if (metadata.autoIncrement && !metadata.keyPath.isNull()) {
@@ -304,7 +319,7 @@ bool IDBCursor::isDeleted() const
     return m_source->idbIndex()->isDeleted();
 }
 
-IndexedDB::CursorDirection IDBCursor::stringToDirection(const String& directionString, ExceptionCode& ec)
+IndexedDB::CursorDirection IDBCursor::stringToDirection(const String& directionString, ExceptionState& es)
 {
     if (directionString.isNull() || directionString == IDBCursor::directionNext())
         return IndexedDB::CursorNext;
@@ -315,7 +330,7 @@ IndexedDB::CursorDirection IDBCursor::stringToDirection(const String& directionS
     if (directionString == IDBCursor::directionPrevUnique())
         return IndexedDB::CursorPrevNoDuplicate;
 
-    ec = TypeError;
+    es.throwTypeError();
     return IndexedDB::CursorNext;
 }
 

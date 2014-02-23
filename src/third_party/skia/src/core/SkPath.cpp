@@ -15,60 +15,6 @@
 #include "SkRRect.h"
 #include "SkThread.h"
 
-////////////////////////////////////////////////////////////////////////////
-
-#if SK_DEBUG_PATH_REF
-
-SkPath::PathRefDebugRef::PathRefDebugRef(SkPath* owner) : fOwner(owner) {}
-
-SkPath::PathRefDebugRef::PathRefDebugRef(SkPathRef* pr, SkPath* owner)
-: fPathRef(pr)
-, fOwner(owner) {
-    pr->addOwner(owner);
-}
-
-SkPath::PathRefDebugRef::~PathRefDebugRef() {
-    fPathRef->removeOwner(fOwner);
-}
-
-void SkPath::PathRefDebugRef::reset(SkPathRef* ref) {
-    bool diff = (ref != fPathRef.get());
-    if (diff && NULL != fPathRef.get()) {
-        fPathRef.get()->removeOwner(fOwner);
-    }
-    fPathRef.reset(ref);
-    if (diff && NULL != fPathRef.get()) {
-        fPathRef.get()->addOwner(fOwner);
-    }
-}
-
-void SkPath::PathRefDebugRef::swap(SkPath::PathRefDebugRef* other) {
-    if (other->fPathRef.get() != fPathRef.get()) {
-        other->fPathRef->removeOwner(other->fOwner);
-        other->fPathRef->addOwner(fOwner);
-
-        fPathRef->removeOwner(fOwner);
-        fPathRef->addOwner(other->fOwner);
-    }
-
-    fPathRef.swap(&other->fPathRef);
-}
-
-SkPathRef* SkPath::PathRefDebugRef::get() const { return fPathRef.get(); }
-
-SkAutoTUnref<SkPathRef>::BlockRefType *SkPath::PathRefDebugRef::operator->() const {
-    return fPathRef.operator->();
-}
-
-SkPath::PathRefDebugRef::operator SkPathRef*() {
-    return fPathRef.operator SkPathRef *();
-}
-
-#endif
-
-////////////////////////////////////////////////////////////////////////////
-
-
 SK_DEFINE_INST_COUNT(SkPath);
 
 // This value is just made-up for now. When count is 4, calling memset was much
@@ -214,74 +160,73 @@ static bool compute_pt_bounds(SkRect* bounds, const SkPathRef& ref) {
 #define INITIAL_LASTMOVETOINDEX_VALUE   ~0
 
 SkPath::SkPath()
-#if SK_DEBUG_PATH_REF
-    : fPathRef(SkPathRef::CreateEmpty(), this)
-#else
     : fPathRef(SkPathRef::CreateEmpty())
+#ifdef SK_BUILD_FOR_ANDROID
+    , fGenerationID(0)
 #endif
-    , fFillType(kWinding_FillType)
-    , fBoundsIsDirty(true) {
+{
+    this->resetFields();
+}
+
+void SkPath::resetFields() {
+    //fPathRef is assumed to have been emptied by the caller.
+    fLastMoveToIndex = INITIAL_LASTMOVETOINDEX_VALUE;
+    fFillType = kWinding_FillType;
+    fSegmentMask = 0;
+    fBoundsIsDirty = true;
     fConvexity = kUnknown_Convexity;
     fDirection = kUnknown_Direction;
-    fSegmentMask = 0;
-    fLastMoveToIndex = INITIAL_LASTMOVETOINDEX_VALUE;
+    fIsFinite = false;
     fIsOval = false;
-    fIsFinite = false;  // gets computed when we know our bounds
 #ifdef SK_BUILD_FOR_ANDROID
-    fGenerationID = 0;
+    GEN_ID_INC;
     fSourcePath = NULL;
 #endif
 }
 
-SkPath::SkPath(const SkPath& src)
-#if SK_DEBUG_PATH_REF
-    : fPathRef(this)
-#endif
-{
-    SkDEBUGCODE(src.validate();)
-    src.fPathRef.get()->ref();
-    fPathRef.reset(src.fPathRef.get());
-    fBounds         = src.fBounds;
-    fFillType       = src.fFillType;
-    fBoundsIsDirty  = src.fBoundsIsDirty;
-    fConvexity      = src.fConvexity;
-    fDirection      = src.fDirection;
-    fIsFinite       = src.fIsFinite;
-    fSegmentMask    = src.fSegmentMask;
-    fLastMoveToIndex = src.fLastMoveToIndex;
-    fIsOval         = src.fIsOval;
+SkPath::SkPath(const SkPath& that)
+    : fPathRef(SkRef(that.fPathRef.get())) {
+    this->copyFields(that);
 #ifdef SK_BUILD_FOR_ANDROID
-    fGenerationID = src.fGenerationID;
-    fSourcePath = NULL;
+    fGenerationID = that.fGenerationID;
+    fSourcePath   = NULL;  // TODO(mtklein): follow up with Android: do we want to copy this too?
 #endif
+    SkDEBUGCODE(that.validate();)
 }
 
 SkPath::~SkPath() {
     SkDEBUGCODE(this->validate();)
 }
 
-SkPath& SkPath::operator=(const SkPath& src) {
-    SkDEBUGCODE(src.validate();)
+SkPath& SkPath::operator=(const SkPath& that) {
+    SkDEBUGCODE(that.validate();)
 
-    if (this != &src) {
-        src.fPathRef.get()->ref();
-        fPathRef.reset(src.fPathRef.get());
-        fBounds         = src.fBounds;
-        fFillType       = src.fFillType;
-        fBoundsIsDirty  = src.fBoundsIsDirty;
-        fConvexity      = src.fConvexity;
-        fDirection      = src.fDirection;
-        fIsFinite       = src.fIsFinite;
-        fSegmentMask    = src.fSegmentMask;
-        fLastMoveToIndex = src.fLastMoveToIndex;
-        fIsOval         = src.fIsOval;
-        GEN_ID_INC;
+    if (this != &that) {
+        fPathRef.reset(SkRef(that.fPathRef.get()));
+        this->copyFields(that);
+#ifdef SK_BUILD_FOR_ANDROID
+        GEN_ID_INC;  // Similar to swap, we can't just copy this or it could go back in time.
+        fSourcePath = NULL;  // TODO(mtklein): follow up with Android: do we want to copy this too?
+#endif
     }
     SkDEBUGCODE(this->validate();)
     return *this;
 }
 
-SK_API bool operator==(const SkPath& a, const SkPath& b) {
+void SkPath::copyFields(const SkPath& that) {
+    //fPathRef is assumed to have been set by the caller.
+    fBounds          = that.fBounds;
+    fLastMoveToIndex = that.fLastMoveToIndex;
+    fFillType        = that.fFillType;
+    fSegmentMask     = that.fSegmentMask;
+    fBoundsIsDirty   = that.fBoundsIsDirty;
+    fConvexity       = that.fConvexity;
+    fDirection       = that.fDirection;
+    fIsFinite        = that.fIsFinite;
+    fIsOval          = that.fIsOval;
+}
+
+bool operator==(const SkPath& a, const SkPath& b) {
     // note: don't need to look at isConvex or bounds, since just comparing the
     // raw data is sufficient.
 
@@ -294,21 +239,27 @@ SK_API bool operator==(const SkPath& a, const SkPath& b) {
          *a.fPathRef.get() == *b.fPathRef.get());
 }
 
-void SkPath::swap(SkPath& other) {
-    SkASSERT(&other != NULL);
+void SkPath::swap(SkPath& that) {
+    SkASSERT(&that != NULL);
 
-    if (this != &other) {
-        SkTSwap<SkRect>(fBounds, other.fBounds);
-        fPathRef.swap(&other.fPathRef);
-        SkTSwap<uint8_t>(fFillType, other.fFillType);
-        SkTSwap<uint8_t>(fBoundsIsDirty, other.fBoundsIsDirty);
-        SkTSwap<uint8_t>(fConvexity, other.fConvexity);
-        SkTSwap<uint8_t>(fDirection, other.fDirection);
-        SkTSwap<uint8_t>(fSegmentMask, other.fSegmentMask);
-        SkTSwap<int>(fLastMoveToIndex, other.fLastMoveToIndex);
-        SkTSwap<SkBool8>(fIsOval, other.fIsOval);
-        SkTSwap<SkBool8>(fIsFinite, other.fIsFinite);
+    if (this != &that) {
+        fPathRef.swap(&that.fPathRef);
+        SkTSwap<SkRect>(fBounds, that.fBounds);
+        SkTSwap<int>(fLastMoveToIndex, that.fLastMoveToIndex);
+        SkTSwap<uint8_t>(fFillType, that.fFillType);
+        SkTSwap<uint8_t>(fSegmentMask, that.fSegmentMask);
+        SkTSwap<uint8_t>(fBoundsIsDirty, that.fBoundsIsDirty);
+        SkTSwap<uint8_t>(fConvexity, that.fConvexity);
+        SkTSwap<uint8_t>(fDirection, that.fDirection);
+        SkTSwap<SkBool8>(fIsFinite, that.fIsFinite);
+        SkTSwap<SkBool8>(fIsOval, that.fIsOval);
+#ifdef SK_BUILD_FOR_ANDROID
+        // It doesn't really make sense to swap the generation IDs here, because they might go
+        // backwards.  To be safe we increment both to mark them both as changed.
         GEN_ID_INC;
+        GEN_ID_PTR_INC(&that);
+        SkTSwap<const SkPath*>(fSourcePath, that.fSourcePath);
+#endif
     }
 }
 
@@ -355,29 +306,35 @@ bool SkPath::conservativelyContainsRect(const SkRect& rect) const {
     SkPath::Verb verb;
     SkPoint pts[4];
     SkDEBUGCODE(int moveCnt = 0;)
+    SkDEBUGCODE(int segmentCount = 0;)
+    SkDEBUGCODE(int closeCount = 0;)
 
     while ((verb = iter.next(pts)) != kDone_Verb) {
         int nextPt = -1;
         switch (verb) {
             case kMove_Verb:
-                SkASSERT(!moveCnt);
+                SkASSERT(!segmentCount && !closeCount);
                 SkDEBUGCODE(++moveCnt);
                 firstPt = prevPt = pts[0];
                 break;
             case kLine_Verb:
                 nextPt = 1;
-                SkASSERT(moveCnt);
+                SkASSERT(moveCnt && !closeCount);
+                SkDEBUGCODE(++segmentCount);
                 break;
             case kQuad_Verb:
             case kConic_Verb:
-                SkASSERT(moveCnt);
+                SkASSERT(moveCnt && !closeCount);
+                SkDEBUGCODE(++segmentCount);
                 nextPt = 2;
                 break;
             case kCubic_Verb:
-                SkASSERT(moveCnt);
+                SkASSERT(moveCnt && !closeCount);
+                SkDEBUGCODE(++segmentCount);
                 nextPt = 3;
                 break;
             case kClose_Verb:
+                SkDEBUGCODE(++closeCount;)
                 break;
             default:
                 SkDEBUGFAIL("unknown verb");
@@ -411,25 +368,14 @@ void SkPath::reset() {
     SkDEBUGCODE(this->validate();)
 
     fPathRef.reset(SkPathRef::CreateEmpty());
-    GEN_ID_INC;
-    fBoundsIsDirty = true;
-    fConvexity = kUnknown_Convexity;
-    fDirection = kUnknown_Direction;
-    fSegmentMask = 0;
-    fLastMoveToIndex = INITIAL_LASTMOVETOINDEX_VALUE;
-    fIsOval = false;
+    this->resetFields();
 }
 
 void SkPath::rewind() {
     SkDEBUGCODE(this->validate();)
 
     SkPathRef::Rewind(&fPathRef);
-    GEN_ID_INC;
-    fConvexity = kUnknown_Convexity;
-    fBoundsIsDirty = true;
-    fSegmentMask = 0;
-    fLastMoveToIndex = INITIAL_LASTMOVETOINDEX_VALUE;
-    fIsOval = false;
+    this->resetFields();
 }
 
 bool SkPath::isEmpty() const {
@@ -439,11 +385,11 @@ bool SkPath::isEmpty() const {
 
 bool SkPath::isLine(SkPoint line[2]) const {
     int verbCount = fPathRef->countVerbs();
-    int ptCount = fPathRef->countVerbs();
 
-    if (2 == verbCount && 2 == ptCount) {
-        if (kMove_Verb == fPathRef->atVerb(0) &&
-            kLine_Verb == fPathRef->atVerb(1)) {
+    if (2 == verbCount) {
+        SkASSERT(kMove_Verb == fPathRef->atVerb(0));
+        if (kLine_Verb == fPathRef->atVerb(1)) {
+            SkASSERT(2 == fPathRef->countPoints());
             if (line) {
                 const SkPoint* pts = fPathRef->points();
                 line[0] = pts[0];
@@ -803,6 +749,7 @@ void SkPath::lineTo(SkScalar x, SkScalar y) {
 }
 
 void SkPath::rLineTo(SkScalar x, SkScalar y) {
+    this->injectMoveToIfNeeded();  // This can change the result of this->getLastPt().
     SkPoint pt;
     this->getLastPt(&pt);
     this->lineTo(pt.fX + x, pt.fY + y);
@@ -824,6 +771,7 @@ void SkPath::quadTo(SkScalar x1, SkScalar y1, SkScalar x2, SkScalar y2) {
 }
 
 void SkPath::rQuadTo(SkScalar x1, SkScalar y1, SkScalar x2, SkScalar y2) {
+    this->injectMoveToIfNeeded();  // This can change the result of this->getLastPt().
     SkPoint pt;
     this->getLastPt(&pt);
     this->quadTo(pt.fX + x1, pt.fY + y1, pt.fX + x2, pt.fY + y2);
@@ -857,6 +805,7 @@ void SkPath::conicTo(SkScalar x1, SkScalar y1, SkScalar x2, SkScalar y2,
 
 void SkPath::rConicTo(SkScalar dx1, SkScalar dy1, SkScalar dx2, SkScalar dy2,
                       SkScalar w) {
+    this->injectMoveToIfNeeded();  // This can change the result of this->getLastPt().
     SkPoint pt;
     this->getLastPt(&pt);
     this->conicTo(pt.fX + dx1, pt.fY + dy1, pt.fX + dx2, pt.fY + dy2, w);
@@ -881,6 +830,7 @@ void SkPath::cubicTo(SkScalar x1, SkScalar y1, SkScalar x2, SkScalar y2,
 
 void SkPath::rCubicTo(SkScalar x1, SkScalar y1, SkScalar x2, SkScalar y2,
                       SkScalar x3, SkScalar y3) {
+    this->injectMoveToIfNeeded();  // This can change the result of this->getLastPt().
     SkPoint pt;
     this->getLastPt(&pt);
     this->cubicTo(pt.fX + x1, pt.fY + y1, pt.fX + x2, pt.fY + y2,
@@ -2242,7 +2192,6 @@ void SkPath::dump(bool forceClose, const char title[]) const {
                 append_params(&builder, "path.moveTo", &pts[0], 1);
                 break;
             case kLine_Verb:
-                append_params(&builder, "path.lineTo", &pts[1], 1);
                 append_params(&builder, "path.lineTo", &pts[1], 1);
                 break;
             case kQuad_Verb:

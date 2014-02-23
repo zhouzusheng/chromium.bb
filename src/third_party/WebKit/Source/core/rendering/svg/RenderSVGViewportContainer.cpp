@@ -32,7 +32,7 @@
 
 namespace WebCore {
 
-RenderSVGViewportContainer::RenderSVGViewportContainer(SVGStyledElement* node)
+RenderSVGViewportContainer::RenderSVGViewportContainer(SVGElement* node)
     : RenderSVGContainer(node)
     , m_didTransformToRootUpdate(false)
     , m_isLayoutSizeChanged(false)
@@ -63,7 +63,7 @@ void RenderSVGViewportContainer::calcViewport()
     FloatRect oldViewport = m_viewport;
 
     SVGLengthContext lengthContext(element);
-    m_viewport = FloatRect(svg->x().value(lengthContext), svg->y().value(lengthContext), svg->width().value(lengthContext), svg->height().value(lengthContext));
+    m_viewport = FloatRect(svg->xCurrentValue().value(lengthContext), svg->yCurrentValue().value(lengthContext), svg->widthCurrentValue().value(lengthContext), svg->heightCurrentValue().value(lengthContext));
 
     SVGElement* correspondingElement = svg->correspondingElement();
     if (correspondingElement && svg->isInShadowTree()) {
@@ -96,15 +96,15 @@ void RenderSVGViewportContainer::calcViewport()
         // values will override the corresponding attributes on the 'svg' in the generated tree.
 
         SVGLengthContext lengthContext(element);
-        if (useElement->width().value(lengthContext) > 0)
-            m_viewport.setWidth(useElement->width().value(lengthContext));
+        if (useElement->hasAttribute(SVGNames::widthAttr))
+            m_viewport.setWidth(useElement->widthCurrentValue().value(lengthContext));
         else if (isSymbolElement && svg->hasAttribute(SVGNames::widthAttr)) {
             SVGLength containerWidth(LengthModeWidth, "100%");
             m_viewport.setWidth(containerWidth.value(lengthContext));
         }
 
-        if (useElement->height().value(lengthContext) > 0)
-            m_viewport.setHeight(useElement->height().value(lengthContext));
+        if (useElement->hasAttribute(SVGNames::heightAttr))
+            m_viewport.setHeight(useElement->heightCurrentValue().value(lengthContext));
         else if (isSymbolElement && svg->hasAttribute(SVGNames::heightAttr)) {
             SVGLength containerHeight(LengthModeHeight, "100%");
             m_viewport.setHeight(containerHeight.value(lengthContext));
@@ -117,12 +117,12 @@ void RenderSVGViewportContainer::calcViewport()
     }
 }
 
-bool RenderSVGViewportContainer::calculateLocalTransform() 
+bool RenderSVGViewportContainer::calculateLocalTransform()
 {
     m_didTransformToRootUpdate = m_needsTransformUpdate || SVGRenderSupport::transformToRootChanged(parent());
     if (!m_needsTransformUpdate)
         return false;
-    
+
     m_localToParentTransform = AffineTransform::translation(m_viewport.x(), m_viewport.y()) * viewportTransform();
     m_needsTransformUpdate = false;
     return true;
@@ -143,7 +143,7 @@ bool RenderSVGViewportContainer::pointIsInsideViewportClip(const FloatPoint& poi
     // Respect the viewport clip (which is in parent coords)
     if (!SVGRenderSupport::isOverflowHidden(this))
         return true;
-    
+
     return m_viewport.contains(pointInParent);
 }
 

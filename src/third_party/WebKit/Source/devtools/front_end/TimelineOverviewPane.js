@@ -463,11 +463,11 @@ WebInspector.TimelineMemoryOverview = function(model)
 WebInspector.TimelineMemoryOverview.prototype = {
     update: function()
     {
+        this._resetCanvas();
+
         var records = this._model.records;
         if (!records.length)
             return;
-
-        this._resetCanvas();
 
         const lowerOffset = 3;
         var maxUsedHeapSize = 0;
@@ -483,7 +483,7 @@ WebInspector.TimelineMemoryOverview.prototype = {
         var width = this._canvas.width;
         var height = this._canvas.height - lowerOffset;
         var xFactor = width / (maxTime - minTime);
-        var yFactor = height / (maxUsedHeapSize - minUsedHeapSize);
+        var yFactor = height / Math.max(maxUsedHeapSize - minUsedHeapSize, 1);
 
         var histogram = new Array(width);
         WebInspector.TimelinePresentationModel.forAllRecords(records, function(r) {
@@ -494,47 +494,39 @@ WebInspector.TimelineMemoryOverview.prototype = {
             histogram[x] = Math.max(histogram[x] || 0, y);
         });
 
+        height++; // +1 so that the border always fit into the canvas area.
+
+        var y = 0;
+        var isFirstPoint = true;
         var ctx = this._context;
-        this._clear(ctx);
-
-        // +1 so that the border always fit into the canvas area.
-        height = height + 1;
-
         ctx.beginPath();
-        var initialY = 0;
-        for (var k = 0; k < histogram.length; k++) {
-            if (histogram[k]) {
-                initialY = histogram[k];
-                break;
-            }
-        }
-        ctx.moveTo(0, height - initialY);
-
+        ctx.moveTo(0, this._canvas.height);
         for (var x = 0; x < histogram.length; x++) {
-             if (!histogram[x])
-                 continue;
-             ctx.lineTo(x, height - histogram[x]);
+            if (typeof histogram[x] === "undefined")
+                continue;
+            if (isFirstPoint) {
+                isFirstPoint = false;
+                y = histogram[x];
+                ctx.lineTo(0, height - y);
+            }
+            ctx.lineTo(x, height - y);
+            y = histogram[x];
+            ctx.lineTo(x, height - y);
         }
+        ctx.lineTo(width, height - y);
+        ctx.lineTo(width, this._canvas.height);
+        ctx.lineTo(0, this._canvas.height);
+        ctx.closePath();
 
         ctx.lineWidth = 0.5;
         ctx.strokeStyle = "rgba(20,0,0,0.8)";
         ctx.stroke();
 
         ctx.fillStyle = "rgba(214,225,254, 0.8);";
-        ctx.lineTo(width, this._canvas.height);
-        ctx.lineTo(0, this._canvas.height);
-        ctx.lineTo(0, height - initialY);
         ctx.fill();
-        ctx.closePath();
 
         this._maxHeapSizeLabel.textContent = Number.bytesToString(maxUsedHeapSize);
         this._minHeapSizeLabel.textContent = Number.bytesToString(minUsedHeapSize);
-    },
-
-    _clear: function(ctx)
-    {
-        ctx.fillStyle = "rgba(255,255,255,0.8)";
-        ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
     },
 
     __proto__: WebInspector.TimelineOverviewBase.prototype
@@ -673,6 +665,7 @@ WebInspector.TimelineFrameOverview.prototype = {
     reset: function()
     {
         this._recordsPerBar = 1;
+        /** @type {!Array.<{startTime:number, endTime:number}>} */
         this._barTimes = [];
         this._frames = [];
     },
@@ -896,10 +889,20 @@ WebInspector.TimelineFrameOverview.prototype = {
      */
     windowBoundaries: function(startTime, endTime)
     {
+        /**
+         * @param {number} time
+         * @param {{startTime:number, endTime:number}} barTime
+         * @return {number}
+         */
         function barStartComparator(time, barTime)
         {
             return time - barTime.startTime;
         }
+        /**
+         * @param {number} time
+         * @param {{startTime:number, endTime:number}} barTime
+         * @return {number}
+         */
         function barEndComparator(time, barTime)
         {
             // We need a frame where time is in [barTime.startTime, barTime.endTime), so exclude exact matches against endTime.
@@ -915,7 +918,7 @@ WebInspector.TimelineFrameOverview.prototype = {
 
     /**
      * @param {number} time
-     * @param {function(*, *):number} comparator
+     * @param {function(number, {startTime:number, endTime:number}):number} comparator
      */
     _windowBoundaryFromTime: function(time, comparator)
     {
@@ -929,7 +932,7 @@ WebInspector.TimelineFrameOverview.prototype = {
 
     /**
      * @param {number} time
-     * @param {function(*, *):number} comparator
+     * @param {function(number, {startTime:number, endTime:number}):number} comparator
      */
     _firstBarAfter: function(time, comparator)
     {

@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "base/shared_memory.h"
+#include "base/memory/shared_memory.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/gpu_memory_allocation.h"
 #include "content/common/gpu/gpu_memory_uma_stats.h"
@@ -151,6 +151,7 @@ IPC_STRUCT_TRAITS_BEGIN(gpu::GPUInfo)
   IPC_STRUCT_TRAITS_MEMBER(gl_ws_vendor)
   IPC_STRUCT_TRAITS_MEMBER(gl_ws_version)
   IPC_STRUCT_TRAITS_MEMBER(gl_ws_extensions)
+  IPC_STRUCT_TRAITS_MEMBER(gl_reset_notification_strategy)
   IPC_STRUCT_TRAITS_MEMBER(can_lose_context)
   IPC_STRUCT_TRAITS_MEMBER(performance_stats)
   IPC_STRUCT_TRAITS_MEMBER(software_rendering)
@@ -183,7 +184,6 @@ IPC_STRUCT_TRAITS_BEGIN(content::GpuMemoryAllocationForRenderer)
   IPC_STRUCT_TRAITS_MEMBER(bytes_limit_when_not_visible)
   IPC_STRUCT_TRAITS_MEMBER(priority_cutoff_when_not_visible)
   IPC_STRUCT_TRAITS_MEMBER(have_backbuffer_when_not_visible)
-  IPC_STRUCT_TRAITS_MEMBER(enforce_but_do_not_keep_as_policy)
 IPC_STRUCT_TRAITS_END()
 IPC_ENUM_TRAITS(content::GpuMemoryAllocationForRenderer::PriorityCutoff)
 
@@ -450,9 +450,8 @@ IPC_MESSAGE_CONTROL1(GpuChannelMsg_GenerateMailboxNamesReply,
 #if defined(OS_ANDROID)
 // Register the StreamTextureProxy class with the GPU process, so that
 // the renderer process will get notified whenever a frame becomes available.
-IPC_SYNC_MESSAGE_CONTROL2_1(GpuChannelMsg_RegisterStreamTextureProxy,
+IPC_SYNC_MESSAGE_CONTROL1_1(GpuChannelMsg_RegisterStreamTextureProxy,
                             int32, /* stream_id */
-                            gfx::Size, /* initial_size */
                             int /* route_id */)
 
 // Tells the GPU process create and send the java surface texture object to
@@ -461,6 +460,12 @@ IPC_MESSAGE_CONTROL3(GpuChannelMsg_EstablishStreamTexture,
                      int32, /* stream_id */
                      int32, /* primary_id */
                      int32 /* secondary_id */)
+
+// Tells the GPU process to set the size of StreamTexture from the given
+// stream Id.
+IPC_MESSAGE_CONTROL2(GpuChannelMsg_SetStreamTextureSize,
+                     int32, /* stream_id */
+                     gfx::Size /* size */)
 #endif
 
 // Tells the GPU process to collect rendering stats.
@@ -609,6 +614,13 @@ IPC_MESSAGE_ROUTED2(GpuCommandBufferMsg_SignalSyncPoint,
 
 // Response to GpuCommandBufferMsg_SignalSyncPoint.
 IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_SignalSyncPointAck,
+                    uint32 /* signal_id */)
+
+// Makes this command buffer signal when a query is reached, by sending
+// back a GpuCommandBufferMsg_SignalSyncPointAck message with the same
+// signal_id.
+IPC_MESSAGE_ROUTED2(GpuCommandBufferMsg_SignalQuery,
+                    uint32 /* query */,
                     uint32 /* signal_id */)
 
 //------------------------------------------------------------------------------

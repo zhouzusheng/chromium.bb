@@ -6,13 +6,13 @@
  * are met:
  *
  * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer. 
+ *     notice, this list of conditions and the following disclaimer.
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution. 
+ *     documentation and/or other materials provided with the distribution.
  * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission. 
+ *     from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -29,7 +29,7 @@
 #ifndef WTF_ASCIICType_h
 #define WTF_ASCIICType_h
 
-#include <wtf/Assertions.h>
+#include "wtf/Assertions.h"
 
 // The behavior of many of the functions in the <ctype.h> header is dependent
 // on the current locale. But in the WebKit project, all uses of those functions
@@ -108,7 +108,12 @@ template<typename CharType> inline bool isASCIIUpper(CharType c)
 
 template<typename CharType> inline CharType toASCIILower(CharType c)
 {
+#if defined(_MSC_FULL_VER) && _MSC_FULL_VER == 170060610
+    // Make a workaround for VS2012 update 3 optimizer bug, remove once VS2012 fix it.
+    return (c >= 'A' && c <= 'Z') ? c + 0x20 : c;
+#else
     return c | ((c >= 'A' && c <= 'Z') << 5);
+#endif
 }
 
 template<typename CharType> inline CharType toASCIILowerUnchecked(CharType character)

@@ -41,30 +41,15 @@ namespace WebCore {
 
 class InsertionPoint : public HTMLElement {
 public:
-    enum Type {
-        ShadowInsertionPoint,
-        ContentInsertionPoint
-    };
-
-    enum MatchType {
-        AlwaysMatches,
-        NeverMatches,
-        HasToMatchSelector
-    };
-
     virtual ~InsertionPoint();
 
     bool hasDistribution() const { return !m_distribution.isEmpty(); }
     void setDistribution(ContentDistribution& distribution) { m_distribution.swap(distribution); }
     void clearDistribution() { m_distribution.clear(); }
-    bool isShadowBoundary() const;
     bool isActive() const;
 
-    PassRefPtr<NodeList> getDistributedNodes() const;
+    PassRefPtr<NodeList> getDistributedNodes();
 
-    virtual MatchType matchTypeFor(Node*) { return AlwaysMatches; }
-    virtual const CSSSelectorList& selectorList() { return emptySelectorList(); }
-    virtual Type insertionPointType() const = 0;
     virtual bool canAffectSelector() const { return false; }
 
     bool resetStyleInheritance() const;
@@ -75,16 +60,12 @@ public:
 
     bool shouldUseFallbackElements() const;
 
-    size_t indexOf(Node* node) const { return m_distribution.find(node); }
-    bool contains(const Node*) const;
     size_t size() const { return m_distribution.size(); }
     Node* at(size_t index)  const { return m_distribution.at(index).get(); }
     Node* first() const { return m_distribution.isEmpty() ? 0 : m_distribution.first().get(); }
     Node* last() const { return m_distribution.isEmpty() ? 0 : m_distribution.last().get(); }
     Node* nextTo(const Node* node) const { return m_distribution.nextTo(node); }
     Node* previousTo(const Node* node) const { return m_distribution.previousTo(node); }
-
-    static const CSSSelectorList& emptySelectorList();
 
 protected:
     InsertionPoint(const QualifiedName&, Document*);
@@ -116,13 +97,6 @@ inline const InsertionPoint* toInsertionPoint(const Node* node)
 inline bool isActiveInsertionPoint(const Node* node)
 {
     return node->isInsertionPoint() && toInsertionPoint(node)->isActive();
-}
-
-inline bool isLowerEncapsulationBoundary(Node* node)
-{
-    if (!node || !node->isInsertionPoint())
-        return false;
-    return toInsertionPoint(node)->isShadowBoundary();
 }
 
 inline Node* parentNodeForDistribution(const Node* node)

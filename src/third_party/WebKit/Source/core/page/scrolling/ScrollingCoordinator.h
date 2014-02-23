@@ -29,8 +29,8 @@
 #include "core/platform/PlatformWheelEvent.h"
 #include "core/platform/ScrollTypes.h"
 #include "core/platform/graphics/IntRect.h"
-#include "core/platform/graphics/LayoutRect.h"
 #include "core/rendering/RenderObject.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebKit {
 class WebLayer;
@@ -63,7 +63,7 @@ public:
     // Should be called whenever the given frame view has been laid out.
     void frameViewLayoutUpdated(FrameView*);
 
-    // Should be called whenever a wheel event handler is added or removed in the 
+    // Should be called whenever a wheel event handler is added or removed in the
     // frame view's underlying document.
     void frameViewWheelEventHandlerCountChanged(FrameView*);
 
@@ -91,17 +91,24 @@ public:
     bool shouldUpdateScrollLayerPositionOnMainThread() const { return mainThreadScrollingReasons() != 0; }
 
     void willDestroyScrollableArea(ScrollableArea*);
-    void scrollableAreaScrollLayerDidChange(ScrollableArea*);
+    // Returns true if the coordinator handled this change.
+    bool scrollableAreaScrollLayerDidChange(ScrollableArea*);
     void scrollableAreaScrollbarLayerDidChange(ScrollableArea*, ScrollbarOrientation);
     void setLayerIsContainerForFixedPositionLayers(GraphicsLayer*, bool);
     void updateLayerPositionConstraint(RenderLayer*);
     void touchEventTargetRectsDidChange(const Document*);
 
-    void computeAbsoluteTouchEventTargetRects(const Document*, Vector<IntRect>&);
-
     static String mainThreadScrollingReasonsAsText(MainThreadScrollingReasons);
     String mainThreadScrollingReasonsAsText() const;
     Region computeShouldHandleScrollGestureOnMainThreadRegion(const Frame*, const IntPoint& frameLocation) const;
+
+    class TouchEventTargetRectsObserver {
+    public:
+        virtual void touchEventTargetRectsChanged(const LayerHitTestRects&) = 0;
+    };
+
+    void addTouchEventTargetRectsObserver(TouchEventTargetRectsObserver*);
+    void removeTouchEventTargetRectsObserver(TouchEventTargetRectsObserver*);
 
 protected:
     explicit ScrollingCoordinator(Page*);
@@ -109,6 +116,7 @@ protected:
     static GraphicsLayer* scrollLayerForScrollableArea(ScrollableArea*);
     static GraphicsLayer* horizontalScrollbarLayerForScrollableArea(ScrollableArea*);
     static GraphicsLayer* verticalScrollbarLayerForScrollableArea(ScrollableArea*);
+    bool isForMainFrame(ScrollableArea*) const;
 
     unsigned computeCurrentWheelEventHandlerCount();
     GraphicsLayer* scrollLayerForFrameView(FrameView*);
@@ -122,21 +130,25 @@ private:
 
     bool hasVisibleSlowRepaintViewportConstrainedObjects(FrameView*) const;
     void updateShouldUpdateScrollLayerPositionOnMainThread();
-    
+
     static WebKit::WebLayer* scrollingWebLayerForScrollableArea(ScrollableArea*);
 
+    bool touchHitTestingEnabled() const;
     void setShouldHandleScrollGestureOnMainThreadRegion(const Region&);
-    void setTouchEventTargetRects(const Vector<IntRect>&);
+    void setTouchEventTargetRects(const LayerHitTestRects&);
+    void computeTouchEventTargetRects(LayerHitTestRects&);
     void setWheelEventHandlerCount(unsigned);
 
     WebKit::WebScrollbarLayer* addWebScrollbarLayer(ScrollableArea*, ScrollbarOrientation, PassOwnPtr<WebKit::WebScrollbarLayer>);
     WebKit::WebScrollbarLayer* getWebScrollbarLayer(ScrollableArea*, ScrollbarOrientation);
     void removeWebScrollbarLayer(ScrollableArea*, ScrollbarOrientation);
 
+
     typedef HashMap<ScrollableArea*, OwnPtr<WebKit::WebScrollbarLayer> > ScrollbarMap;
     ScrollbarMap m_horizontalScrollbars;
     ScrollbarMap m_verticalScrollbars;
 
+    HashSet<TouchEventTargetRectsObserver*> m_touchEventTargetRectsObservers;
 };
 
 } // namespace WebCore

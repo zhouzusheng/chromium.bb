@@ -36,15 +36,13 @@
 #include "core/inspector/InspectorConsoleAgent.h"
 #include "core/inspector/InspectorController.h"
 #include "core/inspector/InspectorDebuggerAgent.h"
-#include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorProfilerAgent.h"
 #include "core/inspector/InspectorResourceAgent.h"
 #include "core/inspector/InspectorTimelineAgent.h"
-#include "core/inspector/InspectorWorkerAgent.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/inspector/WorkerInspectorController.h"
-#include "core/loader/cache/CachedResourceInitiatorInfo.h"
-#include "core/workers/WorkerContext.h"
+#include "core/loader/cache/FetchInitiatorInfo.h"
+#include "core/workers/WorkerGlobalScope.h"
 
 namespace WebCore {
 
@@ -98,7 +96,7 @@ bool isDebuggerPausedImpl(InstrumentingAgents* instrumentingAgents)
 
 void continueAfterPingLoaderImpl(InstrumentingAgents* instrumentingAgents, unsigned long identifier, DocumentLoader* loader, ResourceRequest& request, const ResourceResponse& response)
 {
-    willSendRequestImpl(instrumentingAgents, identifier, loader, request, response, CachedResourceInitiatorInfo());
+    willSendRequestImpl(instrumentingAgents, identifier, loader, request, response, FetchInitiatorInfo());
 }
 
 void didReceiveResourceResponseButCanceledImpl(Frame* frame, DocumentLoader* loader, unsigned long identifier, const ResourceResponse& r)
@@ -122,7 +120,7 @@ void continueWithPolicyIgnoreImpl(Frame* frame, DocumentLoader* loader, unsigned
     didReceiveResourceResponseButCanceledImpl(frame, loader, identifier, r);
 }
 
-void willDestroyCachedResourceImpl(CachedResource* cachedResource)
+void willDestroyResourceImpl(Resource* cachedResource)
 {
     if (!instrumentingAgentsSet)
         return;
@@ -130,7 +128,7 @@ void willDestroyCachedResourceImpl(CachedResource* cachedResource)
     for (HashSet<InstrumentingAgents*>::iterator it = instrumentingAgentsSet->begin(); it != end; ++it) {
         InstrumentingAgents* instrumentingAgents = *it;
         if (InspectorResourceAgent* inspectorResourceAgent = instrumentingAgents->inspectorResourceAgent())
-            inspectorResourceAgent->willDestroyCachedResource(cachedResource);
+            inspectorResourceAgent->willDestroyResource(cachedResource);
     }
 }
 
@@ -207,17 +205,17 @@ InstrumentingAgents* instrumentingAgentsForRenderObject(RenderObject* renderer)
     return instrumentingAgentsForFrame(renderer->frame());
 }
 
-InstrumentingAgents* instrumentingAgentsForWorkerContext(WorkerContext* workerContext)
+InstrumentingAgents* instrumentingAgentsForWorkerGlobalScope(WorkerGlobalScope* workerGlobalScope)
 {
-    if (!workerContext)
+    if (!workerGlobalScope)
         return 0;
-    return instrumentationForWorkerContext(workerContext);
+    return instrumentationForWorkerGlobalScope(workerGlobalScope);
 }
 
 InstrumentingAgents* instrumentingAgentsForNonDocumentContext(ScriptExecutionContext* context)
 {
-    if (context->isWorkerContext())
-        return instrumentationForWorkerContext(static_cast<WorkerContext*>(context));
+    if (context->isWorkerGlobalScope())
+        return instrumentationForWorkerGlobalScope(toWorkerGlobalScope(context));
     return 0;
 }
 
@@ -236,12 +234,14 @@ const char ImageDecodeTask[] = "ImageDecodeTask";
 const char Paint[] = "Paint";
 const char Layer[] = "Layer";
 const char BeginFrame[] = "BeginFrame";
+const char UpdateLayer[] = "UpdateLayer";
 };
 
 namespace InstrumentationEventArguments {
 const char LayerId[] = "layerId";
-const char PageId[] = "pageId";
+const char LayerTreeId[] = "layerTreeId";
 const char NodeId[] = "nodeId";
+const char PageId[] = "pageId";
 };
 
 InstrumentingAgents* instrumentationForPage(Page* page)
@@ -252,9 +252,9 @@ InstrumentingAgents* instrumentationForPage(Page* page)
     return 0;
 }
 
-InstrumentingAgents* instrumentationForWorkerContext(WorkerContext* workerContext)
+InstrumentingAgents* instrumentationForWorkerGlobalScope(WorkerGlobalScope* workerGlobalScope)
 {
-    if (WorkerInspectorController* controller = workerContext->workerInspectorController())
+    if (WorkerInspectorController* controller = workerGlobalScope->workerInspectorController())
         return controller->m_instrumentingAgents.get();
     return 0;
 }

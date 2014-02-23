@@ -21,13 +21,11 @@
 #ifndef SVGDescElement_h
 #define SVGDescElement_h
 
-#include "core/svg/SVGLangSpace.h"
-#include "core/svg/SVGStyledElement.h"
+#include "core/svg/SVGElement.h"
 
 namespace WebCore {
 
-class SVGDescElement FINAL : public SVGStyledElement,
-                             public SVGLangSpace {
+class SVGDescElement FINAL : public SVGElement {
 public:
     static PassRefPtr<SVGDescElement> create(const QualifiedName&, Document*);
 

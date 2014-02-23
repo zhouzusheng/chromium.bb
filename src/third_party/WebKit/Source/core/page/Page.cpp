@@ -20,66 +20,43 @@
 #include "config.h"
 #include "core/page/Page.h"
 
-#include "bindings/v8/ScriptController.h"
 #include "core/dom/ClientRectList.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/DocumentStyleSheetCollection.h"
 #include "core/dom/Event.h"
 #include "core/dom/EventNames.h"
-#include "core/dom/ExceptionCode.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/VisitedLinkState.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "core/editing/Editor.h"
+#include "core/editing/Caret.h"
 #include "core/history/BackForwardController.h"
 #include "core/history/HistoryItem.h"
-#include "core/html/HTMLElement.h"
-#include "core/html/VoidCallback.h"
 #include "core/inspector/InspectorController.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/FrameLoader.h"
-#include "core/loader/FrameLoaderClient.h"
 #include "core/loader/ProgressTracker.h"
-#include "core/loader/TextResourceDecoder.h"
 #include "core/page/AutoscrollController.h"
 #include "core/page/Chrome.h"
-#include "core/page/ChromeClient.h"
-#include "core/page/ContextMenuClient.h"
 #include "core/page/ContextMenuController.h"
 #include "core/page/DOMTimer.h"
-#include "core/page/DOMWindow.h"
 #include "core/page/DragController.h"
-#include "core/page/EditorClient.h"
 #include "core/page/FocusController.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameTree.h"
 #include "core/page/FrameView.h"
-#include "core/page/Navigator.h"
 #include "core/page/PageConsole.h"
 #include "core/page/PageGroup.h"
+#include "core/page/PageLifecycleNotifier.h"
 #include "core/page/PointerLockController.h"
-#include "RuntimeEnabledFeatures.h"
 #include "core/page/Settings.h"
-#include "core/page/animation/AnimationController.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
-#include "core/platform/FileSystem.h"
-#include "core/platform/Logging.h"
-#include "core/platform/SharedBuffer.h"
-#include "core/platform/Widget.h"
 #include "core/platform/network/NetworkStateNotifier.h"
 #include "core/plugins/PluginData.h"
-#include "core/rendering/RenderArena.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/RenderWidget.h"
-#include "core/storage/StorageArea.h"
 #include "core/storage/StorageNamespace.h"
-#include "weborigin/SchemeRegistry.h"
 #include "wtf/HashMap.h"
 #include "wtf/RefCountedLeakCounter.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/Base64.h"
-#include "wtf/text/StringHash.h"
 
 namespace WebCore {
 
@@ -133,14 +110,11 @@ Page::Page(PageClients& pageClients)
     , m_openedByDOM(false)
     , m_tabKeyCyclesThroughElements(true)
     , m_defersLoading(false)
-    , m_defersLoadingCallCount(0)
     , m_pageScaleFactor(1)
     , m_deviceScaleFactor(1)
     , m_didLoadUserStyleSheet(false)
-    , m_userStyleSheetModificationTime(0)
     , m_group(0)
     , m_timerAlignmentInterval(DOMTimer::visiblePageAlignmentInterval())
-    , m_isInWindow(true)
     , m_visibilityState(PageVisibilityStateVisible)
     , m_isCursorVisible(true)
     , m_layoutMilestones(0)
@@ -189,20 +163,6 @@ Page::~Page()
 #endif
 }
 
-ArenaSize Page::renderTreeSize() const
-{
-    ArenaSize total(0, 0);
-    for (Frame* frame = mainFrame(); frame; frame = frame->tree()->traverseNext()) {
-        if (!frame->document())
-            continue;
-        if (RenderArena* arena = frame->document()->renderArena()) {
-            total.treeSize += arena->totalRenderArenaSize();
-            total.allocated += arena->totalRenderArenaAllocatedBytes();
-        }
-    }
-    return total;
-}
-
 ViewportArguments Page::viewportArguments() const
 {
     return mainFrame() && mainFrame()->document() ? mainFrame()->document()->viewportArguments() : ViewportArguments();
@@ -249,7 +209,7 @@ void Page::updateDragAndDrop(Node* dropTargetNode, const IntPoint& eventPosition
     m_autoscrollController->updateDragAndDrop(dropTargetNode, eventPosition, eventTime);
 }
 
-#if ENABLE(PAN_SCROLLING)
+#if OS(WINDOWS)
 void Page::handleMouseReleaseForPanScrolling(Frame* frame, const PlatformMouseEvent& point)
 {
     m_autoscrollController->handleMouseReleaseForPanScrolling(frame, point);
@@ -312,50 +272,6 @@ void Page::setOpenedByDOM()
     m_openedByDOM = true;
 }
 
-bool Page::goBack()
-{
-    HistoryItem* item = backForward()->backItem();
-
-    if (item) {
-        goToItem(item);
-        return true;
-    }
-    return false;
-}
-
-bool Page::goForward()
-{
-    HistoryItem* item = backForward()->forwardItem();
-
-    if (item) {
-        goToItem(item);
-        return true;
-    }
-    return false;
-}
-
-void Page::goBackOrForward(int distance)
-{
-    if (distance == 0)
-        return;
-
-    HistoryItem* item = backForward()->itemAtIndex(distance);
-    if (!item) {
-        if (distance > 0) {
-            if (int forwardCount = backForward()->forwardCount())
-                item = backForward()->itemAtIndex(forwardCount);
-        } else {
-            if (int backCount = backForward()->backCount())
-                item = backForward()->itemAtIndex(-backCount);
-        }
-    }
-
-    if (!item)
-        return;
-
-    goToItem(item);
-}
-
 void Page::goToItem(HistoryItem* item)
 {
     // stopAllLoaders may end up running onload handlers, which could cause further history traversals that may lead to the passed in HistoryItem
@@ -366,11 +282,6 @@ void Page::goToItem(HistoryItem* item)
         m_mainFrame->loader()->stopAllLoaders();
 
     m_mainFrame->loader()->history()->goToItem(item);
-}
-
-int Page::getHistoryLength()
-{
-    return backForward()->backCount() + 1 + backForward()->forwardCount();
 }
 
 void Page::clearPageGroup()
@@ -407,7 +318,7 @@ void Page::scheduleForcedStyleRecalcForAllPages()
     HashSet<Page*>::iterator end = allPages->end();
     for (HashSet<Page*>::iterator it = allPages->begin(); it != end; ++it)
         for (Frame* frame = (*it)->mainFrame(); frame; frame = frame->tree()->traverseNext())
-            frame->document()->scheduleForcedStyleRecalc();
+            frame->document()->setNeedsStyleRecalc();
 }
 
 void Page::setNeedsRecalcStyleInAllFrames()
@@ -437,7 +348,7 @@ void Page::refreshPlugins(bool reload)
             continue;
 
         for (Frame* frame = (*it)->mainFrame(); frame; frame = frame->tree()->traverseNext()) {
-            if (frame->loader()->subframeLoader()->containsPlugins())
+            if (frame->loader()->containsPlugins())
                 framesNeedingReload.append(frame);
         }
     }
@@ -448,7 +359,7 @@ void Page::refreshPlugins(bool reload)
 
 PluginData* Page::pluginData() const
 {
-    if (!mainFrame()->loader()->subframeLoader()->allowPlugins(NotAboutToInstantiatePlugin))
+    if (!mainFrame()->loader()->allowPlugins(NotAboutToInstantiatePlugin))
         return 0;
     if (!m_pluginData)
         m_pluginData = PluginData::create(this);
@@ -476,7 +387,6 @@ void Page::unmarkAllTextMatches()
 
 void Page::setDefersLoading(bool defers)
 {
-    ASSERT(!m_defersLoadingCallCount);
     if (defers == m_defersLoading)
         return;
 
@@ -488,9 +398,6 @@ void Page::setDefersLoading(bool defers)
 void Page::setPageScaleFactor(float scale, const IntPoint& origin)
 {
     FrameView* view = mainFrame()->view();
-
-    bool oldProgrammaticScroll = view->inProgrammaticScroll();
-    view->setInProgrammaticScroll(false);
 
     if (scale != m_pageScaleFactor) {
         m_pageScaleFactor = scale;
@@ -506,8 +413,6 @@ void Page::setPageScaleFactor(float scale, const IntPoint& origin)
 
     if (view && view->scrollPosition() != origin)
         view->notifyScrollPositionChanged(origin);
-
-    view->setInProgrammaticScroll(oldProgrammaticScroll);
 }
 
 void Page::setDeviceScaleFactor(float scaleFactor)
@@ -532,19 +437,6 @@ void Page::setPagination(const Pagination& pagination)
     setNeedsRecalcStyleInAllFrames();
 }
 
-void Page::setIsInWindow(bool isInWindow)
-{
-    if (m_isInWindow == isInWindow)
-        return;
-
-    m_isInWindow = isInWindow;
-
-    for (Frame* frame = mainFrame(); frame; frame = frame->tree()->traverseNext()) {
-        if (FrameView* frameView = frame->view())
-            frameView->setIsInWindow(isInWindow);
-    }
-}
-
 void Page::userStyleSheetLocationChanged()
 {
     // FIXME: Eventually we will move to a model of just being handed the sheet
@@ -553,7 +445,6 @@ void Page::userStyleSheetLocationChanged()
 
     m_didLoadUserStyleSheet = false;
     m_userStyleSheet = String();
-    m_userStyleSheetModificationTime = 0;
 
     // Data URLs with base64-encoded UTF-8 style sheets are common. We can process them
     // synchronously and avoid using a loader.
@@ -610,17 +501,9 @@ void Page::visitedStateChanged(PageGroup* group, LinkHash linkHash)
 
 StorageNamespace* Page::sessionStorage(bool optionalCreate)
 {
-    if (!m_sessionStorage && optionalCreate) {
-        // FIXME: the quota value here is not needed or used in blink, crbug/230987
-        const unsigned int kBogusQuota = UINT_MAX;
-        m_sessionStorage = StorageNamespace::sessionStorageNamespace(this, kBogusQuota);
-    }
+    if (!m_sessionStorage && optionalCreate)
+        m_sessionStorage = StorageNamespace::sessionStorageNamespace(this);
     return m_sessionStorage.get();
-}
-
-void Page::setSessionStorage(PassRefPtr<StorageNamespace> newStorage)
-{
-    m_sessionStorage = newStorage;
 }
 
 void Page::setTimerAlignmentInterval(double interval)
@@ -665,13 +548,16 @@ void Page::setVisibilityState(PageVisibilityState visibilityState, bool isInitia
         return;
     m_visibilityState = visibilityState;
 
-    if (!isInitialState && m_mainFrame)
-        m_mainFrame->dispatchVisibilityStateChangeEvent();
-
     if (visibilityState == WebCore::PageVisibilityStateHidden)
         setTimerAlignmentInterval(DOMTimer::hiddenPageAlignmentInterval());
     else
         setTimerAlignmentInterval(DOMTimer::visiblePageAlignmentInterval());
+
+    if (!isInitialState)
+        lifecycleNotifier()->notifyPageVisibilityChanged();
+
+    if (!isInitialState && m_mainFrame)
+        m_mainFrame->dispatchVisibilityStateChangeEvent();
 }
 
 PageVisibilityState Page::visibilityState() const
@@ -811,38 +697,6 @@ void Page::addRelevantUnpaintedObject(RenderObject* object, const LayoutRect& ob
     m_relevantUnpaintedRegion.unite(pixelSnappedIntRect(objectPaintRect));
 }
 
-void Page::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Page);
-    info.addMember(m_chrome, "chrome");
-    info.addMember(m_dragCaretController, "dragCaretController");
-
-    info.addMember(m_dragController, "dragController");
-    info.addMember(m_focusController, "focusController");
-    info.addMember(m_contextMenuController, "contextMenuController");
-    info.addMember(m_inspectorController, "inspectorController");
-    info.addMember(m_pointerLockController, "pointerLockController");
-    info.addMember(m_scrollingCoordinator, "scrollingCoordinator");
-    info.addMember(m_settings, "settings");
-    info.addMember(m_progress, "progress");
-    info.addMember(m_backForwardController, "backForwardController");
-    info.addMember(m_mainFrame, "mainFrame");
-    info.addMember(m_pluginData, "pluginData");
-    info.addMember(m_theme, "theme");
-    info.addMember(m_UseCounter, "UseCounter");
-    info.addMember(m_pagination, "pagination");
-    info.addMember(m_userStyleSheet, "userStyleSheet");
-    info.addMember(m_group, "group");
-    info.addMember(m_sessionStorage, "sessionStorage");
-    info.addMember(m_relevantUnpaintedRenderObjects, "relevantUnpaintedRenderObjects");
-    info.addMember(m_topRelevantPaintedRegion, "relevantPaintedRegion");
-    info.addMember(m_bottomRelevantPaintedRegion, "relevantPaintedRegion");
-    info.addMember(m_relevantUnpaintedRegion, "relevantUnpaintedRegion");
-
-    info.ignoreMember(m_editorClient);
-    info.ignoreMember(m_validationMessageClient);
-}
-
 void Page::addMultisamplingChangedObserver(MultisamplingChangedObserver* observer)
 {
     m_multisamplingChangedObservers.add(observer);
@@ -858,6 +712,21 @@ void Page::multisamplingChanged()
     HashSet<MultisamplingChangedObserver*>::iterator stop = m_multisamplingChangedObservers.end();
     for (HashSet<MultisamplingChangedObserver*>::iterator it = m_multisamplingChangedObservers.begin(); it != stop; ++it)
         (*it)->multisamplingChanged(m_settings->openGLMultisamplingEnabled());
+}
+
+void Page::didCommitLoad(Frame* frame)
+{
+    lifecycleNotifier()->notifyDidCommitLoad(frame);
+}
+
+PageLifecycleNotifier* Page::lifecycleNotifier()
+{
+    return static_cast<PageLifecycleNotifier*>(LifecycleContext::lifecycleNotifier());
+}
+
+PassOwnPtr<LifecycleNotifier> Page::createLifecycleNotifier()
+{
+    return PageLifecycleNotifier::create(this);
 }
 
 Page::PageClients::PageClients()

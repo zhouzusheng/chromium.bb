@@ -11,7 +11,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/json/json_reader.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -99,12 +99,12 @@ bool IssueAdviceInfoEntry::operator ==(const IssueAdviceInfoEntry& rhs) const {
 OAuth2MintTokenFlow::Parameters::Parameters() : mode(MODE_ISSUE_ADVICE) {}
 
 OAuth2MintTokenFlow::Parameters::Parameters(
-    const std::string& rt,
+    const std::string& at,
     const std::string& eid,
     const std::string& cid,
     const std::vector<std::string>& scopes_arg,
     Mode mode_arg)
-    : login_refresh_token(rt),
+    : access_token(at),
       extension_id(eid),
       client_id(cid),
       scopes(scopes_arg),
@@ -117,8 +117,8 @@ OAuth2MintTokenFlow::OAuth2MintTokenFlow(URLRequestContextGetter* context,
                                          Delegate* delegate,
                                          const Parameters& parameters)
     : OAuth2ApiCallFlow(context,
-                        parameters.login_refresh_token,
                         std::string(),
+                        parameters.access_token,
                         std::vector<std::string>()),
       delegate_(delegate),
       parameters_(parameters),

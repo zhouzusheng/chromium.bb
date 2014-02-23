@@ -33,7 +33,7 @@
 
 #include "core/html/parser/InputStreamPreprocessor.h"
 #include "core/html/track/WebVTTToken.h"
-#include <wtf/PassOwnPtr.h>
+#include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
@@ -61,7 +61,7 @@ public:
     typedef WebVTTTokenizerState State;
 
     void reset();
-    
+
     bool nextToken(SegmentedString&, WebVTTToken&);
 
     inline bool haveBufferedCharacterToken()

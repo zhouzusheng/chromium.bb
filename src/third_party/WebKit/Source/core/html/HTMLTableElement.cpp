@@ -28,12 +28,13 @@
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/css/CSSImageValue.h"
 #include "core/css/CSSValuePool.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/html/HTMLTableCaptionElement.h"
 #include "core/html/HTMLTableRowElement.h"
 #include "core/html/HTMLTableRowsCollection.h"
@@ -76,10 +77,10 @@ HTMLTableCaptionElement* HTMLTableElement::caption() const
     return 0;
 }
 
-void HTMLTableElement::setCaption(PassRefPtr<HTMLTableCaptionElement> newCaption, ExceptionCode& ec)
+void HTMLTableElement::setCaption(PassRefPtr<HTMLTableCaptionElement> newCaption, ExceptionState& es)
 {
     deleteCaption();
-    insertBefore(newCaption, firstChild(), ec);
+    insertBefore(newCaption, firstChild(), es);
 }
 
 HTMLTableSectionElement* HTMLTableElement::tHead() const
@@ -91,7 +92,7 @@ HTMLTableSectionElement* HTMLTableElement::tHead() const
     return 0;
 }
 
-void HTMLTableElement::setTHead(PassRefPtr<HTMLTableSectionElement> newHead, ExceptionCode& ec)
+void HTMLTableElement::setTHead(PassRefPtr<HTMLTableSectionElement> newHead, ExceptionState& es)
 {
     deleteTHead();
 
@@ -100,7 +101,7 @@ void HTMLTableElement::setTHead(PassRefPtr<HTMLTableSectionElement> newHead, Exc
         if (child->isElementNode() && !child->hasTagName(captionTag) && !child->hasTagName(colgroupTag))
             break;
 
-    insertBefore(newHead, child, ec);
+    insertBefore(newHead, child, es);
 }
 
 HTMLTableSectionElement* HTMLTableElement::tFoot() const
@@ -112,7 +113,7 @@ HTMLTableSectionElement* HTMLTableElement::tFoot() const
     return 0;
 }
 
-void HTMLTableElement::setTFoot(PassRefPtr<HTMLTableSectionElement> newFoot, ExceptionCode& ec)
+void HTMLTableElement::setTFoot(PassRefPtr<HTMLTableSectionElement> newFoot, ExceptionState& es)
 {
     deleteTFoot();
 
@@ -121,7 +122,7 @@ void HTMLTableElement::setTFoot(PassRefPtr<HTMLTableSectionElement> newFoot, Exc
         if (child->isElementNode() && !child->hasTagName(captionTag) && !child->hasTagName(colgroupTag) && !child->hasTagName(theadTag))
             break;
 
-    insertBefore(newFoot, child, ec);
+    insertBefore(newFoot, child, es);
 }
 
 PassRefPtr<HTMLElement> HTMLTableElement::createTHead()
@@ -156,6 +157,7 @@ PassRefPtr<HTMLElement> HTMLTableElement::createTBody()
 {
     RefPtr<HTMLTableSectionElement> body = HTMLTableSectionElement::create(tbodyTag, document());
     Node* referenceElement = lastBody() ? lastBody()->nextSibling() : 0;
+
     insertBefore(body, referenceElement, ASSERT_NO_EXCEPTION);
     return body.release();
 }
@@ -183,10 +185,10 @@ HTMLTableSectionElement* HTMLTableElement::lastBody() const
     return 0;
 }
 
-PassRefPtr<HTMLElement> HTMLTableElement::insertRow(int index, ExceptionCode& ec)
+PassRefPtr<HTMLElement> HTMLTableElement::insertRow(int index, ExceptionState& es)
 {
     if (index < -1) {
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
         return 0;
     }
 
@@ -201,7 +203,7 @@ PassRefPtr<HTMLElement> HTMLTableElement::insertRow(int index, ExceptionCode& ec
             row = HTMLTableRowsCollection::rowAfter(this, lastRow.get());
             if (!row) {
                 if (i != index) {
-                    ec = INDEX_SIZE_ERR;
+                    es.throwDOMException(IndexSizeError);
                     return 0;
                 }
                 break;
@@ -218,18 +220,18 @@ PassRefPtr<HTMLElement> HTMLTableElement::insertRow(int index, ExceptionCode& ec
         if (!parent) {
             RefPtr<HTMLTableSectionElement> newBody = HTMLTableSectionElement::create(tbodyTag, document());
             RefPtr<HTMLTableRowElement> newRow = HTMLTableRowElement::create(document());
-            newBody->appendChild(newRow, ec);
-            appendChild(newBody.release(), ec);
+            newBody->appendChild(newRow, es);
+            appendChild(newBody.release(), es, AttachLazily);
             return newRow.release();
         }
     }
 
     RefPtr<HTMLTableRowElement> newRow = HTMLTableRowElement::create(document());
-    parent->insertBefore(newRow, row.get(), ec);
+    parent->insertBefore(newRow, row.get(), es, AttachLazily);
     return newRow.release();
 }
 
-void HTMLTableElement::deleteRow(int index, ExceptionCode& ec)
+void HTMLTableElement::deleteRow(int index, ExceptionState& es)
 {
     HTMLTableRowElement* row = 0;
     if (index == -1)
@@ -242,10 +244,10 @@ void HTMLTableElement::deleteRow(int index, ExceptionCode& ec)
         }
     }
     if (!row) {
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
         return;
     }
-    row->remove(ec);
+    row->remove(es);
 }
 
 static inline bool isTableCellAncestor(Node* n)
@@ -305,7 +307,7 @@ void HTMLTableElement::collectStyleForPresentationAttribute(const QualifiedName&
         addHTMLLengthToStyle(style, CSSPropertyWidth, value);
     else if (name == heightAttr)
         addHTMLLengthToStyle(style, CSSPropertyHeight, value);
-    else if (name == borderAttr) 
+    else if (name == borderAttr)
         addPropertyToPresentationAttributeStyle(style, CSSPropertyBorderWidth, parseBorderWidthAttribute(value), CSSPrimitiveValue::CSS_PX);
     else if (name == bordercolorAttr) {
         if (!value.isEmpty())
@@ -426,7 +428,7 @@ const StylePropertySet* HTMLTableElement::additionalPresentationAttributeStyle()
 {
     if (m_frameAttr)
         return 0;
-    
+
     if (!m_borderAttr && !m_borderColorAttr) {
         // Setting the border to 'hidden' allows it to win over any border
         // set on the table's cells during border-conflict resolution.
@@ -498,7 +500,7 @@ PassRefPtr<StylePropertySet> HTMLTableElement::createSharedCellStyle()
         style->setProperty(CSSPropertyBorderColor, cssValuePool().createInheritedValue());
         break;
     case NoBorders:
-        // If 'rules=none' then allow any borders set at cell level to take effect. 
+        // If 'rules=none' then allow any borders set at cell level to take effect.
         break;
     }
 

@@ -31,6 +31,7 @@
 
 namespace WebCore {
 
+class ExceptionState;
 class GenericCueData;
 
 // A "generic" cue is a non-WebVTT cue, so it is not positioned/sized with the WebVTT logic.
@@ -40,16 +41,16 @@ public:
     {
         return adoptRef(new TextTrackCueGeneric(context, start, end, content));
     }
-    
+
     virtual ~TextTrackCueGeneric() { }
 
     virtual PassRefPtr<TextTrackCueBox> createDisplayTree() OVERRIDE;
 
-    virtual void setLine(int, ExceptionCode&) OVERRIDE;
-    virtual void setPosition(int, ExceptionCode&) OVERRIDE;
+    virtual void setLine(int, ExceptionState&) OVERRIDE;
+    virtual void setPosition(int, ExceptionState&) OVERRIDE;
 
     bool useDefaultPosition() const { return m_defaultPosition; }
-    
+
     double baseFontSizeRelativeToVideoHeight() const { return m_baseFontSizeRelativeToVideoHeight; }
     void setBaseFontSizeRelativeToVideoHeight(double size) { m_baseFontSizeRelativeToVideoHeight = size; }
 
@@ -60,10 +61,10 @@ public:
     void setFontName(String name) { m_fontName = name; }
 
     Color foregroundColor() const { return m_foregroundColor; }
-    void setForegroundColor(RGBA32 color) { m_foregroundColor.setRGB(color); }
-    
+    void setForegroundColor(Color color) { m_foregroundColor = color; }
+
     Color backgroundColor() const { return m_backgroundColor; }
-    void setBackgroundColor(RGBA32 color) { m_backgroundColor.setRGB(color); }
+    void setBackgroundColor(Color color) { m_backgroundColor = color; }
 
     virtual void videoSizeDidChange(const IntSize&);
 
@@ -77,7 +78,7 @@ public:
 
 private:
     TextTrackCueGeneric(ScriptExecutionContext*, double start, double end, const String&);
-    
+
     Color m_foregroundColor;
     Color m_backgroundColor;
     double m_baseFontSizeRelativeToVideoHeight;

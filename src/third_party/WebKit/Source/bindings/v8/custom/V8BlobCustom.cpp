@@ -31,13 +31,13 @@
 #include "config.h"
 #include "core/fileapi/Blob.h"
 
-#include "V8ArrayBuffer.h"
-#include "V8ArrayBufferView.h"
 #include "V8Blob.h"
 #include "V8File.h"
 #include "bindings/v8/Dictionary.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8Utilities.h"
+#include "bindings/v8/custom/V8ArrayBufferCustom.h"
+#include "bindings/v8/custom/V8ArrayBufferViewCustom.h"
 #include "core/fileapi/BlobBuilder.h"
 #include "wtf/RefPtr.h"
 
@@ -66,7 +66,7 @@ void V8Blob::constructorCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
     }
 
     String type;
-    String endings = ASCIILiteral("transparent");
+    String endings = "transparent";
 
     if (args.Length() > 1) {
         if (!args[1]->IsObject()) {

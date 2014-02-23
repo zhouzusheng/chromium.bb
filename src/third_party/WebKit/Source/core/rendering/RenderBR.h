@@ -37,7 +37,7 @@ public:
     virtual ~RenderBR();
 
     virtual const char* renderName() const { return "RenderBR"; }
- 
+
     virtual LayoutRect selectionRectForRepaint(const RenderLayerModelObject* /*repaintContainer*/, bool /*clipToVisibleContent*/) OVERRIDE { return LayoutRect(); }
 
     virtual float width(unsigned /*from*/, unsigned /*len*/, const Font&, float /*xPos*/, HashSet<const SimpleFontData*>* = 0 /*fallbackFonts*/ , GlyphOverflow* = 0) const { return 0; }
@@ -51,7 +51,7 @@ public:
     virtual int caretMinOffset() const;
     virtual int caretMaxOffset() const;
 
-    virtual VisiblePosition positionForPoint(const LayoutPoint&);
+    virtual PositionWithAffinity positionForPoint(const LayoutPoint&) OVERRIDE FINAL;
 
 protected:
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
@@ -62,13 +62,13 @@ private:
 
 
 inline RenderBR* toRenderBR(RenderObject* object)
-{ 
+{
     ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isBR());
     return static_cast<RenderBR*>(object);
 }
 
 inline const RenderBR* toRenderBR(const RenderObject* object)
-{ 
+{
     ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isBR());
     return static_cast<const RenderBR*>(object);
 }

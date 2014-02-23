@@ -19,8 +19,8 @@
 #include "base/memory/weak_ptr.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_checker.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
 
@@ -34,6 +34,7 @@ class PickleIterator;
 namespace disk_cache {
 
 class SimpleIndexFile;
+struct SimpleIndexLoadResult;
 
 class NET_EXPORT_PRIVATE EntryMetadata {
  public:
@@ -69,13 +70,15 @@ class NET_EXPORT_PRIVATE EntryMetadata {
 class NET_EXPORT_PRIVATE SimpleIndex
     : public base::SupportsWeakPtr<SimpleIndex> {
  public:
+  typedef std::vector<uint64> HashList;
+
   SimpleIndex(base::SingleThreadTaskRunner* io_thread,
               const base::FilePath& cache_directory,
               scoped_ptr<SimpleIndexFile> simple_index_file);
 
   virtual ~SimpleIndex();
 
-  void Initialize();
+  void Initialize(base::Time cache_mtime);
 
   bool SetMaxSize(int max_bytes);
   int max_size() const { return max_size_; }
@@ -83,7 +86,8 @@ class NET_EXPORT_PRIVATE SimpleIndex
   void Insert(const std::string& key);
   void Remove(const std::string& key);
 
-  bool Has(const std::string& key) const;
+  // Check whether the index has the entry given the hash of its key.
+  bool Has(uint64 hash) const;
 
   // Update the last used time of the entry with the given key and return true
   // iff the entry exist in the index.
@@ -96,9 +100,6 @@ class NET_EXPORT_PRIVATE SimpleIndex
   // entry.
   bool UpdateEntrySize(const std::string& key, uint64 entry_size);
 
-  // TODO(felipeg): This way we are storing the hash_key twice, as the
-  // hash_map::key and as a member of EntryMetadata. We could save space if we
-  // use a hash_set.
   typedef base::hash_map<uint64, EntryMetadata> EntrySet;
 
   static void InsertInEntrySet(uint64 hash_key,
@@ -112,12 +113,17 @@ class NET_EXPORT_PRIVATE SimpleIndex
   // range between |initial_time| and |end_time| where open intervals are
   // possible according to the definition given in |DoomEntriesBetween()| in the
   // disk cache backend interface. Returns the set of hashes taken out.
-  scoped_ptr<std::vector<uint64> > RemoveEntriesBetween(
-      const base::Time initial_time,
-      const base::Time end_time);
+  scoped_ptr<HashList> RemoveEntriesBetween(const base::Time initial_time,
+                                            const base::Time end_time);
+
+  // Returns the list of all entries key hash.
+  scoped_ptr<HashList> GetAllHashes();
 
   // Returns number of indexed entries.
   int32 GetEntryCount() const;
+
+  // Returns whether the index has been initialized yet.
+  bool initialized() const { return initialized_; }
 
  private:
   friend class SimpleIndexTest;
@@ -134,14 +140,17 @@ class NET_EXPORT_PRIVATE SimpleIndex
   void UpdateEntryIteratorSize(EntrySet::iterator* it, uint64 entry_size);
 
   // Must run on IO Thread.
-  void MergeInitializingSet(scoped_ptr<EntrySet> index_file_entries,
-                            bool force_index_flush);
+  void MergeInitializingSet(scoped_ptr<SimpleIndexLoadResult> load_result);
 
 #if defined(OS_ANDROID)
   void OnActivityStateChange(base::android::ActivityState state);
 
   scoped_ptr<base::android::ActivityStatus::Listener> activity_status_listener_;
 #endif
+
+  scoped_ptr<HashList> ExtractEntriesBetween(const base::Time initial_time,
+                                             const base::Time end_time,
+                                             bool delete_entries);
 
   EntrySet entries_set_;
 

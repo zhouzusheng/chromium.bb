@@ -27,6 +27,7 @@
 #define WebIDBKey_h
 
 #include "WebCommon.h"
+#include "WebIDBTypes.h"
 #include "WebPrivatePtr.h"
 #include "WebString.h"
 #include "WebVector.h"
@@ -64,17 +65,7 @@ public:
     WEBKIT_EXPORT void assignNull();
     WEBKIT_EXPORT void reset();
 
-    enum Type {
-        InvalidType = 0,
-        ArrayType,
-        StringType,
-        DateType,
-        NumberType,
-        NullType,
-        MinType,
-    };
-
-    WEBKIT_EXPORT Type type() const;
+    WEBKIT_EXPORT WebIDBKeyType keyType() const;
     WEBKIT_EXPORT bool isValid() const;
     WEBKIT_EXPORT WebVector<WebIDBKey> array() const; // Only valid for ArrayType.
     WEBKIT_EXPORT WebString string() const; // Only valid for StringType.

@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef PageGroup_h
@@ -28,19 +28,16 @@
 
 #include "core/page/UserStyleSheet.h"
 #include "core/platform/Supplementable.h"
-#include <wtf/HashSet.h>
-#include <wtf/Noncopyable.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/StringHash.h>
+#include "wtf/HashSet.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
 
 namespace WebCore {
 
     class KURL;
-    class GroupSettings;
     class Page;
     class SecurityOrigin;
-    class StorageNamespace;
 
     class PageGroup : public Supplementable<PageGroup>, public RefCounted<PageGroup> {
         WTF_MAKE_NONCOPYABLE(PageGroup); WTF_MAKE_FAST_ALLOCATED;
@@ -56,9 +53,6 @@ namespace WebCore {
         void addPage(Page*);
         void removePage(Page*);
 
-        StorageNamespace* localStorage();
-        bool hasLocalStorage() { return m_localStorage; }
-
         void addUserStyleSheet(const String& source, const KURL&,
                                const Vector<String>& whitelist, const Vector<String>& blacklist,
                                UserContentInjectedFrames,
@@ -69,19 +63,15 @@ namespace WebCore {
 
         const UserStyleSheetVector& userStyleSheets() const { return m_userStyleSheets; }
 
-        GroupSettings* groupSettings() const { return m_groupSettings.get(); }
-
     private:
         PageGroup();
 
         void invalidatedInjectedStyleSheetCacheInAllFrames();
 
         HashSet<Page*> m_pages;
-        RefPtr<StorageNamespace> m_localStorage;
         UserStyleSheetVector m_userStyleSheets;
-        OwnPtr<GroupSettings> m_groupSettings;
     };
 
 } // namespace WebCore
-    
+
 #endif // PageGroup_h

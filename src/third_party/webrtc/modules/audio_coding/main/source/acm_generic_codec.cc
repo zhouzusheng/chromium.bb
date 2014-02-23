@@ -303,8 +303,7 @@ int16_t ACMGenericCodec::Encode(uint8_t* bitstream,
 
         // Reset the variables which will be incremented in the loop.
         *bitstream_len_byte = 0;
-        bool done = false;
-        while (!done) {
+        do {
           status = InternalEncode(&bitstream[*bitstream_len_byte],
                                   &tmp_bitstream_len_byte);
           *bitstream_len_byte += tmp_bitstream_len_byte;
@@ -323,12 +322,7 @@ int16_t ACMGenericCodec::Encode(uint8_t* bitstream,
             // break from the loop
             break;
           }
-
-          // TODO(andrew): This should be multiplied by the number of
-          //               channels, right?
-          // http://code.google.com/p/webrtc/issues/detail?id=714
-          done = in_audio_ix_read_ >= frame_len_smpl_;
-        }
+        } while (in_audio_ix_read_ < frame_len_smpl_ * num_channels_);
       }
       if (status >= 0) {
         *encoding_type = (vad_label_[0] == 1) ? kActiveNormalEncoded :
@@ -595,6 +589,10 @@ int16_t ACMGenericCodec::InitEncoderSafe(WebRtcACMCodecParams* codec_params,
 // for all codecs.
 bool ACMGenericCodec::CanChangeEncodingParam(CodecInst& /*codec_inst*/) {
   return true;
+}
+
+void ACMGenericCodec::CurrentRate(int32_t& /* rate_bps */) {
+  return;
 }
 
 int16_t ACMGenericCodec::InitDecoder(WebRtcACMCodecParams* codec_params,
@@ -1165,6 +1163,10 @@ bool ACMGenericCodec::IsAudioBufferFresh() const {
   return is_audio_buff_fresh_;
 }
 
+int16_t ACMGenericCodec::UpdateDecoderSampFreq(int16_t /* codec_id */) {
+  return 0;
+}
+
 // This function is replaced by codec specific functions for some codecs.
 int16_t ACMGenericCodec::EncoderSampFreq(uint16_t& samp_freq_hz) {
   int32_t f;
@@ -1236,5 +1238,7 @@ int16_t ACMGenericCodec::REDPayloadISAC(const int32_t /* isac_rate */,
                "Error: REDPayloadISAC is an iSAC specific function");
   return -1;
 }
+
+bool ACMGenericCodec::IsTrueStereoCodec() { return false; }
 
 }  // namespace webrtc

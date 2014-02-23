@@ -32,15 +32,27 @@ cr.define('cr.ui', function() {
     var self = this;
     doc.addEventListener('keydown', function(e) {
       if (e.keyCode == 9)  // Tab
-        self.visible = true;
+        self.focusByKeyboard_ = true;
     }, true);
 
     doc.addEventListener('mousedown', function(e) {
-      self.visible = false;
+      self.focusByKeyboard_ = false;
+    }, true);
+
+    doc.addEventListener('focus', function(event) {
+      // Update visibility only when focus is actually changed.
+      self.visible = self.focusByKeyboard_;
     }, true);
   }
 
   FocusOutlineManager.prototype = {
+    /**
+     * Whether focus change is triggered by TAB key.
+     * @type {boolean}
+     * @private
+     */
+    focusByKeyboard_: true,
+
     /**
      * Whether the focus outline should be visible.
      * @type {boolean}

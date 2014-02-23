@@ -10,13 +10,13 @@
 # are met:
 #
 # 1.  Redistributions of source code must retain the above copyright
-#     notice, this list of conditions and the following disclaimer. 
+#     notice, this list of conditions and the following disclaimer.
 # 2.  Redistributions in binary form must reproduce the above copyright
 #     notice, this list of conditions and the following disclaimer in the
-#     documentation and/or other materials provided with the distribution. 
+#     documentation and/or other materials provided with the distribution.
 # 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
 #     its contributors may be used to endorse or promote products derived
-#     from this software without specific prior written permission. 
+#     from this software without specific prior written permission.
 #
 # THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
 # EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -42,8 +42,9 @@ use InFilesParser;
 sub readTags($$);
 sub readAttrs($$);
 
-my $printFactory = 0; 
+my $printFactory = 0;
 my $fontNamesIn = "";
+my $resourceTypesIn = "";
 my $tagsFile = "";
 my $attrsFile = "";
 my $outputDir = ".";
@@ -72,65 +73,28 @@ if ($ENV{CC}) {
 my $preprocessor = $gccLocation . " -E -x c++";
 
 GetOptions(
-    'tags=s' => \$tagsFile, 
+    'tags=s' => \$tagsFile,
     'attrs=s' => \$attrsFile,
     'factory' => \$printFactory,
     'outputDir=s' => \$outputDir,
     'extraDefines=s' => \$extraDefines,
     'preprocessor=s' => \$preprocessor,
-    'fonts=s' => \$fontNamesIn
+    'fonts=s' => \$fontNamesIn,
+    'resourceTypes=s' => \$resourceTypesIn
 );
 
 mkpath($outputDir);
 
 if (length($fontNamesIn)) {
-    my $names = new IO::File;
     my $familyNamesFileBase = "FontFamily";
+    my $familyNamesPrefix = "CSS";
+    createGenericNamesFile($fontNamesIn, $familyNamesFileBase, $familyNamesPrefix);
+}
 
-    open($names, $fontNamesIn) or die "Failed to open file: $fontNamesIn";
-
-    $initDefaults = 0;
-    my $Parser = InFilesParser->new();
-    my $dummy;
-    $Parser->parse($names, \&parametersHandler, \&dummy);
-
-    my $F;
-    my $header = File::Spec->catfile($outputDir, "${familyNamesFileBase}Names.h");
-    open F, ">$header" or die "Unable to open $header for writing.";
-
-    printLicenseHeader($F);
-    printHeaderHead($F, "CSS", $familyNamesFileBase, "#include \"wtf/text/AtomicString.h\"");
-
-    printMacros($F, "extern const WTF::AtomicString", "", \%parameters);
-    print F "#endif\n\n";
-
-    printInit($F, 1);
-    close F;
-
-    my $source = File::Spec->catfile($outputDir, "${familyNamesFileBase}Names.cpp");
-    open F, ">$source" or die "Unable to open $source for writing.";
-
-    printLicenseHeader($F);
-    printCppHead($F, "CSS", $familyNamesFileBase, "WTF");
-
-    print F StaticString::GenerateStrings(\%parameters);
-
-    while ( my ($name, $identifier) = each %parameters ) {
-        print F "DEFINE_GLOBAL(AtomicString, $name)\n";
-    }
-
-    printInit($F, 0);
-
-    print F "\n";
-    print F StaticString::GenerateStringAsserts(\%parameters);
-
-    while ( my ($name, $identifier) = each %parameters ) {
-        print F "    new ((void*)&$name) AtomicString(${name}Impl);\n";
-    }
-
-    print F "}\n}\n}\n";
-    close F;
-    exit 0;
+if (length($resourceTypesIn)) {
+    my $baseName = "FetchInitiatorType";
+    my $basePrefix = "Loader_Cache";
+    createGenericNamesFile($resourceTypesIn, $baseName, $basePrefix);
 }
 
 die "You must specify at least one of --tags <file> or --attrs <file>" unless (length($tagsFile) || length($attrsFile));
@@ -151,6 +115,7 @@ die "You must specify a namespace (e.g. SVG) for <namespace>Names.h" unless $par
 die "You must specify a namespaceURI (e.g. http://www.w3.org/2000/svg)" unless $parameters{namespaceURI};
 
 $parameters{namespacePrefix} = $parameters{namespace} unless $parameters{namespacePrefix};
+$parameters{fallbackJSInterfaceName} = $parameters{fallbackInterfaceName} unless $parameters{fallbackJSInterfaceName};
 
 my $namesBasePath = "$outputDir/$parameters{namespace}Names";
 my $factoryBasePath = "$outputDir/$parameters{namespace}ElementFactory";
@@ -195,7 +160,8 @@ sub defaultParametersHash
         'guardFactoryWith' => '',
         'tagsNullNamespace' => 0,
         'attrsNullNamespace' => 0,
-        'fallbackInterfaceName' => ''
+        'fallbackInterfaceName' => '',
+        'fallbackJSInterfaceName' => ''
     );
 }
 
@@ -280,6 +246,11 @@ sub parametersHandler
 
     # Initialize default properties' values.
     %parameters = defaultParametersHash() if (!(keys %parameters) && $initDefaults);
+
+    # If the input is an array, we want the strings to have the same value as the key.
+    if ( $value eq 1) {
+        $value = $parameter;
+    }
 
     die "Unknown parameter $parameter for tags/attrs\n" if (!defined($parameters{$parameter}) && $initDefaults);
     $parameters{$parameter} = $value;
@@ -378,7 +349,7 @@ sub printConstructorSignature
     print F ")\n{\n";
 }
 
-# Helper method to dump the constructor interior and call the 
+# Helper method to dump the constructor interior and call the
 # Element constructor with the right arguments.
 # The variable names should be kept in sync with the previous method.
 sub printConstructorInterior
@@ -391,7 +362,7 @@ sub printConstructorInterior
     Settings* settings = document->settings();
     if (!RuntimeEnabledFeatures::mediaEnabled() || (settings && !settings->mediaEnabled()))
         return 0;
-    
+
 END
 ;
     }
@@ -503,13 +474,13 @@ sub svgCapitalizationHacks
 sub upperCaseName
 {
     my $name = shift;
-    
+
     $name = svgCapitalizationHacks($name) if ($parameters{namespace} eq "SVG");
 
     while ($name =~ /^(.*?)_(.*)/) {
         $name = $1 . ucfirst $2;
     }
-    
+
     return ucfirst $name;
 }
 
@@ -642,22 +613,20 @@ sub printNamesCppFile
     my $cppPath = shift;
     my $F;
     open F, ">$cppPath";
-    
+
     printLicenseHeader($F);
     printCppHead($F, "DOM", $parameters{namespace}, "WebCore");
-    
+
     my $lowerNamespace = lc($parameters{namespacePrefix});
 
     print F "DEFINE_GLOBAL(AtomicString, ${lowerNamespace}NamespaceURI)\n\n";
-
-    print F StaticString::GenerateStrings(\%allStrings);
 
     if (keys %allTags) {
         print F "// Tags\n";
         for my $name (sort keys %allTags) {
             print F "DEFINE_GLOBAL(QualifiedName, ", $name, "Tag)\n";
         }
-        
+
         print F "\n\nWebCore::QualifiedName** get$parameters{namespace}Tags()\n";
         print F "{\n    static WebCore::QualifiedName* $parameters{namespace}Tags[] = {\n";
         for my $name (sort keys %allTags) {
@@ -690,7 +659,7 @@ sub printNamesCppFile
     print(F "    // Namespace\n");
     print(F "    new ((void*)&${lowerNamespace}NamespaceURI) AtomicString(${lowerNamespace}NS);\n");
     print(F "\n");
-    print F StaticString::GenerateStringAsserts(\%allStrings);
+    print F StaticString::GenerateStringImpls(\%allStrings);
 
     if (keys %allTags) {
         my $tagsNamespace = $parameters{tagsNullNamespace} ? "nullAtom" : "${lowerNamespace}NS";
@@ -721,7 +690,7 @@ sub printJSElementIncludes
 
         print F "#include \"V8${JSInterfaceName}.h\"\n";
     }
-    print F "#include \"V8$parameters{fallbackInterfaceName}.h\"\n";
+    print F "#include \"V8$parameters{fallbackJSInterfaceName}.h\"\n";
 }
 
 sub printElementIncludes
@@ -788,7 +757,7 @@ sub printDefinitions
     my $shortType = substr($singularType, 0, 4);
     my $shortCamelType = ucfirst($shortType);
     my $shortUpperType = uc($shortType);
-    
+
     print F "    // " . ucfirst($type) . "\n";
 
     for my $name (sort keys %$namesRef) {
@@ -833,11 +802,10 @@ printConditionalElementIncludes($F);
 print F <<END
 
 #include "ContextFeatures.h"
+#include "CustomElement.h"
 #include "Document.h"
 #include "RuntimeEnabledFeatures.h"
 #include "Settings.h"
-
-#include "CustomElementRegistry.h"
 
 namespace WebCore {
 
@@ -850,7 +818,7 @@ print F "typedef PassRefPtr<$parameters{namespace}Element> (*ConstructorFunction
 print F ", HTMLFormElement*" if $parameters{namespace} eq "HTML";
 print F ", bool createdByParser);\n";
 print F <<END
-typedef HashMap<AtomicStringImpl*, ConstructorFunction> FunctionMap;
+typedef HashMap<StringImpl*, ConstructorFunction> FunctionMap;
 
 static FunctionMap* gFunctionMap = 0;
 
@@ -873,7 +841,7 @@ static void createFunctionMap()
 
     // Create the table.
     gFunctionMap = new FunctionMap;
-    
+
     // Populate it with constructor functions.
 END
 ;
@@ -891,9 +859,9 @@ print F <<END
     if (!document)
         return 0;
 
-    if (RuntimeEnabledFeatures::customDOMElementsEnabled() && CustomElementRegistry::isCustomTagName(qName.localName())) {
-        RefPtr<Element> element = document->ensureCustomElementRegistry()->createCustomTagElement(qName);
-        ASSERT(element->is$parameters{namespace}Element());
+    if (CustomElement::isValidName(qName.localName()) && document->registrationContext()) {
+        RefPtr<Element> element = document->registrationContext()->createCustomTagElement(document, qName);
+        ASSERT_WITH_SECURITY_IMPLICATION(element->is$parameters{namespace}Element());
         return static_pointer_cast<$parameters{namespace}Element>(element.release());
     }
 
@@ -997,7 +965,7 @@ sub printWrapperFunctions
     for my $tagName (sort keys %enabledTags) {
         # Avoid defining the same wrapper method twice.
         my $JSInterfaceName = $enabledTags{$tagName}{JSInterfaceName};
-        next if defined($tagsSeen{$JSInterfaceName}) || (usesDefaultJSWrapper($tagName) && ($parameters{fallbackInterfaceName} eq $parameters{namespace} . "Element"));
+        next if defined($tagsSeen{$JSInterfaceName}) || (usesDefaultJSWrapper($tagName) && ($parameters{fallbackJSInterfaceName} eq $parameters{namespace} . "Element"));
         $tagsSeen{$JSInterfaceName} = 1;
 
         my $conditional = $enabledTags{$tagName}{conditional};
@@ -1101,7 +1069,7 @@ sub printWrapperFactoryCppFile
 
 #include "V8$parameters{namespace}Element.h"
 
-#include "bindings/v8/CustomElementHelpers.h"
+#include "bindings/v8/CustomElementWrapper.h"
 
 #include <v8.h>
 
@@ -1116,10 +1084,10 @@ END
 
     printWrapperFunctions($F);
 
-        print F <<END
+    print F <<END
 v8::Handle<v8::Object> createV8$parameters{namespace}Wrapper($parameters{namespace}Element* element, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
-    typedef HashMap<WTF::AtomicStringImpl*, Create$parameters{namespace}ElementWrapperFunction> FunctionMap;
+    typedef HashMap<WTF::StringImpl*, Create$parameters{namespace}ElementWrapperFunction> FunctionMap;
     DEFINE_STATIC_LOCAL(FunctionMap, map, ());
     if (map.isEmpty()) {
 END
@@ -1127,7 +1095,7 @@ END
 
     for my $tag (sort keys %enabledTags) {
         # Do not add the name to the map if it does not have a JS wrapper constructor or uses the default wrapper.
-        next if (usesDefaultJSWrapper($tag, \%enabledTags) && ($parameters{fallbackInterfaceName} eq $parameters{namespace} . "Element"));
+        next if (usesDefaultJSWrapper($tag, \%enabledTags) && ($parameters{fallbackJSInterfaceName} eq $parameters{namespace} . "Element"));
 
         my $conditional = $enabledTags{$tag}{conditional};
         if ($conditional) {
@@ -1147,21 +1115,21 @@ END
     }
 
     Create$parameters{namespace}ElementWrapperFunction createWrapperFunction = map.get(element->localName().impl());
-    if (element->isCustomElement())
-        return CustomElementHelpers::wrap(element, creationContext, isolate, CustomElementHelpers::CreateWrapperFunction(createWrapperFunction));
-    if (createWrapperFunction)
-    {
 END
 ;
     if ($parameters{namespace} eq "HTML") {
         print F <<END
-        if (createWrapperFunction == createHTMLElementWrapper)
-           return V8HTMLElement::createWrapper(element, creationContext, isolate);
+    if (createWrapperFunction == createHTMLElementWrapper)
+        createWrapperFunction = createV8HTMLDirectWrapper;
 END
+;
     }
     print F <<END
+    if (element->isCustomElement())
+        return CustomElementWrapper<$parameters{namespace}Element, V8$parameters{namespace}Element>::wrap(element, creationContext, isolate, createWrapperFunction);
+
+    if (createWrapperFunction)
         return createWrapperFunction(element, creationContext, isolate);
-    }
 END
 ;
     if ($parameters{namespace} eq "SVG") {
@@ -1234,7 +1202,7 @@ sub printWrapperFactoryHeaderFile
 
     print F <<END
 #include <V8$parameters{namespace}Element.h>
-#include <V8$parameters{fallbackInterfaceName}.h>
+#include <V8$parameters{fallbackJSInterfaceName}.h>
 #include <v8.h>
 
 namespace WebCore {
@@ -1247,9 +1215,9 @@ namespace WebCore {
     {
         return V8$parameters{namespace}Element::createWrapper(element, creationContext, isolate);
     }
-    inline v8::Handle<v8::Object> createV8$parameters{namespace}FallbackWrapper($parameters{fallbackInterfaceName}* element, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+    inline v8::Handle<v8::Object> createV8$parameters{namespace}FallbackWrapper($parameters{fallbackJSInterfaceName}* element, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
     {
-        return V8$parameters{fallbackInterfaceName}::createWrapper(element, creationContext, isolate);
+        return V8$parameters{fallbackJSInterfaceName}::createWrapper(element, creationContext, isolate);
     }
 }
 END
@@ -1259,4 +1227,55 @@ END
     print F "#endif // V8$parameters{namespace}ElementWrapperFactory_h\n";
 
     close F;
+}
+
+sub createGenericNamesFile
+{
+    my $inputName = shift;
+    my $baseName = shift;
+    my $basePrefix = shift;
+
+    my $names = new IO::File;
+    open($names, $inputName) or die "Failed to open file: $inputName";
+
+    $initDefaults = 0;
+    my $Parser = InFilesParser->new();
+    my $dummy;
+    $Parser->parse($names, \&parametersHandler, \&dummy);
+
+    my $F;
+    my $header = File::Spec->catfile($outputDir, "${baseName}Names.h");
+    open F, ">$header" or die "Unable to open $header for writing.";
+
+    printLicenseHeader($F);
+    printHeaderHead($F, $basePrefix, $baseName, "#include \"wtf/text/AtomicString.h\"");
+
+    printMacros($F, "extern const WTF::AtomicString", "", \%parameters);
+    print F "#endif\n\n";
+
+    printInit($F, 1);
+    close F;
+
+    my $source = File::Spec->catfile($outputDir, "${baseName}Names.cpp");
+    open F, ">$source" or die "Unable to open $source for writing.";
+
+    printLicenseHeader($F);
+    printCppHead($F, $basePrefix, $baseName, "WTF");
+
+    while ( my ($name, $identifier) = each %parameters ) {
+        print F "DEFINE_GLOBAL(AtomicString, $name)\n";
+    }
+
+    printInit($F, 0);
+
+    print F "\n";
+    print F StaticString::GenerateStringImpls(\%parameters);
+
+    while ( my ($name, $identifier) = each %parameters ) {
+        print F "    new ((void*)&$name) AtomicString(${name}Impl);\n";
+    }
+
+    print F "}\n}\n}\n";
+    close F;
+    exit 0;
 }

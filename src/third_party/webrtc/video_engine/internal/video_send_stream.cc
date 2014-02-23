@@ -23,10 +23,60 @@
 namespace webrtc {
 namespace internal {
 
-VideoSendStream::VideoSendStream(
-    newapi::Transport* transport,
-    webrtc::VideoEngine* video_engine,
-    const newapi::VideoSendStream::Config& config)
+// Super simple and temporary overuse logic. This will move to the application
+// as soon as the new API allows changing send codec on the fly.
+class ResolutionAdaptor : public webrtc::CpuOveruseObserver {
+ public:
+  ResolutionAdaptor(ViECodec* codec, int channel, size_t width, size_t height)
+      : codec_(codec),
+        channel_(channel),
+        max_width_(width),
+        max_height_(height) {}
+
+  virtual ~ResolutionAdaptor() {}
+
+  virtual void OveruseDetected() OVERRIDE {
+    VideoCodec codec;
+    if (codec_->GetSendCodec(channel_, codec) != 0)
+      return;
+
+    if (codec.width / 2 < min_width || codec.height / 2 < min_height)
+      return;
+
+    codec.width /= 2;
+    codec.height /= 2;
+    codec_->SetSendCodec(channel_, codec);
+  }
+
+  virtual void NormalUsage() OVERRIDE {
+    VideoCodec codec;
+    if (codec_->GetSendCodec(channel_, codec) != 0)
+      return;
+
+    if (codec.width * 2u > max_width_ || codec.height * 2u > max_height_)
+      return;
+
+    codec.width *= 2;
+    codec.height *= 2;
+    codec_->SetSendCodec(channel_, codec);
+  }
+
+ private:
+  // Temporary and arbitrary chosen minimum resolution.
+  static const size_t min_width = 160;
+  static const size_t min_height = 120;
+
+  ViECodec* codec_;
+  const int channel_;
+
+  const size_t max_width_;
+  const size_t max_height_;
+};
+
+VideoSendStream::VideoSendStream(newapi::Transport* transport,
+                                 bool overuse_detection,
+                                 webrtc::VideoEngine* video_engine,
+                                 const newapi::VideoSendStream::Config& config)
     : transport_(transport), config_(config) {
 
   if (config_.codec.numberOfSimulcastStreams > 0) {
@@ -44,6 +94,7 @@ VideoSendStream::VideoSendStream(
 
   assert(config_.rtp.ssrcs.size() == 1);
   rtp_rtcp_->SetLocalSSRC(channel_, config_.rtp.ssrcs[0]);
+  rtp_rtcp_->SetNACKStatus(channel_, config_.rtp.nack.rtp_history_ms > 0);
 
   capture_ = ViECapture::GetInterface(video_engine);
   capture_->AllocateExternalCaptureDevice(capture_id_, external_capture_);
@@ -57,6 +108,14 @@ VideoSendStream::VideoSendStream(
   codec_ = ViECodec::GetInterface(video_engine);
   if (codec_->SetSendCodec(channel_, config_.codec) != 0) {
     abort();
+  }
+
+  if (overuse_detection) {
+    overuse_observer_.reset(
+        new ResolutionAdaptor(codec_, channel_, config_.codec.width,
+                              config_.codec.height));
+    video_engine_base_->RegisterCpuOveruseObserver(channel_,
+                                                overuse_observer_.get());
   }
 }
 
@@ -110,10 +169,14 @@ newapi::VideoSendStreamInput* VideoSendStream::Input() { return this; }
 void VideoSendStream::StartSend() {
   if (video_engine_base_->StartSend(channel_) != 0)
     abort();
+  if (video_engine_base_->StartReceive(channel_) != 0)
+    abort();
 }
 
 void VideoSendStream::StopSend() {
   if (video_engine_base_->StopSend(channel_) != 0)
+    abort();
+  if (video_engine_base_->StopReceive(channel_) != 0)
     abort();
 }
 
@@ -134,14 +197,23 @@ int VideoSendStream::SendPacket(int /*channel*/,
   // TODO(pbos): Lock these methods and the destructor so it can't be processing
   //             a packet when the destructor has been called.
   assert(length >= 0);
-  return transport_->SendRTP(packet, static_cast<size_t>(length)) ? 0 : -1;
+  bool success = transport_->SendRTP(static_cast<const uint8_t*>(packet),
+                                     static_cast<size_t>(length));
+  return success ? 0 : -1;
 }
 
 int VideoSendStream::SendRTCPPacket(int /*channel*/,
                                     const void* packet,
                                     int length) {
   assert(length >= 0);
-  return transport_->SendRTCP(packet, static_cast<size_t>(length)) ? 0 : -1;
+  bool success = transport_->SendRTCP(static_cast<const uint8_t*>(packet),
+                                      static_cast<size_t>(length));
+  return success ? 0 : -1;
+}
+
+bool VideoSendStream::DeliverRtcp(const uint8_t* packet, size_t length) {
+  return network_->ReceivedRTCPPacket(
+             channel_, packet, static_cast<int>(length)) == 0;
 }
 
 }  // namespace internal

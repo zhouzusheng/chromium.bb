@@ -23,14 +23,14 @@
 #include "core/platform/graphics/FloatSize.h"
 #include "core/platform/graphics/Image.h"
 #include "core/platform/graphics/IntSize.h"
-#include <wtf/HashMap.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/RefPtr.h>
+#include "wtf/HashMap.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
-class CachedImage;
-class CachedImageClient;
+class ImageResource;
+class ImageResourceClient;
 class ImageBuffer;
 class SVGImage;
 class SVGImageForContainer;
@@ -46,9 +46,9 @@ public:
         return adoptPtr(new SVGImageCache(image));
     }
 
-    void removeClientFromCache(const CachedImageClient*);
+    void removeClientFromCache(const ImageResourceClient*);
 
-    void setContainerSizeForRenderer(const CachedImageClient*, const IntSize&, float);
+    void setContainerSizeForRenderer(const ImageResourceClient*, const IntSize&, float);
     IntSize imageSizeForRenderer(const RenderObject*) const;
 
     Image* imageForRenderer(const RenderObject*);
@@ -56,7 +56,7 @@ public:
 private:
     SVGImageCache(SVGImage*);
 
-    typedef HashMap<const CachedImageClient*, RefPtr<SVGImageForContainer> > ImageForContainerMap;
+    typedef HashMap<const ImageResourceClient*, RefPtr<SVGImageForContainer> > ImageForContainerMap;
 
     SVGImage* m_svgImage;
     ImageForContainerMap m_imageForContainerMap;

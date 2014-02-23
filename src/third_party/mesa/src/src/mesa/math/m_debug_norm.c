@@ -165,7 +165,7 @@ static void ref_norm_transform_normalize( const GLmatrix *mat,
 	    /* Hmmm, don't know how we could test the precalculated
 	     * length case...
 	     */
-            scale = 1.0 / SQRTF( len );
+            scale = INV_SQRTF( len );
 	    SCALE_SCALAR_3V( out[i], scale, t );
          } else {
             out[i][0] = out[i][1] = out[i][2] = 0;
@@ -241,7 +241,7 @@ static int test_norm_function( normal_func func, int mtype, long *cycles )
       ASSIGN_3V( d2[i], 0.0, 0.0, 0.0 );
       for ( j = 0 ; j < 3 ; j++ )
          s[i][j] = rnd();
-      length[i] = 1 / SQRTF( LEN_SQUARED_3FV( s[i] ) );
+      length[i] = INV_SQRTF( LEN_SQUARED_3FV( s[i] ) );
    }
 
    source->data = (GLfloat(*)[4]) s;
@@ -362,7 +362,7 @@ void _math_test_all_normal_transform_functions( char *description )
 	 char buf[100];
 	 sprintf( buf, "_mesa_normal_tab[0][%s] failed test (%s)",
 		  norm_strings[mtype], description );
-	 _mesa_problem( NULL, buf );
+	 _mesa_problem( NULL, "%s", buf );
       }
 
 #ifdef RUN_DEBUG_BENCHMARK

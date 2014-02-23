@@ -67,12 +67,11 @@ input[type="text"]:focus {
     background-clip: padding-box;
 }
 
-body.show-toolbar-icons #toolbar {
-    height: 56px;
-}
-
-body.show-toolbar-icons.dock-to-bottom #toolbar {
-    height: 34px;
+button,
+input,
+select {
+  font-family: inherit;
+  font-size: inherit;
 }
 
 body.inactive #toolbar {
@@ -132,22 +131,10 @@ body.undocked.platform-mac-mountain-lion.inactive #toolbar {
     border-style: none;
     border-color: transparent;
     color: inherit;
-    font-family: inherit;
-    font-size: inherit;
 }
 
-body:not(.show-toolbar-icons) .toolbar-item {
+.toolbar-item {
     height: 24px;
-}
-
-body.show-toolbar-icons .toolbar-item.toggleable {
-    padding-top: 2px;
-    padding-bottom: 2px;
-}
-
-body.show-toolbar-icons.dock-to-bottom .toolbar-item.toggleable {
-    margin: 2px 0;
-    padding-bottom: 2px;
 }
 
 .toolbar-item.toggleable.toggled-on {
@@ -155,39 +142,6 @@ body.show-toolbar-icons.dock-to-bottom .toolbar-item.toggleable {
     padding-left: 4px;
     padding-right: 4px;
     -webkit-border-image: url(Images/toolbarItemSelected.png) 0 2 0 2;
-}
-
-.toolbar-icon {
-    display: none;
-    width: 32px;
-    height: 32px;
-    background-image: url(Images/toolbarIcons.png);
-    vertical-align: top;
-}
-
-body.show-toolbar-icons .toolbar-icon {
-    display: block;
-    margin: auto;
-}
-
-body.show-toolbar-icons.dock-to-bottom .toolbar-icon {
-    width: 24px;
-    height: 24px;
-    display: inline-block;
-    vertical-align: middle;
-    background-image: url(Images/toolbarIconsSmall.png);
-}
-
-body.dock-to-bottom .toolbar-icon.custom-toolbar-icon {
-    background-position-x: -32px;
-}
-
-.toolbar-item:active .toolbar-icon {
-    background-position-y: 32px;
-}
-
-body.dock-to-bottom .toolbar-item:active .toolbar-icon {
-    background-position-y: 24px;
 }
 
 .toolbar-label {
@@ -208,29 +162,14 @@ body.dock-to-bottom .toolbar-item:active .toolbar-icon {
     opacity: 1;
 }
 
-body.show-toolbar-icons.dock-to-bottom .toolbar-item.toggleable .close-button {
-    top: 3px;
-}
-
 #toolbar-dropdown .toolbar-items-separator {
     border-bottom: 1px solid #aaa;
     width: 100%;
     margin: 5px 0;
 }
 
-body.show-toolbar-icons .toolbar-label {
-    line-height: 15px;
-}
-
 .toolbar-item.toggleable:active .toolbar-label {
     text-shadow: none;
-}
-
-body.show-toolbar-icons.dock-to-bottom .toolbar-label {
-    display: inline-block;
-    margin-left: 3px;
-    top: 0;
-    vertical-align: middle;
 }
 
 body.dock-to-bottom #search-toolbar-label {
@@ -279,10 +218,6 @@ body.dock-to-bottom #search-toolbar-label {
     background-image: inherit;
 }
 
-body.show-toolbar-icons #toolbar-dropdown {
-    padding: 4px;
-}
-
 body.undocked.platform-mac-leopard #toolbar-dropdown,
 body.undocked.platform-mac-snowleopard #toolbar-dropdown {
     background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(191, 191, 191)), to(rgb(151, 151, 151)));
@@ -303,13 +238,6 @@ body.undocked.platform-mac-snowleopard #toolbar-dropdown {
     border: 1px solid rgba(0, 0, 0, 0);
 }
 
-body.show-toolbar-icons #toolbar-dropdown .toolbar-item {
-    position: relative;
-    left: -2px;
-    margin: 0 2px;
-    padding: 4px;
-}
-
 #toolbar-dropdown .toolbar-item.toggleable.toggled-on {
     border: 1px solid rgba(100, 100, 120, 0.4);
     -webkit-border-image: none;
@@ -320,18 +248,9 @@ body.show-toolbar-icons #toolbar-dropdown .toolbar-item {
     background: -webkit-gradient(linear, left top, left bottom, from(rgba(128, 128, 128, 0.6)), to(rgba(128, 128, 128, 0.3)), color-stop(20%, rgba(158, 158, 158, 0.2)), color-stop(80%, rgba(158, 158, 158, 0.1)));
 }
 
-#toolbar-dropdown .toolbar-icon {
-    margin-left: 0;
-    margin-right: 0.5em;
-}
-
 #toolbar-dropdown .toolbar-label {
     line-height: 22px;
     top: 0;
-}
-
-body.show-toolbar-icons #toolbar-dropdown .toolbar-label {
-    line-height: 32px;
 }
 
 #toolbar-panels-menu {
@@ -344,14 +263,6 @@ body.show-toolbar-icons #toolbar-dropdown .toolbar-label {
     height: 22px;
     padding: 0 4px 0 4px;
     margin: 1px 3px;
-}
-
-body.show-toolbar-icons #toolbar-panels-menu {
-    margin: 16px 3px;
-}
-
-body.show-toolbar-icons.dock-to-bottom #toolbar-panels-menu {
-    margin: 6px 3px;
 }
 
 #toolbar-panels-menu:hover:not(.disabled) {
@@ -406,15 +317,7 @@ body.show-toolbar-icons.dock-to-bottom #toolbar-panels-menu {
     border: 0;
     padding: 0 2px;
     margin: 0;
-    width: 165px;
-}
-
-.filter {
-    -webkit-appearance: none;
-    border: 0;
-    padding: 0 2px;
-    margin: 0;
-    width: 251px;
+    -webkit-flex: 1;
 }
 
 .search-replace:focus {
@@ -430,10 +333,7 @@ body.show-toolbar-icons.dock-to-bottom #toolbar-panels-menu {
 }
 
 .toolbar-search-navigation-controls {
-    position: absolute;
-    top: 0;
-    right: 0;
-    height: 18px;
+    vertical-align: top;
     background-image: -webkit-linear-gradient(rgb(228, 228, 228), rgb(206, 206, 206));
 }
 
@@ -451,6 +351,10 @@ body.show-toolbar-icons.dock-to-bottom #toolbar-panels-menu {
     opacity: 1.0;
 }
 
+.toolbar-search label {
+    vertical-align: bottom;
+}
+
 .toolbar-search input[type="checkbox"] {
     position: relative;
     margin-top: -1px;
@@ -462,9 +366,9 @@ body.show-toolbar-icons.dock-to-bottom #toolbar-panels-menu {
     border: 1px solid rgb(163, 163, 163);
     border-radius: 8px;
     margin: 0;
-    font-size: 11px;
     background-image: -webkit-linear-gradient(rgb(241, 241, 241), rgb(220, 220, 220));
     width: 100%;
+    height: 20px;
 }
 
 .toolbar-search button:active {
@@ -472,13 +376,13 @@ body.show-toolbar-icons.dock-to-bottom #toolbar-panels-menu {
 }
 
 .toolbar-search-control {
-    display: inline-block;
+    display: -webkit-flex;
+    width: 253px;
     position: relative;
     background-color: white;
     border: 1px solid rgb(163, 163, 163);
     height: 20px;
     border-radius: 2px;
-    padding-top: 1px;
 }
 
 .toolbar-replace-control {
@@ -512,97 +416,11 @@ body.show-toolbar-icons.dock-to-bottom #toolbar-panels-menu {
 
 .search-results-matches {
     display: inline-block;
-    min-width: 50px;
     min-height: 10px;
-    margin-right: 36px;
     text-align: right;
     font-size: 11px;
-    padding: 0 4px;
+    padding: 1px 4px;
     color: rgb(165, 165, 165);
-}
-
-.toolbar-item.elements .toolbar-icon {
-    background-position-x: 0;
-}
-
-.toolbar-item.resources .toolbar-icon {
-    background-position-x: -32px;
-}
-
-body.dock-to-bottom .toolbar-item.resources .toolbar-icon {
-    background-position-x: -24px;
-}
-
-.toolbar-item.network .toolbar-icon {
-    background-position-x: -64px;
-}
-
-body.dock-to-bottom .toolbar-item.network .toolbar-icon {
-    background-position-x: -48px;
-}
-
-.toolbar-item.scripts .toolbar-icon {
-    background-position-x: -96px;
-}
-
-body.dock-to-bottom .toolbar-item.scripts .toolbar-icon {
-    background-position-x: -72px;
-}
-
-.toolbar-item.timeline .toolbar-icon {
-    background-position-x: -128px;
-}
-
-body.dock-to-bottom .toolbar-item.timeline .toolbar-icon {
-    background-position-x: -96px;
-}
-
-.toolbar-item.profiles .toolbar-icon {
-    background-position-x: -160px;
-}
-
-.toolbar-item.cpu-profiler .toolbar-icon {
-    background-position-x: -160px;
-}
-
-.toolbar-item.css-profiler .toolbar-icon {
-    background-position-x: -160px;
-}
-
-.toolbar-item.heap-profiler .toolbar-icon {
-    background-position-x: -160px;
-}
-
-.toolbar-item.canvas-profiler .toolbar-icon {
-    background-position-x: -160px;
-}
-
-.toolbar-item.memory-chart-profiler .toolbar-icon {
-    background-position-x: -160px;
-}
-
-.toolbar-item.memory-snapshot-profiler .toolbar-icon {
-    background-position-x: -160px;
-}
-
-body.dock-to-bottom .toolbar-item.profiles .toolbar-icon {
-    background-position-x: -120px;
-}
-
-.toolbar-item.audits .toolbar-icon {
-    background-position-x: -192px;
-}
-
-body.dock-to-bottom .toolbar-item.audits .toolbar-icon {
-    background-position-x: -144px;
-}
-
-.toolbar-item.console .toolbar-icon {
-    background-position-x: -224px;
-}
-
-body.dock-to-bottom .toolbar-item.console .toolbar-icon {
-    background-position-x: -168px;
 }
 
 .close-button,
@@ -687,22 +505,6 @@ body:not(.platform-mac) .toolbar-item.close-left {
     background-color: white;
 }
 
-.animate-slow * {
-    -webkit-transition-duration: 2.5s !important;
-}
-
-.animate #main {
-    -webkit-transition: bottom 100ms linear;
-}
-
-body.show-toolbar-icons #main {
-    top: 56px;
-}
-
-body.show-toolbar-icons.dock-to-bottom #main {
-    top: 34px;
-}
-
 #main-panels {
     position: absolute;
     top: 0;
@@ -769,12 +571,6 @@ body.drawer-visible #main-panels {
     border-bottom: 1px solid rgb(202, 202, 202);
     cursor: ns-resize;
     height: 24px;
-}
-
-.animate #floating-status-bar-container {
-    -webkit-transition-property: padding-left, bottom;
-    -webkit-transition-duration: 100ms;
-    -webkit-transition-timing-function: linear;
 }
 
 body.drawer-overlay #floating-status-bar-container {
@@ -913,8 +709,6 @@ select.status-bar-item {
     margin-right: -10px;
     position: relative;
     line-height: 20px;
-    font-family: inherit;
-    font-size: inherit;
 }
 
 select.status-bar-item,
@@ -938,16 +732,16 @@ select.status-bar-item:hover {
 }
 } /* media */
 
-button.dock-status-bar-item.status-bar-item.toggled-undock .glyph {
+button.status-bar-item.dock-status-bar-item.toggled-undock .glyph {
     -webkit-mask-position: 0 -48px;
 }
 
-button.dock-status-bar-item.status-bar-item.toggled-bottom .glyph {
+button.status-bar-item.dock-status-bar-item.toggled-bottom .glyph {
     -webkit-mask-position: -32px -24px;
     background-color: rgba(0, 0, 0, 0.75);
 }
 
-button.dock-status-bar-item.status-bar-item.toggled-right .glyph {
+button.status-bar-item.dock-status-bar-item.toggled-right .glyph {
     -webkit-mask-position: -256px -48px;
     background-color: rgba(0, 0, 0, 0.75);
 }
@@ -979,6 +773,55 @@ body.undocked .alternate-status-bar-buttons-bar {
 button.status-bar-item.settings-status-bar-item,
 button.status-bar-item.settings-status-bar-item:active {
     border-right: 0 transparent none;
+}
+
+button.status-bar-item.left-sidebar-show-hide-button,
+button.status-bar-item.right-sidebar-show-hide-button {
+    position: absolute;
+    top: 0;
+    background-image: none;
+    height: 16px;
+    width: 16px;
+    margin: 4px 2px 2px 2px;
+    border: none;
+}
+
+button.status-bar-item.left-sidebar-show-hide-button:active,
+button.status-bar-item.right-sidebar-show-hide-button:active {
+    margin: 5px 1px 1px 3px;
+}
+
+button.status-bar-item.left-sidebar-show-hide-button.toggled-left > .glyph {
+    -webkit-mask-position: -199px -76px;
+}
+
+button.status-bar-item.left-sidebar-show-hide-button.toggled-right > .glyph {
+    -webkit-mask-position: -168px -76px;
+}
+
+button.status-bar-item.right-sidebar-show-hide-button.toggled-left > .glyph {
+    -webkit-mask-position: -296px -76px;
+}
+
+button.status-bar-item.right-sidebar-show-hide-button.toggled-right > .glyph {
+    -webkit-mask-position: -264px -76px;
+}
+
+button.status-bar-item.left-sidebar-show-hide-button.toggled-overlay > .glyph {
+    -webkit-mask-position: -231px -76px;
+}
+
+div.resizer-widget {
+    position: absolute;
+    top: 0;
+    right: 0;
+    height: 24px;
+    width: 16px;
+    cursor: ew-resize;
+    background-image: url(Images/statusbarResizerHorizontal.png);
+    background-repeat: no-repeat;
+    background-position: center;
+    z-index: 13;
 }
 
 .settings-status-bar-item .glyph {
@@ -1072,16 +915,29 @@ body.remote .dock-status-bar-item {
     z-index: 1;
 }
 
-.animate #drawer {
-    -webkit-transition: height 100ms linear;
-}
-
-#drawer-contents {
+#drawer-body {
     position: absolute;
     top: 0;
     bottom: 24px;
     left: 0;
     right: 0;
+}
+
+#drawer-contents {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+}
+
+#drawer-footer {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    font-size: 11px;
+    height: 23px;
 }
 
 body.drawer-visible #drawer {
@@ -1557,19 +1413,6 @@ iframe.panel.extension {
     border-radius: 5px;
 }
 
-.outline-disclosure li.highlighted .highlight {
-    background-color: rgb(255, 230, 179);
-    border-radius: 4px;
-    padding-bottom: 2px;
-    margin-bottom: -2px;
-}
-
-.outline-disclosure li.selected.highlighted .highlight {
-    background-color: transparent;
-    padding-bottom: 0;
-    margin-bottom: 0;
-}
-
 .outline-disclosure li .selection {
     display: none;
     position: absolute;
@@ -1879,6 +1722,14 @@ iframe.panel.extension {
     margin-right: 4px;
     color: transparent;
     text-shadow: none;
+}
+
+.properties-calculate-value-button:hover {
+    text-decoration: underline;
+}
+
+.properties-accessor-property-name {
+    font-style: italic;
 }
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
@@ -2757,10 +2608,6 @@ body.platform-mac .search-drawer-header input[type="checkbox"].search-config-che
     overflow: hidden;
 }
 
-.animate #bottom-status-bar-container > * {
-    -webkit-transition: opacity 100ms linear;
-}
-
 .search-status-bar-item {
     display: inline-block;
     cursor: pointer;
@@ -2885,12 +2732,18 @@ body.platform-mac .search-drawer-header input[type="checkbox"].search-config-che
     white-space: pre;
 }
 
-#search-results-pane-file-based .search-match .webkit-line-number.search-match-line-number {
+#search-results-pane-file-based .search-match .search-match-line-number {
+    color: rgb(128, 128, 128);
+    text-align: right;
+    vertical-align: top;
+    word-break: normal;
+    padding-right: 4px;
+    padding-left: 6px;
     margin-right: 5px;
     border-right: 1px solid #BBB;
 }
 
-#search-results-pane-file-based .search-match:not(:hover) .webkit-line-number.search-match-line-number {
+#search-results-pane-file-based .search-match:not(:hover) .search-match-line-number {
     background-color: #F0F0F0;
 }
 
@@ -3078,7 +2931,6 @@ body.platform-mac .search-drawer-header input[type="checkbox"].search-config-che
     bottom: 0;
     left: 0;
     right: 0;
-    font-size: 11px;
     height: auto;
 }
 

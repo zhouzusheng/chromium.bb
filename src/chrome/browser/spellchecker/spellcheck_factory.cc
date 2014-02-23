@@ -63,7 +63,7 @@ BrowserContextKeyedService* SpellcheckServiceFactory::BuildServiceInstanceFor(
   return spellcheck;
 }
 
-void SpellcheckServiceFactory::RegisterUserPrefs(
+void SpellcheckServiceFactory::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* user_prefs) {
   // TODO(estade): IDS_SPELLCHECK_DICTIONARY should be an ASCII string.
   // SHEZ: replace IDS_SPELLCHECK_DICTIONARY with hardcoded "en-US"

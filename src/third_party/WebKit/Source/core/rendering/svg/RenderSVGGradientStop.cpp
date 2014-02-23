@@ -27,7 +27,7 @@
 #include "core/svg/SVGStopElement.h"
 
 namespace WebCore {
-    
+
 using namespace SVGNames;
 
 RenderSVGGradientStop::RenderSVGGradientStop(SVGStopElement* element)
@@ -63,14 +63,14 @@ void RenderSVGGradientStop::styleDidChange(StyleDifference diff, const RenderSty
 void RenderSVGGradientStop::layout()
 {
     StackStats::LayoutCheckPoint layoutCheckPoint;
-    setNeedsLayout(false);
+    clearNeedsLayout();
 }
 
 SVGGradientElement* RenderSVGGradientStop::gradientElement() const
 {
     ContainerNode* parentNode = node()->parentNode();
     if (parentNode->hasTagName(linearGradientTag) || parentNode->hasTagName(radialGradientTag))
-        return static_cast<SVGGradientElement*>(parentNode);
+        return toSVGGradientElement(parentNode);
     return 0;
 }
 

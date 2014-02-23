@@ -10,10 +10,9 @@
 
 #include "webrtc/modules/rtp_rtcp/source/rtp_receiver_audio.h"
 
+#include <assert.h>  // assert
 #include <math.h>   // pow()
-
-#include <cassert>  // assert
-#include <cstring>  // memcpy()
+#include <string.h>  // memcpy()
 
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/trace.h"
@@ -40,6 +39,8 @@ RTPReceiverAudio::RTPReceiverAudio(const int32_t id,
       cb_audio_feedback_(incoming_messages_callback) {
   last_payload_.Audio.channels = 1;
 }
+
+RTPReceiverAudio::~RTPReceiverAudio() {}
 
 uint32_t RTPReceiverAudio::AudioFrequency() const {
   CriticalSectionScoped lock(critical_section_rtp_receiver_audio_.get());

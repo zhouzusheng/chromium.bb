@@ -6,11 +6,10 @@
 
 #include "base/metrics/histogram.h"
 #include "base/sha1.h"
+#include "base/strings/stringprintf.h"
 #include "build/build_config.h"
-#include "googleurl/src/url_canon.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
-#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/cert/cert_verifier.h"
 #include "net/cert/cert_verify_result.h"
@@ -36,6 +35,69 @@ namespace net {
 
 namespace {
 
+// Constants used to build histogram names
+const char kLeafCert[] = "Leaf";
+const char kIntermediateCert[] = "Intermediate";
+const char kRootCert[] = "Root";
+// Matches the order of X509Certificate::PublicKeyType
+const char* const kCertTypeStrings[] = {
+    "Unknown",
+    "RSA",
+    "DSA",
+    "ECDSA",
+    "DH",
+    "ECDH"
+};
+// Histogram buckets for RSA/DSA/DH key sizes.
+const int kRsaDsaKeySizes[] = {512, 768, 1024, 1536, 2048, 3072, 4096, 8192,
+                               16384};
+// Histogram buckets for ECDSA/ECDH key sizes. The list is based upon the FIPS
+// 186-4 approved curves.
+const int kEccKeySizes[] = {163, 192, 224, 233, 256, 283, 384, 409, 521, 571};
+
+const char* CertTypeToString(int cert_type) {
+  if (cert_type < 0 ||
+      static_cast<size_t>(cert_type) >= arraysize(kCertTypeStrings)) {
+    return "Unsupported";
+  }
+  return kCertTypeStrings[cert_type];
+}
+
+void RecordPublicKeyHistogram(const char* chain_position,
+                              bool baseline_keysize_applies,
+                              size_t size_bits,
+                              X509Certificate::PublicKeyType cert_type) {
+  std::string histogram_name =
+      base::StringPrintf("CertificateType2.%s.%s.%s",
+                         baseline_keysize_applies ? "BR" : "NonBR",
+                         chain_position,
+                         CertTypeToString(cert_type));
+  // Do not use UMA_HISTOGRAM_... macros here, as it caches the Histogram
+  // instance and thus only works if |histogram_name| is constant.
+  base::HistogramBase* counter = NULL;
+
+  // Histogram buckets are contingent upon the underlying algorithm being used.
+  if (cert_type == X509Certificate::kPublicKeyTypeECDH ||
+      cert_type == X509Certificate::kPublicKeyTypeECDSA) {
+    // Typical key sizes match SECP/FIPS 186-3 recommendations for prime and
+    // binary curves - which range from 163 bits to 571 bits.
+    counter = base::CustomHistogram::FactoryGet(
+        histogram_name,
+        base::CustomHistogram::ArrayToCustomRanges(kEccKeySizes,
+                                                   arraysize(kEccKeySizes)),
+        base::HistogramBase::kUmaTargetedHistogramFlag);
+  } else {
+    // Key sizes < 1024 bits should cause errors, while key sizes > 16K are not
+    // uniformly supported by the underlying cryptographic libraries.
+    counter = base::CustomHistogram::FactoryGet(
+        histogram_name,
+        base::CustomHistogram::ArrayToCustomRanges(kRsaDsaKeySizes,
+                                                   arraysize(kRsaDsaKeySizes)),
+        base::HistogramBase::kUmaTargetedHistogramFlag);
+  }
+  counter->Add(size_bits);
+}
+
 // Returns true if |type| is |kPublicKeyTypeRSA| or |kPublicKeyTypeDSA|, and
 // if |size_bits| is < 1024. Note that this means there may be false
 // negatives: keys for other algorithms and which are weak will pass this
@@ -48,6 +110,53 @@ bool IsWeakKey(X509Certificate::PublicKeyType type, size_t size_bits) {
     default:
       return false;
   }
+}
+
+// Returns true if |cert| contains a known-weak key. Additionally, histograms
+// the observed keys for future tightening of the definition of what
+// constitutes a weak key.
+bool ExaminePublicKeys(const scoped_refptr<X509Certificate>& cert,
+                       bool should_histogram) {
+  // The effective date of the CA/Browser Forum's Baseline Requirements -
+  // 2012-07-01 00:00:00 UTC.
+  const base::Time kBaselineEffectiveDate =
+      base::Time::FromInternalValue(GG_INT64_C(12985574400000000));
+  // The effective date of the key size requirements from Appendix A, v1.1.5
+  // 2014-01-01 00:00:00 UTC.
+  const base::Time kBaselineKeysizeEffectiveDate =
+      base::Time::FromInternalValue(GG_INT64_C(13033008000000000));
+
+  size_t size_bits = 0;
+  X509Certificate::PublicKeyType type = X509Certificate::kPublicKeyTypeUnknown;
+  bool weak_key = false;
+  bool baseline_keysize_applies =
+      cert->valid_start() >= kBaselineEffectiveDate &&
+      cert->valid_expiry() >= kBaselineKeysizeEffectiveDate;
+
+  X509Certificate::GetPublicKeyInfo(cert->os_cert_handle(), &size_bits, &type);
+  if (should_histogram) {
+    RecordPublicKeyHistogram(kLeafCert, baseline_keysize_applies, size_bits,
+                             type);
+  }
+  if (IsWeakKey(type, size_bits))
+    weak_key = true;
+
+  const X509Certificate::OSCertHandles& intermediates =
+      cert->GetIntermediateCertificates();
+  for (size_t i = 0; i < intermediates.size(); ++i) {
+    X509Certificate::GetPublicKeyInfo(intermediates[i], &size_bits, &type);
+    if (should_histogram) {
+      RecordPublicKeyHistogram(
+          (i < intermediates.size() - 1) ? kIntermediateCert : kRootCert,
+          baseline_keysize_applies,
+          size_bits,
+          type);
+    }
+    if (!weak_key && IsWeakKey(type, size_bits))
+      weak_key = true;
+  }
+
+  return weak_key;
 }
 
 }  // namespace
@@ -87,16 +196,12 @@ int CertVerifyProc::Verify(X509Certificate* cert,
     return ERR_CERT_REVOKED;
   }
 
-  // If EV verification was requested and no CRLSet is present, or if the
-  // CRLSet has expired, then enable online revocation checks. If the online
-  // check fails, EV status won't be shown.
-  //
+  // We do online revocation checking for EV certificates that aren't covered
+  // by a fresh CRLSet.
   // TODO(rsleevi): http://crbug.com/142974 - Allow preferences to fully
   // disable revocation checking.
-  if ((flags & CertVerifier::VERIFY_EV_CERT) &&
-      (!crl_set || crl_set->IsExpired())) {
+  if (flags & CertVerifier::VERIFY_EV_CERT)
     flags |= CertVerifier::VERIFY_REV_CHECKING_ENABLED_EV_ONLY;
-  }
 
   int rv = VerifyInternal(cert, hostname, flags, crl_set,
                           additional_trust_anchors, verify_result);
@@ -109,24 +214,8 @@ int CertVerifyProc::Verify(X509Certificate* cert,
   }
 
   // Check for weak keys in the entire verified chain.
-  size_t size_bits = 0;
-  X509Certificate::PublicKeyType type =
-      X509Certificate::kPublicKeyTypeUnknown;
-  bool weak_key = false;
-
-  X509Certificate::GetPublicKeyInfo(
-      verify_result->verified_cert->os_cert_handle(), &size_bits, &type);
-  if (IsWeakKey(type, size_bits)) {
-    weak_key = true;
-  } else {
-    const X509Certificate::OSCertHandles& intermediates =
-        verify_result->verified_cert->GetIntermediateCertificates();
-    for (size_t i = 0; i < intermediates.size(); ++i) {
-      X509Certificate::GetPublicKeyInfo(intermediates[i], &size_bits, &type);
-      if (IsWeakKey(type, size_bits))
-        weak_key = true;
-    }
-  }
+  bool weak_key = ExaminePublicKeys(verify_result->verified_cert,
+                                    verify_result->is_issued_by_known_root);
 
   if (weak_key) {
     verify_result->cert_status |= CERT_STATUS_WEAK_KEY;
@@ -156,7 +245,10 @@ int CertVerifyProc::Verify(X509Certificate* cert,
   // Flag certificates from publicly-trusted CAs that are issued to intranet
   // hosts. While the CA/Browser Forum Baseline Requirements (v1.1) permit
   // these to be issued until 1 November 2015, they represent a real risk for
-  // the deployment of gTLDs and are being phased out.
+  // the deployment of gTLDs and are being phased out ahead of the hard
+  // deadline.
+  // TODO(rsleevi): http://crbug.com/119212 - Also match internal IP address
+  // ranges.
   if (verify_result->is_issued_by_known_root && IsHostnameNonUnique(hostname)) {
     verify_result->cert_status |= CERT_STATUS_NON_UNIQUE_NAME;
   }
@@ -295,41 +387,6 @@ bool CertVerifyProc::IsPublicKeyBlacklisted(
   }
 
   return false;
-}
-
-// static
-bool CertVerifyProc::IsHostnameNonUnique(const std::string& hostname) {
-  // CanonicalizeHost requires surrounding brackets to parse an IPv6 address.
-  const std::string host_or_ip = hostname.find(':') != std::string::npos ?
-      "[" + hostname + "]" : hostname;
-  url_canon::CanonHostInfo host_info;
-  std::string canonical_name = CanonicalizeHost(host_or_ip, &host_info);
-
-  // If canonicalization fails, then the input is truly malformed. However,
-  // to avoid mis-reporting bad inputs as "non-unique", treat them as unique.
-  if (canonical_name.empty())
-    return false;
-
-  // If |hostname| is an IP address, presume it's unique.
-  // TODO(rsleevi): In the future, this should also reject IP addresses in
-  // IANA-reserved ranges, since those are also non-unique among publicly
-  // trusted CAs.
-  if (host_info.IsIPAddress())
-    return false;
-
-  // Check for a registry controlled portion of |hostname|, ignoring private
-  // registries, as they already chain to ICANN-administered registries,
-  // and explicitly ignoring unknown registries.
-  //
-  // Note: This means that as new gTLDs are introduced on the Internet, they
-  // will be treated as non-unique until the registry controlled domain list
-  // is updated. However, because gTLDs are expected to provide significant
-  // advance notice to deprecate older versions of this code, this an
-  // acceptable tradeoff.
-  return 0 == registry_controlled_domains::GetRegistryLength(
-                  canonical_name,
-                  registry_controlled_domains::EXCLUDE_UNKNOWN_REGISTRIES,
-                  registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
 }
 
 }  // namespace net

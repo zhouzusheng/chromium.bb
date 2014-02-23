@@ -190,10 +190,11 @@ struct PacketMessageData : public talk_base::MessageData {
 };
 
 struct AudioRenderMessageData: public talk_base::MessageData {
-  AudioRenderMessageData(uint32 s, AudioRenderer* r)
-      : ssrc(s), renderer(r), result(false) {}
+  AudioRenderMessageData(uint32 s, AudioRenderer* r, bool l)
+      : ssrc(s), renderer(r), is_local(l), result(false) {}
   uint32 ssrc;
   AudioRenderer* renderer;
+  bool is_local;
   bool result;
 };
 
@@ -615,7 +616,7 @@ void BaseChannel::SetReadyToSend(TransportChannel* channel, bool ready) {
 bool BaseChannel::PacketIsRtcp(const TransportChannel* channel,
                                const char* data, size_t len) {
   return (channel == rtcp_transport_channel_ ||
-          rtcp_mux_filter_.DemuxRtcp(data, len));
+          rtcp_mux_filter_.DemuxRtcp(data, static_cast<int>(len)));
 }
 
 bool BaseChannel::SendPacket(bool rtcp, talk_base::Buffer* packet) {
@@ -669,9 +670,10 @@ bool BaseChannel::SendPacket(bool rtcp, talk_base::Buffer* packet) {
   if (srtp_filter_.IsActive()) {
     bool res;
     char* data = packet->data();
-    int len = packet->length();
+    int len = static_cast<int>(packet->length());
     if (!rtcp) {
-      res = srtp_filter_.ProtectRtp(data, len, packet->capacity(), &len);
+      res = srtp_filter_.ProtectRtp(data, len,
+                                    static_cast<int>(packet->capacity()), &len);
       if (!res) {
         int seq_num = -1;
         uint32 ssrc = 0;
@@ -683,7 +685,9 @@ bool BaseChannel::SendPacket(bool rtcp, talk_base::Buffer* packet) {
         return false;
       }
     } else {
-      res = srtp_filter_.ProtectRtcp(data, len, packet->capacity(), &len);
+      res = srtp_filter_.ProtectRtcp(data, len,
+                                     static_cast<int>(packet->capacity()),
+                                     &len);
       if (!res) {
         int type = -1;
         GetRtcpType(data, len, &type);
@@ -731,7 +735,6 @@ bool BaseChannel::WantsPacket(bool rtcp, talk_base::Buffer* packet) {
                   << packet->length();
     return false;
   }
-
   // If this channel is suppose to handle RTP data, that is determined by
   // checking against ssrc filter. This is necessary to do it here to avoid
   // double decryption.
@@ -762,7 +765,7 @@ void BaseChannel::HandlePacket(bool rtcp, talk_base::Buffer* packet) {
   // Unprotect the packet, if needed.
   if (srtp_filter_.IsActive()) {
     char* data = packet->data();
-    int len = packet->length();
+    int len = static_cast<int>(packet->length());
     bool res;
     if (!rtcp) {
       res = srtp_filter_.UnprotectRtp(data, len, &len);
@@ -903,7 +906,7 @@ void BaseChannel::ChannelWritable_w() {
   }
 
   // If we're doing DTLS-SRTP, now is the time.
-  if (!was_ever_writable_) {
+  if (!was_ever_writable_ && ShouldSetupDtlsSrtp()) {
     if (!SetupDtlsSrtp(false)) {
       LOG(LS_ERROR) << "Couldn't finish DTLS-SRTP on RTP channel";
       SessionErrorMessageData data(BaseSession::ERROR_TRANSPORT);
@@ -938,6 +941,10 @@ bool BaseChannel::SetDtlsSrtpCiphers(TransportChannel *tc, bool rtcp) {
     GetSupportedDefaultCryptoSuites(&ciphers);
   }
   return tc->SetSrtpCiphers(ciphers);
+}
+
+bool BaseChannel::ShouldSetupDtlsSrtp() const {
+  return true;
 }
 
 // This function returns true if either DTLS-SRTP is not in use
@@ -997,7 +1004,7 @@ bool BaseChannel::SetupDtlsSrtp(bool rtcp_channel) {
 
   std::vector<unsigned char> *send_key, *recv_key;
 
-  if (channel->GetRole() == ROLE_CONTROLLING) {
+  if (channel->GetIceRole() == ICEROLE_CONTROLLING) {
     send_key = &server_write_key;
     recv_key = &client_write_key;
   } else {
@@ -1006,15 +1013,21 @@ bool BaseChannel::SetupDtlsSrtp(bool rtcp_channel) {
   }
 
   if (rtcp_channel) {
-    ret = srtp_filter_.SetRtcpParams(selected_cipher,
-      &(*send_key)[0], send_key->size(),
-      selected_cipher,
-      &(*recv_key)[0], recv_key->size());
+    ret = srtp_filter_.SetRtcpParams(
+        selected_cipher,
+        &(*send_key)[0],
+        static_cast<int>(send_key->size()),
+        selected_cipher,
+        &(*recv_key)[0],
+        static_cast<int>(recv_key->size()));
   } else {
-    ret = srtp_filter_.SetRtpParams(selected_cipher,
-      &(*send_key)[0], send_key->size(),
-      selected_cipher,
-      &(*recv_key)[0], recv_key->size());
+    ret = srtp_filter_.SetRtpParams(
+        selected_cipher,
+        &(*send_key)[0],
+        static_cast<int>(send_key->size()),
+        selected_cipher,
+        &(*recv_key)[0],
+        static_cast<int>(recv_key->size()));
   }
 
   if (!ret)
@@ -1429,8 +1442,14 @@ bool VoiceChannel::Init() {
   return true;
 }
 
-bool VoiceChannel::SetRenderer(uint32 ssrc, AudioRenderer* renderer) {
-  AudioRenderMessageData data(ssrc, renderer);
+bool VoiceChannel::SetRemoteRenderer(uint32 ssrc, AudioRenderer* renderer) {
+  AudioRenderMessageData data(ssrc, renderer, false);
+  Send(MSG_SETRENDERER, &data);
+  return data.result;
+}
+
+bool VoiceChannel::SetLocalRenderer(uint32 ssrc, AudioRenderer* renderer) {
+  AudioRenderMessageData data(ssrc, renderer, true);
   Send(MSG_SETRENDERER, &data);
   return data.result;
 }
@@ -1724,8 +1743,12 @@ bool VoiceChannel::SetChannelOptions_w(const AudioOptions& options) {
   return media_channel()->SetOptions(options);
 }
 
-bool VoiceChannel::SetRenderer_w(uint32 ssrc, AudioRenderer* renderer) {
-  return media_channel()->SetRenderer(ssrc, renderer);
+bool VoiceChannel::SetRenderer_w(uint32 ssrc, AudioRenderer* renderer,
+                                 bool is_local) {
+  if (is_local)
+    return media_channel()->SetLocalRenderer(ssrc, renderer);
+
+  return media_channel()->SetRemoteRenderer(ssrc, renderer);
 }
 
 void VoiceChannel::OnMessage(talk_base::Message *pmsg) {
@@ -1786,7 +1809,7 @@ void VoiceChannel::OnMessage(talk_base::Message *pmsg) {
     case MSG_SETRENDERER: {
       AudioRenderMessageData* data =
           static_cast<AudioRenderMessageData*>(pmsg->pdata);
-      data->result = SetRenderer_w(data->ssrc, data->renderer);
+      data->result = SetRenderer_w(data->ssrc, data->renderer, data->is_local);
       break;
     }
     default:
@@ -2271,6 +2294,7 @@ void VideoChannel::OnMessage(talk_base::Message *pmsg) {
       SetScreenCaptureFactoryMessageData* data =
           static_cast<SetScreenCaptureFactoryMessageData*>(pmsg->pdata);
       SetScreenCaptureFactory_w(data->screencapture_factory);
+      break;
     }
     case MSG_GETSTATS: {
       VideoStatsMessageData* data =
@@ -2405,6 +2429,8 @@ bool DataChannel::Init() {
       this, &DataChannel::OnDataReceived);
   media_channel()->SignalMediaError.connect(
       this, &DataChannel::OnDataChannelError);
+  media_channel()->SignalReadyToSend.connect(
+      this, &DataChannel::OnDataChannelReadyToSend);
   srtp_filter()->SignalSrtpError.connect(
       this, &DataChannel::OnSrtpError);
   return true;
@@ -2472,7 +2498,7 @@ bool DataChannel::SetDataChannelType(DataChannelType new_data_channel_type) {
 bool DataChannel::SetDataChannelTypeFromContent(
     const DataContentDescription* content) {
   bool is_sctp = ((content->protocol() == kMediaProtocolSctp) ||
-                  (content->protocol() == kMediaProtocolSctpDtls));
+                  (content->protocol() == kMediaProtocolDtlsSctp));
   DataChannelType data_channel_type = is_sctp ? DCT_SCTP : DCT_RTP;
   return SetDataChannelType(data_channel_type);
 }
@@ -2586,7 +2612,7 @@ void DataChannel::ChangeState() {
 
   // Post to trigger SignalReadyToSendData.
   signaling_thread()->Post(this, MSG_READYTOSENDDATA,
-                           new BoolMessageData(send));
+                           new DataChannelReadyToSendMessageData(send));
 
   LOG(LS_INFO) << "Changing data state, recv=" << recv << " send=" << send;
 }
@@ -2594,7 +2620,8 @@ void DataChannel::ChangeState() {
 void DataChannel::OnMessage(talk_base::Message *pmsg) {
   switch (pmsg->message_id) {
     case MSG_READYTOSENDDATA: {
-      BoolMessageData* data = static_cast<BoolMessageData*>(pmsg->pdata);
+      DataChannelReadyToSendMessageData* data =
+          static_cast<DataChannelReadyToSendMessageData*>(pmsg->pdata);
       SignalReadyToSendData(data->data());
       delete data;
       break;
@@ -2667,6 +2694,14 @@ void DataChannel::OnDataChannelError(
   signaling_thread()->Post(this, MSG_CHANNEL_ERROR, data);
 }
 
+void DataChannel::OnDataChannelReadyToSend(bool writable) {
+  // This is usded for congestion control to indicate that the stream is ready
+  // to send by the MediaChannel, as opposed to OnReadyToSend, which indicates
+  // that the transport channel is ready.
+  signaling_thread()->Post(this, MSG_READYTOSENDDATA,
+                           new DataChannelReadyToSendMessageData(writable));
+}
+
 void DataChannel::OnSrtpError(uint32 ssrc, SrtpFilter::Mode mode,
                               SrtpFilter::Error error) {
   switch (error) {
@@ -2690,9 +2725,12 @@ void DataChannel::OnSrtpError(uint32 ssrc, SrtpFilter::Mode mode,
   }
 }
 
-
 void DataChannel::GetSrtpCiphers(std::vector<std::string>* ciphers) const {
   GetSupportedDataCryptoSuites(ciphers);
+}
+
+bool DataChannel::ShouldSetupDtlsSrtp() const {
+  return (data_channel_type_ == DCT_RTP);
 }
 
 }  // namespace cricket

@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -43,14 +43,30 @@ bool ArrayBuffer::transfer(ArrayBufferContents& result, Vector<RefPtr<ArrayBuffe
         return false;
     }
 
-    m_contents.transfer(result);
+    bool allViewsAreNeuterable = true;
+    for (ArrayBufferView* i = m_firstView; i; i = i->m_nextView) {
+        if (!i->isNeuterable())
+            allViewsAreNeuterable = false;
+    }
+
+    if (allViewsAreNeuterable) {
+        m_contents.transfer(result);
+    } else {
+        m_contents.copyTo(result);
+        if (!result.data())
+            return false;
+    }
 
     while (m_firstView) {
         ArrayBufferView* current = m_firstView;
         removeView(current);
-        current->neuter();
+        if (allViewsAreNeuterable || current->isNeuterable())
+            current->neuter();
         neuteredViews.append(current);
     }
+
+    m_isNeutered = true;
+
     return true;
 }
 

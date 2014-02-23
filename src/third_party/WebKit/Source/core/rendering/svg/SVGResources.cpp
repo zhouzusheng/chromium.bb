@@ -143,11 +143,11 @@ static inline String targetReferenceFromResource(SVGElement* element)
 {
     String target;
     if (element->hasTagName(SVGNames::patternTag))
-        target = static_cast<SVGPatternElement*>(element)->href();
+        target = toSVGPatternElement(element)->hrefCurrentValue();
     else if (element->hasTagName(SVGNames::linearGradientTag) || element->hasTagName(SVGNames::radialGradientTag))
-        target = static_cast<SVGGradientElement*>(element)->href();
+        target = toSVGGradientElement(element)->hrefCurrentValue();
     else if (element->hasTagName(SVGNames::filterTag))
-        target = static_cast<SVGFilterElement*>(element)->href();
+        target = toSVGFilterElement(element)->hrefCurrentValue();
     else
         ASSERT_NOT_REACHED();
 
@@ -176,11 +176,10 @@ static inline RenderSVGResourceContainer* paintingResourceFromSVGPaint(Document*
 static inline void registerPendingResource(SVGDocumentExtensions* extensions, const AtomicString& id, SVGElement* element)
 {
     ASSERT(element);
-    ASSERT_WITH_SECURITY_IMPLICATION(element->isSVGStyledElement());
-    extensions->addPendingResource(id, toSVGStyledElement(element));
+    extensions->addPendingResource(id, element);
 }
 
-bool SVGResources::buildCachedResources(const RenderObject* object, const SVGRenderStyle* style)
+bool SVGResources::buildResources(const RenderObject* object, const SVGRenderStyle* style)
 {
     ASSERT(object);
     ASSERT(style);
@@ -384,7 +383,7 @@ void SVGResources::resourceDestroyed(RenderSVGResourceContainer* resource)
         break;
     case ClipperResourceType:
         if (!m_clipperFilterMaskerData)
-            break; 
+            break;
         if (m_clipperFilterMaskerData->clipper == resource) {
             m_clipperFilterMaskerData->clipper->removeAllClientsFromCache();
             m_clipperFilterMaskerData->clipper = 0;

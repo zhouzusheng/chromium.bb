@@ -27,8 +27,9 @@
 #include "core/dom/Event.h"
 #include "core/dom/EventNames.h"
 #include "core/html/HTMLObjectElement.h"
+#include "core/html/HTMLVideoElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/loader/cache/CachedImage.h"
+#include "core/loader/cache/ImageResource.h"
 
 namespace WebCore {
 
@@ -44,7 +45,7 @@ HTMLImageLoader::~HTMLImageLoader()
 void HTMLImageLoader::dispatchLoadEvent()
 {
     // HTMLVideoElement uses this class to load the poster image, but it should not fire events for loading or failure.
-    if (element()->hasTagName(HTMLNames::videoTag))
+    if (isHTMLVideoElement(element()))
         return;
 
     bool errorOccurred = image()->errorOccurred();
@@ -58,9 +59,9 @@ String HTMLImageLoader::sourceURI(const AtomicString& attr) const
     return stripLeadingAndTrailingHTMLSpaces(attr);
 }
 
-void HTMLImageLoader::notifyFinished(CachedResource*)
+void HTMLImageLoader::notifyFinished(Resource*)
 {
-    CachedImage* cachedImage = image();
+    ImageResource* cachedImage = image();
 
     RefPtr<Element> element = this->element();
     ImageLoader::notifyFinished(cachedImage);

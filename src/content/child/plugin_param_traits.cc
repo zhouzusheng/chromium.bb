@@ -5,10 +5,8 @@
 #include "content/child/plugin_param_traits.h"
 
 #include "base/strings/string_number_conversions.h"
-#include "content/child/npruntime_util.h"
 #include "ipc/ipc_message_utils.h"
 #include "third_party/WebKit/public/web/WebBindings.h"
-#include "webkit/plugins/npapi/plugin_host.h"
 
 namespace content {
 
@@ -128,7 +126,7 @@ void ParamTraits<NPIdentifier_Param>::Log(const param_type& p, std::string* l) {
   if (WebKit::WebBindings::identifierIsString(p.identifier)) {
     NPUTF8* str = WebKit::WebBindings::utf8FromIdentifier(p.identifier);
     l->append(str);
-    webkit::npapi::PluginHost::Singleton()->host_functions()->memfree(str);
+    free(str);
   } else {
     l->append(base::IntToString(
         WebKit::WebBindings::intFromIdentifier(p.identifier)));

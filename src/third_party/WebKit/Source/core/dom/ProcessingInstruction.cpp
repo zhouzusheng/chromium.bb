@@ -21,16 +21,16 @@
 #include "config.h"
 #include "core/dom/ProcessingInstruction.h"
 
+#include "FetchInitiatorTypeNames.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/MediaList.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentStyleSheetCollection.h"
-#include "core/loader/cache/CachedCSSStyleSheet.h"
-#include "core/loader/cache/CachedResourceLoader.h"
-#include "core/loader/cache/CachedResourceRequest.h"
-#include "core/loader/cache/CachedResourceRequestInitiators.h"
-#include "core/loader/cache/CachedXSLStyleSheet.h"
+#include "core/loader/cache/CSSStyleSheetResource.h"
+#include "core/loader/cache/FetchRequest.h"
+#include "core/loader/cache/ResourceFetcher.h"
+#include "core/loader/cache/XSLStyleSheetResource.h"
 #include "core/xml/XSLStyleSheet.h"
 #include "core/xml/parser/XMLDocumentParser.h" // for parseAttributes()
 
@@ -40,7 +40,7 @@ inline ProcessingInstruction::ProcessingInstruction(Document* document, const St
     : Node(document, CreateOther)
     , m_target(target)
     , m_data(data)
-    , m_cachedSheet(0)
+    , m_resource(0)
     , m_loading(false)
     , m_alternate(false)
     , m_createdByParser(false)
@@ -60,8 +60,8 @@ ProcessingInstruction::~ProcessingInstruction()
     if (m_sheet)
         m_sheet->clearOwnerNode();
 
-    if (m_cachedSheet)
-        m_cachedSheet->removeClient(this);
+    if (m_resource)
+        m_resource->removeClient(this);
 
     if (inDocument())
         document()->styleSheetCollection()->removeStyleSheetCandidateNode(this);
@@ -90,7 +90,7 @@ String ProcessingInstruction::nodeValue() const
     return m_data;
 }
 
-void ProcessingInstruction::setNodeValue(const String& nodeValue, ExceptionCode& ec)
+void ProcessingInstruction::setNodeValue(const String& nodeValue)
 {
     setData(nodeValue);
 }
@@ -142,21 +142,20 @@ void ProcessingInstruction::checkStyleSheet()
                 m_loading = false;
             }
         } else {
-            if (m_cachedSheet) {
-                m_cachedSheet->removeClient(this);
-                m_cachedSheet = 0;
+            if (m_resource) {
+                m_resource->removeClient(this);
+                m_resource = 0;
             }
-            
+
             String url = document()->completeURL(href).string();
             if (!dispatchBeforeLoadEvent(url))
                 return;
-            
+
             m_loading = true;
             document()->styleSheetCollection()->addPendingSheet();
-            
-            CachedResourceRequest request(ResourceRequest(document()->completeURL(href)), cachedResourceRequestInitiators().processinginstruction);
+            FetchRequest request(ResourceRequest(document()->completeURL(href)), FetchInitiatorTypeNames::processinginstruction);
             if (m_isXSL)
-                m_cachedSheet = document()->cachedResourceLoader()->requestXSLStyleSheet(request);
+                m_resource = document()->fetcher()->requestXSLStyleSheet(request);
             else
             {
                 String charset = attrs.get("charset");
@@ -164,10 +163,10 @@ void ProcessingInstruction::checkStyleSheet()
                     charset = document()->charset();
                 request.setCharset(charset);
 
-                m_cachedSheet = document()->cachedResourceLoader()->requestCSSStyleSheet(request);
+                m_resource = document()->fetcher()->requestCSSStyleSheet(request);
             }
-            if (m_cachedSheet)
-                m_cachedSheet->addClient(this);
+            if (m_resource)
+                m_resource->addClient(this);
             else {
                 // The request may have been denied if (for example) the stylesheet is local and the document is remote.
                 m_loading = false;
@@ -195,7 +194,7 @@ bool ProcessingInstruction::sheetLoaded()
     return false;
 }
 
-void ProcessingInstruction::setCSSStyleSheet(const String& href, const KURL& baseURL, const String& charset, const CachedCSSStyleSheet* sheet)
+void ProcessingInstruction::setCSSStyleSheet(const String& href, const KURL& baseURL, const String& charset, const CSSStyleSheetResource* sheet)
 {
     if (!inDocument()) {
         ASSERT(!m_sheet);
@@ -234,9 +233,9 @@ void ProcessingInstruction::parseStyleSheet(const String& sheet)
     else if (m_isXSL)
         static_cast<XSLStyleSheet*>(m_sheet.get())->parseString(sheet);
 
-    if (m_cachedSheet)
-        m_cachedSheet->removeClient(this);
-    m_cachedSheet = 0;
+    if (m_resource)
+        m_resource->removeClient(this);
+    m_resource = 0;
 
     m_loading = false;
 
@@ -248,7 +247,7 @@ void ProcessingInstruction::parseStyleSheet(const String& sheet)
 
 void ProcessingInstruction::setCSSStyleSheet(PassRefPtr<CSSStyleSheet> sheet)
 {
-    ASSERT(!m_cachedSheet);
+    ASSERT(!m_resource);
     ASSERT(!m_loading);
     m_sheet = sheet;
     sheet->setTitle(m_title);
@@ -260,7 +259,7 @@ bool ProcessingInstruction::offsetInCharacters() const
     return true;
 }
 
-int ProcessingInstruction::maxCharacterOffset() const 
+int ProcessingInstruction::maxCharacterOffset() const
 {
     return static_cast<int>(m_data.length());
 }
@@ -269,7 +268,7 @@ void ProcessingInstruction::addSubresourceAttributeURLs(ListHashSet<KURL>& urls)
 {
     if (!sheet())
         return;
-    
+
     addSubresourceURL(urls, sheet()->baseURL());
 }
 
@@ -288,8 +287,10 @@ void ProcessingInstruction::removedFrom(ContainerNode* insertionPoint)
     Node::removedFrom(insertionPoint);
     if (!insertionPoint->inDocument())
         return;
-    
+
     document()->styleSheetCollection()->removeStyleSheetCandidateNode(this);
+
+    RefPtr<StyleSheet> removedSheet = m_sheet;
 
     if (m_sheet) {
         ASSERT(m_sheet->ownerNode() == this);
@@ -299,7 +300,7 @@ void ProcessingInstruction::removedFrom(ContainerNode* insertionPoint)
 
     // If we're in document teardown, then we don't need to do any notification of our sheet's removal.
     if (document()->renderer())
-        document()->styleResolverChanged(DeferRecalcStyle);
+        document()->removedStyleSheet(removedSheet.get());
 }
 
 void ProcessingInstruction::finishParsingChildren()

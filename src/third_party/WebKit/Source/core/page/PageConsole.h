@@ -32,9 +32,8 @@
 #include "bindings/v8/ScriptState.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/page/ConsoleTypes.h"
-#include <wtf/BitVector.h>
-#include <wtf/Forward.h>
-#include <wtf/PassOwnPtr.h>
+#include "wtf/Forward.h"
+#include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
@@ -48,7 +47,7 @@ public:
     static PassOwnPtr<PageConsole> create(Page* page) { return adoptPtr(new PageConsole(page)); }
     virtual ~PageConsole();
 
-    void addMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, PassRefPtr<ScriptCallStack> = 0, ScriptState* = 0, unsigned long requestIdentifier = 0);
+    void addMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, unsigned columnNumber = 0, PassRefPtr<ScriptCallStack> = 0, ScriptState* = 0, unsigned long requestIdentifier = 0);
     void addMessage(MessageSource, MessageLevel, const String& message, PassRefPtr<ScriptCallStack>);
     void addMessage(MessageSource, MessageLevel, const String& message, unsigned long requestIdentifier = 0, Document* = 0);
 

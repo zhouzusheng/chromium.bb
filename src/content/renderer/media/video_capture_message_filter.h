@@ -12,8 +12,8 @@
 
 #include <map>
 
+#include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/shared_memory.h"
 #include "content/common/content_export.h"
 #include "content/common/media/video_capture.h"
 #include "ipc/ipc_channel_proxy.h"
@@ -41,6 +41,11 @@ class CONTENT_EXPORT VideoCaptureMessageFilter
     // browser process.
     virtual void OnDeviceInfoReceived(
         const media::VideoCaptureParams& device_info) = 0;
+
+    // Called when newly changed device info is received from video capture
+    // device in the browser process.
+    virtual void OnDeviceInfoChanged(
+        const media::VideoCaptureParams& device_info) {};
 
     // Called when the delegate has been added to filter's delegate list.
     // |device_id| is the device id for the delegate.
@@ -91,6 +96,9 @@ class CONTENT_EXPORT VideoCaptureMessageFilter
   // Receive device info from browser process.
   void OnDeviceInfoReceived(int device_id,
                             const media::VideoCaptureParams& params);
+
+  // Finds the delegate associated with |device_id|, NULL if not found.
+  Delegate* find_delegate(int device_id) const;
 
   // A map of device ids to delegates.
   Delegates delegates_;

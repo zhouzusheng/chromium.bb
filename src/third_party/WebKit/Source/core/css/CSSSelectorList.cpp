@@ -28,8 +28,7 @@
 #include "core/css/CSSSelectorList.h"
 
 #include "core/css/CSSParserValues.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
-#include <wtf/text/StringBuilder.h>
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -118,12 +117,6 @@ String CSSSelectorList::selectorsText() const
     return result.toString();
 }
 
-void CSSSelectorList::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addRawBuffer(m_selectorArray, length() * sizeof(CSSSelector), "CSSSelectors", "selectorArray");
-}
-
 template <typename Functor>
 static bool forEachTagSelector(Functor& functor, const CSSSelector* selector)
 {
@@ -190,7 +183,7 @@ class SelectorHasShadowDistributed {
 public:
     bool operator()(const CSSSelector* selector)
     {
-        return selector->relationIsForShadowDistributed();
+        return selector->relationIsAffectedByPseudoContent();
     }
 };
 

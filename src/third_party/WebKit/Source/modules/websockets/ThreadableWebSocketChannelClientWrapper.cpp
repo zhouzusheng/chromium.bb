@@ -108,10 +108,8 @@ String ThreadableWebSocketChannelClientWrapper::subprotocol() const
 
 void ThreadableWebSocketChannelClientWrapper::setSubprotocol(const String& subprotocol)
 {
-    unsigned length = subprotocol.length();
-    m_subprotocol.resize(length);
-    if (length)
-        memcpy(m_subprotocol.data(), subprotocol.characters(), sizeof(UChar) * length);
+    m_subprotocol.clear();
+    append(m_subprotocol, subprotocol);
 }
 
 String ThreadableWebSocketChannelClientWrapper::extensions() const
@@ -123,10 +121,8 @@ String ThreadableWebSocketChannelClientWrapper::extensions() const
 
 void ThreadableWebSocketChannelClientWrapper::setExtensions(const String& extensions)
 {
-    unsigned length = extensions.length();
-    m_extensions.resize(length);
-    if (length)
-        memcpy(m_extensions.data(), extensions.characters(), sizeof(UChar) * length);
+    m_extensions.clear();
+    append(m_extensions, extensions);
 }
 
 WebSocketChannel::SendResult ThreadableWebSocketChannelClientWrapper::sendRequestResult() const
@@ -218,7 +214,7 @@ void ThreadableWebSocketChannelClientWrapper::resume()
 
 void ThreadableWebSocketChannelClientWrapper::processPendingTasksCallback(ScriptExecutionContext* context, PassRefPtr<ThreadableWebSocketChannelClientWrapper> wrapper)
 {
-    ASSERT_UNUSED(context, context->isWorkerContext());
+    ASSERT_UNUSED(context, context->isWorkerGlobalScope());
     wrapper->processPendingTasks();
 }
 

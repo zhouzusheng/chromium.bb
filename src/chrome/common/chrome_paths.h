@@ -18,6 +18,7 @@ enum {
   DIR_APP = PATH_START,         // Directory where dlls and data reside.
   DIR_LOGS,                     // Directory where logs should be written.
   DIR_USER_DATA,                // Directory where user data can be written.
+  DIR_CRASH_DUMPS,              // Directory where crash dumps are written.
   DIR_RESOURCES,                // Directory containing separate file resources
                                 // used by Chrome at runtime.
   DIR_INSPECTOR,                // Directory where web inspector is located.
@@ -100,11 +101,9 @@ enum {
   DIR_CHROMEOS_CUSTOM_WALLPAPERS,     // Directory where custom wallpapers
                                       // reside.
 #endif
-#if defined(ENABLE_MANAGED_USERS)
   DIR_MANAGED_USERS_DEFAULT_APPS,  // Directory where installer places .crx
                                    // files to be installed when managed user
                                    // session starts.
-#endif
 
   // Valid only in development environment; TODO(darin): move these
   DIR_GEN_TEST_DATA,            // Directory where generated test data resides.

@@ -329,13 +329,9 @@ void GetCertChainInfo(PCCERT_CHAIN_CONTEXT chain_context,
     if (strcmp(algorithm, szOID_RSA_MD5RSA) == 0) {
       // md5WithRSAEncryption: 1.2.840.113549.1.1.4
       verify_result->has_md5 = true;
-      if (i != 0)
-        verify_result->has_md5_ca = true;
     } else if (strcmp(algorithm, szOID_RSA_MD2RSA) == 0) {
       // md2WithRSAEncryption: 1.2.840.113549.1.1.2
       verify_result->has_md2 = true;
-      if (i != 0)
-        verify_result->has_md2_ca = true;
     } else if (strcmp(algorithm, szOID_RSA_MD4RSA) == 0) {
       // md4WithRSAEncryption: 1.2.840.113549.1.1.3
       verify_result->has_md4 = true;
@@ -380,17 +376,32 @@ void GetCertPoliciesInfo(PCCERT_CONTEXT cert,
     output->reset(policies_info);
 }
 
-bool CheckRevocationWithCRLSet(PCCERT_CHAIN_CONTEXT chain,
-                               CRLSet* crl_set) {
+enum CRLSetResult {
+  kCRLSetOk,
+  kCRLSetUnknown,
+  kCRLSetRevoked,
+};
+
+// CheckRevocationWithCRLSet attempts to check each element of |chain|
+// against |crl_set|. It returns:
+//   kCRLSetRevoked: if any element of the chain is known to have been revoked.
+//   kCRLSetUnknown: if there is no fresh information about some element in
+//       the chain.
+//   kCRLSetOk: if every element in the chain is covered by a fresh CRLSet and
+//       is unrevoked.
+CRLSetResult CheckRevocationWithCRLSet(PCCERT_CHAIN_CONTEXT chain,
+                                       CRLSet* crl_set) {
   if (chain->cChain == 0)
-    return true;
+    return kCRLSetOk;
 
   const PCERT_SIMPLE_CHAIN first_chain = chain->rgpChain[0];
   const PCERT_CHAIN_ELEMENT* element = first_chain->rgpElement;
 
   const int num_elements = first_chain->cElement;
   if (num_elements == 0)
-    return true;
+    return kCRLSetOk;
+
+  bool covered = true;
 
   // We iterate from the root certificate down to the leaf, keeping track of
   // the issuer's SPKI at each step.
@@ -405,6 +416,7 @@ bool CheckRevocationWithCRLSet(PCCERT_CHAIN_CONTEXT chain,
     base::StringPiece spki;
     if (!asn1::ExtractSPKIFromDERCert(der_bytes, &spki)) {
       NOTREACHED();
+      covered = false;
       continue;
     }
 
@@ -427,17 +439,22 @@ bool CheckRevocationWithCRLSet(PCCERT_CHAIN_CONTEXT chain,
 
     switch (result) {
       case CRLSet::REVOKED:
-        return false;
+        return kCRLSetRevoked;
       case CRLSet::UNKNOWN:
+        covered = false;
+        continue;
       case CRLSet::GOOD:
         continue;
       default:
         NOTREACHED();
+        covered = false;
         continue;
     }
   }
 
-  return true;
+  if (!covered || crl_set->IsExpired())
+    return kCRLSetUnknown;
+  return kCRLSetOk;
 }
 
 void AppendPublicKeyHashes(PCCERT_CHAIN_CONTEXT chain,
@@ -576,10 +593,8 @@ int CertVerifyProcWin::VerifyInternal(
   // We can set CERT_CHAIN_RETURN_LOWER_QUALITY_CONTEXTS to get more chains.
   DWORD chain_flags = CERT_CHAIN_CACHE_END_CERT |
                       CERT_CHAIN_REVOCATION_CHECK_CHAIN_EXCLUDE_ROOT;
-  const bool rev_checking_enabled =
-      (flags & CertVerifier::VERIFY_REV_CHECKING_ENABLED) ||
-      (ev_policy_oid != NULL &&
-       (flags & CertVerifier::VERIFY_REV_CHECKING_ENABLED_EV_ONLY));
+  bool rev_checking_enabled =
+      (flags & CertVerifier::VERIFY_REV_CHECKING_ENABLED);
 
   if (rev_checking_enabled) {
     verify_result->cert_status |= CERT_STATUS_REV_CHECKING_ENABLED;
@@ -616,6 +631,36 @@ int CertVerifyProcWin::VerifyInternal(
     return MapSecurityError(GetLastError());
   }
 
+  CRLSetResult crl_set_result = kCRLSetUnknown;
+  if (crl_set)
+    crl_set_result = CheckRevocationWithCRLSet(chain_context, crl_set);
+
+  if (crl_set_result == kCRLSetRevoked) {
+    verify_result->cert_status |= CERT_STATUS_REVOKED;
+  } else if (crl_set_result == kCRLSetUnknown &&
+             (flags & CertVerifier::VERIFY_REV_CHECKING_ENABLED_EV_ONLY) &&
+             !rev_checking_enabled &&
+             ev_policy_oid != NULL) {
+    // We don't have fresh information about this chain from the CRLSet and
+    // it's probably an EV certificate. Retry with online revocation checking.
+    rev_checking_enabled = true;
+    chain_flags &= ~CERT_CHAIN_REVOCATION_CHECK_CACHE_ONLY;
+    verify_result->cert_status |= CERT_STATUS_REV_CHECKING_ENABLED;
+
+    if (!CertGetCertificateChain(
+             chain_engine,
+             cert_list.get(),
+             NULL,  // current system time
+             cert_list->hCertStore,
+             &chain_para,
+             chain_flags,
+             NULL,  // reserved
+             &chain_context)) {
+      verify_result->cert_status |= CERT_STATUS_INVALID;
+      return MapSecurityError(GetLastError());
+    }
+  }
+
   if (chain_context->TrustStatus.dwErrorStatus &
       CERT_TRUST_IS_NOT_VALID_FOR_USAGE) {
     ev_policy_oid = NULL;
@@ -636,18 +681,45 @@ int CertVerifyProcWin::VerifyInternal(
     }
   }
 
+  CertVerifyResult temp_verify_result = *verify_result;
+  GetCertChainInfo(chain_context, verify_result);
+  if (!verify_result->is_issued_by_known_root &&
+      (flags & CertVerifier::VERIFY_REV_CHECKING_REQUIRED_LOCAL_ANCHORS)) {
+    *verify_result = temp_verify_result;
+
+    rev_checking_enabled = true;
+    verify_result->cert_status |= CERT_STATUS_REV_CHECKING_ENABLED;
+    chain_flags &= ~CERT_CHAIN_REVOCATION_CHECK_CACHE_ONLY;
+
+    CertFreeCertificateChain(chain_context);
+    if (!CertGetCertificateChain(
+             chain_engine,
+             cert_list.get(),
+             NULL,  // current system time
+             cert_list->hCertStore,
+             &chain_para,
+             chain_flags,
+             NULL,  // reserved
+             &chain_context)) {
+      verify_result->cert_status |= CERT_STATUS_INVALID;
+      return MapSecurityError(GetLastError());
+    }
+    GetCertChainInfo(chain_context, verify_result);
+
+    if (chain_context->TrustStatus.dwErrorStatus &
+        CERT_TRUST_IS_OFFLINE_REVOCATION) {
+      verify_result->cert_status |= CERT_STATUS_REVOKED;
+    }
+  }
+
   ScopedPCCERT_CHAIN_CONTEXT scoped_chain_context(chain_context);
 
-  GetCertChainInfo(chain_context, verify_result);
   verify_result->cert_status |= MapCertChainErrorStatusToCertStatus(
       chain_context->TrustStatus.dwErrorStatus);
 
   // Flag certificates that have a Subject common name with a NULL character.
   if (CertSubjectCommonNameHasNull(cert_handle))
     verify_result->cert_status |= CERT_STATUS_INVALID;
-
-  if (crl_set && !CheckRevocationWithCRLSet(chain_context, crl_set))
-    verify_result->cert_status |= CERT_STATUS_REVOKED;
 
   std::wstring wstr_hostname = ASCIIToWide(hostname);
 

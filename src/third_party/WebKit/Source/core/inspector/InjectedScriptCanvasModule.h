@@ -33,7 +33,7 @@
 
 #include "bindings/v8/ScriptState.h"
 #include "core/inspector/InjectedScriptModule.h"
-#include <wtf/text/WTFString.h>
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -44,7 +44,7 @@ class ScriptObject;
 class InjectedScriptCanvasModule : public InjectedScriptModule {
 public:
     InjectedScriptCanvasModule();
-    
+
     virtual String source() const;
 
     static InjectedScriptCanvasModule moduleForState(InjectedScriptManager*, ScriptState*);
@@ -58,9 +58,9 @@ public:
     void stopCapturing(ErrorString*, const TypeBuilder::Canvas::TraceLogId&);
     void dropTraceLog(ErrorString*, const TypeBuilder::Canvas::TraceLogId&);
     void traceLog(ErrorString*, const String&, const int*, const int*, RefPtr<TypeBuilder::Canvas::TraceLog>*);
-    void replayTraceLog(ErrorString*, const TypeBuilder::Canvas::TraceLogId&, int, RefPtr<TypeBuilder::Canvas::ResourceState>*);
-    void resourceInfo(ErrorString*, const TypeBuilder::Canvas::ResourceId&, RefPtr<TypeBuilder::Canvas::ResourceInfo>*);
+    void replayTraceLog(ErrorString*, const TypeBuilder::Canvas::TraceLogId&, int, RefPtr<TypeBuilder::Canvas::ResourceState>*, double*);
     void resourceState(ErrorString*, const TypeBuilder::Canvas::TraceLogId&, const TypeBuilder::Canvas::ResourceId&, RefPtr<TypeBuilder::Canvas::ResourceState>*);
+    void evaluateTraceLogCallArgument(ErrorString*, const TypeBuilder::Canvas::TraceLogId&, int, int, const String&, RefPtr<TypeBuilder::Runtime::RemoteObject>*, RefPtr<TypeBuilder::Canvas::ResourceState>*);
 
 private:
     ScriptObject callWrapContextFunction(const String&, const ScriptObject&);

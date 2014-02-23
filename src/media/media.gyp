@@ -94,8 +94,8 @@
         'audio/audio_output_proxy.h',
         'audio/audio_output_resampler.cc',
         'audio/audio_output_resampler.h',
-        'audio/audio_silence_detector.cc',
-        'audio/audio_silence_detector.h',
+        'audio/audio_power_monitor.cc',
+        'audio/audio_power_monitor.h',
         'audio/audio_source_diverter.h',
         'audio/audio_util.cc',
         'audio/audio_util.h',
@@ -233,7 +233,6 @@
         'base/buffers.h',
         'base/byte_queue.cc',
         'base/byte_queue.h',
-        'base/callback_holder.h',
         'base/channel_mixer.cc',
         'base/channel_mixer.h',
         'base/clock.cc',
@@ -262,6 +261,8 @@
         'base/filter_collection.h',
         'base/media.cc',
         'base/media.h',
+        'base/media_file_checker.cc',
+        'base/media_file_checker.h',
         'base/media_keys.cc',
         'base/media_keys.h',
         'base/media_log.cc',
@@ -313,8 +314,8 @@
         'base/video_util.h',
         'base/yuv_convert.cc',
         'base/yuv_convert.h',
-        'crypto/aes_decryptor.cc',
-        'crypto/aes_decryptor.h',
+        'cdm/aes_decryptor.cc',
+        'cdm/aes_decryptor.h',
         'ffmpeg/ffmpeg_common.cc',
         'ffmpeg/ffmpeg_common.h',
         'filters/audio_decoder_selector.cc',
@@ -335,10 +336,6 @@
         'filters/decrypting_demuxer_stream.h',
         'filters/decrypting_video_decoder.cc',
         'filters/decrypting_video_decoder.h',
-        'filters/fake_demuxer_stream.cc',
-        'filters/fake_demuxer_stream.h',
-        'filters/fake_video_decoder.cc',
-        'filters/fake_video_decoder.h',
         'filters/ffmpeg_audio_decoder.cc',
         'filters/ffmpeg_audio_decoder.h',
         'filters/ffmpeg_demuxer.cc',
@@ -353,6 +350,8 @@
         'filters/file_data_source.h',
         'filters/gpu_video_decoder.cc',
         'filters/gpu_video_decoder.h',
+        'filters/gpu_video_decoder_factories.cc',
+        'filters/gpu_video_decoder_factories.h',
         'filters/h264_to_annex_b_bitstream_converter.cc',
         'filters/h264_to_annex_b_bitstream_converter.h',
         'filters/in_memory_url_protocol.cc',
@@ -391,6 +390,7 @@
         'video/capture/mac/video_capture_device_qtkit_mac.mm',
 
         'video/capture/video_capture.h',
+        'video/capture/video_capture_device.cc',
         'video/capture/video_capture_device.h',
         'video/capture/video_capture_device_dummy.cc',
         'video/capture/video_capture_device_dummy.h',
@@ -455,6 +455,7 @@
         ['OS!="ios"', {
           'dependencies': [
             '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+            '../gpu/gpu.gyp:command_buffer_common',
             'shared_memory_support',
           ],
         }],
@@ -467,6 +468,8 @@
           'sources!': [
             'base/container_names.cc',
             'base/container_names.h',
+            'base/media_file_checker.cc',
+            'base/media_file_checker.h',
             'base/media_posix.cc',
             'ffmpeg/ffmpeg_common.cc',
             'ffmpeg/ffmpeg_common.h',
@@ -869,7 +872,6 @@
         '../base/base.gyp:base_i18n',
         '../base/base.gyp:test_support_base',
         '../skia/skia.gyp:skia',
-        '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../ui/ui.gyp:ui',
       ],
@@ -884,7 +886,7 @@
         'audio/audio_output_device_unittest.cc',
         'audio/audio_output_proxy_unittest.cc',
         'audio/audio_parameters_unittest.cc',
-        'audio/audio_silence_detector_unittest.cc',
+        'audio/audio_power_monitor_unittest.cc',
         'audio/cross_process_notification_unittest.cc',
         'audio/fake_audio_consumer_unittest.cc',
         'audio/ios/audio_manager_ios_unittest.cc',
@@ -917,6 +919,7 @@
         'base/audio_timestamp_helper_unittest.cc',
         'base/bind_to_loop_unittest.cc',
         'base/bit_reader_unittest.cc',
+        'base/callback_holder.h',
         'base/callback_holder_unittest.cc',
         'base/channel_mixer_unittest.cc',
         'base/clock_unittest.cc',
@@ -926,6 +929,7 @@
         'base/decoder_buffer_unittest.cc',
         'base/djb2_unittest.cc',
         'base/gmock_callback_support_unittest.cc',
+        'base/media_file_checker_unittest.cc',
         'base/multi_channel_resampler_unittest.cc',
         'base/pipeline_unittest.cc',
         'base/ranges_unittest.cc',
@@ -940,7 +944,7 @@
         'base/video_frame_unittest.cc',
         'base/video_util_unittest.cc',
         'base/yuv_convert_unittest.cc',
-        'crypto/aes_decryptor_unittest.cc',
+        'cdm/aes_decryptor_unittest.cc',
         'ffmpeg/ffmpeg_common_unittest.cc',
         'filters/audio_decoder_selector_unittest.cc',
         'filters/audio_file_reader_unittest.cc',
@@ -951,7 +955,11 @@
         'filters/decrypting_audio_decoder_unittest.cc',
         'filters/decrypting_demuxer_stream_unittest.cc',
         'filters/decrypting_video_decoder_unittest.cc',
+        'filters/fake_demuxer_stream.cc',
+        'filters/fake_demuxer_stream.h',
         'filters/fake_demuxer_stream_unittest.cc',
+        'filters/fake_video_decoder.cc',
+        'filters/fake_video_decoder.h',
         'filters/fake_video_decoder_unittest.cc',
         'filters/ffmpeg_audio_decoder_unittest.cc',
         'filters/ffmpeg_demuxer_unittest.cc',
@@ -986,12 +994,17 @@
         }],
         ['OS!="ios"', {
           'dependencies': [
+            '../gpu/gpu.gyp:command_buffer_common',
             'shared_memory_support',
           ],
         }],
         ['media_use_ffmpeg==1', {
           'dependencies': [
             '../third_party/ffmpeg/ffmpeg.gyp:ffmpeg',
+          ],
+        }, {  # media_use_ffmpeg== 0
+          'sources!': [
+            'base/media_file_checker_unittest.cc',
           ],
         }],
         ['os_posix==1 and OS!="mac" and OS!="ios"', {
@@ -1090,7 +1103,6 @@
         'media',
         '../base/base.gyp:base',
         '../skia/skia.gyp:skia',
-        '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
       ],
       'sources': [
@@ -1111,6 +1123,10 @@
         'base/mock_filters.h',
         'base/test_helpers.cc',
         'base/test_helpers.h',
+        'filters/mock_gpu_video_decoder_factories.cc',
+        'filters/mock_gpu_video_decoder_factories.h',
+        'video/mock_video_decode_accelerator.cc',
+        'video/mock_video_decode_accelerator.h',
       ],
     },
   ],
@@ -1208,11 +1224,11 @@
           'cflags': [
             '-mmmx',
           ],
-          'include_dirs': [
-            '..',
-          ],
           'defines': [
             'MEDIA_IMPLEMENTATION',
+          ],
+          'include_dirs': [
+            '..',
           ],
           'conditions': [
             # TODO(jschuh): Get MMX enabled on Win64. crbug.com/179657
@@ -1229,11 +1245,11 @@
           'cflags': [
             '-msse',
           ],
-          'include_dirs': [
-            '..',
-          ],
           'defines': [
             'MEDIA_IMPLEMENTATION',
+          ],
+          'include_dirs': [
+            '..',
           ],
           'sources': [
             'base/simd/sinc_resampler_sse.cc',
@@ -1245,11 +1261,11 @@
           'cflags': [
             '-msse2',
           ],
-          'include_dirs': [
-            '..',
-          ],
           'defines': [
             'MEDIA_IMPLEMENTATION',
+          ],
+          'include_dirs': [
+            '..',
           ],
           'sources': [
             'base/simd/convert_rgb_to_yuv_sse2.cc',
@@ -1263,11 +1279,11 @@
           'cflags': [
             '-msse',
           ],
-          'include_dirs': [
-            '..',
-          ],
           'defines': [
             'MEDIA_IMPLEMENTATION',
+          ],
+          'include_dirs': [
+            '..',
           ],
           'sources': [
             'base/simd/vector_math_sse.cc',
@@ -1276,6 +1292,9 @@
       ], # targets
     }],
     ['OS!="ios"', {
+      'includes': [
+        'media_cdm.gypi',
+      ],
       'targets': [
         {
           # Minimal target for NaCl and other renderer side media clients which
@@ -1372,8 +1391,8 @@
             }],
             ['OS=="win"', {
               'dependencies': [
-                '<(angle_path)/src/build_angle.gyp:libEGL',
-                '<(angle_path)/src/build_angle.gyp:libGLESv2',
+                '../third_party/angle_dx11/src/build_angle.gyp:libEGL',
+                '../third_party/angle_dx11/src/build_angle.gyp:libGLESv2',
               ],
               'sources': [
                 'tools/shader_bench/window_win.cc',
@@ -1404,12 +1423,21 @@
           ],
           'link_settings': {
             'libraries': [
-              '-ldl',
               '-lX11',
               '-lXrender',
               '-lXext',
             ],
           },
+          'conditions': [
+            # Linux/Solaris need libdl for dlopen() and friends.
+            ['OS=="linux" or OS=="solaris"', {
+              'link_settings': {
+                'libraries': [
+                  '-ldl',
+                ],
+              },
+            }],
+          ],
           'sources': [
             'tools/player_x11/data_source_logger.cc',
             'tools/player_x11/data_source_logger.h',
@@ -1444,20 +1472,8 @@
     ['OS=="android"', {
       'targets': [
         {
-          'target_name': 'media_player_jni_headers',
-          'type': 'none',
-          'variables': {
-            'jni_gen_package': 'media',
-            'input_java_class': 'android/media/MediaPlayer.class',
-          },
-          'includes': ['../build/jar_file_jni_generator.gypi'],
-        },
-        {
           'target_name': 'media_android_jni_headers',
           'type': 'none',
-          'dependencies': [
-            'media_player_jni_headers',
-          ],
           'sources': [
             'base/android/java/src/org/chromium/media/AudioManagerAndroid.java',
             'base/android/java/src/org/chromium/media/MediaCodecBridge.java',
@@ -1508,6 +1524,9 @@
             '../ui/gl/gl.gyp:gl',
             '../url/url.gyp:url_lib',
             'media_android_jni_headers',
+          ],
+          'defines': [
+            'MEDIA_IMPLEMENTATION',
           ],
           'include_dirs': [
             '<(SHARED_INTERMEDIATE_DIR)/media',
@@ -1572,7 +1591,6 @@
           'type': 'executable',
           'dependencies': [
             '../base/base.gyp:test_support_base',
-            '../testing/gmock.gyp:gmock',
             '../testing/gtest.gyp:gtest',
             '../third_party/ffmpeg/ffmpeg.gyp:ffmpeg',
             'media',

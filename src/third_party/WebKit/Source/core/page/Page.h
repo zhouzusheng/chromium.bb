@@ -25,20 +25,15 @@
 #include "core/page/LayoutMilestones.h"
 #include "core/page/PageVisibilityState.h"
 #include "core/page/UseCounter.h"
-#include "core/platform/PlatformScreen.h"
+#include "core/platform/LifecycleContext.h"
 #include "core/platform/Supplementable.h"
 #include "core/platform/graphics/LayoutRect.h"
 #include "core/platform/graphics/Region.h"
 #include "core/rendering/Pagination.h"
-#include <wtf/Forward.h>
-#include <wtf/HashMap.h>
-#include <wtf/HashSet.h>
-#include <wtf/Noncopyable.h>
-#include <wtf/text/WTFString.h>
-
-#if OS(SOLARIS)
-#include <sys/time.h> // For time_t structure.
-#endif
+#include "wtf/Forward.h"
+#include "wtf/HashSet.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -65,6 +60,7 @@ class InspectorController;
 class Node;
 class PageConsole;
 class PageGroup;
+class PageLifecycleNotifier;
 class PlatformMouseEvent;
 class PluginData;
 class PointerLockController;
@@ -84,17 +80,7 @@ typedef uint64_t LinkHash;
 
 float deviceScaleFactor(Frame*);
 
-struct ArenaSize {
-    ArenaSize(size_t treeSize, size_t allocated)
-        : treeSize(treeSize)
-        , allocated(allocated)
-    {
-    }
-    size_t treeSize;
-    size_t allocated;
-};
-
-class Page : public Supplementable<Page> {
+class Page : public Supplementable<Page>, public LifecycleContext {
     WTF_MAKE_NONCOPYABLE(Page);
     friend class Settings;
 public:
@@ -118,8 +104,6 @@ public:
     explicit Page(PageClients&);
     ~Page();
 
-    ArenaSize renderTreeSize() const;
-
     void setNeedsRecalcStyleInAllFrames();
 
     RenderTheme* theme() const { return m_theme.get(); }
@@ -137,12 +121,7 @@ public:
     bool openedByDOM() const;
     void setOpenedByDOM();
 
-    // DEPRECATED. Use backForward() instead of the following 5 functions.
-    bool goBack();
-    bool goForward();
-    void goBackOrForward(int distance);
-    int getHistoryLength();
-
+    // DEPRECATED. Use backForward() instead of the following function.
     void goToItem(HistoryItem*);
 
     // FIXME: InspectorPageGroup is only needed to support single process debugger layout tests, it should be removed when DumpRenderTree is gone.
@@ -161,9 +140,9 @@ public:
     int subframeCount() const { checkSubframeCountConsistency(); return m_subframeCount; }
 
     Chrome& chrome() const { return *m_chrome; }
-    DragCaretController* dragCaretController() const { return m_dragCaretController.get(); }
-    DragController* dragController() const { return m_dragController.get(); }
-    FocusController* focusController() const { return m_focusController.get(); }
+    DragCaretController& dragCaretController() const { return *m_dragCaretController; }
+    DragController& dragController() const { return *m_dragController; }
+    FocusController& focusController() const { return *m_focusController; }
     ContextMenuController* contextMenuController() const { return m_contextMenuController.get(); }
     InspectorController* inspectorController() const { return m_inspectorController.get(); }
     PointerLockController* pointerLockController() const { return m_pointerLockController.get(); }
@@ -178,7 +157,7 @@ public:
     void stopAutoscrollTimer();
     void updateAutoscrollRenderer();
     void updateDragAndDrop(Node* targetNode, const IntPoint& eventPosition, double eventTime);
-#if ENABLE(PAN_SCROLLING)
+#if OS(WINDOWS)
     void handleMouseReleaseForPanScrolling(Frame*, const PlatformMouseEvent&);
     void startPanScrolling(RenderBox*, const IntPoint&);
 #endif
@@ -215,10 +194,6 @@ public:
     const Pagination& pagination() const { return m_pagination; }
     void setPagination(const Pagination&);
 
-    // Notification that this Page was moved into or out of a native window.
-    void setIsInWindow(bool);
-    bool isInWindow() const { return m_isInWindow; }
-
     void userStyleSheetLocationChanged();
     const String& userStyleSheet() const;
 
@@ -228,7 +203,6 @@ public:
     static void visitedStateChanged(PageGroup*, LinkHash visitedHash);
 
     StorageNamespace* sessionStorage(bool optionalCreate = true);
-    void setSessionStorage(PassRefPtr<StorageNamespace>);
 
     // Don't allow more than a certain number of frames in a page.
     // This seems like a reasonable upper bound, and otherwise mutually
@@ -258,8 +232,6 @@ public:
 
     PageConsole* console() { return m_console.get(); }
 
-    void reportMemoryUsage(MemoryObjectInfo*) const;
-
     double timerAlignmentInterval() const;
 
     class MultisamplingChangedObserver {
@@ -270,6 +242,11 @@ public:
     void addMultisamplingChangedObserver(MultisamplingChangedObserver*);
     void removeMultisamplingChangedObserver(MultisamplingChangedObserver*);
     void multisamplingChanged();
+
+    void didCommitLoad(Frame*);
+
+protected:
+    PageLifecycleNotifier* lifecycleNotifier();
 
 private:
     void initGroup();
@@ -282,11 +259,12 @@ private:
 
     void setTimerAlignmentInterval(double);
 
+    virtual PassOwnPtr<LifecycleNotifier> createLifecycleNotifier() OVERRIDE;
+
     OwnPtr<AutoscrollController> m_autoscrollController;
     OwnPtr<Chrome> m_chrome;
-    OwnPtr<DragCaretController> m_dragCaretController;
-
-    OwnPtr<DragController> m_dragController;
+    const OwnPtr<DragCaretController> m_dragCaretController;
+    const OwnPtr<DragController> m_dragController;
     OwnPtr<FocusController> m_focusController;
     OwnPtr<ContextMenuController> m_contextMenuController;
     OwnPtr<InspectorController> m_inspectorController;
@@ -313,7 +291,6 @@ private:
 
     bool m_tabKeyCyclesThroughElements;
     bool m_defersLoading;
-    unsigned m_defersLoadingCallCount;
 
     float m_pageScaleFactor;
     float m_deviceScaleFactor;
@@ -322,15 +299,12 @@ private:
 
     mutable String m_userStyleSheet;
     mutable bool m_didLoadUserStyleSheet;
-    mutable time_t m_userStyleSheetModificationTime;
 
     RefPtr<PageGroup> m_group;
 
-    RefPtr<StorageNamespace> m_sessionStorage;
+    OwnPtr<StorageNamespace> m_sessionStorage;
 
     double m_timerAlignmentInterval;
-
-    bool m_isInWindow;
 
     PageVisibilityState m_visibilityState;
 
@@ -353,5 +327,5 @@ private:
 };
 
 } // namespace WebCore
-    
+
 #endif // Page_h

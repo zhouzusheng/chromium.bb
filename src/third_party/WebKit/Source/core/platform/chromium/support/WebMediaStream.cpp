@@ -33,9 +33,9 @@
 #include "public/platform/WebMediaStreamSource.h"
 #include "public/platform/WebMediaStreamTrack.h"
 #include "public/platform/WebString.h"
-#include <wtf/OwnPtr.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/Vector.h>
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/Vector.h"
 
 using namespace WebCore;
 
@@ -68,11 +68,6 @@ WebMediaStream::WebMediaStream(WebCore::MediaStreamDescriptor* mediaStreamDescri
 void WebMediaStream::reset()
 {
     m_private.reset();
-}
-
-WebString WebMediaStream::label() const
-{
-    return m_private->id();
 }
 
 WebString WebMediaStream::id() const
@@ -137,20 +132,6 @@ WebMediaStream::operator PassRefPtr<WebCore::MediaStreamDescriptor>() const
 WebMediaStream::operator WebCore::MediaStreamDescriptor*() const
 {
     return m_private.get();
-}
-
-void WebMediaStream::initialize(const WebString& label, const WebVector<WebMediaStreamSource>& audioSources, const WebVector<WebMediaStreamSource>& videoSources)
-{
-    MediaStreamComponentVector audio, video;
-    for (size_t i = 0; i < audioSources.size(); ++i) {
-        MediaStreamSource* source = audioSources[i];
-        audio.append(MediaStreamComponent::create(source->id(), source));
-    }
-    for (size_t i = 0; i < videoSources.size(); ++i) {
-        MediaStreamSource* source = videoSources[i];
-        video.append(MediaStreamComponent::create(source->id(), source));
-    }
-    m_private = MediaStreamDescriptor::create(label, audio, video);
 }
 
 void WebMediaStream::initialize(const WebVector<WebMediaStreamTrack>& audioTracks, const WebVector<WebMediaStreamTrack>& videoTracks)

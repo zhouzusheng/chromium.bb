@@ -24,9 +24,11 @@
 #define CharacterData_h
 
 #include "core/dom/Node.h"
-#include <wtf/text/WTFString.h>
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
+
+class ExceptionState;
 
 class CharacterData : public Node {
 public:
@@ -34,11 +36,11 @@ public:
     String data() const { return m_data; }
     void setData(const String&);
     unsigned length() const { return m_data.length(); }
-    String substringData(unsigned offset, unsigned count, ExceptionCode&);
+    String substringData(unsigned offset, unsigned count, ExceptionState&);
     void appendData(const String&);
-    void insertData(unsigned offset, const String&, ExceptionCode&);
-    void deleteData(unsigned offset, unsigned count, ExceptionCode&);
-    void replaceData(unsigned offset, unsigned count, const String&, ExceptionCode&);
+    void insertData(unsigned offset, const String&, ExceptionState&);
+    void deleteData(unsigned offset, unsigned count, ExceptionState&);
+    void replaceData(unsigned offset, unsigned count, const String&, ExceptionState&);
 
     bool containsOnlyWhitespace() const;
 
@@ -47,8 +49,6 @@ public:
     // Like appendData, but optimized for the parser (e.g., no mutation events).
     // Returns how much could be added before length limit was met.
     unsigned parserAppendData(const String& string, unsigned offset, unsigned lengthLimit);
-
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
 
 protected:
     CharacterData(TreeScope* treeScope, const String& text, ConstructionType type)
@@ -68,13 +68,11 @@ protected:
 
 private:
     virtual String nodeValue() const OVERRIDE FINAL;
-    virtual void setNodeValue(const String&, ExceptionCode&) OVERRIDE FINAL;
+    virtual void setNodeValue(const String&) OVERRIDE FINAL;
     virtual bool isCharacterDataNode() const OVERRIDE FINAL { return true; }
     virtual int maxCharacterOffset() const OVERRIDE FINAL;
     virtual bool offsetInCharacters() const OVERRIDE FINAL;
     void setDataAndUpdate(const String&, unsigned offsetOfReplacedData, unsigned oldLength, unsigned newLength);
-    void checkCharDataOperation(unsigned offset, ExceptionCode&);
-    void dispatchModifiedEvent(const String& oldValue);
 
     String m_data;
 };

@@ -33,6 +33,7 @@
 #include "main/condrender.h"
 #include "main/image.h"
 #include "main/macros.h"
+#include "main/pbo.h"
 
 #include "s_context.h"
 #include "s_span.h"
@@ -45,7 +46,7 @@
  * All parameter error checking will have been done before this is called.
  */
 void
-_swrast_Bitmap( GLcontext *ctx, GLint px, GLint py,
+_swrast_Bitmap( struct gl_context *ctx, GLint px, GLint py,
 		GLsizei width, GLsizei height,
 		const struct gl_pixelstore_attrib *unpack,
 		const GLubyte *bitmap )
@@ -122,7 +123,7 @@ _swrast_Bitmap( GLcontext *ctx, GLint px, GLint py,
             src++;
       }
 
-      if (count + width >= MAX_WIDTH || row + 1 == height) {
+      if (count + width >= SWRAST_MAX_WIDTH || row + 1 == height) {
          /* flush the span */
          span.end = count;
          _swrast_write_rgba_span(ctx, &span);
@@ -144,7 +145,7 @@ _swrast_Bitmap( GLcontext *ctx, GLint px, GLint py,
  * draw or skip.
  */
 void
-_swrast_Bitmap( GLcontext *ctx, GLint px, GLint py,
+_swrast_Bitmap( struct gl_context *ctx, GLint px, GLint py,
 		GLsizei width, GLsizei height,
 		const struct gl_pixelstore_attrib *unpack,
 		const GLubyte *bitmap )

@@ -18,14 +18,20 @@
  *    Thread2:     CCCCCC                 CCCCC
  *
  */
+base.requireStylesheet('ui.trace_viewer');
 base.requireStylesheet('tracing.timeline_track_view');
-base.require('base.event_target');
+base.require('base.events');
+base.require('base.properties');
+base.require('base.settings');
 base.require('tracing.filter');
 base.require('tracing.selection');
 base.require('tracing.timeline_viewport');
+base.require('tracing.timing_tool');
+base.require('tracing.tracks.drawing_container');
 base.require('tracing.tracks.trace_model_track');
 base.require('tracing.tracks.ruler_track');
 base.require('ui');
+base.require('ui.mouse_mode_selector');
 
 base.exportTo('tracing', function() {
 
@@ -64,23 +70,34 @@ base.exportTo('tracing', function() {
     model_: null,
 
     decorate: function() {
+
       this.classList.add('timeline-track-view');
 
       this.categoryFilter_ = new tracing.CategoryFilter();
 
       this.viewport_ = new Viewport(this);
+      this.viewportStateAtMouseDown_ = null;
 
-      // Add the viewport track.
-      this.rulerTrack_ = new tracing.tracks.RulerTrack();
-      this.rulerTrack_.viewport = this.viewport_;
-      this.appendChild(this.rulerTrack_);
+      this.rulerTrackContainer_ =
+          new tracing.tracks.DrawingContainer(this.viewport_);
+      this.appendChild(this.rulerTrackContainer_);
+      this.rulerTrackContainer_.invalidate();
 
-      this.modelTrackContainer_ = document.createElement('div');
-      this.modelTrackContainer_.className = 'model-track-container';
+      this.rulerTrack_ = new tracing.tracks.RulerTrack(this.viewport_);
+      this.rulerTrackContainer_.appendChild(this.rulerTrack_);
+
+      this.modelTrackContainer_ =
+          new tracing.tracks.DrawingContainer(this.viewport_);
       this.appendChild(this.modelTrackContainer_);
+      this.modelTrackContainer_.style.display = 'block';
+      this.modelTrackContainer_.invalidate();
 
-      this.modelTrack_ = new tracing.tracks.TraceModelTrack();
+      this.viewport_.modelTrackContainer = this.modelTrackContainer_;
+
+      this.modelTrack_ = new tracing.tracks.TraceModelTrack(this.viewport_);
       this.modelTrackContainer_.appendChild(this.modelTrack_);
+
+      this.initMouseModeSelector();
 
       this.dragBox_ = this.ownerDocument.createElement('div');
       this.dragBox_.className = 'drag-box';
@@ -88,19 +105,55 @@ base.exportTo('tracing', function() {
       this.hideDragBox_();
 
       this.bindEventListener_(document, 'keypress', this.onKeypress_, this);
+
+      this.mouseModeSelector_.addEventListener('beginpan',
+          this.onBeginPanScan_.bind(this));
+      this.mouseModeSelector_.addEventListener('beginpan',
+          this.onBeginPanScan_.bind(this));
+      this.mouseModeSelector_.addEventListener('updatepan',
+          this.onUpdatePanScan_.bind(this));
+      this.mouseModeSelector_.addEventListener('endpan',
+          this.onEndPanScan_.bind(this));
+
+      this.mouseModeSelector_.addEventListener('beginselection',
+          this.onBeginSelection_.bind(this));
+      this.mouseModeSelector_.addEventListener('updateselection',
+          this.onUpdateSelection_.bind(this));
+      this.mouseModeSelector_.addEventListener('endselection',
+          this.onEndSelection_.bind(this));
+
+      this.mouseModeSelector_.addEventListener('beginzoom',
+          this.onBeginZoom_.bind(this));
+      this.mouseModeSelector_.addEventListener('updatezoom',
+          this.onUpdateZoom_.bind(this));
+      this.mouseModeSelector_.addEventListener('endzoom',
+          this.onEndZoom_.bind(this));
+
       this.bindEventListener_(document, 'keydown', this.onKeydown_, this);
       this.bindEventListener_(document, 'keyup', this.onKeyup_, this);
-      this.bindEventListener_(document, 'mousemove', this.onMouseMove_, this);
-      this.bindEventListener_(document, 'mouseup', this.onMouseUp_, this);
 
-      this.addEventListener('mousewheel', this.onMouseWheel_);
-      this.addEventListener('mousedown', this.onMouseDown_);
-      this.addEventListener('dblclick', this.onDblClick_);
+      this.addEventListener('mousemove', this.onMouseMove_);
 
+      this.mouseViewPosAtMouseDown_ = {x: 0, y: 0};
       this.lastMouseViewPos_ = {x: 0, y: 0};
-      this.maxHeadingWidth_ = 0;
-
       this.selection_ = new Selection();
+
+      this.isPanningAndScanning_ = false;
+      this.isZooming_ = false;
+
+      this.timingTool_ = new tracing.TimingTool(this.viewport_,
+                                                this.rulerTrack_);
+
+      this.mouseModeSelector_.addEventListener('entertiming',
+          this.timingTool_.onEnterTiming.bind(this.timingTool_));
+      this.mouseModeSelector_.addEventListener('begintiming',
+          this.timingTool_.onBeginTiming.bind(this.timingTool_));
+      this.mouseModeSelector_.addEventListener('updatetiming',
+          this.timingTool_.onUpdateTiming.bind(this.timingTool_));
+      this.mouseModeSelector_.addEventListener('endtiming',
+          this.timingTool_.onEndTiming.bind(this.timingTool_));
+      this.mouseModeSelector_.addEventListener('exittiming',
+          this.timingTool_.onExitTiming.bind(this.timingTool_));
     },
 
     /**
@@ -116,6 +169,18 @@ base.exportTo('tracing', function() {
         event: event,
         boundFunc: boundFunc});
       object.addEventListener(event, boundFunc);
+    },
+
+    initMouseModeSelector: function() {
+      this.mouseModeSelector_ = new ui.MouseModeSelector(this);
+      this.appendChild(this.mouseModeSelector_);
+      this.mouseModeSelector_.settingsKey =
+          'timelineTrackView.mouseModeSelector';
+      var m = ui.MOUSE_SELECTOR_MODE;
+      this.mouseModeSelector_.setKeyCodeForMode(m.PANSCAN, '2'.charCodeAt(0));
+      this.mouseModeSelector_.setKeyCodeForMode(m.SELECTION, '1'.charCodeAt(0));
+      this.mouseModeSelector_.setKeyCodeForMode(m.ZOOM, '3'.charCodeAt(0));
+      this.mouseModeSelector_.setKeyCodeForMode(m.TIMING, '4'.charCodeAt(0));
     },
 
     detach: function() {
@@ -138,6 +203,8 @@ base.exportTo('tracing', function() {
     },
 
     set categoryFilter(filter) {
+      this.modelTrackContainer_.invalidate();
+
       this.categoryFilter_ = filter;
       this.modelTrack_.categoryFilter = filter;
     },
@@ -153,21 +220,21 @@ base.exportTo('tracing', function() {
       var modelInstanceChanged = this.model_ != model;
       this.model_ = model;
       this.modelTrack_.model = model;
-      this.modelTrack_.viewport = this.viewport_;
       this.modelTrack_.categoryFilter = this.categoryFilter;
-      this.rulerTrack_.headingWidth = this.modelTrack_.headingWidth;
 
       // Set up a reasonable viewport.
       if (modelInstanceChanged)
         this.viewport_.setWhenPossible(this.setInitialViewport_.bind(this));
+
+      base.setPropertyAndDispatchChange(this, 'model', model);
     },
 
-    get numVisibleTracks() {
-      return this.modelTrack_.numVisibleTracks;
+    get hasVisibleContent() {
+      return this.modelTrack_.hasVisibleContent;
     },
 
     setInitialViewport_: function() {
-      var w = this.firstCanvas.width;
+      var w = this.modelTrackContainer_.canvas.width;
 
       var min;
       var range;
@@ -233,17 +300,26 @@ base.exportTo('tracing', function() {
       return true;
     },
 
+    onMouseMove_: function(e) {
+
+      // Zooming requires the delta since the last mousemove so we need to avoid
+      // tracking it when the zoom interaction is active.
+      if (this.isZooming_)
+        return;
+
+      this.storeLastMousePos_(e);
+    },
+
     onKeypress_: function(e) {
       var vp = this.viewport_;
-      if (!this.firstCanvas)
-        return;
       if (!this.listenToKeys_)
         return;
       if (document.activeElement.nodeName == 'INPUT')
         return;
-      var viewWidth = this.firstCanvas.clientWidth;
+      var viewWidth = this.modelTrackContainer_.canvas.clientWidth;
       var curMouseV, curCenterW;
       switch (e.keyCode) {
+
         case 119:  // w
         case 44:   // ,
           this.zoomBy_(1.5);
@@ -284,17 +360,8 @@ base.exportTo('tracing', function() {
           this.setInitialViewport_();
           break;
         case 102:  // f
-          this.zoomToSelection_();
+          this.zoomToSelection();
           break;
-      }
-    },
-
-    onMouseWheel_: function(e) {
-      if (e.altKey) {
-        var delta = e.wheelDeltaY / 120;
-        var zoomScale = Math.pow(1.5, delta);
-        this.zoomBy_(zoomScale);
-        e.preventDefault();
       }
     },
 
@@ -304,27 +371,26 @@ base.exportTo('tracing', function() {
         return;
       var sel;
       var vp = this.viewport_;
-      var viewWidth = this.firstCanvas.clientWidth;
+      var viewWidth = this.modelTrackContainer_.canvas.clientWidth;
+
       switch (e.keyCode) {
         case 37:   // left arrow
           sel = this.selection.getShiftedSelection(-1);
           if (sel) {
-            this.setSelectionAndMakeVisible(sel);
+            this.selection = sel;
+            this.panToSelection();
             e.preventDefault();
           } else {
-            if (!this.firstCanvas)
-              return;
             vp.panX += vp.xViewVectorToWorld(viewWidth * 0.1);
           }
           break;
         case 39:   // right arrow
           sel = this.selection.getShiftedSelection(1);
           if (sel) {
-            this.setSelectionAndMakeVisible(sel);
+            this.selection = sel;
+            this.panToSelection();
             e.preventDefault();
           } else {
-            if (!this.firstCanvas)
-              return;
             vp.panX -= vp.xViewVectorToWorld(viewWidth * 0.1);
           }
           break;
@@ -338,13 +404,6 @@ base.exportTo('tracing', function() {
           }
           break;
       }
-      if (e.shiftKey && this.dragBeginEvent_) {
-        var vertical = e.shiftKey;
-        if (this.dragBeginEvent_) {
-          this.setDragBoxPosition_(this.dragBoxXStart_, this.dragBoxYStart_,
-              this.dragBoxXEnd_, this.dragBoxYEnd_, vertical);
-        }
-      }
     },
 
     onKeyup_: function(e) {
@@ -352,11 +411,11 @@ base.exportTo('tracing', function() {
         return;
       if (!e.shiftKey) {
         if (this.dragBeginEvent_) {
-          var vertical = e.shiftKey;
           this.setDragBoxPosition_(this.dragBoxXStart_, this.dragBoxYStart_,
-              this.dragBoxXEnd_, this.dragBoxYEnd_, vertical);
+              this.dragBoxXEnd_, this.dragBoxYEnd_);
         }
       }
+
     },
 
     /**
@@ -364,10 +423,8 @@ base.exportTo('tracing', function() {
      * @param {integer} scale The scale factor to apply.  If <1, zooms out.
      */
     zoomBy_: function(scale) {
-      if (!this.firstCanvas)
-        return;
       var vp = this.viewport_;
-      var viewWidth = this.firstCanvas.clientWidth;
+      var viewWidth = this.modelTrackContainer_.canvas.clientWidth;
       var pixelRatio = window.devicePixelRatio || 1;
       var curMouseV = this.lastMouseViewPos_.x * pixelRatio;
       var curCenterW = vp.xViewToWorld(curMouseV);
@@ -378,48 +435,86 @@ base.exportTo('tracing', function() {
     /**
      * Zoom into the current selection.
      */
-    zoomToSelection_: function() {
-      if (!this.selection)
+    zoomToSelection: function() {
+      if (!this.selection || !this.selection.length)
         return;
+
       var bounds = this.selection.bounds;
-      var worldCenter = bounds.min + (bounds.max - bounds.min) * 0.5;
-      var worldBounds = (bounds.max - bounds.min) * 0.5;
-      var boost = worldBounds * 0.15;
-      this.viewport_.xSetWorldBounds(worldCenter - worldBounds - boost,
-                                    worldCenter + worldBounds + boost,
-                                    this.firstCanvas.width);
+      if (!bounds.range)
+        return;
+
+      var worldCenter = bounds.center;
+      var worldRangeHalf = bounds.range * 0.5;
+      var boost = worldRangeHalf * 0.5;
+      this.viewport_.xSetWorldBounds(worldCenter - worldRangeHalf - boost,
+                                     worldCenter + worldRangeHalf + boost,
+                                     this.modelTrackContainer_.canvas.width);
+    },
+
+    /**
+     * Pan the view so the current selection becomes visible.
+     */
+    panToSelection: function() {
+      if (!this.selection || !this.selection.length)
+        return;
+
+      var bounds = this.selection.bounds;
+      var worldCenter = bounds.center;
+      var viewWidth = this.modelTrackContainer_.canvas.width;
+
+      if (!bounds.range) {
+        if (this.viewport_.xWorldToView(bounds.center) < 0 ||
+            this.viewport_.xWorldToView(bounds.center) > viewWidth) {
+          this.viewport_.xPanWorldPosToViewPos(
+              worldCenter, 'center', viewWidth);
+        }
+        return;
+      }
+
+      var worldRangeHalf = bounds.range * 0.5;
+      var boost = worldRangeHalf * 0.5;
+      this.viewport_.xPanWorldBoundsIntoView(
+          worldCenter - worldRangeHalf - boost,
+          worldCenter + worldRangeHalf + boost,
+          viewWidth);
+
+      this.viewport_.xPanWorldBoundsIntoView(bounds.min, bounds.max, viewWidth);
     },
 
     get keyHelp() {
       var mod = navigator.platform.indexOf('Mac') == 0 ? 'cmd' : 'ctrl';
       var help = 'Qwerty Controls\n' +
-          ' w/s           : Zoom in/out    (with shift: go faster)\n' +
-          ' a/d           : Pan left/right\n\n' +
+          ' w/s                   : Zoom in/out     (with shift: go faster)\n' +
+          ' a/d                   : Pan left/right\n\n' +
           'Dvorak Controls\n' +
-          ' ,/o           : Zoom in/out     (with shift: go faster)\n' +
-          ' a/e           : Pan left/right\n\n' +
+          ' ,/o                   : Zoom in/out     (with shift: go faster)\n' +
+          ' a/e                   : Pan left/right\n\n' +
           'Mouse Controls\n' +
-          ' drag          : Select slices   (with ' + mod +
+          ' drag (Selection mode) : Select slices   (with ' + mod +
                                                         ': zoom to slices)\n' +
-          ' drag + shift  : Select all slices vertically\n\n';
+          ' drag (Pan mode)       : Pan left/right/up/down)\n\n';
 
       if (this.focusElement.tabIndex) {
         help +=
-            ' <-            : Select previous event on current timeline\n' +
-            ' ->            : Select next event on current timeline\n';
+            ' <-                 : Select previous event on current ' +
+            'timeline\n' +
+            ' ->                 : Select next event on current timeline\n';
       } else {
         help += 'General Navigation\n' +
-            ' g/General     : Shows grid at the start/end of the selected' +
-            ' task\n' +
-            ' <-,^TAB       : Select previous event on current timeline\n' +
-            ' ->, TAB       : Select next event on current timeline\n';
+            ' g/General          : Shows grid at the start/end of the ' +
+            ' selected task\n' +
+            ' <-,^TAB            : Select previous event on current ' +
+            'timeline\n' +
+            ' ->, TAB            : Select next event on current timeline\n';
       }
       help +=
           '\n' +
-          'Alt + Scroll to zoom in/out\n' +
-          'Dbl-click to zoom in; Shift dbl-click to zoom out\n' +
+          'Space to switch between select / pan modes\n' +
+          'Shift to temporarily switch between select / pan modes\n' +
+          'Scroll to zoom in/out (in pan mode)\n' +
           'f to zoom into selection\n' +
-          'z to reset zoom and pan to initial view\n';
+          'z to reset zoom and pan to initial view\n' +
+          '/ to search\n';
       return help;
     },
 
@@ -436,7 +531,8 @@ base.exportTo('tracing', function() {
       for (i = 0; i < this.selection_.length; i++)
         this.selection_[i].selected = false;
 
-      this.selection_ = selection;
+      this.selection_.clear();
+      this.selection_.addSelection(selection);
 
       base.dispatchSimpleEvent(this, 'selectionChange');
       for (i = 0; i < this.selection_.length; i++)
@@ -447,33 +543,6 @@ base.exportTo('tracing', function() {
       this.viewport_.dispatchChangeEvent(); // Triggers a redraw.
     },
 
-    setSelectionAndMakeVisible: function(selection, zoomAllowed) {
-      if (!(selection instanceof Selection))
-        throw new Error('Expected Selection');
-      this.selection = selection;
-      var bounds = this.selection.bounds;
-      var size = this.viewport_.xWorldVectorToView(bounds.max - bounds.min);
-      if (zoomAllowed && size < 50) {
-        var worldCenter = bounds.min + (bounds.max - bounds.min) * 0.5;
-        var worldBounds = (bounds.max - bounds.min) * 5;
-        this.viewport_.xSetWorldBounds(worldCenter - worldBounds * 0.5,
-                                      worldCenter + worldBounds * 0.5,
-                                      this.firstCanvas.width);
-        return;
-      }
-
-      this.viewport_.xPanWorldBoundsIntoView(bounds.min, bounds.max,
-          this.firstCanvas.width);
-    },
-
-    get firstCanvas() {
-      if (this.rulerTrack_)
-        return this.rulerTrack_.firstCanvas;
-      if (this.modelTrack_)
-        return this.modelTrack_.firstCanvas;
-      return undefined;
-    },
-
     hideDragBox_: function() {
       this.dragBox_.style.left = '-1000px';
       this.dragBox_.style.top = '-1000px';
@@ -481,24 +550,17 @@ base.exportTo('tracing', function() {
       this.dragBox_.style.height = 0;
     },
 
-    setDragBoxPosition_: function(xStart, yStart, xEnd, yEnd, vertical) {
-      var loY;
-      var hiY;
+    setDragBoxPosition_: function(xStart, yStart, xEnd, yEnd) {
+      var loY = Math.min(yStart, yEnd);
+      var hiY = Math.max(yStart, yEnd);
       var loX = Math.min(xStart, xEnd);
       var hiX = Math.max(xStart, xEnd);
       var modelTrackRect = this.modelTrack_.getBoundingClientRect();
-
-      if (vertical) {
-        loY = modelTrackRect.top;
-        hiY = modelTrackRect.bottom;
-      } else {
-        loY = Math.min(yStart, yEnd);
-        hiY = Math.max(yStart, yEnd);
-      }
-
       var dragRect = {left: loX, top: loY, width: hiX - loX, height: hiY - loY};
+
       dragRect.right = dragRect.left + dragRect.width;
       dragRect.bottom = dragRect.top + dragRect.height;
+
       var modelTrackContainerRect =
           this.modelTrackContainer_.getBoundingClientRect();
       var clipRect = {
@@ -507,7 +569,10 @@ base.exportTo('tracing', function() {
         right: modelTrackContainerRect.right,
         bottom: modelTrackContainerRect.bottom
       };
-      var trackTitleWidth = parseInt(this.modelTrack_.headingWidth);
+
+      var headingWidth = window.getComputedStyle(
+          this.querySelector('heading')).width;
+      var trackTitleWidth = parseInt(headingWidth);
       clipRect.left = clipRect.left + trackTitleWidth;
 
       var finalDragBox = intersectRect_(clipRect, dragRect);
@@ -518,7 +583,7 @@ base.exportTo('tracing', function() {
       this.dragBox_.style.height = finalDragBox.height + 'px';
 
       var pixelRatio = window.devicePixelRatio || 1;
-      var canv = this.firstCanvas;
+      var canv = this.modelTrackContainer_.canvas;
       var loWX = this.viewport_.xViewToWorld(
           (loX - canv.offsetLeft) * pixelRatio);
       var hiWX = this.viewport_.xViewToWorld(
@@ -540,158 +605,212 @@ base.exportTo('tracing', function() {
       // and the same element is selected (same timebase).
       if (this.viewport_.gridEnabled &&
           this.viewport_.gridSide === left &&
-          this.viewport_.gridTimebase === tb) {
+          this.viewport_.gridInitialTimebase === tb) {
         this.viewport_.gridside = undefined;
         this.viewport_.gridEnabled = false;
-        this.viewport_.gridTimebase = undefined;
+        this.viewport_.gridInitialTimebase = undefined;
         return;
       }
 
       // Shift the timebase left until its just left of model_.bounds.min.
-      var numInterfvalsSinceStart = Math.ceil((tb - this.model_.bounds.min) /
+      var numIntervalsSinceStart = Math.ceil((tb - this.model_.bounds.min) /
           this.viewport_.gridStep_);
-      this.viewport_.gridTimebase = tb -
-          (numInterfvalsSinceStart + 1) * this.viewport_.gridStep_;
 
       this.viewport_.gridEnabled = true;
       this.viewport_.gridSide = left;
-      this.viewport_.gridTimebase = tb;
+      this.viewport_.gridInitialTimebase = tb;
+      this.viewport_.gridTimebase = tb -
+          (numIntervalsSinceStart + 1) * this.viewport_.gridStep_;
     },
 
-    onMouseDown_: function(e) {
-      if (e.button !== 0)
-        return;
+    storeLastMousePos_: function(e) {
+      this.lastMouseViewPos_ = this.extractRelativeMousePosition_(e);
+    },
 
-      if (e.shiftKey) {
-        this.rulerTrack_.placeAndBeginDraggingMarker(e.clientX);
-        return;
-      }
-
-      var canv = this.firstCanvas;
-      var rect = this.modelTrack_.getBoundingClientRect();
-      var canvRect = this.firstCanvas.getBoundingClientRect();
-
-      var inside = rect &&
-          e.clientX >= rect.left &&
-          e.clientX < rect.right &&
-          e.clientY >= rect.top &&
-          e.clientY < rect.bottom &&
-          e.clientX >= canvRect.left &&
-          e.clientX < canvRect.right;
-
-      if (!inside)
-        return;
-
-      var pos = {
+    extractRelativeMousePosition_: function(e) {
+      var canv = this.modelTrackContainer_.canvas;
+      return {
         x: e.clientX - canv.offsetLeft,
         y: e.clientY - canv.offsetTop
       };
+    },
 
-      var wX = this.viewport_.xViewToWorld(pos.x);
+    storeInitialMouseDownPos_: function(e) {
 
-      this.dragBeginEvent_ = e;
-      e.preventDefault();
+      var position = this.extractRelativeMousePosition_(e);
+
+      this.mouseViewPosAtMouseDown_.x = position.x;
+      this.mouseViewPosAtMouseDown_.y = position.y;
+    },
+
+    focusElements_: function() {
       if (document.activeElement)
         document.activeElement.blur();
       if (this.focusElement.tabIndex >= 0)
         this.focusElement.focus();
     },
 
-    onMouseMove_: function(e) {
-      if (!this.firstCanvas)
-        return;
-      var canv = this.firstCanvas;
-      var pos = {
-        x: e.clientX - canv.offsetLeft,
-        y: e.clientY - canv.offsetTop
-      };
+    storeInitialInteractionPositionsAndFocus_: function(mouseEvent) {
 
-      // Remember position. Used during keyboard zooming.
-      this.lastMouseViewPos_ = pos;
+      this.storeInitialMouseDownPos_(mouseEvent);
+      this.storeLastMousePos_(mouseEvent);
+
+      this.focusElements_();
+    },
+
+    onBeginPanScan_: function(e) {
+      var vp = this.viewport_;
+      var mouseEvent = e.data;
+
+      this.viewportStateAtMouseDown_ = vp.getStateInViewCoordinates();
+      this.isPanningAndScanning_ = true;
+
+      this.storeInitialInteractionPositionsAndFocus_(mouseEvent);
+      mouseEvent.preventDefault();
+    },
+
+    onUpdatePanScan_: function(e) {
+      if (!this.isPanningAndScanning_)
+        return;
+
+      var vp = this.viewport_;
+      var viewWidth = this.modelTrackContainer_.canvas.clientWidth;
+      var mouseEvent = e.data;
+
+      var x = this.viewportStateAtMouseDown_.panX + (this.lastMouseViewPos_.x -
+          this.mouseViewPosAtMouseDown_.x);
+      var y = this.viewportStateAtMouseDown_.panY - (this.lastMouseViewPos_.y -
+          this.mouseViewPosAtMouseDown_.y);
+
+      vp.setStateInViewCoordinates({
+        panX: x,
+        panY: y
+      });
+
+      mouseEvent.preventDefault();
+      mouseEvent.stopPropagation();
+
+      this.storeLastMousePos_(mouseEvent);
+    },
+
+    onEndPanScan_: function(e) {
+      var mouseEvent = e.data;
+      this.isPanningAndScanning_ = false;
+
+      this.storeLastMousePos_(mouseEvent);
+
+      if (!e.isClick)
+        e.consumed = true;
+    },
+
+    onBeginSelection_: function(e) {
+      var mouseEvent = e.data;
+
+      var canv = this.modelTrackContainer_.canvas;
+      var rect = this.modelTrack_.getBoundingClientRect();
+      var canvRect = canv.getBoundingClientRect();
+
+      var inside = rect &&
+          mouseEvent.clientX >= rect.left &&
+          mouseEvent.clientX < rect.right &&
+          mouseEvent.clientY >= rect.top &&
+          mouseEvent.clientY < rect.bottom &&
+          mouseEvent.clientX >= canvRect.left &&
+          mouseEvent.clientX < canvRect.right;
+
+      if (!inside)
+        return;
+
+      this.dragBeginEvent_ = mouseEvent;
+
+      this.storeInitialInteractionPositionsAndFocus_(mouseEvent);
+      mouseEvent.preventDefault();
+
+    },
+
+    onUpdateSelection_: function(e) {
+      var mouseEvent = e.data;
+
+      if (!this.dragBeginEvent_)
+        return;
 
       // Update the drag box
-      if (this.dragBeginEvent_) {
-        this.dragBoxXStart_ = this.dragBeginEvent_.clientX;
-        this.dragBoxXEnd_ = e.clientX;
-        this.dragBoxYStart_ = this.dragBeginEvent_.clientY;
-        this.dragBoxYEnd_ = e.clientY;
-        var vertical = e.shiftKey;
-        this.setDragBoxPosition_(this.dragBoxXStart_, this.dragBoxYStart_,
-            this.dragBoxXEnd_, this.dragBoxYEnd_, vertical);
-      }
+      this.dragBoxXStart_ = this.dragBeginEvent_.clientX;
+      this.dragBoxXEnd_ = mouseEvent.clientX;
+      this.dragBoxYStart_ = this.dragBeginEvent_.clientY;
+      this.dragBoxYEnd_ = mouseEvent.clientY;
+      this.setDragBoxPosition_(this.dragBoxXStart_, this.dragBoxYStart_,
+          this.dragBoxXEnd_, this.dragBoxYEnd_);
+
     },
 
-    onMouseUp_: function(e) {
-      var i;
-      if (this.dragBeginEvent_) {
-        // Stop the dragging.
-        this.hideDragBox_();
-        var eDown = this.dragBeginEvent_;
-        this.dragBeginEvent_ = null;
+    onEndSelection_: function(e) {
+      e.consumed = true;
 
-        // Figure out extents of the drag.
-        var loY;
-        var hiY;
-        var loX = Math.min(eDown.clientX, e.clientX);
-        var hiX = Math.max(eDown.clientX, e.clientX);
-        var tracksContainer = this.modelTrackContainer_.getBoundingClientRect();
-        var topBoundary = tracksContainer.height;
-        var vertical = e.shiftKey;
-        if (vertical) {
-          var modelTrackRect = this.modelTrack_.getBoundingClientRect();
-          loY = modelTrackRect.top;
-          hiY = modelTrackRect.bottom;
-        } else {
-          loY = Math.min(eDown.clientY, e.clientY);
-          hiY = Math.max(eDown.clientY, e.clientY);
-        }
-
-        // Convert to worldspace.
-        var canv = this.firstCanvas;
-        var loVX = loX - canv.offsetLeft;
-        var hiVX = hiX - canv.offsetLeft;
-
-        // Figure out what has been hit.
-        var selection = new Selection();
-        this.modelTrack_.addIntersectingItemsInRangeToSelection(
-            loVX, hiVX, loY, hiY, selection);
-
-        // Activate the new selection, and zoom if ctrl key held down.
-        this.selection = selection;
-        if ((base.isMac && e.metaKey) || (!base.isMac && e.ctrlKey)) {
-          this.zoomToSelection_();
-        }
-      }
-    },
-
-    onDblClick_: function(e) {
-      var modelTrackContainerRect =
-          this.modelTrackContainer_.getBoundingClientRect();
-      var clipBounds = {
-        left: modelTrackContainerRect.left,
-        right: modelTrackContainerRect.right
-      };
-      var trackTitleWidth = parseInt(this.modelTrack_.headingWidth);
-      clipBounds.left = clipBounds.left + trackTitleWidth;
-
-      if (e.clientX < clipBounds.left || e.clientX > clipBounds.right)
+      if (!this.dragBeginEvent_)
         return;
 
-      var canv = this.firstCanvas;
+      var mouseEvent = e.data;
 
-      var scale = 4;
-      if (e.shiftKey)
-        scale = 1 / scale;
-      this.zoomBy_(scale);
-      e.preventDefault();
+      // Stop the dragging.
+      this.hideDragBox_();
+      var eDown = this.dragBeginEvent_ || mouseEvent;
+      this.dragBeginEvent_ = null;
+
+      // Figure out extents of the drag.
+      var loY = Math.min(eDown.clientY, mouseEvent.clientY);
+      var hiY = Math.max(eDown.clientY, mouseEvent.clientY);
+      var loX = Math.min(eDown.clientX, mouseEvent.clientX);
+      var hiX = Math.max(eDown.clientX, mouseEvent.clientX);
+      var tracksContainerBoundingRect =
+          this.modelTrackContainer_.getBoundingClientRect();
+      var topBoundary = tracksContainerBoundingRect.height;
+
+      // Convert to worldspace.
+      var canv = this.modelTrackContainer_.canvas;
+      var loVX = loX - canv.offsetLeft;
+      var hiVX = hiX - canv.offsetLeft;
+
+      // Figure out what has been hit.
+      var selection = new Selection();
+      this.modelTrack_.addIntersectingItemsInRangeToSelection(
+          loVX, hiVX, loY, hiY, selection);
+
+      // Activate the new selection, and zoom if ctrl key held down.
+      this.selection = selection;
+      if ((base.isMac && e.metaKey) || (!base.isMac && e.ctrlKey))
+        this.zoomToSelection_();
+    },
+
+    onBeginZoom_: function(e) {
+      var mouseEvent = e.data;
+      this.isZooming_ = true;
+
+      this.storeInitialInteractionPositionsAndFocus_(mouseEvent);
+      mouseEvent.preventDefault();
+    },
+
+    onUpdateZoom_: function(e) {
+
+      if (!this.isZooming_)
+        return;
+      var mouseEvent = e.data;
+      var newPosition = this.extractRelativeMousePosition_(mouseEvent);
+
+      var zoomScaleValue = 1 + (this.lastMouseViewPos_.y -
+          newPosition.y) * 0.01;
+
+      this.zoomBy_(zoomScaleValue);
+      this.storeLastMousePos_(mouseEvent);
+    },
+
+    onEndZoom_: function(e) {
+      this.isZooming_ = false;
+
+      if (!e.isClick)
+        e.consumed = true;
     }
   };
-
-  /**
-   * The Model being viewed by the timeline
-   * @type {Model}
-   */
-  base.defineProperty(TimelineTrackView, 'model', base.PropertyKind.JS);
 
   return {
     TimelineTrackView: TimelineTrackView

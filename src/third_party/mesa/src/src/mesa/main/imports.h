@@ -38,7 +38,7 @@
 
 #include "compiler.h"
 #include "glheader.h"
-
+#include "errors.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -81,7 +81,7 @@ extern "C" {
  * these casts generate warnings.
  * The following union typedef is used to solve that.
  */
-typedef union { GLfloat f; GLint i; } fi_type;
+typedef union { GLfloat f; GLint i; GLuint u; } fi_type;
 
 
 
@@ -99,21 +99,13 @@ typedef union { GLfloat f; GLint i; } fi_type;
 /***
  *** SQRTF: single-precision square root
  ***/
-#if 0 /* _mesa_sqrtf() not accurate enough - temporarily disabled */
-#  define SQRTF(X)  _mesa_sqrtf(X)
-#else
-#  define SQRTF(X)  (float) sqrt((float) (X))
-#endif
+#define SQRTF(X)  (float) sqrt((float) (X))
 
 
 /***
  *** INV_SQRTF: single-precision inverse square root
  ***/
-#if 0
-#define INV_SQRTF(X) _mesa_inv_sqrt(X)
-#else
-#define INV_SQRTF(X) (1.0F / SQRTF(X))  /* this is faster on a P4 */
-#endif
+#define INV_SQRTF(X) (1.0F / SQRTF(X))
 
 
 /**
@@ -127,7 +119,7 @@ typedef union { GLfloat f; GLint i; } fi_type;
 #define asinf(f) ((float) asin(f))
 #define atan2f(x,y) ((float) atan2(x,y))
 #define atanf(f) ((float) atan(f))
-#define cielf(f) ((float) ciel(f))
+#define ceilf(f) ((float) ceil(f))
 #define cosf(f) ((float) cos(f))
 #define coshf(f) ((float) cosh(f))
 #define expf(f) ((float) exp(f))
@@ -135,7 +127,7 @@ typedef union { GLfloat f; GLint i; } fi_type;
 #define floorf(f) ((float) floor(f))
 #define logf(f) ((float) log(f))
 
-#if defined(ANDROID)
+#ifdef ANDROID
 #define log2f(f) (logf(f) * (float) (1.0 / M_LN2))
 #else
 #define log2f(f) ((float) log2(f))
@@ -147,13 +139,19 @@ typedef union { GLfloat f; GLint i; } fi_type;
 #define sqrtf(f) ((float) sqrt(f))
 #define tanf(f) ((float) tan(f))
 #define tanhf(f) ((float) tanh(f))
+#define acoshf(f) ((float) acosh(f))
+#define asinhf(f) ((float) asinh(f))
+#define atanhf(f) ((float) atanh(f))
 #endif
 
 #if defined(_MSC_VER)
-static INLINE float truncf(float x) { return x < 0.0f ? ceilf(x) : floorf(x); }
-static INLINE float exp2f(float x) { return powf(2.0f, x); }
-static INLINE float log2f(float x) { return logf(x) * 1.442695041f; }
-static INLINE int isblank(int ch) { return ch == ' ' || ch == '\t'; }
+static inline float truncf(float x) { return x < 0.0f ? ceilf(x) : floorf(x); }
+static inline float exp2f(float x) { return powf(2.0f, x); }
+static inline float log2f(float x) { return logf(x) * 1.442695041f; }
+static inline float asinhf(float x) { return logf(x + sqrtf(x * x + 1.0f)); }
+static inline float acoshf(float x) { return logf(x + sqrtf(x * x - 1.0f)); }
+static inline float atanhf(float x) { return (logf(1.0f + x) - logf(1.0f - x)) / 2.0f; }
+static inline int isblank(int ch) { return ch == ' ' || ch == '\t'; }
 #define strtoll(p, e, b) _strtoi64(p, e, b)
 #endif
 /*@}*/
@@ -166,7 +164,7 @@ static INLINE int isblank(int ch) { return ch == ' ' || ch == '\t'; }
 /* This is pretty fast, but not accurate enough (only 2 fractional bits).
  * Based on code from http://www.stereopsis.com/log2.html
  */
-static INLINE GLfloat LOG2(GLfloat x)
+static inline GLfloat LOG2(GLfloat x)
 {
    const GLfloat y = x * x * x * x;
    const GLuint ix = *((GLuint *) &y);
@@ -178,7 +176,7 @@ static INLINE GLfloat LOG2(GLfloat x)
 /* Pretty fast, and accurate.
  * Based on code from http://www.flipcode.com/totd/
  */
-static INLINE GLfloat LOG2(GLfloat val)
+static inline GLfloat LOG2(GLfloat val)
 {
    fi_type num;
    GLint log_2;
@@ -202,7 +200,7 @@ static INLINE GLfloat LOG2(GLfloat val)
  *** IS_INF_OR_NAN: test if float is infinite or NaN
  ***/
 #ifdef USE_IEEE
-static INLINE int IS_INF_OR_NAN( float x )
+static inline int IS_INF_OR_NAN( float x )
 {
    fi_type tmp;
    tmp.f = x;
@@ -225,7 +223,7 @@ static INLINE int IS_INF_OR_NAN( float x )
  *** IS_NEGATIVE: test if float is negative
  ***/
 #if defined(USE_IEEE)
-static INLINE int GET_FLOAT_BITS( float x )
+static inline int GET_FLOAT_BITS( float x )
 {
    fi_type fi;
    fi.f = x;
@@ -279,19 +277,47 @@ static INLINE int GET_FLOAT_BITS( float x )
 #endif
 
 
-/***
- *** IROUND: return (as an integer) float rounded to nearest integer
- ***/
+/**
+ * Convert float to int by rounding to nearest integer, away from zero.
+ */
+static inline int IROUND(float f)
+{
+   return (int) ((f >= 0.0F) ? (f + 0.5F) : (f - 0.5F));
+}
+
+
+/**
+ * Convert float to int64 by rounding to nearest integer.
+ */
+static inline GLint64 IROUND64(float f)
+{
+   return (GLint64) ((f >= 0.0F) ? (f + 0.5F) : (f - 0.5F));
+}
+
+
+/**
+ * Convert positive float to int by rounding to nearest integer.
+ */
+static inline int IROUND_POS(float f)
+{
+   assert(f >= 0.0F);
+   return (int) (f + 0.5F);
+}
+
+
+/**
+ * Convert float to int using a fast method.  The rounding mode may vary.
+ * XXX We could use an x86-64/SSE2 version here.
+ */
 #if defined(USE_X86_ASM) && defined(__GNUC__) && defined(__i386__)
-static INLINE int iround(float f)
+static inline int F_TO_I(float f)
 {
    int r;
    __asm__ ("fistpl %0" : "=m" (r) : "t" (f) : "st");
    return r;
 }
-#define IROUND(x)  iround(x)
 #elif defined(USE_X86_ASM) && defined(_MSC_VER)
-static INLINE int iround(float f)
+static inline int F_TO_I(float f)
 {
    int r;
    _asm {
@@ -300,9 +326,8 @@ static INLINE int iround(float f)
 	}
    return r;
 }
-#define IROUND(x)  iround(x)
 #elif defined(__WATCOMC__) && defined(__386__)
-long iround(float f);
+long F_TO_I(float f);
 #pragma aux iround =                    \
 	"push   eax"                        \
 	"fistp  dword ptr [esp]"            \
@@ -310,20 +335,8 @@ long iround(float f);
 	parm [8087]                         \
 	value [eax]                         \
 	modify exact [eax];
-#define IROUND(x)  iround(x)
 #else
-#define IROUND(f)  ((int) (((f) >= 0.0F) ? ((f) + 0.5F) : ((f) - 0.5F)))
-#endif
-
-#define IROUND64(f)  ((GLint64) (((f) >= 0.0F) ? ((f) + 0.5F) : ((f) - 0.5F)))
-
-/***
- *** IROUND_POS: return (as an integer) positive float rounded to nearest int
- ***/
-#ifdef DEBUG
-#define IROUND_POS(f) (assert((f) >= 0.0F), IROUND(f))
-#else
-#define IROUND_POS(f) (IROUND(f))
+#define F_TO_I(f)  IROUND(f)
 #endif
 
 
@@ -338,7 +351,7 @@ long iround(float f);
  * but uses some IEEE specific tricks for better speed.
  * Contributed by Josh Vanderhoof
  */
-static INLINE int ifloor(float f)
+static inline int ifloor(float f)
 {
    int ai, bi;
    double af, bf;
@@ -351,7 +364,7 @@ static INLINE int ifloor(float f)
 }
 #define IFLOOR(x)  ifloor(x)
 #elif defined(USE_IEEE)
-static INLINE int ifloor(float f)
+static inline int ifloor(float f)
 {
    int ai, bi;
    double af, bf;
@@ -365,7 +378,7 @@ static INLINE int ifloor(float f)
 }
 #define IFLOOR(x)  ifloor(x)
 #else
-static INLINE int ifloor(float f)
+static inline int ifloor(float f)
 {
    int i = IROUND(f);
    return (i > f) ? i - 1 : i;
@@ -385,7 +398,7 @@ static INLINE int ifloor(float f)
  * but uses some IEEE specific tricks for better speed.
  * Contributed by Josh Vanderhoof
  */
-static INLINE int iceil(float f)
+static inline int iceil(float f)
 {
    int ai, bi;
    double af, bf;
@@ -398,7 +411,7 @@ static INLINE int iceil(float f)
 }
 #define ICEIL(x)  iceil(x)
 #elif defined(USE_IEEE)
-static INLINE int iceil(float f)
+static inline int iceil(float f)
 {
    int ai, bi;
    double af, bf;
@@ -411,7 +424,7 @@ static INLINE int iceil(float f)
 }
 #define ICEIL(x)  iceil(x)
 #else
-static INLINE int iceil(float f)
+static inline int iceil(float f)
 {
    int i = IROUND(f);
    return (i < f) ? i + 1 : i;
@@ -423,7 +436,7 @@ static INLINE int iceil(float f)
 /**
  * Is x a power of two?
  */
-static INLINE int
+static inline int
 _mesa_is_pow_two(int x)
 {
    return !(x & (x - 1));
@@ -443,11 +456,11 @@ _mesa_is_pow_two(int x)
  * results would be different depending on optimization
  * level used for build.
  */
-static INLINE int32_t
+static inline int32_t
 _mesa_next_pow_two_32(uint32_t x)
 {
 #if defined(__GNUC__) && \
-	((__GNUC__ == 3 && __GNUC_MINOR__ >= 4) || __GNUC__ >= 4)
+	((__GNUC__ * 100 + __GNUC_MINOR__) >= 304) /* gcc 3.4 or later */
 	uint32_t y = (x != 1);
 	return (1 + y) << ((__builtin_clz(x - y) ^ 31) );
 #else
@@ -462,11 +475,11 @@ _mesa_next_pow_two_32(uint32_t x)
 #endif
 }
 
-static INLINE int64_t
+static inline int64_t
 _mesa_next_pow_two_64(uint64_t x)
 {
 #if defined(__GNUC__) && \
-	((__GNUC__ == 3 && __GNUC_MINOR__ >= 4) || __GNUC__ >= 4)
+	((__GNUC__ * 100 + __GNUC_MINOR__) >= 304) /* gcc 3.4 or later */
 	uint64_t y = (x != 1);
 	if (sizeof(x) == sizeof(long))
 		return (1 + y) << ((__builtin_clzl(x - y) ^ 63));
@@ -486,10 +499,31 @@ _mesa_next_pow_two_64(uint64_t x)
 }
 
 
+/*
+ * Returns the floor form of binary logarithm for a 32-bit integer.
+ */
+static inline GLuint
+_mesa_logbase2(GLuint n)
+{
+#if defined(__GNUC__) && \
+   ((__GNUC__ * 100 + __GNUC_MINOR__) >= 304) /* gcc 3.4 or later */
+   return (31 - __builtin_clz(n | 1));
+#else
+   GLuint pos = 0;
+   if (n >= 1<<16) { n >>= 16; pos += 16; }
+   if (n >= 1<< 8) { n >>=  8; pos +=  8; }
+   if (n >= 1<< 4) { n >>=  4; pos +=  4; }
+   if (n >= 1<< 2) { n >>=  2; pos +=  2; }
+   if (n >= 1<< 1) {           pos +=  1; }
+   return pos;
+#endif
+}
+
+
 /**
  * Return 1 if this is a little endian machine, 0 if big endian.
  */
-static INLINE GLboolean
+static inline GLboolean
 _mesa_little_endian(void)
 {
    const GLuint ui = 1; /* intentionally not static */
@@ -524,29 +558,57 @@ _mesa_exec_free( void *addr );
 extern void *
 _mesa_realloc( void *oldBuffer, size_t oldSize, size_t newSize );
 
-extern void
-_mesa_memset16( unsigned short *dst, unsigned short val, size_t n );
 
-extern double
-_mesa_sqrtd(double x);
+#ifndef FFS_DEFINED
+#define FFS_DEFINED 1
+#ifdef __GNUC__
 
-extern float
-_mesa_sqrtf(float x);
+#if defined(__MINGW32__) || defined(__CYGWIN__) || defined(ANDROID) || defined(__APPLE__)
+#define ffs __builtin_ffs
+#define ffsll __builtin_ffsll
+#endif
 
-extern float
-_mesa_inv_sqrtf(float x);
+#else
 
-extern void
-_mesa_init_sqrt_table(void);
+extern int ffs(int i);
+extern int ffsll(long long int i);
 
-extern int
-_mesa_ffs(int32_t i);
+#endif /*__ GNUC__ */
+#endif /* FFS_DEFINED */
 
-extern int
-_mesa_ffsll(int64_t i);
 
+#if defined(__GNUC__) && ((__GNUC__ * 100 + __GNUC_MINOR__) >= 304) /* gcc 3.4 or later */
+#define _mesa_bitcount(i) __builtin_popcount(i)
+#define _mesa_bitcount_64(i) __builtin_popcountll(i)
+#else
 extern unsigned int
 _mesa_bitcount(unsigned int n);
+extern unsigned int
+_mesa_bitcount_64(uint64_t n);
+#endif
+
+/**
+ * Find the last (most significant) bit set in a word.
+ *
+ * Essentially ffs() in the reverse direction.
+ */
+static inline unsigned int
+_mesa_fls(unsigned int n)
+{
+#if defined(__GNUC__) && ((__GNUC__ * 100 + __GNUC_MINOR__) >= 304)
+   return n == 0 ? 0 : 32 - __builtin_clz(n);
+#else
+   unsigned int v = 1;
+
+   if (n == 0)
+      return 0;
+
+   while (n >>= 1)
+       v++;
+
+   return v;
+#endif
+}
 
 extern GLhalfARB
 _mesa_float_to_half(float f);
@@ -574,17 +636,8 @@ _mesa_str_checksum(const char *str);
 extern int
 _mesa_snprintf( char *str, size_t size, const char *fmt, ... ) PRINTFLIKE(3, 4);
 
-extern void
-_mesa_warning( __GLcontext *gc, const char *fmtString, ... ) PRINTFLIKE(2, 3);
-
-extern void
-_mesa_problem( const __GLcontext *ctx, const char *fmtString, ... ) PRINTFLIKE(2, 3);
-
-extern void
-_mesa_error( __GLcontext *ctx, GLenum error, const char *fmtString, ... ) PRINTFLIKE(3, 4);
-
-extern void
-_mesa_debug( const __GLcontext *ctx, const char *fmtString, ... ) PRINTFLIKE(2, 3);
+extern int
+_mesa_vsnprintf(char *str, size_t size, const char *fmt, va_list arg);
 
 
 #if defined(_MSC_VER) && !defined(snprintf)

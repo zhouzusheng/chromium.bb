@@ -29,6 +29,7 @@
 
 #include "config.h"
 #include "core/inspector/InspectorDebuggerAgent.h"
+#include "core/inspector/JavaScriptCallFrame.h"
 
 #include "InspectorFrontend.h"
 #include "bindings/v8/ScriptDebugServer.h"
@@ -41,11 +42,9 @@
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/inspector/ScriptArguments.h"
 #include "core/inspector/ScriptCallStack.h"
-#include "core/loader/cache/CachedResource.h"
+#include "core/loader/cache/Resource.h"
 #include "core/platform/JSONValues.h"
 #include "core/platform/text/RegularExpression.h"
-#include "wtf/MemoryInstrumentationHashMap.h"
-#include "wtf/MemoryInstrumentationVector.h"
 #include "wtf/text/WTFString.h"
 
 using WebCore::TypeBuilder::Array;
@@ -59,7 +58,18 @@ namespace DebuggerAgentState {
 static const char debuggerEnabled[] = "debuggerEnabled";
 static const char javaScriptBreakpoints[] = "javaScriptBreakopints";
 static const char pauseOnExceptionsState[] = "pauseOnExceptionsState";
+
+// Breakpoint properties.
+static const char url[] = "url";
+static const char isRegex[] = "isRegex";
+static const char lineNumber[] = "lineNumber";
+static const char columnNumber[] = "columnNumber";
+static const char condition[] = "condition";
+static const char isAnti[] = "isAnti";
+static const char skipStackPattern[] = "skipStackPattern";
 };
+
+static const int numberOfStepsBeforeStepOut = 10;
 
 const char* InspectorDebuggerAgent::backtraceObjectGroup = "backtrace";
 
@@ -88,6 +98,7 @@ InspectorDebuggerAgent::InspectorDebuggerAgent(InstrumentingAgents* instrumentin
     , m_pausedScriptState(0)
     , m_javaScriptPauseScheduled(false)
     , m_listener(0)
+    , m_skipStepInCount(numberOfStepsBeforeStepOut)
 {
     // FIXME: make breakReason optional so that there was no need to init it with "other".
     clearBreakDetails();
@@ -115,6 +126,7 @@ void InspectorDebuggerAgent::disable()
 {
     m_state->setObject(DebuggerAgentState::javaScriptBreakpoints, JSONObject::create());
     m_state->setLong(DebuggerAgentState::pauseOnExceptionsState, ScriptDebugServer::DontPauseOnExceptions);
+    m_state->setString(DebuggerAgentState::skipStackPattern, "");
     m_instrumentingAgents->setInspectorDebuggerAgent(0);
 
     stopListeningScriptDebugServer();
@@ -151,6 +163,16 @@ void InspectorDebuggerAgent::disable(ErrorString*)
     m_state->setBoolean(DebuggerAgentState::debuggerEnabled, false);
 }
 
+static PassOwnPtr<RegularExpression> compileSkipCallFramePattern(String patternText)
+{
+    if (patternText.isEmpty())
+        return nullptr;
+    OwnPtr<RegularExpression> result = adoptPtr(new RegularExpression(patternText, TextCaseSensitive));
+    if (!result->isValid())
+        result.clear();
+    return result.release();
+}
+
 void InspectorDebuggerAgent::restore()
 {
     if (enabled()) {
@@ -159,6 +181,7 @@ void InspectorDebuggerAgent::restore()
         long pauseState = m_state->getLong(DebuggerAgentState::pauseOnExceptionsState);
         String error;
         setPauseOnExceptionsImpl(&error, pauseState);
+        m_cachedSkipStackRegExp = compileSkipCallFramePattern(m_state->getString(DebuggerAgentState::skipStackPattern));
     }
 }
 
@@ -199,7 +222,7 @@ bool InspectorDebuggerAgent::runningNestedMessageLoop()
 
 void InspectorDebuggerAgent::addMessageToConsole(MessageSource source, MessageType type)
 {
-    if (scriptDebugServer().pauseOnExceptionsState() != ScriptDebugServer::DontPauseOnExceptions && source == ConsoleAPIMessageSource && type == AssertMessageType)
+    if (source == ConsoleAPIMessageSource && type == AssertMessageType && scriptDebugServer().pauseOnExceptionsState() != ScriptDebugServer::DontPauseOnExceptions)
         breakProgram(InspectorFrontend::Debugger::Reason::Assert, 0);
 }
 
@@ -214,14 +237,15 @@ void InspectorDebuggerAgent::addMessageToConsole(MessageSource source, MessageTy
 }
 
 
-static PassRefPtr<JSONObject> buildObjectForBreakpointCookie(const String& url, int lineNumber, int columnNumber, const String& condition, bool isRegex)
+static PassRefPtr<JSONObject> buildObjectForBreakpointCookie(const String& url, int lineNumber, int columnNumber, const String& condition, bool isRegex, bool isAnti)
 {
     RefPtr<JSONObject> breakpointObject = JSONObject::create();
-    breakpointObject->setString("url", url);
-    breakpointObject->setNumber("lineNumber", lineNumber);
-    breakpointObject->setNumber("columnNumber", columnNumber);
-    breakpointObject->setString("condition", condition);
-    breakpointObject->setBoolean("isRegex", isRegex);
+    breakpointObject->setString(DebuggerAgentState::url, url);
+    breakpointObject->setNumber(DebuggerAgentState::lineNumber, lineNumber);
+    breakpointObject->setNumber(DebuggerAgentState::columnNumber, columnNumber);
+    breakpointObject->setString(DebuggerAgentState::condition, condition);
+    breakpointObject->setBoolean(DebuggerAgentState::isRegex, isRegex);
+    breakpointObject->setBoolean(DebuggerAgentState::isAnti, isAnti);
     return breakpointObject;
 }
 
@@ -234,7 +258,7 @@ static bool matches(const String& url, const String& pattern, bool isRegex)
     return url == pattern;
 }
 
-void InspectorDebuggerAgent::setBreakpointByUrl(ErrorString* errorString, int lineNumber, const String* const optionalURL, const String* const optionalURLRegex, const int* const optionalColumnNumber, const String* const optionalCondition, TypeBuilder::Debugger::BreakpointId* outBreakpointId, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::Location> >& locations)
+void InspectorDebuggerAgent::setBreakpointByUrl(ErrorString* errorString, int lineNumber, const String* const optionalURL, const String* const optionalURLRegex, const int* const optionalColumnNumber, const String* const optionalCondition, const bool* isAntiBreakpoint, TypeBuilder::Debugger::BreakpointId* outBreakpointId, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::Location> >& locations)
 {
     locations = Array<TypeBuilder::Debugger::Location>::create();
     if (!optionalURL == !optionalURLRegex) {
@@ -242,8 +266,19 @@ void InspectorDebuggerAgent::setBreakpointByUrl(ErrorString* errorString, int li
         return;
     }
 
+    bool isAntiBreakpointValue = isAntiBreakpoint && *isAntiBreakpoint;
+
     String url = optionalURL ? *optionalURL : *optionalURLRegex;
-    int columnNumber = optionalColumnNumber ? *optionalColumnNumber : 0;
+    int columnNumber;
+    if (optionalColumnNumber) {
+        columnNumber = *optionalColumnNumber;
+        if (columnNumber < 0) {
+            *errorString = "Incorrect column number";
+            return;
+        }
+    } else {
+        columnNumber = isAntiBreakpointValue ? -1 : 0;
+    }
     String condition = optionalCondition ? *optionalCondition : "";
     bool isRegex = optionalURLRegex;
 
@@ -254,16 +289,18 @@ void InspectorDebuggerAgent::setBreakpointByUrl(ErrorString* errorString, int li
         return;
     }
 
-    breakpointsCookie->setObject(breakpointId, buildObjectForBreakpointCookie(url, lineNumber, columnNumber, condition, isRegex));
+    breakpointsCookie->setObject(breakpointId, buildObjectForBreakpointCookie(url, lineNumber, columnNumber, condition, isRegex, isAntiBreakpointValue));
     m_state->setObject(DebuggerAgentState::javaScriptBreakpoints, breakpointsCookie);
 
-    ScriptBreakpoint breakpoint(lineNumber, columnNumber, condition);
-    for (ScriptsMap::iterator it = m_scripts.begin(); it != m_scripts.end(); ++it) {
-        if (!matches(it->value.url, url, isRegex))
-            continue;
-        RefPtr<TypeBuilder::Debugger::Location> location = resolveBreakpoint(breakpointId, it->key, breakpoint, UserBreakpointSource);
-        if (location)
-            locations->addItem(location);
+    if (!isAntiBreakpointValue) {
+        ScriptBreakpoint breakpoint(lineNumber, columnNumber, condition);
+        for (ScriptsMap::iterator it = m_scripts.begin(); it != m_scripts.end(); ++it) {
+            if (!matches(it->value.url, url, isRegex))
+                continue;
+            RefPtr<TypeBuilder::Debugger::Location> location = resolveBreakpoint(breakpointId, it->key, breakpoint, UserBreakpointSource);
+            if (location)
+                locations->addItem(location);
+        }
     }
     *outBreakpointId = breakpointId;
 }
@@ -307,10 +344,17 @@ void InspectorDebuggerAgent::setBreakpoint(ErrorString* errorString, const RefPt
 void InspectorDebuggerAgent::removeBreakpoint(ErrorString*, const String& breakpointId)
 {
     RefPtr<JSONObject> breakpointsCookie = m_state->getObject(DebuggerAgentState::javaScriptBreakpoints);
-    breakpointsCookie->remove(breakpointId);
-    m_state->setObject(DebuggerAgentState::javaScriptBreakpoints, breakpointsCookie);
+    JSONObject::iterator it = breakpointsCookie->find(breakpointId);
+    bool isAntibreakpoint = false;
+    if (it != breakpointsCookie->end()) {
+        RefPtr<JSONObject> breakpointObject = it->value->asObject();
+        breakpointObject->getBoolean(DebuggerAgentState::isAnti, &isAntibreakpoint);
+        breakpointsCookie->remove(breakpointId);
+        m_state->setObject(DebuggerAgentState::javaScriptBreakpoints, breakpointsCookie);
+    }
 
-    removeBreakpoint(breakpointId);
+    if (!isAntibreakpoint)
+        removeBreakpoint(breakpointId);
 }
 
 void InspectorDebuggerAgent::removeBreakpoint(const String& breakpointId)
@@ -326,8 +370,9 @@ void InspectorDebuggerAgent::removeBreakpoint(const String& breakpointId)
     m_breakpointIdToDebugServerBreakpointIds.remove(debugServerBreakpointIdsIterator);
 }
 
-void InspectorDebuggerAgent::continueToLocation(ErrorString* errorString, const RefPtr<JSONObject>& location)
+void InspectorDebuggerAgent::continueToLocation(ErrorString* errorString, const RefPtr<JSONObject>& location, const bool* interstateLocationOpt)
 {
+    bool interstateLocation = interstateLocationOpt ? *interstateLocationOpt : false;
     if (!m_continueToLocationBreakpointId.isEmpty()) {
         scriptDebugServer().removeBreakpoint(m_continueToLocationBreakpointId);
         m_continueToLocationBreakpointId = "";
@@ -341,8 +386,106 @@ void InspectorDebuggerAgent::continueToLocation(ErrorString* errorString, const 
         return;
 
     ScriptBreakpoint breakpoint(lineNumber, columnNumber, "");
-    m_continueToLocationBreakpointId = scriptDebugServer().setBreakpoint(scriptId, breakpoint, &lineNumber, &columnNumber);
+    m_continueToLocationBreakpointId = scriptDebugServer().setBreakpoint(scriptId, breakpoint, &lineNumber, &columnNumber, interstateLocation);
     resume(errorString);
+}
+
+void InspectorDebuggerAgent::getStepInPositions(ErrorString* errorString, const String& callFrameId, RefPtr<Array<TypeBuilder::Debugger::Location> >& positions)
+{
+    if (!isPaused() || m_currentCallStack.isNull()) {
+        *errorString = "Attempt to access callframe when debugger is not on pause";
+        return;
+    }
+    InjectedScript injectedScript = m_injectedScriptManager->injectedScriptForObjectId(callFrameId);
+    if (injectedScript.hasNoValue()) {
+        *errorString = "Inspected frame has gone";
+        return;
+    }
+
+    injectedScript.getStepInPositions(errorString, m_currentCallStack, callFrameId, positions);
+}
+
+void InspectorDebuggerAgent::getBacktrace(ErrorString* errorString, RefPtr<Array<TypeBuilder::Debugger::CallFrame> >& callFrames)
+{
+    if (!assertPaused(errorString))
+        return;
+    scriptDebugServer().updateCallStack(&m_currentCallStack);
+    callFrames = currentCallFrames();
+}
+
+String InspectorDebuggerAgent::scriptURL(JavaScriptCallFrame* frame)
+{
+    String scriptIdString = String::number(frame->sourceID());
+    ScriptsMap::iterator it = m_scripts.find(scriptIdString);
+    if (it == m_scripts.end())
+        return String();
+    return it->value.url;
+}
+
+ScriptDebugListener::SkipPauseRequest InspectorDebuggerAgent::shouldSkipExceptionPause(RefPtr<JavaScriptCallFrame>& topFrame)
+{
+    String topFrameScriptUrl = scriptURL(topFrame.get());
+    if (m_cachedSkipStackRegExp && !topFrameScriptUrl.isEmpty() && m_cachedSkipStackRegExp->match(topFrameScriptUrl) != -1)
+        return ScriptDebugListener::Continue;
+
+    // Prepare top frame parameters;
+    int topFrameLineNumber = topFrame->line();
+    int topFrameColumnNumber = topFrame->column();
+
+    // Match against breakpoints.
+    if (topFrameScriptUrl.isEmpty())
+        return ScriptDebugListener::NoSkip;
+
+    RefPtr<JSONObject> breakpointsCookie = m_state->getObject(DebuggerAgentState::javaScriptBreakpoints);
+    for (JSONObject::iterator it = breakpointsCookie->begin(); it != breakpointsCookie->end(); ++it) {
+        RefPtr<JSONObject> breakpointObject = it->value->asObject();
+        bool isAntibreakpoint;
+        breakpointObject->getBoolean(DebuggerAgentState::isAnti, &isAntibreakpoint);
+        if (!isAntibreakpoint)
+            continue;
+
+        int breakLineNumber;
+        breakpointObject->getNumber(DebuggerAgentState::lineNumber, &breakLineNumber);
+        int breakColumnNumber;
+        breakpointObject->getNumber(DebuggerAgentState::columnNumber, &breakColumnNumber);
+
+        if (breakLineNumber != topFrameLineNumber)
+            continue;
+
+        if (breakColumnNumber != -1 && breakColumnNumber != topFrameColumnNumber)
+            continue;
+
+        bool isRegex;
+        breakpointObject->getBoolean(DebuggerAgentState::isRegex, &isRegex);
+        String url;
+        breakpointObject->getString(DebuggerAgentState::url, &url);
+        if (!matches(topFrameScriptUrl, url, isRegex))
+            continue;
+
+        return ScriptDebugListener::Continue;
+    }
+
+    return ScriptDebugListener::NoSkip;
+}
+
+ScriptDebugListener::SkipPauseRequest InspectorDebuggerAgent::shouldSkipBreakpointPause(RefPtr<JavaScriptCallFrame>& topFrame)
+{
+    return ScriptDebugListener::NoSkip;
+}
+
+ScriptDebugListener::SkipPauseRequest InspectorDebuggerAgent::shouldSkipStepPause(RefPtr<JavaScriptCallFrame>& topFrame)
+{
+    if (m_cachedSkipStackRegExp) {
+        String scriptUrl = scriptURL(topFrame.get());
+        if (!scriptUrl.isEmpty() && m_cachedSkipStackRegExp->match(scriptUrl) != -1) {
+            if (m_skipStepInCount > 0) {
+                --m_skipStepInCount;
+                return ScriptDebugListener::StepInto;
+            }
+            return ScriptDebugListener::StepOut;
+        }
+    }
+    return ScriptDebugListener::NoSkip;
 }
 
 PassRefPtr<TypeBuilder::Debugger::Location> InspectorDebuggerAgent::resolveBreakpoint(const String& breakpointId, const String& scriptId, const ScriptBreakpoint& breakpoint, BreakpointSource source)
@@ -356,7 +499,7 @@ PassRefPtr<TypeBuilder::Debugger::Location> InspectorDebuggerAgent::resolveBreak
 
     int actualLineNumber;
     int actualColumnNumber;
-    String debugServerBreakpointId = scriptDebugServer().setBreakpoint(scriptId, breakpoint, &actualLineNumber, &actualColumnNumber);
+    String debugServerBreakpointId = scriptDebugServer().setBreakpoint(scriptId, breakpoint, &actualLineNumber, &actualColumnNumber, false);
     if (debugServerBreakpointId.isEmpty())
         return 0;
 
@@ -409,6 +552,10 @@ void InspectorDebuggerAgent::setScriptSource(ErrorString* error, RefPtr<TypeBuil
 }
 void InspectorDebuggerAgent::restartFrame(ErrorString* errorString, const String& callFrameId, RefPtr<Array<TypeBuilder::Debugger::CallFrame> >& newCallFrames, RefPtr<JSONObject>& result)
 {
+    if (!isPaused() || m_currentCallStack.isNull()) {
+        *errorString = "Attempt to access callframe when debugger is not on pause";
+        return;
+    }
     InjectedScript injectedScript = m_injectedScriptManager->injectedScriptForObjectId(callFrameId);
     if (injectedScript.hasNoValue()) {
         *errorString = "Inspected frame has gone";
@@ -536,6 +683,10 @@ void InspectorDebuggerAgent::setPauseOnExceptionsImpl(ErrorString* errorString, 
 
 void InspectorDebuggerAgent::evaluateOnCallFrame(ErrorString* errorString, const String& callFrameId, const String& expression, const String* const objectGroup, const bool* const includeCommandLineAPI, const bool* const doNotPauseOnExceptionsAndMuteConsole, const bool* const returnByValue, const bool* generatePreview, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown)
 {
+    if (!isPaused() || m_currentCallStack.isNull()) {
+        *errorString = "Attempt to access callframe when debugger is not on pause";
+        return;
+    }
     InjectedScript injectedScript = m_injectedScriptManager->injectedScriptForObjectId(callFrameId);
     if (injectedScript.hasNoValue()) {
         *errorString = "Inspected frame has gone";
@@ -620,6 +771,10 @@ void InspectorDebuggerAgent::setVariableValue(ErrorString* errorString, int scop
 {
     InjectedScript injectedScript;
     if (callFrameId) {
+        if (!isPaused() || m_currentCallStack.isNull()) {
+            *errorString = "Attempt to access callframe when debugger is not on pause";
+            return;
+        }
         injectedScript = m_injectedScriptManager->injectedScriptForObjectId(*callFrameId);
         if (injectedScript.hasNoValue()) {
             *errorString = "Inspected frame has gone";
@@ -638,6 +793,21 @@ void InspectorDebuggerAgent::setVariableValue(ErrorString* errorString, int scop
     String newValueString = newValue->toJSONString();
 
     injectedScript.setVariableValue(errorString, m_currentCallStack, callFrameId, functionObjectId, scopeNumber, variableName, newValueString);
+}
+
+void InspectorDebuggerAgent::skipStackFrames(ErrorString* errorString, const String* pattern)
+{
+    OwnPtr<RegularExpression> compiled;
+    String patternValue = pattern ? *pattern : "";
+    if (!patternValue.isEmpty()) {
+        compiled = compileSkipCallFramePattern(patternValue);
+        if (!compiled) {
+            *errorString = "Invalid regular expression";
+            return;
+        }
+    }
+    m_state->setString(DebuggerAgentState::skipStackPattern, patternValue);
+    m_cachedSkipStackRegExp = compiled.release();
 }
 
 void InspectorDebuggerAgent::scriptExecutionBlockedByCSP(const String& directiveText)
@@ -706,16 +876,20 @@ void InspectorDebuggerAgent::didParseSource(const String& scriptId, const Script
     RefPtr<JSONObject> breakpointsCookie = m_state->getObject(DebuggerAgentState::javaScriptBreakpoints);
     for (JSONObject::iterator it = breakpointsCookie->begin(); it != breakpointsCookie->end(); ++it) {
         RefPtr<JSONObject> breakpointObject = it->value->asObject();
+        bool isAntibreakpoint;
+        breakpointObject->getBoolean(DebuggerAgentState::isAnti, &isAntibreakpoint);
+        if (isAntibreakpoint)
+            continue;
         bool isRegex;
-        breakpointObject->getBoolean("isRegex", &isRegex);
+        breakpointObject->getBoolean(DebuggerAgentState::isRegex, &isRegex);
         String url;
-        breakpointObject->getString("url", &url);
+        breakpointObject->getString(DebuggerAgentState::url, &url);
         if (!matches(scriptURL, url, isRegex))
             continue;
         ScriptBreakpoint breakpoint;
-        breakpointObject->getNumber("lineNumber", &breakpoint.lineNumber);
-        breakpointObject->getNumber("columnNumber", &breakpoint.columnNumber);
-        breakpointObject->getString("condition", &breakpoint.condition);
+        breakpointObject->getNumber(DebuggerAgentState::lineNumber, &breakpoint.lineNumber);
+        breakpointObject->getNumber(DebuggerAgentState::columnNumber, &breakpoint.columnNumber);
+        breakpointObject->getString(DebuggerAgentState::condition, &breakpoint.condition);
         RefPtr<TypeBuilder::Debugger::Location> location = resolveBreakpoint(it->key, scriptId, breakpoint, UserBreakpointSource);
         if (location)
             m_frontend->breakpointResolved(it->key, location);
@@ -732,6 +906,8 @@ void InspectorDebuggerAgent::didPause(ScriptState* scriptState, const ScriptValu
     ASSERT(scriptState && !m_pausedScriptState);
     m_pausedScriptState = scriptState;
     m_currentCallStack = callFrames;
+
+    m_skipStepInCount = numberOfStepsBeforeStepOut;
 
     if (!exception.hasNoValue()) {
         InjectedScript injectedScript = m_injectedScriptManager->injectedScriptFor(scriptState);
@@ -813,29 +989,6 @@ void InspectorDebuggerAgent::clearBreakDetails()
 {
     m_breakReason = InspectorFrontend::Debugger::Reason::Other;
     m_breakAuxData = 0;
-}
-
-void InspectorDebuggerAgent::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::InspectorDebuggerAgent);
-    InspectorBaseAgent<InspectorDebuggerAgent>::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_injectedScriptManager, "injectedScriptManager");
-    info.addWeakPointer(m_frontend);
-    info.addMember(m_pausedScriptState, "pausedScriptState");
-    info.addMember(m_currentCallStack, "currentCallStack");
-    info.addMember(m_scripts, "scripts");
-    info.addMember(m_breakpointIdToDebugServerBreakpointIds, "breakpointIdToDebugServerBreakpointIds");
-    info.addMember(m_continueToLocationBreakpointId, "continueToLocationBreakpointId");
-    info.addMember(m_breakAuxData, "breakAuxData");
-    info.addWeakPointer(m_listener);
-}
-
-void ScriptDebugListener::Script::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::InspectorDebuggerAgent);
-    info.addMember(url, "url");
-    info.addMember(source, "source");
-    info.addMember(sourceMappingURL, "sourceMappingURL");
 }
 
 void InspectorDebuggerAgent::setBreakpoint(const String& scriptId, int lineNumber, int columnNumber, BreakpointSource source, const String& condition)

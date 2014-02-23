@@ -47,7 +47,7 @@ struct point_stage_data {
  * disabled.
  */
 static GLboolean
-run_point_stage(GLcontext *ctx, struct tnl_pipeline_stage *stage)
+run_point_stage(struct gl_context *ctx, struct tnl_pipeline_stage *stage)
 {
    if (ctx->Point._Attenuated && !ctx->VertexProgram._Current) {
       struct point_stage_data *store = POINT_STAGE_DATA(stage);
@@ -64,7 +64,7 @@ run_point_stage(GLcontext *ctx, struct tnl_pipeline_stage *stage)
       for (i = 0; i < VB->Count; i++) {
          const GLfloat dist = FABSF(*eyeCoord);
          const GLfloat q = p0 + dist * (p1 + dist * p2);
-         const GLfloat atten = (q != 0.0F) ? SQRTF(1.0F / q) : 1.0F;
+         const GLfloat atten = (q != 0.0F) ? INV_SQRTF(q) : 1.0F;
          size[i][0] = pointSize * atten; /* clamping done in rasterization */
          eyeCoord += eyeCoordStride;
       }
@@ -77,7 +77,7 @@ run_point_stage(GLcontext *ctx, struct tnl_pipeline_stage *stage)
 
 
 static GLboolean
-alloc_point_data(GLcontext *ctx, struct tnl_pipeline_stage *stage)
+alloc_point_data(struct gl_context *ctx, struct tnl_pipeline_stage *stage)
 {
    struct vertex_buffer *VB = &TNL_CONTEXT(ctx)->vb;
    struct point_stage_data *store;

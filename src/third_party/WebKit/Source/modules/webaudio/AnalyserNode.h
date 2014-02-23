@@ -31,22 +31,24 @@
 
 namespace WebCore {
 
+class ExceptionState;
+
 class AnalyserNode : public AudioBasicInspectorNode {
 public:
     static PassRefPtr<AnalyserNode> create(AudioContext* context, float sampleRate)
     {
-        return adoptRef(new AnalyserNode(context, sampleRate));      
+        return adoptRef(new AnalyserNode(context, sampleRate));
     }
 
     virtual ~AnalyserNode();
-    
+
     // AudioNode
     virtual void process(size_t framesToProcess);
     virtual void reset();
 
     // Javascript bindings
     unsigned fftSize() const { return m_analyser.fftSize(); }
-    void setFftSize(unsigned size, ExceptionCode&);
+    void setFftSize(unsigned size, ExceptionState&);
 
     unsigned frequencyBinCount() const { return m_analyser.frequencyBinCount(); }
 

@@ -33,7 +33,7 @@ void GrTextContext::flushGlyphs() {
         // setup our sampler state for our text texture/atlas
         GrAssert(GrIsALIGN4(fCurrVertex));
         GrAssert(fCurrTexture);
-        GrTextureParams params(SkShader::kRepeat_TileMode, false);
+        GrTextureParams params(SkShader::kRepeat_TileMode, GrTextureParams::kNone_FilterMode);
 
         // This effect could be stored with one of the cache objects (atlas?)
         drawState->addCoverageEffect(
@@ -43,7 +43,7 @@ void GrTextContext::flushGlyphs() {
         if (!GrPixelConfigIsAlphaOnly(fCurrTexture->config())) {
             if (kOne_GrBlendCoeff != fPaint.getSrcBlendCoeff() ||
                 kISA_GrBlendCoeff != fPaint.getDstBlendCoeff() ||
-                fPaint.hasColorStage()) {
+                fPaint.numColorStages()) {
                 GrPrintf("LCD Text will not draw correctly.\n");
             }
             // setup blend so that we get mask * paintColor + (1-mask)*dstColor
@@ -80,7 +80,7 @@ GrTextContext::GrTextContext(GrContext* context, const GrPaint& paint) : fPaint(
 
     const GrClipData* clipData = context->getClip();
 
-    GrRect devConservativeBound;
+    SkRect devConservativeBound;
     clipData->fClipStack->getConservativeBounds(
                                      -clipData->fOrigin.fX,
                                      -clipData->fOrigin.fY,
@@ -152,7 +152,13 @@ void GrTextContext::drawPackedGlyph(GrGlyph::PackedID packed,
         if (fStrike->getGlyphAtlas(glyph, scaler)) {
             goto HAS_ATLAS;
         }
-
+#if 0 // M30 specific revert of font cache improvement to fix https://code.google.com/p/chromium/issues/detail?id=303803
+        // try to clear out an unused atlas before we flush
+        fContext->getFontCache()->freeAtlasExceptFor(fStrike);
+        if (fStrike->getGlyphAtlas(glyph, scaler)) {
+            goto HAS_ATLAS;
+        }
+#endif
         // before we purge the cache, we must flush any accumulated draws
         this->flushGlyphs();
         fContext->flush();

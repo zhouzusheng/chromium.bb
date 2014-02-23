@@ -23,11 +23,10 @@
 
 #include "core/css/CSSImageValue.h"
 #include "core/platform/graphics/IntPoint.h"
-#include <wtf/HashSet.h>
+#include "wtf/HashSet.h"
 
 namespace WebCore {
 
-class Document;
 class Element;
 class SVGElement;
 
@@ -52,21 +51,19 @@ public:
     String customCssText() const;
 
     bool updateIfSVGCursorIsUsed(Element*);
-    StyleImage* cachedImage(CachedResourceLoader*);
-    StyleImage* cachedOrPendingImage(Document*);
+    StyleImage* cachedImage(ResourceFetcher*, float deviceScaleFactor);
+    StyleImage* cachedOrPendingImage(float deviceScaleFactor);
 
     void removeReferencedElement(SVGElement*);
 
     bool equals(const CSSCursorImageValue&) const;
-
-    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     CSSCursorImageValue(PassRefPtr<CSSValue> imageValue, bool hasHotSpot, const IntPoint& hotSpot);
 
     bool isSVGCursor() const;
     String cachedImageURL();
-    void clearCachedImage();
+    void clearImageResource();
 
     RefPtr<CSSValue> m_imageValue;
 

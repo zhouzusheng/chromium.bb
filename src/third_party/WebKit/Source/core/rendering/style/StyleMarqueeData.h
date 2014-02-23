@@ -27,8 +27,8 @@
 
 #include "core/platform/Length.h"
 #include "core/rendering/style/RenderStyleConstants.h"
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
 
 namespace WebCore {
 
@@ -48,7 +48,7 @@ public:
 
     int loops; // -1 means infinite.
 
-    unsigned behavior : 2; // EMarqueeBehavior 
+    unsigned behavior : 2; // EMarqueeBehavior
     EMarqueeDirection direction : 3; // not unsigned because EMarqueeDirection has negative values
 
 private:

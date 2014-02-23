@@ -29,7 +29,6 @@
 #include "V8PannerNode.h"
 
 #include "bindings/v8/V8Binding.h"
-#include "core/dom/ExceptionCode.h"
 #include "modules/webaudio/PannerNode.h"
 
 namespace WebCore {
@@ -43,7 +42,7 @@ void V8PannerNode::panningModelAttrSetterCustom(v8::Local<v8::String> name, v8::
         uint32_t model = toUInt32(value, ok);
         ASSERT(ok);
         if (!imp->setPanningModel(model))
-            throwError(v8TypeError, "Illegal panningModel", info.GetIsolate());
+            throwTypeError("Illegal panningModel", info.GetIsolate());
         return;
     }
 
@@ -54,8 +53,8 @@ void V8PannerNode::panningModelAttrSetterCustom(v8::Local<v8::String> name, v8::
             return;
         }
     }
-    
-    throwError(v8TypeError, "Illegal panningModel", info.GetIsolate());
+
+    throwTypeError("Illegal panningModel", info.GetIsolate());
 }
 
 void V8PannerNode::distanceModelAttrSetterCustom(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info)
@@ -67,7 +66,7 @@ void V8PannerNode::distanceModelAttrSetterCustom(v8::Local<v8::String> name, v8:
         uint32_t model = toUInt32(value, ok);
         ASSERT(ok);
         if (!imp->setDistanceModel(model))
-            throwError(v8TypeError, "Illegal distanceModel", info.GetIsolate());
+            throwTypeError("Illegal distanceModel", info.GetIsolate());
         return;
     }
 
@@ -78,8 +77,8 @@ void V8PannerNode::distanceModelAttrSetterCustom(v8::Local<v8::String> name, v8:
             return;
         }
     }
-    
-    throwError(v8TypeError, "Illegal distanceModel", info.GetIsolate());
+
+    throwTypeError("Illegal distanceModel", info.GetIsolate());
 }
 
 } // namespace WebCore

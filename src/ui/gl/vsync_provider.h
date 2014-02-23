@@ -9,11 +9,12 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
-#include "base/time.h"
+#include "base/time/time.h"
+#include "ui/gl/gl_export.h"
 
 namespace gfx {
 
-class VSyncProvider {
+class GL_EXPORT VSyncProvider {
  public:
   VSyncProvider();
   virtual ~VSyncProvider();

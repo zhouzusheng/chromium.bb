@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/platform/network/ProxyServer.h"
 
-#include <wtf/text/StringBuilder.h>
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -44,7 +44,7 @@ static void appendProxyServerString(StringBuilder& builder, const ProxyServer& p
         builder.append("SOCKS");
         break;
     }
-    
+
     builder.append(' ');
 
     ASSERT(!proxyServer.hostName().isNull());

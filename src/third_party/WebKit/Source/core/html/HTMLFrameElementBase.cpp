@@ -57,7 +57,7 @@ bool HTMLFrameElementBase::isURLAllowed() const
 
     const KURL& completeURL = document()->completeURL(m_URL);
 
-    if (protocolIsJavaScript(completeURL)) { 
+    if (protocolIsJavaScript(completeURL)) {
         Document* contentDoc = this->contentDocument();
         if (contentDoc && !ScriptController::canAccessFromCurrentOrigin(contentDoc->frame()))
             return false;
@@ -82,7 +82,19 @@ void HTMLFrameElementBase::openURL(bool lockBackForwardList)
     if (!parentFrame)
         return;
 
-    parentFrame->loader()->subframeLoader()->requestFrame(this, m_URL, m_frameName, lockBackForwardList);
+    // Support for <frame src="javascript:string">
+    KURL scriptURL;
+    KURL url = document()->completeURL(m_URL);
+    if (protocolIsJavaScript(m_URL)) {
+        scriptURL = url;
+        url = blankURL();
+    }
+
+    if (!loadOrRedirectSubframe(url, m_frameName, lockBackForwardList))
+        return;
+    if (!contentFrame() || scriptURL.isEmpty())
+        return;
+    contentFrame()->script()->executeScriptIfJavaScriptURL(scriptURL);
 }
 
 void HTMLFrameElementBase::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -109,7 +121,7 @@ void HTMLFrameElementBase::parseAttribute(const QualifiedName& name, const Atomi
     } else if (name == scrollingAttr) {
         // Auto and yes both simply mean "allow scrolling." No means "don't allow scrolling."
         if (equalIgnoringCase(value, "auto") || equalIgnoringCase(value, "yes"))
-            m_scrolling = document()->frameElementsShouldIgnoreScrolling() ? ScrollbarAlwaysOff : ScrollbarAuto;
+            m_scrolling = ScrollbarAuto;
         else if (equalIgnoringCase(value, "no"))
             m_scrolling = ScrollbarAlwaysOff;
         // FIXME: If we are already attached, this has no effect.
@@ -196,9 +208,9 @@ void HTMLFrameElementBase::setFocus(bool received)
     HTMLFrameOwnerElement::setFocus(received);
     if (Page* page = document()->page()) {
         if (received)
-            page->focusController()->setFocusedFrame(contentFrame());
-        else if (page->focusController()->focusedFrame() == contentFrame()) // Focus may have already been given to another frame, don't take it away.
-            page->focusController()->setFocusedFrame(0);
+            page->focusController().setFocusedFrame(contentFrame());
+        else if (page->focusController().focusedFrame() == contentFrame()) // Focus may have already been given to another frame, don't take it away.
+            page->focusController().setFocusedFrame(0);
     }
 }
 

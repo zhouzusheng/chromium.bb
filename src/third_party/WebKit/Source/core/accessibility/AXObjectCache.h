@@ -82,7 +82,7 @@ public:
 
     // Returns the root object for the entire document.
     AccessibilityObject* rootObject();
-    
+
     // For AX objects with elements that back them.
     AccessibilityObject* getOrCreate(RenderObject*);
     AccessibilityObject* getOrCreate(Widget*);
@@ -90,12 +90,12 @@ public:
 
     // used for objects without backing elements
     AccessibilityObject* getOrCreate(AccessibilityRole);
-    
+
     // will only return the AccessibilityObject if it already exists
     AccessibilityObject* get(RenderObject*);
     AccessibilityObject* get(Widget*);
     AccessibilityObject* get(Node*);
-    
+
     void remove(RenderObject*);
     void remove(Node*);
     void remove(Widget*);
@@ -181,16 +181,6 @@ public:
     };
 
     void nodeTextChangeNotification(Node*, AXTextChange, unsigned offset, const String&);
-
-    enum AXLoadingEvent {
-        AXLoadingStarted,
-        AXLoadingReloaded,
-        AXLoadingFailed,
-        AXLoadingFinished
-    };
-
-    void frameLoadingEventNotification(Frame*, AXLoadingEvent);
-
     bool nodeHasRole(Node*, const AtomicString& role);
 
     void startCachingComputedObjectAttributesUntilTreeMutates();
@@ -201,7 +191,6 @@ public:
 protected:
     void postPlatformNotification(AccessibilityObject*, AXNotification);
     void nodeTextChangePlatformNotification(AccessibilityObject*, AXTextChange, unsigned offset, const String&);
-    void frameLoadingEventPlatformNotification(AccessibilityObject*, AXLoadingEvent);
     void textChanged(AccessibilityObject*);
     void labelChanged(Element*);
 
@@ -219,22 +208,22 @@ private:
     HashSet<Node*> m_textMarkerNodes;
     OwnPtr<AXComputedObjectAttributeCache> m_computedObjectAttributeCache;
     static bool gAccessibilityEnabled;
-    
+
     HashSet<AXID> m_idsInUse;
-    
+
     Timer<AXObjectCache> m_notificationPostTimer;
     Vector<pair<RefPtr<AccessibilityObject>, AXNotification> > m_notificationsToPost;
     void notificationPostTimerFired(Timer<AXObjectCache>*);
-    
+
     static AccessibilityObject* focusedImageMapUIElement(HTMLAreaElement*);
-    
+
     AXID getAXID(AccessibilityObject*);
 };
 
 bool nodeHasRole(Node*, const String& role);
 // This will let you know if aria-hidden was explicitly set to false.
 bool isNodeAriaVisible(Node*);
-    
+
 #if !HAVE(ACCESSIBILITY)
 inline AccessibilityObjectInclusion AXComputedObjectAttributeCache::getIgnored(AXID) const { return DefaultBehavior; }
 inline void AXComputedObjectAttributeCache::setIgnored(AXID, AccessibilityObjectInclusion) { }
@@ -265,8 +254,6 @@ inline void AXObjectCache::textChanged(Node*) { }
 inline void AXObjectCache::textChanged(AccessibilityObject*) { }
 inline void AXObjectCache::updateCacheAfterNodeIsAttached(Node*) { }
 inline void AXObjectCache::detachWrapper(AccessibilityObject*) { }
-inline void AXObjectCache::frameLoadingEventNotification(Frame*, AXLoadingEvent) { }
-inline void AXObjectCache::frameLoadingEventPlatformNotification(AccessibilityObject*, AXLoadingEvent) { }
 inline void AXObjectCache::handleActiveDescendantChanged(Node*) { }
 inline void AXObjectCache::handleAriaExpandedChange(Node*) { }
 inline void AXObjectCache::handleAriaRoleChanged(Node*) { }

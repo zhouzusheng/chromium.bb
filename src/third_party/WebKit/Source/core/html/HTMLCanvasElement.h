@@ -22,7 +22,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef HTMLCanvasElement_h
@@ -31,7 +31,7 @@
 #include "core/html/HTMLElement.h"
 #include "core/platform/graphics/FloatRect.h"
 #include "core/platform/graphics/IntSize.h"
-#include <wtf/Forward.h>
+#include "wtf/Forward.h"
 
 #define DefaultInterpolationQuality InterpolationMedium
 
@@ -77,10 +77,10 @@ public:
     bool accelerationDisabled() const { return m_accelerationDisabled; }
 
     void setSize(const IntSize& newSize)
-    { 
-        if (newSize == size() && targetDeviceScaleFactor() == m_deviceScaleFactor)
+    {
+        if (newSize == size() && m_deviceScaleFactor == 1)
             return;
-        m_ignoreReset = true; 
+        m_ignoreReset = true;
         setWidth(newSize.width());
         setHeight(newSize.height());
         m_ignoreReset = false;
@@ -90,8 +90,8 @@ public:
     CanvasRenderingContext* getContext(const String&, CanvasContextAttributes* attributes = 0);
 
     static String toEncodingMimeType(const String& mimeType);
-    String toDataURL(const String& mimeType, const double* quality, ExceptionCode&);
-    String toDataURL(const String& mimeType, ExceptionCode& ec) { return toDataURL(mimeType, 0, ec); }
+    String toDataURL(const String& mimeType, const double* quality, ExceptionState&);
+    String toDataURL(const String& mimeType, ExceptionState& es) { return toDataURL(mimeType, 0, es); }
 
     // Used for rendering
     void didDraw(const FloatRect&);
@@ -133,26 +133,25 @@ public:
 
     float deviceScaleFactor() const { return m_deviceScaleFactor; }
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
+    InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
 
 private:
     HTMLCanvasElement(const QualifiedName&, Document*);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual RenderObject* createRenderer(RenderStyle*);
-    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
     void reset();
 
-    float targetDeviceScaleFactor() const;
-
-    void createImageBuffer() const;
-    void clearImageBuffer() const;
+    void createImageBuffer();
+    void clearImageBuffer();
 
     void setSurfaceSize(const IntSize&);
 
     bool paintsIntoCanvasBuffer() const;
+
+    void setExternallyAllocatedMemory(intptr_t);
 
     HashSet<CanvasObserver*> m_observers;
 
@@ -166,18 +165,26 @@ private:
     bool m_accelerationDisabled;
     FloatRect m_dirtyRect;
 
-    float m_deviceScaleFactor;
+    intptr_t m_externallyAllocatedMemory;
+
+    float m_deviceScaleFactor; // FIXME: This is always 1 and should probable be deleted
     bool m_originClean;
 
     // m_createdImageBuffer means we tried to malloc the buffer.  We didn't necessarily get it.
     mutable bool m_hasCreatedImageBuffer;
     mutable bool m_didClearImageBuffer;
-    mutable OwnPtr<ImageBuffer> m_imageBuffer;
+    OwnPtr<ImageBuffer> m_imageBuffer;
     mutable OwnPtr<GraphicsContextStateSaver> m_contextStateSaver;
-    
+
     mutable RefPtr<Image> m_presentedImage;
     mutable RefPtr<Image> m_copiedImage; // FIXME: This is temporary for platforms that have to copy the image buffer to render (and for CSSCanvasValue).
 };
+
+inline HTMLCanvasElement* toHTMLCanvasElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::canvasTag));
+    return static_cast<HTMLCanvasElement*>(node);
+}
 
 } //namespace
 

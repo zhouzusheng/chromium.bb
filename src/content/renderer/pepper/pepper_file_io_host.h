@@ -9,28 +9,32 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/callback_forward.h"
+#include "base/id_map.h"
 #include "base/memory/weak_ptr.h"
+#include "base/platform_file.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
+#include "ipc/ipc_listener.h"
+#include "ipc/ipc_platform_file.h"
 #include "ppapi/host/host_message_context.h"
 #include "ppapi/host/resource_host.h"
 #include "ppapi/shared_impl/file_io_state_manager.h"
 #include "ppapi/thunk/ppb_file_ref_api.h"
-#include "webkit/plugins/ppapi/plugin_delegate.h"
+#include "url/gurl.h"
+#include "webkit/common/quota/quota_types.h"
 
 using ppapi::host::ReplyMessageContext;
-using webkit::ppapi::PluginDelegate;
-
-namespace webkit {
-namespace ppapi {
-class QuotaFileIO;
-}  // namespace ppapi
-}  // namespace webkit
 
 namespace content {
+class QuotaFileIO;
 
 class PepperFileIOHost : public ppapi::host::ResourceHost,
-                         public base::SupportsWeakPtr<PepperFileIOHost> {
+                         public base::SupportsWeakPtr<PepperFileIOHost>,
+                         public IPC::Listener {
  public:
+  typedef base::Callback<void (base::PlatformFileError)>
+      NotifyCloseFileCallback;
+
   PepperFileIOHost(RendererPpapiHost* host,
                    PP_Instance instance,
                    PP_Resource resource);
@@ -42,16 +46,20 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
       ppapi::host::HostMessageContext* context) OVERRIDE;
 
  private:
+  // IPC::Listener implementation.
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+
+  void OnAsyncFileOpened(
+      base::PlatformFileError error_code,
+      IPC::PlatformFileForTransit file_for_transit,
+      int message_id);
+
   int32_t OnHostMsgOpen(ppapi::host::HostMessageContext* context,
                         PP_Resource file_ref_resource,
                         int32_t open_flags);
-  int32_t OnHostMsgQuery(ppapi::host::HostMessageContext* context);
   int32_t OnHostMsgTouch(ppapi::host::HostMessageContext* context,
                          PP_Time last_access_time,
                          PP_Time last_modified_time);
-  int32_t OnHostMsgRead(ppapi::host::HostMessageContext* context,
-                        int64_t offset,
-                        int32_t bytes_to_read);
   int32_t OnHostMsgWrite(ppapi::host::HostMessageContext* context,
                          int64_t offset,
                          const std::string& buffer);
@@ -85,7 +93,7 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
       base::PlatformFileError error_code,
       base::PassPlatformFile file,
       quota::QuotaLimitType quota_policy,
-      const PluginDelegate::NotifyCloseFileCallback& callback);
+      const NotifyCloseFileCallback& callback);
   void ExecutePlatformQueryCallback(ReplyMessageContext reply_context,
                                     base::PlatformFileError error_code,
                                     const base::PlatformFileInfo& file_info);
@@ -96,8 +104,7 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
                                     base::PlatformFileError error_code,
                                     int bytes_written);
 
-  // TODO(victorhsieh): eliminate plugin_delegate_ as it's no longer needed.
-  webkit::ppapi::PluginDelegate* plugin_delegate_;  // Not owned.
+  RendererPpapiHost* renderer_ppapi_host_;
 
   base::PlatformFile file_;
 
@@ -113,11 +120,11 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
   quota::QuotaLimitType quota_policy_;
 
   // Callback function for notifying when the file handle is closed.
-  PluginDelegate::NotifyCloseFileCallback notify_close_file_callback_;
+  NotifyCloseFileCallback notify_close_file_callback_;
 
   // Pointer to a QuotaFileIO instance, which is valid only while a file
   // of type PP_FILESYSTEMTYPE_LOCAL{PERSISTENT,TEMPORARY} is opened.
-  scoped_ptr<webkit::ppapi::QuotaFileIO> quota_file_io_;
+  scoped_ptr<QuotaFileIO> quota_file_io_;
 
   bool is_running_in_process_;
 
@@ -126,6 +133,13 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
   base::WeakPtrFactory<PepperFileIOHost> weak_factory_;
 
   ppapi::FileIOStateManager state_manager_;
+
+  int routing_id_;
+
+  typedef base::Callback<void (base::PlatformFileError, base::PassPlatformFile)>
+      AsyncOpenFileCallback;
+
+  IDMap<AsyncOpenFileCallback> pending_async_open_files_;
 
   DISALLOW_COPY_AND_ASSIGN(PepperFileIOHost);
 };

@@ -11,7 +11,9 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
+#include "base/strings/string_piece.h"
 #include "content/common/content_export.h"
+#include "third_party/leveldatabase/src/include/leveldb/status.h"
 
 namespace leveldb {
 class Comparator;
@@ -25,7 +27,6 @@ namespace content {
 class LevelDBComparator;
 class LevelDBDatabase;
 class LevelDBIterator;
-class LevelDBSlice;
 class LevelDBWriteBatch;
 
 class LevelDBSnapshot {
@@ -42,17 +43,18 @@ class LevelDBSnapshot {
 
 class CONTENT_EXPORT LevelDBDatabase {
  public:
-  static scoped_ptr<LevelDBDatabase> Open(const base::FilePath& file_name,
-                                          const LevelDBComparator* comparator,
-                                          bool* is_disk_full = 0);
+  static leveldb::Status Open(const base::FilePath& file_name,
+                              const LevelDBComparator* comparator,
+                              scoped_ptr<LevelDBDatabase>* db,
+                              bool* is_disk_full = 0);
   static scoped_ptr<LevelDBDatabase> OpenInMemory(
       const LevelDBComparator* comparator);
   static bool Destroy(const base::FilePath& file_name);
   virtual ~LevelDBDatabase();
 
-  bool Put(const LevelDBSlice& key, std::vector<char>* value);
-  bool Remove(const LevelDBSlice& key);
-  virtual bool Get(const LevelDBSlice& key,
+  bool Put(const base::StringPiece& key, std::string* value);
+  bool Remove(const base::StringPiece& key);
+  virtual bool Get(const base::StringPiece& key,
                    std::string* value,
                    bool* found,
                    const LevelDBSnapshot* = 0);

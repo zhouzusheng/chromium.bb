@@ -26,6 +26,7 @@
 #include "main/hash.h"
 #include "main/imports.h"
 #include "main/macros.h"
+#include "main/mfeatures.h"
 #include "main/enums.h"
 #include "main/mtypes.h"
 #include "main/dispatch.h"
@@ -62,7 +63,7 @@ _mesa_init_ati_fragment_shader_dispatch(struct _glapi_table *disp)
  * Allocate and initialize a new ATI fragment shader object.
  */
 struct ati_fragment_shader *
-_mesa_new_ati_fragment_shader(GLcontext *ctx, GLuint id)
+_mesa_new_ati_fragment_shader(struct gl_context *ctx, GLuint id)
 {
    struct ati_fragment_shader *s = CALLOC_STRUCT(ati_fragment_shader);
    (void) ctx;
@@ -78,7 +79,7 @@ _mesa_new_ati_fragment_shader(GLcontext *ctx, GLuint id)
  * Delete the given ati fragment shader
  */
 void
-_mesa_delete_ati_fragment_shader(GLcontext *ctx, struct ati_fragment_shader *s)
+_mesa_delete_ati_fragment_shader(struct gl_context *ctx, struct ati_fragment_shader *s)
 {
    GLuint i;
    for (i = 0; i < MAX_NUM_PASSES_ATI; i++) {
@@ -316,6 +317,7 @@ _mesa_DeleteFragmentShaderATI(GLuint id)
       if (prog) {
 	 prog->RefCount--;
 	 if (prog->RefCount <= 0) {
+	    assert(prog != &DummyShader);
 	    free(prog);
 	 }
       }
@@ -492,7 +494,7 @@ _mesa_PassTexCoordATI(GLuint dst, GLuint coord, GLenum swizzle)
       }
    }
 
-   curProg->regsAssigned[curProg->cur_pass >> 1] |=  1 << (dst - GL_REG_0_ATI);
+   curProg->regsAssigned[curProg->cur_pass >> 1] |= 1 << (dst - GL_REG_0_ATI);
    new_tex_inst(curProg);
 
    /* add the instructions */
@@ -565,7 +567,7 @@ _mesa_SampleMapATI(GLuint dst, GLuint interp, GLenum swizzle)
       }
    }
 
-   curProg->regsAssigned[curProg->cur_pass >> 1] |=  1 << (dst - GL_REG_0_ATI);
+   curProg->regsAssigned[curProg->cur_pass >> 1] |= 1 << (dst - GL_REG_0_ATI);
    new_tex_inst(curProg);
 
    /* add the instructions */

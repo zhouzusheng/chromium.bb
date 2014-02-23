@@ -28,12 +28,13 @@
 
 #include "CSSValueKeywords.h"
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/BeforeTextInsertedEvent.h"
 #include "core/dom/Document.h"
 #include "core/dom/Event.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
@@ -44,8 +45,8 @@
 #include "core/page/Frame.h"
 #include "core/platform/LocalizedStrings.h"
 #include "core/rendering/RenderTextControlMultiLine.h"
-#include <wtf/StdLibExtras.h>
-#include <wtf/text/StringBuilder.h>
+#include "wtf/StdLibExtras.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -58,7 +59,7 @@ static const int defaultCols = 20;
 // This function returns number of characters considering this.
 static inline unsigned computeLengthForSubmission(const String& text, unsigned numberOfLineBreaks)
 {
-    return numGraphemeClusters(text) + numberOfLineBreaks;
+    return text.length() + numberOfLineBreaks;
 }
 
 static unsigned numberOfLineBreaks(const String& text)
@@ -74,12 +75,7 @@ static unsigned numberOfLineBreaks(const String& text)
 
 static inline unsigned computeLengthForSubmission(const String& text)
 {
-    return numGraphemeClusters(text) + numberOfLineBreaks(text);
-}
-
-static inline unsigned upperBoundForLengthForSubmission(const String& text, unsigned numberOfLineBreaks)
-{
-    return text.length() + numberOfLineBreaks;
+    return text.length() + numberOfLineBreaks(text);
 }
 
 HTMLTextAreaElement::HTMLTextAreaElement(const QualifiedName& tagName, Document* document, HTMLFormElement* form)
@@ -206,7 +202,7 @@ void HTMLTextAreaElement::parseAttribute(const QualifiedName& name, const Atomic
 
 RenderObject* HTMLTextAreaElement::createRenderer(RenderStyle*)
 {
-    return new (document()->renderArena()) RenderTextControlMultiLine(this);
+    return new RenderTextControlMultiLine(this);
 }
 
 bool HTMLTextAreaElement::appendFormData(FormDataList& encoding, bool)
@@ -222,7 +218,7 @@ bool HTMLTextAreaElement::appendFormData(FormDataList& encoding, bool)
     const AtomicString& dirnameAttrValue = fastGetAttribute(dirnameAttr);
     if (!dirnameAttrValue.isNull())
         encoding.appendData(dirnameAttrValue, directionForFormData());
-    return true;    
+    return true;
 }
 
 void HTMLTextAreaElement::reset()
@@ -235,21 +231,21 @@ bool HTMLTextAreaElement::hasCustomFocusLogic() const
     return true;
 }
 
-bool HTMLTextAreaElement::isKeyboardFocusable(KeyboardEvent*) const
+bool HTMLTextAreaElement::isKeyboardFocusable() const
 {
     // If a given text area can be focused at all, then it will always be keyboard focusable.
     return isFocusable();
 }
 
-bool HTMLTextAreaElement::isMouseFocusable() const
+bool HTMLTextAreaElement::shouldShowFocusRingOnMouseFocus() const
 {
-    return isFocusable();
+    return true;
 }
 
 void HTMLTextAreaElement::updateFocusAppearance(bool restorePreviousSelection)
 {
     if (!restorePreviousSelection || !hasCachedSelection()) {
-        // If this is the first focus, set a caret at the beginning of the text.  
+        // If this is the first focus, set a caret at the beginning of the text.
         // This matches some browsers' behavior; see bug 11746 Comment #15.
         // http://bugs.webkit.org/show_bug.cgi?id=11746#c15
         setSelectionRange(0, 0);
@@ -293,12 +289,10 @@ void HTMLTextAreaElement::handleBeforeTextInsertedEvent(BeforeTextInsertedEvent*
     unsigned unsignedMaxLength = static_cast<unsigned>(signedMaxLength);
 
     const String& currentValue = innerTextValue();
-    unsigned numberOfLineBreaksInCurrentValue = numberOfLineBreaks(currentValue);
-    if (upperBoundForLengthForSubmission(currentValue, numberOfLineBreaksInCurrentValue)
-        + upperBoundForLengthForSubmission(event->text(), numberOfLineBreaks(event->text())) < unsignedMaxLength)
+    unsigned currentLength = computeLengthForSubmission(currentValue);
+    if (currentLength + computeLengthForSubmission(event->text()) < unsignedMaxLength)
         return;
 
-    unsigned currentLength = computeLengthForSubmission(currentValue, numberOfLineBreaksInCurrentValue);
     // selectionLength represents the selection length of this text field to be
     // removed by this insertion.
     // If the text field has no focus, we don't need to take account of the
@@ -313,7 +307,9 @@ void HTMLTextAreaElement::handleBeforeTextInsertedEvent(BeforeTextInsertedEvent*
 
 String HTMLTextAreaElement::sanitizeUserInputValue(const String& proposedValue, unsigned maxLength)
 {
-    return proposedValue.left(numCharactersInGraphemeClusters(proposedValue, maxLength));
+    if (maxLength > 0 && U16_IS_LEAD(proposedValue[maxLength - 1]))
+        --maxLength;
+    return proposedValue.left(maxLength);
 }
 
 HTMLElement* HTMLTextAreaElement::innerTextElement() const
@@ -384,7 +380,7 @@ void HTMLTextAreaElement::setValueCommon(const String& newValue)
     setFormControlValueMatchesRenderer(true);
 
     // Set the caret to the end of the text value.
-    if (document()->focusedNode() == this) {
+    if (document()->focusedElement() == this) {
         unsigned endOfString = m_value.length();
         setSelectionRange(endOfString, endOfString);
     }
@@ -438,10 +434,10 @@ int HTMLTextAreaElement::maxLength() const
     return ok && value >= 0 ? value : -1;
 }
 
-void HTMLTextAreaElement::setMaxLength(int newValue, ExceptionCode& ec)
+void HTMLTextAreaElement::setMaxLength(int newValue, ExceptionState& es)
 {
     if (newValue < 0)
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
     else
         setAttribute(maxlengthAttr, String::number(newValue));
 }
@@ -483,10 +479,7 @@ bool HTMLTextAreaElement::tooLong(const String& value, NeedsToCheckDirtyFlag che
     int max = maxLength();
     if (max < 0)
         return false;
-    unsigned unsignedMax = static_cast<unsigned>(max);
-    unsigned numberOfLineBreaksInValue = numberOfLineBreaks(value);
-    return upperBoundForLengthForSubmission(value, numberOfLineBreaksInValue) > unsignedMax
-        && computeLengthForSubmission(value, numberOfLineBreaksInValue) > unsignedMax;
+    return computeLengthForSubmission(value) > static_cast<unsigned>(max);
 }
 
 bool HTMLTextAreaElement::isValidValue(const String& candidate) const
@@ -548,7 +541,7 @@ void HTMLTextAreaElement::updatePlaceholderText()
     if (!m_placeholder) {
         RefPtr<HTMLDivElement> placeholder = HTMLDivElement::create(document());
         m_placeholder = placeholder.get();
-        m_placeholder->setPseudo(AtomicString("-webkit-input-placeholder", AtomicString::ConstructFromLiteral));
+        m_placeholder->setPart(AtomicString("-webkit-input-placeholder", AtomicString::ConstructFromLiteral));
         userAgentShadowRoot()->insertBefore(m_placeholder, innerTextElement()->nextSibling(), ASSERT_NO_EXCEPTION);
     }
     m_placeholder->setInnerText(placeholderText, ASSERT_NO_EXCEPTION);

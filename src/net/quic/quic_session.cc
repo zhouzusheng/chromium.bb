@@ -5,14 +5,19 @@
 #include "net/quic/quic_session.h"
 
 #include "base/stl_util.h"
+#include "net/quic/crypto/proof_verifier.h"
 #include "net/quic/quic_connection.h"
+#include "net/ssl/ssl_info.h"
 
 using base::StringPiece;
 using base::hash_map;
 using base::hash_set;
+using std::make_pair;
 using std::vector;
 
 namespace net {
+
+const size_t kMaxPrematurelyClosedStreamsTracked = 20;
 
 #define ENDPOINT (is_server_ ? "Server: " : " Client: ")
 
@@ -72,19 +77,20 @@ QuicSession::QuicSession(QuicConnection* connection,
     : connection_(connection),
       visitor_shim_(new VisitorShim(this)),
       config_(config),
-      max_open_streams_(kDefaultMaxStreamsPerConnection),
+      max_open_streams_(config_.max_streams_per_connection()),
       next_stream_id_(is_server ? 2 : 3),
       is_server_(is_server),
       largest_peer_created_stream_id_(0),
       error_(QUIC_NO_ERROR),
       goaway_received_(false),
       goaway_sent_(false) {
-  set_max_open_streams(config_.max_streams_per_connection());
 
   connection_->set_visitor(visitor_shim_.get());
   connection_->SetIdleNetworkTimeout(config_.idle_connection_state_lifetime());
-  connection_->SetOverallConnectionTimeout(
-      config_.max_time_before_crypto_handshake());
+  if (connection_->connected()) {
+    connection_->SetOverallConnectionTimeout(
+        config_.max_time_before_crypto_handshake());
+  }
   // TODO(satyamshekhar): Set congestion control and ICSL also.
 }
 
@@ -102,9 +108,21 @@ bool QuicSession::OnPacket(const IPEndPoint& self_address,
                << header.public_header.guid;
     return false;
   }
+
   for (size_t i = 0; i < frames.size(); ++i) {
     // TODO(rch) deal with the error case of stream id 0
-    if (IsClosedStream(frames[i].stream_id)) continue;
+    if (IsClosedStream(frames[i].stream_id)) {
+      // If we get additional frames for a stream where we didn't process
+      // headers, it's highly likely our compression context will end up
+      // permanently out of sync with the peer's, so we give up and close the
+      // connection.
+      if (ContainsKey(prematurely_closed_streams_, frames[i].stream_id)) {
+        connection()->SendConnectionClose(
+            QUIC_STREAM_RST_BEFORE_HEADERS_DECOMPRESSED);
+        return false;
+      }
+      continue;
+    }
 
     ReliableQuicStream* stream = GetStream(frames[i].stream_id);
     if (stream == NULL) return false;
@@ -132,6 +150,7 @@ bool QuicSession::OnPacket(const IPEndPoint& self_address,
     if (!stream) {
       connection()->SendConnectionClose(
           QUIC_STREAM_RST_BEFORE_HEADERS_DECOMPRESSED);
+      return false;
     }
     stream->OnDecompressorAvailable();
   }
@@ -216,6 +235,13 @@ void QuicSession::CloseStream(QuicStreamId stream_id) {
     return;
   }
   ReliableQuicStream* stream = it->second;
+  if (!stream->headers_decompressed()) {
+    if (prematurely_closed_streams_.size() ==
+        kMaxPrematurelyClosedStreamsTracked) {
+      prematurely_closed_streams_.erase(prematurely_closed_streams_.begin());
+    }
+    prematurely_closed_streams_.insert(make_pair(stream->id(), true));
+  }
   closed_streams_.push_back(it->second);
   stream_map_.erase(it);
   stream->OnClose();
@@ -365,6 +391,11 @@ void QuicSession::MarkWriteBlocked(QuicStreamId id) {
 void QuicSession::MarkDecompressionBlocked(QuicHeaderId header_id,
                                            QuicStreamId stream_id) {
   decompression_blocked_streams_[header_id] = stream_id;
+}
+
+bool QuicSession::GetSSLInfo(SSLInfo* ssl_info) {
+  NOTIMPLEMENTED();
+  return false;
 }
 
 void QuicSession::PostProcessAfterData() {

@@ -24,13 +24,15 @@
 #include "main/drawtex.h"
 #include "main/state.h"
 #include "main/imports.h"
+#include "main/mfeatures.h"
+#include "main/mtypes.h"
 
 
 #if FEATURE_OES_draw_texture
 
 
 static void
-draw_texture(GLcontext *ctx, GLfloat x, GLfloat y, GLfloat z,
+draw_texture(struct gl_context *ctx, GLfloat x, GLfloat y, GLfloat z,
              GLfloat width, GLfloat height)
 {
    if (!ctx->Extensions.OES_draw_texture) {
@@ -43,11 +45,15 @@ draw_texture(GLcontext *ctx, GLfloat x, GLfloat y, GLfloat z,
       return;
    }
 
+   _mesa_set_vp_override(ctx, GL_TRUE);
+
    if (ctx->NewState)
       _mesa_update_state(ctx);
 
    ASSERT(ctx->Driver.DrawTex);
    ctx->Driver.DrawTex(ctx, x, y, z, width, height);
+
+   _mesa_set_vp_override(ctx, GL_FALSE);
 }
 
 

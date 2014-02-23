@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef DOMApplicationCache_h
@@ -31,15 +31,13 @@
 #include "core/dom/EventTarget.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
 #include "core/page/DOMWindowProperty.h"
-#include <wtf/Forward.h>
-#include <wtf/HashMap.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/AtomicStringHash.h>
-#include <wtf/Vector.h>
+#include "wtf/Forward.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
 
 namespace WebCore {
 
+class ExceptionState;
 class Frame;
 class KURL;
 
@@ -51,8 +49,8 @@ public:
     virtual void willDestroyGlobalObjectInFrame() OVERRIDE;
 
     unsigned short status() const;
-    void update(ExceptionCode&);
-    void swapCache(ExceptionCode&);
+    void update(ExceptionState&);
+    void swapCache(ExceptionState&);
     void abort();
 
     // EventTarget impl

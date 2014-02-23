@@ -1308,6 +1308,7 @@ WebInspector.ElementsTreeElement.prototype = {
         contextMenu.appendItem(WebInspector.UIString("Copy as HTML"), this._copyHTML.bind(this));
         contextMenu.appendItem(WebInspector.UIString("Copy XPath"), this._copyXPath.bind(this));
         contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Delete node" : "Delete Node"), this.remove.bind(this));
+        contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Inspect DOM properties" : "Inspect DOM Properties"), this._inspectDOMProperties.bind(this));
     },
 
     _startEditing: function()
@@ -1375,6 +1376,7 @@ WebInspector.ElementsTreeElement.prototype = {
             return false;
 
         var attributeName = attributeNameElement.textContent;
+        var attributeValueElement = attribute.getElementsByClassName("webkit-html-attribute-value")[0];
 
         function removeZeroWidthSpaceRecursive(node)
         {
@@ -1389,6 +1391,14 @@ WebInspector.ElementsTreeElement.prototype = {
             for (var child = node.firstChild; child; child = child.nextSibling)
                 removeZeroWidthSpaceRecursive(child);
         }
+
+        var domNode;
+        var listItemElement = attribute.enclosingNodeOrSelfWithNodeName("li");
+        if (attributeName && attributeValueElement && listItemElement && listItemElement.treeElement)
+            domNode = listItemElement.treeElement.representedObject;
+        var attributeValue = domNode ? domNode.getAttribute(attributeName) : undefined;
+        if (typeof attributeValue !== "undefined")
+            attributeValueElement.textContent = attributeValue;
 
         // Remove zero-width spaces that were added by nodeTitleInfo.
         removeZeroWidthSpaceRecursive(attribute);
@@ -1556,7 +1566,7 @@ WebInspector.ElementsTreeElement.prototype = {
         }
 
         var config = new WebInspector.EditingConfig(commit.bind(this), dispose.bind(this));
-        config.setMultilineOptions(initialValue, { name: "xml", htmlMode: true }, "web-inspector-html", true, true);
+        config.setMultilineOptions(initialValue, { name: "xml", htmlMode: true }, "web-inspector-html", WebInspector.settings.domWordWrap.get(), true);
         this._editing = WebInspector.startEditing(this._htmlEditElement, config);
     },
 
@@ -1628,6 +1638,7 @@ WebInspector.ElementsTreeElement.prototype = {
             return;
         }
 
+        this.updateTitle();
         moveToNextAttributeIfNeeded.call(this);
     },
 
@@ -2062,6 +2073,24 @@ WebInspector.ElementsTreeElement.prototype = {
     _copyXPath: function()
     {
         this._node.copyXPath(true);
+    },
+
+    _inspectDOMProperties: function()
+    {
+        WebInspector.RemoteObject.resolveNode(this._node, "console", callback);
+
+        /**
+         * @param {WebInspector.RemoteObject} nodeObject
+         */
+        function callback(nodeObject)
+        {
+            if (!nodeObject)
+                return;
+
+            var message = WebInspector.ConsoleMessage.create(WebInspector.ConsoleMessage.MessageSource.ConsoleAPI, WebInspector.ConsoleMessage.MessageLevel.Log, "", WebInspector.ConsoleMessage.MessageType.Dir, undefined, undefined, undefined, undefined, [nodeObject]);
+            WebInspector.console.addMessage(message);
+            WebInspector.showConsole();
+        }
     },
 
     _highlightSearchResults: function()

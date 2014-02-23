@@ -69,7 +69,7 @@
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_checker.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/browser/renderer_host/media/video_capture_oracle.h"
 #include "content/browser/renderer_host/media/web_contents_capture_util.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
@@ -648,7 +648,7 @@ void RenderVideoFrame(const SkBitmap& input,
   }
 
   // Sanity-check the output buffer.
-  if (output->format() != media::VideoFrame::YV12) {
+  if (output->format() != media::VideoFrame::I420) {
     NOTREACHED();
     return;
   }
@@ -1069,7 +1069,7 @@ void WebContentsVideoCaptureDevice::Impl::Allocate(
 
   // Initialize capture settings which will be consistent for the
   // duration of the capture.
-  media::VideoCaptureCapability settings = { 0 };
+  media::VideoCaptureCapability settings;
 
   settings.width = width;
   settings.height = height;
@@ -1238,20 +1238,24 @@ media::VideoCaptureDevice* WebContentsVideoCaptureDevice::Create(
                                                        &render_view_id))
     return NULL;
 
-  media::VideoCaptureDevice::Name name;
-  base::SStringPrintf(&name.device_name,
+  std::string device_name;
+  base::SStringPrintf(&device_name,
                       "WebContents[%.*s]",
                       static_cast<int>(device_id.size()), device_id.data());
-  name.unique_id = device_id;
-
   return new WebContentsVideoCaptureDevice(
-      name, render_process_id, render_view_id);
+      media::VideoCaptureDevice::Name(device_name, device_id),
+      render_process_id, render_view_id);
 }
 
 void WebContentsVideoCaptureDevice::Allocate(
-    int width, int height, int frame_rate,
-    VideoCaptureDevice::EventHandler* consumer) {
-  impl_->Allocate(width, height, frame_rate, consumer);
+    const media::VideoCaptureCapability& capture_format,
+    VideoCaptureDevice::EventHandler* observer) {
+  DVLOG(1) << "Allocating " << capture_format.width << "x"
+           << capture_format.height;
+  impl_->Allocate(capture_format.width,
+                  capture_format.height,
+                  capture_format.frame_rate,
+                  observer);
 }
 
 void WebContentsVideoCaptureDevice::Start() {

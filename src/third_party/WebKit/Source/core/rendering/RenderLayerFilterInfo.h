@@ -12,7 +12,7 @@
  *    copyright notice, this list of conditions and the following
  *    disclaimer in the documentation and/or other materials
  *    provided with the distribution.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -31,13 +31,13 @@
 #define RenderLayerFilterInfo_h
 
 #include "core/dom/Element.h"
-#include "core/loader/cache/CachedDocument.h"
+#include "core/loader/cache/DocumentResource.h"
 #include "core/platform/graphics/LayoutRect.h"
 #include "core/platform/graphics/filters/FilterOperation.h"
 #include "core/platform/graphics/filters/custom/CustomFilterProgramClient.h"
-#include <wtf/HashMap.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefPtr.h>
+#include "wtf/HashMap.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
@@ -47,8 +47,8 @@ class RenderLayer;
 class RenderLayerFilterInfo;
 
 typedef HashMap<const RenderLayer*, RenderLayerFilterInfo*> RenderLayerFilterInfoMap;
-    
-class RenderLayerFilterInfo : public CustomFilterProgramClient, public CachedDocumentClient {
+
+class RenderLayerFilterInfo : public CustomFilterProgramClient, public DocumentResourceClient {
 public:
     static RenderLayerFilterInfo* filterInfoForRenderLayer(const RenderLayer*);
     static RenderLayerFilterInfo* createFilterInfoForRenderLayerIfNeeded(RenderLayer*);
@@ -57,7 +57,7 @@ public:
     const LayoutRect& dirtySourceRect() const { return m_dirtySourceRect; }
     void expandDirtySourceRect(const LayoutRect& rect) { m_dirtySourceRect.unite(rect); }
     void resetDirtySourceRect() { m_dirtySourceRect = LayoutRect(); }
-    
+
     FilterEffectRenderer* renderer() const { return m_renderer.get(); }
     void setRenderer(PassRefPtr<FilterEffectRenderer>);
 
@@ -68,24 +68,24 @@ public:
     void removeCustomFilterClients();
 
     void updateReferenceFilterClients(const FilterOperations&);
-    virtual void notifyFinished(CachedResource*);
+    virtual void notifyFinished(Resource*);
     void removeReferenceFilterClients();
 
 private:
     RenderLayerFilterInfo(RenderLayer*);
     ~RenderLayerFilterInfo();
-    
+
     RenderLayer* m_layer;
-    
+
     RefPtr<FilterEffectRenderer> m_renderer;
     LayoutRect m_dirtySourceRect;
 
     typedef Vector<RefPtr<CustomFilterProgram> > CustomFilterProgramList;
     CustomFilterProgramList m_cachedCustomFilterPrograms;
-    
+
     static RenderLayerFilterInfoMap* s_filterMap;
     Vector<RefPtr<Element> > m_internalSVGReferences;
-    Vector<CachedResourceHandle<CachedDocument> > m_externalSVGReferences;
+    Vector<ResourcePtr<DocumentResource> > m_externalSVGReferences;
 };
 
 } // namespace WebCore

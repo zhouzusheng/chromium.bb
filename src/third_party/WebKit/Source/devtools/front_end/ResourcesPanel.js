@@ -88,13 +88,19 @@ WebInspector.ResourcesPanel = function(database)
     this.storageViewStatusBarItemsContainer = document.createElement("div");
     this.storageViewStatusBarItemsContainer.className = "status-bar-items";
 
+    /** @type {!Map.<!WebInspector.Database, !Object.<string, !WebInspector.DatabaseTableView>>} */
     this._databaseTableViews = new Map();
+    /** @type {!Map.<!WebInspector.Database, !WebInspector.DatabaseQueryView>} */
     this._databaseQueryViews = new Map();
+    /** @type {!Map.<!WebInspector.Database, !WebInspector.DatabaseTreeElement>} */
     this._databaseTreeElements = new Map();
+    /** @type {!Map.<!WebInspector.DOMStorage, !WebInspector.DOMStorageItemsView>} */
     this._domStorageViews = new Map();
+    /** @type {!Map.<!WebInspector.DOMStorage, !WebInspector.DOMStorageTreeElement>} */
     this._domStorageTreeElements = new Map();
+    /** @type {!Object.<string, !WebInspector.CookieItemsView>} */
     this._cookieViews = {};
-    this._origins = {};
+    /** @type {!Object.<string, boolean>} */
     this._domains = {};
 
     this.sidebarElement.addEventListener("mousemove", this._onmousemove.bind(this), false);
@@ -127,6 +133,15 @@ WebInspector.ResourcesPanel.prototype = {
     {
         WebInspector.Panel.prototype.wasShown.call(this);
         this._initialize();
+    },
+
+    /**
+     * @param {KeyboardEvent} event
+     */
+    handleShortcut: function(event)
+    {
+        if (this.visibleView && typeof this.visibleView.handleShortcut === "function")
+            return this.visibleView.handleShortcut(event);
     },
 
     _initialize: function()
@@ -174,7 +189,6 @@ WebInspector.ResourcesPanel.prototype = {
 
     _reset: function()
     {
-        this._origins = {};
         this._domains = {};
         var queryViews = this._databaseQueryViews.values();
         for (var i = 0; i < queryViews.length; ++i)
@@ -416,7 +430,7 @@ WebInspector.ResourcesPanel.prototype = {
     {
         var resourceTreeElement = this._findTreeElementForResource(resource);
         if (resourceTreeElement)
-            resourceTreeElement.revealAndSelect();
+            resourceTreeElement.revealAndSelect(true);
 
         if (typeof line === "number") {
             var view = this._resourceViewForResource(resource);
@@ -450,6 +464,7 @@ WebInspector.ResourcesPanel.prototype = {
     },
 
     /**
+     * @param {WebInspector.Database} database
      * @param {string=} tableName
      */
     _showDatabase: function(database, tableName)
@@ -461,7 +476,7 @@ WebInspector.ResourcesPanel.prototype = {
         if (tableName) {
             var tableViews = this._databaseTableViews.get(database);
             if (!tableViews) {
-                tableViews = {};
+                tableViews = /** @type {!Object.<string, !WebInspector.DatabaseTableView>} */ ({});
                 this._databaseTableViews.put(database, tableViews);
             }
             view = tableViews[tableName];
@@ -489,6 +504,9 @@ WebInspector.ResourcesPanel.prototype = {
         this._innerShowView(view);
     },
 
+    /**
+     * @param {WebInspector.DOMStorage} domStorage
+     */
     _showDOMStorage: function(domStorage)
     {
         if (!domStorage)
@@ -504,6 +522,10 @@ WebInspector.ResourcesPanel.prototype = {
         this._innerShowView(view);
     },
 
+    /**
+     * @param {!WebInspector.CookieTreeElement} treeElement
+     * @param {string} cookieDomain
+     */
     showCookies: function(treeElement, cookieDomain)
     {
         var view = this._cookieViews[cookieDomain];
@@ -694,8 +716,9 @@ WebInspector.ResourcesPanel.prototype = {
 
     /**
      * @param {string} query
+     * @param {boolean} shouldJump
      */
-    performSearch: function(query)
+    performSearch: function(query, shouldJump)
     {
         this._resetSearchResults();
         var regex = WebInspector.SourceFrame.createSearchRegex(query);
@@ -755,7 +778,7 @@ WebInspector.ResourcesPanel.prototype = {
             WebInspector.searchController.updateSearchMatchesCount(totalMatchesCount, this);
             this._searchController = new WebInspector.ResourcesSearchController(this.resourcesListTreeElement, totalMatchesCount);
 
-            if (this.sidebarTree.selectedTreeElement && this.sidebarTree.selectedTreeElement.searchMatchesCount)
+            if (shouldJump && this.sidebarTree.selectedTreeElement && this.sidebarTree.selectedTreeElement.searchMatchesCount)
                 this.jumpToNextSearchResult();
         }
 
@@ -783,7 +806,7 @@ WebInspector.ResourcesPanel.prototype = {
                 // We give id to each search, so that we can skip callbacks for obsolete searches.
                 this._lastViewSearchId = this._lastViewSearchId ? this._lastViewSearchId + 1 : 0;
                 this._viewSearchInProgress = true;
-                this.visibleView.performSearch(this.currentQuery, viewSearchPerformedCallback.bind(this, this._lastViewSearchId));
+                this.visibleView.performSearch(this.currentQuery, false, viewSearchPerformedCallback.bind(this, this._lastViewSearchId));
             } else
                 callback();
         }
@@ -795,10 +818,8 @@ WebInspector.ResourcesPanel.prototype = {
         this._lastSearchResultTreeElement = searchResult.treeElement;
 
         // At first show view for treeElement.
-        if (searchResult.treeElement !== this.sidebarTree.selectedTreeElement) {
+        if (searchResult.treeElement !== this.sidebarTree.selectedTreeElement)
             this.showResource(searchResult.treeElement.representedObject);
-            WebInspector.searchController.showSearchField();
-        }
 
         function callback(searchId)
         {
@@ -1395,6 +1416,7 @@ WebInspector.FrameResourceTreeElement.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.BaseStorageTreeElement}
+ * @param {WebInspector.Database} database
  */
 WebInspector.DatabaseTreeElement = function(storagePanel, database)
 {

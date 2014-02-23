@@ -22,7 +22,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -33,6 +33,7 @@
 #include "core/html/LinkRelAttribute.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/parser/HTMLTokenizer.h"
+#include "core/platform/chromium/TraceEvent.h"
 #include "wtf/MainThread.h"
 
 namespace WebCore {
@@ -84,7 +85,7 @@ static String initiatorFor(const StringImpl* tagImpl)
     if (match(tagImpl, scriptTag))
         return scriptTag.localName();
     ASSERT_NOT_REACHED();
-    return "unknown";
+    return emptyString();
 }
 
 class TokenPreloadScanner::StartTagScanner {
@@ -126,6 +127,7 @@ public:
         if (!shouldPreload())
             return nullptr;
 
+        TRACE_EVENT_INSTANT1("net", "PreloadRequest", "url", m_urlToLoad.ascii());
         TextPosition position = TextPosition(source.currentLine(), source.currentColumn());
         OwnPtr<PreloadRequest> request = PreloadRequest::create(initiatorFor(m_tagImpl), position, m_urlToLoad, predictedBaseURL, resourceType(), m_mediaAttribute);
         request->setCrossOriginModeAllowsCookies(crossOriginModeAllowsCookies());
@@ -183,16 +185,16 @@ private:
         return m_charset;
     }
 
-    CachedResource::Type resourceType() const
+    Resource::Type resourceType() const
     {
         if (match(m_tagImpl, scriptTag))
-            return CachedResource::Script;
+            return Resource::Script;
         if (match(m_tagImpl, imgTag) || (match(m_tagImpl, inputTag) && m_inputIsImage))
-            return CachedResource::ImageResource;
+            return Resource::Image;
         if (match(m_tagImpl, linkTag) && m_linkIsStyleSheet)
-            return CachedResource::CSSStyleSheet;
+            return Resource::CSSStyleSheet;
         ASSERT_NOT_REACHED();
-        return CachedResource::RawResource;
+        return Resource::Raw;
     }
 
     bool shouldPreload()

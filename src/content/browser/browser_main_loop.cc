@@ -7,18 +7,23 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
-#include "base/hi_res_timer_manager.h"
+#include "base/file_util.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
+#include "base/path_service.h"
 #include "base/pending_task.h"
 #include "base/power_monitor/power_monitor.h"
+#include "base/power_monitor/power_monitor_device_source.h"
+#include "base/process/process_metrics.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/system_monitor/system_monitor.h"
 #include "base/threading/thread_restrictions.h"
+#include "base/timer/hi_res_timer_manager.h"
 #include "content/browser/browser_thread_impl.h"
+#include "content/browser/device_orientation/device_motion_service.h"
 #include "content/browser/download/save_file_manager.h"
 #include "content/browser/gamepad/gamepad_service.h"
 #include "content/browser/gpu/browser_gpu_channel_host_factory.h"
@@ -26,13 +31,13 @@
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/gpu/gpu_process_host_ui_shim.h"
 #include "content/browser/histogram_synchronizer.h"
-#include "content/browser/in_process_webkit/webkit_thread.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/net/browser_online_state_observer.h"
 #include "content/browser/plugin_service_impl.h"
 #include "content/browser/renderer_host/media/audio_mirroring_manager.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
 #include "content/browser/speech/speech_recognition_manager_impl.h"
+#include "content/browser/startup_task_runner.h"
 #include "content/browser/tracing/trace_controller_impl.h"
 #include "content/browser/webui/content_web_ui_controller_factory.h"
 #include "content/browser/webui/url_data_manager.h"
@@ -54,13 +59,13 @@
 #include "ui/base/clipboard/clipboard.h"
 
 #if defined(USE_AURA)
-#include "content/browser/renderer_host/image_transport_factory.h"
+#include "content/browser/aura/image_transport_factory.h"
 #endif
 
 #if defined(OS_ANDROID)
 #include "base/android/jni_android.h"
+#include "content/browser/android/browser_startup_config.h"
 #include "content/browser/android/surface_texture_peer_browser_impl.h"
-#include "content/browser/device_orientation/data_fetcher_impl_android.h"
 #endif
 
 #if defined(OS_WIN)
@@ -92,9 +97,12 @@
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 #include <sys/stat.h>
 
-#include "base/process_util.h"
 #include "content/browser/renderer_host/render_sandbox_host_linux.h"
 #include "content/browser/zygote_host/zygote_host_impl_linux.h"
+#endif
+
+#if defined(TCMALLOC_TRACE_MEMORY_SUPPORTED)
+#include "third_party/tcmalloc/chromium/src/gperftools/heap-profiler.h"
 #endif
 
 #if defined(USE_X11)
@@ -114,48 +122,54 @@ void SetupSandbox(const CommandLine& parsed_command_line) {
   TRACE_EVENT0("startup", "SetupSandbox");
   // TODO(evanm): move this into SandboxWrapper; I'm just trying to move this
   // code en masse out of chrome_main for now.
-  const char* sandbox_binary = NULL;
+  base::FilePath sandbox_binary;
+  bool env_chrome_devel_sandbox_set = false;
   struct stat st;
-
-  // In Chromium branded builds, developers can set an environment variable to
-  // use the development sandbox. See
-  // http://code.google.com/p/chromium/wiki/LinuxSUIDSandboxDevelopment
-  if (stat(base::kProcSelfExe, &st) == 0 && st.st_uid == getuid())
-    sandbox_binary = getenv("CHROME_DEVEL_SANDBOX");
-
-#if defined(LINUX_SANDBOX_PATH)
-  if (!sandbox_binary)
-    sandbox_binary = LINUX_SANDBOX_PATH;
-#endif
 
   const bool want_setuid_sandbox =
       !parsed_command_line.HasSwitch(switches::kNoSandbox) &&
       !parsed_command_line.HasSwitch(switches::kDisableSetuidSandbox);
 
   if (want_setuid_sandbox) {
+    base::FilePath exe_dir;
+    if (PathService::Get(base::DIR_EXE, &exe_dir)) {
+      base::FilePath sandbox_candidate = exe_dir.AppendASCII("chrome-sandbox");
+      if (base::PathExists(sandbox_candidate))
+        sandbox_binary = sandbox_candidate;
+    }
+
+    // In user-managed builds, including development builds, an environment
+    // variable is required to enable the sandbox. See
+    // http://code.google.com/p/chromium/wiki/LinuxSUIDSandboxDevelopment
+    if (sandbox_binary.empty() &&
+        stat(base::kProcSelfExe, &st) == 0 && st.st_uid == getuid()) {
+      const char* devel_sandbox_path = getenv("CHROME_DEVEL_SANDBOX");
+      if (devel_sandbox_path) {
+        env_chrome_devel_sandbox_set = true;
+        sandbox_binary = base::FilePath(devel_sandbox_path);
+      }
+    }
+
     static const char no_suid_error[] = "Running without the SUID sandbox! See "
         "https://code.google.com/p/chromium/wiki/LinuxSUIDSandboxDevelopment "
         "for more information on developing with the sandbox on.";
-    if (!sandbox_binary) {
-      // This needs to be fatal. Talk to security@chromium.org if you feel
-      // otherwise.
-      LOG(FATAL) << no_suid_error;
-    }
-    // TODO(jln): an empty CHROME_DEVEL_SANDBOX environment variable (as
-    // opposed to a non existing one) is not fatal yet. This is needed because
-    // of existing bots and scripts. Fix it (crbug.com/245376).
-    if (sandbox_binary && *sandbox_binary == '\0')
-      LOG(ERROR) << no_suid_error;
-  }
+    if (sandbox_binary.empty()) {
+      if (!env_chrome_devel_sandbox_set) {
+        // This needs to be fatal. Talk to security@chromium.org if you feel
+        // otherwise.
+        LOG(FATAL) << no_suid_error;
+      }
 
-  std::string sandbox_cmd;
-  if (want_setuid_sandbox && sandbox_binary) {
-    sandbox_cmd = sandbox_binary;
+      // TODO(jln): an empty CHROME_DEVEL_SANDBOX environment variable (as
+      // opposed to a non existing one) is not fatal yet. This is needed
+      // because of existing bots and scripts. Fix it (crbug.com/245376).
+      LOG(ERROR) << no_suid_error;
+    }
   }
 
   // Tickle the sandbox host and zygote host so they fork now.
-  RenderSandboxHostLinux::GetInstance()->Init(sandbox_cmd);
-  ZygoteHostImpl::GetInstance()->Init(sandbox_cmd);
+  RenderSandboxHostLinux::GetInstance()->Init(sandbox_binary.value());
+  ZygoteHostImpl::GetInstance()->Init(sandbox_binary.value());
 }
 #endif
 
@@ -296,7 +310,8 @@ BrowserMainLoop* BrowserMainLoop::GetInstance() {
 BrowserMainLoop::BrowserMainLoop(const MainFunctionParams& parameters)
     : parameters_(parameters),
       parsed_command_line_(parameters.command_line),
-      result_code_(RESULT_CODE_NORMAL_EXIT) {
+      result_code_(RESULT_CODE_NORMAL_EXIT),
+      created_threads_(false) {
   DCHECK(!g_current_browser_main_loop);
   g_current_browser_main_loop = this;
 }
@@ -391,11 +406,13 @@ void BrowserMainLoop::MainMessageLoopStart() {
   }
   {
     TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:PowerMonitor")
-    power_monitor_.reset(new base::PowerMonitor);
+    scoped_ptr<base::PowerMonitorSource> power_monitor_source(
+      new base::PowerMonitorDeviceSource());
+    power_monitor_.reset(new base::PowerMonitor(power_monitor_source.Pass()));
   }
   {
     TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:HighResTimerManager")
-    hi_res_timer_manager_.reset(new HighResolutionTimerManager);
+    hi_res_timer_manager_.reset(new base::HighResolutionTimerManager);
   }
   {
     TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:NetworkChangeNotifier")
@@ -463,10 +480,6 @@ void BrowserMainLoop::MainMessageLoopStart() {
     TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:SurfaceTexturePeer")
     SurfaceTexturePeer::InitInstance(new SurfaceTexturePeerBrowserImpl());
   }
-  {
-    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:DataFetcher")
-    DataFetcherImplAndroid::Init(base::android::AttachCurrentThread());
-  }
 #endif
 
   if (parsed_command_line_.HasSwitch(switches::kMemoryMetrics)) {
@@ -474,10 +487,17 @@ void BrowserMainLoop::MainMessageLoopStart() {
     memory_observer_.reset(new MemoryObserver());
     base::MessageLoop::current()->AddTaskObserver(memory_observer_.get());
   }
+
+#if defined(TCMALLOC_TRACE_MEMORY_SUPPORTED)
+  trace_memory_controller_.reset(new base::debug::TraceMemoryController(
+      base::MessageLoop::current()->message_loop_proxy(),
+      ::HeapProfilerWithPseudoStackStart,
+      ::HeapProfilerStop,
+      ::GetHeapProfile));
+#endif
 }
 
-void BrowserMainLoop::CreateThreads() {
-  TRACE_EVENT0("startup", "BrowserMainLoop::CreateThreads")
+int BrowserMainLoop::PreCreateThreads() {
 
   if (parts_) {
     TRACE_EVENT0("startup",
@@ -502,9 +522,44 @@ void BrowserMainLoop::CreateThreads() {
   if (parsed_command_line_.HasSwitch(switches::kSingleProcess))
     RenderProcessHost::SetRunRendererInProcess(true);
 #endif
+  return result_code_;
+}
 
-  if (result_code_ > 0)
-    return;
+void BrowserMainLoop::CreateStartupTasks() {
+  TRACE_EVENT0("startup", "BrowserMainLoop::CreateStartupTasks")
+
+#if defined(OS_ANDROID)
+  scoped_refptr<StartupTaskRunner> task_runner =
+      new StartupTaskRunner(BrowserMayStartAsynchronously(),
+                            base::Bind(&BrowserStartupComplete),
+                            base::MessageLoop::current()->message_loop_proxy());
+#else
+  scoped_refptr<StartupTaskRunner> task_runner =
+      new StartupTaskRunner(false,
+                            base::Callback<void(int)>(),
+                            base::MessageLoop::current()->message_loop_proxy());
+#endif
+  StartupTask pre_create_threads =
+      base::Bind(&BrowserMainLoop::PreCreateThreads, base::Unretained(this));
+  task_runner->AddTask(pre_create_threads);
+
+  StartupTask create_threads =
+      base::Bind(&BrowserMainLoop::CreateThreads, base::Unretained(this));
+  task_runner->AddTask(create_threads);
+
+  StartupTask browser_thread_started = base::Bind(
+      &BrowserMainLoop::BrowserThreadsStarted, base::Unretained(this));
+  task_runner->AddTask(browser_thread_started);
+
+  StartupTask pre_main_message_loop_run = base::Bind(
+      &BrowserMainLoop::PreMainMessageLoopRun, base::Unretained(this));
+  task_runner->AddTask(pre_main_message_loop_run);
+
+  task_runner->StartRunningTasks();
+}
+
+int BrowserMainLoop::CreateThreads() {
+  TRACE_EVENT0("startup", "BrowserMainLoop::CreateThreads");
 
   base::Thread::Options default_options;
   base::Thread::Options io_message_loop_options;
@@ -529,13 +584,6 @@ void BrowserMainLoop::CreateThreads() {
             "BrowserMainLoop::CreateThreads:start",
             "Thread", "BrowserThread::DB");
         thread_to_start = &db_thread_;
-        break;
-      case BrowserThread::WEBKIT_DEPRECATED:
-        // Special case as WebKitThread is a separate
-        // type.  |thread_to_start| is not used in this case.
-        TRACE_EVENT_BEGIN1("startup",
-            "BrowserMainLoop::CreateThreads:start",
-            "Thread", "BrowserThread::WEBKIT_DEPRECATED");
         break;
       case BrowserThread::FILE_USER_BLOCKING:
         TRACE_EVENT_BEGIN1("startup",
@@ -586,12 +634,7 @@ void BrowserMainLoop::CreateThreads() {
 
     BrowserThread::ID id = static_cast<BrowserThread::ID>(thread_id);
 
-    if (thread_id == BrowserThread::WEBKIT_DEPRECATED) {
-#if !defined(OS_IOS)
-      webkit_thread_.reset(new WebKitThread);
-      webkit_thread_->Initialize();
-#endif
-    } else if (thread_to_start) {
+    if (thread_to_start) {
       (*thread_to_start).reset(new BrowserProcessSubThread(id));
       (*thread_to_start)->StartWithOptions(*options);
     } else {
@@ -601,9 +644,11 @@ void BrowserMainLoop::CreateThreads() {
     TRACE_EVENT_END0("startup", "BrowserMainLoop::CreateThreads:start");
 
   }
+  created_threads_ = true;
+  return result_code_;
+}
 
-  BrowserThreadsStarted();
-
+int BrowserMainLoop::PreMainMessageLoopRun() {
   if (parts_) {
     TRACE_EVENT0("startup",
         "BrowserMainLoop::CreateThreads:PreMainMessageLoopRun");
@@ -614,6 +659,7 @@ void BrowserMainLoop::CreateThreads() {
   // Do not allow disk IO from the UI thread.
   base::ThreadRestrictions::SetIOAllowed(false);
   base::ThreadRestrictions::DisallowWaiting();
+  return result_code_;
 }
 
 void BrowserMainLoop::RunMainMessageLoopParts() {
@@ -630,6 +676,11 @@ void BrowserMainLoop::RunMainMessageLoopParts() {
 }
 
 void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
+
+  if (!created_threads_) {
+    // Called early, nothing to do
+    return;
+  }
   // Teardown may start in PostMainMessageLoopRun, and during teardown we
   // need to be able to perform IO.
   base::ThreadRestrictions::SetIOAllowed(true);
@@ -640,6 +691,8 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
 
   if (parts_)
     parts_->PostMainMessageLoopRun();
+
+  trace_memory_controller_.reset();
 
 #if !defined(OS_IOS)
   // Destroying the GpuProcessHostUIShims on the UI thread posts a task to
@@ -688,47 +741,31 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
     //   the IO thread posted a task to terminate a process on the
     //   process launcher thread.
     //
-    // - (Not sure why FILE needs to stop before WEBKIT.)
-    //
-    // - The WEBKIT thread (which currently is the responsibility of
-    //   the embedder to stop, by destroying ResourceDispatcherHost
-    //   before the DB thread is stopped)
-    //
     // - (Not sure why DB stops last.)
-    scoped_ptr<BrowserProcessSubThread>* thread_to_stop = NULL;
     switch (thread_id) {
       case BrowserThread::DB:
-        thread_to_stop = &db_thread_;
-        break;
-      case BrowserThread::WEBKIT_DEPRECATED:
-        // Special case as WebKitThread is a separate
-        // type.  |thread_to_stop| is not used in this case.
-
-        // Need to destroy ResourceDispatcherHost before PluginService
-        // and since it caches a pointer to it.
-        resource_dispatcher_host_.reset();
+        db_thread_.reset();
         break;
       case BrowserThread::FILE_USER_BLOCKING:
-        thread_to_stop = &file_user_blocking_thread_;
+        file_user_blocking_thread_.reset();
         break;
       case BrowserThread::FILE:
-        thread_to_stop = &file_thread_;
-
 #if !defined(OS_IOS)
         // Clean up state that lives on or uses the file_thread_ before
         // it goes away.
         if (resource_dispatcher_host_)
           resource_dispatcher_host_.get()->save_file_manager()->Shutdown();
 #endif  // !defined(OS_IOS)
+        file_thread_.reset();
         break;
       case BrowserThread::PROCESS_LAUNCHER:
-        thread_to_stop = &process_launcher_thread_;
+        process_launcher_thread_.reset();
         break;
       case BrowserThread::CACHE:
-        thread_to_stop = &cache_thread_;
+        cache_thread_.reset();
         break;
       case BrowserThread::IO:
-        thread_to_stop = &io_thread_;
+        io_thread_.reset();
         break;
       case BrowserThread::UI:
       case BrowserThread::ID_COUNT:
@@ -736,19 +773,11 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
         NOTREACHED();
         break;
     }
-
-    BrowserThread::ID id = static_cast<BrowserThread::ID>(thread_id);
-
-    if (id == BrowserThread::WEBKIT_DEPRECATED) {
-#if !defined(OS_IOS)
-      webkit_thread_.reset();
-#endif
-    } else if (thread_to_stop) {
-      thread_to_stop->reset();
-    } else {
-      NOTREACHED();
-    }
   }
+
+#if !defined(OS_IOS)
+  indexed_db_thread_.reset();
+#endif
 
   // Close the blocking I/O pool after the other threads. Other threads such
   // as the I/O thread may need to schedule work like closing files or flushing
@@ -766,6 +795,7 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
   // Must happen after the I/O thread is shutdown since this class lives on the
   // I/O thread and isn't threadsafe.
   GamepadService::GetInstance()->Terminate();
+  DeviceMotionService::GetInstance()->Shutdown();
 
   URLDataManager::DeleteDataSources();
 #endif  // !defined(OS_IOS)
@@ -786,8 +816,14 @@ void BrowserMainLoop::InitializeMainThread() {
       new BrowserThreadImpl(BrowserThread::UI, base::MessageLoop::current()));
 }
 
-void BrowserMainLoop::BrowserThreadsStarted() {
+int BrowserMainLoop::BrowserThreadsStarted() {
   TRACE_EVENT0("startup", "BrowserMainLoop::BrowserThreadsStarted")
+
+#if !defined(OS_IOS)
+  indexed_db_thread_.reset(new base::Thread("IndexedDB"));
+  indexed_db_thread_->Start();
+#endif
+
 #if defined(OS_ANDROID)
   // Up the priority of anything that touches with display tasks
   // (this thread is UI thread, and io_thread_ is for IPCs).
@@ -865,6 +901,7 @@ void BrowserMainLoop::BrowserThreadsStarted() {
             CAUSE_FOR_GPU_LAUNCH_BROWSER_STARTUP));
   }
 #endif  // !defined(OS_IOS)
+  return result_code_;
 }
 
 void BrowserMainLoop::InitializeToolkit() {

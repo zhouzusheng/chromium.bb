@@ -21,7 +21,7 @@
 #define SVGTextLayoutAttributesBuilder_h
 
 #include "core/rendering/svg/SVGTextMetricsBuilder.h"
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -66,7 +66,7 @@ private:
     };
 
     void buildCharacterDataMap(RenderSVGText*);
-    void collectTextPositioningElements(RenderObject*, const UChar*& lastCharacter);
+    void collectTextPositioningElements(RenderObject*, UChar& lastCharacter);
     void fillCharacterDataMap(const TextPosition&);
 
 private:

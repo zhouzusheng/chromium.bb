@@ -23,8 +23,9 @@
 #define CSSToStyleMap_h
 
 #include "CSSPropertyNames.h"
+#include "core/css/resolver/ElementStyleResources.h"
 #include "core/platform/LengthBox.h"
-#include <wtf/Noncopyable.h>
+#include "wtf/Noncopyable.h"
 
 namespace WebCore {
 
@@ -33,57 +34,56 @@ class CSSValue;
 class CSSAnimationData;
 class RenderStyle;
 class StyleImage;
-class StyleResolver;
+class StyleResolverState;
 class NinePieceImage;
+
+// CSSToStyleMap is a short-lived helper object which
+// given the current StyleResolverState can map
+// CSSValue objects into their RenderStyle equivalents.
 
 class CSSToStyleMap {
     WTF_MAKE_NONCOPYABLE(CSSToStyleMap);
-    WTF_MAKE_FAST_ALLOCATED;
-
 public:
-    CSSToStyleMap(StyleResolver* resolver) : m_resolver(resolver) { }
+    CSSToStyleMap(const StyleResolverState& state, ElementStyleResources& elementStyleResources) : m_state(state), m_elementStyleResources(elementStyleResources) { }
 
-    void mapFillAttachment(CSSPropertyID, FillLayer*, CSSValue*);
-    void mapFillClip(CSSPropertyID, FillLayer*, CSSValue*);
-    void mapFillComposite(CSSPropertyID, FillLayer*, CSSValue*);
-    void mapFillBlendMode(CSSPropertyID, FillLayer*, CSSValue*);
-    void mapFillOrigin(CSSPropertyID, FillLayer*, CSSValue*);
+    void mapFillAttachment(CSSPropertyID, FillLayer*, CSSValue*) const;
+    void mapFillClip(CSSPropertyID, FillLayer*, CSSValue*) const;
+    void mapFillComposite(CSSPropertyID, FillLayer*, CSSValue*) const;
+    void mapFillBlendMode(CSSPropertyID, FillLayer*, CSSValue*) const;
+    void mapFillOrigin(CSSPropertyID, FillLayer*, CSSValue*) const;
     void mapFillImage(CSSPropertyID, FillLayer*, CSSValue*);
-    void mapFillRepeatX(CSSPropertyID, FillLayer*, CSSValue*);
-    void mapFillRepeatY(CSSPropertyID, FillLayer*, CSSValue*);
-    void mapFillSize(CSSPropertyID, FillLayer*, CSSValue*);
-    void mapFillXPosition(CSSPropertyID, FillLayer*, CSSValue*);
-    void mapFillYPosition(CSSPropertyID, FillLayer*, CSSValue*);
+    void mapFillRepeatX(CSSPropertyID, FillLayer*, CSSValue*) const;
+    void mapFillRepeatY(CSSPropertyID, FillLayer*, CSSValue*) const;
+    void mapFillSize(CSSPropertyID, FillLayer*, CSSValue*) const;
+    void mapFillXPosition(CSSPropertyID, FillLayer*, CSSValue*) const;
+    void mapFillYPosition(CSSPropertyID, FillLayer*, CSSValue*) const;
 
-    void mapAnimationDelay(CSSAnimationData*, CSSValue*);
-    void mapAnimationDirection(CSSAnimationData*, CSSValue*);
-    void mapAnimationDuration(CSSAnimationData*, CSSValue*);
-    void mapAnimationFillMode(CSSAnimationData*, CSSValue*);
-    void mapAnimationIterationCount(CSSAnimationData*, CSSValue*);
-    void mapAnimationName(CSSAnimationData*, CSSValue*);
-    void mapAnimationPlayState(CSSAnimationData*, CSSValue*);
-    void mapAnimationProperty(CSSAnimationData*, CSSValue*);
-    void mapAnimationTimingFunction(CSSAnimationData*, CSSValue*);
+    void mapAnimationDelay(CSSAnimationData*, CSSValue*) const;
+    void mapAnimationDirection(CSSAnimationData*, CSSValue*) const;
+    void mapAnimationDuration(CSSAnimationData*, CSSValue*) const;
+    void mapAnimationFillMode(CSSAnimationData*, CSSValue*) const;
+    void mapAnimationIterationCount(CSSAnimationData*, CSSValue*) const;
+    void mapAnimationName(CSSAnimationData*, CSSValue*) const;
+    void mapAnimationPlayState(CSSAnimationData*, CSSValue*) const;
+    void mapAnimationProperty(CSSAnimationData*, CSSValue*) const;
+    void mapAnimationTimingFunction(CSSAnimationData*, CSSValue*) const;
 
-    void mapNinePieceImage(CSSPropertyID, CSSValue*, NinePieceImage&);
-    void mapNinePieceImageSlice(CSSValue*, NinePieceImage&);
-    LengthBox mapNinePieceImageQuad(CSSValue*);
-    void mapNinePieceImageRepeat(CSSValue*, NinePieceImage&);
+    void mapNinePieceImage(RenderStyle* mutableStyle, CSSPropertyID, CSSValue*, NinePieceImage&);
+    void mapNinePieceImageSlice(CSSValue*, NinePieceImage&) const;
+    LengthBox mapNinePieceImageQuad(CSSValue*) const;
+    void mapNinePieceImageRepeat(CSSValue*, NinePieceImage&) const;
 
 private:
-    // FIXME: These accessors should be replaced by a ResolveState object
-    // similar to how PaintInfo/LayoutState cache values needed for
-    // the current paint/layout.
-    RenderStyle* style() const;
-    RenderStyle* rootElementStyle() const;
+    const RenderStyle* style() const;
+    const RenderStyle* rootElementStyle() const;
     bool useSVGZoomRules() const;
 
-    // FIXME: This should be part of some sort of StyleImageCache object which
-    // is held by the StyleResolver, and likely provided to this object
-    // during the resolve.
     PassRefPtr<StyleImage> styleImage(CSSPropertyID, CSSValue*);
 
-    StyleResolver* m_resolver;
+    // FIXME: Consider passing a StyleResolverState (or ElementResolveState)
+    // as an argument instead of caching it on this object.
+    const StyleResolverState& m_state;
+    ElementStyleResources& m_elementStyleResources;
 };
 
 }

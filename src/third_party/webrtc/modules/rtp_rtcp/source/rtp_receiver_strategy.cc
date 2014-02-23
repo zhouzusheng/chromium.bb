@@ -10,7 +10,7 @@
 
 #include "webrtc/modules/rtp_rtcp/source/rtp_receiver_strategy.h"
 
-#include <cstdlib>
+#include <stdlib.h>
 
 namespace webrtc {
 
@@ -29,4 +29,13 @@ void RTPReceiverStrategy::SetLastMediaSpecificPayload(
   memcpy(&last_payload_, &payload, sizeof(last_payload_));
 }
 
+void RTPReceiverStrategy::CheckPayloadChanged(
+    const int8_t payload_type,
+    ModuleRTPUtility::PayloadUnion* specific_payload,
+    bool* should_reset_statistics,
+    bool* should_discard_changes) {
+  // Default: Keep changes and don't reset statistics.
+  *should_discard_changes = false;
+  *should_reset_statistics = false;
+}
 }  // namespace webrtc

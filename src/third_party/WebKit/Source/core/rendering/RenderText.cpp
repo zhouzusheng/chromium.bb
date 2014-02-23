@@ -27,12 +27,10 @@
 
 #include "core/accessibility/AXObjectCache.h"
 #include "core/dom/Text.h"
-#include "core/editing/VisiblePosition.h"
 #include "core/loader/TextResourceDecoder.h"
 #include "core/page/FrameView.h"
 #include "core/page/Settings.h"
 #include "core/platform/graphics/FloatQuad.h"
-#include "core/platform/text/Hyphenation.h"
 #include "core/platform/text/TextBreakIterator.h"
 #include "core/platform/text/transcoder/FontTranscoder.h"
 #include "core/rendering/EllipsisBox.h"
@@ -42,8 +40,9 @@
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/break_lines.h"
-#include <wtf/text/StringBuffer.h>
-#include <wtf/unicode/CharacterNames.h>
+#include "wtf/text/StringBuffer.h"
+#include "wtf/text/StringBuilder.h"
+#include "wtf/unicode/CharacterNames.h"
 
 using namespace std;
 using namespace WTF;
@@ -85,7 +84,7 @@ private:
     virtual void fired()
     {
         ASSERT(gSecureTextTimers->contains(m_renderText));
-        m_renderText->setText(m_renderText->text(), true /* forcing setting text as it may be masked later */);
+        m_renderText->setText(m_renderText->text().impl(), true /* forcing setting text as it may be masked later */);
     }
 
     RenderText* m_renderText;
@@ -214,7 +213,7 @@ void RenderText::styleDidChange(StyleDifference diff, const RenderStyle* oldStyl
 
     ETextTransform oldTransform = oldStyle ? oldStyle->textTransform() : TTNONE;
     ETextSecurity oldSecurity = oldStyle ? oldStyle->textSecurity() : TSNONE;
-    if (needsResetText || oldTransform != newStyle->textTransform() || oldSecurity != newStyle->textSecurity()) 
+    if (needsResetText || oldTransform != newStyle->textTransform() || oldSecurity != newStyle->textSecurity())
         transformText();
 }
 
@@ -298,11 +297,10 @@ void RenderText::removeTextBox(InlineTextBox* box)
 void RenderText::deleteTextBoxes()
 {
     if (firstTextBox()) {
-        RenderArena* arena = renderArena();
         InlineTextBox* next;
         for (InlineTextBox* curr = firstTextBox(); curr; curr = next) {
             next = curr->nextTextBox();
-            curr->destroy(arena);
+            curr->destroy();
         }
         m_firstTextBox = m_lastTextBox = 0;
     }
@@ -344,15 +342,15 @@ static FloatRect localQuadForTextBox(InlineTextBox* box, unsigned start, unsigne
 void RenderText::absoluteRectsForRange(Vector<IntRect>& rects, unsigned start, unsigned end, bool useSelectionHeight, bool* wasFixed)
 {
     // Work around signed/unsigned issues. This function takes unsigneds, and is often passed UINT_MAX
-    // to mean "all the way to the end". InlineTextBox coordinates are unsigneds, so changing this 
-    // function to take ints causes various internal mismatches. But selectionRect takes ints, and 
-    // passing UINT_MAX to it causes trouble. Ideally we'd change selectionRect to take unsigneds, but 
+    // to mean "all the way to the end". InlineTextBox coordinates are unsigneds, so changing this
+    // function to take ints causes various internal mismatches. But selectionRect takes ints, and
+    // passing UINT_MAX to it causes trouble. Ideally we'd change selectionRect to take unsigneds, but
     // that would cause many ripple effects, so for now we'll just clamp our unsigned parameters to INT_MAX.
     ASSERT(end == UINT_MAX || end <= INT_MAX);
     ASSERT(start <= INT_MAX);
     start = min(start, static_cast<unsigned>(INT_MAX));
     end = min(end, static_cast<unsigned>(INT_MAX));
-    
+
     for (InlineTextBox* box = firstTextBox(); box; box = box->nextTextBox()) {
         // Note: box->end() returns the index of the last character, not the index past it
         if (start <= box->start() && box->end() < end) {
@@ -381,26 +379,26 @@ static IntRect ellipsisRectForBox(InlineTextBox* box, unsigned startPos, unsigne
 {
     if (!box)
         return IntRect();
-    
+
     unsigned short truncation = box->truncation();
     if (truncation == cNoTruncation)
         return IntRect();
-    
+
     IntRect rect;
     if (EllipsisBox* ellipsis = box->root()->ellipsisBox()) {
         int ellipsisStartPosition = max<int>(startPos - box->start(), 0);
         int ellipsisEndPosition = min<int>(endPos - box->start(), box->len());
-        
+
         // The ellipsis should be considered to be selected if the end of
         // the selection is past the beginning of the truncation and the
         // beginning of the selection is before or at the beginning of the truncation.
         if (ellipsisEndPosition >= truncation && ellipsisStartPosition <= truncation)
             return ellipsis->selectionRect();
     }
-    
+
     return IntRect();
 }
-    
+
 void RenderText::absoluteQuads(Vector<FloatQuad>& quads, bool* wasFixed, ClippingOption option) const
 {
     for (InlineTextBox* box = firstTextBox(); box; box = box->nextTextBox()) {
@@ -418,7 +416,7 @@ void RenderText::absoluteQuads(Vector<FloatQuad>& quads, bool* wasFixed, Clippin
         quads.append(localToAbsoluteQuad(boundaries, 0, wasFixed));
     }
 }
-    
+
 void RenderText::absoluteQuads(Vector<FloatQuad>& quads, bool* wasFixed) const
 {
     absoluteQuads(quads, wasFixed, NoClipping);
@@ -427,15 +425,15 @@ void RenderText::absoluteQuads(Vector<FloatQuad>& quads, bool* wasFixed) const
 void RenderText::absoluteQuadsForRange(Vector<FloatQuad>& quads, unsigned start, unsigned end, bool useSelectionHeight, bool* wasFixed)
 {
     // Work around signed/unsigned issues. This function takes unsigneds, and is often passed UINT_MAX
-    // to mean "all the way to the end". InlineTextBox coordinates are unsigneds, so changing this 
-    // function to take ints causes various internal mismatches. But selectionRect takes ints, and 
-    // passing UINT_MAX to it causes trouble. Ideally we'd change selectionRect to take unsigneds, but 
+    // to mean "all the way to the end". InlineTextBox coordinates are unsigneds, so changing this
+    // function to take ints causes various internal mismatches. But selectionRect takes ints, and
+    // passing UINT_MAX to it causes trouble. Ideally we'd change selectionRect to take unsigneds, but
     // that would cause many ripple effects, so for now we'll just clamp our unsigned parameters to INT_MAX.
     ASSERT(end == UINT_MAX || end <= INT_MAX);
     ASSERT(start <= INT_MAX);
     start = min(start, static_cast<unsigned>(INT_MAX));
     end = min(end, static_cast<unsigned>(INT_MAX));
-    
+
     for (InlineTextBox* box = firstTextBox(); box; box = box->nextTextBox()) {
         // Note: box->end() returns the index of the last character, not the index past it
         if (start <= box->start() && box->end() < end) {
@@ -517,7 +515,7 @@ static bool lineDirectionPointFitsInBox(int pointLineDirection, InlineTextBox* b
     return false;
 }
 
-static VisiblePosition createVisiblePositionForBox(const InlineBox* box, int offset, ShouldAffinityBeDownstream shouldAffinityBeDownstream)
+static PositionWithAffinity createPositionWithAffinityForBox(const InlineBox* box, int offset, ShouldAffinityBeDownstream shouldAffinityBeDownstream)
 {
     EAffinity affinity = VP_DEFAULT_AFFINITY;
     switch (shouldAffinityBeDownstream) {
@@ -531,17 +529,17 @@ static VisiblePosition createVisiblePositionForBox(const InlineBox* box, int off
         affinity = offset > box->caretMinOffset() ? VP_UPSTREAM_IF_POSSIBLE : DOWNSTREAM;
         break;
     }
-    return box->renderer()->createVisiblePosition(offset, affinity);
+    return box->renderer()->createPositionWithAffinity(offset, affinity);
 }
 
-static VisiblePosition createVisiblePositionAfterAdjustingOffsetForBiDi(const InlineTextBox* box, int offset, ShouldAffinityBeDownstream shouldAffinityBeDownstream)
+static PositionWithAffinity createPositionWithAffinityForBoxAfterAdjustingOffsetForBiDi(const InlineTextBox* box, int offset, ShouldAffinityBeDownstream shouldAffinityBeDownstream)
 {
     ASSERT(box);
     ASSERT(box->renderer());
     ASSERT(offset >= 0);
 
     if (offset && static_cast<unsigned>(offset) < box->len())
-        return createVisiblePositionForBox(box, box->start() + offset, shouldAffinityBeDownstream);
+        return createPositionWithAffinityForBox(box, box->start() + offset, shouldAffinityBeDownstream);
 
     bool positionIsAtStartOfBox = !offset;
     if (positionIsAtStartOfBox == box->isLeftToRightDirection()) {
@@ -550,7 +548,7 @@ static VisiblePosition createVisiblePositionAfterAdjustingOffsetForBiDi(const In
         const InlineBox* prevBox = box->prevLeafChildIgnoringLineBreak();
         if ((prevBox && prevBox->bidiLevel() == box->bidiLevel())
             || box->renderer()->containingBlock()->style()->direction() == box->direction()) // FIXME: left on 12CBA
-            return createVisiblePositionForBox(box, box->caretLeftmostOffset(), shouldAffinityBeDownstream);
+            return createPositionWithAffinityForBox(box, box->caretLeftmostOffset(), shouldAffinityBeDownstream);
 
         if (prevBox && prevBox->bidiLevel() > box->bidiLevel()) {
             // e.g. left of B in aDC12BAb
@@ -559,7 +557,7 @@ static VisiblePosition createVisiblePositionAfterAdjustingOffsetForBiDi(const In
                 leftmostBox = prevBox;
                 prevBox = leftmostBox->prevLeafChildIgnoringLineBreak();
             } while (prevBox && prevBox->bidiLevel() > box->bidiLevel());
-            return createVisiblePositionForBox(leftmostBox, leftmostBox->caretRightmostOffset(), shouldAffinityBeDownstream);
+            return createPositionWithAffinityForBox(leftmostBox, leftmostBox->caretRightmostOffset(), shouldAffinityBeDownstream);
         }
 
         if (!prevBox || prevBox->bidiLevel() < box->bidiLevel()) {
@@ -570,17 +568,17 @@ static VisiblePosition createVisiblePositionAfterAdjustingOffsetForBiDi(const In
                 rightmostBox = nextBox;
                 nextBox = rightmostBox->nextLeafChildIgnoringLineBreak();
             } while (nextBox && nextBox->bidiLevel() >= box->bidiLevel());
-            return createVisiblePositionForBox(rightmostBox,
+            return createPositionWithAffinityForBox(rightmostBox,
                 box->isLeftToRightDirection() ? rightmostBox->caretMaxOffset() : rightmostBox->caretMinOffset(), shouldAffinityBeDownstream);
         }
 
-        return createVisiblePositionForBox(box, box->caretRightmostOffset(), shouldAffinityBeDownstream);
+        return createPositionWithAffinityForBox(box, box->caretRightmostOffset(), shouldAffinityBeDownstream);
     }
 
     const InlineBox* nextBox = box->nextLeafChildIgnoringLineBreak();
     if ((nextBox && nextBox->bidiLevel() == box->bidiLevel())
         || box->renderer()->containingBlock()->style()->direction() == box->direction())
-        return createVisiblePositionForBox(box, box->caretRightmostOffset(), shouldAffinityBeDownstream);
+        return createPositionWithAffinityForBox(box, box->caretRightmostOffset(), shouldAffinityBeDownstream);
 
     // offset is on the right edge
     if (nextBox && nextBox->bidiLevel() > box->bidiLevel()) {
@@ -590,7 +588,7 @@ static VisiblePosition createVisiblePositionAfterAdjustingOffsetForBiDi(const In
             rightmostBox = nextBox;
             nextBox = rightmostBox->nextLeafChildIgnoringLineBreak();
         } while (nextBox && nextBox->bidiLevel() > box->bidiLevel());
-        return createVisiblePositionForBox(rightmostBox, rightmostBox->caretLeftmostOffset(), shouldAffinityBeDownstream);
+        return createPositionWithAffinityForBox(rightmostBox, rightmostBox->caretLeftmostOffset(), shouldAffinityBeDownstream);
     }
 
     if (!nextBox || nextBox->bidiLevel() < box->bidiLevel()) {
@@ -601,17 +599,17 @@ static VisiblePosition createVisiblePositionAfterAdjustingOffsetForBiDi(const In
             leftmostBox = prevBox;
             prevBox = leftmostBox->prevLeafChildIgnoringLineBreak();
         } while (prevBox && prevBox->bidiLevel() >= box->bidiLevel());
-        return createVisiblePositionForBox(leftmostBox,
+        return createPositionWithAffinityForBox(leftmostBox,
             box->isLeftToRightDirection() ? leftmostBox->caretMinOffset() : leftmostBox->caretMaxOffset(), shouldAffinityBeDownstream);
     }
 
-    return createVisiblePositionForBox(box, box->caretLeftmostOffset(), shouldAffinityBeDownstream);
+    return createPositionWithAffinityForBox(box, box->caretLeftmostOffset(), shouldAffinityBeDownstream);
 }
 
-VisiblePosition RenderText::positionForPoint(const LayoutPoint& point)
+PositionWithAffinity RenderText::positionForPoint(const LayoutPoint& point)
 {
     if (!firstTextBox() || textLength() == 0)
-        return createVisiblePosition(0, DOWNSTREAM);
+        return createPositionWithAffinity(0, DOWNSTREAM);
 
     LayoutUnit pointLineDirection = firstTextBox()->isHorizontal() ? point.x() : point.y();
     LayoutUnit pointBlockDirection = firstTextBox()->isHorizontal() ? point.y() : point.x();
@@ -632,7 +630,7 @@ VisiblePosition RenderText::positionForPoint(const LayoutPoint& point)
             if (pointBlockDirection < bottom || (blocksAreFlipped && pointBlockDirection == bottom)) {
                 ShouldAffinityBeDownstream shouldAffinityBeDownstream;
                 if (lineDirectionPointFitsInBox(pointLineDirection, box, shouldAffinityBeDownstream))
-                    return createVisiblePositionAfterAdjustingOffsetForBiDi(box, box->offsetForPosition(pointLineDirection), shouldAffinityBeDownstream);
+                    return createPositionWithAffinityForBoxAfterAdjustingOffsetForBiDi(box, box->offsetForPosition(pointLineDirection), shouldAffinityBeDownstream);
             }
         }
         lastBox = box;
@@ -641,9 +639,9 @@ VisiblePosition RenderText::positionForPoint(const LayoutPoint& point)
     if (lastBox) {
         ShouldAffinityBeDownstream shouldAffinityBeDownstream;
         lineDirectionPointFitsInBox(pointLineDirection, lastBox, shouldAffinityBeDownstream);
-        return createVisiblePositionAfterAdjustingOffsetForBiDi(lastBox, lastBox->offsetForPosition(pointLineDirection) + lastBox->start(), shouldAffinityBeDownstream);
+        return createPositionWithAffinityForBoxAfterAdjustingOffsetForBiDi(lastBox, lastBox->offsetForPosition(pointLineDirection) + lastBox->start(), shouldAffinityBeDownstream);
     }
-    return createVisiblePosition(0, DOWNSTREAM);
+    return createPositionWithAffinity(0, DOWNSTREAM);
 }
 
 LayoutRect RenderText::localCaretRect(InlineBox* inlineBox, int caretOffset, LayoutUnit* extraWidthToEndOfLine)
@@ -786,7 +784,7 @@ void RenderText::trimmedPrefWidths(float leadWidth,
 
     int len = textLength();
 
-    if (!len || (stripFrontSpaces && text()->containsOnlyWhitespace())) {
+    if (!len || (stripFrontSpaces && text().impl()->containsOnlyWhitespace())) {
         firstLineMinWidth = 0;
         lastLineMinWidth = 0;
         firstLineMaxWidth = 0;
@@ -862,7 +860,7 @@ float RenderText::minLogicalWidth() const
 {
     if (preferredLogicalWidthsDirty())
         const_cast<RenderText*>(this)->computePreferredLogicalWidths(0);
-        
+
     return m_minWidth;
 }
 
@@ -870,7 +868,7 @@ float RenderText::maxLogicalWidth() const
 {
     if (preferredLogicalWidthsDirty())
         const_cast<RenderText*>(this)->computePreferredLogicalWidths(0);
-        
+
     return m_maxWidth;
 }
 
@@ -887,46 +885,6 @@ static inline float hyphenWidth(RenderText* renderer, const Font& font)
 {
     RenderStyle* style = renderer->style();
     return font.width(RenderBlock::constructTextRun(renderer, font, style->hyphenString().string(), style));
-}
-
-static float maxWordFragmentWidth(RenderText* renderer, RenderStyle* style, const Font& font, const UChar* word, int wordLength, int minimumPrefixLength, int minimumSuffixLength, int& suffixStart)
-{
-    suffixStart = 0;
-    if (wordLength <= minimumSuffixLength)
-        return 0;
-
-    Vector<int, 8> hyphenLocations;
-    int hyphenLocation = wordLength - minimumSuffixLength;
-    while ((hyphenLocation = lastHyphenLocation(word, wordLength, hyphenLocation, style->locale())) >= minimumPrefixLength)
-        hyphenLocations.append(hyphenLocation);
-
-    if (hyphenLocations.isEmpty())
-        return 0;
-
-    hyphenLocations.reverse();
-
-    float minimumFragmentWidthToConsider = font.pixelSize() * 5 / 4 + hyphenWidth(renderer, font);
-    float maxFragmentWidth = 0;
-    for (size_t k = 0; k < hyphenLocations.size(); ++k) {
-        int fragmentLength = hyphenLocations[k] - suffixStart;
-        StringBuilder fragmentWithHyphen;
-        fragmentWithHyphen.append(word + suffixStart, fragmentLength);
-        fragmentWithHyphen.append(style->hyphenString());
-
-        TextRun run = RenderBlock::constructTextRun(renderer, font, fragmentWithHyphen.characters(), fragmentWithHyphen.length(), style);
-        run.setCharactersLength(fragmentWithHyphen.length());
-        run.setCharacterScanForCodePath(!renderer->canUseSimpleFontCodePath());
-        float fragmentWidth = font.width(run);
-
-        // Narrow prefixes are ignored. See tryHyphenating in RenderBlockLineLayout.cpp.
-        if (fragmentWidth <= minimumFragmentWidthToConsider)
-            continue;
-
-        suffixStart += fragmentLength;
-        maxFragmentWidth = max(maxFragmentWidth, fragmentWidth);
-    }
-
-    return maxFragmentWidth;
 }
 
 void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const SimpleFontData*>& fallbackFonts, GlyphOverflow& glyphOverflow)
@@ -972,19 +930,6 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
     float maxWordWidth = numeric_limits<float>::max();
     int minimumPrefixLength = 0;
     int minimumSuffixLength = 0;
-    if (styleToUse->hyphens() == HyphensAuto && canHyphenate(styleToUse->locale())) {
-        maxWordWidth = 0;
-
-        // Map 'hyphenate-limit-{before,after}: auto;' to 2.
-        minimumPrefixLength = styleToUse->hyphenationLimitBefore();
-        if (minimumPrefixLength < 0)
-            minimumPrefixLength = 2;
-
-        minimumSuffixLength = styleToUse->hyphenationLimitAfter();
-        if (minimumSuffixLength < 0)
-            minimumSuffixLength = 2;
-    }
-
     int firstGlyphLeftOverflow = -1;
 
     bool breakAll = (styleToUse->wordBreak() == BreakAllWordBreak || styleToUse->wordBreak() == BreakWordBreak) && styleToUse->autoWrap();
@@ -1030,7 +975,7 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
             ASSERT(lastWordBoundary == i);
             lastWordBoundary++;
             continue;
-        } else if (c == softHyphen && styleToUse->hyphens() != HyphensNone) {
+        } else if (c == softHyphen) {
             currMaxWidth += widthFromCache(f, lastWordBoundary, i - lastWordBoundary, leadWidth + currMaxWidth, &fallbackFonts, &glyphOverflow);
             if (firstGlyphLeftOverflow < 0)
                 firstGlyphLeftOverflow = glyphOverflow.left;
@@ -1041,7 +986,7 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
         bool hasBreak = breakAll || isBreakable(breakIterator, i, nextBreakable);
         bool betweenWords = true;
         int j = i;
-        while (c != '\n' && c != ' ' && c != '\t' && (c != softHyphen || styleToUse->hyphens() == HyphensNone)) {
+        while (c != '\n' && c != ' ' && c != '\t' && (c != softHyphen)) {
             j++;
             if (j == len)
                 break;
@@ -1062,28 +1007,11 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
                 w = widthFromCache(f, i, wordLen + 1, leadWidth + currMaxWidth, &fallbackFonts, &glyphOverflow) - wordTrailingSpaceWidth;
             else {
                 w = widthFromCache(f, i, wordLen, leadWidth + currMaxWidth, &fallbackFonts, &glyphOverflow);
-                if (c == softHyphen && styleToUse->hyphens() != HyphensNone)
+                if (c == softHyphen)
                     currMinWidth += hyphenWidth(this, f);
             }
 
-            if (w > maxWordWidth) {
-                int suffixStart;
-                float maxFragmentWidth = maxWordFragmentWidth(this, styleToUse, f, characters() + i, wordLen, minimumPrefixLength, minimumSuffixLength, suffixStart);
-
-                if (suffixStart) {
-                    float suffixWidth;
-                    if (wordTrailingSpaceWidth && isSpace)
-                        suffixWidth = widthFromCache(f, i + suffixStart, wordLen - suffixStart + 1, leadWidth + currMaxWidth, 0, 0) - wordTrailingSpaceWidth;
-                    else
-                        suffixWidth = widthFromCache(f, i + suffixStart, wordLen - suffixStart, leadWidth + currMaxWidth, 0, 0);
-
-                    maxFragmentWidth = max(maxFragmentWidth, suffixWidth);
-
-                    currMinWidth += maxFragmentWidth - w;
-                    maxWordWidth = max(maxWordWidth, maxFragmentWidth);
-                } else
-                    maxWordWidth = w;
-            }
+            maxWordWidth = max(maxWordWidth, w);
 
             if (firstGlyphLeftOverflow < 0)
                 firstGlyphLeftOverflow = glyphOverflow.left;
@@ -1195,7 +1123,7 @@ bool RenderText::isAllCollapsibleWhitespace() const
     }
     return true;
 }
-    
+
 bool RenderText::containsOnlyWhitespace(unsigned from, unsigned len) const
 {
     ASSERT(m_text);
@@ -1221,7 +1149,7 @@ float RenderText::firstRunY() const
 {
     return m_firstTextBox ? m_firstTextBox->y() : 0;
 }
-    
+
 void RenderText::setSelectionState(SelectionState state)
 {
     RenderObject::setSelectionState(state);
@@ -1351,10 +1279,7 @@ static inline bool isInlineFlowOrEmptyText(const RenderObject* o)
         return true;
     if (!o->isText())
         return false;
-    StringImpl* text = toRenderText(o)->text();
-    if (!text)
-        return true;
-    return !text->length();
+    return toRenderText(o)->text().isEmpty();
 }
 
 UChar RenderText::previousCharacter() const
@@ -1366,9 +1291,14 @@ UChar RenderText::previousCharacter() const
             break;
     UChar prev = ' ';
     if (previousText && previousText->isText())
-        if (StringImpl* previousString = toRenderText(previousText)->text())
+        if (StringImpl* previousString = toRenderText(previousText)->text().impl())
             prev = (*previousString)[previousString->length() - 1];
     return prev;
+}
+
+void RenderText::addLayerHitTestRects(LayerHitTestRects&, const RenderLayer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const
+{
+    // Text nodes aren't event targets, so don't descend any further.
 }
 
 void applyTextTransform(const RenderStyle* style, String& text, UChar previousCharacter)
@@ -1459,7 +1389,7 @@ void RenderText::setText(PassRefPtr<StringImpl> text, bool force)
     setTextInternal(text);
     setNeedsLayoutAndPrefWidthsRecalc();
     m_knownToHaveNoOverflowAndNoFallbackFonts = false;
-    
+
     if (AXObjectCache* cache = document()->existingAXObjectCache())
         cache->textChanged(this);
 }
@@ -1490,7 +1420,7 @@ void RenderText::dirtyLineBoxes(bool fullLayout)
 
 InlineTextBox* RenderText::createTextBox()
 {
-    return new (renderArena()) InlineTextBox(this);
+    return new InlineTextBox(this);
 }
 
 InlineTextBox* RenderText::createInlineTextBox()
@@ -1523,7 +1453,7 @@ void RenderText::positionLineBox(InlineBox* box)
             m_lastTextBox = s->prevTextBox();
         else
             s->nextTextBox()->setPreviousTextBox(s->prevTextBox());
-        s->destroy(renderArena());
+        s->destroy();
         return;
     }
 
@@ -1579,7 +1509,7 @@ float RenderText::width(unsigned from, unsigned len, const Font& f, float xPos, 
 IntRect RenderText::linesBoundingBox() const
 {
     IntRect result;
-    
+
     ASSERT(!firstTextBox() == !lastTextBox());  // Either both are null or both exist.
     if (firstTextBox() && lastTextBox()) {
         // Return the width of the minimal left side and the maximal right side.
@@ -1591,9 +1521,9 @@ IntRect RenderText::linesBoundingBox() const
             if (curr == firstTextBox() || curr->logicalRight() > logicalRightSide)
                 logicalRightSide = curr->logicalRight();
         }
-        
+
         bool isHorizontal = style()->isHorizontalWritingMode();
-        
+
         float x = isHorizontal ? logicalLeftSide : firstTextBox()->x();
         float y = isHorizontal ? firstTextBox()->y() : logicalLeftSide;
         float width = isHorizontal ? logicalRightSide - logicalLeftSide : lastTextBox()->logicalBottom() - x;
@@ -1616,11 +1546,11 @@ LayoutRect RenderText::linesVisualOverflowBoundingBox() const
         logicalLeftSide = min(logicalLeftSide, curr->logicalLeftVisualOverflow());
         logicalRightSide = max(logicalRightSide, curr->logicalRightVisualOverflow());
     }
-    
+
     LayoutUnit logicalTop = firstTextBox()->logicalTopVisualOverflow();
     LayoutUnit logicalWidth = logicalRightSide - logicalLeftSide;
     LayoutUnit logicalHeight = lastTextBox()->logicalBottomVisualOverflow() - logicalTop;
-    
+
     LayoutRect rect(logicalLeftSide, logicalTop, logicalWidth, logicalHeight);
     if (!style()->isHorizontalWritingMode())
         rect = rect.transposedRect();
@@ -1897,7 +1827,7 @@ bool RenderText::computeCanUseSimpleFontCodePath() const
 {
     if (isAllASCII() || m_text.is8Bit())
         return true;
-    return Font::characterRangeCodePath(characters(), length()) == Font::Simple;
+    return Font::characterRangeCodePath(characters16(), length()) == Font::Simple;
 }
 
 #ifndef NDEBUG
@@ -1928,15 +1858,6 @@ void RenderText::momentarilyRevealLastTypedCharacter(unsigned lastTypedCharacter
         gSecureTextTimers->add(this, secureTextTimer);
     }
     secureTextTimer->restartWithNewText(lastTypedCharacterOffset);
-}
-
-void RenderText::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Rendering);
-    RenderObject::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_text, "text");
-    info.addMember(m_firstTextBox, "firstTextBox");
-    info.addMember(m_lastTextBox, "lastTextBox");
 }
 
 } // namespace WebCore

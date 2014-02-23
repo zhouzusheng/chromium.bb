@@ -5,7 +5,6 @@
 #include "net/quic/crypto/crypto_utils.h"
 
 #include "crypto/hkdf.h"
-#include "googleurl/src/url_canon.h"
 #include "net/base/net_util.h"
 #include "net/quic/crypto/crypto_handshake.h"
 #include "net/quic/crypto/crypto_protocol.h"
@@ -13,6 +12,7 @@
 #include "net/quic/crypto/quic_encrypter.h"
 #include "net/quic/crypto/quic_random.h"
 #include "net/quic/quic_time.h"
+#include "url/url_canon.h"
 
 using base::StringPiece;
 using std::string;
@@ -54,7 +54,7 @@ bool CryptoUtils::IsValidSNI(StringPiece sni) {
   url_canon::CanonHostInfo host_info;
   string canonicalized_host(CanonicalizeHost(sni.as_string(), &host_info));
   return !host_info.IsIPAddress() &&
-      IsCanonicalizedHostCompliant(canonicalized_host, "") &&
+      IsCanonicalizedHostCompliant(canonicalized_host, std::string()) &&
       sni.find_last_of('.') != string::npos;
 }
 

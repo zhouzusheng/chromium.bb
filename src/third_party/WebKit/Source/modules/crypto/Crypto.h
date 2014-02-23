@@ -32,18 +32,18 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "modules/crypto/SubtleCrypto.h"
 #include "wtf/Forward.h"
-#include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
-typedef int ExceptionCode;
+class ExceptionState;
 
 class Crypto : public ScriptWrappable, public RefCounted<Crypto> {
 public:
     static PassRefPtr<Crypto> create() { return adoptRef(new Crypto()); }
 
-    static void getRandomValues(ArrayBufferView*, ExceptionCode&);
+    static void getRandomValues(ArrayBufferView*, ExceptionState&);
 
     SubtleCrypto* subtle();
 

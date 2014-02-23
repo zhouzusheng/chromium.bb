@@ -40,7 +40,7 @@ namespace WebCore {
 
 class Frame;
 class InspectorController;
-class InspectorBackendDispatchTask;
+class InspectorBackendMessageQueue;
 class InspectorFrontendHost;
 class Page;
 
@@ -73,6 +73,10 @@ public:
     virtual void requestFileSystems() { }
     virtual void addFileSystem() { }
     virtual void removeFileSystem(const String&) { }
+    virtual void indexPath(int requestId, const String& fileSystemPath) { }
+    virtual void stopIndexing(int requestId) { }
+    virtual void searchInPath(int requestId, const String& fileSystemPath, const String& query) { }
+
     virtual bool isUnderTest() { return true; }
 
 private:
@@ -80,7 +84,7 @@ private:
     Page* m_frontendPage;
     // TODO(yurys): this ref shouldn't be needed.
     RefPtr<InspectorFrontendHost> m_frontendHost;
-    OwnPtr<InspectorBackendDispatchTask> m_dispatchTask;
+    RefPtr<InspectorBackendMessageQueue> m_messageQueue;
 };
 
 } // namespace WebCore

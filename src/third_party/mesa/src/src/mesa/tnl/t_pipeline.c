@@ -35,7 +35,7 @@
 #include "t_vp_build.h"
 #include "t_vertex.h"
 
-void _tnl_install_pipeline( GLcontext *ctx,
+void _tnl_install_pipeline( struct gl_context *ctx,
 			    const struct tnl_pipeline_stage **stages )
 {
    TNLcontext *tnl = TNL_CONTEXT(ctx);
@@ -55,7 +55,7 @@ void _tnl_install_pipeline( GLcontext *ctx,
    tnl->pipeline.nr_stages = i;
 }
 
-void _tnl_destroy_pipeline( GLcontext *ctx )
+void _tnl_destroy_pipeline( struct gl_context *ctx )
 {
    TNLcontext *tnl = TNL_CONTEXT(ctx);
    GLuint i;
@@ -71,7 +71,7 @@ void _tnl_destroy_pipeline( GLcontext *ctx )
 
 
 
-static GLuint check_input_changes( GLcontext *ctx )
+static GLuint check_input_changes( struct gl_context *ctx )
 {
    TNLcontext *tnl = TNL_CONTEXT(ctx);
    GLuint i;
@@ -89,7 +89,7 @@ static GLuint check_input_changes( GLcontext *ctx )
 }
 
 
-static GLuint check_output_changes( GLcontext *ctx )
+static GLuint check_output_changes( struct gl_context *ctx )
 {
 #if 0
    TNLcontext *tnl = TNL_CONTEXT(ctx);
@@ -113,7 +113,7 @@ static GLuint check_output_changes( GLcontext *ctx )
 }
 
 
-void _tnl_run_pipeline( GLcontext *ctx )
+void _tnl_run_pipeline( struct gl_context *ctx )
 {
    TNLcontext *tnl = TNL_CONTEXT(ctx);
    unsigned short __tmp;
@@ -146,7 +146,17 @@ void _tnl_run_pipeline( GLcontext *ctx )
 	 _tnl_notify_pipeline_output_change( ctx );
    }
 
+#ifndef _OPENMP
+   /* Don't adjust FPU precision mode in case multiple threads are to be used.
+    * This would require that the additional threads also changed the FPU mode
+    * which is quite a mess as this had to be done in all parallelized sections;
+    * otherwise the master thread and all other threads are running in different
+    * modes, producing inconsistent results.
+    * Note that all x64 implementations don't define/use START_FAST_MATH, so
+    * this is "hack" is only used in i386 mode
+    */
    START_FAST_MATH(__tmp);
+#endif
 
    for (i = 0; i < tnl->pipeline.nr_stages ; i++) {
       struct tnl_pipeline_stage *s = &tnl->pipeline.stages[i];
@@ -154,7 +164,9 @@ void _tnl_run_pipeline( GLcontext *ctx )
 	 break;
    }
 
+#ifndef _OPENMP
    END_FAST_MATH(__tmp);
+#endif
 }
 
 

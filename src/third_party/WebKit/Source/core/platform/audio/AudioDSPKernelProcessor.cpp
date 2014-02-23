@@ -35,6 +35,7 @@
 #include "core/platform/audio/AudioDSPKernelProcessor.h"
 
 #include "core/platform/audio/AudioDSPKernel.h"
+#include "wtf/MainThread.h"
 
 namespace WebCore {
 
@@ -50,12 +51,13 @@ void AudioDSPKernelProcessor::initialize()
     if (isInitialized())
         return;
 
+    MutexLocker locker(m_processLock);
     ASSERT(!m_kernels.size());
 
     // Create processing kernels, one per channel.
     for (unsigned i = 0; i < numberOfChannels(); ++i)
         m_kernels.append(createKernel());
-        
+
     m_initialized = true;
     m_hasJustReset = true;
 }
@@ -64,7 +66,8 @@ void AudioDSPKernelProcessor::uninitialize()
 {
     if (!isInitialized())
         return;
-        
+
+    MutexLocker locker(m_processLock);
     m_kernels.clear();
 
     m_initialized = false;
@@ -75,24 +78,32 @@ void AudioDSPKernelProcessor::process(const AudioBus* source, AudioBus* destinat
     ASSERT(source && destination);
     if (!source || !destination)
         return;
-        
+
     if (!isInitialized()) {
         destination->zero();
         return;
     }
 
-    bool channelCountMatches = source->numberOfChannels() == destination->numberOfChannels() && source->numberOfChannels() == m_kernels.size();
-    ASSERT(channelCountMatches);
-    if (!channelCountMatches)
-        return;
-        
-    for (unsigned i = 0; i < m_kernels.size(); ++i)
-        m_kernels[i]->process(source->channel(i)->data(), destination->channel(i)->mutableData(), framesToProcess);
+    MutexTryLocker tryLocker(m_processLock);
+    if (tryLocker.locked()) {
+        bool channelCountMatches = source->numberOfChannels() == destination->numberOfChannels() && source->numberOfChannels() == m_kernels.size();
+        ASSERT(channelCountMatches);
+        if (!channelCountMatches)
+            return;
+
+        for (unsigned i = 0; i < m_kernels.size(); ++i)
+            m_kernels[i]->process(source->channel(i)->data(), destination->channel(i)->mutableData(), framesToProcess);
+    } else {
+        // Unfortunately, the kernel is being processed by another thread.
+        // See also ConvolverNode::process().
+        destination->zero();
+    }
 }
 
 // Resets filter state
 void AudioDSPKernelProcessor::reset()
 {
+    ASSERT(isMainThread());
     if (!isInitialized())
         return;
 
@@ -100,6 +111,7 @@ void AudioDSPKernelProcessor::reset()
     // Any processing depending on this value must set it to false at the appropriate time.
     m_hasJustReset = true;
 
+    MutexLocker locker(m_processLock);
     for (unsigned i = 0; i < m_kernels.size(); ++i)
         m_kernels[i]->reset();
 }
@@ -108,7 +120,7 @@ void AudioDSPKernelProcessor::setNumberOfChannels(unsigned numberOfChannels)
 {
     if (numberOfChannels == m_numberOfChannels)
         return;
-        
+
     ASSERT(!isInitialized());
     if (!isInitialized())
         m_numberOfChannels = numberOfChannels;
@@ -116,14 +128,28 @@ void AudioDSPKernelProcessor::setNumberOfChannels(unsigned numberOfChannels)
 
 double AudioDSPKernelProcessor::tailTime() const
 {
-    // It is expected that all the kernels have the same tailTime.
-    return !m_kernels.isEmpty() ? m_kernels.first()->tailTime() : 0;
+    ASSERT(!isMainThread());
+    MutexTryLocker tryLocker(m_processLock);
+    if (tryLocker.locked()) {
+        // It is expected that all the kernels have the same tailTime.
+        return !m_kernels.isEmpty() ? m_kernels.first()->tailTime() : 0;
+    }
+    // Since we don't want to block the Audio Device thread, we return a large value
+    // instead of trying to acquire the lock.
+    return std::numeric_limits<double>::infinity();
 }
 
 double AudioDSPKernelProcessor::latencyTime() const
 {
-    // It is expected that all the kernels have the same latencyTime.
-    return !m_kernels.isEmpty() ? m_kernels.first()->latencyTime() : 0;
+    ASSERT(!isMainThread());
+    MutexTryLocker tryLocker(m_processLock);
+    if (tryLocker.locked()) {
+        // It is expected that all the kernels have the same latencyTime.
+        return !m_kernels.isEmpty() ? m_kernels.first()->latencyTime() : 0;
+    }
+    // Since we don't want to block the Audio Device thread, we return a large value
+    // instead of trying to acquire the lock.
+    return std::numeric_limits<double>::infinity();
 }
 
 } // namespace WebCore

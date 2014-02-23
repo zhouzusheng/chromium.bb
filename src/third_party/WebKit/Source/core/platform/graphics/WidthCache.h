@@ -20,18 +20,18 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef WidthCache_h
 #define WidthCache_h
 
 #include "core/platform/graphics/TextRun.h"
-#include <wtf/Forward.h>
-#include <wtf/HashFunctions.h>
-#include <wtf/HashSet.h>
-#include <wtf/RefPtr.h>
-#include <wtf/StringHasher.h>
+#include "wtf/Forward.h"
+#include "wtf/HashFunctions.h"
+#include "wtf/HashSet.h"
+#include "wtf/HashTableDeletedValueType.h"
+#include "wtf/StringHasher.h"
 
 namespace WebCore {
 

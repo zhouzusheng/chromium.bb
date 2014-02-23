@@ -57,6 +57,10 @@ class CC_EXPORT TextureLayer : public Layer {
   // Defaults to true.
   void SetPremultipliedAlpha(bool premultiplied_alpha);
 
+  // Sets whether the texture should be blended with the background color
+  // at draw time. Defaults to false.
+  void SetBlendBackgroundColor(bool blend);
+
   // Sets whether this context should rate limit on damage to prevent too many
   // frames from being queued up before the compositor gets a chance to run.
   // Requires a non-nil client.  Defaults to false.
@@ -75,10 +79,10 @@ class CC_EXPORT TextureLayer : public Layer {
 
   virtual void SetLayerTreeHost(LayerTreeHost* layer_tree_host) OVERRIDE;
   virtual bool DrawsContent() const OVERRIDE;
-  virtual void Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker* occlusion,
-                      RenderingStats* stats) OVERRIDE;
+  virtual bool Update(ResourceUpdateQueue* queue,
+                      const OcclusionTracker* occlusion) OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
+  virtual Region VisibleContentOpaqueRegion() const OVERRIDE;
   virtual bool BlocksPendingCommit() const OVERRIDE;
 
   virtual bool CanClipSelf() const OVERRIDE;
@@ -94,7 +98,7 @@ class CC_EXPORT TextureLayer : public Layer {
      public:
       explicit MainThreadReference(MailboxHolder* holder);
       ~MainThreadReference();
-      MailboxHolder* holder() { return holder_; }
+      MailboxHolder* holder() { return holder_.get(); }
 
      private:
       scoped_refptr<MailboxHolder> holder_;
@@ -141,8 +145,8 @@ class CC_EXPORT TextureLayer : public Layer {
   // [bottom left, top left, top right, bottom right]
   float vertex_opacity_[4];
   bool premultiplied_alpha_;
+  bool blend_background_color_;
   bool rate_limit_context_;
-  bool context_lost_;
   bool content_committed_;
 
   unsigned texture_id_;

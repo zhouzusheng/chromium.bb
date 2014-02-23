@@ -21,12 +21,11 @@
 #include "base/logging.h"
 #include "base/memory/scoped_handle.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
-#include "base/process_util.h"
-#include "base/shared_memory.h"
+#include "base/memory/shared_memory.h"
+#include "base/message_loop/message_loop.h"
 #include "media/video/video_decode_accelerator.h"
 #include "ui/gl/gl_bindings.h"
-#include "ui/gl/gl_surface.h"
+#include "ui/gl/gl_surface_egl.h"
 #include "ui/gl/gl_switches.h"
 
 namespace content {
@@ -203,6 +202,8 @@ linked_ptr<DXVAVideoDecodeAccelerator::DXVAPictureBuffer>
         const media::PictureBuffer& buffer, EGLConfig egl_config) {
   linked_ptr<DXVAPictureBuffer> picture_buffer(new DXVAPictureBuffer(buffer));
 
+  EGLDisplay egl_display = gfx::GLSurfaceEGL::GetHardwareDisplay();
+
   EGLint attrib_list[] = {
     EGL_WIDTH, buffer.size().width(),
     EGL_HEIGHT, buffer.size().height(),
@@ -212,7 +213,7 @@ linked_ptr<DXVAVideoDecodeAccelerator::DXVAPictureBuffer>
   };
 
   picture_buffer->decoding_surface_ = eglCreatePbufferSurface(
-      static_cast<EGLDisplay*>(eglGetDisplay(EGL_DEFAULT_DISPLAY)),
+      egl_display,
       egl_config,
       attrib_list);
   RETURN_ON_FAILURE(picture_buffer->decoding_surface_,
@@ -221,7 +222,7 @@ linked_ptr<DXVAVideoDecodeAccelerator::DXVAPictureBuffer>
 
   HANDLE share_handle = NULL;
   EGLBoolean ret = eglQuerySurfacePointerANGLE(
-      static_cast<EGLDisplay*>(eglGetDisplay(EGL_DEFAULT_DISPLAY)),
+      egl_display,
       picture_buffer->decoding_surface_,
       EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE,
       &share_handle);
@@ -254,13 +255,15 @@ DXVAVideoDecodeAccelerator::DXVAPictureBuffer::DXVAPictureBuffer(
 
 DXVAVideoDecodeAccelerator::DXVAPictureBuffer::~DXVAPictureBuffer() {
   if (decoding_surface_) {
+    EGLDisplay egl_display = gfx::GLSurfaceEGL::GetHardwareDisplay();
+
     eglReleaseTexImage(
-        static_cast<EGLDisplay*>(eglGetDisplay(EGL_DEFAULT_DISPLAY)),
+        egl_display,
         decoding_surface_,
         EGL_BACK_BUFFER);
 
     eglDestroySurface(
-        static_cast<EGLDisplay*>(eglGetDisplay(EGL_DEFAULT_DISPLAY)),
+        egl_display,
         decoding_surface_);
     decoding_surface_ = NULL;
   }
@@ -268,8 +271,9 @@ DXVAVideoDecodeAccelerator::DXVAPictureBuffer::~DXVAPictureBuffer() {
 
 void DXVAVideoDecodeAccelerator::DXVAPictureBuffer::ReusePictureBuffer() {
   DCHECK(decoding_surface_);
+  EGLDisplay egl_display = gfx::GLSurfaceEGL::GetHardwareDisplay();
   eglReleaseTexImage(
-    static_cast<EGLDisplay*>(eglGetDisplay(EGL_DEFAULT_DISPLAY)),
+    egl_display,
     decoding_surface_,
     EGL_BACK_BUFFER);
   set_available(true);
@@ -347,8 +351,9 @@ bool DXVAVideoDecodeAccelerator::DXVAPictureBuffer::
           ++iterations < kMaxIterationsForD3DFlush) {
     Sleep(1);  // Poor-man's Yield().
   }
+  EGLDisplay egl_display = gfx::GLSurfaceEGL::GetHardwareDisplay();
   eglBindTexImage(
-      static_cast<EGLDisplay*>(eglGetDisplay(EGL_DEFAULT_DISPLAY)),
+      egl_display,
       decoding_surface_,
       EGL_BACK_BUFFER);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -369,7 +374,7 @@ void DXVAVideoDecodeAccelerator::PreSandboxInitialization() {
   // Should be called only once during program startup.
   DCHECK(!pre_sandbox_init_done_);
 
-  static wchar_t* decoding_dlls[] = {
+  static const wchar_t* kDecodingDlls[] = {
     L"d3d9.dll",
     L"dxva2.dll",
     L"mf.dll",
@@ -377,9 +382,9 @@ void DXVAVideoDecodeAccelerator::PreSandboxInitialization() {
     L"msmpeg2vdec.dll",
   };
 
-  for (int i = 0; i < arraysize(decoding_dlls); ++i) {
-    if (!::LoadLibrary(decoding_dlls[i])) {
-      DLOG(ERROR) << "Failed to load decoder dll: " << decoding_dlls[i]
+  for (int i = 0; i < arraysize(kDecodingDlls); ++i) {
+    if (!::LoadLibrary(kDecodingDlls[i])) {
+      DLOG(ERROR) << "Failed to load decoder dll: " << kDecodingDlls[i]
                   << ", Error: " << ::GetLastError();
       return;
     }
@@ -655,6 +660,8 @@ bool DXVAVideoDecodeAccelerator::InitDecoder() {
             reinterpret_cast<ULONG_PTR>(device_manager_));
   RETURN_ON_HR_FAILURE(hr, "Failed to pass D3D manager to decoder", false);
 
+  EGLDisplay egl_display = gfx::GLSurfaceEGL::GetHardwareDisplay();
+
   EGLint config_attribs[] = {
     EGL_BUFFER_SIZE, 32,
     EGL_RED_SIZE, 8,
@@ -668,7 +675,7 @@ bool DXVAVideoDecodeAccelerator::InitDecoder() {
   EGLint num_configs;
 
   if (!eglChooseConfig(
-      static_cast<EGLDisplay*>(eglGetDisplay(EGL_DEFAULT_DISPLAY)),
+      egl_display,
       config_attribs,
       &egl_config_,
       1,

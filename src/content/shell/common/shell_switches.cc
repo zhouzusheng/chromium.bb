@@ -24,11 +24,12 @@ const char kDumpRenderTree[] = "dump-render-tree";
 // Enable accelerated 2D canvas.
 const char kEnableAccelerated2DCanvas[] = "enable-accelerated-2d-canvas";
 
-// Alias for kEnableSoftwareCompositingGLAdapter.
-const char kEnableSoftwareCompositing[] = "enable-software-compositing";
-
 // Encode binary layout test results (images, audio) using base64.
 const char kEncodeBinary[] = "encode-binary";
+
+// Exposes the window.internals object to JavaScript for interactive development
+// and debugging of layout tests that rely on it.
+const char kExposeInternalsForTesting[]     = "expose-internals-for-testing";
 
 // Save results when layout-as-browser tests fail.
 const char kOutputLayoutTestDifferences[] = "output-layout-test-differences";

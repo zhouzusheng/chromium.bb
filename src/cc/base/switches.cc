@@ -16,9 +16,6 @@ const char kBackgroundColorInsteadOfCheckerboard[] =
 
 const char kDisableThreadedAnimation[] = "disable-threaded-animation";
 
-// Do not predict whether the tile will be either solid color or transparent.
-const char kDisableColorEstimator[] = "disable-color-estimator";
-
 // Disables layer-edge anti-aliasing in the compositor.
 const char kDisableCompositedAntialiasing[] =
     "disable-composited-antialiasing";
@@ -133,10 +130,6 @@ const char kUseMapImage[] = "use-map-image";
 
 // Prevents the layer tree unit tests from timing out.
 const char kCCLayerTreeTestNoTimeout[] = "cc-layer-tree-test-no-timeout";
-
-// Trace events get dumped to stderr for debugging purposes.
-const char kCCUnittestsTraceEventsToVLOG[] =
-    "cc-unittests-trace-events-to-vlog";
 
 bool IsImplSidePaintingEnabled() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();

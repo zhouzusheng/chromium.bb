@@ -23,7 +23,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -37,7 +37,8 @@
 #include "core/platform/graphics/transforms/AffineTransform.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "third_party/skia/include/core/SkPathMeasure.h"
-#include <wtf/MathExtras.h>
+#include "third_party/skia/include/pathops/SkPathOps.h"
+#include "wtf/MathExtras.h"
 
 namespace WebCore {
 
@@ -68,9 +69,7 @@ bool Path::operator==(const Path& other) const
 
 bool Path::contains(const FloatPoint& point, WindRule rule) const
 {
-    // After crbug.com/236559 is fixed, SkPathContainsPoint should take a const path so this will be unnecessary.
-    SkPath* path = const_cast<SkPath*>(&m_path);
-    return SkPathContainsPoint(path, point, rule == RULE_NONZERO ? SkPath::kWinding_FillType : SkPath::kEvenOdd_FillType);
+    return SkPathContainsPoint(m_path, point, rule == RULE_NONZERO ? SkPath::kWinding_FillType : SkPath::kEvenOdd_FillType);
 }
 
 bool Path::strokeContains(const FloatPoint& point, const StrokeData& strokeData) const
@@ -80,7 +79,7 @@ bool Path::strokeContains(const FloatPoint& point, const StrokeData& strokeData)
     SkPath strokePath;
     paint.getFillPath(m_path, &strokePath);
 
-    return SkPathContainsPoint(&strokePath, point, SkPath::kWinding_FillType);
+    return SkPathContainsPoint(strokePath, point, SkPath::kWinding_FillType);
 }
 
 FloatRect Path::boundingRect() const
@@ -233,6 +232,20 @@ FloatPoint Path::currentPoint() const
     return FloatPoint(quietNaN, quietNaN);
 }
 
+WindRule Path::windRule() const
+{
+    return m_path.getFillType() == SkPath::kEvenOdd_FillType
+        ? RULE_EVENODD
+        : RULE_NONZERO;
+}
+
+void Path::setWindRule(const WindRule rule)
+{
+    m_path.setFillType(rule == RULE_EVENODD
+        ? SkPath::kEvenOdd_FillType
+        : SkPath::kWinding_FillType);
+}
+
 void Path::moveTo(const FloatPoint& point)
 {
     m_path.moveTo(point);
@@ -315,7 +328,7 @@ void Path::addRoundedRect(const RoundedRect& r)
     addRoundedRect(r.rect(), r.radii().topLeft(), r.radii().topRight(), r.radii().bottomLeft(), r.radii().bottomRight());
 }
 
-void Path::addRoundedRect(const FloatRect& rect, const FloatSize& roundingRadii, RoundedRectStrategy strategy)
+void Path::addRoundedRect(const FloatRect& rect, const FloatSize& roundingRadii)
 {
     if (rect.isEmpty())
         return;
@@ -324,7 +337,7 @@ void Path::addRoundedRect(const FloatRect& rect, const FloatSize& roundingRadii,
     FloatSize halfSize(rect.width() / 2, rect.height() / 2);
 
     // Apply the SVG corner radius constraints, per the rect section of the SVG shapes spec: if
-    // one of rx,ry is negative, then the other corner radius value is used. If both values are 
+    // one of rx,ry is negative, then the other corner radius value is used. If both values are
     // negative then rx = ry = 0. If rx is greater than half of the width of the rectangle
     // then set rx to half of the width; ry is handled similarly.
 
@@ -340,10 +353,10 @@ void Path::addRoundedRect(const FloatRect& rect, const FloatSize& roundingRadii,
     if (radius.height() > halfSize.height())
         radius.setHeight(halfSize.height());
 
-    addPathForRoundedRect(rect, radius, radius, radius, radius, strategy);
+    addPathForRoundedRect(rect, radius, radius, radius, radius);
 }
 
-void Path::addRoundedRect(const FloatRect& rect, const FloatSize& topLeftRadius, const FloatSize& topRightRadius, const FloatSize& bottomLeftRadius, const FloatSize& bottomRightRadius, RoundedRectStrategy strategy)
+void Path::addRoundedRect(const FloatRect& rect, const FloatSize& topLeftRadius, const FloatSize& topRightRadius, const FloatSize& bottomLeftRadius, const FloatSize& bottomRightRadius)
 {
     if (rect.isEmpty())
         return;
@@ -357,16 +370,11 @@ void Path::addRoundedRect(const FloatRect& rect, const FloatSize& topLeftRadius,
         return;
     }
 
-    addPathForRoundedRect(rect, topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius, strategy);
+    addPathForRoundedRect(rect, topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius);
 }
 
-void Path::addPathForRoundedRect(const FloatRect& rect, const FloatSize& topLeftRadius, const FloatSize& topRightRadius, const FloatSize& bottomLeftRadius, const FloatSize& bottomRightRadius, RoundedRectStrategy strategy)
+void Path::addPathForRoundedRect(const FloatRect& rect, const FloatSize& topLeftRadius, const FloatSize& topRightRadius, const FloatSize& bottomLeftRadius, const FloatSize& bottomRightRadius)
 {
-    if (strategy == PreferBezierRoundedRect) {
-        addBeziersForRoundedRect(rect, topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius);
-        return;
-    }
-
     addBeziersForRoundedRect(rect, topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius);
 }
 
@@ -405,6 +413,11 @@ void Path::addBeziersForRoundedRect(const FloatRect& rect, const FloatSize& topL
 void Path::translate(const FloatSize& size)
 {
     m_path.offset(WebCoreFloatToSkScalar(size.width()), WebCoreFloatToSkScalar(size.height()));
+}
+
+bool Path::unionPath(const Path& other)
+{
+    return Op(m_path, other.m_path, kUnion_PathOp, &m_path);
 }
 
 }

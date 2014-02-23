@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef WTF_StdLibExtras_h
@@ -30,18 +30,11 @@
 #include "wtf/CPU.h"
 #include "wtf/CheckedArithmetic.h"
 
-// Use these to declare and define a static local variable (static T;) so that
-//  it is leaked so that its destructors are not called at exit. Using this
-//  macro also allows workarounds a compiler bug present in Apple's version of GCC 4.0.1.
+// Use this to declare and define a static local variable (static T;) so that
+//  it is leaked so that its destructors are not called at exit.
 #ifndef DEFINE_STATIC_LOCAL
-#if COMPILER(GCC) && defined(__APPLE_CC__) && __GNUC__ == 4 && __GNUC_MINOR__ == 0 && __GNUC_PATCHLEVEL__ == 1
-#define DEFINE_STATIC_LOCAL(type, name, arguments) \
-    static type* name##Ptr = new type arguments; \
-    type& name = *name##Ptr
-#else
 #define DEFINE_STATIC_LOCAL(type, name, arguments) \
     static type& name = *new type arguments
-#endif
 #endif
 
 // Use this macro to declare and define a debug-only global variable that may have a
@@ -190,7 +183,7 @@ inline ArrayElementType* binarySearchImpl(ArrayType& array, size_t size, KeyType
     while (size > 1) {
         size_t pos = (size - 1) >> 1;
         KeyType val = extractKey(&array[offset + pos]);
-        
+
         if (val == key)
             return &array[offset + pos];
         // The item we are looking for is smaller than the item being check; reduce the value of 'size',
@@ -205,10 +198,10 @@ inline ArrayElementType* binarySearchImpl(ArrayType& array, size_t size, KeyType
 
         ASSERT(mode != KeyMustBePresentInArray || size);
     }
-    
+
     if (mode == KeyMightNotBePresentInArray && !size)
         return 0;
-    
+
     ArrayElementType* result = &array[offset];
 
     if (mode == KeyMightNotBePresentInArray && key != extractKey(result))

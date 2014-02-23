@@ -31,8 +31,7 @@
 
 #include "core/dom/Element.h"
 #include "core/rendering/style/RenderStyle.h"
-
-#include <wtf/UnusedParam.h>
+#include "wtf/UnusedParam.h"
 
 namespace WebCore {
 
@@ -123,7 +122,7 @@ inline int DOMSiblingTraversalStrategy::countElementsOfTypeAfter(Element* elemen
 }
 
 struct ShadowDOMSiblingTraversalStrategy {
-    ShadowDOMSiblingTraversalStrategy(const Vector<RefPtr<Node> >& siblings, int nth)
+    ShadowDOMSiblingTraversalStrategy(const Vector<Node*>& siblings, int nth)
         : m_siblings(siblings)
         , m_nth(nth)
     {
@@ -140,19 +139,18 @@ struct ShadowDOMSiblingTraversalStrategy {
     int countElementsOfTypeAfter(Element*, const QualifiedName&) const;
 
 private:
-    Vector<RefPtr<Node> > m_siblings;
+    Vector<Node*> m_siblings;
     int m_nth;
 };
 
 inline bool ShadowDOMSiblingTraversalStrategy::isFirstChild(Element* element) const
 {
     UNUSED_PARAM(element);
-    
-    const Vector<RefPtr<Node> >& siblings = m_siblings;
-    ASSERT(element == toElement(siblings[m_nth].get()));
+
+    ASSERT(element == toElement(m_siblings[m_nth]));
 
     for (int i = m_nth - 1; i >= 0; --i) {
-        if (siblings[i] && siblings[i]->isElementNode())
+        if (m_siblings[i]->isElementNode())
             return false;
     }
 
@@ -163,11 +161,10 @@ inline bool ShadowDOMSiblingTraversalStrategy::isLastChild(Element* element) con
 {
     UNUSED_PARAM(element);
 
-    const Vector<RefPtr<Node> >& siblings = m_siblings;
-    ASSERT(element == toElement(siblings[m_nth].get()));
+    ASSERT(element == toElement(m_siblings[m_nth]));
 
-    for (size_t i = m_nth + 1; i < siblings.size(); ++i) {
-        if (siblings[i] && siblings[i]->isElementNode())
+    for (size_t i = m_nth + 1; i < m_siblings.size(); ++i) {
+        if (m_siblings[i]->isElementNode())
             return false;
     }
 
@@ -178,11 +175,10 @@ inline bool ShadowDOMSiblingTraversalStrategy::isFirstOfType(Element* element, c
 {
     UNUSED_PARAM(element);
 
-    const Vector<RefPtr<Node> >& siblings = m_siblings;
-    ASSERT(element == toElement(siblings[m_nth].get()));
+    ASSERT(element == toElement(m_siblings[m_nth]));
 
     for (int i = m_nth - 1; i >= 0; --i) {
-        if (siblings[i] && siblings[i]->isElementNode() && siblings[i]->hasTagName(type))
+        if (m_siblings[i]->hasTagName(type))
             return false;
     }
 
@@ -193,11 +189,10 @@ inline bool ShadowDOMSiblingTraversalStrategy::isLastOfType(Element* element, co
 {
     UNUSED_PARAM(element);
 
-    const Vector<RefPtr<Node> >& siblings = m_siblings;
-    ASSERT(element == toElement(siblings[m_nth].get()));
+    ASSERT(element == toElement(m_siblings[m_nth]));
 
-    for (size_t i = m_nth + 1; i < siblings.size(); ++i) {
-        if (siblings[i] && siblings[i]->isElementNode() && siblings[i]->hasTagName(type))
+    for (size_t i = m_nth + 1; i < m_siblings.size(); ++i) {
+        if (m_siblings[i]->hasTagName(type))
             return false;
     }
 
@@ -208,12 +203,11 @@ inline int ShadowDOMSiblingTraversalStrategy::countElementsBefore(Element* eleme
 {
     UNUSED_PARAM(element);
 
-    const Vector<RefPtr<Node> >& siblings = m_siblings;
-    ASSERT(element == toElement(siblings[m_nth].get()));
+    ASSERT(element == toElement(m_siblings[m_nth]));
 
     int count = 0;
     for (int i = m_nth - 1; i >= 0; --i) {
-        if (siblings[i] && siblings[i]->isElementNode())
+        if (m_siblings[i]->isElementNode())
             ++count;
     }
 
@@ -224,12 +218,11 @@ inline int ShadowDOMSiblingTraversalStrategy::countElementsAfter(Element* elemen
 {
     UNUSED_PARAM(element);
 
-    const Vector<RefPtr<Node> >& siblings = m_siblings;
-    ASSERT(element == toElement(siblings[m_nth].get()));
+    ASSERT(element == toElement(m_siblings[m_nth]));
 
     int count = 0;
-    for (size_t i = m_nth + 1; i < siblings.size(); ++i) {
-        if (siblings[i] && siblings[i]->isElementNode())
+    for (size_t i = m_nth + 1; i < m_siblings.size(); ++i) {
+        if (m_siblings[i]->isElementNode())
             return ++count;
     }
 
@@ -240,12 +233,11 @@ inline int ShadowDOMSiblingTraversalStrategy::countElementsOfTypeBefore(Element*
 {
     UNUSED_PARAM(element);
 
-    const Vector<RefPtr<Node> >& siblings = m_siblings;
-    ASSERT(element == toElement(siblings[m_nth].get()));
+    ASSERT(element == toElement(m_siblings[m_nth]));
 
     int count = 0;
     for (int i = m_nth - 1; i >= 0; --i) {
-        if (siblings[i] && siblings[i]->isElementNode() && siblings[i]->hasTagName(type))
+        if (m_siblings[i]->hasTagName(type))
             ++count;
     }
 
@@ -256,12 +248,11 @@ inline int ShadowDOMSiblingTraversalStrategy::countElementsOfTypeAfter(Element* 
 {
     UNUSED_PARAM(element);
 
-    const Vector<RefPtr<Node> >& siblings = m_siblings;
-    ASSERT(element == toElement(siblings[m_nth].get()));
+    ASSERT(element == toElement(m_siblings[m_nth]));
 
     int count = 0;
-    for (size_t i = m_nth + 1; i < siblings.size(); ++i) {
-        if (siblings[i] && siblings[i]->isElementNode() && siblings[i]->hasTagName(type))
+    for (size_t i = m_nth + 1; i < m_siblings.size(); ++i) {
+        if (m_siblings[i]->hasTagName(type))
             return ++count;
     }
 

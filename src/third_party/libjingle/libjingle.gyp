@@ -107,7 +107,7 @@
             'ANDROID',
           ],
         }],
-        ['os_posix == 1', {
+        ['os_posix==1', {
           'defines': [
             'POSIX',
           ],
@@ -125,6 +125,11 @@
         ['OS=="freebsd"', {
           'defines': [
             'FREEBSD',
+          ],
+        }],
+        ['chromeos==1', {
+          'defines': [
+            'CHROMEOS',
           ],
         }],
       ],
@@ -287,8 +292,6 @@
         '<(libjingle_source)/talk/base/flags.h',
         '<(libjingle_source)/talk/base/helpers.cc',
         '<(libjingle_source)/talk/base/helpers.h',
-        '<(libjingle_source)/talk/base/host.cc',
-        '<(libjingle_source)/talk/base/host.h',
         '<(libjingle_source)/talk/base/httpbase.cc',
         '<(libjingle_source)/talk/base/httpbase.h',
         '<(libjingle_source)/talk/base/httpclient.cc',
@@ -684,6 +687,8 @@
             '<(libjingle_source)/talk/app/webrtc/webrtcsdp.h',
             '<(libjingle_source)/talk/app/webrtc/webrtcsession.cc',
             '<(libjingle_source)/talk/app/webrtc/webrtcsession.h',
+            '<(libjingle_source)/talk/app/webrtc/webrtcsessiondescriptionfactory.cc',
+            '<(libjingle_source)/talk/app/webrtc/webrtcsessiondescriptionfactory.h',
             '<(libjingle_source)/talk/media/base/audiorenderer.h',
             '<(libjingle_source)/talk/media/base/capturemanager.cc',
             '<(libjingle_source)/talk/media/base/capturemanager.h',
@@ -722,6 +727,9 @@
             '<(libjingle_source)/talk/media/devices/filevideocapturer.h',
             '<(libjingle_source)/talk/media/webrtc/webrtccommon.h',
             '<(libjingle_source)/talk/media/webrtc/webrtcpassthroughrender.cc',
+            '<(libjingle_source)/talk/media/webrtc/webrtcpassthroughrender.h',
+            '<(libjingle_source)/talk/media/webrtc/webrtctexturevideoframe.cc',
+            '<(libjingle_source)/talk/media/webrtc/webrtctexturevideoframe.h',
             '<(libjingle_source)/talk/media/webrtc/webrtcvideocapturer.cc',
             '<(libjingle_source)/talk/media/webrtc/webrtcvideocapturer.h',
             '<(libjingle_source)/talk/media/webrtc/webrtcvideoframe.cc',

@@ -26,18 +26,16 @@
 #include "config.h"
 #include "core/css/CSSImageSetValue.h"
 
+#include "FetchInitiatorTypeNames.h"
 #include "core/css/CSSImageValue.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/dom/Document.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "core/loader/cache/CachedImage.h"
-#include "core/loader/cache/CachedResourceLoader.h"
-#include "core/loader/cache/CachedResourceRequest.h"
-#include "core/loader/cache/CachedResourceRequestInitiators.h"
-#include "core/page/Page.h"
-#include "core/rendering/style/StyleCachedImageSet.h"
+#include "core/loader/cache/FetchRequest.h"
+#include "core/loader/cache/ImageResource.h"
+#include "core/loader/cache/ResourceFetcher.h"
+#include "core/rendering/style/StyleFetchedImageSet.h"
 #include "core/rendering/style/StylePendingImage.h"
-#include <wtf/MemoryInstrumentationVector.h>
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -50,8 +48,8 @@ CSSImageSetValue::CSSImageSetValue()
 
 CSSImageSetValue::~CSSImageSetValue()
 {
-    if (m_imageSet && m_imageSet->isCachedImageSet())
-        static_cast<StyleCachedImageSet*>(m_imageSet.get())->clearImageSetValue();
+    if (m_imageSet && m_imageSet->isImageResourceSet())
+        static_cast<StyleFetchedImageSet*>(m_imageSet.get())->clearImageSetValue();
 }
 
 void CSSImageSetValue::fillImageSet()
@@ -90,43 +88,37 @@ CSSImageSetValue::ImageWithScale CSSImageSetValue::bestImageForScaleFactor()
     return image;
 }
 
-StyleCachedImageSet* CSSImageSetValue::cachedImageSet(CachedResourceLoader* loader)
+StyleFetchedImageSet* CSSImageSetValue::cachedImageSet(ResourceFetcher* loader, float deviceScaleFactor)
 {
     ASSERT(loader);
 
-    Document* document = loader->document();
-    if (Page* page = document->page())
-        m_scaleFactor = page->deviceScaleFactor();
-    else
-        m_scaleFactor = 1;
+    m_scaleFactor = deviceScaleFactor;
 
     if (!m_imagesInSet.size())
         fillImageSet();
 
     if (!m_accessedBestFitImage) {
-        // FIXME: In the future, we want to take much more than deviceScaleFactor into acount here. 
+        // FIXME: In the future, we want to take much more than deviceScaleFactor into acount here.
         // All forms of scale should be included: Page::pageScaleFactor(), Frame::pageZoomFactor(),
         // and any CSS transforms. https://bugs.webkit.org/show_bug.cgi?id=81698
         ImageWithScale image = bestImageForScaleFactor();
-        CachedResourceRequest request(ResourceRequest(document->completeURL(image.imageURL)), cachedResourceRequestInitiators().css);
-        if (CachedResourceHandle<CachedImage> cachedImage = loader->requestImage(request)) {
-            m_imageSet = StyleCachedImageSet::create(cachedImage.get(), image.scaleFactor, this);
-            m_accessedBestFitImage = true;
+        if (Document* document = loader->document()) {
+            FetchRequest request(ResourceRequest(document->completeURL(image.imageURL)), FetchInitiatorTypeNames::css);
+            if (ResourcePtr<ImageResource> cachedImage = loader->requestImage(request)) {
+                m_imageSet = StyleFetchedImageSet::create(cachedImage.get(), image.scaleFactor, this);
+                m_accessedBestFitImage = true;
+            }
         }
     }
 
-    return (m_imageSet && m_imageSet->isCachedImageSet()) ? static_cast<StyleCachedImageSet*>(m_imageSet.get()) : 0;
+    return (m_imageSet && m_imageSet->isImageResourceSet()) ? static_cast<StyleFetchedImageSet*>(m_imageSet.get()) : 0;
 }
 
-StyleImage* CSSImageSetValue::cachedOrPendingImageSet(Document* document)
+StyleImage* CSSImageSetValue::cachedOrPendingImageSet(float deviceScaleFactor)
 {
-    if (!m_imageSet)
+    if (!m_imageSet) {
         m_imageSet = StylePendingImage::create(this);
-    else if (document && !m_imageSet->isPendingImage()) {
-        float deviceScaleFactor = 1;
-        if (Page* page = document->page())
-            deviceScaleFactor = page->deviceScaleFactor();
-
+    } else if (!m_imageSet->isPendingImage()) {
         // If the deviceScaleFactor has changed, we may not have the best image loaded, so we have to re-assess.
         if (deviceScaleFactor != m_scaleFactor) {
             m_accessedBestFitImage = false;
@@ -169,9 +161,9 @@ String CSSImageSetValue::customCssText() const
 
 bool CSSImageSetValue::hasFailedOrCanceledSubresources() const
 {
-    if (!m_imageSet || !m_imageSet->isCachedImageSet())
+    if (!m_imageSet || !m_imageSet->isImageResourceSet())
         return false;
-    CachedResource* cachedResource = static_cast<StyleCachedImageSet*>(m_imageSet.get())->cachedImage();
+    Resource* cachedResource = static_cast<StyleFetchedImageSet*>(m_imageSet.get())->cachedImage();
     if (!cachedResource)
         return true;
     return cachedResource->loadFailedOrCanceled();
@@ -188,19 +180,6 @@ CSSImageSetValue::CSSImageSetValue(const CSSImageSetValue& cloneFrom)
 PassRefPtr<CSSImageSetValue> CSSImageSetValue::cloneForCSSOM() const
 {
     return adoptRef(new CSSImageSetValue(*this));
-}
-
-void CSSImageSetValue::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    CSSValueList::reportDescendantMemoryUsage(memoryObjectInfo);
-    info.addMember(m_imagesInSet, "imagesInSet");
-}
-
-void CSSImageSetValue::ImageWithScale::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(imageURL, "imageURL");
 }
 
 } // namespace WebCore

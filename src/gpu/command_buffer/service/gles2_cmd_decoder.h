@@ -11,7 +11,7 @@
 
 #include "base/callback.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "gpu/command_buffer/service/common_decoder.h"
 #include "gpu/command_buffer/service/logger.h"
@@ -176,8 +176,6 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   virtual void SetResizeCallback(
       const base::Callback<void(gfx::Size, float)>& callback) = 0;
 
-  virtual void SetStreamTextureManager(StreamTextureManager* manager) = 0;
-
   // Interface to performing async pixel transfers.
   virtual AsyncPixelTransferManager* GetAsyncPixelTransferManager() = 0;
   virtual void ResetAsyncPixelTransferManagerForTest() = 0;
@@ -215,13 +213,18 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   virtual void SetWaitSyncPointCallback(
       const WaitSyncPointCallback& callback) = 0;
 
+  virtual void WaitForReadPixels(base::Closure callback) = 0;
   virtual uint32 GetTextureUploadCount() = 0;
   virtual base::TimeDelta GetTotalTextureUploadTime() = 0;
   virtual base::TimeDelta GetTotalProcessingCommandsTime() = 0;
   virtual void AddProcessingCommandsTime(base::TimeDelta) = 0;
 
-  // Returns true if the context was just lost due to e.g. GL_ARB_robustness.
+  // Returns true if the context was lost either by GL_ARB_robustness, forced
+  // context loss or command buffer parse error.
   virtual bool WasContextLost() = 0;
+
+  // Returns true if the context was lost specifically by GL_ARB_robustness.
+  virtual bool WasContextLostByRobustnessExtension() = 0;
 
   // Lose this context.
   virtual void LoseContext(uint32 reset_status) = 0;

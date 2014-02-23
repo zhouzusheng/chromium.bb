@@ -18,9 +18,9 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGAnimatedType.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/svg/SVGParserUtilities.h"
 #include "core/svg/SVGPathByteStream.h"
 
@@ -203,7 +203,7 @@ PassOwnPtr<SVGAnimatedType> SVGAnimatedType::createPreserveAspectRatio(SVGPreser
     return animatedType.release();
 }
 
-PassOwnPtr<SVGAnimatedType> SVGAnimatedType::createRect(FloatRect* rect)
+PassOwnPtr<SVGAnimatedType> SVGAnimatedType::createRect(SVGRect* rect)
 {
     ASSERT(rect);
     OwnPtr<SVGAnimatedType> animatedType = adoptPtr(new SVGAnimatedType(AnimatedRect));
@@ -250,7 +250,7 @@ String SVGAnimatedType::valueAsString()
         ASSERT(m_data.string);
         return *m_data.string;
 
-    // These types don't appear in the table in SVGStyledElement::cssPropertyToTypeMap() and thus don't need valueAsString() support.
+    // These types don't appear in the table in SVGElement::cssPropertyToTypeMap() and thus don't need valueAsString() support.
     case AnimatedAngle:
     case AnimatedBoolean:
     case AnimatedEnumeration:
@@ -280,9 +280,9 @@ bool SVGAnimatedType::setValueAsString(const QualifiedName& attrName, const Stri
         break;
     case AnimatedLength: {
         ASSERT(m_data.length);
-        ExceptionCode ec = 0;
-        m_data.length->setValueAsString(value, SVGLength::lengthModeForAnimatedLengthAttribute(attrName), ec);
-        return !ec;
+        TrackExceptionState es;
+        m_data.length->setValueAsString(value, SVGLength::lengthModeForAnimatedLengthAttribute(attrName), es);
+        return !es.hadException();
     }
     case AnimatedLengthList:
         ASSERT(m_data.lengthList);
@@ -301,7 +301,7 @@ bool SVGAnimatedType::setValueAsString(const QualifiedName& attrName, const Stri
         *m_data.string = value;
         break;
 
-    // These types don't appear in the table in SVGStyledElement::cssPropertyToTypeMap() and thus don't need setValueAsString() support. 
+    // These types don't appear in the table in SVGElement::cssPropertyToTypeMap() and thus don't need setValueAsString() support.
     case AnimatedAngle:
     case AnimatedBoolean:
     case AnimatedEnumeration:

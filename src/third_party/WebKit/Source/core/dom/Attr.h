@@ -31,6 +31,7 @@
 namespace WebCore {
 
 class CSSStyleDeclaration;
+class ExceptionState;
 class MutableStylePropertySet;
 
 // Attr can have Text children
@@ -50,14 +51,12 @@ public:
     Element* ownerElement() const { return m_element; }
 
     const AtomicString& value() const;
-    void setValue(const AtomicString&, ExceptionCode&);
+    void setValue(const AtomicString&, ExceptionState&);
     void setValue(const AtomicString&);
 
     const QualifiedName& qualifiedName() const { return m_name; }
 
     bool isId() const;
-
-    CSSStyleDeclaration* style();
 
     void setSpecified(bool specified) { m_specified = specified; }
 
@@ -77,11 +76,11 @@ private:
     virtual const AtomicString& namespaceURI() const OVERRIDE { return m_name.namespaceURI(); }
     virtual const AtomicString& prefix() const OVERRIDE { return m_name.prefix(); }
 
-    virtual void setPrefix(const AtomicString&, ExceptionCode&);
+    virtual void setPrefix(const AtomicString&, ExceptionState&);
 
     virtual String nodeValue() const OVERRIDE { return value(); }
-    virtual void setNodeValue(const String&, ExceptionCode&);
-    virtual PassRefPtr<Node> cloneNode(bool deep);
+    virtual void setNodeValue(const String&);
+    virtual PassRefPtr<Node> cloneNode(bool deep = true);
 
     virtual bool isAttributeNode() const { return true; }
     virtual bool childTypeAllowed(NodeType) const;
@@ -99,6 +98,18 @@ private:
     unsigned m_ignoreChildrenChanged : 31;
     bool m_specified : 1;
 };
+
+inline Attr* toAttr(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isAttributeNode());
+    return static_cast<Attr*>(node);
+}
+
+inline const Attr* toAttr(const Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isAttributeNode());
+    return static_cast<const Attr*>(node);
+}
 
 } // namespace WebCore
 

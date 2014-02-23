@@ -26,12 +26,13 @@
 #include "config.h"
 #include "modules/indexeddb/IDBTransaction.h"
 
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/dom/DOMError.h"
 #include "core/dom/EventQueue.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/ScriptExecutionContext.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "modules/indexeddb/IDBDatabase.h"
-#include "modules/indexeddb/IDBDatabaseException.h"
 #include "modules/indexeddb/IDBEventDispatcher.h"
 #include "modules/indexeddb/IDBIndex.h"
 #include "modules/indexeddb/IDBObjectStore.h"
@@ -135,10 +136,10 @@ void IDBTransaction::setError(PassRefPtr<DOMError> error)
     }
 }
 
-PassRefPtr<IDBObjectStore> IDBTransaction::objectStore(const String& name, ExceptionCode& ec)
+PassRefPtr<IDBObjectStore> IDBTransaction::objectStore(const String& name, ExceptionState& es)
 {
     if (m_state == Finished) {
-        ec = IDBDatabaseException::InvalidStateError;
+        es.throwDOMException(InvalidStateError, IDBDatabase::transactionFinishedErrorMessage);
         return 0;
     }
 
@@ -147,14 +148,14 @@ PassRefPtr<IDBObjectStore> IDBTransaction::objectStore(const String& name, Excep
         return it->value;
 
     if (!isVersionChange() && !m_objectStoreNames.contains(name)) {
-        ec = IDBDatabaseException::NotFoundError;
+        es.throwDOMException(NotFoundError, IDBDatabase::noSuchObjectStoreErrorMessage);
         return 0;
     }
 
     int64_t objectStoreId = m_database->findObjectStoreId(name);
     if (objectStoreId == IDBObjectStoreMetadata::InvalidId) {
         ASSERT(isVersionChange());
-        ec = IDBDatabaseException::NotFoundError;
+        es.throwDOMException(NotFoundError, IDBDatabase::noSuchObjectStoreErrorMessage);
         return 0;
     }
 
@@ -200,10 +201,10 @@ void IDBTransaction::setActive(bool active)
         backendDB()->commit(m_id);
 }
 
-void IDBTransaction::abort(ExceptionCode& ec)
+void IDBTransaction::abort(ExceptionState& es)
 {
     if (m_state == Finishing || m_state == Finished) {
-        ec = IDBDatabaseException::InvalidStateError;
+        es.throwDOMException(InvalidStateError, IDBDatabase::transactionFinishedErrorMessage);
         return;
     }
 
@@ -275,15 +276,15 @@ void IDBTransaction::unregisterRequest(IDBRequest* request)
     m_requestList.remove(request);
 }
 
-void IDBTransaction::onAbort(PassRefPtr<IDBDatabaseError> prpError)
+void IDBTransaction::onAbort(PassRefPtr<DOMError> prpError)
 {
     IDB_TRACE("IDBTransaction::onAbort");
-    RefPtr<IDBDatabaseError> error = prpError;
+    RefPtr<DOMError> error = prpError;
     ASSERT(m_state != Finished);
 
     if (m_state != Finishing) {
         ASSERT(error.get());
-        setError(DOMError::create(error->name(), error->message()));
+        setError(error.release());
 
         // Abort was not triggered by front-end, so outstanding requests must
         // be aborted now.
@@ -306,6 +307,9 @@ void IDBTransaction::onAbort(PassRefPtr<IDBDatabaseError> prpError)
 
     // Enqueue events before notifying database, as database may close which enqueues more events and order matters.
     enqueueEvent(Event::create(eventNames().abortEvent, true, false));
+
+    // If script has stopped and GC has completed, database may have last reference to this object.
+    RefPtr<IDBTransaction> protect(this);
     m_database->transactionFinished(this);
 }
 
@@ -319,6 +323,9 @@ void IDBTransaction::onComplete()
 
     // Enqueue events before notifying database, as database may close which enqueues more events and order matters.
     enqueueEvent(Event::create(eventNames().completeEvent, false, false));
+
+    // If script has stopped and GC has completed, database may have last reference to this object.
+    RefPtr<IDBTransaction> protect(this);
     m_database->transactionFinished(this);
 }
 
@@ -330,7 +337,7 @@ bool IDBTransaction::hasPendingActivity() const
     return m_hasPendingActivity && !m_contextStopped;
 }
 
-IndexedDB::TransactionMode IDBTransaction::stringToMode(const String& modeString, ExceptionCode& ec)
+IndexedDB::TransactionMode IDBTransaction::stringToMode(const String& modeString, ExceptionState& es)
 {
     if (modeString.isNull()
         || modeString == IDBTransaction::modeReadOnly())
@@ -338,7 +345,7 @@ IndexedDB::TransactionMode IDBTransaction::stringToMode(const String& modeString
     if (modeString == IDBTransaction::modeReadWrite())
         return IndexedDB::TransactionReadWrite;
 
-    ec = TypeError;
+    es.throwTypeError();
     return IndexedDB::TransactionReadOnly;
 }
 

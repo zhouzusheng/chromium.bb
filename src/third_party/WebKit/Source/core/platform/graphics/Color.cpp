@@ -20,18 +20,18 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
 #include "core/platform/graphics/Color.h"
 
 #include "core/platform/HashTools.h"
-#include <wtf/Assertions.h>
-#include <wtf/DecimalNumber.h>
-#include <wtf/HexNumber.h>
-#include <wtf/MathExtras.h>
-#include <wtf/text/StringBuilder.h>
+#include "wtf/Assertions.h"
+#include "wtf/DecimalNumber.h"
+#include "wtf/HexNumber.h"
+#include "wtf/MathExtras.h"
+#include "wtf/text/StringBuilder.h"
 
 using namespace std;
 
@@ -44,6 +44,7 @@ const RGBA32 Color::darkGray;
 const RGBA32 Color::gray;
 const RGBA32 Color::lightGray;
 const RGBA32 Color::transparent;
+const RGBA32 Color::stdShadowColor;
 #endif
 
 static const RGBA32 lightenedBlack = 0xFF545454;
@@ -94,7 +95,7 @@ static double calcHue(double temp1, double temp2, double hueVal)
 
 // Explanation of this algorithm can be found in the CSS3 Color Module
 // specification at http://www.w3.org/TR/css3-color/#hsl-color with further
-// explanation available at http://en.wikipedia.org/wiki/HSL_color_space 
+// explanation available at http://en.wikipedia.org/wiki/HSL_color_space
 
 // all values are in the range of 0 to 1.0
 RGBA32 makeRGBAFromHSLA(double hue, double saturation, double lightness, double alpha)
@@ -108,8 +109,8 @@ RGBA32 makeRGBAFromHSLA(double hue, double saturation, double lightness, double 
 
     double temp2 = lightness < 0.5 ? lightness * (1.0 + saturation) : lightness + saturation - lightness * saturation;
     double temp1 = 2.0 * lightness - temp2;
-    
-    return makeRGBA(static_cast<int>(calcHue(temp1, temp2, hue + 1.0 / 3.0) * scaleFactor), 
+
+    return makeRGBA(static_cast<int>(calcHue(temp1, temp2, hue + 1.0 / 3.0) * scaleFactor),
                     static_cast<int>(calcHue(temp1, temp2, hue) * scaleFactor),
                     static_cast<int>(calcHue(temp1, temp2, hue - 1.0 / 3.0) * scaleFactor),
                     static_cast<int>(alpha * scaleFactor));
@@ -162,12 +163,12 @@ bool Color::parseHexColor(const UChar* name, unsigned length, RGBA32& rgb)
 bool Color::parseHexColor(const String& name, RGBA32& rgb)
 {
     unsigned length = name.length();
-    
+
     if (!length)
         return false;
     if (name.is8Bit())
         return parseHexColor(name.characters8(), name.length(), rgb);
-    return parseHexColor(name.characters(), name.length(), rgb);
+    return parseHexColor(name.characters16(), name.length(), rgb);
 }
 
 int differenceSquared(const Color& c1, const Color& c2)
@@ -176,28 +177,6 @@ int differenceSquared(const Color& c1, const Color& c2)
     int dG = c1.green() - c2.green();
     int dB = c1.blue() - c2.blue();
     return dR * dR + dG * dG + dB * dB;
-}
-
-Color::Color(const String& name)
-{
-    if (name[0] == '#') {
-        if (name.is8Bit())
-            m_valid = parseHexColor(name.characters8() + 1, name.length() - 1, m_color);
-        else
-            m_valid = parseHexColor(name.characters() + 1, name.length() - 1, m_color);
-    } else
-        setNamedColor(name);
-}
-
-Color::Color(const char* name)
-{
-    if (name[0] == '#')
-        m_valid = parseHexColor(&name[1], m_color);
-    else {
-        const NamedColor* foundColor = findColor(name, strlen(name));
-        m_color = foundColor ? foundColor->ARGBValue : 0;
-        m_valid = foundColor;
-    }
 }
 
 String Color::serialized() const
@@ -212,17 +191,17 @@ String Color::serialized() const
         return builder.toString();
     }
 
-    Vector<LChar> result;
-    result.reserveInitialCapacity(28);
+    StringBuilder result;
+    result.reserveCapacity(28);
     const char commaSpace[] = ", ";
     const char rgbaParen[] = "rgba(";
 
     result.append(rgbaParen, 5);
-    appendNumber(result, red());
+    result.appendNumber(red());
     result.append(commaSpace, 2);
-    appendNumber(result, green());
+    result.appendNumber(green());
     result.append(commaSpace, 2);
-    appendNumber(result, blue());
+    result.appendNumber(blue());
     result.append(commaSpace, 2);
 
     if (!alpha())
@@ -234,7 +213,7 @@ String Color::serialized() const
     }
 
     result.append(')');
-    return String::adopt(result);
+    return result.toString();
 }
 
 String Color::nameForRenderTreeAsText() const
@@ -244,35 +223,12 @@ String Color::nameForRenderTreeAsText() const
     return String::format("#%02X%02X%02X", red(), green(), blue());
 }
 
-static inline const NamedColor* findNamedColor(const String& name)
-{
-    char buffer[64]; // easily big enough for the longest color name
-    unsigned length = name.length();
-    if (length > sizeof(buffer) - 1)
-        return 0;
-    for (unsigned i = 0; i < length; ++i) {
-        UChar c = name[i];
-        if (!c || c > 0x7F)
-            return 0;
-        buffer[i] = toASCIILower(static_cast<char>(c));
-    }
-    buffer[length] = '\0';
-    return findColor(buffer, length);
-}
-
-void Color::setNamedColor(const String& name)
-{
-    const NamedColor* foundColor = findNamedColor(name);
-    m_color = foundColor ? foundColor->ARGBValue : 0;
-    m_valid = foundColor;
-}
-
 Color Color::light() const
 {
     // Hardcode this common case for speed.
     if (m_color == black)
         return lightenedBlack;
-    
+
     const float scaleFactor = nextafterf(256.0f, 0.0f);
 
     float r, g, b, a;
@@ -297,7 +253,7 @@ Color Color::dark() const
     // Hardcode this common case for speed.
     if (m_color == white)
         return darkenedWhite;
-    
+
     const float scaleFactor = nextafterf(256.0f, 0.0f);
 
     float r, g, b, a;
@@ -354,7 +310,7 @@ Color Color::blendWithWhite() const
         int r = blendComponent(red(), alpha);
         int g = blendComponent(green(), alpha);
         int b = blendComponent(blue(), alpha);
-        
+
         newColor = Color(r, g, b, alpha);
 
         if (r >= 0 && g >= 0 && b >= 0)

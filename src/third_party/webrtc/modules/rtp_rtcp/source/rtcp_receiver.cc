@@ -10,7 +10,7 @@
 
 #include "webrtc/modules/rtp_rtcp/source/rtcp_receiver.h"
 
-#include <cassert> //assert
+#include <assert.h> //assert
 #include <string.h> //memset
 
 #include "webrtc/modules/rtp_rtcp/source/rtcp_utility.h"
@@ -484,10 +484,6 @@ RTCPReceiver::HandleReportBlock(const RTCPUtility::RTCPPacket& rtcpPacket,
 
   _lastReceivedRrMs = _clock->TimeInMilliseconds();
   const RTCPPacketReportBlockItem& rb = rtcpPacket.ReportBlockItem;
-  TRACE_COUNTER_ID1("webrtc_rtp", "RRFractionLost", rb.SSRC, rb.FractionLost);
-  TRACE_COUNTER_ID1("webrtc_rtp", "RRCumulativeNumOfPacketLost",
-                    rb.SSRC, rb.CumulativeNumOfPacketsLost);
-  TRACE_COUNTER_ID1("webrtc_rtp", "RRJitter", rb.SSRC, rb.Jitter);
   reportBlock->remoteReceiveBlock.remoteSSRC = remoteSSRC;
   reportBlock->remoteReceiveBlock.sourceSSRC = rb.SSRC;
   reportBlock->remoteReceiveBlock.fractionLost = rb.FractionLost;
@@ -1334,13 +1330,7 @@ void RTCPReceiver::TriggerCallbacksFromRTCPPacket(
       }
     }
     if(_cbRtcpFeedback) {
-      if(rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpSr) {
-        _cbRtcpFeedback->OnSendReportReceived(_id,
-            rtcpPacketInformation.remoteSSRC,
-            rtcpPacketInformation.ntp_secs,
-            rtcpPacketInformation.ntp_frac,
-            rtcpPacketInformation.rtp_timestamp);
-      } else {
+      if(!(rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpSr)) {
         _cbRtcpFeedback->OnReceiveReportReceived(_id,
             rtcpPacketInformation.remoteSSRC);
       }
@@ -1455,4 +1445,4 @@ void RTCPReceiver::PacketTimeout()
     }
 }
 
-} // namespace webrtc
+}  // namespace webrtc

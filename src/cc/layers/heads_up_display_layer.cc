@@ -16,39 +16,31 @@ scoped_refptr<HeadsUpDisplayLayer> HeadsUpDisplayLayer::Create() {
   return make_scoped_refptr(new HeadsUpDisplayLayer());
 }
 
-HeadsUpDisplayLayer::HeadsUpDisplayLayer() : Layer() {
-  SetBounds(gfx::Size(256, 256));
-}
+HeadsUpDisplayLayer::HeadsUpDisplayLayer() {}
 
 HeadsUpDisplayLayer::~HeadsUpDisplayLayer() {}
 
-void HeadsUpDisplayLayer::Update(ResourceUpdateQueue*,
-                                 const OcclusionTracker*,
-                                 RenderingStats*) {
-  const LayerTreeDebugState& debug_state = layer_tree_host()->debug_state();
-  int max_texture_size =
-      layer_tree_host()->GetRendererCapabilities().max_texture_size;
-
-  int device_viewport_in_layout_pixels_width =
-      layer_tree_host()->device_viewport_size().width() /
-      layer_tree_host()->device_scale_factor();
-  int device_viewport_in_layout_pixels_height =
-      layer_tree_host()->device_viewport_size().height() /
-      layer_tree_host()->device_scale_factor();
+void HeadsUpDisplayLayer::PrepareForCalculateDrawProperties(
+    gfx::Size device_viewport, float device_scale_factor) {
+  gfx::Size device_viewport_in_layout_pixels = gfx::Size(
+      device_viewport.width() / device_scale_factor,
+      device_viewport.height() / device_scale_factor);
 
   gfx::Size bounds;
   gfx::Transform matrix;
   matrix.MakeIdentity();
 
-  if (debug_state.ShowHudRects()) {
-    int width =
-        std::min(max_texture_size, device_viewport_in_layout_pixels_width);
-    int height =
-        std::min(max_texture_size, device_viewport_in_layout_pixels_height);
-    bounds = gfx::Size(width, height);
+  if (layer_tree_host()->debug_state().ShowHudRects()) {
+    int max_texture_size =
+        layer_tree_host()->GetRendererCapabilities().max_texture_size;
+    bounds.SetSize(std::min(max_texture_size,
+                            device_viewport_in_layout_pixels.width()),
+                   std::min(max_texture_size,
+                            device_viewport_in_layout_pixels.height()));
   } else {
-    bounds = gfx::Size(256, 256);
-    matrix.Translate(device_viewport_in_layout_pixels_width - 256.0, 0.0);
+    int size = 256;
+    bounds.SetSize(size, size);
+    matrix.Translate(device_viewport_in_layout_pixels.width() - size, 0.0);
   }
 
   SetBounds(bounds);

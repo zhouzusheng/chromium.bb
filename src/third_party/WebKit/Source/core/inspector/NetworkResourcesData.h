@@ -36,13 +36,12 @@
 #include "wtf/Deque.h"
 #include "wtf/HashMap.h"
 #include "wtf/RefCounted.h"
-#include "wtf/text/StringBuilder.h"
 #include "wtf/text/WTFString.h"
 
 
 namespace WebCore {
 
-class CachedResource;
+class Resource;
 class FormData;
 class ResourceResponse;
 class SharedBuffer;
@@ -59,7 +58,7 @@ public:
     PassRefPtr<FormData> formData() const { return m_formData; }
     const HTTPHeaderMap& headers() const { return m_headers; }
     bool includeCredentials() const { return m_includeCredentials; }
-    void reportMemoryUsage(MemoryObjectInfo*) const;
+
 private:
     XHRReplayData(const String &method, const KURL&, bool async, PassRefPtr<FormData>, bool includeCredentials);
 
@@ -114,13 +113,11 @@ public:
         PassRefPtr<SharedBuffer> buffer() const { return m_buffer; }
         void setBuffer(PassRefPtr<SharedBuffer> buffer) { m_buffer = buffer; }
 
-        CachedResource* cachedResource() const { return m_cachedResource; }
-        void setCachedResource(CachedResource* cachedResource) { m_cachedResource = cachedResource; }
+        Resource* cachedResource() const { return m_cachedResource; }
+        void setResource(Resource* cachedResource) { m_cachedResource = cachedResource; }
 
         XHRReplayData* xhrReplayData() const { return m_xhrReplayData.get(); }
         void setXHRReplayData(XHRReplayData* xhrReplayData) { m_xhrReplayData = xhrReplayData; }
-
-        void reportMemoryUsage(MemoryObjectInfo*) const;
 
     private:
         bool hasData() const { return m_dataBuffer; }
@@ -144,7 +141,7 @@ public:
         RefPtr<TextResourceDecoder> m_decoder;
 
         RefPtr<SharedBuffer> m_buffer;
-        CachedResource* m_cachedResource;
+        Resource* m_cachedResource;
     };
 
     NetworkResourcesData();
@@ -158,18 +155,16 @@ public:
     void setResourceContent(const String& requestId, const String& content, bool base64Encoded = false);
     void maybeAddResourceData(const String& requestId, const char* data, size_t dataLength);
     void maybeDecodeDataToContent(const String& requestId);
-    void addCachedResource(const String& requestId, CachedResource*);
+    void addResource(const String& requestId, Resource*);
     void addResourceSharedBuffer(const String& requestId, PassRefPtr<SharedBuffer>, const String& textEncodingName);
     ResourceData const* data(const String& requestId);
-    Vector<String> removeCachedResource(CachedResource*);
+    Vector<String> removeResource(Resource*);
     void clear(const String& preservedLoaderId = String());
 
     void setResourcesDataSizeLimits(size_t maximumResourcesContentSize, size_t maximumSingleResourceContentSize);
     void setXHRReplayData(const String& requestId, XHRReplayData*);
     void reuseXHRReplayData(const String& requestId, const String& reusedRequestId);
     XHRReplayData* xhrReplayData(const String& requestId);
-
-    void reportMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     ResourceData* resourceDataForRequestId(const String& requestId);

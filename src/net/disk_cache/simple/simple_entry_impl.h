@@ -13,8 +13,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
+#include "net/base/net_log.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/disk_cache/simple/simple_entry_format.h"
+#include "net/disk_cache/simple/simple_entry_operation.h"
 
 namespace base {
 class TaskRunner;
@@ -28,6 +30,8 @@ namespace disk_cache {
 
 class SimpleBackendImpl;
 class SimpleSynchronousEntry;
+struct SimpleEntryStat;
+struct SimpleEntryCreationResults;
 
 // SimpleEntryImpl is the IO thread interface to an entry in the very simple
 // disk cache. It proxies for the SimpleSynchronousEntry, which performs IO
@@ -36,10 +40,16 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
     public base::SupportsWeakPtr<SimpleEntryImpl> {
   friend class base::RefCounted<SimpleEntryImpl>;
  public:
-  SimpleEntryImpl(SimpleBackendImpl* backend,
-                  const base::FilePath& path,
-                  const std::string& key,
-                  uint64 entry_hash);
+  enum OperationsMode {
+    NON_OPTIMISTIC_OPERATIONS,
+    OPTIMISTIC_OPERATIONS,
+  };
+
+  SimpleEntryImpl(const base::FilePath& path,
+                  uint64 entry_hash,
+                  OperationsMode operations_mode,
+                  SimpleBackendImpl* backend,
+                  net::NetLog* net_log);
 
   // Adds another reader/writer to this entry, if possible, returning |this| to
   // |entry|.
@@ -53,6 +63,7 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
 
   const std::string& key() const { return key_; }
   uint64 entry_hash() const { return entry_hash_; }
+  void SetKey(const std::string& key);
 
   // From Entry:
   virtual void Doom() OVERRIDE;
@@ -115,7 +126,8 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
     CRC_CHECK_NEVER_READ_TO_END = 0,
     CRC_CHECK_NOT_DONE = 1,
     CRC_CHECK_DONE = 2,
-    CRC_CHECK_MAX = 3,
+    CRC_CHECK_NEVER_READ_AT_ALL = 3,
+    CRC_CHECK_MAX = 4,
   };
 
   virtual ~SimpleEntryImpl();
@@ -142,9 +154,12 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
   // the last reference.
   void RunNextOperationIfNeeded();
 
-  void OpenEntryInternal(const CompletionCallback& callback, Entry** out_entry);
+  void OpenEntryInternal(bool have_index,
+                         const CompletionCallback& callback,
+                         Entry** out_entry);
 
-  void CreateEntryInternal(const CompletionCallback& callback,
+  void CreateEntryInternal(bool have_index,
+                           const CompletionCallback& callback,
                            Entry** out_entry);
 
   void CloseInternal();
@@ -169,9 +184,9 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
   void CreationOperationComplete(
       const CompletionCallback& completion_callback,
       const base::TimeTicks& start_time,
-      scoped_ptr<SimpleSynchronousEntry*> in_sync_entry,
-      scoped_ptr<int> in_result,
-      Entry** out_entry);
+      scoped_ptr<SimpleEntryCreationResults> in_results,
+      Entry** out_entry,
+      net::NetLog::EventType end_event_type);
 
   // Called after we've closed and written the EOF record to our entry. Until
   // this point it hasn't been safe to OpenEntry() the same entry, but from this
@@ -180,24 +195,24 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
 
   // Internal utility method used by other completion methods. Calls
   // |completion_callback| after updating state and dooming on errors.
-  void EntryOperationComplete(
-      int stream_index,
-      const CompletionCallback& completion_callback,
-      scoped_ptr<int> result);
+  void EntryOperationComplete(int stream_index,
+                              const CompletionCallback& completion_callback,
+                              const SimpleEntryStat& entry_stat,
+                              scoped_ptr<int> result);
 
   // Called after an asynchronous read. Updates |crc32s_| if possible.
-  void ReadOperationComplete(
-      int stream_index,
-      int offset,
-      const CompletionCallback& completion_callback,
-      scoped_ptr<uint32> read_crc32,
-      scoped_ptr<int> result);
+  void ReadOperationComplete(int stream_index,
+                             int offset,
+                             const CompletionCallback& completion_callback,
+                             scoped_ptr<uint32> read_crc32,
+                             scoped_ptr<base::Time> last_used,
+                             scoped_ptr<int> result);
 
   // Called after an asynchronous write completes.
-  void WriteOperationComplete(
-      int stream_index,
-      const CompletionCallback& completion_callback,
-      scoped_ptr<int> result);
+  void WriteOperationComplete(int stream_index,
+                              const CompletionCallback& completion_callback,
+                              scoped_ptr<SimpleEntryStat> entry_stat,
+                              scoped_ptr<int> result);
 
   // Called after validating the checksums on an entry. Passes through the
   // original result if successful, propogates the error if the checksum does
@@ -208,11 +223,16 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
       const CompletionCallback& completion_callback,
       scoped_ptr<int> result);
 
-  // Called on initialization and also after the completion of asynchronous IO
-  // to initialize the IO thread copies of data returned by synchronous accessor
-  // functions. Copies data from |synchronous_entry_| into |this|, so that
-  // values can be returned during our next IO operation.
-  void SetSynchronousData();
+  // Called after completion of asynchronous IO and receiving file metadata for
+  // the entry in |entry_stat|. Updates the metadata in the entry and in the
+  // index to make them available on next IO operations.
+  void UpdateDataFromEntryStat(const SimpleEntryStat& entry_stat);
+
+  int64 GetDiskUsage() const;
+
+  // Used to report histograms.
+  void RecordReadIsParallelizable(const SimpleEntryOperation& operation) const;
+  void RecordWriteDependencyType(const SimpleEntryOperation& operation) const;
 
   // All nonstatic SimpleEntryImpl methods should always be called on the IO
   // thread, in all cases. |io_thread_checker_| documents and enforces this.
@@ -221,11 +241,13 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
   base::WeakPtr<SimpleBackendImpl> backend_;
   const scoped_refptr<base::TaskRunner> worker_pool_;
   const base::FilePath path_;
-  const std::string key_;
   const uint64 entry_hash_;
+  const bool use_optimistic_operations_;
+  std::string key_;
 
   // |last_used_|, |last_modified_| and |data_size_| are copied from the
   // synchronous entry at the completion of each item of asynchronous IO.
+  // TODO(clamy): Unify last_used_ with data in the index.
   base::Time last_used_;
   base::Time last_modified_;
   int32 data_size_[kSimpleEntryFileCount];
@@ -256,7 +278,11 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
   // is false (i.e. when an operation is not pending on the worker pool).
   SimpleSynchronousEntry* synchronous_entry_;
 
-  std::queue<base::Closure> pending_operations_;
+  std::queue<SimpleEntryOperation> pending_operations_;
+
+  net::BoundNetLog net_log_;
+
+  scoped_ptr<SimpleEntryOperation> executing_operation_;
 };
 
 }  // namespace disk_cache

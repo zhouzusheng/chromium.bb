@@ -6,7 +6,7 @@
 #define CONTENT_PORT_BROWSER_RENDER_WIDGET_HOST_VIEW_PORT_H_
 
 #include "base/callback.h"
-#include "base/process_util.h"
+#include "base/process/kill.h"
 #include "base/strings/string16.h"
 #include "cc/output/compositor_frame.h"
 #include "content/common/content_export.h"
@@ -16,6 +16,7 @@
 #include "ipc/ipc_listener.h"
 #include "third_party/WebKit/public/web/WebPopupType.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
+#include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/base/range/range.h"
 #include "ui/surface/transport_dib.h"
@@ -33,12 +34,6 @@ namespace media {
 class VideoFrame;
 }
 
-namespace webkit {
-namespace npapi {
-struct WebPluginGeometry;
-}
-}
-
 namespace WebKit {
 struct WebScreenInfo;
 }
@@ -47,6 +42,7 @@ namespace content {
 class BackingStore;
 class RenderWidgetHostViewFrameSubscriber;
 class SmoothScrollGesture;
+struct WebPluginGeometry;
 struct NativeWebKeyboardEvent;
 
 // This is the larger RenderWidgetHostView interface exposed only
@@ -88,7 +84,7 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   // |scroll_offset| is the scroll offset of the render view.
   virtual void MovePluginWindows(
       const gfx::Vector2d& scroll_offset,
-      const std::vector<webkit::npapi::WebPluginGeometry>& moves) = 0;
+      const std::vector<WebPluginGeometry>& moves) = 0;
 
   // Take focus from the associated View component.
   virtual void Blur() = 0;
@@ -101,15 +97,18 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
 
   // Updates the type of the input method attached to the view.
   virtual void TextInputTypeChanged(ui::TextInputType type,
-                                    bool can_compose_inline) = 0;
+                                    bool can_compose_inline,
+                                    ui::TextInputMode mode) = 0;
 
   // Cancel the ongoing composition of the input method attached to the view.
   virtual void ImeCancelComposition() = 0;
 
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
   // Updates the range of the marked text in an IME composition.
   virtual void ImeCompositionRangeChanged(
       const ui::Range& range,
       const std::vector<gfx::Rect>& character_bounds) = 0;
+#endif
 
   // Informs the view that a portion of the widget's backing store was scrolled
   // and/or painted.  The view should ensure this gets copied to the screen.
@@ -136,8 +135,8 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
       const ui::LatencyInfo& latency_info) = 0;
 
   // Notifies the View that the renderer has ceased to exist.
-  virtual void RenderViewGone(base::TerminationStatus status,
-                              int error_code) = 0;
+  virtual void RenderProcessGone(base::TerminationStatus status,
+                                 int error_code) = 0;
 
   // Tells the View to destroy itself.
   virtual void Destroy() = 0;
@@ -238,7 +237,9 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   // returned only if the accelerated surface size matches.
   virtual bool HasAcceleratedSurface(const gfx::Size& desired_size) = 0;
 
-  virtual void OnSwapCompositorFrame(scoped_ptr<cc::CompositorFrame> frame) = 0;
+  virtual void OnSwapCompositorFrame(
+      uint32 output_surface_id,
+      scoped_ptr<cc::CompositorFrame> frame) = 0;
 
   virtual void GetScreenInfo(WebKit::WebScreenInfo* results) = 0;
 
@@ -282,7 +283,8 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   virtual InputEventAckState FilterInputEvent(
       const WebKit::WebInputEvent& input_event) = 0;
 
-  virtual void GestureEventAck(int gesture_event_type) = 0;
+  virtual void GestureEventAck(int gesture_event_type,
+                               InputEventAckState ack_result) = 0;
 
   virtual void OnOverscrolled(gfx::Vector2dF accumulated_overscroll,
                               gfx::Vector2dF current_fling_velocity) = 0;
@@ -294,6 +296,13 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
       GetBrowserAccessibilityManager() const = 0;
   virtual void OnAccessibilityNotifications(
       const std::vector<AccessibilityHostMsg_NotificationParams>& params) = 0;
+
+  // Return a value that is incremented each time the renderer swaps a new frame
+  // to the view.
+  virtual uint32 RendererFrameNumber() = 0;
+  // Called each time the RenderWidgetHost receives a new frame for display from
+  // the renderer.
+  virtual void DidReceiveRendererFrame() = 0;
 
 #if defined(OS_MACOSX)
   // Called just before GetBackingStore blocks for an updated frame.

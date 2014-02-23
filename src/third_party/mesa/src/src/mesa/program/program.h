@@ -40,6 +40,7 @@
 #ifndef PROGRAM_H
 #define PROGRAM_H
 
+#include "main/compiler.h"
 #include "main/mtypes.h"
 
 
@@ -47,16 +48,16 @@ extern struct gl_program _mesa_DummyProgram;
 
 
 extern void
-_mesa_init_program(GLcontext *ctx);
+_mesa_init_program(struct gl_context *ctx);
 
 extern void
-_mesa_free_program_data(GLcontext *ctx);
+_mesa_free_program_data(struct gl_context *ctx);
 
 extern void
-_mesa_update_default_objects_program(GLcontext *ctx);
+_mesa_update_default_objects_program(struct gl_context *ctx);
 
 extern void
-_mesa_set_program_error(GLcontext *ctx, GLint pos, const char *string);
+_mesa_set_program_error(struct gl_context *ctx, GLint pos, const char *string);
 
 extern const GLubyte *
 _mesa_find_line_column(const GLubyte *string, const GLubyte *pos,
@@ -64,36 +65,45 @@ _mesa_find_line_column(const GLubyte *string, const GLubyte *pos,
 
 
 extern struct gl_program *
-_mesa_init_vertex_program(GLcontext *ctx,
+_mesa_init_vertex_program(struct gl_context *ctx,
                           struct gl_vertex_program *prog,
                           GLenum target, GLuint id);
 
 extern struct gl_program *
-_mesa_init_fragment_program(GLcontext *ctx,
+_mesa_init_fragment_program(struct gl_context *ctx,
                             struct gl_fragment_program *prog,
                             GLenum target, GLuint id);
 
 extern struct gl_program *
-_mesa_init_geometry_program(GLcontext *ctx,
+_mesa_init_geometry_program(struct gl_context *ctx,
                             struct gl_geometry_program *prog,
                             GLenum target, GLuint id);
 
 extern struct gl_program *
-_mesa_new_program(GLcontext *ctx, GLenum target, GLuint id);
+_mesa_new_program(struct gl_context *ctx, GLenum target, GLuint id);
 
 extern void
-_mesa_delete_program(GLcontext *ctx, struct gl_program *prog);
+_mesa_delete_program(struct gl_context *ctx, struct gl_program *prog);
 
 extern struct gl_program *
-_mesa_lookup_program(GLcontext *ctx, GLuint id);
+_mesa_lookup_program(struct gl_context *ctx, GLuint id);
 
 extern void
-_mesa_reference_program(GLcontext *ctx,
-                        struct gl_program **ptr,
-                        struct gl_program *prog);
+_mesa_reference_program_(struct gl_context *ctx,
+                         struct gl_program **ptr,
+                         struct gl_program *prog);
 
-static INLINE void
-_mesa_reference_vertprog(GLcontext *ctx,
+static inline void
+_mesa_reference_program(struct gl_context *ctx,
+                        struct gl_program **ptr,
+                        struct gl_program *prog)
+{
+   if (*ptr != prog)
+      _mesa_reference_program_(ctx, ptr, prog);
+}
+
+static inline void
+_mesa_reference_vertprog(struct gl_context *ctx,
                          struct gl_vertex_program **ptr,
                          struct gl_vertex_program *prog)
 {
@@ -101,8 +111,8 @@ _mesa_reference_vertprog(GLcontext *ctx,
                            (struct gl_program *) prog);
 }
 
-static INLINE void
-_mesa_reference_fragprog(GLcontext *ctx,
+static inline void
+_mesa_reference_fragprog(struct gl_context *ctx,
                          struct gl_fragment_program **ptr,
                          struct gl_fragment_program *prog)
 {
@@ -110,8 +120,8 @@ _mesa_reference_fragprog(GLcontext *ctx,
                            (struct gl_program *) prog);
 }
 
-static INLINE void
-_mesa_reference_geomprog(GLcontext *ctx,
+static inline void
+_mesa_reference_geomprog(struct gl_context *ctx,
                          struct gl_geometry_program **ptr,
                          struct gl_geometry_program *prog)
 {
@@ -120,24 +130,24 @@ _mesa_reference_geomprog(GLcontext *ctx,
 }
 
 extern struct gl_program *
-_mesa_clone_program(GLcontext *ctx, const struct gl_program *prog);
+_mesa_clone_program(struct gl_context *ctx, const struct gl_program *prog);
 
-static INLINE struct gl_vertex_program *
-_mesa_clone_vertex_program(GLcontext *ctx,
+static inline struct gl_vertex_program *
+_mesa_clone_vertex_program(struct gl_context *ctx,
                            const struct gl_vertex_program *prog)
 {
    return (struct gl_vertex_program *) _mesa_clone_program(ctx, &prog->Base);
 }
 
-static INLINE struct gl_geometry_program *
-_mesa_clone_geometry_program(GLcontext *ctx,
+static inline struct gl_geometry_program *
+_mesa_clone_geometry_program(struct gl_context *ctx,
                              const struct gl_geometry_program *prog)
 {
    return (struct gl_geometry_program *) _mesa_clone_program(ctx, &prog->Base);
 }
 
-static INLINE struct gl_fragment_program *
-_mesa_clone_fragment_program(GLcontext *ctx,
+static inline struct gl_fragment_program *
+_mesa_clone_fragment_program(struct gl_context *ctx,
                              const struct gl_fragment_program *prog)
 {
    return (struct gl_fragment_program *) _mesa_clone_program(ctx, &prog->Base);
@@ -151,7 +161,7 @@ extern  GLboolean
 _mesa_delete_instructions(struct gl_program *prog, GLuint start, GLuint count);
 
 extern struct gl_program *
-_mesa_combine_programs(GLcontext *ctx,
+_mesa_combine_programs(struct gl_context *ctx,
                        const struct gl_program *progA,
                        const struct gl_program *progB);
 
@@ -164,16 +174,20 @@ extern GLint
 _mesa_find_free_register(const GLboolean used[],
                          GLuint maxRegs, GLuint firstReg);
 
+
+extern GLboolean
+_mesa_valid_register_index(const struct gl_context *ctx,
+                           gl_shader_type shaderType,
+                           gl_register_file file, GLint index);
+
 extern void
-_mesa_postprocess_program(GLcontext *ctx, struct gl_program *prog);
+_mesa_postprocess_program(struct gl_context *ctx, struct gl_program *prog);
 
-/* keep these in the same order as TGSI_PROCESSOR_* */
 
-static INLINE GLuint
+static inline GLuint
 _mesa_program_target_to_index(GLenum v)
 {
-   switch(v)
-   {
+   switch (v) {
    case GL_VERTEX_PROGRAM_ARB:
       return MESA_SHADER_VERTEX;
    case GL_FRAGMENT_PROGRAM_ARB:
@@ -186,18 +200,60 @@ _mesa_program_target_to_index(GLenum v)
    }
 }
 
-static INLINE GLenum
+static inline GLenum
 _mesa_program_index_to_target(GLuint i)
 {
-   GLenum enums[MESA_SHADER_TYPES] = {
-         GL_VERTEX_PROGRAM_ARB,
-         GL_FRAGMENT_PROGRAM_ARB,
-         GL_GEOMETRY_PROGRAM_NV,
+   static const GLenum enums[MESA_SHADER_TYPES] = {
+      GL_VERTEX_PROGRAM_ARB,
+      GL_FRAGMENT_PROGRAM_ARB,
+      GL_GEOMETRY_PROGRAM_NV,
    };
    if(i >= MESA_SHADER_TYPES)
       return 0;
    else
       return enums[i];
 }
+
+
+/* Cast wrappers from gl_program to gl_vertex/geometry/fragment_program */
+
+static inline struct gl_fragment_program *
+gl_fragment_program(struct gl_program *prog)
+{
+   return (struct gl_fragment_program *) prog;
+}
+
+static inline const struct gl_fragment_program *
+gl_fragment_program_const(const struct gl_program *prog)
+{
+   return (const struct gl_fragment_program *) prog;
+}
+
+
+static inline struct gl_vertex_program *
+gl_vertex_program(struct gl_program *prog)
+{
+   return (struct gl_vertex_program *) prog;
+}
+
+static inline const struct gl_vertex_program *
+gl_vertex_program_const(const struct gl_program *prog)
+{
+   return (const struct gl_vertex_program *) prog;
+}
+
+
+static inline struct gl_geometry_program *
+gl_geometry_program(struct gl_program *prog)
+{
+   return (struct gl_geometry_program *) prog;
+}
+
+static inline const struct gl_geometry_program *
+gl_geometry_program_const(const struct gl_program *prog)
+{
+   return (const struct gl_geometry_program *) prog;
+}
+
 
 #endif /* PROGRAM_H */

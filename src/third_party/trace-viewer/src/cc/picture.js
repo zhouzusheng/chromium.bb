@@ -4,20 +4,26 @@
 
 'use strict';
 
-base.require('base.raf');
+base.require('base.guid');
 base.require('base.rect');
+base.require('base.raf');
 base.require('tracing.trace_model.object_instance');
+base.require('cc.picture_as_image_data');
 base.require('cc.util');
 
 base.exportTo('cc', function() {
 
   var ObjectSnapshot = tracing.trace_model.ObjectSnapshot;
 
+  // Number of pictures created. Used as an uniqueId because we are immutable.
+  var PictureCount = 0;
+
   /**
    * @constructor
    */
   function PictureSnapshot() {
     ObjectSnapshot.apply(this, arguments);
+    this.guid_ = base.GUID.allocate();
   }
 
   PictureSnapshot.CanRasterize = function() {
@@ -29,7 +35,28 @@ base.exportTo('cc', function() {
       return false;
     return true;
   }
-  PictureSnapshot.HowToEnableRasterizing = function() {
+
+  PictureSnapshot.CanGetOps = function() {
+    if (!window.chrome)
+      return false;
+    if (!window.chrome.skiaBenchmarking)
+      return false;
+    if (!window.chrome.skiaBenchmarking.getOps)
+      return false;
+    return true;
+  }
+
+  PictureSnapshot.CanGetOpTimings = function() {
+    if (!window.chrome)
+      return false;
+    if (!window.chrome.skiaBenchmarking)
+      return false;
+    if (!window.chrome.skiaBenchmarking.getOpTimings)
+      return false;
+    return true;
+  }
+
+  PictureSnapshot.HowToEnablePictureDebugging = function() {
     var usualReason = [
       'For pictures to show up, you need to have Chrome running with ',
       '--enable-skia-benchmarking. Please restart chrome with this flag ',
@@ -42,107 +69,124 @@ base.exportTo('cc', function() {
       return usualReason;
     if (!window.chrome.skiaBenchmarking.rasterize)
       return 'Your chrome is old';
+    if (!window.chrome.skiaBenchmarking.getOps)
+      return 'Your chrome is old: skiaBenchmarking.getOps not found';
+    if (!window.chrome.skiaBenchmarking.getOpTimings)
+      return 'Your chrome is old: skiaBenchmarking.getOpTimings not found';
     return 'Rasterizing is on';
   }
-
-  var RASTER_IMPOSSIBLE = -2;
-  var RASTER_FAILED = -1;
-  var RASTER_NOT_BEGUN = 0;
-  var RASTER_SUCCEEDED = 1;
 
   PictureSnapshot.prototype = {
     __proto__: ObjectSnapshot.prototype,
 
     preInitialize: function() {
       cc.preInitializeObject(this);
-
-      if (PictureSnapshot.CanRasterize())
-        this.rasterStatus_ = RASTER_NOT_BEGUN;
-      else
-        this.rasterStatus_ = RASTER_IMPOSSIBLE;
       this.rasterResult_ = undefined;
-
-      this.image_ = undefined;
     },
 
     initialize: function() {
       if (!this.args.params.layerRect)
         throw new Error('Missing layer rect');
-      this.layerRect = this.args.params.layerRect;
-      this.layerRect = base.Rect.FromArray(this.layerRect);
+      this.layerRect_ = this.args.params.layerRect;
+    },
+
+    get layerRect() {
+      return this.layerRect_;
+    },
+
+    get guid() {
+      return this.guid_;
     },
 
     getBase64SkpData: function() {
       return this.args.skp64;
     },
 
-    rasterize_: function() {
-      if (this.rasterStatus_ != RASTER_NOT_BEGUN)
-        throw new Error('Rasterized already');
-
-      if (!PictureSnapshot.CanRasterize()) {
-        console.error(PictureSnapshot.HowToEnableRasterizing());
+    getOps: function() {
+      if (!PictureSnapshot.CanGetOps()) {
+        console.error(PictureSnapshot.HowToEnablePictureDebugging());
         return undefined;
       }
 
-      var res = window.chrome.skiaBenchmarking.rasterize({
+      var ops = window.chrome.skiaBenchmarking.getOps({
         skp64: this.args.skp64,
         params: {
-          layer_rect: this.args.params.layerRect,
-          opaque_rect: this.args.params.opaqueRect
+          layer_rect: this.args.params.layerRect.toArray(),
+          opaque_rect: this.args.params.opaqueRect.toArray()
         }
       });
-      if (!res) {
-        this.rasterStatus_ = RASTER_FAILED;
+
+      if (!ops)
+        console.error('Failed to get picture ops.');
+
+      return ops;
+    },
+
+    getOpTimings: function() {
+      if (!PictureSnapshot.CanGetOpTimings()) {
+        console.error(PictureSnapshot.HowToEnablePictureDebugging());
+        return undefined;
+      }
+
+      var opTimings = window.chrome.skiaBenchmarking.getOpTimings({
+        skp64: this.args.skp64,
+        params: {
+          layer_rect: this.args.params.layerRect.toArray(),
+          opaque_rect: this.args.params.opaqueRect.toArray()
+        }
+      });
+
+      if (!opTimings)
+        console.error('Failed to get picture op timings.');
+
+      return opTimings;
+    },
+
+    /**
+     * Rasterize the picture.
+     *
+     * @param {{opt_stopIndex: number, params}} The SkPicture operation to
+     *     rasterize up to. If not defined, the entire SkPicture is rasterized.
+     * @param {{opt_showOverdraw: bool, params}} Defines whether pixel overdraw
+           should be visualized in the image.
+     * @param {function(cc.PictureAsImageData)} The callback function that is
+     *     called after rasterization is complete or fails.
+     */
+    rasterize: function(params, rasterCompleteCallback) {
+      if (!PictureSnapshot.CanRasterize() || !PictureSnapshot.CanGetOps()) {
+        rasterCompleteCallback(new cc.PictureAsImageData(
+            this, cc.PictureSnapshot.HowToEnablePictureDebugging()));
         return;
       }
 
-      this.rasterStatus_ = RASTER_SUCCEEDED;
-      this.rasterResult_ = {
-        width: res.width,
-        height: res.height,
-        data: new Uint8ClampedArray(res.data)
-      };
-    },
+      var raster = window.chrome.skiaBenchmarking.rasterize(
+          {
+            skp64: this.args.skp64,
+            params: {
+              layer_rect: this.args.params.layerRect.toArray(),
+              opaque_rect: this.args.params.opaqueRect.toArray()
+            }
+          },
+          {
+            stop: params.stopIndex === undefined ? -1 : params.stopIndex,
+            overdraw: !!params.showOverdraw,
+            params: { }
+          });
 
-    get image() {
-      return this.image_;
-    },
-
-    get canRasterizeImage() {
-      if (this.rasterStatus_ == RASTER_SUCCEEDED)
-        return true;
-      return this.rasterStatus_ == RASTER_NOT_BEGUN;
-    },
-
-    beginRasterizingImage: function(imageReadyCallback) {
-      if (this.rasterStatus_ == RASTER_IMPOSSIBLE ||
-          this.rasterStatus_ == RASTER_FAILED)
-        throw new Error('Cannot render image');
-
-      if (this.rasterStatus_ == RASTER_SUCCEEDED)
-        throw new Error('Cannot render image');
-
-      this.rasterize_();
-      if (this.rasterStatus_ == RASTER_FAILED) {
-        base.requestAnimationFrameInThisFrameIfPossible(imageReadyCallback);
-        return;
+      if (raster) {
+        var canvas = document.createElement('canvas');
+        var ctx = canvas.getContext('2d');
+        canvas.width = raster.width;
+        canvas.height = raster.height;
+        var imageData = ctx.createImageData(raster.width, raster.height);
+        imageData.data.set(new Uint8ClampedArray(raster.data));
+        rasterCompleteCallback(new cc.PictureAsImageData(this, imageData));
+      } else {
+        var error = 'Failed to rasterize picture. ' +
+                'Your recording may be from an old Chrome version. ' +
+                'The SkPicture format is not backward compatible.';
+        rasterCompleteCallback(new cc.PictureAsImageData(this, error));
       }
-      var rd = this.rasterResult_;
-
-      var helperCanvas = document.createElement('canvas');
-      helperCanvas.width = rd.width;
-      helperCanvas.height = rd.height;
-      var ctx = helperCanvas.getContext('2d');
-      var imageData = ctx.createImageData(rd.width, rd.height);
-      imageData.data.set(rd.data);
-      ctx.putImageData(imageData, 0, 0);
-      var img = document.createElement('img');
-      img.onload = function() {
-        this.image_ = img;
-        imageReadyCallback();
-      }.bind(this);
-      img.src = helperCanvas.toDataURL();
     }
   };
 

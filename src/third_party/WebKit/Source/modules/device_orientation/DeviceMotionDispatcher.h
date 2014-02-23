@@ -31,10 +31,9 @@
 #ifndef DeviceMotionDispatcher_h
 #define DeviceMotionDispatcher_h
 
-#include "DeviceMotionData.h"
-#include "wtf/RefPtr.h"
-#include "wtf/Vector.h"
+#include "modules/device_orientation/DeviceSensorEventDispatcher.h"
 #include "public/platform/WebDeviceMotionListener.h"
+#include "wtf/RefPtr.h"
 
 namespace WebKit {
 class WebDeviceMotionData;
@@ -47,12 +46,9 @@ class DeviceMotionData;
 
 // This class listens to device motion data and dispatches it to all
 // listening controllers.
-class DeviceMotionDispatcher : public WebKit::WebDeviceMotionListener {
+class DeviceMotionDispatcher : public DeviceSensorEventDispatcher, public WebKit::WebDeviceMotionListener {
 public:
     static DeviceMotionDispatcher& instance();
-
-    void addController(DeviceMotionController*);
-    void removeController(DeviceMotionController*);
 
     // Note that the returned object is owned by this class.
     // FIXME: make the return value const, see crbug.com/233174.
@@ -60,18 +56,17 @@ public:
 
     // This method is called every time new device motion data is available.
     virtual void didChangeDeviceMotion(const WebKit::WebDeviceMotionData&) OVERRIDE;
+    void addDeviceMotionController(DeviceMotionController*);
+    void removeDeviceMotionController(DeviceMotionController*);
 
 private:
     DeviceMotionDispatcher();
     ~DeviceMotionDispatcher();
 
-    void startListening();
-    void stopListening();
-
-    void purgeControllers();
+    virtual void startListening() OVERRIDE;
+    virtual void stopListening() OVERRIDE;
 
     RefPtr<DeviceMotionData> m_lastDeviceMotionData;
-    Vector<DeviceMotionController*> m_controllers;
 };
 
 } // namespace WebCore

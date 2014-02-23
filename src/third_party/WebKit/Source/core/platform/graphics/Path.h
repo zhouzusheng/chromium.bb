@@ -23,7 +23,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef Path_h
@@ -32,98 +32,99 @@
 #include "core/platform/graphics/RoundedRect.h"
 #include "core/platform/graphics/WindRule.h"
 #include "third_party/skia/include/core/SkPath.h"
-#include <wtf/FastAllocBase.h>
-#include <wtf/Forward.h>
+#include "wtf/FastAllocBase.h"
+#include "wtf/Forward.h"
 
 class SkPath;
 
 namespace WebCore {
 
-    class AffineTransform;
-    class FloatPoint;
-    class FloatRect;
-    class FloatSize;
-    class GraphicsContext;
-    class StrokeData;
+class AffineTransform;
+class FloatPoint;
+class FloatRect;
+class FloatSize;
+class GraphicsContext;
+class StrokeData;
 
-    enum PathElementType {
-        PathElementMoveToPoint, // The points member will contain 1 value.
-        PathElementAddLineToPoint, // The points member will contain 1 value.
-        PathElementAddQuadCurveToPoint, // The points member will contain 2 values.
-        PathElementAddCurveToPoint, // The points member will contain 3 values.
-        PathElementCloseSubpath // The points member will contain no values.
-    };
+enum PathElementType {
+    PathElementMoveToPoint, // The points member will contain 1 value.
+    PathElementAddLineToPoint, // The points member will contain 1 value.
+    PathElementAddQuadCurveToPoint, // The points member will contain 2 values.
+    PathElementAddCurveToPoint, // The points member will contain 3 values.
+    PathElementCloseSubpath // The points member will contain no values.
+};
 
-    // The points in the sturcture are the same as those that would be used with the
-    // add... method. For example, a line returns the endpoint, while a cubic returns
-    // two tangent points and the endpoint.
-    struct PathElement {
-        PathElementType type;
-        FloatPoint* points;
-    };
+// The points in the sturcture are the same as those that would be used with the
+// add... method. For example, a line returns the endpoint, while a cubic returns
+// two tangent points and the endpoint.
+struct PathElement {
+    PathElementType type;
+    FloatPoint* points;
+};
 
-    typedef void (*PathApplierFunction)(void* info, const PathElement*);
+typedef void (*PathApplierFunction)(void* info, const PathElement*);
 
-    class Path {
-        WTF_MAKE_FAST_ALLOCATED;
-    public:
-        Path();
-        ~Path();
+class Path {
+    WTF_MAKE_FAST_ALLOCATED;
+public:
+    Path();
+    ~Path();
 
-        Path(const Path&);
-        Path& operator=(const Path&);
-        bool operator==(const Path&) const;
+    Path(const Path&);
+    Path& operator=(const Path&);
+    bool operator==(const Path&) const;
 
-        bool contains(const FloatPoint&, WindRule rule = RULE_NONZERO) const;
-        bool strokeContains(const FloatPoint&, const StrokeData&) const;
-        FloatRect boundingRect() const;
-        FloatRect strokeBoundingRect(const StrokeData&) const;
-        
-        float length() const;
-        FloatPoint pointAtLength(float length, bool& ok) const;
-        float normalAngleAtLength(float length, bool& ok) const;
-        bool pointAndNormalAtLength(float length, FloatPoint&, float&) const;
+    bool contains(const FloatPoint&, WindRule = RULE_NONZERO) const;
+    bool strokeContains(const FloatPoint&, const StrokeData&) const;
+    FloatRect boundingRect() const;
+    FloatRect strokeBoundingRect(const StrokeData&) const;
 
-        void clear();
-        bool isEmpty() const;
-        // Gets the current point of the current path, which is conceptually the final point reached by the path so far.
-        // Note the Path can be empty (isEmpty() == true) and still have a current point.
-        bool hasCurrentPoint() const;
-        FloatPoint currentPoint() const;
+    float length() const;
+    FloatPoint pointAtLength(float length, bool& ok) const;
+    float normalAngleAtLength(float length, bool& ok) const;
+    bool pointAndNormalAtLength(float length, FloatPoint&, float&) const;
 
-        void moveTo(const FloatPoint&);
-        void addLineTo(const FloatPoint&);
-        void addQuadCurveTo(const FloatPoint& controlPoint, const FloatPoint& endPoint);
-        void addBezierCurveTo(const FloatPoint& controlPoint1, const FloatPoint& controlPoint2, const FloatPoint& endPoint);
-        void addArcTo(const FloatPoint&, const FloatPoint&, float radius);
-        void closeSubpath();
+    void clear();
+    bool isEmpty() const;
+    // Gets the current point of the current path, which is conceptually the final point reached by the path so far.
+    // Note the Path can be empty (isEmpty() == true) and still have a current point.
+    bool hasCurrentPoint() const;
+    FloatPoint currentPoint() const;
 
-        void addArc(const FloatPoint&, float radius, float startAngle, float endAngle, bool anticlockwise);
-        void addRect(const FloatRect&);
-        void addEllipse(const FloatRect&);
+    WindRule windRule() const;
+    void setWindRule(const WindRule);
 
-        enum RoundedRectStrategy {
-            PreferNativeRoundedRect,
-            PreferBezierRoundedRect
-        };
+    void moveTo(const FloatPoint&);
+    void addLineTo(const FloatPoint&);
+    void addQuadCurveTo(const FloatPoint& controlPoint, const FloatPoint& endPoint);
+    void addBezierCurveTo(const FloatPoint& controlPoint1, const FloatPoint& controlPoint2, const FloatPoint& endPoint);
+    void addArcTo(const FloatPoint&, const FloatPoint&, float radius);
+    void closeSubpath();
 
-        void addRoundedRect(const FloatRect&, const FloatSize& roundingRadii, RoundedRectStrategy = PreferNativeRoundedRect);
-        void addRoundedRect(const FloatRect&, const FloatSize& topLeftRadius, const FloatSize& topRightRadius, const FloatSize& bottomLeftRadius, const FloatSize& bottomRightRadius, RoundedRectStrategy = PreferNativeRoundedRect);
-        void addRoundedRect(const RoundedRect&);
+    void addArc(const FloatPoint&, float radius, float startAngle, float endAngle, bool anticlockwise);
+    void addRect(const FloatRect&);
+    void addEllipse(const FloatRect&);
 
-        void translate(const FloatSize&);
+    void addRoundedRect(const FloatRect&, const FloatSize& roundingRadii);
+    void addRoundedRect(const FloatRect&, const FloatSize& topLeftRadius, const FloatSize& topRightRadius, const FloatSize& bottomLeftRadius, const FloatSize& bottomRightRadius);
+    void addRoundedRect(const RoundedRect&);
 
-        const SkPath& skPath() const { return m_path; }
+    void translate(const FloatSize&);
 
-        void apply(void* info, PathApplierFunction) const;
-        void transform(const AffineTransform&);
+    const SkPath& skPath() const { return m_path; }
 
-        void addPathForRoundedRect(const FloatRect&, const FloatSize& topLeftRadius, const FloatSize& topRightRadius, const FloatSize& bottomLeftRadius, const FloatSize& bottomRightRadius, RoundedRectStrategy = PreferNativeRoundedRect);
-        void addBeziersForRoundedRect(const FloatRect&, const FloatSize& topLeftRadius, const FloatSize& topRightRadius, const FloatSize& bottomLeftRadius, const FloatSize& bottomRightRadius);
+    void apply(void* info, PathApplierFunction) const;
+    void transform(const AffineTransform&);
 
-    private:
-        SkPath m_path;
-    };
+    void addPathForRoundedRect(const FloatRect&, const FloatSize& topLeftRadius, const FloatSize& topRightRadius, const FloatSize& bottomLeftRadius, const FloatSize& bottomRightRadius);
+    void addBeziersForRoundedRect(const FloatRect&, const FloatSize& topLeftRadius, const FloatSize& topRightRadius, const FloatSize& bottomLeftRadius, const FloatSize& bottomRightRadius);
+
+    // Updates the path to the union (inclusive-or) of itself with the given argument.
+    bool unionPath(const Path& other);
+
+private:
+    SkPath m_path;
+};
 
 }
 

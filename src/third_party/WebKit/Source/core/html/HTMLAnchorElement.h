@@ -98,7 +98,7 @@ public:
 
     bool hasRel(uint32_t relation) const;
     void setRel(const String&);
-    
+
     LinkHash visitedLinkHash() const;
     void invalidateCachedVisitedLinkHash() { m_cachedVisitedLinkHash = 0; }
 
@@ -110,7 +110,7 @@ protected:
 private:
     virtual bool supportsFocus() const;
     virtual bool isMouseFocusable() const;
-    virtual bool isKeyboardFocusable(KeyboardEvent*) const;
+    virtual bool isKeyboardFocusable() const OVERRIDE;
     virtual void defaultEventHandler(Event*);
     virtual void setActive(bool active = true, bool pause = false);
     virtual void accessKeyAction(bool sendMouseEvents);
@@ -150,13 +150,29 @@ inline LinkHash HTMLAnchorElement::visitedLinkHash() const
 {
     if (!m_cachedVisitedLinkHash)
         m_cachedVisitedLinkHash = WebCore::visitedLinkHash(document()->baseURL(), fastGetAttribute(HTMLNames::hrefAttr));
-    return m_cachedVisitedLinkHash; 
+    return m_cachedVisitedLinkHash;
 }
 
 // Functions shared with the other anchor elements (i.e., SVG).
 
 bool isEnterKeyKeydownEvent(Event*);
 bool isLinkClick(Event*);
+
+inline bool isHTMLAnchorElement(const Node* node)
+{
+    return node->hasTagName(HTMLNames::aTag);
+}
+
+inline bool isHTMLAnchorElement(const Element* element)
+{
+    return element->hasTagName(HTMLNames::aTag);
+}
+
+inline HTMLAnchorElement* toHTMLAnchorElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLAnchorElement(node));
+    return static_cast<HTMLAnchorElement*>(node);
+}
 
 } // namespace WebCore
 

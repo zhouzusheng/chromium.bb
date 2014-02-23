@@ -4,13 +4,25 @@
  */
 
 .timeline-track-view * {
-  -webkit-user-select: none;
   cursor: default;
+}
+
+.timeline-track-view .tool-button {
+  cursor: pointer;
 }
 
 .timeline-track-view {
   -webkit-box-orient: vertical;
   display: -webkit-box;
+  position: relative;
+}
+
+.timeline-track-view .mode-indicator {
+  height: 32px;
+  position: absolute;
+  right: 5px;
+  top: 38px;
+  width: 33px;
 }
 
 .model-track-container {

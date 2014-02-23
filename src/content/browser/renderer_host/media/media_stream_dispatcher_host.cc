@@ -8,7 +8,7 @@
 #include "content/browser/renderer_host/media/web_contents_capture_util.h"
 #include "content/common/media/media_stream_messages.h"
 #include "content/common/media/media_stream_options.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -60,6 +60,20 @@ void MediaStreamDispatcherHost::StreamGenerationFailed(
 
   Send(new MediaStreamMsg_StreamGenerationFailed(request.render_view_id,
                                                  request.page_request_id));
+}
+
+void MediaStreamDispatcherHost::StopGeneratedStream(
+    const std::string& label) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DVLOG(1) << "MediaStreamDispatcherHost::StopGeneratedStream("
+           << ", {label = " << label <<  "})";
+
+  StreamMap::iterator it = streams_.find(label);
+  DCHECK(it != streams_.end());
+  StreamRequest request = it->second;
+  streams_.erase(it);
+
+  Send(new MediaStreamMsg_StopGeneratedStream(request.render_view_id, label));
 }
 
 void MediaStreamDispatcherHost::DevicesEnumerated(
@@ -143,7 +157,8 @@ void MediaStreamDispatcherHost::OnGenerateStream(
            << security_origin.spec() << ")";
 
   const std::string& label = media_stream_manager_->GenerateStream(
-      this, render_process_id_, render_view_id, components, security_origin);
+      this, render_process_id_, render_view_id, page_request_id,
+      components, security_origin);
   if (label.empty()) {
     Send(new MediaStreamMsg_StreamGenerationFailed(render_view_id,
                                                    page_request_id));
@@ -191,7 +206,8 @@ void MediaStreamDispatcherHost::OnEnumerateDevices(
            << security_origin.spec() << ")";
 
   const std::string& label = media_stream_manager_->EnumerateDevices(
-      this, render_process_id_, render_view_id, type, security_origin);
+      this, render_process_id_, render_view_id, page_request_id,
+      type, security_origin);
   DCHECK(!label.empty());
   streams_[label] = StreamRequest(render_view_id, page_request_id);
 }
@@ -210,7 +226,7 @@ void MediaStreamDispatcherHost::OnOpenDevice(
            << security_origin.spec() << ")";
 
   const std::string& label = media_stream_manager_->OpenDevice(
-      this, render_process_id_, render_view_id,
+      this, render_process_id_, render_view_id, page_request_id,
       device_id, type, security_origin);
   DCHECK(!label.empty());
   streams_[label] = StreamRequest(render_view_id, page_request_id);

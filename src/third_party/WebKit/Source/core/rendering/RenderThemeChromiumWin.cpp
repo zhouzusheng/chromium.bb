@@ -48,7 +48,7 @@
 #include "public/platform/WebColor.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/win/WebThemeEngine.h"
-#include <wtf/CurrentTime.h>
+#include "wtf/CurrentTime.h"
 
 
 // FIXME: This dependency should eventually be removed.
@@ -339,7 +339,7 @@ bool RenderThemeChromiumWin::paintSliderThumb(RenderObject* o, const PaintInfo& 
 
 static int menuListButtonWidth()
 {
-    static int width = isRunningLayoutTest() ? kStandardMenuListButtonWidth : 
+    static int width = isRunningLayoutTest() ? kStandardMenuListButtonWidth :
         IntSize(WebKit::Platform::current()->themeEngine()->getSize(SBP_ARROWBTN)).width();
     return width;
 }
@@ -552,7 +552,7 @@ bool RenderThemeChromiumWin::paintTextFieldInternal(RenderObject* o,
     // Fallback to white if the specified color object is invalid.
     Color backgroundColor(Color::white);
     if (o->style()->visitedDependentColor(CSSPropertyBackgroundColor).isValid())
-        backgroundColor = o->style()->visitedDependentColor(CSSPropertyBackgroundColor);
+        backgroundColor = o->resolveColor(CSSPropertyBackgroundColor);
 
     // If we have background-image, don't fill the content area to expose the
     // parent's background. Also, we shouldn't fill the content area if the

@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "cc/base/cc_export.h"
 #include "cc/output/begin_frame_args.h"
 #include "cc/scheduler/scheduler_settings.h"
@@ -40,12 +40,14 @@ class SchedulerClient {
   virtual ScheduledActionDrawAndSwapResult
   ScheduledActionDrawAndSwapForced() = 0;
   virtual void ScheduledActionCommit() = 0;
-  virtual void ScheduledActionCheckForCompletedTileUploads() = 0;
+  virtual void ScheduledActionUpdateVisibleTiles() = 0;
   virtual void ScheduledActionActivatePendingTreeIfNeeded() = 0;
   virtual void ScheduledActionBeginOutputSurfaceCreation() = 0;
   virtual void ScheduledActionAcquireLayerTexturesForMainThread() = 0;
   virtual void DidAnticipatedDrawTimeChange(base::TimeTicks time) = 0;
   virtual base::TimeDelta DrawDurationEstimate() = 0;
+  virtual base::TimeDelta BeginFrameToCommitDurationEstimate() = 0;
+  virtual base::TimeDelta CommitToActivateDurationEstimate() = 0;
 
  protected:
   virtual ~SchedulerClient() {}
@@ -84,7 +86,7 @@ class CC_EXPORT Scheduler {
   void DidSwapUseIncompleteTile();
 
   void FinishCommit();
-  void BeginFrameAbortedByMainThread();
+  void BeginFrameAbortedByMainThread(bool did_handle);
 
   void DidLoseOutputSurface();
   void DidCreateAndInitializeOutputSurface();

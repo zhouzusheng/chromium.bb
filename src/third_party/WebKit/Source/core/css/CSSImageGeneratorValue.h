@@ -28,12 +28,12 @@
 
 #include "core/css/CSSValue.h"
 #include "core/platform/graphics/IntSizeHash.h"
-#include <wtf/HashCountedSet.h>
-#include <wtf/RefPtr.h>
+#include "wtf/HashCountedSet.h"
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
-class CachedResourceLoader;
+class ResourceFetcher;
 class Image;
 class RenderObject;
 class StyleResolver;
@@ -65,7 +65,7 @@ public:
     bool isPending() const;
     bool knownToBeOpaque(const RenderObject*) const;
 
-    void loadSubimages(CachedResourceLoader*);
+    void loadSubimages(ResourceFetcher*);
 
 protected:
     CSSImageGeneratorValue(ClassType);
@@ -73,8 +73,6 @@ protected:
     Image* getImage(RenderObject*, const IntSize&);
     void putImage(const IntSize&, PassRefPtr<Image>);
     const RenderObjectSizeCountMap& clients() const { return m_clients; }
-
-    void reportBaseClassMemoryUsage(MemoryObjectInfo*) const;
 
     HashCountedSet<IntSize> m_sizes; // A count of how many times a given image size is in use.
     RenderObjectSizeCountMap m_clients; // A map from RenderObjects (with entry count) to image sizes.

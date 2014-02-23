@@ -6,13 +6,13 @@
  * are met:
  *
  * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer. 
+ *     notice, this list of conditions and the following disclaimer.
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution. 
+ *     documentation and/or other materials provided with the distribution.
  * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission. 
+ *     from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -29,7 +29,7 @@
 #include "config.h"
 #include "core/loader/NavigationAction.h"
 
-#include "core/dom/Event.h"
+#include "core/dom/MouseEvent.h"
 #include "core/loader/FrameLoader.h"
 
 namespace WebCore {
@@ -37,13 +37,14 @@ namespace WebCore {
 static NavigationType navigationType(FrameLoadType frameLoadType, bool isFormSubmission, bool haveEvent)
 {
     bool isReload = frameLoadType == FrameLoadTypeReload || frameLoadType == FrameLoadTypeReloadFromOrigin;
+    bool isBackForward = isBackForwardLoadType(frameLoadType);
     if (isFormSubmission)
-        return isReload ? NavigationTypeFormResubmitted : NavigationTypeFormSubmitted;
+        return (isReload || isBackForward) ? NavigationTypeFormResubmitted : NavigationTypeFormSubmitted;
     if (haveEvent)
         return NavigationTypeLinkClicked;
     if (isReload)
         return NavigationTypeReload;
-    if (isBackForwardLoadType(frameLoadType))
+    if (isBackForward)
         return NavigationTypeBackForward;
     return NavigationTypeOther;
 }
@@ -85,6 +86,19 @@ NavigationAction::NavigationAction(const ResourceRequest& resourceRequest, Frame
     , m_type(navigationType(frameLoadType, isFormSubmission, event))
     , m_event(event)
 {
+}
+
+bool NavigationAction::specifiesNavigationPolicy(NavigationPolicy* policy) const
+{
+    const MouseEvent* event = 0;
+    if (m_type == NavigationTypeLinkClicked && m_event->isMouseEvent())
+        event = toMouseEvent(m_event.get());
+    else if (m_type == NavigationTypeFormSubmitted && m_event && m_event->underlyingEvent() && m_event->underlyingEvent()->isMouseEvent())
+        event = toMouseEvent(m_event->underlyingEvent());
+
+    if (!event)
+        return false;
+    return navigationPolicyFromMouseEvent(event->button(), event->ctrlKey(), event->shiftKey(), event->altKey(), event->metaKey(), policy);
 }
 
 }

@@ -31,10 +31,9 @@
 
 #include "core/platform/graphics/filters/custom/ValidatedCustomFilterOperation.h"
 
-#include "core/platform/graphics/LayoutSize.h"
 #include "core/platform/graphics/filters/custom/CustomFilterParameter.h"
 #include "core/platform/graphics/filters/custom/CustomFilterValidatedProgram.h"
-#include <wtf/UnusedParam.h>
+#include "wtf/UnusedParam.h"
 
 namespace WebCore {
 
@@ -53,10 +52,9 @@ ValidatedCustomFilterOperation::~ValidatedCustomFilterOperation()
 {
 }
 
-PassRefPtr<FilterOperation> ValidatedCustomFilterOperation::blend(const FilterOperation*, double progress, const LayoutSize& size, bool blendToPassthrough)
+PassRefPtr<FilterOperation> ValidatedCustomFilterOperation::blend(const FilterOperation*, double progress, bool blendToPassthrough)
 {
     UNUSED_PARAM(progress);
-    UNUSED_PARAM(size);
     UNUSED_PARAM(blendToPassthrough);
 
     ASSERT_NOT_REACHED();

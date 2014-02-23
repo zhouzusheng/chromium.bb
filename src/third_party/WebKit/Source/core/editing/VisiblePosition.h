@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef VisiblePosition_h
@@ -54,6 +54,7 @@ public:
     // otherwise it will be converted to DOWNSTREAM
     VisiblePosition() : m_affinity(VP_DEFAULT_AFFINITY) { }
     VisiblePosition(const Position&, EAffinity = VP_DEFAULT_AFFINITY);
+    explicit VisiblePosition(const PositionWithAffinity&);
 
     void clear() { m_deepPosition.clear(); }
 
@@ -81,7 +82,7 @@ public:
 
     // FIXME: This does not handle [table, 0] correctly.
     Element* rootEditableElement() const { return m_deepPosition.isNotNull() ? m_deepPosition.deprecatedNode()->rootEditableElement() : 0; }
-    
+
     void getInlineBoxAndOffset(InlineBox*& inlineBox, int& caretOffset) const
     {
         m_deepPosition.getInlineBoxAndOffset(m_affinity, inlineBox, caretOffset);
@@ -99,13 +100,13 @@ public:
     // Abs x/y position of the caret ignoring transforms.
     // FIXME: navigation with transforms should be smarter.
     int lineDirectionPointForBlockDirectionNavigation() const;
-    
+
 #ifndef NDEBUG
     void debugPosition(const char* msg = "") const;
     void formatForDebugger(char* buffer, unsigned length) const;
     void showTreeForThis() const;
 #endif
-    
+
 private:
     void init(const Position&, EAffinity);
     Position canonicalPosition(const Position&);
@@ -122,7 +123,7 @@ inline bool operator==(const VisiblePosition& a, const VisiblePosition& b)
 {
     return a.deepEquivalent() == b.deepEquivalent();
 }
- 
+
 inline bool operator!=(const VisiblePosition& a, const VisiblePosition& b)
 {
     return !(a == b);

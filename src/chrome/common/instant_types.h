@@ -8,17 +8,15 @@
 #include <string>
 #include <utility>
 
+#include "base/basictypes.h"
 #include "base/strings/string16.h"
 #include "chrome/common/autocomplete_match_type.h"
 #include "content/public/common/page_transition_types.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 // ID used by Instant code to refer to objects (e.g. Autocomplete results, Most
 // Visited items) that the Instant page needs access to.
 typedef int InstantRestrictedID;
-
-// The size of the InstantMostVisitedItem cache.
-const size_t kMaxInstantMostVisitedItemCacheSize = 100;
 
 const size_t kNoMatchIndex = -1;
 
@@ -114,15 +112,6 @@ struct InstantAutocompleteResult {
 typedef std::pair<InstantRestrictedID, InstantAutocompleteResult>
     InstantAutocompleteResultIDPair;
 
-// How to interpret the size (height or width) of the Instant overlay (preview).
-enum InstantSizeUnits {
-  // As an absolute number of pixels.
-  INSTANT_SIZE_PIXELS,
-
-  // As a percentage of the height or width of the containing (parent) view.
-  INSTANT_SIZE_PERCENT,
-};
-
 // The alignment of the theme background image.
 enum ThemeBackgroundImageAlignment {
   THEME_BKGRND_IMAGE_ALIGN_CENTER,
@@ -140,18 +129,48 @@ enum ThemeBackgroundImageTiling {
   THEME_BKGRND_IMAGE_REPEAT,
 };
 
+// The RGBA color components for the text and links of the theme.
+struct RGBAColor {
+  RGBAColor();
+  ~RGBAColor();
+
+  bool operator==(const RGBAColor& rhs) const;
+
+  // The color in RGBA format where the R, G, B and A values
+  // are between 0 and 255 inclusive and always valid.
+  uint8 r;
+  uint8 g;
+  uint8 b;
+  uint8 a;
+};
+
+// Theme background settings for the NTP.
 struct ThemeBackgroundInfo {
   ThemeBackgroundInfo();
   ~ThemeBackgroundInfo();
 
   bool operator==(const ThemeBackgroundInfo& rhs) const;
 
-  // The theme background color in RGBA format where the R, G, B and A values
-  // are between 0 and 255 inclusive and always valid.
-  int color_r;
-  int color_g;
-  int color_b;
-  int color_a;
+  // True if the default theme is selected.
+  bool using_default_theme;
+
+  // The theme background color in RGBA format always valid.
+  RGBAColor background_color;
+
+  // The theme text color in RGBA format.
+  RGBAColor text_color;
+
+  // The theme link color in RGBA format.
+  RGBAColor link_color;
+
+  // The theme text color light in RGBA format.
+  RGBAColor text_color_light;
+
+  // The theme color for the header in RGBA format.
+  RGBAColor header_color;
+
+  // The theme color for the section border in RGBA format.
+  RGBAColor section_border_color;
 
   // The theme id for the theme background image.
   // Value is only valid if there's a custom theme background image.
@@ -175,6 +194,9 @@ struct ThemeBackgroundInfo {
   // True if theme has attribution logo.
   // Value is only valid if |theme_id| is valid.
   bool has_attribution;
+
+  // True if theme has an alternate logo.
+  bool logo_alternate;
 };
 
 struct InstantMostVisitedItem {

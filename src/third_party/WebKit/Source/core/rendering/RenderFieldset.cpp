@@ -65,7 +65,7 @@ RenderObject* RenderFieldset::layoutSpecialExcludedChild(bool relayoutChildren)
     RenderBox* legend = findLegend();
     if (legend) {
         if (relayoutChildren)
-            legend->setNeedsLayout(true);
+            legend->setNeedsLayout();
         legend->layoutIfNeeded();
 
         LayoutUnit logicalLeft;
@@ -128,7 +128,7 @@ RenderBox* RenderFieldset::findLegend(FindLegendOption option) const
     for (RenderObject* legend = firstChild(); legend; legend = legend->nextSibling()) {
         if (option == IgnoreFloatingOrOutOfFlow && legend->isFloatingOrOutOfFlowPositioned())
             continue;
-        
+
         if (legend->node() && (legend->node()->hasTagName(legendTag)))
             return toRenderBox(legend);
     }
@@ -160,12 +160,12 @@ void RenderFieldset::paintBoxDecorations(PaintInfo& paintInfo, const LayoutPoint
 
     if (!boxShadowShouldBeAppliedToBackground(determineBackgroundBleedAvoidance(paintInfo.context)))
         paintBoxShadow(paintInfo, paintRect, style(), Normal);
-    paintFillLayers(paintInfo, style()->visitedDependentColor(CSSPropertyBackgroundColor), style()->backgroundLayers(), paintRect);
+    paintFillLayers(paintInfo, resolveColor(CSSPropertyBackgroundColor), style()->backgroundLayers(), paintRect);
     paintBoxShadow(paintInfo, paintRect, style(), Inset);
 
     if (!style()->hasBorder())
         return;
-    
+
     // Create a clipping region around the legend and paint the border as normal
     GraphicsContext* graphicsContext = paintInfo.context;
     GraphicsContextStateSaver stateSaver(*graphicsContext);

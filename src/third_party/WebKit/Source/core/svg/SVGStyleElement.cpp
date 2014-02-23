@@ -21,12 +21,11 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGStyleElement.h"
 
 #include "SVGNames.h"
 #include "core/css/CSSStyleSheet.h"
-#include <wtf/StdLibExtras.h>
+#include "wtf/StdLibExtras.h"
 
 namespace WebCore {
 
@@ -53,7 +52,7 @@ bool SVGStyleElement::disabled() const
 {
     if (!m_sheet)
         return false;
-    
+
     return m_sheet->disabled();
 }
 
@@ -100,10 +99,8 @@ void SVGStyleElement::setTitle(const AtomicString& title)
 bool SVGStyleElement::isSupportedAttribute(const QualifiedName& attrName)
 {
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        SVGLangSpace::addSupportedAttributes(supportedAttributes);
+    if (supportedAttributes.isEmpty())
         supportedAttributes.add(SVGNames::titleAttr);
-    }
     return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
@@ -119,9 +116,6 @@ void SVGStyleElement::parseAttribute(const QualifiedName& name, const AtomicStri
             m_sheet->setTitle(value);
         return;
     }
-
-    if (SVGLangSpace::parseAttribute(name, value))
-        return;
 
     ASSERT_NOT_REACHED();
 }

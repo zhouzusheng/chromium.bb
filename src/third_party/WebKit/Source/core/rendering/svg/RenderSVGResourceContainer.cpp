@@ -26,7 +26,7 @@
 #include "core/rendering/svg/RenderSVGRoot.h"
 #include "core/rendering/svg/SVGRenderingContext.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
-#include "core/svg/SVGStyledTransformableElement.h"
+#include "core/svg/SVGGraphicsElement.h"
 
 namespace WebCore {
 
@@ -37,7 +37,7 @@ static inline SVGDocumentExtensions* svgExtensionsFromNode(Node* node)
     return node->document()->accessSVGExtensions();
 }
 
-RenderSVGResourceContainer::RenderSVGResourceContainer(SVGStyledElement* node)
+RenderSVGResourceContainer::RenderSVGResourceContainer(SVGElement* node)
     : RenderSVGHiddenContainer(node)
     , m_id(node->getIdAttribute())
     , m_registered(false)
@@ -191,7 +191,7 @@ void RenderSVGResourceContainer::registerResource()
         if (!renderer)
             continue;
         SVGResourcesCache::clientStyleChanged(renderer, StyleDifferenceLayout, renderer->style());
-        renderer->setNeedsLayout(true);
+        renderer->setNeedsLayout();
     }
 }
 
@@ -218,7 +218,7 @@ AffineTransform RenderSVGResourceContainer::transformOnNonScalingStroke(RenderOb
     if (!object->isSVGShape())
         return resourceTransform;
 
-    SVGStyledTransformableElement* element = toSVGStyledTransformableElement(object->node());
+    SVGGraphicsElement* element = toSVGGraphicsElement(object->node());
     AffineTransform transform = element->getScreenCTM(SVGLocatable::DisallowStyleUpdate);
     transform *= resourceTransform;
     return transform;

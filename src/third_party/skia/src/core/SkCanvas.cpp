@@ -461,31 +461,9 @@ private:
 
 #include "SkColorPriv.h"
 
-class AutoValidator {
-public:
-    AutoValidator(SkDevice* device) : fDevice(device) {}
-    ~AutoValidator() {
-#ifdef SK_DEBUG
-        const SkBitmap& bm = fDevice->accessBitmap(false);
-        if (bm.config() == SkBitmap::kARGB_4444_Config) {
-            for (int y = 0; y < bm.height(); y++) {
-                const SkPMColor16* p = bm.getAddr16(0, y);
-                for (int x = 0; x < bm.width(); x++) {
-                    SkPMColor16 c = p[x];
-                    SkPMColor16Assert(c);
-                }
-            }
-        }
-#endif
-    }
-private:
-    SkDevice* fDevice;
-};
-
 ////////// macros to place around the internal draw calls //////////////////
 
 #define LOOPER_BEGIN_DRAWDEVICE(paint, type)                        \
-/*    AutoValidator   validator(fMCRec->fTopLayer->fDevice); */     \
     this->predrawNotify();                                          \
     AutoDrawLooper  looper(this, paint, true);                      \
     while (looper.next(type)) {                                     \
@@ -493,7 +471,6 @@ private:
         SkDrawIter          iter(this);
 
 #define LOOPER_BEGIN(paint, type)                                   \
-/*    AutoValidator   validator(fMCRec->fTopLayer->fDevice); */     \
     this->predrawNotify();                                          \
     AutoDrawLooper  looper(this, paint);                            \
     while (looper.next(type)) {                                     \
@@ -975,14 +952,10 @@ bool SkCanvas::isDrawingToLayer() const {
 
 // can't draw it if its empty, or its too big for a fixed-point width or height
 static bool reject_bitmap(const SkBitmap& bitmap) {
-    return  bitmap.width() <= 0 || bitmap.height() <= 0
-#ifndef SK_ALLOW_OVER_32K_BITMAPS
-            || bitmap.width() > 32767 || bitmap.height() > 32767
-#endif
-            ;
+    return  bitmap.width() <= 0 || bitmap.height() <= 0;
 }
 
-void SkCanvas::internalDrawBitmap(const SkBitmap& bitmap, const SkIRect* srcRect,
+void SkCanvas::internalDrawBitmap(const SkBitmap& bitmap,
                                 const SkMatrix& matrix, const SkPaint* paint) {
     if (reject_bitmap(bitmap)) {
         return;
@@ -992,7 +965,17 @@ void SkCanvas::internalDrawBitmap(const SkBitmap& bitmap, const SkIRect* srcRect
     if (NULL == paint) {
         paint = lazy.init();
     }
-    this->commonDrawBitmap(bitmap, srcRect, matrix, *paint);
+
+    SkDEBUGCODE(bitmap.validate();)
+    CHECK_LOCKCOUNT_BALANCE(bitmap);
+
+    LOOPER_BEGIN(*paint, SkDrawFilter::kBitmap_Type)
+
+    while (iter.next()) {
+        iter.fDevice->drawBitmap(iter, bitmap, matrix, looper.paint());
+    }
+
+    LOOPER_END
 }
 
 void SkCanvas::internalDrawDevice(SkDevice* srcDev, int x, int y,
@@ -1167,7 +1150,10 @@ static bool clipPathHelper(const SkCanvas* canvas, SkRasterClip* currClip,
         // bounds, than just using the device. However, if currRgn is complex,
         // our region blitter may hork, so we do that case in two steps.
         if (currClip->isRect()) {
-            return currClip->setPath(devPath, *currClip, doAA);
+            // FIXME: we should also be able to do this when currClip->isBW(),
+            // but relaxing the test above triggers GM asserts in
+            // SkRgnBuilder::blitH(). We need to investigate what's going on.
+            return currClip->setPath(devPath, currClip->bwRgn(), doAA);
         } else {
             base.setRect(currClip->getBounds());
             SkRasterClip clip;
@@ -1757,7 +1743,7 @@ void SkCanvas::drawBitmap(const SkBitmap& bitmap, SkScalar x, SkScalar y,
 
     SkMatrix matrix;
     matrix.setTranslate(x, y);
-    this->internalDrawBitmap(bitmap, NULL, matrix, paint);
+    this->internalDrawBitmap(bitmap, matrix, paint);
 }
 
 // this one is non-virtual, so it can be called safely by other canvas apis
@@ -1803,21 +1789,7 @@ void SkCanvas::drawBitmapRectToRect(const SkBitmap& bitmap, const SkRect* src,
 void SkCanvas::drawBitmapMatrix(const SkBitmap& bitmap, const SkMatrix& matrix,
                                 const SkPaint* paint) {
     SkDEBUGCODE(bitmap.validate();)
-    this->internalDrawBitmap(bitmap, NULL, matrix, paint);
-}
-
-void SkCanvas::commonDrawBitmap(const SkBitmap& bitmap, const SkIRect* srcRect,
-                                const SkMatrix& matrix, const SkPaint& paint) {
-    SkDEBUGCODE(bitmap.validate();)
-    CHECK_LOCKCOUNT_BALANCE(bitmap);
-
-    LOOPER_BEGIN(paint, SkDrawFilter::kBitmap_Type)
-
-    while (iter.next()) {
-        iter.fDevice->drawBitmap(iter, bitmap, srcRect, matrix, looper.paint());
-    }
-
-    LOOPER_END
+    this->internalDrawBitmap(bitmap, matrix, paint);
 }
 
 void SkCanvas::internalDrawBitmapNine(const SkBitmap& bitmap,

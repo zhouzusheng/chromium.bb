@@ -112,7 +112,7 @@ bool WebContentsDelegate::PreHandleKeyboardEvent(
 
 bool WebContentsDelegate::CanDragEnter(
     WebContents* source,
-    const WebDropData& data,
+    const DropData& data,
     WebKit::WebDragOperationsMask operations_allowed) {
   return true;
 }
@@ -126,7 +126,12 @@ bool WebContentsDelegate::ShouldCreateWebContents(
     int route_id,
     WindowContainerType window_container_type,
     const string16& frame_name,
-    const GURL& target_url) {
+    const GURL& target_url,
+    const Referrer& referrer,
+    WindowOpenDisposition disposition,
+    const WebKit::WebWindowFeatures& features,
+    bool user_gesture,
+    bool opener_suppressed) {
   return true;
 }
 
@@ -142,6 +147,13 @@ bool WebContentsDelegate::IsFullscreenForTabOrPending(
 content::ColorChooser* WebContentsDelegate::OpenColorChooser(
     WebContents* web_contents, SkColor color) {
   return NULL;
+}
+
+void WebContentsDelegate::RequestMediaAccessPermission(
+    WebContents* web_contents,
+    const MediaStreamRequest& request,
+    const MediaResponseCallback& callback) {
+  callback.Run(MediaStreamDevices(), scoped_ptr<MediaStreamUI>());
 }
 
 bool WebContentsDelegate::RequestPpapiBrokerPermission(

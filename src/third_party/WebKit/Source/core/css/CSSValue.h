@@ -29,7 +29,10 @@
 
 namespace WebCore {
 
+class ExceptionState;
 class StyleSheetContents;
+
+enum CssTextFormattingFlags { QuoteCSSStringIfNeeded, AlwaysQuoteCSSString };
 
 // FIXME: The current CSSValue and subclasses should be turned into internal types (StyleValue).
 // The few subtypes that are actually exposed in CSSOM can be seen in the cloneForCSSOM() function.
@@ -58,7 +61,7 @@ public:
     Type cssValueType() const;
 
     String cssText() const;
-    void setCssText(const String&, ExceptionCode&) { } // FIXME: Not implemented.
+    void setCssText(const String&, ExceptionState&) { } // FIXME: Not implemented.
     String serializeResolvingVariables(const HashMap<AtomicString, String>&) const;
 
     bool isPrimitiveValue() const { return m_classType == PrimitiveClass; }
@@ -91,13 +94,14 @@ public:
     bool isCSSMixFunctionValue() const { return m_classType == CSSMixFunctionValueClass; }
     bool isCSSShaderValue() const { return m_classType == CSSShaderClass; }
     bool isVariableValue() const { return m_classType == VariableClass; }
+    bool isGridTemplateValue() const { return m_classType == GridTemplateClass; }
     bool isSVGColor() const { return m_classType == SVGColorClass || m_classType == SVGPaintClass; }
     bool isSVGPaint() const { return m_classType == SVGPaintClass; }
     bool isCSSSVGDocumentValue() const { return m_classType == CSSSVGDocumentClass; }
-    
+
     bool isCSSOMSafe() const { return m_isCSSOMSafe; }
     bool isSubtypeExposedToCSSOM() const
-    { 
+    {
         return isPrimitiveValue() || isSVGColor() || isValueList();
     }
 
@@ -106,8 +110,6 @@ public:
     void addSubresourceStyleURLs(ListHashSet<KURL>&, const StyleSheetContents*) const;
 
     bool hasFailedOrCanceledSubresources() const;
-
-    void reportMemoryUsage(MemoryObjectInfo*) const;
 
     bool equals(const CSSValue&) const;
 
@@ -150,6 +152,7 @@ protected:
         CalculationClass,
         CSSShaderClass,
         VariableClass,
+        GridTemplateClass,
 
         // SVG classes.
         SVGColorClass,

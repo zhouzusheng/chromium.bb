@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "third_party/skia/include/core/SkColor.h"
 
 namespace cc {
 
@@ -31,11 +32,12 @@ struct TexturedQuadDrawCache {
   // Values tracked to determine if textured quads may be coalesced.
   int program_id;
   int resource_id;
-  bool use_premultiplied_alpha;
   bool needs_blending;
+  SkColor background_color;
 
   // Information about the program binding that is required to draw.
   int uv_xform_location;
+  int background_color_location;
   int vertex_opacity_location;
   int matrix_location;
   int sampler_location;
@@ -45,6 +47,7 @@ struct TexturedQuadDrawCache {
   std::vector<float> vertex_opacity_data;
   std::vector<Float16> matrix_data;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(TexturedQuadDrawCache);
 };
 

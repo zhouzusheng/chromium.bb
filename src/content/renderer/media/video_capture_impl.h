@@ -66,6 +66,8 @@ class CONTENT_EXPORT VideoCaptureImpl
   virtual void OnStateChanged(VideoCaptureState state) OVERRIDE;
   virtual void OnDeviceInfoReceived(
       const media::VideoCaptureParams& device_info) OVERRIDE;
+  virtual void OnDeviceInfoChanged(
+      const media::VideoCaptureParams& device_info) OVERRIDE;
   virtual void OnDelegateAdded(int32 device_id) OVERRIDE;
 
   // Stop/resume delivering video frames to clients, based on flag |suspend|.
@@ -96,6 +98,8 @@ class CONTENT_EXPORT VideoCaptureImpl
   void DoBufferReceivedOnCaptureThread(int buffer_id, base::Time timestamp);
   void DoStateChangedOnCaptureThread(VideoCaptureState state);
   void DoDeviceInfoReceivedOnCaptureThread(
+      const media::VideoCaptureParams& device_info);
+  void DoDeviceInfoChangedOnCaptureThread(
       const media::VideoCaptureParams& device_info);
   void DoDelegateAddedOnCaptureThread(int32 device_id);
 
@@ -132,11 +136,11 @@ class CONTENT_EXPORT VideoCaptureImpl
 
   media::VideoCaptureCapability::Format video_type_;
 
-  // The parameter is being used in current capture session. A capture session
-  // starts with StartCapture and ends with StopCapture.
-  media::VideoCaptureParams current_params_;
+  // Member capture_format_ represents the video format requested by the client
+  // to this class via DoStartCaptureOnCaptureThread.
+  media::VideoCaptureCapability capture_format_;
 
-  // The information about the device sent from browser process side.
+  // The device's video capture format sent from browser process side.
   media::VideoCaptureParams device_info_;
   bool device_info_available_;
 

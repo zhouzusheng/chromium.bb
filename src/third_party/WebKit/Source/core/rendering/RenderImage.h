@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- *           (C) 2006 Allan Sandfeld Jensen (kde@carewolf.com) 
+ *           (C) 2006 Allan Sandfeld Jensen (kde@carewolf.com)
  *           (C) 2006 Samuel Weinig (sam.weinig@gmail.com)
  * Copyright (C) 2004, 2005, 2006, 2007, 2009, 2010, 2011 Apple Inc. All rights reserved.
  *
@@ -44,9 +44,9 @@ public:
 
     RenderImageResource* imageResource() { return m_imageResource.get(); }
     const RenderImageResource* imageResource() const { return m_imageResource.get(); }
-    CachedImage* cachedImage() const { return m_imageResource ? m_imageResource->cachedImage() : 0; }
+    ImageResource* cachedImage() const { return m_imageResource ? m_imageResource->cachedImage() : 0; }
 
-    bool setImageSizeForAltText(CachedImage* newImage = 0);
+    bool setImageSizeForAltText(ImageResource* newImage = 0);
 
     void updateAltText();
 
@@ -93,12 +93,12 @@ private:
 
     virtual LayoutUnit minimumReplacedHeight() const OVERRIDE;
 
-    virtual void notifyFinished(CachedResource*) OVERRIDE FINAL;
+    virtual void notifyFinished(Resource*) OVERRIDE FINAL;
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE FINAL;
 
     virtual bool boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance, InlineFlowBox*) const OVERRIDE FINAL;
 
-    IntSize imageSizeForError(CachedImage*) const;
+    IntSize imageSizeForError(ImageResource*) const;
     void imageDimensionsChanged(bool imageSizeChanged, const IntRect* = 0);
     bool updateIntrinsicSizeIfNeeded(const LayoutSize&, bool imageSizeChanged);
 

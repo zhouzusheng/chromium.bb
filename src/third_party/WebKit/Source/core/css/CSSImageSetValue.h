@@ -30,9 +30,8 @@
 
 namespace WebCore {
 
-class CachedResourceLoader;
-class Document;
-class StyleCachedImageSet;
+class ResourceFetcher;
+class StyleFetchedImageSet;
 class StyleImage;
 
 class CSSImageSetValue : public CSSValueList {
@@ -44,10 +43,10 @@ public:
     }
     ~CSSImageSetValue();
 
-    StyleCachedImageSet* cachedImageSet(CachedResourceLoader*);
+    StyleFetchedImageSet* cachedImageSet(ResourceFetcher*, float deviceScaleFactor);
 
-    // Returns a StyleCachedImageSet if the best fit image has been cached already, otherwise a StylePendingImage.
-    StyleImage* cachedOrPendingImageSet(Document*);
+    // Returns a StyleFetchedImageSet if the best fit image has been cached already, otherwise a StylePendingImage.
+    StyleImage* cachedOrPendingImageSet(float);
 
     String customCssText() const;
 
@@ -56,14 +55,11 @@ public:
     struct ImageWithScale {
         String imageURL;
         float scaleFactor;
-        void reportMemoryUsage(MemoryObjectInfo*) const;
     };
 
     bool hasFailedOrCanceledSubresources() const;
 
     PassRefPtr<CSSImageSetValue> cloneForCSSOM() const;
-
-    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
 protected:
     ImageWithScale bestImageForScaleFactor();

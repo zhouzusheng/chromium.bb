@@ -13,6 +13,7 @@
 #include "webkit/renderer/compositor_bindings/web_animation_impl.h"
 #include "webkit/renderer/compositor_bindings/web_content_layer_impl.h"
 #include "webkit/renderer/compositor_bindings/web_external_texture_layer_impl.h"
+#include "webkit/renderer/compositor_bindings/web_filter_operations_impl.h"
 #include "webkit/renderer/compositor_bindings/web_float_animation_curve_impl.h"
 #include "webkit/renderer/compositor_bindings/web_image_layer_impl.h"
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
@@ -27,6 +28,7 @@ using WebKit::WebContentLayer;
 using WebKit::WebContentLayerClient;
 using WebKit::WebExternalTextureLayer;
 using WebKit::WebExternalTextureLayerClient;
+using WebKit::WebFilterOperations;
 using WebKit::WebFloatAnimationCurve;
 using WebKit::WebImageLayer;
 using WebKit::WebLayer;
@@ -55,13 +57,7 @@ WebContentLayer* WebCompositorSupportImpl::createContentLayer(
 
 WebExternalTextureLayer* WebCompositorSupportImpl::createExternalTextureLayer(
     WebExternalTextureLayerClient* client) {
-  return new WebExternalTextureLayerImpl(client, false);
-}
-
-WebExternalTextureLayer*
-WebCompositorSupportImpl::createExternalTextureLayerForMailbox(
-    WebExternalTextureLayerClient* client) {
-  return new WebExternalTextureLayerImpl(client, true);
+  return new WebExternalTextureLayerImpl(client);
 }
 
 WebKit::WebImageLayer* WebCompositorSupportImpl::createImageLayer() {
@@ -97,6 +93,10 @@ WebCompositorSupportImpl::createTransformAnimationCurve() {
 
 WebTransformOperations* WebCompositorSupportImpl::createTransformOperations() {
   return new WebTransformOperationsImpl();
+}
+
+WebFilterOperations* WebCompositorSupportImpl::createFilterOperations() {
+  return new WebFilterOperationsImpl();
 }
 
 }  // namespace webkit

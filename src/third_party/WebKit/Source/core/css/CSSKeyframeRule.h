@@ -46,6 +46,9 @@ public:
     ~StyleKeyframe();
 
     String keyText() const { return m_key; }
+    // FIXME: Should we trim whitespace?
+    // FIXME: Should we leave keyText unchanged when attempting to set to an
+    // invalid string?
     void setKeyText(const String& s) { m_key = s; }
 
     void getKeys(Vector<float>& keys) const   { parseKeyString(m_key, keys); }
@@ -55,8 +58,6 @@ public:
     void setProperties(PassRefPtr<StylePropertySet>);
 
     String cssText() const;
-
-    void reportMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     StyleKeyframe();
@@ -76,7 +77,6 @@ public:
     virtual CSSRule::Type type() const OVERRIDE { return WEBKIT_KEYFRAME_RULE; }
     virtual String cssText() const OVERRIDE { return m_keyframe->cssText(); }
     virtual void reattach(StyleRuleBase*) OVERRIDE;
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
 
     String keyText() const { return m_keyframe->keyText(); }
     void setKeyText(const String& s) { m_keyframe->setKeyText(s); }

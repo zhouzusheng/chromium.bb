@@ -48,6 +48,9 @@ public:
     // EventTarget
     virtual const AtomicString& interfaceName() const OVERRIDE { return eventNames().interfaceForMIDIInput; }
 
+    // |timeStamp| is a DOMHighResTimeStamp in the time coordinate system of performance.now().
+    void didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp);
+
 private:
     MIDIInput(ScriptExecutionContext*, const String& id, const String& manufacturer, const String& name, const String& version);
 };

@@ -27,8 +27,8 @@
 
 #include "core/rendering/style/CounterContent.h"
 #include "core/rendering/style/StyleImage.h"
-#include <wtf/OwnPtr.h>
-#include <wtf/PassOwnPtr.h>
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
@@ -43,7 +43,7 @@ public:
     static PassOwnPtr<ContentData> create(const String&);
     static PassOwnPtr<ContentData> create(PassOwnPtr<CounterContent>);
     static PassOwnPtr<ContentData> create(QuoteType);
-    
+
     virtual ~ContentData() { }
 
     virtual bool isCounter() const { return false; }

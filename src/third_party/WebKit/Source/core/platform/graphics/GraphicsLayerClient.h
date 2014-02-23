@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef GraphicsLayerClient_h
@@ -57,7 +57,8 @@ enum {
     LayerTreeNormal = 0,
     LayerTreeIncludesDebugInfo = 1 << 0, // Dump extra debugging info like layer addresses.
     LayerTreeIncludesRepaintRects = 1 << 1,
-    LayerTreeIncludesPaintingPhases = 1 << 2
+    LayerTreeIncludesPaintingPhases = 1 << 2,
+    LayerTreeIncludesRootLayer = 1 << 3
 };
 typedef unsigned LayerTreeFlags;
 

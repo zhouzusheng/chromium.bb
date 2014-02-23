@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef TextIterator_h
@@ -28,7 +28,7 @@
 
 #include "core/dom/Range.h"
 #include "core/editing/FindOptions.h"
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -47,7 +47,7 @@ enum TextIteratorBehavior {
     TextIteratorStopsOnFormControls = 1 << 6,
     TextIteratorEmitsImageAltText = 1 << 7,
 };
-    
+
 // FIXME: Can't really answer this question correctly without knowing the white-space mode.
 // FIXME: Move this somewhere else in the editing directory. It doesn't belong here.
 inline bool isCollapsibleWhitespace(UChar c)
@@ -91,20 +91,36 @@ public:
 
     bool atEnd() const { return !m_positionNode || m_shouldStop; }
     void advance();
-    
+
     int length() const { return m_textLength; }
-    const UChar* characters() const { return m_textCharacters ? m_textCharacters : m_text.characters() + startOffset(); }
     UChar characterAt(unsigned index) const;
-    void appendTextToStringBuilder(StringBuilder&) const;
-    
+    String substring(unsigned position, unsigned length) const;
+    void appendTextToStringBuilder(StringBuilder&, unsigned position = 0, unsigned maxLength = UINT_MAX) const;
+
+    template<typename BufferType>
+    void appendTextTo(BufferType& output, unsigned position = 0)
+    {
+        ASSERT_WITH_SECURITY_IMPLICATION(position <= static_cast<unsigned>(length()));
+        unsigned lengthToAppend = length() - position;
+        if (!lengthToAppend)
+            return;
+        if (m_singleCharacterBuffer) {
+            ASSERT(!position);
+            ASSERT(length() == 1);
+            output.append(&m_singleCharacterBuffer, 1);
+        } else {
+            string().appendTo(output, startOffset() + position, lengthToAppend);
+        }
+    }
+
     PassRefPtr<Range> range() const;
     Node* node() const;
-     
+
     static int rangeLength(const Range*, bool spacesForReplacedElements = false);
     static PassRefPtr<Range> rangeFromLocationAndLength(ContainerNode* scope, int rangeLocation, int rangeLength, bool spacesForReplacedElements = false);
     static bool getLocationAndLengthFromRange(Node* scope, const Range*, size_t& location, size_t& length);
     static PassRefPtr<Range> subrange(Range* entireRange, int characterOffset, int characterCount);
-    
+
 private:
     int startOffset() const { return m_positionStartOffset; }
     const String& string() const { return m_text; }
@@ -121,7 +137,7 @@ private:
     void emitCharacter(UChar, Node* textNode, Node* offsetBaseNode, int textStartOffset, int textEndOffset);
     void emitText(Node* textNode, RenderObject* renderObject, int textStartOffset, int textEndOffset);
     void emitText(Node* textNode, int textStartOffset, int textEndOffset);
-    
+
     // Current position, not necessarily of the text being returned, but position
     // as we walk through the DOM tree.
     Node* m_node;
@@ -129,22 +145,20 @@ private:
     bool m_handledNode;
     bool m_handledChildren;
     BitStack m_fullyClippedStack;
-    
+
     // The range.
     Node* m_startContainer;
     int m_startOffset;
     Node* m_endContainer;
     int m_endOffset;
     Node* m_pastEndNode;
-    
+
     // The current text and its position, in the form to be returned from the iterator.
     Node* m_positionNode;
     mutable Node* m_positionOffsetBaseNode;
     mutable int m_positionStartOffset;
     mutable int m_positionEndOffset;
-    const UChar* m_textCharacters; // If null, then use m_text for character data.
     int m_textLength;
-    // Hold string m_textCharacters points to so we ensure it won't be deleted.
     String m_text;
 
     // Used when there is still some pending text from the current node; when these
@@ -156,25 +170,26 @@ private:
     InlineTextBox* m_remainingTextBox;
     // Used to point to RenderText object for :first-letter.
     RenderText *m_firstLetterText;
-    
+
     // Used to do the whitespace collapsing logic.
-    Node* m_lastTextNode;    
+    Node* m_lastTextNode;
     bool m_lastTextNodeEndedWithCollapsedSpace;
     UChar m_lastCharacter;
-    
+
     // Used for whitespace characters that aren't in the DOM, so we can point at them.
+    // If non-zero, overrides m_text.
     UChar m_singleCharacterBuffer;
-    
+
     // Used when text boxes are out of order (Hebrew/Arabic w/ embeded LTR text)
     Vector<InlineTextBox*> m_sortedTextBoxes;
     size_t m_sortedTextBoxesPosition;
-    
+
     // Used when deciding whether to emit a "positioning" (e.g. newline) before any other content
     bool m_hasEmitted;
-    
+
     // Used by selection preservation code.  There should be one character emitted between every VisiblePosition
     // in the Range used to create the TextIterator.
-    // FIXME <rdar://problem/6028818>: This functionality should eventually be phased out when we rewrite 
+    // FIXME <rdar://problem/6028818>: This functionality should eventually be phased out when we rewrite
     // moveParagraphs to not clone/destroy moved content.
     bool m_emitsCharactersBetweenAllVisiblePositions;
     bool m_entersTextControls;
@@ -203,15 +218,25 @@ private:
 class SimplifiedBackwardsTextIterator {
 public:
     explicit SimplifiedBackwardsTextIterator(const Range*, TextIteratorBehavior = TextIteratorDefaultBehavior);
-    
+
     bool atEnd() const { return !m_positionNode || m_shouldStop; }
     void advance();
-    
+
     int length() const { return m_textLength; }
-    const UChar* characters() const { return m_textCharacters; }
-    
+
+    template<typename BufferType>
+    void prependTextTo(BufferType& output)
+    {
+        if (!m_textLength)
+            return;
+        if (m_singleCharacterBuffer)
+            output.prepend(&m_singleCharacterBuffer, 1);
+        else
+            m_textContainer.prependTo(output, m_textOffset, m_textLength);
+    }
+
     PassRefPtr<Range> range() const;
-        
+
 private:
     void exitNode();
     bool handleTextNode();
@@ -235,18 +260,20 @@ private:
     // Start of the range.
     Node* m_endNode;
     int m_endOffset;
-    
+
     // The current text and its position, in the form to be returned from the iterator.
     Node* m_positionNode;
     int m_positionStartOffset;
     int m_positionEndOffset;
-    const UChar* m_textCharacters;
+
+    String m_textContainer; // We're interested in the range [m_textOffset, m_textOffset + m_textLength) of m_textContainer.
+    int m_textOffset;
     int m_textLength;
 
     // Used to do the whitespace logic.
-    Node* m_lastTextNode;    
+    Node* m_lastTextNode;
     UChar m_lastCharacter;
-    
+
     // Used for whitespace characters that aren't in the DOM, so we can point at them.
     UChar m_singleCharacterBuffer;
 
@@ -271,27 +298,31 @@ private:
 class CharacterIterator {
 public:
     explicit CharacterIterator(const Range*, TextIteratorBehavior = TextIteratorDefaultBehavior);
-    
+
     void advance(int numCharacters);
-    
+
     bool atBreak() const { return m_atBreak; }
     bool atEnd() const { return m_textIterator.atEnd(); }
-    
+
     int length() const { return m_textIterator.length() - m_runOffset; }
-    const UChar* characters() const { return m_textIterator.characters() + m_runOffset; }
+    UChar characterAt(unsigned index) const { return m_textIterator.characterAt(m_runOffset + index); }
+
+    template<typename BufferType>
+    void appendTextTo(BufferType& output) { m_textIterator.appendTextTo(output, m_runOffset); }
+
     String string(int numChars);
-    
+
     int characterOffset() const { return m_offset; }
     PassRefPtr<Range> range() const;
-        
+
 private:
     int m_offset;
     int m_runOffset;
     bool m_atBreak;
-    
+
     TextIterator m_textIterator;
 };
-    
+
 class BackwardsCharacterIterator {
 public:
     explicit BackwardsCharacterIterator(const Range*, TextIteratorBehavior = TextIteratorDefaultBehavior);
@@ -319,26 +350,19 @@ public:
 
     bool atEnd() const { return !m_didLookAhead && m_textIterator.atEnd(); }
     void advance();
-    
+
+    String substring(unsigned position, unsigned length) const;
+    UChar characterAt(unsigned index) const;
     int length() const;
-    const UChar* characters() const;
-    
+
     // Range of the text we're currently returning
     PassRefPtr<Range> range() const { return m_range; }
 
 private:
-    // text from the previous chunk from the textIterator
-    const UChar* m_previousText;
-    int m_previousLength;
-
-    // many chunks from textIterator concatenated
     Vector<UChar> m_buffer;
-    
     // Did we have to look ahead in the textIterator to confirm the current chunk?
     bool m_didLookAhead;
-
     RefPtr<Range> m_range;
-
     TextIterator m_textIterator;
 };
 

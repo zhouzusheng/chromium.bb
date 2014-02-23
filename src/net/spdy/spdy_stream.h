@@ -14,7 +14,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/bandwidth_metrics.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_export.h"
@@ -27,6 +26,7 @@
 #include "net/spdy/spdy_protocol.h"
 #include "net/ssl/server_bound_cert_service.h"
 #include "net/ssl/ssl_client_cert_type.h"
+#include "url/gurl.h"
 
 namespace net {
 
@@ -157,8 +157,8 @@ class NET_EXPORT_PRIVATE SpdyStream {
 
   // SpdyStream constructor
   SpdyStream(SpdyStreamType type,
-             SpdySession* session,
-             const std::string& path,
+             const base::WeakPtr<SpdySession>& session,
+             const GURL& url,
              RequestPriority priority,
              int32 initial_send_window_size,
              int32 initial_recv_window_size,
@@ -170,7 +170,6 @@ class NET_EXPORT_PRIVATE SpdyStream {
   // than once. For push streams, calling this may cause buffered data
   // to be sent to the delegate (from a posted task).
   void SetDelegate(Delegate* delegate);
-  Delegate* GetDelegate();
 
   // Detach the delegate from the stream, which must not yet be
   // closed, and cancel it.
@@ -186,7 +185,7 @@ class NET_EXPORT_PRIVATE SpdyStream {
   SpdyStreamId stream_id() const { return stream_id_; }
   void set_stream_id(SpdyStreamId stream_id) { stream_id_ = stream_id; }
 
-  const std::string& path() const { return path_; }
+  const GURL& url() const { return url_; }
 
   RequestPriority priority() const { return priority_; }
 
@@ -334,7 +333,7 @@ class NET_EXPORT_PRIVATE SpdyStream {
   // it.
   void Close();
 
-  // Must be used only by the SpdySession.
+  // Must be used only by |session_|.
   base::WeakPtr<SpdyStream> GetWeakPtr();
 
   // Interface for the delegate to use.
@@ -383,18 +382,30 @@ class NET_EXPORT_PRIVATE SpdyStream {
   // request headers and is ready to send/receive more data.
   bool IsIdle() const;
 
+  // Returns the protocol used by this stream. Always between
+  // kProtoSPDY2 and kProtoSPDYMaximumVersion.
+  //
+  // TODO(akalin): Change the lower bound to kProtoSPDYMinimumVersion
+  // once we stop supporting SPDY/1.
+  NextProto GetProtocol() const;
+
   int response_status() const { return response_status_; }
 
   bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const;
 
-  // Get the URL associated with this stream, or the empty GURL() if
-  // it is unknown.
-  GURL GetUrl() const;
+  // Get the URL from the appropriate stream headers, or the empty
+  // GURL() if it is unknown.
+  //
+  // TODO(akalin): Figure out if we really need this function,
+  // i.e. can we just use the URL this stream was created with and/or
+  // one we receive headers validate that the URL from them is the
+  // same.
+  GURL GetUrlFromHeaders() const;
 
   // Returns whether the URL for this stream is known.
   //
   // TODO(akalin): Remove this, as it's only used in tests.
-  bool HasUrl() const;
+  bool HasUrlFromHeaders() const;
 
   int GetProtocolVersion() const;
 
@@ -473,7 +484,7 @@ class NET_EXPORT_PRIVATE SpdyStream {
   bool continue_buffering_data_;
 
   SpdyStreamId stream_id_;
-  const std::string path_;
+  const GURL url_;
   const RequestPriority priority_;
   size_t slot_;
 
@@ -485,7 +496,7 @@ class NET_EXPORT_PRIVATE SpdyStream {
 
   ScopedBandwidthMetrics metrics_;
 
-  scoped_refptr<SpdySession> session_;
+  const base::WeakPtr<SpdySession> session_;
 
   // The transaction should own the delegate.
   SpdyStream::Delegate* delegate_;
@@ -530,7 +541,6 @@ class NET_EXPORT_PRIVATE SpdyStream {
   // Data received before delegate is attached.
   ScopedVector<SpdyBuffer> pending_buffers_;
 
-  SSLClientCertType domain_bound_cert_type_;
   std::string domain_bound_private_key_;
   std::string domain_bound_cert_;
   ServerBoundCertService::RequestHandle domain_bound_cert_request_handle_;

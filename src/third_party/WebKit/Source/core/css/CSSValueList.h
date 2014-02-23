@@ -22,8 +22,8 @@
 #define CSSValueList_h
 
 #include "core/css/CSSValue.h"
-#include <wtf/PassRefPtr.h>
-#include <wtf/Vector.h>
+#include "wtf/PassRefPtr.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -59,7 +59,7 @@ public:
     bool hasValue(CSSValue*) const;
     PassRefPtr<CSSValueList> copy();
 
-    String customCssText() const;
+    String customCssText(CssTextFormattingFlags = QuoteCSSStringIfNeeded) const;
     bool equals(const CSSValueList&) const;
     bool equals(const CSSValue&) const;
     String customSerializeResolvingVariables(const HashMap<AtomicString, String>&) const;
@@ -67,10 +67,8 @@ public:
     void addSubresourceStyleURLs(ListHashSet<KURL>&, const StyleSheetContents*) const;
 
     bool hasFailedOrCanceledSubresources() const;
-    
-    PassRefPtr<CSSValueList> cloneForCSSOM() const;
 
-    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
+    PassRefPtr<CSSValueList> cloneForCSSOM() const;
 
 protected:
     CSSValueList(ClassType, ValueListSeparator);

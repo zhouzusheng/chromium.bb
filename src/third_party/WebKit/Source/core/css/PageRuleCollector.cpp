@@ -31,6 +31,7 @@
 
 #include "core/css/StylePropertySet.h"
 #include "core/css/StyleRule.h"
+#include "core/css/resolver/StyleResolverState.h"
 
 namespace WebCore {
 
@@ -42,7 +43,7 @@ static inline bool comparePageRules(const StyleRulePage* r1, const StyleRulePage
 bool PageRuleCollector::isLeftPage(int pageIndex) const
 {
     bool isFirstPageLeft = false;
-    if (!m_state.rootElementStyle()->isLeftToRightDirection())
+    if (!m_context.rootElementStyle()->isLeftToRightDirection())
         isFirstPageLeft = true;
 
     return (pageIndex + (isFirstPageLeft ? 1 : 0)) % 2;
@@ -60,8 +61,8 @@ String PageRuleCollector::pageName(int /* pageIndex */) const
     return "";
 }
 
-PageRuleCollector::PageRuleCollector(const StyleResolverState& state, int pageIndex)
-    : m_state(state)
+PageRuleCollector::PageRuleCollector(const ElementResolveContext& context, int pageIndex)
+    : m_context(context)
     , m_isLeftPage(isLeftPage(pageIndex))
     , m_isFirstPage(isFirstPage(pageIndex))
     , m_pageName(pageName(pageIndex)) { }

@@ -21,9 +21,10 @@
 #ifndef CheckedRadioButtons_h
 #define CheckedRadioButtons_h
 
-#include <wtf/Forward.h>
-#include <wtf/HashMap.h>
-#include <wtf/OwnPtr.h>
+#include "wtf/Forward.h"
+#include "wtf/HashMap.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/text/StringHash.h"
 
 namespace WebCore {
 
@@ -44,7 +45,7 @@ public:
     bool isInRequiredGroup(HTMLInputElement*) const;
 
 private:
-    typedef HashMap<AtomicStringImpl*, OwnPtr<RadioButtonGroup> > NameToGroupMap;
+    typedef HashMap<StringImpl*, OwnPtr<RadioButtonGroup> > NameToGroupMap;
     OwnPtr<NameToGroupMap> m_nameToGroupMap;
 };
 

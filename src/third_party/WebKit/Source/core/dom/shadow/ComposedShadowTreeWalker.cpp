@@ -50,45 +50,12 @@ static inline bool nodeCanBeDistributed(const Node* node)
         return false;
 
     if (ShadowRoot* shadowRoot = parent->isShadowRoot() ? toShadowRoot(parent) : 0)
-        return ScopeContentDistribution::assignedTo(shadowRoot);
+        return shadowRoot->insertionPoint();
 
     if (parent->isElementNode() && toElement(parent)->shadow())
         return true;
 
     return false;
-}
-
-ComposedShadowTreeWalker ComposedShadowTreeWalker::fromFirstChild(const Node* node, Policy policy)
-{
-    ComposedShadowTreeWalker walker(node, policy);
-    walker.firstChild();
-    return walker;
-}
-
-void ComposedShadowTreeWalker::firstChild()
-{
-    assertPrecondition();
-    m_node = traverseChild(m_node, TraversalDirectionForward);
-    assertPostcondition();
-}
-
-Node* ComposedShadowTreeWalker::traverseFirstChild(const Node* node) const
-{
-    ASSERT(node);
-    return traverseChild(node, TraversalDirectionForward);
-}
-
-void ComposedShadowTreeWalker::lastChild()
-{
-    assertPrecondition();
-    m_node = traverseLastChild(m_node);
-    assertPostcondition();
-}
-
-Node* ComposedShadowTreeWalker::traverseLastChild(const Node* node) const
-{
-    ASSERT(node);
-    return traverseChild(node, TraversalDirectionBackward);
 }
 
 Node* ComposedShadowTreeWalker::traverseChild(const Node* node, TraversalDirection direction) const
@@ -128,20 +95,6 @@ Node* ComposedShadowTreeWalker::traverseNode(const Node* node, TraversalDirectio
     if (Node* found = traverseDistributedNodes(direction == TraversalDirectionForward ? insertionPoint->first() : insertionPoint->last(), insertionPoint, direction))
         return found;
     return traverseLightChildren(node, direction);
-}
-
-void ComposedShadowTreeWalker::nextSibling()
-{
-    assertPrecondition();
-    m_node = traverseSiblingOrBackToInsertionPoint(m_node, TraversalDirectionForward);
-    assertPostcondition();
-}
-
-void ComposedShadowTreeWalker::previousSibling()
-{
-    assertPrecondition();
-    m_node = traverseSiblingOrBackToInsertionPoint(m_node, TraversalDirectionBackward);
-    assertPostcondition();
 }
 
 Node* ComposedShadowTreeWalker::traverseDistributedNodes(const Node* node, const InsertionPoint* insertionPoint, TraversalDirection direction)
@@ -185,7 +138,7 @@ Node* ComposedShadowTreeWalker::traverseBackToYoungerShadowRoot(const Node* node
     if (node->parentNode() && node->parentNode()->isShadowRoot()) {
         ShadowRoot* parentShadowRoot = toShadowRoot(node->parentNode());
         if (!parentShadowRoot->isYoungest()) {
-            InsertionPoint* assignedInsertionPoint = ScopeContentDistribution::assignedTo(parentShadowRoot);
+            InsertionPoint* assignedInsertionPoint = parentShadowRoot->insertionPoint();
             ASSERT(assignedInsertionPoint);
             return traverseSiblingInCurrentTree(assignedInsertionPoint, direction);
         }
@@ -209,13 +162,6 @@ inline Node* ComposedShadowTreeWalker::traverseNodeEscapingFallbackContents(cons
     const InsertionPoint* insertionPoint = toInsertionPoint(node);
     return insertionPoint->hasDistribution() ? 0 :
         insertionPoint->isActive() ? traverseParent(node, details) : const_cast<Node*>(node);
-}
-
-void ComposedShadowTreeWalker::parent()
-{
-    assertPrecondition();
-    m_node = traverseParent(m_node);
-    assertPostcondition();
 }
 
 // FIXME: Use an iterative algorithm so that it can be inlined.
@@ -254,7 +200,7 @@ inline Node* ComposedShadowTreeWalker::traverseParentInCurrentTree(const Node* n
 Node* ComposedShadowTreeWalker::traverseParentBackToYoungerShadowRootOrHost(const ShadowRoot* shadowRoot, ParentTraversalDetails* details) const
 {
     ASSERT(shadowRoot);
-    ASSERT(!ScopeContentDistribution::assignedTo(shadowRoot));
+    ASSERT(!shadowRoot->insertionPoint());
 
     if (shadowRoot->isYoungest()) {
         if (canCrossUpperBoundary()) {
@@ -267,46 +213,6 @@ Node* ComposedShadowTreeWalker::traverseParentBackToYoungerShadowRootOrHost(cons
     }
 
     return 0;
-}
-
-Node* ComposedShadowTreeWalker::traverseNextSibling(const Node* node)
-{
-    ASSERT(node);
-    return traverseSiblingOrBackToInsertionPoint(node, TraversalDirectionForward);
-}
-
-Node* ComposedShadowTreeWalker::traversePreviousSibling(const Node* node)
-{
-    ASSERT(node);
-    return traverseSiblingOrBackToInsertionPoint(node, TraversalDirectionBackward);
-}
-
-void ComposedShadowTreeWalker::next()
-{
-    assertPrecondition();
-    if (Node* next = traverseFirstChild(m_node))
-        m_node = next;
-    else if (Node* next = traverseNextSibling(m_node))
-        m_node = next;
-    else {
-        const Node* n = m_node;
-        while (n && !traverseNextSibling(n))
-            n = traverseParent(n);
-        m_node = n ? traverseNextSibling(n) : 0;
-    }
-    assertPostcondition();
-}
-
-void ComposedShadowTreeWalker::previous()
-{
-    assertPrecondition();
-    if (Node* n = traversePreviousSibling(m_node)) {
-        while (Node* child = traverseLastChild(n))
-            n = child;
-        m_node = n;
-    } else
-        parent();
-    assertPostcondition();
 }
 
 } // namespace

@@ -22,22 +22,20 @@
 #include "config.h"
 #include "core/rendering/style/StyleRareInheritedData.h"
 
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/rendering/style/CursorList.h"
 #include "core/rendering/style/QuotesData.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/RenderStyleConstants.h"
 #include "core/rendering/style/ShadowData.h"
 #include "core/rendering/style/StyleImage.h"
-#include <wtf/MemoryObjectInfo.h>
 
 namespace WebCore {
 
 struct SameSizeAsStyleRareInheritedData : public RefCounted<SameSizeAsStyleRareInheritedData> {
     void* styleImage;
-    Color firstColor;
+    StyleColor firstColor;
     float firstFloat;
-    Color colors[5];
+    StyleColor colors[5];
     void* ownPtrs[1];
     AtomicString atomicStrings[5];
     void* refPtrs[2];
@@ -48,7 +46,7 @@ struct SameSizeAsStyleRareInheritedData : public RefCounted<SameSizeAsStyleRareI
     unsigned unsigneds[1];
     short hyphenationShorts[3];
 
-    Color touchColors;
+    StyleColor touchColors;
 
     void* variableDataRefs[1];
 };
@@ -76,6 +74,7 @@ StyleRareInheritedData::StyleRareInheritedData()
     , textEmphasisFill(TextEmphasisFillFilled)
     , textEmphasisMark(TextEmphasisMarkNone)
     , textEmphasisPosition(TextEmphasisPositionOver)
+    , m_textAlignLast(RenderStyle::initialTextAlignLast())
     , m_textOrientation(TextOrientationVerticalRight)
 #if ENABLE(CSS3_TEXT)
     , m_textIndentLine(RenderStyle::initialTextIndentLine())
@@ -85,7 +84,6 @@ StyleRareInheritedData::StyleRareInheritedData()
     , m_lineSnap(RenderStyle::initialLineSnap())
     , m_lineAlign(RenderStyle::initialLineAlign())
 #if ENABLE(CSS3_TEXT)
-    , m_textAlignLast(RenderStyle::initialTextAlignLast())
     , m_textUnderlinePosition(RenderStyle::initialTextUnderlinePosition())
 #endif // CSS3_TEXT
     , m_rubyPosition(RenderStyle::initialRubyPosition())
@@ -109,7 +107,7 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , visitedLinkTextStrokeColor(o.visitedLinkTextStrokeColor)
     , visitedLinkTextFillColor(o.visitedLinkTextFillColor)
     , visitedLinkTextEmphasisColor(o.visitedLinkTextEmphasisColor)
-    , textShadow(o.textShadow ? adoptPtr(new ShadowData(*o.textShadow)) : nullptr)
+    , textShadow(cloneShadow(o.textShadow))
     , highlight(o.highlight)
     , cursorData(o.cursorData)
     , indent(o.indent)
@@ -130,6 +128,7 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , textEmphasisFill(o.textEmphasisFill)
     , textEmphasisMark(o.textEmphasisMark)
     , textEmphasisPosition(o.textEmphasisPosition)
+    , m_textAlignLast(o.m_textAlignLast)
     , m_textOrientation(o.m_textOrientation)
 #if ENABLE(CSS3_TEXT)
     , m_textIndentLine(o.m_textIndentLine)
@@ -139,7 +138,6 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , m_lineSnap(o.m_lineSnap)
     , m_lineAlign(o.m_lineAlign)
 #if ENABLE(CSS3_TEXT)
-    , m_textAlignLast(o.m_textAlignLast)
     , m_textUnderlinePosition(o.m_textUnderlinePosition)
 #endif // CSS3_TEXT
     , m_rubyPosition(o.m_rubyPosition)
@@ -203,6 +201,7 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && textEmphasisFill == o.textEmphasisFill
         && textEmphasisMark == o.textEmphasisMark
         && textEmphasisPosition == o.textEmphasisPosition
+        && m_textAlignLast == o.m_textAlignLast
         && m_textOrientation == o.m_textOrientation
 #if ENABLE(CSS3_TEXT)
         && m_textIndentLine == o.m_textIndentLine
@@ -216,7 +215,6 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && m_lineGrid == o.m_lineGrid
         && m_imageRendering == o.m_imageRendering
 #if ENABLE(CSS3_TEXT)
-        && m_textAlignLast == o.m_textAlignLast
         && m_textUnderlinePosition == o.m_textUnderlinePosition
 #endif // CSS3_TEXT
         && m_rubyPosition == o.m_rubyPosition
@@ -233,22 +231,6 @@ bool StyleRareInheritedData::shadowDataEquivalent(const StyleRareInheritedData& 
     if (textShadow && o.textShadow && (*textShadow != *o.textShadow))
         return false;
     return true;
-}
-
-void StyleRareInheritedData::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(listStyleImage, "listStyleImage");
-    info.addMember(indent, "indent");
-    info.addMember(textShadow, "textShadow");
-    info.addMember(highlight, "highlight");
-    info.addMember(cursorData, "cursorData");
-    info.addMember(hyphenationString, "hyphenationString");
-    info.addMember(locale, "locale");
-    info.addMember(textEmphasisCustomMark, "textEmphasisCustomMark");
-    info.addMember(quotes, "quotes");
-    info.addMember(m_lineGrid, "lineGrid");
-    info.addMember(m_variables, "variables");
 }
 
 } // namespace WebCore

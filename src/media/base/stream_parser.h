@@ -11,7 +11,7 @@
 #include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/base/media_export.h"
 #include "media/base/media_log.h"
 #include "media/base/text_track.h"
@@ -50,11 +50,13 @@ class MEDIA_EXPORT StreamParser {
                               const VideoDecoderConfig&)> NewConfigCB;
 
   // New stream buffers have been parsed.
-  // First parameter - A queue of newly parsed buffers.
+  // First parameter - A queue of newly parsed audio buffers.
+  // Second parameter - A queue of newly parsed video buffers.
   // Return value - True indicates that the buffers are accepted.
   //                False if something was wrong with the buffers and a parsing
   //                error should be signalled.
-  typedef base::Callback<bool(const BufferQueue&)> NewBuffersCB;
+  typedef base::Callback<bool(const BufferQueue&,
+                              const BufferQueue&)> NewBuffersCB;
 
   // New stream buffers of inband text have been parsed.
   // First parameter - The text track to which these cues will be added.
@@ -65,18 +67,14 @@ class MEDIA_EXPORT StreamParser {
   typedef base::Callback<bool(TextTrack*, const BufferQueue&)> NewTextBuffersCB;
 
   // Signals the beginning of a new media segment.
-  // First parameter - The earliest timestamp of all the streams in the segment.
-  typedef base::Callback<void(base::TimeDelta)> NewMediaSegmentCB;
+  typedef base::Callback<void()> NewMediaSegmentCB;
 
   // A new potentially encrypted stream has been parsed.
   // First parameter - The type of the initialization data associated with the
   //                   stream.
   // Second parameter - The initialization data associated with the stream.
   // Third parameter - Number of bytes of the initialization data.
-  // Return value - True indicates that the initialization data is accepted.
-  //                False if something was wrong with the initialization data
-  //                and a parsing error should be signalled.
-  typedef base::Callback<bool(const std::string&,
+  typedef base::Callback<void(const std::string&,
                               scoped_ptr<uint8[]>, int)> NeedKeyCB;
 
   // Initialize the parser with necessary callbacks. Must be called before any
@@ -85,8 +83,7 @@ class MEDIA_EXPORT StreamParser {
   // start time, and duration.
   virtual void Init(const InitCB& init_cb,
                     const NewConfigCB& config_cb,
-                    const NewBuffersCB& audio_cb,
-                    const NewBuffersCB& video_cb,
+                    const NewBuffersCB& new_buffers_cb,
                     const NewTextBuffersCB& text_cb,
                     const NeedKeyCB& need_key_cb,
                     const AddTextTrackCB& add_text_track_cb,

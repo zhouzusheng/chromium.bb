@@ -33,10 +33,12 @@
 
 #include "HTMLNames.h"
 #include "InspectorFrontend.h"
+#include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScriptEventListener.h"
 #include "core/dom/Attr.h"
 #include "core/dom/CharacterData.h"
 #include "core/dom/ContainerNode.h"
+#include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/DocumentType.h"
@@ -49,6 +51,7 @@
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/editing/markup.h"
 #include "core/fileapi/File.h"
 #include "core/fileapi/FileList.h"
 #include "core/html/HTMLFrameOwnerElement.h"
@@ -67,20 +70,19 @@
 #include "core/page/Frame.h"
 #include "core/page/FrameTree.h"
 #include "core/page/Page.h"
+#include "core/platform/PlatformGestureEvent.h"
 #include "core/platform/PlatformMouseEvent.h"
 #include "core/platform/PlatformTouchEvent.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderView.h"
+#include "core/xml/DocumentXPathEvaluator.h"
 #include "core/xml/XPathResult.h"
-
-#include "core/editing/markup.h"
-
-#include <wtf/HashSet.h>
-#include <wtf/ListHashSet.h>
-#include <wtf/OwnPtr.h>
-#include <wtf/text/CString.h>
-#include <wtf/text/WTFString.h>
-#include <wtf/Vector.h>
+#include "wtf/HashSet.h"
+#include "wtf/ListHashSet.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/Vector.h"
+#include "wtf/text/CString.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -161,6 +163,11 @@ static Node* hoveredNodeForPoint(Frame* frame, const IntPoint& point, bool ignor
     return node;
 }
 
+static Node* hoveredNodeForEvent(Frame* frame, const PlatformGestureEvent& event, bool ignorePointerEventsNone)
+{
+    return hoveredNodeForPoint(frame, event.position(), ignorePointerEventsNone);
+}
+
 static Node* hoveredNodeForEvent(Frame* frame, const PlatformMouseEvent& event, bool ignorePointerEventsNone)
 {
     return hoveredNodeForPoint(frame, event.position(), ignorePointerEventsNone);
@@ -212,12 +219,10 @@ void RevalidateStyleAttributeTask::onTimer(Timer<RevalidateStyleAttributeTask>*)
     m_elements.clear();
 }
 
-String InspectorDOMAgent::toErrorString(const ExceptionCode& ec)
+String InspectorDOMAgent::toErrorString(ExceptionState& es)
 {
-    if (ec) {
-        ExceptionCodeDescription description(ec);
-        return description.name;
-    }
+    if (es.hadException())
+        return DOMException::getErrorName(es.code());
     return "";
 }
 
@@ -352,12 +357,8 @@ void InspectorDOMAgent::unbind(Node* node, NodeToIdMap* nodesMap)
             unbind(contentDocument, nodesMap);
     }
 
-    if (node->isElementNode()) {
-        if (ElementShadow* shadow = toElement(node)->shadow()) {
-            for (ShadowRoot* root = shadow->youngestShadowRoot(); root; root = root->olderShadowRoot())
-                unbind(root, nodesMap);
-        }
-    }
+    for (ShadowRoot* root = node->youngestShadowRoot(); root; root = root->olderShadowRoot())
+        unbind(root, nodesMap);
 
     nodesMap->remove(node);
     if (m_domListener)
@@ -547,9 +548,9 @@ void InspectorDOMAgent::querySelector(ErrorString* errorString, int nodeId, cons
     if (!node)
         return;
 
-    ExceptionCode ec = 0;
-    RefPtr<Element> element = node->querySelector(selectors, ec);
-    if (ec) {
+    TrackExceptionState es;
+    RefPtr<Element> element = node->querySelector(selectors, es);
+    if (es.hadException()) {
         *errorString = "DOM Error while querying";
         return;
     }
@@ -564,9 +565,9 @@ void InspectorDOMAgent::querySelectorAll(ErrorString* errorString, int nodeId, c
     if (!node)
         return;
 
-    ExceptionCode ec = 0;
-    RefPtr<NodeList> nodes = node->querySelectorAll(selectors, ec);
-    if (ec) {
+    TrackExceptionState es;
+    RefPtr<NodeList> nodes = node->querySelectorAll(selectors, es);
+    if (es.hadException()) {
         *errorString = "DOM Error while querying";
         return;
     }
@@ -747,9 +748,9 @@ void InspectorDOMAgent::setNodeName(ErrorString* errorString, int nodeId, const 
     if (!oldNode || !oldNode->isElementNode())
         return;
 
-    ExceptionCode ec = 0;
-    RefPtr<Element> newElem = oldNode->document()->createElement(tagName, ec);
-    if (ec)
+    TrackExceptionState es;
+    RefPtr<Element> newElem = oldNode->document()->createElement(tagName, es);
+    if (es.hadException())
         return;
 
     // Copy over the original node's attributes.
@@ -982,19 +983,19 @@ void InspectorDOMAgent::performSearch(ErrorString*, const String& whitespaceTrim
         // XPath evaluation
         for (Vector<Document*>::iterator it = docs.begin(); it != docs.end(); ++it) {
             Document* document = *it;
-            ExceptionCode ec = 0;
-            RefPtr<XPathResult> result = document->evaluate(whitespaceTrimmedQuery, document, 0, XPathResult::ORDERED_NODE_SNAPSHOT_TYPE, 0, ec);
-            if (ec || !result)
+            TrackExceptionState es;
+            RefPtr<XPathResult> result = DocumentXPathEvaluator::evaluate(document, whitespaceTrimmedQuery, document, 0, XPathResult::ORDERED_NODE_SNAPSHOT_TYPE, 0, es);
+            if (es.hadException() || !result)
                 continue;
 
-            unsigned long size = result->snapshotLength(ec);
-            for (unsigned long i = 0; !ec && i < size; ++i) {
-                Node* node = result->snapshotItem(i, ec);
-                if (ec)
+            unsigned long size = result->snapshotLength(es);
+            for (unsigned long i = 0; !es.hadException() && i < size; ++i) {
+                Node* node = result->snapshotItem(i, es);
+                if (es.hadException())
                     break;
 
                 if (node->nodeType() == Node::ATTRIBUTE_NODE)
-                    node = static_cast<Attr*>(node)->ownerElement();
+                    node = toAttr(node)->ownerElement();
                 resultCollector.add(node);
             }
         }
@@ -1002,9 +1003,9 @@ void InspectorDOMAgent::performSearch(ErrorString*, const String& whitespaceTrim
         // Selector evaluation
         for (Vector<Document*>::iterator it = docs.begin(); it != docs.end(); ++it) {
             Document* document = *it;
-            ExceptionCode ec = 0;
-            RefPtr<NodeList> nodeList = document->querySelectorAll(whitespaceTrimmedQuery, ec);
-            if (ec || !nodeList)
+            TrackExceptionState es;
+            RefPtr<NodeList> nodeList = document->querySelectorAll(whitespaceTrimmedQuery, es);
+            if (es.hadException() || !nodeList)
                 continue;
 
             unsigned size = nodeList->length();
@@ -1052,6 +1053,19 @@ bool InspectorDOMAgent::handleMousePress()
         return false;
 
     if (Node* node = m_overlay->highlightedNode()) {
+        inspect(node);
+        return true;
+    }
+    return false;
+}
+
+bool InspectorDOMAgent::handleGestureEvent(Frame* frame, const PlatformGestureEvent& event)
+{
+    if (m_searchingForNode == NotSearching || event.type() != PlatformEvent::GestureTap)
+        return false;
+    Node* node = hoveredNodeForEvent(frame, event, false);
+    if (node && m_inspectModeHighlightConfig) {
+        m_overlay->highlightNode(node, 0 /* eventTarget */, *m_inspectModeHighlightConfig);
         inspect(node);
         return true;
     }
@@ -1245,16 +1259,16 @@ void InspectorDOMAgent::moveTo(ErrorString* errorString, int nodeId, int targetE
 
 void InspectorDOMAgent::undo(ErrorString* errorString)
 {
-    ExceptionCode ec = 0;
-    m_history->undo(ec);
-    *errorString = InspectorDOMAgent::toErrorString(ec);
+    TrackExceptionState es;
+    m_history->undo(es);
+    *errorString = InspectorDOMAgent::toErrorString(es);
 }
 
 void InspectorDOMAgent::redo(ErrorString* errorString)
 {
-    ExceptionCode ec = 0;
-    m_history->redo(ec);
-    *errorString = InspectorDOMAgent::toErrorString(ec);
+    TrackExceptionState es;
+    m_history->redo(es);
+    *errorString = InspectorDOMAgent::toErrorString(es);
 }
 
 void InspectorDOMAgent::markUndoableState(ErrorString*)
@@ -1418,7 +1432,7 @@ PassRefPtr<TypeBuilder::DOM::Node> InspectorDOMAgent::buildObjectForNode(Node* n
         value->setSystemId(docType->systemId());
         value->setInternalSubset(docType->internalSubset());
     } else if (node->isAttributeNode()) {
-        Attr* attribute = static_cast<Attr*>(node);
+        Attr* attribute = toAttr(node);
         value->setName(attribute->name());
         value->setValue(attribute->value());
     }

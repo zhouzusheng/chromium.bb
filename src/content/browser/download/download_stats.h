@@ -48,11 +48,14 @@ enum DownloadCountTypes {
   // Downloads that were interrupted by the OS.
   INTERRUPTED_COUNT,
 
-  // Write sizes for downloads.
-  WRITE_SIZE_COUNT,
+  // (Deprecated) Write sizes for downloads.
+  // This is equal to the number of samples in Download.WriteSize histogram.
+  DOWNLOAD_COUNT_UNUSED_10,
 
-  // Counts iterations of the BaseFile::AppendDataToFile() loop.
-  WRITE_LOOP_COUNT,
+  // (Deprecated) Counts iterations of the BaseFile::AppendDataToFile() loop.
+  // This is equal to the number of samples in Download.WriteLoopCount
+  // histogram.
+  DOWNLOAD_COUNT_UNUSED_11,
 
   // Counts interruptions that happened at the end of the download.
   INTERRUPTED_AT_END_COUNT,
@@ -67,6 +70,14 @@ enum DownloadCountTypes {
   // Counts the number of instances where the downloaded file is missing after a
   // successful invocation of ScanAndSaveDownloadedFile().
   FILE_MISSING_AFTER_SUCCESSFUL_SCAN_COUNT,
+
+  // Count of downloads that supplies a strong ETag and has a 'Accept-Ranges:
+  // bytes' header. These downloads are candidates for partial resumption.
+  STRONG_ETAG_AND_ACCEPTS_RANGES,
+
+  // Count of downloads that didn't have a valid WebContents at the time it was
+  // interrupted.
+  INTERRUPTED_WITHOUT_WEBCONTENTS,
 
   DOWNLOAD_COUNT_TYPES_LAST_ENTRY
 };
@@ -85,10 +96,12 @@ enum DownloadSource {
   // (e.g. by Alt-click) through the IPC ViewHostMsg_DownloadUrl.
   INITIATED_BY_RENDERER,
 
-  // The download was initiated by a renderer or plugin process through
-  // the IPC ViewHostMsg_SaveURLAs; currently this is only used by the
-  // Pepper plugin API.
-  INITIATED_BY_PEPPER_SAVE,
+  // Fomerly INITIATED_BY_PEPPER_SAVE.
+  DOWNLOAD_SOURCE_UNUSED_3,
+
+  // A request that was initiated as a result of resuming an interrupted
+  // download.
+  INITIATED_BY_RESUMPTION,
 
   DOWNLOAD_SOURCE_LAST_ENTRY
 };
@@ -146,8 +159,11 @@ void RecordBandwidth(double actual_bandwidth, double potential_bandwidth);
 // download completed.
 void RecordOpen(const base::Time& end, bool first);
 
-// Record whether or not the server accepts ranges, and the download size.
-void RecordAcceptsRanges(const std::string& accepts_ranges, int64 download_len);
+// Record whether or not the server accepts ranges, and the download size. Also
+// counts if a strong ETag is supplied. The combination of range request support
+// and ETag indicates downloads that are candidates for partial resumption.
+void RecordAcceptsRanges(const std::string& accepts_ranges, int64 download_len,
+                         const std::string& etag);
 
 // Record the number of downloads removed by ClearAll.
 void RecordClearAllSize(int size);

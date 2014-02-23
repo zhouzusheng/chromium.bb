@@ -59,7 +59,7 @@ public:
     {
         ASSERT(isolate);
         ASSERT(isolate->GetData());
-        return static_cast<V8PerIsolateData*>(isolate->GetData()); 
+        return static_cast<V8PerIsolateData*>(isolate->GetData());
     }
     static void dispose(v8::Isolate*);
 
@@ -87,16 +87,13 @@ public:
 
     StringCache* stringCache() { return m_stringCache.get(); }
 
-    v8::Handle<v8::Value> v8Null() { return m_v8Null.get(); }
-
     v8::Persistent<v8::Value>& ensureLiveRoot();
 
-    void visitExternalStrings(ExternalStringVisitor*);
     DOMDataList& allStores() { return m_domDataList; }
 
     V8HiddenPropertyName* hiddenPropertyName() { return m_hiddenPropertyName.get(); }
 
-    void registerDOMDataStore(DOMDataStore* domDataStore) 
+    void registerDOMDataStore(DOMDataStore* domDataStore)
     {
         ASSERT(m_domDataList.find(domDataStore) == notFound);
         m_domDataList.append(domDataStore);
@@ -124,8 +121,6 @@ public:
 
     GCEventData* gcEventData() { return m_gcEventData.get(); }
 
-    void reportMemoryUsage(MemoryObjectInfo*) const;
-
     // Gives the system a hint that we should request garbage collection
     // upon the next close or navigation event, because some expensive
     // objects have been allocated that we want to take every opportunity
@@ -134,14 +129,18 @@ public:
     void clearShouldCollectGarbageSoon() { m_shouldCollectGarbageSoon = false; }
     bool shouldCollectGarbageSoon() const { return m_shouldCollectGarbageSoon; }
 
-    bool hasPrivateTemplate(WrapperWorldType, void* privatePointer);
-    v8::Handle<v8::FunctionTemplate> privateTemplate(WrapperWorldType, void* privatePointer, v8::FunctionCallback, v8::Handle<v8::Value> data, v8::Handle<v8::Signature>, int length = 0);
+    v8::Handle<v8::FunctionTemplate> privateTemplate(WrapperWorldType, void* privatePointer, v8::FunctionCallback = 0, v8::Handle<v8::Value> data = v8::Handle<v8::Value>(), v8::Handle<v8::Signature> = v8::Handle<v8::Signature>(), int length = 0);
+    v8::Handle<v8::FunctionTemplate> privateTemplateIfExists(WrapperWorldType, void* privatePointer);
+    void setPrivateTemplate(WrapperWorldType, void* privatePointer, v8::Handle<v8::FunctionTemplate>);
 
     v8::Handle<v8::FunctionTemplate> rawTemplate(WrapperTypeInfo*, WrapperWorldType);
 
     bool hasInstance(WrapperTypeInfo*, v8::Handle<v8::Value>, WrapperWorldType);
 
     v8::Local<v8::Context> ensureRegexContext();
+
+    const char* previousSamplingState() const { return m_previousSamplingState; }
+    void setPreviousSamplingState(const char* name) { m_previousSamplingState = name; }
 
 private:
     explicit V8PerIsolateData(v8::Isolate*);
@@ -156,7 +155,6 @@ private:
     ScopedPersistent<v8::FunctionTemplate> m_toStringTemplate;
     v8::Persistent<v8::FunctionTemplate> m_lazyEventListenerToStringTemplate;
     OwnPtr<StringCache> m_stringCache;
-    ScopedPersistent<v8::Value> m_v8Null;
 
     Vector<DOMDataStore*> m_domDataList;
     DOMDataStore* m_workerDomDataStore;
@@ -164,6 +162,8 @@ private:
     OwnPtr<V8HiddenPropertyName> m_hiddenPropertyName;
     ScopedPersistent<v8::Value> m_liveRoot;
     ScopedPersistent<v8::Context> m_regexContext;
+
+    const char* m_previousSamplingState;
 
     bool m_constructorMode;
     friend class ConstructorMode;

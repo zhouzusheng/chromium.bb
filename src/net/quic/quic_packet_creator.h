@@ -69,15 +69,15 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
   // Makes the framer not serialize the protocol version in sent packets.
   void StopSendingVersion();
 
-  // The overhead the framing will add for a packet with num_frames frames.
+  // The overhead the framing will add for a packet with one frame.
   static size_t StreamFramePacketOverhead(
-      int num_frames,
+      QuicVersion version,
       QuicGuidLength guid_length,
       bool include_version,
       QuicSequenceNumberLength sequence_number_length,
       InFecGroup is_in_fec_group);
 
-  bool HasRoomForStreamFrame() const;
+  bool HasRoomForStreamFrame(QuicStreamId id, QuicStreamOffset offset) const;
 
   // Converts a raw payload to a frame which fits into the currently open
   // packet if there is one.  Returns the number of bytes consumed from data.
@@ -130,7 +130,7 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
   // serialized packet to a random bool and returns that value as a member of
   // SerializedPacket.
   QuicEncryptedPacket* SerializeVersionNegotiationPacket(
-      const QuicTagVector& supported_versions);
+      const QuicVersionVector& supported_versions);
 
   QuicPacketSequenceNumber sequence_number() const {
     return sequence_number_;

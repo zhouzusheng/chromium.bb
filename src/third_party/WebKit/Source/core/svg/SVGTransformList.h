@@ -23,7 +23,7 @@
 
 #include "core/svg/SVGTransform.h"
 #include "core/svg/properties/SVGPropertyTraits.h"
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -36,7 +36,7 @@ public:
 
     // Internal use only
     bool concatenate(AffineTransform& result) const;
- 
+
     String valueAsString() const;
     void parse(const String&);
 };

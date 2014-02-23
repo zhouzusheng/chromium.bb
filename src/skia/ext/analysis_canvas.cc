@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/debug/trace_event.h"
+#include "base/logging.h"
 #include "skia/ext/analysis_canvas.h"
 #include "third_party/skia/include/core/SkDevice.h"
 #include "third_party/skia/include/core/SkDraw.h"
@@ -192,7 +193,6 @@ void AnalysisDevice::drawPath(const SkDraw& draw,
 
 void AnalysisDevice::drawBitmap(const SkDraw& draw,
                                 const SkBitmap& bitmap,
-                                const SkIRect* src_rect_or_null,
                                 const SkMatrix& matrix,
                                 const SkPaint& paint) {
   is_solid_color_ = false;

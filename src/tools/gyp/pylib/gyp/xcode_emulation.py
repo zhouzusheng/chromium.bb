@@ -39,6 +39,15 @@ class XcodeSettings(object):
                                              None):
         self.isIOS = True
 
+      # If you need this, speak up at http://crbug.com/122592
+      conditional_keys = [key for key in self.xcode_settings[configname]
+                          if key.endswith(']')]
+      if conditional_keys:
+        print 'Warning: Conditional keys not implemented, ignoring:', \
+              ' '.join(conditional_keys)
+        for key in conditional_keys:
+          del self.xcode_settings[configname][key]
+
     # This is only non-None temporarily during the execution of some methods.
     self.configname = None
 
@@ -231,6 +240,12 @@ class XcodeSettings(object):
     else:
       return self._GetStandaloneBinaryPath()
 
+  def GetActiveArchs(self, configname):
+    """Returns the architectures this target should be built for."""
+    # TODO: Look at VALID_ARCHS, ONLY_ACTIVE_ARCH; possibly set
+    # CURRENT_ARCH / NATIVE_ARCH env vars?
+    return self.xcode_settings[configname].get('ARCHS', ['i386'])
+
   def _GetSdkVersionInfoItem(self, sdk, infoitem):
     job = subprocess.Popen(['xcodebuild', '-version', '-sdk', sdk, infoitem],
                            stdout=subprocess.PIPE)
@@ -261,7 +276,7 @@ class XcodeSettings(object):
         self._Appendf(lst, 'IPHONEOS_DEPLOYMENT_TARGET',
                       '-miphoneos-version-min=%s')
 
-  def GetCflags(self, configname):
+  def GetCflags(self, configname, arch=None):
     """Returns flags that need to be added to .c, .cc, .m, and .mm
     compilations."""
     # This functions (and the similar ones below) do not offer complete
@@ -308,6 +323,11 @@ class XcodeSettings(object):
       else:
         raise NotImplementedError('Unknown debug format %s' % dbg_format)
 
+    if self._Settings().get('GCC_STRICT_ALIASING') == 'YES':
+      cflags.append('-fstrict-aliasing')
+    elif self._Settings().get('GCC_STRICT_ALIASING') == 'NO':
+      cflags.append('-fno-strict-aliasing')
+
     if self._Test('GCC_SYMBOLS_PRIVATE_EXTERN', 'YES', default='NO'):
       cflags.append('-fvisibility=hidden')
 
@@ -329,7 +349,10 @@ class XcodeSettings(object):
     self._WarnUnimplemented('MACH_O_TYPE')
     self._WarnUnimplemented('PRODUCT_TYPE')
 
-    archs = self._Settings().get('ARCHS', ['i386'])
+    if arch is not None:
+      archs = [arch]
+    else:
+      archs = self._Settings().get('ARCHS', ['i386'])
     if len(archs) != 1:
       # TODO: Supporting fat binaries will be annoying.
       self._WarnUnimplemented('ARCHS')
@@ -361,7 +384,10 @@ class XcodeSettings(object):
     """Returns flags that need to be added to .c, and .m compilations."""
     self.configname = configname
     cflags_c = []
-    self._Appendf(cflags_c, 'GCC_C_LANGUAGE_STANDARD', '-std=%s')
+    if self._Settings().get('GCC_C_LANGUAGE_STANDARD', '') == 'ansi':
+      cflags_c.append('-ansi')
+    else:
+      self._Appendf(cflags_c, 'GCC_C_LANGUAGE_STANDARD', '-std=%s')
     cflags_c += self._Settings().get('OTHER_CFLAGS', [])
     self.configname = None
     return cflags_c
@@ -414,13 +440,16 @@ class XcodeSettings(object):
     elif gc_policy == 'required':
       flags.append('-fobjc-gc-only')
 
+  def _AddObjectiveCARCFlags(self, flags):
+    if self._Test('CLANG_ENABLE_OBJC_ARC', 'YES', default='NO'):
+      flags.append('-fobjc-arc')
+
   def GetCflagsObjC(self, configname):
     """Returns flags that need to be added to .m compilations."""
     self.configname = configname
     cflags_objc = []
-
     self._AddObjectiveCGarbageCollectionFlags(cflags_objc)
-
+    self._AddObjectiveCARCFlags(cflags_objc)
     self.configname = None
     return cflags_objc
 
@@ -429,6 +458,7 @@ class XcodeSettings(object):
     self.configname = configname
     cflags_objcc = []
     self._AddObjectiveCGarbageCollectionFlags(cflags_objcc)
+    self._AddObjectiveCARCFlags(cflags_objcc)
     if self._Test('GCC_OBJC_CALL_CXX_CDTORS', 'YES', default='NO'):
       cflags_objcc.append('-fobjc-call-cxx-cdtors')
     self.configname = None
@@ -523,7 +553,7 @@ class XcodeSettings(object):
       ldflag = '-L' + gyp_to_build_path(ldflag[len('-L'):])
     return ldflag
 
-  def GetLdflags(self, configname, product_dir, gyp_to_build_path):
+  def GetLdflags(self, configname, product_dir, gyp_to_build_path, arch=None):
     """Returns flags that need to be passed to the linker.
 
     Args:
@@ -565,7 +595,10 @@ class XcodeSettings(object):
                      '-Wl,' + gyp_to_build_path(
                                   self._Settings()['ORDER_FILE']))
 
-    archs = self._Settings().get('ARCHS', ['i386'])
+    if arch is not None:
+      archs = [arch]
+    else:
+      archs = self._Settings().get('ARCHS', ['i386'])
     if len(archs) != 1:
       # TODO: Supporting fat binaries will be annoying.
       self._WarnUnimplemented('ARCHS')
@@ -770,21 +803,28 @@ class MacPrefixHeader(object):
               self.header, lang)
       self.header = gyp_path_to_build_path(self.header)
 
-  def GetInclude(self, lang):
+  def _CompiledHeader(self, lang, arch):
+    assert self.compile_headers
+    h = self.compiled_headers[lang]
+    if arch:
+      h += '.' + arch
+    return h
+
+  def GetInclude(self, lang, arch=None):
     """Gets the cflags to include the prefix header for language |lang|."""
     if self.compile_headers and lang in self.compiled_headers:
-      return '-include %s' % self.compiled_headers[lang]
+      return '-include %s' % self._CompiledHeader(lang, arch)
     elif self.header:
       return '-include %s' % self.header
     else:
       return ''
 
-  def _Gch(self, lang):
+  def _Gch(self, lang, arch):
     """Returns the actual file name of the prefix header for language |lang|."""
     assert self.compile_headers
-    return self.compiled_headers[lang] + '.gch'
+    return self._CompiledHeader(lang, arch) + '.gch'
 
-  def GetObjDependencies(self, sources, objs):
+  def GetObjDependencies(self, sources, objs, arch=None):
     """Given a list of source files and the corresponding object files, returns
     a list of (source, object, gch) tuples, where |gch| is the build-directory
     relative path to the gch file each object file depends on.  |compilable[i]|
@@ -802,20 +842,20 @@ class MacPrefixHeader(object):
         '.mm': 'mm',
       }.get(ext, None)
       if lang:
-        result.append((source, obj, self._Gch(lang)))
+        result.append((source, obj, self._Gch(lang, arch)))
     return result
 
-  def GetPchBuildCommands(self):
+  def GetPchBuildCommands(self, arch=None):
     """Returns [(path_to_gch, language_flag, language, header)].
     |path_to_gch| and |header| are relative to the build directory.
     """
     if not self.header or not self.compile_headers:
       return []
     return [
-      (self._Gch('c'), '-x c-header', 'c', self.header),
-      (self._Gch('cc'), '-x c++-header', 'cc', self.header),
-      (self._Gch('m'), '-x objective-c-header', 'm', self.header),
-      (self._Gch('mm'), '-x objective-c++-header', 'mm', self.header),
+      (self._Gch('c', arch), '-x c-header', 'c', self.header),
+      (self._Gch('cc', arch), '-x c++-header', 'cc', self.header),
+      (self._Gch('m', arch), '-x objective-c-header', 'm', self.header),
+      (self._Gch('mm', arch), '-x objective-c++-header', 'mm', self.header),
     ]
 
 
@@ -888,7 +928,7 @@ def GetMacBundleResources(product_dir, xcode_settings, resources):
 
 def GetMacInfoPlist(product_dir, xcode_settings, gyp_path_to_build_path):
   """Returns (info_plist, dest_plist, defines, extra_env), where:
-  * |info_plist| is the sourc plist path, relative to the
+  * |info_plist| is the source plist path, relative to the
     build directory,
   * |dest_plist| is the destination plist path, relative to the
     build directory,

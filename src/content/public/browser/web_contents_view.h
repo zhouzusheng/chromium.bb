@@ -8,15 +8,14 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/process_util.h"
+#include "base/process/kill.h"
 #include "content/common/content_export.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 
-struct WebDropData;
-
 namespace content {
+struct DropData;
 
 // The WebContentsView is an interface that is implemented by the platform-
 // dependent web contents views. The WebContents uses this interface to talk to
@@ -77,7 +76,7 @@ class CONTENT_EXPORT WebContentsView {
   virtual void RestoreFocus() = 0;
 
   // Returns the current drop data, if any.
-  virtual WebDropData* GetDropData() const = 0;
+  virtual DropData* GetDropData() const = 0;
 
   // Get the bounds of the View, relative to the parent.
   virtual gfx::Rect GetViewBounds() const = 0;

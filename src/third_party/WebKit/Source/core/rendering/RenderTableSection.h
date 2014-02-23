@@ -26,7 +26,7 @@
 #define RenderTableSection_h
 
 #include "core/rendering/RenderTable.h"
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -83,8 +83,10 @@ public:
 
     RenderTable* table() const { return toRenderTable(parent()); }
 
+    typedef Vector<RenderTableCell*, 2> SpanningRenderTableCells;
+
     struct CellStruct {
-        Vector<RenderTableCell*, 1> cells; 
+        Vector<RenderTableCell*, 1> cells;
         bool inColSpan; // true for columns after the first in a colspan
 
         CellStruct()
@@ -103,8 +105,6 @@ public:
         }
 
         bool hasCells() const { return cells.size() > 0; }
-
-        void reportMemoryUsage(MemoryObjectInfo*) const;
     };
 
     typedef Vector<CellStruct> Row;
@@ -116,12 +116,25 @@ public:
         {
         }
 
-        void reportMemoryUsage(MemoryObjectInfo*) const;
-
         Row row;
         RenderTableRow* rowRenderer;
         LayoutUnit baseline;
         Length logicalHeight;
+    };
+
+    struct SpanningRowsHeight {
+        WTF_MAKE_NONCOPYABLE(SpanningRowsHeight);
+
+    public:
+        SpanningRowsHeight()
+            : totalRowsHeight(0)
+            , spanningCellHeightIgnoringBorderSpacing(0)
+        {
+        }
+
+        Vector<int> rowHeight;
+        int totalRowsHeight;
+        int spanningCellHeightIgnoringBorderSpacing;
     };
 
     const BorderValue& borderAdjoiningTableStart() const
@@ -199,10 +212,8 @@ public:
     {
         return createAnonymousWithParentRenderer(parent);
     }
-    
-    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
+    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
 
 protected:
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
@@ -226,11 +237,21 @@ private:
 
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
 
+    int borderSpacingForRow(unsigned row) const { return m_grid[row].rowRenderer ? table()->vBorderSpacing() : 0; }
+
     void ensureRows(unsigned);
+
+    void populateSpanningRowsHeightFromCell(RenderTableCell*, struct SpanningRowsHeight&);
+    void distributeExtraRowSpanHeightToPercentRows(RenderTableCell*, int, int&, Vector<int>&);
+    void distributeExtraRowSpanHeightToAutoRows(RenderTableCell*, int, int&, Vector<int>&);
+    void distributeExtraRowSpanHeightToRemainingRows(RenderTableCell*, int, int&, Vector<int>&);
+    void distributeRowSpanHeightToRows(SpanningRenderTableCells& rowSpanCells);
 
     void distributeExtraLogicalHeightToPercentRows(int& extraLogicalHeight, int totalPercent);
     void distributeExtraLogicalHeightToAutoRows(int& extraLogicalHeight, unsigned autoRowsCount);
     void distributeRemainingExtraLogicalHeight(int& extraLogicalHeight);
+
+    void updateBaselineForCell(RenderTableCell*, unsigned row, LayoutUnit& baselineDescent);
 
     bool hasOverflowingCell() const { return m_overflowingCells.size() || m_forceSlowPaintPathWithOverflowingCell; }
     void computeOverflowFromCells(unsigned totalRows, unsigned nEffCols);

@@ -11,51 +11,6 @@
   },
   'targets': [
     {
-      'target_name': 'webkit_resources',
-      'type': 'none',
-      'variables': {
-        'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/webkit',
-      },
-      'actions': [
-        {
-          'action_name': 'webkit_resources',
-          'variables': {
-            'grit_grd_file': 'resources/webkit_resources.grd',
-          },
-          'includes': [ '../../build/grit_action.gypi' ],
-        },
-        {
-          'action_name': 'webkit_chromium_resources',
-          'variables': {
-            'grit_grd_file': '../../third_party/WebKit/Source/WebKit/chromium/WebKit.grd',
-          },
-          'includes': [ '../../build/grit_action.gypi' ],
-        },
-      ],
-      'includes': [ '../../build/grit_target.gypi' ],
-      'direct_dependent_settings': {
-        'include_dirs': [ '<(grit_out_dir)' ],
-      },
-    },
-    {
-      'target_name': 'webkit_strings',
-      'type': 'none',
-      'variables': {
-        'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/webkit',
-      },
-      'actions': [
-        {
-          'action_name': 'webkit_strings',
-          'variables': {
-            'grit_grd_file': 'webkit_strings.grd',
-          },
-          'includes': [ '../../build/grit_action.gypi' ],
-        },
-      ],
-      'includes': [ '../../build/grit_target.gypi' ],
-    },
-
-    {
       'target_name': 'glue_child',
       'type': '<(component)',
       'variables': { 'enable_wexit_time_destructors': 1, },
@@ -64,26 +19,37 @@
       ],
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
+        '<(DEPTH)/base/base.gyp:base_i18n',
+        '<(DEPTH)/base/base.gyp:base_static',
         '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '<(DEPTH)/net/net.gyp:net',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink',
         '<(DEPTH)/ui/native_theme/native_theme.gyp:native_theme',
         '<(DEPTH)/ui/ui.gyp:ui',
-
-        # TODO(scottmg): crbug.com/237249
-        'glue',
+        '<(DEPTH)/url/url.gyp:url_lib',
+        '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
+        '<(DEPTH)/webkit/common/user_agent/webkit_user_agent.gyp:user_agent',
+        '<(DEPTH)/webkit/common/webkit_common.gyp:webkit_common',
       ],
 
       'include_dirs': [
         # For JNI generated header.
         '<(SHARED_INTERMEDIATE_DIR)/webkit',
       ],
+      'hard_dependency': 1,
 
       'sources': [
         '../child/fling_animator_impl_android.cc',
         '../child/fling_animator_impl_android.h',
         '../child/fling_curve_configuration.cc',
         '../child/fling_curve_configuration.h',
+        '../child/ftp_directory_listing_response_delegate.cc',
+        '../child/ftp_directory_listing_response_delegate.h',
+        '../child/multipart_response_delegate.cc',
+        '../child/multipart_response_delegate.h',
+        '../child/resource_loader_bridge.cc',
+        '../child/resource_loader_bridge.h',
         '../child/touch_fling_gesture_curve.cc',
         '../child/touch_fling_gesture_curve.h',
         '../child/web_discardable_memory_impl.cc',
@@ -91,8 +57,16 @@
         '../child/webfallbackthemeengine_impl.cc',
         '../child/webfallbackthemeengine_impl.h',
         '../child/webkit_child_export.h',
+        '../child/webkit_child_helpers.cc',
+        '../child/webkit_child_helpers.h',
         '../child/webkitplatformsupport_child_impl.cc',
         '../child/webkitplatformsupport_child_impl.h',
+        '../child/webkitplatformsupport_impl.cc',
+        '../child/webkitplatformsupport_impl.h',
+        '../child/websocketstreamhandle_bridge.h',
+        '../child/websocketstreamhandle_delegate.h',
+        '../child/websocketstreamhandle_impl.cc',
+        '../child/websocketstreamhandle_impl.h',
         '../child/webthemeengine_impl_android.cc',
         '../child/webthemeengine_impl_android.h',
         '../child/webthemeengine_impl_default.cc',
@@ -103,9 +77,18 @@
         '../child/webthemeengine_impl_win.h',
         '../child/webthread_impl.cc',
         '../child/webthread_impl.h',
+        '../child/weburlloader_impl.cc',
+        '../child/weburlloader_impl.h',
+        '../child/weburlrequest_extradata_impl.cc',
+        '../child/weburlrequest_extradata_impl.h',
+        '../child/weburlresponse_extradata_impl.cc',
+        '../child/weburlresponse_extradata_impl.h',
         '../child/worker_task_runner.cc',
         '../child/worker_task_runner.h',
       ],
+
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267 ],
 
       'conditions': [
         ['use_default_render_theme==0', {
@@ -129,104 +112,6 @@
       ],
     },
 
-    {
-      'target_name': 'glue_common',
-      'type': '<(component)',
-      'variables': { 'enable_wexit_time_destructors': 1, },
-      'defines': [
-        'WEBKIT_COMMON_IMPLEMENTATION',
-      ],
-      'dependencies': [
-        '<(DEPTH)/base/base.gyp:base',
-        '<(DEPTH)/base/base.gyp:base_i18n',
-        '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '<(DEPTH)/net/net.gyp:net',
-        '<(DEPTH)/skia/skia.gyp:skia',
-        '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink',
-        '<(DEPTH)/ui/ui.gyp:ui',
-        '<(DEPTH)/ui/ui.gyp:ui_resources',
-        '<(DEPTH)/url/url.gyp:url_lib',
-      ],
-
-      'sources': [
-        '../common/webdropdata.cc',
-        '../common/webdropdata.h',
-        '../common/webkit_common_export.h',
-        '../common/webmenuitem.cc',
-        '../common/webmenuitem.h',
-        '../common/webpreferences.cc',
-        '../common/webpreferences.h',
-        'multipart_response_delegate.cc',
-        'multipart_response_delegate.h',
-        'weburlrequest_extradata_impl.cc',
-        'weburlrequest_extradata_impl.h',
-        'weburlresponse_extradata_impl.cc',
-        'weburlresponse_extradata_impl.h',
-      ],
-
-      'conditions': [
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '<(DEPTH)/build/linux/system.gyp:gtk',
-          ],
-          'sources/': [['exclude', '_x11\\.cc$']],
-        }],
-        ['OS!="mac"', {
-          'sources/': [['exclude', '_mac\\.(cc|mm)$']],
-        }, {  # else: OS=="mac"
-          'link_settings': {
-            'libraries': [
-              '$(SDKROOT)/System/Library/Frameworks/QuartzCore.framework',
-            ],
-          },
-        }],
-        ['OS!="win"', {
-          'sources/': [['exclude', '_win\\.cc$']],
-        }, {  # else: OS=="win"
-          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-          'msvs_disabled_warnings': [ 4800, 4267 ],
-          'sources/': [['exclude', '_posix\\.cc$']],
-          'include_dirs': [
-            '<(DEPTH)/third_party/wtl/include',
-          ],
-        }],
-      ],
-    },
-
-    {
-      'target_name': 'glue_renderer',
-      'type': '<(component)',
-      'variables': { 'enable_wexit_time_destructors': 1, },
-      'defines': [
-        'WEBKIT_RENDERER_IMPLEMENTATION',
-      ],
-      'dependencies': [
-        '<(DEPTH)/base/base.gyp:base',
-        '<(DEPTH)/base/base.gyp:base_i18n',
-        '<(DEPTH)/net/net.gyp:net',
-        '<(DEPTH)/skia/skia.gyp:skia',
-        '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink',
-        '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
-        '<(DEPTH)/ui/ui.gyp:ui',
-        '<(DEPTH)/url/url.gyp:url_lib',
-        'glue_common',
-        'webkit_common',
-      ],
-
-      'sources': [
-        '../renderer/cpp_bound_class.cc',
-        '../renderer/cpp_bound_class.h',
-        '../renderer/cpp_variant.cc',
-        '../renderer/cpp_variant.h',
-        '../renderer/clipboard_utils.cc',
-        '../renderer/clipboard_utils.h',
-        '../renderer/cursor_utils.cc',
-        '../renderer/cursor_utils.h',
-        '../renderer/webkit_renderer_export.h',
-        '../renderer/webpreferences_renderer.cc',
-        '../renderer/webpreferences_renderer.h',
-      ],
-    },
 
     {
       'target_name': 'glue',
@@ -237,6 +122,7 @@
         'WEBKIT_GLUE_IMPLEMENTATION',
       ],
       'dependencies': [
+        '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/base/base.gyp:base_i18n',
         '<(DEPTH)/base/base.gyp:base_static',
         '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
@@ -245,7 +131,6 @@
         '<(DEPTH)/net/net.gyp:net',
         '<(DEPTH)/printing/printing.gyp:printing',
         '<(DEPTH)/skia/skia.gyp:skia',
-        '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink',
         '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
         '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
         '<(DEPTH)/third_party/npapi/npapi.gyp:npapi',
@@ -254,18 +139,13 @@
         '<(DEPTH)/ui/ui.gyp:ui_resources',
         '<(DEPTH)/url/url.gyp:url_lib',
         '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
-        '<(DEPTH)/webkit/base/webkit_base.gyp:webkit_base',
         '<(DEPTH)/webkit/common/user_agent/webkit_user_agent.gyp:user_agent',
-        '<(DEPTH)/webkit/plugins/webkit_plugins.gyp:plugins_common',
+        '<(DEPTH)/webkit/common/webkit_common.gyp:webkit_common',
         '<(DEPTH)/webkit/renderer/compositor_bindings/compositor_bindings.gyp:webkit_compositor_support',
         '<(DEPTH)/webkit/storage_browser.gyp:webkit_storage_browser',
         '<(DEPTH)/webkit/storage_common.gyp:webkit_storage_common',
-        'glue_common',
-        'plugins',
-        'webkit_common',
-        'webkit_media',
-        'webkit_resources',
-        'webkit_strings',
+        '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
+        '<(DEPTH)/webkit/webkit_resources.gyp:webkit_strings',
       ],
       'include_dirs': [
         '<(INTERMEDIATE_DIR)',
@@ -273,19 +153,6 @@
         '<(SHARED_INTERMEDIATE_DIR)/ui',
       ],
       'sources': [
-        'ftp_directory_listing_response_delegate.cc',
-        'ftp_directory_listing_response_delegate.h',
-        'glue_serialize_deprecated.cc',
-        'glue_serialize_deprecated.h',
-        'image_decoder.cc',
-        'image_decoder.h',
-        'network_list_observer.h',
-        'resource_loader_bridge.cc',
-        'resource_loader_bridge.h',
-        'resource_request_body.cc',
-        'resource_request_body.h',
-        'resource_type.cc',
-        'resource_type.h',
         'simple_webmimeregistry_impl.cc',
         'simple_webmimeregistry_impl.h',
         'webfileutilities_impl.cc',
@@ -293,14 +160,6 @@
         'webkit_glue.cc',
         'webkit_glue.h',
         'webkit_glue_export.h',
-        'webkitplatformsupport_impl.cc',
-        'webkitplatformsupport_impl.h',
-        'websocketstreamhandle_bridge.h',
-        'websocketstreamhandle_delegate.h',
-        'websocketstreamhandle_impl.cc',
-        'websocketstreamhandle_impl.h',
-        'weburlloader_impl.cc',
-        'weburlloader_impl.h',
       ],
       # When glue is a dependency, it needs to be a hard dependency.
       # Dependents may rely on files generated by this target or one of its
@@ -334,6 +193,11 @@
                  '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
                ],
             }],
+          ],
+        }],
+        ['chrome_multiple_dll!=1', {
+          'dependencies': [
+            '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink',
           ],
         }],
       ],

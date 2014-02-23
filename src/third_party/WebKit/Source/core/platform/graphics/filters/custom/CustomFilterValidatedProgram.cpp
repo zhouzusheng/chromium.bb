@@ -36,10 +36,10 @@
 #include "core/platform/graphics/filters/custom/CustomFilterConstants.h"
 #include "core/platform/graphics/filters/custom/CustomFilterGlobalContext.h"
 #include "core/platform/graphics/filters/custom/CustomFilterProgramInfo.h"
-#include <wtf/HashMap.h>
-#include <wtf/text/StringBuilder.h>
-#include <wtf/text/StringHash.h>
-#include <wtf/Vector.h>
+#include "wtf/HashMap.h"
+#include "wtf/text/StringBuilder.h"
+#include "wtf/text/StringHash.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -133,7 +133,7 @@ static bool validateSymbols(const Vector<ANGLEShaderSymbol>& symbols, CustomFilt
 
 String CustomFilterValidatedProgram::defaultVertexShaderString()
 {
-    DEFINE_STATIC_LOCAL(String, vertexShaderString, (ASCIILiteral(SHADER(
+    DEFINE_STATIC_LOCAL(String, vertexShaderString, (SHADER(
         attribute mediump vec4 a_position;
         uniform mediump mat4 u_projectionMatrix;
 
@@ -141,17 +141,17 @@ String CustomFilterValidatedProgram::defaultVertexShaderString()
         {
             gl_Position = u_projectionMatrix * a_position;
         }
-    ))));
+    )));
     return vertexShaderString;
 }
 
 String CustomFilterValidatedProgram::defaultFragmentShaderString()
 {
-    DEFINE_STATIC_LOCAL(String, fragmentShaderString, (ASCIILiteral(SHADER(
+    DEFINE_STATIC_LOCAL(String, fragmentShaderString, (SHADER(
         void main()
         {
         }
-    ))));
+    )));
     return fragmentShaderString;
 }
 

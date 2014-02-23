@@ -31,23 +31,20 @@
 #ifndef InspectorHeapProfilerAgent_h
 #define InspectorHeapProfilerAgent_h
 
-
 #include "InspectorFrontend.h"
 #include "core/inspector/InspectorBaseAgent.h"
-#include <wtf/Forward.h>
-#include <wtf/HashMap.h>
-#include <wtf/Noncopyable.h>
-#include <wtf/OwnPtr.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/Forward.h"
+#include "wtf/HashMap.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class HeapObjectsStatsStream;
 class InjectedScriptManager;
 class HeapStatsUpdateTask;
 class ScriptHeapSnapshot;
-class ScriptProfile;
 
 typedef String ErrorString;
 
@@ -74,9 +71,6 @@ public:
 
     virtual void getObjectByHeapObjectId(ErrorString*, const String& heapSnapshotObjectId, const String* objectGroup, RefPtr<TypeBuilder::Runtime::RemoteObject>& result);
     virtual void getHeapObjectId(ErrorString*, const String& objectId, String* heapSnapshotObjectId);
-
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
-
 
 private:
     class HeapStatsStream;

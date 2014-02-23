@@ -55,12 +55,6 @@ PassRefPtr<Scrollbar> Scrollbar::createNativeScrollbar(ScrollableArea* scrollabl
     return adoptRef(new Scrollbar(scrollableArea, orientation, size));
 }
 
-int Scrollbar::maxOverlapBetweenPages()
-{
-    static int maxOverlapBetweenPages = ScrollbarTheme::theme()->maxOverlapBetweenPages();
-    return maxOverlapBetweenPages;
-}
-
 Scrollbar::Scrollbar(ScrollableArea* scrollableArea, ScrollbarOrientation orientation, ScrollbarControlSize controlSize,
                      ScrollbarTheme* theme)
     : m_scrollableArea(scrollableArea)
@@ -71,9 +65,6 @@ Scrollbar::Scrollbar(ScrollableArea* scrollableArea, ScrollbarOrientation orient
     , m_totalSize(0)
     , m_currentPos(0)
     , m_dragOrigin(0)
-    , m_lineStep(0)
-    , m_pageStep(0)
-    , m_pixelStep(1)
     , m_hoveredPart(NoPart)
     , m_pressedPart(NoPart)
     , m_pressedPos(0)
@@ -97,17 +88,16 @@ Scrollbar::Scrollbar(ScrollableArea* scrollableArea, ScrollbarOrientation orient
     int thickness = m_theme->scrollbarThickness(controlSize);
     Widget::setFrameRect(IntRect(0, 0, thickness, thickness));
 
-    if (m_scrollableArea)
-        m_currentPos = static_cast<float>(m_scrollableArea->scrollPosition(this));
+    m_currentPos = scrollableAreaCurrentPos();
 }
 
 Scrollbar::~Scrollbar()
 {
     if (AXObjectCache* cache = existingAXObjectCache())
         cache->remove(this);
-    
+
     stopTimerIfNeeded();
-    
+
     m_theme->unregisterScrollbar(this);
 }
 
@@ -136,7 +126,7 @@ void Scrollbar::offsetDidChange()
 {
     ASSERT(m_scrollableArea);
 
-    float position = static_cast<float>(m_scrollableArea->scrollPosition(this));
+    float position = scrollableAreaCurrentPos();
     if (position == m_currentPos)
         return;
 
@@ -144,7 +134,7 @@ void Scrollbar::offsetDidChange()
     m_currentPos = position;
     updateThumbPosition();
     if (m_pressedPart == ThumbPart)
-        setPressedPos(m_pressedPos + theme()->thumbPosition(this) - oldThumbPosition);    
+        setPressedPos(m_pressedPos + theme()->thumbPosition(this) - oldThumbPosition);
 }
 
 void Scrollbar::setProportion(int visibleSize, int totalSize)
@@ -156,13 +146,6 @@ void Scrollbar::setProportion(int visibleSize, int totalSize)
     m_totalSize = totalSize;
 
     updateThumbProportion();
-}
-
-void Scrollbar::setSteps(int lineStep, int pageStep, int pixelsPerStep)
-{
-    m_lineStep = lineStep;
-    m_pageStep = pageStep;
-    m_pixelStep = 1.0f / pixelsPerStep;
 }
 
 void Scrollbar::updateThumb()
@@ -313,7 +296,7 @@ void Scrollbar::moveThumb(int pos, bool draggingDocument)
         delta = min(trackLen - thumbLen - thumbPos, delta);
     else if (delta < 0)
         delta = max(-thumbPos, delta);
-    
+
     float minPos = m_scrollableArea->minimumScrollPosition(m_orientation);
     float maxPos = m_scrollableArea->maximumScrollPosition(m_orientation);
     if (delta) {
@@ -392,7 +375,7 @@ void Scrollbar::mouseMoved(const PlatformMouseEvent& evt)
             if (m_scrollableArea)
                 m_scrollableArea->scrollToOffsetWithoutAnimation(m_orientation, m_dragOrigin);
         } else {
-            moveThumb(m_orientation == HorizontalScrollbar ? 
+            moveThumb(m_orientation == HorizontalScrollbar ?
                       convertFromContainingWindow(evt.position()).x() :
                       convertFromContainingWindow(evt.position()).y(), theme()->shouldDragDocumentInsteadOfThumb(this, evt));
         }
@@ -416,10 +399,10 @@ void Scrollbar::mouseMoved(const PlatformMouseEvent& evt)
                 stopTimerIfNeeded();
                 theme()->invalidatePart(this, m_pressedPart);
             }
-        } 
-        
+        }
+
         setHoveredPart(part);
-    } 
+    }
 
     return;
 }
@@ -464,7 +447,7 @@ void Scrollbar::mouseDown(const PlatformMouseEvent& evt)
 
     setPressedPart(theme()->hitTest(this, evt.position()));
     int pressedPos = (orientation() == HorizontalScrollbar ? convertFromContainingWindow(evt.position()).x() : convertFromContainingWindow(evt.position()).y());
-    
+
     if ((m_pressedPart == BackTrackPart || m_pressedPart == ForwardTrackPart) && theme()->shouldCenterOnThumb(this, evt)) {
         setHoveredPart(ThumbPart);
         setPressedPart(ThumbPart);
@@ -478,7 +461,7 @@ void Scrollbar::mouseDown(const PlatformMouseEvent& evt)
         return;
     } else if (m_pressedPart == ThumbPart)
         m_dragOrigin = m_currentPos;
-    
+
     m_pressedPos = pressedPos;
 
     autoscrollPressedPart(theme()->initialAutoscrollTimerDelay());
@@ -526,7 +509,7 @@ void Scrollbar::setParent(ScrollView* parentView)
 }
 
 void Scrollbar::setEnabled(bool e)
-{ 
+{
     if (m_enabled == e)
         return;
     m_enabled = e;
@@ -556,7 +539,7 @@ AXObjectCache* Scrollbar::existingAXObjectCache() const
 {
     if (!parent())
         return 0;
-    
+
     return parent()->axObjectCache();
 }
 
@@ -599,6 +582,17 @@ IntPoint Scrollbar::convertFromContainingView(const IntPoint& parentPoint) const
         return m_scrollableArea->convertFromContainingViewToScrollbar(this, parentPoint);
 
     return Widget::convertFromContainingView(parentPoint);
+}
+
+float Scrollbar::scrollableAreaCurrentPos() const
+{
+    if (!m_scrollableArea)
+        return 0;
+
+    if (m_orientation == HorizontalScrollbar)
+        return m_scrollableArea->scrollPosition().x() - m_scrollableArea->minimumScrollPosition().x();
+
+    return m_scrollableArea->scrollPosition().y() - m_scrollableArea->minimumScrollPosition().y();
 }
 
 } // namespace WebCore

@@ -49,10 +49,10 @@ public:
     virtual FloatRect resourceBoundingBox(RenderObject*);
 
     virtual RenderSVGResourceType resourceType() const { return ClipperResourceType; }
-    
+
     bool hitTestClipContent(const FloatRect&, const FloatPoint&);
 
-    SVGUnitTypes::SVGUnitType clipPathUnits() const { return static_cast<SVGClipPathElement*>(node())->clipPathUnits(); }
+    SVGUnitTypes::SVGUnitType clipPathUnits() const { return static_cast<SVGClipPathElement*>(node())->clipPathUnitsCurrentValue(); }
 
     static RenderSVGResourceType s_resourceType;
 private:

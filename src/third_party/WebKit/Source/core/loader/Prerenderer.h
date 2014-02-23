@@ -34,7 +34,6 @@
 
 #include "core/dom/ActiveDOMObject.h"
 #include "weborigin/KURL.h"
-#include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -56,8 +55,6 @@ public:
     PassRefPtr<PrerenderHandle> render(PrerenderClient*, const KURL&);
 
     static PassOwnPtr<Prerenderer> create(Document*);
-
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
 
     // From ActiveDOMObject:
     virtual bool canSuspend() const OVERRIDE { return true; }

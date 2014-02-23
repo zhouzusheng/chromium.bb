@@ -61,7 +61,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
       const WebKit::WebMouseWheelEvent& event) OVERRIDE;
   virtual InputEventAckState FilterInputEvent(
       const WebKit::WebInputEvent& input_event) OVERRIDE;
-  virtual void GestureEventAck(int gesture_event_type) OVERRIDE;
+  virtual void GestureEventAck(int gesture_event_type,
+                               InputEventAckState ack_result) OVERRIDE;
   virtual void SetPopupType(WebKit::WebPopupType popup_type) OVERRIDE;
   virtual WebKit::WebPopupType GetPopupType() OVERRIDE;
   virtual BrowserAccessibilityManager*
@@ -76,14 +77,21 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
       scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) OVERRIDE;
   virtual void EndFrameSubscription() OVERRIDE;
   virtual void OnSwapCompositorFrame(
+      uint32 output_surface_id,
       scoped_ptr<cc::CompositorFrame> frame) OVERRIDE {}
   virtual void OnOverscrolled(gfx::Vector2dF accumulated_overscroll,
                               gfx::Vector2dF current_fling_velocity) OVERRIDE;
+  virtual uint32 RendererFrameNumber() OVERRIDE;
+  virtual void DidReceiveRendererFrame() OVERRIDE;
 
   void SetBrowserAccessibilityManager(BrowserAccessibilityManager* manager);
 
   // Notification that a resize or move session ended on the native widget.
   void UpdateScreenInfo(gfx::NativeView view);
+
+  // Tells if the display property (work area/scale factor) has
+  // changed since the last time.
+  bool HasDisplayPropertyChanged(gfx::NativeView view);
 
 #if defined(OS_WIN)
   // The callback that DetachPluginsHelper calls for each child window. Call
@@ -99,7 +107,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // Shared implementation of MovePluginWindows for use by win and aura/wina.
   static void MovePluginWindowsHelper(
       HWND parent,
-      const std::vector<webkit::npapi::WebPluginGeometry>& moves);
+      const std::vector<WebPluginGeometry>& moves);
 
   static void PaintPluginWindowsHelper(
       HWND parent,
@@ -147,6 +155,8 @@ protected:
   scoped_ptr<BrowserAccessibilityManager> browser_accessibility_manager_;
 
   gfx::Rect current_display_area_;
+
+  uint32 renderer_frame_number_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewBase);
 };

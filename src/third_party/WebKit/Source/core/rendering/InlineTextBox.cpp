@@ -27,8 +27,8 @@
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/RenderedDocumentMarker.h"
 #include "core/dom/Text.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/editing/Editor.h"
+#include "core/editing/InputMethodController.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
@@ -48,6 +48,7 @@
 #include "core/rendering/svg/SVGTextRunRenderingContext.h"
 #include "wtf/Vector.h"
 #include "wtf/text/CString.h"
+#include "wtf/text/StringBuilder.h"
 
 using namespace std;
 
@@ -66,11 +67,11 @@ static InlineTextBoxOverflowMap* gTextBoxesWithOverflow;
 
 static const int misspellingLineThickness = 3;
 
-void InlineTextBox::destroy(RenderArena* arena)
+void InlineTextBox::destroy()
 {
     if (!knownToHaveNoOverflow() && gTextBoxesWithOverflow)
         gTextBoxesWithOverflow->remove(this);
-    InlineBox::destroy(arena);
+    InlineBox::destroy();
 }
 
 void InlineTextBox::markDirty(bool dirty)
@@ -187,21 +188,11 @@ RenderObject::SelectionState InlineTextBox::selectionState()
     return state;
 }
 
-static void adjustCharactersAndLengthForHyphen(BufferForAppendingHyphen& charactersWithHyphen, RenderStyle* style, String& string, int& length)
-{
-    const AtomicString& hyphenString = style->hyphenString();
-    charactersWithHyphen.reserveCapacity(length + hyphenString.length());
-    charactersWithHyphen.append(string);
-    charactersWithHyphen.append(hyphenString);
-    string = charactersWithHyphen.toString();
-    length += hyphenString.length();
-}
-
 LayoutRect InlineTextBox::localSelectionRect(int startPos, int endPos)
 {
     int sPos = max(startPos - m_start, 0);
     int ePos = min(endPos - m_start, (int)m_len);
-    
+
     if (sPos > ePos)
         return LayoutRect();
 
@@ -213,7 +204,7 @@ LayoutRect InlineTextBox::localSelectionRect(int startPos, int endPos)
     RenderStyle* styleToUse = textObj->style(isFirstLineStyle());
     const Font& font = styleToUse->font();
 
-    BufferForAppendingHyphen charactersWithHyphen;
+    StringBuilder charactersWithHyphen;
     bool respectHyphen = ePos == m_len && hasHyphen();
     TextRun textRun = constructTextRun(styleToUse, font, respectHyphen ? &charactersWithHyphen : 0);
     if (respectHyphen)
@@ -239,10 +230,10 @@ LayoutRect InlineTextBox::localSelectionRect(int startPos, int endPos)
     return LayoutRect(topPoint, LayoutSize(width, height));
 }
 
-void InlineTextBox::deleteLine(RenderArena* arena)
+void InlineTextBox::deleteLine()
 {
     toRenderText(renderer())->removeTextBox(this);
-    destroy(arena);
+    destroy();
 }
 
 void InlineTextBox::extractLine()
@@ -257,7 +248,7 @@ void InlineTextBox::attachLine()
 {
     if (!extracted())
         return;
-    
+
     toRenderText(renderer())->attachTextBox(this);
 }
 
@@ -270,7 +261,7 @@ float InlineTextBox::placeEllipsisBox(bool flowIsLTR, float visibleLeftEdge, flo
 
     // For LTR this is the left edge of the box, for RTL, the right edge in parent coordinates.
     float ellipsisX = flowIsLTR ? visibleRightEdge - ellipsisWidth : visibleLeftEdge + ellipsisWidth;
-    
+
     // Criteria for full truncation:
     // LTR: the left edge of the ellipsis is to the left of our text run.
     // RTL: the right edge of the ellipsis is to the right of our text run.
@@ -329,24 +320,24 @@ float InlineTextBox::placeEllipsisBox(bool flowIsLTR, float visibleLeftEdge, flo
     return -1;
 }
 
-Color correctedTextColor(Color textColor, Color backgroundColor) 
+Color correctedTextColor(Color textColor, Color backgroundColor)
 {
     // Adjust the text color if it is too close to the background color,
     // by darkening or lightening it to move it further away.
-    
+
     int d = differenceSquared(textColor, backgroundColor);
-    // semi-arbitrarily chose 65025 (255^2) value here after a few tests; 
+    // semi-arbitrarily chose 65025 (255^2) value here after a few tests;
     if (d > 65025) {
         return textColor;
     }
-    
+
     int distanceFromWhite = differenceSquared(textColor, Color::white);
     int distanceFromBlack = differenceSquared(textColor, Color::black);
 
     if (distanceFromWhite < distanceFromBlack) {
         return textColor.dark();
     }
-    
+
     return textColor.light();
 }
 
@@ -374,7 +365,7 @@ void updateGraphicsContext(GraphicsContext* context, const Color& fillColor, con
 
 bool InlineTextBox::isLineBreak() const
 {
-    return renderer()->isBR() || (renderer()->style()->preserveNewline() && len() == 1 && (*textRenderer()->text())[start()] == '\n');
+    return renderer()->isBR() || (renderer()->style()->preserveNewline() && len() == 1 && (*textRenderer()->text().impl())[start()] == '\n');
 }
 
 bool InlineTextBox::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit /* lineTop */, LayoutUnit /*lineBottom*/)
@@ -393,11 +384,12 @@ bool InlineTextBox::nodeAtPoint(const HitTestRequest& request, HitTestResult& re
     return false;
 }
 
-static void paintTextWithShadows(GraphicsContext* context, const Font& font, const TextRun& textRun,
-                                 const AtomicString& emphasisMark, int emphasisMarkOffset,
-                                 int startOffset, int endOffset, int truncationPoint,
-                                 const FloatPoint& textOrigin, const FloatRect& boxRect,
-                                 const ShadowData* shadow, bool stroked, bool horizontal)
+static void paintTextWithShadows(GraphicsContext* context,
+    const RenderObject* renderer, const Font& font, const TextRun& textRun,
+    const AtomicString& emphasisMark, int emphasisMarkOffset,
+    int startOffset, int endOffset, int truncationPoint,
+    const FloatPoint& textOrigin, const FloatRect& boxRect,
+    const ShadowData* shadow, bool stroked, bool horizontal)
 {
     // Text shadows are disabled when printing. http://crbug.com/258321
     bool hasShadow = shadow && !context->printing();
@@ -409,7 +401,8 @@ static void paintTextWithShadows(GraphicsContext* context, const Font& font, con
             int shadowX = horizontal ? shadow->x() : shadow->y();
             int shadowY = horizontal ? shadow->y() : -shadow->x();
             FloatSize offset(shadowX, shadowY);
-            drawLooper.addShadow(offset, shadow->blur(), shadow->color(),
+            drawLooper.addShadow(offset, shadow->blur(),
+                renderer->resolveColor(shadow->color(), Color::stdShadowColor),
                 DrawLooper::ShadowRespectsTransforms, DrawLooper::ShadowIgnoresAlpha);
         } while ((shadow = shadow->next()));
         drawLooper.addUnmodifiedContent();
@@ -491,17 +484,17 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
     LayoutUnit logicalRightSide = logicalRightVisualOverflow();
     LayoutUnit logicalStart = logicalLeftSide + (isHorizontal() ? paintOffset.x() : paintOffset.y());
     LayoutUnit logicalExtent = logicalRightSide - logicalLeftSide;
-    
+
     LayoutUnit paintEnd = isHorizontal() ? paintInfo.rect.maxX() : paintInfo.rect.maxY();
     LayoutUnit paintStart = isHorizontal() ? paintInfo.rect.x() : paintInfo.rect.y();
-    
+
     LayoutPoint adjustedPaintOffset = roundedIntPoint(paintOffset);
-    
+
     if (logicalStart >= paintEnd || logicalStart + logicalExtent <= paintStart)
         return;
 
     bool isPrinting = textRenderer()->document()->printing();
-    
+
     // Determine whether or not we're selected.
     bool haveSelection = !isPrinting && paintInfo.phase != PaintPhaseTextClip && selectionState() != RenderObject::SelectionNone;
     if (!haveSelection && paintInfo.phase == PaintPhaseSelection)
@@ -528,8 +521,9 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
 
     GraphicsContext* context = paintInfo.context;
 
-    RenderStyle* styleToUse = renderer()->style(isFirstLineStyle());
-    
+    RenderObject* rendererToUse = renderer();
+    RenderStyle* styleToUse = rendererToUse->style(isFirstLineStyle());
+
     adjustedPaintOffset.move(0, styleToUse->isHorizontalWritingMode() ? 0 : -logicalHeight());
 
     FloatPoint boxOrigin = locationIncludingFlipping();
@@ -543,8 +537,8 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
         context->concatCTM(rotation(boxRect, Clockwise));
 
     // Determine whether or not we have composition underlines to draw.
-    bool containsComposition = renderer()->node() && renderer()->frame()->editor()->compositionNode() == renderer()->node();
-    bool useCustomUnderlines = containsComposition && renderer()->frame()->editor()->compositionUsesCustomUnderlines();
+    bool containsComposition = renderer()->node() && renderer()->frame()->inputMethodController().compositionNode() == renderer()->node();
+    bool useCustomUnderlines = containsComposition && renderer()->frame()->inputMethodController().compositionUsesCustomUnderlines();
 
     // Determine the text colors and selection colors.
     Color textFillColor;
@@ -560,8 +554,8 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
         textStrokeColor = Color::black;
         emphasisMarkColor = Color::black;
     } else {
-        textFillColor = styleToUse->visitedDependentColor(CSSPropertyWebkitTextFillColor);
-        
+        textFillColor = rendererToUse->resolveColor(styleToUse, CSSPropertyWebkitTextFillColor);
+
         bool forceBackgroundToWhite = false;
         if (isPrinting) {
             if (styleToUse->printColorAdjust() == PrintColorAdjustEconomy)
@@ -574,14 +568,14 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
         if (forceBackgroundToWhite)
             textFillColor = correctedTextColor(textFillColor, Color::white);
 
-        textStrokeColor = styleToUse->visitedDependentColor(CSSPropertyWebkitTextStrokeColor);
-        
+        textStrokeColor = rendererToUse->resolveColor(styleToUse, CSSPropertyWebkitTextStrokeColor);
+
         // Make the text stroke color legible against a white background
         if (forceBackgroundToWhite)
             textStrokeColor = correctedTextColor(textStrokeColor, Color::white);
 
-        emphasisMarkColor = styleToUse->visitedDependentColor(CSSPropertyWebkitTextEmphasisColor);
-        
+        emphasisMarkColor = rendererToUse->resolveColor(styleToUse, CSSPropertyWebkitTextEmphasisColor);
+
         // Make the text stroke color legible against a white background
         if (forceBackgroundToWhite)
             emphasisMarkColor = correctedTextColor(emphasisMarkColor, Color::white);
@@ -598,14 +592,14 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
     if (haveSelection) {
         // Check foreground color first.
         Color foreground = paintInfo.forceBlackText() ? Color::black : renderer()->selectionForegroundColor();
-        if (foreground.isValid() && foreground != selectionFillColor) {
+        if (foreground != Color::transparent && foreground != selectionFillColor) {
             if (!paintSelectedTextOnly)
                 paintSelectedTextSeparately = true;
             selectionFillColor = foreground;
         }
 
         Color emphasisMarkForeground = paintInfo.forceBlackText() ? Color::black : renderer()->selectionEmphasisMarkColor();
-        if (emphasisMarkForeground.isValid() && emphasisMarkForeground != selectionEmphasisMarkColor) {
+        if (emphasisMarkForeground != Color::transparent && emphasisMarkForeground != selectionEmphasisMarkColor) {
             if (!paintSelectedTextOnly)
                 paintSelectedTextSeparately = true;
             selectionEmphasisMarkColor = emphasisMarkForeground;
@@ -627,7 +621,7 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
                 selectionStrokeWidth = strokeWidth;
             }
 
-            Color stroke = paintInfo.forceBlackText() ? Color::black : pseudoStyle->visitedDependentColor(CSSPropertyWebkitTextStrokeColor);
+            Color stroke = paintInfo.forceBlackText() ? Color::black : rendererToUse->resolveColor(pseudoStyle, CSSPropertyWebkitTextStrokeColor);
             if (stroke != selectionStrokeColor) {
                 if (!paintSelectedTextOnly)
                     paintSelectedTextSeparately = true;
@@ -648,10 +642,11 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
     // and composition underlines.
     if (paintInfo.phase != PaintPhaseSelection && paintInfo.phase != PaintPhaseTextClip && !isPrinting) {
 
-        if (containsComposition && !useCustomUnderlines)
+        if (containsComposition && !useCustomUnderlines) {
             paintCompositionBackground(context, boxOrigin, styleToUse, font,
-                renderer()->frame()->editor()->compositionStart(),
-                renderer()->frame()->editor()->compositionEnd());
+                renderer()->frame()->inputMethodController().compositionStart(),
+                renderer()->frame()->inputMethodController().compositionEnd());
+        }
 
         paintDocumentMarkers(context, boxOrigin, styleToUse, font, true);
 
@@ -673,20 +668,18 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
     // 2. Now paint the foreground, including text and decorations like underline/overline (in quirks mode only).
     int length = m_len;
     int maximumLength;
-    String string;
+    StringView string;
     if (!combinedText) {
-        string = textRenderer()->text();
-        if (static_cast<unsigned>(length) != string.length() || m_start) {
-            ASSERT_WITH_SECURITY_IMPLICATION(static_cast<unsigned>(m_start + length) <= string.length());
-            string = string.substringSharingImpl(m_start, length);
-        }
+        string = textRenderer()->text().createView();
+        if (static_cast<unsigned>(length) != string.length() || m_start)
+            string.narrow(m_start, length);
         maximumLength = textRenderer()->textLength() - m_start;
     } else {
         combinedText->getStringToRender(m_start, string, length);
         maximumLength = length;
     }
 
-    BufferForAppendingHyphen charactersWithHyphen;
+    StringBuilder charactersWithHyphen;
     TextRun textRun = constructTextRun(styleToUse, font, string, maximumLength, hasHyphen() ? &charactersWithHyphen : 0);
     if (hasHyphen())
         length = textRun.length();
@@ -717,9 +710,10 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
         updateGraphicsContext(context, textFillColor, textStrokeColor, textStrokeWidth);
         if (!paintSelectedTextSeparately || ePos <= sPos) {
             // FIXME: Truncate right-to-left text correctly.
-            paintTextWithShadows(context, font, textRun, nullAtom, 0, 0, length, length, textOrigin, boxRect, textShadow, textStrokeWidth > 0, isHorizontal());
-        } else
-            paintTextWithShadows(context, font, textRun, nullAtom, 0, ePos, sPos, length, textOrigin, boxRect, textShadow, textStrokeWidth > 0, isHorizontal());
+            paintTextWithShadows(context, rendererToUse, font, textRun, nullAtom, 0, 0, length, length, textOrigin, boxRect, textShadow, textStrokeWidth > 0, isHorizontal());
+        } else {
+            paintTextWithShadows(context, rendererToUse, font, textRun, nullAtom, 0, ePos, sPos, length, textOrigin, boxRect, textShadow, textStrokeWidth > 0, isHorizontal());
+        }
 
         if (!emphasisMark.isEmpty()) {
             updateGraphicsContext(context, emphasisMarkColor, textStrokeColor, textStrokeWidth);
@@ -732,9 +726,10 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
 
             if (!paintSelectedTextSeparately || ePos <= sPos) {
                 // FIXME: Truncate right-to-left text correctly.
-                paintTextWithShadows(context, combinedText ? combinedText->originalFont() : font, emphasisMarkTextRun, emphasisMark, emphasisMarkOffset, 0, length, length, emphasisMarkTextOrigin, boxRect, textShadow, textStrokeWidth > 0, isHorizontal());
-            } else
-                paintTextWithShadows(context, combinedText ? combinedText->originalFont() : font, emphasisMarkTextRun, emphasisMark, emphasisMarkOffset, ePos, sPos, length, emphasisMarkTextOrigin, boxRect, textShadow, textStrokeWidth > 0, isHorizontal());
+                paintTextWithShadows(context, rendererToUse, combinedText ? combinedText->originalFont() : font, emphasisMarkTextRun, emphasisMark, emphasisMarkOffset, 0, length, length, emphasisMarkTextOrigin, boxRect, textShadow, textStrokeWidth > 0, isHorizontal());
+            } else {
+                paintTextWithShadows(context, rendererToUse, combinedText ? combinedText->originalFont() : font, emphasisMarkTextRun, emphasisMark, emphasisMarkOffset, ePos, sPos, length, emphasisMarkTextOrigin, boxRect, textShadow, textStrokeWidth > 0, isHorizontal());
+            }
 
             if (combinedText)
                 context->concatCTM(rotation(boxRect, Counterclockwise));
@@ -746,7 +741,7 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
         GraphicsContextStateSaver stateSaver(*context, selectionStrokeWidth > 0);
 
         updateGraphicsContext(context, selectionFillColor, selectionStrokeColor, selectionStrokeWidth);
-        paintTextWithShadows(context, font, textRun, nullAtom, 0, sPos, ePos, length, textOrigin, boxRect, selectionShadow, selectionStrokeWidth > 0, isHorizontal());
+        paintTextWithShadows(context, rendererToUse, font, textRun, nullAtom, 0, sPos, ePos, length, textOrigin, boxRect, selectionShadow, selectionStrokeWidth > 0, isHorizontal());
         if (!emphasisMark.isEmpty()) {
             updateGraphicsContext(context, selectionEmphasisMarkColor, textStrokeColor, textStrokeWidth);
 
@@ -756,7 +751,7 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
             if (combinedText)
                 context->concatCTM(rotation(boxRect, Clockwise));
 
-            paintTextWithShadows(context, combinedText ? combinedText->originalFont() : font, emphasisMarkTextRun, emphasisMark, emphasisMarkOffset, sPos, ePos, length, emphasisMarkTextOrigin, boxRect, selectionShadow, selectionStrokeWidth > 0, isHorizontal());
+            paintTextWithShadows(context, rendererToUse, combinedText ? combinedText->originalFont() : font, emphasisMarkTextRun, emphasisMark, emphasisMarkOffset, sPos, ePos, length, emphasisMarkTextOrigin, boxRect, selectionShadow, selectionStrokeWidth > 0, isHorizontal());
 
             if (combinedText)
                 context->concatCTM(rotation(boxRect, Counterclockwise));
@@ -778,7 +773,7 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
         paintDocumentMarkers(context, boxOrigin, styleToUse, font, false);
 
         if (useCustomUnderlines) {
-            const Vector<CompositionUnderline>& underlines = renderer()->frame()->editor()->customCompositionUnderlines();
+            const Vector<CompositionUnderline>& underlines = renderer()->frame()->inputMethodController().customCompositionUnderlines();
             size_t numUnderlines = underlines.size();
 
             for (size_t index = 0; index < numUnderlines; ++index) {
@@ -786,10 +781,10 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
 
                 if (underline.endOffset <= start())
                     // underline is completely before this run.  This might be an underline that sits
-                    // before the first run we draw, or underlines that were within runs we skipped 
+                    // before the first run we draw, or underlines that were within runs we skipped
                     // due to truncation.
                     continue;
-                
+
                 if (underline.startOffset <= end()) {
                     // underline intersects this run.  Paint it.
                     paintCompositionUnderline(context, boxOrigin, underline);
@@ -802,7 +797,7 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
             }
         }
     }
-    
+
     if (shouldRotate)
         context->concatCTM(rotation(boxRect, Counterclockwise));
 }
@@ -844,7 +839,7 @@ void InlineTextBox::paintSelection(GraphicsContext* context, const FloatPoint& b
         return;
 
     Color c = renderer()->selectionBackgroundColor();
-    if (!c.isValid() || c.alpha() == 0)
+    if (!c.alpha())
         return;
 
     // If the text color ends up being the same as the selection background, invert the selection
@@ -858,14 +853,12 @@ void InlineTextBox::paintSelection(GraphicsContext* context, const FloatPoint& b
     // If the text is truncated, let the thing being painted in the truncation
     // draw its own highlight.
     int length = m_truncation != cNoTruncation ? m_truncation : m_len;
-    String string = textRenderer()->text();
+    StringView string = textRenderer()->text().createView();
 
-    if (string.length() != static_cast<unsigned>(length) || m_start) {
-        ASSERT_WITH_SECURITY_IMPLICATION(static_cast<unsigned>(m_start + length) <= string.length());
-        string = string.substringSharingImpl(m_start, length);
-    }
+    if (string.length() != static_cast<unsigned>(length) || m_start)
+        string.narrow(m_start, length);
 
-    BufferForAppendingHyphen charactersWithHyphen;
+    StringBuilder charactersWithHyphen;
     bool respectHyphen = ePos == length && hasHyphen();
     TextRun textRun = constructTextRun(style, font, string, textRenderer()->textLength() - m_start, respectHyphen ? &charactersWithHyphen : 0);
     if (respectHyphen)
@@ -1098,13 +1091,13 @@ void InlineTextBox::paintDecoration(GraphicsContext* context, const FloatPoint& 
         if (!isLeftToRightDirection())
             localOrigin.move(m_logicalWidth - width, 0);
     }
-    
+
     // Get the text decoration colors.
     Color underline, overline, linethrough;
     renderer()->getTextDecorationColors(deco, underline, overline, linethrough, true);
     if (isFirstLineStyle())
         renderer()->getTextDecorationColors(deco, underline, overline, linethrough, true, true);
-    
+
     // Use a special function for underlines to get the positioning exactly right.
     bool isPrinting = textRenderer()->document()->printing();
     context->setStrokeThickness(textDecorationThickness);
@@ -1140,7 +1133,8 @@ void InlineTextBox::paintDecoration(GraphicsContext* context, const FloatPoint& 
             }
             int shadowX = isHorizontal() ? shadow->x() : shadow->y();
             int shadowY = isHorizontal() ? shadow->y() : -shadow->x();
-            context->setShadow(FloatSize(shadowX, shadowY - extraOffset), shadow->blur(), shadow->color());
+            context->setShadow(FloatSize(shadowX, shadowY - extraOffset), shadow->blur(),
+                renderer()->resolveColor(shadow->color(), Color::stdShadowColor));
             shadow = shadow->next();
         }
 
@@ -1240,7 +1234,7 @@ void InlineTextBox::paintDocumentMarker(GraphicsContext* pt, const FloatPoint& b
     if (!markerSpansWholeBox || grammar) {
         int startPosition = max<int>(marker->startOffset() - m_start, 0);
         int endPosition = min<int>(marker->endOffset() - m_start, m_len);
-        
+
         if (m_truncation != cNoTruncation)
             endPosition = min<int>(endPosition, m_truncation);
 
@@ -1254,7 +1248,7 @@ void InlineTextBox::paintDocumentMarker(GraphicsContext* pt, const FloatPoint& b
         IntRect markerRect = enclosingIntRect(font.selectionRectForText(run, startPoint, selHeight, startPosition, endPosition));
         start = markerRect.x() - startPoint.x();
         width = markerRect.width();
-        
+
         // Store rendered rects for bad grammar markers, so we can hit-test against it elsewhere in order to
         // display a toolTip. We don't do this for misspelling markers.
         if (grammar) {
@@ -1263,7 +1257,7 @@ void InlineTextBox::paintDocumentMarker(GraphicsContext* pt, const FloatPoint& b
             toRenderedDocumentMarker(marker)->setRenderedRect(markerRect);
         }
     }
-    
+
     // IMPORTANT: The misspelling underline is not considered when calculating the text bounds, so we have to
     // make sure to fit within those bounds.  This means the top pixel(s) of the underline will overlap the
     // bottom pixel(s) of the glyphs in smaller font sizes.  The alternatives are to increase the line spacing (bad!!)
@@ -1324,7 +1318,7 @@ void InlineTextBox::paintDocumentMarkers(GraphicsContext* pt, const FloatPoint& 
     // Note end() points at the last char, not one past it like endOffset and ranges do.
     for ( ; markerIt != markers.end(); markerIt++) {
         DocumentMarker* marker = *markerIt;
-        
+
         // Paint either the background markers or the foreground markers, but not both
         switch (marker->type()) {
             case DocumentMarker::Grammar:
@@ -1344,11 +1338,11 @@ void InlineTextBox::paintDocumentMarkers(GraphicsContext* pt, const FloatPoint& 
             // marker is completely before this run.  This might be a marker that sits before the
             // first run we draw, or markers that were within runs we skipped due to truncation.
             continue;
-        
+
         if (marker->startOffset() > end())
             // marker is completely after this run, bail.  A later run will paint it.
             break;
-        
+
         // marker intersects this run.  Paint it.
         switch (marker->type()) {
             case DocumentMarker::Spelling:
@@ -1371,7 +1365,7 @@ void InlineTextBox::paintCompositionUnderline(GraphicsContext* ctx, const FloatP
 {
     if (m_truncation == cFullTruncation)
         return;
-    
+
     float start = 0; // start of line to draw, relative to tx
     float width = m_logicalWidth; // how much line to draw
     bool useWholeWidth = true;
@@ -1493,7 +1487,7 @@ bool InlineTextBox::containsCaretOffset(int offset) const
     return true;
 }
 
-TextRun InlineTextBox::constructTextRun(RenderStyle* style, const Font& font, BufferForAppendingHyphen* charactersWithHyphen) const
+TextRun InlineTextBox::constructTextRun(RenderStyle* style, const Font& font, StringBuilder* charactersWithHyphen) const
 {
     ASSERT(style);
 
@@ -1501,31 +1495,33 @@ TextRun InlineTextBox::constructTextRun(RenderStyle* style, const Font& font, Bu
     ASSERT(textRenderer);
     ASSERT(textRenderer->text());
 
-    String string = textRenderer->text();
+    StringView string = textRenderer->text().createView();
     unsigned startPos = start();
     unsigned length = len();
 
     if (string.length() != length || startPos)
-        string = string.substringSharingImpl(startPos, length);
+        string.narrow(startPos, length);
 
     return constructTextRun(style, font, string, textRenderer->textLength() - startPos, charactersWithHyphen);
 }
 
-TextRun InlineTextBox::constructTextRun(RenderStyle* style, const Font& font, String string, int maximumLength, BufferForAppendingHyphen* charactersWithHyphen) const
+TextRun InlineTextBox::constructTextRun(RenderStyle* style, const Font& font, StringView string, int maximumLength, StringBuilder* charactersWithHyphen) const
 {
     ASSERT(style);
 
     RenderText* textRenderer = this->textRenderer();
     ASSERT(textRenderer);
 
-    int length = string.length();
-
     if (charactersWithHyphen) {
-        adjustCharactersAndLengthForHyphen(*charactersWithHyphen, style, string, length);
-        maximumLength = length;
+        const AtomicString& hyphenString = style->hyphenString();
+        charactersWithHyphen->reserveCapacity(string.length() + hyphenString.length());
+        charactersWithHyphen->append(string);
+        charactersWithHyphen->append(hyphenString);
+        string = charactersWithHyphen->toString().createView();
+        maximumLength = string.length();
     }
 
-    ASSERT(maximumLength >= length);
+    ASSERT(maximumLength >= static_cast<int>(string.length()));
 
     TextRun run(string, textPos(), expansion(), expansionBehavior(), direction(), dirOverride() || style->rtlOrdering() == VisualOrder, !textRenderer->canUseSimpleFontCodePath());
     run.setTabSize(!style->collapseWhiteSpace(), style->tabSize());
@@ -1563,13 +1559,5 @@ void InlineTextBox::showBox(int printedCharacters) const
 }
 
 #endif
-
-void InlineTextBox::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Rendering);
-    InlineBox::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_prevTextBox, "prevTextBox");
-    info.addMember(m_nextTextBox, "nextTextBox");
-}
 
 } // namespace WebCore

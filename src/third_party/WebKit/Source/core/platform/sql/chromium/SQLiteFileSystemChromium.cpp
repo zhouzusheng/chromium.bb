@@ -33,7 +33,7 @@
 
 #include <sqlite3.h>
 #include "public/platform/Platform.h"
-#include <wtf/text/CString.h>
+#include "wtf/text/CString.h"
 
 // SQLiteFileSystem::registerSQLiteVFS() is implemented in the
 // platform-specific files SQLiteFileSystemChromium{Win|Posix}.cpp
@@ -43,14 +43,12 @@ SQLiteFileSystem::SQLiteFileSystem()
 {
 }
 
-int SQLiteFileSystem::openDatabase(const String& fileName, sqlite3** database, bool forWebSQLDatabase)
+int SQLiteFileSystem::openDatabase(const String& filename, sqlite3** database, bool forWebSQLDatabase)
 {
-    if (!forWebSQLDatabase) {
-        String path = fileName;
-        return sqlite3_open16(path.charactersWithNullTermination(), database);
-    }
+    if (!forWebSQLDatabase)
+        return sqlite3_open(filename.utf8().data(), database);
 
-    return sqlite3_open_v2(fileName.utf8().data(), database, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, "chromium_vfs");
+    return sqlite3_open_v2(filename.utf8().data(), database, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, "chromium_vfs");
 }
 
 String SQLiteFileSystem::getFileNameForNewDatabase(

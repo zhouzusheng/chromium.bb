@@ -21,7 +21,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "base/synchronization/lock.h"
 #include "content/browser/renderer_host/media/video_capture_buffer_pool.h"
 #include "content/browser/renderer_host/media/video_capture_controller_event_handler.h"
@@ -79,7 +79,8 @@ class CONTENT_EXPORT VideoCaptureController
       const scoped_refptr<media::VideoFrame>& frame,
       base::Time timestamp) OVERRIDE;
   virtual void OnError() OVERRIDE;
-  virtual void OnFrameInfo(
+  virtual void OnFrameInfo(const media::VideoCaptureCapability& info) OVERRIDE;
+  virtual void OnFrameInfoChanged(
       const media::VideoCaptureCapability& info) OVERRIDE;
 
  protected:
@@ -99,6 +100,7 @@ class CONTENT_EXPORT VideoCaptureController
       const scoped_refptr<media::VideoFrame>& captured_frame,
       base::Time timestamp);
   void DoFrameInfoOnIOThread();
+  void DoFrameInfoChangedOnIOThread(const media::VideoCaptureCapability& info);
   void DoErrorOnIOThread();
   void DoDeviceStoppedOnIOThread();
 
@@ -120,7 +122,8 @@ class CONTENT_EXPORT VideoCaptureController
   // can stay in kStopping state, or go to kStopped, or restart capture.
   void PostStopping();
 
-  // Protects access to the |buffer_pool_| pointer on non-IO threads.
+  // Protects access to the |buffer_pool_| pointer on non-IO threads.  IO thread
+  // must hold this lock when modifying the |buffer_pool_| pointer itself.
   // TODO(nick): Make it so that this lock isn't required.
   base::Lock buffer_pool_lock_;
 

@@ -25,20 +25,18 @@
 #ifndef Cache_h
 #define Cache_h
 
-#include "core/loader/cache/CachedResource.h"
-#include "weborigin/SecurityOriginHash.h"
-#include <wtf/HashMap.h>
-#include <wtf/HashSet.h>
-#include <wtf/Noncopyable.h>
-#include <wtf/text/StringHash.h>
-#include <wtf/text/WTFString.h>
-#include <wtf/Vector.h>
+#include "core/loader/cache/Resource.h"
+#include "wtf/HashMap.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/Vector.h"
+#include "wtf/text/StringHash.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore  {
 
-class CachedCSSStyleSheet;
-class CachedResource;
-class CachedResourceLoader;
+class CSSStyleSheetResource;
+class Resource;
+class ResourceFetcher;
 class KURL;
 class ScriptExecutionContext;
 class SecurityOrigin;
@@ -46,7 +44,7 @@ struct SecurityOriginHash;
 
 // This cache holds subresources used by Web pages: images, scripts, stylesheets, etc.
 
-// The cache keeps a flexible but bounded window of dead resources that grows/shrinks 
+// The cache keeps a flexible but bounded window of dead resources that grows/shrinks
 // depending on the live resource load. Here's an example of cache growth over time,
 // with a min dead resource capacity of 25% and a max dead resource capacity of 50%:
 
@@ -66,11 +64,11 @@ public:
     MemoryCache();
     ~MemoryCache() { }
 
-    typedef HashMap<String, CachedResource*> CachedResourceMap;
+    typedef HashMap<String, Resource*> ResourceMap;
 
     struct LRUList {
-        CachedResource* m_head;
-        CachedResource* m_tail;
+        Resource* m_head;
+        Resource* m_tail;
         LRUList() : m_head(0), m_tail(0) { }
     };
 
@@ -96,7 +94,7 @@ public:
         {
         }
 
-        void addResource(CachedResource*);
+        void addResource(Resource*);
     };
 
     struct Statistics {
@@ -108,42 +106,39 @@ public:
         TypeStatistic other;
     };
 
-    CachedResource* resourceForURL(const KURL&);
-    
-    void add(CachedResource*);
-    void replace(CachedResource* newResource, CachedResource* oldResource);
-    void remove(CachedResource* resource) { evict(resource); }
+    Resource* resourceForURL(const KURL&);
+
+    void add(Resource*);
+    void replace(Resource* newResource, Resource* oldResource);
+    void remove(Resource* resource) { evict(resource); }
 
     static KURL removeFragmentIdentifierIfNeeded(const KURL& originalURL);
-    
-    // Sets the cache's memory capacities, in bytes. These will hold only approximately, 
+
+    // Sets the cache's memory capacities, in bytes. These will hold only approximately,
     // since the decoded cost of resources like scripts and stylesheets is not known.
     //  - minDeadBytes: The maximum number of bytes that dead resources should consume when the cache is under pressure.
     //  - maxDeadBytes: The maximum number of bytes that dead resources should consume when the cache is not under pressure.
     //  - totalBytes: The maximum number of bytes that the cache should consume overall.
     void setCapacities(unsigned minDeadBytes, unsigned maxDeadBytes, unsigned totalBytes);
+    void setDelayBeforeLiveDecodedPrune(unsigned seconds) { m_delayBeforeLiveDecodedPrune = seconds; }
 
     void evictResources();
 
     void prune();
-    void pruneToPercentage(float targetPercentLive);
-
-    void setDeadDecodedDataDeletionInterval(double interval) { m_deadDecodedDataDeletionInterval = interval; }
-    double deadDecodedDataDeletionInterval() const { return m_deadDecodedDataDeletionInterval; }
 
     // Calls to put the cached resource into and out of LRU lists.
-    void insertInLRUList(CachedResource*);
-    void removeFromLRUList(CachedResource*);
+    void insertInLRUList(Resource*);
+    void removeFromLRUList(Resource*);
 
     // Called to adjust the cache totals when a resource changes size.
     void adjustSize(bool live, int delta);
 
     // Track decoded resources that are in the cache and referenced by a Web page.
-    void insertInLiveDecodedResourcesList(CachedResource*);
-    void removeFromLiveDecodedResourcesList(CachedResource*);
+    void insertInLiveDecodedResourcesList(Resource*);
+    void removeFromLiveDecodedResourcesList(Resource*);
 
-    void addToLiveResourcesSize(CachedResource*);
-    void removeFromLiveResourcesSize(CachedResource*);
+    void addToLiveResourcesSize(Resource*);
+    void removeFromLiveResourcesSize(Resource*);
 
     static void removeURLFromCache(ScriptExecutionContext*, const KURL&);
 
@@ -155,10 +150,8 @@ public:
     unsigned liveSize() const { return m_liveSize; }
     unsigned deadSize() const { return m_deadSize; }
 
-    void reportMemoryUsage(MemoryObjectInfo*) const;
-
 private:
-    LRUList* lruListFor(CachedResource*);
+    LRUList* lruListFor(Resource*);
 
 #ifdef MEMORY_CACHE_STATS
     void dumpStats(Timer<MemoryCache>*);
@@ -168,16 +161,12 @@ private:
     unsigned liveCapacity() const;
     unsigned deadCapacity() const;
 
-    // pruneDead*() - Flush decoded and encoded data from resources not referenced by Web pages.
-    // pruneLive*() - Flush decoded data from resources still referenced by Web pages.
+    // pruneDeadResources() - Flush decoded and encoded data from resources not referenced by Web pages.
+    // pruneLiveResources() - Flush decoded data from resources still referenced by Web pages.
     void pruneDeadResources(); // Automatically decide how much to prune.
     void pruneLiveResources();
-    void pruneDeadResourcesToPercentage(float prunePercentage); // Prune to % current size
-    void pruneLiveResourcesToPercentage(float prunePercentage);
-    void pruneDeadResourcesToSize(unsigned targetSize);
-    void pruneLiveResourcesToSize(unsigned targetSize);
 
-    void evict(CachedResource*);
+    void evict(Resource*);
 
     static void removeURLFromCacheInternal(ScriptExecutionContext*, const KURL&);
 
@@ -186,6 +175,7 @@ private:
     unsigned m_capacity;
     unsigned m_minDeadCapacity;
     unsigned m_maxDeadCapacity;
+    unsigned m_delayBeforeLiveDecodedPrune;
     double m_deadDecodedDataDeletionInterval;
 
     unsigned m_liveSize; // The number of bytes currently consumed by "live" resources in the cache.
@@ -195,13 +185,14 @@ private:
     // more resources than the cached resource map, since it can also hold "stale" multiple versions of objects that are
     // waiting to die when the clients referencing them go away.
     Vector<LRUList, 32> m_allResources;
-    
-    // List just for live resources with decoded data.  Access to this list is based off of painting the resource.
-    LRUList m_liveDecodedResources;
-    
-    // A URL-based map of all resources that are in the cache (including the freshest version of objects that are currently being 
+
+    // Lists just for live resources with decoded data. Access to this list is based off of painting the resource.
+    // The lists are ordered by decode priority, with higher indices having higher priorities.
+    LRUList m_liveDecodedResources[Resource::CacheLiveResourcePriorityHigh + 1];
+
+    // A URL-based map of all resources that are in the cache (including the freshest version of objects that are currently being
     // referenced by a Web page).
-    HashMap<String, CachedResource*> m_resources;
+    HashMap<String, Resource*> m_resources;
 
 #ifdef MEMORY_CACHE_STATS
     Timer<MemoryCache> m_statsTimer;

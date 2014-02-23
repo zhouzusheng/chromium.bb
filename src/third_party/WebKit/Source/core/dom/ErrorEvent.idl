@@ -34,5 +34,7 @@
     [InitializedByEventConstructor] readonly attribute DOMString message;
     [InitializedByEventConstructor] readonly attribute DOMString filename;
     [InitializedByEventConstructor] readonly attribute unsigned long lineno;
+    [InitializedByEventConstructor] readonly attribute unsigned long colno;
+    [InitializedByEventConstructor, Custom, Unserializable] readonly attribute any error;
 };
 

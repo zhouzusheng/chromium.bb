@@ -6,11 +6,11 @@
 #define CONTENT_PUBLIC_BROWSER_BROWSER_PPAPI_HOST_H_
 
 #include "base/callback_forward.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/render_view_host.h"
-#include "googleurl/src/gurl.h"
 #include "ppapi/c/pp_instance.h"
+#include "url/gurl.h"
 
 namespace IPC {
 class ChannelProxy;

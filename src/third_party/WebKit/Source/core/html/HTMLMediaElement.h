@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef HTMLMediaElement_h
@@ -46,13 +46,14 @@ class MediaElementAudioSourceNode;
 #endif
 class ContentType;
 class Event;
+class ExceptionState;
 class HTMLSourceElement;
 class HTMLTrackElement;
 class KURL;
 class MediaController;
 class MediaControls;
 class MediaError;
-class MediaSourceBase;
+class HTMLMediaSource;
 class TextTrackList;
 class TimeRanges;
 #if ENABLE(ENCRYPTED_MEDIA_V2)
@@ -85,7 +86,7 @@ public:
     virtual bool supportsFullscreen() const { return false; };
 
     virtual bool supportsSave() const;
-    
+
     WebKit::WebLayer* platformLayer() const;
 
     enum DelayedActionType {
@@ -94,9 +95,9 @@ public:
         TextTrackChangesNotification = 1 << 2
     };
     void scheduleDelayedAction(DelayedActionType);
-    
+
     bool inActiveDocument() const { return m_inActiveDocument; }
-    
+
 // DOM API
 // error state
     PassRefPtr<MediaError> error() const;
@@ -108,7 +109,7 @@ public:
     enum NetworkState { NETWORK_EMPTY, NETWORK_IDLE, NETWORK_LOADING, NETWORK_NO_SOURCE };
     NetworkState networkState() const;
 
-    String preload() const;    
+    String preload() const;
     void setPreload(const String&);
 
     PassRefPtr<TimeRanges> buffered() const;
@@ -121,7 +122,7 @@ public:
 
 // playback state
     double currentTime() const;
-    void setCurrentTime(double, ExceptionCode&);
+    void setCurrentTime(double, ExceptionState&);
     double initialTime() const;
     double startTime() const;
     double duration() const;
@@ -136,9 +137,9 @@ public:
     PassRefPtr<TimeRanges> played();
     PassRefPtr<TimeRanges> seekable() const;
     bool ended() const;
-    bool autoplay() const;    
+    bool autoplay() const;
     void setAutoplay(bool b);
-    bool loop() const;    
+    bool loop() const;
     void setLoop(bool b);
     void play();
     void pause();
@@ -155,11 +156,13 @@ public:
 //  Media Source.
     void closeMediaSource();
 
-    void webkitGenerateKeyRequest(const String& keySystem, PassRefPtr<Uint8Array> initData, ExceptionCode&);
-    void webkitGenerateKeyRequest(const String& keySystem, ExceptionCode&);
-    void webkitAddKey(const String& keySystem, PassRefPtr<Uint8Array> key, PassRefPtr<Uint8Array> initData, const String& sessionId, ExceptionCode&);
-    void webkitAddKey(const String& keySystem, PassRefPtr<Uint8Array> key, ExceptionCode&);
-    void webkitCancelKeyRequest(const String& keySystem, const String& sessionId, ExceptionCode&);
+    void durationChanged(double duration);
+
+    void webkitGenerateKeyRequest(const String& keySystem, PassRefPtr<Uint8Array> initData, ExceptionState&);
+    void webkitGenerateKeyRequest(const String& keySystem, ExceptionState&);
+    void webkitAddKey(const String& keySystem, PassRefPtr<Uint8Array> key, PassRefPtr<Uint8Array> initData, const String& sessionId, ExceptionState&);
+    void webkitAddKey(const String& keySystem, PassRefPtr<Uint8Array> key, ExceptionState&);
+    void webkitCancelKeyRequest(const String& keySystem, const String& sessionId, ExceptionState&);
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitkeyadded);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitkeyerror);
@@ -175,21 +178,21 @@ public:
     bool controls() const;
     void setControls(bool);
     double volume() const;
-    void setVolume(double, ExceptionCode&);
+    void setVolume(double, ExceptionState&);
     bool muted() const;
     void setMuted(bool);
 
     void togglePlayState();
     void beginScrubbing();
     void endScrubbing();
-    
+
     bool canPlay() const;
 
     double percentLoaded() const;
 
-    PassRefPtr<TextTrack> addTextTrack(const String& kind, const String& label, const String& language, ExceptionCode&);
-    PassRefPtr<TextTrack> addTextTrack(const String& kind, const String& label, ExceptionCode& ec) { return addTextTrack(kind, label, emptyString(), ec); }
-    PassRefPtr<TextTrack> addTextTrack(const String& kind, ExceptionCode& ec) { return addTextTrack(kind, emptyString(), emptyString(), ec); }
+    PassRefPtr<TextTrack> addTextTrack(const String& kind, const String& label, const String& language, ExceptionState&);
+    PassRefPtr<TextTrack> addTextTrack(const String& kind, const String& label, ExceptionState& es) { return addTextTrack(kind, label, emptyString(), es); }
+    PassRefPtr<TextTrack> addTextTrack(const String& kind, ExceptionState& es) { return addTextTrack(kind, emptyString(), emptyString(), es); }
 
     TextTrackList* textTracks();
     CueList currentlyActiveCues() const { return m_currentlyActiveCues; }
@@ -249,7 +252,7 @@ public:
     virtual ScriptExecutionContext* scriptExecutionContext() const OVERRIDE { return HTMLElement::scriptExecutionContext(); }
 
     bool hasSingleSecurityOrigin() const { return !m_player || m_player->hasSingleSecurityOrigin(); }
-    
+
     bool isFullscreen() const;
     void enterFullscreen();
     void exitFullscreen();
@@ -285,8 +288,6 @@ public:
 
     virtual bool dispatchEvent(PassRefPtr<Event>) OVERRIDE;
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
-
 protected:
     HTMLMediaElement(const QualifiedName&, Document*, bool);
     virtual ~HTMLMediaElement();
@@ -301,7 +302,7 @@ protected:
     enum DisplayMode { Unknown, None, Poster, PosterWaitingForVideo, Video };
     DisplayMode displayMode() const { return m_displayMode; }
     virtual void setDisplayMode(DisplayMode mode) { m_displayMode = mode; }
-    
+
     virtual bool isMediaElement() const { return true; }
 
     // Restrictions to change default behaviors.
@@ -313,12 +314,12 @@ protected:
         RequirePageConsentToLoadMediaRestriction = 1 << 3,
     };
     typedef unsigned BehaviorRestrictions;
-    
+
     bool userGestureRequiredForLoad() const { return m_restrictions & RequireUserGestureForLoadRestriction; }
     bool userGestureRequiredForRateChange() const { return m_restrictions & RequireUserGestureForRateChangeRestriction; }
     bool userGestureRequiredForFullscreen() const { return m_restrictions & RequireUserGestureForFullscreenRestriction; }
     bool pageConsentRequiredForLoad() const { return m_restrictions & RequirePageConsentToLoadMediaRestriction; }
-    
+
     void addBehaviorRestriction(BehaviorRestrictions restriction) { m_restrictions |= restriction; }
     void removeBehaviorRestriction(BehaviorRestrictions restriction) { m_restrictions &= ~restriction; }
 
@@ -341,7 +342,7 @@ private:
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
     virtual void didRecalcStyle(StyleChange);
-    
+
     virtual void didBecomeFullscreenElement();
     virtual void willStopBeingFullscreenElement();
 
@@ -352,7 +353,7 @@ private:
     virtual void stop();
 
     virtual void updateDisplayState() { }
-    
+
     void setReadyState(MediaPlayer::ReadyState);
     void setNetworkState(MediaPlayer::NetworkState);
 
@@ -376,7 +377,7 @@ private:
 
     virtual CORSMode mediaPlayerCORSMode() const OVERRIDE;
 
-    virtual void mediaPlayerNeedsStyleRecalc() OVERRIDE;
+    virtual void mediaPlayerScheduleLayerUpdate() OVERRIDE;
 
     void loadTimerFired(Timer<HTMLMediaElement>*);
     void progressEventTimerFired(Timer<HTMLMediaElement>*);
@@ -385,14 +386,14 @@ private:
     void startProgressEventTimer();
     void stopPeriodicTimers();
 
-    void seek(double time, ExceptionCode&);
+    void seek(double time, ExceptionState&);
     void finishSeek();
     void checkIfSeekNeeded();
     void addPlayedRange(double start, double end);
-    
+
     void scheduleTimeupdateEvent(bool periodicEvent);
     void scheduleEvent(const AtomicString& eventName);
-    
+
     // loading
     void selectMediaResource();
     void loadResource(const KURL&, ContentType&, const String& keySystem);
@@ -481,16 +482,19 @@ private:
 
     double m_volume;
     double m_lastSeekTime;
-    
+
     unsigned m_previousProgress;
     double m_previousProgressTime;
+
+    // Cached duration to suppress duplicate events if duration unchanged.
+    double m_duration;
 
     // The last time a timeupdate event was sent (wall clock).
     double m_lastTimeUpdateEventWallTime;
 
     // The last time a timeupdate event was sent in movie time.
     double m_lastTimeUpdateEventMovieTime;
-    
+
     // Loading state.
     enum LoadState { WaitingForSource, LoadingFromSrcAttr, LoadingFromSourceElement };
     LoadState m_loadState;
@@ -500,12 +504,12 @@ private:
     OwnPtr<MediaPlayer> m_player;
 
     BehaviorRestrictions m_restrictions;
-    
+
     MediaPlayer::Preload m_preload;
 
     DisplayMode m_displayMode;
 
-    RefPtr<MediaSourceBase> m_mediaSource;
+    RefPtr<HTMLMediaSource> m_mediaSource;
 
     mutable double m_cachedTime;
     mutable double m_cachedTimeWallClockUpdateTime;
@@ -535,7 +539,7 @@ private:
     bool m_pausedInternal : 1;
 
     // Not all media engines provide enough information about a file to be able to
-    // support progress events so setting m_sendProgressEvents disables them 
+    // support progress events so setting m_sendProgressEvents disables them
     bool m_sendProgressEvents : 1;
 
     bool m_closedCaptionsVisible : 1;

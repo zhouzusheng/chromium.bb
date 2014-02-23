@@ -9,6 +9,7 @@
 #include "content/common/content_export.h"
 #include "ipc/ipc_message_macros.h"
 #include "media/midi/midi_port_info.h"
+#include "url/gurl.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
@@ -21,10 +22,25 @@ IPC_STRUCT_TRAITS_BEGIN(media::MIDIPortInfo)
   IPC_STRUCT_TRAITS_MEMBER(version)
 IPC_STRUCT_TRAITS_END()
 
-// Renderer request to browser for access to MIDI services.
-IPC_MESSAGE_CONTROL2(MIDIHostMsg_RequestAccess,
+// Messages for IPC between MIDIDispatcher and MIDIDispatcherHost.
+
+// Renderer request to browser for using system exclusive messages.
+IPC_MESSAGE_CONTROL3(MIDIHostMsg_RequestSysExPermission,
+                     int /* routing id */,
                      int /* client id */,
-                     int /* access */)
+                     GURL /* origin */)
+
+// Messages sent from the browser to the renderer.
+
+IPC_MESSAGE_ROUTED2(MIDIMsg_SysExPermissionApproved,
+                    int /* client id */,
+                    bool /* success */)
+
+// Messages for IPC between MIDIMessageFilter and MIDIHost.
+
+// Renderer request to browser for access to MIDI services.
+IPC_MESSAGE_CONTROL1(MIDIHostMsg_StartSession,
+                     int /* client id */)
 
 IPC_MESSAGE_CONTROL3(MIDIHostMsg_SendData,
                      int /* port */,
@@ -33,9 +49,8 @@ IPC_MESSAGE_CONTROL3(MIDIHostMsg_SendData,
 
 // Messages sent from the browser to the renderer.
 
-IPC_MESSAGE_CONTROL5(MIDIMsg_AccessApproved,
+IPC_MESSAGE_CONTROL4(MIDIMsg_SessionStarted,
                      int /* client id */,
-                     int /* access */,
                      bool /* success */,
                      media::MIDIPortInfoList /* input ports */,
                      media::MIDIPortInfoList /* output ports */)
@@ -44,3 +59,6 @@ IPC_MESSAGE_CONTROL3(MIDIMsg_DataReceived,
                      int /* port */,
                      std::vector<uint8> /* data */,
                      double /* timestamp */)
+
+IPC_MESSAGE_CONTROL1(MIDIMsg_AcknowledgeSentData,
+                     size_t /* bytes sent */)

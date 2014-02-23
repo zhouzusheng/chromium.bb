@@ -39,6 +39,11 @@ EventPathWalker::EventPathWalker(const Node* node)
     , m_isVisitingInsertionPointInReprojection(false)
 {
     ASSERT(node);
+    // FIXME: It's not clear if we need this document check, but I think we do
+    // since DocType nodes from document.implementation.createDocumentType
+    // don't have a document().
+    if (Document* document = node->document())
+        document->updateDistributionForNodeIfNeeded(const_cast<Node*>(node));
 }
 
 Node* EventPathWalker::parent(const Node* node)
@@ -53,7 +58,6 @@ void EventPathWalker::moveToParent()
     ASSERT(m_node);
     ASSERT(m_distributedNode);
     if (ElementShadow* shadow = shadowOfParent(m_node)) {
-        shadow->host()->ensureDistribution();
         if (InsertionPoint* insertionPoint = shadow->distributor().findInsertionPointFor(m_distributedNode)) {
             m_node = insertionPoint;
             m_isVisitingInsertionPointInReprojection = true;
@@ -62,14 +66,14 @@ void EventPathWalker::moveToParent()
     }
     if (!m_node->isShadowRoot()) {
         m_node = m_node->parentNode();
-        if (!(m_node && m_node->isShadowRoot() && ScopeContentDistribution::assignedTo(toShadowRoot(m_node))))
+        if (!(m_node && m_node->isShadowRoot() && toShadowRoot(m_node)->insertionPoint()))
             m_distributedNode = m_node;
         m_isVisitingInsertionPointInReprojection = false;
         return;
     }
 
     const ShadowRoot* shadowRoot = toShadowRoot(m_node);
-    if (InsertionPoint* insertionPoint = ScopeContentDistribution::assignedTo(shadowRoot)) {
+    if (InsertionPoint* insertionPoint = shadowRoot->insertionPoint()) {
         m_node = insertionPoint;
         m_isVisitingInsertionPointInReprojection = true;
         return;

@@ -12,8 +12,8 @@
 #include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/global_request_id.h"
-#include "googleurl/src/gurl.h"
-#include "webkit/glue/resource_type.h"
+#include "url/gurl.h"
+#include "webkit/common/resource_type.h"
 
 namespace net {
 class SSLInfo;

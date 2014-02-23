@@ -476,18 +476,14 @@ RTPSenderVideo::SendVP8(const FrameType frameType,
                        " %d", _rtpSender.SequenceNumber());
         }
     }
+    TRACE_EVENT_ASYNC_END1("webrtc", "Video", capture_time_ms,
+                           "timestamp", _rtpSender.Timestamp());
     return 0;
 }
 
 void RTPSenderVideo::ProcessBitrate() {
   _videoBitrate.Process();
   _fecOverheadRate.Process();
-  TRACE_COUNTER_ID1("webrtc_rtp", "VideoSendBitrate",
-                    _rtpSender.SSRC(),
-                    _videoBitrate.BitrateLast());
-  TRACE_COUNTER_ID1("webrtc_rtp", "VideoFecOverheadRate",
-                    _rtpSender.SSRC(),
-                    _fecOverheadRate.BitrateLast());
 }
 
 uint32_t RTPSenderVideo::VideoBitrateSent() const {
@@ -507,4 +503,4 @@ int RTPSenderVideo::SetSelectiveRetransmissions(uint8_t settings) {
   return 0;
 }
 
-} // namespace webrtc
+}  // namespace webrtc

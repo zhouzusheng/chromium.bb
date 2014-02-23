@@ -33,10 +33,10 @@
 #include "core/dom/MouseEvent.h"
 #include "core/dom/NodeRenderingContext.h"
 #include "core/html/HTMLCollection.h"
+#include "core/html/HTMLDimension.h"
 #include "core/html/HTMLFrameElement.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/page/Frame.h"
-#include "core/platform/Length.h"
 #include "core/rendering/RenderFrameSet.h"
 
 namespace WebCore {
@@ -45,8 +45,6 @@ using namespace HTMLNames;
 
 HTMLFrameSetElement::HTMLFrameSetElement(const QualifiedName& tagName, Document* document)
     : HTMLElement(tagName, document)
-    , m_totalRows(1)
-    , m_totalCols(1)
     , m_border(6)
     , m_borderSet(false)
     , m_borderColorSet(false)
@@ -83,12 +81,12 @@ void HTMLFrameSetElement::parseAttribute(const QualifiedName& name, const Atomic
 {
     if (name == rowsAttr) {
         if (!value.isNull()) {
-            m_rowLengths = newLengthArray(value.string(), m_totalRows);
+            m_rowLengths = parseListOfDimensions(value.string());
             setNeedsStyleRecalc();
         }
     } else if (name == colsAttr) {
         if (!value.isNull()) {
-            m_colLengths = newLengthArray(value.string(), m_totalCols);
+            m_colLengths = parseListOfDimensions(value.string());
             setNeedsStyleRecalc();
         }
     } else if (name == frameborderAttr) {
@@ -152,7 +150,7 @@ void HTMLFrameSetElement::parseAttribute(const QualifiedName& name, const Atomic
 bool HTMLFrameSetElement::rendererIsNeeded(const NodeRenderingContext& context)
 {
     // For compatibility, frames render even when display: none is set.
-    // However, we delay creating a renderer until stylesheets have loaded. 
+    // However, we delay creating a renderer until stylesheets have loaded.
     return context.style()->isStyleAvailable();
 }
 
@@ -160,8 +158,8 @@ RenderObject* HTMLFrameSetElement::createRenderer(RenderStyle *style)
 {
     if (style->hasContent())
         return RenderObject::createObject(this, style);
-    
-    return new (document()->renderArena()) RenderFrameSet(this);
+
+    return new RenderFrameSet(this);
 }
 
 void HTMLFrameSetElement::attach(const AttachContext& context)
@@ -211,7 +209,7 @@ Node::InsertionNotificationRequest HTMLFrameSetElement::insertedInto(ContainerNo
 void HTMLFrameSetElement::willRecalcStyle(StyleChange)
 {
     if (needsStyleRecalc() && renderer()) {
-        renderer()->setNeedsLayout(true);
+        renderer()->setNeedsLayout();
         clearNeedsStyleRecalc();
     }
 }

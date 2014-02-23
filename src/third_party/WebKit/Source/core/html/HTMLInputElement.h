@@ -33,6 +33,7 @@ namespace WebCore {
 
 class CheckedRadioButtons;
 class DragData;
+class ExceptionState;
 class FileList;
 class HTMLDataListElement;
 class HTMLImageLoader;
@@ -76,10 +77,10 @@ public:
     Decimal findClosestTickMarkValue(const Decimal&);
 
     // Implementations of HTMLInputElement::stepUp() and stepDown().
-    void stepUp(int, ExceptionCode&);
-    void stepDown(int, ExceptionCode&);
-    void stepUp(ExceptionCode& ec) { stepUp(1, ec); }
-    void stepDown(ExceptionCode& ec) { stepDown(1, ec); }
+    void stepUp(int, ExceptionState&);
+    void stepDown(int, ExceptionState&);
+    void stepUp(ExceptionState& es) { stepUp(1, es); }
+    void stepDown(ExceptionState& es) { stepDown(1, es); }
     // stepUp()/stepDown() for user-interaction.
     bool isSteppable() const;
 
@@ -121,13 +122,12 @@ public:
     virtual HTMLElement* innerTextElement() const;
     HTMLElement* innerBlockElement() const;
     HTMLElement* innerSpinButtonElement() const;
-    HTMLElement* searchDecorationElement() const;
-    HTMLElement* cancelButtonElement() const;
 #if ENABLE(INPUT_SPEECH)
     HTMLElement* speechButtonElement() const;
 #endif
     HTMLElement* sliderThumbElement() const;
     HTMLElement* sliderTrackElement() const;
+    HTMLElement* passwordGeneratorButtonElement() const;
     virtual HTMLElement* placeholderElement() const;
 
     bool checked() const { return m_isChecked; }
@@ -146,7 +146,7 @@ public:
     void setType(const String&);
 
     String value() const;
-    void setValue(const String&, ExceptionCode&, TextFieldEventBehavior = DispatchNoEvent);
+    void setValue(const String&, ExceptionState&, TextFieldEventBehavior = DispatchNoEvent);
     void setValue(const String&, TextFieldEventBehavior = DispatchNoEvent);
     void setValueForUser(const String&);
     // Checks if the specified string would be a valid value.
@@ -167,23 +167,23 @@ public:
     void setEditingValue(const String&);
 
     double valueAsDate() const;
-    void setValueAsDate(double, ExceptionCode&);
+    void setValueAsDate(double, ExceptionState&);
 
     double valueAsNumber() const;
-    void setValueAsNumber(double, ExceptionCode&, TextFieldEventBehavior = DispatchNoEvent);
+    void setValueAsNumber(double, ExceptionState&, TextFieldEventBehavior = DispatchNoEvent);
 
     String valueWithDefault() const;
 
     void setValueFromRenderer(const String&);
 
-    int selectionStartForBinding(ExceptionCode&) const;
-    int selectionEndForBinding(ExceptionCode&) const;
-    String selectionDirectionForBinding(ExceptionCode&) const;
-    void setSelectionStartForBinding(int, ExceptionCode&);
-    void setSelectionEndForBinding(int, ExceptionCode&);
-    void setSelectionDirectionForBinding(const String&, ExceptionCode&);
-    void setSelectionRangeForBinding(int start, int end, ExceptionCode&);
-    void setSelectionRangeForBinding(int start, int end, const String& direction, ExceptionCode&);
+    int selectionStartForBinding(ExceptionState&) const;
+    int selectionEndForBinding(ExceptionState&) const;
+    String selectionDirectionForBinding(ExceptionState&) const;
+    void setSelectionStartForBinding(int, ExceptionState&);
+    void setSelectionEndForBinding(int, ExceptionState&);
+    void setSelectionDirectionForBinding(const String&, ExceptionState&);
+    void setSelectionRangeForBinding(int start, int end, ExceptionState&);
+    void setSelectionRangeForBinding(int start, int end, const String& direction, ExceptionState&);
 
     virtual bool rendererIsNeeded(const NodeRenderingContext&);
     virtual RenderObject* createRenderer(RenderStyle*);
@@ -208,12 +208,12 @@ public:
     String alt() const;
 
     void setSize(unsigned);
-    void setSize(unsigned, ExceptionCode&);
+    void setSize(unsigned, ExceptionState&);
 
     KURL src() const;
 
     virtual int maxLength() const;
-    void setMaxLength(int, ExceptionCode&);
+    void setMaxLength(int, ExceptionState&);
 
     bool multiple() const;
 
@@ -249,8 +249,6 @@ public:
 
     // Functions for InputType classes.
     void setValueInternal(const String&, TextFieldEventBehavior);
-    bool isTextFormControlKeyboardFocusable(KeyboardEvent*) const;
-    bool isTextFormControlMouseFocusable() const;
     bool valueAttributeWasUpdatedAfterParsing() const { return m_valueAttributeWasUpdatedAfterParsing; }
 
     void cacheSelectionInResponseToSetValue(int caretOffset) { cacheSelection(caretOffset, caretOffset, SelectionHasNoDirection); }
@@ -261,11 +259,10 @@ public:
     String defaultToolTip() const;
 
 #if ENABLE(MEDIA_CAPTURE)
-    String capture() const;
-    void setCapture(const String& value);
+    bool capture() const;
 #endif
 
-    static const int maximumLength;
+    static const unsigned maximumLength;
 
     unsigned height() const;
     unsigned width() const;
@@ -277,20 +274,22 @@ public:
 
     virtual const AtomicString& name() const OVERRIDE;
 
+    void beginEditing();
     void endEditing();
 
     static Vector<FileChooserFileInfo> filesFromFileInputFormControlState(const FormControlState&);
 
     virtual bool matchesReadOnlyPseudoClass() const OVERRIDE;
     virtual bool matchesReadWritePseudoClass() const OVERRIDE;
-    virtual void setRangeText(const String& replacement, ExceptionCode&) OVERRIDE;
-    virtual void setRangeText(const String& replacement, unsigned start, unsigned end, const String& selectionMode, ExceptionCode&) OVERRIDE;
+    virtual void setRangeText(const String& replacement, ExceptionState&) OVERRIDE;
+    virtual void setRangeText(const String& replacement, unsigned start, unsigned end, const String& selectionMode, ExceptionState&) OVERRIDE;
 
     bool hasImageLoader() const { return m_imageLoader; }
     HTMLImageLoader* imageLoader();
 
     bool setupDateTimeChooserParameters(DateTimeChooserParameters&);
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
+
+    bool supportsInputModeAttribute() const;
 
 protected:
     HTMLInputElement(const QualifiedName&, Document*, HTMLFormElement*, bool createdByParser);
@@ -299,10 +298,6 @@ protected:
 
 private:
     enum AutoCompleteSetting { Uninitialized, On, Off };
-
-    // FIXME: Author shadows should be allowed
-    // https://bugs.webkit.org/show_bug.cgi?id=92608
-    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
     virtual void didAddUserAgentShadowRoot(ShadowRoot*) OVERRIDE;
 
@@ -313,8 +308,8 @@ private:
     virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
 
     virtual bool hasCustomFocusLogic() const OVERRIDE;
-    virtual bool isKeyboardFocusable(KeyboardEvent*) const;
-    virtual bool isMouseFocusable() const;
+    virtual bool isKeyboardFocusable() const OVERRIDE;
+    virtual bool shouldShowFocusRingOnMouseFocus() const OVERRIDE;
     virtual bool isEnumeratable() const;
     virtual bool supportLabels() const OVERRIDE;
     virtual void updateFocusAppearance(bool restorePreviousSelection);
@@ -366,7 +361,7 @@ private:
     virtual void updatePlaceholderText();
     virtual bool isEmptyValue() const OVERRIDE { return innerTextValue().isEmpty(); }
     virtual bool isEmptySuggestedValue() const { return suggestedValue().isEmpty(); }
-    virtual void handleFocusEvent(Node* oldFocusedNode, FocusDirection) OVERRIDE;
+    virtual void handleFocusEvent(Element* oldFocusedElement, FocusDirection) OVERRIDE;
     virtual void handleBlurEvent();
 
     virtual bool isOptionalFormControl() const { return !isRequiredFormControl(); }
@@ -375,7 +370,7 @@ private:
     virtual void requiredAttributeChanged() OVERRIDE;
 
     void updateType();
-    
+
     virtual void subtreeHasChanged();
 
     void resetListAttributeTargetObserver();

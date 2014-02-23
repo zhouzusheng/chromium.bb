@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef RenderVideo_h
@@ -29,7 +29,7 @@
 #include "core/rendering/RenderMedia.h"
 
 namespace WebCore {
-    
+
 class HTMLMediaElement;
 class HTMLVideoElement;
 
@@ -83,6 +83,12 @@ inline RenderVideo* toRenderVideo(RenderObject* object)
 {
     ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isVideo());
     return static_cast<RenderVideo*>(object);
+}
+
+inline const RenderVideo* toRenderVideo(const RenderObject* object)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isVideo());
+    return static_cast<const RenderVideo*>(object);
 }
 
 // This will catch anyone doing an unnecessary cast.

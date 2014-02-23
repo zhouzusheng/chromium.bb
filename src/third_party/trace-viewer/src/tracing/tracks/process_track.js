@@ -1,138 +1,115 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 'use strict';
 
-base.require('tcmalloc.heap_instance_track');
-base.require('tracing.analysis.object_snapshot_view');
-base.require('tracing.analysis.object_instance_view');
-base.require('tracing.tracks.container_track');
-base.require('tracing.tracks.counter_track');
-base.require('tracing.tracks.object_instance_track');
-base.require('tracing.tracks.thread_track');
-base.require('tracing.filter');
-base.require('ui');
+base.require('tracing.tracks.process_track_base');
+base.require('tracing.draw_helpers');
 
 base.exportTo('tracing.tracks', function() {
-
-  var ObjectSnapshotView = tracing.analysis.ObjectSnapshotView;
-  var ObjectInstanceView = tracing.analysis.ObjectInstanceView;
+  var ProcessTrackBase = tracing.tracks.ProcessTrackBase;
 
   /**
-   * Visualizes a Process by building ThreadTracks and CounterTracks.
    * @constructor
    */
-  var ProcessTrack =
-      ui.define('process-track', tracing.tracks.ContainerTrack);
+  var ProcessTrack = ui.define('process-track', ProcessTrackBase);
 
   ProcessTrack.prototype = {
+    __proto__: ProcessTrackBase.prototype,
 
-    __proto__: tracing.tracks.ContainerTrack.prototype,
+    decorate: function(viewport) {
+      tracing.tracks.ProcessTrackBase.prototype.decorate.call(this, viewport);
+    },
 
-    decorate: function() {
-      this.classList.add('process-track');
-      this.categoryFilter_ = new tracing.Filter();
+    drawTrack: function(type) {
+      switch (type) {
+        case tracing.tracks.DrawType.INSTANT_EVENT:
+          if (!this.processBase.instantEvents ||
+              this.processBase.instantEvents.length === 0)
+            break;
+
+          var ctx = this.context();
+
+          var pixelRatio = window.devicePixelRatio || 1;
+          var bounds = this.getBoundingClientRect();
+          var canvasBounds = ctx.canvas.getBoundingClientRect();
+
+          ctx.save();
+          ctx.translate(0, pixelRatio * (bounds.top - canvasBounds.top));
+
+          var viewLWorld = this.viewport.xViewToWorld(0);
+          var viewRWorld = this.viewport.xViewToWorld(
+              bounds.width * pixelRatio);
+
+          tracing.drawInstantSlicesAsLines(
+              ctx,
+              this.viewport,
+              viewLWorld,
+              viewRWorld,
+              bounds.height,
+              this.processBase.instantEvents);
+
+          ctx.restore();
+
+          break;
+
+        case tracing.tracks.DrawType.BACKGROUND:
+          this.drawBackground_();
+          // Don't bother recursing further, Process is the only level that
+          // draws backgrounds.
+          return;
+      }
+
+      tracing.tracks.ContainerTrack.prototype.drawTrack.call(this, type);
+    },
+
+    drawBackground_: function() {
+      var ctx = this.context();
+      var canvasBounds = ctx.canvas.getBoundingClientRect();
+      var pixelRatio = window.devicePixelRatio || 1;
+
+      var draw = false;
+      ctx.fillStyle = '#eee';
+      for (var i = 0; i < this.children.length; ++i) {
+        if (!(this.children[i] instanceof tracing.tracks.Track) ||
+            (this.children[i] instanceof tracing.tracks.SpacingTrack))
+          continue;
+
+        draw = !draw;
+        if (!draw)
+          continue;
+
+        var bounds = this.children[i].getBoundingClientRect();
+        ctx.fillRect(0, pixelRatio * (bounds.top - canvasBounds.top),
+            ctx.canvas.width, pixelRatio * bounds.height);
+      }
+    },
+
+    // Process maps to processBase because we derive from ProcessTrackBase.
+    set process(process) {
+      this.processBase = process;
     },
 
     get process() {
-      return this.process_;
+      return this.processBase;
     },
 
-    set process(process) {
-      this.process_ = process;
-      this.updateChildTracks_();
-    },
-
-    applyCategoryFilter_: function() {
-      this.visible = (this.categoryFilter.matchProcess(this.process) &&
-                      !!this.numVisibleChildTracks);
-    },
-
-    updateChildTracks_: function() {
-      this.detach();
-      if (this.process_) {
-        // Create the object instance tracks for this process.
-        var instancesByTypeName =
-            this.process_.objects.getAllInstancesByTypeName();
-        var instanceTypeNames = base.dictionaryKeys(instancesByTypeName);
-        instanceTypeNames.sort();
-        instanceTypeNames.forEach(function(typeName) {
-          var allInstances = instancesByTypeName[typeName];
-
-          // If a object snapshot has a viewer it will be shown,
-          // unless the viewer asked for it to not be shown.
-          var instanceViewInfo = ObjectInstanceView.getViewInfo(typeName);
-          var snapshotViewInfo = ObjectSnapshotView.getViewInfo(typeName);
-          if (instanceViewInfo && !instanceViewInfo.options.showInTrackView)
-            instanceViewInfo = undefined;
-          if (snapshotViewInfo && !snapshotViewInfo.options.showInTrackView)
-            snapshotViewInfo = undefined;
-          var hasViewInfo = instanceViewInfo || snapshotViewInfo;
-
-          // There are some instances that don't merit their own track in
-          // the UI. Filter them out.
-          var visibleInstances = [];
-          for (var i = 0; i < allInstances.length; i++) {
-            var instance = allInstances[i];
-
-            // Do not create tracks for instances that have no snapshots.
-            if (instance.snapshots.length === 0)
-              continue;
-
-            // Do not create tracks for instances that have implicit snapshots
-            // and don't have a viewer.
-            if (instance.hasImplicitSnapshots && !hasViewInfo)
-              continue;
-
-            visibleInstances.push(instance);
-          }
-          if (visibleInstances.length === 0)
-            return;
-
-          // Look up the constructor for this track, or use the default
-          // constructor if none exists.
-          var trackConstructor =
-              tracing.tracks.ObjectInstanceTrack.getTrackConstructor(typeName);
-          if (!trackConstructor)
-            trackConstructor = tracing.tracks.ObjectInstanceTrack;
-          var track = new trackConstructor();
-          track.heading = typeName + ':';
-          track.objectInstances = visibleInstances;
-          this.addTrack_(track);
-        }, this);
-
-
-        // Add counter tracks for this process.
-        var counters = [];
-        for (var tid in this.process.counters) {
-          counters.push(this.process.counters[tid]);
-        }
-        counters.sort(tracing.trace_model.Counter.compare);
-
-        // Create the counters for this process.
-        counters.forEach(function(counter) {
-          var track = new tracing.tracks.CounterTrack();
-          track.heading = counter.name + ':';
-          track.counter = counter;
-          this.addTrack_(track);
-        }.bind(this));
-
-        // Get a sorted list of threads.
-        var threads = [];
-        for (var tid in this.process.threads)
-          threads.push(this.process.threads[tid]);
-        threads.sort(tracing.trace_model.Thread.compare);
-
-        // Create the threads.
-        threads.forEach(function(thread) {
-          var track = new tracing.tracks.ThreadTrack();
-          track.heading = thread.userFriendlyName + ':';
-          track.tooltip = thread.userFriendlyDetails;
-          track.thread = thread;
-          this.addTrack_(track);
-        }.bind(this));
+    addIntersectingItemsInRangeToSelectionInWorldSpace: function(
+        loWX, hiWX, viewPixWidthWorld, selection) {
+      function onPickHit(instantEvent) {
+        var hit = selection.addSlice(this, instantEvent);
+        this.decorateHit(hit);
       }
+      base.iterateOverIntersectingIntervals(this.processBase.instantEvents,
+          function(x) { return x.start; },
+          function(x) { return x.duration; },
+          loWX, hiWX,
+          onPickHit.bind(this));
+
+      tracing.tracks.ContainerTrack.prototype.
+          addIntersectingItemsInRangeToSelectionInWorldSpace.
+          apply(this, arguments);
     }
   };
 

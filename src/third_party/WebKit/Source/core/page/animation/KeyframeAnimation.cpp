@@ -6,13 +6,13 @@
  * are met:
  *
  * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer. 
+ *     notice, this list of conditions and the following disclaimer.
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution. 
+ *     documentation and/or other materials provided with the distribution.
  * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission. 
+ *     from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -32,12 +32,13 @@
 #include "CSSPropertyNames.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/EventNames.h"
+#include "core/page/UseCounter.h"
 #include "core/page/animation/AnimationControllerPrivate.h"
 #include "core/page/animation/CSSPropertyAnimation.h"
 #include "core/page/animation/CompositeAnimation.h"
 #include "core/rendering/RenderBoxModelObject.h"
 #include "core/rendering/style/RenderStyle.h"
-#include <wtf/UnusedParam.h>
+#include "public/platform/Platform.h"
 
 using namespace std;
 
@@ -57,6 +58,9 @@ KeyframeAnimation::KeyframeAnimation(const CSSAnimationData* animation, RenderOb
     // Update the m_transformFunctionListValid flag based on whether the function lists in the keyframes match.
     validateTransformFunctionList();
     checkForMatchingFilterFunctionLists();
+    HashSet<CSSPropertyID>::const_iterator endProperties = m_keyframes.endProperties();
+    for (HashSet<CSSPropertyID>::const_iterator it = m_keyframes.beginProperties(); it != endProperties; ++it)
+        WebKit::Platform::current()->histogramSparse("WebCore.Animation.CSSProperties", UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(*it));
 }
 
 KeyframeAnimation::~KeyframeAnimation()
@@ -92,7 +96,7 @@ void KeyframeAnimation::fetchIntervalEndpointsForProperty(CSSPropertyID property
     size_t numKeyframes = m_keyframes.size();
     if (!numKeyframes)
         return;
-    
+
     ASSERT(!m_keyframes[0].key());
     ASSERT(m_keyframes[m_keyframes.size() - 1].key() == 1);
 
@@ -151,7 +155,7 @@ void KeyframeAnimation::fetchIntervalEndpointsForProperty(CSSPropertyID property
 
     fromStyle = prevKeyframe.style();
     toStyle = nextKeyframe.style();
-    
+
     offset = prevKeyframe.key();
     scale = 1.0 / (nextKeyframe.key() - prevKeyframe.key());
 
@@ -166,7 +170,7 @@ void KeyframeAnimation::animate(CompositeAnimation*, RenderObject*, const Render
 {
     // Fire the start timeout if needed
     fireAnimationEventsIfNeeded();
-    
+
     // If we have not yet started, we will not have a valid start time, so just start the animation if needed.
     if (isNew() && m_animation->playState() == AnimPlayStatePlaying)
         updateStateMachine(AnimationStateInputStartAnimation, -1);
@@ -186,7 +190,7 @@ void KeyframeAnimation::animate(CompositeAnimation*, RenderObject*, const Render
     // through to the style blend so that we get the fromStyle.
     if (waitingToStart() && m_animation->delay() > 0 && !m_animation->fillsBackwards())
         return;
-    
+
     // If we have no keyframes, don't animate.
     if (!m_keyframes.size()) {
         updateStateMachine(AnimationStateInputEndAnimation, -1);
@@ -207,7 +211,7 @@ void KeyframeAnimation::animate(CompositeAnimation*, RenderObject*, const Render
         const RenderStyle* toStyle = 0;
         double progress = 0.0;
         fetchIntervalEndpointsForProperty(*it, fromStyle, toStyle, progress);
-    
+
         bool needsAnim = CSSPropertyAnimation::blendProperties(this, *it, animatedStyle.get(), fromStyle, toStyle, progress);
         if (!needsAnim)
             // If we are running an accelerated animation, set a flag in the style
@@ -366,7 +370,7 @@ bool KeyframeAnimation::affectsProperty(CSSPropertyID property) const
 void KeyframeAnimation::validateTransformFunctionList()
 {
     m_transformFunctionListValid = false;
-    
+
     if (m_keyframes.size() < 2 || !m_keyframes.containsProperty(CSSPropertyWebkitTransform))
         return;
 
@@ -381,21 +385,21 @@ void KeyframeAnimation::validateTransformFunctionList()
             break;
         }
     }
-    
+
     if (firstNonEmptyTransformKeyframeIndex == numKeyframes)
         return;
-        
+
     const TransformOperations* firstVal = &m_keyframes[firstNonEmptyTransformKeyframeIndex].style()->transform();
-    
+
     // See if the keyframes are valid
     for (size_t i = firstNonEmptyTransformKeyframeIndex + 1; i < numKeyframes; ++i) {
         const KeyframeValue& currentKeyframe = m_keyframes[i];
         const TransformOperations* val = &currentKeyframe.style()->transform();
-        
+
         // An emtpy transform list matches anything.
         if (val->operations().isEmpty())
             continue;
-        
+
         if (!firstVal->operationsMatch(*val))
             return;
     }
@@ -422,24 +426,24 @@ void KeyframeAnimation::checkForMatchingFilterFunctionLists()
             break;
         }
     }
-    
+
     if (firstNonEmptyFilterKeyframeIndex == numKeyframes)
         return;
-        
+
     const FilterOperations* firstVal = &m_keyframes[firstNonEmptyFilterKeyframeIndex].style()->filter();
-    
+
     for (size_t i = firstNonEmptyFilterKeyframeIndex + 1; i < numKeyframes; ++i) {
         const KeyframeValue& currentKeyframe = m_keyframes[i];
         const FilterOperations* val = &currentKeyframe.style()->filter();
-        
+
         // An emtpy filter list matches anything.
         if (val->operations().isEmpty())
             continue;
-        
+
         if (!firstVal->operationsMatch(*val))
             return;
     }
-    
+
     m_filterFunctionListsMatch = true;
 }
 
@@ -448,12 +452,12 @@ double KeyframeAnimation::timeToNextService()
     double t = AnimationBase::timeToNextService();
     if (t != 0 || preActive())
         return t;
-        
-    // A return value of 0 means we need service. But if we only have accelerated animations we 
+
+    // A return value of 0 means we need service. But if we only have accelerated animations we
     // only need service at the end of the transition
     HashSet<CSSPropertyID>::const_iterator endProperties = m_keyframes.endProperties();
     bool acceleratedPropertiesOnly = true;
-    
+
     for (HashSet<CSSPropertyID>::const_iterator it = m_keyframes.beginProperties(); it != endProperties; ++it) {
         if (!CSSPropertyAnimation::animationOfPropertyIsAccelerated(*it) || !isAccelerated()) {
             acceleratedPropertiesOnly = false;

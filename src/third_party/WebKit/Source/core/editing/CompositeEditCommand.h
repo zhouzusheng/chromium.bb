@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef CompositeEditCommand_h
@@ -29,13 +29,13 @@
 #include "CSSPropertyNames.h"
 #include "core/editing/EditCommand.h"
 #include "core/editing/UndoStep.h"
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
 class EditingStyle;
+class Element;
 class HTMLElement;
-class StyledElement;
 class Text;
 
 class EditCommandComposition : public UndoStep {
@@ -118,16 +118,16 @@ protected:
     void prepareWhitespaceAtPositionForSplit(Position&);
     bool canRebalance(const Position&) const;
     bool shouldRebalanceLeadingWhitespaceFor(const String&) const;
-    void removeCSSProperty(PassRefPtr<StyledElement>, CSSPropertyID);
+    void removeCSSProperty(PassRefPtr<Element>, CSSPropertyID);
     void removeNodeAttribute(PassRefPtr<Element>, const QualifiedName& attribute);
     void removeChildrenInRange(PassRefPtr<Node>, unsigned from, unsigned to);
     virtual void removeNode(PassRefPtr<Node>, ShouldAssumeContentIsAlwaysEditable = DoNotAssumeContentIsAlwaysEditable);
     HTMLElement* replaceElementWithSpanPreservingChildrenAndAttributes(PassRefPtr<HTMLElement>);
     void removeNodePreservingChildren(PassRefPtr<Node>, ShouldAssumeContentIsAlwaysEditable = DoNotAssumeContentIsAlwaysEditable);
-    void removeNodeAndPruneAncestors(PassRefPtr<Node>);
+    void removeNodeAndPruneAncestors(PassRefPtr<Node>, Node* excludeNode = 0);
     void moveRemainingSiblingsToNewParent(Node*, Node* pastLastNodeToMove, PassRefPtr<Element> prpNewParent);
     void updatePositionForNodeRemovalPreservingChildren(Position&, Node*);
-    void prune(PassRefPtr<Node>);
+    void prune(PassRefPtr<Node>, Node* excludeNode = 0);
     void replaceTextInNode(PassRefPtr<Text>, unsigned offset, unsigned count, const String& replacementText);
     Position replaceSelectedTextInNode(const String&);
     void replaceTextInNodePreservingMarkers(PassRefPtr<Text>, unsigned offset, unsigned count, const String& replacementText);
@@ -150,7 +150,7 @@ protected:
     PassRefPtr<Node> insertNewDefaultParagraphElementAt(const Position&);
 
     PassRefPtr<Node> moveParagraphContentsToNewBlockIfNecessary(const Position&);
-    
+
     void pushAnchorElementDown(Node*);
 
     // FIXME: preserveSelection and preserveStyle should be enums
@@ -159,12 +159,12 @@ protected:
     void moveParagraphWithClones(const VisiblePosition& startOfParagraphToMove, const VisiblePosition& endOfParagraphToMove, Element* blockElement, Node* outerNode);
     void cloneParagraphUnderNewElement(Position& start, Position& end, Node* outerNode, Element* blockElement);
     void cleanupAfterDeletion(VisiblePosition destination = VisiblePosition());
-    
+
     bool breakOutOfEmptyListItem();
     bool breakOutOfEmptyMailBlockquotedParagraph();
-    
+
     Position positionAvoidingSpecialElementBoundary(const Position&);
-    
+
     PassRefPtr<Node> splitTreeToNode(Node*, Node*, bool splitAncestor = false);
 
     Vector<RefPtr<EditCommand> > m_commands;
@@ -174,7 +174,7 @@ private:
 
     RefPtr<EditCommandComposition> m_composition;
 };
-    
+
 void applyCommand(PassRefPtr<CompositeEditCommand>);
 
 inline CompositeEditCommand* toCompositeEditCommand(EditCommand* command)

@@ -34,10 +34,8 @@
 #include "bindings/v8/UnsafePersistent.h"
 #include "bindings/v8/V8Utilities.h"
 #include "bindings/v8/WrapperTypeInfo.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include <v8.h>
 #include "wtf/HashMap.h"
-#include "wtf/MemoryInstrumentationHashMap.h"
 
 namespace WebCore {
 
@@ -53,7 +51,7 @@ public:
 
     v8::Handle<v8::Object> get(KeyType* key)
     {
-        return m_map.get(key).handle();
+        return m_map.get(key).deprecatedHandle();
     }
 
     v8::Handle<v8::Object> getNewLocal(v8::Isolate* isolate, KeyType* key)
@@ -82,16 +80,10 @@ public:
             MapType map;
             map.swap(m_map);
             for (typename MapType::iterator it = map.begin(); it != map.end(); ++it) {
-                toWrapperTypeInfo(it->value.handle())->derefObject(it->key);
+                toWrapperTypeInfo(it->value.deprecatedHandle())->derefObject(it->key);
                 it->value.dispose();
             }
         }
-    }
-
-    void reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-    {
-        MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Binding);
-        info.addMember(m_map, "map");
     }
 
     void removeAndDispose(KeyType* key)

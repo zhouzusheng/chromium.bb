@@ -25,11 +25,13 @@
 
 #include "main/glheader.h"
 #include "main/imports.h"
+#include "main/accum.h"
 #include "main/arrayobj.h"
 #include "main/context.h"
 #include "main/framebuffer.h"
 #include "main/mipmap.h"
 #include "main/queryobj.h"
+#include "main/readpix.h"
 #include "main/renderbuffer.h"
 #include "main/shaderobj.h"
 #include "main/texcompress.h"
@@ -40,13 +42,15 @@
 #include "main/texstore.h"
 #include "main/bufferobj.h"
 #include "main/fbobject.h"
-#include "main/texrender.h"
+#include "main/samplerobj.h"
 #include "main/syncobj.h"
+#include "main/texturebarrier.h"
 #include "main/transformfeedback.h"
 
 #include "program/program.h"
 #include "tnl/tnl.h"
 #include "swrast/swrast.h"
+#include "swrast/s_renderbuffer.h"
 
 #include "driverfuncs.h"
 #include "meta.h"
@@ -78,52 +82,34 @@ _mesa_init_driver_functions(struct dd_function_table *driver)
 
    /* framebuffer/image functions */
    driver->Clear = _swrast_Clear;
-   driver->Accum = _swrast_Accum;
+   driver->Accum = _mesa_accum;
    driver->RasterPos = _tnl_RasterPos;
    driver->DrawPixels = _swrast_DrawPixels;
-   driver->ReadPixels = _swrast_ReadPixels;
+   driver->ReadPixels = _mesa_readpixels;
    driver->CopyPixels = _swrast_CopyPixels;
    driver->Bitmap = _swrast_Bitmap;
 
    /* Texture functions */
    driver->ChooseTextureFormat = _mesa_choose_tex_format;
-   driver->TexImage1D = _mesa_store_teximage1d;
-   driver->TexImage2D = _mesa_store_teximage2d;
-   driver->TexImage3D = _mesa_store_teximage3d;
-   driver->TexSubImage1D = _mesa_store_texsubimage1d;
-   driver->TexSubImage2D = _mesa_store_texsubimage2d;
-   driver->TexSubImage3D = _mesa_store_texsubimage3d;
-   driver->GetTexImage = _mesa_get_teximage;
-   driver->CopyTexImage1D = _mesa_meta_CopyTexImage1D;
-   driver->CopyTexImage2D = _mesa_meta_CopyTexImage2D;
-   driver->CopyTexSubImage1D = _mesa_meta_CopyTexSubImage1D;
-   driver->CopyTexSubImage2D = _mesa_meta_CopyTexSubImage2D;
-   driver->CopyTexSubImage3D = _mesa_meta_CopyTexSubImage3D;
+   driver->TexImage = _mesa_store_teximage;
+   driver->TexSubImage = _mesa_store_texsubimage;
+   driver->GetTexImage = _mesa_meta_GetTexImage;
+   driver->CopyTexSubImage = _mesa_meta_CopyTexSubImage;
    driver->GenerateMipmap = _mesa_meta_GenerateMipmap;
    driver->TestProxyTexImage = _mesa_test_proxy_teximage;
-   driver->CompressedTexImage1D = _mesa_store_compressed_teximage1d;
-   driver->CompressedTexImage2D = _mesa_store_compressed_teximage2d;
-   driver->CompressedTexImage3D = _mesa_store_compressed_teximage3d;
-   driver->CompressedTexSubImage1D = _mesa_store_compressed_texsubimage1d;
-   driver->CompressedTexSubImage2D = _mesa_store_compressed_texsubimage2d;
-   driver->CompressedTexSubImage3D = _mesa_store_compressed_texsubimage3d;
+   driver->CompressedTexImage = _mesa_store_compressed_teximage;
+   driver->CompressedTexSubImage = _mesa_store_compressed_texsubimage;
    driver->GetCompressedTexImage = _mesa_get_compressed_teximage;
    driver->BindTexture = NULL;
    driver->NewTextureObject = _mesa_new_texture_object;
    driver->DeleteTexture = _mesa_delete_texture_object;
-   driver->NewTextureImage = _mesa_new_texture_image;
-   driver->FreeTexImageData = _mesa_free_texture_image_data; 
-   driver->MapTexture = NULL;
-   driver->UnmapTexture = NULL;
-   driver->TextureMemCpy = memcpy;
-   driver->IsTextureResident = NULL;
-   driver->UpdateTexturePalette = NULL;
-
-   /* imaging */
-   driver->CopyColorTable = _mesa_meta_CopyColorTable;
-   driver->CopyColorSubTable = _mesa_meta_CopyColorSubTable;
-   driver->CopyConvolutionFilter1D = _mesa_meta_CopyConvolutionFilter1D;
-   driver->CopyConvolutionFilter2D = _mesa_meta_CopyConvolutionFilter2D;
+   driver->NewTextureImage = _swrast_new_texture_image;
+   driver->DeleteTextureImage = _swrast_delete_texture_image;
+   driver->AllocTextureImageBuffer = _swrast_alloc_texture_image_buffer;
+   driver->FreeTextureImageBuffer = _swrast_free_texture_image_buffer;
+   driver->MapTextureImage = _swrast_map_teximage;
+   driver->UnmapTextureImage = _swrast_unmap_teximage;
+   driver->DrawTex = _mesa_meta_DrawTex;
 
    /* Vertex/fragment programs */
    driver->BindProgram = NULL;
@@ -135,9 +121,6 @@ _mesa_init_driver_functions(struct dd_function_table *driver)
    driver->BlendColor = NULL;
    driver->BlendEquationSeparate = NULL;
    driver->BlendFuncSeparate = NULL;
-   driver->ClearColor = NULL;
-   driver->ClearDepth = NULL;
-   driver->ClearStencil = NULL;
    driver->ClipPlane = NULL;
    driver->ColorMask = NULL;
    driver->ColorMaterial = NULL;
@@ -182,12 +165,17 @@ _mesa_init_driver_functions(struct dd_function_table *driver)
    _mesa_init_sync_object_functions(driver);
 
    driver->NewFramebuffer = _mesa_new_framebuffer;
-   driver->NewRenderbuffer = _mesa_new_soft_renderbuffer;
-   driver->RenderTexture = _mesa_render_texture;
-   driver->FinishRenderTexture = _mesa_finish_render_texture;
+   driver->NewRenderbuffer = _swrast_new_soft_renderbuffer;
+   driver->MapRenderbuffer = _swrast_map_soft_renderbuffer;
+   driver->UnmapRenderbuffer = _swrast_unmap_soft_renderbuffer;
+   driver->RenderTexture = _swrast_render_texture;
+   driver->FinishRenderTexture = _swrast_finish_render_texture;
    driver->FramebufferRenderbuffer = _mesa_framebuffer_renderbuffer;
+   driver->ValidateFramebuffer = _mesa_validate_framebuffer;
 
    driver->BlitFramebuffer = _swrast_BlitFramebuffer;
+
+   _mesa_init_texture_barrier_functions(driver);
 
    /* APPLE_vertex_array_object */
    driver->NewArrayObject = _mesa_new_array_object;
@@ -198,9 +186,9 @@ _mesa_init_driver_functions(struct dd_function_table *driver)
 
    _mesa_init_transform_feedback_functions(driver);
 
+   _mesa_init_sampler_object_functions(driver);
+
    /* T&L stuff */
-   driver->NeedValidate = GL_FALSE;
-   driver->ValidateTnlModule = NULL;
    driver->CurrentExecPrimitive = 0;
    driver->CurrentSavePrimitive = 0;
    driver->NeedFlush = 0;
@@ -209,6 +197,7 @@ _mesa_init_driver_functions(struct dd_function_table *driver)
    driver->ProgramStringNotify = _tnl_program_string;
    driver->FlushVertices = NULL;
    driver->SaveFlushVertices = NULL;
+   driver->PrepareExecBegin = NULL;
    driver->NotifySaveBegin = NULL;
    driver->LightingSpaceChange = NULL;
 
@@ -217,6 +206,9 @@ _mesa_init_driver_functions(struct dd_function_table *driver)
    driver->EndList = NULL;
    driver->BeginCallList = NULL;
    driver->EndCallList = NULL;
+
+   /* GL_ARB_texture_storage */
+   driver->AllocTextureStorage = _swrast_AllocTextureStorage;
 }
 
 
@@ -226,29 +218,30 @@ _mesa_init_driver_functions(struct dd_function_table *driver)
  * Only the Intel drivers use this so far.
  */
 void
-_mesa_init_driver_state(GLcontext *ctx)
+_mesa_init_driver_state(struct gl_context *ctx)
 {
    ctx->Driver.AlphaFunc(ctx, ctx->Color.AlphaFunc, ctx->Color.AlphaRef);
 
    ctx->Driver.BlendColor(ctx, ctx->Color.BlendColor);
 
    ctx->Driver.BlendEquationSeparate(ctx,
-                                     ctx->Color.BlendEquationRGB,
-                                     ctx->Color.BlendEquationA);
+                                     ctx->Color.Blend[0].EquationRGB,
+                                     ctx->Color.Blend[0].EquationA);
 
    ctx->Driver.BlendFuncSeparate(ctx,
-                                 ctx->Color.BlendSrcRGB,
-                                 ctx->Color.BlendDstRGB,
-                                 ctx->Color.BlendSrcA, ctx->Color.BlendDstA);
+                                 ctx->Color.Blend[0].SrcRGB,
+                                 ctx->Color.Blend[0].DstRGB,
+                                 ctx->Color.Blend[0].SrcA,
+                                 ctx->Color.Blend[0].DstA);
 
    if (ctx->Driver.ColorMaskIndexed) {
       GLuint i;
       for (i = 0; i < ctx->Const.MaxDrawBuffers; i++) {
          ctx->Driver.ColorMaskIndexed(ctx, i,
-                                      ctx->Color.ColorMask[0][RCOMP],
-                                      ctx->Color.ColorMask[0][GCOMP],
-                                      ctx->Color.ColorMask[0][BCOMP],
-                                      ctx->Color.ColorMask[0][ACOMP]);
+                                      ctx->Color.ColorMask[i][RCOMP],
+                                      ctx->Color.ColorMask[i][GCOMP],
+                                      ctx->Color.ColorMask[i][BCOMP],
+                                      ctx->Color.ColorMask[i][ACOMP]);
       }
    }
    else {
@@ -283,7 +276,10 @@ _mesa_init_driver_state(GLcontext *ctx)
    ctx->Driver.Enable(ctx, GL_TEXTURE_CUBE_MAP, GL_FALSE);
 
    ctx->Driver.Fogfv(ctx, GL_FOG_COLOR, ctx->Fog.Color);
-   ctx->Driver.Fogfv(ctx, GL_FOG_MODE, 0);
+   {
+      GLfloat mode = (GLfloat) ctx->Fog.Mode;
+      ctx->Driver.Fogfv(ctx, GL_FOG_MODE, &mode);
+   }
    ctx->Driver.Fogfv(ctx, GL_FOG_DENSITY, &ctx->Fog.Density);
    ctx->Driver.Fogfv(ctx, GL_FOG_START, &ctx->Fog.Start);
    ctx->Driver.Fogfv(ctx, GL_FOG_END, &ctx->Fog.End);

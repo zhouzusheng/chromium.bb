@@ -26,6 +26,20 @@ void LatencyInfo::MergeWith(const LatencyInfo& other) {
   }
 }
 
+void LatencyInfo::AddNewLatencyFrom(const LatencyInfo& other) {
+    for (LatencyMap::const_iterator it = other.latency_components.begin();
+         it != other.latency_components.end();
+         ++it) {
+      if (!FindLatency(it->first.first, it->first.second, NULL)) {
+        AddLatencyNumberWithTimestamp(it->first.first,
+                                      it->first.second,
+                                      it->second.sequence_number,
+                                      it->second.event_time,
+                                      it->second.event_count);
+      }
+    }
+}
+
 void LatencyInfo::AddLatencyNumber(LatencyComponentType component,
                                    int64 id,
                                    int64 component_sequence_number) {
@@ -58,9 +72,20 @@ void LatencyInfo::AddLatencyNumberWithTimestamp(LatencyComponentType component,
   }
 }
 
+bool LatencyInfo::FindLatency(LatencyComponentType type,
+                              int64 id,
+                              LatencyComponent* output) const {
+  LatencyMap::const_iterator it = latency_components.find(
+      std::make_pair(type, id));
+  if (it == latency_components.end())
+    return false;
+  if (output)
+    *output = it->second;
+  return true;
+}
+
 void LatencyInfo::Clear() {
   latency_components.clear();
 }
 
 }  // namespace ui
-

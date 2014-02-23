@@ -27,6 +27,7 @@
 #include "config.h"
 #include "core/dom/shadow/ShadowRoot.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ContentDistributor.h"
@@ -106,9 +107,18 @@ ShadowRoot* ShadowRoot::bindingsOlderShadowRoot() const
     return older;
 }
 
-PassRefPtr<Node> ShadowRoot::cloneNode(bool, ExceptionCode& ec)
+bool ShadowRoot::isOldestAuthorShadowRoot() const
 {
-    ec = DATA_CLONE_ERR;
+    if (type() != AuthorShadowRoot)
+        return false;
+    if (ShadowRoot* older = olderShadowRoot())
+        return older->type() == UserAgentShadowRoot;
+    return true;
+}
+
+PassRefPtr<Node> ShadowRoot::cloneNode(bool, ExceptionState& es)
+{
+    es.throwDOMException(DataCloneError);
     return 0;
 }
 
@@ -117,15 +127,15 @@ String ShadowRoot::innerHTML() const
     return createMarkup(this, ChildrenOnly);
 }
 
-void ShadowRoot::setInnerHTML(const String& markup, ExceptionCode& ec)
+void ShadowRoot::setInnerHTML(const String& markup, ExceptionState& es)
 {
     if (isOrphan()) {
-        ec = INVALID_ACCESS_ERR;
+        es.throwDOMException(InvalidAccessError);
         return;
     }
 
-    if (RefPtr<DocumentFragment> fragment = createFragmentForInnerOuterHTML(markup, host(), AllowScriptingContent, ec))
-        replaceChildrenWithFragment(this, fragment.release(), ec);
+    if (RefPtr<DocumentFragment> fragment = createFragmentForInnerOuterHTML(markup, host(), AllowScriptingContent, es))
+        replaceChildrenWithFragment(this, fragment.release(), es);
 }
 
 bool ShadowRoot::childTypeAllowed(NodeType type) const
@@ -152,23 +162,33 @@ void ShadowRoot::recalcStyle(StyleChange change)
 
     if (!attached()) {
         attach();
-        // attach recalculates the style for all children. No need to do it twice.
-        clearNeedsStyleRecalc();
-        clearChildNeedsStyleRecalc();
         return;
     }
 
-    // When we're set to lazyAttach we'll have a FullStyleChange and we'll need
+    // When we're set to lazyAttach we'll have a SubtreeStyleChange and we'll need
     // to promote the change to a Force for all our descendants so they get a
     // recalc and will attach.
-    if (styleChangeType() == FullStyleChange)
+    if (styleChangeType() >= SubtreeStyleChange)
         change = Force;
 
+    // FIXME: This doesn't handle :hover + div properly like Element::recalcStyle does.
+    bool forceReattachOfAnyWhitespaceSibling = false;
     for (Node* child = firstChild(); child; child = child->nextSibling()) {
-        if (child->isElementNode())
-            toElement(child)->recalcStyle(change);
-        else if (child->isTextNode())
-            toText(child)->recalcTextStyle(change);
+        bool didReattach = false;
+
+        if (child->renderer())
+            forceReattachOfAnyWhitespaceSibling = false;
+
+        if (child->isTextNode()) {
+            if (forceReattachOfAnyWhitespaceSibling && toText(child)->containsOnlyWhitespace())
+                child->reattach();
+            else
+                didReattach = toText(child)->recalcTextStyle(change);
+        } else if (child->isElementNode() && shouldRecalcStyle(change, child)) {
+            didReattach = toElement(child)->recalcStyle(change);
+        }
+
+        forceReattachOfAnyWhitespaceSibling = didReattach || forceReattachOfAnyWhitespaceSibling;
     }
 
     styleResolver->popParentShadowRoot(this);
@@ -179,7 +199,7 @@ void ShadowRoot::recalcStyle(StyleChange change)
 bool ShadowRoot::isActive() const
 {
     for (ShadowRoot* shadowRoot = youngerShadowRoot(); shadowRoot; shadowRoot = shadowRoot->youngerShadowRoot())
-        if (!ScopeContentDistribution::hasShadowElement(shadowRoot))
+        if (!shadowRoot->containsShadowElements())
             return false;
     return true;
 }
@@ -196,6 +216,17 @@ void ShadowRoot::setApplyAuthorStyles(bool value)
     if (!isActive())
         return;
 
+    ASSERT(host());
+    ASSERT(host()->shadow());
+    if (host()->shadow()->didAffectApplyAuthorStyles())
+        host()->setNeedsStyleRecalc();
+
+    // Since styles in shadow trees can select shadow hosts, set shadow host's needs-recalc flag true.
+    // FIXME: host->setNeedsStyleRecalc() should take care of all elements in its shadow tree.
+    // However, when host's recalcStyle is skipped (i.e. host's parent has no renderer),
+    // no recalc style is invoked for any elements in its shadow tree.
+    // This problem occurs when using getComputedStyle() API.
+    // So currently host and shadow root's needsStyleRecalc flags are set to be true.
     setNeedsStyleRecalc();
 }
 
@@ -260,11 +291,11 @@ void ShadowRoot::removedFrom(ContainerNode* insertionPoint)
 
 void ShadowRoot::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
 {
-    if (isOrphan())
-        return;
-
     ContainerNode::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
-    owner()->invalidateDistribution();
+    if (InsertionPoint* point = insertionPoint()) {
+        if (ShadowRoot* root = point->containingShadowRoot())
+            root->owner()->setNeedsDistributionRecalc();
+    }
 }
 
 void ShadowRoot::registerScopedHTMLStyleChild()
@@ -289,14 +320,24 @@ ScopeContentDistribution* ShadowRoot::ensureScopeDistribution()
     return m_scopeDistribution.get();
 }
 
-void ShadowRoot::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+bool ShadowRoot::containsShadowElements() const
 {
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    DocumentFragment::reportMemoryUsage(memoryObjectInfo);
-    TreeScope::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_prev, "prev");
-    info.addMember(m_next, "next");
-    info.addMember(m_scopeDistribution, "scopeDistribution");
+    return m_scopeDistribution ? m_scopeDistribution->hasShadowElementChildren() : 0;
+}
+
+bool ShadowRoot::containsContentElements() const
+{
+    return m_scopeDistribution ? m_scopeDistribution->hasContentElementChildren() : 0;
+}
+
+bool ShadowRoot::containsShadowRoots() const
+{
+    return m_scopeDistribution ? m_scopeDistribution->numberOfElementShadowChildren() : 0;
+}
+
+InsertionPoint* ShadowRoot::insertionPoint() const
+{
+    return m_scopeDistribution ? m_scopeDistribution->insertionPointAssignedTo() : 0;
 }
 
 }

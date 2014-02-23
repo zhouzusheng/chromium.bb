@@ -29,8 +29,8 @@
 #define Widget_h
 
 #include "core/platform/graphics/IntRect.h"
-#include <wtf/Forward.h>
-#include <wtf/RefCounted.h>
+#include "wtf/Forward.h"
+#include "wtf/RefCounted.h"
 
 namespace WebCore {
 
@@ -129,7 +129,7 @@ public:
 
     // A means to access the AX cache when this object can get a pointer to it.
     virtual AXObjectCache* axObjectCache() const { return 0; }
-    
+
 private:
     ScrollView* m_parent;
     IntRect m_frame;

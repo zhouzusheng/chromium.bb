@@ -31,18 +31,20 @@
 #ifndef MediaConstraintsImpl_h
 #define MediaConstraintsImpl_h
 
-#include "core/dom/ExceptionBase.h"
 #include "core/platform/mediastream/MediaConstraints.h"
 #include "wtf/HashMap.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
+
 class Dictionary;
+
+class ExceptionState;
 
 class MediaConstraintsImpl : public MediaConstraints {
 public:
     static PassRefPtr<MediaConstraintsImpl> create();
-    static PassRefPtr<MediaConstraintsImpl> create(const Dictionary&, ExceptionCode&);
+    static PassRefPtr<MediaConstraintsImpl> create(const Dictionary&, ExceptionState&);
     virtual ~MediaConstraintsImpl();
 
     virtual void getMandatoryConstraints(Vector<MediaConstraint>&) const OVERRIDE;

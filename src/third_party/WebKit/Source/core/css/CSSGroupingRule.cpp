@@ -29,15 +29,14 @@
  */
 
 #include "config.h"
-
 #include "core/css/CSSGroupingRule.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/css/CSSParser.h"
 #include "core/css/CSSRuleList.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/StyleRule.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
@@ -58,13 +57,12 @@ CSSGroupingRule::~CSSGroupingRule()
     }
 }
 
-unsigned CSSGroupingRule::insertRule(const String& ruleString, unsigned index, ExceptionCode& ec)
+unsigned CSSGroupingRule::insertRule(const String& ruleString, unsigned index, ExceptionState& es)
 {
     ASSERT(m_childRuleCSSOMWrappers.size() == m_groupRule->childRules().size());
 
     if (index > m_groupRule->childRules().size()) {
-        // INDEX_SIZE_ERR: Raised if the specified index is not a valid insertion point.
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError, "Failed to execute 'insertRule' on a 'CSSGroupingRule' object: the index " + String::number(index) + " must be less than or equal to the length of the rule list.");
         return 0;
     }
 
@@ -72,20 +70,15 @@ unsigned CSSGroupingRule::insertRule(const String& ruleString, unsigned index, E
     CSSParser parser(parserContext(), UseCounter::getFrom(styleSheet));
     RefPtr<StyleRuleBase> newRule = parser.parseRule(styleSheet ? styleSheet->contents() : 0, ruleString);
     if (!newRule) {
-        // SYNTAX_ERR: Raised if the specified rule has a syntax error and is unparsable.
-        ec = SYNTAX_ERR;
+        es.throwDOMException(SyntaxError, "Failed to execute 'insertRule' on a 'CSSGroupingRule' object: the rule '" + ruleString + "' is invalid and cannot be parsed.");
         return 0;
     }
 
     if (newRule->isImportRule()) {
-        // FIXME: an HIERARCHY_REQUEST_ERR should also be thrown for a @charset or a nested
-        // @media rule. They are currently not getting parsed, resulting in a SYNTAX_ERR
+        // FIXME: an HierarchyRequestError should also be thrown for a @charset or a nested
+        // @media rule. They are currently not getting parsed, resulting in a SyntaxError
         // to get raised above.
-
-        // HIERARCHY_REQUEST_ERR: Raised if the rule cannot be inserted at the specified
-        // index, e.g., if an @import rule is inserted after a standard rule set or other
-        // at-rule.
-        ec = HIERARCHY_REQUEST_ERR;
+        es.throwDOMException(HierarchyRequestError, "Failed to execute 'insertRule' on a 'CSSGroupingRule' object: '@import' rules cannot be inserted inside a group rule.");
         return 0;
     }
     CSSStyleSheet::RuleMutationScope mutationScope(this);
@@ -96,14 +89,12 @@ unsigned CSSGroupingRule::insertRule(const String& ruleString, unsigned index, E
     return index;
 }
 
-void CSSGroupingRule::deleteRule(unsigned index, ExceptionCode& ec)
+void CSSGroupingRule::deleteRule(unsigned index, ExceptionState& es)
 {
     ASSERT(m_childRuleCSSOMWrappers.size() == m_groupRule->childRules().size());
 
     if (index >= m_groupRule->childRules().size()) {
-        // INDEX_SIZE_ERR: Raised if the specified index does not correspond to a
-        // rule in the media rule list.
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError, "Failed to execute 'deleteRule' on a 'CSSGroupingRule' object: the index " + String::number(index) + " is greated than the length of the rule list.");
         return;
     }
 
@@ -127,12 +118,12 @@ void CSSGroupingRule::appendCssTextForItems(StringBuilder& result) const
 }
 
 unsigned CSSGroupingRule::length() const
-{ 
-    return m_groupRule->childRules().size(); 
+{
+    return m_groupRule->childRules().size();
 }
 
 CSSRule* CSSGroupingRule::item(unsigned index) const
-{ 
+{
     if (index >= length())
         return 0;
     ASSERT(m_childRuleCSSOMWrappers.size() == m_groupRule->childRules().size());
@@ -157,15 +148,6 @@ void CSSGroupingRule::reattach(StyleRuleBase* rule)
         if (m_childRuleCSSOMWrappers[i])
             m_childRuleCSSOMWrappers[i]->reattach(m_groupRule->childRules()[i].get());
     }
-}
-
-void CSSGroupingRule::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    CSSRule::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_groupRule, "groupRule");
-    info.addMember(m_childRuleCSSOMWrappers, "childRuleCSSOMWrappers");
-    info.addMember(m_ruleListCSSOMWrapper, "ruleListCSSOMWrapper");
 }
 
 } // namespace WebCore

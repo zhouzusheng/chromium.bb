@@ -30,8 +30,8 @@
 #include "core/platform/graphics/IntPoint.h"
 #include "core/platform/graphics/IntRect.h"
 #include "core/platform/graphics/IntSize.h"
-#include <wtf/PassOwnPtr.h>
-#include <wtf/Vector.h>
+#include "wtf/PassOwnPtr.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -71,9 +71,6 @@ public:
     virtual int totalSize() const = 0;
     virtual int maximum() const = 0;
     virtual ScrollbarControlSize controlSize() const = 0;
-
-    virtual int lineStep() const = 0;
-    virtual int pageStep() const = 0;
 
     virtual ScrollbarPart pressedPart() const = 0;
     virtual ScrollbarPart hoveredPart() const = 0;

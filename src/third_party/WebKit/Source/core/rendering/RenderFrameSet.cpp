@@ -27,6 +27,7 @@
 #include "core/dom/Document.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/MouseEvent.h"
+#include "core/html/HTMLDimension.h"
 #include "core/html/HTMLFrameSetElement.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Frame.h"
@@ -35,7 +36,6 @@
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderFrame.h"
 #include "core/rendering/RenderView.h"
-#include <wtf/MemoryInstrumentationVector.h>
 
 namespace WebCore {
 
@@ -85,7 +85,7 @@ void RenderFrameSet::paintColumnBorder(const PaintInfo& paintInfo, const IntRect
 
     // Fill first.
     GraphicsContext* context = paintInfo.context;
-    context->fillRect(borderRect, frameSet()->hasBorderColor() ? style()->visitedDependentColor(CSSPropertyBorderLeftColor) : borderFillColor());
+    context->fillRect(borderRect, frameSet()->hasBorderColor() ? resolveColor(CSSPropertyBorderLeftColor) : borderFillColor());
 
     // Now stroke the edges but only if we have enough room to paint both edges with a little
     // bit of the fill color showing through.
@@ -104,7 +104,7 @@ void RenderFrameSet::paintRowBorder(const PaintInfo& paintInfo, const IntRect& b
 
     // Fill first.
     GraphicsContext* context = paintInfo.context;
-    context->fillRect(borderRect, frameSet()->hasBorderColor() ? style()->visitedDependentColor(CSSPropertyBorderLeftColor) : borderFillColor());
+    context->fillRect(borderRect, frameSet()->hasBorderColor() ? resolveColor(CSSPropertyBorderLeftColor) : borderFillColor());
 
     // Now stroke the edges but only if we have enough room to paint both edges with a little
     // bit of the fill color showing through.
@@ -120,7 +120,7 @@ void RenderFrameSet::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 
     if (paintInfo.phase != PaintPhaseForeground)
         return;
-    
+
     RenderObject* child = firstChild();
     if (!child)
         return;
@@ -130,7 +130,7 @@ void RenderFrameSet::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
     size_t rows = m_rows.m_sizes.size();
     size_t cols = m_cols.m_sizes.size();
     LayoutUnit borderThickness = frameSet()->border();
-    
+
     LayoutUnit yPos = 0;
     for (size_t r = 0; r < rows; r++) {
         LayoutUnit xPos = 0;
@@ -158,7 +158,7 @@ void RenderFrameSet::GridAxis::resize(int size)
     m_sizes.resize(size);
     m_deltas.resize(size);
     m_deltas.fill(0);
-    
+
     // To track edges for resizability and borders, we need to be (size + 1). This is because a parent frameset
     // may ask us for information about our left/top/right/bottom edges in order to make its own decisions about
     // what to do. We are capable of tainting that parent frameset's borders, so we have to cache this info.
@@ -166,13 +166,13 @@ void RenderFrameSet::GridAxis::resize(int size)
     m_allowBorder.resize(size + 1);
 }
 
-void RenderFrameSet::layOutAxis(GridAxis& axis, const Length* grid, int availableLen)
+void RenderFrameSet::layOutAxis(GridAxis& axis, const Vector<HTMLDimension>& grid, int availableLen)
 {
     availableLen = max(availableLen, 0);
 
     int* gridLayout = axis.m_sizes.data();
 
-    if (!grid) {
+    if (grid.isEmpty()) {
         gridLayout[0] = availableLen;
         return;
     }
@@ -192,16 +192,16 @@ void RenderFrameSet::layOutAxis(GridAxis& axis, const Length* grid, int availabl
     for (int i = 0; i < gridLen; ++i) {
         // Count the total length of all of the fixed columns/rows -> totalFixed
         // Count the number of columns/rows which are fixed -> countFixed
-        if (grid[i].isFixed()) {
-            gridLayout[i] = max(grid[i].intValue(), 0);
+        if (grid[i].isAbsolute()) {
+            gridLayout[i] = max<int>(grid[i].value(), 0);
             totalFixed += gridLayout[i];
             countFixed++;
         }
-        
+
         // Count the total percentage of all of the percentage columns/rows -> totalPercent
         // Count the number of columns/rows which are percentages -> countPercent
-        if (grid[i].isPercent()) {
-            gridLayout[i] = max(intValueForLength(grid[i], availableLen), 0);
+        if (grid[i].isPercentage()) {
+            gridLayout[i] = max<int>(grid[i].value() * availableLen / 100., 0);
             totalPercent += gridLayout[i];
             countPercent++;
         }
@@ -209,20 +209,20 @@ void RenderFrameSet::layOutAxis(GridAxis& axis, const Length* grid, int availabl
         // Count the total relative of all the relative columns/rows -> totalRelative
         // Count the number of columns/rows which are relative -> countRelative
         if (grid[i].isRelative()) {
-            totalRelative += max(grid[i].intValue(), 1);
+            totalRelative += max<int>(grid[i].value(), 1);
             countRelative++;
-        }            
+        }
     }
 
     int remainingLen = availableLen;
 
     // Fixed columns/rows are our first priority. If there is not enough space to fit all fixed
-    // columns/rows we need to proportionally adjust their size. 
+    // columns/rows we need to proportionally adjust their size.
     if (totalFixed > remainingLen) {
         int remainingFixed = remainingLen;
 
         for (int i = 0; i < gridLen; ++i) {
-            if (grid[i].isFixed()) {
+            if (grid[i].isAbsolute()) {
                 gridLayout[i] = (gridLayout[i] * remainingFixed) / totalFixed;
                 remainingLen -= gridLayout[i];
             }
@@ -230,15 +230,15 @@ void RenderFrameSet::layOutAxis(GridAxis& axis, const Length* grid, int availabl
     } else
         remainingLen -= totalFixed;
 
-    // Percentage columns/rows are our second priority. Divide the remaining space proportionally 
-    // over all percentage columns/rows. IMPORTANT: the size of each column/row is not relative 
+    // Percentage columns/rows are our second priority. Divide the remaining space proportionally
+    // over all percentage columns/rows. IMPORTANT: the size of each column/row is not relative
     // to 100%, but to the total percentage. For example, if there are three columns, each of 75%,
     // and the available space is 300px, each column will become 100px in width.
     if (totalPercent > remainingLen) {
         int remainingPercent = remainingLen;
 
         for (int i = 0; i < gridLen; ++i) {
-            if (grid[i].isPercent()) {
+            if (grid[i].isPercentage()) {
                 gridLayout[i] = (gridLayout[i] * remainingPercent) / totalPercent;
                 remainingLen -= gridLayout[i];
             }
@@ -254,13 +254,13 @@ void RenderFrameSet::layOutAxis(GridAxis& axis, const Length* grid, int availabl
 
         for (int i = 0; i < gridLen; ++i) {
             if (grid[i].isRelative()) {
-                gridLayout[i] = (max(grid[i].intValue(), 1) * remainingRelative) / totalRelative;
+                gridLayout[i] = (max(grid[i].value(), 1.) * remainingRelative) / totalRelative;
                 remainingLen -= gridLayout[i];
                 lastRelative = i;
             }
         }
-        
-        // If we could not evenly distribute the available space of all of the relative  
+
+        // If we could not evenly distribute the available space of all of the relative
         // columns/rows, the remainder will be added to the last column/row.
         // For example: if we have a space of 100px and three columns (*,*,*), the remainder will
         // be 1px and will be added to the last column: 33px, 33px, 34px.
@@ -274,15 +274,15 @@ void RenderFrameSet::layOutAxis(GridAxis& axis, const Length* grid, int availabl
     // columns/rows
     if (remainingLen) {
         // Our first priority is to spread if over the percentage columns. The remaining
-        // space is spread evenly, for example: if we have a space of 100px, the columns 
-        // definition of 25%,25% used to result in two columns of 25px. After this the 
-        // columns will each be 50px in width. 
+        // space is spread evenly, for example: if we have a space of 100px, the columns
+        // definition of 25%,25% used to result in two columns of 25px. After this the
+        // columns will each be 50px in width.
         if (countPercent && totalPercent) {
             int remainingPercent = remainingLen;
             int changePercent = 0;
 
             for (int i = 0; i < gridLen; ++i) {
-                if (grid[i].isPercent()) {
+                if (grid[i].isPercentage()) {
                     changePercent = (remainingPercent * gridLayout[i]) / totalPercent;
                     gridLayout[i] += changePercent;
                     remainingLen -= changePercent;
@@ -296,25 +296,25 @@ void RenderFrameSet::layOutAxis(GridAxis& axis, const Length* grid, int availabl
             int changeFixed = 0;
 
             for (int i = 0; i < gridLen; ++i) {
-                if (grid[i].isFixed()) {
+                if (grid[i].isAbsolute()) {
                     changeFixed = (remainingFixed * gridLayout[i]) / totalFixed;
                     gridLayout[i] += changeFixed;
                     remainingLen -= changeFixed;
-                } 
+                }
             }
         }
     }
-    
+
     // If we still have some left over space we probably ended up with a remainder of
-    // a division. We cannot spread it evenly anymore. If we have any percentage 
-    // columns/rows simply spread the remainder equally over all available percentage columns, 
+    // a division. We cannot spread it evenly anymore. If we have any percentage
+    // columns/rows simply spread the remainder equally over all available percentage columns,
     // regardless of their size.
     if (remainingLen && countPercent) {
         int remainingPercent = remainingLen;
         int changePercent = 0;
 
         for (int i = 0; i < gridLen; ++i) {
-            if (grid[i].isPercent()) {
+            if (grid[i].isPercentage()) {
                 changePercent = remainingPercent / countPercent;
                 gridLayout[i] += changePercent;
                 remainingLen -= changePercent;
@@ -326,9 +326,9 @@ void RenderFrameSet::layOutAxis(GridAxis& axis, const Length* grid, int availabl
         // columns/rows.
         int remainingFixed = remainingLen;
         int changeFixed = 0;
-        
+
         for (int i = 0; i < gridLen; ++i) {
-            if (grid[i].isFixed()) {
+            if (grid[i].isAbsolute()) {
                 changeFixed = remainingFixed / countFixed;
                 gridLayout[i] += changeFixed;
                 remainingLen -= changeFixed;
@@ -376,7 +376,7 @@ void RenderFrameSet::fillFromEdgeInfo(const FrameEdgeInfo& edgeInfo, int r, int 
         m_cols.m_preventResize[c] = true;
     if (edgeInfo.preventResize(RightFrameEdge))
         m_cols.m_preventResize[c + 1] = true;
-    
+
     if (edgeInfo.allowBorder(TopFrameEdge))
         m_rows.m_allowBorder[r] = true;
     if (edgeInfo.allowBorder(BottomFrameEdge))
@@ -389,11 +389,11 @@ void RenderFrameSet::fillFromEdgeInfo(const FrameEdgeInfo& edgeInfo, int r, int 
 
 void RenderFrameSet::computeEdgeInfo()
 {
-    m_rows.m_preventResize.fill(frameSet()->noResize());    
+    m_rows.m_preventResize.fill(frameSet()->noResize());
     m_rows.m_allowBorder.fill(false);
-    m_cols.m_preventResize.fill(frameSet()->noResize());    
+    m_cols.m_preventResize.fill(frameSet()->noResize());
     m_cols.m_allowBorder.fill(false);
-    
+
     RenderObject* child = firstChild();
     if (!child)
         return;
@@ -418,7 +418,7 @@ void RenderFrameSet::computeEdgeInfo()
 FrameEdgeInfo RenderFrameSet::edgeInfo() const
 {
     FrameEdgeInfo result(frameSet()->noResize(), true);
-    
+
     int rows = frameSet()->totalRows();
     int cols = frameSet()->totalCols();
     if (rows && cols) {
@@ -431,7 +431,7 @@ FrameEdgeInfo RenderFrameSet::edgeInfo() const
         result.setPreventResize(BottomFrameEdge, m_rows.m_preventResize[rows]);
         result.setAllowBorder(BottomFrameEdge, m_rows.m_allowBorder[rows]);
     }
-    
+
     return result;
 }
 
@@ -480,7 +480,7 @@ void RenderFrameSet::layout()
             repaintUsingContainer(repaintContainer, pixelSnappedIntRect(newBounds));
     }
 
-    setNeedsLayout(false);
+    clearNeedsLayout();
 }
 
 void RenderFrameSet::positionFrames()
@@ -505,7 +505,7 @@ void RenderFrameSet::positionFrames()
             if (width != child->width() || height != child->height()) {
                 child->setWidth(width);
                 child->setHeight(height);
-                child->setNeedsLayout(true);
+                child->setNeedsLayout();
                 child->layout();
             }
 
@@ -522,7 +522,7 @@ void RenderFrameSet::positionFrames()
     for (; child; child = child->nextSiblingBox()) {
         child->setWidth(0);
         child->setHeight(0);
-        child->setNeedsLayout(false);
+        child->clearNeedsLayout();
     }
 }
 
@@ -549,7 +549,7 @@ void RenderFrameSet::continueResizing(GridAxis& axis, int position)
         return;
     axis.m_deltas[axis.m_splitBeingResized - 1] += delta;
     axis.m_deltas[axis.m_splitBeingResized] -= delta;
-    setNeedsLayout(true);
+    setNeedsLayout();
 }
 
 bool RenderFrameSet::userResize(MouseEvent* evt)
@@ -670,24 +670,6 @@ CursorDirective RenderFrameSet::getCursor(const LayoutPoint& point, Cursor& curs
         return SetCursor;
     }
     return RenderBox::getCursor(point, cursor);
-}
-
-void RenderFrameSet::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Rendering);
-    RenderBox::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_children, "children");
-    info.addMember(m_rows, "rows");
-    info.addMember(m_cols, "cols");
-}
-
-void RenderFrameSet::GridAxis::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Rendering);
-    info.addMember(m_sizes, "sizes");
-    info.addMember(m_deltas, "deltas");
-    info.addMember(m_preventResize, "preventResize");
-    info.addMember(m_allowBorder, "allowBorder");
 }
 
 } // namespace WebCore

@@ -77,6 +77,7 @@ class WebRtcMonitorStream : public webrtc::OutStream {
 };
 
 class AudioDeviceModule;
+class AudioRenderer;
 class VoETraceWrapper;
 class VoEWrapper;
 class VoiceProcessor;
@@ -274,7 +275,7 @@ template <class T, class E>
 class WebRtcMediaChannel : public T, public webrtc::Transport {
  public:
   WebRtcMediaChannel(E *engine, int channel)
-      : engine_(engine), voe_channel_(channel), sequence_number_(-1) {}
+      : engine_(engine), voe_channel_(channel) {}
   E *engine() { return engine_; }
   int voe_channel() const { return voe_channel_; }
   bool valid() const { return voe_channel_ != -1; }
@@ -282,42 +283,21 @@ class WebRtcMediaChannel : public T, public webrtc::Transport {
  protected:
   // implements Transport interface
   virtual int SendPacket(int channel, const void *data, int len) {
-    if (!T::network_interface_) {
-      return -1;
-    }
-
-    // We need to store the sequence number to be able to pick up
-    // the same sequence when the device is restarted.
-    // TODO(oja): Remove when WebRtc has fixed the problem.
-    int seq_num;
-    if (!GetRtpSeqNum(data, len, &seq_num)) {
-      return -1;
-    }
-    if (sequence_number() == -1) {
-      LOG(INFO) << "WebRtcVoiceMediaChannel sends first packet seqnum="
-                << seq_num;
-    }
-    sequence_number_ = seq_num;
-
     talk_base::Buffer packet(data, len, kMaxRtpPacketLen);
-    return T::network_interface_->SendPacket(&packet) ? len : -1;
+    if (!T::SendPacket(&packet)) {
+      return -1;
+    }
+    return len;
   }
+
   virtual int SendRTCPPacket(int channel, const void *data, int len) {
-    if (!T::network_interface_) {
-      return -1;
-    }
-
     talk_base::Buffer packet(data, len, kMaxRtpPacketLen);
-    return T::network_interface_->SendRtcp(&packet) ? len : -1;
-  }
-  int sequence_number() const {
-    return sequence_number_;
+    return T::SendRtcp(&packet) ? len : -1;
   }
 
  private:
   E *engine_;
   int voe_channel_;
-  int sequence_number_;
 };
 
 // WebRtcVoiceMediaChannel is an implementation of VoiceMediaChannel that uses
@@ -348,7 +328,8 @@ class WebRtcVoiceMediaChannel
   virtual bool RemoveSendStream(uint32 ssrc);
   virtual bool AddRecvStream(const StreamParams& sp);
   virtual bool RemoveRecvStream(uint32 ssrc);
-  virtual bool SetRenderer(uint32 ssrc, AudioRenderer* renderer);
+  virtual bool SetRemoteRenderer(uint32 ssrc, AudioRenderer* renderer);
+  virtual bool SetLocalRenderer(uint32 ssrc, AudioRenderer* renderer);
   virtual bool GetActiveStreams(AudioInfo::StreamList* actives);
   virtual int GetOutputLevel();
   virtual int GetTimeSinceLastTyping();
@@ -393,12 +374,25 @@ class WebRtcVoiceMediaChannel
   static Error WebRtcErrorToChannelError(int err_code);
 
  private:
+  struct WebRtcVoiceChannelInfo;
+  typedef std::map<uint32, WebRtcVoiceChannelInfo> ChannelMap;
+
   void SetNack(uint32 ssrc, int channel, bool nack_enabled);
+  void SetNack(const ChannelMap& channels, bool nack_enabled);
   bool SetSendCodec(const webrtc::CodecInst& send_codec);
+  bool SetSendCodec(int channel, const webrtc::CodecInst& send_codec);
   bool ChangePlayout(bool playout);
   bool ChangeSend(SendFlags send);
+  bool ChangeSend(int channel, SendFlags send);
+  void ConfigureSendChannel(int channel);
+  bool DeleteChannel(int channel);
+  bool InConferenceMode() const {
+    return options_.conference_mode.GetWithDefaultIfUnset(false);
+  }
+  bool IsDefaultChannel(int channel_id) const {
+    return channel_id == voe_channel();
+  }
 
-  typedef std::map<uint32, int> ChannelMap;
   talk_base::scoped_ptr<WebRtcSoundclipStream> ringback_tone_;
   std::set<int> ringback_channels_;  // channels playing ringback
   std::vector<AudioCodec> recv_codecs_;
@@ -411,16 +405,22 @@ class WebRtcVoiceMediaChannel
   SendFlags desired_send_;
   SendFlags send_;
 
-  uint32 send_ssrc_;
+  // send_channels_ contains the channels which are being used for sending.
+  // When the default channel (voe_channel) is used for sending, it is
+  // contained in send_channels_, otherwise not.
+  ChannelMap send_channels_;
   uint32 default_receive_ssrc_;
-  ChannelMap mux_channels_;  // for multiple sources
-  // mux_channels_ can be read from WebRtc callback thread.  Accesses off the
-  // WebRtc thread must be synchronized with edits on the worker thread.  Reads
-  // on the worker thread are ok.
+  // Note the default channel (voe_channel()) can reside in both
+  // receive_channels_ and send_channels_ in non-conference mode and in that
+  // case it will only be there if a non-zero default_receive_ssrc_ is set.
+  ChannelMap receive_channels_;  // for multiple sources
+  // receive_channels_ can be read from WebRtc callback thread.  Access from
+  // the WebRtc thread must be synchronized with edits on the worker thread.
+  // Reads on the worker thread are ok.
   //
   // Do not lock this on the VoE media processor thread; potential for deadlock
   // exists.
-  mutable talk_base::CriticalSection mux_channels_cs_;
+  mutable talk_base::CriticalSection receive_channels_cs_;
 };
 
 }  // namespace cricket

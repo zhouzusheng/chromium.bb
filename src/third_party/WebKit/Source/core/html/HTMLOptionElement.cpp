@@ -28,12 +28,14 @@
 #include "core/html/HTMLOptionElement.h"
 
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/NodeRenderStyle.h"
 #include "core/dom/NodeTraversal.h"
-#include "core/dom/ScriptElement.h"
+#include "core/dom/ScriptLoader.h"
 #include "core/dom/Text.h"
 #include "core/html/HTMLDataListElement.h"
+#include "core/html/HTMLOptGroupElement.h"
 #include "core/html/HTMLSelectElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/rendering/RenderTheme.h"
@@ -65,15 +67,14 @@ PassRefPtr<HTMLOptionElement> HTMLOptionElement::create(const QualifiedName& tag
 }
 
 PassRefPtr<HTMLOptionElement> HTMLOptionElement::createForJSConstructor(Document* document, const String& data, const String& value,
-        bool defaultSelected, bool selected, ExceptionCode& ec)
+    bool defaultSelected, bool selected, ExceptionState& es)
 {
     RefPtr<HTMLOptionElement> element = adoptRef(new HTMLOptionElement(optionTag, document));
 
     RefPtr<Text> text = Text::create(document, data.isNull() ? "" : data);
 
-    ec = 0;
-    element->appendChild(text.release(), ec);
-    if (ec)
+    element->appendChild(text.release(), es);
+    if (es.hadException())
         return 0;
 
     if (!value.isNull())
@@ -127,7 +128,7 @@ String HTMLOptionElement::text() const
     return document->displayStringModifiedByEncoding(text).stripWhiteSpace(isHTMLSpace).simplifyWhiteSpace(isHTMLSpace);
 }
 
-void HTMLOptionElement::setText(const String &text, ExceptionCode& ec)
+void HTMLOptionElement::setText(const String &text, ExceptionState& es)
 {
     RefPtr<Node> protectFromMutationEvents(this);
 
@@ -144,9 +145,9 @@ void HTMLOptionElement::setText(const String &text, ExceptionCode& ec)
         toText(child)->setData(text);
     else {
         removeChildren();
-        appendChild(Text::create(document(), text), ec);
+        appendChild(Text::create(document(), text), es, AttachLazily);
     }
-    
+
     if (selectIsMenuList && select->selectedIndex() != oldSelectedIndex)
         select->setSelectedIndex(oldSelectedIndex);
 }
@@ -288,7 +289,7 @@ String HTMLOptionElement::label() const
 {
     const AtomicString& label = fastGetAttribute(labelAttr);
     if (!label.isNull())
-        return label; 
+        return label;
     return collectOptionInnerText().stripWhiteSpace(isHTMLSpace).simplifyWhiteSpace(isHTMLSpace);
 }
 
@@ -328,7 +329,7 @@ void HTMLOptionElement::didRecalcStyle(StyleChange)
 String HTMLOptionElement::textIndentedToRespectGroupLabel() const
 {
     ContainerNode* parent = parentNode();
-    if (parent && parent->hasTagName(optgroupTag))
+    if (parent && isHTMLOptGroupElement(parent))
         return "    " + text();
     return text();
 }
@@ -338,7 +339,7 @@ bool HTMLOptionElement::isDisabledFormControl() const
     if (ownElementDisabled())
         return true;
     if (Element* parent = parentElement())
-        return parent->hasTagName(optgroupTag) && parent->isDisabledFormControl();
+        return isHTMLOptGroupElement(parent) && parent->isDisabledFormControl();
     return false;
 }
 
@@ -365,7 +366,7 @@ String HTMLOptionElement::collectOptionInnerText() const
         if (node->isTextNode())
             text.append(node->nodeValue());
         // Text nodes inside script elements are not part of the option text.
-        if (node->isElementNode() && toScriptElementIfPossible(toElement(node)))
+        if (node->isElementNode() && toScriptLoaderIfPossible(toElement(node)))
             node = NodeTraversal::nextSkippingChildren(node, this);
         else
             node = NodeTraversal::next(node, this);

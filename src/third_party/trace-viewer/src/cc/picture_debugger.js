@@ -7,6 +7,7 @@
 base.requireStylesheet('cc.picture_debugger');
 
 base.require('cc.picture');
+base.require('cc.picture_ops_list_view');
 base.require('tracing.analysis.generic_object_view');
 base.require('ui.drag_handle');
 base.require('ui.info_bar');
@@ -27,34 +28,60 @@ base.exportTo('cc', function() {
     __proto__: HTMLUnknownElement.prototype,
 
     decorate: function() {
-      this.controls_ = document.createElement('top-controls');
-      this.infoBar_ = new ui.InfoBar();
-      this.pictureDataView_ = new tracing.analysis.GenericObjectView();
+      this.pictureAsImageData_ = undefined;
+      this.showOverdraw_ = false;
 
-      this.rasterResult_ = document.createElement('raster-result');
-      this.rasterArea_ = document.createElement('raster-area');
+      this.leftPanel_ = document.createElement('left-panel');
 
+      this.pictureInfo_ = document.createElement('picture-info');
+
+      this.title_ = document.createElement('span');
+      this.title_.textContent = 'Skia Picture';
+      this.title_.classList.add('title');
+      this.sizeInfo_ = document.createElement('span');
+      this.sizeInfo_.classList.add('size');
       this.filename_ = document.createElement('input');
       this.filename_.classList.add('filename');
       this.filename_.type = 'text';
       this.filename_.value = 'skpicture.skp';
-      this.controls_.appendChild(this.filename_);
-
-      var saveButton = document.createElement('button');
-      saveButton.textContent = 'Save SkPicture';
-      saveButton.addEventListener(
+      var exportButton = document.createElement('button');
+      exportButton.textContent = 'Export';
+      exportButton.addEventListener(
           'click', this.onSaveAsSkPictureClicked_.bind(this));
-      this.controls_.appendChild(saveButton);
+      var overdrawCheckbox = ui.createCheckBox(
+          this, 'showOverdraw',
+          'pictureViewer.showOverdraw', false,
+          'Show overdraw');
+      this.pictureInfo_.appendChild(this.title_);
+      this.pictureInfo_.appendChild(this.sizeInfo_);
+      this.pictureInfo_.appendChild(document.createElement('br'));
+      this.pictureInfo_.appendChild(this.filename_);
+      this.pictureInfo_.appendChild(exportButton);
+      this.pictureInfo_.appendChild(document.createElement('br'));
+      this.pictureInfo_.appendChild(overdrawCheckbox);
 
-      this.dragHandle_ = new ui.DragHandle();
-      this.dragHandle_.horizontal = false;
-      this.dragHandle_.target = this.pictureDataView_;
+      this.titleDragHandle_ = new ui.DragHandle();
+      this.titleDragHandle_.horizontal = true;
+      this.titleDragHandle_.target = this.pictureInfo_;
 
-      this.appendChild(this.pictureDataView_);
-      this.appendChild(this.dragHandle_);
-      this.rasterArea_.appendChild(this.controls_);
+      this.drawOpsView_ = new cc.PictureOpsListView();
+      this.drawOpsView_.addEventListener(
+          'selection-changed', this.onChangeDrawOps_.bind(this));
+
+      this.leftPanel_.appendChild(this.pictureInfo_);
+      this.leftPanel_.appendChild(this.titleDragHandle_);
+      this.leftPanel_.appendChild(this.drawOpsView_);
+
+      this.middleDragHandle_ = new ui.DragHandle();
+      this.middleDragHandle_.horizontal = false;
+      this.middleDragHandle_.target = this.leftPanel_;
+
+      this.infoBar_ = new ui.InfoBar();
+      this.rasterArea_ = document.createElement('raster-area');
+
+      this.appendChild(this.leftPanel_);
+      this.appendChild(this.middleDragHandle_);
       this.rasterArea_.appendChild(this.infoBar_);
-      this.rasterArea_.appendChild(this.rasterResult_);
       this.appendChild(this.rasterArea_);
 
       this.picture_ = undefined;
@@ -91,53 +118,83 @@ base.exportTo('cc', function() {
     },
 
     set picture(picture) {
+      this.drawOpsView_.picture = picture;
       this.picture_ = picture;
-      this.updateContents_();
+      this.rasterize_();
+
+      this.scheduleUpdateContents_();
     },
 
     scheduleUpdateContents_: function() {
       if (this.updateContentsPending_)
         return;
       this.updateContentsPending_ = true;
-      webkitRequestAnimationFrame(this.updateContents_.bind(this));
+      base.requestAnimationFrameInThisFrameIfPossible(
+          this.updateContents_.bind(this)
+      );
     },
 
     updateContents_: function() {
       this.updateContentsPending_ = false;
 
-      if (!this.picture_)
-        return;
-      this.infoBar_.visible = false;
-      this.infoBar_.removeAllButtons();
-
-      if (!this.picture_.image) {
-        this.style.backgroundImage = '';
-        if (!this.picture_.canRasterizeImage) {
-          var details;
-          if (!cc.PictureSnapshot.CanRasterize()) {
-            details = cc.PictureSnapshot.HowToEnableRasterizing();
-          } else {
-            details = 'Your recording may be from an old Chrome version. ' +
-                'The SkPicture format is not backward compatible.';
-          }
-          this.infoBar_.message = 'Cannot rasterize...';
-          this.infoBar_.addButton('More info...', function() {
-            var overlay = new ui.Overlay();
-            overlay.textContent = details;
-            overlay.visible = true;
-            overlay.autoClose = true;
-          });
-          this.infoBar_.visible = true;
-        } else {
-          this.picture_.beginRasterizingImage(
-              this.scheduleUpdateContents_.bind(this));
-        }
-      } else {
-        this.rasterArea_.style.backgroundImage = 'url("' +
-            this.picture_.image.src + '")';
+      if (this.picture_) {
+        this.sizeInfo_.textContent = '(' +
+            this.picture_.layerRect.width + ' x ' +
+            this.picture_.layerRect.height + ')';
       }
 
-      this.pictureDataView_.object = this.picture_;
+      // Return if picture hasn't finished rasterizing.
+      if (!this.pictureAsImageData_)
+        return;
+
+      this.infoBar_.visible = false;
+      this.infoBar_.removeAllButtons();
+      if (this.pictureAsImageData_.error) {
+        this.infoBar_.message = 'Cannot rasterize...';
+        this.infoBar_.addButton('More info...', function() {
+          var overlay = new ui.Overlay();
+          overlay.textContent = this.pictureAsImageData_.error;
+          overlay.visible = true;
+          overlay.obeyCloseEvents = true;
+        }.bind(this));
+        this.infoBar_.visible = true;
+      }
+
+      // FIXME(pdr): Append the canvas instead of using a background image.
+      if (this.pictureAsImageData_.imageData) {
+        var canvas = this.pictureAsImageData_.asCanvas();
+        var imageUrl = canvas.toDataURL();
+        canvas.width = 0; // Free the GPU texture.
+        this.rasterArea_.style.backgroundImage = 'url("' + imageUrl + '")';
+      } else {
+        this.rasterArea_.style.backgroundImage = '';
+      }
+    },
+
+    rasterize_: function() {
+      if (this.picture_) {
+        this.picture_.rasterize(
+            {
+              stopIndex: this.drawOpsView_.selectedOpIndex,
+              showOverdraw: this.showOverdraw_
+            },
+            this.onRasterComplete_.bind(this));
+      }
+    },
+
+    onRasterComplete_: function(pictureAsImageData) {
+      this.pictureAsImageData_ = pictureAsImageData;
+      this.scheduleUpdateContents_();
+    },
+
+    onChangeDrawOps_: function() {
+      this.rasterize_();
+      this.scheduleUpdateContents_();
+    },
+
+    set showOverdraw(v) {
+      this.showOverdraw_ = v;
+      this.rasterize_();
     }
   };
 

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "base/debug/trace_event.h"
 #include "cc/base/math_util.h"
@@ -15,13 +16,6 @@
 #include "ui/gfx/size_conversions.h"
 
 namespace cc {
-
-bool PictureLayerTilingClient::TileMayHaveLCDText(Tile* tile) {
-  RasterMode raster_mode = HIGH_QUALITY_RASTER_MODE;
-  if (!tile->IsReadyToDraw(&raster_mode))
-    return true;
-  return tile->has_text(raster_mode);
-}
 
 scoped_ptr<PictureLayerTiling> PictureLayerTiling::Create(
     float contents_scale,
@@ -114,18 +108,77 @@ Region PictureLayerTiling::OpaqueRegionInContentRect(
   return opaque_region;
 }
 
-void PictureLayerTiling::DestroyAndRecreateTilesWithText() {
-  std::vector<TileMapKey> new_tiles;
-  for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it) {
-    if (client_->TileMayHaveLCDText(it->second.get()))
-      new_tiles.push_back(it->first);
+void PictureLayerTiling::SetCanUseLCDText(bool can_use_lcd_text) {
+  for (TileMap::iterator it = tiles_.begin(); it != tiles_.end(); ++it)
+    it->second->set_can_use_lcd_text(can_use_lcd_text);
+}
+
+void PictureLayerTiling::CreateMissingTilesInLiveTilesRect() {
+  const PictureLayerTiling* twin_tiling = client_->GetTwinTiling(this);
+  for (TilingData::Iterator iter(&tiling_data_, live_tiles_rect_); iter;
+       ++iter) {
+    TileMapKey key = iter.index();
+    TileMap::iterator find = tiles_.find(key);
+    if (find != tiles_.end())
+      continue;
+    CreateTile(key.first, key.second, twin_tiling);
+  }
+}
+
+void PictureLayerTiling::SetLayerBounds(gfx::Size layer_bounds) {
+  if (layer_bounds_ == layer_bounds)
+    return;
+
+  DCHECK(!layer_bounds.IsEmpty());
+
+  gfx::Size old_layer_bounds = layer_bounds_;
+  layer_bounds_ = layer_bounds;
+  gfx::Size old_content_bounds = tiling_data_.total_size();
+  gfx::Size content_bounds =
+      gfx::ToCeiledSize(gfx::ScaleSize(layer_bounds_, contents_scale_));
+
+  gfx::Size tile_size = client_->CalculateTileSize(content_bounds);
+  if (tile_size != tiling_data_.max_texture_size()) {
+    tiling_data_.SetTotalSize(content_bounds);
+    tiling_data_.SetMaxTextureSize(tile_size);
+    Reset();
+    return;
+  }
+
+  // Any tiles outside our new bounds are invalid and should be dropped.
+  gfx::Rect bounded_live_tiles_rect(live_tiles_rect_);
+  bounded_live_tiles_rect.Intersect(gfx::Rect(content_bounds));
+  SetLiveTilesRect(bounded_live_tiles_rect);
+  tiling_data_.SetTotalSize(content_bounds);
+
+  // Create tiles for newly exposed areas.
+  Region layer_region((gfx::Rect(layer_bounds_)));
+  layer_region.Subtract(gfx::Rect(old_layer_bounds));
+  Invalidate(layer_region);
+}
+
+void PictureLayerTiling::Invalidate(const Region& layer_region) {
+  std::vector<TileMapKey> new_tile_keys;
+  for (Region::Iterator iter(layer_region); iter.has_rect(); iter.next()) {
+    gfx::Rect layer_rect = iter.rect();
+    gfx::Rect content_rect =
+        gfx::ScaleToEnclosingRect(layer_rect, contents_scale_);
+    content_rect.Intersect(live_tiles_rect_);
+    if (content_rect.IsEmpty())
+      continue;
+    for (TilingData::Iterator iter(&tiling_data_, content_rect); iter; ++iter) {
+      TileMapKey key(iter.index());
+      TileMap::iterator find = tiles_.find(key);
+      if (find == tiles_.end())
+        continue;
+      tiles_.erase(find);
+      new_tile_keys.push_back(key);
+    }
   }
 
   const PictureLayerTiling* twin_tiling = client_->GetTwinTiling(this);
-  for (size_t i = 0; i < new_tiles.size(); ++i) {
-    tiles_.erase(new_tiles[i]);
-    CreateTile(new_tiles[i].first, new_tiles[i].second, twin_tiling);
-  }
+  for (size_t i = 0; i < new_tile_keys.size(); ++i)
+    CreateTile(new_tile_keys[i].first, new_tile_keys[i].second, twin_tiling);
 }
 
 PictureLayerTiling::CoverageIterator::CoverageIterator()
@@ -286,6 +339,35 @@ void PictureLayerTiling::Reset() {
   tiles_.clear();
 }
 
+namespace {
+
+bool NearlyOne(SkMScalar lhs) {
+  return std::abs(lhs-1.0) < std::numeric_limits<float>::epsilon();
+}
+
+bool NearlyZero(SkMScalar lhs) {
+  return std::abs(lhs) < std::numeric_limits<float>::epsilon();
+}
+
+bool ApproximatelyTranslation(const SkMatrix44& matrix) {
+  return
+      NearlyOne(matrix.get(0, 0)) &&
+      NearlyZero(matrix.get(1, 0)) &&
+      NearlyZero(matrix.get(2, 0)) &&
+      matrix.get(3, 0) == 0 &&
+      NearlyZero(matrix.get(0, 1)) &&
+      NearlyOne(matrix.get(1, 1)) &&
+      NearlyZero(matrix.get(2, 1)) &&
+      matrix.get(3, 1) == 0 &&
+      NearlyZero(matrix.get(0, 2)) &&
+      NearlyZero(matrix.get(1, 2)) &&
+      NearlyOne(matrix.get(2, 2)) &&
+      matrix.get(3, 2) == 0 &&
+      matrix.get(3, 3) == 1;
+}
+
+}  // namespace
+
 void PictureLayerTiling::UpdateTilePriorities(
     WhichTree tree,
     gfx::Size device_viewport,
@@ -346,8 +428,8 @@ void PictureLayerTiling::UpdateTilePriorities(
                                      &store_screen_space_quads_on_tiles);
 
   // Fast path tile priority calculation when both transforms are translations.
-  if (last_screen_transform.IsIdentityOrTranslation() &&
-      current_screen_transform.IsIdentityOrTranslation()) {
+  if (ApproximatelyTranslation(last_screen_transform.matrix()) &&
+      ApproximatelyTranslation(current_screen_transform.matrix())) {
     gfx::Vector2dF current_offset(
         current_screen_transform.matrix().get(0, 3),
         current_screen_transform.matrix().get(1, 3));
@@ -385,6 +467,101 @@ void PictureLayerTiling::UpdateTilePriorities(
           distance_to_visible_in_pixels);
       if (store_screen_space_quads_on_tiles)
         priority.set_current_screen_quad(gfx::QuadF(current_screen_rect));
+      tile->SetPriority(tree, priority);
+    }
+  } else if (!last_screen_transform.HasPerspective() &&
+             !current_screen_transform.HasPerspective()) {
+    // Secondary fast path that can be applied for any affine transforms.
+
+    // Initialize the necessary geometry in screen space, so that we can
+    // iterate over tiles in screen space without needing a costly transform
+    // mapping for each tile.
+
+    // Apply screen space transform to the local origin point (0, 0); only the
+    // translation component is needed and can be initialized directly.
+    gfx::Point current_screen_space_origin(
+        current_screen_transform.matrix().get(0, 3),
+        current_screen_transform.matrix().get(1, 3));
+
+    gfx::Point last_screen_space_origin(
+        last_screen_transform.matrix().get(0, 3),
+        last_screen_transform.matrix().get(1, 3));
+
+    float current_tile_width = tiling_data_.TileSizeX(0) * current_scale;
+    float last_tile_width = tiling_data_.TileSizeX(0) * last_scale;
+    float current_tile_height = tiling_data_.TileSizeY(0) * current_scale;
+    float last_tile_height = tiling_data_.TileSizeY(0) * last_scale;
+
+    // Apply screen space transform to local basis vectors (tile_width, 0) and
+    // (0, tile_height); the math simplifies and can be initialized directly.
+    gfx::Vector2dF current_horizontal(
+        current_screen_transform.matrix().get(0, 0) * current_tile_width,
+        current_screen_transform.matrix().get(1, 0) * current_tile_width);
+    gfx::Vector2dF current_vertical(
+        current_screen_transform.matrix().get(0, 1) * current_tile_height,
+        current_screen_transform.matrix().get(1, 1) * current_tile_height);
+
+    gfx::Vector2dF last_horizontal(
+        last_screen_transform.matrix().get(0, 0) * last_tile_width,
+        last_screen_transform.matrix().get(1, 0) * last_tile_width);
+    gfx::Vector2dF last_vertical(
+        last_screen_transform.matrix().get(0, 1) * last_tile_height,
+        last_screen_transform.matrix().get(1, 1) * last_tile_height);
+
+    for (TilingData::Iterator iter(&tiling_data_, interest_rect);
+         iter; ++iter) {
+      TileMap::iterator find = tiles_.find(iter.index());
+      if (find == tiles_.end())
+        continue;
+
+      Tile* tile = find->second.get();
+
+      int i = iter.index_x();
+      int j = iter.index_y();
+      gfx::PointF current_tile_origin = current_screen_space_origin +
+              ScaleVector2d(current_horizontal, i) +
+              ScaleVector2d(current_vertical, j);
+      gfx::PointF last_tile_origin = last_screen_space_origin +
+              ScaleVector2d(last_horizontal, i) +
+              ScaleVector2d(last_vertical, j);
+
+      gfx::RectF current_screen_rect = gfx::QuadF(
+          current_tile_origin,
+          current_tile_origin + current_horizontal,
+          current_tile_origin + current_horizontal + current_vertical,
+          current_tile_origin + current_vertical).BoundingBox();
+
+      gfx::RectF last_screen_rect = gfx::QuadF(
+          last_tile_origin,
+          last_tile_origin + last_horizontal,
+          last_tile_origin + last_horizontal + last_vertical,
+          last_tile_origin + last_vertical).BoundingBox();
+
+      float distance_to_visible_in_pixels =
+          TilePriority::manhattanDistance(current_screen_rect, view_rect);
+
+      float time_to_visible_in_seconds =
+          TilePriority::TimeForBoundsToIntersect(
+              last_screen_rect, current_screen_rect, time_delta, view_rect);
+      TilePriority priority(
+          resolution_,
+          time_to_visible_in_seconds,
+          distance_to_visible_in_pixels);
+
+      if (store_screen_space_quads_on_tiles) {
+        // This overhead is only triggered when logging event tracing data.
+        gfx::Rect tile_bounds =
+            tiling_data_.TileBounds(iter.index_x(), iter.index_y());
+        gfx::RectF current_layer_content_rect = gfx::ScaleRect(
+            tile_bounds,
+            current_scale,
+            current_scale);
+        bool clipped;
+        priority.set_current_screen_quad(
+            MathUtil::MapQuad(current_screen_transform,
+                              gfx::QuadF(current_layer_content_rect),
+                              &clipped));
+      }
       tile->SetPriority(tree, priority);
     }
   } else {
@@ -486,6 +663,12 @@ void PictureLayerTiling::DidBecomeActive() {
   }
 }
 
+void PictureLayerTiling::UpdateTilesToCurrentPile() {
+  for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it) {
+    client_->UpdatePile(it->second.get());
+  }
+}
+
 scoped_ptr<base::Value> PictureLayerTiling::AsValue() const {
   scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue());
   state->SetInteger("num_tiles", tiles_.size());
@@ -499,10 +682,7 @@ size_t PictureLayerTiling::GPUMemoryUsageInBytes() const {
   size_t amount = 0;
   for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it) {
     const Tile* tile = it->second.get();
-    for (int mode = 0; mode < NUM_RASTER_MODES; ++mode) {
-      amount += tile->tile_version(
-          static_cast<RasterMode>(mode)).GPUMemoryUsageInBytes();
-    }
+    amount += tile->GPUMemoryUsageInBytes();
   }
   return amount;
 }

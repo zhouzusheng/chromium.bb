@@ -45,6 +45,10 @@ public:
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE;
 
+    // As per http://dev.w3.org/csswg/css3-regions/#flow-into, pseudo-elements such as ::first-line, ::first-letter, ::before or ::after
+    // cannot be directly collected into a named flow.
+    virtual bool shouldMoveToFlowThread(RenderStyle*) const OVERRIDE { return false; }
+
     virtual bool canStartSelection() const OVERRIDE { return false; }
     virtual bool canContainRangeEndPoint() const OVERRIDE { return false; }
 
@@ -63,7 +67,7 @@ const QualifiedName& pseudoElementTagName();
 
 inline bool pseudoElementRendererIsNeeded(const RenderStyle* style)
 {
-    return style && style->display() != NONE && (style->contentData() || !style->regionThread().isEmpty());
+    return style && style->display() != NONE && (style->styleType() == BACKDROP || style->contentData() || !style->regionThread().isEmpty());
 }
 
 } // namespace

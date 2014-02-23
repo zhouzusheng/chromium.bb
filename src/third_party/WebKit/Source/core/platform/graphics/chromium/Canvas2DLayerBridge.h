@@ -33,9 +33,9 @@
 #include "public/platform/WebExternalTextureLayer.h"
 #include "public/platform/WebExternalTextureLayerClient.h"
 #include "public/platform/WebExternalTextureMailbox.h"
-#include <wtf/DoublyLinkedList.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/RefPtr.h>
+#include "wtf/DoublyLinkedList.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/RefPtr.h"
 
 namespace WebKit {
 class WebGraphicsContext3D;
@@ -51,22 +51,13 @@ public:
         NonOpaque
     };
 
-    enum ThreadMode {
-        SingleThread,
-        Threaded
-    };
-
-    static PassOwnPtr<Canvas2DLayerBridge> create(PassRefPtr<GraphicsContext3D> context, SkDeferredCanvas* canvas, OpacityMode opacityMode, ThreadMode threading)
-    {
-        return adoptPtr(new Canvas2DLayerBridge(context, canvas, opacityMode, threading));
-    }
+    static PassOwnPtr<Canvas2DLayerBridge> create(PassRefPtr<GraphicsContext3D>, const IntSize&, OpacityMode);
 
     virtual ~Canvas2DLayerBridge();
 
     // WebKit::WebExternalTextureLayerClient implementation.
-    virtual unsigned prepareTexture(WebKit::WebTextureUpdater&) OVERRIDE;
     virtual WebKit::WebGraphicsContext3D* context() OVERRIDE;
-    virtual bool prepareMailbox(WebKit::WebExternalTextureMailbox*) OVERRIDE;
+    virtual bool prepareMailbox(WebKit::WebExternalTextureMailbox*, WebKit::WebExternalBitmap*) OVERRIDE;
     virtual void mailboxReleased(const WebKit::WebExternalTextureMailbox&) OVERRIDE;
 
     // SkDeferredCanvas::NotificationClient implementation
@@ -84,11 +75,14 @@ public:
 
     WebKit::WebLayer* layer();
     void contextAcquired();
+    SkCanvas* getCanvas() { return m_canvas; }
 
     unsigned backBufferTexture();
 
+    bool isValid();
+
 protected:
-    Canvas2DLayerBridge(PassRefPtr<GraphicsContext3D>, SkDeferredCanvas*, OpacityMode, ThreadMode);
+    Canvas2DLayerBridge(PassRefPtr<GraphicsContext3D>, SkDeferredCanvas*, OpacityMode);
     void setRateLimitingEnabled(bool);
 
     SkDeferredCanvas* m_canvas;
@@ -96,6 +90,7 @@ protected:
     RefPtr<GraphicsContext3D> m_context;
     size_t m_bytesAllocated;
     bool m_didRecordDrawCommand;
+    bool m_surfaceIsValid;
     int m_framesPending;
     bool m_rateLimitingEnabled;
 
@@ -103,7 +98,6 @@ protected:
     Canvas2DLayerBridge* m_next;
     Canvas2DLayerBridge* m_prev;
 
-#if ENABLE(CANVAS_USES_MAILBOX)
     enum MailboxStatus {
         MailboxInUse,
         MailboxReleased,
@@ -122,7 +116,6 @@ protected:
 
     uint32_t m_lastImageId;
     Vector<MailboxInfo> m_mailboxes;
-#endif
 };
 
 }

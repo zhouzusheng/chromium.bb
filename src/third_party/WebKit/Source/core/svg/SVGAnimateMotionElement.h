@@ -22,11 +22,12 @@
 #define SVGAnimateMotionElement_h
 
 #include "core/platform/graphics/Path.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
 #include "core/svg/SVGAnimationElement.h"
 
 namespace WebCore {
-            
+
+class AffineTransform;
+
 class SVGAnimateMotionElement FINAL : public SVGAnimationElement {
 public:
     static PassRefPtr<SVGAnimateMotionElement> create(const QualifiedName&, Document*);
@@ -56,7 +57,6 @@ private:
         RotateAutoReverse
     };
     RotateMode rotateMode() const;
-    void buildTransformForProgress(AffineTransform*, float percentage);
 
     bool m_hasToPointAtEndOfDuration;
 
@@ -70,7 +70,7 @@ private:
     Path m_path;
     Path m_animationPath;
 };
-    
+
 } // namespace WebCore
 
 #endif // SVGAnimateMotionElement_h

@@ -9,7 +9,7 @@
 #include "base/compiler_specific.h"
 #include "base/event_types.h"
 #include "base/logging.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/events/event_constants.h"
 #include "ui/base/gestures/gesture_types.h"
@@ -82,6 +82,7 @@ class UI_EXPORT Event {
   }
 
   LatencyInfo* latency() { return &latency_; }
+  const LatencyInfo* latency() const { return &latency_; }
   void set_latency(const LatencyInfo& latency) { latency_ = latency; }
 
   // By default, events are "cancelable", this means any default processing that
@@ -96,6 +97,7 @@ class UI_EXPORT Event {
   bool IsControlDown() const { return (flags_ & EF_CONTROL_DOWN) != 0; }
   bool IsCapsLockDown() const { return (flags_ & EF_CAPS_LOCK_DOWN) != 0; }
   bool IsAltDown() const { return (flags_ & EF_ALT_DOWN) != 0; }
+  bool IsAltGrDown() const { return (flags_ & EF_ALTGR_DOWN) != 0; }
 
   bool IsKeyEvent() const {
     return type_ == ET_KEY_PRESSED ||

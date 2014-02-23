@@ -30,14 +30,14 @@
 #define HRTFElevation_h
 
 #include "core/platform/audio/HRTFKernel.h"
-#include <wtf/Noncopyable.h>
-#include <wtf/OwnPtr.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/RefPtr.h>
-#include <wtf/text/CString.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/Noncopyable.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/RefPtr.h"
+#include "wtf/text/CString.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -62,20 +62,20 @@ public:
     double elevationAngle() const { return m_elevationAngle; }
     unsigned numberOfAzimuths() const { return NumberOfTotalAzimuths; }
     float sampleRate() const { return m_sampleRate; }
-    
+
     // Returns the left and right kernels for the given azimuth index.
     // The interpolated delays based on azimuthBlend: 0 -> 1 are returned in frameDelayL and frameDelayR.
     void getKernelsFromAzimuth(double azimuthBlend, unsigned azimuthIndex, HRTFKernel* &kernelL, HRTFKernel* &kernelR, double& frameDelayL, double& frameDelayR);
-    
+
     // Spacing, in degrees, between every azimuth loaded from resource.
     static const unsigned AzimuthSpacing;
-    
+
     // Number of azimuths loaded from resource.
     static const unsigned NumberOfRawAzimuths;
 
     // Interpolates by this factor to get the total number of azimuths from every azimuth loaded from resource.
     static const unsigned InterpolationFactor;
-    
+
     // Total number of azimuths after interpolation.
     static const unsigned NumberOfTotalAzimuths;
 
@@ -91,8 +91,6 @@ public:
     // Returns true on success.
     static bool calculateSymmetricKernelsForAzimuthElevation(int azimuth, int elevation, float sampleRate, const String& subjectName,
                                                              RefPtr<HRTFKernel>& kernelL, RefPtr<HRTFKernel>& kernelR);
-
-    void reportMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     HRTFElevation(PassOwnPtr<HRTFKernelList> kernelListL, PassOwnPtr<HRTFKernelList> kernelListR, int elevation, float sampleRate)

@@ -47,29 +47,31 @@
 #include "main/mtypes.h"
 #include "program/prog_execute.h"
 #include "swrast.h"
+#include "s_fragprog.h"
 #include "s_span.h"
 
 
-typedef void (*texture_sample_func)(GLcontext *ctx,
+typedef void (*texture_sample_func)(struct gl_context *ctx,
+                                    const struct gl_sampler_object *samp,
                                     const struct gl_texture_object *tObj,
                                     GLuint n, const GLfloat texcoords[][4],
                                     const GLfloat lambda[], GLfloat rgba[][4]);
 
-typedef void (_ASMAPIP blend_func)( GLcontext *ctx, GLuint n,
+typedef void (_ASMAPIP blend_func)( struct gl_context *ctx, GLuint n,
                                     const GLubyte mask[],
                                     GLvoid *src, const GLvoid *dst,
                                     GLenum chanType);
 
-typedef void (*swrast_point_func)( GLcontext *ctx, const SWvertex *);
+typedef void (*swrast_point_func)( struct gl_context *ctx, const SWvertex *);
 
-typedef void (*swrast_line_func)( GLcontext *ctx,
+typedef void (*swrast_line_func)( struct gl_context *ctx,
                                   const SWvertex *, const SWvertex *);
 
-typedef void (*swrast_tri_func)( GLcontext *ctx, const SWvertex *,
+typedef void (*swrast_tri_func)( struct gl_context *ctx, const SWvertex *,
                                  const SWvertex *, const SWvertex *);
 
 
-typedef void (*validate_texture_image_func)(GLcontext *ctx,
+typedef void (*validate_texture_image_func)(struct gl_context *ctx,
                                             struct gl_texture_object *texObj,
                                             GLuint face, GLuint level);
 
@@ -109,6 +111,87 @@ typedef void (*validate_texture_image_func)(GLcontext *ctx,
 			        _NEW_DEPTH)
 
 
+struct swrast_texture_image;
+
+
+/**
+ * Fetch a texel from texture image at given position.
+ */
+typedef void (*FetchTexelFunc)(const struct swrast_texture_image *texImage,
+                               GLint col, GLint row, GLint img,
+                               GLfloat *texelOut);
+
+
+/**
+ * Subclass of gl_texture_image.
+ * We need extra fields/info to keep tracking of mapped texture buffers,
+ * strides and Fetch functions.
+ */
+struct swrast_texture_image
+{
+   struct gl_texture_image Base;
+
+   GLboolean _IsPowerOfTwo;  /**< Are all dimensions powers of two? */
+
+   /** used for mipmap LOD computation */
+   GLfloat WidthScale, HeightScale, DepthScale;
+
+   /** These fields only valid when texture memory is mapped */
+   GLint RowStride;		/**< Padded width in units of texels */
+   GLuint *ImageOffsets;        /**< if 3D texture: array [Depth] of offsets to
+                                     each 2D slice in 'Data', in texels */
+   GLubyte *Map;		/**< Pointer to mapped image memory */
+
+   /** Malloc'd texture memory */
+   GLubyte *Buffer;
+
+   FetchTexelFunc FetchTexel;
+};
+
+
+/** cast wrapper */
+static inline struct swrast_texture_image *
+swrast_texture_image(struct gl_texture_image *img)
+{
+   return (struct swrast_texture_image *) img;
+}
+
+/** cast wrapper */
+static inline const struct swrast_texture_image *
+swrast_texture_image_const(const struct gl_texture_image *img)
+{
+   return (const struct swrast_texture_image *) img;
+}
+
+
+/**
+ * Subclass of gl_renderbuffer with extra fields needed for software
+ * rendering.
+ */
+struct swrast_renderbuffer
+{
+   struct gl_renderbuffer Base;
+
+   GLubyte *Buffer;     /**< The malloc'd memory for buffer */
+
+   /** These fields are only valid while buffer is mapped for rendering */
+   GLubyte *Map;
+   GLint RowStride;    /**< in bytes */
+
+   /** For span rendering */
+   GLenum ColorType;
+};
+
+
+/** cast wrapper */
+static inline struct swrast_renderbuffer *
+swrast_renderbuffer(struct gl_renderbuffer *img)
+{
+   return (struct swrast_renderbuffer *) img;
+}
+
+
+
 /**
  * \struct SWcontext
  * \brief  Per-context state that's private to the software rasterizer module.
@@ -135,21 +218,15 @@ typedef struct
    GLboolean _TextureCombinePrimary;
    GLboolean _FogEnabled;
    GLboolean _DeferredTexture;
-   GLenum _FogMode;  /* either GL_FOG_MODE or fragment program's fog mode */
 
    /** List/array of the fragment attributes to interpolate */
    GLuint _ActiveAttribs[FRAG_ATTRIB_MAX];
-   /** Same info, but as a bitmask */
-   GLbitfield _ActiveAttribMask;
+   /** Same info, but as a bitmask of FRAG_BIT_x bits */
+   GLbitfield64 _ActiveAttribMask;
    /** Number of fragment attributes to interpolate */
    GLuint _NumActiveAttribs;
    /** Indicates how each attrib is to be interpolated (lines/tris) */
    GLenum _InterpMode[FRAG_ATTRIB_MAX]; /* GL_FLAT or GL_SMOOTH (for now) */
-
-   /* Accum buffer temporaries.
-    */
-   GLboolean _IntegerAccumMode;	/**< Storing unscaled integers? */
-   GLfloat _IntegerAccumScaler;	/**< Implicit scale factor */
 
    /* Working values:
     */
@@ -160,7 +237,7 @@ typedef struct
    GLenum Primitive;    /* current primitive being drawn (ala glBegin) */
    GLboolean SpecularVertexAdd; /**< Add specular/secondary color per vertex */
 
-   void (*InvalidateState)( GLcontext *ctx, GLbitfield new_state );
+   void (*InvalidateState)( struct gl_context *ctx, GLbitfield new_state );
 
    /**
     * When the NewState mask intersects these masks, we invalidate the
@@ -177,9 +254,9 @@ typedef struct
     * Will be called when the GL state change mask intersects the above masks.
     */
    /*@{*/
-   void (*choose_point)( GLcontext * );
-   void (*choose_line)( GLcontext * );
-   void (*choose_triangle)( GLcontext * );
+   void (*choose_point)( struct gl_context * );
+   void (*choose_line)( struct gl_context * );
+   void (*choose_triangle)( struct gl_context * );
    /*@}*/
 
    /**
@@ -230,26 +307,33 @@ typedef struct
    /** State used during execution of fragment programs */
    struct gl_program_machine FragProgMachine;
 
+   /** Temporary arrays for stencil operations.  To avoid large stack
+    * allocations.
+    */
+   struct {
+      GLubyte *buf1, *buf2, *buf3, *buf4;
+   } stencil_temp;
+
 } SWcontext;
 
 
 extern void
-_swrast_validate_derived( GLcontext *ctx );
+_swrast_validate_derived( struct gl_context *ctx );
 
 extern void
-_swrast_update_texture_samplers(GLcontext *ctx);
+_swrast_update_texture_samplers(struct gl_context *ctx);
 
 
-/** Return SWcontext for the given GLcontext */
-static INLINE SWcontext *
-SWRAST_CONTEXT(GLcontext *ctx)
+/** Return SWcontext for the given struct gl_context */
+static inline SWcontext *
+SWRAST_CONTEXT(struct gl_context *ctx)
 {
    return (SWcontext *) ctx->swrast_context;
 }
 
 /** const version of above */
-static INLINE const SWcontext *
-CONST_SWRAST_CONTEXT(const GLcontext *ctx)
+static inline const SWcontext *
+CONST_SWRAST_CONTEXT(const struct gl_context *ctx)
 {
    return (const SWcontext *) ctx->swrast_context;
 }
@@ -260,8 +344,8 @@ CONST_SWRAST_CONTEXT(const GLcontext *ctx)
  * For drivers that rely on swrast for fallback rendering, this is the
  * driver's opportunity to map renderbuffers and textures.
  */
-static INLINE void
-swrast_render_start(GLcontext *ctx)
+static inline void
+swrast_render_start(struct gl_context *ctx)
 {
    SWcontext *swrast = SWRAST_CONTEXT(ctx);
    if (swrast->Driver.SpanRenderStart)
@@ -270,14 +354,39 @@ swrast_render_start(GLcontext *ctx)
 
 
 /** Called after framebuffer reading/writing */
-static INLINE void
-swrast_render_finish(GLcontext *ctx)
+static inline void
+swrast_render_finish(struct gl_context *ctx)
 {
    SWcontext *swrast = SWRAST_CONTEXT(ctx);
    if (swrast->Driver.SpanRenderFinish)
       swrast->Driver.SpanRenderFinish(ctx);
 }
 
+
+extern void
+_swrast_span_render_start(struct gl_context *ctx);
+
+extern void
+_swrast_span_render_finish(struct gl_context *ctx);
+
+extern void
+_swrast_map_textures(struct gl_context *ctx);
+
+extern void
+_swrast_unmap_textures(struct gl_context *ctx);
+
+extern void
+_swrast_map_texture(struct gl_context *ctx, struct gl_texture_object *texObj);
+
+extern void
+_swrast_unmap_texture(struct gl_context *ctx, struct gl_texture_object *texObj);
+
+
+extern void
+_swrast_map_renderbuffers(struct gl_context *ctx);
+
+extern void
+_swrast_unmap_renderbuffers(struct gl_context *ctx);
 
 
 /**
@@ -343,6 +452,27 @@ swrast_render_finish(GLcontext *ctx)
          const GLuint attr = swrast->_ActiveAttribs[a];
 
 #define ATTRIB_LOOP_END } }
+
+
+/**
+ * Return the address of a pixel value in a mapped renderbuffer.
+ */
+static inline GLubyte *
+_swrast_pixel_address(struct gl_renderbuffer *rb, GLint x, GLint y)
+{
+   struct swrast_renderbuffer *srb = swrast_renderbuffer(rb);
+   const GLint bpp = _mesa_get_format_bytes(rb->Format);
+   const GLint rowStride = srb->RowStride;
+   assert(x >= 0);
+   assert(y >= 0);
+   /* NOTE: using <= only because of s_tritemp.h which gets a pixel
+    * address but doesn't necessarily access it.
+    */
+   assert(x <= (GLint) rb->Width);
+   assert(y <= (GLint) rb->Height);
+   assert(srb->Map);
+   return (GLubyte *) srb->Map + y * rowStride + x * bpp;
+}
 
 
 

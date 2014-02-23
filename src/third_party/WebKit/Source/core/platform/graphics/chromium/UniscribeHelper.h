@@ -1,10 +1,10 @@
 /*
  * Copyright (c) 2006, 2007, 2008, 2009, Google Inc. All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  *     * Redistributions of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
  *     * Redistributions in binary form must reproduce the above
@@ -14,7 +14,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -38,7 +38,7 @@
 #include <map>
 
 #include <unicode/uchar.h>
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 class UniscribeTest_TooBig_Test; // A gunit test for UniscribeHelper.
 
@@ -222,6 +222,11 @@ protected:
     // Tries to preload the font when the it is not accessible.
     // This is the default implementation and it does not do anything.
     virtual void tryToPreloadFont(HFONT) {}
+
+    // Let our subclasses provide the input lazily in case they can't compute
+    // it in their constructors. Once we have input, however, we don't let
+    // our subclasses change it.
+    void setInput(const UChar* input) { ASSERT(!m_input); m_input = input; }
 
 private:
     friend class UniscribeTest_TooBig_Test;

@@ -6,8 +6,10 @@
 
 base.requireStylesheet('tracing.tracks.ruler_track');
 
+base.require('tracing.constants');
 base.require('tracing.tracks.track');
-base.require('tracing.tracks.canvas_based_track');
+base.require('tracing.tracks.heading_track');
+base.require('tracing.draw_helpers');
 base.require('ui');
 
 base.exportTo('tracing.tracks', function() {
@@ -15,10 +17,10 @@ base.exportTo('tracing.tracks', function() {
   /**
    * A track that displays the ruler.
    * @constructor
-   * @extends {CanvasBasedTrack}
+   * @extends {HeadingTrack}
    */
 
-  var RulerTrack = ui.define('ruler-track', tracing.tracks.CanvasBasedTrack);
+  var RulerTrack = ui.define('ruler-track', tracing.tracks.HeadingTrack);
 
   var logOf10 = Math.log(10);
   function log10(x) {
@@ -26,69 +28,33 @@ base.exportTo('tracing.tracks', function() {
   }
 
   RulerTrack.prototype = {
+    __proto__: tracing.tracks.HeadingTrack.prototype,
 
-    __proto__: tracing.tracks.CanvasBasedTrack.prototype,
-
-    decorate: function() {
+    decorate: function(viewport) {
+      tracing.tracks.HeadingTrack.prototype.decorate.call(this, viewport);
       this.classList.add('ruler-track');
       this.strings_secs_ = [];
       this.strings_msecs_ = [];
-      this.addEventListener('mousedown', this.onMouseDown);
+
+      this.viewportMarkersChange_ = this.viewportMarkersChange_.bind(this);
+      viewport.addEventListener('markersChange', this.viewportMarkersChange_);
+
     },
 
-    onMouseDown: function(e) {
-      if (e.button != 0)
-        return;
-      this.placeAndBeginDraggingMarker(e.clientX);
+    detach: function() {
+      tracing.tracks.HeadingTrack.prototype.detach.call(this);
+      this.viewport.removeEventListener('markersChange',
+                                        this.viewportMarkersChange_);
     },
 
-
-    placeAndBeginDraggingMarker: function(clientX) {
-      var pixelRatio = window.devicePixelRatio || 1;
-      var viewX = (clientX - this.canvasContainer_.offsetLeft) * pixelRatio;
-      var worldX = this.viewport_.xViewToWorld(viewX);
-      var marker = this.viewport_.findMarkerNear(worldX, 6);
-      var createdMarker = false;
-      var movedMarker = false;
-      if (!marker) {
-        marker = this.viewport_.addMarker(worldX);
-        createdMarker = true;
-      }
-      marker.selected = true;
-
-      var that = this;
-      var onMouseMove = function(e) {
-        var viewX = (e.clientX - that.canvasContainer_.offsetLeft) * pixelRatio;
-        var worldX = that.viewport_.xViewToWorld(viewX);
-        marker.positionWorld = worldX;
-        movedMarker = true;
-      };
-
-      var onMouseUp = function(e) {
-        marker.selected = false;
-        if (!movedMarker && !createdMarker)
-          that.viewport_.removeMarker(marker);
-        document.removeEventListener('mouseup', onMouseUp);
-        document.removeEventListener('mousemove', onMouseMove);
-      };
-
-      document.addEventListener('mouseup', onMouseUp);
-      document.addEventListener('mousemove', onMouseMove);
+    viewportMarkersChange_: function() {
+      if (this.viewport.markers.length < 1)
+        this.classList.remove('ruler-track-with-distance-measurements');
+      else
+        this.classList.add('ruler-track-with-distance-measurements');
     },
 
-    drawLine_: function(ctx, x1, y1, x2, y2, color) {
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-      ctx.closePath();
-      ctx.strokeStyle = color;
-      ctx.stroke();
-    },
-
-    drawArrow_: function(ctx, x1, y1, x2, y2, arrowWidth, color) {
-
-      this.drawLine_(ctx, x1, y1, x2, y2, color);
-
+    drawArrow: function(ctx, x1, y1, x2, y2, arrowWidth) {
       var dx = x2 - x1;
       var dy = y2 - y1;
       var len = Math.sqrt(dx * dx + dy * dy);
@@ -101,47 +67,45 @@ base.exportTo('tracing.tracks', function() {
       var ay = -ux * arrowWidth;
 
       ctx.beginPath();
-      ctx.fillStyle = color;
-      ctx.moveTo(bx + ax, by + ay);
-      ctx.lineTo(x2, y2);
-      ctx.lineTo(bx - ax, by - ay);
-      ctx.lineTo(bx + ax, by + ay);
-      ctx.closePath();
+      tracing.drawLine(ctx, x1, y1, x2, y2);
+      ctx.stroke();
+
+      tracing.drawTriangle(ctx,
+          bx + ax, by + ay,
+          x2, y2,
+          bx - ax, by - ay);
       ctx.fill();
     },
 
-    redraw: function() {
-      var ctx = this.ctx_;
-      var canvasW = this.canvas_.width;
-      var canvasH = this.canvas_.height;
+    draw: function(type, viewLWorld, viewRWorld) {
+      switch (type) {
+        case tracing.tracks.DrawType.SLICE:
+          this.drawSlices_(viewLWorld, viewRWorld);
+          break;
+      }
+    },
 
-      ctx.clearRect(0, 0, canvasW, canvasH);
+    drawSlices_: function(viewLWorld, viewRWorld) {
+      var ctx = this.context();
+      var pixelRatio = window.devicePixelRatio || 1;
 
-      // Culling parametrs.
-      var vp = this.viewport_;
-      var pixWidth = vp.xViewVectorToWorld(1);
-      var viewLWorld = vp.xViewToWorld(0);
-      var viewRWorld = vp.xViewToWorld(canvasW);
+      var bounds = ctx.canvas.getBoundingClientRect();
+      var width = bounds.width * pixelRatio;
+      var height = bounds.height * pixelRatio;
 
       var measurements = this.classList.contains(
           'ruler-track-with-distance-measurements');
 
-      var rulerHeight = measurements ? canvasH / 2 : canvasH;
+      var rulerHeight = measurements ? (height * 2) / 5 : height;
 
-      for (var i = 0; i < vp.markers.length; ++i) {
-        vp.markers[i].drawTriangle_(ctx, viewLWorld, viewRWorld,
-                                    canvasH, rulerHeight, vp);
-      }
+      var vp = this.viewport;
+      vp.drawMarkerArrows(ctx, viewLWorld, viewRWorld, rulerHeight);
 
-      var pixelRatio = window.devicePixelRatio || 1;
       var idealMajorMarkDistancePix = 150 * pixelRatio;
       var idealMajorMarkDistanceWorld =
           vp.xViewVectorToWorld(idealMajorMarkDistancePix);
 
       var majorMarkDistanceWorld;
-      var unit;
-      var unitDivisor;
-      var tickLabels;
 
       // The conservative guess is the nearest enclosing 0.1, 1, 10, 100, etc.
       var conservativeGuess =
@@ -158,6 +122,9 @@ base.exportTo('tracing.tracks', function() {
         majorMarkDistanceWorld = conservativeGuess / divisors[i - 1];
         break;
       }
+
+      var unit;
+      var unitDivisor;
       var tickLabels = undefined;
       if (majorMarkDistanceWorld < 100) {
         unit = 'ms';
@@ -177,21 +144,33 @@ base.exportTo('tracing.tracks', function() {
           Math.floor(viewLWorld / majorMarkDistanceWorld) *
               majorMarkDistanceWorld;
 
-      var minorTickH = Math.floor(canvasH * 0.25);
+      var minorTickH = Math.floor(rulerHeight * 0.25);
+
+      ctx.save();
+
+      var pixelRatio = window.devicePixelRatio || 1;
+      ctx.lineWidth = Math.round(pixelRatio);
+
+      // Apply subpixel translate to get crisp lines.
+      // http://www.mobtowers.com/html5-canvas-crisp-lines-every-time/
+      var crispLineCorrection = (ctx.lineWidth % 2) / 2;
+      ctx.translate(crispLineCorrection, -crispLineCorrection);
 
       ctx.fillStyle = 'rgb(0, 0, 0)';
       ctx.strokeStyle = 'rgb(0, 0, 0)';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
 
-      var pixelRatio = window.devicePixelRatio || 1;
       ctx.font = (9 * pixelRatio) + 'px sans-serif';
+
+      vp.majorMarkPositions = [];
 
       // Each iteration of this loop draws one major mark
       // and numTicksPerMajor minor ticks.
       //
       // Rendering can't be done in world space because canvas transforms
       // affect line width. So, do the conversions manually.
+      ctx.beginPath();
       for (var curX = firstMajorMark;
            curX < viewRWorld;
            curX += majorMarkDistanceWorld) {
@@ -204,118 +183,161 @@ base.exportTo('tracing.tracks', function() {
         if (!tickLabels[roundedUnitValue])
           tickLabels[roundedUnitValue] = roundedUnitValue + ' ' + unit;
         ctx.fillText(tickLabels[roundedUnitValue],
-                     curXView + 2 * pixelRatio, 0);
-        ctx.beginPath();
+                     curXView + (2 * pixelRatio), 0);
+
+        vp.majorMarkPositions.push(curXView);
 
         // Major mark
-        ctx.moveTo(curXView, 0);
-        ctx.lineTo(curXView, rulerHeight);
+        tracing.drawLine(ctx, curXView, 0, curXView, rulerHeight);
 
         // Minor marks
         for (var i = 1; i < numTicksPerMajor; ++i) {
           var xView = Math.floor(curXView + minorMarkDistancePx * i);
-          ctx.moveTo(xView, rulerHeight - minorTickH);
-          ctx.lineTo(xView, rulerHeight);
+          tracing.drawLine(ctx,
+              xView, rulerHeight - minorTickH,
+              xView, rulerHeight);
         }
-
-        ctx.stroke();
       }
 
+      // Draw bottom bar.
+      ctx.strokeStyle = 'rgb(0, 0, 0)';
+      tracing.drawLine(ctx, 0, height, width, height);
+      ctx.stroke();
+
       // Give distance between directly adjacent markers.
-      if (measurements) {
+      if (!measurements)
+        return;
 
-        // Divide canvas horizontally between ruler and measurements.
-        ctx.moveTo(0, rulerHeight);
-        ctx.lineTo(canvasW, rulerHeight);
-        ctx.stroke();
+      // Draw middle bar.
+      tracing.drawLine(ctx, 0, rulerHeight, width, rulerHeight);
+      ctx.stroke();
 
-        // Obtain a sorted array of markers
-        var sortedMarkers = vp.markers.slice();
-        sortedMarkers.sort(function(a, b) {
-          return a.positionWorld_ - b.positionWorld_;
-        });
+      // Obtain a sorted array of markers
+      var sortedMarkers = vp.markers.slice();
+      sortedMarkers.sort(function(a, b) {
+        return a.positionWorld_ - b.positionWorld_;
+      });
 
-        // Distance Variables.
-        var displayDistance;
-        var unitDivisor;
-        var displayTextColor = 'rgb(0,0,0)';
-        var measurementsPosY = rulerHeight + 2;
+      // Distance Variables.
+      var displayDistance;
+      var displayTextColor = 'rgb(0,0,0)';
 
-        // Arrow Variables.
-        var arrowSpacing = 10;
-        var arrowColor = 'rgb(128,121,121)';
-        var arrowPosY = measurementsPosY + 4;
-        var arrowWidthView = 3;
-        var spaceForArrowsView = 2 * (arrowWidthView + arrowSpacing);
+      // Arrow Variables.
+      var arrowSpacing = 10;
+      var arrowColor = 'rgb(128,121,121)';
+      var arrowPosY = rulerHeight * 1.75;
+      var arrowWidthView = 3;
+      var spaceForArrowsView = 2 * (arrowWidthView + arrowSpacing);
 
-        for (i = 0; i < sortedMarkers.length - 1; i++) {
-          var rightMarker = sortedMarkers[i + 1];
-          var leftMarker = sortedMarkers[i];
-          var distanceBetweenMarkers =
-              rightMarker.positionWorld - leftMarker.positionWorld;
-          var distanceBetweenMarkersView =
-              vp.xWorldVectorToView(distanceBetweenMarkers);
+      ctx.textBaseline = 'middle';
+      ctx.font = (14 * pixelRatio) + 'px sans-serif';
+      var textPosY = arrowPosY;
 
-          var positionInMiddleOfMarkers = leftMarker.positionWorld +
-                                              distanceBetweenMarkers / 2;
-          var positionInMiddleOfMarkersView =
-              vp.xWorldToView(positionInMiddleOfMarkers);
+      // If there is only on marker, draw it's timestamp next to the line.
+      if (sortedMarkers.length === 1) {
+        var markerWorld = sortedMarkers[0].positionWorld;
+        var markerView = vp.xWorldToView(markerWorld);
+        var displayValue = markerWorld / unitDivisor;
+        displayValue = Math.abs((Math.floor(displayValue * 1000) / 1000));
 
-          // Determine units.
-          if (distanceBetweenMarkers < 100) {
-            unit = 'ms';
-            unitDivisor = 1;
-          } else {
-            unit = 's';
-            unitDivisor = 1000;
-          }
-          // Calculate display value to print.
-          displayDistance = distanceBetweenMarkers / unitDivisor;
-          var roundedDisplayDistance =
-              Math.abs((Math.floor(displayDistance * 1000) / 1000));
-          var textToDraw = roundedDisplayDistance + ' ' + unit;
-          var textWidthView = ctx.measureText(textToDraw).width;
-          var textWidthWorld = vp.xViewVectorToWorld(textWidthView);
-          var spaceForArrowsAndTextView = textWidthView +
-                                          spaceForArrowsView + arrowSpacing;
+        var textToDraw = displayValue + ' ' + unit;
+        var textLeftView = markerView + 4 * pixelRatio;
+        var textWidthView = ctx.measureText(textToDraw).width;
 
-          // Set text positions.
-          var textLeft = leftMarker.positionWorld +
-              (distanceBetweenMarkers / 2) - (textWidthWorld / 2);
-          var textRight = textLeft + textWidthWorld;
-          var textPosY = measurementsPosY;
-          var textLeftView = vp.xWorldToView(textLeft);
-          var textRightView = vp.xWorldToView(textRight);
-          var leftMarkerView = vp.xWorldToView(leftMarker.positionWorld);
-          var rightMarkerView = vp.xWorldToView(rightMarker.positionWorld);
-          var textDrawn = false;
+        // Put text to the left in case it gets cut off.
+        if (textLeftView + textWidthView > width)
+          textLeftView = markerView - 4 * pixelRatio - textWidthView;
 
+        ctx.fillStyle = displayTextColor;
+        ctx.fillText(textToDraw, textLeftView, textPosY);
+      }
+
+      for (i = 0; i < sortedMarkers.length - 1; i++) {
+        var leftMarker = sortedMarkers[i];
+        var rightMarker = sortedMarkers[i + 1];
+        var leftMarkerView = vp.xWorldToView(leftMarker.positionWorld);
+        var rightMarkerView = vp.xWorldToView(rightMarker.positionWorld);
+
+        var distanceBetweenMarkers =
+            rightMarker.positionWorld - leftMarker.positionWorld;
+        var distanceBetweenMarkersView =
+            vp.xWorldVectorToView(distanceBetweenMarkers);
+        var positionInMiddleOfMarkersView =
+            leftMarkerView + (distanceBetweenMarkersView / 2);
+
+        // Determine units.
+        if (distanceBetweenMarkers < 100) {
+          unit = 'ms';
+          unitDivisor = 1;
+        } else {
+          unit = 's';
+          unitDivisor = 1000;
+        }
+
+        // Calculate display value to print.
+        displayDistance = distanceBetweenMarkers / unitDivisor;
+        var roundedDisplayDistance =
+            Math.abs((Math.floor(displayDistance * 1000) / 1000));
+        var textToDraw = roundedDisplayDistance + ' ' + unit;
+        var textWidthView = ctx.measureText(textToDraw).width;
+        var spaceForArrowsAndTextView =
+            textWidthView + spaceForArrowsView + arrowSpacing;
+
+        // Set text positions.
+        var textLeftView = positionInMiddleOfMarkersView - textWidthView / 2;
+        var textRightView = textLeftView + textWidthView;
+
+        if (sortedMarkers.length === 2 &&
+            spaceForArrowsAndTextView > distanceBetweenMarkersView) {
+          // Print the display distance text right of the 2 markers.
+          textLeftView = rightMarkerView + 2 * arrowSpacing;
+
+          // Put text to the left in case it gets cut off.
+          if (textLeftView + textWidthView > width)
+            textLeftView = leftMarkerView - 2 * arrowSpacing - textWidthView;
+
+          ctx.fillStyle = displayTextColor;
+          ctx.fillText(textToDraw, textLeftView, textPosY);
+
+          // Draw the arrows pointing from outside in and a line in between.
+          ctx.strokeStyle = arrowColor;
+          ctx.beginPath();
+          tracing.drawLine(ctx, leftMarkerView, arrowPosY, rightMarkerView,
+              arrowPosY);
+          ctx.stroke();
+
+          ctx.fillStyle = arrowColor;
+          this.drawArrow(ctx, leftMarkerView - 1.5 * arrowSpacing, arrowPosY,
+              leftMarkerView, arrowPosY, arrowWidthView);
+          this.drawArrow(ctx, rightMarkerView + 1.5 * arrowSpacing,
+              arrowPosY, rightMarkerView, arrowPosY, arrowWidthView);
+
+        } else if (spaceForArrowsView <= distanceBetweenMarkersView) {
+          var leftArrowStart;
+          var rightArrowStart;
           if (spaceForArrowsAndTextView <= distanceBetweenMarkersView) {
             // Print the display distance text.
             ctx.fillStyle = displayTextColor;
             ctx.fillText(textToDraw, textLeftView, textPosY);
-            textDrawn = true;
+
+            leftArrowStart = textLeftView - arrowSpacing;
+            rightArrowStart = textRightView + arrowSpacing;
+          } else {
+            leftArrowStart = positionInMiddleOfMarkersView;
+            rightArrowStart = positionInMiddleOfMarkersView;
           }
 
-          if (spaceForArrowsView <= distanceBetweenMarkersView) {
-            var leftArrowStart;
-            var rightArrowStart;
-            if (textDrawn) {
-              leftArrowStart = textLeftView - arrowSpacing;
-              rightArrowStart = textRightView + arrowSpacing;
-            } else {
-              leftArrowStart = positionInMiddleOfMarkersView;
-              rightArrowStart = positionInMiddleOfMarkersView;
-            }
-            // Draw left arrow.
-            this.drawArrow_(ctx, leftArrowStart, arrowPosY,
-                leftMarkerView, arrowPosY, arrowWidthView, arrowColor);
-            // Draw right arrow.
-            this.drawArrow_(ctx, rightArrowStart, arrowPosY,
-                rightMarkerView, arrowPosY, arrowWidthView, arrowColor);
-          }
+          // Draw the arrows pointing inside out.
+          ctx.strokeStyle = arrowColor;
+          ctx.fillStyle = arrowColor;
+          this.drawArrow(ctx, leftArrowStart, arrowPosY,
+              leftMarkerView, arrowPosY, arrowWidthView);
+          this.drawArrow(ctx, rightArrowStart, arrowPosY,
+              rightMarkerView, arrowPosY, arrowWidthView);
         }
       }
+
+      ctx.restore();
     },
 
     /**

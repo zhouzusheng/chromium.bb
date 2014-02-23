@@ -6,82 +6,52 @@
 
 #include "StyleBuilderFunctions.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
-#include "core/css/resolver/StyleResolver.h"
+#include "core/css/resolver/StyleResolverState.h"
 
 // FIXME: currently we're just generating a switch statement, but we should
 //   test other variations for performance once we have more properties here.
 
-{%- macro set_value(property) -%}
-    styleResolver->style()->{{property.setter}}
+{%- macro set_value(property) %}
+{%- if property.svg -%}
+    state.style()->accessSVGStyle()->{{property.setter}}
+{%- else -%}
+    state.style()->{{property.setter}}
+{%- endif %}
 {%- endmacro %}
 
 namespace WebCore {
-
-{%- macro apply_value_length(property) -%}
-    if (!value->isPrimitiveValue())
-        return;
-
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-{% if property.use_none %}
-    if (primitiveValue->getValueID() == CSSValueNone)
-        {{ set_value(property) }}(Length(Undefined));
-{% endif %}
-
-{%- if property.use_intrinsic %}
-    if (primitiveValue->getValueID() == CSSValueIntrinsic)
-        {{ set_value(property) }}(Length(Intrinsic));
-    else if (primitiveValue->getValueID() == CSSValueMinIntrinsic)
-        {{ set_value(property) }}(Length(MinIntrinsic));
-    else if (primitiveValue->getValueID() == CSSValueWebkitMinContent)
-        {{ set_value(property) }}(Length(MinContent));
-    else if (primitiveValue->getValueID() == CSSValueWebkitMaxContent)
-        {{ set_value(property) }}(Length(MaxContent));
-    else if (primitiveValue->getValueID() == CSSValueWebkitFillAvailable)
-        {{ set_value(property) }}(Length(FillAvailable));
-    else if (primitiveValue->getValueID() == CSSValueWebkitFitContent)
-        {{ set_value(property) }}(Length(FitContent));
-{% endif %}
-
-{%- if property.use_auto %}
-    if (primitiveValue->getValueID() == CSSValueAuto)
-        {{ set_value(property) }}(Length());
-{%- endif %}
-
-    if (primitiveValue->isLength()) {
-        Length length = primitiveValue->computeLength<Length>(styleResolver->style(), styleResolver->rootElementStyle(), styleResolver->style()->effectiveZoom());
-        length.setQuirk(primitiveValue->isQuirkValue());
-        {{ set_value(property) }}(length);
-    } else if (primitiveValue->isPercentage())
-        {{ set_value(property) }}(Length(primitiveValue->getDoubleValue(), Percent));
-    else if (primitiveValue->isCalculatedPercentageWithLength())
-        {{ set_value(property) }}(Length(primitiveValue->cssCalcValue()->toCalcValue(styleResolver->style(), styleResolver->rootElementStyle(), styleResolver->style()->effectiveZoom())));
-    else if (primitiveValue->isViewportPercentageLength())
-        {{ set_value(property) }}(primitiveValue->viewportPercentageLength());
-{%- endmacro %}
 
 {%- for property_id, property in properties.items() if not property.use_handlers_for %}
 {%- call wrap_with_condition(property.condition) %}
 {%- set apply_type = property.apply_type %}
 
 {%- if not property.custom_initial %}
-void StyleBuilderFunctions::applyInitial{{property_id}}(StyleResolver* styleResolver)
+void StyleBuilderFunctions::applyInitial{{property_id}}(StyleResolverState& state)
 {
+{%- if property.svg %}
+    {{ set_value(property) }}(SVGRenderStyle::{{property.initial}}());
+{%- else %}
     {{ set_value(property) }}(RenderStyle::{{property.initial}}());
+{%- endif %}
 }
 {% endif %}
 
 {%- if not property.custom_inherit %}
-void StyleBuilderFunctions::applyInherit{{property_id}}(StyleResolver* styleResolver)
+void StyleBuilderFunctions::applyInherit{{property_id}}(StyleResolverState& state)
 {
-    {{ set_value(property) }}(styleResolver->parentStyle()->{{property.getter}}());
+{%- if property.svg %}
+    {{ set_value(property) }}(state.parentStyle()->svgStyle()->{{property.getter}}());
+{%- else %}
+    {{ set_value(property) }}(state.parentStyle()->{{property.getter}}());
+{%- endif %}
 }
 {% endif %}
 
 {%- if not property.custom_value %}
-void StyleBuilderFunctions::applyValue{{property_id}}(StyleResolver* styleResolver, CSSValue* value)
+void StyleBuilderFunctions::applyValue{{property_id}}(StyleResolverState& state, CSSValue* value)
 {
-{%- if apply_type == "length" %}
-    {{ apply_value_length(property) }}
+{%- if property.converter %}
+    {{ set_value(property) }}(StyleBuilderConverter::{{property.converter}}(state, value));
 {%- else %}
     {{ set_value(property) }}(static_cast<{{property.type_name}}>(*toCSSPrimitiveValue(value)));
 {%- endif %}
@@ -91,7 +61,7 @@ void StyleBuilderFunctions::applyValue{{property_id}}(StyleResolver* styleResolv
 {%- endcall %}
 {%- endfor %}
 
-bool StyleBuilder::applyProperty(CSSPropertyID property, StyleResolver* styleResolver, CSSValue* value, bool isInitial, bool isInherit) {
+bool StyleBuilder::applyProperty(CSSPropertyID property, StyleResolverState& state, CSSValue* value, bool isInitial, bool isInherit) {
     switch(property) {
 {%- for property_id, property in properties.items() %}
 {%- set used_property = properties[property.use_handlers_for] or property %}
@@ -99,11 +69,11 @@ bool StyleBuilder::applyProperty(CSSPropertyID property, StyleResolver* styleRes
 {%- call wrap_with_condition(used_property.condition) %}
     case {{ property_id }}:
         if (isInitial)
-            StyleBuilderFunctions::applyInitial{{ used_property_id }}(styleResolver);
+            StyleBuilderFunctions::applyInitial{{ used_property_id }}(state);
         else if (isInherit)
-            StyleBuilderFunctions::applyInherit{{ used_property_id }}(styleResolver);
+            StyleBuilderFunctions::applyInherit{{ used_property_id }}(state);
         else
-            StyleBuilderFunctions::applyValue{{ used_property_id }}(styleResolver, value);
+            StyleBuilderFunctions::applyValue{{ used_property_id }}(state, value);
         return true;
 {%- endcall %}
 {% endfor %}

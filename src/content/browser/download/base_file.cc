@@ -198,7 +198,7 @@ void BaseFile::Cancel() {
   if (!full_path_.empty()) {
     bound_net_log_.AddEvent(net::NetLog::TYPE_DOWNLOAD_FILE_DELETED);
 
-    file_util::Delete(full_path_, false);
+    base::DeleteFile(full_path_, false);
   }
 }
 
@@ -209,6 +209,10 @@ void BaseFile::Finish() {
     secure_hash_->Finish(sha256_hash_, kSha256HashLen);
 
   Close();
+}
+
+void BaseFile::SetClientGuid(const std::string& guid) {
+  client_guid_ = guid;
 }
 
 // OS_WIN, OS_MACOSX and OS_LINUX have specialized implementations.

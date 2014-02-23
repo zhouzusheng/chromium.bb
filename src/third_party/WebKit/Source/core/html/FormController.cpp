@@ -25,7 +25,8 @@
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/platform/FileChooser.h"
-#include <wtf/text/StringBuilder.h>
+#include "wtf/HashTableDeletedValueType.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -81,13 +82,13 @@ FormControlState FormControlState::deserialize(const Vector<String>& stateVector
 
 class FormElementKey {
 public:
-    FormElementKey(AtomicStringImpl* = 0, AtomicStringImpl* = 0);
+    FormElementKey(StringImpl* = 0, StringImpl* = 0);
     ~FormElementKey();
     FormElementKey(const FormElementKey&);
     FormElementKey& operator=(const FormElementKey&);
 
-    AtomicStringImpl* name() const { return m_name; }
-    AtomicStringImpl* type() const { return m_type; }
+    StringImpl* name() const { return m_name; }
+    StringImpl* type() const { return m_type; }
 
     // Hash table deleted values, which are only constructed and never copied or destroyed.
     FormElementKey(WTF::HashTableDeletedValueType) : m_name(hashTableDeletedValue()) { }
@@ -97,13 +98,13 @@ private:
     void ref() const;
     void deref() const;
 
-    static AtomicStringImpl* hashTableDeletedValue() { return reinterpret_cast<AtomicStringImpl*>(-1); }
+    static StringImpl* hashTableDeletedValue() { return reinterpret_cast<StringImpl*>(-1); }
 
-    AtomicStringImpl* m_name;
-    AtomicStringImpl* m_type;
+    StringImpl* m_name;
+    StringImpl* m_type;
 };
 
-FormElementKey::FormElementKey(AtomicStringImpl* name, AtomicStringImpl* type)
+FormElementKey::FormElementKey(StringImpl* name, StringImpl* type)
     : m_name(name)
     , m_type(type)
 {
@@ -386,7 +387,7 @@ static String formStateSignature()
     // In the legacy version of serialized state, the first item was a name
     // attribute value of a form control. The following string literal should
     // contain some characters which are rarely used for name attribute values.
-    DEFINE_STATIC_LOCAL(String, signature, (ASCIILiteral("\n\r?% WebKit serialized form state version 8 \n\r=&")));
+    DEFINE_STATIC_LOCAL(String, signature, ("\n\r?% WebKit serialized form state version 8 \n\r=&"));
     return signature;
 }
 
@@ -414,7 +415,7 @@ Vector<String> FormController::formElementsState() const
     stateVector.reserveInitialCapacity(m_formElementsWithState.size() * 4);
     stateVector.append(formStateSignature());
     for (SavedFormStateMap::const_iterator it = stateMap->begin(); it != stateMap->end(); ++it) {
-        stateVector.append(it->key.get());
+        stateVector.append(it->key);
         it->value->serializeTo(stateVector);
     }
     bool hasOnlySignature = stateVector.size() == 1;

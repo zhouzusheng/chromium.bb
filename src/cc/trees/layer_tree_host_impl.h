@@ -5,12 +5,14 @@
 #ifndef CC_TREES_LAYER_TREE_HOST_IMPL_H_
 #define CC_TREES_LAYER_TREE_HOST_IMPL_H_
 
+#include <list>
 #include <string>
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "cc/animation/animation_events.h"
 #include "cc/animation/animation_registrar.h"
 #include "cc/base/cc_export.h"
@@ -20,13 +22,14 @@
 #include "cc/layers/layer_lists.h"
 #include "cc/layers/render_pass_sink.h"
 #include "cc/output/begin_frame_args.h"
+#include "cc/output/managed_memory_policy.h"
 #include "cc/output/output_surface_client.h"
 #include "cc/output/renderer.h"
 #include "cc/quads/render_pass.h"
+#include "cc/resources/resource_provider.h"
 #include "cc/resources/tile_manager.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "third_party/skia/include/core/SkPicture.h"
 #include "ui/gfx/rect.h"
 
 namespace cc {
@@ -43,9 +46,10 @@ class PaintTimeCounter;
 class MemoryHistory;
 class RenderingStatsInstrumentation;
 class RenderPassDrawQuad;
-class ResourceProvider;
 class TopControlsManager;
+class UIResourceBitmap;
 struct RendererCapabilities;
+struct UIResourceRequest;
 
 // LayerTreeHost->Proxy callback interface.
 class LayerTreeHostImplClient {
@@ -135,6 +139,7 @@ class CC_EXPORT LayerTreeHostImpl
   struct CC_EXPORT FrameData : public RenderPassSink {
     FrameData();
     virtual ~FrameData();
+    scoped_ptr<base::Value> AsValue() const;
 
     std::vector<gfx::Rect> occluding_screen_space_rects;
     std::vector<gfx::Rect> non_occluding_screen_space_rects;
@@ -176,6 +181,9 @@ class CC_EXPORT LayerTreeHostImpl
   // the URL bar and non-overlay scrollbars.
   gfx::SizeF VisibleViewportSize() const;
 
+  // Evict all textures by enforcing a memory policy with an allocation of 0.
+  void EvictTexturesForTesting();
+
   // RendererClient implementation
   virtual gfx::Rect DeviceViewport() const OVERRIDE;
  private:
@@ -183,35 +191,36 @@ class CC_EXPORT LayerTreeHostImpl
   virtual const LayerTreeSettings& Settings() const OVERRIDE;
  public:
   virtual void SetFullRootLayerDamage() OVERRIDE;
-  virtual void SetManagedMemoryPolicy(const ManagedMemoryPolicy& policy)
-      OVERRIDE;
-  virtual void EnforceManagedMemoryPolicy(const ManagedMemoryPolicy& policy)
-      OVERRIDE;
   virtual bool HasImplThread() const OVERRIDE;
   virtual bool ShouldClearRootRenderPass() const OVERRIDE;
   virtual CompositorFrameMetadata MakeCompositorFrameMetadata() const OVERRIDE;
   virtual bool AllowPartialSwap() const OVERRIDE;
+  virtual bool ExternalStencilTestEnabled() const OVERRIDE;
 
   // TileManagerClient implementation.
-  virtual void DidInitializeVisibleTile() OVERRIDE;
   virtual void NotifyReadyToActivate() OVERRIDE;
 
   // OutputSurfaceClient implementation.
   virtual bool DeferredInitialize(
       scoped_refptr<ContextProvider> offscreen_context_provider) OVERRIDE;
+  virtual void ReleaseGL() OVERRIDE;
   virtual void SetNeedsRedrawRect(gfx::Rect rect) OVERRIDE;
-  virtual void BeginFrame(const BeginFrameArgs& args)
-      OVERRIDE;
+  virtual void BeginFrame(const BeginFrameArgs& args) OVERRIDE;
   virtual void SetExternalDrawConstraints(const gfx::Transform& transform,
                                           gfx::Rect viewport) OVERRIDE;
+  virtual void SetExternalStencilTest(bool enabled) OVERRIDE;
   virtual void DidLoseOutputSurface() OVERRIDE;
   virtual void OnSwapBuffersComplete(const CompositorFrameAck* ack) OVERRIDE;
+  virtual void SetMemoryPolicy(const ManagedMemoryPolicy& policy) OVERRIDE;
+  virtual void SetDiscardBackBufferWhenNotVisible(bool discard) OVERRIDE;
+  virtual void SetTreeActivationCallback(const base::Closure& callback)
+      OVERRIDE;
 
   // Called from LayerTreeImpl.
   void OnCanDrawStateChangedForTree();
 
   // Implementation
-  bool CanDraw();
+  bool CanDraw() const;
   OutputSurface* output_surface() const { return output_surface_.get(); }
 
   std::string LayerTreeAsJson() const;
@@ -237,7 +246,7 @@ class CC_EXPORT LayerTreeHostImpl
   const LayerTreeImpl* pending_tree() const { return pending_tree_.get(); }
   const LayerTreeImpl* recycle_tree() const { return recycle_tree_.get(); }
   virtual void CreatePendingTree();
-  void CheckForCompletedTileUploads();
+  void UpdateVisibleTiles();
   virtual void ActivatePendingTreeIfNeeded();
 
   // Shortcuts to layers on the active tree.
@@ -253,9 +262,7 @@ class CC_EXPORT LayerTreeHostImpl
 
   ManagedMemoryPolicy ActualManagedMemoryPolicy() const;
 
-  size_t memory_allocation_limit_bytes() const {
-    return managed_memory_policy_.bytes_limit_when_visible;
-  }
+  size_t memory_allocation_limit_bytes() const;
 
   void SetViewportSize(gfx::Size device_viewport_size);
   gfx::Size device_viewport_size() const { return device_viewport_size_; }
@@ -308,7 +315,7 @@ class CC_EXPORT LayerTreeHostImpl
     return animation_registrar_.get();
   }
 
-  void SetDebugState(const LayerTreeDebugState& debug_state);
+  void SetDebugState(const LayerTreeDebugState& new_debug_state);
   const LayerTreeDebugState& debug_state() const { return debug_state_; }
 
   class CC_EXPORT CullRenderPassesWithCachedTextures {
@@ -348,8 +355,6 @@ class CC_EXPORT LayerTreeHostImpl
   template <typename RenderPassCuller>
       static void RemoveRenderPasses(RenderPassCuller culler, FrameData* frame);
 
-  skia::RefPtr<SkPicture> CapturePicture();
-
   gfx::Vector2dF accumulated_root_overscroll() const {
     return accumulated_root_overscroll_;
   }
@@ -367,10 +372,18 @@ class CC_EXPORT LayerTreeHostImpl
 
   virtual base::TimeTicks CurrentPhysicalTimeTicks() const;
 
-  scoped_ptr<base::Value> AsValue() const;
+  scoped_ptr<base::Value> AsValue() const { return AsValueWithFrame(NULL); }
+  scoped_ptr<base::Value> AsValueWithFrame(FrameData* frame) const;
   scoped_ptr<base::Value> ActivationStateAsValue() const;
 
   bool page_scale_animation_active() const { return !!page_scale_animation_; }
+
+  void CreateUIResource(UIResourceId uid,
+                        scoped_refptr<UIResourceBitmap> bitmap);
+  // Deletes a UI resource.  May safely be called more than once.
+  void DeleteUIResource(UIResourceId uid);
+
+  ResourceProvider::ResourceId ResourceIdForUIResource(UIResourceId uid) const;
 
  protected:
   LayerTreeHostImpl(
@@ -397,7 +410,10 @@ class CC_EXPORT LayerTreeHostImpl
 
  private:
   void CreateAndSetRenderer(OutputSurface* output_surface,
-                            ResourceProvider* resource_provider);
+                            ResourceProvider* resource_provider,
+                            bool skip_gl_renderer);
+  void CreateAndSetTileManager(ResourceProvider* resource_provider,
+                               bool using_map_image);
   void ReleaseTreeResources();
   void EnforceZeroBudget(bool zero_budget);
 
@@ -424,18 +440,24 @@ class CC_EXPORT LayerTreeHostImpl
   bool CalculateRenderPasses(FrameData* frame);
 
   void SendReleaseResourcesRecursive(LayerImpl* current);
-  void ClearRenderSurfaces();
   bool EnsureRenderSurfaceLayerList();
   void ClearCurrentlyScrollingLayer();
 
   void AnimateScrollbarsRecursive(LayerImpl* layer,
                                   base::TimeTicks time);
 
-  static LayerImpl* GetNonCompositedContentLayerRecursive(LayerImpl* layer);
-
   void UpdateCurrentFrameTime(base::TimeTicks* ticks, base::Time* now) const;
 
   void StartScrollbarAnimationRecursive(LayerImpl* layer, base::TimeTicks time);
+  void SetManagedMemoryPolicy(const ManagedMemoryPolicy& policy,
+                              bool zero_budget);
+  void EnforceManagedMemoryPolicy(const ManagedMemoryPolicy& policy);
+
+  void DidInitializeVisibleTile();
+
+  typedef base::hash_map<UIResourceId, ResourceProvider::ResourceId>
+      UIResourceMap;
+  UIResourceMap ui_resource_map_;
 
   scoped_ptr<OutputSurface> output_surface_;
 
@@ -468,7 +490,7 @@ class CC_EXPORT LayerTreeHostImpl
   LayerTreeSettings settings_;
   LayerTreeDebugState debug_state_;
   bool visible_;
-  ManagedMemoryPolicy managed_memory_policy_;
+  ManagedMemoryPolicy cached_managed_memory_policy_;
 
   gfx::Vector2dF accumulated_root_overscroll_;
   gfx::Vector2dF current_fling_velocity_;
@@ -520,6 +542,7 @@ class CC_EXPORT LayerTreeHostImpl
   // used for scrollable size.
   gfx::Transform external_transform_;
   gfx::Rect external_viewport_;
+  bool external_stencil_test_enabled_;
 
   gfx::Rect viewport_damage_rect_;
 
@@ -529,6 +552,11 @@ class CC_EXPORT LayerTreeHostImpl
   scoped_ptr<AnimationRegistrar> animation_registrar_;
 
   RenderingStatsInstrumentation* rendering_stats_instrumentation_;
+
+  bool need_to_update_visible_tiles_before_draw_;
+
+  // Optional callback to notify of new tree activations.
+  base::Closure tree_activation_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerTreeHostImpl);
 };

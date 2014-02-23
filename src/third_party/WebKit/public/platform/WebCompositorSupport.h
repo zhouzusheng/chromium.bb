@@ -39,6 +39,7 @@ class WebContentLayer;
 class WebContentLayerClient;
 class WebExternalTextureLayer;
 class WebExternalTextureLayerClient;
+class WebFilterOperations;
 class WebFloatAnimationCurve;
 class WebGraphicsContext3D;
 class WebImageLayer;
@@ -65,9 +66,7 @@ public:
 
     virtual WebContentLayer* createContentLayer(WebContentLayerClient*) { return 0; }
 
-    virtual WebExternalTextureLayer* createExternalTextureLayer(WebExternalTextureLayerClient* = 0) { return 0; }
-
-    virtual WebExternalTextureLayer* createExternalTextureLayerForMailbox(WebExternalTextureLayerClient*) { return 0; }
+    virtual WebExternalTextureLayer* createExternalTextureLayer(WebExternalTextureLayerClient*) { return 0; }
 
     virtual WebImageLayer* createImageLayer() { return 0; }
 
@@ -86,6 +85,7 @@ public:
 
     virtual WebTransformOperations* createTransformOperations() { return 0; }
 
+    virtual WebFilterOperations* createFilterOperations() { return 0; }
 
 protected:
     virtual ~WebCompositorSupport() { }

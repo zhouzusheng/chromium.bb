@@ -32,16 +32,12 @@ void GrDrawState::setFromPaint(const GrPaint& paint, const SkMatrix& vm, GrRende
     fColorStages.reset();
     fCoverageStages.reset();
 
-    for (int i = 0; i < GrPaint::kMaxColorStages; ++i) {
-        if (paint.isColorStageEnabled(i)) {
-            fColorStages.push_back(paint.getColorStage(i));
-        }
+    for (int i = 0; i < paint.numColorStages(); ++i) {
+        fColorStages.push_back(paint.getColorStage(i));
     }
 
-    for (int i = 0; i < GrPaint::kMaxCoverageStages; ++i) {
-        if (paint.isCoverageStageEnabled(i)) {
-            fCoverageStages.push_back(paint.getCoverageStage(i));
-        }
+    for (int i = 0; i < paint.numCoverageStages(); ++i) {
+        fCoverageStages.push_back(paint.getCoverageStage(i));
     }
 
     this->setRenderTarget(rt);
@@ -50,7 +46,6 @@ void GrDrawState::setFromPaint(const GrPaint& paint, const SkMatrix& vm, GrRende
 
     // These have no equivalent in GrPaint, set them to defaults
     fCommon.fBlendConstant = 0x0;
-    fCommon.fCoverage = 0xffffffff;
     fCommon.fDrawFace = kBoth_DrawFace;
     fCommon.fStencilSettings.setDisabled();
     this->resetStateFlags();
@@ -59,6 +54,7 @@ void GrDrawState::setFromPaint(const GrPaint& paint, const SkMatrix& vm, GrRende
     this->enableState(GrDrawState::kClip_StateBit);
 
     this->setColor(paint.getColor());
+    this->setCoverage4(paint.getCoverage());
     this->setState(GrDrawState::kDither_StateBit, paint.isDither());
     this->setState(GrDrawState::kHWAntialias_StateBit, paint.isAntiAlias());
 

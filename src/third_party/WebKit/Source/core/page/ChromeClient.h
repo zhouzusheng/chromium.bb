@@ -25,6 +25,7 @@
 #include "core/accessibility/AXObjectCache.h"
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/loader/FrameLoader.h"
+#include "core/loader/NavigationPolicy.h"
 #include "core/page/ConsoleTypes.h"
 #include "core/page/FocusDirection.h"
 #include "core/platform/Cursor.h"
@@ -35,10 +36,10 @@
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/rendering/RenderEmbeddedObject.h"
 #include "modules/webdatabase/DatabaseDetails.h"
-#include <wtf/Forward.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/UnusedParam.h>
-#include <wtf/Vector.h>
+#include "wtf/Forward.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/UnusedParam.h"
+#include "wtf/Vector.h"
 
 
 #ifndef __OBJC__
@@ -55,7 +56,6 @@ class DateTimeChooser;
 class DateTimeChooserClient;
 class Element;
 class FileChooser;
-class FileIconLoader;
 class FloatRect;
 class Frame;
 class Geolocation;
@@ -105,8 +105,8 @@ public:
     // created Page has its show method called.
     // The FrameLoadRequest parameter is only for ChromeClient to check if the
     // request could be fulfilled. The ChromeClient should not load the request.
-    virtual Page* createWindow(Frame*, const FrameLoadRequest&, const WindowFeatures&, const NavigationAction&) = 0;
-    virtual void show() = 0;
+    virtual Page* createWindow(Frame*, const FrameLoadRequest&, const WindowFeatures&, const NavigationAction&, NavigationPolicy = NavigationPolicyIgnore) = 0;
+    virtual void show(NavigationPolicy) = 0;
 
     virtual bool canRunModal() = 0;
     virtual void runModal() = 0;
@@ -191,8 +191,6 @@ public:
     virtual PassRefPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) = 0;
 
     virtual void runOpenPanel(Frame*, PassRefPtr<FileChooser>) = 0;
-    // Asynchronous request to load an icon for specified filenames.
-    virtual void loadIconForFiles(const Vector<String>&, FileIconLoader*) = 0;
 
     // Asychronous request to enumerate all files in a directory chosen by the user.
     virtual void enumerateChosenDirectory(FileChooser*) = 0;
@@ -243,13 +241,10 @@ public:
     // For testing.
     virtual void setPagePopupDriver(PagePopupDriver*) = 0;
     virtual void resetPagePopupDriver() = 0;
-    // This function is called whenever a text field <input> is created. The
-    // implementation should return true if it wants to do something in
-    // addTextFieldDecorationsTo().
-    // The argument is always non-0.
-    virtual bool willAddTextFieldDecorationsTo(HTMLInputElement*) { return false; }
-    // The argument is always non-0.
-    virtual void addTextFieldDecorationsTo(HTMLInputElement*) { }
+
+    // FIXME: Should these be on a different client interface?
+    virtual bool isPasswordGenerationEnabled() const { return false; }
+    virtual void openPasswordGenerator(HTMLInputElement*) { }
 
     virtual void postAccessibilityNotification(AccessibilityObject*, AXObjectCache::AXNotification) { }
     virtual String acceptLanguages() = 0;
@@ -263,7 +258,7 @@ public:
     virtual bool shouldRunModalDialogDuringPageDismissal(const DialogType&, const String& dialogMessage, FrameLoader::PageDismissalType) const { UNUSED_PARAM(dialogMessage); return true; }
 
     virtual void numWheelEventHandlersChanged(unsigned) = 0;
-        
+
     virtual bool isSVGImageChromeClient() const { return false; }
 
     virtual bool requestPointerLock() { return false; }

@@ -22,7 +22,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -50,8 +50,8 @@ static PassRefPtr<Geoposition> createGeoposition(GeolocationPosition* position)
 {
     if (!position)
         return 0;
-    
-    RefPtr<Coordinates> coordinates = Coordinates::create(position->latitude(), position->longitude(), position->canProvideAltitude(), position->altitude(), 
+
+    RefPtr<Coordinates> coordinates = Coordinates::create(position->latitude(), position->longitude(), position->canProvideAltitude(), position->altitude(),
                                                           position->accuracy(), position->canProvideAltitudeAccuracy(), position->altitudeAccuracy(),
                                                           position->canProvideHeading(), position->heading(), position->canProvideSpeed(), position->speed());
     return Geoposition::create(coordinates.release(), convertSecondsToDOMTimeStamp(position->timestamp()));
@@ -165,7 +165,7 @@ void Geolocation::GeoNotifier::timerFired(Timer<GeoNotifier>*)
     }
 
     if (m_errorCallback) {
-        RefPtr<PositionError> error = PositionError::create(PositionError::TIMEOUT, ASCIILiteral("Timeout expired"));
+        RefPtr<PositionError> error = PositionError::create(PositionError::TIMEOUT, "Timeout expired");
         m_errorCallback->handleEvent(error.get());
     }
     m_geolocation->requestTimedOut(this);
@@ -310,7 +310,7 @@ int Geolocation::watchPosition(PassRefPtr<PositionCallback> successCallback, Pas
     int watchID;
     // Keep asking for the next id until we're given one that we don't already have.
     do {
-        watchID = m_scriptExecutionContext->circularSequentialID();
+        watchID = scriptExecutionContext()->circularSequentialID();
     } while (!m_watchers.add(watchID, notifier));
     return watchID;
 }
@@ -320,7 +320,7 @@ void Geolocation::startRequest(GeoNotifier *notifier)
     // Check whether permissions have already been denied. Note that if this is the case,
     // the permission state can not change again in the lifetime of this page.
     if (isDenied())
-        notifier->setFatalError(PositionError::create(PositionError::PERMISSION_DENIED, ASCIILiteral(permissionDeniedErrorMessage)));
+        notifier->setFatalError(PositionError::create(PositionError::PERMISSION_DENIED, permissionDeniedErrorMessage));
     else if (haveSuitableCachedPosition(notifier->options()))
         notifier->setUseCachedPosition();
     else if (notifier->hasZeroTimeout())
@@ -332,7 +332,7 @@ void Geolocation::startRequest(GeoNotifier *notifier)
     } else if (startUpdating(notifier))
         notifier->startTimerIfNeeded();
     else
-        notifier->setFatalError(PositionError::create(PositionError::POSITION_UNAVAILABLE, ASCIILiteral(failedToStartServiceErrorMessage)));
+        notifier->setFatalError(PositionError::create(PositionError::POSITION_UNAVAILABLE, failedToStartServiceErrorMessage));
 }
 
 void Geolocation::fatalErrorOccurred(Geolocation::GeoNotifier* notifier)
@@ -350,7 +350,7 @@ void Geolocation::requestUsesCachedPosition(GeoNotifier* notifier)
     // This is called asynchronously, so the permissions could have been denied
     // since we last checked in startRequest.
     if (isDenied()) {
-        notifier->setFatalError(PositionError::create(PositionError::PERMISSION_DENIED, ASCIILiteral(permissionDeniedErrorMessage)));
+        notifier->setFatalError(PositionError::create(PositionError::PERMISSION_DENIED, permissionDeniedErrorMessage));
         return;
     }
 
@@ -384,7 +384,7 @@ void Geolocation::makeCachedPositionCallbacks()
             if (notifier->hasZeroTimeout() || startUpdating(notifier))
                 notifier->startTimerIfNeeded();
             else
-                notifier->setFatalError(PositionError::create(PositionError::POSITION_UNAVAILABLE, ASCIILiteral(failedToStartServiceErrorMessage)));
+                notifier->setFatalError(PositionError::create(PositionError::POSITION_UNAVAILABLE, failedToStartServiceErrorMessage));
         }
     }
 
@@ -424,7 +424,7 @@ void Geolocation::clearWatch(int watchID)
     if (GeoNotifier* notifier = m_watchers.find(watchID))
         m_pendingForPermissionNotifiers.remove(notifier);
     m_watchers.remove(watchID);
-    
+
     if (!hasListeners())
         stopUpdating();
 }
@@ -437,7 +437,7 @@ void Geolocation::setIsAllowed(bool allowed)
     // This may be due to either a new position from the service, or a cached
     // position.
     m_allowGeolocation = allowed ? Yes : No;
-    
+
     // Permission request was made during the startRequest process
     if (!m_pendingForPermissionNotifiers.isEmpty()) {
         handlePendingPermissionNotifiers();
@@ -446,7 +446,7 @@ void Geolocation::setIsAllowed(bool allowed)
     }
 
     if (!isAllowed()) {
-        RefPtr<PositionError> error = PositionError::create(PositionError::PERMISSION_DENIED,  ASCIILiteral(permissionDeniedErrorMessage));
+        RefPtr<PositionError> error = PositionError::create(PositionError::PERMISSION_DENIED, permissionDeniedErrorMessage);
         error->setIsFatal(true);
         handleError(error.get());
         m_requestsAwaitingCachedPosition.clear();
@@ -467,7 +467,7 @@ void Geolocation::sendError(GeoNotifierVector& notifiers, PositionError* error)
      GeoNotifierVector::const_iterator end = notifiers.end();
      for (GeoNotifierVector::const_iterator it = notifiers.begin(); it != end; ++it) {
          RefPtr<GeoNotifier> notifier = *it;
-         
+
          notifier->runErrorCallback(error);
      }
 }
@@ -490,7 +490,7 @@ void Geolocation::stopTimersForOneShots()
 {
     GeoNotifierVector copy;
     copyToVector(m_oneShots, copy);
-    
+
     stopTimer(copy);
 }
 
@@ -498,7 +498,7 @@ void Geolocation::stopTimersForWatchers()
 {
     GeoNotifierVector copy;
     m_watchers.getNotifiersVector(copy);
-    
+
     stopTimer(copy);
 }
 
@@ -512,7 +512,7 @@ void Geolocation::cancelRequests(GeoNotifierVector& notifiers)
 {
     GeoNotifierVector::const_iterator end = notifiers.end();
     for (GeoNotifierVector::const_iterator it = notifiers.begin(); it != end; ++it)
-        (*it)->setFatalError(PositionError::create(PositionError::POSITION_UNAVAILABLE, ASCIILiteral(framelessDocumentErrorMessage)));
+        (*it)->setFatalError(PositionError::create(PositionError::POSITION_UNAVAILABLE, framelessDocumentErrorMessage));
 }
 
 void Geolocation::cancelAllRequests()
@@ -551,7 +551,7 @@ void Geolocation::copyToSet(const GeoNotifierVector& src, GeoNotifierSet& dest)
 void Geolocation::handleError(PositionError* error)
 {
     ASSERT(error);
-    
+
     GeoNotifierVector oneShotsCopy;
     copyToVector(m_oneShots, oneShotsCopy);
 
@@ -603,13 +603,13 @@ void Geolocation::makeSuccessCallbacks()
 {
     ASSERT(lastPosition());
     ASSERT(isAllowed());
-    
+
     GeoNotifierVector oneShotsCopy;
     copyToVector(m_oneShots, oneShotsCopy);
-    
+
     GeoNotifierVector watchersCopy;
     m_watchers.getNotifiersVector(watchersCopy);
-    
+
     // Clear the lists before we make the callbacks, to avoid clearing notifiers
     // added by calls to Geolocation methods from the callbacks, and to prevent
     // further callbacks to these notifiers.
@@ -659,7 +659,7 @@ void Geolocation::stopUpdating()
 
 void Geolocation::handlePendingPermissionNotifiers()
 {
-    // While we iterate through the list, we need not worry about list being modified as the permission 
+    // While we iterate through the list, we need not worry about list being modified as the permission
     // is already set to Yes/No and no new listeners will be added to the pending list
     GeoNotifierSet::const_iterator end = m_pendingForPermissionNotifiers.end();
     for (GeoNotifierSet::const_iterator iter = m_pendingForPermissionNotifiers.begin(); iter != end; ++iter) {
@@ -671,9 +671,10 @@ void Geolocation::handlePendingPermissionNotifiers()
             if (startUpdating(notifier))
                 notifier->startTimerIfNeeded();
             else
-                notifier->setFatalError(PositionError::create(PositionError::POSITION_UNAVAILABLE, ASCIILiteral(failedToStartServiceErrorMessage)));
-        } else
-            notifier->setFatalError(PositionError::create(PositionError::PERMISSION_DENIED, ASCIILiteral(permissionDeniedErrorMessage)));
+                notifier->setFatalError(PositionError::create(PositionError::POSITION_UNAVAILABLE, failedToStartServiceErrorMessage));
+        } else {
+            notifier->setFatalError(PositionError::create(PositionError::PERMISSION_DENIED, permissionDeniedErrorMessage));
+        }
     }
 }
 

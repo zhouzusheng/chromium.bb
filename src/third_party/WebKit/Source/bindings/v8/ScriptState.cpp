@@ -32,12 +32,12 @@
 #include "bindings/v8/ScriptState.h"
 
 #include "V8Window.h"
-#include "V8WorkerContext.h"
+#include "V8WorkerGlobalScope.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8HiddenPropertyName.h"
 #include "bindings/v8/WorkerScriptController.h"
 #include "core/page/Frame.h"
-#include "core/workers/WorkerContext.h"
+#include "core/workers/WorkerGlobalScope.h"
 #include <v8.h>
 #include "wtf/Assertions.h"
 
@@ -96,13 +96,13 @@ void ScriptState::makeWeakCallback(v8::Isolate* isolate, v8::Persistent<v8::Cont
 
 bool ScriptState::evalEnabled() const
 {
-    v8::HandleScope handleScope;
+    v8::HandleScope handleScope(m_isolate);
     return context()->IsCodeGenerationFromStringsAllowed();
 }
 
 void ScriptState::setEvalEnabled(bool enabled)
 {
-    v8::HandleScope handleScope;
+    v8::HandleScope handleScope(m_isolate);
     return context()->AllowCodeGenerationFromStrings(enabled);
 }
 
@@ -112,9 +112,9 @@ ScriptState* mainWorldScriptState(Frame* frame)
     return ScriptState::forContext(frame->script()->mainWorldContext());
 }
 
-ScriptState* scriptStateFromWorkerContext(WorkerContext* workerContext)
+ScriptState* scriptStateFromWorkerGlobalScope(WorkerGlobalScope* workerGlobalScope)
 {
-    WorkerScriptController* script = workerContext->script();
+    WorkerScriptController* script = workerGlobalScope->script();
     if (!script)
         return 0;
 

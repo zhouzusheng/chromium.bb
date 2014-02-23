@@ -27,13 +27,12 @@
 #include "core/dom/Element.h"
 #include "core/dom/Event.h"
 #include "core/dom/EventSender.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/html/HTMLObjectElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/loader/CrossOriginAccessControl.h"
-#include "core/loader/cache/CachedImage.h"
-#include "core/loader/cache/CachedResourceLoader.h"
-#include "core/loader/cache/CachedResourceRequest.h"
+#include "core/loader/cache/FetchRequest.h"
+#include "core/loader/cache/ImageResource.h"
+#include "core/loader/cache/ResourceFetcher.h"
 #include "core/page/Frame.h"
 #include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderVideo.h"
@@ -76,6 +75,7 @@ ImageLoader::ImageLoader(Element* element)
     , m_imageComplete(true)
     , m_loadManually(false)
     , m_elementIsProtected(false)
+    , m_highPriorityClientCount(0)
 {
 }
 
@@ -102,7 +102,7 @@ ImageLoader::~ImageLoader()
         m_element->deref();
 }
 
-void ImageLoader::setImage(CachedImage* newImage)
+void ImageLoader::setImage(ImageResource* newImage)
 {
     setImageWithoutConsideringPendingLoadEvent(newImage);
 
@@ -111,11 +111,12 @@ void ImageLoader::setImage(CachedImage* newImage)
     updatedHasPendingEvent();
 }
 
-void ImageLoader::setImageWithoutConsideringPendingLoadEvent(CachedImage* newImage)
+void ImageLoader::setImageWithoutConsideringPendingLoadEvent(ImageResource* newImage)
 {
     ASSERT(m_failedLoadURL.isEmpty());
-    CachedImage* oldImage = m_image.get();
+    ImageResource* oldImage = m_image.get();
     if (newImage != oldImage) {
+        sourceImageChanged();
         m_image = newImage;
         if (m_hasPendingBeforeLoadEvent) {
             beforeLoadEventSender().cancelEvent(this);
@@ -150,14 +151,14 @@ void ImageLoader::updateFromElement()
 
     AtomicString attr = m_element->imageSourceURL();
 
-    if (attr == m_failedLoadURL)
+    if (!m_failedLoadURL.isEmpty() && attr == m_failedLoadURL)
         return;
 
     // Do not load any image if the 'src' attribute is missing or if it is
     // an empty string.
-    CachedResourceHandle<CachedImage> newImage = 0;
+    ResourcePtr<ImageResource> newImage = 0;
     if (!attr.isNull() && !stripLeadingAndTrailingHTMLSpaces(attr).isEmpty()) {
-        CachedResourceRequest request(ResourceRequest(document->completeURL(sourceURI(attr))), element()->localName());
+        FetchRequest request(ResourceRequest(document->completeURL(sourceURI(attr))), element()->localName());
 
         String crossOriginMode = m_element->fastGetAttribute(HTMLNames::crossoriginAttr);
         if (!crossOriginMode.isNull()) {
@@ -166,14 +167,15 @@ void ImageLoader::updateFromElement()
         }
 
         if (m_loadManually) {
-            bool autoLoadOtherImages = document->cachedResourceLoader()->autoLoadImages();
-            document->cachedResourceLoader()->setAutoLoadImages(false);
-            newImage = new CachedImage(request.resourceRequest());
+            bool autoLoadOtherImages = document->fetcher()->autoLoadImages();
+            document->fetcher()->setAutoLoadImages(false);
+            newImage = new ImageResource(request.resourceRequest());
             newImage->setLoading(true);
-            document->cachedResourceLoader()->m_documentResources.set(newImage->url(), newImage.get());
-            document->cachedResourceLoader()->setAutoLoadImages(autoLoadOtherImages);
-        } else
-            newImage = document->cachedResourceLoader()->requestImage(request);
+            document->fetcher()->m_documentResources.set(newImage->url(), newImage.get());
+            document->fetcher()->setAutoLoadImages(autoLoadOtherImages);
+        } else {
+            newImage = document->fetcher()->requestImage(request);
+        }
 
         // If we do not have an image here, it means that a cross-site
         // violation occurred, or that the image was blocked via Content
@@ -190,9 +192,11 @@ void ImageLoader::updateFromElement()
         m_hasPendingErrorEvent = true;
         errorEventSender().dispatchEventSoon(this);
     }
-    
-    CachedImage* oldImage = m_image.get();
+
+    ImageResource* oldImage = m_image.get();
     if (newImage != oldImage) {
+        sourceImageChanged();
+
         if (m_hasPendingBeforeLoadEvent) {
             beforeLoadEventSender().cancelEvent(this);
             m_hasPendingBeforeLoadEvent = false;
@@ -229,7 +233,10 @@ void ImageLoader::updateFromElement()
             // being queued to fire. Ensure this happens after beforeload is
             // dispatched.
             newImage->addClient(this);
+        } else {
+            updateRenderer();
         }
+
         if (oldImage)
             oldImage->removeClient(this);
     }
@@ -248,7 +255,7 @@ void ImageLoader::updateFromElementIgnoringPreviousError()
     updateFromElement();
 }
 
-void ImageLoader::notifyFinished(CachedResource* resource)
+void ImageLoader::notifyFinished(Resource* resource)
 {
     ASSERT(m_failedLoadURL.isEmpty());
     ASSERT(resource == m_image.get());
@@ -269,7 +276,7 @@ void ImageLoader::notifyFinished(CachedResource* resource)
         m_hasPendingErrorEvent = true;
         errorEventSender().dispatchEventSoon(this);
 
-        DEFINE_STATIC_LOCAL(String, consoleMessage, (ASCIILiteral("Cross-origin image load denied by Cross-Origin Resource Sharing policy.")));
+        DEFINE_STATIC_LOCAL(String, consoleMessage, ("Cross-origin image load denied by Cross-Origin Resource Sharing policy."));
         m_element->document()->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, consoleMessage);
 
         ASSERT(!m_hasPendingLoadEvent);
@@ -322,9 +329,9 @@ void ImageLoader::updateRenderer()
     // Only update the renderer if it doesn't have an image or if what we have
     // is a complete image.  This prevents flickering in the case where a dynamic
     // change is happening between two images.
-    CachedImage* cachedImage = imageResource->cachedImage();
+    ImageResource* cachedImage = imageResource->cachedImage();
     if (m_image != cachedImage && (m_imageComplete || !cachedImage))
-        imageResource->setCachedImage(m_image.get());
+        imageResource->setImageResource(m_image.get());
 }
 
 void ImageLoader::updatedHasPendingEvent()
@@ -346,7 +353,7 @@ void ImageLoader::updatedHasPendingEvent()
     } else {
         ASSERT(!m_derefElementTimer.isActive());
         m_derefElementTimer.startOneShot(0);
-    }   
+    }
 }
 
 void ImageLoader::timerFired(Timer<ImageLoader>*)
@@ -386,7 +393,7 @@ void ImageLoader::dispatchPendingBeforeLoadEvent()
 
     loadEventSender().cancelEvent(this);
     m_hasPendingLoadEvent = false;
-    
+
     if (m_element->hasTagName(HTMLNames::objectTag))
         static_cast<HTMLObjectElement*>(m_element)->renderFallbackContent();
 
@@ -423,6 +430,25 @@ void ImageLoader::dispatchPendingErrorEvent()
     updatedHasPendingEvent();
 }
 
+void ImageLoader::addClient(ImageLoaderClient* client)
+{
+    if (client->requestsHighLiveResourceCachePriority()) {
+        if (m_image && !m_highPriorityClientCount++)
+            m_image->setCacheLiveResourcePriority(Resource::CacheLiveResourcePriorityHigh);
+    }
+    m_clients.add(client);
+}
+void ImageLoader::removeClient(ImageLoaderClient* client)
+{
+    if (client->requestsHighLiveResourceCachePriority()) {
+        ASSERT(m_highPriorityClientCount);
+        m_highPriorityClientCount--;
+        if (m_image && !m_highPriorityClientCount)
+            m_image->setCacheLiveResourcePriority(Resource::CacheLiveResourcePriorityLow);
+    }
+    m_clients.remove(client);
+}
+
 void ImageLoader::dispatchPendingBeforeLoadEvents()
 {
     beforeLoadEventSender().dispatchPendingEvents();
@@ -444,18 +470,18 @@ void ImageLoader::elementDidMoveToNewDocument()
     setImage(0);
 }
 
+void ImageLoader::sourceImageChanged()
+{
+    HashSet<ImageLoaderClient*>::iterator end = m_clients.end();
+    for (HashSet<ImageLoaderClient*>::iterator it = m_clients.begin(); it != end; ++it) {
+        ImageLoaderClient* handle = *it;
+        handle->notifyImageSourceChanged();
+    }
+}
+
 inline void ImageLoader::clearFailedLoadURL()
 {
     m_failedLoadURL = AtomicString();
-}
-
-void ImageLoader::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Image);
-    info.addMember(m_element, "element");
-    info.addMember(m_image.get(), "image", WTF::RetainingPointer);
-    info.addMember(m_derefElementTimer, "derefElementTimer");
-    info.addMember(m_failedLoadURL, "failedLoadURL");
 }
 
 }

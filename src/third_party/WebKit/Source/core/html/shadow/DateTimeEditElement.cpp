@@ -28,6 +28,7 @@
 #include "core/html/shadow/DateTimeEditElement.h"
 
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/MouseEvent.h"
 #include "core/dom/Text.h"
 #include "core/html/DateTimeFieldsState.h"
@@ -402,14 +403,14 @@ void DateTimeEditBuilder::visitLiteral(const String& text)
     DEFINE_STATIC_LOCAL(AtomicString, textPseudoId, ("-webkit-datetime-edit-text", AtomicString::ConstructFromLiteral));
     ASSERT(text.length());
     RefPtr<HTMLDivElement> element = HTMLDivElement::create(m_editElement.document());
-    element->setPseudo(textPseudoId);
+    element->setPart(textPseudoId);
     if (m_parameters.locale.isRTL() && text.length()) {
         Direction dir = direction(text[0]);
         if (dir == SegmentSeparator || dir == WhiteSpaceNeutral || dir == OtherNeutral)
             element->appendChild(Text::create(m_editElement.document(), String(&rightToLeftMark, 1)));
     }
     element->appendChild(Text::create(m_editElement.document(), text));
-    m_editElement.fieldsWrapperElement()->appendChild(element);
+    m_editElement.fieldsWrapperElement()->appendChild(element, ASSERT_NO_EXCEPTION, AttachLazily);
 }
 
 DateTimeNumericFieldElement::Step DateTimeEditBuilder::createStep(double msPerFieldUnit, double msPerFieldSize) const
@@ -463,7 +464,7 @@ void DateTimeEditElement::addField(PassRefPtr<DateTimeFieldElement> field)
     if (m_fields.size() == m_fields.capacity())
         return;
     m_fields.append(field.get());
-    fieldsWrapperElement()->appendChild(field);
+    fieldsWrapperElement()->appendChild(field, ASSERT_NO_EXCEPTION, AttachLazily);
 }
 
 bool DateTimeEditElement::anyEditableFieldsHaveValues() const
@@ -484,7 +485,7 @@ void DateTimeEditElement::blurByOwner()
 PassRefPtr<DateTimeEditElement> DateTimeEditElement::create(Document* document, EditControlOwner& editControlOwner)
 {
     RefPtr<DateTimeEditElement> container = adoptRef(new DateTimeEditElement(document, editControlOwner));
-    container->setPseudo(AtomicString("-webkit-datetime-edit", AtomicString::ConstructFromLiteral));
+    container->setPart(AtomicString("-webkit-datetime-edit", AtomicString::ConstructFromLiteral));
     container->setAttribute(idAttr, ShadowElementNames::dateTimeEdit());
     return container.release();
 }
@@ -552,10 +553,10 @@ void DateTimeEditElement::focusIfNoFocus()
     focusOnNextFocusableField(0);
 }
 
-void DateTimeEditElement::focusByOwner(Node* oldFocusedNode)
+void DateTimeEditElement::focusByOwner(Element* oldFocusedElement)
 {
-    if (oldFocusedNode && oldFocusedNode->isElementNode() && toElement(oldFocusedNode)->isDateTimeFieldElement()) {
-        DateTimeFieldElement* oldFocusedField = static_cast<DateTimeFieldElement*>(oldFocusedNode);
+    if (oldFocusedElement && oldFocusedElement->isDateTimeFieldElement()) {
+        DateTimeFieldElement* oldFocusedField = static_cast<DateTimeFieldElement*>(oldFocusedElement);
         size_t index = fieldIndexOf(*oldFocusedField);
         if (index != invalidFieldIndex && oldFocusedField->isFocusable()) {
             oldFocusedField->focus();
@@ -572,9 +573,9 @@ DateTimeFieldElement* DateTimeEditElement::focusedField() const
 
 size_t DateTimeEditElement::focusedFieldIndex() const
 {
-    Node* const focusedFieldNode = document()->focusedNode();
+    Element* const focusedFieldElement = document()->focusedElement();
     for (size_t fieldIndex = 0; fieldIndex < m_fields.size(); ++fieldIndex) {
-        if (m_fields[fieldIndex] == focusedFieldNode)
+        if (m_fields[fieldIndex] == focusedFieldElement)
             return fieldIndex;
     }
     return invalidFieldIndex;
@@ -651,8 +652,8 @@ void DateTimeEditElement::layout(const LayoutParameters& layoutParameters, const
     DEFINE_STATIC_LOCAL(AtomicString, fieldsWrapperPseudoId, ("-webkit-datetime-edit-fields-wrapper", AtomicString::ConstructFromLiteral));
     if (!firstChild()) {
         RefPtr<HTMLDivElement> element = HTMLDivElement::create(document());
-        element->setPseudo(fieldsWrapperPseudoId);
-        appendChild(element.get());
+        element->setPart(fieldsWrapperPseudoId);
+        appendChild(element.get(), ASSERT_NO_EXCEPTION, AttachLazily);
     }
     Element* fieldsWrapper = fieldsWrapperElement();
 

@@ -83,7 +83,7 @@ static Region TransformSurfaceOpaqueRegion(const Region& region,
   // surface after applying |transform|. If this is true, then apply |transform|
   // to each rect within |region| in order to transform the entire Region.
 
-  // FIXME: Find a rect interior to each transformed quad.
+  // TODO(danakj): Find a rect interior to each transformed quad.
   if (!transform.Preserves2dAxisAlignment())
     return Region();
 
@@ -141,6 +141,12 @@ static inline bool LayerIsInUnsorted3dRenderingContext(const Layer* layer) {
 }
 static inline bool LayerIsInUnsorted3dRenderingContext(const LayerImpl* layer) {
   return false;
+}
+
+template <typename LayerType>
+static inline bool LayerIsHidden(const LayerType* layer) {
+  return layer->hide_layer_and_subtree() ||
+         (layer->parent() && LayerIsHidden(layer->parent()));
 }
 
 template <typename LayerType, typename RenderSurfaceType>
@@ -220,6 +226,11 @@ void OcclusionTrackerBase<LayerType, RenderSurfaceType>::FinishedRenderTarget(
 
   RenderSurfaceType* surface = finished_target->render_surface();
 
+  // Readbacks always happen on render targets so we only need to check
+  // for readbacks here.
+  bool target_is_only_for_copy_request =
+      finished_target->HasCopyRequest() && LayerIsHidden(finished_target);
+
   // If the occlusion within the surface can not be applied to things outside of
   // the surface's subtree, then clear the occlusion here so it won't be used.
   // TODO(senorblanco):  Make this smarter for SkImageFilter case:  once
@@ -227,7 +238,8 @@ void OcclusionTrackerBase<LayerType, RenderSurfaceType>::FinishedRenderTarget(
   if (finished_target->mask_layer() ||
       !SurfaceOpacityKnown(surface) ||
       surface->draw_opacity() < 1 ||
-      finished_target->filters().hasFilterThatAffectsOpacity() ||
+      target_is_only_for_copy_request ||
+      finished_target->filters().HasFilterThatAffectsOpacity() ||
       finished_target->filter()) {
     stack_.back().occlusion_from_outside_target.Clear();
     stack_.back().occlusion_from_inside_target.Clear();
@@ -256,8 +268,8 @@ static void ReduceOcclusionBelowSurface(LayerType* contributing_layer,
     return;
 
   int outset_top, outset_right, outset_bottom, outset_left;
-  contributing_layer->background_filters().getOutsets(
-      outset_top, outset_right, outset_bottom, outset_left);
+  contributing_layer->background_filters().GetOutsets(
+      &outset_top, &outset_right, &outset_bottom, &outset_left);
 
   // The filter can move pixels from outside of the clip, so allow affected_area
   // to expand outside the clip.
@@ -336,7 +348,7 @@ void OcclusionTrackerBase<LayerType, RenderSurfaceType>::LeaveToRenderTarget(
 
   gfx::Rect unoccluded_surface_rect;
   gfx::Rect unoccluded_replica_rect;
-  if (old_target->background_filters().hasFilterThatMovesPixels()) {
+  if (old_target->background_filters().HasFilterThatMovesPixels()) {
     unoccluded_surface_rect = UnoccludedContributingSurfaceContentRect(
         old_target, false, old_surface->content_rect(), NULL);
     if (old_target->has_replica()) {
@@ -369,7 +381,7 @@ void OcclusionTrackerBase<LayerType, RenderSurfaceType>::LeaveToRenderTarget(
     }
   }
 
-  if (!old_target->background_filters().hasFilterThatMovesPixels())
+  if (!old_target->background_filters().HasFilterThatMovesPixels())
     return;
 
   ReduceOcclusionBelowSurface(old_target,
@@ -420,7 +432,7 @@ void OcclusionTrackerBase<LayerType, RenderSurfaceType>::
 
   DCHECK(layer->visible_content_rect().Contains(opaque_contents.bounds()));
 
-  // FIXME: Find a rect interior to each transformed quad.
+  // TODO(danakj): Find a rect interior to each transformed quad.
   if (!layer->draw_transform().Preserves2dAxisAlignment())
     return;
 

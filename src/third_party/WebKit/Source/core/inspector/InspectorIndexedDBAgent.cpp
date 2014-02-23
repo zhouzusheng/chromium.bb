@@ -29,9 +29,10 @@
  */
 
 #include "config.h"
-
 #include "core/inspector/InspectorIndexedDBAgent.h"
 
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "bindings/v8/ScriptController.h"
 #include "core/dom/DOMStringList.h"
 #include "core/dom/Document.h"
@@ -58,8 +59,7 @@
 #include "modules/indexeddb/IDBRequest.h"
 #include "modules/indexeddb/IDBTransaction.h"
 #include "weborigin/SecurityOrigin.h"
-
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 using WebCore::TypeBuilder::Array;
 using WebCore::TypeBuilder::IndexedDB::DatabaseWithObjectStores;
@@ -109,9 +109,9 @@ public:
         }
 
         IDBRequest* idbRequest = static_cast<IDBRequest*>(event->target());
-        ExceptionCode ec = 0;
-        RefPtr<IDBAny> requestResult = idbRequest->result(ec);
-        if (ec) {
+        TrackExceptionState es;
+        RefPtr<IDBAny> requestResult = idbRequest->result(es);
+        if (es.hadException()) {
             m_requestCallback->sendFailure("Could not get result in callback.");
             return;
         }
@@ -171,9 +171,9 @@ public:
         }
 
         IDBOpenDBRequest* idbOpenDBRequest = static_cast<IDBOpenDBRequest*>(event->target());
-        ExceptionCode ec = 0;
-        RefPtr<IDBAny> requestResult = idbOpenDBRequest->result(ec);
-        if (ec) {
+        TrackExceptionState es;
+        RefPtr<IDBAny> requestResult = idbOpenDBRequest->result(es);
+        if (es.hadException()) {
             m_executableWithDatabase->requestCallback()->sendFailure("Could not get result in callback.");
             return;
         }
@@ -198,9 +198,9 @@ private:
 void ExecutableWithDatabase::start(IDBFactory* idbFactory, SecurityOrigin*, const String& databaseName)
 {
     RefPtr<OpenDatabaseCallback> callback = OpenDatabaseCallback::create(this);
-    ExceptionCode ec = 0;
-    RefPtr<IDBOpenDBRequest> idbOpenDBRequest = idbFactory->open(context(), databaseName, ec);
-    if (ec) {
+    TrackExceptionState es;
+    RefPtr<IDBOpenDBRequest> idbOpenDBRequest = idbFactory->open(context(), databaseName, es);
+    if (es.hadException()) {
         requestCallback()->sendFailure("Could not open database.");
         return;
     }
@@ -209,27 +209,27 @@ void ExecutableWithDatabase::start(IDBFactory* idbFactory, SecurityOrigin*, cons
 
 static PassRefPtr<IDBTransaction> transactionForDatabase(ScriptExecutionContext* scriptExecutionContext, IDBDatabase* idbDatabase, const String& objectStoreName, const String& mode = IDBTransaction::modeReadOnly())
 {
-    ExceptionCode ec = 0;
-    RefPtr<IDBTransaction> idbTransaction = idbDatabase->transaction(scriptExecutionContext, objectStoreName, mode, ec);
-    if (ec)
+    TrackExceptionState es;
+    RefPtr<IDBTransaction> idbTransaction = idbDatabase->transaction(scriptExecutionContext, objectStoreName, mode, es);
+    if (es.hadException())
         return 0;
     return idbTransaction;
 }
 
 static PassRefPtr<IDBObjectStore> objectStoreForTransaction(IDBTransaction* idbTransaction, const String& objectStoreName)
 {
-    ExceptionCode ec = 0;
-    RefPtr<IDBObjectStore> idbObjectStore = idbTransaction->objectStore(objectStoreName, ec);
-    if (ec)
+    TrackExceptionState es;
+    RefPtr<IDBObjectStore> idbObjectStore = idbTransaction->objectStore(objectStoreName, es);
+    if (es.hadException())
         return 0;
     return idbObjectStore;
 }
 
 static PassRefPtr<IDBIndex> indexForObjectStore(IDBObjectStore* idbObjectStore, const String& indexName)
 {
-    ExceptionCode ec = 0;
-    RefPtr<IDBIndex> idbIndex = idbObjectStore->index(indexName, ec);
-    if (ec)
+    TrackExceptionState es;
+    RefPtr<IDBIndex> idbIndex = idbObjectStore->index(indexName, es);
+    if (es.hadException())
         return 0;
     return idbIndex;
 }
@@ -328,10 +328,10 @@ static PassRefPtr<IDBKey> idbKeyFromInspectorObject(JSONObject* key)
     if (!key->getString("type", &type))
         return 0;
 
-    DEFINE_STATIC_LOCAL(String, number, (ASCIILiteral("number")));
-    DEFINE_STATIC_LOCAL(String, string, (ASCIILiteral("string")));
-    DEFINE_STATIC_LOCAL(String, date, (ASCIILiteral("date")));
-    DEFINE_STATIC_LOCAL(String, array, (ASCIILiteral("array")));
+    DEFINE_STATIC_LOCAL(String, number, ("number"));
+    DEFINE_STATIC_LOCAL(String, string, ("string"));
+    DEFINE_STATIC_LOCAL(String, date, ("date"));
+    DEFINE_STATIC_LOCAL(String, array, ("array"));
 
     if (type == number) {
         double number;
@@ -415,9 +415,9 @@ public:
         }
 
         IDBRequest* idbRequest = static_cast<IDBRequest*>(event->target());
-        ExceptionCode ec = 0;
-        RefPtr<IDBAny> requestResult = idbRequest->result(ec);
-        if (ec) {
+        TrackExceptionState es;
+        RefPtr<IDBAny> requestResult = idbRequest->result(es);
+        if (es.hadException()) {
             m_requestCallback->sendFailure("Could not get result in callback.");
             return;
         }
@@ -433,9 +433,9 @@ public:
         RefPtr<IDBCursorWithValue> idbCursor = requestResult->idbCursorWithValue();
 
         if (m_skipCount) {
-            ExceptionCode ec = 0;
-            idbCursor->advance(m_skipCount, ec);
-            if (ec)
+            TrackExceptionState es;
+            idbCursor->advance(m_skipCount, es);
+            if (es.hadException())
                 m_requestCallback->sendFailure("Could not advance cursor.");
             m_skipCount = 0;
             return;
@@ -447,8 +447,8 @@ public:
         }
 
         // Continue cursor before making injected script calls, otherwise transaction might be finished.
-        idbCursor->continueFunction(0, ec);
-        if (ec) {
+        idbCursor->continueFunction(0, es);
+        if (es.hadException()) {
             m_requestCallback->sendFailure("Could not continue cursor.");
             return;
         }
@@ -512,7 +512,6 @@ public:
 
         RefPtr<OpenCursorCallback> openCursorCallback = OpenCursorCallback::create(m_injectedScript, m_requestCallback, m_skipCount, m_pageSize);
 
-        ExceptionCode ec = 0;
         RefPtr<IDBRequest> idbRequest;
         if (!m_indexName.isEmpty()) {
             RefPtr<IDBIndex> idbIndex = indexForObjectStore(idbObjectStore.get(), m_indexName);
@@ -521,9 +520,10 @@ public:
                 return;
             }
 
-            idbRequest = idbIndex->openCursor(context(), PassRefPtr<IDBKeyRange>(m_idbKeyRange), IDBCursor::directionNext(), ec);
-        } else
-            idbRequest = idbObjectStore->openCursor(context(), PassRefPtr<IDBKeyRange>(m_idbKeyRange), IDBCursor::directionNext(), ec);
+            idbRequest = idbIndex->openCursor(context(), PassRefPtr<IDBKeyRange>(m_idbKeyRange), IDBCursor::directionNext(), IGNORE_EXCEPTION);
+        } else {
+            idbRequest = idbObjectStore->openCursor(context(), PassRefPtr<IDBKeyRange>(m_idbKeyRange), IDBCursor::directionNext(), IGNORE_EXCEPTION);
+        }
         idbRequest->addEventListener(eventNames().successEvent, openCursorCallback, false);
     }
 
@@ -623,9 +623,9 @@ void InspectorIndexedDBAgent::requestDatabaseNames(ErrorString* errorString, con
     ASSERT(!context.IsEmpty());
     v8::Context::Scope contextScope(context);
 
-    ExceptionCode ec = 0;
-    RefPtr<IDBRequest> idbRequest = idbFactory->getDatabaseNames(document, ec);
-    if (ec) {
+    TrackExceptionState es;
+    RefPtr<IDBRequest> idbRequest = idbFactory->getDatabaseNames(document, es);
+    if (es.hadException()) {
         requestCallback->sendFailure("Could not obtain database names.");
         return;
     }
@@ -747,10 +747,11 @@ public:
             return;
         }
 
-        ExceptionCode ec = 0;
-        RefPtr<IDBRequest> idbRequest = idbObjectStore->clear(context(), ec);
-        ASSERT(!ec);
-        if (ec) {
+        TrackExceptionState es;
+        RefPtr<IDBRequest> idbRequest = idbObjectStore->clear(context(), es);
+        ASSERT(!es.hadException());
+        if (es.hadException()) {
+            ExceptionCode ec = es.code();
             m_requestCallback->sendFailure(String::format("Could not clear object store '%s': %d", m_objectStoreName.utf8().data(), ec));
             return;
         }

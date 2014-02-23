@@ -32,9 +32,9 @@
 #include "core/platform/graphics/LayoutRect.h"
 #include "core/rendering/Pagination.h"
 #include "core/rendering/PaintPhase.h"
-#include <wtf/Forward.h>
-#include <wtf/OwnPtr.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/Forward.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -67,7 +67,7 @@ public:
     virtual ~FrameView();
 
     virtual HostWindow* hostWindow() const;
-    
+
     virtual void invalidateRect(const IntRect&);
     virtual void setFrameRect(const IntRect&);
 
@@ -126,10 +126,7 @@ public:
     // a faithful representation of the content.
     bool isSoftwareRenderable() const;
 
-    void setIsInWindow(bool);
-
     void resetScrollbars();
-    void resetScrollbarsAndClearContentsSize();
     void prepareForDetach();
     void detachCustomScrollbars();
     virtual void recalculateScrollbarOverlayStyle();
@@ -138,20 +135,20 @@ public:
 
     bool isTransparent() const;
     void setTransparent(bool isTransparent);
-    
+
     // True if the FrameView is not transparent, and the base background color is opaque.
     bool hasOpaqueBackground() const;
 
     Color baseBackgroundColor() const;
-    void setBaseBackgroundColor(const Color&);
-    void updateBackgroundRecursively(const Color&, bool);
+    void setBaseBackgroundColor(const StyleColor&);
+    void updateBackgroundRecursively(const StyleColor&, bool);
 
     bool shouldUpdateWhileOffscreen() const;
     void setShouldUpdateWhileOffscreen(bool);
     bool shouldUpdate() const;
 
     void adjustViewSize();
-    
+
     virtual IntRect windowClipRect(bool clipToContents = true) const;
     IntRect windowClipRectForFrameOwner(const HTMLFrameOwnerElement*, bool clipToLayerContents) const;
 
@@ -169,11 +166,11 @@ public:
     void setScrollPositionNonProgrammatically(const IntPoint&);
 
     // This is different than visibleContentRect() in that it ignores negative (or overly positive)
-    // offsets from rubber-banding, and it takes zooming into account. 
+    // offsets from rubber-banding, and it takes zooming into account.
     LayoutRect viewportConstrainedVisibleContentRect() const;
 
-    String mediaType() const;
-    void setMediaType(const String&);
+    AtomicString mediaType() const;
+    void setMediaType(const AtomicString&);
     void adjustMediaTypeForPrinting(bool printing);
 
     void setCannotBlitToWindow();
@@ -235,10 +232,10 @@ public:
     virtual void paintScrollCorner(GraphicsContext*, const IntRect& cornerRect);
     virtual void paintScrollbar(GraphicsContext*, Scrollbar*, const IntRect&) OVERRIDE;
 
-    Color documentBackgroundColor() const;
+    StyleColor documentBackgroundColor() const;
 
     static double currentPaintTimeStamp() { return sCurrentPaintTimeStamp; } // returns 0 if not painting
-    
+
     void updateLayoutAndStyleIfNeededRecursive();
 
     void incrementVisuallyNonEmptyCharacterCount(unsigned);
@@ -290,7 +287,7 @@ public:
     void setAnimatorsAreActive();
 
     RenderBox* embeddedContentBox() const;
-    
+
     void setTracksRepaints(bool);
     bool isTrackingRepaints() const { return m_isTrackingRepaints; }
     void resetTrackedRepaints();
@@ -336,11 +333,6 @@ public:
     bool hasSoftwareFilters() const { return m_hasSoftwareFilters; }
 
     virtual bool isActive() const OVERRIDE;
-
-#if ENABLE(RUBBER_BANDING)
-    GraphicsLayer* setWantsLayerForTopOverHangArea(bool) const;
-    GraphicsLayer* setWantsLayerForBottomOverHangArea(bool) const;
-#endif
 
     // DEPRECATED: Use viewportConstrainedVisibleContentRect() instead.
     IntSize scrollOffsetForFixedPosition() const;
@@ -427,18 +419,18 @@ private:
 
     virtual AXObjectCache* axObjectCache() const;
     void removeFromAXObjectCache();
-    
+
     static double sCurrentPaintTimeStamp; // used for detecting decoded resource thrash in the cache
 
     LayoutSize m_size;
     LayoutSize m_margins;
-    
+
     typedef HashSet<RenderObject*> RenderObjectSet;
     OwnPtr<RenderObjectSet> m_widgetUpdateSet;
     RefPtr<Frame> m_frame;
 
     bool m_doFullRepaint;
-    
+
     bool m_canHaveScrollbars;
     bool m_cannotBlitToWindow;
     bool m_isOverlapped;
@@ -450,7 +442,7 @@ private:
     Timer<FrameView> m_layoutTimer;
     bool m_delayedLayout;
     RenderObject* m_layoutRoot;
-    
+
     bool m_layoutSchedulingEnabled;
     bool m_inLayout;
     bool m_doingPreLayoutStyleUpdate;
@@ -466,14 +458,14 @@ private:
     IntSize m_lastViewportSize;
     float m_lastZoomFactor;
 
-    String m_mediaType;
-    String m_mediaTypeWhenNotPrinting;
+    AtomicString m_mediaType;
+    AtomicString m_mediaTypeWhenNotPrinting;
 
     OwnPtr<FrameActionScheduler> m_actionScheduler;
 
     bool m_overflowStatusDirty;
     bool m_horizontalOverflow;
-    bool m_verticalOverflow;    
+    bool m_verticalOverflow;
     RenderObject* m_viewportRenderer;
 
     Pagination m_pagination;

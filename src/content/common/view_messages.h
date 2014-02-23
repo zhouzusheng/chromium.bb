@@ -5,8 +5,8 @@
 // IPC messages for page rendering.
 // Multiply-included message file, hence no include guard.
 
-#include "base/process.h"
-#include "base/shared_memory.h"
+#include "base/memory/shared_memory.h"
+#include "base/process/process.h"
 #include "base/strings/string16.h"
 #include "cc/output/begin_frame_args.h"
 #include "cc/output/compositor_frame.h"
@@ -18,6 +18,7 @@
 #include "content/common/navigation_gesture.h"
 #include "content/common/pepper_renderer_instance_data.h"
 #include "content/common/view_message_enums.h"
+#include "content/common/webplugin_geometry.h"
 #include "content/port/common/input_event_ack_state.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/context_menu_params.h"
@@ -25,6 +26,7 @@
 #include "content/public/common/file_chooser_params.h"
 #include "content/public/common/frame_navigate_params.h"
 #include "content/public/common/javascript_message_type.h"
+#include "content/public/common/menu_item.h"
 #include "content/public/common/page_state.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/referrer.h"
@@ -38,6 +40,8 @@
 #include "media/audio/audio_parameters.h"
 #include "media/base/channel_layout.h"
 #include "media/base/media_log_event.h"
+#include "third_party/WebKit/public/platform/WebFloatPoint.h"
+#include "third_party/WebKit/public/platform/WebFloatRect.h"
 #include "third_party/WebKit/public/web/WebCompositionUnderline.h"
 #include "third_party/WebKit/public/web/WebFindOptions.h"
 #include "third_party/WebKit/public/web/WebMediaPlayerAction.h"
@@ -45,9 +49,8 @@
 #include "third_party/WebKit/public/web/WebPopupType.h"
 #include "third_party/WebKit/public/web/WebScreenInfo.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
-#include "third_party/WebKit/public/platform/WebFloatPoint.h"
-#include "third_party/WebKit/public/platform/WebFloatRect.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/base/range/range.h"
 #include "ui/base/ui_base_types.h"
@@ -57,8 +60,6 @@
 #include "ui/gfx/vector2d.h"
 #include "ui/gfx/vector2d_f.h"
 #include "ui/shell_dialogs/selected_file_info.h"
-#include "webkit/common/webmenuitem.h"
-#include "webkit/plugins/npapi/webplugin.h"
 
 #if defined(OS_MACOSX)
 #include "content/common/mac/font_descriptor.h"
@@ -76,20 +77,23 @@ IPC_ENUM_TRAITS(WebKit::WebMediaPlayerAction::Type)
 IPC_ENUM_TRAITS(WebKit::WebPluginAction::Type)
 IPC_ENUM_TRAITS(WebKit::WebPopupType)
 IPC_ENUM_TRAITS(WebKit::WebTextDirection)
-IPC_ENUM_TRAITS(WebMenuItem::Type)
 IPC_ENUM_TRAITS(WindowContainerType)
 IPC_ENUM_TRAITS(content::FaviconURL::IconType)
 IPC_ENUM_TRAITS(content::FileChooserParams::Mode)
 IPC_ENUM_TRAITS(content::JavaScriptMessageType)
+IPC_ENUM_TRAITS(content::MenuItem::Type)
 IPC_ENUM_TRAITS(content::NavigationGesture)
 IPC_ENUM_TRAITS(content::PageZoom)
 IPC_ENUM_TRAITS(content::RendererPreferencesHintingEnum)
 IPC_ENUM_TRAITS(content::RendererPreferencesSubpixelRenderingEnum)
+IPC_ENUM_TRAITS_MAX_VALUE(content::TapMultipleTargetsStrategy,
+                          content::TAP_MULTIPLE_TARGETS_STRATEGY_MAX)
 IPC_ENUM_TRAITS(content::StopFindAction)
 IPC_ENUM_TRAITS(content::ThreeDAPIType)
 IPC_ENUM_TRAITS(media::ChannelLayout)
 IPC_ENUM_TRAITS(media::MediaLogEvent::Type)
 IPC_ENUM_TRAITS(ui::MenuSourceType)
+IPC_ENUM_TRAITS_MAX_VALUE(ui::TextInputMode, ui::TEXT_INPUT_MODE_MAX)
 IPC_ENUM_TRAITS(ui::TextInputType)
 
 #if defined(OS_MACOSX)
@@ -143,9 +147,9 @@ IPC_STRUCT_TRAITS_BEGIN(WebKit::WebScreenInfo)
   IPC_STRUCT_TRAITS_MEMBER(availableRect)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(WebMenuItem)
+IPC_STRUCT_TRAITS_BEGIN(content::MenuItem)
   IPC_STRUCT_TRAITS_MEMBER(label)
-  IPC_STRUCT_TRAITS_MEMBER(toolTip)
+  IPC_STRUCT_TRAITS_MEMBER(tool_tip)
   IPC_STRUCT_TRAITS_MEMBER(type)
   IPC_STRUCT_TRAITS_MEMBER(action)
   IPC_STRUCT_TRAITS_MEMBER(rtl)
@@ -265,6 +269,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::RendererPreferences)
   IPC_STRUCT_TRAITS_MEMBER(report_frame_name_changes)
   IPC_STRUCT_TRAITS_MEMBER(touchpad_fling_profile)
   IPC_STRUCT_TRAITS_MEMBER(touchscreen_fling_profile)
+  IPC_STRUCT_TRAITS_MEMBER(tap_multiple_targets_strategy)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::CookieData)
@@ -278,7 +283,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::CookieData)
   IPC_STRUCT_TRAITS_MEMBER(session)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(webkit::npapi::WebPluginGeometry)
+IPC_STRUCT_TRAITS_BEGIN(content::WebPluginGeometry)
   IPC_STRUCT_TRAITS_MEMBER(window)
   IPC_STRUCT_TRAITS_MEMBER(window_rect)
   IPC_STRUCT_TRAITS_MEMBER(clip_rect)
@@ -303,6 +308,12 @@ IPC_STRUCT_TRAITS_END()
 IPC_STRUCT_TRAITS_BEGIN(content::BrowserRenderingStats)
   IPC_STRUCT_TRAITS_MEMBER(input_event_count)
   IPC_STRUCT_TRAITS_MEMBER(total_input_latency)
+  IPC_STRUCT_TRAITS_MEMBER(touch_ui_count)
+  IPC_STRUCT_TRAITS_MEMBER(total_touch_ui_latency)
+  IPC_STRUCT_TRAITS_MEMBER(touch_acked_count)
+  IPC_STRUCT_TRAITS_MEMBER(total_touch_acked_latency)
+  IPC_STRUCT_TRAITS_MEMBER(scroll_update_count)
+  IPC_STRUCT_TRAITS_MEMBER(total_scroll_update_latency)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_BEGIN(ViewHostMsg_CreateWindow_Params)
@@ -328,6 +339,9 @@ IPC_STRUCT_BEGIN(ViewHostMsg_CreateWindow_Params)
   // The URL of the frame initiating the open.
   IPC_STRUCT_MEMBER(GURL, opener_url)
 
+  // The URL of the top frame containing the opener.
+  IPC_STRUCT_MEMBER(GURL, opener_top_level_frame_url)
+
   // The security origin of the frame initiating the open.
   IPC_STRUCT_MEMBER(GURL, opener_security_origin)
 
@@ -341,6 +355,13 @@ IPC_STRUCT_BEGIN(ViewHostMsg_CreateWindow_Params)
   // The URL that will be loaded in the new window (empty if none has been
   // sepcified).
   IPC_STRUCT_MEMBER(GURL, target_url)
+
+  // The referrer that will be used to load |target_url| (empty if none has
+  // been specified).
+  IPC_STRUCT_MEMBER(content::Referrer, referrer)
+
+  // The window features to use for the new view.
+  IPC_STRUCT_MEMBER(WebKit::WebWindowFeatures, features)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewHostMsg_CreateWorker_Params)
@@ -448,7 +469,8 @@ IPC_STRUCT_BEGIN(ViewHostMsg_OpenURL_Params)
   IPC_STRUCT_MEMBER(content::Referrer, referrer)
   IPC_STRUCT_MEMBER(WindowOpenDisposition, disposition)
   IPC_STRUCT_MEMBER(int64, frame_id)
-  IPC_STRUCT_MEMBER(bool, is_cross_site_redirect)
+  IPC_STRUCT_MEMBER(bool, should_replace_current_entry)
+  IPC_STRUCT_MEMBER(bool, user_gesture)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewHostMsg_SelectionBounds_Params)
@@ -476,7 +498,7 @@ IPC_STRUCT_BEGIN(ViewHostMsg_ShowPopup_Params)
   IPC_STRUCT_MEMBER(int, selected_item)
 
   // The entire list of items in the popup menu.
-  IPC_STRUCT_MEMBER(std::vector<WebMenuItem>, popup_items)
+  IPC_STRUCT_MEMBER(std::vector<content::MenuItem>, popup_items)
 
   // Whether items should be right-aligned.
   IPC_STRUCT_MEMBER(bool, right_aligned)
@@ -513,6 +535,9 @@ IPC_STRUCT_BEGIN(ViewHostMsg_TextInputState_Params)
   // true, the IME will only be shown if the type is appropriate (e.g. not
   // TEXT_INPUT_TYPE_NONE).
   IPC_STRUCT_MEMBER(bool, show_ime_if_needed)
+
+  // Whether an acknowledgement is required for this update.
+  IPC_STRUCT_MEMBER(bool, require_ack)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewHostMsg_UpdateRect_Params)
@@ -546,7 +571,7 @@ IPC_STRUCT_BEGIN(ViewHostMsg_UpdateRect_Params)
   IPC_STRUCT_MEMBER(gfx::Size, view_size)
 
   // New window locations for plugin child windows.
-  IPC_STRUCT_MEMBER(std::vector<webkit::npapi::WebPluginGeometry>,
+  IPC_STRUCT_MEMBER(std::vector<content::WebPluginGeometry>,
                     plugin_window_moves)
 
   // The following describes the various bits that may be set in flags:
@@ -1052,9 +1077,10 @@ IPC_MESSAGE_ROUTED4(
     int /* selection_end */)
 
 // This message confirms an ongoing composition.
-IPC_MESSAGE_ROUTED2(ViewMsg_ImeConfirmComposition,
+IPC_MESSAGE_ROUTED3(ViewMsg_ImeConfirmComposition,
                     string16 /* text */,
-                    ui::Range /* replacement_range */)
+                    ui::Range /* replacement_range */,
+                    bool /* keep_selection */)
 
 // Sets the text composition to be between the given start and end offsets
 // in the currently focused editable field.
@@ -1181,8 +1207,8 @@ IPC_MESSAGE_ROUTED1(ViewMsg_SetActive,
 // Sent when the worker has started.
 IPC_MESSAGE_ROUTED0(ViewMsg_WorkerCreated)
 
-// The response to ViewHostMsg_AsyncOpenFile.
-IPC_MESSAGE_ROUTED3(ViewMsg_AsyncOpenFile_ACK,
+// The response to ViewHostMsg_AsyncOpenPepperFile.
+IPC_MESSAGE_ROUTED3(ViewMsg_AsyncOpenPepperFile_ACK,
                     base::PlatformFileError /* error_code */,
                     IPC::PlatformFileForTransit /* file descriptor */,
                     int /* message_id */)
@@ -1194,16 +1220,14 @@ IPC_MESSAGE_CONTROL1(ViewMsg_NetworkStateChanged,
 
 // Reply to ViewHostMsg_OpenChannelToPpapiBroker
 // Tells the renderer that the channel to the broker has been created.
-IPC_MESSAGE_ROUTED3(ViewMsg_PpapiBrokerChannelCreated,
-                    int /* request_id */,
+IPC_MESSAGE_ROUTED2(ViewMsg_PpapiBrokerChannelCreated,
                     base::ProcessId /* broker_pid */,
                     IPC::ChannelHandle /* handle */)
 
 // Reply to ViewHostMsg_RequestPpapiBrokerPermission.
 // Tells the renderer whether permission to access to PPAPI broker was granted
 // or not.
-IPC_MESSAGE_ROUTED2(ViewMsg_PpapiBrokerPermissionResult,
-                    int /* request_id */,
+IPC_MESSAGE_ROUTED1(ViewMsg_PpapiBrokerPermissionResult,
                     bool /* result */)
 
 // Tells the renderer to empty its plugin list cache, optional reloading
@@ -1287,6 +1311,10 @@ IPC_MESSAGE_ROUTED0(ViewMsg_ShowImeIfNeeded)
 IPC_MESSAGE_ROUTED1(ViewMsg_BeginFrame,
                     cc::BeginFrameArgs /* args */)
 
+// Sent by the browser when an IME update that requires acknowledgement has been
+// processed on the browser side.
+IPC_MESSAGE_ROUTED0(ViewMsg_ImeEventAck)
+
 #elif defined(OS_MACOSX)
 // Let the RenderView know its window has changed visibility.
 IPC_MESSAGE_ROUTED1(ViewMsg_SetWindowVisibility,
@@ -1313,7 +1341,8 @@ IPC_MESSAGE_ROUTED1(ViewMsg_SelectPopupMenuItem,
 #endif
 
 // Sent by the browser as a reply to ViewHostMsg_SwapCompositorFrame.
-IPC_MESSAGE_ROUTED1(ViewMsg_SwapCompositorFrameAck,
+IPC_MESSAGE_ROUTED2(ViewMsg_SwapCompositorFrameAck,
+                    uint32 /* output_surface_id */,
                     cc::CompositorFrameAck /* ack */)
 
 // Sent by the browser to ask the renderer for a snapshot of the current view.
@@ -1404,7 +1433,7 @@ IPC_MESSAGE_ROUTED0(ViewHostMsg_RenderViewReady)
 
 // Indicates the renderer process is gone.  This actually is sent by the
 // browser process to itself, but keeps the interface cleaner.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_RenderViewGone,
+IPC_MESSAGE_ROUTED2(ViewHostMsg_RenderProcessGone,
                     int, /* this really is base::TerminationStatus */
                     int /* exit_code */)
 
@@ -1668,7 +1697,7 @@ IPC_SYNC_MESSAGE_CONTROL2_1(ViewHostMsg_CookiesEnabled,
 // Used to get the list of plugins
 IPC_SYNC_MESSAGE_CONTROL1_1(ViewHostMsg_GetPlugins,
     bool /* refresh*/,
-    std::vector<webkit::WebPluginInfo> /* plugins */)
+    std::vector<content::WebPluginInfo> /* plugins */)
 
 // Return information about a plugin for the given URL and MIME
 // type. If there is no matching plugin, |found| is false.
@@ -1680,7 +1709,7 @@ IPC_SYNC_MESSAGE_CONTROL4_3(ViewHostMsg_GetPluginInfo,
                             GURL /* page_url */,
                             std::string /* mime_type */,
                             bool /* found */,
-                            webkit::WebPluginInfo /* plugin info */,
+                            content::WebPluginInfo /* plugin info */,
                             std::string /* actual_mime_type */)
 
 // A renderer sends this to the browser process when it wants to
@@ -1693,7 +1722,7 @@ IPC_SYNC_MESSAGE_CONTROL4_2(ViewHostMsg_OpenChannelToPlugin,
                             GURL /* page_url */,
                             std::string /* mime_type */,
                             IPC::ChannelHandle /* channel_handle */,
-                            webkit::WebPluginInfo /* info */)
+                            content::WebPluginInfo /* info */)
 
 #if defined(OS_WIN)
 IPC_MESSAGE_ROUTED1(ViewHostMsg_WindowlessPluginDummyWindowCreated,
@@ -1864,22 +1893,40 @@ IPC_MESSAGE_CONTROL3(ViewHostMsg_DidDeleteOutOfProcessPepperInstance,
                      int32 /* pp_instance */,
                      bool /* is_external */)
 
+// Message from the renderer to the browser indicating the in-process instance
+// has been created.
+IPC_MESSAGE_CONTROL2(ViewHostMsg_DidCreateInProcessInstance,
+                     int32 /* instance */,
+                     content::PepperRendererInstanceData /* instance_data */)
+
+// Message from the renderer to the browser indicating the in-process instance
+// has been destroyed.
+IPC_MESSAGE_CONTROL1(ViewHostMsg_DidDeleteInProcessInstance,
+                     int32 /* instance */)
+
 // A renderer sends this to the browser process when it wants to
 // create a ppapi broker.  The browser will create the broker process
 // if necessary, and will return a handle to the channel on success.
 // On error an empty string is returned.
 // The browser will respond with ViewMsg_PpapiBrokerChannelCreated.
-IPC_MESSAGE_CONTROL3(ViewHostMsg_OpenChannelToPpapiBroker,
+IPC_MESSAGE_CONTROL2(ViewHostMsg_OpenChannelToPpapiBroker,
                      int /* routing_id */,
-                     int /* request_id */,
                      base::FilePath /* path */)
+
+// Opens a Pepper file asynchronously. The response returns a file descriptor
+// and an error code from base/platform_file.h.
+IPC_MESSAGE_CONTROL4(ViewHostMsg_AsyncOpenPepperFile,
+                     int /* routing_id */,
+                     base::FilePath /* file path */,
+                     int /* pp_open_flags */,
+                     int /* message_id */)
 
 // A renderer sends this to the browser process when it wants to access a PPAPI
 // broker. In contrast to ViewHostMsg_OpenChannelToPpapiBroker, this is called
 // for every connection.
 // The browser will respond with ViewMsg_PpapiBrokerPermissionResult.
 IPC_MESSAGE_ROUTED3(ViewHostMsg_RequestPpapiBrokerPermission,
-                    int /* request_id */,
+                    int /* routing_id */,
                     GURL /* document_url */,
                     base::FilePath /* plugin_path */)
 
@@ -1952,18 +1999,14 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_TakeFocus,
 IPC_MESSAGE_ROUTED1(ViewHostMsg_OpenDateTimeDialog,
                     ViewHostMsg_DateTimeDialogValue_Params /* value */)
 
-IPC_MESSAGE_ROUTED2(ViewHostMsg_TextInputTypeChanged,
+IPC_MESSAGE_ROUTED3(ViewHostMsg_TextInputTypeChanged,
                     ui::TextInputType /* TextInputType of the focused node */,
-                    bool /* can_compose_inline in the focused node */)
+                    bool /* can_compose_inline in the focused node */,
+                    ui::TextInputMode /* TextInputMode of the focused node */)
 
 // Required for updating text input state.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_TextInputStateChanged,
                     ViewHostMsg_TextInputState_Params /* input state params */)
-
-// Message sent when the IME text composition range changes.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_ImeCompositionRangeChanged,
-                    ui::Range /* composition range */,
-                    std::vector<gfx::Rect> /* character bounds */)
 
 // Required for cancelling an ongoing input method composition.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_ImeCancelComposition)
@@ -2048,7 +2091,8 @@ IPC_MESSAGE_ROUTED1(
     ViewHostMsg_CompositorSurfaceBuffersSwapped,
     ViewHostMsg_CompositorSurfaceBuffersSwapped_Params /* params */)
 
-IPC_MESSAGE_ROUTED1(ViewHostMsg_SwapCompositorFrame,
+IPC_MESSAGE_ROUTED2(ViewHostMsg_SwapCompositorFrame,
+                    uint32 /* output_surface_id */,
                     cc::CompositorFrame /* frame */)
 
 // Sent by the compositor when input scroll events are dropped due to bounds
@@ -2056,13 +2100,6 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_SwapCompositorFrame,
 IPC_MESSAGE_ROUTED2(ViewHostMsg_DidOverscroll,
                     gfx::Vector2dF /* accumulated_overscroll */,
                     gfx::Vector2dF /* current_fling_velocity */)
-
-// Opens a file asynchronously. The response returns a file descriptor
-// and an error code from base/platform_file.h.
-IPC_MESSAGE_ROUTED3(ViewHostMsg_AsyncOpenFile,
-                    base::FilePath /* file path */,
-                    int /* flags */,
-                    int /* message_id */)
 
 // Reply to a snapshot request containing whether snapshotting succeeded and the
 // SkBitmap if it succeeded.
@@ -2090,15 +2127,6 @@ IPC_MESSAGE_CONTROL3(ViewHostMsg_DidGenerateCacheableMetadata,
                      GURL /* url */,
                      double /* expected_response_time */,
                      std::vector<char> /* data */)
-
-// Updates the content restrictions, i.e. to disable print/copy.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_UpdateContentRestrictions,
-                    int /* restrictions */)
-
-// Brings up SaveAs... dialog to save specified URL.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_SaveURLAs,
-                    GURL /* url */,
-                    content::Referrer /* referrer */)
 
 // Displays a JavaScript out-of-memory message in the infobar.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_JSOutOfMemory)
@@ -2279,6 +2307,15 @@ IPC_MESSAGE_CONTROL3(ViewHostMsg_RunWebAudioMediaCodec,
 IPC_MESSAGE_ROUTED1(ViewHostMsg_SetNeedsBeginFrame,
                     bool /* enabled */)
 
+// Sent by the renderer to the browser to start a vibration with the given
+// duration.
+IPC_MESSAGE_CONTROL1(ViewHostMsg_Vibrate,
+                     int64 /* milliseconds */)
+
+// Sent by the renderer to the browser to cancel the currently running
+// vibration, if there is one.
+IPC_MESSAGE_CONTROL0(ViewHostMsg_CancelVibration)
+
 #elif defined(OS_MACOSX)
 // Request that the browser load a font into shared memory for us.
 IPC_SYNC_MESSAGE_CONTROL1_3(ViewHostMsg_LoadFont,
@@ -2323,6 +2360,15 @@ IPC_SYNC_MESSAGE_CONTROL2_1(ViewHostMsg_AllocTransportDIB,
 // renderer is finished with them.
 IPC_MESSAGE_CONTROL1(ViewHostMsg_FreeTransportDIB,
                      TransportDIB::Id /* DIB id */)
+#endif
+
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+// On MACOSX, WIN and AURA IME can request composition character bounds
+// synchronously (see crbug.com/120597). This IPC message sends the character
+// bounds after every composition change to always have correct bound info.
+IPC_MESSAGE_ROUTED2(ViewHostMsg_ImeCompositionRangeChanged,
+                    ui::Range /* composition range */,
+                    std::vector<gfx::Rect> /* character bounds */)
 #endif
 
 // Adding a new message? Stick to the sort order above: first platform

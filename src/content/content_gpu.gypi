@@ -24,12 +24,12 @@
     ['OS=="win"', {
       'include_dirs': [
         '<(DEPTH)/third_party/khronos',
-        '<(angle_path)/src',
+        '<(DEPTH)/third_party/angle_dx11/src',
         '<(DEPTH)/third_party/wtl/include',
       ],
       'dependencies': [
-        '<(angle_path)/src/build_angle.gyp:libEGL',
-        '<(angle_path)/src/build_angle.gyp:libGLESv2',
+        '../third_party/angle_dx11/src/build_angle.gyp:libEGL',
+        '../third_party/angle_dx11/src/build_angle.gyp:libGLESv2',
       ],
       'link_settings': {
         'libraries': [
@@ -40,12 +40,14 @@
         {
           'destination': '<(PRODUCT_DIR)',
           'files': [
-            '<(windows_sdk_path)/Redist/D3D/x86/d3dcompiler_46.dll',
+            '<(windows_sdk_path)/Redist/D3D/<(winsdk_arch)/d3dcompiler_46.dll',
           ],
         },
       ],
     }],
-    ['OS=="win" and directxsdk_exists=="True"', {
+    ['OS=="win" and target_arch=="ia32" and directxsdk_exists=="True"', {
+      # We don't support x64 prior to Win7 and D3DCompiler_43.dll is
+      # not needed on Vista+.
       'actions': [
         {
           'action_name': 'extract_d3dcompiler',
@@ -68,11 +70,6 @@
           ],
           'msvs_cygwin_shell': 1,
         },
-      ],
-    }],
-    ['target_arch=="arm" and chromeos == 1', {
-      'include_dirs': [
-        '<(DEPTH)/third_party/openmax/il',
       ],
     }],
     ['target_arch!="arm" and chromeos == 1', {

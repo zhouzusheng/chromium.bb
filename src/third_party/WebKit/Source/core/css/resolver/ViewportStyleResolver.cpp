@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 Intel Corporation. All rights reserved.
+ * Copyright (C) 2012-2013 Intel Corporation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -116,18 +116,16 @@ float ViewportStyleResolver::getViewportArgumentValue(CSSPropertyID id) const
         return primitiveValue->getFloatValue();
 
     if (primitiveValue->isFontRelativeLength())
-        return primitiveValue->getFloatValue() * m_document->documentElement()->renderStyle()->fontDescription().computedSize();
+        return primitiveValue->getFloatValue() * m_document->renderStyle()->fontDescription().computedSize();
 
     if (primitiveValue->isPercentage()) {
         float percentValue = primitiveValue->getFloatValue() / 100.0f;
         switch (id) {
         case CSSPropertyMaxHeight:
         case CSSPropertyMinHeight:
-            ASSERT(m_document->initialViewportSize().height() > 0);
             return percentValue * m_document->initialViewportSize().height();
         case CSSPropertyMaxWidth:
         case CSSPropertyMinWidth:
-            ASSERT(m_document->initialViewportSize().width() > 0);
             return percentValue * m_document->initialViewportSize().width();
         case CSSPropertyMaxZoom:
         case CSSPropertyMinZoom:
@@ -148,6 +146,8 @@ float ViewportStyleResolver::getViewportArgumentValue(CSSPropertyID id) const
         return ViewportArguments::ValuePortrait;
     case CSSValueZoom:
         return defaultValue;
+    case CSSValueInternalExtendToZoom:
+        return ViewportArguments::ValueExtendToZoom;
     case CSSValueFixed:
         return 0;
     default:

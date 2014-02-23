@@ -27,10 +27,12 @@
 #include "core/platform/graphics/filters/FilterEffect.h"
 
 namespace WebCore {
-    
+
 class FETile : public FilterEffect {
 public:
     static PassRefPtr<FETile> create(Filter* filter);
+
+    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
 
     virtual void determineAbsolutePaintRect() { setAbsolutePaintRect(enclosingIntRect(maxEffectRect())); }
 

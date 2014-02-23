@@ -270,7 +270,7 @@ static void writeStyle(TextStream& ts, const RenderObject& object)
         ASSERT(shape.node());
         ASSERT(shape.node()->isSVGElement());
 
-        Color fallbackColor;
+        StyleColor fallbackColor;
         if (RenderSVGResource* strokePaintingResource = RenderSVGResource::strokePaintingResource(const_cast<RenderSVGShape*>(&shape), shape.style(), fallbackColor)) {
             TextStreamSeparator s(" ");
             ts << " [stroke={" << s;
@@ -331,33 +331,33 @@ static TextStream& operator<<(TextStream& ts, const RenderSVGShape& shape)
     SVGLengthContext lengthContext(svgElement);
 
     if (svgElement->hasTagName(SVGNames::rectTag)) {
-        SVGRectElement* element = static_cast<SVGRectElement*>(svgElement);
-        writeNameValuePair(ts, "x", element->x().value(lengthContext));
-        writeNameValuePair(ts, "y", element->y().value(lengthContext));
-        writeNameValuePair(ts, "width", element->width().value(lengthContext));
-        writeNameValuePair(ts, "height", element->height().value(lengthContext));
+        SVGRectElement* element = toSVGRectElement(svgElement);
+        writeNameValuePair(ts, "x", element->xCurrentValue().value(lengthContext));
+        writeNameValuePair(ts, "y", element->yCurrentValue().value(lengthContext));
+        writeNameValuePair(ts, "width", element->widthCurrentValue().value(lengthContext));
+        writeNameValuePair(ts, "height", element->heightCurrentValue().value(lengthContext));
     } else if (svgElement->hasTagName(SVGNames::lineTag)) {
         SVGLineElement* element = static_cast<SVGLineElement*>(svgElement);
-        writeNameValuePair(ts, "x1", element->x1().value(lengthContext));
-        writeNameValuePair(ts, "y1", element->y1().value(lengthContext));
-        writeNameValuePair(ts, "x2", element->x2().value(lengthContext));
-        writeNameValuePair(ts, "y2", element->y2().value(lengthContext));
+        writeNameValuePair(ts, "x1", element->x1CurrentValue().value(lengthContext));
+        writeNameValuePair(ts, "y1", element->y1CurrentValue().value(lengthContext));
+        writeNameValuePair(ts, "x2", element->x2CurrentValue().value(lengthContext));
+        writeNameValuePair(ts, "y2", element->y2CurrentValue().value(lengthContext));
     } else if (svgElement->hasTagName(SVGNames::ellipseTag)) {
         SVGEllipseElement* element = static_cast<SVGEllipseElement*>(svgElement);
-        writeNameValuePair(ts, "cx", element->cx().value(lengthContext));
-        writeNameValuePair(ts, "cy", element->cy().value(lengthContext));
-        writeNameValuePair(ts, "rx", element->rx().value(lengthContext));
-        writeNameValuePair(ts, "ry", element->ry().value(lengthContext));
+        writeNameValuePair(ts, "cx", element->cxCurrentValue().value(lengthContext));
+        writeNameValuePair(ts, "cy", element->cyCurrentValue().value(lengthContext));
+        writeNameValuePair(ts, "rx", element->rxCurrentValue().value(lengthContext));
+        writeNameValuePair(ts, "ry", element->ryCurrentValue().value(lengthContext));
     } else if (svgElement->hasTagName(SVGNames::circleTag)) {
         SVGCircleElement* element = static_cast<SVGCircleElement*>(svgElement);
-        writeNameValuePair(ts, "cx", element->cx().value(lengthContext));
-        writeNameValuePair(ts, "cy", element->cy().value(lengthContext));
-        writeNameValuePair(ts, "r", element->r().value(lengthContext));
+        writeNameValuePair(ts, "cx", element->cxCurrentValue().value(lengthContext));
+        writeNameValuePair(ts, "cy", element->cyCurrentValue().value(lengthContext));
+        writeNameValuePair(ts, "r", element->rCurrentValue().value(lengthContext));
     } else if (svgElement->hasTagName(SVGNames::polygonTag) || svgElement->hasTagName(SVGNames::polylineTag)) {
         SVGPolyElement* element = static_cast<SVGPolyElement*>(svgElement);
         writeNameAndQuotedValue(ts, "points", element->pointList().valueAsString());
     } else if (svgElement->hasTagName(SVGNames::pathTag)) {
-        SVGPathElement* element = static_cast<SVGPathElement*>(svgElement);
+        SVGPathElement* element = toSVGPathElement(svgElement);
         String pathString;
         // FIXME: We should switch to UnalteredParsing here - this will affect the path dumping output of dozens of tests.
         buildStringFromByteStream(element->pathByteStream(), pathString, NormalizedParsing);
@@ -379,12 +379,12 @@ static void writeRenderSVGTextBox(TextStream& ts, const RenderSVGText& text)
         return;
 
     ts << " " << enclosingIntRect(FloatRect(text.location(), FloatSize(box->logicalWidth(), box->logicalHeight())));
-    
+
     // FIXME: Remove this hack, once the new text layout engine is completly landed. We want to preserve the old layout test results for now.
     ts << " contains 1 chunk(s)";
 
     if (text.parent() && (text.parent()->style()->visitedDependentColor(CSSPropertyColor) != text.style()->visitedDependentColor(CSSPropertyColor)))
-        writeNameValuePair(ts, "color", text.style()->visitedDependentColor(CSSPropertyColor).nameForRenderTreeAsText());
+        writeNameValuePair(ts, "color", text.resolveColor(CSSPropertyColor).nameForRenderTreeAsText());
 }
 
 static inline void writeSVGInlineTextBox(TextStream& ts, SVGInlineTextBox* textBox, int indent)
@@ -450,7 +450,7 @@ static inline void writeSVGInlineTextBoxes(TextStream& ts, const RenderText& tex
         if (!box->isSVGInlineTextBox())
             continue;
 
-        writeSVGInlineTextBox(ts, static_cast<SVGInlineTextBox*>(box), indent);
+        writeSVGInlineTextBox(ts, toSVGInlineTextBox(box), indent);
     }
 }
 
@@ -486,7 +486,7 @@ void writeSVGResourceContainer(TextStream& ts, const RenderObject& object, int i
 
     Element* element = toElement(object.node());
     const AtomicString& id = element->getIdAttribute();
-    writeNameAndQuotedValue(ts, "id", id);    
+    writeNameAndQuotedValue(ts, "id", id);
 
     RenderSVGResourceContainer* resource = const_cast<RenderObject&>(object).toRenderSVGResourceContainer();
     ASSERT(resource);
@@ -527,7 +527,7 @@ void writeSVGResourceContainer(TextStream& ts, const RenderObject& object, int i
         // Dump final results that are used for rendering. No use in asking SVGPatternElement for its patternUnits(), as it may
         // link to other patterns using xlink:href, we need to build the full inheritance chain, aka. collectPatternProperties()
         PatternAttributes attributes;
-        static_cast<SVGPatternElement*>(pattern->node())->collectPatternAttributes(attributes);
+        toSVGPatternElement(pattern->node())->collectPatternAttributes(attributes);
 
         writeNameValuePair(ts, "patternUnits", attributes.patternUnits());
         writeNameValuePair(ts, "patternContentUnits", attributes.patternContentUnits());
@@ -632,7 +632,7 @@ void writeSVGGradientStop(TextStream& ts, const RenderSVGGradientStop& stop, int
     if (!style)
         return;
 
-    ts << " [offset=" << stopElement->offset() << "] [color=" << stopElement->stopColorIncludingOpacity() << "]\n";
+    ts << " [offset=" << stopElement->offsetCurrentValue() << "] [color=" << stopElement->stopColorIncludingOpacity() << "]\n";
 }
 
 void writeResources(TextStream& ts, const RenderObject& object, int indent)

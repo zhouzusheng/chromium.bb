@@ -41,28 +41,21 @@
 
 namespace WebCore {
 
+class ChangeRegionOversetTask;
 struct CSSParserString;
 class CSSRule;
 class CSSRuleList;
-class CSSStyleDeclaration;
 class CSSStyleRule;
 class CSSStyleSheet;
 class Document;
-class DocumentStyleSheetCollection;
 class Element;
-class InspectorCSSOMWrappers;
 class InspectorFrontend;
 class InstrumentingAgents;
 class MediaList;
-class NameNodeMap;
 class Node;
 class NodeList;
-class SelectorProfile;
 class StyleResolver;
-class StyleRule;
-class StyleSheetVisitor;
 class UpdateRegionLayoutTask;
-class UpdateActiveStylesheetsTask;
 
 typedef HashMap<CSSStyleSheet*, RefPtr<InspectorStyleSheet> > CSSStyleSheetToInspectorStyleSheet;
 typedef Vector<RefPtr<StyleSheet> > StyleSheetVector;
@@ -119,8 +112,15 @@ public:
     void mediaQueryResultChanged();
     void didCreateNamedFlow(Document*, NamedFlow*);
     void willRemoveNamedFlow(Document*, NamedFlow*);
-    void didUpdateRegionLayout(Document*, NamedFlow*);
+
+private:
     void regionLayoutUpdated(NamedFlow*, int documentNodeId);
+    void regionOversetChanged(NamedFlow*, int documentNodeId);
+
+public:
+    void didUpdateRegionLayout(Document*, NamedFlow*);
+    void didChangeRegionOverset(Document*, NamedFlow*);
+
     void activeStyleSheetsUpdated(Document*, const StyleSheetVector& newSheets);
     void frameDetachedFromParent(Frame*);
 
@@ -140,15 +140,7 @@ public:
     virtual void forcePseudoState(ErrorString*, int nodeId, const RefPtr<JSONArray>& forcedPseudoClasses);
     virtual void getNamedFlowCollection(ErrorString*, int documentNodeId, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::NamedFlow> >& result);
 
-    virtual void startSelectorProfiler(ErrorString*);
-    virtual void stopSelectorProfiler(ErrorString*, RefPtr<TypeBuilder::CSS::SelectorProfile>&);
-
-    PassRefPtr<TypeBuilder::CSS::SelectorProfile> stopSelectorProfilerImpl(ErrorString*, bool needProfile);
-    void willMatchRule(StyleRule*, InspectorCSSOMWrappers&, DocumentStyleSheetCollection*);
-    void didMatchRule(bool);
-    void willProcessRule(StyleRule*, StyleResolver*);
-    void didProcessRule();
-    PassRefPtr<TypeBuilder::CSS::CSSMedia> buildMediaObject(const MediaList*, MediaListSource, const String&);
+    PassRefPtr<TypeBuilder::CSS::CSSMedia> buildMediaObject(const MediaList*, MediaListSource, const String&, CSSStyleSheet*);
     PassRefPtr<TypeBuilder::Array<TypeBuilder::CSS::CSSMedia> > buildMediaListChain(CSSRule*);
 
 private:
@@ -210,14 +202,15 @@ private:
     NodeIdToForcedPseudoState m_nodeIdToForcedPseudoState;
     HashSet<int> m_namedFlowCollectionsRequested;
     OwnPtr<UpdateRegionLayoutTask> m_updateRegionLayoutTask;
+    OwnPtr<ChangeRegionOversetTask> m_changeRegionOversetTask;
 
     int m_lastStyleSheetId;
     bool m_creatingViaInspectorStyleSheet;
     bool m_isSettingStyleSheetText;
 
-    OwnPtr<SelectorProfile> m_currentSelectorProfile;
-
+    friend class ChangeRegionOversetTask;
     friend class StyleSheetBinder;
+    friend class UpdateRegionLayoutTask;
 };
 
 

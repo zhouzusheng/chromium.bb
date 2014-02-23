@@ -43,6 +43,7 @@ namespace WebCore {
 class Blob;
 class FileReaderLoaderClient;
 class ScriptExecutionContext;
+class Stream;
 class TextResourceDecoder;
 class ThreadableLoader;
 
@@ -60,7 +61,8 @@ public:
     FileReaderLoader(ReadType, FileReaderLoaderClient*);
     ~FileReaderLoader();
 
-    void start(ScriptExecutionContext*, Blob*);
+    void start(ScriptExecutionContext*, const Blob&);
+    void start(ScriptExecutionContext*, const Stream&);
     void cancel();
 
     // ThreadableLoaderClient
@@ -71,23 +73,21 @@ public:
 
     String stringResult();
     PassRefPtr<ArrayBuffer> arrayBufferResult() const;
-#if ENABLE(STREAM)
-    PassRefPtr<Blob> blobResult();
-#endif // ENABLE(STREAM)
     unsigned bytesLoaded() const { return m_bytesLoaded; }
     unsigned totalBytes() const { return m_totalBytes; }
-    int errorCode() const { return m_errorCode; }
+    FileError::ErrorCode errorCode() const { return m_errorCode; }
 
     void setEncoding(const String&);
     void setDataType(const String& dataType) { m_dataType = dataType; }
-#if ENABLE(STREAM)
-    void setRange(unsigned, unsigned);
-#endif // ENABLE(STREAM)
 
 private:
+    // We have start() methods for Blob and Stream instead of exposing this
+    // method so that users don't misuse this by calling with non Blob/Stream
+    // URL.
+    void startForURL(ScriptExecutionContext*, const KURL&);
     void terminate();
     void cleanup();
-    void failed(int errorCode);
+    void failed(FileError::ErrorCode);
     void convertToText();
     void convertToDataURL();
 
@@ -120,7 +120,7 @@ private:
     unsigned m_rangeStart;
     unsigned m_rangeEnd;
 
-    int m_errorCode;
+    FileError::ErrorCode m_errorCode;
 };
 
 } // namespace WebCore

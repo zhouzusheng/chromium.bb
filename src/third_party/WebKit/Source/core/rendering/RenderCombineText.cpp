@@ -57,7 +57,7 @@ void RenderCombineText::setTextInternal(PassRefPtr<StringImpl> text)
 
 float RenderCombineText::width(unsigned from, unsigned length, const Font& font, float xPosition, HashSet<const SimpleFontData*>* fallbackFonts, GlyphOverflow* glyphOverflow) const
 {
-    if (!characters())
+    if (hasEmptyText())
         return 0;
 
     if (m_isCombined)
@@ -72,17 +72,16 @@ void RenderCombineText::adjustTextOrigin(FloatPoint& textOrigin, const FloatRect
         textOrigin.move(boxRect.height() / 2 - ceilf(m_combinedTextWidth) / 2, style()->font().pixelSize());
 }
 
-void RenderCombineText::getStringToRender(int start, String& string, int& length) const
+void RenderCombineText::getStringToRender(int start, StringView& string, int& length) const
 {
     ASSERT(start >= 0);
     if (m_isCombined) {
-        string = originalText();
+        string = StringView(originalText());
         length = string.length();
         return;
     }
- 
-    string = text();
-    string = string.substringSharingImpl(static_cast<unsigned>(start), length);
+
+    string = text().createView(start, length);
 }
 
 void RenderCombineText::combineText()

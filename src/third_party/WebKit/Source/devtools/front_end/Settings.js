@@ -71,10 +71,13 @@ WebInspector.Settings = function()
     this.eventListenerBreakpoints = this.createSetting("eventListenerBreakpoints", []);
     this.domBreakpoints = this.createSetting("domBreakpoints", []);
     this.xhrBreakpoints = this.createSetting("xhrBreakpoints", []);
-    this.sourceMapsEnabled = this.createSetting("sourceMapsEnabled", true);
+    this.jsSourceMapsEnabled = this.createSetting("sourceMapsEnabled", true);
+    this.cssSourceMapsEnabled = this.createSetting("cssSourceMapsEnabled", true);
     this.cacheDisabled = this.createSetting("cacheDisabled", false);
-    this.overrideUserAgent = this.createSetting("overrideUserAgent", "");
+    this.enableOverridesOnStartup = this.createSetting("enableOverridesOnStartup", false);
+    this.overrideUserAgent = this.createSetting("overrideUserAgent", false);
     this.userAgent = this.createSetting("userAgent", "");
+    this.overrideDeviceMetrics = this.createSetting("overrideDeviceMetrics", false);
     this.deviceMetrics = this.createSetting("deviceMetrics", "");
     this.deviceFitWindow = this.createSetting("deviceFitWindow", false);
     this.emulateTouchEvents = this.createSetting("emulateTouchEvents", false);
@@ -82,21 +85,22 @@ WebInspector.Settings = function()
     this.zoomLevel = this.createSetting("zoomLevel", 0);
     this.savedURLs = this.createSetting("savedURLs", {});
     this.javaScriptDisabled = this.createSetting("javaScriptDisabled", false);
+    this.overrideGeolocation = this.createSetting("overrideGeolocation", false);
     this.geolocationOverride = this.createSetting("geolocationOverride", "");
+    this.overrideDeviceOrientation = this.createSetting("overrideDeviceOrientation", false);
     this.deviceOrientationOverride = this.createSetting("deviceOrientationOverride", "");
-    this.showHeapSnapshotObjectsHiddenProperties = this.createSetting("showHeaSnapshotObjectsHiddenProperties", false);
-    this.showNativeSnapshotUninstrumentedSize = this.createSetting("showNativeSnapshotUninstrumentedSize", false);
+    this.showAdvancedHeapSnapshotProperties = this.createSetting("showAdvancedHeapSnapshotProperties", false);
     this.searchInContentScripts = this.createSetting("searchInContentScripts", false);
     this.textEditorIndent = this.createSetting("textEditorIndent", "    ");
+    this.textEditorAutoDetectIndent = this.createSetting("textEditorAutoIndentIndent", true);
     this.lastDockState = this.createSetting("lastDockState", "");
     this.cssReloadEnabled = this.createSetting("cssReloadEnabled", false);
-    this.cssReloadTimeout = this.createSetting("cssReloadTimeout", 1000);
     this.showCpuOnTimelineRuler = this.createSetting("showCpuOnTimelineRuler", false);
     this.timelineStackFramesToCapture = this.createSetting("timelineStackFramesToCapture", 30);
     this.timelineLimitStackFramesFlag = this.createSetting("timelineLimitStackFramesFlag", false);
     this.showMetricsRulers = this.createSetting("showMetricsRulers", false);
+    this.overrideCSSMedia = this.createSetting("overrideCSSMedia", false);
     this.emulatedCSSMedia = this.createSetting("emulatedCSSMedia", "print");
-    this.showToolbarIcons = this.createSetting("showToolbarIcons", false);
     this.workerInspectorWidth = this.createSetting("workerInspectorWidth", 600);
     this.workerInspectorHeight = this.createSetting("workerInspectorHeight", 600);
     this.messageURLFilters = this.createSetting("messageURLFilters", {});
@@ -107,6 +111,8 @@ WebInspector.Settings = function()
     this.shortcutPanelSwitch = this.createSetting("shortcutPanelSwitch", false);
     this.portForwardings = this.createSetting("portForwardings", []);
     this.showWhitespacesInEditor = this.createSetting("showWhitespacesInEditor", false);
+    this.skipStackFramesSwitch = this.createSetting("skipStackFramesSwitch", false);
+    this.skipStackFramesPattern = this.createSetting("skipStackFramesPattern", "");
 }
 
 WebInspector.Settings.prototype = {
@@ -245,17 +251,16 @@ WebInspector.ExperimentsSettings = function()
     this._enabledForTest = {};
 
     // Add currently running experiments here.
-    this.nativeMemorySnapshots = this._createExperiment("nativeMemorySnapshots", "Native memory profiling");
-    this.nativeMemoryTimeline = this._createExperiment("nativeMemoryTimeline", "Native memory timeline");
     this.fileSystemInspection = this._createExperiment("fileSystemInspection", "FileSystem inspection");
     this.canvasInspection = this._createExperiment("canvasInspection ", "Canvas inspection");
-    this.sass = this._createExperiment("sass", "Sass stylesheet debugging");
     this.cssRegions = this._createExperiment("cssRegions", "CSS Regions Support");
     this.showOverridesInDrawer = this._createExperiment("showOverridesInDrawer", "Show Overrides in drawer");
     this.customizableToolbar = this._createExperiment("customizableToolbar", "Enable toolbar customization");
     this.tethering = this._createExperiment("tethering", "Enable port forwarding");
     this.drawerOverlay = this._createExperiment("drawerOverlay", "Open console as overlay");
-    this.textEditorAutocomplete = this._createExperiment("textEditorAutocomplete", "Enable text editor autocompletion");
+    this.frameworksDebuggingSupport = this._createExperiment("frameworksDebuggingSupport", "Enable frameworks debugging support");
+    this.refreshFileSystemsOnFocus = this._createExperiment("refreshFileSystemsOnFocus", "Refresh file system folders on window focus");
+    this.scrollBeyondEndOfFile = this._createExperiment("scrollBeyondEndOfFile", "Support scrolling beyond end of file");
 
     this._cleanUpSetting();
 }
@@ -396,7 +401,7 @@ WebInspector.VersionController = function()
 {
 }
 
-WebInspector.VersionController.currentVersion = 3;
+WebInspector.VersionController.currentVersion = 4;
 
 WebInspector.VersionController.prototype = {
     updateVersion: function()
@@ -438,6 +443,12 @@ WebInspector.VersionController.prototype = {
         var fileSystemMappingSetting = WebInspector.settings.createSetting("fileSystemMapping", {});
         fileSystemMappingSetting.set({});
         delete window.localStorage["fileMappingEntries"];
+    },
+
+    _updateVersionFrom3To4: function()
+    {
+        var advancedMode = WebInspector.settings.createSetting("showHeaSnapshotObjectsHiddenProperties", false).get();
+        WebInspector.settings.showAdvancedHeapSnapshotProperties.set(advancedMode);
     },
 
     /**

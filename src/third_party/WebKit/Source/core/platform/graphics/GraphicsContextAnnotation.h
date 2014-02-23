@@ -34,14 +34,10 @@
 #ifndef GraphicsContextAnnotation_h
 #define GraphicsContextAnnotation_h
 
-#if ENABLE(GRAPHICS_CONTEXT_ANNOTATIONS)
 #define ANNOTATE_GRAPHICS_CONTEXT(paintInfo, renderer) \
     GraphicsContextAnnotator scopedGraphicsContextAnnotator; \
     if (UNLIKELY(paintInfo.context->annotationMode())) \
         scopedGraphicsContextAnnotator.annotate(paintInfo, renderer)
-#else
-#define ANNOTATE_GRAPHICS_CONTEXT(paint, renderer) do { } while (0)
-#endif
 
 namespace WebCore {
 
@@ -66,8 +62,8 @@ class GraphicsContextAnnotation {
 public:
     GraphicsContextAnnotation(const PaintInfo&, const RenderObject*);
 
-    String rendererName() const { return ASCIILiteral(m_rendererName); }
-    String paintPhase() const { return ASCIILiteral(m_paintPhase); }
+    String rendererName() const { return m_rendererName; }
+    String paintPhase() const { return m_paintPhase; }
     String elementId() const { return m_elementId; }
     String elementClass() const { return m_elementClass; }
     String elementTag() const { return m_elementTag; }

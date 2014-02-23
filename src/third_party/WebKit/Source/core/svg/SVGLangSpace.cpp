@@ -19,11 +19,10 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGLangSpace.h"
 
 #include "XMLNames.h"
-#include <wtf/StdLibExtras.h>
+#include "wtf/StdLibExtras.h"
 
 namespace WebCore {
 
@@ -65,7 +64,7 @@ bool SVGLangSpace::isKnownAttribute(const QualifiedName& attrName)
 {
     return attrName.matches(XMLNames::langAttr) || attrName.matches(XMLNames::spaceAttr);
 }
-    
+
 void SVGLangSpace::addSupportedAttributes(HashSet<QualifiedName>& supportedAttributes)
 {
     DEFINE_STATIC_LOCAL(AtomicString, xmlPrefix, ("xml", AtomicString::ConstructFromLiteral));

@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -29,8 +29,8 @@
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/PendingScript.h"
-#include "core/dom/ScriptElement.h"
-#include "core/loader/cache/CachedScript.h"
+#include "core/dom/ScriptLoader.h"
+#include "core/loader/cache/ScriptResource.h"
 
 namespace WebCore {
 
@@ -51,12 +51,12 @@ ScriptRunner::~ScriptRunner()
         m_document->decrementLoadEventDelayCount();
 }
 
-void ScriptRunner::queueScriptForExecution(ScriptElement* scriptElement, CachedResourceHandle<CachedScript> cachedScript, ExecutionType executionType)
+void ScriptRunner::queueScriptForExecution(ScriptLoader* scriptLoader, ResourcePtr<ScriptResource> resource, ExecutionType executionType)
 {
-    ASSERT(scriptElement);
-    ASSERT(cachedScript.get());
+    ASSERT(scriptLoader);
+    ASSERT(resource.get());
 
-    Element* element = scriptElement->element();
+    Element* element = scriptLoader->element();
     ASSERT(element);
     ASSERT(element->inDocument());
 
@@ -64,11 +64,11 @@ void ScriptRunner::queueScriptForExecution(ScriptElement* scriptElement, CachedR
 
     switch (executionType) {
     case ASYNC_EXECUTION:
-        m_pendingAsyncScripts.add(scriptElement, PendingScript(element, cachedScript.get()));
+        m_pendingAsyncScripts.add(scriptLoader, PendingScript(element, resource.get()));
         break;
 
     case IN_ORDER_EXECUTION:
-        m_scriptsToExecuteInOrder.append(PendingScript(element, cachedScript.get()));
+        m_scriptsToExecuteInOrder.append(PendingScript(element, resource.get()));
         break;
     }
 }
@@ -84,12 +84,12 @@ void ScriptRunner::resume()
         m_timer.startOneShot(0);
 }
 
-void ScriptRunner::notifyScriptReady(ScriptElement* scriptElement, ExecutionType executionType)
+void ScriptRunner::notifyScriptReady(ScriptLoader* scriptLoader, ExecutionType executionType)
 {
     switch (executionType) {
     case ASYNC_EXECUTION:
-        ASSERT(m_pendingAsyncScripts.contains(scriptElement));
-        m_scriptsToExecuteSoon.append(m_pendingAsyncScripts.take(scriptElement));
+        ASSERT(m_pendingAsyncScripts.contains(scriptLoader));
+        m_scriptsToExecuteSoon.append(m_pendingAsyncScripts.take(scriptLoader));
         break;
 
     case IN_ORDER_EXECUTION:
@@ -109,16 +109,16 @@ void ScriptRunner::timerFired(Timer<ScriptRunner>* timer)
     scripts.swap(m_scriptsToExecuteSoon);
 
     size_t numInOrderScriptsToExecute = 0;
-    for (; numInOrderScriptsToExecute < m_scriptsToExecuteInOrder.size() && m_scriptsToExecuteInOrder[numInOrderScriptsToExecute].cachedScript()->isLoaded(); ++numInOrderScriptsToExecute)
+    for (; numInOrderScriptsToExecute < m_scriptsToExecuteInOrder.size() && m_scriptsToExecuteInOrder[numInOrderScriptsToExecute].resource()->isLoaded(); ++numInOrderScriptsToExecute)
         scripts.append(m_scriptsToExecuteInOrder[numInOrderScriptsToExecute]);
     if (numInOrderScriptsToExecute)
         m_scriptsToExecuteInOrder.remove(0, numInOrderScriptsToExecute);
 
     size_t size = scripts.size();
     for (size_t i = 0; i < size; ++i) {
-        CachedScript* cachedScript = scripts[i].cachedScript();
+        ScriptResource* resource = scripts[i].resource();
         RefPtr<Element> element = scripts[i].releaseElementAndClear();
-        toScriptElementIfPossible(element.get())->execute(cachedScript);
+        toScriptLoaderIfPossible(element.get())->execute(resource);
         m_document->decrementLoadEventDelayCount();
     }
 }

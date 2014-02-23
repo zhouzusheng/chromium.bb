@@ -21,7 +21,11 @@
 #include "config.h"
 #include "RefCountedLeakCounter.h"
 
-#include <wtf/HashCountedSet.h>
+#ifndef NDEBUG
+#include "wtf/Assertions.h"
+#include "wtf/Atomics.h"
+#include "wtf/HashCountedSet.h"
+#endif
 
 namespace WTF {
 
@@ -61,7 +65,7 @@ void RefCountedLeakCounter::cancelMessageSuppression(const char* reason)
 RefCountedLeakCounter::RefCountedLeakCounter(const char* description)
     : m_description(description)
 {
-}    
+}
 
 RefCountedLeakCounter::~RefCountedLeakCounter()
 {

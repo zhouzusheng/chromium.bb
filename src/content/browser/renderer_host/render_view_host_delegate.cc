@@ -4,7 +4,7 @@
 
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 #include "webkit/common/webpreferences.h"
 
 namespace content {
@@ -43,6 +43,11 @@ WebPreferences RenderViewHostDelegate::GetWebkitPrefs() {
 
 bool RenderViewHostDelegate::IsFullscreenForCurrentTab() const {
   return false;
+}
+
+SessionStorageNamespace* RenderViewHostDelegate::GetSessionStorageNamespace(
+    SiteInstance* instance) {
+  return NULL;
 }
 
 }  // namespace content

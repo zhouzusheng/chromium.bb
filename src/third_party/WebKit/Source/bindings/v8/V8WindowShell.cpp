@@ -63,7 +63,6 @@
 #include <algorithm>
 #include <utility>
 #include <v8-debug.h>
-#include <v8-i18n/include/extension.h>
 #include <v8.h>
 
 namespace WebCore {
@@ -271,10 +270,6 @@ void V8WindowShell::createContext()
     // Used to avoid sleep calls in unload handlers.
     ScriptController::registerExtensionIfNeeded(DateExtension::get());
 
-    // Enables experimental i18n API in V8.
-    if (RuntimeEnabledFeatures::javaScriptI18NAPIEnabled())
-        ScriptController::registerExtensionIfNeeded(v8_i18n::Extension::get());
-
     // Dynamically tell v8 about our extensions now.
     const V8Extensions& extensions = ScriptController::registeredExtensions();
     OwnArrayPtr<const char*> extensionNames = adoptArrayPtr(new const char*[extensions.size()]);
@@ -304,8 +299,8 @@ void V8WindowShell::createContext()
 bool V8WindowShell::installDOMWindow()
 {
     DOMWrapperWorld::setInitializingWindow(true);
-    DOMWindow* window = m_frame->document()->domWindow();
-    v8::Local<v8::Object> windowWrapper = V8ObjectConstructor::newInstance(V8PerContextData::from(m_context.get())->constructorForType(&V8Window::info));
+    DOMWindow* window = m_frame->domWindow();
+    v8::Local<v8::Object> windowWrapper = V8ObjectConstructor::newInstance(V8PerContextData::from(m_context.newLocal(m_isolate))->constructorForType(&V8Window::info));
     if (windowWrapper.IsEmpty())
         return false;
 
@@ -329,7 +324,7 @@ bool V8WindowShell::installDOMWindow()
     v8::Handle<v8::Object> innerGlobalObject = toInnerGlobalObject(m_context.newLocal(m_isolate));
     V8DOMWrapper::setNativeInfo(innerGlobalObject, &V8Window::info, window);
     innerGlobalObject->SetPrototype(windowWrapper);
-    V8DOMWrapper::associateObjectWithWrapper(PassRefPtr<DOMWindow>(window), &V8Window::info, windowWrapper, m_isolate, WrapperConfiguration::Dependent);
+    V8DOMWrapper::associateObjectWithWrapper<V8Window>(PassRefPtr<DOMWindow>(window), &V8Window::info, windowWrapper, m_isolate, WrapperConfiguration::Dependent);
     DOMWrapperWorld::setInitializingWindow(false);
     return true;
 }
@@ -440,8 +435,8 @@ static v8::Handle<v8::Value> getNamedProperty(HTMLDocument* htmlDocument, const 
     if (items->hasExactlyOneItem()) {
         Node* node = items->item(0);
         Frame* frame = 0;
-        if (node->hasTagName(HTMLNames::iframeTag) && (frame = static_cast<HTMLIFrameElement*>(node)->contentFrame()))
-            return toV8(frame->document()->domWindow(), creationContext, isolate);
+        if (node->hasTagName(HTMLNames::iframeTag) && (frame = toHTMLIFrameElement(node)->contentFrame()))
+            return toV8(frame->domWindow(), creationContext, isolate);
         return toV8(node, creationContext, isolate);
     }
     return toV8(items.release(), creationContext, isolate);
@@ -449,7 +444,7 @@ static v8::Handle<v8::Value> getNamedProperty(HTMLDocument* htmlDocument, const 
 
 static void getter(v8::Local<v8::String> property, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
-    // FIXME: Consider passing AtomicStringImpl directly.
+    // FIXME: Consider passing StringImpl directly.
     AtomicString name = toWebCoreAtomicString(property);
     HTMLDocument* htmlDocument = V8HTMLDocument::toNative(info.Holder());
     ASSERT(htmlDocument);
@@ -505,7 +500,7 @@ void V8WindowShell::updateSecurityOrigin()
     ASSERT(m_world->isMainWorld());
     if (m_context.isEmpty())
         return;
-    v8::HandleScope handleScope;
+    v8::HandleScope handleScope(m_isolate);
     setSecurityToken();
 }
 

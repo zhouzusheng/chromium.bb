@@ -32,21 +32,20 @@
 #include "core/css/CSSDefaultStyleSheets.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/StyleSheetContents.h"
+#include "core/css/resolver/MatchRequest.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/DocumentStyleSheetCollection.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "wtf/MemoryInstrumentationHashMap.h"
 
 namespace WebCore {
 
-void ShadowDistributedRules::addRule(StyleRule* rule, size_t selectorIndex, ContainerNode* scope, AddRuleFlags addRuleFlags)
+void ShadowDistributedRules::addRule(StyleRule* rule, size_t selectorIndex, ContainerNode* scopingNode, AddRuleFlags addRuleFlags)
 {
-    if (m_shadowDistributedRuleSetMap.contains(scope))
-        m_shadowDistributedRuleSetMap.get(scope)->addRule(rule, selectorIndex, addRuleFlags);
+    if (m_shadowDistributedRuleSetMap.contains(scopingNode))
+        m_shadowDistributedRuleSetMap.get(scopingNode)->addRule(rule, selectorIndex, addRuleFlags);
     else {
         OwnPtr<RuleSet> ruleSetForScope = RuleSet::create();
         ruleSetForScope->addRule(rule, selectorIndex, addRuleFlags);
-        m_shadowDistributedRuleSetMap.add(scope, ruleSetForScope.release());
+        m_shadowDistributedRuleSetMap.add(scopingNode, ruleSetForScope.release());
     }
 }
 
@@ -56,10 +55,9 @@ void ShadowDistributedRules::collectMatchRequests(bool includeEmptyRules, Vector
         matchRequests.append(MatchRequest(it->value.get(), includeEmptyRules, it->key));
 }
 
-void ShadowDistributedRules::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+void ShadowDistributedRules::reset(const ContainerNode* scopingNode)
 {
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_shadowDistributedRuleSetMap, "shadowDistributedRuleSetMap");
+    m_shadowDistributedRuleSetMap.remove(scopingNode);
 }
 
 void ShadowDistributedRules::collectFeaturesTo(RuleFeatureSet& features)
@@ -115,13 +113,6 @@ void DocumentRuleSets::collectFeaturesTo(RuleFeatureSet& features, bool isViewSo
         features.add(m_userStyle->features());
 
     m_shadowDistributedRules.collectFeaturesTo(features);
-}
-
-void DocumentRuleSets::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_userStyle, "userStyle");
-    info.addMember(m_shadowDistributedRules, "shadowDistributedRules");
 }
 
 } // namespace WebCore

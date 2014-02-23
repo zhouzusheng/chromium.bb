@@ -12,7 +12,6 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
-#include "base/process_util.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/waitable_event.h"
@@ -96,7 +95,8 @@ BrowserChildProcessHostImpl::BrowserChildProcessHostImpl(
     int process_type,
     BrowserChildProcessHostDelegate* delegate)
     : data_(process_type),
-      delegate_(delegate) {
+      delegate_(delegate),
+      power_monitor_message_broadcaster_(this) {
   data_.id = ChildProcessHostImpl::GenerateChildProcessUniqueId();
 
   child_process_host_.reset(ChildProcessHost::Create(this));
@@ -147,6 +147,7 @@ void BrowserChildProcessHostImpl::Launch(
     switches::kEnableDCHECK,
     switches::kEnableLogging,
     switches::kLoggingLevel,
+    switches::kTraceToConsole,
     switches::kV,
     switches::kVModule,
 #if defined(OS_POSIX)
@@ -260,39 +261,41 @@ bool BrowserChildProcessHostImpl::CanShutdown() {
 
 void BrowserChildProcessHostImpl::OnChildDisconnected() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  DCHECK(data_.handle != base::kNullProcessHandle);
-  int exit_code;
-  base::TerminationStatus status = GetTerminationStatus(&exit_code);
-  switch (status) {
-    case base::TERMINATION_STATUS_PROCESS_CRASHED:
-    case base::TERMINATION_STATUS_ABNORMAL_TERMINATION: {
-      delegate_->OnProcessCrashed(exit_code);
-      BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                              base::Bind(&NotifyProcessCrashed, data_));
-      UMA_HISTOGRAM_ENUMERATION("ChildProcess.Crashed2",
-                                data_.process_type,
-                                PROCESS_TYPE_MAX);
-      break;
+  if (child_process_.get() || data_.handle) {
+    DCHECK(data_.handle != base::kNullProcessHandle);
+    int exit_code;
+    base::TerminationStatus status = GetTerminationStatus(&exit_code);
+    switch (status) {
+      case base::TERMINATION_STATUS_PROCESS_CRASHED:
+      case base::TERMINATION_STATUS_ABNORMAL_TERMINATION: {
+        delegate_->OnProcessCrashed(exit_code);
+        BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+                                base::Bind(&NotifyProcessCrashed, data_));
+        UMA_HISTOGRAM_ENUMERATION("ChildProcess.Crashed2",
+                                  data_.process_type,
+                                  PROCESS_TYPE_MAX);
+        break;
+      }
+      case base::TERMINATION_STATUS_PROCESS_WAS_KILLED: {
+        delegate_->OnProcessCrashed(exit_code);
+        // Report that this child process was killed.
+        UMA_HISTOGRAM_ENUMERATION("ChildProcess.Killed2",
+                                  data_.process_type,
+                                  PROCESS_TYPE_MAX);
+        break;
+      }
+      case base::TERMINATION_STATUS_STILL_RUNNING: {
+        UMA_HISTOGRAM_ENUMERATION("ChildProcess.DisconnectedAlive2",
+                                  data_.process_type,
+                                  PROCESS_TYPE_MAX);
+      }
+      default:
+        break;
     }
-    case base::TERMINATION_STATUS_PROCESS_WAS_KILLED: {
-      delegate_->OnProcessCrashed(exit_code);
-      // Report that this child process was killed.
-      UMA_HISTOGRAM_ENUMERATION("ChildProcess.Killed2",
-                                data_.process_type,
-                                PROCESS_TYPE_MAX);
-      break;
-    }
-    case base::TERMINATION_STATUS_STILL_RUNNING: {
-      UMA_HISTOGRAM_ENUMERATION("ChildProcess.DisconnectedAlive2",
-                                data_.process_type,
-                                PROCESS_TYPE_MAX);
-    }
-    default:
-      break;
+    UMA_HISTOGRAM_ENUMERATION("ChildProcess.Disconnected2",
+                              data_.process_type,
+                              PROCESS_TYPE_MAX);
   }
-  UMA_HISTOGRAM_ENUMERATION("ChildProcess.Disconnected2",
-                            data_.process_type,
-                            PROCESS_TYPE_MAX);
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                           base::Bind(&NotifyProcessHostDisconnected, data_));
   delete delegate_;  // Will delete us

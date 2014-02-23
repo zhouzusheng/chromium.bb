@@ -29,11 +29,12 @@
 #include "SkBlurImageFilter.h"
 #include "SkColorFilterImageFilter.h"
 #include "SkColorMatrixFilter.h"
+#include "SkDropShadowImageFilter.h"
 #include "SkTableColorFilter.h"
 #include "core/platform/graphics/ImageBuffer.h"
-#include "core/platform/graphics/filters/DropShadowImageFilter.h"
 #include "core/platform/graphics/filters/FilterEffect.h"
 #include "core/platform/graphics/filters/FilterOperations.h"
+#include "core/platform/graphics/filters/SourceGraphic.h"
 
 namespace {
 
@@ -152,10 +153,10 @@ void getSepiaMatrix(float amount, SkScalar matrix[20])
     matrix[18] = 1;
 }
 
-SkImageFilter* createMatrixImageFilter(SkScalar matrix[20], SkImageFilter* input)
+PassRefPtr<SkImageFilter> createMatrixImageFilter(SkScalar matrix[20], SkImageFilter* input)
 {
-    SkAutoTUnref<SkColorFilter> colorFilter(new SkColorMatrixFilter(matrix));
-    return SkColorFilterImageFilter::Create(colorFilter, input);
+    RefPtr<SkColorFilter> colorFilter(adoptRef(new SkColorMatrixFilter(matrix)));
+    return adoptRef(SkColorFilterImageFilter::Create(colorFilter.get(), input));
 }
 
 };
@@ -168,31 +169,27 @@ SkiaImageFilterBuilder::SkiaImageFilterBuilder()
 
 SkiaImageFilterBuilder::~SkiaImageFilterBuilder()
 {
-    for (FilterBuilderHashMap::iterator it = m_map.begin(); it != m_map.end(); ++it)
-        SkSafeUnref(it->value);
 }
 
-SkImageFilter* SkiaImageFilterBuilder::build(FilterEffect* effect, ColorSpace colorSpace)
+PassRefPtr<SkImageFilter> SkiaImageFilterBuilder::build(FilterEffect* effect, ColorSpace colorSpace)
 {
     if (!effect)
         return 0;
 
-    SkImageFilter* filter = 0;
     FilterColorSpacePair key(effect, colorSpace);
     FilterBuilderHashMap::iterator it = m_map.find(key);
     if (it != m_map.end()) {
-        filter = it->value;
+        return it->value;
     } else {
         // Note that we may still need the color transform even if the filter is null
-        filter = transformColorSpace(effect->createImageFilter(this), effect->operatingColorSpace(), colorSpace);
+        RefPtr<SkImageFilter> origFilter = effect->createImageFilter(this);
+        RefPtr<SkImageFilter> filter = transformColorSpace(origFilter.get(), effect->operatingColorSpace(), colorSpace);
         m_map.set(key, filter);
+        return filter.release();
     }
-    // The hash map has a ref, so we return a new ref for the caller.
-    SkSafeRef(filter);
-    return filter;
 }
 
-SkImageFilter* SkiaImageFilterBuilder::transformColorSpace(
+PassRefPtr<SkImageFilter> SkiaImageFilterBuilder::transformColorSpace(
     SkImageFilter* input, ColorSpace srcColorSpace, ColorSpace dstColorSpace) {
     if ((srcColorSpace == dstColorSpace)
         || (srcColorSpace != ColorSpaceLinearRGB && srcColorSpace != ColorSpaceDeviceRGB)
@@ -204,83 +201,99 @@ SkImageFilter* SkiaImageFilterBuilder::transformColorSpace(
         lut = &ImageBuffer::getLinearRgbLUT()[0];
     else if (dstColorSpace == ColorSpaceDeviceRGB)
         lut = &ImageBuffer::getDeviceRgbLUT()[0];
+    else
+        return input;
 
-    return lut ? SkColorFilterImageFilter::Create(
-        SkTableColorFilter::CreateARGB(0, lut, lut, lut), input) : input;
+    RefPtr<SkColorFilter> colorFilter(adoptRef(SkTableColorFilter::CreateARGB(0, lut, lut, lut)));
+    return adoptRef(SkColorFilterImageFilter::Create(colorFilter.get(), input));
 }
 
-SkImageFilter* SkiaImageFilterBuilder::build(const FilterOperations& operations)
+PassRefPtr<SkImageFilter> SkiaImageFilterBuilder::build(const FilterOperations& operations)
 {
-    SkAutoTUnref<SkImageFilter> filter;
+    RefPtr<SkImageFilter> filter;
     SkScalar matrix[20];
     ColorSpace currentColorSpace = ColorSpaceDeviceRGB;
     for (size_t i = 0; i < operations.size(); ++i) {
         const FilterOperation& op = *operations.at(i);
         switch (op.getOperationType()) {
         case FilterOperation::REFERENCE: {
-            FilterEffect* filterEffect = static_cast<const ReferenceFilterOperation*>(&op)->filterEffect();
-            // FIXME: hook up parent filter to image source
-            if (filterEffect)
+            const ReferenceFilterOperation* referenceFilterOperation = static_cast<const ReferenceFilterOperation*>(&op);
+            ReferenceFilter* referenceFilter = referenceFilterOperation->filter();
+            if (referenceFilter && referenceFilter->lastEffect()) {
+                FilterEffect* filterEffect = referenceFilter->lastEffect();
+                // Link SourceGraphic to the previous filter in the chain.
+                // We don't know what color space the interior nodes will request, so we have to populate the map with both options.
+                // (Only one of these will actually have a color transform on it.)
+                FilterColorSpacePair deviceKey(referenceFilter->sourceGraphic(), ColorSpaceDeviceRGB);
+                FilterColorSpacePair linearKey(referenceFilter->sourceGraphic(), ColorSpaceLinearRGB);
+                m_map.set(deviceKey, transformColorSpace(filter.get(), currentColorSpace, ColorSpaceDeviceRGB));
+                m_map.set(linearKey, transformColorSpace(filter.get(), currentColorSpace, ColorSpaceLinearRGB));
+
                 currentColorSpace = filterEffect->operatingColorSpace();
-            filter.reset(SkiaImageFilterBuilder::build(filterEffect, currentColorSpace));
+                filter = SkiaImageFilterBuilder::build(filterEffect, currentColorSpace);
+                // We might have no reference to the SourceGraphic's Skia filter now, so make
+                // sure we don't keep it in the map anymore.
+                m_map.remove(deviceKey);
+                m_map.remove(linearKey);
+            }
             break;
         }
         case FilterOperation::GRAYSCALE: {
             float amount = static_cast<const BasicColorMatrixFilterOperation*>(&op)->amount();
             getGrayscaleMatrix(1 - amount, matrix);
-            filter.reset(createMatrixImageFilter(matrix, filter));
+            filter = createMatrixImageFilter(matrix, filter.get());
             break;
         }
         case FilterOperation::SEPIA: {
             float amount = static_cast<const BasicColorMatrixFilterOperation*>(&op)->amount();
             getSepiaMatrix(1 - amount, matrix);
-            filter.reset(createMatrixImageFilter(matrix, filter));
+            filter = createMatrixImageFilter(matrix, filter.get());
             break;
         }
         case FilterOperation::SATURATE: {
             float amount = static_cast<const BasicColorMatrixFilterOperation*>(&op)->amount();
             getSaturateMatrix(amount, matrix);
-            filter.reset(createMatrixImageFilter(matrix, filter));
+            filter = createMatrixImageFilter(matrix, filter.get());
             break;
         }
         case FilterOperation::HUE_ROTATE: {
             float amount = static_cast<const BasicColorMatrixFilterOperation*>(&op)->amount();
             getHueRotateMatrix(amount, matrix);
-            filter.reset(createMatrixImageFilter(matrix, filter));
+            filter = createMatrixImageFilter(matrix, filter.get());
             break;
         }
         case FilterOperation::INVERT: {
             float amount = static_cast<const BasicComponentTransferFilterOperation*>(&op)->amount();
             getInvertMatrix(amount, matrix);
-            filter.reset(createMatrixImageFilter(matrix, filter));
+            filter = createMatrixImageFilter(matrix, filter.get());
             break;
         }
         case FilterOperation::OPACITY: {
             float amount = static_cast<const BasicComponentTransferFilterOperation*>(&op)->amount();
             getOpacityMatrix(amount, matrix);
-            filter.reset(createMatrixImageFilter(matrix, filter));
+            filter = createMatrixImageFilter(matrix, filter.get());
             break;
         }
         case FilterOperation::BRIGHTNESS: {
             float amount = static_cast<const BasicComponentTransferFilterOperation*>(&op)->amount();
             getBrightnessMatrix(amount, matrix);
-            filter.reset(createMatrixImageFilter(matrix, filter));
+            filter = createMatrixImageFilter(matrix, filter.get());
             break;
         }
         case FilterOperation::CONTRAST: {
             float amount = static_cast<const BasicComponentTransferFilterOperation*>(&op)->amount();
             getContrastMatrix(amount, matrix);
-            filter.reset(createMatrixImageFilter(matrix, filter));
+            filter = createMatrixImageFilter(matrix, filter.get());
             break;
         }
         case FilterOperation::BLUR: {
             float pixelRadius = static_cast<const BlurFilterOperation*>(&op)->stdDeviation().getFloatValue();
-            filter.reset(new SkBlurImageFilter(pixelRadius, pixelRadius, filter));
+            filter = adoptRef(new SkBlurImageFilter(pixelRadius, pixelRadius, filter.get()));
             break;
         }
         case FilterOperation::DROP_SHADOW: {
             const DropShadowFilterOperation* drop = static_cast<const DropShadowFilterOperation*>(&op);
-            filter.reset(new DropShadowImageFilter(SkIntToScalar(drop->x()), SkIntToScalar(drop->y()), SkIntToScalar(drop->stdDeviation()), drop->color().rgb(), filter));
+            filter = adoptRef(new SkDropShadowImageFilter(SkIntToScalar(drop->x()), SkIntToScalar(drop->y()), SkIntToScalar(drop->stdDeviation()), drop->color().rgb(), filter.get()));
             break;
         }
         case FilterOperation::VALIDATED_CUSTOM:
@@ -293,9 +306,9 @@ SkImageFilter* SkiaImageFilterBuilder::build(const FilterOperations& operations)
     }
     if (currentColorSpace != ColorSpaceDeviceRGB) {
         // Transform to device color space at the end of processing, if required
-        filter.reset(transformColorSpace(filter.get(), currentColorSpace, ColorSpaceDeviceRGB));
+        filter = transformColorSpace(filter.get(), currentColorSpace, ColorSpaceDeviceRGB);
     }
-    return filter.detach();
+    return filter.release();
 }
 
 };

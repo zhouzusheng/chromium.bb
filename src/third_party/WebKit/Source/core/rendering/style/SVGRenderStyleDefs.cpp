@@ -58,7 +58,7 @@ StyleFillData::StyleFillData(const StyleFillData& other)
 
 bool StyleFillData::operator==(const StyleFillData& other) const
 {
-    return opacity == other.opacity 
+    return opacity == other.opacity
         && paintType == other.paintType
         && paintColor == other.paintColor
         && paintUri == other.paintUri
@@ -171,25 +171,6 @@ bool StyleMiscData::operator==(const StyleMiscData& other) const
         && floodColor == other.floodColor
         && lightingColor == other.lightingColor
         && baselineShiftValue == other.baselineShiftValue;
-}
-
-StyleShadowSVGData::StyleShadowSVGData()
-{
-}
-
-StyleShadowSVGData::StyleShadowSVGData(const StyleShadowSVGData& other)
-    : RefCounted<StyleShadowSVGData>()
-    , shadow(other.shadow ? adoptPtr(new ShadowData(*other.shadow)) : nullptr)
-{
-}
-
-bool StyleShadowSVGData::operator==(const StyleShadowSVGData& other) const
-{
-    if ((!shadow && other.shadow) || (shadow && !other.shadow))
-        return false;
-    if (shadow && other.shadow && (*shadow != *other.shadow))
-        return false;
-    return true;
 }
 
 StyleResourceData::StyleResourceData()

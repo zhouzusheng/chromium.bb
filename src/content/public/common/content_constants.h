@@ -24,6 +24,14 @@ CONTENT_EXPORT extern const base::FilePath::CharType kPepperDataDirname[];
 // The MIME type used for the browser plugin.
 CONTENT_EXPORT extern const char kBrowserPluginMimeType[];
 
+CONTENT_EXPORT extern const char kFlashPluginName[];
+CONTENT_EXPORT extern const char kFlashPluginSwfMimeType[];
+CONTENT_EXPORT extern const char kFlashPluginSwfExtension[];
+CONTENT_EXPORT extern const char kFlashPluginSwfDescription[];
+CONTENT_EXPORT extern const char kFlashPluginSplMimeType[];
+CONTENT_EXPORT extern const char kFlashPluginSplExtension[];
+CONTENT_EXPORT extern const char kFlashPluginSplDescription[];
+
 CONTENT_EXPORT extern const size_t kMaxRendererProcessCount;
 
 // The maximum number of session history entries per tab.
@@ -57,6 +65,10 @@ CONTENT_EXPORT extern const char kGpuCompositingFieldTrialName[];
 CONTENT_EXPORT extern const char
     kGpuCompositingFieldTrialForceCompositingEnabledName[];
 CONTENT_EXPORT extern const char kGpuCompositingFieldTrialThreadEnabledName[];
+
+// Shared constants for the low latency flash audio field trial.
+CONTENT_EXPORT extern const char kLowLatencyFlashAudioFieldTrialName[];
+CONTENT_EXPORT extern const char kLowLatencyFlashAudioFieldTrialEnabledName[];
 
 }  // namespace content
 

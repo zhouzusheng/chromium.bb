@@ -29,6 +29,7 @@
 namespace WebCore {
 
 class BeforeTextInsertedEvent;
+class ExceptionState;
 class VisibleSelection;
 
 class HTMLTextAreaElement FINAL : public HTMLTextFormControlElement {
@@ -46,13 +47,13 @@ public:
     void setDefaultValue(const String&);
     int textLength() const { return value().length(); }
     virtual int maxLength() const;
-    void setMaxLength(int, ExceptionCode&);
+    void setMaxLength(int, ExceptionState&);
     // For ValidityState
     virtual String validationMessage() const OVERRIDE;
     virtual bool valueMissing() const OVERRIDE;
     virtual bool tooLong() const OVERRIDE;
     bool isValidValue(const String&) const;
-    
+
     virtual HTMLElement* innerTextElement() const;
 
     void rendererWillBeDestroyed();
@@ -66,7 +67,6 @@ private:
     enum WrapMethod { NoWrap, SoftWrap, HardWrap };
 
     virtual void didAddUserAgentShadowRoot(ShadowRoot*) OVERRIDE;
-    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
     void handleBeforeTextInsertedEvent(BeforeTextInsertedEvent*) const;
     static String sanitizeUserInputValue(const String&, unsigned maxLength);
@@ -83,7 +83,7 @@ private:
     virtual bool isRequiredFormControl() const { return isRequired(); }
 
     virtual void defaultEventHandler(Event*);
-    
+
     virtual void subtreeHasChanged();
 
     virtual bool isEnumeratable() const { return true; }
@@ -104,8 +104,8 @@ private:
     virtual bool appendFormData(FormDataList&, bool);
     virtual void reset();
     virtual bool hasCustomFocusLogic() const OVERRIDE;
-    virtual bool isMouseFocusable() const;
-    virtual bool isKeyboardFocusable(KeyboardEvent*) const;
+    virtual bool shouldShowFocusRingOnMouseFocus() const OVERRIDE;
+    virtual bool isKeyboardFocusable() const OVERRIDE;
     virtual void updateFocusAppearance(bool restorePreviousSelection);
 
     virtual void accessKeyAction(bool sendMouseEvents);
@@ -127,9 +127,20 @@ private:
     mutable bool m_wasModifiedByUser;
 };
 
-inline bool isHTMLTextAreaElement(Node* node)
+inline bool isHTMLTextAreaElement(const Node* node)
 {
     return node->hasTagName(HTMLNames::textareaTag);
+}
+
+inline bool isHTMLTextAreaElement(const Element* element)
+{
+    return element->hasTagName(HTMLNames::textareaTag);
+}
+
+inline HTMLTextAreaElement* toHTMLTextAreaElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLTextAreaElement(node));
+    return static_cast<HTMLTextAreaElement*>(node);
 }
 
 } //namespace

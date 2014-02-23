@@ -9,6 +9,7 @@
 #include "base/callback.h"
 #include "base/file_util.h"
 #include "base/files/file_util_proxy.h"
+#include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/fileapi/browser_file_system_helper.h"
 #include "content/browser/renderer_host/pepper/pepper_file_system_browser_host.h"
 #include "content/public/browser/browser_context.h"
@@ -32,7 +33,6 @@
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_file_ref_api.h"
 #include "ppapi/thunk/ppb_file_system_api.h"
-#include "webkit/browser/fileapi/file_permission_policy.h"
 #include "webkit/browser/fileapi/file_system_operation.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
 #include "webkit/browser/fileapi/file_system_url.h"
@@ -60,12 +60,25 @@ PepperInternalFileRefBackend::~PepperInternalFileRefBackend() {
 }
 
 fileapi::FileSystemURL PepperInternalFileRefBackend::GetFileSystemURL() const {
-  if (!fs_url_.is_valid() && fs_host_.get()) {
+  if (!fs_url_.is_valid() && fs_host_.get() && fs_host_->IsOpened()) {
     GURL fs_path = fs_host_->GetRootUrl().Resolve(
         net::EscapePath(path_.substr(1)));
     fs_url_ = GetFileSystemContext()->CrackURL(fs_path);
   }
   return fs_url_;
+}
+
+std::string PepperInternalFileRefBackend::GetFileSystemURLSpec() const {
+  if (fs_host_.get() && fs_host_->IsOpened() &&
+      fs_host_->GetRootUrl().is_valid()) {
+    return fs_host_->GetRootUrl().Resolve(
+        net::EscapePath(path_.substr(1))).spec();
+  }
+  return std::string();
+}
+
+base::FilePath PepperInternalFileRefBackend::GetExternalPath() const {
+  return base::FilePath();
 }
 
 scoped_refptr<fileapi::FileSystemContext>
@@ -90,13 +103,6 @@ int32_t PepperInternalFileRefBackend::MakeDirectory(
   if (!GetFileSystemURL().is_valid())
     return PP_ERROR_FAILED;
 
-  base::PlatformFileError error;
-  if (!HasPermissionsForFile(GetFileSystemURL(),
-                             fileapi::kCreateFilePermissions,
-                             &error)) {
-    return ppapi::PlatformFileErrorToPepperError(error);
-  }
-
   GetFileSystemContext()->operation_runner()->CreateDirectory(
       GetFileSystemURL(),
       false,
@@ -115,15 +121,6 @@ int32_t PepperInternalFileRefBackend::Touch(
   if (!GetFileSystemURL().is_valid())
     return PP_ERROR_FAILED;
 
-  // TODO(teravest): Change this to be kWriteFilePermissions here and in
-  // fileapi_message_filter.
-  base::PlatformFileError error;
-  if (!HasPermissionsForFile(GetFileSystemURL(),
-                             fileapi::kCreateFilePermissions,
-                             &error)) {
-    return ppapi::PlatformFileErrorToPepperError(error);
-  }
-
   GetFileSystemContext()->operation_runner()->TouchFile(
       GetFileSystemURL(),
       ppapi::PPTimeToTime(last_access_time),
@@ -140,13 +137,6 @@ int32_t PepperInternalFileRefBackend::Delete(
   if (!GetFileSystemURL().is_valid())
     return PP_ERROR_FAILED;
 
-  base::PlatformFileError error;
-  if (!HasPermissionsForFile(GetFileSystemURL(),
-                             fileapi::kWriteFilePermissions,
-                             &error)) {
-    return ppapi::PlatformFileErrorToPepperError(error);
-  }
-
   GetFileSystemContext()->operation_runner()->Remove(
       GetFileSystemURL(),
       false,
@@ -159,38 +149,15 @@ int32_t PepperInternalFileRefBackend::Delete(
 
 int32_t PepperInternalFileRefBackend::Rename(
     ppapi::host::ReplyMessageContext reply_context,
-    PP_Resource new_file_ref) {
+    PepperFileRefHost* new_file_ref) {
   if (!GetFileSystemURL().is_valid())
     return PP_ERROR_FAILED;
 
-  base::PlatformFileError error;
-  if (!HasPermissionsForFile(
-      GetFileSystemURL(),
-      fileapi::kReadFilePermissions | fileapi::kWriteFilePermissions,
-      &error)) {
-    return ppapi::PlatformFileErrorToPepperError(error);
-  }
-
-  ResourceHost* resource_host = host_->GetResourceHost(new_file_ref);
-  if (!resource_host)
-    return PP_ERROR_BADRESOURCE;
-
-  PepperFileRefHost* file_ref_host = resource_host->AsPepperFileRefHost();
-  if (!file_ref_host)
-    return PP_ERROR_BADRESOURCE;
-
-  fileapi::FileSystemURL new_url = file_ref_host->GetFileSystemURL();
+  fileapi::FileSystemURL new_url = new_file_ref->GetFileSystemURL();
   if (!new_url.is_valid())
     return PP_ERROR_FAILED;
   if (!new_url.IsInSameFileSystem(GetFileSystemURL()))
     return PP_ERROR_FAILED;
-
-  if (!HasPermissionsForFile(GetFileSystemURL(),
-                             fileapi::kCreateFilePermissions,
-                             &error)) {
-    return ppapi::PlatformFileErrorToPepperError(error);
-  }
-
 
   GetFileSystemContext()->operation_runner()->Move(
       GetFileSystemURL(),
@@ -206,13 +173,6 @@ int32_t PepperInternalFileRefBackend::Query(
     ppapi::host::ReplyMessageContext reply_context) {
   if (!GetFileSystemURL().is_valid())
     return PP_ERROR_FAILED;
-
-  base::PlatformFileError error;
-  if (!HasPermissionsForFile(GetFileSystemURL(),
-                             fileapi::kReadFilePermissions,
-                             &error)) {
-    return ppapi::PlatformFileErrorToPepperError(error);
-  }
 
   GetFileSystemContext()->operation_runner()->GetMetadata(
       GetFileSystemURL(),
@@ -242,13 +202,6 @@ int32_t PepperInternalFileRefBackend::ReadDirectoryEntries(
     ppapi::host::ReplyMessageContext reply_context) {
   if (!GetFileSystemURL().is_valid())
     return PP_ERROR_FAILED;
-
-  base::PlatformFileError error;
-  if (!HasPermissionsForFile(GetFileSystemURL(),
-                             fileapi::kReadFilePermissions,
-                             &error)) {
-    return ppapi::PlatformFileErrorToPepperError(error);
-  }
 
   GetFileSystemContext()->operation_runner()->ReadDirectory(
       GetFileSystemURL(),
@@ -304,15 +257,50 @@ int32_t PepperInternalFileRefBackend::GetAbsolutePath(
   return PP_OK_COMPLETIONPENDING;
 }
 
-bool PepperInternalFileRefBackend::HasPermissionsForFile(
-    const fileapi::FileSystemURL& url,
-    int permissions,
-    base::PlatformFileError* error) const {
-  return CheckFileSystemPermissionsForProcess(GetFileSystemContext(),
-                                              render_process_id_,
-                                              url,
-                                              permissions,
-                                              error);
+int32_t PepperInternalFileRefBackend::CanRead() const {
+  fileapi::FileSystemURL url = GetFileSystemURL();
+  if (!FileSystemURLIsValid(GetFileSystemContext().get(), url))
+    return PP_ERROR_FAILED;
+  if (!ChildProcessSecurityPolicyImpl::GetInstance()->
+          CanReadFileSystemFile(render_process_id_, url)) {
+    return PP_ERROR_NOACCESS;
+  }
+  return PP_OK;
+}
+
+int32_t PepperInternalFileRefBackend::CanWrite() const {
+  fileapi::FileSystemURL url = GetFileSystemURL();
+  if (!FileSystemURLIsValid(GetFileSystemContext().get(), url))
+    return PP_ERROR_FAILED;
+  if (!ChildProcessSecurityPolicyImpl::GetInstance()->
+          CanWriteFileSystemFile(render_process_id_, url)) {
+    return PP_ERROR_NOACCESS;
+  }
+  return PP_OK;
+}
+
+int32_t PepperInternalFileRefBackend::CanCreate() const {
+  fileapi::FileSystemURL url = GetFileSystemURL();
+  if (!FileSystemURLIsValid(GetFileSystemContext().get(), url))
+    return PP_ERROR_FAILED;
+  if (!ChildProcessSecurityPolicyImpl::GetInstance()->
+          CanCreateFileSystemFile(render_process_id_, url)) {
+    return PP_ERROR_NOACCESS;
+  }
+  return PP_OK;
+}
+
+int32_t PepperInternalFileRefBackend::CanReadWrite() const {
+  fileapi::FileSystemURL url = GetFileSystemURL();
+  if (!FileSystemURLIsValid(GetFileSystemContext().get(), url))
+    return PP_ERROR_FAILED;
+  ChildProcessSecurityPolicyImpl* policy =
+      ChildProcessSecurityPolicyImpl::GetInstance();
+  if (!policy->CanReadFileSystemFile(render_process_id_, url) ||
+      !policy->CanWriteFileSystemFile(render_process_id_, url)) {
+    return PP_ERROR_NOACCESS;
+  }
+  return PP_OK;
 }
 
 }  // namespace content

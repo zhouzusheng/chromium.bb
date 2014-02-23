@@ -13,7 +13,8 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
-#include "base/process.h"
+#include "base/process/process.h"
+#include "base/values.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/web_contents/frame_tree_node.h"
@@ -30,7 +31,7 @@
 #include "ui/gfx/rect_f.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/vector2d.h"
-#include "webkit/glue/resource_type.h"
+#include "webkit/common/resource_type.h"
 
 struct BrowserPluginHostMsg_ResizeGuest_Params;
 struct ViewHostMsg_DateTimeDialogValue_Params;
@@ -46,6 +47,7 @@ class DownloadItem;
 class InterstitialPageImpl;
 class JavaBridgeDispatcherHostManager;
 class JavaScriptDialogManager;
+class PowerSaveBlocker;
 class RenderViewHost;
 class RenderViewHostDelegateView;
 class RenderViewHostImpl;
@@ -91,7 +93,8 @@ class CONTENT_EXPORT WebContentsImpl
   static BrowserPluginGuest* CreateGuest(
       BrowserContext* browser_context,
       content::SiteInstance* site_instance,
-      int guest_instance_id);
+      int guest_instance_id,
+      scoped_ptr<base::DictionaryValue> extra_params);
 
   // Returns the content specific prefs for the given RVH.
   static WebPreferences GetWebkitPrefs(
@@ -150,6 +153,13 @@ class CONTENT_EXPORT WebContentsImpl
   JavaBridgeDispatcherHostManager* java_bridge_dispatcher_host_manager() const {
     return java_bridge_dispatcher_host_manager_.get();
   }
+
+  // In Android WebView, the RenderView needs created even there is no
+  // navigation entry, this allows Android WebViews to use
+  // javascript: URLs that load into the DOMWindow before the first page
+  // load. This is not safe to do in any context that a web page could get a
+  // reference to the DOMWindow before the first page load.
+  bool CreateRenderViewForInitialEmptyDocument();
 #endif
 
   // Expose the render manager for testing.
@@ -158,9 +168,16 @@ class CONTENT_EXPORT WebContentsImpl
   // Returns guest browser plugin object, or NULL if this WebContents is not a
   // guest.
   BrowserPluginGuest* GetBrowserPluginGuest() const;
+
+  // Sets a BrowserPluginGuest object for this WebContents. If this WebContents
+  // has a BrowserPluginGuest then that implies that it is being hosted by
+  // a BrowserPlugin object in an embedder renderer process.
+  void SetBrowserPluginGuest(BrowserPluginGuest* guest);
+
   // Returns embedder browser plugin object, or NULL if this WebContents is not
   // an embedder.
   BrowserPluginEmbedder* GetBrowserPluginEmbedder() const;
+
   // Returns the BrowserPluginGuestManager object, or NULL if this web contents
   // does not have a BrowserPluginGuestManager.
   BrowserPluginGuestManager* GetBrowserPluginGuestManager() const;
@@ -233,6 +250,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual bool DisplayedInsecureContent() const OVERRIDE;
   virtual void IncrementCapturerCount() OVERRIDE;
   virtual void DecrementCapturerCount() OVERRIDE;
+  virtual int GetCapturerCount() const OVERRIDE;
   virtual bool IsCrashed() const OVERRIDE;
   virtual void SetIsCrashed(base::TerminationStatus status,
                             int error_code) OVERRIDE;
@@ -253,6 +271,8 @@ class CONTENT_EXPORT WebContentsImpl
   virtual bool SavePage(const base::FilePath& main_file,
                         const base::FilePath& dir_path,
                         SavePageType save_type) OVERRIDE;
+  virtual void SaveFrame(const GURL& url,
+                         const Referrer& referrer) OVERRIDE;
   virtual void GenerateMHTML(
       const base::FilePath& file,
       const base::Callback<void(const base::FilePath&, int64)>& callback)
@@ -278,7 +298,6 @@ class CONTENT_EXPORT WebContentsImpl
   virtual int GetMinimumZoomPercent() const OVERRIDE;
   virtual int GetMaximumZoomPercent() const OVERRIDE;
   virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual int GetContentRestrictions() const OVERRIDE;
   virtual bool GotResponseToLockMouseRequest(bool allowed) OVERRIDE;
   virtual bool HasOpener() const OVERRIDE;
   virtual void DidChooseColorInColorChooser(SkColor color) OVERRIDE;
@@ -303,7 +322,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual bool OnMessageReceived(RenderViewHost* render_view_host,
                                  const IPC::Message& message) OVERRIDE;
   virtual const GURL& GetURL() const OVERRIDE;
-  virtual const GURL& GetActiveURL() const OVERRIDE;
+  virtual const GURL& GetVisibleURL() const OVERRIDE;
   virtual const GURL& GetLastCommittedURL() const OVERRIDE;
   virtual WebContents* GetAsWebContents() OVERRIDE;
   virtual gfx::Rect GetRootWindowResizerRect() const OVERRIDE;
@@ -360,14 +379,16 @@ class CONTENT_EXPORT WebContentsImpl
                               const Referrer& referrer,
                               WindowOpenDisposition disposition,
                               int64 source_frame_id,
-                              bool is_cross_site_redirect) OVERRIDE;
+                              bool should_replace_current_entry,
+                              bool user_gesture) OVERRIDE;
   virtual void RequestTransferURL(
       const GURL& url,
       const Referrer& referrer,
       WindowOpenDisposition disposition,
       int64 source_frame_id,
       const GlobalRequestID& transferred_global_request_id,
-      bool is_cross_site_redirect) OVERRIDE;
+      bool should_replace_current_entry,
+      bool user_gesture) OVERRIDE;
   virtual void RouteCloseEvent(RenderViewHost* rvh) OVERRIDE;
   virtual void RouteMessageEvent(
       RenderViewHost* rvh,
@@ -437,6 +458,8 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void RequestMediaAccessPermission(
       const MediaStreamRequest& request,
       const MediaResponseCallback& callback) OVERRIDE;
+  virtual SessionStorageNamespace* GetSessionStorageNamespace(
+      SiteInstance* instance) OVERRIDE;
 
   // RenderWidgetHostDelegate --------------------------------------------------
 
@@ -461,7 +484,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void BeforeUnloadFiredFromRenderManager(
       bool proceed, const base::TimeTicks& proceed_time,
       bool* proceed_to_fire_unload) OVERRIDE;
-  virtual void RenderViewGoneFromRenderManager(
+  virtual void RenderProcessGoneFromRenderManager(
       RenderViewHost* render_view_host) OVERRIDE;
   virtual void UpdateRenderViewSizeForRenderManager() OVERRIDE;
   virtual void NotifySwappedFromRenderManager(
@@ -538,7 +561,7 @@ class CONTENT_EXPORT WebContentsImpl
 
   // Callback function when requesting permission to access the PPAPI broker.
   // |result| is true if permission was granted.
-  void OnPpapiBrokerPermissionResult(int request_id, bool result);
+  void OnPpapiBrokerPermissionResult(int routing_id, bool result);
 
   // IPC message handlers.
   void OnDidLoadResourceFromMemoryCache(const GURL& url,
@@ -558,12 +581,10 @@ class CONTENT_EXPORT WebContentsImpl
                               bool is_main_frame,
                               int error_code,
                               const string16& error_description);
-  void OnUpdateContentRestrictions(int restrictions);
   void OnGoToEntryAtOffset(int offset);
   void OnUpdateZoomLimits(int minimum_percent,
                           int maximum_percent,
                           bool remember);
-  void OnSaveURL(const GURL& url, const Referrer& referrer);
   void OnEnumerateDirectory(int request_id, const base::FilePath& path);
   void OnJSOutOfMemory();
 
@@ -597,7 +618,7 @@ class CONTENT_EXPORT WebContentsImpl
   void OnWebUISend(const GURL& source_url,
                    const std::string& name,
                    const base::ListValue& args);
-  void OnRequestPpapiBrokerPermission(int request_id,
+  void OnRequestPpapiBrokerPermission(int routing_id,
                                       const GURL& url,
                                       const base::FilePath& plugin_path);
   void OnBrowserPluginMessage(const IPC::Message& message);
@@ -612,6 +633,11 @@ class CONTENT_EXPORT WebContentsImpl
                        int64 frame_id,
                        const std::string& frame_name);
   void OnFrameDetached(int64 parent_frame_id, int64 frame_id);
+
+  void OnMediaNotification(int64 player_cookie,
+                           bool has_video,
+                           bool has_audio,
+                           bool is_playing);
 
   // Changes the IsLoading state and notifies delegate as needed
   // |details| is used to provide details on the load that just finished
@@ -718,17 +744,18 @@ class CONTENT_EXPORT WebContentsImpl
 
   void SetEncoding(const std::string& encoding);
 
-  // Save a URL to the local filesystem.
-  void SaveURL(const GURL& url,
-               const Referrer& referrer,
-               bool is_main_frame);
-
   RenderViewHostImpl* GetRenderViewHostImpl();
 
   FrameTreeNode* FindFrameTreeNodeByID(int64 frame_id);
 
   // Removes browser plugin embedder if there is one.
   void RemoveBrowserPluginEmbedder();
+
+  // Clear |render_view_host|'s PowerSaveBlockers.
+  void ClearPowerSaveBlockers(RenderViewHost* render_view_host);
+
+  // Clear all PowerSaveBlockers, leave power_save_blocker_ empty.
+  void ClearAllPowerSaveBlockers();
 
   // Data for core operation ---------------------------------------------------
 
@@ -774,6 +801,13 @@ class CONTENT_EXPORT WebContentsImpl
 #endif
 
   // Helper classes ------------------------------------------------------------
+
+  // Maps the RenderViewHost to its media_player_cookie and PowerSaveBlocker
+  // pairs. Key is the RenderViewHost, value is the map which maps player_cookie
+  // on to PowerSaveBlocker.
+  typedef std::map<RenderViewHost*, std::map<int64, PowerSaveBlocker*> >
+      PowerSaveBlockerMap;
+  PowerSaveBlockerMap power_save_blockers_;
 
   // Manages creation and swapping of render views.
   RenderViewHostManager render_manager_;
@@ -883,10 +917,6 @@ class CONTENT_EXPORT WebContentsImpl
 
   // The intrinsic size of the page.
   gfx::Size preferred_size_;
-
-  // Content restrictions, used to disable print/copy etc based on content's
-  // (full-page plugins for now only) permissions.
-  int content_restrictions_;
 
 #if defined(OS_ANDROID)
   // Date time chooser opened by this tab.

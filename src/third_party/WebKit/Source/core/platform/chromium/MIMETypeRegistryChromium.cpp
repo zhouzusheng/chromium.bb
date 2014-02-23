@@ -1,10 +1,10 @@
 /*
  * Copyright (c) 2008, 2009, Google Inc. All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  *     * Redistributions of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
  *     * Redistributions in binary form must reproduce the above
@@ -14,7 +14,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -35,11 +35,7 @@
 
 #include "public/platform/Platform.h"
 #include "public/platform/WebMimeRegistry.h"
-#include <wtf/text/CString.h>
-
-// NOTE: Unlike other ports, we don't use the shared implementation in
-// MIMETypeRegistry.cpp.  Instead, we need to route most functions via
-// Platform.h to the embedder.
+#include "wtf/text/CString.h"
 
 namespace WebCore {
 
@@ -52,21 +48,6 @@ String MIMETypeRegistry::getWellKnownMIMETypeForExtension(const String &ext)
 {
     // This method must be thread safe and should not consult the OS/registry.
     return WebKit::Platform::current()->mimeRegistry()->wellKnownMimeTypeForExtension(ext);
-}
-
-// Returns the file extension if one is found.  Does not include the dot in the
-// filename.  E.g., 'html'.
-String MIMETypeRegistry::getPreferredExtensionForMIMEType(const String& type)
-{
-    // Prune out any parameters in case they happen to have snuck in there...
-    // FIXME: Is this really necessary??
-    String mimeType = type.substring(0, static_cast<unsigned>(type.find(';')));
-
-    String ext = WebKit::Platform::current()->mimeRegistry()->preferredExtensionForMIMEType(type);
-    if (!ext.isEmpty() && ext[0] == '.')
-        ext = ext.substring(1);
-
-    return ext;
 }
 
 String MIMETypeRegistry::getMIMETypeForPath(const String& path)
@@ -87,14 +68,14 @@ String MIMETypeRegistry::getMIMETypeForPath(const String& path)
 }
 
 bool MIMETypeRegistry::isSupportedImageMIMEType(const String& mimeType)
-{ 
+{
     return WebKit::Platform::current()->mimeRegistry()->supportsImageMIMEType(mimeType)
         != WebKit::WebMimeRegistry::IsNotSupported;
 }
 
 bool MIMETypeRegistry::isSupportedImageResourceMIMEType(const String& mimeType)
-{ 
-    return isSupportedImageMIMEType(mimeType); 
+{
+    return isSupportedImageMIMEType(mimeType);
 }
 
 bool MIMETypeRegistry::isSupportedImageMIMETypeForEncoding(const String& mimeType)
@@ -111,7 +92,7 @@ bool MIMETypeRegistry::isSupportedJavaScriptMIMEType(const String& mimeType)
     return WebKit::Platform::current()->mimeRegistry()->supportsJavaScriptMIMEType(mimeType)
         != WebKit::WebMimeRegistry::IsNotSupported;
 }
-    
+
 bool MIMETypeRegistry::isSupportedNonImageMIMEType(const String& mimeType)
 {
     return WebKit::Platform::current()->mimeRegistry()->supportsNonImageMIMEType(mimeType)
@@ -130,33 +111,9 @@ bool MIMETypeRegistry::isJavaAppletMIMEType(const String& mimeType)
     // of using a hash set.
     // Any of the MIME types below may be followed by any number of specific versions of the JVM,
     // which is why we use startsWith()
-    return mimeType.startsWith("application/x-java-applet", false) 
-        || mimeType.startsWith("application/x-java-bean", false) 
+    return mimeType.startsWith("application/x-java-applet", false)
+        || mimeType.startsWith("application/x-java-bean", false)
         || mimeType.startsWith("application/x-java-vm", false);
 }
-
-String MIMETypeRegistry::getMediaMIMETypeForExtension(const String&)
-{
-    return String();
-}
-
-bool MIMETypeRegistry::isApplicationPluginMIMEType(const String&)
-{
-    return false;
-}
-
-static HashSet<String>& dummyHashSet()
-{
-    ASSERT_NOT_REACHED();
-    DEFINE_STATIC_LOCAL(HashSet<String>, dummy, ());
-    return dummy;
-}
-
-// NOTE: the following methods should never be reached
-HashSet<String>& MIMETypeRegistry::getSupportedImageMIMETypes() { return dummyHashSet(); }
-HashSet<String>& MIMETypeRegistry::getSupportedImageResourceMIMETypes() { return dummyHashSet(); }
-HashSet<String>& MIMETypeRegistry::getSupportedImageMIMETypesForEncoding() { return dummyHashSet(); }
-HashSet<String>& MIMETypeRegistry::getSupportedNonImageMIMETypes() { return dummyHashSet(); }
-HashSet<String>& MIMETypeRegistry::getSupportedMediaMIMETypes() { return dummyHashSet(); }
 
 } // namespace WebCore

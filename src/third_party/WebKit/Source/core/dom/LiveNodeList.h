@@ -28,8 +28,8 @@
 #include "core/dom/Document.h"
 #include "core/dom/NodeList.h"
 #include "core/html/CollectionType.h"
-#include <wtf/Forward.h>
-#include <wtf/RefPtr.h>
+#include "wtf/Forward.h"
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
@@ -76,8 +76,6 @@ public:
         if (type() != ChildNodeListType)
             document()->unregisterNodeList(this);
     }
-
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
 
     // DOM API
     virtual unsigned length() const OVERRIDE;

@@ -32,182 +32,61 @@
 #include "core/html/HTMLImportsController.h"
 
 #include "core/dom/Document.h"
-#include "core/html/HTMLDocument.h"
-#include "core/html/HTMLLinkElement.h"
-#include "core/loader/cache/CachedResourceLoader.h"
-#include "core/loader/cache/CachedScript.h"
-#include "weborigin/SecurityOrigin.h"
+#include "core/html/HTMLImportLoader.h"
+#include "core/html/HTMLImportLoaderClient.h"
+#include "core/loader/cache/ResourceFetcher.h"
 
 namespace WebCore {
 
-PassRefPtr<LinkImport> LinkImport::create(HTMLLinkElement* owner)
+void HTMLImportsController::provideTo(Document* master)
 {
-    return adoptRef(new LinkImport(owner));
-}
-
-LinkImport::LinkImport(HTMLLinkElement* owner)
-    : LinkResource(owner)
-{
-}
-
-LinkImport::~LinkImport()
-{
-}
-
-Document* LinkImport::importedDocument() const
-{
-    if (!m_loader)
-        return 0;
-    return m_loader->importedDocument();
-}
-
-void LinkImport::process()
-{
-    if (m_loader)
-        return;
-    if (!m_owner)
-        return;
-
-    // FIXME(morrita): Should take care of sub-imports whose document doesn't have frame.
-    if (!m_owner->document()->frame() && !m_owner->document()->imports())
-        return;
-
-    LinkRequestBuilder builder(m_owner);
-    if (!builder.isValid())
-        return;
-
-    HTMLImportsController* controller = m_owner->document()->imports();
-    if (!controller) {
-        ASSERT(m_owner->document()->frame()); // The document should be the master.
-        m_owner->document()->setImports(HTMLImportsController::create(m_owner->document()));
-        controller = m_owner->document()->imports();
-    }
-
-    if (RefPtr<HTMLImportLoader> found = controller->findLinkFor(builder.url())) {
-        m_loader = found;
-        return;
-    }
-
-    CachedResourceRequest request = builder.build(true);
-    CachedResourceHandle<CachedScript> resource = controller->cachedResourceLoader()->requestScript(request);
-    if (!resource)
-        return;
-
-    m_loader = HTMLImportLoader::create(controller, builder.url(), resource);
-}
-
-void LinkImport::ownerRemoved()
-{
-    m_owner = 0;
-    m_loader.clear();
-}
-
-
-PassRefPtr<HTMLImportLoader> HTMLImportLoader::create(HTMLImportsController* controller, const KURL& url, const CachedResourceHandle<CachedScript>& resource)
-{
-    RefPtr<HTMLImportLoader> loader = adoptRef(new HTMLImportLoader(controller, url, resource));
-    controller->addImport(loader);
-    return loader;
-}
-
-HTMLImportLoader::HTMLImportLoader(HTMLImportsController* controller, const KURL& url, const CachedResourceHandle<CachedScript>& resource)
-    : m_controller(controller)
-    , m_state(StateLoading)
-    , m_resource(resource)
-    , m_url(url)
-{
-    m_resource->addClient(this);
-}
-
-HTMLImportLoader::~HTMLImportLoader()
-{
-    if (m_resource)
-        m_resource->removeClient(this);
-}
-
-void HTMLImportLoader::notifyFinished(CachedResource*)
-{
-    setState(finish());
-}
-
-void HTMLImportLoader::setState(State state)
-{
-    if (m_state == state)
-        return;
-    m_state = state;
-
-    if ((m_state == StateReady  || m_state == StateError) && m_controller)
-        m_controller->didLoad();
-}
-
-HTMLImportLoader::State HTMLImportLoader::finish()
-{
-    if (!m_controller)
-        return StateError;
-
-    if (m_resource->loadFailedOrCanceled())
-        return StateError;
-
-    String error;
-    if (!m_controller->securityOrigin()->canRequest(m_resource->response().url())
-        && !m_resource->passesAccessControlCheck(m_controller->securityOrigin(), error)) {
-        m_controller->showSecurityErrorMessage("Import from origin '" + SecurityOrigin::create(m_resource->response().url())->toString() + "' has been blocked from loading by Cross-Origin Resource Sharing policy: " + error);
-        return StateError;
-    }
-
-    // FIXME(morrita): This should be done in incremental way.
-    m_importedDocument = HTMLDocument::create(0, m_resource->response().url());
-    m_importedDocument->setImports(m_controller);
-    m_importedDocument->setContent(m_resource->script());
-
-    return StateReady;
-}
-
-Document* HTMLImportLoader::importedDocument() const
-{
-    if (m_state != StateReady)
-        return 0;
-    return m_importedDocument.get();
-}
-
-void HTMLImportLoader::importDestroyed()
-{
-    m_controller = 0;
-    m_importedDocument.clear();
-}
-
-
-PassRefPtr<HTMLImportsController> HTMLImportsController::create(Document* master)
-{
-    return adoptRef(new HTMLImportsController(master));
+    DEFINE_STATIC_LOCAL(const char*, name, ("HTMLImportsController"));
+    OwnPtr<HTMLImportsController> controller = adoptPtr(new HTMLImportsController(master));
+    master->setImport(controller.get());
+    Supplement<ScriptExecutionContext>::provideTo(master, name, controller.release());
 }
 
 HTMLImportsController::HTMLImportsController(Document* master)
     : m_master(master)
+    , m_unblockTimer(this, &HTMLImportsController::unblockTimerFired)
 {
 }
 
 HTMLImportsController::~HTMLImportsController()
 {
-    for (size_t i = 0; i < m_imports.size(); ++i)
-        m_imports[i]->importDestroyed();
+    ASSERT(!m_master);
 }
 
-void HTMLImportsController::addImport(PassRefPtr<HTMLImportLoader> link)
+void HTMLImportsController::clear()
 {
-    ASSERT(!link->url().isEmpty() && link->url().isValid());
-    m_imports.append(link);
+    for (size_t i = 0; i < m_imports.size(); ++i)
+        m_imports[i]->importDestroyed();
+    if (m_master)
+        m_master->setImport(0);
+    m_master = 0;
+}
+
+PassRefPtr<HTMLImportLoader> HTMLImportsController::createLoader(HTMLImport* parent, FetchRequest request)
+{
+    ASSERT(!request.url().isEmpty() && request.url().isValid());
+
+    if (RefPtr<HTMLImportLoader> found = findLinkFor(request.url()))
+        return found.release();
+
+    request.setPotentiallyCrossOriginEnabled(securityOrigin(), DoNotAllowStoredCredentials);
+    ResourcePtr<RawResource> resource = parent->document()->fetcher()->requestImport(request);
+    if (!resource)
+        return 0;
+
+    RefPtr<HTMLImportLoader> loader = adoptRef(new HTMLImportLoader(parent, request.url(), resource));
+    parent->appendChild(loader.get());
+    m_imports.append(loader);
+    return loader.release();
 }
 
 void HTMLImportsController::showSecurityErrorMessage(const String& message)
 {
     m_master->addConsoleMessage(JSMessageSource, ErrorMessageLevel, message);
-}
-
-void HTMLImportsController::didLoad()
-{
-    if (haveLoaded())
-        m_master->didLoadAllImports();
 }
 
 PassRefPtr<HTMLImportLoader> HTMLImportsController::findLinkFor(const KURL& url) const
@@ -225,19 +104,58 @@ SecurityOrigin* HTMLImportsController::securityOrigin() const
     return m_master->securityOrigin();
 }
 
-CachedResourceLoader* HTMLImportsController::cachedResourceLoader() const
+ResourceFetcher* HTMLImportsController::fetcher() const
 {
-    return m_master->cachedResourceLoader();
+    return m_master->fetcher();
 }
 
-bool HTMLImportsController::haveLoaded() const
+HTMLImportRoot* HTMLImportsController::root()
 {
-    for (size_t i = 0; i < m_imports.size(); ++i) {
-        if (!m_imports[i]->isDone())
-            return false;
-    }
+    return this;
+}
 
-    return true;
+HTMLImport* HTMLImportsController::parent() const
+{
+    return 0;
+}
+
+Document* HTMLImportsController::document() const
+{
+    return m_master;
+}
+
+void HTMLImportsController::wasDetachedFromDocument()
+{
+    clear();
+}
+
+void HTMLImportsController::didFinishParsing()
+{
+}
+
+bool HTMLImportsController::isProcessing() const
+{
+    return m_master->parsing();
+}
+
+void HTMLImportsController::importWasDisposed()
+{
+    scheduleUnblock();
+}
+
+void HTMLImportsController::scheduleUnblock()
+{
+    if (m_unblockTimer.isActive())
+        return;
+    m_unblockTimer.startOneShot(0);
+}
+
+void HTMLImportsController::unblockTimerFired(Timer<HTMLImportsController>*)
+{
+    do {
+        m_unblockTimer.stop();
+        HTMLImport::unblock(this);
+    } while (m_unblockTimer.isActive());
 }
 
 } // namespace WebCore

@@ -30,9 +30,9 @@
 #ifndef CustomFilterParameter_h
 #define CustomFilterParameter_h
 
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -56,7 +56,7 @@ public:
 
     bool isSameType(const CustomFilterParameter& other) const { return parameterType() == other.parameterType(); }
 
-    virtual PassRefPtr<CustomFilterParameter> blend(const CustomFilterParameter*, double progress, const LayoutSize&) = 0;
+    virtual PassRefPtr<CustomFilterParameter> blend(const CustomFilterParameter*, double progress) = 0;
     virtual bool operator==(const CustomFilterParameter&) const = 0;
     bool operator!=(const CustomFilterParameter& o) const { return !(*this == o); }
 protected:

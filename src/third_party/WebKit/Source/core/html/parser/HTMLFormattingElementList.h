@@ -20,16 +20,16 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef HTMLFormattingElementList_h
 #define HTMLFormattingElementList_h
 
 #include "core/html/parser/HTMLStackItem.h"
-#include <wtf/Forward.h>
-#include <wtf/RefPtr.h>
-#include <wtf/Vector.h>
+#include "wtf/Forward.h"
+#include "wtf/RefPtr.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -53,7 +53,7 @@ public:
         {
         }
         enum MarkerEntryType { MarkerEntry };
-        Entry(MarkerEntryType)
+        explicit Entry(MarkerEntryType)
             : m_item(0)
         {
         }
@@ -81,7 +81,7 @@ public:
 
     class Bookmark {
     public:
-        Bookmark(Entry* entry)
+        explicit Bookmark(Entry* entry)
             : m_hasBeenMoved(false)
             , m_mark(entry)
         {

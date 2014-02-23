@@ -55,14 +55,14 @@ PassOwnPtr<ContentData> ContentData::create(QuoteType quote)
 PassOwnPtr<ContentData> ContentData::clone() const
 {
     OwnPtr<ContentData> result = cloneInternal();
-    
+
     ContentData* lastNewData = result.get();
     for (const ContentData* contentData = next(); contentData; contentData = contentData->next()) {
         OwnPtr<ContentData> newData = contentData->cloneInternal();
         lastNewData->setNext(newData.release());
         lastNewData = lastNewData->next();
     }
-        
+
     return result.release();
 }
 
@@ -79,21 +79,21 @@ RenderObject* ImageContentData::createRenderer(Document* doc, RenderStyle* pseud
 
 RenderObject* TextContentData::createRenderer(Document* doc, RenderStyle* pseudoStyle) const
 {
-    RenderObject* renderer = new (doc->renderArena()) RenderTextFragment(doc, m_text.impl());
+    RenderObject* renderer = new RenderTextFragment(doc, m_text.impl());
     renderer->setPseudoStyle(pseudoStyle);
     return renderer;
 }
 
 RenderObject* CounterContentData::createRenderer(Document* doc, RenderStyle* pseudoStyle) const
 {
-    RenderObject* renderer = new (doc->renderArena()) RenderCounter(doc, *m_counter);
+    RenderObject* renderer = new RenderCounter(doc, *m_counter);
     renderer->setPseudoStyle(pseudoStyle);
     return renderer;
 }
 
 RenderObject* QuoteContentData::createRenderer(Document* doc, RenderStyle* pseudoStyle) const
 {
-    RenderObject* renderer = new (doc->renderArena()) RenderQuote(doc, m_quote);
+    RenderObject* renderer = new RenderQuote(doc, m_quote);
     renderer->setPseudoStyle(pseudoStyle);
     return renderer;
 }

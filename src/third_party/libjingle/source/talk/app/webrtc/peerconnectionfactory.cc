@@ -54,16 +54,19 @@ struct CreatePeerConnectionParams : public talk_base::MessageData {
       const webrtc::PeerConnectionInterface::IceServers& configuration,
       const webrtc::MediaConstraintsInterface* constraints,
       webrtc::PortAllocatorFactoryInterface* allocator_factory,
+      webrtc::DTLSIdentityServiceInterface* dtls_identity_service,
       webrtc::PeerConnectionObserver* observer)
       : configuration(configuration),
         constraints(constraints),
         allocator_factory(allocator_factory),
+        dtls_identity_service(dtls_identity_service),
         observer(observer) {
   }
   scoped_refptr<webrtc::PeerConnectionInterface> peerconnection;
   const webrtc::PeerConnectionInterface::IceServers& configuration;
   const webrtc::MediaConstraintsInterface* constraints;
   scoped_refptr<webrtc::PortAllocatorFactoryInterface> allocator_factory;
+  webrtc::DTLSIdentityServiceInterface* dtls_identity_service;
   webrtc::PeerConnectionObserver* observer;
 };
 
@@ -189,7 +192,7 @@ bool PeerConnectionFactory::Initialize() {
 void PeerConnectionFactory::OnMessage(talk_base::Message* msg) {
   switch (msg->message_id) {
     case MSG_INIT_FACTORY: {
-     InitMessageData* pdata = static_cast<InitMessageData*> (msg->pdata);
+     InitMessageData* pdata = static_cast<InitMessageData*>(msg->pdata);
      pdata->data() = Initialize_s();
      break;
     }
@@ -200,10 +203,12 @@ void PeerConnectionFactory::OnMessage(talk_base::Message* msg) {
     case MSG_CREATE_PEERCONNECTION: {
       CreatePeerConnectionParams* pdata =
           static_cast<CreatePeerConnectionParams*> (msg->pdata);
-      pdata->peerconnection = CreatePeerConnection_s(pdata->configuration,
-                                                     pdata->constraints,
-                                                     pdata->allocator_factory,
-                                                     pdata->observer);
+      pdata->peerconnection = CreatePeerConnection_s(
+          pdata->configuration,
+          pdata->constraints,
+          pdata->allocator_factory,
+          pdata->dtls_identity_service,
+          pdata->observer);
       break;
     }
     case MSG_CREATE_AUDIOSOURCE: {
@@ -214,7 +219,7 @@ void PeerConnectionFactory::OnMessage(talk_base::Message* msg) {
     }
     case MSG_CREATE_VIDEOSOURCE: {
       CreateVideoSourceParams* pdata =
-          static_cast<CreateVideoSourceParams*> (msg->pdata);
+          static_cast<CreateVideoSourceParams*>(msg->pdata);
       pdata->source = CreateVideoSource_s(pdata->capturer, pdata->constraints);
       break;
     }
@@ -278,7 +283,8 @@ PeerConnectionFactory::CreatePeerConnection(
     DTLSIdentityServiceInterface* dtls_identity_service,
     PeerConnectionObserver* observer) {
   CreatePeerConnectionParams params(configuration, constraints,
-                                    allocator_factory, observer);
+                                    allocator_factory, dtls_identity_service,
+                                    observer);
   signaling_thread_->Send(this, MSG_CREATE_PEERCONNECTION, &params);
   return params.peerconnection;
 }
@@ -298,6 +304,7 @@ PeerConnectionFactory::CreatePeerConnection_s(
     const PeerConnectionInterface::IceServers& configuration,
     const MediaConstraintsInterface* constraints,
     PortAllocatorFactoryInterface* allocator_factory,
+    DTLSIdentityServiceInterface* dtls_identity_service,
     PeerConnectionObserver* observer) {
   ASSERT(allocator_factory || allocator_factory_);
   talk_base::scoped_refptr<PeerConnection> pc(
@@ -306,6 +313,7 @@ PeerConnectionFactory::CreatePeerConnection_s(
       configuration,
       constraints,
       allocator_factory ? allocator_factory : allocator_factory_.get(),
+      dtls_identity_service,
       observer)) {
     return NULL;
   }

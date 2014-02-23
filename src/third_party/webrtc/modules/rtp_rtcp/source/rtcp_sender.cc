@@ -10,10 +10,11 @@
 
 #include "webrtc/modules/rtp_rtcp/source/rtcp_sender.h"
 
-#include <algorithm>  // min
-#include <cassert>  // assert
-#include <cstdlib>  // rand
+#include <assert.h>  // assert
+#include <stdlib.h>  // rand
 #include <string.h>  // memcpy
+
+#include <algorithm>  // min
 
 #include "webrtc/common_types.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_rtcp_impl.h"
@@ -30,6 +31,8 @@ NACKStringBuilder::NACKStringBuilder() :
 {
     // Empty.
 }
+
+NACKStringBuilder::~NACKStringBuilder() {}
 
 void NACKStringBuilder::PushNACK(uint16_t nack)
 {
@@ -1118,7 +1121,6 @@ RTCPSender::BuildREMB(uint8_t* rtcpbuffer, uint32_t& pos)
         ModuleRTPUtility::AssignUWord32ToBuffer(rtcpbuffer+pos, _rembSSRC[i]);
         pos += 4;
     }
-    TRACE_COUNTER_ID1("webrtc_rtp", "RTCPRembBitrate", _SSRC, _rembBitrate);
     return 0;
 }
 
@@ -2136,4 +2138,4 @@ RTCPSender::SetTMMBN(const TMMBRSet* boundingSet,
     }
     return -1;
 }
-} // namespace webrtc
+}  // namespace webrtc

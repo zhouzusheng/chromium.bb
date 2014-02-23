@@ -33,7 +33,7 @@
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/rendering/RenderButton.h"
-#include <wtf/StdLibExtras.h>
+#include "wtf/StdLibExtras.h"
 
 namespace WebCore {
 
@@ -60,7 +60,7 @@ void HTMLButtonElement::setType(const AtomicString& type)
 
 RenderObject* HTMLButtonElement::createRenderer(RenderStyle*)
 {
-    return new (document()->renderArena()) RenderButton(this);
+    return new RenderButton(this);
 }
 
 const AtomicString& HTMLButtonElement::formControlType() const
@@ -125,13 +125,13 @@ void HTMLButtonElement::defaultEventHandler(Event* event)
     }
 
     if (event->isKeyboardEvent()) {
-        if (event->type() == eventNames().keydownEvent && static_cast<KeyboardEvent*>(event)->keyIdentifier() == "U+0020") {
+        if (event->type() == eventNames().keydownEvent && toKeyboardEvent(event)->keyIdentifier() == "U+0020") {
             setActive(true, true);
             // No setDefaultHandled() - IE dispatches a keypress in this case.
             return;
         }
         if (event->type() == eventNames().keypressEvent) {
-            switch (static_cast<KeyboardEvent*>(event)->charCode()) {
+            switch (toKeyboardEvent(event)->charCode()) {
                 case '\r':
                     dispatchSimulatedClick(event);
                     event->setDefaultHandled();
@@ -142,7 +142,7 @@ void HTMLButtonElement::defaultEventHandler(Event* event)
                     return;
             }
         }
-        if (event->type() == eventNames().keyupEvent && static_cast<KeyboardEvent*>(event)->keyIdentifier() == "U+0020") {
+        if (event->type() == eventNames().keyupEvent && toKeyboardEvent(event)->keyIdentifier() == "U+0020") {
             if (active())
                 dispatchSimulatedClick(event);
             event->setDefaultHandled();

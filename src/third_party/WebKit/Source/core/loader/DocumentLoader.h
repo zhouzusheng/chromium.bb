@@ -7,13 +7,13 @@
  * are met:
  *
  * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer. 
+ *     notice, this list of conditions and the following disclaimer.
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution. 
+ *     documentation and/or other materials provided with the distribution.
  * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission. 
+ *     from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -35,16 +35,15 @@
 #include "core/loader/NavigationAction.h"
 #include "core/loader/ResourceLoaderOptions.h"
 #include "core/loader/SubstituteData.h"
-#include "core/loader/cache/CachedRawResource.h"
-#include "core/loader/cache/CachedResourceHandle.h"
+#include "core/loader/cache/RawResource.h"
+#include "core/loader/cache/ResourcePtr.h"
 #include "core/platform/Timer.h"
 #include "core/platform/network/ResourceError.h"
 #include "core/platform/network/ResourceRequest.h"
 #include "core/platform/network/ResourceResponse.h"
 #include "core/platform/text/StringWithDirection.h"
-#include <wtf/HashSet.h>
-#include <wtf/RefPtr.h>
-#include <wtf/Vector.h>
+#include "wtf/HashSet.h"
+#include "wtf/RefPtr.h"
 
 namespace WTF {
 class SchedulePair;
@@ -54,7 +53,7 @@ namespace WebCore {
     class ApplicationCacheHost;
     class ArchiveResource;
     class ArchiveResourceCollection;
-    class CachedResourceLoader;
+    class ResourceFetcher;
     class ContentFilter;
     class FormState;
     class Frame;
@@ -66,7 +65,7 @@ namespace WebCore {
 
     typedef HashSet<RefPtr<ResourceLoader> > ResourceLoaderSet;
 
-    class DocumentLoader : public RefCounted<DocumentLoader>, private CachedRawResourceClient {
+    class DocumentLoader : public RefCounted<DocumentLoader>, private RawResourceClient {
         WTF_MAKE_FAST_ALLOCATED;
     public:
         static PassRefPtr<DocumentLoader> create(const ResourceRequest& request, const SubstituteData& data)
@@ -86,6 +85,8 @@ namespace WebCore {
 
         void replaceDocument(const String& source, Document*);
         DocumentWriter* beginWriting(const String& mimeType, const String& encoding, const KURL& = KURL());
+        void endWriting(DocumentWriter*);
+
         String mimeType() const;
 
         const ResourceRequest& originalRequest() const;
@@ -94,7 +95,7 @@ namespace WebCore {
         const ResourceRequest& request() const;
         ResourceRequest& request();
 
-        CachedResourceLoader* cachedResourceLoader() const { return m_cachedResourceLoader.get(); }
+        ResourceFetcher* fetcher() const { return m_fetcher.get(); }
 
         const SubstituteData& substituteData() const { return m_substituteData; }
 
@@ -116,16 +117,20 @@ namespace WebCore {
         const ResourceError& mainDocumentError() const { return m_mainDocumentError; }
         bool isClientRedirect() const { return m_isClientRedirect; }
         void setIsClientRedirect(bool isClientRedirect) { m_isClientRedirect = isClientRedirect; }
-        void handledOnloadEvents();
-        bool wasOnloadHandled() { return m_wasOnloadHandled; }
+        bool replacesCurrentHistoryItem() const { return m_replacesCurrentHistoryItem; }
+        void setReplacesCurrentHistoryItem(bool replacesCurrentHistoryItem) { m_replacesCurrentHistoryItem = replacesCurrentHistoryItem; }
         bool isLoadingInAPISense() const;
         void setTitle(const StringWithDirection&);
         const String& overrideEncoding() const { return m_overrideEncoding; }
 
-        bool scheduleArchiveLoad(CachedResource*, const ResourceRequest&);
+        bool scheduleArchiveLoad(Resource*, const ResourceRequest&);
         void cancelPendingSubstituteLoad(ResourceLoader*);
 
-        bool shouldContinueForNavigationPolicy(const ResourceRequest&);
+        enum PolicyCheckLoadType {
+            PolicyCheckStandard,
+            PolicyCheckFragment
+        };
+        bool shouldContinueForNavigationPolicy(const ResourceRequest&, PolicyCheckLoadType);
         const NavigationAction& triggeringAction() const { return m_triggeringAction; }
         void setTriggeringAction(const NavigationAction& action) { m_triggeringAction = action; }
 
@@ -133,7 +138,7 @@ namespace WebCore {
         const StringWithDirection& title() const { return m_pageTitle; }
 
         KURL urlForHistory() const;
-        
+
         void setDefersLoading(bool);
 
         void startLoadingMainResource();
@@ -152,37 +157,39 @@ namespace WebCore {
         DocumentLoadTiming* timing() { return &m_documentLoadTiming; }
         void resetTiming() { m_documentLoadTiming = DocumentLoadTiming(); }
 
-        // The WebKit layer calls this function when it's ready for the data to
-        // actually be added to the document.
-        void commitData(const char* bytes, size_t length);
-
         ApplicationCacheHost* applicationCacheHost() const { return m_applicationCacheHost.get(); }
 
-        virtual void reportMemoryUsage(MemoryObjectInfo*) const;
         void checkLoadComplete();
+
+        bool isRedirect() const { return m_redirectChain.size() > 1; }
+        void clearRedirectChain();
+        void appendRedirect(const KURL&);
 
     protected:
         DocumentLoader(const ResourceRequest&, const SubstituteData&);
 
         bool m_deferMainResourceDataLoad;
+        Vector<KURL> m_redirectChain;
 
     private:
+        static PassRefPtr<DocumentWriter> createWriterFor(Frame*, const Document* ownerDocument, const KURL&, const String& mimeType, const String& encoding, bool userChosen, bool dispatch);
 
-        // The URL of the document resulting from this DocumentLoader.
-        KURL documentURL() const;
+        void ensureWriter();
+        void ensureWriter(const String& mimeType, const KURL& overridingURL = KURL());
+
         Document* document() const;
 
         void setRequest(const ResourceRequest&);
 
         void commitIfReady();
+        void commitData(const char* bytes, size_t length);
         void setMainDocumentError(const ResourceError&);
-        void commitLoad(const char*, int);
         void clearMainResourceLoader();
         ResourceLoader* mainResourceLoader() const;
         void clearMainResourceHandle();
         PassRefPtr<SharedBuffer> mainResourceData() const;
 
-        bool maybeCreateArchive();
+        void createArchive();
         void clearArchiveResources();
 
         void prepareSubframeArchiveLoadIfNeeded();
@@ -191,63 +198,58 @@ namespace WebCore {
         void willSendRequest(ResourceRequest&, const ResourceResponse&);
         void finishedLoading(double finishTime);
         void mainReceivedError(const ResourceError&);
-        virtual void redirectReceived(CachedResource*, ResourceRequest&, const ResourceResponse&) OVERRIDE;
-        virtual void responseReceived(CachedResource*, const ResourceResponse&) OVERRIDE;
-        virtual void dataReceived(CachedResource*, const char* data, int length) OVERRIDE;
-        virtual void notifyFinished(CachedResource*) OVERRIDE;
+        virtual void redirectReceived(Resource*, ResourceRequest&, const ResourceResponse&) OVERRIDE;
+        virtual void responseReceived(Resource*, const ResourceResponse&) OVERRIDE;
+        virtual void dataReceived(Resource*, const char* data, int length) OVERRIDE;
+        virtual void notifyFinished(Resource*) OVERRIDE;
 
         bool maybeLoadEmpty();
 
-        bool isPostOrRedirectAfterPost(const ResourceRequest&, const ResourceResponse&);
+        bool isRedirectAfterPost(const ResourceRequest&, const ResourceResponse&);
 
         bool shouldContinueForResponse() const;
         void stopLoadingForPolicyChange();
-        ResourceError interruptedForPolicyChangeError() const;
 
         typedef Timer<DocumentLoader> DocumentLoaderTimer;
 
         void handleSubstituteDataLoadSoon();
         void handleSubstituteDataLoadNow(DocumentLoaderTimer*);
         void startDataLoadTimer();
-                
-        Frame* m_frame;
-        RefPtr<CachedResourceLoader> m_cachedResourceLoader;
 
-        CachedResourceHandle<CachedRawResource> m_mainResource;
+        Frame* m_frame;
+        RefPtr<ResourceFetcher> m_fetcher;
+
+        ResourcePtr<RawResource> m_mainResource;
         ResourceLoaderSet m_resourceLoaders;
         ResourceLoaderSet m_multipartResourceLoaders;
-        
-        mutable DocumentWriter m_writer;
+
+        RefPtr<DocumentWriter> m_writer;
 
         // A reference to actual request used to create the data source.
         // This should only be used by the resourceLoadDelegate's
         // identifierForInitialRequest:fromDatasource: method. It is
         // not guaranteed to remain unchanged, as requests are mutable.
-        ResourceRequest m_originalRequest;   
+        ResourceRequest m_originalRequest;
 
         SubstituteData m_substituteData;
 
         // A copy of the original request used to create the data source.
         // We have to copy the request because requests are mutable.
         ResourceRequest m_originalRequestCopy;
-        
+
         // The 'working' request. It may be mutated
         // several times from the original request to include additional
         // headers, cookie information, canonicalization and redirects.
         ResourceRequest m_request;
 
         ResourceResponse m_response;
-    
-        ResourceError m_mainDocumentError;    
+
+        ResourceError m_mainDocumentError;
 
         bool m_committed;
         bool m_isStopping;
-        bool m_gotFirstByte;
         bool m_isClientRedirect;
-
-        // FIXME: Document::m_processingLoadEvent and DocumentLoader::m_wasOnloadHandled are roughly the same
-        // and should be merged.
-        bool m_wasOnloadHandled;
+        bool m_replacesCurrentHistoryItem;
 
         StringWithDirection m_pageTitle;
 

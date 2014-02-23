@@ -7,13 +7,13 @@
  * are met:
  *
  * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer. 
+ *     notice, this list of conditions and the following disclaimer.
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution. 
+ *     documentation and/or other materials provided with the distribution.
  * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission. 
+ *     from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -32,8 +32,8 @@
 
 #include "core/platform/graphics/FloatSize.h"
 #include "core/platform/graphics/Glyph.h"
-#include <wtf/UnusedParam.h>
-#include <wtf/Vector.h>
+#include "wtf/UnusedParam.h"
+#include "wtf/Vector.h"
 
 #if OS(DARWIN)
 #include <ApplicationServices/ApplicationServices.h>
@@ -66,7 +66,7 @@ class GlyphBuffer {
 public:
     bool isEmpty() const { return m_fontData.isEmpty(); }
     int size() const { return m_fontData.size(); }
-    
+
     void clear()
     {
         m_fontData.clear();
@@ -80,7 +80,7 @@ public:
     const GlyphBufferAdvance* advances(int from) const { return m_advances.data() + from; }
 
     const SimpleFontData* fontDataAt(int index) const { return m_fontData[index]; }
-    
+
     Glyph glyphAt(int index) const
     {
         return m_glyphs[index];
@@ -91,14 +91,7 @@ public:
         return m_advances[index].width();
     }
 
-    FloatSize offsetAt(int index) const
-    {
-        // FIXME: Remove this function, it was only used in PLATFORM(WIN).
-        UNUSED_PARAM(index);
-        return FloatSize();
-    }
-
-    void add(Glyph glyph, const SimpleFontData* font, float width, const FloatSize* offset = 0)
+    void add(Glyph glyph, const SimpleFontData* font, float width)
     {
         m_fontData.append(font);
         m_glyphs.append(glyph);
@@ -109,10 +102,8 @@ public:
 #else
         m_advances.append(FloatSize(width, 0));
 #endif
-
-        UNUSED_PARAM(offset);
     }
-    
+
     void add(Glyph glyph, const SimpleFontData* font, GlyphBufferAdvance advance)
     {
         m_fontData.append(font);

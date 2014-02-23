@@ -13,9 +13,9 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
-#include "base/process_util.h"
+#include "base/process/kill.h"
 #include "base/synchronization/lock.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/common/gpu_memory_stats.h"
@@ -140,6 +140,8 @@ class CONTENT_EXPORT GpuDataManagerImpl
   // presenting by itself.
   bool IsUsingAcceleratedSurface() const;
 #endif
+
+  bool CanUseGpuBrowserCompositor() const;
 
   // Maintenance of domains requiring explicit user permission before
   // using client-facing 3D APIs (WebGL, Pepper 3D), either because

@@ -20,18 +20,19 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
 #include "core/html/parser/HTMLResourcePreloader.h"
 
 #include "core/dom/Document.h"
-#include "core/loader/cache/CachedResourceInitiatorInfo.h"
-#include "core/loader/cache/CachedResourceLoader.h"
-
+#include "core/html/HTMLImport.h"
+#include "core/loader/cache/FetchInitiatorInfo.h"
+#include "core/loader/cache/ResourceFetcher.h"
 #include "core/css/MediaList.h"
 #include "core/css/MediaQueryEvaluator.h"
+#include "core/platform/HistogramSupport.h"
 #include "core/rendering/RenderObject.h"
 
 namespace WebCore {
@@ -50,16 +51,16 @@ KURL PreloadRequest::completeURL(Document* document)
     return document->completeURL(m_resourceURL, m_baseURL.isEmpty() ? document->url() : m_baseURL);
 }
 
-CachedResourceRequest PreloadRequest::resourceRequest(Document* document)
+FetchRequest PreloadRequest::resourceRequest(Document* document)
 {
     ASSERT(isMainThread());
-    CachedResourceInitiatorInfo initiatorInfo;
+    FetchInitiatorInfo initiatorInfo;
     initiatorInfo.name = m_initiatorName;
     initiatorInfo.position = m_initiatorPosition;
-    CachedResourceRequest request(ResourceRequest(completeURL(document)), initiatorInfo);
+    FetchRequest request(ResourceRequest(completeURL(document)), initiatorInfo);
 
     // FIXME: It's possible CORS should work for other request types?
-    if (m_resourceType == CachedResource::Script)
+    if (m_resourceType == Resource::Script)
         request.mutableResourceRequest().setAllowCookies(m_crossOriginModeAllowsCookies);
     return request;
 }
@@ -82,14 +83,18 @@ static bool mediaAttributeMatches(Frame* frame, RenderStyle* renderStyle, const 
 
 void HTMLResourcePreloader::preload(PassOwnPtr<PreloadRequest> preload)
 {
-    ASSERT(m_document->frame());
-    ASSERT(m_document->renderer());
-    ASSERT(m_document->renderer()->style());
-    if (!preload->media().isEmpty() && !mediaAttributeMatches(m_document->frame(), m_document->renderer()->style(), preload->media()))
+    Document* executingDocument = m_document->import() ? m_document->import()->master() : m_document;
+    Document* loadingDocument = m_document;
+
+    ASSERT(executingDocument->frame());
+    ASSERT(executingDocument->renderer());
+    ASSERT(executingDocument->renderer()->style());
+    if (!preload->media().isEmpty() && !mediaAttributeMatches(executingDocument->frame(), executingDocument->renderer()->style(), preload->media()))
         return;
 
-    CachedResourceRequest request = preload->resourceRequest(m_document);
-    m_document->cachedResourceLoader()->preload(preload->resourceType(), request, preload->charset());
+    FetchRequest request = preload->resourceRequest(m_document);
+    HistogramSupport::histogramCustomCounts("WebCore.PreloadDelayMs", static_cast<int>(1000 * (monotonicallyIncreasingTime() - preload->discoveryTime())), 0, 2000, 20);
+    loadingDocument->fetcher()->preload(preload->resourceType(), request, preload->charset());
 }
 
 

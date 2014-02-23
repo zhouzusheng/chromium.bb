@@ -25,7 +25,7 @@
 #include "core/dom/Event.h"
 #include "core/dom/EventNames.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/loader/cache/CachedImage.h"
+#include "core/loader/cache/ImageResource.h"
 #include "core/svg/SVGImageElement.h"
 
 namespace WebCore {
@@ -40,7 +40,7 @@ void SVGImageLoader::dispatchLoadEvent()
     if (image()->errorOccurred())
         element()->dispatchEvent(Event::create(eventNames().errorEvent, false, false));
     else {
-        SVGImageElement* imageElement = static_cast<SVGImageElement*>(element());
+        SVGImageElement* imageElement = toSVGImageElement(element());
         if (imageElement->externalResourcesRequiredBaseValue())
             imageElement->sendSVGLoadEventIfPossible(true);
     }

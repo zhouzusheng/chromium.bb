@@ -1,10 +1,10 @@
 /*
  * Copyright (c) 2008, 2009, Google Inc. All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  *     * Redistributions of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
  *     * Redistributions in binary form must reproduce the above
@@ -14,7 +14,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -37,19 +37,9 @@
 #include "public/platform/Platform.h"
 #include "public/platform/WebFileInfo.h"
 #include "public/platform/WebFileUtilities.h"
-#include <wtf/text/WTFString.h>
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
-
-bool deleteFile(const String& path)
-{
-    return WebKit::Platform::current()->fileUtilities()->deleteFile(path);
-}
-
-bool deleteEmptyDirectory(const String& path)
-{
-    return WebKit::Platform::current()->fileUtilities()->deleteEmptyDirectory(path);
-}
 
 bool getFileSize(const String& path, long long& result)
 {
@@ -83,51 +73,6 @@ bool getFileMetadata(const String& path, FileMetadata& metadata)
 String directoryName(const String& path)
 {
     return WebKit::Platform::current()->fileUtilities()->directoryName(path);
-}
-
-String pathByAppendingComponent(const String& path, const String& component)
-{
-    return WebKit::Platform::current()->fileUtilities()->pathByAppendingComponent(path, component);
-}
-
-bool makeAllDirectories(const String& path)
-{
-    return WebKit::Platform::current()->fileUtilities()->makeAllDirectories(path);
-}
-
-bool fileExists(const String& path)
-{
-    return WebKit::Platform::current()->fileUtilities()->fileExists(path);
-}
-
-PlatformFileHandle openFile(const String& path, FileOpenMode mode)
-{
-    return WebKit::Platform::current()->fileUtilities()->openFile(path, mode);
-}
-
-void closeFile(PlatformFileHandle& handle)
-{
-    WebKit::Platform::current()->fileUtilities()->closeFile(handle);
-}
-
-long long seekFile(PlatformFileHandle handle, long long offset, FileSeekOrigin origin)
-{
-    return WebKit::Platform::current()->fileUtilities()->seekFile(handle, offset, origin);
-}
-
-bool truncateFile(PlatformFileHandle handle, long long offset)
-{
-    return WebKit::Platform::current()->fileUtilities()->truncateFile(handle, offset);
-}
-
-int readFromFile(PlatformFileHandle handle, char* data, int length)
-{
-    return WebKit::Platform::current()->fileUtilities()->readFromFile(handle, data, length);
-}
-
-int writeToFile(PlatformFileHandle handle, const char* data, int length)
-{
-    return WebKit::Platform::current()->fileUtilities()->writeToFile(handle, data, length);
 }
 
 } // namespace WebCore

@@ -37,8 +37,12 @@
 #ifndef ACCUM_H
 #define ACCUM_H
 
+#include "main/glheader.h"
+#include "main/mfeatures.h"
 
-#include "main/mtypes.h"
+struct _glapi_table;
+struct gl_context;
+struct gl_renderbuffer;
 
 #if FEATURE_accum
 
@@ -48,25 +52,42 @@ _mesa_ClearAccum( GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha );
 extern void
 _mesa_init_accum_dispatch(struct _glapi_table *disp);
 
+extern void
+_mesa_accum(struct gl_context *ctx, GLenum op, GLfloat value);
+
+extern void
+_mesa_clear_accum_buffer(struct gl_context *ctx);
+
 #else /* FEATURE_accum */
 
 #include "main/compiler.h"
 
-static INLINE void
+static inline void
 _mesa_ClearAccum( GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha )
 {
    /* this is used in _mesa_PopAttrib */
    ASSERT_NO_FEATURE();
 }
 
-static INLINE void
+static inline void
 _mesa_init_accum_dispatch(struct _glapi_table *disp)
 {
 }
 
+static inline void
+_mesa_accum(struct gl_context *ctx, GLenum op, GLfloat value)
+{
+}
+
+static inline void
+_mesa_clear_accum_buffer(struct gl_context *ctx)
+{
+}
+
+
 #endif /* FEATURE_accum */
 
 extern void
-_mesa_init_accum( GLcontext *ctx );
+_mesa_init_accum( struct gl_context *ctx );
 
 #endif /* ACCUM_H */

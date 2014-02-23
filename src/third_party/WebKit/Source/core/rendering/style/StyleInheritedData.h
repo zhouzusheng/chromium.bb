@@ -25,12 +25,12 @@
 #ifndef StyleInheritedData_h
 #define StyleInheritedData_h
 
+#include "core/css/StyleColor.h"
 #include "core/platform/Length.h"
-#include "core/platform/graphics/Color.h"
 #include "core/platform/graphics/Font.h"
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/RefPtr.h>
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
@@ -54,8 +54,8 @@ public:
     Length line_height;
 
     Font font;
-    Color color;
-    Color visitedLinkColor;
+    StyleColor color;
+    StyleColor visitedLinkColor;
 
 private:
     StyleInheritedData();

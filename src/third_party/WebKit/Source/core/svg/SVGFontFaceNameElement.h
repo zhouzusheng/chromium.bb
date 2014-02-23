@@ -30,11 +30,13 @@ class CSSFontFaceSrcValue;
 class SVGFontFaceNameElement FINAL : public SVGElement {
 public:
     static PassRefPtr<SVGFontFaceNameElement> create(const QualifiedName&, Document*);
-    
+
     PassRefPtr<CSSFontFaceSrcValue> srcValue() const;
 
 private:
     SVGFontFaceNameElement(const QualifiedName&, Document*);
+
+    virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE { return false; }
 };
 
 } // namespace WebCore

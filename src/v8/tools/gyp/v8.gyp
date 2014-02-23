@@ -26,7 +26,10 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 {
-  'includes': ['../../build/common.gypi'],
+  'variables': {
+    'v8_code': 1,
+  },
+  'includes': ['../../build/toolchain.gypi', '../../build/features.gypi'],
   'targets': [
     {
       'target_name': 'v8',
@@ -126,6 +129,11 @@
             ],
           },
         }],
+        ['v8_enable_i18n_support==1', {
+          'sources': [
+            '<(SHARED_INTERMEDIATE_DIR)/i18n-libraries.cc',
+          ],
+        }],
       ],
       'dependencies': [
         'v8_base.<(v8_target_arch)',
@@ -187,6 +195,11 @@
           'defines': [
             'BUILDING_V8_SHARED',
             'V8_SHARED',
+          ],
+        }],
+        ['v8_enable_i18n_support==1', {
+          'sources': [
+            '<(SHARED_INTERMEDIATE_DIR)/i18n-libraries.cc',
           ],
         }],
       ]
@@ -277,6 +290,7 @@
         '../../src/double.h',
         '../../src/dtoa.cc',
         '../../src/dtoa.h',
+        '../../src/effects.h',
         '../../src/elements-kind.cc',
         '../../src/elements-kind.h',
         '../../src/elements.cc',
@@ -322,14 +336,52 @@
         '../../src/heap-snapshot-generator.h',
         '../../src/heap.cc',
         '../../src/heap.h',
+        '../../src/hydrogen-bce.cc',
+        '../../src/hydrogen-bce.h',
+        '../../src/hydrogen-bch.cc',
+        '../../src/hydrogen-bch.h',
+        '../../src/hydrogen-canonicalize.cc',
+        '../../src/hydrogen-canonicalize.h',
+        '../../src/hydrogen-dce.cc',
+        '../../src/hydrogen-dce.h',
+        '../../src/hydrogen-dehoist.cc',
+        '../../src/hydrogen-dehoist.h',
+        '../../src/hydrogen-deoptimizing-mark.cc',
+        '../../src/hydrogen-deoptimizing-mark.h',
         '../../src/hydrogen-environment-liveness.cc',
         '../../src/hydrogen-environment-liveness.h',
+        '../../src/hydrogen-escape-analysis.cc',
+        '../../src/hydrogen-escape-analysis.h',
         '../../src/hydrogen-instructions.cc',
         '../../src/hydrogen-instructions.h',
         '../../src/hydrogen.cc',
         '../../src/hydrogen.h',
         '../../src/hydrogen-gvn.cc',
         '../../src/hydrogen-gvn.h',
+        '../../src/hydrogen-infer-representation.cc',
+        '../../src/hydrogen-infer-representation.h',
+        '../../src/hydrogen-infer-types.cc',
+        '../../src/hydrogen-infer-types.h',
+        '../../src/hydrogen-mark-deoptimize.cc',
+        '../../src/hydrogen-mark-deoptimize.h',
+        '../../src/hydrogen-minus-zero.cc',
+        '../../src/hydrogen-minus-zero.h',
+        '../../src/hydrogen-range-analysis.cc',
+        '../../src/hydrogen-range-analysis.h',
+        '../../src/hydrogen-redundant-phi.cc',
+        '../../src/hydrogen-redundant-phi.h',
+        '../../src/hydrogen-removable-simulates.cc',
+        '../../src/hydrogen-removable-simulates.h',
+        '../../src/hydrogen-representation-changes.cc',
+        '../../src/hydrogen-representation-changes.h',
+        '../../src/hydrogen-sce.cc',
+        '../../src/hydrogen-sce.h',
+        '../../src/hydrogen-uint32-analysis.cc',
+        '../../src/hydrogen-uint32-analysis.h',
+        '../../src/hydrogen-osr.cc',
+        '../../src/hydrogen-osr.h',
+        '../../src/icu_util.cc',
+        '../../src/icu_util.h',
         '../../src/ic-inl.h',
         '../../src/ic.cc',
         '../../src/ic.h',
@@ -383,9 +435,6 @@
         '../../src/parser.cc',
         '../../src/parser.h',
         '../../src/platform-posix.h',
-        '../../src/platform-tls-mac.h',
-        '../../src/platform-tls-win32.h',
-        '../../src/platform-tls.h',
         '../../src/platform.h',
         '../../src/preparse-data-format.h',
         '../../src/preparse-data.cc',
@@ -772,6 +821,27 @@
             '<(SHARED_INTERMEDIATE_DIR)/debug-support.cc',
           ]
         }],
+        ['v8_enable_i18n_support==1', {
+          'sources': [
+            '../../src/i18n.cc',
+            '../../src/i18n.h',
+            '../../src/extensions/i18n/break-iterator.cc',
+            '../../src/extensions/i18n/break-iterator.h',
+            '../../src/extensions/i18n/i18n-extension.cc',
+            '../../src/extensions/i18n/i18n-extension.h',
+            '../../src/extensions/i18n/i18n-utils.cc',
+            '../../src/extensions/i18n/i18n-utils.h',
+          ],
+          'dependencies': [
+            '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
+            '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
+          ]
+        }],
+        ['OS=="win" and v8_enable_i18n_support==1', {
+          'dependencies': [
+            '<(DEPTH)/third_party/icu/icu.gyp:icudata',
+          ],
+        }],
       ],
     },
     {
@@ -782,6 +852,26 @@
           'toolsets': ['host'],
         }, {
           'toolsets': ['target'],
+        }],
+        ['v8_enable_i18n_support==1', {
+          'actions': [{
+            'action_name': 'js2c_i18n',
+            'inputs': [
+              '../../tools/js2c.py',
+              '<@(i18n_library_files)',
+            ],
+            'outputs': [
+              '<(SHARED_INTERMEDIATE_DIR)/i18n-libraries.cc',
+            ],
+            'action': [
+              'python',
+              '../../tools/js2c.py',
+              '<@(_outputs)',
+              'I18N',
+              '<(v8_compress_startup_data)',
+              '<@(i18n_library_files)'
+            ],
+          }],
         }],
       ],
       'variables': {
@@ -810,7 +900,22 @@
           '../../src/object-observe.js',
           '../../src/arraybuffer.js',
           '../../src/typedarray.js',
-          '../../src/generator.js'
+          '../../src/generator.js',
+          '../../src/array-iterator.js',
+          '../../src/harmony-string.js',
+          '../../src/harmony-array.js',
+        ],
+        'i18n_library_files': [
+          '../../src/extensions/i18n/header.js',
+          '../../src/extensions/i18n/globals.js',
+          '../../src/extensions/i18n/locale.js',
+          '../../src/extensions/i18n/collator.js',
+          '../../src/extensions/i18n/number-format.js',
+          '../../src/extensions/i18n/date-format.js',
+          '../../src/extensions/i18n/break-iterator.js',
+          '../../src/extensions/i18n/i18n-utils.js',
+          '../../src/extensions/i18n/overrides.js',
+          '../../src/extensions/i18n/footer.js',
         ],
       },
       'actions': [

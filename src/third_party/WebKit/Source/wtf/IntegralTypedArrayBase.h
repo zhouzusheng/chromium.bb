@@ -21,15 +21,15 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef IntegralTypedArrayBase_h
 #define IntegralTypedArrayBase_h
 
-#include <wtf/TypedArrayBase.h>
+#include "wtf/TypedArrayBase.h"
 #include <limits>
-#include <wtf/MathExtras.h>
+#include "wtf/MathExtras.h"
 
 // Base class for all WebGL<T>Array types holding integral
 // (non-floating-point) values.

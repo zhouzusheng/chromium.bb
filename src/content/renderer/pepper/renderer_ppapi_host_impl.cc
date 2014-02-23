@@ -6,13 +6,16 @@
 
 #include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/process_util.h"
+#include "base/process/process_handle.h"
 #include "content/common/sandbox_util.h"
+#include "content/renderer/pepper/fullscreen_container.h"
+#include "content/renderer/pepper/host_globals.h"
 #include "content/renderer/pepper/pepper_browser_connection.h"
 #include "content/renderer/pepper/pepper_graphics_2d_host.h"
 #include "content/renderer/pepper/pepper_in_process_resource_creation.h"
 #include "content/renderer/pepper/pepper_in_process_router.h"
-#include "content/renderer/pepper/pepper_plugin_delegate_impl.h"
+#include "content/renderer/pepper/pepper_plugin_instance_impl.h"
+#include "content/renderer/pepper/plugin_module.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/render_widget_fullscreen_pepper.h"
 #include "ipc/ipc_message.h"
@@ -23,45 +26,8 @@
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "ui/gfx/point.h"
-#include "webkit/plugins/ppapi/fullscreen_container.h"
-#include "webkit/plugins/ppapi/host_globals.h"
-#include "webkit/plugins/ppapi/plugin_delegate.h"
-#include "webkit/plugins/ppapi/plugin_module.h"
-#include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
-
-using webkit::ppapi::HostGlobals;
-using webkit::ppapi::PluginInstance;
-using webkit::ppapi::PluginModule;
 
 namespace content {
-
-// static
-CONTENT_EXPORT RendererPpapiHost*
-RendererPpapiHost::CreateExternalPluginModule(
-    scoped_refptr<PluginModule> plugin_module,
-    PluginInstance* plugin_instance,
-    const base::FilePath& file_path,
-    ppapi::PpapiPermissions permissions,
-    const IPC::ChannelHandle& channel_handle,
-    base::ProcessId plugin_pid,
-    int plugin_child_id) {
-  RendererPpapiHost* renderer_ppapi_host = NULL;
-  // Since we're the embedder, we can make assumptions about the delegate on
-  // the instance.
-  PepperPluginDelegateImpl* pepper_plugin_delegate =
-      static_cast<PepperPluginDelegateImpl*>(plugin_instance->delegate());
-  if (pepper_plugin_delegate) {
-    renderer_ppapi_host = pepper_plugin_delegate->CreateExternalPluginModule(
-        plugin_module,
-        file_path,
-        permissions,
-        channel_handle,
-        plugin_pid,
-        plugin_child_id);
-  }
-  return renderer_ppapi_host;
-}
-
 // static
 CONTENT_EXPORT RendererPpapiHost*
 RendererPpapiHost::GetForPPInstance(PP_Instance instance) {
@@ -111,13 +77,12 @@ RendererPpapiHostImpl* RendererPpapiHostImpl::CreateOnModuleForOutOfProcess(
     PluginModule* module,
     ppapi::proxy::HostDispatcher* dispatcher,
     const ppapi::PpapiPermissions& permissions) {
-  DCHECK(!module->GetEmbedderState());
+  DCHECK(!module->renderer_ppapi_host());
   RendererPpapiHostImpl* result = new RendererPpapiHostImpl(
       module, dispatcher, permissions);
 
   // Takes ownership of pointer.
-  module->SetEmbedderState(
-      scoped_ptr<PluginModule::EmbedderState>(result));
+  module->SetRendererPpapiHost(scoped_ptr<RendererPpapiHostImpl>(result));
 
   return result;
 }
@@ -126,13 +91,12 @@ RendererPpapiHostImpl* RendererPpapiHostImpl::CreateOnModuleForOutOfProcess(
 RendererPpapiHostImpl* RendererPpapiHostImpl::CreateOnModuleForInProcess(
     PluginModule* module,
     const ppapi::PpapiPermissions& permissions) {
-  DCHECK(!module->GetEmbedderState());
+  DCHECK(!module->renderer_ppapi_host());
   RendererPpapiHostImpl* result = new RendererPpapiHostImpl(
       module, permissions);
 
   // Takes ownership of pointer.
-  module->SetEmbedderState(
-      scoped_ptr<PluginModule::EmbedderState>(result));
+  module->SetRendererPpapiHost(scoped_ptr<RendererPpapiHostImpl>(result));
 
   return result;
 }
@@ -140,21 +104,26 @@ RendererPpapiHostImpl* RendererPpapiHostImpl::CreateOnModuleForInProcess(
 // static
 RendererPpapiHostImpl* RendererPpapiHostImpl::GetForPPInstance(
     PP_Instance pp_instance) {
-  PluginInstance* instance = HostGlobals::Get()->GetInstance(pp_instance);
+  PepperPluginInstanceImpl* instance =
+      HostGlobals::Get()->GetInstance(pp_instance);
   if (!instance)
     return NULL;
 
   // All modules created by content will have their embedder state be the
   // host impl.
-  return static_cast<RendererPpapiHostImpl*>(
-      instance->module()->GetEmbedderState());
+  return instance->module()->renderer_ppapi_host();
 }
 
-scoped_ptr< ::ppapi::thunk::ResourceCreationAPI>
+scoped_ptr<ppapi::thunk::ResourceCreationAPI>
 RendererPpapiHostImpl::CreateInProcessResourceCreationAPI(
-    PluginInstance* instance) {
-  return scoped_ptr< ::ppapi::thunk::ResourceCreationAPI>(
+    PepperPluginInstanceImpl* instance) {
+  return scoped_ptr<ppapi::thunk::ResourceCreationAPI>(
       new PepperInProcessResourceCreation(this, instance));
+}
+
+PepperPluginInstanceImpl* RendererPpapiHostImpl::GetPluginInstanceImpl(
+    PP_Instance instance) const {
+  return GetAndValidateInstance(instance);
 }
 
 ppapi::host::PpapiHost* RendererPpapiHostImpl::GetPpapiHost() {
@@ -163,36 +132,40 @@ ppapi::host::PpapiHost* RendererPpapiHostImpl::GetPpapiHost() {
 
 RenderView* RendererPpapiHostImpl::GetRenderViewForInstance(
     PP_Instance instance) const {
-  PluginInstance* instance_object = GetAndValidateInstance(instance);
+  PepperPluginInstanceImpl* instance_object = GetAndValidateInstance(instance);
   if (!instance_object)
     return NULL;
 
-  // Since we're the embedder, we can make assumptions about the delegate on
+  // Since we're the embedder, we can make assumptions about the helper on
   // the instance and get back to our RenderView.
-  return static_cast<PepperPluginDelegateImpl*>(
-      instance_object->delegate())->render_view();
+  return instance_object->render_view();
 }
 
-bool RendererPpapiHostImpl::IsValidInstance(
-    PP_Instance instance) const {
+bool RendererPpapiHostImpl::IsValidInstance(PP_Instance instance) const {
   return !!GetAndValidateInstance(instance);
 }
 
-webkit::ppapi::PluginInstance* RendererPpapiHostImpl::GetPluginInstance(
+PepperPluginInstance* RendererPpapiHostImpl::GetPluginInstance(
     PP_Instance instance) const {
   return GetAndValidateInstance(instance);
 }
 
 WebKit::WebPluginContainer* RendererPpapiHostImpl::GetContainerForInstance(
       PP_Instance instance) const {
-  PluginInstance* instance_object = GetAndValidateInstance(instance);
+  PepperPluginInstanceImpl* instance_object = GetAndValidateInstance(instance);
   if (!instance_object)
     return NULL;
   return instance_object->container();
 }
 
+base::ProcessId RendererPpapiHostImpl::GetPluginPID() const {
+  if (dispatcher_)
+    return dispatcher_->channel()->peer_pid();
+  return base::kNullProcessId;
+}
+
 bool RendererPpapiHostImpl::HasUserGesture(PP_Instance instance) const {
-  PluginInstance* instance_object = GetAndValidateInstance(instance);
+  PepperPluginInstanceImpl* instance_object = GetAndValidateInstance(instance);
   if (!instance_object)
     return false;
 
@@ -203,13 +176,11 @@ bool RendererPpapiHostImpl::HasUserGesture(PP_Instance instance) const {
 }
 
 int RendererPpapiHostImpl::GetRoutingIDForWidget(PP_Instance instance) const {
-  webkit::ppapi::PluginInstance* plugin_instance =
-      GetAndValidateInstance(instance);
+  PepperPluginInstanceImpl* plugin_instance = GetAndValidateInstance(instance);
   if (!plugin_instance)
     return 0;
   if (plugin_instance->flash_fullscreen()) {
-    webkit::ppapi::FullscreenContainer* container =
-        plugin_instance->fullscreen_container();
+    FullscreenContainer* container = plugin_instance->fullscreen_container();
     return static_cast<RenderWidgetFullscreenPepper*>(container)->routing_id();
   }
   return GetRenderViewForInstance(instance)->GetRoutingID();
@@ -218,8 +189,7 @@ int RendererPpapiHostImpl::GetRoutingIDForWidget(PP_Instance instance) const {
 gfx::Point RendererPpapiHostImpl::PluginPointToRenderView(
     PP_Instance instance,
     const gfx::Point& pt) const {
-  webkit::ppapi::PluginInstance* plugin_instance =
-      GetAndValidateInstance(instance);
+  PepperPluginInstanceImpl* plugin_instance = GetAndValidateInstance(instance);
   if (!plugin_instance)
     return pt;
 
@@ -259,28 +229,23 @@ void RendererPpapiHostImpl::CreateBrowserResourceHost(
     PP_Instance instance,
     const IPC::Message& nested_msg,
     const base::Callback<void(int)>& callback) const {
-  PluginInstance* instance_object = GetAndValidateInstance(instance);
-  if (!instance_object)
-    callback.Run(0);
-
-  // Since we're the embedder, we can make assumptions about the delegate on
-  // the instance.
-  PepperPluginDelegateImpl* delegate =
-      static_cast<PepperPluginDelegateImpl*>(instance_object->delegate());
-  if (!delegate)
-    callback.Run(0);
-
+  RenderView* render_view = GetRenderViewForInstance(instance);
   PepperBrowserConnection* browser_connection =
-      delegate->pepper_browser_connection();
-  browser_connection->SendBrowserCreate(module_->GetPluginChildId(),
-                                        instance,
-                                        nested_msg,
-                                        callback);
+      PepperBrowserConnection::Get(render_view);
+  if (!browser_connection) {
+    callback.Run(0);
+  } else {
+    browser_connection->SendBrowserCreate(module_->GetPluginChildId(),
+                                          instance,
+                                          nested_msg,
+                                          callback);
+  }
 }
 
-PluginInstance* RendererPpapiHostImpl::GetAndValidateInstance(
+PepperPluginInstanceImpl* RendererPpapiHostImpl::GetAndValidateInstance(
     PP_Instance pp_instance) const {
-  PluginInstance* instance = HostGlobals::Get()->GetInstance(pp_instance);
+  PepperPluginInstanceImpl* instance =
+      HostGlobals::Get()->GetInstance(pp_instance);
   if (!instance)
     return NULL;
   if (!instance->IsValidInstanceOf(module_))

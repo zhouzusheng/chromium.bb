@@ -40,6 +40,7 @@
 #include "wtf/OwnArrayPtr.h"
 #include "wtf/Vector.h"
 #include "wtf/text/AtomicString.h"
+#include "wtf/text/TextPosition.h"
 
 namespace WebCore {
 
@@ -65,9 +66,12 @@ class StyleRuleBase;
 class StyleRuleKeyframes;
 class StyleKeyframe;
 class StyleSheetContents;
-class StyledElement;
 
-struct CSSParserLocation;
+struct CSSParserLocation {
+    unsigned offset;
+    unsigned lineNumber;
+    CSSParserString token;
+};
 
 class CSSParser {
     friend inline int cssyylex(void*, CSSParser*);
@@ -82,6 +86,10 @@ public:
         InvalidSelectorError,
         InvalidSupportsConditionError,
         InvalidRuleError,
+        InvalidMediaQueryError,
+        InvalidKeyframeSelectorError,
+        InvalidSelectorPseudoError,
+        UnterminatedCommentError,
         GeneralError
     };
 
@@ -89,7 +97,7 @@ public:
 
     ~CSSParser();
 
-    void parseSheet(StyleSheetContents*, const String&, int startLineNumber = 0, SourceDataHandler* = 0, bool = false);
+    void parseSheet(StyleSheetContents*, const String&, const TextPosition& startPosition = TextPosition::minimumPosition(), SourceDataHandler* = 0, bool = false);
     PassRefPtr<StyleRuleBase> parseRule(StyleSheetContents*, const String&);
     PassRefPtr<StyleKeyframe> parseKeyframeRule(StyleSheetContents*, const String&);
     bool parseSupportsCondition(const String&);
@@ -161,12 +169,20 @@ public:
     bool parseTransitionShorthand(CSSPropertyID, bool important);
     bool parseAnimationShorthand(bool important);
 
+    PassRefPtr<CSSValue> parseColumnWidth();
+    PassRefPtr<CSSValue> parseColumnCount();
+    bool parseColumnsShorthand(bool important);
+
     PassRefPtr<CSSValue> parseGridPosition();
     bool parseIntegerOrStringFromGridPosition(RefPtr<CSSPrimitiveValue>& numericValue, RefPtr<CSSPrimitiveValue>& gridLineName);
     bool parseGridItemPositionShorthand(CSSPropertyID, bool important);
+    bool parseGridAreaShorthand(bool important);
+    bool parseSingleGridAreaLonghand(RefPtr<CSSValue>&);
     bool parseGridTrackList(CSSPropertyID, bool important);
-    PassRefPtr<CSSPrimitiveValue> parseGridTrackSize();
+    bool parseGridTrackRepeatFunction(CSSValueList&);
+    PassRefPtr<CSSPrimitiveValue> parseGridTrackSize(CSSParserValueList& inputList);
     PassRefPtr<CSSPrimitiveValue> parseGridBreadth(CSSParserValue*);
+    PassRefPtr<CSSValue> parseGridTemplate();
 
     bool parseClipShape(CSSPropertyID, bool important);
 
@@ -262,7 +278,7 @@ public:
 #endif // CSS3_TEXT
 
     PassRefPtr<CSSValue> parseTextIndent();
-    
+
     bool parseLineBoxContain(bool important);
     bool parseCalculation(CSSParserValue*, CalculationPermittedValueRange);
 
@@ -330,6 +346,8 @@ public:
     QualifiedName determineNameInNamespace(const AtomicString& prefix, const AtomicString& localName);
 
     CSSParserSelector* rewriteSpecifiersWithElementName(const AtomicString& namespacePrefix, const AtomicString& elementName, CSSParserSelector*, bool isNamespacePlaceholder = false);
+    CSSParserSelector* rewriteSpecifiersWithElementNameForCustomPseudoElement(const QualifiedName& tag, const AtomicString& elementName, CSSParserSelector* specifiers, bool tagIsForNamespaceRule);
+    CSSParserSelector* rewriteSpecifiersWithElementNameForContentPseudoElement(const QualifiedName& tag, const AtomicString& elementName, CSSParserSelector* specifiers, bool tagIsForNamespaceRule);
     CSSParserSelector* rewriteSpecifiersWithNamespaceIfNeeded(CSSParserSelector*);
     CSSParserSelector* rewriteSpecifiers(CSSParserSelector*, CSSParserSelector*);
     CSSParserSelector* rewriteSpecifiersForShadowDistributed(CSSParserSelector* specifiers, CSSParserSelector* distributedPseudoElementSelector);
@@ -340,8 +358,6 @@ public:
 
     void setReusableRegionSelectorVector(Vector<OwnPtr<CSSParserSelector> >* selectors);
     Vector<OwnPtr<CSSParserSelector> >* reusableRegionSelectorVector() { return &m_reusableRegionSelectorVector; }
-
-    void updateLastSelectorLineAndPosition();
 
     void clearProperties();
 
@@ -395,6 +411,8 @@ public:
     void endInvalidRuleHeader();
     void reportError(const CSSParserLocation&, ErrorType = GeneralError);
     void resumeErrorLogging() { m_ignoreErrors = false; }
+    void setLocationLabel(const CSSParserLocation& location) { m_locationLabel = location; }
+    const CSSParserLocation& lastLocationLabel() const { return m_locationLabel; }
 
     inline int lex(void* yylval) { return (this->*m_lexFunc)(yylval); }
 
@@ -463,6 +481,11 @@ private:
     template <typename CharacterType>
     inline bool isIdentifierStart();
 
+    inline void ensureLineEndings();
+
+    template <typename CharacterType>
+    inline CSSParserLocation tokenLocation();
+
     template <typename CharacterType>
     unsigned parseEscape(CharacterType*&);
     template <typename DestCharacterType>
@@ -512,7 +535,7 @@ private:
 
     inline bool inStrictMode() const { return m_context.mode == CSSStrictMode || m_context.mode == SVGAttributeMode; }
     inline bool inQuirksMode() const { return m_context.mode == CSSQuirksMode; }
-    
+
     KURL completeURL(const String& url) const;
 
     void recheckAtKeyword(const UChar* str, int len);
@@ -572,12 +595,13 @@ private:
     } m_tokenStart;
     unsigned m_length;
     int m_token;
+    TextPosition m_startPosition;
     int m_lineNumber;
     int m_tokenStartLineNumber;
-    int m_lastSelectorLineNumber;
     CSSRuleSourceData::Type m_ruleHeaderType;
     unsigned m_ruleHeaderStartOffset;
     int m_ruleHeaderStartLineNumber;
+    OwnPtr<Vector<unsigned> > m_lineEndings;
 
     bool m_allowImportRules;
     bool m_allowNamespaceDeclarations;
@@ -587,6 +611,10 @@ private:
 
     bool inViewport() const { return m_inViewport; }
     bool m_inViewport;
+
+    CSSParserLocation m_locationLabel;
+
+    bool useLegacyBackgroundSizeShorthandBehavior() const;
 
     int (CSSParser::*m_lexFunc)(void*);
 
@@ -639,7 +667,7 @@ private:
     };
 
     bool isLoggingErrors();
-    void logError(const String& message, int lineNumber);
+    void logError(const String& message, const CSSParserLocation&);
 
     bool validCalculationUnit(CSSParserValue*, Units, ReleaseParsedCalcValueCondition releaseCalc = DoNotReleaseParsedCalcValue);
 
@@ -681,11 +709,6 @@ public:
 
 private:
     CSSParser* m_parser;
-};
-
-struct CSSParserLocation {
-    int lineNumber;
-    CSSParserString token;
 };
 
 class CSSParser::SourceDataHandler {

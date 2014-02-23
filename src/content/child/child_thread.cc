@@ -5,18 +5,23 @@
 #include "content/child/child_thread.h"
 
 #include "base/allocator/allocator_extension.h"
+#include "base/base_switches.h"
 #include "base/command_line.h"
-#include "base/message_loop.h"
-#include "base/process.h"
-#include "base/process_util.h"
+#include "base/lazy_instance.h"
+#include "base/message_loop/message_loop.h"
+#include "base/process/kill.h"
+#include "base/process/process_handle.h"
 #include "base/strings/string_util.h"
+#include "base/threading/thread_local.h"
 #include "base/tracked_objects.h"
 #include "components/tracing/child_trace_message_filter.h"
 #include "content/child/child_histogram_message_filter.h"
 #include "content/child/child_process.h"
 #include "content/child/child_resource_message_filter.h"
 #include "content/child/fileapi/file_system_dispatcher.h"
+#include "content/child/power_monitor_broadcast_source.h"
 #include "content/child/quota_dispatcher.h"
+#include "content/child/quota_message_filter.h"
 #include "content/child/resource_dispatcher.h"
 #include "content/child/socket_stream_dispatcher.h"
 #include "content/child/thread_safe_sender.h"
@@ -32,6 +37,10 @@
 #include "content/common/handle_enumerator_win.h"
 #endif
 
+#if defined(TCMALLOC_TRACE_MEMORY_SUPPORTED)
+#include "third_party/tcmalloc/chromium/src/gperftools/heap-profiler.h"
+#endif
+
 using tracked_objects::ThreadData;
 
 namespace content {
@@ -39,6 +48,9 @@ namespace {
 
 // How long to wait for a connection to the browser process before giving up.
 const int kConnectionTimeoutS = 15;
+
+base::LazyInstance<base::ThreadLocalPointer<ChildThread> > g_lazy_tls =
+    LAZY_INSTANCE_INITIALIZER;
 
 // This isn't needed on Windows because there the sandbox's job object
 // terminates child processes automatically. For unsandboxed processes (i.e.
@@ -64,14 +76,16 @@ class SuicideOnChannelErrorFilter : public IPC::ChannelProxy::MessageFilter {
     //
     // So, we install a filter on the channel so that we can process this event
     // here and kill the process.
-    //
-    // We want to kill this process after giving it 30 seconds to run the exit
-    // handlers. SIGALRM has a default disposition of terminating the
-    // application.
-    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kChildCleanExit))
-      alarm(30);
-    else
+    if (CommandLine::ForCurrentProcess()->
+        HasSwitch(switches::kChildCleanExit)) {
+      // If clean exit is requested, we want to kill this process after giving
+      // it 60 seconds to run exit handlers. Exit handlers may including ones
+      // that write profile data to disk (which happens under profile collection
+      // mode).
+      alarm(60);
+    } else {
       _exit(0);
+    }
   }
 
  protected:
@@ -79,6 +93,15 @@ class SuicideOnChannelErrorFilter : public IPC::ChannelProxy::MessageFilter {
 };
 
 #endif  // OS(POSIX)
+
+#if defined(OS_ANDROID)
+ChildThread* g_child_thread;
+
+void QuitMainThreadMessageLoop() {
+  base::MessageLoop::current()->Quit();
+}
+
+#endif
 
 }  // namespace
 
@@ -96,6 +119,7 @@ ChildThread::ChildThread(const std::string& channel_name)
 }
 
 void ChildThread::Init() {
+  g_lazy_tls.Pointer()->Set(this);
   on_channel_error_called_ = false;
   message_loop_ = base::MessageLoop::current();
   channel_.reset(
@@ -109,24 +133,40 @@ void ChildThread::Init() {
   IPC::Logging::GetInstance()->SetIPCSender(this);
 #endif
 
-  resource_dispatcher_.reset(new ResourceDispatcher(this));
-  socket_stream_dispatcher_.reset(new SocketStreamDispatcher());
-  file_system_dispatcher_.reset(new FileSystemDispatcher());
-  quota_dispatcher_.reset(new QuotaDispatcher());
-
   sync_message_filter_ =
       new IPC::SyncMessageFilter(ChildProcess::current()->GetShutDownEvent());
   thread_safe_sender_ = new ThreadSafeSender(
       base::MessageLoopProxy::current().get(), sync_message_filter_.get());
+
+  resource_dispatcher_.reset(new ResourceDispatcher(this));
+  socket_stream_dispatcher_.reset(new SocketStreamDispatcher());
+  file_system_dispatcher_.reset(new FileSystemDispatcher());
+
   histogram_message_filter_ = new ChildHistogramMessageFilter();
   resource_message_filter_ =
       new ChildResourceMessageFilter(resource_dispatcher());
+
+  quota_message_filter_ =
+      new QuotaMessageFilter(thread_safe_sender_.get());
+  quota_dispatcher_.reset(new QuotaDispatcher(thread_safe_sender_.get(),
+                                              quota_message_filter_.get()));
 
   channel_->AddFilter(histogram_message_filter_.get());
   channel_->AddFilter(sync_message_filter_.get());
   channel_->AddFilter(new tracing::ChildTraceMessageFilter(
       ChildProcess::current()->io_message_loop_proxy()));
   channel_->AddFilter(resource_message_filter_.get());
+  channel_->AddFilter(quota_message_filter_.get());
+
+  // In single process mode we may already have a power monitor
+  if (!base::PowerMonitor::Get()) {
+    scoped_ptr<PowerMonitorBroadcastSource> power_monitor_source(
+      new PowerMonitorBroadcastSource());
+    channel_->AddFilter(power_monitor_source->GetMessageFilter());
+
+    power_monitor_.reset(new base::PowerMonitor(
+        power_monitor_source.PassAs<base::PowerMonitorSource>()));
+  }
 
 #if defined(OS_POSIX)
   // Check that --process-type is specified so we don't do this in unit tests
@@ -135,11 +175,36 @@ void ChildThread::Init() {
     channel_->AddFilter(new SuicideOnChannelErrorFilter());
 #endif
 
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kTraceToConsole)) {
+    std::string category_string =
+        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+            switches::kTraceToConsole);
+
+    if (!category_string.size())
+      category_string = "*";
+
+    base::debug::TraceLog::GetInstance()->SetEnabled(
+        base::debug::CategoryFilter(category_string),
+        base::debug::TraceLog::ECHO_TO_CONSOLE);
+  }
+
   base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&ChildThread::EnsureConnected,
                  channel_connected_factory_.GetWeakPtr()),
       base::TimeDelta::FromSeconds(kConnectionTimeoutS));
+
+#if defined(OS_ANDROID)
+  g_child_thread = this;
+#endif
+
+#if defined(TCMALLOC_TRACE_MEMORY_SUPPORTED)
+  trace_memory_controller_.reset(new base::debug::TraceMemoryController(
+      message_loop_->message_loop_proxy(),
+      ::HeapProfilerWithPseudoStackStart,
+      ::HeapProfilerStop,
+      ::GetHeapProfile));
+#endif
 }
 
 ChildThread::~ChildThread() {
@@ -147,6 +212,7 @@ ChildThread::~ChildThread() {
   IPC::Logging::GetInstance()->SetIPCSender(NULL);
 #endif
 
+  channel_->RemoveFilter(quota_message_filter_.get());
   channel_->RemoveFilter(histogram_message_filter_.get());
   channel_->RemoveFilter(sync_message_filter_.get());
 
@@ -159,6 +225,13 @@ ChildThread::~ChildThread() {
   // automatically.  We used to watch the object handle on Windows to do this,
   // but it wasn't possible to do so on POSIX.
   channel_->ClearIPCTaskRunner();
+  g_lazy_tls.Pointer()->Set(NULL);
+}
+
+void ChildThread::Shutdown() {
+  // Delete objects that hold references to blink so derived classes can
+  // safely shutdown blink in their Shutdown implementation.
+  file_system_dispatcher_.reset();
 }
 
 void ChildThread::OnChannelConnected(int32 peer_pid) {
@@ -244,8 +317,6 @@ bool ChildThread::OnMessageReceived(const IPC::Message& msg) {
     return true;
   if (file_system_dispatcher_->OnMessageReceived(msg))
     return true;
-  if (quota_dispatcher_->OnMessageReceived(msg))
-    return true;
 
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ChildThread, msg)
@@ -328,14 +399,17 @@ void ChildThread::OnGetTcmallocStats() {
 #endif
 
 ChildThread* ChildThread::current() {
-  return ChildProcess::current() ?
-      ChildProcess::current()->main_thread() : NULL;
+  return g_lazy_tls.Pointer()->Get();
 }
 
-bool ChildThread::IsWebFrameValid(WebKit::WebFrame* frame) {
-  // Return false so that it is overridden in any process in which it is used.
-  return false;
+#if defined(OS_ANDROID)
+void ChildThread::ShutdownThread() {
+  DCHECK_NE(base::MessageLoop::current(), g_child_thread->message_loop());
+  g_child_thread->message_loop()->PostTask(
+      FROM_HERE, base::Bind(&QuitMainThreadMessageLoop));
 }
+
+#endif
 
 void ChildThread::OnProcessFinalRelease() {
   if (on_channel_error_called_) {

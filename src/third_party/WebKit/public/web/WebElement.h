@@ -31,6 +31,7 @@
 #ifndef WebElement_h
 #define WebElement_h
 
+#include "../platform/WebImage.h"
 #include "WebNode.h"
 
 #if WEBKIT_IMPLEMENTATION
@@ -83,6 +84,10 @@ struct WebRect;
         // also called the Root View in WebKit.
         // This function will update the layout if required.
         WEBKIT_EXPORT WebRect boundsInViewportSpace();
+
+        // Returns the image contents of this element or a null WebImage
+        // if there isn't any.
+        WEBKIT_EXPORT WebImage imageContents();
 
 #if WEBKIT_IMPLEMENTATION
         WebElement(const WTF::PassRefPtr<WebCore::Element>&);

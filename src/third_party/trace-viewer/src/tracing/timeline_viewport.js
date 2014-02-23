@@ -7,7 +7,8 @@
 /**
  * @fileoverview Code for the viewport.
  */
-base.require('base.event_target');
+base.require('base.events');
+base.require('tracing.draw_helpers');
 
 base.exportTo('tracing', function() {
 
@@ -26,14 +27,18 @@ base.exportTo('tracing', function() {
    */
   function TimelineViewport(parentEl) {
     this.parentEl_ = parentEl;
+    this.modelTrackContainer_ = null;
     this.scaleX_ = 1;
     this.panX_ = 0;
+    this.panY_ = 0;
     this.gridTimebase_ = 0;
     this.gridStep_ = 1000 / 60;
     this.gridEnabled_ = false;
     this.hasCalledSetupFunction_ = false;
 
-    this.onResizeBoundToThis_ = this.onResize_.bind(this);
+    this.onResize_ = this.onResize_.bind(this);
+    this.onModelTrackControllerScroll_ =
+        this.onModelTrackControllerScroll_.bind(this);
 
     // The following code uses an interval to detect when the parent element
     // is attached to the document. That is a trigger to run the setup function
@@ -42,37 +47,13 @@ base.exportTo('tracing', function() {
         this.checkForAttach_.bind(this), 250);
 
     this.markers = [];
+    this.majorMarkPositions = [];
+
+    this.modelGuidToTrackMap_ = {};
   }
 
   TimelineViewport.prototype = {
     __proto__: base.EventTarget.prototype,
-
-    drawUnderContent: function(ctx, viewLWorld, viewRWorld, canvasH) {
-    },
-
-    drawOverContent: function(ctx, viewLWorld, viewRWorld, canvasH) {
-      if (this.gridEnabled) {
-        var x = this.gridTimebase;
-
-        ctx.beginPath();
-        while (x < viewRWorld) {
-          if (x >= viewLWorld) {
-            // Do conversion to viewspace here rather than on
-            // x to avoid precision issues.
-            var vx = this.xWorldToView(x);
-            ctx.moveTo(vx, 0);
-            ctx.lineTo(vx, canvasH);
-          }
-          x += this.gridStep;
-        }
-        ctx.strokeStyle = 'rgba(255,0,0,0.25)';
-        ctx.stroke();
-      }
-
-      for (var i = 0; i < this.markers.length; ++i) {
-        this.markers[i].drawLine(ctx, viewLWorld, viewRWorld, canvasH, this);
-      }
-    },
 
     /**
      * Allows initialization of the viewport when the viewport's parent element
@@ -90,6 +71,9 @@ base.exportTo('tracing', function() {
      */
     get isAttachedToDocument_() {
       var cur = this.parentEl_;
+      // Allow not providing a parent element, used by tests.
+      if (cur === undefined)
+        return;
       while (cur.parentNode)
         cur = cur.parentNode;
       return cur == this.parentEl_.ownerDocument;
@@ -114,8 +98,7 @@ base.exportTo('tracing', function() {
             'position:absolute;width:100%;height:0;border:0;visibility:hidden;';
         this.parentEl_.appendChild(this.iframe_);
 
-        this.iframe_.contentWindow.addEventListener('resize',
-                                                    this.onResizeBoundToThis_);
+        this.iframe_.contentWindow.addEventListener('resize', this.onResize_);
       }
 
       var curSize = this.parentEl_.clientWidth + 'x' +
@@ -125,7 +108,8 @@ base.exportTo('tracing', function() {
         try {
           this.pendingSetFunction_();
         } catch (ex) {
-          console.log('While running setWhenPossible:', ex);
+          console.log('While running setWhenPossible:',
+              ex.message ? ex.message + '\n' + ex.stack : ex.stack);
         }
         this.pendingSetFunction_ = undefined;
       }
@@ -152,9 +136,37 @@ base.exportTo('tracing', function() {
         this.checkForAttachInterval_ = undefined;
       }
       if (this.iframe_) {
-        this.iframe_.removeEventListener('resize', this.onResizeBoundToThis_);
+        this.iframe_.removeEventListener('resize', this.onResize_);
         this.parentEl_.removeChild(this.iframe_);
       }
+    },
+
+    getStateInViewCoordinates: function() {
+      return {
+        panX: this.xWorldVectorToView(this.panX),
+        panY: this.panY,
+        scaleX: this.scaleX
+      };
+    },
+
+    setStateInViewCoordinates: function(state) {
+      this.panX = this.xViewVectorToWorld(state.panX);
+      this.panY = state.panY;
+    },
+
+    onModelTrackControllerScroll_: function(e) {
+      this.panY_ = this.modelTrackContainer_.scrollTop;
+    },
+
+    set modelTrackContainer(m) {
+
+      if (this.modelTrackContainer_)
+        this.modelTrackContainer_.removeEventListener('scroll',
+            this.onModelTrackControllerScroll_);
+
+      this.modelTrackContainer_ = m;
+      this.modelTrackContainer_.addEventListener('scroll',
+          this.onModelTrackControllerScroll_);
     },
 
     get scaleX() {
@@ -177,6 +189,14 @@ base.exportTo('tracing', function() {
         this.panX_ = p;
         this.dispatchChangeEvent();
       }
+    },
+
+    get panY() {
+      return this.panY_;
+    },
+    set panY(p) {
+      this.panY_ = p;
+      this.modelTrackContainer_.scrollTop = p;
     },
 
     setPanAndScale: function(p, s) {
@@ -240,6 +260,7 @@ base.exportTo('tracing', function() {
     set gridEnabled(enabled) {
       if (this.gridEnabled_ == enabled)
         return;
+
       this.gridEnabled_ = enabled && true;
       this.dispatchChangeEvent();
     },
@@ -252,7 +273,7 @@ base.exportTo('tracing', function() {
       if (this.gridTimebase_ == timebase)
         return;
       this.gridTimebase_ = timebase;
-      base.dispatchSimpleEvent(this, 'change');
+      this.dispatchChangeEvent();
     },
 
     get gridStep() {
@@ -263,8 +284,13 @@ base.exportTo('tracing', function() {
       ctx.transform(this.scaleX_, 0, 0, 1, this.panX_ * this.scaleX_, 0);
     },
 
-    addMarker: function(positionWorld) {
-      var marker = new ViewportMarker(this, positionWorld);
+    createMarker: function(positionWorld) {
+      return new ViewportMarker(this, positionWorld);
+    },
+
+    addMarker: function(marker) {
+      if (this.markers.indexOf(marker) >= 0)
+        return false;
       this.markers.push(marker);
       this.dispatchChangeEvent();
       this.dispatchMarkersChangeEvent_();
@@ -294,6 +320,113 @@ base.exportTo('tracing', function() {
         }
       }
       return undefined;
+    },
+
+    drawMarkLines: function(ctx) {
+      // Apply subpixel translate to get crisp lines.
+      // http://www.mobtowers.com/html5-canvas-crisp-lines-every-time/
+      ctx.save();
+      ctx.translate((Math.round(ctx.lineWidth) % 2) / 2, 0);
+
+      ctx.beginPath();
+      for (var idx in this.majorMarkPositions) {
+        var x = Math.floor(this.majorMarkPositions[idx]);
+        tracing.drawLine(ctx, x, 0, x, ctx.canvas.height);
+      }
+      ctx.strokeStyle = '#ddd';
+      ctx.stroke();
+
+      ctx.restore();
+    },
+
+    drawGridLines: function(ctx, viewLWorld, viewRWorld) {
+      if (!this.gridEnabled)
+        return;
+
+      var x = this.gridTimebase;
+
+      // Apply subpixel translate to get crisp lines.
+      // http://www.mobtowers.com/html5-canvas-crisp-lines-every-time/
+      ctx.save();
+      ctx.translate((Math.round(ctx.lineWidth) % 2) / 2, 0);
+
+      ctx.beginPath();
+      while (x < viewRWorld) {
+        if (x >= viewLWorld) {
+          // Do conversion to viewspace here rather than on
+          // x to avoid precision issues.
+          var vx = Math.floor(this.xWorldToView(x));
+          tracing.drawLine(ctx, vx, 0, vx, ctx.canvas.height);
+        }
+
+        x += this.gridStep;
+      }
+      ctx.strokeStyle = 'rgba(255, 0, 0, 0.25)';
+      ctx.stroke();
+
+      ctx.restore();
+    },
+
+    drawMarkerArrows: function(ctx, viewLWorld, viewRWorld, drawHeight) {
+      for (var i = 0; i < this.markers.length; ++i) {
+        var marker = this.markers[i];
+        var ts = marker.positionWorld;
+        if (ts < viewLWorld || ts > viewRWorld)
+          continue;
+        marker.drawArrow(ctx, drawHeight);
+      }
+    },
+
+    drawMarkerLines: function(ctx, viewLWorld, viewRWorld) {
+      // Dim the area left and right of the markers if there are 2 markers.
+      if (this.markers.length === 2) {
+        var posWorld0 = this.markers[0].positionWorld;
+        var posWorld1 = this.markers[1].positionWorld;
+
+        var markerLWorld = Math.min(posWorld0, posWorld1);
+        var markerRWorld = Math.max(posWorld0, posWorld1);
+
+        var markerLView = this.xWorldToView(markerLWorld);
+        var markerRView = this.xWorldToView(markerRWorld);
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+        if (markerLWorld > viewLWorld) {
+          ctx.fillRect(this.xWorldToView(viewLWorld), 0,
+              markerLView, ctx.canvas.height);
+        }
+
+        if (markerRWorld < viewRWorld) {
+          ctx.fillRect(markerRView, 0,
+              this.xWorldToView(viewRWorld), ctx.canvas.height);
+        }
+      }
+
+      var pixelRatio = window.devicePixelRatio || 1;
+      ctx.lineWidth = Math.round(pixelRatio);
+
+      for (var i = 0; i < this.markers.length; ++i) {
+        var marker = this.markers[i];
+
+        var ts = marker.positionWorld;
+        if (ts < viewLWorld || ts >= viewRWorld)
+          continue;
+
+        marker.drawLine(ctx, ctx.canvas.height);
+      }
+
+      ctx.lineWidth = 1;
+    },
+
+    clearSliceMemoization: function() {
+      this.modelGuidToTrackMap_ = {};
+    },
+
+    sliceMemoization: function(slice, track) {
+      this.modelGuidToTrackMap_[slice.guid] = track;
+    },
+
+    trackForSlice: function(slice) {
+      return this.modelGuidToTrackMap_[slice.guid];
     }
   };
 
@@ -317,7 +450,13 @@ base.exportTo('tracing', function() {
       this.viewport_.dispatchChangeEvent();
     },
 
+    get positionView() {
+      return this.viewport_.xWorldToView(this.positionWorld);
+    },
+
     set selected(selected) {
+      if (this.selected === selected)
+        return;
       this.selected_ = selected;
       this.viewport_.dispatchChangeEvent();
     },
@@ -327,45 +466,41 @@ base.exportTo('tracing', function() {
     },
 
     get color() {
-      if (this.selected)
-        return 'rgb(255,0,0)';
-      return 'rgb(0,0,0)';
+      return this.selected ? 'rgb(255, 0, 0)' : 'rgb(0, 0, 0)';
     },
 
-    drawTriangle_: function(ctx, viewLWorld, viewRWorld,
-                            canvasH, rulerHeight, vp) {
-      ctx.beginPath();
-      var ts = this.positionWorld_;
-      if (ts >= viewLWorld && ts < viewRWorld) {
-        var viewX = vp.xWorldToView(ts);
-        ctx.moveTo(viewX, rulerHeight);
-        ctx.lineTo(viewX - 3, rulerHeight / 2);
-        ctx.lineTo(viewX + 3, rulerHeight / 2);
-        ctx.lineTo(viewX, rulerHeight);
-        ctx.closePath();
-        ctx.fillStyle = this.color;
-        ctx.fill();
-        if (rulerHeight != canvasH) {
-          ctx.beginPath();
-          ctx.moveTo(viewX, rulerHeight);
-          ctx.lineTo(viewX, canvasH);
-          ctx.closePath();
-          ctx.strokeStyle = this.color;
-          ctx.stroke();
-        }
-      }
+    drawArrow: function(ctx, height) {
+      var viewX = this.viewport_.xWorldToView(this.positionWorld_);
+
+      // Apply subpixel translate to get crisp lines.
+      // http://www.mobtowers.com/html5-canvas-crisp-lines-every-time/
+      ctx.save();
+      ctx.translate((Math.round(ctx.lineWidth) % 2) / 2, 0);
+
+      tracing.drawTriangle(ctx,
+          viewX, height,
+          viewX - 3, height / 2,
+          viewX + 3, height / 2);
+      ctx.fillStyle = this.color;
+      ctx.fill();
+
+      ctx.restore();
     },
 
-    drawLine: function(ctx, viewLWorld, viewRWorld, canvasH, vp) {
+    drawLine: function(ctx, height) {
+      var viewX = this.viewport_.xWorldToView(this.positionWorld_);
+
+      // Apply subpixel translate to get crisp lines.
+      // http://www.mobtowers.com/html5-canvas-crisp-lines-every-time/
+      ctx.save();
+      ctx.translate((Math.round(ctx.lineWidth) % 2) / 2, 0);
+
       ctx.beginPath();
-      var ts = this.positionWorld_;
-      if (ts >= viewLWorld && ts < viewRWorld) {
-        var viewX = vp.xWorldToView(ts);
-        ctx.moveTo(viewX, 0);
-        ctx.lineTo(viewX, canvasH);
-      }
+      tracing.drawLine(ctx, viewX, 0, viewX, height);
       ctx.strokeStyle = this.color;
       ctx.stroke();
+
+      ctx.restore();
     }
   };
 

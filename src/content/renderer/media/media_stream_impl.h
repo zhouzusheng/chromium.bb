@@ -17,18 +17,15 @@
 #include "base/threading/non_thread_safe.h"
 #include "content/common/content_export.h"
 #include "content/public/renderer/render_view_observer.h"
+#include "content/renderer/media/media_stream_client.h"
 #include "content/renderer/media/media_stream_dispatcher_eventhandler.h"
 #include "third_party/WebKit/public/platform/WebMediaStream.h"
 #include "third_party/WebKit/public/web/WebUserMediaClient.h"
 #include "third_party/WebKit/public/web/WebUserMediaRequest.h"
 #include "third_party/libjingle/source/talk/app/webrtc/mediastreaminterface.h"
-#include "webkit/renderer/media/media_stream_client.h"
-
-namespace webkit_media {
-class MediaStreamAudioRenderer;
-}
 
 namespace content {
+class MediaStreamAudioRenderer;
 class MediaStreamDependencyFactory;
 class MediaStreamDispatcher;
 class WebRtcAudioRenderer;
@@ -43,7 +40,7 @@ class WebRtcLocalAudioRenderer;
 class CONTENT_EXPORT MediaStreamImpl
     : public RenderViewObserver,
       NON_EXPORTED_BASE(public WebKit::WebUserMediaClient),
-      NON_EXPORTED_BASE(public webkit_media::MediaStreamClient),
+      NON_EXPORTED_BASE(public MediaStreamClient),
       public MediaStreamDispatcherEventHandler,
       public base::SupportsWeakPtr<MediaStreamImpl>,
       NON_EXPORTED_BASE(public base::NonThreadSafe) {
@@ -54,25 +51,19 @@ class CONTENT_EXPORT MediaStreamImpl
       MediaStreamDependencyFactory* dependency_factory);
   virtual ~MediaStreamImpl();
 
-  // Return true when the |url| is media stream.
-  // This static function has the same functionalilty as IsMediaStream
-  // except that it doesn't require an instance of this class.
-  // This can save some overhead time when the |url| is not media stream.
-  static bool CheckMediaStream(const GURL& url);
-
   // WebKit::WebUserMediaClient implementation
   virtual void requestUserMedia(
       const WebKit::WebUserMediaRequest& user_media_request) OVERRIDE;
   virtual void cancelUserMediaRequest(
       const WebKit::WebUserMediaRequest& user_media_request) OVERRIDE;
 
-  // webkit_media::MediaStreamClient implementation.
+  // MediaStreamClient implementation.
   virtual bool IsMediaStream(const GURL& url) OVERRIDE;
-  virtual scoped_refptr<webkit_media::VideoFrameProvider> GetVideoFrameProvider(
+  virtual scoped_refptr<VideoFrameProvider> GetVideoFrameProvider(
       const GURL& url,
       const base::Closure& error_cb,
-      const webkit_media::VideoFrameProvider::RepaintCB& repaint_cb) OVERRIDE;
-  virtual scoped_refptr<webkit_media::MediaStreamAudioRenderer>
+      const VideoFrameProvider::RepaintCB& repaint_cb) OVERRIDE;
+  virtual scoped_refptr<MediaStreamAudioRenderer>
       GetAudioRenderer(const GURL& url) OVERRIDE;
 
   // MediaStreamDispatcherEventHandler implementation.
@@ -82,6 +73,7 @@ class CONTENT_EXPORT MediaStreamImpl
       const StreamDeviceInfoArray& audio_array,
       const StreamDeviceInfoArray& video_array) OVERRIDE;
   virtual void OnStreamGenerationFailed(int request_id) OVERRIDE;
+  virtual void OnStopGeneratedStream(const std::string& label) OVERRIDE;
   virtual void OnDevicesEnumerated(
       int request_id,
       const StreamDeviceInfoArray& device_array) OVERRIDE;
@@ -103,11 +95,11 @@ class CONTENT_EXPORT MediaStreamImpl
 
   // Callback function triggered when all native (libjingle) versions of the
   // underlying media sources have been created and started.
-  // |description| is a raw pointer to the description in
-  // UserMediaRequests::description for which the underlying sources have been
+  // |web_stream| is a raw pointer to the web_stream in
+  // UserMediaRequests::web_stream for which the underlying sources have been
   // created.
   void OnCreateNativeSourcesComplete(
-      WebKit::WebMediaStream* description,
+      WebKit::WebMediaStream* web_stream,
       bool request_succeeded);
 
   // This function is virtual for test purposes. A test can override this to
@@ -136,7 +128,7 @@ class CONTENT_EXPORT MediaStreamImpl
     // OnStreamGenerated.
     bool generated;
     WebKit::WebFrame* frame;  // WebFrame that requested the MediaStream.
-    WebKit::WebMediaStream descriptor;
+    WebKit::WebMediaStream web_stream;
     WebKit::WebUserMediaRequest request;
     WebKit::WebVector<WebKit::WebMediaStreamSource> audio_sources;
     WebKit::WebVector<WebKit::WebMediaStreamSource> video_sources;
@@ -145,21 +137,23 @@ class CONTENT_EXPORT MediaStreamImpl
 
   UserMediaRequestInfo* FindUserMediaRequestInfo(int request_id);
   UserMediaRequestInfo* FindUserMediaRequestInfo(
-      WebKit::WebMediaStream* descriptor);
+      WebKit::WebMediaStream* web_stream);
   UserMediaRequestInfo* FindUserMediaRequestInfo(
       const WebKit::WebUserMediaRequest& request);
   UserMediaRequestInfo* FindUserMediaRequestInfo(const std::string& label);
   void DeleteUserMediaRequestInfo(UserMediaRequestInfo* request);
 
-  scoped_refptr<webkit_media::VideoFrameProvider>
+  scoped_refptr<VideoFrameProvider>
   CreateVideoFrameProvider(
       webrtc::MediaStreamInterface* stream,
       const base::Closure& error_cb,
-      const webkit_media::VideoFrameProvider::RepaintCB& repaint_cb);
+      const VideoFrameProvider::RepaintCB& repaint_cb);
   scoped_refptr<WebRtcAudioRenderer> CreateRemoteAudioRenderer(
       webrtc::MediaStreamInterface* stream);
   scoped_refptr<WebRtcLocalAudioRenderer> CreateLocalAudioRenderer(
       webrtc::MediaStreamInterface* stream);
+
+  void StopLocalAudioTrack(const WebKit::WebMediaStream& web_stream);
 
   // Weak ref to a MediaStreamDependencyFactory, owned by the RenderThread.
   // It's valid for the lifetime of RenderThread.

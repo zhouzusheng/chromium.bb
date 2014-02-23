@@ -24,6 +24,7 @@
 #include "ir_print_visitor.h"
 #include "glsl_types.h"
 #include "glsl_parser_extras.h"
+#include "program/hash_table.h"
 
 static void print_type(const glsl_type *t);
 
@@ -67,11 +68,56 @@ _mesa_print_ir(exec_list *instructions,
    printf("\n)");
 }
 
+ir_print_visitor::ir_print_visitor()
+{
+   indentation = 0;
+   printable_names =
+      hash_table_ctor(32, hash_table_pointer_hash, hash_table_pointer_compare);
+   symbols = _mesa_symbol_table_ctor();
+   mem_ctx = ralloc_context(NULL);
+}
+
+ir_print_visitor::~ir_print_visitor()
+{
+   hash_table_dtor(printable_names);
+   _mesa_symbol_table_dtor(symbols);
+   ralloc_free(mem_ctx);
+}
 
 void ir_print_visitor::indent(void)
 {
    for (int i = 0; i < indentation; i++)
       printf("  ");
+}
+
+const char *
+ir_print_visitor::unique_name(ir_variable *var)
+{
+   /* var->name can be NULL in function prototypes when a type is given for a
+    * parameter but no name is given.  In that case, just return an empty
+    * string.  Don't worry about tracking the generated name in the printable
+    * names hash because this is the only scope where it can ever appear.
+    */
+   if (var->name == NULL) {
+      static unsigned arg = 1;
+      return ralloc_asprintf(this->mem_ctx, "parameter@%u", arg++);
+   }
+
+   /* Do we already have a name for this variable? */
+   const char *name = (const char *) hash_table_find(this->printable_names, var);
+   if (name != NULL)
+      return name;
+
+   /* If there's no conflict, just use the original name */
+   if (_mesa_symbol_table_find_symbol(this->symbols, -1, var->name) == NULL) {
+      name = var->name;
+   } else {
+      static unsigned i = 1;
+      name = ralloc_asprintf(this->mem_ctx, "%s@%u", var->name, ++i);
+   }
+   hash_table_insert(this->printable_names, (void *) name, var);
+   _mesa_symbol_table_add_symbol(this->symbols, -1, name, var);
+   return name;
 }
 
 static void
@@ -89,6 +135,10 @@ print_type(const glsl_type *t)
    }
 }
 
+void ir_print_visitor::visit(ir_rvalue *ir)
+{
+   printf("error");
+}
 
 void ir_print_visitor::visit(ir_variable *ir)
 {
@@ -97,19 +147,20 @@ void ir_print_visitor::visit(ir_variable *ir)
    const char *const cent = (ir->centroid) ? "centroid " : "";
    const char *const inv = (ir->invariant) ? "invariant " : "";
    const char *const mode[] = { "", "uniform ", "in ", "out ", "inout ",
-			        "temporary " };
+			        "const_in ", "sys ", "temporary " };
    const char *const interp[] = { "", "flat", "noperspective" };
 
    printf("(%s%s%s%s) ",
 	  cent, inv, mode[ir->mode], interp[ir->interpolation]);
 
    print_type(ir->type);
-   printf(" %s@%p)", ir->name, (void *) ir);
+   printf(" %s)", unique_name(ir));
 }
 
 
 void ir_print_visitor::visit(ir_function_signature *ir)
 {
+   _mesa_symbol_table_push_scope(symbols);
    printf("(signature ");
    indentation++;
 
@@ -148,22 +199,16 @@ void ir_print_visitor::visit(ir_function_signature *ir)
    indent();
    printf("))\n");
    indentation--;
+   _mesa_symbol_table_pop_scope(symbols);
 }
 
 
 void ir_print_visitor::visit(ir_function *ir)
 {
-   if (!ir->has_user_signature())
-      return;
-
    printf("(function %s\n", ir->name);
    indentation++;
    foreach_iter(exec_list_iterator, iter, *ir) {
       ir_function_signature *const sig = (ir_function_signature *) iter.get();
-
-      if (sig->is_builtin)
-	 continue;
-
       indent();
       sig->accept(this);
       printf("\n");
@@ -182,11 +227,10 @@ void ir_print_visitor::visit(ir_expression *ir)
 
    printf(" %s ", ir->operator_string());
 
-   if (ir->operands[0])
-      ir->operands[0]->accept(this);
+   for (unsigned i = 0; i < ir->get_num_operands(); i++) {
+      ir->operands[i]->accept(this);
+   }
 
-   if (ir->operands[1])
-      ir->operands[1]->accept(this);
    printf(") ");
 }
 
@@ -195,14 +239,27 @@ void ir_print_visitor::visit(ir_texture *ir)
 {
    printf("(%s ", ir->opcode_string());
 
+   print_type(ir->type);
+   printf(" ");
+
    ir->sampler->accept(this);
    printf(" ");
 
-   ir->coordinate->accept(this);
+   if (ir->op != ir_txs) {
+      ir->coordinate->accept(this);
 
-   printf(" (%d %d %d) ", ir->offsets[0], ir->offsets[1], ir->offsets[2]);
+      printf(" ");
 
-   if (ir->op != ir_txf) {
+      if (ir->offset != NULL) {
+	 ir->offset->accept(this);
+      } else {
+	 printf("0");
+      }
+
+      printf(" ");
+   }
+
+   if (ir->op != ir_txf && ir->op != ir_txs) {
       if (ir->projector)
 	 ir->projector->accept(this);
       else
@@ -226,6 +283,7 @@ void ir_print_visitor::visit(ir_texture *ir)
       break;
    case ir_txl:
    case ir_txf:
+   case ir_txs:
       ir->lod_info.lod->accept(this);
       break;
    case ir_txd:
@@ -262,7 +320,7 @@ void ir_print_visitor::visit(ir_swizzle *ir)
 void ir_print_visitor::visit(ir_dereference_variable *ir)
 {
    ir_variable *var = ir->variable_referenced();
-   printf("(var_ref %s@%p) ", var->name, (void *) var);
+   printf("(var_ref %s) ", unique_name(var));
 }
 
 
@@ -289,9 +347,6 @@ void ir_print_visitor::visit(ir_assignment *ir)
 
    if (ir->condition)
       ir->condition->accept(this);
-   else
-      printf("(constant bool (1))");
-
 
    char mask[5];
    unsigned j = 0;
@@ -317,8 +372,6 @@ void ir_print_visitor::visit(ir_assignment *ir)
 
 void ir_print_visitor::visit(ir_constant *ir)
 {
-   const glsl_type *const base_type = ir->type->get_base_type();
-
    printf("(constant ");
    print_type(ir->type);
    printf(" (");
@@ -326,11 +379,20 @@ void ir_print_visitor::visit(ir_constant *ir)
    if (ir->type->is_array()) {
       for (unsigned i = 0; i < ir->type->length; i++)
 	 ir->get_array_element(i)->accept(this);
+   } else if (ir->type->is_record()) {
+      ir_constant *value = (ir_constant *) ir->components.get_head();
+      for (unsigned i = 0; i < ir->type->length; i++) {
+	 printf("(%s ", ir->type->fields.structure[i].name);
+	 value->accept(this);
+	 printf(")");
+
+	 value = (ir_constant *) value->next;
+      }
    } else {
       for (unsigned i = 0; i < ir->type->components(); i++) {
 	 if (i != 0)
 	    printf(" ");
-	 switch (base_type->base_type) {
+	 switch (ir->type->base_type) {
 	 case GLSL_TYPE_UINT:  printf("%u", ir->value.u[i]); break;
 	 case GLSL_TYPE_INT:   printf("%d", ir->value.i[i]); break;
 	 case GLSL_TYPE_FLOAT: printf("%f", ir->value.f[i]); break;
@@ -346,7 +408,10 @@ void ir_print_visitor::visit(ir_constant *ir)
 void
 ir_print_visitor::visit(ir_call *ir)
 {
-   printf("(call %s (", ir->callee_name());
+   printf("(call %s ", ir->callee_name());
+   if (ir->return_deref)
+      ir->return_deref->accept(this);
+   printf(" (");
    foreach_iter(exec_list_iterator, iter, *ir) {
       ir_instruction *const inst = (ir_instruction *) iter.get();
 

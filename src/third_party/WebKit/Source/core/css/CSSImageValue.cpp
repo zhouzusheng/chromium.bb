@@ -21,14 +21,13 @@
 #include "config.h"
 #include "core/css/CSSImageValue.h"
 
+#include "FetchInitiatorTypeNames.h"
 #include "core/css/CSSParser.h"
 #include "core/dom/Document.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "core/loader/cache/CachedImage.h"
-#include "core/loader/cache/CachedResourceLoader.h"
-#include "core/loader/cache/CachedResourceRequest.h"
-#include "core/loader/cache/CachedResourceRequestInitiators.h"
-#include "core/rendering/style/StyleCachedImage.h"
+#include "core/loader/cache/FetchRequest.h"
+#include "core/loader/cache/ImageResource.h"
+#include "core/loader/cache/ResourceFetcher.h"
+#include "core/rendering/style/StyleFetchedImage.h"
 #include "core/rendering/style/StylePendingImage.h"
 
 namespace WebCore {
@@ -60,26 +59,26 @@ StyleImage* CSSImageValue::cachedOrPendingImage()
     return m_image.get();
 }
 
-StyleCachedImage* CSSImageValue::cachedImage(CachedResourceLoader* loader, const ResourceLoaderOptions& options)
+StyleFetchedImage* CSSImageValue::cachedImage(ResourceFetcher* loader, const ResourceLoaderOptions& options)
 {
     ASSERT(loader);
 
     if (!m_accessedImage) {
         m_accessedImage = true;
 
-        CachedResourceRequest request(ResourceRequest(loader->document()->completeURL(m_url)), m_initiatorName.isEmpty() ? cachedResourceRequestInitiators().css : m_initiatorName, options);
-        if (CachedResourceHandle<CachedImage> cachedImage = loader->requestImage(request))
-            m_image = StyleCachedImage::create(cachedImage.get());
+        FetchRequest request(ResourceRequest(loader->document()->completeURL(m_url)), m_initiatorName.isEmpty() ? FetchInitiatorTypeNames::css : m_initiatorName, options);
+        if (ResourcePtr<ImageResource> cachedImage = loader->requestImage(request))
+            m_image = StyleFetchedImage::create(cachedImage.get());
     }
 
-    return (m_image && m_image->isCachedImage()) ? static_cast<StyleCachedImage*>(m_image.get()) : 0;
+    return (m_image && m_image->isImageResource()) ? static_cast<StyleFetchedImage*>(m_image.get()) : 0;
 }
 
 bool CSSImageValue::hasFailedOrCanceledSubresources() const
 {
-    if (!m_image || !m_image->isCachedImage())
+    if (!m_image || !m_image->isImageResource())
         return false;
-    CachedResource* cachedResource = static_cast<StyleCachedImage*>(m_image.get())->cachedImage();
+    Resource* cachedResource = static_cast<StyleFetchedImage*>(m_image.get())->cachedImage();
     if (!cachedResource)
         return true;
     return cachedResource->loadFailedOrCanceled();
@@ -101,13 +100,6 @@ PassRefPtr<CSSValue> CSSImageValue::cloneForCSSOM() const
     RefPtr<CSSPrimitiveValue> uriValue = CSSPrimitiveValue::create(m_url, CSSPrimitiveValue::CSS_URI);
     uriValue->setCSSOMSafe();
     return uriValue.release();
-}
-
-void CSSImageValue::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_url, "url");
-    // No need to report m_image as it is counted as part of RenderArena.
 }
 
 bool CSSImageValue::knownToBeOpaque(const RenderObject* renderer) const

@@ -31,54 +31,63 @@
 #include "config.h"
 #include "core/animation/Animation.h"
 
+#include "core/animation/DocumentTimeline.h"
+#include "core/animation/Player.h"
 #include "core/dom/Element.h"
 
 namespace WebCore {
 
-PassRefPtr<Animation> Animation::create(PassRefPtr<Element> target, PassRefPtr<AnimationEffect> effect, const Timing& timing)
+PassRefPtr<Animation> Animation::create(PassRefPtr<Element> target, PassRefPtr<AnimationEffect> effect, const Timing& timing, PassOwnPtr<TimedItemEventDelegate> eventDelegate)
 {
-    return adoptRef(new Animation(target, effect, timing));
+    return adoptRef(new Animation(target, effect, timing, eventDelegate));
 }
 
-Animation::Animation(PassRefPtr<Element> target, PassRefPtr<AnimationEffect> effect, const Timing& timing)
-    : TimedItem(timing)
+Animation::Animation(PassRefPtr<Element> target, PassRefPtr<AnimationEffect> effect, const Timing& timing, PassOwnPtr<TimedItemEventDelegate> eventDelegate)
+    : TimedItem(timing, eventDelegate)
     , m_target(target)
     , m_effect(effect)
-    , m_isInTargetActiveAnimationsList(false)
+    , m_activeInAnimationStack(false)
 {
 }
 
-Animation::~Animation()
+void Animation::willDetach()
 {
-    if (m_isInTargetActiveAnimationsList)
-        m_target->removeActiveAnimation(this);
+    if (m_activeInAnimationStack)
+        clearEffects();
 }
 
-void Animation::applyEffects(bool previouslyActiveOrInEffect)
+static AnimationStack* ensureAnimationStack(Element* element)
 {
-    if (!previouslyActiveOrInEffect) {
-        m_target->addActiveAnimation(this);
-        m_isInTargetActiveAnimationsList = true;
+    return element->ensureActiveAnimations()->defaultStack();
+}
+
+void Animation::applyEffects(bool previouslyInEffect)
+{
+    ASSERT(player());
+    if (!previouslyInEffect) {
+        ensureAnimationStack(m_target.get())->add(this);
+        m_activeInAnimationStack = true;
     }
     m_compositableValues = m_effect->sample(currentIteration(), timeFraction());
-    m_target->setNeedsStyleRecalc(SyntheticStyleChange);
+    m_target->setNeedsStyleRecalc(LocalStyleChange, StyleChangeFromRenderer);
 }
 
 void Animation::clearEffects()
 {
-    m_target->removeActiveAnimation(this);
-    m_isInTargetActiveAnimationsList = false;
+    ASSERT(player());
+    ASSERT(m_activeInAnimationStack);
+    ensureAnimationStack(m_target.get())->remove(this);
+    m_activeInAnimationStack = false;
     m_compositableValues.clear();
 }
 
-void Animation::updateChildrenAndEffects(bool wasActiveOrInEffect) const
+void Animation::updateChildrenAndEffects(bool wasInEffect) const
 {
-    const bool isActiveOrInEffect = isActive() || isInEffect();
-    ASSERT(m_isInTargetActiveAnimationsList == wasActiveOrInEffect);
-    if (wasActiveOrInEffect && !isActiveOrInEffect)
+    ASSERT(m_activeInAnimationStack == wasInEffect);
+    if (isInEffect())
+        const_cast<Animation*>(this)->applyEffects(wasInEffect);
+    else if (wasInEffect)
         const_cast<Animation*>(this)->clearEffects();
-    else if (isActiveOrInEffect)
-        const_cast<Animation*>(this)->applyEffects(wasActiveOrInEffect);
 }
 
 } // namespace WebCore

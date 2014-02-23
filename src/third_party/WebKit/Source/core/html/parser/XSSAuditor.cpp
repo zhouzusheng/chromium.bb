@@ -202,6 +202,7 @@ XSSAuditor::XSSAuditor()
     , m_didSendValidCSPHeader(false)
     , m_didSendValidXSSProtectionHeader(false)
     , m_state(Uninitialized)
+    , m_scriptTagFoundInRequest(false)
     , m_scriptTagNestingLevel(0)
     , m_encoding(UTF8Encoding())
 {
@@ -266,7 +267,7 @@ void XSSAuditor::init(Document* document, XSSAuditorDelegate* auditorDelegate)
 
     String httpBodyAsString;
     if (DocumentLoader* documentLoader = document->frame()->loader()->documentLoader()) {
-        DEFINE_STATIC_LOCAL(String, XSSProtectionHeader, (ASCIILiteral("X-XSS-Protection")));
+        DEFINE_STATIC_LOCAL(String, XSSProtectionHeader, ("X-XSS-Protection"));
         String headerValue = documentLoader->response().httpHeaderField(XSSProtectionHeader);
         String errorDetails;
         unsigned errorPosition = 0;
@@ -381,7 +382,7 @@ void XSSAuditor::filterEndToken(const FilterTokenRequest& request)
 bool XSSAuditor::filterCharacterToken(const FilterTokenRequest& request)
 {
     ASSERT(m_scriptTagNestingLevel);
-    if (isContainedInRequest(m_cachedDecodedSnippet) && isContainedInRequest(decodedSnippetForJavaScript(request))) {
+    if (m_scriptTagFoundInRequest && isContainedInRequest(decodedSnippetForJavaScript(request))) {
         request.token.eraseCharacters();
         request.token.appendToCharacter(' '); // Technically, character tokens can't be empty.
         return true;
@@ -394,14 +395,12 @@ bool XSSAuditor::filterScriptToken(const FilterTokenRequest& request)
     ASSERT(request.token.type() == HTMLToken::StartTag);
     ASSERT(hasName(request.token, scriptTag));
 
-    m_cachedDecodedSnippet = decodedSnippetForName(request);
-
     bool didBlockScript = false;
-    if (isContainedInRequest(decodedSnippetForName(request))) {
+    m_scriptTagFoundInRequest = isContainedInRequest(decodedSnippetForName(request));
+    if (m_scriptTagFoundInRequest) {
         didBlockScript |= eraseAttributeIfInjected(request, srcAttr, blankURL().string(), SrcLikeAttribute);
         didBlockScript |= eraseAttributeIfInjected(request, XLinkNames::hrefAttr, blankURL().string(), SrcLikeAttribute);
     }
-
     return didBlockScript;
 }
 
@@ -517,7 +516,7 @@ bool XSSAuditor::filterButtonToken(const FilterTokenRequest& request)
 
 bool XSSAuditor::eraseDangerousAttributesIfInjected(const FilterTokenRequest& request)
 {
-    DEFINE_STATIC_LOCAL(String, safeJavaScriptURL, (ASCIILiteral("javascript:void(0)")));
+    DEFINE_STATIC_LOCAL(String, safeJavaScriptURL, ("javascript:void(0)"));
 
     bool didBlockScript = false;
     for (size_t i = 0; i < request.token.attributes().size(); ++i) {
@@ -576,7 +575,7 @@ String XSSAuditor::decodedSnippetForAttribute(const FilterTokenRequest& request,
     if (treatment == SrcLikeAttribute) {
         int slashCount = 0;
         bool commaSeen = false;
-        // In HTTP URLs, characters following the first ?, #, or third slash may come from 
+        // In HTTP URLs, characters following the first ?, #, or third slash may come from
         // the page itself and can be merely ignored by an attacker's server when a remote
         // script or script-like resource is requested. In DATA URLS, the payload starts at
         // the first comma, and the the first /*, //, or <!-- may introduce a comment. Characters
@@ -596,10 +595,10 @@ String XSSAuditor::decodedSnippetForAttribute(const FilterTokenRequest& request,
                 commaSeen = true;
         }
     } else if (treatment == ScriptLikeAttribute) {
-        // Beware of trailing characters which came from the page itself, not the 
+        // Beware of trailing characters which came from the page itself, not the
         // injected vector. Excluding the terminating character covers common cases
         // where the page immediately ends the attribute, but doesn't cover more
-        // complex cases where there is other page data following the injection. 
+        // complex cases where there is other page data following the injection.
         // Generally, these won't parse as javascript, so the injected vector
         // typically excludes them from consideration via a single-line comment or
         // by enclosing them in a string literal terminated later by the page's own
@@ -656,7 +655,7 @@ String XSSAuditor::decodedSnippetForJavaScript(const FilterTokenRequest& request
 
     String result;
     while (startPosition < endPosition && !result.length()) {
-        // Stop at next comment (using the same rules as above for SVG/XML vs HTML), when we 
+        // Stop at next comment (using the same rules as above for SVG/XML vs HTML), when we
         // encounter a comma, or when we  exceed the maximum length target. The comma rule
         // covers a common parameter concatenation case performed by some webservers.
         // After hitting the length target, we can only stop at a point where we know we are
@@ -709,7 +708,7 @@ bool XSSAuditor::isLikelySafeResource(const String& url)
     // request, ignoring scheme and port considerations. If the resource has a
     // query string, we're more suspicious, however, because that's pretty rare
     // and the attacker might be able to trick a server-side script into doing
-    // something dangerous with the query string.  
+    // something dangerous with the query string.
     if (m_documentURL.host().isEmpty())
         return false;
 
@@ -721,8 +720,7 @@ bool XSSAuditor::isSafeToSendToAnotherThread() const
 {
     return m_documentURL.isSafeToSendToAnotherThread()
         && m_decodedURL.isSafeToSendToAnotherThread()
-        && m_decodedHTTPBody.isSafeToSendToAnotherThread()
-        && m_cachedDecodedSnippet.isSafeToSendToAnotherThread();
+        && m_decodedHTTPBody.isSafeToSendToAnotherThread();
 }
 
 } // namespace WebCore

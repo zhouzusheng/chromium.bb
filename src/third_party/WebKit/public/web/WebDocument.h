@@ -34,6 +34,7 @@
 #include "../platform/WebReferrerPolicy.h"
 #include "../platform/WebVector.h"
 #include "WebDraggableRegion.h"
+#include "WebExceptionCode.h"
 #include "WebNode.h"
 #include "WebSecurityOrigin.h"
 
@@ -44,6 +45,11 @@ class DocumentType;
 }
 namespace WTF { template <typename T> class PassRefPtr; }
 #endif
+
+namespace v8 {
+class Value;
+template <class T> class Handle;
+}
 
 namespace WebKit {
 class WebAccessibilityObject;
@@ -90,7 +96,12 @@ public:
     WEBKIT_EXPORT bool isXHTMLDocument() const;
     WEBKIT_EXPORT bool isPluginDocument() const;
     WEBKIT_EXPORT WebURL baseURL() const;
+
+    // The firstPartyForCookies is used to compute whether this document
+    // appears in a "third-party" context for the purpose of third-party
+    // cookie blocking.
     WEBKIT_EXPORT WebURL firstPartyForCookies() const;
+
     WEBKIT_EXPORT WebElement documentElement() const;
     WEBKIT_EXPORT WebElement body() const;
     WEBKIT_EXPORT WebElement head();
@@ -124,6 +135,8 @@ public:
     WEBKIT_EXPORT void insertUserStyleSheet(const WebString& sourceCode, UserStyleLevel);
 
     WEBKIT_EXPORT WebVector<WebDraggableRegion> draggableRegions() const;
+
+    WEBKIT_EXPORT v8::Handle<v8::Value> registerEmbedderCustomElement(const WebString& name, v8::Handle<v8::Value> options, WebExceptionCode&);
 
 #if WEBKIT_IMPLEMENTATION
     WebDocument(const WTF::PassRefPtr<WebCore::Document>&);

@@ -17,6 +17,7 @@
 #include "base/synchronization/lock.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/win/scoped_comptr.h"
+#include "media/base/media_export.h"
 #include "media/video/capture/video_capture_device.h"
 
 interface IMFSourceReader;
@@ -25,7 +26,7 @@ namespace media {
 
 class MFReaderCallback;
 
-class VideoCaptureDeviceMFWin
+class MEDIA_EXPORT VideoCaptureDeviceMFWin
     : public base::NonThreadSafe,
       public VideoCaptureDevice {
  public:
@@ -37,10 +38,8 @@ class VideoCaptureDeviceMFWin
   bool Init();
 
   // VideoCaptureDevice implementation.
-  virtual void Allocate(int width,
-                        int height,
-                        int frame_rate,
-                        VideoCaptureDevice::EventHandler* observer) OVERRIDE;
+  virtual void Allocate(const VideoCaptureCapability& capture_format,
+                         VideoCaptureDevice::EventHandler* observer) OVERRIDE;
   virtual void Start() OVERRIDE;
   virtual void Stop() OVERRIDE;
   virtual void DeAllocate() OVERRIDE;

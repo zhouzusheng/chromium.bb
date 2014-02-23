@@ -37,16 +37,17 @@
 #include "core/fileapi/BlobRegistry.h"
 #include "core/fileapi/BlobURL.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
+#include "core/fileapi/Stream.h"
 #include "core/loader/TextResourceDecoder.h"
 #include "core/loader/ThreadableLoader.h"
 #include "core/platform/network/ResourceRequest.h"
 #include "core/platform/network/ResourceResponse.h"
-#include <wtf/ArrayBuffer.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefPtr.h>
-#include <wtf/text/Base64.h>
-#include <wtf/text/StringBuilder.h>
-#include <wtf/Vector.h>
+#include "wtf/ArrayBuffer.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefPtr.h"
+#include "wtf/Vector.h"
+#include "wtf/text/Base64.h"
+#include "wtf/text/StringBuilder.h"
 
 using namespace std;
 
@@ -65,7 +66,7 @@ FileReaderLoader::FileReaderLoader(ReadType readType, FileReaderLoaderClient* cl
     , m_hasRange(false)
     , m_rangeStart(0)
     , m_rangeEnd(0)
-    , m_errorCode(0)
+    , m_errorCode(FileError::OK)
 {
 }
 
@@ -76,7 +77,7 @@ FileReaderLoader::~FileReaderLoader()
         BlobRegistry::unregisterBlobURL(m_urlForReading);
 }
 
-void FileReaderLoader::start(ScriptExecutionContext* scriptExecutionContext, Blob* blob)
+void FileReaderLoader::startForURL(ScriptExecutionContext* scriptExecutionContext, const KURL& url)
 {
     // The blob is read by routing through the request handling layer given a temporary public url.
     m_urlForReading = BlobURL::createPublicURL(scriptExecutionContext->securityOrigin());
@@ -84,7 +85,7 @@ void FileReaderLoader::start(ScriptExecutionContext* scriptExecutionContext, Blo
         failed(FileError::SECURITY_ERR);
         return;
     }
-    BlobRegistry::registerBlobURL(scriptExecutionContext->securityOrigin(), m_urlForReading, blob->url());
+    BlobRegistry::registerBlobURL(scriptExecutionContext->securityOrigin(), m_urlForReading, url);
 
     // Construct and load the request.
     ResourceRequest request(m_urlForReading);
@@ -105,6 +106,16 @@ void FileReaderLoader::start(ScriptExecutionContext* scriptExecutionContext, Blo
         m_loader = ThreadableLoader::create(scriptExecutionContext, this, request, options);
     else
         ThreadableLoader::loadResourceSynchronously(scriptExecutionContext, request, *this, options);
+}
+
+void FileReaderLoader::start(ScriptExecutionContext* scriptExecutionContext, const Blob& blob)
+{
+    startForURL(scriptExecutionContext, blob.url());
+}
+
+void FileReaderLoader::start(ScriptExecutionContext* scriptExecutionContext, const Stream& stream)
+{
+    startForURL(scriptExecutionContext, stream.url());
 }
 
 void FileReaderLoader::cancel()
@@ -238,7 +249,7 @@ void FileReaderLoader::didFail(const ResourceError&)
     failed(FileError::NOT_READABLE_ERR);
 }
 
-void FileReaderLoader::failed(int errorCode)
+void FileReaderLoader::failed(FileError::ErrorCode errorCode)
 {
     m_errorCode = errorCode;
     cleanup();
@@ -271,31 +282,8 @@ PassRefPtr<ArrayBuffer> FileReaderLoader::arrayBufferResult() const
         return m_rawData;
 
     // Otherwise, return a copy.
-    return ArrayBuffer::create(m_rawData.get());
+    return m_rawData->slice(0, m_bytesLoaded);
 }
-
-#if ENABLE(STREAM)
-PassRefPtr<Blob> FileReaderLoader::blobResult()
-{
-    ASSERT(m_readType == ReadAsBlob);
-
-    // If the loading is not finished or an error occurs, return an empty result.
-    if (!m_rawData || m_errorCode || !isCompleted())
-        return 0;
-
-    if (!m_blobResult) {
-        OwnPtr<BlobData> blobData = BlobData::create();
-        size_t size = 0;
-        RefPtr<RawData> rawData = RawData::create();
-        size = m_rawData->byteLength();
-        rawData->mutableData()->append(static_cast<char*>(m_rawData->data()), size);
-        blobData->appendData(rawData, 0, size);
-        blobData->setContentType(m_dataType);
-        m_blobResult = Blob::create(blobData.release(), size);
-    }
-    return m_blobResult;
-}
-#endif // ENABLE(STREAM)
 
 String FileReaderLoader::stringResult()
 {
@@ -327,7 +315,7 @@ String FileReaderLoader::stringResult()
     default:
         ASSERT_NOT_REACHED();
     }
-    
+
     return m_stringResult;
 }
 
@@ -339,7 +327,7 @@ void FileReaderLoader::convertToText()
     // Decode the data.
     // The File API spec says that we should use the supplied encoding if it is valid. However, we choose to ignore this
     // requirement in order to be consistent with how WebKit decodes the web content: always has the BOM override the
-    // provided encoding.     
+    // provided encoding.
     // FIXME: consider supporting incremental decoding to improve the perf.
     StringBuilder builder;
     if (!m_decoder)
@@ -383,15 +371,5 @@ void FileReaderLoader::setEncoding(const String& encoding)
     if (!encoding.isEmpty())
         m_encoding = WTF::TextEncoding(encoding);
 }
-
-#if ENABLE(STREAM)
-void FileReaderLoader::setRange(unsigned start, unsigned length)
-{
-    ASSERT(length > 0);
-    m_hasRange = true;
-    m_rangeStart = start;
-    m_rangeEnd = start + length - 1;
-}
-#endif // ENABLE(STREAM)
 
 } // namespace WebCore

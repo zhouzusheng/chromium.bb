@@ -44,36 +44,34 @@ class symbol_table_entry;
  */
 struct glsl_symbol_table {
 private:
-   static int
+   static void
    _glsl_symbol_table_destructor (glsl_symbol_table *table)
    {
       table->~glsl_symbol_table();
-
-      return 0;
    }
 
 public:
-   /* Callers of this talloc-based new need not call delete. It's
-    * easier to just talloc_free 'ctx' (or any of its ancestors). */
+   /* Callers of this ralloc-based new need not call delete. It's
+    * easier to just ralloc_free 'ctx' (or any of its ancestors). */
    static void* operator new(size_t size, void *ctx)
    {
       void *table;
 
-      table = talloc_size(ctx, size);
+      table = ralloc_size(ctx, size);
       assert(table != NULL);
 
-      talloc_set_destructor(table, (int (*)(void*)) _glsl_symbol_table_destructor);
+      ralloc_set_destructor(table, (void (*)(void*)) _glsl_symbol_table_destructor);
 
       return table;
    }
 
    /* If the user *does* call delete, that's OK, we will just
-    * talloc_free in that case. Here, C++ will have already called the
-    * destructor so tell talloc not to do that again. */
+    * ralloc_free in that case. Here, C++ will have already called the
+    * destructor so tell ralloc not to do that again. */
    static void operator delete(void *table)
    {
-      talloc_set_destructor(table, NULL);
-      talloc_free(table);
+      ralloc_set_destructor(table, NULL);
+      ralloc_free(table);
    }
    
    glsl_symbol_table();
@@ -97,10 +95,16 @@ public:
     * reduces the clarity of the intention of code that uses these methods.
     */
    /*@{*/
-   bool add_variable(const char *name, ir_variable *v);
+   bool add_variable(ir_variable *v);
    bool add_type(const char *name, const glsl_type *t);
-   bool add_function(const char *name, ir_function *f);
+   bool add_function(ir_function *f);
+   bool add_uniform_block(struct gl_uniform_block *u);
    /*@}*/
+
+   /**
+    * Add an function at global scope without checking for scoping conflicts.
+    */
+   void add_global_function(ir_function *f);
 
    /**
     * \name Methods to get symbols from the table

@@ -277,7 +277,7 @@ static void set_aa_rect_vertex_attributes(GrDrawState* drawState, bool useCovera
 }
 
 static void set_inset_fan(GrPoint* pts, size_t stride,
-                          const GrRect& r, SkScalar dx, SkScalar dy) {
+                          const SkRect& r, SkScalar dx, SkScalar dy) {
     pts->setRectFan(r.fLeft + dx, r.fTop + dy,
                     r.fRight - dx, r.fBottom - dy, stride);
 }
@@ -376,9 +376,9 @@ GrIndexBuffer* GrAARectRenderer::aaStrokeRectIndexBuffer(GrGpu* gpu) {
 
 void GrAARectRenderer::geometryFillAARect(GrGpu* gpu,
                                           GrDrawTarget* target,
-                                          const GrRect& rect,
+                                          const SkRect& rect,
                                           const SkMatrix& combinedMatrix,
-                                          const GrRect& devRect,
+                                          const SkRect& devRect,
                                           bool useVertexCoverage) {
     GrDrawState* drawState = target->drawState();
 
@@ -470,7 +470,7 @@ void GrAARectRenderer::geometryFillAARect(GrGpu* gpu,
 
     GrColor innerColor;
     if (useVertexCoverage) {
-        innerColor = scale | (scale << 8) | (scale << 16) | (scale << 24);
+        innerColor = GrColorPackRGBA(scale, scale, scale, scale);
     } else {
         if (0xff == scale) {
             innerColor = target->getDrawState().getColor();
@@ -525,7 +525,7 @@ extern const GrVertexAttrib gAAAARectVertexAttribs[] = {
 
 void GrAARectRenderer::shaderFillAARect(GrGpu* gpu,
                                         GrDrawTarget* target,
-                                        const GrRect& rect,
+                                        const SkRect& rect,
                                         const SkMatrix& combinedMatrix) {
     GrDrawState* drawState = target->drawState();
 
@@ -589,7 +589,7 @@ void GrAARectRenderer::shaderFillAARect(GrGpu* gpu,
 
 void GrAARectRenderer::shaderFillAlignedAARect(GrGpu* gpu,
                                                GrDrawTarget* target,
-                                               const GrRect& rect,
+                                               const SkRect& rect,
                                                const SkMatrix& combinedMatrix) {
     GrDrawState* drawState = target->drawState();
     SkASSERT(combinedMatrix.rectStaysRect());
@@ -647,9 +647,9 @@ void GrAARectRenderer::shaderFillAlignedAARect(GrGpu* gpu,
 
 void GrAARectRenderer::strokeAARect(GrGpu* gpu,
                                     GrDrawTarget* target,
-                                    const GrRect& rect,
+                                    const SkRect& rect,
                                     const SkMatrix& combinedMatrix,
-                                    const GrRect& devRect,
+                                    const SkRect& devRect,
                                     SkScalar width,
                                     bool useVertexCoverage) {
     GrVec devStrokeSize;
@@ -681,7 +681,7 @@ void GrAARectRenderer::strokeAARect(GrGpu* gpu,
         spare = GrMin(w, h);
     }
 
-    GrRect devOutside(devRect);
+    SkRect devOutside(devRect);
     devOutside.outset(rx, ry);
 
     if (spare <= 0) {
@@ -728,10 +728,23 @@ void GrAARectRenderer::geometryStrokeAARect(GrGpu* gpu,
     GrPoint* fan2Pos = reinterpret_cast<GrPoint*>(verts + 8 * vsize);
     GrPoint* fan3Pos = reinterpret_cast<GrPoint*>(verts + 12 * vsize);
 
+#ifndef SK_IGNORE_THIN_STROKED_RECT_FIX
+    // TODO: this only really works if the X & Y margins are the same all around
+    // the rect
+    SkScalar inset = SkMinScalar(SK_Scalar1, devOutside.fRight - devInside.fRight);
+    inset = SkMinScalar(inset, devInside.fLeft - devOutside.fLeft);
+    inset = SkMinScalar(inset, devInside.fTop - devOutside.fTop);
+    inset = SK_ScalarHalf * SkMinScalar(inset, devOutside.fBottom - devInside.fBottom);
+    SkASSERT(inset >= 0);
+#else
+    SkScalar inset = SK_ScalarHalf;
+#endif
+
     // outermost
     set_inset_fan(fan0Pos, vsize, devOutside, -SK_ScalarHalf, -SK_ScalarHalf);
-    set_inset_fan(fan1Pos, vsize, devOutside,  SK_ScalarHalf,  SK_ScalarHalf);
-    set_inset_fan(fan2Pos, vsize, devInside,  -SK_ScalarHalf, -SK_ScalarHalf);
+    // inner two
+    set_inset_fan(fan1Pos, vsize, devOutside,  inset,  inset);
+    set_inset_fan(fan2Pos, vsize, devInside,  -inset, -inset);
     // innermost
     set_inset_fan(fan3Pos, vsize, devInside,   SK_ScalarHalf,  SK_ScalarHalf);
 
@@ -741,13 +754,26 @@ void GrAARectRenderer::geometryStrokeAARect(GrGpu* gpu,
         *reinterpret_cast<GrColor*>(verts + i * vsize) = 0;
     }
 
+    int scale;
+    if (inset < SK_ScalarHalf) {
+        scale = SkScalarFloorToInt(512.0f * inset / (inset + SK_ScalarHalf));
+        SkASSERT(scale >= 0 && scale <= 255);
+    } else {
+        scale = 0xff;
+    }
+
     // The inner two rects have full coverage
     GrColor innerColor;
     if (useVertexCoverage) {
-        innerColor = 0xffffffff;
+        innerColor = GrColorPackRGBA(scale, scale, scale, scale);
     } else {
-        innerColor = target->getDrawState().getColor();
+        if (0xff == scale) {
+            innerColor = target->getDrawState().getColor();
+        } else {
+            innerColor = SkAlphaMulQ(target->getDrawState().getColor(), scale);
+        }
     }
+
     verts += 4 * vsize;
     for (int i = 0; i < 8; ++i) {
         *reinterpret_cast<GrColor*>(verts + i * vsize) = innerColor;

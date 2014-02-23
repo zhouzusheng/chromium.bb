@@ -41,7 +41,7 @@ public:
     // content on Mac.
     bool shouldMoveCaretToHorizontalBoundaryWhenPastTopOrBottom() const
     {
-        return m_type != EditingWindowsBehavior && m_type != EditingAndroidBehavior;
+        return m_type != EditingWindowsBehavior && m_type != EditingAndroidBehavior && m_type != EditingUnixBehavior;
     }
 
     // On Windows, selections should always be considered as directional, regardless if it is
@@ -62,7 +62,7 @@ public:
 
     // On Mac, when processing a contextual click, the object being clicked upon should be selected.
     bool shouldSelectOnContextualMenuClick() const { return m_type == EditingMacBehavior; }
-    
+
     // On Mac and Windows, pressing backspace (when it isn't handled otherwise) should navigate back.
     bool shouldNavigateBackOnBackspace() const
     {

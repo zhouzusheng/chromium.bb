@@ -33,7 +33,7 @@
 #define ProgressShadowElement_h
 
 #include "core/html/HTMLDivElement.h"
-#include <wtf/Forward.h>
+#include "wtf/Forward.h"
 
 namespace WebCore {
 
@@ -60,11 +60,11 @@ private:
 
 class ProgressBarElement FINAL : public ProgressShadowElement {
 public:
-    ProgressBarElement(Document* document) 
+    ProgressBarElement(Document* document)
         : ProgressShadowElement(document)
     {
         DEFINE_STATIC_LOCAL(AtomicString, pseudoId, ("-webkit-progress-bar", AtomicString::ConstructFromLiteral));
-        setPseudo(pseudoId);
+        setPart(pseudoId);
     }
 
     static PassRefPtr<ProgressBarElement> create(Document*);
@@ -77,11 +77,11 @@ inline PassRefPtr<ProgressBarElement> ProgressBarElement::create(Document* docum
 
 class ProgressValueElement FINAL : public ProgressShadowElement {
 public:
-    ProgressValueElement(Document* document) 
+    ProgressValueElement(Document* document)
         : ProgressShadowElement(document)
     {
         DEFINE_STATIC_LOCAL(AtomicString, pseudoId, ("-webkit-progress-value", AtomicString::ConstructFromLiteral));
-        setPseudo(pseudoId);
+        setPart(pseudoId);
     }
 
     static PassRefPtr<ProgressValueElement> create(Document*);

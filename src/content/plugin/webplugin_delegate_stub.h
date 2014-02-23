@@ -9,13 +9,13 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
-#include "content/child/npobject_stub.h"
-#include "googleurl/src/gurl.h"
+#include "content/child/npapi/npobject_stub.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "third_party/npapi/bindings/npapi.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
+#include "url/gurl.h"
 
 struct PluginMsg_Init_Params;
 struct PluginMsg_DidReceiveResponseParams;
@@ -26,14 +26,9 @@ namespace WebKit {
 class WebInputEvent;
 }
 
-namespace webkit {
-namespace npapi {
-class WebPluginDelegateImpl;
-}
-}
-
 namespace content {
 class PluginChannel;
+class WebPluginDelegateImpl;
 class WebPluginProxy;
 
 // Converts the IPC messages from WebPluginDelegateProxy into calls to the
@@ -119,7 +114,7 @@ class WebPluginDelegateStub : public IPC::Listener,
   scoped_refptr<PluginChannel> channel_;
 
   base::WeakPtr<NPObjectStub> plugin_scriptable_object_;
-  webkit::npapi::WebPluginDelegateImpl* delegate_;
+  WebPluginDelegateImpl* delegate_;
   WebPluginProxy* webplugin_;
   bool in_destructor_;
 

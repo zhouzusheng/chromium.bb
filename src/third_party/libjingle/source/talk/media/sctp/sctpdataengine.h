@@ -28,8 +28,18 @@
 #ifndef TALK_MEDIA_SCTP_SCTPDATAENGINE_H_
 #define TALK_MEDIA_SCTP_SCTPDATAENGINE_H_
 
+#include <errno.h>
 #include <string>
 #include <vector>
+
+namespace cricket {
+// Some ERRNO values get re-#defined to WSA* equivalents in some talk/
+// headers.  We save the original ones in an enum.
+enum PreservedErrno {
+  SCTP_EINPROGRESS = EINPROGRESS,
+  SCTP_EWOULDBLOCK = EWOULDBLOCK
+};
+}  // namespace cricket
 
 #include "talk/base/buffer.h"
 #include "talk/base/scoped_ptr.h"
@@ -208,8 +218,8 @@ class SctpDataMediaChannel : public DataMediaChannel,
   bool sending_;
   // receiving_ controls whether inbound packets are thrown away.
   bool receiving_;
-  std::vector<StreamParams> send_streams_;
-  std::vector<StreamParams> recv_streams_;
+  // Unified send/receive streams, as each is bidirectional.
+  std::vector<StreamParams> streams_;
 
   // A human-readable name for debugging messages.
   std::string debug_name_;

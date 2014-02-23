@@ -10,7 +10,7 @@
 #include "base/memory/aligned_memory.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/base/media_export.h"
 #include "media/base/sample_format.h"
 
@@ -37,13 +37,26 @@ class MEDIA_EXPORT AudioBuffer
                                              const base::TimeDelta timestamp,
                                              const base::TimeDelta duration);
 
+  // Create an AudioBuffer with |frame_count| frames. Buffer is allocated, but
+  // not initialized. Timestamp and duration are set to kNoTimestamp().
+  static scoped_refptr<AudioBuffer> CreateBuffer(SampleFormat sample_format,
+                                                 int channel_count,
+                                                 int frame_count);
+
+  // Create an empty AudioBuffer with |frame_count| frames.
+  static scoped_refptr<AudioBuffer> CreateEmptyBuffer(
+      int channel_count,
+      int frame_count,
+      const base::TimeDelta timestamp,
+      const base::TimeDelta duration);
+
   // Create a AudioBuffer indicating we've reached end of stream.
   // Calling any method other than end_of_stream() on the resulting buffer
   // is disallowed.
   static scoped_refptr<AudioBuffer> CreateEOSBuffer();
 
   // Copy frames into |dest|. |frames_to_copy| is the number of frames to copy.
-  // |source_frame_offset| specified how many frames in the buffer to skip
+  // |source_frame_offset| specifies how many frames in the buffer to skip
   // first. |dest_frame_offset| is the frame offset in |dest|. The frames are
   // converted from their source format into planar float32 data (which is all
   // that AudioBus handles).
@@ -52,35 +65,62 @@ class MEDIA_EXPORT AudioBuffer
                   int dest_frame_offset,
                   AudioBus* dest);
 
+  // Trim an AudioBuffer by removing |frames_to_trim| frames from the start.
+  // Timestamp and duration are adjusted to reflect the fewer frames.
+  // Note that repeated calls to TrimStart() may result in timestamp() and
+  // duration() being off by a few microseconds due to rounding issues.
+  void TrimStart(int frames_to_trim);
+
+  // Trim an AudioBuffer by removing |frames_to_trim| frames from the end.
+  // Duration is adjusted to reflect the fewer frames.
+  void TrimEnd(int frames_to_trim);
+
+  // Return the number of channels.
+  int channel_count() const { return channel_count_; }
+
   // Return the number of frames held.
-  int frame_count() const { return frame_count_; }
+  int frame_count() const { return adjusted_frame_count_; }
 
   // Access to constructor parameters.
   base::TimeDelta timestamp() const { return timestamp_; }
   base::TimeDelta duration() const { return duration_; }
 
+  // TODO(jrummell): Remove set_timestamp() and set_duration() once
+  // DecryptingAudioDecoder::EnqueueFrames() is changed to set them when
+  // creating the buffer. See http://crbug.com/255261.
+  void set_timestamp(base::TimeDelta timestamp) { timestamp_ = timestamp; }
+  void set_duration(base::TimeDelta duration) { duration_ = duration; }
+
   // If there's no data in this buffer, it represents end of stream.
-  bool end_of_stream() const { return data_ == NULL; }
+  bool end_of_stream() const { return end_of_stream_; }
+
+  // Access to the raw buffer for ffmpeg to write directly to. Data for planar
+  // data is grouped by channel.
+  uint8* writable_data() { return data_.get(); }
 
  private:
   friend class base::RefCountedThreadSafe<AudioBuffer>;
 
   // Allocates aligned contiguous buffer to hold all channel data (1 block for
   // interleaved data, |channel_count| blocks for planar data), copies
-  // [data,data+data_size) to the allocated buffer(s). If |data| is null an end
-  // of stream buffer is created.
+  // [data,data+data_size) to the allocated buffer(s). If |data| is null, no
+  // data is copied. If |create_buffer| is false, no data buffer is created (or
+  // copied to).
   AudioBuffer(SampleFormat sample_format,
               int channel_count,
               int frame_count,
+              bool create_buffer,
               const uint8* const* data,
               const base::TimeDelta timestamp,
               const base::TimeDelta duration);
 
   virtual ~AudioBuffer();
 
-  SampleFormat sample_format_;
-  int channel_count_;
-  int frame_count_;
+  const SampleFormat sample_format_;
+  const int channel_count_;
+  int adjusted_frame_count_;
+  int trim_start_;
+  const bool end_of_stream_;
   base::TimeDelta timestamp_;
   base::TimeDelta duration_;
 

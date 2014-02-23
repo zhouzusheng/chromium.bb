@@ -34,16 +34,17 @@
 
 #include "bindings/v8/ArrayValue.h"
 #include "bindings/v8/Dictionary.h"
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "wtf/HashMap.h"
 
 namespace WebCore {
 
-PassRefPtr<MediaConstraintsImpl> MediaConstraintsImpl::create(const Dictionary& constraints, ExceptionCode& ec)
+PassRefPtr<MediaConstraintsImpl> MediaConstraintsImpl::create(const Dictionary& constraints, ExceptionState& es)
 {
     RefPtr<MediaConstraintsImpl> object = adoptRef(new MediaConstraintsImpl());
     if (!object->initialize(constraints)) {
-        ec = TYPE_MISMATCH_ERR;
+        es.throwDOMException(TypeMismatchError);
         return 0;
     }
     return object.release();
@@ -62,8 +63,8 @@ bool MediaConstraintsImpl::initialize(const Dictionary& constraints)
     Vector<String> names;
     constraints.getOwnPropertyNames(names);
 
-    String mandatory = ASCIILiteral("mandatory");
-    String optional = ASCIILiteral("optional");
+    String mandatory("mandatory");
+    String optional("optional");
 
     for (Vector<String>::iterator it = names.begin(); it != names.end(); ++it) {
         if (*it != mandatory && *it != optional)

@@ -30,14 +30,16 @@
 #include "core/html/HTMLFormControlElementWithState.h"
 #include "core/html/HTMLOptionsCollection.h"
 #include "core/html/TypeAhead.h"
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
+class ExceptionState;
 class HTMLOptionElement;
 
-class HTMLSelectElement : public HTMLFormControlElementWithState, public TypeAheadDataSource {
+class HTMLSelectElement FINAL : public HTMLFormControlElementWithState, public TypeAheadDataSource {
 public:
+    static PassRefPtr<HTMLSelectElement> create(Document*);
     static PassRefPtr<HTMLSelectElement> create(const QualifiedName&, Document*, HTMLFormElement*, bool createdByParser);
 
     int selectedIndex() const;
@@ -58,7 +60,7 @@ public:
 
     bool usesMenuList() const;
 
-    void add(HTMLElement*, HTMLElement* beforeElement, ExceptionCode&);
+    void add(HTMLElement*, HTMLElement* beforeElement, ExceptionState&);
     void remove(int index);
     void remove(HTMLOptionElement*);
 
@@ -83,8 +85,8 @@ public:
 
     void setSize(int);
 
-    void setOption(unsigned index, HTMLOptionElement*, ExceptionCode&);
-    void setLength(unsigned, ExceptionCode&);
+    void setOption(unsigned index, HTMLOptionElement*, ExceptionState&);
+    void setLength(unsigned, ExceptionState&);
 
     Node* namedItem(const AtomicString& name);
     Node* item(unsigned index);
@@ -103,25 +105,24 @@ public:
     void setActiveSelectionAnchorIndex(int);
     void setActiveSelectionEndIndex(int);
     void updateListBoxSelection(bool deselectOtherOptions);
-    
+
     // For use in the implementation of HTMLOptionElement.
     void optionSelectionStateChanged(HTMLOptionElement*, bool optionIsSelected);
     bool isParsingInProgress() const { return m_isParsingInProgress; }
-    bool anonymousIndexedSetter(unsigned, PassRefPtr<HTMLOptionElement>, ExceptionCode&);
-    bool anonymousIndexedSetterRemove(unsigned, ExceptionCode&);
+    bool anonymousIndexedSetter(unsigned, PassRefPtr<HTMLOptionElement>, ExceptionState&);
+    bool anonymousIndexedSetterRemove(unsigned, ExceptionState&);
 
 protected:
     HTMLSelectElement(const QualifiedName&, Document*, HTMLFormElement*, bool createdByParser);
 
 private:
     virtual const AtomicString& formControlType() const;
-    
-    virtual bool isKeyboardFocusable(KeyboardEvent*) const;
-    virtual bool isMouseFocusable() const;
 
-    virtual void dispatchFocusEvent(PassRefPtr<Node> oldFocusedNode, FocusDirection) OVERRIDE;
-    virtual void dispatchBlurEvent(PassRefPtr<Node> newFocusedNode);
-    
+    virtual bool shouldShowFocusRingOnMouseFocus() const OVERRIDE;
+
+    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusDirection) OVERRIDE;
+    virtual void dispatchBlurEvent(Element* newFocusedElemnet) OVERRIDE;
+
     virtual bool canStartSelection() const { return false; }
 
     virtual bool isEnumeratable() const { return true; }
@@ -140,7 +141,7 @@ private:
     virtual void defaultEventHandler(Event*);
 
     void dispatchChangeEventForMenuList();
-    
+
     void recalcListItems(bool updateSelectedStates = true) const;
 
     void deselectItems(HTMLOptionElement* excludeElement = 0);
@@ -207,21 +208,10 @@ private:
     bool m_isParsingInProgress;
 };
 
-inline bool isHTMLSelectElement(const Node* node)
-{
-    return node->hasTagName(HTMLNames::selectTag);
-}
-
 inline HTMLSelectElement* toHTMLSelectElement(Node* node)
 {
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLSelectElement(node));
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::selectTag));
     return static_cast<HTMLSelectElement*>(node);
-}
-
-inline const HTMLSelectElement* toHTMLSelectElement(const Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLSelectElement(node));
-    return static_cast<const HTMLSelectElement*>(node);
 }
 
 void toHTMLSelectElement(const HTMLSelectElement*); // This overload will catch anyone doing an unnecessary cast.

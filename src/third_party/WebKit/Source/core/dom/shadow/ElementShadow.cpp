@@ -38,8 +38,12 @@ ShadowRoot* ElementShadow::addShadowRoot(Element* shadowHost, ShadowRoot::Shadow
     shadowRoot->setParentOrShadowHostNode(shadowHost);
     shadowRoot->setParentTreeScope(shadowHost->treeScope());
     m_shadowRoots.push(shadowRoot.get());
-    m_distributor.didShadowBoundaryChange(shadowHost);
     ChildNodeInsertionNotifier(shadowHost).notify(shadowRoot.get());
+    setNeedsDistributionRecalc();
+
+    // addShadowRoot() affects apply-author-styles. However, we know that the youngest shadow root has not had any children yet.
+    // The youngest shadow root's apply-author-styles is default (false). So we can just set m_applyAuthorStyles false.
+    m_applyAuthorStyles = false;
 
     if (shadowHost->attached())
         shadowHost->lazyReattach();
@@ -56,7 +60,7 @@ void ElementShadow::removeAllShadowRoots()
 
     while (RefPtr<ShadowRoot> oldRoot = m_shadowRoots.head()) {
         InspectorInstrumentation::willPopShadowRoot(shadowHost, oldRoot.get());
-        shadowHost->document()->removeFocusedNodeOfSubtree(oldRoot.get());
+        shadowHost->document()->removeFocusedElementOfSubtree(oldRoot.get());
 
         if (oldRoot->attached())
             oldRoot->detach();
@@ -68,14 +72,10 @@ void ElementShadow::removeAllShadowRoots()
         oldRoot->setNext(0);
         ChildNodeRemovalNotifier(shadowHost).notify(oldRoot.get());
     }
-
-    m_distributor.invalidateDistribution(shadowHost);
 }
 
 void ElementShadow::attach(const Node::AttachContext& context)
 {
-    ContentDistributor::ensureDistribution(host());
-
     Node::AttachContext childrenContext(context);
     childrenContext.resolvedStyle = 0;
 
@@ -96,32 +96,6 @@ void ElementShadow::detach(const Node::AttachContext& context)
     }
 }
 
-bool ElementShadow::childNeedsStyleRecalc() const
-{
-    ASSERT(youngestShadowRoot());
-    for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot())
-        if (root->childNeedsStyleRecalc())
-            return true;
-
-    return false;
-}
-
-bool ElementShadow::needsStyleRecalc() const
-{
-    ASSERT(youngestShadowRoot());
-    for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot())
-        if (root->needsStyleRecalc())
-            return true;
-
-    return false;
-}
-
-void ElementShadow::recalcStyle(Node::StyleChange change)
-{
-    for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot())
-        root->recalcStyle(change);
-}
-
 void ElementShadow::removeAllEventListeners()
 {
     for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot()) {
@@ -130,16 +104,46 @@ void ElementShadow::removeAllEventListeners()
     }
 }
 
-void ElementShadow::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+void ElementShadow::setNeedsDistributionRecalc()
 {
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    info.addMember(m_shadowRoots, "shadowRoots");
-    ShadowRoot* shadowRoot = m_shadowRoots.head();
-    while (shadowRoot) {
-        info.addMember(shadowRoot, "shadowRoot");
-        shadowRoot = shadowRoot->next();
+    if (m_needsDistributionRecalc)
+        return;
+    m_needsDistributionRecalc = true;
+    host()->markAncestorsWithChildNeedsDistributionRecalc();
+    clearDistribution();
+}
+
+bool ElementShadow::didAffectApplyAuthorStyles()
+{
+    bool applyAuthorStyles = resolveApplyAuthorStyles();
+
+    if (m_applyAuthorStyles == applyAuthorStyles)
+        return false;
+
+    m_applyAuthorStyles = applyAuthorStyles;
+    return true;
+}
+
+bool ElementShadow::containsActiveStyles() const
+{
+    for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot()) {
+        if (root->hasScopedHTMLStyleChild())
+            return true;
+        if (!root->containsShadowElements())
+            return false;
     }
-    info.addMember(m_distributor, "distributor");
+    return false;
+}
+
+bool ElementShadow::resolveApplyAuthorStyles() const
+{
+    for (const ShadowRoot* shadowRoot = youngestShadowRoot(); shadowRoot; shadowRoot = shadowRoot->olderShadowRoot()) {
+        if (shadowRoot->applyAuthorStyles())
+            return true;
+        if (!shadowRoot->containsShadowElements())
+            break;
+    }
+    return false;
 }
 
 } // namespace

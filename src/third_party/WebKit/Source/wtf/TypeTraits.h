@@ -22,7 +22,7 @@
 #ifndef TypeTraits_h
 #define TypeTraits_h
 
-#include <wtf/Platform.h>
+#include "wtf/Platform.h"
 
 #if (defined(__GLIBCXX__) && (__GLIBCXX__ >= 20070724) && defined(__GXX_EXPERIMENTAL_CXX0X__)) || (defined(_MSC_VER) && (_MSC_VER >= 1600))
 #include <type_traits>
@@ -230,7 +230,7 @@ namespace WTF {
 
 #if COMPILER(CLANG) || GCC_VERSION_AT_LEAST(4, 6, 0) || (defined(_MSC_VER) && (_MSC_VER >= 1400) && (_MSC_VER < 1600) && !defined(__INTEL_COMPILER))
     // VC8 (VS2005) and later has __has_trivial_constructor and __has_trivial_destructor,
-    // but the implementation returns false for built-in types. We add the extra IsPod condition to 
+    // but the implementation returns false for built-in types. We add the extra IsPod condition to
     // work around this.
     template <typename T> struct HasTrivialConstructor {
         static const bool value = __has_trivial_constructor(T) || IsPod<RemoveConstVolatile<T> >::value;
@@ -244,9 +244,9 @@ namespace WTF {
     template<typename T> struct HasTrivialConstructor : public std::tr1::has_trivial_constructor<T> { };
     template<typename T> struct HasTrivialDestructor : public std::tr1::has_trivial_destructor<T> { };
 #else
-    // For compilers that don't support detection of trivial constructors and destructors in classes, 
-    // we use a template that returns true for any POD type that IsPod can detect (see IsPod caveats above), 
-    // but false for all other types (which includes all classes). This will give false negatives, which can hurt 
+    // For compilers that don't support detection of trivial constructors and destructors in classes,
+    // we use a template that returns true for any POD type that IsPod can detect (see IsPod caveats above),
+    // but false for all other types (which includes all classes). This will give false negatives, which can hurt
     // performance, but avoids false positives, which would result in incorrect behavior.
     template <typename T> struct HasTrivialConstructor {
         static const bool value = IsPod<RemoveConstVolatile<T> >::value;
@@ -256,6 +256,56 @@ namespace WTF {
     };
 #endif
 
+    template<typename From, typename To> class IsPointerConvertible {
+    public:
+        struct MatchFound {
+            char dummy;
+        };
+        struct MatchNotFound {
+            char dummy[2];
+        };
+
+        static MatchFound tryConvert(To* x);
+        static MatchNotFound tryConvert(...);
+
+        enum {
+            Value = (sizeof(MatchFound) == sizeof(tryConvert(static_cast<From*>(0))))
+        };
+    };
+
+    template<typename ReturnType, bool Expr> class InstantiateOnlyWhen;
+    template<typename ReturnType> class InstantiateOnlyWhen<ReturnType, true> {
+    public:
+        typedef ReturnType Type;
+    };
+
+#define EnsurePtrConvertibleType(ReturnType, From, To) \
+    typename InstantiateOnlyWhen<ReturnType, IsPointerConvertible<From, To>::Value >::Type
+#define EnsurePtrConvertibleArgDecl(From, To) \
+    EnsurePtrConvertibleType(bool, From, To) = true
+#define EnsurePtrConvertibleArgDefn(From, To) \
+    EnsurePtrConvertibleType(bool, From, To)
+
 } // namespace WTF
+
+namespace WebCore {
+
+class JSONValue;
+
+} // namespace WebCore
+
+namespace WTF {
+
+    // FIXME: Disable pointer conversion checking against JSONValue.
+    // The current CodeGeneratorInspector.py generates code which upcasts to JSONValue from undefined types.
+    template<typename From> class IsPointerConvertible<From, WebCore::JSONValue> {
+    public:
+        enum {
+            Value = true
+        };
+    };
+
+} // namespace WTF
+
 
 #endif // TypeTraits_h

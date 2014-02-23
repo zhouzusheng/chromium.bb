@@ -78,6 +78,7 @@ public:
     bool get(const String&, RefPtr<Storage>&) const;
     bool get(const String&, MessagePortArray&) const;
     bool get(const String&, RefPtr<Uint8Array>&) const;
+    bool get(const String&, RefPtr<ArrayBufferView>&) const;
     bool get(const String&, RefPtr<MIDIPort>&) const;
     bool get(const String&, RefPtr<MediaKeyError>&) const;
     bool get(const String&, RefPtr<TrackBase>&) const;
@@ -93,6 +94,7 @@ public:
     bool get(const String&, RefPtr<CSSFontFaceRule>&) const;
     bool get(const String&, RefPtr<DOMError>&) const;
     bool get(const String&, RefPtr<VoidCallback>&) const;
+    bool get(const String&, v8::Local<v8::Value>&) const;
 
     bool getOwnPropertiesAsStringHashMap(HashMap<String, String>&) const;
     bool getOwnPropertyNames(Vector<String>&) const;

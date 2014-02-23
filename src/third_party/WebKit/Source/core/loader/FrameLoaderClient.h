@@ -7,13 +7,13 @@
  * are met:
  *
  * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer. 
+ *     notice, this list of conditions and the following disclaimer.
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution. 
+ *     documentation and/or other materials provided with the distribution.
  * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission. 
+ *     from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -32,10 +32,11 @@
 
 #include "core/dom/IconURL.h"
 #include "core/loader/FrameLoaderTypes.h"
+#include "core/loader/NavigationPolicy.h"
 #include "core/page/LayoutMilestones.h"
 #include "core/platform/network/ResourceLoadPriority.h"
-#include <wtf/Forward.h>
-#include <wtf/Vector.h>
+#include "wtf/Forward.h"
+#include "wtf/Vector.h"
 
 typedef class _jobject* jobject;
 
@@ -50,12 +51,12 @@ class WebCookieJar;
 
 namespace WebCore {
 
-    class CachedResourceRequest;
     class Color;
     class DOMWindowExtension;
     class DOMWrapperWorld;
     class DocumentLoader;
     class Element;
+class FetchRequest;
     class FormState;
     class Frame;
     class FrameLoader;
@@ -68,7 +69,6 @@ namespace WebCore {
     class IntSize;
     class KURL;
     class MessageEvent;
-    class NavigationAction;
     class Page;
     class PluginView;
     class ResourceError;
@@ -93,18 +93,15 @@ namespace WebCore {
 
         virtual void detachedFromParent() = 0;
 
+        virtual void dispatchWillRequestAfterPreconnect(ResourceRequest&) { }
         virtual void dispatchWillSendRequest(DocumentLoader*, unsigned long identifier, ResourceRequest&, const ResourceResponse& redirectResponse) = 0;
         virtual void dispatchDidReceiveResponse(DocumentLoader*, unsigned long identifier, const ResourceResponse&) = 0;
         virtual void dispatchDidFinishLoading(DocumentLoader*, unsigned long identifier) = 0;
-        virtual void dispatchDidFailLoading(DocumentLoader*, unsigned long identifier, const ResourceError&) = 0;
         virtual void dispatchDidLoadResourceFromMemoryCache(DocumentLoader*, const ResourceRequest&, const ResourceResponse&, int length) = 0;
 
         virtual void dispatchDidHandleOnloadEvents() = 0;
         virtual void dispatchDidReceiveServerRedirectForProvisionalLoad() = 0;
-        virtual void dispatchDidCancelClientRedirect() = 0;
-        virtual void dispatchWillPerformClientRedirect(const KURL&, double interval, double fireDate) = 0;
         virtual void dispatchDidNavigateWithinPage() { }
-        virtual void dispatchDidChangeLocationWithinPage() = 0;
         virtual void dispatchWillClose() = 0;
         virtual void dispatchDidStartProvisionalLoad() = 0;
         virtual void dispatchDidReceiveTitle(const StringWithDirection&) = 0;
@@ -117,30 +114,19 @@ namespace WebCore {
 
         virtual void dispatchDidLayout(LayoutMilestones) { }
 
-        virtual Frame* dispatchCreatePage(const NavigationAction&) = 0;
-        virtual void dispatchShow() = 0;
+        virtual NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy) = 0;
 
-        virtual PolicyAction policyForNewWindowAction(const NavigationAction&, const String& frameName) = 0;
-        virtual PolicyAction decidePolicyForNavigationAction(const NavigationAction&, const ResourceRequest&) = 0;
-
-        virtual void dispatchUnableToImplementPolicy(const ResourceError&) = 0;
-
-        virtual void dispatchWillRequestResource(CachedResourceRequest*) { }
+        virtual void dispatchWillRequestResource(FetchRequest*) { }
 
         virtual void dispatchWillSendSubmitEvent(PassRefPtr<FormState>) = 0;
         virtual void dispatchWillSubmitForm(PassRefPtr<FormState>) = 0;
-
-        virtual void setMainDocumentError(DocumentLoader*, const ResourceError&) = 0;
 
         // Maybe these should go into a ProgressTrackerClient some day
         virtual void postProgressStartedNotification() = 0;
         virtual void postProgressEstimateChangedNotification() = 0;
         virtual void postProgressFinishedNotification() = 0;
 
-        virtual void startDownload(const ResourceRequest&, const String& suggestedName = String()) = 0;
-
-        virtual void committedLoad(DocumentLoader*, const char*, int) = 0;
-        virtual void finishedLoading(DocumentLoader*) = 0;
+        virtual void loadURLExternally(const ResourceRequest&, NavigationPolicy, const String& suggestedName = String()) = 0;
 
         virtual bool shouldGoToHistoryItem(HistoryItem*) const = 0;
         virtual bool shouldStopLoadingForHistoryItem(HistoryItem*) const = 0;
@@ -164,21 +150,9 @@ namespace WebCore {
         // spread to other frames in the same origin.
         virtual void didRunInsecureContent(SecurityOrigin*, const KURL&) = 0;
         virtual void didDetectXSS(const KURL&, bool didBlockEntirePage) = 0;
+        virtual void didDispatchPingLoader(const KURL&) = 0;
 
-        virtual ResourceError cancelledError(const ResourceRequest&) = 0;
-        virtual ResourceError cannotShowURLError(const ResourceRequest&) = 0;
         virtual ResourceError interruptedForPolicyChangeError(const ResourceRequest&) = 0;
-
-        virtual ResourceError cannotShowMIMETypeError(const ResourceResponse&) = 0;
-        virtual ResourceError fileDoesNotExistError(const ResourceResponse&) = 0;
-        virtual ResourceError pluginWillHandleLoadError(const ResourceResponse&) = 0;
-
-        virtual bool shouldFallBack(const ResourceError&) = 0;
-
-        virtual bool canShowMIMEType(const String& MIMEType) const = 0;
-        virtual String generatedMIMETypeForURLScheme(const String& URLScheme) const = 0;
-
-        virtual void didFinishLoad() = 0;
 
         virtual PassRefPtr<DocumentLoader> createDocumentLoader(const ResourceRequest&, const SubstituteData&) = 0;
 
@@ -190,7 +164,6 @@ namespace WebCore {
 
         virtual PassRefPtr<Frame> createFrame(const KURL& url, const String& name, HTMLFrameOwnerElement* ownerElement, const String& referrer, bool allowsScrolling, int marginWidth, int marginHeight) = 0;
         virtual PassRefPtr<Widget> createPlugin(const IntSize&, HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool loadManually) = 0;
-        virtual void redirectDataToPlugin(Widget* pluginWidget) = 0;
 
         virtual PassRefPtr<Widget> createJavaAppletWidget(const IntSize&, HTMLAppletElement*, const KURL& baseURL, const Vector<String>& paramNames, const Vector<String>& paramValues) = 0;
 

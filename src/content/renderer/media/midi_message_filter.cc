@@ -15,13 +15,20 @@
 using media::MIDIPortInfoList;
 using base::AutoLock;
 
+// The maximum number of bytes which we're allowed to send to the browser
+// before getting acknowledgement back from the browser that they've been
+// successfully sent.
+static const size_t kMaxUnacknowledgedBytesSent = 10 * 1024 * 1024;  // 10 MB.
+
 namespace content {
 
 MIDIMessageFilter::MIDIMessageFilter(
     const scoped_refptr<base::MessageLoopProxy>& io_message_loop)
     : channel_(NULL),
       io_message_loop_(io_message_loop),
-      next_available_id_(0) {
+      main_message_loop_(base::MessageLoopProxy::current()),
+      next_available_id_(0),
+      unacknowledged_bytes_sent_(0) {
 }
 
 MIDIMessageFilter::~MIDIMessageFilter() {}
@@ -39,8 +46,9 @@ bool MIDIMessageFilter::OnMessageReceived(const IPC::Message& message) {
   DCHECK(io_message_loop_->BelongsToCurrentThread());
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(MIDIMessageFilter, message)
-    IPC_MESSAGE_HANDLER(MIDIMsg_AccessApproved, OnAccessApproved)
+    IPC_MESSAGE_HANDLER(MIDIMsg_SessionStarted, OnSessionStarted)
     IPC_MESSAGE_HANDLER(MIDIMsg_DataReceived, OnDataReceived)
+    IPC_MESSAGE_HANDLER(MIDIMsg_AcknowledgeSentData, OnAcknowledgeSentData)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -64,8 +72,7 @@ void MIDIMessageFilter::OnChannelClosing() {
   channel_ = NULL;
 }
 
-void MIDIMessageFilter::RequestAccess(
-    WebKit::WebMIDIAccessorClient* client, int access) {
+void MIDIMessageFilter::StartSession(WebKit::WebMIDIAccessorClient* client) {
   // Generate and keep track of a "client id" which is sent to the browser
   // to ask permission to talk to MIDI hardware.
   // This id is handed back when we receive the answer in OnAccessApproved().
@@ -74,13 +81,13 @@ void MIDIMessageFilter::RequestAccess(
     clients_[client] = client_id;
 
     io_message_loop_->PostTask(FROM_HERE,
-        base::Bind(&MIDIMessageFilter::RequestAccessOnIOThread, this,
-                   client_id, access));
+        base::Bind(&MIDIMessageFilter::StartSessionOnIOThread, this,
+                   client_id));
   }
 }
 
-void MIDIMessageFilter::RequestAccessOnIOThread(int client_id, int access) {
-  Send(new MIDIHostMsg_RequestAccess(client_id, access));
+void MIDIMessageFilter::StartSessionOnIOThread(int client_id) {
+  Send(new MIDIHostMsg_StartSession(client_id));
 }
 
 void MIDIMessageFilter::RemoveClient(WebKit::WebMIDIAccessorClient* client) {
@@ -91,21 +98,20 @@ void MIDIMessageFilter::RemoveClient(WebKit::WebMIDIAccessorClient* client) {
 
 // Received from browser.
 
-void MIDIMessageFilter::OnAccessApproved(
+void MIDIMessageFilter::OnSessionStarted(
     int client_id,
-    int access,
     bool success,
     MIDIPortInfoList inputs,
     MIDIPortInfoList outputs) {
   // Handle on the main JS thread.
-  ChildThread::current()->message_loop()->PostTask(FROM_HERE,
-      base::Bind(&MIDIMessageFilter::HandleAccessApproved, this,
-                 client_id, access, success, inputs, outputs));
+  main_message_loop_->PostTask(
+      FROM_HERE,
+      base::Bind(&MIDIMessageFilter::HandleSessionStarted, this,
+                 client_id, success, inputs, outputs));
 }
 
-void MIDIMessageFilter::HandleAccessApproved(
+void MIDIMessageFilter::HandleSessionStarted(
     int client_id,
-    int access,
     bool success,
     MIDIPortInfoList inputs,
     MIDIPortInfoList outputs) {
@@ -131,11 +137,10 @@ void MIDIMessageFilter::HandleAccessApproved(
           UTF8ToUTF16(outputs[i].version));
     }
   }
-
-  if (success)
-    client->didAllowAccess();
-  else
-    client->didBlockAccess();
+  // TODO(toyoshim): Reports device initialization failure to JavaScript as
+  // "NotSupportedError" or something when |success| is false.
+  // http://crbug.com/260315
+  client->didStartSession();
 }
 
 WebKit::WebMIDIAccessorClient*
@@ -156,9 +161,16 @@ void MIDIMessageFilter::OnDataReceived(int port,
                                        double timestamp) {
   TRACE_EVENT0("midi", "MIDIMessageFilter::OnDataReceived");
 
-  ChildThread::current()->message_loop()->PostTask(FROM_HERE,
+  main_message_loop_->PostTask(
+      FROM_HERE,
       base::Bind(&MIDIMessageFilter::HandleDataReceived, this,
                  port, data, timestamp));
+}
+
+void MIDIMessageFilter::OnAcknowledgeSentData(size_t bytes_sent) {
+  DCHECK_GE(unacknowledged_bytes_sent_, bytes_sent);
+  if (unacknowledged_bytes_sent_ >= bytes_sent)
+    unacknowledged_bytes_sent_ -= bytes_sent;
 }
 
 void MIDIMessageFilter::HandleDataReceived(int port,
@@ -179,19 +191,32 @@ void MIDIMessageFilter::SendMIDIData(int port,
                                      const uint8* data,
                                      size_t length,
                                      double timestamp) {
-  // TODO(crogers): we need more work to check the amount of data sent,
-  // throttle if necessary, and filter out the SYSEX messages if not
-  // approved. For now, we will not implement the sending of MIDI data.
-  NOTIMPLEMENTED();
-  // std::vector<uint8> v(data, data + length);
-  // io_message_loop_->PostTask(FROM_HERE,
-  //     base::Bind(&MIDIMessageFilter::SendMIDIDataOnIOThread, this,
-  //                port, v, timestamp));
+  if (length > kMaxUnacknowledgedBytesSent) {
+    // TODO(crogers): buffer up the data to send at a later time.
+    // For now we're just dropping these bytes on the floor.
+    return;
+  }
+
+  std::vector<uint8> v(data, data + length);
+  io_message_loop_->PostTask(FROM_HERE,
+      base::Bind(&MIDIMessageFilter::SendMIDIDataOnIOThread, this,
+                 port, v, timestamp));
 }
 
 void MIDIMessageFilter::SendMIDIDataOnIOThread(int port,
                                                const std::vector<uint8>& data,
                                                double timestamp) {
+  size_t n = data.size();
+  if (n > kMaxUnacknowledgedBytesSent ||
+      unacknowledged_bytes_sent_ > kMaxUnacknowledgedBytesSent ||
+      n + unacknowledged_bytes_sent_ > kMaxUnacknowledgedBytesSent) {
+    // TODO(crogers): buffer up the data to send at a later time.
+    // For now we're just dropping these bytes on the floor.
+    return;
+  }
+
+  unacknowledged_bytes_sent_ += n;
+
   // Send to the browser.
   Send(new MIDIHostMsg_SendData(port, data, timestamp));
 }

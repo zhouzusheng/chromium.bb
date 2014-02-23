@@ -35,8 +35,7 @@
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderProgress.h"
 #include "core/rendering/RenderThemeChromiumFontProvider.h"
-
-#include <wtf/CurrentTime.h>
+#include "wtf/CurrentTime.h"
 
 namespace WebCore {
 
@@ -78,11 +77,6 @@ String RenderThemeChromiumSkia::extraDefaultStyleSheet()
 String RenderThemeChromiumSkia::extraQuirksStyleSheet()
 {
     return String(themeWinQuirksUserAgentStyleSheet, sizeof(themeWinQuirksUserAgentStyleSheet));
-}
-
-String RenderThemeChromiumSkia::extraMediaControlsStyleSheet()
-{
-    return String(mediaControlsChromiumUserAgentStyleSheet, sizeof(mediaControlsChromiumUserAgentStyleSheet));
 }
 
 bool RenderThemeChromiumSkia::supportsHover(const RenderStyle* style) const

@@ -54,6 +54,7 @@ WebInspector.ExtensionServer = function()
     this._registerHandler(commands.CreateSidebarPane, this._onCreateSidebarPane.bind(this));
     this._registerHandler(commands.CreateStatusBarButton, this._onCreateStatusBarButton.bind(this));
     this._registerHandler(commands.EvaluateOnInspectedPage, this._onEvaluateOnInspectedPage.bind(this));
+    this._registerHandler(commands.ForwardKeyboardEvent, this._onForwardKeyboardEvent.bind(this));
     this._registerHandler(commands.GetHAR, this._onGetHAR.bind(this));
     this._registerHandler(commands.GetConsoleMessages, this._onGetConsoleMessages.bind(this));
     this._registerHandler(commands.GetPageResources, this._onGetPageResources.bind(this));
@@ -204,7 +205,6 @@ WebInspector.ExtensionServer.prototype = {
 
         var page = this._expandResourcePath(port._extensionOrigin, message.page);
         var panelDescriptor = new WebInspector.PanelDescriptor(id, message.title, undefined, undefined, new WebInspector.ExtensionPanel(id, page));
-        panelDescriptor.setIconURL(this._expandResourcePath(port._extensionOrigin, message.icon));
         this._clientObjects[id] = panelDescriptor.panel();
         WebInspector.inspectorView.addPanel(panelDescriptor);
         return this._status.OK();
@@ -435,6 +435,9 @@ WebInspector.ExtensionServer.prototype = {
         };
     },
 
+    /**
+     * @return {!Array.<WebInspector.ContentProvider>}
+     */
     _onGetPageResources: function()
     {
         var resources = {};
@@ -564,6 +567,25 @@ WebInspector.ExtensionServer.prototype = {
         if (!auditRun)
             return this._status.E_NOTFOUND(message.resultId);
         auditRun.done();
+    },
+
+    _onForwardKeyboardEvent: function(message)
+    {
+        const Esc = "U+001B";
+
+        if (!message.ctrlKey && !message.altKey && !message.metaKey && !/^F\d+$/.test(message.keyIdentifier) && message.keyIdentifier !== Esc)
+            return;
+        // Fool around closure compiler -- it has its own notion of both KeyboardEvent constructor
+        // and initKeyboardEvent methods and overriding these in externs.js does not have effect.
+        var event = new window.KeyboardEvent(message.eventType, {
+            keyIdentifier: message.keyIdentifier,
+            location: message.location,
+            ctrlKey: message.ctrlKey,
+            altKey: message.altKey,
+            shiftKey: message.shiftKey,
+            metaKey: message.metaKey
+        });
+        document.dispatchEvent(event);
     },
 
     _dispatchCallback: function(requestId, port, result)

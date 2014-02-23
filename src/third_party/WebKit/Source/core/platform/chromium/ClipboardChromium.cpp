@@ -28,16 +28,16 @@
 #include "core/platform/chromium/ClipboardChromium.h"
 
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/DataTransferItemList.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/StringCallback.h"
-#include "core/editing/Editor.h"
 #include "core/editing/markup.h"
 #include "core/fileapi/File.h"
 #include "core/fileapi/FileList.h"
-#include "core/loader/cache/CachedImage.h"
+#include "core/loader/cache/ImageResource.h"
 #include "core/page/Frame.h"
 #include "core/platform/DragData.h"
 #include "core/platform/MIMETypeRegistry.h"
@@ -48,7 +48,7 @@
 #include "core/platform/graphics/Image.h"
 #include "core/rendering/RenderImage.h"
 
-#include <wtf/text/WTFString.h>
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -62,9 +62,9 @@ public:
 
     virtual size_t length() const;
     virtual PassRefPtr<DataTransferItem> item(unsigned long index) OVERRIDE;
-    virtual void deleteItem(unsigned long index, ExceptionCode&) OVERRIDE;
+    virtual void deleteItem(unsigned long index, ExceptionState&) OVERRIDE;
     virtual void clear() OVERRIDE;
-    virtual void add(const String& data, const String& type, ExceptionCode&) OVERRIDE;
+    virtual void add(const String& data, const String& type, ExceptionState&) OVERRIDE;
     virtual void add(PassRefPtr<File>) OVERRIDE;
 
 private:
@@ -103,10 +103,10 @@ PassRefPtr<DataTransferItem> DataTransferItemListPolicyWrapper::item(unsigned lo
     return DataTransferItemPolicyWrapper::create(m_clipboard, item);
 }
 
-void DataTransferItemListPolicyWrapper::deleteItem(unsigned long index, ExceptionCode& ec)
+void DataTransferItemListPolicyWrapper::deleteItem(unsigned long index, ExceptionState& es)
 {
     if (!m_clipboard->canWriteData()) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
     m_dataObject->deleteItem(index);
@@ -119,11 +119,11 @@ void DataTransferItemListPolicyWrapper::clear()
     m_dataObject->clearAll();
 }
 
-void DataTransferItemListPolicyWrapper::add(const String& data, const String& type, ExceptionCode& ec)
+void DataTransferItemListPolicyWrapper::add(const String& data, const String& type, ExceptionState& es)
 {
     if (!m_clipboard->canWriteData())
         return;
-    m_dataObject->add(data, type, ec);
+    m_dataObject->add(data, type, es);
 }
 
 void DataTransferItemListPolicyWrapper::add(PassRefPtr<File> file)
@@ -298,7 +298,7 @@ PassRefPtr<FileList> ClipboardChromium::files() const
     return files.release();
 }
 
-void ClipboardChromium::setDragImage(CachedImage* image, Node* node, const IntPoint& loc)
+void ClipboardChromium::setDragImage(ImageResource* image, Node* node, const IntPoint& loc)
 {
     if (!canSetDragImage())
         return;
@@ -313,7 +313,7 @@ void ClipboardChromium::setDragImage(CachedImage* image, Node* node, const IntPo
     m_dragImageElement = node;
 }
 
-void ClipboardChromium::setDragImage(CachedImage* img, const IntPoint& loc)
+void ClipboardChromium::setDragImage(ImageResource* img, const IntPoint& loc)
 {
     setDragImage(img, 0, loc);
 }
@@ -337,9 +337,9 @@ PassOwnPtr<DragImage> ClipboardChromium::createDragImage(IntPoint& loc) const
     return nullptr;
 }
 
-static CachedImage* getCachedImage(Element* element)
+static ImageResource* getImageResource(Element* element)
 {
-    // Attempt to pull CachedImage from element
+    // Attempt to pull ImageResource from element
     ASSERT(element);
     RenderObject* renderer = element->renderer();
     if (!renderer || !renderer->isImage())
@@ -356,7 +356,7 @@ static void writeImageToDataObject(ChromiumDataObject* dataObject, Element* elem
                                    const KURL& url)
 {
     // Shove image data into a DataObject for use as a file
-    CachedImage* cachedImage = getCachedImage(element);
+    ImageResource* cachedImage = getImageResource(element);
     if (!cachedImage || !cachedImage->imageForRenderer(element->renderer()) || !cachedImage->isLoaded())
         return;
 
@@ -364,32 +364,38 @@ static void writeImageToDataObject(ChromiumDataObject* dataObject, Element* elem
     if (!imageBuffer || !imageBuffer->size())
         return;
 
+    String imageExtension = cachedImage->image()->filenameExtension();
+    ASSERT(!imageExtension.isEmpty());
+
     // Determine the filename for the file contents of the image.
     String filename = cachedImage->response().suggestedFilename();
-    String extension;
     if (filename.isEmpty())
         filename = url.lastPathComponent();
-    if (filename.isEmpty())
+
+    String fileExtension;
+    if (filename.isEmpty()) {
         filename = element->getAttribute(altAttr);
-    else {
+    } else {
         // Strip any existing extension. Assume that alt text is usually not a filename.
         int extensionIndex = filename.reverseFind('.');
         if (extensionIndex != -1) {
-            extension = filename.substring(extensionIndex + 1);
+            fileExtension = filename.substring(extensionIndex + 1);
             filename.truncate(extensionIndex);
         }
     }
 
-    String extensionMimeType = MIMETypeRegistry::getMIMETypeForExtension(extension);
-    if (extensionMimeType != cachedImage->response().mimeType()) {
-        extension = MIMETypeRegistry::getPreferredExtensionForMIMEType(
-            cachedImage->response().mimeType());
+    if (!fileExtension.isEmpty() && fileExtension != imageExtension) {
+        String imageMimeType = MIMETypeRegistry::getMIMETypeForExtension(imageExtension);
+        ASSERT(imageMimeType.startsWith("image/"));
+        // Use the file extension only if it has imageMimeType: it's untrustworthy otherwise.
+        if (imageMimeType == MIMETypeRegistry::getMIMETypeForExtension(fileExtension))
+            imageExtension = fileExtension;
     }
 
-    extension = extension.isEmpty() ? emptyString() : "." + extension;
-    ClipboardChromium::validateFilename(filename, extension);
+    imageExtension = "." + imageExtension;
+    ClipboardChromium::validateFilename(filename, imageExtension);
 
-    dataObject->addSharedBuffer(filename + extension, imageBuffer);
+    dataObject->addSharedBuffer(filename + imageExtension, imageBuffer);
 }
 
 void ClipboardChromium::declareAndWriteDragImage(Element* element, const KURL& url, const String& title, Frame* frame)
@@ -429,7 +435,7 @@ void ClipboardChromium::writeRange(Range* selectedRange, Frame* frame)
 
     m_dataObject->setHTMLAndBaseURL(createMarkup(selectedRange, 0, AnnotateForInterchange, false, ResolveNonLocalURLs), frame->document()->url());
 
-    String str = frame->editor()->selectedTextForClipboard();
+    String str = frame->selectedTextForClipboard();
 #if OS(WINDOWS)
     replaceNewlinesWithWindowsStyleNewlines(str);
 #endif

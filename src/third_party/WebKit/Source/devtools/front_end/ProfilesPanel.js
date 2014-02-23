@@ -421,18 +421,13 @@ WebInspector.ProfilesPanel = function(name, type)
         this._launcherView.addEventListener(WebInspector.MultiProfileLauncherView.EventTypes.ProfileTypeSelected, this._onProfileTypeSelected, this);
 
         this._registerProfileType(new WebInspector.CPUProfileType());
-        if (!WebInspector.WorkerManager.isWorkerFrontend())
-            this._registerProfileType(new WebInspector.CSSSelectorProfileType());
         this._registerProfileType(new WebInspector.HeapSnapshotProfileType());
         this._registerProfileType(new WebInspector.TrackingHeapSnapshotProfileType(this));
-        if (!WebInspector.WorkerManager.isWorkerFrontend() && WebInspector.experimentsSettings.nativeMemorySnapshots.isEnabled()) {
-            this._registerProfileType(new WebInspector.NativeSnapshotProfileType());
-            this._registerProfileType(new WebInspector.NativeMemoryProfileType());
-        }
         if (!WebInspector.WorkerManager.isWorkerFrontend() && WebInspector.experimentsSettings.canvasInspection.isEnabled())
             this._registerProfileType(new WebInspector.CanvasProfileType());
     }
 
+    this._profilesWereRequested = false;
     this._reset();
 
     this._createFileSelectorElement();
@@ -574,7 +569,6 @@ WebInspector.ProfilesPanel.prototype = {
         this.searchCanceled();
 
         this._profileGroups = {};
-        this._profilesWereRequested = false;
         this.recordButton.toggled = false;
         if (this._selectedProfileType)
             this.recordButton.title = this._selectedProfileType.buttonTooltip;
@@ -905,8 +899,9 @@ WebInspector.ProfilesPanel.prototype = {
 
     /**
      * @param {string} query
+     * @param {boolean} shouldJump
      */
-    performSearch: function(query)
+    performSearch: function(query, shouldJump)
     {
         this.searchCanceled();
 
@@ -941,12 +936,11 @@ WebInspector.ProfilesPanel.prototype = {
             this._totalSearchMatches += searchMatches;
             this._searchResults.push(view);
 
-            if (this.searchMatchFound)
-                this.searchMatchFound(view, searchMatches);
+            this.searchMatchFound(view, searchMatches);
 
             updateMatchesCountSoon.call(this);
 
-            if (view === visibleView)
+            if (shouldJump && view === visibleView)
                 view.jumpToFirstSearchResult();
         }
 
@@ -1085,7 +1079,7 @@ WebInspector.ProfilesPanel.prototype = {
 
     searchMatchFound: function(view, matches)
     {
-        view.profileHeader._profilesTreeElement.searchMatches = matches;
+        view.profile._profilesTreeElement.searchMatches = matches;
     },
 
     searchCanceled: function()
@@ -1358,20 +1352,6 @@ WebInspector.CPUProfilerPanel.prototype = {
  * @constructor
  * @extends {WebInspector.ProfilesPanel}
  */
-WebInspector.CSSSelectorProfilerPanel = function()
-{
-    WebInspector.ProfilesPanel.call(this, "css-profiler", new WebInspector.CSSSelectorProfileType());
-}
-
-WebInspector.CSSSelectorProfilerPanel.prototype = {
-    __proto__: WebInspector.ProfilesPanel.prototype
-}
-
-
-/**
- * @constructor
- * @extends {WebInspector.ProfilesPanel}
- */
 WebInspector.HeapProfilerPanel = function()
 {
     var heapSnapshotProfileType = new WebInspector.HeapSnapshotProfileType();
@@ -1406,38 +1386,9 @@ WebInspector.CanvasProfilerPanel.prototype = {
 }
 
 
-/**
- * @constructor
- * @extends {WebInspector.ProfilesPanel}
- */
-WebInspector.MemoryChartProfilerPanel = function()
-{
-    WebInspector.ProfilesPanel.call(this, "memory-chart-profiler", new WebInspector.NativeMemoryProfileType());
-}
-
-WebInspector.MemoryChartProfilerPanel.prototype = {
-    __proto__: WebInspector.ProfilesPanel.prototype
-}
-
-
-/**
- * @constructor
- * @extends {WebInspector.ProfilesPanel}
- */
-WebInspector.NativeMemoryProfilerPanel = function()
-{
-    WebInspector.ProfilesPanel.call(this, "memory-snapshot-profiler", new WebInspector.NativeSnapshotProfileType());
-}
-
-WebInspector.NativeMemoryProfilerPanel.prototype = {
-    __proto__: WebInspector.ProfilesPanel.prototype
-}
-
-
 importScript("ProfileDataGridTree.js");
 importScript("BottomUpProfileDataGridTree.js");
 importScript("CPUProfileView.js");
-importScript("CSSSelectorProfileView.js");
 importScript("FlameChart.js");
 importScript("HeapSnapshot.js");
 importScript("HeapSnapshotDataGrids.js");
@@ -1447,8 +1398,6 @@ importScript("HeapSnapshotProxy.js");
 importScript("HeapSnapshotView.js");
 importScript("HeapSnapshotWorkerDispatcher.js");
 importScript("JSHeapSnapshot.js");
-importScript("NativeHeapSnapshot.js");
-importScript("NativeMemorySnapshotView.js");
 importScript("ProfileLauncherView.js");
 importScript("TopDownProfileDataGridTree.js");
 importScript("CanvasProfileView.js");

@@ -29,7 +29,9 @@
 #include "modules/webdatabase/DOMWindowWebDatabase.h"
 
 #include "RuntimeEnabledFeatures.h"
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
+#include "core/dom/ExceptionCode.h"
 #include "core/page/DOMWindow.h"
 #include "core/page/Frame.h"
 #include "modules/webdatabase/Database.h"
@@ -39,7 +41,7 @@
 
 namespace WebCore {
 
-PassRefPtr<Database> DOMWindowWebDatabase::openDatabase(DOMWindow* window, const String& name, const String& version, const String& displayName, unsigned long estimatedSize, PassRefPtr<DatabaseCallback> creationCallback, ExceptionCode& ec)
+PassRefPtr<Database> DOMWindowWebDatabase::openDatabase(DOMWindow* window, const String& name, const String& version, const String& displayName, unsigned long estimatedSize, PassRefPtr<DatabaseCallback> creationCallback, ExceptionState& es)
 {
     if (!window->isCurrentlyDisplayedInFrame())
         return 0;
@@ -47,12 +49,14 @@ PassRefPtr<Database> DOMWindowWebDatabase::openDatabase(DOMWindow* window, const
     RefPtr<Database> database = 0;
     DatabaseManager& dbManager = DatabaseManager::manager();
     DatabaseError error = DatabaseError::None;
-    if (RuntimeEnabledFeatures::databaseEnabled() && window->document()->securityOrigin()->canAccessDatabase(window->document()->topOrigin())) {
+    if (RuntimeEnabledFeatures::databaseEnabled() && window->document()->securityOrigin()->canAccessDatabase()) {
         database = dbManager.openDatabase(window->document(), name, version, displayName, estimatedSize, creationCallback, error);
         ASSERT(database || error != DatabaseError::None);
-        ec = DatabaseManager::exceptionCodeForDatabaseError(error);
-    } else
-        ec = SECURITY_ERR;
+        if (error != DatabaseError::None)
+            es.throwDOMException(DatabaseManager::exceptionCodeForDatabaseError(error));
+    } else {
+        es.throwDOMException(SecurityError);
+    }
 
     return database;
 }

@@ -29,11 +29,13 @@
 #include "config.h"
 #include "modules/indexeddb/IDBRequest.h"
 
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "bindings/v8/IDBBindingUtilities.h"
+#include "core/dom/DOMError.h"
 #include "core/dom/EventListener.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/EventQueue.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/ScriptExecutionContext.h"
 #include "modules/indexeddb/IDBCursorBackendInterface.h"
 #include "modules/indexeddb/IDBCursorWithValue.h"
@@ -90,19 +92,19 @@ IDBRequest::~IDBRequest()
     ASSERT(m_readyState == DONE || m_readyState == EarlyDeath || !scriptExecutionContext());
 }
 
-PassRefPtr<IDBAny> IDBRequest::result(ExceptionCode& ec) const
+PassRefPtr<IDBAny> IDBRequest::result(ExceptionState& es) const
 {
     if (m_readyState != DONE) {
-        ec = IDBDatabaseException::InvalidStateError;
+        es.throwDOMException(InvalidStateError, IDBDatabase::requestNotFinishedErrorMessage);
         return 0;
     }
     return m_result;
 }
 
-PassRefPtr<DOMError> IDBRequest::error(ExceptionCode& ec) const
+PassRefPtr<DOMError> IDBRequest::error(ExceptionState& es) const
 {
     if (m_readyState != DONE) {
-        ec = IDBDatabaseException::InvalidStateError;
+        es.throwDOMException(InvalidStateError, IDBDatabase::requestNotFinishedErrorMessage);
         return 0;
     }
     return m_error;
@@ -161,7 +163,7 @@ void IDBRequest::abort()
 
     m_error.clear();
     m_result.clear();
-    onError(IDBDatabaseError::create(IDBDatabaseException::AbortError));
+    onError(DOMError::create(AbortError, "The transaction was aborted, so the request cannot be fulfilled."));
     m_requestAborted = true;
 }
 
@@ -205,13 +207,7 @@ void IDBRequest::setResultCursor(PassRefPtr<IDBCursor> cursor, PassRefPtr<IDBKey
     m_cursorKey = key;
     m_cursorPrimaryKey = primaryKey;
     m_cursorValue = value;
-
-    if (m_cursorType == IndexedDB::CursorKeyOnly) {
-        m_result = IDBAny::create(cursor);
-        return;
-    }
-
-    m_result = IDBAny::create(IDBCursorWithValue::fromCursor(cursor));
+    m_result = IDBAny::create(cursor);
 }
 
 void IDBRequest::finishCursor()
@@ -233,13 +229,13 @@ bool IDBRequest::shouldEnqueueEvent() const
     return true;
 }
 
-void IDBRequest::onError(PassRefPtr<IDBDatabaseError> error)
+void IDBRequest::onError(PassRefPtr<DOMError> error)
 {
     IDB_TRACE("IDBRequest::onError()");
     if (!shouldEnqueueEvent())
         return;
 
-    m_error = DOMError::create(IDBDatabaseException::getErrorName(error->idbCode()), error->message());
+    m_error = error;
     m_pendingCursor.clear();
     enqueueEvent(Event::create(eventNames().errorEvent, true, true));
 }
@@ -307,6 +303,11 @@ void IDBRequest::onSuccess(PassRefPtr<SharedBuffer> valueBuffer)
     if (!shouldEnqueueEvent())
         return;
 
+    if (m_pendingCursor) {
+        m_pendingCursor->close();
+        m_pendingCursor.clear();
+    }
+
     DOMRequestState::Scope scope(m_requestState);
     ScriptValue value = deserializeIDBValueBuffer(requestState(), valueBuffer);
     onSuccessInternal(value);
@@ -373,10 +374,7 @@ void IDBRequest::onSuccessInternal(PassRefPtr<SerializedScriptValue> value)
 void IDBRequest::onSuccessInternal(const ScriptValue& value)
 {
     m_result = IDBAny::create(value);
-    if (m_pendingCursor) {
-        m_pendingCursor->close();
-        m_pendingCursor.clear();
-    }
+    ASSERT(!m_pendingCursor);
     enqueueEvent(createSuccessEvent());
 }
 
@@ -506,7 +504,7 @@ bool IDBRequest::dispatchEvent(PassRefPtr<Event> event)
 void IDBRequest::uncaughtExceptionInEventHandler()
 {
     if (m_transaction && !m_requestAborted) {
-        m_transaction->setError(DOMError::create(IDBDatabaseException::getErrorName(IDBDatabaseException::AbortError), "Uncaught exception in event handler."));
+        m_transaction->setError(DOMError::create(AbortError, "Uncaught exception in event handler."));
         m_transaction->abort(IGNORE_EXCEPTION);
     }
 }

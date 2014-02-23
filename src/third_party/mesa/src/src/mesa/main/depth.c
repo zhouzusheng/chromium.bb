@@ -44,6 +44,9 @@ _mesa_ClearDepth( GLclampd depth )
    GET_CURRENT_CONTEXT(ctx);
    ASSERT_OUTSIDE_BEGIN_END(ctx);
 
+   if (MESA_VERBOSE & VERBOSE_API)
+      _mesa_debug(ctx, "glClearDepth(%f)\n", depth);
+
    depth = CLAMP( depth, 0.0, 1.0 );
 
    if (ctx->Depth.Clear == depth)
@@ -51,10 +54,14 @@ _mesa_ClearDepth( GLclampd depth )
 
    FLUSH_VERTICES(ctx, _NEW_DEPTH);
    ctx->Depth.Clear = depth;
-   if (ctx->Driver.ClearDepth)
-      (*ctx->Driver.ClearDepth)( ctx, ctx->Depth.Clear );
 }
 
+
+void GLAPIENTRY
+_mesa_ClearDepthf( GLclampf depth )
+{
+   _mesa_ClearDepth(depth);
+}
 
 
 void GLAPIENTRY
@@ -127,6 +134,9 @@ _mesa_DepthBoundsEXT( GLclampd zmin, GLclampd zmax )
    GET_CURRENT_CONTEXT(ctx);
    ASSERT_OUTSIDE_BEGIN_END(ctx);
 
+   if (MESA_VERBOSE & VERBOSE_API)
+      _mesa_debug(ctx, "glDepthBounds(%f, %f)\n", zmin, zmax);
+
    if (zmin > zmax) {
       _mesa_error(ctx, GL_INVALID_VALUE, "glDepthBoundsEXT(zmin > zmax)");
       return;
@@ -153,7 +163,7 @@ _mesa_DepthBoundsEXT( GLclampd zmin, GLclampd zmax )
  * Initialize the depth buffer attribute group in the given context.
  */
 void
-_mesa_init_depth(GLcontext *ctx)
+_mesa_init_depth(struct gl_context *ctx)
 {
    ctx->Depth.Test = GL_FALSE;
    ctx->Depth.Clear = 1.0;

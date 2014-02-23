@@ -26,7 +26,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "core/platform/graphics/chromium/Canvas2DLayerManager.h"
 
 #include "public/platform/Platform.h"
-#include <wtf/StdLibExtras.h>
+#include "wtf/StdLibExtras.h"
 
 using WebKit::WebThread;
 
@@ -114,7 +114,7 @@ void Canvas2DLayerManager::layerAllocatedStorageChanged(Canvas2DLayerBridge* lay
     if (!isInList(layer))
         addLayerToList(layer);
     else {
-        ASSERT((intptr_t)m_bytesAllocated + deltaBytes >= 0); 
+        ASSERT((intptr_t)m_bytesAllocated + deltaBytes >= 0);
         m_bytesAllocated = (intptr_t)m_bytesAllocated + deltaBytes;
     }
     if (deltaBytes > 0)
@@ -127,7 +127,7 @@ void Canvas2DLayerManager::layerToBeDestroyed(Canvas2DLayerBridge* layer)
         removeLayerFromList(layer);
 }
 
-void Canvas2DLayerManager::freeMemoryIfNecessary() 
+void Canvas2DLayerManager::freeMemoryIfNecessary()
 {
     if (m_bytesAllocated > m_maxBytesAllocated) {
         // Pass 1: Free memory from caches

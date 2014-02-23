@@ -33,25 +33,24 @@ namespace WebCore {
 class CSSStyleSheet;
 class Document;
 class DocumentType;
+class ExceptionState;
 class Frame;
 class HTMLDocument;
 class KURL;
-
-typedef int ExceptionCode;
 
 class DOMImplementation : public ScriptWrappable {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     static PassOwnPtr<DOMImplementation> create(Document* document) { return adoptPtr(new DOMImplementation(document)); }
-    
+
     void ref() { m_document->ref(); }
     void deref() { m_document->deref(); }
     Document* document() { return m_document; }
 
     // DOM methods & attributes for DOMImplementation
     static bool hasFeature(const String& feature, const String& version);
-    PassRefPtr<DocumentType> createDocumentType(const String& qualifiedName, const String& publicId, const String& systemId, ExceptionCode&);
-    PassRefPtr<Document> createDocument(const String& namespaceURI, const String& qualifiedName, DocumentType*, ExceptionCode&);
+    PassRefPtr<DocumentType> createDocumentType(const String& qualifiedName, const String& publicId, const String& systemId, ExceptionState&);
+    PassRefPtr<Document> createDocument(const String& namespaceURI, const String& qualifiedName, DocumentType*, ExceptionState&);
 
     DOMImplementation* getInterface(const String& feature);
 

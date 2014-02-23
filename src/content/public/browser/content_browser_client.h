@@ -14,6 +14,7 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/values.h"
 #include "content/public/browser/certificate_request_result_type.h"
 #include "content/public/browser/file_descriptor_info.h"
 #include "content/public/common/content_client.h"
@@ -23,7 +24,8 @@
 #include "net/cookies/canonical_cookie.h"
 #include "net/url_request/url_request_job_factory.h"
 #include "third_party/WebKit/public/web/WebNotificationPresenter.h"
-#include "webkit/glue/resource_type.h"
+#include "ui/base/window_open_disposition.h"
+#include "webkit/common/resource_type.h"
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 #include "base/posix/global_descriptors.h"
@@ -32,6 +34,10 @@
 class CommandLine;
 class GURL;
 struct WebPreferences;
+
+namespace WebKit {
+struct WebWindowFeatures;
+}
 
 namespace base {
 class DictionaryValue;
@@ -66,7 +72,8 @@ class SelectFilePolicy;
 }
 
 namespace fileapi {
-class FileSystemMountPointProvider;
+class ExternalMountPoints;
+class FileSystemBackend;
 }
 
 namespace content {
@@ -75,6 +82,7 @@ class AccessTokenStore;
 class BrowserChildProcessHost;
 class BrowserContext;
 class BrowserMainParts;
+class BrowserPluginGuestDelegate;
 class BrowserPpapiHost;
 class BrowserURLHandler;
 class LocationProvider;
@@ -90,6 +98,7 @@ class WebContents;
 class WebContentsViewDelegate;
 class WebContentsViewPort;
 struct MainFunctionParams;
+struct Referrer;
 struct ShowDesktopNotificationHostMsgParams;
 
 // A mapping from the scheme name to the protocol handler that services its
@@ -130,6 +139,22 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual WebContentsViewDelegate* GetWebContentsViewDelegate(
       WebContents* web_contents);
 
+  // Notifies that a guest WebContents has been created. A guest WebContents
+  // represents a renderer that's hosted within a BrowserPlugin. Creation can
+  // occur an arbitrary length of time before attachment. If the new guest has
+  // an |opener_web_contents|, then it's a new window created by that opener.
+  // If the guest was created via navigation, then |extra_params| will be
+  // non-NULL. |extra_params| are parameters passed to the BrowserPlugin object
+  // element by the content embedder. These parameters may include the API to
+  // enable for the given guest. |guest_delegate| is a return parameter of
+  // the delegate in the content embedder that will service the guest in the
+  // content layer. The content layer takes ownership of the |guest_delegate|.
+  virtual void GuestWebContentsCreated(
+      WebContents* guest_web_contents,
+      WebContents* opener_web_contents,
+      BrowserPluginGuestDelegate** guest_delegate,
+      scoped_ptr<base::DictionaryValue> extra_params) {}
+
   // Notifies that a guest WebContents has been attached to a BrowserPlugin.
   // A guest is attached to a BrowserPlugin when the guest has acquired an
   // embedder WebContents. This happens on initial navigation or when a new
@@ -138,7 +163,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual void GuestWebContentsAttached(
       WebContents* guest_web_contents,
       WebContents* embedder_web_contents,
-      int browser_plugin_instance_id,
       const base::DictionaryValue& extra_params) {}
 
   // Notifies that a RenderProcessHost has been created. This is called before
@@ -148,22 +172,6 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Notifies that a BrowserChildProcessHost has been created.
   virtual void BrowserChildProcessHostCreated(BrowserChildProcessHost* host) {}
-
-  // Determines whether a navigation from |current_instance| to |url| would be a
-  // valid entry point to a "privileged site," based on whether it
-  // |is_renderer_initiated|. A privileged site requires careful process
-  // isolation to ensure its privileges do not leak, and it can only be entered
-  // via known navigation paths.
-  //
-  // If this is a valid entry to a privileged site, this function should rewrite
-  // the origin of |url| with a non-http(s) origin that represents the
-  // privileged site. This will distinguish the resulting SiteInstance from
-  // other SiteInstances in the process model.
-  virtual GURL GetPossiblyPrivilegedURL(
-      content::BrowserContext* browser_context,
-      const GURL& url,
-      bool is_renderer_initiated,
-      SiteInstance* current_instance);
 
   // Get the effective URL for the given actual URL, to allow an embedder to
   // group different url schemes in the same SiteInstance.
@@ -238,6 +246,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual bool ShouldSwapProcessesForRedirect(ResourceContext* resource_context,
                                               const GURL& current_url,
                                               const GURL& new_url);
+
+  // Returns true if the passed in URL should be assigned as the site of the
+  // current SiteInstance, if it does not yet have a site.
+  virtual bool ShouldAssignSiteForURL(const GURL& url);
 
   // See CharacterEncoding's comment.
   virtual std::string GetCanonicalEncodingNameByAliasName(
@@ -437,13 +449,21 @@ class CONTENT_EXPORT ContentBrowserClient {
   // type. If true is returned, |no_javascript_access| will indicate whether
   // the window that is created should be scriptable/in the same process.
   // This is called on the IO thread.
-  virtual bool CanCreateWindow(
-      const GURL& opener_url,
-      const GURL& source_origin,
-      WindowContainerType container_type,
-      ResourceContext* context,
-      int render_process_id,
-      bool* no_javascript_access);
+  virtual bool CanCreateWindow(const GURL& opener_url,
+                               const GURL& opener_top_level_frame_url,
+                               const GURL& source_origin,
+                               WindowContainerType container_type,
+                               const GURL& target_url,
+                               const content::Referrer& referrer,
+                               WindowOpenDisposition disposition,
+                               const WebKit::WebWindowFeatures& features,
+                               bool user_gesture,
+                               bool opener_suppressed,
+                               content::ResourceContext* context,
+                               int render_process_id,
+                               bool is_guest,
+                               int opener_id,
+                               bool* no_javascript_access);
 
   // Returns a title string to use in the task manager for a process host with
   // the given URL, or the empty string to fall back to the default logic.
@@ -522,9 +542,6 @@ class CONTENT_EXPORT ContentBrowserClient {
                                     bool private_api,
                                     const SocketPermissionRequest& params);
 
-  // Returns the directory containing hyphenation dictionaries.
-  virtual base::FilePath GetHyphenDictionaryDirectory();
-
   // Returns an implementation of a file selecition policy. Can return NULL.
   virtual ui::SelectFilePolicy* CreateSelectFilePolicy(
       WebContents* web_contents);
@@ -534,11 +551,14 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual void GetAdditionalAllowedSchemesForFileSystem(
       std::vector<std::string>* additional_schemes) {}
 
-  // Returns additional MountPointProviders for FileSystem API.
-  virtual void GetAdditionalFileSystemMountPointProviders(
+  // Returns additional file system backends for FileSystem API.
+  // |browser_context| is needed in the additional FileSystemBackends.
+  // It has mount points to create objects returned by additional
+  // FileSystemBackends, and SpecialStoragePolicy for permission granting.
+  virtual void GetAdditionalFileSystemBackends(
+      BrowserContext* browser_context,
       const base::FilePath& storage_partition_path,
-      ScopedVector<fileapi::FileSystemMountPointProvider>*
-          additional_providers) {}
+      ScopedVector<fileapi::FileSystemBackend>* additional_backends) {}
 
   // Allows an embedder to return its own LocationProvider implementation.
   // Return NULL to use the default one for the platform to be created.

@@ -21,7 +21,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef EditorClient_h
@@ -32,8 +32,8 @@
 #include "core/editing/UndoStep.h"
 #include "core/platform/graphics/FloatRect.h"
 #include "core/platform/text/TextChecking.h"
-#include <wtf/Forward.h>
-#include <wtf/Vector.h>
+#include "wtf/Forward.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -60,7 +60,7 @@ public:
     virtual ~EditorClient() {  }
 
     virtual bool shouldDeleteRange(Range*) = 0;
-    virtual bool smartInsertDeleteEnabled() = 0; 
+    virtual bool smartInsertDeleteEnabled() = 0;
     virtual bool isSelectTrailingWhitespaceEnabled() = 0;
     virtual bool isContinuousSpellCheckingEnabled() = 0;
     virtual void toggleContinuousSpellChecking() = 0;
@@ -71,7 +71,7 @@ public:
     virtual bool shouldInsertNode(Node*, Range*, EditorInsertAction) = 0;
     virtual bool shouldInsertText(const String&, Range*, EditorInsertAction) = 0;
     virtual bool shouldChangeSelectedRange(Range* fromRange, Range* toRange, EAffinity, bool stillSelecting) = 0;
-    
+
     virtual bool shouldApplyStyle(StylePropertySet*, Range*) = 0;
 
     virtual void didBeginEditing() = 0;
@@ -88,7 +88,7 @@ public:
     virtual bool canPaste(Frame*, bool defaultValue) const = 0;
     virtual bool canUndo() const = 0;
     virtual bool canRedo() const = 0;
-    
+
     virtual void undo() = 0;
     virtual void redo() = 0;
 

@@ -83,11 +83,12 @@ void RenderViewHostManager::Init(BrowserContext* browser_context,
   render_view_host_ = static_cast<RenderViewHostImpl*>(
       RenderViewHostFactory::Create(
           site_instance, render_view_delegate_, render_widget_delegate_,
-          routing_id, main_frame_routing_id, false, delegate_->
-          GetControllerForRenderManager().GetSessionStorageNamespace(
-              site_instance)));
+          routing_id, main_frame_routing_id, false));
 
-  // Keep track of renderer processes as they start to shut down.
+  // Keep track of renderer processes as they start to shut down or are
+  // crashed/killed.
+  registrar_.Add(this, NOTIFICATION_RENDERER_PROCESS_CLOSED,
+                 NotificationService::AllSources());
   registrar_.Add(this, NOTIFICATION_RENDERER_PROCESS_CLOSING,
                  NotificationService::AllSources());
 }
@@ -148,7 +149,10 @@ RenderViewHostImpl* RenderViewHostManager::Navigate(
   // If the renderer crashed, then try to create a new one to satisfy this
   // navigation request.
   if (!dest_render_view_host->IsRenderViewLive()) {
-    if (!InitRenderView(dest_render_view_host, MSG_ROUTING_NONE))
+    // Recreate the opener chain.
+    int opener_route_id = delegate_->CreateOpenerRenderViewsForRenderManager(
+        dest_render_view_host->GetSiteInstance());
+    if (!InitRenderView(dest_render_view_host, opener_route_id))
       return NULL;
 
     // Now that we've created a new renderer, be sure to hide it if it isn't
@@ -397,6 +401,7 @@ void RenderViewHostManager::Observe(
     const NotificationSource& source,
     const NotificationDetails& details) {
   switch (type) {
+    case NOTIFICATION_RENDERER_PROCESS_CLOSED:
     case NOTIFICATION_RENDERER_PROCESS_CLOSING:
       RendererProcessClosing(
           Source<RenderProcessHost>(source).ptr());
@@ -485,14 +490,10 @@ SiteInstance* RenderViewHostManager::GetSiteInstanceForEntry(
     SiteInstance* curr_instance) {
   // NOTE: This is only called when ShouldTransitionCrossSite is true.
 
+  const GURL& dest_url = entry.GetURL();
   NavigationControllerImpl& controller =
       delegate_->GetControllerForRenderManager();
   BrowserContext* browser_context = controller.GetBrowserContext();
-  const GURL& dest_url = GetContentClient()->browser()->
-      GetPossiblyPrivilegedURL(browser_context,
-                               entry.GetURL(),
-                               entry.is_renderer_initiated(),
-                               curr_instance);
 
   // If the entry has an instance already we should use it.
   if (entry.site_instance())
@@ -509,8 +510,10 @@ SiteInstance* RenderViewHostManager::GetSiteInstanceForEntry(
   //       RenderViews in response to a link click.
   //
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kProcessPerSite) &&
-      entry.GetTransitionType() == PAGE_TRANSITION_GENERATED)
+      PageTransitionCoreTypeIs(entry.GetTransitionType(),
+                               PAGE_TRANSITION_GENERATED)) {
     return curr_instance;
+  }
 
   SiteInstanceImpl* curr_site_instance =
       static_cast<SiteInstanceImpl*>(curr_instance);
@@ -655,10 +658,11 @@ int RenderViewHostManager::CreateRenderView(
     // Create a new RenderViewHost if we don't find an existing one.
     new_render_view_host = static_cast<RenderViewHostImpl*>(
         RenderViewHostFactory::Create(instance,
-            render_view_delegate_, render_widget_delegate_, MSG_ROUTING_NONE,
-            MSG_ROUTING_NONE, swapped_out, delegate_->
-            GetControllerForRenderManager().GetSessionStorageNamespace(
-                instance)));
+                                      render_view_delegate_,
+                                      render_widget_delegate_,
+                                      MSG_ROUTING_NONE,
+                                      MSG_ROUTING_NONE,
+                                      swapped_out));
 
     // If the new RVH is swapped out already, store it.  Otherwise prevent the
     // process from exiting while we're trying to navigate in it.
@@ -734,12 +738,12 @@ void RenderViewHostManager::CommitPending() {
   render_view_host_->GetProcess()->RemovePendingView();
 
   // If the view is gone, then this RenderViewHost died while it was hidden.
-  // We ignored the RenderViewGone call at the time, so we should send it now
+  // We ignored the RenderProcessGone call at the time, so we should send it now
   // to make sure the sad tab shows up, etc.
   if (render_view_host_->GetView())
     render_view_host_->GetView()->Show();
   else
-    delegate_->RenderViewGoneFromRenderManager(render_view_host_);
+    delegate_->RenderProcessGoneFromRenderManager(render_view_host_);
 
   // Hide the old view now that the new one is visible.
   if (old_render_view_host->GetView()) {
@@ -813,7 +817,7 @@ void RenderViewHostManager::ShutdownRenderViewHostsInSiteInstance(
   swapped_out_hosts_.erase(site_instance_id);
 
   RenderWidgetHost::List widgets =
-      RenderWidgetHostImpl::GetRenderWidgetHosts();
+      RenderWidgetHostImpl::GetAllRenderWidgetHosts();
 
   // Here deleting a RWH in widgets can possibly cause another RWH in
   // the list to be deleted.  This can result in leaving a dangling

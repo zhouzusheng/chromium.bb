@@ -23,11 +23,9 @@
 #pragma once
 
 #include "main/config.h"
+#include "program/prog_parameter.h"
 
-#ifndef MTYPES_H
-struct __GLcontextRec;
-typedef struct __GLcontextRec GLcontext;
-#endif
+struct gl_context;
 
 enum asm_type {
    at_none,
@@ -99,7 +97,7 @@ struct asm_symbol {
 
 struct asm_vector {
    unsigned count;
-   float    data[4];
+   gl_constant_value data[4];
 };
 
 
@@ -131,7 +129,7 @@ struct asm_instruction {
 
 
 struct asm_parser_state {
-   GLcontext *ctx;
+   struct gl_context *ctx;
    struct gl_program *prog;
 
    /**
@@ -176,6 +174,7 @@ struct asm_parser_state {
    unsigned MaxClipPlanes;
    unsigned MaxLights;
    unsigned MaxProgramMatrices;
+   unsigned MaxDrawBuffers;
    /*@}*/
 
    /**
@@ -192,7 +191,7 @@ struct asm_parser_state {
     * multiple ATTRIB statements bind illegal combinations of vertex
     * attributes.
     */
-   unsigned InputsBound;
+   GLbitfield64 InputsBound;
 
    enum {
       invalid_mode = 0,
@@ -215,6 +214,7 @@ struct asm_parser_state {
 
    struct {
       unsigned UsesKill:1;
+      unsigned UsesDFdy:1;
    } fragment;
 };
 
@@ -237,7 +237,7 @@ typedef struct YYLTYPE {
 #define YYLTYPE_IS_TRIVIAL 1
 
 
-extern GLboolean _mesa_parse_arb_program(GLcontext *ctx, GLenum target,
+extern GLboolean _mesa_parse_arb_program(struct gl_context *ctx, GLenum target,
     const GLubyte *str, GLsizei len, struct asm_parser_state *state);
 
 

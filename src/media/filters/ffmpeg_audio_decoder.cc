@@ -8,14 +8,15 @@
 #include "base/callback_helpers.h"
 #include "base/location.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "media/base/audio_buffer.h"
 #include "media/base/audio_bus.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/audio_timestamp_helper.h"
 #include "media/base/bind_to_loop.h"
-#include "media/base/data_buffer.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/demuxer.h"
 #include "media/base/pipeline.h"
+#include "media/base/sample_format.h"
 #include "media/ffmpeg/ffmpeg_common.h"
 #include "media/filters/ffmpeg_glue.h"
 
@@ -24,17 +25,47 @@ namespace media {
 // Helper structure for managing multiple decoded audio frames per packet.
 struct QueuedAudioBuffer {
   AudioDecoder::Status status;
-  scoped_refptr<DataBuffer> buffer;
+  scoped_refptr<AudioBuffer> buffer;
 };
 
 // Returns true if the decode result was end of stream.
-static inline bool IsEndOfStream(int result, int decoded_size,
+static inline bool IsEndOfStream(int result,
+                                 int decoded_size,
                                  const scoped_refptr<DecoderBuffer>& input) {
   // Three conditions to meet to declare end of stream for this decoder:
   // 1. FFmpeg didn't read anything.
   // 2. FFmpeg didn't output anything.
   // 3. An end of stream buffer is received.
-  return result == 0 && decoded_size == 0 && input->IsEndOfStream();
+  return result == 0 && decoded_size == 0 && input->end_of_stream();
+}
+
+// Return the number of channels from the data in |frame|.
+static inline int DetermineChannels(AVFrame* frame) {
+#if defined(CHROMIUM_NO_AVFRAME_CHANNELS)
+  // When use_system_ffmpeg==1, libav's AVFrame doesn't have channels field.
+  return av_get_channel_layout_nb_channels(frame->channel_layout);
+#else
+  return frame->channels;
+#endif
+}
+
+// Called by FFmpeg's allocation routine to allocate a buffer. Uses
+// AVCodecContext.opaque to get the object reference in order to call
+// GetAudioBuffer() to do the actual allocation.
+static int GetAudioBufferImpl(struct AVCodecContext* s,
+                              AVFrame* frame,
+                              int flags) {
+  DCHECK(s->codec->capabilities & CODEC_CAP_DR1);
+  DCHECK_EQ(s->codec_type, AVMEDIA_TYPE_AUDIO);
+  FFmpegAudioDecoder* decoder = static_cast<FFmpegAudioDecoder*>(s->opaque);
+  return decoder->GetAudioBuffer(s, frame, flags);
+}
+
+// Called by FFmpeg's allocation routine to free a buffer. |opaque| is the
+// AudioBuffer allocated, so unref it.
+static void ReleaseAudioBufferImpl(void* opaque, uint8* data) {
+  scoped_refptr<AudioBuffer> buffer;
+  buffer.swap(reinterpret_cast<AudioBuffer**>(&opaque));
 }
 
 FFmpegAudioDecoder::FFmpegAudioDecoder(
@@ -43,14 +74,13 @@ FFmpegAudioDecoder::FFmpegAudioDecoder(
       weak_factory_(this),
       demuxer_stream_(NULL),
       codec_context_(NULL),
-      bits_per_channel_(0),
+      bytes_per_channel_(0),
       channel_layout_(CHANNEL_LAYOUT_NONE),
       channels_(0),
       samples_per_second_(0),
       av_sample_format_(0),
-      bytes_per_frame_(0),
       last_input_timestamp_(kNoTimestamp()),
-      output_bytes_to_drop_(0),
+      output_frames_to_drop_(0),
       av_frame_(NULL) {
 }
 
@@ -103,7 +133,7 @@ void FFmpegAudioDecoder::Read(const ReadCB& read_cb) {
 
 int FFmpegAudioDecoder::bits_per_channel() {
   DCHECK(message_loop_->BelongsToCurrentThread());
-  return bits_per_channel_;
+  return bytes_per_channel_ * 8;
 }
 
 ChannelLayout FFmpegAudioDecoder::channel_layout() {
@@ -130,6 +160,48 @@ FFmpegAudioDecoder::~FFmpegAudioDecoder() {
   // TODO(scherkus): should we require Stop() to be called? this might end up
   // getting called on a random thread due to refcounting.
   ReleaseFFmpegResources();
+}
+
+int FFmpegAudioDecoder::GetAudioBuffer(AVCodecContext* codec,
+                                       AVFrame* frame,
+                                       int flags) {
+  // Since this routine is called by FFmpeg when a buffer is required for audio
+  // data, use the values supplied by FFmpeg (ignoring the current settings).
+  // RunDecodeLoop() gets to determine if the buffer is useable or not.
+  AVSampleFormat format = static_cast<AVSampleFormat>(frame->format);
+  SampleFormat sample_format = AVSampleFormatToSampleFormat(format);
+  int channels = DetermineChannels(frame);
+  int bytes_per_channel = SampleFormatToBytesPerChannel(sample_format);
+  if (frame->nb_samples <= 0)
+    return AVERROR(EINVAL);
+
+  // Determine how big the buffer should be and allocate it. FFmpeg may adjust
+  // how big each channel data is in order to meet it's alignment policy, so
+  // we need to take this into consideration.
+  int buffer_size_in_bytes =
+      av_samples_get_buffer_size(NULL, channels, frame->nb_samples, format, 1);
+  int frames_required = buffer_size_in_bytes / bytes_per_channel / channels;
+  DCHECK_GE(frames_required, frame->nb_samples);
+  scoped_refptr<AudioBuffer> buffer =
+      AudioBuffer::CreateBuffer(sample_format, channels, frames_required);
+
+  // Initialize the data[], linesize[], and extended_data[] fields.
+  int ret = avcodec_fill_audio_frame(frame,
+                                     channels,
+                                     format,
+                                     buffer->writable_data(),
+                                     buffer_size_in_bytes,
+                                     1);
+  if (ret < 0)
+    return ret;
+
+  // Now create an AVBufferRef for the data just allocated. It will own the
+  // reference to the AudioBuffer object.
+  void* opaque = NULL;
+  buffer.swap(reinterpret_cast<AudioBuffer**>(&opaque));
+  frame->buf[0] = av_buffer_create(
+      frame->data[0], buffer_size_in_bytes, ReleaseAudioBufferImpl, opaque, 0);
+  return 0;
 }
 
 void FFmpegAudioDecoder::ReadFromDemuxerStream() {
@@ -184,7 +256,7 @@ void FFmpegAudioDecoder::BufferReady(
 
   // Make sure we are notified if http://crbug.com/49709 returns.  Issue also
   // occurs with some damaged files.
-  if (!input->IsEndOfStream() && input->GetTimestamp() == kNoTimestamp() &&
+  if (!input->end_of_stream() && input->timestamp() == kNoTimestamp() &&
       output_timestamp_helper_->base_timestamp() == kNoTimestamp()) {
     DVLOG(1) << "Received a buffer without timestamps!";
     base::ResetAndReturn(&read_cb_).Run(kDecodeError, NULL);
@@ -192,28 +264,27 @@ void FFmpegAudioDecoder::BufferReady(
   }
 
   bool is_vorbis = codec_context_->codec_id == AV_CODEC_ID_VORBIS;
-  if (!input->IsEndOfStream()) {
+  if (!input->end_of_stream()) {
     if (last_input_timestamp_ == kNoTimestamp()) {
-      if (is_vorbis && (input->GetTimestamp() < base::TimeDelta())) {
+      if (is_vorbis && (input->timestamp() < base::TimeDelta())) {
         // Dropping frames for negative timestamps as outlined in section A.2
         // in the Vorbis spec. http://xiph.org/vorbis/doc/Vorbis_I_spec.html
-        int frames_to_drop = floor(
-            0.5 + -input->GetTimestamp().InSecondsF() * samples_per_second_);
-        output_bytes_to_drop_ = bytes_per_frame_ * frames_to_drop;
+        output_frames_to_drop_ = floor(
+            0.5 + -input->timestamp().InSecondsF() * samples_per_second_);
       } else {
-        last_input_timestamp_ = input->GetTimestamp();
+        last_input_timestamp_ = input->timestamp();
       }
-    } else if (input->GetTimestamp() != kNoTimestamp()) {
-      if (input->GetTimestamp() < last_input_timestamp_) {
-        base::TimeDelta diff = input->GetTimestamp() - last_input_timestamp_;
+    } else if (input->timestamp() != kNoTimestamp()) {
+      if (input->timestamp() < last_input_timestamp_) {
+        base::TimeDelta diff = input->timestamp() - last_input_timestamp_;
         DVLOG(1) << "Input timestamps are not monotonically increasing! "
-                 << " ts " << input->GetTimestamp().InMicroseconds() << " us"
+                 << " ts " << input->timestamp().InMicroseconds() << " us"
                  << " diff " << diff.InMicroseconds() << " us";
         base::ResetAndReturn(&read_cb_).Run(kDecodeError, NULL);
         return;
       }
 
-      last_input_timestamp_ = input->GetTimestamp();
+      last_input_timestamp_ = input->timestamp();
     }
   }
 
@@ -250,12 +321,12 @@ bool FFmpegAudioDecoder::ConfigureDecoder() {
   }
 
   if (codec_context_ &&
-      (bits_per_channel_ != config.bits_per_channel() ||
+      (bytes_per_channel_ != config.bytes_per_channel() ||
        channel_layout_ != config.channel_layout() ||
        samples_per_second_ != config.samples_per_second())) {
     DVLOG(1) << "Unsupported config change :";
-    DVLOG(1) << "\tbits_per_channel : " << bits_per_channel_
-             << " -> " << config.bits_per_channel();
+    DVLOG(1) << "\tbytes_per_channel : " << bytes_per_channel_
+             << " -> " << config.bytes_per_channel();
     DVLOG(1) << "\tchannel_layout : " << channel_layout_
              << " -> " << config.channel_layout();
     DVLOG(1) << "\tsample_rate : " << samples_per_second_
@@ -270,9 +341,8 @@ bool FFmpegAudioDecoder::ConfigureDecoder() {
   codec_context_ = avcodec_alloc_context3(NULL);
   AudioDecoderConfigToAVCodecContext(config, codec_context_);
 
-  // MP3 decodes to S16P which we don't support, tell it to use S16 instead.
-  if (codec_context_->sample_fmt == AV_SAMPLE_FMT_S16P)
-    codec_context_->request_sample_fmt = AV_SAMPLE_FMT_S16;
+  codec_context_->opaque = this;
+  codec_context_->get_buffer2 = GetAudioBufferImpl;
 
   AVCodec* codec = avcodec_find_decoder(codec_context_->codec_id);
   if (!codec || avcodec_open2(codec_context_, codec, NULL) < 0) {
@@ -281,38 +351,26 @@ bool FFmpegAudioDecoder::ConfigureDecoder() {
     return false;
   }
 
-  // Ensure avcodec_open2() respected our format request.
-  if (codec_context_->sample_fmt == AV_SAMPLE_FMT_S16P) {
-    DLOG(ERROR) << "Unable to configure a supported sample format: "
-                << codec_context_->sample_fmt;
-    return false;
-  }
-
-  // Some codecs will only output float data, so we need to convert to integer
-  // before returning the decoded buffer.
-  if (codec_context_->sample_fmt == AV_SAMPLE_FMT_FLTP ||
-      codec_context_->sample_fmt == AV_SAMPLE_FMT_FLT) {
-    // Preallocate the AudioBus for float conversions.  We can treat interleaved
-    // float data as a single planar channel since our output is expected in an
-    // interleaved format anyways.
-    int channels = codec_context_->channels;
-    if (codec_context_->sample_fmt == AV_SAMPLE_FMT_FLT)
-      channels = 1;
-    converter_bus_ = AudioBus::CreateWrapper(channels);
-  }
-
   // Success!
   av_frame_ = avcodec_alloc_frame();
-  bits_per_channel_ = config.bits_per_channel();
   channel_layout_ = config.channel_layout();
   samples_per_second_ = config.samples_per_second();
-  output_timestamp_helper_.reset(new AudioTimestampHelper(
-      config.bytes_per_frame(), config.samples_per_second()));
-  bytes_per_frame_ = config.bytes_per_frame();
+  output_timestamp_helper_.reset(
+      new AudioTimestampHelper(config.samples_per_second()));
 
   // Store initial values to guard against midstream configuration changes.
   channels_ = codec_context_->channels;
+  if (channels_ != ChannelLayoutToChannelCount(channel_layout_)) {
+    DLOG(ERROR) << "Audio configuration specified "
+                << ChannelLayoutToChannelCount(channel_layout_)
+                << " channels, but FFmpeg thinks the file contains "
+                << channels_ << " channels";
+    return false;
+  }
   av_sample_format_ = codec_context_->sample_fmt;
+  sample_format_ = AVSampleFormatToSampleFormat(
+      static_cast<AVSampleFormat>(av_sample_format_));
+  bytes_per_channel_ = SampleFormatToBytesPerChannel(sample_format_);
 
   return true;
 }
@@ -333,7 +391,7 @@ void FFmpegAudioDecoder::ReleaseFFmpegResources() {
 void FFmpegAudioDecoder::ResetTimestampState() {
   output_timestamp_helper_->SetBaseTimestamp(kNoTimestamp());
   last_input_timestamp_ = kNoTimestamp();
-  output_bytes_to_drop_ = 0;
+  output_frames_to_drop_ = 0;
 }
 
 void FFmpegAudioDecoder::RunDecodeLoop(
@@ -341,12 +399,12 @@ void FFmpegAudioDecoder::RunDecodeLoop(
     bool skip_eos_append) {
   AVPacket packet;
   av_init_packet(&packet);
-  if (input->IsEndOfStream()) {
+  if (input->end_of_stream()) {
     packet.data = NULL;
     packet.size = 0;
   } else {
-    packet.data = const_cast<uint8*>(input->GetData());
-    packet.size = input->GetDataSize();
+    packet.data = const_cast<uint8*>(input->data());
+    packet.size = input->data_size();
   }
 
   // Each audio packet may contain several frames, so we must call the decoder
@@ -362,16 +420,16 @@ void FFmpegAudioDecoder::RunDecodeLoop(
         codec_context_, av_frame_, &frame_decoded, &packet);
 
     if (result < 0) {
-      DCHECK(!input->IsEndOfStream())
+      DCHECK(!input->end_of_stream())
           << "End of stream buffer produced an error! "
           << "This is quite possibly a bug in the audio decoder not handling "
           << "end of stream AVPackets correctly.";
 
       DLOG(ERROR)
           << "Error decoding an audio frame with timestamp: "
-          << input->GetTimestamp().InMicroseconds() << " us, duration: "
-          << input->GetDuration().InMicroseconds() << " us, packet size: "
-          << input->GetDataSize() << " bytes";
+          << input->timestamp().InMicroseconds() << " us, duration: "
+          << input->duration().InMicroseconds() << " us, packet size: "
+          << input->data_size() << " bytes";
 
       // TODO(dalecurtis): We should return a kDecodeError here instead:
       // http://crbug.com/145276
@@ -384,25 +442,22 @@ void FFmpegAudioDecoder::RunDecodeLoop(
     packet.data += result;
 
     if (output_timestamp_helper_->base_timestamp() == kNoTimestamp() &&
-        !input->IsEndOfStream()) {
-      DCHECK(input->GetTimestamp() != kNoTimestamp());
-      if (output_bytes_to_drop_ > 0) {
+        !input->end_of_stream()) {
+      DCHECK(input->timestamp() != kNoTimestamp());
+      if (output_frames_to_drop_ > 0) {
         // Currently Vorbis is the only codec that causes us to drop samples.
         // If we have to drop samples it always means the timeline starts at 0.
         DCHECK_EQ(codec_context_->codec_id, AV_CODEC_ID_VORBIS);
         output_timestamp_helper_->SetBaseTimestamp(base::TimeDelta());
       } else {
-        output_timestamp_helper_->SetBaseTimestamp(input->GetTimestamp());
+        output_timestamp_helper_->SetBaseTimestamp(input->timestamp());
       }
     }
 
-    int decoded_audio_size = 0;
-#ifdef CHROMIUM_NO_AVFRAME_CHANNELS
-    int channels = av_get_channel_layout_nb_channels(
-        av_frame_->channel_layout);
-#else
-    int channels = av_frame_->channels;
-#endif
+    scoped_refptr<AudioBuffer> output;
+    int decoded_frames = 0;
+    int original_frames = 0;
+    int channels = DetermineChannels(av_frame_);
     if (frame_decoded) {
       if (av_frame_->sample_rate != samples_per_second_ ||
           channels != channels_ ||
@@ -421,74 +476,41 @@ void FFmpegAudioDecoder::RunDecodeLoop(
         break;
       }
 
-      decoded_audio_size = av_samples_get_buffer_size(
-          NULL, codec_context_->channels, av_frame_->nb_samples,
-          codec_context_->sample_fmt, 1);
-      // If we're decoding into float, adjust audio size.
-      if (converter_bus_ && bits_per_channel_ / 8 != sizeof(float)) {
-        DCHECK(codec_context_->sample_fmt == AV_SAMPLE_FMT_FLT ||
-               codec_context_->sample_fmt == AV_SAMPLE_FMT_FLTP);
-        decoded_audio_size *=
-            static_cast<float>(bits_per_channel_ / 8) / sizeof(float);
+      // Get the AudioBuffer that the data was decoded into. Adjust the number
+      // of frames, in case fewer than requested were actually decoded.
+      output = reinterpret_cast<AudioBuffer*>(
+          av_buffer_get_opaque(av_frame_->buf[0]));
+      DCHECK_EQ(channels_, output->channel_count());
+      original_frames = av_frame_->nb_samples;
+      int unread_frames = output->frame_count() - original_frames;
+      DCHECK_GE(unread_frames, 0);
+      if (unread_frames > 0)
+        output->TrimEnd(unread_frames);
+
+      // If there are frames to drop, get rid of as many as we can.
+      if (output_frames_to_drop_ > 0) {
+        int drop = std::min(output->frame_count(), output_frames_to_drop_);
+        output->TrimStart(drop);
+        output_frames_to_drop_ -= drop;
       }
+
+      decoded_frames = output->frame_count();
     }
 
-    int start_sample = 0;
-    if (decoded_audio_size > 0 && output_bytes_to_drop_ > 0) {
-      DCHECK_EQ(decoded_audio_size % bytes_per_frame_, 0)
-          << "Decoder didn't output full frames";
-
-      int dropped_size = std::min(decoded_audio_size, output_bytes_to_drop_);
-      start_sample = dropped_size / bytes_per_frame_;
-      decoded_audio_size -= dropped_size;
-      output_bytes_to_drop_ -= dropped_size;
-    }
-
-    scoped_refptr<DataBuffer> output;
-    if (decoded_audio_size > 0) {
-      DCHECK_EQ(decoded_audio_size % bytes_per_frame_, 0)
-          << "Decoder didn't output full frames";
-
-      // Convert float data using an AudioBus.
-      if (converter_bus_) {
-        // Setup the AudioBus as a wrapper of the AVFrame data and then use
-        // AudioBus::ToInterleaved() to convert the data as necessary.
-        int skip_frames = start_sample;
-        int total_frames = av_frame_->nb_samples;
-        int frames_to_interleave = decoded_audio_size / bytes_per_frame_;
-        if (codec_context_->sample_fmt == AV_SAMPLE_FMT_FLT) {
-          DCHECK_EQ(converter_bus_->channels(), 1);
-          total_frames *= codec_context_->channels;
-          skip_frames *= codec_context_->channels;
-          frames_to_interleave *= codec_context_->channels;
-        }
-
-        converter_bus_->set_frames(total_frames);
-        for (int i = 0; i < converter_bus_->channels(); ++i) {
-          converter_bus_->SetChannelData(i, reinterpret_cast<float*>(
-              av_frame_->extended_data[i]));
-        }
-
-        output = new DataBuffer(decoded_audio_size);
-        output->SetDataSize(decoded_audio_size);
-
-        DCHECK_EQ(frames_to_interleave, converter_bus_->frames() - skip_frames);
-        converter_bus_->ToInterleavedPartial(
-            skip_frames, frames_to_interleave, bits_per_channel_ / 8,
-            output->GetWritableData());
-      } else {
-        output = DataBuffer::CopyFrom(
-            av_frame_->extended_data[0] + start_sample * bytes_per_frame_,
-            decoded_audio_size);
-      }
-      output->SetTimestamp(output_timestamp_helper_->GetTimestamp());
-      output->SetDuration(
-          output_timestamp_helper_->GetDuration(decoded_audio_size));
-      output_timestamp_helper_->AddBytes(decoded_audio_size);
-    } else if (IsEndOfStream(result, decoded_audio_size, input) &&
+    if (decoded_frames > 0) {
+      // Set the timestamp/duration once all the extra frames have been
+      // discarded.
+      output->set_timestamp(output_timestamp_helper_->GetTimestamp());
+      output->set_duration(
+          output_timestamp_helper_->GetFrameDuration(decoded_frames));
+      output_timestamp_helper_->AddFrames(decoded_frames);
+    } else if (IsEndOfStream(result, original_frames, input) &&
                !skip_eos_append) {
       DCHECK_EQ(packet.size, 0);
-      output = DataBuffer::CreateEOSBuffer();
+      output = AudioBuffer::CreateEOSBuffer();
+    } else {
+      // In case all the frames in the buffer were dropped.
+      output = NULL;
     }
 
     if (output.get()) {

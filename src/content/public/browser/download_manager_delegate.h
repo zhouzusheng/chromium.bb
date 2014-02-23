@@ -9,7 +9,7 @@
 #include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/download_danger_type.h"
 #include "content/public/browser/download_item.h"
@@ -18,7 +18,6 @@
 namespace content {
 
 class BrowserContext;
-class DownloadId;
 class WebContents;
 
 // Called by SavePackage when it creates a DownloadItem.
@@ -49,8 +48,10 @@ typedef base::Callback<void(
 // Called when a download delayed by the delegate has completed.
 typedef base::Callback<void(bool)> DownloadOpenDelayedCallback;
 
-// Called with the reuslt of CheckForFileExistence().
+// Called with the result of CheckForFileExistence().
 typedef base::Callback<void(bool result)> CheckForFileExistenceCallback;
+
+typedef base::Callback<void(uint32)> DownloadIdCallback;
 
 // Browser's download manager: manages all downloads and destination view.
 class CONTENT_EXPORT DownloadManagerDelegate {
@@ -58,8 +59,9 @@ class CONTENT_EXPORT DownloadManagerDelegate {
   // Lets the delegate know that the download manager is shutting down.
   virtual void Shutdown() {}
 
-  // Returns a new DownloadId.
-  virtual DownloadId GetNextId();
+  // Runs |callback| with a new download id when possible, perhaps
+  // synchronously.
+  virtual void GetNextId(const DownloadIdCallback& callback);
 
   // Called to notify the delegate that a new download |item| requires a
   // download target to be determined. The delegate should return |true| if it
@@ -126,6 +128,12 @@ class CONTENT_EXPORT DownloadManagerDelegate {
   virtual void CheckForFileExistence(
       DownloadItem* download,
       const CheckForFileExistenceCallback& callback) {}
+
+  // Return a GUID string used for identifying the application to the
+  // system AV function for scanning downloaded files. If an empty
+  // or invalid GUID string is returned, no client identification
+  // will be given to the AV function.
+  virtual std::string ApplicationClientIdForFileScanning() const;
 
  protected:
   virtual ~DownloadManagerDelegate();

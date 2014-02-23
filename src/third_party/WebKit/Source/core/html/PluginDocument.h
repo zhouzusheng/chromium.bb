@@ -19,7 +19,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef PluginDocument_h
@@ -34,9 +34,9 @@ class Widget;
 
 class PluginDocument FINAL : public HTMLDocument {
 public:
-    static PassRefPtr<PluginDocument> create(Frame* frame, const KURL& url)
+    static PassRefPtr<PluginDocument> create(const DocumentInit& initializer = DocumentInit())
     {
-        return adoptRef(new PluginDocument(frame, url));
+        return adoptRef(new PluginDocument(initializer));
     }
 
     void setPluginNode(Node* pluginNode) { m_pluginNode = pluginNode; }
@@ -51,10 +51,10 @@ public:
     bool shouldLoadPluginManually() { return m_shouldLoadPluginManually; }
 
 private:
-    PluginDocument(Frame*, const KURL&);
+    PluginDocument(const DocumentInit&);
 
     virtual PassRefPtr<DocumentParser> createParser() OVERRIDE;
-        
+
     void setShouldLoadPluginManually(bool loadManually) { m_shouldLoadPluginManually = loadManually; }
 
     bool m_shouldLoadPluginManually;
@@ -75,7 +75,7 @@ inline const PluginDocument* toPluginDocument(const Document* document)
 
 // This will catch anyone doing an unnecessary cast.
 void toPluginDocument(const PluginDocument*);
-    
+
 }
 
 #endif // PluginDocument_h

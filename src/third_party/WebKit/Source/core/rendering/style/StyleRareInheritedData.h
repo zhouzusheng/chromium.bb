@@ -123,7 +123,7 @@ public:
 
     StyleColor tapHighlightColor;
 
-    Color caretColor;
+    StyleColor caretColor;
 
     DataRef<StyleVariableData> m_variables;
 

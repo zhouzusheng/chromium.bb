@@ -1532,7 +1532,7 @@ void StyleBuilder::oldApplyProperty(CSSPropertyID id, StyleResolverState& state,
         if (!primitiveValue)
             break;
 
-        Color col = colorFromPrimitiveValue(primitiveValue);
+        StyleColor col = state.document()->textLinkColors().colorFromPrimitiveValue(primitiveValue);
         state.style()->setCaretColor(col);
         return;
     }

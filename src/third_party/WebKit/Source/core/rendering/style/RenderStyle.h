@@ -1451,7 +1451,7 @@ public:
     static NinePieceImage initialNinePieceImage() { return NinePieceImage(); }
     static LengthSize initialBorderRadius() { return LengthSize(Length(0, Fixed), Length(0, Fixed)); }
     static ECaptionSide initialCaptionSide() { return CAPTOP; }
-    static Color initialCaretColor() { return Color(); }
+    static StyleColor initialCaretColor() { return StyleColor(); }
     static EClear initialClear() { return CNONE; }
     static ColumnAxis initialColumnAxis() { return AutoColumnAxis; }
     static ColumnProgression initialColumnProgression() { return NormalColumnProgression; }

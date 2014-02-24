@@ -41,7 +41,8 @@ namespace blpwtk2 {
 
 class BrowserContextImplManager;
 class DevToolsHttpHandlerDelegateImpl;
-class InProcessRendererHost;
+class ManagedRenderProcessHost;
+class ProcessHostManager;
 class RendererInfoMap;
 
 // This class represents the browser-main-thread's "main".  See
@@ -56,21 +57,13 @@ class BrowserMainRunner {
     explicit BrowserMainRunner(sandbox::SandboxInterfaceInfo* sandboxInfo);
     ~BrowserMainRunner();
 
-    int Run();
-
-    // Obtain the host affinity for the specified 'rendererAffinity', using the
-    // specified 'rendererInfoMap' to perform the lookup.  If
-    // 'rendererAffinity' is 'IN_PROCESS_RENDERER', then the in-process
-    // renderer host will be initialized.
-    int obtainHostAffinity(content::BrowserContext* browserContext,
-                           int rendererAffinity,
-                           RendererInfoMap* rendererInfoMap);
+    void destroyProcessHostManager();
+    int run();
 
   private:
     content::MainFunctionParams d_mainParams;
     scoped_ptr<content::BrowserMainRunner> d_impl;
     scoped_ptr<BrowserContextImplManager> d_browserContextImplManager;
-    scoped_ptr<InProcessRendererHost> d_inProcessRendererHost;
     scoped_ptr<DevToolsHttpHandlerDelegateImpl> d_devToolsHttpHandlerDelegate;
 
     DISALLOW_COPY_AND_ASSIGN(BrowserMainRunner);

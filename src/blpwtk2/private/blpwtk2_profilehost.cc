@@ -35,15 +35,17 @@ namespace blpwtk2 {
 ProfileHost::ProfileHost(ProcessHost* processHost,
                          int routingId,
                          const std::string& dataDir,
-                         bool diskCacheEnabled)
+                         bool diskCacheEnabled,
+                         bool cookiePersistenceEnabled)
 : d_processHost(processHost)
 , d_routingId(routingId)
 {
     d_processHost->addRoute(d_routingId, this);
     d_browserContext =
-        Statics::browserContextImplManager->createBrowserContextImpl(
+        Statics::browserContextImplManager->obtainBrowserContextImpl(
             dataDir,
-            diskCacheEnabled);
+            diskCacheEnabled,
+            cookiePersistenceEnabled);
 }
 
 ProfileHost::~ProfileHost()

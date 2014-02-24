@@ -47,6 +47,7 @@ namespace blpwtk2 {
 
 class BrowserThread;
 class BrowserMainRunner;
+class ManagedRenderProcessHost;
 class ProcessClientImpl;
 class ProcessHostImpl;
 class Profile;
@@ -63,7 +64,9 @@ class ToolkitImpl : public Toolkit {
   public:
     static ToolkitImpl* instance();
 
-    ToolkitImpl(const StringRef& dictionaryPath, bool pluginDiscoveryEnabled);
+    ToolkitImpl(const StringRef& dictionaryPath,
+                const StringRef& hostChannel,
+                bool pluginDiscoveryDisabled);
     virtual ~ToolkitImpl();
 
     void startupThreads();
@@ -82,8 +85,7 @@ class ToolkitImpl : public Toolkit {
                                    WebViewDelegate* delegate,
                                    const WebViewCreateParams& params) OVERRIDE;
 
-    virtual void onRootWindowPositionChanged(gfx::NativeView root) OVERRIDE;
-    virtual void onRootWindowSettingChange(gfx::NativeView root) OVERRIDE;
+    virtual String createHostChannel(int timeoutInMilliseconds) OVERRIDE;
 
     virtual bool preHandleMessage(const NativeMsg* msg) OVERRIDE;
     virtual void postHandleMessage(const NativeMsg* msg) OVERRIDE;
@@ -96,18 +98,23 @@ class ToolkitImpl : public Toolkit {
     bool d_threadsStopped;
     Profile* d_defaultProfile;
     RendererInfoMap d_rendererInfoMap;
+    RendererInfo d_inProcessRendererInfo;
     sandbox::SandboxInterfaceInfo d_sandboxInfo;
     ContentMainDelegateImpl d_mainDelegate;
     scoped_ptr<content::ContentMainRunner> d_mainRunner;
     std::string d_dictionaryPath;
+    std::string d_hostChannel;
+
+    // only used for the RENDERER_MAIN thread mode, if host channel is empty
+    scoped_ptr<BrowserThread> d_browserThread;
+    scoped_ptr<ProcessHostImpl> d_inProcessHost;
 
     // only used for the RENDERER_MAIN thread mode
-    scoped_ptr<BrowserThread> d_browserThread;
-    scoped_ptr<ProcessClientImpl> d_inProcessClient;
-    scoped_ptr<ProcessHostImpl> d_inProcessHost;
+    scoped_ptr<ProcessClientImpl> d_processClient;
 
     // only used for the ORIGINAL thread mode
     scoped_ptr<BrowserMainRunner> d_browserMainRunner;
+    scoped_ptr<ManagedRenderProcessHost> d_inProcessRendererHost;
 };
 
 }  // close namespace blpwtk2

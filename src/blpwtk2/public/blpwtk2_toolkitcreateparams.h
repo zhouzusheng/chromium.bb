@@ -30,7 +30,7 @@
 
 namespace blpwtk2 {
 
-class HttpTransactionHandler;
+class ResourceLoader;
 class StringRef;
 struct ToolkitCreateParamsImpl;
 
@@ -63,9 +63,9 @@ class ToolkitCreateParams {
 
     // By default, blpwtk2 will automatically load plugins it finds on the
     // system (e.g. from paths in the Windows registry).  Use this method to
-    // enable or disable this behavior.  If it is disabled, then only plugins
-    // registered via 'registerPlugin' will be loaded.
-    BLPWTK2_EXPORT void enableSystemPlugins(bool enabled);
+    // disable this behavior.  If it is disabled, then only plugins registered
+    // via 'registerPlugin' will be loaded.
+    BLPWTK2_EXPORT void disablePluginDiscovery();
 
     // By default, renderers will run plugins in a separate process.  Use this
     // method to make any WebView created with affinity to the specified
@@ -73,8 +73,10 @@ class ToolkitCreateParams {
     // will disable the sandbox for that renderer.
     BLPWTK2_EXPORT void setRendererUsesInProcessPlugins(int renderer);
 
-    // Install a custom HttpTransactionHandler.
-    BLPWTK2_EXPORT void setHttpTransactionHandler(HttpTransactionHandler*);
+    // Install a custom ResourceLoader.  Note that this is only valid when
+    // using the 'RENDERER_MAIN' thread-mode, and will only be used for
+    // in-process renderers.
+    BLPWTK2_EXPORT void setInProcessResourceLoader(ResourceLoader*);
 
     // By default, blpwtk2 will look for .bdic files in the application's
     // working directory.  Use this method to change the path where blpwtk2
@@ -82,6 +84,22 @@ class ToolkitCreateParams {
     // spellchecking is enabled in one of the Profile objects.
     BLPWTK2_EXPORT void setDictionaryPath(const StringRef& path);
 
+    // By default, blpwtk2 will allocate new browser process resources for each
+    // blpwtk2 process.  However, the 'Toolkit::createHostChannel' method can
+    // be used to setup an IPC channel that this process can use to share the
+    // same browser process resources.  Use this method to set the channel-id
+    // that will be used to connect this process to the browser process.  This
+    // channel-id must have been obtained from 'Toolkit::createHostChannel' in
+    // another process using the same version of blpwtk2 (i.e.
+    // 'isValidHostChannelVersion' must return true).
+    BLPWTK2_EXPORT void setHostChannel(const StringRef& channelId);
+
+    // Return true if the specified 'channelId' was obtained from a process
+    // using the same version of blpwtk2, and false otherwise.  It is undefined
+    // behavior to use a channel-id obtained from a different version of
+    // blpwtk2.
+    BLPWTK2_EXPORT static bool isValidHostChannelVersion(
+        const StringRef& channelId);
 
     // ACCESSORS
     ThreadMode::Value threadMode() const;
@@ -90,11 +108,12 @@ class ToolkitCreateParams {
     int maxSocketsPerProxy() const;
     size_t numRegisteredPlugins() const;
     StringRef registeredPluginAt(size_t index) const;
-    bool systemPluginsEnabled() const;
+    bool pluginDiscoveryDisabled() const;
     size_t numRenderersUsingInProcessPlugins() const;
     int rendererUsingInProcessPluginsAt(size_t index) const;
-    HttpTransactionHandler* httpTransactionHandler() const;
+    ResourceLoader* inProcessResourceLoader() const;
     StringRef dictionaryPath() const;
+    StringRef hostChannel() const;
 
   private:
     ToolkitCreateParamsImpl* d_impl;

@@ -62,13 +62,6 @@ class ContentBrowserClientImpl : public content::ContentBrowserClient {
     // StartInProcessRendererThread and StopInProcessRendererThread.
     virtual bool SupportsInProcessRenderer() OVERRIDE;
 
-    // Start the in-process renderer thread.
-    virtual void StartInProcessRendererThread(
-        const std::string& channel_id) OVERRIDE;
-
-    // Stop the in-process renderer thread.
-    virtual void StopInProcessRendererThread() OVERRIDE;
-
     virtual void ResourceDispatcherHostCreated() OVERRIDE;
 
     // If content creates the WebContentsView implementation, it will ask the

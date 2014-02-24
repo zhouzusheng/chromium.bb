@@ -7,6 +7,7 @@
 #include "content/child/socket_stream_dispatcher.h"
 #include "content/child/webkitplatformsupport_impl.h"
 #include "content/public/common/content_client.h"
+#include "content/public/renderer/content_renderer_client.h"
 
 namespace content {
 
@@ -36,6 +37,11 @@ void WebKitPlatformSupportImpl::GetPlugins(
 webkit_glue::ResourceLoaderBridge*
 WebKitPlatformSupportImpl::CreateResourceLoader(
     const webkit_glue::ResourceLoaderBridge::RequestInfo& request_info) {
+  webkit_glue::ResourceLoaderBridge* bridge =
+      GetContentClient()->renderer()->OverrideResourceLoaderBridge(
+          request_info);
+  if (bridge)
+    return bridge;
   return ChildThread::current()->CreateBridge(request_info);
 }
 

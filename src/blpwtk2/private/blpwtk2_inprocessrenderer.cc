@@ -26,6 +26,7 @@
 
 #include <base/message_loop.h>
 #include <content/public/renderer/render_thread.h>
+#include <content/renderer/render_process_impl.h>
 
 namespace blpwtk2 {
 
@@ -63,11 +64,15 @@ private:
 static InProcessRendererThread* g_inProcessRendererThread = 0;
 
 // static
-void InProcessRenderer::init()
+void InProcessRenderer::init(bool usesInProcessPlugins)
 {
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(!g_inProcessRendererThread);
     DCHECK(!Statics::rendererMessageLoop);
+
+    if (usesInProcessPlugins) {
+        content::RenderProcessImpl::ForceInProcessPlugins();
+    }
 
     if (Statics::isRendererMainThreadMode()) {
         Statics::rendererMessageLoop = base::MessageLoop::current();
@@ -112,12 +117,17 @@ base::SingleThreadTaskRunner* InProcessRenderer::ipcTaskRunner()
 // static
 void InProcessRenderer::setChannelName(const std::string& channelName)
 {
-    DCHECK(Statics::isInBrowserMainThread());
-    DCHECK(Statics::rendererMessageLoop);
-    Statics::rendererMessageLoop->PostTask(
-        FROM_HERE,
-        base::Bind(&content::RenderThread::SetInProcessRendererChannelName,
-                   channelName));
+    DCHECK(Statics::isInApplicationMainThread());
+    if (Statics::isInBrowserMainThread()) {
+        DCHECK(Statics::rendererMessageLoop);
+        Statics::rendererMessageLoop->PostTask(
+            FROM_HERE,
+            base::Bind(&content::RenderThread::SetInProcessRendererChannelName,
+                       channelName));
+    }
+    else {
+        content::RenderThread::SetInProcessRendererChannelName(channelName);
+    }
 }
 
 }  // close namespace blpwtk2

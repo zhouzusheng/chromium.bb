@@ -30,6 +30,7 @@
 #include <base/memory/scoped_ptr.h>
 #include <base/synchronization/lock.h>
 #include <content/public/browser/content_browser_client.h>  // for ProtocolHandlerMap
+#include <net/cookies/cookie_monster.h>
 #include <net/url_request/url_request_context_getter.h>
 #include <net/url_request/url_request_job_factory.h>
 
@@ -57,7 +58,8 @@ namespace blpwtk2 {
 class URLRequestContextGetterImpl : public net::URLRequestContextGetter {
 public:
     URLRequestContextGetterImpl(const base::FilePath& path,
-                                bool diskCacheEnabled);
+                                bool diskCacheEnabled,
+                                bool cookiePersistenceEnabled);
     virtual ~URLRequestContextGetterImpl();
 
     // Called on the UI thread.
@@ -65,6 +67,8 @@ public:
     void useSystemProxyConfig();
     void setProtocolHandlers(content::ProtocolHandlerMap* protocolHandlers);
     const base::FilePath& path() const { return d_path; }
+    bool diskCacheEnabled() const { return d_diskCacheEnabled; }
+    bool cookiePersistenceEnabled() const { return d_cookiePersistenceEnabled; }
 
     // net::URLRequestContextGetter implementation.
     virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE;
@@ -78,6 +82,7 @@ private:
         scoped_ptr<net::ProxyConfigService> proxyConfigService);
 
     scoped_ptr<net::ProxyService> d_proxyService;
+    scoped_refptr<net::CookieMonster::PersistentCookieStore> d_cookieStore;
     scoped_ptr<net::URLRequestContextStorage> d_storage;
     scoped_ptr<net::URLRequestContext> d_urlRequestContext;
 
@@ -88,6 +93,7 @@ private:
 
     base::FilePath d_path;
     bool d_diskCacheEnabled;
+    bool d_cookiePersistenceEnabled;
     bool d_wasProxyInitialized;
 
     DISALLOW_COPY_AND_ASSIGN(URLRequestContextGetterImpl);

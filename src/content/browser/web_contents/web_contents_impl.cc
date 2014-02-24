@@ -1736,11 +1736,6 @@ void WebContentsImpl::RequestMediaAccessPermission(
     callback.Run(MediaStreamDevices(), scoped_ptr<MediaStreamUI>());
 }
 
-void WebContentsImpl::HandleExternalProtocol(const GURL& url) {
-  if (delegate_) 
-    delegate_->HandleExternalProtocol(url);
-}
-
 void WebContentsImpl::DidSendScreenRects(RenderWidgetHostImpl* rwh) {
   if (browser_plugin_embedder_)
     browser_plugin_embedder_->DidSendScreenRects();

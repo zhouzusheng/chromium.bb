@@ -48,9 +48,6 @@ namespace blpwtk2 {
 class ProcessClientImpl : public ProcessClient,
                             private IPC::Listener {
   public:
-    // Verifies the version embedded in the channelId
-    static bool isValidVersion(const std::string& channelId);
-
     ProcessClientImpl(const std::string& channelId,
                       base::SingleThreadTaskRunner* ipcTaskRunner);
     ~ProcessClientImpl();
@@ -68,6 +65,9 @@ class ProcessClientImpl : public ProcessClient,
     virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
     virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
     virtual void OnChannelError() OVERRIDE;
+
+    // Control message handlers
+    void onSetInProcessRendererChannelName(const std::string& channelName);
 
     base::WaitableEvent d_shutdownEvent;
     scoped_ptr<IPC::SyncChannel> d_channel;

@@ -35,3 +35,16 @@
 // This syncs the ProcessClient with the ProcessHost.
 IPC_SYNC_MESSAGE_CONTROL0_0(BlpControlHostMsg_Sync)
 
+// Send information to the ProcessHost about the client's in-process renderer.
+IPC_MESSAGE_CONTROL1(BlpControlHostMsg_SetInProcessRendererInfo,
+                     bool /* usesInProcessPlugins */)
+
+// Create a new ProcessHost and return the channelId.
+IPC_SYNC_MESSAGE_CONTROL1_1(BlpControlHostMsg_CreateNewHostChannel,
+                            int /* timeoutInMilliseconds */,
+                            std::string /* channelId */)
+
+// ============= Messages from host to client =======================
+
+IPC_MESSAGE_CONTROL1(BlpControlMsg_SetInProcessRendererChannelName,
+                     std::string /* channelName */)

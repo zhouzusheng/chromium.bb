@@ -66,7 +66,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
       public GpuDataManagerObserver {
  public:
   RenderProcessHostImpl(int host_id,
-                        bool is_in_process,
+                        base::ProcessHandle externally_managed_handle,
                         BrowserContext* browser_context,
                         StoragePartitionImpl* storage_partition_impl,
                         bool supports_browser_plugin,
@@ -79,6 +79,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual int GetNextRoutingID() OVERRIDE;
   virtual void AddRoute(int32 routing_id, IPC::Listener* listener) OVERRIDE;
   virtual void RemoveRoute(int32 routing_id) OVERRIDE;
+  virtual size_t NumListeners() OVERRIDE;
   virtual bool WaitForBackingStoreMsg(int render_widget_id,
                                       const base::TimeDelta& max_delay,
                                       IPC::Message* msg) OVERRIDE;
@@ -111,7 +112,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual base::TimeDelta GetChildProcessIdleTime() const OVERRIDE;
   virtual void SurfaceUpdated(int32 surface_id) OVERRIDE;
   virtual void ResumeRequestsForView(int route_id) OVERRIDE;
-  virtual bool IsInProcess() const OVERRIDE;
+  virtual bool IsProcessManagedExternally() const OVERRIDE;
   virtual bool UsesInProcessPlugins() const OVERRIDE;
   virtual void SetUsesInProcessPlugins() OVERRIDE;
 
@@ -284,6 +285,11 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // because the queued messages may have dependencies on the init messages.
   std::queue<IPC::Message*> queued_messages_;
 
+  // Handle for the renderer process if it is managed externally, otherwise
+  // this will be set to base::kNullProcessHandle (which means the
+  // RenderProcessHostImpl is the one that launches the process).
+  base::ProcessHandle externally_managed_handle_;
+
   // The globally-unique identifier for this RPH.
   int id_;
 
@@ -314,10 +320,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Indicates whether this is a RenderProcessHost of a Browser Plugin guest
   // renderer.
   bool is_guest_;
-
-  // Indicates whether this is a RenderProcessHost for an in-process
-  // renderer.
-  bool is_in_process_;
 
   // Indicates whether this RenderProcessHost uses in-process plugins.
   bool uses_in_process_plugins_;

@@ -166,6 +166,11 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
   void AddFilter(MessageFilter* filter);
   void RemoveFilter(MessageFilter* filter);
 
+  // Return the channel id that was used to construct this ChannelProxy.
+  const std::string& ChannelId() const {
+    return context_->channel_id();
+  }
+
   void set_outgoing_message_filter(OutgoingMessageFilter* filter) {
     outgoing_message_filter_ = filter;
   }

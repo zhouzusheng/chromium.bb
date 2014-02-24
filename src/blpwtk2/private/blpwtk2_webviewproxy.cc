@@ -58,6 +58,7 @@ WebViewProxy::WebViewProxy(ProcessClient* processClient,
 , d_moveAckPending(false)
 , d_isMainFrameAccessible(false)
 , d_gotRendererInfo(false)
+, d_ncDragNeedsAck(false)
 {
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(profileProxy);
@@ -87,6 +88,7 @@ WebViewProxy::WebViewProxy(ProcessClient* processClient,
 , d_moveAckPending(false)
 , d_isMainFrameAccessible(false)
 , d_gotRendererInfo(false)
+, d_ncDragNeedsAck(false)
 {
     profileProxy->incrementWebViewCount();
     d_processClient->addRoute(d_routingId, this);
@@ -336,6 +338,18 @@ void WebViewProxy::replaceMisspelledRange(const StringRef& text)
     Send(new BlpWebViewHostMsg_ReplaceMisspelledRange(d_routingId, stext));
 }
 
+void WebViewProxy::rootWindowPositionChanged()
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    Send(new BlpWebViewHostMsg_RootWindowPositionChanged(d_routingId));
+}
+
+void WebViewProxy::rootWindowSettingsChanged()
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    Send(new BlpWebViewHostMsg_RootWindowSettingsChanged(d_routingId));
+}
+
 // IPC::Sender override
 
 bool WebViewProxy::Send(IPC::Message* message)
@@ -365,6 +379,9 @@ bool WebViewProxy::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_HandleExternalProtocol, onHandleExternalProtocol)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_MoveView, onMoveView)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_RequestNCHitTest, onRequestNCHitTest)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_NCDragBegin, onNCDragBegin)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_NCDragMove, onNCDragMove)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_NCDragEnd, onNCDragEnd)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_ShowTooltip, onShowTooltip)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_FindState, onFindState)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_MoveAck, onMoveAck)
@@ -500,10 +517,43 @@ void WebViewProxy::onRequestNCHitTest()
     }
 }
 
+void WebViewProxy::onNCDragBegin(int hitTestCode, const gfx::Point& startPoint)
+{
+    // Keep this in sync with WebViewHost::d_ncDragNeedsAck
+    d_ncDragNeedsAck = hitTestCode != HTCAPTION;
+
+    if (d_delegate) {
+        d_delegate->ncDragBegin(this, hitTestCode, startPoint.ToPOINT());
+    }
+}
+
+void WebViewProxy::onNCDragMove()
+{
+    POINT point;
+    ::GetCursorPos(&point);
+    if (d_delegate) {
+        d_delegate->ncDragMove(this, point);
+    }
+    if (d_ncDragNeedsAck) {
+        Send(new BlpWebViewHostMsg_NCDragMoveAck(d_routingId,
+                                                 gfx::Point(point)));
+    }
+}
+
+void WebViewProxy::onNCDragEnd(const gfx::Point& endPoint)
+{
+    if (d_delegate) {
+        d_delegate->ncDragEnd(this, endPoint.ToPOINT());
+    }
+    if (d_ncDragNeedsAck) {
+        Send(new BlpWebViewHostMsg_NCDragEndAck(d_routingId));
+    }
+}
+
 void WebViewProxy::onShowTooltip(const std::string& tooltipText, TextDirection::Value direction)
 {
     if (d_delegate) {
-        d_delegate->showTooltip(this, String(tooltipText), direction);
+        d_delegate->showTooltip(this, tooltipText, direction);
     }
 }
 

@@ -24,7 +24,6 @@
 
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_devtoolsfrontendhostdelegateimpl.h>
-#include <blpwtk2_ncdragutil.h>
 #include <blpwtk2_newviewparams.h>
 #include <blpwtk2_webframeimpl.h>
 #include <blpwtk2_stringref.h>
@@ -36,6 +35,7 @@
 
 #include <base/message_loop.h>
 #include <base/strings/utf_string_conversions.h>
+#include <content/browser/renderer_host/render_widget_host_view_base.h>
 #include <content/public/browser/devtools_agent_host.h>
 #include <content/public/browser/devtools_http_handler.h>
 #include <content/public/browser/render_view_host.h>
@@ -175,6 +175,14 @@ void WebViewImpl::handleFindRequest(const FindOnPageRequest& request)
         WebKit::WebString::fromUTF8(request.text.data(),
                                     request.text.length());
     host->Find(request.reqId, textStr, options);
+}
+
+void WebViewImpl::handleExternalProtocol(const GURL& url)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    if (d_wasDestroyed || !d_delegate) return;
+
+    d_delegate->handleExternalProtocol(this, url.spec());
 }
 
 void WebViewImpl::destroy()
@@ -430,6 +438,28 @@ void WebViewImpl::replaceMisspelledRange(const StringRef& text)
     d_webContents->GetRenderViewHost()->ReplaceMisspelling(text16);
 }
 
+void WebViewImpl::rootWindowPositionChanged()
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+    content::RenderWidgetHostViewBase* rwhv =
+        static_cast<content::RenderWidgetHostViewBase*>(
+            d_webContents->GetRenderWidgetHostView());
+    if (rwhv)
+        rwhv->UpdateScreenInfo(rwhv->GetNativeView());
+}
+
+void WebViewImpl::rootWindowSettingsChanged()
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+    content::RenderWidgetHostViewBase* rwhv =
+        static_cast<content::RenderWidgetHostViewBase*>(
+            d_webContents->GetRenderWidgetHostView());
+    if (rwhv)
+        rwhv->UpdateScreenInfo(rwhv->GetNativeView());
+}
+
 void WebViewImpl::UpdateTargetURL(content::WebContents* source,
                                   int32 page_id,
                                   const GURL& url)
@@ -567,14 +597,6 @@ void WebViewImpl::CloseContents(content::WebContents* source)
     d_delegate->destroyView(this);
 }
 
-void WebViewImpl::HandleExternalProtocol(const GURL& url)
-{
-    DCHECK(Statics::isInBrowserMainThread());
-    if (d_wasDestroyed || !d_delegate) return;
-
-    d_delegate->handleExternalProtocol(this, url.spec());
-}
-
 void WebViewImpl::MoveContents(content::WebContents* source_contents, const gfx::Rect& pos)
 {
     DCHECK(Statics::isInBrowserMainThread());
@@ -603,12 +625,13 @@ bool WebViewImpl::OnNCHitTest(int* result)
     return false;
 }
 
-bool WebViewImpl::OnNCDragBegin(int hitTestCode, const gfx::Point& point)
+bool WebViewImpl::OnNCDragBegin(int hitTestCode)
 {
-    if (!d_ncHitTestEnabled) {
+    if (!d_ncHitTestEnabled || !d_delegate) {
         return false;
     }
 
+    POINT screenPoint;
     switch (hitTestCode) {
     case HTCAPTION:
     case HTLEFT:
@@ -619,7 +642,8 @@ bool WebViewImpl::OnNCDragBegin(int hitTestCode, const gfx::Point& point)
     case HTTOPRIGHT:
     case HTBOTTOMRIGHT:
     case HTBOTTOMLEFT:
-        NCDragUtil::onDragBegin(getNativeView(), hitTestCode, point.ToPOINT());
+        ::GetCursorPos(&screenPoint);
+        d_delegate->ncDragBegin(this, hitTestCode, screenPoint);
         return true;
     default:
         return false;
@@ -628,12 +652,20 @@ bool WebViewImpl::OnNCDragBegin(int hitTestCode, const gfx::Point& point)
 
 void WebViewImpl::OnNCDragMove()
 {
-    NCDragUtil::onDragMove();
+    if (d_delegate) {
+        POINT screenPoint;
+        ::GetCursorPos(&screenPoint);
+        d_delegate->ncDragMove(this, screenPoint);
+    }
 }
 
 void WebViewImpl::OnNCDragEnd()
 {
-    NCDragUtil::onDragEnd();
+    if (d_delegate) {
+        POINT screenPoint;
+        ::GetCursorPos(&screenPoint);
+        d_delegate->ncDragEnd(this, screenPoint);
+    }
 }
 
 bool WebViewImpl::OnSetCursor(int hitTestCode)
@@ -681,8 +713,8 @@ bool WebViewImpl::ShouldSetFocusOnMouseDown()
     return d_takeFocusOnMouseDown;
 }
 
-bool WebViewImpl::ShowTooltip(content::WebContents* source_contents, 
-                              const string16& tooltip_text, 
+bool WebViewImpl::ShowTooltip(content::WebContents* source_contents,
+                              const string16& tooltip_text,
                               WebKit::WebTextDirection text_direction_hint)
 {
     DCHECK(Statics::isInBrowserMainThread());
@@ -692,14 +724,15 @@ bool WebViewImpl::ShowTooltip(content::WebContents* source_contents,
     if (d_delegate) {
         TextDirection::Value direction;
         switch (text_direction_hint) {
-            case WebKit::WebTextDirectionLeftToRight: 
-                direction = TextDirection::LEFT_TO_RIGHT; break; 
+            case WebKit::WebTextDirectionLeftToRight:
+                direction = TextDirection::LEFT_TO_RIGHT; break;
             case WebKit::WebTextDirectionRightToLeft:
-                direction = TextDirection::RIGHT_TO_LEFT; break; 
+                direction = TextDirection::RIGHT_TO_LEFT; break;
             default:
                 direction = TextDirection::LEFT_TO_RIGHT;
         }
-        d_delegate->showTooltip(this, String(tooltip_text.c_str(), tooltip_text.length()), direction);
+        String tooltipText(tooltip_text.c_str(), tooltip_text.length());
+        d_delegate->showTooltip(this, tooltipText, direction);
         return true;
     }
     return false;

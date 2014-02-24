@@ -59,14 +59,17 @@ class BrowserContextImpl : public content::BrowserContext,
                             public Profile {
   public:
     BrowserContextImpl(const std::string& dataDir,
-                       bool diskCacheEnabled);
+                       bool diskCacheEnabled,
+                       bool cookiePersistenceEnabled);
     virtual ~BrowserContextImpl();
 
     // Only called from the browser-main thread.
     URLRequestContextGetterImpl* requestContextGetter() const;
     void incrementWebViewCount();
     void decrementWebViewCount();
-    bool isDestroyed() const;
+    bool diskCacheEnabled() const;
+    bool cookiePersistenceEnabled() const;
+    void reallyDestroy();
 
     // Profile overrides, must only be called on the browser-main thread.
     virtual void destroy() OVERRIDE;

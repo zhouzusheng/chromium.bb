@@ -29,11 +29,12 @@
 #include <blpwtk2_browsercontextimplmanager.h>
 #include <blpwtk2_control_messages.h>
 #include <blpwtk2_inprocessrenderer.h>
-#include <blpwtk2_inprocessrendererhost.h>
 #include <blpwtk2_browsermainrunner.h>
 #include <blpwtk2_mainmessagepump.h>
+#include <blpwtk2_managedrenderprocesshost.h>
 #include <blpwtk2_processclientimpl.h>
 #include <blpwtk2_processhostimpl.h>
+#include <blpwtk2_processhostmanager.h>
 #include <blpwtk2_products.h>
 #include <blpwtk2_profilecreateparams.h>
 #include <blpwtk2_profileproxy.h>
@@ -188,20 +189,29 @@ ToolkitImpl* ToolkitImpl::instance()
 }
 
 ToolkitImpl::ToolkitImpl(const StringRef& dictionaryPath,
-                         bool pluginDiscoveryEnabled)
+                         const StringRef& hostChannel,
+                         bool pluginDiscoveryDisabled)
 : d_threadsStarted(false)
 , d_threadsStopped(false)
 , d_defaultProfile(0)
-, d_mainDelegate(false, pluginDiscoveryEnabled)
+, d_mainDelegate(false, pluginDiscoveryDisabled, !hostChannel.isEmpty())
 , d_dictionaryPath(dictionaryPath.data(), dictionaryPath.length())
+, d_hostChannel(hostChannel.data(), hostChannel.length())
 {
     DCHECK(!g_instance);
     g_instance = this;
 
-    deleteTemporaryScopedDirs();
+    // If host channel is set, we must not be in ORIGINAL thread mode.
+    DCHECK(d_hostChannel.empty() || !Statics::isOriginalThreadMode());
+
+    if (d_hostChannel.empty()) {
+        // Do this only if we are the host.
+        deleteTemporaryScopedDirs();
+    }
 
     d_mainDelegate.setRendererInfoMap(&d_rendererInfoMap);
     base::MessageLoop::InitMessagePumpForUIFactory(&messagePumpForUIFactory);
+    content::WebContentsViewWin::disableHookOnRoot();
 }
 
 ToolkitImpl::~ToolkitImpl()
@@ -215,7 +225,14 @@ void ToolkitImpl::startupThreads()
 {
     DCHECK(!d_threadsStarted);
 
-    content::InitializeSandboxInfo(&d_sandboxInfo);
+    if (d_hostChannel.empty()) {
+        content::InitializeSandboxInfo(&d_sandboxInfo);
+    }
+    else {
+        d_sandboxInfo.broker_services = 0;
+        d_sandboxInfo.target_services = 0;
+    }
+
     d_mainRunner.reset(content::ContentMainRunner::Create());
     int rc = d_mainRunner->Initialize((HINSTANCE)g_instDLL, &d_sandboxInfo, &d_mainDelegate);
     DCHECK(-1 == rc);  // it returns -1 for success!!
@@ -227,29 +244,43 @@ void ToolkitImpl::startupThreads()
 
     if (Statics::isRendererMainThreadMode()) {
         new base::MessageLoop(base::MessageLoop::TYPE_UI);
-        content::WebContentsViewWin::disableHookOnRoot();
-        d_browserThread.reset(new BrowserThread(&d_sandboxInfo));
+        if (d_hostChannel.empty()) {
+            d_browserThread.reset(new BrowserThread(&d_sandboxInfo));
+        }
     }
     else {
         DCHECK(Statics::isOriginalThreadMode());
         d_browserMainRunner.reset(new BrowserMainRunner(&d_sandboxInfo));
     }
 
-    InProcessRenderer::init();
+    InProcessRenderer::init(d_inProcessRendererInfo.d_usesInProcessPlugins);
     MainMessagePump::current()->init();
 
     if (Statics::isRendererMainThreadMode()) {
-        std::string channelId = IPC::Channel::GenerateVerifiedChannelID(BLPWTK2_VERSION);
+        std::string channelId;
 
-        d_browserThread->messageLoop()->PostTask(
-            FROM_HERE,
-            base::Bind(&ToolkitImpl::createInProcessHost,
-                       base::Unretained(this),
-                       channelId));
-        d_browserThread->sync();  // TODO: remove this sync
-        d_inProcessClient.reset(
+        // If the specified hostChannel is empty, we will create an in-process
+        // host on the browser-main thread, otherwise, our ProcessClient will
+        // connect to the hostChannel provided by the app.
+        if (d_hostChannel.empty()) {
+            channelId = IPC::Channel::GenerateVerifiedChannelID(BLPWTK2_VERSION);
+            d_browserThread->messageLoop()->PostTask(
+                FROM_HERE,
+                base::Bind(&ToolkitImpl::createInProcessHost,
+                           base::Unretained(this),
+                           channelId));
+            d_browserThread->sync();  // TODO: remove this sync
+        }
+        else {
+            channelId = d_hostChannel;
+        }
+
+        d_processClient.reset(
             new ProcessClientImpl(channelId,
                                   InProcessRenderer::ipcTaskRunner()));
+        d_processClient->Send(
+            new BlpControlHostMsg_SetInProcessRendererInfo(
+                d_inProcessRendererInfo.d_usesInProcessPlugins));
     }
 
     d_threadsStarted = true;
@@ -267,19 +298,36 @@ void ToolkitImpl::shutdownThreads()
 
     if (Statics::isRendererMainThreadMode()) {
         // Make sure any messages posted to the ProcessHost have been handled.
-        d_inProcessClient->Send(new BlpControlHostMsg_Sync());
+        d_processClient->Send(new BlpControlHostMsg_Sync());
+        d_processClient.reset();
 
-        d_inProcessClient.reset();
+        if (d_browserThread.get()) {
+            d_browserThread->messageLoop()->PostTask(
+                FROM_HERE,
+                base::Bind(&ToolkitImpl::destroyInProcessHost,
+                           base::Unretained(this)));
+            d_browserThread->messageLoop()->PostTask(
+                FROM_HERE,
+                base::Bind(&BrowserMainRunner::destroyProcessHostManager,
+                           base::Unretained(d_browserThread->mainRunner())));
+            d_browserThread->messageLoop()->PostTask(
+                FROM_HERE,
+                base::Bind(
+                    &BrowserContextImplManager::destroyBrowserContexts,
+                    base::Unretained(Statics::browserContextImplManager)));
 
-        d_browserThread->messageLoop()->PostTask(
-            FROM_HERE,
-            base::Bind(&ToolkitImpl::destroyInProcessHost,
-                       base::Unretained(this)));
-
-        // Make sure any tasks posted to the browser-main thread have been
-        // handled.
-        d_browserThread->sync();
+            // Make sure any tasks posted to the browser-main thread have been
+            // handled.
+            d_browserThread->sync();
+        }
     }
+    else {
+        DCHECK(Statics::isOriginalThreadMode());
+        d_browserMainRunner->destroyProcessHostManager();
+        Statics::browserContextImplManager->destroyBrowserContexts();
+    }
+
+    DCHECK(0 == Statics::numProfiles);
 
     MainMessagePump::current()->cleanup();
     InProcessRenderer::cleanup();
@@ -290,6 +338,7 @@ void ToolkitImpl::shutdownThreads()
     }
     else {
         DCHECK(Statics::isOriginalThreadMode());
+        d_inProcessRendererHost.reset();
         d_browserMainRunner.reset();
     }
 
@@ -303,6 +352,10 @@ void ToolkitImpl::shutdownThreads()
 
 void ToolkitImpl::setRendererUsesInProcessPlugins(int renderer)
 {
+    if (renderer == Constants::IN_PROCESS_RENDERER) {
+        d_inProcessRendererInfo.d_usesInProcessPlugins = true;
+        return;
+    }
     d_rendererInfoMap.setRendererUsesInProcessPlugins(renderer);
 }
 
@@ -323,17 +376,19 @@ Profile* ToolkitImpl::createProfile(const ProfileCreateParams& params)
 
     std::string dataDir(params.dataDir().data(), params.dataDir().length());
     if (Statics::isRendererMainThreadMode()) {
-        return new ProfileProxy(d_inProcessClient.get(),
+        return new ProfileProxy(d_processClient.get(),
                                 Statics::getUniqueRoutingId(),
                                 dataDir,
-                                params.diskCacheEnabled());
+                                params.diskCacheEnabled(),
+                                params.cookiePersistenceEnabled());
     }
     else {
         DCHECK(Statics::isOriginalThreadMode());
         DCHECK(Statics::browserContextImplManager);
-        return Statics::browserContextImplManager->createBrowserContextImpl(
+        return Statics::browserContextImplManager->obtainBrowserContextImpl(
             dataDir,
-            params.diskCacheEnabled());
+            params.diskCacheEnabled(),
+            params.cookiePersistenceEnabled());
     }
 }
 
@@ -346,7 +401,6 @@ bool ToolkitImpl::hasDevTools()
 void ToolkitImpl::destroy()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    DCHECK(0 == Statics::numProfiles);
     if (d_threadsStarted) {
         shutdownThreads();
     }
@@ -381,13 +435,13 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
 
     DCHECK(singleProcess ||
            rendererAffinity == Constants::ANY_OUT_OF_PROCESS_RENDERER ||
+           (rendererAffinity == Constants::IN_PROCESS_RENDERER &&
+            d_inProcessRendererInfo.dcheckProfile(profile)) ||
            d_rendererInfoMap.dcheckProfileForRenderer(rendererAffinity, profile));
 
     if (Statics::isRendererMainThreadMode()) {
-        DCHECK(d_browserThread.get());
-
         ProfileProxy* profileProxy = static_cast<ProfileProxy*>(profile);
-        return new WebViewProxy(d_inProcessClient.get(),
+        return new WebViewProxy(d_processClient.get(),
                                 Statics::getUniqueRoutingId(),
                                 profileProxy,
                                 delegate,
@@ -399,10 +453,31 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
     else if (Statics::isOriginalThreadMode()) {
         BrowserContextImpl* browserContext =
             static_cast<BrowserContextImpl*>(profile);
-        int hostAffinity =
-            d_browserMainRunner->obtainHostAffinity(browserContext,
-                                                    rendererAffinity,
-                                                    &d_rendererInfoMap);
+
+        int hostAffinity;
+
+        if (rendererAffinity == Constants::IN_PROCESS_RENDERER) {
+            if (!d_inProcessRendererHost.get()) {
+                DCHECK(-1 == d_inProcessRendererInfo.d_hostId);
+                d_inProcessRendererHost.reset(
+                    new ManagedRenderProcessHost(
+                        base::Process::Current().handle(),
+                        browserContext,
+                        d_inProcessRendererInfo.d_usesInProcessPlugins));
+                d_inProcessRendererInfo.d_hostId =
+                    d_inProcessRendererHost->id();
+                InProcessRenderer::setChannelName(
+                    d_inProcessRendererHost->channelId());
+            }
+
+            DCHECK(-1 != d_inProcessRendererInfo.d_hostId);
+            hostAffinity = d_inProcessRendererInfo.d_hostId;
+        }
+        else {
+            hostAffinity =
+                d_rendererInfoMap.obtainHostAffinity(rendererAffinity);
+        }
+
         return new WebViewImpl(delegate,
                                parent,
                                browserContext,
@@ -415,24 +490,34 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
     return 0;
 }
 
-void ToolkitImpl::onRootWindowPositionChanged(gfx::NativeView root)
+String ToolkitImpl::createHostChannel(int timeoutInMilliseconds)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    if (d_threadsStarted && Statics::isRendererMainThreadMode()) {
-        DCHECK(d_browserThread);
-        d_browserThread->messageLoop()->PostTask(FROM_HERE,
-            base::Bind(&content::WebContentsViewWin::onRootWindowPositionChanged, root));
-    }
-}
+    DCHECK(Statics::isRendererMainThreadMode()
+        || Statics::isOriginalThreadMode());
 
-void ToolkitImpl::onRootWindowSettingChange(gfx::NativeView root)
-{
-    DCHECK(Statics::isInApplicationMainThread());
-    if (d_threadsStarted && Statics::isRendererMainThreadMode()) {
-        DCHECK(d_browserThread);
-        d_browserThread->messageLoop()->PostTask(FROM_HERE,
-            base::Bind(&content::WebContentsViewWin::onRootWindowSettingChange, root));
+    if (!d_threadsStarted) {
+        startupThreads();
     }
+
+    std::string channelId;
+
+    if (Statics::isRendererMainThreadMode()) {
+        DCHECK(d_processClient.get());
+        d_processClient->Send(
+            new BlpControlHostMsg_CreateNewHostChannel(timeoutInMilliseconds,
+                                                       &channelId));
+    }
+    else {
+        DCHECK(Statics::processHostManager);
+        channelId = IPC::Channel::GenerateVerifiedChannelID(BLPWTK2_VERSION);
+
+        Statics::processHostManager->addProcessHost(
+            new ProcessHostImpl(channelId, &d_rendererInfoMap),
+            base::TimeDelta::FromMilliseconds(timeoutInMilliseconds));
+    }
+
+    return String(channelId.data(), channelId.length());
 }
 
 bool ToolkitImpl::preHandleMessage(const NativeMsg* msg)
@@ -457,9 +542,7 @@ void ToolkitImpl::postHandleMessage(const NativeMsg* msg)
 void ToolkitImpl::createInProcessHost(const std::string& channelId)
 {
     DCHECK(Statics::isInBrowserMainThread());
-    d_inProcessHost.reset(new ProcessHostImpl(channelId,
-                                              &d_rendererInfoMap,
-                                              d_browserThread->mainRunner()));
+    d_inProcessHost.reset(new ProcessHostImpl(channelId, &d_rendererInfoMap));
 }
 
 void ToolkitImpl::destroyInProcessHost()

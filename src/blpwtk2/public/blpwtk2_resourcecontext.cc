@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Bloomberg Finance L.P.
+ * Copyright (C) 2014 Bloomberg Finance L.P.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,36 +20,12 @@
  * IN THE SOFTWARE.
  */
 
-#include <blpwtk2_httptransactionfactoryimpl.h>
-#include <blpwtk2_httptransactionimpl.h>
-
-#include <net/base/net_errors.h>
+#include <blpwtk2_resourcecontext.h>
 
 namespace blpwtk2 {
 
-HttpTransactionFactoryImpl::HttpTransactionFactoryImpl(net::HttpTransactionFactory* fallbackFactory)
-: d_fallbackFactory(fallbackFactory)
+ResourceContext::~ResourceContext()
 {
-    DCHECK(d_fallbackFactory.get());
-}
-
-int HttpTransactionFactoryImpl::CreateTransaction(net::RequestPriority priority,
-                                                  scoped_ptr<net::HttpTransaction>* trans,
-                                                  net::HttpTransactionDelegate* delegate)
-{
-    trans->reset(new HttpTransactionImpl(d_fallbackFactory.get(), delegate));
-    return net::OK;
-}
-
-net::HttpCache* HttpTransactionFactoryImpl::GetCache()
-{
-    return d_fallbackFactory->GetCache();
-}
-
-net::HttpNetworkSession* HttpTransactionFactoryImpl::GetSession()
-{
-    return d_fallbackFactory->GetSession();
 }
 
 }  // close namespace blpwtk2
-

@@ -23,7 +23,6 @@
 #include <blpwtk2_browserthread.h>
 
 #include <blpwtk2_browsermainrunner.h>
-#include <blpwtk2_inprocessrendererhost.h>
 #include <blpwtk2_statics.h>
 
 #include <base/at_exit.h>
@@ -101,7 +100,7 @@ void BrowserThread::ThreadMain()
     DCHECK(s_initWaitEvent);
     s_initWaitEvent->Signal();
 
-    int rc = d_mainRunner->Run();
+    int rc = d_mainRunner->run();
     DCHECK(0 == rc);
 
     delete d_mainRunner;

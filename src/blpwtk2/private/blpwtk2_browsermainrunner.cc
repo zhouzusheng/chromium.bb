@@ -23,17 +23,13 @@
 #include <blpwtk2_browsermainrunner.h>
 
 #include <blpwtk2_browsercontextimplmanager.h>
-#include <blpwtk2_constants.h>
 #include <blpwtk2_devtoolshttphandlerdelegateimpl.h>
-#include <blpwtk2_inprocessrendererhost.h>
-#include <blpwtk2_rendererinfomap.h>
+#include <blpwtk2_processhostmanager.h>
 #include <blpwtk2_statics.h>
 
 #include <base/logging.h>  // for DCHECK
 #include <base/message_loop.h>
-#include <content/browser/renderer_host/render_process_host_impl.h>
 #include <content/public/browser/browser_main_runner.h>
-#include <content/public/browser/site_instance.h>
 
 namespace blpwtk2 {
 
@@ -56,58 +52,36 @@ BrowserMainRunner::BrowserMainRunner(
 
     d_devToolsHttpHandlerDelegate.reset(
         new DevToolsHttpHandlerDelegateImpl());
+
+    Statics::processHostManager = new ProcessHostManager();
 }
 
 BrowserMainRunner::~BrowserMainRunner()
 {
+    DCHECK(!Statics::processHostManager);
+
     d_devToolsHttpHandlerDelegate.reset();
-    d_inProcessRendererHost.reset();
     Statics::browserMainMessageLoop = 0;
 
-    // This needs to happen after the main message loop has finished, but
-    // before shutting down threads, because the BrowserContext holds on to
-    // state that needs to be deleted on those threads.
-    d_browserContextImplManager->deleteBrowserContexts();
+    // This deletes the BrowserContextImpl objects, and needs to happen after
+    // the main message loop has finished, but before shutting down threads,
+    // because the BrowserContext holds on to state that needs to be deleted on
+    // those threads.  For example, it holds on to the URLRequestContextGetter
+    // inside UserData (base class for content::BrowserContext).
+    d_browserContextImplManager.reset();
 
     d_impl->Shutdown();
 }
 
-int BrowserMainRunner::Run()
+void BrowserMainRunner::destroyProcessHostManager()
 {
-    return d_impl->Run();
+    delete Statics::processHostManager;
+    Statics::processHostManager = 0;
 }
 
-int BrowserMainRunner::obtainHostAffinity(
-    content::BrowserContext* browserContext,
-    int rendererAffinity,
-    RendererInfoMap* rendererInfoMap)
+int BrowserMainRunner::run()
 {
-    DCHECK(Statics::isInBrowserMainThread());
-    DCHECK(rendererInfoMap);
-
-    int hostAffinity;
-    if (rendererAffinity == Constants::IN_PROCESS_RENDERER) {
-        if (!d_inProcessRendererHost.get()) {
-            d_inProcessRendererHost.reset(
-                new InProcessRendererHost(browserContext, rendererInfoMap));
-        }
-
-        hostAffinity = rendererInfoMap->rendererToHostId(rendererAffinity);
-        DCHECK(-1 != hostAffinity);
-    }
-    else if (rendererAffinity == Constants::ANY_OUT_OF_PROCESS_RENDERER) {
-        hostAffinity = content::SiteInstance::kNoProcessAffinity;
-    }
-    else {
-        hostAffinity = rendererInfoMap->rendererToHostId(rendererAffinity);
-        if (-1 == hostAffinity) {
-            hostAffinity = content::RenderProcessHostImpl::GenerateUniqueId();
-            rendererInfoMap->setRendererHostId(rendererAffinity,
-                                               hostAffinity);
-        }
-    }
-
-    return hostAffinity;
+    return d_impl->Run();
 }
 
 }  // close namespace blpwtk2

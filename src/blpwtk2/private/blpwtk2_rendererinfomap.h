@@ -34,6 +34,31 @@ namespace blpwtk2 {
 
 class Profile;
 
+struct RendererInfo {
+    int d_hostId;
+    bool d_usesInProcessPlugins;
+
+    Profile* d_profileForDCheck;  // only set when DCHECKs are enabled
+
+    RendererInfo()
+    : d_hostId(-1)
+    , d_usesInProcessPlugins(false)
+    , d_profileForDCheck(0)
+    {
+    }
+
+    // This is only used if DCHECK is enabled.  See comment for
+    // RendererInfoMap::dcheckProfileForRenderer.
+    bool dcheckProfile(Profile* profile)
+    {
+        if (!d_profileForDCheck) {
+            d_profileForDCheck = profile;
+            return true;
+        }
+        return d_profileForDCheck == profile;
+    }
+};
+
 // A renderer is the process in which Blink lives.  This class maintains
 // information about each renderer that the browser process manages.  In
 // blpwtk2, a WebView can be created with affinity to a particular renderer.
@@ -44,14 +69,13 @@ class Profile;
 //
 // This class contains the mapping from blpwtk2's renderer number to the
 // hostId.  It also stores renderer-specific configuration, such as whether the
-// renderer uses in-process plugins or not.
+// renderer uses in-process plugins or not.  Note that IN_PROCESS_RENDERER info
+// is maintained outside this class (in ToolkitImpl and in ProcessHostImpl for
+// each blpwtk2 ProcessClient).
 class RendererInfoMap {
   public:
     RendererInfoMap();
     ~RendererInfoMap();
-
-    // Sets up the mapping between the specified 'renderer' and 'hostId'.
-    void setRendererHostId(int renderer, int hostId);
 
     // Marks the specified 'renderer' as using in-process plugins.
     void setRendererUsesInProcessPlugins(int renderer);
@@ -59,9 +83,11 @@ class RendererInfoMap {
     // Return true if the specified 'hostId' should use in-process plugins.
     bool hostIdUsesInProcessPlugins(int hostId);
 
-    // Return the hostId for the specified 'renderer', or -1 if the hostId has
-    // not been set for this renderer.
-    int rendererToHostId(int renderer);
+    // Return the host affinity for the specified 'renderer'.  If the hostId
+    // for this renderer has not been created yet, a new ID will be generated.
+    // Note that 'ANY_OUT_OF_PROCESS_RENDERER' will return
+    // SiteInstance::kNoProcessAffinity.
+    int obtainHostAffinity(int renderer);
 
     // This is only used if DCHECK is enabled.  Since a renderer can only be
     // associated with a single Profile, we want to check that WebViews for
@@ -71,19 +97,6 @@ class RendererInfoMap {
     bool dcheckProfileForRenderer(int renderer, Profile* profile);
 
   private:
-    struct RendererInfo {
-        int d_hostId;
-        bool d_usesInProcessPlugins;
-
-        Profile* d_profileForDCheck;  // only set when DCHECKs are enabled
-
-        RendererInfo()
-        : d_hostId(-1)
-        , d_usesInProcessPlugins(false)
-        , d_profileForDCheck(0)
-        {
-        }
-    };
     typedef std::map<int, RendererInfo> InfoMap;
 
     base::Lock d_lock;

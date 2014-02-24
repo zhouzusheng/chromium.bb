@@ -68,11 +68,12 @@ class ContentClient : public content::ContentClient {
 // content::ContentMainRunner class).
 class ContentMainDelegateImpl : public content::ContentMainDelegate {
   public:
-    ContentMainDelegateImpl(bool isSubProcess, bool pluginDiscoveryEnabled);
+    ContentMainDelegateImpl(bool isSubProcess,
+                            bool pluginDiscoveryDisabled,
+                            bool sandboxDisabled);
     virtual ~ContentMainDelegateImpl();
 
     void setRendererInfoMap(RendererInfoMap* rendererInfoMap);
-    void disablePluginDiscovery();
     void registerPlugin(const char* pluginPath);
 
     // ContentMainDelegate implementation
@@ -88,8 +89,9 @@ class ContentMainDelegateImpl : public content::ContentMainDelegate {
     scoped_ptr<content::ContentBrowserClient> d_contentBrowserClient;
     scoped_ptr<content::ContentRendererClient> d_contentRendererClient;
     RendererInfoMap* d_rendererInfoMap;
-    bool d_pluginDiscoveryEnabled;
+    bool d_pluginDiscoveryDisabled;
     bool d_isSubProcess;
+    bool d_sandboxDisabled;
 
     DISALLOW_COPY_AND_ASSIGN(ContentMainDelegateImpl);
 };

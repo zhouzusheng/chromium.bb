@@ -29,13 +29,20 @@ namespace blpwtk2 {
 ProfileCreateParams::ProfileCreateParams(const StringRef& dataDir)
 : d_dataDir(dataDir)
 , d_diskCacheEnabled(!dataDir.isEmpty())
+, d_cookiePersistenceEnabled(!dataDir.isEmpty())
 {
 }
 
 void ProfileCreateParams::setDiskCacheEnabled(bool enabled)
 {
-    DCHECK(!d_dataDir.isEmpty());
+    DCHECK(!enabled || !d_dataDir.isEmpty());
     d_diskCacheEnabled = enabled;
+}
+
+void ProfileCreateParams::setCookiePersistenceEnabled(bool enabled)
+{
+    DCHECK(!enabled || !d_dataDir.isEmpty());
+    d_cookiePersistenceEnabled = enabled;
 }
 
 StringRef ProfileCreateParams::dataDir() const
@@ -46,6 +53,11 @@ StringRef ProfileCreateParams::dataDir() const
 bool ProfileCreateParams::diskCacheEnabled() const
 {
     return d_diskCacheEnabled;
+}
+
+bool ProfileCreateParams::cookiePersistenceEnabled() const
+{
+    return d_cookiePersistenceEnabled;
 }
 
 }  // close namespace blpwtk2

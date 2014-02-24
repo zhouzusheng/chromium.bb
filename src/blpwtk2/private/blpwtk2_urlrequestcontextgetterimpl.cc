@@ -22,7 +22,6 @@
 
 #include <blpwtk2_urlrequestcontextgetterimpl.h>
 
-#include <blpwtk2_httptransactionfactoryimpl.h>
 #include <blpwtk2_networkdelegateimpl.h>
 
 #include <base/bind.h>
@@ -30,6 +29,7 @@
 #include <base/logging.h>  // for DCHECK
 #include <base/string_util.h>
 #include <base/threading/worker_pool.h>
+#include <content/browser/net/sqlite_persistent_cookie_store.h>
 #include <content/public/browser/browser_thread.h>
 #include <content/public/common/content_switches.h>
 #include <content/public/common/url_constants.h>
@@ -74,10 +74,12 @@ void installProtocolHandlers(net::URLRequestJobFactoryImpl* jobFactory,
 
 URLRequestContextGetterImpl::URLRequestContextGetterImpl(
     const base::FilePath& path,
-    bool diskCacheEnabled)
-: d_path(path)
+    bool diskCacheEnabled,
+    bool cookiePersistenceEnabled)
+: d_gotProtocolHandlers(false)
+, d_path(path)
 , d_diskCacheEnabled(diskCacheEnabled)
-, d_gotProtocolHandlers(false)
+, d_cookiePersistenceEnabled(cookiePersistenceEnabled)
 , d_wasProxyInitialized(false)
 {
 }
@@ -175,6 +177,17 @@ void URLRequestContextGetterImpl::initialize()
 {
     DCHECK(d_proxyService.get());
 
+    if (d_cookiePersistenceEnabled) {
+        d_cookieStore =
+            new content::SQLitePersistentCookieStore(
+                d_path.Append(FILE_PATH_LITERAL("Cookies")),
+                GetNetworkTaskRunner(),
+                content::BrowserThread::GetMessageLoopProxyForThread(
+                    content::BrowserThread::FILE),
+                true,
+                0);
+    }
+
     const CommandLine& cmdline = *CommandLine::ForCurrentProcess();
 
     d_urlRequestContext.reset(new net::URLRequestContext());
@@ -182,7 +195,8 @@ void URLRequestContextGetterImpl::initialize()
     d_storage.reset(
         new net::URLRequestContextStorage(d_urlRequestContext.get()));
     d_storage->set_network_delegate(new NetworkDelegateImpl());
-    d_storage->set_cookie_store(new net::CookieMonster(0, 0));
+    d_storage->set_cookie_store(
+        new net::CookieMonster(d_cookieStore.get(), 0));
     d_storage->set_server_bound_cert_service(new net::ServerBoundCertService(
         new net::DefaultServerBoundCertStore(0),
         base::WorkerPool::GetTaskRunner(true)));
@@ -240,14 +254,10 @@ void URLRequestContextGetterImpl::initialize()
                                                       content::BrowserThread::GetMessageLoopProxyForThread(content::BrowserThread::CACHE))
                  : net::HttpCache::DefaultBackend::InMemory(0);
 
-    net::HttpNetworkLayer* defaultNetworkLayer
+    net::HttpNetworkLayer* networkLayer
         = new net::HttpNetworkLayer(new net::HttpNetworkSession(networkSessionParams));
 
-    // our own network layer that has hooks to blpwtk2::TransactionHandler
-    blpwtk2::HttpTransactionFactoryImpl* hookedNetworkLayer
-        = new blpwtk2::HttpTransactionFactoryImpl(defaultNetworkLayer);
-
-    net::HttpCache* mainCache = new net::HttpCache(hookedNetworkLayer,
+    net::HttpCache* mainCache = new net::HttpCache(networkLayer,
                                                    networkSessionParams.net_log,
                                                    backendFactory);
     d_storage->set_http_transaction_factory(mainCache);

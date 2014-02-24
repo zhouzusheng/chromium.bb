@@ -20,11 +20,7 @@
  * IN THE SOFTWARE.
  */
 
-#include <blpwtk2_inprocessrendererhost.h>
-
-#include <blpwtk2_constants.h>
-#include <blpwtk2_rendererinfomap.h>
-#include <blpwtk2_statics.h>
+#include <blpwtk2_managedrenderprocesshost.h>
 
 #include <content/public/browser/browser_context.h>
 // TODO: remove dependency on these impl classes
@@ -34,11 +30,10 @@
 namespace blpwtk2 {
 
 static content::RenderProcessHostImpl*
-createRenderProcessHost(content::BrowserContext* browserContext,
-                        RendererInfoMap* rendererInfoMap)
+createRenderProcessHost(base::ProcessHandle processHandle,
+                        content::BrowserContext* browserContext)
 {
     DCHECK(browserContext);
-    DCHECK(rendererInfoMap);
 
     content::StoragePartition* partition
         = content::BrowserContext::GetDefaultStoragePartition(browserContext);
@@ -48,27 +43,38 @@ createRenderProcessHost(content::BrowserContext* browserContext,
     int id = content::RenderProcessHostImpl::GenerateUniqueId();
     bool supportsBrowserPlugin = true;
     bool isGuest = false;
-    rendererInfoMap->setRendererHostId(Constants::IN_PROCESS_RENDERER, id);
-    return new content::RenderProcessHostImpl(id, true, browserContext,
-                                              partitionImpl,
+    return new content::RenderProcessHostImpl(id, processHandle,
+                                              browserContext, partitionImpl,
                                               supportsBrowserPlugin, isGuest);
 }
 
-InProcessRendererHost::InProcessRendererHost(content::BrowserContext* browserContext,
-                                             RendererInfoMap* rendererInfoMap)
-: d_impl(createRenderProcessHost(browserContext, rendererInfoMap))
+ManagedRenderProcessHost::ManagedRenderProcessHost(
+    base::ProcessHandle processHandle,
+    content::BrowserContext* browserContext,
+    bool usesInProcessPlugins)
+: d_impl(createRenderProcessHost(processHandle, browserContext))
 {
+    if (usesInProcessPlugins) {
+        d_impl->SetUsesInProcessPlugins();
+    }
     d_impl->Init();
 }
 
-InProcessRendererHost::~InProcessRendererHost()
+ManagedRenderProcessHost::~ManagedRenderProcessHost()
 {
+    DCHECK(0 == d_impl->NumListeners());
     d_impl->Cleanup();
+    // don't delete d_impl.  Calling Cleanup() does a DeleteSoon.
 }
 
-int InProcessRendererHost::id() const
+int ManagedRenderProcessHost::id() const
 {
     return d_impl->GetID();
+}
+
+const std::string& ManagedRenderProcessHost::channelId() const
+{
+    return d_impl->GetChannel()->ChannelId();
 }
 
 }  // close namespace blpwtk2

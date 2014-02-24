@@ -44,10 +44,19 @@
 HINSTANCE g_instance = 0;
 WNDPROC g_defaultEditWndProc = 0;
 blpwtk2::Toolkit* g_toolkit = 0;
+blpwtk2::Profile* g_profile = 0;
 bool g_spellCheckEnabled;
 bool g_autoCorrectEnabled;
 std::set<std::string> g_languages;
 std::set<std::string> g_customWords;
+std::string g_url;
+std::string g_dataDir;
+bool g_no_disk_cache = false;
+bool g_no_disk_cookies = false;
+bool g_in_process_renderer = false;
+bool g_custom_tooltip = false;
+bool g_no_plugin_discovery = false;
+HANDLE g_hJob;
 
 #define OVERRIDE override
 #define BUTTON_WIDTH 72
@@ -127,7 +136,7 @@ static const char LANGUAGE_RU[] = "ru-RU";
 class Shell;
 int registerShellWindowClass();
 Shell* createShell(blpwtk2::Profile* profile, blpwtk2::WebView* webView = 0);
-blpwtk2::HttpTransactionHandler* createHttpTransactionHandler();
+blpwtk2::ResourceLoader* createInProcessResourceLoader();
 void populateSubmenu(HMENU menu, int menuIdStart, const blpwtk2::ContextMenuItem& item);
 void populateContextMenu(HMENU menu, int menuIdStart, const blpwtk2::ContextMenuParams& params);
 void updateSpellCheckConfig(blpwtk2::Profile* profile);
@@ -267,7 +276,9 @@ public:
         if (!d_webView) {
             blpwtk2::WebViewCreateParams params;
             params.setProfile(d_profile);
-            //params.setRendererAffinity(blpwtk2::Constants::IN_PROCESS_RENDERER);
+            if (g_in_process_renderer && d_profile == g_profile) {
+                params.setRendererAffinity(blpwtk2::Constants::IN_PROCESS_RENDERER);
+            }
             d_webView = g_toolkit->createWebView(d_mainWnd, this, params);
         }
         else
@@ -275,7 +286,7 @@ public:
 
         d_webView->enableFocusBefore(true);
         d_webView->enableFocusAfter(true);
-        d_webView->enableCustomTooltip(true);
+        d_webView->enableCustomTooltip(g_custom_tooltip);
 
         SetWindowLongPtr(d_mainWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
         SetWindowLongPtr(d_urlEntryWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
@@ -297,6 +308,12 @@ public:
         }
 
         d_webView->destroy();
+
+        if (d_profile != g_profile) {
+            // If the shell has its own profile, then the profile needs to be
+            // destroyed.  g_profile gets destroyed before main() exits.
+            d_profile->destroy();
+        }
 
         s_shells.erase(this);
         if (0 == s_shells.size()) {
@@ -475,13 +492,14 @@ public:
         ShellExecuteA(NULL, NULL, target.c_str(), NULL, NULL, SW_SHOWNORMAL);        
     }
 
-    virtual void showTooltip(blpwtk2::WebView* source, 
-                             const blpwtk2::String& tooltipText, 
-                             blpwtk2::TextDirection::Value direction){
+    virtual void showTooltip(blpwtk2::WebView* source,
+                             const blpwtk2::StringRef& tooltipText,
+                             blpwtk2::TextDirection::Value direction) {
         assert(source == d_webView);
         if (!tooltipText.isEmpty()) {
+            std::string stext(tooltipText.data(), tooltipText.length());
             char buf[1024];
-            sprintf_s(buf, sizeof(buf), "DELEGATE: showTooltip '%s'\n", tooltipText.c_str());
+            sprintf_s(buf, sizeof(buf), "DELEGATE: showTooltip '%s'\n", stext.c_str());
             OutputDebugStringA(buf);
         }
     }
@@ -565,59 +583,8 @@ public:
 };
 std::set<Shell*> Shell::s_shells;
 
-int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
+void runMessageLoop()
 {
-    g_instance = instance;
-
-    std::string url = "http://www.google.com";
-
-    {
-        int argc;
-        LPWSTR *argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
-        if (!argv) {
-            return -1;
-        }
-
-        for (int i = 1; i < argc; ++i) {
-            if (argv[i][0] != '-') {
-                char buf[1024];
-                sprintf_s(buf, sizeof(buf), "%S", argv[i]);
-                url = buf;
-            }
-        }
-
-        ::LocalFree(argv);
-    }
-
-    int rc = registerShellWindowClass();
-    if (rc) return rc;
-
-    blpwtk2::ToolkitCreateParams toolkitParams;
-    toolkitParams.setThreadMode(blpwtk2::ThreadMode::RENDERER_MAIN);
-    toolkitParams.setHttpTransactionHandler(createHttpTransactionHandler());
-#if AUTO_PUMP
-    toolkitParams.setPumpMode(blpwtk2::PumpMode::AUTOMATIC);
-#endif
-
-    g_toolkit = blpwtk2::ToolkitFactory::create(toolkitParams);
-
-    blpwtk2::ProfileCreateParams profileParams("");
-    blpwtk2::Profile* profile = g_toolkit->createProfile(profileParams);
-
-    g_spellCheckEnabled = true;
-    g_autoCorrectEnabled = true;
-    g_languages.insert(LANGUAGE_EN_US);
-    g_customWords.insert("foo");
-    g_customWords.insert("zzzx");
-    g_customWords.insert("Bloomberg");
-    updateSpellCheckConfig(profile);
-
-    Shell* firstShell = createShell(profile);
-    firstShell->d_webView->loadUrl(url);
-    ShowWindow(firstShell->d_mainWnd, SW_SHOW);
-    UpdateWindow(firstShell->d_mainWnd);
-    firstShell->d_webView->focus();
-
     MSG msg;
 #if AUTO_PUMP
     while (GetMessage(&msg, NULL, 0, 0) > 0) {
@@ -633,8 +600,257 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
         g_toolkit->postHandleMessage(&msg);
     }
 #endif
+}
 
-    profile->destroy();
+struct HostWatcherThreadData {
+    HANDLE d_processHandle;
+    int d_mainThreadId;
+};
+
+DWORD hostWatcherThreadFunc(LPVOID lParam)
+{
+    HostWatcherThreadData* data = (HostWatcherThreadData*)lParam;
+    ::WaitForSingleObject(data->d_processHandle, INFINITE);
+    ::PostThreadMessage(data->d_mainThreadId, WM_QUIT, 0, 0);
+    return 0;
+}
+
+HANDLE spawnProcess()
+{
+    blpwtk2::String channelId = g_toolkit->createHostChannel(10000);
+
+    char fileName[MAX_PATH + 1];
+    ::GetModuleFileNameA(NULL, fileName, MAX_PATH);
+
+    std::string cmdline;
+    cmdline.append("\"");
+    cmdline.append(fileName);
+    cmdline.append("\" " + g_url);
+    cmdline.append(" --host-channel=");
+    cmdline.append(channelId.c_str());
+    if (g_in_process_renderer) {
+        cmdline.append(" --in-process-renderer");
+    }
+    if (!g_dataDir.empty()) {
+        cmdline.append(" --data-dir=");
+        cmdline.append(g_dataDir);
+    }
+    if (g_no_disk_cache) {
+        cmdline.append(" --no-disk-cache");
+    }
+    if (g_no_disk_cookies) {
+        cmdline.append(" --no-disk-cookies");
+    }
+    if (g_custom_tooltip) {
+        cmdline.append(" --custom-tooltip");
+    }
+    if (g_no_plugin_discovery) {
+        cmdline.append(" --no-plugin-discovery");
+    }
+
+    // It seems like CreateProcess wants a char* instead of
+    // a const char*.  So we need to make a copy to a modifiable
+    // buffer.
+    char cmdlineCopy[1024];
+    strcpy_s(cmdlineCopy, sizeof(cmdlineCopy), cmdline.c_str());
+
+    STARTUPINFOA si = {0};
+    si.cb = sizeof(si);
+
+    PROCESS_INFORMATION procInfo;
+    BOOL success = ::CreateProcessA(
+        NULL,
+        cmdlineCopy,
+        NULL,
+        NULL,
+        FALSE,
+        CREATE_BREAKAWAY_FROM_JOB,
+        NULL,
+        NULL,
+        &si,
+        &procInfo);
+
+    if (!success) {
+        DWORD lastError = ::GetLastError();
+        char buf[1024];
+        sprintf_s(buf, sizeof(buf), "CreateProcess failed: %d\n", lastError);
+        OutputDebugStringA(buf);
+        return NULL;
+    }
+
+    if (!::AssignProcessToJobObject(g_hJob, procInfo.hProcess)) {
+        DWORD lastError = ::GetLastError();
+        char buf[1024];
+        sprintf_s(buf, sizeof(buf), "AssignProcessToJobObject failed: %d\n", lastError);
+        OutputDebugStringA(buf);
+        ::TerminateProcess(procInfo.hProcess, -1);
+        return NULL;
+    }
+
+    ::CloseHandle(procInfo.hThread);
+    return procInfo.hProcess;
+}
+
+void runHost()
+{
+    g_hJob = ::CreateJobObject(NULL, NULL);
+    {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION info = { 0 };
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (!::SetInformationJobObject(g_hJob,
+                                       JobObjectExtendedLimitInformation,
+                                       &info,
+                                       sizeof(info))) {
+            DWORD lastError = ::GetLastError();
+            char buf[1024];
+            sprintf_s(buf, sizeof(buf), "SetInformationJobObject failed: %d\n", lastError);
+            OutputDebugStringA(buf);
+            return;
+        }
+    }
+
+    HANDLE processHandle = spawnProcess();
+    if (!processHandle) {
+        return;
+    }
+
+    HostWatcherThreadData threadData;
+    threadData.d_mainThreadId = ::GetCurrentThreadId();
+    threadData.d_processHandle = processHandle;
+
+    HANDLE watcherThread = ::CreateThread(
+        NULL,
+        0,
+        (LPTHREAD_START_ROUTINE)hostWatcherThreadFunc,
+        &threadData,
+        0,
+        NULL);
+
+    runMessageLoop();
+    ::WaitForSingleObject(watcherThread, INFINITE);
+    ::CloseHandle(watcherThread);
+    ::CloseHandle(threadData.d_processHandle);
+    ::CloseHandle(g_hJob);
+}
+
+int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
+{
+    g_instance = instance;
+
+    g_url = "http://www.google.com";
+    std::string hostChannel = "";
+    bool isHost = false;
+
+    {
+        int argc;
+        LPWSTR *argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
+        if (!argv) {
+            return -1;
+        }
+
+        for (int i = 1; i < argc; ++i) {
+            if (0 == wcscmp(L"--host", argv[i])) {
+                isHost = true;
+            }
+            else if (0 == wcsncmp(L"--host-channel=", argv[i], 15)) {
+                char buf[1024];
+                sprintf_s(buf, sizeof(buf), "%S", argv[i]+15);
+                hostChannel = buf;
+            }
+            else if (0 == wcscmp(L"--in-process-renderer", argv[i])) {
+                g_in_process_renderer = true;
+            }
+            else if (0 == wcsncmp(L"--data-dir=", argv[i], 11)) {
+                char buf[1024];
+                sprintf_s(buf, sizeof(buf), "%S", argv[i]+11);
+                g_dataDir = buf;
+            }
+            else if (0 == wcscmp(L"--no-disk-cache", argv[i])) {
+                g_no_disk_cache = true;
+            }
+            else if (0 == wcscmp(L"--no-disk-cookies", argv[i])) {
+                g_no_disk_cookies = true;
+            }
+            else if (0 == wcscmp(L"--custom-tooltip", argv[i])) {
+                g_custom_tooltip = true;
+            }
+            else if (0 == wcscmp(L"--no-plugin-discovery", argv[i])) {
+                g_no_plugin_discovery = true;
+            }
+            else if (argv[i][0] != '-') {
+                char buf[1024];
+                sprintf_s(buf, sizeof(buf), "%S", argv[i]);
+                g_url = buf;
+            }
+        }
+
+        ::LocalFree(argv);
+    }
+
+    {
+        char buf[1024];
+        sprintf_s(buf, sizeof(buf), "URL(%s) isHost(%d) hostChannel(%s)\n",
+                  g_url.c_str(),
+                  isHost ? 1 : 0,
+                  hostChannel.c_str());
+        OutputDebugStringA(buf);
+    }
+
+    blpwtk2::ToolkitCreateParams toolkitParams;
+    if (isHost) {
+        toolkitParams.setThreadMode(blpwtk2::ThreadMode::ORIGINAL);
+    }
+    else {
+        toolkitParams.setThreadMode(blpwtk2::ThreadMode::RENDERER_MAIN);
+        toolkitParams.setInProcessResourceLoader(createInProcessResourceLoader());
+        if (!hostChannel.empty()) {
+            toolkitParams.setHostChannel(hostChannel);
+        }
+    }
+#if AUTO_PUMP
+    toolkitParams.setPumpMode(blpwtk2::PumpMode::AUTOMATIC);
+#endif
+
+    if (g_no_plugin_discovery) {
+        toolkitParams.disablePluginDiscovery();
+    }
+
+    g_toolkit = blpwtk2::ToolkitFactory::create(toolkitParams);
+
+    if (isHost) {
+        runHost();
+        g_toolkit->destroy();
+        g_toolkit = 0;
+        return 0;
+    }
+
+    int rc = registerShellWindowClass();
+    if (rc) return rc;
+
+    blpwtk2::ProfileCreateParams profileParams(g_dataDir);
+    if (g_no_disk_cache)
+        profileParams.setDiskCacheEnabled(false);
+    if (g_no_disk_cookies)
+        profileParams.setCookiePersistenceEnabled(false);
+    g_profile = g_toolkit->createProfile(profileParams);
+
+    g_spellCheckEnabled = true;
+    g_autoCorrectEnabled = true;
+    g_languages.insert(LANGUAGE_EN_US);
+    g_customWords.insert("foo");
+    g_customWords.insert("zzzx");
+    g_customWords.insert("Bloomberg");
+    updateSpellCheckConfig(g_profile);
+
+    Shell* firstShell = createShell(g_profile);
+    firstShell->d_webView->loadUrl(g_url);
+    ShowWindow(firstShell->d_mainWnd, SW_SHOW);
+    UpdateWindow(firstShell->d_mainWnd);
+    firstShell->d_webView->focus();
+
+    runMessageLoop();
+
+    g_profile->destroy();
     g_toolkit->destroy();
     g_toolkit = 0;
     return 0;
@@ -701,9 +917,10 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
             return 0;
         case IDM_NEW_WINDOW:
             newShell = createShell(shell->d_profile);
+            newShell->d_webView->loadUrl(g_url);
             ShowWindow(newShell->d_mainWnd, SW_SHOW);
             UpdateWindow(newShell->d_mainWnd);
-            SetFocus(newShell->d_urlEntryWnd);
+            newShell->d_webView->focus();
             return 0;
         case IDM_CLOSE_WINDOW:
             DestroyWindow(shell->d_mainWnd);
@@ -777,7 +994,14 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
                 shell->d_inspectorShell->d_webView->focus();
                 return 0;
             }
-            shell->d_inspectorShell = createShell(shell->d_profile);
+            {
+                blpwtk2::Profile* profile = g_profile;
+                if (!g_dataDir.empty()) {
+                    blpwtk2::ProfileCreateParams profileParams("");
+                    profile = g_toolkit->createProfile(profileParams);
+                }
+                shell->d_inspectorShell = createShell(profile);
+            }
             shell->d_inspectorShell->d_inspectorFor = shell;
             ShowWindow(shell->d_inspectorShell->d_mainWnd, SW_SHOW);
             UpdateWindow(shell->d_inspectorShell->d_mainWnd);
@@ -824,10 +1048,10 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
         }
         break;
     case WM_WINDOWPOSCHANGED:
-        g_toolkit->onRootWindowPositionChanged(hwnd);
+        shell->d_webView->rootWindowPositionChanged();
         break;
     case WM_SETTINGCHANGE:
-        g_toolkit->onRootWindowSettingChange(hwnd);
+        shell->d_webView->rootWindowSettingsChanged();
         break;
     case WM_ERASEBKGND:
         return 1;
@@ -1104,8 +1328,8 @@ void toggleLanguage(blpwtk2::Profile* profile, const std::string& language)
     updateSpellCheckConfig(profile);
 }
 
-class DummyHttpTransactionHandler : public blpwtk2::HttpTransactionHandler {
-    // This dummy HttpTransactionHandler handles all "http://cdrive/" requests
+class DummyResourceLoader : public blpwtk2::ResourceLoader {
+    // This dummy ResourceLoader handles all "http://cdrive/" requests
     // and responds with the file at the specified path in the C drive.  For
     // example:
     //
@@ -1116,66 +1340,63 @@ class DummyHttpTransactionHandler : public blpwtk2::HttpTransactionHandler {
     //     C:\stuff\test.html
 
 public:
-    virtual bool startTransaction(blpwtk2::HttpTransaction* transaction,
-                                  void** userData) OVERRIDE
+    static const char PREFIX[];
+
+    virtual bool canHandleURL(const blpwtk2::StringRef& url) OVERRIDE
     {
-        const char PREFIX[] = "http://cdrive/";
-        blpwtk2::String url = transaction->url();
-        if (url.length() <= sizeof(PREFIX)-1)
+        if (url.length() <= (int)strlen(PREFIX))
             return false;
-        blpwtk2::StringRef prefix(url.data(), sizeof(PREFIX)-1);
+        blpwtk2::StringRef prefix(url.data(), strlen(PREFIX));
         if (!prefix.equals(PREFIX))
             return false;
-
-        std::string filePath = "C:\\";
-        filePath.append(url.c_str() + sizeof(PREFIX)-1);
-        std::replace(filePath.begin(), filePath.end(), '/', '\\');
-
-        std::ifstream* fstream = new std::ifstream(filePath.c_str());
-        *userData = fstream;
-        if (!fstream->is_open())
-            transaction->replaceStatusLine("HTTP/1.1 404 Not Found");
-        transaction->notifyDataAvailable();
         return true;
     }
 
-    virtual int readResponseBody(blpwtk2::HttpTransaction* transaction,
-                                 void* userData,
-                                 char* buffer,
-                                 int bufferLen,
-                                 bool* isCompleted) OVERRIDE
+    virtual void start(const blpwtk2::StringRef& url,
+                       blpwtk2::ResourceContext* context,
+                       void** userData) OVERRIDE
     {
-        std::ifstream* fstream = (std::ifstream*)userData;
-        if (!fstream->is_open()) {
-            strncpy(buffer, "The specified file was not found.", bufferLen-1);
-            *isCompleted = true;
-            return strlen(buffer);
+        assert(canHandleURL(url));
+
+        std::string filePath = "C:\\";
+        filePath.append(url.data() + strlen(PREFIX),
+                        url.length() - strlen(PREFIX));
+        std::replace(filePath.begin(), filePath.end(), '/', '\\');
+
+        std::ifstream fstream(filePath.c_str());
+        char buffer[1024];
+        if (!fstream.is_open()) {
+            context->replaceStatusLine("HTTP/1.1 404 Not Found");
+            strcpy(buffer, "The specified file was not found.");
+            context->addResponseData(buffer, strlen(buffer));
         }
+        else {
+            while (!fstream.eof()) {
+                fstream.read(buffer, sizeof(buffer));
+                if (fstream.bad()) {
+                    // some other failure
+                    context->failed();
+                    break;
+                }
 
-        fstream->read(buffer, bufferLen);
-        if (fstream->bad())
-            return -1;  // some other failure
-
-        *isCompleted = fstream->eof();
-
-        // If we are not at eof, that means the supplied buffer was not big
-        // enough for our file.  Notify that we already have data so that we
-        // will be called back immediately.
-        if (!fstream->eof())
-            transaction->notifyDataAvailable();
-
-        return fstream->gcount();
+                assert(fstream.gcount() <= sizeof(buffer));
+                context->addResponseData(buffer, fstream.gcount());
+            }
+        }
+        context->finish();
     }
 
-    virtual void endTransaction(blpwtk2::HttpTransaction* transaction, void* userData) OVERRIDE
+    virtual void cancel(blpwtk2::ResourceContext* context,
+                        void* userData)
     {
-        std::ifstream* fstream = (std::ifstream*)userData;
-        delete fstream;
+        assert(false);  // everything is loaded in start(), so we should never
+                        // get canceled
     }
 };
+const char DummyResourceLoader::PREFIX[] = "http://cdrive/";
 
-blpwtk2::HttpTransactionHandler* createHttpTransactionHandler()
+blpwtk2::ResourceLoader* createInProcessResourceLoader()
 {
-    return new DummyHttpTransactionHandler();
+    return new DummyResourceLoader();
 }
 

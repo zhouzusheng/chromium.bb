@@ -81,6 +81,7 @@ class WebViewImpl : public WebView,
     void showContextMenu(const ContextMenuParams& params);
     void saveCustomContextMenuContext(const content::CustomContextMenuContext& context);
     void handleFindRequest(const FindOnPageRequest& request);
+    void handleExternalProtocol(const GURL& url);
 
     /////////////// WebView overrides
 
@@ -111,6 +112,8 @@ class WebViewImpl : public WebView,
     virtual void setZoomPercent(int value) OVERRIDE;
     virtual void find(const StringRef& text, bool matchCase, bool forward) OVERRIDE;
     virtual void replaceMisspelledRange(const StringRef& text) OVERRIDE;
+    virtual void rootWindowPositionChanged() OVERRIDE;
+    virtual void rootWindowSettingsChanged() OVERRIDE;
 
     /////// WebContentsDelegate overrides
 
@@ -148,9 +151,6 @@ class WebViewImpl : public WebView,
     // it needs to do.
     virtual void CloseContents(content::WebContents* source) OVERRIDE;
 
-    // Handle external protocol url such as 'mailto:'
-    virtual void HandleExternalProtocol(const GURL& url) OVERRIDE;
-
     // Request the delegate to move this WebContents to the specified position
     // in screen coordinates.
     virtual void MoveContents(content::WebContents* source, const gfx::Rect& pos) OVERRIDE;
@@ -169,7 +169,7 @@ class WebViewImpl : public WebView,
     // continuously until OnNCDragEnd gets called.  Returning false means the
     // default Windows dragging will be performed.  The specified 'point' is in
     // screen coordinates.
-    virtual bool OnNCDragBegin(int hitTestCode, const gfx::Point& point) OVERRIDE;
+    virtual bool OnNCDragBegin(int hitTestCode) OVERRIDE;
 
     // Invoked while the move moves during an NC drag event.  This only gets
     // called if the previous call to OnNCDragBegin returned true.

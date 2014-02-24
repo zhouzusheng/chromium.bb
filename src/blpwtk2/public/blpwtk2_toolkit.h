@@ -88,6 +88,7 @@ namespace blpwtk2 {
 
 class Profile;
 class ProfileCreateParams;
+class String;
 class WebView;
 class WebViewDelegate;
 
@@ -101,8 +102,11 @@ class Toolkit {
     // stored within the 'dataDir' path in the 'params' object.  An incognito
     // profile will be returned if the 'dataDir' is empty.
     // For non-incognito profiles, the behavior is undefined if a Profile has
-    // already been created in the 'dataDir' (in this process, or any other
-    // process).
+    // already been created in the 'dataDir'.  The only exception to this rule
+    // is when you have multiple blpwtk2 client processes connected to the same
+    // host process, and each client process creates a Profile with the same
+    // 'dataDir' (in this case, the same underlying profile in the host process
+    // will be used for all client processes).
     virtual Profile* createProfile(const ProfileCreateParams& params) = 0;
 
     // Return true if the blpwtk2_devtools pak file was detected and has been
@@ -129,23 +133,15 @@ class Toolkit {
         WebViewDelegate* delegate = 0,
         const WebViewCreateParams& params = WebViewCreateParams()) = 0;
 
-    // This function must be called by the application whenever any root
-    // window containing a WebView receives WM_WINDOWPOSCHANGED.  Chromium
-    // internally uses this notification to update its screen configuration
-    // for the WebViews contained inside.  Note that this is only necessary
-    // for 'ThreadMode::RENDERER_MAIN'.  This function is a no-op for other
-    // thread modes (Chromium automatically hooks to the root window's WndProc
-    // if thread mode is 'ThreadMode::ORIGINAL').
-    virtual void onRootWindowPositionChanged(NativeView root) = 0;
-
-    // This function must be called by the application whenever any root
-    // window containing a WebView receives WM_SETTINGCHANGE.  Chromium
-    // internally uses this notification to update its screen configuration
-    // for the WebViews contained inside.  Note that this is only necessary
-    // for 'ThreadMode::RENDERER_MAIN'.  This function is a no-op for other
-    // thread modes (Chromium automatically hooks to the root window's WndProc
-    // if thread mode is 'ThreadMode::ORIGINAL').
-    virtual void onRootWindowSettingChange(NativeView root) = 0;
+    // Create a new host channel.  The returned channel-id string can be passed
+    // to 'ToolkitCreateParams::setHostChannel' in another process.  This will
+    // allow this process and the other process to share the same browser
+    // process resources.  The 'timeoutInMilliseconds' parameter specifies the
+    // amount of time that blpwtk2 will wait for a connection to be
+    // established.  If the other process does not connect within this timeout,
+    // then the channel will be destroyed and will no longer be usable.  Note
+    // that only one process may connect to a single host channel.
+    virtual String createHostChannel(int timeoutInMilliseconds) = 0;
 
     // Do extra chromium work needed at each message-loop iteration.  These
     // functions must be called on each message within the application's

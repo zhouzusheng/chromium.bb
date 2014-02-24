@@ -157,8 +157,7 @@ bool WebContentsDelegate::OnNCHitTest(int* result) {
 }
 
 bool WebContentsDelegate::OnNCDragBegin(
-    int hitTestCode,
-    const gfx::Point& point) {
+    int hitTestCode) {
   return false;
 }
 

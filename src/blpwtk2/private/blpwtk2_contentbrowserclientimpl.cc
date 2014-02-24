@@ -24,11 +24,11 @@
 
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_statics.h>
-#include <blpwtk2_inprocessrenderer.h>
 #include <blpwtk2_mediaobserverimpl.h>
 #include <blpwtk2_rendererinfomap.h>
 #include <blpwtk2_urlrequestcontextgetterimpl.h>
 #include <blpwtk2_webcontentsviewdelegateimpl.h>
+#include <blpwtk2_webviewimpl.h>
 
 #include <base/message_loop.h>
 #include <base/threading/thread.h>
@@ -37,6 +37,7 @@
 #include <content/public/browser/render_process_host.h>
 #include <content/public/browser/resource_dispatcher_host.h>
 #include <content/public/browser/resource_dispatcher_host_delegate.h>
+#include <content/public/browser/web_contents.h>
 #include <content/public/common/url_constants.h>
 #include <chrome/browser/spellchecker/spellcheck_message_filter.h>
 
@@ -76,6 +77,7 @@ bool ResourceDispatcherHostDelegate::HandleExternalProtocol(const GURL& url,
         doHandleExternalProtocol(url, child_id, route_id);
     }
     else {
+        DCHECK(Statics::browserMainMessageLoop);
         Statics::browserMainMessageLoop->PostTask(
             FROM_HERE,
             base::Bind(&doHandleExternalProtocol, url, child_id, route_id));
@@ -89,10 +91,22 @@ void ResourceDispatcherHostDelegate::doHandleExternalProtocol(const GURL& url,
 {
     DCHECK(Statics::isInBrowserMainThread());
 
-    content::RenderViewHost* viewHost = 
+    content::RenderViewHost* viewHost =
         content::RenderViewHost::FromID(child_id, route_id);
+    if (!viewHost) {
+        // RenderViewHost has gone away.
+        return;
+    }
 
-    viewHost->HandleExternalProtocol(url);
+    content::WebContents* webContents =
+        content::WebContents::FromRenderViewHost(viewHost);
+    DCHECK(webContents);
+
+    WebViewImpl* webViewImpl =
+        static_cast<WebViewImpl*>(webContents->GetDelegate());
+    DCHECK(webViewImpl);
+
+    webViewImpl->handleExternalProtocol(url);
 }
 
 ContentBrowserClientImpl::ContentBrowserClientImpl(RendererInfoMap* rendererInfoMap)
@@ -110,8 +124,13 @@ void ContentBrowserClientImpl::RenderProcessHostCreated(
 {
     DCHECK(Statics::isInBrowserMainThread());
     int id = host->GetID();
-    if (d_rendererInfoMap->hostIdUsesInProcessPlugins(id)) {
-        host->SetUsesInProcessPlugins();
+    if (!host->IsProcessManagedExternally()) {
+        // Externally-managed processes (e.g. in-process renderers) get the
+        // "uses-in-process-plugins" flag set during the creation of the
+        // ManagedRenderProcessHost.
+        if (d_rendererInfoMap->hostIdUsesInProcessPlugins(id)) {
+            host->SetUsesInProcessPlugins();
+        }
     }
     host->GetChannel()->AddFilter(new SpellCheckMessageFilter(id));
 }
@@ -119,21 +138,6 @@ void ContentBrowserClientImpl::RenderProcessHostCreated(
 bool ContentBrowserClientImpl::SupportsInProcessRenderer()
 {
     return true;
-}
-
-void ContentBrowserClientImpl::StartInProcessRendererThread(
-    const std::string& channel_id)
-{
-    // This does not actually start the thread.  The thread is started during
-    // ToolkitImpl startup.  What we do here is set the channel name that is
-    // used by the in-process renderer thread.
-    InProcessRenderer::setChannelName(channel_id);
-}
-
-void ContentBrowserClientImpl::StopInProcessRendererThread()
-{
-    // Don't actually stop the thread here.  That is done by ToolkitImpl's
-    // shutdown procedure.
 }
 
 void ContentBrowserClientImpl::ResourceDispatcherHostCreated()

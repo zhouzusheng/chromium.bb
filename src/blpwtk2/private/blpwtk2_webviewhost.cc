@@ -42,6 +42,9 @@ WebViewHost::WebViewHost(ProcessHost* processHost,
 : d_processHost(processHost)
 , d_routingId(routingId)
 , d_implMoveAckPending(false)
+, d_ncDragAckPending(false)
+, d_ncDragNeedsAck(false)
+, d_ncDragging(false)
 , d_isInProcess(isInProcess)
 {
     d_processHost->addRoute(d_routingId, this);
@@ -63,6 +66,9 @@ WebViewHost::WebViewHost(ProcessHost* processHost,
 , d_webView(webView)
 , d_routingId(routingId)
 , d_implMoveAckPending(false)
+, d_ncDragAckPending(false)
+, d_ncDragNeedsAck(false)
+, d_ncDragging(false)
 , d_isInProcess(isInProcess)
 {
     d_processHost->addRoute(d_routingId, this);
@@ -103,11 +109,15 @@ bool WebViewHost::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_EnableFocusAfter, onEnableFocusAfter)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_EnableNCHitTest, onEnableNCHitTest)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_OnNCHitTestResult, onOnNCHitTestResult)
+        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_NCDragMoveAck, onNCDragMoveAck)
+        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_NCDragEndAck, onNCDragEndAck)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_PerformContextMenuAction, onPerformCustomContextMenuAction)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_EnableCustomTooltip, onEnableCustomTooltip)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_SetZoomPercent, onSetZoomPercent)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Find, onFind)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_ReplaceMisspelledRange, onReplaceMisspelledRange)
+        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_RootWindowPositionChanged, onRootWindowPositionChanged)
+        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_RootWindowSettingsChanged, onRootWindowSettingsChanged)
         IPC_MESSAGE_UNHANDLED(handled = false)
     IPC_END_MESSAGE_MAP_EX()
 
@@ -246,6 +256,31 @@ void WebViewHost::onOnNCHitTestResult(int x, int y, int result)
     d_webView->onNCHitTestResult(x, y, result);
 }
 
+void WebViewHost::onNCDragMoveAck(const gfx::Point& movePoint)
+{
+    DCHECK(d_ncDragAckPending);
+    d_ncDragAckPending = false;
+    if (d_ncDragging) {
+        POINT nowPoint;
+        ::GetCursorPos(&nowPoint);
+        if (gfx::Point(nowPoint) != movePoint) {
+            d_ncDragAckPending = d_ncDragNeedsAck;
+            Send(new BlpWebViewMsg_NCDragMove(d_routingId));
+        }
+    }
+    else {
+        d_ncDragAckPending = d_ncDragNeedsAck;
+        Send(new BlpWebViewMsg_NCDragEnd(d_routingId, d_ncDragEndPoint));
+    }
+}
+
+void WebViewHost::onNCDragEndAck()
+{
+    DCHECK(!d_ncDragging);
+    DCHECK(d_ncDragAckPending);
+    d_ncDragAckPending = false;
+}
+
 void WebViewHost::onPerformCustomContextMenuAction(int actionId)
 {
     d_webView->performCustomContextMenuAction(actionId);
@@ -269,6 +304,16 @@ void WebViewHost::onFind(const FindOnPageRequest& value)
 void WebViewHost::onReplaceMisspelledRange(const std::string& text)
 {
     d_webView->replaceMisspelledRange(text);
+}
+
+void WebViewHost::onRootWindowPositionChanged()
+{
+    d_webView->rootWindowPositionChanged();
+}
+
+void WebViewHost::onRootWindowSettingsChanged()
+{
+    d_webView->rootWindowSettingsChanged();
 }
 
 // IPC::Sender override
@@ -427,8 +472,64 @@ void WebViewHost::requestNCHitTest(WebView* source)
     Send(new BlpWebViewMsg_RequestNCHitTest(d_routingId));
 }
 
+void WebViewHost::ncDragBegin(WebView* source,
+                              int hitTestCode,
+                              const POINT& startPoint)
+{
+    DCHECK(source == d_webView);
+
+    if (d_ncDragAckPending) {
+        // This could happen if the user stopped dragging, then started
+        // dragging again before we received an ack.  We'll just ignore the
+        // second drag for now.
+        // TODO: fix this
+        return;
+    }
+
+    // If we are dragging the caption, then we want the drag to be as smooth as
+    // possible, so we will sent continuous ncDragMove notifications.  However,
+    // other drag types would cause resizes to happen, which would be slow.  In
+    // those case, we don't want to send a continuous stream of ncDragMove
+    // notifications, so we will need an ack from the WebViewProxy for each
+    // move.
+    d_ncDragNeedsAck = hitTestCode != HTCAPTION;
+    d_ncDragging = true;
+    Send(new BlpWebViewMsg_NCDragBegin(d_routingId,
+                                       hitTestCode,
+                                       gfx::Point(startPoint)));
+}
+
+void WebViewHost::ncDragMove(WebView* source, const POINT& movePoint)
+{
+    DCHECK(source == d_webView);
+
+    if (d_ncDragAckPending)
+        return;
+
+    d_ncDragAckPending = d_ncDragNeedsAck;
+
+    // Note that we are ignoring the 'movePoint'.  WebViewProxy will provide
+    // its delegate with a more up-to-date mouse position.
+    Send(new BlpWebViewMsg_NCDragMove(d_routingId));
+}
+
+void WebViewHost::ncDragEnd(WebView* source, const POINT& endPoint)
+{
+    DCHECK(source == d_webView);
+
+    d_ncDragging = false;
+
+    if (d_ncDragAckPending) {
+        d_ncDragEndPoint = endPoint;
+        return;
+    }
+
+    d_ncDragAckPending = d_ncDragNeedsAck;
+    Send(new BlpWebViewMsg_NCDragEnd(d_routingId, gfx::Point(endPoint)));
+}
+
 void WebViewHost::showTooltip(WebView* source,
-                              const String& tooltipText,
+                              const StringRef& tooltipText,
                               TextDirection::Value direction)
 {
     DCHECK(source == d_webView);

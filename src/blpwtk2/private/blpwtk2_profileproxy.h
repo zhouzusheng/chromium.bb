@@ -59,7 +59,8 @@ class ProfileProxy : public Profile,
     ProfileProxy(ProcessClient* processClient,
                  int routingId,
                  const std::string& dataDir,
-                 bool diskCacheEnabled);
+                 bool diskCacheEnabled,
+                 bool cookiePersistenceEnabled);
 
     // Only called from the application-main thread.
     void incrementWebViewCount();

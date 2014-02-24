@@ -22,7 +22,11 @@
 
 #include <blpwtk2_contentrendererclientimpl.h>
 
+#include <blpwtk2_inprocessresourceloaderbridge.h>
 #include <blpwtk2_renderviewobserverimpl.h>
+#include <blpwtk2_resourceloader.h>
+#include <blpwtk2_statics.h>
+#include <blpwtk2_stringref.h>
 
 #include <base/strings/utf_string_conversions.h>
 #include <net/base/net_errors.h>
@@ -118,6 +122,20 @@ void ContentRendererClientImpl::GetNavigationErrorStrings(
         }
         *error_description = UTF8ToUTF16(tmp);
     }
+}
+
+webkit_glue::ResourceLoaderBridge*
+ContentRendererClientImpl::OverrideResourceLoaderBridge(
+    const webkit_glue::ResourceLoaderBridge::RequestInfo& request_info)
+{
+    StringRef url = request_info.url.spec();
+
+    if (!Statics::inProcessResourceLoader ||
+        !Statics::inProcessResourceLoader->canHandleURL(url))
+    {
+        return false;
+    }
+    return new InProcessResourceLoaderBridge(request_info);
 }
 
 }  // close namespace blpwtk2

@@ -25,6 +25,8 @@
 #include <blpwtk2_constants.h>
 
 #include <base/logging.h>  // for DCHECK
+#include <content/browser/renderer_host/render_process_host_impl.h>
+#include <content/public/browser/site_instance.h>
 
 namespace blpwtk2 {
 
@@ -37,21 +39,9 @@ RendererInfoMap::~RendererInfoMap()
 {
 }
 
-void RendererInfoMap::setRendererHostId(int renderer, int hostId)
-{
-    DCHECK(renderer == Constants::IN_PROCESS_RENDERER
-        || renderer >= 0);
-
-    base::AutoLock guard(d_lock);
-    RendererInfo& info = d_map[renderer];
-    DCHECK(-1 == info.d_hostId);
-    info.d_hostId = hostId;
-}
-
 void RendererInfoMap::setRendererUsesInProcessPlugins(int renderer)
 {
     DCHECK(renderer == Constants::ANY_OUT_OF_PROCESS_RENDERER
-        || renderer == Constants::IN_PROCESS_RENDERER
         || renderer >= 0);
 
     base::AutoLock guard(d_lock);
@@ -79,28 +69,31 @@ bool RendererInfoMap::hostIdUsesInProcessPlugins(int hostId)
     return d_anyOutOfProcessRenderersUseInProcessPlugins;
 }
 
-int RendererInfoMap::rendererToHostId(int renderer)
+int RendererInfoMap::obtainHostAffinity(int renderer)
 {
-    DCHECK(renderer == Constants::IN_PROCESS_RENDERER
+    DCHECK(renderer == Constants::ANY_OUT_OF_PROCESS_RENDERER
         || renderer >= 0);
 
-    base::AutoLock guard(d_lock);
-    RendererInfo& info = d_map[renderer];
-    return info.d_hostId;
+    if (renderer == Constants::ANY_OUT_OF_PROCESS_RENDERER) {
+        return content::SiteInstance::kNoProcessAffinity;
+    }
+    else {
+        base::AutoLock guard(d_lock);
+        RendererInfo& info = d_map[renderer];
+        if (-1 == info.d_hostId) {
+            info.d_hostId = content::RenderProcessHostImpl::GenerateUniqueId();
+        }
+        return info.d_hostId;
+    }
 }
 
 bool RendererInfoMap::dcheckProfileForRenderer(int renderer, Profile* profile)
 {
-    DCHECK(renderer == Constants::IN_PROCESS_RENDERER
-        || renderer >= 0);
+    DCHECK(renderer >= 0);
 
     base::AutoLock guard(d_lock);
     RendererInfo& info = d_map[renderer];
-    if (!info.d_profileForDCheck) {
-        info.d_profileForDCheck = profile;
-        return true;
-    }
-    return info.d_profileForDCheck == profile;
+    return info.dcheckProfile(profile);
 }
 
 }  // close namespace blpwtk2

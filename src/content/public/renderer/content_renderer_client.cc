@@ -76,6 +76,12 @@ WebKit::WebSpeechSynthesizer* ContentRendererClient::OverrideSpeechSynthesizer(
   return NULL;
 }
 
+webkit_glue::ResourceLoaderBridge*
+ContentRendererClient::OverrideResourceLoaderBridge(
+    const webkit_glue::ResourceLoaderBridge::RequestInfo& request_info) {
+  return NULL;
+}
+
 bool ContentRendererClient::RunIdleHandlerWhenWidgetsHidden() {
   return true;
 }

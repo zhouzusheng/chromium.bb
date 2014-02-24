@@ -40,9 +40,10 @@ namespace content {
 namespace blpwtk2 {
 
 class BrowserContextImplManager;
-class HttpTransactionHandler;
-class Profile;
 class MediaObserverImpl;
+class ProcessHostManager;
+class Profile;
+class ResourceLoader;
 
 // Hold any static variables.  This will be used to store global state that
 // may be setup before ToolkitImpl is instantiated, or any other global
@@ -68,8 +69,8 @@ struct Statics {
     // destroyed by DevToolsHttpHandlerDelegateImpl.
     static content::DevToolsHttpHandler* devToolsHttpHandler;
 
-    // The optional http transaction handler installed by the application.
-    static HttpTransactionHandler* httpTransactionHandler;
+    // The optional in-process resource loader installed by the application.
+    static ResourceLoader* inProcessResourceLoader;
 
     // MessageLoop for the in-process renderer thread.
     static base::MessageLoop* rendererMessageLoop;
@@ -82,6 +83,9 @@ struct Statics {
 
     // The single BrowserContextImplManager instance.
     static BrowserContextImplManager* browserContextImplManager;
+
+    // The single ProcessHostManager instance.
+    static ProcessHostManager* processHostManager;
 
     // Whether or not devtools is available.
     static bool hasDevTools;

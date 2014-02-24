@@ -26,10 +26,12 @@
 #include <blpwtk2_config.h>
 
 #include <blpwtk2_processhost.h>
+#include <blpwtk2_rendererinfomap.h>
 
 #include <base/compiler_specific.h>
 #include <base/id_map.h>
 #include <base/memory/scoped_ptr.h>
+#include <base/process.h>
 #include <ipc/ipc_listener.h>
 
 #include <string>
@@ -42,8 +44,7 @@ class ChannelProxy;
 
 namespace blpwtk2 {
 
-class BrowserMainRunner;
-class RendererInfoMap;
+class ManagedRenderProcessHost;
 
 // This object lives in the browser process, and on the browser UI thread.  It
 // sets up a channel to speak to a blpwtk2 ProcessClientImpl.
@@ -51,8 +52,7 @@ class ProcessHostImpl : public ProcessHost,
                         private IPC::Listener {
   public:
     ProcessHostImpl(const std::string& channelId,
-                    RendererInfoMap* rendererInfoMap,
-                    BrowserMainRunner* mainRunner);
+                    RendererInfoMap* rendererInfoMap);
     ~ProcessHostImpl();
 
     // ProcessHost overrides
@@ -60,6 +60,7 @@ class ProcessHostImpl : public ProcessHost,
     virtual void removeRoute(int routingId) OVERRIDE;
     virtual IPC::Listener* findListener(int routingId) OVERRIDE;
     virtual int getUniqueRoutingId() OVERRIDE;
+    virtual base::ProcessHandle processHandle() OVERRIDE;
 
     // IPC::Sender overrides
     virtual bool Send(IPC::Message* message) OVERRIDE;
@@ -72,16 +73,22 @@ class ProcessHostImpl : public ProcessHost,
 
     // Control message handlers
     void onSync();
+    void onSetInProcessRendererInfo(bool usesInProcessPlugins);
+    void onCreateNewHostChannel(int timeoutInMilliseconds,
+                             std::string* channelId);
     void onProfileNew(int routingId,
                       const std::string& dataDir,
-                      bool diskCacheEnabled);
+                      bool diskCacheEnabled,
+                      bool cookiePersistenceEnabled);
     void onProfileDestroy(int routingId);
     void onWebViewNew(const BlpWebViewHostMsg_NewParams& params);
     void onWebViewDestroy(int routingId);
 
+    base::ProcessHandle d_processHandle;
+    scoped_ptr<ManagedRenderProcessHost> d_renderProcessHost;
     scoped_ptr<IPC::ChannelProxy> d_channel;
     RendererInfoMap* d_rendererInfoMap;
-    BrowserMainRunner* d_mainRunner;
+    RendererInfo d_inProcessRendererInfo;
     IDMap<IPC::Listener> d_routes;
     int d_lastRoutingId;
 

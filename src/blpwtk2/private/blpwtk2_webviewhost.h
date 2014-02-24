@@ -96,11 +96,15 @@ class WebViewHost : public IPC::Listener,
     void onEnableFocusAfter(bool enabled);
     void onEnableNCHitTest(bool enabled);
     void onOnNCHitTestResult(int x, int y, int result);
+    void onNCDragMoveAck(const gfx::Point& movePoint);
+    void onNCDragEndAck();
     void onPerformCustomContextMenuAction(int actionId);
     void onEnableCustomTooltip(bool enabled);
     void onSetZoomPercent(int value);
     void onFind(const FindOnPageRequest& value);
     void onReplaceMisspelledRange(const std::string& text);
+    void onRootWindowPositionChanged();
+    void onRootWindowSettingsChanged();
 
     // IPC::Sender override
     virtual bool Send(IPC::Message* message) OVERRIDE;
@@ -133,7 +137,14 @@ class WebViewHost : public IPC::Listener,
     virtual void handleExternalProtocol(WebView* source, const StringRef& url) OVERRIDE;
     virtual void moveView(WebView* source, int x, int y, int width, int height) OVERRIDE;
     virtual void requestNCHitTest(WebView* source) OVERRIDE;
-    virtual void showTooltip(WebView* source, const String& tooltipText, TextDirection::Value direction) OVERRIDE;
+    virtual void ncDragBegin(WebView* source,
+                             int hitTestCode,
+                             const POINT& startPoint) OVERRIDE;
+    virtual void ncDragMove(WebView* source, const POINT& movePoint) OVERRIDE;
+    virtual void ncDragEnd(WebView* source, const POINT& endPoint) OVERRIDE;
+    virtual void showTooltip(WebView* source,
+                             const StringRef& tooltipText,
+                             TextDirection::Value direction) OVERRIDE;
     virtual void findState(WebView* source,
                            int numberOfMatches,
                            int activeMatchOrdinal,
@@ -143,7 +154,11 @@ class WebViewHost : public IPC::Listener,
     WebViewImpl* d_webView;
     int d_routingId;
     gfx::Rect d_implRect;
+    gfx::Point d_ncDragEndPoint;
     bool d_implMoveAckPending;
+    bool d_ncDragAckPending;
+    bool d_ncDragNeedsAck;
+    bool d_ncDragging;
     bool d_isInProcess;
 
     DISALLOW_COPY_AND_ASSIGN(WebViewHost);

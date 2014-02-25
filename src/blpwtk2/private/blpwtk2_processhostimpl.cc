@@ -35,7 +35,8 @@
 #include <blpwtk2_webview_messages.h>
 #include <blpwtk2_webviewhost.h>
 
-#include <base/process_util.h>
+#include <base/process/process_iterator.h>  // for kProcessAccess* constants
+#include <base/process/process_handle.h>
 #include <content/public/browser/browser_thread.h>
 #include <ipc/ipc_channel_proxy.h>
 

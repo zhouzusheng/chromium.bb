@@ -57,6 +57,8 @@ private:
 // are many globals used in the utility process.
 static base::LazyInstance<base::Lock> g_one_utility_thread_lock;
 
+static bool g_run_utility_in_process_ = false;
+
 // Single process not supported in multiple dll mode currently.
 #if !defined(CHROME_MULTIPLE_DLL)
 class UtilityMainThread : public base::Thread {
@@ -105,6 +107,16 @@ UtilityProcessHost* UtilityProcessHost::Create(
     UtilityProcessHostClient* client,
     base::SequencedTaskRunner* client_task_runner) {
   return new UtilityProcessHostImpl(client, client_task_runner);
+}
+
+// static
+bool UtilityProcessHost::run_utility_in_process() {
+  return g_run_utility_in_process_;
+}
+
+// static
+void UtilityProcessHost::SetRunUtilityInProcess(bool value) {
+  g_run_utility_in_process_ = value;
 }
 
 UtilityProcessHostImpl::UtilityProcessHostImpl(
@@ -197,7 +209,7 @@ bool UtilityProcessHostImpl::StartProcess() {
 
   // Single process not supported in multiple dll mode currently.
 #if !defined(CHROME_MULTIPLE_DLL)
-  if (RenderProcessHost::run_renderer_in_process()) {
+  if (UtilityProcessHost::run_utility_in_process()) {
     // See comment in RenderProcessHostImpl::Init() for the background on why we
     // support single process mode this way.
     in_process_thread_.reset(new UtilityMainThread(channel_id));

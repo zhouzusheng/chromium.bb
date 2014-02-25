@@ -182,43 +182,43 @@ WebRect WebElement::boundsInViewportSpace()
 
 bool WebElement::setCssProperty(const WebString& name, const WebString& value, const WebString& priority)
 {
-    ExceptionCode exceptionCode = 0;
-    unwrap<Element>()->style()->setProperty(name, value, priority, exceptionCode);
-    return !exceptionCode;
+    TrackExceptionState es;
+    unwrap<Element>()->style()->setProperty(name, value, priority, es);
+    return !es.hadException();
 }
 
 bool WebElement::removeCssProperty(const WebString& name)
 {
-    ExceptionCode exceptionCode = 0;
-    unwrap<Element>()->style()->removeProperty(name, exceptionCode);
-    return !exceptionCode;
+    TrackExceptionState es;
+    unwrap<Element>()->style()->removeProperty(name, es);
+    return !es.hadException();
 }
 
 bool WebElement::addClass(const WebString& name)
 {
-    ExceptionCode exceptionCode = 0;
-    unwrap<Element>()->classList()->add(name, exceptionCode);
-    return !exceptionCode;
+    TrackExceptionState es;
+    unwrap<Element>()->classList()->add(name, es);
+    return !es.hadException();
 }
 
 bool WebElement::removeClass(const WebString& name)
 {
-    ExceptionCode exceptionCode = 0;
-    unwrap<Element>()->classList()->remove(name, exceptionCode);
-    return !exceptionCode;
+    TrackExceptionState es;
+    unwrap<Element>()->classList()->remove(name, es);
+    return !es.hadException();
 }
 
 bool WebElement::containsClass(const WebString& name)
 {
-    ExceptionCode exceptionCode = 0;
-    return unwrap<Element>()->classList()->contains(name, exceptionCode);
+    TrackExceptionState es;
+    return unwrap<Element>()->classList()->contains(name, IGNORE_EXCEPTION);
 }
 
 bool WebElement::toggleClass(const WebString& name)
 {
-    ExceptionCode exceptionCode = 0;
-    unwrap<Element>()->classList()->toggle(name, exceptionCode);
-    return !exceptionCode;
+    TrackExceptionState es;
+    unwrap<Element>()->classList()->toggle(name, es);
+    return !es.hadException();
 }
 
 WebString WebElement::innerHTML() const

@@ -27,11 +27,11 @@
 
 #include <base/compiler_specific.h>  // for OVERRIDE
 #include <base/memory/scoped_vector.h>
-#include <base/process.h>
+#include <base/process/process_handle.h>
 #include <base/threading/platform_thread.h>
 #include <base/synchronization/lock.h>
 #include <base/synchronization/waitable_event.h>
-#include <base/timer.h>
+#include <base/timer/timer.h>
 
 #include <list>
 

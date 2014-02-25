@@ -37,6 +37,9 @@ class UtilityProcessHost : public IPC::Sender,
       UtilityProcessHostClient* client,
       base::SequencedTaskRunner* client_task_runner);
 
+  static bool run_utility_in_process();
+  static void SetRunUtilityInProcess(bool value);
+
   virtual ~UtilityProcessHost() {}
 
   // Starts utility process in batch mode. Caller must call EndBatchMode()

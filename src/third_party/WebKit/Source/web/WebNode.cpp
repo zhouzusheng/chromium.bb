@@ -158,29 +158,29 @@ WebNodeList WebNode::childNodes()
 
 bool WebNode::insertBefore(const WebNode& newChild, const WebNode& refChild, bool shouldLazyAttach)
 {
-    ExceptionCode exceptionCode = 0;
+    TrackExceptionState es;
     WebCore::AttachBehavior attachBehavior =
         shouldLazyAttach ? WebCore::AttachLazily : WebCore::AttachNow;
-    m_private->insertBefore(newChild, refChild.m_private.get(), exceptionCode, attachBehavior);
-    return !exceptionCode;
+    m_private->insertBefore(newChild, refChild.m_private.get(), es, attachBehavior);
+    return !es.hadException();
 }
 
 bool WebNode::replaceChild(const WebNode& newChild, const WebNode& oldChild, bool shouldLazyAttach)
 {
-    ExceptionCode exceptionCode = 0;
+    TrackExceptionState es;
     WebCore::AttachBehavior attachBehavior =
         shouldLazyAttach ? WebCore::AttachLazily : WebCore::AttachNow;
-    m_private->replaceChild(newChild, oldChild.m_private.get(), exceptionCode, attachBehavior);
-    return !exceptionCode;
+    m_private->replaceChild(newChild, oldChild.m_private.get(), es, attachBehavior);
+    return !es.hadException();
 }
 
 bool WebNode::appendChild(const WebNode& child, bool shouldLazyAttach)
 {
-    ExceptionCode exceptionCode = 0;
+    TrackExceptionState es;
     WebCore::AttachBehavior attachBehavior =
         shouldLazyAttach ? WebCore::AttachLazily : WebCore::AttachNow;
-    m_private->appendChild(child, exceptionCode, attachBehavior);
-    return !exceptionCode;
+    m_private->appendChild(child, es, attachBehavior);
+    return !es.hadException();
 }
 
 WebString WebNode::createMarkup() const
@@ -272,16 +272,16 @@ bool WebNode::remove()
 
 bool WebNode::setTextContent(const WebString& text)
 {
-    ExceptionCode exceptionCode = 0;
-    m_private->setTextContent(text, exceptionCode);
-    return !exceptionCode;
+    TrackExceptionState es;
+    m_private->setTextContent(text, es);
+    return !es.hadException();
 }
 
 bool WebNode::removeChild(const WebNode& oldChild)
 {
-    ExceptionCode exceptionCode = 0;
-    m_private->removeChild(oldChild.m_private.get(), exceptionCode);
-    return !exceptionCode;
+    TrackExceptionState es;
+    m_private->removeChild(oldChild.m_private.get(), es);
+    return !es.hadException();
 }
 
 WebString WebNode::textContent() const

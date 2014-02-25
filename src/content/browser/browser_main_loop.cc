@@ -46,6 +46,7 @@
 #include "content/public/browser/compositor_util.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/browser/utility_process_host.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/result_codes.h"
@@ -516,6 +517,10 @@ int BrowserMainLoop::PreCreateThreads() {
     PluginService::GetInstance()->Init();
   }
 #endif
+
+  if (parsed_command_line_.HasSwitch(switches::kSingleProcess)) {
+    UtilityProcessHost::SetRunUtilityInProcess(true);
+  }
 
   if (GetContentClient()->browser()->SupportsInProcessRenderer() &&
       !parsed_command_line_.HasSwitch(switches::kLang)) {

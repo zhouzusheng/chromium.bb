@@ -16,7 +16,7 @@
 #include "third_party/WebKit/public/web/WebNavigationType.h"
 #include "third_party/WebKit/public/web/WebPageVisibilityState.h"
 #include "v8/include/v8.h"
-#include "webkit/glue/resource_loader_bridge.h"
+#include "webkit/child/resource_loader_bridge.h"
 
 class GURL;
 class SkBitmap;

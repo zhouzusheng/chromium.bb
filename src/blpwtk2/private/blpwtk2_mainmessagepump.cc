@@ -56,9 +56,9 @@
 #include <blpwtk2_statics.h>
 
 #include <base/run_loop.h>
-#include <base/message_loop.h>
+#include <base/message_loop/message_loop.h>
 #include <base/win/wrapped_window_proc.h>
-#include <base/time.h>
+#include <base/time/time.h>
 
 #include <content/public/renderer/render_thread.h>
 

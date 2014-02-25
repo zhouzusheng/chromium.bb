@@ -23,6 +23,7 @@
 #include "config.h"
 #include "core/page/BBWindowHooks.h"
 
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "bindings/v8/V8BindingMacros.h"
 #include "core/editing/TextIterator.h"
 #include "core/editing/Editor.h"
@@ -39,6 +40,7 @@
 #include "core/page/Settings.h"
 #include "core/dom/Range.h"
 #include "core/dom/ClientRect.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -51,12 +53,7 @@ bool BBWindowHooks::matchSelector(Node *node, const String& selector)
 {
     if (node->isElementNode() && !selector.isEmpty()) {
         Element *e = toElement(node);
-        WebCore::ExceptionCode ec = 0;
-        bool match = e->webkitMatchesSelector(selector, ec);
-        if (ec) {
-            return false;
-        }
-        return match;
+        return e->webkitMatchesSelector(selector, IGNORE_EXCEPTION);
     }
     return false;
 }
@@ -138,8 +135,7 @@ void BBWindowHooks::setTextMatchMarkerVisibility(Document* document, bool highli
 
 bool BBWindowHooks::checkSpellingForRange(Range* range)
 {
-    WebCore::ExceptionCode ec = 0;
-    Node* ancestor = range->commonAncestorContainer(ec);
+    Node* ancestor = range->commonAncestorContainer(IGNORE_EXCEPTION);
 
     if (!ancestor) {
         return false;

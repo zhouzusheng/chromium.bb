@@ -421,7 +421,7 @@ static void exposeBool(v8::Isolate* isolate, const v8::Handle<v8::Object>& obj, 
     obj->Set(v8::String::NewFromUtf8(isolate, name), v8::Boolean::New(value));
 }
 
-static void exposeString(v8::Isolate* isolate, const v8::Handle<v8::Object>& obj, const char* name, const WebCString& value)
+static void exposeString(v8::Isolate* isolate, const v8::Handle<v8::Object>& obj, const char* name, const std::string& value)
 {
     obj->Set(v8::String::NewFromUtf8(isolate, name), v8::String::NewFromUtf8(isolate, value.data(), v8::String::kNormalString, value.length()));
 }
@@ -430,7 +430,7 @@ static void exposeStringVector(v8::Isolate* isolate, const v8::Handle<v8::Object
 {
     v8::Handle<v8::Array> array = v8::Array::New();
     for (unsigned i = 0; i < value.size(); ++i) {
-        WebCString item = value[i].utf8();
+        std::string item = value[i].utf8();
         array->Set(i, v8::String::NewFromUtf8(isolate, item.data(), v8::String::kNormalString, item.length()));
     }
     obj->Set(v8::String::NewFromUtf8(isolate, name), array);
@@ -474,8 +474,8 @@ bool ContextMenuClientImpl::fireBbContextMenuEvent(WebFrame* frame, WebContextMe
     CustomEventInit eventInit;
     eventInit.bubbles = true;
     eventInit.cancelable = true;
-    eventInit.detail = ScriptValue(detailObj);
     RefPtr<CustomEvent> event = CustomEvent::create("bbContextMenu", eventInit);
+    event->setSerializedDetail(SerializedScriptValue::create(detailObj, v8::Isolate::GetCurrent()));
 
     data.node.unwrap<Node>()->dispatchEvent(event);
     return event->defaultPrevented();

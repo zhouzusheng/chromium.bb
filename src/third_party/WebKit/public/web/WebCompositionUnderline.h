@@ -31,8 +31,6 @@
 #ifndef WebCompositionUnderline_h
 #define WebCompositionUnderline_h
 
-#include "../platform/WebColor.h"
-
 namespace WebKit {
 
 // Class WebCompositionUnderline is intended to be used with WebWidget's
@@ -41,18 +39,15 @@ struct WebCompositionUnderline {
     WebCompositionUnderline()
         : startOffset(0)
         , endOffset(0)
-        , color(0)
         , thick(false) { }
 
-    WebCompositionUnderline(unsigned s, unsigned e, WebColor c, bool t)
+    WebCompositionUnderline(unsigned s, unsigned e, bool t)
         : startOffset(s)
         , endOffset(e)
-        , color(c)
         , thick(t) { }
 
     unsigned startOffset;
     unsigned endOffset;
-    WebColor color;
     bool thick;
 };
 

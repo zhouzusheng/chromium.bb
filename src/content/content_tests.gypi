@@ -1077,7 +1077,6 @@
               ['OS=="win"', {
                 'dependencies': [
                   '../third_party/angle_dx11/src/build_angle.gyp:libEGL',
-                  '../third_party/angle_dx11/src/build_angle.gyp:libGLESv2',
                 ],
               }],
               ['(OS=="win" and win_use_allocator_shim==1) or '

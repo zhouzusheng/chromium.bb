@@ -110,7 +110,7 @@ void initialize(Platform* platform)
     // currentThread will always be non-null in production, but can be null in Chromium unit tests.
     if (WebThread* currentThread = platform->currentThread()) {
 #ifndef NDEBUG
-        v8::V8::AddCallCompletedCallback(&assertV8RecursionScope);
+        //v8::V8::AddCallCompletedCallback(&assertV8RecursionScope);
 #endif
         ASSERT(!s_endOfTaskRunner);
         s_endOfTaskRunner = new EndOfTaskRunner;
@@ -175,7 +175,7 @@ void shutdown()
     if (Platform::current()->currentThread()) {
         ASSERT(s_endOfTaskRunner);
 #ifndef NDEBUG
-        v8::V8::RemoveCallCompletedCallback(&assertV8RecursionScope);
+        //v8::V8::RemoveCallCompletedCallback(&assertV8RecursionScope);
 #endif
         Platform::current()->currentThread()->removeTaskObserver(s_endOfTaskRunner);
         delete s_endOfTaskRunner;
@@ -222,6 +222,11 @@ void enableLogChannel(const char* name)
 void resetPluginCache(bool reloadPages)
 {
     WebCore::Page::refreshPlugins(reloadPages);
+}
+
+void allowNonWindowContexts_Unsafe()
+{
+    WebCore::setNonWindowContextsAllowed(true);
 }
 
 } // namespace WebKit

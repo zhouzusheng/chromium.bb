@@ -40,6 +40,11 @@ void CustomDictionaryEngine::OnCustomDictionaryChanged(
   }
 }
 
+void CustomDictionaryEngine::OnCustomDictionaryReset(const std::set<std::string>& words) {
+  dictionary_.clear();
+  Init(words);
+}
+
 bool CustomDictionaryEngine::SpellCheckWord(
     const string16& text,
     int misspelling_start,

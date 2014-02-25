@@ -131,6 +131,7 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       resize_ack_pending_(false),
       overdraw_bottom_height_(0.f),
       should_auto_resize_(false),
+      is_browser_side_resize_disabled_(false),
       waiting_for_screen_rects_ack_(false),
       accessibility_mode_(AccessibilityModeOff),
       needs_repainting_on_restore_(false),
@@ -549,7 +550,7 @@ void RenderWidgetHostImpl::WasShown() {
 
 void RenderWidgetHostImpl::WasResized() {
   if (resize_ack_pending_ || !process_->HasConnection() || !view_ ||
-      !renderer_initialized_ || should_auto_resize_) {
+      !renderer_initialized_ || should_auto_resize_ || is_browser_side_resize_disabled_) {
     return;
   }
 
@@ -578,9 +579,9 @@ void RenderWidgetHostImpl::WasResized() {
     GetWebScreenInfo(screen_info_.get());
   }
 
-  // We don't expect to receive an ACK when the requested size or the physical
-  // backing size is empty, or when the main viewport size didn't change.
-  if (!new_size.IsEmpty() && !physical_backing_size_.IsEmpty() && size_changed)
+  // We don't expect to receive an ACK when the requested size is empty or when
+  // the main viewport size didn't change.
+  if (!new_size.IsEmpty() && size_changed)
     resize_ack_pending_ = g_check_for_pending_resize_ack;
 
   ViewMsg_Resize_Params params;
@@ -595,6 +596,15 @@ void RenderWidgetHostImpl::WasResized() {
   } else {
     last_requested_size_ = new_size;
   }
+}
+
+void RenderWidgetHostImpl::DisableBrowserSideResize() {
+  DCHECK(!resize_ack_pending_);
+  is_browser_side_resize_disabled_ = true;
+}
+
+const gfx::Size& RenderWidgetHostImpl::LastKnownRendererSize() const {
+  return current_size_;
 }
 
 void RenderWidgetHostImpl::ResizeRectChanged(const gfx::Rect& new_rect) {
@@ -1393,6 +1403,14 @@ void RenderWidgetHostImpl::OnSetTooltipText(
   // trying to detect the directionality from the tooltip text rather than the
   // element direction.  One could argue that would be a preferable solution
   // but we use the current approach to match Fx & IE's behavior.
+
+  if (delegate_) {
+    const bool showTooltipHandled = delegate_->ShowTooltip(tooltip_text, 
+                                                           text_direction_hint);
+    if (showTooltipHandled) {
+        return;
+    }
+  }
   string16 wrapped_tooltip_text = tooltip_text;
   if (!tooltip_text.empty()) {
     if (text_direction_hint == WebKit::WebTextDirectionLeftToRight) {
@@ -1618,6 +1636,9 @@ void RenderWidgetHostImpl::DidUpdateBackingStore(
   // view to be destroyed.
   if (view_)
     view_->MovePluginWindows(params.scroll_offset, params.plugin_window_moves);
+
+  if (delegate_)
+    delegate_->DidUpdateBackingStore();
 
   NotificationService::current()->Notify(
       NOTIFICATION_RENDER_WIDGET_HOST_DID_UPDATE_BACKING_STORE,
@@ -2133,6 +2154,13 @@ const gfx::Vector2d& RenderWidgetHostImpl::GetLastScrollOffset() const {
 
 bool RenderWidgetHostImpl::IgnoreInputEvents() const {
   return ignore_input_events_ || process_->IgnoreInputEvents();
+}
+
+bool RenderWidgetHostImpl::ShouldSetFocusOnMouseDown() const {
+  if (delegate_) {
+    return delegate_->ShouldSetFocusOnMouseDown();
+  }
+  return true;
 }
 
 bool RenderWidgetHostImpl::ShouldForwardTouchEvent() const {

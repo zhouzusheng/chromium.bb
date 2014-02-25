@@ -4,6 +4,7 @@
 
 #include "content/public/browser/web_contents.h"
 
+#include "content/public/browser/site_instance.h"
 #include "ipc/ipc_message.h"
 
 namespace content {
@@ -14,6 +15,7 @@ WebContents::CreateParams::CreateParams(BrowserContext* context)
       opener(NULL),
       routing_id(MSG_ROUTING_NONE),
       main_frame_routing_id(MSG_ROUTING_NONE),
+      render_process_affinity(SiteInstance::kNoProcessAffinity),
       context(NULL) {}
 
 WebContents::CreateParams::CreateParams(
@@ -23,6 +25,7 @@ WebContents::CreateParams::CreateParams(
       opener(NULL),
       routing_id(MSG_ROUTING_NONE),
       main_frame_routing_id(MSG_ROUTING_NONE),
+      render_process_affinity(SiteInstance::kNoProcessAffinity),
       context(NULL) {}
 
 }  // namespace content

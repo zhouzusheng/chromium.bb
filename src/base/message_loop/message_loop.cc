@@ -420,10 +420,13 @@ __declspec(noinline) void MessageLoop::RunInternalInSEHFrame() {
 }
 #endif
 
-void MessageLoop::RunInternal() {
+void MessageLoop::PrepareRunInternal() {
   DCHECK_EQ(this, current());
-
   StartHistogrammer();
+}
+
+void MessageLoop::RunInternal() {
+  PrepareRunInternal();
 
 #if !defined(OS_MACOSX) && !defined(OS_ANDROID)
   if (run_loop_->dispatcher_ && type() == TYPE_UI) {

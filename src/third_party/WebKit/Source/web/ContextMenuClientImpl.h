@@ -35,6 +35,7 @@
 
 namespace WebKit {
 
+class WebFrame;
 class WebViewImpl;
 struct WebContextMenuData;
 
@@ -45,6 +46,7 @@ public:
     virtual void showContextMenu(const WebCore::ContextMenu*);
 private:
     void populateCustomMenuItems(const WebCore::ContextMenu*, WebContextMenuData*);
+    bool fireBbContextMenuEvent(WebFrame*, WebContextMenuData&);
     WebViewImpl* m_webView;
 };
 

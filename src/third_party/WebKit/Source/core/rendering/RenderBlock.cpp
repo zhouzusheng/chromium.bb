@@ -3488,8 +3488,10 @@ GapRects RenderBlock::selectionGapRectsForRepaint(const RenderLayerModelObject* 
     LayoutUnit lastTop = 0;
     LayoutUnit lastLeft = logicalLeftSelectionOffset(this, lastTop);
     LayoutUnit lastRight = logicalRightSelectionOffset(this, lastTop);
-
-    return selectionGaps(this, offsetFromRepaintContainer, IntSize(), lastTop, lastLeft, lastRight);
+    bool shouldHighlightBeforeSide = false;
+    bool isAfterSideSelected = false;
+    return selectionGaps(this, offsetFromRepaintContainer, IntSize(), lastTop, lastLeft, lastRight, 0,
+                         shouldHighlightBeforeSide, isAfterSideSelected);
 }
 
 void RenderBlock::paintSelection(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
@@ -3498,9 +3500,12 @@ void RenderBlock::paintSelection(PaintInfo& paintInfo, const LayoutPoint& paintO
         LayoutUnit lastTop = 0;
         LayoutUnit lastLeft = logicalLeftSelectionOffset(this, lastTop);
         LayoutUnit lastRight = logicalRightSelectionOffset(this, lastTop);
+        bool shouldHighlightBeforeSide = false;
+        bool isAfterSideSelected = false;
         GraphicsContextStateSaver stateSaver(*paintInfo.context);
 
-        LayoutRect gapRectsBounds = selectionGaps(this, paintOffset, LayoutSize(), lastTop, lastLeft, lastRight, &paintInfo);
+        LayoutRect gapRectsBounds = selectionGaps(this, paintOffset, LayoutSize(), lastTop, lastLeft, lastRight, &paintInfo,
+                                                  shouldHighlightBeforeSide, isAfterSideSelected);
         if (!gapRectsBounds.isEmpty()) {
             if (RenderLayer* layer = enclosingLayer()) {
                 gapRectsBounds.moveBy(-paintOffset);
@@ -3552,7 +3557,8 @@ LayoutRect RenderBlock::logicalRectToPhysicalRect(const LayoutPoint& rootBlockPh
 }
 
 GapRects RenderBlock::selectionGaps(RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-                                    LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo* paintInfo)
+                                    LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo* paintInfo,
+                                    bool& shouldHighlightBeforeSide, bool& isAfterSideSelected)
 {
     // IMPORTANT: Callers of this method that intend for painting to happen need to do a save/restore.
     // Clip out floating and positioned objects when painting selection gaps.
@@ -3594,20 +3600,26 @@ GapRects RenderBlock::selectionGaps(RenderBlock* rootBlock, const LayoutPoint& r
         return result;
     }
 
+    if (rootBlock == this && isTableCell())
+        shouldHighlightBeforeSide = true;
+
     if (childrenInline())
-        result = inlineSelectionGaps(rootBlock, rootBlockPhysicalPosition, offsetFromRootBlock, lastLogicalTop, lastLogicalLeft, lastLogicalRight, paintInfo);
+        result = inlineSelectionGaps(rootBlock, rootBlockPhysicalPosition, offsetFromRootBlock, lastLogicalTop, lastLogicalLeft, lastLogicalRight, paintInfo,
+                                     shouldHighlightBeforeSide, isAfterSideSelected);
     else
-        result = blockSelectionGaps(rootBlock, rootBlockPhysicalPosition, offsetFromRootBlock, lastLogicalTop, lastLogicalLeft, lastLogicalRight, paintInfo);
+        result = blockSelectionGaps(rootBlock, rootBlockPhysicalPosition, offsetFromRootBlock, lastLogicalTop, lastLogicalLeft, lastLogicalRight, paintInfo,
+                                    shouldHighlightBeforeSide, isAfterSideSelected);
 
     // Go ahead and fill the vertical gap all the way to the bottom of our block if the selection extends past our block.
-    if (rootBlock == this && (selectionState() != SelectionBoth && selectionState() != SelectionEnd))
+    if (rootBlock == this && ((selectionState() != SelectionBoth && selectionState() != SelectionEnd) || (isAfterSideSelected && isTableCell())))
         result.uniteCenter(blockSelectionGap(rootBlock, rootBlockPhysicalPosition, offsetFromRootBlock, lastLogicalTop, lastLogicalLeft, lastLogicalRight,
                                              logicalHeight(), paintInfo));
     return result;
 }
 
 GapRects RenderBlock::inlineSelectionGaps(RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-                                          LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo* paintInfo)
+                                          LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo* paintInfo,
+                                          bool& shouldHighlightBeforeSide, bool& isAfterSideSelected)
 {
     GapRects result;
 
@@ -3621,22 +3633,33 @@ GapRects RenderBlock::inlineSelectionGaps(RenderBlock* rootBlock, const LayoutPo
             lastLogicalLeft = logicalLeftSelectionOffset(rootBlock, logicalHeight());
             lastLogicalRight = logicalRightSelectionOffset(rootBlock, logicalHeight());
         }
+        isAfterSideSelected = true;
         return result;
     }
 
     RootInlineBox* lastSelectedLine = 0;
     RootInlineBox* curr;
-    for (curr = firstRootBox(); curr && !curr->hasSelectedChildren(); curr = curr->nextRootBox()) { }
+    for (curr = firstRootBox(); curr && !curr->hasSelectedChildren(); curr = curr->nextRootBox())
+        shouldHighlightBeforeSide = false;
+
+    // We need to fill the top of if the before-side is selected.
+    bool shouldFillTop = !containsStart || shouldHighlightBeforeSide;
+    if (shouldFillTop && curr) {
+        // Set lastLogicalLeft and lastLogicalRight to be the selection left/right of the first line.
+        ASSERT(curr->hasSelectedChildren());
+        getLineSelectionLogicalLeftAndRight(rootBlock, offsetFromRootBlock, curr, lastLogicalLeft, lastLogicalRight);
+    }
 
     // Now paint the gaps for the lines.
     for (; curr && curr->hasSelectedChildren(); curr = curr->nextRootBox()) {
         LayoutUnit selTop =  curr->selectionTopAdjustedForPrecedingBlock();
         LayoutUnit selHeight = curr->selectionHeightAdjustedForPrecedingBlock();
 
-        if (!containsStart && !lastSelectedLine &&
-            selectionState() != SelectionStart && selectionState() != SelectionBoth)
+        if (shouldFillTop && !lastSelectedLine) {
             result.uniteCenter(blockSelectionGap(rootBlock, rootBlockPhysicalPosition, offsetFromRootBlock, lastLogicalTop, lastLogicalLeft, lastLogicalRight,
                                                  selTop, paintInfo));
+            shouldHighlightBeforeSide = false;
+        }
 
         LayoutRect logicalRect(curr->logicalLeft(), selTop, curr->logicalWidth(), selTop + selHeight);
         logicalRect.move(isHorizontalWritingMode() ? offsetFromRootBlock : offsetFromRootBlock.transposedSize());
@@ -3652,23 +3675,27 @@ GapRects RenderBlock::inlineSelectionGaps(RenderBlock* rootBlock, const LayoutPo
         // VisibleSelection must start just after our last line.
         lastSelectedLine = lastRootBox();
 
-    if (lastSelectedLine && selectionState() != SelectionEnd && selectionState() != SelectionBoth) {
+    isAfterSideSelected = lastSelectedLine == lastRootBox();
+    if (isAfterSideSelected) {
         // Go ahead and update our lastY to be the bottom of the last selected line.
         lastLogicalTop = blockDirectionOffset(rootBlock, offsetFromRootBlock) + lastSelectedLine->selectionBottom();
-        lastLogicalLeft = logicalLeftSelectionOffset(rootBlock, lastSelectedLine->selectionBottom());
-        lastLogicalRight = logicalRightSelectionOffset(rootBlock, lastSelectedLine->selectionBottom());
+        getLineSelectionLogicalLeftAndRight(rootBlock, offsetFromRootBlock, lastSelectedLine, lastLogicalLeft, lastLogicalRight);
     }
     return result;
 }
 
 GapRects RenderBlock::blockSelectionGaps(RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-                                         LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo* paintInfo)
+                                         LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo* paintInfo,
+                                         bool& shouldHighlightBeforeSide, bool& isAfterSideSelected)
 {
     GapRects result;
 
+    isAfterSideSelected = false;
+
     // Go ahead and jump right to the first block child that contains some selected objects.
     RenderBox* curr;
-    for (curr = firstChildBox(); curr && curr->selectionState() == SelectionNone; curr = curr->nextSiblingBox()) { }
+    for (curr = firstChildBox(); curr && curr->selectionState() == SelectionNone; curr = curr->nextSiblingBox())
+        shouldHighlightBeforeSide = false;
 
     for (bool sawSelectionEnd = false; curr && !sawSelectionEnd; curr = curr->nextSiblingBox()) {
         SelectionState childState = curr->selectionState();
@@ -3702,7 +3729,7 @@ GapRects RenderBlock::blockSelectionGaps(RenderBlock* rootBlock, const LayoutPoi
 
             // Fill side gaps on this object based off its state.
             bool leftGap, rightGap;
-            getSelectionGapInfo(childState, leftGap, rightGap);
+            getSelectionGapInfo(rootBlock, leftGap, rightGap);
 
             if (leftGap)
                 result.uniteLeft(logicalLeftSelectionGap(rootBlock, rootBlockPhysicalPosition, offsetFromRootBlock, this, curr->logicalLeft(), curr->logicalTop(), curr->logicalHeight(), paintInfo));
@@ -3715,12 +3742,103 @@ GapRects RenderBlock::blockSelectionGaps(RenderBlock* rootBlock, const LayoutPoi
             lastLogicalTop = blockDirectionOffset(rootBlock, offsetFromRootBlock) + curr->logicalBottom();
             lastLogicalLeft = logicalLeftSelectionOffset(rootBlock, curr->logicalBottom());
             lastLogicalRight = logicalRightSelectionOffset(rootBlock, curr->logicalBottom());
-        } else if (childState != SelectionNone)
+            isAfterSideSelected = false;
+            shouldHighlightBeforeSide = false;
+        } else if (childState != SelectionNone) {
             // We must be a block that has some selected object inside it.  Go ahead and recur.
             result.unite(toRenderBlock(curr)->selectionGaps(rootBlock, rootBlockPhysicalPosition, LayoutSize(offsetFromRootBlock.width() + curr->x(), offsetFromRootBlock.height() + curr->y()),
-                                                            lastLogicalTop, lastLogicalLeft, lastLogicalRight, paintInfo));
+                                                            lastLogicalTop, lastLogicalLeft, lastLogicalRight, paintInfo,
+                                                            shouldHighlightBeforeSide, isAfterSideSelected));
+            if (sawSelectionEnd && curr->nextSiblingBox())
+                isAfterSideSelected = false;
+        } else {
+            isAfterSideSelected = false;
+            shouldHighlightBeforeSide = false;
+        }
     }
     return result;
+}
+
+void RenderBlock::getLineSelectionLogicalLeftAndRight(RenderBlock *rootBlock, const LayoutSize& offsetFromRootBlock, RootInlineBox* line,
+                                                      LayoutUnit& logicalLeft, LayoutUnit& logicalRight)
+{
+    RenderObject::SelectionState lineState = line->selectionState();
+    if (lineState == SelectionNone) {
+        logicalLeft = 0;
+        logicalRight = 0;
+        return;
+    }
+
+    bool containsStartOfSelection = lineState == SelectionStart || lineState == SelectionBoth;
+    bool containsEndOfSelection = lineState == SelectionEnd || lineState == SelectionBoth;
+    bool leftGap, rightGap;
+    getSelectionGapInfo(rootBlock, leftGap, rightGap);
+
+    LayoutUnit selTop =  line->selectionTopAdjustedForPrecedingBlock();
+    LayoutUnit selHeight = line->selectionHeightAdjustedForPrecedingBlock();
+
+    bool ltr = style()->isLeftToRightDirection();
+    LayoutUnit lineEndingLogicalLeft, lineEndingLogicalRight;
+    if ((!leftGap && !ltr) || (!rightGap && ltr)) {
+        LayoutUnit logicalEnd = ltr ? line->logicalRight() : line->logicalLeft();
+        getLineEndingGapLogicalLeftAndRight(rootBlock, offsetFromRootBlock, logicalEnd, selTop, selHeight,
+                                            lineEndingLogicalLeft, lineEndingLogicalRight);
+    }
+
+    if (leftGap)
+        logicalLeft = max(logicalLeftSelectionOffset(rootBlock, selTop), logicalLeftSelectionOffset(rootBlock, selTop + selHeight));
+    else if (ltr) {
+        if (containsStartOfSelection)
+            // this will be adjusted further below if the first selected box has a selection rect
+            logicalLeft = inlineDirectionOffset(rootBlock, offsetFromRootBlock) + line->logicalRight();
+        else
+            logicalLeft = inlineDirectionOffset(rootBlock, offsetFromRootBlock) + line->logicalLeft();
+    }
+    else
+        // this will be adjusted further below if containsEndOfSelection and the first selected box has a selection rect
+        logicalLeft = lineEndingLogicalLeft;
+
+    if (rightGap)
+        logicalRight = min(logicalRightSelectionOffset(rootBlock, selTop), logicalRightSelectionOffset(rootBlock, selTop + selHeight));
+    else if (!ltr) {
+        if (containsStartOfSelection)
+            // this will be adjusted further below if the last selected box has a selection rect
+            logicalRight = inlineDirectionOffset(rootBlock, offsetFromRootBlock) + line->logicalLeft();
+        else
+            logicalRight = inlineDirectionOffset(rootBlock, offsetFromRootBlock) + line->logicalRight();
+    }
+    else
+        // this will be adjusted further below if containsEndOfSelection and the last selected box has a selection rect
+        logicalRight = lineEndingLogicalRight;
+
+    if (ltr) {
+        if (containsStartOfSelection) {
+            InlineBox* firstBox = line->firstSelectedBox();
+            LayoutRect firstBoxSelRect = firstBox ? firstBox->renderer()->selectionRectForRepaint(rootBlock, false) : LayoutRect();
+            if (!firstBoxSelRect.isEmpty())
+                logicalLeft = min(logicalLeft, firstBoxSelRect.x());
+        }
+        if (containsEndOfSelection) {
+            InlineBox* lastBox = line->lastSelectedBox();
+            LayoutRect lastBoxSelRect = lastBox ? lastBox->renderer()->selectionRectForRepaint(rootBlock, false) : LayoutRect();
+            if (!lastBoxSelRect.isEmpty())
+                logicalRight = min(logicalRight, lastBoxSelRect.maxX());
+        }
+    }
+    else {
+        if (containsStartOfSelection) {
+            InlineBox* lastBox = line->lastSelectedBox();
+            LayoutRect lastBoxSelRect = lastBox ? lastBox->renderer()->selectionRectForRepaint(rootBlock, false) : LayoutRect();
+            if (!lastBoxSelRect.isEmpty())
+                logicalRight = max(logicalRight, lastBoxSelRect.maxX());
+        }
+        if (containsEndOfSelection) {
+            InlineBox* firstBox = line->firstSelectedBox();
+            LayoutRect firstBoxSelRect = firstBox ? firstBox->renderer()->selectionRectForRepaint(rootBlock, false) : LayoutRect();
+            if (!firstBoxSelRect.isEmpty())
+                logicalLeft = max(logicalLeft, firstBoxSelRect.x());
+        }
+    }
 }
 
 LayoutRect RenderBlock::blockSelectionGap(RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
@@ -3776,8 +3894,53 @@ LayoutRect RenderBlock::logicalRightSelectionGap(RenderBlock* rootBlock, const L
     return gapRect;
 }
 
-void RenderBlock::getSelectionGapInfo(SelectionState state, bool& leftGap, bool& rightGap)
+LayoutRect RenderBlock::lineEndingSelectionGap(RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
+                                               RenderObject* selObj, LayoutUnit logicalEnd, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo* paintInfo)
 {
+    LayoutUnit rootBlockLogicalTop = blockDirectionOffset(rootBlock, offsetFromRootBlock) + logicalTop;
+    LayoutUnit lineEndingLogicalLeft;
+    LayoutUnit lineEndingLogicalRight;
+    getLineEndingGapLogicalLeftAndRight(rootBlock, offsetFromRootBlock, logicalEnd, logicalTop, logicalHeight, lineEndingLogicalLeft, lineEndingLogicalRight);
+    LayoutUnit lineEndingLogicalWidth = lineEndingLogicalRight - lineEndingLogicalLeft;
+    if (lineEndingLogicalWidth <= 0)
+        return LayoutRect();
+
+    LayoutRect gapRect = rootBlock->logicalRectToPhysicalRect(rootBlockPhysicalPosition, LayoutRect(lineEndingLogicalLeft, rootBlockLogicalTop, lineEndingLogicalWidth, logicalHeight));
+    if (paintInfo)
+        paintInfo->context->fillRect(pixelSnappedIntRect(gapRect), selObj->selectionBackgroundColor());
+    return gapRect;
+}
+
+void RenderBlock::getLineEndingGapLogicalLeftAndRight(RenderBlock* rootBlock, const LayoutSize& offsetFromRootBlock, LayoutUnit logicalEnd,
+                                                      LayoutUnit logicalTop, LayoutUnit logicalHeight, LayoutUnit& logicalLeft, LayoutUnit& logicalRight)
+{
+    LayoutUnit lineEndingGapWidth = logicalHeight / 4;
+    LayoutUnit endPaddingToRoot = paddingEnd();
+    RenderBlock* cb = containingBlock();
+    while (cb && cb != rootBlock) {
+        endPaddingToRoot += cb->paddingEnd();
+        cb = cb->containingBlock();
+    }
+    endPaddingToRoot += rootBlock->paddingEnd();
+
+    if (style()->isLeftToRightDirection()) {
+        logicalLeft = max(inlineDirectionOffset(rootBlock, offsetFromRootBlock) + floorToInt(logicalEnd), max(logicalLeftSelectionOffset(rootBlock, logicalTop), logicalLeftSelectionOffset(rootBlock, logicalTop + logicalHeight)));
+        logicalRight = min(logicalLeft + lineEndingGapWidth, endPaddingToRoot + min(logicalRightSelectionOffset(rootBlock, logicalTop), logicalRightSelectionOffset(rootBlock, logicalTop + logicalHeight)));
+    }
+    else {
+        logicalRight = min(inlineDirectionOffset(rootBlock, offsetFromRootBlock) + floorToInt(logicalEnd), min(logicalRightSelectionOffset(rootBlock, logicalTop), logicalRightSelectionOffset(rootBlock, logicalTop + logicalHeight)));
+        logicalLeft = max(logicalRight - lineEndingGapWidth, max(logicalLeftSelectionOffset(rootBlock, logicalTop), logicalLeftSelectionOffset(rootBlock, logicalTop + logicalHeight)) - endPaddingToRoot);
+    }
+}
+
+void RenderBlock::getSelectionGapInfo(RenderBlock* rootBlock, bool& leftGap, bool& rightGap)
+{
+    if (!rootBlock || !rootBlock->isTableCell()) {
+        leftGap = rightGap = false;
+        return;
+    }
+
+    SelectionState state = rootBlock->selectionState();
     bool ltr = style()->isLeftToRightDirection();
     leftGap = (state == RenderObject::SelectionInside) ||
               (state == RenderObject::SelectionEnd && ltr) ||

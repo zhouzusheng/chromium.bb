@@ -1663,6 +1663,10 @@ Color RenderObject::selectionBackgroundColor() const
 {
     Color backgroundColor= Color::transparent;
     if (shouldUseSelectionColor(*style())) {
+        // anonymous blocks don't have pseudo styles
+        if (isAnonymous() && parent())
+            return parent()->selectionBackgroundColor();
+
         RefPtr<RenderStyle> pseudoStyle = getUncachedPseudoStyle(PseudoStyleRequest(SELECTION));
         if (pseudoStyle) {
             StyleColor styleColor = resolveCurrentColor(pseudoStyle.get(), CSSPropertyBackgroundColor);
@@ -1685,6 +1689,10 @@ Color RenderObject::selectionColor(int colorProperty) const
     if (!shouldUseSelectionColor(*style())
         || (frame()->view()->paintBehavior() & PaintBehaviorSelectionOnly))
         return Color::transparent;
+
+    // anonymous blocks don't have pseudo styles
+    if (isAnonymous() && parent())
+        return parent()->selectionColor(colorProperty);
 
     Color color;
     if (RefPtr<RenderStyle> pseudoStyle = getUncachedPseudoStyle(PseudoStyleRequest(SELECTION))) {

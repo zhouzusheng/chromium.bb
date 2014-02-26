@@ -42,6 +42,7 @@
 #include "core/dom/KeyboardEvent.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Text.h"
+#include "core/editing/Editor.h"
 #include "core/editing/markup.h"
 #include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLFormElement.h"
@@ -300,6 +301,17 @@ void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& 
             setTabIndexExplicitly(max(static_cast<int>(std::numeric_limits<short>::min()), min(tabindex, static_cast<int>(std::numeric_limits<short>::max()))));
         }
     } else {
+        if (name == contenteditableAttr) {
+            if (value.isNull() || equalIgnoringCase(value, "false")) {
+                RefPtr<Range> range = Range::create(document());
+
+                TrackExceptionState es;
+                range->selectNode(this, es);
+                if (!es.hadException())
+                    document()->frame()->editor()->clearMisspellingsAndBadGrammar(VisibleSelection(range.get()));
+            }
+        }
+
         AtomicString eventName = eventNameForAttributeName(name);
         if (!eventName.isNull())
             setAttributeEventListener(eventName, createAttributeEventListener(this, name, value));

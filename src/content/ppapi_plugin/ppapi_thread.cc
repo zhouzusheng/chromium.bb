@@ -10,12 +10,12 @@
 #include "base/debug/crash_logging.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/process_util.h"
 #include "base/rand_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/platform_thread.h"
-#include "base/time.h"
+#include "base/time/time.h"
+#include "content/child/browser_font_resource_trusted.h"
 #include "content/child/child_process.h"
 #include "content/common/child_process_messages.h"
 #include "content/common/sandbox_util.h"
@@ -23,6 +23,7 @@
 #include "content/ppapi_plugin/plugin_process_dispatcher.h"
 #include "content/ppapi_plugin/ppapi_webkitplatformsupport_impl.h"
 #include "content/public/common/content_client.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/pepper_plugin_info.h"
 #include "content/public/common/sandbox_init.h"
 #include "content/public/plugin/content_plugin_client.h"
@@ -39,10 +40,10 @@
 #include "ppapi/shared_impl/api_id.h"
 #include "third_party/WebKit/public/web/WebKit.h"
 #include "ui/base/ui_base_switches.h"
-#include "webkit/plugins/plugin_switches.h"
 
 #if defined(OS_WIN)
 #include "base/win/win_util.h"
+#include "base/win/windows_version.h"
 #include "sandbox/win/src/sandbox.h"
 #elif defined(OS_MACOSX)
 #include "content/common/sandbox_init_mac.h"
@@ -100,13 +101,9 @@ PpapiThread::PpapiThread(const CommandLine& command_line, bool is_broker)
 
   // Register interfaces that expect messages from the browser process. Please
   // note that only those InterfaceProxy-based ones require registration.
-  AddRoute(ppapi::API_ID_PPB_TCPSERVERSOCKET_PRIVATE,
-           &dispatcher_message_listener_);
   AddRoute(ppapi::API_ID_PPB_TCPSOCKET,
            &dispatcher_message_listener_);
   AddRoute(ppapi::API_ID_PPB_TCPSOCKET_PRIVATE,
-           &dispatcher_message_listener_);
-  AddRoute(ppapi::API_ID_PPB_UDPSOCKET_PRIVATE,
            &dispatcher_message_listener_);
   AddRoute(ppapi::API_ID_PPB_HOSTRESOLVER_PRIVATE,
            &dispatcher_message_listener_);
@@ -208,6 +205,17 @@ void PpapiThread::PreCacheFont(const void* logfontw) {
 
 void PpapiThread::SetActiveURL(const std::string& url) {
   GetContentClient()->SetActiveURL(GURL(url));
+}
+
+PP_Resource PpapiThread::CreateBrowserFont(
+    ppapi::proxy::Connection connection,
+    PP_Instance instance,
+    const PP_BrowserFont_Trusted_Description& desc,
+    const ppapi::Preferences& prefs) {
+  if (!BrowserFontResource_Trusted::IsPPFontDescriptionValid(desc))
+    return 0;
+  return (new BrowserFontResource_Trusted(
+        connection, instance, desc, prefs))->GetReference();
 }
 
 uint32 PpapiThread::Register(ppapi::proxy::PluginDispatcher* plugin_dispatcher) {
@@ -314,6 +322,13 @@ void PpapiThread::OnLoadPlugin(const base::FilePath& path,
   // can be loaded. TODO(cpu): consider changing to the loading style of
   // regular plugins.
   if (g_target_services) {
+    // Let Flash load DRM before lockdown on Vista+.
+    if (permissions.HasPermission(ppapi::PERMISSION_FLASH) &&
+        base::win::OSInfo::GetInstance()->version() >=
+        base::win::VERSION_VISTA ) {
+      LoadLibrary(L"dxva2.dll");
+    }
+
     // Cause advapi32 to load before the sandbox is turned on.
     unsigned int dummy_rand;
     rand_s(&dummy_rand);

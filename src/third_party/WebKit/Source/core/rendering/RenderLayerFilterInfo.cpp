@@ -12,7 +12,7 @@
  *    copyright notice, this list of conditions and the following
  *    disclaimer in the documentation and/or other materials
  *    provided with the distribution.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -31,12 +31,13 @@
 
 #include "core/rendering/RenderLayerFilterInfo.h"
 
-#include "core/loader/cache/CachedDocument.h"
-#include "core/loader/cache/CachedSVGDocumentReference.h"
+#include "core/loader/cache/DocumentResource.h"
+#include "core/loader/cache/DocumentResourceReference.h"
 #include "core/platform/graphics/filters/custom/CustomFilterOperation.h"
 #include "core/platform/graphics/filters/custom/CustomFilterProgram.h"
 #include "core/rendering/FilterEffectRenderer.h"
 #include "core/rendering/RenderLayer.h"
+#include "core/rendering/svg/RenderSVGResourceContainer.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "core/svg/graphics/filters/SVGFilter.h"
@@ -57,13 +58,13 @@ RenderLayerFilterInfo* RenderLayerFilterInfo::createFilterInfoForRenderLayerIfNe
 {
     if (!s_filterMap)
         s_filterMap = new RenderLayerFilterInfoMap();
-    
+
     RenderLayerFilterInfoMap::iterator iter = s_filterMap->find(layer);
     if (iter != s_filterMap->end()) {
         ASSERT(layer->hasFilterInfo());
         return iter->value;
     }
-    
+
     RenderLayerFilterInfo* filter = new RenderLayerFilterInfo(layer);
     s_filterMap->set(layer, filter);
     layer->setHasFilterInfo(true);
@@ -99,14 +100,14 @@ RenderLayerFilterInfo::~RenderLayerFilterInfo()
 }
 
 void RenderLayerFilterInfo::setRenderer(PassRefPtr<FilterEffectRenderer> renderer)
-{ 
-    m_renderer = renderer; 
+{
+    m_renderer = renderer;
 }
 
-void RenderLayerFilterInfo::notifyFinished(CachedResource*)
+void RenderLayerFilterInfo::notifyFinished(Resource*)
 {
     RenderObject* renderer = m_layer->renderer();
-    renderer->node()->setNeedsStyleRecalc(SyntheticStyleChange);
+    toElement(renderer->node())->scheduleLayerUpdate();
     renderer->repaint();
 }
 
@@ -118,8 +119,8 @@ void RenderLayerFilterInfo::updateReferenceFilterClients(const FilterOperations&
         if (filterOperation->getOperationType() != FilterOperation::REFERENCE)
             continue;
         ReferenceFilterOperation* referenceFilterOperation = static_cast<ReferenceFilterOperation*>(filterOperation.get());
-        CachedSVGDocumentReference* documentReference = referenceFilterOperation->cachedSVGDocumentReference();
-        CachedDocument* cachedSVGDocument = documentReference ? documentReference->document() : 0;
+        DocumentResourceReference* documentReference = referenceFilterOperation->documentResourceReference();
+        DocumentResource* cachedSVGDocument = documentReference ? documentReference->document() : 0;
 
         if (cachedSVGDocument) {
             // Reference is external; wait for notifyFinished().
@@ -154,7 +155,7 @@ void RenderLayerFilterInfo::removeReferenceFilterClients()
 void RenderLayerFilterInfo::notifyCustomFilterProgramLoaded(CustomFilterProgram*)
 {
     RenderObject* renderer = m_layer->renderer();
-    renderer->node()->setNeedsStyleRecalc(SyntheticStyleChange);
+    toElement(renderer->node())->scheduleLayerUpdate();
     renderer->repaint();
 }
 

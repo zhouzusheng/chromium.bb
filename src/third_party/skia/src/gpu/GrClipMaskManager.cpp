@@ -33,7 +33,7 @@ namespace {
 // stage matrix this also alters the vertex layout
 void setup_drawstate_aaclip(GrGpu* gpu,
                             GrTexture* result,
-                            const GrIRect &devBound) {
+                            const SkIRect &devBound) {
     GrDrawState* drawState = gpu->drawState();
     GrAssert(drawState);
 
@@ -53,7 +53,7 @@ void setup_drawstate_aaclip(GrGpu* gpu,
                                       mat,
                                       GrTextureDomainEffect::MakeTexelDomain(result, domainTexels),
                                       GrTextureDomainEffect::kDecal_WrapMode,
-                                      false,
+                                      GrTextureParams::kNone_FilterMode,
                                       GrEffect::kPosition_CoordsType))->unref();
 }
 
@@ -345,8 +345,8 @@ bool GrClipMaskManager::canStencilAndDrawElement(GrTexture* target,
 void GrClipMaskManager::mergeMask(GrTexture* dstMask,
                                   GrTexture* srcMask,
                                   SkRegion::Op op,
-                                  const GrIRect& dstBound,
-                                  const GrIRect& srcBound) {
+                                  const SkIRect& dstBound,
+                                  const SkIRect& srcBound) {
     GrDrawState::AutoViewMatrixRestore avmr;
     GrDrawState* drawState = fGpu->drawState();
     SkAssertResult(avmr.setIdentity(drawState));
@@ -358,12 +358,13 @@ void GrClipMaskManager::mergeMask(GrTexture* dstMask,
 
     SkMatrix sampleM;
     sampleM.setIDiv(srcMask->width(), srcMask->height());
+
     drawState->addColorEffect(
         GrTextureDomainEffect::Create(srcMask,
                                       sampleM,
                                       GrTextureDomainEffect::MakeTexelDomain(srcMask, srcBound),
                                       GrTextureDomainEffect::kDecal_WrapMode,
-                                      false))->unref();
+                                      GrTextureParams::kNone_FilterMode))->unref();
     fGpu->drawSimpleRect(SkRect::MakeFromIRect(dstBound), NULL);
 }
 
@@ -482,13 +483,13 @@ GrTexture* GrClipMaskManager::createAlphaClipMask(int32_t clipStackGenID,
             // mask buffer can be substantially larger than the actually clip stack element. We
             // touch the minimum number of pixels necessary and use decal mode to combine it with
             // the accumulator.
-            GrIRect maskSpaceElementIBounds;
+            SkIRect maskSpaceElementIBounds;
 
             if (useTemp) {
                 if (invert) {
                     maskSpaceElementIBounds = maskSpaceIBounds;
                 } else {
-                    GrRect elementBounds = element->getBounds();
+                    SkRect elementBounds = element->getBounds();
                     elementBounds.offset(clipToMaskOffset);
                     elementBounds.roundOut(&maskSpaceElementIBounds);
                 }
@@ -690,11 +691,13 @@ bool GrClipMaskManager::createStencilClipMask(InitialState initialState,
                     fGpu->drawSimpleRect(element->getRect(), NULL);
                 } else {
                     GrAssert(Element::kPath_Type == element->getType());
-                    if (canRenderDirectToStencil) {
-                        *drawState->stencil() = gDrawToStencil;
-                        pr->drawPath(*clipPath, stroke, fGpu, false);
-                    } else {
-                        pr->stencilPath(*clipPath, stroke, fGpu);
+                    if (!clipPath->isEmpty()) {
+                        if (canRenderDirectToStencil) {
+                            *drawState->stencil() = gDrawToStencil;
+                            pr->drawPath(*clipPath, stroke, fGpu, false);
+                        } else {
+                            pr->stencilPath(*clipPath, stroke, fGpu);
+                        }
                     }
                 }
             }
@@ -993,7 +996,7 @@ GrTexture* GrClipMaskManager::createSoftwareClipMask(int32_t clipStackGenID,
         }
     }
 
-    helper.toTexture(result, kAllIn_InitialState == initialState ? 0xFF : 0x00);
+    helper.toTexture(result);
 
     fCurrClipMaskType = kAlpha_ClipMaskType;
     return result;

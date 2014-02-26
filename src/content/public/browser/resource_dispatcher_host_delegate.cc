@@ -14,8 +14,7 @@ bool ResourceDispatcherHostDelegate::ShouldBeginRequest(
     const std::string& method,
     const GURL& url,
     ResourceType::Type resource_type,
-    ResourceContext* resource_context,
-    const Referrer& referrer) {
+    ResourceContext* resource_context) {
   return true;
 }
 
@@ -76,7 +75,7 @@ bool ResourceDispatcherHostDelegate::ShouldInterceptResourceAsStream(
     content::ResourceContext* resource_context,
     const GURL& url,
     const std::string& mime_type,
-    GURL* security_origin,
+    GURL* origin,
     std::string* target_id) {
   return false;
 }

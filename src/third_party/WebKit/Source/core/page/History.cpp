@@ -26,11 +26,13 @@
 #include "config.h"
 #include "core/page/History.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/SerializedScriptValue.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/history/BackForwardController.h"
 #include "core/history/HistoryItem.h"
+#include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/page/Frame.h"
@@ -57,13 +59,13 @@ unsigned History::length() const
     return m_frame->page()->backForward()->count();
 }
 
-PassRefPtr<SerializedScriptValue> History::state()
+SerializedScriptValue* History::state()
 {
     m_lastStateObjectRequested = stateInternal();
-    return m_lastStateObjectRequested;
+    return m_lastStateObjectRequested.get();
 }
 
-PassRefPtr<SerializedScriptValue> History::stateInternal() const
+SerializedScriptValue* History::stateInternal() const
 {
     if (!m_frame)
         return 0;
@@ -81,7 +83,7 @@ bool History::stateChanged() const
 
 bool History::isSameAsCurrentState(SerializedScriptValue* state) const
 {
-    return state == stateInternal().get();
+    return state == stateInternal();
 }
 
 void History::back()
@@ -137,26 +139,17 @@ KURL History::urlForState(const String& urlString)
     return KURL(baseURL, urlString);
 }
 
-void History::stateObjectAdded(PassRefPtr<SerializedScriptValue> data, const String& title, const String& urlString, StateObjectType stateObjectType, ExceptionCode& ec)
+void History::stateObjectAdded(PassRefPtr<SerializedScriptValue> data, const String& title, const String& urlString, SameDocumentNavigationSource sameDocumentNavigationSource, ExceptionState& es)
 {
     if (!m_frame || !m_frame->page())
         return;
-    
+
     KURL fullURL = urlForState(urlString);
     if (!fullURL.isValid() || !m_frame->document()->securityOrigin()->canRequest(fullURL)) {
-        ec = SECURITY_ERR;
+        es.throwDOMException(SecurityError, "A history state object with URL '" + fullURL.elidedString() + "' cannot be created in a document with origin '" + m_frame->document()->securityOrigin()->toString() + "'.");
         return;
     }
-
-    if (stateObjectType == StateObjectPush)
-        m_frame->loader()->history()->pushState(data, title, fullURL.string());
-    else if (stateObjectType == StateObjectReplace)
-        m_frame->loader()->history()->replaceState(data, title, fullURL.string());
-            
-    if (!urlString.isEmpty())
-        m_frame->document()->updateURLForPushOrReplaceState(fullURL);
-
-    m_frame->loader()->client()->dispatchDidNavigateWithinPage();
+    m_frame->loader()->updateForSameDocumentNavigation(fullURL, sameDocumentNavigationSource, data, title, FrameLoader::DoNotUpdateBackForwardList);
 }
 
 } // namespace WebCore

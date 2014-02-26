@@ -32,7 +32,7 @@ public:
 
     void combineText();
     void adjustTextOrigin(FloatPoint& textOrigin, const FloatRect& boxRect) const;
-    void getStringToRender(int, String& string, int& length) const;
+    void getStringToRender(int, StringView&, int& length) const;
     bool isCombined() const { return m_isCombined; }
     float combinedTextWidth(const Font& font) const { return font.size(); }
     const Font& originalFont() const { return parent()->style()->font(); }
@@ -50,13 +50,13 @@ private:
 };
 
 inline RenderCombineText* toRenderCombineText(RenderObject* object)
-{ 
+{
     ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isCombineText());
     return static_cast<RenderCombineText*>(object);
 }
 
 inline const RenderCombineText* toRenderCombineText(const RenderObject* object)
-{ 
+{
     ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isCombineText());
     return static_cast<const RenderCombineText*>(object);
 }

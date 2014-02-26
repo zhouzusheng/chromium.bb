@@ -27,23 +27,33 @@ class FileSystemOperationContext;
 class FileSystemURL;
 
 // An interface which provides filesystem-specific file operations for
-// LocalFileSystemOperation.
+// FileSystemOperationImpl.
 //
-// Each filesystem which needs to be dispatched from LocalFileSystemOperation
+// Each filesystem which needs to be dispatched from FileSystemOperationImpl
 // must implement this interface or a synchronous version of interface:
 // FileSystemFileUtil.
 //
-// As far as an instance of this class is owned by a MountPointProvider
+// As far as an instance of this class is owned by a FileSystemBackend
 // (which is owned by FileSystemContext), it's guaranteed that this instance's
 // alive while FileSystemOperationContext given to each operation is kept
 // alive. (Note that this instance might be freed on different thread
 // from the thread it is created.)
+//
+// It is NOT valid to give null callback to this class, and implementors
+// can assume that they don't get any null callbacks.
+//
 class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
  public:
   typedef base::Callback<
       void(base::PlatformFileError result)> StatusCallback;
 
-  typedef base::FileUtilProxy::CreateOrOpenCallback CreateOrOpenCallback;
+  // |on_close_callback| will be called after the |file| is closed in the
+  // child process. |on_close_callback|.is_null() can be true, if no operation
+  // is needed on closing the file.
+  typedef base::Callback<
+      void(base::PlatformFileError result,
+           base::PassPlatformFile file,
+           const base::Closure& on_close_callback)> CreateOrOpenCallback;
 
   typedef base::Callback<
       void(base::PlatformFileError result,
@@ -74,12 +84,10 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
   // a new file at the given |url| and calls back with
   // PLATFORM_FILE_ERROR_FILE_EXISTS if the |url| already exists.
   //
-  // LocalFileSystemOperation::OpenFile calls this.
+  // FileSystemOperationImpl::OpenFile calls this.
   // This is used only by Pepper/NaCL File API.
   //
-  // This returns false if it fails to post an async task.
-  //
-  virtual bool CreateOrOpen(
+  virtual void CreateOrOpen(
       scoped_ptr<FileSystemOperationContext> context,
       const FileSystemURL& url,
       int file_flags,
@@ -88,9 +96,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
   // Ensures that the given |url| exist.  This creates a empty new file
   // at |url| if the |url| does not exist.
   //
-  // LocalFileSystemOperation::CreateFile calls this.
-  //
-  // This returns false if it fails to post an async task.
+  // FileSystemOperationImpl::CreateFile calls this.
   //
   // This reports following error code via |callback|:
   // - PLATFORM_FILE_OK and created==true if a file has not existed and
@@ -99,16 +105,14 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
   // - Other error code (with created=false) if a file hasn't existed yet
   //   and there was an error while creating a new file.
   //
-  virtual bool EnsureFileExists(
+  virtual void EnsureFileExists(
       scoped_ptr<FileSystemOperationContext> context,
       const FileSystemURL& url,
       const EnsureFileExistsCallback& callback) = 0;
 
   // Creates directory at given url.
   //
-  // LocalFileSystemOperation::CreateDirectory calls this.
-  //
-  // This returns false if it fails to post an async task.
+  // FileSystemOperationImpl::CreateDirectory calls this.
   //
   // This reports following error code via |callback|:
   // - PLATFORM_FILE_ERROR_NOT_FOUND if the |url|'s parent directory
@@ -119,7 +123,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
   //   (regardless of |exclusive| value).
   // - Other error code if it failed to create a directory.
   //
-  virtual bool CreateDirectory(
+  virtual void CreateDirectory(
       scoped_ptr<FileSystemOperationContext> context,
       const FileSystemURL& url,
       bool exclusive,
@@ -128,22 +132,20 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
 
   // Retrieves the information about a file.
   //
-  // LocalFileSystemOperation::GetMetadata calls this.
-  //
-  // This returns false if it fails to post an async task.
+  // FileSystemOperationImpl::GetMetadata calls this.
   //
   // This reports following error code via |callback|:
   // - PLATFORM_FILE_ERROR_NOT_FOUND if the file doesn't exist.
   // - Other error code if there was an error while retrieving the file info.
   //
-  virtual bool GetFileInfo(
+  virtual void GetFileInfo(
       scoped_ptr<FileSystemOperationContext> context,
       const FileSystemURL& url,
       const GetFileInfoCallback& callback) = 0;
 
   // Reads contents of a directory at |path|.
   //
-  // LocalFileSystemOperation::ReadDirectory calls this.
+  // FileSystemOperationImpl::ReadDirectory calls this.
   //
   // Note that the |name| field of each entry in |file_list|
   // returned by |callback| should have a base file name
@@ -154,14 +156,12 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
   // the returned |file_list| should include entries whose names
   // are 'a' and 'b', but not '/path/to/dir/a' and '/path/to/dir/b'.)
   //
-  // This returns false if it fails to post an async task.
-  //
   // This reports following error code via |callback|:
   // - PLATFORM_FILE_ERROR_NOT_FOUND if the target directory doesn't exist.
   // - PLATFORM_FILE_ERROR_NOT_A_DIRECTORY if an entry exists at |url| but
   //   is a file (not a directory).
   //
-  virtual bool ReadDirectory(
+  virtual void ReadDirectory(
       scoped_ptr<FileSystemOperationContext> context,
       const FileSystemURL& url,
       const ReadDirectoryCallback& callback) = 0;
@@ -170,11 +170,10 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
   // |last_access_time| and |last_modified_time|. The function DOES NOT
   // create a file unlike 'touch' command on Linux.
   //
-  // LocalFileSystemOperation::TouchFile calls this.
+  // FileSystemOperationImpl::TouchFile calls this.
   // This is used only by Pepper/NaCL File API.
   //
-  // This returns false if it fails to post an async task.
-  virtual bool Touch(
+  virtual void Touch(
       scoped_ptr<FileSystemOperationContext> context,
       const FileSystemURL& url,
       const base::Time& last_access_time,
@@ -185,14 +184,12 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
   // the original file size, the file will be extended, and the extended
   // part is filled with null bytes.
   //
-  // LocalFileSystemOperation::Truncate calls this.
-  //
-  // This returns false if it fails to post an async task.
+  // FileSystemOperationImpl::Truncate calls this.
   //
   // This reports following error code via |callback|:
   // - PLATFORM_FILE_ERROR_NOT_FOUND if the file doesn't exist.
   //
-  virtual bool Truncate(
+  virtual void Truncate(
       scoped_ptr<FileSystemOperationContext> context,
       const FileSystemURL& url,
       int64 length,
@@ -202,9 +199,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
   // This must be called for files that belong to the same filesystem
   // (i.e. type() and origin() of the |src_url| and |dest_url| must match).
   //
-  // LocalFileSystemOperation::Copy calls this for same-filesystem copy case.
-  //
-  // This returns false if it fails to post an async task.
+  // FileSystemOperationImpl::Copy calls this for same-filesystem copy case.
   //
   // This reports following error code via |callback|:
   // - PLATFORM_FILE_ERROR_NOT_FOUND if |src_url|
@@ -215,7 +210,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
   // - PLATFORM_FILE_ERROR_FAILED if |dest_url| does not exist and
   //   its parent path is a file.
   //
-  virtual bool CopyFileLocal(
+  virtual void CopyFileLocal(
       scoped_ptr<FileSystemOperationContext> context,
       const FileSystemURL& src_url,
       const FileSystemURL& dest_url,
@@ -225,9 +220,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
   // This must be called for files that belong to the same filesystem
   // (i.e. type() and origin() of the |src_url| and |dest_url| must match).
   //
-  // LocalFileSystemOperation::Move calls this for same-filesystem move case.
-  //
-  // This returns false if it fails to post an async task.
+  // FileSystemOperationImpl::Move calls this for same-filesystem move case.
   //
   // This reports following error code via |callback|:
   // - PLATFORM_FILE_ERROR_NOT_FOUND if |src_url|
@@ -238,7 +231,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
   // - PLATFORM_FILE_ERROR_FAILED if |dest_url| does not exist and
   //   its parent path is a file.
   //
-  virtual bool MoveFileLocal(
+  virtual void MoveFileLocal(
       scoped_ptr<FileSystemOperationContext> context,
       const FileSystemURL& src_url,
       const FileSystemURL& dest_url,
@@ -246,10 +239,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
 
   // Copies in a single file from a different filesystem.
   //
-  // LocalFileSystemOperation::Copy or Move calls this for cross-filesystem
+  // FileSystemOperationImpl::Copy or Move calls this for cross-filesystem
   // cases.
-  //
-  // This returns false if it fails to post an async task.
   //
   // This reports following error code via |callback|:
   // - PLATFORM_FILE_ERROR_NOT_FOUND if |src_file_path|
@@ -259,7 +250,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
   // - PLATFORM_FILE_ERROR_FAILED if |dest_url| does not exist and
   //   its parent path is a file.
   //
-  virtual bool CopyInForeignFile(
+  virtual void CopyInForeignFile(
         scoped_ptr<FileSystemOperationContext> context,
         const base::FilePath& src_file_path,
         const FileSystemURL& dest_url,
@@ -267,31 +258,45 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
 
   // Deletes a single file.
   //
-  // LocalFileSystemOperation::RemoveFile calls this.
-  //
-  // This returns false if it fails to post an async task.
+  // FileSystemOperationImpl::RemoveFile calls this.
   //
   // This reports following error code via |callback|:
   // - PLATFORM_FILE_ERROR_NOT_FOUND if |url| does not exist.
   // - PLATFORM_FILE_ERROR_NOT_A_FILE if |url| is not a file.
   //
-  virtual bool DeleteFile(
+  virtual void DeleteFile(
       scoped_ptr<FileSystemOperationContext> context,
       const FileSystemURL& url,
       const StatusCallback& callback) = 0;
 
   // Removes a single empty directory.
   //
-  // LocalFileSystemOperation::RemoveDirectory calls this.
-  //
-  // This returns false if it fails to post an async task.
+  // FileSystemOperationImpl::RemoveDirectory calls this.
   //
   // This reports following error code via |callback|:
   // - PLATFORM_FILE_ERROR_NOT_FOUND if |url| does not exist.
   // - PLATFORM_FILE_ERROR_NOT_A_DIRECTORY if |url| is not a directory.
   // - PLATFORM_FILE_ERROR_NOT_EMPTY if |url| is not empty.
   //
-  virtual bool DeleteDirectory(
+  virtual void DeleteDirectory(
+      scoped_ptr<FileSystemOperationContext> context,
+      const FileSystemURL& url,
+      const StatusCallback& callback) = 0;
+
+  // Removes a single file or a single directory with its contents
+  // (i.e. files/subdirectories under the directory).
+  //
+  // FileSystemOperationImpl::Remove calls this.
+  // On some platforms, such as Chrome OS Drive File System, recursive file
+  // deletion can be implemented more efficiently than calling DeleteFile() and
+  // DeleteDirectory() for each files/directories.
+  // This method is optional, so if not supported,
+  // PLATFORM_ERROR_INVALID_OPERATION should be returned via |callback|.
+  //
+  // This reports following error code via |callback|:
+  // - PLATFORM_FILE_ERROR_NOT_FOUND if |url| does not exist.
+  // - PLATFORM_ERROR_INVALID_OPERATION if this operation is not supported.
+  virtual void DeleteRecursively(
       scoped_ptr<FileSystemOperationContext> context,
       const FileSystemURL& url,
       const StatusCallback& callback) = 0;
@@ -318,9 +323,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
   // Via the |file_ref| implementors can schedule a file deletion
   // or arbitrary callbacks when the last reference of File/Blob is dropped.
   //
-  // LocalFileSystemOperation::CreateSnapshotFile calls this.
-  //
-  // This returns false if it fails to post an async task.
+  // FileSystemOperationImpl::CreateSnapshotFile calls this.
   //
   // This reports following error code via |callback|:
   // - PLATFORM_FILE_ERROR_NOT_FOUND if |url| does not exist.
@@ -329,7 +332,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AsyncFileUtil {
   // The field values of |file_info| are undefined (implementation
   // dependent) in error cases, and the caller should always
   // check the return code.
-  virtual bool CreateSnapshotFile(
+  virtual void CreateSnapshotFile(
       scoped_ptr<FileSystemOperationContext> context,
       const FileSystemURL& url,
       const CreateSnapshotFileCallback& callback) = 0;

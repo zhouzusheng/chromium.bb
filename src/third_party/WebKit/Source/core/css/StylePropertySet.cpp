@@ -2,6 +2,7 @@
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
  * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2012, 2013 Apple Inc. All rights reserved.
  * Copyright (C) 2011 Research In Motion Limited. All rights reserved.
+ * Copyright (C) 2013 Intel Corporation. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -22,15 +23,15 @@
 #include "config.h"
 #include "core/css/StylePropertySet.h"
 
+#include "RuntimeEnabledFeatures.h"
+#include "StylePropertyShorthand.h"
 #include "core/css/CSSParser.h"
 #include "core/css/CSSValuePool.h"
 #include "core/css/CSSVariableValue.h"
 #include "core/css/PropertySetCSSStyleDeclaration.h"
 #include "core/css/StylePropertySerializer.h"
-#include "core/css/StylePropertyShorthand.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/page/RuntimeCSSEnabled.h"
-#include "wtf/MemoryInstrumentationVector.h"
 #include "wtf/text/StringBuilder.h"
 
 #ifndef NDEBUG
@@ -41,13 +42,6 @@
 using namespace std;
 
 namespace WebCore {
-
-typedef HashMap<MutableStylePropertySet*, OwnPtr<PropertySetCSSStyleDeclaration> > PropertySetCSSOMWrapperMap;
-static PropertySetCSSOMWrapperMap& propertySetCSSOMWrapperMap()
-{
-    DEFINE_STATIC_LOCAL(PropertySetCSSOMWrapperMap, propertySetCSSOMWrapperMapInstance, ());
-    return propertySetCSSOMWrapperMapInstance;
-}
 
 static size_t sizeForImmutableStylePropertySetWithPropertyCount(unsigned count)
 {
@@ -66,6 +60,11 @@ PassRefPtr<ImmutableStylePropertySet> StylePropertySet::immutableCopyIfNeeded() 
         return static_cast<ImmutableStylePropertySet*>(const_cast<StylePropertySet*>(this));
     const MutableStylePropertySet* mutableThis = static_cast<const MutableStylePropertySet*>(this);
     return ImmutableStylePropertySet::create(mutableThis->m_propertyVector.data(), mutableThis->m_propertyVector.size(), cssParserMode());
+}
+
+MutableStylePropertySet::MutableStylePropertySet(CSSParserMode cssParserMode)
+    : StylePropertySet(cssParserMode)
+{
 }
 
 MutableStylePropertySet::MutableStylePropertySet(const CSSProperty* properties, unsigned length)
@@ -107,13 +106,6 @@ MutableStylePropertySet::MutableStylePropertySet(const StylePropertySet& other)
     }
 }
 
-MutableStylePropertySet::~MutableStylePropertySet()
-{
-    ASSERT(!m_ownsCSSOMWrapper || propertySetCSSOMWrapperMap().contains(this));
-    if (m_ownsCSSOMWrapper)
-        propertySetCSSOMWrapperMap().remove(this);
-}
-
 String StylePropertySet::getPropertyValue(CSSPropertyID propertyID) const
 {
     RefPtr<CSSValue> value = getPropertyCSSValue(propertyID);
@@ -129,6 +121,26 @@ PassRefPtr<CSSValue> StylePropertySet::getPropertyCSSValue(CSSPropertyID propert
     if (foundPropertyIndex == -1)
         return 0;
     return propertyAt(foundPropertyIndex).value();
+}
+
+unsigned StylePropertySet::variableCount() const
+{
+    ASSERT(RuntimeEnabledFeatures::cssVariablesEnabled());
+    unsigned count = 0;
+    for (unsigned i = 0; i < propertyCount(); ++i) {
+        if (propertyAt(i).id() == CSSPropertyVariable)
+            count++;
+    }
+    return count;
+}
+
+String StylePropertySet::variableValue(const AtomicString& name) const
+{
+    ASSERT(RuntimeEnabledFeatures::cssVariablesEnabled());
+    size_t index = findVariableIndex(name);
+    if (index == notFound)
+        return String();
+    return toCSSVariableValue(propertyAt(index).value())->value();
 }
 
 bool MutableStylePropertySet::removeShorthandProperty(CSSPropertyID propertyID)
@@ -265,6 +277,27 @@ unsigned getIndexInShorthandVectorForPrefixingVariant(const CSSProperty& propert
     return indexOfShorthandForLonghand(prefixedShorthand, matchingShorthandsForLonghand(prefixingVariant));
 }
 
+bool MutableStylePropertySet::setVariableValue(const AtomicString& name, const String& value, bool important)
+{
+    ASSERT(RuntimeEnabledFeatures::cssVariablesEnabled());
+    if (value.isEmpty())
+        return removeVariable(name);
+
+    size_t index = findVariableIndex(name);
+    if (index != notFound) {
+        CSSValue* cssValue = m_propertyVector.at(index).value();
+        if (toCSSVariableValue(cssValue)->value() == value)
+            return false;
+    }
+
+    CSSProperty property(CSSPropertyVariable, CSSVariableValue::create(name, value), important);
+    if (index == notFound)
+        m_propertyVector.append(property);
+    else
+        m_propertyVector.at(index) = property;
+    return true;
+}
+
 void MutableStylePropertySet::appendPrefixingVariantProperty(const CSSProperty& property)
 {
     m_propertyVector.append(property);
@@ -328,9 +361,13 @@ String StylePropertySet::asText() const
     return StylePropertySerializer(*this).asText();
 }
 
+bool StylePropertySet::hasCSSOMWrapper() const
+{
+    return m_isMutable && static_cast<const MutableStylePropertySet*>(this)->m_cssomWrapper;
+}
+
 void MutableStylePropertySet::mergeAndOverrideOnConflict(const StylePropertySet* other)
 {
-    ASSERT(isMutable());
     unsigned size = other->propertyCount();
     for (unsigned n = 0; n < size; ++n) {
         PropertyReference toMerge = other->propertyAt(n);
@@ -381,9 +418,7 @@ static const CSSPropertyID staticBlockProperties[] = {
     CSSPropertyWebkitRegionBreakBefore,
     CSSPropertyWebkitRegionBreakInside,
     CSSPropertyTextAlign,
-#if ENABLE(CSS3_TEXT)
-    CSSPropertyWebkitTextAlignLast,
-#endif // CSS3_TEXT
+    CSSPropertyTextAlignLast,
     CSSPropertyTextIndent,
     CSSPropertyWidows
 };
@@ -442,14 +477,28 @@ bool MutableStylePropertySet::removePropertiesInSet(const CSSPropertyID* set, un
 
 int StylePropertySet::findPropertyIndex(CSSPropertyID propertyID) const
 {
+    // Convert here propertyID into an uint16_t to compare it with the metadata's m_propertyID to avoid
+    // the compiler converting it to an int multiple times in the loop.
+    uint16_t id = static_cast<uint16_t>(propertyID);
     for (int n = propertyCount() - 1 ; n >= 0; --n) {
-        if (propertyID == propertyAt(n).id()) {
+        if (id == propertyAt(n).propertyMetadata().m_propertyID) {
             // Only enabled properties should be part of the style.
             ASSERT(RuntimeCSSEnabled::isCSSPropertyEnabled(propertyID));
             return n;
         }
     }
     return -1;
+}
+
+size_t StylePropertySet::findVariableIndex(const AtomicString& name) const
+{
+    ASSERT(RuntimeEnabledFeatures::cssVariablesEnabled());
+    for (int i = propertyCount() - 1; i >= 0; --i) {
+        const PropertyReference& property = propertyAt(i);
+        if (property.id() == CSSPropertyVariable && toCSSVariableValue(property.value())->name() == name)
+            return i;
+    }
+    return notFound;
 }
 
 CSSProperty* MutableStylePropertySet::findCSSPropertyWithID(CSSPropertyID propertyID)
@@ -467,7 +516,7 @@ bool StylePropertySet::propertyMatches(CSSPropertyID propertyID, const CSSValue*
         return false;
     return propertyAt(foundPropertyIndex).value()->equals(*propertyValue);
 }
-    
+
 void MutableStylePropertySet::removeEquivalentProperties(const StylePropertySet* style)
 {
     Vector<CSSPropertyID> propertiesToRemove;
@@ -476,7 +525,7 @@ void MutableStylePropertySet::removeEquivalentProperties(const StylePropertySet*
         PropertyReference property = propertyAt(i);
         if (style->propertyMatches(property.id(), property.value()))
             propertiesToRemove.append(property.id());
-    }    
+    }
     // FIXME: This should use mass removal.
     for (unsigned i = 0; i < propertiesToRemove.size(); ++i)
         removeProperty(propertiesToRemove[i]);
@@ -490,10 +539,27 @@ void MutableStylePropertySet::removeEquivalentProperties(const CSSStyleDeclarati
         PropertyReference property = propertyAt(i);
         if (style->cssPropertyMatches(property.id(), property.value()))
             propertiesToRemove.append(property.id());
-    }    
+    }
     // FIXME: This should use mass removal.
     for (unsigned i = 0; i < propertiesToRemove.size(); ++i)
         removeProperty(propertiesToRemove[i]);
+}
+
+bool MutableStylePropertySet::removeVariable(const AtomicString& name)
+{
+    ASSERT(RuntimeEnabledFeatures::cssVariablesEnabled());
+    size_t index = findVariableIndex(name);
+    if (index == notFound)
+        return false;
+    m_propertyVector.remove(index);
+    return true;
+}
+
+bool MutableStylePropertySet::clearVariables()
+{
+    ASSERT(RuntimeEnabledFeatures::cssVariablesEnabled());
+    CSSPropertyID variablesId = CSSPropertyVariable;
+    return removePropertiesInSet(&variablesId, 1);
 }
 
 PassRefPtr<MutableStylePropertySet> StylePropertySet::mutableCopy() const
@@ -515,52 +581,34 @@ PassRefPtr<MutableStylePropertySet> StylePropertySet::copyPropertiesInSet(const 
 
 PropertySetCSSStyleDeclaration* MutableStylePropertySet::cssStyleDeclaration()
 {
-    if (!m_ownsCSSOMWrapper)
-        return 0;
-    return propertySetCSSOMWrapperMap().get(this);
+    return m_cssomWrapper.get();
 }
 
 CSSStyleDeclaration* MutableStylePropertySet::ensureCSSStyleDeclaration()
 {
-    if (m_ownsCSSOMWrapper) {
-        ASSERT(!static_cast<CSSStyleDeclaration*>(propertySetCSSOMWrapperMap().get(this))->parentRule());
-        ASSERT(!propertySetCSSOMWrapperMap().get(this)->parentElement());
-        return propertySetCSSOMWrapperMap().get(this);
+    if (m_cssomWrapper) {
+        ASSERT(!static_cast<CSSStyleDeclaration*>(m_cssomWrapper.get())->parentRule());
+        ASSERT(!m_cssomWrapper->parentElement());
+        return m_cssomWrapper.get();
     }
-    m_ownsCSSOMWrapper = true;
-    PropertySetCSSStyleDeclaration* cssomWrapper = new PropertySetCSSStyleDeclaration(this);
-    propertySetCSSOMWrapperMap().add(this, adoptPtr(cssomWrapper));
-    return cssomWrapper;
+    m_cssomWrapper = adoptPtr(new PropertySetCSSStyleDeclaration(this));
+    return m_cssomWrapper.get();
 }
 
-CSSStyleDeclaration* MutableStylePropertySet::ensureInlineCSSStyleDeclaration(StyledElement* parentElement)
+CSSStyleDeclaration* MutableStylePropertySet::ensureInlineCSSStyleDeclaration(Element* parentElement)
 {
-    if (m_ownsCSSOMWrapper) {
-        ASSERT(propertySetCSSOMWrapperMap().get(this)->parentElement() == parentElement);
-        return propertySetCSSOMWrapperMap().get(this);
+    if (m_cssomWrapper) {
+        ASSERT(m_cssomWrapper->parentElement() == parentElement);
+        return m_cssomWrapper.get();
     }
-    m_ownsCSSOMWrapper = true;
-    PropertySetCSSStyleDeclaration* cssomWrapper = new InlineCSSStyleDeclaration(this, parentElement);
-    propertySetCSSOMWrapperMap().add(this, adoptPtr(cssomWrapper));
-    return cssomWrapper;
+    m_cssomWrapper = adoptPtr(new InlineCSSStyleDeclaration(this, parentElement));
+    return m_cssomWrapper.get();
 }
 
 unsigned StylePropertySet::averageSizeInBytes()
 {
     // Please update this if the storage scheme changes so that this longer reflects the actual size.
     return sizeForImmutableStylePropertySetWithPropertyCount(4);
-}
-
-void StylePropertySet::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    size_t actualSize = m_isMutable ? sizeof(StylePropertySet) : sizeForImmutableStylePropertySetWithPropertyCount(m_arraySize);
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS, actualSize);
-    if (m_isMutable)
-        info.addMember(static_cast<const MutableStylePropertySet*>(this)->m_propertyVector, "m_propertyVector");
-    else {
-        for (unsigned i = 0; i < propertyCount(); ++i)
-            info.addMember(propertyAt(i).value(), "value");
-    }
 }
 
 // See the function above if you need to update this.
@@ -589,10 +637,9 @@ PassRefPtr<MutableStylePropertySet> MutableStylePropertySet::create(const CSSPro
 String StylePropertySet::PropertyReference::cssName() const
 {
     if (id() == CSSPropertyVariable) {
-        ASSERT(propertyValue()->isVariableValue());
         if (!propertyValue()->isVariableValue())
             return emptyString(); // Should not happen, but if it does, avoid a bad cast.
-        return "var-" + static_cast<const CSSVariableValue*>(propertyValue())->name();
+        return "var-" + toCSSVariableValue(propertyValue())->name();
     }
     return getPropertyNameString(id());
 }

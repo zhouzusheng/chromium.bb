@@ -211,7 +211,7 @@ void GrGpuGL::flushPathStencilMatrix() {
     const SkMatrix& vm = this->getDrawState().getViewMatrix();
 
     if (fHWPathStencilMatrixState.fRenderTargetOrigin != rt->origin() ||
-        fHWPathStencilMatrixState.fViewMatrix.cheapEqualTo(viewMatrix) ||
+        !fHWPathStencilMatrixState.fViewMatrix.cheapEqualTo(viewMatrix) ||
         fHWPathStencilMatrixState.fRenderTargetSize!= size) {
         // rescale the coords from skia's "device" coords to GL's normalized coords,
         // and perform a y-flip if required.
@@ -317,8 +317,8 @@ bool GrGpuGL::flushGraphicsState(DrawType type, const GrDeviceCoordTexture* dstC
     this->flushScissor();
     this->flushAAState(type);
 
-    GrIRect* devRect = NULL;
-    GrIRect devClipBounds;
+    SkIRect* devRect = NULL;
+    SkIRect devClipBounds;
     if (drawState.isClipState()) {
         this->getClip()->getConservativeBounds(drawState.getRenderTarget(), &devClipBounds);
         devRect = &devClipBounds;

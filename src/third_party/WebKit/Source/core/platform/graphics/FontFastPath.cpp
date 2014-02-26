@@ -31,10 +31,10 @@
 #include "core/platform/graphics/SimpleFontData.h"
 #include "core/platform/graphics/TextRun.h"
 #include "core/platform/graphics/WidthIterator.h"
-#include <wtf/MainThread.h>
-#include <wtf/MathExtras.h>
-#include <wtf/unicode/CharacterNames.h>
-#include <wtf/unicode/Unicode.h>
+#include "wtf/MainThread.h"
+#include "wtf/MathExtras.h"
+#include "wtf/unicode/CharacterNames.h"
+#include "wtf/unicode/Unicode.h"
 
 using namespace WTF;
 using namespace Unicode;
@@ -57,7 +57,7 @@ static bool shouldIgnoreRotation(UChar32 character)
 
     if (isInRange(character, 0x002E5, 0x002EB))
         return true;
-    
+
     if (isInRange(character, 0x01100, 0x011FF) || isInRange(character, 0x01401, 0x0167F) || isInRange(character, 0x01800, 0x018FF))
         return true;
 
@@ -119,13 +119,13 @@ static bool shouldIgnoreRotation(UChar32 character)
         || isInRange(character, 0x1D000, 0x1D1FF) || isInRange(character, 0x1D300, 0x1D37F)
         || isInRange(character, 0x1F000, 0x1F64F) || isInRange(character, 0x1F680, 0x1F77F))
         return true;
-    
+
     if (isInRange(character, 0x20000, 0x2FFFD) || isInRange(character, 0x30000, 0x3FFFD))
         return true;
 
     return false;
 }
-    
+
 static inline std::pair<GlyphData, GlyphPage*> glyphDataAndPageForNonCJKCharacterWithGlyphOrientation(UChar32 character, NonCJKGlyphOrientation orientation, GlyphData& data, GlyphPage* page, unsigned pageNumber)
 {
     if (orientation == NonCJKGlyphOrientationUpright || shouldIgnoreRotation(character)) {
@@ -270,17 +270,13 @@ std::pair<GlyphData, GlyphPage*> Font::glyphDataAndPageForCharacter(UChar32 c, b
     // System fallback is character-dependent. When we get here, we
     // know that the character in question isn't in the system fallback
     // font's glyph page. Try to lazily create it here.
-    UChar codeUnits[2];
-    int codeUnitsLength;
-    if (c <= 0xFFFF) {
-        codeUnits[0] = Font::normalizeSpaces(c);
-        codeUnitsLength = 1;
-    } else {
-        codeUnits[0] = U16_LEAD(c);
-        codeUnits[1] = U16_TRAIL(c);
-        codeUnitsLength = 2;
-    }
-    RefPtr<SimpleFontData> characterFontData = fontCache()->getFontDataForCharacters(*this, codeUnits, codeUnitsLength);
+
+    // FIXME: Unclear if this should normalizeSpaces above 0xFFFF.
+    // Doing so changes fast/text/international/plane2-diffs.html
+    UChar32 characterToRender = c;
+    if (characterToRender <=  0xFFFF)
+        characterToRender = Font::normalizeSpaces(characterToRender);
+    RefPtr<SimpleFontData> characterFontData = fontCache()->getFontDataForCharacter(*this, characterToRender);
     if (characterFontData) {
         if (characterFontData->platformData().orientation() == Vertical && !characterFontData->hasVerticalGlyphs() && isCJKIdeographOrSymbol(c))
             variant = BrokenIdeographVariant;
@@ -351,7 +347,7 @@ bool Font::getEmphasisMarkGlyphData(const AtomicString& mark, GlyphData& glyphDa
 int Font::emphasisMarkAscent(const AtomicString& mark) const
 {
     FontCachePurgePreventer purgePreventer;
-    
+
     GlyphData markGlyphData;
     if (!getEmphasisMarkGlyphData(mark, markGlyphData))
         return 0;
@@ -367,7 +363,7 @@ int Font::emphasisMarkAscent(const AtomicString& mark) const
 int Font::emphasisMarkDescent(const AtomicString& mark) const
 {
     FontCachePurgePreventer purgePreventer;
-    
+
     GlyphData markGlyphData;
     if (!getEmphasisMarkGlyphData(mark, markGlyphData))
         return 0;
@@ -452,10 +448,9 @@ void Font::drawEmphasisMarksForSimpleText(GraphicsContext* context, const TextRu
 }
 
 void Font::drawGlyphBuffer(GraphicsContext* context, const TextRunPaintInfo& runInfo, const GlyphBuffer& glyphBuffer, const FloatPoint& point) const
-{   
+{
     // Draw each contiguous run of glyphs that use the same font data.
     const SimpleFontData* fontData = glyphBuffer.fontDataAt(0);
-    FloatSize offset = glyphBuffer.offsetAt(0);
     FloatPoint startPoint(point);
     float nextX = startPoint.x() + glyphBuffer.advanceAt(0);
     int lastFrom = 0;
@@ -465,9 +460,8 @@ void Font::drawGlyphBuffer(GraphicsContext* context, const TextRunPaintInfo& run
 #endif
     while (nextGlyph < glyphBuffer.size()) {
         const SimpleFontData* nextFontData = glyphBuffer.fontDataAt(nextGlyph);
-        FloatSize nextOffset = glyphBuffer.offsetAt(nextGlyph);
 
-        if (nextFontData != fontData || nextOffset != offset) {
+        if (nextFontData != fontData) {
 #if ENABLE(SVG_FONTS)
             if (renderingContext && fontData->isSVGFont())
                 renderingContext->drawSVGGlyphs(context, runInfo.run, fontData, glyphBuffer, lastFrom, nextGlyph - lastFrom, startPoint);
@@ -477,7 +471,6 @@ void Font::drawGlyphBuffer(GraphicsContext* context, const TextRunPaintInfo& run
 
             lastFrom = nextGlyph;
             fontData = nextFontData;
-            offset = nextOffset;
             startPoint.setX(nextX);
         }
         nextX += glyphBuffer.advanceAt(nextGlyph);
@@ -510,7 +503,7 @@ inline static float offsetToMiddleOfGlyphAtIndex(const GlyphBuffer& glyphBuffer,
 void Font::drawEmphasisMarks(GraphicsContext* context, const TextRunPaintInfo& runInfo, const GlyphBuffer& glyphBuffer, const AtomicString& mark, const FloatPoint& point) const
 {
     FontCachePurgePreventer purgePreventer;
-    
+
     GlyphData markGlyphData;
     if (!getEmphasisMarkGlyphData(mark, markGlyphData))
         return;

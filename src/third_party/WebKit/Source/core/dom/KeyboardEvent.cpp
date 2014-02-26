@@ -68,26 +68,27 @@ static inline int windowsVirtualKeyCodeWithoutLocation(int keycode)
 static inline KeyboardEvent::KeyLocationCode keyLocationCode(const PlatformKeyboardEvent& key)
 {
     if (key.isKeypad())
-        return KeyboardEvent::DOMKeyLocationNumpad;
+        return KeyboardEvent::DOM_KEY_LOCATION_NUMPAD;
 
+    // FIXME: Support DOM_KEY_LOCATION_MOBILE & DOM_KEY_LOCATION_JOYSTICK (crbug.com/265446).
     switch (key.windowsVirtualKeyCode()) {
     case VK_LCONTROL:
     case VK_LSHIFT:
     case VK_LMENU:
     case VK_LWIN:
-        return KeyboardEvent::DOMKeyLocationLeft;
+        return KeyboardEvent::DOM_KEY_LOCATION_LEFT;
     case VK_RCONTROL:
     case VK_RSHIFT:
     case VK_RMENU:
     case VK_RWIN:
-        return KeyboardEvent::DOMKeyLocationRight;
+        return KeyboardEvent::DOM_KEY_LOCATION_RIGHT;
     default:
-        return KeyboardEvent::DOMKeyLocationStandard;
+        return KeyboardEvent::DOM_KEY_LOCATION_STANDARD;
     }
 }
 
 KeyboardEventInit::KeyboardEventInit()
-    : keyLocation(0)
+    : location(0)
     , ctrlKey(false)
     , altKey(false)
     , shiftKey(false)
@@ -96,7 +97,7 @@ KeyboardEventInit::KeyboardEventInit()
 }
 
 KeyboardEvent::KeyboardEvent()
-    : m_keyLocation(DOMKeyLocationStandard)
+    : m_location(DOM_KEY_LOCATION_STANDARD)
     , m_altGraphKey(false)
 {
     ScriptWrappable::init(this);
@@ -107,7 +108,7 @@ KeyboardEvent::KeyboardEvent(const PlatformKeyboardEvent& key, AbstractView* vie
                           true, true, view, 0, key.ctrlKey(), key.altKey(), key.shiftKey(), key.metaKey())
     , m_keyEvent(adoptPtr(new PlatformKeyboardEvent(key)))
     , m_keyIdentifier(key.keyIdentifier())
-    , m_keyLocation(keyLocationCode(key))
+    , m_location(keyLocationCode(key))
     , m_altGraphKey(false)
 {
     ScriptWrappable::init(this);
@@ -116,18 +117,18 @@ KeyboardEvent::KeyboardEvent(const PlatformKeyboardEvent& key, AbstractView* vie
 KeyboardEvent::KeyboardEvent(const AtomicString& eventType, const KeyboardEventInit& initializer)
     : UIEventWithKeyState(eventType, initializer.bubbles, initializer.cancelable, initializer.view, initializer.detail, initializer.ctrlKey, initializer.altKey, initializer.shiftKey, initializer.metaKey)
     , m_keyIdentifier(initializer.keyIdentifier)
-    , m_keyLocation(initializer.keyLocation)
+    , m_location(initializer.location)
     , m_altGraphKey(false)
 {
     ScriptWrappable::init(this);
 }
 
 KeyboardEvent::KeyboardEvent(const AtomicString& eventType, bool canBubble, bool cancelable, AbstractView *view,
-                             const String &keyIdentifier,  unsigned keyLocation,
+                             const String &keyIdentifier,  unsigned location,
                              bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool altGraphKey)
     : UIEventWithKeyState(eventType, canBubble, cancelable, view, 0, ctrlKey, altKey, shiftKey, metaKey)
     , m_keyIdentifier(keyIdentifier)
-    , m_keyLocation(keyLocation)
+    , m_location(location)
     , m_altGraphKey(altGraphKey)
 {
     ScriptWrappable::init(this);
@@ -138,7 +139,7 @@ KeyboardEvent::~KeyboardEvent()
 }
 
 void KeyboardEvent::initKeyboardEvent(const AtomicString& type, bool canBubble, bool cancelable, AbstractView* view,
-                                      const String &keyIdentifier, unsigned keyLocation,
+                                      const String &keyIdentifier, unsigned location,
                                       bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool altGraphKey)
 {
     if (dispatched())
@@ -147,7 +148,7 @@ void KeyboardEvent::initKeyboardEvent(const AtomicString& type, bool canBubble, 
     initUIEvent(type, canBubble, cancelable, view, 0);
 
     m_keyIdentifier = keyIdentifier;
-    m_keyLocation = keyLocation;
+    m_location = location;
     m_ctrlKey = ctrlKey;
     m_shiftKey = shiftKey;
     m_altKey = altKey;
@@ -157,6 +158,8 @@ void KeyboardEvent::initKeyboardEvent(const AtomicString& type, bool canBubble, 
 
 bool KeyboardEvent::getModifierState(const String& keyIdentifier) const
 {
+    // FIXME: The following keyIdentifiers are not supported yet (crbug.com/265458):
+    // "AltGraph", "CapsLock", "Fn", "NumLock", "ScrollLock", "SymbolLock", "OS".
     if (keyIdentifier == "Control")
         return ctrlKey();
     if (keyIdentifier == "Shift")
@@ -212,9 +215,10 @@ int KeyboardEvent::which() const
 
 KeyboardEvent* findKeyboardEvent(Event* event)
 {
-    for (Event* e = event; e; e = e->underlyingEvent())
+    for (Event* e = event; e; e = e->underlyingEvent()) {
         if (e->isKeyboardEvent())
-            return static_cast<KeyboardEvent*>(e);
+            return toKeyboardEvent(e);
+    }
     return 0;
 }
 

@@ -82,6 +82,7 @@ public:
     * \name Visit methods for leaf-node classes
     */
    /*@{*/
+   virtual ir_visitor_status visit(class ir_rvalue *);
    virtual ir_visitor_status visit(class ir_variable *);
    virtual ir_visitor_status visit(class ir_constant *);
    virtual ir_visitor_status visit(class ir_loop_jump *);
@@ -178,6 +179,7 @@ void visit_tree(ir_instruction *ir,
 		void (*callback)(class ir_instruction *ir, void *data),
 		void *data);
 
-ir_visitor_status visit_list_elements(ir_hierarchical_visitor *v, exec_list *l);
+ir_visitor_status visit_list_elements(ir_hierarchical_visitor *v, exec_list *l,
+                                      bool statement_list = true);
 
 #endif /* IR_HIERARCHICAL_VISITOR_H */

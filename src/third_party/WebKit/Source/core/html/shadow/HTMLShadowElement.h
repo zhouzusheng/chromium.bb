@@ -32,7 +32,7 @@
 #define HTMLShadowElement_h
 
 #include "core/dom/shadow/InsertionPoint.h"
-#include <wtf/Forward.h>
+#include "wtf/Forward.h"
 
 namespace WebCore {
 
@@ -42,12 +42,12 @@ public:
 
     virtual ~HTMLShadowElement();
 
-    virtual Type insertionPointType() const OVERRIDE { return ShadowInsertionPoint; }
-
     ShadowRoot* olderShadowRoot();
+    bool shouldSelect() const;
 
 private:
     HTMLShadowElement(const QualifiedName&, Document*);
+    virtual InsertionNotificationRequest insertedInto(ContainerNode* insertionPoint) OVERRIDE;
 };
 
 inline bool isHTMLShadowElement(const Node* node)

@@ -5,6 +5,7 @@
 #ifndef CC_BASE_MATH_UTIL_H_
 #define CC_BASE_MATH_UTIL_H_
 
+#include <algorithm>
 #include <cmath>
 
 #include "base/logging.h"
@@ -28,37 +29,43 @@ class Vector2dF;
 namespace cc {
 
 struct HomogeneousCoordinate {
-  HomogeneousCoordinate(double new_x, double new_y, double new_z, double new_w)
-      : x(new_x), y(new_y), z(new_z), w(new_w) {}
+  HomogeneousCoordinate(SkMScalar x, SkMScalar y, SkMScalar z, SkMScalar w) {
+    vec[0] = x;
+    vec[1] = y;
+    vec[2] = z;
+    vec[3] = w;
+  }
 
-  bool ShouldBeClipped() const { return w <= 0.0; }
+  bool ShouldBeClipped() const { return w() <= 0.0; }
 
   gfx::PointF CartesianPoint2d() const {
-    if (w == 1.0)
-      return gfx::PointF(x, y);
+    if (w() == 1.0)
+      return gfx::PointF(x(), y());
 
     // For now, because this code is used privately only by MathUtil, it should
     // never be called when w == 0, and we do not yet need to handle that case.
-    DCHECK(w);
-    double inv_w = 1.0 / w;
-    return gfx::PointF(x * inv_w, y * inv_w);
+    DCHECK(w());
+    double inv_w = 1.0 / w();
+    return gfx::PointF(x() * inv_w, y() * inv_w);
   }
 
   gfx::Point3F CartesianPoint3d() const {
-    if (w == 1)
-      return gfx::Point3F(x, y, z);
+    if (w() == 1)
+      return gfx::Point3F(x(), y(), z());
 
     // For now, because this code is used privately only by MathUtil, it should
     // never be called when w == 0, and we do not yet need to handle that case.
-    DCHECK(w);
-    double inv_w = 1.0 / w;
-    return gfx::Point3F(x * inv_w, y * inv_w, z * inv_w);
+    DCHECK(w());
+    double inv_w = 1.0 / w();
+    return gfx::Point3F(x() * inv_w, y() * inv_w, z() * inv_w);
   }
 
-  double x;
-  double y;
-  double z;
-  double w;
+  SkMScalar x() const { return vec[0]; }
+  SkMScalar y() const { return vec[1]; }
+  SkMScalar z() const { return vec[2]; }
+  SkMScalar w() const { return vec[3]; }
+
+  SkMScalar vec[4];
 };
 
 class CC_EXPORT MathUtil {
@@ -77,6 +84,10 @@ class CC_EXPORT MathUtil {
   }
   static double Round(double d) {
     return (d > 0.0) ? std::floor(d + 0.5) : std::ceil(d - 0.5);
+  }
+
+  template <typename T> static T ClampToRange(T value, T min, T max) {
+    return std::min(std::max(value, min), max);
   }
 
   // Background: Existing transform code does not do the right thing in
@@ -145,11 +156,13 @@ class CC_EXPORT MathUtil {
 
   // Conversion to value.
   static scoped_ptr<base::Value> AsValue(gfx::Size s);
+  static scoped_ptr<base::Value> AsValue(gfx::SizeF s);
   static scoped_ptr<base::Value> AsValue(gfx::Rect r);
   static bool FromValue(const base::Value*, gfx::Rect* out_rect);
   static scoped_ptr<base::Value> AsValue(gfx::PointF q);
   static scoped_ptr<base::Value> AsValue(const gfx::QuadF& q);
   static scoped_ptr<base::Value> AsValue(const gfx::RectF& rect);
+  static scoped_ptr<base::Value> AsValue(const gfx::Transform& transform);
 
   // Returns a base::Value representation of the floating point value.
   // If the value is inf, returns max double/float representation.

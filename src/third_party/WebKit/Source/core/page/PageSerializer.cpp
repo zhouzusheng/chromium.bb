@@ -44,15 +44,17 @@
 #include "core/editing/MarkupAccumulator.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/HTMLImageElement.h"
+#include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLLinkElement.h"
 #include "core/html/HTMLStyleElement.h"
 #include "core/html/parser/HTMLMetaCharsetParser.h"
-#include "core/loader/cache/CachedImage.h"
+#include "core/loader/cache/ImageResource.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
 #include "core/platform/SerializedResource.h"
 #include "core/platform/graphics/Image.h"
-#include "core/rendering/style/StyleCachedImage.h"
+#include "core/rendering/RenderImage.h"
+#include "core/rendering/style/StyleFetchedImage.h"
 #include "core/rendering/style/StyleImage.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringBuilder.h"
@@ -204,7 +206,7 @@ void PageSerializer::serializeFrame(Frame* frame)
         return;
     }
     String text = accumulator.serializeNodes(document->documentElement(), IncludeNode);
-    CString frameHTML = textEncoding.encode(text.characters(), text.length(), WTF::EntitiesForUnencodables);
+    CString frameHTML = textEncoding.normalizeAndEncode(text, WTF::EntitiesForUnencodables);
     m_resources->append(SerializedResource(url, document->suggestedMIMEType(), SharedBuffer::create(frameHTML.data(), frameHTML.length())));
     m_resourceURLs.add(url);
 
@@ -216,15 +218,22 @@ void PageSerializer::serializeFrame(Frame* frame)
         Element* element = toElement(node);
         // We have to process in-line style as it might contain some resources (typically background images).
         if (element->isStyledElement())
-            retrieveResourcesForProperties(static_cast<StyledElement*>(element)->inlineStyle(), document);
+            retrieveResourcesForProperties(element->inlineStyle(), document);
 
         if (element->hasTagName(HTMLNames::imgTag)) {
             HTMLImageElement* imageElement = toHTMLImageElement(element);
             KURL url = document->completeURL(imageElement->getAttribute(HTMLNames::srcAttr));
-            CachedImage* cachedImage = imageElement->cachedImage();
+            ImageResource* cachedImage = imageElement->cachedImage();
             addImageToResources(cachedImage, imageElement->renderer(), url);
+        } else if (element->hasTagName(HTMLNames::inputTag)) {
+            HTMLInputElement* inputElement = toHTMLInputElement(element);
+            if (inputElement->isImageButton() && inputElement->hasImageLoader()) {
+                KURL url = inputElement->src();
+                ImageResource* cachedImage = inputElement->imageLoader()->image();
+                addImageToResources(cachedImage, inputElement->renderer(), url);
+            }
         } else if (element->hasTagName(HTMLNames::linkTag)) {
-            HTMLLinkElement* linkElement = static_cast<HTMLLinkElement*>(element);
+            HTMLLinkElement* linkElement = toHTMLLinkElement(element);
             if (CSSStyleSheet* sheet = linkElement->sheet()) {
                 KURL url = document->completeURL(linkElement->getAttribute(HTMLNames::hrefAttr));
                 serializeCSSStyleSheet(sheet, url);
@@ -263,8 +272,9 @@ void PageSerializer::serializeCSSStyleSheet(CSSStyleSheet* styleSheet, const KUR
         } else if (rule->type() == CSSRule::FONT_FACE_RULE) {
             // FIXME: Add support for font face rule. It is not clear to me at this point if the actual otf/eot file can
             // be retrieved from the CSSFontFaceRule object.
-        } else if (rule->type() == CSSRule::STYLE_RULE)
+        } else if (rule->type() == CSSRule::STYLE_RULE) {
             retrieveResourcesForRule(static_cast<CSSStyleRule*>(rule)->styleRule(), document);
+        }
     }
 
     if (url.isValid() && !m_resourceURLs.contains(url)) {
@@ -272,15 +282,15 @@ void PageSerializer::serializeCSSStyleSheet(CSSStyleSheet* styleSheet, const KUR
         WTF::TextEncoding textEncoding(styleSheet->contents()->charset());
         ASSERT(textEncoding.isValid());
         String textString = cssText.toString();
-        CString text = textEncoding.encode(textString.characters(), textString.length(), WTF::EntitiesForUnencodables);
+        CString text = textEncoding.normalizeAndEncode(textString, WTF::EntitiesForUnencodables);
         m_resources->append(SerializedResource(url, String("text/css"), SharedBuffer::create(text.data(), text.length())));
         m_resourceURLs.add(url);
     }
 }
 
-void PageSerializer::addImageToResources(CachedImage* image, RenderObject* imageRenderer, const KURL& url)
+void PageSerializer::addImageToResources(ImageResource* image, RenderObject* imageRenderer, const KURL& url)
 {
-    if (!url.isValid() || m_resourceURLs.contains(url))
+    if (!url.isValid() || m_resourceURLs.contains(url) || url.protocolIsData())
         return;
 
     if (!image || image->image() == Image::nullImage())
@@ -319,13 +329,13 @@ void PageSerializer::retrieveResourcesForProperties(const StylePropertySet* styl
         if (!cssValue->isImageValue())
             continue;
 
-        CSSImageValue* imageValue = static_cast<CSSImageValue*>(cssValue.get());
+        CSSImageValue* imageValue = toCSSImageValue(cssValue.get());
         StyleImage* styleImage = imageValue->cachedOrPendingImage();
         // Non cached-images are just place-holders and do not contain data.
-        if (!styleImage || !styleImage->isCachedImage())
+        if (!styleImage || !styleImage->isImageResource())
             continue;
 
-        CachedImage* image = static_cast<StyleCachedImage*>(styleImage)->cachedImage();
+        ImageResource* image = static_cast<StyleFetchedImage*>(styleImage)->cachedImage();
         addImageToResources(image, 0, image->url());
     }
 }

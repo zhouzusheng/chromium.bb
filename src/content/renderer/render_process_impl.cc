@@ -15,20 +15,21 @@
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
 #include "content/child/child_thread.h"
+#include "content/child/npapi/plugin_instance.h"
+#include "content/child/npapi/plugin_lib.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_message_utils.h"
 #include "skia/ext/platform_canvas.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
 #include "ui/surface/transport_dib.h"
 #include "webkit/glue/webkit_glue.h"
-#include "webkit/plugins/npapi/plugin_instance.h"
-#include "webkit/plugins/npapi/plugin_lib.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
@@ -77,10 +78,10 @@ RenderProcessImpl::RenderProcessImpl()
 }
 
 RenderProcessImpl::~RenderProcessImpl() {
-  // TODO(port): Try and limit what we pull in for our non-Win unit test bundle.
 #ifndef NDEBUG
-  // log important leaked objects
-  webkit_glue::CheckForLeaks();
+  int count = WebKit::WebFrame::instanceCount();
+  if (count)
+    DLOG(ERROR) << "WebFrame LEAKED " << count << " TIMES";
 #endif
 
   GetShutDownEvent()->Signal();

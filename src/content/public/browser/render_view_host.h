@@ -8,12 +8,12 @@
 #include "base/callback_forward.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/render_widget_host.h"
+#include "content/public/common/file_chooser_params.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/stop_find_action.h"
 #include "third_party/WebKit/public/web/WebDragOperation.h"
 
 class GURL;
-struct WebDropData;
 struct WebPreferences;
 
 namespace gfx {
@@ -43,6 +43,7 @@ class RenderViewHostDelegate;
 class SessionStorageNamespace;
 class SiteInstance;
 struct CustomContextMenuContext;
+struct DropData;
 
 // A RenderViewHost is responsible for creating and talking to a RenderView
 // object in a child process. It exposes a high level API to users, for things
@@ -136,7 +137,7 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
 
   // D&d drop target messages that get sent to WebKit.
   virtual void DragTargetDragEnter(
-      const WebDropData& drop_data,
+      const DropData& drop_data,
       const gfx::Point& client_pt,
       const gfx::Point& screen_pt,
       WebKit::WebDragOperationsMask operations_allowed,
@@ -210,12 +211,11 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   virtual void FirePageBeforeUnload(bool for_cross_site_transition) = 0;
 
   // Notifies the Listener that one or more files have been chosen by the user
-  // from a file chooser dialog for the form. |permissions| are flags from the
-  // base::PlatformFileFlags enum which specify which file permissions should
-  // be granted to the renderer.
+  // from a file chooser dialog for the form. |permissions| is the file
+  // selection mode in which the chooser dialog was created.
   virtual void FilesSelectedInChooser(
       const std::vector<ui::SelectedFileInfo>& files,
-      int permissions) = 0;
+      FileChooserParams::Mode permissions) = 0;
 
   virtual RenderViewHostDelegate* GetDelegate() const = 0;
 

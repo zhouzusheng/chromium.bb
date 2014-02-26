@@ -42,7 +42,7 @@ class CONTENT_EXPORT ResourceLoader : public net::URLRequest::Delegate,
   void ReportUploadProgress();
 
   bool is_transferring() const { return is_transferring_; }
-  void MarkAsTransferring();
+  void MarkAsTransferring(const GURL& target_url);
   void WillCompleteTransfer();
   void CompleteTransfer(scoped_ptr<ResourceHandler> new_handler);
 
@@ -127,6 +127,7 @@ class CONTENT_EXPORT ResourceLoader : public net::URLRequest::Delegate,
   uint64 last_upload_position_;
   bool waiting_for_upload_progress_ack_;
   base::TimeTicks last_upload_ticks_;
+  base::TimeTicks read_deferral_start_time_;
 
   // Indicates that we are in a state of being transferred to a new downstream
   // consumer.  We are waiting for a notification to complete the transfer, at

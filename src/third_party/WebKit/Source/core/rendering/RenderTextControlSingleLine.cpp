@@ -1,6 +1,6 @@
 /**
  * Copyright (C) 2006, 2007, 2010 Apple Inc. All rights reserved.
- *           (C) 2008 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/) 
+ *           (C) 2008 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/)
  * Copyright (C) 2010 Google Inc. All rights reserved.
  * Copyright (C) 2010 Nokia Corporation and/or its subsidiary(-ies).
  *
@@ -86,6 +86,15 @@ LayoutUnit RenderTextControlSingleLine::computeLogicalHeightLimit() const
     return containerElement() ? contentLogicalHeight() : logicalHeight();
 }
 
+// 'end' must be an ancestor of 'start.'
+static void setNeedsLayoutInRange(RenderObject* start, RenderObject* end)
+{
+    ASSERT(start);
+    ASSERT(start != end);
+    for (RenderObject* renderer = start; renderer != end; renderer = renderer->parent())
+        renderer->setNeedsLayout(MarkOnlyThis);
+}
+
 void RenderTextControlSingleLine::layout()
 {
     StackStats::LayoutCheckPoint layoutCheckPoint;
@@ -107,11 +116,11 @@ void RenderTextControlSingleLine::layout()
     // To ensure consistency between layouts, we need to reset any conditionally overriden height.
     if (innerTextRenderer && !innerTextRenderer->style()->logicalHeight().isAuto()) {
         innerTextRenderer->style()->setLogicalHeight(Length(Auto));
-        innerTextRenderer->setNeedsLayout(true, MarkOnlyThis);
+        setNeedsLayoutInRange(innerTextRenderer, this);
     }
     if (innerBlockRenderer && !innerBlockRenderer->style()->logicalHeight().isAuto()) {
         innerBlockRenderer->style()->setLogicalHeight(Length(Auto));
-        innerBlockRenderer->setNeedsLayout(true, MarkOnlyThis);
+        setNeedsLayoutInRange(innerBlockRenderer, this);
     }
 
     RenderBlock::layoutBlock(false);
@@ -124,15 +133,15 @@ void RenderTextControlSingleLine::layout()
     LayoutUnit logicalHeightLimit = computeLogicalHeightLimit();
     if (innerTextRenderer && innerTextRenderer->logicalHeight() > logicalHeightLimit) {
         if (desiredLogicalHeight != innerTextRenderer->logicalHeight())
-            setNeedsLayout(true, MarkOnlyThis);
+            setNeedsLayout(MarkOnlyThis);
 
         m_desiredInnerTextLogicalHeight = desiredLogicalHeight;
 
         innerTextRenderer->style()->setLogicalHeight(Length(desiredLogicalHeight, Fixed));
-        innerTextRenderer->setNeedsLayout(true, MarkOnlyThis);
+        innerTextRenderer->setNeedsLayout(MarkOnlyThis);
         if (innerBlockRenderer) {
             innerBlockRenderer->style()->setLogicalHeight(Length(desiredLogicalHeight, Fixed));
-            innerBlockRenderer->setNeedsLayout(true, MarkOnlyThis);
+            innerBlockRenderer->setNeedsLayout(MarkOnlyThis);
         }
     }
     // The container might be taller because of decoration elements.
@@ -141,10 +150,10 @@ void RenderTextControlSingleLine::layout()
         LayoutUnit containerLogicalHeight = containerRenderer->logicalHeight();
         if (containerLogicalHeight > logicalHeightLimit) {
             containerRenderer->style()->setLogicalHeight(Length(logicalHeightLimit, Fixed));
-            setNeedsLayout(true, MarkOnlyThis);
+            setNeedsLayout(MarkOnlyThis);
         } else if (containerRenderer->logicalHeight() < contentLogicalHeight()) {
             containerRenderer->style()->setLogicalHeight(Length(contentLogicalHeight(), Fixed));
-            setNeedsLayout(true, MarkOnlyThis);
+            setNeedsLayout(MarkOnlyThis);
         } else
             containerRenderer->style()->setLogicalHeight(Length(containerLogicalHeight, Fixed));
     }
@@ -243,7 +252,7 @@ void RenderTextControlSingleLine::styleDidChange(StyleDifference diff, const Ren
     }
     RenderObject* innerTextRenderer = innerTextElement()->renderer();
     if (innerTextRenderer && diff == StyleDifferenceLayout)
-        innerTextRenderer->setNeedsLayout(true, MarkContainingBlockChain);
+        innerTextRenderer->setNeedsLayout(MarkContainingBlockChain);
     if (HTMLElement* placeholder = inputElement()->placeholderElement())
         placeholder->setInlineStyleProperty(CSSPropertyTextOverflow, textShouldBeTruncated() ? CSSValueEllipsis : CSSValueClip);
     setHasOverflowClip(false);
@@ -262,10 +271,7 @@ void RenderTextControlSingleLine::capsLockStateMayHaveChanged()
     bool shouldDrawCapsLockIndicator = false;
 
     if (Frame* frame = document()->frame())
-        shouldDrawCapsLockIndicator = inputElement()->isPasswordField()
-                                      && frame->selection()->isFocusedAndActive()
-                                      && document()->focusedNode() == node()
-                                      && PlatformKeyboardEvent::currentCapsLockState();
+        shouldDrawCapsLockIndicator = inputElement()->isPasswordField() && frame->selection()->isFocusedAndActive() && document()->focusedElement() == node() && PlatformKeyboardEvent::currentCapsLockState();
 
     if (shouldDrawCapsLockIndicator != m_shouldDrawCapsLockIndicator) {
         m_shouldDrawCapsLockIndicator = shouldDrawCapsLockIndicator;
@@ -350,7 +356,7 @@ void RenderTextControlSingleLine::updateFromElement()
 
 PassRefPtr<RenderStyle> RenderTextControlSingleLine::createInnerTextStyle(const RenderStyle* startStyle) const
 {
-    RefPtr<RenderStyle> textBlockStyle = RenderStyle::create();   
+    RefPtr<RenderStyle> textBlockStyle = RenderStyle::create();
     textBlockStyle->inheritFrom(startStyle);
     adjustInnerTextStyle(textBlockStyle.get());
 
@@ -391,8 +397,7 @@ PassRefPtr<RenderStyle> RenderTextControlSingleLine::createInnerBlockStyle(const
 
 bool RenderTextControlSingleLine::textShouldBeTruncated() const
 {
-    return document()->focusedNode() != node()
-        && style()->textOverflow() == TextOverflowEllipsis;
+    return document()->focusedElement() != node() && style()->textOverflow() == TextOverflowEllipsis;
 }
 
 void RenderTextControlSingleLine::autoscroll(const IntPoint& position)

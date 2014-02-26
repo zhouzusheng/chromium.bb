@@ -52,7 +52,15 @@ Player::Player(DocumentTimeline* timeline, TimedItem* content)
     , m_timeline(timeline)
 {
     ASSERT(m_startTime >= 0);
+    if (m_content)
+        m_content->attach(this);
     update();
+}
+
+Player::~Player()
+{
+    if (m_content)
+        m_content->detach();
 }
 
 double Player::currentTimeBeforeDrift() const
@@ -84,6 +92,15 @@ bool Player::update()
     double newTime = isNull(m_timeline->currentTime()) ? nullValue() : currentTime();
     m_content->updateInheritedTime(newTime);
     return m_content->isCurrent() || m_content->isInEffect();
+}
+
+void Player::cancel()
+{
+    if (!m_content)
+        return;
+
+    m_content->detach();
+    m_content = 0;
 }
 
 void Player::setCurrentTime(double seekTime)

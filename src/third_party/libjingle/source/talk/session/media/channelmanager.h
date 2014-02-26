@@ -144,7 +144,12 @@ class ChannelManager : public talk_base::MessageHandler,
   bool SetOutputVolume(int level);
   bool IsSameCapturer(const std::string& capturer_name,
                       VideoCapturer* capturer);
+  // TODO(noahric): Nearly everything called "device" in this API is actually a
+  // device name, so this should really be GetCaptureDeviceName, and the
+  // next method should be GetCaptureDevice.
   bool GetCaptureDevice(std::string* cam_device);
+  // Gets the current capture Device.
+  bool GetVideoCaptureDevice(Device* device);
   // Create capturer based on what has been set in SetCaptureDevice().
   VideoCapturer* CreateVideoCapturer();
   bool SetCaptureDevice(const std::string& cam_device);
@@ -161,8 +166,6 @@ class ChannelManager : public talk_base::MessageHandler,
   // Sets the externally provided video capturer. The ssrc is the ssrc of the
   // (video) stream for which the video capturer should be set.
   bool SetVideoCapturer(VideoCapturer* capturer);
-  // Starts and stops the local camera and renders it to the local renderer.
-  bool SetVideoCapture(bool capture);
   bool capturing() const { return capturing_; }
 
   // Configures the logging output of the mediaengine(s).
@@ -293,8 +296,6 @@ class ChannelManager : public talk_base::MessageHandler,
 
   bool capturing_;
   bool monitoring_;
-
-  talk_base::scoped_ptr<VideoCapturer> video_capturer_;
 
   // String containing currently set device. Note that this string is subtly
   // different from camera_device_. E.g. camera_device_ will list unplugged

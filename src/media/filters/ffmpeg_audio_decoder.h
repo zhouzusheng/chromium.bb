@@ -9,9 +9,10 @@
 
 #include "base/callback.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/base/audio_decoder.h"
 #include "media/base/demuxer_stream.h"
+#include "media/base/sample_format.h"
 
 struct AVCodecContext;
 struct AVFrame;
@@ -22,9 +23,7 @@ class MessageLoopProxy;
 
 namespace media {
 
-class AudioBus;
 class AudioTimestampHelper;
-class DataBuffer;
 class DecoderBuffer;
 struct QueuedAudioBuffer;
 
@@ -43,6 +42,11 @@ class MEDIA_EXPORT FFmpegAudioDecoder : public AudioDecoder {
   virtual ChannelLayout channel_layout() OVERRIDE;
   virtual int samples_per_second() OVERRIDE;
   virtual void Reset(const base::Closure& closure) OVERRIDE;
+
+  // Callback called from within FFmpeg to allocate a buffer based on
+  // the dimensions of |codec_context|. See AVCodecContext.get_buffer2
+  // documentation inside FFmpeg.
+  int GetAudioBuffer(AVCodecContext* codec, AVFrame* frame, int flags);
 
  private:
   // Reads from the demuxer stream with corresponding callback method.
@@ -65,22 +69,21 @@ class MEDIA_EXPORT FFmpegAudioDecoder : public AudioDecoder {
   AVCodecContext* codec_context_;
 
   // Decoded audio format.
-  int bits_per_channel_;
+  int bytes_per_channel_;
   ChannelLayout channel_layout_;
   int channels_;
   int samples_per_second_;
 
   // AVSampleFormat initially requested; not Chrome's SampleFormat.
   int av_sample_format_;
+  SampleFormat sample_format_;
 
   // Used for computing output timestamps.
   scoped_ptr<AudioTimestampHelper> output_timestamp_helper_;
-  int bytes_per_frame_;
   base::TimeDelta last_input_timestamp_;
 
-  // Number of output sample bytes to drop before generating
-  // output buffers.
-  int output_bytes_to_drop_;
+  // Number of frames to drop before generating output buffers.
+  int output_frames_to_drop_;
 
   // Holds decoded audio.
   AVFrame* av_frame_;
@@ -90,10 +93,6 @@ class MEDIA_EXPORT FFmpegAudioDecoder : public AudioDecoder {
   // Since multiple frames may be decoded from the same packet we need to queue
   // them up and hand them out as we receive Read() calls.
   std::list<QueuedAudioBuffer> queued_audio_;
-
-  // We may need to convert the audio data coming out of FFmpeg from planar
-  // float to integer.
-  scoped_ptr<AudioBus> converter_bus_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(FFmpegAudioDecoder);
 };

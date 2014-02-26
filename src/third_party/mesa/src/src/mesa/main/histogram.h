@@ -36,7 +36,10 @@
 #ifndef HISTOGRAM_H
 #define HISTOGRAM_H
 
-#include "main/mtypes.h"
+#include "compiler.h"
+#include "mfeatures.h"
+
+struct _glapi_table;
 
 #if FEATURE_histogram
 
@@ -45,13 +48,11 @@ _mesa_init_histogram_dispatch(struct _glapi_table *disp);
 
 #else /* FEATURE_histogram */
 
-static INLINE void
+static inline void
 _mesa_init_histogram_dispatch(struct _glapi_table *disp)
 {
 }
 
 #endif /* FEATURE_histogram */
-
-extern void _mesa_init_histogram( GLcontext * ctx );
 
 #endif /* HISTOGRAM_H */

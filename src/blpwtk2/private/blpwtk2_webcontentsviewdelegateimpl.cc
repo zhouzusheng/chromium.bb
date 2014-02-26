@@ -32,14 +32,14 @@
 #include <base/strings/utf_string_conversions.h>
 #include <content/public/browser/web_contents.h>
 #include <content/public/common/context_menu_params.h>
+#include <content/public/common/menu_item.h>
 #include <third_party/WebKit/public/web/WebContextMenuData.h>
-#include <webkit/common/webmenuitem.h>
 
 namespace {
 
-void convertItem(const WebMenuItem& item1, blpwtk2::ContextMenuItemImpl* item2Impl);
+void convertItem(const content::MenuItem& item1, blpwtk2::ContextMenuItemImpl* item2Impl);
 
-void convertSubmenus(const WebMenuItem& item1, blpwtk2::ContextMenuItemImpl* item2Impl)
+void convertSubmenus(const content::MenuItem& item1, blpwtk2::ContextMenuItemImpl* item2Impl)
 {
     item2Impl->d_submenu.resize(item1.submenu.size());
     for (size_t i = 0; i < item1.submenu.size(); ++i) {
@@ -55,10 +55,10 @@ void convertCustomItems(const content::ContextMenuParams& params, blpwtk2::Conte
     }
 }
 
-void convertItem(const WebMenuItem& item1, blpwtk2::ContextMenuItemImpl* item2Impl)
+void convertItem(const content::MenuItem& item1, blpwtk2::ContextMenuItemImpl* item2Impl)
 {
     item2Impl->d_label = base::UTF16ToUTF8(item1.label);
-    item2Impl->d_tooltip = base::UTF16ToUTF8(item1.toolTip);
+    item2Impl->d_tooltip = base::UTF16ToUTF8(item1.tool_tip);
     switch (item1.type) {
     case WebKit::WebMenuItemInfo::Option: item2Impl->d_type = blpwtk2::ContextMenuItem::OPTION; break;
     case WebKit::WebMenuItemInfo::CheckableOption: item2Impl->d_type = blpwtk2::ContextMenuItem::CHECKABLE_OPTION; break;

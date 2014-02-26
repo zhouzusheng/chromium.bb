@@ -29,63 +29,83 @@
  */
 
 #include "config.h"
-
 #include "core/dom/CustomElementUpgradeCandidateMap.h"
+
+#include "core/dom/Element.h"
 
 namespace WebCore {
 
-void CustomElementUpgradeCandidateMap::add(CustomElementDefinition::CustomElementKind kind, const AtomicString& type, Element* element)
+CustomElementUpgradeCandidateMap::~CustomElementUpgradeCandidateMap()
 {
-    m_unresolvedElements.add(element, RequiredDefinition(kind, type));
-
-    UnresolvedDefinitionMap::iterator it = m_unresolvedDefinitions.find(type);
-    if (it == m_unresolvedDefinitions.end())
-        it = m_unresolvedDefinitions.add(type, ElementSet()).iterator;
-    it->value.add(element);
+    UpgradeCandidateMap::const_iterator::Keys end = m_upgradeCandidates.end().keys();
+    for (UpgradeCandidateMap::const_iterator::Keys it = m_upgradeCandidates.begin().keys(); it != end; ++it)
+        unregisterForElementDestructionNotification(*it, this);
 }
 
-bool CustomElementUpgradeCandidateMap::contains(Element* element) const
+void CustomElementUpgradeCandidateMap::add(const CustomElementDescriptor& descriptor, Element* element)
 {
-    return m_unresolvedElements.contains(element);
+    element->setCustomElementState(Element::UpgradeCandidate);
+
+    registerForElementDestructionNotification(element, this);
+
+    UpgradeCandidateMap::AddResult result = m_upgradeCandidates.add(element, descriptor);
+    ASSERT(result.isNewEntry);
+
+    UnresolvedDefinitionMap::iterator it = m_unresolvedDefinitions.find(descriptor);
+    if (it == m_unresolvedDefinitions.end())
+        it = m_unresolvedDefinitions.add(descriptor, ElementSet()).iterator;
+    it->value.add(element);
 }
 
 void CustomElementUpgradeCandidateMap::remove(Element* element)
 {
-    UnresolvedElementMap::iterator it = m_unresolvedElements.find(element);
-    if (it == m_unresolvedElements.end())
-        return;
+    unregisterForElementDestructionNotification(element, this);
 
-    const AtomicString& type = it->value.second;
-    m_unresolvedDefinitions.get(type).remove(element);
-    m_unresolvedElements.remove(it);
+    UpgradeCandidateMap::iterator candidate = m_upgradeCandidates.find(element);
+    ASSERT(candidate != m_upgradeCandidates.end());
+
+    UnresolvedDefinitionMap::iterator elements = m_unresolvedDefinitions.find(candidate->value);
+    ASSERT(elements != m_unresolvedDefinitions.end());
+    elements->value.remove(element);
+    m_upgradeCandidates.remove(candidate);
 }
 
-CustomElementUpgradeCandidateMap::ElementSet CustomElementUpgradeCandidateMap::takeUpgradeCandidatesFor(CustomElementDefinition* definition)
+ListHashSet<Element*> CustomElementUpgradeCandidateMap::takeUpgradeCandidatesFor(const CustomElementDescriptor& descriptor)
 {
-    UnresolvedDefinitionMap::iterator it = m_unresolvedDefinitions.find(definition->type());
-    if (it == m_unresolvedDefinitions.end())
-        return ElementSet();
+    const ListHashSet<Element*>& candidates = m_unresolvedDefinitions.take(descriptor);
 
-    const ElementSet& candidatesForThisType = it->value;
-    ElementSet matchingCandidates;
-
-    // Filter the set based on whether the definition matches
-    for (ElementSet::const_iterator candidate = candidatesForThisType.begin(); candidate != candidatesForThisType.end(); ++candidate) {
-        if (matches(definition, *candidate)) {
-            matchingCandidates.add(*candidate);
-            m_unresolvedElements.remove(*candidate);
-        }
+    for (ElementSet::const_iterator candidate = candidates.begin(); candidate != candidates.end(); ++candidate) {
+        unregisterForElementDestructionNotification(*candidate, this);
+        m_upgradeCandidates.remove(*candidate);
     }
 
-    m_unresolvedDefinitions.remove(it);
-    return matchingCandidates;
+    return candidates;
 }
 
-bool CustomElementUpgradeCandidateMap::matches(CustomElementDefinition* definition, Element* element)
+void CustomElementUpgradeCandidateMap::elementWasDestroyed(Element* element)
 {
-    ASSERT(m_unresolvedElements.contains(element));
-    const RequiredDefinition& requirement = m_unresolvedElements.get(element);
-    return definition->kind() == requirement.first && definition->type() == requirement.second && definition->namespaceURI() == element->namespaceURI() && definition->name() == element->localName();
+    DestructionObserverMap::iterator it = destructionObservers().find(element);
+    if (it == destructionObservers().end())
+        return;
+    it->value->remove(element); // will also remove the destruction observer
+}
+
+CustomElementUpgradeCandidateMap::DestructionObserverMap& CustomElementUpgradeCandidateMap::destructionObservers()
+{
+    DEFINE_STATIC_LOCAL(DestructionObserverMap, map, ());
+    return map;
+}
+
+void CustomElementUpgradeCandidateMap::registerForElementDestructionNotification(Element* element, CustomElementUpgradeCandidateMap* observer)
+{
+    DestructionObserverMap::AddResult result = destructionObservers().add(element, observer);
+    ASSERT(result.isNewEntry);
+}
+
+void CustomElementUpgradeCandidateMap::unregisterForElementDestructionNotification(Element* element, CustomElementUpgradeCandidateMap* observer)
+{
+    CustomElementUpgradeCandidateMap* map = destructionObservers().take(element);
+    ASSERT(map == observer);
 }
 
 }

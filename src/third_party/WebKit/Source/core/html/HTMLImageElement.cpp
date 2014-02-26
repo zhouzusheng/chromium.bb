@@ -30,7 +30,7 @@
 #include "core/dom/EventNames.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/loader/cache/CachedImage.h"
+#include "core/loader/cache/ImageResource.h"
 #include "core/rendering/RenderImage.h"
 
 using namespace std;
@@ -143,7 +143,7 @@ RenderObject* HTMLImageElement::createRenderer(RenderStyle* style)
     if (style->hasContent())
         return RenderObject::createObject(this, style);
 
-    RenderImage* image = new (document()->renderArena()) RenderImage(this);
+    RenderImage* image = new RenderImage(this);
     image->setImageResource(RenderImageResource::create());
     return image;
 }
@@ -165,18 +165,25 @@ void HTMLImageElement::attach(const AttachContext& context)
         RenderImageResource* renderImageResource = renderImage->imageResource();
         if (renderImageResource->hasImage())
             return;
-        renderImageResource->setCachedImage(m_imageLoader.image());
 
         // If we have no image at all because we have no src attribute, set
         // image height and width for the alt text instead.
         if (!m_imageLoader.image() && !renderImageResource->cachedImage())
             renderImage->setImageSizeForAltText();
+        else
+            renderImageResource->setImageResource(m_imageLoader.image());
+
     }
 }
 
 Node::InsertionNotificationRequest HTMLImageElement::insertedInto(ContainerNode* insertionPoint)
 {
     // m_form can be non-null if it was set in constructor.
+    if (m_form && insertionPoint->highestAncestor() != m_form->highestAncestor()) {
+        m_form->removeImgElement(this);
+        m_form = 0;
+    }
+
     if (!m_form) {
         m_form = findFormAncestor();
         if (m_form)
@@ -349,7 +356,7 @@ bool HTMLImageElement::isServerMap() const
         return false;
 
     const AtomicString& usemap = fastGetAttribute(usemapAttr);
-    
+
     // If the usemap attribute starts with '#', it refers to a map element in the document.
     if (usemap.string()[0] == '#')
         return false;
@@ -357,12 +364,12 @@ bool HTMLImageElement::isServerMap() const
     return document()->completeURL(stripLeadingAndTrailingHTMLSpaces(usemap)).isEmpty();
 }
 
-void HTMLImageElement::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+Image* HTMLImageElement::imageContents()
 {
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    HTMLElement::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_imageLoader, "imageLoader");
-    info.addMember(m_form, "form");
+    if (!m_imageLoader.imageComplete())
+        return 0;
+
+    return m_imageLoader.image()->image();
 }
 
 }

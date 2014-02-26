@@ -23,6 +23,7 @@
 #include "main/colormac.h"
 #include "main/macros.h"
 #include "main/atifragshader.h"
+#include "main/samplerobj.h"
 #include "swrast/s_atifragshader.h"
 #include "swrast/s_context.h"
 
@@ -43,14 +44,15 @@ struct atifs_machine
  * Fetch a texel.
  */
 static void
-fetch_texel(GLcontext * ctx, const GLfloat texcoord[4], GLfloat lambda,
+fetch_texel(struct gl_context * ctx, const GLfloat texcoord[4], GLfloat lambda,
 	    GLuint unit, GLfloat color[4])
 {
    SWcontext *swrast = SWRAST_CONTEXT(ctx);
 
    /* XXX use a float-valued TextureSample routine here!!! */
-   swrast->TextureSample[unit](ctx, ctx->Texture.Unit[unit]._Current,
-                               1, (const GLfloat(*)[4]) texcoord,
+   swrast->TextureSample[unit](ctx, _mesa_get_samplerobj(ctx, unit),
+                               ctx->Texture.Unit[unit]._Current,
+			       1, (const GLfloat(*)[4]) texcoord,
                                &lambda, (GLfloat (*)[4]) color);
 }
 
@@ -272,7 +274,7 @@ handle_pass_op(struct atifs_machine *machine, struct atifs_setupinst *texinst,
 }
 
 static void
-handle_sample_op(GLcontext * ctx, struct atifs_machine *machine,
+handle_sample_op(struct gl_context * ctx, struct atifs_machine *machine,
 		 struct atifs_setupinst *texinst, const SWspan *span,
 		 GLuint column, GLuint idx)
 {
@@ -311,7 +313,7 @@ do {						\
  * \param column - which pixel [i] we're operating on in the span
  */
 static void
-execute_shader(GLcontext *ctx, const struct ati_fragment_shader *shader,
+execute_shader(struct gl_context *ctx, const struct ati_fragment_shader *shader,
 	       struct atifs_machine *machine, const SWspan *span,
                GLuint column)
 {
@@ -555,7 +557,7 @@ execute_shader(GLcontext *ctx, const struct ati_fragment_shader *shader,
  * Init fragment shader virtual machine state.
  */
 static void
-init_machine(GLcontext * ctx, struct atifs_machine *machine,
+init_machine(struct gl_context * ctx, struct atifs_machine *machine,
 	     const struct ati_fragment_shader *shader,
 	     const SWspan *span, GLuint col)
 {
@@ -577,7 +579,7 @@ init_machine(GLcontext * ctx, struct atifs_machine *machine,
  * Execute the current ATI shader program, operating on the given span.
  */
 void
-_swrast_exec_fragment_shader(GLcontext * ctx, SWspan *span)
+_swrast_exec_fragment_shader(struct gl_context * ctx, SWspan *span)
 {
    const struct ati_fragment_shader *shader = ctx->ATIFragmentShader.Current;
    struct atifs_machine machine;

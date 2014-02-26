@@ -12,15 +12,24 @@ namespace cc {
 
 scoped_ptr<base::Value> ManagedTileBinAsValue(ManagedTileBin bin) {
   switch (bin) {
+  case NOW_AND_READY_TO_DRAW_BIN:
+      return scoped_ptr<base::Value>(base::Value::CreateStringValue(
+          "NOW_AND_READY_TO_DRAW_BIN"));
   case NOW_BIN:
       return scoped_ptr<base::Value>(base::Value::CreateStringValue(
           "NOW_BIN"));
   case SOON_BIN:
       return scoped_ptr<base::Value>(base::Value::CreateStringValue(
           "SOON_BIN"));
+  case EVENTUALLY_AND_ACTIVE_BIN:
+      return scoped_ptr<base::Value>(base::Value::CreateStringValue(
+          "EVENTUALLY_AND_ACTIVE_BIN"));
   case EVENTUALLY_BIN:
       return scoped_ptr<base::Value>(base::Value::CreateStringValue(
           "EVENTUALLY_BIN"));
+  case NEVER_AND_ACTIVE_BIN:
+      return scoped_ptr<base::Value>(base::Value::CreateStringValue(
+          "NEVER_AND_ACTIVE_BIN"));
   case NEVER_BIN:
       return scoped_ptr<base::Value>(base::Value::CreateStringValue(
           "NEVER_BIN"));
@@ -54,7 +63,8 @@ ManagedTileState::ManagedTileState()
       required_for_activation(false),
       time_to_needed_in_seconds(std::numeric_limits<float>::infinity()),
       distance_to_visible_in_pixels(std::numeric_limits<float>::infinity()),
-      visible_and_ready_to_draw(false) {
+      visible_and_ready_to_draw(false),
+      scheduled_priority(0) {
   for (int i = 0; i < NUM_TREES; ++i) {
     tree_bin[i] = NEVER_BIN;
     bin[i] = NEVER_BIN;
@@ -113,6 +123,7 @@ scoped_ptr<base::Value> ManagedTileState::AsValue() const {
       "is_transparent",
       tile_versions[raster_mode].mode_ == TileVersion::SOLID_COLOR_MODE &&
           !SkColorGetA(tile_versions[raster_mode].solid_color_));
+  state->SetInteger("scheduled_priority", scheduled_priority);
   return state.PassAs<base::Value>();
 }
 

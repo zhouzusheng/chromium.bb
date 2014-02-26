@@ -12,12 +12,12 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include "common_types.h"
-#include "engine_configurations.h"
-#include "file_wrapper.h"
-#include "media_file_utility.h"
-#include "module_common_types.h"
-#include "trace.h"
+#include "webrtc/common_types.h"
+#include "webrtc/engine_configurations.h"
+#include "webrtc/modules/interface/module_common_types.h"
+#include "webrtc/modules/media_file/source/media_file_utility.h"
+#include "webrtc/system_wrappers/interface/file_wrapper.h"
+#include "webrtc/system_wrappers/interface/trace.h"
 
 #ifdef WEBRTC_MODULE_UTILITY_VIDEO
     #include "avi_file.h"
@@ -55,7 +55,7 @@ struct WAVE_CHUNK_header
    int8_t  fmt_ckID[4];
    int32_t fmt_ckSize;
 };
-} // unnamed namespace
+}  // unnamed namespace
 
 namespace webrtc {
 ModuleFileUtility::ModuleFileUtility(const int32_t id)
@@ -2559,4 +2559,4 @@ uint32_t ModuleFileUtility::PlayoutPositionMs()
         return 0;
     }
 }
-} // namespace webrtc
+}  // namespace webrtc

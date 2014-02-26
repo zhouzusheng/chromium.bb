@@ -54,7 +54,7 @@ bool HTMLFrameElement::rendererIsNeeded(const NodeRenderingContext&)
 
 RenderObject* HTMLFrameElement::createRenderer(RenderStyle*)
 {
-    return new (document()->renderArena()) RenderFrame(this);
+    return new RenderFrame(this);
 }
 
 static inline HTMLFrameSetElement* containingFrameSetElement(Node* node)
@@ -74,7 +74,7 @@ bool HTMLFrameElement::noResize() const
 void HTMLFrameElement::attach(const AttachContext& context)
 {
     HTMLFrameElementBase::attach(context);
-    
+
     if (HTMLFrameSetElement* frameSetElement = containingFrameSetElement(this)) {
         if (!m_frameBorderSet)
             m_frameBorder = frameSetElement->hasFrameBorder();

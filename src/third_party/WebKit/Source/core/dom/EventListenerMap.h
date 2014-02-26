@@ -34,9 +34,9 @@
 #define EventListenerMap_h
 
 #include "core/dom/RegisteredEventListener.h"
-#include <wtf/Forward.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/text/AtomicStringHash.h>
+#include "wtf/Forward.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/text/AtomicStringHash.h"
 
 namespace WebCore {
 
@@ -50,6 +50,7 @@ public:
 
     bool isEmpty() const { return m_entries.isEmpty(); }
     bool contains(const AtomicString& eventType) const;
+    bool containsCapturing(const AtomicString& eventType) const;
 
     void clear();
     bool add(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture);

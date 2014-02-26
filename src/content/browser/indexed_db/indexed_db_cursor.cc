@@ -5,13 +5,10 @@
 #include "content/browser/indexed_db/indexed_db_cursor.h"
 
 #include "base/logging.h"
-#include "content/browser/indexed_db/indexed_db_backing_store.h"
-#include "content/browser/indexed_db/indexed_db_callbacks_wrapper.h"
-#include "content/browser/indexed_db/indexed_db_database.h"
+#include "content/browser/indexed_db/indexed_db_callbacks.h"
 #include "content/browser/indexed_db/indexed_db_database_error.h"
 #include "content/browser/indexed_db/indexed_db_tracing.h"
 #include "content/browser/indexed_db/indexed_db_transaction.h"
-#include "content/common/indexed_db/indexed_db_key_range.h"
 
 namespace content {
 
@@ -20,14 +17,14 @@ class IndexedDBCursor::CursorIterationOperation
  public:
   CursorIterationOperation(scoped_refptr<IndexedDBCursor> cursor,
                            scoped_ptr<IndexedDBKey> key,
-                           scoped_refptr<IndexedDBCallbacksWrapper> callbacks)
+                           scoped_refptr<IndexedDBCallbacks> callbacks)
       : cursor_(cursor), key_(key.Pass()), callbacks_(callbacks) {}
   virtual void Perform(IndexedDBTransaction* transaction) OVERRIDE;
 
  private:
   scoped_refptr<IndexedDBCursor> cursor_;
   scoped_ptr<IndexedDBKey> key_;
-  scoped_refptr<IndexedDBCallbacksWrapper> callbacks_;
+  scoped_refptr<IndexedDBCallbacks> callbacks_;
 };
 
 class IndexedDBCursor::CursorAdvanceOperation
@@ -35,23 +32,22 @@ class IndexedDBCursor::CursorAdvanceOperation
  public:
   CursorAdvanceOperation(scoped_refptr<IndexedDBCursor> cursor,
                          uint32 count,
-                         scoped_refptr<IndexedDBCallbacksWrapper> callbacks)
+                         scoped_refptr<IndexedDBCallbacks> callbacks)
       : cursor_(cursor), count_(count), callbacks_(callbacks) {}
   virtual void Perform(IndexedDBTransaction* transaction) OVERRIDE;
 
  private:
   scoped_refptr<IndexedDBCursor> cursor_;
   uint32 count_;
-  scoped_refptr<IndexedDBCallbacksWrapper> callbacks_;
+  scoped_refptr<IndexedDBCallbacks> callbacks_;
 };
 
 class IndexedDBCursor::CursorPrefetchIterationOperation
     : public IndexedDBTransaction::Operation {
  public:
-  CursorPrefetchIterationOperation(
-      scoped_refptr<IndexedDBCursor> cursor,
-      int number_to_fetch,
-      scoped_refptr<IndexedDBCallbacksWrapper> callbacks)
+  CursorPrefetchIterationOperation(scoped_refptr<IndexedDBCursor> cursor,
+                                   int number_to_fetch,
+                                   scoped_refptr<IndexedDBCallbacks> callbacks)
       : cursor_(cursor),
         number_to_fetch_(number_to_fetch),
         callbacks_(callbacks) {}
@@ -60,7 +56,7 @@ class IndexedDBCursor::CursorPrefetchIterationOperation
  private:
   scoped_refptr<IndexedDBCursor> cursor_;
   int number_to_fetch_;
-  scoped_refptr<IndexedDBCallbacksWrapper> callbacks_;
+  scoped_refptr<IndexedDBCallbacks> callbacks_;
 };
 
 IndexedDBCursor::IndexedDBCursor(
@@ -80,18 +76,16 @@ IndexedDBCursor::~IndexedDBCursor() {
   transaction_->UnregisterOpenCursor(this);
 }
 
-void IndexedDBCursor::ContinueFunction(
-    scoped_ptr<IndexedDBKey> key,
-    scoped_refptr<IndexedDBCallbacksWrapper> callbacks) {
+void IndexedDBCursor::Continue(scoped_ptr<IndexedDBKey> key,
+                               scoped_refptr<IndexedDBCallbacks> callbacks) {
   IDB_TRACE("IndexedDBCursor::Continue");
 
   transaction_->ScheduleTask(
       task_type_, new CursorIterationOperation(this, key.Pass(), callbacks));
 }
 
-void IndexedDBCursor::Advance(
-    uint32 count,
-    scoped_refptr<IndexedDBCallbacksWrapper> callbacks) {
+void IndexedDBCursor::Advance(uint32 count,
+                              scoped_refptr<IndexedDBCallbacks> callbacks) {
   IDB_TRACE("IndexedDBCursor::Advance");
 
   transaction_->ScheduleTask(
@@ -103,7 +97,7 @@ void IndexedDBCursor::CursorAdvanceOperation::Perform(
   IDB_TRACE("CursorAdvanceOperation");
   if (!cursor_->cursor_ || !cursor_->cursor_->Advance(count_)) {
     cursor_->cursor_.reset();
-    callbacks_->OnSuccess(static_cast<std::vector<char>*>(NULL));
+    callbacks_->OnSuccess(static_cast<std::string*>(NULL));
     return;
   }
 
@@ -114,9 +108,11 @@ void IndexedDBCursor::CursorAdvanceOperation::Perform(
 void IndexedDBCursor::CursorIterationOperation::Perform(
     IndexedDBTransaction* /*transaction*/) {
   IDB_TRACE("CursorIterationOperation");
-  if (!cursor_->cursor_ || !cursor_->cursor_->ContinueFunction(key_.get())) {
+  if (!cursor_->cursor_ ||
+      !cursor_->cursor_->Continue(key_.get(),
+                                  IndexedDBBackingStore::Cursor::SEEK)) {
     cursor_->cursor_.reset();
-    callbacks_->OnSuccess(static_cast<std::vector<char>*>(NULL));
+    callbacks_->OnSuccess(static_cast<std::string*>(NULL));
     return;
   }
 
@@ -126,7 +122,7 @@ void IndexedDBCursor::CursorIterationOperation::Perform(
 
 void IndexedDBCursor::PrefetchContinue(
     int number_to_fetch,
-    scoped_refptr<IndexedDBCallbacksWrapper> callbacks) {
+    scoped_refptr<IndexedDBCallbacks> callbacks) {
   IDB_TRACE("IndexedDBCursor::PrefetchContinue");
 
   transaction_->ScheduleTask(
@@ -140,7 +136,7 @@ void IndexedDBCursor::CursorPrefetchIterationOperation::Perform(
 
   std::vector<IndexedDBKey> found_keys;
   std::vector<IndexedDBKey> found_primary_keys;
-  std::vector<std::vector<char> > found_values;
+  std::vector<std::string> found_values;
 
   if (cursor_->cursor_)
     cursor_->saved_cursor_.reset(cursor_->cursor_->Clone());
@@ -148,7 +144,7 @@ void IndexedDBCursor::CursorPrefetchIterationOperation::Perform(
   size_t size_estimate = 0;
 
   for (int i = 0; i < number_to_fetch_; ++i) {
-    if (!cursor_->cursor_ || !cursor_->cursor_->ContinueFunction(0)) {
+    if (!cursor_->cursor_ || !cursor_->cursor_->Continue()) {
       cursor_->cursor_.reset();
       break;
     }
@@ -158,10 +154,10 @@ void IndexedDBCursor::CursorPrefetchIterationOperation::Perform(
 
     switch (cursor_->cursor_type_) {
       case indexed_db::CURSOR_KEY_ONLY:
-        found_values.push_back(std::vector<char>());
+        found_values.push_back(std::string());
         break;
       case indexed_db::CURSOR_KEY_AND_VALUE: {
-        std::vector<char> value;
+        std::string value;
         value.swap(*cursor_->cursor_->Value());
         size_estimate += value.size();
         found_values.push_back(value);
@@ -178,7 +174,7 @@ void IndexedDBCursor::CursorPrefetchIterationOperation::Perform(
   }
 
   if (!found_keys.size()) {
-    callbacks_->OnSuccess(static_cast<std::vector<char>*>(NULL));
+    callbacks_->OnSuccess(static_cast<std::string*>(NULL));
     return;
   }
 
@@ -195,7 +191,7 @@ void IndexedDBCursor::PrefetchReset(int used_prefetches, int) {
     return;
   if (cursor_) {
     for (int i = 0; i < used_prefetches; ++i) {
-      bool ok = cursor_->ContinueFunction();
+      bool ok = cursor_->Continue();
       DCHECK(ok);
     }
   }

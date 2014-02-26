@@ -31,14 +31,14 @@
 
 #include "core/css/CSSShaderValue.h"
 
+#include "FetchInitiatorTypeNames.h"
 #include "core/css/CSSParser.h"
 #include "core/dom/Document.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "core/loader/cache/CachedResourceLoader.h"
-#include "core/loader/cache/CachedResourceRequest.h"
-#include "core/loader/cache/CachedResourceRequestInitiators.h"
-#include "core/rendering/style/StyleCachedShader.h"
+#include "core/loader/cache/FetchRequest.h"
+#include "core/loader/cache/ResourceFetcher.h"
+#include "core/rendering/style/StyleFetchedShader.h"
 #include "core/rendering/style/StylePendingShader.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -53,24 +53,24 @@ CSSShaderValue::~CSSShaderValue()
 {
 }
 
-KURL CSSShaderValue::completeURL(CachedResourceLoader* loader) const
+KURL CSSShaderValue::completeURL(ResourceFetcher* loader) const
 {
     return loader->document()->completeURL(m_url);
 }
 
-StyleCachedShader* CSSShaderValue::cachedShader(CachedResourceLoader* loader)
+StyleFetchedShader* CSSShaderValue::resource(ResourceFetcher* loader)
 {
     ASSERT(loader);
 
     if (!m_accessedShader) {
         m_accessedShader = true;
 
-        CachedResourceRequest request(ResourceRequest(completeURL(loader)), cachedResourceRequestInitiators().css);
-        if (CachedResourceHandle<CachedShader> cachedShader = loader->requestShader(request))
-            m_shader = StyleCachedShader::create(cachedShader.get());
+        FetchRequest request(ResourceRequest(completeURL(loader)), FetchInitiatorTypeNames::css);
+        if (ResourcePtr<ShaderResource> resource = loader->requestShader(request))
+            m_shader = StyleFetchedShader::create(resource.get());
     }
 
-    return (m_shader && m_shader->isCachedShader()) ? static_cast<StyleCachedShader*>(m_shader.get()) : 0;
+    return (m_shader && m_shader->isShaderResource()) ? static_cast<StyleFetchedShader*>(m_shader.get()) : 0;
 }
 
 StyleShader* CSSShaderValue::cachedOrPendingShader()
@@ -98,13 +98,6 @@ String CSSShaderValue::customCssText() const
 bool CSSShaderValue::equals(const CSSShaderValue& other) const
 {
     return m_url == other.m_url;
-}
-
-void CSSShaderValue::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_url, "url");
-    info.addMember(m_format, "format");
 }
 
 } // namespace WebCore

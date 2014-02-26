@@ -4,7 +4,7 @@
 
 #include "sync/internal_api/public/engine/passive_model_worker.h"
 
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 
 namespace syncer {
 
@@ -18,7 +18,8 @@ PassiveModelWorker::~PassiveModelWorker() {
 }
 
 void PassiveModelWorker::RegisterForLoopDestruction() {
-  NOTREACHED();
+  base::MessageLoop::current()->AddDestructionObserver(this);
+  SetWorkingLoopToCurrent();
 }
 
 SyncerError PassiveModelWorker::DoWorkAndWaitUntilDoneImpl(

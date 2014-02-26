@@ -24,24 +24,20 @@
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
-#include "core/svg/SVGLangSpace.h"
-#include "core/svg/SVGStyledTransformableElement.h"
-#include "core/svg/SVGTests.h"
+#include "core/svg/SVGGraphicsElement.h"
 
 namespace WebCore {
 
-class SVGEllipseElement FINAL : public SVGStyledTransformableElement,
-                                public SVGTests,
-                                public SVGLangSpace,
+class SVGEllipseElement FINAL : public SVGGraphicsElement,
                                 public SVGExternalResourcesRequired {
 public:
     static PassRefPtr<SVGEllipseElement> create(const QualifiedName&, Document*);
 
 private:
     SVGEllipseElement(const QualifiedName&, Document*);
-    
+
     virtual bool isValid() const { return SVGTests::isValid(); }
-    virtual bool supportsFocus() const { return true; }
+    virtual bool supportsFocus() const OVERRIDE { return hasFocusEventListeners(); }
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
@@ -58,11 +54,6 @@ private:
         DECLARE_ANIMATED_LENGTH(Ry, ry)
         DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
     END_DECLARE_ANIMATED_PROPERTIES
-
-    // SVGTests
-    virtual void synchronizeRequiredFeatures() { SVGTests::synchronizeRequiredFeatures(this); }
-    virtual void synchronizeRequiredExtensions() { SVGTests::synchronizeRequiredExtensions(this); }
-    virtual void synchronizeSystemLanguage() { SVGTests::synchronizeSystemLanguage(this); }
 };
 
 } // namespace WebCore

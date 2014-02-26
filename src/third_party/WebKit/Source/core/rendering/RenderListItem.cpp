@@ -29,8 +29,8 @@
 #include "core/html/HTMLOListElement.h"
 #include "core/rendering/RenderListMarker.h"
 #include "core/rendering/RenderView.h"
-#include <wtf/StdLibExtras.h>
-#include <wtf/text/StringBuilder.h>
+#include "wtf/StdLibExtras.h"
+#include "wtf/text/StringBuilder.h"
 
 using namespace std;
 
@@ -57,7 +57,7 @@ void RenderListItem::styleDidChange(StyleDifference diff, const RenderStyle* old
         RefPtr<RenderStyle> newStyle = RenderStyle::create();
         // The marker always inherits from the list item, regardless of where it might end
         // up (e.g., in some deeply nested line box). See CSS3 spec.
-        newStyle->inheritFrom(style()); 
+        newStyle->inheritFrom(style());
         if (!m_marker)
             m_marker = RenderListMarker::createAnonymous(this);
         m_marker->setStyle(newStyle.release());
@@ -68,7 +68,7 @@ void RenderListItem::styleDidChange(StyleDifference diff, const RenderStyle* old
 }
 
 void RenderListItem::willBeDestroyed()
-{    
+{
     if (m_marker) {
         m_marker->destroy();
         m_marker = 0;
@@ -326,9 +326,9 @@ LayoutUnit RenderListItem::additionalMarginStart() const
 void RenderListItem::layout()
 {
     StackStats::LayoutCheckPoint layoutCheckPoint;
-    ASSERT(needsLayout()); 
+    ASSERT(needsLayout());
 
-    updateMarkerLocation();    
+    updateMarkerLocation();
     RenderBlock::layout();
 }
 
@@ -353,7 +353,7 @@ void RenderListItem::positionListMarker()
         LayoutUnit markerLogicalLeft = markerOldLogicalLeft;
         RootInlineBox* root = m_marker->inlineBoxWrapper()->root();
         bool hitSelfPaintingLayer = false;
-        
+
         RootInlineBox* rootBox = m_marker->inlineBoxWrapper()->root();
         LayoutUnit lineTop = rootBox->lineTop();
         LayoutUnit lineBottom = rootBox->lineBottom();
@@ -394,7 +394,7 @@ void RenderListItem::positionListMarker()
                         adjustOverflow = true;
                 }
                 box->setOverflowFromLogicalRects(newLogicalLayoutOverflowRect, newLogicalVisualOverflowRect, lineTop, lineBottom);
-                
+
                 if (box->boxModelObject()->hasSelfPaintingLayer())
                     hitSelfPaintingLayer = true;
             }
@@ -409,16 +409,16 @@ void RenderListItem::positionListMarker()
             bool propagateLayoutOverflow = true;
             do {
                 o = o->parentBox();
-                if (o->hasOverflowClip())
-                    propagateVisualOverflow = false;
                 if (o->isRenderBlock()) {
                     if (propagateVisualOverflow)
-                        toRenderBlock(o)->addVisualOverflow(markerRect);
+                        toRenderBlock(o)->addContentsVisualOverflow(markerRect);
                     if (propagateLayoutOverflow)
                         toRenderBlock(o)->addLayoutOverflow(markerRect);
                 }
-                if (o->hasOverflowClip())
+                if (o->hasOverflowClip()) {
                     propagateLayoutOverflow = false;
+                    propagateVisualOverflow = false;
+                }
                 if (o->hasSelfPaintingLayer())
                     propagateVisualOverflow = false;
                 markerRect.moveBy(-o->location());

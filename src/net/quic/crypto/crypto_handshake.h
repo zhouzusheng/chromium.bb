@@ -12,7 +12,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_piece.h"
 #include "net/base/net_export.h"
+#include "net/cert/cert_verify_result.h"
+#include "net/cert/x509_certificate.h"
 #include "net/quic/crypto/crypto_protocol.h"
+#include "net/quic/crypto/proof_verifier.h"
 #include "net/quic/quic_protocol.h"
 
 namespace net {
@@ -268,13 +271,23 @@ class NET_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
     // (Note: this does not check the chain or signature.)
     void SetProofValid();
 
+    // If the server config or the proof has changed then it needs to be
+    // revalidated. Helper function to keep server_config_valid_ and
+    // generation_counter_ in sync.
+    void SetProofInvalid();
+
     const std::string& server_config() const;
     const std::string& source_address_token() const;
     const std::vector<std::string>& certs() const;
     const std::string& signature() const;
     bool proof_valid() const;
+    uint64 generation_counter() const;
+    const ProofVerifyDetails* proof_verify_details() const;
 
     void set_source_address_token(base::StringPiece token);
+
+    // SetProofVerifyDetails takes ownership of |details|.
+    void SetProofVerifyDetails(ProofVerifyDetails* details);
 
    private:
     std::string server_config_id_;      // An opaque id from the server.
@@ -283,8 +296,15 @@ class NET_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
     std::vector<std::string> certs_;    // A list of certificates in leaf-first
                                         // order.
     std::string server_config_sig_;     // A signature of |server_config_|.
-    bool server_config_valid_;  // true if |server_config_| is correctly signed
-                                // and |certs_| has been validated.
+    bool server_config_valid_;          // True if |server_config_| is correctly
+                                        // signed and |certs_| has been
+                                        // validated.
+    // Generation counter associated with the |server_config_|, |certs_| and
+    // |server_config_sig_| combination. It is incremented whenever we set
+    // server_config_valid_ to false.
+    uint64 generation_counter_;
+
+    scoped_ptr<ProofVerifyDetails> proof_verify_details_;
 
     // scfg contains the cached, parsed value of |server_config|.
     mutable scoped_ptr<CryptoHandshakeMessage> scfg_;
@@ -348,7 +368,7 @@ class NET_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
                                    QuicCryptoNegotiatedParameters* out_params,
                                    std::string* error_details);
 
-  const ProofVerifier* proof_verifier() const;
+  ProofVerifier* proof_verifier() const;
 
   // SetProofVerifier takes ownership of a |ProofVerifier| that clients are
   // free to use in order to verify certificate chains from servers. If a

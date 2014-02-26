@@ -29,17 +29,13 @@
 
 #include "core/dom/Event.h"
 #include "core/platform/Supplementable.h"
-#include "core/platform/Timer.h"
+#include "modules/device_orientation/DeviceSensorEventController.h"
 
 namespace WebCore {
 
 class DeviceMotionData;
-class Document;
 
-// FIXME: This class doesn't inherit from DeviceController anymore, which is a temporary
-// solution. Once device orientation switches to the client-less design, move some of
-// the methods in this class to the DeviceController.
-class DeviceMotionController : public Supplement<ScriptExecutionContext> {
+class DeviceMotionController : public DeviceSensorEventController, public Supplement<ScriptExecutionContext> {
 
 public:
     virtual ~DeviceMotionController();
@@ -48,20 +44,15 @@ public:
     static DeviceMotionController* from(Document*);
 
     void didChangeDeviceMotion(DeviceMotionData*);
-    bool hasLastData();
-    PassRefPtr<Event> getLastEvent();
-    void dispatchDeviceEvent(const PassRefPtr<Event>);
-    void startUpdating();
-    void stopUpdating();
 
 private:
     explicit DeviceMotionController(Document*);
+    virtual void registerWithDispatcher() OVERRIDE;
+    virtual void unregisterWithDispatcher() OVERRIDE;
 
-    void fireDeviceEvent(Timer<DeviceMotionController>*);
-
-    Document* m_document;
-    bool m_isActive;
-    Timer<DeviceMotionController> m_timer;
+    virtual bool hasLastData() OVERRIDE;
+    virtual PassRefPtr<Event> getLastEvent() OVERRIDE;
+    virtual bool isNullEvent(Event*) OVERRIDE;
 };
 
 } // namespace WebCore

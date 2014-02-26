@@ -38,7 +38,7 @@
 // 13. "perf_graphics" is a FLOAT structure (defined below).
 // 14. "perf_gaming" is a FLOAT structure (defined below).
 // 15. "perf_overall" is a FLOAT structure (defined below).
-// 16. "machine_model" contais "name" and an optional "version".  "name" is a
+// 16. "machine_model" contains "name" and an optional "version".  "name" is a
 //     STRING structure and "version" is a VERSION structure (defined below).
 // 17. "gpu_count" is a INT structure (defined below).
 // 18  "cpu_info" is a STRING structure (defined below).
@@ -85,7 +85,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "2.1",
+  "version": "2.6",
   "entries": [
     {
       "id": 1,
@@ -146,7 +146,6 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       },
       "features": [
         "restore_scissor_on_fbo_change",
-        "flush_on_context_switch",
         "delete_instead_of_resize_fbo"  // Only need this on the ICS driver.
       ]
     },
@@ -173,9 +172,14 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
     },
     {
       "id": 9,
-      "description": "Mac AMD drivers get gl_PointCoord backward, rdar://problem/11883495",
+      "description": "Mac AMD drivers get gl_PointCoord backward on OSX 10.8 or earlier",
+      "cr_bugs": [256349],
       "os": {
-        "type": "macosx"
+        "type": "macosx",
+        "version": {
+          "op": "<",
+          "number": "10.9"
+        }
       },
       "vendor_id": "0x1002",
       "features": [
@@ -184,9 +188,14 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
     },
     {
       "id": 10,
-      "description": "Mac Intel drivers get gl_PointCoord backward, rdar://problem/11883495",
+      "description": "Mac Intel drivers get gl_PointCoord backward on OSX 10.8 or earlier",
+      "cr_bugs": [256349],
       "os": {
-        "type": "macosx"
+        "type": "macosx",
+        "version": {
+          "op": "<",
+          "number": "10.9"
+        }
       },
       "vendor_id": "0x8086",
       "features": [
@@ -375,6 +384,58 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "features": [
         "use_non_zero_size_for_client_side_stream_buffers"
       ]
+    },
+    {
+      "id": 25,
+      "cr_bugs": [152225],
+      "description":
+          "PBO + Readpixels + intel gpu doesn't work on OSX 10.7.",
+      "os": {
+        "type": "macosx",
+        "version": {
+          "op": "<",
+          "number": "10.8"
+        }
+      },
+      "vendor_id": "0x8086",
+      "features": [
+        "disable_async_readpixels"
+      ]
+    },
+    {
+      "id": 26,
+      "description": "Disable use of Direct3D 11 on Windows",
+      "os": {
+        "type": "win"
+      },
+      "features": [
+        "disable_d3d11"
+      ]
+    },
+    {
+      "id": 27,
+      "cr_bugs": [265115],
+      "description": "Async Readpixels with GL_BGRA format is broken on Haswell chipset on Mac.",
+      "os": {
+        "type": "macosx"
+      },
+      "vendor_id": "0x8086",
+      "device_id": ["0x0402", "0x0406", "0x040a", "0x0412", "0x0416", "0x041a",
+                    "0x0a04", "0x0a16", "0x0a22", "0x0a26", "0x0a2a"],
+      "features": [
+        "swizzle_rgba_for_async_readpixels"
+      ]
+    },
+    {
+      "id": 28,
+      "cr_bugs": [277817],
+      "description": "Disable use of ANGLE_instanced_arrays on Windows",
+      "os": {
+        "type": "win"
+      },
+      "features": [
+        "disable_angle_instanced_arrays"
+      ]
     }
   ]
 }
@@ -382,4 +443,3 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 );  // LONG_STRING_CONST macro
 
 }  // namespace gpu
-

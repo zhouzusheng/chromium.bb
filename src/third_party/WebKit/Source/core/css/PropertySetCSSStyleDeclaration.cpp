@@ -23,15 +23,15 @@
 #include "core/css/PropertySetCSSStyleDeclaration.h"
 
 #include "HTMLNames.h"
+#include "RuntimeEnabledFeatures.h"
+#include "bindings/v8/ExceptionState.h"
 #include "core/css/CSSParser.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/StylePropertySet.h"
+#include "core/dom/Element.h"
 #include "core/dom/MutationObserverInterestGroup.h"
 #include "core/dom/MutationRecord.h"
-#include "core/dom/StyledElement.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include <wtf/MemoryInstrumentationHashMap.h>
 
 using namespace std;
 
@@ -123,20 +123,13 @@ bool StyleAttributeMutationScope::s_shouldDeliver = false;
 } // namespace
 
 void PropertySetCSSStyleDeclaration::ref()
-{ 
+{
     m_propertySet->ref();
 }
 
 void PropertySetCSSStyleDeclaration::deref()
 {
-    m_propertySet->deref(); 
-}
-
-void PropertySetCSSStyleDeclaration::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_propertySet, "propertySet");
-    info.addMember(m_cssomCSSValueClones, "cssomCSSValueClones");
+    m_propertySet->deref();
 }
 
 unsigned PropertySetCSSStyleDeclaration::length() const
@@ -155,19 +148,18 @@ String PropertySetCSSStyleDeclaration::cssText() const
 {
     return m_propertySet->asText();
 }
-    
-void PropertySetCSSStyleDeclaration::setCssText(const String& text, ExceptionCode& ec)
+
+void PropertySetCSSStyleDeclaration::setCssText(const String& text, ExceptionState& es)
 {
     StyleAttributeMutationScope mutationScope(this);
     willMutate();
 
-    ec = 0;
-    // FIXME: Detect syntax errors and set ec.
+    // FIXME: Detect syntax errors and set es.
     m_propertySet->parseDeclaration(text, contextStyleSheet());
 
     didMutate(PropertyChanged);
 
-    mutationScope.enqueueMutationRecord();    
+    mutationScope.enqueueMutationRecord();
 }
 
 PassRefPtr<CSSValue> PropertySetCSSStyleDeclaration::getPropertyCSSValue(const String& propertyName)
@@ -213,7 +205,7 @@ bool PropertySetCSSStyleDeclaration::isPropertyImplicit(const String& propertyNa
     return m_propertySet->isPropertyImplicit(propertyID);
 }
 
-void PropertySetCSSStyleDeclaration::setProperty(const String& propertyName, const String& value, const String& priority, ExceptionCode& ec)
+void PropertySetCSSStyleDeclaration::setProperty(const String& propertyName, const String& value, const String& priority, ExceptionState& es)
 {
     StyleAttributeMutationScope mutationScope(this);
     CSSPropertyID propertyID = cssPropertyID(propertyName);
@@ -224,19 +216,18 @@ void PropertySetCSSStyleDeclaration::setProperty(const String& propertyName, con
 
     willMutate();
 
-    ec = 0;
     bool changed = m_propertySet->setProperty(propertyID, value, important, contextStyleSheet());
 
     didMutate(changed ? PropertyChanged : NoChanges);
 
     if (changed) {
-        // CSS DOM requires raising SYNTAX_ERR of parsing failed, but this is too dangerous for compatibility,
+        // CSS DOM requires raising SyntaxError of parsing failed, but this is too dangerous for compatibility,
         // see <http://bugs.webkit.org/show_bug.cgi?id=7296>.
         mutationScope.enqueueMutationRecord();
     }
 }
 
-String PropertySetCSSStyleDeclaration::removeProperty(const String& propertyName, ExceptionCode& ec)
+String PropertySetCSSStyleDeclaration::removeProperty(const String& propertyName, ExceptionState& es)
 {
     StyleAttributeMutationScope mutationScope(this);
     CSSPropertyID propertyID = cssPropertyID(propertyName);
@@ -245,7 +236,6 @@ String PropertySetCSSStyleDeclaration::removeProperty(const String& propertyName
 
     willMutate();
 
-    ec = 0;
     String result;
     bool changed = m_propertySet->removeProperty(propertyID, &result);
 
@@ -262,20 +252,65 @@ PassRefPtr<CSSValue> PropertySetCSSStyleDeclaration::getPropertyCSSValueInternal
 }
 
 String PropertySetCSSStyleDeclaration::getPropertyValueInternal(CSSPropertyID propertyID)
-{ 
+{
     return m_propertySet->getPropertyValue(propertyID);
 }
 
-void PropertySetCSSStyleDeclaration::setPropertyInternal(CSSPropertyID propertyID, const String& value, bool important, ExceptionCode& ec)
-{ 
+void PropertySetCSSStyleDeclaration::setPropertyInternal(CSSPropertyID propertyID, const String& value, bool important, ExceptionState& es)
+{
     StyleAttributeMutationScope mutationScope(this);
     willMutate();
 
-    ec = 0;
     bool changed = m_propertySet->setProperty(propertyID, value, important, contextStyleSheet());
 
     didMutate(changed ? PropertyChanged : NoChanges);
 
+    if (changed)
+        mutationScope.enqueueMutationRecord();
+}
+
+unsigned PropertySetCSSStyleDeclaration::variableCount() const
+{
+    ASSERT(RuntimeEnabledFeatures::cssVariablesEnabled());
+    return m_propertySet->variableCount();
+}
+
+String PropertySetCSSStyleDeclaration::variableValue(const AtomicString& name) const
+{
+    ASSERT(RuntimeEnabledFeatures::cssVariablesEnabled());
+    return m_propertySet->variableValue(name);
+}
+
+void PropertySetCSSStyleDeclaration::setVariableValue(const AtomicString& name, const String& value, ExceptionState&)
+{
+    ASSERT(RuntimeEnabledFeatures::cssVariablesEnabled());
+    StyleAttributeMutationScope mutationScope(this);
+    willMutate();
+    bool changed = m_propertySet->setVariableValue(name, value);
+    didMutate(changed ? PropertyChanged : NoChanges);
+    if (changed)
+        mutationScope.enqueueMutationRecord();
+}
+
+bool PropertySetCSSStyleDeclaration::removeVariable(const AtomicString& name)
+{
+    ASSERT(RuntimeEnabledFeatures::cssVariablesEnabled());
+    StyleAttributeMutationScope mutationScope(this);
+    willMutate();
+    bool changed = m_propertySet->removeVariable(name);
+    didMutate(changed ? PropertyChanged : NoChanges);
+    if (changed)
+        mutationScope.enqueueMutationRecord();
+    return changed;
+}
+
+void PropertySetCSSStyleDeclaration::clearVariables(ExceptionState&)
+{
+    ASSERT(RuntimeEnabledFeatures::cssVariablesEnabled());
+    StyleAttributeMutationScope mutationScope(this);
+    willMutate();
+    bool changed = m_propertySet->clearVariables();
+    didMutate(changed ? PropertyChanged : NoChanges);
     if (changed)
         mutationScope.enqueueMutationRecord();
 }
@@ -289,7 +324,7 @@ CSSValue* PropertySetCSSStyleDeclaration::cloneAndCacheForCSSOM(CSSValue* intern
     // FIXME: It is likely that the identity is not important for web compatibility and this code should be removed.
     if (!m_cssomCSSValueClones)
         m_cssomCSSValueClones = adoptPtr(new HashMap<CSSValue*, RefPtr<CSSValue> >);
-    
+
     RefPtr<CSSValue>& clonedValue = m_cssomCSSValueClones->add(internalValue, RefPtr<CSSValue>()).iterator->value;
     if (!clonedValue)
         clonedValue = internalValue->cloneForCSSOM();
@@ -297,7 +332,7 @@ CSSValue* PropertySetCSSStyleDeclaration::cloneAndCacheForCSSOM(CSSValue* intern
 }
 
 StyleSheetContents* PropertySetCSSStyleDeclaration::contextStyleSheet() const
-{ 
+{
     CSSStyleSheet* cssStyleSheet = parentStyleSheet();
     return cssStyleSheet ? cssStyleSheet->contents() : 0;
 }
@@ -311,11 +346,11 @@ bool PropertySetCSSStyleDeclaration::cssPropertyMatches(CSSPropertyID propertyID
 {
     return m_propertySet->propertyMatches(propertyID, propertyValue);
 }
-    
+
 StyleRuleCSSStyleDeclaration::StyleRuleCSSStyleDeclaration(MutableStylePropertySet* propertySet, CSSRule* parentRule)
     : PropertySetCSSStyleDeclaration(propertySet)
     , m_refCount(1)
-    , m_parentRule(parentRule) 
+    , m_parentRule(parentRule)
 {
     m_propertySet->ref();
 }
@@ -326,12 +361,12 @@ StyleRuleCSSStyleDeclaration::~StyleRuleCSSStyleDeclaration()
 }
 
 void StyleRuleCSSStyleDeclaration::ref()
-{ 
+{
     ++m_refCount;
 }
 
 void StyleRuleCSSStyleDeclaration::deref()
-{ 
+{
     ASSERT(m_refCount);
     if (!--m_refCount)
         delete this;
@@ -366,20 +401,6 @@ void StyleRuleCSSStyleDeclaration::reattach(MutableStylePropertySet* propertySet
     m_propertySet->ref();
 }
 
-void StyleRuleCSSStyleDeclaration::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    PropertySetCSSStyleDeclaration::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_parentRule, "parentRule");
-}
-
-void InlineCSSStyleDeclaration::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    PropertySetCSSStyleDeclaration::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_parentElement, "parentElement");
-}
-
 void InlineCSSStyleDeclaration::didMutate(MutationType type)
 {
     if (type == NoChanges)
@@ -390,7 +411,7 @@ void InlineCSSStyleDeclaration::didMutate(MutationType type)
     if (!m_parentElement)
         return;
 
-    m_parentElement->setNeedsStyleRecalc(InlineStyleChange);
+    m_parentElement->setNeedsStyleRecalc(LocalStyleChange);
     m_parentElement->invalidateStyleAttribute();
     StyleAttributeMutationScope(this).didInvalidateStyleAttr();
 }

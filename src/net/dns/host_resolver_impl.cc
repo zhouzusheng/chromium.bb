@@ -28,7 +28,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/worker_pool.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "net/base/address_family.h"
 #include "net/base/address_list.h"
@@ -171,13 +171,14 @@ bool ResemblesMulticastDNSName(const std::string& hostname) {
 }
 
 // Attempts to connect a UDP socket to |dest|:53.
-bool IsGloballyReachable(const IPAddressNumber& dest) {
+bool IsGloballyReachable(const IPAddressNumber& dest,
+                         const BoundNetLog& net_log) {
   scoped_ptr<DatagramClientSocket> socket(
       ClientSocketFactory::GetDefaultFactory()->CreateDatagramClientSocket(
           DatagramSocket::DEFAULT_BIND,
           RandIntCallback(),
-          NULL,
-          NetLog::Source()));
+          net_log.net_log(),
+          net_log.source()));
   int rv = socket->Connect(IPEndPoint(dest, 53));
   if (rv != OK)
     return false;
@@ -241,6 +242,20 @@ void RecordTTL(base::TimeDelta ttl) {
   UMA_HISTOGRAM_CUSTOM_TIMES("AsyncDNS.TTL", ttl,
                              base::TimeDelta::FromSeconds(1),
                              base::TimeDelta::FromDays(1), 100);
+}
+
+bool ConfigureAsyncDnsNoFallbackFieldTrial() {
+  const bool kDefault = false;
+
+  // Configure the AsyncDns field trial as follows:
+  // groups AsyncDnsNoFallbackA and AsyncDnsNoFallbackB: return true,
+  // groups AsyncDnsA and AsyncDnsB: return false,
+  // groups SystemDnsA and SystemDnsB: return false,
+  // otherwise (trial absent): return default.
+  std::string group_name = base::FieldTrialList::FindFullName("AsyncDns");
+  if (!group_name.empty())
+    return StartsWithASCII(group_name, "AsyncDnsNoFallback", false);
+  return kDefault;
 }
 
 //-----------------------------------------------------------------------------
@@ -908,54 +923,6 @@ class HostResolverImpl::ProcTask
 
 //-----------------------------------------------------------------------------
 
-// Wraps a call to TestIPv6Support to be executed on the WorkerPool as it takes
-// 40-100ms.
-// TODO(szym): Remove altogether, if IPv6ActiveProbe works.
-class HostResolverImpl::IPv6ProbeJob {
- public:
-  IPv6ProbeJob(const base::WeakPtr<HostResolverImpl>& resolver, NetLog* net_log)
-      : resolver_(resolver),
-        net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_IPV6_PROBE_JOB)),
-        result_(false, IPV6_SUPPORT_MAX, OK) {
-    DCHECK(resolver.get());
-    net_log_.BeginEvent(NetLog::TYPE_IPV6_PROBE_RUNNING);
-    const bool kIsSlow = true;
-    base::WorkerPool::PostTaskAndReply(
-        FROM_HERE,
-        base::Bind(&IPv6ProbeJob::DoProbe, base::Unretained(this)),
-        base::Bind(&IPv6ProbeJob::OnProbeComplete, base::Owned(this)),
-        kIsSlow);
-  }
-
-  virtual ~IPv6ProbeJob() {}
-
- private:
-  // Runs on worker thread.
-  void DoProbe() {
-    result_ = TestIPv6Support();
-  }
-
-  void OnProbeComplete() {
-    net_log_.EndEvent(NetLog::TYPE_IPV6_PROBE_RUNNING,
-                      base::Bind(&IPv6SupportResult::ToNetLogValue,
-                                 base::Unretained(&result_)));
-    if (!resolver_.get())
-      return;
-    resolver_->IPv6ProbeSetDefaultAddressFamily(
-        result_.ipv6_supported ? ADDRESS_FAMILY_UNSPECIFIED
-                                      : ADDRESS_FAMILY_IPV4);
-  }
-
-  // Used/set only on origin thread.
-  base::WeakPtr<HostResolverImpl> resolver_;
-
-  BoundNetLog net_log_;
-
-  IPv6SupportResult result_;
-
-  DISALLOW_COPY_AND_ASSIGN(IPv6ProbeJob);
-};
-
 // Wraps a call to HaveOnlyLoopbackAddresses to be executed on the WorkerPool as
 // it takes 40-100ms and should not block initialization.
 class HostResolverImpl::LoopbackProbeJob {
@@ -1027,9 +994,9 @@ class HostResolverImpl::DnsTask : public base::SupportsWeakPtr<DnsTask> {
         net_log_);
   }
 
-  int Start() {
+  void Start() {
     net_log_.BeginEvent(NetLog::TYPE_HOST_RESOLVER_IMPL_DNS_TASK);
-    return transaction_->Start();
+    transaction_->Start();
   }
 
  private:
@@ -1085,9 +1052,7 @@ class HostResolverImpl::DnsTask : public base::SupportsWeakPtr<DnsTask> {
             base::Bind(&DnsTask::OnTransactionComplete, base::Unretained(this),
                        false /* first_query */, base::TimeTicks::Now()),
             net_log_);
-        net_error = transaction_->Start();
-        if (net_error != ERR_IO_PENDING)
-          OnFailure(net_error, DnsResponse::DNS_PARSE_OK);
+        transaction_->Start();
         return;
       }
     } else {
@@ -1435,8 +1400,10 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
         resolver_->resolved_known_ipv6_hostname_ = true;
         bool got_ipv6_address = false;
         for (size_t i = 0; i < addr_list.size(); ++i) {
-          if (addr_list[i].GetFamily() == ADDRESS_FAMILY_IPV6)
+          if (addr_list[i].GetFamily() == ADDRESS_FAMILY_IPV6) {
             got_ipv6_address = true;
+            break;
+          }
         }
         UMA_HISTOGRAM_BOOLEAN("Net.UnspecResolvedIPv6", got_ipv6_address);
       }
@@ -1475,19 +1442,40 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
 
   void StartDnsTask() {
     DCHECK(resolver_->HaveDnsConfig());
+    base::TimeTicks start_time = base::TimeTicks::Now();
     dns_task_.reset(new DnsTask(
         resolver_->dns_client_.get(),
         key_,
-        base::Bind(&Job::OnDnsTaskComplete, base::Unretained(this),
-                   base::TimeTicks::Now()),
+        base::Bind(&Job::OnDnsTaskComplete, base::Unretained(this), start_time),
         net_log_));
 
-    int rv = dns_task_->Start();
-    if (rv != ERR_IO_PENDING) {
-      DCHECK_NE(OK, rv);
-      dns_task_error_ = rv;
+    dns_task_->Start();
+  }
+
+  // Called if DnsTask fails. It is posted from StartDnsTask, so Job may be
+  // deleted before this callback. In this case dns_task is deleted as well,
+  // so we use it as indicator whether Job is still valid.
+  void OnDnsTaskFailure(const base::WeakPtr<DnsTask>& dns_task,
+                        base::TimeDelta duration,
+                        int net_error) {
+    DNS_HISTOGRAM("AsyncDNS.ResolveFail", duration);
+
+    if (dns_task == NULL)
+      return;
+
+    dns_task_error_ = net_error;
+
+    // TODO(szym): Run ServeFromHosts now if nsswitch.conf says so.
+    // http://crbug.com/117655
+
+    // TODO(szym): Some net errors indicate lack of connectivity. Starting
+    // ProcTask in that case is a waste of time.
+    if (resolver_->fallback_to_proctask_) {
       dns_task_.reset();
       StartProcTask();
+    } else {
+      UmaAsyncDnsResolveStatus(RESOLVE_STATUS_FAIL);
+      CompleteRequestsWithError(net_error);
     }
   }
 
@@ -1500,17 +1488,7 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job {
 
     base::TimeDelta duration = base::TimeTicks::Now() - start_time;
     if (net_error != OK) {
-      DNS_HISTOGRAM("AsyncDNS.ResolveFail", duration);
-
-      dns_task_error_ = net_error;
-      dns_task_.reset();
-
-      // TODO(szym): Run ServeFromHosts now if nsswitch.conf says so.
-      // http://crbug.com/117655
-
-      // TODO(szym): Some net errors indicate lack of connectivity. Starting
-      // ProcTask in that case is a waste of time.
-      StartProcTask();
+      OnDnsTaskFailure(dns_task_->AsWeakPtr(), duration, net_error);
       return;
     }
     DNS_HISTOGRAM("AsyncDNS.ResolveSuccess", duration);
@@ -1702,9 +1680,10 @@ HostResolverImpl::HostResolverImpl(
       probe_weak_ptr_factory_(this),
       received_dns_config_(false),
       num_dns_failures_(0),
-      ipv6_probe_monitoring_(false),
+      probe_ipv6_support_(true),
       resolved_known_ipv6_hostname_(false),
-      additional_resolver_flags_(0) {
+      additional_resolver_flags_(0),
+      fallback_to_proctask_(true) {
 
   DCHECK_GE(dispatcher_.num_priorities(), static_cast<size_t>(NUM_PRIORITIES));
 
@@ -1717,7 +1696,7 @@ HostResolverImpl::HostResolverImpl(
 #if defined(OS_WIN)
   EnsureWinsockInit();
 #endif
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
   new LoopbackProbeJob(weak_ptr_factory_.GetWeakPtr());
 #endif
   NetworkChangeNotifier::AddIPAddressObserver(this);
@@ -1734,6 +1713,8 @@ HostResolverImpl::HostResolverImpl(
     NetworkChangeNotifier::GetDnsConfig(&dns_config);
     received_dns_config_ = dns_config.IsValid();
   }
+
+  fallback_to_proctask_ = !ConfigureAsyncDnsNoFallbackFieldTrial();
 }
 
 HostResolverImpl::~HostResolverImpl() {
@@ -1772,7 +1753,7 @@ int HostResolverImpl::Resolve(const RequestInfo& info,
 
   // Build a key that identifies the request in the cache and in the
   // outstanding jobs map.
-  Key key = GetEffectiveKeyForRequest(info);
+  Key key = GetEffectiveKeyForRequest(info, request_net_log);
 
   int rv = ResolveHelper(key, info, addresses, request_net_log);
   if (rv != ERR_DNS_CACHE_MISS) {
@@ -1860,7 +1841,7 @@ int HostResolverImpl::ResolveFromCache(const RequestInfo& info,
   // Update the net log and notify registered observers.
   LogStartRequest(source_net_log, request_net_log, info);
 
-  Key key = GetEffectiveKeyForRequest(info);
+  Key key = GetEffectiveKeyForRequest(info, request_net_log);
 
   int rv = ResolveHelper(key, info, addresses, request_net_log);
   LogFinishRequest(source_net_log, request_net_log, info, rv);
@@ -1879,19 +1860,11 @@ void HostResolverImpl::CancelRequest(RequestHandle req_handle) {
 void HostResolverImpl::SetDefaultAddressFamily(AddressFamily address_family) {
   DCHECK(CalledOnValidThread());
   default_address_family_ = address_family;
-  ipv6_probe_monitoring_ = false;
+  probe_ipv6_support_ = false;
 }
 
 AddressFamily HostResolverImpl::GetDefaultAddressFamily() const {
   return default_address_family_;
-}
-
-// TODO(szym): Remove this API altogether if IPv6ActiveProbe works.
-void HostResolverImpl::ProbeIPv6Support() {
-  DCHECK(CalledOnValidThread());
-  DCHECK(!ipv6_probe_monitoring_);
-  ipv6_probe_monitoring_ = true;
-  OnIPAddressChanged();
 }
 
 void HostResolverImpl::SetDnsClientEnabled(bool enabled) {
@@ -1938,7 +1911,7 @@ bool HostResolverImpl::ResolveAsIP(const Key& key,
         HOST_RESOLVER_DEFAULT_FAMILY_SET_DUE_TO_NO_IPV6),
             0) << " Unhandled flag";
   bool ipv6_disabled = (default_address_family_ == ADDRESS_FAMILY_IPV4) &&
-      !ipv6_probe_monitoring_;
+      !probe_ipv6_support_;
   *net_error = OK;
   if ((ip_number.size() == kIPv6AddressSize) && ipv6_disabled) {
     *net_error = ERR_NAME_NOT_RESOLVED;
@@ -2035,20 +2008,6 @@ void HostResolverImpl::RemoveJob(Job* job) {
     jobs_.erase(it);
 }
 
-void HostResolverImpl::IPv6ProbeSetDefaultAddressFamily(
-    AddressFamily address_family) {
-  DCHECK(address_family == ADDRESS_FAMILY_UNSPECIFIED ||
-         address_family == ADDRESS_FAMILY_IPV4);
-  if (!ipv6_probe_monitoring_)
-    return;
-  if (default_address_family_ != address_family) {
-    VLOG(1) << "IPv6Probe forced AddressFamily setting to "
-            << ((address_family == ADDRESS_FAMILY_UNSPECIFIED) ?
-                "ADDRESS_FAMILY_UNSPECIFIED" : "ADDRESS_FAMILY_IPV4");
-  }
-  default_address_family_ = address_family;
-}
-
 void HostResolverImpl::SetHaveOnlyLoopbackAddresses(bool result) {
   if (result) {
     additional_resolver_flags_ |= HOST_RESOLVER_LOOPBACK_ONLY;
@@ -2058,7 +2017,7 @@ void HostResolverImpl::SetHaveOnlyLoopbackAddresses(bool result) {
 }
 
 HostResolverImpl::Key HostResolverImpl::GetEffectiveKeyForRequest(
-    const RequestInfo& info) const {
+    const RequestInfo& info, const BoundNetLog& net_log) const {
   HostResolverFlags effective_flags =
       info.host_resolver_flags() | additional_resolver_flags_;
   AddressFamily effective_address_family = info.address_family();
@@ -2069,8 +2028,11 @@ HostResolverImpl::Key HostResolverImpl::GetEffectiveKeyForRequest(
     const uint8 kIPv6Address[] =
         { 0x20, 0x01, 0x48, 0x60, 0x48, 0x60, 0x00, 0x00,
           0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x88, 0x88 };
-    bool rv6 = IsGloballyReachable(
-        IPAddressNumber(kIPv6Address, kIPv6Address + arraysize(kIPv6Address)));
+    IPAddressNumber address(kIPv6Address,
+                            kIPv6Address + arraysize(kIPv6Address));
+    bool rv6 = IsGloballyReachable(address, net_log);
+    if (rv6)
+      net_log.AddEvent(NetLog::TYPE_HOST_RESOLVER_IMPL_IPV6_SUPPORTED);
 
     UMA_HISTOGRAM_TIMES("Net.IPv6ConnectDuration",
                         base::TimeTicks::Now() - start_time);
@@ -2086,7 +2048,7 @@ HostResolverImpl::Key HostResolverImpl::GetEffectiveKeyForRequest(
   if (effective_address_family == ADDRESS_FAMILY_UNSPECIFIED &&
       default_address_family_ != ADDRESS_FAMILY_UNSPECIFIED) {
     effective_address_family = default_address_family_;
-    if (ipv6_probe_monitoring_)
+    if (probe_ipv6_support_)
       effective_flags |= HOST_RESOLVER_DEFAULT_FAMILY_SET_DUE_TO_NO_IPV6;
   }
 
@@ -2145,9 +2107,7 @@ void HostResolverImpl::OnIPAddressChanged() {
   probe_weak_ptr_factory_.InvalidateWeakPtrs();
   if (cache_.get())
     cache_->clear();
-  if (ipv6_probe_monitoring_)
-    new IPv6ProbeJob(probe_weak_ptr_factory_.GetWeakPtr(), net_log_);
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
   new LoopbackProbeJob(probe_weak_ptr_factory_.GetWeakPtr());
 #endif
   AbortAllInProgressJobs();

@@ -30,12 +30,12 @@ static const int INDEX_POOL_IB_COUNT = 4;
 GrGpu::GrGpu(GrContext* context)
     : GrDrawTarget(context)
     , fResetTimestamp(kExpiredTimestamp+1)
+    , fResetBits(kAll_GrBackendState)
     , fVertexPool(NULL)
     , fIndexPool(NULL)
     , fVertexPoolUseCnt(0)
     , fIndexPoolUseCnt(0)
-    , fQuadIndexBuffer(NULL)
-    , fContextIsDirty(true) {
+    , fQuadIndexBuffer(NULL) {
 
     fClipMaskManager.setGpu(this);
 
@@ -203,7 +203,7 @@ GrPath* GrGpu::createPath(const SkPath& path) {
     return this->onCreatePath(path);
 }
 
-void GrGpu::clear(const GrIRect* rect,
+void GrGpu::clear(const SkIRect* rect,
                   GrColor color,
                   GrRenderTarget* renderTarget) {
     GrDrawState::AutoRenderTargetRestore art;
@@ -211,6 +211,7 @@ void GrGpu::clear(const GrIRect* rect,
         art.set(this->drawState(), renderTarget);
     }
     if (NULL == this->getDrawState().getRenderTarget()) {
+        GrAssert(0);
         return;
     }
     this->handleDirtyContext();

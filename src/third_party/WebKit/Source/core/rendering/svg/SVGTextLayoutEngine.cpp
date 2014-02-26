@@ -62,7 +62,7 @@ void SVGTextLayoutEngine::updateCharacerPositionIfNeeded(float& x, float& y)
 
     // Replace characters x/y position, with the current text position plus any
     // relative adjustments, if it doesn't specify an absolute position itself.
-    if (x == SVGTextLayoutAttributes::emptyValue()) 
+    if (x == SVGTextLayoutAttributes::emptyValue())
         x = m_x + m_dx;
 
     if (y == SVGTextLayoutAttributes::emptyValue())
@@ -148,7 +148,7 @@ bool SVGTextLayoutEngine::parentDefinesTextLength(RenderObject* parent) const
     while (currentParent) {
         if (SVGTextContentElement* textContentElement = SVGTextContentElement::elementFromRenderer(currentParent)) {
             SVGLengthContext lengthContext(textContentElement);
-            if (textContentElement->lengthAdjust() == SVGLengthAdjustSpacing && textContentElement->specifiedTextLength().value(lengthContext) > 0)
+            if (textContentElement->lengthAdjustCurrentValue() == SVGLengthAdjustSpacing && textContentElement->specifiedTextLength().value(lengthContext) > 0)
                 return true;
         }
 
@@ -206,7 +206,7 @@ void SVGTextLayoutEngine::beginTextPathLayout(RenderObject* object, SVGTextLayou
 
     if (SVGTextContentElement* textContentElement = SVGTextContentElement::elementFromRenderer(textPath)) {
         SVGLengthContext lengthContext(textContentElement);
-        lengthAdjust = textContentElement->lengthAdjust();
+        lengthAdjust = textContentElement->lengthAdjustCurrentValue();
         desiredTextLength = textContentElement->specifiedTextLength().value(lengthContext);
     }
 
@@ -268,12 +268,12 @@ static inline void dumpTextBoxes(Vector<SVGInlineTextBox*>& boxes)
         fprintf(stderr, "        textBox properties, start=%i, len=%i, box direction=%i\n", textBox->start(), textBox->len(), textBox->direction());
         fprintf(stderr, "   textRenderer properties, textLength=%i\n", textBox->textRenderer()->textLength());
 
-        const UChar* characters = textBox->textRenderer()->characters();
+        String characters = textBox->textRenderer()->text();
 
         unsigned fragmentCount = fragments.size();
         for (unsigned i = 0; i < fragmentCount; ++i) {
             SVGTextFragment& fragment = fragments.at(i);
-            String fragmentString(characters + fragment.characterOffset, fragment.length);
+            String fragmentString = characters.substring(fragment.characterOffset, fragment.length);
             fprintf(stderr, "    -> Fragment %i, x=%lf, y=%lf, width=%lf, height=%lf, characterOffset=%i, length=%i, characters='%s'\n"
                           , i, fragment.x, fragment.y, fragment.width, fragment.height, fragment.characterOffset, fragment.length, fragmentString.utf8().data());
         }
@@ -389,9 +389,6 @@ bool SVGTextLayoutEngine::currentVisualCharacterMetrics(SVGInlineTextBox* textBo
     unsigned boxStart = textBox->start();
     unsigned boxLength = textBox->len();
 
-    if (m_visualMetricsListOffset == textMetricsSize)
-        return false;
-
     while (m_visualMetricsListOffset < textMetricsSize) {
         // Advance to text box start location.
         if (m_visualCharacterOffset < boxStart) {
@@ -428,7 +425,7 @@ void SVGTextLayoutEngine::layoutTextOnLineOrPath(SVGInlineTextBox* textBox, Rend
         return;
 
     SVGElement* lengthContext = toSVGElement(text->parent()->node());
-    
+
     RenderObject* textParent = text->parent();
     bool definesTextLength = textParent ? parentDefinesTextLength(textParent) : false;
 
@@ -441,7 +438,6 @@ void SVGTextLayoutEngine::layoutTextOnLineOrPath(SVGInlineTextBox* textBox, Rend
     Vector<SVGTextMetrics>& visualMetricsValues = text->layoutAttributes()->textMetricsValues();
     ASSERT(!visualMetricsValues.isEmpty());
 
-    const UChar* characters = text->characters();
     const Font& font = style->font();
 
     SVGTextLayoutEngineSpacing spacingLayout(font);
@@ -492,8 +488,8 @@ void SVGTextLayoutEngine::layoutTextOnLineOrPath(SVGInlineTextBox* textBox, Rend
         float angle = data.rotate == SVGTextLayoutAttributes::emptyValue() ? 0 : data.rotate;
 
         // Calculate glyph orientation angle.
-        const UChar* currentCharacter = characters + m_visualCharacterOffset;
-        float orientationAngle = baselineLayout.calculateGlyphOrientationAngle(m_isVerticalText, svgStyle, *currentCharacter);
+        UChar currentCharacter = text->characterAt(m_visualCharacterOffset);
+        float orientationAngle = baselineLayout.calculateGlyphOrientationAngle(m_isVerticalText, svgStyle, currentCharacter);
 
         // Calculate glyph advance & x/y orientation shifts.
         float xOrientationShift = 0;

@@ -41,13 +41,15 @@
 
 #include "glheader.h"
 #include "hash.h"
+#include "image.h"
 #include "imports.h"
 #include "context.h"
-#if FEATURE_ARB_vertex_buffer_object
+#include "mfeatures.h"
 #include "bufferobj.h"
-#endif
 #include "arrayobj.h"
 #include "macros.h"
+#include "mtypes.h"
+#include "varray.h"
 #include "main/dispatch.h"
 
 
@@ -60,8 +62,8 @@
  * non-existent.
  */
 
-static INLINE struct gl_array_object *
-lookup_arrayobj(GLcontext *ctx, GLuint id)
+static inline struct gl_array_object *
+lookup_arrayobj(struct gl_context *ctx, GLuint id)
 {
    if (id == 0)
       return NULL;
@@ -77,28 +79,12 @@ lookup_arrayobj(GLcontext *ctx, GLuint id)
  * This is done just prior to array object destruction.
  */
 static void
-unbind_array_object_vbos(GLcontext *ctx, struct gl_array_object *obj)
+unbind_array_object_vbos(struct gl_context *ctx, struct gl_array_object *obj)
 {
    GLuint i;
 
-   _mesa_reference_buffer_object(ctx, &obj->Vertex.BufferObj, NULL);
-   _mesa_reference_buffer_object(ctx, &obj->Weight.BufferObj, NULL);
-   _mesa_reference_buffer_object(ctx, &obj->Normal.BufferObj, NULL);
-   _mesa_reference_buffer_object(ctx, &obj->Color.BufferObj, NULL);
-   _mesa_reference_buffer_object(ctx, &obj->SecondaryColor.BufferObj, NULL);
-   _mesa_reference_buffer_object(ctx, &obj->FogCoord.BufferObj, NULL);
-   _mesa_reference_buffer_object(ctx, &obj->Index.BufferObj, NULL);
-   _mesa_reference_buffer_object(ctx, &obj->EdgeFlag.BufferObj, NULL);
-
-   for (i = 0; i < Elements(obj->TexCoord); i++)
-      _mesa_reference_buffer_object(ctx, &obj->TexCoord[i].BufferObj, NULL);
-
    for (i = 0; i < Elements(obj->VertexAttrib); i++)
-      _mesa_reference_buffer_object(ctx, &obj->VertexAttrib[i].BufferObj,NULL);
-
-#if FEATURE_point_size_array
-   _mesa_reference_buffer_object(ctx, &obj->PointSize.BufferObj, NULL);
-#endif
+      _mesa_reference_buffer_object(ctx, &obj->VertexAttrib[i].BufferObj, NULL);
 }
 
 
@@ -109,7 +95,7 @@ unbind_array_object_vbos(GLcontext *ctx, struct gl_array_object *obj)
  * \c dd_function_table::NewArrayObject.
  */
 struct gl_array_object *
-_mesa_new_array_object( GLcontext *ctx, GLuint name )
+_mesa_new_array_object( struct gl_context *ctx, GLuint name )
 {
    struct gl_array_object *obj = CALLOC_STRUCT(gl_array_object);
    if (obj)
@@ -125,10 +111,11 @@ _mesa_new_array_object( GLcontext *ctx, GLuint name )
  * \c dd_function_table::DeleteArrayObject.
  */
 void
-_mesa_delete_array_object( GLcontext *ctx, struct gl_array_object *obj )
+_mesa_delete_array_object( struct gl_context *ctx, struct gl_array_object *obj )
 {
    (void) ctx;
    unbind_array_object_vbos(ctx, obj);
+   _mesa_reference_buffer_object(ctx, &obj->ElementArrayBufferObj, NULL);
    _glthread_DESTROY_MUTEX(obj->Mutex);
    free(obj);
 }
@@ -136,14 +123,15 @@ _mesa_delete_array_object( GLcontext *ctx, struct gl_array_object *obj )
 
 /**
  * Set ptr to arrayObj w/ reference counting.
+ * Note: this should only be called from the _mesa_reference_array_object()
+ * inline function.
  */
 void
-_mesa_reference_array_object(GLcontext *ctx,
-                             struct gl_array_object **ptr,
-                             struct gl_array_object *arrayObj)
+_mesa_reference_array_object_(struct gl_context *ctx,
+                              struct gl_array_object **ptr,
+                              struct gl_array_object *arrayObj)
 {
-   if (*ptr == arrayObj)
-      return;
+   assert(*ptr != arrayObj);
 
    if (*ptr) {
       /* Unreference the old array object */
@@ -193,7 +181,7 @@ _mesa_reference_array_object(GLcontext *ctx,
 
 
 static void
-init_array(GLcontext *ctx,
+init_array(struct gl_context *ctx,
            struct gl_client_array *array, GLint size, GLint type)
 {
    array->Size = size;
@@ -204,11 +192,11 @@ init_array(GLcontext *ctx,
    array->Ptr = NULL;
    array->Enabled = GL_FALSE;
    array->Normalized = GL_FALSE;
-#if FEATURE_ARB_vertex_buffer_object
+   array->Integer = GL_FALSE;
+   array->_ElementSize = size * _mesa_sizeof_type(type);
    /* Vertex array buffers */
    _mesa_reference_buffer_object(ctx, &array->BufferObj,
                                  ctx->Shared->NullBufferObj);
-#endif
 }
 
 
@@ -216,7 +204,7 @@ init_array(GLcontext *ctx,
  * Initialize a gl_array_object's arrays.
  */
 void
-_mesa_initialize_array_object( GLcontext *ctx,
+_mesa_initialize_array_object( struct gl_context *ctx,
 			       struct gl_array_object *obj,
 			       GLuint name )
 {
@@ -228,24 +216,39 @@ _mesa_initialize_array_object( GLcontext *ctx,
    obj->RefCount = 1;
 
    /* Init the individual arrays */
-   init_array(ctx, &obj->Vertex, 4, GL_FLOAT);
-   init_array(ctx, &obj->Weight, 1, GL_FLOAT);
-   init_array(ctx, &obj->Normal, 3, GL_FLOAT);
-   init_array(ctx, &obj->Color, 4, GL_FLOAT);
-   init_array(ctx, &obj->SecondaryColor, 4, GL_FLOAT);
-   init_array(ctx, &obj->FogCoord, 1, GL_FLOAT);
-   init_array(ctx, &obj->Index, 1, GL_FLOAT);
-   for (i = 0; i < Elements(obj->TexCoord); i++) {
-      init_array(ctx, &obj->TexCoord[i], 4, GL_FLOAT);
-   }
-   init_array(ctx, &obj->EdgeFlag, 1, GL_BOOL);
    for (i = 0; i < Elements(obj->VertexAttrib); i++) {
-      init_array(ctx, &obj->VertexAttrib[i], 4, GL_FLOAT);
+      switch (i) {
+      case VERT_ATTRIB_WEIGHT:
+         init_array(ctx, &obj->VertexAttrib[VERT_ATTRIB_WEIGHT], 1, GL_FLOAT);
+         break;
+      case VERT_ATTRIB_NORMAL:
+         init_array(ctx, &obj->VertexAttrib[VERT_ATTRIB_NORMAL], 3, GL_FLOAT);
+         break;
+      case VERT_ATTRIB_COLOR1:
+         init_array(ctx, &obj->VertexAttrib[VERT_ATTRIB_COLOR1], 3, GL_FLOAT);
+         break;
+      case VERT_ATTRIB_FOG:
+         init_array(ctx, &obj->VertexAttrib[VERT_ATTRIB_FOG], 1, GL_FLOAT);
+         break;
+      case VERT_ATTRIB_COLOR_INDEX:
+         init_array(ctx, &obj->VertexAttrib[VERT_ATTRIB_COLOR_INDEX], 1, GL_FLOAT);
+         break;
+      case VERT_ATTRIB_EDGEFLAG:
+         init_array(ctx, &obj->VertexAttrib[VERT_ATTRIB_EDGEFLAG], 1, GL_BOOL);
+         break;
+#if FEATURE_point_size_array
+      case VERT_ATTRIB_POINT_SIZE:
+         init_array(ctx, &obj->VertexAttrib[VERT_ATTRIB_POINT_SIZE], 1, GL_FLOAT);
+         break;
+#endif
+      default:
+         init_array(ctx, &obj->VertexAttrib[i], 4, GL_FLOAT);
+         break;
+      }
    }
 
-#if FEATURE_point_size_array
-   init_array(ctx, &obj->PointSize, 1, GL_FLOAT);
-#endif
+   _mesa_reference_buffer_object(ctx, &obj->ElementArrayBufferObj,
+                                 ctx->Shared->NullBufferObj);
 }
 
 
@@ -253,7 +256,7 @@ _mesa_initialize_array_object( GLcontext *ctx,
  * Add the given array object to the array object pool.
  */
 static void
-save_array_object( GLcontext *ctx, struct gl_array_object *obj )
+save_array_object( struct gl_context *ctx, struct gl_array_object *obj )
 {
    if (obj->Name > 0) {
       /* insert into hash table */
@@ -267,7 +270,7 @@ save_array_object( GLcontext *ctx, struct gl_array_object *obj )
  * Do not deallocate the array object though.
  */
 static void
-remove_array_object( GLcontext *ctx, struct gl_array_object *obj )
+remove_array_object( struct gl_context *ctx, struct gl_array_object *obj )
 {
    if (obj->Name > 0) {
       /* remove from hash table */
@@ -278,48 +281,26 @@ remove_array_object( GLcontext *ctx, struct gl_array_object *obj )
 
 
 /**
- * Compute the index of the last array element that can be safely accessed
- * in a vertex array.  We can really only do this when the array lives in
- * a VBO.
- * The array->_MaxElement field will be updated.
- * Later in glDrawArrays/Elements/etc we can do some bounds checking.
- */
-static void
-compute_max_element(struct gl_client_array *array)
-{
-   if (array->BufferObj->Name) {
-      /* Compute the max element we can access in the VBO without going
-       * out of bounds.
-       */
-      array->_MaxElement = ((GLsizeiptrARB) array->BufferObj->Size
-                            - (GLsizeiptrARB) array->Ptr + array->StrideB
-                            - array->_ElementSize) / array->StrideB;
-      if (0)
-         printf("%s Object %u  Size %u  MaxElement %u\n",
-		__FUNCTION__,
-		array->BufferObj->Name,
-		(GLuint) array->BufferObj->Size,
-		array->_MaxElement);
-   }
-   else {
-      /* user-space array, no idea how big it is */
-      array->_MaxElement = 2 * 1000 * 1000 * 1000; /* just a big number */
-   }
-}
-
-
-/**
- * Helper for update_arrays().
- * \return  min(current min, array->_MaxElement).
+ * Helper for _mesa_update_array_object_max_element().
+ * \return  min(arrayObj->VertexAttrib[*]._MaxElement).
  */
 static GLuint
-update_min(GLuint min, struct gl_client_array *array)
+compute_max_element(struct gl_array_object *arrayObj, GLbitfield64 enabled)
 {
-   compute_max_element(array);
-   if (array->Enabled)
-      return MIN2(min, array->_MaxElement);
-   else
-      return min;
+   GLuint min = ~((GLuint)0);
+   
+   while (enabled) {
+      struct gl_client_array *client_array;
+      GLint attrib = ffsll(enabled) - 1;
+      enabled ^= BITFIELD64_BIT(attrib);
+      
+      client_array = &arrayObj->VertexAttrib[attrib];
+      assert(client_array->Enabled);
+      _mesa_update_array_max_element(client_array);
+      min = MIN2(min, client_array->_MaxElement);
+   }
+   
+   return min;
 }
 
 
@@ -327,29 +308,22 @@ update_min(GLuint min, struct gl_client_array *array)
  * Examine vertex arrays to update the gl_array_object::_MaxElement field.
  */
 void
-_mesa_update_array_object_max_element(GLcontext *ctx,
+_mesa_update_array_object_max_element(struct gl_context *ctx,
                                       struct gl_array_object *arrayObj)
 {
-   GLuint i, min = ~0;
+   GLbitfield64 enabled;
 
-   min = update_min(min, &arrayObj->Vertex);
-   min = update_min(min, &arrayObj->Weight);
-   min = update_min(min, &arrayObj->Normal);
-   min = update_min(min, &arrayObj->Color);
-   min = update_min(min, &arrayObj->SecondaryColor);
-   min = update_min(min, &arrayObj->FogCoord);
-   min = update_min(min, &arrayObj->Index);
-   min = update_min(min, &arrayObj->EdgeFlag);
-#if FEATURE_point_size_array
-   min = update_min(min, &arrayObj->PointSize);
-#endif
-   for (i = 0; i < ctx->Const.MaxTextureCoordUnits; i++)
-      min = update_min(min, &arrayObj->TexCoord[i]);
-   for (i = 0; i < Elements(arrayObj->VertexAttrib); i++)
-      min = update_min(min, &arrayObj->VertexAttrib[i]);
+   if (!ctx->VertexProgram._Current ||
+       ctx->VertexProgram._Current == ctx->VertexProgram._TnlProgram) {
+      enabled = _mesa_array_object_get_enabled_ff(arrayObj);
+   } else if (ctx->VertexProgram._Current->IsNVProgram) {
+      enabled = _mesa_array_object_get_enabled_nv(arrayObj);
+   } else {
+      enabled = _mesa_array_object_get_enabled_arb(arrayObj);
+   }
 
    /* _MaxElement is one past the last legal array element */
-   arrayObj->_MaxElement = min;
+   arrayObj->_MaxElement = compute_max_element(arrayObj, enabled);
 }
 
 
@@ -364,7 +338,7 @@ _mesa_update_array_object_max_element(GLcontext *ctx,
  *                     glGenVertexArrays().
  */
 static void
-bind_vertex_array(GLcontext *ctx, GLuint id, GLboolean genRequired)
+bind_vertex_array(struct gl_context *ctx, GLuint id, GLboolean genRequired)
 {
    struct gl_array_object * const oldObj = ctx->Array.ArrayObj;
    struct gl_array_object *newObj = NULL;
@@ -399,12 +373,23 @@ bind_vertex_array(GLcontext *ctx, GLuint id, GLboolean genRequired)
             _mesa_error(ctx, GL_OUT_OF_MEMORY, "glBindVertexArrayAPPLE");
             return;
          }
+
          save_array_object(ctx, newObj);
+      }
+
+      if (!newObj->_Used) {
+         /* The "Interactions with APPLE_vertex_array_object" section of the
+          * GL_ARB_vertex_array_object spec says:
+          *
+          *     "The first bind call, either BindVertexArray or
+          *     BindVertexArrayAPPLE, determines the semantic of the object."
+          */
+         newObj->ARBsemantics = genRequired;
+         newObj->_Used = GL_TRUE;
       }
    }
 
    ctx->NewState |= _NEW_ARRAY;
-   ctx->Array.NewState |= _NEW_ARRAY_ALL;
    _mesa_reference_array_object(ctx, &ctx->Array.ArrayObj, newObj);
 
    /* Pass BindVertexArray call to device driver */
@@ -472,7 +457,7 @@ _mesa_DeleteVertexArraysAPPLE(GLsizei n, const GLuint *ids)
 	  * becomes current."
 	  */
 	 if ( obj == ctx->Array.ArrayObj ) {
-	    CALL_BindVertexArrayAPPLE( ctx->Exec, (0) );
+	    _mesa_BindVertexArray(0);
 	 }
 
 	 /* The ID is immediately freed for re-use */
@@ -495,7 +480,7 @@ _mesa_DeleteVertexArraysAPPLE(GLsizei n, const GLuint *ids)
  * \param vboOnly Will arrays have to reside in VBOs?
  */
 static void 
-gen_vertex_arrays(GLcontext *ctx, GLsizei n, GLuint *arrays, GLboolean vboOnly)
+gen_vertex_arrays(struct gl_context *ctx, GLsizei n, GLuint *arrays)
 {
    GLuint first;
    GLint i;
@@ -522,7 +507,6 @@ gen_vertex_arrays(GLcontext *ctx, GLsizei n, GLuint *arrays, GLboolean vboOnly)
          _mesa_error(ctx, GL_OUT_OF_MEMORY, "glGenVertexArraysAPPLE");
          return;
       }
-      obj->VBOonly = vboOnly;
       save_array_object(ctx, obj);
       arrays[i] = first + i;
    }
@@ -537,7 +521,7 @@ void GLAPIENTRY
 _mesa_GenVertexArrays(GLsizei n, GLuint *arrays)
 {
    GET_CURRENT_CONTEXT(ctx);
-   gen_vertex_arrays(ctx, n, arrays, GL_TRUE);
+   gen_vertex_arrays(ctx, n, arrays);
 }
 
 
@@ -549,7 +533,7 @@ void GLAPIENTRY
 _mesa_GenVertexArraysAPPLE(GLsizei n, GLuint *arrays)
 {
    GET_CURRENT_CONTEXT(ctx);
-   gen_vertex_arrays(ctx, n, arrays, GL_FALSE);
+   gen_vertex_arrays(ctx, n, arrays);
 }
 
 

@@ -35,7 +35,6 @@
 
 #include "core/html/ImageData.h"
 #include "core/platform/MIMETypeRegistry.h"
-#include "core/platform/PlatformMemoryInstrumentation.h"
 #include "core/platform/graphics/BitmapImage.h"
 #include "core/platform/graphics/Extensions3D.h"
 #include "core/platform/graphics/GraphicsContext.h"
@@ -43,7 +42,6 @@
 #include "core/platform/graphics/IntRect.h"
 #include "core/platform/graphics/chromium/Canvas2DLayerBridge.h"
 #include "core/platform/graphics/gpu/SharedGraphicsContext3D.h"
-#include "core/platform/graphics/skia/MemoryInstrumentationSkia.h"
 #include "core/platform/graphics/skia/NativeImageSkia.h"
 #include "core/platform/graphics/skia/SkiaUtils.h"
 #include "core/platform/image-encoders/skia/JPEGImageEncoder.h"
@@ -68,25 +66,11 @@ static SkCanvas* createAcceleratedCanvas(const IntSize& size, OwnPtr<Canvas2DLay
     RefPtr<GraphicsContext3D> context3D = SharedGraphicsContext3D::get();
     if (!context3D)
         return 0;
-    GrContext* gr = context3D->grContext();
-    if (!gr)
-        return 0;
-    gr->resetContext();
     Canvas2DLayerBridge::OpacityMode bridgeOpacityMode = opacityMode == Opaque ? Canvas2DLayerBridge::Opaque : Canvas2DLayerBridge::NonOpaque;
-    Canvas2DLayerBridge::ThreadMode threadMode = WebKit::Platform::current()->isThreadedCompositingEnabled() ? Canvas2DLayerBridge::Threaded : Canvas2DLayerBridge::SingleThread;
-    SkImage::Info info;
-    info.fWidth = size.width();
-    info.fHeight = size.height();
-    info.fColorType = SkImage::kPMColor_ColorType;
-    info.fAlphaType = SkImage::kPremul_AlphaType;
-    SkAutoTUnref<SkSurface> surface(SkSurface::NewRenderTarget(context3D->grContext(), info));
-    if (!surface.get())
-        return 0;
-    SkDeferredCanvas* canvas = new SkDeferredCanvas(surface.get());
-    *outLayerBridge = Canvas2DLayerBridge::create(context3D.release(), canvas, bridgeOpacityMode, threadMode);
+    *outLayerBridge = Canvas2DLayerBridge::create(context3D.release(), size, bridgeOpacityMode);
     // If canvas buffer allocation failed, debug build will have asserted
     // For release builds, we must verify whether the device has a render target
-    return canvas;
+    return (*outLayerBridge) ? (*outLayerBridge)->getCanvas() : 0;
 }
 
 static SkCanvas* createNonPlatformCanvas(const IntSize& size)
@@ -140,9 +124,13 @@ ImageBuffer::ImageBuffer(const IntSize& size, float resolutionScale, RenderingMo
     , m_logicalSize(size)
     , m_resolutionScale(resolutionScale)
 {
-    if (renderingMode == Accelerated)
+    if (renderingMode == Accelerated) {
         m_canvas = adoptPtr(createAcceleratedCanvas(size, &m_layerBridge, opacityMode));
-    else if (renderingMode == UnacceleratedNonPlatformBuffer)
+        if (!m_canvas)
+            renderingMode = UnacceleratedNonPlatformBuffer;
+    }
+
+    if (renderingMode == UnacceleratedNonPlatformBuffer)
         m_canvas = adoptPtr(createNonPlatformCanvas(size));
 
     if (!m_canvas)
@@ -183,6 +171,14 @@ GraphicsContext* ImageBuffer::context() const
     return m_context.get();
 }
 
+
+bool ImageBuffer::isValid() const
+{
+    if (m_layerBridge.get())
+        return const_cast<Canvas2DLayerBridge*>(m_layerBridge.get())->isValid();
+    return true;
+}
+
 static SkBitmap deepSkBitmapCopy(const SkBitmap& bitmap)
 {
     SkBitmap tmp;
@@ -194,6 +190,9 @@ static SkBitmap deepSkBitmapCopy(const SkBitmap& bitmap)
 
 PassRefPtr<Image> ImageBuffer::copyImage(BackingStoreCopy copyBehavior, ScaleBehavior) const
 {
+    if (!isValid())
+        return BitmapImage::create(NativeImageSkia::create());
+
     const SkBitmap& bitmap = *context()->bitmap();
     // FIXME: Start honoring ScaleBehavior to scale 2x buffers down to 1x.
     return BitmapImage::create(NativeImageSkia::create(copyBehavior == CopyBackingStore ? deepSkBitmapCopy(bitmap) : bitmap, m_resolutionScale));
@@ -211,7 +210,7 @@ WebKit::WebLayer* ImageBuffer::platformLayer() const
 
 bool ImageBuffer::copyToPlatformTexture(GraphicsContext3D& context, Platform3DObject texture, GC3Denum internalFormat, GC3Denum destType, GC3Dint level, bool premultiplyAlpha, bool flipY)
 {
-    if (!m_layerBridge || !platformLayer())
+    if (!m_layerBridge || !platformLayer() || !isValid())
         return false;
 
     Platform3DObject sourceTexture = m_layerBridge->backBufferTexture();
@@ -238,11 +237,6 @@ bool ImageBuffer::copyToPlatformTexture(GraphicsContext3D& context, Platform3DOb
     return true;
 }
 
-void ImageBuffer::clip(GraphicsContext* context, const FloatRect& rect) const
-{
-    context->beginLayerClippedToImage(rect, this);
-}
-
 static bool drawNeedsCopy(GraphicsContext* src, GraphicsContext* dst)
 {
     return (src == dst);
@@ -251,17 +245,23 @@ static bool drawNeedsCopy(GraphicsContext* src, GraphicsContext* dst)
 void ImageBuffer::draw(GraphicsContext* context, const FloatRect& destRect, const FloatRect& srcRect,
     CompositeOperator op, BlendMode blendMode, bool useLowQualityScale)
 {
+    if (!isValid())
+        return;
+
     const SkBitmap& bitmap = *m_context->bitmap();
     RefPtr<Image> image = BitmapImage::create(NativeImageSkia::create(drawNeedsCopy(m_context.get(), context) ? deepSkBitmapCopy(bitmap) : bitmap));
     context->drawImage(image.get(), destRect, srcRect, op, blendMode, DoNotRespectImageOrientation, useLowQualityScale);
 }
 
 void ImageBuffer::drawPattern(GraphicsContext* context, const FloatRect& srcRect, const FloatSize& scale,
-    const FloatPoint& phase, CompositeOperator op, const FloatRect& destRect)
+    const FloatPoint& phase, CompositeOperator op, const FloatRect& destRect, BlendMode blendMode)
 {
+    if (!isValid())
+        return;
+
     const SkBitmap& bitmap = *m_context->bitmap();
     RefPtr<Image> image = BitmapImage::create(NativeImageSkia::create(drawNeedsCopy(m_context.get(), context) ? deepSkBitmapCopy(bitmap) : bitmap));
-    image->drawPattern(context, srcRect, scale, phase, op, destRect);
+    image->drawPattern(context, srcRect, scale, phase, op, destRect, blendMode);
 }
 
 void ImageBuffer::transformColorSpace(ColorSpace srcColorSpace, ColorSpace dstColorSpace)
@@ -275,7 +275,7 @@ void ImageBuffer::transformColorSpace(ColorSpace srcColorSpace, ColorSpace dstCo
         return;
 
     // FIXME: Disable color space conversions on accelerated canvases (for now).
-    if (context()->isAccelerated())
+    if (context()->isAccelerated() || !isValid())
         return;
 
     const SkBitmap& bitmap = *context()->bitmap();
@@ -365,16 +365,23 @@ PassRefPtr<Uint8ClampedArray> getImageData(const IntRect& rect, GraphicsContext*
 
 PassRefPtr<Uint8ClampedArray> ImageBuffer::getUnmultipliedImageData(const IntRect& rect, CoordinateSystem) const
 {
+    if (!isValid())
+        return Uint8ClampedArray::create(rect.width() * rect.height() * 4);
     return getImageData<Unmultiplied>(rect, context(), m_size);
 }
 
 PassRefPtr<Uint8ClampedArray> ImageBuffer::getPremultipliedImageData(const IntRect& rect, CoordinateSystem) const
 {
+    if (!isValid())
+        return Uint8ClampedArray::create(rect.width() * rect.height() * 4);
     return getImageData<Premultiplied>(rect, context(), m_size);
 }
 
 void ImageBuffer::putByteArray(Multiply multiplied, Uint8ClampedArray* source, const IntSize& sourceSize, const IntRect& sourceRect, const IntPoint& destPoint, CoordinateSystem)
 {
+    if (!isValid())
+        return;
+
     ASSERT(sourceRect.width() > 0);
     ASSERT(sourceRect.height() > 0);
 
@@ -466,9 +473,8 @@ String ImageBuffer::toDataURL(const String& mimeType, const double* quality, Coo
     ASSERT(MIMETypeRegistry::isSupportedImageMIMETypeForEncoding(mimeType));
 
     Vector<char> encodedImage;
-    if (!encodeImage(*context()->bitmap(), mimeType, quality, &encodedImage))
+    if (!isValid() || !encodeImage(*context()->bitmap(), mimeType, quality, &encodedImage))
         return "data:,";
-
     Vector<char> base64Data;
     base64Encode(encodedImage, base64Data);
 
@@ -487,14 +493,6 @@ String ImageDataToDataURL(const ImageData& imageData, const String& mimeType, co
     base64Encode(encodedImage, base64Data);
 
     return "data:" + mimeType + ";base64," + base64Data;
-}
-
-void ImageBuffer::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Image);
-    info.addMember(m_canvas, "canvas");
-    info.addMember(m_context, "context");
-    info.addMember(m_layerBridge, "layerBridge");
 }
 
 } // namespace WebCore

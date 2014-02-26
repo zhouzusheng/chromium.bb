@@ -54,7 +54,7 @@ public:
 
     SVGMatrix& svgMatrix() { return static_cast<SVGMatrix&>(m_matrix); }
     AffineTransform matrix() const { return m_matrix; }
-    void updateMatrix();
+    void updateSVGMatrix();
 
     float angle() const { return m_angle; }
     FloatPoint rotationCenter() const { return m_center; }
@@ -65,7 +65,7 @@ public:
     void setRotate(float angle, float cx, float cy);
     void setSkewX(float angle);
     void setSkewY(float angle);
-    
+
     // Internal use only (animation system)
     FloatPoint translate() const;
     FloatSize scale() const;

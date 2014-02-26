@@ -28,7 +28,7 @@
 #if ENABLE(WEB_AUDIO)
 #include "core/platform/audio/AudioBus.h"
 #else
-#include <wtf/ThreadSafeRefCounted.h>
+#include "wtf/ThreadSafeRefCounted.h"
 
 namespace WebCore {
 class AudioBus : public ThreadSafeRefCounted<AudioBus> {
@@ -36,8 +36,8 @@ class AudioBus : public ThreadSafeRefCounted<AudioBus> {
 } // namespace WebCore
 #endif
 
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefPtr.h>
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefPtr.h"
 
 using namespace WebCore;
 
@@ -47,7 +47,7 @@ class WebAudioBusPrivate : public AudioBus {
 };
 
 void WebAudioBus::initialize(unsigned numberOfChannels, size_t length, double sampleRate)
-{        
+{
 #if ENABLE(WEB_AUDIO)
     RefPtr<AudioBus> audioBus = AudioBus::create(numberOfChannels, length);
     audioBus->setSampleRate(sampleRate);

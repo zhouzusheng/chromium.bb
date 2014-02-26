@@ -28,17 +28,15 @@
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGAnimatedInteger.h"
 #include "core/svg/SVGAnimatedLength.h"
+#include "core/svg/SVGElement.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
-#include "core/svg/SVGLangSpace.h"
-#include "core/svg/SVGStyledElement.h"
 #include "core/svg/SVGURIReference.h"
 #include "core/svg/SVGUnitTypes.h"
 
 namespace WebCore {
 
-class SVGFilterElement FINAL : public SVGStyledElement,
+class SVGFilterElement FINAL : public SVGElement,
                                public SVGURIReference,
-                               public SVGLangSpace,
                                public SVGExternalResourcesRequired {
 public:
     static PassRefPtr<SVGFilterElement> create(const QualifiedName&, Document*);
@@ -77,10 +75,10 @@ private:
     END_DECLARE_ANIMATED_PROPERTIES
 };
 
-inline SVGFilterElement* toSVGFilterElement(SVGElement* element)
+inline SVGFilterElement* toSVGFilterElement(Node* node)
 {
-    ASSERT_WITH_SECURITY_IMPLICATION(!element || element->hasTagName(SVGNames::filterTag));
-    return static_cast<SVGFilterElement*>(element);
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::filterTag));
+    return static_cast<SVGFilterElement*>(node);
 }
 
 }

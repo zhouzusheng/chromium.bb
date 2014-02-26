@@ -26,7 +26,8 @@ CopyOrMoveOperationDelegate::CopyOrMoveOperationDelegate(
       src_root_(src_root),
       dest_root_(dest_root),
       operation_type_(operation_type),
-      callback_(callback) {
+      callback_(callback),
+      weak_factory_(this) {
   same_file_system_ = src_root_.IsInSameFileSystem(dest_root_);
 }
 
@@ -56,7 +57,7 @@ void CopyOrMoveOperationDelegate::RunRecursively() {
   // First try to copy/move it as a file.
   CopyOrMoveFile(URLPair(src_root_, dest_root_),
                  base::Bind(&CopyOrMoveOperationDelegate::DidTryCopyOrMoveFile,
-                            AsWeakPtr()));
+                            weak_factory_.GetWeakPtr()));
 }
 
 void CopyOrMoveOperationDelegate::ProcessFile(const FileSystemURL& src_url,
@@ -90,7 +91,7 @@ void CopyOrMoveOperationDelegate::DidTryCopyOrMoveFile(
   operation_runner()->RemoveDirectory(
       dest_root_,
       base::Bind(&CopyOrMoveOperationDelegate::DidTryRemoveDestRoot,
-                 AsWeakPtr()));
+                 weak_factory_.GetWeakPtr()));
 }
 
 void CopyOrMoveOperationDelegate::DidTryRemoveDestRoot(
@@ -110,12 +111,14 @@ void CopyOrMoveOperationDelegate::DidTryRemoveDestRoot(
   // and operation==MOVE case, probably we can just rename the root directory.
   // http://crbug.com/172187
   StartRecursiveOperation(
-      src_root_, base::Bind(&CopyOrMoveOperationDelegate::DidFinishCopy,
-                            AsWeakPtr(), src_root_, callback_));
+      src_root_,
+      base::Bind(&CopyOrMoveOperationDelegate::DidFinishRecursiveCopyDir,
+                 weak_factory_.GetWeakPtr(), src_root_, callback_));
 }
 
-void CopyOrMoveOperationDelegate::CopyOrMoveFile(const URLPair& url_pair,
-                                            const StatusCallback& callback) {
+void CopyOrMoveOperationDelegate::CopyOrMoveFile(
+    const URLPair& url_pair,
+    const StatusCallback& callback) {
   // Same filesystem case.
   if (same_file_system_) {
     if (operation_type_ == OPERATION_MOVE) {
@@ -130,12 +133,12 @@ void CopyOrMoveOperationDelegate::CopyOrMoveFile(const URLPair& url_pair,
   // Perform CreateSnapshotFile, CopyInForeignFile and then calls
   // copy_callback which removes the source file if operation_type == MOVE.
   StatusCallback copy_callback =
-      base::Bind(&CopyOrMoveOperationDelegate::DidFinishCopy, AsWeakPtr(),
-                 url_pair.src, callback);
+      base::Bind(&CopyOrMoveOperationDelegate::DidFinishCopy,
+                 weak_factory_.GetWeakPtr(), url_pair, callback);
   operation_runner()->CreateSnapshotFile(
       url_pair.src,
-      base::Bind(&CopyOrMoveOperationDelegate::DidCreateSnapshot, AsWeakPtr(),
-                 url_pair, copy_callback));
+      base::Bind(&CopyOrMoveOperationDelegate::DidCreateSnapshot,
+                 weak_factory_.GetWeakPtr(), url_pair, copy_callback));
 }
 
 void CopyOrMoveOperationDelegate::DidCreateSnapshot(
@@ -169,8 +172,9 @@ void CopyOrMoveOperationDelegate::DidCreateSnapshot(
 
   validator_.reset(
       factory->CreateCopyOrMoveFileValidator(url_pair.src, platform_path));
-  validator_->StartValidation(
-      base::Bind(&CopyOrMoveOperationDelegate::DidValidateFile, AsWeakPtr(),
+  validator_->StartPreWriteValidation(
+      base::Bind(&CopyOrMoveOperationDelegate::DidValidateFile,
+                 weak_factory_.GetWeakPtr(),
                  url_pair.dest, callback, file_info, platform_path));
 }
 
@@ -188,7 +192,7 @@ void CopyOrMoveOperationDelegate::DidValidateFile(
   operation_runner()->CopyInForeignFile(platform_path, dest, callback);
 }
 
-void CopyOrMoveOperationDelegate::DidFinishCopy(
+void CopyOrMoveOperationDelegate::DidFinishRecursiveCopyDir(
     const FileSystemURL& src,
     const StatusCallback& callback,
     base::PlatformFileError error) {
@@ -204,7 +208,85 @@ void CopyOrMoveOperationDelegate::DidFinishCopy(
   operation_runner()->Remove(
       src, true /* recursive */,
       base::Bind(&CopyOrMoveOperationDelegate::DidRemoveSourceForMove,
-                 AsWeakPtr(), callback));
+                 weak_factory_.GetWeakPtr(), callback));
+}
+
+void CopyOrMoveOperationDelegate::DidFinishCopy(
+    const URLPair& url_pair,
+    const StatusCallback& callback,
+    base::PlatformFileError error) {
+  if (error != base::PLATFORM_FILE_OK) {
+    callback.Run(error);
+    return;
+  }
+
+  // |validator_| is NULL in the same-filesystem case or when the destination
+  // filesystem does not do validation.
+  if (!validator_.get()) {
+    scoped_refptr<webkit_blob::ShareableFileReference> file_ref;
+    DidPostWriteValidation(url_pair, callback, file_ref,
+                           base::PLATFORM_FILE_OK);
+    return;
+  }
+
+  DCHECK(!same_file_system_);
+  operation_runner()->CreateSnapshotFile(
+      url_pair.dest,
+      base::Bind(&CopyOrMoveOperationDelegate::DoPostWriteValidation,
+                 weak_factory_.GetWeakPtr(), url_pair, callback));
+}
+
+void CopyOrMoveOperationDelegate::DoPostWriteValidation(
+    const URLPair& url_pair,
+    const StatusCallback& callback,
+    base::PlatformFileError error,
+    const base::PlatformFileInfo& file_info,
+    const base::FilePath& platform_path,
+    const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref) {
+  if (error != base::PLATFORM_FILE_OK) {
+    operation_runner()->Remove(
+        url_pair.dest, true,
+        base::Bind(&CopyOrMoveOperationDelegate::DidRemoveDestForError,
+                   weak_factory_.GetWeakPtr(), error, callback));
+    return;
+  }
+
+  DCHECK(validator_.get());
+  // Note: file_ref passed here to keep the file alive until after
+  // the StartPostWriteValidation operation finishes.
+  validator_->StartPostWriteValidation(
+      platform_path,
+      base::Bind(&CopyOrMoveOperationDelegate::DidPostWriteValidation,
+                 weak_factory_.GetWeakPtr(), url_pair, callback, file_ref));
+}
+
+// |file_ref| is unused; it is passed here to make sure the reference is
+// alive until after post-write validation is complete.
+void CopyOrMoveOperationDelegate::DidPostWriteValidation(
+    const URLPair& url_pair,
+    const StatusCallback& callback,
+    const scoped_refptr<webkit_blob::ShareableFileReference>& /*file_ref*/,
+    base::PlatformFileError error) {
+  if (error != base::PLATFORM_FILE_OK) {
+    operation_runner()->Remove(
+        url_pair.dest, true,
+        base::Bind(&CopyOrMoveOperationDelegate::DidRemoveDestForError,
+                   weak_factory_.GetWeakPtr(), error, callback));
+    return;
+  }
+
+  if (operation_type_ == OPERATION_COPY) {
+    callback.Run(error);
+    return;
+  }
+
+  DCHECK_EQ(OPERATION_MOVE, operation_type_);
+
+  // Remove the source for finalizing move operation.
+  operation_runner()->Remove(
+      url_pair.src, true /* recursive */,
+      base::Bind(&CopyOrMoveOperationDelegate::DidRemoveSourceForMove,
+                 weak_factory_.GetWeakPtr(), callback));
 }
 
 void CopyOrMoveOperationDelegate::DidRemoveSourceForMove(
@@ -227,6 +309,17 @@ FileSystemURL CopyOrMoveOperationDelegate::CreateDestURL(
       dest_root_.origin(),
       dest_root_.mount_type(),
       relative);
+}
+
+void CopyOrMoveOperationDelegate::DidRemoveDestForError(
+    base::PlatformFileError prior_error,
+    const StatusCallback& callback,
+    base::PlatformFileError error) {
+  if (error != base::PLATFORM_FILE_OK) {
+    VLOG(1) << "Error removing destination file after validation error: "
+            << error;
+  }
+  callback.Run(prior_error);
 }
 
 }  // namespace fileapi

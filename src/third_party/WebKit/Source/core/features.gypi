@@ -1,10 +1,10 @@
 #
 # Copyright (C) 2009 Google Inc. All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
 # met:
-# 
+#
 #     * Redistributions of source code must retain the above copyright
 # notice, this list of conditions and the following disclaimer.
 #     * Redistributions in binary form must reproduce the above
@@ -14,7 +14,7 @@
 #     * Neither the name of Google Inc. nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-# 
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
 # "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
 # LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -32,18 +32,14 @@
   # The following defines turn WebKit features on and off.
   'variables': {
     'feature_defines': [
-      'ENABLE_CANVAS_USES_MAILBOX=1',
       'ENABLE_CSS3_TEXT=0',
       'ENABLE_CSS_EXCLUSIONS=1',
       'ENABLE_CSS_REGIONS=1',
       'ENABLE_CUSTOM_SCHEME_HANDLER=0',
       'ENABLE_ENCRYPTED_MEDIA_V2=1',
-      'ENABLE_GRAPHICS_CONTEXT_ANNOTATIONS=<(enable_graphics_context_annotations)',
       'ENABLE_SVG_FONTS=1',
       'ENABLE_TOUCH_ICON_LOADING=<(enable_touch_icon_loading)',
-      'ENABLE_XHR_TIMEOUT=0',
       'ENABLE_GDI_FONTS_ON_WINDOWS=1',
-      'ENABLE_PARTITION_ALLOC=1',
       # WTF_USE_DYNAMIC_ANNOTATIONS=1 may be defined in build/common.gypi
       # We can't define it here because it should be present only
       # in Debug or release_valgrind_build=1 builds.
@@ -51,10 +47,8 @@
     # We have to nest variables inside variables so that they can be overridden
     # through GYP_DEFINES.
     'variables': {
-      'enable_graphics_context_annotations%': 0,
       'enable_touch_icon_loading%' : 0,
     },
-    'enable_graphics_context_annotations%': '<(enable_graphics_context_annotations)',
     'conditions': [
       ['use_concatenated_impulse_responses==1', {
         # Use concatenated HRTF impulse responses
@@ -69,7 +63,6 @@
           'ENABLE_MEDIA_CAPTURE=1',
           'ENABLE_NOTIFICATIONS=0',
           'ENABLE_ORIENTATION_EVENTS=1',
-          'ENABLE_PRINTING=0',
           'ENABLE_NAVIGATOR_CONTENT_UTILS=0',
           'WTF_USE_NATIVE_FULLSCREEN_VIDEO=1',
         ],
@@ -84,14 +77,7 @@
           'ENABLE_NAVIGATOR_CONTENT_UTILS=1',
           'ENABLE_NOTIFICATIONS=1',
           'ENABLE_ORIENTATION_EVENTS=0',
-          'ENABLE_PRINTING=1',
           'ENABLE_WEB_AUDIO=1',
-        ],
-      }],
-      ['OS=="linux" or OS=="mac" or OS=="android"', {
-        'feature_defines': [
-          # 8Bit text runs should be enabled for all platforms webkit.org/b/111348
-          'ENABLE_8BIT_TEXTRUN=1',
         ],
       }],
       # Mac OS X uses Accelerate.framework FFT by default instead of FFmpeg.
@@ -111,11 +97,6 @@
       ['OS=="win" or OS=="android" or OS=="linux"', {
         'feature_defines': [
           'ENABLE_OPENTYPE_VERTICAL=1',
-        ],
-      }],
-      ['OS=="win"', {
-        'feature_defines': [
-          'ENABLE_PAN_SCROLLING=1',
         ],
       }],
       ['OS=="mac"', {

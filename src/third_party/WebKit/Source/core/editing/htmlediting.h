@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef htmlediting_h
@@ -29,15 +29,15 @@
 #include "core/dom/Position.h"
 #include "core/editing/EditingBoundary.h"
 #include "core/platform/text/TextDirection.h"
-#include <wtf/Forward.h>
-#include <wtf/unicode/CharacterNames.h>
+#include "wtf/Forward.h"
+#include "wtf/unicode/CharacterNames.h"
 
 namespace WebCore {
 
 class Document;
 class Element;
+class ExceptionState;
 class HTMLElement;
-class HTMLTextFormControlElement;
 class Node;
 class Position;
 class Range;
@@ -58,13 +58,13 @@ Node* highestEditableRoot(const Position&, EditableType = ContentIsEditable);
 
 Node* highestEnclosingNodeOfType(const Position&, bool (*nodeIsOfType)(const Node*),
     EditingBoundaryCrossingRule = CannotCrossEditingBoundary, Node* stayWithin = 0);
-Node* highestNodeToRemoveInPruning(Node*);
+Node* highestNodeToRemoveInPruning(Node*, Node* excludeNode = 0);
 Node* lowestEditableAncestor(Node*);
 
 Element* enclosingBlock(Node*, EditingBoundaryCrossingRule = CannotCrossEditingBoundary);
 Node* enclosingTableCell(const Position&);
 Node* enclosingEmptyListItem(const VisiblePosition&);
-Node* enclosingAnchorElement(const Position&);
+Element* enclosingAnchorElement(const Position&);
 Node* enclosingNodeWithTag(const Position&, const QualifiedName&);
 Node* enclosingNodeOfType(const Position&, bool (*nodeIsOfType)(const Node*), EditingBoundaryCrossingRule = CannotCrossEditingBoundary);
 
@@ -126,19 +126,18 @@ TextDirection directionOfEnclosingBlock(const Position&);
 // -------------------------------------------------------------------------
 // Position
 // -------------------------------------------------------------------------
-    
+
 // Functions returning Position
-    
+
 Position nextCandidate(const Position&);
 Position previousCandidate(const Position&);
-    
+
 Position nextVisuallyDistinctCandidate(const Position&);
 Position previousVisuallyDistinctCandidate(const Position&);
 
 Position positionOutsideTabSpan(const Position&);
 Position positionBeforeContainingSpecialElement(const Position&, Node** containingSpecialElement = 0);
 Position positionAfterContainingSpecialElement(const Position&, Node** containingSpecialElement = 0);
-Position positionOutsideContainingSpecialElement(const Position&, Node** containingSpecialElement = 0);
 
 inline Position firstPositionInOrBeforeNode(Node* node)
 {
@@ -155,16 +154,15 @@ inline Position lastPositionInOrAfterNode(Node* node)
 }
 
 // comparision functions on Position
-    
+
 int comparePositions(const Position&, const Position&);
+int comparePositions(const PositionWithAffinity&, const PositionWithAffinity&);
 
 // boolean functions on Position
 
 enum EUpdateStyle { UpdateStyle, DoNotUpdateStyle };
 bool isEditablePosition(const Position&, EditableType = ContentIsEditable, EUpdateStyle = UpdateStyle);
 bool isRichlyEditablePosition(const Position&, EditableType = ContentIsEditable);
-bool isFirstVisiblePositionInSpecialElement(const Position&);
-bool isLastVisiblePositionInSpecialElement(const Position&);
 bool lineBreakExistsAtPosition(const Position&);
 bool isVisiblyAdjacent(const Position& first, const Position& second);
 bool isAtUnsplittableElement(const Position&);
@@ -177,16 +175,16 @@ void updatePositionForNodeRemoval(Position&, Node*);
 // -------------------------------------------------------------------------
 // VisiblePosition
 // -------------------------------------------------------------------------
-    
+
 // Functions returning VisiblePosition
-    
+
 VisiblePosition firstEditablePositionAfterPositionInRoot(const Position&, Node*);
 VisiblePosition lastEditablePositionBeforePositionInRoot(const Position&, Node*);
 VisiblePosition visiblePositionBeforeNode(Node*);
 VisiblePosition visiblePositionAfterNode(Node*);
 
 bool lineBreakExistsAtVisiblePosition(const VisiblePosition&);
-    
+
 int comparePositions(const VisiblePosition&, const VisiblePosition&);
 
 int indexForVisiblePosition(const VisiblePosition&, RefPtr<ContainerNode>& scope);
@@ -198,15 +196,14 @@ VisiblePosition visiblePositionForIndex(int index, ContainerNode* scope);
 
 // Functions returning Range
 
-PassRefPtr<Range> createRange(PassRefPtr<Document>, const VisiblePosition& start, const VisiblePosition& end, ExceptionCode&);
-PassRefPtr<Range> extendRangeToWrappingNodes(PassRefPtr<Range> rangeToExtend, const Range* maximumRange, const Node* rootNode);
+PassRefPtr<Range> createRange(PassRefPtr<Document>, const VisiblePosition& start, const VisiblePosition& end, ExceptionState&);
 
 // -------------------------------------------------------------------------
 // HTMLElement
 // -------------------------------------------------------------------------
-    
+
 // Functions returning HTMLElement
-    
+
 PassRefPtr<HTMLElement> createDefaultParagraphElement(Document*);
 PassRefPtr<HTMLElement> createBreakElement(Document*);
 PassRefPtr<HTMLElement> createOrderedListElement(Document*);
@@ -222,9 +219,9 @@ Node* enclosingListChild(Node*);
 // -------------------------------------------------------------------------
 // Element
 // -------------------------------------------------------------------------
-    
+
 // Functions returning Element
-    
+
 PassRefPtr<Element> createTabSpanElement(Document*);
 PassRefPtr<Element> createTabSpanElement(Document*, PassRefPtr<Node> tabTextNode);
 PassRefPtr<Element> createTabSpanElement(Document*, const String& tabText);
@@ -234,9 +231,9 @@ Element* editableRootForPosition(const Position&, EditableType = ContentIsEditab
 Element* unsplittableElementForPosition(const Position&);
 
 // Boolean functions on Element
-    
+
 bool canMergeLists(Element* firstList, Element* secondList);
-    
+
 // -------------------------------------------------------------------------
 // VisibleSelection
 // -------------------------------------------------------------------------
@@ -245,7 +242,7 @@ bool canMergeLists(Element* firstList, Element* secondList);
 VisibleSelection selectionForParagraphIteration(const VisibleSelection&);
 
 Position adjustedSelectionStartForStyleComputation(const VisibleSelection&);
-    
+
 
 // Miscellaneous functions on Text
 inline bool isWhitespace(UChar c)

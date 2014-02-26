@@ -13,8 +13,8 @@
 
 #ifdef WEBRTC_MODULE_UTILITY_VIDEO
 
-#include "engine_configurations.h"
-#include "video_coding.h"
+#include "webrtc/engine_configurations.h"
+#include "webrtc/modules/video_coding/main/interface/video_coding.h"
 
 namespace webrtc {
 class VideoCoder : public VCMPacketizationCallback, public VCMReceiveCallback
@@ -63,6 +63,6 @@ private:
     I420VideoFrame* _decodedVideo;
     EncodedVideoData* _videoEncodedData;
 };
-} // namespace webrtc
+}  // namespace webrtc
 #endif // WEBRTC_MODULE_UTILITY_VIDEO
 #endif // WEBRTC_MODULES_UTILITY_SOURCE_VIDEO_CODER_H_

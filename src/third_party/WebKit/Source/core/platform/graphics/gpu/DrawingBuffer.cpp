@@ -39,6 +39,7 @@
 #include "core/platform/graphics/GraphicsLayer.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositorSupport.h"
+#include "public/platform/WebExternalBitmap.h"
 #include "public/platform/WebExternalTextureLayer.h"
 #include "public/platform/WebGraphicsContext3D.h"
 
@@ -114,7 +115,6 @@ DrawingBuffer::DrawingBuffer(GraphicsContext3D* context,
     , m_fbo(0)
     , m_colorBuffer(0)
     , m_frontColorBuffer(0)
-    , m_separateFrontTexture(false)
     , m_depthStencilBuffer(0)
     , m_depthBuffer(0)
     , m_stencilBuffer(0)
@@ -129,44 +129,12 @@ DrawingBuffer::DrawingBuffer(GraphicsContext3D* context,
 {
     // Used by browser tests to detect the use of a DrawingBuffer.
     TRACE_EVENT_INSTANT0("test_gpu", "DrawingBufferCreation");
-    // Before enabling mailboxes for canvas, make sure the scenarios
-    // from http://crbug.com/234428 do not reproduce!
-#if !ENABLE(CANVAS_USES_MAILBOX)
-    // We need a separate front and back textures if ...
-    m_separateFrontTexture = m_preserveDrawingBuffer == Preserve // ... we have to preserve contents after compositing, which is done with a copy or ...
-                             || WebKit::Platform::current()->isThreadedCompositingEnabled(); // ... if we're in threaded mode and need to double buffer.
-
-#if OS(DARWIN)
-    // http://crbug.com/234428 : always use a separate front texture
-    // on Mac OS. Doing this on all GPUs, not just NVIDIA GPUs,
-    // ensures consistent behavior and is much less code.
-    m_separateFrontTexture = true;
-#endif // OS(DARWIN)
-
-#endif // !ENABLE(CANVAS_USES_MAILBOX)
     initialize(size);
 }
 
 DrawingBuffer::~DrawingBuffer()
 {
     releaseResources();
-}
-
-unsigned DrawingBuffer::prepareTexture(WebKit::WebTextureUpdater& updater)
-{
-    if (!m_context || !m_colorBuffer)
-        return 0;
-
-    prepareBackBuffer();
-
-    m_context->flush();
-    m_context->markLayerComposited();
-
-    unsigned textureId = frontColorBuffer();
-    if (requiresCopyFromBackToFrontBuffer())
-        updater.appendCopy(colorBuffer(), textureId, size());
-
-    return textureId;
 }
 
 WebKit::WebGraphicsContext3D* DrawingBuffer::context()
@@ -176,7 +144,7 @@ WebKit::WebGraphicsContext3D* DrawingBuffer::context()
     return m_context->webContext();
 }
 
-bool DrawingBuffer::prepareMailbox(WebKit::WebExternalTextureMailbox* outMailbox)
+bool DrawingBuffer::prepareMailbox(WebKit::WebExternalTextureMailbox* outMailbox, WebKit::WebExternalBitmap* bitmap)
 {
     if (!m_context || !m_contentsChanged || !m_lastColorBuffer)
         return false;
@@ -186,6 +154,16 @@ bool DrawingBuffer::prepareMailbox(WebKit::WebExternalTextureMailbox* outMailbox
     // Resolve the multisampled buffer into the texture referenced by m_lastColorBuffer mailbox.
     if (multisample())
         commit();
+
+    if (bitmap) {
+        bitmap->setSize(size());
+
+        unsigned char* pixels = bitmap->pixels();
+        bool needPremultiply = m_attributes.alpha && !m_attributes.premultipliedAlpha;
+        GraphicsContext3D::AlphaOp op = needPremultiply ? GraphicsContext3D::AlphaDoPremultiply : GraphicsContext3D::AlphaDoNothing;
+        if (pixels)
+            m_context->readBackFramebuffer(pixels, size().width(), size().height(), GraphicsContext3D::ReadbackSkia, op);
+    }
 
     // We must restore the texture binding since creating new textures,
     // consuming and producing mailboxes changes it.
@@ -301,55 +279,17 @@ void DrawingBuffer::initialize(const IntSize& size)
 
     m_fbo = m_context->createFramebuffer();
 
-    if (m_separateFrontTexture)
-        m_frontColorBuffer = createColorTexture();
-
     m_context->bindFramebuffer(GraphicsContext3D::FRAMEBUFFER, m_fbo);
     m_colorBuffer = createColorTexture();
     m_context->framebufferTexture2D(GraphicsContext3D::FRAMEBUFFER, GraphicsContext3D::COLOR_ATTACHMENT0, GraphicsContext3D::TEXTURE_2D, m_colorBuffer, 0);
     createSecondaryBuffers();
     reset(size);
-#if ENABLE(CANVAS_USES_MAILBOX)
     m_lastColorBuffer = createNewMailbox(m_colorBuffer);
-#endif // ENABLE(CANVAS_USES_MAILBOX)
-}
-
-void DrawingBuffer::prepareBackBuffer()
-{
-    if (!m_context || !m_contentsChanged)
-        return;
-
-    m_context->makeContextCurrent();
-
-    if (multisample())
-        commit();
-
-    if (m_preserveDrawingBuffer == Discard && m_separateFrontTexture) {
-        swap(m_frontColorBuffer, m_colorBuffer);
-        // It appears safe to overwrite the context's framebuffer binding in the Discard case since there will always be a
-        // WebGLRenderingContext::clearIfComposited() call made before the next draw call which restores the framebuffer binding.
-        // If this stops being true at some point, we should track the current framebuffer binding in the DrawingBuffer and restore
-        // it after attaching the new back buffer here.
-        m_context->bindFramebuffer(GraphicsContext3D::FRAMEBUFFER, m_fbo);
-        m_context->framebufferTexture2D(GraphicsContext3D::FRAMEBUFFER, GraphicsContext3D::COLOR_ATTACHMENT0, GraphicsContext3D::TEXTURE_2D, m_colorBuffer, 0);
-    }
-
-    if (multisample() && !m_framebufferBinding)
-        bind();
-    else
-        restoreFramebufferBinding();
-
-    m_contentsChanged = false;
-}
-
-bool DrawingBuffer::requiresCopyFromBackToFrontBuffer() const
-{
-    return m_separateFrontTexture && m_preserveDrawingBuffer == Preserve;
 }
 
 unsigned DrawingBuffer::frontColorBuffer() const
 {
-    return m_separateFrontTexture ? m_frontColorBuffer : m_colorBuffer;
+    return m_colorBuffer;
 }
 
 Platform3DObject DrawingBuffer::framebuffer() const
@@ -362,14 +302,11 @@ WebKit::WebLayer* DrawingBuffer::platformLayer()
     if (!m_context)
         return 0;
 
-    if (!m_layer){
-#if ENABLE(CANVAS_USES_MAILBOX)
-        m_layer = adoptPtr(WebKit::Platform::current()->compositorSupport()->createExternalTextureLayerForMailbox(this));
-#else
+    if (!m_layer) {
         m_layer = adoptPtr(WebKit::Platform::current()->compositorSupport()->createExternalTextureLayer(this));
-#endif // ENABLE(CANVAS_USES_MAILBOX)
 
         m_layer->setOpaque(!m_attributes.alpha);
+        m_layer->setBlendBackgroundColor(m_attributes.alpha);
         m_layer->setPremultipliedAlpha(m_attributes.premultipliedAlpha);
         GraphicsLayer::registerContentsLayer(m_layer->layer());
     }
@@ -383,16 +320,12 @@ void DrawingBuffer::paintCompositedResultsToCanvas(ImageBuffer* imageBuffer)
         return;
 
     Extensions3D* extensions = m_context->getExtensions();
-#if ENABLE(CANVAS_USES_MAILBOX)
     // Since the m_frontColorBuffer was produced and sent to the compositor, it cannot be bound to an fbo.
     // We have to make a copy of it here and bind that copy instead.
+    // FIXME: That's not true any more, provided we don't change texture
+    // parameters.
     unsigned sourceTexture = createColorTexture(m_size);
     extensions->copyTextureCHROMIUM(GraphicsContext3D::TEXTURE_2D, m_frontColorBuffer, sourceTexture, 0, GraphicsContext3D::RGBA, GraphicsContext3D::UNSIGNED_BYTE);
-#else
-    // FIXME: Re-examine general correctness of this code beacause m_colorBuffer may contain a stale copy of the data
-    // that was sent to the compositor at some point in the past.
-    unsigned sourceTexture = frontColorBuffer();
-#endif // ENABLE(CANVAS_USES_MAILBOX)
 
     // Since we're using the same context as WebGL, we have to restore any state we change (in this case, just the framebuffer binding).
     // FIXME: The WebGLRenderingContext tracks the current framebuffer binding, it would be slightly more efficient to use this value
@@ -406,9 +339,7 @@ void DrawingBuffer::paintCompositedResultsToCanvas(ImageBuffer* imageBuffer)
 
     extensions->paintFramebufferToCanvas(framebuffer, size().width(), size().height(), !m_attributes.premultipliedAlpha, imageBuffer);
     m_context->deleteFramebuffer(framebuffer);
-#if ENABLE(CANVAS_USES_MAILBOX)
     m_context->deleteTexture(sourceTexture);
-#endif // ENABLE(CANVAS_USES_MAILBOX)
 
     m_context->bindFramebuffer(GraphicsContext3D::FRAMEBUFFER, previousFramebuffer);
 }
@@ -429,16 +360,8 @@ void DrawingBuffer::releaseResources()
 
         clearPlatformLayer();
 
-#if !ENABLE(CANVAS_USES_MAILBOX)
-        if (m_colorBuffer)
-            m_context->deleteTexture(m_colorBuffer);
-
-        if (m_frontColorBuffer)
-            m_context->deleteTexture(m_frontColorBuffer);
-#else
         for (size_t i = 0; i < m_textureMailboxes.size(); i++)
             m_context->deleteTexture(m_textureMailboxes[i]->textureId);
-#endif // !ENABLE(CANVAS_USES_MAILBOX)
 
         if (m_multisampleColorBuffer)
             m_context->deleteRenderbuffer(m_multisampleColorBuffer);
@@ -473,11 +396,9 @@ void DrawingBuffer::releaseResources()
     m_fbo = 0;
     m_contextEvictionManager.clear();
 
-#if ENABLE(CANVAS_USES_MAILBOX)
     m_lastColorBuffer.clear();
     m_recycledMailboxes.clear();
     m_textureMailboxes.clear();
-#endif  // ENABLE(CANVAS_USES_MAILBOX)
 
     if (m_layer) {
         GraphicsLayer::unregisterContentsLayer(m_layer->layer());
@@ -526,12 +447,6 @@ bool DrawingBuffer::resizeFramebuffer(const IntSize& size)
         m_lastColorBuffer->size = m_size;
 
     m_context->framebufferTexture2D(GraphicsContext3D::FRAMEBUFFER, GraphicsContext3D::COLOR_ATTACHMENT0, GraphicsContext3D::TEXTURE_2D, m_colorBuffer, 0);
-
-    // resize the front color buffer
-    if (m_separateFrontTexture) {
-        m_context->bindTexture(GraphicsContext3D::TEXTURE_2D, m_frontColorBuffer);
-        m_context->texImage2DResourceSafe(GraphicsContext3D::TEXTURE_2D, 0, m_internalColorFormat, size.width(), size.height(), 0, m_colorFormat, GraphicsContext3D::UNSIGNED_BYTE);
-    }
 
     m_context->bindTexture(GraphicsContext3D::TEXTURE_2D, 0);
 
@@ -597,7 +512,7 @@ void DrawingBuffer::resizeDepthStencil(const IntSize& size, int sampleCount)
             m_context->bindRenderbuffer(GraphicsContext3D::RENDERBUFFER, m_stencilBuffer);
             if (multisample())
                 m_context->getExtensions()->renderbufferStorageMultisample(GraphicsContext3D::RENDERBUFFER, sampleCount, GraphicsContext3D::STENCIL_INDEX8, size.width(), size.height());
-            else 
+            else
                 m_context->renderbufferStorage(GraphicsContext3D::RENDERBUFFER, GraphicsContext3D::STENCIL_INDEX8, size.width(), size.height());
             m_context->framebufferRenderbuffer(GraphicsContext3D::FRAMEBUFFER, GraphicsContext3D::STENCIL_ATTACHMENT, GraphicsContext3D::RENDERBUFFER, m_stencilBuffer);
         }

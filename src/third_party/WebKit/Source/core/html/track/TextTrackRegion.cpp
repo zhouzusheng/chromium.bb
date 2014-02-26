@@ -34,16 +34,17 @@
 
 #include "core/html/track/TextTrackRegion.h"
 
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ClientRect.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/html/DOMTokenList.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/html/track/WebVTTParser.h"
 #include "core/platform/Logging.h"
 #include "core/rendering/RenderInline.h"
 #include "core/rendering/RenderObject.h"
-#include <wtf/MathExtras.h>
-#include <wtf/text/StringBuilder.h>
+#include "wtf/MathExtras.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -99,85 +100,85 @@ void TextTrackRegion::setId(const String& id)
     m_id = id;
 }
 
-void TextTrackRegion::setWidth(double value, ExceptionCode& ec)
+void TextTrackRegion::setWidth(double value, ExceptionState& es)
 {
     if (std::isinf(value) || std::isnan(value)) {
-        ec = TypeError;
+        es.throwTypeError();
         return;
     }
 
     if (value < 0 || value > 100) {
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
         return;
     }
 
     m_width = value;
 }
 
-void TextTrackRegion::setHeight(long value, ExceptionCode& ec)
+void TextTrackRegion::setHeight(long value, ExceptionState& es)
 {
     if (value < 0) {
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
         return;
     }
 
     m_heightInLines = value;
 }
 
-void TextTrackRegion::setRegionAnchorX(double value, ExceptionCode& ec)
+void TextTrackRegion::setRegionAnchorX(double value, ExceptionState& es)
 {
     if (std::isinf(value) || std::isnan(value)) {
-        ec = TypeError;
+        es.throwTypeError();
         return;
     }
 
     if (value < 0 || value > 100) {
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
         return;
     }
 
     m_regionAnchor.setX(value);
 }
 
-void TextTrackRegion::setRegionAnchorY(double value, ExceptionCode& ec)
+void TextTrackRegion::setRegionAnchorY(double value, ExceptionState& es)
 {
     if (std::isinf(value) || std::isnan(value)) {
-        ec = TypeError;
+        es.throwTypeError();
         return;
     }
 
     if (value < 0 || value > 100) {
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
         return;
     }
 
     m_regionAnchor.setY(value);
 }
 
-void TextTrackRegion::setViewportAnchorX(double value, ExceptionCode& ec)
+void TextTrackRegion::setViewportAnchorX(double value, ExceptionState& es)
 {
     if (std::isinf(value) || std::isnan(value)) {
-        ec = TypeError;
+        es.throwTypeError();
         return;
     }
 
     if (value < 0 || value > 100) {
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
         return;
     }
 
     m_viewportAnchor.setX(value);
 }
 
-void TextTrackRegion::setViewportAnchorY(double value, ExceptionCode& ec)
+void TextTrackRegion::setViewportAnchorY(double value, ExceptionState& es)
 {
     if (std::isinf(value) || std::isnan(value)) {
-        ec = TypeError;
+        es.throwTypeError();
         return;
     }
 
     if (value < 0 || value > 100) {
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
         return;
     }
 
@@ -194,12 +195,12 @@ const AtomicString TextTrackRegion::scroll() const
     return "";
 }
 
-void TextTrackRegion::setScroll(const AtomicString& value, ExceptionCode& ec)
+void TextTrackRegion::setScroll(const AtomicString& value, ExceptionState& es)
 {
     DEFINE_STATIC_LOCAL(const AtomicString, upScrollValueKeyword, ("up", AtomicString::ConstructFromLiteral));
 
     if (value != emptyString() && value != upScrollValueKeyword) {
-        ec = SYNTAX_ERR;
+        es.throwDOMException(SyntaxError);
         return;
     }
 
@@ -464,14 +465,14 @@ void TextTrackRegion::prepareRegionDisplayTree()
     // gradually scrolled out as multiple cues are appended to the region.
     m_cueContainer = HTMLDivElement::create(ownerDocument());
     m_cueContainer->setInlineStyleProperty(CSSPropertyTop,
-        0.0f,
+        0.0,
         CSSPrimitiveValue::CSS_PX);
 
-    m_cueContainer->setPseudo(textTrackCueContainerShadowPseudoId());
+    m_cueContainer->setPart(textTrackCueContainerShadowPseudoId());
     m_regionDisplayTree->appendChild(m_cueContainer);
 
     // 7.5 Every WebVTT region object is initialised with the following CSS
-    m_regionDisplayTree->setPseudo(textTrackRegionShadowPseudoId());
+    m_regionDisplayTree->setPart(textTrackRegionShadowPseudoId());
 }
 
 void TextTrackRegion::startTimer()

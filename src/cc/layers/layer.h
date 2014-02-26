@@ -21,23 +21,19 @@
 #include "cc/layers/layer_position_constraint.h"
 #include "cc/layers/paint_properties.h"
 #include "cc/layers/render_surface.h"
+#include "cc/output/filter_operations.h"
 #include "cc/trees/occlusion_tracker.h"
 #include "skia/ext/refptr.h"
-#include "third_party/WebKit/public/platform/WebFilterOperations.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_f.h"
 #include "ui/gfx/transform.h"
 
-namespace WebKit {
-class WebAnimationDelegate;
-class WebLayerScrollClient;
-}
-
 namespace cc {
 
 class Animation;
+class AnimationDelegate;
 struct AnimationEvent;
 class CopyOutputRequest;
 class LayerAnimationDelegate;
@@ -50,7 +46,6 @@ class RenderingStatsInstrumentation;
 class ResourceUpdateQueue;
 class ScrollbarLayer;
 struct AnimationEvent;
-struct RenderingStats;
 
 // Base class for composited layers. Special layer types are derived from
 // this class.
@@ -74,6 +69,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void RemoveFromParent();
   void RemoveAllChildren();
   void SetChildren(const LayerList& children);
+  bool HasAncestor(const Layer* ancestor) const;
 
   const LayerList& children() const { return children_; }
   Layer* child_at(size_t index) { return children_[index].get(); }
@@ -118,8 +114,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool OpacityIsAnimating() const;
   virtual bool OpacityCanAnimateOnImplThread() const;
 
-  void SetFilters(const WebKit::WebFilterOperations& filters);
-  const WebKit::WebFilterOperations& filters() const { return filters_; }
+  void SetFilters(const FilterOperations& filters);
+  const FilterOperations& filters() const { return filters_; }
 
   void SetFilter(const skia::RefPtr<SkImageFilter>& filter);
   skia::RefPtr<SkImageFilter> filter() const { return filter_; }
@@ -127,8 +123,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   // Background filters are filters applied to what is behind this layer, when
   // they are viewed through non-opaque regions in this layer. They are used
   // through the WebLayer interface, and are not exposed to HTML.
-  void SetBackgroundFilters(const WebKit::WebFilterOperations& filters);
-  const WebKit::WebFilterOperations& background_filters() const {
+  void SetBackgroundFilters(const FilterOperations& filters);
+  const FilterOperations& background_filters() const {
     return background_filters_;
   }
 
@@ -234,8 +230,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
     return touch_event_handler_region_;
   }
 
-  void set_layer_scroll_client(WebKit::WebLayerScrollClient* client) {
-    layer_scroll_client_ = client;
+  void set_did_scroll_callback(const base::Closure& callback) {
+    did_scroll_callback_ = callback;
   }
 
   void SetDrawCheckerboardForMissingTiles(bool checkerboard);
@@ -247,6 +243,10 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool force_render_surface() const { return force_render_surface_; }
 
   gfx::Vector2d ScrollDelta() const { return gfx::Vector2d(); }
+  gfx::Vector2dF TotalScrollOffset() const {
+    // Floating point to match the LayerImpl version.
+    return scroll_offset() + ScrollDelta();
+  }
 
   void SetDoubleSided(bool double_sided);
   bool double_sided() const { return double_sided_; }
@@ -285,9 +285,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   // These methods typically need to be overwritten by derived classes.
   virtual bool DrawsContent() const;
   virtual void SavePaintProperties();
-  virtual void Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker* occlusion,
-                      RenderingStats* stats) {}
+  // Returns true iff any resources were updated that need to be committed.
+  virtual bool Update(ResourceUpdateQueue* queue,
+                      const OcclusionTracker* occlusion);
   virtual bool NeedMoreUpdates();
   virtual void SetIsMask(bool is_mask) {}
   virtual void ReduceMemoryUsage() {}
@@ -334,7 +334,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void SetLayerAnimationControllerForTest(
       scoped_refptr<LayerAnimationController> controller);
 
-  void set_layer_animation_delegate(WebKit::WebAnimationDelegate* delegate) {
+  void set_layer_animation_delegate(AnimationDelegate* delegate) {
     layer_animation_controller_->set_layer_animation_delegate(delegate);
   }
 
@@ -363,8 +363,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   // Constructs a LayerImpl of the correct runtime type for this Layer type.
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl);
 
-  bool NeedsDisplayForTesting() const { return needs_display_; }
-  void ResetNeedsDisplayForTesting() { needs_display_ = false; }
+  bool NeedsDisplayForTesting() const { return !update_rect_.IsEmpty(); }
+  void ResetNeedsDisplayForTesting() { update_rect_ = gfx::RectF(); }
 
   RenderingStatsInstrumentation* rendering_stats_instrumentation() const;
 
@@ -382,6 +382,11 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   virtual bool SupportsLCDText() const;
 
+  bool needs_push_properties() const { return needs_push_properties_; }
+  bool descendant_needs_push_properties() const {
+    return num_dependents_need_push_properties_ > 0;
+  }
+
  protected:
   friend class LayerImpl;
   friend class TreeSynchronizer;
@@ -389,14 +394,38 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   Layer();
 
+  // These SetNeeds functions are in order of severity of update:
+  //
+  // Called when this layer has been modified in some way, but isn't sure
+  // that it needs a commit yet.  It needs CalcDrawProperties and UpdateLayers
+  // before it knows whether or not a commit is required.
+  void SetNeedsUpdate();
+  // Called when a property has been modified in a way that the layer
+  // knows immediately that a commit is required.  This implies SetNeedsUpdate
+  // as well as SetNeedsPushProperties to push that property.
   void SetNeedsCommit();
+  // Called when there's been a change in layer structure.  Implies both
+  // SetNeedsUpdate and SetNeedsCommit, but not SetNeedsPushProperties.
   void SetNeedsFullTreeSync();
   bool IsPropertyChangeAllowed() const;
 
+  void SetNeedsPushProperties();
+  void AddDependentNeedsPushProperties();
+  void RemoveDependentNeedsPushProperties();
+  bool parent_should_know_need_push_properties() const {
+    return needs_push_properties() || descendant_needs_push_properties();
+  }
+
   void reset_raster_scale_to_unknown() { raster_scale_ = 0.f; }
 
-  // This flag is set when layer need repainting/updating.
-  bool needs_display_;
+  // This flag is set when the layer needs to push properties to the impl
+  // side.
+  bool needs_push_properties_;
+
+  // The number of direct children or dependent layers that need to be recursed
+  // to in order for them or a descendent of them to push properties to the impl
+  // side.
+  int num_dependents_need_push_properties_;
 
   // Tracks whether this layer may have changed stacking order with its
   // siblings.
@@ -414,14 +443,13 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   int layer_id_;
 
   // When true, the layer is about to perform an update. Any commit requests
-  // will be handled implcitly after the update completes.
+  // will be handled implicitly after the update completes.
   bool ignore_set_needs_commit_;
 
  private:
   friend class base::RefCounted<Layer>;
 
   void SetParent(Layer* layer);
-  bool HasAncestor(Layer* ancestor) const;
   bool DescendantIsFixedToContainerLayer() const;
 
   // Returns the index of the child or -1 if not found.
@@ -462,8 +490,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   CompositingReasons compositing_reasons_;
   float opacity_;
   skia::RefPtr<SkImageFilter> filter_;
-  WebKit::WebFilterOperations filters_;
-  WebKit::WebFilterOperations background_filters_;
+  FilterOperations filters_;
+  FilterOperations background_filters_;
   float anchor_point_z_;
   bool is_container_for_fixed_position_layers_;
   LayerPositionConstraint position_constraint_;
@@ -488,7 +516,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   ScopedPtrVector<CopyOutputRequest> copy_requests_;
 
-  WebKit::WebLayerScrollClient* layer_scroll_client_;
+  base::Closure did_scroll_callback_;
 
   DrawProperties<Layer, RenderSurface> draw_properties_;
 

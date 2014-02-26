@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -28,6 +28,7 @@
 
 #include "CSSPropertyNames.h"
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScriptController.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
@@ -58,14 +59,14 @@ PassRefPtr<HTMLVideoElement> HTMLVideoElement::create(const QualifiedName& tagNa
     return videoElement.release();
 }
 
-bool HTMLVideoElement::rendererIsNeeded(const NodeRenderingContext& context) 
+bool HTMLVideoElement::rendererIsNeeded(const NodeRenderingContext& context)
 {
-    return HTMLElement::rendererIsNeeded(context); 
+    return HTMLElement::rendererIsNeeded(context);
 }
 
 RenderObject* HTMLVideoElement::createRenderer(RenderStyle*)
 {
-    return new (document()->renderArena()) RenderVideo(this);
+    return new RenderVideo(this);
 }
 
 void HTMLVideoElement::attach(const AttachContext& context)
@@ -78,7 +79,7 @@ void HTMLVideoElement::attach(const AttachContext& context)
             m_imageLoader = adoptPtr(new HTMLImageLoader(this));
         m_imageLoader->updateFromElement();
         if (renderer())
-            toRenderImage(renderer())->imageResource()->setCachedImage(m_imageLoader->image()); 
+            toRenderImage(renderer())->imageResource()->setImageResource(m_imageLoader->image());
     }
 }
 
@@ -111,7 +112,7 @@ void HTMLVideoElement::parseAttribute(const QualifiedName& name, const AtomicStr
             m_imageLoader->updateFromElementIgnoringPreviousError();
         } else {
             if (renderer())
-                toRenderImage(renderer())->imageResource()->setCachedImage(0); 
+                toRenderImage(renderer())->imageResource()->setImageResource(0);
         }
     } else
         HTMLMediaElement::parseAttribute(name, value);
@@ -120,7 +121,7 @@ void HTMLVideoElement::parseAttribute(const QualifiedName& name, const AtomicStr
 bool HTMLVideoElement::supportsFullscreen() const
 {
     Page* page = document() ? document()->page() : 0;
-    if (!page) 
+    if (!page)
         return false;
 
     if (!player() || !player()->supportsFullscreen())
@@ -149,14 +150,14 @@ unsigned HTMLVideoElement::width() const
     unsigned w = getAttribute(widthAttr).string().toUInt(&ok);
     return ok ? w : 0;
 }
-    
+
 unsigned HTMLVideoElement::height() const
 {
     bool ok;
     unsigned h = getAttribute(heightAttr).string().toUInt(&ok);
     return ok ? h : 0;
 }
-    
+
 bool HTMLVideoElement::isURLAttribute(const Attribute& attribute) const
 {
     return attribute.name() == posterAttr || HTMLMediaElement::isURLAttribute(attribute);
@@ -215,19 +216,19 @@ bool HTMLVideoElement::hasAvailableVideoFrame() const
 {
     if (!player())
         return false;
-    
+
     return player()->hasVideo() && player()->readyState() >= MediaPlayer::HaveCurrentData;
 }
 
-void HTMLVideoElement::webkitEnterFullscreen(ExceptionCode& ec)
+void HTMLVideoElement::webkitEnterFullscreen(ExceptionState& es)
 {
     if (isFullscreen())
         return;
 
-    // Generate an exception if this isn't called in response to a user gesture, or if the 
+    // Generate an exception if this isn't called in response to a user gesture, or if the
     // element does not support fullscreen.
     if ((userGestureRequiredForFullscreen() && !ScriptController::processingUserGesture()) || !supportsFullscreen()) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
 

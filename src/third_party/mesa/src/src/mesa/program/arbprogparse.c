@@ -64,7 +64,7 @@ having three separate program parameter arrays.
 
 
 void
-_mesa_parse_arb_fragment_program(GLcontext* ctx, GLenum target,
+_mesa_parse_arb_fragment_program(struct gl_context* ctx, GLenum target,
                                  const GLvoid *str, GLsizei len,
                                  struct gl_fragment_program *program)
 {
@@ -116,19 +116,11 @@ _mesa_parse_arb_fragment_program(GLcontext* ctx, GLenum target,
          program->Base.SamplersUsed |= (1 << i);
    }
    program->Base.ShadowSamplers = prog.ShadowSamplers;
-   switch (state.option.Fog) {
-   case OPTION_FOG_EXP:    program->FogOption = GL_EXP;    break;
-   case OPTION_FOG_EXP2:   program->FogOption = GL_EXP2;   break;
-   case OPTION_FOG_LINEAR: program->FogOption = GL_LINEAR; break;
-   default:                program->FogOption = GL_NONE;   break;
-   }
    program->OriginUpperLeft = state.option.OriginUpperLeft;
    program->PixelCenterInteger = state.option.PixelCenterInteger;
 
    program->UsesKill            = state.fragment.UsesKill;
-
-   if (program->FogOption)
-      program->Base.InputsRead |= FRAG_BIT_FOGC;
+   program->UsesDFdy            = state.fragment.UsesDFdy;
 
    if (program->Base.Instructions)
       free(program->Base.Instructions);
@@ -143,9 +135,15 @@ _mesa_parse_arb_fragment_program(GLcontext* ctx, GLenum target,
     * there's no hardware that wants to do fog in a discrete stage separate
     * from the fragment shader.
     */
-   if (program->FogOption != GL_NONE) {
-      _mesa_append_fog_code(ctx, program);
-      program->FogOption = GL_NONE;
+   if (state.option.Fog != OPTION_NONE) {
+      static const GLenum fog_modes[4] = {
+	 GL_NONE, GL_EXP, GL_EXP2, GL_LINEAR
+      };
+
+      /* XXX: we should somehow recompile this to remove clamping if disabled
+       * On the ATI driver, this is unclampled if fragment clamping is disabled
+       */
+      _mesa_append_fog_code(ctx, program, fog_modes[state.option.Fog], GL_TRUE);
    }
 
 #if DEBUG_FP
@@ -162,7 +160,7 @@ _mesa_parse_arb_fragment_program(GLcontext* ctx, GLenum target,
  * object unchanged.
  */
 void
-_mesa_parse_arb_vertex_program(GLcontext *ctx, GLenum target,
+_mesa_parse_arb_vertex_program(struct gl_context *ctx, GLenum target,
 			       const GLvoid *str, GLsizei len,
 			       struct gl_vertex_program *program)
 {

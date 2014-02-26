@@ -21,19 +21,8 @@
 #include "content/public/common/ssl_status.h"
 #include "content/public/common/url_constants.h"
 #include "net/ssl/ssl_info.h"
-#include "webkit/glue/resource_type.h"
+#include "webkit/common/resource_type.h"
 
-
-namespace {
-
-const char kDot = '.';
-
-bool IsIntranetHost(const std::string& host) {
-  const size_t dot = host.find(kDot);
-  return dot == std::string::npos || dot == host.length() - 1;
-}
-
-}  // namespace
 
 namespace content {
 
@@ -45,7 +34,9 @@ SSLPolicy::SSLPolicy(SSLPolicyBackend* backend)
 void SSLPolicy::OnCertError(SSLCertErrorHandler* handler) {
   // First we check if we know the policy for this error.
   net::CertPolicy::Judgment judgment = backend_->QueryPolicy(
-      handler->ssl_info().cert.get(), handler->request_url().host());
+      handler->ssl_info().cert.get(),
+      handler->request_url().host(),
+      handler->cert_error());
 
   if (judgment == net::CertPolicy::ALLOWED) {
     handler->ContinueRequest();
@@ -124,14 +115,6 @@ void SSLPolicy::UpdateEntry(NavigationEntryImpl* entry,
     return;
   }
 
-  if (!(entry->GetSSL().cert_status & net::CERT_STATUS_COMMON_NAME_INVALID)) {
-    // CAs issue certificates for intranet hosts to everyone.  Therefore, we
-    // mark intranet hosts as being non-unique.
-    if (IsIntranetHost(entry->GetURL().host())) {
-      entry->GetSSL().cert_status |= net::CERT_STATUS_NON_UNIQUE_NAME;
-    }
-  }
-
   if (net::IsCertStatusError(entry->GetSSL().cert_status)) {
     // Minor errors don't lower the security style to
     // SECURITY_STYLE_AUTHENTICATION_BROKEN.
@@ -157,6 +140,8 @@ void SSLPolicy::UpdateEntry(NavigationEntryImpl* entry,
 
   if (web_contents->DisplayedInsecureContent())
     entry->GetSSL().content_status |= SSLStatus::DISPLAYED_INSECURE_CONTENT;
+  else
+    entry->GetSSL().content_status &= ~SSLStatus::DISPLAYED_INSECURE_CONTENT;
 }
 
 void SSLPolicy::OnAllowCertificate(scoped_refptr<SSLCertErrorHandler> handler,
@@ -173,7 +158,8 @@ void SSLPolicy::OnAllowCertificate(scoped_refptr<SSLCertErrorHandler> handler,
     // ContinueRequest() gets posted to a different thread. Calling
     // AllowCertForHost() first ensures deterministic ordering.
     backend_->AllowCertForHost(handler->ssl_info().cert.get(),
-                               handler->request_url().host());
+                               handler->request_url().host(),
+                               handler->cert_error());
     handler->ContinueRequest();
   } else {
     // Default behavior for rejecting a certificate.
@@ -182,7 +168,8 @@ void SSLPolicy::OnAllowCertificate(scoped_refptr<SSLCertErrorHandler> handler,
     // CancelRequest() gets posted to a different thread. Calling
     // DenyCertForHost() first ensures deterministic ordering.
     backend_->DenyCertForHost(handler->ssl_info().cert.get(),
-                              handler->request_url().host());
+                              handler->request_url().host(),
+                              handler->cert_error());
     handler->CancelRequest();
   }
 }

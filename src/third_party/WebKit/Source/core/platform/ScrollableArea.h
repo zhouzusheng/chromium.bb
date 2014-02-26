@@ -20,14 +20,14 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef ScrollableArea_h
 #define ScrollableArea_h
 
 #include "core/platform/Scrollbar.h"
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -40,6 +40,10 @@ class ScrollAnimator;
 
 class ScrollableArea {
 public:
+    static int pixelsPerLineStep();
+    static float minFractionToStepWhenPaging();
+    static int maxOverlapBetweenPages();
+
     bool scroll(ScrollDirection, ScrollGranularity, float multiplier = 1);
     void scrollToOffsetWithoutAnimation(const FloatPoint&);
     void scrollToOffsetWithoutAnimation(ScrollbarOrientation, float offset);
@@ -88,7 +92,7 @@ public:
     virtual void contentsResized();
 
     bool hasOverlayScrollbars() const;
-    virtual void setScrollbarOverlayStyle(ScrollbarOverlayStyle);
+    void setScrollbarOverlayStyle(ScrollbarOverlayStyle);
     ScrollbarOverlayStyle scrollbarOverlayStyle() const { return static_cast<ScrollbarOverlayStyle>(m_scrollbarOverlayStyle); }
 
     // This getter will create a ScrollAnimator if it doesn't already exist.
@@ -102,7 +106,6 @@ public:
 
     virtual bool isActive() const = 0;
     virtual int scrollSize(ScrollbarOrientation) const = 0;
-    virtual int scrollPosition(Scrollbar*) const = 0;
     virtual void invalidateScrollbar(Scrollbar*, const IntRect&);
     virtual bool isScrollCornerVisible() const = 0;
     virtual IntRect scrollCornerRect() const = 0;
@@ -132,9 +135,11 @@ public:
     virtual Scrollbar* horizontalScrollbar() const { return 0; }
     virtual Scrollbar* verticalScrollbar() const { return 0; }
 
-    virtual IntPoint scrollPosition() const;
-    virtual IntPoint minimumScrollPosition() const;
-    virtual IntPoint maximumScrollPosition() const;
+    // scrollPosition is relative to the scrollOrigin. i.e. If the page is RTL
+    // then scrollPosition will be negative.
+    virtual IntPoint scrollPosition() const = 0;
+    virtual IntPoint minimumScrollPosition() const = 0;
+    virtual IntPoint maximumScrollPosition() const = 0;
 
     enum VisibleContentRectIncludesScrollbars { ExcludeScrollbars, IncludeScrollbars };
     virtual IntRect visibleContentRect(VisibleContentRectIncludesScrollbars = ExcludeScrollbars) const;
@@ -148,7 +153,7 @@ public:
     virtual void scrollbarStyleChanged(int /*newStyle*/, bool /*forceUpdate*/) { }
 
     virtual bool scrollbarsCanBeActive() const = 0;
-    
+
     // Note that this only returns scrollable areas that can actually be scrolled.
     virtual ScrollableArea* enclosingScrollableArea() const = 0;
 
@@ -173,7 +178,7 @@ public:
     virtual bool usesCompositedScrolling() const { return false; }
     virtual void updateNeedsCompositedScrolling() { }
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
+    virtual bool userInputScrollable(ScrollbarOrientation) const = 0;
 
     // Convenience functions
     int scrollPosition(ScrollbarOrientation orientation) { return orientation == HorizontalScrollbar ? scrollPosition().x() : scrollPosition().y(); }
@@ -205,7 +210,7 @@ protected:
 
 private:
     void scrollPositionChanged(const IntPoint&);
-    
+
     // NOTE: Only called from the ScrollAnimator.
     friend class ScrollAnimator;
     void setScrollOffsetFromAnimation(const IntPoint&);
@@ -213,6 +218,11 @@ private:
     // This function should be overriden by subclasses to perform the actual
     // scroll of the content.
     virtual void setScrollOffset(const IntPoint&) = 0;
+
+    virtual int lineStep(ScrollbarOrientation) const;
+    virtual int pageStep(ScrollbarOrientation) const = 0;
+    virtual int documentStep(ScrollbarOrientation) const;
+    virtual float pixelStep(ScrollbarOrientation) const;
 
     mutable OwnPtr<ScrollAnimator> m_scrollAnimator;
     unsigned m_constrainsScrollingToContentEdge : 1;

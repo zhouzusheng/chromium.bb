@@ -24,17 +24,13 @@
 
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
-#include "core/svg/SVGLangSpace.h"
-#include "core/svg/SVGStyledTransformableElement.h"
-#include "core/svg/SVGTests.h"
+#include "core/svg/SVGGraphicsElement.h"
 #include "core/svg/SVGURIReference.h"
 
 namespace WebCore {
 
-class SVGAElement FINAL : public SVGStyledTransformableElement,
+class SVGAElement FINAL : public SVGGraphicsElement,
                           public SVGURIReference,
-                          public SVGTests,
-                          public SVGLangSpace,
                           public SVGExternalResourcesRequired {
 public:
     static PassRefPtr<SVGAElement> create(const QualifiedName&, Document*);
@@ -43,9 +39,9 @@ private:
     SVGAElement(const QualifiedName&, Document*);
 
     virtual bool isValid() const { return SVGTests::isValid(); }
-    
+
     virtual String title() const;
-    virtual String target() const { return svgTarget(); }
+    virtual String target() const { return svgTargetCurrentValue(); }
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
@@ -54,10 +50,10 @@ private:
     virtual RenderObject* createRenderer(RenderStyle*);
 
     virtual void defaultEventHandler(Event*);
-    
+
     virtual bool supportsFocus() const OVERRIDE;
-    virtual bool isMouseFocusable() const;
-    virtual bool isKeyboardFocusable(KeyboardEvent*) const;
+    virtual bool isMouseFocusable() const OVERRIDE;
+    virtual bool isKeyboardFocusable() const OVERRIDE;
     virtual bool rendererIsFocusable() const OVERRIDE;
     virtual bool isURLAttribute(const Attribute&) const;
 
@@ -70,11 +66,6 @@ private:
         DECLARE_ANIMATED_STRING(Href, href)
         DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
     END_DECLARE_ANIMATED_PROPERTIES
-
-    // SVGTests
-    virtual void synchronizeRequiredFeatures() { SVGTests::synchronizeRequiredFeatures(this); }
-    virtual void synchronizeRequiredExtensions() { SVGTests::synchronizeRequiredExtensions(this); }
-    virtual void synchronizeSystemLanguage() { SVGTests::synchronizeSystemLanguage(this); }
 };
 
 } // namespace WebCore

@@ -25,11 +25,9 @@
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedNumber.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
-#include "core/svg/SVGLangSpace.h"
+#include "core/svg/SVGGraphicsElement.h"
 #include "core/svg/SVGPathByteStream.h"
 #include "core/svg/SVGPathSegList.h"
-#include "core/svg/SVGStyledTransformableElement.h"
-#include "core/svg/SVGTests.h"
 
 namespace WebCore {
 
@@ -54,15 +52,13 @@ class SVGPathSegCurvetoQuadraticSmoothAbs;
 class SVGPathSegCurvetoQuadraticSmoothRel;
 class SVGPathSegListPropertyTearOff;
 
-class SVGPathElement FINAL : public SVGStyledTransformableElement,
-                             public SVGTests,
-                             public SVGLangSpace,
+class SVGPathElement FINAL : public SVGGraphicsElement,
                              public SVGExternalResourcesRequired {
 public:
     static PassRefPtr<SVGPathElement> create(const QualifiedName&, Document*);
-    
+
     float getTotalLength();
-    FloatPoint getPointAtLength(float distance);
+    SVGPoint getPointAtLength(float distance);
     unsigned getPathSegAtLength(float distance);
 
     PassRefPtr<SVGPathSegClosePath> createSVGPathSegClosePath(SVGPathSegRole role = PathSegUndefinedRole);
@@ -105,7 +101,7 @@ private:
     SVGPathElement(const QualifiedName&, Document*);
 
     virtual bool isValid() const { return SVGTests::isValid(); }
-    virtual bool supportsFocus() const { return true; }
+    virtual bool supportsFocus() const OVERRIDE { return hasFocusEventListeners(); }
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
@@ -121,12 +117,7 @@ private:
         DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
     END_DECLARE_ANIMATED_PROPERTIES
 
-    // SVGTests
-    virtual void synchronizeRequiredFeatures() { SVGTests::synchronizeRequiredFeatures(this); }
-    virtual void synchronizeRequiredExtensions() { SVGTests::synchronizeRequiredExtensions(this); }
-    virtual void synchronizeSystemLanguage() { SVGTests::synchronizeSystemLanguage(this); }
-
-    RenderObject* createRenderer(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 
     virtual Node::InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
@@ -139,7 +130,7 @@ private:
     bool m_isAnimValObserved;
 };
 
-inline SVGPathElement* toSVGPathElement(SVGElement* element)
+inline SVGPathElement* toSVGPathElement(Element* element)
 {
     ASSERT_WITH_SECURITY_IMPLICATION(!element || element->hasTagName(SVGNames::pathTag));
     return static_cast<SVGPathElement*>(element);

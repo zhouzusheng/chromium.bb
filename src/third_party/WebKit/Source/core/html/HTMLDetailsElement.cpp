@@ -22,6 +22,7 @@
 #include "core/html/HTMLDetailsElement.h"
 
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/NodeRenderingContext.h"
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -33,12 +34,6 @@
 namespace WebCore {
 
 using namespace HTMLNames;
-
-static const AtomicString& summaryQuerySelector()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, selector, ("summary:first-of-type", AtomicString::ConstructFromLiteral));
-    return selector;
-};
 
 PassRefPtr<HTMLDetailsElement> HTMLDetailsElement::create(const QualifiedName& tagName, Document* document)
 {
@@ -57,16 +52,18 @@ HTMLDetailsElement::HTMLDetailsElement(const QualifiedName& tagName, Document* d
 
 RenderObject* HTMLDetailsElement::createRenderer(RenderStyle*)
 {
-    return new (document()->renderArena()) RenderBlock(this);
+    return new RenderBlock(this);
 }
 
 void HTMLDetailsElement::didAddUserAgentShadowRoot(ShadowRoot* root)
 {
+    DEFINE_STATIC_LOCAL(AtomicString, summarySelector, ("summary:first-of-type", AtomicString::ConstructFromLiteral));
+
     RefPtr<HTMLSummaryElement> defaultSummary = HTMLSummaryElement::create(summaryTag, document());
     defaultSummary->appendChild(Text::create(document(), defaultDetailsSummaryText()), ASSERT_NO_EXCEPTION);
 
     RefPtr<HTMLContentElement> content = HTMLContentElement::create(document());
-    content->setSelect(summaryQuerySelector());
+    content->setAttribute(selectAttr, summarySelector);
     content->appendChild(defaultSummary);
 
     root->appendChild(content, ASSERT_NO_EXCEPTION, AttachLazily);
@@ -98,15 +95,10 @@ void HTMLDetailsElement::parseAttribute(const QualifiedName& name, const AtomicS
 
 bool HTMLDetailsElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
 {
-    if (!childContext.isOnEncapsulationBoundary())
-        return false;
-
     if (m_isOpen)
         return HTMLElement::childShouldCreateRenderer(childContext);
-
     if (!childContext.node()->hasTagName(summaryTag))
         return false;
-
     return childContext.node() == findMainSummary() && HTMLElement::childShouldCreateRenderer(childContext);
 }
 

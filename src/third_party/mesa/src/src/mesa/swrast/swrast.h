@@ -33,6 +33,35 @@
 #define SWRAST_H
 
 #include "main/mtypes.h"
+#include "swrast/s_chan.h"
+
+
+/**
+ * If non-zero use GLdouble for walking triangle edges, for better accuracy.
+ */
+#define TRIANGLE_WALK_DOUBLE 0
+
+
+/**
+ * Bits per depth buffer value (max is 32).
+ */
+#ifndef DEFAULT_SOFTWARE_DEPTH_BITS
+#define DEFAULT_SOFTWARE_DEPTH_BITS 16
+#endif
+/** Depth buffer data type */
+#if DEFAULT_SOFTWARE_DEPTH_BITS <= 16
+#define DEFAULT_SOFTWARE_DEPTH_TYPE GLushort
+#else
+#define DEFAULT_SOFTWARE_DEPTH_TYPE GLuint
+#endif
+
+
+/**
+ * Max image/surface/texture size.
+ */
+#define SWRAST_MAX_WIDTH 16384
+#define SWRAST_MAX_HEIGHT 16384
+
 
 /**
  * \struct SWvertex
@@ -85,32 +114,37 @@ struct swrast_device_driver;
  */
 
 extern GLboolean
-_swrast_CreateContext( GLcontext *ctx );
+_swrast_CreateContext( struct gl_context *ctx );
 
 extern void
-_swrast_DestroyContext( GLcontext *ctx );
+_swrast_DestroyContext( struct gl_context *ctx );
 
 /* Get a (non-const) reference to the device driver struct for swrast.
  */
 extern struct swrast_device_driver *
-_swrast_GetDeviceDriverReference( GLcontext *ctx );
+_swrast_GetDeviceDriverReference( struct gl_context *ctx );
 
 extern void
-_swrast_Bitmap( GLcontext *ctx,
+_swrast_Bitmap( struct gl_context *ctx,
 		GLint px, GLint py,
 		GLsizei width, GLsizei height,
 		const struct gl_pixelstore_attrib *unpack,
 		const GLubyte *bitmap );
 
 extern void
-_swrast_CopyPixels( GLcontext *ctx,
+_swrast_CopyPixels( struct gl_context *ctx,
 		    GLint srcx, GLint srcy,
 		    GLint destx, GLint desty,
 		    GLsizei width, GLsizei height,
 		    GLenum type );
 
+extern GLboolean
+swrast_fast_copy_pixels(struct gl_context *ctx,
+			GLint srcX, GLint srcY, GLsizei width, GLsizei height,
+			GLint dstX, GLint dstY, GLenum type);
+
 extern void
-_swrast_DrawPixels( GLcontext *ctx,
+_swrast_DrawPixels( struct gl_context *ctx,
 		    GLint x, GLint y,
 		    GLsizei width, GLsizei height,
 		    GLenum format, GLenum type,
@@ -118,37 +152,27 @@ _swrast_DrawPixels( GLcontext *ctx,
 		    const GLvoid *pixels );
 
 extern void
-_swrast_ReadPixels( GLcontext *ctx,
-		    GLint x, GLint y, GLsizei width, GLsizei height,
-		    GLenum format, GLenum type,
-		    const struct gl_pixelstore_attrib *unpack,
-		    GLvoid *pixels );
-
-extern void
-_swrast_BlitFramebuffer(GLcontext *ctx,
+_swrast_BlitFramebuffer(struct gl_context *ctx,
                         GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1,
                         GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1,
                         GLbitfield mask, GLenum filter);
 
 extern void
-_swrast_Clear(GLcontext *ctx, GLbitfield buffers);
-
-extern void
-_swrast_Accum(GLcontext *ctx, GLenum op, GLfloat value);
+_swrast_Clear(struct gl_context *ctx, GLbitfield buffers);
 
 
 
 /* Reset the stipple counter
  */
 extern void
-_swrast_ResetLineStipple( GLcontext *ctx );
+_swrast_ResetLineStipple( struct gl_context *ctx );
 
 /**
  * Indicates front/back facing for subsequent points/lines when drawing
  * unfilled polygons.  Needed for two-side stencil.
  */
 extern void
-_swrast_SetFacing(GLcontext *ctx, GLuint facing);
+_swrast_SetFacing(struct gl_context *ctx, GLuint facing);
 
 /* These will always render the correct point/line/triangle for the
  * current state.
@@ -156,55 +180,104 @@ _swrast_SetFacing(GLcontext *ctx, GLuint facing);
  * For flatshaded primitives, the provoking vertex is the final one.
  */
 extern void
-_swrast_Point( GLcontext *ctx, const SWvertex *v );
+_swrast_Point( struct gl_context *ctx, const SWvertex *v );
 
 extern void
-_swrast_Line( GLcontext *ctx, const SWvertex *v0, const SWvertex *v1 );
+_swrast_Line( struct gl_context *ctx, const SWvertex *v0, const SWvertex *v1 );
 
 extern void
-_swrast_Triangle( GLcontext *ctx, const SWvertex *v0,
+_swrast_Triangle( struct gl_context *ctx, const SWvertex *v0,
                   const SWvertex *v1, const SWvertex *v2 );
 
 extern void
-_swrast_Quad( GLcontext *ctx,
+_swrast_Quad( struct gl_context *ctx,
               const SWvertex *v0, const SWvertex *v1,
 	      const SWvertex *v2,  const SWvertex *v3);
 
 extern void
-_swrast_flush( GLcontext *ctx );
+_swrast_flush( struct gl_context *ctx );
 
 extern void
-_swrast_render_primitive( GLcontext *ctx, GLenum mode );
+_swrast_render_primitive( struct gl_context *ctx, GLenum mode );
 
 extern void
-_swrast_render_start( GLcontext *ctx );
+_swrast_render_start( struct gl_context *ctx );
 
 extern void
-_swrast_render_finish( GLcontext *ctx );
+_swrast_render_finish( struct gl_context *ctx );
+
+extern struct gl_texture_image *
+_swrast_new_texture_image( struct gl_context *ctx );
+
+extern void
+_swrast_delete_texture_image(struct gl_context *ctx,
+                             struct gl_texture_image *texImage);
+
+extern GLboolean
+_swrast_alloc_texture_image_buffer(struct gl_context *ctx,
+                                   struct gl_texture_image *texImage);
+
+extern void
+_swrast_init_texture_image(struct gl_texture_image *texImage);
+
+extern void
+_swrast_free_texture_image_buffer(struct gl_context *ctx,
+                                  struct gl_texture_image *texImage);
+
+extern void
+_swrast_map_teximage(struct gl_context *ctx,
+		     struct gl_texture_image *texImage,
+		     GLuint slice,
+		     GLuint x, GLuint y, GLuint w, GLuint h,
+		     GLbitfield mode,
+		     GLubyte **mapOut,
+		     GLint *rowStrideOut);
+
+extern void
+_swrast_unmap_teximage(struct gl_context *ctx,
+		       struct gl_texture_image *texImage,
+		       GLuint slice);
 
 /* Tell the software rasterizer about core state changes.
  */
 extern void
-_swrast_InvalidateState( GLcontext *ctx, GLbitfield new_state );
+_swrast_InvalidateState( struct gl_context *ctx, GLbitfield new_state );
 
 /* Configure software rasterizer to match hardware rasterizer characteristics:
  */
 extern void
-_swrast_allow_vertex_fog( GLcontext *ctx, GLboolean value );
+_swrast_allow_vertex_fog( struct gl_context *ctx, GLboolean value );
 
 extern void
-_swrast_allow_pixel_fog( GLcontext *ctx, GLboolean value );
+_swrast_allow_pixel_fog( struct gl_context *ctx, GLboolean value );
 
 /* Debug:
  */
 extern void
-_swrast_print_vertex( GLcontext *ctx, const SWvertex *v );
+_swrast_print_vertex( struct gl_context *ctx, const SWvertex *v );
 
 
 
 extern void
-_swrast_eject_texture_images(GLcontext *ctx);
+_swrast_eject_texture_images(struct gl_context *ctx);
 
+
+extern void
+_swrast_render_texture(struct gl_context *ctx,
+                       struct gl_framebuffer *fb,
+                       struct gl_renderbuffer_attachment *att);
+
+extern void
+_swrast_finish_render_texture(struct gl_context *ctx,
+                              struct gl_renderbuffer_attachment *att);
+
+
+
+extern GLboolean
+_swrast_AllocTextureStorage(struct gl_context *ctx,
+                            struct gl_texture_object *texObj,
+                            GLsizei levels, GLsizei width,
+                            GLsizei height, GLsizei depth);
 
 
 /**
@@ -223,8 +296,8 @@ struct swrast_device_driver {
     * these functions.  Locking in that case must be organized by the
     * driver by other mechanisms.
     */
-   void (*SpanRenderStart)(GLcontext *ctx);
-   void (*SpanRenderFinish)(GLcontext *ctx);
+   void (*SpanRenderStart)(struct gl_context *ctx);
+   void (*SpanRenderFinish)(struct gl_context *ctx);
 };
 
 

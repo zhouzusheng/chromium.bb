@@ -7,13 +7,13 @@
  * are met:
  *
  * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer. 
+ *     notice, this list of conditions and the following disclaimer.
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution. 
+ *     documentation and/or other materials provided with the distribution.
  * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission. 
+ *     from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -32,10 +32,10 @@
 
 #include <string.h>
 #include "core/platform/graphics/Glyph.h"
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/RefPtr.h>
-#include <wtf/unicode/Unicode.h>
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/RefPtr.h"
+#include "wtf/unicode/Unicode.h"
 
 namespace WebCore {
 
@@ -68,9 +68,6 @@ struct GlyphData {
 // although multiple nodes may reference it as their "page" if they are supposed
 // to be overriding the parent's node, but provide no additional information.
 class GlyphPage : public RefCounted<GlyphPage> {
-    // This is needed because we malloc() space for a GlyphPage plus optional
-    // following data, as a performance tweak.
-    NEW_DELETE_SAME_AS_MALLOC_FREE;
 public:
     static PassRefPtr<GlyphPage> createForMixedFontData(GlyphPageTreeNode* owner)
     {

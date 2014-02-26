@@ -7,11 +7,11 @@
 
 #include <set>
 #include "base/memory/scoped_ptr.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/net_log.h"
 #include "net/http/http_stream_factory_impl.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/spdy/spdy_session_key.h"
+#include "url/gurl.h"
 
 namespace net {
 
@@ -63,7 +63,7 @@ class HttpStreamFactoryImpl::Request : public HttpStreamRequest {
 
   // Called by an attached Job if it sets up a SpdySession.
   void OnNewSpdySessionReady(Job* job,
-                             scoped_refptr<SpdySession> spdy_session,
+                             const base::WeakPtr<SpdySession>& spdy_session,
                              bool direct);
 
   WebSocketStreamBase::Factory* websocket_stream_factory() {

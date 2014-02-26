@@ -29,12 +29,11 @@
 #ifndef ContentSearchUtils_h
 #define ContentSearchUtils_h
 
-
 #include "InspectorTypeBuilder.h"
-#include <wtf/Vector.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/text/TextPosition.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/PassOwnPtr.h"
+#include "wtf/Vector.h"
+#include "wtf/text/TextPosition.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -50,8 +49,6 @@ enum MagicCommentType {
 PassOwnPtr<RegularExpression> createSearchRegex(const String& query, bool caseSensitive, bool isRegex);
 int countRegularExpressionMatches(const RegularExpression*, const String&);
 PassRefPtr<TypeBuilder::Array<TypeBuilder::Page::SearchMatch> > searchInTextByLines(const String& text, const String& query, const bool caseSensitive, const bool isRegex);
-TextPosition textPositionFromOffset(size_t offset, const Vector<size_t>& lineEndings);
-PassOwnPtr<Vector<size_t> > lineEndings(const String&);
 
 String findSourceURL(const String& content, MagicCommentType, bool* deprecated);
 String findSourceMapURL(const String& content, MagicCommentType, bool* deprecated);

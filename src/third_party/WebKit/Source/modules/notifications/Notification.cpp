@@ -36,6 +36,7 @@
 #include "modules/notifications/Notification.h"
 
 #include "bindings/v8/Dictionary.h"
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ErrorEvent.h"
 #include "core/dom/EventNames.h"
@@ -44,7 +45,7 @@
 #include "core/page/WindowFocusAllowedIndicator.h"
 #include "core/platform/network/ResourceRequest.h"
 #include "core/platform/network/ResourceResponse.h"
-#include "core/workers/WorkerContext.h"
+#include "core/workers/WorkerGlobalScope.h"
 #include "modules/notifications/DOMWindowNotifications.h"
 #include "modules/notifications/NotificationCenter.h"
 #include "modules/notifications/NotificationClient.h"
@@ -60,31 +61,8 @@ Notification::Notification()
 }
 
 #if ENABLE(LEGACY_NOTIFICATIONS)
-Notification::Notification(const KURL& url, ScriptExecutionContext* context, ExceptionCode& ec, PassRefPtr<NotificationCenter> provider)
+Notification::Notification(const String& title, const String& body, const String& iconURI, ScriptExecutionContext* context, ExceptionState& es, PassRefPtr<NotificationCenter> provider)
     : ActiveDOMObject(context)
-    , m_isHTML(true)
-    , m_state(Idle)
-    , m_notificationCenter(provider)
-{
-    ScriptWrappable::init(this);
-    if (m_notificationCenter->checkPermission() != NotificationClient::PermissionAllowed) {
-        ec = SECURITY_ERR;
-        return;
-    }
-
-    if (url.isEmpty() || !url.isValid()) {
-        ec = SYNTAX_ERR;
-        return;
-    }
-
-    m_notificationURL = url;
-}
-#endif
-
-#if ENABLE(LEGACY_NOTIFICATIONS)
-Notification::Notification(const String& title, const String& body, const String& iconURI, ScriptExecutionContext* context, ExceptionCode& ec, PassRefPtr<NotificationCenter> provider)
-    : ActiveDOMObject(context)
-    , m_isHTML(false)
     , m_title(title)
     , m_body(body)
     , m_state(Idle)
@@ -92,13 +70,13 @@ Notification::Notification(const String& title, const String& body, const String
 {
     ScriptWrappable::init(this);
     if (m_notificationCenter->checkPermission() != NotificationClient::PermissionAllowed) {
-        ec = SECURITY_ERR;
+        es.throwDOMException(SecurityError);
         return;
     }
 
     m_icon = iconURI.isEmpty() ? KURL() : scriptExecutionContext()->completeURL(iconURI);
     if (!m_icon.isEmpty() && !m_icon.isValid()) {
-        ec = SYNTAX_ERR;
+        es.throwDOMException(SyntaxError);
         return;
     }
 }
@@ -107,34 +85,26 @@ Notification::Notification(const String& title, const String& body, const String
 #if ENABLE(NOTIFICATIONS)
 Notification::Notification(ScriptExecutionContext* context, const String& title)
     : ActiveDOMObject(context)
-    , m_isHTML(false)
     , m_title(title)
     , m_state(Idle)
     , m_taskTimer(adoptPtr(new Timer<Notification>(this, &Notification::taskTimerFired)))
 {
     ScriptWrappable::init(this);
     m_notificationCenter = DOMWindowNotifications::webkitNotifications(toDocument(context)->domWindow());
-    
+
     ASSERT(m_notificationCenter->client());
     m_taskTimer->startOneShot(0);
 }
 #endif
 
-Notification::~Notification() 
+Notification::~Notification()
 {
 }
 
 #if ENABLE(LEGACY_NOTIFICATIONS)
-PassRefPtr<Notification> Notification::create(const KURL& url, ScriptExecutionContext* context, ExceptionCode& ec, PassRefPtr<NotificationCenter> provider) 
-{ 
-    RefPtr<Notification> notification(adoptRef(new Notification(url, context, ec, provider)));
-    notification->suspendIfNeeded();
-    return notification.release();
-}
-
-PassRefPtr<Notification> Notification::create(const String& title, const String& body, const String& iconURI, ScriptExecutionContext* context, ExceptionCode& ec, PassRefPtr<NotificationCenter> provider) 
-{ 
-    RefPtr<Notification> notification(adoptRef(new Notification(title, body, iconURI, context, ec, provider)));
+PassRefPtr<Notification> Notification::create(const String& title, const String& body, const String& iconURI, ScriptExecutionContext* context, ExceptionState& es, PassRefPtr<NotificationCenter> provider)
+{
+    RefPtr<Notification> notification(adoptRef(new Notification(title, body, iconURI, context, es, provider)));
     notification->suspendIfNeeded();
     return notification.release();
 }
@@ -169,7 +139,7 @@ const AtomicString& Notification::interfaceName() const
     return eventNames().interfaceForNotification;
 }
 
-void Notification::show() 
+void Notification::show()
 {
     // prevent double-showing
     if (m_state == Idle && m_notificationCenter->client()) {
@@ -268,9 +238,9 @@ const String& Notification::permission(ScriptExecutionContext* context)
 
 const String& Notification::permissionString(NotificationClient::Permission permission)
 {
-    DEFINE_STATIC_LOCAL(const String, allowedPermission, (ASCIILiteral("granted")));
-    DEFINE_STATIC_LOCAL(const String, deniedPermission, (ASCIILiteral("denied")));
-    DEFINE_STATIC_LOCAL(const String, defaultPermission, (ASCIILiteral("default")));
+    DEFINE_STATIC_LOCAL(const String, allowedPermission, ("granted"));
+    DEFINE_STATIC_LOCAL(const String, deniedPermission, ("denied"));
+    DEFINE_STATIC_LOCAL(const String, defaultPermission, ("default"));
 
     switch (permission) {
     case NotificationClient::PermissionAllowed:
@@ -280,7 +250,7 @@ const String& Notification::permissionString(NotificationClient::Permission perm
     case NotificationClient::PermissionNotAllowed:
         return defaultPermission;
     }
-    
+
     ASSERT_NOT_REACHED();
     return deniedPermission;
 }

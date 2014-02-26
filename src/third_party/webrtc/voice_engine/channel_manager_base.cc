@@ -10,7 +10,8 @@
 
 #include "webrtc/voice_engine/channel_manager_base.h"
 
-#include <cassert>
+#include <assert.h>
+
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/rw_lock_wrapper.h"
 
@@ -222,6 +223,6 @@ void ChannelManagerBase::GetChannels(MapWrapper& channels) const
     }
 }
 
-} // namespace voe
+}  // namespace voe
 
-} // namespace webrtc
+}  // namespace webrtc

@@ -7,6 +7,7 @@
 #include "cc/output/begin_frame_args.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
+#include "cc/output/filter_operation.h"
 #include "cc/quads/checkerboard_draw_quad.h"
 #include "cc/quads/debug_border_draw_quad.h"
 #include "cc/quads/draw_quad.h"
@@ -24,7 +25,6 @@
 #include "content/common/content_export.h"
 #include "gpu/ipc/gpu_command_buffer_traits.h"
 #include "ipc/ipc_message_macros.h"
-#include "third_party/WebKit/public/platform/WebFilterOperation.h"
 
 #ifndef CONTENT_COMMON_CC_MESSAGES_H_
 #define CONTENT_COMMON_CC_MESSAGES_H_
@@ -33,23 +33,31 @@ namespace gfx {
 class Transform;
 }
 
-namespace WebKit {
-class WebFilterOperations;
+namespace cc {
+class FilterOperations;
 }
 
 namespace IPC {
 
 template <>
-struct ParamTraits<WebKit::WebFilterOperation> {
-  typedef WebKit::WebFilterOperation param_type;
+struct ParamTraits<cc::FilterOperation> {
+  typedef cc::FilterOperation param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template <>
-struct ParamTraits<WebKit::WebFilterOperations> {
-  typedef WebKit::WebFilterOperations param_type;
+struct ParamTraits<cc::FilterOperations> {
+  typedef cc::FilterOperations param_type;
+  static void Write(Message* m, const param_type& p);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+
+template <>
+struct ParamTraits<skia::RefPtr<SkImageFilter> > {
+  typedef skia::RefPtr<SkImageFilter> param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
@@ -107,7 +115,7 @@ struct CONTENT_EXPORT ParamTraits<cc::DelegatedFrameData> {
 
 IPC_ENUM_TRAITS(cc::DrawQuad::Material)
 IPC_ENUM_TRAITS(cc::IOSurfaceDrawQuad::Orientation)
-IPC_ENUM_TRAITS(WebKit::WebFilterOperation::FilterType)
+IPC_ENUM_TRAITS(cc::FilterOperation::FilterType)
 
 IPC_STRUCT_TRAITS_BEGIN(cc::RenderPass::Id)
   IPC_STRUCT_TRAITS_MEMBER(layer_id)
@@ -148,8 +156,7 @@ IPC_STRUCT_TRAITS_BEGIN(cc::RenderPassDrawQuad)
   IPC_STRUCT_TRAITS_MEMBER(contents_changed_since_last_frame)
   IPC_STRUCT_TRAITS_MEMBER(mask_uv_rect)
   IPC_STRUCT_TRAITS_MEMBER(filters)
-  // TODO(piman): filter isn't being serialized.
-  // IPC_STRUCT_TRAITS_MEMBER(filter)
+  IPC_STRUCT_TRAITS_MEMBER(filter)
   IPC_STRUCT_TRAITS_MEMBER(background_filters)
 IPC_STRUCT_TRAITS_END()
 
@@ -171,6 +178,7 @@ IPC_STRUCT_TRAITS_BEGIN(cc::TextureDrawQuad)
   IPC_STRUCT_TRAITS_MEMBER(premultiplied_alpha)
   IPC_STRUCT_TRAITS_MEMBER(uv_top_left)
   IPC_STRUCT_TRAITS_MEMBER(uv_bottom_right)
+  IPC_STRUCT_TRAITS_MEMBER(background_color)
   IPC_STRUCT_TRAITS_MEMBER(vertex_opacity[0])
   IPC_STRUCT_TRAITS_MEMBER(vertex_opacity[1])
   IPC_STRUCT_TRAITS_MEMBER(vertex_opacity[2])

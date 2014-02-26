@@ -1,3 +1,4 @@
+
 /*
  * Copyright (C) 2012 Google, Inc. All rights reserved.
  *
@@ -46,7 +47,7 @@ static int totalPagesMeasuredCSSSampleId() { return 1; }
 //         to detect new values in CSSPropertyID and add them to the
 //         end of this function. This file would be checked in.
 //         https://code.google.com/p/chromium/issues/detail?id=234940
-static int mapCSSPropertyIdToCSSSampleId(int id)
+int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
 {
     CSSPropertyID cssPropertyID = convertToCSSPropertyID(id);
 
@@ -295,21 +296,17 @@ static int mapCSSPropertyIdToCSSSampleId(int id)
     case CSSPropertyFlexWrap: return 239;
     case CSSPropertyJustifyContent: return 240;
     case CSSPropertyWebkitFontSizeDelta: return 241;
-    case CSSPropertyGridColumns: return 242;
-    case CSSPropertyGridRows: return 243;
-    case CSSPropertyGridStart: return 244;
-    case CSSPropertyGridEnd: return 245;
-    case CSSPropertyGridBefore: return 246;
-    case CSSPropertyGridAfter: return 247;
+    case CSSPropertyGridDefinitionColumns: return 242;
+    case CSSPropertyGridDefinitionRows: return 243;
+    case CSSPropertyGridColumnStart: return 244;
+    case CSSPropertyGridColumnEnd: return 245;
+    case CSSPropertyGridRowStart: return 246;
+    case CSSPropertyGridRowEnd: return 247;
     case CSSPropertyGridColumn: return 248;
     case CSSPropertyGridRow: return 249;
     case CSSPropertyGridAutoFlow: return 250;
     case CSSPropertyWebkitHighlight: return 251;
     case CSSPropertyWebkitHyphenateCharacter: return 252;
-    case CSSPropertyWebkitHyphenateLimitAfter: return 253;
-    case CSSPropertyWebkitHyphenateLimitBefore: return 254;
-    case CSSPropertyWebkitHyphenateLimitLines: return 255;
-    case CSSPropertyWebkitHyphens: return 256;
     case CSSPropertyWebkitLineBoxContain: return 257;
     case CSSPropertyWebkitLineAlign: return 258;
     case CSSPropertyWebkitLineBreak: return 259;
@@ -452,7 +449,7 @@ static int mapCSSPropertyIdToCSSSampleId(int id)
     case CSSPropertyTextAnchor: return 392;
     case CSSPropertyVectorEffect: return 393;
     case CSSPropertyWritingMode: return 394;
-    case CSSPropertyWebkitSvgShadow: return 395;
+    // CSSPropertyWebkitSvgShadow has been removed, was return 395;
 #if defined(ENABLE_CURSOR_VISIBILITY) && ENABLE_CURSOR_VISIBILITY
     case CSSPropertyWebkitCursorVisibility: return 396;
 #endif
@@ -465,8 +462,8 @@ static int mapCSSPropertyIdToCSSSampleId(int id)
     case CSSPropertyTextDecorationLine: return 401;
     case CSSPropertyTextDecorationStyle: return 402;
     case CSSPropertyTextDecorationColor: return 403;
+    case CSSPropertyTextAlignLast: return 404;
 #if defined(ENABLE_CSS3_TEXT) && ENABLE_CSS3_TEXT
-    case CSSPropertyWebkitTextAlignLast: return 404;
     case CSSPropertyWebkitTextUnderlinePosition: return 405;
 #endif
     case CSSPropertyMaxZoom: return 406;
@@ -476,9 +473,7 @@ static int mapCSSPropertyIdToCSSSampleId(int id)
 #if defined(ENABLE_DASHBOARD_SUPPORT) && ENABLE_DASHBOARD_SUPPORT
     case CSSPropertyWebkitDashboardRegion: return 410;
 #endif
-#if defined(ENABLE_ACCELERATED_OVERFLOW_SCROLLING) && ENABLE_ACCELERATED_OVERFLOW_SCROLLING
-    case CSSPropertyWebkitOverflowScrolling: return 411;
-#endif
+    // CSSPropertyWebkitOverflowScrolling was 411.
     case CSSPropertyWebkitAppRegion: return 412;
     case CSSPropertyWebkitFilter: return 413;
     case CSSPropertyWebkitBoxDecorationBreak: return 414;
@@ -490,6 +485,7 @@ static int mapCSSPropertyIdToCSSSampleId(int id)
     case CSSPropertyMixBlendMode: return 420;
     case CSSPropertyTouchAction: return 421;
     case CSSPropertyGridArea: return 422;
+    case CSSPropertyGridTemplate: return 423;
 
     // Add new features above this line (don't change the assigned numbers of the existing
     // items) and update maximumCSSSampleId() with the new maximum value.
@@ -504,7 +500,7 @@ static int mapCSSPropertyIdToCSSSampleId(int id)
     return 0;
 }
 
-static int maximumCSSSampleId() { return 422; }
+static int maximumCSSSampleId() { return 423; }
 
 UseCounter::UseCounter()
 {
@@ -539,7 +535,7 @@ void UseCounter::updateMeasurements()
     bool needsPagesMeasuredUpdate = false;
     for (int i = firstCSSProperty; i <= lastCSSProperty; ++i) {
         if (m_CSSFeatureBits.quickGet(i)) {
-            int cssSampleId = mapCSSPropertyIdToCSSSampleId(i);
+            int cssSampleId = mapCSSPropertyIdToCSSSampleIdForHistogram(i);
             HistogramSupport::histogramEnumeration("WebCore.FeatureObserver.CSSProperties", cssSampleId, maximumCSSSampleId());
             needsPagesMeasuredUpdate = true;
         }
@@ -644,11 +640,22 @@ String UseCounter::deprecationMessage(Feature feature)
     case PrefixedDocumentRegister:
         return "The document.webkitRegister method is deprecated. Use the document.register method instead.";
 
+    // HTML Media Capture
+    case CaptureAttributeAsEnum:
+        return "Using the 'capture' attribute as an enum is deprecated. Please use it as a boolean and specify the media types that should be accepted in the 'accept' attribute.";
+
+    // Keyboard Event (DOM Level 3)
+    case KeyboardEventKeyLocation:
+        return "'KeyboardEvent.keyLocation'' is deprecated. Please use 'KeyboardEvent.location' instead.";
+
     case CaptureEvents:
         return "captureEvents() is deprecated. This method doesn't do anything.";
 
     case ReleaseEvents:
         return "releaseEvents() is deprecated. This method doesn't do anything.";
+
+    case ConsoleMarkTimeline:
+        return "console.markTimeline is deprecated. Please use the console.timeStamp instead.";
 
     // Features that aren't deprecated don't have a deprecation message.
     default:
@@ -661,6 +668,12 @@ void UseCounter::count(CSSPropertyID feature)
     ASSERT(feature >= firstCSSProperty);
     ASSERT(feature <= lastCSSProperty);
     m_CSSFeatureBits.quickSet(feature);
+}
+
+void UseCounter::count(Feature feature)
+{
+    ASSERT(deprecationMessage(feature).isEmpty());
+    recordMeasurement(feature);
 }
 
 UseCounter* UseCounter::getFrom(const Document* document)

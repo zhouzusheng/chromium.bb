@@ -7,7 +7,6 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "ppapi/c/dev/ppb_text_input_dev.h"
 #include "ppapi/c/dev/ppb_url_util_dev.h"
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/pp_completion_callback.h"
@@ -17,6 +16,7 @@
 #include "ppapi/c/ppb_gamepad.h"
 #include "ppapi/c/ppb_instance.h"
 #include "ppapi/c/ppb_mouse_cursor.h"
+#include "ppapi/c/ppb_text_input_controller.h"
 #include "ppapi/c/private/pp_content_decryptor.h"
 #include "ppapi/c/private/ppb_instance_private.h"
 #include "ppapi/shared_impl/api_id.h"
@@ -136,7 +136,7 @@ class PPB_Instance_API {
   virtual void ZoomChanged(PP_Instance instance, double factor) = 0;
   virtual void ZoomLimitsChanged(PP_Instance instance,
                                  double minimum_factor,
-                                 double maximium_factor) = 0;
+                                 double maximum_factor) = 0;
   // Testing and URLUtil.
   virtual PP_Var GetDocumentURL(PP_Instance instance,
                                 PP_URLComponents_Dev* components) = 0;

@@ -7,8 +7,8 @@
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/hash.h"
-#include "base/shared_memory.h"
-#include "base/time.h"
+#include "base/memory/shared_memory.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "content/common/gpu/gpu_channel.h"
 #include "content/common/gpu/gpu_channel_manager.h"
@@ -29,6 +29,7 @@
 #include "gpu/command_buffer/service/gl_state_restorer_impl.h"
 #include "gpu/command_buffer/service/logger.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
+#include "gpu/command_buffer/service/query_manager.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_switches.h"
 
@@ -140,10 +141,15 @@ GpuCommandBufferStub::GpuCommandBufferStub(
   if (share_group) {
     context_group_ = share_group->context_group_;
   } else {
+    gpu::StreamTextureManager* stream_texture_manager = NULL;
+#if defined(OS_ANDROID)
+    stream_texture_manager = channel_->stream_texture_manager();
+#endif
     context_group_ = new gpu::gles2::ContextGroup(
         mailbox_manager,
         image_manager,
         new GpuCommandBufferMemoryTracker(channel),
+        stream_texture_manager,
         true);
   }
 }
@@ -210,6 +216,8 @@ bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
                         OnRetireSyncPoint)
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_SignalSyncPoint,
                         OnSignalSyncPoint)
+    IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_SignalQuery,
+                        OnSignalQuery)
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_SendClientManagedMemoryStats,
                         OnReceivedClientManagedMemoryStats)
     IPC_MESSAGE_HANDLER(
@@ -329,8 +337,7 @@ bool GpuCommandBufferStub::MakeCurrent() {
   DLOG(ERROR) << "Context lost because MakeCurrent failed.";
   command_buffer_->SetContextLostReason(decoder_->GetContextLostReason());
   command_buffer_->SetParseError(gpu::error::kLostContext);
-  if (gfx::GLContext::LosesAllContextsOnContextLost())
-    channel_->LoseAllContexts();
+  CheckContextLost();
   return false;
 }
 
@@ -354,7 +361,8 @@ void GpuCommandBufferStub::Destroy() {
   scheduler_.reset();
 
   bool have_context = false;
-  if (decoder_)
+  if (decoder_ && command_buffer_ &&
+      command_buffer_->GetState().error != gpu::error::kLostContext)
     have_context = decoder_->MakeCurrent();
   FOR_EACH_OBSERVER(DestructionObserver,
                     destruction_observers_,
@@ -455,8 +463,6 @@ void GpuCommandBufferStub::OnInitialize(
       DLOG(ERROR) << "Failed to initialize virtual GL context.";
       OnInitializeFailed(reply_message);
       return;
-    } else {
-      LOG(INFO) << "Created virtual GL context.";
     }
   }
   if (!context.get()) {
@@ -533,10 +539,6 @@ void GpuCommandBufferStub::OnInitialize(
                    base::Unretained(this)));
   }
 
-#if defined(OS_ANDROID)
-  decoder_->SetStreamTextureManager(channel_->stream_texture_manager());
-#endif
-
   if (!command_buffer_->SetSharedStateBuffer(shared_state_shm.Pass())) {
     DLOG(ERROR) << "Failed to map shared stae buffer.";
     OnInitializeFailed(reply_message);
@@ -585,10 +587,7 @@ void GpuCommandBufferStub::OnGetState(IPC::Message* reply_message) {
   TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnGetState");
   if (command_buffer_) {
     gpu::CommandBuffer::State state = command_buffer_->GetState();
-    if (state.error == gpu::error::kLostContext &&
-        gfx::GLContext::LosesAllContextsOnContextLost())
-      channel_->LoseAllContexts();
-
+    CheckContextLost();
     GpuCommandBufferMsg_GetState::WriteReplyParams(reply_message, state);
   } else {
     DLOG(ERROR) << "no command_buffer.";
@@ -612,16 +611,15 @@ void GpuCommandBufferStub::OnParseError() {
   GpuChannelManager* gpu_channel_manager = channel_->gpu_channel_manager();
   gpu_channel_manager->Send(new GpuHostMsg_DidLoseContext(
       handle_.is_null(), state.context_lost_reason, active_url_));
+
+  CheckContextLost();
 }
 
 void GpuCommandBufferStub::OnGetStateFast(IPC::Message* reply_message) {
   TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnGetStateFast");
   DCHECK(command_buffer_.get());
+  CheckContextLost();
   gpu::CommandBuffer::State state = command_buffer_->GetState();
-  if (state.error == gpu::error::kLostContext &&
-      gfx::GLContext::LosesAllContextsOnContextLost())
-    channel_->LoseAllContexts();
-
   GpuCommandBufferMsg_GetStateFast::WriteReplyParams(reply_message, state);
   Send(reply_message);
 }
@@ -708,13 +706,8 @@ void GpuCommandBufferStub::OnCommandProcessed() {
 }
 
 void GpuCommandBufferStub::ReportState() {
-  gpu::CommandBuffer::State state = command_buffer_->GetState();
-  if (state.error == gpu::error::kLostContext &&
-      gfx::GLContext::LosesAllContextsOnContextLost()) {
-    channel_->LoseAllContexts();
-  } else {
+  if (!CheckContextLost())
     command_buffer_->UpdateState();
-  }
 }
 
 void GpuCommandBufferStub::PutChanged() {
@@ -814,6 +807,26 @@ void GpuCommandBufferStub::OnSignalSyncPointAck(uint32 id) {
   Send(new GpuCommandBufferMsg_SignalSyncPointAck(route_id_, id));
 }
 
+void GpuCommandBufferStub::OnSignalQuery(uint32 query_id, uint32 id) {
+  if (decoder_) {
+    gpu::gles2::QueryManager* query_manager = decoder_->GetQueryManager();
+    if (query_manager) {
+      gpu::gles2::QueryManager::Query* query =
+          query_manager->GetQuery(query_id);
+      if (query) {
+        query->AddCallback(
+          base::Bind(&GpuCommandBufferStub::OnSignalSyncPointAck,
+                     this->AsWeakPtr(),
+                     id));
+        return;
+      }
+    }
+  }
+  // Something went wrong, run callback immediately.
+  OnSignalSyncPointAck(id);
+}
+
+
 void GpuCommandBufferStub::OnReceivedClientManagedMemoryStats(
     const GpuManagedMemoryStats& stats) {
   TRACE_EVENT0(
@@ -908,6 +921,30 @@ void GpuCommandBufferStub::SetMemoryAllocation(
 
   last_memory_allocation_valid_ = true;
   last_memory_allocation_ = allocation;
+}
+
+bool GpuCommandBufferStub::CheckContextLost() {
+  DCHECK(command_buffer_);
+  gpu::CommandBuffer::State state = command_buffer_->GetState();
+  bool was_lost = state.error == gpu::error::kLostContext;
+  // Lose all other contexts if the reset was triggered by the robustness
+  // extension instead of being synthetic.
+  if (was_lost && decoder_ && decoder_->WasContextLostByRobustnessExtension() &&
+      (gfx::GLContext::LosesAllContextsOnContextLost() ||
+       use_virtualized_gl_context_))
+    channel_->LoseAllContexts();
+  return was_lost;
+}
+
+void GpuCommandBufferStub::MarkContextLost() {
+  if (!command_buffer_ ||
+      command_buffer_->GetState().error == gpu::error::kLostContext)
+    return;
+
+  command_buffer_->SetContextLostReason(gpu::error::kUnknown);
+  if (decoder_)
+    decoder_->LoseContext(GL_UNKNOWN_CONTEXT_RESET_ARB);
+  command_buffer_->SetParseError(gpu::error::kLostContext);
 }
 
 }  // namespace content

@@ -40,10 +40,11 @@
 
 namespace WebCore {
 
+class DOMError;
+class ExceptionState;
 class IDBCursor;
 class IDBDatabase;
 class IDBDatabaseBackendInterface;
-class IDBDatabaseError;
 class IDBObjectStore;
 class IDBOpenDBRequest;
 struct IDBObjectStoreMetadata;
@@ -60,7 +61,7 @@ public:
     static const AtomicString& modeReadOnlyLegacy();
     static const AtomicString& modeReadWriteLegacy();
 
-    static IndexedDB::TransactionMode stringToMode(const String&, ExceptionCode&);
+    static IndexedDB::TransactionMode stringToMode(const String&, ExceptionState&);
     static const AtomicString& modeToString(IndexedDB::TransactionMode);
 
     IDBDatabaseBackendInterface* backendDB() const;
@@ -75,8 +76,8 @@ public:
     const String& mode() const;
     IDBDatabase* db() const { return m_database.get(); }
     PassRefPtr<DOMError> error() const { return m_error; }
-    PassRefPtr<IDBObjectStore> objectStore(const String& name, ExceptionCode&);
-    void abort(ExceptionCode&);
+    PassRefPtr<IDBObjectStore> objectStore(const String& name, ExceptionState&);
+    void abort(ExceptionState&);
 
     class OpenCursorNotifier {
     public:
@@ -99,7 +100,7 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(complete);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
 
-    virtual void onAbort(PassRefPtr<IDBDatabaseError>);
+    virtual void onAbort(PassRefPtr<DOMError>);
     virtual void onComplete();
 
     // EventTarget

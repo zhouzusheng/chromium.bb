@@ -11,7 +11,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "gpu/command_buffer/client/gpu_memory_buffer.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "ui/gfx/native_widget_types.h"
@@ -38,21 +37,17 @@ using WebKit::WGC3Dclampf;
 using WebKit::WGC3Dintptr;
 using WebKit::WGC3Dsizeiptr;
 
+namespace gpu {
+class GLInProcessContext;
+struct GLInProcessContextAttribs;
+}
+
 namespace webkit {
 namespace gpu {
-
-class GLInProcessContext;
 
 class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
     : public NON_EXPORTED_BASE(WebKit::WebGraphicsContext3D) {
  public:
-  typedef scoped_ptr< ::gpu::GpuMemoryBuffer> GpuMemoryBufferCreator(
-      int width, int height);
-
-  // Must be called before any WebGraphicsContext3DInProcessCommandBufferImpl
-  // instances are created. Default value is false.
-  static void EnableVirtualizedContext();
-
   static scoped_ptr<WebKit::WebGraphicsContext3D> CreateViewContext(
       const WebKit::WebGraphicsContext3D::Attributes& attributes,
       gfx::AcceleratedWidget window);
@@ -60,9 +55,17 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
   static scoped_ptr<WebKit::WebGraphicsContext3D> CreateOffscreenContext(
       const WebKit::WebGraphicsContext3D::Attributes& attributes);
 
-  static void SetGpuMemoryBufferCreator(GpuMemoryBufferCreator* creator);
+  static scoped_ptr<WebKit::WebGraphicsContext3D> WrapContext(
+      scoped_ptr< ::gpu::GLInProcessContext> context,
+      const WebKit::WebGraphicsContext3D::Attributes& attributes);
 
   virtual ~WebGraphicsContext3DInProcessCommandBufferImpl();
+
+  // Convert WebGL context creation attributes into GLInProcessContext / EGL
+  // size requests.
+  static void ConvertAttributes(
+      const WebKit::WebGraphicsContext3D::Attributes& attributes,
+      ::gpu::GLInProcessContextAttribs* output_attribs);
 
   //----------------------------------------------------------------------
   // WebGraphicsContext3D methods
@@ -73,10 +76,6 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
 
   virtual void reshape(int width, int height);
   virtual void reshapeWithScaleFactor(int width, int height, float scaleFactor);
-
-  virtual bool readBackFramebuffer(unsigned char* pixels, size_t buffer_size);
-  virtual bool readBackFramebuffer(unsigned char* pixels, size_t buffer_size,
-                                   WebGLId framebuffer, int width, int height);
 
   virtual void prepareTexture();
   virtual void postSubBufferCHROMIUM(int x, int y, int width, int height);
@@ -455,11 +454,6 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
 
   virtual WebKit::WebString getTranslatedShaderSourceANGLE(WebGLId shader);
 
-  virtual WebGLId createCompositorTexture(WGC3Dsizei width, WGC3Dsizei height);
-  virtual void deleteCompositorTexture(WebGLId parent_texture);
-  virtual void copyTextureToCompositor(WebGLId texture,
-                                       WebGLId parent_texture);
-
   virtual void setContextLostCallback(
       WebGraphicsContext3D::WebGraphicsContextLostCallback* callback);
   virtual WGC3Denum getGraphicsResetStatusARB();
@@ -543,6 +537,8 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
   virtual unsigned insertSyncPoint();
   virtual void signalSyncPoint(unsigned sync_point,
                                WebGraphicsSyncPointCallback* callback);
+  virtual void signalQuery(unsigned query,
+                           WebGraphicsSyncPointCallback* callback);
 
   virtual void loseContextCHROMIUM(WGC3Denum current, WGC3Denum other);
 
@@ -551,6 +547,7 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
 
  private:
   WebGraphicsContext3DInProcessCommandBufferImpl(
+      scoped_ptr< ::gpu::GLInProcessContext> context,
       const WebKit::WebGraphicsContext3D::Attributes& attributes,
       bool is_offscreen,
       gfx::AcceleratedWidget window);
@@ -574,7 +571,7 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
   bool initialize_failed_;
 
   // The context we use for OpenGL rendering.
-  GLInProcessContext* context_;
+  scoped_ptr< ::gpu::GLInProcessContext> context_;
   // The GLES2Implementation we use for OpenGL rendering.
   ::gpu::gles2::GLES2Implementation* gl_;
 
@@ -584,17 +581,8 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
   WebKit::WebGraphicsContext3D::Attributes attributes_;
   int cached_width_, cached_height_;
 
-  // For tracking which FBO is bound.
-  WebGLId bound_fbo_;
-
   // Errors raised by synthesizeGLError().
   std::vector<WGC3Denum> synthetic_errors_;
-
-  std::vector<uint8> scanline_;
-
-  void FlipVertically(uint8* framebuffer,
-                      unsigned int width,
-                      unsigned int height);
 };
 
 }  // namespace gpu

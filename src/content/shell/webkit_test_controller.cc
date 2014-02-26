@@ -8,8 +8,7 @@
 
 #include "base/base64.h"
 #include "base/command_line.h"
-#include "base/message_loop.h"
-#include "base/process_util.h"
+#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
@@ -24,13 +23,14 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
+#include "content/public/common/content_switches.h"
 #include "content/shell/common/shell_messages.h"
 #include "content/shell/common/shell_switches.h"
 #include "content/shell/common/webkit_test_helpers.h"
 #include "content/shell/shell.h"
 #include "content/shell/shell_browser_context.h"
 #include "content/shell/shell_content_browser_client.h"
-#include "webkit/support/webkit_support_gfx.h"
+#include "ui/gfx/codec/png_codec.h"
 
 namespace content {
 
@@ -171,9 +171,10 @@ void WebKitTestResultPrinter::PrintEncodedBinaryData(
   *output_ << "Content-Transfer-Encoding: base64\n";
 
   std::string data_base64;
-  DCHECK(base::Base64Encode(
+  const bool success = base::Base64Encode(
       base::StringPiece(reinterpret_cast<const char*>(&data[0]), data.size()),
-      &data_base64));
+      &data_base64);
+  DCHECK(success);
 
   *output_ << "Content-Length: " << data_base64.length() << "\n";
   output_->write(data_base64.c_str(), data_base64.length());
@@ -247,7 +248,8 @@ bool WebKitTestController::PrepareForLayoutTest(
     current_pid_ = base::kNullProcessId;
     main_window_->LoadURL(test_url);
   } else {
-#if (defined(OS_WIN) && !defined(USE_AURA)) || defined(TOOLKIT_GTK)
+#if (defined(OS_WIN) && !defined(USE_AURA)) || \
+    defined(TOOLKIT_GTK) || defined(OS_MACOSX)
     // Shell::SizeTo is not implemented on all platforms.
     main_window_->SizeTo(initial_size_.width(), initial_size_.height());
 #endif
@@ -295,6 +297,12 @@ void WebKitTestController::SetTempPath(const base::FilePath& temp_path) {
 void WebKitTestController::RendererUnresponsive() {
   DCHECK(CalledOnValidThread());
   LOG(WARNING) << "renderer unresponsive";
+}
+
+void WebKitTestController::WorkerCrashed() {
+  DCHECK(CalledOnValidThread());
+  printer_->AddErrorMessage("#CRASHED - worker");
+  DiscardMainWindow();
 }
 
 void WebKitTestController::OverrideWebkitPrefs(WebPreferences* prefs) {
@@ -384,7 +392,7 @@ void WebKitTestController::RenderViewCreated(RenderViewHost* render_view_host) {
   SendTestConfiguration();
 }
 
-void WebKitTestController::RenderViewGone(base::TerminationStatus status) {
+void WebKitTestController::RenderProcessGone(base::TerminationStatus status) {
   DCHECK(CalledOnValidThread());
   if (current_pid_ != base::kNullProcessId) {
     printer_->AddErrorMessage(std::string("#CRASHED - renderer (pid ") +
@@ -504,13 +512,15 @@ void WebKitTestController::OnImageDump(
     bool discard_transparency = true;
 #endif
 
-    bool success = webkit_support::EncodeBGRAPNGWithChecksum(
-        reinterpret_cast<const unsigned char*>(image.getPixels()),
-        image.width(),
-        image.height(),
+    std::vector<gfx::PNGCodec::Comment> comments;
+    comments.push_back(gfx::PNGCodec::Comment("checksum", actual_pixel_hash));
+    bool success = gfx::PNGCodec::Encode(
+        static_cast<const unsigned char*>(image.getPixels()),
+        gfx::PNGCodec::FORMAT_BGRA,
+        gfx::Size(image.width(), image.height()),
         static_cast<int>(image.rowBytes()),
         discard_transparency,
-        actual_pixel_hash,
+        comments,
         &png);
     if (success)
       printer_->PrintImageBlock(png);

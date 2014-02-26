@@ -10,7 +10,7 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "net/base/io_buffer.h"
@@ -188,9 +188,10 @@ void AppCacheURLRequestJob::OnCacheLoaded(AppCache* cache, int64 cache_id) {
   handler_source_reader_.reset(storage_->CreateResponseReader(
       manifest_url_, group_id_, entry_.response_id()));
   handler_source_reader_->ReadData(
-      handler_source_buffer_, kLimit,
+      handler_source_buffer_.get(),
+      kLimit,
       base::Bind(&AppCacheURLRequestJob::OnExecutableSourceLoaded,
-                  base::Unretained(this)));
+                 base::Unretained(this)));
 }
 
 void AppCacheURLRequestJob::OnExecutableSourceLoaded(int result) {
@@ -204,7 +205,7 @@ void AppCacheURLRequestJob::OnExecutableSourceLoaded(int result) {
   handler_source_buffer_->SetCapacity(result);  // Free up some memory.
 
   AppCacheExecutableHandler* handler = cache_->GetOrCreateExecutableHandler(
-      entry_.response_id(), handler_source_buffer_);
+      entry_.response_id(), handler_source_buffer_.get());
   handler_source_buffer_ = NULL;  // not needed anymore
   if (handler) {
     InvokeExecutableHandler(handler);

@@ -23,13 +23,14 @@
 #ifndef HTMLElement_h
 #define HTMLElement_h
 
-#include "core/dom/StyledElement.h"
+#include "core/dom/Element.h"
 
 namespace WebCore {
 
 class DocumentFragment;
 class HTMLCollection;
 class HTMLFormElement;
+class ExceptionState;
 
 enum TranslateAttributeMode {
     TranslateAttributeYes,
@@ -37,7 +38,7 @@ enum TranslateAttributeMode {
     TranslateAttributeInherit
 };
 
-class HTMLElement : public StyledElement {
+class HTMLElement : public Element {
 public:
     static PassRefPtr<HTMLElement> create(const QualifiedName& tagName, Document*);
 
@@ -48,20 +49,20 @@ public:
 
     String innerHTML() const;
     String outerHTML() const;
-    void setInnerHTML(const String&, ExceptionCode&);
-    void setOuterHTML(const String&, ExceptionCode&);
-    void setInnerText(const String&, ExceptionCode&);
-    void setOuterText(const String&, ExceptionCode&);
+    void setInnerHTML(const String&, ExceptionState&);
+    void setOuterHTML(const String&, ExceptionState&);
+    void setInnerText(const String&, ExceptionState&);
+    void setOuterText(const String&, ExceptionState&);
 
-    Element* insertAdjacentElement(const String& where, Element* newChild, ExceptionCode&);
-    void insertAdjacentHTML(const String& where, const String& html, ExceptionCode&);
-    void insertAdjacentText(const String& where, const String& text, ExceptionCode&);
+    Element* insertAdjacentElement(const String& where, Element* newChild, ExceptionState&);
+    void insertAdjacentHTML(const String& where, const String& html, ExceptionState&);
+    void insertAdjacentText(const String& where, const String& text, ExceptionState&);
 
     virtual bool hasCustomFocusLogic() const;
     virtual bool supportsFocus() const;
 
     String contentEditable() const;
-    void setContentEditable(const String&, ExceptionCode&);
+    void setContentEditable(const String&, ExceptionState&);
 
     virtual bool draggable() const;
     void setDraggable(bool);
@@ -118,8 +119,8 @@ private:
 
     virtual HTMLFormElement* virtualForm() const;
 
-    Node* insertAdjacent(const String& where, Node* newChild, ExceptionCode&);
-    PassRefPtr<DocumentFragment> textToFragment(const String&, ExceptionCode&);
+    Node* insertAdjacent(const String& where, Node* newChild, ExceptionState&);
+    PassRefPtr<DocumentFragment> textToFragment(const String&, ExceptionState&);
 
     void dirAttributeChanged(const AtomicString&);
     void adjustDirectionalityIfNeededAfterChildAttributeChanged(Element* child);
@@ -150,7 +151,7 @@ inline const HTMLElement* toHTMLElement(const Node* node)
 void toHTMLElement(const HTMLElement*);
 
 inline HTMLElement::HTMLElement(const QualifiedName& tagName, Document* document, ConstructionType type = CreateHTMLElement)
-    : StyledElement(tagName, document, type)
+    : Element(tagName, document, type)
 {
     ASSERT(tagName.localName().impl());
     ScriptWrappable::init(this);

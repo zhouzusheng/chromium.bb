@@ -20,13 +20,13 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-  
+
 #include "config.h"
 #include "core/editing/VisibleSelection.h"
 
-#include <stdio.h>
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Range.h"
@@ -36,10 +36,11 @@
 #include "core/editing/htmlediting.h"
 #include "core/platform/graphics/LayoutPoint.h"
 #include "core/rendering/RenderObject.h"
-#include <wtf/Assertions.h>
-#include <wtf/text/CString.h>
-#include <wtf/text/StringBuilder.h>
-#include <wtf/unicode/CharacterNames.h>
+#include "wtf/Assertions.h"
+#include "wtf/text/CString.h"
+#include "wtf/text/StringBuilder.h"
+#include "wtf/unicode/CharacterNames.h"
+#include <stdio.h>
 
 namespace WebCore {
 
@@ -154,18 +155,18 @@ PassRefPtr<Range> VisibleSelection::toNormalizedRange() const
     if (isCaret()) {
         // If the selection is a caret, move the range start upstream. This helps us match
         // the conventions of text editors tested, which make style determinations based
-        // on the character before the caret, if any. 
+        // on the character before the caret, if any.
         s = m_start.upstream().parentAnchoredEquivalent();
         e = s;
     } else {
         // If the selection is a range, select the minimum range that encompasses the selection.
-        // Again, this is to match the conventions of text editors tested, which make style 
-        // determinations based on the first character of the selection. 
-        // For instance, this operation helps to make sure that the "X" selected below is the 
-        // only thing selected. The range should not be allowed to "leak" out to the end of the 
-        // previous text node, or to the beginning of the next text node, each of which has a 
+        // Again, this is to match the conventions of text editors tested, which make style
+        // determinations based on the first character of the selection.
+        // For instance, this operation helps to make sure that the "X" selected below is the
+        // only thing selected. The range should not be allowed to "leak" out to the end of the
+        // previous text node, or to the beginning of the next text node, each of which has a
         // different style.
-        // 
+        //
         // On a treasure map, <b>X</b> marks the spot.
         //                       ^ selected
         //
@@ -214,14 +215,14 @@ static PassRefPtr<Range> makeSearchRange(const Position& pos)
         return 0;
 
     RefPtr<Range> searchRange(Range::create(d));
-    ExceptionCode ec = 0;
+    TrackExceptionState es;
 
     Position start(pos.parentAnchoredEquivalent());
-    searchRange->selectNodeContents(boundary, ec);
-    searchRange->setStart(start.containerNode(), start.offsetInContainerNode(), ec);
+    searchRange->selectNodeContents(boundary, es);
+    searchRange->setStart(start.containerNode(), start.offsetInContainerNode(), es);
 
-    ASSERT(!ec);
-    if (ec)
+    ASSERT(!es.hadException());
+    if (es.hadException())
         return 0;
 
     return searchRange.release();
@@ -241,7 +242,7 @@ void VisibleSelection::appendTrailingWhitespace()
     CharacterIterator charIt(searchRange.get(), TextIteratorEmitsCharactersBetweenAllVisiblePositions);
 
     for (; charIt.length(); charIt.advance(1)) {
-        UChar c = charIt.characters()[0];
+        UChar c = charIt.characterAt(0);
         if ((!isSpaceOrNewline(c) && c != noBreakSpace) || c == '\n')
             break;
         m_end = charIt.range()->endPosition();
@@ -302,15 +303,15 @@ void VisibleSelection::setStartAndEndFromBaseAndExtentRespectingGranularity(Text
             side = RightWordIfOnBoundary;
             if (isEndOfEditableOrNonEditableContent(originalEnd) || (isEndOfLine(originalEnd) && !isStartOfLine(originalEnd) && !isEndOfParagraph(originalEnd)))
                 side = LeftWordIfOnBoundary;
-                
+
             VisiblePosition wordEnd(endOfWord(originalEnd, side));
             VisiblePosition end(wordEnd);
-            
+
             if (isEndOfParagraph(originalEnd) && !isEmptyTableCell(m_start.deprecatedNode())) {
-                // Select the paragraph break (the space from the end of a paragraph to the start of 
+                // Select the paragraph break (the space from the end of a paragraph to the start of
                 // the next one) to match TextEdit.
                 end = wordEnd.next();
-                
+
                 if (Node* table = isFirstPositionAfterTable(end)) {
                     // The paragraph break after the last paragraph in the last cell of a block table ends
                     // at the start of the paragraph after the table.
@@ -319,12 +320,12 @@ void VisibleSelection::setStartAndEndFromBaseAndExtentRespectingGranularity(Text
                     else
                         end = wordEnd;
                 }
-                
+
                 if (end.isNull())
                     end = wordEnd;
-                    
+
             }
-                
+
             m_end = end.deepEquivalent();
             break;
         }
@@ -336,7 +337,7 @@ void VisibleSelection::setStartAndEndFromBaseAndExtentRespectingGranularity(Text
         case LineGranularity: {
             m_start = startOfLine(VisiblePosition(m_start, m_affinity)).deepEquivalent();
             VisiblePosition end = endOfLine(VisiblePosition(m_end, m_affinity));
-            // If the end of this line is at the end of a paragraph, include the space 
+            // If the end of this line is at the end of a paragraph, include the space
             // after the end of the line in the selection.
             if (isEndOfParagraph(end)) {
                 VisiblePosition next = end.next();
@@ -356,11 +357,11 @@ void VisibleSelection::setStartAndEndFromBaseAndExtentRespectingGranularity(Text
                 pos = pos.previous();
             m_start = startOfParagraph(pos).deepEquivalent();
             VisiblePosition visibleParagraphEnd = endOfParagraph(VisiblePosition(m_end, m_affinity));
-            
+
             // Include the "paragraph break" (the space from the end of this paragraph to the start
             // of the next one) in the selection.
             VisiblePosition end(visibleParagraphEnd.next());
-             
+
             if (Node* table = isFirstPositionAfterTable(end)) {
                 // The paragraph break after the last paragraph in the last cell of a block table ends
                 // at the start of the paragraph after the table, not at the position just after the table.
@@ -370,10 +371,10 @@ void VisibleSelection::setStartAndEndFromBaseAndExtentRespectingGranularity(Text
                 else
                     end = visibleParagraphEnd;
             }
-             
+
             if (end.isNull())
                 end = visibleParagraphEnd;
-                
+
             m_end = end.deepEquivalent();
             break;
         }
@@ -390,7 +391,7 @@ void VisibleSelection::setStartAndEndFromBaseAndExtentRespectingGranularity(Text
             m_end = endOfSentence(VisiblePosition(m_end, m_affinity)).deepEquivalent();
             break;
     }
-    
+
     // Make sure we do not have a dangling start or end.
     if (m_start.isNull())
         m_start = m_end;
@@ -426,7 +427,7 @@ void VisibleSelection::validate(TextGranularity granularity)
         // This is a somewhat arbitrary choice, but experience shows that it is
         // useful to make to make the selection "canonical" (if only for
         // purposes of comparing selections). This is an ideal point of the code
-        // to do this operation, since all selection changes that result in a RANGE 
+        // to do this operation, since all selection changes that result in a RANGE
         // come through here before anyone uses it.
         // FIXME: Canonicalizing is good, but haven't we already done it (when we
         // set these two positions to VisiblePosition deepEquivalent()s above)?
@@ -487,7 +488,7 @@ static Position adjustPositionForStart(const Position& currentPosition, Node* en
     TreeScope* treeScope = endContainerNode->treeScope();
 
     ASSERT(currentPosition.containerNode()->treeScope() != treeScope);
-    
+
     if (Node* ancestor = treeScope->ancestorInThisScope(currentPosition.containerNode())) {
         if (ancestor->contains(endContainerNode))
             return positionBeforeNode(ancestor);
@@ -527,13 +528,13 @@ void VisibleSelection::adjustSelectionToAvoidCrossingEditingBoundaries()
     Node* baseRoot = highestEditableRoot(m_base);
     Node* startRoot = highestEditableRoot(m_start);
     Node* endRoot = highestEditableRoot(m_end);
-    
+
     Node* baseEditableAncestor = lowestEditableAncestor(m_base.containerNode());
-    
+
     // The base, start and end are all in the same region.  No adjustment necessary.
     if (baseRoot == startRoot && baseRoot == endRoot)
         return;
-    
+
     // The selection is based in editable content.
     if (baseRoot) {
         // If the start is outside the base's editable root, cap it at the start of that root.
@@ -560,12 +561,12 @@ void VisibleSelection::adjustSelectionToAvoidCrossingEditingBoundaries()
     } else {
         // FIXME: Non-editable pieces inside editable content should be atomic, in the same way that editable
         // pieces in non-editable content are atomic.
-    
-        // The selection ends in editable content or non-editable content inside a different editable ancestor, 
+
+        // The selection ends in editable content or non-editable content inside a different editable ancestor,
         // move backward until non-editable content inside the same lowest editable ancestor is reached.
         Node* endEditableAncestor = lowestEditableAncestor(m_end.containerNode());
         if (endRoot || endEditableAncestor != baseEditableAncestor) {
-            
+
             Position p = previousVisuallyDistinctCandidate(m_end);
             Node* shadowAncestor = endRoot ? endRoot->shadowHost() : 0;
             if (p.isNull() && shadowAncestor)
@@ -591,9 +592,9 @@ void VisibleSelection::adjustSelectionToAvoidCrossingEditingBoundaries()
             m_end = previous.deepEquivalent();
         }
 
-        // The selection starts in editable content or non-editable content inside a different editable ancestor, 
+        // The selection starts in editable content or non-editable content inside a different editable ancestor,
         // move forward until non-editable content inside the same lowest editable ancestor is reached.
-        Node* startEditableAncestor = lowestEditableAncestor(m_start.containerNode());      
+        Node* startEditableAncestor = lowestEditableAncestor(m_start.containerNode());
         if (startRoot || startEditableAncestor != baseEditableAncestor) {
             Position p = nextVisuallyDistinctCandidate(m_start);
             Node* shadowAncestor = startRoot ? startRoot->shadowHost() : 0;
@@ -607,7 +608,7 @@ void VisibleSelection::adjustSelectionToAvoidCrossingEditingBoundaries()
                     p = positionBeforeNode(shadowAncestor);
             }
             VisiblePosition next(p);
-            
+
             if (next.isNull()) {
                 // The selection crosses an Editing boundary.  This is a
                 // programmer error in the editing code.  Happy debugging!
@@ -620,7 +621,7 @@ void VisibleSelection::adjustSelectionToAvoidCrossingEditingBoundaries()
             m_start = next.deepEquivalent();
         }
     }
-    
+
     // Correct the extent if necessary.
     if (baseEditableAncestor != lowestEditableAncestor(m_extent.containerNode()))
         m_extent = m_baseIsFirst ? m_end : m_start;
@@ -643,7 +644,7 @@ VisiblePosition VisibleSelection::visiblePositionRespectingEditingBoundary(const
         targetNode = editableElement;
     }
 
-    return targetNode->renderer()->positionForPoint(selectionEndPoint);
+    return VisiblePosition(targetNode->renderer()->positionForPoint(selectionEndPoint));
 }
 
 

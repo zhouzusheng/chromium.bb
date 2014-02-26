@@ -31,7 +31,7 @@
 #define CustomFilterParameterList_h
 
 #include "core/platform/graphics/LayoutSize.h"
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -44,7 +44,7 @@ public:
     explicit CustomFilterParameterList(size_t);
 
     bool checkAlphabeticalOrder() const;
-    void blend(const CustomFilterParameterList& from, double progress, const LayoutSize&, CustomFilterParameterList& resultList) const;
+    void blend(const CustomFilterParameterList& from, double progress, CustomFilterParameterList& resultList) const;
     bool operator==(const CustomFilterParameterList&) const;
 };
 

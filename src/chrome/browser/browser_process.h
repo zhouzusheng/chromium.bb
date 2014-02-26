@@ -13,6 +13,7 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/browser_process_platform_part.h"
 #include "chrome/browser/ui/host_desktop.h"
 
@@ -46,6 +47,7 @@ class WebRtcLogUploader;
 
 namespace chrome {
 class MediaFileSystemRegistry;
+class StorageMonitor;
 }
 
 namespace chrome_variations {
@@ -175,6 +177,8 @@ class BrowserProcess {
 
   // Returns the object that manages background applications.
   virtual BackgroundModeManager* background_mode_manager() = 0;
+  virtual void set_background_mode_manager_for_test(
+      scoped_ptr<BackgroundModeManager> manager) = 0;
 
   // Returns the StatusTray, which provides an API for displaying status icons
   // in the system status tray. Returns NULL if status icons are not supported
@@ -213,6 +217,8 @@ class BrowserProcess {
   virtual BookmarkPromptController* bookmark_prompt_controller() = 0;
 
   virtual chrome::MediaFileSystemRegistry* media_file_system_registry() = 0;
+
+  virtual chrome::StorageMonitor* storage_monitor() = 0;
 
   virtual bool created_local_state() const = 0;
 

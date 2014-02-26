@@ -38,24 +38,23 @@
 #include "core/inspector/ScriptBreakpoint.h"
 #include "core/inspector/ScriptDebugListener.h"
 #include "core/page/ConsoleTypes.h"
-#include <wtf/Forward.h>
-#include <wtf/HashMap.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/text/StringHash.h>
-#include <wtf/Vector.h>
+#include "wtf/Forward.h"
+#include "wtf/HashMap.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/Vector.h"
+#include "wtf/text/StringHash.h"
 
 namespace WebCore {
 
 class InjectedScriptManager;
 class InspectorFrontend;
-class InspectorState;
 class InstrumentingAgents;
 class JSONObject;
 class ScriptArguments;
 class ScriptCallStack;
 class ScriptDebugServer;
 class ScriptValue;
+class RegularExpression;
 
 typedef String ErrorString;
 
@@ -88,10 +87,12 @@ public:
     virtual void disable(ErrorString*);
     virtual void setBreakpointsActive(ErrorString*, bool active);
 
-    virtual void setBreakpointByUrl(ErrorString*, int lineNumber, const String* optionalURL, const String* optionalURLRegex, const int* optionalColumnNumber, const String* optionalCondition, TypeBuilder::Debugger::BreakpointId*, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::Location> >& locations);
+    virtual void setBreakpointByUrl(ErrorString*, int lineNumber, const String* optionalURL, const String* optionalURLRegex, const int* optionalColumnNumber, const String* optionalCondition, const bool* isAntiBreakpoint, TypeBuilder::Debugger::BreakpointId*, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::Location> >& locations);
     virtual void setBreakpoint(ErrorString*, const RefPtr<JSONObject>& location, const String* optionalCondition, TypeBuilder::Debugger::BreakpointId*, RefPtr<TypeBuilder::Debugger::Location>& actualLocation);
     virtual void removeBreakpoint(ErrorString*, const String& breakpointId);
-    virtual void continueToLocation(ErrorString*, const RefPtr<JSONObject>& location);
+    virtual void continueToLocation(ErrorString*, const RefPtr<JSONObject>& location, const bool* interstateLocationOpt);
+    virtual void getStepInPositions(ErrorString*, const String& callFrameId, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::Location> >& positions);
+    virtual void getBacktrace(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::CallFrame> >&);
 
     virtual void searchInContent(ErrorString*, const String& scriptId, const String& query, const bool* optionalCaseSensitive, const bool* optionalIsRegex, RefPtr<TypeBuilder::Array<TypeBuilder::Page::SearchMatch> >&);
     virtual void setScriptSource(ErrorString*, RefPtr<TypeBuilder::Debugger::SetScriptSourceError>&, const String& scriptId, const String& newContent, const bool* preview, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::CallFrame> >& newCallFrames, RefPtr<JSONObject>& result);
@@ -118,6 +119,7 @@ public:
     void runScript(ErrorString*, const TypeBuilder::Debugger::ScriptId&, const int* executionContextId, const String* objectGroup, const bool* doNotPauseOnExceptionsAndMuteConsole, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown);
     virtual void setOverlayMessage(ErrorString*, const String*);
     virtual void setVariableValue(ErrorString*, int in_scopeNumber, const String& in_variableName, const RefPtr<JSONObject>& in_newValue, const String* in_callFrame, const String* in_functionObjectId);
+    virtual void skipStackFrames(ErrorString*, const String* pattern);
 
     void schedulePauseOnNextStatement(InspectorFrontend::Debugger::Reason::Enum breakReason, PassRefPtr<JSONObject> data);
     void didFireTimer();
@@ -138,10 +140,12 @@ public:
 
     virtual ScriptDebugServer& scriptDebugServer() = 0;
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
-
     void setBreakpoint(const String& scriptId, int lineNumber, int columnNumber, BreakpointSource, const String& condition = String());
     void removeBreakpoint(const String& scriptId, int lineNumber, int columnNumber, BreakpointSource);
+
+    SkipPauseRequest shouldSkipExceptionPause(RefPtr<JavaScriptCallFrame>& topFrame);
+    SkipPauseRequest shouldSkipBreakpointPause(RefPtr<JavaScriptCallFrame>& topFrame);
+    SkipPauseRequest shouldSkipStepPause(RefPtr<JavaScriptCallFrame>& topFrame);
 
 protected:
     InspectorDebuggerAgent(InstrumentingAgents*, InspectorCompositeState*, InjectedScriptManager*);
@@ -181,6 +185,8 @@ private:
 
     String sourceMapURLForScript(const Script&);
 
+    String scriptURL(JavaScriptCallFrame*);
+
     typedef HashMap<String, Script> ScriptsMap;
     typedef HashMap<String, Vector<String> > BreakpointIdToDebugServerBreakpointIdsMap;
     typedef HashMap<String, std::pair<String, BreakpointSource> > DebugServerBreakpointToBreakpointIdAndSourceMap;
@@ -197,6 +203,9 @@ private:
     RefPtr<JSONObject> m_breakAuxData;
     bool m_javaScriptPauseScheduled;
     Listener* m_listener;
+
+    int m_skipStepInCount;
+    OwnPtr<RegularExpression> m_cachedSkipStackRegExp;
 };
 
 } // namespace WebCore

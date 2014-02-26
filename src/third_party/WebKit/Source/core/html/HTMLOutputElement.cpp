@@ -32,7 +32,7 @@
 #include "core/html/HTMLOutputElement.h"
 
 #include "HTMLNames.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 
 namespace WebCore {
 

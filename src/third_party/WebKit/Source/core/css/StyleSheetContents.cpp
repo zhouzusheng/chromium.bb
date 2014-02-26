@@ -21,9 +21,6 @@
 #include "config.h"
 #include "core/css/StyleSheetContents.h"
 
-#include <wtf/Deque.h>
-#include <wtf/MemoryInstrumentationHashMap.h>
-#include <wtf/MemoryInstrumentationVector.h>
 #include "core/css/CSSParser.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/MediaList.h"
@@ -31,16 +28,16 @@
 #include "core/css/StyleRule.h"
 #include "core/css/StyleRuleImport.h"
 #include "core/dom/Node.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "core/loader/cache/CachedCSSStyleSheet.h"
+#include "core/loader/cache/CSSStyleSheetResource.h"
 #include "weborigin/SecurityOrigin.h"
+#include "wtf/Deque.h"
 
 namespace WebCore {
 
 // Rough size estimate for the memory cache.
 unsigned StyleSheetContents::estimatedSizeInBytes() const
 {
-    // Note that this does not take into account size of the strings hanging from various objects. 
+    // Note that this does not take into account size of the strings hanging from various objects.
     // The assumption is that nearly all of of them are atomic and would exist anyway.
     unsigned size = sizeof(*this);
 
@@ -188,7 +185,7 @@ void StyleSheetContents::parserSetEncodingFromCharsetRule(const String& encoding
 {
     // Parser enforces that there is ever only one @charset.
     ASSERT(m_encodingFromCharsetRule.isNull());
-    m_encodingFromCharsetRule = encoding; 
+    m_encodingFromCharsetRule = encoding;
 }
 
 bool StyleSheetContents::wrapperInsertRule(PassRefPtr<StyleRuleBase> rule, unsigned index)
@@ -197,7 +194,7 @@ bool StyleSheetContents::wrapperInsertRule(PassRefPtr<StyleRuleBase> rule, unsig
     ASSERT_WITH_SECURITY_IMPLICATION(index <= ruleCount());
     // Parser::parseRule doesn't currently allow @charset so we don't need to deal with it.
     ASSERT(!rule->isCharsetRule());
-    
+
     unsigned childVectorIndex = index;
     // m_childRules does not contain @charset which is always in index 0 if it exists.
     if (hasCharsetRule()) {
@@ -207,7 +204,7 @@ bool StyleSheetContents::wrapperInsertRule(PassRefPtr<StyleRuleBase> rule, unsig
         }
         --childVectorIndex;
     }
-    
+
     if (childVectorIndex < m_importRules.size() || (childVectorIndex == m_importRules.size() && rule->isImportRule())) {
         // Inserting non-import rule before @import is not allowed.
         if (!rule->isImportRule())
@@ -222,7 +219,7 @@ bool StyleSheetContents::wrapperInsertRule(PassRefPtr<StyleRuleBase> rule, unsig
     if (rule->isImportRule())
         return false;
     childVectorIndex -= m_importRules.size();
- 
+
     m_childRules.insert(childVectorIndex, rule);
     return true;
 }
@@ -272,14 +269,14 @@ const AtomicString& StyleSheetContents::determineNamespace(const AtomicString& p
     return it->value;
 }
 
-void StyleSheetContents::parseAuthorStyleSheet(const CachedCSSStyleSheet* cachedStyleSheet, const SecurityOrigin* securityOrigin)
+void StyleSheetContents::parseAuthorStyleSheet(const CSSStyleSheetResource* cachedStyleSheet, const SecurityOrigin* securityOrigin)
 {
     bool enforceMIMEType = isStrictParserMode(m_parserContext.mode);
     bool hasValidMIMEType = false;
     String sheetText = cachedStyleSheet->sheetText(enforceMIMEType, &hasValidMIMEType);
 
     CSSParser p(parserContext(), UseCounter::getFrom(this));
-    p.parseSheet(this, sheetText, 0, 0, true);
+    p.parseSheet(this, sheetText, TextPosition::minimumPosition(), 0, true);
 
     // If we're loading a stylesheet cross-origin, and the MIME type is not standard, require the CSS
     // to at least start with a syntactically valid CSS rule.
@@ -293,7 +290,7 @@ void StyleSheetContents::parseAuthorStyleSheet(const CachedCSSStyleSheet* cached
     }
     if (m_parserContext.needsSiteSpecificQuirks && isStrictParserMode(m_parserContext.mode)) {
         // Work around <https://bugs.webkit.org/show_bug.cgi?id=28350>.
-        DEFINE_STATIC_LOCAL(const String, mediaWikiKHTMLFixesStyleSheet, (ASCIILiteral("/* KHTML fix stylesheet */\n/* work around the horizontal scrollbars */\n#column-content { margin-left: 0; }\n\n")));
+        DEFINE_STATIC_LOCAL(const String, mediaWikiKHTMLFixesStyleSheet, ("/* KHTML fix stylesheet */\n/* work around the horizontal scrollbars */\n#column-content { margin-left: 0; }\n\n"));
         // There are two variants of KHTMLFixes.css. One is equal to mediaWikiKHTMLFixesStyleSheet,
         // while the other lacks the second trailing newline.
         if (baseURL().string().endsWith("/KHTMLFixes.css") && !sheetText.isNull() && mediaWikiKHTMLFixesStyleSheet.startsWith(sheetText)
@@ -304,13 +301,13 @@ void StyleSheetContents::parseAuthorStyleSheet(const CachedCSSStyleSheet* cached
 
 bool StyleSheetContents::parseString(const String& sheetText)
 {
-    return parseStringAtLine(sheetText, 0, false);
+    return parseStringAtPosition(sheetText, TextPosition::minimumPosition(), false);
 }
 
-bool StyleSheetContents::parseStringAtLine(const String& sheetText, int startLineNumber, bool createdByParser)
+bool StyleSheetContents::parseStringAtPosition(const String& sheetText, const TextPosition& startPosition, bool createdByParser)
 {
     CSSParser p(parserContext(), UseCounter::getFrom(this));
-    p.parseSheet(this, sheetText, startLineNumber, 0, createdByParser);
+    p.parseSheet(this, sheetText, startPosition, 0, createdByParser);
 
     return true;
 }
@@ -351,7 +348,7 @@ void StyleSheetContents::checkLoaded()
         ownerNode->notifyLoadedSheetAndAllCriticalSubresources(m_didLoadErrorOccur);
 }
 
-void StyleSheetContents::notifyLoadedSheet(const CachedCSSStyleSheet* sheet)
+void StyleSheetContents::notifyLoadedSheet(const CSSStyleSheetResource* sheet)
 {
     ASSERT(sheet);
     m_didLoadErrorOccur |= sheet->errorOccurred();
@@ -406,7 +403,7 @@ void StyleSheetContents::addSubresourceStyleURLs(ListHashSet<KURL>& urls)
 
     while (!styleSheetQueue.isEmpty()) {
         StyleSheetContents* styleSheet = styleSheetQueue.takeFirst();
-        
+
         for (unsigned i = 0; i < styleSheet->m_importRules.size(); ++i) {
             StyleRuleImport* importRule = styleSheet->m_importRules[i].get();
             if (importRule->styleSheet()) {
@@ -507,19 +504,6 @@ void StyleSheetContents::shrinkToFit()
 {
     m_importRules.shrinkToFit();
     m_childRules.shrinkToFit();
-}
-
-void StyleSheetContents::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_ownerRule, "ownerRule");
-    info.addMember(m_originalURL, "originalURL");
-    info.addMember(m_encodingFromCharsetRule, "encodingFromCharsetRule");
-    info.addMember(m_importRules, "importRules");
-    info.addMember(m_childRules, "childRules");
-    info.addMember(m_namespaces, "namespaces");
-    info.addMember(m_parserContext, "parserContext");
-    info.addMember(m_clients, "clients");
 }
 
 }

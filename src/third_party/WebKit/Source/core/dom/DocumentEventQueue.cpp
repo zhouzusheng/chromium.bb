@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -30,26 +30,17 @@
 #include "core/dom/Document.h"
 #include "core/dom/Event.h"
 #include "core/dom/EventNames.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/page/DOMWindow.h"
 #include "core/page/SuspendableTimer.h"
-#include "wtf/MemoryInstrumentationListHashSet.h"
 
 namespace WebCore {
-    
+
 class DocumentEventQueueTimer : public SuspendableTimer {
     WTF_MAKE_NONCOPYABLE(DocumentEventQueueTimer);
 public:
     DocumentEventQueueTimer(DocumentEventQueue* eventQueue, ScriptExecutionContext* context)
         : SuspendableTimer(context)
         , m_eventQueue(eventQueue) { }
-
-    virtual void reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const OVERRIDE
-    {
-        MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-        SuspendableTimer::reportMemoryUsage(memoryObjectInfo);
-        info.addWeakPointer(m_eventQueue);
-    }
 
 private:
     virtual void fired() { m_eventQueue->pendingEventTimerFired(); }
@@ -80,7 +71,7 @@ bool DocumentEventQueue::enqueueEvent(PassRefPtr<Event> event)
     ASSERT(event->target());
     bool wasAdded = m_queuedEvents.add(event).isNewEntry;
     ASSERT_UNUSED(wasAdded, wasAdded); // It should not have already been in the list.
-    
+
     if (!m_pendingEventTimer->isActive())
         m_pendingEventTimer->startOneShot(0);
 
@@ -95,20 +86,12 @@ void DocumentEventQueue::enqueueOrDispatchScrollEvent(PassRefPtr<Node> target, S
     // Per the W3C CSSOM View Module, scroll events fired at the document should bubble, others should not.
     bool canBubble = targetType == ScrollEventDocumentTarget;
     RefPtr<Event> scrollEvent = Event::create(eventNames().scrollEvent, canBubble, false /* non cancelleable */);
-     
+
     if (!m_nodesWithQueuedScrollEvents.add(target.get()).isNewEntry)
         return;
 
     scrollEvent->setTarget(target);
     enqueueEvent(scrollEvent.release());
-}
-
-void DocumentEventQueue::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    info.addMember(m_pendingEventTimer, "pendingEventTimer");
-    info.addMember(m_queuedEvents, "queuedEvents");
-    info.addMember(m_nodesWithQueuedScrollEvents, "nodesWithQueuedScrollEvents");
 }
 
 bool DocumentEventQueue::cancelEvent(Event* event)

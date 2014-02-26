@@ -21,26 +21,25 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
 #include "config.h"
-
 #include "core/workers/Worker.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/EventListener.h"
 #include "core/dom/EventNames.h"
-#include "core/dom/ExceptionCode.h"
 #include "core/dom/MessageEvent.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/FrameLoader.h"
-#include "core/loader/cache/CachedResourceLoader.h"
+#include "core/loader/cache/ResourceFetcher.h"
 #include "core/page/DOMWindow.h"
 #include "core/page/Frame.h"
 #include "core/page/UseCounter.h"
-#include "core/workers/WorkerContextProxy.h"
+#include "core/workers/WorkerGlobalScopeProxy.h"
 #include "core/workers/WorkerScriptLoader.h"
 #include "core/workers/WorkerThread.h"
 #include "wtf/MainThread.h"
@@ -49,21 +48,21 @@ namespace WebCore {
 
 inline Worker::Worker(ScriptExecutionContext* context)
     : AbstractWorker(context)
-    , m_contextProxy(WorkerContextProxy::create(this))
+    , m_contextProxy(WorkerGlobalScopeProxy::create(this))
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<Worker> Worker::create(ScriptExecutionContext* context, const String& url, ExceptionCode& ec)
+PassRefPtr<Worker> Worker::create(ScriptExecutionContext* context, const String& url, ExceptionState& es)
 {
     ASSERT(isMainThread());
-    UseCounter::count(static_cast<Document*>(context)->domWindow(), UseCounter::WorkerStart);
+    UseCounter::count(toDocument(context)->domWindow(), UseCounter::WorkerStart);
 
     RefPtr<Worker> worker = adoptRef(new Worker(context));
 
     worker->suspendIfNeeded();
 
-    KURL scriptURL = worker->resolveURL(url, ec);
+    KURL scriptURL = worker->resolveURL(url, es);
     if (scriptURL.isEmpty())
         return 0;
 
@@ -88,18 +87,18 @@ const AtomicString& Worker::interfaceName() const
     return eventNames().interfaceForWorker;
 }
 
-void Worker::postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, ExceptionCode& ec)
+void Worker::postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, ExceptionState& es)
 {
     // Disentangle the port in preparation for sending it to the remote context.
-    OwnPtr<MessagePortChannelArray> channels = MessagePort::disentanglePorts(ports, ec);
-    if (ec)
+    OwnPtr<MessagePortChannelArray> channels = MessagePort::disentanglePorts(ports, es);
+    if (es.hadException())
         return;
-    m_contextProxy->postMessageToWorkerContext(message, channels.release());
+    m_contextProxy->postMessageToWorkerGlobalScope(message, channels.release());
 }
 
 void Worker::terminate()
 {
-    m_contextProxy->terminateWorkerContext();
+    m_contextProxy->terminateWorkerGlobalScope();
 }
 
 bool Worker::canSuspend() const
@@ -128,10 +127,10 @@ void Worker::notifyFinished()
     if (m_scriptLoader->failed())
         dispatchEvent(Event::create(eventNames().errorEvent, false, true));
     else {
-        WorkerThreadStartMode startMode = DontPauseWorkerContextOnStart;
+        WorkerThreadStartMode startMode = DontPauseWorkerGlobalScopeOnStart;
         if (InspectorInstrumentation::shouldPauseDedicatedWorkerOnStart(scriptExecutionContext()))
-            startMode = PauseWorkerContextOnStart;
-        m_contextProxy->startWorkerContext(m_scriptLoader->url(), scriptExecutionContext()->userAgent(m_scriptLoader->url()), m_scriptLoader->script(), startMode);
+            startMode = PauseWorkerGlobalScopeOnStart;
+        m_contextProxy->startWorkerGlobalScope(m_scriptLoader->url(), scriptExecutionContext()->userAgent(m_scriptLoader->url()), m_scriptLoader->script(), startMode);
         InspectorInstrumentation::scriptImported(scriptExecutionContext(), m_scriptLoader->identifier(), m_scriptLoader->script());
     }
     m_scriptLoader = nullptr;

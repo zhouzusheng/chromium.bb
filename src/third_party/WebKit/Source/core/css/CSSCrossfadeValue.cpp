@@ -27,12 +27,11 @@
 #include "core/css/CSSCrossfadeValue.h"
 
 #include "core/css/CSSImageValue.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "core/loader/cache/CachedImage.h"
+#include "core/loader/cache/ImageResource.h"
 #include "core/platform/graphics/CrossfadeGeneratedImage.h"
 #include "core/rendering/RenderObject.h"
-#include "core/rendering/style/StyleCachedImage.h"
-#include <wtf/text/StringBuilder.h>
+#include "core/rendering/style/StyleFetchedImage.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -40,12 +39,12 @@ static bool subimageIsPending(CSSValue* value)
 {
     if (value->isImageValue())
         return toCSSImageValue(value)->cachedOrPendingImage()->isPendingImage();
-    
+
     if (value->isImageGeneratorValue())
         return static_cast<CSSImageGeneratorValue*>(value)->isPending();
-    
+
     ASSERT_NOT_REACHED();
-    
+
     return false;
 }
 
@@ -62,27 +61,27 @@ static bool subimageKnownToBeOpaque(CSSValue* value, const RenderObject* rendere
     return false;
 }
 
-static CachedImage* cachedImageForCSSValue(CSSValue* value, CachedResourceLoader* cachedResourceLoader)
+static ImageResource* cachedImageForCSSValue(CSSValue* value, ResourceFetcher* fetcher)
 {
     if (!value)
         return 0;
 
     if (value->isImageValue()) {
-        StyleCachedImage* styleCachedImage = toCSSImageValue(value)->cachedImage(cachedResourceLoader);
-        if (!styleCachedImage)
+        StyleFetchedImage* styleImageResource = toCSSImageValue(value)->cachedImage(fetcher);
+        if (!styleImageResource)
             return 0;
 
-        return styleCachedImage->cachedImage();
+        return styleImageResource->cachedImage();
     }
-    
+
     if (value->isImageGeneratorValue()) {
-        static_cast<CSSImageGeneratorValue*>(value)->loadSubimages(cachedResourceLoader);
+        static_cast<CSSImageGeneratorValue*>(value)->loadSubimages(fetcher);
         // FIXME: Handle CSSImageGeneratorValue (and thus cross-fades with gradients and canvas).
         return 0;
     }
-    
+
     ASSERT_NOT_REACHED();
-    
+
     return 0;
 }
 
@@ -112,9 +111,9 @@ IntSize CSSCrossfadeValue::fixedSize(const RenderObject* renderer)
     float percentage = m_percentageValue->getFloatValue();
     float inversePercentage = 1 - percentage;
 
-    CachedResourceLoader* cachedResourceLoader = renderer->document()->cachedResourceLoader();
-    CachedImage* cachedFromImage = cachedImageForCSSValue(m_fromValue.get(), cachedResourceLoader);
-    CachedImage* cachedToImage = cachedImageForCSSValue(m_toValue.get(), cachedResourceLoader);
+    ResourceFetcher* fetcher = renderer->document()->fetcher();
+    ImageResource* cachedFromImage = cachedImageForCSSValue(m_fromValue.get(), fetcher);
+    ImageResource* cachedToImage = cachedImageForCSSValue(m_toValue.get(), fetcher);
 
     if (!cachedFromImage || !cachedToImage)
         return IntSize();
@@ -141,13 +140,13 @@ bool CSSCrossfadeValue::knownToBeOpaque(const RenderObject* renderer) const
     return subimageKnownToBeOpaque(m_fromValue.get(), renderer) && subimageKnownToBeOpaque(m_toValue.get(), renderer);
 }
 
-void CSSCrossfadeValue::loadSubimages(CachedResourceLoader* cachedResourceLoader)
+void CSSCrossfadeValue::loadSubimages(ResourceFetcher* fetcher)
 {
-    CachedResourceHandle<CachedImage> oldCachedFromImage = m_cachedFromImage;
-    CachedResourceHandle<CachedImage> oldCachedToImage = m_cachedToImage;
+    ResourcePtr<ImageResource> oldCachedFromImage = m_cachedFromImage;
+    ResourcePtr<ImageResource> oldCachedToImage = m_cachedToImage;
 
-    m_cachedFromImage = cachedImageForCSSValue(m_fromValue.get(), cachedResourceLoader);
-    m_cachedToImage = cachedImageForCSSValue(m_toValue.get(), cachedResourceLoader);
+    m_cachedFromImage = cachedImageForCSSValue(m_fromValue.get(), fetcher);
+    m_cachedToImage = cachedImageForCSSValue(m_toValue.get(), fetcher);
 
     if (m_cachedFromImage != oldCachedFromImage) {
         if (oldCachedFromImage)
@@ -166,27 +165,14 @@ void CSSCrossfadeValue::loadSubimages(CachedResourceLoader* cachedResourceLoader
     m_crossfadeSubimageObserver.setReady(true);
 }
 
-void CSSCrossfadeValue::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    CSSImageGeneratorValue::reportBaseClassMemoryUsage(memoryObjectInfo);
-    info.addMember(m_fromValue, "fromValue");
-    info.addMember(m_toValue, "toValue");
-    info.addMember(m_percentageValue, "percentageValue");
-    // FIXME: add instrumentation for
-    // m_cachedFromImage
-    // m_cachedToImage
-    // m_generatedImage
-}
-
 PassRefPtr<Image> CSSCrossfadeValue::image(RenderObject* renderer, const IntSize& size)
 {
     if (size.isEmpty())
         return 0;
 
-    CachedResourceLoader* cachedResourceLoader = renderer->document()->cachedResourceLoader();
-    CachedImage* cachedFromImage = cachedImageForCSSValue(m_fromValue.get(), cachedResourceLoader);
-    CachedImage* cachedToImage = cachedImageForCSSValue(m_toValue.get(), cachedResourceLoader);
+    ResourceFetcher* fetcher = renderer->document()->fetcher();
+    ImageResource* cachedFromImage = cachedImageForCSSValue(m_fromValue.get(), fetcher);
+    ImageResource* cachedToImage = cachedImageForCSSValue(m_toValue.get(), fetcher);
 
     if (!cachedFromImage || !cachedToImage)
         return Image::nullImage();
@@ -211,7 +197,7 @@ void CSSCrossfadeValue::crossfadeChanged(const IntRect&)
     }
 }
 
-void CSSCrossfadeValue::CrossfadeSubimageObserverProxy::imageChanged(CachedImage*, const IntRect* rect)
+void CSSCrossfadeValue::CrossfadeSubimageObserverProxy::imageChanged(ImageResource*, const IntRect* rect)
 {
     if (m_ready)
         m_ownerValue->crossfadeChanged(*rect);

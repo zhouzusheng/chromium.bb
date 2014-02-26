@@ -6,6 +6,8 @@
 
 #include "sync/protocol/proto_value_conversions.h"
 
+#include <string>
+
 #include "base/base64.h"
 #include "base/basictypes.h"
 #include "base/logging.h"
@@ -238,8 +240,36 @@ base::DictionaryValue* TimeRangeDirectiveToValue(
   return value;
 }
 
-// TODO(petewil): I will need new functions here for the SyncedNotifications
-// subtypes.
+base::DictionaryValue* SimpleCollapsedLayoutToValue(
+    const sync_pb::SimpleCollapsedLayout& proto) {
+  base::DictionaryValue* value = new base::DictionaryValue();
+  SET_STR(heading);
+  SET_STR(description);
+  return value;
+}
+
+base::DictionaryValue* CollapsedInfoToValue(
+    const sync_pb::CollapsedInfo& proto) {
+  base::DictionaryValue* value = new base::DictionaryValue();
+  SET(simple_collapsed_layout, SimpleCollapsedLayoutToValue);
+  return value;
+}
+
+base::DictionaryValue* RenderInfoToValue(
+    const sync_pb::SyncedNotificationRenderInfo& proto) {
+  base::DictionaryValue* value = new base::DictionaryValue();
+  SET(collapsed_info, CollapsedInfoToValue);
+  return value;
+}
+
+base::DictionaryValue* CoalescedNotificationToValue(
+    const sync_pb::CoalescedSyncedNotification& proto) {
+  base::DictionaryValue* value = new base::DictionaryValue();
+  SET_STR(key);
+  SET_INT32(read_state);
+  SET(render_info, RenderInfoToValue);
+  return value;
+}
 
 base::DictionaryValue* AppNotificationToValue(
     const sync_pb::AppNotification& proto) {
@@ -344,7 +374,7 @@ base::DictionaryValue* FaviconSyncFlagsToValue(
   return value;
 }
 
-}
+}  // namespace
 
 base::DictionaryValue* ExperimentsSpecificsToValue(
     const sync_pb::ExperimentsSpecifics& proto) {
@@ -352,6 +382,7 @@ base::DictionaryValue* ExperimentsSpecificsToValue(
   SET_EXPERIMENT_ENABLED_FIELD(keystore_encryption);
   SET_EXPERIMENT_ENABLED_FIELD(history_delete_directives);
   SET_EXPERIMENT_ENABLED_FIELD(autofill_culling);
+  SET_EXPERIMENT_ENABLED_FIELD(pre_commit_update_avoidance);
   if (proto.has_favicon_sync())
     SET(favicon_sync, FaviconSyncFlagsToValue);
   return value;
@@ -485,8 +516,11 @@ base::DictionaryValue* PriorityPreferenceSpecificsToValue(
 
 base::DictionaryValue* SyncedNotificationSpecificsToValue(
     const sync_pb::SyncedNotificationSpecifics& proto) {
+  // There is a lot of data, for now just use heading, description, key, and
+  // the read state.
+  // TODO(petewil): Eventually add more data here.
   base::DictionaryValue* value = new base::DictionaryValue();
-  // TODO(petewil): Adjust this once we add actual types in protobuf.
+  SET(coalesced_notification, CoalescedNotificationToValue);
   return value;
 }
 
@@ -510,6 +544,11 @@ base::DictionaryValue* SearchEngineSpecificsToValue(
   SET_STR(sync_guid);
   SET_STR_REP(alternate_urls);
   SET_STR(search_terms_replacement_key);
+  SET_STR(image_url);
+  SET_STR(search_url_post_params);
+  SET_STR(suggestions_url_post_params);
+  SET_STR(instant_url_post_params);
+  SET_STR(image_url_post_params);
   return value;
 }
 

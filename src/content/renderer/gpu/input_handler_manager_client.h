@@ -6,6 +6,7 @@
 #define CONTENT_RENDERER_GPU_INPUT_HANDLER_MANAGER_CLIENT_H_
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/callback_forward.h"
 #include "content/common/content_export.h"
 #include "ui/gfx/vector2d_f.h"
@@ -16,6 +17,7 @@ struct LatencyInfo;
 
 namespace cc {
 class InputHandler;
+struct DidOverscrollParams;
 }
 
 namespace WebKit {
@@ -44,8 +46,7 @@ class CONTENT_EXPORT InputHandlerManagerClient {
                                   cc::InputHandler* input_handler) = 0;
   virtual void DidRemoveInputHandler(int routing_id) = 0;
   virtual void DidOverscroll(int routing_id,
-                             gfx::Vector2dF accumulated_overscroll,
-                             gfx::Vector2dF current_fling_velocity) = 0;
+                             const cc::DidOverscrollParams& params) = 0;
 
  protected:
   InputHandlerManagerClient() {}

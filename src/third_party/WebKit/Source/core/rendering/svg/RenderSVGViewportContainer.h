@@ -31,7 +31,7 @@ namespace WebCore {
 // thus we inherit from RenderSVGContainer instead of RenderSVGTransformableContainer
 class RenderSVGViewportContainer FINAL : public RenderSVGContainer {
 public:
-    explicit RenderSVGViewportContainer(SVGStyledElement*);
+    explicit RenderSVGViewportContainer(SVGElement*);
     FloatRect viewport() const { return m_viewport; }
 
     bool isLayoutSizeChanged() const { return m_isLayoutSizeChanged; }
@@ -61,7 +61,7 @@ private:
     bool m_isLayoutSizeChanged : 1;
     bool m_needsTransformUpdate : 1;
 };
-  
+
 inline RenderSVGViewportContainer* toRenderSVGViewportContainer(RenderObject* object)
 {
     ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isSVGViewportContainer());

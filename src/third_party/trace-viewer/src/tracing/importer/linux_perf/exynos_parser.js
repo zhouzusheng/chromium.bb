@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /**
  * @fileoverview Parses exynos events in the Linux event trace format.
  */
@@ -47,7 +49,7 @@ base.exportTo('tracing.importer.linux_perf', function() {
             args,
             ts - kthread.openSliceTS);
 
-        kthread.thread.pushSlice(slice);
+        kthread.thread.sliceGroup.pushSlice(slice);
       }
       kthread.openSlice = undefined;
     },
@@ -74,13 +76,13 @@ base.exportTo('tracing.importer.linux_perf', function() {
     exynosBusfreqSample: function(name, ts, frequency) {
       var targetCpu = this.importer.getOrCreateCpuState(0);
       var counter = targetCpu.cpu.getOrCreateCounter('', name);
-      if (counter.numSeries == 0) {
-        counter.seriesNames.push('frequency');
-        counter.seriesColors.push(
-            tracing.getStringColorId(counter.name + '.' + 'frequency'));
+      if (counter.numSeries === 0) {
+        counter.addSeries(new tracing.trace_model.CounterSeries('frequency',
+            tracing.getStringColorId(counter.name + '.' + 'frequency')));
       }
-      counter.timestamps.push(ts);
-      counter.samples.push(frequency);
+      counter.series.forEach(function(series) {
+        series.addSample(ts, frequency);
+      });
     },
 
     /**

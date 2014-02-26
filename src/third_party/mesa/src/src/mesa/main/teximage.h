@@ -33,91 +33,101 @@
 
 
 #include "mtypes.h"
+#include "formats.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-extern void *
-_mesa_alloc_texmemory(GLsizei bytes);
+/** Is the given value one of the 6 cube faces? */
+static inline GLboolean
+_mesa_is_cube_face(GLenum target)
+{
+   return (target >= GL_TEXTURE_CUBE_MAP_POSITIVE_X_ARB &&
+           target <= GL_TEXTURE_CUBE_MAP_NEGATIVE_Z_ARB);
+}
 
-extern void
-_mesa_free_texmemory(void *m);
-
+/** Is any of the dimensions of given texture equal to zero? */
+static inline GLboolean
+_mesa_is_zero_size_texture(const struct gl_texture_image *texImage)
+{
+   return (texImage->Width == 0 ||
+           texImage->Height == 0 ||
+           texImage->Depth == 0);
+}
 
 /** \name Internal functions */
 /*@{*/
 
 extern GLint
-_mesa_base_tex_format( GLcontext *ctx, GLint internalFormat );
+_mesa_base_tex_format( struct gl_context *ctx, GLint internalFormat );
 
 
 extern GLboolean
 _mesa_is_proxy_texture(GLenum target);
 
+extern GLenum
+_mesa_get_proxy_target(GLenum target);
 
 extern struct gl_texture_image *
-_mesa_new_texture_image( GLcontext *ctx );
+_mesa_new_texture_image( struct gl_context *ctx );
 
 
 extern void
-_mesa_delete_texture_image( GLcontext *ctx, struct gl_texture_image *teximage );
-
-extern void
-_mesa_free_texture_image_data( GLcontext *ctx, 
-			       struct gl_texture_image *texImage );
+_mesa_delete_texture_image( struct gl_context *ctx,
+                            struct gl_texture_image *teximage );
 
 
 extern void
-_mesa_init_teximage_fields(GLcontext *ctx, GLenum target,
+_mesa_init_teximage_fields(struct gl_context *ctx,
                            struct gl_texture_image *img,
                            GLsizei width, GLsizei height, GLsizei depth,
-                           GLint border, GLenum internalFormat);
+                           GLint border, GLenum internalFormat,
+                           gl_format format);
 
 
-extern void
-_mesa_choose_texture_format(GLcontext *ctx,
+extern gl_format
+_mesa_choose_texture_format(struct gl_context *ctx,
                             struct gl_texture_object *texObj,
-                            struct gl_texture_image *texImage,
                             GLenum target, GLint level,
                             GLenum internalFormat, GLenum format, GLenum type);
 
+extern void
+_mesa_update_fbo_texture(struct gl_context *ctx,
+                         struct gl_texture_object *texObj,
+                         GLuint face, GLuint level);
 
 extern void
-_mesa_clear_texture_image(GLcontext *ctx, struct gl_texture_image *texImage);
-
-
-extern void
-_mesa_set_tex_image(struct gl_texture_object *tObj,
-                    GLenum target, GLint level,
-                    struct gl_texture_image *texImage);
+_mesa_clear_texture_image(struct gl_context *ctx,
+                          struct gl_texture_image *texImage);
 
 
 extern struct gl_texture_object *
-_mesa_select_tex_object(GLcontext *ctx, const struct gl_texture_unit *texUnit,
+_mesa_select_tex_object(struct gl_context *ctx,
+                        const struct gl_texture_unit *texUnit,
                         GLenum target);
 
 extern struct gl_texture_object *
-_mesa_get_current_tex_object(GLcontext *ctx, GLenum target);
+_mesa_get_current_tex_object(struct gl_context *ctx, GLenum target);
 
 
 extern struct gl_texture_image *
-_mesa_select_tex_image(GLcontext *ctx, const struct gl_texture_object *texObj,
+_mesa_select_tex_image(struct gl_context *ctx,
+                       const struct gl_texture_object *texObj,
                        GLenum target, GLint level);
 
 
 extern struct gl_texture_image *
-_mesa_get_tex_image(GLcontext *ctx, struct gl_texture_object *texObj,
+_mesa_get_tex_image(struct gl_context *ctx, struct gl_texture_object *texObj,
                     GLenum target, GLint level);
 
 
-extern struct gl_texture_image *
-_mesa_get_proxy_tex_image(GLcontext *ctx, GLenum target, GLint level);
-
-
 extern GLint
-_mesa_max_texture_levels(GLcontext *ctx, GLenum target);
+_mesa_max_texture_levels(struct gl_context *ctx, GLenum target);
 
 
 extern GLboolean
-_mesa_test_proxy_teximage(GLcontext *ctx, GLenum target, GLint level,
+_mesa_test_proxy_teximage(struct gl_context *ctx, GLenum target, GLint level,
                          GLint internalFormat, GLenum format, GLenum type,
                          GLint width, GLint height, GLint depth, GLint border);
 
@@ -125,21 +135,36 @@ _mesa_test_proxy_teximage(GLcontext *ctx, GLenum target, GLint level,
 extern GLuint
 _mesa_tex_target_to_face(GLenum target);
 
+extern GLint
+_mesa_get_texture_dimensions(GLenum target);
+
+extern GLsizei
+_mesa_get_tex_max_num_levels(GLenum target, GLsizei width, GLsizei height,
+                             GLsizei depth);
+
+extern GLenum
+_mesa_es_error_check_format_and_type(GLenum format, GLenum type,
+                                     unsigned dimensions);
+
+extern GLsizei
+_mesa_get_tex_max_num_levels(GLenum target, GLsizei width, GLsizei height,
+                             GLsizei depth);
 
 /**
  * Lock a texture for updating.  See also _mesa_lock_context_textures().
  */
-static INLINE void
-_mesa_lock_texture(GLcontext *ctx, struct gl_texture_object *texObj)
+static inline void
+_mesa_lock_texture(struct gl_context *ctx, struct gl_texture_object *texObj)
 {
    _glthread_LOCK_MUTEX(ctx->Shared->TexMutex);
    ctx->Shared->TextureStateStamp++;
    (void) texObj;
 }
 
-static INLINE void
-_mesa_unlock_texture(GLcontext *ctx, struct gl_texture_object *texObj)
+static inline void
+_mesa_unlock_texture(struct gl_context *ctx, struct gl_texture_object *texObj)
 {
+   (void) texObj;
    _glthread_UNLOCK_MUTEX(ctx->Shared->TexMutex);
 }
 
@@ -268,6 +293,15 @@ _mesa_CompressedTexSubImage3DARB(GLenum target, GLint level, GLint xoffset,
                                  GLsizei height, GLsizei depth, GLenum format,
                                  GLsizei imageSize, const GLvoid *data);
 
+
+extern void GLAPIENTRY
+_mesa_TexBuffer(GLenum target, GLenum internalFormat, GLuint buffer);
+
+
 /*@}*/
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

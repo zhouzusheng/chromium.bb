@@ -21,7 +21,6 @@
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/auth.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/io_buffer.h"
@@ -59,6 +58,7 @@
 #include "net/spdy/spdy_session_pool.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_connection_status_flags.h"
+#include "url/gurl.h"
 
 using base::Time;
 
@@ -66,10 +66,11 @@ namespace net {
 
 namespace {
 
-void ProcessAlternateProtocol(HttpStreamFactory* factory,
-                              HttpServerProperties* http_server_properties,
-                              const HttpResponseHeaders& headers,
-                              const HostPortPair& http_host_port_pair) {
+void ProcessAlternateProtocol(
+    HttpStreamFactory* factory,
+    const base::WeakPtr<HttpServerProperties>& http_server_properties,
+    const HttpResponseHeaders& headers,
+    const HostPortPair& http_host_port_pair) {
   std::string alternate_protocol_str;
 
   if (!headers.EnumerateHeader(NULL, kAlternateProtocolHeader,

@@ -71,7 +71,7 @@ BrowserContextImpl::BrowserContextImpl(const std::string& dataDir,
         base::ThreadRestrictions::ScopedAllowIO allowIO;
 
         path = base::FilePath::FromUTF8Unsafe(dataDir);
-        if (!file_util::PathExists(path))
+        if (!base::PathExists(path))
             file_util::CreateDirectory(path);
     }
     else {
@@ -181,8 +181,8 @@ void BrowserContextImpl::reallyDestroy()
 
         // allow IO during deletion of temporary directory
         base::ThreadRestrictions::ScopedAllowIO allowIO;
-        DCHECK(file_util::PathExists(d_requestContextGetter->path()));
-        file_util::Delete(d_requestContextGetter->path(), true);
+        DCHECK(base::PathExists(d_requestContextGetter->path()));
+        base::DeleteFile(d_requestContextGetter->path(), true);
     }
 
     d_requestContextGetter = 0;
@@ -253,7 +253,7 @@ void BrowserContextImpl::setSpellCheckConfig(const SpellCheckConfig& config)
 
 // ======== content::BrowserContext implementation =============
 
-base::FilePath BrowserContextImpl::GetPath()
+base::FilePath BrowserContextImpl::GetPath() const
 {
     DCHECK(!d_isDestroyed);
     return d_requestContextGetter->path();
@@ -296,6 +296,17 @@ BrowserContextImpl::GetMediaRequestContextForStoragePartition(
     return GetRequestContext();
 }
 
+void BrowserContextImpl::RequestMIDISysExPermission(
+    int render_process_id,
+    int render_view_id,
+    const GURL& requesting_frame,
+    const MIDISysExPermissionCallback& callback)
+{
+    // Always reject for now.
+    // TODO: implement.  See http://crbug.com/257618 for upstream impl.
+    callback.Run(false);
+}
+
 content::ResourceContext* BrowserContextImpl::GetResourceContext()
 {
     DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
@@ -316,12 +327,6 @@ BrowserContextImpl::GetDownloadManagerDelegate()
 
 content::GeolocationPermissionContext*
 BrowserContextImpl::GetGeolocationPermissionContext()
-{
-    return 0;
-}
-
-content::SpeechRecognitionPreferences*
-BrowserContextImpl::GetSpeechRecognitionPreferences()
 {
     return 0;
 }

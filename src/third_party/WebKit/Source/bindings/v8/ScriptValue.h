@@ -14,7 +14,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -39,8 +39,8 @@
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-#ifndef NDEBUG 
-#include "bindings/v8/V8GCController.h" 
+#ifndef NDEBUG
+#include "bindings/v8/V8GCController.h"
 #endif
 
 namespace WTF {
@@ -70,7 +70,10 @@ public:
     {
     }
 
-    ScriptValue& operator=(const ScriptValue& value) 
+    static ScriptValue createNull() { return ScriptValue(v8::Null()); }
+    static ScriptValue createBoolean(bool b) { return ScriptValue(b ? v8::True() : v8::False()); }
+
+    ScriptValue& operator=(const ScriptValue& value)
     {
         if (this != &value)
             m_value = value.m_value;
@@ -91,10 +94,13 @@ public:
         return operator==(value);
     }
 
+    // Note: This creates a new local Handle; not to be used in cases where is
+    // is an efficiency problem.
     bool isFunction() const
     {
         ASSERT(!hasNoValue());
-        return m_value->isFunction();
+        v8::Handle<v8::Value> value = v8Value();
+        return !value.IsEmpty() && value->IsFunction();
     }
 
     bool operator!=(const ScriptValue& value) const
@@ -102,22 +108,31 @@ public:
         return !operator==(value);
     }
 
+    // Note: This creates a new local Handle; not to be used in cases where is
+    // is an efficiency problem.
     bool isNull() const
     {
         ASSERT(!hasNoValue());
-        return m_value->isNull();
+        v8::Handle<v8::Value> value = v8Value();
+        return !value.IsEmpty() && value->IsNull();
     }
 
+    // Note: This creates a new local Handle; not to be used in cases where is
+    // is an efficiency problem.
     bool isUndefined() const
     {
         ASSERT(!hasNoValue());
-        return m_value->isUndefined();
+        v8::Handle<v8::Value> value = v8Value();
+        return !value.IsEmpty() && value->IsUndefined();
     }
 
+    // Note: This creates a new local Handle; not to be used in cases where is
+    // is an efficiency problem.
     bool isObject() const
     {
         ASSERT(!hasNoValue());
-        return m_value->isObject();
+        v8::Handle<v8::Value> value = v8Value();
+        return !value.IsEmpty() && value->IsObject();
     }
 
     bool hasNoValue() const

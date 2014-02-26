@@ -29,7 +29,8 @@ const double kContextRecreationTickRate = 0.03;
 // Measured in seconds.
 const double kSmoothnessTakesPriorityExpirationDelay = 0.25;
 
-const size_t kDrawDurationHistorySize = 60;
+const size_t kDurationHistorySize = 60;
+const double kCommitAndActivationDurationEstimationPercentile = 50.0;
 const double kDrawDurationEstimationPercentile = 100.0;
 const int kDrawDurationEstimatePaddingInMicroseconds = 0;
 
@@ -89,9 +90,13 @@ ThreadProxy::ThreadProxy(
       using_synchronous_renderer_compositor_(
           layer_tree_host->settings().using_synchronous_renderer_compositor),
       inside_draw_(false),
+      can_cancel_commit_(true),
       defer_commits_(false),
+      input_throttled_until_commit_(false),
       renew_tree_priority_on_impl_thread_pending_(false),
-      draw_duration_history_(kDrawDurationHistorySize) {
+      draw_duration_history_(kDurationHistorySize),
+      begin_frame_to_commit_duration_history_(kDurationHistorySize),
+      commit_to_activate_duration_history_(kDurationHistorySize) {
   TRACE_EVENT0("cc", "ThreadProxy::ThreadProxy");
   DCHECK(IsMainThread());
   DCHECK(layer_tree_host_);
@@ -107,7 +112,11 @@ bool ThreadProxy::CompositeAndReadback(void* pixels, gfx::Rect rect) {
   TRACE_EVENT0("cc", "ThreadProxy::CompositeAndReadback");
   DCHECK(IsMainThread());
   DCHECK(layer_tree_host_);
-  DCHECK(!defer_commits_);
+
+  if (defer_commits_) {
+    TRACE_EVENT0("cc", "CompositeAndReadback_DeferCommit");
+    return false;
+  }
 
   if (!layer_tree_host_->InitializeOutputSurfaceIfNeeded()) {
     TRACE_EVENT0("cc", "CompositeAndReadback_EarlyOut_LR_Uninitialized");
@@ -125,9 +134,14 @@ bool ThreadProxy::CompositeAndReadback(void* pixels, gfx::Rect rect) {
                    &begin_frame_sent_to_main_thread_completion));
     begin_frame_sent_to_main_thread_completion.Wait();
   }
+
   in_composite_and_readback_ = true;
   BeginFrameOnMainThread(scoped_ptr<BeginFrameAndCommitState>());
   in_composite_and_readback_ = false;
+
+  // Composite and readback requires a second commit to undo any changes
+  // that it made.
+  can_cancel_commit_ = false;
 
   // Perform a synchronous readback.
   ReadbackRequest request;
@@ -224,6 +238,8 @@ void ThreadProxy::SetVisibleOnImplThread(CompletionEvent* completion,
   TRACE_EVENT0("cc", "ThreadProxy::SetVisibleOnImplThread");
   layer_tree_host_impl_->SetVisible(visible);
   scheduler_on_impl_thread_->SetVisible(visible);
+  layer_tree_host_impl_->UpdateBackgroundAnimateTicking(
+      !scheduler_on_impl_thread_->WillDrawIfNeeded());
   completion->Signal();
 }
 
@@ -298,6 +314,17 @@ void ThreadProxy::OnOutputSurfaceInitializeAttempted(
   }
 }
 
+void ThreadProxy::SendCommitRequestToImplThreadIfNeeded() {
+  DCHECK(IsMainThread());
+  if (commit_request_sent_to_impl_thread_)
+    return;
+  commit_request_sent_to_impl_thread_ = true;
+  Proxy::ImplThreadTaskRunner()->PostTask(
+      FROM_HERE,
+      base::Bind(&ThreadProxy::SetNeedsCommitOnImplThread,
+                 impl_thread_weak_ptr_));
+}
+
 const RendererCapabilities& ThreadProxy::GetRendererCapabilities() const {
   DCHECK(IsMainThread());
   DCHECK(!layer_tree_host_->output_surface_lost());
@@ -311,30 +338,26 @@ void ThreadProxy::SetNeedsAnimate() {
 
   TRACE_EVENT0("cc", "ThreadProxy::SetNeedsAnimate");
   animate_requested_ = true;
+  can_cancel_commit_ = false;
+  SendCommitRequestToImplThreadIfNeeded();
+}
 
-  if (commit_request_sent_to_impl_thread_)
-    return;
-  commit_request_sent_to_impl_thread_ = true;
-  Proxy::ImplThreadTaskRunner()->PostTask(
-      FROM_HERE,
-      base::Bind(&ThreadProxy::SetNeedsCommitOnImplThread,
-                 impl_thread_weak_ptr_));
+void ThreadProxy::SetNeedsUpdateLayers() {
+  DCHECK(IsMainThread());
+  SendCommitRequestToImplThreadIfNeeded();
 }
 
 void ThreadProxy::SetNeedsCommit() {
   DCHECK(IsMainThread());
+  // Unconditionally set here to handle SetNeedsCommit calls during a commit.
+  can_cancel_commit_ = false;
+
   if (commit_requested_)
     return;
   TRACE_EVENT0("cc", "ThreadProxy::SetNeedsCommit");
   commit_requested_ = true;
 
-  if (commit_request_sent_to_impl_thread_)
-    return;
-  commit_request_sent_to_impl_thread_ = true;
-  Proxy::ImplThreadTaskRunner()->PostTask(
-      FROM_HERE,
-      base::Bind(&ThreadProxy::SetNeedsCommitOnImplThread,
-                 impl_thread_weak_ptr_));
+  SendCommitRequestToImplThreadIfNeeded();
 }
 
 void ThreadProxy::DidLoseOutputSurfaceOnImplThread() {
@@ -539,6 +562,24 @@ void ThreadProxy::MainThreadHasStoppedFlingingOnImplThread() {
   layer_tree_host_impl_->MainThreadHasStoppedFlinging();
 }
 
+void ThreadProxy::NotifyInputThrottledUntilCommit() {
+  DCHECK(IsMainThread());
+  Proxy::ImplThreadTaskRunner()->PostTask(
+      FROM_HERE,
+      base::Bind(&ThreadProxy::SetInputThrottledUntilCommitOnImplThread,
+                 impl_thread_weak_ptr_,
+                 true));
+}
+
+void ThreadProxy::SetInputThrottledUntilCommitOnImplThread(
+    bool is_throttled) {
+  DCHECK(IsImplThread());
+  if (is_throttled == input_throttled_until_commit_)
+    return;
+  input_throttled_until_commit_ = is_throttled;
+  RenewTreePriority();
+}
+
 void ThreadProxy::Start(scoped_ptr<OutputSurface> first_output_surface) {
   DCHECK(IsMainThread());
   DCHECK(Proxy::HasImplThread());
@@ -647,6 +688,7 @@ void ThreadProxy::ScheduledActionSendBeginFrameToMainThread() {
     begin_frame_sent_to_main_thread_completion_event_on_impl_thread_->Signal();
     begin_frame_sent_to_main_thread_completion_event_on_impl_thread_ = NULL;
   }
+  begin_frame_sent_to_main_thread_time_ = base::TimeTicks::HighResNow();
 }
 
 void ThreadProxy::BeginFrameOnMainThread(
@@ -676,20 +718,22 @@ void ThreadProxy::BeginFrameOnMainThread(
   // callbacks will trigger another frame.
   animate_requested_ = false;
 
-  if (begin_frame_state)
-    layer_tree_host_->ApplyScrollAndScale(*begin_frame_state->scroll_info);
-
   if (!in_composite_and_readback_ && !layer_tree_host_->visible()) {
     commit_requested_ = false;
     commit_request_sent_to_impl_thread_ = false;
 
     TRACE_EVENT0("cc", "EarlyOut_NotVisible");
+    bool did_handle = false;
     Proxy::ImplThreadTaskRunner()->PostTask(
         FROM_HERE,
         base::Bind(&ThreadProxy::BeginFrameAbortedByMainThreadOnImplThread,
-                   impl_thread_weak_ptr_));
+                   impl_thread_weak_ptr_,
+                   did_handle));
     return;
   }
+
+  if (begin_frame_state)
+    layer_tree_host_->ApplyScrollAndScale(*begin_frame_state->scroll_info);
 
   layer_tree_host_->WillBeginFrame();
 
@@ -714,24 +758,44 @@ void ThreadProxy::BeginFrameOnMainThread(
   // UpdateLayers.
   commit_requested_ = false;
   commit_request_sent_to_impl_thread_ = false;
+  bool can_cancel_this_commit =
+      can_cancel_commit_ && !in_composite_and_readback_;
+  can_cancel_commit_ = true;
 
   scoped_ptr<ResourceUpdateQueue> queue =
       make_scoped_ptr(new ResourceUpdateQueue);
-  layer_tree_host_->UpdateLayers(
+  bool updated = layer_tree_host_->UpdateLayers(
       queue.get(),
-      begin_frame_state ?
-          begin_frame_state->memory_allocation_limit_bytes : 0u);
+      begin_frame_state ? begin_frame_state->memory_allocation_limit_bytes
+                        : 0u);
 
   // Once single buffered layers are committed, they cannot be modified until
   // they are drawn by the impl thread.
   textures_acquired_ = false;
 
   layer_tree_host_->WillCommit();
-  // Before applying scrolls and calling animate, we set animate_requested_ to
-  // false. If it is true now, it means SetNeedAnimate was called again, but
-  // during a state when commit_request_sent_to_impl_thread_ = true. We need to
-  // force that call to happen again now so that the commit request is sent to
-  // the impl thread.
+
+  if (!updated && can_cancel_this_commit) {
+    TRACE_EVENT0("cc", "EarlyOut_NoUpdates");
+    bool did_handle = true;
+    Proxy::ImplThreadTaskRunner()->PostTask(
+        FROM_HERE,
+        base::Bind(&ThreadProxy::BeginFrameAbortedByMainThreadOnImplThread,
+                   impl_thread_weak_ptr_,
+                   did_handle));
+
+    // Although the commit is internally aborted, this is because it has been
+    // detected to be a no-op.  From the perspective of an embedder, this commit
+    // went through, and input should no longer be throttled, etc.
+    layer_tree_host_->CommitComplete();
+    layer_tree_host_->DidBeginFrame();
+    return;
+  }
+
+  // Before calling animate, we set animate_requested_ to false. If it is true
+  // now, it means SetNeedAnimate was called again, but during a state when
+  // commit_request_sent_to_impl_thread_ = true. We need to force that call to
+  // happen again now so that the commit request is sent to the impl thread.
   if (animate_requested_) {
     // Forces SetNeedsAnimate to consider posting a commit task.
     animate_requested_ = false;
@@ -827,13 +891,22 @@ void ThreadProxy::StartCommitOnImplThread(
       scheduler_on_impl_thread_->AnticipatedDrawTime());
 }
 
-void ThreadProxy::BeginFrameAbortedByMainThreadOnImplThread() {
+void ThreadProxy::BeginFrameAbortedByMainThreadOnImplThread(bool did_handle) {
   TRACE_EVENT0("cc", "ThreadProxy::BeginFrameAbortedByMainThreadOnImplThread");
   DCHECK(IsImplThread());
   DCHECK(scheduler_on_impl_thread_);
   DCHECK(scheduler_on_impl_thread_->CommitPending());
+  DCHECK(!layer_tree_host_impl_->pending_tree());
 
-  scheduler_on_impl_thread_->BeginFrameAbortedByMainThread();
+  // If the begin frame data was handled, then scroll and scale set was applied
+  // by the main thread, so the active tree needs to be updated as if these sent
+  // values were applied and committed.
+  if (did_handle) {
+    layer_tree_host_impl_->active_tree()->ApplySentScrollAndScaleDeltas();
+    layer_tree_host_impl_->active_tree()->ResetContentsTexturesPurged();
+    SetInputThrottledUntilCommitOnImplThread(false);
+  }
+  scheduler_on_impl_thread_->BeginFrameAbortedByMainThread(did_handle);
 }
 
 void ThreadProxy::ScheduledActionCommit() {
@@ -850,6 +923,8 @@ void ThreadProxy::ScheduledActionCommit() {
   layer_tree_host_->BeginCommitOnImplThread(layer_tree_host_impl_.get());
   layer_tree_host_->FinishCommitOnImplThread(layer_tree_host_impl_.get());
   layer_tree_host_impl_->CommitComplete();
+
+  SetInputThrottledUntilCommitOnImplThread(false);
 
   layer_tree_host_impl_->UpdateBackgroundAnimateTicking(
       !scheduler_on_impl_thread_->WillDrawIfNeeded());
@@ -871,15 +946,18 @@ void ThreadProxy::ScheduledActionCommit() {
     commit_completion_event_on_impl_thread_ = NULL;
   }
 
+  commit_complete_time_ = base::TimeTicks::HighResNow();
+  begin_frame_to_commit_duration_history_.InsertSample(
+      commit_complete_time_ - begin_frame_sent_to_main_thread_time_);
+
   // SetVisible kicks off the next scheduler action, so this must be last.
   scheduler_on_impl_thread_->SetVisible(layer_tree_host_impl_->visible());
 }
 
-void ThreadProxy::ScheduledActionCheckForCompletedTileUploads() {
+void ThreadProxy::ScheduledActionUpdateVisibleTiles() {
   DCHECK(IsImplThread());
-  TRACE_EVENT0("cc",
-               "ThreadProxy::ScheduledActionCheckForCompletedTileUploads");
-  layer_tree_host_impl_->CheckForCompletedTileUploads();
+  TRACE_EVENT0("cc", "ThreadProxy::ScheduledActionUpdateVisibleTiles");
+  layer_tree_host_impl_->UpdateVisibleTiles();
 }
 
 void ThreadProxy::ScheduledActionActivatePendingTreeIfNeeded() {
@@ -898,7 +976,8 @@ void ThreadProxy::ScheduledActionBeginOutputSurfaceCreation() {
 
 ScheduledActionDrawAndSwapResult
 ThreadProxy::ScheduledActionDrawAndSwapInternal(bool forced_draw) {
-  TRACE_EVENT0("cc", "ThreadProxy::ScheduledActionDrawAndSwap");
+  TRACE_EVENT1(
+      "cc", "ThreadProxy::ScheduledActionDrawAndSwap", "forced", forced_draw);
 
   ScheduledActionDrawAndSwapResult result;
   result.did_draw = false;
@@ -1059,6 +1138,7 @@ void ThreadProxy::AcquireLayerTextures() {
   completion.Wait();
 
   textures_acquired_ = true;
+  can_cancel_commit_ = false;
 }
 
 void ThreadProxy::AcquireLayerTexturesForMainThreadOnImplThread(
@@ -1099,6 +1179,16 @@ base::TimeDelta ThreadProxy::DrawDurationEstimate() {
   base::TimeDelta padding = base::TimeDelta::FromMicroseconds(
       kDrawDurationEstimatePaddingInMicroseconds);
   return historical_estimate + padding;
+}
+
+base::TimeDelta ThreadProxy::BeginFrameToCommitDurationEstimate() {
+  return begin_frame_to_commit_duration_history_.Percentile(
+      kCommitAndActivationDurationEstimationPercentile);
+}
+
+base::TimeDelta ThreadProxy::CommitToActivateDurationEstimate() {
+  return commit_to_activate_duration_history_.Percentile(
+      kCommitAndActivationDurationEstimationPercentile);
 }
 
 void ThreadProxy::ReadyToFinalizeTextureUpdates() {
@@ -1332,31 +1422,8 @@ void ThreadProxy::SchedulerStateAsStringOnImplThreadForTesting(
   request->completion.Signal();
 }
 
-skia::RefPtr<SkPicture> ThreadProxy::CapturePicture() {
-  DCHECK(IsMainThread());
-  CompletionEvent completion;
-  skia::RefPtr<SkPicture> picture;
-  {
-    DebugScopedSetMainThreadBlocked main_thread_blocked(this);
-    Proxy::ImplThreadTaskRunner()->PostTask(
-        FROM_HERE,
-        base::Bind(&ThreadProxy::CapturePictureOnImplThread,
-                   impl_thread_weak_ptr_,
-                   &completion,
-                   &picture));
-    completion.Wait();
-  }
-  return picture;
-}
-
-void ThreadProxy::CapturePictureOnImplThread(CompletionEvent* completion,
-                                             skia::RefPtr<SkPicture>* picture) {
-  DCHECK(IsImplThread());
-  *picture = layer_tree_host_impl_->CapturePicture();
-  completion->Signal();
-}
-
 void ThreadProxy::RenewTreePriority() {
+  DCHECK(IsImplThread());
   bool smoothness_takes_priority =
       layer_tree_host_impl_->pinch_gesture_active() ||
       layer_tree_host_impl_->CurrentlyScrollingLayer() ||
@@ -1381,7 +1448,8 @@ void ThreadProxy::RenewTreePriority() {
   // New content always takes priority when the active tree has
   // evicted resources or there is an invalid viewport size.
   if (layer_tree_host_impl_->active_tree()->ContentsTexturesPurged() ||
-      layer_tree_host_impl_->active_tree()->ViewportSizeInvalid())
+      layer_tree_host_impl_->active_tree()->ViewportSizeInvalid() ||
+      input_throttled_until_commit_)
     priority = NEW_CONTENT_TAKES_PRIORITY;
 
   layer_tree_host_impl_->SetTreePriority(priority);
@@ -1443,6 +1511,9 @@ void ThreadProxy::DidActivatePendingTree() {
     completion_event_for_commit_held_on_tree_activation_->Signal();
     completion_event_for_commit_held_on_tree_activation_ = NULL;
   }
+
+  commit_to_activate_duration_history_.InsertSample(
+      base::TimeTicks::HighResNow() - commit_complete_time_);
 }
 
 }  // namespace cc

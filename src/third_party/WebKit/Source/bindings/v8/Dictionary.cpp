@@ -36,12 +36,13 @@
 #include "V8SpeechRecognitionResult.h"
 #include "V8SpeechRecognitionResultList.h"
 #include "V8Storage.h"
-#include "V8Uint8Array.h"
 #include "V8VoidCallback.h"
 #include "V8Window.h"
 #include "bindings/v8/ArrayValue.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8Utilities.h"
+#include "bindings/v8/custom/V8ArrayBufferViewCustom.h"
+#include "bindings/v8/custom/V8Uint8ArrayCustom.h"
 #include "core/dom/DOMStringList.h"
 #include "modules/indexeddb/IDBKeyRange.h"
 #include "modules/speech/SpeechRecognitionError.h"
@@ -108,6 +109,11 @@ bool Dictionary::getKey(const String& key, v8::Local<v8::Value>& value) const
     if (value.IsEmpty())
         return false;
     return true;
+}
+
+bool Dictionary::get(const String& key, v8::Local<v8::Value>& value) const
+{
+    return getKey(key, value);
 }
 
 bool Dictionary::get(const String& key, bool& value) const
@@ -324,6 +330,18 @@ bool Dictionary::get(const String& key, RefPtr<Uint8Array>& value) const
     value = 0;
     if (V8Uint8Array::HasInstance(v8Value, m_isolate, worldType(m_isolate)))
         value = V8Uint8Array::toNative(v8::Handle<v8::Object>::Cast(v8Value));
+    return true;
+}
+
+bool Dictionary::get(const String& key, RefPtr<ArrayBufferView>& value) const
+{
+    v8::Local<v8::Value> v8Value;
+    if (!getKey(key, v8Value))
+        return false;
+
+    value = 0;
+    if (V8ArrayBufferView::HasInstance(v8Value, m_isolate, worldType(m_isolate)))
+        value = V8ArrayBufferView::toNative(v8::Handle<v8::Object>::Cast(v8Value));
     return true;
 }
 

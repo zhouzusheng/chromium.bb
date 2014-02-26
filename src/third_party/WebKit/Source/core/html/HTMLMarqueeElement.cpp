@@ -26,6 +26,7 @@
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/rendering/RenderMarquee.h"
 
@@ -126,15 +127,15 @@ int HTMLMarqueeElement::scrollAmount() const
     int scrollAmount = fastGetAttribute(scrollamountAttr).toInt(&ok);
     return ok && scrollAmount >= 0 ? scrollAmount : RenderStyle::initialMarqueeIncrement().intValue();
 }
-    
-void HTMLMarqueeElement::setScrollAmount(int scrollAmount, ExceptionCode& ec)
+
+void HTMLMarqueeElement::setScrollAmount(int scrollAmount, ExceptionState& es)
 {
     if (scrollAmount < 0)
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
     else
         setIntegralAttribute(scrollamountAttr, scrollAmount);
 }
-    
+
 int HTMLMarqueeElement::scrollDelay() const
 {
     bool ok;
@@ -142,25 +143,25 @@ int HTMLMarqueeElement::scrollDelay() const
     return ok && scrollDelay >= 0 ? scrollDelay : RenderStyle::initialMarqueeSpeed();
 }
 
-void HTMLMarqueeElement::setScrollDelay(int scrollDelay, ExceptionCode& ec)
+void HTMLMarqueeElement::setScrollDelay(int scrollDelay, ExceptionState& es)
 {
     if (scrollDelay < 0)
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
     else
         setIntegralAttribute(scrolldelayAttr, scrollDelay);
 }
-    
+
 int HTMLMarqueeElement::loop() const
 {
     bool ok;
     int loopValue = fastGetAttribute(loopAttr).toInt(&ok);
     return ok && loopValue > 0 ? loopValue : -1;
 }
-    
-void HTMLMarqueeElement::setLoop(int loop, ExceptionCode& ec)
+
+void HTMLMarqueeElement::setLoop(int loop, ExceptionState& es)
 {
     if (loop <= 0 && loop != -1)
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
     else
         setIntegralAttribute(loopAttr, loop);
 }
@@ -191,7 +192,7 @@ RenderMarquee* HTMLMarqueeElement::renderMarquee() const
 
 RenderObject* HTMLMarqueeElement::createRenderer(RenderStyle*)
 {
-    return new (document()->renderArena()) RenderMarquee(this);
+    return new RenderMarquee(this);
 }
 
 } // namespace WebCore

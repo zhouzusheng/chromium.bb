@@ -49,19 +49,14 @@ WebInspector.UISourceCode = function(project, parentPath, name, originURL, url, 
     this._url = url;
     this._contentType = contentType;
     this._isEditable = isEditable;
-    /**
-     * @type Array.<function(?string,boolean,string)>
-     */
+    /** @type {!Array.<function(?string,boolean,string)>} */
     this._requestContentCallbacks = [];
+    /** @type {!Set.<!WebInspector.LiveLocation>} */
     this._liveLocations = new Set();
-    /**
-     * @type {Array.<WebInspector.PresentationConsoleMessage>}
-     */
+    /** @type {!Array.<WebInspector.PresentationConsoleMessage>} */
     this._consoleMessages = [];
     
-    /**
-     * @type {Array.<WebInspector.Revision>}
-     */
+    /** @type {!Array.<WebInspector.Revision>} */
     this.history = [];
     if (this.isEditable() && this._url)
         this._restoreRevisionHistory();
@@ -116,18 +111,19 @@ WebInspector.UISourceCode.prototype = {
     /**
      * @return {string}
      */
-    fullName: function()
+    fullDisplayName: function()
     {
-        return this._project.displayName() + "/" + this.path();
+        return this._project.displayName() + "/" + (this._parentPath ? this._parentPath + "/" : "") + this.displayName(true);
     },
 
     /**
+     * @param {boolean=} skipTrim
      * @return {string}
      */
-    displayName: function()
+    displayName: function(skipTrim)
     {
-        var displayName = this.name() || this.fullName();
-        return displayName.trimEnd(100);
+        var displayName = this.name() || WebInspector.UIString("(index)");
+        return skipTrim ? displayName : displayName.trimEnd(100);
     },
 
     /**
@@ -249,6 +245,14 @@ WebInspector.UISourceCode.prototype = {
     },
 
     /**
+     * @param {function(?Date, ?number)} callback
+     */
+    requestMetadata: function(callback)
+    {
+        this._project.requestMetadata(this, callback);
+    },
+
+    /**
      * @param {function(?string,boolean,string)} callback
      */
     requestContent: function(callback)
@@ -262,7 +266,10 @@ WebInspector.UISourceCode.prototype = {
             this._project.requestFileContent(this, this._fireContentAvailable.bind(this));
     },
 
-    checkContentUpdated: function()
+    /**
+     * @param {function()=} callback
+     */
+    checkContentUpdated: function(callback)
     {
         if (!this._project.canSetFileContent())
             return;
@@ -278,21 +285,29 @@ WebInspector.UISourceCode.prototype = {
                 this._commitContent("", false);
                 this.setWorkingCopy(workingCopy);
                 delete this._checkingContent;
+                if (callback)
+                    callback();
                 return;
             }
             if (typeof this._lastAcceptedContent === "string" && this._lastAcceptedContent === updatedContent) {
                 delete this._checkingContent;
+                if (callback)
+                    callback();
                 return;
             }
             if (this._content === updatedContent) {
                 delete this._lastAcceptedContent;
                 delete this._checkingContent;
+                if (callback)
+                    callback();
                 return;
             }
 
             if (!this.isDirty()) {
                 this._commitContent(updatedContent, false);
                 delete this._checkingContent;
+                if (callback)
+                    callback();
                 return;
             }
 
@@ -302,6 +317,8 @@ WebInspector.UISourceCode.prototype = {
             else
                 this._lastAcceptedContent = updatedContent;
             delete this._checkingContent;
+            if (callback)
+                callback();
         }
     },
 
@@ -525,7 +542,8 @@ WebInspector.UISourceCode.prototype = {
      */
     setWorkingCopy: function(newWorkingCopy)
     {
-        this._mimeType = this.canonicalMimeType();
+        if (!this._mimeType)
+            this._mimeType = this.canonicalMimeType();
         this._workingCopy = newWorkingCopy;
         delete this._workingCopyGetter;
         this.dispatchEventToListeners(WebInspector.UISourceCode.Events.WorkingCopyChanged);
@@ -845,7 +863,7 @@ WebInspector.UILocation.prototype = {
      */
     linkText: function()
     {
-        var linkText = this.uiSourceCode.name() || this.uiSourceCode.fullName();
+        var linkText = this.uiSourceCode.displayName();
         if (typeof this.lineNumber === "number")
             linkText += ":" + (this.lineNumber + 1);
         return linkText;

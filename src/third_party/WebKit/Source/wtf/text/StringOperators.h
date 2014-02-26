@@ -35,8 +35,7 @@ public:
 
     operator String() const
     {
-        RefPtr<StringImpl> resultImpl = tryMakeString(m_string1, m_string2);
-        RELEASE_ASSERT(resultImpl);
+        RefPtr<StringImpl> resultImpl = makeString(m_string1, m_string2);
         return resultImpl.release();
     }
 
@@ -74,7 +73,7 @@ public:
         StringTypeAdapter<StringType1> adapter1(m_string1);
         StringTypeAdapter<StringType2> adapter2(m_string2);
         return adapter1.length() + adapter2.length();
-    }    
+    }
 
 private:
     StringType1 m_string1;
@@ -130,22 +129,6 @@ template<typename U, typename V>
 inline StringAppend<const UChar*, StringAppend<U, V> > operator+(const UChar* string1, const StringAppend<U, V>& string2)
 {
     return StringAppend<const UChar*, StringAppend<U, V> >(string1, string2);
-}
-
-inline StringAppend<ASCIILiteral, String> operator+(const ASCIILiteral& string1, const String& string2)
-{
-    return StringAppend<ASCIILiteral, String>(string1, string2);
-}
-
-inline StringAppend<ASCIILiteral, AtomicString> operator+(const ASCIILiteral& string1, const AtomicString& string2)
-{
-    return StringAppend<ASCIILiteral, AtomicString>(string1, string2);
-}
-
-template<typename U, typename V>
-inline StringAppend<ASCIILiteral, StringAppend<U, V> > operator+(const ASCIILiteral& string1, const StringAppend<U, V>& string2)
-{
-    return StringAppend<ASCIILiteral, StringAppend<U, V> >(string1, string2);
 }
 
 template<typename T>

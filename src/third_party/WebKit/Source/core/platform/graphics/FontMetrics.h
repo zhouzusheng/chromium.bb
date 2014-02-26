@@ -21,7 +21,7 @@
 #define FontMetrics_h
 
 #include "core/platform/graphics/FontBaseline.h"
-#include <wtf/MathExtras.h>
+#include "wtf/MathExtras.h"
 
 namespace WebCore {
 
@@ -75,8 +75,8 @@ public:
     void setLineSpacing(float lineSpacing) { m_lineSpacing = lineSpacing; }
 
     float xHeight() const { return m_xHeight; }
-    void setXHeight(float xHeight) 
-    { 
+    void setXHeight(float xHeight)
+    {
         m_xHeight = xHeight;
         m_hasXHeight = true;
     }

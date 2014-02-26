@@ -75,7 +75,6 @@
         '../base/base.gyp:base',
         '../base/base.gyp:test_support_base',
         '../skia/skia.gyp:skia',
-        '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
@@ -99,6 +98,7 @@
         'base/l10n/l10n_util_mac_unittest.mm',
         'base/l10n/l10n_util_unittest.cc',
         'base/l10n/l10n_util_win_unittest.cc',
+        'base/l10n/time_format_unittest.cc',
         'base/models/tree_node_iterator_unittest.cc',
         'base/range/range_mac_unittest.mm',
         'base/range/range_unittest.cc',
@@ -107,6 +107,7 @@
         'base/resource/data_pack_unittest.cc',
         'base/resource/resource_bundle_unittest.cc',
         'base/text/text_elider_unittest.cc',
+        'gfx/box_unittest.cc',
         'gfx/codec/png_codec_unittest.cc',
         'gfx/color_utils_unittest.cc',
         'gfx/display_unittest.cc',
@@ -136,11 +137,13 @@
       'all_sources': [
         '<@(_common_sources)',
         'base/accelerators/accelerator_manager_unittest.cc',
+        'base/accelerators/menu_label_accelerator_util_linux_unittest.cc',
         'base/clipboard/clipboard_unittest.cc',
         'base/clipboard/custom_data_helper_unittest.cc',
         'base/cocoa/base_view_unittest.mm',
         'base/cocoa/cocoa_event_utils_unittest.mm',
         'base/cocoa/controls/hover_image_menu_button_unittest.mm',
+        'base/cocoa/controls/hyperlink_button_cell_unittest.mm',
         'base/cocoa/events_mac_unittest.mm',
         'base/cocoa/focus_tracker_unittest.mm',
         'base/cocoa/fullscreen_window_manager_unittest.mm',
@@ -152,12 +155,12 @@
         'base/events/event_unittest.cc',
         'base/gtk/gtk_expanded_container_unittest.cc',
         'base/gtk/gtk_im_context_util_unittest.cc',
-        'base/gtk/menu_label_accelerator_util_unittest.cc',
         'base/keycodes/usb_keycode_map_unittest.cc',
+        'base/latency_info_unittest.cc',
         'base/models/list_model_unittest.cc',
         'base/models/list_selection_model_unittest.cc',
         'base/models/tree_node_model_unittest.cc',
-        'base/ozone/touch_event_converter_ozone_unittest.cc',
+        'base/ozone/evdev/touch_event_converter_ozone_unittest.cc',
         'base/test/data/resource.h',
         'base/text/bytes_formatting_unittest.cc',
         'base/text/utf16_indexing_unittest.cc',
@@ -253,6 +256,7 @@
         }],
         ['use_pango == 1', {
           'dependencies': [
+            '../build/linux/system.gyp:fontconfig',
             '../build/linux/system.gyp:pangocairo',
           ],
           'sources': [
@@ -294,8 +298,14 @@
             'base/view_prop_unittest.cc',
           ],
         }],
+        ['use_x11==1 and use_aura==1',  {
+          'sources': [
+            'base/cursor/cursor_loader_x11_unittest.cc',
+          ],
+        }],
         ['use_aura==1 or toolkit_views==1',  {
           'sources': [
+            'base/dragdrop/os_exchange_data_unittest.cc',
             'base/gestures/velocity_calculator_unittest.cc',
           ],
         }, {

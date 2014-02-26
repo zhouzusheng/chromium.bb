@@ -29,14 +29,18 @@
 #include "main/mtypes.h"
 
 
-typedef void (*FetchTexelLodFunc)(GLcontext *ctx, const GLfloat texcoord[4],
+typedef void (*FetchTexelLodFunc)(struct gl_context *ctx, const GLfloat texcoord[4],
                                   GLfloat lambda, GLuint unit, GLfloat color[4]);
 
-typedef void (*FetchTexelDerivFunc)(GLcontext *ctx, const GLfloat texcoord[4],
+typedef void (*FetchTexelDerivFunc)(struct gl_context *ctx, const GLfloat texcoord[4],
                                     const GLfloat texdx[4],
                                     const GLfloat texdy[4],
                                     GLfloat lodBias,
                                     GLuint unit, GLfloat color[4]);
+
+
+/** NOTE: This must match SWRAST_MAX_WIDTH */
+#define PROG_MAX_WIDTH 16384
 
 
 /**
@@ -47,7 +51,7 @@ struct gl_program_machine
    const struct gl_program *CurProgram;
 
    /** Fragment Input attributes */
-   GLfloat (*Attribs)[MAX_WIDTH][4];
+   GLfloat (*Attribs)[PROG_MAX_WIDTH][4];
    GLfloat (*DerivX)[4];
    GLfloat (*DerivY)[4];
    GLuint NumDeriv; /**< Max index into DerivX/Y arrays */
@@ -61,6 +65,7 @@ struct gl_program_machine
    GLfloat (*EnvParams)[4]; /**< Vertex or Fragment env parameters */
    GLuint CondCodes[4];  /**< COND_* value for x/y/z/w */
    GLint AddressReg[MAX_PROGRAM_ADDRESS_REGS][4];
+   GLfloat SystemValues[SYSTEM_VALUE_MAX][4];
 
    const GLubyte *Samplers;  /** Array mapping sampler var to tex unit */
 
@@ -74,11 +79,11 @@ struct gl_program_machine
 
 
 extern void
-_mesa_get_program_register(GLcontext *ctx, gl_register_file file,
+_mesa_get_program_register(struct gl_context *ctx, gl_register_file file,
                            GLuint index, GLfloat val[4]);
 
 extern GLboolean
-_mesa_execute_program(GLcontext *ctx,
+_mesa_execute_program(struct gl_context *ctx,
                       const struct gl_program *program,
                       struct gl_program_machine *machine);
 

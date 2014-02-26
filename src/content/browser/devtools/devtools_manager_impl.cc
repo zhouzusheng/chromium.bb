@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "content/browser/devtools/devtools_netlog_observer.h"
 #include "content/browser/devtools/render_view_devtools_agent_host.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -132,7 +132,6 @@ void DevToolsManagerImpl::BindClientHost(
   agent_to_client_host_[agent_host] = client_host;
   client_to_agent_host_[client_host] = agent_host;
   agent_host->set_close_listener(this);
-  NotifyObservers(agent_host, true);
 }
 
 void DevToolsManagerImpl::UnbindClientHost(DevToolsAgentHostImpl* agent_host,
@@ -153,7 +152,6 @@ void DevToolsManagerImpl::UnbindClientHost(DevToolsAgentHostImpl* agent_host,
         FROM_HERE,
         base::Bind(&DevToolsNetLogObserver::Detach));
   }
-  NotifyObservers(agent_host, false);
   // Lazy agent hosts can be deleted from within detach.
   // Do not access agent_host below this line.
   agent_host->Detach();

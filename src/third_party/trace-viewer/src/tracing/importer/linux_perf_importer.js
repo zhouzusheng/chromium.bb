@@ -31,6 +31,7 @@ base.require('tracing.importer.linux_perf.i915_parser');
 base.require('tracing.importer.linux_perf.mali_parser');
 base.require('tracing.importer.linux_perf.power_parser');
 base.require('tracing.importer.linux_perf.sched_parser');
+base.require('tracing.importer.linux_perf.sync_parser');
 base.require('tracing.importer.linux_perf.workqueue_parser');
 base.require('tracing.importer.linux_perf.android_parser');
 base.require('tracing.importer.linux_perf.kfunc_parser');
@@ -104,7 +105,7 @@ base.exportTo('tracing.importer', function() {
     this.eventHandlers_ = {};
   }
 
-  TestExports = {};
+  var TestExports = {};
 
   // Matches the trace record in 3.2 and later with the print-tgid option:
   //          <idle>-0    0 [001] d...  1.23: sched_switch
@@ -337,7 +338,7 @@ base.exportTo('tracing.importer', function() {
      */
     getOrCreateCpuState: function(cpuNumber) {
       if (!this.cpuStates_[cpuNumber]) {
-        var cpu = this.model_.getOrCreateCpu(cpuNumber);
+        var cpu = this.model_.kernel.getOrCreateCpu(cpuNumber);
         this.cpuStates_[cpuNumber] = new CpuState(cpu);
       }
       return this.cpuStates_[cpuNumber];
@@ -458,8 +459,8 @@ base.exportTo('tracing.importer', function() {
           return x.ts - y.ts;
         });
 
-        // Walk the slice list and put slices between each original slice
-        // to show when the thread isn't running
+        // Walk the slice list and put slices between each original slice to
+        // show when the thread isn't running.
         var slices = [];
 
         if (origSlices.length) {
@@ -529,16 +530,24 @@ base.exportTo('tracing.importer', function() {
           } else if (prevSlice.args.stateWhenDescheduled == 'x') {
             slices.push(new tracing.trace_model.Slice('', 'Task Dead', ioWaitId,
                 prevSlice.end, {}, midDuration));
-          } else if (prevSlice.args.stateWhenDescheduled == 'W') {
-            slices.push(new tracing.trace_model.Slice('', 'WakeKill', ioWaitId,
+          } else if (prevSlice.args.stateWhenDescheduled == 'K') {
+            slices.push(new tracing.trace_model.Slice('', 'Wakekill', ioWaitId,
                 prevSlice.end, {}, midDuration));
+          } else if (prevSlice.args.stateWhenDescheduled == 'W') {
+            slices.push(new tracing.trace_model.Slice('', 'Waking', ioWaitId,
+                prevSlice.end, {}, midDuration));
+          } else if (prevSlice.args.stateWhenDescheduled == 'D|K') {
+            pushSleep('Uninterruptible Sleep | WakeKill', ioWaitId);
           } else if (prevSlice.args.stateWhenDescheduled == 'D|W') {
-            pushSleep('Uninterruptable Sleep | WakeKill', ioWaitId);
+            pushSleep('Uninterruptible Sleep | Waking', ioWaitId);
           } else {
             slices.push(new tracing.trace_model.Slice('', 'UNKNOWN', ioWaitId,
                 prevSlice.end, {}, midDuration));
-            this.model_.importErrors.push('Unrecognized sleep state: ' +
-                prevSlice.args.stateWhenDescheduled);
+            this.model_.importWarning({
+              type: 'parse_error',
+              message: 'Unrecognized sleep state: ' +
+                  prevSlice.args.stateWhenDescheduled
+            });
           }
 
           slices.push(new tracing.trace_model.Slice('', 'Running', runningId,
@@ -604,7 +613,7 @@ base.exportTo('tracing.importer', function() {
         throw new Error('Cannot abort, have alrady pushedCpuDataToThreads.');
 
       for (var cpuNumber in this.cpuStates_)
-        delete this.model_.cpus[cpuNumber];
+        delete this.model_.kernel.cpus[cpuNumber];
       for (var kernelThreadName in this.kernelThreadStates_) {
         var kthread = this.kernelThreadStates_[kernelThreadName];
         var thread = kthread.thread;
@@ -612,8 +621,10 @@ base.exportTo('tracing.importer', function() {
         delete process.threads[thread.tid];
         delete this.model_.processes[process.pid];
       }
-      this.model_.importErrors.push(
-          'Cannot import kernel trace without a clock sync.');
+      this.model_.importWarning({
+        type: 'clock_sync',
+        message: 'Cannot import kernel trace without a clock sync.'
+      });
     },
 
     /**
@@ -662,12 +673,6 @@ base.exportTo('tracing.importer', function() {
       this.wakeups_.push({ts: ts, tid: pid, fromTid: fromPid});
     },
 
-    importError: function(message) {
-      this.model_.importErrors.push(
-          'Line ' + (this.lineNumberBase + this.lineNumber + 1) +
-          ': ' + message);
-    },
-
     /**
      * Processes a trace_event_clock_sync event.
      */
@@ -692,7 +697,8 @@ base.exportTo('tracing.importer', function() {
       if (!event) {
         // Check if the event matches events traced by the Android framework
         var tag = eventBase.details.substring(0, 2);
-        if (tag == 'B|' || tag == 'E' || tag == 'E|' || tag == 'C|') {
+        if (tag == 'B|' || tag == 'E' || tag == 'E|' || tag == 'C|' ||
+            tag == 'S|' || tag == 'F|') {
           eventBase.subEventName = 'android';
         } else {
           return false;
@@ -705,7 +711,10 @@ base.exportTo('tracing.importer', function() {
       var writeEventName = eventName + ':' + eventBase.subEventName;
       var handler = this.eventHandlers_[writeEventName];
       if (!handler) {
-        this.importError('Unknown trace_marking_write event ' + writeEventName);
+        this.model_.importWarning({
+          type: 'parse_error',
+          message: 'Unknown trace_marking_write event ' + writeEventName
+        });
         return true;
       }
       return handler(writeEventName, cpuNumber, pid, ts, eventBase, threadName);
@@ -735,13 +744,19 @@ base.exportTo('tracing.importer', function() {
         if (lineParser == null) {
           lineParser = autoDetectLineParser(line);
           if (lineParser == null) {
-            this.importError('Cannot parse line: ' + line);
+            this.model_.importWarning({
+              type: 'parse_error',
+              message: 'Cannot parse line: ' + line
+            });
             continue;
           }
         }
         var eventBase = lineParser(line);
         if (!eventBase) {
-          this.importError('Unrecognized line: ' + line);
+          this.model_.importWarning({
+            type: 'parse_error',
+            message: 'Unrecognized line: ' + line
+          });
           continue;
         }
 
@@ -752,11 +767,18 @@ base.exportTo('tracing.importer', function() {
 
         var handler = this.eventHandlers_[eventName];
         if (!handler) {
-          this.importError('Unknown event ' + eventName + ' (' + line + ')');
+          this.model_.importWarning({
+            type: 'parse_error',
+            message: 'Unknown event ' + eventName + ' (' + line + ')'
+          });
           continue;
         }
-        if (!handler(eventName, cpuNumber, pid, ts, eventBase))
-          this.importError('Malformed ' + eventName + ' event (' + line + ')');
+        if (!handler(eventName, cpuNumber, pid, ts, eventBase)) {
+          this.model_.importWarning({
+            type: 'parse_error',
+            message: 'Malformed ' + eventName + ' event (' + line + ')'
+          });
+        }
       }
     }
   };

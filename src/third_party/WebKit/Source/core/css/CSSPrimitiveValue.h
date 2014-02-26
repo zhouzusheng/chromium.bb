@@ -32,14 +32,15 @@
 
 namespace WebCore {
 
+class CSSBasicShape;
 class CSSCalcValue;
 class Counter;
+class ExceptionState;
 class Pair;
 class Quad;
 class RGBColor;
 class Rect;
 class RenderStyle;
-class CSSBasicShape;
 
 struct Length;
 
@@ -195,6 +196,7 @@ public:
     bool isViewportPercentageLength() const { return m_primitiveUnitType >= CSS_VW && m_primitiveUnitType <= CSS_VMAX; }
     bool isFlex() const { return primitiveType() == CSS_FR; }
     bool isValueID() const { return m_primitiveUnitType == CSS_VALUE_ID; }
+    bool colorIsDerivedFromElement() const;
 
     static PassRefPtr<CSSPrimitiveValue> createIdentifier(CSSValueID valueID) { return adoptRef(new CSSPrimitiveValue(valueID)); }
     static PassRefPtr<CSSPrimitiveValue> createIdentifier(CSSPropertyID propertyID) { return adoptRef(new CSSPrimitiveValue(propertyID)); }
@@ -252,52 +254,52 @@ public:
      * this is screen/printer dependent, so we probably need a config option for this,
      * and some tool to calibrate.
      */
-    template<typename T> T computeLength(RenderStyle* currStyle, RenderStyle* rootStyle, float multiplier = 1.0f, bool computingFontSize = false);
+    template<typename T> T computeLength(const RenderStyle* currStyle, const RenderStyle* rootStyle, float multiplier = 1.0f, bool computingFontSize = false);
 
     // Converts to a Length, mapping various unit types appropriately.
-    template<int> Length convertToLength(RenderStyle* currStyle, RenderStyle* rootStyle, double multiplier = 1.0, bool computingFontSize = false);
+    template<int> Length convertToLength(const RenderStyle* currStyle, const RenderStyle* rootStyle, double multiplier = 1.0, bool computingFontSize = false);
 
     // use with care!!!
     void setPrimitiveType(unsigned short type) { m_primitiveUnitType = type; }
 
-    double getDoubleValue(unsigned short unitType, ExceptionCode&) const;
+    double getDoubleValue(unsigned short unitType, ExceptionState&) const;
     double getDoubleValue(unsigned short unitType) const;
     double getDoubleValue() const;
 
-    void setFloatValue(unsigned short unitType, double floatValue, ExceptionCode&);
-    float getFloatValue(unsigned short unitType, ExceptionCode& ec) const { return getValue<float>(unitType, ec); }
+    void setFloatValue(unsigned short unitType, double floatValue, ExceptionState&);
+    float getFloatValue(unsigned short unitType, ExceptionState& es) const { return getValue<float>(unitType, es); }
     float getFloatValue(unsigned short unitType) const { return getValue<float>(unitType); }
     float getFloatValue() const { return getValue<float>(); }
 
-    int getIntValue(unsigned short unitType, ExceptionCode& ec) const { return getValue<int>(unitType, ec); }
+    int getIntValue(unsigned short unitType, ExceptionState& es) const { return getValue<int>(unitType, es); }
     int getIntValue(unsigned short unitType) const { return getValue<int>(unitType); }
     int getIntValue() const { return getValue<int>(); }
 
-    template<typename T> inline T getValue(unsigned short unitType, ExceptionCode& ec) const { return clampTo<T>(getDoubleValue(unitType, ec)); }
+    template<typename T> inline T getValue(unsigned short unitType, ExceptionState& es) const { return clampTo<T>(getDoubleValue(unitType, es)); }
     template<typename T> inline T getValue(unsigned short unitType) const { return clampTo<T>(getDoubleValue(unitType)); }
     template<typename T> inline T getValue() const { return clampTo<T>(getDoubleValue()); }
 
-    void setStringValue(unsigned short stringType, const String& stringValue, ExceptionCode&);
-    String getStringValue(ExceptionCode&) const;
+    void setStringValue(unsigned short stringType, const String& stringValue, ExceptionState&);
+    String getStringValue(ExceptionState&) const;
     String getStringValue() const;
 
-    Counter* getCounterValue(ExceptionCode&) const;
+    Counter* getCounterValue(ExceptionState&) const;
     Counter* getCounterValue() const { return m_primitiveUnitType != CSS_COUNTER ? 0 : m_value.counter; }
 
-    Rect* getRectValue(ExceptionCode&) const;
+    Rect* getRectValue(ExceptionState&) const;
     Rect* getRectValue() const { return m_primitiveUnitType != CSS_RECT ? 0 : m_value.rect; }
 
-    Quad* getQuadValue(ExceptionCode&) const;
+    Quad* getQuadValue(ExceptionState&) const;
     Quad* getQuadValue() const { return m_primitiveUnitType != CSS_QUAD ? 0 : m_value.quad; }
 
-    PassRefPtr<RGBColor> getRGBColorValue(ExceptionCode&) const;
+    PassRefPtr<RGBColor> getRGBColorValue(ExceptionState&) const;
     RGBA32 getRGBA32Value() const { return m_primitiveUnitType != CSS_RGBCOLOR ? 0 : m_value.rgbcolor; }
 
-    Pair* getPairValue(ExceptionCode&) const;
+    Pair* getPairValue(ExceptionState&) const;
     Pair* getPairValue() const { return m_primitiveUnitType != CSS_PAIR ? 0 : m_value.pair; }
 
     CSSBasicShape* getShapeValue() const { return m_primitiveUnitType != CSS_SHAPE ? 0 : m_value.shape; }
-    
+
     CSSCalcValue* cssCalcValue() const { return m_primitiveUnitType != CSS_CALC ? 0 : m_value.calc; }
 
     CSSPropertyID getPropertyID() const { return m_primitiveUnitType == CSS_PROPERTY_ID ? m_value.propertyID : CSSPropertyInvalid; }
@@ -305,7 +307,7 @@ public:
 
     template<typename T> inline operator T() const; // Defined in CSSPrimitiveValueMappings.h
 
-    String customCssText() const;
+    String customCssText(CssTextFormattingFlags = QuoteCSSStringIfNeeded) const;
     String customSerializeResolvingVariables(const HashMap<AtomicString, String>&) const;
     bool hasVariableReference() const;
 
@@ -314,13 +316,11 @@ public:
     void addSubresourceStyleURLs(ListHashSet<KURL>&, const StyleSheetContents*) const;
 
     Length viewportPercentageLength();
-    
+
     PassRefPtr<CSSPrimitiveValue> cloneForCSSOM() const;
     void setCSSOMSafe() { m_isCSSOMSafe = true; }
 
     bool equals(const CSSPrimitiveValue&) const;
-
-    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
     static UnitTypes canonicalUnitTypeForCategory(UnitCategory);
     static double conversionToCanonicalUnitsScaleFactor(unsigned short unitType);
@@ -360,7 +360,7 @@ private:
     void init(PassRefPtr<CSSCalcValue>);
     bool getDoubleValueInternal(UnitTypes targetUnitType, double* result) const;
 
-    double computeLengthDouble(RenderStyle* currentStyle, RenderStyle* rootStyle, float multiplier, bool computingFontSize);
+    double computeLengthDouble(const RenderStyle* currentStyle, const RenderStyle* rootStyle, float multiplier, bool computingFontSize);
 
     union {
         CSSPropertyID propertyID;

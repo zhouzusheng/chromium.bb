@@ -19,7 +19,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef HTMLViewSourceDocument_h
@@ -35,15 +35,15 @@ class HTMLToken;
 
 class HTMLViewSourceDocument FINAL : public HTMLDocument {
 public:
-    static PassRefPtr<HTMLViewSourceDocument> create(Frame* frame, const KURL& url, const String& mimeType)
+    static PassRefPtr<HTMLViewSourceDocument> create(const DocumentInit& initializer, const String& mimeType)
     {
-        return adoptRef(new HTMLViewSourceDocument(frame, url, mimeType));
+        return adoptRef(new HTMLViewSourceDocument(initializer, mimeType));
     }
 
     void addSource(const String&, HTMLToken&);
 
 private:
-    HTMLViewSourceDocument(Frame*, const KURL&, const String& mimeType);
+    HTMLViewSourceDocument(const DocumentInit&, const String& mimeType);
 
     virtual PassRefPtr<DocumentParser> createParser() OVERRIDE;
 
@@ -65,6 +65,7 @@ private:
     RefPtr<Element> m_current;
     RefPtr<HTMLTableSectionElement> m_tbody;
     RefPtr<HTMLTableCellElement> m_td;
+    int m_lineNumber;
 };
 
 }

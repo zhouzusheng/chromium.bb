@@ -34,46 +34,63 @@
 #include "core/platform/graphics/GraphicsContext3D.h"
 #include "core/platform/graphics/GraphicsLayer.h"
 #include "core/platform/graphics/chromium/Canvas2DLayerManager.h"
+#include "core/platform/graphics/gpu/SharedGraphicsContext3D.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositorSupport.h"
 #include "public/platform/WebGraphicsContext3D.h"
 
 using WebKit::WebExternalTextureLayer;
 using WebKit::WebGraphicsContext3D;
-using WebKit::WebTextureUpdater;
 
 namespace WebCore {
 
-Canvas2DLayerBridge::Canvas2DLayerBridge(PassRefPtr<GraphicsContext3D> context, SkDeferredCanvas* canvas, OpacityMode opacityMode, ThreadMode threadMode)
+static SkSurface* createSurface(GraphicsContext3D* context3D, const IntSize& size)
+{
+    ASSERT(!context3D->webContext()->isContextLost());
+    GrContext* gr = context3D->grContext();
+    if (!gr)
+        return 0;
+    gr->resetContext();
+    SkImage::Info info;
+    info.fWidth = size.width();
+    info.fHeight = size.height();
+    info.fColorType = SkImage::kPMColor_ColorType;
+    info.fAlphaType = SkImage::kPremul_AlphaType;
+    return SkSurface::NewRenderTarget(gr, info);
+}
+
+PassOwnPtr<Canvas2DLayerBridge> Canvas2DLayerBridge::create(PassRefPtr<GraphicsContext3D> context, const IntSize& size, OpacityMode opacityMode)
+{
+    TRACE_EVENT_INSTANT0("test_gpu", "Canvas2DLayerBridgeCreation");
+    SkAutoTUnref<SkSurface> surface(createSurface(context.get(), size));
+    if (!surface.get())
+        return PassOwnPtr<Canvas2DLayerBridge>();
+    SkDeferredCanvas* canvas = SkDeferredCanvas::Create(surface.get());
+    OwnPtr<Canvas2DLayerBridge> layerBridge = adoptPtr(new Canvas2DLayerBridge(context, canvas, opacityMode));
+    return layerBridge.release();
+}
+
+Canvas2DLayerBridge::Canvas2DLayerBridge(PassRefPtr<GraphicsContext3D> context, SkDeferredCanvas* canvas, OpacityMode opacityMode)
     : m_canvas(canvas)
     , m_context(context)
     , m_bytesAllocated(0)
     , m_didRecordDrawCommand(false)
+    , m_surfaceIsValid(true)
     , m_framesPending(0)
     , m_rateLimitingEnabled(false)
     , m_next(0)
     , m_prev(0)
-#if ENABLE(CANVAS_USES_MAILBOX)
     , m_lastImageId(0)
-#endif
 {
     ASSERT(m_canvas);
     // Used by browser tests to detect the use of a Canvas2DLayerBridge.
     TRACE_EVENT_INSTANT0("test_gpu", "Canvas2DLayerBridgeCreation");
-    m_canvas->setNotificationClient(this);
-#if ENABLE(CANVAS_USES_MAILBOX)
-    m_layer = adoptPtr(WebKit::Platform::current()->compositorSupport()->createExternalTextureLayerForMailbox(this));
-#else
     m_layer = adoptPtr(WebKit::Platform::current()->compositorSupport()->createExternalTextureLayer(this));
-    m_layer->setRateLimitContext(threadMode == SingleThread);
-    GrRenderTarget* renderTarget = reinterpret_cast<GrRenderTarget*>(m_canvas->getDevice()->accessRenderTarget());
-    if (renderTarget) {
-        m_layer->setTextureId(renderTarget->asTexture()->getTextureHandle());
-    }
-#endif
     m_layer->setOpaque(opacityMode == Opaque);
+    m_layer->setBlendBackgroundColor(opacityMode != Opaque);
     GraphicsLayer::registerContentsLayer(m_layer->layer());
     m_layer->setRateLimitContext(m_rateLimitingEnabled);
+    m_canvas->setNotificationClient(this);
 }
 
 Canvas2DLayerBridge::~Canvas2DLayerBridge()
@@ -81,11 +98,9 @@ Canvas2DLayerBridge::~Canvas2DLayerBridge()
     GraphicsLayer::unregisterContentsLayer(m_layer->layer());
     Canvas2DLayerManager::get().layerToBeDestroyed(this);
     m_canvas->setNotificationClient(0);
+    m_mailboxes.clear();
     m_layer->clearTexture();
     m_layer.clear();
-#if ENABLE(CANVAS_USES_MAILBOX)
-    m_mailboxes.clear();
-#endif
 }
 
 void Canvas2DLayerBridge::limitPendingFrames()
@@ -106,9 +121,14 @@ void Canvas2DLayerBridge::limitPendingFrames()
 
 void Canvas2DLayerBridge::prepareForDraw()
 {
-#if !ENABLE(CANVAS_USES_MAILBOX)
-    m_layer->willModifyTexture();
-#endif
+    ASSERT(m_layer);
+    if (!isValid()) {
+        if (m_canvas) {
+            // drop pending commands because there is no surface to draw to
+            m_canvas->silentFlush();
+        }
+        return;
+    }
     m_context->makeContextCurrent();
 }
 
@@ -163,37 +183,52 @@ void Canvas2DLayerBridge::flush()
     }
 }
 
-unsigned Canvas2DLayerBridge::prepareTexture(WebTextureUpdater& updater)
-{
-#if ENABLE(CANVAS_USES_MAILBOX)
-    ASSERT_NOT_REACHED();
-    return 0;
-#else
-    m_context->makeContextCurrent();
-
-    TRACE_EVENT0("cc", "Canvas2DLayerBridge::SkCanvas::flush");
-    m_canvas->flush();
-    m_context->flush();
-
-    // Notify skia that the state of the backing store texture object will be touched by the compositor
-    GrRenderTarget* renderTarget = reinterpret_cast<GrRenderTarget*>(m_canvas->getDevice()->accessRenderTarget());
-    if (renderTarget) {
-        GrTexture* texture = renderTarget->asTexture();
-        texture->invalidateCachedState();
-        return texture->getTextureHandle();
-    }
-    return 0;
-#endif  // !ENABLE(CANVAS_USES_MAILBOX)
-}
-
 WebGraphicsContext3D* Canvas2DLayerBridge::context()
 {
+    // Check on m_layer is necessary because context() may be called during
+    // the destruction of m_layer
+    if (m_layer) {
+        isValid(); // To ensure rate limiter is disabled if context is lost.
+    }
     return m_context->webContext();
 }
 
-bool Canvas2DLayerBridge::prepareMailbox(WebKit::WebExternalTextureMailbox* outMailbox)
+bool Canvas2DLayerBridge::isValid()
 {
-#if ENABLE(CANVAS_USES_MAILBOX)
+    ASSERT(m_layer);
+    if (m_context->webContext()->isContextLost() || !m_surfaceIsValid) {
+        // Attempt to recover.
+        m_layer->clearTexture();
+        m_mailboxes.clear();
+        RefPtr<GraphicsContext3D> sharedContext = SharedGraphicsContext3D::get();
+        if (!sharedContext || sharedContext->webContext()->isContextLost()) {
+            m_surfaceIsValid = false;
+        } else {
+            m_context = sharedContext;
+            IntSize size(m_canvas->getTopDevice()->width(), m_canvas->getTopDevice()->height());
+            SkAutoTUnref<SkSurface> surface(createSurface(m_context.get(), size));
+            if (surface.get()) {
+                m_canvas->setSurface(surface.get());
+                m_surfaceIsValid = true;
+                // FIXME: draw sad canvas picture into new buffer crbug.com/243842
+            } else {
+                // Surface allocation failed. Set m_surfaceIsValid to false to
+                // trigger subsequent retry.
+                m_surfaceIsValid = false;
+            }
+        }
+    }
+    if (!m_surfaceIsValid)
+        setRateLimitingEnabled(false);
+    return m_surfaceIsValid;
+
+}
+
+bool Canvas2DLayerBridge::prepareMailbox(WebKit::WebExternalTextureMailbox* outMailbox, WebKit::WebExternalBitmap* bitmap)
+{
+    ASSERT(!bitmap);
+    if (!isValid())
+        return false;
     // Release to skia textures that were previouosly released by the
     // compositor. We do this before acquiring the next snapshot in
     // order to cap maximum gpu memory consumption.
@@ -241,19 +276,12 @@ bool Canvas2DLayerBridge::prepareMailbox(WebKit::WebExternalTextureMailbox* outM
     m_context->bindTexture(GraphicsContext3D::TEXTURE_2D, 0);
     // Because we are changing the texture binding without going through skia,
     // we must dirty the context.
-    // TODO(piman): expose finer granularity reset. We only really want to
-    // 'dirty' the current texture binding.
-    m_context->grContext()->resetContext();
+    m_context->grContext()->resetContext(kTextureBinding_GrGLBackendState);
 
     *outMailbox = mailboxInfo->m_mailbox;
     return true;
-#else
-    ASSERT_NOT_REACHED();
-    return false;
-#endif
 }
 
-#if ENABLE(CANVAS_USES_MAILBOX)
 Canvas2DLayerBridge::MailboxInfo* Canvas2DLayerBridge::createMailboxInfo() {
     MailboxInfo* mailboxInfo;
     for (mailboxInfo = m_mailboxes.begin(); mailboxInfo < m_mailboxes.end(); mailboxInfo++) {
@@ -276,26 +304,23 @@ Canvas2DLayerBridge::MailboxInfo* Canvas2DLayerBridge::createMailboxInfo() {
     ASSERT(mailboxInfo < m_mailboxes.end());
     return mailboxInfo;
 }
-#endif
 
 void Canvas2DLayerBridge::mailboxReleased(const WebKit::WebExternalTextureMailbox& mailbox)
 {
-#if ENABLE(CANVAS_USES_MAILBOX)
     Vector<MailboxInfo>::iterator mailboxInfo;
     for (mailboxInfo = m_mailboxes.begin(); mailboxInfo < m_mailboxes.end(); mailboxInfo++) {
-         if (!memcmp(mailboxInfo->m_mailbox.name, mailbox.name, sizeof(mailbox.name))) {
-             mailboxInfo->m_mailbox.syncPoint = mailbox.syncPoint;
-             ASSERT(mailboxInfo->m_status == MailboxInUse);
-             mailboxInfo->m_status = MailboxReleased;
-             return;
-         }
-     }
-#endif
-     ASSERT_NOT_REACHED();
+        if (!memcmp(mailboxInfo->m_mailbox.name, mailbox.name, sizeof(mailbox.name))) {
+            mailboxInfo->m_mailbox.syncPoint = mailbox.syncPoint;
+            ASSERT(mailboxInfo->m_status == MailboxInUse);
+            mailboxInfo->m_status = MailboxReleased;
+            return;
+        }
+    }
 }
 
 WebKit::WebLayer* Canvas2DLayerBridge::layer()
 {
+    ASSERT(m_layer);
     return m_layer->layer();
 }
 
@@ -307,6 +332,8 @@ void Canvas2DLayerBridge::contextAcquired()
 
 unsigned Canvas2DLayerBridge::backBufferTexture()
 {
+    if (!isValid())
+        return 0;
     contextAcquired();
     m_canvas->flush();
     m_context->flush();
@@ -317,7 +344,6 @@ unsigned Canvas2DLayerBridge::backBufferTexture()
     return 0;
 }
 
-#if ENABLE(CANVAS_USES_MAILBOX)
 Canvas2DLayerBridge::MailboxInfo::MailboxInfo(const MailboxInfo& other) {
     // This copy constructor should only be used for Vector reallocation
     // Assuming 'other' is to be destroyed, we swap m_image ownership
@@ -326,6 +352,5 @@ Canvas2DLayerBridge::MailboxInfo::MailboxInfo(const MailboxInfo& other) {
     m_image.swap(const_cast<SkAutoTUnref<SkImage>*>(&other.m_image));
     m_status = other.m_status;
 }
-#endif
 
 }

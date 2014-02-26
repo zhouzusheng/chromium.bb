@@ -74,8 +74,8 @@ class ScopeContentDistribution {
 public:
     ScopeContentDistribution();
 
-    InsertionPoint* insertionPointAssignedTo() const { return m_insertionPointAssignedTo; }
-    void setInsertionPointAssignedTo(InsertionPoint* insertionPoint) { m_insertionPointAssignedTo = insertionPoint; }
+    InsertionPoint* insertionPointAssignedTo() const { return m_insertionPointAssignedTo.get(); }
+    void setInsertionPointAssignedTo(PassRefPtr<InsertionPoint>);
 
     void registerInsertionPoint(InsertionPoint*);
     void unregisterInsertionPoint(InsertionPoint*);
@@ -90,17 +90,8 @@ public:
     void invalidateInsertionPointList();
     const Vector<RefPtr<InsertionPoint> >& ensureInsertionPointList(ShadowRoot*);
 
-    bool isUsedForRendering() const;
-
-    static bool hasShadowElement(const ShadowRoot*);
-    static bool hasContentElement(const ShadowRoot*);
-    static bool hasInsertionPoint(const ShadowRoot*);
-    static bool hasElementShadow(const ShadowRoot* holder) { return countElementShadow(holder); }
-    static unsigned countElementShadow(const ShadowRoot*);
-    static InsertionPoint* assignedTo(const ShadowRoot*);
-
 private:
-    InsertionPoint* m_insertionPointAssignedTo;
+    RefPtr<InsertionPoint> m_insertionPointAssignedTo;
     unsigned m_numberOfShadowElementChildren;
     unsigned m_numberOfContentElementChildren;
     unsigned m_numberOfElementShadowChildren;
@@ -111,56 +102,33 @@ private:
 class ContentDistributor {
     WTF_MAKE_NONCOPYABLE(ContentDistributor);
 public:
-    enum Validity {
-        Valid = 0,
-        Invalidated = 1,
-        Invalidating = 2,
-        Undetermined = 3
-    };
-
     ContentDistributor();
     ~ContentDistributor();
 
     InsertionPoint* findInsertionPointFor(const Node* key) const;
     const SelectRuleFeatureSet& ensureSelectFeatureSet(ElementShadow*);
 
-    void distributeSelectionsTo(InsertionPoint*, const ContentDistribution& pool, Vector<bool>& distributed);
+    void distributeSelectionsTo(InsertionPoint*, const Vector<Node*>& pool, Vector<bool>& distributed);
     void distributeNodeChildrenTo(InsertionPoint*, ContainerNode*);
 
-    void invalidateDistribution(Element* host);
-    void didShadowBoundaryChange(Element* host);
     void didAffectSelector(Element* host, AffectedSelectorMask);
     void willAffectSelector(Element* host);
-    void setNeedsStyleRecalcIfDistributedTo(InsertionPoint*);
 
-    static void ensureDistribution(Element*);
+    void distribute(Element* host);
+    void clearDistribution(Element* host);
 
 private:
-    void distribute(Element* host);
-    bool invalidate(Element* host, Vector<Node*, 8>& nodesNeedingReattach);
-    void populate(Node*, ContentDistribution&);
+    void populate(Node*, Vector<Node*>&);
 
     void collectSelectFeatureSetFrom(ShadowRoot*);
     bool needsSelectFeatureSet() const { return m_needsSelectFeatureSet; }
     void setNeedsSelectFeatureSet() { m_needsSelectFeatureSet = true; }
 
-    void setValidity(Validity validity) { m_validity = validity; }
-    bool isValid() const { return m_validity == Valid; }
-    bool needsDistribution() const;
-    bool needsInvalidation() const { return m_validity != Invalidated; }
-
     typedef HashMap<const Node*, RefPtr<InsertionPoint> > NodeInsertionPointMap;
     NodeInsertionPointMap m_nodeToInsertionPoint;
     SelectRuleFeatureSet m_selectFeatures;
-    unsigned m_needsSelectFeatureSet : 1;
-    unsigned m_validity : 2;
+    bool m_needsSelectFeatureSet;
 };
-
-inline bool ContentDistributor::needsDistribution() const
-{
-    // During the invalidation, re-distribution should be supressed.
-    return m_validity != Valid && m_validity != Invalidating;
-}
 
 }
 

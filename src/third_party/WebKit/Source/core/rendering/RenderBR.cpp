@@ -23,13 +23,12 @@
 #include "core/rendering/RenderBR.h"
 
 #include "core/dom/Document.h"
-#include "core/editing/VisiblePosition.h"
 
 namespace WebCore {
 
 static PassRefPtr<StringImpl> newlineString()
 {
-    DEFINE_STATIC_LOCAL(const String, string, (ASCIILiteral("\n")));
+    DEFINE_STATIC_LOCAL(const String, string, ("\n"));
     return string.impl();
 }
 
@@ -50,10 +49,10 @@ int RenderBR::lineHeight(bool firstLine) const
         if (s != style())
             return s->computedLineHeight(view());
     }
-    
+
     if (m_lineHeight == -1)
         m_lineHeight = style()->computedLineHeight(view());
-    
+
     return m_lineHeight;
 }
 
@@ -63,19 +62,19 @@ void RenderBR::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
     m_lineHeight = -1;
 }
 
-int RenderBR::caretMinOffset() const 
-{ 
+int RenderBR::caretMinOffset() const
+{
     return 0;
 }
 
-int RenderBR::caretMaxOffset() const 
-{ 
+int RenderBR::caretMaxOffset() const
+{
     return 1;
 }
 
-VisiblePosition RenderBR::positionForPoint(const LayoutPoint&)
+PositionWithAffinity RenderBR::positionForPoint(const LayoutPoint&)
 {
-    return createVisiblePosition(0, DOWNSTREAM);
+    return createPositionWithAffinity(0, DOWNSTREAM);
 }
 
 } // namespace WebCore

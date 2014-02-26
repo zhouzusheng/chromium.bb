@@ -23,7 +23,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -32,6 +32,7 @@
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionState.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSValue.h"
 #include "core/css/StylePropertySet.h"
@@ -40,7 +41,6 @@
 #include "core/dom/ContextFeatures.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Range.h"
 #include "core/editing/Editor.h"
@@ -51,6 +51,8 @@
 #include "core/editing/htmlediting.h"
 #include "core/html/HTMLBodyElement.h"
 #include "core/html/HTMLElement.h"
+#include "core/html/HTMLHtmlElement.h"
+#include "core/html/HTMLTableElement.h"
 #include "core/html/HTMLTextFormControlElement.h"
 #include "core/page/Frame.h"
 #include "core/rendering/RenderObject.h"
@@ -110,7 +112,7 @@ static void completeURLs(DocumentFragment* fragment, const String& baseURL)
     for (size_t i = 0; i < numChanges; ++i)
         changes[i].apply();
 }
-    
+
 class StyledMarkupAccumulator : public MarkupAccumulator {
 public:
     enum RangeFullySelectsNode { DoesFullySelectNode, DoesNotFullySelectNode };
@@ -191,8 +193,8 @@ void StyledMarkupAccumulator::appendStyleNodeOpenTag(StringBuilder& out, StylePr
 
 const String& StyledMarkupAccumulator::styleNodeCloseTag(bool isBlock)
 {
-    DEFINE_STATIC_LOCAL(const String, divClose, (ASCIILiteral("</div>")));
-    DEFINE_STATIC_LOCAL(const String, styleSpanClose, (ASCIILiteral("</span>")));
+    DEFINE_STATIC_LOCAL(const String, divClose, ("</div>"));
+    DEFINE_STATIC_LOCAL(const String, styleSpanClose, ("</span>"));
     return isBlock ? divClose : styleSpanClose;
 }
 
@@ -211,7 +213,7 @@ String StyledMarkupAccumulator::takeResults()
 }
 
 void StyledMarkupAccumulator::appendText(StringBuilder& out, Text* text)
-{    
+{
     const bool parentIsTextarea = text->parentElement() && text->parentElement()->tagQName() == textareaTag;
     const bool wrappingSpan = shouldApplyWrappingStyle(text) && !parentIsTextarea;
     if (wrappingSpan) {
@@ -222,9 +224,7 @@ void StyledMarkupAccumulator::appendText(StringBuilder& out, Text* text)
         // FIXME: Should this be included in forceInline?
         wrappingStyle->style()->setProperty(CSSPropertyFloat, CSSValueNone);
 
-        StringBuilder openTag;
-        appendStyleNodeOpenTag(openTag, wrappingStyle->style(), text->document());
-        out.append(openTag.characters(), openTag.length());
+        appendStyleNodeOpenTag(out, wrappingStyle->style(), text->document());
     }
 
     if (!shouldAnnotate() || parentIsTextarea)
@@ -240,7 +240,7 @@ void StyledMarkupAccumulator::appendText(StringBuilder& out, Text* text)
     if (wrappingSpan)
         out.append(styleNodeCloseTag());
 }
-    
+
 String StyledMarkupAccumulator::renderedText(const Node* node, const Range* range)
 {
     if (!node->isTextNode())
@@ -299,8 +299,8 @@ void StyledMarkupAccumulator::appendElement(StringBuilder& out, Element* element
         } else
             newInlineStyle = EditingStyle::create();
 
-        if (element->isStyledElement() && static_cast<StyledElement*>(element)->inlineStyle())
-            newInlineStyle->overrideWithStyle(static_cast<StyledElement*>(element)->inlineStyle());
+        if (element->isStyledElement() && element->inlineStyle())
+            newInlineStyle->overrideWithStyle(element->inlineStyle());
 
         if (shouldAnnotateOrForceInline) {
             if (shouldAnnotate())
@@ -352,7 +352,7 @@ Node* StyledMarkupAccumulator::traverseNodesForSerialization(Node* startNode, No
         ASSERT(n);
         if (!n)
             break;
-        
+
         next = NodeTraversal::next(n);
         bool openedTag = false;
 
@@ -431,7 +431,7 @@ static Node* ancestorToRetainStructureAndAppearanceForBlock(Node* commonAncestor
 
     if (commonAncestorBlock->hasTagName(tbodyTag) || commonAncestorBlock->hasTagName(trTag)) {
         ContainerNode* table = commonAncestorBlock->parentNode();
-        while (table && !table->hasTagName(tableTag))
+        while (table && !isHTMLTableElement(table))
             table = table->parentNode();
 
         return table;
@@ -463,7 +463,7 @@ static bool propertyMissingOrEqualToNone(StylePropertySet* style, CSSPropertyID 
         return true;
     if (!value->isPrimitiveValue())
         return false;
-    return static_cast<CSSPrimitiveValue*>(value.get())->getValueID() == CSSValueNone;
+    return toCSSPrimitiveValue(value.get())->getValueID() == CSSValueNone;
 }
 
 static bool needInterchangeNewlineAfter(const VisiblePosition& v)
@@ -500,7 +500,7 @@ static Node* highestAncestorToWrapMarkup(const Range* range, EAnnotateForInterch
     ASSERT(commonAncestor);
     Node* specialCommonAncestor = 0;
     if (shouldAnnotate == AnnotateForInterchange) {
-        // Include ancestors that aren't completely inside the range but are required to retain 
+        // Include ancestors that aren't completely inside the range but are required to retain
         // the structure and appearance of the copied markup.
         specialCommonAncestor = ancestorToRetainStructureAndAppearance(commonAncestor);
 
@@ -526,7 +526,7 @@ static Node* highestAncestorToWrapMarkup(const Range* range, EAnnotateForInterch
 
     // If a single tab is selected, commonAncestor will be a text node inside a tab span.
     // If two or more tabs are selected, commonAncestor will be the tab span.
-    // In either case, if there is a specialCommonAncestor already, it will necessarily be above 
+    // In either case, if there is a specialCommonAncestor already, it will necessarily be above
     // any tab span that needs to be included.
     if (!specialCommonAncestor && isTabSpanTextNode(commonAncestor))
         specialCommonAncestor = commonAncestor->parentNode();
@@ -539,7 +539,7 @@ static Node* highestAncestorToWrapMarkup(const Range* range, EAnnotateForInterch
     return specialCommonAncestor;
 }
 
-// FIXME: Shouldn't we omit style info when annotate == DoNotAnnotateForInterchange? 
+// FIXME: Shouldn't we omit style info when annotate == DoNotAnnotateForInterchange?
 // FIXME: At least, annotation and style info should probably not be included in range.markupString()
 static String createMarkupInternal(Document* document, const Range* range, const Range* updatedRange, Vector<Node*>* nodes,
     EAnnotateForInterchange shouldAnnotate, bool convertBlocksToInlines, EAbsoluteURLs shouldResolveURLs, Node* constrainingAncestor)
@@ -547,7 +547,7 @@ static String createMarkupInternal(Document* document, const Range* range, const
     ASSERT(document);
     ASSERT(range);
     ASSERT(updatedRange);
-    DEFINE_STATIC_LOCAL(const String, interchangeNewlineString, (ASCIILiteral("<br class=\"" AppleInterchangeNewline "\">")));
+    DEFINE_STATIC_LOCAL(const String, interchangeNewlineString, ("<br class=\"" AppleInterchangeNewline "\">"));
 
     bool collapsed = updatedRange->collapsed(ASSERT_NO_EXCEPTION);
     if (collapsed)
@@ -612,9 +612,9 @@ static String createMarkupInternal(Document* document, const Range* range, const
             }
             if (nodes)
                 nodes->append(ancestor);
-            
+
             lastClosed = ancestor;
-            
+
             if (ancestor == specialCommonAncestor)
                 break;
         }
@@ -707,7 +707,7 @@ PassRefPtr<DocumentFragment> createFragmentFromMarkupWithContext(Document* docum
     taggedMarkup.append(markup.substring(fragmentEnd));
 
     RefPtr<DocumentFragment> taggedFragment = createFragmentFromMarkup(document, taggedMarkup.toString(), baseURL, parserContentPolicy);
-    RefPtr<Document> taggedDocument = Document::create(0, KURL());
+    RefPtr<Document> taggedDocument = Document::create();
     taggedDocument->setContextFeatures(document->contextFeatures());
     taggedDocument->takeAllChildrenFrom(taggedFragment.get());
 
@@ -790,11 +790,26 @@ bool isPlainTextMarkup(Node *node)
 {
     if (!node->isElementNode() || !node->hasTagName(divTag) || toElement(node)->hasAttributes())
         return false;
-    
+
     if (node->childNodeCount() == 1 && (node->firstChild()->isTextNode() || (node->firstChild()->firstChild())))
         return true;
-    
+
     return (node->childNodeCount() == 2 && isTabSpanTextNode(node->firstChild()->firstChild()) && node->firstChild()->nextSibling()->isTextNode());
+}
+
+static bool shouldPreserveNewline(const Range& range)
+{
+    if (Node* node = range.firstNode()) {
+        if (RenderObject* renderer = node->renderer())
+            return renderer->style()->preserveNewline();
+    }
+
+    if (Node* node = range.startPosition().anchorNode()) {
+        if (RenderObject* renderer = node->renderer())
+            return renderer->style()->preserveNewline();
+    }
+
+    return false;
 }
 
 PassRefPtr<DocumentFragment> createFragmentFromText(Range* context, const String& text)
@@ -802,16 +817,9 @@ PassRefPtr<DocumentFragment> createFragmentFromText(Range* context, const String
     if (!context)
         return 0;
 
-    Node* styleNode = context->firstNode();
-    if (!styleNode) {
-        styleNode = context->startPosition().deprecatedNode();
-        if (!styleNode)
-            return 0;
-    }
-
-    Document* document = styleNode->document();
+    Document* document = context->ownerDocument();
     RefPtr<DocumentFragment> fragment = document->createDocumentFragment();
-    
+
     if (text.isEmpty())
         return fragment.release();
 
@@ -819,12 +827,11 @@ PassRefPtr<DocumentFragment> createFragmentFromText(Range* context, const String
     string.replace("\r\n", "\n");
     string.replace('\r', '\n');
 
-    RenderObject* renderer = styleNode->renderer();
-    if (renderer && renderer->style()->preserveNewline()) {
+    if (shouldPreserveNewline(*context)) {
         fragment->appendChild(document->createTextNode(string), ASSERT_NO_EXCEPTION);
         if (string.endsWith('\n')) {
             RefPtr<Element> element = createBreakElement(document);
-            element->setAttribute(classAttr, AppleInterchangeNewline);            
+            element->setAttribute(classAttr, AppleInterchangeNewline);
             fragment->appendChild(element.release(), ASSERT_NO_EXCEPTION);
         }
         return fragment.release();
@@ -842,7 +849,7 @@ PassRefPtr<DocumentFragment> createFragmentFromText(Range* context, const String
     bool useClonesOfEnclosingBlock = blockNode
         && blockNode->isElementNode()
         && !block->hasTagName(bodyTag)
-        && !block->hasTagName(htmlTag)
+        && !isHTMLHtmlElement(block)
         && block != editableRootForPosition(context->startPosition());
     bool useLineBreak = enclosingTextFormControl(context->startPosition());
 
@@ -893,16 +900,16 @@ String createFullMarkup(const Node* node)
 {
     if (!node)
         return String();
-        
+
     Document* document = node->document();
     if (!document)
         return String();
-        
+
     Frame* frame = document->frame();
     if (!frame)
         return String();
 
-    // FIXME: This is never "for interchange". Is that right?    
+    // FIXME: This is never "for interchange". Is that right?
     String markupString = createMarkup(node, IncludeNode, 0);
     Node::NodeType nodeType = node->nodeType();
     if (nodeType != Node::DOCUMENT_NODE && nodeType != Node::DOCUMENT_TYPE_NODE)
@@ -919,17 +926,17 @@ String createFullMarkup(const Range* range)
     Node* node = range->startContainer();
     if (!node)
         return String();
-        
+
     Document* document = node->document();
     if (!document)
         return String();
-        
+
     Frame* frame = document->frame();
     if (!frame)
         return String();
 
     // FIXME: This is always "for interchange". Is that right? See the previous method.
-    return frame->documentTypeString() + createMarkup(range, 0, AnnotateForInterchange);        
+    return frame->documentTypeString() + createMarkup(range, 0, AnnotateForInterchange);
 }
 
 String urlToMarkup(const KURL& url, const String& title)
@@ -943,7 +950,7 @@ String urlToMarkup(const KURL& url, const String& title)
     return markup.toString();
 }
 
-PassRefPtr<DocumentFragment> createFragmentForInnerOuterHTML(const String& markup, Element* contextElement, ParserContentPolicy parserContentPolicy, ExceptionCode& ec)
+PassRefPtr<DocumentFragment> createFragmentForInnerOuterHTML(const String& markup, Element* contextElement, ParserContentPolicy parserContentPolicy, ExceptionState& es)
 {
     Document* document = contextElement->hasTagName(templateTag) ? contextElement->document()->ensureTemplateDocument() : contextElement->document();
     RefPtr<DocumentFragment> fragment = DocumentFragment::create(document);
@@ -955,7 +962,7 @@ PassRefPtr<DocumentFragment> createFragmentForInnerOuterHTML(const String& marku
 
     bool wasValid = fragment->parseXML(markup, contextElement, parserContentPolicy);
     if (!wasValid) {
-        ec = SYNTAX_ERR;
+        es.throwDOMException(SyntaxError);
         return 0;
     }
     return fragment.release();
@@ -964,7 +971,7 @@ PassRefPtr<DocumentFragment> createFragmentForInnerOuterHTML(const String& marku
 PassRefPtr<DocumentFragment> createFragmentForTransformToFragment(const String& sourceString, const String& sourceMIMEType, Document* outputDoc)
 {
     RefPtr<DocumentFragment> fragment = outputDoc->createDocumentFragment();
-    
+
     if (sourceMIMEType == "text/html") {
         // As far as I can tell, there isn't a spec for how transformToFragment is supposed to work.
         // Based on the documentation I can find, it looks like we want to start parsing the fragment in the InBody insertion mode.
@@ -979,9 +986,9 @@ PassRefPtr<DocumentFragment> createFragmentForTransformToFragment(const String& 
         if (!successfulParse)
             return 0;
     }
-    
+
     // FIXME: Do we need to mess with URLs here?
-    
+
     return fragment.release();
 }
 
@@ -996,21 +1003,21 @@ static inline void removeElementPreservingChildren(PassRefPtr<DocumentFragment> 
     fragment->removeChild(element, ASSERT_NO_EXCEPTION);
 }
 
-PassRefPtr<DocumentFragment> createContextualFragment(const String& markup, HTMLElement* element, ParserContentPolicy parserContentPolicy, ExceptionCode& ec)
+PassRefPtr<DocumentFragment> createContextualFragment(const String& markup, HTMLElement* element, ParserContentPolicy parserContentPolicy, ExceptionState& es)
 {
     ASSERT(element);
     if (element->ieForbidsInsertHTML()) {
-        ec = NOT_SUPPORTED_ERR;
+        es.throwDOMException(NotSupportedError);
         return 0;
     }
 
     if (element->hasLocalName(colTag) || element->hasLocalName(colgroupTag) || element->hasLocalName(framesetTag)
         || element->hasLocalName(headTag) || element->hasLocalName(styleTag) || element->hasLocalName(titleTag)) {
-        ec = NOT_SUPPORTED_ERR;
+        es.throwDOMException(NotSupportedError);
         return 0;
     }
 
-    RefPtr<DocumentFragment> fragment = createFragmentForInnerOuterHTML(markup, element, parserContentPolicy, ec);
+    RefPtr<DocumentFragment> fragment = createFragmentForInnerOuterHTML(markup, element, parserContentPolicy, es);
     if (!fragment)
         return 0;
 
@@ -1021,7 +1028,7 @@ PassRefPtr<DocumentFragment> createContextualFragment(const String& markup, HTML
     RefPtr<Node> nextNode;
     for (RefPtr<Node> node = fragment->firstChild(); node; node = nextNode) {
         nextNode = node->nextSibling();
-        if (node->hasTagName(htmlTag) || node->hasTagName(headTag) || node->hasTagName(bodyTag)) {
+        if (isHTMLHtmlElement(node.get()) || node->hasTagName(headTag) || node->hasTagName(bodyTag)) {
             HTMLElement* element = toHTMLElement(node.get());
             if (Node* firstChild = element->firstChild())
                 nextNode = firstChild;
@@ -1042,7 +1049,7 @@ static inline bool hasOneTextChild(ContainerNode* node)
     return hasOneChild(node) && node->firstChild()->isTextNode();
 }
 
-void replaceChildrenWithFragment(ContainerNode* container, PassRefPtr<DocumentFragment> fragment, ExceptionCode& ec)
+void replaceChildrenWithFragment(ContainerNode* container, PassRefPtr<DocumentFragment> fragment, ExceptionState& es)
 {
     RefPtr<ContainerNode> containerNode(container);
 
@@ -1059,15 +1066,15 @@ void replaceChildrenWithFragment(ContainerNode* container, PassRefPtr<DocumentFr
     }
 
     if (hasOneChild(containerNode.get())) {
-        containerNode->replaceChild(fragment, containerNode->firstChild(), ec);
+        containerNode->replaceChild(fragment, containerNode->firstChild(), es);
         return;
     }
 
     containerNode->removeChildren();
-    containerNode->appendChild(fragment, ec);
+    containerNode->appendChild(fragment, es);
 }
 
-void replaceChildrenWithText(ContainerNode* container, const String& text, ExceptionCode& ec)
+void replaceChildrenWithText(ContainerNode* container, const String& text, ExceptionState& es)
 {
     RefPtr<ContainerNode> containerNode(container);
 
@@ -1081,12 +1088,12 @@ void replaceChildrenWithText(ContainerNode* container, const String& text, Excep
     RefPtr<Text> textNode = Text::create(containerNode->document(), text);
 
     if (hasOneChild(containerNode.get())) {
-        containerNode->replaceChild(textNode.release(), containerNode->firstChild(), ec);
+        containerNode->replaceChild(textNode.release(), containerNode->firstChild(), es);
         return;
     }
 
     containerNode->removeChildren();
-    containerNode->appendChild(textNode.release(), ec);
+    containerNode->appendChild(textNode.release(), es);
 }
 
 }

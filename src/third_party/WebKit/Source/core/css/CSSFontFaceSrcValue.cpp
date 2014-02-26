@@ -25,17 +25,17 @@
 
 #include "config.h"
 #include "core/css/CSSFontFaceSrcValue.h"
+
+#include "FetchInitiatorTypeNames.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "core/loader/cache/CachedFont.h"
-#include "core/loader/cache/CachedResourceLoader.h"
-#include "core/loader/cache/CachedResourceRequest.h"
-#include "core/loader/cache/CachedResourceRequestInitiators.h"
+#include "core/loader/cache/FetchRequest.h"
+#include "core/loader/cache/FontResource.h"
+#include "core/loader/cache/ResourceFetcher.h"
 #include "core/platform/graphics/FontCustomPlatformData.h"
 #include "core/svg/SVGFontFaceElement.h"
-#include <wtf/text/StringBuilder.h>
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -89,34 +89,23 @@ void CSSFontFaceSrcValue::addSubresourceStyleURLs(ListHashSet<KURL>& urls, const
 
 bool CSSFontFaceSrcValue::hasFailedOrCanceledSubresources() const
 {
-    if (!m_cachedFont)
+    if (!m_fetched)
         return false;
-    return m_cachedFont->loadFailedOrCanceled();
+    return m_fetched->loadFailedOrCanceled();
 }
 
-CachedFont* CSSFontFaceSrcValue::cachedFont(Document* document)
+FontResource* CSSFontFaceSrcValue::fetch(Document* document)
 {
-    if (!m_cachedFont) {
-        CachedResourceRequest request(ResourceRequest(document->completeURL(m_resource)), cachedResourceRequestInitiators().css);
-        m_cachedFont = document->cachedResourceLoader()->requestFont(request);
+    if (!m_fetched) {
+        FetchRequest request(ResourceRequest(document->completeURL(m_resource)), FetchInitiatorTypeNames::css);
+        m_fetched = document->fetcher()->requestFont(request);
     }
-    return m_cachedFont.get();
+    return m_fetched.get();
 }
 
 bool CSSFontFaceSrcValue::equals(const CSSFontFaceSrcValue& other) const
 {
     return m_isLocal == other.m_isLocal && m_format == other.m_format && m_resource == other.m_resource;
-}
-
-void CSSFontFaceSrcValue::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_resource, "resource");
-    info.addMember(m_format, "format");
-    // FIXME: add m_cachedFont when MemoryCache is instrumented.
-#if ENABLE(SVG_FONTS)
-    info.addMember(m_svgFontFaceElement, "svgFontFaceElement");
-#endif
 }
 
 }

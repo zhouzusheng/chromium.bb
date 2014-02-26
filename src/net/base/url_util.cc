@@ -5,8 +5,8 @@
 #include "net/base/url_util.h"
 
 #include "base/strings/string_piece.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/escape.h"
+#include "url/gurl.h"
 
 namespace net {
 
@@ -71,6 +71,9 @@ GURL AppendOrReplaceQueryParameter(const GURL& url,
 bool GetValueForKeyInQuery(const GURL& url,
                            const std::string& search_key,
                            std::string* out_value) {
+  if (!url.is_valid())
+    return false;
+
   url_parse::Component query = url.parsed_for_possibly_invalid_spec().query;
   url_parse::Component key, value;
   while (url_parse::ExtractQueryKeyValue(

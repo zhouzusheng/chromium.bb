@@ -24,11 +24,11 @@
 #include "core/rendering/svg/RenderSVGContainer.h"
 
 namespace WebCore {
-    
-class SVGStyledTransformableElement;
+
+class SVGGraphicsElement;
 class RenderSVGTransformableContainer FINAL : public RenderSVGContainer {
 public:
-    explicit RenderSVGTransformableContainer(SVGStyledTransformableElement*);
+    explicit RenderSVGTransformableContainer(SVGGraphicsElement*);
 
     virtual bool isSVGTransformableContainer() const { return true; }
     virtual const AffineTransform& localToParentTransform() const { return m_localTransform; }

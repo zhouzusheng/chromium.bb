@@ -8,7 +8,6 @@
 
 #include "base/bind.h"
 #include "base/lazy_instance.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
@@ -22,6 +21,7 @@
 #include "net/websockets/websocket_handshake_handler.h"
 #include "net/websockets/websocket_net_log_params.h"
 #include "net/websockets/websocket_throttle.h"
+#include "url/gurl.h"
 
 static const int kMaxPendingSendAllowed = 32768;  // 32 kilobytes.
 
@@ -148,7 +148,6 @@ void WebSocketJob::RestartWithAuth(const AuthCredentials& credentials) {
 void WebSocketJob::DetachDelegate() {
   state_ = CLOSED;
   WebSocketThrottle::GetInstance()->RemoveFromQueue(this);
-  WebSocketThrottle::GetInstance()->WakeupSocketIfNecessary();
 
   scoped_refptr<WebSocketJob> protect(this);
   weak_ptr_factory_.InvalidateWeakPtrs();
@@ -169,8 +168,12 @@ int WebSocketJob::OnStartOpenConnection(
     SocketStream* socket, const CompletionCallback& callback) {
   DCHECK(callback_.is_null());
   state_ = CONNECTING;
+
   addresses_ = socket->address_list();
-  WebSocketThrottle::GetInstance()->PutInQueue(this);
+  if (!WebSocketThrottle::GetInstance()->PutInQueue(this)) {
+    return ERR_WS_THROTTLE_QUEUE_TOO_LARGE;
+  }
+
   if (delegate_) {
     int result = delegate_->OnStartOpenConnection(socket, callback);
     DCHECK_EQ(OK, result);
@@ -246,7 +249,6 @@ void WebSocketJob::OnReceivedData(
 void WebSocketJob::OnClose(SocketStream* socket) {
   state_ = CLOSED;
   WebSocketThrottle::GetInstance()->RemoveFromQueue(this);
-  WebSocketThrottle::GetInstance()->WakeupSocketIfNecessary();
 
   scoped_refptr<WebSocketJob> protect(this);
   weak_ptr_factory_.InvalidateWeakPtrs();
@@ -497,7 +499,6 @@ void WebSocketJob::NotifyHeadersComplete() {
         socket_.get(), &received_data.front(), received_data.size());
 
   WebSocketThrottle::GetInstance()->RemoveFromQueue(this);
-  WebSocketThrottle::GetInstance()->WakeupSocketIfNecessary();
 }
 
 void WebSocketJob::SaveNextCookie() {
@@ -593,14 +594,14 @@ int WebSocketJob::TrySpdyStream() {
   SpdySessionPool* spdy_pool = session->spdy_session_pool();
   PrivacyMode privacy_mode = socket_->privacy_mode();
   const SpdySessionKey key(HostPortPair::FromURL(socket_->url()),
-                               socket_->proxy_server(), privacy_mode);
-  if (!spdy_pool->HasSession(key))
-    return OK;
-
+                           socket_->proxy_server(), privacy_mode);
   // Forbid wss downgrade to SPDY without SSL.
   // TODO(toyoshim): Does it realize the same policy with HTTP?
-  scoped_refptr<SpdySession> spdy_session =
-      spdy_pool->Get(key, *socket_->net_log());
+  base::WeakPtr<SpdySession> spdy_session =
+      spdy_pool->FindAvailableSession(key, *socket_->net_log());
+  if (!spdy_session)
+    return OK;
+
   SSLInfo ssl_info;
   bool was_npn_negotiated;
   NextProto protocol_negotiated = kProtoUnknown;
@@ -611,8 +612,7 @@ int WebSocketJob::TrySpdyStream() {
 
   // Create SpdyWebSocketStream.
   spdy_protocol_version_ = spdy_session->GetProtocolVersion();
-  spdy_websocket_stream_.reset(
-      new SpdyWebSocketStream(spdy_session.get(), this));
+  spdy_websocket_stream_.reset(new SpdyWebSocketStream(spdy_session, this));
 
   int result = spdy_websocket_stream_->InitializeStream(
       socket_->url(), MEDIUM, *socket_->net_log());

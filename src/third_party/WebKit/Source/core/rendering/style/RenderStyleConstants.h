@@ -70,12 +70,13 @@ enum StyleDifferenceContextSensitiveProperty {
 // Static pseudo styles. Dynamic ones are produced on the fly.
 enum PseudoId {
     // The order must be NOP ID, public IDs, and then internal IDs.
-    NOPSEUDO, FIRST_LINE, FIRST_LETTER, BEFORE, AFTER, SELECTION, FIRST_LINE_INHERITED, SCROLLBAR,
+    // If you add or remove a public ID, you must update _pseudoBits in RenderStyle.
+    NOPSEUDO, FIRST_LINE, FIRST_LETTER, BEFORE, AFTER, BACKDROP, SELECTION, FIRST_LINE_INHERITED, SCROLLBAR,
     // Internal IDs follow:
     SCROLLBAR_THUMB, SCROLLBAR_BUTTON, SCROLLBAR_TRACK, SCROLLBAR_TRACK_PIECE, SCROLLBAR_CORNER, RESIZER,
     INPUT_LIST_BUTTON,
     AFTER_LAST_INTERNAL_PSEUDOID,
-    FULL_SCREEN, FULL_SCREEN_DOCUMENT, FULL_SCREEN_ANCESTOR, ANIMATING_FULL_SCREEN_TRANSITION,
+    FULL_SCREEN, FULL_SCREEN_DOCUMENT, FULL_SCREEN_ANCESTOR,
     FIRST_PUBLIC_PSEUDOID = FIRST_LINE,
     FIRST_INTERNAL_PSEUDOID = SCROLLBAR_THUMB,
     PUBLIC_PSEUDOID_MASK = ((1 << FIRST_INTERNAL_PSEUDOID) - 1) & ~((1 << FIRST_PUBLIC_PSEUDOID) - 1)
@@ -350,11 +351,11 @@ enum TextDecorationStyle {
     TextDecorationStyleWavy
 };
 
-#if ENABLE(CSS3_TEXT)
 enum TextAlignLast {
     TextAlignLastAuto, TextAlignLastStart, TextAlignLastEnd, TextAlignLastLeft, TextAlignLastRight, TextAlignLastCenter, TextAlignLastJustify
 };
 
+#if ENABLE(CSS3_TEXT)
 enum TextUnderlinePosition {
     // FIXME: Implement support for 'under left' and 'under right' values.
     TextUnderlinePositionAuto = 0x1, TextUnderlinePositionAlphabetic = 0x2, TextUnderlinePositionUnder = 0x4
@@ -435,7 +436,7 @@ enum EDisplay {
 enum EInsideLink {
     NotInsideLink, InsideUnvisitedLink, InsideVisitedLink
 };
-    
+
 enum EPointerEvents {
     PE_NONE, PE_AUTO, PE_STROKE, PE_FILL, PE_PAINTED, PE_VISIBLE,
     PE_VISIBLE_STROKE, PE_VISIBLE_FILL, PE_VISIBLE_PAINTED, PE_ALL
@@ -448,7 +449,7 @@ enum ETransformStyle3D {
 enum EBackfaceVisibility {
     BackfaceVisibilityVisible, BackfaceVisibilityHidden
 };
-    
+
 enum ELineClampType { LineClampLineCount, LineClampPercentage };
 
 enum Hyphens { HyphensNone, HyphensManual, HyphensAuto };

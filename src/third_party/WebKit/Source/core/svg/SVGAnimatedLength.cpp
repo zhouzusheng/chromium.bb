@@ -18,9 +18,9 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGAnimatedLength.h"
 
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/svg/SVGAnimateElement.h"
 #include "core/svg/SVGAnimatedNumber.h"
 

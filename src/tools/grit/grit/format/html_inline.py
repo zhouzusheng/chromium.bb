@@ -32,11 +32,11 @@ _END_IF_BLOCK = lazy_re.compile('\s*</if>')
 
 # Used by DoInline to replace various links with inline content.
 _STYLESHEET_RE = lazy_re.compile(
-    '<link rel="stylesheet"[^>]+?href="(?P<filename>[^"]*)".*?>',
-    re.MULTILINE)
+    '<link rel="stylesheet"[^>]+?href="(?P<filename>[^"]*)".*?>(\s*</link>)?',
+    re.DOTALL)
 _INCLUDE_RE = lazy_re.compile(
-    '<include[^>]+?src="(?P<filename>[^"\']*)".*>',
-    re.MULTILINE)
+    '<include[^>]+?src="(?P<filename>[^"\']*)".*?>(\s*</include>)?',
+    re.DOTALL)
 _SRC_RE = lazy_re.compile(
     r'<(?!script)(?:[^>]+?\s)src=(?P<quote>")(?P<filename>[^"\']*)\1',
     re.MULTILINE)

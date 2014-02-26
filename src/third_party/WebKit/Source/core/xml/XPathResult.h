@@ -5,13 +5,13 @@
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
- * 
+ *
  * 1. Redistributions of source code must retain the above copyright
  *    notice, this list of conditions and the following disclaimer.
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
@@ -34,9 +34,8 @@
 
 namespace WebCore {
 
-typedef int ExceptionCode;
-
 class Document;
+class ExceptionState;
 class Node;
 
 class XPathResult : public RefCounted<XPathResult>, public ScriptWrappable {
@@ -57,19 +56,19 @@ public:
     static PassRefPtr<XPathResult> create(Document* document, const XPath::Value& value) { return adoptRef(new XPathResult(document, value)); }
     ~XPathResult();
 
-    void convertTo(unsigned short type, ExceptionCode&);
+    void convertTo(unsigned short type, ExceptionState&);
 
     unsigned short resultType() const;
 
-    double numberValue(ExceptionCode&) const;
-    String stringValue(ExceptionCode&) const;
-    bool booleanValue(ExceptionCode&) const;
-    Node* singleNodeValue(ExceptionCode&) const;
+    double numberValue(ExceptionState&) const;
+    String stringValue(ExceptionState&) const;
+    bool booleanValue(ExceptionState&) const;
+    Node* singleNodeValue(ExceptionState&) const;
 
     bool invalidIteratorState() const;
-    unsigned long snapshotLength(ExceptionCode&) const;
-    Node* iterateNext(ExceptionCode&);
-    Node* snapshotItem(unsigned long index, ExceptionCode&);
+    unsigned long snapshotLength(ExceptionState&) const;
+    Node* iterateNext(ExceptionState&);
+    Node* snapshotItem(unsigned long index, ExceptionState&);
 
     const XPath::Value& value() const { return m_value; }
 

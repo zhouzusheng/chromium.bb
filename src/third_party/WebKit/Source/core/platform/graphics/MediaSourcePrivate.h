@@ -30,7 +30,7 @@
 #ifndef MediaSourcePrivate_h
 #define MediaSourcePrivate_h
 
-#include <wtf/Forward.h>
+#include "wtf/Forward.h"
 
 namespace WebCore {
 
@@ -48,7 +48,8 @@ public:
     virtual double duration() = 0;
     virtual void setDuration(double) = 0;
     enum EndOfStreamStatus { EosNoError, EosNetworkError, EosDecodeError };
-    virtual void endOfStream(EndOfStreamStatus) = 0;
+    virtual void markEndOfStream(EndOfStreamStatus) = 0;
+    virtual void unmarkEndOfStream() = 0;
 };
 
 }

@@ -31,10 +31,9 @@
 #include "XMLNSNames.h"
 #include "XMLNames.h"
 #include "core/dom/QualifiedName.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
-#include <wtf/Assertions.h>
-#include <wtf/HashSet.h>
-#include <wtf/StaticConstructors.h>
+#include "wtf/Assertions.h"
+#include "wtf/HashSet.h"
+#include "wtf/StaticConstructors.h"
 
 namespace WebCore {
 
@@ -53,7 +52,7 @@ typedef HashSet<QualifiedName::QualifiedNameImpl*, QualifiedNameHash, QualifiedN
 struct QNameComponentsTranslator {
     static unsigned hash(const QualifiedNameComponents& components)
     {
-        return hashComponents(components); 
+        return hashComponents(components);
     }
     static bool equal(QualifiedName::QualifiedNameImpl* name, const QualifiedNameComponents& c)
     {
@@ -101,12 +100,8 @@ QualifiedName::QualifiedNameImpl::~QualifiedNameImpl()
 String QualifiedName::toString() const
 {
     String local = localName();
-    if (hasPrefix()) {
-        String result = prefix().string();
-        result.append(":");
-        result.append(local);
-        return result;
-    }
+    if (hasPrefix())
+        return prefix().string() + ":" + local;
     return local;
 }
 
@@ -132,22 +127,6 @@ const AtomicString& QualifiedName::localNameUpper() const
     return m_impl->m_localNameUpper;
 }
 
-void QualifiedName::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    info.addMember(m_impl, "impl");
-}
-
-
-void QualifiedName::QualifiedNameImpl::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    info.addMember(m_prefix, "prefix");
-    info.addMember(m_localName, "localName");
-    info.addMember(m_namespace, "namespace");
-    info.addMember(m_localNameUpper, "localNameUpper");
-}
-
 unsigned QualifiedName::QualifiedNameImpl::computeHash() const
 {
     QualifiedNameComponents components = { m_prefix.impl(), m_localName.impl(), m_namespace.impl() };
@@ -156,12 +135,12 @@ unsigned QualifiedName::QualifiedNameImpl::computeHash() const
 
 void createQualifiedName(void* targetAddress, StringImpl* name, const AtomicString& nameNamespace)
 {
-    new (reinterpret_cast<void*>(targetAddress)) QualifiedName(nullAtom, AtomicString(name), nameNamespace);
+    new (targetAddress) QualifiedName(nullAtom, AtomicString(name), nameNamespace);
 }
 
 void createQualifiedName(void* targetAddress, StringImpl* name)
 {
-    new (reinterpret_cast<void*>(targetAddress)) QualifiedName(nullAtom, AtomicString(name), nullAtom);
+    new (targetAddress) QualifiedName(nullAtom, AtomicString(name), nullAtom);
 }
 
 }

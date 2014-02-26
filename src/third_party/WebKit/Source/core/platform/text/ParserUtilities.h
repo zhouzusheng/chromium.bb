@@ -22,32 +22,46 @@
 #ifndef ParserUtilities_h
 #define ParserUtilities_h
 
-#include <wtf/text/WTFString.h>
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-    inline bool skipString(const UChar*& ptr, const UChar* end, const UChar* name, int length)
-    {
-        if (end - ptr < length)
-            return false;
-        if (memcmp(name, ptr, sizeof(UChar) * length))
-            return false;
-        ptr += length;
-        return true;
-    }
+template<typename CharType>
+inline bool skipString(const CharType*& ptr, const CharType* end, const CharType* name, int length)
+{
+    if (end - ptr < length)
+        return false;
+    if (memcmp(name, ptr, sizeof(CharType) * length))
+        return false;
+    ptr += length;
+    return true;
+}
 
-    inline bool skipString(const UChar*& ptr, const UChar* end, const char* str)
-    {
-        int length = strlen(str);
-        if (end - ptr < length)
+inline bool skipString(const UChar*& ptr, const UChar* end, const LChar* name, int length)
+{
+    if (end - ptr < length)
+        return false;
+    for (int i = 0; i < length; ++i) {
+        if (ptr[i] != name[i])
             return false;
-        for (int i = 0; i < length; ++i) {
-            if (ptr[i] != str[i])
-                return false;
-        }
-        ptr += length;
-        return true;
     }
+    ptr += length;
+    return true;
+}
+
+template<typename CharType>
+inline bool skipString(const CharType*& ptr, const CharType* end, const char* str)
+{
+    int length = strlen(str);
+    if (end - ptr < length)
+        return false;
+    for (int i = 0; i < length; ++i) {
+        if (ptr[i] != str[i])
+            return false;
+    }
+    ptr += length;
+    return true;
+}
 
 } // namspace WebCore
 

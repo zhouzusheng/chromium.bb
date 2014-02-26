@@ -7,13 +7,18 @@
 
 #include <string>
 
+#include "net/cert/cert_verify_result.h"
+#include "net/cert/x509_certificate.h"
 #include "net/quic/crypto/crypto_handshake.h"
+#include "net/quic/crypto/proof_verifier.h"
 #include "net/quic/quic_config.h"
 #include "net/quic/quic_crypto_stream.h"
 
 namespace net {
 
+class ProofVerifyDetails;
 class QuicSession;
+class SSLInfo;
 
 namespace test {
 class CryptoTestUtils;
@@ -40,18 +45,45 @@ class NET_EXPORT_PRIVATE QuicCryptoClientStream : public QuicCryptoStream {
   // than the number of round-trips needed for the handshake.
   int num_sent_client_hellos() const;
 
+  // Gets the SSL connection information.
+  bool GetSSLInfo(SSLInfo* ssl_info);
+
  private:
+  // ProofVerifierCallbackImpl is passed as the callback method to VerifyProof.
+  // The ProofVerifier calls this class with the result of proof verification
+  // when verification is performed asynchronously.
+  class ProofVerifierCallbackImpl : public ProofVerifierCallback {
+   public:
+    explicit ProofVerifierCallbackImpl(QuicCryptoClientStream* stream);
+    virtual ~ProofVerifierCallbackImpl();
+
+    // ProofVerifierCallback interface.
+    virtual void Run(bool ok,
+                     const string& error_details,
+                     scoped_ptr<ProofVerifyDetails>* details) OVERRIDE;
+
+    // Cancel causes any future callbacks to be ignored. It must be called on
+    // the same thread as the callback will be made on.
+    void Cancel();
+
+   private:
+    QuicCryptoClientStream* stream_;
+  };
+
   friend class test::CryptoTestUtils;
+  friend class ProofVerifierCallbackImpl;
 
   enum State {
     STATE_IDLE,
     STATE_SEND_CHLO,
     STATE_RECV_REJ,
+    STATE_VERIFY_PROOF,
+    STATE_VERIFY_PROOF_COMPLETE,
     STATE_RECV_SHLO,
   };
 
   // DoHandshakeLoop performs a step of the handshake state machine. Note that
-  // |in| is NULL for the first call.
+  // |in| may be NULL if the call did not result from a received message
   void DoHandshakeLoop(const CryptoHandshakeMessage* in);
 
   State next_state_;
@@ -65,6 +97,23 @@ class NET_EXPORT_PRIVATE QuicCryptoClientStream : public QuicCryptoStream {
   std::string nonce_;
   // Server's hostname
   std::string server_hostname_;
+
+  // Generation counter from QuicCryptoClientConfig's CachedState.
+  uint64 generation_counter_;
+
+  // proof_verify_callback_ contains the callback object that we passed to an
+  // asynchronous proof verification. The ProofVerifier owns this object.
+  ProofVerifierCallbackImpl* proof_verify_callback_;
+
+  // These members are used to store the result of an asynchronous proof
+  // verification. These members must not be used after
+  // STATE_VERIFY_PROOF_COMPLETE.
+  bool verify_ok_;
+  string verify_error_details_;
+  scoped_ptr<ProofVerifyDetails> verify_details_;
+
+  // The result of certificate verification.
+  scoped_ptr<CertVerifyResult> cert_verify_result_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicCryptoClientStream);
 };

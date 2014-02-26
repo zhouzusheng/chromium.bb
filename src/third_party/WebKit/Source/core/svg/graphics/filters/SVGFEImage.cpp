@@ -33,8 +33,8 @@
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderTreeAsText.h"
 #include "core/rendering/svg/SVGRenderingContext.h"
+#include "core/svg/SVGElement.h"
 #include "core/svg/SVGPreserveAspectRatio.h"
-#include "core/svg/SVGStyledElement.h"
 #include "core/svg/SVGURIReference.h"
 
 namespace WebCore {
@@ -120,7 +120,7 @@ void FEImage::applySoftware()
 
     if (renderer) {
         SVGElement* contextNode = toSVGElement(renderer->node());
-        if (contextNode->isSVGStyledElement() && toSVGStyledElement(contextNode)->hasRelativeLengths()) {
+        if (contextNode->hasRelativeLengths()) {
             SVGLengthContext lengthContext(contextNode);
             float width = 0;
             float height = 0;
@@ -157,7 +157,7 @@ TextStream& FEImage::externalRepresentation(TextStream& ts, int indent) const
     return ts;
 }
 
-SkImageFilter* FEImage::createImageFilter(SkiaImageFilterBuilder* builder)
+PassRefPtr<SkImageFilter> FEImage::createImageFilter(SkiaImageFilterBuilder* builder)
 {
     if (!m_image)
         return 0;
@@ -165,7 +165,7 @@ SkImageFilter* FEImage::createImageFilter(SkiaImageFilterBuilder* builder)
     if (!m_image->nativeImageForCurrentFrame())
         return 0;
 
-    return new SkBitmapSource(m_image->nativeImageForCurrentFrame()->bitmap());
+    return adoptRef(new SkBitmapSource(m_image->nativeImageForCurrentFrame()->bitmap()));
 }
 
 } // namespace WebCore

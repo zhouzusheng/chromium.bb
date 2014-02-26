@@ -20,15 +20,15 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef ResourceLoadTiming_h
 #define ResourceLoadTiming_h
 
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/RefPtr.h>
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
@@ -98,7 +98,7 @@ public:
     double sslStart;
     double sslEnd;
 
-    double calculateMillisecondDelta(double time) const { return (time - requestTime) * 1000; }
+    double calculateMillisecondDelta(double time) const { return time ? (time - requestTime) * 1000 : -1; }
 
 private:
     ResourceLoadTiming()

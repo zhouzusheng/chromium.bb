@@ -55,10 +55,6 @@ var WebInspector = {
             allProfilers.push(new WebInspector.PanelDescriptor("heap-profiler", WebInspector.UIString("Heap Profiler"), "HeapProfilerPanel", "ProfilesPanel.js"));
             if (!WebInspector.WorkerManager.isWorkerFrontend() && WebInspector.experimentsSettings.canvasInspection.isEnabled())
                 allProfilers.push(new WebInspector.PanelDescriptor("canvas-profiler", WebInspector.UIString("Canvas Profiler"), "CanvasProfilerPanel", "ProfilesPanel.js"));
-            if (!WebInspector.WorkerManager.isWorkerFrontend() && WebInspector.experimentsSettings.nativeMemorySnapshots.isEnabled()) {
-                allProfilers.push(new WebInspector.PanelDescriptor("memory-chart-profiler", WebInspector.UIString("Memory Distribution"), "MemoryChartProfilerPanel", "ProfilesPanel.js"));
-                allProfilers.push(new WebInspector.PanelDescriptor("memory-snapshot-profiler", WebInspector.UIString("Memory Snapshots"), "NativeMemoryProfilerPanel", "ProfilesPanel.js"));
-            }
             Array.prototype.splice.bind(allDescriptors, allDescriptors.indexOf(profiles), 1).apply(null, allProfilers);
         }
 
@@ -195,19 +191,28 @@ var WebInspector = {
         this._consoleWasShown = false;
     },
 
-
-    _updateErrorAndWarningCounts: function()
+    _resetErrorAndWarningCounts: function()
     {
         var errorWarningElement = document.getElementById("error-warning-count");
         if (!errorWarningElement)
             return;
 
+        errorWarningElement.addStyleClass("hidden");
+    },
+
+    _updateErrorAndWarningCounts: function()
+    {
         var errors = WebInspector.console.errors;
         var warnings = WebInspector.console.warnings;
+
         if (!errors && !warnings) {
-            errorWarningElement.addStyleClass("hidden");
+            this._resetErrorAndWarningCounts();
             return;
         }
+
+        var errorWarningElement = document.getElementById("error-warning-count");
+        if (!errorWarningElement)
+            return;
 
         errorWarningElement.removeStyleClass("hidden");
 
@@ -460,7 +465,7 @@ WebInspector._doLoadedDoneWithCapabilities = function()
         panelDescriptors[i].registerShortcuts();
 
     this.console = new WebInspector.ConsoleModel();
-    this.console.addEventListener(WebInspector.ConsoleModel.Events.ConsoleCleared, this._updateErrorAndWarningCounts, this);
+    this.console.addEventListener(WebInspector.ConsoleModel.Events.ConsoleCleared, this._resetErrorAndWarningCounts, this);
     this.console.addEventListener(WebInspector.ConsoleModel.Events.MessageAdded, this._updateErrorAndWarningCounts, this);
     this.console.addEventListener(WebInspector.ConsoleModel.Events.RepeatCountUpdated, this._updateErrorAndWarningCounts, this);
 
@@ -487,7 +492,8 @@ WebInspector._doLoadedDoneWithCapabilities = function()
 
     this.cssModel = new WebInspector.CSSStyleModel(this.workspace);
     this.timelineManager = new WebInspector.TimelineManager();
-    this.userAgentSupport = new WebInspector.UserAgentSupport();
+    this.tracingAgent = new WebInspector.TracingAgent();
+    this.overridesSupport = new WebInspector.OverridesSupport();
 
     this.searchController = new WebInspector.SearchController();
     this.advancedSearchController = new WebInspector.AdvancedSearchController();
@@ -561,6 +567,7 @@ WebInspector._doLoadedDoneWithCapabilities = function()
     WebInspector.settings.showDebugBorders = WebInspector.settings.createBackendSetting("showDebugBorders", false, PageAgent.setShowDebugBorders.bind(PageAgent));
     WebInspector.settings.continuousPainting = WebInspector.settings.createBackendSetting("continuousPainting", false, PageAgent.setContinuousPaintingEnabled.bind(PageAgent));
     WebInspector.settings.showFPSCounter = WebInspector.settings.createBackendSetting("showFPSCounter", false, PageAgent.setShowFPSCounter.bind(PageAgent));
+    WebInspector.settings.showScrollBottleneckRects = WebInspector.settings.createBackendSetting("showScrollBottleneckRects", false, PageAgent.setShowScrollBottleneckRects.bind(PageAgent));
 
     WebInspector.settings.showMetricsRulers.addChangeListener(showRulersChanged);
     function showRulersChanged()
@@ -832,10 +839,16 @@ WebInspector.documentKeyDown = function(event)
 
 WebInspector.postDocumentKeyDown = function(event)
 {
+    var Esc = "U+001B";
+
     if (event.handled)
         return;
 
-    if (event.keyCode === WebInspector.KeyboardShortcut.Keys.Esc.code) {
+    if (event.keyIdentifier === Esc) {
+        if (WebInspector.searchController.isSearchVisible()) {
+            WebInspector.searchController.closeSearch();
+            return;
+        }
         // If drawer is open with some view other than console then close it.
         if (!this._toggleConsoleButton.toggled && WebInspector.drawer.visible)
             this.closeViewInDrawer();
@@ -980,7 +993,8 @@ WebInspector.inspect = function(payload, hints)
         WebInspector.showPanel("resources").selectDatabase(WebInspector.databaseModel.databaseForId(hints.databaseId));
     else if (hints.domStorageId)
         WebInspector.showPanel("resources").selectDOMStorage(WebInspector.domStorageModel.storageForId(hints.domStorageId));
-
+    else if (hints.copyToClipboard)
+        InspectorFrontendHost.copyText(object.value);
     object.release();
 }
 
@@ -1037,7 +1051,7 @@ WebInspector._showAnchorLocationInPanel = function(anchor, panel)
         anchor.addStyleClass("webkit-html-resource-link");
     }
 
-    WebInspector.inspectorView.showPanelForAnchorNavigation(panel);
+    WebInspector.inspectorView.setCurrentPanel(panel);
     panel.showAnchorLocation(anchor);
     return true;
 }

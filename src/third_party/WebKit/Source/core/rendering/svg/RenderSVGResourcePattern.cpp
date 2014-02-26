@@ -58,7 +58,7 @@ PatternData* RenderSVGResourcePattern::buildPattern(RenderObject* object, unsign
     if (currentData && currentData->pattern)
         return currentData;
 
-    SVGPatternElement* patternElement = static_cast<SVGPatternElement*>(node());
+    SVGPatternElement* patternElement = toSVGPatternElement(node());
     if (!patternElement)
         return 0;
 
@@ -216,7 +216,7 @@ bool RenderSVGResourcePattern::buildTileImageTransform(RenderObject* renderer,
     ASSERT(patternElement);
 
     FloatRect objectBoundingBox = renderer->objectBoundingBox();
-    patternBoundaries = calculatePatternBoundaries(attributes, objectBoundingBox, patternElement); 
+    patternBoundaries = calculatePatternBoundaries(attributes, objectBoundingBox, patternElement);
     if (patternBoundaries.width() <= 0 || patternBoundaries.height() <= 0)
         return false;
 
@@ -261,7 +261,7 @@ PassOwnPtr<ImageBuffer> RenderSVGResourcePattern::createTileImage(const PatternA
 
     // Draw the content into the ImageBuffer.
     for (Node* node = attributes.patternContentElement()->firstChild(); node; node = node->nextSibling()) {
-        if (!node->isSVGElement() || !toSVGElement(node)->isSVGStyledElement() || !node->renderer())
+        if (!node->isSVGElement() || !node->renderer())
             continue;
         if (node->renderer()->needsLayout())
             return nullptr;

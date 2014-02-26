@@ -12,7 +12,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "build/build_config.h"
 #include "content/common/gpu/gpu_command_buffer_stub.h"
 #include "content/common/gpu/gpu_memory_manager.h"
@@ -124,6 +124,7 @@ class GpuChannel : public IPC::Listener,
   GpuCommandBufferStub* LookupCommandBuffer(int32 route_id);
 
   void LoseAllContexts();
+  void MarkAllContextsLost();
 
   // Destroy channel and all contained contexts.
   void DestroySoon();
@@ -176,13 +177,15 @@ class GpuChannel : public IPC::Listener,
 #if defined(OS_ANDROID)
   // Register the StreamTextureProxy class with the gpu process so that all
   // the callbacks will be correctly forwarded to the renderer.
-  void OnRegisterStreamTextureProxy(
-      int32 stream_id, const gfx::Size& initial_size, int32* route_id);
+  void OnRegisterStreamTextureProxy(int32 stream_id, int32* route_id);
 
   // Create a java surface texture object and send it to the renderer process
   // through binder thread.
   void OnEstablishStreamTexture(
       int32 stream_id, int32 primary_id, int32 secondary_id);
+
+  // Set the size of StreamTexture.
+  void OnSetStreamTextureSize(int32 stream_id, const gfx::Size& size);
 #endif
 
   // Collect rendering stats.
@@ -226,6 +229,9 @@ class GpuChannel : public IPC::Listener,
 
   scoped_refptr<gpu::gles2::MailboxManager> mailbox_manager_;
   scoped_refptr<gpu::gles2::ImageManager> image_manager_;
+#if defined(OS_ANDROID)
+  scoped_ptr<StreamTextureManagerAndroid> stream_texture_manager_;
+#endif
 
 #if defined(ENABLE_GPU)
   typedef IDMap<GpuCommandBufferStub, IDMapOwnPointer> StubMap;
@@ -239,10 +245,6 @@ class GpuChannel : public IPC::Listener,
   bool handle_messages_scheduled_;
   bool processed_get_state_fast_;
   IPC::Message* currently_processing_message_;
-
-#if defined(OS_ANDROID)
-  scoped_ptr<StreamTextureManagerAndroid> stream_texture_manager_;
-#endif
 
   base::WeakPtrFactory<GpuChannel> weak_factory_;
 

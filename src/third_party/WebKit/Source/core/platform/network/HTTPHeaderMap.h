@@ -21,19 +21,19 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef HTTPHeaderMap_h
 #define HTTPHeaderMap_h
 
 #include <utility>
-#include <wtf/HashMap.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/Vector.h>
-#include <wtf/text/AtomicString.h>
-#include <wtf/text/AtomicStringHash.h>
-#include <wtf/text/StringHash.h>
+#include "wtf/HashMap.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/Vector.h"
+#include "wtf/text/AtomicString.h"
+#include "wtf/text/AtomicStringHash.h"
+#include "wtf/text/StringHash.h"
 
 namespace WebCore {
 
@@ -49,7 +49,7 @@ namespace WebCore {
         PassOwnPtr<CrossThreadHTTPHeaderMapData> copyData() const;
 
         void adopt(PassOwnPtr<CrossThreadHTTPHeaderMapData>);
-        
+
         AtomicString get(const AtomicString& name) const;
 
         AddResult add(const AtomicString& name, const AtomicString& value);
@@ -58,7 +58,7 @@ namespace WebCore {
         bool contains(const char*) const;
         AtomicString get(const char*) const;
         AddResult add(const char* name, const AtomicString& value);
-        
+
     };
 
 } // namespace WebCore

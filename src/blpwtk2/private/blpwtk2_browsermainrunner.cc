@@ -28,7 +28,7 @@
 #include <blpwtk2_statics.h>
 
 #include <base/logging.h>  // for DCHECK
-#include <base/message_loop.h>
+#include <base/message_loop/message_loop.h>
 #include <content/public/browser/browser_main_runner.h>
 
 namespace blpwtk2 {

@@ -21,8 +21,8 @@
 #ifndef AtomicString_h
 #define AtomicString_h
 
+#include "wtf/HashTableDeletedValueType.h"
 #include "wtf/WTFExport.h"
-#include "wtf/text/AtomicStringImpl.h"
 #include "wtf/text/WTFString.h"
 
 // Define 'NO_IMPLICIT_ATOMICSTRING' before including this header,
@@ -36,7 +36,6 @@
 namespace WTF {
 
 struct AtomicStringHash;
-class MemoryObjectInfo;
 
 class WTF_EXPORT AtomicString {
 public:
@@ -57,7 +56,6 @@ public:
     }
 
     ATOMICSTRING_CONVERSION AtomicString(StringImpl* imp) : m_string(add(imp)) { }
-    AtomicString(AtomicStringImpl* imp) : m_string(imp) { }
     ATOMICSTRING_CONVERSION AtomicString(const String& s) : m_string(add(s.impl())) { }
     AtomicString(StringImpl* baseString, unsigned start, unsigned length) : m_string(add(baseString, start, length)) { }
 
@@ -90,21 +88,20 @@ public:
     AtomicString(WTF::HashTableDeletedValueType) : m_string(WTF::HashTableDeletedValue) { }
     bool isHashTableDeletedValue() const { return m_string.isHashTableDeletedValue(); }
 
-    static AtomicStringImpl* find(const StringImpl*);
+    static StringImpl* find(const StringImpl*);
 
     operator const String&() const { return m_string; }
     const String& string() const { return m_string; };
 
-    AtomicStringImpl* impl() const { return static_cast<AtomicStringImpl *>(m_string.impl()); }
+    StringImpl* impl() const { return m_string.impl(); }
 
     bool is8Bit() const { return m_string.is8Bit(); }
-    const UChar* characters() const { return m_string.characters(); }
     const LChar* characters8() const { return m_string.characters8(); }
     const UChar* characters16() const { return m_string.characters16(); }
     unsigned length() const { return m_string.length(); }
-    
+
     UChar operator[](unsigned int i) const { return m_string[i]; }
-    
+
     bool contains(UChar c) const { return m_string.contains(c); }
     bool contains(const LChar* s, bool caseSensitive = true) const
         { return m_string.contains(s, caseSensitive); }
@@ -116,7 +113,7 @@ public:
         { return m_string.find(s, start, caseSentitive); }
     size_t find(const String& s, size_t start = 0, bool caseSentitive = true) const
         { return m_string.find(s, start, caseSentitive); }
-    
+
     bool startsWith(const String& s, bool caseSensitive = true) const
         { return m_string.startsWith(s, caseSensitive); }
     bool startsWith(UChar character) const
@@ -132,10 +129,10 @@ public:
     template<unsigned matchLength>
     bool endsWith(const char (&prefix)[matchLength], bool caseSensitive = true) const
         { return m_string.endsWith<matchLength>(prefix, caseSensitive); }
-    
+
     AtomicString lower() const;
     AtomicString upper() const { return AtomicString(impl()->upper()); }
-    
+
     int toInt(bool* ok = 0) const { return m_string.toInt(ok); }
     double toDouble(bool* ok = 0) const { return m_string.toDouble(ok); }
     float toFloat(bool* ok = 0) const { return m_string.toFloat(ok); }
@@ -145,10 +142,10 @@ public:
     bool isEmpty() const { return m_string.isEmpty(); }
 
     static void remove(StringImpl*);
-    
+
 #if USE(CF)
     AtomicString(CFStringRef s) :  m_string(add(s)) { }
-#endif    
+#endif
 #ifdef __OBJC__
     AtomicString(NSString* s) : m_string(add((CFStringRef)s)) { }
     operator NSString*() const { return m_string; }
@@ -163,11 +160,8 @@ public:
 #endif
 
 private:
-    // The explicit constructors with AtomicString::ConstructFromLiteral must be used for literals.
-    AtomicString(ASCIILiteral);
-
     String m_string;
-    
+
     static PassRefPtr<StringImpl> add(const LChar*);
     ALWAYS_INLINE static PassRefPtr<StringImpl> add(const char* s) { return add(reinterpret_cast<const LChar*>(s)); };
     static PassRefPtr<StringImpl> add(const LChar*, unsigned length);
@@ -194,7 +188,7 @@ private:
 inline bool operator==(const AtomicString& a, const AtomicString& b) { return a.impl() == b.impl(); }
 WTF_EXPORT bool operator==(const AtomicString&, const LChar*);
 inline bool operator==(const AtomicString& a, const char* b) { return WTF::equal(a.impl(), reinterpret_cast<const LChar*>(b)); }
-inline bool operator==(const AtomicString& a, const Vector<UChar>& b) { return a.impl() && equal(a.impl(), b.data(), b.size()); }    
+inline bool operator==(const AtomicString& a, const Vector<UChar>& b) { return a.impl() && equal(a.impl(), b.data(), b.size()); }
 inline bool operator==(const AtomicString& a, const String& b) { return equal(a.impl(), b.impl()); }
 inline bool operator==(const LChar* a, const AtomicString& b) { return b == a; }
 inline bool operator==(const String& a, const AtomicString& b) { return equal(a.impl(), b.impl()); }
@@ -268,5 +262,5 @@ using WTF::xmlnsAtom;
 using WTF::xlinkAtom;
 #endif
 
-#include <wtf/text/StringConcatenate.h>
+#include "wtf/text/StringConcatenate.h"
 #endif // AtomicString_h

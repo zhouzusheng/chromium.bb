@@ -16,6 +16,7 @@
 #include "content/public/browser/devtools_http_handler.h"
 #include "content/public/browser/devtools_http_handler_delegate.h"
 #include "content/public/browser/worker_service.h"
+#include "net/http/http_status_code.h"
 #include "net/server/http_server.h"
 
 namespace base {
@@ -34,7 +35,6 @@ namespace content {
 
 class DevToolsBrowserTarget;
 class DevToolsClientHost;
-class TetheringHandler;
 
 class DevToolsHttpHandlerImpl
     : public DevToolsHttpHandler,
@@ -128,9 +128,7 @@ class DevToolsHttpHandlerImpl
   scoped_ptr<DevToolsHttpHandlerDelegate> delegate_;
   DevToolsAgentHostBinding* binding_;
   scoped_ptr<DevToolsAgentHostBinding> default_binding_;
-  scoped_ptr<DevToolsBrowserTarget> browser_target_;
-  typedef std::map<int, TetheringHandler*> TetheringHandlers;
-  TetheringHandlers tethering_handlers_;
+  scoped_refptr<DevToolsBrowserTarget> browser_target_;
   DISALLOW_COPY_AND_ASSIGN(DevToolsHttpHandlerImpl);
 };
 

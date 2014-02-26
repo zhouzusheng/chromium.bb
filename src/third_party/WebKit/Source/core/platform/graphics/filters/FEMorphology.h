@@ -36,7 +36,7 @@ enum MorphologyOperatorType {
 
 class FEMorphology : public FilterEffect {
 public:
-    static PassRefPtr<FEMorphology> create(Filter*, MorphologyOperatorType, float radiusX, float radiusY);  
+    static PassRefPtr<FEMorphology> create(Filter*, MorphologyOperatorType, float radiusX, float radiusY);
     MorphologyOperatorType morphologyOperator() const;
     bool setMorphologyOperator(MorphologyOperatorType);
 
@@ -46,7 +46,7 @@ public:
     float radiusY() const;
     bool setRadiusY(float);
 
-    virtual SkImageFilter* createImageFilter(SkiaImageFilterBuilder*);
+    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
 
     virtual void determineAbsolutePaintRect();
     virtual FloatRect mapRect(const FloatRect&, bool forward = true) OVERRIDE FINAL;

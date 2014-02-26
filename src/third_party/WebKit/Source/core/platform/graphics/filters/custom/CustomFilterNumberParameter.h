@@ -32,7 +32,7 @@
 
 #include "core/platform/animation/AnimationUtilities.h"
 #include "core/platform/graphics/filters/custom/CustomFilterParameter.h"
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -48,7 +48,7 @@ public:
 
     void addValue(double value) { m_data.append(value); }
 
-    virtual PassRefPtr<CustomFilterParameter> blend(const CustomFilterParameter* from, double progress, const LayoutSize&)
+    virtual PassRefPtr<CustomFilterParameter> blend(const CustomFilterParameter* from, double progress)
     {
         if (!from || !isSameType(*from))
             return this;

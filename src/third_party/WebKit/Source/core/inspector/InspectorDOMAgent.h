@@ -31,45 +31,38 @@
 #define InspectorDOMAgent_h
 
 #include "InspectorFrontend.h"
-#include "core/dom/EventTarget.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorBaseAgent.h"
-#include "core/inspector/InspectorOverlay.h"
 #include "core/platform/JSONValues.h"
-#include "core/platform/Timer.h"
 #include "core/rendering/RenderLayer.h"
 
-#include <wtf/Deque.h>
-#include <wtf/HashMap.h>
-#include <wtf/HashSet.h>
-#include <wtf/ListHashSet.h>
-#include <wtf/OwnPtr.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/RefPtr.h>
-#include <wtf/text/AtomicString.h>
-#include <wtf/Vector.h>
+#include "wtf/HashMap.h"
+#include "wtf/HashSet.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/RefPtr.h"
+#include "wtf/Vector.h"
+#include "wtf/text/AtomicString.h"
 
 namespace WebCore {
-class ContainerNode;
+
 class CharacterData;
 class DOMEditor;
 class Document;
 class Element;
-class Event;
+class ExceptionState;
 class InspectorClient;
 class InspectorFrontend;
 class InspectorHistory;
 class InspectorOverlay;
 class InspectorPageAgent;
-class HTMLElement;
 class InspectorState;
 class InstrumentingAgents;
-class NameNodeMap;
 class Node;
+class PlatformGestureEvent;
 class PlatformTouchEvent;
 class RevalidateStyleAttributeTask;
-class ScriptValue;
 class ShadowRoot;
 
 struct HighlightConfig;
@@ -108,7 +101,7 @@ public:
         return adoptPtr(new InspectorDOMAgent(instrumentingAgents, pageAgent, inspectorState, injectedScriptManager, overlay, client));
     }
 
-    static String toErrorString(const ExceptionCode&);
+    static String toErrorString(ExceptionState&);
 
     ~InspectorDOMAgent();
 
@@ -188,6 +181,7 @@ public:
 
     PassRefPtr<TypeBuilder::Runtime::RemoteObject> resolveNode(Node*, const String& objectGroup);
     bool handleMousePress();
+    bool handleGestureEvent(Frame*, const PlatformGestureEvent&);
     bool handleTouchEvent(Frame*, const PlatformTouchEvent&);
     void handleMouseMove(Frame*, const PlatformMouseEvent&);
 

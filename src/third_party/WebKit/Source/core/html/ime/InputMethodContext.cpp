@@ -31,11 +31,9 @@
 #include "config.h"
 #include "core/html/ime/InputMethodContext.h"
 
-#include "core/editing/Editor.h"
+#include "core/editing/InputMethodController.h"
 #include "core/html/ime/Composition.h"
-#include "core/page/EditorClient.h"
 #include "core/page/Frame.h"
-#include "core/page/Page.h"
 
 namespace WebCore {
 
@@ -45,8 +43,7 @@ PassOwnPtr<InputMethodContext> InputMethodContext::create(HTMLElement* element)
 }
 
 InputMethodContext::InputMethodContext(HTMLElement* element)
-    : m_enabled(false)
-    , m_composition(0)
+    : m_composition(0)
     , m_element(element)
 {
     ScriptWrappable::init(this);
@@ -63,23 +60,15 @@ Composition* InputMethodContext::composition() const
     return m_composition.get();
 }
 
-bool InputMethodContext::enabled() const
-{
-    // FIXME: Implement this. Enabled state may change between calls from user
-    // action and the status should be retrieved here.
-    return m_enabled;
-}
-
-void InputMethodContext::setEnabled(bool enabled)
-{
-    // FIXME: Implement this. The enabled state should propagate to IME.
-    m_enabled = enabled;
-}
-
 String InputMethodContext::locale() const
 {
     // FIXME: Implement this.
     return emptyString();
+}
+
+HTMLElement* InputMethodContext::target() const
+{
+    return m_element;
 }
 
 void InputMethodContext::confirmComposition()
@@ -87,27 +76,12 @@ void InputMethodContext::confirmComposition()
     Frame* frame = m_element->document()->frame();
     if (!frame)
         return;
-    Editor* editor = frame->editor();
-    if (!editor->hasComposition())
+
+    const Element* element = frame->document()->focusedElement();
+    if (!element || !element->isHTMLElement() || m_element != toHTMLElement(element))
         return;
 
-    const Node* node = frame->document()->focusedNode();
-    if (!node || !node->isHTMLElement() || m_element != toHTMLElement(node))
-        return;
-
-    // We should verify the parent node of this IME composition node are
-    // editable because JavaScript may delete a parent node of the composition
-    // node. In this case, WebKit crashes while deleting texts from the parent
-    // node, which doesn't exist any longer.
-    RefPtr<Range> range = editor->compositionRange();
-    if (range) {
-        Node* node = range->startContainer();
-        if (!node || !node->isContentEditable())
-            return;
-    }
-
-    // This resets input method and the composition string is committed.
-    editor->client()->willSetInputMethodState();
+    frame->inputMethodController().confirmCompositionAndResetState();
 }
 
 void InputMethodContext::setCaretRectangle(Node* anchor, int x, int y, int w, int h)
@@ -118,12 +92,6 @@ void InputMethodContext::setCaretRectangle(Node* anchor, int x, int y, int w, in
 void InputMethodContext::setExclusionRectangle(Node* anchor, int x, int y, int w, int h)
 {
     // FIXME: Implement this.
-}
-
-bool InputMethodContext::open()
-{
-    // FIXME: Implement this.
-    return false;
 }
 
 } // namespace WebCore

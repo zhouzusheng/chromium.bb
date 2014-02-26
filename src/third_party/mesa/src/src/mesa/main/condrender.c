@@ -34,6 +34,7 @@
 #include "glheader.h"
 #include "condrender.h"
 #include "enums.h"
+#include "mtypes.h"
 #include "queryobj.h"
 
 
@@ -43,7 +44,8 @@ _mesa_BeginConditionalRender(GLuint queryId, GLenum mode)
    struct gl_query_object *q;
    GET_CURRENT_CONTEXT(ctx);
 
-   if (!ctx->Extensions.NV_conditional_render || ctx->Query.CondRenderQuery) {
+   if (!ctx->Extensions.NV_conditional_render || ctx->Query.CondRenderQuery ||
+       queryId == 0) {
       _mesa_error(ctx, GL_INVALID_OPERATION, "glBeginConditionalRender()");
       return;
    }
@@ -71,7 +73,7 @@ _mesa_BeginConditionalRender(GLuint queryId, GLenum mode)
    }
    ASSERT(q->Id == queryId);
 
-   if (q->Target != GL_SAMPLES_PASSED) {
+   if (q->Target != GL_SAMPLES_PASSED || q->Active) {
       _mesa_error(ctx, GL_INVALID_OPERATION, "glBeginConditionalRender()");
       return;
    }
@@ -117,7 +119,7 @@ _mesa_EndConditionalRender(void)
  * \return GL_TRUE if we should render, GL_FALSE if we should discard
  */
 GLboolean
-_mesa_check_conditional_render(GLcontext *ctx)
+_mesa_check_conditional_render(struct gl_context *ctx)
 {
    struct gl_query_object *q = ctx->Query.CondRenderQuery;
 
@@ -137,6 +139,8 @@ _mesa_check_conditional_render(GLcontext *ctx)
    case GL_QUERY_BY_REGION_NO_WAIT:
       /* fall-through */
    case GL_QUERY_NO_WAIT:
+      if (!q->Ready)
+         ctx->Driver.CheckQuery(ctx, q);
       return q->Ready ? (q->Result > 0) : GL_TRUE;
    default:
       _mesa_problem(ctx, "Bad cond render mode %s in "

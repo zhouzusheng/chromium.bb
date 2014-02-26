@@ -28,13 +28,15 @@
 
 #include "core/css/CSSImageGeneratorValue.h"
 #include "core/css/CSSPrimitiveValue.h"
-#include <wtf/RefPtr.h>
-#include <wtf/Vector.h>
+#include "core/css/StyleColor.h"
+#include "wtf/RefPtr.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
 class FloatPoint;
 class Gradient;
+class TextLinkColors;
 
 enum CSSGradientType {
     CSSDeprecatedLinearGradient,
@@ -50,9 +52,8 @@ struct CSSGradientColorStop {
     CSSGradientColorStop() : m_colorIsDerivedFromElement(false) { };
     RefPtr<CSSPrimitiveValue> m_position; // percentage or length
     RefPtr<CSSPrimitiveValue> m_color;
-    Color m_resolvedColor;
+    StyleColor m_resolvedColor;
     bool m_colorIsDerivedFromElement;
-    void reportMemoryUsage(MemoryObjectInfo*) const;
     bool operator==(const CSSGradientColorStop& other) const
     {
         return compareCSSValuePtr(m_color, other.m_color)
@@ -88,8 +89,8 @@ public:
     bool isPending() const { return false; }
     bool knownToBeOpaque(const RenderObject*) const;
 
-    void loadSubimages(CachedResourceLoader*) { }
-    PassRefPtr<CSSGradientValue> gradientWithStylesResolved(StyleResolver*);
+    void loadSubimages(ResourceFetcher*) { }
+    PassRefPtr<CSSGradientValue> gradientWithStylesResolved(const TextLinkColors&);
 
 protected:
     CSSGradientValue(ClassType classType, CSSGradientRepeat repeat, CSSGradientType gradientType)
@@ -119,8 +120,6 @@ protected:
     FloatPoint computeEndPoint(CSSPrimitiveValue*, CSSPrimitiveValue*, RenderStyle*, RenderStyle* rootStyle, const IntSize&);
 
     bool isCacheable() const;
-
-    void reportBaseClassMemoryUsage(MemoryObjectInfo*) const;
 
     // Points. Some of these may be null.
     RefPtr<CSSPrimitiveValue> m_firstX;
@@ -158,8 +157,6 @@ public:
     }
 
     bool equals(const CSSLinearGradientValue&) const;
-
-    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     CSSLinearGradientValue(CSSGradientRepeat repeat, CSSGradientType gradientType = CSSLinearGradient)
@@ -203,8 +200,6 @@ public:
     PassRefPtr<Gradient> createGradient(RenderObject*, const IntSize&);
 
     bool equals(const CSSRadialGradientValue&) const;
-
-    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     CSSRadialGradientValue(CSSGradientRepeat repeat, CSSGradientType gradientType = CSSRadialGradient)

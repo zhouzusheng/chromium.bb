@@ -30,8 +30,8 @@
 #include "core/platform/graphics/transforms/AffineTransform.h"
 #include "core/rendering/svg/RenderSVGModelObject.h"
 #include "core/rendering/svg/SVGMarkerData.h"
-#include <wtf/OwnPtr.h>
-#include <wtf/Vector.h>
+#include "wtf/OwnPtr.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -40,12 +40,12 @@ class GraphicsContextStateSaver;
 class RenderSVGContainer;
 class RenderSVGPath;
 class RenderSVGResource;
-class SVGStyledTransformableElement;
+class SVGGraphicsElement;
 
 class RenderSVGShape : public RenderSVGModelObject {
 public:
-    explicit RenderSVGShape(SVGStyledTransformableElement*);
-    RenderSVGShape(SVGStyledTransformableElement*, Path*, bool);
+    explicit RenderSVGShape(SVGGraphicsElement*);
+    RenderSVGShape(SVGGraphicsElement*, Path*, bool);
     virtual ~RenderSVGShape();
 
     void setNeedsShapeUpdate() { m_needsShapeUpdate = true; }
@@ -83,7 +83,6 @@ private:
     bool strokeContains(const FloatPoint&, bool requiresStroke = true);
 
     virtual FloatRect repaintRectInLocalCoordinates() const OVERRIDE FINAL { return m_repaintBoundingBox; }
-    virtual FloatRect repaintRectInLocalCoordinatesExcludingSVGShadow() const OVERRIDE FINAL { return m_repaintBoundingBoxExcludingShadow; }
     virtual const AffineTransform& localToParentTransform() const OVERRIDE FINAL { return m_localTransform; }
     virtual AffineTransform localTransform() const OVERRIDE FINAL { return m_localTransform; }
 

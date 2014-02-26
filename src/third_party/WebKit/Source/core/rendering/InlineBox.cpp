@@ -20,11 +20,10 @@
 #include "config.h"
 #include "core/rendering/InlineBox.h"
 
-#include "core/dom/WebCoreMemoryInstrumentation.h"
+#include "core/platform/Partitions.h"
 #include "core/platform/graphics/FontMetrics.h"
 #include "core/rendering/InlineFlowBox.h"
 #include "core/rendering/PaintInfo.h"
-#include "core/rendering/RenderArena.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/RootInlineBox.h"
 
@@ -64,36 +63,19 @@ InlineBox::~InlineBox()
 #endif
 
 void InlineBox::remove()
-{ 
+{
     if (parent())
         parent()->removeChild(this);
 }
 
-void InlineBox::destroy(RenderArena* renderArena)
+void* InlineBox::operator new(size_t sz)
 {
-#ifndef NDEBUG
-    inInlineBoxDetach = true;
-#endif
-    delete this;
-#ifndef NDEBUG
-    inInlineBoxDetach = false;
-#endif
-
-    // Recover the size left there for us by operator delete and free the memory.
-    renderArena->free(*(size_t *)this, this);
+    return partitionAlloc(Partitions::getRenderingPartition(), sz);
 }
 
-void* InlineBox::operator new(size_t sz, RenderArena* renderArena)
+void InlineBox::operator delete(void* ptr)
 {
-    return renderArena->allocate(sz);
-}
-
-void InlineBox::operator delete(void* ptr, size_t sz)
-{
-    ASSERT(inInlineBoxDetach);
-
-    // Stash size where destroy can find it.
-    *(size_t *)ptr = sz;
+    partitionFree(ptr);
 }
 
 #ifndef NDEBUG
@@ -142,7 +124,7 @@ float InlineBox::logicalHeight() const
 {
     if (hasVirtualLogicalHeight())
         return virtualLogicalHeight();
-    
+
     if (renderer()->isText())
         return m_bitfields.isText() ? renderer()->style(isFirstLineStyle())->fontMetrics().height() : 0;
     if (renderer()->isBox() && parent())
@@ -167,14 +149,14 @@ LayoutUnit InlineBox::lineHeight() const
     return boxModelObject()->lineHeight(m_bitfields.firstLine(), isHorizontal() ? HorizontalLine : VerticalLine, PositionOnContainingLine);
 }
 
-int InlineBox::caretMinOffset() const 
-{ 
-    return m_renderer->caretMinOffset(); 
+int InlineBox::caretMinOffset() const
+{
+    return m_renderer->caretMinOffset();
 }
 
-int InlineBox::caretMaxOffset() const 
-{ 
-    return m_renderer->caretMaxOffset(); 
+int InlineBox::caretMaxOffset() const
+{
+    return m_renderer->caretMaxOffset();
 }
 
 void InlineBox::dirtyLineBoxes()
@@ -184,11 +166,11 @@ void InlineBox::dirtyLineBoxes()
         curr->markDirty();
 }
 
-void InlineBox::deleteLine(RenderArena* arena)
+void InlineBox::deleteLine()
 {
     if (!m_bitfields.extracted() && m_renderer->isBox())
         toRenderBox(m_renderer)->setInlineBoxWrapper(0);
-    destroy(arena);
+    destroy();
 }
 
 void InlineBox::extractLine()
@@ -209,8 +191,8 @@ void InlineBox::adjustPosition(float dx, float dy)
 {
     m_topLeft.move(dx, dy);
 
-    if (m_renderer->isReplaced()) 
-        toRenderBox(m_renderer)->move(dx, dy); 
+    if (m_renderer->isReplaced())
+        toRenderBox(m_renderer)->move(dx, dy);
 }
 
 void InlineBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, LayoutUnit /* lineTop */, LayoutUnit /*lineBottom*/)
@@ -221,7 +203,7 @@ void InlineBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, Layo
     LayoutPoint childPoint = paintOffset;
     if (parent()->renderer()->style()->isFlippedBlocksWritingMode()) // Faster than calling containingBlock().
         childPoint = renderer()->containingBlock()->flipForWritingModeForChild(toRenderBox(renderer()), childPoint);
-    
+
     // Paint all phases of replaced elements atomically, as though the replaced element established its
     // own stacking context.  (See Appendix E.2, section 6.4 on inline block/table elements in the CSS2.1
     // specification.)
@@ -249,22 +231,22 @@ bool InlineBox::nodeAtPoint(const HitTestRequest& request, HitTestResult& result
     LayoutPoint childPoint = accumulatedOffset;
     if (parent()->renderer()->style()->isFlippedBlocksWritingMode()) // Faster than calling containingBlock().
         childPoint = renderer()->containingBlock()->flipForWritingModeForChild(toRenderBox(renderer()), childPoint);
-    
+
     return renderer()->hitTest(request, result, locationInContainer, childPoint);
 }
 
 const RootInlineBox* InlineBox::root() const
-{ 
+{
     if (m_parent)
-        return m_parent->root(); 
+        return m_parent->root();
     ASSERT(isRootInlineBox());
     return static_cast<const RootInlineBox*>(this);
 }
 
 RootInlineBox* InlineBox::root()
-{ 
+{
     if (m_parent)
-        return m_parent->root(); 
+        return m_parent->root();
     ASSERT(isRootInlineBox());
     return static_cast<RootInlineBox*>(this);
 }
@@ -293,7 +275,7 @@ InlineBox* InlineBox::nextLeafChild() const
         leaf = parent()->nextLeafChild();
     return leaf;
 }
-    
+
 InlineBox* InlineBox::prevLeafChild() const
 {
     InlineBox* leaf = 0;
@@ -330,7 +312,7 @@ bool InlineBox::canAccommodateEllipsis(bool ltr, int blockEdge, int ellipsisWidt
     // Non-replaced elements can always accommodate an ellipsis.
     if (!m_renderer || !m_renderer->isReplaced())
         return true;
-    
+
     IntRect boxRect(left(), 0, m_logicalWidth, 10);
     IntRect ellipsisRect(ltr ? blockEdge - ellipsisWidth : blockEdge, 0, ellipsisWidth, 10);
     return !(boxRect.intersects(ellipsisRect));
@@ -344,7 +326,7 @@ float InlineBox::placeEllipsisBox(bool, float, float, float, float& truncatedWid
 }
 
 void InlineBox::clearKnownToHaveNoOverflow()
-{ 
+{
     m_bitfields.setKnownToHaveNoOverflow(false);
     if (parent() && parent()->knownToHaveNoOverflow())
         parent()->clearKnownToHaveNoOverflow();
@@ -387,17 +369,6 @@ LayoutPoint InlineBox::flipForWritingMode(const LayoutPoint& point)
     if (!renderer()->style()->isFlippedBlocksWritingMode())
         return point;
     return root()->block()->flipForWritingMode(point);
-}
-
-void InlineBox::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Rendering);
-    info.addMember(m_next, "next");
-    info.addMember(m_prev, "prev");
-    info.addMember(m_parent, "parent");
-    info.addMember(m_renderer, "renderer");
-
-    info.setCustomAllocation(true);
 }
 
 } // namespace WebCore

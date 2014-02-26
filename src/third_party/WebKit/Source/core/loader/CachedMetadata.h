@@ -31,9 +31,9 @@
 #ifndef CachedMetadata_h
 #define CachedMetadata_h
 
-#include <wtf/Forward.h>
-#include <wtf/RefCounted.h>
-#include <wtf/Vector.h>
+#include "wtf/Forward.h"
+#include "wtf/RefCounted.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -78,8 +78,6 @@ public:
             return 0;
         return m_serializedData.size() - dataStart;
     }
-
-    void reportMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     // Reads an unsigned value at position. Returns 0 on error.

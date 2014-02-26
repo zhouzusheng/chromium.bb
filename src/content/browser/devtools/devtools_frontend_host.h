@@ -37,7 +37,7 @@ class DevToolsFrontendHost : public DevToolsClientHost,
 
   // WebContentsObserver overrides.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void RenderViewGone(base::TerminationStatus status) OVERRIDE;
+  virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
 
   void OnDispatchOnInspectorBackend(const std::string& message);
   void OnActivateWindow();
@@ -51,6 +51,11 @@ class DevToolsFrontendHost : public DevToolsClientHost,
   void OnRequestFileSystems();
   void OnAddFileSystem();
   void OnRemoveFileSystem(const std::string& file_system_path);
+  void OnIndexPath(int request_id, const std::string& file_system_path);
+  void OnStopIndexing(int request_id);
+  void OnSearchInPath(int request_id,
+                      const std::string& file_system_path,
+                      const std::string& query);
 
   DevToolsFrontendHostDelegate* delegate_;
   DISALLOW_COPY_AND_ASSIGN(DevToolsFrontendHost);

@@ -270,7 +270,7 @@ int StackSlotOffset(int index) {
     return -(index + 3) * kPointerSize;
   } else {
     // Incoming parameter. Skip the return address.
-    return -(index - 1) * kPointerSize;
+    return -(index + 1) * kPointerSize + kFPOnStackSize + kPCOnStackSize;
   }
 }
 
@@ -306,8 +306,9 @@ Label* LChunk::GetAssemblyLabel(int block_id) const {
   return label->label();
 }
 
+
 void LChunk::MarkEmptyBlocks() {
-  HPhase phase("L_Mark empty blocks", this);
+  LPhase phase("L_Mark empty blocks", this);
   for (int i = 0; i < graph()->blocks()->length(); ++i) {
     HBasicBlock* block = graph()->blocks()->at(i);
     int first = block->first_instruction_index();
@@ -424,7 +425,7 @@ LChunk* LChunk::NewChunk(HGraph* graph) {
   int values = graph->GetMaximumValueID();
   CompilationInfo* info = graph->info();
   if (values > LUnallocated::kMaxVirtualRegisters) {
-    info->set_bailout_reason("not enough virtual registers for values");
+    info->set_bailout_reason(kNotEnoughVirtualRegistersForValues);
     return NULL;
   }
   LAllocator allocator(values, graph);
@@ -433,7 +434,7 @@ LChunk* LChunk::NewChunk(HGraph* graph) {
   if (chunk == NULL) return NULL;
 
   if (!allocator.Allocate(chunk)) {
-    info->set_bailout_reason("not enough virtual registers (regalloc)");
+    info->set_bailout_reason(kNotEnoughVirtualRegistersRegalloc);
     return NULL;
   }
 
@@ -487,6 +488,13 @@ void LChunk::set_allocated_double_registers(BitVector* allocated_registers) {
       }
     }
     iterator.Advance();
+  }
+}
+
+
+LPhase::~LPhase() {
+  if (ShouldProduceTraceOutput()) {
+    isolate()->GetHTracer()->TraceLithium(name(), chunk_);
   }
 }
 

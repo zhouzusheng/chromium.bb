@@ -25,7 +25,7 @@
 
 #include "core/dom/Element.h"
 #include "core/dom/NodeRareData.h"
-#include <wtf/Assertions.h>
+#include "wtf/Assertions.h"
 
 namespace WebCore {
 
@@ -40,7 +40,7 @@ NameNodeList::NameNodeList(PassRefPtr<Node> rootNode, const AtomicString& name)
 NameNodeList::~NameNodeList()
 {
     ownerNode()->nodeLists()->removeCacheWithAtomicName(this, NameNodeListType, m_name);
-} 
+}
 
 bool NameNodeList::nodeMatches(Element* testNode) const
 {

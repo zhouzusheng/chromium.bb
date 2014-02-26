@@ -358,13 +358,8 @@ bool DatabaseTracker::DeleteClosedDatabase(
 
   // Try to delete the file on the hard drive.
   base::FilePath db_file = GetFullDBFilePath(origin_identifier, database_name);
-  if (file_util::PathExists(db_file) && !file_util::Delete(db_file, false))
+  if (!sql::Connection::Delete(db_file))
     return false;
-
-  // Also delete any orphaned journal file.
-  DCHECK(db_file.Extension().empty());
-  file_util::Delete(db_file.InsertBeforeExtensionASCII(
-      DatabaseUtil::kJournalFileSuffix), false);
 
   if (quota_manager_proxy_.get() && db_file_size)
     quota_manager_proxy_->NotifyStorageModified(
@@ -419,10 +414,10 @@ bool DatabaseTracker::DeleteOrigin(const std::string& origin_identifier,
   for (base::FilePath database = databases.Next(); !database.empty();
        database = databases.Next()) {
     base::FilePath new_file = new_origin_dir.Append(database.BaseName());
-    file_util::Move(database, new_file);
+    base::Move(database, new_file);
   }
-  file_util::Delete(origin_dir, true);
-  file_util::Delete(new_origin_dir, true); // might fail on windows.
+  base::DeleteFile(origin_dir, true);
+  base::DeleteFile(new_origin_dir, true); // might fail on windows.
 
   databases_table_->DeleteOriginIdentifier(origin_identifier);
 
@@ -456,7 +451,7 @@ bool DatabaseTracker::LazyInit() {
 
     // If there are left-over directories from failed deletion attempts, clean
     // them up.
-    if (file_util::DirectoryExists(db_dir_)) {
+    if (base::DirectoryExists(db_dir_)) {
       base::FileEnumerator directories(
           db_dir_,
           false,
@@ -464,7 +459,7 @@ bool DatabaseTracker::LazyInit() {
           kTemporaryDirectoryPattern);
       for (base::FilePath directory = directories.Next(); !directory.empty();
            directory = directories.Next()) {
-        file_util::Delete(directory, true);
+        base::DeleteFile(directory, true);
       }
     }
 
@@ -472,12 +467,12 @@ bool DatabaseTracker::LazyInit() {
     // have a meta table, delete the database directory.
     const base::FilePath kTrackerDatabaseFullPath =
         db_dir_.Append(base::FilePath(kTrackerDatabaseFileName));
-    if (file_util::DirectoryExists(db_dir_) &&
-        file_util::PathExists(kTrackerDatabaseFullPath) &&
+    if (base::DirectoryExists(db_dir_) &&
+        base::PathExists(kTrackerDatabaseFullPath) &&
         (!db_->Open(kTrackerDatabaseFullPath) ||
          !sql::MetaTable::DoesTableExist(db_.get()))) {
       db_->Close();
-      if (!file_util::Delete(db_dir_, true))
+      if (!base::DeleteFile(db_dir_, true))
         return false;
     }
 
@@ -802,8 +797,8 @@ void DatabaseTracker::DeleteIncognitoDBDirectory() {
 
   base::FilePath incognito_db_dir =
       profile_path_.Append(kIncognitoDatabaseDirectoryName);
-  if (file_util::DirectoryExists(incognito_db_dir))
-    file_util::Delete(incognito_db_dir, true);
+  if (base::DirectoryExists(incognito_db_dir))
+    base::DeleteFile(incognito_db_dir, true);
 }
 
 void DatabaseTracker::ClearSessionOnlyOrigins() {

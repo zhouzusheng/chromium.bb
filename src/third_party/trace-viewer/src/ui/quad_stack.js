@@ -6,12 +6,15 @@
 
 base.requireStylesheet('ui.quad_stack');
 
+base.require('base.properties');
 base.require('base.bbox2');
 base.require('base.quad');
+base.require('base.utils');
 base.require('base.raf');
 base.require('ui.quad_view');
 base.require('cc.region');
 base.require('ui.camera');
+base.require('ui.rect_view');
 
 base.exportTo('ui', function() {
   var QuadView = ui.QuadView;
@@ -32,17 +35,40 @@ base.exportTo('ui', function() {
     __proto__: HTMLUnknownElement.prototype,
 
     decorate: function() {
-      this.contentContainer_ = document.createElement('view-container');
-      this.appendChild(this.contentContainer_);
+      this.transformedContainer_ =
+          document.createElement('transformed-container');
+      this.appendChild(this.transformedContainer_);
       this.viewport_ = undefined;
+      this.worldViewportRectView_ = new ui.RectView();
       this.quads_ = undefined;
     },
 
-    setQuadsAndViewport: function(quads, viewport) {
-      validateQuads(quads);
-      this.quads_ = quads;
-      this.viewport_ = viewport;
-      this.updateContents_();
+    initialize: function(unpaddedWorldRect, opt_worldViewportRect, opt_scale) {
+      this.viewport_ = new ui.QuadViewViewport(unpaddedWorldRect);
+      if (opt_scale)
+        this.viewport_.scale = opt_scale;
+
+      this.viewport_.addEventListener('change', function() {
+        this.worldViewportRectView_.viewport = this.viewport_;
+      }.bind(this));
+
+      this.worldViewportRect_ = base.Rect.FromXYWH(
+          opt_worldViewportRect.x || 0,
+          opt_worldViewportRect.y || 0,
+          opt_worldViewportRect.width,
+          opt_worldViewportRect.height
+          );
+
+      this.worldViewportRectView_.viewport = this.viewport_;
+      this.worldViewportRectView_.rect = this.worldViewportRect_;
+    },
+
+    get layers() {
+      return this.layers_;
+    },
+
+    set layers(newValue) {
+      base.setPropertyAndDispatchChange(this, 'layers', newValue);
     },
 
     get quads() {
@@ -59,34 +85,19 @@ base.exportTo('ui', function() {
       return this.viewport_;
     },
 
-    set viewport(viewport) {
-      this.viewport_ = viewport;
-      this.updateContents_();
+    get worldViewportRect() {
+      return this.worldViewportRect_;
     },
 
-    get contentContainer() {
-      return this.contentContainer_;
+    get worldViewportRectView() {
+      return this.worldViewportRectView_;
+    },
+
+    get transformedContainer() {
+      return this.transformedContainer_;
     },
 
     updateContents_: function() {
-      var percX, percY;
-      // TODO(nduca): This exists to get the stack to appear centered around the
-      // center of the stack. But, the way this was done makes the quad stack
-      // un-shrinkable. We need a better way.
-      if (false) {
-        if (this.viewport_) {
-          var layoutRect = this.viewport_.layoutRect;
-          percX = 100 * (Math.abs(layoutRect.x) / layoutRect.width);
-          percX = 100 * (Math.abs(layoutRect.y) / layoutRect.height);
-          this.style.width = layoutRect.width + 'px';
-          this.style.height = layoutRect.height + 'px';
-        } else {
-          percX = '50';
-          percY = '50';
-        }
-        this.style.webkitPerspectiveOrigin = percX + '% ' + percY + '%';
-      }
-
       // Build the stacks.
       var stackingGroupsById = {};
       var quads = this.quads;
@@ -97,12 +108,16 @@ base.exportTo('ui', function() {
         stackingGroupsById[quad.stackingGroupId].push(quad);
       }
 
+      // Remove worldViewportRectView to re-insert after Quads.
+      if (this.worldViewportRectView_.parentNode === this.transformedContainer_)
+        this.transformedContainer_.removeChild(this.worldViewportRectView_);
+
       // Get rid of old quad views if needed.
       var numStackingGroups = base.dictionaryValues(stackingGroupsById).length;
-      while (this.contentContainer_.children.length > numStackingGroups) {
-        var n = this.contentContainer_.children.length - 1;
-        this.contentContainer_.removeChild(
-            this.contentContainer_.children[n]);
+      while (this.transformedContainer_.children.length > numStackingGroups) {
+        var n = this.transformedContainer_.children.length - 1;
+        this.transformedContainer_.removeChild(
+            this.transformedContainer_.children[n]);
       }
 
       // Helper function to create a new quad view and track the current one.
@@ -111,11 +126,11 @@ base.exportTo('ui', function() {
       var curQuadView = undefined;
       function appendNewQuadView() {
         curQuadViewIndex++;
-        if (curQuadViewIndex < that.contentContainer_.children.length) {
-          curQuadView = that.contentContainer_.children[curQuadViewIndex];
+        if (curQuadViewIndex < that.transformedContainer_.children.length) {
+          curQuadView = that.transformedContainer_.children[curQuadViewIndex];
         } else {
           curQuadView = new QuadView();
-          that.contentContainer_.appendChild(curQuadView);
+          that.transformedContainer_.appendChild(curQuadView);
         }
         curQuadView.quads = undefined;
         curQuadView.viewport = that.viewport_;
@@ -139,22 +154,23 @@ base.exportTo('ui', function() {
         });
       }
 
-      var topQuadIndex = this.contentContainer_.children.length - 1;
-      var topQuad = this.contentContainer_.children[topQuadIndex];
-      topQuad.drawDeviceViewportMask = true;
+      // Add worldViewportRectView after the Quads.
+      this.transformedContainer_.appendChild(this.worldViewportRectView_);
 
-      for (var i = 0; i < this.contentContainer_.children.length; i++) {
-        var child = this.contentContainer_.children[i];
-        child.quads = child.pendingQuads;
-        delete child.pendingQuads;
+      for (var i = 0; i < this.transformedContainer_.children.length; i++) {
+        var child = this.transformedContainer_.children[i];
+        if (child instanceof ui.QuadView) {
+          child.quads = child.pendingQuads;
+          delete child.pendingQuads;
+        }
       }
 
-      this.layers = this.contentContainer_.children;
+      this.viewport.updateBoxSize(this.transformedContainer_);
+      this.layers = this.transformedContainer_.children;
     }
 
-  };
 
-  base.defineProperty(QuadStack, 'layers', base.PropertyKind.JS);
+  };
 
   return {
     QuadStack: QuadStack

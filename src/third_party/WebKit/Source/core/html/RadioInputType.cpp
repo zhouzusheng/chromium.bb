@@ -30,7 +30,7 @@
 #include "core/html/InputTypeNames.h"
 #include "core/page/SpatialNavigation.h"
 #include "core/platform/LocalizedStrings.h"
-#include <wtf/PassOwnPtr.h>
+#include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
@@ -95,7 +95,7 @@ void RadioInputType::handleKeydownEvent(KeyboardEvent* event)
             break;
         if (inputElement->isRadioButton() && inputElement->name() == element()->name() && inputElement->isFocusable()) {
             RefPtr<HTMLInputElement> protector(inputElement);
-            document->setFocusedNode(inputElement);
+            document->setFocusedElement(inputElement);
             inputElement->dispatchSimulatedClick(event, SendNoEvents, DoNotShowPressedLook);
             event->setDefaultHandled();
             return;
@@ -115,9 +115,9 @@ void RadioInputType::handleKeyupEvent(KeyboardEvent* event)
     dispatchSimulatedClickIfActive(event);
 }
 
-bool RadioInputType::isKeyboardFocusable(KeyboardEvent* event) const
+bool RadioInputType::isKeyboardFocusable() const
 {
-    if (!InputType::isKeyboardFocusable(event))
+    if (!InputType::isKeyboardFocusable())
         return false;
 
     // When using Spatial Navigation, every radio button should be focusable.
@@ -126,9 +126,9 @@ bool RadioInputType::isKeyboardFocusable(KeyboardEvent* event) const
 
     // Never allow keyboard tabbing to leave you in the same radio group.  Always
     // skip any other elements in the group.
-    Node* currentFocusedNode = element()->document()->focusedNode();
-    if (currentFocusedNode && currentFocusedNode->hasTagName(inputTag)) {
-        HTMLInputElement* focusedInput = toHTMLInputElement(currentFocusedNode);
+    Element* currentFocusedElement = element()->document()->focusedElement();
+    if (currentFocusedElement && currentFocusedElement->hasTagName(inputTag)) {
+        HTMLInputElement* focusedInput = toHTMLInputElement(currentFocusedElement);
         if (focusedInput->isRadioButton() && focusedInput->form() == element()->form() && focusedInput->name() == element()->name())
             return false;
     }

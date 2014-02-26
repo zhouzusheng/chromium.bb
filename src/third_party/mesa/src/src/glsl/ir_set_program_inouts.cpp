@@ -26,6 +26,9 @@
  *
  * Sets the InputsRead and OutputsWritten of Mesa programs.
  *
+ * Additionally, for fragment shaders, sets the InterpQualifier array, the
+ * IsCentroid bitfield, and the UsesDFdy flag.
+ *
  * Mesa programs (gl_program, not gl_shader_program) have a set of
  * flags indicating which varyings are read and written.  Computing
  * which are actually read from some sort of backend code can be
@@ -34,19 +37,19 @@
  * from the GLSL IR.
  */
 
-extern "C" {
 #include "main/core.h" /* for struct gl_program */
 #include "program/hash_table.h"
-}
 #include "ir.h"
 #include "ir_visitor.h"
 #include "glsl_types.h"
 
 class ir_set_program_inouts_visitor : public ir_hierarchical_visitor {
 public:
-   ir_set_program_inouts_visitor(struct gl_program *prog)
+   ir_set_program_inouts_visitor(struct gl_program *prog,
+                                 bool is_fragment_shader)
    {
       this->prog = prog;
+      this->is_fragment_shader = is_fragment_shader;
       this->ht = hash_table_ctor(0,
 				 hash_table_pointer_hash,
 				 hash_table_pointer_compare);
@@ -58,15 +61,19 @@ public:
 
    virtual ir_visitor_status visit_enter(ir_dereference_array *);
    virtual ir_visitor_status visit_enter(ir_function_signature *);
+   virtual ir_visitor_status visit_enter(ir_expression *);
+   virtual ir_visitor_status visit_enter(ir_discard *);
    virtual ir_visitor_status visit(ir_dereference_variable *);
    virtual ir_visitor_status visit(ir_variable *);
 
    struct gl_program *prog;
    struct hash_table *ht;
+   bool is_fragment_shader;
 };
 
 static void
-mark(struct gl_program *prog, ir_variable *var, int index)
+mark(struct gl_program *prog, ir_variable *var, int offset, int len,
+     bool is_fragment_shader)
 {
    /* As of GLSL 1.20, varyings can only be floats, floating-point
     * vectors or matrices, or arrays of them.  For Mesa programs using
@@ -75,25 +82,23 @@ mark(struct gl_program *prog, ir_variable *var, int index)
     * something doing a more clever packing would use something other
     * than InputsRead/OutputsWritten.
     */
-   const glsl_type *element_type;
-   int element_size;
 
-   if (var->type->is_array())
-      element_type = var->type->fields.array;
-   else
-      element_type = var->type;
-
-   if (element_type->is_matrix())
-      element_size = element_type->matrix_columns;
-   else
-      element_size = 1;
-
-   index *= element_size;
-   for (int i = 0; i < element_size; i++) {
-      if (var->mode == ir_var_in)
-	 prog->InputsRead |= BITFIELD64_BIT(var->location + index + i);
-      else
-	 prog->OutputsWritten |= BITFIELD64_BIT(var->location + index + i);
+   for (int i = 0; i < len; i++) {
+      GLbitfield64 bitfield = BITFIELD64_BIT(var->location + var->index + offset + i);
+      if (var->mode == ir_var_in) {
+	 prog->InputsRead |= bitfield;
+         if (is_fragment_shader) {
+            gl_fragment_program *fprog = (gl_fragment_program *) prog;
+            fprog->InterpQualifier[var->location + var->index + offset + i] =
+               (glsl_interp_qualifier) var->interpolation;
+            if (var->centroid)
+               fprog->IsCentroid |= bitfield;
+         }
+      } else if (var->mode == ir_var_system_value) {
+         prog->SystemValuesRead |= bitfield;
+      } else {
+	 prog->OutputsWritten |= bitfield;
+      }
    }
 }
 
@@ -105,11 +110,12 @@ ir_set_program_inouts_visitor::visit(ir_dereference_variable *ir)
       return visit_continue;
 
    if (ir->type->is_array()) {
-      for (unsigned int i = 0; i < ir->type->length; i++) {
-	 mark(this->prog, ir->var, i);
-      }
+      mark(this->prog, ir->var, 0,
+	   ir->type->length * ir->type->fields.array->matrix_columns,
+           this->is_fragment_shader);
    } else {
-      mark(this->prog, ir->var, 0);
+      mark(this->prog, ir->var, 0, ir->type->matrix_columns,
+           this->is_fragment_shader);
    }
 
    return visit_continue;
@@ -128,7 +134,15 @@ ir_set_program_inouts_visitor::visit_enter(ir_dereference_array *ir)
       var = (ir_variable *)hash_table_find(this->ht, deref_var->var);
 
    if (index && var) {
-      mark(this->prog, var, index->value.i[0]);
+      int width = 1;
+
+      if (deref_var->type->is_array() &&
+	  deref_var->type->fields.array->is_matrix()) {
+	 width = deref_var->type->fields.array->matrix_columns;
+      }
+
+      mark(this->prog, var, index->value.i[0] * width, width,
+           this->is_fragment_shader);
       return visit_continue_with_parent;
    }
 
@@ -139,7 +153,8 @@ ir_visitor_status
 ir_set_program_inouts_visitor::visit(ir_variable *ir)
 {
    if (ir->mode == ir_var_in ||
-       ir->mode == ir_var_out) {
+       ir->mode == ir_var_out ||
+       ir->mode == ir_var_system_value) {
       hash_table_insert(this->ht, ir, ir);
    }
 
@@ -156,12 +171,43 @@ ir_set_program_inouts_visitor::visit_enter(ir_function_signature *ir)
    return visit_continue_with_parent;
 }
 
-void
-do_set_program_inouts(exec_list *instructions, struct gl_program *prog)
+ir_visitor_status
+ir_set_program_inouts_visitor::visit_enter(ir_expression *ir)
 {
-   ir_set_program_inouts_visitor v(prog);
+   if (is_fragment_shader && ir->operation == ir_unop_dFdy) {
+      gl_fragment_program *fprog = (gl_fragment_program *) prog;
+      fprog->UsesDFdy = true;
+   }
+   return visit_continue;
+}
+
+ir_visitor_status
+ir_set_program_inouts_visitor::visit_enter(ir_discard *)
+{
+   /* discards are only allowed in fragment shaders. */
+   assert(is_fragment_shader);
+
+   gl_fragment_program *fprog = (gl_fragment_program *) prog;
+   fprog->UsesKill = true;
+
+   return visit_continue;
+}
+
+void
+do_set_program_inouts(exec_list *instructions, struct gl_program *prog,
+                      bool is_fragment_shader)
+{
+   ir_set_program_inouts_visitor v(prog, is_fragment_shader);
 
    prog->InputsRead = 0;
    prog->OutputsWritten = 0;
+   prog->SystemValuesRead = 0;
+   if (is_fragment_shader) {
+      gl_fragment_program *fprog = (gl_fragment_program *) prog;
+      memset(fprog->InterpQualifier, 0, sizeof(fprog->InterpQualifier));
+      fprog->IsCentroid = 0;
+      fprog->UsesDFdy = false;
+      fprog->UsesKill = false;
+   }
    visit_list_elements(&v, instructions);
 }

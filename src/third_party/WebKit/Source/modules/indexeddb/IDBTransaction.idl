@@ -25,9 +25,8 @@
  */
 
 [
-    ActiveDOMObject,
-    EventTarget
-] interface IDBTransaction {
+    ActiveDOMObject
+] interface IDBTransaction : EventTarget {
 
     // Properties
     readonly attribute DOMString mode;
@@ -39,15 +38,7 @@
     [RaisesException] void abort ();
 
     // Events
-    attribute EventListener onabort;
-    attribute EventListener oncomplete;
-    attribute EventListener onerror;
-    // EventTarget interface
-    void addEventListener(DOMString type,
-                          EventListener listener,
-                          optional boolean useCapture);
-    void removeEventListener(DOMString type,
-                             EventListener listener,
-                             optional boolean useCapture);
-    [RaisesException] boolean dispatchEvent(Event evt);
+    attribute EventHandler onabort;
+    attribute EventHandler oncomplete;
+    attribute EventHandler onerror;
 };

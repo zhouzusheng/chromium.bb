@@ -47,7 +47,7 @@
         '../third_party/hunspell/hunspell.gyp:hunspell',
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
-        '../third_party/WebKit/Source/WebKit/chromium/WebKit.gyp:webkit',
+        '../third_party/WebKit/public/blink.gyp:blink',
       ],
       'include_dirs': [ '..' ],
       'sources': [

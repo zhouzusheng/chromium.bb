@@ -26,17 +26,13 @@
 #ifndef CustomEvent_h
 #define CustomEvent_h
 
-#include "bindings/v8/ScriptValue.h"
-#include "bindings/v8/SerializedScriptValue.h"
 #include "core/dom/Event.h"
 
 namespace WebCore {
 
-struct CustomEventInit : public EventInit {
-    CustomEventInit();
+class SerializedScriptValue;
 
-    ScriptValue detail;
-};
+typedef EventInit CustomEventInit;
 
 class CustomEvent : public Event {
 public:
@@ -52,20 +48,23 @@ public:
         return adoptRef(new CustomEvent(type, initializer));
     }
 
-    void initCustomEvent(const AtomicString& type, bool canBubble, bool cancelable, const ScriptValue& detail);
     void initCustomEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<SerializedScriptValue>);
 
     virtual const AtomicString& interfaceName() const;
 
-    const ScriptValue& detail() const { return m_detail; }
-    PassRefPtr<SerializedScriptValue> serializedScriptValue() { return m_serializedScriptValue; }
+    SerializedScriptValue* serializedDetail() { return m_serializedDetail.get(); }
+
+    void setSerializedDetail(PassRefPtr<SerializedScriptValue> detail)
+    {
+        ASSERT(!m_serializedDetail);
+        m_serializedDetail = detail;
+    }
 
 private:
     CustomEvent();
     CustomEvent(const AtomicString& type, const CustomEventInit& initializer);
 
-    ScriptValue m_detail;
-    RefPtr<SerializedScriptValue> m_serializedScriptValue;
+    RefPtr<SerializedScriptValue> m_serializedDetail;
 };
 
 } // namespace WebCore

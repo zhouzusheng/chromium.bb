@@ -39,6 +39,8 @@
 
 namespace WebCore {
 
+class ExceptionState;
+
 class MediaSource : public MediaSourceBase, public ScriptWrappable {
 public:
     static PassRefPtr<MediaSource> create(ScriptExecutionContext*);
@@ -47,8 +49,8 @@ public:
     // MediaSource.idl methods
     SourceBufferList* sourceBuffers() { return m_sourceBuffers.get(); }
     SourceBufferList* activeSourceBuffers() { return m_activeSourceBuffers.get(); }
-    SourceBuffer* addSourceBuffer(const String& type, ExceptionCode&);
-    void removeSourceBuffer(SourceBuffer*, ExceptionCode&);
+    SourceBuffer* addSourceBuffer(const String& type, ExceptionState&);
+    void removeSourceBuffer(SourceBuffer*, ExceptionState&);
     static bool isTypeSupported(const String& type);
 
     // EventTarget interface
@@ -57,13 +59,12 @@ public:
     using RefCounted<MediaSourceBase>::ref;
     using RefCounted<MediaSourceBase>::deref;
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
-
 private:
     explicit MediaSource(ScriptExecutionContext*);
 
     // MediaSourceBase interface
-    virtual void setReadyState(const AtomicString&) OVERRIDE;
+    virtual void onReadyStateChange(const AtomicString&, const AtomicString&) OVERRIDE;
+    virtual Vector<RefPtr<TimeRanges> > activeRanges() const OVERRIDE;
 
     RefPtr<SourceBufferList> m_sourceBuffers;
     RefPtr<SourceBufferList> m_activeSourceBuffers;

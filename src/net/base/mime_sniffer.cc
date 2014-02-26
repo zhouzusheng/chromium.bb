@@ -100,8 +100,8 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/mime_util.h"
+#include "url/gurl.h"
 
 namespace net {
 
@@ -807,6 +807,9 @@ bool ShouldSniffMimeType(const GURL& url, const std::string& mime_type) {
                           url.SchemeIs("http") ||
                           url.SchemeIs("https") ||
                           url.SchemeIs("ftp") ||
+#if defined(OS_ANDROID)
+                          url.SchemeIs("content") ||
+#endif
                           url.SchemeIsFile() ||
                           url.SchemeIsFileSystem();
   if (!sniffable_scheme) {

@@ -33,7 +33,6 @@ LayerTreeSettings::LayerTreeSettings()
       solid_color_scrollbar_color(SK_ColorWHITE),
       solid_color_scrollbar_thickness_dip(-1),
       calculate_top_controls_position(false),
-      use_color_estimator(false),
       use_memory_management(true),
       timeout_and_draw_when_animation_checkerboards(true),
       layer_transforms_should_scale_layer_contents(false),
@@ -57,7 +56,8 @@ LayerTreeSettings::LayerTreeSettings()
       force_direct_layer_drawing(false),
       strict_layer_property_change_checking(false),
       use_map_image(false),
-      compositor_name("ChromiumCompositor") {
+      compositor_name("ChromiumCompositor"),
+      ignore_root_layer_flings(false) {
   // TODO(danakj): Renable surface caching when we can do it more realiably.
   // crbug.com/170713
   cache_render_pass_contents = false;

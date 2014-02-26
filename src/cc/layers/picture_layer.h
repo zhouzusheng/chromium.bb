@@ -5,8 +5,8 @@
 #ifndef CC_LAYERS_PICTURE_LAYER_H_
 #define CC_LAYERS_PICTURE_LAYER_H_
 
+#include "cc/base/invalidation_region.h"
 #include "cc/debug/devtools_instrumentation.h"
-#include "cc/layers/contents_scaling_layer.h"
 #include "cc/layers/layer.h"
 #include "cc/resources/picture_pile.h"
 #include "cc/trees/occlusion_tracker.h"
@@ -15,25 +15,23 @@ namespace cc {
 
 class ContentLayerClient;
 class ResourceUpdateQueue;
-struct RenderingStats;
 
-class CC_EXPORT PictureLayer : public ContentsScalingLayer {
+class CC_EXPORT PictureLayer : public Layer {
  public:
   static scoped_refptr<PictureLayer> Create(ContentLayerClient* client);
 
   void ClearClient() { client_ = NULL; }
 
-  // Implement Layer interface
+  // Layer interface.
   virtual bool DrawsContent() const OVERRIDE;
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(
       LayerTreeImpl* tree_impl) OVERRIDE;
   virtual void SetLayerTreeHost(LayerTreeHost* host) OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
   virtual void SetNeedsDisplayRect(const gfx::RectF& layer_rect) OVERRIDE;
-  virtual void Update(
+  virtual bool Update(
       ResourceUpdateQueue* queue,
-      const OcclusionTracker* occlusion,
-      RenderingStats* stats) OVERRIDE;
+      const OcclusionTracker* occlusion) OVERRIDE;
   virtual void SetIsMask(bool is_mask) OVERRIDE;
   virtual bool SupportsLCDText() const OVERRIDE;
 
@@ -47,7 +45,7 @@ class CC_EXPORT PictureLayer : public ContentsScalingLayer {
   devtools_instrumentation::
       ScopedLayerObjectTracker instrumentation_object_tracker_;
   // Invalidation to use the next time update is called.
-  Region pending_invalidation_;
+  InvalidationRegion pending_invalidation_;
   // Invalidation from the last time update was called.
   Region pile_invalidation_;
   bool is_mask_;

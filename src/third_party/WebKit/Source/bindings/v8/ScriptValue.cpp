@@ -14,7 +14,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -47,13 +47,13 @@ ScriptValue::~ScriptValue()
 PassRefPtr<SerializedScriptValue> ScriptValue::serialize(ScriptState* scriptState)
 {
     ScriptScope scope(scriptState);
-    return SerializedScriptValue::create(v8Value());
+    return SerializedScriptValue::create(v8Value(), scriptState->isolate());
 }
 
 PassRefPtr<SerializedScriptValue> ScriptValue::serialize(ScriptState* scriptState, MessagePortArray* messagePorts, ArrayBufferArray* arrayBuffers, bool& didThrow)
 {
     ScriptScope scope(scriptState);
-    return SerializedScriptValue::create(v8Value(), messagePorts, arrayBuffers, didThrow);
+    return SerializedScriptValue::create(v8Value(), messagePorts, arrayBuffers, didThrow, scriptState->isolate());
 }
 
 ScriptValue ScriptValue::deserialize(ScriptState* scriptState, SerializedScriptValue* value)
@@ -67,11 +67,11 @@ bool ScriptValue::getString(String& result, v8::Isolate* isolate) const
     if (hasNoValue())
         return false;
 
-    if (!m_value->isString())
-        return false;
-
     v8::HandleScope handleScope(isolate);
-    result = toWebCoreString(v8Value());
+    v8::Handle<v8::Value> string = v8Value();
+    if (string.IsEmpty() || !string->IsString())
+        return false;
+    result = toWebCoreString(string);
     return true;
 }
 

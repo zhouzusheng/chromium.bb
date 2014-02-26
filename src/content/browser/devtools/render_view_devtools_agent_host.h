@@ -17,6 +17,7 @@
 
 namespace content {
 
+class DevToolsTracingHandler;
 class RendererOverridesHandler;
 class RenderViewHost;
 
@@ -38,6 +39,8 @@ class CONTENT_EXPORT RenderViewDevToolsAgentHost
   virtual ~RenderViewDevToolsAgentHost();
 
   // DevTooolsAgentHost overrides.
+  virtual void DisconnectRenderViewHost() OVERRIDE;
+  virtual void ConnectRenderViewHost(RenderViewHost* rvh) OVERRIDE;
   virtual RenderViewHost* GetRenderViewHost() OVERRIDE;
 
   // IPCDevToolsAgentHost overrides.
@@ -48,10 +51,10 @@ class CONTENT_EXPORT RenderViewDevToolsAgentHost
 
   // WebContentsObserver overrides.
   virtual void AboutToNavigateRenderView(RenderViewHost* dest_rvh) OVERRIDE;
-  virtual void RenderViewGone(base::TerminationStatus status) OVERRIDE;
+  virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
+  virtual void DidAttachInterstitialPage() OVERRIDE;
 
-  void ConnectRenderViewHost(RenderViewHost* rvh, bool reattach);
-  void DisconnectRenderViewHost();
+  void SetRenderViewHost(RenderViewHost* rvh);
 
   void RenderViewHostDestroyed(RenderViewHost* rvh);
   void RenderViewCrashed();
@@ -65,6 +68,7 @@ class CONTENT_EXPORT RenderViewDevToolsAgentHost
   RenderViewHost* render_view_host_;
   scoped_ptr<DevToolsAgentHostRvhObserver> rvh_observer_;
   scoped_ptr<RendererOverridesHandler> overrides_handler_;
+  scoped_ptr<DevToolsTracingHandler> tracing_handler_;
   std::string state_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderViewDevToolsAgentHost);

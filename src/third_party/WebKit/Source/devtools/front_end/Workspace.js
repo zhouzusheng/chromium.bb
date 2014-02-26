@@ -30,25 +30,6 @@
 
 /**
  * @constructor
- */
-WebInspector.WorkspaceController = function(workspace)
-{
-    this._workspace = workspace;
-    WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.InspectedURLChanged, this._inspectedURLChanged, this);
-}
-
-WebInspector.WorkspaceController.prototype = {
-    /**
-     * @param {WebInspector.Event} event
-     */
-    _inspectedURLChanged: function(event)
-    {
-        WebInspector.Revision.filterOutStaleRevisions();
-    }
-}
-
-/**
- * @constructor
  * @param {string} parentPath
  * @param {string} name
  * @param {string} originURL
@@ -98,6 +79,12 @@ WebInspector.ProjectDelegate.prototype = {
 
     /**
      * @param {string} path
+     * @param {function(?Date, ?number)} callback
+     */
+    requestMetadata: function(path, callback) { },
+
+    /**
+     * @param {string} path
      * @param {function(?string,boolean,string)} callback
      */
     requestFileContent: function(path, callback) { },
@@ -128,18 +115,47 @@ WebInspector.ProjectDelegate.prototype = {
 
     /**
      * @param {string} path
+     */
+    refresh: function(path) { },
+
+    /**
+     * @param {string} path
+     * @param {?string} name
+     * @param {function(?string)} callback
+     */
+    createFile: function(path, name, callback) { },
+
+    /**
+     * @param {string} path
+     */
+    deleteFile: function(path) { },
+
+    remove: function() { },
+
+    /**
+     * @param {string} path
      * @param {string} query
      * @param {boolean} caseSensitive
      * @param {boolean} isRegex
      * @param {function(Array.<WebInspector.ContentProvider.SearchMatch>)} callback
      */
-    searchInFileContent: function(path, query, caseSensitive, isRegex, callback) { }
-}
+    searchInFileContent: function(path, query, caseSensitive, isRegex, callback) { },
 
-/**
- * @type {?WebInspector.WorkspaceController}
- */
-WebInspector.workspaceController = null;
+    /**
+     * @param {string} query
+     * @param {boolean} caseSensitive
+     * @param {boolean} isRegex
+     * @param {WebInspector.Progress} progress
+     * @param {function(StringMap)} callback
+     */
+    searchInContent: function(query, caseSensitive, isRegex, progress, callback) { },
+
+    /**
+     * @param {WebInspector.Progress} progress
+     * @param {function()} callback
+     */
+    indexContent: function(progress, callback) { }
+}
 
 /**
  * @param {WebInspector.Workspace} workspace
@@ -196,16 +212,15 @@ WebInspector.Project.prototype = {
     _fileAdded: function(event)
     {
         var fileDescriptor = /** @type {WebInspector.FileDescriptor} */ (event.data);
-        var uiSourceCode = this.uiSourceCode(fileDescriptor.path);
-        if (uiSourceCode) {
-            // FIXME: Implement
+        var path = fileDescriptor.parentPath ? fileDescriptor.parentPath + "/" + fileDescriptor.name : fileDescriptor.name;
+        var uiSourceCode = this.uiSourceCode(path);
+        if (uiSourceCode)
             return;
-        }
 
         uiSourceCode = new WebInspector.UISourceCode(this, fileDescriptor.parentPath, fileDescriptor.name, fileDescriptor.originURL, fileDescriptor.url, fileDescriptor.contentType, fileDescriptor.isEditable);
         uiSourceCode.isContentScript = fileDescriptor.isContentScript;
 
-        this._uiSourceCodesMap[uiSourceCode.path()] = {uiSourceCode: uiSourceCode, index: this._uiSourceCodesList.length};
+        this._uiSourceCodesMap[path] = {uiSourceCode: uiSourceCode, index: this._uiSourceCodesList.length};
         this._uiSourceCodesList.push(uiSourceCode);
         this._workspace.dispatchEventToListeners(WebInspector.Workspace.Events.UISourceCodeAdded, uiSourceCode);
     },
@@ -264,6 +279,15 @@ WebInspector.Project.prototype = {
     uiSourceCodes: function()
     {
         return this._uiSourceCodesList;
+    },
+
+    /**
+     * @param {WebInspector.UISourceCode} uiSourceCode
+     * @param {function(?Date, ?number)} callback
+     */
+    requestMetadata: function(uiSourceCode, callback)
+    {
+        this._projectDelegate.requestMetadata(uiSourceCode.path(), callback);
     },
 
     /**
@@ -343,6 +367,42 @@ WebInspector.Project.prototype = {
     },
 
     /**
+     * @param {string} path
+     */
+    refresh: function(path)
+    {
+        this._projectDelegate.refresh(path);
+    },
+
+    /**
+     * @param {string} path
+     * @param {?string} name
+     * @param {function(?string)} callback
+     */
+    createFile: function(path, name, callback)
+    {
+        this._projectDelegate.createFile(path, name, innerCallback);
+
+        function innerCallback(filePath)
+        {
+            callback(filePath);
+        }
+    },
+
+    /**
+     * @param {WebInspector.UISourceCode} uiSourceCode
+     */
+    deleteFile: function(uiSourceCode)
+    {
+        this._projectDelegate.deleteFile(uiSourceCode.path());
+    },
+
+    remove: function()
+    {
+        this._projectDelegate.remove();
+    },
+
+    /**
      * @param {WebInspector.UISourceCode} uiSourceCode
      * @param {string} query
      * @param {boolean} caseSensitive
@@ -352,6 +412,27 @@ WebInspector.Project.prototype = {
     searchInFileContent: function(uiSourceCode, query, caseSensitive, isRegex, callback)
     {
         this._projectDelegate.searchInFileContent(uiSourceCode.path(), query, caseSensitive, isRegex, callback);
+    },
+
+    /**
+     * @param {string} query
+     * @param {boolean} caseSensitive
+     * @param {boolean} isRegex
+     * @param {WebInspector.Progress} progress
+     * @param {function(StringMap)} callback
+     */
+    searchInContent: function(query, caseSensitive, isRegex, progress, callback)
+    {
+        this._projectDelegate.searchInContent(query, caseSensitive, isRegex, progress, callback);
+    },
+
+    /**
+     * @param {WebInspector.Progress} progress
+     * @param {function()} callback
+     */
+    indexContent: function(progress, callback)
+    {
+        this._projectDelegate.indexContent(progress, callback);
     },
 
     dispose: function()

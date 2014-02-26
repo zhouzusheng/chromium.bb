@@ -1,3 +1,5 @@
+// http://dev.chromium.org/blink/runtime-enabled-features
+//
 // This list is used to generate RuntimeEnabledFeatures.h/cpp which contains
 // a class that stores static enablers for all experimental features.
 //
@@ -16,7 +18,6 @@
 AnimatedWebP status=experimental
 ApplicationCache status=stable
 AuthorShadowDOMForAnyElement
-CanvasPath status=test
 Crypto status=test
 CSSCompositing status=experimental
 CSSExclusions status=experimental
@@ -24,19 +25,22 @@ CSSGridLayout status=experimental
 CSSRegions status=experimental
 CSSTouchAction status=test
 CSSVariables status=experimental
+CSS3Text status=experimental
 CSS3TextDecorations status=experimental
 CustomDOMElements status=experimental
 Database status=stable
 DataListElement status=stable
-DeviceMotion
+DeviceMotion status=test
 DeviceOrientation status=stable
 DialogElement status=experimental
 DirectoryUpload status=stable
+// FIXME: Remove this separate feature when CustomElements are always enabled
+EmbedderCustomElements
+EncodingAPI status=experimental
 EncryptedMedia status=experimental
 EncryptedMediaAnyVersion status=stable
 ExperimentalCanvasFeatures status=test
 ExperimentalContentSecurityPolicyFeatures status=experimental
-ExperimentalShadowDOM status=experimental
 FileSystem status=stable
 FontLoadEvents status=experimental
 Fullscreen status=stable
@@ -47,9 +51,9 @@ HTMLImports status=test
 HighResolutionTimeInWorkers status=experimental
 IMEAPI status=test
 IndexedDB status=stable
+InputModeAttribute status=test
 InputTypeColor status=stable
 InputTypeWeek status=stable
-JavaScriptI18NAPI status=stable
 LangAttributeAwareFormControlUI
 LazyLayout
 LegacyEncryptedMedia status=stable
@@ -60,23 +64,30 @@ MediaStream status=stable
 Notifications status=stable
 PagePopup status=stable
 ParseSVGAsHTML
+PathOpsSVGClipping
 PeerConnection depends_on=MediaStream, status=stable
 ProgrammaticScrollNotifications status=test
-Promise status=test
+Promise status=experimental
 Quota status=stable
+OverlayScrollbars
 RequestAutocomplete status=test
+RowSpanLogicalHeightSpreading status=test
 ScriptedSpeech status=stable
 SeamlessIFrames status=experimental
 SessionStorage status=stable
+ShadowDOM status=experimental
 SharedWorker custom
 SpeechInput status=stable
 SpeechSynthesis status=experimental
 Stream status=experimental
 StyleScoped status=experimental
 Touch status=stable
-Vibration status=test
+UserSelectAll status=experimental
+Vibration status=experimental
 VideoTrack status=stable
 WebAnimations
+WebAnimationsCSS depends_on=WebAnimations
+WebAnimationsSVG depends_on=WebAnimations
 WebAudio condition=WEB_AUDIO, status=stable
 WebGLDraftExtensions status=experimental
 WebMIDI status=test

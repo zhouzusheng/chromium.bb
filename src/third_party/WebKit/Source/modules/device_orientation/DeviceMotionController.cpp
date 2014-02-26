@@ -28,7 +28,6 @@
 #include "modules/device_orientation/DeviceMotionController.h"
 
 #include "core/dom/Document.h"
-#include "core/page/DOMWindow.h"
 #include "modules/device_orientation/DeviceMotionData.h"
 #include "modules/device_orientation/DeviceMotionDispatcher.h"
 #include "modules/device_orientation/DeviceMotionEvent.h"
@@ -36,49 +35,17 @@
 namespace WebCore {
 
 DeviceMotionController::DeviceMotionController(Document* document)
-    : m_document(document)
-    , m_isActive(false)
-    , m_timer(this, &DeviceMotionController::fireDeviceEvent)
+    : DeviceSensorEventController(document)
 {
 }
 
 DeviceMotionController::~DeviceMotionController()
 {
-    stopUpdating();
 }
 
 void DeviceMotionController::didChangeDeviceMotion(DeviceMotionData* deviceMotionData)
 {
     dispatchDeviceEvent(DeviceMotionEvent::create(eventNames().devicemotionEvent, deviceMotionData));
-}
-
-bool DeviceMotionController::hasLastData()
-{
-    return DeviceMotionDispatcher::instance().latestDeviceMotionData();
-}
-
-PassRefPtr<Event> DeviceMotionController::getLastEvent()
-{
-    return DeviceMotionEvent::create(eventNames().devicemotionEvent,
-        DeviceMotionDispatcher::instance().latestDeviceMotionData());
-}
-
-void DeviceMotionController::fireDeviceEvent(Timer<DeviceMotionController>* timer)
-{
-    ASSERT_UNUSED(timer, timer == &m_timer);
-    ASSERT(hasLastData());
-
-    m_timer.stop();
-    dispatchDeviceEvent(getLastEvent());
-}
-
-void DeviceMotionController::dispatchDeviceEvent(PassRefPtr<Event> prpEvent)
-{
-    RefPtr<Event> event = prpEvent;
-    if (m_document && m_document->domWindow()
-        && !m_document->activeDOMObjectsAreSuspended()
-        && !m_document->activeDOMObjectsAreStopped())
-        m_document->domWindow()->dispatchEvent(event);
 }
 
 const char* DeviceMotionController::supplementName()
@@ -96,26 +63,31 @@ DeviceMotionController* DeviceMotionController::from(Document* document)
     return controller;
 }
 
-void DeviceMotionController::startUpdating()
+bool DeviceMotionController::hasLastData()
 {
-    if (m_isActive)
-        return;
-
-    DeviceMotionDispatcher::instance().addController(this);
-    m_isActive = true;
-
-    if (hasLastData() && !m_timer.isActive())
-        // Make sure to fire the device motion data as soon as possible.
-        m_timer.startOneShot(0);
+    return DeviceMotionDispatcher::instance().latestDeviceMotionData();
 }
 
-void DeviceMotionController::stopUpdating()
+PassRefPtr<Event> DeviceMotionController::getLastEvent()
 {
-    if (!m_isActive)
-        return;
+    return DeviceMotionEvent::create(eventNames().devicemotionEvent, DeviceMotionDispatcher::instance().latestDeviceMotionData());
+}
 
-    DeviceMotionDispatcher::instance().removeController(this);
-    m_isActive = false;
+void DeviceMotionController::registerWithDispatcher()
+{
+    DeviceMotionDispatcher::instance().addDeviceMotionController(this);
+}
+
+void DeviceMotionController::unregisterWithDispatcher()
+{
+    DeviceMotionDispatcher::instance().removeDeviceMotionController(this);
+}
+
+bool DeviceMotionController::isNullEvent(Event* event)
+{
+    ASSERT(event->type() == eventNames().devicemotionEvent);
+    DeviceMotionEvent* motionEvent = static_cast<DeviceMotionEvent*>(event);
+    return !motionEvent->deviceMotionData()->canProvideEventData();
 }
 
 } // namespace WebCore

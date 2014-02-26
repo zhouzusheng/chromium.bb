@@ -8,19 +8,25 @@
 #include <map>
 #include <string>
 #include "base/basictypes.h"
+#include "base/memory/weak_ptr.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_export.h"
 #include "net/http/http_pipelined_host_capability.h"
+#include "net/socket/next_proto.h"
 #include "net/spdy/spdy_framer.h"  // TODO(willchan): Reconsider this.
 
 namespace net {
 
 enum AlternateProtocol {
   NPN_SPDY_1 = 0,
+  NPN_SPDY_MINIMUM_VERSION = NPN_SPDY_1,
   NPN_SPDY_2,
   NPN_SPDY_3,
   NPN_SPDY_3_1,
   NPN_SPDY_4A2,
+  // We lump in HTTP/2 with the SPDY protocols for now.
+  NPN_HTTP2_DRAFT_04,
+  NPN_SPDY_MAXIMUM_VERSION = NPN_HTTP2_DRAFT_04,
   QUIC,
   NUM_ALTERNATE_PROTOCOLS,
   ALTERNATE_PROTOCOL_BROKEN,  // The alternate protocol is known to be broken.
@@ -30,6 +36,8 @@ enum AlternateProtocol {
 NET_EXPORT const char* AlternateProtocolToString(AlternateProtocol protocol);
 NET_EXPORT AlternateProtocol AlternateProtocolFromString(
     const std::string& protocol);
+NET_EXPORT_PRIVATE AlternateProtocol AlternateProtocolFromNextProto(
+    NextProto next_proto);
 
 struct NET_EXPORT PortAlternateProtocolPair {
   bool Equals(const PortAlternateProtocolPair& other) const {
@@ -48,7 +56,6 @@ typedef std::map<HostPortPair,
         HttpPipelinedHostCapability> PipelineCapabilityMap;
 
 extern const char kAlternateProtocolHeader[];
-extern const char* const kAlternateProtocolStrings[NUM_ALTERNATE_PROTOCOLS];
 
 // The interface for setting/retrieving the HTTP server properties.
 // Currently, this class manages servers':
@@ -59,6 +66,9 @@ class NET_EXPORT HttpServerProperties {
  public:
   HttpServerProperties() {}
   virtual ~HttpServerProperties() {}
+
+  // Gets a weak pointer for this object.
+  virtual base::WeakPtr<HttpServerProperties> GetWeakPtr() = 0;
 
   // Deletes all data.
   virtual void Clear() = 0;

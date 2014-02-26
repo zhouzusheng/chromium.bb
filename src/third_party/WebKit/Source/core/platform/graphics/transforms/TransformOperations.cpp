@@ -24,7 +24,7 @@
 
 #include <algorithm>
 #include "core/platform/graphics/transforms/IdentityTransformOperation.h"
-#include "core/platform/graphics/transforms/Matrix3DTransformOperation.h"
+#include "core/platform/graphics/transforms/InterpolatedTransformOperation.h"
 
 using namespace std;
 
@@ -40,13 +40,13 @@ bool TransformOperations::operator==(const TransformOperations& o) const
 {
     if (m_operations.size() != o.m_operations.size())
         return false;
-        
+
     unsigned s = m_operations.size();
     for (unsigned i = 0; i < s; i++) {
         if (*m_operations[i] != *o.m_operations[i])
             return false;
     }
-    
+
     return true;
 }
 
@@ -56,7 +56,7 @@ bool TransformOperations::operationsMatch(const TransformOperations& other) cons
     // If the sizes of the function lists don't match, the lists don't match
     if (numOperations != other.operations().size())
         return false;
-    
+
     // If the types of each function are not the same, the lists don't match
     for (size_t i = 0; i < numOperations; ++i) {
         if (!operations()[i]->isSameType(*other.operations()[i]))
@@ -90,25 +90,14 @@ TransformOperations TransformOperations::blendByMatchingOperations(const Transfo
     return result;
 }
 
-TransformOperations TransformOperations::blendByUsingMatrixInterpolation(const TransformOperations& from, double progress, const LayoutSize& size) const
+TransformOperations TransformOperations::blendByUsingMatrixInterpolation(const TransformOperations& from, double progress) const
 {
     TransformOperations result;
-
-    // Convert the TransformOperations into matrices
-    TransformationMatrix fromTransform;
-    TransformationMatrix toTransform;
-    from.apply(size, fromTransform);
-    apply(size, toTransform);
-
-    toTransform.blend(fromTransform, progress);
-
-    // Append the result
-    result.operations().append(Matrix3DTransformOperation::create(toTransform));
-
+    result.operations().append(InterpolatedTransformOperation::create(from, *this, progress));
     return result;
 }
 
-TransformOperations TransformOperations::blend(const TransformOperations& from, double progress, const LayoutSize& size) const
+TransformOperations TransformOperations::blend(const TransformOperations& from, double progress) const
 {
     if (from == *this)
         return *this;
@@ -116,7 +105,7 @@ TransformOperations TransformOperations::blend(const TransformOperations& from, 
     if (from.size() && from.operationsMatch(*this))
         return blendByMatchingOperations(from, progress);
 
-    return blendByUsingMatrixInterpolation(from, progress, size);
+    return blendByUsingMatrixInterpolation(from, progress);
 }
 
 } // namespace WebCore

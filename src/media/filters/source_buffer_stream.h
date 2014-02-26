@@ -64,6 +64,16 @@ class MEDIA_EXPORT SourceBufferStream {
   // TODO(vrk): Implement garbage collection. (crbug.com/125070)
   bool Append(const BufferQueue& buffers);
 
+  // Removes buffers between |start| and |end| according to the steps
+  // in the "Coded Frame Removal Algorithm" in the Media Source
+  // Extensions Spec.
+  // https://dvcs.w3.org/hg/html-media/raw-file/default/media-source/media-source.html#sourcebuffer-coded-frame-removal
+  //
+  // |duration| is the current duration of the presentation. It is
+  // required by the computation outlined in the spec.
+  void Remove(base::TimeDelta start, base::TimeDelta end,
+              base::TimeDelta duration);
+
   // Changes the SourceBufferStream's state so that it will start returning
   // buffers starting from the closest keyframe before |timestamp|.
   void Seek(base::TimeDelta timestamp);
@@ -90,10 +100,10 @@ class MEDIA_EXPORT SourceBufferStream {
   Ranges<base::TimeDelta> GetBufferedTime() const;
 
   // Notifies this object that end of stream has been signalled.
-  void EndOfStream();
+  void MarkEndOfStream();
 
-  // Cancel the previous end of stream notification.
-  void CancelEndOfStream();
+  // Clear the end of stream state set by MarkEndOfStream().
+  void UnmarkEndOfStream();
 
   const AudioDecoderConfig& GetCurrentAudioDecoderConfig();
   const VideoDecoderConfig& GetCurrentVideoDecoderConfig();
@@ -111,11 +121,12 @@ class MEDIA_EXPORT SourceBufferStream {
   // yet.
   base::TimeDelta GetMaxInterbufferDistance() const;
 
- private:
-  friend class SourceBufferStreamTest;
-  typedef std::list<SourceBufferRange*> RangeList;
+  void set_memory_limit_for_testing(int memory_limit) {
+    memory_limit_ = memory_limit;
+  }
 
-  void set_memory_limit(int memory_limit) { memory_limit_ = memory_limit; }
+ private:
+  typedef std::list<SourceBufferRange*> RangeList;
 
   // Frees up space if the SourceBufferStream is taking up too much memory.
   void GarbageCollectIfNeeded();

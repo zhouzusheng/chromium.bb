@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef RenderMedia_h
@@ -52,6 +52,10 @@ protected:
 private:
     virtual RenderObjectChildList* virtualChildren() OVERRIDE FINAL { return children(); }
     virtual const RenderObjectChildList* virtualChildren() const OVERRIDE FINAL { return children(); }
+
+    // FIXME: RenderMedia::layout makes assumptions about what children are allowed
+    // so we can't support generated content.
+    virtual bool canHaveGeneratedChildren() const OVERRIDE FINAL { return false; }
     virtual bool canHaveChildren() const OVERRIDE FINAL { return true; }
 
     virtual const char* renderName() const { return "RenderMedia"; }

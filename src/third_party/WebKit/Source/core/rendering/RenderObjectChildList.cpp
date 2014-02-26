@@ -21,7 +21,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -159,7 +159,7 @@ void RenderObjectChildList::insertChildNode(RenderObject* owner, RenderObject* n
 
     newChild->setNeedsLayoutAndPrefWidthsRecalc();
     if (!owner->normalChildNeedsLayout())
-        owner->setChildNeedsLayout(true); // We may supply the static position for an absolute positioned child.
+        owner->setChildNeedsLayout(); // We may supply the static position for an absolute positioned child.
 
     if (AXObjectCache* cache = owner->document()->axObjectCache())
         cache->childrenChanged(owner);

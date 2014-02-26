@@ -26,12 +26,9 @@
 #define SVGAnimationElement_h
 
 #include "core/platform/graphics/UnitBezier.h"
-#include "core/svg/ElementTimeControl.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
-#include "core/svg/SVGStringList.h"
 #include "core/svg/SVGTests.h"
-#include "core/svg/animation/SMILTime.h"
 #include "core/svg/animation/SVGSMILElement.h"
 
 namespace WebCore {
@@ -67,19 +64,17 @@ class SVGAnimatedType;
 
 class SVGAnimationElement : public SVGSMILElement,
                             public SVGTests,
-                            public SVGExternalResourcesRequired,
-                            public ElementTimeControl {
+                            public SVGExternalResourcesRequired {
 public:
     // SVGAnimationElement
     float getStartTime() const;
     float getCurrentTime() const;
     float getSimpleDuration() const;
 
-    // ElementTimeControl
-    virtual void beginElement();
-    virtual void beginElementAt(float offset);
-    virtual void endElement();
-    virtual void endElementAt(float offset);
+    void beginElement();
+    void beginElementAt(float offset);
+    void endElement();
+    void endElementAt(float offset);
 
     static bool isTargetAttributeCSSProperty(SVGElement*, const QualifiedName&);
 

@@ -27,8 +27,8 @@
 
 #include "core/dom/ParserContentPolicy.h"
 #include "core/dom/ScriptableDocumentParser.h"
-#include "core/loader/cache/CachedResourceClient.h"
-#include "core/loader/cache/CachedResourceHandle.h"
+#include "core/loader/cache/ResourceClient.h"
+#include "core/loader/cache/ResourcePtr.h"
 #include "core/platform/text/SegmentedString.h"
 #include "core/xml/XMLErrors.h"
 #include <libxml/tree.h>
@@ -40,8 +40,8 @@
 namespace WebCore {
 
 class ContainerNode;
-class CachedScript;
-class CachedResourceLoader;
+class ScriptResource;
+class ResourceFetcher;
 class DocumentFragment;
 class Document;
 class Element;
@@ -63,7 +63,7 @@ class Text;
         xmlParserCtxtPtr m_context;
     };
 
-    class XMLDocumentParser : public ScriptableDocumentParser, public CachedResourceClient {
+    class XMLDocumentParser : public ScriptableDocumentParser, public ResourceClient {
         WTF_MAKE_FAST_ALLOCATED;
     public:
         static PassRefPtr<XMLDocumentParser> create(Document* document, FrameView* view)
@@ -82,6 +82,8 @@ class Text;
 
         void setIsXHTMLDocument(bool isXHTML) { m_isXHTMLDocument = isXHTML; }
         bool isXHTMLDocument() const { return m_isXHTMLDocument; }
+
+        bool isCurrentlyParsing8BitChunk() { return m_isCurrentlyParsing8BitChunk; }
 
         static bool parseDocumentFragment(const String&, DocumentFragment*, Element* parent = 0, ParserContentPolicy = AllowScriptingContent);
 
@@ -112,8 +114,8 @@ class Text;
         virtual OrdinalNumber lineNumber() const;
         OrdinalNumber columnNumber() const;
 
-        // from CachedResourceClient
-        virtual void notifyFinished(CachedResource*);
+        // from ResourceClient
+        virtual void notifyFinished(Resource*);
 
         void end();
 
@@ -165,6 +167,7 @@ class Text;
 
         RefPtr<Text> m_leafTextNode;
 
+        bool m_isCurrentlyParsing8BitChunk;
         bool m_sawError;
         bool m_sawCSS;
         bool m_sawXSLTransform;
@@ -176,7 +179,7 @@ class Text;
 
         XMLErrors m_xmlErrors;
 
-        CachedResourceHandle<CachedScript> m_pendingScript;
+        ResourcePtr<ScriptResource> m_pendingScript;
         RefPtr<Element> m_scriptElement;
         TextPosition m_scriptStartPosition;
 
@@ -188,7 +191,7 @@ class Text;
         SegmentedString m_pendingSrc;
     };
 
-xmlDocPtr xmlDocPtrForString(CachedResourceLoader*, const String& source, const String& url);
+xmlDocPtr xmlDocPtrForString(ResourceFetcher*, const String& source, const String& url);
 
 HashMap<String, String> parseAttributes(const String&, bool& attrsOK);
 

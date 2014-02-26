@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef AnimationUtilities_h
@@ -28,39 +28,38 @@
 
 #include "core/platform/LayoutUnit.h"
 #include "core/platform/graphics/IntPoint.h"
-#include <wtf/MathExtras.h>
+#include "wtf/MathExtras.h"
 
 namespace WebCore {
 
 inline int blend(int from, int to, double progress)
-{  
-    return static_cast<int>(lround(static_cast<double>(from) + static_cast<double>(to - from) * progress));
+{
+    return lround(from + (to - from) * progress);
 }
 
 inline unsigned blend(unsigned from, unsigned to, double progress)
 {
-    return static_cast<unsigned>(lround(to > from ? static_cast<double>(from) + static_cast<double>(to - from) * progress : static_cast<double>(from) - static_cast<double>(from - to) * progress));
+    return lround(to > from ? from + (to - from) * progress : from - (from - to) * progress);
 }
 
 inline double blend(double from, double to, double progress)
-{  
+{
     return from + (to - from) * progress;
 }
 
 inline float blend(float from, float to, double progress)
-{  
+{
     return static_cast<float>(from + (to - from) * progress);
 }
 
 inline LayoutUnit blend(LayoutUnit from, LayoutUnit to, double progress)
-{  
+{
     return from + (to - from) * progress;
 }
 
 inline IntPoint blend(const IntPoint& from, const IntPoint& to, double progress)
 {
-    return IntPoint(blend(from.x(), to.x(), progress),
-                    blend(from.y(), to.y(), progress));
+    return IntPoint(blend(from.x(), to.x(), progress), blend(from.y(), to.y(), progress));
 }
 
 // Calculates the accuracy for evaluating a timing function for an animation with the specified duration.

@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef SVGSMILElement_h
@@ -28,8 +28,7 @@
 
 #include "core/svg/SVGElement.h"
 #include "core/svg/animation/SMILTime.h"
-
-#include <wtf/HashMap.h>
+#include "wtf/HashMap.h"
 
 namespace WebCore {
 
@@ -49,7 +48,7 @@ public:
     virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
-    
+
     virtual bool hasValidAttributeType() = 0;
     virtual bool hasValidAttributeName();
     virtual void animationAttributeChanged() = 0;
@@ -82,7 +81,7 @@ public:
     SMILTime maxValue() const;
     SMILTime minValue() const;
 
-    SMILTime elapsed() const; 
+    SMILTime elapsed() const;
 
     SMILTime intervalBegin() const { return m_intervalBegin; }
     SMILTime intervalEnd() const { return m_intervalEnd; }
@@ -128,11 +127,13 @@ private:
     void endedActiveInterval();
     virtual void updateAnimation(float percent, unsigned repeat, SVGSMILElement* resultElement) = 0;
 
+    virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE { return false; }
+
     enum BeginOrEnd {
         Begin,
         End
     };
-    
+
     SMILTime findInstanceTime(BeginOrEnd, SMILTime minimumTime, bool equalsMinimumOK) const;
     void resolveFirstInterval();
     void resolveNextInterval(bool notifyDependents);
@@ -199,7 +200,7 @@ private:
 
     Vector<Condition> m_conditions;
     bool m_conditionsConnected;
-    bool m_hasEndEventConditions;     
+    bool m_hasEndEventConditions;
 
     bool m_isWaitingForFirstInterval;
 
@@ -233,6 +234,12 @@ private:
 
     friend class ConditionEventListener;
 };
+
+inline SVGSMILElement* toSVGSMILElement(Element* element)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!element || SVGSMILElement::isSMILElement(element));
+    return static_cast<SVGSMILElement*>(element);
+}
 
 }
 

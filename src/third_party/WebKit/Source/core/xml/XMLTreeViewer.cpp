@@ -31,11 +31,11 @@
 
 #include "XMLViewerCSS.h"
 #include "XMLViewerJS.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptSourceCode.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/Text.h"
 #include "core/page/Frame.h"
 
@@ -48,20 +48,6 @@ XMLTreeViewer::XMLTreeViewer(Document* document)
 {
 }
 
-bool XMLTreeViewer::hasNoStyleInformation() const
-{
-    if (m_document->sawElementsInKnownNamespaces() || m_document->transformSourceDocument())
-        return false;
-
-    if (!m_document->frame() || !m_document->frame()->page())
-        return false;
-
-    if (m_document->frame()->tree()->parent())
-        return false; // This document is not in a top frame
-
-    return true;
-}
-
 void XMLTreeViewer::transformDocumentToTreeView()
 {
     m_document->setIsViewSource(true);
@@ -72,8 +58,7 @@ void XMLTreeViewer::transformDocumentToTreeView()
 
     String cssString(reinterpret_cast<const char*>(XMLViewer_css), sizeof(XMLViewer_css));
     RefPtr<Text> text = m_document->createTextNode(cssString);
-    m_document->getElementById("xml-viewer-style")->appendChild(text, IGNORE_EXCEPTION);
-    m_document->styleResolverChanged(RecalcStyleImmediately);
+    m_document->getElementById("xml-viewer-style")->appendChild(text, IGNORE_EXCEPTION, AttachLazily);
 }
 
 } // namespace WebCore

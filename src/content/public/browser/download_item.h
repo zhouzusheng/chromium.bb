@@ -40,7 +40,6 @@ class TimeDelta;
 namespace content {
 
 class BrowserContext;
-class DownloadId;
 class DownloadManager;
 class WebContents;
 
@@ -78,6 +77,8 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
 
   // Callback used with AcquireFileAndDeleteDownload().
   typedef base::Callback<void(const base::FilePath&)> AcquireFileCallback;
+
+  static const uint32 kInvalidId;
 
   static const char kEmptyFileHash[];
 
@@ -151,8 +152,7 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
 
   // State accessors -----------------------------------------------------------
 
-  virtual int32 GetId() const = 0;
-  virtual DownloadId GetGlobalId() const = 0;
+  virtual uint32 GetId() const = 0;
   virtual DownloadState GetState() const = 0;
 
   // Returns the most recent interrupt reason for this download. Returns
@@ -234,6 +234,12 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
   // True if the file associated with the download has been removed by
   // external action.
   virtual bool GetFileExternallyRemoved() const = 0;
+
+  // If the file is successfully deleted, then GetFileExternallyRemoved() will
+  // become true and DownloadItem::OnDownloadUpdated() will be called. Does
+  // nothing if GetState() == COMPLETE or GetFileExternallyRemoved() is already
+  // true.
+  virtual void DeleteFile() = 0;
 
   // True if the file that will be written by the download is dangerous
   // and we will require a call to ValidateDangerousDownload() to complete.

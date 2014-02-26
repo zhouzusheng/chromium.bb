@@ -25,7 +25,7 @@
 #include "core/page/FrameView.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/rendering/RenderView.h"
-#include <wtf/text/WTFString.h>
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -138,7 +138,7 @@ void PrintContext::computePageRectsWithPageSizeInternal(const FloatSize& pageSiz
     unsigned pageCount = ceilf((float)docLogicalHeight / pageLogicalHeight);
     for (unsigned i = 0; i < pageCount; ++i) {
         int pageLogicalTop = blockDirectionEnd > blockDirectionStart ?
-                                blockDirectionStart + i * pageLogicalHeight : 
+                                blockDirectionStart + i * pageLogicalHeight :
                                 blockDirectionStart - (i + 1) * pageLogicalHeight;
         if (allowInlineDirectionTiling) {
             for (int currentInlinePosition = inlineDirectionStart;

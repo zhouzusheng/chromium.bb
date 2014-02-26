@@ -19,6 +19,7 @@
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
+#include "skia/ext/opacity_draw_filter.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkDevice.h"
@@ -75,9 +76,8 @@ SoftwareRenderer::SoftwareRenderer(RendererClient* client,
   capabilities_.allow_partial_texture_updates = true;
   capabilities_.using_partial_swap = true;
 
-  capabilities_.using_map_image =
-      Settings().use_map_image &&
-      output_surface->capabilities().deferred_gl_initialization;
+  capabilities_.using_map_image = Settings().use_map_image;
+  capabilities_.using_shared_memory_resources = true;
 }
 
 SoftwareRenderer::~SoftwareRenderer() {}
@@ -135,6 +135,7 @@ void SoftwareRenderer::EnsureScissorTestDisabled() {
 void SoftwareRenderer::Finish() {}
 
 void SoftwareRenderer::BindFramebufferToOutputSurface(DrawingFrame* frame) {
+  DCHECK(!client_->ExternalStencilTestEnabled());
   current_framebuffer_lock_.reset();
   current_canvas_ = root_canvas_;
 }
@@ -199,6 +200,8 @@ bool SoftwareRenderer::IsSoftwareResource(
       return false;
     case ResourceProvider::Bitmap:
       return true;
+    case ResourceProvider::InvalidType:
+      break;
   }
 
   LOG(FATAL) << "Invalid resource type.";
@@ -308,27 +311,20 @@ void SoftwareRenderer::DrawPictureQuad(const DrawingFrame* frame,
       SkMatrix::kFill_ScaleToFit);
   current_canvas_->concat(content_matrix);
 
-  if (quad->ShouldDrawWithBlending()) {
-    TRACE_EVENT0("cc", "SoftwareRenderer::DrawPictureQuad with blending");
-    SkBitmap temp_bitmap;
-    temp_bitmap.setConfig(SkBitmap::kARGB_8888_Config,
-                          quad->texture_size.width(),
-                          quad->texture_size.height());
-    temp_bitmap.allocPixels();
-    SkDevice temp_device(temp_bitmap);
-    SkCanvas temp_canvas(&temp_device);
+  // TODO(aelias): This isn't correct in all cases. We should detect these
+  // cases and fall back to a persistent bitmap backing
+  // (http://crbug.com/280374).
+  skia::RefPtr<SkDrawFilter> opacity_filter =
+      skia::AdoptRef(new skia::OpacityDrawFilter(quad->opacity(), true));
+  DCHECK(!current_canvas_->getDrawFilter());
+  current_canvas_->setDrawFilter(opacity_filter.get());
 
-    quad->picture_pile->RasterToBitmap(
-        &temp_canvas, quad->content_rect, quad->contents_scale, NULL);
+  TRACE_EVENT0("cc",
+               "SoftwareRenderer::DrawPictureQuad");
+  quad->picture_pile->RasterDirect(
+      current_canvas_, quad->content_rect, quad->contents_scale, NULL);
 
-    current_paint_.setFilterBitmap(true);
-    current_canvas_->drawBitmap(temp_bitmap, 0, 0, &current_paint_);
-  } else {
-    TRACE_EVENT0("cc",
-                 "SoftwareRenderer::DrawPictureQuad direct from PicturePile");
-    quad->picture_pile->RasterDirect(
-        current_canvas_, quad->content_rect, quad->contents_scale, NULL);
-  }
+  current_canvas_->setDrawFilter(NULL);
 }
 
 void SoftwareRenderer::DrawSolidColorQuad(const DrawingFrame* frame,
@@ -346,7 +342,7 @@ void SoftwareRenderer::DrawTextureQuad(const DrawingFrame* frame,
     return;
   }
 
-  // FIXME: Add support for non-premultiplied alpha.
+  // TODO(skaslev): Add support for non-premultiplied alpha.
   ResourceProvider::ScopedReadLockSoftware lock(resource_provider_,
                                                 quad->resource_id);
   const SkBitmap* bitmap = lock.sk_bitmap();
@@ -355,11 +351,31 @@ void SoftwareRenderer::DrawTextureQuad(const DrawingFrame* frame,
                                       bitmap->width(),
                                       bitmap->height());
   SkRect sk_uv_rect = gfx::RectFToSkRect(uv_rect);
+  SkRect quad_rect = gfx::RectFToSkRect(QuadVertexRect());
+
   if (quad->flipped)
     current_canvas_->scale(1, -1);
-  current_canvas_->drawBitmapRectToRect(*bitmap, &sk_uv_rect,
-                                        gfx::RectFToSkRect(QuadVertexRect()),
+
+  bool blend_background = quad->background_color != SK_ColorTRANSPARENT &&
+                          !bitmap->isOpaque();
+  bool needs_layer = blend_background && (current_paint_.getAlpha() != 0xFF);
+  if (needs_layer) {
+    current_canvas_->saveLayerAlpha(&quad_rect, current_paint_.getAlpha());
+    current_paint_.setAlpha(0xFF);
+  }
+  if (blend_background) {
+    SkPaint background_paint;
+    background_paint.setColor(quad->background_color);
+    current_canvas_->drawRect(quad_rect, background_paint);
+  }
+
+  current_canvas_->drawBitmapRectToRect(*bitmap,
+                                        &sk_uv_rect,
+                                        quad_rect,
                                         &current_paint_);
+
+  if (needs_layer)
+    current_canvas_->restore();
 }
 
 void SoftwareRenderer::DrawTileQuad(const DrawingFrame* frame,
@@ -437,7 +453,7 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
     current_paint_.setRasterizer(mask_rasterizer.get());
     current_canvas_->drawRect(dest_rect, current_paint_);
   } else {
-    // FIXME: Apply background filters and blend with content
+    // TODO(skaslev): Apply background filters and blend with content
     current_canvas_->drawRect(dest_rect, current_paint_);
   }
 }
@@ -489,6 +505,12 @@ void SoftwareRenderer::SetVisible(bool visible) {
   if (visible_ == visible)
     return;
   visible_ = visible;
+}
+
+void SoftwareRenderer::SetDiscardBackBufferWhenNotVisible(bool discard) {
+  // TODO(piman, skaslev): Can we release the backbuffer? We don't currently
+  // receive memory policy yet anyway.
+  NOTIMPLEMENTED();
 }
 
 }  // namespace cc

@@ -29,9 +29,9 @@
 #include "core/platform/PODArena.h"
 #include "core/platform/PODInterval.h"
 #include "core/platform/PODRedBlackTree.h"
-#include <wtf/Assertions.h>
-#include <wtf/Noncopyable.h>
-#include <wtf/Vector.h>
+#include "wtf/Assertions.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -44,14 +44,14 @@ template <class T, class UserData = void*>
 class PODIntervalSearchAdapter {
 public:
     typedef PODInterval<T, UserData> IntervalType;
-    
+
     PODIntervalSearchAdapter(Vector<IntervalType>& result, const T& lowValue, const T& highValue)
         : m_result(result)
         , m_lowValue(lowValue)
         , m_highValue(highValue)
     {
     }
-    
+
     const T& lowValue() const { return m_lowValue; }
     const T& highValue() const { return m_highValue; }
     void collectIfNeeded(const IntervalType& data) const
@@ -83,7 +83,7 @@ public:
     {
         init();
     }
-    
+
     PODIntervalTree()
         : PODRedBlackTree<IntervalType>()
     {
@@ -116,7 +116,7 @@ public:
         IntervalSearchAdapterType adapter(result, interval.low(), interval.high());
         searchForOverlapsFrom<IntervalSearchAdapterType>(this->root(), adapter);
     }
-    
+
     template <class AdapterType>
     void allOverlapsWithAdapter(AdapterType& adapter) const
     {

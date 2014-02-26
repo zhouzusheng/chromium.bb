@@ -10,7 +10,7 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/lazy_instance.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/thread_restrictions.h"
@@ -24,7 +24,6 @@ namespace {
 static const char* g_browser_thread_names[BrowserThread::ID_COUNT] = {
   "",  // UI (name assembled in browser_main.cc).
   "Chrome_DBThread",  // DB
-  "Chrome_WebKitThread",  // WEBKIT_DEPRECATED
   "Chrome_FileThread",  // FILE
   "Chrome_FileUserBlockingThread",  // FILE_USER_BLOCKING
   "Chrome_ProcessLauncherThread",  // PROCESS_LAUNCHER
@@ -103,8 +102,14 @@ void BrowserThreadImpl::Init() {
   AtomicWord stored_pointer = base::subtle::NoBarrier_Load(storage);
   BrowserThreadDelegate* delegate =
       reinterpret_cast<BrowserThreadDelegate*>(stored_pointer);
-  if (delegate)
+  if (delegate) {
     delegate->Init();
+    message_loop()->PostTask(FROM_HERE,
+                             base::Bind(&BrowserThreadDelegate::InitAsync,
+                                        // Delegate is expected to exist for the
+                                        // duration of the thread's lifetime
+                                        base::Unretained(delegate)));
+  }
 }
 
 // We disable optimizations for this block of functions so the compiler doesn't
@@ -119,13 +124,6 @@ NOINLINE void BrowserThreadImpl::UIThreadRun(base::MessageLoop* message_loop) {
 }
 
 NOINLINE void BrowserThreadImpl::DBThreadRun(base::MessageLoop* message_loop) {
-  volatile int line_number = __LINE__;
-  Thread::Run(message_loop);
-  CHECK_GT(line_number, 0);
-}
-
-NOINLINE void BrowserThreadImpl::WebKitThreadRun(
-    base::MessageLoop* message_loop) {
   volatile int line_number = __LINE__;
   Thread::Run(message_loop);
   CHECK_GT(line_number, 0);
@@ -178,8 +176,6 @@ void BrowserThreadImpl::Run(base::MessageLoop* message_loop) {
       return UIThreadRun(message_loop);
     case BrowserThread::DB:
       return DBThreadRun(message_loop);
-    case BrowserThread::WEBKIT_DEPRECATED:
-      return WebKitThreadRun(message_loop);
     case BrowserThread::FILE:
       return FileThreadRun(message_loop);
     case BrowserThread::FILE_USER_BLOCKING:
@@ -343,14 +339,14 @@ base::SequencedWorkerPool* BrowserThread::GetBlockingPool() {
 }
 
 // static
-bool BrowserThread::IsWellKnownThread(ID identifier) {
+bool BrowserThread::IsThreadInitialized(ID identifier) {
   if (g_globals == NULL)
     return false;
 
   BrowserThreadGlobals& globals = g_globals.Get();
   base::AutoLock lock(globals.lock);
-  return (identifier >= 0 && identifier < ID_COUNT &&
-          globals.threads[identifier]);
+  DCHECK(identifier >= 0 && identifier < ID_COUNT);
+  return globals.threads[identifier] != NULL;
 }
 
 // static

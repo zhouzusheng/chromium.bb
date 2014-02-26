@@ -27,7 +27,7 @@
 #include <base/bind.h>
 #include <base/command_line.h>
 #include <base/logging.h>  // for DCHECK
-#include <base/string_util.h>
+#include <base/strings/string_util.h>
 #include <base/threading/worker_pool.h>
 #include <content/browser/net/sqlite_persistent_cookie_store.h>
 #include <content/public/browser/browser_thread.h>
@@ -212,7 +212,9 @@ void URLRequestContextGetterImpl::initialize()
     d_storage->set_ssl_config_service(new net::SSLConfigServiceDefaults);
     d_storage->set_http_auth_handler_factory(
         net::HttpAuthHandlerFactory::CreateDefault(hostResolver.get()));
-    d_storage->set_http_server_properties(new net::HttpServerPropertiesImpl);
+    d_storage->set_http_server_properties(
+        scoped_ptr<net::HttpServerProperties>(
+            new net::HttpServerPropertiesImpl()));
 
     net::HttpNetworkSession::Params networkSessionParams;
     networkSessionParams.cert_verifier =

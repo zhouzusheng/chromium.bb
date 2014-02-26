@@ -20,36 +20,36 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef PropertySetCSSStyleDeclaration_h
 #define PropertySetCSSStyleDeclaration_h
 
 #include "core/css/CSSStyleDeclaration.h"
-#include <wtf/HashMap.h>
+#include "wtf/HashMap.h"
+#include "wtf/OwnPtr.h"
 
 namespace WebCore {
 
-class CSSRule;
 class CSSProperty;
+class CSSRule;
 class CSSValue;
+class Element;
+class ExceptionState;
 class MutableStylePropertySet;
 class StyleSheetContents;
-class StyledElement;
 
 class PropertySetCSSStyleDeclaration : public CSSStyleDeclaration {
 public:
     PropertySetCSSStyleDeclaration(MutableStylePropertySet* propertySet) : m_propertySet(propertySet) { }
-    
-    virtual StyledElement* parentElement() const { return 0; }
+
+    virtual Element* parentElement() const { return 0; }
     virtual void clearParentElement() { ASSERT_NOT_REACHED(); }
     StyleSheetContents* contextStyleSheet() const;
-    
+
     virtual void ref() OVERRIDE;
     virtual void deref() OVERRIDE;
-
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
 
 private:
     virtual CSSRule* parentRule() const OVERRIDE { return 0; };
@@ -60,19 +60,25 @@ private:
     virtual String getPropertyPriority(const String& propertyName) OVERRIDE;
     virtual String getPropertyShorthand(const String& propertyName) OVERRIDE;
     virtual bool isPropertyImplicit(const String& propertyName) OVERRIDE;
-    virtual void setProperty(const String& propertyName, const String& value, const String& priority, ExceptionCode&) OVERRIDE;
-    virtual String removeProperty(const String& propertyName, ExceptionCode&) OVERRIDE;
+    virtual void setProperty(const String& propertyName, const String& value, const String& priority, ExceptionState&) OVERRIDE;
+    virtual String removeProperty(const String& propertyName, ExceptionState&) OVERRIDE;
     virtual String cssText() const OVERRIDE;
-    virtual void setCssText(const String&, ExceptionCode&) OVERRIDE;
+    virtual void setCssText(const String&, ExceptionState&) OVERRIDE;
     virtual PassRefPtr<CSSValue> getPropertyCSSValueInternal(CSSPropertyID) OVERRIDE;
     virtual String getPropertyValueInternal(CSSPropertyID) OVERRIDE;
-    virtual void setPropertyInternal(CSSPropertyID, const String& value, bool important, ExceptionCode&) OVERRIDE;
-    
+    virtual void setPropertyInternal(CSSPropertyID, const String& value, bool important, ExceptionState&) OVERRIDE;
+
+    virtual unsigned variableCount() const OVERRIDE;
+    virtual String variableValue(const AtomicString& name) const OVERRIDE;
+    virtual void setVariableValue(const AtomicString& name, const String& value, ExceptionState&) OVERRIDE;
+    virtual bool removeVariable(const AtomicString& name) OVERRIDE;
+    virtual void clearVariables(ExceptionState&) OVERRIDE;
+
     virtual bool cssPropertyMatches(CSSPropertyID, const CSSValue*) const OVERRIDE;
     virtual PassRefPtr<MutableStylePropertySet> copyProperties() const OVERRIDE;
 
     CSSValue* cloneAndCacheForCSSOM(CSSValue*);
-    
+
 protected:
     enum MutationType { NoChanges, PropertyChanged };
     virtual void willMutate() { }
@@ -91,13 +97,11 @@ public:
     }
 
     void clearParentRule() { m_parentRule = 0; }
-    
+
     virtual void ref() OVERRIDE;
     virtual void deref() OVERRIDE;
 
     void reattach(MutableStylePropertySet*);
-
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
 
 private:
     StyleRuleCSSStyleDeclaration(MutableStylePropertySet*, CSSRule*);
@@ -117,22 +121,20 @@ private:
 class InlineCSSStyleDeclaration : public PropertySetCSSStyleDeclaration
 {
 public:
-    InlineCSSStyleDeclaration(MutableStylePropertySet* propertySet, StyledElement* parentElement)
+    InlineCSSStyleDeclaration(MutableStylePropertySet* propertySet, Element* parentElement)
         : PropertySetCSSStyleDeclaration(propertySet)
-        , m_parentElement(parentElement) 
+        , m_parentElement(parentElement)
     {
     }
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
-    
 private:
     virtual CSSStyleSheet* parentStyleSheet() const OVERRIDE;
-    virtual StyledElement* parentElement() const OVERRIDE { return m_parentElement; }
+    virtual Element* parentElement() const OVERRIDE { return m_parentElement; }
     virtual void clearParentElement() OVERRIDE { m_parentElement = 0; }
 
     virtual void didMutate(MutationType) OVERRIDE;
 
-    StyledElement* m_parentElement;
+    Element* m_parentElement;
 };
 
 } // namespace WebCore

@@ -42,7 +42,7 @@ BuildCommitCommand::BuildCommitCommand(
     syncable::BaseTransaction* trans,
     const sessions::OrderedCommitSet& batch_commit_set,
     sync_pb::ClientToServerMessage* commit_message,
-    ExtensionsActivityMonitor::Records* extensions_activity_buffer)
+    ExtensionsActivity::Records* extensions_activity_buffer)
   : trans_(trans),
     batch_commit_set_(batch_commit_set),
     commit_message_(commit_message),
@@ -55,7 +55,7 @@ void BuildCommitCommand::AddExtensionsActivityToMessage(
     SyncSession* session, sync_pb::CommitMessage* message) {
   // We only send ExtensionsActivity to the server if bookmarks are being
   // committed.
-  ExtensionsActivityMonitor* monitor = session->context()->extensions_monitor();
+  ExtensionsActivity* activity = session->context()->extensions_activity();
   if (batch_commit_set_.HasBookmarkCommitId()) {
     // This isn't perfect, since the set of extensions activity may not
     // correlate exactly with the items being committed.  That's OK as
@@ -66,11 +66,11 @@ void BuildCommitCommand::AddExtensionsActivityToMessage(
     // We will push this list of extensions activity back into the
     // ExtensionsActivityMonitor if this commit fails.  That's why we must keep
     // a copy of these records in the session.
-    monitor->GetAndClearRecords(extensions_activity_buffer_);
+    activity->GetAndClearRecords(extensions_activity_buffer_);
 
-    const ExtensionsActivityMonitor::Records& records =
+    const ExtensionsActivity::Records& records =
         *extensions_activity_buffer_;
-    for (ExtensionsActivityMonitor::Records::const_iterator it =
+    for (ExtensionsActivity::Records::const_iterator it =
          records.begin();
          it != records.end(); ++it) {
       sync_pb::ChromiumExtensionsActivity* activity_message =
@@ -104,6 +104,7 @@ void SetEntrySpecifics(Entry* meta_entry,
   sync_entry->mutable_specifics()->CopyFrom(meta_entry->Get(SPECIFICS));
   sync_entry->set_folder(meta_entry->Get(syncable::IS_DIR));
 
+  CHECK(!sync_entry->specifics().password().has_client_only_encrypted_data());
   DCHECK_EQ(meta_entry->GetModelType(), GetModelType(*sync_entry));
 }
 }  // namespace

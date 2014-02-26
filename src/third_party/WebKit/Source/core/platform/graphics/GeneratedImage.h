@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef GeneratedImage_h
@@ -45,10 +45,8 @@ public:
     virtual IntSize size() const OVERRIDE { return m_size; }
 
     // Assume that generated content has no decoded data we need to worry about
-    virtual void destroyDecodedData() OVERRIDE { }
+    virtual void destroyDecodedData(bool) OVERRIDE { }
     virtual unsigned decodedSize() const OVERRIDE { return 0; }
-
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
 
 protected:
     virtual void drawPattern(GraphicsContext*, const FloatRect&,

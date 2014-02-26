@@ -4,11 +4,6 @@
 
 #include "cc/resources/worker_pool.h"
 
-#if defined(OS_ANDROID)
-// TODO(epenner): Move thread priorities to base. (crbug.com/170549)
-#include <sys/resource.h>
-#endif
-
 #include <algorithm>
 #include <queue>
 
@@ -16,6 +11,7 @@
 #include "base/containers/hash_tables.h"
 #include "base/debug/trace_event.h"
 #include "base/strings/stringprintf.h"
+#include "base/synchronization/condition_variable.h"
 #include "base/threading/simple_thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "cc/base/scoped_ptr_deque.h"
@@ -49,6 +45,10 @@ void WorkerPoolTask::WillRun() {
 
 void WorkerPoolTask::DidRun() {
   did_run_ = true;
+}
+
+void WorkerPoolTask::WillComplete() {
+  DCHECK(!did_complete_);
 }
 
 void WorkerPoolTask::DidComplete() {
@@ -95,7 +95,7 @@ class WorkerPool::Inner : public base::DelegateSimpleThread::Delegate {
   void SetTaskGraph(TaskGraph* graph);
 
   // Collect all completed tasks in |completed_tasks|.
-  void CollectCompletedTasks(TaskDeque* completed_tasks);
+  void CollectCompletedTasks(TaskVector* completed_tasks);
 
  private:
   class PriorityComparator {
@@ -103,7 +103,11 @@ class WorkerPool::Inner : public base::DelegateSimpleThread::Delegate {
     bool operator()(const internal::GraphNode* a,
                     const internal::GraphNode* b) {
       // In this system, numerically lower priority is run first.
-      return a->priority() > b->priority();
+      if (a->priority() != b->priority())
+        return a->priority() > b->priority();
+
+      // Run task with most dependents first when priority is the same.
+      return a->dependents().size() < b->dependents().size();
     }
   };
 
@@ -140,7 +144,7 @@ class WorkerPool::Inner : public base::DelegateSimpleThread::Delegate {
   GraphNodeMap running_tasks_;
 
   // Completed tasks not yet collected by origin thread.
-  TaskDeque completed_tasks_;
+  TaskVector completed_tasks_;
 
   ScopedPtrDeque<base::DelegateSimpleThread> workers_;
 
@@ -164,6 +168,9 @@ WorkerPool::Inner::Inner(
                 "Worker%u",
                 static_cast<unsigned>(workers_.size() + 1)).c_str()));
     worker->Start();
+#if defined(OS_ANDROID) || defined(OS_LINUX)
+    worker->SetThreadPriority(base::kThreadPriority_Background);
+#endif
     workers_.push_back(worker.Pass());
   }
 }
@@ -215,7 +222,7 @@ void WorkerPool::Inner::SetTaskGraph(TaskGraph* graph) {
 
     // First remove all completed tasks from |new_pending_tasks| and
     // adjust number of dependencies.
-    for (TaskDeque::iterator it = completed_tasks_.begin();
+    for (TaskVector::iterator it = completed_tasks_.begin();
          it != completed_tasks_.end(); ++it) {
       internal::WorkerPoolTask* task = it->get();
 
@@ -229,16 +236,6 @@ void WorkerPool::Inner::SetTaskGraph(TaskGraph* graph) {
           dependent_node->remove_dependency();
         }
       }
-    }
-
-    // Move tasks not present in |new_pending_tasks| to |completed_tasks_|.
-    for (GraphNodeMap::iterator it = pending_tasks_.begin();
-         it != pending_tasks_.end(); ++it) {
-      internal::WorkerPoolTask* task = it->first;
-
-      // Task has completed if not present in |new_pending_tasks|.
-      if (!new_pending_tasks.contains(task))
-        completed_tasks_.push_back(task);
     }
 
     // Build new running task set.
@@ -269,6 +266,18 @@ void WorkerPool::Inner::SetTaskGraph(TaskGraph* graph) {
 
       if (!node->num_dependencies())
         new_ready_to_run_tasks.push(node);
+
+      // Erase the task from old pending tasks.
+      pending_tasks_.erase(task);
+    }
+
+    completed_tasks_.reserve(completed_tasks_.size() + pending_tasks_.size());
+
+    // The items left in |pending_tasks_| need to be canceled.
+    for (GraphNodeMap::const_iterator it = pending_tasks_.begin();
+         it != pending_tasks_.end();
+         ++it) {
+      completed_tasks_.push_back(it->first);
     }
 
     // Swap task sets.
@@ -288,7 +297,7 @@ void WorkerPool::Inner::SetTaskGraph(TaskGraph* graph) {
   }
 }
 
-void WorkerPool::Inner::CollectCompletedTasks(TaskDeque* completed_tasks) {
+void WorkerPool::Inner::CollectCompletedTasks(TaskVector* completed_tasks) {
   base::AutoLock lock(lock_);
 
   DCHECK_EQ(0u, completed_tasks->size());
@@ -296,12 +305,6 @@ void WorkerPool::Inner::CollectCompletedTasks(TaskDeque* completed_tasks) {
 }
 
 void WorkerPool::Inner::Run() {
-#if defined(OS_ANDROID)
-  base::PlatformThread::SetThreadPriority(
-      base::PlatformThread::CurrentHandle(),
-      base::kThreadPriority_Background);
-#endif
-
   base::AutoLock lock(lock_);
 
   // Get a unique thread index.
@@ -337,7 +340,7 @@ void WorkerPool::Inner::Run() {
     {
       base::AutoUnlock unlock(lock_);
 
-      task->RunOnThread(thread_index);
+      task->RunOnWorkerThread(thread_index);
     }
 
     // This will mark task as finished running.
@@ -354,12 +357,10 @@ void WorkerPool::Inner::Run() {
         internal::GraphNode* dependent_node = *it;
 
         dependent_node->remove_dependency();
-        // Dependent is not ready unless number of dependencies are 0.
-        if (dependent_node->num_dependencies())
-          continue;
-
-        // Task is ready. Add it to |ready_to_run_tasks_|.
-        ready_to_run_tasks_.push(dependent_node);
+        // Task is ready if it has no dependencies. Add it to
+        // |ready_to_run_tasks_|.
+        if (!dependent_node->num_dependencies())
+          ready_to_run_tasks_.push(dependent_node);
       }
     }
 
@@ -394,24 +395,27 @@ void WorkerPool::CheckForCompletedTasks() {
 
   DCHECK(!in_dispatch_completion_callbacks_);
 
-  TaskDeque completed_tasks;
+  TaskVector completed_tasks;
   inner_->CollectCompletedTasks(&completed_tasks);
-  DispatchCompletionCallbacks(&completed_tasks);
+  ProcessCompletedTasks(completed_tasks);
 }
 
-void WorkerPool::DispatchCompletionCallbacks(TaskDeque* completed_tasks) {
-  TRACE_EVENT0("cc", "WorkerPool::DispatchCompletionCallbacks");
+void WorkerPool::ProcessCompletedTasks(
+    const TaskVector& completed_tasks) {
+  TRACE_EVENT1("cc", "WorkerPool::ProcessCompletedTasks",
+               "completed_task_count", completed_tasks.size());
 
   // Worker pool instance is not reentrant while processing completed tasks.
   in_dispatch_completion_callbacks_ = true;
 
-  while (!completed_tasks->empty()) {
-    internal::WorkerPoolTask* task = completed_tasks->front().get();
+  for (TaskVector::const_iterator it = completed_tasks.begin();
+       it != completed_tasks.end();
+       ++it) {
+    internal::WorkerPoolTask* task = it->get();
 
+    task->WillComplete();
+    task->CompleteOnOriginThread();
     task->DidComplete();
-    task->DispatchCompletionCallback();
-
-    completed_tasks->pop_front();
   }
 
   in_dispatch_completion_callbacks_ = false;

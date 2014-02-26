@@ -34,7 +34,7 @@
  * \param iy  - integer fragment window Y coordiante
  */
 static void
-NAME(plot)(GLcontext *ctx, struct LineInfo *line, int ix, int iy)
+NAME(plot)(struct gl_context *ctx, struct LineInfo *line, int ix, int iy)
 {
    const SWcontext *swrast = SWRAST_CONTEXT(ctx);
    const GLfloat fx = (GLfloat) ix;
@@ -67,7 +67,7 @@ NAME(plot)(GLcontext *ctx, struct LineInfo *line, int ix, int iy)
    ATTRIB_LOOP_BEGIN
       GLfloat (*attribArray)[4] = line->span.array->attribs[attr];
       if (attr >= FRAG_ATTRIB_TEX0 && attr < FRAG_ATTRIB_VAR0
-          && !ctx->FragmentProgram._Current) {
+          && !_swrast_use_fragment_program(ctx)) {
          /* texcoord w/ divide by Q */
          const GLuint unit = attr - FRAG_ATTRIB_TEX0;
          const GLfloat invQ = solve_plane_recip(fx, fy, line->attrPlane[attr][3]);
@@ -91,7 +91,7 @@ NAME(plot)(GLcontext *ctx, struct LineInfo *line, int ix, int iy)
    ATTRIB_LOOP_END
 #endif
 
-   if (line->span.end == MAX_WIDTH) {
+   if (line->span.end == SWRAST_MAX_WIDTH) {
       _swrast_write_rgba_span(ctx, &(line->span));
       line->span.end = 0; /* reset counter */
    }
@@ -103,7 +103,7 @@ NAME(plot)(GLcontext *ctx, struct LineInfo *line, int ix, int iy)
  * Line setup
  */
 static void
-NAME(line)(GLcontext *ctx, const SWvertex *v0, const SWvertex *v1)
+NAME(line)(struct gl_context *ctx, const SWvertex *v0, const SWvertex *v1)
 {
    SWcontext *swrast = SWRAST_CONTEXT(ctx);
    GLfloat tStart, tEnd;   /* segment start, end along line length */
@@ -175,7 +175,7 @@ NAME(line)(GLcontext *ctx, const SWvertex *v0, const SWvertex *v1)
                              line.attrPlane[attr][c]);
             }
          }
-         line.span.arrayAttribs |= (1 << attr);
+         line.span.arrayAttribs |= BITFIELD64_BIT(attr);
          if (attr >= FRAG_ATTRIB_TEX0 && attr < FRAG_ATTRIB_VAR0) {
             const GLuint u = attr - FRAG_ATTRIB_TEX0;
             const struct gl_texture_object *obj = ctx->Texture.Unit[u]._Current;

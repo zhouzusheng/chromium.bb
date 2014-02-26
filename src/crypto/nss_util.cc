@@ -313,19 +313,19 @@ class NSSInitSingleton {
       return true;
     if (!g_test_nss_db_dir.Get().CreateUniqueTempDir())
       return false;
-    test_slot_ = OpenUserDB(g_test_nss_db_dir.Get().path(), "Test DB");
+    test_slot_ = OpenUserDB(g_test_nss_db_dir.Get().path(), kTestTPMTokenName);
     return !!test_slot_;
   }
 
   void CloseTestNSSDB() {
-    if (test_slot_) {
-      SECStatus status = SECMOD_CloseUserDB(test_slot_);
-      if (status != SECSuccess)
-        PLOG(ERROR) << "SECMOD_CloseUserDB failed: " << PORT_GetError();
-      PK11_FreeSlot(test_slot_);
-      test_slot_ = NULL;
-      ignore_result(g_test_nss_db_dir.Get().Delete());
-    }
+    if (!test_slot_)
+      return;
+    SECStatus status = SECMOD_CloseUserDB(test_slot_);
+    if (status != SECSuccess)
+      PLOG(ERROR) << "SECMOD_CloseUserDB failed: " << PORT_GetError();
+    PK11_FreeSlot(test_slot_);
+    test_slot_ = NULL;
+    ignore_result(g_test_nss_db_dir.Get().Delete());
   }
 
   PK11SlotInfo* GetPublicNSSKeySlot() {
@@ -384,23 +384,17 @@ class NSSInitSingleton {
     base::TimeTicks start_time = base::TimeTicks::Now();
     EnsureNSPRInit();
 
-    // We *must* have NSS >= 3.12.3.  See bug 26448.
+    // We *must* have NSS >= 3.14.3.
     COMPILE_ASSERT(
-        (NSS_VMAJOR == 3 && NSS_VMINOR == 12 && NSS_VPATCH >= 3) ||
-        (NSS_VMAJOR == 3 && NSS_VMINOR > 12) ||
+        (NSS_VMAJOR == 3 && NSS_VMINOR == 14 && NSS_VPATCH >= 3) ||
+        (NSS_VMAJOR == 3 && NSS_VMINOR > 14) ||
         (NSS_VMAJOR > 3),
         nss_version_check_failed);
     // Also check the run-time NSS version.
     // NSS_VersionCheck is a >= check, not strict equality.
-    if (!NSS_VersionCheck("3.12.3")) {
-      // It turns out many people have misconfigured NSS setups, where
-      // their run-time NSPR doesn't match the one their NSS was compiled
-      // against.  So rather than aborting, complain loudly.
-      LOG(ERROR) << "NSS_VersionCheck(\"3.12.3\") failed.  "
-                    "We depend on NSS >= 3.12.3, and this error is not fatal "
-                    "only because many people have busted NSS setups (for "
-                    "example, using the wrong version of NSPR). "
-                    "Please upgrade to the latest NSS and NSPR, and if you "
+    if (!NSS_VersionCheck("3.14.3")) {
+      LOG(FATAL) << "NSS_VersionCheck(\"3.14.3\") failed. NSS >= 3.14.3 is "
+                    "required. Please upgrade to the latest NSS, and if you "
                     "still get this error, contact your distribution "
                     "maintainer.";
     }
@@ -600,6 +594,8 @@ base::LazyInstance<NSSInitSingleton>::Leaky
     g_nss_singleton = LAZY_INSTANCE_INITIALIZER;
 }  // namespace
 
+const char kTestTPMTokenName[] = "Test DB";
+
 #if defined(USE_NSS)
 void EarlySetupForNSSInit() {
   base::FilePath database_dir = GetInitialConfigDirectory();
@@ -652,13 +648,15 @@ void LoadNSSLibraries() {
   // For Debian derivatives NSS libraries are located here.
   paths.push_back(base::FilePath("/usr/lib/nss"));
 
-  // Ubuntu 11.10 (Oneiric) places the libraries here.
+  // Ubuntu 11.10 (Oneiric) and Debian Wheezy place the libraries here.
 #if defined(ARCH_CPU_X86_64)
   paths.push_back(base::FilePath("/usr/lib/x86_64-linux-gnu/nss"));
 #elif defined(ARCH_CPU_X86)
   paths.push_back(base::FilePath("/usr/lib/i386-linux-gnu/nss"));
 #elif defined(ARCH_CPU_ARMEL)
   paths.push_back(base::FilePath("/usr/lib/arm-linux-gnueabi/nss"));
+#elif defined(ARCH_CPU_MIPSEL)
+  paths.push_back(base::FilePath("/usr/lib/mipsel-linux-gnu/nss"));
 #endif
 
   // A list of library files to load.
@@ -698,9 +696,12 @@ ScopedTestNSSDB::ScopedTestNSSDB()
 }
 
 ScopedTestNSSDB::~ScopedTestNSSDB() {
-  // TODO(mattm): Close the dababase once NSS 3.14 is required,
-  // which fixes https://bugzilla.mozilla.org/show_bug.cgi?id=588269
-  // Resource leaks are suppressed. http://crbug.com/156433 .
+  // Don't close when NSS is < 3.15.1, because it would require an additional
+  // sleep for 1 second after closing the database, due to
+  // http://bugzil.la/875601.
+  if (NSS_VersionCheck("3.15.1")) {
+    g_nss_singleton.Get().CloseTestNSSDB();
+  }
 }
 
 base::Lock* GetNSSWriteLock() {

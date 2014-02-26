@@ -39,16 +39,18 @@
 #include "core/page/PerformanceEntry.h"
 #include "core/page/PerformanceNavigation.h"
 #include "core/page/PerformanceTiming.h"
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/RefPtr.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/RefPtr.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 class Document;
+class ExceptionState;
 class ResourceRequest;
 class ResourceResponse;
+class ResourceTimingInfo;
 class UserTiming;
 
 class Performance : public ScriptWrappable, public RefCounted<Performance>, public DOMWindowProperty, public EventTarget {
@@ -73,15 +75,15 @@ public:
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitresourcetimingbufferfull);
 
-    void addResourceTiming(const String& initiatorName, Document*, const ResourceRequest&, const ResourceResponse&, double initiationTime, double finishTime);
+    void addResourceTiming(const ResourceTimingInfo&, Document*);
 
     using RefCounted<Performance>::ref;
     using RefCounted<Performance>::deref;
 
-    void mark(const String& markName, ExceptionCode&);
+    void mark(const String& markName, ExceptionState&);
     void clearMarks(const String& markName);
 
-    void measure(const String& measureName, const String& startMark, const String& endMark, ExceptionCode&);
+    void measure(const String& measureName, const String& startMark, const String& endMark, ExceptionState&);
     void clearMeasures(const String& measureName);
 
 private:
@@ -92,6 +94,7 @@ private:
     virtual EventTargetData* eventTargetData();
     virtual EventTargetData* ensureEventTargetData();
     bool isResourceTimingBufferFull();
+    void addResourceTimingBuffer(PassRefPtr<PerformanceEntry>);
 
     EventTargetData m_eventTargetData;
 
@@ -100,6 +103,7 @@ private:
 
     Vector<RefPtr<PerformanceEntry> > m_resourceTimingBuffer;
     unsigned m_resourceTimingBufferSize;
+    double m_referenceTime;
 
     RefPtr<UserTiming> m_userTiming;
 };

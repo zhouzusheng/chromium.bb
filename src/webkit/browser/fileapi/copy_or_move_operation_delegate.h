@@ -21,8 +21,7 @@ class CopyOrMoveFileValidator;
 
 // A delegate class for recursive copy or move operations.
 class CopyOrMoveOperationDelegate
-    : public RecursiveOperationDelegate,
-      public base::SupportsWeakPtr<CopyOrMoveOperationDelegate> {
+    : public RecursiveOperationDelegate {
  public:
   enum OperationType {
     OPERATION_COPY,
@@ -44,8 +43,6 @@ class CopyOrMoveOperationDelegate
                            const StatusCallback& callback) OVERRIDE;
   virtual void ProcessDirectory(const FileSystemURL& url,
                                 const StatusCallback& callback) OVERRIDE;
-
-  using base::SupportsWeakPtr<CopyOrMoveOperationDelegate>::AsWeakPtr;
 
  private:
   struct URLPair {
@@ -75,11 +72,31 @@ class CopyOrMoveOperationDelegate
       const base::PlatformFileInfo& file_info,
       const base::FilePath& platform_path,
       base::PlatformFileError error);
-  void DidFinishCopy(
+  void DidFinishRecursiveCopyDir(
       const FileSystemURL& src,
       const StatusCallback& callback,
       base::PlatformFileError error);
+  void DidFinishCopy(
+      const URLPair& url_pair,
+      const StatusCallback& callback,
+      base::PlatformFileError error);
+  void DoPostWriteValidation(
+      const URLPair& url_pair,
+      const StatusCallback& callback,
+      base::PlatformFileError error,
+      const base::PlatformFileInfo& file_info,
+      const base::FilePath& platform_path,
+      const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref);
+  void DidPostWriteValidation(
+      const URLPair& url_pair,
+      const StatusCallback& callback,
+      const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref,
+      base::PlatformFileError error);
   void DidRemoveSourceForMove(
+      const StatusCallback& callback,
+      base::PlatformFileError error);
+  void DidRemoveDestForError(
+      base::PlatformFileError prior_error,
       const StatusCallback& callback,
       base::PlatformFileError error);
 
@@ -94,6 +111,8 @@ class CopyOrMoveOperationDelegate
   scoped_refptr<webkit_blob::ShareableFileReference> current_file_ref_;
 
   scoped_ptr<CopyOrMoveFileValidator> validator_;
+
+  base::WeakPtrFactory<CopyOrMoveOperationDelegate> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(CopyOrMoveOperationDelegate);
 };

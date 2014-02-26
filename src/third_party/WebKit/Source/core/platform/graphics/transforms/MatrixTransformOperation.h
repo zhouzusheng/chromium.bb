@@ -47,8 +47,8 @@ public:
 private:
     virtual bool isIdentity() const { return m_a == 1 && m_b == 0 && m_c == 0 && m_d == 1 && m_e == 0 && m_f == 0; }
 
-    virtual OperationType getOperationType() const { return MATRIX; }
-    virtual bool isSameType(const TransformOperation& o) const { return o.getOperationType() == MATRIX; }
+    virtual OperationType getOperationType() const { return Matrix; }
+    virtual bool isSameType(const TransformOperation& o) const { return o.getOperationType() == Matrix; }
 
     virtual bool operator==(const TransformOperation& o) const
     {
@@ -67,7 +67,7 @@ private:
     }
 
     virtual PassRefPtr<TransformOperation> blend(const TransformOperation* from, double progress, bool blendToIdentity = false);
-    
+
     MatrixTransformOperation(double a, double b, double c, double d, double e, double f)
         : m_a(a)
         , m_b(b)
@@ -87,7 +87,7 @@ private:
         , m_f(t.f())
     {
     }
-    
+
     double m_a;
     double m_b;
     double m_c;

@@ -60,7 +60,6 @@
             'front_end/DataGrid.js',
             'front_end/DebuggerModel.js',
             'front_end/DebuggerScriptMapping.js',
-            'front_end/DefaultTextEditor.js',
             'front_end/DevToolsExtensionAPI.js',
             'front_end/Tests.js',
             'front_end/Dialog.js',
@@ -118,6 +117,7 @@
             'front_end/Object.js',
             'front_end/ObjectPopoverHelper.js',
             'front_end/ObjectPropertiesSection.js',
+            'front_end/OverridesSupport.js',
             'front_end/OverridesView.js',
             'front_end/OverviewGrid.js',
             'front_end/Panel.js',
@@ -172,6 +172,7 @@
             'front_end/TestController.js',
             'front_end/TextEditor.js',
             'front_end/TextEditorHighlighter.js',
+            'front_end/TextRange.js',
             'front_end/TextEditorModel.js',
             'front_end/TextPrompt.js',
             'front_end/TextUtils.js',
@@ -179,17 +180,18 @@
             'front_end/TimelineManager.js',
             'front_end/TimelinePanelDescriptor.js',
             'front_end/Toolbar.js',
+            'front_end/TracingAgent.js',
             'front_end/treeoutline.js',
             'front_end/UISourceCode.js',
             'front_end/UIString.js',
             'front_end/UIUtils.js',
-            'front_end/UserAgentSupport.js',
             'front_end/UserMetrics.js',
             'front_end/utilities.js',
             'front_end/View.js',
             'front_end/ViewportControl.js',
             'front_end/WorkerManager.js',
             'front_end/Workspace.js',
+            'front_end/WorkspaceController.js',
             'front_end/dialog.css',
             'front_end/inspector.css',
             'front_end/inspectorSyntaxHighlight.css',
@@ -204,7 +206,6 @@
             'front_end/buildSystemOnly.js',
             'front_end/cm/cmdevtools.css',
             'front_end/cm/codemirror.css',
-            'front_end/cm/showhint.css',
             'front_end/cssNamedFlows.css',
             'front_end/dataGrid.css',
             'front_end/elementsPanel.css',
@@ -214,7 +215,6 @@
             'front_end/helpScreen.css',
             'front_end/indexedDBViews.css',
             'front_end/inspectorCommon.css',
-            'front_end/nativeMemoryProfiler.css',
             'front_end/navigatorView.css',
             'front_end/networkLogView.css',
             'front_end/networkPanel.css',
@@ -228,7 +228,6 @@
             'front_end/spectrum.css',
             'front_end/splitView.css',
             'front_end/tabbedPane.css',
-            'front_end/textEditor.css',
             'front_end/textPrompt.css',
             'front_end/timelinePanel.css',
             'front_end/canvasProfiler.css',
@@ -269,6 +268,7 @@
         'devtools_scripts_js_files': [
             'front_end/BreakpointsSidebarPane.js',
             'front_end/CallStackSidebarPane.js',
+            'front_end/FilePathScoreFunction.js',
             'front_end/FilteredItemSelectionDialog.js',
             'front_end/JavaScriptSourceFrame.js',
             'front_end/NavigatorOverlayController.js',
@@ -286,7 +286,6 @@
         ],
         'devtools_timeline_js_files': [
             'front_end/MemoryStatistics.js',
-            'front_end/NativeMemoryGraph.js',
             'front_end/TimelineFrameController.js',
             'front_end/TimelineModel.js',
             'front_end/TimelinePresentationModel.js',
@@ -297,7 +296,6 @@
         'devtools_profiles_js_files': [
             'front_end/BottomUpProfileDataGridTree.js',
             'front_end/CPUProfileView.js',
-            'front_end/CSSSelectorProfileView.js',
             'front_end/FlameChart.js',
             'front_end/HeapSnapshot.js',
             'front_end/HeapSnapshotDataGrids.js',
@@ -307,8 +305,6 @@
             'front_end/HeapSnapshotView.js',
             'front_end/HeapSnapshotWorkerDispatcher.js',
             'front_end/JSHeapSnapshot.js',
-            'front_end/NativeHeapSnapshot.js',
-            'front_end/NativeMemorySnapshotView.js',
             'front_end/ProfileDataGridTree.js',
             'front_end/ProfilesPanel.js',
             'front_end/ProfileLauncherView.js',
@@ -328,17 +324,22 @@
 
         'devtools_codemirror_js_files': [
             'front_end/CodeMirrorTextEditor.js',
-            'front_end/cm/codemirror.js',
-            'front_end/cm/css.js',
-            'front_end/cm/showhint.js',
-            'front_end/cm/comment.js',
-            'front_end/cm/htmlmixed.js',
+            'front_end/cm/clike.js',
             'front_end/cm/closebrackets.js',
-            'front_end/cm/matchbrackets.js',
+            'front_end/cm/codemirror.js',
+            'front_end/cm/coffeescript.js',
+            'front_end/cm/comment.js',
+            'front_end/cm/css.js',
+            'front_end/cm/htmlembedded.js',
+            'front_end/cm/htmlmixed.js',
             'front_end/cm/javascript.js',
-            'front_end/cm/xml.js',
             'front_end/cm/markselection.js',
+            'front_end/cm/matchbrackets.js',
             'front_end/cm/overlay.js',
+            'front_end/cm/php.js',
+            'front_end/cm/python.js',
+            'front_end/cm/shell.js',
+            'front_end/cm/xml.js',
         ],
 
         'devtools_modules_js_files': [
@@ -452,8 +453,6 @@
             'front_end/Images/timelinePillPurple.png',
             'front_end/Images/timelinePillRed.png',
             'front_end/Images/timelinePillYellow.png',
-            'front_end/Images/toolbarIcons.png',
-            'front_end/Images/toolbarIconsSmall.png',
             'front_end/Images/toolbarItemSelected.png',
             'front_end/Images/trackHoriz.png',
             'front_end/Images/trackVert.png',
@@ -492,7 +491,7 @@
                     'destination': '<(PRODUCT_DIR)/resources/inspector',
                     'files': [
                         '<@(devtools_files)',
-                        '<(SHARED_INTERMEDIATE_DIR)/webcore/InspectorBackendCommands.js',
+                        '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorBackendCommands.js',
                     ],
                     'conditions': [
                         ['debug_devtools==0', {
@@ -615,7 +614,7 @@
                         'script_name': 'scripts/generate_devtools_grd.py',
                         'input_pages': [
                             '<@(devtools_files)',
-                            '<(SHARED_INTERMEDIATE_DIR)/webcore/InspectorBackendCommands.js',
+                            '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorBackendCommands.js',
                             '<(PRODUCT_DIR)/resources/inspector/devtools.html',
                         ],
                         'images': [
@@ -636,32 +635,32 @@
                 }],
             ],
         },
-	    {
-	      'target_name': 'frontend_protocol_sources',
-	      'type': 'none',
-	      'actions': [
-	        {
-	          'action_name': 'generateInspectorProtocolFrontendSources',
-	          'inputs': [
-	            # The python script in action below.
-	            'scripts/CodeGeneratorFrontend.py',
-	            # Input file for the script.
-	            'protocol.json',
-	          ],
-	          'outputs': [
-	            '<(SHARED_INTERMEDIATE_DIR)/webcore/InspectorBackendCommands.js',
-	          ],
-	          'action': [
-	            'python',
-	            'scripts/CodeGeneratorFrontend.py',
-	            'protocol.json',
-	            '--output_js_dir', '<(SHARED_INTERMEDIATE_DIR)/webcore',
-	          ],
-	          'message': 'Generating Inspector protocol frontend sources from protocol.json',
-	          'msvs_cygwin_shell': 1,
-	        },
-	      ]
-	    },
+        {
+          'target_name': 'frontend_protocol_sources',
+          'type': 'none',
+          'actions': [
+            {
+              'action_name': 'generateInspectorProtocolFrontendSources',
+              'inputs': [
+                # The python script in action below.
+                'scripts/CodeGeneratorFrontend.py',
+                # Input file for the script.
+                'protocol.json',
+              ],
+              'outputs': [
+                '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorBackendCommands.js',
+              ],
+              'action': [
+                'python',
+                'scripts/CodeGeneratorFrontend.py',
+                'protocol.json',
+                '--output_js_dir', '<(SHARED_INTERMEDIATE_DIR)/blink',
+              ],
+              'message': 'Generating Inspector protocol frontend sources from protocol.json',
+              'msvs_cygwin_shell': 1,
+            },
+          ]
+        },
     ], # targets
     'conditions': [
         ['debug_devtools==0', {
@@ -681,11 +680,11 @@
                             '<@(_script_name)',
                             '<@(_input_page)',
                             '<@(devtools_files)',
-                            '<(SHARED_INTERMEDIATE_DIR)/webcore/InspectorBackendCommands.js'
+                            '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorBackendCommands.js'
                         ],
                         'search_path': [
                             'front_end',
-                            '<(SHARED_INTERMEDIATE_DIR)/webcore',
+                            '<(SHARED_INTERMEDIATE_DIR)/blink',
                         ],
                         'outputs': ['<(PRODUCT_DIR)/resources/inspector/inspector.js'],
                         'action': ['python', '<@(_script_name)', '<@(_input_page)', '<@(_search_path)', '<@(_outputs)'],
@@ -816,7 +815,7 @@
                         ],
                         'search_path': 'front_end',
                         'outputs': ['<(PRODUCT_DIR)/resources/inspector/CodeMirrorTextEditor.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_search_path)', '<@(_outputs)', 'true'],
+                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_search_path)', '<@(_outputs)'],
                     }],
                 },
                 {

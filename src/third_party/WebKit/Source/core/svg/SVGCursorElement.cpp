@@ -23,6 +23,7 @@
 #include "core/svg/SVGCursorElement.h"
 
 #include "SVGNames.h"
+#include "XLinkNames.h"
 #include "core/dom/Document.h"
 #include "core/svg/SVGElementInstance.h"
 
@@ -92,7 +93,7 @@ void SVGCursorElement::parseAttribute(const QualifiedName& name, const AtomicStr
              || SVGURIReference::parseAttribute(name, value)) {
     } else
         ASSERT_NOT_REACHED();
-    
+
     reportAttributeParsingError(parseError, name, value);
 }
 
@@ -137,7 +138,7 @@ void SVGCursorElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) cons
 {
     SVGElement::addSubresourceAttributeURLs(urls);
 
-    addSubresourceURL(urls, document()->completeURL(href()));
+    addSubresourceURL(urls, document()->completeURL(hrefCurrentValue()));
 }
 
 }

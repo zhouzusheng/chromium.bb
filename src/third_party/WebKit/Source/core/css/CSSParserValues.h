@@ -56,11 +56,16 @@ struct CSSParserString {
     void init(const String& string, unsigned startOffset, unsigned length)
     {
         m_length = length;
-        if (m_length && string.is8Bit()) {
+        if (!m_length) {
+            m_data.characters8 = 0;
+            m_is8Bit = true;
+            return;
+        }
+        if (string.is8Bit()) {
             m_data.characters8 = const_cast<LChar*>(string.characters8()) + startOffset;
             m_is8Bit = true;
         } else {
-            m_data.characters16 = const_cast<UChar*>(string.characters()) + startOffset;
+            m_data.characters16 = const_cast<UChar*>(string.characters16()) + startOffset;
             m_is8Bit = false;
         }
     }
@@ -69,7 +74,7 @@ struct CSSParserString {
     {
         m_data.characters8 = 0;
         m_length = 0;
-        m_is8Bit = false;
+        m_is8Bit = true;
     }
 
     void trimTrailingWhitespace();
@@ -111,10 +116,12 @@ struct CSSParserString {
         return is8Bit() ? WTF::equalIgnoringCase(str, characters8(), strLength) : WTF::equalIgnoringCase(str, characters16(), strLength);
     }
 
-    operator String() const { return is8Bit() ? String(m_data.characters8, m_length) : String(m_data.characters16, m_length); }
+    operator String() const { return is8Bit() ? String(m_data.characters8, m_length) : StringImpl::create8BitIfPossible(m_data.characters16, m_length); }
     operator AtomicString() const { return is8Bit() ? AtomicString(m_data.characters8, m_length) : AtomicString(m_data.characters16, m_length); }
 
     AtomicString atomicSubstring(unsigned position, unsigned length) const;
+
+    bool isFunction() const { return length() > 0 && (*this)[length() - 1] == '('; }
 
     union {
         const LChar* characters8;
@@ -206,7 +213,9 @@ public:
     void setMatch(CSSSelector::Match value) { m_selector->m_match = value; }
     void setRelation(CSSSelector::Relation value) { m_selector->m_relation = value; }
     void setForPage() { m_selector->setForPage(); }
-    void setRelationIsForShadowDistributed() { m_selector->setRelationIsForShadowDistributed(); }
+    void setRelationIsAffectedByPseudoContent() { m_selector->setRelationIsAffectedByPseudoContent(); }
+    bool relationIsAffectedByPseudoContent() const { return m_selector->relationIsAffectedByPseudoContent(); }
+    void setMatchUserAgentOnly() { m_selector->setMatchUserAgentOnly(); }
 
     void adoptSelectorVector(Vector<OwnPtr<CSSParserSelector> >& selectorVector);
 
@@ -214,9 +223,11 @@ public:
     void setFunctionArgumentSelector(CSSParserSelector* selector) { m_functionArgumentSelector = selector; }
     bool isDistributedPseudoElement() const { return m_selector->isDistributedPseudoElement(); }
     CSSParserSelector* findDistributedPseudoElementSelector() const;
+    bool isContentPseudoElement() const { return m_selector->isContentPseudoElement(); }
 
     CSSSelector::PseudoType pseudoType() const { return m_selector->pseudoType(); }
     bool isCustomPseudoElement() const { return m_selector->isCustomPseudoElement(); }
+    bool needsCrossingTreeScopeBoundary() const { return isCustomPseudoElement() || pseudoType() == CSSSelector::PseudoCue; }
 
     bool isSimple() const;
     bool hasShadowPseudo() const;

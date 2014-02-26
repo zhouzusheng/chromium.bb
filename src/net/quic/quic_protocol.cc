@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 #include "net/quic/quic_protocol.h"
+
 #include "base/stl_util.h"
+#include "net/quic/quic_utils.h"
 
 using base::StringPiece;
 using std::map;
@@ -50,13 +52,6 @@ size_t GetStartOfEncryptedData(
   return GetPacketHeaderSize(
       guid_length, include_version, sequence_number_length, NOT_IN_FEC_GROUP) -
       kPrivateFlagsSize;
-}
-
-uint32 MakeQuicTag(char a, char b, char c, char d) {
-  return static_cast<uint32>(a) |
-         static_cast<uint32>(b) << 8 |
-         static_cast<uint32>(c) << 16 |
-         static_cast<uint32>(d) << 24;
 }
 
 QuicPacketPublicHeader::QuicPacketPublicHeader()
@@ -117,6 +112,73 @@ QuicStreamFrame::QuicStreamFrame(QuicStreamId stream_id,
       fin(fin),
       offset(offset),
       data(data) {
+}
+
+uint32 MakeQuicTag(char a, char b, char c, char d) {
+  return static_cast<uint32>(a) |
+         static_cast<uint32>(b) << 8 |
+         static_cast<uint32>(c) << 16 |
+         static_cast<uint32>(d) << 24;
+}
+
+QuicVersion QuicVersionMax() { return kSupportedQuicVersions[0]; }
+
+QuicVersion QuicVersionMin() {
+  return kSupportedQuicVersions[arraysize(kSupportedQuicVersions) - 1];
+}
+
+QuicTag QuicVersionToQuicTag(const QuicVersion version) {
+  switch (version) {
+    case QUIC_VERSION_7:
+      return MakeQuicTag('Q', '0', '0', '7');
+    case QUIC_VERSION_8:
+      return MakeQuicTag('Q', '0', '0', '8');
+    default:
+      // This shold be an ERROR because we should never attempt to convert an
+      // invalid QuicVersion to be written to the wire.
+      LOG(ERROR) << "Unsupported QuicVersion: " << version;
+      return 0;
+  }
+}
+
+QuicVersion QuicTagToQuicVersion(const QuicTag version_tag) {
+  const QuicTag quic_tag_v7 = MakeQuicTag('Q', '0', '0', '7');
+  const QuicTag quic_tag_v8 = MakeQuicTag('Q', '0', '0', '8');
+
+  if (version_tag == quic_tag_v7) {
+    return QUIC_VERSION_7;
+  } else if (version_tag == quic_tag_v8) {
+    return QUIC_VERSION_8;
+  } else {
+    // Reading from the client so this should not be considered an ERROR.
+    DLOG(INFO) << "Unsupported QuicTag version: "
+               << QuicUtils::TagToString(version_tag);
+    return QUIC_VERSION_UNSUPPORTED;
+  }
+}
+
+#define RETURN_STRING_LITERAL(x) \
+case x: \
+return #x
+
+string QuicVersionToString(const QuicVersion version) {
+  switch (version) {
+    RETURN_STRING_LITERAL(QUIC_VERSION_7);
+    RETURN_STRING_LITERAL(QUIC_VERSION_8);
+    default:
+      return "QUIC_VERSION_UNSUPPORTED";
+  }
+}
+
+string QuicVersionArrayToString(const QuicVersion versions[],
+                                int num_versions) {
+  string result = "";
+  for (int i = 0; i < num_versions; ++i) {
+    const QuicVersion& version = versions[i];
+    result.append(QuicVersionToString(version));
+    result.append(",");
+  }
+  return result;
 }
 
 ostream& operator<<(ostream& os, const QuicPacketHeader& header) {

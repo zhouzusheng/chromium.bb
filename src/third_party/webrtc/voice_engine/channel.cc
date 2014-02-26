@@ -915,6 +915,7 @@ Channel::Channel(int32_t channelId,
     playout_timestamp_rtp_(0),
     playout_timestamp_rtcp_(0),
     _numberOfDiscardedPackets(0),
+    send_sequence_number_(0),
     _engineStatisticsPtr(NULL),
     _outputMixerPtr(NULL),
     _transmitMixerPtr(NULL),
@@ -1400,6 +1401,11 @@ Channel::StartSend()
 {
     WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
                  "Channel::StartSend()");
+    // Resume the previous sequence number which was reset by StopSend().
+    // This needs to be done before |_sending| is set to true.
+    if (send_sequence_number_)
+      SetInitSequenceNumber(send_sequence_number_);
+
     {
         // A lock is needed because |_sending| can be accessed or modified by
         // another thread at the same time.
@@ -1441,6 +1447,14 @@ Channel::StopSend()
         }
         _sending = false;
     }
+
+    // Store the sequence number to be able to pick up the same sequence for
+    // the next StartSend(). This is needed for restarting device, otherwise
+    // it might cause libSRTP to complain about packets being replayed.
+    // TODO(xians): Remove this workaround after RtpRtcpModule's refactoring
+    // CL is landed. See issue
+    // https://code.google.com/p/webrtc/issues/detail?id=2111 .
+    send_sequence_number_ = _rtpRtcpModule->SequenceNumber();
 
     // Reset sending SSRC and sequence number and triggers direct transmission
     // of RTCP BYE
@@ -3200,7 +3214,7 @@ Channel::SetSendTelephoneEventPayloadType(unsigned char type)
             "SetSendTelephoneEventPayloadType() invalid type");
         return -1;
     }
-    CodecInst codec;
+    CodecInst codec = {};
     codec.plfreq = 8000;
     codec.pltype = type;
     memcpy(codec.plname, "telephone-event", 16);
@@ -4418,6 +4432,63 @@ Channel::Demultiplex(const AudioFrame& audioFrame)
     return 0;
 }
 
+// TODO(xians): This method borrows quite some code from
+// TransmitMixer::GenerateAudioFrame(), refactor these two methods and reduce
+// code duplication.
+void Channel::Demultiplex(const int16_t* audio_data,
+                          int sample_rate,
+                          int number_of_frames,
+                          int number_of_channels) {
+  // The highest sample rate that WebRTC supports for mono audio is 96kHz.
+  static const int kMaxNumberOfFrames = 960;
+  assert(number_of_frames <= kMaxNumberOfFrames);
+
+  // Get the send codec information for doing resampling or downmixing later on.
+  CodecInst codec;
+  GetSendCodec(codec);
+  assert(codec.channels == 1 || codec.channels == 2);
+  int support_sample_rate = std::min(32000,
+                                     std::min(sample_rate, codec.plfreq));
+
+  // Downmix the data to mono if needed.
+  const int16_t* audio_ptr = audio_data;
+  if (number_of_channels == 2 && codec.channels == 1) {
+    if (!mono_recording_audio_.get())
+      mono_recording_audio_.reset(new int16_t[kMaxNumberOfFrames]);
+
+    AudioFrameOperations::StereoToMono(audio_data, number_of_frames,
+                                       mono_recording_audio_.get());
+    audio_ptr = mono_recording_audio_.get();
+  }
+
+  // Resample the data to the sample rate that the codec is using.
+  if (input_resampler_.InitializeIfNeeded(sample_rate,
+                                          support_sample_rate,
+                                          codec.channels)) {
+    WEBRTC_TRACE(kTraceError, kTraceVoice, VoEId(_instanceId, -1),
+                 "Channel::Demultiplex() unable to resample");
+    return;
+  }
+
+  int out_length = input_resampler_.Resample(audio_ptr,
+                                             number_of_frames * codec.channels,
+                                             _audioFrame.data_,
+                                             AudioFrame::kMaxDataSizeSamples);
+  if (out_length == -1) {
+    WEBRTC_TRACE(kTraceError, kTraceVoice, VoEId(_instanceId, -1),
+                 "Channel::Demultiplex() resampling failed");
+    return;
+  }
+
+  _audioFrame.samples_per_channel_ = out_length / codec.channels;
+  _audioFrame.timestamp_ = -1;
+  _audioFrame.sample_rate_hz_ = support_sample_rate;
+  _audioFrame.speech_type_ = AudioFrame::kNormalSpeech;
+  _audioFrame.vad_activity_ = AudioFrame::kVadUnknown;
+  _audioFrame.num_channels_ = codec.channels;
+  _audioFrame.id_ = _channelId;
+}
+
 uint32_t
 Channel::PrepareEncodeAndSend(int mixingFrequency)
 {
@@ -5324,5 +5395,5 @@ int Channel::SetRedPayloadType(int red_payload_type) {
   return 0;
 }
 
-} // namespace voe
-} // namespace webrtc
+}  // namespace voe
+}  // namespace webrtc

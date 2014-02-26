@@ -67,9 +67,13 @@ public:
     bool hasRotationRateAlpha : 1;
     bool hasRotationRateBeta : 1;
     bool hasRotationRateGamma : 1;
+
+    bool allAvailableSensorsAreActive : 1;
 };
 
 #if WEBKIT_IMPLEMENTATION
+#include "wtf/Assertions.h"
+
 COMPILE_ASSERT(sizeof(WebDeviceMotionData) == (10 * sizeof(double) + 2 * sizeof(char)), WebDeviceMotionData_has_wrong_size);
 #endif
 

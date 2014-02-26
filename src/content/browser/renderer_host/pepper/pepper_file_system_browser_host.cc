@@ -66,7 +66,7 @@ PepperFileSystemBrowserHost::PepperFileSystemBrowserHost(BrowserPpapiHost* host,
 }
 
 PepperFileSystemBrowserHost::~PepperFileSystemBrowserHost() {
-  if (fs_context_)
+  if (fs_context_.get())
     fs_context_->operation_runner()->Shutdown();
 }
 
@@ -84,9 +84,8 @@ int32_t PepperFileSystemBrowserHost::OnResourceMessageReceived(
   return PP_ERROR_FAILED;
 }
 
-PepperFileSystemBrowserHost*
-PepperFileSystemBrowserHost::AsPepperFileSystemBrowserHost() {
-  return this;
+bool PepperFileSystemBrowserHost::IsFileSystemHost() {
+  return true;
 }
 
 int32_t PepperFileSystemBrowserHost::OnHostMsgOpen(
@@ -137,9 +136,9 @@ void PepperFileSystemBrowserHost::GotFileSystemContext(
     ppapi::host::ReplyMessageContext reply_context,
     fileapi::FileSystemType file_system_type,
     scoped_refptr<fileapi::FileSystemContext> fs_context) {
-  if (!fs_context) {
-    OpenFileSystemComplete(reply_context, base::PLATFORM_FILE_ERROR_FAILED,
-                           std::string(), GURL());
+  if (!fs_context.get()) {
+    OpenFileSystemComplete(
+        reply_context, base::PLATFORM_FILE_ERROR_FAILED, std::string(), GURL());
     return;
   }
   GURL origin = browser_ppapi_host_->GetDocumentURLForInstance(

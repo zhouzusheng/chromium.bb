@@ -10,7 +10,7 @@
 #include "base/strings/nullable_string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "ipc/ipc_channel_handle.h"
 
@@ -253,6 +253,40 @@ void ParamTraits<bool>::Log(const param_type& p, std::string* l) {
   l->append(p ? "true" : "false");
 }
 
+void ParamTraits<unsigned char>::Write(Message* m, const param_type& p) {
+  m->WriteBytes(&p, sizeof(param_type));
+}
+
+bool ParamTraits<unsigned char>::Read(const Message* m, PickleIterator* iter,
+                                       param_type* r) {
+  const char* data;
+  if (!m->ReadBytes(iter, &data, sizeof(param_type)))
+    return false;
+  memcpy(r, data, sizeof(param_type));
+  return true;
+}
+
+void ParamTraits<unsigned char>::Log(const param_type& p, std::string* l) {
+  l->append(base::UintToString(p));
+}
+
+void ParamTraits<unsigned short>::Write(Message* m, const param_type& p) {
+  m->WriteBytes(&p, sizeof(param_type));
+}
+
+bool ParamTraits<unsigned short>::Read(const Message* m, PickleIterator* iter,
+                                       param_type* r) {
+  const char* data;
+  if (!m->ReadBytes(iter, &data, sizeof(param_type)))
+    return false;
+  memcpy(r, data, sizeof(param_type));
+  return true;
+}
+
+void ParamTraits<unsigned short>::Log(const param_type& p, std::string* l) {
+  l->append(base::UintToString(p));
+}
+
 void ParamTraits<int>::Log(const param_type& p, std::string* l) {
   l->append(base::IntToString(p));
 }
@@ -275,23 +309,6 @@ void ParamTraits<long long>::Log(const param_type& p, std::string* l) {
 
 void ParamTraits<unsigned long long>::Log(const param_type& p, std::string* l) {
   l->append(base::Uint64ToString(p));
-}
-
-void ParamTraits<unsigned short>::Write(Message* m, const param_type& p) {
-  m->WriteBytes(&p, sizeof(param_type));
-}
-
-bool ParamTraits<unsigned short>::Read(const Message* m, PickleIterator* iter,
-                                       param_type* r) {
-  const char* data;
-  if (!m->ReadBytes(iter, &data, sizeof(param_type)))
-    return false;
-  memcpy(r, data, sizeof(param_type));
-  return true;
-}
-
-void ParamTraits<unsigned short>::Log(const param_type& p, std::string* l) {
-  l->append(base::UintToString(p));
 }
 
 void ParamTraits<float>::Write(Message* m, const param_type& p) {

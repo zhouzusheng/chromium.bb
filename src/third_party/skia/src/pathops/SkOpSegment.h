@@ -130,6 +130,11 @@ public:
         return fTs[index].fOther;
     }
 
+    // was used only by right angle winding finding
+    SkPoint ptAtT(double mid) const {
+        return (*CurvePointAtT[SkPathOpsVerbToPoints(fVerb)])(fPts, mid);
+    }
+
     const SkPoint* pts() const {
         return fPts;
     }
@@ -214,11 +219,6 @@ public:
         return span->fPt;
     }
 
-    // used only by right angle winding finding
-    SkPoint xyAtT(double mid) const {
-        return (*CurvePointAtT[SkPathOpsVerbToPoints(fVerb)])(fPts, mid);
-    }
-
     const SkPoint& xyAtT(int index) const {
         return xyAtT(&fTs[index]);
     }
@@ -254,6 +254,7 @@ public:
                   const SkPoint& oPt);
     int addUnsortableT(SkOpSegment* other, bool start, const SkPoint& pt, double newT);
     bool betweenTs(int lesser, double testT, int greater) const;
+    void checkEnds();
     int computeSum(int startIndex, int endIndex, bool binary);
     int crossedSpanY(const SkPoint& basePt, SkScalar* bestY, double* hitT, bool* hitSomething,
                      double mid, bool opp, bool current) const;
@@ -318,8 +319,9 @@ public:
 #endif
 #if DEBUG_SORT || DEBUG_SWAP_TOP
     void debugShowSort(const char* fun, const SkTArray<SkOpAngle*, true>& angles, int first,
-            const int contourWinding, const int oppContourWinding) const;
-    void debugShowSort(const char* fun, const SkTArray<SkOpAngle*, true>& angles, int first);
+            const int contourWinding, const int oppContourWinding, bool sortable) const;
+    void debugShowSort(const char* fun, const SkTArray<SkOpAngle*, true>& angles, int first,
+            bool sortable);
 #endif
 #if DEBUG_CONCIDENT
     void debugShowTs() const;
@@ -392,6 +394,7 @@ private:
         return value < 0 ? '?' : value <= 9 ? '0' + value : '+';
     }
 #endif
+    void debugValidate() const;
 
     const SkPoint* fPts;
     SkPathOpsBounds fBounds;

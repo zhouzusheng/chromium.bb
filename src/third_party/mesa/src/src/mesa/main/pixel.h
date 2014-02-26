@@ -33,25 +33,39 @@
 #define PIXEL_H
 
 
-#include "main/mtypes.h"
+#include "compiler.h"
+#include "glheader.h"
+#include "mfeatures.h"
+
+struct _glapi_table;
+struct gl_context;
 
 
 #if FEATURE_pixel_transfer
 
+extern void GLAPIENTRY
+_mesa_PixelTransferf(GLenum pname, GLfloat param);
+
 extern void 
-_mesa_update_pixel( GLcontext *ctx, GLuint newstate );
+_mesa_update_pixel( struct gl_context *ctx, GLuint newstate );
 
 extern void
 _mesa_init_pixel_dispatch( struct _glapi_table * disp );
 
 #else /* FEATURE_pixel_transfer */
 
-static INLINE void
-_mesa_update_pixel(GLcontext *ctx, GLuint newstate)
+static inline void GLAPIENTRY
+_mesa_PixelTransferf(GLenum pname, GLfloat param)
 {
 }
 
-static INLINE void
+
+static inline void
+_mesa_update_pixel(struct gl_context *ctx, GLuint newstate)
+{
+}
+
+static inline void
 _mesa_init_pixel_dispatch(struct _glapi_table *disp)
 {
 }
@@ -60,7 +74,7 @@ _mesa_init_pixel_dispatch(struct _glapi_table *disp)
 
 
 extern void 
-_mesa_init_pixel( GLcontext * ctx );
+_mesa_init_pixel( struct gl_context * ctx );
 
 /*@}*/
 

@@ -93,12 +93,10 @@ private:
     virtual void destroyShadowSubtree() OVERRIDE FINAL;
     virtual void disabledAttributeChanged() OVERRIDE FINAL;
     virtual void forwardEvent(Event*) OVERRIDE FINAL;
-    virtual void handleFocusEvent(Node* oldFocusedNode, FocusDirection) OVERRIDE;
+    virtual void handleFocusEvent(Element* oldFocusedElement, FocusDirection) OVERRIDE;
     virtual void handleKeydownEvent(KeyboardEvent*) OVERRIDE FINAL;
     virtual bool hasBadInput() const OVERRIDE;
     virtual bool hasCustomFocusLogic() const OVERRIDE FINAL;
-    virtual bool isKeyboardFocusable(KeyboardEvent*) const OVERRIDE FINAL;
-    virtual bool isMouseFocusable() const OVERRIDE FINAL;
     virtual void minOrMaxAttributeChanged() OVERRIDE FINAL;
     virtual void readonlyAttributeChanged() OVERRIDE FINAL;
     virtual void requiredAttributeChanged() OVERRIDE FINAL;
@@ -124,6 +122,7 @@ private:
     bool m_isDestroyingShadowSubtree;
     bool m_pickerIndicatorIsVisible;
     bool m_pickerIndicatorIsAlwaysVisible;
+    bool m_didCreateShadowElements;
 };
 
 } // namespace WebCore

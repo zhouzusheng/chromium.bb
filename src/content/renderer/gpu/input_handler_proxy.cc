@@ -6,6 +6,7 @@
 
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
 #include "content/renderer/gpu/input_handler_proxy_client.h"
 #include "third_party/WebKit/public/platform/Platform.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
@@ -18,6 +19,35 @@ using WebKit::WebInputEvent;
 using WebKit::WebMouseWheelEvent;
 using WebKit::WebPoint;
 using WebKit::WebTouchEvent;
+
+namespace {
+
+void SendScrollLatencyUma(const WebInputEvent& event,
+                          const ui::LatencyInfo& latency_info) {
+  if (!(event.type == WebInputEvent::GestureScrollBegin ||
+        event.type == WebInputEvent::GestureScrollUpdate ||
+        event.type == WebInputEvent::GestureScrollUpdateWithoutPropagation))
+    return;
+
+  ui::LatencyInfo::LatencyMap::const_iterator it =
+      latency_info.latency_components.find(std::make_pair(
+          ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, 0));
+
+  if (it == latency_info.latency_components.end())
+    return;
+
+  base::TimeDelta delta = base::TimeTicks::HighResNow() - it->second.event_time;
+  for (size_t i = 0; i < it->second.event_count; ++i) {
+    UMA_HISTOGRAM_CUSTOM_COUNTS(
+        "Event.Latency.RendererImpl.GestureScroll",
+        delta.InMicroseconds(),
+        0,
+        200000,
+        100);
+  }
+}  // namespace
+
+}
 
 namespace content {
 
@@ -54,6 +84,8 @@ InputHandlerProxy::HandleInputEventWithLatencyInfo(
     const WebInputEvent& event,
     const ui::LatencyInfo& latency_info) {
   DCHECK(input_handler_);
+
+  SendScrollLatencyUma(event, latency_info);
 
   InputHandlerProxy::EventDisposition disposition = HandleInputEvent(event);
   if (disposition != DID_NOT_HANDLE)
@@ -141,10 +173,11 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleInputEvent(
     DCHECK(expect_scroll_update_end_);
     expect_scroll_update_end_ = false;
 #endif
+    input_handler_->ScrollEnd();
+
     if (!gesture_scroll_on_impl_thread_)
       return DID_NOT_HANDLE;
 
-    input_handler_->ScrollEnd();
     gesture_scroll_on_impl_thread_ = false;
     return DID_HANDLE;
   } else if (event.type == WebInputEvent::GesturePinchBegin) {
@@ -293,18 +326,19 @@ void InputHandlerProxy::MainThreadHasStoppedFlinging() {
   fling_may_be_active_on_main_thread_ = false;
 }
 
-void InputHandlerProxy::DidOverscroll(gfx::Vector2dF accumulated_overscroll,
-                                      gfx::Vector2dF current_fling_velocity) {
+void InputHandlerProxy::DidOverscroll(const cc::DidOverscrollParams& params) {
   DCHECK(client_);
   if (fling_curve_) {
     static const int kFlingOverscrollThreshold = 1;
     fling_overscrolled_horizontally_ |=
-        std::abs(accumulated_overscroll.x()) >= kFlingOverscrollThreshold;
+        std::abs(params.accumulated_overscroll.x()) >=
+        kFlingOverscrollThreshold;
     fling_overscrolled_vertically_ |=
-        std::abs(accumulated_overscroll.y()) >= kFlingOverscrollThreshold;
+        std::abs(params.accumulated_overscroll.y()) >=
+        kFlingOverscrollThreshold;
   }
 
-  client_->DidOverscroll(accumulated_overscroll, current_fling_velocity);
+  client_->DidOverscroll(params);
 }
 
 bool InputHandlerProxy::CancelCurrentFling() {

@@ -18,6 +18,9 @@ const char kGLImplementationMockName[]        = "mock";
 
 namespace switches {
 
+// Disables use of D3D11.
+const char kDisableD3D11[]                  = "disable-d3d11";
+
 // Stop the GPU from synchronizing on the vsync before presenting.
 const char kDisableGpuVsync[]               = "disable-gpu-vsync";
 
@@ -67,6 +70,7 @@ const char kTestGLLib[]                     = "test-gl-lib";
 // to read it in the GPU process, else don't add it.
 const char* kGLSwitchesCopiedFromGpuProcessHost[] = {
   kDisableGpuVsync,
+  kDisableD3D11,
   kEnableGPUServiceLogging,
   kEnableGPUServiceTracing,
   kGpuNoContextLost,

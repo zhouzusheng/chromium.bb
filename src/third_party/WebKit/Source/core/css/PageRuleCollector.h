@@ -22,19 +22,20 @@
 #ifndef PageRuleCollector_h
 #define PageRuleCollector_h
 
-#include "core/css/resolver/StyleResolver.h"
+#include "core/css/resolver/MatchResult.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
+class ElementResolveContext;
 class StyleRulePage;
 
 class PageRuleCollector {
 public:
-    PageRuleCollector(const StyleResolverState&, int pageIndex);
+    PageRuleCollector(const ElementResolveContext&, int pageIndex);
 
     void matchPageRules(RuleSet* rules);
-    StyleResolver::MatchResult& matchedResult() { return m_result; }
+    MatchResult& matchedResult() { return m_result; }
 
 private:
     bool isLeftPage(int pageIndex) const;
@@ -44,12 +45,12 @@ private:
 
     void matchPageRulesForList(Vector<StyleRulePage*>& matchedRules, const Vector<StyleRulePage*>& rules, bool isLeftPage, bool isFirstPage, const String& pageName);
 
-    const StyleResolverState& m_state;
+    const ElementResolveContext& m_context;
     const bool m_isLeftPage;
     const bool m_isFirstPage;
     const String m_pageName;
 
-    StyleResolver::MatchResult m_result;
+    MatchResult m_result;
 };
 
 } // namespace WebCore

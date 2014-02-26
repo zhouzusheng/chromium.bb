@@ -32,20 +32,11 @@
 #include "V8InjectedScriptHost.h"
 
 #include "V8Database.h"
-#include "V8Float32Array.h"
 #include "V8HTMLAllCollection.h"
 #include "V8HTMLCollection.h"
-#include "V8Int16Array.h"
-#include "V8Int32Array.h"
-#include "V8Int8Array.h"
 #include "V8Node.h"
 #include "V8NodeList.h"
 #include "V8Storage.h"
-#include "V8Uint16Array.h"
-#include "V8Uint32Array.h"
-#include "V8Uint8Array.h"
-#include "V8Uint8ClampedArray.h"
-#include "bindings/tests/results/V8Float64Array.h"
 #include "bindings/v8/BindingSecurity.h"
 #include "bindings/v8/ScriptDebugServer.h"
 #include "bindings/v8/ScriptValue.h"
@@ -53,6 +44,15 @@
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8HiddenPropertyName.h"
 #include "bindings/v8/V8ScriptRunner.h"
+#include "bindings/v8/custom/V8Float32ArrayCustom.h"
+#include "bindings/v8/custom/V8Float64ArrayCustom.h"
+#include "bindings/v8/custom/V8Int16ArrayCustom.h"
+#include "bindings/v8/custom/V8Int32ArrayCustom.h"
+#include "bindings/v8/custom/V8Int8ArrayCustom.h"
+#include "bindings/v8/custom/V8Uint16ArrayCustom.h"
+#include "bindings/v8/custom/V8Uint32ArrayCustom.h"
+#include "bindings/v8/custom/V8Uint8ArrayCustom.h"
+#include "bindings/v8/custom/V8Uint8ClampedArrayCustom.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InspectorDOMAgent.h"
@@ -63,9 +63,9 @@ namespace WebCore {
 
 Node* InjectedScriptHost::scriptValueAsNode(ScriptValue value)
 {
+    v8::HandleScope scope(v8::Isolate::GetCurrent());
     if (!value.isObject() || value.isNull())
         return 0;
-    v8::HandleScope scope(v8::Isolate::GetCurrent());
     return V8Node::toNative(v8::Handle<v8::Object>::Cast(value.v8Value()));
 }
 
@@ -310,7 +310,7 @@ void V8InjectedScriptHost::databaseIdMethodCustom(const v8::FunctionCallbackInfo
         Database* database = V8Database::toNative(v8::Handle<v8::Object>::Cast(args[0]));
         if (database) {
             InjectedScriptHost* host = V8InjectedScriptHost::toNative(args.Holder()); {
-                v8SetReturnValue(args, v8StringOrUndefined(host->databaseIdImpl(database), args.GetIsolate()));
+                v8SetReturnValueStringOrUndefined(args, host->databaseIdImpl(database), args.GetIsolate());
                 return;
             }
         }
@@ -323,7 +323,7 @@ void V8InjectedScriptHost::storageIdMethodCustom(const v8::FunctionCallbackInfo<
         Storage* storage = V8Storage::toNative(v8::Handle<v8::Object>::Cast(args[0]));
         if (storage) {
             InjectedScriptHost* host = V8InjectedScriptHost::toNative(args.Holder());
-            v8SetReturnValue(args, v8StringOrUndefined(host->storageIdImpl(storage), args.GetIsolate()));
+            v8SetReturnValueStringOrUndefined(args, host->storageIdImpl(storage), args.GetIsolate());
             return;
         }
     }

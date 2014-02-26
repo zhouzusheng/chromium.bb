@@ -34,7 +34,9 @@
 #include "main/colormac.h"
 #include "main/imports.h"
 #include "main/macros.h"
-#include "main/texformat.h"
+#include "main/mtypes.h"
+#include "main/state.h"
+#include "main/samplerobj.h"
 #include "program/prog_instruction.h"
 
 #include "s_aatriangle.h"
@@ -49,7 +51,7 @@
  * \return GL_TRUE if the triangle is to be culled, GL_FALSE otherwise.
  */
 GLboolean
-_swrast_culltriangle( GLcontext *ctx,
+_swrast_culltriangle( struct gl_context *ctx,
                       const SWvertex *v0,
                       const SWvertex *v1,
                       const SWvertex *v2 )
@@ -126,10 +128,12 @@ _swrast_culltriangle( GLcontext *ctx,
       ctx->Texture.Unit[0].CurrentTex[TEXTURE_2D_INDEX];		\
    const struct gl_texture_image *texImg =				\
       obj->Image[0][obj->BaseLevel];					\
+   const struct swrast_texture_image *swImg =				\
+      swrast_texture_image_const(texImg);				\
    const GLfloat twidth = (GLfloat) texImg->Width;			\
    const GLfloat theight = (GLfloat) texImg->Height;			\
    const GLint twidth_log2 = texImg->WidthLog2;				\
-   const GLubyte *texture = (const GLubyte *) texImg->Data;		\
+   const GLubyte *texture = (const GLubyte *) swImg->Map;		\
    const GLint smask = texImg->Width - 1;				\
    const GLint tmask = texImg->Height - 1;				\
    ASSERT(texImg->TexFormat == MESA_FORMAT_RGB888);			\
@@ -139,7 +143,7 @@ _swrast_culltriangle( GLcontext *ctx,
 
 #define RENDER_SPAN( span )						\
    GLuint i;								\
-   GLubyte rgb[MAX_WIDTH][3];						\
+   GLubyte (*rgba)[4] = swrast->SpanArrays->rgba8;			\
    span.intTex[0] -= FIXED_HALF; /* off-by-one error? */		\
    span.intTex[1] -= FIXED_HALF;					\
    for (i = 0; i < span.end; i++) {					\
@@ -147,13 +151,15 @@ _swrast_culltriangle( GLcontext *ctx,
       GLint t = FixedToInt(span.intTex[1]) & tmask;			\
       GLint pos = (t << twidth_log2) + s;				\
       pos = pos + pos + pos;  /* multiply by 3 */			\
-      rgb[i][RCOMP] = texture[pos+2];					\
-      rgb[i][GCOMP] = texture[pos+1];					\
-      rgb[i][BCOMP] = texture[pos+0];					\
+      rgba[i][RCOMP] = texture[pos+2];					\
+      rgba[i][GCOMP] = texture[pos+1];					\
+      rgba[i][BCOMP] = texture[pos+0];					\
+      rgba[i][ACOMP] = 0xff;                                            \
       span.intTex[0] += span.intTexStep[0];				\
       span.intTex[1] += span.intTexStep[1];				\
    }									\
-   rb->PutRowRGB(ctx, rb, span.end, span.x, span.y, rgb, NULL);
+   _swrast_put_row(ctx, rb, GL_UNSIGNED_BYTE, span.end,                 \
+                   span.x, span.y, rgba, NULL);
 
 #include "s_tritemp.h"
 
@@ -180,10 +186,12 @@ _swrast_culltriangle( GLcontext *ctx,
       ctx->Texture.Unit[0].CurrentTex[TEXTURE_2D_INDEX];		\
    const struct gl_texture_image *texImg = 				\
        obj->Image[0][obj->BaseLevel]; 					\
+   const struct swrast_texture_image *swImg =				\
+      swrast_texture_image_const(texImg);				\
    const GLfloat twidth = (GLfloat) texImg->Width;			\
    const GLfloat theight = (GLfloat) texImg->Height;			\
    const GLint twidth_log2 = texImg->WidthLog2;				\
-   const GLubyte *texture = (const GLubyte *) texImg->Data;		\
+   const GLubyte *texture = (const GLubyte *) swImg->Map;		\
    const GLint smask = texImg->Width - 1;				\
    const GLint tmask = texImg->Height - 1;				\
    ASSERT(texImg->TexFormat == MESA_FORMAT_RGB888);			\
@@ -193,7 +201,8 @@ _swrast_culltriangle( GLcontext *ctx,
 
 #define RENDER_SPAN( span )						\
    GLuint i;				    				\
-   GLubyte rgb[MAX_WIDTH][3];						\
+   GLubyte (*rgba)[4] = swrast->SpanArrays->rgba8;			\
+   GLubyte *mask = swrast->SpanArrays->mask;                            \
    span.intTex[0] -= FIXED_HALF; /* off-by-one error? */		\
    span.intTex[1] -= FIXED_HALF;					\
    for (i = 0; i < span.end; i++) {					\
@@ -203,20 +212,22 @@ _swrast_culltriangle( GLcontext *ctx,
          GLint t = FixedToInt(span.intTex[1]) & tmask;			\
          GLint pos = (t << twidth_log2) + s;				\
          pos = pos + pos + pos;  /* multiply by 3 */			\
-         rgb[i][RCOMP] = texture[pos+2];				\
-         rgb[i][GCOMP] = texture[pos+1];				\
-         rgb[i][BCOMP] = texture[pos+0];				\
+         rgba[i][RCOMP] = texture[pos+2];				\
+         rgba[i][GCOMP] = texture[pos+1];				\
+         rgba[i][BCOMP] = texture[pos+0];				\
+         rgba[i][ACOMP] = 0xff;          				\
          zRow[i] = z;							\
-         span.array->mask[i] = 1;					\
+         mask[i] = 1;							\
       }									\
       else {								\
-         span.array->mask[i] = 0;					\
+         mask[i] = 0;							\
       }									\
       span.intTex[0] += span.intTexStep[0];				\
       span.intTex[1] += span.intTexStep[1];				\
       span.z += span.zStep;						\
    }									\
-   rb->PutRowRGB(ctx, rb, span.end, span.x, span.y, rgb, span.array->mask);
+   _swrast_put_row(ctx, rb, GL_UNSIGNED_BYTE,                           \
+                   span.end, span.x, span.y, rgba, mask);
 
 #include "s_tritemp.h"
 
@@ -236,13 +247,13 @@ struct affine_info
 };
 
 
-static INLINE GLint
+static inline GLint
 ilerp(GLint t, GLint a, GLint b)
 {
    return a + ((t * (b - a)) >> FIXED_SHIFT);
 }
 
-static INLINE GLint
+static inline GLint
 ilerp_2d(GLint ia, GLint ib, GLint v00, GLint v10, GLint v01, GLint v11)
 {
    const GLint temp0 = ilerp(ia, v00, v10);
@@ -255,8 +266,8 @@ ilerp_2d(GLint ia, GLint ib, GLint v00, GLint v10, GLint v01, GLint v11)
  * textures with GL_REPLACE, GL_MODULATE, GL_BLEND, GL_DECAL or GL_ADD
  * texture env modes.
  */
-static INLINE void
-affine_span(GLcontext *ctx, SWspan *span,
+static inline void
+affine_span(struct gl_context *ctx, SWspan *span,
             struct affine_info *info)
 {
    GLchan sample[4];  /* the filtered texture sample */
@@ -532,14 +543,16 @@ affine_span(GLcontext *ctx, SWspan *span,
       ctx->Texture.Unit[0].CurrentTex[TEXTURE_2D_INDEX];		\
    const struct gl_texture_image *texImg = 				\
       obj->Image[0][obj->BaseLevel]; 					\
+   const struct swrast_texture_image *swImg =				\
+      swrast_texture_image_const(texImg);				\
    const GLfloat twidth = (GLfloat) texImg->Width;			\
    const GLfloat theight = (GLfloat) texImg->Height;			\
-   info.texture = (const GLchan *) texImg->Data;			\
+   info.texture = (const GLchan *) swImg->Map;				\
    info.twidth_log2 = texImg->WidthLog2;				\
    info.smask = texImg->Width - 1;					\
    info.tmask = texImg->Height - 1;					\
    info.format = texImg->TexFormat;					\
-   info.filter = obj->MinFilter;					\
+   info.filter = obj->Sampler.MinFilter;				\
    info.envmode = unit->EnvMode;					\
    info.er = 0;					\
    info.eg = 0;					\
@@ -590,8 +603,8 @@ struct persp_info
 };
 
 
-static INLINE void
-fast_persp_span(GLcontext *ctx, SWspan *span,
+static inline void
+fast_persp_span(struct gl_context *ctx, SWspan *span,
 		struct persp_info *info)
 {
    GLchan sample[4];  /* the filtered texture sample */
@@ -799,12 +812,14 @@ fast_persp_span(GLcontext *ctx, SWspan *span,
       ctx->Texture.Unit[0].CurrentTex[TEXTURE_2D_INDEX];		\
    const struct gl_texture_image *texImg = 				\
       obj->Image[0][obj->BaseLevel];			 		\
-   info.texture = (const GLchan *) texImg->Data;			\
+   const struct swrast_texture_image *swImg =				\
+      swrast_texture_image_const(texImg);				\
+   info.texture = (const GLchan *) swImg->Map;				\
    info.twidth_log2 = texImg->WidthLog2;				\
    info.smask = texImg->Width - 1;					\
    info.tmask = texImg->Height - 1;					\
    info.format = texImg->TexFormat;					\
-   info.filter = obj->MinFilter;					\
+   info.filter = obj->Sampler.MinFilter;				\
    info.envmode = unit->EnvMode;					\
    info.er = 0;					\
    info.eg = 0;					\
@@ -863,36 +878,27 @@ fast_persp_span(GLcontext *ctx, SWspan *span,
 /*
  * Special tri function for occlusion testing
  */
-#define NAME occlusion_zless_triangle
+#define NAME occlusion_zless_16_triangle
 #define INTERP_Z 1
 #define SETUP_CODE							\
-   struct gl_renderbuffer *rb = ctx->DrawBuffer->_DepthBuffer;		\
+   struct gl_renderbuffer *rb =                                         \
+      ctx->DrawBuffer->Attachment[BUFFER_DEPTH].Renderbuffer;           \
    struct gl_query_object *q = ctx->Query.CurrentOcclusionObject;	\
    ASSERT(ctx->Depth.Test);						\
    ASSERT(!ctx->Depth.Mask);						\
    ASSERT(ctx->Depth.Func == GL_LESS);					\
+   assert(rb->Format == MESA_FORMAT_Z16);                               \
    if (!q) {								\
       return;								\
    }
 #define RENDER_SPAN( span )						\
-   if (rb->Format == MESA_FORMAT_Z16) {					\
+   {                                                                    \
       GLuint i;								\
       const GLushort *zRow = (const GLushort *)				\
-         rb->GetPointer(ctx, rb, span.x, span.y);			\
+         _swrast_pixel_address(rb, span.x, span.y);                     \
       for (i = 0; i < span.end; i++) {					\
          GLuint z = FixedToDepth(span.z);				\
          if (z < zRow[i]) {						\
-            q->Result++;						\
-         }								\
-         span.z += span.zStep;						\
-      }									\
-   }									\
-   else {								\
-      GLuint i;								\
-      const GLuint *zRow = (const GLuint *)				\
-         rb->GetPointer(ctx, rb, span.x, span.y);			\
-      for (i = 0; i < span.end; i++) {					\
-         if ((GLuint)span.z < zRow[i]) {				\
             q->Result++;						\
          }								\
          span.z += span.zStep;						\
@@ -903,7 +909,7 @@ fast_persp_span(GLcontext *ctx, SWspan *span,
 
 
 static void
-nodraw_triangle( GLcontext *ctx,
+nodraw_triangle( struct gl_context *ctx,
                  const SWvertex *v0,
                  const SWvertex *v1,
                  const SWvertex *v2 )
@@ -919,7 +925,7 @@ nodraw_triangle( GLcontext *ctx,
  * Inefficient, but seldom needed.
  */
 void
-_swrast_add_spec_terms_triangle(GLcontext *ctx, const SWvertex *v0,
+_swrast_add_spec_terms_triangle(struct gl_context *ctx, const SWvertex *v0,
                                 const SWvertex *v1, const SWvertex *v2)
 {
    SWvertex *ncv0 = (SWvertex *)v0; /* drop const qualifier */
@@ -992,7 +998,7 @@ do {						\
  * remove tests to this code.
  */
 void
-_swrast_choose_triangle( GLcontext *ctx )
+_swrast_choose_triangle( struct gl_context *ctx )
 {
    SWcontext *swrast = SWRAST_CONTEXT(ctx);
 
@@ -1003,6 +1009,8 @@ _swrast_choose_triangle( GLcontext *ctx )
    }
 
    if (ctx->RenderMode==GL_RENDER) {
+      struct gl_renderbuffer *depthRb =
+         ctx->DrawBuffer->Attachment[BUFFER_DEPTH].Renderbuffer;
 
       if (ctx->Polygon.SmoothFlag) {
          _swrast_set_aa_triangle_function(ctx);
@@ -1015,12 +1023,14 @@ _swrast_choose_triangle( GLcontext *ctx )
           ctx->Depth.Test &&
           ctx->Depth.Mask == GL_FALSE &&
           ctx->Depth.Func == GL_LESS &&
-          !ctx->Stencil._Enabled) {
+          !ctx->Stencil._Enabled &&
+          depthRb &&
+          depthRb->Format == MESA_FORMAT_Z16) {
          if (ctx->Color.ColorMask[0][0] == 0 &&
 	     ctx->Color.ColorMask[0][1] == 0 &&
 	     ctx->Color.ColorMask[0][2] == 0 &&
 	     ctx->Color.ColorMask[0][3] == 0) {
-            USE(occlusion_zless_triangle);
+            USE(occlusion_zless_16_triangle);
             return;
          }
       }
@@ -1030,35 +1040,45 @@ _swrast_choose_triangle( GLcontext *ctx )
        * needs to be interpolated.
        */
       if (ctx->Texture._EnabledCoordUnits ||
-          ctx->FragmentProgram._Current ||
+	  _swrast_use_fragment_program(ctx) ||
           ctx->ATIFragmentShader._Enabled ||
-          NEED_SECONDARY_COLOR(ctx) ||
+          _mesa_need_secondary_color(ctx) ||
           swrast->_FogEnabled) {
          /* Ugh, we do a _lot_ of tests to pick the best textured tri func */
          const struct gl_texture_object *texObj2D;
+         const struct gl_sampler_object *samp;
          const struct gl_texture_image *texImg;
+         const struct swrast_texture_image *swImg;
          GLenum minFilter, magFilter, envMode;
          gl_format format;
          texObj2D = ctx->Texture.Unit[0].CurrentTex[TEXTURE_2D_INDEX];
+         if (ctx->Texture.Unit[0].Sampler)
+            samp = ctx->Texture.Unit[0].Sampler;
+         else if (texObj2D)
+            samp = &texObj2D->Sampler;
+         else
+            samp = NULL;
 
          texImg = texObj2D ? texObj2D->Image[0][texObj2D->BaseLevel] : NULL;
+         swImg = swrast_texture_image_const(texImg);
+
          format = texImg ? texImg->TexFormat : MESA_FORMAT_NONE;
-         minFilter = texObj2D ? texObj2D->MinFilter : GL_NONE;
-         magFilter = texObj2D ? texObj2D->MagFilter : GL_NONE;
+         minFilter = texObj2D ? samp->MinFilter : GL_NONE;
+         magFilter = texObj2D ? samp->MagFilter : GL_NONE;
          envMode = ctx->Texture.Unit[0].EnvMode;
 
          /* First see if we can use an optimized 2-D texture function */
          if (ctx->Texture._EnabledCoordUnits == 0x1
-             && !ctx->FragmentProgram._Current
+             && !_swrast_use_fragment_program(ctx)
              && !ctx->ATIFragmentShader._Enabled
              && ctx->Texture._EnabledUnits == 0x1
              && ctx->Texture.Unit[0]._ReallyEnabled == TEXTURE_2D_BIT
-             && texObj2D->WrapS == GL_REPEAT
-             && texObj2D->WrapT == GL_REPEAT
+             && samp->WrapS == GL_REPEAT
+             && samp->WrapT == GL_REPEAT
              && texObj2D->_Swizzle == SWIZZLE_NOOP
-             && texImg->_IsPowerOfTwo
+             && swImg->_IsPowerOfTwo
              && texImg->Border == 0
-             && texImg->Width == texImg->RowStride
+             && texImg->Width == swImg->RowStride
              && (format == MESA_FORMAT_RGB888 || format == MESA_FORMAT_RGBA8888)
              && minFilter == magFilter
              && ctx->Light.Model.ColorControl == GL_SINGLE_COLOR
@@ -1113,7 +1133,7 @@ _swrast_choose_triangle( GLcontext *ctx )
       }
       else {
          ASSERT(!swrast->_FogEnabled);
-         ASSERT(!NEED_SECONDARY_COLOR(ctx));
+         ASSERT(!_mesa_need_secondary_color(ctx));
 	 if (ctx->Light.ShadeModel==GL_SMOOTH) {
 	    /* smooth shaded, no texturing, stippled or some raster ops */
 #if CHAN_BITS != 8

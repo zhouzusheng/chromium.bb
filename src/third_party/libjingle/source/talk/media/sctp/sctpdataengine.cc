@@ -27,7 +27,6 @@
 
 #include "talk/media/sctp/sctpdataengine.h"
 
-#include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <vector>
@@ -135,11 +134,14 @@ static int OnSctpInboundPacket(struct socket* sock, union sctp_sockstore addr,
   // Post data to the channel's receiver thread (copying it).
   // TODO(ldixon): Unclear if copy is needed as this method is responsible for
   // memory cleanup. But this does simplify code.
+  const uint32 native_ppid = talk_base::HostToNetwork32(rcv.rcv_ppid);
   SctpInboundPacket* packet = new SctpInboundPacket();
   packet->buffer.SetData(data, length);
   packet->params.ssrc = rcv.rcv_sid;
   packet->params.seq_num = rcv.rcv_ssn;
   packet->params.timestamp = rcv.rcv_tsn;
+  packet->params.type =
+      static_cast<cricket::DataMessageType>(native_ppid);
   packet->flags = flags;
   channel->worker_thread()->Post(channel, MSG_SCTPINBOUNDPACKET,
                                  talk_base::WrapMessageData(packet));
@@ -271,7 +273,8 @@ bool SctpDataMediaChannel::OpenSctpSocket() {
   // Subscribe to SCTP event notifications.
   int event_types[] = {SCTP_ASSOC_CHANGE,
                        SCTP_PEER_ADDR_CHANGE,
-                       SCTP_SEND_FAILED_EVENT};
+                       SCTP_SEND_FAILED_EVENT,
+                       SCTP_SENDER_DRY_EVENT};
   struct sctp_event event = {0};
   event.se_assoc_id = SCTP_ALL_ASSOC;
   event.se_on = 1;
@@ -335,8 +338,9 @@ bool SctpDataMediaChannel::Connect() {
   sockaddr_conn remote_sconn = GetSctpSockAddr(remote_port_);
   int connect_result = usrsctp_connect(
       sock_, reinterpret_cast<sockaddr *>(&remote_sconn), sizeof(remote_sconn));
-  if (connect_result < 0 && errno != EINPROGRESS) {
-    LOG_ERRNO(LS_ERROR) << debug_name_ << "Failed usrsctp_connect";
+  if (connect_result < 0 && errno != SCTP_EINPROGRESS) {
+    LOG_ERRNO(LS_ERROR) << debug_name_ << "Failed usrsctp_connect. got errno="
+                        << errno << ", but wanted " << SCTP_EINPROGRESS;
     CloseSctpSocket();
     return false;
   }
@@ -370,7 +374,8 @@ bool SctpDataMediaChannel::AddSendStream(const StreamParams& stream) {
   }
 
   StreamParams found_stream;
-  if (GetStreamBySsrc(send_streams_, stream.first_ssrc(), &found_stream)) {
+  // TODO(lally): Consider keeping this sorted.
+  if (GetStreamBySsrc(streams_, stream.first_ssrc(), &found_stream)) {
     LOG(LS_WARNING) << debug_name_ << "->AddSendStream(...): "
                     << "Not adding data send stream '" << stream.id
                     << "' with ssrc=" << stream.first_ssrc()
@@ -378,17 +383,17 @@ bool SctpDataMediaChannel::AddSendStream(const StreamParams& stream) {
     return false;
   }
 
-  send_streams_.push_back(stream);
+  streams_.push_back(stream);
   return true;
 }
 
 bool SctpDataMediaChannel::RemoveSendStream(uint32 ssrc) {
   StreamParams found_stream;
-  if (!GetStreamBySsrc(send_streams_, ssrc, &found_stream)) {
+  if (!GetStreamBySsrc(streams_, ssrc, &found_stream)) {
     return false;
   }
 
-  RemoveStreamBySsrc(&send_streams_, ssrc);
+  RemoveStreamBySsrc(&streams_, ssrc);
   return true;
 }
 
@@ -400,7 +405,7 @@ bool SctpDataMediaChannel::AddRecvStream(const StreamParams& stream) {
   }
 
   StreamParams found_stream;
-  if (GetStreamBySsrc(recv_streams_, stream.first_ssrc(), &found_stream)) {
+  if (GetStreamBySsrc(streams_, stream.first_ssrc(), &found_stream)) {
     LOG(LS_WARNING) << debug_name_ << "->AddRecvStream(...): "
                     << "Not adding data recv stream '" << stream.id
                     << "' with ssrc=" << stream.first_ssrc()
@@ -408,7 +413,7 @@ bool SctpDataMediaChannel::AddRecvStream(const StreamParams& stream) {
     return false;
   }
 
-  recv_streams_.push_back(stream);
+  streams_.push_back(stream);
   LOG(LS_VERBOSE) << debug_name_ << "->AddRecvStream(...): "
                   << "Added data recv stream '" << stream.id
                   << "' with ssrc=" << stream.first_ssrc();
@@ -416,7 +421,7 @@ bool SctpDataMediaChannel::AddRecvStream(const StreamParams& stream) {
 }
 
 bool SctpDataMediaChannel::RemoveRecvStream(uint32 ssrc) {
-  RemoveStreamBySsrc(&recv_streams_, ssrc);
+  RemoveStreamBySsrc(&streams_, ssrc);
   return true;
 }
 
@@ -437,7 +442,8 @@ bool SctpDataMediaChannel::SendData(
   }
 
   StreamParams found_stream;
-  if (!GetStreamBySsrc(send_streams_, params.ssrc, &found_stream)) {
+  if (params.type != cricket::DMT_CONTROL &&
+      !GetStreamBySsrc(streams_, params.ssrc, &found_stream)) {
     LOG(LS_WARNING) << debug_name_ << "->SendData(...): "
                     << "Not sending data because ssrc is unknown: "
                     << params.ssrc;
@@ -470,7 +476,7 @@ bool SctpDataMediaChannel::SendData(
   sndinfo.snd_flags = 0;
   // TODO(pthatcher): Once data types are added to SendParams, this can be set
   // from SendParams.
-  sndinfo.snd_ppid = talk_base::HostToNetwork32(PPID_NONE);
+  sndinfo.snd_ppid = talk_base::HostToNetwork32(params.type);
   sndinfo.snd_context = 0;
   sndinfo.snd_assoc_id = 0;
   ssize_t res = usrsctp_sendv(sock_, payload.data(),
@@ -479,11 +485,14 @@ bool SctpDataMediaChannel::SendData(
                               static_cast<socklen_t>(sizeof(sndinfo)),
                               SCTP_SENDV_SNDINFO, 0);
   if (res < 0) {
-    LOG_ERRNO(LS_ERROR) << "ERROR:" << debug_name_
-                        << "SendData->(...): "
-                        << " usrsctp_sendv: ";
-    // TODO(pthatcher): Make result SDR_BLOCK if the error is because
-    // it would block.
+    if (errno == EWOULDBLOCK) {
+      *result = SDR_BLOCK;
+      LOG(LS_INFO) << debug_name_ << "->SendData(...): EWOULDBLOCK returned";
+    } else {
+      LOG_ERRNO(LS_ERROR) << "ERROR:" << debug_name_
+                          << "->SendData(...): "
+                          << " usrsctp_sendv: ";
+    }
     return false;
   }
   if (result) {
@@ -544,9 +553,13 @@ void SctpDataMediaChannel::OnInboundPacketFromSctpToChannel(
 void SctpDataMediaChannel::OnDataFromSctpToChannel(
     const ReceiveDataParams& params, talk_base::Buffer* buffer) {
   StreamParams found_stream;
-  if (!GetStreamBySsrc(recv_streams_, params.ssrc, &found_stream)) {
-    LOG(LS_WARNING) << debug_name_ << "->OnDataFromSctpToChannel(...): "
-                    << "Received packet for unknown ssrc: " << params.ssrc;
+  if (!GetStreamBySsrc(streams_, params.ssrc, &found_stream)) {
+    if (params.type == DMT_CONTROL) {
+      SignalDataReceived(params, buffer->data(), buffer->length());
+    } else {
+      LOG(LS_WARNING) << debug_name_ << "->OnDataFromSctpToChannel(...): "
+                      << "Received packet for unknown ssrc: " << params.ssrc;
+    }
     return;
   }
 
@@ -562,8 +575,7 @@ void SctpDataMediaChannel::OnDataFromSctpToChannel(
   }
 }
 
-void SctpDataMediaChannel::OnNotificationFromSctp(
-    talk_base::Buffer* buffer) {
+void SctpDataMediaChannel::OnNotificationFromSctp(talk_base::Buffer* buffer) {
   const sctp_notification& notification =
       reinterpret_cast<const sctp_notification&>(*buffer->data());
   ASSERT(notification.sn_header.sn_length == buffer->length());
@@ -591,6 +603,7 @@ void SctpDataMediaChannel::OnNotificationFromSctp(
       break;
     case SCTP_SENDER_DRY_EVENT:
       LOG(LS_INFO) << "SCTP_SENDER_DRY_EVENT";
+      SignalReadyToSend(true);
       break;
     // TODO(ldixon): Unblock after congestion.
     case SCTP_NOTIFICATIONS_STOPPED_EVENT:
@@ -649,7 +662,7 @@ void SctpDataMediaChannel::OnPacketFromSctpToNetwork(
                   << "SCTP seems to have made a poacket that is bigger "
                      "than its official MTU.";
   }
-  network_interface()->SendPacket(buffer);
+  MediaChannel::SendPacket(buffer);
 }
 
 void SctpDataMediaChannel::OnMessage(talk_base::Message* msg) {

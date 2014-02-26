@@ -17,6 +17,10 @@
     border-radius: 10px;
 }
 
+.help-window-main a {
+    color: rgb(17, 85, 204);
+}
+
 .help-window-caption {
     border-bottom: solid 1px rgb(153, 153, 153);
     margin: 0 8px;
@@ -37,7 +41,12 @@
     scrollbar-width: 11px;
     margin: 8px;
     padding: 0 4px;
-    font-size: 13px;
+}
+
+.help-footnote {
+    border-top: 1px solid #EEEEEE;
+    margin: 0;
+    padding: 12px;
 }
 
 .help-window-main ::-webkit-scrollbar {
@@ -94,7 +103,7 @@ body.platform-mac .settings-tab.help-container {
 }
 
 body.platform-mac .help-container {
-    -webkit-column-width: 330px;
+    -webkit-column-width: 361px;
 }
 
 .help-block {
@@ -118,10 +127,16 @@ body.platform-mac .settings-tab .help-block {
 
 .settings-tab .help-block {
     width: 410px;
+    margin-left: 20px;
+}
+
+.settings-tab .field-error-message {
+    color: DarkRed;
 }
 
 .help-line {
-    padding-bottom: 3px;
+    padding-bottom: 5px;
+    margin-bottom: 5px;
 }
 
 .help-key-cell {
@@ -131,7 +146,7 @@ body.platform-mac .settings-tab .help-block {
 }
 
 body.platform-mac .help-key-cell {
-    width: 120px;
+    width: 151px;
 }
 
 .help-cell {
@@ -139,11 +154,22 @@ body.platform-mac .help-key-cell {
 }
 
 .help-section-title {
-    font-weight: bold;
+    font-size: 120%;
 }
 
 .help-key {
-    font-weight: bold;
+    padding: 0.1em 0.6em;
+    border: 1px solid #ccc;
+    font-size: 11px;
+    background-color: #f7f7f7;
+    color: #333;
+    box-shadow: 0 1px 0px rgba(0, 0, 0, 0.2), 0 0 0 2px #ffffff inset;
+    border-radius: 3px;
+    display: inline-block;
+    margin: 0 0.1em;
+    text-shadow: 0 1px 0 #fff;
+    line-height: 1.5;
+    white-space: nowrap;
 }
 
 body.platform-mac .help-key {
@@ -163,13 +189,14 @@ body.platform-mac .help-key {
     margin: 0 0.5em;
 }
 
-.help-content p {
+.help-content > fieldset {
     margin: 3px 0;
 }
 
 .help-content fieldset {
     border: none;
     margin-left: 7px;
+    padding: 0 initial;
 }
 
 #general-tab-content .help-content fieldset legend {
@@ -180,14 +207,19 @@ body.platform-mac .settings-tab.help-content fieldset {
     margin-left: 10px;
 }
 
-.help-content fieldset p {
+.help-content fieldset p,
+.help-content fieldset fieldset {
     border-left: 1px solid rgb(128,128,128);
-    margin: 0 0 0 6px;
-    padding-left: 3px;
+    padding-left: 30px;
 }
 
 .help-content fieldset label {
     padding-right: 4px;
+}
+
+#enable-devtools-on-startup {
+    margin: 0 0 0 80px;
+    display: inline-block;
 }
 
 .help-content p.help-section {
@@ -292,6 +324,8 @@ body.platform-mac .help-content input[type=radio] {
 }
 
 #settings-screen .tabbed-pane-header-tabs {
+    display: flex;
+    flex-direction: column;
     padding-top: 5px;
     width: 100px;
 }
@@ -304,7 +338,6 @@ body.platform-mac .help-content input[type=radio] {
     text-shadow: none;
     color: #999999;
     height: 22px;
-    font-size: 13px;
     padding-left: 0;
 }
 
@@ -343,7 +376,6 @@ body.platform-mac .help-content input[type=radio] {
     border: 1px solid rgb(213, 213, 213);
     border-radius: 2px;
     color: #444444;
-    font: inherit;
     padding: 3px;
 }
 
@@ -380,15 +412,8 @@ body.platform-mac .help-content input[type=radio] {
 }
 
 .settings-tab .help-section-title {
+    margin-left: -20px;
     color: #222;
-}
-
-.settings-tab .help-block label {
-    font-size: 14px;
-}
-
-.settings-tab .help-block fieldset:not(.toplevel) label {
-    font-size: 13px;
 }
 
 .settings-tab .help-block fieldset:disabled label:hover,
@@ -400,13 +425,14 @@ body.platform-mac .help-content input[type=radio] {
     color: #222;
 }
 
-.settings-tab p {
-    margin: 10px 0;
+.settings-tab p,
+.settings-tab fieldset {
+    margin: 12px 0;
 }
 
-.settings-tab fieldset p {
+.settings-tab fieldset p,
+.settings-tab fieldset fieldset {
     border-left: none transparent;
-    padding: 2px 0 2px 3px;
 }
 
 .settings-tab select {

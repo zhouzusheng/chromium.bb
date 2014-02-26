@@ -34,13 +34,14 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/EventTarget.h"
-#include "core/dom/ExceptionCode.h"
 #include "core/platform/Timer.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
+
+class ExceptionState;
 class GenericEventQueue;
 class MediaSource;
 class SourceBufferPrivate;
@@ -54,12 +55,17 @@ public:
 
     // SourceBuffer.idl methods
     bool updating() const { return m_updating; }
-    PassRefPtr<TimeRanges> buffered(ExceptionCode&) const;
+    PassRefPtr<TimeRanges> buffered(ExceptionState&) const;
     double timestampOffset() const;
-    void setTimestampOffset(double, ExceptionCode&);
-    void appendBuffer(PassRefPtr<ArrayBuffer> data, ExceptionCode&);
-    void appendBuffer(PassRefPtr<ArrayBufferView> data, ExceptionCode&);
-    void abort(ExceptionCode&);
+    void setTimestampOffset(double, ExceptionState&);
+    void appendBuffer(PassRefPtr<ArrayBuffer> data, ExceptionState&);
+    void appendBuffer(PassRefPtr<ArrayBufferView> data, ExceptionState&);
+    void abort(ExceptionState&);
+    void remove(double start, double end, ExceptionState&);
+    double appendWindowStart() const;
+    void setAppendWindowStart(double, ExceptionState&);
+    double appendWindowEnd() const;
+    void setAppendWindowEnd(double, ExceptionState&);
 
     void abortIfUpdating();
     void removedFromMediaSource();
@@ -88,8 +94,10 @@ private:
     bool isRemoved() const;
     void scheduleEvent(const AtomicString& eventName);
 
-    void appendBufferInternal(unsigned char*, unsigned, ExceptionCode&);
+    void appendBufferInternal(unsigned char*, unsigned, ExceptionState&);
     void appendBufferTimerFired(Timer<SourceBuffer>*);
+
+    void removeTimerFired(Timer<SourceBuffer>*);
 
     OwnPtr<SourceBufferPrivate> m_private;
     MediaSource* m_source;
@@ -98,9 +106,15 @@ private:
 
     bool m_updating;
     double m_timestampOffset;
+    double m_appendWindowStart;
+    double m_appendWindowEnd;
 
     Vector<unsigned char> m_pendingAppendData;
     Timer<SourceBuffer> m_appendBufferTimer;
+
+    double m_pendingRemoveStart;
+    double m_pendingRemoveEnd;
+    Timer<SourceBuffer> m_removeTimer;
 };
 
 } // namespace WebCore

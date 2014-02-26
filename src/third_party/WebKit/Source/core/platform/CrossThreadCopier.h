@@ -31,13 +31,13 @@
 #ifndef CrossThreadCopier_h
 #define CrossThreadCopier_h
 
-#include <wtf/Assertions.h>
-#include <wtf/Forward.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefPtr.h>
-#include <wtf/Threading.h>
-#include <wtf/TypeTraits.h>
+#include "wtf/Assertions.h"
+#include "wtf/Forward.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefPtr.h"
+#include "wtf/ThreadSafeRefCounted.h"
+#include "wtf/TypeTraits.h"
 
 namespace WebCore {
 
@@ -148,7 +148,7 @@ namespace WebCore {
         static Type copy(const AllowCrossThreadAccessWrapper<T>& wrapper) { return wrapper.value(); }
     };
 
-    template<typename T> AllowCrossThreadAccessWrapper<T> AllowCrossThreadAccess(T* value) 
+    template<typename T> AllowCrossThreadAccessWrapper<T> AllowCrossThreadAccess(T* value)
     {
         return AllowCrossThreadAccessWrapper<T>(value);
     }

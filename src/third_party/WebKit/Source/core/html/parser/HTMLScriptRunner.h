@@ -20,21 +20,21 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef HTMLScriptRunner_h
 #define HTMLScriptRunner_h
 
 #include "core/dom/PendingScript.h"
-#include <wtf/Deque.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/text/TextPosition.h>
+#include "wtf/Deque.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/text/TextPosition.h"
 
 namespace WebCore {
 
-class CachedResource;
-class CachedScript;
+class Resource;
+class ScriptResource;
 class Document;
 class Element;
 class Frame;
@@ -55,7 +55,7 @@ public:
     // Processes the passed in script and any pending scripts if possible.
     void execute(PassRefPtr<Element> scriptToProcess, const TextPosition& scriptStartPosition);
 
-    void executeScriptsWaitingForLoad(CachedResource*);
+    void executeScriptsWaitingForLoad(Resource*);
     bool hasScriptsWaitingForResources() const { return m_hasScriptsWaitingForResources; }
     void executeScriptsWaitingForResources();
     bool executeScriptsWaitingForParsing();

@@ -26,7 +26,9 @@
 #include "config.h"
 #include "modules/mediastream/MediaStreamTrack.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/Event.h"
+#include "core/dom/ExceptionCode.h"
 #include "core/dom/ScriptExecutionContext.h"
 #include "core/platform/mediastream/MediaStreamCenter.h"
 #include "core/platform/mediastream/MediaStreamComponent.h"
@@ -59,8 +61,8 @@ MediaStreamTrack::~MediaStreamTrack()
 
 String MediaStreamTrack::kind() const
 {
-    DEFINE_STATIC_LOCAL(String, audioKind, (ASCIILiteral("audio")));
-    DEFINE_STATIC_LOCAL(String, videoKind, (ASCIILiteral("video")));
+    DEFINE_STATIC_LOCAL(String, audioKind, ("audio"));
+    DEFINE_STATIC_LOCAL(String, videoKind, ("video"));
 
     switch (m_component->source()->type()) {
     case MediaStreamSource::TypeAudio:
@@ -104,27 +106,27 @@ void MediaStreamTrack::setEnabled(bool enabled)
 String MediaStreamTrack::readyState() const
 {
     if (m_stopped)
-        return ASCIILiteral("ended");
+        return "ended";
 
     switch (m_component->source()->readyState()) {
     case MediaStreamSource::ReadyStateLive:
-        return ASCIILiteral("live");
+        return "live";
     case MediaStreamSource::ReadyStateMuted:
-        return ASCIILiteral("muted");
+        return "muted";
     case MediaStreamSource::ReadyStateEnded:
-        return ASCIILiteral("ended");
+        return "ended";
     }
 
     ASSERT_NOT_REACHED();
     return String();
 }
 
-void MediaStreamTrack::getSources(ScriptExecutionContext* context, PassRefPtr<MediaStreamTrackSourcesCallback> callback, ExceptionCode& ec)
+void MediaStreamTrack::getSources(ScriptExecutionContext* context, PassRefPtr<MediaStreamTrackSourcesCallback> callback, ExceptionState& es)
 {
     RefPtr<MediaStreamTrackSourcesRequest> request = MediaStreamTrackSourcesRequest::create(context, callback);
     bool ok = MediaStreamCenter::instance().getMediaStreamTrackSources(request.release());
     if (!ok)
-        ec = NOT_SUPPORTED_ERR;
+        es.throwDOMException(NotSupportedError);
 }
 
 bool MediaStreamTrack::ended() const

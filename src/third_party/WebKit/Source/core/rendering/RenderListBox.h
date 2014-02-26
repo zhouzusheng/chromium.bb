@@ -8,13 +8,13 @@
  * are met:
  *
  * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer. 
+ *     notice, this list of conditions and the following disclaimer.
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution. 
+ *     documentation and/or other materials provided with the distribution.
  * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission. 
+ *     from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -103,7 +103,7 @@ private:
 
     // ScrollableArea interface.
     virtual int scrollSize(ScrollbarOrientation) const OVERRIDE;
-    virtual int scrollPosition(Scrollbar*) const OVERRIDE;
+    virtual IntPoint scrollPosition() const OVERRIDE;
     virtual void setScrollOffset(const IntPoint&) OVERRIDE;
     virtual void invalidateScrollbarRect(Scrollbar*, const IntRect&) OVERRIDE;
     virtual bool isActive() const OVERRIDE;
@@ -121,7 +121,13 @@ private:
     virtual IntPoint lastKnownMousePosition() const OVERRIDE;
     virtual bool shouldSuspendScrollAnimations() const OVERRIDE;
     virtual bool scrollbarsCanBeActive() const OVERRIDE;
+    virtual IntPoint minimumScrollPosition() const OVERRIDE;
     virtual IntPoint maximumScrollPosition() const OVERRIDE;
+    virtual bool userInputScrollable(ScrollbarOrientation) const OVERRIDE;
+    virtual int lineStep(ScrollbarOrientation) const;
+    virtual int pageStep(ScrollbarOrientation) const;
+    virtual float pixelStep(ScrollbarOrientation) const;
+
 
     virtual ScrollableArea* enclosingScrollableArea() const OVERRIDE;
     virtual IntRect scrollableAreaBoundingBox() const OVERRIDE;
@@ -132,7 +138,7 @@ private:
     void setHasVerticalScrollbar(bool hasScrollbar);
     PassRefPtr<Scrollbar> createScrollbar();
     void destroyScrollbar();
-    
+
     LayoutUnit itemHeight() const;
     void valueChanged(unsigned listIndex);
     int numVisibleItems() const;
@@ -153,7 +159,7 @@ private:
 };
 
 inline RenderListBox* toRenderListBox(RenderObject* object)
-{ 
+{
     ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isListBox());
     return static_cast<RenderListBox*>(object);
 }

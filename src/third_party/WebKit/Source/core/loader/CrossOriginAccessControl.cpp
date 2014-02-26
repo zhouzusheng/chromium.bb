@@ -20,20 +20,20 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
 #include "config.h"
 #include "core/loader/CrossOriginAccessControl.h"
 
-#include <wtf/text/AtomicString.h>
-#include <wtf/text/StringBuilder.h>
-#include <wtf/Threading.h>
 #include "core/platform/network/HTTPParsers.h"
 #include "core/platform/network/ResourceRequest.h"
 #include "core/platform/network/ResourceResponse.h"
 #include "weborigin/SecurityOrigin.h"
+#include "wtf/Threading.h"
+#include "wtf/text/AtomicString.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -79,7 +79,7 @@ bool isSimpleCrossOriginAccessRequest(const String& method, const HTTPHeaderMap&
 static PassOwnPtr<HTTPHeaderSet> createAllowedCrossOriginResponseHeadersSet()
 {
     OwnPtr<HTTPHeaderSet> headerSet = adoptPtr(new HashSet<String, CaseFoldingHash>);
-    
+
     headerSet->add("cache-control");
     headerSet->add("content-language");
     headerSet->add("content-type");
@@ -101,7 +101,9 @@ void updateRequestForAccessControl(ResourceRequest& request, SecurityOrigin* sec
 {
     request.removeCredentials();
     request.setAllowCookies(allowCredentials == AllowStoredCredentials);
-    request.setHTTPOrigin(securityOrigin->toString());
+
+    if (securityOrigin)
+        request.setHTTPOrigin(securityOrigin->toString());
 }
 
 ResourceRequest createAccessControlPreflightRequest(const ResourceRequest& request, SecurityOrigin* securityOrigin)
@@ -144,11 +146,6 @@ bool passesAccessControlCheck(const ResourceResponse& response, StoredCredential
     if (accessControlOriginString == "*" && includeCredentials == DoNotAllowStoredCredentials)
         return true;
 
-    if (securityOrigin->isUnique()) {
-        errorDescription = "Cannot make any requests from " + securityOrigin->toString() + ".";
-        return false;
-    }
-
     // FIXME: Access-Control-Allow-Origin can contain a list of origins.
     if (accessControlOriginString != securityOrigin->toString()) {
         if (accessControlOriginString == "*")
@@ -164,6 +161,16 @@ bool passesAccessControlCheck(const ResourceResponse& response, StoredCredential
             errorDescription = "Credentials flag is true, but Access-Control-Allow-Credentials is not \"true\".";
             return false;
         }
+    }
+
+    return true;
+}
+
+bool passesPreflightStatusCheck(const ResourceResponse& response, String& errorDescription)
+{
+    if (response.httpStatusCode() < 200 || response.httpStatusCode() >= 400) {
+        errorDescription = "Invalid HTTP status code " + String::number(response.httpStatusCode());
+        return false;
     }
 
     return true;

@@ -28,6 +28,9 @@
 #include "wtf/ArrayBufferContents.h"
 
 #include "wtf/ArrayBufferDeallocationObserver.h"
+#include "wtf/Assertions.h"
+#include "wtf/WTF.h"
+#include <string.h>
 
 namespace WTF {
 
@@ -42,9 +45,6 @@ ArrayBufferContents::ArrayBufferContents(unsigned numElements, unsigned elementB
     , m_deallocationObserver(0)
 {
     // Do not allow 32-bit overflow of the total size.
-    // FIXME: Why not? The tryFastCalloc function already checks its arguments,
-    // and will fail if there is any overflow, so why should we include a
-    // redudant unnecessarily restrictive check here?
     if (numElements) {
         unsigned totalSize = numElements * elementByteSize;
         if (totalSize / numElements != elementByteSize) {
@@ -52,24 +52,27 @@ ArrayBufferContents::ArrayBufferContents(unsigned numElements, unsigned elementB
             return;
         }
     }
-    bool allocationSucceeded = false;
-    if (policy == ZeroInitialize)
-        allocationSucceeded = WTF::tryFastCalloc(numElements, elementByteSize).getValue(m_data);
-    else {
-        ASSERT(policy == DontInitialize);
-        allocationSucceeded = WTF::tryFastMalloc(numElements * elementByteSize).getValue(m_data);
-    }
+    allocateMemory(numElements * elementByteSize, policy, m_data);
+    m_sizeInBytes = numElements * elementByteSize;
+}
 
-    if (allocationSucceeded) {
-        m_sizeInBytes = numElements * elementByteSize;
-        return;
+ArrayBufferContents::ArrayBufferContents(void* data, unsigned sizeInBytes)
+    : m_data(data)
+    , m_sizeInBytes(sizeInBytes)
+    , m_deallocationObserver(0)
+{
+    if (!m_data) {
+        ASSERT(!m_sizeInBytes);
+        m_sizeInBytes = 0;
+        // Allow null data if size is 0 bytes, make sure m_data is valid pointer.
+        // (partitionAllocGeneric guarantees valid pointer for size 0)
+        allocateMemory(0, ZeroInitialize, m_data);
     }
-    m_data = 0;
 }
 
 ArrayBufferContents::~ArrayBufferContents()
 {
-    WTF::fastFree(m_data);
+    freeMemory(m_data, m_sizeInBytes);
     clear();
 }
 
@@ -88,6 +91,30 @@ void ArrayBufferContents::transfer(ArrayBufferContents& other)
     other.m_data = m_data;
     other.m_sizeInBytes = m_sizeInBytes;
     clear();
+}
+
+void ArrayBufferContents::copyTo(ArrayBufferContents& other)
+{
+    ASSERT(!other.m_sizeInBytes);
+    other.freeMemory(other.m_data, other.m_sizeInBytes);
+    allocateMemory(m_sizeInBytes, DontInitialize, other.m_data);
+    if (!other.m_data)
+        return;
+    memcpy(other.m_data, m_data, m_sizeInBytes);
+    other.m_sizeInBytes = m_sizeInBytes;
+}
+
+void ArrayBufferContents::allocateMemory(size_t size, InitializationPolicy policy, void*& data)
+{
+    data = partitionAllocGeneric(WTF::bufferPartition(), size);
+    if (policy == ZeroInitialize)
+        memset(data, '\0', size);
+}
+
+void ArrayBufferContents::freeMemory(void* data, size_t size)
+{
+    if (data)
+        partitionFreeGeneric(data, size);
 }
 
 } // namespace WTF

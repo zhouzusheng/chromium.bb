@@ -17,7 +17,7 @@
 
 #ifdef SK_BUILD_FOR_ANDROID
 #define GEN_ID_INC              fGenerationID++
-#define GEN_ID_PTR_INC(ptr)     ptr->fGenerationID++
+#define GEN_ID_PTR_INC(ptr)     (ptr)->fGenerationID++
 #else
 #define GEN_ID_INC
 #define GEN_ID_PTR_INC(ptr)
@@ -30,10 +30,6 @@ class SkString;
 class SkPathRef;
 class SkRRect;
 
-#ifndef SK_DEBUG_PATH_REF
-    #define SK_DEBUG_PATH_REF 0
-#endif
-
 /** \class SkPath
 
     The SkPath class encapsulates compound (multiple contour) geometric paths
@@ -44,11 +40,10 @@ public:
     SK_DECLARE_INST_COUNT_ROOT(SkPath);
 
     SkPath();
-    SkPath(const SkPath&);
+    SkPath(const SkPath&);  // Copies fGenerationID on Android.
     ~SkPath();
 
-    SkPath& operator=(const SkPath&);
-
+    SkPath& operator=(const SkPath&);  // Increments fGenerationID on Android.
     friend  SK_API bool operator==(const SkPath&, const SkPath&);
     friend bool operator!=(const SkPath& a, const SkPath& b) {
         return !(a == b);
@@ -171,14 +166,12 @@ public:
 
     /** Clear any lines and curves from the path, making it empty. This frees up
         internal storage associated with those segments.
-        This does NOT change the fill-type setting nor isConvex
     */
     void reset();
 
     /** Similar to reset(), in that all lines and curves are removed from the
         path. However, any internal storage for those lines/curves is retained,
         making reuse of the path potentially faster.
-        This does NOT change the fill-type setting nor isConvex
     */
     void rewind();
 
@@ -945,30 +938,7 @@ private:
         kSegmentMask_SerializationShift = 0 // requires 4 bits
     };
 
-#if SK_DEBUG_PATH_REF
-public:
-    /** Debugging wrapper for SkAutoTUnref<SkPathRef> used to track owners (SkPaths)
-        of SkPathRefs */
-    class PathRefDebugRef {
-    public:
-        PathRefDebugRef(SkPath* owner);
-        PathRefDebugRef(SkPathRef* pr, SkPath* owner);
-        ~PathRefDebugRef();
-        void reset(SkPathRef* ref);
-        void swap(PathRefDebugRef* other);
-        SkPathRef* get() const;
-        SkAutoTUnref<SkPathRef>::BlockRefType *operator->() const;
-        operator SkPathRef*();
-    private:
-        SkAutoTUnref<SkPathRef>   fPathRef;
-        SkPath*                   fOwner;
-    };
-
-private:
-    PathRefDebugRef     fPathRef;
-#else
     SkAutoTUnref<SkPathRef> fPathRef;
-#endif
 
     mutable SkRect      fBounds;
     int                 fLastMoveToIndex;
@@ -983,6 +953,18 @@ private:
     uint32_t            fGenerationID;
     const SkPath*       fSourcePath;
 #endif
+
+    /** Resets all fields other than fPathRef to their initial 'empty' values.
+     *  Assumes the caller has already emptied fPathRef.
+     *  On Android increments fGenerationID without reseting it.
+     */
+    void resetFields();
+
+    /** Sets all fields other than fPathRef to the values in 'that'.
+     *  Assumes the caller has already set fPathRef.
+     *  Doesn't change fGenerationID or fSourcePath on Android.
+     */
+    void copyFields(const SkPath& that);
 
     // called, if dirty, by getBounds()
     void computeBounds() const;

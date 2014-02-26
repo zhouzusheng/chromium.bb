@@ -60,12 +60,13 @@ inline bool IsTurnChannelData(uint16 msg_type) {
   return ((msg_type & 0xC000) == 0x4000);  // MSB are 0b01
 }
 
-static int GetRelayPreference(cricket::ProtocolType proto) {
+static int GetRelayPreference(cricket::ProtocolType proto, bool secure) {
   int relay_preference = ICE_TYPE_PREFERENCE_RELAY;
-  if (proto == cricket::PROTO_TCP)
+  if (proto == cricket::PROTO_TCP) {
     relay_preference -= 1;
-  else if (proto == cricket::PROTO_SSLTCP)
-    relay_preference -= 2;
+    if (secure)
+      relay_preference -= 1;
+  }
 
   ASSERT(relay_preference >= 0);
   return relay_preference;
@@ -223,9 +224,15 @@ void TurnPort::PrepareAddress() {
       socket_.reset(socket_factory()->CreateUdpSocket(
           talk_base::SocketAddress(ip(), 0), min_port(), max_port()));
     } else if (server_address_.proto == PROTO_TCP) {
+      int opts = talk_base::PacketSocketFactory::OPT_STUN;
+      // If secure bit is enabled in server address, use TLS over TCP.
+      if (server_address_.secure) {
+        opts |= talk_base::PacketSocketFactory::OPT_TLS;
+      }
+
       socket_.reset(socket_factory()->CreateClientTcpSocket(
           talk_base::SocketAddress(ip(), 0), server_address_.address,
-          proxy(), user_agent(), talk_base::PacketSocketFactory::OPT_STUN));
+          proxy(), user_agent(), opts));
     }
 
     if (!socket_) {
@@ -332,7 +339,7 @@ int TurnPort::SendTo(const void* data, size_t size,
 
   // The caller of the function is expecting the number of user data bytes,
   // rather than the size of the packet.
-  return size;
+  return static_cast<int>(size);
 }
 
 void TurnPort::OnReadPacket(talk_base::AsyncPacketSocket* socket,
@@ -412,8 +419,12 @@ void TurnPort::OnStunAddress(const talk_base::SocketAddress& address) {
 
 void TurnPort::OnAllocateSuccess(const talk_base::SocketAddress& address) {
   connected_ = true;
-  AddAddress(address, socket_->GetLocalAddress(), "udp",
-             RELAY_PORT_TYPE, GetRelayPreference(server_address_.proto), true);
+  AddAddress(address,
+             socket_->GetLocalAddress(),
+             "udp",
+             RELAY_PORT_TYPE,
+             GetRelayPreference(server_address_.proto, server_address_.secure),
+             true);
 }
 
 void TurnPort::OnAllocateError() {
@@ -901,7 +912,7 @@ int TurnEntry::Send(const void* data, size_t size, bool payload) {
   } else {
     // If the channel is bound, we can send the data as a Channel Message.
     buf.WriteUInt16(channel_id_);
-    buf.WriteUInt16(size);
+    buf.WriteUInt16(static_cast<uint16>(size));
     buf.WriteBytes(reinterpret_cast<const char*>(data), size);
   }
   return port_->Send(buf.Data(), buf.Length());

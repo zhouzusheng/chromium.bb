@@ -37,6 +37,16 @@ base.exportTo('ui', function() {
 
   Camera.prototype = {
 
+    get zoom() {
+      return this.targetElement_.viewport ?
+          this.targetElement_.viewport.scale : 0;
+    },
+
+    set zoom(newValue) {
+      if (this.targetElement_.viewport)
+        this.targetElement_.viewport.scale = newValue;
+    },
+
     scheduleRepaint: function() {
       if (this.repaintPending_)
         return;
@@ -51,13 +61,16 @@ base.exportTo('ui', function() {
       this.repaint_();
     },
 
-    //-----------------------
-
     repaint_: function() {
       if (!this.repaintPending_)
         return;
+
       this.repaintPending_ = false;
       var layers = this.targetElement_.layers;
+
+      if (!layers)
+        return;
+
       var numLayers = layers.length;
 
       var vpThickness;
@@ -98,7 +111,7 @@ base.exportTo('ui', function() {
       var transformString = '';
       transformString += 'rotateX(' + this.rotations_.x + 'deg)';
       transformString += ' rotateY(' + this.rotations_.y + 'deg)';
-      var container = this.targetElement_.contentContainer;
+      var container = this.targetElement_.transformedContainer;
       container.style.webkitTransform = transformString;
     },
 

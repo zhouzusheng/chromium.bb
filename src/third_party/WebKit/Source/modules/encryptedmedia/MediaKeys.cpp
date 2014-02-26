@@ -26,6 +26,7 @@
 #include "config.h"
 #include "modules/encryptedmedia/MediaKeys.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/EventNames.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/platform/UUID.h"
@@ -36,20 +37,20 @@
 
 namespace WebCore {
 
-PassRefPtr<MediaKeys> MediaKeys::create(const String& keySystem, ExceptionCode& ec)
+PassRefPtr<MediaKeys> MediaKeys::create(const String& keySystem, ExceptionState& es)
 {
     // From <http://dvcs.w3.org/hg/html-media/raw-file/default/encrypted-media/encrypted-media.html#dom-media-keys-constructor>:
     // The MediaKeys(keySystem) constructor must run the following steps:
 
-    // 1. If keySystem is null or an empty string, throw an INVALID_ACCESS_ERR exception and abort these steps.
+    // 1. If keySystem is null or an empty string, throw an InvalidAccessError exception and abort these steps.
     if (keySystem.isEmpty()) {
-        ec = INVALID_ACCESS_ERR;
+        es.throwDOMException(InvalidAccessError);
         return 0;
     }
 
-    // 2. If keySystem is not one of the user agent's supported Key Systems, throw a NOT_SUPPORTED_ERR and abort these steps.
+    // 2. If keySystem is not one of the user agent's supported Key Systems, throw a NotSupportedError and abort these steps.
     if (!ContentDecryptionModule::supportsKeySystem(keySystem)) {
-        ec = NOT_SUPPORTED_ERR;
+        es.throwDOMException(NotSupportedError);
         return 0;
     }
 
@@ -57,7 +58,7 @@ PassRefPtr<MediaKeys> MediaKeys::create(const String& keySystem, ExceptionCode& 
     // 4. Load cdm if necessary.
     OwnPtr<ContentDecryptionModule> cdm = ContentDecryptionModule::create(keySystem);
     if (!cdm) {
-        ec = NOT_SUPPORTED_ERR;
+        es.throwDOMException(NotSupportedError);
         return 0;
     }
 
@@ -83,24 +84,24 @@ MediaKeys::~MediaKeys()
         m_sessions[i]->close();
 }
 
-PassRefPtr<MediaKeySession> MediaKeys::createSession(ScriptExecutionContext* context, const String& type, Uint8Array* initData, ExceptionCode& ec)
+PassRefPtr<MediaKeySession> MediaKeys::createSession(ScriptExecutionContext* context, const String& type, Uint8Array* initData, ExceptionState& es)
 {
     // From <http://dvcs.w3.org/hg/html-media/raw-file/default/encrypted-media/encrypted-media.html#dom-createsession>:
     // The createSession(type, initData) method must run the following steps:
     // Note: The contents of initData are container-specific Initialization Data.
 
     // 1. If type is null or an empty string and initData is not null or an empty string, throw an
-    // INVALID_ACCESS_ERR exception and abort these steps.
+    // InvalidAccessError exception and abort these steps.
     if ((type.isEmpty()) && (!initData || initData->length())) {
-        ec = INVALID_ACCESS_ERR;
+        es.throwDOMException(InvalidAccessError);
         return 0;
     }
 
     // 2. If type contains a MIME type that is not supported or is not supported by the keySystem, throw
-    // a NOT_SUPPORTED_ERR exception and abort these steps.
+    // a NotSupportedError exception and abort these steps.
     ASSERT(!type.isEmpty());
     if (type.isEmpty() || !m_cdm->supportsMIMEType(type)) {
-        ec = NOT_SUPPORTED_ERR;
+        es.throwDOMException(NotSupportedError);
         return 0;
     }
 

@@ -36,14 +36,6 @@ base::TimeDelta RenderingStatsInstrumentation::EndRecording(
   return base::TimeDelta();
 }
 
-void RenderingStatsInstrumentation::AddStats(const RenderingStats& other) {
-  if (!record_rendering_stats_)
-    return;
-
-  base::AutoLock scoped_lock(lock_);
-  rendering_stats_.Add(other);
-}
-
 void RenderingStatsInstrumentation::IncrementAnimationFrameCount() {
   if (!record_rendering_stats_)
     return;
@@ -175,7 +167,7 @@ void RenderingStatsInstrumentation::IncrementDeferredImageCacheHitCount() {
   rendering_stats_.total_deferred_image_cache_hit_count++;
 }
 
-void RenderingStatsInstrumentation::AddTileAnalysisResult(
+void RenderingStatsInstrumentation::AddAnalysisResult(
     base::TimeDelta duration,
     bool is_solid_color) {
   if (!record_rendering_stats_)

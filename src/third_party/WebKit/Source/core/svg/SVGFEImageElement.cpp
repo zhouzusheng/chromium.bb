@@ -24,10 +24,11 @@
 #include "core/svg/SVGFEImageElement.h"
 
 #include "SVGNames.h"
+#include "XLinkNames.h"
 #include "core/dom/Document.h"
-#include "core/loader/cache/CachedImage.h"
-#include "core/loader/cache/CachedResourceLoader.h"
-#include "core/loader/cache/CachedResourceRequest.h"
+#include "core/loader/cache/FetchRequest.h"
+#include "core/loader/cache/ImageResource.h"
+#include "core/loader/cache/ResourceFetcher.h"
 #include "core/platform/graphics/Image.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/svg/SVGElementInstance.h"
@@ -78,8 +79,8 @@ void SVGFEImageElement::clearResourceReferences()
 
 void SVGFEImageElement::requestImageResource()
 {
-    CachedResourceRequest request(ResourceRequest(ownerDocument()->completeURL(href())), localName());
-    m_cachedImage = document()->cachedResourceLoader()->requestImage(request);
+    FetchRequest request(ResourceRequest(ownerDocument()->completeURL(hrefCurrentValue())), localName());
+    m_cachedImage = document()->fetcher()->requestImage(request);
 
     if (m_cachedImage)
         m_cachedImage->addClient(this);
@@ -92,7 +93,7 @@ void SVGFEImageElement::buildPendingResource()
         return;
 
     String id;
-    Element* target = SVGURIReference::targetElementFromIRIString(href(), document(), &id);
+    Element* target = SVGURIReference::targetElementFromIRIString(hrefCurrentValue(), document(), &id);
     if (!target) {
         if (id.isEmpty())
             requestImageResource();
@@ -114,7 +115,6 @@ bool SVGFEImageElement::isSupportedAttribute(const QualifiedName& attrName)
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty()) {
         SVGURIReference::addSupportedAttributes(supportedAttributes);
-        SVGLangSpace::addSupportedAttributes(supportedAttributes);
         SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::preserveAspectRatioAttr);
     }
@@ -137,8 +137,6 @@ void SVGFEImageElement::parseAttribute(const QualifiedName& name, const AtomicSt
 
     if (SVGURIReference::parseAttribute(name, value))
         return;
-    if (SVGLangSpace::parseAttribute(name, value))
-        return;
     if (SVGExternalResourcesRequired::parseAttribute(name, value))
         return;
 
@@ -153,7 +151,7 @@ void SVGFEImageElement::svgAttributeChanged(const QualifiedName& attrName)
     }
 
     SVGElementInstance::InvalidationGuard invalidationGuard(this);
-    
+
     if (attrName == SVGNames::preserveAspectRatioAttr) {
         invalidate();
         return;
@@ -164,7 +162,7 @@ void SVGFEImageElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    if (SVGLangSpace::isKnownAttribute(attrName) || SVGExternalResourcesRequired::isKnownAttribute(attrName))
+    if (SVGExternalResourcesRequired::isKnownAttribute(attrName))
         return;
 
     ASSERT_NOT_REACHED();
@@ -184,7 +182,7 @@ void SVGFEImageElement::removedFrom(ContainerNode* rootParent)
         clearResourceReferences();
 }
 
-void SVGFEImageElement::notifyFinished(CachedResource*)
+void SVGFEImageElement::notifyFinished(Resource*)
 {
     if (!inDocument())
         return;
@@ -201,15 +199,15 @@ void SVGFEImageElement::notifyFinished(CachedResource*)
 PassRefPtr<FilterEffect> SVGFEImageElement::build(SVGFilterBuilder*, Filter* filter)
 {
     if (m_cachedImage)
-        return FEImage::createWithImage(filter, m_cachedImage->imageForRenderer(renderer()), preserveAspectRatio());
-    return FEImage::createWithIRIReference(filter, document(), href(), preserveAspectRatio());
+        return FEImage::createWithImage(filter, m_cachedImage->imageForRenderer(renderer()), preserveAspectRatioCurrentValue());
+    return FEImage::createWithIRIReference(filter, document(), hrefCurrentValue(), preserveAspectRatioCurrentValue());
 }
 
 void SVGFEImageElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const
 {
     SVGFilterPrimitiveStandardAttributes::addSubresourceAttributeURLs(urls);
 
-    addSubresourceURL(urls, document()->completeURL(href()));
+    addSubresourceURL(urls, document()->completeURL(hrefCurrentValue()));
 }
 
 }

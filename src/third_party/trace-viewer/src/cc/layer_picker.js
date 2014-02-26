@@ -103,7 +103,11 @@ base.exportTo('cc', function() {
 
         return true;
       }
+      var visitedLayers = {};
       function visitLayer(layer, depth, isMask, isReplica) {
+        if (visitedLayers[layer.layerId])
+          return;
+        visitedLayers[layer.layerId] = true;
         var info = {layer: layer,
           depth: depth};
 
@@ -165,7 +169,10 @@ base.exportTo('cc', function() {
       if (this.layerList_.selectedElement)
         selectedLayer = this.layerList_.selectedElement.layer;
 
-      this.selection_ = new cc.LayerSelection(selectedLayer);
+      if (selectedLayer)
+        this.selection_ = new cc.LayerSelection(selectedLayer);
+      else
+        this.selection_ = undefined;
       base.dispatchSimpleEvent(this, 'selection-changed', false);
     },
 

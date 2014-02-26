@@ -105,8 +105,6 @@ public:
     using Node::ref;
     using Node::deref;
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
-
 protected:
     HTMLFormControlElement(const QualifiedName& tagName, Document*, HTMLFormElement*);
 
@@ -120,12 +118,14 @@ protected:
 
     virtual bool supportsFocus() const OVERRIDE;
     virtual bool rendererIsFocusable() const OVERRIDE;
-    virtual bool isKeyboardFocusable(KeyboardEvent*) const;
-    virtual bool isMouseFocusable() const;
+    virtual bool isKeyboardFocusable() const OVERRIDE;
+    virtual bool shouldShowFocusRingOnMouseFocus() const;
+    virtual bool shouldHaveFocusAppearance() const OVERRIDE;
+    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusDirection) OVERRIDE;
+    virtual void dispatchBlurEvent(Element* newFocusedElement) OVERRIDE;
+    virtual void willCallDefaultEventHandler(const Event&) OVERRIDE;
 
     virtual void didRecalcStyle(StyleChange) OVERRIDE;
-
-    virtual void dispatchBlurEvent(PassRefPtr<Node> newFocusedNode);
 
     // This must be called any time the result of willValidate() has changed.
     void setNeedsWillValidateCheck();
@@ -167,7 +167,7 @@ private:
     bool m_isValid : 1;
 
     bool m_wasChangedSinceLastFormControlChangeEvent : 1;
-
+    bool m_wasFocusedByMouse : 1;
     bool m_hasAutofocused : 1;
 };
 

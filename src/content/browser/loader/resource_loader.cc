@@ -5,8 +5,9 @@
 #include "content/browser/loader/resource_loader.h"
 
 #include "base/command_line.h"
-#include "base/message_loop.h"
-#include "base/time.h"
+#include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
+#include "base/time/time.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/loader/doomed_resource_handler.h"
 #include "content/browser/loader/resource_loader_delegate.h"
@@ -154,8 +155,14 @@ void ResourceLoader::ReportUploadProgress() {
   }
 }
 
-void ResourceLoader::MarkAsTransferring() {
+void ResourceLoader::MarkAsTransferring(const GURL& target_url) {
+  CHECK_EQ(GetRequestInfo()->GetResourceType(), ResourceType::MAIN_FRAME)
+      << "Cannot transfer non-main frame navigations";
   is_transferring_ = true;
+
+  // When transferring a request to another process, the renderer doesn't get
+  // a chance to update the cookie policy URL. Do it here instead.
+  request()->set_first_party_for_cookies(target_url);
 
   // When an URLRequest is transferred to a new RenderViewHost, its
   // ResourceHandler should not receive any notifications because it may depend
@@ -560,6 +567,7 @@ void ResourceLoader::CompleteResponseStarted() {
           info->GetRequestID(), response.get(), &defer)) {
     Cancel();
   } else if (defer) {
+    read_deferral_start_time_ = base::TimeTicks::Now();
     deferred_stage_ = DEFERRED_READ;  // Read first chunk when resumed.
   }
 }
@@ -589,6 +597,11 @@ void ResourceLoader::StartReading(bool is_continuation) {
 void ResourceLoader::ResumeReading() {
   DCHECK(!is_deferred());
 
+  if (!read_deferral_start_time_.is_null()) {
+    UMA_HISTOGRAM_TIMES("Net.ResourceLoader.ReadDeferral",
+                        base::TimeTicks::Now() - read_deferral_start_time_);
+    read_deferral_start_time_ = base::TimeTicks();
+  }
   if (request_->status().is_success()) {
     StartReading(false);  // Read the next chunk (OK to complete synchronously).
   } else {

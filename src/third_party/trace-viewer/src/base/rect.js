@@ -64,6 +64,10 @@ base.exportTo('base', function() {
           this.width + ', ' + this.height + ')';
     },
 
+    toArray: function() {
+      return [this.x, this.y, this.width, this.height];
+    },
+
     clone: function() {
       var rect = new Rect();
       rect.x = this.x;
@@ -85,6 +89,10 @@ base.exportTo('base', function() {
       out.width = this.width + 2 * pad;
       out.height = this.height + 2 * pad;
       return out;
+    },
+
+    size: function() {
+      return {width: this.width, height: this.height};
     },
 
     scale: function(s) {

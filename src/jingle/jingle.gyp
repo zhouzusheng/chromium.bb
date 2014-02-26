@@ -136,7 +136,6 @@
           'dependencies': [
             'notifier',
             '../base/base.gyp:base',
-            '../testing/gmock.gyp:gmock',
           ],
         },
         {
@@ -206,7 +205,6 @@
             '../base/base.gyp:test_support_base',
             '../net/net.gyp:net',
             '../net/net.gyp:net_test_support',
-            '../testing/gmock.gyp:gmock',
             '../testing/gtest.gyp:gtest',
             '../third_party/libjingle/libjingle.gyp:libjingle',
           ],

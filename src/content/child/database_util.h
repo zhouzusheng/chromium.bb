@@ -5,7 +5,11 @@
 #ifndef CONTENT_CHILD_DATABASE_UTIL_H_
 #define CONTENT_CHILD_DATABASE_UTIL_H_
 
-#include "webkit/glue/webkitplatformsupport_impl.h"
+#include "webkit/child/webkitplatformsupport_impl.h"
+
+namespace IPC {
+class SyncMessageFilter;
+}
 
 namespace content {
 // A class of utility functions used by RendererWebKitPlatformSupportImpl and
@@ -13,15 +17,22 @@ namespace content {
 class DatabaseUtil {
  public:
   static WebKit::Platform::FileHandle DatabaseOpenFile(
-      const WebKit::WebString& vfs_file_name, int desired_flags);
+      const WebKit::WebString& vfs_file_name,
+      int desired_flags,
+      IPC::SyncMessageFilter* sync_message_filter);
   static int DatabaseDeleteFile(
-      const WebKit::WebString& vfs_file_name, bool sync_dir);
+      const WebKit::WebString& vfs_file_name,
+      bool sync_dir,
+      IPC::SyncMessageFilter* sync_message_filter);
   static long DatabaseGetFileAttributes(
-      const WebKit::WebString& vfs_file_name);
+      const WebKit::WebString& vfs_file_name,
+      IPC::SyncMessageFilter* sync_message_filter);
   static long long DatabaseGetFileSize(
-      const WebKit::WebString& vfs_file_name);
+      const WebKit::WebString& vfs_file_name,
+      IPC::SyncMessageFilter* sync_message_filter);
   static long long DatabaseGetSpaceAvailable(
-      const WebKit::WebString& origin_identifier);
+      const WebKit::WebString& origin_identifier,
+      IPC::SyncMessageFilter* sync_message_filter);
 };
 
 }  // namespace content

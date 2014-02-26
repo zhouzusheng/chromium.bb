@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef FilterEffectRenderer_h
@@ -36,15 +36,13 @@
 #include "core/platform/graphics/filters/FilterOperations.h"
 #include "core/platform/graphics/filters/SourceGraphic.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
-
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/RefPtr.h>
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
-typedef Vector<RefPtr<FilterEffect> > FilterEffectList;
-class CachedShader;
+class ShaderResource;
 class CustomFilterProgram;
 class Document;
 class GraphicsContext;
@@ -59,7 +57,7 @@ public:
         , m_haveFilterEffect(haveFilterEffect)
     {
     }
-    
+
     bool haveFilterEffect() const { return m_haveFilterEffect; }
     bool hasStartedFilterEffect() const { return m_savedGraphicsContext; }
 
@@ -86,7 +84,7 @@ public:
     }
 
     void setSourceImageRect(const FloatRect& sourceImageRect)
-    { 
+    {
         m_sourceDrawingRegion = sourceImageRect;
         m_graphicsBufferAttached = false;
     }
@@ -96,12 +94,11 @@ public:
     ImageBuffer* output() const { return lastEffect()->asImageBuffer(); }
 
     bool build(RenderObject* renderer, const FilterOperations&);
-    PassRefPtr<FilterEffect> buildReferenceFilter(RenderObject* renderer, PassRefPtr<FilterEffect> previousEffect, ReferenceFilterOperation*);
     bool updateBackingStoreRect(const FloatRect& filterRect);
     void allocateBackingStoreIfNeeded();
     void clearIntermediateResults();
     void apply();
-    
+
     IntRect outputRect() const { return lastEffect()->hasResult() ? lastEffect()->absolutePaintRect() : IntRect(); }
 
     bool hasFilterThatMovesPixels() const { return m_hasFilterThatMovesPixels; }
@@ -110,20 +107,18 @@ public:
     bool hasCustomShaderFilter() const { return m_hasCustomShaderFilter; }
     PassRefPtr<FilterEffect> lastEffect() const
     {
-        if (m_effects.size() > 0)
-            return m_effects.last();
-        return 0;
+        return m_lastEffect;
     }
 private:
 
     FilterEffectRenderer();
     virtual ~FilterEffectRenderer();
-    
+
     FloatRect m_sourceDrawingRegion;
-    
-    FilterEffectList m_effects;
+
     RefPtr<SourceGraphic> m_sourceGraphic;
-    
+    RefPtr<FilterEffect> m_lastEffect;
+
     IntRectExtent m_outsets;
 
     bool m_graphicsBufferAttached;

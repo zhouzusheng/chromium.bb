@@ -18,12 +18,6 @@ using WebKit::WebRuntimeFeatures;
 namespace content {
 
 static void SetRuntimeFeatureDefaultsForPlatform() {
-#if defined(OS_ANDROID) && !defined(GOOGLE_TV)
-  WebRuntimeFeatures::enableWebKitMediaSource(false);
-  WebRuntimeFeatures::enableLegacyEncryptedMedia(false);
-  WebRuntimeFeatures::enableEncryptedMedia(false);
-#endif
-
 #if defined(OS_ANDROID)
 #if !defined(GOOGLE_TV)
   // MSE/EME implementation needs Android MediaCodec API that was introduced
@@ -44,8 +38,6 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
   WebRuntimeFeatures::enableWebAudio(enable_webaudio);
   // Android does not support the Gamepad API.
   WebRuntimeFeatures::enableGamepad(false);
-  // input[type=week] in Android is incomplete. crbug.com/135938
-  WebRuntimeFeatures::enableInputTypeWeek(false);
   // Android does not have support for PagePopup
   WebRuntimeFeatures::enablePagePopup(false);
   // datalist on Android is not enabled
@@ -57,7 +49,7 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
     const CommandLine& command_line) {
   WebRuntimeFeatures::enableStableFeatures(true);
 
-  if (command_line.HasSwitch(switches::kEnableExperimentalWebKitFeatures))
+  if (command_line.HasSwitch(switches::kEnableExperimentalWebPlatformFeatures))
     WebRuntimeFeatures::enableExperimentalFeatures(true);
 
   SetRuntimeFeatureDefaultsForPlatform();
@@ -80,13 +72,8 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kDisableGeolocation))
     WebRuntimeFeatures::enableGeolocation(false);
 
-#if defined(OS_ANDROID) && !defined(GOOGLE_TV)
-  if (command_line.HasSwitch(switches::kEnableWebKitMediaSource))
-    WebRuntimeFeatures::enableWebKitMediaSource(true);
-#else
   if (command_line.HasSwitch(switches::kDisableWebKitMediaSource))
     WebRuntimeFeatures::enableWebKitMediaSource(false);
-#endif
 
 #if defined(OS_ANDROID)
   if (command_line.HasSwitch(switches::kDisableWebRTC)) {
@@ -94,8 +81,11 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
     WebRuntimeFeatures::enablePeerConnection(false);
   }
 
-  if (!command_line.HasSwitch(switches::kEnableSpeechRecognition))
+  if (!command_line.HasSwitch(switches::kEnableSpeechRecognition) ||
+      !command_line.HasSwitch(
+          switches::kEnableExperimentalWebPlatformFeatures)) {
     WebRuntimeFeatures::enableScriptedSpeech(false);
+  }
 #endif
 
   if (command_line.HasSwitch(switches::kDisableWebAudio))
@@ -110,11 +100,23 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kDisableLegacyEncryptedMedia))
     WebRuntimeFeatures::enableLegacyEncryptedMedia(false);
 
+  if (command_line.HasSwitch(switches::kEnableWebAnimationsCSS))
+    WebRuntimeFeatures::enableWebAnimationsCSS();
+
+  if (command_line.HasSwitch(switches::kEnableWebAnimationsSVG))
+    WebRuntimeFeatures::enableWebAnimationsSVG();
+
   if (command_line.HasSwitch(switches::kEnableWebMIDI))
     WebRuntimeFeatures::enableWebMIDI(true);
 
+#if defined(OS_ANDROID)
+  // Enable Device Motion on Android by default.
+  WebRuntimeFeatures::enableDeviceMotion(
+      !command_line.HasSwitch(switches::kDisableDeviceMotion));
+#else
   if (command_line.HasSwitch(switches::kEnableDeviceMotion))
       WebRuntimeFeatures::enableDeviceMotion(true);
+#endif
 
   if (command_line.HasSwitch(switches::kDisableDeviceOrientation))
     WebRuntimeFeatures::enableDeviceOrientation(false);
@@ -125,9 +127,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kDisableFileSystem))
     WebRuntimeFeatures::enableFileSystem(false);
 
-  if (command_line.HasSwitch(switches::kDisableJavaScriptI18NAPI))
-    WebRuntimeFeatures::enableJavaScriptI18NAPI(false);
-
   if (command_line.HasSwitch(switches::kEnableExperimentalCanvasFeatures))
     WebRuntimeFeatures::enableExperimentalCanvasFeatures(true);
 
@@ -136,6 +135,12 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (command_line.HasSwitch(switches::kEnableWebGLDraftExtensions))
     WebRuntimeFeatures::enableWebGLDraftExtensions(true);
+
+  if (command_line.HasSwitch(switches::kEnableHTMLImports))
+    WebRuntimeFeatures::enableHTMLImports(true);
+
+  if (command_line.HasSwitch(switches::kEnableOverlayScrollbars))
+    WebRuntimeFeatures::enableOverlayScrollbars(true);
 }
 
 }  // namespace content

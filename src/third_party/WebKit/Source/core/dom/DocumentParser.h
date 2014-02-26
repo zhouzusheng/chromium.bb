@@ -24,8 +24,8 @@
 #ifndef DocumentParser_h
 #define DocumentParser_h
 
-#include <wtf/Forward.h>
-#include <wtf/RefCounted.h>
+#include "wtf/Forward.h"
+#include "wtf/RefCounted.h"
 
 namespace WebCore {
 
@@ -51,6 +51,7 @@ public:
     virtual size_t flush() = 0;
     virtual bool needsDecoder() const { return false; }
 
+    // pinToMainThread also makes append() not yield before completion of that chunk.
     virtual void pinToMainThread() { }
 
     // FIXME: append() should be private, but DocumentWriter::replaceDocument uses it for now.

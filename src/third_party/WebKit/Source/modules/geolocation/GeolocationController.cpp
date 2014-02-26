@@ -61,7 +61,7 @@ void GeolocationController::addObserver(Geolocation* observer, bool enableHighAc
     if (enableHighAccuracy)
         m_highAccuracyObservers.add(observer);
 
-    if (m_client) {        
+    if (m_client) {
         if (enableHighAccuracy)
             m_client->setEnableHighAccuracy(true);
         if (wasEmpty)
@@ -101,7 +101,7 @@ void GeolocationController::positionChanged(GeolocationPosition* position)
 {
     position = InspectorInstrumentation::overrideGeolocationPosition(m_page, position);
     if (!position) {
-        errorOccurred(GeolocationError::create(GeolocationError::PositionUnavailable, ASCIILiteral("PositionUnavailable")).get());
+        errorOccurred(GeolocationError::create(GeolocationError::PositionUnavailable, "PositionUnavailable").get());
         return;
     }
     m_lastPosition = position;
@@ -139,5 +139,5 @@ void provideGeolocationTo(Page* page, GeolocationClient* client)
 {
     Supplement<Page>::provideTo(page, GeolocationController::supplementName(), GeolocationController::create(page, client));
 }
-    
+
 } // namespace WebCore

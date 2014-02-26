@@ -35,6 +35,7 @@
 #include "InspectorBackendDispatcher.h"
 #include "bindings/v8/ScopedPersistent.h"
 #include "core/inspector/ScriptBreakpoint.h"
+#include "core/inspector/ScriptDebugListener.h"
 #include <v8-debug.h>
 #include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
@@ -49,11 +50,12 @@ class ScriptDebugListener;
 class ScriptObject;
 class ScriptState;
 class ScriptValue;
+class JavaScriptCallFrame;
 
 class ScriptDebugServer {
     WTF_MAKE_NONCOPYABLE(ScriptDebugServer);
 public:
-    String setBreakpoint(const String& sourceID, const ScriptBreakpoint&, int* actualLineNumber, int* actualColumnNumber);
+    String setBreakpoint(const String& sourceID, const ScriptBreakpoint&, int* actualLineNumber, int* actualColumnNumber, bool interstatementLocation);
     void removeBreakpoint(const String& breakpointId);
     void clearBreakpoints();
     void setBreakpointsActivated(bool activated);
@@ -102,7 +104,7 @@ public:
 protected:
     explicit ScriptDebugServer(v8::Isolate*);
     virtual ~ScriptDebugServer();
-    
+
     ScriptValue currentCallFrame();
 
     virtual ScriptDebugListener* getDebugListenerForContext(v8::Handle<v8::Context>) = 0;
@@ -110,8 +112,8 @@ protected:
     virtual void quitMessageLoopOnPause() = 0;
 
     static void breakProgramCallback(const v8::FunctionCallbackInfo<v8::Value>& args);
-    void breakProgram(v8::Handle<v8::Object> executionState, v8::Handle<v8::Value> exception, v8::Handle<v8::Array> hitBreakpoints);
-    void breakProgram(const v8::Debug::EventDetails&, v8::Handle<v8::Value> exception, v8::Handle<v8::Array> hitBreakpointNumbers);
+    void handleProgramBreak(v8::Handle<v8::Object> executionState, v8::Handle<v8::Value> exception, v8::Handle<v8::Array> hitBreakpoints);
+    void handleProgramBreak(const v8::Debug::EventDetails&, v8::Handle<v8::Value> exception, v8::Handle<v8::Array> hitBreakpointNumbers);
 
     static void v8DebugEventCallback(const v8::Debug::EventDetails& eventDetails);
     void handleV8DebugEvent(const v8::Debug::EventDetails& eventDetails);
@@ -132,8 +134,11 @@ protected:
     ScopedPersistent<v8::FunctionTemplate> m_breakProgramCallbackTemplate;
     HashMap<String, OwnPtr<ScopedPersistent<v8::Script> > > m_compiledScripts;
     v8::Isolate* m_isolate;
-    
+
 private:
+    PassRefPtr<JavaScriptCallFrame> wrapCallFrames(v8::Handle<v8::Object> executionState, int maximumLimit);
+    bool executeSkipPauseRequest(ScriptDebugListener::SkipPauseRequest, v8::Handle<v8::Object> executionState);
+
     class ScriptPreprocessor;
     OwnPtr<ScriptPreprocessor> m_scriptPreprocessor;
     bool m_runningNestedMessageLoop;

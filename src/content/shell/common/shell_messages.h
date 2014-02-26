@@ -32,10 +32,6 @@ IPC_MESSAGE_ROUTED0(ShellViewMsg_Reset)
 IPC_MESSAGE_CONTROL1(ShellViewMsg_SetWebKitSourceDir,
                      base::FilePath /* webkit source dir */)
 
-// Loads the hyphen dictionary used for layout tests.
-IPC_MESSAGE_CONTROL1(ShellViewMsg_LoadHyphenDictionary,
-                     IPC::PlatformFileForTransit /* dict_file */)
-
 // Sets the initial configuration to use for layout tests.
 IPC_MESSAGE_ROUTED1(ShellViewMsg_SetTestConfiguration,
                     content::ShellTestConfiguration)
@@ -97,6 +93,7 @@ IPC_MESSAGE_ROUTED1(ShellViewHostMsg_SetDatabaseQuota,
                     int /* quota */)
 IPC_MESSAGE_ROUTED1(ShellViewHostMsg_AcceptAllCookies,
                     bool /* accept */)
+IPC_MESSAGE_ROUTED0(ShellViewHostMsg_DeleteAllCookies)
 IPC_MESSAGE_ROUTED1(ShellViewHostMsg_SetDeviceScaleFactor,
                     float /* factor */)
 IPC_MESSAGE_ROUTED0(ShellViewHostMsg_CaptureSessionHistory)

@@ -35,9 +35,9 @@ public:
     void setLocation(const String&);
 
     virtual ScrollbarMode scrollingMode() const { return m_scrolling; }
-    
-    int marginWidth() const { return m_marginWidth; }
-    int marginHeight() const { return m_marginHeight; }
+
+    virtual int marginWidth() const { return m_marginWidth; }
+    virtual int marginHeight() const { return m_marginHeight; }
 
     int width();
     int height();
@@ -49,6 +49,8 @@ protected:
 
     bool isURLAllowed() const;
 
+    virtual bool allowScrollingInContentFrame() { return scrollingMode() != ScrollbarAlwaysOff; }
+
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void didNotifySubtreeInsertions(ContainerNode*) OVERRIDE;
@@ -57,7 +59,7 @@ protected:
 private:
     virtual bool supportsFocus() const;
     virtual void setFocus(bool) OVERRIDE;
-    
+
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
     virtual bool isHTMLContentAttribute(const Attribute&) const OVERRIDE;
 

@@ -12,7 +12,7 @@
 #include "content/public/browser/access_token_store.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_client.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace content {
 namespace {
@@ -160,7 +160,11 @@ LocationProvider* GeolocationArbitratorImpl::NewNetworkLocationProvider(
 }
 
 LocationProvider* GeolocationArbitratorImpl::NewSystemLocationProvider() {
+#if defined(OS_WIN)
+  return NULL;
+#else
   return content::NewSystemLocationProvider();
+#endif
 }
 
 base::Time GeolocationArbitratorImpl::GetTimeNow() const {

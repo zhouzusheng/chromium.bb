@@ -19,13 +19,15 @@
  */
 
 #include "config.h"
-
 #include "core/rendering/TextAutosizer.h"
+
+#include <algorithm>
 
 #include "core/dom/Document.h"
 #include "core/html/HTMLElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/page/Settings.h"
+#include "core/platform/chromium/TraceEvent.h"
 #include "core/platform/graphics/IntSize.h"
 #include "core/rendering/RenderListItem.h"
 #include "core/rendering/RenderObject.h"
@@ -33,10 +35,8 @@
 #include "core/rendering/RenderView.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/StyleInheritedData.h"
-
-#include <algorithm>
-#include <wtf/StdLibExtras.h>
-#include <wtf/Vector.h>
+#include "wtf/StdLibExtras.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -123,6 +123,8 @@ void TextAutosizer::recalculateMultipliers()
 
 bool TextAutosizer::processSubtree(RenderObject* layoutRoot)
 {
+    TRACE_EVENT0("webkit", "TextAutosizer::processSubtree");
+
     // FIXME: Text Autosizing should only be enabled when m_document->page()->mainFrame()->view()->useFixedLayout()
     // is true, but for now it's useful to ignore this so that it can be tested on desktop.
     if (!m_document->settings() || !m_document->settings()->textAutosizingEnabled() || layoutRoot->view()->printing() || !m_document->page())
@@ -458,7 +460,7 @@ bool TextAutosizer::containerIsRowOfLinks(const RenderObject* container)
 
     while (renderer) {
         if (!isAutosizingContainer(renderer)) {
-            if (renderer->isText() && toRenderText(renderer)->text()->stripWhiteSpace()->length() > 3)
+            if (renderer->isText() && toRenderText(renderer)->text().impl()->stripWhiteSpace()->length() > 3)
                 return false;
             if (!renderer->isInline())
                 return false;

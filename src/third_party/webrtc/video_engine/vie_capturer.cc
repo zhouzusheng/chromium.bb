@@ -16,12 +16,15 @@
 #include "webrtc/modules/video_capture/include/video_capture_factory.h"
 #include "webrtc/modules/video_processing/main/interface/video_processing.h"
 #include "webrtc/modules/video_render/include/video_render_defines.h"
+#include "webrtc/system_wrappers/interface/clock.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/event_wrapper.h"
 #include "webrtc/system_wrappers/interface/thread_wrapper.h"
 #include "webrtc/system_wrappers/interface/trace.h"
 #include "webrtc/system_wrappers/interface/trace_event.h"
+#include "webrtc/video_engine/include/vie_base.h"
 #include "webrtc/video_engine/include/vie_image_process.h"
+#include "webrtc/video_engine/overuse_frame_detector.h"
 #include "webrtc/video_engine/vie_defines.h"
 #include "webrtc/video_engine/vie_encoder.h"
 
@@ -55,7 +58,8 @@ ViECapturer::ViECapturer(int capture_id,
       reported_brightness_level_(Normal),
       denoising_enabled_(false),
       observer_cs_(CriticalSectionWrapper::CreateCriticalSection()),
-      observer_(NULL) {
+      observer_(NULL),
+      overuse_detector_(new OveruseFrameDetector(Clock::GetRealTimeClock())) {
   WEBRTC_TRACE(kTraceMemory, kTraceVideo, ViEId(engine_id, capture_id),
                "ViECapturer::ViECapturer(capture_id: %d, engine_id: %d)",
                capture_id, engine_id);
@@ -66,12 +70,14 @@ ViECapturer::ViECapturer(int capture_id,
   } else {
     assert(false);
   }
+  module_process_thread_.RegisterModule(overuse_detector_.get());
 }
 
 ViECapturer::~ViECapturer() {
   WEBRTC_TRACE(kTraceMemory, kTraceVideo, ViEId(engine_id_, capture_id_),
                "ViECapturer::~ViECapturer() - capture_id: %d, engine_id: %d",
                capture_id_, engine_id_);
+  module_process_thread_.DeRegisterModule(overuse_detector_.get());
 
   // Stop the thread.
   deliver_cs_->Enter();
@@ -255,6 +261,10 @@ const char* ViECapturer::CurrentDeviceName() const {
   return capture_module_->CurrentDeviceName();
 }
 
+void ViECapturer::RegisterCpuOveruseObserver(CpuOveruseObserver* observer) {
+  overuse_detector_->SetObserver(observer);
+}
+
 int32_t ViECapturer::SetCaptureDelay(int32_t delay_ms) {
   return capture_module_->SetCaptureDelay(delay_ms);
 }
@@ -335,11 +345,12 @@ void ViECapturer::OnIncomingCapturedFrame(const int32_t capture_id,
   // the camera, and not when the camera actually captured the frame.
   video_frame.set_render_time_ms(video_frame.render_time_ms() - FrameDelay());
 
-  TRACE_EVENT_INSTANT1("webrtc", "VC::OnIncomingCapturedFrame",
-                       "render_time", video_frame.render_time_ms());
+  TRACE_EVENT_ASYNC_BEGIN1("webrtc", "Video", video_frame.render_time_ms(),
+                           "render_time", video_frame.render_time_ms());
 
   captured_frame_.SwapFrame(&video_frame);
   capture_event_.Set();
+  overuse_detector_->FrameCaptured();
   return;
 }
 
@@ -506,7 +517,16 @@ bool ViECapturer::ViECaptureProcess() {
       deliver_frame_.SwapFrame(&captured_frame_);
       captured_frame_.ResetSize();
       capture_cs_->Leave();
+
+      int64_t encode_start_time =
+          Clock::GetRealTimeClock()->TimeInMilliseconds();
       DeliverI420Frame(&deliver_frame_);
+
+      // The frame has been encoded, update the overuse detector with the
+      // duration.
+      overuse_detector_->FrameEncoded(
+          Clock::GetRealTimeClock()->TimeInMilliseconds() - encode_start_time,
+          deliver_frame_.width(), deliver_frame_.height());
     }
     deliver_cs_->Leave();
     if (current_brightness_level_ != reported_brightness_level_) {

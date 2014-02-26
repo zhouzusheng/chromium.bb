@@ -7,10 +7,10 @@
 
 #include "base/basictypes.h"
 #include "base/memory/weak_ptr.h"
-#include "googleurl/src/gurl.h"
 #include "ppapi/c/pp_file_info.h"
 #include "ppapi/host/host_message_context.h"
 #include "ppapi/host/resource_host.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -30,7 +30,7 @@ class PepperFileSystemHost :
   virtual int32_t OnResourceMessageReceived(
       const IPC::Message& msg,
       ppapi::host::HostMessageContext* context) OVERRIDE;
-  virtual PepperFileSystemHost* AsPepperFileSystemHost() OVERRIDE;
+  virtual bool IsFileSystemHost() OVERRIDE;
 
   // Supports FileRefs direct access on the host side.
   PP_FileSystemType GetType() const { return type_; }

@@ -20,8 +20,8 @@
 #ifndef SVGResourcesCycleSolver_h
 #define SVGResourcesCycleSolver_h
 
-#include <wtf/HashSet.h>
-#include <wtf/Noncopyable.h>
+#include "wtf/HashSet.h"
+#include "wtf/Noncopyable.h"
 
 namespace WebCore {
 
@@ -43,7 +43,7 @@ private:
 
     RenderObject* m_renderer;
     SVGResources* m_resources;
-    HashSet<RenderSVGResourceContainer*> m_allResources; 
+    HashSet<RenderSVGResourceContainer*> m_allResources;
 };
 
 }

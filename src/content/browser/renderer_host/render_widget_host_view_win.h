@@ -12,10 +12,11 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/win/scoped_comptr.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
@@ -27,7 +28,6 @@
 #include "ui/base/ime/text_input_client.h"
 #include "ui/base/ime/win/tsf_bridge.h"
 #include "ui/base/win/extra_sdk_defines.h"
-#include "ui/base/win/ime_input.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
 #include "ui/surface/accelerated_surface_win.h"
@@ -45,6 +45,7 @@ class Message;
 }
 
 namespace ui {
+class IMM32Manager;
 class ViewProp;
 }
 
@@ -175,13 +176,14 @@ class RenderWidgetHostViewWin
   virtual void WasHidden() OVERRIDE;
   virtual void MovePluginWindows(
       const gfx::Vector2d& scroll_offset,
-      const std::vector<webkit::npapi::WebPluginGeometry>& moves) OVERRIDE;
+      const std::vector<WebPluginGeometry>& moves) OVERRIDE;
   virtual void Focus() OVERRIDE;
   virtual void Blur() OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
   virtual void TextInputTypeChanged(ui::TextInputType type,
-                                    bool can_compose_inline) OVERRIDE;
+                                    bool can_compose_inline,
+                                    ui::TextInputMode input_mode) OVERRIDE;
   virtual void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) OVERRIDE;
   virtual void ScrollOffsetChanged() OVERRIDE;
@@ -194,8 +196,8 @@ class RenderWidgetHostViewWin
       const gfx::Vector2d& scroll_delta,
       const std::vector<gfx::Rect>& copy_rects,
       const ui::LatencyInfo& latency_info) OVERRIDE;
-  virtual void RenderViewGone(base::TerminationStatus status,
-                              int error_code) OVERRIDE;
+  virtual void RenderProcessGone(base::TerminationStatus status,
+                                 int error_code) OVERRIDE;
   virtual bool CanSubscribeFrame() const OVERRIDE;
 
   // called by WebContentsImpl before DestroyWindow
@@ -269,6 +271,7 @@ class RenderWidgetHostViewWin
   virtual void InsertChar(char16 ch, int flags) OVERRIDE;
   virtual gfx::NativeWindow GetAttachedWindow() const OVERRIDE;
   virtual ui::TextInputType GetTextInputType() const OVERRIDE;
+  virtual ui::TextInputMode GetTextInputMode() const OVERRIDE;
   virtual bool CanComposeInline() const OVERRIDE;
   virtual gfx::Rect GetCaretBounds() OVERRIDE;
   virtual bool GetCompositionCharacterBounds(uint32 index,
@@ -359,6 +362,9 @@ class RenderWidgetHostViewWin
   void OnFinalMessage(HWND window);
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewWinBrowserTest,
+                           TextInputTypeChanged);
+
   // Updates the display cursor to the current cursor if the cursor is over this
   // render view.
   void UpdateCursorIfOverSelf();
@@ -472,9 +478,9 @@ class RenderWidgetHostViewWin
   // true if we are currently tracking WM_MOUSEEXIT messages.
   bool track_mouse_leave_;
 
-  // Wrapper class for IME input.
-  // (See "ui/base/win/ime_input.h" for its details.)
-  ui::ImeInput ime_input_;
+  // Wrapper class for IMM32 APIs.
+  // (See "ui/base/ime/win/imm32_manager.h" for its details.)
+  scoped_ptr<ui::IMM32Manager> imm32_manager_;
 
   // Represents whether or not this browser process is receiving status
   // messages about the focused edit control from a renderer process.
@@ -532,6 +538,7 @@ class RenderWidgetHostViewWin
   // Stores the current text input type received by TextInputStateChanged()
   // method.
   ui::TextInputType text_input_type_;
+  ui::TextInputMode text_input_mode_;
   bool can_compose_inline_;
 
   ScopedVector<ui::ViewProp> props_;

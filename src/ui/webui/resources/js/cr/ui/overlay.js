@@ -6,7 +6,6 @@
  * @fileoverview Provides dialog-like behaviors for the tracing UI.
  */
 cr.define('cr.ui.overlay', function() {
-
   /**
    * Gets the top, visible overlay. It makes the assumption that if multiple
    * overlays are visible, the last in the byte order is topmost.
@@ -36,36 +35,42 @@ cr.define('cr.ui.overlay', function() {
     return null;
   }
 
+  /** @type {boolean} */
+  var globallyInitialized = false;
+
   /**
    * Makes initializations which must hook at the document level.
    */
   function globalInitialization() {
-    document.addEventListener('keydown', function(e) {
-      var overlay = getTopOverlay();
-      if (!overlay)
-        return;
+    if (!globallyInitialized) {
+      document.addEventListener('keydown', function(e) {
+        var overlay = getTopOverlay();
+        if (!overlay)
+          return;
 
-      // Close the overlay on escape.
-      if (e.keyCode == 27)  // Escape
-        cr.dispatchSimpleEvent(overlay, 'cancelOverlay');
+        // Close the overlay on escape.
+        if (e.keyCode == 27)  // Escape
+          cr.dispatchSimpleEvent(overlay, 'cancelOverlay');
 
-      // Execute the overlay's default button on enter, unless focus is on an
-      // element that has standard behavior for the enter key.
-      var forbiddenTagNames = /^(A|BUTTON|SELECT|TEXTAREA)$/;
-      if (e.keyIdentifier == 'Enter' &&
-          !forbiddenTagNames.test(document.activeElement.tagName)) {
-        var button = getDefaultButton(overlay);
-        if (button) {
-          button.click();
-          // Executing the default button may result in focus moving to a
-          // different button. Calling preventDefault is necessary to not have
-          // that button execute as well.
-          e.preventDefault();
+        // Execute the overlay's default button on enter, unless focus is on an
+        // element that has standard behavior for the enter key.
+        var forbiddenTagNames = /^(A|BUTTON|SELECT|TEXTAREA)$/;
+        if (e.keyIdentifier == 'Enter' &&
+            !forbiddenTagNames.test(document.activeElement.tagName)) {
+          var button = getDefaultButton(overlay);
+          if (button) {
+            button.click();
+            // Executing the default button may result in focus moving to a
+            // different button. Calling preventDefault is necessary to not have
+            // that button execute as well.
+            e.preventDefault();
+          }
         }
-      }
-    });
+      });
 
-    window.addEventListener('resize', setMaxHeightAllPages);
+      window.addEventListener('resize', setMaxHeightAllPages);
+      globallyInitialized = true;
+    }
 
     setMaxHeightAllPages();
   }
@@ -128,6 +133,3 @@ cr.define('cr.ui.overlay', function() {
     setupOverlay: setupOverlay,
   };
 });
-
-document.addEventListener('DOMContentLoaded',
-                          cr.ui.overlay.globalInitialization);

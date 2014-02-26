@@ -78,16 +78,6 @@
                     { "name": "nodes", "type": "integer" },
                     { "name": "jsEventListeners", "type": "integer" }
                 ]
-            },
-            {
-                "name": "getProcessMemoryDistribution",
-                "parameters": [
-                    { "name": "reportGraph", "type": "boolean", "optional": true, "description": "Whether native memory graph should be reported in addition to aggregated statistics." }
-                ],
-                "returns": [
-                    { "name": "distribution", "$ref": "MemoryBlock", "description": "An object describing all memory allocated by the process"},
-                    { "name": "graphMetaInformation", "type": "object", "optional": true, "description": "An object describing structures of nodes and edges in the graph."}
-                ]
             }
         ],
         "events": [
@@ -354,6 +344,14 @@
                 "hidden": true
             },
             {
+                "name": "setShowScrollBottleneckRects",
+                "description": "Requests that backend shows scroll bottleneck rects",
+                "parameters": [
+                    { "name": "show", "type": "boolean", "description": "True for showing scroll bottleneck rects" }
+                ],
+                "hidden": true
+            },
+            {
                 "name": "getScriptExecutionStatus",
                 "description": "Determines if scripts can be executed in the page.",
                 "returns": [
@@ -411,22 +409,6 @@
                     { "name": "media", "type": "string", "description": "Media type to emulate. Empty string disables the override." }
                 ],
                 "description": "Emulates the given media for CSS media queries.",
-                "hidden": true
-            },
-            {
-                "name": "getCompositingBordersVisible",
-                "description": "Indicates the visibility of compositing borders.",
-                "returns": [
-                    { "name": "result", "type": "boolean", "description": "If true, compositing borders are visible." }
-                ],
-                "hidden": true
-            },
-            {
-                "name": "setCompositingBordersVisible",
-                "description": "Controls the visibility of compositing borders.",
-                "parameters": [
-                    { "name": "visible", "type": "boolean", "description": "True for showing compositing borders." }
-                ],
                 "hidden": true
             },
             {
@@ -754,6 +736,7 @@
                     { "name": "type", "type": "string", "optional": true, "enum": ["log", "dir", "dirxml", "table", "trace", "clear", "startGroup", "startGroupCollapsed", "endGroup", "assert", "timing", "profile", "profileEnd"], "description": "Console message type." },
                     { "name": "url", "type": "string", "optional": true, "description": "URL of the message origin." },
                     { "name": "line", "type": "integer", "optional": true, "description": "Line number in the resource that generated this message." },
+                    { "name": "column", "type": "integer", "optional": true, "description": "Column number in the resource that generated this message." },
                     { "name": "repeatCount", "type": "integer", "optional": true, "description": "Repeat count for repeated messages." },
                     { "name": "parameters", "type": "array", "items": { "$ref": "Runtime.RemoteObject" }, "optional": true, "description": "Message parameters in case of the formatted message." },
                     { "name": "stackTrace", "$ref": "StackTrace", "optional": true, "description": "JavaScript stack trace for assertions and error messages." },
@@ -1047,9 +1030,12 @@
                 "async": true,
                 "parameters": [
                     { "name": "frameId", "$ref": "FrameId", "description": "Frame to load the resource from." },
-                    { "name": "url", "type": "string", "description": "URL of the resource to load." }
+                    { "name": "url", "type": "string", "description": "URL of the resource to load." },
+                    { "name": "requestHeaders", "$ref": "Network.Headers", "optional": true, "description": "Request headers." }
                 ],
                 "returns": [
+                    { "name": "statusCode", "type": "number", "description": "HTTP status code." },
+                    { "name": "responseHeaders", "$ref": "Network.Headers", "description": "Response headers." },
                     { "name": "content", "type": "string", "description": "Resource content." }
                 ],
                 "description": "Loads a resource in the context of a frame on the inspected page without cross origin checks.",
@@ -1450,6 +1436,16 @@
             {
                 "name": "disable",
                 "description": "Disables storage tracking, prevents storage events from being sent to the client."
+            },
+            {
+                "name": "getValue",
+                "parameters": [
+                    { "name": "storageId", "$ref": "StorageId" },
+                    { "name": "key", "type": "string" }
+                ],
+                "returns": [
+                    { "name": "value", "type": "string", "optional": true }
+                ]
             },
             {
                 "name": "getDOMStorageItems",
@@ -2392,7 +2388,8 @@
                     { "name": "text", "type": "string", "description": "Media query text." },
                     { "name": "source", "type": "string", "enum": ["mediaRule", "importRule", "linkedSheet", "inlineSheet"], "description": "Source of the media query: \"mediaRule\" if specified by a @media rule, \"importRule\" if specified by an @import rule, \"linkedSheet\" if specified by a \"media\" attribute in a linked stylesheet's LINK tag, \"inlineSheet\" if specified by a \"media\" attribute in an inline stylesheet's STYLE tag." },
                     { "name": "sourceURL", "type": "string", "optional": true, "description": "URL of the document containing the media query description." },
-                    { "name": "range", "$ref": "SourceRange", "optional": true, "description": "The associated rule (@media or @import) header range in the enclosing stylesheet (if available)." }
+                    { "name": "range", "$ref": "SourceRange", "optional": true, "description": "The associated rule (@media or @import) header range in the enclosing stylesheet (if available)." },
+                    { "name": "parentStyleSheetId", "$ref": "StyleSheetId", "optional": true, "description": "Identifier of the stylesheet containing this object (if exists)." }
                 ],
                 "description": "CSS media query descriptor."
             },
@@ -2403,7 +2400,7 @@
                     { "name": "selector", "type": "string", "description": "CSS selector of the corresponding rule." },
                     { "name": "url", "type": "string", "description": "URL of the resource containing the corresponding rule." },
                     { "name": "lineNumber", "type": "integer", "description": "Selector line number in the resource for the corresponding rule." },
-                    { "name": "time", "type": "number", "description": "Total time this rule handling contributed to the browser running time during profiling (in milliseconds.)" },
+                    { "name": "time", "type": "number", "description": "Total time this rule handling contributed to the browser running time during profiling (in milliseconds)." },
                     { "name": "hitCount", "type": "integer", "description": "Number of times this rule was considered a candidate for matching against DOM elements." },
                     { "name": "matchCount", "type": "integer", "description": "Number of times this rule actually matched a DOM element." }
                 ],
@@ -2413,7 +2410,7 @@
                 "id": "SelectorProfile",
                 "type": "object",
                 "properties": [
-                    { "name": "totalTime", "type": "number", "description": "Total processing time for all selectors in the profile (in milliseconds.)" },
+                    { "name": "totalTime", "type": "number", "description": "Total processing time for all selectors in the profile (in milliseconds)." },
                     { "name": "data", "type": "array", "items": { "$ref": "SelectorProfileEntry" }, "description": "CSS selector profile entries." }
                 ]
             },
@@ -2594,15 +2591,6 @@
                 "description": "Ensures that the given node will have specified pseudo-classes whenever its style is computed by the browser."
             },
             {
-                "name": "startSelectorProfiler"
-            },
-            {
-                "name": "stopSelectorProfiler",
-                "returns": [
-                    { "name": "profile", "$ref": "SelectorProfile" }
-                ]
-            },
-            {
                 "name": "getNamedFlowCollection",
                 "parameters": [
                     { "name": "documentNodeId", "$ref": "DOM.NodeId", "description": "The document node id for which to get the Named Flow Collection." }
@@ -2664,6 +2652,14 @@
                 ],
                 "description": "Fires when a Named Flow's layout may have changed.",
                 "hidden": true
+            },
+            {
+                "name": "regionOversetChanged",
+                "parameters": [
+                    { "name": "namedFlow", "$ref": "NamedFlow", "description": "The Named Flow containing the regions whose regionOverset values changed." }
+                ],
+                "description": "Fires if any of the regionOverset values changed in a Named Flow's region chain.",
+                "hidden": true
             }
         ]
     },
@@ -2720,6 +2716,14 @@
                     { "name": "record", "$ref": "TimelineEvent", "description": "Timeline event record data." }
                 ],
                 "description": "Fired for every instrumentation event while timeline is started."
+            },
+            {
+                "name": "timelineStarted",
+                "parameters": [
+                    { "name": "timestampsBase", "type": "number", "description": "Timestamps base in milliseconds." },
+                    { "name": "startTime", "type": "number", "description": "Timeline recording start wall time in milliseconds." }
+                ],
+                "description": "Sent out on timeline start and provides general information on timeline."
             }
         ]
     },
@@ -2747,8 +2751,8 @@
                 "type": "object",
                 "properties": [
                     { "name": "scriptId", "$ref": "ScriptId", "description": "Script identifier as reported in the <code>Debugger.scriptParsed</code>." },
-                    { "name": "lineNumber", "type": "integer", "description": "Line number in the script." },
-                    { "name": "columnNumber", "type": "integer", "optional": true, "description": "Column number in the script." }
+                    { "name": "lineNumber", "type": "integer", "description": "Line number in the script (0-based)." },
+                    { "name": "columnNumber", "type": "integer", "optional": true, "description": "Column number in the script (0-based)." }
                 ],
                 "description": "Location in the source code."
             },
@@ -2824,7 +2828,8 @@
                     { "name": "url", "type": "string", "optional": true, "description": "URL of the resources to set breakpoint on." },
                     { "name": "urlRegex", "type": "string", "optional": true, "description": "Regex pattern for the URLs of the resources to set breakpoints on. Either <code>url</code> or <code>urlRegex</code> must be specified." },
                     { "name": "columnNumber", "type": "integer", "optional": true, "description": "Offset in the line to set breakpoint at." },
-                    { "name": "condition", "type": "string", "optional": true, "description": "Expression to use as a breakpoint condition. When specified, debugger will only stop on the breakpoint if this expression evaluates to true." }
+                    { "name": "condition", "type": "string", "optional": true, "description": "Expression to use as a breakpoint condition. When specified, debugger will only stop on the breakpoint if this expression evaluates to true." },
+                    { "name": "isAntibreakpoint", "type": "boolean", "optional": true, "hidden": true, "description": "Creates pseudo-breakpoint that prevents debugger from pausing on exception at this location." }
                 ],
                 "returns": [
                     { "name": "breakpointId", "$ref": "BreakpointId", "description": "Id of the created breakpoint for further reference." },
@@ -2854,7 +2859,8 @@
             {
                 "name": "continueToLocation",
                 "parameters": [
-                    { "name": "location", "$ref": "Location", "description": "Location to continue to." }
+                    { "name": "location", "$ref": "Location", "description": "Location to continue to." },
+                    { "name": "interstatementLocation", "type": "boolean", "optional": true, "hidden": true, "description": "Allows breakpoints at the intemediate positions inside statements." }
                 ],
                 "description": "Continues execution until specific location is reached."
             },
@@ -3018,6 +3024,33 @@
                 ],
                 "hidden": true,
                 "description": "Changes value of variable in a callframe or a closure. Either callframe or function must be specified. Object-based scopes are not supported and must be mutated manually."
+            },
+            {
+                "name": "getStepInPositions",
+                "parameters": [
+                    { "name": "callFrameId", "$ref": "CallFrameId", "description": "Id of a call frame where the current statement should be analized" }
+                ],
+                "returns": [
+                    { "name": "stepInPositions", "type": "array", "items": { "$ref": "Location" }, "optional": true, "description": "experimental" }
+                ],
+                "hidden": true,
+                "description": "Lists all positions where step-in is possible for a current statement in a specified call frame"
+            },
+            {
+                "name": "getBacktrace",
+                "returns": [
+                    { "name": "callFrames", "type": "array", "items": { "$ref": "CallFrame"}, "description": "Call stack the virtual machine stopped on." }
+                ],
+                "hidden": true,
+                "description": "Returns call stack including variables changed since VM was paused. VM must be paused."
+            },
+            {
+                "name": "skipStackFrames",
+                "parameters": [
+                    { "name": "script", "optional": true, "type": "string", "description": "Regular expression defining the scripts to ignore while stepping." }
+                ],
+                "hidden": true,
+                "description": "Makes backend skip steps in the sources with names matching given pattern. VM will try leave blacklisted scripts by performing 'step in' several times, finally resorting to 'step out' if unsuccessful."
             }
         ],
         "events": [
@@ -3158,7 +3191,6 @@
                 "type": "object",
                 "description": "Profile header.",
                 "properties": [
-                    { "name": "typeId", "type": "string", "enum": ["CPU", "CSS", "HEAP"], "description": "Profile type name." },
                     { "name": "title", "type": "string", "description": "Profile title." },
                     { "name": "uid", "type": "integer", "description": "Unique identifier of the profile." }
                 ]
@@ -3169,12 +3201,10 @@
                 "description": "CPU Profile node. Holds callsite information, execution statistics and child nodes.",
                 "properties": [
                     { "name": "functionName", "type": "string", "description": "Function name." },
+                    { "name": "scriptId", "$ref": "Debugger.ScriptId", "description": "Script identifier." },
                     { "name": "url", "type": "string", "description": "URL." },
                     { "name": "lineNumber", "type": "integer", "description": "Line number." },
-                    { "name": "totalTime", "type": "number", "description": "Total execution time." },
-                    { "name": "selfTime", "type": "number", "description": "Self time." },
-                    { "name": "numberOfCalls", "type": "integer", "description": "Number of calls." },
-                    { "name": "visible", "type": "boolean", "description": "Visibility." },
+                    { "name": "hitCount", "type": "integer", "description": "Number of samples where this node was on top of the call stack." },
                     { "name": "callUID", "type": "number", "description": "Call UID." },
                     { "name": "children", "type": "array", "items": { "$ref": "CPUProfileNode" }, "description": "Child nodes." },
                     { "name": "id", "optional": true, "type": "integer", "description": "Unique id of the node." }
@@ -3185,8 +3215,10 @@
                 "type": "object",
                 "description": "Profile.",
                 "properties": [
-                    { "name": "head", "$ref": "CPUProfileNode", "optional": true },
-                    { "name": "idleTime", "type": "number", "optional": true },
+                    { "name": "head", "$ref": "CPUProfileNode" },
+                    { "name": "idleTime", "type": "number", "description": "Idle time in seconds." },
+                    { "name": "startTime", "type": "number", "description": "Profiling start time in seconds." },
+                    { "name": "endTime", "type": "number", "description": "Profiling end time in seconds." },
                     { "name": "samples", "optional": true, "type": "array", "items": { "type": "integer" }, "description": "Ids of samples top nodes." }
                 ]
             },
@@ -3461,19 +3493,23 @@
                 "description": "Unique resource identifier."
             },
             {
-                "id": "ResourceInfo",
+                "id": "ResourceStateDescriptor",
                 "type": "object",
+                "description": "Resource state descriptor.",
                 "properties": [
-                    { "name": "id", "$ref": "ResourceId" },
-                    { "name": "description", "type": "string" }
+                    { "name": "name", "type": "string", "description": "State name." },
+                    { "name": "value", "$ref": "CallArgument", "optional": true, "description": "The value associated with the particular state." },
+                    { "name": "values", "type": "array", "items": { "$ref": "ResourceStateDescriptor" }, "optional": true, "description": "Array of values associated with the particular state. Either <code>value</code> or <code>values</code> will be specified." }
                 ]
             },
             {
                 "id": "ResourceState",
                 "type": "object",
+                "description": "Resource state.",
                 "properties": [
                     { "name": "id", "$ref": "ResourceId" },
                     { "name": "traceLogId", "$ref": "TraceLogId" },
+                    { "name": "descriptors", "type": "array", "items": { "$ref": "ResourceStateDescriptor" }, "optional": true, "description": "Describes current <code>Resource</code> state." },
                     { "name": "imageURL", "type": "string", "optional": true, "description": "Screenshot image data URL." }
                 ]
             },
@@ -3515,6 +3551,7 @@
                 "properties": [
                     { "name": "id", "$ref": "TraceLogId" },
                     { "name": "calls", "type": "array", "items": { "$ref": "Call" } },
+                    { "name": "contexts", "type": "array", "items": { "$ref": "CallArgument" } },
                     { "name": "startOffset", "type": "integer" },
                     { "name": "alive", "type": "boolean" },
                     { "name": "totalAvailableCalls", "type": "number" }
@@ -3584,19 +3621,11 @@
                 "name": "replayTraceLog",
                 "parameters": [
                     { "name": "traceLogId", "$ref": "TraceLogId" },
-                    { "name": "stepNo", "type": "integer" }
+                    { "name": "stepNo", "type": "integer", "description": "Last call index in the trace log to replay (zero based)." }
                 ],
                 "returns": [
-                    { "name": "resourceState", "$ref": "ResourceState" }
-                ]
-            },
-            {
-                "name": "getResourceInfo",
-                "parameters": [
-                    { "name": "resourceId", "$ref": "ResourceId" }
-                ],
-                "returns": [
-                    { "name": "resourceInfo", "$ref": "ResourceInfo" }
+                    { "name": "resourceState", "$ref": "ResourceState" },
+                    { "name": "replayTime", "type": "number", "description": "Replay time (in milliseconds)." }
                 ]
             },
             {
@@ -3608,6 +3637,20 @@
                 "returns": [
                     { "name": "resourceState", "$ref": "ResourceState" }
                 ]
+            },
+            {
+                "name": "evaluateTraceLogCallArgument",
+                "parameters": [
+                    { "name": "traceLogId", "$ref": "TraceLogId" },
+                    { "name": "callIndex", "type": "integer", "description": "Index of the call to evaluate on (zero based)." },
+                    { "name": "argumentIndex", "type": "integer", "description": "Index of the argument to evaluate (zero based). Provide <code>-1</code> to evaluate call result." },
+                    { "name": "objectGroup", "type": "string", "optional": true, "description": "String object group name to put result into (allows rapid releasing resulting object handles using <code>Runtime.releaseObjectGroup</code>)." }
+                ],
+                "returns": [
+                    { "name": "result", "$ref": "Runtime.RemoteObject", "optional": true, "description": "Object wrapper for the evaluation result." },
+                    { "name": "resourceState", "$ref": "ResourceState", "optional": true, "description": "State of the <code>Resource</code> object." }
+                ],
+                "description": "Evaluates a given trace call argument or its result."
             }
         ],
         "events": [
@@ -3630,7 +3673,23 @@
     },
     {
         "domain": "Input",
-        "types": [],
+        "types": [
+            {
+                "id": "TouchPoint",
+                "type": "object",
+                "hidden": true,
+                "properties": [
+                    { "name": "state", "type": "string", "enum": ["touchPressed", "touchReleased", "touchMoved", "touchStationary", "touchCancelled"], "description": "State of the touch point." },
+                    { "name": "x", "type": "integer", "description": "X coordinate of the event relative to the main frame's viewport."},
+                    { "name": "y", "type": "integer", "description": "Y coordinate of the event relative to the main frame's viewport. 0 refers to the top of the viewport and Y increases as it proceeds towards the bottom of the viewport."},
+                    { "name": "radiusX", "type": "integer", "optional": true, "description": "X radius of the touch area (default: 1)."},
+                    { "name": "radiusY", "type": "integer", "optional": true, "description": "Y radius of the touch area (default: 1)."},
+                    { "name": "rotationAngle", "type": "number", "optional": true, "description": "Rotation angle (default: 0.0)."},
+                    { "name": "force", "type": "number", "optional": true, "description": "Force (default: 1.0)."},
+                    { "name": "id", "type": "number", "optional": true, "description": "Identifier used to track touch sources between events, must be unique within an event."}
+                ]
+            }
+        ],
         "commands": [
             {
                 "name": "dispatchKeyEvent",
@@ -3662,6 +3721,17 @@
                     { "name": "clickCount", "type": "integer", "optional": true, "description": "Number of times the mouse button was clicked (default: 0)." }
                 ],
                 "description": "Dispatches a mouse event to the page."
+            },
+            {
+                "name": "dispatchTouchEvent",
+                "hidden": true,
+                "parameters": [
+                    { "name": "type", "type": "string", "enum": ["touchStart", "touchEnd", "touchMove"], "description": "Type of the touch event." },
+                    { "name": "touchPoints", "type": "array", "items": { "$ref": "TouchPoint" }, "description": "Touch points." },
+                    { "name": "modifiers", "type": "integer", "optional": true, "description": "Bit field representing pressed modifier keys. Alt=1, Ctrl=2, Meta/Command=4, Shift=8 (default: 0)." },
+                    { "name": "timestamp", "type": "number", "optional": true, "description": "Time at which the event occurred. Measured in UTC time in seconds since January 1, 1970 (default: current time)." }
+                ],
+                "description": "Dispatches a touch event to the page."
             }
         ],
         "events": []
@@ -3676,68 +3746,18 @@
                 "description": "Unique RenderLayer identifier."
             },
             {
-                "id": "PseudoElementId",
-                "type": "string",
-                "description": "Unique PseudoElement identifier."
-            },
-            {
-                "id": "IntRect",
-                "type": "object",
-                "description": "A rectangle.",
-                "properties": [
-                    { "name": "x", "type": "integer", "description": "The x position." },
-                    { "name": "y", "type": "integer", "description": "The y position." },
-                    { "name": "width", "type": "integer", "description": "The width metric." },
-                    { "name": "height", "type": "integer", "description": "The height metric." }
-                ]
-            },
-            {
                 "id": "Layer",
                 "type": "object",
                 "description": "Information about a compositing layer.",
                 "properties": [
                     { "name": "layerId", "$ref": "LayerId", "description": "The unique id for this layer." },
+                    { "name": "parentLayerId", "$ref": "LayerId", "optional": true, "description": "The id of parent (not present for root)." },
                     { "name": "nodeId", "$ref": "DOM.NodeId", "description": "The id for the node associated with this layer." },
-                    { "name": "bounds", "$ref": "IntRect", "description": "Bounds of the layer in absolute page coordinates." },
-                    { "name": "paintCount", "type": "integer", "description": "Indicates how many time this layer has painted." },
-                    { "name": "memory", "type": "integer", "description": "Estimated memory used by this layer." },
-                    { "name": "compositedBounds", "$ref": "IntRect", "description": "The bounds of the composited layer." },
-                    { "name": "isInShadowTree", "type": "boolean", "optional": true, "description": "Indicates whether this layer is associated with an element hosted in a shadow tree." },
-                    { "name": "isReflection", "type": "boolean", "optional": true, "description": "Indicates whether this layer was used to provide a reflection for the element." },
-                    { "name": "isGeneratedContent", "type": "boolean", "optional": true, "description": "Indicates whether the layer is attached to a pseudo element that is CSS generated content." },
-                    { "name": "pseudoElementId", "$ref": "PseudoElementId", "optional": true, "description": "The id for the pseudo element associated with this layer." },
-                    { "name": "pseudoClass", "type": "string", "optional": true, "description": "The name of the CSS pseudo-class that prompted the layer's content to be generated." }
-                ]
-            },
-            {
-                "id": "CompositingReasons",
-                "type": "object",
-                "description": "An object containing the reasons why the layer was composited as properties.",
-                "properties": [
-                    { "name": "transform3D", "type": "boolean", "optional": true, "description": "Composition due to association with an element with a CSS 3D transform." },
-                    { "name": "video", "type": "boolean", "optional": true, "description": "Composition due to association with a <video> element." },
-                    { "name": "canvas", "type": "boolean", "optional": true, "description": "Composition due to the element being a <canvas> element." },
-                    { "name": "plugin", "type": "boolean", "optional": true, "description": "Composition due to association with a plugin." },
-                    { "name": "iFrame", "type": "boolean", "optional": true, "description": "Composition due to association with an <iframe> element." },
-                    { "name": "backfaceVisibilityHidden", "type": "boolean", "optional": true, "description": "Composition due to association with an element with a \"backface-visibility: hidden\" style." },
-                    { "name": "clipsCompositingDescendants", "type": "boolean", "optional": true, "description": "Composition due to association with an element clipping compositing descendants." },
-                    { "name": "animation", "type": "boolean", "optional": true, "description": "Composition due to association with an animated element." },
-                    { "name": "filters", "type": "boolean", "optional": true, "description": "Composition due to association with an element with CSS filters applied." },
-                    { "name": "positionFixed", "type": "boolean", "optional": true, "description": "Composition due to association with an element with a \"position: fixed\" style." },
-                    { "name": "positionSticky", "type": "boolean", "optional": true, "description": "Composition due to association with an element with a \"position: sticky\" style." },
-                    { "name": "overflowScrollingTouch", "type": "boolean", "optional": true, "description": "Composition due to association with an element with a \"overflow-scrolling: touch\" style." },
-                    { "name": "stacking", "type": "boolean", "optional": true, "description": "Composition due to association with an element establishing a stacking context." },
-                    { "name": "overlap", "type": "boolean", "optional": true, "description": "Composition due to association with an element overlapping other composited elements." },
-                    { "name": "negativeZIndexChildren", "type": "boolean", "optional": true, "description": "Composition due to association with an element with descendants that have a negative z-index." },
-                    { "name": "transformWithCompositedDescendants", "type": "boolean", "optional": true, "description": "Composition due to association with an element with composited descendants." },
-                    { "name": "opacityWithCompositedDescendants", "type": "boolean", "optional": true, "description": "Composition due to association with an element with opacity applied and composited descendants." },
-                    { "name": "maskWithCompositedDescendants", "type": "boolean", "optional": true, "description": "Composition due to association with a masked element and composited descendants." },
-                    { "name": "reflectionWithCompositedDescendants", "type": "boolean", "optional": true, "description": "Composition due to association with an element with a reflection and composited descendants." },
-                    { "name": "filterWithCompositedDescendants", "type": "boolean", "optional": true, "description": "Composition due to association with an element with CSS filters applied and composited descendants." },
-                    { "name": "blendingWithCompositedDescendants", "type": "boolean", "optional": true, "description": "Composition due to association with an element with CSS blending applied and composited descendants." },
-                    { "name": "perspective", "type": "boolean", "optional": true, "description": "Composition due to association with an element with perspective applied." },
-                    { "name": "preserve3D", "type": "boolean", "optional": true, "description": "Composition due to association with an element with a \"transform-style: preserve-3d\" style." },
-                    { "name": "root", "type": "boolean", "optional": true, "description": "Composition due to association with the root element." }
+                    { "name": "offsetX", "type": "number", "description": "Offset from parent layer, X coordinate." },
+                    { "name": "offsetY", "type": "number", "description": "Offset from parent layer, X coordinate." },
+                    { "name": "width", "type": "number", "description": "Layer width." },
+                    { "name": "height", "type": "number", "description": "Layer height." },
+                    { "name": "paintCount", "type": "integer", "description": "Indicates how many time this layer has painted." }
                 ]
             }
         ],
@@ -3751,28 +3771,47 @@
                 "description": "Disables compositing tree inspection."
             },
             {
-                "name": "layersForNode",
+                "name": "getLayers",
                 "parameters": [
-                    { "name": "nodeId", "$ref": "DOM.NodeId", "description": "Root of the subtree for which we want to gather layers." }                ],
+                    { "name": "nodeId", "optional": true, "$ref": "DOM.NodeId", "description": "Root of the subtree for which we want to gather layers (return entire tree if not specified)" }
+                ],
                 "description": "Returns the layer tree structure of the current page.",
                 "returns": [
                     { "name": "layers", "type": "array", "items": { "$ref": "Layer" }, "description": "Child layers." }
-                ]
-            },
-            {
-                "name": "reasonsForCompositingLayer",
-                "parameters": [
-                    { "name": "layerId", "$ref": "LayerId", "description": "The id of the layer for which we want to get the reasons it was composited." }
-                ],
-                "description": "Provides the reasons why the given layer was composited.",
-                "returns": [
-                    { "name": "compositingReasons", "$ref": "CompositingReasons", "description": "An object containing the reasons why the layer was composited as properties." }
                 ]
             }
         ],
         "events": [
             {
                 "name": "layerTreeDidChange"
+            }
+        ]
+    },
+    {
+        "domain": "Tracing",
+        "hidden": true,
+        "commands": [
+            {
+                "name": "start",
+                "description": "Strart trace events collection.",
+                "parameters": [
+                    { "name": "categories", "type": "string", "description": "Category/tag filter" }
+                ]
+            },
+            {
+                "name": "end",
+                "description": "Stop trace events collection."
+            }
+        ],
+        "events": [
+            {
+                "name": "dataCollected",
+                "parameters": [
+                    { "name": "value", "type": "array", "items": { "type": "object" } }
+                ]
+            },
+            {
+                "name": "tracingComplete"
             }
         ]
     }]

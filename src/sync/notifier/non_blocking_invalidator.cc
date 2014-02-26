@@ -169,7 +169,7 @@ NonBlockingInvalidator::~NonBlockingInvalidator() {
           FROM_HERE,
           base::Bind(&NonBlockingInvalidator::Core::Teardown,
                      core_.get()))) {
-    NOTREACHED();
+    DVLOG(1) << "Network thread stopped before invalidator is destroyed.";
   }
 }
 
@@ -225,13 +225,6 @@ void NonBlockingInvalidator::UpdateCredentials(const std::string& email,
                      core_.get(), email, token))) {
     NOTREACHED();
   }
-}
-
-void NonBlockingInvalidator::SendInvalidation(
-    const ObjectIdInvalidationMap& invalidation_map) {
-  DCHECK(parent_task_runner_->BelongsToCurrentThread());
-  // InvalidationNotifier doesn't implement SendInvalidation(), so no
-  // need to forward on the call.
 }
 
 void NonBlockingInvalidator::OnInvalidatorStateChange(InvalidatorState state) {

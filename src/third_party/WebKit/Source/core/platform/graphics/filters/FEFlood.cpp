@@ -31,6 +31,7 @@
 #include "core/platform/graphics/filters/Filter.h"
 #include "core/platform/text/TextStream.h"
 #include "core/rendering/RenderTreeAsText.h"
+#include "third_party/skia/include/core/SkDevice.h"
 
 namespace {
 
@@ -124,10 +125,10 @@ void FEFlood::applySoftware()
     resultImage->context()->fillRect(FloatRect(FloatPoint(), absolutePaintRect().size()), color);
 }
 
-SkImageFilter* FEFlood::createImageFilter(SkiaImageFilterBuilder* builder)
+PassRefPtr<SkImageFilter> FEFlood::createImageFilter(SkiaImageFilterBuilder* builder)
 {
     Color color = colorWithOverrideAlpha(floodColor().rgb(), floodOpacity());
-    return new FloodImageFilter(color.rgb());
+    return adoptRef(new FloodImageFilter(color.rgb()));
 }
 
 TextStream& FEFlood::externalRepresentation(TextStream& ts, int indent) const

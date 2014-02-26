@@ -29,7 +29,6 @@
 #include "config.h"
 #include "modules/webdatabase/SQLTransactionBackend.h"
 
-#include "core/dom/ExceptionCode.h"
 #include "core/platform/Logging.h"
 #include "core/platform/sql/SQLValue.h"
 #include "core/platform/sql/SQLiteTransaction.h"
@@ -228,7 +227,7 @@
 // to wait for further action.
 
 
-// The Life-Cycle of a SQLTransaction i.e. Who's keeping the SQLTransaction alive? 
+// The Life-Cycle of a SQLTransaction i.e. Who's keeping the SQLTransaction alive?
 // ==============================================================================
 // The RefPtr chain goes something like this:
 //
@@ -305,7 +304,7 @@
 //     - DatabaseBackend::close() will iterate
 //       DatabaseBackend::m_transactionQueue and call
 //       notifyDatabaseThreadIsShuttingDown() on each transaction there.
-//        
+//
 //     Phase 2. After scheduling, before state AcquireLock
 //
 //     - If the interruption occures before the DatabaseTransactionTask is

@@ -39,8 +39,6 @@ class IDBDatabase;
 class IDBDatabaseCallbacks;
 class ScriptExecutionContext;
 
-typedef int ExceptionCode;
-
 // This class is shared by IDBFactory (async) and IDBFactorySync (sync).
 // This is implemented by IDBFactoryBackendImpl and optionally others (in order to proxy
 // calls across process barriers). All calls to these classes should be non-blocking and
@@ -50,9 +48,9 @@ public:
     static PassRefPtr<IDBFactoryBackendInterface> create();
     virtual ~IDBFactoryBackendInterface() { }
 
-    virtual void getDatabaseNames(PassRefPtr<IDBCallbacks>, const String& databaseIdentifier, ScriptExecutionContext*, const String& dataDir) = 0;
-    virtual void open(const String& name, int64_t version, int64_t transactionId, PassRefPtr<IDBCallbacks>, PassRefPtr<IDBDatabaseCallbacks>, const String& databaseIdentifier, ScriptExecutionContext*, const String& dataDir) = 0;
-    virtual void deleteDatabase(const String& name, PassRefPtr<IDBCallbacks>, const String& databaseIdentifier, ScriptExecutionContext*, const String& dataDir) = 0;
+    virtual void getDatabaseNames(PassRefPtr<IDBCallbacks>, const String& databaseIdentifier, ScriptExecutionContext*) = 0;
+    virtual void open(const String& name, int64_t version, int64_t transactionId, PassRefPtr<IDBCallbacks>, PassRefPtr<IDBDatabaseCallbacks>, const String& databaseIdentifier, ScriptExecutionContext*) = 0;
+    virtual void deleteDatabase(const String& name, PassRefPtr<IDBCallbacks>, const String& databaseIdentifier, ScriptExecutionContext*) = 0;
 };
 
 } // namespace WebCore

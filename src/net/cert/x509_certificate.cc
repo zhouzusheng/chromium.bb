@@ -21,11 +21,11 @@
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/lock.h"
-#include "base/time.h"
-#include "googleurl/src/url_canon.h"
+#include "base/time/time.h"
 #include "net/base/net_util.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/cert/pem_tokenizer.h"
+#include "url/url_canon.h"
 
 namespace net {
 
@@ -218,9 +218,10 @@ void SplitOnChar(const base::StringPiece& src,
 
 }  // namespace
 
-bool X509Certificate::LessThan::operator()(X509Certificate* lhs,
-                                           X509Certificate* rhs) const {
-  if (lhs == rhs)
+bool X509Certificate::LessThan::operator()(
+    const scoped_refptr<X509Certificate>& lhs,
+    const scoped_refptr<X509Certificate>& rhs) const {
+  if (lhs.get() == rhs.get())
     return false;
 
   int rv = memcmp(lhs->fingerprint_.data, rhs->fingerprint_.data,
@@ -655,10 +656,9 @@ bool X509Certificate::VerifyNameMatch(const std::string& hostname) const {
 }
 
 // static
-bool X509Certificate::GetPEMEncoded(OSCertHandle cert_handle,
-                                    std::string* pem_encoded) {
-  std::string der_encoded;
-  if (!GetDEREncoded(cert_handle, &der_encoded) || der_encoded.empty())
+bool X509Certificate::GetPEMEncodedFromDER(const std::string& der_encoded,
+                                           std::string* pem_encoded) {
+  if (der_encoded.empty())
     return false;
   std::string b64_encoded;
   if (!base::Base64Encode(der_encoded, &b64_encoded) || b64_encoded.empty())
@@ -676,6 +676,15 @@ bool X509Certificate::GetPEMEncoded(OSCertHandle cert_handle,
   }
   pem_encoded->append("-----END CERTIFICATE-----\n");
   return true;
+}
+
+// static
+bool X509Certificate::GetPEMEncoded(OSCertHandle cert_handle,
+                                    std::string* pem_encoded) {
+  std::string der_encoded;
+  if (!GetDEREncoded(cert_handle, &der_encoded))
+    return false;
+  return GetPEMEncodedFromDER(der_encoded, pem_encoded);
 }
 
 bool X509Certificate::GetPEMEncodedChain(

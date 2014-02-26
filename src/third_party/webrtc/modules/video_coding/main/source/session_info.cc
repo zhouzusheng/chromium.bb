@@ -8,18 +8,25 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "modules/video_coding/main/source/session_info.h"
+#include "webrtc/modules/video_coding/main/source/session_info.h"
 
-#include "modules/video_coding/main/source/packet.h"
+#include "webrtc/modules/video_coding/main/source/packet.h"
 
 namespace webrtc {
+
+// Used in determining whether a frame is decodable.
+enum {kRttThreshold = 100};  // Not decodable if Rtt is lower than this.
+
+// Do not decode frames if the number of packets is between these two
+// thresholds.
+static const float kLowPacketPercentageThreshold = 0.2f;
+static const float kHighPacketPercentageThreshold = 0.8f;
 
 VCMSessionInfo::VCMSessionInfo()
     : session_nack_(false),
       complete_(false),
       decodable_(false),
       frame_type_(kVideoFrameDelta),
-      previous_frame_loss_(false),
       packets_(),
       empty_seq_num_low_(-1),
       empty_seq_num_high_(-1),
@@ -89,7 +96,6 @@ void VCMSessionInfo::Reset() {
   complete_ = false;
   decodable_ = false;
   frame_type_ = kVideoFrameDelta;
-  previous_frame_loss_ = false;
   packets_.clear();
   empty_seq_num_low_ = -1;
   empty_seq_num_high_ = -1;
@@ -101,6 +107,10 @@ int VCMSessionInfo::SessionLength() const {
   for (PacketIteratorConst it = packets_.begin(); it != packets_.end(); ++it)
     length += (*it).sizeBytes;
   return length;
+}
+
+int VCMSessionInfo::NumPackets() const {
+  return packets_.size();
 }
 
 int VCMSessionInfo::InsertBuffer(uint8_t* frame_buffer,
@@ -171,11 +181,23 @@ void VCMSessionInfo::UpdateCompleteSession() {
   }
 }
 
-void VCMSessionInfo::UpdateDecodableSession(int rttMs) {
+void VCMSessionInfo::UpdateDecodableSession(const FrameData& frame_data) {
   // Irrelevant if session is already complete or decodable
   if (complete_ || decodable_)
     return;
-  // First iteration - do nothing
+
+  // TODO(agalusza): Account for bursty loss.
+  // TODO(agalusza): Refine these values to better approximate optimal ones.
+  if (frame_data.rtt_ms < kRttThreshold
+      || frame_type_ == kVideoFrameKey
+      || !HaveFirstPacket()
+      || (NumPackets() <= kHighPacketPercentageThreshold
+                          * frame_data.rolling_average_packets_per_frame
+          && NumPackets() > kLowPacketPercentageThreshold
+                            * frame_data.rolling_average_packets_per_frame))
+    return;
+
+  decodable_ = true;
 }
 
 bool VCMSessionInfo::complete() const {
@@ -370,8 +392,8 @@ VCMSessionInfo::session_nack() const {
 
 int VCMSessionInfo::InsertPacket(const VCMPacket& packet,
                                  uint8_t* frame_buffer,
-                                 bool enable_decodable_state,
-                                 int rtt_ms) {
+                                 VCMDecodeErrorMode decode_error_mode,
+                                 const FrameData& frame_data) {
   // Check if this is first packet (only valid for some codecs)
   if (packet.isFirstPacket) {
     // The first packet in a frame signals the frame type.
@@ -407,8 +429,11 @@ int VCMSessionInfo::InsertPacket(const VCMPacket& packet,
 
   int returnLength = InsertBuffer(frame_buffer, packet_list_it);
   UpdateCompleteSession();
-  if (enable_decodable_state)
-    UpdateDecodableSession(rtt_ms);
+  if (decode_error_mode == kWithErrors)
+    decodable_ = true;
+  else if (decode_error_mode == kSelectiveErrors)
+    UpdateDecodableSession(frame_data);
+
   return returnLength;
 }
 

@@ -20,16 +20,18 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
 #include "core/editing/SplitTextNodeCommand.h"
 
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/Text.h"
-#include <wtf/Assertions.h>
+#include "wtf/Assertions.h"
 
 namespace WebCore {
 
@@ -94,11 +96,11 @@ void SplitTextNodeCommand::doReapply()
 
 void SplitTextNodeCommand::insertText1AndTrimText2()
 {
-    ExceptionCode ec = 0;
-    m_text2->parentNode()->insertBefore(m_text1.get(), m_text2.get(), ec);
-    if (ec)
+    TrackExceptionState es;
+    m_text2->parentNode()->insertBefore(m_text1.get(), m_text2.get(), es);
+    if (es.hadException())
         return;
-    m_text2->deleteData(0, m_offset, ec);
+    m_text2->deleteData(0, m_offset, es);
 }
 
 #ifndef NDEBUG
@@ -108,5 +110,5 @@ void SplitTextNodeCommand::getNodesInCommand(HashSet<Node*>& nodes)
     addNodeAndDescendants(m_text2.get(), nodes);
 }
 #endif
-    
+
 } // namespace WebCore

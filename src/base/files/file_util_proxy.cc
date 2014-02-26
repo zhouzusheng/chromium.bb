@@ -107,7 +107,7 @@ class GetFileInfoHelper {
       : error_(PLATFORM_FILE_OK) {}
 
   void RunWorkForFilePath(const FilePath& file_path) {
-    if (!file_util::PathExists(file_path)) {
+    if (!PathExists(file_path)) {
       error_ = PLATFORM_FILE_ERROR_NOT_FOUND;
       return;
     }
@@ -187,13 +187,12 @@ class WriteHelper {
   DISALLOW_COPY_AND_ASSIGN(WriteHelper);
 };
 
-
 PlatformFileError CreateOrOpenAdapter(
     const FilePath& file_path, int file_flags,
     PlatformFile* file_handle, bool* created) {
   DCHECK(file_handle);
   DCHECK(created);
-  if (!file_util::DirectoryExists(file_path.DirName())) {
+  if (!DirectoryExists(file_path.DirName())) {
     // If its parent does not exist, should return NOT_FOUND error.
     return PLATFORM_FILE_ERROR_NOT_FOUND;
   }
@@ -210,10 +209,10 @@ PlatformFileError CloseAdapter(PlatformFile file_handle) {
 }
 
 PlatformFileError DeleteAdapter(const FilePath& file_path, bool recursive) {
-  if (!file_util::PathExists(file_path)) {
+  if (!PathExists(file_path)) {
     return PLATFORM_FILE_ERROR_NOT_FOUND;
   }
-  if (!file_util::Delete(file_path, recursive)) {
+  if (!base::DeleteFile(file_path, recursive)) {
     if (!recursive && !file_util::IsDirectoryEmpty(file_path)) {
       return PLATFORM_FILE_ERROR_NOT_EMPTY;
     }
@@ -288,24 +287,13 @@ bool FileUtilProxy::GetFileInfoFromPlatformFile(
 }
 
 // static
-bool FileUtilProxy::Delete(TaskRunner* task_runner,
-                           const FilePath& file_path,
-                           bool recursive,
-                           const StatusCallback& callback) {
+bool FileUtilProxy::DeleteFile(TaskRunner* task_runner,
+                               const FilePath& file_path,
+                               bool recursive,
+                               const StatusCallback& callback) {
   return base::PostTaskAndReplyWithResult(
       task_runner, FROM_HERE,
       Bind(&DeleteAdapter, file_path, recursive),
-      callback);
-}
-
-// static
-bool FileUtilProxy::RecursiveDelete(
-    TaskRunner* task_runner,
-    const FilePath& file_path,
-    const StatusCallback& callback) {
-  return base::PostTaskAndReplyWithResult(
-      task_runner, FROM_HERE,
-      Bind(&DeleteAdapter, file_path, true /* recursive */),
       callback);
 }
 

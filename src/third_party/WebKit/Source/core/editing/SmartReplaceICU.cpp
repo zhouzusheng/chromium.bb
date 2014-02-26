@@ -7,13 +7,13 @@
  * are met:
  *
  * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer. 
+ *     notice, this list of conditions and the following disclaimer.
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution. 
+ *     documentation and/or other materials provided with the distribution.
  * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission. 
+ *     from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -31,31 +31,30 @@
 #include "core/editing/SmartReplace.h"
 
 #if !USE(CF)
+#include "wtf/Assertions.h"
+#include "wtf/text/WTFString.h"
 #include <unicode/uset.h>
-#include <wtf/Assertions.h>
-#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
 static void addAllCodePoints(USet* smartSet, const String& string)
 {
-    const UChar* characters = string.characters();
     for (size_t i = 0; i < string.length(); i++)
-        uset_add(smartSet, characters[i]);
+        uset_add(smartSet, string[i]);
 }
 
 // This is mostly a port of the code in WebCore/editing/SmartReplaceCF.cpp
 // except we use icu in place of CoreFoundations character classes.
 static USet* getSmartSet(bool isPreviousCharacter)
 {
-    static USet* preSmartSet = NULL; 
+    static USet* preSmartSet = NULL;
     static USet* postSmartSet = NULL;
     USet* smartSet = isPreviousCharacter ? preSmartSet : postSmartSet;
     if (!smartSet) {
         // Whitespace and newline (kCFCharacterSetWhitespaceAndNewline)
         UErrorCode ec = U_ZERO_ERROR;
-        String whitespaceAndNewline = ASCIILiteral("[[:WSpace:] [\\u000A\\u000B\\u000C\\u000D\\u0085]]");
-        smartSet = uset_openPattern(whitespaceAndNewline.characters(), whitespaceAndNewline.length(), &ec);
+        String whitespaceAndNewline("[[:WSpace:] [\\u000A\\u000B\\u000C\\u000D\\u0085]]");
+        smartSet = uset_openPattern(whitespaceAndNewline.charactersWithNullTermination().data(), whitespaceAndNewline.length(), &ec);
         ASSERT(U_SUCCESS(ec));
 
         // CJK ranges
@@ -71,15 +70,15 @@ static USet* getSmartSet(bool isPreviousCharacter)
         uset_addRange(smartSet, 0x2F800, 0x2F800 + 0x021E); // CJK Compatibility Ideographs (0x2F800 - 0x2FA1D)
 
         if (isPreviousCharacter) {
-            addAllCodePoints(smartSet, ASCIILiteral("([\"\'#$/-`{"));
+            addAllCodePoints(smartSet, "([\"\'#$/-`{");
             preSmartSet = smartSet;
         } else {
-            addAllCodePoints(smartSet, ASCIILiteral(")].,;:?\'!\"%*-/}"));
+            addAllCodePoints(smartSet, ")].,;:?\'!\"%*-/}");
 
             // Punctuation (kCFCharacterSetPunctuation)
             UErrorCode ec = U_ZERO_ERROR;
-            String punctuationClass = ASCIILiteral("[:P:]");
-            USet* icuPunct = uset_openPattern(punctuationClass.characters(), punctuationClass.length(), &ec);
+            String punctuationClass("[:P:]");
+            USet* icuPunct = uset_openPattern(punctuationClass.charactersWithNullTermination().data(), punctuationClass.length(), &ec);
             ASSERT(U_SUCCESS(ec));
             uset_addAll(smartSet, icuPunct);
             uset_close(icuPunct);

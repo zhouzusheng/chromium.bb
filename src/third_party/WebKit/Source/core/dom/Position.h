@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef Position_h
@@ -30,9 +30,9 @@
 #include "core/editing/EditingBoundary.h"
 #include "core/editing/TextAffinity.h"
 #include "core/platform/text/TextDirection.h"
-#include <wtf/Assertions.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefPtr.h>
+#include "wtf/Assertions.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
@@ -164,7 +164,7 @@ public:
     // Returns true if the visually equivalent positions around have different editability
     bool atEditingBoundary() const;
     Node* parentEditingBoundary() const;
-    
+
     bool atStartOfTree() const;
     bool atEndOfTree() const;
 
@@ -172,11 +172,11 @@ public:
     // These aren't really basic "position" operations. More high level editing helper functions.
     Position leadingWhitespacePosition(EAffinity, bool considerNonCollapsibleWhitespace = false) const;
     Position trailingWhitespacePosition(EAffinity, bool considerNonCollapsibleWhitespace = false) const;
-    
+
     // These return useful visually equivalent positions.
     Position upstream(EditingBoundaryCrossingRule = CannotCrossEditingBoundary) const;
     Position downstream(EditingBoundaryCrossingRule = CannotCrossEditingBoundary) const;
-    
+
     bool isCandidate() const;
     bool inRenderedText() const;
     bool isRenderedCharacter() const;
@@ -189,12 +189,11 @@ public:
 
     static bool hasRenderedNonAnonymousDescendantsWithHeight(RenderObject*);
     static bool nodeIsUserSelectNone(Node*);
-#if ENABLE(USERSELECT_ALL)
     static bool nodeIsUserSelectAll(const Node*);
     static Node* rootUserSelectAllForNode(Node*);
-#endif
+
     static ContainerNode* findParent(const Node*);
-    
+
     void debugPosition(const char* msg = "") const;
 
 #ifndef NDEBUG
@@ -202,13 +201,13 @@ public:
     void showAnchorTypeAndOffset() const;
     void showTreeForThis() const;
 #endif
-    
+
 private:
     int offsetForPositionAfterAnchor() const;
 
     int renderedOffset() const;
 
-    
+
     Position previousCharacterPosition(EAffinity) const;
     Position nextCharacterPosition(EAffinity) const;
 
@@ -300,7 +299,7 @@ inline int minOffsetForNode(Node* anchorNode, int offset)
     int newOffset = 0;
     for (Node* node = anchorNode->firstChild(); node && newOffset < offset; node = node->nextSibling())
         newOffset++;
-    
+
     return newOffset;
 }
 
@@ -312,10 +311,31 @@ inline bool offsetIsBeforeLastNodeOffset(int offset, Node* anchorNode)
     int currentOffset = 0;
     for (Node* node = anchorNode->firstChild(); node && currentOffset < offset; node = node->nextSibling())
         currentOffset++;
-    
-    
+
+
     return offset < currentOffset;
 }
+
+class PositionWithAffinity {
+public:
+    PositionWithAffinity()
+        : m_affinity(DOWNSTREAM)
+    {
+    }
+
+    PositionWithAffinity(const Position& position, EAffinity affinity = DOWNSTREAM)
+        : m_position(position)
+        , m_affinity(affinity)
+    {
+    }
+
+    EAffinity affinity() const { return m_affinity; }
+    const Position& position() const { return m_position; }
+
+private:
+    Position m_position;
+    EAffinity m_affinity;
+};
 
 } // namespace WebCore
 

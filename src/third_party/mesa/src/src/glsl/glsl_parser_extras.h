@@ -37,40 +37,76 @@
 enum _mesa_glsl_parser_targets {
    vertex_shader,
    geometry_shader,
-   fragment_shader,
-   ir_shader
+   fragment_shader
 };
 
-struct __GLcontextRec;
+struct gl_context;
+
+struct glsl_switch_state {
+   /** Temporary variables needed for switch statement. */
+   ir_variable *test_var;
+   ir_variable *is_fallthru_var;
+   ir_variable *is_break_var;
+   class ast_switch_statement *switch_nesting_ast;
+
+   /** Table of constant values already used in case labels */
+   struct hash_table *labels_ht;
+   class ast_case_label *previous_default;
+
+   bool is_switch_innermost; // if switch stmt is closest to break, ...
+};
 
 struct _mesa_glsl_parse_state {
-   _mesa_glsl_parse_state(struct __GLcontextRec *ctx, GLenum target,
+   _mesa_glsl_parse_state(struct gl_context *_ctx, GLenum target,
 			  void *mem_ctx);
 
-   /* Callers of this talloc-based new need not call delete. It's
-    * easier to just talloc_free 'ctx' (or any of its ancestors). */
+   /* Callers of this ralloc-based new need not call delete. It's
+    * easier to just ralloc_free 'ctx' (or any of its ancestors). */
    static void* operator new(size_t size, void *ctx)
    {
-      void *mem = talloc_zero_size(ctx, size);
+      void *mem = rzalloc_size(ctx, size);
       assert(mem != NULL);
 
       return mem;
    }
 
    /* If the user *does* call delete, that's OK, we will just
-    * talloc_free in that case. */
+    * ralloc_free in that case. */
    static void operator delete(void *mem)
    {
-      talloc_free(mem);
+      ralloc_free(mem);
    }
 
+   struct gl_context *const ctx;
    void *scanner;
    exec_list translation_unit;
    glsl_symbol_table *symbols;
 
+   unsigned num_uniform_blocks;
+   unsigned uniform_block_array_size;
+   struct gl_uniform_block *uniform_blocks;
+
    bool es_shader;
    unsigned language_version;
+   const char *version_string;
    enum _mesa_glsl_parser_targets target;
+
+   /**
+    * Default uniform layout qualifiers tracked during parsing.
+    * Currently affects uniform blocks and uniform buffer variables in
+    * those blocks.
+    */
+   struct ast_type_qualifier *default_uniform_qualifier;
+
+   /**
+    * Printable list of GLSL versions supported by the current context
+    *
+    * \note
+    * This string should probably be generated per-context instead of per
+    * invokation of the compiler.  This should be changed when the method of
+    * tracking supported GLSL versions changes.
+    */
+   const char *supported_version_string;
 
    /**
     * Implementation defined limits that affect built-in variables, etc.
@@ -103,15 +139,29 @@ struct _mesa_glsl_parse_state {
     */
    class ir_function_signature *current_function;
 
+   /**
+    * During AST to IR conversion, pointer to the toplevel IR
+    * instruction list being generated.
+    */
+   exec_list *toplevel_ir;
+
    /** Have we found a return statement in this function? */
    bool found_return;
 
    /** Was there an error during compilation? */
    bool error;
 
+   /**
+    * Are all shader inputs / outputs invariant?
+    *
+    * This is set when the 'STDGL invariant(all)' pragma is used.
+    */
+   bool all_invariant;
+
    /** Loop or switch statement containing the current instructions. */
-   class ir_instruction *loop_or_switch_nesting;
-   class ast_iteration_statement *loop_or_switch_nesting_ast;
+   class ast_iteration_statement *loop_nesting_ast;
+
+   struct glsl_switch_state switch_state;
 
    /** List of structures defined in user code. */
    const glsl_type **user_structures;
@@ -123,14 +173,38 @@ struct _mesa_glsl_parse_state {
     * \name Enable bits for GLSL extensions
     */
    /*@{*/
-   unsigned ARB_draw_buffers_enable:1;
-   unsigned ARB_draw_buffers_warn:1;
-   unsigned ARB_fragment_coord_conventions_enable:1;
-   unsigned ARB_fragment_coord_conventions_warn:1;
-   unsigned ARB_texture_rectangle_enable:1;
-   unsigned ARB_texture_rectangle_warn:1;
-   unsigned EXT_texture_array_enable:1;
-   unsigned EXT_texture_array_warn:1;
+   bool ARB_draw_buffers_enable;
+   bool ARB_draw_buffers_warn;
+   bool ARB_draw_instanced_enable;
+   bool ARB_draw_instanced_warn;
+   bool ARB_explicit_attrib_location_enable;
+   bool ARB_explicit_attrib_location_warn;
+   bool ARB_fragment_coord_conventions_enable;
+   bool ARB_fragment_coord_conventions_warn;
+   bool ARB_texture_rectangle_enable;
+   bool ARB_texture_rectangle_warn;
+   bool EXT_texture_array_enable;
+   bool EXT_texture_array_warn;
+   bool ARB_shader_texture_lod_enable;
+   bool ARB_shader_texture_lod_warn;
+   bool ARB_shader_stencil_export_enable;
+   bool ARB_shader_stencil_export_warn;
+   bool AMD_conservative_depth_enable;
+   bool AMD_conservative_depth_warn;
+   bool ARB_conservative_depth_enable;
+   bool ARB_conservative_depth_warn;
+   bool AMD_shader_stencil_export_enable;
+   bool AMD_shader_stencil_export_warn;
+   bool OES_texture_3D_enable;
+   bool OES_texture_3D_warn;
+   bool OES_EGL_image_external_enable;
+   bool OES_EGL_image_external_warn;
+   bool ARB_shader_bit_encoding_enable;
+   bool ARB_shader_bit_encoding_warn;
+   bool ARB_uniform_buffer_object_enable;
+   bool ARB_uniform_buffer_object_warn;
+   bool OES_standard_derivatives_enable;
+   bool OES_standard_derivatives_warn;
    /*@}*/
 
    /** Extensions supported by the OpenGL implementation. */
@@ -222,11 +296,11 @@ _mesa_glsl_shader_target_name(enum _mesa_glsl_parser_targets target);
 extern "C" {
 #endif
 
-extern int preprocess(void *ctx, const char **shader, char **info_log,
+extern int glcpp_preprocess(void *ctx, const char **shader, char **info_log,
                       const struct gl_extensions *extensions, int api);
 
-extern void _mesa_destroy_shader_compiler();
-extern void _mesa_destroy_shader_compiler_caches();
+extern void _mesa_destroy_shader_compiler(void);
+extern void _mesa_destroy_shader_compiler_caches(void);
 
 #ifdef __cplusplus
 }

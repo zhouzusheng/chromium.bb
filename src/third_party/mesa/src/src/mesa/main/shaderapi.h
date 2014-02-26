@@ -28,24 +28,37 @@
 
 
 #include "glheader.h"
-#include "mtypes.h"
 
 
-extern GLint
-_mesa_sizeof_glsl_type(GLenum type);
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
+struct _glapi_table;
+struct gl_context;
+struct gl_shader_program;
 
 extern void
 _mesa_copy_string(GLchar *dst, GLsizei maxLength,
                   GLsizei *length, const GLchar *src);
 
 extern void
-_mesa_use_program(GLcontext *ctx, GLuint program);
-
+_mesa_use_program(struct gl_context *ctx, struct gl_shader_program *shProg);
 
 extern void
-_mesa_init_shader_dispatch(struct _glapi_table *exec);
+_mesa_active_program(struct gl_context *ctx, struct gl_shader_program *shProg,
+		     const char *caller);
 
+extern void
+_mesa_init_shader_dispatch(const struct gl_context *ctx,
+                           struct _glapi_table *exec);
 
+extern unsigned
+_mesa_count_active_attribs(struct gl_shader_program *shProg);
+
+extern size_t
+_mesa_longest_attribute_name_length(struct gl_shader_program *shProg);
 
 extern void GLAPIENTRY
 _mesa_AttachObjectARB(GLhandleARB, GLhandleARB);
@@ -67,6 +80,12 @@ _mesa_DetachObjectARB(GLhandleARB, GLhandleARB);
 
 extern void GLAPIENTRY
 _mesa_GetAttachedObjectsARB(GLhandleARB, GLsizei, GLsizei *, GLhandleARB *);
+
+extern GLint GLAPIENTRY
+_mesa_GetFragDataLocation(GLuint program, const GLchar *name);
+
+extern GLint GLAPIENTRY
+_mesa_GetFragDataIndex(GLuint program, const GLchar *name);
 
 extern GLhandleARB GLAPIENTRY
 _mesa_GetHandleARB(GLenum pname);
@@ -104,6 +123,14 @@ _mesa_ValidateProgramARB(GLhandleARB);
 
 extern void GLAPIENTRY
 _mesa_BindAttribLocationARB(GLhandleARB, GLuint, const GLcharARB *);
+
+extern void GLAPIENTRY
+_mesa_BindFragDataLocation(GLuint program, GLuint colorNumber,
+                           const GLchar *name);
+
+extern void GLAPIENTRY
+_mesa_BindFragDataLocationIndexed(GLuint program, GLuint colorNumber,
+                                  GLuint index, const GLchar *name);
 
 extern void GLAPIENTRY
 _mesa_GetActiveAttribARB(GLhandleARB, GLuint, GLsizei, GLsizei *, GLint *,
@@ -165,5 +192,22 @@ _mesa_ShaderBinary(GLint n, const GLuint *shaders, GLenum binaryformat,
 extern void GLAPIENTRY
 _mesa_ProgramParameteriARB(GLuint program, GLenum pname,
                            GLint value);
+void
+_mesa_use_shader_program(struct gl_context *ctx, GLenum type,
+			 struct gl_shader_program *shProg);
+
+extern void GLAPIENTRY
+_mesa_UseShaderProgramEXT(GLenum type, GLuint program);
+
+extern void GLAPIENTRY
+_mesa_ActiveProgramEXT(GLuint program);
+
+extern GLuint GLAPIENTRY
+_mesa_CreateShaderProgramEXT(GLenum type, const GLchar *string);
+
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* SHADERAPI_H */

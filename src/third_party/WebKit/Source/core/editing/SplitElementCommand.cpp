@@ -20,15 +20,17 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
 #include "core/editing/SplitElementCommand.h"
 
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Element.h"
-#include <wtf/Assertions.h>
+#include "wtf/Assertions.h"
 
 namespace WebCore {
 
@@ -46,18 +48,18 @@ void SplitElementCommand::executeApply()
 {
     if (m_atChild->parentNode() != m_element2)
         return;
-    
+
     Vector<RefPtr<Node> > children;
     for (Node* node = m_element2->firstChild(); node != m_atChild; node = node->nextSibling())
         children.append(node);
-    
-    ExceptionCode ec = 0;
-    
+
+    TrackExceptionState es;
+
     ContainerNode* parent = m_element2->parentNode();
     if (!parent || !parent->rendererIsEditable())
         return;
-    parent->insertBefore(m_element1.get(), m_element2.get(), ec);
-    if (ec)
+    parent->insertBefore(m_element1.get(), m_element2.get(), es);
+    if (es.hadException())
         return;
 
     // Delete id attribute from the second element because the same id cannot be used for more than one element
@@ -65,13 +67,13 @@ void SplitElementCommand::executeApply()
 
     size_t size = children.size();
     for (size_t i = 0; i < size; ++i)
-        m_element1->appendChild(children[i], ec);
+        m_element1->appendChild(children[i], es);
 }
-    
+
 void SplitElementCommand::doApply()
 {
     m_element1 = m_element2->cloneElementWithoutChildren();
-    
+
     executeApply();
 }
 
@@ -101,7 +103,7 @@ void SplitElementCommand::doReapply()
 {
     if (!m_element1)
         return;
-    
+
     executeApply();
 }
 
@@ -113,5 +115,5 @@ void SplitElementCommand::getNodesInCommand(HashSet<Node*>& nodes)
     addNodeAndDescendants(m_atChild.get(), nodes);
 }
 #endif
-    
+
 } // namespace WebCore

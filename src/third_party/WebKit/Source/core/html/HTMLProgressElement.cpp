@@ -23,6 +23,8 @@
 #include "core/html/HTMLProgressElement.h"
 
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NodeRenderingContext.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -61,12 +63,7 @@ RenderObject* HTMLProgressElement::createRenderer(RenderStyle* style)
     if (!style->hasAppearance() || hasAuthorShadowRoot())
         return RenderObject::createObject(this, style);
 
-    return new (document()->renderArena()) RenderProgress(this);
-}
-
-bool HTMLProgressElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
-{
-    return childContext.isOnUpperEncapsulationBoundary() && HTMLElement::childShouldCreateRenderer(childContext);
+    return new RenderProgress(this);
 }
 
 RenderProgress* HTMLProgressElement::renderProgress() const
@@ -102,10 +99,10 @@ double HTMLProgressElement::value() const
     return !std::isfinite(value) || value < 0 ? 0 : std::min(value, max());
 }
 
-void HTMLProgressElement::setValue(double value, ExceptionCode& ec)
+void HTMLProgressElement::setValue(double value, ExceptionState& es)
 {
     if (!std::isfinite(value)) {
-        ec = NOT_SUPPORTED_ERR;
+        es.throwDOMException(NotSupportedError);
         return;
     }
     setAttribute(valueAttr, String::number(value >= 0 ? value : 0));
@@ -117,10 +114,10 @@ double HTMLProgressElement::max() const
     return !std::isfinite(max) || max <= 0 ? 1 : max;
 }
 
-void HTMLProgressElement::setMax(double max, ExceptionCode& ec)
+void HTMLProgressElement::setMax(double max, ExceptionState& es)
 {
     if (!std::isfinite(max)) {
-        ec = NOT_SUPPORTED_ERR;
+        es.throwDOMException(NotSupportedError);
         return;
     }
     setAttribute(maxAttr, String::number(max > 0 ? max : 1));
@@ -137,7 +134,7 @@ bool HTMLProgressElement::isDeterminate() const
 {
     return fastHasAttribute(valueAttr);
 }
-    
+
 void HTMLProgressElement::didElementStateChange()
 {
     m_value->setWidthPercentage(position() * 100);

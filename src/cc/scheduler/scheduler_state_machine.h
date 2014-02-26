@@ -8,7 +8,7 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "cc/base/cc_export.h"
 #include "cc/output/begin_frame_args.h"
 #include "cc/scheduler/scheduler_settings.h"
@@ -62,7 +62,7 @@ class CC_EXPORT SchedulerStateMachine {
     ACTION_NONE,
     ACTION_SEND_BEGIN_FRAME_TO_MAIN_THREAD,
     ACTION_COMMIT,
-    ACTION_CHECK_FOR_COMPLETED_TILE_UPLOADS,
+    ACTION_UPDATE_VISIBLE_TILES,
     ACTION_ACTIVATE_PENDING_TREE_IF_NEEDED,
     ACTION_DRAW_IF_POSSIBLE,
     ACTION_DRAW_FORCED,
@@ -79,7 +79,7 @@ class CC_EXPORT SchedulerStateMachine {
 
   // Indicates that the system has entered and left a BeginFrame callback.
   // The scheduler will not draw more than once in a given BeginFrame
-  // callback.
+  // callback nor send more than one BeginFrame message.
   void DidEnterBeginFrame(const BeginFrameArgs& args);
   void DidLeaveBeginFrame();
   bool inside_begin_frame() const { return inside_begin_frame_; }
@@ -120,8 +120,9 @@ class CC_EXPORT SchedulerStateMachine {
 
   // Call this only in response to receiving an
   // ACTION_SEND_BEGIN_FRAME_TO_MAIN_THREAD from NextAction if the client
-  // rejects the begin frame message.
-  void BeginFrameAbortedByMainThread();
+  // rejects the begin frame message.  If did_handle is false, then
+  // another commit will be retried soon.
+  void BeginFrameAbortedByMainThread(bool did_handle);
 
   // Request exclusive access to the textures that back single buffered
   // layers on behalf of the main thread. Upon acquisition,
@@ -164,10 +165,11 @@ class CC_EXPORT SchedulerStateMachine {
   bool ShouldDraw() const;
   bool ShouldAttemptTreeActivation() const;
   bool ShouldAcquireLayerTexturesForMainThread() const;
-  bool ShouldCheckForCompletedTileUploads() const;
+  bool ShouldUpdateVisibleTiles() const;
   bool HasDrawnThisFrame() const;
   bool HasAttemptedTreeActivationThisFrame() const;
-  bool HasCheckedForCompletedTileUploadsThisFrame() const;
+  bool HasUpdatedVisibleTilesThisFrame() const;
+  void SetPostCommitFlags();
 
   const SchedulerSettings settings_;
 
@@ -175,15 +177,17 @@ class CC_EXPORT SchedulerStateMachine {
   int commit_count_;
 
   int current_frame_number_;
+  int last_frame_number_where_begin_frame_sent_to_main_thread_;
   int last_frame_number_where_draw_was_called_;
   int last_frame_number_where_tree_activation_attempted_;
-  int last_frame_number_where_check_for_completed_tile_uploads_called_;
+  int last_frame_number_where_update_visible_tiles_was_called_;
   int consecutive_failed_draws_;
   int maximum_number_of_failed_draws_before_draw_is_forced_;
   bool needs_redraw_;
   bool swap_used_incomplete_tile_;
   bool needs_forced_redraw_;
   bool needs_forced_redraw_after_next_commit_;
+  bool needs_redraw_after_next_commit_;
   bool needs_commit_;
   bool needs_forced_commit_;
   bool expect_immediate_begin_frame_for_main_thread_;

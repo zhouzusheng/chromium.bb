@@ -31,9 +31,9 @@
 #include "core/platform/text/TextStream.h"
 #include "core/rendering/RenderTreeAsText.h"
 
-#include <wtf/MathExtras.h>
-#include <wtf/StdLibExtras.h>
-#include <wtf/Uint8ClampedArray.h>
+#include "wtf/MathExtras.h"
+#include "wtf/StdLibExtras.h"
+#include "wtf/Uint8ClampedArray.h"
 
 #include "SkColorFilterImageFilter.h"
 #include "SkTableColorFilter.h"
@@ -54,7 +54,7 @@ FEComponentTransfer::FEComponentTransfer(Filter* filter, const ComponentTransfer
 {
 }
 
-PassRefPtr<FEComponentTransfer> FEComponentTransfer::create(Filter* filter, const ComponentTransferFunction& redFunc, 
+PassRefPtr<FEComponentTransfer> FEComponentTransfer::create(Filter* filter, const ComponentTransferFunction& redFunc,
     const ComponentTransferFunction& greenFunc, const ComponentTransferFunction& blueFunc, const ComponentTransferFunction& alphaFunc)
 {
     return adoptRef(new FEComponentTransfer(filter, redFunc, greenFunc, blueFunc, alphaFunc));
@@ -109,9 +109,9 @@ static void table(unsigned char* values, const ComponentTransferFunction& transf
     const Vector<float>& tableValues = transferFunction.tableValues;
     unsigned n = tableValues.size();
     if (n < 1)
-        return;            
+        return;
     for (unsigned i = 0; i < 256; ++i) {
-        double c = i / 255.0;                
+        double c = i / 255.0;
         unsigned k = static_cast<unsigned>(c * (n - 1));
         double v1 = tableValues[k];
         double v2 = tableValues[std::min((k + 1), (n - 1))];
@@ -202,16 +202,16 @@ bool FEComponentTransfer::applySkia()
     return true;
 }
 
-SkImageFilter* FEComponentTransfer::createImageFilter(SkiaImageFilterBuilder* builder)
+PassRefPtr<SkImageFilter> FEComponentTransfer::createImageFilter(SkiaImageFilterBuilder* builder)
 {
-    SkAutoTUnref<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
+    RefPtr<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
 
     unsigned char rValues[256], gValues[256], bValues[256], aValues[256];
     getValues(rValues, gValues, bValues, aValues);
 
     SkAutoTUnref<SkColorFilter> colorFilter(SkTableColorFilter::CreateARGB(aValues, rValues, gValues, bValues));
 
-    return SkColorFilterImageFilter::Create(colorFilter, input);
+    return adoptRef(SkColorFilterImageFilter::Create(colorFilter, input.get()));
 }
 
 void FEComponentTransfer::getValues(unsigned char rValues[256], unsigned char gValues[256], unsigned char bValues[256], unsigned char aValues[256])
@@ -255,7 +255,7 @@ static TextStream& operator<<(TextStream& ts, const ComponentTransferType& type)
 
 static TextStream& operator<<(TextStream& ts, const ComponentTransferFunction& function)
 {
-    ts << "type=\"" << function.type 
+    ts << "type=\"" << function.type
        << "\" slope=\"" << function.slope
        << "\" intercept=\"" << function.intercept
        << "\" amplitude=\"" << function.amplitude
@@ -275,7 +275,7 @@ TextStream& FEComponentTransfer::externalRepresentation(TextStream& ts, int inde
     writeIndent(ts, indent + 2);
     ts << "{green: " << m_greenFunc << "}\n";
     writeIndent(ts, indent + 2);
-    ts << "{blue: " << m_blueFunc << "}\n";    
+    ts << "{blue: " << m_blueFunc << "}\n";
     writeIndent(ts, indent + 2);
     ts << "{alpha: " << m_alphaFunc << "}]\n";
     inputEffect(0)->externalRepresentation(ts, indent + 1);

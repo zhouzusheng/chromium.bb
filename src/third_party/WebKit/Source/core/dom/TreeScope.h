@@ -28,8 +28,8 @@
 #define TreeScope_h
 
 #include "core/dom/DocumentOrderedMap.h"
-#include <wtf/Forward.h>
-#include <wtf/text/AtomicString.h>
+#include "wtf/Forward.h"
+#include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
@@ -54,9 +54,9 @@ public:
     TreeScope* parentTreeScope() const { return m_parentTreeScope; }
     void setParentTreeScope(TreeScope*);
 
-    Node* focusedNode();
+    Element* adjustedFocusedElement();
     Element* getElementById(const AtomicString&) const;
-    bool hasElementWithId(AtomicStringImpl* id) const;
+    bool hasElementWithId(StringImpl* id) const;
     bool containsMultipleElementsWithId(const AtomicString& id) const;
     void addElementById(const AtomicString& elementId, Element*);
     void removeElementById(const AtomicString& elementId, Element*);
@@ -86,8 +86,7 @@ public:
     // quirks mode for historical compatibility reasons.
     Element* findAnchor(const String& name);
 
-    virtual bool applyAuthorStyles() const;
-    virtual bool resetStyleInheritance() const;
+    bool applyAuthorStyles() const;
 
     // Used by the basic DOM mutation methods (e.g., appendChild()).
     void adoptIfNeeded(Node*);
@@ -95,8 +94,6 @@ public:
     Node* rootNode() const { return m_rootNode; }
 
     IdTargetObserverRegistry& idTargetObserverRegistry() const { return *m_idTargetObserverRegistry.get(); }
-
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
 
     static TreeScope* noDocumentInstance()
     {
@@ -119,7 +116,7 @@ public:
     {
         ASSERT(!deletionHasBegun());
         --m_guardRefCount;
-        if (!m_guardRefCount && !refCount() && this != noDocumentInstance()) {
+        if (!m_guardRefCount && !refCount() && this != noDocumentInstance() && !rootNodeHasTreeSharedParent()) {
             beginDeletion();
             delete this;
         }
@@ -129,6 +126,8 @@ public:
 
     bool isInclusiveAncestorOf(const TreeScope*) const;
     unsigned short comparePosition(const TreeScope*) const;
+
+    Element* getElementByAccessKey(const String& key) const;
 
 protected:
     TreeScope(ContainerNode*, Document*);
@@ -160,6 +159,8 @@ private:
     void beginDeletion() { }
 #endif
 
+    bool rootNodeHasTreeSharedParent() const;
+
     Node* m_rootNode;
     Document* m_documentScope;
     TreeScope* m_parentTreeScope;
@@ -174,7 +175,7 @@ private:
     mutable RefPtr<DOMSelection> m_selection;
 };
 
-inline bool TreeScope::hasElementWithId(AtomicStringImpl* id) const
+inline bool TreeScope::hasElementWithId(StringImpl* id) const
 {
     ASSERT(id);
     return m_elementsById && m_elementsById->contains(id);

@@ -15,10 +15,9 @@
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/process_util.h"
 #include "base/rand_util.h"
 #include "base/strings/string_util.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "content/common/gpu/gpu_channel_manager.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/gpu/sync_point_manager.h"
@@ -505,7 +504,6 @@ int GpuChannel::TakeRendererFileDescriptor() {
 #endif  // defined(OS_POSIX)
 
 bool GpuChannel::OnMessageReceived(const IPC::Message& message) {
-  bool message_processed = true;
   if (log_messages_) {
     DVLOG(1) << "received message @" << &message << " on channel @" << this
              << " with type " << message.type();
@@ -527,20 +525,14 @@ bool GpuChannel::OnMessageReceived(const IPC::Message& message) {
       }
 
       deferred_messages_.insert(point, new IPC::Message(message));
-      message_processed = false;
     } else {
       // Move GetStateFast commands to the head of the queue, so the renderer
       // doesn't have to wait any longer than necessary.
       deferred_messages_.push_front(new IPC::Message(message));
-      message_processed = false;
     }
   } else {
     deferred_messages_.push_back(new IPC::Message(message));
-    message_processed = false;
   }
-
-  if (message_processed)
-    MessageProcessed();
 
   OnScheduled();
 
@@ -702,6 +694,13 @@ void GpuChannel::LoseAllContexts() {
   gpu_channel_manager_->LoseAllContexts();
 }
 
+void GpuChannel::MarkAllContextsLost() {
+  for (StubMap::Iterator<GpuCommandBufferStub> it(&stubs_);
+       !it.IsAtEnd(); it.Advance()) {
+    it.GetCurrentValue()->MarkContextLost();
+  }
+}
+
 void GpuChannel::DestroySoon() {
   base::MessageLoop::current()->PostTask(
       FROM_HERE, base::Bind(&GpuChannel::OnDestroy, this));
@@ -763,6 +762,8 @@ bool GpuChannel::OnControlMessageReceived(const IPC::Message& msg) {
                         OnRegisterStreamTextureProxy)
     IPC_MESSAGE_HANDLER(GpuChannelMsg_EstablishStreamTexture,
                         OnEstablishStreamTexture)
+    IPC_MESSAGE_HANDLER(GpuChannelMsg_SetStreamTextureSize,
+                        OnSetStreamTextureSize)
 #endif
     IPC_MESSAGE_HANDLER(
         GpuChannelMsg_CollectRenderingStatsForSurface,
@@ -900,19 +901,23 @@ void GpuChannel::OnDestroyCommandBuffer(int32 route_id) {
 
 #if defined(OS_ANDROID)
 void GpuChannel::OnRegisterStreamTextureProxy(
-    int32 stream_id,  const gfx::Size& initial_size, int32* route_id) {
+    int32 stream_id, int32* route_id) {
   // Note that route_id is only used for notifications sent out from here.
   // StreamTextureManager owns all texture objects and for incoming messages
   // it finds the correct object based on stream_id.
   *route_id = GenerateRouteID();
-  stream_texture_manager_->RegisterStreamTextureProxy(
-      stream_id, initial_size, *route_id);
+  stream_texture_manager_->RegisterStreamTextureProxy(stream_id, *route_id);
 }
 
 void GpuChannel::OnEstablishStreamTexture(
     int32 stream_id, int32 primary_id, int32 secondary_id) {
   stream_texture_manager_->EstablishStreamTexture(
       stream_id, primary_id, secondary_id);
+}
+
+void GpuChannel::OnSetStreamTextureSize(
+    int32 stream_id, const gfx::Size& size) {
+  stream_texture_manager_->SetStreamTextureSize(stream_id, size);
 }
 #endif
 

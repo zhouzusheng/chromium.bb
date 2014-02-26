@@ -34,7 +34,7 @@ SVGZoomEvent::SVGZoomEvent()
     ScriptWrappable::init(this);
 }
 
-FloatRect SVGZoomEvent::zoomRectScreen() const
+SVGRect SVGZoomEvent::zoomRectScreen() const
 {
     return m_zoomRectScreen;
 }
@@ -49,7 +49,7 @@ void SVGZoomEvent::setPreviousScale(float scale)
     m_previousScale = scale;
 }
 
-FloatPoint SVGZoomEvent::previousTranslate() const
+SVGPoint SVGZoomEvent::previousTranslate() const
 {
     return m_previousTranslate;
 }
@@ -64,7 +64,7 @@ void SVGZoomEvent::setNewScale(float scale)
     m_newScale = scale;
 }
 
-FloatPoint SVGZoomEvent::newTranslate() const
+SVGPoint SVGZoomEvent::newTranslate() const
 {
     return m_newTranslate;
 }

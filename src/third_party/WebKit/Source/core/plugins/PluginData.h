@@ -20,9 +20,9 @@
 #ifndef PluginData_h
 #define PluginData_h
 
-#include <wtf/RefCounted.h>
-#include <wtf/Vector.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/RefCounted.h"
+#include "wtf/Vector.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -54,7 +54,7 @@ public:
     const Vector<PluginInfo>& plugins() const { return m_plugins; }
     const Vector<MimeClassInfo>& mimes() const { return m_mimes; }
     const Vector<size_t>& mimePluginIndices() const { return m_mimePluginIndices; }
-    
+
     bool supportsMimeType(const String& mimeType) const;
     String pluginNameForMimeType(const String& mimeType) const;
     String pluginFileForMimeType(const String& mimeType) const;

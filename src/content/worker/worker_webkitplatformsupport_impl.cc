@@ -4,12 +4,16 @@
 
 #include "content/worker/worker_webkitplatformsupport_impl.h"
 
+#include "base/files/file_path.h"
 #include "base/logging.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/platform_file.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/child/database_util.h"
 #include "content/child/fileapi/webfilesystem_impl.h"
 #include "content/child/indexed_db/proxy_webidbfactory_impl.h"
+#include "content/child/quota_dispatcher.h"
+#include "content/child/quota_message_filter.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/child/webblobregistry_impl.h"
 #include "content/child/webmessageportchannel_impl.h"
@@ -22,7 +26,7 @@
 #include "third_party/WebKit/public/platform/WebFileInfo.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
-#include "webkit/base/file_path_string_conversions.h"
+#include "webkit/common/quota/quota_types.h"
 #include "webkit/glue/webfileutilities_impl.h"
 #include "webkit/glue/webkit_glue.h"
 
@@ -60,7 +64,7 @@ bool WorkerWebKitPlatformSupportImpl::FileUtilities::getFileInfo(
   base::PlatformFileError status;
   if (!thread_safe_sender_.get() ||
       !thread_safe_sender_->Send(new FileUtilitiesMsg_GetFileInfo(
-           webkit_base::WebStringToFilePath(path), &file_info, &status)) ||
+           base::FilePath::FromUTF16Unsafe(path), &file_info, &status)) ||
       status != base::PLATFORM_FILE_OK) {
     return false;
   }
@@ -72,8 +76,13 @@ bool WorkerWebKitPlatformSupportImpl::FileUtilities::getFileInfo(
 //------------------------------------------------------------------------------
 
 WorkerWebKitPlatformSupportImpl::WorkerWebKitPlatformSupportImpl(
-    ThreadSafeSender* sender)
-    : thread_safe_sender_(sender) {
+    ThreadSafeSender* sender,
+    IPC::SyncMessageFilter* sync_message_filter,
+    QuotaMessageFilter* quota_message_filter)
+    : thread_safe_sender_(sender),
+      child_thread_loop_(base::MessageLoopProxy::current()),
+      sync_message_filter_(sync_message_filter),
+      quota_message_filter_(quota_message_filter) {
 }
 
 WorkerWebKitPlatformSupportImpl::~WorkerWebKitPlatformSupportImpl() {
@@ -90,7 +99,7 @@ WebMimeRegistry* WorkerWebKitPlatformSupportImpl::mimeRegistry() {
 
 WebFileSystem* WorkerWebKitPlatformSupportImpl::fileSystem() {
   if (!web_file_system_)
-    web_file_system_.reset(new WebFileSystemImpl());
+    web_file_system_.reset(new WebFileSystemImpl(child_thread_loop_.get()));
   return web_file_system_.get();
 }
 
@@ -129,7 +138,7 @@ bool WorkerWebKitPlatformSupportImpl::isLinkVisited(
 
 WebMessagePortChannel*
 WorkerWebKitPlatformSupportImpl::createMessagePortChannel() {
-  return new WebMessagePortChannelImpl();
+  return new WebMessagePortChannelImpl(child_thread_loop_.get());
 }
 
 void WorkerWebKitPlatformSupportImpl::setCookies(
@@ -145,18 +154,13 @@ WebString WorkerWebKitPlatformSupportImpl::cookies(
   return WebString();
 }
 
-void WorkerWebKitPlatformSupportImpl::prefetchHostName(const WebString&) {
-  NOTREACHED();
-}
-
 WebString WorkerWebKitPlatformSupportImpl::defaultLocale() {
   NOTREACHED();
   return WebString();
 }
 
 WebStorageNamespace*
-WorkerWebKitPlatformSupportImpl::createLocalStorageNamespace(
-    const WebString& path, unsigned quota) {
+WorkerWebKitPlatformSupportImpl::createLocalStorageNamespace() {
   NOTREACHED();
   return 0;
 }
@@ -171,32 +175,38 @@ void WorkerWebKitPlatformSupportImpl::dispatchStorageEvent(
 Platform::FileHandle
 WorkerWebKitPlatformSupportImpl::databaseOpenFile(
     const WebString& vfs_file_name, int desired_flags) {
-  return DatabaseUtil::DatabaseOpenFile(vfs_file_name, desired_flags);
+  return DatabaseUtil::DatabaseOpenFile(
+      vfs_file_name, desired_flags, sync_message_filter_.get());
 }
 
 int WorkerWebKitPlatformSupportImpl::databaseDeleteFile(
     const WebString& vfs_file_name, bool sync_dir) {
-  return DatabaseUtil::DatabaseDeleteFile(vfs_file_name, sync_dir);
+  return DatabaseUtil::DatabaseDeleteFile(
+      vfs_file_name, sync_dir, sync_message_filter_.get());
 }
 
 long WorkerWebKitPlatformSupportImpl::databaseGetFileAttributes(
     const WebString& vfs_file_name) {
-  return DatabaseUtil::DatabaseGetFileAttributes(vfs_file_name);
+  return DatabaseUtil::DatabaseGetFileAttributes(vfs_file_name,
+                                                 sync_message_filter_.get());
 }
 
 long long WorkerWebKitPlatformSupportImpl::databaseGetFileSize(
     const WebString& vfs_file_name) {
-  return DatabaseUtil::DatabaseGetFileSize(vfs_file_name);
+  return DatabaseUtil::DatabaseGetFileSize(vfs_file_name,
+                                           sync_message_filter_.get());
 }
 
 long long WorkerWebKitPlatformSupportImpl::databaseGetSpaceAvailableForOrigin(
     const WebString& origin_identifier) {
-  return DatabaseUtil::DatabaseGetSpaceAvailable(origin_identifier);
+  return DatabaseUtil::DatabaseGetSpaceAvailable(origin_identifier,
+                                                 sync_message_filter_.get());
 }
 
 WebKit::WebIDBFactory* WorkerWebKitPlatformSupportImpl::idbFactory() {
   if (!web_idb_factory_)
-    web_idb_factory_.reset(new RendererWebIDBFactoryImpl());
+    web_idb_factory_.reset(
+        new RendererWebIDBFactoryImpl(thread_safe_sender_.get()));
   return web_idb_factory_.get();
 }
 
@@ -250,7 +260,7 @@ WebString WorkerWebKitPlatformSupportImpl::mimeTypeForExtension(
     const WebString& file_extension) {
   std::string mime_type;
   thread_safe_sender_->Send(new MimeRegistryMsg_GetMimeTypeFromExtension(
-      webkit_base::WebStringToFilePathString(file_extension), &mime_type));
+      base::FilePath::FromUTF16Unsafe(file_extension).value(), &mime_type));
   return ASCIIToUTF16(mime_type);
 }
 
@@ -258,7 +268,7 @@ WebString WorkerWebKitPlatformSupportImpl::wellKnownMimeTypeForExtension(
     const WebString& file_extension) {
   std::string mime_type;
   net::GetWellKnownMimeTypeFromExtension(
-      webkit_base::WebStringToFilePathString(file_extension), &mime_type);
+      base::FilePath::FromUTF16Unsafe(file_extension).value(), &mime_type);
   return ASCIIToUTF16(mime_type);
 }
 
@@ -267,7 +277,7 @@ WebString WorkerWebKitPlatformSupportImpl::mimeTypeFromFile(
   std::string mime_type;
   thread_safe_sender_->Send(
       new MimeRegistryMsg_GetMimeTypeFromFile(
-          base::FilePath(webkit_base::WebStringToFilePathString(file_path)),
+          base::FilePath::FromUTF16Unsafe(file_path),
           &mime_type));
   return ASCIIToUTF16(mime_type);
 }
@@ -278,13 +288,27 @@ WebString WorkerWebKitPlatformSupportImpl::preferredExtensionForMIMEType(
   thread_safe_sender_->Send(
       new MimeRegistryMsg_GetPreferredExtensionForMimeType(
           UTF16ToASCII(mime_type), &file_extension));
-  return webkit_base::FilePathStringToWebString(file_extension);
+  return base::FilePath(file_extension).AsUTF16Unsafe();
 }
 
 WebBlobRegistry* WorkerWebKitPlatformSupportImpl::blobRegistry() {
   if (!blob_registry_.get() && thread_safe_sender_.get())
     blob_registry_.reset(new WebBlobRegistryImpl(thread_safe_sender_.get()));
   return blob_registry_.get();
+}
+
+void WorkerWebKitPlatformSupportImpl::queryStorageUsageAndQuota(
+    const WebKit::WebURL& storage_partition,
+    WebKit::WebStorageQuotaType type,
+    WebKit::WebStorageQuotaCallbacks* callbacks) {
+  if (!thread_safe_sender_.get() || !quota_message_filter_.get())
+    return;
+  QuotaDispatcher::ThreadSpecificInstance(
+      thread_safe_sender_.get(),
+      quota_message_filter_.get())->QueryStorageUsageAndQuota(
+          storage_partition,
+          static_cast<quota::StorageType>(type),
+          QuotaDispatcher::CreateWebStorageQuotaCallbacksWrapper(callbacks));
 }
 
 }  // namespace content

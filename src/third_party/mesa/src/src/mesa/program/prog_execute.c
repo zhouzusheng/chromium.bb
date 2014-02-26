@@ -84,7 +84,7 @@ static const GLfloat ZeroVec[4] = { 0.0F, 0.0F, 0.0F, 0.0F };
  * Return TRUE for +0 and other positive values, FALSE otherwise.
  * Used for RCC opcode.
  */
-static INLINE GLboolean
+static inline GLboolean
 positive(float x)
 {
    fi_type fi;
@@ -100,7 +100,7 @@ positive(float x)
  * Return a pointer to the 4-element float vector specified by the given
  * source register.
  */
-static INLINE const GLfloat *
+static inline const GLfloat *
 get_src_register_pointer(const struct prog_src_register *source,
                          const struct gl_program_machine *machine)
 {
@@ -157,7 +157,11 @@ get_src_register_pointer(const struct prog_src_register *source,
    case PROGRAM_NAMED_PARAM:
       if (reg >= (GLint) prog->Parameters->NumParameters)
          return ZeroVec;
-      return prog->Parameters->ParameterValues[reg];
+      return (GLfloat *) prog->Parameters->ParameterValues[reg];
+
+   case PROGRAM_SYSTEM_VALUE:
+      assert(reg < Elements(machine->SystemValues));
+      return machine->SystemValues[reg];
 
    default:
       _mesa_problem(NULL,
@@ -172,7 +176,7 @@ get_src_register_pointer(const struct prog_src_register *source,
  * Return a pointer to the 4-element float vector specified by the given
  * destination register.
  */
-static INLINE GLfloat *
+static inline GLfloat *
 get_dst_register_pointer(const struct prog_dst_register *dest,
                          struct gl_program_machine *machine)
 {
@@ -296,7 +300,7 @@ fetch_vector4ui(const struct prog_src_register *source,
  * XXX this currently only works for fragment program input attribs.
  */
 static void
-fetch_vector4_deriv(GLcontext * ctx,
+fetch_vector4_deriv(struct gl_context * ctx,
                     const struct prog_src_register *source,
                     const struct gl_program_machine *machine,
                     char xOrY, GLfloat result[4])
@@ -379,8 +383,8 @@ fetch_vector1ui(const struct prog_src_register *source,
 /**
  * Fetch texel from texture.  Use partial derivatives when possible.
  */
-static INLINE void
-fetch_texel(GLcontext *ctx,
+static inline void
+fetch_texel(struct gl_context *ctx,
             const struct gl_program_machine *machine,
             const struct prog_instruction *inst,
             const GLfloat texcoord[4], GLfloat lodBias,
@@ -409,7 +413,7 @@ fetch_texel(GLcontext *ctx,
 /**
  * Test value against zero and return GT, LT, EQ or UN if NaN.
  */
-static INLINE GLuint
+static inline GLuint
 generate_cc(float value)
 {
    if (value != value)
@@ -426,7 +430,7 @@ generate_cc(float value)
  * Test if the ccMaskRule is satisfied by the given condition code.
  * Used to mask destination writes according to the current condition code.
  */
-static INLINE GLboolean
+static inline GLboolean
 test_cc(GLuint condCode, GLuint ccMaskRule)
 {
    switch (ccMaskRule) {
@@ -447,7 +451,7 @@ test_cc(GLuint condCode, GLuint ccMaskRule)
  * Evaluate the 4 condition codes against a predicate and return GL_TRUE
  * or GL_FALSE to indicate result.
  */
-static INLINE GLboolean
+static inline GLboolean
 eval_condition(const struct gl_program_machine *machine,
                const struct prog_instruction *inst)
 {
@@ -630,12 +634,12 @@ store_vector4ui(const struct prog_instruction *inst,
  * \return GL_TRUE if program completed or GL_FALSE if program executed KIL.
  */
 GLboolean
-_mesa_execute_program(GLcontext * ctx,
+_mesa_execute_program(struct gl_context * ctx,
                       const struct gl_program *program,
                       struct gl_program_machine *machine)
 {
    const GLuint numInst = program->NumInstructions;
-   const GLuint maxExec = 10000;
+   const GLuint maxExec = 65536;
    GLuint pc, numExec = 0;
 
    machine->CurProgram = program;
@@ -1304,8 +1308,8 @@ _mesa_execute_program(GLcontext * ctx,
             fetch_vector4(&inst->SrcReg[0], machine, a);
             a[0] = CLAMP(a[0], 0.0F, 1.0F);
             a[1] = CLAMP(a[1], 0.0F, 1.0F);
-            usx = IROUND(a[0] * 65535.0F);
-            usy = IROUND(a[1] * 65535.0F);
+            usx = F_TO_I(a[0] * 65535.0F);
+            usy = F_TO_I(a[1] * 65535.0F);
             result[0] =
             result[1] =
             result[2] =
@@ -1322,10 +1326,10 @@ _mesa_execute_program(GLcontext * ctx,
             a[1] = CLAMP(a[1], -128.0F / 127.0F, 1.0F);
             a[2] = CLAMP(a[2], -128.0F / 127.0F, 1.0F);
             a[3] = CLAMP(a[3], -128.0F / 127.0F, 1.0F);
-            ubx = IROUND(127.0F * a[0] + 128.0F);
-            uby = IROUND(127.0F * a[1] + 128.0F);
-            ubz = IROUND(127.0F * a[2] + 128.0F);
-            ubw = IROUND(127.0F * a[3] + 128.0F);
+            ubx = F_TO_I(127.0F * a[0] + 128.0F);
+            uby = F_TO_I(127.0F * a[1] + 128.0F);
+            ubz = F_TO_I(127.0F * a[2] + 128.0F);
+            ubw = F_TO_I(127.0F * a[3] + 128.0F);
             result[0] =
             result[1] =
             result[2] =
@@ -1342,10 +1346,10 @@ _mesa_execute_program(GLcontext * ctx,
             a[1] = CLAMP(a[1], 0.0F, 1.0F);
             a[2] = CLAMP(a[2], 0.0F, 1.0F);
             a[3] = CLAMP(a[3], 0.0F, 1.0F);
-            ubx = IROUND(255.0F * a[0]);
-            uby = IROUND(255.0F * a[1]);
-            ubz = IROUND(255.0F * a[2]);
-            ubw = IROUND(255.0F * a[3]);
+            ubx = F_TO_I(255.0F * a[0]);
+            uby = F_TO_I(255.0F * a[1]);
+            ubz = F_TO_I(255.0F * a[2]);
+            ubw = F_TO_I(255.0F * a[3]);
             result[0] =
             result[1] =
             result[2] =
@@ -1647,6 +1651,14 @@ _mesa_execute_program(GLcontext * ctx,
             GLfloat texcoord[4], color[4];
             fetch_vector4(&inst->SrcReg[0], machine, texcoord);
 
+            /* For TEX, texcoord.Q should not be used and its value should not
+             * matter (at most, we pass coord.xyz to texture3D() in GLSL).
+             * Set Q=1 so that FetchTexelDeriv() doesn't get a garbage value
+             * which is effectively what happens when the texcoord swizzle
+             * is .xyzz
+             */
+            texcoord[3] = 1.0f;
+
             fetch_texel(ctx, machine, inst, texcoord, 0.0, color);
 
             if (DEBUG_PROG) {
@@ -1669,6 +1681,18 @@ _mesa_execute_program(GLcontext * ctx,
             lodBias = texcoord[3];
 
             fetch_texel(ctx, machine, inst, texcoord, lodBias, color);
+
+            if (DEBUG_PROG) {
+               printf("TXB (%g, %g, %g, %g) = texture[%d][%g %g %g %g]"
+                      "  bias %g\n",
+                      color[0], color[1], color[2], color[3],
+                      inst->TexSrcUnit,
+                      texcoord[0],
+                      texcoord[1],
+                      texcoord[2],
+                      texcoord[3],
+                      lodBias);
+            }
 
             store_vector4(inst, machine, color);
          }

@@ -74,7 +74,7 @@ private:
     virtual float getAvgCharWidth(AtomicString family);
     virtual LayoutUnit preferredContentLogicalWidth(float charWidth) const;
     virtual LayoutUnit computeControlLogicalHeight(LayoutUnit lineHeight, LayoutUnit nonContentHeight) const OVERRIDE;
-    
+
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
 
     virtual RenderStyle* textBaseStyle() const;
@@ -111,6 +111,7 @@ void toRenderTextControlSingleLine(const RenderTextControlSingleLine*);
 class RenderTextControlInnerBlock : public RenderBlock {
 public:
     RenderTextControlInnerBlock(Element* element) : RenderBlock(element) { }
+    virtual int inlineBlockBaseline(LineDirectionMode direction) const OVERRIDE { return lastLineBoxBaseline(direction); }
 
 private:
     virtual bool hasLineIfEmpty() const { return true; }

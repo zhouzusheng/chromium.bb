@@ -9,8 +9,8 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
-#include "base/message_loop.h"
-#include "base/process_util.h"
+#include "base/message_loop/message_loop.h"
+#include "base/process/process_handle.h"
 #include "base/strings/string_number_conversions.h"
 #include "content/common/gpu/gpu_channel_manager.h"
 #include "content/common/gpu/gpu_memory_allocation.h"
@@ -70,6 +70,9 @@ GpuMemoryManager::GpuMemoryManager(
 #if defined(OS_ANDROID)
   bytes_default_per_client_ = 16 * 1024 * 1024;
   bytes_minimum_per_client_ = 16 * 1024 * 1024;
+#elif defined(OS_CHROMEOS)
+  bytes_default_per_client_ = 64 * 1024 * 1024;
+  bytes_minimum_per_client_ = 4 * 1024 * 1024;
 #else
   bytes_default_per_client_ = 64 * 1024 * 1024;
   bytes_minimum_per_client_ = 64 * 1024 * 1024;

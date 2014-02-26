@@ -26,7 +26,7 @@
 #include "core/platform/graphics/filters/FilterEffect.h"
 
 #include "core/platform/graphics/filters/Filter.h"
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -48,7 +48,7 @@ public:
     const Vector<float>& values() const;
     bool setValues(const Vector<float>&);
 
-    virtual SkImageFilter* createImageFilter(SkiaImageFilterBuilder*);
+    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
 
     virtual TextStream& externalRepresentation(TextStream&, int indention) const;
 

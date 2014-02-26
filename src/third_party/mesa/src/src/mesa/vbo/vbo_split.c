@@ -98,7 +98,7 @@ GLboolean split_prim_inplace(GLenum mode, GLuint *first, GLuint *incr)
 
 
 
-void vbo_split_prims( GLcontext *ctx,
+void vbo_split_prims( struct gl_context *ctx,
 		      const struct gl_client_array *arrays[],
 		      const struct _mesa_prim *prim,
 		      GLuint nr_prims,
@@ -121,8 +121,7 @@ void vbo_split_prims( GLcontext *ctx,
 	 /* Could traverse the indices, re-emitting vertices in turn.
 	  * But it's hard to see why this case would be needed - for
 	  * software tnl, it is better to convert to non-indexed
-	  * rendering after transformation is complete, as is done in
-	  * the t_dd_rendertmp.h templates.  Are there any devices
+	  * rendering after transformation is complete.  Are there any devices
 	  * with hardware tnl that cannot do indexed rendering?
 	  *
 	  * For now, this path is disabled.

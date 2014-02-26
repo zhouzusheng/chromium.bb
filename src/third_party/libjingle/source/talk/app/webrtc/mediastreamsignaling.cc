@@ -34,6 +34,7 @@
 #include "talk/app/webrtc/mediaconstraintsinterface.h"
 #include "talk/app/webrtc/mediastreamtrackproxy.h"
 #include "talk/app/webrtc/videotrack.h"
+#include "talk/base/bytebuffer.h"
 
 static const char kDefaultStreamLabel[] = "default";
 static const char kDefaultAudioTrackLabel[] = "defaulta0";
@@ -235,6 +236,29 @@ bool MediaStreamSignaling::AddDataChannel(DataChannel* data_channel) {
   return true;
 }
 
+bool MediaStreamSignaling::AddDataChannelFromOpenMessage(
+    const std::string& label,
+    const DataChannelInit& config) {
+  if (!data_channel_factory_) {
+    LOG(LS_WARNING) << "Remote peer requested a DataChannel but DataChannels "
+                    << "are not supported.";
+    return false;
+  }
+
+  if (data_channels_.find(label) != data_channels_.end()) {
+    LOG(LS_ERROR) << "DataChannel with label " << label
+                  << " already exists.";
+    return false;
+  }
+  scoped_refptr<DataChannel> channel(
+      data_channel_factory_->CreateDataChannel(label, &config));
+  data_channels_[label] = channel;
+  stream_observer_->OnAddDataChannel(channel);
+  // It's immediately ready to use.
+  channel->OnChannelReady(true);
+  return true;
+}
+
 bool MediaStreamSignaling::AddLocalStream(MediaStreamInterface* local_stream) {
   if (local_streams_->find(local_stream->label()) != NULL) {
     LOG(LS_WARNING) << "MediaStream with label " << local_stream->label()
@@ -349,7 +373,11 @@ void MediaStreamSignaling::OnRemoteDescriptionChanged(
     const cricket::DataContentDescription* data_desc =
         static_cast<const cricket::DataContentDescription*>(
             data_content->description);
-    UpdateRemoteDataChannels(data_desc->streams());
+    if (data_desc->protocol() == cricket::kMediaProtocolDtlsSctp) {
+      UpdateRemoteSctpDataChannels();
+    } else {
+      UpdateRemoteRtpDataChannels(data_desc->streams());
+    }
   }
 
   // Iterate new_streams and notify the observer about new MediaStreams.
@@ -401,7 +429,11 @@ void MediaStreamSignaling::OnLocalDescriptionChanged(
     const cricket::DataContentDescription* data_desc =
         static_cast<const cricket::DataContentDescription*>(
             data_content->description);
-    UpdateLocalDataChannels(data_desc->streams());
+    if (data_desc->protocol() == cricket::kMediaProtocolDtlsSctp) {
+      UpdateLocalSctpDataChannels();
+    } else {
+      UpdateLocalRtpDataChannels(data_desc->streams());
+    }
   }
 }
 
@@ -768,7 +800,7 @@ void MediaStreamSignaling::OnLocalTrackRemoved(
   }
 }
 
-void MediaStreamSignaling::UpdateLocalDataChannels(
+void MediaStreamSignaling::UpdateLocalRtpDataChannels(
     const cricket::StreamParamsVec& streams) {
   std::vector<std::string> existing_channels;
 
@@ -793,7 +825,7 @@ void MediaStreamSignaling::UpdateLocalDataChannels(
   UpdateClosingDataChannels(existing_channels, true);
 }
 
-void MediaStreamSignaling::UpdateRemoteDataChannels(
+void MediaStreamSignaling::UpdateRemoteRtpDataChannels(
     const cricket::StreamParamsVec& streams) {
   std::vector<std::string> existing_channels;
 
@@ -854,6 +886,161 @@ void MediaStreamSignaling::CreateRemoteDataChannel(const std::string& label,
       data_channel_factory_->CreateDataChannel(label, NULL));
   channel->SetReceiveSsrc(remote_ssrc);
   stream_observer_->OnAddDataChannel(channel);
+}
+
+
+// Format defined at
+// http://tools.ietf.org/html/draft-jesup-rtcweb-data-protocol-04
+const uint8 DATA_CHANNEL_OPEN_MESSAGE_TYPE = 0x03;
+
+enum DataChannelOpenMessageChannelType {
+  DCOMCT_ORDERED_RELIABLE = 0x00,
+  DCOMCT_ORDERED_PARTIAL_RTXS = 0x01,
+  DCOMCT_ORDERED_PARTIAL_TIME = 0x02,
+  DCOMCT_UNORDERED_RELIABLE = 0x80,
+  DCOMCT_UNORDERED_PARTIAL_RTXS = 0x81,
+  DCOMCT_UNORDERED_PARTIAL_TIME = 0x82,
+};
+
+bool MediaStreamSignaling::ParseDataChannelOpenMessage(
+    const talk_base::Buffer& payload,
+    std::string* label,
+    DataChannelInit* config) {
+  // Format defined at
+  // http://tools.ietf.org/html/draft-jesup-rtcweb-data-protocol-04
+
+  talk_base::ByteBuffer buffer(payload.data(), payload.length());
+
+  uint8 message_type;
+  if (!buffer.ReadUInt8(&message_type)) {
+    LOG(LS_WARNING) << "Could not read OPEN message type.";
+    return false;
+  }
+  if (message_type != DATA_CHANNEL_OPEN_MESSAGE_TYPE) {
+    LOG(LS_WARNING) << "Data Channel OPEN message of unexpected type: "
+                    << message_type;
+    return false;
+  }
+
+  uint8 channel_type;
+  if (!buffer.ReadUInt8(&channel_type)) {
+    LOG(LS_WARNING) << "Could not read OPEN message channel type.";
+    return false;
+  }
+  uint16 priority;
+  if (!buffer.ReadUInt16(&priority)) {
+    LOG(LS_WARNING) << "Could not read OPEN message reliabilility prioirty.";
+    return false;
+  }
+  uint32 reliability_param;
+  if (!buffer.ReadUInt32(&reliability_param)) {
+    LOG(LS_WARNING) << "Could not read OPEN message reliabilility param.";
+    return false;
+  }
+  uint16 label_length;
+  if (!buffer.ReadUInt16(&label_length)) {
+    LOG(LS_WARNING) << "Could not read OPEN message label length.";
+    return false;
+  }
+  uint16 protocol_length;
+  if (!buffer.ReadUInt16(&protocol_length)) {
+    LOG(LS_WARNING) << "Could not read OPEN message protocol length.";
+    return false;
+  }
+  if (!buffer.ReadString(label, (size_t) label_length)) {
+    LOG(LS_WARNING) << "Could not read OPEN message label";
+    return false;
+  }
+  if (!buffer.ReadString(&config->protocol, protocol_length)) {
+    LOG(LS_WARNING) << "Could not read OPEN message protocol.";
+    return false;
+  }
+
+  config->ordered = true;
+  switch (channel_type) {
+    case DCOMCT_UNORDERED_RELIABLE:
+    case DCOMCT_UNORDERED_PARTIAL_RTXS:
+    case DCOMCT_UNORDERED_PARTIAL_TIME:
+      config->ordered = false;
+  }
+
+  config->maxRetransmits = -1;
+  config->maxRetransmitTime = -1;
+  switch (channel_type) {
+    case DCOMCT_ORDERED_PARTIAL_RTXS:
+    case DCOMCT_UNORDERED_PARTIAL_RTXS:
+      config->maxRetransmits = reliability_param;
+
+    case DCOMCT_ORDERED_PARTIAL_TIME:
+    case DCOMCT_UNORDERED_PARTIAL_TIME:
+      config->maxRetransmitTime = reliability_param;
+  }
+
+  return true;
+}
+
+bool MediaStreamSignaling::WriteDataChannelOpenMessage(
+    const std::string& label,
+    const DataChannelInit& config,
+    talk_base::Buffer* payload) {
+  // Format defined at
+  // http://tools.ietf.org/html/draft-jesup-rtcweb-data-protocol-04
+  // TODO(pthatcher)
+
+  uint8 channel_type = 0;
+  uint32 reliability_param = 0;
+  uint16 priority = 0;
+  if (config.ordered) {
+    if (config.maxRetransmits > -1) {
+      channel_type = DCOMCT_ORDERED_PARTIAL_RTXS;
+      reliability_param = config.maxRetransmits;
+    } else if (config.maxRetransmitTime > -1) {
+      channel_type = DCOMCT_ORDERED_PARTIAL_TIME;
+      reliability_param = config.maxRetransmitTime;
+    } else {
+      channel_type = DCOMCT_ORDERED_RELIABLE;
+    }
+  } else {
+    if (config.maxRetransmits > -1) {
+      channel_type = DCOMCT_UNORDERED_PARTIAL_RTXS;
+      reliability_param = config.maxRetransmits;
+    } else if (config.maxRetransmitTime > -1) {
+      channel_type = DCOMCT_UNORDERED_PARTIAL_TIME;
+      reliability_param = config.maxRetransmitTime;
+    } else {
+      channel_type = DCOMCT_UNORDERED_RELIABLE;
+    }
+  }
+
+  talk_base::ByteBuffer buffer(
+      NULL, 20 + label.length() + config.protocol.length(),
+      talk_base::ByteBuffer::ORDER_NETWORK);
+  buffer.WriteUInt8(DATA_CHANNEL_OPEN_MESSAGE_TYPE);
+  buffer.WriteUInt8(channel_type);
+  buffer.WriteUInt16(priority);
+  buffer.WriteUInt32(reliability_param);
+  buffer.WriteUInt16(static_cast<uint16>(label.length()));
+  buffer.WriteUInt16(static_cast<uint16>(config.protocol.length()));
+  buffer.WriteString(label);
+  buffer.WriteString(config.protocol);
+  payload->SetData(buffer.Data(), buffer.Length());
+  return true;
+}
+
+void MediaStreamSignaling::UpdateLocalSctpDataChannels() {
+  DataChannels::iterator it = data_channels_.begin();
+  for (; it != data_channels_.end(); ++it) {
+    DataChannel* data_channel = it->second;
+    data_channel->SetSendSsrc(data_channel->id());
+  }
+}
+
+void MediaStreamSignaling::UpdateRemoteSctpDataChannels() {
+  DataChannels::iterator it = data_channels_.begin();
+  for (; it != data_channels_.end(); ++it) {
+    DataChannel* data_channel = it->second;
+    data_channel->SetReceiveSsrc(data_channel->id());
+  }
 }
 
 }  // namespace webrtc

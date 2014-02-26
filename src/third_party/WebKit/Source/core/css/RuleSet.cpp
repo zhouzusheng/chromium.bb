@@ -43,11 +43,8 @@
 #include "core/css/StyleRuleImport.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/css/resolver/StyleResolver.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/html/track/TextTrackCue.h"
 #include "weborigin/SecurityOrigin.h"
-#include "wtf/MemoryInstrumentationHashMap.h"
-#include "wtf/MemoryInstrumentationVector.h"
 
 namespace WebCore {
 
@@ -58,6 +55,11 @@ using namespace HTMLNames;
 static inline bool isDocumentScope(const ContainerNode* scope)
 {
     return !scope || scope->isDocumentNode();
+}
+
+static inline bool isScopingNodeInShadowTree(const ContainerNode* scopingNode)
+{
+    return scopingNode && scopingNode->isInShadowTree();
 }
 
 static inline bool isSelectorMatchingHTMLBasedOnRuleHash(const CSSSelector* selector)
@@ -130,9 +132,80 @@ static inline PropertyWhitelistType determinePropertyWhitelistType(const AddRule
     return PropertyWhitelistNone;
 }
 
+namespace {
+
+// FIXME: Should we move this class to WTF?
+template<typename T>
+class TerminatedArrayBuilder {
+public:
+    explicit TerminatedArrayBuilder(PassOwnPtr<T> array)
+        : m_array(array)
+        , m_count(0)
+        , m_capacity(0)
+    {
+        if (!m_array)
+            return;
+        for (T* item = m_array.get(); !item->isLastInArray(); ++item)
+            ++m_count;
+        ++m_count; // To count the last item itself.
+        m_capacity = m_count;
+    }
+
+    void grow(size_t count)
+    {
+        ASSERT(count);
+        if (!m_array) {
+            ASSERT(!m_count);
+            ASSERT(!m_capacity);
+            m_capacity = count;
+            m_array = adoptPtr(static_cast<T*>(fastMalloc(m_capacity * sizeof(T))));
+            return;
+        }
+        m_capacity += count;
+        m_array = adoptPtr(static_cast<T*>(fastRealloc(m_array.leakPtr(), m_capacity * sizeof(T))));
+        m_array.get()[m_count - 1].setLastInArray(false);
+    }
+
+    void append(const T& item)
+    {
+        RELEASE_ASSERT(m_count < m_capacity);
+        ASSERT(!item.isLastInArray());
+        m_array.get()[m_count++] = item;
+    }
+
+    PassOwnPtr<T> release()
+    {
+        RELEASE_ASSERT(m_count == m_capacity);
+        if (m_array)
+            m_array.get()[m_count - 1].setLastInArray(true);
+        assertValid();
+        return m_array.release();
+    }
+
+private:
+#ifndef NDEBUG
+    void assertValid()
+    {
+        for (size_t i = 0; i < m_count; ++i) {
+            bool isLastInArray = (i + 1 == m_count);
+            ASSERT(m_array.get()[i].isLastInArray() == isLastInArray);
+        }
+    }
+#else
+    void assertValid() { }
+#endif
+
+    OwnPtr<T> m_array;
+    size_t m_count;
+    size_t m_capacity;
+};
+
+}
+
 RuleData::RuleData(StyleRule* rule, unsigned selectorIndex, unsigned position, AddRuleFlags addRuleFlags)
     : m_rule(rule)
     , m_selectorIndex(selectorIndex)
+    , m_isLastInArray(false)
     , m_position(position)
     , m_hasFastCheckableSelector((addRuleFlags & RuleCanUseFastCheckSelector) && SelectorCheckerFastPath::canUse(selector()))
     , m_specificity(selector()->specificity())
@@ -148,41 +221,12 @@ RuleData::RuleData(StyleRule* rule, unsigned selectorIndex, unsigned position, A
     SelectorFilter::collectIdentifierHashes(selector(), m_descendantSelectorIdentifierHashes, maximumIdentifierCount);
 }
 
-void RuleData::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_rule, "rule");
-}
-
-void RuleSet::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_idRules, "idRules");
-    info.addMember(m_classRules, "classRules");
-    info.addMember(m_tagRules, "tagRules");
-    info.addMember(m_shadowPseudoElementRules, "shadowPseudoElementRules");
-    info.addMember(m_linkPseudoClassRules, "linkPseudoClassRules");
-    info.addMember(m_cuePseudoRules, "cuePseudoRules");
-    info.addMember(m_focusPseudoClassRules, "focusPseudoClassRules");
-    info.addMember(m_universalRules, "universalRules");
-    info.addMember(m_pageRules, "pageRules");
-    info.addMember(m_regionSelectorsAndRuleSets, "regionSelectorsAndRuleSets");
-    info.addMember(m_features, "features");
-}
-
-void RuleSet::RuleSetSelectorPair::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(ruleSet, "ruleSet");
-    info.addMember(selector, "selector");
-}
-
 static void collectFeaturesFromRuleData(RuleFeatureSet& features, const RuleData& ruleData)
 {
     bool foundSiblingSelector = false;
     for (const CSSSelector* selector = ruleData.selector(); selector; selector = selector->tagHistory()) {
         features.collectFeaturesFromSelector(selector);
-        
+
         if (const CSSSelectorList* selectorList = selector->selectorList()) {
             for (const CSSSelector* subSelector = selectorList->first(); subSelector; subSelector = CSSSelectorList::next(subSelector)) {
                 if (!foundSiblingSelector && selector->isSiblingSelector())
@@ -197,8 +241,8 @@ static void collectFeaturesFromRuleData(RuleFeatureSet& features, const RuleData
     if (ruleData.containsUncommonAttributeSelector())
         features.uncommonAttributeRules.append(RuleFeature(ruleData.rule(), ruleData.selectorIndex(), ruleData.hasDocumentSecurityOrigin()));
 }
-    
-void RuleSet::addToRuleSet(AtomicStringImpl* key, PendingRuleMap& map, const RuleData& ruleData)
+
+void RuleSet::addToRuleSet(StringImpl* key, PendingRuleMap& map, const RuleData& ruleData)
 {
     if (!key)
         return;
@@ -219,7 +263,8 @@ bool RuleSet::findBestRuleSetAndAdd(const CSSSelector* component, RuleData& rule
         return true;
     }
     if (component->isCustomPseudoElement()) {
-        addToRuleSet(component->value().impl(), ensurePendingRules()->shadowPseudoElementRules, ruleData);
+        StringImpl* pseudoValue = component->pseudoType() == CSSSelector::PseudoPart ? component->argument().impl() : component->value().impl();
+        addToRuleSet(pseudoValue, ensurePendingRules()->shadowPseudoElementRules, ruleData);
         return true;
     }
     if (component->pseudoType() == CSSSelector::PseudoCue) {
@@ -272,6 +317,12 @@ void RuleSet::addPageRule(StyleRulePage* rule)
 {
     ensurePendingRules(); // So that m_pageRules.shrinkToFit() gets called.
     m_pageRules.append(rule);
+}
+
+void RuleSet::addViewportRule(StyleRuleViewport* rule)
+{
+    ensurePendingRules(); // So that m_viewportRules.shrinkToFit() gets called.
+    m_viewportRules.append(rule);
 }
 
 void RuleSet::addRegionRule(StyleRuleRegion* regionRule, bool hasDocumentSecurityOrigin)
@@ -331,22 +382,22 @@ void RuleSet::addChildRules(const Vector<RefPtr<StyleRuleBase> >& rules, const M
             resolver->fontSelector()->addFontFaceRule(fontFaceRule);
             resolver->invalidateMatchedPropertiesCache();
         } else if (rule->isKeyframesRule() && resolver) {
-            // FIXME (BUG 72462): We don't add @keyframe rules of scoped style sheets for the moment.
-            if (!isDocumentScope(scope))
-                continue;
-            resolver->addKeyframeStyle(static_cast<StyleRuleKeyframes*>(rule));
-        }
-        else if (rule->isRegionRule() && resolver) {
+            resolver->ensureScopedStyleResolver(scope)->addKeyframeStyle(static_cast<StyleRuleKeyframes*>(rule));
+        } else if (rule->isRegionRule() && resolver) {
             // FIXME (BUG 72472): We don't add @-webkit-region rules of scoped style sheets for the moment.
             addRegionRule(static_cast<StyleRuleRegion*>(rule), hasDocumentSecurityOrigin);
-        }
-        else if (rule->isHostRule())
+        } else if (rule->isHostRule() && resolver) {
+            if (!isScopingNodeInShadowTree(scope))
+                continue;
+            bool enabled = resolver->buildScopedStyleTreeInDocumentOrder();
+            resolver->setBuildScopedStyleTreeInDocumentOrder(false);
             resolver->ensureScopedStyleResolver(scope->shadowHost())->addHostRule(static_cast<StyleRuleHost*>(rule), hasDocumentSecurityOrigin, scope);
-        else if (RuntimeEnabledFeatures::cssViewportEnabled() && rule->isViewportRule() && resolver) {
+            resolver->setBuildScopedStyleTreeInDocumentOrder(enabled);
+        } else if (RuntimeEnabledFeatures::cssViewportEnabled() && rule->isViewportRule()) {
             // @viewport should not be scoped.
             if (!isDocumentScope(scope))
                 continue;
-            resolver->viewportStyleResolver()->addViewportRule(static_cast<StyleRuleViewport*>(rule));
+            addViewportRule(static_cast<StyleRuleViewport*>(rule));
         }
         else if (rule->isSupportsRule() && static_cast<StyleRuleSupports*>(rule)->conditionIsSupported())
             addChildRules(static_cast<StyleRuleSupports*>(rule)->childRules(), medium, resolver, scope, hasDocumentSecurityOrigin, addRuleFlags);
@@ -381,21 +432,16 @@ void RuleSet::compactPendingRules(PendingRuleMap& pendingMap, CompactRuleMap& co
     PendingRuleMap::iterator end = pendingMap.end();
     for (PendingRuleMap::iterator it = pendingMap.begin(); it != end; ++it) {
         OwnPtr<LinkedStack<RuleData> > pendingRules = it->value.release();
-        size_t pendingSize = pendingRules->size();
-        ASSERT(pendingSize);
+        CompactRuleMap::iterator compactRules = compactMap.add(it->key, nullptr).iterator;
 
-        OwnPtr<Vector<RuleData> >& compactRules = compactMap.add(it->key, nullptr).iterator->value;
-        if (!compactRules) {
-            compactRules = adoptPtr(new Vector<RuleData>);
-            compactRules->reserveInitialCapacity(pendingSize);
-        } else {
-            compactRules->reserveCapacity(compactRules->size() + pendingSize);
-        }
-
+        TerminatedArrayBuilder<RuleData> builder(compactRules->value.release());
+        builder.grow(pendingRules->size());
         while (!pendingRules->isEmpty()) {
-            compactRules->append(pendingRules->peek());
+            builder.append(pendingRules->peek());
             pendingRules->pop();
         }
+
+        compactRules->value = builder.release();
     }
 }
 
@@ -412,6 +458,7 @@ void RuleSet::compactRules()
     m_focusPseudoClassRules.shrinkToFit();
     m_universalRules.shrinkToFit();
     m_pageRules.shrinkToFit();
+    m_viewportRules.shrinkToFit();
 }
 
 } // namespace WebCore

@@ -85,13 +85,14 @@ sctp_init(void)
 
 #endif
 #if defined(__Userspace_os_Windows)
+#if defined(INET) || defined(INET6)
 	WSADATA wsaData;
-	int Ret;
 
-	if ((Ret = WSAStartup(MAKEWORD(2,2), &wsaData))!=0) {
+	if (WSAStartup(MAKEWORD(2,2), &wsaData) != 0) {
 		SCTP_PRINTF("WSAStartup failed\n");
 		exit (-1);
 	}
+#endif
 	InitializeConditionVariable(&accept_cond);
 	InitializeCriticalSection(&accept_mtx);
 #endif
@@ -1162,11 +1163,11 @@ sctp_disconnect(struct socket *so)
 			}
 #if defined(__Userspace__)
 			if (((so->so_options & SCTP_SO_LINGER) &&
-			    (so->so_linger == 0)) ||
+			     (so->so_linger == 0)) ||
 			    (so->so_rcv.sb_cc > 0)) {
 #else
 			if (((so->so_options & SO_LINGER) &&
-			    (so->so_linger == 0)) ||
+			     (so->so_linger == 0)) ||
 			    (so->so_rcv.sb_cc > 0)) {
 #endif
 				if (SCTP_GET_STATE(asoc) !=

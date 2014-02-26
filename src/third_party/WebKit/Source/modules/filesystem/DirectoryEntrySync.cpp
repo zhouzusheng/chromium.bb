@@ -31,7 +31,8 @@
 #include "config.h"
 #include "modules/filesystem/DirectoryEntrySync.h"
 
-#include "core/fileapi/FileException.h"
+#include "bindings/v8/ExceptionState.h"
+#include "core/dom/ExceptionCode.h"
 #include "modules/filesystem/DirectoryReaderSync.h"
 #include "modules/filesystem/EntrySync.h"
 #include "modules/filesystem/FileEntrySync.h"
@@ -50,39 +51,36 @@ PassRefPtr<DirectoryReaderSync> DirectoryEntrySync::createReader()
     return DirectoryReaderSync::create(m_fileSystem, m_fullPath);
 }
 
-PassRefPtr<FileEntrySync> DirectoryEntrySync::getFile(const String& path, const Dictionary& options, ExceptionCode& ec)
+PassRefPtr<FileEntrySync> DirectoryEntrySync::getFile(const String& path, const Dictionary& options, ExceptionState& es)
 {
-    ec = 0;
     FileSystemFlags flags(options);
     EntrySyncCallbackHelper helper(m_fileSystem->asyncFileSystem());
-    if (!m_fileSystem->getFile(this, path, flags, helper.successCallback(), helper.errorCallback())) {
-        ec = FileException::INVALID_MODIFICATION_ERR;
+    if (!m_fileSystem->getFile(this, path, flags, helper.successCallback(), helper.errorCallback(), DOMFileSystemBase::Synchronous)) {
+        es.throwDOMException(InvalidModificationError);
         return 0;
     }
-    return static_pointer_cast<FileEntrySync>(helper.getResult(ec));
+    return static_pointer_cast<FileEntrySync>(helper.getResult(es));
 }
 
-PassRefPtr<DirectoryEntrySync> DirectoryEntrySync::getDirectory(const String& path, const Dictionary& options, ExceptionCode& ec)
+PassRefPtr<DirectoryEntrySync> DirectoryEntrySync::getDirectory(const String& path, const Dictionary& options, ExceptionState& es)
 {
-    ec = 0;
     FileSystemFlags flags(options);
     EntrySyncCallbackHelper helper(m_fileSystem->asyncFileSystem());
-    if (!m_fileSystem->getDirectory(this, path, flags, helper.successCallback(), helper.errorCallback())) {
-        ec = FileException::INVALID_MODIFICATION_ERR;
+    if (!m_fileSystem->getDirectory(this, path, flags, helper.successCallback(), helper.errorCallback(), DOMFileSystemBase::Synchronous)) {
+        es.throwDOMException(InvalidModificationError);
         return 0;
     }
-    return static_pointer_cast<DirectoryEntrySync>(helper.getResult(ec));
+    return static_pointer_cast<DirectoryEntrySync>(helper.getResult(es));
 }
 
-void DirectoryEntrySync::removeRecursively(ExceptionCode& ec)
+void DirectoryEntrySync::removeRecursively(ExceptionState& es)
 {
-    ec = 0;
     VoidSyncCallbackHelper helper(m_fileSystem->asyncFileSystem());
-    if (!m_fileSystem->removeRecursively(this, helper.successCallback(), helper.errorCallback())) {
-        ec = FileException::INVALID_MODIFICATION_ERR;
+    if (!m_fileSystem->removeRecursively(this, helper.successCallback(), helper.errorCallback(), DOMFileSystemBase::Synchronous)) {
+        es.throwDOMException(InvalidModificationError);
         return;
     }
-    helper.getResult(ec);
+    helper.getResult(es);
 }
 
 }

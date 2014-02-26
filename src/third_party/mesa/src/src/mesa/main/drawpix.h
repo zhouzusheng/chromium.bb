@@ -26,7 +26,10 @@
 #define DRAWPIX_H
 
 
-#include "main/mtypes.h"
+#include "compiler.h"
+#include "mfeatures.h"
+
+struct _glapi_table;
 
 
 #if FEATURE_drawpix
@@ -36,7 +39,7 @@ _mesa_init_drawpix_dispatch(struct _glapi_table *disp);
 
 #else /* FEATURE_drawpix */
 
-static INLINE void
+static inline void
 _mesa_init_drawpix_dispatch(struct _glapi_table *disp)
 {
 }

@@ -20,16 +20,16 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef WTF_PassOwnPtr_h
 #define WTF_PassOwnPtr_h
 
-#include <wtf/Assertions.h>
-#include <wtf/NullPtr.h>
-#include <wtf/OwnPtrCommon.h>
-#include <wtf/TypeTraits.h>
+#include "wtf/Assertions.h"
+#include "wtf/NullPtr.h"
+#include "wtf/OwnPtrCommon.h"
+#include "wtf/TypeTraits.h"
 
 namespace WTF {
 
@@ -40,6 +40,7 @@ namespace WTF {
     template<typename T> PassOwnPtr<T> adoptPtr(T*);
 
     template<typename T> class PassOwnPtr {
+        WTF_DISALLOW_CONSTRUCTION_FROM_ZERO(PassOwnPtr);
     public:
         typedef typename RemovePointer<T>::Type ValueType;
         typedef ValueType* PtrType;
@@ -92,54 +93,54 @@ namespace WTF {
         return ptr;
     }
 
-    template<typename T, typename U> inline bool operator==(const PassOwnPtr<T>& a, const PassOwnPtr<U>& b) 
+    template<typename T, typename U> inline bool operator==(const PassOwnPtr<T>& a, const PassOwnPtr<U>& b)
     {
-        return a.get() == b.get(); 
+        return a.get() == b.get();
     }
 
-    template<typename T, typename U> inline bool operator==(const PassOwnPtr<T>& a, const OwnPtr<U>& b) 
+    template<typename T, typename U> inline bool operator==(const PassOwnPtr<T>& a, const OwnPtr<U>& b)
     {
-        return a.get() == b.get(); 
+        return a.get() == b.get();
     }
-    
-    template<typename T, typename U> inline bool operator==(const OwnPtr<T>& a, const PassOwnPtr<U>& b) 
+
+    template<typename T, typename U> inline bool operator==(const OwnPtr<T>& a, const PassOwnPtr<U>& b)
     {
-        return a.get() == b.get(); 
+        return a.get() == b.get();
     }
-    
-    template<typename T, typename U> inline bool operator==(const PassOwnPtr<T>& a, U* b) 
+
+    template<typename T, typename U> inline bool operator==(const PassOwnPtr<T>& a, U* b)
     {
-        return a.get() == b; 
+        return a.get() == b;
     }
-    
-    template<typename T, typename U> inline bool operator==(T* a, const PassOwnPtr<U>& b) 
+
+    template<typename T, typename U> inline bool operator==(T* a, const PassOwnPtr<U>& b)
     {
-        return a == b.get(); 
+        return a == b.get();
     }
-    
-    template<typename T, typename U> inline bool operator!=(const PassOwnPtr<T>& a, const PassOwnPtr<U>& b) 
+
+    template<typename T, typename U> inline bool operator!=(const PassOwnPtr<T>& a, const PassOwnPtr<U>& b)
     {
-        return a.get() != b.get(); 
+        return a.get() != b.get();
     }
-    
-    template<typename T, typename U> inline bool operator!=(const PassOwnPtr<T>& a, const OwnPtr<U>& b) 
+
+    template<typename T, typename U> inline bool operator!=(const PassOwnPtr<T>& a, const OwnPtr<U>& b)
     {
-        return a.get() != b.get(); 
+        return a.get() != b.get();
     }
-    
-    template<typename T, typename U> inline bool operator!=(const OwnPtr<T>& a, const PassOwnPtr<U>& b) 
+
+    template<typename T, typename U> inline bool operator!=(const OwnPtr<T>& a, const PassOwnPtr<U>& b)
     {
-        return a.get() != b.get(); 
+        return a.get() != b.get();
     }
-    
+
     template<typename T, typename U> inline bool operator!=(const PassOwnPtr<T>& a, U* b)
     {
-        return a.get() != b; 
+        return a.get() != b;
     }
-    
-    template<typename T, typename U> inline bool operator!=(T* a, const PassOwnPtr<U>& b) 
+
+    template<typename T, typename U> inline bool operator!=(T* a, const PassOwnPtr<U>& b)
     {
-        return a != b.get(); 
+        return a != b.get();
     }
 
     template<typename T> inline PassOwnPtr<T> adoptPtr(T* ptr)
@@ -147,12 +148,12 @@ namespace WTF {
         return PassOwnPtr<T>(ptr);
     }
 
-    template<typename T, typename U> inline PassOwnPtr<T> static_pointer_cast(const PassOwnPtr<U>& p) 
+    template<typename T, typename U> inline PassOwnPtr<T> static_pointer_cast(const PassOwnPtr<U>& p)
     {
         return adoptPtr(static_cast<T*>(p.leakPtr()));
     }
 
-    template<typename T, typename U> inline PassOwnPtr<T> const_pointer_cast(const PassOwnPtr<U>& p) 
+    template<typename T, typename U> inline PassOwnPtr<T> const_pointer_cast(const PassOwnPtr<U>& p)
     {
         return adoptPtr(const_cast<T*>(p.leakPtr()));
     }

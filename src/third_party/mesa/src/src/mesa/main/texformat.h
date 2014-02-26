@@ -27,13 +27,13 @@
 #define TEXFORMAT_H
 
 
-#include "mtypes.h"
 #include "formats.h"
 
+struct gl_context;
 
 extern gl_format
-_mesa_choose_tex_format( GLcontext *ctx, GLint internalFormat,
-                         GLenum format, GLenum type );
+_mesa_choose_tex_format(struct gl_context *ctx, GLenum target,
+                        GLint internalFormat, GLenum format, GLenum type);
 
 
 #endif

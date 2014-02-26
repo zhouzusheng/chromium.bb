@@ -9,7 +9,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "cc/animation/animation_events.h"
 #include "cc/base/completion_event.h"
 #include "cc/resources/resource_update_controller.h"
@@ -49,8 +49,10 @@ class ThreadProxy : public Proxy,
   virtual void CreateAndInitializeOutputSurface() OVERRIDE;
   virtual const RendererCapabilities& GetRendererCapabilities() const OVERRIDE;
   virtual void SetNeedsAnimate() OVERRIDE;
+  virtual void SetNeedsUpdateLayers() OVERRIDE;
   virtual void SetNeedsCommit() OVERRIDE;
   virtual void SetNeedsRedraw(gfx::Rect damage_rect) OVERRIDE;
+  virtual void NotifyInputThrottledUntilCommit() OVERRIDE;
   virtual void SetDeferCommits(bool defer_commits) OVERRIDE;
   virtual bool CommitRequested() const OVERRIDE;
   virtual void MainThreadHasStoppedFlinging() OVERRIDE;
@@ -59,7 +61,6 @@ class ThreadProxy : public Proxy,
   virtual size_t MaxPartialTextureUpdates() const OVERRIDE;
   virtual void AcquireLayerTextures() OVERRIDE;
   virtual void ForceSerializeOnSwapBuffers() OVERRIDE;
-  virtual skia::RefPtr<SkPicture> CapturePicture() OVERRIDE;
   virtual scoped_ptr<base::Value> AsValue() const OVERRIDE;
   virtual bool CommitPendingForTesting() OVERRIDE;
   virtual std::string SchedulerStateAsStringForTesting() OVERRIDE;
@@ -99,12 +100,14 @@ class ThreadProxy : public Proxy,
   virtual ScheduledActionDrawAndSwapResult ScheduledActionDrawAndSwapForced()
       OVERRIDE;
   virtual void ScheduledActionCommit() OVERRIDE;
-  virtual void ScheduledActionCheckForCompletedTileUploads() OVERRIDE;
+  virtual void ScheduledActionUpdateVisibleTiles() OVERRIDE;
   virtual void ScheduledActionActivatePendingTreeIfNeeded() OVERRIDE;
   virtual void ScheduledActionBeginOutputSurfaceCreation() OVERRIDE;
   virtual void ScheduledActionAcquireLayerTexturesForMainThread() OVERRIDE;
   virtual void DidAnticipatedDrawTimeChange(base::TimeTicks time) OVERRIDE;
   virtual base::TimeDelta DrawDurationEstimate() OVERRIDE;
+  virtual base::TimeDelta BeginFrameToCommitDurationEstimate() OVERRIDE;
+  virtual base::TimeDelta CommitToActivateDurationEstimate() OVERRIDE;
 
   // ResourceUpdateControllerClient implementation
   virtual void ReadyToFinalizeTextureUpdates() OVERRIDE;
@@ -134,6 +137,7 @@ class ThreadProxy : public Proxy,
   void OnOutputSurfaceInitializeAttempted(
       bool success,
       const RendererCapabilities& capabilities);
+  void SendCommitRequestToImplThreadIfNeeded();
 
   // Called on impl thread.
   struct ReadbackRequest;
@@ -145,7 +149,7 @@ class ThreadProxy : public Proxy,
       CompletionEvent* completion,
       ResourceUpdateQueue* queue,
       scoped_refptr<cc::ContextProvider> offscreen_context_provider);
-  void BeginFrameAbortedByMainThreadOnImplThread();
+  void BeginFrameAbortedByMainThreadOnImplThread(bool did_handle);
   void RequestReadbackOnImplThread(ReadbackRequest* request);
   void FinishAllRenderingOnImplThread(CompletionEvent* completion);
   void InitializeImplOnImplThread(CompletionEvent* completion);
@@ -171,14 +175,13 @@ class ThreadProxy : public Proxy,
   void CommitPendingOnImplThreadForTesting(CommitPendingRequest* request);
   void SchedulerStateAsStringOnImplThreadForTesting(
       SchedulerStateRequest* request);
-  void CapturePictureOnImplThread(CompletionEvent* completion,
-                                  skia::RefPtr<SkPicture>* picture);
   void AsValueOnImplThread(CompletionEvent* completion,
                            base::DictionaryValue* state) const;
   void RenewTreePriorityOnImplThread();
   void DidSwapUseIncompleteTileOnImplThread();
   void StartScrollbarAnimationOnImplThread();
   void MainThreadHasStoppedFlingingOnImplThread();
+  void SetInputThrottledUntilCommitOnImplThread(bool is_throttled);
 
   // Accessed on main thread only.
 
@@ -242,13 +245,24 @@ class ThreadProxy : public Proxy,
 
   bool inside_draw_;
 
+  bool can_cancel_commit_;
+
   bool defer_commits_;
+  bool input_throttled_until_commit_;
   scoped_ptr<BeginFrameAndCommitState> pending_deferred_commit_;
 
   base::TimeTicks smoothness_takes_priority_expiration_time_;
   bool renew_tree_priority_on_impl_thread_pending_;
 
   RollingTimeDeltaHistory draw_duration_history_;
+  RollingTimeDeltaHistory begin_frame_to_commit_duration_history_;
+  RollingTimeDeltaHistory commit_to_activate_duration_history_;
+
+  // Used for computing samples added to
+  // begin_frame_to_commit_draw_duration_history_ and
+  // activation_duration_history_.
+  base::TimeTicks begin_frame_sent_to_main_thread_time_;
+  base::TimeTicks commit_complete_time_;
 
   DISALLOW_COPY_AND_ASSIGN(ThreadProxy);
 };

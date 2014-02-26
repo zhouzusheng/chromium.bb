@@ -36,6 +36,8 @@
 
 namespace WebCore {
 
+class ExceptionState;
+
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 typedef BaseMultipleFieldsDateAndTimeInputType BaseDateTimeLocalInputType;
 #else
@@ -52,9 +54,9 @@ private:
     virtual const AtomicString& formControlType() const OVERRIDE;
     virtual DateComponents::Type dateType() const OVERRIDE;
     virtual double valueAsDate() const OVERRIDE;
-    virtual void setValueAsDate(double, ExceptionCode&) const OVERRIDE;
+    virtual void setValueAsDate(double, ExceptionState&) const OVERRIDE;
     virtual StepRange createStepRange(AnyStepHandling) const;
-    virtual bool parseToDateComponentsInternal(const UChar*, unsigned length, DateComponents*) const OVERRIDE;
+    virtual bool parseToDateComponentsInternal(const String&, DateComponents*) const OVERRIDE;
     virtual bool setMillisecondToDateComponents(double, DateComponents*) const OVERRIDE;
     virtual bool isDateTimeLocalField() const OVERRIDE;
 

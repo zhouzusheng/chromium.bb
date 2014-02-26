@@ -15,12 +15,12 @@
 #include "base/i18n/rtl.h"
 #include "base/json/json_reader.h"
 #include "base/lazy_instance.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/cross_site_request_manager.h"
@@ -50,13 +50,13 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
-#include "content/public/browser/power_save_blocker.h"
 #include "content/public/browser/render_view_host_observer.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/context_menu_params.h"
+#include "content/public/common/drop_data.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
@@ -68,7 +68,6 @@
 #include "ui/shell_dialogs/selected_file_info.h"
 #include "ui/snapshot/snapshot.h"
 #include "webkit/browser/fileapi/isolated_context.h"
-#include "webkit/common/webdropdata.h"
 
 #if defined(OS_MACOSX)
 #include "content/browser/renderer_host/popup_menu_helper_mac.h"
@@ -154,8 +153,7 @@ RenderViewHostImpl::RenderViewHostImpl(
     RenderWidgetHostDelegate* widget_delegate,
     int routing_id,
     int main_frame_routing_id,
-    bool swapped_out,
-    SessionStorageNamespace* session_storage)
+    bool swapped_out)
     : RenderWidgetHostImpl(widget_delegate, instance->GetProcess(), routing_id),
       delegate_(delegate),
       instance_(static_cast<SiteInstanceImpl*>(instance)),
@@ -174,10 +172,7 @@ RenderViewHostImpl::RenderViewHostImpl(
       unload_ack_is_for_cross_site_transition_(false),
       are_javascript_messages_suppressed_(false),
       sudden_termination_allowed_(false),
-      session_storage_namespace_(
-          static_cast<SessionStorageNamespaceImpl*>(session_storage)),
       render_view_termination_status_(base::TERMINATION_STATUS_STILL_RUNNING) {
-  DCHECK(session_storage_namespace_.get());
   DCHECK(instance_.get());
   CHECK(delegate_);  // http://crbug.com/82827
 
@@ -204,9 +199,7 @@ RenderViewHostImpl::~RenderViewHostImpl() {
   FOR_EACH_OBSERVER(
       RenderViewHostObserver, observers_, RenderViewHostDestruction());
 
-  ClearPowerSaveBlockers();
-
-  GetDelegate()->RenderViewDeleted(this);
+    GetDelegate()->RenderViewDeleted(this);
 
   // Be sure to clean up any leftover state from cross-site requests.
   CrossSiteRequestManager::GetInstance()->SetHasPendingCrossSiteRequest(
@@ -260,7 +253,8 @@ bool RenderViewHostImpl::CreateRenderView(
   params.view_id = GetRoutingID();
   params.main_frame_routing_id = main_render_frame_host_->routing_id();
   params.surface_id = surface_id();
-  params.session_storage_namespace_id = session_storage_namespace_->id();
+  params.session_storage_namespace_id =
+      delegate_->GetSessionStorageNamespace(instance_)->id();
   params.frame_name = frame_name;
   // Ensure the RenderView sets its opener correctly.
   params.opener_route_id = opener_route_id;
@@ -483,8 +477,8 @@ void RenderViewHostImpl::WasSwappedOut() {
     base::ProcessHandle process_handle = GetProcess()->GetHandle();
     int views = 0;
 
-    // Count the number of widget hosts for the process, which is equivalent to
-    // views using the process as of this writing.
+    // Count the number of active widget hosts for the process, which
+    // is equivalent to views using the process as of this writing.
     RenderWidgetHost::List widgets = RenderWidgetHost::GetRenderWidgetHosts();
     for (size_t i = 0; i < widgets.size(); ++i) {
       if (widgets[i]->GetProcess()->GetID() == GetProcess()->GetID())
@@ -579,7 +573,7 @@ void RenderViewHostImpl::RequestFindMatchRects(int current_version) {
 #endif
 
 void RenderViewHostImpl::DragTargetDragEnter(
-    const WebDropData& drop_data,
+    const DropData& drop_data,
     const gfx::Point& client_pt,
     const gfx::Point& screen_pt,
     WebDragOperationsMask operations_allowed,
@@ -590,13 +584,13 @@ void RenderViewHostImpl::DragTargetDragEnter(
 
   // The URL could have been cobbled together from any highlighted text string,
   // and can't be interpreted as a capability.
-  WebDropData filtered_data(drop_data);
+  DropData filtered_data(drop_data);
   FilterURL(policy, GetProcess(), true, &filtered_data.url);
 
   // The filenames vector, on the other hand, does represent a capability to
   // access the given files.
   fileapi::IsolatedContext::FileInfoSet files;
-  for (std::vector<WebDropData::FileInfo>::iterator iter(
+  for (std::vector<DropData::FileInfo>::iterator iter(
            filtered_data.filenames.begin());
        iter != filtered_data.filenames.end(); ++iter) {
     // A dragged file may wind up as the value of an input element, or it
@@ -842,12 +836,17 @@ void RenderViewHostImpl::SetInitialFocus(bool reverse) {
 
 void RenderViewHostImpl::FilesSelectedInChooser(
     const std::vector<ui::SelectedFileInfo>& files,
-    int permissions) {
+    FileChooserParams::Mode permissions) {
   // Grant the security access requested to the given files.
   for (size_t i = 0; i < files.size(); ++i) {
     const ui::SelectedFileInfo& file = files[i];
-    ChildProcessSecurityPolicyImpl::GetInstance()->GrantPermissionsForFile(
-        GetProcess()->GetID(), file.local_path, permissions);
+    if (permissions == FileChooserParams::Save) {
+      ChildProcessSecurityPolicyImpl::GetInstance()->GrantCreateWriteFile(
+          GetProcess()->GetID(), file.local_path);
+    } else {
+      ChildProcessSecurityPolicyImpl::GetInstance()->GrantReadFile(
+          GetProcess()->GetID(), file.local_path);
+    }
   }
   Send(new ViewMsg_RunFileChooserResponse(GetRoutingID(), files));
 }
@@ -926,7 +925,7 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
                         OnShowFullscreenWidget)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_RunModal, OnRunModal)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RenderViewReady, OnRenderViewReady)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_RenderViewGone, OnRenderViewGone)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_RenderProcessGone, OnRenderProcessGone)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidStartProvisionalLoadForFrame,
                         OnDidStartProvisionalLoadForFrame)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidRedirectProvisionalLoad,
@@ -985,7 +984,6 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
                         OnSelectionBoundsChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ScriptEvalResponse, OnScriptEvalResponse)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidZoomURL, OnDidZoomURL)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_MediaNotification, OnMediaNotification)
     IPC_MESSAGE_HANDLER(ViewHostMsg_GetWindowSnapshot, OnGetWindowSnapshot)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_RequestPermission,
                         OnRequestDesktopNotificationPermission)
@@ -1118,14 +1116,13 @@ void RenderViewHostImpl::OnRenderViewReady() {
   delegate_->RenderViewReady(this);
 }
 
-void RenderViewHostImpl::OnRenderViewGone(int status, int exit_code) {
+void RenderViewHostImpl::OnRenderProcessGone(int status, int exit_code) {
   // Keep the termination status so we can get at it later when we
   // need to know why it died.
   render_view_termination_status_ =
       static_cast<base::TerminationStatus>(status);
 
   // Reset state.
-  ClearPowerSaveBlockers();
   main_frame_id_ = -1;
 
   // Our base class RenderWidgetHost needs to reset some stuff.
@@ -1368,7 +1365,7 @@ void RenderViewHostImpl::OnOpenURL(
 
   delegate_->RequestOpenURL(
       this, validated_url, params.referrer, params.disposition, params.frame_id,
-      params.is_cross_site_redirect);
+      params.should_replace_current_entry, params.user_gesture);
 }
 
 void RenderViewHostImpl::OnDidContentsPreferredSizeChange(
@@ -1452,7 +1449,7 @@ void RenderViewHostImpl::OnRunBeforeUnloadConfirm(const GURL& frame_url,
 }
 
 void RenderViewHostImpl::OnStartDragging(
-    const WebDropData& drop_data,
+    const DropData& drop_data,
     WebDragOperationsMask drag_operations_mask,
     const SkBitmap& bitmap,
     const gfx::Vector2d& bitmap_offset_in_dip,
@@ -1461,7 +1458,7 @@ void RenderViewHostImpl::OnStartDragging(
   if (!view)
     return;
 
-  WebDropData filtered_data(drop_data);
+  DropData filtered_data(drop_data);
   RenderProcessHost* process = GetProcess();
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
@@ -1479,7 +1476,7 @@ void RenderViewHostImpl::OnStartDragging(
   //    still fire though, which causes read permissions to be granted to the
   //    renderer for any file paths in the drop.
   filtered_data.filenames.clear();
-  for (std::vector<WebDropData::FileInfo>::const_iterator it =
+  for (std::vector<DropData::FileInfo>::const_iterator it =
            drop_data.filenames.begin();
        it != drop_data.filenames.end(); ++it) {
     base::FilePath path(base::FilePath::FromUTF8Unsafe(UTF16ToUTF8(it->path)));
@@ -1944,33 +1941,6 @@ void RenderViewHostImpl::OnDidZoomURL(double zoom_level,
   }
 }
 
-void RenderViewHostImpl::OnMediaNotification(int64 player_cookie,
-                                             bool has_video,
-                                             bool has_audio,
-                                             bool is_playing) {
-  // Chrome OS does its own detection of audio and video.
-#if !defined(OS_CHROMEOS)
-  if (is_playing) {
-    scoped_ptr<PowerSaveBlocker> blocker;
-    if (has_video) {
-      blocker = PowerSaveBlocker::Create(
-          PowerSaveBlocker::kPowerSaveBlockPreventDisplaySleep,
-          "Playing video");
-    } else if (has_audio) {
-      blocker = PowerSaveBlocker::Create(
-          PowerSaveBlocker::kPowerSaveBlockPreventAppSuspension,
-          "Playing audio");
-    }
-
-    if (blocker)
-      power_save_blockers_[player_cookie] = blocker.release();
-  } else {
-    delete power_save_blockers_[player_cookie];
-    power_save_blockers_.erase(player_cookie);
-  }
-#endif
-}
-
 void RenderViewHostImpl::OnRequestDesktopNotificationPermission(
     const GURL& source_origin, int callback_context) {
   GetContentClient()->browser()->RequestDesktopNotificationPermission(
@@ -2070,10 +2040,6 @@ void RenderViewHostImpl::SetSwappedOut(bool is_swapped_out) {
   is_waiting_for_beforeunload_ack_ = false;
   is_waiting_for_unload_ack_ = false;
   has_timed_out_on_unload_ = false;
-}
-
-void RenderViewHostImpl::ClearPowerSaveBlockers() {
-  STLDeleteValues(&power_save_blockers_);
 }
 
 bool RenderViewHostImpl::CanAccessFilesOfPageState(

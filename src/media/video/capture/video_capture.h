@@ -9,7 +9,7 @@
 #define MEDIA_VIDEO_CAPTURE_VIDEO_CAPTURE_H_
 
 #include "base/memory/ref_counted.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/base/media_export.h"
 #include "media/base/video_frame.h"
 #include "media/video/capture/video_capture_types.h"
@@ -71,6 +71,11 @@ class MEDIA_EXPORT VideoCapture {
     virtual void OnDeviceInfoReceived(
         VideoCapture* capture,
         const VideoCaptureParams& device_info) = 0;
+
+    // Notify client about the newly changed device info.
+    virtual void OnDeviceInfoChanged(
+        VideoCapture* capture,
+        const VideoCaptureParams& device_info) {};
 
    protected:
     virtual ~EventHandler() {}

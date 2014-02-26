@@ -27,14 +27,13 @@
 #include "config.h"
 #include "core/page/DOMWindow.h"
 
-#include <wtf/CurrentTime.h>
-#include <wtf/MainThread.h>
-#include <wtf/MathExtras.h>
-#include <wtf/text/Base64.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/MainThread.h"
+#include "wtf/MathExtras.h"
+#include "wtf/text/WTFString.h"
 #include <algorithm>
 #include "RuntimeEnabledFeatures.h"
-#include "bindings/v8/ScheduledAction.h"
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "bindings/v8/ScriptCallStackFactory.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/SerializedScriptValue.h"
@@ -51,11 +50,10 @@
 #include "core/dom/EventListener.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/MessageEvent.h"
 #include "core/dom/PageTransitionEvent.h"
 #include "core/dom/RequestAnimationFrameCallback.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
+#include "core/dom/ScriptExecutionContext.h"
 #include "core/editing/Editor.h"
 #include "core/history/BackForwardController.h"
 #include "core/html/HTMLFrameOwnerElement.h"
@@ -73,8 +71,8 @@
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Console.h"
+#include "core/page/CreateWindow.h"
 #include "core/page/DOMPoint.h"
-#include "core/page/DOMTimer.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameTree.h"
@@ -94,6 +92,7 @@
 #include "core/platform/PlatformScreen.h"
 #include "core/platform/SuddenTermination.h"
 #include "core/platform/graphics/FloatRect.h"
+#include "core/platform/graphics/MediaPlayer.h"
 #include "core/storage/Storage.h"
 #include "core/storage/StorageArea.h"
 #include "core/storage/StorageNamespace.h"
@@ -230,77 +229,9 @@ static bool allowsBeforeUnloadListeners(DOMWindow* window)
     return frame == page->mainFrame();
 }
 
-bool DOMWindow::dispatchAllPendingBeforeUnloadEvents()
-{
-    DOMWindowSet& set = windowsWithBeforeUnloadEventListeners();
-    if (set.isEmpty())
-        return true;
-
-    static bool alreadyDispatched = false;
-    ASSERT(!alreadyDispatched);
-    if (alreadyDispatched)
-        return true;
-
-    Vector<RefPtr<DOMWindow> > windows;
-    DOMWindowSet::iterator end = set.end();
-    for (DOMWindowSet::iterator it = set.begin(); it != end; ++it)
-        windows.append(it->key);
-
-    size_t size = windows.size();
-    for (size_t i = 0; i < size; ++i) {
-        DOMWindow* window = windows[i].get();
-        if (!set.contains(window))
-            continue;
-
-        Frame* frame = window->frame();
-        if (!frame)
-            continue;
-
-        if (!frame->loader()->shouldClose())
-            return false;
-    }
-
-    enableSuddenTermination();
-
-    alreadyDispatched = true;
-
-    return true;
-}
-
 unsigned DOMWindow::pendingUnloadEventListeners() const
 {
     return windowsWithUnloadEventListeners().count(const_cast<DOMWindow*>(this));
-}
-
-void DOMWindow::dispatchAllPendingUnloadEvents()
-{
-    DOMWindowSet& set = windowsWithUnloadEventListeners();
-    if (set.isEmpty())
-        return;
-
-    static bool alreadyDispatched = false;
-    ASSERT(!alreadyDispatched);
-    if (alreadyDispatched)
-        return;
-
-    Vector<RefPtr<DOMWindow> > windows;
-    DOMWindowSet::iterator end = set.end();
-    for (DOMWindowSet::iterator it = set.begin(); it != end; ++it)
-        windows.append(it->key);
-
-    size_t size = windows.size();
-    for (size_t i = 0; i < size; ++i) {
-        DOMWindow* window = windows[i].get();
-        if (!set.contains(window))
-            continue;
-
-        window->dispatchEvent(PageTransitionEvent::create(eventNames().pagehideEvent, false), window->document());
-        window->dispatchEvent(Event::create(eventNames().unloadEvent, false, false), window->document());
-    }
-
-    enableSuddenTermination();
-
-    alreadyDispatched = true;
 }
 
 // This function:
@@ -401,6 +332,11 @@ void DOMWindow::setDocument(PassRefPtr<Document> document)
     if (m_document) {
         if (m_document->attached()) {
             // FIXME: We don't call willRemove here. Why is that OK?
+            // This detach() call is also mostly redundant. Most of the calls to
+            // this function come via DocumentLoader::createWriterFor, which
+            // always detaches the previous Document first. Only XSLTProcessor
+            // depends on this detach() call, so it seems like there's some room
+            // for cleanup.
             m_document->detach();
         }
         m_document->setDOMWindow(0);
@@ -464,7 +400,7 @@ DOMWindow::~DOMWindow()
 
     removeAllEventListeners();
 
-    // Unparent any attached Document so Document won't try to use a destroyed DOMWindow.
+    ASSERT(!m_document->attached());
     setDocument(0);
 }
 
@@ -571,7 +507,7 @@ void DOMWindow::resetDOMWindowProperties()
 
 bool DOMWindow::isCurrentlyDisplayedInFrame() const
 {
-    return m_frame && m_frame->document()->domWindow() == this;
+    return m_frame && m_frame->domWindow() == this;
 }
 
 #if ENABLE(ORIENTATION_EVENTS)
@@ -690,12 +626,6 @@ Navigator* DOMWindow::navigator() const
     return m_navigator.get();
 }
 
-void DOMWindow::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    info.addMember(m_document, "document");
-}
-
 Performance* DOMWindow::performance() const
 {
     if (!isCurrentlyDisplayedInFrame())
@@ -714,7 +644,7 @@ Location* DOMWindow::location() const
     return m_location.get();
 }
 
-Storage* DOMWindow::sessionStorage(ExceptionCode& ec) const
+Storage* DOMWindow::sessionStorage(ExceptionState& es) const
 {
     if (!isCurrentlyDisplayedInFrame())
         return 0;
@@ -723,14 +653,14 @@ Storage* DOMWindow::sessionStorage(ExceptionCode& ec) const
     if (!document)
         return 0;
 
-    if (!document->securityOrigin()->canAccessLocalStorage(document->topOrigin())) {
-        ec = SECURITY_ERR;
+    if (!document->securityOrigin()->canAccessLocalStorage()) {
+        es.throwDOMException(SecurityError);
         return 0;
     }
 
     if (m_sessionStorage) {
         if (!m_sessionStorage->area()->canAccessStorage(m_frame)) {
-            ec = SECURITY_ERR;
+            es.throwDOMException(SecurityError);
             return 0;
         }
         return m_sessionStorage.get();
@@ -740,9 +670,9 @@ Storage* DOMWindow::sessionStorage(ExceptionCode& ec) const
     if (!page)
         return 0;
 
-    RefPtr<StorageArea> storageArea = page->sessionStorage()->storageArea(document->securityOrigin());
+    OwnPtr<StorageArea> storageArea = page->sessionStorage()->storageArea(document->securityOrigin());
     if (!storageArea->canAccessStorage(m_frame)) {
-        ec = SECURITY_ERR;
+        es.throwDOMException(SecurityError);
         return 0;
     }
 
@@ -750,7 +680,7 @@ Storage* DOMWindow::sessionStorage(ExceptionCode& ec) const
     return m_sessionStorage.get();
 }
 
-Storage* DOMWindow::localStorage(ExceptionCode& ec) const
+Storage* DOMWindow::localStorage(ExceptionState& es) const
 {
     if (!isCurrentlyDisplayedInFrame())
         return 0;
@@ -759,14 +689,14 @@ Storage* DOMWindow::localStorage(ExceptionCode& ec) const
     if (!document)
         return 0;
 
-    if (!document->securityOrigin()->canAccessLocalStorage(document->topOrigin())) {
-        ec = SECURITY_ERR;
+    if (!document->securityOrigin()->canAccessLocalStorage()) {
+        es.throwDOMException(SecurityError);
         return 0;
     }
 
     if (m_localStorage) {
         if (!m_localStorage->area()->canAccessStorage(m_frame)) {
-            ec = SECURITY_ERR;
+            es.throwDOMException(SecurityError);
             return 0;
         }
         return m_localStorage.get();
@@ -779,9 +709,9 @@ Storage* DOMWindow::localStorage(ExceptionCode& ec) const
     if (!page->settings()->localStorageEnabled())
         return 0;
 
-    RefPtr<StorageArea> storageArea = page->group().localStorage()->storageArea(document->securityOrigin());
+    OwnPtr<StorageArea> storageArea = StorageNamespace::localStorageArea(document->securityOrigin());
     if (!storageArea->canAccessStorage(m_frame)) {
-        ec = SECURITY_ERR;
+        es.throwDOMException(SecurityError);
         return 0;
     }
 
@@ -789,7 +719,7 @@ Storage* DOMWindow::localStorage(ExceptionCode& ec) const
     return m_localStorage.get();
 }
 
-void DOMWindow::postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, const String& targetOrigin, DOMWindow* source, ExceptionCode& ec)
+void DOMWindow::postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, const String& targetOrigin, DOMWindow* source, ExceptionState& es)
 {
     if (!isCurrentlyDisplayedInFrame())
         return;
@@ -797,7 +727,7 @@ void DOMWindow::postMessage(PassRefPtr<SerializedScriptValue> message, const Mes
     Document* sourceDocument = source->document();
 
     // Compute the target origin.  We need to do this synchronously in order
-    // to generate the SYNTAX_ERR exception correctly.
+    // to generate the SyntaxError exception correctly.
     RefPtr<SecurityOrigin> target;
     if (targetOrigin == "/") {
         if (!sourceDocument)
@@ -808,13 +738,13 @@ void DOMWindow::postMessage(PassRefPtr<SerializedScriptValue> message, const Mes
         // It doesn't make sense target a postMessage at a unique origin
         // because there's no way to represent a unique origin in a string.
         if (target->isUnique()) {
-            ec = SYNTAX_ERR;
+            es.throwDOMException(SyntaxError);
             return;
         }
     }
 
-    OwnPtr<MessagePortChannelArray> channels = MessagePort::disentanglePorts(ports, ec);
-    if (ec)
+    OwnPtr<MessagePortChannelArray> channels = MessagePort::disentanglePorts(ports, es);
+    if (es.hadException())
         return;
 
     // Capture the source of the message.  We need to do this synchronously
@@ -1020,38 +950,6 @@ String DOMWindow::prompt(const String& message, const String& defaultValue)
     return String();
 }
 
-String DOMWindow::btoa(const String& stringToEncode, ExceptionCode& ec)
-{
-    if (stringToEncode.isNull())
-        return String();
-
-    if (!stringToEncode.containsOnlyLatin1()) {
-        ec = INVALID_CHARACTER_ERR;
-        return String();
-    }
-
-    return base64Encode(stringToEncode.latin1());
-}
-
-String DOMWindow::atob(const String& encodedString, ExceptionCode& ec)
-{
-    if (encodedString.isNull())
-        return String();
-
-    if (!encodedString.containsOnlyLatin1()) {
-        ec = INVALID_CHARACTER_ERR;
-        return String();
-    }
-
-    Vector<char> out;
-    if (!base64Decode(encodedString, out, Base64FailOnInvalidCharacter)) {
-        ec = INVALID_CHARACTER_ERR;
-        return String();
-    }
-
-    return String(out.data(), out.size());
-}
-
 bool DOMWindow::find(const String& string, bool caseSensitive, bool backwards, bool wrap, bool /*wholeWord*/, bool /*searchInFrames*/, bool /*showDialog*/) const
 {
     if (!isCurrentlyDisplayedInFrame())
@@ -1099,6 +997,10 @@ int DOMWindow::innerHeight() const
     if (!view)
         return 0;
 
+    // FIXME: This is potentially too much work. We really only need to know the dimensions of the parent frame's renderer.
+    if (Frame* parent = m_frame->tree()->parent())
+        parent->document()->updateLayoutIgnorePendingStylesheets();
+
     // If the device height is overridden, do not include the horizontal scrollbar into the innerHeight (since it is absent on the real device).
     bool includeScrollbars = !InspectorInstrumentation::shouldApplyScreenHeightOverride(m_frame);
     return view->mapFromLayoutToCSSUnits(static_cast<int>(view->visibleContentRect(includeScrollbars ? ScrollableArea::IncludeScrollbars : ScrollableArea::ExcludeScrollbars).height()));
@@ -1112,6 +1014,10 @@ int DOMWindow::innerWidth() const
     FrameView* view = m_frame->view();
     if (!view)
         return 0;
+
+    // FIXME: This is potentially too much work. We really only need to know the dimensions of the parent frame's renderer.
+    if (Frame* parent = m_frame->tree()->parent())
+        parent->document()->updateLayoutIgnorePendingStylesheets();
 
     // If the device width is overridden, do not include the vertical scrollbar into the innerWidth (since it is absent on the real device).
     bool includeScrollbars = !InspectorInstrumentation::shouldApplyScreenWidthOverride(m_frame);
@@ -1235,7 +1141,7 @@ DOMWindow* DOMWindow::self() const
     if (!m_frame)
         return 0;
 
-    return m_frame->document()->domWindow();
+    return m_frame->domWindow();
 }
 
 DOMWindow* DOMWindow::opener() const
@@ -1247,7 +1153,7 @@ DOMWindow* DOMWindow::opener() const
     if (!opener)
         return 0;
 
-    return opener->document()->domWindow();
+    return opener->domWindow();
 }
 
 DOMWindow* DOMWindow::parent() const
@@ -1257,9 +1163,9 @@ DOMWindow* DOMWindow::parent() const
 
     Frame* parent = m_frame->tree()->parent();
     if (parent)
-        return parent->document()->domWindow();
+        return parent->domWindow();
 
-    return m_frame->document()->domWindow();
+    return m_frame->domWindow();
 }
 
 DOMWindow* DOMWindow::top() const
@@ -1271,7 +1177,7 @@ DOMWindow* DOMWindow::top() const
     if (!page)
         return 0;
 
-    return m_frame->tree()->top()->document()->domWindow();
+    return m_frame->tree()->top()->domWindow();
 }
 
 Document* DOMWindow::document() const
@@ -1463,22 +1369,6 @@ void DOMWindow::resizeTo(float width, float height) const
     page->chrome().setWindowRect(adjustWindowRect(page, update));
 }
 
-void DOMWindow::clearTimeout(int timeoutId)
-{
-    ScriptExecutionContext* context = scriptExecutionContext();
-    if (!context)
-        return;
-    DOMTimer::removeById(context, timeoutId);
-}
-
-void DOMWindow::clearInterval(int timeoutId)
-{
-    ScriptExecutionContext* context = scriptExecutionContext();
-    if (!context)
-        return;
-    DOMTimer::removeById(context, timeoutId);
-}
-
 int DOMWindow::requestAnimationFrame(PassRefPtr<RequestAnimationFrameCallback> callback)
 {
     callback->m_useLegacyTimeBase = false;
@@ -1533,11 +1423,19 @@ bool DOMWindow::addEventListener(const AtomicString& eventType, PassRefPtr<Event
             didAddStorageEventListener(this);
     }
 
-    if (eventType == eventNames().unloadEvent)
+    if (eventType == eventNames().unloadEvent) {
         addUnloadEventListener(this);
-    else if (eventType == eventNames().beforeunloadEvent && allowsBeforeUnloadListeners(this))
-        addBeforeUnloadEventListener(this);
-    else if (eventType == eventNames().devicemotionEvent && RuntimeEnabledFeatures::deviceMotionEnabled()) {
+    } else if (eventType == eventNames().beforeunloadEvent) {
+        if (allowsBeforeUnloadListeners(this)) {
+            // This is confusingly named. It doesn't actually add the listener. It just increments a count
+            // so that we know we have listeners registered for the purposes of determining if we can
+            // fast terminate the renderer process.
+            addBeforeUnloadEventListener(this);
+        } else {
+            // Subframes return false from allowsBeforeUnloadListeners.
+            UseCounter::count(this, UseCounter::SubFrameBeforeUnloadRegistered);
+        }
+    } else if (eventType == eventNames().devicemotionEvent && RuntimeEnabledFeatures::deviceMotionEnabled()) {
         if (DeviceMotionController* controller = DeviceMotionController::from(document()))
             controller->startUpdating();
     } else if (eventType == eventNames().deviceorientationEvent && RuntimeEnabledFeatures::deviceOrientationEnabled()) {
@@ -1753,49 +1651,6 @@ bool DOMWindow::isInsecureScriptAccess(DOMWindow* activeWindow, const String& ur
     return true;
 }
 
-Frame* DOMWindow::createWindow(const String& urlString, const AtomicString& frameName, const WindowFeatures& windowFeatures,
-    DOMWindow* activeWindow, Frame* firstFrame, Frame* openerFrame, PrepareDialogFunction function, void* functionContext)
-{
-    Frame* activeFrame = activeWindow->frame();
-
-    KURL completedURL = urlString.isEmpty() ? KURL(ParsedURLString, emptyString()) : firstFrame->document()->completeURL(urlString);
-    if (!completedURL.isEmpty() && !completedURL.isValid()) {
-        // Don't expose client code to invalid URLs.
-        activeWindow->printErrorMessage("Unable to open a window with invalid URL '" + completedURL.string() + "'.\n");
-        return 0;
-    }
-
-    // For whatever reason, Firefox uses the first frame to determine the outgoingReferrer. We replicate that behavior here.
-    String referrer = SecurityPolicy::generateReferrerHeader(firstFrame->document()->referrerPolicy(), completedURL, firstFrame->loader()->outgoingReferrer());
-
-    ResourceRequest request(completedURL, referrer);
-    FrameLoader::addHTTPOriginIfNeeded(request, firstFrame->loader()->outgoingOrigin());
-    FrameLoadRequest frameRequest(activeWindow->document()->securityOrigin(), request, frameName);
-
-    // We pass the opener frame for the lookupFrame in case the active frame is different from
-    // the opener frame, and the name references a frame relative to the opener frame.
-    bool created;
-    Frame* newFrame = WebCore::createWindow(activeFrame, openerFrame, frameRequest, windowFeatures, created);
-    if (!newFrame)
-        return 0;
-
-    newFrame->loader()->setOpener(openerFrame);
-    newFrame->page()->setOpenedByDOM();
-
-    if (newFrame->document()->domWindow()->isInsecureScriptAccess(activeWindow, completedURL))
-        return newFrame;
-
-    if (function)
-        function(newFrame->document()->domWindow(), functionContext);
-
-    if (created)
-        newFrame->loader()->changeLocation(activeWindow->document()->securityOrigin(), completedURL, referrer, false);
-    else if (!urlString.isEmpty())
-        newFrame->navigationScheduler()->scheduleLocationChange(activeWindow->document()->securityOrigin(), completedURL.string(), referrer, false);
-
-    return newFrame;
-}
-
 PassRefPtr<DOMWindow> DOMWindow::open(const String& urlString, const AtomicString& frameName, const String& windowFeaturesString,
     DOMWindow* activeWindow, DOMWindow* firstWindow)
 {
@@ -1832,11 +1687,11 @@ PassRefPtr<DOMWindow> DOMWindow::open(const String& urlString, const AtomicStrin
 
         KURL completedURL = firstFrame->document()->completeURL(urlString);
 
-        if (targetFrame->document()->domWindow()->isInsecureScriptAccess(activeWindow, completedURL))
-            return targetFrame->document()->domWindow();
+        if (targetFrame->domWindow()->isInsecureScriptAccess(activeWindow, completedURL))
+            return targetFrame->domWindow();
 
         if (urlString.isEmpty())
-            return targetFrame->document()->domWindow();
+            return targetFrame->domWindow();
 
         // For whatever reason, Firefox uses the first window rather than the active window to
         // determine the outgoing referrer. We replicate that behavior here.
@@ -1845,12 +1700,12 @@ PassRefPtr<DOMWindow> DOMWindow::open(const String& urlString, const AtomicStrin
             completedURL,
             firstFrame->loader()->outgoingReferrer(),
             false);
-        return targetFrame->document()->domWindow();
+        return targetFrame->domWindow();
     }
 
     WindowFeatures windowFeatures(windowFeaturesString);
     Frame* result = createWindow(urlString, frameName, windowFeatures, activeWindow, firstFrame, m_frame);
-    return result ? result->document()->domWindow() : 0;
+    return result ? result->domWindow() : 0;
 }
 
 void DOMWindow::showModalDialog(const String& urlString, const String& dialogFeaturesString,
@@ -1912,7 +1767,7 @@ DOMWindow* DOMWindow::anonymousIndexedGetter(uint32_t index)
 
     Frame* child = frame->tree()->scopedChild(index);
     if (child)
-        return child->document()->domWindow();
+        return child->domWindow();
 
     return 0;
 }

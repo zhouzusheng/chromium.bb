@@ -16,14 +16,15 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager_delegate.h"
 #include "content/public/browser/save_page_type.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/referrer.h"
-#include "googleurl/src/gurl.h"
+#include "net/base/net_errors.h"
+#include "url/gurl.h"
 
 class GURL;
 
@@ -122,6 +123,10 @@ class CONTENT_EXPORT SavePackage
 
  private:
   friend class base::RefCountedThreadSafe<SavePackage>;
+
+  void InitWithDownloadItem(
+      const SavePackageDownloadCreatedCallback& download_created_callback,
+      DownloadItemImpl* item);
 
   // Callback for WebContents::GenerateMHTML().
   void OnMHTMLGenerated(const base::FilePath& path, int64 size);

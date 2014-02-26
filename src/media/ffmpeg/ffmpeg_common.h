@@ -9,12 +9,12 @@
 #include <cerrno>
 
 #include "base/compiler_specific.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/channel_layout.h"
 #include "media/base/media_export.h"
-#include "media/base/video_frame.h"
 #include "media/base/video_decoder_config.h"
+#include "media/base/video_frame.h"
 
 // Include FFmpeg header files.
 extern "C" {
@@ -93,6 +93,9 @@ void VideoDecoderConfigToAVCodecContext(
 // good guess about the plausible channel layout based on number of channels.
 ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout,
                                                  int channels);
+
+// Converts FFmpeg's audio sample format to Chrome's SampleFormat.
+SampleFormat AVSampleFormatToSampleFormat(AVSampleFormat sample_format);
 
 // Converts FFmpeg's pixel formats to its corresponding supported video format.
 VideoFrame::Format PixelFormatToVideoFormat(PixelFormat pixel_format);

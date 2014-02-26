@@ -19,7 +19,7 @@
 #include "webkit/common/cursors/webcursor.h"
 
 #if defined(TOOLKIT_GTK)
-#include "webkit/plugins/npapi/gtk_plugin_container_manager.h"
+#include "content/browser/renderer_host/gtk_plugin_container_manager.h"
 #endif  // defined(TOOLKIT_GTK)
 
 namespace content {
@@ -79,27 +79,33 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   virtual void WasHidden() OVERRIDE;
   virtual void MovePluginWindows(
       const gfx::Vector2d& scroll_offset,
-      const std::vector<webkit::npapi::WebPluginGeometry>& moves) OVERRIDE;
+      const std::vector<WebPluginGeometry>& moves) OVERRIDE;
   virtual void Focus() OVERRIDE;
   virtual void Blur() OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
   virtual void TextInputTypeChanged(ui::TextInputType type,
-                                    bool can_compose_inline) OVERRIDE;
+                                    bool can_compose_inline,
+                                    ui::TextInputMode input_mode) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
   virtual void ImeCompositionRangeChanged(
       const ui::Range& range,
       const std::vector<gfx::Rect>& character_bounds) OVERRIDE;
+#endif
   virtual void DidUpdateBackingStore(
       const gfx::Rect& scroll_rect,
       const gfx::Vector2d& scroll_delta,
       const std::vector<gfx::Rect>& copy_rects,
       const ui::LatencyInfo& latency_info) OVERRIDE;
-  virtual void RenderViewGone(base::TerminationStatus status,
-                              int error_code) OVERRIDE;
+  virtual void RenderProcessGone(base::TerminationStatus status,
+                                 int error_code) OVERRIDE;
   virtual void Destroy() OVERRIDE;
   virtual void WillDestroyRenderWidget(RenderWidgetHost* rwh) {}
   virtual void SetTooltipText(const string16& tooltip_text) OVERRIDE;
+  virtual void SelectionChanged(const string16& text,
+                                size_t offset,
+                                const ui::Range& range) OVERRIDE;
   virtual void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) OVERRIDE;
   virtual void ScrollOffsetChanged() OVERRIDE;
@@ -121,6 +127,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
       const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params,
       int gpu_host_id) OVERRIDE;
   virtual void OnSwapCompositorFrame(
+      uint32 output_surface_id,
       scoped_ptr<cc::CompositorFrame> frame) OVERRIDE;
   virtual void AcceleratedSurfaceSuspend() OVERRIDE;
   virtual void AcceleratedSurfaceRelease() OVERRIDE;

@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -29,7 +29,6 @@
 
 #include "SkImageFilter.h"
 #include "SkMatrix44.h"
-#include "core/platform/PlatformMemoryInstrumentation.h"
 #include "core/platform/ScrollableArea.h"
 #include "core/platform/graphics/FloatPoint.h"
 #include "core/platform/graphics/FloatRect.h"
@@ -46,8 +45,6 @@
 #include "wtf/CurrentTime.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
-#include "wtf/MemoryInstrumentationHashMap.h"
-#include "wtf/MemoryInstrumentationVector.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/StringHash.h"
@@ -56,7 +53,6 @@
 #include "public/platform/Platform.h"
 #include "public/platform/WebAnimation.h"
 #include "public/platform/WebCompositorSupport.h"
-#include "public/platform/WebFilterOperation.h"
 #include "public/platform/WebFilterOperations.h"
 #include "public/platform/WebFloatPoint.h"
 #include "public/platform/WebFloatRect.h"
@@ -70,7 +66,6 @@
 
 using WebKit::Platform;
 using WebKit::WebAnimation;
-using WebKit::WebFilterOperation;
 using WebKit::WebFilterOperations;
 using WebKit::WebLayer;
 using WebKit::WebPoint;
@@ -100,7 +95,7 @@ void KeyframeValueList::insert(PassOwnPtr<const AnimationValue> value)
             return;
         }
     }
-    
+
     m_values.append(value);
 }
 
@@ -120,7 +115,6 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     , m_masksToBounds(false)
     , m_drawsContent(false)
     , m_contentsVisible(true)
-    , m_showDebugBorder(false)
     , m_showRepaintCounter(false)
     , m_paintingPhase(GraphicsLayerPaintAllWithOverflowClip)
     , m_contentsOrientation(CompositingCoordinatesTopDown)
@@ -143,7 +137,6 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     m_opaqueRectTrackingContentLayerDelegate = adoptPtr(new OpaqueRectTrackingContentLayerDelegate(this));
     m_layer = adoptPtr(Platform::current()->compositorSupport()->createContentLayer(m_opaqueRectTrackingContentLayerDelegate.get()));
     m_layer->layer()->setDrawsContent(m_drawsContent && m_contentsVisible);
-    m_layer->layer()->setScrollClient(this);
     m_layer->setAutomaticallyComputeRasterScale(true);
 }
 
@@ -184,7 +177,7 @@ bool GraphicsLayer::hasAncestor(GraphicsLayer* ancestor) const
         if (curr == ancestor)
             return true;
     }
-    
+
     return false;
 }
 
@@ -208,7 +201,7 @@ bool GraphicsLayer::setChildren(const Vector<GraphicsLayer*>& newChildren)
 void GraphicsLayer::addChildInternal(GraphicsLayer* childLayer)
 {
     ASSERT(childLayer != this);
-    
+
     if (childLayer->parent())
         childLayer->removeFromParent();
 
@@ -364,15 +357,8 @@ void GraphicsLayer::setOffsetFromRenderer(const IntSize& offset, ShouldSetNeedsD
 
 void GraphicsLayer::paintGraphicsLayerContents(GraphicsContext& context, const IntRect& clip)
 {
-    if (m_client) {
-        LayoutSize offset = offsetFromRenderer();
-        context.translate(-offset);
-
-        LayoutRect clipRect(clip);
-        clipRect.move(offset);
-
-        m_client->paintContents(this, context, m_paintingPhase, pixelSnappedIntRect(clipRect));
-    }
+    if (m_client)
+        m_client->paintContents(this, context, m_paintingPhase, clip);
 }
 
 String GraphicsLayer::animationNameForTransition(AnimatedPropertyID property)
@@ -385,35 +371,6 @@ String GraphicsLayer::animationNameForTransition(AnimatedPropertyID property)
     return id.toString();
 }
 
-void GraphicsLayer::getDebugBorderInfo(Color& color, float& width) const
-{
-    if (drawsContent()) {
-        color = Color(0, 128, 32, 128); // normal layer: green
-        width = 2;
-        return;
-    }
-    
-    if (masksToBounds()) {
-        color = Color(128, 255, 255, 48); // masking layer: pale blue
-        width = 20;
-        return;
-    }
-        
-    color = Color(255, 255, 0, 192); // container: yellow
-    width = 2;
-}
-
-void GraphicsLayer::updateDebugIndicators()
-{
-    if (!isShowingDebugBorder())
-        return;
-
-    Color borderColor;
-    float width = 0;
-    getDebugBorderInfo(borderColor, width);
-    setDebugBorder(borderColor, width);
-}
-
 void GraphicsLayer::setZPosition(float position)
 {
     m_zPosition = position;
@@ -423,18 +380,18 @@ float GraphicsLayer::accumulatedOpacity() const
 {
     if (!preserves3D())
         return 1;
-        
+
     return m_opacity * (parent() ? parent()->accumulatedOpacity() : 1);
 }
 
 void GraphicsLayer::distributeOpacity(float accumulatedOpacity)
 {
     // If this is a transform layer we need to distribute our opacity to all our children
-    
+
     // Incoming accumulatedOpacity is the contribution from our parent(s). We mutiply this by our own
     // opacity to get the total contribution
     accumulatedOpacity *= m_opacity;
-    
+
     if (preserves3D()) {
         size_t numChildren = children().size();
         for (size_t i = 0; i < numChildren; ++i)
@@ -465,23 +422,23 @@ int GraphicsLayer::validateFilterOperations(const KeyframeValueList& valueList)
         return -1;
 
     const FilterOperations* firstVal = filterOperationsAt(valueList, firstIndex);
-    
+
     for (size_t i = firstIndex + 1; i < valueList.size(); ++i) {
         const FilterOperations* val = filterOperationsAt(valueList, i);
-        
+
         // An emtpy filter list matches anything.
         if (val->operations().isEmpty())
             continue;
-        
+
         if (!firstVal->operationsMatch(*val))
             return -1;
     }
-    
+
     return firstIndex;
 }
 
 // An "invalid" list is one whose functions don't match, and therefore has to be animated as a Matrix
-// The hasBigRotation flag will always return false if isValid is false. Otherwise hasBigRotation is 
+// The hasBigRotation flag will always return false if isValid is false. Otherwise hasBigRotation is
 // true if the rotation between any two keyframes is >= 180 degrees.
 
 static inline const TransformOperations* operationsAt(const KeyframeValueList& valueList, size_t index)
@@ -494,51 +451,51 @@ int GraphicsLayer::validateTransformOperations(const KeyframeValueList& valueLis
     ASSERT(valueList.property() == AnimatedPropertyWebkitTransform);
 
     hasBigRotation = false;
-    
+
     if (valueList.size() < 2)
         return -1;
-    
+
     // Empty transforms match anything, so find the first non-empty entry as the reference.
     size_t firstIndex = 0;
     for ( ; firstIndex < valueList.size(); ++firstIndex) {
         if (operationsAt(valueList, firstIndex)->operations().size() > 0)
             break;
     }
-    
+
     if (firstIndex >= valueList.size())
         return -1;
-        
+
     const TransformOperations* firstVal = operationsAt(valueList, firstIndex);
-    
+
     // See if the keyframes are valid.
     for (size_t i = firstIndex + 1; i < valueList.size(); ++i) {
         const TransformOperations* val = operationsAt(valueList, i);
-        
+
         // An emtpy transform list matches anything.
         if (val->operations().isEmpty())
             continue;
-            
+
         if (!firstVal->operationsMatch(*val))
             return -1;
     }
 
-    // Keyframes are valid, check for big rotations.    
+    // Keyframes are valid, check for big rotations.
     double lastRotAngle = 0.0;
     double maxRotAngle = -1.0;
-        
+
     for (size_t j = 0; j < firstVal->operations().size(); ++j) {
         TransformOperation::OperationType type = firstVal->operations().at(j)->getOperationType();
-        
+
         // if this is a rotation entry, we need to see if any angle differences are >= 180 deg
-        if (type == TransformOperation::ROTATE_X ||
-            type == TransformOperation::ROTATE_Y ||
-            type == TransformOperation::ROTATE_Z ||
-            type == TransformOperation::ROTATE_3D) {
+        if (type == TransformOperation::RotateX
+            || type == TransformOperation::RotateY
+            || type == TransformOperation::RotateZ
+            || type == TransformOperation::Rotate3D) {
             lastRotAngle = static_cast<RotateTransformOperation*>(firstVal->operations().at(j).get())->angle();
-            
+
             if (maxRotAngle < 0)
                 maxRotAngle = fabs(lastRotAngle);
-            
+
             for (size_t i = firstIndex + 1; i < valueList.size(); ++i) {
                 const TransformOperations* val = operationsAt(valueList, i);
                 double rotAngle = val->operations().isEmpty() ? 0 : (static_cast<RotateTransformOperation*>(val->operations().at(j).get())->angle());
@@ -549,9 +506,9 @@ int GraphicsLayer::validateTransformOperations(const KeyframeValueList& valueLis
             }
         }
     }
-    
+
     hasBigRotation = maxRotAngle >= 180.0;
-    
+
     return firstIndex;
 }
 
@@ -708,7 +665,7 @@ double GraphicsLayer::backingStoreMemoryEstimate() const
 {
     if (!drawsContent())
         return 0;
-    
+
     // Effects of page and device scale are ignored; subclasses should override to take these into account.
     return static_cast<double>(4 * size().width()) * size().height();
 }
@@ -783,7 +740,7 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags fl
         writeIndent(ts, indent + 1);
         ts << "(opacity " << m_opacity << ")\n";
     }
-    
+
     if (m_contentsOpaque) {
         writeIndent(ts, indent + 1);
         ts << "(contentsOpaque " << m_contentsOpaque << ")\n";
@@ -819,7 +776,7 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags fl
         ts << ")\n";
     }
 
-    if (m_backgroundColor.isValid() && m_backgroundColor != Color::transparent) {
+    if (m_backgroundColor != Color::transparent) {
         writeIndent(ts, indent + 1);
         ts << "(backgroundColor " << m_backgroundColor.nameForRenderTreeAsText() << ")\n";
     }
@@ -907,11 +864,11 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags fl
     }
 
     dumpAdditionalProperties(ts, indent, flags);
-    
+
     if (m_children.size()) {
         writeIndent(ts, indent + 1);
         ts << "(children " << m_children.size() << "\n";
-        
+
         unsigned i;
         for (i = 0; i < m_children.size(); i++)
             m_children[i]->dumpLayer(ts, indent + 2, flags);
@@ -928,37 +885,11 @@ String GraphicsLayer::layerTreeAsText(LayerTreeFlags flags) const
     return ts.release();
 }
 
-void GraphicsLayer::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Layers);
-    info.addMember(m_children, "children");
-    info.addMember(m_parent, "parent");
-    info.addMember(m_maskLayer, "maskLayer");
-    info.addMember(m_replicaLayer, "replicaLayer");
-    info.addMember(m_replicatedLayer, "replicatedLayer");
-    info.ignoreMember(m_client);
-    info.addMember(m_name, "name");
-    info.addMember(m_nameBase, "nameBase");
-    info.addMember(m_layer, "layer");
-    info.addMember(m_imageLayer, "imageLayer");
-    info.addMember(m_contentsLayer, "contentsLayer");
-    info.addMember(m_linkHighlight, "linkHighlight");
-    info.addMember(m_opaqueRectTrackingContentLayerDelegate, "opaqueRectTrackingContentLayerDelegate");
-    info.addMember(m_animationIdMap, "animationIdMap");
-    info.addMember(m_scrollableArea, "scrollableArea");
-}
-
 void GraphicsLayer::setName(const String& name)
 {
     m_nameBase = name;
     m_name = String::format("GraphicsLayer(%p) ", this) + name;
     updateNames();
-}
-
-int GraphicsLayer::debugID() const
-{
-    // FIXME: change this to assert m_layer always exists, and remove enum.
-    return m_layer ? m_layer->layer()->id() : DebugIDNoCompositedLayer;
 }
 
 void GraphicsLayer::setCompositingReasons(WebKit::WebCompositingReasons reasons)
@@ -1230,16 +1161,16 @@ static bool copyWebCoreFilterOperationsToWebFilterOperations(const FilterOperati
             float amount = static_cast<const BasicColorMatrixFilterOperation*>(&op)->amount();
             switch (op.getOperationType()) {
             case FilterOperation::GRAYSCALE:
-                webFilters.append(WebFilterOperation::createGrayscaleFilter(amount));
+                webFilters.appendGrayscaleFilter(amount);
                 break;
             case FilterOperation::SEPIA:
-                webFilters.append(WebFilterOperation::createSepiaFilter(amount));
+                webFilters.appendSepiaFilter(amount);
                 break;
             case FilterOperation::SATURATE:
-                webFilters.append(WebFilterOperation::createSaturateFilter(amount));
+                webFilters.appendSaturateFilter(amount);
                 break;
             case FilterOperation::HUE_ROTATE:
-                webFilters.append(WebFilterOperation::createHueRotateFilter(amount));
+                webFilters.appendHueRotateFilter(amount);
                 break;
             default:
                 ASSERT_NOT_REACHED();
@@ -1253,16 +1184,16 @@ static bool copyWebCoreFilterOperationsToWebFilterOperations(const FilterOperati
             float amount = static_cast<const BasicComponentTransferFilterOperation*>(&op)->amount();
             switch (op.getOperationType()) {
             case FilterOperation::INVERT:
-                webFilters.append(WebFilterOperation::createInvertFilter(amount));
+                webFilters.appendInvertFilter(amount);
                 break;
             case FilterOperation::OPACITY:
-                webFilters.append(WebFilterOperation::createOpacityFilter(amount));
+                webFilters.appendOpacityFilter(amount);
                 break;
             case FilterOperation::BRIGHTNESS:
-                webFilters.append(WebFilterOperation::createBrightnessFilter(amount));
+                webFilters.appendBrightnessFilter(amount);
                 break;
             case FilterOperation::CONTRAST:
-                webFilters.append(WebFilterOperation::createContrastFilter(amount));
+                webFilters.appendContrastFilter(amount);
                 break;
             default:
                 ASSERT_NOT_REACHED();
@@ -1271,12 +1202,12 @@ static bool copyWebCoreFilterOperationsToWebFilterOperations(const FilterOperati
         }
         case FilterOperation::BLUR: {
             float pixelRadius = static_cast<const BlurFilterOperation*>(&op)->stdDeviation().getFloatValue();
-            webFilters.append(WebFilterOperation::createBlurFilter(pixelRadius));
+            webFilters.appendBlurFilter(pixelRadius);
             break;
         }
         case FilterOperation::DROP_SHADOW: {
             const DropShadowFilterOperation& dropShadowOp = *static_cast<const DropShadowFilterOperation*>(&op);
-            webFilters.append(WebFilterOperation::createDropShadowFilter(WebPoint(dropShadowOp.x(), dropShadowOp.y()), dropShadowOp.stdDeviation(), dropShadowOp.color().rgb()));
+            webFilters.appendDropShadowFilter(WebPoint(dropShadowOp.x(), dropShadowOp.y()), dropShadowOp.stdDeviation(), dropShadowOp.color().rgb());
             break;
         }
         case FilterOperation::CUSTOM:
@@ -1305,18 +1236,19 @@ bool GraphicsLayer::setFilters(const FilterOperations& filters)
             return false;
         }
         SkiaImageFilterBuilder builder;
-        SkAutoTUnref<SkImageFilter> imageFilter(builder.build(filters));
-        m_layer->layer()->setFilter(imageFilter);
+        RefPtr<SkImageFilter> imageFilter = builder.build(filters);
+        m_layer->layer()->setFilter(imageFilter.get());
     } else {
-        WebFilterOperations webFilters;
-        if (!copyWebCoreFilterOperationsToWebFilterOperations(filters, webFilters)) {
+        OwnPtr<WebFilterOperations> webFilters = adoptPtr(Platform::current()->compositorSupport()->createFilterOperations());
+        if (!copyWebCoreFilterOperationsToWebFilterOperations(filters, *webFilters)) {
             // Make sure the filters are removed from the platform layer, as they are
             // going to fallback to software mode.
-            m_layer->layer()->setFilters(WebFilterOperations());
+            webFilters->clear();
+            m_layer->layer()->setFilters(*webFilters);
             m_filters = FilterOperations();
             return false;
         }
-        m_layer->layer()->setFilters(webFilters);
+        m_layer->layer()->setFilters(*webFilters);
     }
 
     m_filters = filters;
@@ -1325,16 +1257,31 @@ bool GraphicsLayer::setFilters(const FilterOperations& filters)
 
 void GraphicsLayer::setBackgroundFilters(const FilterOperations& filters)
 {
-    WebFilterOperations webFilters;
-    if (!copyWebCoreFilterOperationsToWebFilterOperations(filters, webFilters))
+    OwnPtr<WebFilterOperations> webFilters = adoptPtr(Platform::current()->compositorSupport()->createFilterOperations());
+    if (!copyWebCoreFilterOperationsToWebFilterOperations(filters, *webFilters))
         return;
-    m_layer->layer()->setBackgroundFilters(webFilters);
+    m_layer->layer()->setBackgroundFilters(*webFilters);
 }
 
 void GraphicsLayer::setLinkHighlight(LinkHighlightClient* linkHighlight)
 {
     m_linkHighlight = linkHighlight;
     updateChildList();
+}
+
+void GraphicsLayer::setScrollableArea(ScrollableArea* scrollableArea, bool isMainFrame)
+{
+    if (m_scrollableArea == scrollableArea)
+        return;
+
+    m_scrollableArea = scrollableArea;
+
+    // Main frame scrolling may involve pinch zoom and gets routed through
+    // WebViewImpl explicitly rather than via GraphicsLayer::didScroll.
+    if (isMainFrame)
+        m_layer->layer()->setScrollClient(0);
+    else
+        m_layer->layer()->setScrollClient(this);
 }
 
 void GraphicsLayer::paint(GraphicsContext& context, const IntRect& clip)

@@ -21,7 +21,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef Image_h
@@ -33,11 +33,11 @@
 #include "core/platform/graphics/IntRect.h"
 #include "core/platform/graphics/skia/NativeImageSkia.h"
 #include "third_party/skia/include/core/SkXfermode.h"
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/RefPtr.h>
-#include <wtf/RetainPtr.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/RefPtr.h"
+#include "wtf/RetainPtr.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -60,15 +60,14 @@ class Image : public RefCounted<Image> {
 public:
     virtual ~Image();
 
-    static PassRefPtr<Image> create(ImageObserver* = 0);
     static PassRefPtr<Image> loadPlatformResource(const char* name);
-    static bool supportsType(const String&); 
+    static bool supportsType(const String&);
 
     virtual bool isSVGImage() const { return false; }
     virtual bool isBitmapImage() const { return false; }
     virtual bool currentFrameKnownToBeOpaque() = 0;
 
-    // Derived classes should override this if they can assure that 
+    // Derived classes should override this if they can assure that
     // the image contains only resources from its own security origin.
     virtual bool hasSingleSecurityOrigin() const { return false; }
 
@@ -92,7 +91,7 @@ public:
 
     virtual String filenameExtension() const { return String(); } // null string if unknown
 
-    virtual void destroyDecodedData() = 0;
+    virtual void destroyDecodedData(bool destroyAll) = 0;
     virtual unsigned decodedSize() const = 0;
 
     SharedBuffer* data() { return m_encodedImageData.get(); }
@@ -103,7 +102,7 @@ public:
     virtual void stopAnimation() {}
     virtual void resetAnimation() {}
 
-    // Typically the CachedImage that owns us.
+    // Typically the ImageResource that owns us.
     ImageObserver* imageObserver() const { return m_imageObserver; }
     void setImageObserver(ImageObserver* observer) { m_imageObserver = observer; }
 
@@ -119,21 +118,16 @@ public:
     virtual bool notSolidColor() { return true; }
 #endif
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
-
 protected:
     Image(ImageObserver* = 0);
 
     static void fillWithSolidColor(GraphicsContext*, const FloatRect& dstRect, const Color&, CompositeOperator);
     static FloatRect adjustForNegativeSize(const FloatRect&); // A helper method for translating negative width and height values.
 
-    // FIXME (crbug.com/242060): This does not belong on Image.
-    static void paintSkBitmap(GraphicsContext*, const NativeImageSkia&, const SkRect& /*srcRect*/, const SkRect& /*destRect*/, const SkXfermode::Mode&);
-
     virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator, BlendMode) = 0;
     virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator, BlendMode, RespectImageOrientationEnum);
     void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatPoint& srcPoint, const FloatSize& tileSize,
-        CompositeOperator , BlendMode);
+        CompositeOperator, BlendMode);
     void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, const FloatSize& tileScaleFactor, TileRule hRule, TileRule vRule, CompositeOperator);
 
     // Supporting tiled drawing

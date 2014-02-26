@@ -188,10 +188,10 @@ void PrioritizedResourceManager::ClearPriorities() {
   DCHECK(proxy_->IsMainThread());
   for (TextureSet::iterator it = textures_.begin(); it != textures_.end();
        ++it) {
-    // FIXME: We should remove this and just set all priorities to
-    //        PriorityCalculator::lowestPriority() once we have priorities
-    //        for all textures (we can't currently calculate distances for
-    //        off-screen textures).
+    // TODO(reveman): We should remove this and just set all priorities to
+    // PriorityCalculator::lowestPriority() once we have priorities for all
+    // textures (we can't currently calculate distances for off-screen
+    // textures).
     (*it)->set_request_priority(
         PriorityCalculator::LingeringPriority((*it)->request_priority()));
   }
@@ -290,6 +290,7 @@ bool PrioritizedResourceManager::EvictBackingsToReduceMemory(
 
   // Destroy backings until we are below the limit,
   // or until all backings remaining are above the cutoff.
+  bool evicted_anything = false;
   while (backings_.size() > 0) {
     PrioritizedResource::Backing* backing = backings_.front();
     if (MemoryUseBytes() <= limit_bytes &&
@@ -302,8 +303,9 @@ bool PrioritizedResourceManager::EvictBackingsToReduceMemory(
     if (unlink_policy == UNLINK_BACKINGS && backing->owner())
       backing->owner()->Unlink();
     EvictFirstBackingResource(resource_provider);
+    evicted_anything = true;
   }
-  return true;
+  return evicted_anything;
 }
 
 void PrioritizedResourceManager::ReduceWastedMemory(

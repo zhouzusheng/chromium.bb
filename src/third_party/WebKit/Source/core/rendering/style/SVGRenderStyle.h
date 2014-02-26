@@ -23,8 +23,8 @@
 #ifndef SVGRenderStyle_h
 #define SVGRenderStyle_h
 
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/css/CSSValueList.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/platform/graphics/GraphicsTypes.h"
 #include "core/platform/graphics/Path.h"
 #include "core/rendering/style/DataRef.h"
@@ -38,7 +38,7 @@ class FloatRect;
 class IntRect;
 class RenderObject;
 
-class SVGRenderStyle : public RefCounted<SVGRenderStyle> {    
+class SVGRenderStyle : public RefCounted<SVGRenderStyle> {
 public:
     static PassRefPtr<SVGRenderStyle> create() { return adoptRef(new SVGRenderStyle); }
     PassRefPtr<SVGRenderStyle> copy() const { return adoptRef(new SVGRenderStyle(*this));}
@@ -86,7 +86,6 @@ public:
     static float initialFloodOpacity() { return 1; }
     static Color initialFloodColor() { return Color(0, 0, 0); }
     static Color initialLightingColor() { return Color(255, 255, 255); }
-    static ShadowData* initialShadow() { return 0; }
     static String initialClipperResource() { return String(); }
     static String initialFilterResource() { return String(); }
     static String initialMaskerResource() { return String(); }
@@ -261,8 +260,6 @@ public:
             misc.access()->baselineShiftValue = obj;
     }
 
-    void setShadow(PassOwnPtr<ShadowData> obj) { shadowSVG.access()->shadow = obj; }
-
     // Setters for non-inherited resources
     void setClipperResource(const String& obj)
     {
@@ -322,7 +319,7 @@ public:
     float fillOpacity() const { return fill->opacity; }
     const SVGPaint::SVGPaintType& fillPaintType() const { return fill->paintType; }
     const Color& fillPaintColor() const { return fill->paintColor; }
-    const String& fillPaintUri() const { return fill->paintUri; }    
+    const String& fillPaintUri() const { return fill->paintUri; }
     float strokeOpacity() const { return stroke->opacity; }
     const SVGPaint::SVGPaintType& strokePaintType() const { return stroke->paintType; }
     const Color& strokePaintColor() const { return stroke->paintColor; }
@@ -338,7 +335,6 @@ public:
     const Color& floodColor() const { return misc->floodColor; }
     const Color& lightingColor() const { return misc->lightingColor; }
     SVGLength baselineShiftValue() const { return misc->baselineShiftValue; }
-    ShadowData* shadow() const { return shadowSVG->shadow.get(); }
     String clipperResource() const { return resources->clipper; }
     String filterResource() const { return resources->filter; }
     String maskerResource() const { return resources->masker; }
@@ -389,7 +385,7 @@ protected:
         }
 
         unsigned _colorRendering : 2; // EColorRendering
-        unsigned _shapeRendering : 2; // EShapeRendering 
+        unsigned _shapeRendering : 2; // EShapeRendering
         unsigned _clipRule : 1; // WindRule
         unsigned _fillRule : 1; // WindRule
         unsigned _capStyle : 2; // LineCap
@@ -410,7 +406,7 @@ protected:
 
         union {
             struct {
-                unsigned _alignmentBaseline : 4; // EAlignmentBaseline 
+                unsigned _alignmentBaseline : 4; // EAlignmentBaseline
                 unsigned _dominantBaseline : 4; // EDominantBaseline
                 unsigned _baselineShift : 2; // EBaselineShift
                 unsigned _vectorEffect: 1; // EVectorEffect
@@ -431,12 +427,11 @@ protected:
     // non-inherited attributes
     DataRef<StyleStopData> stops;
     DataRef<StyleMiscData> misc;
-    DataRef<StyleShadowSVGData> shadowSVG;
     DataRef<StyleResourceData> resources;
 
 private:
     enum CreateDefaultType { CreateDefault };
-        
+
     SVGRenderStyle();
     SVGRenderStyle(const SVGRenderStyle&);
     SVGRenderStyle(CreateDefaultType); // Used to create the default style.

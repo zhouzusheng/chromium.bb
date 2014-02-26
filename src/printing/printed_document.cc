@@ -14,7 +14,7 @@
 #include "base/i18n/file_util_icu.h"
 #include "base/i18n/time_formatting.h"
 #include "base/lazy_instance.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -225,8 +225,8 @@ PrintedDocument::Immutable::Immutable(const PrintSettings& settings,
 PrintedDocument::Immutable::~Immutable() {
 }
 
-#if defined(OS_POSIX) && defined(USE_AURA)
-// This function is not used on aura linux/chromeos.
+#if (defined(OS_POSIX) && defined(USE_AURA)) || defined(OS_ANDROID)
+// This function is not used on aura linux/chromeos or android.
 void PrintedDocument::RenderPrintedPage(const PrintedPage& page,
                                         PrintingContext* context) const {
 }

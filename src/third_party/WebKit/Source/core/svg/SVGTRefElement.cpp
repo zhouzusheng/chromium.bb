@@ -20,19 +20,19 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGTRefElement.h"
 
 #include "SVGNames.h"
 #include "XLinkNames.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/EventListener.h"
 #include "core/dom/EventNames.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/MutationEvent.h"
 #include "core/dom/NodeRenderingContext.h"
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/editing/markup.h"
 #include "core/page/UseCounter.h"
 #include "core/rendering/style/StyleInheritedData.h"
 #include "core/rendering/svg/RenderSVGInline.h"
@@ -149,18 +149,10 @@ SVGTRefElement::~SVGTRefElement()
 
 void SVGTRefElement::updateReferencedText(Element* target)
 {
-    String textContent;
     if (target)
-        textContent = target->textContent();
-
-    ASSERT(shadow());
-    ShadowRoot* root = shadow()->oldestShadowRoot();
-    if (!root->firstChild())
-        root->appendChild(Text::create(document(), textContent), ASSERT_NO_EXCEPTION);
-    else {
-        ASSERT(root->firstChild()->isTextNode());
-        root->firstChild()->setTextContent(textContent, ASSERT_NO_EXCEPTION);
-    }
+        replaceChildrenWithText(userAgentShadowRoot(), target->textContent(), ASSERT_NO_EXCEPTION);
+    else
+        userAgentShadowRoot()->removeChildren();
 }
 
 void SVGTRefElement::detachTarget()
@@ -168,19 +160,14 @@ void SVGTRefElement::detachTarget()
     // Remove active listeners and clear the text content.
     m_targetListener->detach();
 
-    String emptyContent;
-
-    ASSERT(shadow());
-    Node* container = shadow()->oldestShadowRoot()->firstChild();
-    if (container)
-        container->setTextContent(emptyContent, IGNORE_EXCEPTION);
+    userAgentShadowRoot()->removeChildren();
 
     if (!inDocument())
         return;
 
     // Mark the referenced ID as pending.
     String id;
-    SVGURIReference::targetElementFromIRIString(href(), document(), &id);
+    SVGURIReference::targetElementFromIRIString(hrefCurrentValue(), document(), &id);
     if (!id.isEmpty())
         document()->accessSVGExtensions()->addPendingResource(id, this);
 }
@@ -227,7 +214,7 @@ void SVGTRefElement::svgAttributeChanged(const QualifiedName& attrName)
 
 RenderObject* SVGTRefElement::createRenderer(RenderStyle*)
 {
-    return new (document()->renderArena()) RenderSVGInline(this);
+    return new RenderSVGInline(this);
 }
 
 bool SVGTRefElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
@@ -245,7 +232,7 @@ bool SVGTRefElement::rendererIsNeeded(const NodeRenderingContext& context)
             || parentNode()->hasTagName(SVGNames::textTag)
             || parentNode()->hasTagName(SVGNames::textPathTag)
             || parentNode()->hasTagName(SVGNames::tspanTag)))
-        return StyledElement::rendererIsNeeded(context);
+        return Element::rendererIsNeeded(context);
 
     return false;
 }
@@ -260,7 +247,7 @@ void SVGTRefElement::buildPendingResource()
         return;
 
     String id;
-    RefPtr<Element> target = SVGURIReference::targetElementFromIRIString(href(), document(), &id);
+    RefPtr<Element> target = SVGURIReference::targetElementFromIRIString(hrefCurrentValue(), document(), &id);
     if (!target.get()) {
         if (id.isEmpty())
             return;
@@ -282,7 +269,7 @@ void SVGTRefElement::buildPendingResource()
 
 Node::InsertionNotificationRequest SVGTRefElement::insertedInto(ContainerNode* rootParent)
 {
-    SVGStyledElement::insertedInto(rootParent);
+    SVGElement::insertedInto(rootParent);
     if (rootParent->inDocument())
         buildPendingResource();
     return InsertionDone;
@@ -290,7 +277,7 @@ Node::InsertionNotificationRequest SVGTRefElement::insertedInto(ContainerNode* r
 
 void SVGTRefElement::removedFrom(ContainerNode* rootParent)
 {
-    SVGStyledElement::removedFrom(rootParent);
+    SVGElement::removedFrom(rootParent);
     if (rootParent->inDocument())
         m_targetListener->detach();
 }

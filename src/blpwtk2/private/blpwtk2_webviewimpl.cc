@@ -33,7 +33,7 @@
 #include <blpwtk2_products.h>
 #include <blpwtk2_statics.h>
 
-#include <base/message_loop.h>
+#include <base/message_loop/message_loop.h>
 #include <base/strings/utf_string_conversions.h>
 #include <content/browser/renderer_host/render_widget_host_view_base.h>
 #include <content/public/browser/devtools_agent_host.h>

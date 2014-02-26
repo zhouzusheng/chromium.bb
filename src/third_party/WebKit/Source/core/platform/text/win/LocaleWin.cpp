@@ -37,13 +37,14 @@
 #include "core/platform/Language.h"
 #include "core/platform/LocalizedStrings.h"
 #include "core/platform/text/DateTimeFormat.h"
-#include <wtf/CurrentTime.h>
-#include <wtf/DateMath.h>
-#include <wtf/HashMap.h>
-#include <wtf/OwnPtr.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/text/StringBuilder.h>
-#include <wtf/text/StringHash.h>
+#include "wtf/CurrentTime.h"
+#include "wtf/DateMath.h"
+#include "wtf/HashMap.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/text/StringBuffer.h"
+#include "wtf/text/StringBuilder.h"
+#include "wtf/text/StringHash.h"
 
 using namespace std;
 
@@ -125,7 +126,7 @@ static LCID LCIDFromLocaleInternal(LCID userDefaultLCID, const String& userDefau
     String localeLanguageCode = extractLanguageCode(locale);
     if (equalIgnoringCase(localeLanguageCode, userDefaultLanguageCode))
         return userDefaultLCID;
-    return localeNameToLCID(locale.charactersWithNullTermination(), 0);
+    return localeNameToLCID(locale.charactersWithNullTermination().data(), 0);
 }
 
 static LCID LCIDFromLocale(const AtomicString& locale)
@@ -179,8 +180,8 @@ String LocaleWin::getLocaleInfoString(LCTYPE type)
     int bufferSizeWithNUL = ::GetLocaleInfo(m_lcid, type, 0, 0);
     if (bufferSizeWithNUL <= 0)
         return String();
-    Vector<UChar> buffer(bufferSizeWithNUL);
-    ::GetLocaleInfo(m_lcid, type, buffer.data(), bufferSizeWithNUL);
+    StringBuffer<UChar> buffer(bufferSizeWithNUL);
+    ::GetLocaleInfo(m_lcid, type, buffer.characters(), bufferSizeWithNUL);
     buffer.shrink(bufferSizeWithNUL - 1);
     return String::adopt(buffer);
 }

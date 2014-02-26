@@ -84,7 +84,7 @@ public:
     virtual bool isShowing() const;
 
     virtual MediaControlElementType displayType() { return m_displayType; }
-    virtual const AtomicString& shadowPseudoId() const = 0;
+    virtual const AtomicString& part() const = 0;
 
     virtual void setMediaController(MediaControllerInterface* controller) { m_mediaController = controller; }
     virtual MediaControllerInterface* mediaController() const { return m_mediaController; }
@@ -119,6 +119,7 @@ protected:
 
 private:
     virtual void updateDisplayType() { }
+    virtual bool isMouseFocusable() const OVERRIDE;
 };
 
 // ----------------------------

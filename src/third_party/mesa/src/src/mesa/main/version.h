@@ -1,6 +1,6 @@
 /*
  * Mesa 3-D graphics library
- * Version:  7.9
+ * Version:  7.11
  *
  * Copyright (C) 1999-2008  Brian Paul   All Rights Reserved.
  * Copyright (C) 2009  VMware, Inc.  All Rights Reserved.
@@ -28,33 +28,24 @@
 #define VERSION_H
 
 
-#include "mtypes.h"
+struct gl_context;
 
 
 /* Mesa version */
-#define MESA_MAJOR 7
-#define MESA_MINOR 9
-#define MESA_PATCH 0
-#define MESA_VERSION_STRING "7.9"
+#define MESA_MAJOR 9
+#define MESA_MINOR 0
+#define MESA_PATCH 3
+#define MESA_VERSION_STRING "9.0.3"
 
 /* To make version comparison easy */
 #define MESA_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + (c))
 #define MESA_VERSION_CODE MESA_VERSION(MESA_MAJOR, MESA_MINOR, MESA_PATCH)
 
 
-/* OpenGL API version */
-#define OPENGL_MAJOR 2
-#define OPENGL_MINOR 1
-#define OPENGL_PATCH 0
-#define OPENGL_VERSION_STRING "2.1"
-
-/* To make version comparison easy */
-#define OPENGL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + (c))
-#define OPENGL_VERSION_CODE OPENGL_VERSION(OPENGL_MAJOR, OPENGL_MINOR, OPENGL_PATCH)
-
+extern void
+_mesa_compute_version(struct gl_context *ctx);
 
 extern void
-_mesa_compute_version(GLcontext *ctx);
-
+_mesa_override_glsl_version(struct gl_context *ctx);
 
 #endif /* VERSION_H */

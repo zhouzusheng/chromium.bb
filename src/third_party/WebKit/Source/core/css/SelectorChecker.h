@@ -51,6 +51,7 @@ public:
         StaysWithinTreeScope = 2,
         BoundaryBehaviorMask = 3, // 2bit for boundary behavior
         ScopeContainsLastMatchedElement = 4,
+        ScopeIsShadowHost = 8
     };
 
     struct SelectorCheckingContext {
@@ -100,13 +101,15 @@ public:
     static bool tagMatches(const Element*, const QualifiedName&);
     static bool isCommonPseudoClassSelector(const CSSSelector*);
     static bool matchesFocusPseudoClass(const Element*);
-    static bool checkExactAttribute(const Element*, const QualifiedName& selectorAttributeName, const AtomicStringImpl* value);
+    static bool checkExactAttribute(const Element*, const QualifiedName& selectorAttributeName, const StringImpl* value);
 
     enum LinkMatchMask { MatchLink = 1, MatchVisited = 2, MatchAll = MatchLink | MatchVisited };
     static unsigned determineLinkMatchType(const CSSSelector*);
 
 private:
     bool checkScrollbarPseudoClass(const SelectorCheckingContext&, Document*, const CSSSelector*) const;
+    Element* parentElement(const SelectorCheckingContext&) const;
+    bool scopeContainsLastMatchedElement(const SelectorCheckingContext&) const;
 
     static bool isFrameFocused(const Element*);
 
@@ -137,7 +140,7 @@ inline bool SelectorChecker::tagMatches(const Element* element, const QualifiedN
     return namespaceURI == starAtom || namespaceURI == element->namespaceURI();
 }
 
-inline bool SelectorChecker::checkExactAttribute(const Element* element, const QualifiedName& selectorAttributeName, const AtomicStringImpl* value)
+inline bool SelectorChecker::checkExactAttribute(const Element* element, const QualifiedName& selectorAttributeName, const StringImpl* value)
 {
     if (!element->hasAttributesWithoutUpdate())
         return false;

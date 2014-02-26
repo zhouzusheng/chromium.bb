@@ -1,10 +1,10 @@
 /*
  * Copyright (C) 2009 Google Inc. All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  *     * Redistributions of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
  *     * Redistributions in binary form must reproduce the above
@@ -14,7 +14,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -39,28 +39,30 @@
 namespace WebCore {
 
     class ModePredicate;
-    class WorkerContext;
+    class WorkerGlobalScope;
     class WorkerSharedTimer;
 
     class WorkerRunLoop {
     public:
         WorkerRunLoop();
         ~WorkerRunLoop();
-        
+
         // Blocking call. Waits for tasks and timers, invokes the callbacks.
-        void run(WorkerContext*);
+        void run(WorkerGlobalScope*);
 
         enum WaitMode { WaitForMessage, DontWaitForMessage };
 
         // Waits for a single task and returns.
-        MessageQueueWaitResult runInMode(WorkerContext*, const String& mode, WaitMode = WaitForMessage);
+        MessageQueueWaitResult runInMode(WorkerGlobalScope*, const String& mode, WaitMode = WaitForMessage);
 
         void terminate();
         bool terminated() const { return m_messageQueue.killed(); }
 
-        void postTask(PassOwnPtr<ScriptExecutionContext::Task>);
+        // Returns true if the loop is still alive, false if it has been terminated.
+        bool postTask(PassOwnPtr<ScriptExecutionContext::Task>);
         void postTaskAndTerminate(PassOwnPtr<ScriptExecutionContext::Task>);
-        void postTaskForMode(PassOwnPtr<ScriptExecutionContext::Task>, const String& mode);
+        // Returns true if the loop is still alive, false if it has been terminated.
+        bool postTaskForMode(PassOwnPtr<ScriptExecutionContext::Task>, const String& mode);
 
         unsigned long createUniqueId() { return ++m_uniqueId; }
 
@@ -76,18 +78,18 @@ namespace WebCore {
 
         private:
             Task(PassOwnPtr<ScriptExecutionContext::Task> task, const String& mode);
-        
+
             OwnPtr<ScriptExecutionContext::Task> m_task;
             String m_mode;
         };
 
     private:
         friend class RunLoopSetup;
-        MessageQueueWaitResult runInMode(WorkerContext*, const ModePredicate&, WaitMode);
+        MessageQueueWaitResult runInMode(WorkerGlobalScope*, const ModePredicate&, WaitMode);
 
         // Runs any clean up tasks that are currently in the queue and returns.
         // This should only be called when the context is closed or loop has been terminated.
-        void runCleanupTasks(WorkerContext*);
+        void runCleanupTasks(WorkerGlobalScope*);
 
         MessageQueue<Task> m_messageQueue;
         OwnPtr<WorkerSharedTimer> m_sharedTimer;

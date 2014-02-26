@@ -25,7 +25,7 @@
 
 #include <blpwtk2_config.h>
 
-#include <base/process.h>
+#include <base/process/process_handle.h>
 
 #include <string>
 

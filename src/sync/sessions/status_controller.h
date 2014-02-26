@@ -33,7 +33,7 @@
 
 #include "base/logging.h"
 #include "base/stl_util.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "sync/base/sync_export.h"
 #include "sync/internal_api/public/sessions/model_neutral_state.h"
 #include "sync/sessions/ordered_commit_set.h"
@@ -52,6 +52,12 @@ class SYNC_EXPORT_PRIVATE StatusController {
   }
   void set_updates_request_types(ModelTypeSet value) {
     model_neutral_.updates_request_types = value;
+  }
+  const ModelTypeSet commit_request_types() const {
+    return model_neutral_.commit_request_types;
+  }
+  void set_commit_request_types(ModelTypeSet value) {
+    model_neutral_.commit_request_types = value;
   }
   const sync_pb::ClientToServerResponse& updates_response() const {
     return model_neutral_.updates_response;

@@ -15,7 +15,8 @@
 #include <list>
 #include <string>
 
-#include "base/time.h"
+#include "base/logging.h"
+#include "base/time/time.h"
 #include "media/base/media_export.h"
 #include "media/video/capture/video_capture_types.h"
 
@@ -23,16 +24,99 @@ namespace media {
 
 class MEDIA_EXPORT VideoCaptureDevice {
  public:
+  // Represents a capture device name and ID.
+  // You should not create an instance of this class directly by e.g. setting
+  // various properties directly.  Instead use
+  // VideoCaptureDevice::GetDeviceNames to do this for you and if you need to
+  // cache your own copy of a name, you can do so via the copy constructor.
+  // The reason for this is that a device name might contain platform specific
+  // settings that are relevant only to the platform specific implementation of
+  // VideoCaptureDevice::Create.
+  class MEDIA_EXPORT Name {
+   public:
+    Name() {}
+    Name(const std::string& name, const std::string& id)
+        : device_name_(name), unique_id_(id) {}
 
-  struct Name {
+#if defined(OS_WIN)
+    // Windows targets Capture Api type: it can only be set on construction.
+    enum CaptureApiType {
+      MEDIA_FOUNDATION,
+      DIRECT_SHOW,
+      API_TYPE_UNKNOWN
+    };
+
+    Name(const std::string& name,
+         const std::string& id,
+         const CaptureApiType api_type)
+        : device_name_(name), unique_id_(id), capture_api_class_(api_type) {}
+#endif  // if defined(OS_WIN)
+    ~Name() {}
+
     // Friendly name of a device
-    std::string device_name;
+    const std::string& name() const { return device_name_; }
 
     // Unique name of a device. Even if there are multiple devices with the same
     // friendly name connected to the computer this will be unique.
-    std::string unique_id;
+    const std::string& id() const { return unique_id_; }
+
+    // The unique hardware model identifier of the capture device.  Returns
+    // "[vid]:[pid]" when a USB device is detected, otherwise "".
+    // The implementation of this method is platform-dependent.
+    const std::string GetModel() const;
+
+    // Friendly name of a device, plus the model identifier in parentheses.
+    const std::string GetNameAndModel() const;
+
+    // These operators are needed due to storing the name in an STL container.
+    // In the shared build, all methods from the STL container will be exported
+    // so even though they're not used, they're still depended upon.
+    bool operator==(const Name& other) const {
+      return other.id() == unique_id_ && other.name() == device_name_;
+    }
+    bool operator<(const Name& other) const {
+      return unique_id_ < other.id();
+    }
+
+#if defined(OS_WIN)
+    CaptureApiType capture_api_type() const {
+      return capture_api_class_.capture_api_type();
+    }
+#endif  // if defined(OS_WIN)
+
+   private:
+    std::string device_name_;
+    std::string unique_id_;
+#if defined(OS_WIN)
+    // This class wraps the CaptureApiType, so it has a by default value if not
+    // inititalized, and I (mcasas) do a DCHECK on reading its value.
+    class CaptureApiClass{
+     public:
+      CaptureApiClass():  capture_api_type_(API_TYPE_UNKNOWN) {}
+      CaptureApiClass(const CaptureApiType api_type)
+          :  capture_api_type_(api_type) {}
+      CaptureApiType capture_api_type() const {
+        DCHECK_NE(capture_api_type_,  API_TYPE_UNKNOWN);
+        return capture_api_type_;
+      }
+     private:
+      CaptureApiType capture_api_type_;
+    };
+
+    CaptureApiClass capture_api_class_;
+#endif  // if defined(OS_WIN)
+    // Allow generated copy constructor and assignment.
   };
-  typedef std::list<Name> Names;
+
+  // Manages a list of Name entries.
+  class MEDIA_EXPORT Names
+      : public NON_EXPORTED_BASE(std::list<Name>) {
+   public:
+    // Returns NULL if no entry was found by that ID.
+    Name* FindById(const std::string& id);
+
+    // Allow generated copy constructor and assignment.
+  };
 
   class MEDIA_EXPORT EventHandler {
    public:
@@ -100,6 +184,10 @@ class MEDIA_EXPORT VideoCaptureDevice {
     // the resulting frame size.
     virtual void OnFrameInfo(const VideoCaptureCapability& info) = 0;
 
+    // Called when the native resolution of VideoCaptureDevice has been changed
+    // and it needs to inform its client of the new frame size.
+    virtual void OnFrameInfoChanged(const VideoCaptureCapability& info) {};
+
    protected:
     virtual ~EventHandler() {}
   };
@@ -116,9 +204,7 @@ class MEDIA_EXPORT VideoCaptureDevice {
   // is called informing of the resulting resolution and frame rate.
   // DeAllocate() must be called before this function can be called again and
   // before the object is deleted.
-  virtual void Allocate(int width,
-                        int height,
-                        int frame_rate,
+  virtual void Allocate(const VideoCaptureCapability& capture_format,
                         EventHandler* observer) = 0;
 
   // Start capturing video frames. Allocate must be called before this function.

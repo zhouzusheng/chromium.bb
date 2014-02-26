@@ -22,6 +22,7 @@
 #include "core/html/HTMLSummaryElement.h"
 
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/KeyboardEvent.h"
 #include "core/dom/NodeRenderingContext.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -49,14 +50,7 @@ HTMLSummaryElement::HTMLSummaryElement(const QualifiedName& tagName, Document* d
 
 RenderObject* HTMLSummaryElement::createRenderer(RenderStyle*)
 {
-    return new (document()->renderArena()) RenderBlock(this);
-}
-
-bool HTMLSummaryElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
-{
-    if (childContext.node()->isPseudoElement())
-        return true;
-    return childContext.isOnEncapsulationBoundary() && HTMLElement::childShouldCreateRenderer(childContext);
+    return new RenderBlock(this);
 }
 
 void HTMLSummaryElement::didAddUserAgentShadowRoot(ShadowRoot* root)
@@ -67,10 +61,10 @@ void HTMLSummaryElement::didAddUserAgentShadowRoot(ShadowRoot* root)
 
 HTMLDetailsElement* HTMLSummaryElement::detailsElement() const
 {
-    Node* mayDetails = const_cast<HTMLSummaryElement*>(this)->parentNodeForRenderingAndStyle();
-    if (!mayDetails || !mayDetails->hasTagName(detailsTag))
-        return 0;
-    return static_cast<HTMLDetailsElement*>(mayDetails);
+    Node* parent = NodeRenderingTraversal::parent(this);
+    if (parent && isHTMLDetailsElement(parent))
+        return toHTMLDetailsElement(parent);
+    return 0;
 }
 
 bool HTMLSummaryElement::isMainSummary() const
@@ -108,13 +102,13 @@ void HTMLSummaryElement::defaultEventHandler(Event* event)
         }
 
         if (event->isKeyboardEvent()) {
-            if (event->type() == eventNames().keydownEvent && static_cast<KeyboardEvent*>(event)->keyIdentifier() == "U+0020") {
+            if (event->type() == eventNames().keydownEvent && toKeyboardEvent(event)->keyIdentifier() == "U+0020") {
                 setActive(true, true);
                 // No setDefaultHandled() - IE dispatches a keypress in this case.
                 return;
             }
             if (event->type() == eventNames().keypressEvent) {
-                switch (static_cast<KeyboardEvent*>(event)->charCode()) {
+                switch (toKeyboardEvent(event)->charCode()) {
                 case '\r':
                     dispatchSimulatedClick(event);
                     event->setDefaultHandled();
@@ -125,7 +119,7 @@ void HTMLSummaryElement::defaultEventHandler(Event* event)
                     return;
                 }
             }
-            if (event->type() == eventNames().keyupEvent && static_cast<KeyboardEvent*>(event)->keyIdentifier() == "U+0020") {
+            if (event->type() == eventNames().keyupEvent && toKeyboardEvent(event)->keyIdentifier() == "U+0020") {
                 if (active())
                     dispatchSimulatedClick(event);
                 event->setDefaultHandled();

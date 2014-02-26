@@ -31,7 +31,6 @@
 #ifndef PageSerializer_h
 #define PageSerializer_h
 
-#include "core/platform/SharedBuffer.h"
 #include "weborigin/KURL.h"
 #include "weborigin/KURLHash.h"
 #include "wtf/HashMap.h"
@@ -40,7 +39,7 @@
 
 namespace WebCore {
 
-class CachedImage;
+class ImageResource;
 class CSSStyleSheet;
 class Document;
 class Frame;
@@ -71,7 +70,7 @@ private:
     // It also adds any resources included in that stylesheet (including any imported stylesheets and their own resources).
     void serializeCSSStyleSheet(CSSStyleSheet*, const KURL&);
 
-    void addImageToResources(CachedImage*, RenderObject*, const KURL&);
+    void addImageToResources(ImageResource*, RenderObject*, const KURL&);
     void retrieveResourcesForProperties(const StylePropertySet*, Document*);
     void retrieveResourcesForRule(StyleRule*, Document*);
 

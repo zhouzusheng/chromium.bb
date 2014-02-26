@@ -27,17 +27,26 @@
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGMPathElement.h"
-#include "core/svg/SVGPathSegArc.h"
+#include "core/svg/SVGPathSegArcAbs.h"
+#include "core/svg/SVGPathSegArcRel.h"
 #include "core/svg/SVGPathSegClosePath.h"
-#include "core/svg/SVGPathSegCurvetoCubic.h"
-#include "core/svg/SVGPathSegCurvetoCubicSmooth.h"
-#include "core/svg/SVGPathSegCurvetoQuadratic.h"
-#include "core/svg/SVGPathSegCurvetoQuadraticSmooth.h"
-#include "core/svg/SVGPathSegLineto.h"
-#include "core/svg/SVGPathSegLinetoHorizontal.h"
-#include "core/svg/SVGPathSegLinetoVertical.h"
+#include "core/svg/SVGPathSegCurvetoCubicAbs.h"
+#include "core/svg/SVGPathSegCurvetoCubicRel.h"
+#include "core/svg/SVGPathSegCurvetoCubicSmoothAbs.h"
+#include "core/svg/SVGPathSegCurvetoCubicSmoothRel.h"
+#include "core/svg/SVGPathSegCurvetoQuadraticAbs.h"
+#include "core/svg/SVGPathSegCurvetoQuadraticRel.h"
+#include "core/svg/SVGPathSegCurvetoQuadraticSmoothAbs.h"
+#include "core/svg/SVGPathSegCurvetoQuadraticSmoothRel.h"
+#include "core/svg/SVGPathSegLinetoAbs.h"
+#include "core/svg/SVGPathSegLinetoHorizontalAbs.h"
+#include "core/svg/SVGPathSegLinetoHorizontalRel.h"
+#include "core/svg/SVGPathSegLinetoRel.h"
+#include "core/svg/SVGPathSegLinetoVerticalAbs.h"
+#include "core/svg/SVGPathSegLinetoVerticalRel.h"
 #include "core/svg/SVGPathSegList.h"
-#include "core/svg/SVGPathSegMoveto.h"
+#include "core/svg/SVGPathSegMovetoAbs.h"
+#include "core/svg/SVGPathSegMovetoRel.h"
 #include "core/svg/SVGPathUtilities.h"
 #include "core/svg/properties/SVGPathSegListPropertyTearOff.h"
 
@@ -66,12 +75,11 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGPathElement)
     REGISTER_LOCAL_ANIMATED_PROPERTY(d)
     REGISTER_LOCAL_ANIMATED_PROPERTY(pathLength)
     REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGStyledTransformableElement)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGTests)
+    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
 inline SVGPathElement::SVGPathElement(const QualifiedName& tagName, Document* document)
-    : SVGStyledTransformableElement(tagName, document)
+    : SVGGraphicsElement(tagName, document)
     , m_pathByteStream(SVGPathByteStream::create())
     , m_pathSegList(PathSegUnalteredRole)
     , m_isAnimValObserved(false)
@@ -93,9 +101,9 @@ float SVGPathElement::getTotalLength()
     return totalLength;
 }
 
-FloatPoint SVGPathElement::getPointAtLength(float length)
+SVGPoint SVGPathElement::getPointAtLength(float length)
 {
-    FloatPoint point;
+    SVGPoint point;
     getPointAtLengthOfSVGPathByteStream(pathByteStream(), length, point);
     return point;
 }
@@ -206,8 +214,6 @@ bool SVGPathElement::isSupportedAttribute(const QualifiedName& attrName)
 {
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty()) {
-        SVGTests::addSupportedAttributes(supportedAttributes);
-        SVGLangSpace::addSupportedAttributes(supportedAttributes);
         SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::dAttr);
         supportedAttributes.add(SVGNames::pathLengthAttr);
@@ -218,7 +224,7 @@ bool SVGPathElement::isSupportedAttribute(const QualifiedName& attrName)
 void SVGPathElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (!isSupportedAttribute(name)) {
-        SVGStyledTransformableElement::parseAttribute(name, value);
+        SVGGraphicsElement::parseAttribute(name, value);
         return;
     }
 
@@ -235,10 +241,6 @@ void SVGPathElement::parseAttribute(const QualifiedName& name, const AtomicStrin
         return;
     }
 
-    if (SVGTests::parseAttribute(name, value))
-        return;
-    if (SVGLangSpace::parseAttribute(name, value))
-        return;
     if (SVGExternalResourcesRequired::parseAttribute(name, value))
         return;
 
@@ -248,14 +250,11 @@ void SVGPathElement::parseAttribute(const QualifiedName& name, const AtomicStrin
 void SVGPathElement::svgAttributeChanged(const QualifiedName& attrName)
 {
     if (!isSupportedAttribute(attrName)) {
-        SVGStyledTransformableElement::svgAttributeChanged(attrName);
+        SVGGraphicsElement::svgAttributeChanged(attrName);
         return;
     }
 
     SVGElementInstance::InvalidationGuard invalidationGuard(this);
-    
-    if (SVGTests::handleAttributeChange(this, attrName))
-        return;
 
     RenderSVGPath* renderer = toRenderSVGPath(this->renderer());
 
@@ -285,21 +284,21 @@ void SVGPathElement::invalidateMPathDependencies()
         HashSet<SVGElement*>::iterator end = dependencies->end();
         for (HashSet<SVGElement*>::iterator it = dependencies->begin(); it != end; ++it) {
             if ((*it)->hasTagName(SVGNames::mpathTag))
-                static_cast<SVGMPathElement*>(*it)->targetPathChanged();
+                toSVGMPathElement(*it)->targetPathChanged();
         }
     }
 }
 
 Node::InsertionNotificationRequest SVGPathElement::insertedInto(ContainerNode* rootParent)
 {
-    SVGStyledTransformableElement::insertedInto(rootParent);
+    SVGGraphicsElement::insertedInto(rootParent);
     invalidateMPathDependencies();
     return InsertionDone;
 }
 
 void SVGPathElement::removedFrom(ContainerNode* rootParent)
 {
-    SVGStyledTransformableElement::removedFrom(rootParent);
+    SVGGraphicsElement::removedFrom(rootParent);
     invalidateMPathDependencies();
 }
 
@@ -378,7 +377,7 @@ void SVGPathElement::pathSegListChanged(SVGPathSegRole role, ListModification li
     }
 
     invalidateSVGAttributes();
-    
+
     RenderSVGPath* renderer = toRenderSVGPath(this->renderer());
     if (!renderer)
         return;
@@ -404,7 +403,7 @@ FloatRect SVGPathElement::getBBox(StyleUpdateStrategy styleUpdateStrategy)
 RenderObject* SVGPathElement::createRenderer(RenderStyle*)
 {
     // By default, any subclass is expected to do path-based drawing
-    return new (document()->renderArena()) RenderSVGPath(this);
+    return new RenderSVGPath(this);
 }
 
 }

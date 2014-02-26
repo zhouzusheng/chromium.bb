@@ -38,6 +38,7 @@
 #include "core/css/CSSFontFaceSrcValue.h"
 #include "core/css/CSSFunctionValue.h"
 #include "core/css/CSSGradientValue.h"
+#include "core/css/CSSGridTemplateValue.h"
 #include "core/css/CSSImageSetValue.h"
 #include "core/css/CSSImageValue.h"
 #include "core/css/CSSInheritedValue.h"
@@ -56,7 +57,6 @@
 #include "core/css/FontFeatureValue.h"
 #include "core/css/FontValue.h"
 #include "core/css/ShadowValue.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/svg/SVGColor.h"
 #include "core/svg/SVGPaint.h"
 
@@ -74,14 +74,8 @@ public:
 
     String cssText() const { return m_cssText; }
 
-    void reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-    {
-        MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-        info.addMember(m_cssText, "cssText");
-    }
-
 private:
-    TextCloneCSSValue(ClassType classType, const String& text) 
+    TextCloneCSSValue(ClassType classType, const String& text)
         : CSSValue(classType, /*isCSSOMSafe*/ true)
         , m_cssText(text)
     {
@@ -143,122 +137,6 @@ bool CSSValue::hasFailedOrCanceledSubresources() const
     return false;
 }
 
-void CSSValue::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    if (m_isTextClone) {
-        ASSERT(isCSSOMSafe());
-        static_cast<const TextCloneCSSValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    }
-
-    ASSERT(!isCSSOMSafe() || isSubtypeExposedToCSSOM());
-    switch (classType()) {
-    case PrimitiveClass:
-        toCSSPrimitiveValue(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case ImageClass:
-        toCSSImageValue(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case CursorImageClass:
-        static_cast<const CSSCursorImageValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case CanvasClass:
-        static_cast<const CSSCanvasValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case CrossfadeClass:
-        static_cast<const CSSCrossfadeValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case LinearGradientClass:
-        static_cast<const CSSLinearGradientValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case RadialGradientClass:
-        static_cast<const CSSRadialGradientValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case CubicBezierTimingFunctionClass:
-        static_cast<const CSSCubicBezierTimingFunctionValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case LinearTimingFunctionClass:
-        static_cast<const CSSLinearTimingFunctionValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case StepsTimingFunctionClass:
-        static_cast<const CSSStepsTimingFunctionValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case AspectRatioClass:
-        static_cast<const CSSAspectRatioValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case BorderImageSliceClass:
-        static_cast<const CSSBorderImageSliceValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case FontFeatureClass:
-        static_cast<const FontFeatureValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case FontClass:
-        static_cast<const FontValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case FontFaceSrcClass:
-        static_cast<const CSSFontFaceSrcValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case FunctionClass:
-        static_cast<const CSSFunctionValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case InheritedClass:
-        static_cast<const CSSInheritedValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case InitialClass:
-        static_cast<const CSSInitialValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case ReflectClass:
-        static_cast<const CSSReflectValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case ShadowClass:
-        static_cast<const ShadowValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case UnicodeRangeClass:
-        static_cast<const CSSUnicodeRangeValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case LineBoxContainClass:
-        static_cast<const CSSLineBoxContainValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case CalculationClass:
-        static_cast<const CSSCalcValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case CSSArrayFunctionValueClass:
-        static_cast<const CSSArrayFunctionValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case CSSMixFunctionValueClass:
-        static_cast<const CSSMixFunctionValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case CSSShaderClass:
-        static_cast<const CSSShaderValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case VariableClass:
-        static_cast<const CSSVariableValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case SVGColorClass:
-        static_cast<const SVGColor*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case SVGPaintClass:
-        static_cast<const SVGPaint*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case CSSSVGDocumentClass:
-        static_cast<const CSSSVGDocumentValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case ValueListClass:
-        toCSSValueList(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case ImageSetClass:
-        static_cast<const CSSImageSetValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case CSSFilterClass:
-        static_cast<const CSSFilterValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    case CSSTransformClass:
-        static_cast<const CSSTransformValue*>(this)->reportDescendantMemoryUsage(memoryObjectInfo);
-        return;
-    }
-    ASSERT_NOT_REACHED();
-}
-
 template<class ChildClassType>
 inline static bool compareCSSValues(const CSSValue& first, const CSSValue& second)
 {
@@ -302,6 +180,8 @@ bool CSSValue::equals(const CSSValue& other) const
             return compareCSSValues<CSSInheritedValue>(*this, other);
         case InitialClass:
             return compareCSSValues<CSSInitialValue>(*this, other);
+        case GridTemplateClass:
+            return compareCSSValues<CSSGridTemplateValue>(*this, other);
         case PrimitiveClass:
             return compareCSSValues<CSSPrimitiveValue>(*this, other);
         case ReflectClass:
@@ -390,6 +270,8 @@ String CSSValue::cssText() const
         return static_cast<const CSSInheritedValue*>(this)->customCssText();
     case InitialClass:
         return static_cast<const CSSInitialValue*>(this)->customCssText();
+    case GridTemplateClass:
+        return static_cast<const CSSGridTemplateValue*>(this)->customCssText();
     case PrimitiveClass:
         return toCSSPrimitiveValue(this)->customCssText();
     case ReflectClass:
@@ -423,7 +305,7 @@ String CSSValue::cssText() const
     case CSSShaderClass:
         return static_cast<const CSSShaderValue*>(this)->customCssText();
     case VariableClass:
-        return static_cast<const CSSVariableValue*>(this)->value();
+        return toCSSVariableValue(this)->value();
     case SVGColorClass:
         return static_cast<const SVGColor*>(this)->customCssText();
     case SVGPaintClass:
@@ -503,6 +385,9 @@ void CSSValue::destroy()
     case InitialClass:
         delete static_cast<CSSInitialValue*>(this);
         return;
+    case GridTemplateClass:
+        delete static_cast<CSSGridTemplateValue*>(this);
+        return;
     case PrimitiveClass:
         delete toCSSPrimitiveValue(this);
         return;
@@ -552,7 +437,7 @@ void CSSValue::destroy()
         delete static_cast<CSSShaderValue*>(this);
         return;
     case VariableClass:
-        delete static_cast<CSSVariableValue*>(this);
+        delete toCSSVariableValue(this);
         return;
     case SVGColorClass:
         delete static_cast<SVGColor*>(this);

@@ -33,6 +33,7 @@
 #include "core/html/TextFieldInputType.h"
 
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/BeforeTextInsertedEvent.h"
 #include "core/dom/KeyboardEvent.h"
 #include "core/dom/NodeRenderStyle.h"
@@ -44,15 +45,13 @@
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/TextControlInnerElements.h"
-#include "core/page/Chrome.h"
-#include "core/page/ChromeClient.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderTextControlSingleLine.h"
 #include "core/rendering/RenderTheme.h"
-#include <wtf/text/WTFString.h>
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -69,14 +68,9 @@ TextFieldInputType::~TextFieldInputType()
         m_innerSpinButton->removeSpinButtonOwner();
 }
 
-bool TextFieldInputType::isKeyboardFocusable(KeyboardEvent*) const
+bool TextFieldInputType::shouldShowFocusRingOnMouseFocus() const
 {
-    return element()->isFocusable();
-}
-
-bool TextFieldInputType::isMouseFocusable() const
-{
-    return element()->isFocusable();
+    return true;
 }
 
 bool TextFieldInputType::isTextField() const
@@ -200,6 +194,12 @@ void TextFieldInputType::forwardEvent(Event* event)
     }
 }
 
+void TextFieldInputType::handleFocusEvent(Element* oldFocusedNode, FocusDirection focusDirection)
+{
+    InputType::handleFocusEvent(oldFocusedNode, focusDirection);
+    element()->beginEditing();
+}
+
 void TextFieldInputType::handleBlurEvent()
 {
     InputType::handleBlurEvent();
@@ -213,7 +213,7 @@ bool TextFieldInputType::shouldSubmitImplicitly(Event* event)
 
 RenderObject* TextFieldInputType::createRenderer(RenderStyle*) const
 {
-    return new (element()->document()->renderArena()) RenderTextControlSingleLine(element());
+    return new RenderTextControlSingleLine(element());
 }
 
 bool TextFieldInputType::needsContainer() const
@@ -241,10 +241,8 @@ void TextFieldInputType::createShadowSubtree()
     ASSERT(!m_innerSpinButton);
 
     Document* document = element()->document();
-    ChromeClient* chromeClient = document->page() ? document->page()->chrome().client() : 0;
-    bool shouldAddDecorations = chromeClient && chromeClient->willAddTextFieldDecorationsTo(element());
     bool shouldHaveSpinButton = this->shouldHaveSpinButton();
-    bool createsContainer = shouldHaveSpinButton || needsContainer() || shouldAddDecorations;
+    bool createsContainer = shouldHaveSpinButton || needsContainer();
 
     m_innerText = TextControlInnerTextElement::create(document);
     if (!createsContainer) {
@@ -254,7 +252,7 @@ void TextFieldInputType::createShadowSubtree()
 
     ShadowRoot* shadowRoot = element()->userAgentShadowRoot();
     m_container = TextControlInnerContainer::create(document);
-    m_container->setPseudo(AtomicString("-webkit-textfield-decoration-container", AtomicString::ConstructFromLiteral));
+    m_container->setPart(AtomicString("-webkit-textfield-decoration-container", AtomicString::ConstructFromLiteral));
     shadowRoot->appendChild(m_container, IGNORE_EXCEPTION);
 
     m_innerBlock = TextControlInnerElement::create(document);
@@ -273,9 +271,6 @@ void TextFieldInputType::createShadowSubtree()
         m_innerSpinButton = SpinButtonElement::create(document, *this);
         m_container->appendChild(m_innerSpinButton, IGNORE_EXCEPTION);
     }
-
-    if (shouldAddDecorations)
-        chromeClient->addTextFieldDecorationsTo(element());
 }
 
 HTMLElement* TextFieldInputType::containerElement() const
@@ -360,9 +355,11 @@ static bool isASCIILineBreak(UChar c)
     return c == '\r' || c == '\n';
 }
 
-static String limitLength(const String& string, int maxLength)
+static String limitLength(const String& string, unsigned maxLength)
 {
-    unsigned newLength = numCharactersInGraphemeClusters(string, maxLength);
+    unsigned newLength = std::min(maxLength, string.length());
+    // FIXME: We should not truncate the string at a control character. It's not
+    // compatible with IE and Firefox.
     for (unsigned i = 0; i < newLength; ++i) {
         const UChar current = string[i];
         if (current < ' ' && current != '\t') {
@@ -370,6 +367,10 @@ static String limitLength(const String& string, int maxLength)
             break;
         }
     }
+    if (newLength == string.length())
+        return string;
+    if (newLength > 0 && U16_IS_LEAD(string[newLength - 1]))
+        --newLength;
     return string.left(newLength);
 }
 
@@ -382,17 +383,17 @@ void TextFieldInputType::handleBeforeTextInsertedEvent(BeforeTextInsertedEvent* 
 {
     // Make sure that the text to be inserted will not violate the maxLength.
 
-    // We use RenderTextControlSingleLine::text() instead of InputElement::value()
-    // because they can be mismatched by sanitizeValue() in
-    // HTMLInputElement::subtreeHasChanged() in some cases.
-    unsigned oldLength = numGraphemeClusters(element()->innerTextValue());
+    // We use HTMLInputElement::innerTextValue() instead of
+    // HTMLInputElement::value() because they can be mismatched by
+    // sanitizeValue() in HTMLInputElement::subtreeHasChanged() in some cases.
+    unsigned oldLength = element()->innerTextValue().length();
 
     // selectionLength represents the selection length of this text field to be
     // removed by this insertion.
     // If the text field has no focus, we don't need to take account of the
     // selection length. The selection is the source of text drag-and-drop in
     // that case, and nothing in the text field will be removed.
-    unsigned selectionLength = element()->focused() ? numGraphemeClusters(plainText(element()->document()->frame()->selection()->selection().toNormalizedRange().get())) : 0;
+    unsigned selectionLength = element()->focused() ? plainText(element()->document()->frame()->selection()->selection().toNormalizedRange().get()).length() : 0;
     ASSERT(oldLength >= selectionLength);
 
     // Selected characters will be removed by the next text event.
@@ -432,7 +433,7 @@ void TextFieldInputType::updatePlaceholderText()
     }
     if (!m_placeholder) {
         m_placeholder = HTMLDivElement::create(element()->document());
-        m_placeholder->setPseudo(AtomicString("-webkit-input-placeholder", AtomicString::ConstructFromLiteral));
+        m_placeholder->setPart(AtomicString("-webkit-input-placeholder", AtomicString::ConstructFromLiteral));
         element()->userAgentShadowRoot()->insertBefore(m_placeholder, m_container ? m_container->nextSibling() : innerTextElement()->nextSibling(), ASSERT_NO_EXCEPTION);
     }
     m_placeholder->setInnerText(placeholderText, ASSERT_NO_EXCEPTION);

@@ -29,20 +29,18 @@
  */
 
 #include "config.h"
-
 #include "core/dom/CustomElementDefinition.h"
 
 namespace WebCore {
 
-PassRefPtr<CustomElementDefinition> CustomElementDefinition::create(const AtomicString& type, const AtomicString& name, const AtomicString& namespaceURI, PassRefPtr<CustomElementCallback> callback)
+PassRefPtr<CustomElementDefinition> CustomElementDefinition::create(const CustomElementDescriptor& descriptor, PassRefPtr<CustomElementLifecycleCallbacks> callbacks)
 {
-    return adoptRef(new CustomElementDefinition(type, name, namespaceURI, callback));
+    return adoptRef(new CustomElementDefinition(descriptor, callbacks));
 }
 
-CustomElementDefinition::CustomElementDefinition(const AtomicString& type, const AtomicString& name, const AtomicString& namespaceURI, PassRefPtr<CustomElementCallback> callback)
-    : m_type(type)
-    , m_tag(QualifiedName(nullAtom, name, namespaceURI))
-    , m_callback(callback)
+CustomElementDefinition::CustomElementDefinition(const CustomElementDescriptor& descriptor, PassRefPtr<CustomElementLifecycleCallbacks> callbacks)
+    : m_descriptor(descriptor)
+    , m_callbacks(callbacks)
 {
 }
 

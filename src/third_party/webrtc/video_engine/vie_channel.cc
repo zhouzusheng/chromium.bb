@@ -100,7 +100,6 @@ ViEChannel::ViEChannel(int32_t channel_id,
       external_encryption_(NULL),
       effect_filter_(NULL),
       color_enhancement_(false),
-      file_recorder_(channel_id),
       mtu_(0),
       sender_(sender),
       nack_history_size_sender_(kSendSidePacketHistorySize),
@@ -576,7 +575,7 @@ int32_t ViEChannel::WaitForKeyFrame(bool wait) {
 }
 
 int32_t ViEChannel::SetSignalPacketLossStatus(bool enable,
-                                                    bool only_key_frames) {
+                                              bool only_key_frames) {
   WEBRTC_TRACE(kTraceInfo, kTraceVideo, ViEId(engine_id_, channel_id_),
                "%s(enable: %d)", __FUNCTION__, enable);
   if (enable) {
@@ -682,6 +681,8 @@ int32_t ViEChannel::ProcessNACKRequest(const bool enable) {
       rtp_rtcp->SetNACKStatus(nackMethod, max_nack_reordering_threshold_);
       rtp_rtcp->SetStorePacketsStatus(true, nack_history_size_sender_);
     }
+    // Don't introduce errors when NACK is enabled.
+    vcm_.SetDecodeErrorMode(kNoErrors);
   } else {
     CriticalSectionScoped cs(rtp_rtcp_cs_.get());
     for (std::list<RtpRtcp*>::iterator it = simulcast_rtp_rtcp_.begin();
@@ -703,6 +704,9 @@ int32_t ViEChannel::ProcessNACKRequest(const bool enable) {
                    "%s: Could not turn off NACK", __FUNCTION__);
       return -1;
     }
+    // When NACK is off, allow decoding with errors. Otherwise, the video
+    // will freeze, and will only recover with a complete key frame.
+    vcm_.SetDecodeErrorMode(kWithErrors);
   }
   return 0;
 }
@@ -1685,22 +1689,22 @@ int32_t ViEChannel::FrameToRender(
     }
     decoder_reset_ = false;
   }
-  if (effect_filter_) {
-    unsigned int length = CalcBufferSize(kI420,
-                                         video_frame.width(),
-                                         video_frame.height());
-    scoped_array<uint8_t> video_buffer(new uint8_t[length]);
-    ExtractBuffer(video_frame, length, video_buffer.get());
-    effect_filter_->Transform(length, video_buffer.get(),
-                              video_frame.timestamp(), video_frame.width(),
-                              video_frame.height());
+  // Post processing is not supported if the frame is backed by a texture.
+  if (video_frame.native_handle() == NULL) {
+    if (effect_filter_) {
+      unsigned int length = CalcBufferSize(kI420,
+                                           video_frame.width(),
+                                           video_frame.height());
+      scoped_array<uint8_t> video_buffer(new uint8_t[length]);
+      ExtractBuffer(video_frame, length, video_buffer.get());
+      effect_filter_->Transform(length, video_buffer.get(),
+                                video_frame.timestamp(), video_frame.width(),
+                                video_frame.height());
+    }
+    if (color_enhancement_) {
+      VideoProcessingModule::ColorEnhancement(&video_frame);
+    }
   }
-  if (color_enhancement_) {
-    VideoProcessingModule::ColorEnhancement(&video_frame);
-  }
-
-  // Record videoframe.
-  file_recorder_.RecordVideoFrame(video_frame);
 
   uint32_t arr_ofCSRC[kRtpCsrcSize];
   int32_t no_of_csrcs = rtp_rtcp_->RemoteCSRCs(arr_ofCSRC);
@@ -1913,17 +1917,6 @@ int32_t ViEChannel::RegisterEffectFilter(ViEEffectFilter* effect_filter) {
   return 0;
 }
 
-ViEFileRecorder& ViEChannel::GetIncomingFileRecorder() {
-  // Start getting callback of all frames before they are decoded.
-  vcm_.RegisterFrameStorageCallback(this);
-  return file_recorder_;
-}
-
-void ViEChannel::ReleaseIncomingFileRecorder() {
-  // Stop getting callback of all frames before they are decoded.
-  vcm_.RegisterFrameStorageCallback(NULL);
-}
-
 void ViEChannel::OnApplicationDataReceived(const int32_t id,
                                            const uint8_t sub_type,
                                            const uint32_t name,
@@ -1942,15 +1935,6 @@ void ViEChannel::OnApplicationDataReceived(const int32_t id,
           length);
     }
   }
-}
-
-void ViEChannel::OnSendReportReceived(const int32_t id,
-                                      const uint32_t senderSSRC,
-                                      uint32_t ntp_secs,
-                                      uint32_t ntp_frac,
-                                      uint32_t timestamp) {
-  vie_receiver_.OnSendReportReceived(id, senderSSRC, ntp_secs, ntp_frac,
-                                     timestamp);
 }
 
 int32_t ViEChannel::OnInitializeDecoder(

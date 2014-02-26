@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -29,9 +29,11 @@
 #include "core/platform/FileMetadata.h"
 #include "core/platform/FileSystem.h"
 #include "core/platform/MIMETypeRegistry.h"
-#include <wtf/CurrentTime.h>
-#include <wtf/DateMath.h>
-#include <wtf/text/WTFString.h>
+#include "public/platform/Platform.h"
+#include "public/platform/WebFileUtilities.h"
+#include "wtf/CurrentTime.h"
+#include "wtf/DateMath.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -94,7 +96,7 @@ PassRefPtr<File> File::createWithRelativePath(const String& path, const String& 
 File::File(const String& path, ContentTypeLookupPolicy policy)
     : Blob(createBlobDataForFile(path, policy), -1)
     , m_path(path)
-    , m_name(pathGetFileName(path))
+    , m_name(WebKit::Platform::current()->fileUtilities()->baseName(path))
     , m_snapshotSize(-1)
     , m_snapshotModificationTime(invalidFileTime())
 {
@@ -108,7 +110,7 @@ File::File(const String& path, const KURL& url, const String& type)
     , m_snapshotModificationTime(invalidFileTime())
 {
     ScriptWrappable::init(this);
-    m_name = pathGetFileName(path);
+    m_name = WebKit::Platform::current()->fileUtilities()->baseName(path);
     // FIXME: File object serialization/deserialization does not include
     // newer file object data members: m_name and m_relativePath.
     // See SerializedScriptValue.cpp for js and v8.

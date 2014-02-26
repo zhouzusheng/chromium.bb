@@ -45,8 +45,7 @@
 #include "core/page/Page.h"
 #include "core/platform/JSONValues.h"
 #include "weborigin/SecurityOrigin.h"
-
-using namespace std;
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 

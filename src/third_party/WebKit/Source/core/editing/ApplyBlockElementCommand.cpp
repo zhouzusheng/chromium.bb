@@ -28,6 +28,7 @@
 #include "core/editing/ApplyBlockElementCommand.h"
 
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/Text.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
@@ -102,7 +103,7 @@ void ApplyBlockElementCommand::formatSelection(const VisiblePosition& startOfSel
 
         formatRange(start, end, m_endOfLastParagraph, blockquoteForNextIndent);
 
-        // Don't put the next paragraph in the blockquote we just created for this paragraph unless 
+        // Don't put the next paragraph in the blockquote we just created for this paragraph unless
         // the next paragraph is in the same cell.
         if (enclosingCell && enclosingCell != enclosingNodeOfType(endOfNextParagraph.deepEquivalent(), &isTableCell))
             blockquoteForNextIndent = 0;
@@ -129,9 +130,9 @@ static bool isNewLineAtPosition(const Position& position)
     if (!textNode || !textNode->isTextNode() || offset < 0 || offset >= textNode->maxCharacterOffset())
         return false;
 
-    ExceptionCode ec = 0;
-    String textAtPosition = toText(textNode)->substringData(offset, 1, ec);
-    if (ec)
+    TrackExceptionState es;
+    String textAtPosition = toText(textNode)->substringData(offset, 1, es);
+    if (es.hadException())
         return false;
 
     return textAtPosition[0] == '\n';

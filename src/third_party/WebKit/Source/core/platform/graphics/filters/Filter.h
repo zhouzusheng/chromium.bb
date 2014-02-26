@@ -24,7 +24,7 @@
 #include "core/platform/graphics/FloatRect.h"
 #include "core/platform/graphics/FloatSize.h"
 #include "core/platform/graphics/ImageBuffer.h"
-#include <wtf/RefCounted.h>
+#include "wtf/RefCounted.h"
 
 namespace WebCore {
 
@@ -48,9 +48,19 @@ public:
     RenderingMode renderingMode() const { return m_renderingMode; }
     void setRenderingMode(RenderingMode renderingMode) { m_renderingMode = renderingMode; }
 
-    virtual float applyHorizontalScale(float value) const { return value * m_filterResolution.width(); }
-    virtual float applyVerticalScale(float value) const { return value * m_filterResolution.height(); }
-    
+    virtual float applyHorizontalScale(float value) const
+    {
+        float filterRegionScale = absoluteFilterRegion().isEmpty() || filterRegion().isEmpty() ?
+            1.0f : absoluteFilterRegion().width() / filterRegion().width();
+        return value * m_filterResolution.width() * filterRegionScale;
+    }
+    virtual float applyVerticalScale(float value) const
+    {
+        float filterRegionScale = absoluteFilterRegion().isEmpty() || filterRegion().isEmpty() ?
+            1.0f : absoluteFilterRegion().height() / filterRegion().height();
+        return value * m_filterResolution.height() * filterRegionScale;
+    }
+
     virtual FloatRect sourceImageRect() const = 0;
 
     FloatRect absoluteFilterRegion() const { return m_absoluteFilterRegion; }

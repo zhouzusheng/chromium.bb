@@ -41,6 +41,7 @@ WebInspector.TimelineModel = function()
     this._collectionEnabled = false;
 
     WebInspector.timelineManager.addEventListener(WebInspector.TimelineManager.EventTypes.TimelineEventRecorded, this._onRecordAdded, this);
+    WebInspector.timelineManager.addEventListener(WebInspector.TimelineManager.EventTypes.TimelineStartEvent, this._onTimelineStarted, this);
 }
 
 WebInspector.TimelineModel.TransferChunkLengthBytes = 5000000;
@@ -149,15 +150,14 @@ WebInspector.TimelineModel.aggregateTimeByCategory = function(total, addend)
 WebInspector.TimelineModel.prototype = {
     /**
      * @param {boolean=} includeDomCounters
-     * @param {boolean=} includeNativeMemoryStatistics
      */
-    startRecord: function(includeDomCounters, includeNativeMemoryStatistics)
+    startRecord: function(includeDomCounters)
     {
         if (this._collectionEnabled)
             return;
         this.reset();
         var maxStackFrames = WebInspector.settings.timelineLimitStackFramesFlag.get() ? WebInspector.settings.timelineStackFramesToCapture.get() : 30;
-        WebInspector.timelineManager.start(maxStackFrames, includeDomCounters, includeNativeMemoryStatistics);
+        WebInspector.timelineManager.start(maxStackFrames, includeDomCounters);
         this._collectionEnabled = true;
     },
 
@@ -262,6 +262,14 @@ WebInspector.TimelineModel.prototype = {
             this._minimumRecordTime = startTime;
         if (this._maximumRecordTime === -1 || endTime > this._maximumRecordTime)
             this._maximumRecordTime = endTime;
+    },
+
+    _onTimelineStarted: function(event)
+    {
+        if (event.data.timestampsBase)
+            this._timestampsBase = event.data.timestampsBase;
+        if (event.data.startTime)
+            this._startTime = event.data.startTime;
     },
 
     /**

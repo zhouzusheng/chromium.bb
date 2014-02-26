@@ -13,7 +13,6 @@
 #include "media/base/bind_to_loop.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/decryptor.h"
-#include "media/base/demuxer_stream.h"
 #include "media/base/pipeline.h"
 #include "media/base/video_decoder_config.h"
 #include "media/base/video_frame.h"
@@ -26,34 +25,27 @@ DecryptingVideoDecoder::DecryptingVideoDecoder(
     : message_loop_(message_loop),
       weak_factory_(this),
       state_(kUninitialized),
-      demuxer_stream_(NULL),
       set_decryptor_ready_cb_(set_decryptor_ready_cb),
       decryptor_(NULL),
       key_added_while_decode_pending_(false),
       trace_id_(0) {
 }
 
-void DecryptingVideoDecoder::Initialize(
-    DemuxerStream* stream,
-    const PipelineStatusCB& status_cb,
-    const StatisticsCB& statistics_cb) {
+void DecryptingVideoDecoder::Initialize(const VideoDecoderConfig& config,
+                                        const PipelineStatusCB& status_cb) {
   DVLOG(2) << "Initialize()";
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK(state_ == kUninitialized ||
          state_ == kIdle ||
          state_ == kDecodeFinished) << state_;
-  DCHECK(read_cb_.is_null());
+  DCHECK(decode_cb_.is_null());
   DCHECK(reset_cb_.is_null());
-  DCHECK(stream);
+  DCHECK(config.IsValidConfig());
+  DCHECK(config.is_encrypted());
 
   init_cb_ = BindToCurrentLoop(status_cb);
   weak_this_ = weak_factory_.GetWeakPtr();
-  demuxer_stream_ = stream;
-  statistics_cb_ = statistics_cb;
-
-  const VideoDecoderConfig& config = demuxer_stream_->video_decoder_config();
-  DCHECK(config.IsValidConfig());
-  DCHECK(config.is_encrypted());
+  config_ = config;
 
   if (state_ == kUninitialized) {
     state_ = kDecryptorRequested;
@@ -69,36 +61,38 @@ void DecryptingVideoDecoder::Initialize(
       &DecryptingVideoDecoder::FinishInitialization, weak_this_)));
 }
 
-void DecryptingVideoDecoder::Read(const ReadCB& read_cb) {
-  DVLOG(3) << "Read()";
+void DecryptingVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
+                                    const DecodeCB& decode_cb) {
+  DVLOG(3) << "Decode()";
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK(state_ == kIdle ||
          state_ == kDecodeFinished ||
          state_ == kError) << state_;
-  DCHECK(!read_cb.is_null());
-  CHECK(read_cb_.is_null()) << "Overlapping decodes are not supported.";
-  read_cb_ = BindToCurrentLoop(read_cb);
+  DCHECK(!decode_cb.is_null());
+  CHECK(decode_cb_.is_null()) << "Overlapping decodes are not supported.";
+
+  decode_cb_ = BindToCurrentLoop(decode_cb);
 
   if (state_ == kError) {
-    base::ResetAndReturn(&read_cb_).Run(kDecodeError, NULL);
+    base::ResetAndReturn(&decode_cb_).Run(kDecodeError, NULL);
     return;
   }
 
   // Return empty frames if decoding has finished.
   if (state_ == kDecodeFinished) {
-    base::ResetAndReturn(&read_cb_).Run(kOk, VideoFrame::CreateEmptyFrame());
+    base::ResetAndReturn(&decode_cb_).Run(kOk, VideoFrame::CreateEmptyFrame());
     return;
   }
 
-  state_ = kPendingDemuxerRead;
-  ReadFromDemuxerStream();
+  pending_buffer_to_decode_ = buffer;
+  state_ = kPendingDecode;
+  DecodePendingBuffer();
 }
 
 void DecryptingVideoDecoder::Reset(const base::Closure& closure) {
   DVLOG(2) << "Reset() - state: " << state_;
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK(state_ == kIdle ||
-         state_ == kPendingDemuxerRead ||
          state_ == kPendingDecode ||
          state_ == kWaitingForKey ||
          state_ == kDecodeFinished ||
@@ -110,22 +104,22 @@ void DecryptingVideoDecoder::Reset(const base::Closure& closure) {
 
   decryptor_->ResetDecoder(Decryptor::kVideo);
 
-  // Reset() cannot complete if the read callback is still pending.
+  // Reset() cannot complete if the decode callback is still pending.
   // Defer the resetting process in this case. The |reset_cb_| will be fired
-  // after the read callback is fired - see DecryptAndDecodeBuffer() and
+  // after the decode callback is fired - see DecryptAndDecodeBuffer() and
   // DeliverFrame().
-  if (state_ == kPendingDemuxerRead || state_ == kPendingDecode) {
-    DCHECK(!read_cb_.is_null());
+  if (state_ == kPendingDecode) {
+    DCHECK(!decode_cb_.is_null());
     return;
   }
 
   if (state_ == kWaitingForKey) {
-    DCHECK(!read_cb_.is_null());
+    DCHECK(!decode_cb_.is_null());
     pending_buffer_to_decode_ = NULL;
-    base::ResetAndReturn(&read_cb_).Run(kOk, NULL);
+    base::ResetAndReturn(&decode_cb_).Run(kOk, NULL);
   }
 
-  DCHECK(read_cb_.is_null());
+  DCHECK(decode_cb_.is_null());
   DoReset();
 }
 
@@ -147,8 +141,8 @@ void DecryptingVideoDecoder::Stop(const base::Closure& closure) {
   pending_buffer_to_decode_ = NULL;
   if (!init_cb_.is_null())
     base::ResetAndReturn(&init_cb_).Run(DECODER_ERROR_NOT_SUPPORTED);
-  if (!read_cb_.is_null())
-    base::ResetAndReturn(&read_cb_).Run(kOk, NULL);
+  if (!decode_cb_.is_null())
+    base::ResetAndReturn(&decode_cb_).Run(kOk, NULL);
   if (!reset_cb_.is_null())
     base::ResetAndReturn(&reset_cb_).Run();
   state_ = kStopped;
@@ -181,7 +175,8 @@ void DecryptingVideoDecoder::SetDecryptor(Decryptor* decryptor) {
 
   state_ = kPendingDecoderInit;
   decryptor_->InitializeVideoDecoder(
-      demuxer_stream_->video_decoder_config(), BindToCurrentLoop(base::Bind(
+      config_,
+      BindToCurrentLoop(base::Bind(
           &DecryptingVideoDecoder::FinishInitialization, weak_this_)));
 }
 
@@ -195,7 +190,7 @@ void DecryptingVideoDecoder::FinishInitialization(bool success) {
   DCHECK_EQ(state_, kPendingDecoderInit) << state_;
   DCHECK(!init_cb_.is_null());
   DCHECK(reset_cb_.is_null());  // No Reset() before initialization finished.
-  DCHECK(read_cb_.is_null());  // No Read() before initialization finished.
+  DCHECK(decode_cb_.is_null());  // No Decode() before initialization finished.
 
   if (!success) {
     base::ResetAndReturn(&init_cb_).Run(DECODER_ERROR_NOT_SUPPORTED);
@@ -211,47 +206,6 @@ void DecryptingVideoDecoder::FinishInitialization(bool success) {
   base::ResetAndReturn(&init_cb_).Run(PIPELINE_OK);
 }
 
-void DecryptingVideoDecoder::ReadFromDemuxerStream() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-  DCHECK_EQ(state_, kPendingDemuxerRead) << state_;
-  DCHECK(!read_cb_.is_null());
-
-  demuxer_stream_->Read(
-      base::Bind(&DecryptingVideoDecoder::DecryptAndDecodeBuffer, weak_this_));
-}
-
-void DecryptingVideoDecoder::DecryptAndDecodeBuffer(
-    DemuxerStream::Status status,
-    const scoped_refptr<DecoderBuffer>& buffer) {
-  DVLOG(3) << "DecryptAndDecodeBuffer()";
-  DCHECK(message_loop_->BelongsToCurrentThread());
-
-  if (state_ == kStopped)
-    return;
-
-  DCHECK_EQ(state_, kPendingDemuxerRead) << state_;
-  DCHECK(!read_cb_.is_null());
-  DCHECK_EQ(buffer.get() != NULL, status == DemuxerStream::kOk) << status;
-
-  if (!reset_cb_.is_null()) {
-    base::ResetAndReturn(&read_cb_).Run(kOk, NULL);
-    DoReset();
-    return;
-  }
-
-  if (status == DemuxerStream::kAborted) {
-    DVLOG(2) << "DecryptAndDecodeBuffer() - kAborted";
-    state_ = kIdle;
-    base::ResetAndReturn(&read_cb_).Run(kOk, NULL);
-    return;
-  }
-
-  // VideoFrameStream ensures no kConfigChanged is passed to VideoDecoders.
-  DCHECK_EQ(status, DemuxerStream::kOk) << status;
-  pending_buffer_to_decode_ = buffer;
-  state_ = kPendingDecode;
-  DecodePendingBuffer();
-}
 
 void DecryptingVideoDecoder::DecodePendingBuffer() {
   DCHECK(message_loop_->BelongsToCurrentThread());
@@ -260,8 +214,8 @@ void DecryptingVideoDecoder::DecodePendingBuffer() {
       "eme", "DecryptingVideoDecoder::DecodePendingBuffer", ++trace_id_);
 
   int buffer_size = 0;
-  if (!pending_buffer_to_decode_->IsEndOfStream()) {
-    buffer_size = pending_buffer_to_decode_->GetDataSize();
+  if (!pending_buffer_to_decode_->end_of_stream()) {
+    buffer_size = pending_buffer_to_decode_->data_size();
   }
 
   decryptor_->DecryptAndDecodeVideo(
@@ -282,7 +236,7 @@ void DecryptingVideoDecoder::DeliverFrame(
     return;
 
   DCHECK_EQ(state_, kPendingDecode) << state_;
-  DCHECK(!read_cb_.is_null());
+  DCHECK(!decode_cb_.is_null());
   DCHECK(pending_buffer_to_decode_.get());
 
   bool need_to_try_again_if_nokey_is_returned = key_added_while_decode_pending_;
@@ -293,7 +247,7 @@ void DecryptingVideoDecoder::DeliverFrame(
   pending_buffer_to_decode_ = NULL;
 
   if (!reset_cb_.is_null()) {
-    base::ResetAndReturn(&read_cb_).Run(kOk, NULL);
+    base::ResetAndReturn(&decode_cb_).Run(kOk, NULL);
     DoReset();
     return;
   }
@@ -303,7 +257,7 @@ void DecryptingVideoDecoder::DeliverFrame(
   if (status == Decryptor::kError) {
     DVLOG(2) << "DeliverFrame() - kError";
     state_ = kError;
-    base::ResetAndReturn(&read_cb_).Run(kDecodeError, NULL);
+    base::ResetAndReturn(&decode_cb_).Run(kDecodeError, NULL);
     return;
   }
 
@@ -323,24 +277,17 @@ void DecryptingVideoDecoder::DeliverFrame(
     return;
   }
 
-  // The buffer has been accepted by the decoder, let's report statistics.
-  if (buffer_size) {
-    PipelineStatistics statistics;
-    statistics.video_bytes_decoded = buffer_size;
-    statistics_cb_.Run(statistics);
-  }
-
   if (status == Decryptor::kNeedMoreData) {
     DVLOG(2) << "DeliverFrame() - kNeedMoreData";
-    if (scoped_pending_buffer_to_decode->IsEndOfStream()) {
+    if (scoped_pending_buffer_to_decode->end_of_stream()) {
       state_ = kDecodeFinished;
-      base::ResetAndReturn(&read_cb_).Run(
+      base::ResetAndReturn(&decode_cb_).Run(
           kOk, media::VideoFrame::CreateEmptyFrame());
       return;
     }
 
-    state_ = kPendingDemuxerRead;
-    ReadFromDemuxerStream();
+    state_ = kIdle;
+    base::ResetAndReturn(&decode_cb_).Run(kNotEnoughData, NULL);
     return;
   }
 
@@ -348,7 +295,7 @@ void DecryptingVideoDecoder::DeliverFrame(
   // No frame returned with kSuccess should be end-of-stream frame.
   DCHECK(!frame->IsEndOfStream());
   state_ = kIdle;
-  base::ResetAndReturn(&read_cb_).Run(kOk, frame);
+  base::ResetAndReturn(&decode_cb_).Run(kOk, frame);
 }
 
 void DecryptingVideoDecoder::OnKeyAdded() {
@@ -368,7 +315,7 @@ void DecryptingVideoDecoder::OnKeyAdded() {
 
 void DecryptingVideoDecoder::DoReset() {
   DCHECK(init_cb_.is_null());
-  DCHECK(read_cb_.is_null());
+  DCHECK(decode_cb_.is_null());
   state_ = kIdle;
   base::ResetAndReturn(&reset_cb_).Run();
 }

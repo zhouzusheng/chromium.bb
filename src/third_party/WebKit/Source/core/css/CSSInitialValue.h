@@ -22,7 +22,7 @@
 #define CSSInitialValue_h
 
 #include "core/css/CSSValue.h"
-#include <wtf/PassRefPtr.h>
+#include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
@@ -42,8 +42,6 @@ public:
     bool isImplicit() const { return m_isImplicit; }
 
     bool equals(const CSSInitialValue&) const { return true; }
-
-    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     CSSInitialValue(bool implicit)

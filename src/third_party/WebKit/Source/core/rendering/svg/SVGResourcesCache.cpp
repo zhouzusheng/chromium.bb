@@ -47,7 +47,7 @@ void SVGResourcesCache::addResourcesFromRenderObject(RenderObject* object, const
 
     // Build a list of all resources associated with the passed RenderObject
     OwnPtr<SVGResources> newResources = adoptPtr(new SVGResources);
-    if (!newResources->buildCachedResources(object, svgStyle))
+    if (!newResources->buildResources(object, svgStyle))
         return;
 
     // Put object in cache.
@@ -141,8 +141,11 @@ void SVGResourcesCache::clientStyleChanged(RenderObject* renderer, StyleDifferen
 
     RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer, false);
 
+    // FIXME: This doesn't look right, we often go through here in styleDidChange which means
+    // we're changing the needsStyleRecalc bits in the middle of recalcStyle on ourself which
+    // makes no sense. It's also not clear why we'd go through here for non-SVG elements.
     if (renderer->node() && !renderer->node()->isSVGElement())
-        renderer->node()->setNeedsStyleRecalc(SyntheticStyleChange);
+        renderer->node()->setNeedsStyleRecalc(LocalStyleChange, StyleChangeFromRenderer);
 }
 
 void SVGResourcesCache::clientWasAddedToTree(RenderObject* renderer, const RenderStyle* newStyle)

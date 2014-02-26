@@ -27,19 +27,20 @@
 #define SelectorQuery_h
 
 #include "core/css/CSSSelectorList.h"
-#include <wtf/HashMap.h>
-#include <wtf/text/AtomicStringHash.h>
-#include <wtf/Vector.h>
+#include "wtf/HashMap.h"
+#include "wtf/Vector.h"
+#include "wtf/text/AtomicStringHash.h"
 
 namespace WebCore {
 
-typedef int ExceptionCode;
-    
 class CSSSelector;
 class Document;
 class Element;
+class ExceptionState;
 class Node;
 class NodeList;
+class SimpleNodeList;
+class SpaceSplitString;
 
 class SelectorDataList {
 public:
@@ -55,10 +56,18 @@ private:
         bool isFastCheckable;
     };
 
+    bool canUseFastQuery(Node* rootNode) const;
     bool selectorMatches(const SelectorData&, Element*, const Node*) const;
-    std::pair<bool, Node*> findTraverseRoot(Node* traverseRoot) const;
-    template <bool firstMatchOnly>
-    void execute(Node* rootNode, Vector<RefPtr<Node> >&) const;
+    void collectElementsByClassName(Node* rootNode, const AtomicString& className, Vector<RefPtr<Node> >&) const;
+    Element* findElementByClassName(Node* rootNode, const AtomicString& className) const;
+    void collectElementsByTagName(Node* rootNode, const QualifiedName& tagName, Vector<RefPtr<Node> >&) const;
+    Element* findElementByTagName(Node* rootNode, const QualifiedName& tagName) const;
+    PassOwnPtr<SimpleNodeList> findTraverseRoots(Node* rootNode, bool& matchTraverseRoots) const;
+    void executeSlowQueryAll(Node* rootNode, Vector<RefPtr<Node> >& matchedElements) const;
+    void executeQueryAll(Node* rootNode, Vector<RefPtr<Node> >& matchedElements) const;
+    Node* findTraverseRoot(Node* rootNode, bool& matchTraverseRoot) const;
+    Element* executeSlowQueryFirst(Node* rootNode) const;
+    Element* executeQueryFirst(Node* rootNode) const;
 
     Vector<SelectorData> m_selectors;
 };
@@ -79,7 +88,7 @@ private:
 class SelectorQueryCache {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    SelectorQuery* add(const AtomicString&, Document*, ExceptionCode&);
+    SelectorQuery* add(const AtomicString&, Document*, ExceptionState&);
     void invalidate();
 
 private:

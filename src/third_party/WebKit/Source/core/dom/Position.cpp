@@ -35,6 +35,8 @@
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
+#include "core/html/HTMLHtmlElement.h"
+#include "core/html/HTMLTableElement.h"
 #include "core/platform/Logging.h"
 #include "core/rendering/InlineIterator.h"
 #include "core/rendering/InlineTextBox.h"
@@ -548,7 +550,7 @@ static bool endsOfNodeAreVisuallyDistinctPositions(Node* node)
         return true;
 
     // Don't include inline tables.
-    if (node->hasTagName(tableTag))
+    if (isHTMLTableElement(node))
         return false;
 
     // There is a VisiblePosition inside an empty inline-block container.
@@ -850,10 +852,9 @@ ContainerNode* Position::findParent(const Node* node)
     return node->parentNode();
 }
 
-#if ENABLE(USERSELECT_ALL)
 bool Position::nodeIsUserSelectAll(const Node* node)
 {
-    return node && node->renderer() && node->renderer()->style()->userSelect() == SELECT_ALL;
+    return RuntimeEnabledFeatures::userSelectAllEnabled() && node && node->renderer() && node->renderer()->style()->userSelect() == SELECT_ALL;
 }
 
 Node* Position::rootUserSelectAllForNode(Node* node)
@@ -877,7 +878,6 @@ Node* Position::rootUserSelectAllForNode(Node* node)
     }
     return candidateRoot;
 }
-#endif
 
 bool Position::isCandidate() const
 {
@@ -901,7 +901,7 @@ bool Position::isCandidate() const
     if (isTableElement(deprecatedNode()) || editingIgnoresContent(deprecatedNode()))
         return (atFirstEditingPositionForNode() || atLastEditingPositionForNode()) && !nodeIsUserSelectNone(deprecatedNode()->parentNode());
 
-    if (m_anchorNode->hasTagName(htmlTag))
+    if (isHTMLHtmlElement(m_anchorNode.get()))
         return false;
 
     if (renderer->isBlockFlow()) {

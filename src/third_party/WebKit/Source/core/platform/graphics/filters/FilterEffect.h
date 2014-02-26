@@ -27,11 +27,11 @@
 #include "core/platform/graphics/FloatRect.h"
 #include "core/platform/graphics/IntRect.h"
 
-#include <wtf/PassOwnPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/RefPtr.h>
-#include <wtf/Uint8ClampedArray.h>
-#include <wtf/Vector.h>
+#include "wtf/PassOwnPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/RefPtr.h"
+#include "wtf/Uint8ClampedArray.h"
+#include "wtf/Vector.h"
 
 static const float kMaxFilterSize = 5000.0f;
 
@@ -71,7 +71,7 @@ public:
     FilterEffectVector& inputEffects() { return m_inputEffects; }
     FilterEffect* inputEffect(unsigned) const;
     unsigned numberOfEffectInputs() const { return m_inputEffects.size(); }
-    
+
     inline bool hasResult() const
     {
         // This function needs platform specific checks, if the memory managment is not done by FilterEffect.
@@ -91,7 +91,7 @@ public:
     void setAbsolutePaintRect(const IntRect& absolutePaintRect) { m_absolutePaintRect = absolutePaintRect; }
 
     FloatRect maxEffectRect() const { return m_maxEffectRect; }
-    void setMaxEffectRect(const FloatRect& maxEffectRect) { m_maxEffectRect = maxEffectRect; } 
+    void setMaxEffectRect(const FloatRect& maxEffectRect) { m_maxEffectRect = maxEffectRect; }
 
     void apply();
 
@@ -100,7 +100,7 @@ public:
     // Only the arithmetic composite filter ever needs to perform correction.
     virtual void correctFilterResultIfNeeded() { }
 
-    virtual SkImageFilter* createImageFilter(SkiaImageFilterBuilder*) { return 0; }
+    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*);
 
     virtual void determineAbsolutePaintRect();
 
@@ -184,12 +184,12 @@ private:
     bool m_alphaImage;
 
     IntRect m_absolutePaintRect;
-    
+
     // The maximum size of a filter primitive. In SVG this is the primitive subregion in absolute coordinate space.
     // The absolute paint rect should never be bigger than m_maxEffectRect.
     FloatRect m_maxEffectRect;
     Filter* m_filter;
-    
+
     // The following member variables are SVG specific and will move to RenderSVGResourceFilterPrimitive.
     // See bug https://bugs.webkit.org/show_bug.cgi?id=45614.
 

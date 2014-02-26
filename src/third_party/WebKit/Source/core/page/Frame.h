@@ -28,6 +28,7 @@
 #ifndef Frame_h
 #define Frame_h
 
+#include "core/css/StyleColor.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/NavigationScheduler.h"
 #include "core/page/AdjustViewSizeOrNot.h"
@@ -51,7 +52,9 @@ namespace WebCore {
     class FrameDestructionObserver;
     class FrameSelection;
     class FrameView;
+    class HTMLFrameOwnerElement;
     class HTMLTableCellElement;
+    class InputMethodController;
     class IntPoint;
     class Node;
     class Range;
@@ -62,6 +65,7 @@ namespace WebCore {
     class Settings;
     class TreeScope;
     class VisiblePosition;
+    class Widget;
 
     class Frame : public RefCounted<Frame> {
     public:
@@ -69,7 +73,7 @@ namespace WebCore {
 
         void init();
         void setView(PassRefPtr<FrameView>);
-        void createView(const IntSize&, const Color&, bool,
+        void createView(const IntSize&, const StyleColor&, bool,
             const IntSize& fixedLayoutSize = IntSize(), bool useFixedLayout = false, ScrollbarMode = ScrollbarAuto, bool horizontalLock = false,
             ScrollbarMode = ScrollbarAuto, bool verticalLock = false);
 
@@ -97,14 +101,13 @@ namespace WebCore {
         FrameSelection* selection() const;
         FrameTree* tree() const;
         AnimationController* animation() const;
+        InputMethodController& inputMethodController() const;
         ScriptController* script();
-        
+
         RenderView* contentRenderer() const; // Root of the render tree for the document contained in this frame.
         RenderPart* ownerRenderer() const; // Renderer for the element that contains this frame.
 
         void dispatchVisibilityStateChangeEvent();
-
-        void reportMemoryUsage(MemoryObjectInfo*) const;
 
     // ======== All public functions below this point are candidates to move out of Frame into another class. ========
 
@@ -151,6 +154,9 @@ namespace WebCore {
         PassOwnPtr<DragImage> nodeImage(Node*);
         PassOwnPtr<DragImage> dragImageForSelection();
 
+        String selectedText() const;
+        String selectedTextForClipboard() const;
+
         VisiblePosition visiblePositionForPoint(const IntPoint& framePoint);
         Document* documentAtPoint(const IntPoint& windowPoint);
         PassRefPtr<Range> rangeForPoint(const IntPoint& framePoint);
@@ -181,6 +187,7 @@ namespace WebCore {
         OwnPtr<FrameSelection> m_selection;
         OwnPtr<EventHandler> m_eventHandler;
         OwnPtr<AnimationController> m_animationController;
+        OwnPtr<InputMethodController> m_inputMethodController;
 
         float m_pageZoomFactor;
         float m_textZoomFactor;
@@ -237,6 +244,11 @@ namespace WebCore {
         return m_animationController.get();
     }
 
+    inline InputMethodController& Frame::inputMethodController() const
+    {
+        return *m_inputMethodController;
+    }
+
     inline HTMLFrameOwnerElement* Frame::ownerElement() const
     {
         return m_ownerElement;
@@ -260,11 +272,6 @@ namespace WebCore {
     inline Page* Frame::page() const
     {
         return m_page;
-    }
-
-    inline void Frame::detachFromPage()
-    {
-        m_page = 0;
     }
 
     inline EventHandler* Frame::eventHandler() const

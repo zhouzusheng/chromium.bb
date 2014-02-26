@@ -28,7 +28,7 @@
 #define FloatRect_h
 
 #include "core/platform/graphics/FloatPoint.h"
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 #if OS(DARWIN)
 typedef struct CGRect CGRect;
@@ -89,7 +89,7 @@ public:
 
     FloatPoint center() const { return FloatPoint(x() + width() / 2, y() + height() / 2); }
 
-    void move(const FloatSize& delta) { m_location += delta; } 
+    void move(const FloatSize& delta) { m_location += delta; }
     void moveBy(const FloatPoint& delta) { m_location.move(delta.x(), delta.y()); }
     void move(float dx, float dy) { m_location.move(dx, dy); }
 

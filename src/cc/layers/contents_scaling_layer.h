@@ -23,10 +23,9 @@ class CC_EXPORT ContentsScalingLayer : public Layer {
       float* contents_scale_y,
       gfx::Size* content_bounds) OVERRIDE;
 
-  virtual void Update(
+  virtual bool Update(
     ResourceUpdateQueue* queue,
-    const OcclusionTracker* occlusion,
-    RenderingStats* stats) OVERRIDE;
+    const OcclusionTracker* occlusion) OVERRIDE;
 
  protected:
   ContentsScalingLayer();

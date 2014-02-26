@@ -21,10 +21,10 @@
 #define SVGTextLayoutAttributes_h
 
 #include "core/rendering/svg/SVGTextMetrics.h"
-#include <wtf/HashMap.h>
-#include <wtf/Noncopyable.h>
-#include <wtf/text/WTFString.h>
-#include <wtf/Vector.h>
+#include "wtf/HashMap.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/Vector.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -52,7 +52,7 @@ public:
     static float emptyValue();
 
     RenderSVGInlineText* context() const { return m_context; }
-    
+
     SVGCharacterDataMap& characterDataMap() { return m_characterDataMap; }
     const SVGCharacterDataMap& characterDataMap() const { return m_characterDataMap; }
 

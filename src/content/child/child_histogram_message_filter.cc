@@ -7,7 +7,7 @@
 #include <ctype.h>
 
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/statistics_recorder.h"
 #include "base/pickle.h"
 #include "content/child/child_process.h"
@@ -18,6 +18,7 @@ namespace content {
 
 ChildHistogramMessageFilter::ChildHistogramMessageFilter()
     : channel_(NULL),
+      io_message_loop_(ChildProcess::current()->io_message_loop_proxy()),
       histogram_snapshot_manager_(this) {
 }
 
@@ -43,7 +44,7 @@ bool ChildHistogramMessageFilter::OnMessageReceived(
 }
 
 void ChildHistogramMessageFilter::SendHistograms(int sequence_number) {
-  ChildProcess::current()->io_message_loop_proxy()->PostTask(
+  io_message_loop_->PostTask(
       FROM_HERE, base::Bind(&ChildHistogramMessageFilter::UploadAllHistograms,
                             this, sequence_number));
 }

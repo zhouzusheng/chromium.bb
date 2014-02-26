@@ -20,6 +20,7 @@
 #include "config.h"
 #include "core/css/MediaList.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/css/CSSParser.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/MediaFeatureNames.h"
@@ -27,9 +28,7 @@
 #include "core/css/MediaQueryExp.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/page/DOMWindow.h"
-#include "wtf/MemoryInstrumentationVector.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
@@ -161,12 +160,6 @@ String MediaQuerySet::mediaText() const
     return text.toString();
 }
 
-void MediaQuerySet::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_queries, "queries");
-}
-
 MediaList::MediaList(MediaQuerySet* mediaQueries, CSSStyleSheet* parentSheet)
     : m_mediaQueries(mediaQueries)
     , m_parentStyleSheet(parentSheet)
@@ -203,26 +196,26 @@ String MediaList::item(unsigned index) const
     return String();
 }
 
-void MediaList::deleteMedium(const String& medium, ExceptionCode& ec)
+void MediaList::deleteMedium(const String& medium, ExceptionState& es)
 {
     CSSStyleSheet::RuleMutationScope mutationScope(m_parentRule);
 
     bool success = m_mediaQueries->remove(medium);
     if (!success) {
-        ec = NOT_FOUND_ERR;
+        es.throwDOMException(NotFoundError);
         return;
     }
     if (m_parentStyleSheet)
         m_parentStyleSheet->didMutate();
 }
 
-void MediaList::appendMedium(const String& medium, ExceptionCode& ec)
+void MediaList::appendMedium(const String& medium, ExceptionState& es)
 {
     CSSStyleSheet::RuleMutationScope mutationScope(m_parentRule);
 
     bool success = m_mediaQueries->add(medium);
     if (!success) {
-        ec = INVALID_CHARACTER_ERR;
+        es.throwDOMException(InvalidCharacterError);
         return;
     }
 
@@ -236,24 +229,16 @@ void MediaList::reattach(MediaQuerySet* mediaQueries)
     m_mediaQueries = mediaQueries;
 }
 
-void MediaList::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_mediaQueries, "mediaQueries");
-    info.addMember(m_parentStyleSheet, "parentStyleSheet");
-    info.addMember(m_parentRule, "parentRule");
-}
-
 static void addResolutionWarningMessageToConsole(Document* document, const String& serializedExpression, const CSSPrimitiveValue* value)
 {
     ASSERT(document);
     ASSERT(value);
 
-    DEFINE_STATIC_LOCAL(String, mediaQueryMessage, (ASCIILiteral("Consider using 'dppx' units instead of '%replacementUnits%', as in CSS '%replacementUnits%' means dots-per-CSS-%lengthUnit%, not dots-per-physical-%lengthUnit%, so does not correspond to the actual '%replacementUnits%' of a screen. In media query expression: ")));
-    DEFINE_STATIC_LOCAL(String, mediaValueDPI, (ASCIILiteral("dpi")));
-    DEFINE_STATIC_LOCAL(String, mediaValueDPCM, (ASCIILiteral("dpcm")));
-    DEFINE_STATIC_LOCAL(String, lengthUnitInch, (ASCIILiteral("inch")));
-    DEFINE_STATIC_LOCAL(String, lengthUnitCentimeter, (ASCIILiteral("centimeter")));
+    DEFINE_STATIC_LOCAL(String, mediaQueryMessage, ("Consider using 'dppx' units instead of '%replacementUnits%', as in CSS '%replacementUnits%' means dots-per-CSS-%lengthUnit%, not dots-per-physical-%lengthUnit%, so does not correspond to the actual '%replacementUnits%' of a screen. In media query expression: "));
+    DEFINE_STATIC_LOCAL(String, mediaValueDPI, ("dpi"));
+    DEFINE_STATIC_LOCAL(String, mediaValueDPCM, ("dpcm"));
+    DEFINE_STATIC_LOCAL(String, lengthUnitInch, ("inch"));
+    DEFINE_STATIC_LOCAL(String, lengthUnitCentimeter, ("centimeter"));
 
     String message;
     if (value->isDotsPerInch())

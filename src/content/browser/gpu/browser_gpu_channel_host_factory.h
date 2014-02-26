@@ -7,14 +7,15 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "base/synchronization/waitable_event.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "ipc/ipc_channel_handle.h"
 
 namespace content {
 
-class BrowserGpuChannelHostFactory : public GpuChannelHostFactory {
+class CONTENT_EXPORT BrowserGpuChannelHostFactory
+    : public GpuChannelHostFactory {
  public:
   static void Initialize();
   static void Terminate();
@@ -38,12 +39,15 @@ class BrowserGpuChannelHostFactory : public GpuChannelHostFactory {
   virtual GpuChannelHost* EstablishGpuChannelSync(
       CauseForGpuLaunch cause_for_gpu_launch) OVERRIDE;
 
-  // Specify a task runner and callback to be used for a set of messages.
+  // Specify a task runner and callback to be used for a set of messages. The
+  // callback will be set up on the current GpuProcessHost, identified by
+  // GpuProcessHostId().
   virtual void SetHandlerForControlMessages(
       const uint32* message_ids,
       size_t num_messages,
       const base::Callback<void(const IPC::Message&)>& handler,
       base::TaskRunner* target_task_runner);
+  int GpuProcessHostId() { return gpu_host_id_; }
 
  private:
   struct CreateRequest {

@@ -4,13 +4,10 @@
  */
 
 .ruler-track {
+  -webkit-user-select: none;
   height: 12px;
 }
 
 .ruler-track-with-distance-measurements {
-  height: 24px;
-}
-
-.ruler-track .canvas-based-track-canvas-container {
-  border-bottom: 1px solid #8e8e8e;
+  height: 30px;
 }

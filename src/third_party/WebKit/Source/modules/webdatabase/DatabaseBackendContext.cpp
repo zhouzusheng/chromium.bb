@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -40,12 +40,12 @@ DatabaseContext* DatabaseBackendContext::frontend()
 
 SecurityOrigin* DatabaseBackendContext::securityOrigin() const
 {
-    return m_scriptExecutionContext->securityOrigin();
+    return scriptExecutionContext()->securityOrigin();
 }
 
 bool DatabaseBackendContext::isContextThread() const
 {
-    return m_scriptExecutionContext->isContextThread();
+    return scriptExecutionContext()->isContextThread();
 }
 
 } // namespace WebCore

@@ -23,9 +23,11 @@
 #include "core/dom/Text.h"
 
 #include "SVGNames.h"
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
+#include "core/dom/NodeRenderStyle.h"
 #include "core/dom/NodeRenderingContext.h"
 #include "core/dom/ScopedEventQueue.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -44,24 +46,17 @@ PassRefPtr<Text> Text::create(Document* document, const String& data)
     return adoptRef(new Text(document, data, CreateText));
 }
 
-PassRefPtr<Text> Text::create(ScriptExecutionContext* context, const String& data)
-{
-    return adoptRef(new Text(toDocument(context), data, CreateText));
-}
-
 PassRefPtr<Text> Text::createEditingText(Document* document, const String& data)
 {
     return adoptRef(new Text(document, data, CreateEditingText));
 }
 
-PassRefPtr<Text> Text::splitText(unsigned offset, ExceptionCode& ec)
+PassRefPtr<Text> Text::splitText(unsigned offset, ExceptionState& es)
 {
-    ec = 0;
-
-    // INDEX_SIZE_ERR: Raised if the specified offset is negative or greater than
+    // IndexSizeError: Raised if the specified offset is negative or greater than
     // the number of 16-bit units in data.
     if (offset > length()) {
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
         return 0;
     }
 
@@ -73,8 +68,8 @@ PassRefPtr<Text> Text::splitText(unsigned offset, ExceptionCode& ec)
     didModifyData(oldStr);
 
     if (parentNode())
-        parentNode()->insertBefore(newText.get(), nextSibling(), ec);
-    if (ec)
+        parentNode()->insertBefore(newText.get(), nextSibling(), es);
+    if (es.hadException())
         return 0;
 
     if (parentNode())
@@ -206,21 +201,20 @@ bool Text::textRendererIsNeeded(const NodeRenderingContext& context)
     if (context.style()->display() == NONE)
         return false;
 
-    bool onlyWS = containsOnlyWhitespace();
-    if (!onlyWS)
+    if (!containsOnlyWhitespace())
         return true;
 
     RenderObject* parent = context.parentRenderer();
-    if (parent->isTable() || parent->isTableRow() || parent->isTableSection() || parent->isRenderTableCol() || parent->isFrameSet())
+    if (!parent->canHaveWhitespaceChildren())
         return false;
-    
+
     if (context.style()->preserveNewline()) // pre/pre-wrap/pre-line always make renderers.
         return true;
-    
+
     RenderObject* prev = context.previousRenderer();
     if (prev && prev->isBR()) // <span><br/> <br/></span>
         return false;
-        
+
     if (parent->isRenderInline()) {
         // <span><div/> <div/></span>
         if (prev && !prev->isInline())
@@ -228,17 +222,19 @@ bool Text::textRendererIsNeeded(const NodeRenderingContext& context)
     } else {
         if (parent->isRenderBlock() && !parent->childrenInline() && (!prev || !prev->isInline()))
             return false;
-        
+
+        // Avoiding creation of a Renderer for the text node is a non-essential memory optimization.
+        // So to avoid blowing up on very wide DOMs, we limit the number of siblings to visit.
+        unsigned maxSiblingsToVisit = 50;
+
         RenderObject* first = parent->firstChild();
-        while (first && first->isFloatingOrOutOfFlowPositioned())
+        while (first && first->isFloatingOrOutOfFlowPositioned() && maxSiblingsToVisit--)
             first = first->nextSibling();
-        RenderObject* next = context.nextRenderer();
-        if (!first || next == first)
+        if (!first || context.nextRenderer() == first)
             // Whitespace at the start of a block just goes away.  Don't even
             // make a render object for this text.
             return false;
     }
-    
     return true;
 }
 
@@ -254,42 +250,46 @@ static bool isSVGText(Text* text)
     return parentOrShadowHostNode->isSVGElement() && !parentOrShadowHostNode->hasTagName(SVGNames::foreignObjectTag);
 }
 
-void Text::createTextRendererIfNeeded()
-{
-    NodeRenderingContext(this).createRendererForTextIfNeeded();
-}
-
 RenderText* Text::createTextRenderer(RenderStyle* style)
 {
     if (isSVGText(this) || isSVGShadowText(this))
-        return new (document()->renderArena()) RenderSVGInlineText(this, dataImpl());
+        return new RenderSVGInlineText(this, dataImpl());
 
     if (style->hasTextCombine())
-        return new (document()->renderArena()) RenderCombineText(this, dataImpl());
+        return new RenderCombineText(this, dataImpl());
 
-    return new (document()->renderArena()) RenderText(this, dataImpl());
+    return new RenderText(this, dataImpl());
 }
 
 void Text::attach(const AttachContext& context)
 {
-    createTextRendererIfNeeded();
+    NodeRenderingContext(this, context.resolvedStyle).createRendererForTextIfNeeded();
     CharacterData::attach(context);
 }
 
-void Text::recalcTextStyle(StyleChange change)
+bool Text::recalcTextStyle(StyleChange change)
 {
-    RenderText* renderer = toRenderText(this->renderer());
-
-    if (renderer) {
+    if (RenderText* renderer = toRenderText(this->renderer())) {
         if (change != NoChange || needsStyleRecalc())
             renderer->setStyle(document()->styleResolver()->styleForText(this));
         if (needsStyleRecalc())
             renderer->setText(dataImpl());
-    } else if (needsStyleRecalc()) {
+        clearNeedsStyleRecalc();
+    } else if (needsStyleRecalc() || needsWhitespaceRenderer()) {
         reattach();
+        return true;
     }
+    return false;
+}
 
-    clearNeedsStyleRecalc();
+// If a whitespace node had no renderer and goes through a recalcStyle it may
+// need to create one if the parent style now has white-space: pre.
+bool Text::needsWhitespaceRenderer()
+{
+    ASSERT(!renderer());
+    if (RenderStyle* style = parentRenderStyle())
+        return style->preserveNewline();
+    return false;
 }
 
 void Text::updateTextRenderer(unsigned offsetOfReplacedData, unsigned lengthOfReplacedData)

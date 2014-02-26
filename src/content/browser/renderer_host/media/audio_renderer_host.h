@@ -42,9 +42,8 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "base/sequenced_task_runner_helpers.h"
-#include "base/shared_memory.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/browser_thread.h"
@@ -123,10 +122,10 @@ class CONTENT_EXPORT AudioRendererHost : public BrowserMessageFilter {
   // Complete the process of creating an audio stream. This will set up the
   // shared memory or shared socket in low latency mode and send the
   // NotifyStreamCreated message to the peer.
-  void DoCompleteCreation(AudioEntry* entry);
+  void DoCompleteCreation(int stream_id);
 
-  // Propagate audible signal to MediaObserver.
-  void DoNotifyAudibleState(AudioEntry* entry, bool is_audible);
+  // Propagate measured power level of the audio signal to MediaObserver.
+  void DoNotifyAudioPowerLevel(int stream_id, float power_dbfs, bool clipped);
 
   // Send an error message to the renderer.
   void SendErrorMessage(int stream_id);

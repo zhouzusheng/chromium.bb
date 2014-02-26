@@ -12,7 +12,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/win/scoped_comptr.h"
 #include "ui/base/latency_info.h"
 #include "ui/gfx/native_widget_types.h"
@@ -56,6 +56,10 @@ class SURFACE_EXPORT AcceleratedPresenter
       int64 surface_handle,
       const ui::LatencyInfo& latency_info,
       const CompletionTask& completion_task);
+
+  // Returns true if the swap chain has been created and initialized.  This can
+  // be called on any thread.
+  bool IsSwapChainInitialized() const;
 
   // Schedule the presenter to free all its resources. This can be called on any
   // thread.
@@ -187,6 +191,10 @@ class SURFACE_EXPORT AcceleratedSurface {
 
   // Synchronously present a frame with no acknowledgement.
   void Present(HDC dc);
+
+  // Returns true if the surface is fully initialized and has been presented to
+  // at least once.
+  bool IsReadyForCopy() const;
 
   // Transfer the contents of the surface to an SkBitmap, and invoke a callback
   // with the result.

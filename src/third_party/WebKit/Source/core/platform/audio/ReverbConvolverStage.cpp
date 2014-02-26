@@ -36,8 +36,8 @@
 #include "core/platform/audio/ReverbConvolver.h"
 #include "core/platform/audio/ReverbInputBuffer.h"
 #include "core/platform/audio/VectorMath.h"
-#include <wtf/OwnPtr.h>
-#include <wtf/PassOwnPtr.h>
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
@@ -58,8 +58,11 @@ ReverbConvolverStage::ReverbConvolverStage(const float* impulseResponse, size_t,
         m_fftKernel->doPaddedFFT(impulseResponse + stageOffset, stageLength);
         m_fftConvolver = adoptPtr(new FFTConvolver(fftSize));
     } else {
+        ASSERT(!stageOffset);
+        ASSERT(stageLength <= fftSize / 2);
+
         m_directKernel = adoptPtr(new AudioFloatArray(fftSize / 2));
-        m_directKernel->copyToRange(impulseResponse + stageOffset, 0, fftSize / 2);
+        m_directKernel->copyToRange(impulseResponse, 0, stageLength);
         m_directConvolver = adoptPtr(new DirectConvolver(renderSliceSize));
     }
     m_temporaryBuffer.allocate(renderSliceSize);
@@ -103,7 +106,7 @@ void ReverbConvolverStage::process(const float* source, size_t framesToProcess)
     ASSERT(source);
     if (!source)
         return;
-    
+
     // Deal with pre-delay stream : note special handling of zero delay.
 
     const float* preDelayedSource;
@@ -121,16 +124,16 @@ void ReverbConvolverStage::process(const float* source, size_t framesToProcess)
 
         preDelayedDestination = m_preDelayBuffer.data() + m_preReadWriteIndex;
         preDelayedSource = preDelayedDestination;
-        temporaryBuffer = m_temporaryBuffer.data();        
+        temporaryBuffer = m_temporaryBuffer.data();
     } else {
         // Zero delay
         preDelayedDestination = 0;
         preDelayedSource = source;
         temporaryBuffer = m_preDelayBuffer.data();
-        
+
         isTemporaryBufferSafe = framesToProcess <= m_preDelayBuffer.size();
     }
-    
+
     ASSERT(isTemporaryBufferSafe);
     if (!isTemporaryBufferSafe)
         return;

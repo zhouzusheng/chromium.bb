@@ -29,20 +29,20 @@
  */
 
 #include "config.h"
-
 #include "core/dom/MutationObserver.h"
 
 #include <algorithm>
 #include "bindings/v8/Dictionary.h"
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/MutationCallback.h"
 #include "core/dom/MutationObserverRegistration.h"
 #include "core/dom/MutationRecord.h"
 #include "core/dom/Node.h"
-#include <wtf/HashSet.h>
-#include <wtf/MainThread.h>
-#include <wtf/Vector.h>
+#include "wtf/HashSet.h"
+#include "wtf/MainThread.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -81,10 +81,10 @@ bool MutationObserver::validateOptions(MutationObserverOptions options)
         && ((options & CharacterData) || !(options & CharacterDataOldValue));
 }
 
-void MutationObserver::observe(Node* node, const Dictionary& optionsDictionary, ExceptionCode& ec)
+void MutationObserver::observe(Node* node, const Dictionary& optionsDictionary, ExceptionState& es)
 {
     if (!node) {
-        ec = NOT_FOUND_ERR;
+        es.throwDOMException(NotFoundError);
         return;
     }
 
@@ -111,7 +111,7 @@ void MutationObserver::observe(Node* node, const Dictionary& optionsDictionary, 
         options |= AttributeFilter;
 
     if (!validateOptions(options)) {
-        ec = SYNTAX_ERR;
+        es.throwDOMException(SyntaxError);
         return;
     }
 

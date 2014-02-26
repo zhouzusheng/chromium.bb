@@ -22,8 +22,8 @@
 #define FontValue_h
 
 #include "core/css/CSSValue.h"
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefPtr.h>
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
@@ -40,8 +40,6 @@ public:
     String customCssText() const;
 
     bool equals(const FontValue&) const;
-
-    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
     RefPtr<CSSPrimitiveValue> style;
     RefPtr<CSSPrimitiveValue> variant;

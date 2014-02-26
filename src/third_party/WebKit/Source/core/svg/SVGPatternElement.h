@@ -21,16 +21,16 @@
 #ifndef SVGPatternElement_h
 #define SVGPatternElement_h
 
+#include "SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGAnimatedPreserveAspectRatio.h"
 #include "core/svg/SVGAnimatedRect.h"
 #include "core/svg/SVGAnimatedTransformList.h"
+#include "core/svg/SVGElement.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGFitToViewBox.h"
-#include "core/svg/SVGLangSpace.h"
-#include "core/svg/SVGStyledElement.h"
 #include "core/svg/SVGTests.h"
 #include "core/svg/SVGURIReference.h"
 #include "core/svg/SVGUnitTypes.h"
@@ -38,11 +38,10 @@
 namespace WebCore {
 
 struct PatternAttributes;
- 
-class SVGPatternElement FINAL : public SVGStyledElement,
+
+class SVGPatternElement FINAL : public SVGElement,
                                 public SVGURIReference,
                                 public SVGTests,
-                                public SVGLangSpace,
                                 public SVGExternalResourcesRequired,
                                 public SVGFitToViewBox {
 public:
@@ -54,7 +53,7 @@ public:
 
 private:
     SVGPatternElement(const QualifiedName&, Document*);
-    
+
     virtual bool isValid() const { return SVGTests::isValid(); }
     virtual bool needsPendingResourceHandling() const { return false; }
 
@@ -78,7 +77,7 @@ private:
         DECLARE_ANIMATED_STRING(Href, href)
         DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
         DECLARE_ANIMATED_RECT(ViewBox, viewBox)
-        DECLARE_ANIMATED_PRESERVEASPECTRATIO(PreserveAspectRatio, preserveAspectRatio) 
+        DECLARE_ANIMATED_PRESERVEASPECTRATIO(PreserveAspectRatio, preserveAspectRatio)
     END_DECLARE_ANIMATED_PROPERTIES
 
     // SVGTests
@@ -86,6 +85,12 @@ private:
     virtual void synchronizeRequiredExtensions() { SVGTests::synchronizeRequiredExtensions(this); }
     virtual void synchronizeSystemLanguage() { SVGTests::synchronizeSystemLanguage(this); }
 };
+
+inline SVGPatternElement* toSVGPatternElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::patternTag));
+    return static_cast<SVGPatternElement*>(node);
+}
 
 } // namespace WebCore
 

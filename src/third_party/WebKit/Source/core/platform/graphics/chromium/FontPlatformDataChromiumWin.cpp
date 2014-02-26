@@ -1,11 +1,11 @@
 /*
  * Copyright (C) 2006, 2007 Apple Computer, Inc.
  * Copyright (c) 2006, 2007, 2008, 2009, 2012 Google Inc. All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  *     * Redistributions of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
  *     * Redistributions in binary form must reproduce the above
@@ -15,7 +15,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -43,7 +43,8 @@
 #include "core/platform/win/HWndDC.h"
 #include "public/platform/Platform.h"
 #include "public/platform/win/WebSandboxSupport.h"
-#include <wtf/StdLibExtras.h>
+#include "wtf/PassOwnPtr.h"
+#include "wtf/StdLibExtras.h"
 
 namespace WebCore {
 
@@ -102,7 +103,7 @@ static int computePaintTextFlags(const LOGFONT& lf)
     return textFlags & getDefaultGDITextFlags();
 }
 
-SkTypeface* CreateTypefaceFromHFont(HFONT hfont, int* size, int* paintTextFlags)
+PassRefPtr<SkTypeface> CreateTypefaceFromHFont(HFONT hfont, int* size, int* paintTextFlags)
 {
     LOGFONT info;
     GetObject(hfont, sizeof(info), &info);
@@ -114,17 +115,16 @@ SkTypeface* CreateTypefaceFromHFont(HFONT hfont, int* size, int* paintTextFlags)
     }
     if (paintTextFlags)
         *paintTextFlags = computePaintTextFlags(info);
-    return SkCreateTypefaceFromLOGFONT(info);
+    return adoptRef(SkCreateTypefaceFromLOGFONT(info));
 }
 
 FontPlatformData::FontPlatformData(WTF::HashTableDeletedValueType)
-    : m_font(hashTableDeletedFontValue())
+    : m_font(0)
     , m_size(-1)
     , m_orientation(Horizontal)
     , m_scriptCache(0)
-    , m_scriptFontProperties(0)
-    , m_typeface(0)
     , m_paintTextFlags(0)
+    , m_isHashTableDeletedValue(true)
 {
 }
 
@@ -133,9 +133,8 @@ FontPlatformData::FontPlatformData()
     , m_size(0)
     , m_orientation(Horizontal)
     , m_scriptCache(0)
-    , m_scriptFontProperties(0)
-    , m_typeface(0)
     , m_paintTextFlags(0)
+    , m_isHashTableDeletedValue(false)
 {
 }
 
@@ -144,8 +143,8 @@ FontPlatformData::FontPlatformData(HFONT font, float size, FontOrientation orien
     , m_size(size)
     , m_orientation(orientation)
     , m_scriptCache(0)
-    , m_scriptFontProperties(0)
     , m_typeface(CreateTypefaceFromHFont(font, 0, &m_paintTextFlags))
+    , m_isHashTableDeletedValue(false)
 {
 }
 
@@ -155,9 +154,8 @@ FontPlatformData::FontPlatformData(float size, bool bold, bool oblique)
     , m_size(size)
     , m_orientation(Horizontal)
     , m_scriptCache(0)
-    , m_scriptFontProperties(0)
-    , m_typeface(0)
     , m_paintTextFlags(0)
+    , m_isHashTableDeletedValue(false)
 {
 }
 
@@ -166,11 +164,10 @@ FontPlatformData::FontPlatformData(const FontPlatformData& data)
     , m_size(data.m_size)
     , m_orientation(data.m_orientation)
     , m_scriptCache(0)
-    , m_scriptFontProperties(0)
     , m_typeface(data.m_typeface)
     , m_paintTextFlags(data.m_paintTextFlags)
+    , m_isHashTableDeletedValue(false)
 {
-    SkSafeRef(m_typeface);
 }
 
 FontPlatformData::FontPlatformData(const FontPlatformData& data, float textSize)
@@ -178,11 +175,10 @@ FontPlatformData::FontPlatformData(const FontPlatformData& data, float textSize)
     , m_size(textSize)
     , m_orientation(data.m_orientation)
     , m_scriptCache(0)
-    , m_scriptFontProperties(0)
     , m_typeface(data.m_typeface)
     , m_paintTextFlags(data.m_paintTextFlags)
+    , m_isHashTableDeletedValue(false)
 {
-    SkSafeRef(m_typeface);
 }
 
 FontPlatformData& FontPlatformData::operator=(const FontPlatformData& data)
@@ -191,28 +187,21 @@ FontPlatformData& FontPlatformData::operator=(const FontPlatformData& data)
         m_font = data.m_font;
         m_size = data.m_size;
         m_orientation = data.m_orientation;
-        SkRefCnt_SafeAssign(m_typeface, data.m_typeface);
+        m_typeface = data.m_typeface;
         m_paintTextFlags = data.m_paintTextFlags;
 
         // The following fields will get re-computed if necessary.
         ScriptFreeCache(&m_scriptCache);
         m_scriptCache = 0;
-
-        delete m_scriptFontProperties;
-        m_scriptFontProperties = 0;
-    } 
+        m_scriptFontProperties.clear();
+    }
     return *this;
 }
 
 FontPlatformData::~FontPlatformData()
 {
-    SkSafeUnref(m_typeface);
-
     ScriptFreeCache(&m_scriptCache);
     m_scriptCache = 0;
-
-    delete m_scriptFontProperties;
-    m_scriptFontProperties = 0;
 }
 
 bool FontPlatformData::isFixedPitch() const
@@ -247,36 +236,24 @@ bool FontPlatformData::isFixedPitch() const
 
 FontPlatformData::RefCountedHFONT::~RefCountedHFONT()
 {
-    if (m_hfont != reinterpret_cast<HFONT>(-1)) {
-        DeleteObject(m_hfont);
-    }
-}
-
-FontPlatformData::RefCountedHFONT* FontPlatformData::hashTableDeletedFontValue()
-{
-    DEFINE_STATIC_LOCAL(RefPtr<RefCountedHFONT>, deletedValue,
-                        (RefCountedHFONT::create(reinterpret_cast<HFONT>(-1))));
-    return deletedValue.get();
+    DeleteObject(m_hfont);
 }
 
 SCRIPT_FONTPROPERTIES* FontPlatformData::scriptFontProperties() const
 {
     if (!m_scriptFontProperties) {
-        m_scriptFontProperties = new SCRIPT_FONTPROPERTIES;
-        memset(m_scriptFontProperties, 0, sizeof(SCRIPT_FONTPROPERTIES));
+        m_scriptFontProperties = adoptPtr(new SCRIPT_FONTPROPERTIES);
+        memset(m_scriptFontProperties.get(), 0, sizeof(SCRIPT_FONTPROPERTIES));
         m_scriptFontProperties->cBytes = sizeof(SCRIPT_FONTPROPERTIES);
-        HRESULT result = ScriptGetFontProperties(0, scriptCache(),
-                                                 m_scriptFontProperties);
+        HRESULT result = ScriptGetFontProperties(0, scriptCache(), m_scriptFontProperties.get());
         if (result == E_PENDING) {
             HWndDC dc(0);
             HGDIOBJ oldFont = SelectObject(dc, hfont());
-            HRESULT hr = ScriptGetFontProperties(dc, scriptCache(),
-                                                 m_scriptFontProperties);
+            HRESULT hr = ScriptGetFontProperties(dc, scriptCache(), m_scriptFontProperties.get());
             if (S_OK != hr) {
                 if (FontPlatformData::ensureFontLoaded(hfont())) {
                     // FIXME: Handle gracefully the error if this call also fails.
-                    hr = ScriptGetFontProperties(dc, scriptCache(),
-                                                 m_scriptFontProperties);
+                    hr = ScriptGetFontProperties(dc, scriptCache(), m_scriptFontProperties.get());
                     if (S_OK != hr) {
                         LOG_ERROR("Unable to get the font properties after second attempt");
                     }
@@ -286,33 +263,8 @@ SCRIPT_FONTPROPERTIES* FontPlatformData::scriptFontProperties() const
             SelectObject(dc, oldFont);
         }
     }
-    return m_scriptFontProperties;
+    return m_scriptFontProperties.get();
 }
-
-#if ENABLE(OPENTYPE_VERTICAL)
-PassRefPtr<OpenTypeVerticalData> FontPlatformData::verticalData() const
-{
-    SkFontID id = typeface()->uniqueID();
-    return fontCache()->getVerticalData(id, *this);
-}
-
-PassRefPtr<SharedBuffer> FontPlatformData::openTypeTable(uint32_t table) const
-{
-    HWndDC hdc(0);
-    HGDIOBJ oldFont = SelectObject(hdc, hfont());
-
-    DWORD size = GetFontData(hdc, table, 0, 0, 0);
-    RefPtr<SharedBuffer> buffer;
-    if (size != GDI_ERROR) {
-        buffer = SharedBuffer::create(size);
-        DWORD result = GetFontData(hdc, table, 0, (PVOID)buffer->data(), size);
-        ASSERT(result == size);
-    }
-
-    SelectObject(hdc, oldFont);
-    return buffer.release();
-}
-#endif
 
 #ifndef NDEBUG
 String FontPlatformData::description() const

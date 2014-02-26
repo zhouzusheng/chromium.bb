@@ -65,6 +65,7 @@
     'java_strings_grd%': '',
     'res_extra_dirs': [],
     'res_extra_files': [],
+    'res_v14_verify_only%': 0,
     'resource_input_paths': ['>@(res_extra_files)'],
     'intermediate_dir': '<(SHARED_INTERMEDIATE_DIR)/<(_target_name)',
     'classes_dir': '<(intermediate_dir)/classes',
@@ -152,6 +153,10 @@
             # resources in dependencies can be resolved.
             'all_res_dirs': ['<@(res_input_dirs)',
                              '>@(dependencies_res_input_dirs)',],
+            # Write the inputs list to a file, so that the action command
+            # line won't exceed the OS limits when calculating the checksum
+            # of the list.
+            'inputs_list_file': '>|(inputs_list.<(_target_name).gypcmd >@(_inputs))'
           },
           'inputs': [
             '<(DEPTH)/build/android/gyp/util/build_utils.py',
@@ -178,13 +183,23 @@
             # Add hash of inputs to the command line, so if inputs change
             # (e.g. if a resource if removed), the command will be re-run.
             # TODO(newt): remove this once crbug.com/177552 is fixed in ninja.
-            '--ignore=>!(echo \'>(_inputs)\' | md5sum)',
+            '--ignore=>!(md5sum >(inputs_list_file))',
           ],
         },
         # Generate API 14 resources.
         {
           'action_name': 'generate_api_14_resources_<(_target_name)',
           'message': 'Generating Android API 14 resources <(_target_name)',
+          'variables' : {
+            'res_v14_additional_options': [],
+          },
+          'conditions': [
+            ['res_v14_verify_only == 1', {
+              'variables': {
+                'res_v14_additional_options': ['--verify-only']
+              },
+            }],
+          ],
           'inputs': [
             '<(DEPTH)/build/android/gyp/util/build_utils.py',
             '<(DEPTH)/build/android/gyp/generate_v14_compatible_resources.py',
@@ -198,6 +213,7 @@
             '--res-dir=<(res_dir)',
             '--res-v14-compatibility-dir=<(res_v14_compatibility_dir)',
             '--stamp', '<(res_v14_compatibility_stamp)',
+            '<@(res_v14_additional_options)',
           ]
         },
       ],
@@ -217,7 +233,7 @@
       'inputs': [
         '<(DEPTH)/build/android/gyp/util/build_utils.py',
         '<(DEPTH)/build/android/gyp/javac.py',
-        '>!@(find >(java_in_dir) >(additional_src_dirs) -name "*.java")',
+        '>!@(find >(java_in_dir)/src >(additional_src_dirs) -name "*.java")',
         '>@(input_jars_paths)',
         '>@(additional_input_paths)',
       ],

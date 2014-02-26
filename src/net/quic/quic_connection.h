@@ -27,12 +27,14 @@
 #include "net/base/ip_endpoint.h"
 #include "net/base/linked_hash_map.h"
 #include "net/quic/congestion_control/quic_congestion_manager.h"
+#include "net/quic/quic_alarm.h"
 #include "net/quic/quic_blocked_writer_interface.h"
 #include "net/quic/quic_framer.h"
 #include "net/quic/quic_packet_creator.h"
-#include "net/quic/quic_packet_entropy_manager.h"
 #include "net/quic/quic_packet_generator.h"
 #include "net/quic/quic_protocol.h"
+#include "net/quic/quic_received_packet_manager.h"
+#include "net/quic/quic_sent_entropy_manager.h"
 #include "net/quic/quic_stats.h"
 
 namespace net {
@@ -101,7 +103,7 @@ class NET_EXPORT_PRIVATE QuicConnectionDebugVisitorInterface
 
   // Called when the protocol version on the received packet doensn't match
   // current protocol version of the connection.
-  virtual void OnProtocolVersionMismatch(QuicTag version) = 0;
+  virtual void OnProtocolVersionMismatch(QuicVersion version) = 0;
 
   // Called when the complete header of a packet has been parsed.
   virtual void OnPacketHeader(const QuicPacketHeader& header) = 0;
@@ -166,38 +168,10 @@ class NET_EXPORT_PRIVATE QuicConnectionHelperInterface {
   // as EAGAIN or ERR_IO_PENDING.
   virtual bool IsWriteBlocked(int error) = 0;
 
-  // Sets up an alarm to retransmit a packet if we haven't received an ack
-  // in the expected time frame.  Implementations must invoke
-  // OnRetransmissionAlarm when the alarm fires.  Implementations must also
-  // handle the case where |this| is deleted before the alarm fires.  If the
-  // alarm is already set, this call is a no-op.
-  virtual void SetRetransmissionAlarm(QuicTime::Delta delay) = 0;
-
-  // Sets an alarm to send packets at |alarm_time|.  Implementations must
-  // invoke OnCanWrite when the alarm fires.  Implementations must also
-  // handle the case where |this| is deleted before the alarm fires.
-  virtual void SetSendAlarm(QuicTime alarm_time) = 0;
-
-  // Sets an alarm which fires when the connection may have timed out.
-  // Implementations must call CheckForTimeout() and then reregister the alarm
-  // if the connection has not yet timed out.
-  virtual void SetTimeoutAlarm(QuicTime::Delta delay) = 0;
-
-  // Returns true if a send alarm is currently set.
-  virtual bool IsSendAlarmSet() = 0;
-
-  // If a send alarm is currently set, this method unregisters it.  If
-  // no send alarm is set, it does nothing.
-  virtual void UnregisterSendAlarmIfRegistered() = 0;
-
-  // Sets an alarm which fires when an Ack may need to be sent.
-  // Implementations must call SendAck() when the alarm fires.
-  // If the alarm is already registered for a shorter timeout, this call is a
-  // no-op.
-  virtual void SetAckAlarm(QuicTime::Delta delay) = 0;
-
-  // Clears the ack alarm if it was set.  If it was not set, this is a no-op.
-  virtual void ClearAckAlarm() = 0;
+  // Creates a new platform-specific alarm which will be configured to
+  // notify |delegate| when the alarm fires.  Caller takes ownership
+  // of the new alarm, which will not yet be "set" to fire.
+  virtual QuicAlarm* CreateAlarm(QuicAlarm::Delegate* delegate) = 0;
 };
 
 class NET_EXPORT_PRIVATE QuicConnection
@@ -220,7 +194,8 @@ class NET_EXPORT_PRIVATE QuicConnection
   QuicConnection(QuicGuid guid,
                  IPEndPoint address,
                  QuicConnectionHelperInterface* helper,
-                 bool is_server);
+                 bool is_server,
+                 QuicVersion version);
   virtual ~QuicConnection();
 
   static void DeleteEnclosedFrame(QuicFrame* frame);
@@ -266,20 +241,25 @@ class NET_EXPORT_PRIVATE QuicConnection
                                 const QuicEncryptedPacket& packet);
 
   // QuicBlockedWriterInterface
-  // Called when the underlying connection becomes writable to allow
-  // queued writes to happen.  Returns false if the socket has become blocked.
+  // Called when the underlying connection becomes writable to allow queued
+  // writes to happen.  Returns false if the socket has become blocked.
   virtual bool OnCanWrite() OVERRIDE;
+
+  // If the socket is not blocked, this allows queued writes to happen. Returns
+  // false if the socket has become blocked.
+  bool WriteIfNotBlocked();
 
   // Do any work which logically would be done in OnPacket but can not be
   // safely done until the packet is validated.  Returns true if the packet
   // can be handled, false otherwise.
   bool ProcessValidatedPacket();
 
-  QuicTag version() const { return quic_version_; }
+  // The version of the protocol this connection is using.
+  QuicVersion version() const { return framer_.version(); }
 
   // From QuicFramerVisitorInterface
   virtual void OnError(QuicFramer* framer) OVERRIDE;
-  virtual bool OnProtocolVersionMismatch(QuicTag received_version) OVERRIDE;
+  virtual bool OnProtocolVersionMismatch(QuicVersion received_version) OVERRIDE;
   virtual void OnPacket() OVERRIDE;
   virtual void OnPublicResetPacket(
       const QuicPublicResetPacket& packet) OVERRIDE;
@@ -302,7 +282,8 @@ class NET_EXPORT_PRIVATE QuicConnection
   // QuicPacketGenerator::DelegateInterface
   virtual bool CanWrite(
       Retransmission is_retransmission,
-      HasRetransmittableData has_retransmittable_data) OVERRIDE;
+      HasRetransmittableData has_retransmittable_data,
+      IsHandshake handshake) OVERRIDE;
   virtual QuicAckFrame* CreateAckFrame() OVERRIDE;
   virtual QuicCongestionFeedbackFrame* CreateFeedbackFrame() OVERRIDE;
   virtual bool OnSerializedPacket(const SerializedPacket& packet) OVERRIDE;
@@ -320,9 +301,6 @@ class NET_EXPORT_PRIVATE QuicConnection
   QuicGuid guid() const { return guid_; }
   const QuicClock* clock() const { return clock_; }
   QuicRandom* random_generator() const { return random_generator_; }
-
-  // Updates the internal state concerning which packets have been acked.
-  void RecordPacketReceived(const QuicPacketHeader& header);
 
   // Called by a RetransmissionAlarm when the timer goes off.  If the peer
   // appears to be sending truncated acks, this returns false to indicate
@@ -404,12 +382,6 @@ class NET_EXPORT_PRIVATE QuicConnection
   const QuicDecrypter* alternative_decrypter() const;
 
  protected:
-  // Deletes all missing packets before least unacked. The connection won't
-  // process any packets with sequence number before |least_unacked| that it
-  // received after this call. Returns true if there were missing packets before
-  // |least_unacked| unacked, false otherwise.
-  bool DontWaitForPacketsBefore(QuicPacketSequenceNumber least_unacked);
-
   // Send a packet to the peer using encryption |level|. If |sequence_number|
   // is present in the |retransmission_map_|, then contents of this packet will
   // be retransmitted with a new sequence number if it's not acked by the peer.
@@ -447,7 +419,11 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   QuicConnectionHelperInterface* helper() { return helper_.get(); }
 
- protected:
+  // Selects and updates the version of the protocol being used by selecting a
+  // version from |available_versions| which is also supported. Returns true if
+  // such a version exists, false otherwise.
+  bool SelectMutualVersion(const QuicVersionVector& available_versions);
+
   QuicFramer framer_;
 
  private:
@@ -518,10 +494,6 @@ class NET_EXPORT_PRIVATE QuicConnection
                               RetransmissionTimeComparator>
       RetransmissionTimeouts;
 
-  // Selects and updates the version of the protocol being used by selecting a
-  // version from |available_versions| which is also supported. Returns true if
-  // such a version exists, false otherwise.
-  bool SelectMutualVersion(const QuicTagVector& available_versions);
   // Sends a version negotiation packet to the peer.
   void SendVersionNegotiationPacket();
 
@@ -530,6 +502,13 @@ class NET_EXPORT_PRIVATE QuicConnection
   bool IsRetransmission(QuicPacketSequenceNumber sequence_number);
 
   void SetupAbandonFecTimer(QuicPacketSequenceNumber sequence_number);
+
+  // Clears any accumulated frames from the last received packet.
+  void ClearLastFrames();
+
+  // Called from OnCanWrite and WriteIfNotBlocked to write queued packets.
+  // Returns false if the socket has become blocked.
+  bool DoWrite();
 
   // Drop packet corresponding to |sequence_number| by deleting entries from
   // |unacked_packets_| and |retransmission_map_|, if present. We need to drop
@@ -552,22 +531,22 @@ class NET_EXPORT_PRIVATE QuicConnection
   // revive and process the packet.
   void MaybeProcessRevivedPacket();
 
+  void ProcessAckFrame(const QuicAckFrame& incoming_ack);
+
   void HandleAckForSentPackets(const QuicAckFrame& incoming_ack,
                                SequenceNumberSet* acked_packets);
   void HandleAckForSentFecPackets(const QuicAckFrame& incoming_ack,
                                   SequenceNumberSet* acked_packets);
 
-  // These two are called by OnAckFrame.
-  //
-  // Updates internal state based on incoming_ack.received_info
-  void UpdatePacketInformationReceivedByPeer(
-      const QuicAckFrame& incoming_ack);
-  // Updates internal state based on incoming_ack.sent_info
-  void UpdatePacketInformationSentByPeer(const QuicAckFrame& incoming_ack);
+  // Update the |sent_info| for an outgoing ack.
+  void UpdateSentPacketInfo(SentPacketInfo* sent_info);
 
-  void UpdateOutgoingAck();
+  // Checks if the last packet should instigate an ack.
+  bool ShouldLastPacketInstigateAck();
 
-  void MaybeSendAckInResponseToPacket();
+  // Sends any packets which are a response to the last packet, including both
+  // acks and pending writes if an ack opened the congestion window.
+  void MaybeSendInResponseToPacket(bool last_packet_should_instigate_ack);
 
   void MaybeAbandonFecPacket(QuicPacketSequenceNumber sequence_number);
 
@@ -593,21 +572,16 @@ class NET_EXPORT_PRIVATE QuicConnection
   size_t last_size_;  // Size of the last received packet.
   QuicPacketHeader last_header_;
   std::vector<QuicStreamFrame> last_stream_frames_;
+  std::vector<QuicAckFrame> last_ack_frames_;
+  std::vector<QuicCongestionFeedbackFrame> last_congestion_frames_;
+  std::vector<QuicRstStreamFrame> last_rst_frames_;
+  std::vector<QuicGoAwayFrame> last_goaway_frames_;
 
-  QuicAckFrame outgoing_ack_;
   QuicCongestionFeedbackFrame outgoing_congestion_feedback_;
 
   // Track some peer state so we can do less bookkeeping
   // Largest sequence sent by the peer which had an ack frame (latest ack info).
   QuicPacketSequenceNumber largest_seen_packet_with_ack_;
-  // Largest sequence number that the peer has observed. Mostly received,
-  // missing in case of truncated acks.
-  QuicPacketSequenceNumber peer_largest_observed_packet_;
-  // Least sequence number which the peer is still waiting for.
-  QuicPacketSequenceNumber least_packet_awaited_by_peer_;
-  // Least sequence number of the the packet sent by the peer for which it
-  // hasn't received an ack.
-  QuicPacketSequenceNumber peer_least_packet_awaiting_ack_;
 
   // When new packets are created which may be retransmitted, they are added
   // to this map, which contains owning pointers to the contained frames.
@@ -650,7 +624,18 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   FecGroupMap group_map_;
 
-  QuicPacketEntropyManager entropy_manager_;
+  QuicReceivedPacketManager received_packet_manager_;
+  QuicSentEntropyManager sent_entropy_manager_;
+
+  // An alarm that fires when an ACK should be sent to the peer.
+  scoped_ptr<QuicAlarm> ack_alarm_;
+  // An alarm that fires when a packet needs to be retransmitted.
+  scoped_ptr<QuicAlarm> retransmission_alarm_;
+  // An alarm that is scheduled when the sent scheduler requires a
+  // a delay before sending packets and fires when the packet may be sent.
+  scoped_ptr<QuicAlarm> send_alarm_;
+  // An alarm that fires when the connection may have timed out.
+  scoped_ptr<QuicAlarm> timeout_alarm_;
 
   QuicConnectionVisitorInterface* visitor_;
   QuicConnectionDebugVisitorInterface* debug_visitor_;
@@ -668,14 +653,11 @@ class NET_EXPORT_PRIVATE QuicConnection
   QuicConnectionStats stats_;
 
   // The time that we got a packet for this connection.
+  // This is used for timeouts, and does not indicate the packet was processed.
   QuicTime time_of_last_received_packet_;
 
   // The time that we last sent a packet for this connection.
   QuicTime time_of_last_sent_packet_;
-
-  // Member holding the time we received the largest_observed sequence number.
-  // Needed for calculating delta_time_largest_observed.
-  QuicTime time_largest_observed_;
 
   // Congestion manager which controls the rate the connection sends packets
   // as well as collecting and generating congestion feedback.
@@ -683,9 +665,6 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   // The state of connection in version negotiation finite state machine.
   QuicVersionNegotiationState version_negotiation_state_;
-
-  // The version of the protocol this connection is using.
-  QuicTag quic_version_;
 
   size_t max_packets_per_retransmission_alarm_;
 

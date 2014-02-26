@@ -34,7 +34,6 @@
 #include "InspectorBackendDispatcher.h"
 #include "InspectorFrontend.h"
 #include "bindings/v8/DOMWrapperWorld.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/inspector/IdentifiersFactory.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InjectedScriptManager.h"
@@ -70,8 +69,6 @@
 #include "core/inspector/PageRuntimeAgent.h"
 #include "core/page/Page.h"
 #include "core/platform/PlatformMouseEvent.h"
-#include <wtf/MemoryInstrumentationVector.h>
-#include <wtf/UnusedParam.h>
 
 namespace WebCore {
 
@@ -104,15 +101,17 @@ InspectorController::InspectorController(Page* page, InspectorClient* inspectorC
 
     m_agents.append(InspectorDOMStorageAgent::create(m_instrumentingAgents.get(), pageAgent, m_state.get()));
 
-    OwnPtr<InspectorMemoryAgent> memoryAgentPtr(InspectorMemoryAgent::create(m_instrumentingAgents.get(), inspectorClient, m_state.get(), m_page));
+    OwnPtr<InspectorMemoryAgent> memoryAgentPtr(InspectorMemoryAgent::create(m_instrumentingAgents.get(), m_state.get()));
     m_memoryAgent = memoryAgentPtr.get();
     m_agents.append(memoryAgentPtr.release());
 
-    m_agents.append(InspectorTimelineAgent::create(m_instrumentingAgents.get(), pageAgent, m_memoryAgent, domAgent, m_state.get(), InspectorTimelineAgent::PageInspector,
-       inspectorClient));
-    m_agents.append(InspectorApplicationCacheAgent::create(m_instrumentingAgents.get(), m_state.get(), pageAgent));
+    OwnPtr<InspectorTimelineAgent> timelineAgentPtr(InspectorTimelineAgent::create(m_instrumentingAgents.get(), pageAgent, m_memoryAgent, domAgent, m_state.get(),
+        InspectorTimelineAgent::PageInspector, inspectorClient));
+    m_timelineAgent = timelineAgentPtr.get();
+    m_agents.append(timelineAgentPtr.release());
 
-    m_agents.append(InspectorResourceAgent::create(m_instrumentingAgents.get(), pageAgent, inspectorClient, m_state.get()));
+    m_agents.append(InspectorApplicationCacheAgent::create(m_instrumentingAgents.get(), m_state.get(), pageAgent));
+    m_agents.append(InspectorResourceAgent::create(m_instrumentingAgents.get(), pageAgent, inspectorClient, m_state.get(), m_overlay.get()));
 
     PageScriptDebugServer* pageScriptDebugServer = &PageScriptDebugServer::shared();
 
@@ -139,7 +138,7 @@ InspectorController::InspectorController(Page* page, InspectorClient* inspectorC
 
     m_agents.append(InspectorInputAgent::create(m_instrumentingAgents.get(), m_state.get(), page, inspectorClient));
 
-    m_agents.append(InspectorLayerTreeAgent::create(m_instrumentingAgents.get(), m_state.get()));
+    m_agents.append(InspectorLayerTreeAgent::create(m_instrumentingAgents.get(), m_state.get(), domAgent, page));
 
     ASSERT_ARG(inspectorClient, inspectorClient);
     m_injectedScriptManager->injectedScriptHost()->init(m_instrumentingAgents.get(), pageScriptDebugServer);
@@ -243,6 +242,11 @@ void InspectorController::setProcessId(long processId)
     IdentifiersFactory::setProcessId(processId);
 }
 
+void InspectorController::setLayerTreeId(int id)
+{
+    m_timelineAgent->setLayerTreeId(id);
+}
+
 void InspectorController::webViewResized(const IntSize& size)
 {
     if (InspectorPageAgent* pageAgent = m_instrumentingAgents->inspectorPageAgent())
@@ -318,6 +322,15 @@ Node* InspectorController::highlightedNode() const
     return m_overlay->highlightedNode();
 }
 
+bool InspectorController::handleGestureEvent(Frame* frame, const PlatformGestureEvent& event)
+{
+    // Overlay should not consume events.
+    m_overlay->handleGestureEvent(event);
+    if (InspectorDOMAgent* domAgent = m_instrumentingAgents->inspectorDOMAgent())
+        return domAgent->handleGestureEvent(frame, event);
+    return false;
+}
+
 bool InspectorController::handleMouseEvent(Frame* frame, const PlatformMouseEvent& event)
 {
     // Overlay should not consume events.
@@ -340,7 +353,7 @@ bool InspectorController::handleTouchEvent(Frame* frame, const PlatformTouchEven
     // Overlay should not consume events.
     m_overlay->handleTouchEvent(event);
     if (InspectorDOMAgent* domAgent = m_instrumentingAgents->inspectorDOMAgent())
-        domAgent->handleTouchEvent(frame, event);
+        return domAgent->handleTouchEvent(frame, event);
     return false;
 }
 
@@ -356,22 +369,6 @@ void InspectorController::setResourcesDataSizeLimitsFromInternals(int maximumRes
 {
     if (InspectorResourceAgent* resourceAgent = m_instrumentingAgents->inspectorResourceAgent())
         resourceAgent->setResourcesDataSizeLimitsFromInternals(maximumResourcesContentSize, maximumSingleResourceContentSize);
-}
-
-void InspectorController::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::InspectorController);
-    info.addMember(m_instrumentingAgents, "instrumentingAgents");
-    info.addMember(m_injectedScriptManager, "injectedScriptManager");
-    info.addMember(m_state, "state");
-    info.addMember(m_overlay, "overlay");
-
-    info.addMember(m_inspectorBackendDispatcher, "inspectorBackendDispatcher");
-    info.addMember(m_inspectorFrontendClient, "inspectorFrontendClient");
-    info.addMember(m_inspectorFrontend, "inspectorFrontend");
-    info.addMember(m_page, "page");
-    info.addWeakPointer(m_inspectorClient);
-    info.addMember(m_agents, "agents");
 }
 
 void InspectorController::willProcessTask()
@@ -416,13 +413,6 @@ void InspectorController::didComposite()
 {
     if (InspectorTimelineAgent* timelineAgent = m_instrumentingAgents->inspectorTimelineAgent())
         timelineAgent->didComposite();
-}
-
-HashMap<String, size_t> InspectorController::processMemoryDistribution() const
-{
-    HashMap<String, size_t> memoryInfo;
-    m_memoryAgent->getProcessMemoryDistributionMap(&memoryInfo);
-    return memoryInfo;
 }
 
 } // namespace WebCore

@@ -21,10 +21,10 @@
 #ifndef WTF_OwnArrayPtr_h
 #define WTF_OwnArrayPtr_h
 
-#include <wtf/Assertions.h>
-#include <wtf/Noncopyable.h>
-#include <wtf/NullPtr.h>
-#include <wtf/PassOwnArrayPtr.h>
+#include "wtf/Assertions.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/NullPtr.h"
+#include "wtf/PassOwnArrayPtr.h"
 #include <algorithm>
 
 namespace WTF {
@@ -127,22 +127,22 @@ template <typename T> inline void swap(OwnArrayPtr<T>& a, OwnArrayPtr<T>& b)
 
 template<typename T, typename U> inline bool operator==(const OwnArrayPtr<T>& a, U* b)
 {
-    return a.get() == b; 
+    return a.get() == b;
 }
 
-template<typename T, typename U> inline bool operator==(T* a, const OwnArrayPtr<U>& b) 
+template<typename T, typename U> inline bool operator==(T* a, const OwnArrayPtr<U>& b)
 {
-    return a == b.get(); 
+    return a == b.get();
 }
 
 template<typename T, typename U> inline bool operator!=(const OwnArrayPtr<T>& a, U* b)
 {
-    return a.get() != b; 
+    return a.get() != b;
 }
 
 template<typename T, typename U> inline bool operator!=(T* a, const OwnArrayPtr<U>& b)
 {
-    return a != b.get(); 
+    return a != b.get();
 }
 
 template <typename T> inline T* getPtr(const OwnArrayPtr<T>& p)

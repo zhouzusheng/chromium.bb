@@ -25,10 +25,9 @@
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/cookie_store_factory.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_constants.h"
@@ -38,6 +37,7 @@
 #include "sql/statement.h"
 #include "sql/transaction.h"
 #include "third_party/sqlite/sqlite3.h"
+#include "url/gurl.h"
 #include "webkit/browser/quota/special_storage_policy.h"
 
 using base::Time;
@@ -545,7 +545,7 @@ bool SQLitePersistentCookieStore::Backend::InitializeDatabase() {
   base::Time start = base::Time::Now();
 
   const base::FilePath dir = path_.DirName();
-  if (!file_util::PathExists(dir) && !file_util::CreateDirectory(dir)) {
+  if (!base::PathExists(dir) && !file_util::CreateDirectory(dir)) {
     return false;
   }
 
@@ -844,7 +844,7 @@ bool SQLitePersistentCookieStore::Backend::EnsureDatabaseVersion() {
 
     meta_table_.Reset();
     db_.reset(new sql::Connection);
-    if (!file_util::Delete(path_, false) ||
+    if (!base::DeleteFile(path_, false) ||
         !db_->Open(path_) ||
         !meta_table_.Init(
             db_.get(), kCurrentVersionNumber, kCompatibleVersionNumber)) {

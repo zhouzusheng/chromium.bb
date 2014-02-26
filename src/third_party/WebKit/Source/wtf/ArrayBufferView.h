@@ -20,13 +20,13 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef ArrayBufferView_h
 #define ArrayBufferView_h
 
-#include <wtf/ArrayBuffer.h>
+#include "wtf/ArrayBuffer.h"
 
 #include <algorithm>
 #include <limits.h>
@@ -69,6 +69,9 @@ class WTF_EXPORT ArrayBufferView : public RefCounted<ArrayBufferView> {
     }
 
     virtual unsigned byteLength() const = 0;
+
+    void setNeuterable(bool flag) { m_isNeuterable = flag; }
+    bool isNeuterable() const { return m_isNeuterable; }
 
     virtual ~ArrayBufferView();
 
@@ -128,7 +131,8 @@ class WTF_EXPORT ArrayBufferView : public RefCounted<ArrayBufferView> {
     // This is the address of the ArrayBuffer's storage, plus the byte offset.
     void* m_baseAddress;
 
-    unsigned m_byteOffset;
+    unsigned m_byteOffset : 31;
+    bool m_isNeuterable : 1;
 
   private:
     friend class ArrayBuffer;
@@ -145,7 +149,7 @@ bool ArrayBufferView::setImpl(ArrayBufferView* array, unsigned byteOffset)
         // Out of range offset or overflow
         return false;
     }
-    
+
     char* base = static_cast<char*>(baseAddress());
     memmove(base + byteOffset, array->baseAddress(), array->byteLength());
     return true;
@@ -159,7 +163,7 @@ bool ArrayBufferView::setRangeImpl(const char* data, size_t dataByteLength, unsi
         // Out of range offset or overflow
         return false;
     }
-    
+
     char* base = static_cast<char*>(baseAddress());
     memmove(base + byteOffset, data, dataByteLength);
     return true;
@@ -173,7 +177,7 @@ bool ArrayBufferView::zeroRangeImpl(unsigned byteOffset, size_t rangeByteLength)
         // Out of range offset or overflow
         return false;
     }
-    
+
     char* base = static_cast<char*>(baseAddress());
     memset(base + byteOffset, 0, rangeByteLength);
     return true;

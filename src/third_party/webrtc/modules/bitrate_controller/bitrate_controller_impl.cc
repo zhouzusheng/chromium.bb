@@ -9,11 +9,11 @@
  *
  */
 
-#include "modules/bitrate_controller/bitrate_controller_impl.h"
+#include "webrtc/modules/bitrate_controller/bitrate_controller_impl.h"
 
 #include <utility>
 
-#include "modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
+#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
 
 namespace webrtc {
 
@@ -25,7 +25,7 @@ class RtcpBandwidthObserverImpl : public RtcpBandwidthObserver {
   virtual ~RtcpBandwidthObserverImpl() {
   }
   // Received RTCP REMB or TMMBR.
-  virtual void OnReceivedEstimatedBitrate(const uint32_t bitrate) {
+  virtual void OnReceivedEstimatedBitrate(const uint32_t bitrate) OVERRIDE {
     owner_->OnReceivedEstimatedBitrate(bitrate);
   }
   // Received RTCP receiver block.
@@ -34,7 +34,7 @@ class RtcpBandwidthObserverImpl : public RtcpBandwidthObserver {
       const uint8_t fraction_loss,
       const uint32_t rtt,
       const uint32_t last_received_extended_high_seq_num,
-      const uint32_t now_ms) {
+      const uint32_t now_ms) OVERRIDE {
     uint32_t number_of_packets = 0;
     std::map<uint32_t, uint32_t>::iterator it =
         ssrc_to_last_received_extended_high_seq_num_.find(ssrc);
@@ -228,4 +228,3 @@ bool BitrateControllerImpl::AvailableBandwidth(uint32_t* bandwidth) const {
   return bandwidth_estimation_.AvailableBandwidth(bandwidth);
 }
 }  // namespace webrtc
-

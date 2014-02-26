@@ -56,6 +56,7 @@ public:
     virtual void OnMediaRequestStateChanged(
         int render_process_id,
         int render_view_id,
+        int page_request_id,
         const content::MediaStreamDevice& device,
         content::MediaRequestState state) OVERRIDE;
 
@@ -64,7 +65,14 @@ public:
         int render_process_id,
         int render_view_id,
         int stream_id,
-        bool playing) OVERRIDE;
+        bool playing,
+        float power_dbfs,
+        bool clipped) OVERRIDE;
+
+    // Called when the audio stream is being created.
+    virtual void OnCreatingAudioStream(
+        int render_process_id,
+        int render_view_id) OVERRIDE;
 
     /////// Own accessors
 

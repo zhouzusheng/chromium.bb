@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/strings/string_piece.h"
 #include "net/base/net_export.h"
 
 namespace base {
@@ -33,7 +34,7 @@ NET_EXPORT_PRIVATE uint64 GetEntryHashKey(const std::string& key);
 // Parses the |hash_key| string into a uint64 buffer.
 // |hash_key| string must be of the form: FFFFFFFFFFFFFFFF .
 NET_EXPORT_PRIVATE bool GetEntryHashKeyFromHexString(
-    const std::string& hash_key,
+    const base::StringPiece& hash_key,
     uint64* hash_key_out);
 
 // Given a |key| for a (potential) entry in the simple backend and the |index|
@@ -62,8 +63,8 @@ NET_EXPORT_PRIVATE int64 GetFileOffsetFromKeyAndDataOffset(
     const std::string& key,
     int data_offset);
 
-// Fills |out_time| with the time the file last modified time. Unlike the
-// functions in platform_file.h, the time resolution is milliseconds.
+// Fills |out_time| with the time the file last modified time.
+// TODO(gavinp): Remove this function.
 NET_EXPORT_PRIVATE bool GetMTime(const base::FilePath& path,
                                  base::Time* out_mtime);
 }  // namespace simple_backend

@@ -32,18 +32,16 @@
 #ifndef DocumentThreadableLoader_h
 #define DocumentThreadableLoader_h
 
-#include "core/loader/FrameLoaderTypes.h"
 #include "core/loader/ThreadableLoader.h"
-#include "core/loader/cache/CachedRawResource.h"
-#include "core/loader/cache/CachedResourceHandle.h"
+#include "core/loader/cache/RawResource.h"
+#include "core/loader/cache/ResourcePtr.h"
 #include "core/platform/Timer.h"
 #include "core/platform/network/ResourceError.h"
-#include <wtf/Forward.h>
-#include <wtf/OwnPtr.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/RefPtr.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/Forward.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
     class Document;
@@ -52,7 +50,7 @@ namespace WebCore {
     class SecurityOrigin;
     class ThreadableLoaderClient;
 
-    class DocumentThreadableLoader : public RefCounted<DocumentThreadableLoader>, public ThreadableLoader, private CachedRawResourceClient  {
+    class DocumentThreadableLoader : public RefCounted<DocumentThreadableLoader>, public ThreadableLoader, private RawResourceClient  {
         WTF_MAKE_FAST_ALLOCATED;
     public:
         static void loadResourceSynchronously(Document*, const ResourceRequest&, ThreadableLoaderClient&, const ThreadableLoaderOptions&);
@@ -79,13 +77,13 @@ namespace WebCore {
 
         void clearResource();
 
-        // CachedRawResourceClient
-        virtual void dataSent(CachedResource*, unsigned long long bytesSent, unsigned long long totalBytesToBeSent);
-        virtual void responseReceived(CachedResource*, const ResourceResponse&);
-        virtual void dataReceived(CachedResource*, const char* data, int dataLength);
-        virtual void redirectReceived(CachedResource*, ResourceRequest&, const ResourceResponse&);
-        virtual void notifyFinished(CachedResource*);
-        virtual void dataDownloaded(CachedResource*, int);
+        // RawResourceClient
+        virtual void dataSent(Resource*, unsigned long long bytesSent, unsigned long long totalBytesToBeSent);
+        virtual void responseReceived(Resource*, const ResourceResponse&);
+        virtual void dataReceived(Resource*, const char* data, int dataLength);
+        virtual void redirectReceived(Resource*, ResourceRequest&, const ResourceResponse&);
+        virtual void notifyFinished(Resource*);
+        virtual void dataDownloaded(Resource*, int);
 
         void cancelWithError(const ResourceError&);
         void didReceiveResponse(unsigned long identifier, const ResourceResponse&);
@@ -105,7 +103,7 @@ namespace WebCore {
 
         SecurityOrigin* securityOrigin() const;
 
-        CachedResourceHandle<CachedRawResource> m_resource;
+        ResourcePtr<RawResource> m_resource;
         ThreadableLoaderClient* m_client;
         Document* m_document;
         ThreadableLoaderOptions m_options;

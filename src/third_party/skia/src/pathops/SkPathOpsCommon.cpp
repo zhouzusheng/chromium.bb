@@ -17,7 +17,7 @@ static int contourRangeCheckY(const SkTArray<SkOpContour*, true>& contourList, S
     const double mid = *midPtr;
     const SkOpSegment* current = *currentPtr;
     double tAtMid = current->tAtMid(index, endIndex, mid);
-    SkPoint basePt = current->xyAtT(tAtMid);
+    SkPoint basePt = current->ptAtT(tAtMid);
     int contourCount = contourList.count();
     SkScalar bestY = SK_ScalarMin;
     SkOpSegment* bestSeg = NULL;
@@ -138,7 +138,7 @@ SkOpSegment* FindChase(SkTDArray<SkOpSpan*>& chase, int& tIndex, int& endIndex) 
                 SkOpSegment::kMayBeUnordered_SortAngleKind);
         int angleCount = sorted.count();
 #if DEBUG_SORT
-        sorted[0]->segment()->debugShowSort(__FUNCTION__, sorted, 0, 0, 0);
+        sorted[0]->segment()->debugShowSort(__FUNCTION__, sorted, 0, 0, 0, sortable);
 #endif
         if (!sortable) {
             continue;
@@ -162,7 +162,7 @@ SkOpSegment* FindChase(SkTDArray<SkOpSpan*>& chase, int& tIndex, int& endIndex) 
             winding += spanWinding;
         }
     #if DEBUG_SORT
-        segment->debugShowSort(__FUNCTION__, sorted, firstIndex, winding, 0);
+        segment->debugShowSort(__FUNCTION__, sorted, firstIndex, winding, 0, sortable);
     #endif
         // we care about first sign and whether wind sum indicates this
         // edge is inside or outside. Maybe need to pass span winding
@@ -342,6 +342,16 @@ SkOpSegment* FindSortableTop(const SkTArray<SkOpContour*, true>& contourList, bo
     current->initWinding(*indexPtr, *endIndexPtr, tHit, contourWinding, hitDx, oppContourWinding,
             hitOppDx);
     return current;
+}
+
+void CheckEnds(SkTArray<SkOpContour*, true>* contourList) {
+    // it's hard to determine if the end of a cubic or conic nearly intersects another curve.
+    // instead, look to see if the connecting curve intersected at that same end.
+    int contourCount = (*contourList).count();
+    for (int cTest = 0; cTest < contourCount; ++cTest) {
+        SkOpContour* contour = (*contourList)[cTest];
+        contour->checkEnds();
+    }
 }
 
 void FixOtherTIndex(SkTArray<SkOpContour*, true>* contourList) {

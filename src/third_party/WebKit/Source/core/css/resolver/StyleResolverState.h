@@ -25,130 +25,136 @@
 #include "CSSPropertyNames.h"
 
 #include "core/css/CSSSVGDocumentValue.h"
+#include "core/css/CSSToStyleMap.h"
+#include "core/css/resolver/ElementResolveContext.h"
+#include "core/css/resolver/ElementStyleResources.h"
+#include "core/css/resolver/FontBuilder.h"
 #include "core/dom/Element.h"
-#include "core/platform/graphics/Color.h"
-#include "core/rendering/style/BorderData.h"
-#include "core/rendering/style/FillLayer.h"
+#include "core/rendering/style/CachedUAStyle.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/StyleInheritedData.h"
-#include "wtf/HashMap.h"
 
 namespace WebCore {
 
-class FillLayer;
 class FontDescription;
 class RenderRegion;
-class StyledElement;
-
-typedef HashMap<CSSPropertyID, RefPtr<CSSValue> > PendingImagePropertyMap;
-typedef HashMap<FilterOperation*, RefPtr<CSSSVGDocumentValue> > PendingSVGDocumentMap;
 
 class StyleResolverState {
 WTF_MAKE_NONCOPYABLE(StyleResolverState);
 public:
-    StyleResolverState()
-    : m_element(0)
-    , m_styledElement(0)
-    , m_parentNode(0)
-    , m_parentStyle(0)
-    , m_rootElementStyle(0)
-    , m_regionForStyling(0)
-    , m_elementLinkState(NotInsideLink)
-    , m_distributedToInsertionPoint(false)
-    , m_elementAffectedByClassRules(false)
-    , m_applyPropertyToRegularStyle(true)
-    , m_applyPropertyToVisitedLinkStyle(false)
-    , m_hasPendingShaders(false)
-    , m_lineHeightValue(0)
-    , m_fontDirty(false)
-    , m_hasUAAppearance(false)
-    , m_backgroundData(BackgroundFillLayer) { }
+    StyleResolverState(Document*, Element*, RenderStyle* parentStyle = 0, RenderRegion* regionForStyling = 0);
+    ~StyleResolverState();
 
-    public:
-    void initElement(Element*);
-    void initForStyleResolve(Document*, Element*, RenderStyle* parentStyle = 0, RenderRegion* regionForStyling = 0);
-    void clear();
+    // In FontLoader and CanvasRenderingContext2D, we don't have an element to grab the document from.
+    // This is why we have to store the document separately.
+    Document* document() const { return m_document; }
+    // These are all just pass-through methods to ElementResolveContext.
+    Element* element() const { return m_elementContext.element(); }
+    const ContainerNode* parentNode() const { return m_elementContext.parentNode(); }
+    const RenderStyle* rootElementStyle() const { return m_elementContext.rootElementStyle(); }
+    EInsideLink elementLinkState() const { return m_elementContext.elementLinkState(); }
+    bool distributedToInsertionPoint() const { return m_elementContext.distributedToInsertionPoint(); }
 
-    Color colorFromPrimitiveValue(CSSPrimitiveValue*, bool forVisitedLink = false) const;
+    const ElementResolveContext& elementContext() const { return m_elementContext; }
 
-    Document* document() const { return m_element->document(); }
-    Element* element() const { return m_element; }
-    StyledElement* styledElement() const { return m_styledElement; }
     void setStyle(PassRefPtr<RenderStyle> style) { m_style = style; }
-    RenderStyle* style() const { return m_style.get(); }
+    const RenderStyle* style() const { return m_style.get(); }
+    RenderStyle* style() { return m_style.get(); }
     PassRefPtr<RenderStyle> takeStyle() { return m_style.release(); }
 
-    const ContainerNode* parentNode() const { return m_parentNode; }
     void setParentStyle(PassRefPtr<RenderStyle> parentStyle) { m_parentStyle = parentStyle; }
-    RenderStyle* parentStyle() const { return m_parentStyle.get(); }
-    RenderStyle* rootElementStyle() const { return m_rootElementStyle; }
+    const RenderStyle* parentStyle() const { return m_parentStyle.get(); }
+    RenderStyle* parentStyle() { return m_parentStyle.get(); }
 
     const RenderRegion* regionForStyling() const { return m_regionForStyling; }
-    EInsideLink elementLinkState() const { return m_elementLinkState; }
-    bool distributedToInsertionPoint() const { return m_distributedToInsertionPoint; }
-    void setElementAffectedByClassRules(bool isAffected) { m_elementAffectedByClassRules = isAffected; }
-    bool elementAffectedByClassRules() const { return m_elementAffectedByClassRules; }
 
+    // FIXME: These are effectively side-channel "out parameters" for the various
+    // map functions. When we map from CSS to style objects we use this state object
+    // to track various meta-data about that mapping (e.g. if it's cache-able).
+    // We need to move this data off of StyleResolverState and closer to the
+    // objects it applies to. Possibly separating (immutable) inputs from (mutable) outputs.
     void setApplyPropertyToRegularStyle(bool isApply) { m_applyPropertyToRegularStyle = isApply; }
     void setApplyPropertyToVisitedLinkStyle(bool isApply) { m_applyPropertyToVisitedLinkStyle = isApply; }
     bool applyPropertyToRegularStyle() const { return m_applyPropertyToRegularStyle; }
     bool applyPropertyToVisitedLinkStyle() const { return m_applyPropertyToVisitedLinkStyle; }
-    PendingImagePropertyMap& pendingImageProperties() { return m_pendingImageProperties; }
-    PendingSVGDocumentMap& pendingSVGDocuments() { return m_pendingSVGDocuments; }
-    void setHasPendingShaders(bool hasPendingShaders) { m_hasPendingShaders = hasPendingShaders; }
-    bool hasPendingShaders() const { return m_hasPendingShaders; }
+
+    // Holds all attribute names found while applying "content" properties that contain an "attr()" value.
+    Vector<AtomicString>& contentAttrValues() { return m_contentAttrValues; }
 
     void setLineHeightValue(CSSValue* value) { m_lineHeightValue = value; }
     CSSValue* lineHeightValue() { return m_lineHeightValue; }
-    void setFontDirty(bool isDirty) { m_fontDirty = isDirty; }
-    bool fontDirty() const { return m_fontDirty; }
 
-    void cacheBorderAndBackground();
-    bool hasUAAppearance() const { return m_hasUAAppearance; }
-    BorderData borderData() const { return m_borderData; }
-    FillLayer backgroundData() const { return m_backgroundData; }
-    Color backgroundColor() const { return m_backgroundColor; }
+    void cacheUserAgentBorderAndBackground() { m_cachedUAStyle = CachedUAStyle(style()); }
+    const CachedUAStyle& cachedUAStyle() const { return m_cachedUAStyle; }
 
-    const FontDescription& fontDescription() { return m_style->fontDescription(); }
+    ElementStyleResources& elementStyleResources() { return m_elementStyleResources; }
+    const CSSToStyleMap& styleMap() const { return m_styleMap; }
+    CSSToStyleMap& styleMap() { return m_styleMap; }
+
+    // FIXME: Once styleImage can be made to not take a StyleResolverState
+    // this convenience function should be removed. As-is, without this, call
+    // sites are extremely verbose.
+    PassRefPtr<StyleImage> styleImage(CSSPropertyID propertyId, CSSValue* value)
+    {
+        return m_elementStyleResources.styleImage(document()->textLinkColors(), propertyId, value);
+    }
+
+    FontBuilder& fontBuilder() { return m_fontBuilder; }
+    // FIXME: These exist as a primitive way to track mutations to font-related properties
+    // on a RenderStyle. As designed, these are very error-prone, as some callers
+    // set these directly on the RenderStyle w/o telling us. Presumably we'll
+    // want to design a better wrapper around RenderStyle for tracking these mutations
+    // and separate it from StyleResolverState.
     const FontDescription& parentFontDescription() { return m_parentStyle->fontDescription(); }
-    void setFontDescription(const FontDescription& fontDescription) { m_fontDirty |= m_style->setFontDescription(fontDescription); }
-    void setZoom(float f) { m_fontDirty |= m_style->setZoom(f); }
-    void setEffectiveZoom(float f) { m_fontDirty |= m_style->setEffectiveZoom(f); }
-    void setWritingMode(WritingMode writingMode) { m_fontDirty |= m_style->setWritingMode(writingMode); }
-    void setTextOrientation(TextOrientation textOrientation) { m_fontDirty |= m_style->setTextOrientation(textOrientation); }
+    void setZoom(float f) { m_fontBuilder.didChangeFontParameters(m_style->setZoom(f)); }
+    void setEffectiveZoom(float f) { m_fontBuilder.didChangeFontParameters(m_style->setEffectiveZoom(f)); }
+    void setWritingMode(WritingMode writingMode) { m_fontBuilder.didChangeFontParameters(m_style->setWritingMode(writingMode)); }
+    void setTextOrientation(TextOrientation textOrientation) { m_fontBuilder.didChangeFontParameters(m_style->setTextOrientation(textOrientation)); }
 
-    bool useSVGZoomRules() const { return m_element && m_element->isSVGElement(); }
+    // SVG handles zooming in a different way compared to CSS. The whole document is scaled instead
+    // of each individual length value in the render style / tree. CSSPrimitiveValue::computeLength*()
+    // multiplies each resolved length with the zoom multiplier - so for SVG we need to disable that.
+    // Though all CSS values that can be applied to outermost <svg> elements (width/height/border/padding...)
+    // need to respect the scaling. RenderBox (the parent class of RenderSVGRoot) grabs values like
+    // width/height/border/padding/... from the RenderStyle -> for SVG these values would never scale,
+    // if we'd pass a 1.0 zoom factor everyhwere. So we only pass a zoom factor of 1.0 for specific
+    // properties that are NOT allowed to scale within a zoomed SVG document (letter/word-spacing/font-size).
+    bool useSVGZoomRules() const { return element() && element()->isSVGElement(); }
 
 private:
-    Element* m_element;
+    friend class StyleResolveScope;
+
+    void initElement(Element*);
+
+    Document* m_document;
+    ElementResolveContext m_elementContext;
+
+    // m_style is the primary output for each element's style resolve.
     RefPtr<RenderStyle> m_style;
-    StyledElement* m_styledElement;
-    ContainerNode* m_parentNode;
+
+    // m_parentStyle is not always just element->parentNode()->style()
+    // so we keep it separate from m_elementContext.
     RefPtr<RenderStyle> m_parentStyle;
-    RenderStyle* m_rootElementStyle;
 
     // Required to ASSERT in applyProperties.
+    // FIXME: Regions should not need special state on StyleResolverState
+    // no other @rule does.
     RenderRegion* m_regionForStyling;
-
-    EInsideLink m_elementLinkState;
-
-    bool m_distributedToInsertionPoint;
-
-    bool m_elementAffectedByClassRules;
 
     bool m_applyPropertyToRegularStyle;
     bool m_applyPropertyToVisitedLinkStyle;
 
-    PendingImagePropertyMap m_pendingImageProperties;
-    bool m_hasPendingShaders;
-    PendingSVGDocumentMap m_pendingSVGDocuments;
     CSSValue* m_lineHeightValue;
-    bool m_fontDirty;
 
-    bool m_hasUAAppearance;
-    BorderData m_borderData;
-    FillLayer m_backgroundData;
-    Color m_backgroundColor;
+    FontBuilder m_fontBuilder;
+
+    CachedUAStyle m_cachedUAStyle;
+
+    ElementStyleResources m_elementStyleResources;
+    // CSSToStyleMap is a pure-logic class and only contains
+    // a back-pointer to this object.
+    CSSToStyleMap m_styleMap;
+    Vector<AtomicString> m_contentAttrValues;
 };
 
 } // namespace WebCore

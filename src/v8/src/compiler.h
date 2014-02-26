@@ -199,6 +199,11 @@ class CompilationInfo {
     return IsCompilingForDebugging::decode(flags_);
   }
 
+  bool ShouldTrapOnDeopt() const {
+    return (FLAG_trap_on_deopt && IsOptimizing()) ||
+        (FLAG_trap_on_stub_deopt && IsStub());
+  }
+
   bool has_global_object() const {
     return !closure().is_null() &&
         (closure()->context()->global_object() != NULL);
@@ -239,16 +244,17 @@ class CompilationInfo {
     deferred_handles_ = deferred_handles;
   }
 
-  ZoneList<Handle<Map> >* dependent_maps(DependentCode::DependencyGroup group) {
-    if (dependent_maps_[group] == NULL) {
-      dependent_maps_[group] = new(zone_) ZoneList<Handle<Map> >(2, zone_);
+  ZoneList<Handle<HeapObject> >* dependencies(
+      DependentCode::DependencyGroup group) {
+    if (dependencies_[group] == NULL) {
+      dependencies_[group] = new(zone_) ZoneList<Handle<HeapObject> >(2, zone_);
     }
-    return dependent_maps_[group];
+    return dependencies_[group];
   }
 
-  void CommitDependentMaps(Handle<Code> code);
+  void CommitDependencies(Handle<Code> code);
 
-  void RollbackDependentMaps();
+  void RollbackDependencies();
 
   void SaveHandles() {
     SaveHandle(&closure_);
@@ -257,8 +263,8 @@ class CompilationInfo {
     SaveHandle(&script_);
   }
 
-  const char* bailout_reason() const { return bailout_reason_; }
-  void set_bailout_reason(const char* reason) { bailout_reason_ = reason; }
+  BailoutReason bailout_reason() const { return bailout_reason_; }
+  void set_bailout_reason(BailoutReason reason) { bailout_reason_ = reason; }
 
   int prologue_offset() const {
     ASSERT_NE(kPrologueOffsetNotSet, prologue_offset_);
@@ -302,9 +308,13 @@ class CompilationInfo {
   }
 
  protected:
-  CompilationInfo(Handle<Script> script, Zone* zone);
-  CompilationInfo(Handle<SharedFunctionInfo> shared_info, Zone* zone);
-  CompilationInfo(HydrogenCodeStub* stub, Isolate* isolate, Zone* zone);
+  CompilationInfo(Handle<Script> script,
+                  Zone* zone);
+  CompilationInfo(Handle<SharedFunctionInfo> shared_info,
+                  Zone* zone);
+  CompilationInfo(HydrogenCodeStub* stub,
+                  Isolate* isolate,
+                  Zone* zone);
 
  private:
   Isolate* isolate_;
@@ -401,7 +411,7 @@ class CompilationInfo {
 
   DeferredHandles* deferred_handles_;
 
-  ZoneList<Handle<Map> >* dependent_maps_[DependentCode::kGroupCount];
+  ZoneList<Handle<HeapObject> >* dependencies_[DependentCode::kGroupCount];
 
   template<typename T>
   void SaveHandle(Handle<T> *object) {
@@ -411,7 +421,7 @@ class CompilationInfo {
     }
   }
 
-  const char* bailout_reason_;
+  BailoutReason bailout_reason_;
 
   int prologue_offset_;
 
@@ -433,31 +443,26 @@ class CompilationInfoWithZone: public CompilationInfo {
  public:
   explicit CompilationInfoWithZone(Handle<Script> script)
       : CompilationInfo(script, &zone_),
-        zone_(script->GetIsolate()),
-        zone_scope_(&zone_, DELETE_ON_EXIT) {}
+        zone_(script->GetIsolate()) {}
   explicit CompilationInfoWithZone(Handle<SharedFunctionInfo> shared_info)
       : CompilationInfo(shared_info, &zone_),
-        zone_(shared_info->GetIsolate()),
-        zone_scope_(&zone_, DELETE_ON_EXIT) {}
+        zone_(shared_info->GetIsolate()) {}
   explicit CompilationInfoWithZone(Handle<JSFunction> closure)
       : CompilationInfo(closure, &zone_),
-        zone_(closure->GetIsolate()),
-        zone_scope_(&zone_, DELETE_ON_EXIT) {}
+        zone_(closure->GetIsolate()) {}
   CompilationInfoWithZone(HydrogenCodeStub* stub, Isolate* isolate)
       : CompilationInfo(stub, isolate, &zone_),
-        zone_(isolate),
-        zone_scope_(&zone_, DELETE_ON_EXIT) {}
+        zone_(isolate) {}
 
   // Virtual destructor because a CompilationInfoWithZone has to exit the
   // zone scope and get rid of dependent maps even when the destructor is
   // called when cast as a CompilationInfo.
   virtual ~CompilationInfoWithZone() {
-    RollbackDependentMaps();
+    RollbackDependencies();
   }
 
  private:
   Zone zone_;
-  ZoneScope zone_scope_;
 };
 
 
@@ -564,8 +569,6 @@ class OptimizingCompiler: public ZoneObject {
 
 class Compiler : public AllStatic {
  public:
-  static const int kMaxInliningLevels = 3;
-
   // Call count before primitive functions trigger their own optimization.
   static const int kCallsUntilPrimitiveOpt = 200;
 
@@ -578,6 +581,7 @@ class Compiler : public AllStatic {
                                             Handle<Object> script_name,
                                             int line_offset,
                                             int column_offset,
+                                            bool is_shared_cross_origin,
                                             Handle<Context> context,
                                             v8::Extension* extension,
                                             ScriptDataImpl* pre_data,
@@ -618,6 +622,30 @@ class Compiler : public AllStatic {
   static void RecordFunctionCompilation(Logger::LogEventsAndTags tag,
                                         CompilationInfo* info,
                                         Handle<SharedFunctionInfo> shared);
+};
+
+
+class CompilationPhase BASE_EMBEDDED {
+ public:
+  CompilationPhase(const char* name, CompilationInfo* info);
+  ~CompilationPhase();
+
+ protected:
+  bool ShouldProduceTraceOutput() const;
+
+  const char* name() const { return name_; }
+  CompilationInfo* info() const { return info_; }
+  Isolate* isolate() const { return info()->isolate(); }
+  Zone* zone() { return &zone_; }
+
+ private:
+  const char* name_;
+  CompilationInfo* info_;
+  Zone zone_;
+  unsigned info_zone_start_allocation_size_;
+  int64_t start_ticks_;
+
+  DISALLOW_COPY_AND_ASSIGN(CompilationPhase);
 };
 
 

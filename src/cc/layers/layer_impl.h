@@ -21,11 +21,11 @@
 #include "cc/layers/layer_lists.h"
 #include "cc/layers/layer_position_constraint.h"
 #include "cc/layers/render_surface_impl.h"
+#include "cc/output/filter_operations.h"
 #include "cc/quads/render_pass.h"
 #include "cc/quads/shared_quad_state.h"
 #include "cc/resources/resource_provider.h"
 #include "skia/ext/refptr.h"
-#include "third_party/WebKit/public/platform/WebFilterOperations.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "third_party/skia/include/core/SkPicture.h"
@@ -152,11 +152,11 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   // non-opaque color.  Tries to return background_color(), if possible.
   SkColor SafeOpaqueBackgroundColor() const;
 
-  void SetFilters(const WebKit::WebFilterOperations& filters);
-  const WebKit::WebFilterOperations& filters() const { return filters_; }
+  void SetFilters(const FilterOperations& filters);
+  const FilterOperations& filters() const { return filters_; }
 
-  void SetBackgroundFilters(const WebKit::WebFilterOperations& filters);
-  const WebKit::WebFilterOperations& background_filters() const {
+  void SetBackgroundFilters(const FilterOperations& filters);
+  const FilterOperations& background_filters() const {
     return background_filters_;
   }
 
@@ -330,6 +330,8 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   void SetScrollable(bool scrollable) { scrollable_ = scrollable; }
   bool scrollable() const { return scrollable_; }
 
+  void ApplySentScrollDeltas();
+
   void SetShouldScrollOnMainThread(bool should_scroll_on_main_thread) {
     should_scroll_on_main_thread_ = should_scroll_on_main_thread;
   }
@@ -437,6 +439,10 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   scoped_ptr<base::Value> AsValue() const;
   virtual size_t GPUMemoryUsageInBytes() const;
 
+  // TODO(danakj): Be true only if needed. crbug.com/259511
+  bool needs_push_properties() const { return true; }
+  bool descendant_needs_push_properties() const { return true; }
+
  protected:
   LayerImpl(LayerTreeImpl* layer_impl, int id);
 
@@ -540,8 +546,8 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   std::string debug_name_;
   CompositingReasons compositing_reasons_;
 
-  WebKit::WebFilterOperations filters_;
-  WebKit::WebFilterOperations background_filters_;
+  FilterOperations filters_;
+  FilterOperations background_filters_;
   skia::RefPtr<SkImageFilter> filter_;
 
  protected:

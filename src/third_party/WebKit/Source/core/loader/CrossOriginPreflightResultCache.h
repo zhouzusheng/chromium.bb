@@ -20,14 +20,14 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
 #ifndef CrossOriginPreflightResultCache_h
 #define CrossOriginPreflightResultCache_h
 
-#include "core/platform/network/ResourceHandle.h"
+#include "core/loader/ResourceLoaderOptions.h"
 #include "weborigin/KURLHash.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"

@@ -30,8 +30,6 @@
          enable_chromium_fast_npot_mo8_textures)             \
   GPU_OP(EXIT_ON_CONTEXT_LOST,                               \
          exit_on_context_lost)                               \
-  GPU_OP(FLUSH_ON_CONTEXT_SWITCH,                            \
-         flush_on_context_switch)                            \
   GPU_OP(MAX_CUBE_MAP_TEXTURE_SIZE_LIMIT_1024,               \
          max_cube_map_texture_size_limit_1024)               \
   GPU_OP(MAX_CUBE_MAP_TEXTURE_SIZE_LIMIT_4096,               \
@@ -58,6 +56,14 @@
          use_current_program_after_successful_link)          \
   GPU_OP(USE_NON_ZERO_SIZE_FOR_CLIENT_SIDE_STREAM_BUFFERS,   \
          use_non_zero_size_for_client_side_stream_buffers)   \
+  GPU_OP(DISABLE_ASYNC_READPIXELS,                           \
+         disable_async_readpixels)                           \
+  GPU_OP(DISABLE_D3D11,                                      \
+         disable_d3d11)                                      \
+  GPU_OP(SWIZZLE_RGBA_FOR_ASYNC_READPIXELS,                  \
+         swizzle_rgba_for_async_readpixels)                  \
+  GPU_OP(DISABLE_ANGLE_INSTANCED_ARRAYS,                     \
+         disable_angle_instanced_arrays)                     \
 
 namespace gpu {
 
@@ -75,4 +81,3 @@ GPU_EXPORT std::string GpuDriverBugWorkaroundTypeToString(
 }  // namespace gpu
 
 #endif  // GPU_CONFIG_GPU_DRIVER_BUG_WORKAROUND_TYPE_H_
-

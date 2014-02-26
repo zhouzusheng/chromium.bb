@@ -46,7 +46,6 @@
 #include "weborigin/KURL.h"
 #include "weborigin/SecurityOrigin.h"
 #include "wtf/CryptographicallyRandomNumber.h"
-#include "wtf/MD5.h"
 #include "wtf/SHA1.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/StringExtras.h"
@@ -549,6 +548,9 @@ bool WebSocketHandshake::checkResponseHeaders()
             m_failureReason = "Error during WebSocket handshake: Sec-WebSocket-Protocol mismatch";
             return false;
         }
+    } else if (!m_clientProtocol.isEmpty()) {
+        m_failureReason = "Error during WebSocket handshake: Sec-WebSocket-Protocol mismatch";
+        return false;
     }
     return true;
 }

@@ -32,13 +32,11 @@
 #define InspectorFileSystemAgent_h
 
 #include "core/inspector/InspectorBaseAgent.h"
-
-#include <wtf/PassOwnPtr.h>
-#include <wtf/PassRefPtr.h>
+#include "wtf/PassOwnPtr.h"
+#include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
-class InspectorFrontend;
 class InspectorPageAgent;
 class ScriptExecutionContext;
 class SecurityOrigin;

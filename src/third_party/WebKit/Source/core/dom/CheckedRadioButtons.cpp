@@ -22,7 +22,7 @@
 #include "core/dom/CheckedRadioButtons.h"
 
 #include "core/html/HTMLInputElement.h"
-#include <wtf/HashSet.h>
+#include "wtf/HashSet.h"
 
 namespace WebCore {
 
@@ -228,7 +228,6 @@ HTMLInputElement* CheckedRadioButtons::checkedButtonForGroup(const AtomicString&
 {
     if (!m_nameToGroupMap)
         return 0;
-    m_nameToGroupMap->checkConsistency();
     RadioButtonGroup* group = m_nameToGroupMap->get(name.impl());
     return group ? group->checkedButton() : 0;
 }
@@ -252,7 +251,6 @@ void CheckedRadioButtons::removeButton(HTMLInputElement* element)
     if (!m_nameToGroupMap)
         return;
 
-    m_nameToGroupMap->checkConsistency();
     NameToGroupMap::iterator it = m_nameToGroupMap->find(element->name().impl());
     if (it == m_nameToGroupMap->end())
         return;
@@ -260,7 +258,7 @@ void CheckedRadioButtons::removeButton(HTMLInputElement* element)
     if (it->value->isEmpty()) {
         // FIXME: We may skip deallocating the empty RadioButtonGroup for
         // performance improvement. If we do so, we need to change the key type
-        // of m_nameToGroupMap from AtomicStringImpl* to RefPtr<AtomicStringImpl>.
+        // of m_nameToGroupMap from StringImpl* to AtomicString.
         m_nameToGroupMap->remove(it);
         if (m_nameToGroupMap->isEmpty())
             m_nameToGroupMap.clear();

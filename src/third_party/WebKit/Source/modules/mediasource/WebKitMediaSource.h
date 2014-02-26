@@ -39,6 +39,8 @@
 
 namespace WebCore {
 
+class ExceptionState;
+
 class WebKitMediaSource : public MediaSourceBase, public ScriptWrappable {
 public:
     static PassRefPtr<WebKitMediaSource> create(ScriptExecutionContext*);
@@ -47,8 +49,8 @@ public:
     // WebKitMediaSource.idl methods
     WebKitSourceBufferList* sourceBuffers();
     WebKitSourceBufferList* activeSourceBuffers();
-    WebKitSourceBuffer* addSourceBuffer(const String& type, ExceptionCode&);
-    void removeSourceBuffer(WebKitSourceBuffer*, ExceptionCode&);
+    WebKitSourceBuffer* addSourceBuffer(const String& type, ExceptionState&);
+    void removeSourceBuffer(WebKitSourceBuffer*, ExceptionState&);
     static bool isTypeSupported(const String& type);
 
     // EventTarget interface
@@ -57,13 +59,12 @@ public:
     using RefCounted<MediaSourceBase>::ref;
     using RefCounted<MediaSourceBase>::deref;
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
-
 private:
     explicit WebKitMediaSource(ScriptExecutionContext*);
 
     // MediaSourceBase interface
-    virtual void setReadyState(const AtomicString&) OVERRIDE;
+    virtual void onReadyStateChange(const AtomicString&, const AtomicString&) OVERRIDE;
+    virtual Vector<RefPtr<TimeRanges> > activeRanges() const OVERRIDE;
 
     RefPtr<WebKitSourceBufferList> m_sourceBuffers;
     RefPtr<WebKitSourceBufferList> m_activeSourceBuffers;

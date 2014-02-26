@@ -21,12 +21,12 @@
 #define SVGGlyphRefElement_h
 
 #if ENABLE(SVG_FONTS)
-#include "core/svg/SVGStyledElement.h"
+#include "core/svg/SVGElement.h"
 #include "core/svg/SVGURIReference.h"
 
 namespace WebCore {
 
-class SVGGlyphRefElement FINAL : public SVGStyledElement,
+class SVGGlyphRefElement FINAL : public SVGElement,
                                  public SVGURIReference {
 public:
     static PassRefPtr<SVGGlyphRefElement> create(const QualifiedName&, Document*);
@@ -48,6 +48,9 @@ public:
 
 private:
     SVGGlyphRefElement(const QualifiedName&, Document*);
+
+    template<typename CharType>
+    void parseAttributeInternal(const QualifiedName&, const AtomicString&);
 
     virtual bool rendererIsNeeded(const NodeRenderingContext&) { return false; }
 

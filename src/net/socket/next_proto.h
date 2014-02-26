@@ -14,17 +14,24 @@ namespace net {
 enum NextProto {
   kProtoUnknown = 0,
   kProtoHTTP11 = 1,
+  kProtoMinimumVersion = kProtoHTTP11,
 
+  // TODO(akalin): Stop advertising SPDY/1 and remove this.
   kProtoSPDY1 = 2,
   kProtoSPDYMinimumVersion = kProtoSPDY1,
   kProtoSPDY2 = 3,
+  // TODO(akalin): Stop adverising SPDY/2.1, too.
   kProtoSPDY21 = 4,
   kProtoSPDY3 = 5,
   kProtoSPDY31 = 6,
   kProtoSPDY4a2 = 7,
-  kProtoSPDYMaximumVersion = kProtoSPDY4a2,
+  // We lump in HTTP/2 with the SPDY protocols for now.
+  kProtoHTTP2Draft04 = 8,
+  kProtoSPDYMaximumVersion = kProtoHTTP2Draft04,
 
-  kProtoMaximumVersion = 7,
+  kProtoQUIC1SPDY3 = 9,
+
+  kProtoMaximumVersion = kProtoQUIC1SPDY3,
 };
 
 }  // namespace net

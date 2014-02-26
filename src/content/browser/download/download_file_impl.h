@@ -10,8 +10,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "content/browser/byte_stream.h"
 #include "content/browser/download/base_file.h"
 #include "content/browser/download/rate_estimator.h"
@@ -63,6 +63,7 @@ class CONTENT_EXPORT DownloadFileImpl : virtual public DownloadFile {
   virtual int64 CurrentSpeed() const OVERRIDE;
   virtual bool GetHash(std::string* hash) OVERRIDE;
   virtual std::string GetHashState() OVERRIDE;
+  virtual void SetClientGuid(const std::string& guid) OVERRIDE;
 
  protected:
   // For test class overrides.

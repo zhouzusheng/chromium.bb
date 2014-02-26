@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/i18n/rtl.h"
-#include "base/process_util.h"
+#include "base/process/kill.h"
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "content/public/common/javascript_message_type.h"
@@ -58,6 +58,7 @@ struct GlobalRequestID;
 struct NativeWebKeyboardEvent;
 struct Referrer;
 struct RendererPreferences;
+class SiteInstance;
 
 //
 // RenderViewHostDelegate
@@ -234,7 +235,8 @@ class CONTENT_EXPORT RenderViewHostDelegate {
                               const Referrer& referrer,
                               WindowOpenDisposition disposition,
                               int64 source_frame_id,
-                              bool is_redirect) {}
+                              bool is_redirect,
+                              bool user_gesture) {}
 
   // The page wants to transfer the request to a new renderer.
   virtual void RequestTransferURL(
@@ -243,7 +245,8 @@ class CONTENT_EXPORT RenderViewHostDelegate {
       WindowOpenDisposition disposition,
       int64 source_frame_id,
       const GlobalRequestID& old_request_id,
-      bool is_redirect) {}
+      bool is_redirect,
+      bool user_gesture) {}
 
   // The page wants to close the active view in this tab.
   virtual void RouteCloseEvent(RenderViewHost* rvh) {}
@@ -411,6 +414,11 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   virtual void RequestMediaAccessPermission(
       const MediaStreamRequest& request,
       const MediaResponseCallback& callback) {}
+
+  // Returns the SessionStorageNamespace the render view should use. Might
+  // create the SessionStorageNamespace on the fly.
+  virtual SessionStorageNamespace* GetSessionStorageNamespace(
+      SiteInstance* instance);
 
  protected:
   virtual ~RenderViewHostDelegate() {}

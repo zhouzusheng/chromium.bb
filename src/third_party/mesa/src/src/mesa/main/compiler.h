@@ -57,29 +57,7 @@ extern "C" {
 /**
  * Get standard integer types
  */
-#if defined(_MSC_VER)
-   typedef __int8             int8_t;
-   typedef unsigned __int8    uint8_t;
-   typedef __int16            int16_t;
-   typedef unsigned __int16   uint16_t;
-   typedef __int32            int32_t;
-   typedef unsigned __int32   uint32_t;
-   typedef __int64            int64_t;
-   typedef unsigned __int64   uint64_t;
-
-#  if defined(_WIN64)
-     typedef __int64            intptr_t;
-     typedef unsigned __int64   uintptr_t;
-#  else
-     typedef __int32            intptr_t;
-     typedef unsigned __int32   uintptr_t;
-#  endif
-
-#  define INT64_C(__val) __val##i64
-#  define UINT64_C(__val) __val##ui64
-#else
-#  include <stdint.h>
-#endif
+#include <stdint.h>
 
 
 /**
@@ -136,26 +114,29 @@ extern "C" {
 /**
  * Function inlining
  */
-#if defined(__GNUC__)
-#  define INLINE __inline__
-#elif defined(__MSC__)
-#  define INLINE __inline
-#elif defined(_MSC_VER)
-#  define INLINE __inline
-#elif defined(__ICL)
-#  define INLINE __inline
-#elif defined(__INTEL_COMPILER)
+#ifndef inline
+#  ifdef __cplusplus
+     /* C++ supports inline keyword */
+#  elif defined(__GNUC__)
+#    define inline __inline__
+#  elif defined(_MSC_VER)
+#    define inline __inline
+#  elif defined(__ICL)
+#    define inline __inline
+#  elif defined(__INTEL_COMPILER)
+     /* Intel compiler supports inline keyword */
+#  elif defined(__WATCOMC__) && (__WATCOMC__ >= 1100)
+#    define inline __inline
+#  elif defined(__SUNPRO_C) && defined(__C99FEATURES__)
+     /* C99 supports inline keyword */
+#  elif (__STDC_VERSION__ >= 199901L)
+     /* C99 supports inline keyword */
+#  else
+#    define inline
+#  endif
+#endif
+#ifndef INLINE
 #  define INLINE inline
-#elif defined(__WATCOMC__) && (__WATCOMC__ >= 1100)
-#  define INLINE __inline
-#elif defined(__SUNPRO_C) && defined(__C99FEATURES__)
-#  define INLINE inline
-#  define __inline inline
-#  define __inline__ inline
-#elif (__STDC_VERSION__ >= 199901L) /* C99 */
-#  define INLINE inline
-#else
-#  define INLINE
 #endif
 
 
@@ -168,14 +149,14 @@ extern "C" {
  * We also need to define a USED attribute, so the optimizer doesn't 
  * inline a static function that we later use in an alias. - ajax
  */
-#if defined(__GNUC__) || (defined(__SUNPRO_C) && (__SUNPRO_C >= 0x590))
-#  define PUBLIC __attribute__((visibility("default")))
-#  define USED __attribute__((used))
-#else
-# ifndef PUBLIC
-#  define PUBLIC
-# endif
-#  define USED
+#ifndef PUBLIC
+#  if (defined(__GNUC__) && __GNUC__ >= 4) || (defined(__SUNPRO_C) && (__SUNPRO_C >= 0x590))
+#    define PUBLIC __attribute__((visibility("default")))
+#    define USED __attribute__((used))
+#  else
+#    define PUBLIC
+#    define USED
+#  endif
 #endif
 
 
@@ -194,15 +175,17 @@ extern "C" {
  * __builtin_expect macros
  */
 #if !defined(__GNUC__)
-#  define __builtin_expect(x, y) x
+#  define __builtin_expect(x, y) (x)
 #endif
 
-#ifdef __GNUC__
-#define likely(x) __builtin_expect(!!(x), 1)
-#define unlikely(x) __builtin_expect(!!(x), 0)
-#else
-#define likely(x) !!(x)
-#define unlikely(x) !!(x)
+#ifndef likely
+#  ifdef __GNUC__
+#    define likely(x)   __builtin_expect(!!(x), 1)
+#    define unlikely(x) __builtin_expect(!!(x), 0)
+#  else
+#    define likely(x)   (x)
+#    define unlikely(x) (x)
+#  endif
 #endif
 
 /**
@@ -258,6 +241,9 @@ static INLINE GLuint CPU_TO_LE32(GLuint x)
            ((x & 0x00ff0000) >>  8) |
            ((x & 0xff000000) >> 24));
 }
+#elif defined(__OpenBSD__)
+#include <sys/types.h>
+#define CPU_TO_LE32( x )	htole32( x )
 #else /*__linux__ */
 #include <sys/endian.h>
 #define CPU_TO_LE32( x )	bswap32( x )
@@ -302,12 +288,6 @@ static INLINE GLuint CPU_TO_LE32(GLuint x)
 #endif
 
 
-/* This is a macro on IRIX */
-#ifdef _P
-#undef _P
-#endif
-
-
 /* Turn off macro checking systems used by other libraries */
 #ifdef CHECK
 #undef CHECK
@@ -326,6 +306,18 @@ static INLINE GLuint CPU_TO_LE32(GLuint x)
 #  define ASSERT(X)
 #endif
 #endif
+
+
+/**
+ * Static (compile-time) assertion.
+ * Basically, use COND to dimension an array.  If COND is false/zero the
+ * array size will be -1 and we'll get a compilation error.
+ */
+#define STATIC_ASSERT(COND) \
+   do { \
+      typedef int static_assertion_failed[(!!(COND))*2-1]; \
+   } while (0)
+
 
 #if (__GNUC__ >= 3)
 #define PRINTFLIKE(f, a) __attribute__ ((format(__printf__, f, a)))
@@ -350,15 +342,15 @@ static INLINE GLuint CPU_TO_LE32(GLuint x)
 
 
 #ifndef M_PI
-#define M_PI (3.1415926536)
+#define M_PI (3.14159265358979323846)
 #endif
 
 #ifndef M_E
 #define M_E (2.7182818284590452354)
 #endif
 
-#ifndef ONE_DIV_LN2
-#define ONE_DIV_LN2 (1.442695040888963456)
+#ifndef M_LOG2E
+#define M_LOG2E     (1.4426950408889634074)
 #endif
 
 #ifndef ONE_DIV_SQRT_LN2

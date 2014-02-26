@@ -21,13 +21,13 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGLocatable.h"
 
 #include "SVGNames.h"
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/rendering/RenderObject.h"
-#include "core/svg/SVGStyledLocatableElement.h"
+#include "core/svg/SVGGraphicsElement.h"
 
 namespace WebCore {
 
@@ -61,7 +61,7 @@ SVGElement* SVGLocatable::farthestViewportElement(const SVGElement* element)
     return farthest;
 }
 
-FloatRect SVGLocatable::getBBox(SVGElement* element, StyleUpdateStrategy styleUpdateStrategy)
+SVGRect SVGLocatable::getBBox(SVGElement* element, StyleUpdateStrategy styleUpdateStrategy)
 {
     ASSERT(element);
     if (styleUpdateStrategy == AllowStyleUpdate)
@@ -69,7 +69,7 @@ FloatRect SVGLocatable::getBBox(SVGElement* element, StyleUpdateStrategy styleUp
 
     // FIXME: Eventually we should support getBBox for detached elements.
     if (!element->renderer())
-        return FloatRect();
+        return SVGRect();
 
     return element->renderer()->objectBoundingBox();
 }
@@ -87,8 +87,7 @@ AffineTransform SVGLocatable::computeCTM(SVGElement* element, CTMScope mode, Sty
         if (!currentElement->isSVGElement())
             break;
 
-        if (toSVGElement(currentElement)->isSVGStyledElement())
-            ctm = toSVGStyledElement(currentElement)->localCoordinateSpaceTransform(mode).multiply(ctm);
+        ctm = toSVGElement(currentElement)->localCoordinateSpaceTransform(mode).multiply(ctm);
 
         // For getCTM() computation, stop at the nearest viewport element
         if (currentElement == stopAtElement)
@@ -98,14 +97,14 @@ AffineTransform SVGLocatable::computeCTM(SVGElement* element, CTMScope mode, Sty
     return ctm;
 }
 
-AffineTransform SVGLocatable::getTransformToElement(SVGElement* target, ExceptionCode& ec, StyleUpdateStrategy styleUpdateStrategy)
+AffineTransform SVGLocatable::getTransformToElement(SVGElement* target, ExceptionState& es, StyleUpdateStrategy styleUpdateStrategy)
 {
     AffineTransform ctm = getCTM(styleUpdateStrategy);
 
-    if (target && target->isStyledLocatable()) {
-        AffineTransform targetCTM = toSVGStyledLocatableElement(target)->getCTM(styleUpdateStrategy);
+    if (target && target->isSVGGraphicsElement()) {
+        AffineTransform targetCTM = toSVGGraphicsElement(target)->getCTM(styleUpdateStrategy);
         if (!targetCTM.isInvertible()) {
-            ec = INVALID_STATE_ERR;
+            es.throwDOMException(InvalidStateError);
             return ctm;
         }
         ctm = targetCTM.inverse() * ctm;

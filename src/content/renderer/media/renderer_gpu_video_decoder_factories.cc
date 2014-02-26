@@ -23,15 +23,17 @@ RendererGpuVideoDecoderFactories::RendererGpuVideoDecoderFactories(
     const scoped_refptr<base::MessageLoopProxy>& message_loop,
     WebGraphicsContext3DCommandBufferImpl* context)
     : message_loop_(message_loop),
+      main_message_loop_(base::MessageLoopProxy::current()),
       gpu_channel_host_(gpu_channel_host),
       aborted_waiter_(true, false),
-      compositor_loop_async_waiter_(false, false),
+      message_loop_async_waiter_(false, false),
       render_thread_async_waiter_(false, false) {
   if (message_loop_->BelongsToCurrentThread()) {
     AsyncGetContext(context);
+    message_loop_async_waiter_.Reset();
     return;
   }
-  // Threaded compositor requires us to wait for the context to be acquired.
+  // Wait for the context to be acquired.
   message_loop_->PostTask(FROM_HERE, base::Bind(
       &RendererGpuVideoDecoderFactories::AsyncGetContext,
       // Unretained to avoid ref/deref'ing |*this|, which is not yet stored in a
@@ -43,8 +45,13 @@ RendererGpuVideoDecoderFactories::RendererGpuVideoDecoderFactories(
       // which can only happen after this function returns, so our PostTask will
       // run first.
       context));
-  compositor_loop_async_waiter_.Wait();
+  message_loop_async_waiter_.Wait();
 }
+
+RendererGpuVideoDecoderFactories::RendererGpuVideoDecoderFactories()
+    : aborted_waiter_(true, false),
+      message_loop_async_waiter_(false, false),
+      render_thread_async_waiter_(false, false) {}
 
 void RendererGpuVideoDecoderFactories::AsyncGetContext(
     WebGraphicsContext3DCommandBufferImpl* context) {
@@ -56,14 +63,18 @@ void RendererGpuVideoDecoderFactories::AsyncGetContext(
       context_->insertEventMarkerEXT("GpuVDAContext3D");
     }
   }
-  compositor_loop_async_waiter_.Signal();
+  message_loop_async_waiter_.Signal();
 }
 
 media::VideoDecodeAccelerator*
 RendererGpuVideoDecoderFactories::CreateVideoDecodeAccelerator(
     media::VideoCodecProfile profile,
     media::VideoDecodeAccelerator::Client* client) {
-  DCHECK(!message_loop_->BelongsToCurrentThread());
+  if (message_loop_->BelongsToCurrentThread()) {
+    AsyncCreateVideoDecodeAccelerator(profile, client);
+    message_loop_async_waiter_.Reset();
+    return vda_.release();
+  }
   // The VDA is returned in the vda_ member variable by the
   // AsyncCreateVideoDecodeAccelerator() function.
   message_loop_->PostTask(FROM_HERE, base::Bind(
@@ -71,7 +82,7 @@ RendererGpuVideoDecoderFactories::CreateVideoDecodeAccelerator(
       this, profile, client));
 
   base::WaitableEvent* objects[] = {&aborted_waiter_,
-                                    &compositor_loop_async_waiter_};
+                                    &message_loop_async_waiter_};
   if (base::WaitableEvent::WaitMany(objects, arraysize(objects)) == 0) {
     // If we are aborting and the VDA is created by the
     // AsyncCreateVideoDecodeAccelerator() function later we need to ensure
@@ -93,37 +104,49 @@ void RendererGpuVideoDecoderFactories::AsyncCreateVideoDecodeAccelerator(
     vda_ = gpu_channel_host_->CreateVideoDecoder(
         context_->GetCommandBufferProxy()->GetRouteID(), profile, client);
   }
-  compositor_loop_async_waiter_.Signal();
+  message_loop_async_waiter_.Signal();
 }
 
-bool RendererGpuVideoDecoderFactories::CreateTextures(
+uint32 RendererGpuVideoDecoderFactories::CreateTextures(
     int32 count, const gfx::Size& size,
     std::vector<uint32>* texture_ids,
+    std::vector<gpu::Mailbox>* texture_mailboxes,
     uint32 texture_target) {
-  DCHECK(!message_loop_->BelongsToCurrentThread());
+  uint32 sync_point = 0;
+
+  if (message_loop_->BelongsToCurrentThread()) {
+    AsyncCreateTextures(count, size, texture_target, &sync_point);
+    texture_ids->swap(created_textures_);
+    texture_mailboxes->swap(created_texture_mailboxes_);
+    message_loop_async_waiter_.Reset();
+    return sync_point;
+  }
   message_loop_->PostTask(FROM_HERE, base::Bind(
       &RendererGpuVideoDecoderFactories::AsyncCreateTextures, this,
-      count, size, texture_target));
+      count, size, texture_target, &sync_point));
 
   base::WaitableEvent* objects[] = {&aborted_waiter_,
-                                    &compositor_loop_async_waiter_};
+                                    &message_loop_async_waiter_};
   if (base::WaitableEvent::WaitMany(objects, arraysize(objects)) == 0)
-    return false;
+    return 0;
   texture_ids->swap(created_textures_);
-  return true;
+  texture_mailboxes->swap(created_texture_mailboxes_);
+  return sync_point;
 }
 
 void RendererGpuVideoDecoderFactories::AsyncCreateTextures(
-    int32 count, const gfx::Size& size, uint32 texture_target) {
+    int32 count, const gfx::Size& size, uint32 texture_target,
+    uint32* sync_point) {
   DCHECK(message_loop_->BelongsToCurrentThread());
   DCHECK(texture_target);
 
   if (!context_.get()) {
-    compositor_loop_async_waiter_.Signal();
+    message_loop_async_waiter_.Signal();
     return;
   }
   gpu::gles2::GLES2Implementation* gles2 = context_->GetImplementation();
   created_textures_.resize(count);
+  created_texture_mailboxes_.resize(count);
   gles2->GenTextures(count, &created_textures_[0]);
   for (int i = 0; i < count; ++i) {
     gles2->ActiveTexture(GL_TEXTURE0);
@@ -137,17 +160,26 @@ void RendererGpuVideoDecoderFactories::AsyncCreateTextures(
       gles2->TexImage2D(texture_target, 0, GL_RGBA, size.width(), size.height(),
                         0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     }
+    gles2->GenMailboxCHROMIUM(created_texture_mailboxes_[i].name);
+    gles2->ProduceTextureCHROMIUM(texture_target,
+                                  created_texture_mailboxes_[i].name);
   }
+
   // We need a glFlush here to guarantee the decoder (in the GPU process) can
   // use the texture ids we return here.  Since textures are expected to be
   // reused, this should not be unacceptably expensive.
   gles2->Flush();
   DCHECK_EQ(gles2->GetError(), static_cast<GLenum>(GL_NO_ERROR));
-  compositor_loop_async_waiter_.Signal();
+
+  *sync_point = gles2->InsertSyncPointCHROMIUM();
+  message_loop_async_waiter_.Signal();
 }
 
 void RendererGpuVideoDecoderFactories::DeleteTexture(uint32 texture_id) {
-  DCHECK(!message_loop_->BelongsToCurrentThread());
+  if (message_loop_->BelongsToCurrentThread()) {
+    AsyncDeleteTexture(texture_id);
+    return;
+  }
   message_loop_->PostTask(FROM_HERE, base::Bind(
       &RendererGpuVideoDecoderFactories::AsyncDeleteTexture, this, texture_id));
 }
@@ -160,6 +192,34 @@ void RendererGpuVideoDecoderFactories::AsyncDeleteTexture(uint32 texture_id) {
   gpu::gles2::GLES2Implementation* gles2 = context_->GetImplementation();
   gles2->DeleteTextures(1, &texture_id);
   DCHECK_EQ(gles2->GetError(), static_cast<GLenum>(GL_NO_ERROR));
+}
+
+void RendererGpuVideoDecoderFactories::WaitSyncPoint(uint32 sync_point) {
+  if (message_loop_->BelongsToCurrentThread()) {
+    AsyncWaitSyncPoint(sync_point);
+    message_loop_async_waiter_.Reset();
+    return;
+  }
+
+  message_loop_->PostTask(FROM_HERE, base::Bind(
+      &RendererGpuVideoDecoderFactories::AsyncWaitSyncPoint,
+      this,
+      sync_point));
+  base::WaitableEvent* objects[] = {&aborted_waiter_,
+                                    &message_loop_async_waiter_};
+  base::WaitableEvent::WaitMany(objects, arraysize(objects));
+}
+
+void RendererGpuVideoDecoderFactories::AsyncWaitSyncPoint(uint32 sync_point) {
+  DCHECK(message_loop_->BelongsToCurrentThread());
+  if (!context_) {
+    message_loop_async_waiter_.Signal();
+    return;
+  }
+
+  gpu::gles2::GLES2Implementation* gles2 = context_->GetImplementation();
+  gles2->WaitSyncPointCHROMIUM(sync_point);
+  message_loop_async_waiter_.Signal();
 }
 
 void RendererGpuVideoDecoderFactories::ReadPixels(
@@ -176,11 +236,12 @@ void RendererGpuVideoDecoderFactories::ReadPixels(
         &RendererGpuVideoDecoderFactories::AsyncReadPixels, this,
         texture_id, texture_target, size));
     base::WaitableEvent* objects[] = {&aborted_waiter_,
-                                      &compositor_loop_async_waiter_};
+                                      &message_loop_async_waiter_};
     if (base::WaitableEvent::WaitMany(objects, arraysize(objects)) == 0)
       return;
   } else {
     AsyncReadPixels(texture_id, texture_target, size);
+    message_loop_async_waiter_.Reset();
   }
   read_pixels_bitmap_.setPixelRef(NULL);
 }
@@ -189,7 +250,7 @@ void RendererGpuVideoDecoderFactories::AsyncReadPixels(
     uint32 texture_id, uint32 texture_target, const gfx::Size& size) {
   DCHECK(message_loop_->BelongsToCurrentThread());
   if (!context_.get()) {
-    compositor_loop_async_waiter_.Signal();
+    message_loop_async_waiter_.Signal();
     return;
   }
 
@@ -216,14 +277,15 @@ void RendererGpuVideoDecoderFactories::AsyncReadPixels(
   gles2->DeleteFramebuffers(1, &fb);
   gles2->DeleteTextures(1, &tmp_texture);
   DCHECK_EQ(gles2->GetError(), static_cast<GLenum>(GL_NO_ERROR));
-  compositor_loop_async_waiter_.Signal();
+  message_loop_async_waiter_.Signal();
 }
 
 base::SharedMemory* RendererGpuVideoDecoderFactories::CreateSharedMemory(
     size_t size) {
-  DCHECK_NE(base::MessageLoop::current(),
-            ChildThread::current()->message_loop());
-  ChildThread::current()->message_loop()->PostTask(FROM_HERE, base::Bind(
+  if (main_message_loop_->BelongsToCurrentThread()) {
+    return ChildThread::current()->AllocateSharedMemory(size);
+  }
+  main_message_loop_->PostTask(FROM_HERE, base::Bind(
       &RendererGpuVideoDecoderFactories::AsyncCreateSharedMemory, this,
       size));
 
@@ -254,6 +316,17 @@ void RendererGpuVideoDecoderFactories::Abort() {
 
 bool RendererGpuVideoDecoderFactories::IsAborted() {
   return aborted_waiter_.IsSignaled();
+}
+
+scoped_refptr<media::GpuVideoDecoderFactories>
+RendererGpuVideoDecoderFactories::Clone() {
+  scoped_refptr<RendererGpuVideoDecoderFactories> factories =
+      new RendererGpuVideoDecoderFactories();
+  factories->message_loop_ = message_loop_;
+  factories->main_message_loop_ = main_message_loop_;
+  factories->gpu_channel_host_ = gpu_channel_host_;
+  factories->context_ = context_;
+  return factories;
 }
 
 void RendererGpuVideoDecoderFactories::AsyncDestroyVideoDecodeAccelerator() {

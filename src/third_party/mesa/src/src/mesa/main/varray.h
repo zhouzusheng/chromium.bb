@@ -28,7 +28,42 @@
 #define VARRAY_H
 
 
-#include "mtypes.h"
+#include "glheader.h"
+#include "mfeatures.h"
+
+struct gl_client_array;
+struct gl_context;
+
+
+/**
+ * Compute the index of the last array element that can be safely accessed in
+ * a vertex array.  We can really only do this when the array lives in a VBO.
+ * The array->_MaxElement field will be updated.
+ * Later in glDrawArrays/Elements/etc we can do some bounds checking.
+ */
+static inline void
+_mesa_update_array_max_element(struct gl_client_array *array)
+{
+   assert(array->Enabled);
+
+   if (array->BufferObj->Name) {
+      GLsizeiptrARB offset = (GLsizeiptrARB) array->Ptr;
+      GLsizeiptrARB bufSize = (GLsizeiptrARB) array->BufferObj->Size;
+
+      if (offset < bufSize) {
+	 array->_MaxElement = (bufSize - offset + array->StrideB
+                               - array->_ElementSize) / array->StrideB;
+      }
+      else {
+	 array->_MaxElement = 0;
+      }
+   }
+   else {
+      /* user-space array, no idea how big it is */
+      array->_MaxElement = 2 * 1000 * 1000 * 1000; /* just a big number */
+   }
+}
+
 
 #if _HAVE_FULL_GL
 
@@ -118,7 +153,6 @@ _mesa_VertexAttribPointerARB(GLuint index, GLint size, GLenum type,
 
 void GLAPIENTRY
 _mesa_VertexAttribIPointer(GLuint index, GLint size, GLenum type,
-                           GLboolean normalized,
                            GLsizei stride, const GLvoid *ptr);
 
 
@@ -211,24 +245,35 @@ _mesa_DrawRangeElementsBaseVertex(GLenum mode, GLuint start, GLuint end,
 				  const GLvoid *indices,
 				  GLint basevertex);
 
+#if FEATURE_EXT_transform_feedback
+
+extern void GLAPIENTRY
+_mesa_DrawTransformFeedback(GLenum mode, GLuint name);
+
+#endif
+
 extern void GLAPIENTRY
 _mesa_PrimitiveRestartIndex(GLuint index);
 
 
+extern void GLAPIENTRY
+_mesa_VertexAttribDivisor(GLuint index, GLuint divisor);
+
+
 extern void
-_mesa_copy_client_array(GLcontext *ctx,
+_mesa_copy_client_array(struct gl_context *ctx,
                         struct gl_client_array *dst,
                         struct gl_client_array *src);
 
 
 extern void
-_mesa_print_arrays(GLcontext *ctx);
+_mesa_print_arrays(struct gl_context *ctx);
 
 extern void
-_mesa_init_varray( GLcontext * ctx );
+_mesa_init_varray( struct gl_context * ctx );
 
 extern void 
-_mesa_free_varray_data(GLcontext *ctx);
+_mesa_free_varray_data(struct gl_context *ctx);
 
 #else
 

@@ -26,13 +26,10 @@
 #include "config.h"
 #include "core/dom/CustomEvent.h"
 
+#include "bindings/v8/SerializedScriptValue.h"
 #include "core/dom/EventNames.h"
 
 namespace WebCore {
-
-CustomEventInit::CustomEventInit()
-{
-}
 
 CustomEvent::CustomEvent()
 {
@@ -41,7 +38,6 @@ CustomEvent::CustomEvent()
 
 CustomEvent::CustomEvent(const AtomicString& type, const CustomEventInit& initializer)
     : Event(type, initializer)
-    , m_detail(initializer.detail)
 {
     ScriptWrappable::init(this);
 }
@@ -50,26 +46,14 @@ CustomEvent::~CustomEvent()
 {
 }
 
-void CustomEvent::initCustomEvent(const AtomicString& type, bool canBubble, bool cancelable, const ScriptValue& detail)
+void CustomEvent::initCustomEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<SerializedScriptValue> serializedDetail)
 {
-    ASSERT(!m_serializedScriptValue.get());
     if (dispatched())
         return;
 
     initEvent(type, canBubble, cancelable);
 
-    m_detail = detail;
-}
-
-void CustomEvent::initCustomEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<SerializedScriptValue> serializedScriptValue)
-{
-    ASSERT(m_detail.hasNoValue());
-    if (dispatched())
-        return;
-
-    initEvent(type, canBubble, cancelable);
-
-    m_serializedScriptValue = serializedScriptValue;
+    m_serializedDetail = serializedDetail;
 }
 
 const AtomicString& CustomEvent::interfaceName() const

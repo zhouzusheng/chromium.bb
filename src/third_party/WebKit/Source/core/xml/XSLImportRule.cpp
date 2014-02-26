@@ -22,11 +22,11 @@
 #include "config.h"
 #include "core/xml/XSLImportRule.h"
 
+#include "FetchInitiatorTypeNames.h"
 #include "core/dom/Document.h"
-#include "core/loader/cache/CachedResourceLoader.h"
-#include "core/loader/cache/CachedResourceRequest.h"
-#include "core/loader/cache/CachedResourceRequestInitiators.h"
-#include "core/loader/cache/CachedXSLStyleSheet.h"
+#include "core/loader/cache/FetchRequest.h"
+#include "core/loader/cache/ResourceFetcher.h"
+#include "core/loader/cache/XSLStyleSheetResource.h"
 #include "core/xml/XSLStyleSheet.h"
 
 namespace WebCore {
@@ -34,7 +34,7 @@ namespace WebCore {
 XSLImportRule::XSLImportRule(XSLStyleSheet* parent, const String& href)
     : m_parentStyleSheet(parent)
     , m_strHref(href)
-    , m_cachedSheet(0)
+    , m_resource(0)
     , m_loading(false)
 {
 }
@@ -43,9 +43,9 @@ XSLImportRule::~XSLImportRule()
 {
     if (m_styleSheet)
         m_styleSheet->setParentStyleSheet(0);
-    
-    if (m_cachedSheet)
-        m_cachedSheet->removeClient(this);
+
+    if (m_resource)
+        m_resource->removeClient(this);
 }
 
 void XSLImportRule::setXSLStyleSheet(const String& href, const KURL& baseURL, const String& sheet)
@@ -61,7 +61,7 @@ void XSLImportRule::setXSLStyleSheet(const String& href, const KURL& baseURL, co
 
     m_styleSheet->parseString(sheet);
     m_loading = false;
-    
+
     if (parent)
         parent->checkLoaded();
 }
@@ -73,7 +73,7 @@ bool XSLImportRule::isLoading()
 
 void XSLImportRule::loadSheet()
 {
-    CachedResourceLoader* cachedResourceLoader = 0;
+    ResourceFetcher* fetcher = 0;
 
     XSLStyleSheet* rootSheet = parentStyleSheet();
 
@@ -83,27 +83,27 @@ void XSLImportRule::loadSheet()
     }
 
     if (rootSheet)
-        cachedResourceLoader = rootSheet->cachedResourceLoader();
-    
+        fetcher = rootSheet->fetcher();
+
     String absHref = m_strHref;
     XSLStyleSheet* parentSheet = parentStyleSheet();
     if (!parentSheet->baseURL().isNull())
         // use parent styleheet's URL as the base URL
         absHref = KURL(parentSheet->baseURL(), m_strHref).string();
-    
+
     // Check for a cycle in our import chain.  If we encounter a stylesheet
     // in our parent chain with the same URL, then just bail.
     for (XSLStyleSheet* parentSheet = parentStyleSheet(); parentSheet; parentSheet = parentSheet->parentStyleSheet()) {
         if (absHref == parentSheet->baseURL().string())
             return;
     }
-    
-    CachedResourceRequest request(ResourceRequest(cachedResourceLoader->document()->completeURL(absHref)), cachedResourceRequestInitiators().xml);
-    m_cachedSheet = cachedResourceLoader->requestXSLStyleSheet(request);
-    
-    if (m_cachedSheet) {
-        m_cachedSheet->addClient(this);
-        
+
+    FetchRequest request(ResourceRequest(fetcher->document()->completeURL(absHref)), FetchInitiatorTypeNames::xml);
+    m_resource = fetcher->requestXSLStyleSheet(request);
+
+    if (m_resource) {
+        m_resource->addClient(this);
+
         // If the imported sheet is in the cache, then setXSLStyleSheet gets called,
         // and the sheet even gets parsed (via parseString).  In this case we have
         // loaded (even if our subresources haven't), so if we have a stylesheet after

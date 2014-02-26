@@ -35,8 +35,7 @@
 #include "bindings/v8/ScriptState.h"
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/page/ConsoleTypes.h"
-#include <wtf/Forward.h>
-#include <wtf/Vector.h>
+#include "wtf/Forward.h"
 
 namespace WebCore {
 
@@ -52,7 +51,7 @@ class ConsoleMessage {
     WTF_MAKE_NONCOPYABLE(ConsoleMessage); WTF_MAKE_FAST_ALLOCATED;
 public:
     ConsoleMessage(bool canGenerateCallStack, MessageSource, MessageType, MessageLevel, const String& message);
-    ConsoleMessage(bool canGenerateCallStack, MessageSource, MessageType, MessageLevel, const String& message, const String& url, unsigned line, ScriptState*, unsigned long requestIdentifier);
+    ConsoleMessage(bool canGenerateCallStack, MessageSource, MessageType, MessageLevel, const String& message, const String& url, unsigned line, unsigned column, ScriptState*, unsigned long requestIdentifier);
     ConsoleMessage(bool canGenerateCallStack, MessageSource, MessageType, MessageLevel, const String& message, PassRefPtr<ScriptCallStack>, unsigned long requestIdentifier);
     ConsoleMessage(bool canGenerateCallStack, MessageSource, MessageType, MessageLevel, const String& message, PassRefPtr<ScriptArguments>, ScriptState*, unsigned long requestIdentifier);
     ~ConsoleMessage();
@@ -82,6 +81,7 @@ private:
     RefPtr<ScriptCallStack> m_callStack;
     String m_url;
     unsigned m_line;
+    unsigned m_column;
     unsigned m_repeatCount;
     String m_requestId;
     double m_timestamp;

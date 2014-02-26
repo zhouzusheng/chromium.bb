@@ -13,9 +13,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/strings/string16.h"
 #include "base/supports_user_data.h"
-#include "base/time.h"
 #include "base/threading/non_thread_safe.h"
-#include "googleurl/src/gurl.h"
+#include "base/time/time.h"
 #include "net/base/auth.h"
 #include "net/base/completion_callback.h"
 #include "net/base/load_states.h"
@@ -29,6 +28,7 @@
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/url_request/url_request_status.h"
+#include "url/gurl.h"
 
 // Temporary layering violation to allow existing users of a deprecated
 // interface.
@@ -364,6 +364,12 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // should only be assigned an uppercase value.
   const std::string& method() const { return method_; }
   void set_method(const std::string& method);
+
+  // Determines the new method of the request afer following a redirect.
+  // |method| is the method used to arrive at the redirect,
+  // |http_status_code| is the status code associated with the redirect.
+  static std::string ComputeMethodForRedirect(const std::string& method,
+                                              int http_status_code);
 
   // The referrer URL for the request.  This header may actually be suppressed
   // from the underlying network request for security reasons (e.g., a HTTPS

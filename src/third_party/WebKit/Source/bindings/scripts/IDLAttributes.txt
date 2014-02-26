@@ -22,17 +22,18 @@ ActiveDOMObject
 ActivityLog=Access|Setter|Getter|AccessForIsolatedWorlds|SetterForIsolatedWorlds|GetterForIsolatedWorlds
 CachedAttribute
 KeepAttributeAliveForGC
-CallWith=ScriptExecutionContext|ScriptState|ScriptArguments|ActiveWindow|FirstWindow
+CallWith=ScriptExecutionContext|ScriptState|ScriptArguments|ActiveWindow|FirstWindow|ThisValue
 CheckSecurity
 CheckSecurityForNode
 Clamp
 Conditional=*
 Constructor
-ConstructorCallWith=ScriptExecutionContext
+ConstructorCallWith=ScriptExecutionContext|Document
 ConstructorRaisesException
 ConstructorTemplate=Event|TypedArray
 Custom
 CustomConstructor
+CustomElementCallbacks=Enable|Disable
 CustomEnumerateProperty
 CustomGetter
 CustomIsReachable
@@ -40,7 +41,6 @@ CustomLegacyCall
 CustomSetter
 CustomToV8
 Default=NullString|Undefined
-DeliverCustomElementCallbacks
 DependentLifetime
 DeprecateAs=*
 DoNotCheckConstants
@@ -53,14 +53,15 @@ DoNotGenerateWrap
 EnabledAtRuntime=*
 EnabledPerContext=*
 EnforceRange
-EventTarget
 GenerateIsReachable=*
 GetterRaisesException
-GlobalContext=WindowOnly|WorkerOnly|WindowAndWorker
+GlobalContext=Window|WorkerGlobalScope|SharedWorkerGlobalScope|DedicatedWorkerGlobalScope
 Immutable
 ImplementedAs=*
 InitializedByEventConstructor
 IsIndex
+# FIXME: We should remove this extended attribute once the needed refactoring is complete.
+LegacyImplementedInBaseClass
 MasqueradesAsUndefined
 MeasureAs=*
 NamedConstructor=*
@@ -80,3 +81,4 @@ TreatReturnedNullStringAs=Null|Undefined
 TreatUndefinedAs=*
 URL
 Unforgeable
+Unserializable

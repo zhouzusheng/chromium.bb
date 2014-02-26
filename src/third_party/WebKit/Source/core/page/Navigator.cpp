@@ -23,8 +23,6 @@
 #include "config.h"
 #include "core/page/Navigator.h"
 
-#include <wtf/HashSet.h>
-#include <wtf/StdLibExtras.h>
 #include "bindings/v8/ScriptController.h"
 #include "core/dom/Document.h"
 #include "core/loader/CookieJar.h"
@@ -84,12 +82,12 @@ String Navigator::userAgent() const
 {
     if (!m_frame)
         return String();
-        
+
     // If the frame is already detached, FrameLoader::userAgent may malfunction, because it calls a client method
     // that uses frame's WebView (at least, in Mac WebKit).
     if (!m_frame->page())
         return String();
-        
+
     return m_frame->loader()->userAgent(m_frame->document()->url());
 }
 

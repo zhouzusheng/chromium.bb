@@ -17,6 +17,7 @@
 
 #include "content/shell/common/shell_switches.h"
 #include "content/shell/renderer/shell_render_process_observer.h"
+#include "content/shell/renderer/shell_render_view_observer.h"
 #include "content/shell/renderer/webkit_test_runner.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamCenter.h"
 #include "third_party/WebKit/public/testing/WebTestInterfaces.h"
@@ -25,15 +26,16 @@
 #include "third_party/WebKit/public/web/WebPluginParams.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "v8/include/v8.h"
-#include "webkit/mocks/mock_webhyphenator.h"
 #include "webkit/support/mock_webclipboard_impl.h"
 
 #include "chrome/renderer/spellchecker/spellcheck.h"
 #include "chrome/renderer/spellchecker/spellcheck_provider.h"
 
+using WebKit::WebAudioDevice;
 using WebKit::WebClipboard;
 using WebKit::WebFrame;
-using WebKit::WebHyphenator;
+using WebKit::WebMIDIAccessor;
+using WebKit::WebMIDIAccessorClient;
 using WebKit::WebMediaStreamCenter;
 using WebKit::WebMediaStreamCenterClient;
 using WebKit::WebPlugin;
@@ -70,14 +72,6 @@ ShellContentRendererClient::~ShellContentRendererClient() {
   g_renderer_client = NULL;
 }
 
-void ShellContentRendererClient::LoadHyphenDictionary(
-    base::PlatformFile dict_file) {
-  if (!hyphenator_)
-    hyphenator_.reset(new webkit_glue::MockWebHyphenator);
-  base::SeekPlatformFile(dict_file, base::PLATFORM_FILE_FROM_BEGIN, 0);
-  hyphenator_->LoadDictionary(dict_file);
-}
-
 void ShellContentRendererClient::RenderThreadStarted() {
   shell_observer_.reset(new ShellRenderProcessObserver());
   spellcheck_.reset(new SpellCheck());
@@ -91,6 +85,7 @@ void ShellContentRendererClient::RenderThreadStarted() {
 }
 
 void ShellContentRendererClient::RenderViewCreated(RenderView* render_view) {
+  new ShellRenderViewObserver(render_view);
   new SpellCheckProvider(render_view, spellcheck_.get());
 
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
@@ -153,6 +148,22 @@ ShellContentRendererClient::OverrideCreateWebRTCPeerConnectionHandler(
 #endif
 }
 
+WebMIDIAccessor*
+ShellContentRendererClient::OverrideCreateMIDIAccessor(
+    WebMIDIAccessorClient* client) {
+  WebTestInterfaces* interfaces =
+      ShellRenderProcessObserver::GetInstance()->test_interfaces();
+  return interfaces->createMIDIAccessor(client);
+}
+
+WebAudioDevice*
+ShellContentRendererClient::OverrideCreateAudioDevice(
+    double sample_rate) {
+  WebTestInterfaces* interfaces =
+      ShellRenderProcessObserver::GetInstance()->test_interfaces();
+  return interfaces->createAudioDevice(sample_rate);
+}
+
 WebClipboard* ShellContentRendererClient::OverrideWebClipboard() {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return NULL;
@@ -161,13 +172,12 @@ WebClipboard* ShellContentRendererClient::OverrideWebClipboard() {
   return clipboard_.get();
 }
 
-WebHyphenator* ShellContentRendererClient::OverrideWebHyphenator() {
+WebKit::WebCrypto* ShellContentRendererClient::OverrideWebCrypto() {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return NULL;
-  if (!hyphenator_)
-    hyphenator_.reset(new webkit_glue::MockWebHyphenator);
-  return hyphenator_.get();
-
+  WebTestInterfaces* interfaces =
+      ShellRenderProcessObserver::GetInstance()->test_interfaces();
+  return interfaces->crypto();
 }
 
 WebThemeEngine* ShellContentRendererClient::OverrideThemeEngine() {
@@ -190,7 +200,7 @@ void ShellContentRendererClient::WebTestProxyCreated(RenderView* render_view,
 }
 
 bool ShellContentRendererClient::AllowBrowserPlugin(
-    WebKit::WebPluginContainer* container) const {
+    WebKit::WebPluginContainer* container) {
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableBrowserPluginForAllViewTypes)) {
     // Allow BrowserPlugin if forced by command line flag. This is generally

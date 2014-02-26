@@ -13,7 +13,6 @@ const char kBlobScheme[] = "blob";
 // There are security implications associated with introducing new schemes.
 const char kChromeDevToolsScheme[] = "chrome-devtools";
 const char kChromeInternalScheme[] = "chrome-internal";
-const char kChromeNativeScheme[] = "chrome-native";
 const char kChromeUIScheme[] = "chrome";
 const char kDataScheme[] = "data";
 const char kFileScheme[] = "file";
@@ -23,13 +22,13 @@ const char kGuestScheme[] = "chrome-guest";
 const char kHttpScheme[] = "http";
 const char kHttpsScheme[] = "https";
 const char kJavaScriptScheme[] = "javascript";
-const char kMailToScheme[] = "mailto";
-const char kMetadataScheme[] = "metadata";
-const char kSwappedOutScheme[] = "swappedout";
 }  // namespace chrome
 
 namespace content {
 
+const char kMailToScheme[] = "mailto";
+const char kMetadataScheme[] = "metadata";
+const char kSwappedOutScheme[] = "swappedout";
 const char kViewSourceScheme[] = "view-source";
 
 const char kAboutBlankURL[] = "about:blank";

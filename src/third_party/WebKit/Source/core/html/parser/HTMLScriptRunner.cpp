@@ -20,23 +20,22 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
 #include "core/html/parser/HTMLScriptRunner.h"
 
 #include "bindings/v8/ScriptSourceCode.h"
-#include "core/dom/CustomElementRegistry.h"
 #include "core/dom/Element.h"
 #include "core/dom/Event.h"
 #include "core/dom/IgnoreDestructiveWriteCountIncrementer.h"
-#include "core/dom/MutationObserver.h"
-#include "core/dom/ScriptElement.h"
+#include "core/dom/Microtask.h"
+#include "core/dom/ScriptLoader.h"
 #include "core/html/parser/HTMLInputStream.h"
 #include "core/html/parser/HTMLScriptRunnerHost.h"
 #include "core/html/parser/NestingLevelIncrementer.h"
-#include "core/loader/cache/CachedScript.h"
+#include "core/loader/cache/ScriptResource.h"
 #include "core/page/Frame.h"
 #include "core/platform/NotImplemented.h"
 
@@ -56,12 +55,12 @@ HTMLScriptRunner::HTMLScriptRunner(Document* document, HTMLScriptRunnerHost* hos
 HTMLScriptRunner::~HTMLScriptRunner()
 {
     // FIXME: Should we be passed a "done loading/parsing" callback sooner than destruction?
-    if (m_parserBlockingScript.cachedScript() && m_parserBlockingScript.watchingForLoad())
+    if (m_parserBlockingScript.resource() && m_parserBlockingScript.watchingForLoad())
         stopWatchingForLoad(m_parserBlockingScript);
 
     while (!m_scriptsToExecuteAfterParsing.isEmpty()) {
         PendingScript pendingScript = m_scriptsToExecuteAfterParsing.takeFirst();
-        if (pendingScript.cachedScript() && pendingScript.watchingForLoad())
+        if (pendingScript.resource() && pendingScript.watchingForLoad())
             stopWatchingForLoad(pendingScript);
     }
 }
@@ -87,10 +86,10 @@ inline PassRefPtr<Event> createScriptLoadEvent()
 
 ScriptSourceCode HTMLScriptRunner::sourceFromPendingScript(const PendingScript& script, bool& errorOccurred) const
 {
-    if (script.cachedScript()) {
-        errorOccurred = script.cachedScript()->errorOccurred();
-        ASSERT(script.cachedScript()->isLoaded());
-        return ScriptSourceCode(script.cachedScript());
+    if (script.resource()) {
+        errorOccurred = script.resource()->errorOccurred();
+        ASSERT(script.resource()->isLoaded());
+        return ScriptSourceCode(script.resource());
     }
     errorOccurred = false;
     return ScriptSourceCode(script.element()->textContent(), documentURLForScriptExecution(m_document), script.startingPosition());
@@ -101,7 +100,7 @@ bool HTMLScriptRunner::isPendingScriptReady(const PendingScript& script)
     m_hasScriptsWaitingForResources = !m_document->haveStylesheetsAndImportsLoaded();
     if (m_hasScriptsWaitingForResources)
         return false;
-    if (script.cachedScript() && !script.cachedScript()->isLoaded())
+    if (script.resource() && !script.resource()->isLoaded())
         return false;
     return true;
 }
@@ -123,24 +122,22 @@ void HTMLScriptRunner::executePendingScriptAndDispatchEvent(PendingScript& pendi
     ScriptSourceCode sourceCode = sourceFromPendingScript(pendingScript, errorOccurred);
 
     // Stop watching loads before executeScript to prevent recursion if the script reloads itself.
-    if (pendingScript.cachedScript() && pendingScript.watchingForLoad())
+    if (pendingScript.resource() && pendingScript.watchingForLoad())
         stopWatchingForLoad(pendingScript);
 
-    if (!isExecutingScript()) {
-        CustomElementRegistry::deliverAllLifecycleCallbacks();
-        MutationObserver::deliverAllMutations();
-    }
+    if (!isExecutingScript())
+        Microtask::performCheckpoint();
 
     // Clear the pending script before possible rentrancy from executeScript()
     RefPtr<Element> element = pendingScript.releaseElementAndClear();
-    if (ScriptElement* scriptElement = toScriptElementIfPossible(element.get())) {
+    if (ScriptLoader* scriptLoader = toScriptLoaderIfPossible(element.get())) {
         NestingLevelIncrementer nestingLevelIncrementer(m_scriptNestingLevel);
         IgnoreDestructiveWriteCountIncrementer ignoreDestructiveWriteCountIncrementer(m_document);
         if (errorOccurred)
-            scriptElement->dispatchErrorEvent();
+            scriptLoader->dispatchErrorEvent();
         else {
             ASSERT(isExecutingScript());
-            scriptElement->executeScript(sourceCode);
+            scriptLoader->executeScript(sourceCode);
             element->dispatchEvent(createScriptLoadEvent());
         }
     }
@@ -150,14 +147,14 @@ void HTMLScriptRunner::executePendingScriptAndDispatchEvent(PendingScript& pendi
 void HTMLScriptRunner::watchForLoad(PendingScript& pendingScript)
 {
     ASSERT(!pendingScript.watchingForLoad());
-    m_host->watchForLoad(pendingScript.cachedScript());
+    m_host->watchForLoad(pendingScript.resource());
     pendingScript.setWatchingForLoad(true);
 }
 
 void HTMLScriptRunner::stopWatchingForLoad(PendingScript& pendingScript)
 {
     ASSERT(pendingScript.watchingForLoad());
-    m_host->stopWatchingForLoad(pendingScript.cachedScript());
+    m_host->stopWatchingForLoad(pendingScript.resource());
     pendingScript.setWatchingForLoad(false);
 }
 
@@ -194,12 +191,12 @@ void HTMLScriptRunner::executeParsingBlockingScripts()
         executeParsingBlockingScript();
 }
 
-void HTMLScriptRunner::executeScriptsWaitingForLoad(CachedResource* cachedScript)
+void HTMLScriptRunner::executeScriptsWaitingForLoad(Resource* resource)
 {
     ASSERT(!isExecutingScript());
     ASSERT(hasParserBlockingScript());
-    ASSERT_UNUSED(cachedScript, m_parserBlockingScript.cachedScript() == cachedScript);
-    ASSERT(m_parserBlockingScript.cachedScript()->isLoaded());
+    ASSERT_UNUSED(resource, m_parserBlockingScript.resource() == resource);
+    ASSERT(m_parserBlockingScript.resource()->isLoaded());
     executeParsingBlockingScripts();
 }
 
@@ -219,8 +216,8 @@ bool HTMLScriptRunner::executeScriptsWaitingForParsing()
     while (!m_scriptsToExecuteAfterParsing.isEmpty()) {
         ASSERT(!isExecutingScript());
         ASSERT(!hasParserBlockingScript());
-        ASSERT(m_scriptsToExecuteAfterParsing.first().cachedScript());
-        if (!m_scriptsToExecuteAfterParsing.first().cachedScript()->isLoaded()) {
+        ASSERT(m_scriptsToExecuteAfterParsing.first().resource());
+        if (!m_scriptsToExecuteAfterParsing.first().resource()->isLoaded()) {
             watchForLoad(m_scriptsToExecuteAfterParsing.first());
             return false;
         }
@@ -238,12 +235,12 @@ void HTMLScriptRunner::requestParsingBlockingScript(Element* element)
     if (!requestPendingScript(m_parserBlockingScript, element))
         return;
 
-    ASSERT(m_parserBlockingScript.cachedScript());
+    ASSERT(m_parserBlockingScript.resource());
 
-    // We only care about a load callback if cachedScript is not already
+    // We only care about a load callback if resource is not already
     // in the cache. Callers will attempt to run the m_parserBlockingScript
     // if possible before returning control to the parser.
-    if (!m_parserBlockingScript.cachedScript()->isLoaded())
+    if (!m_parserBlockingScript.resource()->isLoaded())
         watchForLoad(m_parserBlockingScript);
 }
 
@@ -253,7 +250,7 @@ void HTMLScriptRunner::requestDeferredScript(Element* element)
     if (!requestPendingScript(pendingScript, element))
         return;
 
-    ASSERT(pendingScript.cachedScript());
+    ASSERT(pendingScript.resource());
     m_scriptsToExecuteAfterParsing.append(pendingScript);
 }
 
@@ -262,12 +259,12 @@ bool HTMLScriptRunner::requestPendingScript(PendingScript& pendingScript, Elemen
     ASSERT(!pendingScript.element());
     pendingScript.setElement(script);
     // This should correctly return 0 for empty or invalid srcValues.
-    CachedScript* cachedScript = toScriptElementIfPossible(script)->cachedScript().get();
-    if (!cachedScript) {
+    ScriptResource* resource = toScriptLoaderIfPossible(script)->resource().get();
+    if (!resource) {
         notImplemented(); // Dispatch error event.
         return false;
     }
-    pendingScript.setCachedScript(cachedScript);
+    pendingScript.setScriptResource(resource);
     return true;
 }
 
@@ -278,45 +275,44 @@ void HTMLScriptRunner::runScript(Element* script, const TextPosition& scriptStar
     ASSERT(m_document);
     ASSERT(!hasParserBlockingScript());
     {
-        ScriptElement* scriptElement = toScriptElementIfPossible(script);
+        ScriptLoader* scriptLoader = toScriptLoaderIfPossible(script);
 
         // This contains both and ASSERTION and a null check since we should not
         // be getting into the case of a null script element, but seem to be from
         // time to time. The assertion is left in to help find those cases and
         // is being tracked by <https://bugs.webkit.org/show_bug.cgi?id=60559>.
-        ASSERT(scriptElement);
-        if (!scriptElement)
+        ASSERT(scriptLoader);
+        if (!scriptLoader)
             return;
 
         // FIXME: This may be too agressive as we always deliver mutations at
         // every script element, even if it's not ready to execute yet. There's
         // unfortuantely no obvious way to tell if prepareScript is going to
         // execute the script from out here.
-        if (!isExecutingScript()) {
-            CustomElementRegistry::deliverAllLifecycleCallbacks();
-            MutationObserver::deliverAllMutations();
-        }
+        if (!isExecutingScript())
+            Microtask::performCheckpoint();
 
         InsertionPointRecord insertionPointRecord(m_host->inputStream());
         NestingLevelIncrementer nestingLevelIncrementer(m_scriptNestingLevel);
 
-        scriptElement->prepareScript(scriptStartPosition);
+        scriptLoader->prepareScript(scriptStartPosition);
 
-        if (!scriptElement->willBeParserExecuted())
+        if (!scriptLoader->willBeParserExecuted())
             return;
 
-        if (scriptElement->willExecuteWhenDocumentFinishedParsing())
+        if (scriptLoader->willExecuteWhenDocumentFinishedParsing()) {
             requestDeferredScript(script);
-        else if (scriptElement->readyToBeParserExecuted()) {
+        } else if (scriptLoader->readyToBeParserExecuted()) {
             if (m_scriptNestingLevel == 1) {
                 m_parserBlockingScript.setElement(script);
                 m_parserBlockingScript.setStartingPosition(scriptStartPosition);
             } else {
                 ScriptSourceCode sourceCode(script->textContent(), documentURLForScriptExecution(m_document), scriptStartPosition);
-                scriptElement->executeScript(sourceCode);
+                scriptLoader->executeScript(sourceCode);
             }
-        } else
+        } else {
             requestParsingBlockingScript(script);
+        }
     }
 }
 

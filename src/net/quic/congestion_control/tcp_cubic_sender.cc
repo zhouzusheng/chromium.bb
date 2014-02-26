@@ -12,12 +12,18 @@ const int64 kHybridStartLowWindow = 16;
 const QuicByteCount kMaxSegmentSize = kMaxPacketSize;
 const QuicByteCount kDefaultReceiveWindow = 64000;
 const int64 kInitialCongestionWindow = 10;
-const int64 kMaxCongestionWindow = 10000;
 const int kMaxBurstLength = 3;
 const int kInitialRttMs = 60;  // At a typical RTT 60 ms.
-};
+const float kAlpha = 0.125f;
+const float kOneMinusAlpha = (1 - kAlpha);
+const float kBeta = 0.25f;
+const float kOneMinusBeta = (1 - kBeta);
+};  // namespace
 
-TcpCubicSender::TcpCubicSender(const QuicClock* clock, bool reno)
+TcpCubicSender::TcpCubicSender(
+    const QuicClock* clock,
+    bool reno,
+    QuicTcpCongestionWindow max_tcp_congestion_window)
     : hybrid_slow_start_(clock),
       cubic_(clock),
       reno_(reno),
@@ -28,8 +34,14 @@ TcpCubicSender::TcpCubicSender(const QuicClock* clock, bool reno)
       update_end_sequence_number_(true),
       end_sequence_number_(0),
       congestion_window_(kInitialCongestionWindow),
-      slowstart_threshold_(kMaxCongestionWindow),
-      delay_min_(QuicTime::Delta::Zero()) {
+      slowstart_threshold_(max_tcp_congestion_window),
+      max_tcp_congestion_window_(max_tcp_congestion_window),
+      delay_min_(QuicTime::Delta::Zero()),
+      smoothed_rtt_(QuicTime::Delta::Zero()),
+      mean_deviation_(QuicTime::Delta::Zero()) {
+}
+
+TcpCubicSender::~TcpCubicSender() {
 }
 
 void TcpCubicSender::OnIncomingQuicCongestionFeedbackFrame(
@@ -103,10 +115,15 @@ void TcpCubicSender::AbandoningPacket(QuicPacketSequenceNumber sequence_number,
 QuicTime::Delta TcpCubicSender::TimeUntilSend(
     QuicTime now,
     Retransmission is_retransmission,
-    HasRetransmittableData has_retransmittable_data) {
+    HasRetransmittableData has_retransmittable_data,
+    IsHandshake handshake) {
   if (is_retransmission == IS_RETRANSMISSION ||
-      has_retransmittable_data == NO_RETRANSMITTABLE_DATA) {
-    // For TCP we can always send a retransmission and/or an ACK immediately.
+      has_retransmittable_data == NO_RETRANSMITTABLE_DATA ||
+      handshake == IS_HANDSHAKE) {
+    // For TCP we can always send a retransmission,  or an ACK immediately.
+    // We also immediately send any handshake packet (CHLO, etc.).  We provide
+    // this  special dispensation for handshake messages in QUIC, although the
+    // concept is not present in TCP.
     return QuicTime::Delta::Zero();
   }
   if (AvailableCongestionWindow() == 0) {
@@ -136,11 +153,15 @@ QuicBandwidth TcpCubicSender::BandwidthEstimate() {
 }
 
 QuicTime::Delta TcpCubicSender::SmoothedRtt() {
-  // TODO(satyamshekhar): Return the smoothed averaged RTT.
-  if (delay_min_.IsZero()) {
+  if (smoothed_rtt_.IsZero()) {
     return QuicTime::Delta::FromMilliseconds(kInitialRttMs);
   }
-  return delay_min_;
+  return smoothed_rtt_;
+}
+
+QuicTime::Delta TcpCubicSender::RetransmissionDelay() {
+  return QuicTime::Delta::FromMicroseconds(
+      smoothed_rtt_.ToMicroseconds() + 4 * mean_deviation_.ToMicroseconds());
 }
 
 void TcpCubicSender::Reset() {
@@ -173,13 +194,13 @@ void TcpCubicSender::CongestionAvoidance(QuicPacketSequenceNumber ack) {
       hybrid_slow_start_.Reset(end_sequence_number_);
     }
     // congestion_window_cnt is the number of acks since last change of snd_cwnd
-    if (congestion_window_ < kMaxCongestionWindow) {
+    if (congestion_window_ < max_tcp_congestion_window_) {
       // TCP slow start, exponentail growth, increase by one for each ACK.
       congestion_window_++;
     }
     DLOG(INFO) << "Slow start; congestion window:" << congestion_window_;
   } else {
-    if (congestion_window_ < kMaxCongestionWindow) {
+    if (congestion_window_ < max_tcp_congestion_window_) {
       if (reno_) {
         // Classic Reno congestion avoidance provided for testing.
         if (congestion_window_count_ >= congestion_window_) {
@@ -218,6 +239,21 @@ void TcpCubicSender::AckAccounting(QuicTime::Delta rtt) {
   if (delay_min_.IsZero() || delay_min_ > rtt) {
     delay_min_ = rtt;
   }
+  // First time call.
+  if (smoothed_rtt_.IsZero()) {
+    smoothed_rtt_ = rtt;
+    mean_deviation_ = QuicTime::Delta::FromMicroseconds(
+        rtt.ToMicroseconds() / 2);
+  } else {
+    mean_deviation_ = QuicTime::Delta::FromMicroseconds(
+        kOneMinusBeta * mean_deviation_.ToMicroseconds() +
+        kBeta * abs(smoothed_rtt_.ToMicroseconds() - rtt.ToMicroseconds()));
+    smoothed_rtt_ = QuicTime::Delta::FromMicroseconds(
+        kOneMinusAlpha * smoothed_rtt_.ToMicroseconds() +
+        kAlpha * rtt.ToMicroseconds());
+    DLOG(INFO) << "Cubic; mean_deviation_:" << mean_deviation_.ToMicroseconds();
+  }
+
   // Hybrid start triggers when cwnd is larger than some threshold.
   if (congestion_window_ <= slowstart_threshold_ &&
       congestion_window_ >= kHybridStartLowWindow) {

@@ -28,12 +28,12 @@
 
 #include <unicode/ubrk.h>
 #include "core/platform/text/TextBreakIteratorInternalICU.h"
-#include <wtf/Assertions.h>
-#include <wtf/HashMap.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/text/AtomicString.h>
-#include <wtf/text/CString.h>
-#include <wtf/ThreadSpecific.h>
+#include "wtf/Assertions.h"
+#include "wtf/HashMap.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/text/AtomicString.h"
+#include "wtf/text/CString.h"
+#include "wtf/ThreadSpecific.h"
 
 namespace WebCore {
 
@@ -69,7 +69,7 @@ public:
                 openStatus = U_ZERO_ERROR;
                 iterator = ubrk_open(UBRK_LINE, currentTextBreakLocaleID(), 0, 0, &openStatus);
             }
-                
+
             if (U_FAILURE(openStatus)) {
                 LOG_ERROR("ubrk_open failed with status %d", openStatus);
                 return 0;

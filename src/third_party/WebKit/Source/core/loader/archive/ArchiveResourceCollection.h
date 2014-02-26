@@ -32,7 +32,6 @@
 #include "core/loader/archive/ArchiveResource.h"
 #include "core/loader/archive/MHTMLArchive.h"
 #include "wtf/HashMap.h"
-#include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -46,11 +45,11 @@ public:
 
     void addResource(PassRefPtr<ArchiveResource>);
     void addAllResources(MHTMLArchive*);
-    
+
     ArchiveResource* archiveResourceForURL(const KURL&);
     PassRefPtr<MHTMLArchive> popSubframeArchive(const String& frameName, const KURL&);
-    
-private:    
+
+private:
     HashMap<String, RefPtr<ArchiveResource> > m_subresources;
     HashMap<String, RefPtr<MHTMLArchive> > m_subframes;
 };

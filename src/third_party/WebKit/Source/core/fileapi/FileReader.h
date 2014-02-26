@@ -37,16 +37,15 @@
 #include "core/fileapi/FileError.h"
 #include "core/fileapi/FileReaderLoader.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
-#include <wtf/Forward.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/Forward.h"
+#include "wtf/RefCounted.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 class Blob;
+class ExceptionState;
 class ScriptExecutionContext;
-
-typedef int ExceptionCode;
 
 class FileReader : public RefCounted<FileReader>, public ScriptWrappable, public ActiveDOMObject, public EventTarget, public FileReaderLoaderClient {
 public:
@@ -60,11 +59,11 @@ public:
         DONE = 2
     };
 
-    void readAsArrayBuffer(Blob*, ExceptionCode&);
-    void readAsBinaryString(Blob*, ExceptionCode&);
-    void readAsText(Blob*, const String& encoding, ExceptionCode&);
-    void readAsText(Blob*, ExceptionCode&);
-    void readAsDataURL(Blob*, ExceptionCode&);
+    void readAsArrayBuffer(Blob*, ExceptionState&);
+    void readAsBinaryString(Blob*, ExceptionState&);
+    void readAsText(Blob*, const String& encoding, ExceptionState&);
+    void readAsText(Blob*, ExceptionState&);
+    void readAsDataURL(Blob*, ExceptionState&);
     void abort();
 
     void doAbort();
@@ -87,7 +86,7 @@ public:
     virtual void didStartLoading();
     virtual void didReceiveData();
     virtual void didFinishLoading();
-    virtual void didFail(int errorCode);
+    virtual void didFail(FileError::ErrorCode);
 
     using RefCounted<FileReader>::ref;
     using RefCounted<FileReader>::deref;
@@ -109,12 +108,21 @@ private:
     virtual EventTargetData* ensureEventTargetData() { return &m_eventTargetData; }
 
     void terminate();
-    void readInternal(Blob*, FileReaderLoader::ReadType, ExceptionCode&);
+    void readInternal(Blob*, FileReaderLoader::ReadType, ExceptionState&);
     void fireErrorEvent(int httpStatusCode);
     void fireEvent(const AtomicString& type);
 
     ReadyState m_state;
-    bool m_aborting;
+
+    // Internal loading state, which could differ from ReadyState as it's
+    // for script-visible state while this one's for internal state.
+    enum LoadingState {
+        LoadingStateNone,
+        LoadingStateLoading,
+        LoadingStateAborted
+    };
+    LoadingState m_loadingState;
+
     EventTargetData m_eventTargetData;
 
     RefPtr<Blob> m_blob;

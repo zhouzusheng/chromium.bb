@@ -56,9 +56,9 @@ struct RDFTContext;
 #include <ipps.h>
 #endif // USE(WEBAUDIO_IPP)
 
-#include <wtf/Forward.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/Threading.h>
+#include "wtf/Forward.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/Threading.h"
 
 namespace WebCore {
 
@@ -97,8 +97,6 @@ public:
 
     unsigned fftSize() const { return m_FFTSize; }
     unsigned log2FFTSize() const { return m_log2FFTSize; }
-
-    void reportMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     unsigned m_FFTSize;
@@ -153,7 +151,7 @@ private:
     AudioFloatArray m_realData;
     AudioFloatArray m_imagData;
 #endif
-    
+
 #endif // !USE_ACCELERATE_FFT
 };
 

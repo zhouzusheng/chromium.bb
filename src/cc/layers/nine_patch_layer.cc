@@ -33,15 +33,13 @@ void NinePatchLayer::SetTexturePriorities(
     resource_.reset();
     if (!bitmap_.isNull())
       CreateResource();
-  } else if (needs_display_ && bitmap_dirty_ && DrawsContent()) {
+  } else if (bitmap_dirty_ && DrawsContent()) {
     CreateResource();
   }
 
   if (resource_) {
     resource_->texture()->set_request_priority(
         PriorityCalculator::UIPriority(true));
-    // FIXME: Need to support swizzle in the shader for
-    // !PlatformColor::sameComponentOrder(texture_format)
     GLenum texture_format =
         layer_tree_host()->GetRendererCapabilities().best_texture_format;
     resource_->texture()->SetDimensions(
@@ -56,9 +54,10 @@ void NinePatchLayer::SetBitmap(const SkBitmap& bitmap, gfx::Rect aperture) {
   SetNeedsDisplay();
 }
 
-void NinePatchLayer::Update(ResourceUpdateQueue* queue,
-                            const OcclusionTracker* occlusion,
-                            RenderingStats* stats) {
+bool NinePatchLayer::Update(ResourceUpdateQueue* queue,
+                            const OcclusionTracker* occlusion) {
+  bool updated = Layer::Update(queue, occlusion);
+
   CreateUpdaterIfNeeded();
 
   if (resource_ &&
@@ -71,7 +70,9 @@ void NinePatchLayer::Update(ResourceUpdateQueue* queue,
                                                    gfx::Vector2d());
     queue->AppendFullUpload(upload);
     bitmap_dirty_ = false;
+    updated = true;
   }
+  return updated;
 }
 
 void NinePatchLayer::CreateUpdaterIfNeeded() {
@@ -84,8 +85,7 @@ void NinePatchLayer::CreateUpdaterIfNeeded() {
 void NinePatchLayer::CreateResource() {
   DCHECK(!bitmap_.isNull());
   CreateUpdaterIfNeeded();
-  updater_->set_bitmap(bitmap_);
-  needs_display_ = false;
+  updater_->SetBitmap(bitmap_);
 
   if (!resource_) {
     resource_ = updater_->CreateResource(

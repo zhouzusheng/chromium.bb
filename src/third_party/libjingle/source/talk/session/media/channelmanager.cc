@@ -43,10 +43,12 @@
 #include "talk/media/base/hybriddataengine.h"
 #include "talk/media/base/rtpdataengine.h"
 #include "talk/media/base/videocapturer.h"
+#include "talk/media/devices/devicemanager.h"
 #ifdef HAVE_SCTP
 #include "talk/media/sctp/sctpdataengine.h"
 #endif
 #include "talk/session/media/soundclip.h"
+#include "talk/session/media/srtpfilter.h"
 
 namespace cricket {
 
@@ -137,8 +139,15 @@ void ChannelManager::Construct(MediaEngineInterface* me,
 }
 
 ChannelManager::~ChannelManager() {
-  if (initialized_)
+  if (initialized_) {
     Terminate();
+    // If srtp is initialized (done by the Channel) then we must call
+    // srtp_shutdown to free all crypto kernel lists. But we need to make sure
+    // shutdown always called at the end, after channels are destroyed.
+    // ChannelManager d'tor is always called last, it's safe place to call
+    // shutdown.
+    ShutdownSrtp();
+  }
 }
 
 bool ChannelManager::SetVideoRtxEnabled(bool enable) {
@@ -595,6 +604,14 @@ bool ChannelManager::IsSameCapturer(const std::string& capturer_name,
   return capturer->GetId() == device.id;
 }
 
+bool ChannelManager::GetVideoCaptureDevice(Device* device) {
+  std::string device_name;
+  if (!GetCaptureDevice(&device_name)) {
+    return false;
+  }
+  return device_manager_->GetVideoCaptureDevice(device_name, device);
+}
+
 bool ChannelManager::GetCaptureDevice(std::string* cam_name) {
   if (camera_device_.empty()) {
     // Initialize camera_device_ with default.
@@ -704,26 +721,6 @@ bool ChannelManager::SetLocalRenderer(VideoRenderer* renderer) {
   return ret;
 }
 
-bool ChannelManager::SetVideoCapturer(VideoCapturer* capturer) {
-  bool ret = true;
-  if (initialized_) {
-    ret = worker_thread_->Invoke<bool>(
-        Bind(&MediaEngineInterface::SetVideoCapturer,
-             media_engine_.get(), capturer));
-  }
-  return ret;
-}
-
-bool ChannelManager::SetVideoCapture(bool capture) {
-  bool ret = initialized_ && worker_thread_->Invoke<bool>(
-      Bind(&MediaEngineInterface::SetVideoCapture,
-           media_engine_.get(), capture));
-  if (ret) {
-    capturing_ = capture;
-  }
-  return ret;
-}
-
 void ChannelManager::SetVoiceLogging(int level, const char* filter) {
   if (initialized_) {
     worker_thread_->Invoke<void>(
@@ -757,7 +754,6 @@ bool ChannelManager::RegisterVideoProcessor(VideoCapturer* capturer,
 
 bool ChannelManager::RegisterVideoProcessor_w(VideoCapturer* capturer,
                                               VideoProcessor* processor) {
-  media_engine_->RegisterVideoProcessor(processor);
   return capture_manager_->AddVideoProcessor(capturer, processor);
 }
 
@@ -770,7 +766,6 @@ bool ChannelManager::UnregisterVideoProcessor(VideoCapturer* capturer,
 
 bool ChannelManager::UnregisterVideoProcessor_w(VideoCapturer* capturer,
                                                 VideoProcessor* processor) {
-  media_engine_->UnregisterVideoProcessor(processor);
   return capture_manager_->RemoveVideoProcessor(capturer, processor);
 }
 

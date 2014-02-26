@@ -33,17 +33,17 @@
 #include "core/platform/graphics/ImageSource.h"
 #include "core/platform/graphics/IntRect.h"
 #include "core/platform/graphics/skia/NativeImageSkia.h"
-#include <wtf/Assertions.h>
-#include <wtf/RefPtr.h>
-#include <wtf/text/WTFString.h>
-#include <wtf/Vector.h>
+#include "wtf/Assertions.h"
+#include "wtf/RefPtr.h"
+#include "wtf/text/WTFString.h"
+#include "wtf/Vector.h"
 
 #if USE(QCMSLIB)
 #include "qcms.h"
 #if OS(DARWIN)
 #include <ApplicationServices/ApplicationServices.h>
 #include "core/platform/graphics/cg/GraphicsContextCG.h"
-#include <wtf/RetainPtr.h>
+#include "wtf/RetainPtr.h"
 #endif
 #endif
 
@@ -77,6 +77,7 @@ namespace WebCore {
         // These do not touch other metadata, only the raw pixel data.
         void clearPixelData();
         void zeroFillPixelData();
+        void zeroFillFrameRect(const IntRect&);
 
         // Makes this frame have an independent copy of the provided image's
         // pixel data, so that modifications in one frame are not reflected in
@@ -114,7 +115,9 @@ namespace WebCore {
         unsigned duration() const { return m_duration; }
         FrameDisposalMethod disposalMethod() const { return m_disposalMethod; }
         bool premultiplyAlpha() const { return m_premultiplyAlpha; }
-        void reportMemoryUsage(MemoryObjectInfo*) const;
+        SkBitmap::Allocator* allocator() const { return m_allocator; }
+        const SkBitmap& getSkBitmap() const { return m_bitmap->bitmap(); }
+
         size_t requiredPreviousFrameIndex() const
         {
             ASSERT(m_requiredPreviousFrameIndexValid);
@@ -123,13 +126,15 @@ namespace WebCore {
 #if !ASSERT_DISABLED
         bool requiredPreviousFrameIndexValid() const { return m_requiredPreviousFrameIndexValid; }
 #endif
-
         void setHasAlpha(bool alpha);
         void setOriginalFrameRect(const IntRect& r) { m_originalFrameRect = r; }
         void setStatus(FrameStatus status);
         void setDuration(unsigned duration) { m_duration = duration; }
         void setDisposalMethod(FrameDisposalMethod method) { m_disposalMethod = method; }
         void setPremultiplyAlpha(bool premultiplyAlpha) { m_premultiplyAlpha = premultiplyAlpha; }
+        void setMemoryAllocator(SkBitmap::Allocator* allocator) { m_allocator = allocator; }
+        void setSkBitmap(const SkBitmap& bitmap) { m_bitmap = NativeImageSkia::create(bitmap); }
+
         void setRequiredPreviousFrameIndex(size_t previousFrameIndex)
         {
             m_requiredPreviousFrameIndex = previousFrameIndex;
@@ -138,42 +143,17 @@ namespace WebCore {
 #endif
         }
 
-        inline void setRGBA(int x, int y, unsigned r, unsigned g, unsigned b, unsigned a)
-        {
-            setRGBA(getAddr(x, y), r, g, b, a);
-        }
-
         inline PixelData* getAddr(int x, int y)
         {
             return m_bitmap->bitmap().getAddr32(x, y);
         }
 
-        void setSkBitmap(const SkBitmap& bitmap)
+        inline void setRGBA(int x, int y, unsigned r, unsigned g, unsigned b, unsigned a)
         {
-            m_bitmap = NativeImageSkia::create(bitmap);
+            setRGBA(getAddr(x, y), r, g, b, a);
         }
 
-        const SkBitmap& getSkBitmap() const
-        {
-            return m_bitmap->bitmap();
-        }
-
-        void setMemoryAllocator(SkBitmap::Allocator* allocator)
-        {
-            m_allocator = allocator;
-        }
-
-        SkBitmap::Allocator* allocator() const { return m_allocator; }
-
-        // Use fix point multiplier instead of integer division or floating point math.
-        // This multipler produces exactly the same result for all values in range 0 - 255.
-        static const unsigned fixPointShift = 24;
-        static const unsigned fixPointMult = static_cast<unsigned>(1.0 / 255.0 * (1 << fixPointShift)) + 1;
-        // Multiplies unsigned value by fixpoint value and converts back to unsigned.
-        static unsigned fixPointUnsignedMultiply(unsigned fixed, unsigned v)
-        {
-            return  (fixed * v) >> fixPointShift;
-        }
+        static const unsigned div255 = static_cast<unsigned>(1.0 / 255 * (1 << 24)) + 1;
 
         inline void setRGBA(PixelData* dest, unsigned r, unsigned g, unsigned b, unsigned a)
         {
@@ -183,13 +163,19 @@ namespace WebCore {
                     return;
                 }
 
-                unsigned alphaMult = a * fixPointMult;
-                r = fixPointUnsignedMultiply(r, alphaMult);
-                g = fixPointUnsignedMultiply(g, alphaMult);
-                b = fixPointUnsignedMultiply(b, alphaMult);
+                unsigned alpha = a * div255;
+                r = (r * alpha) >> 24;
+                g = (g * alpha) >> 24;
+                b = (b * alpha) >> 24;
             }
+
             // Call the "NoCheck" version since we may deliberately pass non-premultiplied
             // values, and we don't want an assert.
+            *dest = SkPackARGB32NoCheck(a, r, g, b);
+        }
+
+        inline void setRGBARaw(PixelData* dest, unsigned r, unsigned g, unsigned b, unsigned a)
+        {
             *dest = SkPackARGB32NoCheck(a, r, g, b);
         }
 
@@ -207,10 +193,9 @@ namespace WebCore {
         RefPtr<NativeImageSkia> m_bitmap;
         SkBitmap::Allocator* m_allocator;
         bool m_hasAlpha;
-        IntRect m_originalFrameRect; // This will always just be the entire
-                                     // buffer except for GIF frames whose
-                                     // original rect was smaller than the
-                                     // overall image size.
+        // This will always just be the entire buffer except for GIF or WebP
+        // frames whose original rect was smaller than the overall image size.
+        IntRect m_originalFrameRect;
         FrameStatus m_status;
         unsigned m_duration;
         FrameDisposalMethod m_disposalMethod;
@@ -269,9 +254,9 @@ namespace WebCore {
 
         // This will only differ from size() for ICO (where each frame is a
         // different icon) or other formats where different frames are different
-        // sizes.  This does NOT differ from size() for GIF, since decoding GIFs
-        // composites any smaller frames against previous frames to create full-
-        // size frames.
+        // sizes. This does NOT differ from size() for GIF or WebP, since
+        // decoding GIF or WebP composites any smaller frames against previous
+        // frames to create full-size frames.
         virtual IntSize frameSizeAtIndex(size_t) const
         {
             return size();
@@ -382,25 +367,24 @@ namespace WebCore {
 
         bool failed() const { return m_failed; }
 
-        // Clears decoded pixel data from all frames except the provided frame,
-        // unless that frame has status FrameEmpty, in which case we instead
-        // preserve the most recent frame whose data is required in order to
-        // decode this frame. Callers may pass WTF::notFound to clear all frames.
-        //
+        // Clears decoded pixel data from all frames except the provided frame.
+        // Callers may pass WTF::notFound to clear all frames.
+        // Note: If |m_frameBufferCache| contains only one frame, it won't be cleared.
         // Returns the number of bytes of frame data actually cleared.
-        size_t clearCacheExceptFrame(size_t);
+        virtual size_t clearCacheExceptFrame(size_t);
 
         // If the image has a cursor hot-spot, stores it in the argument
         // and returns true. Otherwise returns false.
         virtual bool hotSpot(IntPoint&) const { return false; }
 
-        virtual void reportMemoryUsage(MemoryObjectInfo*) const;
-
         virtual void setMemoryAllocator(SkBitmap::Allocator* allocator)
         {
             // FIXME: this doesn't work for images with multiple frames.
-            if (m_frameBufferCache.isEmpty())
+            if (m_frameBufferCache.isEmpty()) {
                 m_frameBufferCache.resize(1);
+                m_frameBufferCache[0].setRequiredPreviousFrameIndex(
+                    findRequiredPreviousFrame(0));
+            }
             m_frameBufferCache[0].setMemoryAllocator(allocator);
         }
 

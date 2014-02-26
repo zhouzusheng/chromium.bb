@@ -30,70 +30,41 @@
 #include "config.h"
 #include "core/page/Frame.h"
 
+#include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ScriptController.h"
-#include "bindings/v8/ScriptSourceCode.h"
-#include "bindings/v8/ScriptValue.h"
-#include "bindings/v8/npruntime_impl.h"
-#include "core/css/CSSComputedStyleDeclaration.h"
-#include "core/css/StylePropertySet.h"
 #include "core/dom/DocumentType.h"
 #include "core/dom/Event.h"
-#include "core/dom/EventNames.h"
-#include "core/dom/NodeList.h"
-#include "core/dom/NodeTraversal.h"
-#include "core/dom/UserTypingGestureIndicator.h"
-#include "core/editing/ApplyStyleCommand.h"
 #include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
-#include "core/editing/TextIterator.h"
-#include "core/editing/VisibleUnits.h"
+#include "core/editing/InputMethodController.h"
 #include "core/editing/htmlediting.h"
 #include "core/editing/markup.h"
-#include "core/html/HTMLDocument.h"
-#include "core/html/HTMLFormControlElement.h"
-#include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLFrameElementBase.h"
-#include "core/html/HTMLTableCellElement.h"
-#include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/loader/TextResourceDecoder.h"
-#include "core/loader/cache/CachedCSSStyleSheet.h"
-#include "core/loader/cache/CachedResourceLoader.h"
+#include "core/loader/cache/ResourceFetcher.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/DOMWindow.h"
-#include "core/page/EditorClient.h"
 #include "core/page/EventHandler.h"
 #include "core/page/FocusController.h"
 #include "core/page/FrameDestructionObserver.h"
 #include "core/page/FrameView.h"
-#include "core/page/Navigator.h"
 #include "core/page/Page.h"
-#include "core/page/PageGroup.h"
-#include "RuntimeEnabledFeatures.h"
 #include "core/page/Settings.h"
-#include "core/page/UserContentURLPattern.h"
 #include "core/page/animation/AnimationController.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/platform/DragImage.h"
-#include "core/platform/Logging.h"
-#include "core/platform/graphics/FloatQuad.h"
 #include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/GraphicsLayer.h"
 #include "core/platform/graphics/ImageBuffer.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderLayerCompositor.h"
 #include "core/rendering/RenderPart.h"
-#include "core/rendering/RenderTableCell.h"
-#include "core/rendering/RenderTextControl.h"
-#include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
 #include "core/svg/SVGDocument.h"
-#include "core/svg/SVGDocumentExtensions.h"
-#include <wtf/PassOwnPtr.h>
-#include <wtf/RefCountedLeakCounter.h>
-#include <wtf/StdLibExtras.h>
+#include "wtf/PassOwnPtr.h"
+#include "wtf/RefCountedLeakCounter.h"
+#include "wtf/StdLibExtras.h"
 
 using namespace std;
 
@@ -137,6 +108,7 @@ inline Frame::Frame(Page* page, HTMLFrameOwnerElement* ownerElement, FrameLoader
     , m_selection(adoptPtr(new FrameSelection(this)))
     , m_eventHandler(adoptPtr(new EventHandler(this)))
     , m_animationController(adoptPtr(new AnimationController(this)))
+    , m_inputMethodController(InputMethodController::create(this))
     , m_pageZoomFactor(parentPageZoomFactor(this))
     , m_textZoomFactor(parentTextZoomFactor(this))
 #if ENABLE(ORIENTATION_EVENTS)
@@ -254,7 +226,7 @@ void Frame::setPrinting(bool printing, const FloatSize& pageSize, const FloatSiz
 {
     // In setting printing, we should not validate resources already cached for the document.
     // See https://bugs.webkit.org/show_bug.cgi?id=43704
-    ResourceCacheValidationSuppressor validationSuppressor(document()->cachedResourceLoader());
+    ResourceCacheValidationSuppressor validationSuppressor(document()->fetcher());
 
     document()->setPrinting(printing);
     view()->adjustMediaTypeForPrinting(printing);
@@ -351,7 +323,8 @@ void Frame::clearTimers(FrameView *view, Document *document)
     if (view) {
         view->unscheduleRelayout();
         if (view->frame()) {
-            view->frame()->animation()->suspendAnimationsForDocument(document);
+            if (!RuntimeEnabledFeatures::webAnimationsCSSEnabled())
+                view->frame()->animation()->suspendAnimationsForDocument(document);
             view->frame()->eventHandler()->stopAutoscrollTimer();
         }
     }
@@ -375,19 +348,11 @@ void Frame::dispatchVisibilityStateChangeEvent()
         childFrames[i]->dispatchVisibilityStateChangeEvent();
 }
 
-void Frame::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    info.addMember(m_domWindow, "domWindow");
-    info.ignoreMember(m_view);
-    info.addMember(m_ownerElement, "ownerElement");
-    info.addMember(m_page, "page");
-    info.addMember(m_loader, "loader");
-    info.ignoreMember(m_destructionObservers);
-}
-
 void Frame::willDetachPage()
 {
+    // We should never be detatching the page during a Layout.
+    RELEASE_ASSERT(!m_view || !m_view->isInLayout());
+
     if (Frame* parent = tree()->parent())
         parent->loader()->checkLoadComplete();
 
@@ -397,13 +362,20 @@ void Frame::willDetachPage()
 
     // FIXME: It's unclear as to why this is called more than once, but it is,
     // so page() could be NULL.
-    if (page() && page()->focusController()->focusedFrame() == this)
-        page()->focusController()->setFocusedFrame(0);
+    if (page() && page()->focusController().focusedFrame() == this)
+        page()->focusController().setFocusedFrame(0);
 
     if (page() && page()->scrollingCoordinator() && m_view)
         page()->scrollingCoordinator()->willDestroyScrollableArea(m_view.get());
 
     script()->clearScriptObjects();
+}
+
+void Frame::detachFromPage()
+{
+    // We should never be detatching the page during a Layout.
+    RELEASE_ASSERT(!m_view || !m_view->isInLayout());
+    m_page = 0;
 }
 
 void Frame::disconnectOwnerElement()
@@ -431,6 +403,16 @@ String Frame::displayStringModifiedByEncoding(const String& str) const
     return document() ? document()->displayStringModifiedByEncoding(str) : str;
 }
 
+String Frame::selectedText() const
+{
+    return selection()->selectedText();
+}
+
+String Frame::selectedTextForClipboard() const
+{
+    return selection()->selectedTextForClipboard();
+}
+
 VisiblePosition Frame::visiblePositionForPoint(const IntPoint& framePoint)
 {
     HitTestResult result = eventHandler()->hitTestResultAtPoint(framePoint);
@@ -440,7 +422,7 @@ VisiblePosition Frame::visiblePositionForPoint(const IntPoint& framePoint)
     RenderObject* renderer = node->renderer();
     if (!renderer)
         return VisiblePosition();
-    VisiblePosition visiblePos = renderer->positionForPoint(result.localPoint());
+    VisiblePosition visiblePos = VisiblePosition(renderer->positionForPoint(result.localPoint()));
     if (visiblePos.isNull())
         visiblePos = firstPositionInOrBeforeNode(node);
     return visiblePos;
@@ -483,7 +465,7 @@ PassRefPtr<Range> Frame::rangeForPoint(const IntPoint& framePoint)
     return 0;
 }
 
-void Frame::createView(const IntSize& viewportSize, const Color& backgroundColor, bool transparent,
+void Frame::createView(const IntSize& viewportSize, const StyleColor& backgroundColor, bool transparent,
     const IntSize& fixedLayoutSize, bool useFixedLayout, ScrollbarMode horizontalScrollbarMode, bool horizontalLock,
     ScrollbarMode verticalScrollbarMode, bool verticalLock)
 {
@@ -510,7 +492,7 @@ void Frame::createView(const IntSize& viewportSize, const Color& backgroundColor
     setView(frameView);
 
     if (backgroundColor.isValid())
-        frameView->updateBackgroundRecursively(backgroundColor, transparent);
+        frameView->updateBackgroundRecursively(backgroundColor.color(), transparent);
 
     if (isMainFrame)
         frameView->setParentVisible(true);

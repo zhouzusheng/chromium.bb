@@ -38,16 +38,6 @@ namespace sandbox {
 class TargetPolicy;
 }
 
-namespace webkit {
-namespace npapi {
-class PluginList;
-}
-
-namespace ppapi {
-class HostGlobals;
-}
-}
-
 namespace content {
 
 class ContentBrowserClient;
@@ -72,6 +62,8 @@ CONTENT_EXPORT ContentBrowserClient* SetBrowserClientForTesting(
     ContentBrowserClient* b);
 CONTENT_EXPORT ContentRendererClient* SetRendererClientForTesting(
     ContentRendererClient* r);
+CONTENT_EXPORT ContentUtilityClient* SetUtilityClientForTesting(
+    ContentUtilityClient* u);
 
 // Returns the user agent string being used by the browser. SetContentClient()
 // must be called prior to calling this, and this routine must be used
@@ -82,10 +74,6 @@ CONTENT_EXPORT ContentRendererClient* SetRendererClientForTesting(
 // static values of the user agent. This will be fixed when we clean up
 // webkit_glue.
 CONTENT_EXPORT const std::string& GetUserAgent(const GURL& url);
-
-// Returns the PPAPI global singleton. See webkit/plugins/ppapi/host_globals.h
-// TODO(dpranke): Also needed since webkit_glue is a library.
-CONTENT_EXPORT webkit::ppapi::HostGlobals* GetHostGlobals();
 
 // Interface that the embedder implements.
 class CONTENT_EXPORT ContentClient {
@@ -107,10 +95,6 @@ class CONTENT_EXPORT ContentClient {
   // Gives the embedder a chance to register its own pepper plugins.
   virtual void AddPepperPlugins(
       std::vector<content::PepperPluginInfo>* plugins) {}
-
-  // Gives the embedder a chance to register its own internal NPAPI plugins.
-  virtual void AddNPAPIPlugins(
-      webkit::npapi::PluginList* plugin_list) {}
 
   // Gives the embedder a chance to register its own standard and saveable
   // url schemes early on in the startup sequence.

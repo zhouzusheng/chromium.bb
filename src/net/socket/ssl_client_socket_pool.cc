@@ -8,6 +8,7 @@
 #include "base/bind_helpers.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/values.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
@@ -19,6 +20,8 @@
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/transport_client_socket_pool.h"
 #include "net/ssl/ssl_cert_request_info.h"
+#include "net/ssl/ssl_connection_status_flags.h"
+#include "net/ssl/ssl_info.h"
 
 namespace net {
 
@@ -29,6 +32,7 @@ SSLSocketParams::SSLSocketParams(
     ProxyServer::Scheme proxy,
     const HostPortPair& host_and_port,
     const SSLConfig& ssl_config,
+    PrivacyMode privacy_mode,
     int load_flags,
     bool force_spdy_over_ssl,
     bool want_spdy_over_npn)
@@ -38,6 +42,7 @@ SSLSocketParams::SSLSocketParams(
       proxy_(proxy),
       host_and_port_(host_and_port),
       ssl_config_(ssl_config),
+      privacy_mode_(privacy_mode),
       load_flags_(load_flags),
       force_spdy_over_ssl_(force_spdy_over_ssl),
       want_spdy_over_npn_(want_spdy_over_npn),
@@ -85,7 +90,9 @@ SSLConnectJob::SSLConnectJob(const std::string& group_name,
                              const SSLClientSocketContext& context,
                              Delegate* delegate,
                              NetLog* net_log)
-    : ConnectJob(group_name, timeout_duration, delegate,
+    : ConnectJob(group_name,
+                 timeout_duration,
+                 delegate,
                  BoundNetLog::Make(net_log, NetLog::SOURCE_CONNECT_JOB)),
       params_(params),
       transport_pool_(transport_pool),
@@ -93,7 +100,12 @@ SSLConnectJob::SSLConnectJob(const std::string& group_name,
       http_proxy_pool_(http_proxy_pool),
       client_socket_factory_(client_socket_factory),
       host_resolver_(host_resolver),
-      context_(context),
+      context_(context.cert_verifier,
+               context.server_bound_cert_service,
+               context.transport_security_state,
+               (params->privacy_mode() == kPrivacyModeEnabled
+                    ? "pm/" + context.ssl_session_cache_shard
+                    : context.ssl_session_cache_shard)),
       callback_(base::Bind(&SSLConnectJob::OnIOComplete,
                            base::Unretained(this))) {}
 
@@ -276,8 +288,10 @@ int SSLConnectJob::DoSSLConnect() {
   connect_timing_.ssl_start = base::TimeTicks::Now();
 
   ssl_socket_.reset(client_socket_factory_->CreateSSLClientSocket(
-      transport_socket_handle_.release(), params_->host_and_port(),
-      params_->ssl_config(), context_));
+      transport_socket_handle_.release(),
+      params_->host_and_port(),
+      params_->ssl_config(),
+      context_));
   return ssl_socket_->Connect(callback_);
 }
 
@@ -327,6 +341,18 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
                                  base::TimeDelta::FromMinutes(1),
                                  100);
     }
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+    bool using_data_reduction_proxy = params_->host_and_port().Equals(
+        HostPortPair::FromURL(GURL(SPDY_PROXY_AUTH_ORIGIN)));
+    if (using_data_reduction_proxy) {
+      UMA_HISTOGRAM_CUSTOM_TIMES(
+          "Net.SSL_Connection_Latency_DataReductionProxy",
+          connect_duration,
+          base::TimeDelta::FromMilliseconds(1),
+          base::TimeDelta::FromMinutes(1),
+          100);
+    }
+#endif
 
     UMA_HISTOGRAM_CUSTOM_TIMES("Net.SSL_Connection_Latency_2",
                                connect_duration,
@@ -336,6 +362,10 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
 
     SSLInfo ssl_info;
     ssl_socket_->GetSSLInfo(&ssl_info);
+
+    UMA_HISTOGRAM_SPARSE_SLOWLY("Net.SSL_CipherSuite",
+                                SSLConnectionStatusToCipherSuite(
+                                    ssl_info.connection_status));
 
     if (ssl_info.handshake_type == SSLInfo::HANDSHAKE_RESUME) {
       UMA_HISTOGRAM_CUSTOM_TIMES("Net.SSL_Connection_Latency_Resume_Handshake",

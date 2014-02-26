@@ -25,10 +25,10 @@
  */
 
 #include "config.h"
-
 #include "core/html/shadow/MediaControlsChromium.h"
 
-#include "core/dom/ExceptionCodePlaceholder.h"
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 
 using namespace std;
 
@@ -69,68 +69,68 @@ bool MediaControlsChromium::initializeControls(Document* document)
 
     RefPtr<MediaControlPanelElement> panel = MediaControlPanelElement::create(document);
 
-    ExceptionCode ec;
+    TrackExceptionState es;
 
     RefPtr<MediaControlPlayButtonElement> playButton = MediaControlPlayButtonElement::create(document);
     m_playButton = playButton.get();
-    panel->appendChild(playButton.release(), ec, AttachLazily);
-    if (ec)
+    panel->appendChild(playButton.release(), es, AttachLazily);
+    if (es.hadException())
         return false;
 
     RefPtr<MediaControlTimelineElement> timeline = MediaControlTimelineElement::create(document, this);
     m_timeline = timeline.get();
-    panel->appendChild(timeline.release(), ec, AttachLazily);
-    if (ec)
+    panel->appendChild(timeline.release(), es, AttachLazily);
+    if (es.hadException())
         return false;
 
     RefPtr<MediaControlCurrentTimeDisplayElement> currentTimeDisplay = MediaControlCurrentTimeDisplayElement::create(document);
     m_currentTimeDisplay = currentTimeDisplay.get();
     m_currentTimeDisplay->hide();
-    panel->appendChild(currentTimeDisplay.release(), ec, AttachLazily);
-    if (ec)
+    panel->appendChild(currentTimeDisplay.release(), es, AttachLazily);
+    if (es.hadException())
         return false;
 
     RefPtr<MediaControlTimeRemainingDisplayElement> durationDisplay = MediaControlTimeRemainingDisplayElement::create(document);
     m_durationDisplay = durationDisplay.get();
-    panel->appendChild(durationDisplay.release(), ec, AttachLazily);
-    if (ec)
+    panel->appendChild(durationDisplay.release(), es, AttachLazily);
+    if (es.hadException())
         return false;
 
     RefPtr<MediaControlPanelMuteButtonElement> panelMuteButton = MediaControlPanelMuteButtonElement::create(document, this);
     m_panelMuteButton = panelMuteButton.get();
-    panel->appendChild(panelMuteButton.release(), ec, AttachLazily);
-    if (ec)
+    panel->appendChild(panelMuteButton.release(), es, AttachLazily);
+    if (es.hadException())
         return false;
 
     RefPtr<MediaControlPanelVolumeSliderElement> slider = MediaControlPanelVolumeSliderElement::create(document);
     m_volumeSlider = slider.get();
     m_volumeSlider->setClearMutedOnUserInteraction(true);
-    panel->appendChild(slider.release(), ec, AttachLazily);
-    if (ec)
+    panel->appendChild(slider.release(), es, AttachLazily);
+    if (es.hadException())
         return false;
 
     if (document->page()->theme()->supportsClosedCaptioning()) {
         RefPtr<MediaControlToggleClosedCaptionsButtonElement> toggleClosedCaptionsButton = MediaControlToggleClosedCaptionsButtonElement::create(document, this);
         m_toggleClosedCaptionsButton = toggleClosedCaptionsButton.get();
-        panel->appendChild(toggleClosedCaptionsButton.release(), ec, AttachLazily);
-        if (ec)
+        panel->appendChild(toggleClosedCaptionsButton.release(), es, AttachLazily);
+        if (es.hadException())
             return false;
     }
 
     RefPtr<MediaControlFullscreenButtonElement> fullscreenButton = MediaControlFullscreenButtonElement::create(document);
     m_fullScreenButton = fullscreenButton.get();
-    panel->appendChild(fullscreenButton.release(), ec, AttachLazily);
-    if (ec)
+    panel->appendChild(fullscreenButton.release(), es, AttachLazily);
+    if (es.hadException())
         return false;
 
     m_panel = panel.get();
-    enclosure->appendChild(panel.release(), ec, AttachLazily);
-    if (ec)
+    enclosure->appendChild(panel.release(), es, AttachLazily);
+    if (es.hadException())
         return false;
 
     m_enclosure = enclosure.get();
-    appendChild(enclosure.release(), ec, AttachLazily);
-    if (ec)
+    appendChild(enclosure.release(), es, AttachLazily);
+    if (es.hadException())
         return false;
 
     return true;

@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef RemoveCSSPropertyCommand_h
@@ -31,27 +31,27 @@
 
 namespace WebCore {
 
-class StyledElement;
+class Element;
 
 class RemoveCSSPropertyCommand : public SimpleEditCommand {
 public:
-    static PassRefPtr<RemoveCSSPropertyCommand> create(Document* document, PassRefPtr<StyledElement> element, CSSPropertyID property)
+    static PassRefPtr<RemoveCSSPropertyCommand> create(Document* document, PassRefPtr<Element> element, CSSPropertyID property)
     {
         return adoptRef(new RemoveCSSPropertyCommand(document, element, property));
     }
 
 private:
-    RemoveCSSPropertyCommand(Document*, PassRefPtr<StyledElement>, CSSPropertyID property);
+    RemoveCSSPropertyCommand(Document*, PassRefPtr<Element>, CSSPropertyID);
     ~RemoveCSSPropertyCommand();
 
     virtual void doApply() OVERRIDE;
     virtual void doUnapply() OVERRIDE;
-    
+
 #ifndef NDEBUG
     virtual void getNodesInCommand(HashSet<Node*>&) OVERRIDE;
 #endif
-    
-    RefPtr<StyledElement> m_element;
+
+    RefPtr<Element> m_element;
     CSSPropertyID m_property;
     String m_oldValue;
     bool m_important;

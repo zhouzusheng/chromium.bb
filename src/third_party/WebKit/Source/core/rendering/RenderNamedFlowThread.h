@@ -29,9 +29,9 @@
 
 #include "core/platform/Timer.h"
 #include "core/rendering/RenderFlowThread.h"
-#include <wtf/HashCountedSet.h>
-#include <wtf/ListHashSet.h>
-#include <wtf/text/AtomicString.h>
+#include "wtf/HashCountedSet.h"
+#include "wtf/ListHashSet.h"
+#include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
@@ -68,6 +68,11 @@ public:
     virtual void addRegionToThread(RenderRegion*) OVERRIDE;
     virtual void removeRegionFromThread(RenderRegion*) OVERRIDE;
 
+    virtual void regionChangedWritingMode(RenderRegion*) OVERRIDE;
+
+    bool overset() const { return m_overset; }
+    void computeOversetStateForRegions(LayoutUnit oldClientAfterEdge);
+
     void registerNamedFlowContentNode(Node*);
     void unregisterNamedFlowContentNode(Node*);
     const NamedFlowContentNodes& contentNodes() const { return m_contentNodes; }
@@ -101,6 +106,7 @@ private:
     void regionLayoutUpdateEventTimerFired(Timer<RenderNamedFlowThread>*);
     void regionOversetChangeEventTimerFired(Timer<RenderNamedFlowThread>*);
     void clearContentNodes();
+    void updateWritingMode();
 
 private:
     // Observer flow threads have invalid regions that depend on the state of this thread
@@ -120,6 +126,8 @@ private:
     NamedFlowContentNodes m_contentNodes;
 
     RenderRegionList m_invalidRegionList;
+
+    bool m_overset : 1;
 
     // The DOM Object that represents a named flow.
     RefPtr<NamedFlow> m_namedFlow;

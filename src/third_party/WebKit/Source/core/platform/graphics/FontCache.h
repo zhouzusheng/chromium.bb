@@ -7,13 +7,13 @@
  * are met:
  *
  * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer. 
+ *     notice, this list of conditions and the following disclaimer.
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution. 
+ *     documentation and/or other materials provided with the distribution.
  * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission. 
+ *     from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -31,12 +31,12 @@
 #define FontCache_h
 
 #include <limits.h>
-#include <wtf/Forward.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefPtr.h>
-#include <wtf/Vector.h>
-#include <wtf/text/WTFString.h>
-#include <wtf/unicode/Unicode.h>
+#include "wtf/Forward.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefPtr.h"
+#include "wtf/Vector.h"
+#include "wtf/text/WTFString.h"
+#include "wtf/unicode/Unicode.h"
 
 #if OS(WINDOWS)
 #include <windows.h>
@@ -66,15 +66,16 @@ public:
     PassRefPtr<FontData> getFontData(const Font&, int& familyIndex, FontSelector*);
     void releaseFontData(const SimpleFontData*);
 
-    // This method is implemented by the platform.
-    PassRefPtr<SimpleFontData> getFontDataForCharacters(const Font&, const UChar* characters, int length);
+    // This method is implemented by the plaform and used by
+    // FontFastPath to lookup the font for a given character.
+    PassRefPtr<SimpleFontData> getFontDataForCharacter(const Font&, UChar32);
 
     // Also implemented by the platform.
     void platformInit();
 
     void getTraitsInFamily(const AtomicString&, Vector<unsigned>&);
 
-    PassRefPtr<SimpleFontData> getCachedFontData(const FontDescription&, const AtomicString&, bool checkingAlternateName = false, ShouldRetain = Retain);
+    PassRefPtr<SimpleFontData> getFontResourceData(const FontDescription&, const AtomicString&, bool checkingAlternateName = false, ShouldRetain = Retain);
     PassRefPtr<SimpleFontData> getLastResortFallbackFont(const FontDescription&, ShouldRetain = Retain);
     SimpleFontData* getNonRetainedLastResortFallbackFont(const FontDescription&);
 
@@ -102,7 +103,7 @@ public:
         bool isBold;
         bool isItalic;
     };
-    static void getFontFamilyForCharacters(const UChar* characters, size_t numCharacters, const char* preferredLocale, SimpleFontFamily*);
+    static void getFontFamilyForCharacter(UChar32, const char* preferredLocale, SimpleFontFamily*);
 
 private:
     FontCache();
@@ -119,13 +120,14 @@ private:
     void purgeInactiveFontDataIfNeeded();
 
     // FIXME: This method should eventually be removed.
-    FontPlatformData* getCachedFontPlatformData(const FontDescription&, const AtomicString& family, bool checkingAlternateName = false);
+    FontPlatformData* getFontResourcePlatformData(const FontDescription&, const AtomicString& family, bool checkingAlternateName = false);
 
     // These methods are implemented by each platform.
     PassRefPtr<SimpleFontData> getSimilarFontPlatformData(const Font&);
     FontPlatformData* createFontPlatformData(const FontDescription&, const AtomicString& family);
 
-    PassRefPtr<SimpleFontData> getCachedFontData(const FontPlatformData*, ShouldRetain = Retain);
+    PassRefPtr<SimpleFontData> getFontResourceData(const FontPlatformData*, ShouldRetain = Retain);
+    const FontPlatformData* getFallbackFontData(const FontDescription&);
 
     // Don't purge if this count is > 0;
     int m_purgePreventCount;
@@ -133,7 +135,7 @@ private:
 #if OS(DARWIN) || OS(ANDROID)
     friend class ComplexTextController;
 #endif
-    friend class SimpleFontData; // For getCachedFontData(const FontPlatformData*)
+    friend class SimpleFontData; // For getFontResourceData(const FontPlatformData*)
     friend class FontFallbackList;
 };
 

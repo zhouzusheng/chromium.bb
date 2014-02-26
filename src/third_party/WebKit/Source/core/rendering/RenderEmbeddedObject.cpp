@@ -44,7 +44,7 @@
 namespace WebCore {
 
 using namespace HTMLNames;
-    
+
 static const float replacementTextRoundedRectHeight = 18;
 static const float replacementTextRoundedRectLeftRightTextMargin = 6;
 static const float replacementTextRoundedRectOpacity = 0.20f;
@@ -56,7 +56,7 @@ static const Color& replacementTextRoundedRectPressedColor()
     static const Color lightGray(205, 205, 205);
     return lightGray;
 }
-    
+
 RenderEmbeddedObject::RenderEmbeddedObject(Element* element)
     : RenderPart(element)
     , m_hasFallbackContent(false)
@@ -75,7 +75,7 @@ bool RenderEmbeddedObject::requiresLayer() const
 {
     if (RenderPart::requiresLayer())
         return true;
-    
+
     return allowsAcceleratedCompositing();
 }
 
@@ -146,11 +146,11 @@ void RenderEmbeddedObject::paintReplaced(PaintInfo& paintInfo, const LayoutPoint
 
     if (paintInfo.phase == PaintPhaseSelection)
         return;
-    
+
     GraphicsContext* context = paintInfo.context;
     if (context->paintingDisabled())
         return;
-    
+
     FloatRect contentRect;
     Path path;
     FloatRect replacementTextRect;
@@ -159,7 +159,7 @@ void RenderEmbeddedObject::paintReplaced(PaintInfo& paintInfo, const LayoutPoint
     float textWidth;
     if (!getReplacementTextGeometry(paintOffset, contentRect, path, replacementTextRect, font, run, textWidth))
         return;
-    
+
     GraphicsContextStateSaver stateSaver(*context);
     context->clip(contentRect);
     context->setAlpha(replacementTextRoundedRectOpacity);
@@ -180,7 +180,7 @@ bool RenderEmbeddedObject::getReplacementTextGeometry(const LayoutPoint& accumul
 {
     contentRect = contentBoxRect();
     contentRect.moveBy(roundedIntPoint(accumulatedOffset));
-    
+
     FontDescription fontDescription;
     RenderTheme::defaultTheme()->systemFont(CSSValueWebkitSmallControl, fontDescription);
     fontDescription.setWeight(FontWeightBold);
@@ -188,19 +188,18 @@ bool RenderEmbeddedObject::getReplacementTextGeometry(const LayoutPoint& accumul
     ASSERT(settings);
     if (!settings)
         return false;
-    fontDescription.setRenderingMode(settings->fontRenderingMode());
     fontDescription.setComputedSize(fontDescription.specifiedSize());
     font = Font(fontDescription, 0, 0);
     font.update(0);
 
     run = TextRun(m_unavailablePluginReplacementText);
     textWidth = font.width(run);
-    
+
     replacementTextRect.setSize(FloatSize(textWidth + replacementTextRoundedRectLeftRightTextMargin * 2, replacementTextRoundedRectHeight));
     float x = (contentRect.size().width() / 2 - replacementTextRect.size().width() / 2) + contentRect.location().x();
     float y = (contentRect.size().height() / 2 - replacementTextRect.size().height() / 2) + contentRect.location().y();
     replacementTextRect.setLocation(FloatPoint(x, y));
-    
+
     path.addRoundedRect(replacementTextRect, FloatSize(replacementTextRoundedRectRadius, replacementTextRoundedRectRadius));
 
     return true;
@@ -226,7 +225,7 @@ void RenderEmbeddedObject::layout()
     if (!widget() && frameView())
         frameView()->addWidgetToUpdate(this);
 
-    setNeedsLayout(false);
+    clearNeedsLayout();
 
     if (!canHaveChildren())
         return;
@@ -241,23 +240,22 @@ void RenderEmbeddedObject::layout()
 
     if (!childBox)
         return;
-    
+
     LayoutSize newSize = contentBoxRect().size();
     if (newSize == oldSize && !childBox->needsLayout())
         return;
-    
+
     // When calling layout() on a child node, a parent must either push a LayoutStateMaintainter, or
     // instantiate LayoutStateDisabler. Since using a LayoutStateMaintainer is slightly more efficient,
     // and this method will be called many times per second during playback, use a LayoutStateMaintainer:
     LayoutStateMaintainer statePusher(view(), this, locationOffset(), hasTransform() || hasReflection() || style()->isFlippedBlocksWritingMode());
-    
+
     childBox->setLocation(LayoutPoint(borderLeft(), borderTop()) + LayoutSize(paddingLeft(), paddingTop()));
     childBox->style()->setHeight(Length(newSize.height(), Fixed));
     childBox->style()->setWidth(Length(newSize.width(), Fixed));
-    childBox->setNeedsLayout(true, MarkOnlyThis);
-    childBox->layout();
-    setChildNeedsLayout(false);
-    
+    childBox->forceLayout();
+    clearNeedsLayout();
+
     statePusher.pop();
 }
 
@@ -269,7 +267,7 @@ void RenderEmbeddedObject::viewCleared()
         int marginWidth = -1;
         int marginHeight = -1;
         if (node()->hasTagName(iframeTag)) {
-            HTMLIFrameElement* frame = static_cast<HTMLIFrameElement*>(node());
+            HTMLIFrameElement* frame = toHTMLIFrameElement(node());
             marginWidth = frame->marginWidth();
             marginHeight = frame->marginHeight();
         }

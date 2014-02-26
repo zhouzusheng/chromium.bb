@@ -31,57 +31,49 @@
 #ifndef LocalFileSystem_h
 #define LocalFileSystem_h
 
-#include "modules/filesystem/DOMFileSystemBase.h"
+#include "core/page/Page.h"
 #include "modules/filesystem/FileSystemType.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
-#include "wtf/text/WTFString.h"
+#include "wtf/Forward.h"
 
 namespace WebCore {
 
-class ErrorCallback;
-class FileSystemCallback;
+class AsyncFileSystemCallbacks;
+class FileSystemClient;
 class ScriptExecutionContext;
 
-// Keeps per-process information and provides an entry point to open a file system.
-class LocalFileSystem {
-    WTF_MAKE_NONCOPYABLE(LocalFileSystem);
+// Base class of LocalFileSystem and WorkerLocalFileSystem.
+class LocalFileSystemBase {
+    WTF_MAKE_NONCOPYABLE(LocalFileSystemBase);
 public:
-    // Returns a per-process instance of LocalFileSystem.
-    // Note that LocalFileSystem::initializeLocalFileSystem must be called before
-    // calling this one.
-    static LocalFileSystem& localFileSystem();
+    virtual ~LocalFileSystemBase();
 
-    // Does not create the root path for file system, just reads it if available.
+    // Does not create the new file system if it doesn't exist, just reads it if available.
     void readFileSystem(ScriptExecutionContext*, FileSystemType, PassOwnPtr<AsyncFileSystemCallbacks>, FileSystemSynchronousType = AsynchronousFileSystem);
 
     void requestFileSystem(ScriptExecutionContext*, FileSystemType, long long size, PassOwnPtr<AsyncFileSystemCallbacks>, FileSystemSynchronousType = AsynchronousFileSystem);
 
     void deleteFileSystem(ScriptExecutionContext*, FileSystemType, PassOwnPtr<AsyncFileSystemCallbacks>);
 
-private:
-    explicit LocalFileSystem(const String& basePath)
-        : m_basePath(basePath)
-    {
-    }
+    FileSystemClient* client() { return m_client.get(); }
 
-    static LocalFileSystem* s_instance;
+protected:
+    explicit LocalFileSystemBase(PassOwnPtr<FileSystemClient>);
 
-    // An inner class that enforces thread-safe string access.
-    class SystemBasePath {
-    public:
-        explicit SystemBasePath(const String& path) : m_value(path) { }
-        operator String() const
-        {
-            return m_value.isolatedCopy();
-        }
-    private:
-        String m_value;
-    };
-
-    SystemBasePath m_basePath;
+    OwnPtr<FileSystemClient> m_client;
 };
 
-} // namespace
+class LocalFileSystem : public LocalFileSystemBase, public Supplement<Page> {
+public:
+    static PassOwnPtr<LocalFileSystem> create(PassOwnPtr<FileSystemClient>);
+    static const char* supplementName();
+    static LocalFileSystem* from(ScriptExecutionContext*);
+    virtual ~LocalFileSystem();
+
+private:
+    explicit LocalFileSystem(PassOwnPtr<FileSystemClient>);
+};
+
+
+} // namespace WebCore
 
 #endif // LocalFileSystem_h

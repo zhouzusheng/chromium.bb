@@ -31,12 +31,13 @@
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLLegendElement.h"
+#include "core/html/HTMLTextAreaElement.h"
 #include "core/html/ValidationMessage.h"
 #include "core/html/ValidityState.h"
 #include "core/page/UseCounter.h"
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/RenderTheme.h"
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -55,6 +56,7 @@ HTMLFormControlElement::HTMLFormControlElement(const QualifiedName& tagName, Doc
     , m_willValidate(true)
     , m_isValid(true)
     , m_wasChangedSinceLastFormControlChangeEvent(false)
+    , m_wasFocusedByMouse(false)
     , m_hasAutofocused(false)
 {
     setForm(form ? form : findFormAncestor());
@@ -155,6 +157,11 @@ void HTMLFormControlElement::disabledAttributeChanged()
     didAffectSelector(AffectedSelectorDisabled | AffectedSelectorEnabled);
     if (renderer() && renderer()->style()->hasAppearance())
         renderer()->theme()->stateChanged(renderer(), EnabledState);
+    if (isDisabledFormControl() && treeScope()->adjustedFocusedElement() == this) {
+        // We might want to call blur(), but it's dangerous to dispatch events
+        // here.
+        document()->setNeedsFocusedElementCheck();
+    }
 }
 
 void HTMLFormControlElement::requiredAttributeChanged()
@@ -191,16 +198,16 @@ static bool shouldAutofocus(HTMLFormControlElement* element)
         return true;
     if (element->hasTagName(buttonTag))
         return true;
-    if (element->hasTagName(textareaTag))
+    if (isHTMLTextAreaElement(element))
         return true;
 
     return false;
 }
 
 static void focusPostAttach(Node* element)
-{ 
-    toElement(element)->focus(); 
-    element->deref(); 
+{
+    toElement(element)->focus();
+    element->deref();
 }
 
 void HTMLFormControlElement::attach(const AttachContext& context)
@@ -314,15 +321,41 @@ bool HTMLFormControlElement::rendererIsFocusable() const
     return HTMLElement::rendererIsFocusable();
 }
 
-bool HTMLFormControlElement::isKeyboardFocusable(KeyboardEvent*) const
+bool HTMLFormControlElement::isKeyboardFocusable() const
 {
-    return isFocusable() && document()->frame();
+    // Skip tabIndex check in a parent class.
+    return isFocusable();
 }
 
-bool HTMLFormControlElement::isMouseFocusable() const
+bool HTMLFormControlElement::shouldShowFocusRingOnMouseFocus() const
 {
     return false;
 }
+
+void HTMLFormControlElement::dispatchFocusEvent(Element* oldFocusedElement, FocusDirection direction)
+{
+    if (direction != FocusDirectionPage)
+        m_wasFocusedByMouse = direction == FocusDirectionMouse;
+    HTMLElement::dispatchFocusEvent(oldFocusedElement, direction);
+}
+
+bool HTMLFormControlElement::shouldHaveFocusAppearance() const
+{
+    ASSERT(focused());
+    return shouldShowFocusRingOnMouseFocus() || !m_wasFocusedByMouse;
+}
+
+void HTMLFormControlElement::willCallDefaultEventHandler(const Event& event)
+{
+    if (!event.isKeyboardEvent() || event.type() != eventNames().keydownEvent)
+        return;
+    if (!m_wasFocusedByMouse)
+        return;
+    m_wasFocusedByMouse = false;
+    if (renderer())
+        renderer()->repaint();
+}
+
 
 short HTMLFormControlElement::tabIndex() const
 {
@@ -442,9 +475,9 @@ void HTMLFormControlElement::setCustomValidity(const String& error)
     setNeedsValidityCheck();
 }
 
-void HTMLFormControlElement::dispatchBlurEvent(PassRefPtr<Node> newFocusedNode)
+void HTMLFormControlElement::dispatchBlurEvent(Element* newFocusedElement)
 {
-    HTMLElement::dispatchBlurEvent(newFocusedNode);
+    HTMLElement::dispatchBlurEvent(newFocusedElement);
     hideVisibleValidationMessage();
 }
 
@@ -465,13 +498,6 @@ HTMLFormControlElement* HTMLFormControlElement::enclosingFormControlElement(Node
             return toHTMLFormControlElement(node);
     }
     return 0;
-}
-
-void HTMLFormControlElement::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    LabelableElement::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_validationMessage, "validationMessage");
 }
 
 } // namespace Webcore

@@ -21,14 +21,13 @@
 #ifndef SVGFEImageElement_h
 #define SVGFEImageElement_h
 
-#include "core/loader/cache/CachedImage.h"
-#include "core/loader/cache/CachedResourceHandle.h"
+#include "core/loader/cache/ImageResource.h"
+#include "core/loader/cache/ResourcePtr.h"
 #include "core/platform/graphics/ImageBuffer.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedPreserveAspectRatio.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
-#include "core/svg/SVGLangSpace.h"
 #include "core/svg/SVGURIReference.h"
 #include "core/svg/graphics/filters/SVGFEImage.h"
 
@@ -36,9 +35,8 @@ namespace WebCore {
 
 class SVGFEImageElement FINAL : public SVGFilterPrimitiveStandardAttributes,
                                 public SVGURIReference,
-                                public SVGLangSpace,
                                 public SVGExternalResourcesRequired,
-                                public CachedImageClient {
+                                public ImageResourceClient {
 public:
     static PassRefPtr<SVGFEImageElement> create(const QualifiedName&, Document*);
 
@@ -50,7 +48,7 @@ private:
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual void svgAttributeChanged(const QualifiedName&);
-    virtual void notifyFinished(CachedResource*);
+    virtual void notifyFinished(Resource*);
 
     virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
     virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*);
@@ -68,7 +66,7 @@ private:
         DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
     END_DECLARE_ANIMATED_PROPERTIES
 
-    CachedResourceHandle<CachedImage> m_cachedImage;
+    ResourcePtr<ImageResource> m_cachedImage;
 };
 
 } // namespace WebCore

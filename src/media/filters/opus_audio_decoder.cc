@@ -9,11 +9,11 @@
 #include "base/location.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/sys_byteorder.h"
+#include "media/base/audio_buffer.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/audio_timestamp_helper.h"
 #include "media/base/bind_to_loop.h"
 #include "media/base/buffers.h"
-#include "media/base/data_buffer.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/demuxer.h"
 #include "media/base/pipeline.h"
@@ -36,7 +36,7 @@ static inline bool IsEndOfStream(int decoded_size,
   // Two conditions to meet to declare end of stream for this decoder:
   // 1. Opus didn't output anything.
   // 2. An end of stream buffer is received.
-  return decoded_size == 0 && input->IsEndOfStream();
+  return decoded_size == 0 && input->end_of_stream();
 }
 
 // The Opus specification is part of IETF RFC 6716:
@@ -356,14 +356,14 @@ void OpusAudioDecoder::BufferReady(
 
   // Libopus does not buffer output. Decoding is complete when an end of stream
   // input buffer is received.
-  if (input->IsEndOfStream()) {
-    base::ResetAndReturn(&read_cb_).Run(kOk, DataBuffer::CreateEOSBuffer());
+  if (input->end_of_stream()) {
+    base::ResetAndReturn(&read_cb_).Run(kOk, AudioBuffer::CreateEOSBuffer());
     return;
   }
 
   // Make sure we are notified if http://crbug.com/49709 returns.  Issue also
   // occurs with some damaged files.
-  if (input->GetTimestamp() == kNoTimestamp() &&
+  if (input->timestamp() == kNoTimestamp() &&
       output_timestamp_helper_->base_timestamp() == kNoTimestamp()) {
     DVLOG(1) << "Received a buffer without timestamps!";
     base::ResetAndReturn(&read_cb_).Run(kDecodeError, NULL);
@@ -371,19 +371,19 @@ void OpusAudioDecoder::BufferReady(
   }
 
   if (last_input_timestamp_ != kNoTimestamp() &&
-      input->GetTimestamp() != kNoTimestamp() &&
-      input->GetTimestamp() < last_input_timestamp_) {
-    base::TimeDelta diff = input->GetTimestamp() - last_input_timestamp_;
+      input->timestamp() != kNoTimestamp() &&
+      input->timestamp() < last_input_timestamp_) {
+    base::TimeDelta diff = input->timestamp() - last_input_timestamp_;
     DVLOG(1) << "Input timestamps are not monotonically increasing! "
-              << " ts " << input->GetTimestamp().InMicroseconds() << " us"
+              << " ts " << input->timestamp().InMicroseconds() << " us"
               << " diff " << diff.InMicroseconds() << " us";
     base::ResetAndReturn(&read_cb_).Run(kDecodeError, NULL);
     return;
   }
 
-  last_input_timestamp_ = input->GetTimestamp();
+  last_input_timestamp_ = input->timestamp();
 
-  scoped_refptr<DataBuffer> output_buffer;
+  scoped_refptr<AudioBuffer> output_buffer;
 
   if (!Decode(input, &output_buffer)) {
     base::ResetAndReturn(&read_cb_).Run(kDecodeError, NULL);
@@ -493,8 +493,8 @@ bool OpusAudioDecoder::ConfigureDecoder() {
   bits_per_channel_ = config.bits_per_channel();
   channel_layout_ = config.channel_layout();
   samples_per_second_ = config.samples_per_second();
-  output_timestamp_helper_.reset(new AudioTimestampHelper(
-      config.bytes_per_frame(), config.samples_per_second()));
+  output_timestamp_helper_.reset(
+      new AudioTimestampHelper(config.samples_per_second()));
   return true;
 }
 
@@ -512,18 +512,18 @@ void OpusAudioDecoder::ResetTimestampState() {
 }
 
 bool OpusAudioDecoder::Decode(const scoped_refptr<DecoderBuffer>& input,
-                              scoped_refptr<DataBuffer>* output_buffer) {
-  const int samples_decoded =
-      opus_multistream_decode(opus_decoder_,
-                              input->GetData(), input->GetDataSize(),
-                              &output_buffer_[0],
-                              kMaxOpusOutputPacketSizeSamples,
-                              0);
+                              scoped_refptr<AudioBuffer>* output_buffer) {
+  int samples_decoded = opus_multistream_decode(opus_decoder_,
+                                                input->data(),
+                                                input->data_size(),
+                                                &output_buffer_[0],
+                                                kMaxOpusOutputPacketSizeSamples,
+                                                0);
   if (samples_decoded < 0) {
     LOG(ERROR) << "opus_multistream_decode failed for"
-               << " timestamp: " << input->GetTimestamp().InMicroseconds()
-               << " us, duration: " << input->GetDuration().InMicroseconds()
-               << " us, packet size: " << input->GetDataSize() << " bytes with"
+               << " timestamp: " << input->timestamp().InMicroseconds()
+               << " us, duration: " << input->duration().InMicroseconds()
+               << " us, packet size: " << input->data_size() << " bytes with"
                << " status: " << opus_strerror(samples_decoded);
     return false;
   }
@@ -534,9 +534,9 @@ bool OpusAudioDecoder::Decode(const scoped_refptr<DecoderBuffer>& input,
   DCHECK_LE(decoded_audio_size, kMaxOpusOutputPacketSizeBytes);
 
   if (output_timestamp_helper_->base_timestamp() == kNoTimestamp() &&
-      !input->IsEndOfStream()) {
-    DCHECK(input->GetTimestamp() != kNoTimestamp());
-    output_timestamp_helper_->SetBaseTimestamp(input->GetTimestamp());
+      !input->end_of_stream()) {
+    DCHECK(input->timestamp() != kNoTimestamp());
+    output_timestamp_helper_->SetBaseTimestamp(input->timestamp());
   }
 
   if (decoded_audio_size > 0 && output_bytes_to_drop_ > 0) {
@@ -545,16 +545,21 @@ bool OpusAudioDecoder::Decode(const scoped_refptr<DecoderBuffer>& input,
     decoded_audio_data += dropped_size;
     decoded_audio_size -= dropped_size;
     output_bytes_to_drop_ -= dropped_size;
+    samples_decoded = decoded_audio_size /
+                      demuxer_stream_->audio_decoder_config().bytes_per_frame();
   }
 
   if (decoded_audio_size > 0) {
     // Copy the audio samples into an output buffer.
-    *output_buffer = DataBuffer::CopyFrom(
-        decoded_audio_data, decoded_audio_size);
-    (*output_buffer)->SetTimestamp(output_timestamp_helper_->GetTimestamp());
-    (*output_buffer)->SetDuration(
-        output_timestamp_helper_->GetDuration(decoded_audio_size));
-    output_timestamp_helper_->AddBytes(decoded_audio_size);
+    uint8* data[] = { decoded_audio_data };
+    *output_buffer = AudioBuffer::CopyFrom(
+        kSampleFormatS16,
+        ChannelLayoutToChannelCount(channel_layout_),
+        samples_decoded,
+        data,
+        output_timestamp_helper_->GetTimestamp(),
+        output_timestamp_helper_->GetFrameDuration(samples_decoded));
+    output_timestamp_helper_->AddFrames(samples_decoded);
   }
 
   // Decoding finished successfully, update statistics.

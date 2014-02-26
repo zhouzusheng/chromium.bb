@@ -25,7 +25,7 @@
 
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderView.h"
-#include <wtf/Forward.h>
+#include "wtf/Forward.h"
 
 namespace WebCore {
 
@@ -52,7 +52,7 @@ public:
     void attachTextBox(InlineTextBox*);
     void removeTextBox(InlineTextBox*);
 
-    StringImpl* text() const { return m_text.impl(); }
+    const String& text() const { return m_text; }
     String textWithoutTranscoding() const;
 
     InlineTextBox* createInlineTextBox();
@@ -67,12 +67,13 @@ public:
     enum ClippingOption { NoClipping, ClipToEllipsis };
     void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed = 0, ClippingOption = NoClipping) const;
 
-    virtual VisiblePosition positionForPoint(const LayoutPoint&);
+    virtual PositionWithAffinity positionForPoint(const LayoutPoint&) OVERRIDE;
 
     bool is8Bit() const { return m_text.is8Bit(); }
     const LChar* characters8() const { return m_text.impl()->characters8(); }
     const UChar* characters16() const { return m_text.impl()->characters16(); }
-    const UChar* characters() const { return m_text.characters(); }
+    bool hasEmptyText() const { return m_text.isEmpty(); }
+    String substring(unsigned position, unsigned length) const { return m_text.substring(position, length); }
     UChar characterAt(unsigned) const;
     UChar uncheckedCharacterAt(unsigned) const;
     UChar operator[](unsigned i) const { return uncheckedCharacterAt(i); }
@@ -141,8 +142,6 @@ public:
 
     void removeAndDestroyTextBoxes();
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE FINAL;
-
 protected:
     virtual void computePreferredLogicalWidths(float leadWidth);
     virtual void willBeDestroyed();
@@ -152,14 +151,16 @@ protected:
 
     virtual void setTextInternal(PassRefPtr<StringImpl>);
     virtual UChar previousCharacter() const;
-    
+
+    virtual void addLayerHitTestRects(LayerHitTestRects&, const RenderLayer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const OVERRIDE;
+
     virtual InlineTextBox* createTextBox(); // Subclassed by SVG.
 
 private:
     void computePreferredLogicalWidths(float leadWidth, HashSet<const SimpleFontData*>& fallbackFonts, GlyphOverflow&);
 
     bool computeCanUseSimpleFontCodePath() const;
-    
+
     // Make length() private so that callers that have a RenderText*
     // will use the more efficient textLength() instead, while
     // callers with a RenderObject* can continue to use length().
@@ -193,7 +194,7 @@ private:
     bool m_canUseSimpleFontCodePath : 1;
     mutable bool m_knownToHaveNoOverflowAndNoFallbackFonts : 1;
     bool m_needsTranscoding : 1;
-    
+
     float m_minWidth;
     float m_maxWidth;
     float m_firstLineMinWidth;
@@ -220,13 +221,13 @@ inline UChar RenderText::characterAt(unsigned i) const
 }
 
 inline RenderText* toRenderText(RenderObject* object)
-{ 
+{
     ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isText());
     return static_cast<RenderText*>(object);
 }
 
 inline const RenderText* toRenderText(const RenderObject* object)
-{ 
+{
     ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isText());
     return static_cast<const RenderText*>(object);
 }

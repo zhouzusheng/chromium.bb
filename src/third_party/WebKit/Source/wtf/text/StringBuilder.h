@@ -21,7 +21,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef StringBuilder_h
@@ -42,7 +42,6 @@ public:
         : m_bufferCharacters8(0)
         , m_length(0)
         , m_is8Bit(true)
-        , m_valid16BitShadowLength(0)
     {
     }
 
@@ -102,6 +101,17 @@ public:
             append(string.characters8() + offset, length);
         else
             append(string.characters16() + offset, length);
+    }
+
+    void append(const StringView& string)
+    {
+        if (!string.length())
+            return;
+
+        if (string.is8Bit())
+            append(string.characters8(), string.length());
+        else
+            append(string.characters16(), string.length());
     }
 
     void append(const char* characters)
@@ -170,11 +180,11 @@ public:
         return m_string;
     }
 
-    const String& toStringPreserveCapacity() const
+    String substring(unsigned position, unsigned length) const
     {
-        if (m_string.isNull())
-            reifyString();
-        return m_string;
+        if (!m_string.isNull())
+            return m_string.substring(position, length);
+        return reifySubstring(position, length);
     }
 
     AtomicString toAtomicString() const
@@ -186,7 +196,7 @@ public:
         if (canShrink()) {
             if (is8Bit())
                 return AtomicString(characters8(), length());
-            return AtomicString(characters16(), length());            
+            return AtomicString(characters16(), length());
         }
 
         if (!m_string.isNull())
@@ -245,22 +255,7 @@ public:
         ASSERT(m_buffer);
         return m_buffer->characters16();
     }
-    
-    const UChar* characters() const
-    {
-        if (!m_length)
-            return 0;
-        if (!m_string.isNull())
-            return m_string.characters();
-        ASSERT(m_buffer);
-        if (m_buffer->has16BitShadow() && m_valid16BitShadowLength < m_length)
-            m_buffer->upconvertCharacters(m_valid16BitShadowLength, m_length);
 
-        m_valid16BitShadowLength = m_length;
-
-        return m_buffer->characters();
-    }
-    
     bool is8Bit() const { return m_is8Bit; }
 
     void clear()
@@ -270,7 +265,6 @@ public:
         m_buffer = 0;
         m_bufferCharacters8 = 0;
         m_is8Bit = true;
-        m_valid16BitShadowLength = 0;
     }
 
     void swap(StringBuilder& stringBuilder)
@@ -279,7 +273,6 @@ public:
         m_string.swap(stringBuilder.m_string);
         m_buffer.swap(stringBuilder.m_buffer);
         std::swap(m_is8Bit, stringBuilder.m_is8Bit);
-        std::swap(m_valid16BitShadowLength, stringBuilder.m_valid16BitShadowLength);
         std::swap(m_bufferCharacters8, stringBuilder.m_bufferCharacters8);
     }
 
@@ -295,9 +288,10 @@ private:
     CharType* appendUninitializedSlow(unsigned length);
     template <typename CharType>
     ALWAYS_INLINE CharType * getBufferCharacters();
-    void reifyString() const;
+    void reifyString();
+    String reifySubstring(unsigned position, unsigned length) const;
 
-    mutable String m_string;  // Pointers first: crbug.com/232031
+    String m_string; // Pointers first: crbug.com/232031
     RefPtr<StringImpl> m_buffer;
     union {
         LChar* m_bufferCharacters8;
@@ -305,7 +299,6 @@ private:
     };
     unsigned m_length;
     bool m_is8Bit;
-    mutable unsigned m_valid16BitShadowLength;
 };
 
 template <>
@@ -320,7 +313,7 @@ ALWAYS_INLINE UChar* StringBuilder::getBufferCharacters<UChar>()
 {
     ASSERT(!m_is8Bit);
     return m_bufferCharacters16;
-}    
+}
 
 template <typename CharType>
 bool equal(const StringBuilder& s, const CharType* buffer, unsigned length)
@@ -332,6 +325,23 @@ bool equal(const StringBuilder& s, const CharType* buffer, unsigned length)
         return equal(s.characters8(), buffer, length);
 
     return equal(s.characters16(), buffer, length);
+}
+
+template<typename CharType>
+bool equalIgnoringCase(const StringBuilder& s, const CharType* buffer, unsigned length)
+{
+    if (s.length() != length)
+        return false;
+
+    if (s.is8Bit())
+        return equalIgnoringCase(s.characters8(), buffer, length);
+
+    return equalIgnoringCase(s.characters16(), buffer, length);
+}
+
+inline bool equalIgnoringCase(const StringBuilder& s, const char* string)
+{
+    return equalIgnoringCase(s, reinterpret_cast<const LChar*>(string), strlen(string));
 }
 
 template <typename StringType>
@@ -352,6 +362,26 @@ bool equal(const StringBuilder& a, const StringType& b)
     if (b.is8Bit())
         return equal(a.characters16(), b.characters8(), a.length());
     return equal(a.characters16(), b.characters16(), a.length());
+}
+
+template <typename StringType>
+bool equalIgnoringCase(const StringBuilder& a, const StringType& b)
+{
+    if (a.length() != b.length())
+        return false;
+
+    if (!a.length())
+        return true;
+
+    if (a.is8Bit()) {
+        if (b.is8Bit())
+            return equalIgnoringCase(a.characters8(), b.characters8(), a.length());
+        return equalIgnoringCase(a.characters8(), b.characters16(), a.length());
+    }
+
+    if (b.is8Bit())
+        return equalIgnoringCase(a.characters16(), b.characters8(), a.length());
+    return equalIgnoringCase(a.characters16(), b.characters16(), a.length());
 }
 
 inline bool operator==(const StringBuilder& a, const StringBuilder& b) { return equal(a, b); }

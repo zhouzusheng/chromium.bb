@@ -73,9 +73,9 @@ private:
         , m_z(sz)
         , m_type(type)
     {
-        ASSERT(type == SCALE_X || type == SCALE_Y || type == SCALE_Z || type == SCALE || type == SCALE_3D);
+        ASSERT(type == ScaleX || type == ScaleY || type == ScaleZ || type == Scale || type == Scale3D);
     }
-        
+
     double m_x;
     double m_y;
     double m_z;

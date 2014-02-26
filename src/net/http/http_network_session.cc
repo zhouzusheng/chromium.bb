@@ -62,7 +62,6 @@ HttpNetworkSession::Params::Params()
       ssl_config_service(NULL),
       http_auth_handler_factory(NULL),
       network_delegate(NULL),
-      http_server_properties(NULL),
       net_log(NULL),
       host_mapping_rules(NULL),
       force_http_pipelining(false),
@@ -70,7 +69,6 @@ HttpNetworkSession::Params::Params()
       http_pipelining_enabled(false),
       testing_fixed_http_port(0),
       testing_fixed_https_port(0),
-      max_spdy_sessions_per_domain(0),
       force_spdy_single_domain(false),
       enable_spdy_ip_pooling(true),
       enable_spdy_credential_frames(false),
@@ -82,11 +80,14 @@ HttpNetworkSession::Params::Params()
       spdy_max_concurrent_streams_limit(0),
       time_func(&base::TimeTicks::Now),
       enable_quic(false),
+      enable_quic_https(false),
       quic_clock(NULL),
       quic_random(NULL),
       enable_user_alternate_protocol_ports(false),
       quic_crypto_client_stream_factory(NULL) {
 }
+
+HttpNetworkSession::Params::~Params() {}
 
 // TODO(mbelshe): Move the socket factories into HttpStreamFactory.
 HttpNetworkSession::HttpNetworkSession(const Params& params)
@@ -114,7 +115,6 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
       spdy_session_pool_(params.host_resolver,
                          params.ssl_config_service,
                          params.http_server_properties,
-                         params.max_spdy_sessions_per_domain,
                          params.force_spdy_single_domain,
                          params.enable_spdy_ip_pooling,
                          params.enable_spdy_credential_frames,
@@ -193,6 +193,7 @@ base::Value* HttpNetworkSession::QuicInfoToValue() const {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->Set("sessions", quic_stream_factory_.QuicStreamFactoryInfoToValue());
   dict->SetBoolean("quic_enabled", params_.enable_quic);
+  dict->SetBoolean("quic_enabled_https", params_.enable_quic_https);
   dict->SetString("origin_to_force_quic_on",
                   params_.origin_to_force_quic_on.ToString());
   return dict;
@@ -208,7 +209,7 @@ void HttpNetworkSession::CloseAllConnections() {
 void HttpNetworkSession::CloseIdleConnections() {
   normal_socket_pool_manager_->CloseIdleSockets();
   websocket_socket_pool_manager_->CloseIdleSockets();
-  spdy_session_pool_.CloseIdleSessions();
+  spdy_session_pool_.CloseCurrentIdleSessions();
 }
 
 ClientSocketPoolManager* HttpNetworkSession::GetSocketPoolManager(

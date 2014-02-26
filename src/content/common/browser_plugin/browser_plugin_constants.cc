@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,9 +21,14 @@ const char kMethodStop[] = "stop";
 const char kMethodTerminate[] = "terminate";
 
 // Internal method bindings.
+const char kMethodInternalAttach[] = "-internal-attach";
 const char kMethodInternalAttachWindowTo[] = "-internal-attachWindowTo";
-const char kMethodInternalPersistObject[] = "-internal-persistObject";
-const char kMethodInternalSetPermission[] = "-internal-setPermission";
+const char kMethodInternalTrackObjectLifetime[] =
+    "-internal-trackObjectLifetime";
+
+// Internal events.
+const char kEventInternalInstanceIDAllocated[] = "instanceid-allocated";
+const char kEventInternalTrackedObjectGone[] = "trackedobjectgone";
 
 // Attributes.
 const char kAttributeApi[] = "api";
@@ -38,37 +43,23 @@ const char kAttributePartition[] = "partition";
 const char kAttributeSrc[] = "src";
 
 // Events.
-const char kEventClose[] = "close";
-const char kEventConsoleMessage[] = "consolemessage";
-const char kEventContentLoad[] = "contentload";
-const char kEventExit[] = "exit";
-const char kEventLoadAbort[] = "loadabort";
-const char kEventLoadCommit[] = "loadcommit";
-const char kEventLoadRedirect[] = "loadredirect";
-const char kEventLoadStart[] = "loadstart";
-const char kEventLoadStop[] = "loadstop";
-const char kEventNewWindow[] = "newwindow";
-const char kEventRequestPermission[] = "permissionrequest";
-const char kEventResponsive[] = "responsive";
 const char kEventSizeChanged[] = "sizechanged";
-const char kEventUnresponsive[] = "unresponsive";
 
 // Parameters/properties on events.
+const char kDefaultPromptText[] = "defaultPromptText";
+const char kId[] = "id";
 const char kInitialHeight[] = "initialHeight";
 const char kInitialWidth[] = "initialWidth";
-const char kIsTopLevel[] = "isTopLevel";
 const char kLastUnlockedBySelf[] = "lastUnlockedBySelf";
-const char kLevel[] = "level";
-const char kLine[] = "line";
-const char kMessage[] = "message";
+const char kMessageText[] = "messageText";
+const char kMessageType[] = "messageType";
 const char kName[] = "name";
-const char kNewURL[] = "newUrl";
 const char kNewHeight[] = "newHeight";
 const char kNewWidth[] = "newWidth";
-const char kOldURL[] = "oldUrl";
 const char kOldHeight[] = "oldHeight";
 const char kOldWidth[] = "oldWidth";
 const char kPermission[] = "permission";
+const char kPermissionTypeDialog[] = "dialog";
 const char kPermissionTypeDownload[] = "download";
 const char kPermissionTypeGeolocation[] = "geolocation";
 const char kPermissionTypeMedia[] = "media";
@@ -76,10 +67,8 @@ const char kPermissionTypeNewWindow[] = "newwindow";
 const char kPermissionTypePointerLock[] = "pointerLock";
 const char kPersistPrefix[] = "persist:";
 const char kProcessId[] = "processId";
-const char kReason[] = "reason";
 const char kRequestId[] = "requestId";
 const char kRequestMethod[] = "requestMethod";
-const char kSourceId[] = "sourceId";
 const char kTargetURL[] = "targetUrl";
 const char kURL[] = "url";
 const char kWindowID[] = "windowId";
@@ -97,6 +86,7 @@ const char kErrorCannotRemovePartition[] =
 // Other.
 const char kBrowserPluginGuestManagerKeyName[] = "browser_plugin_guest_manager";
 const int kInstanceIDNone = 0;
+const int kInvalidPermissionRequestID = 0;
 
 }  // namespace browser_plugin
 

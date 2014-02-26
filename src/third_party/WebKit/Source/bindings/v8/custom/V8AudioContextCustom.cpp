@@ -28,10 +28,10 @@
 
 #include "V8AudioContext.h"
 
-#include "V8ArrayBuffer.h"
 #include "V8AudioBuffer.h"
 #include "V8OfflineAudioContext.h"
 #include "bindings/v8/V8Binding.h"
+#include "bindings/v8/custom/V8ArrayBufferCustom.h"
 #include "core/dom/Document.h"
 #include "core/page/Frame.h"
 #include "modules/webaudio/AudioBuffer.h"
@@ -46,7 +46,7 @@ void V8AudioContext::constructorCustom(const v8::FunctionCallbackInfo<v8::Value>
     Document* document = currentDocument();
 
     RefPtr<AudioContext> audioContext;
-    
+
     if (!args.Length()) {
         // Constructor for default AudioContext which talks to audio hardware.
         audioContext = AudioContext::create(document);
@@ -68,10 +68,10 @@ void V8AudioContext::constructorCustom(const v8::FunctionCallbackInfo<v8::Value>
         throwError(v8SyntaxError, "Error creating AudioContext", args.GetIsolate());
         return;
     }
-    
+
     // Transform the holder into a wrapper object for the audio context.
     v8::Handle<v8::Object> wrapper = args.Holder();
-    V8DOMWrapper::associateObjectWithWrapper(audioContext.release(), &info, wrapper, args.GetIsolate(), WrapperConfiguration::Dependent);
+    V8DOMWrapper::associateObjectWithWrapper<V8AudioContext>(audioContext.release(), &info, wrapper, args.GetIsolate(), WrapperConfiguration::Dependent);
     args.GetReturnValue().Set(wrapper);
 }
 

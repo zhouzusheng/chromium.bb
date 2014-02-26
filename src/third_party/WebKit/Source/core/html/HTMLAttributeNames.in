@@ -125,6 +125,7 @@ http_equiv
 id
 incremental
 indeterminate
+inputmode
 is
 ismap
 itemid
@@ -209,6 +210,8 @@ onloadeddata
 onloadedmetadata
 onloadstart
 onmousedown
+onmouseenter
+onmouseleave
 onmousemove
 onmouseout
 onmouseover
@@ -264,6 +267,7 @@ onwebkitsourceopen
 onwebkittransitionend
 open
 optimum
+part
 pattern
 placeholder
 pluginspage

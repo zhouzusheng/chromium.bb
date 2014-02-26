@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -29,7 +29,7 @@
 #include "core/dom/NodeTraversal.h"
 #include "core/svg/SVGSVGElement.h"
 #include "core/svg/animation/SVGSMILElement.h"
-#include <wtf/CurrentTime.h>
+#include "wtf/CurrentTime.h"
 
 using namespace std;
 
@@ -37,10 +37,11 @@ namespace WebCore {
 
 static const double animationFrameDelay = 0.025;
 
-SMILTimeContainer::SMILTimeContainer(SVGSVGElement* owner) 
+SMILTimeContainer::SMILTimeContainer(SVGSVGElement* owner)
     : m_beginTime(0)
     , m_pauseTime(0)
-    , m_accumulatedPauseTime(0)
+    , m_resumeTime(0)
+    , m_accumulatedActiveTime(0)
     , m_presetStartTime(0)
     , m_documentOrderIndexesDirty(false)
     , m_timer(this, &SMILTimeContainer::timerFired)
@@ -107,7 +108,11 @@ SMILTime SMILTimeContainer::elapsed() const
 {
     if (!m_beginTime)
         return 0;
-    return currentTime() - m_beginTime - m_accumulatedPauseTime;
+
+    if (isPaused())
+        return m_accumulatedActiveTime;
+
+    return currentTime() + m_accumulatedActiveTime - lastResumeTime();
 }
 
 bool SMILTimeContainer::isActive() const
@@ -147,16 +152,17 @@ void SMILTimeContainer::pause()
     ASSERT(!isPaused());
     m_pauseTime = currentTime();
 
-    if (m_beginTime)
+    if (m_beginTime) {
+        m_accumulatedActiveTime += m_pauseTime - lastResumeTime();
         m_timer.stop();
+    }
+    m_resumeTime = 0;
 }
 
 void SMILTimeContainer::resume()
 {
     ASSERT(isPaused());
-
-    if (m_beginTime)
-        m_accumulatedPauseTime += currentTime() - m_pauseTime;
+    m_resumeTime = currentTime();
 
     m_pauseTime = 0;
     startTimer(0);
@@ -175,10 +181,13 @@ void SMILTimeContainer::setElapsed(SMILTime time)
 
     double now = currentTime();
     m_beginTime = now - time.value();
-
-    m_accumulatedPauseTime = 0;
-    if (m_pauseTime)
+    m_resumeTime = 0;
+    if (m_pauseTime) {
         m_pauseTime = now;
+        m_accumulatedActiveTime = time.value();
+    } else {
+        m_accumulatedActiveTime = 0;
+    }
 
 #ifndef NDEBUG
     m_preventScheduledAnimationsChanges = true;
@@ -221,7 +230,7 @@ void SMILTimeContainer::updateDocumentOrderIndexes()
     unsigned timingElementCount = 0;
     for (Element* element = m_ownerSVGElement; element; element = ElementTraversal::next(element, m_ownerSVGElement)) {
         if (SVGSMILElement::isSMILElement(element))
-            static_cast<SVGSMILElement*>(element)->setDocumentOrderIndex(timingElementCount++);
+            toSVGSMILElement(element)->setDocumentOrderIndex(timingElementCount++);
     }
     m_documentOrderIndexesDirty = false;
 }
@@ -266,7 +275,7 @@ void SMILTimeContainer::updateAnimations(SMILTime elapsed, bool seekToTime)
         AnimationsVector* scheduled = it->value.get();
 
         // Sort according to priority. Elements with later begin time have higher priority.
-        // In case of a tie, document order decides. 
+        // In case of a tie, document order decides.
         // FIXME: This should also consider timing relationships between the elements. Dependents
         // have higher priority.
         sortByPriority(*scheduled, elapsed);

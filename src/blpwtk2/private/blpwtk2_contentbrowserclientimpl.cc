@@ -30,7 +30,7 @@
 #include <blpwtk2_webcontentsviewdelegateimpl.h>
 #include <blpwtk2_webviewimpl.h>
 
-#include <base/message_loop.h>
+#include <base/message_loop/message_loop.h>
 #include <base/threading/thread.h>
 #include <base/threading/platform_thread.h>
 #include <content/public/browser/render_view_host.h>

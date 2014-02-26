@@ -47,12 +47,11 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGRectElement)
     REGISTER_LOCAL_ANIMATED_PROPERTY(rx)
     REGISTER_LOCAL_ANIMATED_PROPERTY(ry)
     REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGStyledTransformableElement)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGTests)
+    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
 inline SVGRectElement::SVGRectElement(const QualifiedName& tagName, Document* document)
-    : SVGStyledTransformableElement(tagName, document)
+    : SVGGraphicsElement(tagName, document)
     , m_x(LengthModeWidth)
     , m_y(LengthModeHeight)
     , m_width(LengthModeWidth)
@@ -74,7 +73,6 @@ bool SVGRectElement::isSupportedAttribute(const QualifiedName& attrName)
 {
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty()) {
-        SVGTests::addSupportedAttributes(supportedAttributes);
         SVGLangSpace::addSupportedAttributes(supportedAttributes);
         SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::xAttr);
@@ -92,7 +90,7 @@ void SVGRectElement::parseAttribute(const QualifiedName& name, const AtomicStrin
     SVGParsingError parseError = NoError;
 
     if (!isSupportedAttribute(name))
-        SVGStyledTransformableElement::parseAttribute(name, value);
+        SVGGraphicsElement::parseAttribute(name, value);
     else if (name == SVGNames::xAttr)
         setXBaseValue(SVGLength::construct(LengthModeWidth, value, parseError));
     else if (name == SVGNames::yAttr)
@@ -105,8 +103,7 @@ void SVGRectElement::parseAttribute(const QualifiedName& name, const AtomicStrin
         setWidthBaseValue(SVGLength::construct(LengthModeWidth, value, parseError, ForbidNegativeLengths));
     else if (name == SVGNames::heightAttr)
         setHeightBaseValue(SVGLength::construct(LengthModeHeight, value, parseError, ForbidNegativeLengths));
-    else if (SVGTests::parseAttribute(name, value)
-             || SVGLangSpace::parseAttribute(name, value)
+    else if (SVGLangSpace::parseAttribute(name, value)
              || SVGExternalResourcesRequired::parseAttribute(name, value)) {
     } else
         ASSERT_NOT_REACHED();
@@ -117,12 +114,12 @@ void SVGRectElement::parseAttribute(const QualifiedName& name, const AtomicStrin
 void SVGRectElement::svgAttributeChanged(const QualifiedName& attrName)
 {
     if (!isSupportedAttribute(attrName)) {
-        SVGStyledTransformableElement::svgAttributeChanged(attrName);
+        SVGGraphicsElement::svgAttributeChanged(attrName);
         return;
     }
 
     SVGElementInstance::InvalidationGuard invalidationGuard(this);
-    
+
     bool isLengthAttribute = attrName == SVGNames::xAttr
                           || attrName == SVGNames::yAttr
                           || attrName == SVGNames::widthAttr
@@ -132,9 +129,6 @@ void SVGRectElement::svgAttributeChanged(const QualifiedName& attrName)
 
     if (isLengthAttribute)
         updateRelativeLengthsInformation();
-
-    if (SVGTests::handleAttributeChange(this, attrName))
-        return;
 
     RenderSVGShape* renderer = toRenderSVGShape(this->renderer());
     if (!renderer)
@@ -156,17 +150,17 @@ void SVGRectElement::svgAttributeChanged(const QualifiedName& attrName)
 
 bool SVGRectElement::selfHasRelativeLengths() const
 {
-    return x().isRelative()
-        || y().isRelative()
-        || width().isRelative()
-        || height().isRelative()
-        || rx().isRelative()
-        || ry().isRelative();
+    return xCurrentValue().isRelative()
+        || yCurrentValue().isRelative()
+        || widthCurrentValue().isRelative()
+        || heightCurrentValue().isRelative()
+        || rxCurrentValue().isRelative()
+        || ryCurrentValue().isRelative();
 }
 
 RenderObject* SVGRectElement::createRenderer(RenderStyle*)
 {
-    return new (document()->renderArena()) RenderSVGRect(this);
+    return new RenderSVGRect(this);
 }
 
 }

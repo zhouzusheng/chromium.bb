@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -35,7 +35,7 @@
 namespace WebCore {
 
 using namespace HTMLNames;
-    
+
 RenderIFrame::RenderIFrame(Element* element)
     : RenderPart(element)
 {
@@ -78,7 +78,7 @@ LayoutUnit RenderIFrame::maxPreferredLogicalWidth() const
 
 bool RenderIFrame::isSeamless() const
 {
-    return node() && node()->hasTagName(iframeTag) && static_cast<HTMLIFrameElement*>(node())->shouldDisplaySeamlessly();
+    return node() && node()->hasTagName(iframeTag) && toHTMLIFrameElement(node())->shouldDisplaySeamlessly();
 }
 
 bool RenderIFrame::requiresLayer() const
@@ -137,7 +137,7 @@ void RenderIFrame::layout()
     addVisualEffectOverflow();
     updateLayerTransform();
 
-    setNeedsLayout(false);
+    clearNeedsLayout();
 }
 
 }

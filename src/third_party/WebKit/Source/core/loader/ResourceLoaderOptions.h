@@ -31,8 +31,7 @@
 #ifndef ResourceLoaderOptions_h
 #define ResourceLoaderOptions_h
 
-#include "core/loader/cache/CachedResourceInitiatorInfo.h"
-#include "core/platform/network/ResourceHandleTypes.h"
+#include "core/loader/cache/FetchInitiatorInfo.h"
 
 namespace WebCore {
 
@@ -68,7 +67,27 @@ enum ContentSecurityPolicyCheck {
 
 enum RequestOriginPolicy {
     UseDefaultOriginRestrictionsForType,
-    RestrictToSameOrigin
+    RestrictToSameOrigin,
+    PotentiallyCrossOriginEnabled // Indicates "potentially CORS-enabled fetch" in HTML standard.
+};
+
+enum RequestInitiatorContext {
+    DocumentContext,
+    WorkerContext,
+};
+
+enum StoredCredentials {
+    AllowStoredCredentials,
+    DoNotAllowStoredCredentials
+};
+
+// APIs like XMLHttpRequest and EventSource let the user decide
+// whether to send credentials, but they're always sent for
+// same-origin requests. Additional information is needed to handle
+// cross-origin redirects correctly.
+enum CredentialRequest {
+    ClientRequestedCredentials,
+    ClientDidNotRequestCredentials
 };
 
 struct ResourceLoaderOptions {
@@ -82,6 +101,7 @@ struct ResourceLoaderOptions {
         , securityCheck(DoSecurityCheck)
         , contentSecurityPolicyOption(CheckContentSecurityPolicy)
         , requestOriginPolicy(UseDefaultOriginRestrictionsForType)
+        , requestInitiatorContext(DocumentContext)
     {
     }
 
@@ -94,7 +114,8 @@ struct ResourceLoaderOptions {
         ClientCrossOriginCredentialPolicy crossOriginCredentialPolicy,
         SecurityCheckPolicy securityCheck,
         ContentSecurityPolicyCheck contentSecurityPolicyOption,
-        RequestOriginPolicy requestOriginPolicy)
+        RequestOriginPolicy requestOriginPolicy,
+        RequestInitiatorContext requestInitiatorContext)
         : sendLoadCallbacks(sendLoadCallbacks)
         , sniffContent(sniffContent)
         , dataBufferingPolicy(dataBufferingPolicy)
@@ -104,6 +125,7 @@ struct ResourceLoaderOptions {
         , securityCheck(securityCheck)
         , contentSecurityPolicyOption(contentSecurityPolicyOption)
         , requestOriginPolicy(requestOriginPolicy)
+        , requestInitiatorContext(requestInitiatorContext)
     {
     }
     SendCallbackPolicy sendLoadCallbacks;
@@ -114,8 +136,9 @@ struct ResourceLoaderOptions {
     ClientCrossOriginCredentialPolicy crossOriginCredentialPolicy; // Whether we will ask the client for credentials (if we allow credentials at all).
     SecurityCheckPolicy securityCheck;
     ContentSecurityPolicyCheck contentSecurityPolicyOption;
-    CachedResourceInitiatorInfo initiatorInfo;
+    FetchInitiatorInfo initiatorInfo;
     RequestOriginPolicy requestOriginPolicy;
+    RequestInitiatorContext requestInitiatorContext;
 };
 
 } // namespace WebCore

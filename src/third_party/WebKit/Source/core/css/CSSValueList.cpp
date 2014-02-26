@@ -22,8 +22,6 @@
 #include "core/css/CSSValueList.h"
 
 #include "core/css/CSSParserValues.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "wtf/MemoryInstrumentationVector.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
@@ -96,7 +94,7 @@ PassRefPtr<CSSValueList> CSSValueList::copy()
     return newList.release();
 }
 
-String CSSValueList::customCssText() const
+String CSSValueList::customCssText(CssTextFormattingFlags formattingFlag) const
 {
     StringBuilder result;
     String separator;
@@ -118,7 +116,10 @@ String CSSValueList::customCssText() const
     for (unsigned i = 0; i < size; i++) {
         if (!result.isEmpty())
             result.append(separator);
-        result.append(m_values[i]->cssText());
+        if (formattingFlag == AlwaysQuoteCSSString && m_values[i]->isPrimitiveValue())
+            result.append(toCSSPrimitiveValue(m_values[i].get())->customCssText(AlwaysQuoteCSSString));
+        else
+            result.append(m_values[i]->cssText());
     }
 
     return result.toString();
@@ -194,12 +195,6 @@ CSSValueList::CSSValueList(const CSSValueList& cloneFrom)
 PassRefPtr<CSSValueList> CSSValueList::cloneForCSSOM() const
 {
     return adoptRef(new CSSValueList(*this));
-}
-
-void CSSValueList::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_values, "values");
 }
 
 } // namespace WebCore

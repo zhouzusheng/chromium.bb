@@ -5,6 +5,7 @@
 #ifndef CONTENT_BROWSER_INDEXED_DB_INDEXED_DB_BACKING_STORE_H_
 #define CONTENT_BROWSER_INDEXED_DB_INDEXED_DB_BACKING_STORE_H_
 
+#include <string>
 #include <vector>
 
 #include "base/basictypes.h"
@@ -20,6 +21,7 @@
 #include "content/common/indexed_db/indexed_db_key.h"
 #include "content/common/indexed_db/indexed_db_key_path.h"
 #include "content/common/indexed_db/indexed_db_key_range.h"
+#include "third_party/WebKit/public/platform/WebIDBCallbacks.h"
 
 namespace content {
 
@@ -29,10 +31,11 @@ class LevelDBDatabase;
 class LevelDBFactory {
  public:
   virtual ~LevelDBFactory() {}
-  virtual scoped_ptr<LevelDBDatabase> OpenLevelDB(
+  virtual leveldb::Status OpenLevelDB(
       const base::FilePath& file_name,
       const LevelDBComparator* comparator,
-      bool* is_disk_full = NULL) = 0;
+      scoped_ptr<LevelDBDatabase>* db,
+      bool* is_disk_full) = 0;
   virtual bool DestroyLevelDB(const base::FilePath& file_name) = 0;
 };
 
@@ -42,18 +45,21 @@ class CONTENT_EXPORT IndexedDBBackingStore
   class CONTENT_EXPORT Transaction;
 
   static scoped_refptr<IndexedDBBackingStore> Open(
-      const string16& database_identifier,
+      const std::string& origin_identifier,
       const base::FilePath& path_base,
-      const string16& file_identifier);
+      const std::string& file_identifier,
+      WebKit::WebIDBCallbacks::DataLoss* data_loss);
+
   static scoped_refptr<IndexedDBBackingStore> Open(
-      const string16& database_identifier,
+      const std::string& origin_identifier,
       const base::FilePath& path_base,
-      const string16& file_identifier,
+      const std::string& file_identifier,
+      WebKit::WebIDBCallbacks::DataLoss* data_loss,
       LevelDBFactory* factory);
   static scoped_refptr<IndexedDBBackingStore> OpenInMemory(
-      const string16& identifier);
+      const std::string& file_identifier);
   static scoped_refptr<IndexedDBBackingStore> OpenInMemory(
-      const string16& identifier,
+      const std::string& file_identifier,
       LevelDBFactory* factory);
   base::WeakPtr<IndexedDBBackingStore> GetWeakPtr() {
     return weak_factory_.GetWeakPtr();
@@ -94,21 +100,21 @@ class CONTENT_EXPORT IndexedDBBackingStore
 
   class CONTENT_EXPORT RecordIdentifier {
    public:
-    RecordIdentifier(const std::vector<char>& primary_key, int64 version);
+    RecordIdentifier(const std::string& primary_key, int64 version);
     RecordIdentifier();
     ~RecordIdentifier();
 
-    const std::vector<char>& primary_key() const { return primary_key_; }
+    const std::string& primary_key() const { return primary_key_; }
     int64 version() const { return version_; }
-    void Reset(const std::vector<char>& primary_key, int64 version) {
+    void Reset(const std::string& primary_key, int64 version) {
       primary_key_ = primary_key;
       version_ = version;
     }
 
    private:
-    std::vector<char>
-        primary_key_;  // TODO(jsbell): Make it more clear that this is
-                       // the *encoded* version of the key.
+    // TODO(jsbell): Make it more clear that this is the *encoded* version of
+    // the key.
+    std::string primary_key_;
     int64 version_;
     DISALLOW_COPY_AND_ASSIGN(RecordIdentifier);
   };
@@ -117,12 +123,12 @@ class CONTENT_EXPORT IndexedDBBackingStore
                          int64 database_id,
                          int64 object_store_id,
                          const IndexedDBKey& key,
-                         std::vector<char>* record) WARN_UNUSED_RESULT;
+                         std::string* record) WARN_UNUSED_RESULT;
   virtual bool PutRecord(IndexedDBBackingStore::Transaction* transaction,
                          int64 database_id,
                          int64 object_store_id,
                          const IndexedDBKey& key,
-                         const std::vector<char>& value,
+                         const std::string& value,
                          RecordIdentifier* record) WARN_UNUSED_RESULT;
   virtual bool ClearObjectStore(IndexedDBBackingStore::Transaction* transaction,
                                 int64 database_id,
@@ -199,22 +205,23 @@ class CONTENT_EXPORT IndexedDBBackingStore
       int64 database_id;
       int64 object_store_id;
       int64 index_id;
-      std::vector<char> low_key;
+      std::string low_key;
       bool low_open;
-      std::vector<char> high_key;
+      std::string high_key;
       bool high_open;
       bool forward;
       bool unique;
     };
 
     const IndexedDBKey& key() const { return *current_key_; }
-    bool ContinueFunction(const IndexedDBKey* = 0, IteratorState = SEEK);
+    bool Continue() { return Continue(NULL, SEEK); }
+    bool Continue(const IndexedDBKey* key, IteratorState state);
     bool Advance(uint32 count);
     bool FirstSeek();
 
     virtual Cursor* Clone() = 0;
     virtual const IndexedDBKey& primary_key() const;
-    virtual std::vector<char>* Value() = 0;
+    virtual std::string* Value() = 0;
     virtual const RecordIdentifier& record_identifier() const;
     virtual bool LoadCurrentRow() = 0;
 
@@ -223,7 +230,7 @@ class CONTENT_EXPORT IndexedDBBackingStore
            const CursorOptions& cursor_options);
     explicit Cursor(const IndexedDBBackingStore::Cursor* other);
 
-    virtual std::vector<char> EncodeKey(const IndexedDBKey& key) = 0;
+    virtual std::string EncodeKey(const IndexedDBKey& key) = 0;
 
     bool IsPastBounds() const;
     bool HaveEnteredRange() const;
@@ -276,7 +283,7 @@ class CONTENT_EXPORT IndexedDBBackingStore
 
     static LevelDBTransaction* LevelDBTransactionFrom(
         Transaction* transaction) {
-      return transaction->transaction_.get();
+      return transaction->transaction_;
     }
 
    private:
@@ -285,7 +292,7 @@ class CONTENT_EXPORT IndexedDBBackingStore
   };
 
  protected:
-  IndexedDBBackingStore(const string16& identifier,
+  IndexedDBBackingStore(const std::string& identifier,
                         scoped_ptr<LevelDBDatabase> db,
                         scoped_ptr<LevelDBComparator> comparator);
   virtual ~IndexedDBBackingStore();
@@ -293,7 +300,7 @@ class CONTENT_EXPORT IndexedDBBackingStore
 
  private:
   static scoped_refptr<IndexedDBBackingStore> Create(
-      const string16& identifier,
+      const std::string& identifier,
       scoped_ptr<LevelDBDatabase> db,
       scoped_ptr<LevelDBComparator> comparator);
 
@@ -302,14 +309,14 @@ class CONTENT_EXPORT IndexedDBBackingStore
                       int64 object_store_id,
                       int64 index_id,
                       const IndexedDBKey& key,
-                      std::vector<char>* found_encoded_primary_key,
+                      std::string* found_encoded_primary_key,
                       bool* found);
   bool GetIndexes(int64 database_id,
                   int64 object_store_id,
                   IndexedDBObjectStoreMetadata::IndexMap* map)
       WARN_UNUSED_RESULT;
 
-  string16 identifier_;
+  std::string identifier_;
 
   scoped_ptr<LevelDBDatabase> db_;
   scoped_ptr<LevelDBComparator> comparator_;

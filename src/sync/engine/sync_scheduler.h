@@ -10,7 +10,7 @@
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "sync/base/sync_export.h"
 #include "sync/engine/nudge_source.h"
 #include "sync/internal_api/public/base/model_type_invalidation_map.h"
@@ -79,9 +79,7 @@ class SYNC_EXPORT_PRIVATE SyncScheduler
   // cancel all scheduled tasks. This function can be called from any thread,
   // and should in fact be called from a thread that isn't the sync loop to
   // allow preempting ongoing sync cycles.
-  // Invokes |callback| from the sync loop once syncer is idle and all tasks
-  // are cancelled.
-  virtual void RequestStop(const base::Closure& callback) = 0;
+  virtual void RequestStop() = 0;
 
   // The meat and potatoes. All three of the following methods will post a
   // delayed task to attempt the actual nudge (see ScheduleNudgeImpl).

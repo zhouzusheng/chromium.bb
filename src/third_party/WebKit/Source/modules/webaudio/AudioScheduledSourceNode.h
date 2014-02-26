@@ -53,7 +53,18 @@ public:
         PLAYING_STATE = 2,
         FINISHED_STATE = 3
     };
-    
+
+    // This helper class handles the lifetime of an AudioScheduledSourceNode with an onended event
+    // listener. This keeps the node alive until the event listener is processed.
+    class NotifyEndedTask {
+    public:
+        NotifyEndedTask(PassRefPtr<AudioScheduledSourceNode> scheduledNode);
+        void notifyEnded();
+
+    private:
+        RefPtr<AudioScheduledSourceNode> m_scheduledNode;
+    };
+
     AudioScheduledSourceNode(AudioContext*, float sampleRate);
 
     // Scheduling.
@@ -66,6 +77,9 @@ public:
     unsigned short playbackState() const { return static_cast<unsigned short>(m_playbackState); }
     bool isPlayingOrScheduled() const { return m_playbackState == PLAYING_STATE || m_playbackState == SCHEDULED_STATE; }
     bool hasFinished() const { return m_playbackState == FINISHED_STATE; }
+
+    EventListener* onended(DOMWrapperWorld* isolatedWorld) { return getAttributeEventListener(eventNames().endedEvent, isolatedWorld); }
+    void setOnended(PassRefPtr<EventListener>, DOMWrapperWorld* isolatedWorld = 0);
 
 protected:
     // Get frame information for the current time quantum.
@@ -83,6 +97,8 @@ protected:
     // Called when we have no more sound to play or the noteOff() time has been reached.
     virtual void finish();
 
+    static void notifyEndedDispatch(void*);
+
     PlaybackState m_playbackState;
 
     // m_startTime is the time to start playing based on the context's timeline (0 or a time less than the context's current time means "now").
@@ -92,6 +108,8 @@ protected:
     // If it hasn't been set explicitly, then the sound will not stop playing (if looping) or will stop when the end of the AudioBuffer
     // has been reached.
     double m_endTime; // in seconds
+
+    bool m_hasEndedListener;
 
     static const double UnknownTime;
 };

@@ -27,6 +27,7 @@
 
 namespace WebCore {
 
+class ExceptionState;
 class RenderText;
 class ScriptExecutionContext;
 
@@ -35,25 +36,23 @@ public:
     static const unsigned defaultLengthLimit = 1 << 16;
 
     static PassRefPtr<Text> create(Document*, const String&);
-    static PassRefPtr<Text> create(ScriptExecutionContext*, const String&);
     static PassRefPtr<Text> createWithLengthLimit(Document*, const String&, unsigned positionInString, unsigned lengthLimit = defaultLengthLimit);
     static PassRefPtr<Text> createEditingText(Document*, const String&);
 
-    PassRefPtr<Text> splitText(unsigned offset, ExceptionCode&);
+    PassRefPtr<Text> splitText(unsigned offset, ExceptionState&);
 
     // DOM Level 3: http://www.w3.org/TR/DOM-Level-3-Core/core.html#ID-1312295772
 
     String wholeText() const;
     PassRefPtr<Text> replaceWholeText(const String&);
-    
-    void recalcTextStyle(StyleChange);
-    void createTextRendererIfNeeded();
+
+    bool recalcTextStyle(StyleChange);
     bool textRendererIsNeeded(const NodeRenderingContext&);
-    RenderText* createTextRenderer(RenderStyle*);
+    virtual RenderText* createTextRenderer(RenderStyle*);
     void updateTextRenderer(unsigned offsetOfReplacedData, unsigned lengthOfReplacedData);
 
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE FINAL;
-    
+
     virtual bool canContainRangeEndPoint() const OVERRIDE FINAL { return true; }
     virtual NodeType nodeType() const OVERRIDE;
 
@@ -66,8 +65,10 @@ protected:
 
 private:
     virtual String nodeName() const OVERRIDE;
-    virtual PassRefPtr<Node> cloneNode(bool deep) OVERRIDE FINAL;
+    virtual PassRefPtr<Node> cloneNode(bool deep = true) OVERRIDE FINAL;
     virtual bool childTypeAllowed(NodeType) const OVERRIDE;
+
+    bool needsWhitespaceRenderer();
 
     virtual PassRefPtr<Text> cloneWithData(const String&);
 

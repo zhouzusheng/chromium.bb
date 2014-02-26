@@ -33,7 +33,7 @@
 #include "core/css/CSSShaderValue.h"
 #include "core/css/CSSValue.h"
 #include "core/rendering/style/StyleShader.h"
-#include <wtf/PassRefPtr.h>
+#include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
@@ -42,7 +42,7 @@ class WebKitCSSShaderValue;
 class StylePendingShader : public StyleShader {
 public:
     static PassRefPtr<StylePendingShader> create(CSSShaderValue* value) { return adoptRef(new StylePendingShader(value)); }
-    
+
     virtual PassRefPtr<CSSValue> cssValue() const { return m_value; }
     CSSShaderValue* cssShaderValue() const { return m_value; }
 private:
@@ -51,7 +51,7 @@ private:
     {
          m_isPendingShader = true;
     }
-    
+
     CSSShaderValue* m_value; // Not retained; it owns us.
 };
 

@@ -17,12 +17,15 @@
 #include "base/sequenced_task_runner_helpers.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/open_file_system_mode.h"
+#include "webkit/browser/fileapi/sandbox_context.h"
 #include "webkit/browser/fileapi/task_runner_bound_observer_list.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/fileapi/file_system_types.h"
 
 namespace base {
 class FilePath;
+class SequencedTaskRunner;
+class SingleThreadTaskRunner;
 }
 
 namespace chrome {
@@ -34,11 +37,6 @@ class QuotaManagerProxy;
 class SpecialStoragePolicy;
 }
 
-namespace sync_file_system {
-class LocalFileChangeTracker;
-class LocalFileSyncContext;
-}
-
 namespace webkit_blob {
 class BlobURLRequestJobTest;
 class FileStreamReader;
@@ -48,20 +46,19 @@ namespace fileapi {
 
 class AsyncFileUtil;
 class CopyOrMoveFileValidatorFactory;
-class ExternalFileSystemMountPointProvider;
+class ExternalFileSystemBackend;
 class ExternalMountPoints;
 class FileStreamWriter;
 class FileSystemFileUtil;
-class FileSystemMountPointProvider;
+class FileSystemBackend;
 class FileSystemOperation;
 class FileSystemOperationRunner;
 class FileSystemOptions;
 class FileSystemQuotaUtil;
-class FileSystemTaskRunners;
 class FileSystemURL;
-class IsolatedMountPointProvider;
+class IsolatedFileSystemBackend;
 class MountPoints;
-class SandboxMountPointProvider;
+class SandboxFileSystemBackend;
 
 struct DefaultContextDeleter;
 
@@ -71,30 +68,37 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
     : public base::RefCountedThreadSafe<FileSystemContext,
                                         DefaultContextDeleter> {
  public:
-  // task_runners->file_task_runner() is used as default TaskRunner.
-  // Unless a MountPointProvider is overridden in CreateFileSystemOperation,
+  // Returns file permission policy we should apply for the given |type|.
+  // The return value must be bitwise-or'd of FilePermissionPolicy.
+  //
+  // Note: if a part of a filesystem is returned via 'Isolated' mount point,
+  // its per-filesystem permission overrides the underlying filesystem's
+  // permission policy.
+  static int GetPermissionPolicy(FileSystemType type);
+
+  // file_task_runner is used as default TaskRunner.
+  // Unless a FileSystemBackend is overridden in CreateFileSystemOperation,
   // it is used for all file operations and file related meta operations.
-  // The code assumes that
-  // task_runners->file_task_runner()->RunsTasksOnCurrentThread()
+  // The code assumes that file_task_runner->RunsTasksOnCurrentThread()
   // returns false if the current task is not running on the thread that allows
   // blocking file operations (like SequencedWorkerPool implementation does).
   //
   // |external_mount_points| contains non-system external mount points available
-  // in the context. If not NULL, it will be used during URL cracking. On
-  // ChromeOS, it will be passed to external_mount_point_provider.
+  // in the context. If not NULL, it will be used during URL cracking.
   // |external_mount_points| may be NULL only on platforms different from
   // ChromeOS (i.e. platforms that don't use external_mount_point_provider).
   //
-  // |additional_providers| are added to the internal provider map
+  // |additional_backends| are added to the internal backend map
   // to serve filesystem requests for non-regular types.
   // If none is given, this context only handles HTML5 Sandbox FileSystem
   // and Drag-and-drop Isolated FileSystem requests.
   FileSystemContext(
-      scoped_ptr<FileSystemTaskRunners> task_runners,
+      base::SingleThreadTaskRunner* io_task_runner,
+      base::SequencedTaskRunner* file_task_runner,
       ExternalMountPoints* external_mount_points,
       quota::SpecialStoragePolicy* special_storage_policy,
       quota::QuotaManagerProxy* quota_manager_proxy,
-      ScopedVector<FileSystemMountPointProvider> additional_providers,
+      ScopedVector<FileSystemBackend> additional_backends,
       const base::FilePath& partition_path,
       const FileSystemOptions& options);
 
@@ -103,6 +107,9 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
   quota::QuotaManagerProxy* quota_manager_proxy() const {
     return quota_manager_proxy_.get();
   }
+
+  // Discards inflight operations in the operation runner.
+  void Shutdown();
 
   // Returns a quota util for a given filesystem type.  This may
   // return NULL if the type does not support the usage tracking or
@@ -123,10 +130,10 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
   CopyOrMoveFileValidatorFactory* GetCopyOrMoveFileValidatorFactory(
       FileSystemType type, base::PlatformFileError* error_code) const;
 
-  // Returns the mount point provider instance for the given |type|.
+  // Returns the file system backend instance for the given |type|.
   // This may return NULL if it is given an invalid or unsupported filesystem
   // type.
-  FileSystemMountPointProvider* GetMountPointProvider(
+  FileSystemBackend* GetFileSystemBackend(
       FileSystemType type) const;
 
   // Returns true for sandboxed filesystems. Currently this does
@@ -142,10 +149,10 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
   // Returns all registered filesystem types.
   void GetFileSystemTypes(std::vector<FileSystemType>* types) const;
 
-  // Returns a FileSystemMountPointProvider instance for external filesystem
+  // Returns a FileSystemBackend instance for external filesystem
   // type, which is used only by chromeos for now.  This is equivalent to
-  // calling GetMountPointProvider(kFileSystemTypeExternal).
-  ExternalFileSystemMountPointProvider* external_provider() const;
+  // calling GetFileSystemBackend(kFileSystemTypeExternal).
+  ExternalFileSystemBackend* external_backend() const;
 
   // Used for OpenFileSystem.
   typedef base::Callback<void(base::PlatformFileError result,
@@ -167,17 +174,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
       OpenFileSystemMode mode,
       const OpenFileSystemCallback& callback);
 
-  // Opens a syncable filesystem for the given |origin_url|.
-  // The file system is internally mounted as an external file system at the
-  // given |mount_name|.
-  // Currently only kFileSystemTypeSyncable type is supported.
-  // TODO(kinuko): Deprecate this method. (http://crbug.com/177137)
-  void OpenSyncableFileSystem(
-      const GURL& origin_url,
-      FileSystemType type,
-      OpenFileSystemMode mode,
-      const OpenFileSystemCallback& callback);
-
   // Deletes the filesystem for the given |origin_url| and |type|. This should
   // be called on the IO Thread.
   void DeleteFileSystem(
@@ -192,8 +188,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
   // the file has been modified, and if it does any succeeding read operations
   // should fail with ERR_UPLOAD_FILE_CHANGED error.
   // This method internally cracks the |url|, get an appropriate
-  // MountPointProvider for the URL and call the provider's CreateFileReader.
-  // The resolved MountPointProvider could perform further specialization
+  // FileSystemBackend for the URL and call the backend's CreateFileReader.
+  // The resolved FileSystemBackend could perform further specialization
   // depending on the filesystem type pointed by the |url|.
   scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
       const FileSystemURL& url,
@@ -206,22 +202,16 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
       const FileSystemURL& url,
       int64 offset);
 
-  FileSystemTaskRunners* task_runners() { return task_runners_.get(); }
+  // Creates a new FileSystemOperationRunner.
+  scoped_ptr<FileSystemOperationRunner> CreateFileSystemOperationRunner();
+
+  base::SequencedTaskRunner* default_file_task_runner() {
+    return default_file_task_runner_.get();
+  }
 
   FileSystemOperationRunner* operation_runner() {
     return operation_runner_.get();
   }
-
-  sync_file_system::LocalFileChangeTracker* change_tracker() {
-    return change_tracker_.get();
-  }
-  void SetLocalFileChangeTracker(
-      scoped_ptr<sync_file_system::LocalFileChangeTracker> tracker);
-
-  sync_file_system::LocalFileSyncContext* sync_context() {
-    return sync_context_.get();
-  }
-  void set_sync_context(sync_file_system::LocalFileSyncContext* sync_context);
 
   const base::FilePath& partition_path() const { return partition_path_; }
 
@@ -238,14 +228,16 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
   void EnableTemporaryFileSystemInIncognito();
 #endif
 
+  SandboxContext* sandbox_context() { return sandbox_context_.get(); }
+
  private:
-  typedef std::map<FileSystemType, FileSystemMountPointProvider*>
-      MountPointProviderMap;
+  typedef std::map<FileSystemType, FileSystemBackend*>
+      FileSystemBackendMap;
 
   // For CreateFileSystemOperation.
   friend class FileSystemOperationRunner;
 
-  // For sandbox_provider().
+  // For sandbox_backend().
   friend class SandboxFileSystemTestHelper;
 
   // Deleters.
@@ -258,9 +250,9 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
   void DeleteOnCorrectThread() const;
 
   // Creates a new FileSystemOperation instance by getting an appropriate
-  // MountPointProvider for |url| and calling the provider's corresponding
+  // FileSystemBackend for |url| and calling the backend's corresponding
   // CreateFileSystemOperation method.
-  // The resolved MountPointProvider could perform further specialization
+  // The resolved FileSystemBackend could perform further specialization
   // depending on the filesystem type pointed by the |url|.
   //
   // Called by FileSystemOperationRunner.
@@ -277,34 +269,36 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
   // returns the original url, without attempting to crack it.
   FileSystemURL CrackFileSystemURL(const FileSystemURL& url) const;
 
-  // For initial provider_map construction. This must be called only from
+  // For initial backend_map construction. This must be called only from
   // the constructor.
-  void RegisterMountPointProvider(FileSystemMountPointProvider* provider);
+  void RegisterBackend(FileSystemBackend* backend);
 
-  // Returns a FileSystemMountPointProvider, used only by test code.
-  SandboxMountPointProvider* sandbox_provider() const {
-    return sandbox_provider_.get();
+  // Returns a FileSystemBackend, used only by test code.
+  SandboxFileSystemBackend* sandbox_backend() const {
+    return sandbox_backend_.get();
   }
 
-  scoped_ptr<FileSystemTaskRunners> task_runners_;
+  scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
+  scoped_refptr<base::SequencedTaskRunner> default_file_task_runner_;
 
   scoped_refptr<quota::QuotaManagerProxy> quota_manager_proxy_;
 
-  // Regular mount point providers.
-  scoped_ptr<SandboxMountPointProvider> sandbox_provider_;
-  scoped_ptr<IsolatedMountPointProvider> isolated_provider_;
-  scoped_ptr<ExternalFileSystemMountPointProvider> external_provider_;
+  scoped_ptr<SandboxContext> sandbox_context_;
 
-  // Additional mount point providers.
-  ScopedVector<FileSystemMountPointProvider> additional_providers_;
+  // Regular file system backends.
+  scoped_ptr<SandboxFileSystemBackend> sandbox_backend_;
+  scoped_ptr<IsolatedFileSystemBackend> isolated_backend_;
 
-  // Registered mount point providers.
+  // Additional file system backends.
+  ScopedVector<FileSystemBackend> additional_backends_;
+
+  // Registered file system backends.
   // The map must be constructed in the constructor since it can be accessed
   // on multiple threads.
-  // This map itself doesn't retain each provider's ownership; ownerships
-  // of the providers are held by additional_providers_ or other scoped_ptr
-  // provider fields.
-  MountPointProviderMap provider_map_;
+  // This map itself doesn't retain each backend's ownership; ownerships
+  // of the backends are held by additional_backends_ or other scoped_ptr
+  // backend fields.
+  FileSystemBackendMap backend_map_;
 
   // External mount points visible in the file system context (excluding system
   // external mount points).
@@ -316,10 +310,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
 
   // The base path of the storage partition for this context.
   const base::FilePath partition_path_;
-
-  // For syncable file systems.
-  scoped_ptr<sync_file_system::LocalFileChangeTracker> change_tracker_;
-  scoped_refptr<sync_file_system::LocalFileSyncContext> sync_context_;
 
   scoped_ptr<FileSystemOperationRunner> operation_runner_;
 

@@ -32,9 +32,10 @@
 #include "V8MessageEvent.h"
 
 #include "bindings/v8/SerializedScriptValue.h"
+#include "bindings/v8/V8HiddenPropertyName.h"
+#include "bindings/v8/custom/V8ArrayBufferCustom.h"
 #include "core/dom/MessageEvent.h"
 
-#include "V8ArrayBuffer.h"
 #include "V8Blob.h"
 #include "V8MessagePort.h"
 #include "V8Window.h"
@@ -49,20 +50,30 @@ void V8MessageEvent::dataAttrGetterCustom(v8::Local<v8::String> name, const v8::
     v8::Handle<v8::Value> result;
     switch (event->dataType()) {
     case MessageEvent::DataTypeScriptValue: {
-        ScriptValue scriptValue = event->dataAsScriptValue();
-        if (scriptValue.hasNoValue())
-            result = v8Null(info.GetIsolate());
-        else
-            result = scriptValue.v8Value();
+        result = info.Holder()->GetHiddenValue(V8HiddenPropertyName::data());
+        if (result.IsEmpty()) {
+            if (!event->dataAsSerializedScriptValue()) {
+                // If we're in an isolated world and the event was created in the main world,
+                // we need to find the 'data' property on the main world wrapper and clone it.
+                v8::Local<v8::Value> mainWorldData = getHiddenValueFromMainWorldWrapper(info.GetIsolate(), event, V8HiddenPropertyName::data());
+                if (!mainWorldData.IsEmpty())
+                    event->setSerializedData(SerializedScriptValue::createAndSwallowExceptions(mainWorldData, info.GetIsolate()));
+            }
+            if (event->dataAsSerializedScriptValue())
+                result = event->dataAsSerializedScriptValue()->deserialize(info.GetIsolate());
+            else
+                result = v8::Null(info.GetIsolate());
+        }
         break;
     }
 
     case MessageEvent::DataTypeSerializedScriptValue:
-        if (RefPtr<SerializedScriptValue> serializedValue = event->dataAsSerializedScriptValue()) {
+        if (SerializedScriptValue* serializedValue = event->dataAsSerializedScriptValue()) {
             MessagePortArray ports = event->ports();
             result = serializedValue->deserialize(info.GetIsolate(), &ports);
-        } else
-            result = v8Null(info.GetIsolate());
+        } else {
+            result = v8::Null(info.GetIsolate());
+        }
         break;
 
     case MessageEvent::DataTypeString: {
@@ -90,12 +101,12 @@ void V8MessageEvent::dataAttrGetterCustom(v8::Local<v8::String> name, const v8::
 void V8MessageEvent::initMessageEventMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     MessageEvent* event = V8MessageEvent::toNative(args.Holder());
-    String typeArg = toWebCoreString(args[0]);
-    bool canBubbleArg = args[1]->BooleanValue();
-    bool cancelableArg = args[2]->BooleanValue();
-    ScriptValue dataArg = ScriptValue(args[3]);
-    String originArg = toWebCoreString(args[4]);
-    String lastEventIdArg = toWebCoreString(args[5]);
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, typeArg, args[0]);
+    V8TRYCATCH_VOID(bool, canBubbleArg, args[1]->BooleanValue());
+    V8TRYCATCH_VOID(bool, cancelableArg, args[2]->BooleanValue());
+    v8::Handle<v8::Value> dataArg = args[3];
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, originArg, args[4]);
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, lastEventIdArg, args[5]);
 
     DOMWindow* sourceArg = 0;
     if (args[6]->IsObject()) {
@@ -111,7 +122,13 @@ void V8MessageEvent::initMessageEventMethodCustom(const v8::FunctionCallbackInfo
         if (!getMessagePortArray(args[7], *portArray, args.GetIsolate()))
             return;
     }
-    event->initMessageEvent(typeArg, canBubbleArg, cancelableArg, dataArg, originArg, lastEventIdArg, sourceArg, portArray.release());
+    event->initMessageEvent(typeArg, canBubbleArg, cancelableArg, originArg, lastEventIdArg, sourceArg, portArray.release());
+
+    if (!dataArg.IsEmpty()) {
+        args.Holder()->SetHiddenValue(V8HiddenPropertyName::data(), dataArg);
+        if (isolatedWorldForIsolate(args.GetIsolate()))
+            event->setSerializedData(SerializedScriptValue::createAndSwallowExceptions(dataArg, args.GetIsolate()));
+    }
 }
 
 void V8MessageEvent::webkitInitMessageEventMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)

@@ -26,7 +26,7 @@
 #include "core/rendering/BidiRun.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/RenderText.h"
-#include <wtf/StdLibExtras.h>
+#include "wtf/StdLibExtras.h"
 
 namespace WebCore {
 
@@ -78,7 +78,7 @@ public:
         return m_obj && m_obj->preservesNewline() && m_obj->isText() && toRenderText(m_obj)->textLength()
             && !toRenderText(m_obj)->isWordBreak() && toRenderText(m_obj)->characterAt(m_pos) == '\n';
     }
-    
+
     inline bool atParagraphSeparator()
     {
         return (m_obj && m_obj->isBR()) || atTextParagraphSeparator();
@@ -287,7 +287,7 @@ static inline RenderObject* bidiFirstSkippingEmptyInlines(RenderObject* root, In
             // Never skip empty inlines.
             if (resolver)
                 resolver->commitExplicitEmbedding();
-            return o; 
+            return o;
         }
     }
 
@@ -414,15 +414,17 @@ static inline bool isIsolatedInline(RenderObject* object)
     return object->isRenderInline() && isIsolated(object->style()->unicodeBidi());
 }
 
-static inline RenderObject* containingIsolate(RenderObject* object, RenderObject* root)
+static inline RenderObject* highestContainingIsolateWithinRoot(RenderObject* object, RenderObject* root)
 {
     ASSERT(object);
+    RenderObject* containingIsolateObj = 0;
     while (object && object != root) {
         if (isIsolatedInline(object))
-            return object;
+            containingIsolateObj = object;
+
         object = object->parent();
     }
-    return 0;
+    return containingIsolateObj;
 }
 
 static inline unsigned numberOfIsolateAncestors(const InlineIterator& iter)
@@ -444,7 +446,7 @@ static inline unsigned numberOfIsolateAncestors(const InlineIterator& iter)
 static inline void addPlaceholderRunForIsolatedInline(InlineBidiResolver& resolver, RenderObject* obj, unsigned pos)
 {
     ASSERT(obj);
-    BidiRun* isolatedRun = new (obj->renderArena()) BidiRun(pos, 0, obj, resolver.context(), resolver.dir());
+    BidiRun* isolatedRun = new BidiRun(pos, 0, obj, resolver.context(), resolver.dir());
     resolver.runs().addRun(isolatedRun);
     // FIXME: isolatedRuns() could be a hash of object->run and then we could cheaply
     // ASSERT here that we didn't create multiple objects for the same inline.

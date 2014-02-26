@@ -424,7 +424,9 @@
 .styles-element-state-pane {
     background-color: rgb(240, 240, 240);
     overflow: hidden;
-    margin-top: -38px;
+    margin-top: -56px;
+    padding-top: 18px;
+    height: 56px;
     -webkit-transition: margin-top 0.1s ease-in-out;
     padding-left: 2px;
 }
@@ -562,6 +564,11 @@
     margin-top: 4px;
     margin-bottom: -4px;
     position: relative;
+}
+
+.sidebar-pane.composite .metrics-and-styles .metrics {
+    border-top: 1px solid rgb(64%, 64%, 64%);
+    border-bottom: none;
 }
 
 .sidebar-pane.composite .sidebar-pane-toolbar > .sidebar-pane-subtitle {

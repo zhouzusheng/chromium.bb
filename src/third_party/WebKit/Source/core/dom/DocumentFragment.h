@@ -34,11 +34,10 @@ class ScriptExecutionContext;
 class DocumentFragment : public ContainerNode {
 public:
     static PassRefPtr<DocumentFragment> create(Document*);
-    static PassRefPtr<DocumentFragment> create(ScriptExecutionContext*);
 
     void parseHTML(const String&, Element* contextElement, ParserContentPolicy = AllowScriptingContent);
     bool parseXML(const String&, Element* contextElement, ParserContentPolicy = AllowScriptingContent);
-    
+
     virtual bool canContainRangeEndPoint() const { return true; }
     virtual bool isTemplateContent() const { return false; }
 
@@ -48,7 +47,7 @@ protected:
 
 private:
     virtual NodeType nodeType() const;
-    virtual PassRefPtr<Node> cloneNode(bool deep);
+    virtual PassRefPtr<Node> cloneNode(bool deep = true);
     virtual bool childTypeAllowed(NodeType) const;
 };
 

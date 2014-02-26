@@ -33,6 +33,7 @@ namespace WebCore {
 class CSSRule;
 class CSSStyleSheet;
 class Document;
+class ExceptionState;
 class MediaList;
 class MediaQuery;
 
@@ -57,8 +58,6 @@ public:
 
     PassRefPtr<MediaQuerySet> copy() const { return adoptRef(new MediaQuerySet(*this)); }
 
-    void reportMemoryUsage(MemoryObjectInfo*) const;
-
 private:
     MediaQuerySet();
     MediaQuerySet(const MediaQuerySet&);
@@ -81,8 +80,8 @@ public:
 
     unsigned length() const { return m_mediaQueries->queryVector().size(); }
     String item(unsigned index) const;
-    void deleteMedium(const String& oldMedium, ExceptionCode&);
-    void appendMedium(const String& newMedium, ExceptionCode&);
+    void deleteMedium(const String& oldMedium, ExceptionState&);
+    void appendMedium(const String& newMedium, ExceptionState&);
 
     String mediaText() const { return m_mediaQueries->mediaText(); }
     void setMediaText(const String&);
@@ -95,8 +94,6 @@ public:
     const MediaQuerySet* queries() const { return m_mediaQueries.get(); }
 
     void reattach(MediaQuerySet*);
-
-    void reportMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     MediaList();

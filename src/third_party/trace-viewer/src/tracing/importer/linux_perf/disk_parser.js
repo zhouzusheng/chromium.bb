@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /**
  * @fileoverview Parses filesystem and block device events in the Linux event
  * trace format.
@@ -57,7 +59,7 @@ base.exportTo('tracing.importer.linux_perf', function() {
             new tracing.trace_model.Slice(category, slice.title,
                 slice.colorId, slice.start, slice.args, slice.duration)
           ];
-          kthread.thread.asyncSlices.push(slice);
+          kthread.thread.asyncSliceGroup.push(slice);
           delete kthread.openAsyncSlices[key];
         }
       }

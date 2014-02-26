@@ -33,8 +33,8 @@
 
 #include "CSSValueKeywords.h"
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/css/StylePropertySet.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/MouseEvent.h"
 
 namespace WebCore {
@@ -114,6 +114,11 @@ MediaControlInputElement::MediaControlInputElement(Document* document, MediaCont
     : HTMLInputElement(inputTag, document, 0, false)
     , MediaControlElement(displayType, this)
 {
+}
+
+bool MediaControlInputElement::isMouseFocusable() const
+{
+    return false;
 }
 
 // ----------------------------

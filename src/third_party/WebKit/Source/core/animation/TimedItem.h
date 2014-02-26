@@ -32,9 +32,12 @@
 #define TimedItem_h
 
 #include "core/animation/Timing.h"
+#include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
+
+class Player;
 
 static inline bool isNull(double value)
 {
@@ -46,39 +49,61 @@ static inline double nullValue()
     return std::numeric_limits<double>::quiet_NaN();
 }
 
+class TimedItemEventDelegate {
+public:
+    virtual ~TimedItemEventDelegate() { };
+    virtual void onEventCondition(bool wasInPlay, bool isInPlay, double previousIteration, double currentIteration) = 0;
+};
+
 class TimedItem : public RefCounted<TimedItem> {
+    friend class Player; // Calls attach/detach, updateInheritedTime.
 public:
     virtual ~TimedItem() { }
 
-    bool isScheduled() const { return ensureCalculated().isScheduled; }
-    bool isActive() const { return ensureCalculated().isActive; }
     bool isCurrent() const { return ensureCalculated().isCurrent; }
     bool isInEffect() const { return ensureCalculated().isInEffect; }
+    bool isInPlay() const { return ensureCalculated().isInPlay; }
 
     double startTime() const { return m_startTime; }
 
     double currentIteration() const { return ensureCalculated().currentIteration; }
     double activeDuration() const { return ensureCalculated().activeDuration; }
     double timeFraction() const { return ensureCalculated().timeFraction; }
+    Player* player() const { return m_player; }
+
+    enum Phase {
+        PhaseBefore,
+        PhaseActive,
+        PhaseAfter,
+        PhaseNone,
+    };
 
 protected:
-    TimedItem(const Timing&);
+    TimedItem(const Timing&, PassOwnPtr<TimedItemEventDelegate> = nullptr);
 
     // When TimedItem receives a new inherited time via updateInheritedTime
     // it will (if necessary) recalculate timings and (if necessary) call
     // updateChildrenAndEffects.
     void updateInheritedTime(double inheritedTime) const;
-    virtual void updateChildrenAndEffects(bool wasActiveOrInEffect) const = 0;
+    virtual void updateChildrenAndEffects(bool wasInEffect) const = 0;
     virtual double intrinsicIterationDuration() const { return 0; };
-
-    friend class Player; // Calls updateInheritedTime.
+    virtual void willDetach() = 0;
 
 private:
+    void attach(Player* player) { m_player = player; };
+    void detach()
+    {
+        ASSERT(m_player);
+        willDetach();
+        m_player = 0;
+    };
+
     // FIXME: m_parent and m_startTime are placeholders, they depend on timing groups.
     TimedItem* const m_parent;
     const double m_startTime;
-
+    Player* m_player;
     Timing m_specified;
+    OwnPtr<TimedItemEventDelegate> m_eventDelegate;
 
     // FIXME: Should be versioned by monotonic value on player.
     mutable struct CalculatedTiming {
@@ -86,10 +111,9 @@ private:
         double activeDuration;
         double currentIteration;
         double timeFraction;
-        bool isScheduled;
-        bool isActive;
         bool isCurrent;
         bool isInEffect;
+        bool isInPlay;
     } m_calculated;
 
     // FIXME: Should check the version and reinherit time if inconsistent.

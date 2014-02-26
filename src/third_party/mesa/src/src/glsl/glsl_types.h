@@ -26,33 +26,38 @@
 #ifndef GLSL_TYPES_H
 #define GLSL_TYPES_H
 
-#include <cstring>
-#include <cassert>
+#include <string.h>
+#include <assert.h>
+#include "main/mtypes.h" /* for gl_texture_index, C++'s enum rules are broken */
 
+#ifdef __cplusplus
 extern "C" {
-#include "GL/gl.h"
-#include <talloc.h>
-}
+#endif
 
 struct _mesa_glsl_parse_state;
 struct glsl_symbol_table;
 
-extern "C" void
+extern void
 _mesa_glsl_initialize_types(struct _mesa_glsl_parse_state *state);
 
-extern "C" void
+extern void
 _mesa_glsl_release_types(void);
 
-#define GLSL_TYPE_UINT          0
-#define GLSL_TYPE_INT           1
-#define GLSL_TYPE_FLOAT         2
-#define GLSL_TYPE_BOOL          3
-#define GLSL_TYPE_SAMPLER       4
-#define GLSL_TYPE_STRUCT        5
-#define GLSL_TYPE_ARRAY         6
-#define GLSL_TYPE_FUNCTION      7
-#define GLSL_TYPE_VOID          8
-#define GLSL_TYPE_ERROR         9
+#ifdef __cplusplus
+}
+#endif
+
+enum glsl_base_type {
+   GLSL_TYPE_UINT = 0,
+   GLSL_TYPE_INT,
+   GLSL_TYPE_FLOAT,
+   GLSL_TYPE_BOOL,
+   GLSL_TYPE_SAMPLER,
+   GLSL_TYPE_STRUCT,
+   GLSL_TYPE_ARRAY,
+   GLSL_TYPE_VOID,
+   GLSL_TYPE_ERROR
+};
 
 enum glsl_sampler_dim {
    GLSL_SAMPLER_DIM_1D = 0,
@@ -60,15 +65,19 @@ enum glsl_sampler_dim {
    GLSL_SAMPLER_DIM_3D,
    GLSL_SAMPLER_DIM_CUBE,
    GLSL_SAMPLER_DIM_RECT,
-   GLSL_SAMPLER_DIM_BUF
+   GLSL_SAMPLER_DIM_BUF,
+   GLSL_SAMPLER_DIM_EXTERNAL
 };
 
+#ifdef __cplusplus
+#include "GL/gl.h"
+#include "ralloc.h"
 
 struct glsl_type {
    GLenum gl_type;
-   unsigned base_type:4;
+   glsl_base_type base_type;
 
-   unsigned sampler_dimensionality:3;
+   unsigned sampler_dimensionality:3; /**< \see glsl_sampler_dim */
    unsigned sampler_shadow:1;
    unsigned sampler_array:1;
    unsigned sampler_type:2;    /**< Type of data returned using this sampler.
@@ -76,28 +85,28 @@ struct glsl_type {
 				* and \c GLSL_TYPE_UINT are valid.
 				*/
 
-   /* Callers of this talloc-based new need not call delete. It's
-    * easier to just talloc_free 'mem_ctx' (or any of its ancestors). */
+   /* Callers of this ralloc-based new need not call delete. It's
+    * easier to just ralloc_free 'mem_ctx' (or any of its ancestors). */
    static void* operator new(size_t size)
    {
       if (glsl_type::mem_ctx == NULL) {
-	 glsl_type::mem_ctx = talloc_init("glsl_type");
+	 glsl_type::mem_ctx = ralloc_context(NULL);
 	 assert(glsl_type::mem_ctx != NULL);
       }
 
       void *type;
 
-      type = talloc_size(glsl_type::mem_ctx, size);
+      type = ralloc_size(glsl_type::mem_ctx, size);
       assert(type != NULL);
 
       return type;
    }
 
    /* If the user *does* call delete, that's OK, we will just
-    * talloc_free in that case. */
+    * ralloc_free in that case. */
    static void operator delete(void *type)
    {
-      talloc_free(type);
+      ralloc_free(type);
    }
 
    /**
@@ -123,11 +132,6 @@ struct glsl_type {
     * For \c GLSL_TYPE_ARRAY, this is the length of the array.  For
     * \c GLSL_TYPE_STRUCT, it is the number of elements in the structure and
     * the number of values pointed to by \c fields.structure (below).
-    *
-    * For \c GLSL_TYPE_FUNCTION, it is the number of parameters to the
-    * function.  The return value from a function is implicitly the first
-    * parameter.  The types of the parameters are stored in
-    * \c fields.parameters (below).
     */
    unsigned length;
 
@@ -146,15 +150,23 @@ struct glsl_type {
     */
    /*@{*/
    static const glsl_type *const error_type;
+   static const glsl_type *const void_type;
    static const glsl_type *const int_type;
+   static const glsl_type *const ivec2_type;
+   static const glsl_type *const ivec3_type;
    static const glsl_type *const ivec4_type;
    static const glsl_type *const uint_type;
+   static const glsl_type *const uvec2_type;
+   static const glsl_type *const uvec3_type;
    static const glsl_type *const uvec4_type;
    static const glsl_type *const float_type;
    static const glsl_type *const vec2_type;
    static const glsl_type *const vec3_type;
    static const glsl_type *const vec4_type;
    static const glsl_type *const bool_type;
+   static const glsl_type *const bvec2_type;
+   static const glsl_type *const bvec3_type;
+   static const glsl_type *const bvec4_type;
    static const glsl_type *const mat2_type;
    static const glsl_type *const mat2x3_type;
    static const glsl_type *const mat2x4_type;
@@ -176,6 +188,17 @@ struct glsl_type {
     * error type is returned.
     */
    const glsl_type *get_base_type() const;
+
+   /**
+    * Get the basic scalar type which this type aggregates.
+    *
+    * If the type is a numeric or boolean scalar, vector, or matrix, or an
+    * array of any of those, this function gets the scalar type of the
+    * individual components.  For structs and arrays of structs, this function
+    * returns the struct type.  For samplers and arrays of samplers, this
+    * function returns the sampler type.
+    */
+   const glsl_type *get_scalar_type() const;
 
    /**
     * Query the type of elements in an array
@@ -224,6 +247,54 @@ struct glsl_type {
     */
    unsigned component_slots() const;
 
+   /**
+    * Alignment in bytes of the start of this type in a std140 uniform
+    * block.
+    */
+   unsigned std140_base_alignment(bool row_major) const;
+
+   /** Size in bytes of this type in a std140 uniform block.
+    *
+    * Note that this is not GL_UNIFORM_SIZE (which is the number of
+    * elements in the array)
+    */
+   unsigned std140_size(bool row_major) const;
+
+   /**
+    * \brief Can this type be implicitly converted to another?
+    *
+    * \return True if the types are identical or if this type can be converted
+    *         to \c desired according to Section 4.1.10 of the GLSL spec.
+    *
+    * \verbatim
+    * From page 25 (31 of the pdf) of the GLSL 1.50 spec, Section 4.1.10
+    * Implicit Conversions:
+    *
+    *     In some situations, an expression and its type will be implicitly
+    *     converted to a different type. The following table shows all allowed
+    *     implicit conversions:
+    *
+    *     Type of expression | Can be implicitly converted to
+    *     --------------------------------------------------
+    *     int                  float
+    *     uint
+    *
+    *     ivec2                vec2
+    *     uvec2
+    *
+    *     ivec3                vec3
+    *     uvec3
+    *
+    *     ivec4                vec4
+    *     uvec4
+    *
+    *     There are no implicit array or structure conversions. For example,
+    *     an array of int cannot be implicitly converted to an array of float.
+    *     There are no implicit conversions between signed and unsigned
+    *     integers.
+    * \endverbatim
+    */
+   bool can_implicitly_convert_to(const glsl_type *desired) const;
 
    /**
     * Query whether or not a type is a scalar (non-vector and non-matrix).
@@ -294,6 +365,17 @@ struct glsl_type {
    {
       return base_type == GLSL_TYPE_SAMPLER;
    }
+
+   /**
+    * Query whether or not type is a sampler, or for struct and array
+    * types, contains a sampler.
+    */
+   bool contains_sampler() const;
+
+   /**
+    * Get the Mesa texture target index for a sampler type.
+    */
+   gl_texture_index sampler_index() const;
 
    /**
     * Query whether or not a type is an array
@@ -387,17 +469,17 @@ struct glsl_type {
 
 private:
    /**
-    * talloc context for all glsl_type allocations
+    * ralloc context for all glsl_type allocations
     *
     * Set on the first call to \c glsl_type::new.
     */
    static void *mem_ctx;
 
-   void init_talloc_type_ctx(void);
+   void init_ralloc_type_ctx(void);
 
    /** Constructor for vector and matrix types */
    glsl_type(GLenum gl_type,
-	     unsigned base_type, unsigned vector_elements,
+	     glsl_base_type base_type, unsigned vector_elements,
 	     unsigned matrix_columns, const char *name);
 
    /** Constructor for sampler types */
@@ -426,16 +508,19 @@ private:
     */
    /*@{*/
    static const glsl_type _error_type;
-   static const glsl_type void_type;
+   static const glsl_type _void_type;
+   static const glsl_type _sampler3D_type;
    static const glsl_type builtin_core_types[];
    static const glsl_type builtin_structure_types[];
    static const glsl_type builtin_110_deprecated_structure_types[];
    static const glsl_type builtin_110_types[];
    static const glsl_type builtin_120_types[];
    static const glsl_type builtin_130_types[];
+   static const glsl_type builtin_140_types[];
    static const glsl_type builtin_ARB_texture_rectangle_types[];
    static const glsl_type builtin_EXT_texture_array_types[];
    static const glsl_type builtin_EXT_texture_buffer_object_types[];
+   static const glsl_type builtin_OES_EGL_image_external_types[];
    /*@}*/
 
    /**
@@ -448,11 +533,14 @@ private:
     */
    /*@{*/
    static void generate_100ES_types(glsl_symbol_table *);
-   static void generate_110_types(glsl_symbol_table *);
-   static void generate_120_types(glsl_symbol_table *);
-   static void generate_130_types(glsl_symbol_table *);
+   static void generate_110_types(glsl_symbol_table *, bool add_deprecated);
+   static void generate_120_types(glsl_symbol_table *, bool add_deprecated);
+   static void generate_130_types(glsl_symbol_table *, bool add_deprecated);
+   static void generate_140_types(glsl_symbol_table *);
    static void generate_ARB_texture_rectangle_types(glsl_symbol_table *, bool);
    static void generate_EXT_texture_array_types(glsl_symbol_table *, bool);
+   static void generate_OES_texture_3D_types(glsl_symbol_table *, bool);
+   static void generate_OES_EGL_image_external_types(glsl_symbol_table *, bool);
    /*@}*/
 
    /**
@@ -472,5 +560,7 @@ struct glsl_struct_field {
    const struct glsl_type *type;
    const char *name;
 };
+
+#endif /* __cplusplus */
 
 #endif /* GLSL_TYPES_H */

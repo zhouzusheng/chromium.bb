@@ -28,7 +28,7 @@
 
 #include "core/platform/graphics/GraphicsTypes3D.h"
 
-#include <wtf/text/WTFString.h>
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -108,20 +108,20 @@ public:
         // GL_EXT_texture_format_BGRA8888 enums
         BGRA_EXT = 0x80E1,
 
-        // GL_ARB_robustness enums
+        // GL_ARB_robustness/GL_CHROMIUM_lose_context enums
         GUILTY_CONTEXT_RESET_ARB = 0x8253,
         INNOCENT_CONTEXT_RESET_ARB = 0x8254,
         UNKNOWN_CONTEXT_RESET_ARB = 0x8255,
 
         // GL_EXT/OES_packed_depth_stencil enums
         DEPTH24_STENCIL8 = 0x88F0,
-        
+
         // GL_ANGLE_framebuffer_blit names
         READ_FRAMEBUFFER = 0x8CA8,
         DRAW_FRAMEBUFFER = 0x8CA9,
-        DRAW_FRAMEBUFFER_BINDING = 0x8CA6, 
+        DRAW_FRAMEBUFFER_BINDING = 0x8CA6,
         READ_FRAMEBUFFER_BINDING = 0x8CAA,
-        
+
         // GL_ANGLE_framebuffer_multisample names
         RENDERBUFFER_SAMPLES = 0x8CAB,
         FRAMEBUFFER_INCOMPLETE_MULTISAMPLE = 0x8D56,
@@ -133,7 +133,7 @@ public:
         // GL_OES_rgb8_rgba8 names
         RGB8_OES = 0x8051,
         RGBA8_OES = 0x8058,
-        
+
         // GL_OES_vertex_array_object names
         VERTEX_ARRAY_BINDING_OES = 0x85B5,
 
@@ -248,13 +248,13 @@ public:
     // returning the same error. Restoring the GraphicsContext3D is handled
     // externally.
     int getGraphicsResetStatusARB();
-    
+
     // GL_ANGLE_framebuffer_blit
     void blitFramebuffer(long srcX0, long srcY0, long srcX1, long srcY1, long dstX0, long dstY0, long dstX1, long dstY1, unsigned long mask, unsigned long filter);
-    
+
     // GL_ANGLE_framebuffer_multisample
     void renderbufferStorageMultisample(unsigned long target, unsigned long samples, unsigned long internalformat, unsigned long width, unsigned long height);
-    
+
     // GL_OES_vertex_array_object
     Platform3DObject createVertexArrayOES();
     void deleteVertexArrayOES(Platform3DObject);
@@ -314,6 +314,9 @@ public:
     void drawArraysInstancedANGLE(GC3Denum mode, GC3Dint first, GC3Dsizei count, GC3Dsizei primcount);
     void drawElementsInstancedANGLE(GC3Denum mode, GC3Dsizei count, GC3Denum type, GC3Dintptr offset, GC3Dsizei primcount);
     void vertexAttribDivisorANGLE(GC3Duint index, GC3Duint divisor);
+
+    // GL_CHROMIUM_lose_context
+    void loseContextCHROMIUM(GC3Denum, GC3Denum);
 
 private:
     // Instances of this class are strictly owned by the GraphicsContext3D implementation and do not

@@ -54,10 +54,8 @@
     "structures": [5500],
   },
   "ash/resources/ash_resources.grd": {
-    "structures": [5900],
-  },
-  "ash/resources/ash_wallpaper_resources.grd": {
-    "includes": [6300],
+    "includes": [6100],
+    "structures": [6150],
   },
   "chrome/app/theme/theme_resources.grd": {
     "structures": [6500],
@@ -68,15 +66,6 @@
   "chrome_frame/resources/chrome_frame_resources.grd": {
     "includes": [8000],
   },
-  # WebKit.grd can be in two different places depending on whether we are
-  # in a chromium checkout or a webkit-only checkout.
-  "third_party/WebKit/Source/WebKit/chromium/WebKit.grd": {
-    "includes": [8500],
-  },
-  "WebKit.grd": {
-    "includes": [8500],
-  },
-
   "ui/base/strings/app_locale_settings.grd": {
     "messages": [9000],
   },
@@ -194,6 +183,10 @@
   "content/shell/shell_resources.grd": {
     "includes": [25500],
   },
+  # This file is generated during the build.
+  "<(SHARED_INTERMEDIATE_DIR)/content/browser/tracing/tracing_resources.grd": {
+    "includes": [25750],
+  },
   "ash/ash_strings.grd": {
     "messages": [26000],
   },
@@ -220,6 +213,9 @@
   },
   "components/component_strings.grd": {
     "messages": [30000],
+  },
+  "third_party/WebKit/public/blink_resources.grd": {
+    "includes": [30500],
   },
   # Resource ids starting at 31000 are reserved for projects built on Chromium.
 }

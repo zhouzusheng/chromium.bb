@@ -10,12 +10,10 @@
 #include "content/common/content_export.h"
 #include "content/public/common/top_controls_state.h"
 #include "ipc/ipc_sender.h"
-#include "skia/ext/refptr.h"
 #include "third_party/WebKit/public/web/WebNavigationPolicy.h"
 #include "third_party/WebKit/public/web/WebPageVisibilityState.h"
 #include "ui/gfx/native_widget_types.h"
 
-class SkPicture;
 struct WebPreferences;
 
 namespace WebKit {
@@ -33,16 +31,13 @@ namespace gfx {
 class Size;
 }
 
-namespace webkit {
-struct WebPluginInfo;
-}
-
 namespace content {
 
 class ContextMenuClient;
 class RenderViewVisitor;
 struct ContextMenuParams;
 struct SSLStatus;
+struct WebPluginInfo;
 
 class CONTENT_EXPORT RenderView : public IPC::Sender {
  public:
@@ -97,7 +92,7 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
   // plugin was found.
   virtual WebKit::WebPlugin* CreatePlugin(
       WebKit::WebFrame* frame,
-      const webkit::WebPluginInfo& info,
+      const WebPluginInfo& info,
       const WebKit::WebPluginParams& params) = 0;
 
   // Evaluates a string of JavaScript in a particular frame.
@@ -154,6 +149,11 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
       const WebKit::WebURLRequest& request,
       WebKit::WebNavigationPolicy policy) = 0;
 
+  // Used by plugins that load data in this RenderView to update the loading
+  // notifications.
+  virtual void DidStartLoading() = 0;
+  virtual void DidStopLoading() = 0;
+
   // Notifies the renderer that a paint is to be generated for the size
   // passed in.
   virtual void Repaint(const gfx::Size& size) = 0;
@@ -167,12 +167,6 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
   virtual SSLStatus GetSSLStatusOfFrame(WebKit::WebFrame* frame) const = 0;
 
 #if defined(OS_ANDROID)
-  // Returns a SkPicture with the full contents of the current frame as part of
-  // the legacy Android WebView capture picture API. As it involves playing back
-  // all the drawing commands of the current frame it can have an important
-  // performance impact and should not be used for other purposes.
-  // Requires enabling the impl-side painting feature in the compositor.
-  virtual skia::RefPtr<SkPicture> CapturePicture() = 0;
   virtual void UpdateTopControlsState(TopControlsState constraints,
                                       TopControlsState current,
                                       bool animate) = 0;

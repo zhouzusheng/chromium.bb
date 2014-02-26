@@ -34,14 +34,13 @@
 
 #include <math.h>
 #include <algorithm>
-#include "core/platform/PlatformMemoryInstrumentation.h"
 #include "core/platform/audio/AudioBus.h"
 #include "core/platform/audio/HRTFPanner.h"
-#include <wtf/MemoryInstrumentationVector.h>
-#include <wtf/OwnPtr.h>
+#include "wtf/OwnPtr.h"
+#include "wtf/ThreadingPrimitives.h"
 
 using namespace std;
- 
+
 namespace WebCore {
 
 const unsigned HRTFElevation::AzimuthSpacing = 15;
@@ -66,7 +65,9 @@ static PassRefPtr<AudioBus> getConcatenatedImpulseResponsesForSubject(const Stri
 {
     typedef HashMap<String, RefPtr<AudioBus> > AudioBusMap;
     DEFINE_STATIC_LOCAL(AudioBusMap, audioBusMap, ());
+    DEFINE_STATIC_LOCAL(Mutex, mutex, ());
 
+    MutexLocker locker(mutex);
     RefPtr<AudioBus> bus;
     AudioBusMap::iterator iterator = audioBusMap.find(subjectName);
     if (iterator == audioBusMap.end()) {
@@ -103,20 +104,20 @@ bool HRTFElevation::calculateSymmetricKernelsForAzimuthElevation(int azimuth, in
     bool success = calculateKernelsForAzimuthElevation(azimuth, elevation, sampleRate, subjectName, kernelL1, kernelR1);
     if (!success)
         return false;
-        
+
     // And symmetric version
     int symmetricAzimuth = !azimuth ? 0 : 360 - azimuth;
-                                                              
+
     RefPtr<HRTFKernel> kernelL2;
     RefPtr<HRTFKernel> kernelR2;
     success = calculateKernelsForAzimuthElevation(symmetricAzimuth, elevation, sampleRate, subjectName, kernelL2, kernelR2);
     if (!success)
         return false;
-        
+
     // Notice L/R reversal in symmetric version.
     kernelL = HRTFKernel::createInterpolatedKernel(kernelL1.get(), kernelR2.get(), 0.5f);
     kernelR = HRTFKernel::createInterpolatedKernel(kernelR1.get(), kernelL2.get(), 0.5f);
-    
+
     return true;
 }
 
@@ -135,7 +136,7 @@ bool HRTFElevation::calculateKernelsForAzimuthElevation(int azimuth, int elevati
     ASSERT(isElevationGood);
     if (!isElevationGood)
         return false;
-    
+
     // Construct the resource name from the subject name, azimuth, and elevation, for example:
     // "IRC_Composite_C_R0195_T015_P000"
     // Note: the passed in subjectName is not a string passed in via JavaScript or the web.
@@ -179,7 +180,7 @@ bool HRTFElevation::calculateKernelsForAzimuthElevation(int azimuth, int elevati
     ASSERT(impulseResponse.get());
     if (!impulseResponse.get())
         return false;
-    
+
     size_t responseLength = impulseResponse->length();
     size_t expectedLength = static_cast<size_t>(256 * (sampleRate / 44100.0));
 
@@ -188,7 +189,7 @@ bool HRTFElevation::calculateKernelsForAzimuthElevation(int azimuth, int elevati
     ASSERT(isBusGood);
     if (!isBusGood)
         return false;
-    
+
     AudioChannel* leftEarImpulseResponse = impulseResponse->channelByType(AudioBus::ChannelLeft);
     AudioChannel* rightEarImpulseResponse = impulseResponse->channelByType(AudioBus::ChannelRight);
 #endif
@@ -197,7 +198,7 @@ bool HRTFElevation::calculateKernelsForAzimuthElevation(int azimuth, int elevati
     const size_t fftSize = HRTFPanner::fftSizeForSampleRate(sampleRate);
     kernelL = HRTFKernel::create(leftEarImpulseResponse, fftSize, sampleRate);
     kernelR = HRTFKernel::create(rightEarImpulseResponse, fftSize, sampleRate);
-    
+
     return true;
 }
 
@@ -207,30 +208,30 @@ bool HRTFElevation::calculateKernelsForAzimuthElevation(int azimuth, int elevati
 static int maxElevations[] = {
         //  Azimuth
         //
-    90, // 0  
-    45, // 15 
-    60, // 30 
-    45, // 45 
-    75, // 60 
-    45, // 75 
-    60, // 90 
-    45, // 105 
-    75, // 120 
-    45, // 135 
-    60, // 150 
-    45, // 165 
-    75, // 180 
-    45, // 195 
-    60, // 210 
-    45, // 225 
-    75, // 240 
-    45, // 255 
-    60, // 270 
-    45, // 285 
-    75, // 300 
-    45, // 315 
-    60, // 330 
-    45 //  345 
+    90, // 0
+    45, // 15
+    60, // 30
+    45, // 45
+    75, // 60
+    45, // 75
+    60, // 90
+    45, // 105
+    75, // 120
+    45, // 135
+    60, // 150
+    45, // 165
+    75, // 180
+    45, // 195
+    60, // 210
+    45, // 225
+    75, // 240
+    45, // 255
+    60, // 270
+    45, // 285
+    75, // 300
+    45, // 315
+    60, // 330
+    45 //  345
 };
 
 PassOwnPtr<HRTFElevation> HRTFElevation::createForSubject(const String& subjectName, int elevation, float sampleRate)
@@ -239,7 +240,7 @@ PassOwnPtr<HRTFElevation> HRTFElevation::createForSubject(const String& subjectN
     ASSERT(isElevationGood);
     if (!isElevationGood)
         return nullptr;
-        
+
     OwnPtr<HRTFKernelList> kernelListL = adoptPtr(new HRTFKernelList(NumberOfTotalAzimuths));
     OwnPtr<HRTFKernelList> kernelListR = adoptPtr(new HRTFKernelList(NumberOfTotalAzimuths));
 
@@ -253,7 +254,7 @@ PassOwnPtr<HRTFElevation> HRTFElevation::createForSubject(const String& subjectN
         bool success = calculateKernelsForAzimuthElevation(rawIndex * AzimuthSpacing, actualElevation, sampleRate, subjectName, kernelListL->at(interpolatedIndex), kernelListR->at(interpolatedIndex));
         if (!success)
             return nullptr;
-            
+
         interpolatedIndex += InterpolationFactor;
     }
 
@@ -269,7 +270,7 @@ PassOwnPtr<HRTFElevation> HRTFElevation::createForSubject(const String& subjectN
             (*kernelListR)[i + jj] = HRTFKernel::createInterpolatedKernel(kernelListR->at(i).get(), kernelListR->at(j).get(), x);
         }
     }
-    
+
     OwnPtr<HRTFElevation> hrtfElevation = adoptPtr(new HRTFElevation(kernelListL.release(), kernelListR.release(), elevation, sampleRate));
     return hrtfElevation.release();
 }
@@ -279,9 +280,9 @@ PassOwnPtr<HRTFElevation> HRTFElevation::createByInterpolatingSlices(HRTFElevati
     ASSERT(hrtfElevation1 && hrtfElevation2);
     if (!hrtfElevation1 || !hrtfElevation2)
         return nullptr;
-        
+
     ASSERT(x >= 0.0 && x < 1.0);
-    
+
     OwnPtr<HRTFKernelList> kernelListL = adoptPtr(new HRTFKernelList(NumberOfTotalAzimuths));
     OwnPtr<HRTFKernelList> kernelListR = adoptPtr(new HRTFKernelList(NumberOfTotalAzimuths));
 
@@ -289,7 +290,7 @@ PassOwnPtr<HRTFElevation> HRTFElevation::createByInterpolatingSlices(HRTFElevati
     HRTFKernelList* kernelListR1 = hrtfElevation1->kernelListR();
     HRTFKernelList* kernelListL2 = hrtfElevation2->kernelListL();
     HRTFKernelList* kernelListR2 = hrtfElevation2->kernelListR();
-    
+
     // Interpolate kernels of corresponding azimuths of the two elevations.
     for (unsigned i = 0; i < NumberOfTotalAzimuths; ++i) {
         (*kernelListL)[i] = HRTFKernel::createInterpolatedKernel(kernelListL1->at(i).get(), kernelListL2->at(i).get(), x);
@@ -298,9 +299,9 @@ PassOwnPtr<HRTFElevation> HRTFElevation::createByInterpolatingSlices(HRTFElevati
 
     // Interpolate elevation angle.
     double angle = (1.0 - x) * hrtfElevation1->elevationAngle() + x * hrtfElevation2->elevationAngle();
-    
+
     OwnPtr<HRTFElevation> hrtfElevation = adoptPtr(new HRTFElevation(kernelListL.release(), kernelListR.release(), static_cast<int>(angle), sampleRate));
-    return hrtfElevation.release();  
+    return hrtfElevation.release();
 }
 
 void HRTFElevation::getKernelsFromAzimuth(double azimuthBlend, unsigned azimuthIndex, HRTFKernel* &kernelL, HRTFKernel* &kernelR, double& frameDelayL, double& frameDelayR)
@@ -309,7 +310,7 @@ void HRTFElevation::getKernelsFromAzimuth(double azimuthBlend, unsigned azimuthI
     ASSERT(checkAzimuthBlend);
     if (!checkAzimuthBlend)
         azimuthBlend = 0.0;
-    
+
     unsigned numKernels = m_kernelListL->size();
 
     bool isIndexGood = azimuthIndex < numKernels;
@@ -319,7 +320,7 @@ void HRTFElevation::getKernelsFromAzimuth(double azimuthBlend, unsigned azimuthI
         kernelR = 0;
         return;
     }
-    
+
     // Return the left and right kernels.
     kernelL = m_kernelListL->at(azimuthIndex).get();
     kernelR = m_kernelListR->at(azimuthIndex).get();
@@ -334,13 +335,6 @@ void HRTFElevation::getKernelsFromAzimuth(double azimuthBlend, unsigned azimuthI
     // Linearly interpolate delays.
     frameDelayL = (1.0 - azimuthBlend) * frameDelayL + azimuthBlend * frameDelay2L;
     frameDelayR = (1.0 - azimuthBlend) * frameDelayR + azimuthBlend * frameDelay2R;
-}
-
-void HRTFElevation::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::AudioSharedData);
-    info.addMember(m_kernelListL, "kernelListL");
-    info.addMember(m_kernelListR, "kernelListR");
 }
 
 } // namespace WebCore

@@ -37,6 +37,7 @@
 #define EVAL_H
 
 
+#include "main/mfeatures.h"
 #include "main/mtypes.h"
 
 
@@ -55,10 +56,6 @@
    } while (0)
 
 extern GLuint _mesa_evaluator_components( GLenum target );
-
-
-extern void gl_free_control_points( GLcontext *ctx,
-                                    GLenum target, GLfloat *data );
 
 
 extern GLfloat *_mesa_copy_map_points1f( GLenum target,
@@ -90,21 +87,21 @@ _mesa_init_eval_dispatch(struct _glapi_table *disp);
 
 #define _MESA_INIT_EVAL_VTXFMT(vfmt, impl) do { } while (0)
 
-static INLINE void
+static inline void
 _mesa_install_eval_vtxfmt(struct _glapi_table *disp,
                           const GLvertexformat *vfmt)
 {
 }
 
-static INLINE void
+static inline void
 _mesa_init_eval_dispatch(struct _glapi_table *disp)
 {
 }
 
 #endif /* FEATURE_evaluators */
 
-extern void _mesa_init_eval( GLcontext *ctx );
-extern void _mesa_free_eval_data( GLcontext *ctx );
+extern void _mesa_init_eval( struct gl_context *ctx );
+extern void _mesa_free_eval_data( struct gl_context *ctx );
 
 
 #endif /* EVAL_H */

@@ -20,20 +20,20 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
 #include "core/html/canvas/CanvasPattern.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
-#include <wtf/text/WTFString.h>
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-void CanvasPattern::parseRepetitionType(const String& type, bool& repeatX, bool& repeatY, ExceptionCode& ec)
+void CanvasPattern::parseRepetitionType(const String& type, bool& repeatX, bool& repeatY, ExceptionState& es)
 {
-    ec = 0;
     if (type.isEmpty() || type == "repeat") {
         repeatX = true;
         repeatY = true;
@@ -54,7 +54,7 @@ void CanvasPattern::parseRepetitionType(const String& type, bool& repeatX, bool&
         repeatY = true;
         return;
     }
-    ec = SYNTAX_ERR;
+    es.throwDOMException(SyntaxError);
 }
 
 CanvasPattern::CanvasPattern(PassRefPtr<Image> image, bool repeatX, bool repeatY, bool originClean)

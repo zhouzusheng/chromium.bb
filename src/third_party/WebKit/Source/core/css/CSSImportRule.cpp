@@ -22,12 +22,11 @@
 #include "config.h"
 #include "core/css/CSSImportRule.h"
 
-#include <wtf/text/StringBuilder.h>
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/MediaList.h"
 #include "core/css/StyleRuleImport.h"
 #include "core/css/StyleSheetContents.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -72,27 +71,18 @@ String CSSImportRule::cssText() const
         }
     }
     result.append(';');
-    
+
     return result.toString();
 }
 
-void CSSImportRule::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    CSSRule::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_importRule, "importRule");
-    info.addMember(m_mediaCSSOMWrapper, "mediaCSSOMWrapper");
-    info.addMember(m_styleSheetCSSOMWrapper, "styleSheetCSSOMWrapper");
-}
-
 CSSStyleSheet* CSSImportRule::styleSheet() const
-{ 
+{
     if (!m_importRule->styleSheet())
         return 0;
 
     if (!m_styleSheetCSSOMWrapper)
         m_styleSheetCSSOMWrapper = CSSStyleSheet::create(m_importRule->styleSheet(), const_cast<CSSImportRule*>(this));
-    return m_styleSheetCSSOMWrapper.get(); 
+    return m_styleSheetCSSOMWrapper.get();
 }
 
 void CSSImportRule::reattach(StyleRuleBase*)

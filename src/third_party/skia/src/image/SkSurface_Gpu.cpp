@@ -66,7 +66,7 @@ SkCanvas* SkSurface_Gpu::onNewCanvas() {
 }
 
 SkSurface* SkSurface_Gpu::onNewSurface(const SkImage::Info& info) {
-    GrRenderTarget* rt = (GrRenderTarget*) fDevice->accessRenderTarget();
+    GrRenderTarget* rt = fDevice->accessRenderTarget();
     int sampleCount = rt->numSamples();
     return SkSurface::NewRenderTarget(fDevice->context(), info, sampleCount);
 }
@@ -84,7 +84,7 @@ void SkSurface_Gpu::onDraw(SkCanvas* canvas, SkScalar x, SkScalar y,
 // device into it. Note that this flushes the SkGpuDevice but
 // doesn't force an OpenGL flush.
 void SkSurface_Gpu::onCopyOnWrite(ContentChangeMode mode) {
-    GrRenderTarget* rt = (GrRenderTarget*) fDevice->accessRenderTarget();
+    GrRenderTarget* rt = fDevice->accessRenderTarget();
     // are we sharing our render target with the image?
     SkASSERT(NULL != this->getCachedImage());
     if (rt->asTexture() == SkTextureImageGetTexture(this->getCachedImage())) {

@@ -25,19 +25,22 @@
 #ifndef Element_h
 #define Element_h
 
+#include "CSSPropertyNames.h"
 #include "HTMLNames.h"
+#include "core/css/CSSPrimitiveValue.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
 #include "core/dom/SpaceSplitString.h"
 #include "core/html/CollectionType.h"
+#include "core/page/FocusDirection.h"
 #include "core/platform/ScrollTypes.h"
 #include "core/rendering/RegionOversetState.h"
 
 namespace WebCore {
 
-class Animation;
-
+class ActiveAnimations;
 class Attr;
+class Attribute;
 class ClientRect;
 class ClientRectList;
 class DOMStringMap;
@@ -45,15 +48,21 @@ class DOMTokenList;
 class Element;
 class ElementRareData;
 class ElementShadow;
+class ExceptionState;
+class Image;
 class InputMethodContext;
 class IntSize;
 class Locale;
+class MutableStylePropertySet;
+class PropertySetCSSStyleDeclaration;
 class PseudoElement;
 class RenderRegion;
 class ShadowRoot;
 class ShareableElementData;
 class StylePropertySet;
 class UniqueElementData;
+
+struct PresentationAttributeCacheKey;
 
 class ElementData : public RefCounted<ElementData> {
     WTF_MAKE_FAST_ALLOCATED;
@@ -87,8 +96,6 @@ public:
 
     bool isEquivalent(const ElementData* other) const;
 
-    void reportMemoryUsage(MemoryObjectInfo*) const;
-
     bool isUnique() const { return m_isUnique; }
 
 protected:
@@ -108,7 +115,6 @@ protected:
 
 private:
     friend class Element;
-    friend class StyledElement;
     friend class ShareableElementData;
     friend class UniqueElementData;
     friend class SVGElement;
@@ -126,9 +132,6 @@ private:
 #endif
 
 class ShareableElementData : public ElementData {
-    // This is needed because we malloc() space for a ShareableElementData plus
-    // optional following attributes, as a performance tweak.
-    NEW_DELETE_SAME_AS_MALLOC_FREE;
 public:
     static PassRefPtr<ShareableElementData> createWithAttributes(const Vector<Attribute>&);
 
@@ -203,6 +206,8 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(keypress);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(keyup);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(mousedown);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(mouseenter);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(mouseleave);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(mousemove);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(mouseout);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(mouseover);
@@ -270,9 +275,9 @@ public:
     const AtomicString& getAttribute(const AtomicString& name) const;
     const AtomicString& getAttributeNS(const AtomicString& namespaceURI, const AtomicString& localName) const;
 
-    void setAttribute(const AtomicString& name, const AtomicString& value, ExceptionCode&);
-    static bool parseAttributeName(QualifiedName&, const AtomicString& namespaceURI, const AtomicString& qualifiedName, ExceptionCode&);
-    void setAttributeNS(const AtomicString& namespaceURI, const AtomicString& qualifiedName, const AtomicString& value, ExceptionCode&);
+    void setAttribute(const AtomicString& name, const AtomicString& value, ExceptionState&);
+    static bool parseAttributeName(QualifiedName&, const AtomicString& namespaceURI, const AtomicString& qualifiedName, ExceptionState&);
+    void setAttributeNS(const AtomicString& namespaceURI, const AtomicString& qualifiedName, const AtomicString& value, ExceptionState&);
 
     bool isIdAttributeName(const QualifiedName&) const;
     const AtomicString& getIdAttribute() const;
@@ -325,9 +330,11 @@ public:
 
     PassRefPtr<ClientRectList> getClientRects();
     PassRefPtr<ClientRect> getBoundingClientRect();
-    
+
     // Returns the absolute bounding box translated into screen coordinates:
     IntRect screenRect() const;
+
+    virtual void didMoveToNewDocument(Document*) OVERRIDE;
 
     void removeAttribute(const AtomicString& name);
     void removeAttributeNS(const AtomicString& namespaceURI, const AtomicString& localName);
@@ -336,21 +343,21 @@ public:
 
     PassRefPtr<Attr> getAttributeNode(const AtomicString& name);
     PassRefPtr<Attr> getAttributeNodeNS(const AtomicString& namespaceURI, const AtomicString& localName);
-    PassRefPtr<Attr> setAttributeNode(Attr*, ExceptionCode&);
-    PassRefPtr<Attr> setAttributeNodeNS(Attr*, ExceptionCode&);
-    PassRefPtr<Attr> removeAttributeNode(Attr*, ExceptionCode&);
+    PassRefPtr<Attr> setAttributeNode(Attr*, ExceptionState&);
+    PassRefPtr<Attr> setAttributeNodeNS(Attr*, ExceptionState&);
+    PassRefPtr<Attr> removeAttributeNode(Attr*, ExceptionState&);
 
     PassRefPtr<Attr> attrIfExists(const QualifiedName&);
     PassRefPtr<Attr> ensureAttr(const QualifiedName&);
 
     const Vector<RefPtr<Attr> >& attrNodeList();
 
-    virtual CSSStyleDeclaration* style();
+    CSSStyleDeclaration* style();
 
     const QualifiedName& tagQName() const { return m_tagName; }
     String tagName() const { return nodeName(); }
     bool hasTagName(const QualifiedName& tagName) const { return m_tagName.matches(tagName); }
-    
+
     // A fast function for checking the local name against another atomic string.
     bool hasLocalName(const AtomicString& other) const { return m_tagName.localName() == other; }
     bool hasLocalName(const QualifiedName& other) const { return m_tagName.localName() == other.localName(); }
@@ -366,12 +373,29 @@ public:
     PassRefPtr<Element> cloneElementWithChildren();
     PassRefPtr<Element> cloneElementWithoutChildren();
 
-    void scheduleSyntheticStyleChange();
+    void scheduleLayerUpdate();
 
     void normalizeAttributes();
     String nodeNamePreservingCase() const;
 
     void setBooleanAttribute(const QualifiedName& name, bool);
+
+    virtual const StylePropertySet* additionalPresentationAttributeStyle() { return 0; }
+    void invalidateStyleAttribute();
+
+    const StylePropertySet* inlineStyle() const { return elementData() ? elementData()->m_inlineStyle.get() : 0; }
+
+    bool setInlineStyleProperty(CSSPropertyID, CSSValueID identifier, bool important = false);
+    bool setInlineStyleProperty(CSSPropertyID, CSSPropertyID identifier, bool important = false);
+    bool setInlineStyleProperty(CSSPropertyID, double value, CSSPrimitiveValue::UnitTypes, bool important = false);
+    bool setInlineStyleProperty(CSSPropertyID, const String& value, bool important = false);
+    bool removeInlineStyleProperty(CSSPropertyID);
+    void removeAllInlineStyleProperties();
+
+    void synchronizeStyleAttributeInternal() const;
+
+    const StylePropertySet* presentationAttributeStyle();
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) { }
 
     // For exposing to DOM only.
     NamedNodeMap* attributes() const;
@@ -410,21 +434,21 @@ public:
     virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual RenderObject* createRenderer(RenderStyle*);
     virtual bool rendererIsNeeded(const NodeRenderingContext&);
-    void recalcStyle(StyleChange = NoChange);
+    bool recalcStyle(StyleChange = NoChange);
     void didAffectSelector(AffectedSelectorMask);
 
     ElementShadow* shadow() const;
     ElementShadow* ensureShadow();
-    PassRefPtr<ShadowRoot> createShadowRoot(ExceptionCode&);
+    PassRefPtr<ShadowRoot> createShadowRoot(ExceptionState&);
     ShadowRoot* shadowRoot() const;
-    void ensureDistribution();
 
     bool hasAuthorShadowRoot() const { return shadowRoot(); }
 
     ShadowRoot* userAgentShadowRoot() const;
     ShadowRoot* ensureUserAgentShadowRoot();
-
-    virtual const AtomicString& shadowPseudoId() const;
+    Element* uaShadowElementById(const AtomicString& id) const;
+    virtual bool supportsShadowElementForUserAgentShadow() const;
+    virtual const AtomicString& shadowPseudoId() const { return !part().isEmpty() ? part() : pseudo(); }
 
     RenderStyle* computedStyle(PseudoId = NOPSEUDO);
 
@@ -457,7 +481,11 @@ public:
     void setIsInCanvasSubtree(bool);
     bool isInCanvasSubtree() const;
 
-    bool isUnresolvedCustomElement();
+    bool isUpgradedCustomElement() { return customElementState() == Upgraded; }
+    bool isUnresolvedCustomElement() { return isCustomElement() && !isUpgradedCustomElement(); }
+
+    void setIsInsideRegion(bool);
+    bool isInsideRegion() const;
 
     void setRegionOversetState(RegionOversetState);
     RegionOversetState regionOversetState() const;
@@ -475,20 +503,35 @@ public:
 
     virtual const AtomicString& imageSourceURL() const;
     virtual String target() const { return String(); }
+    virtual Image* imageContents() { return 0; }
 
     virtual void focus(bool restorePreviousSelection = true, FocusDirection = FocusDirectionNone);
     virtual void updateFocusAppearance(bool restorePreviousSelection);
     virtual void blur();
+    // Whether this element can receive focus at all. Most elements are not
+    // focusable but some elements, such as form controls and links, are. Unlike
+    // rendererIsFocusable(), this method may be called when layout is not up to
+    // date, so it must not use the renderer to determine focusability.
+    virtual bool supportsFocus() const;
+    // Whether the node can actually be focused.
+    bool isFocusable() const;
+    virtual bool isKeyboardFocusable() const;
+    virtual bool isMouseFocusable() const;
+    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusDirection);
+    virtual void dispatchBlurEvent(Element* newFocusedElement);
+    void dispatchFocusInEvent(const AtomicString& eventType, Element* oldFocusedElement);
+    void dispatchFocusOutEvent(const AtomicString& eventType, Element* newFocusedElement);
 
     String innerText();
     String outerText();
- 
+
     String textFromChildren();
 
-    virtual String title() const;
+    virtual String title() const { return String(); }
 
     const AtomicString& pseudo() const;
-    void setPseudo(const AtomicString&);
+    virtual const AtomicString& part() const;
+    void setPart(const AtomicString&);
 
     LayoutSize minimumSizeForResizing() const;
     void setMinimumSizeForResizing(const LayoutSize&);
@@ -503,10 +546,10 @@ public:
     PseudoElement* pseudoElement(PseudoId) const;
     RenderObject* pseudoElementRenderer(PseudoId) const;
 
-    virtual bool matchesReadOnlyPseudoClass() const;
-    virtual bool matchesReadWritePseudoClass() const;
-    bool webkitMatchesSelector(const String& selectors, ExceptionCode&);
-    virtual bool shouldAppearIndeterminate() const;
+    virtual bool matchesReadOnlyPseudoClass() const { return false; }
+    virtual bool matchesReadWritePseudoClass() const { return false; }
+    bool webkitMatchesSelector(const String& selectors, ExceptionState&);
+    virtual bool shouldAppearIndeterminate() const { return false; }
 
     DOMTokenList* classList();
 
@@ -519,9 +562,9 @@ public:
     virtual bool isInputFieldSpeechButtonElement() const { return false; }
 #endif
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
-    virtual bool isDateTimeEditElement() const;
-    virtual bool isDateTimeFieldElement() const;
-    virtual bool isPickerIndicatorElement() const;
+    virtual bool isDateTimeEditElement() const { return false; }
+    virtual bool isDateTimeFieldElement() const { return false; }
+    virtual bool isPickerIndicatorElement() const { return false; }
 #endif
 
     virtual bool isFormControlElement() const { return false; }
@@ -535,15 +578,16 @@ public:
     virtual bool isInRange() const { return false; }
     virtual bool isOutOfRange() const { return false; }
     virtual bool isFrameElementBase() const { return false; }
-    virtual bool isTextFieldDecoration() const { return false; }
-    virtual bool isClearButtonElement() const;
+    virtual bool isPasswordGeneratorButtonElement() const { return false; }
+    virtual bool isClearButtonElement() const { return false; }
 
     virtual bool canContainRangeEndPoint() const { return true; }
 
     virtual const AtomicString& formControlType() const { return nullAtom; }
 
-    virtual bool wasChangedSinceLastFormControlChangeEvent() const;
-    virtual void setChangedSinceLastFormControlChangeEvent(bool);
+    // FIXME: Only HTMLInputElement uses these, they don't need to be virtual.
+    virtual bool wasChangedSinceLastFormControlChangeEvent() const { return false; }
+    virtual void setChangedSinceLastFormControlChangeEvent(bool) { }
     virtual void dispatchFormControlChangeEvent() { }
 
     // Used for disabled form elements; if true, prevents mouse events from being dispatched
@@ -563,7 +607,7 @@ public:
         ALLOW_KEYBOARD_INPUT = 1 << 0,
         LEGACY_MOZILLA_REQUEST = 1 << 1,
     };
-    
+
     void webkitRequestFullScreen(unsigned short flags);
     bool containsFullScreenElement() const;
     void setContainsFullScreenElement(bool);
@@ -583,6 +627,7 @@ public:
     PassRefPtr<RenderStyle> originalStyleForRenderer();
 
     RenderRegion* renderRegion() const;
+    virtual bool shouldMoveToFlowThread(RenderStyle*) const;
     const AtomicString& webkitRegionOverset() const;
     Vector<RefPtr<Range> > webkitGetRegionFlowRanges() const;
 
@@ -593,14 +638,11 @@ public:
     IntSize savedLayerScrollOffset() const;
     void setSavedLayerScrollOffset(const IntSize&);
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
-
-    void addActiveAnimation(Animation*);
-    void removeActiveAnimation(Animation*);
+    ActiveAnimations* activeAnimations() const;
+    ActiveAnimations* ensureActiveAnimations();
     bool hasActiveAnimations() const;
-    Vector<Animation*>* activeAnimations() const;
 
-    InputMethodContext* getInputContext();
+    InputMethodContext* inputMethodContext();
 
 protected:
     Element(const QualifiedName& tagName, Document* document, ConstructionType type)
@@ -609,6 +651,14 @@ protected:
     {
         ScriptWrappable::init(this);
     }
+
+    virtual bool isPresentationAttribute(const QualifiedName&) const { return false; }
+
+    void addPropertyToPresentationAttributeStyle(MutableStylePropertySet*, CSSPropertyID, CSSValueID identifier);
+    void addPropertyToPresentationAttributeStyle(MutableStylePropertySet*, CSSPropertyID, double value, CSSPrimitiveValue::UnitTypes);
+    void addPropertyToPresentationAttributeStyle(MutableStylePropertySet*, CSSPropertyID, const String& value);
+
+    virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
@@ -622,12 +672,15 @@ protected:
     virtual bool shouldRegisterAsNamedItem() const { return false; }
     virtual bool shouldRegisterAsExtraNamedItem() const { return false; }
 
-    void clearTabIndexExplicitlyIfNeeded();    
+    void clearTabIndexExplicitlyIfNeeded();
     void setTabIndexExplicitly(short);
-    virtual bool supportsFocus() const OVERRIDE;
     virtual short tabIndex() const OVERRIDE;
-    virtual bool rendererIsFocusable() const OVERRIDE;
-
+    // Subclasses may override this method to affect focusability. Unlike
+    // supportsFocus, this method must be called on an up-to-date layout, so it
+    // may use the renderer to reason about focusability. This method cannot be
+    // moved to RenderObject because some focusable nodes don't have renderers,
+    // e.g., HTMLOptionElement.
+    virtual bool rendererIsFocusable() const;
     PassRefPtr<HTMLCollection> ensureCachedHTMLCollection(CollectionType);
     HTMLCollection* cachedHTMLCollection(CollectionType);
 
@@ -637,9 +690,20 @@ protected:
     void classAttributeChanged(const AtomicString& newClassString);
 
 private:
+    void styleAttributeChanged(const AtomicString& newStyleString, AttributeModificationReason);
+
+    void inlineStyleChanged();
+    PropertySetCSSStyleDeclaration* inlineStyleCSSOMWrapper();
+    void setInlineStyleFromString(const AtomicString&);
+    MutableStylePropertySet* ensureMutableInlineStyle();
+
+    void makePresentationAttributeCacheKey(PresentationAttributeCacheKey&) const;
+    void rebuildPresentationAttributeStyle();
+
     void updatePseudoElement(PseudoId, StyleChange);
     void createPseudoElementIfNeeded(PseudoId);
 
+    // FIXME: Everyone should allow author shadows.
     virtual bool areAuthorShadowsAllowed() const { return true; }
     virtual void didAddUserAgentShadowRoot(ShadowRoot*) { }
     virtual bool alwaysCreateUserAgentShadowRoot() const { return false; }
@@ -664,7 +728,7 @@ private:
 
     void scrollByUnits(int units, ScrollGranularity);
 
-    virtual void setPrefix(const AtomicString&, ExceptionCode&) OVERRIDE FINAL;
+    virtual void setPrefix(const AtomicString&, ExceptionState&) OVERRIDE FINAL;
     virtual NodeType nodeType() const OVERRIDE FINAL;
     virtual bool childTypeAllowed(NodeType) const OVERRIDE FINAL;
 
@@ -682,7 +746,7 @@ private:
     void cancelFocusAppearanceUpdate();
 
     virtual RenderStyle* virtualComputedStyle(PseudoId pseudoElementSpecifier = NOPSEUDO) { return computedStyle(pseudoElementSpecifier); }
-    
+
     // cloneNode is private so that non-virtual cloneElementWithChildren and cloneElementWithoutChildren
     // are used instead.
     virtual PassRefPtr<Node> cloneNode(bool deep) OVERRIDE;
@@ -718,13 +782,11 @@ private:
     void detachAttrNodeFromElementWithValue(Attr*, const AtomicString& value);
     void detachAttrNodeAtIndex(Attr*, size_t index);
 
-    void createRendererIfNeeded(const AttachContext&);
-
     bool isJavaScriptURLAttribute(const Attribute&) const;
 
     RefPtr<ElementData> m_elementData;
 };
-    
+
 inline Element* toElement(Node* node)
 {
     ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isElementNode());
@@ -749,7 +811,7 @@ inline bool Node::hasTagName(const QualifiedName& name) const
 {
     return isElementNode() && toElement(this)->hasTagName(name);
 }
-    
+
 inline bool Node::hasLocalName(const AtomicString& name) const
 {
     return isElementNode() && toElement(this)->hasLocalName(name);
@@ -907,6 +969,8 @@ inline Node::InsertionNotificationRequest Node::insertedInto(ContainerNode* inse
         setFlag(InDocumentFlag);
     if (parentOrShadowHostNode()->isInShadowTree())
         setFlag(IsInShadowTreeFlag);
+    if (childNeedsDistributionRecalc() && !insertionPoint->childNeedsDistributionRecalc())
+        insertionPoint->markAncestorsWithChildNeedsDistributionRecalc();
     return InsertionDone;
 }
 
@@ -919,9 +983,29 @@ inline void Node::removedFrom(ContainerNode* insertionPoint)
         clearFlag(IsInShadowTreeFlag);
 }
 
+inline void Element::invalidateStyleAttribute()
+{
+    ASSERT(elementData());
+    elementData()->m_styleAttributeIsDirty = true;
+}
+
+inline const StylePropertySet* Element::presentationAttributeStyle()
+{
+    if (!elementData())
+        return 0;
+    if (elementData()->m_presentationAttributeStyleIsDirty)
+        rebuildPresentationAttributeStyle();
+    return elementData()->presentationAttributeStyle();
+}
+
 inline bool isShadowHost(const Node* node)
 {
     return node && node->isElementNode() && toElement(node)->shadow();
+}
+
+inline bool isShadowHost(const Element* element)
+{
+    return element && element->shadow();
 }
 
 inline size_t ElementData::length() const

@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -29,9 +29,9 @@
 
 #include "core/loader/CrossOriginAccessControl.h"
 #include "core/platform/network/ResourceResponse.h"
-#include <wtf/CurrentTime.h>
-#include <wtf/MainThread.h>
-#include <wtf/StdLibExtras.h>
+#include "wtf/CurrentTime.h"
+#include "wtf/MainThread.h"
+#include "wtf/StdLibExtras.h"
 
 namespace WebCore {
 
@@ -61,7 +61,7 @@ static void addToAccessControlAllowList(const String& string, unsigned start, un
         ++start;
 
     // only white space
-    if (start > end) 
+    if (start > end)
         return;
 
     // Skip white space from end.

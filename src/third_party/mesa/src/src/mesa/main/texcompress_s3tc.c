@@ -36,13 +36,15 @@
 #include "glheader.h"
 #include "imports.h"
 #include "colormac.h"
-#include "convolve.h"
 #include "dlopen.h"
 #include "image.h"
 #include "macros.h"
+#include "mfeatures.h"
+#include "mtypes.h"
 #include "texcompress.h"
 #include "texcompress_s3tc.h"
 #include "texstore.h"
+#include "swrast/s_context.h"
 
 
 #if FEATURE_texture_s3tc
@@ -64,7 +66,7 @@
  * linear RGB value in [0, 1].
  * Implemented with a 256-entry lookup table.
  */
-static INLINE GLfloat
+static inline GLfloat
 nonlinear_to_linear(GLubyte cs8)
 {
    static GLfloat table[256];
@@ -95,7 +97,7 @@ dxtFetchTexelFuncExt fetch_ext_rgba_dxt3 = NULL;
 dxtFetchTexelFuncExt fetch_ext_rgba_dxt5 = NULL;
 
 typedef void (*dxtCompressTexFuncExt)(GLint srccomps, GLint width,
-                                      GLint height, const GLchan *srcPixData,
+                                      GLint height, const GLubyte *srcPixData,
                                       GLenum destformat, GLubyte *dest,
                                       GLint dstRowStride);
 
@@ -105,7 +107,7 @@ static void *dxtlibhandle = NULL;
 
 
 void
-_mesa_init_texture_s3tc( GLcontext *ctx )
+_mesa_init_texture_s3tc( struct gl_context *ctx )
 {
    /* called during context initialization */
    ctx->Mesa_DXTn = GL_FALSE;
@@ -161,26 +163,20 @@ _mesa_init_texture_s3tc( GLcontext *ctx )
 GLboolean
 _mesa_texstore_rgb_dxt1(TEXSTORE_PARAMS)
 {
-   const GLchan *pixels;
-   GLint srcRowStride;
+   const GLubyte *pixels;
    GLubyte *dst;
-   const GLint texWidth = dstRowStride * 4 / 8; /* a bit of a hack */
-   const GLchan *tempImage = NULL;
+   const GLubyte *tempImage = NULL;
 
    ASSERT(dstFormat == MESA_FORMAT_RGB_DXT1 ||
           dstFormat == MESA_FORMAT_SRGB_DXT1);
-   ASSERT(dstXoffset % 4 == 0);
-   ASSERT(dstYoffset % 4 == 0);
-   ASSERT(dstZoffset % 4 == 0);
-   (void) dstZoffset;
-   (void) dstImageOffsets;
 
    if (srcFormat != GL_RGB ||
-       srcType != CHAN_TYPE ||
+       srcType != GL_UNSIGNED_BYTE ||
        ctx->_ImageTransferState ||
+       srcPacking->RowLength != srcWidth ||
        srcPacking->SwapBytes) {
-      /* convert image to RGB/GLchan */
-      tempImage = _mesa_make_temp_chan_image(ctx, dims,
+      /* convert image to RGB/GLubyte */
+      tempImage = _mesa_make_temp_ubyte_image(ctx, dims,
                                              baseInternalFormat,
                                              _mesa_get_format_base_format(dstFormat),
                                              srcWidth, srcHeight, srcDepth,
@@ -188,20 +184,15 @@ _mesa_texstore_rgb_dxt1(TEXSTORE_PARAMS)
                                              srcPacking);
       if (!tempImage)
          return GL_FALSE; /* out of memory */
-      _mesa_adjust_image_for_convolution(ctx, dims, &srcWidth, &srcHeight);
       pixels = tempImage;
-      srcRowStride = 3 * srcWidth;
       srcFormat = GL_RGB;
    }
    else {
-      pixels = (const GLchan *) srcAddr;
-      srcRowStride = _mesa_image_row_stride(srcPacking, srcWidth, srcFormat,
-                                            srcType) / sizeof(GLchan);
+      pixels = _mesa_image_address2d(srcPacking, srcAddr, srcWidth, srcHeight,
+                                     srcFormat, srcType, 0, 0);
    }
 
-   dst = _mesa_compressed_image_address(dstXoffset, dstYoffset, 0,
-                                        dstFormat,
-                                        texWidth, (GLubyte *) dstAddr);
+   dst = dstSlices[0];
 
    if (ext_tx_compress_dxtn) {
       (*ext_tx_compress_dxtn)(3, srcWidth, srcHeight, pixels,
@@ -225,26 +216,20 @@ _mesa_texstore_rgb_dxt1(TEXSTORE_PARAMS)
 GLboolean
 _mesa_texstore_rgba_dxt1(TEXSTORE_PARAMS)
 {
-   const GLchan *pixels;
-   GLint srcRowStride;
+   const GLubyte *pixels;
    GLubyte *dst;
-   const GLint texWidth = dstRowStride * 4 / 8; /* a bit of a hack */
-   const GLchan *tempImage = NULL;
+   const GLubyte *tempImage = NULL;
 
    ASSERT(dstFormat == MESA_FORMAT_RGBA_DXT1 ||
           dstFormat == MESA_FORMAT_SRGBA_DXT1);
-   ASSERT(dstXoffset % 4 == 0);
-   ASSERT(dstYoffset % 4 == 0);
-   ASSERT(dstZoffset % 4 == 0);
-   (void) dstZoffset;
-   (void) dstImageOffsets;
 
    if (srcFormat != GL_RGBA ||
-       srcType != CHAN_TYPE ||
+       srcType != GL_UNSIGNED_BYTE ||
        ctx->_ImageTransferState ||
+       srcPacking->RowLength != srcWidth ||
        srcPacking->SwapBytes) {
-      /* convert image to RGBA/GLchan */
-      tempImage = _mesa_make_temp_chan_image(ctx, dims,
+      /* convert image to RGBA/GLubyte */
+      tempImage = _mesa_make_temp_ubyte_image(ctx, dims,
                                              baseInternalFormat,
                                              _mesa_get_format_base_format(dstFormat),
                                              srcWidth, srcHeight, srcDepth,
@@ -252,20 +237,16 @@ _mesa_texstore_rgba_dxt1(TEXSTORE_PARAMS)
                                              srcPacking);
       if (!tempImage)
          return GL_FALSE; /* out of memory */
-      _mesa_adjust_image_for_convolution(ctx, dims, &srcWidth, &srcHeight);
       pixels = tempImage;
-      srcRowStride = 4 * srcWidth;
       srcFormat = GL_RGBA;
    }
    else {
-      pixels = (const GLchan *) srcAddr;
-      srcRowStride = _mesa_image_row_stride(srcPacking, srcWidth, srcFormat,
-                                            srcType) / sizeof(GLchan);
+      pixels = _mesa_image_address2d(srcPacking, srcAddr, srcWidth, srcHeight,
+                                     srcFormat, srcType, 0, 0);
    }
 
-   dst = _mesa_compressed_image_address(dstXoffset, dstYoffset, 0,
-                                        dstFormat,
-                                        texWidth, (GLubyte *) dstAddr);
+   dst = dstSlices[0];
+
    if (ext_tx_compress_dxtn) {
       (*ext_tx_compress_dxtn)(4, srcWidth, srcHeight, pixels,
                               GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
@@ -288,26 +269,20 @@ _mesa_texstore_rgba_dxt1(TEXSTORE_PARAMS)
 GLboolean
 _mesa_texstore_rgba_dxt3(TEXSTORE_PARAMS)
 {
-   const GLchan *pixels;
-   GLint srcRowStride;
+   const GLubyte *pixels;
    GLubyte *dst;
-   const GLint texWidth = dstRowStride * 4 / 16; /* a bit of a hack */
-   const GLchan *tempImage = NULL;
+   const GLubyte *tempImage = NULL;
 
    ASSERT(dstFormat == MESA_FORMAT_RGBA_DXT3 ||
           dstFormat == MESA_FORMAT_SRGBA_DXT3);
-   ASSERT(dstXoffset % 4 == 0);
-   ASSERT(dstYoffset % 4 == 0);
-   ASSERT(dstZoffset % 4 == 0);
-   (void) dstZoffset;
-   (void) dstImageOffsets;
 
    if (srcFormat != GL_RGBA ||
-       srcType != CHAN_TYPE ||
+       srcType != GL_UNSIGNED_BYTE ||
        ctx->_ImageTransferState ||
+       srcPacking->RowLength != srcWidth ||
        srcPacking->SwapBytes) {
-      /* convert image to RGBA/GLchan */
-      tempImage = _mesa_make_temp_chan_image(ctx, dims,
+      /* convert image to RGBA/GLubyte */
+      tempImage = _mesa_make_temp_ubyte_image(ctx, dims,
                                              baseInternalFormat,
                                              _mesa_get_format_base_format(dstFormat),
                                              srcWidth, srcHeight, srcDepth,
@@ -315,19 +290,15 @@ _mesa_texstore_rgba_dxt3(TEXSTORE_PARAMS)
                                              srcPacking);
       if (!tempImage)
          return GL_FALSE; /* out of memory */
-      _mesa_adjust_image_for_convolution(ctx, dims, &srcWidth, &srcHeight);
       pixels = tempImage;
-      srcRowStride = 4 * srcWidth;
    }
    else {
-      pixels = (const GLchan *) srcAddr;
-      srcRowStride = _mesa_image_row_stride(srcPacking, srcWidth, srcFormat,
-                                            srcType) / sizeof(GLchan);
+      pixels = _mesa_image_address2d(srcPacking, srcAddr, srcWidth, srcHeight,
+                                     srcFormat, srcType, 0, 0);
    }
 
-   dst = _mesa_compressed_image_address(dstXoffset, dstYoffset, 0,
-                                        dstFormat,
-                                        texWidth, (GLubyte *) dstAddr);
+   dst = dstSlices[0];
+
    if (ext_tx_compress_dxtn) {
       (*ext_tx_compress_dxtn)(4, srcWidth, srcHeight, pixels,
                               GL_COMPRESSED_RGBA_S3TC_DXT3_EXT,
@@ -350,26 +321,20 @@ _mesa_texstore_rgba_dxt3(TEXSTORE_PARAMS)
 GLboolean
 _mesa_texstore_rgba_dxt5(TEXSTORE_PARAMS)
 {
-   const GLchan *pixels;
-   GLint srcRowStride;
+   const GLubyte *pixels;
    GLubyte *dst;
-   const GLint texWidth = dstRowStride * 4 / 16; /* a bit of a hack */
-   const GLchan *tempImage = NULL;
+   const GLubyte *tempImage = NULL;
 
    ASSERT(dstFormat == MESA_FORMAT_RGBA_DXT5 ||
           dstFormat == MESA_FORMAT_SRGBA_DXT5);
-   ASSERT(dstXoffset % 4 == 0);
-   ASSERT(dstYoffset % 4 == 0);
-   ASSERT(dstZoffset % 4 == 0);
-   (void) dstZoffset;
-   (void) dstImageOffsets;
 
    if (srcFormat != GL_RGBA ||
-       srcType != CHAN_TYPE ||
+       srcType != GL_UNSIGNED_BYTE ||
        ctx->_ImageTransferState ||
+       srcPacking->RowLength != srcWidth ||
        srcPacking->SwapBytes) {
-      /* convert image to RGBA/GLchan */
-      tempImage = _mesa_make_temp_chan_image(ctx, dims,
+      /* convert image to RGBA/GLubyte */
+      tempImage = _mesa_make_temp_ubyte_image(ctx, dims,
                                              baseInternalFormat,
                                    	     _mesa_get_format_base_format(dstFormat),
                                              srcWidth, srcHeight, srcDepth,
@@ -377,19 +342,15 @@ _mesa_texstore_rgba_dxt5(TEXSTORE_PARAMS)
                                              srcPacking);
       if (!tempImage)
          return GL_FALSE; /* out of memory */
-      _mesa_adjust_image_for_convolution(ctx, dims, &srcWidth, &srcHeight);
       pixels = tempImage;
-      srcRowStride = 4 * srcWidth;
    }
    else {
-      pixels = (const GLchan *) srcAddr;
-      srcRowStride = _mesa_image_row_stride(srcPacking, srcWidth, srcFormat,
-                                            srcType) / sizeof(GLchan);
+      pixels = _mesa_image_address2d(srcPacking, srcAddr, srcWidth, srcHeight,
+                                     srcFormat, srcType, 0, 0);
    }
 
-   dst = _mesa_compressed_image_address(dstXoffset, dstYoffset, 0,
-                                        dstFormat,
-                                        texWidth, (GLubyte *) dstAddr);
+   dst = dstSlices[0];
+
    if (ext_tx_compress_dxtn) {
       (*ext_tx_compress_dxtn)(4, srcWidth, srcHeight, pixels,
                               GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
@@ -407,14 +368,14 @@ _mesa_texstore_rgba_dxt5(TEXSTORE_PARAMS)
 
 
 static void
-fetch_texel_2d_rgb_dxt1( const struct gl_texture_image *texImage,
-                         GLint i, GLint j, GLint k, GLchan *texel )
+fetch_texel_2d_rgb_dxt1(const struct swrast_texture_image *texImage,
+                        GLint i, GLint j, GLint k, GLubyte *texel)
 {
    (void) k;
    if (fetch_ext_rgb_dxt1) {
-      ASSERT (sizeof(GLchan) == sizeof(GLubyte));
+      GLint sliceOffset = k ? texImage->ImageOffsets[k] / 2 : 0;
       fetch_ext_rgb_dxt1(texImage->RowStride,
-                         (GLubyte *)(texImage)->Data, i, j, texel);
+                         texImage->Map + sliceOffset, i, j, texel);
    }
    else
       _mesa_debug(NULL, "attempted to decode s3tc texture without library available: fetch_texel_2d_rgb_dxt1");
@@ -422,27 +383,28 @@ fetch_texel_2d_rgb_dxt1( const struct gl_texture_image *texImage,
 
 
 void
-_mesa_fetch_texel_2d_f_rgb_dxt1(const struct gl_texture_image *texImage,
-                                GLint i, GLint j, GLint k, GLfloat *texel)
+_mesa_fetch_texel_rgb_dxt1(const struct swrast_texture_image *texImage,
+                           GLint i, GLint j, GLint k, GLfloat *texel)
 {
-   /* just sample as GLchan and convert to float here */
-   GLchan rgba[4];
+   /* just sample as GLubyte and convert to float here */
+   GLubyte rgba[4];
    fetch_texel_2d_rgb_dxt1(texImage, i, j, k, rgba);
-   texel[RCOMP] = CHAN_TO_FLOAT(rgba[RCOMP]);
-   texel[GCOMP] = CHAN_TO_FLOAT(rgba[GCOMP]);
-   texel[BCOMP] = CHAN_TO_FLOAT(rgba[BCOMP]);
-   texel[ACOMP] = CHAN_TO_FLOAT(rgba[ACOMP]);
+   texel[RCOMP] = UBYTE_TO_FLOAT(rgba[RCOMP]);
+   texel[GCOMP] = UBYTE_TO_FLOAT(rgba[GCOMP]);
+   texel[BCOMP] = UBYTE_TO_FLOAT(rgba[BCOMP]);
+   texel[ACOMP] = UBYTE_TO_FLOAT(rgba[ACOMP]);
 }
 
 
 static void
-fetch_texel_2d_rgba_dxt1( const struct gl_texture_image *texImage,
-                          GLint i, GLint j, GLint k, GLchan *texel )
+fetch_texel_2d_rgba_dxt1(const struct swrast_texture_image *texImage,
+                         GLint i, GLint j, GLint k, GLubyte *texel)
 {
    (void) k;
    if (fetch_ext_rgba_dxt1) {
+      GLint sliceOffset = k ? texImage->ImageOffsets[k] / 2 : 0;
       fetch_ext_rgba_dxt1(texImage->RowStride,
-                          (GLubyte *)(texImage)->Data, i, j, texel);
+                          texImage->Map + sliceOffset, i, j, texel);
    }
    else
       _mesa_debug(NULL, "attempted to decode s3tc texture without library available: fetch_texel_2d_rgba_dxt1\n");
@@ -450,28 +412,28 @@ fetch_texel_2d_rgba_dxt1( const struct gl_texture_image *texImage,
 
 
 void
-_mesa_fetch_texel_2d_f_rgba_dxt1(const struct gl_texture_image *texImage,
-                                 GLint i, GLint j, GLint k, GLfloat *texel)
+_mesa_fetch_texel_rgba_dxt1(const struct swrast_texture_image *texImage,
+                            GLint i, GLint j, GLint k, GLfloat *texel)
 {
-   /* just sample as GLchan and convert to float here */
-   GLchan rgba[4];
+   /* just sample as GLubyte and convert to float here */
+   GLubyte rgba[4];
    fetch_texel_2d_rgba_dxt1(texImage, i, j, k, rgba);
-   texel[RCOMP] = CHAN_TO_FLOAT(rgba[RCOMP]);
-   texel[GCOMP] = CHAN_TO_FLOAT(rgba[GCOMP]);
-   texel[BCOMP] = CHAN_TO_FLOAT(rgba[BCOMP]);
-   texel[ACOMP] = CHAN_TO_FLOAT(rgba[ACOMP]);
+   texel[RCOMP] = UBYTE_TO_FLOAT(rgba[RCOMP]);
+   texel[GCOMP] = UBYTE_TO_FLOAT(rgba[GCOMP]);
+   texel[BCOMP] = UBYTE_TO_FLOAT(rgba[BCOMP]);
+   texel[ACOMP] = UBYTE_TO_FLOAT(rgba[ACOMP]);
 }
 
 
 static void
-fetch_texel_2d_rgba_dxt3( const struct gl_texture_image *texImage,
-                          GLint i, GLint j, GLint k, GLchan *texel )
+fetch_texel_2d_rgba_dxt3(const struct swrast_texture_image *texImage,
+                         GLint i, GLint j, GLint k, GLubyte *texel)
 {
    (void) k;
    if (fetch_ext_rgba_dxt3) {
-      ASSERT (sizeof(GLchan) == sizeof(GLubyte));
-      fetch_ext_rgba_dxt3(texImage->RowStride, (GLubyte *)(texImage)->Data,
-                          i, j, texel);
+      GLint sliceOffset = k ? texImage->ImageOffsets[k] : 0;
+      fetch_ext_rgba_dxt3(texImage->RowStride,
+                          texImage->Map + sliceOffset, i, j, texel);
    }
    else
       _mesa_debug(NULL, "attempted to decode s3tc texture without library available: fetch_texel_2d_rgba_dxt3\n");
@@ -479,27 +441,28 @@ fetch_texel_2d_rgba_dxt3( const struct gl_texture_image *texImage,
 
 
 void
-_mesa_fetch_texel_2d_f_rgba_dxt3(const struct gl_texture_image *texImage,
-                                 GLint i, GLint j, GLint k, GLfloat *texel)
+_mesa_fetch_texel_rgba_dxt3(const struct swrast_texture_image *texImage,
+                            GLint i, GLint j, GLint k, GLfloat *texel)
 {
-   /* just sample as GLchan and convert to float here */
-   GLchan rgba[4];
+   /* just sample as GLubyte and convert to float here */
+   GLubyte rgba[4];
    fetch_texel_2d_rgba_dxt3(texImage, i, j, k, rgba);
-   texel[RCOMP] = CHAN_TO_FLOAT(rgba[RCOMP]);
-   texel[GCOMP] = CHAN_TO_FLOAT(rgba[GCOMP]);
-   texel[BCOMP] = CHAN_TO_FLOAT(rgba[BCOMP]);
-   texel[ACOMP] = CHAN_TO_FLOAT(rgba[ACOMP]);
+   texel[RCOMP] = UBYTE_TO_FLOAT(rgba[RCOMP]);
+   texel[GCOMP] = UBYTE_TO_FLOAT(rgba[GCOMP]);
+   texel[BCOMP] = UBYTE_TO_FLOAT(rgba[BCOMP]);
+   texel[ACOMP] = UBYTE_TO_FLOAT(rgba[ACOMP]);
 }
 
 
 static void
-fetch_texel_2d_rgba_dxt5( const struct gl_texture_image *texImage,
-                          GLint i, GLint j, GLint k, GLchan *texel )
+fetch_texel_2d_rgba_dxt5(const struct swrast_texture_image *texImage,
+                         GLint i, GLint j, GLint k, GLubyte *texel)
 {
    (void) k;
    if (fetch_ext_rgba_dxt5) {
-      fetch_ext_rgba_dxt5(texImage->RowStride, (GLubyte *)(texImage)->Data,
-                          i, j, texel);
+      GLint sliceOffset = k ? texImage->ImageOffsets[k] : 0;
+      fetch_ext_rgba_dxt5(texImage->RowStride,
+                          texImage->Map + sliceOffset, i, j, texel);
    }
    else
       _mesa_debug(NULL, "attempted to decode s3tc texture without library available: fetch_texel_2d_rgba_dxt5\n");
@@ -507,69 +470,69 @@ fetch_texel_2d_rgba_dxt5( const struct gl_texture_image *texImage,
 
 
 void
-_mesa_fetch_texel_2d_f_rgba_dxt5(const struct gl_texture_image *texImage,
-                                 GLint i, GLint j, GLint k, GLfloat *texel)
+_mesa_fetch_texel_rgba_dxt5(const struct swrast_texture_image *texImage,
+                            GLint i, GLint j, GLint k, GLfloat *texel)
 {
-   /* just sample as GLchan and convert to float here */
-   GLchan rgba[4];
+   /* just sample as GLubyte and convert to float here */
+   GLubyte rgba[4];
    fetch_texel_2d_rgba_dxt5(texImage, i, j, k, rgba);
-   texel[RCOMP] = CHAN_TO_FLOAT(rgba[RCOMP]);
-   texel[GCOMP] = CHAN_TO_FLOAT(rgba[GCOMP]);
-   texel[BCOMP] = CHAN_TO_FLOAT(rgba[BCOMP]);
-   texel[ACOMP] = CHAN_TO_FLOAT(rgba[ACOMP]);
+   texel[RCOMP] = UBYTE_TO_FLOAT(rgba[RCOMP]);
+   texel[GCOMP] = UBYTE_TO_FLOAT(rgba[GCOMP]);
+   texel[BCOMP] = UBYTE_TO_FLOAT(rgba[BCOMP]);
+   texel[ACOMP] = UBYTE_TO_FLOAT(rgba[ACOMP]);
 }
 
 #if FEATURE_EXT_texture_sRGB
 void
-_mesa_fetch_texel_2d_f_srgb_dxt1( const struct gl_texture_image *texImage,
-                                  GLint i, GLint j, GLint k, GLfloat *texel )
+_mesa_fetch_texel_srgb_dxt1(const struct swrast_texture_image *texImage,
+                            GLint i, GLint j, GLint k, GLfloat *texel)
 {
-   /* just sample as GLchan and convert to float here */
-   GLchan rgba[4];
+   /* just sample as GLubyte and convert to float here */
+   GLubyte rgba[4];
    fetch_texel_2d_rgb_dxt1(texImage, i, j, k, rgba);
    texel[RCOMP] = nonlinear_to_linear(rgba[RCOMP]);
    texel[GCOMP] = nonlinear_to_linear(rgba[GCOMP]);
    texel[BCOMP] = nonlinear_to_linear(rgba[BCOMP]);
-   texel[ACOMP] = CHAN_TO_FLOAT(rgba[ACOMP]);
+   texel[ACOMP] = UBYTE_TO_FLOAT(rgba[ACOMP]);
 }
 
 void
-_mesa_fetch_texel_2d_f_srgba_dxt1(const struct gl_texture_image *texImage,
-                                  GLint i, GLint j, GLint k, GLfloat *texel)
+_mesa_fetch_texel_srgba_dxt1(const struct swrast_texture_image *texImage,
+                             GLint i, GLint j, GLint k, GLfloat *texel)
 {
-   /* just sample as GLchan and convert to float here */
-   GLchan rgba[4];
+   /* just sample as GLubyte and convert to float here */
+   GLubyte rgba[4];
    fetch_texel_2d_rgba_dxt1(texImage, i, j, k, rgba);
    texel[RCOMP] = nonlinear_to_linear(rgba[RCOMP]);
    texel[GCOMP] = nonlinear_to_linear(rgba[GCOMP]);
    texel[BCOMP] = nonlinear_to_linear(rgba[BCOMP]);
-   texel[ACOMP] = CHAN_TO_FLOAT(rgba[ACOMP]);
+   texel[ACOMP] = UBYTE_TO_FLOAT(rgba[ACOMP]);
 }
 
 void
-_mesa_fetch_texel_2d_f_srgba_dxt3(const struct gl_texture_image *texImage,
-                                  GLint i, GLint j, GLint k, GLfloat *texel)
+_mesa_fetch_texel_srgba_dxt3(const struct swrast_texture_image *texImage,
+                             GLint i, GLint j, GLint k, GLfloat *texel)
 {
-   /* just sample as GLchan and convert to float here */
-   GLchan rgba[4];
+   /* just sample as GLubyte and convert to float here */
+   GLubyte rgba[4];
    fetch_texel_2d_rgba_dxt3(texImage, i, j, k, rgba);
    texel[RCOMP] = nonlinear_to_linear(rgba[RCOMP]);
    texel[GCOMP] = nonlinear_to_linear(rgba[GCOMP]);
    texel[BCOMP] = nonlinear_to_linear(rgba[BCOMP]);
-   texel[ACOMP] = CHAN_TO_FLOAT(rgba[ACOMP]);
+   texel[ACOMP] = UBYTE_TO_FLOAT(rgba[ACOMP]);
 }
 
 void
-_mesa_fetch_texel_2d_f_srgba_dxt5(const struct gl_texture_image *texImage,
-                                  GLint i, GLint j, GLint k, GLfloat *texel)
+_mesa_fetch_texel_srgba_dxt5(const struct swrast_texture_image *texImage,
+                             GLint i, GLint j, GLint k, GLfloat *texel)
 {
-   /* just sample as GLchan and convert to float here */
-   GLchan rgba[4];
+   /* just sample as GLubyte and convert to float here */
+   GLubyte rgba[4];
    fetch_texel_2d_rgba_dxt5(texImage, i, j, k, rgba);
    texel[RCOMP] = nonlinear_to_linear(rgba[RCOMP]);
    texel[GCOMP] = nonlinear_to_linear(rgba[GCOMP]);
    texel[BCOMP] = nonlinear_to_linear(rgba[BCOMP]);
-   texel[ACOMP] = CHAN_TO_FLOAT(rgba[ACOMP]);
+   texel[ACOMP] = UBYTE_TO_FLOAT(rgba[ACOMP]);
 }
 #endif /* FEATURE_EXT_texture_sRGB */
 

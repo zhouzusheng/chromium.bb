@@ -31,17 +31,13 @@
 #ifndef InspectorInstrumentation_h
 #define InspectorInstrumentation_h
 
-#include "bindings/v8/ScriptState.h"
 #include "bindings/v8/ScriptString.h"
-#include "core/css/CSSImportRule.h"
-#include "core/css/CSSRule.h"
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/dom/Element.h"
 #include "core/dom/EventContext.h"
 #include "core/dom/ScriptExecutionContext.h"
 #include "core/inspector/ConsoleAPITypes.h"
-#include "core/page/ConsoleTypes.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
 #include "core/platform/network/FormData.h"
@@ -51,53 +47,22 @@
 #include "modules/websockets/WebSocketHandshakeRequest.h"
 #include "modules/websockets/WebSocketHandshakeResponse.h"
 #include "wtf/RefPtr.h"
-#include "wtf/UnusedParam.h"
-#include "wtf/Vector.h"
 
 namespace WebCore {
 
 struct CSSParserString;
-class CSSRule;
-class CachedResource;
-class CharacterData;
-class DOMWindow;
-class DOMWrapperWorld;
-class Database;
 class Document;
 class Element;
-class EventContext;
-class DocumentLoader;
-class DocumentStyleSheetCollection;
 class DeviceOrientationData;
 class GeolocationPosition;
 class GraphicsContext;
-class InspectorCSSAgent;
-class InspectorCSSOMWrappers;
 class InspectorTimelineAgent;
 class InstrumentingAgents;
-class KURL;
-class Node;
-class PseudoElement;
 class RenderLayer;
-class RenderLayerBacking;
-class RenderObject;
-class ResourceRequest;
-class ResourceResponse;
-class ScriptArguments;
-class ScriptCallStack;
 class ScriptExecutionContext;
-class ScriptObject;
-class ScriptProfile;
-class SecurityOrigin;
-class ShadowRoot;
-class StorageArea;
-class StyleResolver;
-class StyleRule;
-class StyleSheet;
 class ThreadableLoaderClient;
-class WorkerContext;
-class WorkerContextProxy;
-class XMLHttpRequest;
+class WorkerGlobalScope;
+class WorkerGlobalScopeProxy;
 
 #define FAST_RETURN_IF_NO_FRONTENDS(value) if (!hasFrontends()) return value;
 
@@ -144,7 +109,7 @@ InstrumentingAgents* instrumentingAgentsForDocument(Document*);
 InstrumentingAgents* instrumentingAgentsForRenderObject(RenderObject*);
 InstrumentingAgents* instrumentingAgentsForElement(Element*);
 
-InstrumentingAgents* instrumentingAgentsForWorkerContext(WorkerContext*);
+InstrumentingAgents* instrumentingAgentsForWorkerGlobalScope(WorkerGlobalScope*);
 InstrumentingAgents* instrumentingAgentsForNonDocumentContext(ScriptExecutionContext*);
 
 }  // namespace InspectorInstrumentation
@@ -157,12 +122,14 @@ extern const char ImageDecodeTask[];
 extern const char Paint[];
 extern const char Layer[];
 extern const char BeginFrame[];
+extern const char UpdateLayer[];
 };
 
 namespace InstrumentationEventArguments {
 extern const char LayerId[];
-extern const char PageId[];
+extern const char LayerTreeId[];
 extern const char NodeId[];
+extern const char PageId[];
 };
 
 namespace InspectorInstrumentation {
@@ -178,9 +145,7 @@ inline InstrumentingAgents* instrumentingAgentsForScriptExecutionContext(ScriptE
 
 inline InstrumentingAgents* instrumentingAgentsForFrame(Frame* frame)
 {
-    if (frame)
-        return instrumentingAgentsForPage(frame->page());
-    return 0;
+    return frame ? instrumentingAgentsForPage(frame->page()) : 0;
 }
 
 inline InstrumentingAgents* instrumentingAgentsForDocument(Document* document)
@@ -196,7 +161,7 @@ inline InstrumentingAgents* instrumentingAgentsForDocument(Document* document)
 
 inline InstrumentingAgents* instrumentingAgentsForElement(Element* element)
 {
-    return instrumentingAgentsForDocument(element->document());
+    return element ? instrumentingAgentsForDocument(element->document()) : 0;
 }
 
 bool cssErrorFilter(const CSSParserString& content, int propertyId, int errorType);
@@ -205,7 +170,7 @@ bool cssErrorFilter(const CSSParserString& content, int propertyId, int errorTyp
 
 InstrumentingAgents* instrumentationForPage(Page*);
 
-InstrumentingAgents* instrumentationForWorkerContext(WorkerContext*);
+InstrumentingAgents* instrumentationForWorkerGlobalScope(WorkerGlobalScope*);
 
 } // namespace WebCore
 

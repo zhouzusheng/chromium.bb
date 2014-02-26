@@ -7,18 +7,18 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/spdy/spdy_framer.h"
 #include "net/spdy/spdy_protocol.h"
 #include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_stream.h"
+#include "url/gurl.h"
 
 namespace net {
 
 SpdyWebSocketStream::SpdyWebSocketStream(
-    SpdySession* spdy_session, Delegate* delegate)
+    const base::WeakPtr<SpdySession>& spdy_session, Delegate* delegate)
     : weak_ptr_factory_(this),
       spdy_session_(spdy_session),
       pending_send_data_length_(0),
@@ -35,7 +35,7 @@ SpdyWebSocketStream::~SpdyWebSocketStream() {
 int SpdyWebSocketStream::InitializeStream(const GURL& url,
                                           RequestPriority request_priority,
                                           const BoundNetLog& net_log) {
-  if (spdy_session_->IsClosed())
+  if (!spdy_session_)
     return ERR_SOCKET_NOT_CONNECTED;
 
   int rv = stream_request_.StartRequest(

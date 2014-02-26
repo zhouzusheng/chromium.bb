@@ -22,12 +22,14 @@ SkImageDecoder* SkImageDecoder::Factory(SkStream*) {
     return NULL;
 }
 
+void SkImageDecoder::copyFieldsToOther(SkImageDecoder* ) {}
+
 bool SkImageDecoder::DecodeFile(const char[], SkBitmap*, SkBitmap::Config,
                                 SkImageDecoder::Mode, SkImageDecoder::Format*) {
     return false;
 }
 
-bool SkImageDecoder::decode(SkStream*, SkBitmap*, SkBitmap::Config, Mode, bool) {
+bool SkImageDecoder::decode(SkStream*, SkBitmap*, SkBitmap::Config, Mode) {
     return false;
 }
 

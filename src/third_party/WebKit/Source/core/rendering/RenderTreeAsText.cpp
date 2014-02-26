@@ -79,12 +79,6 @@ TextStream& operator<<(TextStream& ts, const IntPoint& p)
     return ts << "(" << p.x() << "," << p.y() << ")";
 }
 
-TextStream& operator<<(TextStream& ts, const LayoutPoint& p)
-{
-    // FIXME: These should be printed as floats. Keeping them ints for consistency with pervious test expectations.
-    return ts << "(" << p.x().toInt() << "," << p.y().toInt() << ")";
-}
-
 TextStream& operator<<(TextStream& ts, const FloatPoint& p)
 {
     ts << "(" << TextStream::FormatNumberRespectingIntegers(p.x());
@@ -190,7 +184,7 @@ String quoteAndEscapeNonPrintables(const String& s)
                 result.append('\\');
                 result.append('x');
                 result.append('{');
-                appendUnsignedAsHex(c, result); 
+                appendUnsignedAsHex(c, result);
                 result.append('}');
             }
         }
@@ -222,7 +216,7 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
                 ts << " *empty or unstyled AppleStyleSpan*";
         }
     }
-    
+
     RenderBlock* cb = o.containingBlock();
     bool adjustForTableCells = cb ? cb->isTableCell() : false;
 
@@ -253,33 +247,31 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
     if (adjustForTableCells)
         r.move(0, -toRenderTableCell(o.containingBlock())->intrinsicPaddingBefore());
 
-    // FIXME: Convert layout test results to report sub-pixel values, in the meantime using enclosingIntRect
-    // for consistency with old results.
-    ts << " " << enclosingIntRect(r);
+    ts << " " << r;
 
     if (!(o.isText() && !o.isBR())) {
         if (o.isFileUploadControl())
             ts << " " << quoteAndEscapeNonPrintables(toRenderFileUploadControl(&o)->fileTextValue());
 
         if (o.parent()) {
-            Color color = o.style()->visitedDependentColor(CSSPropertyColor);
-            if (o.parent()->style()->visitedDependentColor(CSSPropertyColor) != color)
+            Color color = o.resolveColor(CSSPropertyColor);
+            if (o.parent()->resolveColor(CSSPropertyColor) != color)
                 ts << " [color=" << color.nameForRenderTreeAsText() << "]";
 
             // Do not dump invalid or transparent backgrounds, since that is the default.
-            Color backgroundColor = o.style()->visitedDependentColor(CSSPropertyBackgroundColor);
-            if (o.parent()->style()->visitedDependentColor(CSSPropertyBackgroundColor) != backgroundColor
-                && backgroundColor.isValid() && backgroundColor.rgb())
+            Color backgroundColor = o.resolveColor(CSSPropertyBackgroundColor);
+            if (o.parent()->resolveColor(CSSPropertyBackgroundColor) != backgroundColor
+                && backgroundColor.rgb())
                 ts << " [bgcolor=" << backgroundColor.nameForRenderTreeAsText() << "]";
-            
-            Color textFillColor = o.style()->visitedDependentColor(CSSPropertyWebkitTextFillColor);
-            if (o.parent()->style()->visitedDependentColor(CSSPropertyWebkitTextFillColor) != textFillColor
-                && textFillColor.isValid() && textFillColor != color && textFillColor.rgb())
+
+            Color textFillColor = o.resolveColor(CSSPropertyWebkitTextFillColor);
+            if (o.parent()->resolveColor(CSSPropertyWebkitTextFillColor) != textFillColor
+                && textFillColor != color && textFillColor.rgb())
                 ts << " [textFillColor=" << textFillColor.nameForRenderTreeAsText() << "]";
 
-            Color textStrokeColor = o.style()->visitedDependentColor(CSSPropertyWebkitTextStrokeColor);
-            if (o.parent()->style()->visitedDependentColor(CSSPropertyWebkitTextStrokeColor) != textStrokeColor
-                && textStrokeColor.isValid() && textStrokeColor != color && textStrokeColor.rgb())
+            Color textStrokeColor = o.resolveColor(CSSPropertyWebkitTextStrokeColor);
+            if (o.parent()->resolveColor(CSSPropertyWebkitTextStrokeColor) != textStrokeColor
+                && textStrokeColor != color && textStrokeColor.rgb())
                 ts << " [textStrokeColor=" << textStrokeColor.nameForRenderTreeAsText() << "]";
 
             if (o.parent()->style()->textStrokeWidth() != o.style()->textStrokeWidth() && o.style()->textStrokeWidth() > 0)
@@ -299,9 +291,7 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
             else {
                 ts << " (" << box.borderTop() << "px ";
                 printBorderStyle(ts, o.style()->borderTopStyle());
-                Color col = o.style()->borderTopColor();
-                if (!col.isValid())
-                    col = o.style()->color();
+                Color col = o.resolveColor(CSSPropertyBorderTopColor);
                 ts << col.nameForRenderTreeAsText() << ")";
             }
 
@@ -312,9 +302,7 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
                 else {
                     ts << " (" << box.borderRight() << "px ";
                     printBorderStyle(ts, o.style()->borderRightStyle());
-                    Color col = o.style()->borderRightColor();
-                    if (!col.isValid())
-                        col = o.style()->color();
+                    Color col = o.resolveColor(CSSPropertyBorderRightColor);
                     ts << col.nameForRenderTreeAsText() << ")";
                 }
             }
@@ -326,9 +314,7 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
                 else {
                     ts << " (" << box.borderBottom() << "px ";
                     printBorderStyle(ts, o.style()->borderBottomStyle());
-                    Color col = o.style()->borderBottomColor();
-                    if (!col.isValid())
-                        col = o.style()->color();
+                    Color col = o.resolveColor(CSSPropertyBorderBottomColor);
                     ts << col.nameForRenderTreeAsText() << ")";
                 }
             }
@@ -340,9 +326,7 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
                 else {
                     ts << " (" << box.borderLeft() << "px ";
                     printBorderStyle(ts, o.style()->borderLeftStyle());
-                    Color col = o.style()->borderLeftColor();
-                    if (!col.isValid())
-                        col = o.style()->color();
+                    Color col = o.resolveColor(CSSPropertyBorderLeftColor);
                     ts << col.nameForRenderTreeAsText() << ")";
                 }
             }
@@ -397,7 +381,7 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
             ts << ": " << text;
         }
     }
-    
+
     if (behavior & RenderAsTextShowIDAndClass) {
         if (Node* node = o.node()) {
             if (node->hasID())
@@ -405,22 +389,22 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
 
             if (node->hasClass()) {
                 ts << " class=\"";
-                StyledElement* styledElement = static_cast<StyledElement*>(node);
-                for (size_t i = 0; i < styledElement->classNames().size(); ++i) {
+                Element* element = toElement(node);
+                for (size_t i = 0; i < element->classNames().size(); ++i) {
                     if (i > 0)
                         ts << " ";
-                    ts << styledElement->classNames()[i];
+                    ts << element->classNames()[i];
                 }
                 ts << "\"";
             }
         }
     }
-    
+
     if (behavior & RenderAsTextShowLayoutState) {
         bool needsLayout = o.selfNeedsLayout() || o.needsPositionedMovementLayout() || o.posChildNeedsLayout() || o.normalChildNeedsLayout();
         if (needsLayout)
             ts << " (needs layout:";
-        
+
         bool havePrevious = false;
         if (o.selfNeedsLayout()) {
             ts << " self";
@@ -463,7 +447,7 @@ static void writeTextRun(TextStream& ts, const RenderText& o, const InlineTextBo
     // FIXME: Table cell adjustment is temporary until results can be updated.
     if (o.containingBlock()->isTableCell())
         y -= toRenderTableCell(o.containingBlock())->intrinsicPaddingBefore();
-        
+
     ts << "text run at (" << x << "," << y << ") width " << logicalWidth;
     if (!run.isLeftToRightDirection() || run.dirOverride()) {
         ts << (!run.isLeftToRightDirection() ? " RTL" : " LTR");
@@ -564,10 +548,10 @@ static void write(TextStream& ts, RenderLayer& l,
     writeIndent(ts, indent);
 
     ts << "layer ";
-    
+
     if (behavior & RenderAsTextShowAddresses)
         ts << static_cast<const void*>(&l) << " ";
-      
+
     ts << adjustedLayoutBounds;
 
     if (!adjustedLayoutBounds.isEmpty()) {
@@ -594,7 +578,7 @@ static void write(TextStream& ts, RenderLayer& l,
         ts << " layerType: background only";
     else if (paintPhase == LayerPaintPhaseForeground)
         ts << " layerType: foreground only";
-    
+
     if (behavior & RenderAsTextShowCompositedLayers) {
         if (l.isComposited())
             ts << " (composited, bounds=" << l.backing()->compositedBounds() << ", drawsContent=" << l.backing()->graphicsLayer()->drawsContent() << ", paints into ancestor=" << l.backing()->paintsIntoCompositedAncestor() << ")";
@@ -673,7 +657,7 @@ static void writeLayers(TextStream& ts, const RenderLayer* rootLayer, RenderLaye
         paintDirtyRect.setHeight(max<LayoutUnit>(paintDirtyRect.height(), rootLayer->renderBox()->layoutOverflowRect().maxY()));
         l->setSize(l->size().expandedTo(pixelSnappedIntSize(l->renderBox()->maxLayoutOverflow(), LayoutPoint(0, 0))));
     }
-    
+
     // Calculate the clip rects we should use.
     LayoutRect layerBounds;
     ClipRect damageRect, clipRectToApply, outlineRect;
@@ -723,7 +707,7 @@ static void writeLayers(TextStream& ts, const RenderLayer* rootLayer, RenderLaye
         for (unsigned i = 0; i != posList->size(); ++i)
             writeLayers(ts, rootLayer, posList->at(i), paintDirtyRect, currIndent, behavior);
     }
-    
+
     // Altough the RenderFlowThread requires a layer, it is not collected by its parent,
     // so we have to treat it as a special case.
     if (l->renderer()->isRenderView()) {
@@ -793,7 +777,7 @@ static String externalRepresentation(RenderBox* renderer, RenderAsTextBehavior b
     TextStream ts;
     if (!renderer->hasLayer())
         return ts.release();
-        
+
     RenderLayer* layer = renderer->layer();
     writeLayers(ts, layer, layer, layer->rect(), 0, behavior);
     writeSelection(ts, renderer);
@@ -824,7 +808,7 @@ String externalRepresentation(Element* element, RenderAsTextBehavior behavior)
     ASSERT(!(behavior & RenderAsTextPrintingMode));
     if (!(behavior & RenderAsTextDontUpdateLayout) && element->document())
         element->document()->updateLayout();
-    
+
     return externalRepresentation(toRenderBox(renderer), behavior | RenderAsTextShowAllLayers);
 }
 

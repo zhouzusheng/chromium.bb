@@ -10,7 +10,7 @@
 #include "base/memory/weak_ptr.h"
 #include "content/browser/byte_stream.h"
 #include "content/common/content_export.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace net {
 class IOBuffer;
@@ -38,10 +38,13 @@ class CONTENT_EXPORT Stream : public base::RefCountedThreadSafe<Stream> {
     STREAM_EMPTY,
   };
 
-  // Creates a stream useable from the |security_origin|.
+  // Creates a stream.
+  //
+  // Security origin of Streams is checked in Blink (See BlobRegistry,
+  // BlobURL and SecurityOrigin to understand how it works). There's no security
+  // origin check in Chromium side for now.
   Stream(StreamRegistry* registry,
          StreamWriteObserver* write_observer,
-         const GURL& security_origin,
          const GURL& url);
 
   // Sets the reader of this stream. Returns true on success, or false if there
@@ -56,6 +59,9 @@ class CONTENT_EXPORT Stream : public base::RefCountedThreadSafe<Stream> {
 
   // Adds the data in |buffer| to the stream.  Takes ownership of |buffer|.
   void AddData(scoped_refptr<net::IOBuffer> buffer, size_t size);
+  // Adds data of |size| at |data| to the stream. This method creates a copy
+  // of the data, and then passes it to |writer_|.
+  void AddData(const char* data, size_t size);
 
   // Notifies this stream that it will not be receiving any more data.
   void Finalize();
@@ -75,8 +81,6 @@ class CONTENT_EXPORT Stream : public base::RefCountedThreadSafe<Stream> {
 
   const GURL& url() const { return url_; }
 
-  const GURL& security_origin() const { return security_origin_; }
-
  private:
   friend class base::RefCountedThreadSafe<Stream>;
 
@@ -88,7 +92,6 @@ class CONTENT_EXPORT Stream : public base::RefCountedThreadSafe<Stream> {
   size_t data_bytes_read_;
   bool can_add_data_;
 
-  GURL security_origin_;
   GURL url_;
 
   scoped_refptr<net::IOBuffer> data_;

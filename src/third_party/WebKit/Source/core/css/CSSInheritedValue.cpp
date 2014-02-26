@@ -21,19 +21,13 @@
 #include "config.h"
 #include "core/css/CSSInheritedValue.h"
 
-#include "core/dom/WebCoreMemoryInstrumentation.h"
-#include <wtf/text/WTFString.h>
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 String CSSInheritedValue::customCssText() const
 {
     return "inherit";
-}
-
-void CSSInheritedValue::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
 }
 
 } // namespace WebCore

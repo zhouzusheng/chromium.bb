@@ -55,6 +55,28 @@ bool SandboxIsolatedOriginDatabase::ListAllOrigins(
 void SandboxIsolatedOriginDatabase::DropDatabase() {
 }
 
+void SandboxIsolatedOriginDatabase::MigrateBackDatabase(
+    const std::string& origin,
+    const base::FilePath& file_system_directory,
+    SandboxOriginDatabase* database) {
+  base::FilePath isolated_directory =
+      file_system_directory.Append(kOriginDirectory);
+
+  if (database->HasOriginPath(origin)) {
+    // Don't bother.
+    base::DeleteFile(isolated_directory, true /* recursive */);
+    return;
+  }
+
+  base::FilePath directory_name;
+  if (database->GetPathForOrigin(origin, &directory_name)) {
+    base::FilePath origin_directory =
+        file_system_directory.Append(directory_name);
+    base::DeleteFile(origin_directory, true /* recursive */);
+    base::Move(isolated_directory, origin_directory);
+  }
+}
+
 void SandboxIsolatedOriginDatabase::MigrateDatabaseIfNeeded() {
   if (migration_checked_)
     return;
@@ -72,9 +94,9 @@ void SandboxIsolatedOriginDatabase::MigrateDatabaseIfNeeded() {
     base::FilePath from_path = file_system_directory_.Append(directory_name);
     base::FilePath to_path = file_system_directory_.Append(kOriginDirectory);
 
-    if (file_util::PathExists(to_path))
-      file_util::Delete(to_path, true /* recursive */);
-    file_util::Move(from_path, to_path);
+    if (base::PathExists(to_path))
+      base::DeleteFile(to_path, true /* recursive */);
+    base::Move(from_path, to_path);
   }
 
   database->RemoveDatabase();

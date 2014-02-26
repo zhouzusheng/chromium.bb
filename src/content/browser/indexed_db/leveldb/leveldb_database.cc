@@ -5,19 +5,18 @@
 #include "content/browser/indexed_db/leveldb/leveldb_database.h"
 
 #include <cerrno>
-#include <string>
 
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string16.h"
+#include "base/strings/string_piece.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
 #include "content/browser/indexed_db/leveldb/leveldb_comparator.h"
 #include "content/browser/indexed_db/leveldb/leveldb_iterator.h"
-#include "content/browser/indexed_db/leveldb/leveldb_slice.h"
 #include "content/browser/indexed_db/leveldb/leveldb_write_batch.h"
 #include "third_party/leveldatabase/env_chromium.h"
 #include "third_party/leveldatabase/env_idb.h"
@@ -27,19 +26,16 @@
 #include "third_party/leveldatabase/src/include/leveldb/env.h"
 #include "third_party/leveldatabase/src/include/leveldb/slice.h"
 
+using base::StringPiece;
+
 namespace content {
 
-static leveldb::Slice MakeSlice(const std::vector<char>& value) {
-  DCHECK_GT(value.size(), static_cast<size_t>(0));
-  return leveldb::Slice(&*value.begin(), value.size());
+static leveldb::Slice MakeSlice(const StringPiece& s) {
+  return leveldb::Slice(s.begin(), s.size());
 }
 
-static leveldb::Slice MakeSlice(const LevelDBSlice& s) {
-  return leveldb::Slice(s.begin(), s.end() - s.begin());
-}
-
-static LevelDBSlice MakeLevelDBSlice(const leveldb::Slice& s) {
-  return LevelDBSlice(s.data(), s.data() + s.size());
+static StringPiece MakeStringPiece(const leveldb::Slice& s) {
+  return StringPiece(s.data(), s.size());
 }
 
 class ComparatorAdapter : public leveldb::Comparator {
@@ -49,7 +45,7 @@ class ComparatorAdapter : public leveldb::Comparator {
 
   virtual int Compare(const leveldb::Slice& a, const leveldb::Slice& b) const
       OVERRIDE {
-    return comparator_->Compare(MakeLevelDBSlice(a), MakeLevelDBSlice(b));
+    return comparator_->Compare(MakeStringPiece(a), MakeStringPiece(b));
   }
 
   virtual const char* Name() const OVERRIDE { return comparator_->Name(); }
@@ -139,33 +135,8 @@ static int CheckFreeSpace(const char* const type,
   return clamped_disk_space_k_bytes;
 }
 
-static void HistogramLevelDBError(const std::string& histogram_name,
-                                  const leveldb::Status& s) {
-  DCHECK(!s.ok());
-  enum {
-    LEVEL_DB_NOT_FOUND,
-    LEVEL_DB_CORRUPTION,
-    LEVEL_DB_IO_ERROR,
-    LEVEL_DB_OTHER,
-    LEVEL_DB_MAX_ERROR
-  };
-  int leveldb_error = LEVEL_DB_OTHER;
-  if (s.IsNotFound())
-    leveldb_error = LEVEL_DB_NOT_FOUND;
-  else if (s.IsCorruption())
-    leveldb_error = LEVEL_DB_CORRUPTION;
-  else if (s.IsIOError())
-    leveldb_error = LEVEL_DB_IO_ERROR;
-  base::Histogram::FactoryGet(histogram_name,
-                              1,
-                              LEVEL_DB_MAX_ERROR,
-                              LEVEL_DB_MAX_ERROR + 1,
-                              base::HistogramBase::kUmaTargetedHistogramFlag)
-      ->Add(leveldb_error);
-
-  // The code above histograms the type of error. The code below tries to
-  // histogram the method where the error occurred in ChromiumEnv and, in most
-  // cases, the exact error encountered.
+static void ParseAndHistogramIOErrorDetails(const std::string& histogram_name,
+                                            const leveldb::Status& s) {
   leveldb_env::MethodID method;
   int error = -1;
   leveldb_env::ErrorParsingResult result =
@@ -205,9 +176,102 @@ static void HistogramLevelDBError(const std::string& histogram_name,
   }
 }
 
-scoped_ptr<LevelDBDatabase> LevelDBDatabase::Open(
+static void ParseAndHistogramCorruptionDetails(
+    const std::string& histogram_name,
+    const leveldb::Status& status) {
+  DCHECK(!status.IsIOError());
+  DCHECK(!status.ok());
+  const int kOtherError = 0;
+  int error = kOtherError;
+  const std::string& str_error = status.ToString();
+  // Keep in sync with LevelDBCorruptionTypes in histograms.xml.
+  const char* patterns[] = {
+    "missing files",
+    "log record too small",
+    "corrupted internal key",
+    "partial record",
+    "missing start of fragmented record",
+    "error in middle of record",
+    "unknown record type",
+    "truncated record at end",
+    "bad record length",
+    "VersionEdit",
+    "FileReader invoked with unexpected value",
+    "corrupted key",
+    "CURRENT file does not end with newline",
+    "no meta-nextfile entry",
+    "no meta-lognumber entry",
+    "no last-sequence-number entry",
+    "malformed WriteBatch",
+    "bad WriteBatch Put",
+    "bad WriteBatch Delete",
+    "unknown WriteBatch tag",
+    "WriteBatch has wrong count",
+    "bad entry in block",
+    "bad block contents",
+    "bad block handle",
+    "truncated block read",
+    "block checksum mismatch",
+    "checksum mismatch",
+    "corrupted compressed block contents",
+    "bad block type",
+    "bad magic number",
+    "file is too short",
+  };
+  const size_t kNumPatterns = arraysize(patterns);
+  for (size_t i = 0; i < kNumPatterns; ++i) {
+    if (str_error.find(patterns[i]) != std::string::npos) {
+      error = i + 1;
+      break;
+    }
+  }
+  DCHECK(error >= 0);
+  std::string corruption_histogram_name(histogram_name);
+  corruption_histogram_name.append(".Corruption");
+  base::LinearHistogram::FactoryGet(
+      corruption_histogram_name,
+      1,
+      kNumPatterns + 1,
+      kNumPatterns + 2,
+      base::HistogramBase::kUmaTargetedHistogramFlag)->Add(error);
+}
+
+static void HistogramLevelDBError(const std::string& histogram_name,
+                                  const leveldb::Status& s) {
+  if (s.ok()) {
+    NOTREACHED();
+    return;
+  }
+  enum {
+    LEVEL_DB_NOT_FOUND,
+    LEVEL_DB_CORRUPTION,
+    LEVEL_DB_IO_ERROR,
+    LEVEL_DB_OTHER,
+    LEVEL_DB_MAX_ERROR
+  };
+  int leveldb_error = LEVEL_DB_OTHER;
+  if (s.IsNotFound())
+    leveldb_error = LEVEL_DB_NOT_FOUND;
+  else if (s.IsCorruption())
+    leveldb_error = LEVEL_DB_CORRUPTION;
+  else if (s.IsIOError())
+    leveldb_error = LEVEL_DB_IO_ERROR;
+  base::Histogram::FactoryGet(histogram_name,
+                              1,
+                              LEVEL_DB_MAX_ERROR,
+                              LEVEL_DB_MAX_ERROR + 1,
+                              base::HistogramBase::kUmaTargetedHistogramFlag)
+      ->Add(leveldb_error);
+  if (s.IsIOError())
+    ParseAndHistogramIOErrorDetails(histogram_name, s);
+  else
+    ParseAndHistogramCorruptionDetails(histogram_name, s);
+}
+
+leveldb::Status LevelDBDatabase::Open(
     const base::FilePath& file_name,
     const LevelDBComparator* comparator,
+    scoped_ptr<LevelDBDatabase>* result,
     bool* is_disk_full) {
   scoped_ptr<ComparatorAdapter> comparator_adapter(
       new ComparatorAdapter(comparator));
@@ -226,17 +290,17 @@ scoped_ptr<LevelDBDatabase> LevelDBDatabase::Open(
 
     LOG(ERROR) << "Failed to open LevelDB database from "
                << file_name.AsUTF8Unsafe() << "," << s.ToString();
-    return scoped_ptr<LevelDBDatabase>();
+    return s;
   }
 
   CheckFreeSpace("Success", file_name);
 
-  scoped_ptr<LevelDBDatabase> result(new LevelDBDatabase);
-  result->db_ = make_scoped_ptr(db);
-  result->comparator_adapter_ = comparator_adapter.Pass();
-  result->comparator_ = comparator;
+  (*result).reset(new LevelDBDatabase);
+  (*result)->db_ = make_scoped_ptr(db);
+  (*result)->comparator_adapter_ = comparator_adapter.Pass();
+  (*result)->comparator_ = comparator;
 
-  return result.Pass();
+  return s;
 }
 
 scoped_ptr<LevelDBDatabase> LevelDBDatabase::OpenInMemory(
@@ -263,8 +327,7 @@ scoped_ptr<LevelDBDatabase> LevelDBDatabase::OpenInMemory(
   return result.Pass();
 }
 
-bool LevelDBDatabase::Put(const LevelDBSlice& key,
-                          std::vector<char>* value) {
+bool LevelDBDatabase::Put(const StringPiece& key, std::string* value) {
   leveldb::WriteOptions write_options;
   write_options.sync = true;
 
@@ -276,7 +339,7 @@ bool LevelDBDatabase::Put(const LevelDBSlice& key,
   return false;
 }
 
-bool LevelDBDatabase::Remove(const LevelDBSlice& key) {
+bool LevelDBDatabase::Remove(const StringPiece& key) {
   leveldb::WriteOptions write_options;
   write_options.sync = true;
 
@@ -289,7 +352,7 @@ bool LevelDBDatabase::Remove(const LevelDBSlice& key) {
   return false;
 }
 
-bool LevelDBDatabase::Get(const LevelDBSlice& key,
+bool LevelDBDatabase::Get(const StringPiece& key,
                           std::string* value,
                           bool* found,
                           const LevelDBSnapshot* snapshot) {
@@ -306,6 +369,7 @@ bool LevelDBDatabase::Get(const LevelDBSlice& key,
   }
   if (s.IsNotFound())
     return true;
+  HistogramLevelDBError("WebCore.IndexedDB.LevelDBReadErrors", s);
   LOG(ERROR) << "LevelDB get failed: " << s.ToString();
   return false;
 }
@@ -330,11 +394,11 @@ class IteratorImpl : public LevelDBIterator {
 
   virtual bool IsValid() const OVERRIDE;
   virtual void SeekToLast() OVERRIDE;
-  virtual void Seek(const LevelDBSlice& target) OVERRIDE;
+  virtual void Seek(const StringPiece& target) OVERRIDE;
   virtual void Next() OVERRIDE;
   virtual void Prev() OVERRIDE;
-  virtual LevelDBSlice Key() const OVERRIDE;
-  virtual LevelDBSlice Value() const OVERRIDE;
+  virtual StringPiece Key() const OVERRIDE;
+  virtual StringPiece Value() const OVERRIDE;
 
  private:
   friend class content::LevelDBDatabase;
@@ -361,7 +425,7 @@ void IteratorImpl::SeekToLast() {
   CheckStatus();
 }
 
-void IteratorImpl::Seek(const LevelDBSlice& target) {
+void IteratorImpl::Seek(const StringPiece& target) {
   iterator_->Seek(MakeSlice(target));
   CheckStatus();
 }
@@ -378,14 +442,14 @@ void IteratorImpl::Prev() {
   CheckStatus();
 }
 
-LevelDBSlice IteratorImpl::Key() const {
+StringPiece IteratorImpl::Key() const {
   DCHECK(IsValid());
-  return MakeLevelDBSlice(iterator_->key());
+  return MakeStringPiece(iterator_->key());
 }
 
-LevelDBSlice IteratorImpl::Value() const {
+StringPiece IteratorImpl::Value() const {
   DCHECK(IsValid());
-  return MakeLevelDBSlice(iterator_->value());
+  return MakeStringPiece(iterator_->value());
 }
 
 scoped_ptr<LevelDBIterator> LevelDBDatabase::CreateIterator(

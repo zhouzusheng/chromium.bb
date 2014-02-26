@@ -8,8 +8,10 @@
 #include "base/callback.h"
 #include "base/location.h"
 #include "base/strings/string_split.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "content/browser/devtools/devtools_http_handler_impl.h"
+#include "content/browser/devtools/devtools_protocol_constants.h"
 #include "content/public/browser/trace_controller.h"
 #include "content/public/browser/trace_subscriber.h"
 
@@ -17,29 +19,18 @@ namespace content {
 
 namespace {
 
-const char kTracingStartCommand[] = "Tracing.start";
-const char kTracingEndCommand[] = "Tracing.end";
-
-const char kTracingCompleteNotification[] = "Tracing.tracingComplete";
-const char kTracingDataCollected[] = "Tracing.dataCollected";
-
-const char kCategoriesParam[] = "categories";
-
-const char kTraceOptionsParam[] = "trace-options";
 const char kRecordUntilFull[]   = "record-until-full";
 const char kRecordContinuously[] = "record-continuously";
 const char kEnableSampling[] = "enable-sampling";
 
 }  // namespace
 
-const char DevToolsTracingHandler::kDomain[] = "Tracing";
-
 DevToolsTracingHandler::DevToolsTracingHandler()
     : is_running_(false) {
-  RegisterCommandHandler(kTracingStartCommand,
+  RegisterCommandHandler(devtools::Tracing::start::kName,
                          base::Bind(&DevToolsTracingHandler::OnStart,
                                     base::Unretained(this)));
-  RegisterCommandHandler(kTracingEndCommand,
+  RegisterCommandHandler(devtools::Tracing::end::kName,
                          base::Bind(&DevToolsTracingHandler::OnEnd,
                                     base::Unretained(this)));
 }
@@ -49,15 +40,20 @@ DevToolsTracingHandler::~DevToolsTracingHandler() {
 
 void DevToolsTracingHandler::OnEndTracingComplete() {
   is_running_ = false;
-  SendNotification(kTracingCompleteNotification, NULL);
+  SendNotification(devtools::Tracing::tracingComplete::kName, NULL);
 }
 
 void DevToolsTracingHandler::OnTraceDataCollected(
     const scoped_refptr<base::RefCountedString>& trace_fragment) {
   if (is_running_) {
-    base::DictionaryValue* params = new base::DictionaryValue();
-    params->SetString("value", trace_fragment->data());
-    SendNotification(kTracingDataCollected, params);
+    // Hand-craft protocol notification message so we can substitute JSON
+    // that we already got as string as a bare object, not a quoted string.
+    std::string message = base::StringPrintf(
+        "{ \"method\": \"%s\", \"params\": { \"%s\": [ %s ] } }",
+        devtools::Tracing::dataCollected::kName,
+        devtools::Tracing::dataCollected::kValue,
+        trace_fragment->data().c_str());
+    SendRawMessage(message);
   }
 }
 
@@ -86,18 +82,19 @@ base::debug::TraceLog::Options DevToolsTracingHandler::TraceOptionsFromString(
   return static_cast<base::debug::TraceLog::Options>(ret);
 }
 
-scoped_ptr<DevToolsProtocol::Response>
-DevToolsTracingHandler::OnStart(DevToolsProtocol::Command* command) {
+scoped_refptr<DevToolsProtocol::Response>
+DevToolsTracingHandler::OnStart(
+    scoped_refptr<DevToolsProtocol::Command> command) {
   std::string categories;
   base::DictionaryValue* params = command->params();
-  if (params && params->HasKey(kCategoriesParam))
-    params->GetString(kCategoriesParam, &categories);
+  if (params)
+    params->GetString(devtools::Tracing::start::kCategories, &categories);
 
   base::debug::TraceLog::Options options =
       base::debug::TraceLog::RECORD_UNTIL_FULL;
-  if (params && params->HasKey(kTraceOptionsParam)) {
+  if (params && params->HasKey(devtools::Tracing::start::kTraceOptions)) {
     std::string options_param;
-    params->GetString(kTraceOptionsParam, &options_param);
+    params->GetString(devtools::Tracing::start::kTraceOptions, &options_param);
     options = TraceOptionsFromString(options_param);
   }
 
@@ -106,8 +103,9 @@ DevToolsTracingHandler::OnStart(DevToolsProtocol::Command* command) {
   return command->SuccessResponse(NULL);
 }
 
-scoped_ptr<DevToolsProtocol::Response>
-DevToolsTracingHandler::OnEnd(DevToolsProtocol::Command* command) {
+scoped_refptr<DevToolsProtocol::Response>
+DevToolsTracingHandler::OnEnd(
+    scoped_refptr<DevToolsProtocol::Command> command) {
   TraceController::GetInstance()->EndTracingAsync(this);
   return command->SuccessResponse(NULL);
 }

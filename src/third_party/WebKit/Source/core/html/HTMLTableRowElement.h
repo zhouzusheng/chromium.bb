@@ -30,6 +30,8 @@
 
 namespace WebCore {
 
+class ExceptionState;
+
 class HTMLTableRowElement FINAL : public HTMLTablePartElement {
 public:
     static PassRefPtr<HTMLTableRowElement> create(Document*);
@@ -41,15 +43,26 @@ public:
     int sectionRowIndex() const;
     void setSectionRowIndex(int);
 
-    PassRefPtr<HTMLElement> insertCell(int index, ExceptionCode&);
-    void deleteCell(int index, ExceptionCode&);
+    PassRefPtr<HTMLElement> insertCell(int index, ExceptionState&);
+    void deleteCell(int index, ExceptionState&);
 
     PassRefPtr<HTMLCollection> cells();
-    void setCells(HTMLCollection *, ExceptionCode&);
+    void setCells(HTMLCollection *, ExceptionState&);
 
 private:
     HTMLTableRowElement(const QualifiedName&, Document*);
 };
+
+inline bool isHTMLTableRowElement(const Node* node)
+{
+    return node->hasTagName(HTMLNames::trTag);
+}
+
+inline HTMLTableRowElement* toHTMLTableRowElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLTableRowElement(node));
+    return static_cast<HTMLTableRowElement*>(node);
+}
 
 } // namespace
 

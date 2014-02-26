@@ -31,7 +31,7 @@
 #include "talk/base/network.h"
 #include "talk/base/thread.h"
 #include "talk/p2p/base/basicpacketsocketfactory.h"
-#include "talk/p2p/client/httpportallocator.h"
+#include "talk/p2p/client/basicportallocator.h"
 
 static const char kUserAgent[] = "PeerConnection User Agent";
 
@@ -71,18 +71,18 @@ cricket::PortAllocator* PortAllocatorFactory::CreatePortAllocator(
       new cricket::BasicPortAllocator(
           network_manager_.get(), socket_factory_.get(), stun_addr));
 
-  if (turn.size() > 0) {
-    cricket::RelayCredentials credentials(turn[0].username, turn[0].password);
+  for (size_t i = 0; i < turn.size(); ++i) {
+    cricket::RelayCredentials credentials(turn[i].username, turn[i].password);
     cricket::RelayServerConfig relay_server(cricket::RELAY_TURN);
     cricket::ProtocolType protocol;
-    if (cricket::StringToProto(turn[0].transport_type.c_str(), &protocol)) {
+    if (cricket::StringToProto(turn[i].transport_type.c_str(), &protocol)) {
       relay_server.ports.push_back(cricket::ProtocolAddress(
-          turn[0].server, protocol));
+          turn[i].server, protocol, turn[i].secure));
       relay_server.credentials = credentials;
       allocator->AddRelay(relay_server);
     } else {
-      LOG(LS_WARNING) << "Ignoring TURN server " << turn[0].server << ". "
-                      << "Reason= Incorrect " << turn[0].transport_type
+      LOG(LS_WARNING) << "Ignoring TURN server " << turn[i].server << ". "
+                      << "Reason= Incorrect " << turn[i].transport_type
                       << " transport parameter.";
     }
   }

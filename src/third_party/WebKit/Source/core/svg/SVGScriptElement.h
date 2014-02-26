@@ -22,7 +22,7 @@
 #define SVGScriptElement_h
 
 #include "SVGNames.h"
-#include "core/dom/ScriptElement.h"
+#include "core/dom/ScriptLoaderClient.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedString.h"
 #include "core/svg/SVGElement.h"
@@ -31,15 +31,20 @@
 
 namespace WebCore {
 
-class SVGScriptElement FINAL : public SVGElement
-                             , public SVGURIReference
-                             , public SVGExternalResourcesRequired
-                             , public ScriptElement {
+class ScriptLoader;
+
+class SVGScriptElement FINAL
+    : public SVGElement
+    , public SVGURIReference
+    , public SVGExternalResourcesRequired
+    , public ScriptLoaderClient {
 public:
     static PassRefPtr<SVGScriptElement> create(const QualifiedName&, Document*, bool wasInsertedByParser);
 
     String type() const;
     void setType(const String&);
+
+    ScriptLoader* loader() const { return m_loader.get(); }
 
 private:
     SVGScriptElement(const QualifiedName&, Document*, bool wasInsertedByParser, bool alreadyStarted);
@@ -70,12 +75,13 @@ private:
     virtual void dispatchLoadEvent() { SVGExternalResourcesRequired::dispatchLoadEvent(this); }
 
     virtual PassRefPtr<Element> cloneElementWithoutAttributesAndChildren();
+    virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE { return false; }
 
     // SVGExternalResourcesRequired
-    virtual void setHaveFiredLoadEvent(bool haveFiredLoadEvent) { ScriptElement::setHaveFiredLoadEvent(haveFiredLoadEvent); }
-    virtual bool isParserInserted() const { return ScriptElement::isParserInserted(); }
-    virtual bool haveFiredLoadEvent() const { return ScriptElement::haveFiredLoadEvent(); }
-    virtual Timer<SVGElement>* svgLoadEventTimer() OVERRIDE { return &m_svgLoadEventTimer; }
+    virtual void setHaveFiredLoadEvent(bool) OVERRIDE;
+    virtual bool isParserInserted() const OVERRIDE;
+    virtual bool haveFiredLoadEvent() const OVERRIDE;
+    virtual Timer<SVGElement>* svgLoadEventTimer() OVERRIDE;
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGScriptElement)
         DECLARE_ANIMATED_STRING(Href, href)
@@ -84,6 +90,7 @@ private:
 
     String m_type;
     Timer<SVGElement> m_svgLoadEventTimer;
+    OwnPtr<ScriptLoader> m_loader;
 };
 
 inline SVGScriptElement* toSVGScriptElement(Node* node)

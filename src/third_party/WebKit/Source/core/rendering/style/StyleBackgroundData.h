@@ -25,11 +25,11 @@
 #ifndef StyleBackgroundData_h
 #define StyleBackgroundData_h
 
-#include "core/platform/graphics/Color.h"
+#include "core/css/StyleColor.h"
 #include "core/rendering/style/FillLayer.h"
 #include "core/rendering/style/OutlineValue.h"
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
 
 namespace WebCore {
 
@@ -46,17 +46,17 @@ public:
     }
 
     const FillLayer& background() const { return m_background; }
-    const Color& color() const { return m_color; }
+    const StyleColor& color() const { return m_color; }
     const OutlineValue& outline() const { return m_outline; }
 
 private:
     friend class RenderStyle;
 
     StyleBackgroundData();
-    StyleBackgroundData(const StyleBackgroundData&); 
+    StyleBackgroundData(const StyleBackgroundData&);
 
     FillLayer m_background;
-    Color m_color;
+    StyleColor m_color;
     OutlineValue m_outline;
 };
 

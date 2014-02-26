@@ -29,6 +29,7 @@
 #define BUFFEROBJ_H
 
 
+#include "mfeatures.h"
 #include "mtypes.h"
 
 
@@ -38,7 +39,7 @@
 
 
 /** Is the given buffer object currently mapped? */
-static INLINE GLboolean
+static inline GLboolean
 _mesa_bufferobj_mapped(const struct gl_buffer_object *obj)
 {
    return obj->Pointer != NULL;
@@ -49,75 +50,47 @@ _mesa_bufferobj_mapped(const struct gl_buffer_object *obj)
  * Mesa uses default buffer objects in several places.  Default buffers
  * always have Name==0.  User created buffers have Name!=0.
  */
-static INLINE GLboolean
+static inline GLboolean
 _mesa_is_bufferobj(const struct gl_buffer_object *obj)
 {
-   return obj->Name != 0;
+   return obj != NULL && obj->Name != 0;
 }
 
 
 extern void
-_mesa_init_buffer_objects( GLcontext *ctx );
+_mesa_init_buffer_objects( struct gl_context *ctx );
 
 extern void
-_mesa_free_buffer_objects( GLcontext *ctx );
+_mesa_free_buffer_objects( struct gl_context *ctx );
 
 extern void
-_mesa_update_default_objects_buffer_objects(GLcontext *ctx);
+_mesa_update_default_objects_buffer_objects(struct gl_context *ctx);
 
 
 extern struct gl_buffer_object *
-_mesa_lookup_bufferobj(GLcontext *ctx, GLuint buffer);
+_mesa_lookup_bufferobj(struct gl_context *ctx, GLuint buffer);
 
 extern void
-_mesa_initialize_buffer_object( struct gl_buffer_object *obj,
+_mesa_initialize_buffer_object( struct gl_context *ctx,
+				struct gl_buffer_object *obj,
 				GLuint name, GLenum target );
 
 extern void
-_mesa_reference_buffer_object(GLcontext *ctx,
+_mesa_reference_buffer_object_(struct gl_context *ctx,
+                               struct gl_buffer_object **ptr,
+                               struct gl_buffer_object *bufObj);
+
+static inline void
+_mesa_reference_buffer_object(struct gl_context *ctx,
                               struct gl_buffer_object **ptr,
-                              struct gl_buffer_object *bufObj);
+                              struct gl_buffer_object *bufObj)
+{
+   if (*ptr != bufObj)
+      _mesa_reference_buffer_object_(ctx, ptr, bufObj);
+}
 
-extern GLboolean
-_mesa_validate_pbo_access(GLuint dimensions,
-                          const struct gl_pixelstore_attrib *pack,
-                          GLsizei width, GLsizei height, GLsizei depth,
-                          GLenum format, GLenum type, const GLvoid *ptr);
-
-extern const GLvoid *
-_mesa_map_pbo_source(GLcontext *ctx,
-                     const struct gl_pixelstore_attrib *unpack,
-                     const GLvoid *src);
-
-extern const GLvoid *
-_mesa_map_validate_pbo_source(GLcontext *ctx,
-                              GLuint dimensions,
-                              const struct gl_pixelstore_attrib *unpack,
-                              GLsizei width, GLsizei height, GLsizei depth,
-                              GLenum format, GLenum type, const GLvoid *ptr,
-                              const char *where);
-
-extern void
-_mesa_unmap_pbo_source(GLcontext *ctx,
-                       const struct gl_pixelstore_attrib *unpack);
-
-extern void *
-_mesa_map_pbo_dest(GLcontext *ctx,
-                   const struct gl_pixelstore_attrib *pack,
-                   GLvoid *dest);
-
-extern GLvoid *
-_mesa_map_validate_pbo_dest(GLcontext *ctx,
-                            GLuint dimensions,
-                            const struct gl_pixelstore_attrib *unpack,
-                            GLsizei width, GLsizei height, GLsizei depth,
-                            GLenum format, GLenum type, GLvoid *ptr,
-                            const char *where);
-
-extern void
-_mesa_unmap_pbo_dest(GLcontext *ctx,
-                     const struct gl_pixelstore_attrib *pack);
-
+extern GLuint
+_mesa_total_buffer_object_memory(struct gl_context *ctx);
 
 extern void
 _mesa_init_buffer_object_functions(struct dd_function_table *driver);
@@ -185,5 +158,16 @@ _mesa_ObjectUnpurgeableAPPLE(GLenum objectType, GLuint name, GLenum option);
 extern void GLAPIENTRY
 _mesa_GetObjectParameterivAPPLE(GLenum objectType, GLuint name, GLenum pname, GLint* params);
 #endif
+
+void GLAPIENTRY
+_mesa_BindBufferBase(GLenum target, GLuint index, GLuint buffer);
+
+void GLAPIENTRY
+_mesa_BindBufferRange(GLenum target, GLuint index,
+                      GLuint buffer, GLintptr offset, GLsizeiptr size);
+
+extern void
+_mesa_init_bufferobj_dispatch(struct gl_context *ctx,
+                              struct _glapi_table *disp);
 
 #endif

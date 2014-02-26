@@ -8,12 +8,13 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
 #include "content/renderer/gpu/render_widget_compositor.h"
-#include "content/renderer/pepper/pepper_platform_context_3d_impl.h"
+#include "content/renderer/pepper/pepper_platform_context_3d.h"
+#include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "skia/ext/platform_canvas.h"
@@ -25,8 +26,6 @@
 #include "third_party/WebKit/public/web/WebWidget.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gl/gpu_preference.h"
-#include "webkit/plugins/ppapi/plugin_delegate.h"
-#include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 
 using WebKit::WebCanvas;
 using WebKit::WebCompositionUnderline;
@@ -348,7 +347,8 @@ class PepperWidget : public WebWidget {
 
 // static
 RenderWidgetFullscreenPepper* RenderWidgetFullscreenPepper::Create(
-    int32 opener_id, webkit::ppapi::PluginInstance* plugin,
+    int32 opener_id,
+    PepperPluginInstanceImpl* plugin,
     const GURL& active_url,
     const WebKit::WebScreenInfo& screen_info) {
   DCHECK_NE(MSG_ROUTING_NONE, opener_id);
@@ -360,7 +360,7 @@ RenderWidgetFullscreenPepper* RenderWidgetFullscreenPepper::Create(
 }
 
 RenderWidgetFullscreenPepper::RenderWidgetFullscreenPepper(
-    webkit::ppapi::PluginInstance* plugin,
+    PepperPluginInstanceImpl* plugin,
     const GURL& active_url,
     const WebKit::WebScreenInfo& screen_info)
     : RenderWidgetFullscreen(screen_info),
@@ -467,13 +467,13 @@ void RenderWidgetFullscreenPepper::Close() {
   RenderWidget::Close();
 }
 
-webkit::ppapi::PluginInstance*
-RenderWidgetFullscreenPepper::GetBitmapForOptimizedPluginPaint(
-    const gfx::Rect& paint_bounds,
-    TransportDIB** dib,
-    gfx::Rect* location,
-    gfx::Rect* clip,
-    float* scale_factor) {
+PepperPluginInstanceImpl*
+    RenderWidgetFullscreenPepper::GetBitmapForOptimizedPluginPaint(
+        const gfx::Rect& paint_bounds,
+        TransportDIB** dib,
+        gfx::Rect* location,
+        gfx::Rect* clip,
+        float* scale_factor) {
   if (plugin_ && plugin_->GetBitmapForOptimizedPluginPaint(
           paint_bounds, dib, location, clip, scale_factor)) {
     return plugin_;

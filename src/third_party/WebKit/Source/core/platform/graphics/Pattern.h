@@ -23,7 +23,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef Pattern_h
@@ -33,9 +33,9 @@
 #include "core/platform/graphics/Image.h"
 #include "core/platform/graphics/transforms/AffineTransform.h"
 
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/RefPtr.h>
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
@@ -47,7 +47,7 @@ public:
     {
         return adoptRef(new Pattern(tileImage, repeatX, repeatY));
     }
-    virtual ~Pattern();
+    ~Pattern();
 
     Image* tileImage() const { return m_tileImage.get(); }
 
@@ -66,7 +66,7 @@ private:
     bool m_repeatX;
     bool m_repeatY;
     AffineTransform m_patternSpaceTransformation;
-    SkShader* m_pattern;
+    RefPtr<SkShader> m_pattern;
     int m_externalMemoryAllocated;
 };
 

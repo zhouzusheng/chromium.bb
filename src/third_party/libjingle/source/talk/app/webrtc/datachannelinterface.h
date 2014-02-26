@@ -75,6 +75,8 @@ struct DataBuffer {
       : data(text.data(), text.length()),
         binary(false) {
   }
+  size_t size() const { return data.length(); }
+
   talk_base::Buffer data;
   // Indicates if the received data contains UTF-8 or binary data.
   // Note that the upper layers are left to verify the UTF-8 encoding.
@@ -95,7 +97,7 @@ class DataChannelObserver {
 
 class DataChannelInterface : public talk_base::RefCountInterface {
  public:
-  enum DataState {
+  enum DataState {  // Keep in sync with DataChannel.java:State.
     kConnecting,
     kOpen,  // The DataChannel is ready to send data.
     kClosing,

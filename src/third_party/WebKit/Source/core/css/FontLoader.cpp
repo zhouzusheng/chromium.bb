@@ -26,6 +26,7 @@
 #include "config.h"
 #include "core/css/FontLoader.h"
 
+#include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/Dictionary.h"
 #include "core/css/CSSFontFaceLoadEvent.h"
 #include "core/css/CSSFontFaceSource.h"
@@ -34,6 +35,7 @@
 #include "core/css/CSSSegmentedFontFace.h"
 #include "core/css/StylePropertySet.h"
 #include "core/css/resolver/StyleResolver.h"
+#include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
 #include "core/page/FrameView.h"
 #include "core/platform/HistogramSupport.h"
@@ -227,7 +229,7 @@ void FontLoader::loadError(CSSFontFaceRule* rule, CSSFontFaceSource* source)
     if (!RuntimeEnabledFeatures::fontLoadEventsEnabled())
         return;
     // FIXME: We should report NetworkError in case of timeout, etc.
-    String errorName = (source && source->isDecodeError()) ? "InvalidFontDataError" : ExceptionCodeDescription(NOT_FOUND_ERR).name;
+    String errorName = (source && source->isDecodeError()) ? "InvalidFontDataError" : DOMException::getErrorName(NotFoundError);
     scheduleEvent(CSSFontFaceLoadEvent::createForError(rule, DOMError::create(errorName)));
     queueDoneEvent(rule);
 }
@@ -256,13 +258,11 @@ void FontLoader::fireDoneEventIfPossible()
     if (m_loadingCount || (!m_pendingDoneEvent && m_fontsReadyCallbacks.isEmpty()))
         return;
 
-    if (FrameView* view = m_document->view()) {
-        if (view->needsLayout())
-            return;
-        m_document->updateStyleIfNeeded();
-        if (view->needsLayout())
-            return;
-    }
+    // If the layout was invalidated in between when we thought layout
+    // was updated and when we're ready to fire the event, just wait
+    // until after the next layout before firing events.
+    if (!m_document->view() || m_document->view()->needsLayout())
+        return;
 
     if (m_pendingDoneEvent)
         dispatchEvent(m_pendingDoneEvent.release());
@@ -311,11 +311,6 @@ bool FontLoader::checkFont(const String& fontString, const String&)
     return true;
 }
 
-static void applyPropertyToCurrentStyle(StyleResolver* styleResolver, CSSPropertyID id, const RefPtr<StylePropertySet>& parsedStyle)
-{
-    styleResolver->applyPropertyToCurrentStyle(id, parsedStyle->getPropertyCSSValue(id).get());
-}
-
 bool FontLoader::resolveFontStyle(const String& fontString, Font& font)
 {
     // Interpret fontString in the same way as the 'font' attribute of CanvasRenderingContext2D.
@@ -343,19 +338,16 @@ bool FontLoader::resolveFontStyle(const String& fontString, Font& font)
     style->font().update(style->font().fontSelector());
 
     // Now map the font property longhands into the style.
+    CSSPropertyValue properties[] = {
+        CSSPropertyValue(CSSPropertyFontFamily, *parsedStyle),
+        CSSPropertyValue(CSSPropertyFontStyle, *parsedStyle),
+        CSSPropertyValue(CSSPropertyFontVariant, *parsedStyle),
+        CSSPropertyValue(CSSPropertyFontWeight, *parsedStyle),
+        CSSPropertyValue(CSSPropertyFontSize, *parsedStyle),
+        CSSPropertyValue(CSSPropertyLineHeight, *parsedStyle),
+    };
     StyleResolver* styleResolver = m_document->styleResolver();
-    styleResolver->applyPropertyToStyle(CSSPropertyFontFamily, parsedStyle->getPropertyCSSValue(CSSPropertyFontFamily).get(), style.get());
-    applyPropertyToCurrentStyle(styleResolver, CSSPropertyFontStyle, parsedStyle);
-    applyPropertyToCurrentStyle(styleResolver, CSSPropertyFontVariant, parsedStyle);
-    applyPropertyToCurrentStyle(styleResolver, CSSPropertyFontWeight, parsedStyle);
-
-    // As described in BUG66291, setting font-size and line-height on a font may entail a CSSPrimitiveValue::computeLengthDouble call,
-    // which assumes the fontMetrics are available for the affected font, otherwise a crash occurs (see http://trac.webkit.org/changeset/96122).
-    // The updateFont() calls below update the fontMetrics and ensure the proper setting of font-size and line-height.
-    styleResolver->updateFont();
-    applyPropertyToCurrentStyle(styleResolver, CSSPropertyFontSize, parsedStyle);
-    styleResolver->updateFont();
-    applyPropertyToCurrentStyle(styleResolver, CSSPropertyLineHeight, parsedStyle);
+    styleResolver->applyPropertiesToStyle(properties, WTF_ARRAY_LENGTH(properties), style.get());
 
     font = style->font();
     font.update(styleResolver->fontSelector());

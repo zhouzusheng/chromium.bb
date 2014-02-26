@@ -43,9 +43,9 @@
 
 namespace WebCore {
 
+class DOMError;
+class ExceptionState;
 class ScriptExecutionContext;
-
-typedef int ExceptionCode;
 
 class IDBDatabase : public RefCounted<IDBDatabase>, public ScriptWrappable, public EventTarget, public ActiveDOMObject {
 public:
@@ -63,21 +63,22 @@ public:
     PassRefPtr<IDBAny> version() const;
     PassRefPtr<DOMStringList> objectStoreNames() const;
 
-    PassRefPtr<IDBObjectStore> createObjectStore(const String& name, const Dictionary&, ExceptionCode&);
-    PassRefPtr<IDBObjectStore> createObjectStore(const String& name, const IDBKeyPath&, bool autoIncrement, ExceptionCode&);
-    PassRefPtr<IDBTransaction> transaction(ScriptExecutionContext* context, PassRefPtr<DOMStringList> scope, const String& mode, ExceptionCode& ec) { return transaction(context, *scope, mode, ec); }
-    PassRefPtr<IDBTransaction> transaction(ScriptExecutionContext*, const Vector<String>&, const String& mode, ExceptionCode&);
-    PassRefPtr<IDBTransaction> transaction(ScriptExecutionContext*, const String&, const String& mode, ExceptionCode&);
-    void deleteObjectStore(const String& name, ExceptionCode&);
+    PassRefPtr<IDBObjectStore> createObjectStore(const String& name, const Dictionary&, ExceptionState&);
+    PassRefPtr<IDBObjectStore> createObjectStore(const String& name, const IDBKeyPath&, bool autoIncrement, ExceptionState&);
+    PassRefPtr<IDBTransaction> transaction(ScriptExecutionContext* context, PassRefPtr<DOMStringList> scope, const String& mode, ExceptionState& es) { return transaction(context, *scope, mode, es); }
+    PassRefPtr<IDBTransaction> transaction(ScriptExecutionContext*, const Vector<String>&, const String& mode, ExceptionState&);
+    PassRefPtr<IDBTransaction> transaction(ScriptExecutionContext*, const String&, const String& mode, ExceptionState&);
+    void deleteObjectStore(const String& name, ExceptionState&);
     void close();
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(abort);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(close);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(versionchange);
 
     // IDBDatabaseCallbacks
     virtual void onVersionChange(int64_t oldVersion, int64_t newVersion);
-    virtual void onAbort(int64_t, PassRefPtr<IDBDatabaseError>);
+    virtual void onAbort(int64_t, PassRefPtr<DOMError>);
     virtual void onComplete(int64_t);
 
     // ActiveDOMObject
@@ -105,6 +106,20 @@ public:
     IDBDatabaseBackendInterface* backend() const { return m_backend.get(); }
 
     static int64_t nextTransactionId();
+
+    static const char indexDeletedErrorMessage[];
+    static const char isKeyCursorErrorMessage[];
+    static const char noKeyOrKeyRangeErrorMessage[];
+    static const char noSuchIndexErrorMessage[];
+    static const char noSuchObjectStoreErrorMessage[];
+    static const char noValueErrorMessage[];
+    static const char notValidKeyErrorMessage[];
+    static const char notVersionChangeTransactionErrorMessage[];
+    static const char objectStoreDeletedErrorMessage[];
+    static const char requestNotFinishedErrorMessage[];
+    static const char sourceDeletedErrorMessage[];
+    static const char transactionFinishedErrorMessage[];
+    static const char transactionInactiveErrorMessage[];
 
     using RefCounted<IDBDatabase>::ref;
     using RefCounted<IDBDatabase>::deref;

@@ -28,24 +28,30 @@
 #include "core/rendering/RenderObject.h"
 
 #include "HTMLNames.h"
+#include "RuntimeEnabledFeatures.h"
 #include "core/accessibility/AXObjectCache.h"
+#include "core/animation/ActiveAnimations.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/editing/EditingBoundary.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/htmlediting.h"
+#include "core/html/HTMLAnchorElement.h"
 #include "core/html/HTMLElement.h"
+#include "core/html/HTMLHtmlElement.h"
+#include "core/html/HTMLTableElement.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
+#include "core/page/UseCounter.h"
 #include "core/page/animation/AnimationController.h"
+#include "core/platform/Partitions.h"
 #include "core/platform/graphics/FloatQuad.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/transforms/TransformState.h"
 #include "core/rendering/FlowThreadController.h"
 #include "core/rendering/HitTestResult.h"
-#include "core/rendering/RenderArena.h"
 #include "core/rendering/RenderCounter.h"
 #include "core/rendering/RenderDeprecatedFlexibleBox.h"
 #include "core/rendering/RenderFlexibleBox.h"
@@ -87,7 +93,6 @@ namespace WebCore {
 using namespace HTMLNames;
 
 #ifndef NDEBUG
-static void* baseOfRenderObjectBeingDeleted;
 
 RenderObject::SetLayoutNeededForbiddenScope::SetLayoutNeededForbiddenScope(RenderObject* renderObject, bool isForbidden)
     : m_renderObject(renderObject)
@@ -117,30 +122,28 @@ bool RenderObject::s_affectsParentBlock = false;
 
 RenderObjectAncestorLineboxDirtySet* RenderObject::s_ancestorLineboxDirtySet = 0;
 
-void* RenderObject::operator new(size_t sz, RenderArena* renderArena)
+void* RenderObject::operator new(size_t sz)
 {
-    return renderArena->allocate(sz);
+    ASSERT(isMainThread());
+    return partitionAlloc(Partitions::getRenderingPartition(), sz);
 }
 
-void RenderObject::operator delete(void* ptr, size_t sz)
+void RenderObject::operator delete(void* ptr)
 {
-    ASSERT(baseOfRenderObjectBeingDeleted == ptr);
-
-    // Stash size where destroy can find it.
-    *(size_t *)ptr = sz;
+    ASSERT(isMainThread());
+    partitionFree(ptr);
 }
 
 RenderObject* RenderObject::createObject(Element* element, RenderStyle* style)
 {
     Document* doc = element->document();
-    RenderArena* arena = doc->renderArena();
 
     // Minimal support for content properties replacing an entire element.
     // Works only if we have exactly one piece of content and it's a URL.
     // Otherwise acts as if we didn't support this feature.
     const ContentData* contentData = style->contentData();
     if (contentData && !contentData->next() && contentData->isImage() && !element->isPseudoElement()) {
-        RenderImage* image = new (arena) RenderImage(element);
+        RenderImage* image = new RenderImage(element);
         // RenderImageResourceStyleImage requires a style being present on the image but we don't want to
         // trigger a style change now as the node is not fully attached. Moving this code to style change
         // doesn't make sense as it should be run once at renderer creation.
@@ -156,56 +159,62 @@ RenderObject* RenderObject::createObject(Element* element, RenderStyle* style)
 
     if (element->hasTagName(rubyTag)) {
         if (style->display() == INLINE)
-            return new (arena) RenderRubyAsInline(element);
+            return new RenderRubyAsInline(element);
         else if (style->display() == BLOCK)
-            return new (arena) RenderRubyAsBlock(element);
+            return new RenderRubyAsBlock(element);
     }
     // treat <rt> as ruby text ONLY if it still has its default treatment of block
     if (element->hasTagName(rtTag) && style->display() == BLOCK)
-        return new (arena) RenderRubyText(element);
+        return new RenderRubyText(element);
     if (RuntimeEnabledFeatures::cssRegionsEnabled() && style->isDisplayRegionType() && !style->regionThread().isEmpty() && doc->renderView())
-        return new (arena) RenderRegion(element, 0);
+        return new RenderRegion(element, 0);
+
+    if (style->display() == RUN_IN)
+        UseCounter::count(doc, UseCounter::CSSDisplayRunIn);
+    else if (style->display() == COMPACT)
+        UseCounter::count(doc, UseCounter::CSSDisplayCompact);
+
     switch (style->display()) {
     case NONE:
         return 0;
     case INLINE:
-        return new (arena) RenderInline(element);
+        return new RenderInline(element);
     case BLOCK:
     case INLINE_BLOCK:
     case RUN_IN:
     case COMPACT:
         if ((!style->hasAutoColumnCount() || !style->hasAutoColumnWidth()) && doc->regionBasedColumnsEnabled())
-            return new (arena) RenderMultiColumnBlock(element);
-        return new (arena) RenderBlock(element);
+            return new RenderMultiColumnBlock(element);
+        return new RenderBlock(element);
     case LIST_ITEM:
-        return new (arena) RenderListItem(element);
+        return new RenderListItem(element);
     case TABLE:
     case INLINE_TABLE:
-        return new (arena) RenderTable(element);
+        return new RenderTable(element);
     case TABLE_ROW_GROUP:
     case TABLE_HEADER_GROUP:
     case TABLE_FOOTER_GROUP:
-        return new (arena) RenderTableSection(element);
+        return new RenderTableSection(element);
     case TABLE_ROW:
-        return new (arena) RenderTableRow(element);
+        return new RenderTableRow(element);
     case TABLE_COLUMN_GROUP:
     case TABLE_COLUMN:
-        return new (arena) RenderTableCol(element);
+        return new RenderTableCol(element);
     case TABLE_CELL:
-        return new (arena) RenderTableCell(element);
+        return new RenderTableCell(element);
     case TABLE_CAPTION:
-        return new (arena) RenderTableCaption(element);
+        return new RenderTableCaption(element);
     case BOX:
     case INLINE_BOX:
-        return new (arena) RenderDeprecatedFlexibleBox(element);
+        return new RenderDeprecatedFlexibleBox(element);
     case FLEX:
     case INLINE_FLEX:
-        return new (arena) RenderFlexibleBox(element);
+        return new RenderFlexibleBox(element);
     case GRID:
     case INLINE_GRID:
-        return new (arena) RenderGrid(element);
+        return new RenderGrid(element);
     case LAZY_BLOCK:
-        return new (arena) RenderLazyBlock(element);
+        return new RenderLazyBlock(element);
     }
 
     return 0;
@@ -214,7 +223,7 @@ RenderObject* RenderObject::createObject(Element* element, RenderStyle* style)
 DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, renderObjectCounter, ("RenderObject"));
 
 RenderObject::RenderObject(Node* node)
-    : CachedImageClient()
+    : ImageResourceClient()
     , m_style(0)
     , m_node(node)
     , m_parent(0)
@@ -354,8 +363,6 @@ void RenderObject::addChild(RenderObject* newChild, RenderObject* beforeChild)
     // and stop creating layers at all for these cases - they're not used anyways.
     if (newChild->hasLayer() && !layerCreationAllowedForSubtree())
         toRenderLayerModelObject(newChild)->layer()->removeOnlyThisLayer();
-
-    SVGRenderSupport::childAdded(this, newChild);
 }
 
 void RenderObject::removeChild(RenderObject* oldChild)
@@ -593,7 +600,7 @@ RenderBox* RenderObject::enclosingBox() const
             return toRenderBox(curr);
         curr = curr->parent();
     }
-    
+
     ASSERT_NOT_REACHED();
     return 0;
 }
@@ -619,7 +626,7 @@ RenderFlowThread* RenderObject::locateFlowThreadContainingBlock() const
     RenderFlowThread* flowThread = view()->flowThreadController()->currentRenderFlowThread();
     if (flowThread)
         return flowThread;
-    
+
     // Not in the middle of layout so have to find the thread the slow way.
     RenderObject* curr = const_cast<RenderObject*>(this);
     while (curr) {
@@ -682,6 +689,10 @@ void RenderObject::markContainingBlocksForLayout(bool scheduleRelayout, RenderOb
         // calling setNeedsLayout during preferred width computation.
         SetLayoutNeededForbiddenScope layoutForbiddenScope(object, isSetNeedsLayoutForbidden());
 #endif
+
+        if (object->selfNeedsLayout())
+            return;
+
         // Don't mark the outermost object of an unrooted subtree. That object will be
         // marked when the subtree is added to the document.
         RenderObject* container = object->container();
@@ -748,7 +759,7 @@ void RenderObject::invalidateContainerPreferredLogicalWidths()
     // in the chain that we mark dirty (even though they're kind of irrelevant).
     RenderObject* o = isTableCell() ? containingBlock() : container();
     while (o && !o->preferredLogicalWidthsDirty()) {
-        // Don't invalidate the outermost object of an unrooted subtree. That object will be 
+        // Don't invalidate the outermost object of an unrooted subtree. That object will be
         // invalidated when the subtree is added to the document.
         RenderObject* container = o->isTableCell() ? o->containingBlock() : o->container();
         if (!container && !o->isRenderView())
@@ -842,7 +853,7 @@ static bool mustRepaintFillLayers(const RenderObject* renderer, const FillLayer*
 
     if (sizeType == Contain || sizeType == Cover)
         return true;
-    
+
     if (sizeType == SizeLength) {
         if (layer->sizeLength().width().isPercent() || layer->sizeLength().height().isPercent())
             return true;
@@ -871,7 +882,7 @@ bool RenderObject::mustRepaintBackgroundOrBorder() const
 
     if (mustRepaintFillLayers(this, style()->backgroundLayers()))
         return true;
-     
+
     // Our fill layers are ok.  Let's check border.
     if (style()->hasBorder() && borderImageIsLoadedAndCanBeRendered())
         return true;
@@ -1112,7 +1123,7 @@ void RenderObject::paintFocusRing(PaintInfo& paintInfo, const LayoutPoint& paint
     Vector<IntRect> focusRingRects;
     addFocusRingRects(focusRingRects, paintOffset, paintInfo.paintContainer);
     if (style->outlineStyleIsAuto())
-        paintInfo.context->drawFocusRing(focusRingRects, style->outlineWidth(), style->outlineOffset(), style->visitedDependentColor(CSSPropertyOutlineColor));
+        paintInfo.context->drawFocusRing(focusRingRects, style->outlineWidth(), style->outlineOffset(), resolveColor(style, CSSPropertyOutlineColor));
     else
         addPDFURLRect(paintInfo.context, unionRect(focusRingRects));
 }
@@ -1150,7 +1161,7 @@ void RenderObject::paintOutline(PaintInfo& paintInfo, const LayoutRect& paintRec
     int outlineOffset = styleToUse->outlineOffset();
 
     if (styleToUse->outlineStyleIsAuto() || hasOutlineAnnotation()) {
-        if (!theme()->supportsFocusRing(styleToUse)) {
+        if (theme()->shouldDrawDefaultFocusRing(this)) {
             // Only paint the focus ring by hand if the theme isn't able to draw the focus ring.
             paintFocusRing(paintInfo, paintRect.location(), styleToUse);
         }
@@ -1170,7 +1181,7 @@ void RenderObject::paintOutline(PaintInfo& paintInfo, const LayoutRect& paintRec
         return;
 
     EBorderStyle outlineStyle = styleToUse->outlineStyle();
-    Color outlineColor = styleToUse->visitedDependentColor(CSSPropertyOutlineColor);
+    Color outlineColor = resolveColor(styleToUse, CSSPropertyOutlineColor);
 
     GraphicsContext* graphicsContext = paintInfo.context;
     bool useTransparencyLayer = outlineColor.hasAlpha();
@@ -1196,7 +1207,7 @@ void RenderObject::paintOutline(PaintInfo& paintInfo, const LayoutRect& paintRec
     int topInner = inner.y();
     int bottomOuter = outer.maxY();
     int bottomInner = inner.maxY();
-    
+
     drawLineForBoxSide(graphicsContext, leftOuter, topOuter, leftInner, bottomOuter, BSLeft, outlineColor, outlineStyle, outlineWidth, outlineWidth);
     drawLineForBoxSide(graphicsContext, leftOuter, topOuter, rightOuter, topInner, BSTop, outlineColor, outlineStyle, outlineWidth, outlineWidth);
     drawLineForBoxSide(graphicsContext, rightInner, topOuter, rightOuter, bottomOuter, BSRight, outlineColor, outlineStyle, outlineWidth, outlineWidth);
@@ -1215,7 +1226,7 @@ IntRect RenderObject::absoluteBoundingBoxRect(bool useTransforms) const
         size_t n = quads.size();
         if (!n)
             return IntRect();
-    
+
         IntRect result = quads[0].enclosingBoundingBox();
         for (size_t i = 1; i < n; ++i)
             result.unite(quads[i].enclosingBoundingBox());
@@ -1297,7 +1308,7 @@ RenderLayerModelObject* RenderObject::containerForRepaint() const
     RenderView* v = view();
     if (!v)
         return 0;
-    
+
     RenderLayerModelObject* repaintContainer = 0;
 
     if (v->usesCompositing()) {
@@ -1363,7 +1374,7 @@ void RenderObject::repaintUsingContainer(const RenderLayerModelObject* repaintCo
             return;
         }
     }
-    
+
     if (v->usesCompositing()) {
         ASSERT(repaintContainer->hasLayer() && repaintContainer->layer()->isComposited());
         repaintContainer->layer()->setBackingNeedsRepaintInRect(r);
@@ -1650,41 +1661,43 @@ static bool shouldUseSelectionColor(const RenderStyle& style)
 
 Color RenderObject::selectionBackgroundColor() const
 {
-    Color color;
+    Color backgroundColor= Color::transparent;
     if (shouldUseSelectionColor(*style())) {
         // anonymous blocks don't have pseudo styles
         if (isAnonymous() && parent())
             return parent()->selectionBackgroundColor();
 
         RefPtr<RenderStyle> pseudoStyle = getUncachedPseudoStyle(PseudoStyleRequest(SELECTION));
-        if (pseudoStyle && pseudoStyle->visitedDependentColor(CSSPropertyBackgroundColor).isValid())
-            color = pseudoStyle->visitedDependentColor(CSSPropertyBackgroundColor).blendWithWhite();
-        else
-            color = frame()->selection()->isFocusedAndActive() ?
-                    theme()->activeSelectionBackgroundColor() :
-                    theme()->inactiveSelectionBackgroundColor();
+        if (pseudoStyle) {
+            StyleColor styleColor = resolveCurrentColor(pseudoStyle.get(), CSSPropertyBackgroundColor);
+            if (styleColor.isValid())
+                return styleColor.color().blendWithWhite();
+        }
+
+        backgroundColor = frame()->selection()->isFocusedAndActive() ?
+            theme()->activeSelectionBackgroundColor() :
+            theme()->inactiveSelectionBackgroundColor();
     }
 
-    return color;
+    return backgroundColor;
 }
 
 Color RenderObject::selectionColor(int colorProperty) const
 {
-    Color color;
     // If the element is unselectable, or we are only painting the selection,
     // don't override the foreground color with the selection foreground color.
     if (!shouldUseSelectionColor(*style())
         || (frame()->view()->paintBehavior() & PaintBehaviorSelectionOnly))
-        return color;
+        return Color::transparent;
 
     // anonymous blocks don't have pseudo styles
     if (isAnonymous() && parent())
         return parent()->selectionColor(colorProperty);
 
+    Color color;
     if (RefPtr<RenderStyle> pseudoStyle = getUncachedPseudoStyle(PseudoStyleRequest(SELECTION))) {
-        color = pseudoStyle->visitedDependentColor(colorProperty);
-        if (!color.isValid())
-            color = pseudoStyle->visitedDependentColor(CSSPropertyColor);
+        StyleColor styleColor = resolveCurrentColor(pseudoStyle.get(), colorProperty);
+        color = styleColor.isValid() ? styleColor.color() : resolveColor(pseudoStyle.get(), CSSPropertyColor);
     } else
         color = frame()->selection()->isFocusedAndActive() ?
                 theme()->activeSelectionForegroundColor() :
@@ -1729,10 +1742,18 @@ void RenderObject::handleDynamicFloatPositionChange()
 
 void RenderObject::setAnimatableStyle(PassRefPtr<RenderStyle> style)
 {
-    if (!isText() && style)
-        setStyle(animation()->updateAnimations(this, style.get()));
-    else
-        setStyle(style);
+    if (!isText() && style) {
+        if (!RuntimeEnabledFeatures::webAnimationsCSSEnabled()) {
+            setStyle(animation()->updateAnimations(this, style.get()));
+            return;
+        }
+        if (node() && node()->isElementNode()) {
+            Element* element = toElement(node());
+            if (CSSAnimations::needsUpdate(element, style.get()))
+                element->ensureActiveAnimations()->cssAnimations()->update(element, style.get());
+        }
+    }
+    setStyle(style);
 }
 
 StyleDifference RenderObject::adjustStyleDifference(StyleDifference diff, unsigned contextSensitiveProperties) const
@@ -1771,7 +1792,7 @@ StyleDifference RenderObject::adjustStyleDifference(StyleDifference diff, unsign
         else if (diff < StyleDifferenceRecompositeLayer)
             diff = StyleDifferenceRecompositeLayer;
     }
-    
+
     // The answer to requiresLayer() for plugins, iframes, and canvas can change without the actual
     // style changing, since it depends on whether we decide to composite these elements. When the
     // layer status of one of these elements changes, we need to force a layout.
@@ -1841,7 +1862,7 @@ void RenderObject::setStyle(PassRefPtr<RenderStyle> style)
     diff = adjustStyleDifference(diff, contextSensitiveProperties);
 
     styleWillChange(diff, style.get());
-    
+
     RefPtr<RenderStyle> oldStyle = m_style.release();
     setStyleInternal(style);
 
@@ -1870,7 +1891,7 @@ void RenderObject::setStyle(PassRefPtr<RenderStyle> style)
     // Now that the layer (if any) has been updated, we need to adjust the diff again,
     // check whether we should layout now, and decide if we need to repaint.
     StyleDifference updatedDiff = adjustStyleDifference(diff, contextSensitiveProperties);
-    
+
     if (diff <= StyleDifferenceLayoutPositionedMovementOnly) {
         if (updatedDiff == StyleDifferenceLayout)
             setNeedsLayoutAndPrefWidthsRecalc();
@@ -1882,7 +1903,7 @@ void RenderObject::setStyle(PassRefPtr<RenderStyle> style)
         } else if (updatedDiff == StyleDifferenceSimplifiedLayout)
             setNeedsSimplifiedNormalFlowLayout();
     }
-    
+
     if (updatedDiff == StyleDifferenceRepaintLayer || shouldRepaintForStyleDifference(updatedDiff)) {
         // Do a repaint with the new style now, e.g., for example if we go from
         // not having an outline to having an outline.
@@ -1901,8 +1922,8 @@ void RenderObject::styleWillChange(StyleDifference diff, const RenderStyle* newS
         // If our z-index changes value or our visibility changes,
         // we need to dirty our stacking context's z-order list.
         if (newStyle) {
-            bool visibilityChanged = m_style->visibility() != newStyle->visibility() 
-                || m_style->zIndex() != newStyle->zIndex() 
+            bool visibilityChanged = m_style->visibility() != newStyle->visibility()
+                || m_style->zIndex() != newStyle->zIndex()
                 || m_style->hasAutoZIndex() != newStyle->hasAutoZIndex();
             if (visibilityChanged) {
                 document()->setAnnotatedRegionsDirty(true);
@@ -2001,11 +2022,9 @@ void RenderObject::styleDidChange(StyleDifference diff, const RenderStyle* oldSt
     if (s_affectsParentBlock)
         handleDynamicFloatPositionChange();
 
-    SVGRenderSupport::styleChanged(this);
-
     if (!m_parent)
         return;
-    
+
     if (diff == StyleDifferenceLayout || diff == StyleDifferenceSimplifiedLayout) {
         RenderCounter::rendererStyleChanged(this, oldStyle, m_style.get());
 
@@ -2073,7 +2092,7 @@ void RenderObject::updateFillImages(const FillLayer* oldLayers, const FillLayer*
     // Optimize the common case
     if (oldLayers && !oldLayers->next() && newLayers && !newLayers->next() && (oldLayers->image() == newLayers->image()))
         return;
-    
+
     // Go through the new layers and addClients first, to avoid removing all clients of an image.
     for (const FillLayer* currNew = newLayers; currNew; currNew = currNew->next()) {
         if (currNew->image())
@@ -2106,7 +2125,7 @@ FloatPoint RenderObject::localToAbsolute(const FloatPoint& localPoint, MapCoordi
     TransformState transformState(TransformState::ApplyTransformDirection, localPoint);
     mapLocalToContainer(0, transformState, mode | ApplyContainerFlip);
     transformState.flatten();
-    
+
     return transformState.lastPlanarPoint();
 }
 
@@ -2115,7 +2134,7 @@ FloatPoint RenderObject::absoluteToLocal(const FloatPoint& containerPoint, MapCo
     TransformState transformState(TransformState::UnapplyInverseTransformDirection, containerPoint);
     mapAbsoluteToLocalPoint(mode, transformState);
     transformState.flatten();
-    
+
     return transformState.lastPlanarPoint();
 }
 
@@ -2169,7 +2188,7 @@ const RenderObject* RenderObject::pushMappingToContainer(const RenderLayerModelO
         offset = -toRenderBox(container)->scrolledContentOffset();
 
     geometryMap.push(this, offset, hasColumns());
-    
+
     return container;
 }
 
@@ -2197,7 +2216,7 @@ void RenderObject::getTransformFromContainer(const RenderObject* containerObject
     RenderLayer* layer;
     if (hasLayer() && (layer = toRenderLayerModelObject(this)->layer()) && layer->transform())
         transform.multiply(layer->currentTransform());
-    
+
     if (containerObject && containerObject->hasLayer() && containerObject->style()->hasPerspective()) {
         // Perpsective on the container affects us, so we have to factor it in here.
         ASSERT(containerObject->hasLayer());
@@ -2205,7 +2224,7 @@ void RenderObject::getTransformFromContainer(const RenderObject* containerObject
 
         TransformationMatrix perspectiveMatrix;
         perspectiveMatrix.applyPerspective(containerObject->style()->perspective());
-        
+
         transform.translateRight3d(-perspectiveOrigin.x(), -perspectiveOrigin.y(), 0);
         transform = perspectiveMatrix * transform;
         transform.translateRight3d(perspectiveOrigin.x(), perspectiveOrigin.y(), 0);
@@ -2219,7 +2238,7 @@ FloatQuad RenderObject::localToContainerQuad(const FloatQuad& localQuad, const R
     TransformState transformState(TransformState::ApplyTransformDirection, localQuad.boundingBox().center(), localQuad);
     mapLocalToContainer(repaintContainer, transformState, mode | ApplyContainerFlip | UseTransforms, wasFixed);
     transformState.flatten();
-    
+
     return transformState.lastPlanarQuad();
 }
 
@@ -2277,6 +2296,73 @@ LayoutRect RenderObject::localCaretRect(InlineBox*, int, LayoutUnit* extraWidthT
     return LayoutRect();
 }
 
+void RenderObject::computeLayerHitTestRects(LayerHitTestRects& layerRects) const
+{
+    // Figure out what layer our container is in. Any offset (or new layer) for this
+    // renderer within it's container will be applied in addLayerHitTestRects.
+    LayoutPoint layerOffset;
+    const RenderLayer* currentLayer = 0;
+
+    if (!hasLayer()) {
+        RenderObject* container = this->container();
+        if (container) {
+            currentLayer = container->enclosingLayer();
+            if (currentLayer && currentLayer->renderer() != container) {
+                layerOffset.move(container->offsetFromAncestorContainer(currentLayer->renderer()));
+                // If the layer itself is scrolled, we have to undo the subtraction of its scroll
+                // offset since we want the offset relative to the scrolling content, not the
+                // element itself.
+                layerOffset.move(currentLayer->scrolledContentOffset());
+            }
+        } else {
+            currentLayer = enclosingLayer();
+        }
+        if (!currentLayer)
+            return;
+    }
+
+    this->addLayerHitTestRects(layerRects, currentLayer, layerOffset, LayoutRect());
+}
+
+void RenderObject::addLayerHitTestRects(LayerHitTestRects& layerRects, const RenderLayer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const
+{
+    ASSERT(currentLayer);
+    ASSERT(currentLayer == this->enclosingLayer());
+
+    // Compute the rects for this renderer only and add them to the results.
+    // Note that we could avoid passing the offset and instead adjust each result, but this
+    // seems slightly simpler.
+    Vector<LayoutRect> ownRects;
+    LayoutRect newContainerRect;
+    computeSelfHitTestRects(ownRects, layerOffset);
+
+    LayerHitTestRects::iterator iter = layerRects.find(currentLayer);
+    if (iter == layerRects.end())
+        iter = layerRects.add(currentLayer, Vector<LayoutRect>()).iterator;
+    for (size_t i = 0; i < ownRects.size(); i++) {
+        if (!containerRect.contains(ownRects[i])) {
+            iter->value.append(ownRects[i]);
+            if (newContainerRect.isEmpty())
+                newContainerRect = ownRects[i];
+        }
+    }
+    if (newContainerRect.isEmpty())
+        newContainerRect = containerRect;
+
+    // If it's possible for children to have rects outside our bounds, then we need to descend into
+    // the children and compute them.
+    // Ideally there would be other cases where we could detect that children couldn't have rects
+    // outside our bounds and prune the tree walk.
+    // Note that we don't use Region here because Union is O(N) - better to just keep a list of
+    // partially redundant rectangles. If we find examples where this is expensive, then we could
+    // rewrite Region to be more efficient. See https://bugs.webkit.org/show_bug.cgi?id=100814.
+    if (!isRenderView()) {
+        for (RenderObject* curr = firstChild(); curr; curr = curr->nextSibling()) {
+            curr->addLayerHitTestRects(layerRects, currentLayer,  layerOffset, newContainerRect);
+        }
+    }
+}
+
 bool RenderObject::isRooted(RenderView** view) const
 {
     const RenderObject* o = this;
@@ -2295,7 +2381,7 @@ bool RenderObject::isRooted(RenderView** view) const
 RenderObject* RenderObject::rendererForRootBackground()
 {
     ASSERT(isRoot());
-    if (!hasBackground() && node() && node()->hasTagName(HTMLNames::htmlTag)) {
+    if (!hasBackground() && node() && isHTMLHtmlElement(node())) {
         // Locate the <body> element using the DOM. This is easier than trying
         // to crawl around a render tree with potential :before/:after content and
         // anonymous blocks created by inline <body> tags etc. We can locate the <body>
@@ -2305,7 +2391,7 @@ RenderObject* RenderObject::rendererForRootBackground()
         if (bodyObject)
             return bodyObject;
     }
-    
+
     return this;
 }
 
@@ -2419,7 +2505,7 @@ void RenderObject::willBeDestroyed()
         children->destroyLeftoverChildren();
 
     // If this renderer is being autoscrolled, stop the autoscroll timer
-    
+
     // FIXME: RenderObject::destroy should not get called with a renderer whose document
     // has a null frame, so we assert this. However, we don't want release builds to crash which is why we
     // check that the frame is not null.
@@ -2535,9 +2621,9 @@ void RenderObject::removeFromRenderFlowThread()
 {
     if (flowThreadState() == NotInsideFlowThread)
         return;
-    
+
     // Sometimes we remove the element from the flow, but it's not destroyed at that time.
-    // It's only until later when we actually destroy it and remove all the children from it. 
+    // It's only until later when we actually destroy it and remove all the children from it.
     // Currently, that happens for firstLetter elements and list markers.
     // Pass in the flow thread so that we don't have to look it up for all the children.
     removeFromRenderFlowThreadRecursive(flowThreadContainingBlock());
@@ -2549,7 +2635,7 @@ void RenderObject::removeFromRenderFlowThreadRecursive(RenderFlowThread* renderF
         for (RenderObject* child = children->firstChild(); child; child = child->nextSibling())
             child->removeFromRenderFlowThreadRecursive(renderFlowThread);
     }
-    
+
     RenderFlowThread* localFlowThread = renderFlowThread;
     if (flowThreadState() == InsideInFlowThread)
         localFlowThread = flowThreadContainingBlock(); // We have to ask. We can't just assume we are in the same flow thread.
@@ -2588,11 +2674,12 @@ void RenderObject::destroyAndCleanupAnonymousWrappers()
 void RenderObject::destroy()
 {
     willBeDestroyed();
-    arenaDelete(renderArena(), this);
+    postDestroy();
 }
 
-void RenderObject::arenaDelete(RenderArena* arena, void* base)
+void RenderObject::postDestroy()
 {
+    // It seems ugly that this is not in willBeDestroyed().
     if (m_style) {
         for (const FillLayer* bgLayer = m_style->backgroundLayers(); bgLayer; bgLayer = bgLayer->next()) {
             if (StyleImage* backgroundImage = bgLayer->image())
@@ -2611,22 +2698,12 @@ void RenderObject::arenaDelete(RenderArena* arena, void* base)
             maskBoxImage->removeClient(this);
     }
 
-#ifndef NDEBUG
-    void* savedBase = baseOfRenderObjectBeingDeleted;
-    baseOfRenderObjectBeingDeleted = base;
-#endif
     delete this;
-#ifndef NDEBUG
-    baseOfRenderObjectBeingDeleted = savedBase;
-#endif
-
-    // Recover the size left there for us by operator delete and free the memory.
-    arena->free(*(size_t*)base, base);
 }
 
-VisiblePosition RenderObject::positionForPoint(const LayoutPoint&)
+PositionWithAffinity RenderObject::positionForPoint(const LayoutPoint&)
 {
-    return createVisiblePosition(caretMinOffset(), DOWNSTREAM);
+    return createPositionWithAffinity(caretMinOffset(), DOWNSTREAM);
 }
 
 void RenderObject::updateDragState(bool dragOn)
@@ -2720,7 +2797,25 @@ void RenderObject::layout()
         ASSERT(!child->needsLayout());
         child = child->nextSibling();
     }
-    setNeedsLayout(false);
+    clearNeedsLayout();
+}
+
+// FIXME: Do we need this method at all? If setNeedsLayout early returns in all the right places,
+// then MarkOnlyThis is not needed for performance or correctness.
+void RenderObject::forceLayout()
+{
+    // This is the only way it's safe to use MarkOnlyThis (i.e. if we're immediately going to call layout).
+    // FIXME: Add asserts that we only ever do the MarkOnlyThis behavior from here.
+    setNeedsLayout(MarkOnlyThis);
+    layout();
+}
+
+// FIXME: Does this do anything different than forceLayout given that we're passing MarkOnlyThis.
+// I don't think it does and we should change all callers to use forceLayout.
+void RenderObject::forceChildLayout()
+{
+    setChildNeedsLayout(MarkOnlyThis);
+    forceLayout();
 }
 
 enum StyleCacheState {
@@ -2782,7 +2877,7 @@ RenderStyle* RenderObject::getCachedPseudoStyle(PseudoId pseudo, RenderStyle* pa
     RenderStyle* cachedStyle = style()->getCachedPseudoStyle(pseudo);
     if (cachedStyle)
         return cachedStyle;
-    
+
     RefPtr<RenderStyle> result = getUncachedPseudoStyle(PseudoStyleRequest(pseudo), parentStyle);
     if (result)
         return style()->addCachedPseudoStyle(result.release());
@@ -2793,7 +2888,7 @@ PassRefPtr<RenderStyle> RenderObject::getUncachedPseudoStyle(const PseudoStyleRe
 {
     if (pseudoStyleRequest.pseudoId < FIRST_INTERNAL_PSEUDOID && !ownStyle && !style()->hasPseudoStyle(pseudoStyleRequest.pseudoId))
         return 0;
-    
+
     if (!parentStyle) {
         ASSERT(!ownStyle);
         parentStyle = style();
@@ -2821,22 +2916,22 @@ bool RenderObject::hasBlendMode() const
     return RuntimeEnabledFeatures::cssCompositingEnabled() && style() && style()->hasBlendMode();
 }
 
-static Color decorationColor(RenderStyle* style)
+static Color decorationColor(const RenderObject* object, RenderStyle* style)
 {
-    Color result;
+    StyleColor result;
     // Check for text decoration color first.
-    result = style->visitedDependentColor(CSSPropertyTextDecorationColor);
+    result = object->resolveStyleColor(style, CSSPropertyTextDecorationColor);
     if (result.isValid())
-        return result;
+        return result.color();
     if (style->textStrokeWidth() > 0) {
         // Prefer stroke color if possible but not if it's fully transparent.
-        result = style->visitedDependentColor(CSSPropertyWebkitTextStrokeColor);
+        result = object->resolveColor(style, CSSPropertyWebkitTextStrokeColor);
         if (result.alpha())
-            return result;
+            return result.color();
     }
-    
-    result = style->visitedDependentColor(CSSPropertyWebkitTextFillColor);
-    return result;
+
+    result = object->resolveColor(style, CSSPropertyWebkitTextFillColor);
+    return result.color();
 }
 
 void RenderObject::getTextDecorationColors(int decorations, Color& underline, Color& overline,
@@ -2849,7 +2944,7 @@ void RenderObject::getTextDecorationColors(int decorations, Color& underline, Co
     do {
         styleToUse = curr->style(firstlineStyle);
         currDecs = styleToUse->textDecoration();
-        resultColor = decorationColor(styleToUse);
+        resultColor = decorationColor(this, styleToUse);
         // Parameter 'decorations' is cast as an int to enable the bitwise operations below.
         if (currDecs) {
             if (currDecs & TextDecorationUnderline) {
@@ -2870,13 +2965,12 @@ void RenderObject::getTextDecorationColors(int decorations, Color& underline, Co
         curr = curr->parent();
         if (curr && curr->isAnonymousBlock() && toRenderBlock(curr)->continuation())
             curr = toRenderBlock(curr)->continuation();
-    } while (curr && decorations && (!quirksMode || !curr->node() ||
-                                     (!curr->node()->hasTagName(aTag) && !curr->node()->hasTagName(fontTag))));
+    } while (curr && decorations && (!quirksMode || !curr->node() || (!isHTMLAnchorElement(curr->node()) && !curr->node()->hasTagName(fontTag))));
 
     // If we bailed out, use the element we bailed out at (typically a <font> or <a> element).
     if (decorations && curr) {
         styleToUse = curr->style(firstlineStyle);
-        resultColor = decorationColor(styleToUse);
+        resultColor = decorationColor(this, styleToUse);
         if (decorations & TextDecorationUnderline)
             underline = resultColor;
         if (decorations & TextDecorationOverline)
@@ -2891,7 +2985,7 @@ void RenderObject::addAnnotatedRegions(Vector<AnnotatedRegionValue>& regions)
     // Convert the style regions to absolute coordinates.
     if (style()->visibility() != VISIBLE || !isBox())
         return;
-    
+
     RenderBox* box = toRenderBox(this);
     FloatPoint absPos = localToAbsolute();
 
@@ -2915,7 +3009,7 @@ void RenderObject::collectAnnotatedRegions(Vector<AnnotatedRegionValue>& regions
         curr->collectAnnotatedRegions(regions);
 }
 
-bool RenderObject::willRenderImage(CachedImage*)
+bool RenderObject::willRenderImage(ImageResource*)
 {
     // Without visibility we won't render (and therefore don't care about animation).
     if (style()->visibility() != VISIBLE)
@@ -2993,9 +3087,36 @@ bool RenderObject::isInert() const
     return parentNode && toElement(parentNode)->isInert();
 }
 
-void RenderObject::imageChanged(CachedImage* image, const IntRect* rect)
+void RenderObject::imageChanged(ImageResource* image, const IntRect* rect)
 {
     imageChanged(static_cast<WrappedImagePtr>(image), rect);
+}
+
+RenderObject* RenderObject::hoverAncestor() const
+{
+    // When searching for the hover ancestor and encountering a named flow thread,
+    // the search will continue with the DOM ancestor of the top-most element
+    // in the named flow thread.
+    // See https://code.google.com/p/chromium/issues/detail?id=243278
+    RenderObject* hoverAncestor = parent();
+
+    // Skip anonymous blocks directly flowed into flow threads as it would
+    // prevent us from continuing the search on the DOM tree when reaching the named flow thread.
+    if (hoverAncestor && hoverAncestor->isAnonymousBlock() && hoverAncestor->parent() && hoverAncestor->parent()->isRenderNamedFlowThread())
+        hoverAncestor = hoverAncestor->parent();
+
+    if (hoverAncestor && hoverAncestor->isRenderNamedFlowThread()) {
+        hoverAncestor = 0;
+
+        Node* node = this->node();
+        if (node) {
+            Node* domAncestorNode = node->parentNode();
+            if (domAncestorNode)
+                hoverAncestor = domAncestorNode->renderer();
+        }
+    }
+
+    return hoverAncestor;
 }
 
 Element* RenderObject::offsetParent() const
@@ -3030,7 +3151,7 @@ Element* RenderObject::offsetParent() const
         if (node->hasTagName(HTMLNames::bodyTag))
             break;
 
-        if (!isPositioned() && (node->hasTagName(tableTag) || node->hasTagName(tdTag) || node->hasTagName(thTag)))
+        if (!isPositioned() && (isHTMLTableElement(node) || node->hasTagName(tdTag) || node->hasTagName(thTag)))
             break;
 
         // Webkit specific extension where offsetParent stops at zoom level changes.
@@ -3041,22 +3162,22 @@ Element* RenderObject::offsetParent() const
     return node && node->isElementNode() ? toElement(node) : 0;
 }
 
-VisiblePosition RenderObject::createVisiblePosition(int offset, EAffinity affinity)
+PositionWithAffinity RenderObject::createPositionWithAffinity(int offset, EAffinity affinity)
 {
     // If this is a non-anonymous renderer in an editable area, then it's simple.
     if (Node* node = nonPseudoNode()) {
         if (!node->rendererIsEditable()) {
-            // If it can be found, we prefer a visually equivalent position that is editable. 
+            // If it can be found, we prefer a visually equivalent position that is editable.
             Position position = createLegacyEditingPosition(node, offset);
             Position candidate = position.downstream(CanCrossEditingBoundary);
             if (candidate.deprecatedNode()->rendererIsEditable())
-                return VisiblePosition(candidate, affinity);
+                return PositionWithAffinity(candidate, affinity);
             candidate = position.upstream(CanCrossEditingBoundary);
             if (candidate.deprecatedNode()->rendererIsEditable())
-                return VisiblePosition(candidate, affinity);
+                return PositionWithAffinity(candidate, affinity);
         }
         // FIXME: Eliminate legacy editing positions
-        return VisiblePosition(createLegacyEditingPosition(node, offset), affinity);
+        return PositionWithAffinity(createLegacyEditingPosition(node, offset), affinity);
     }
 
     // We don't want to cross the boundary between editable and non-editable
@@ -3071,7 +3192,7 @@ VisiblePosition RenderObject::createVisiblePosition(int offset, EAffinity affini
         RenderObject* renderer = child;
         while ((renderer = renderer->nextInPreOrder(parent))) {
             if (Node* node = renderer->nonPseudoNode())
-                return VisiblePosition(firstPositionInOrBeforeNode(node), DOWNSTREAM);
+                return PositionWithAffinity(firstPositionInOrBeforeNode(node), DOWNSTREAM);
         }
 
         // Find non-anonymous content before.
@@ -3080,28 +3201,28 @@ VisiblePosition RenderObject::createVisiblePosition(int offset, EAffinity affini
             if (renderer == parent)
                 break;
             if (Node* node = renderer->nonPseudoNode())
-                return VisiblePosition(lastPositionInOrAfterNode(node), DOWNSTREAM);
+                return PositionWithAffinity(lastPositionInOrAfterNode(node), DOWNSTREAM);
         }
 
         // Use the parent itself unless it too is anonymous.
         if (Node* node = parent->nonPseudoNode())
-            return VisiblePosition(firstPositionInOrBeforeNode(node), DOWNSTREAM);
+            return PositionWithAffinity(firstPositionInOrBeforeNode(node), DOWNSTREAM);
 
         // Repeat at the next level up.
         child = parent;
     }
 
     // Everything was anonymous. Give up.
-    return VisiblePosition();
+    return PositionWithAffinity();
 }
 
-VisiblePosition RenderObject::createVisiblePosition(const Position& position)
+PositionWithAffinity RenderObject::createPositionWithAffinity(const Position& position)
 {
     if (position.isNotNull())
-        return VisiblePosition(position);
+        return PositionWithAffinity(position);
 
     ASSERT(!node());
-    return createVisiblePosition(0, DOWNSTREAM);
+    return createPositionWithAffinity(0, DOWNSTREAM);
 }
 
 CursorDirective RenderObject::getCursor(const LayoutPoint&, Cursor&) const
@@ -3130,18 +3251,6 @@ bool RenderObject::canHaveGeneratedChildren() const
 bool RenderObject::canBeReplacedWithInlineRunIn() const
 {
     return true;
-}
-
-void RenderObject::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Rendering);
-    info.addMember(m_style, "style");
-    info.addWeakPointer(m_node);
-    info.addWeakPointer(m_parent);
-    info.addWeakPointer(m_previous);
-    info.addWeakPointer(m_next);
-
-    info.setCustomAllocation(true);
 }
 
 RenderSVGResourceContainer* RenderObject::toRenderSVGResourceContainer()

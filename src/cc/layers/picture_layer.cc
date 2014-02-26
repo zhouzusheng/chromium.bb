@@ -4,6 +4,7 @@
 
 #include "cc/layers/picture_layer.h"
 
+#include "cc/debug/benchmark_instrumentation.h"
 #include "cc/debug/devtools_instrumentation.h"
 #include "cc/layers/picture_layer_impl.h"
 #include "cc/trees/layer_tree_impl.h"
@@ -41,14 +42,19 @@ void PictureLayer::PushPropertiesTo(LayerImpl* base_layer) {
   layer_impl->UpdateTwinLayer();
 
   layer_impl->SetIsMask(is_mask_);
-  layer_impl->CreateTilingSet();
+  layer_impl->CreateTilingSetIfNeeded();
   // Unlike other properties, invalidation must always be set on layer_impl.
   // See PictureLayerImpl::PushPropertiesTo for more details.
   layer_impl->invalidation_.Clear();
   layer_impl->invalidation_.Swap(&pile_invalidation_);
-  layer_impl->pile_ = PicturePileImpl::CreateFromOther(
-      pile_.get(), layer_impl->is_using_lcd_text_);
+  layer_impl->pile_ = PicturePileImpl::CreateFromOther(pile_.get());
   layer_impl->SyncFromActiveLayer();
+
+  // PictureLayer must push properties every frame.
+  // TODO(danakj): If we can avoid requiring to do CreateTilingSetIfNeeded() and
+  // SyncFromActiveLayer() on every commit then this could go away, maybe
+  // conditionally. crbug.com/259402
+  needs_push_properties_ = true;
 }
 
 void PictureLayer::SetLayerTreeHost(LayerTreeHost* host) {
@@ -74,29 +80,46 @@ void PictureLayer::SetNeedsDisplayRect(const gfx::RectF& layer_rect) {
   Layer::SetNeedsDisplayRect(layer_rect);
 }
 
-void PictureLayer::Update(ResourceUpdateQueue*,
-                          const OcclusionTracker*,
-                          RenderingStats* stats) {
+bool PictureLayer::Update(ResourceUpdateQueue* queue,
+                          const OcclusionTracker* occlusion) {
   // Do not early-out of this function so that PicturePile::Update has a chance
   // to record pictures due to changing visibility of this layer.
+
+  TRACE_EVENT1(benchmark_instrumentation::kCategory,
+               benchmark_instrumentation::kPictureLayerUpdate,
+               benchmark_instrumentation::kSourceFrameNumber,
+               layer_tree_host()->source_frame_number());
+
+  bool updated = Layer::Update(queue, occlusion);
 
   pile_->Resize(paint_properties().bounds);
 
   // Calling paint in WebKit can sometimes cause invalidations, so save
   // off the invalidation prior to calling update.
-  pile_invalidation_.Swap(&pending_invalidation_);
+  pending_invalidation_.Swap(&pile_invalidation_);
   pending_invalidation_.Clear();
 
   gfx::Rect visible_layer_rect = gfx::ScaleToEnclosingRect(
       visible_content_rect(), 1.f / contents_scale_x());
+  if (layer_tree_host()->settings().using_synchronous_renderer_compositor) {
+    // Workaround for http://crbug.com/235910 - to retain backwards compat
+    // the full page content must always be provided in the picture layer.
+    visible_layer_rect = gfx::Rect(bounds());
+  }
   devtools_instrumentation::ScopedLayerTask paint_layer(
       devtools_instrumentation::kPaintLayer, id());
-  pile_->Update(client_,
-                SafeOpaqueBackgroundColor(),
-                contents_opaque(),
-                pile_invalidation_,
-                visible_layer_rect,
-                stats);
+  updated |= pile_->Update(client_,
+                           SafeOpaqueBackgroundColor(),
+                           contents_opaque(),
+                           pile_invalidation_,
+                           visible_layer_rect,
+                           rendering_stats_instrumentation());
+  if (!updated) {
+    // If this invalidation did not affect the pile, then it can be cleared as
+    // an optimization.
+    pile_invalidation_.Clear();
+  }
+  return updated;
 }
 
 void PictureLayer::SetIsMask(bool is_mask) {

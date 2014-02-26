@@ -682,6 +682,12 @@ void AcceleratedPresenter::SetNewTargetWindow(gfx::PluginWindowHandle window) {
 AcceleratedPresenter::~AcceleratedPresenter() {
 }
 
+bool AcceleratedPresenter::IsSwapChainInitialized() const {
+  base::AutoLock locked(*present_thread_->lock());
+
+  return !!swap_chain_;
+}
+
 void AcceleratedPresenter::DoPresentAndAcknowledge(
     const gfx::Size& size,
     int64 surface_handle,
@@ -722,7 +728,6 @@ void AcceleratedPresenter::DoPresentAndAcknowledge(
     return;
   }
 
-#if !defined(USE_AURA)
   // If the window is a different size than the swap chain that is being
   // presented then drop the frame.
   gfx::Size window_size = GetWindowSize();
@@ -745,7 +750,6 @@ void AcceleratedPresenter::DoPresentAndAcknowledge(
                  "windowheight", window_size.height());
     return;
   }
-#endif
 
   // Round up size so the swap chain is not continuously resized with the
   // surface, which could lead to memory fragmentation.
@@ -842,10 +846,6 @@ void AcceleratedPresenter::DoPresentAndAcknowledge(
     TRACE_EVENT0("gpu", "PresentD3D");
 
     hr = swap_chain_->Present(&rect, &rect, window_, NULL, 0);
-
-    // For latency_tests.cc:
-    UNSHIPPED_TRACE_EVENT_INSTANT0("test_gpu", "CompositorSwapBuffersComplete",
-                                   TRACE_EVENT_SCOPE_THREAD);
 
     if (FAILED(hr)) {
       if (present_thread_->IsDeviceLost())
@@ -1025,10 +1025,6 @@ void AcceleratedPresenter::PresentWithGDI(HDC dc) {
   }
 
   system_surface->UnlockRect();
-
-  // For latency_tests.cc:
-  UNSHIPPED_TRACE_EVENT_INSTANT0("test_gpu", "CompositorSwapBuffersComplete",
-                                 TRACE_EVENT_SCOPE_THREAD);
 }
 
 gfx::Size AcceleratedPresenter::GetWindowSize() {
@@ -1082,6 +1078,11 @@ AcceleratedSurface::~AcceleratedSurface() {
 void AcceleratedSurface::Present(HDC dc) {
   presenter_->Present(dc);
 }
+
+bool AcceleratedSurface::IsReadyForCopy() const {
+  return !!presenter_ && presenter_->IsSwapChainInitialized();
+}
+
 
 void AcceleratedSurface::AsyncCopyTo(
     const gfx::Rect& src_subrect,

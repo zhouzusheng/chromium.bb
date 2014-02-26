@@ -5,13 +5,13 @@
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
- * 
+ *
  * 1. Redistributions of source code must retain the above copyright
  *    notice, this list of conditions and the following disclaimer.
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
@@ -27,6 +27,7 @@
 #include "config.h"
 #include "core/xml/XPathExpression.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/xml/XPathExpressionNode.h"
 #include "core/xml/XPathNSResolver.h"
@@ -38,13 +39,13 @@
 namespace WebCore {
 
 using namespace XPath;
-    
-PassRefPtr<XPathExpression> XPathExpression::createExpression(const String& expression, XPathNSResolver* resolver, ExceptionCode& ec)
+
+PassRefPtr<XPathExpression> XPathExpression::createExpression(const String& expression, XPathNSResolver* resolver, ExceptionState& es)
 {
     RefPtr<XPathExpression> expr = XPathExpression::create();
     Parser parser;
 
-    expr->m_topExpression = parser.parseStatement(expression, resolver, ec);
+    expr->m_topExpression = parser.parseStatement(expression, resolver, es);
     if (!expr->m_topExpression)
         return 0;
 
@@ -56,10 +57,10 @@ XPathExpression::~XPathExpression()
     delete m_topExpression;
 }
 
-PassRefPtr<XPathResult> XPathExpression::evaluate(Node* contextNode, unsigned short type, XPathResult*, ExceptionCode& ec)
+PassRefPtr<XPathResult> XPathExpression::evaluate(Node* contextNode, unsigned short type, XPathResult*, ExceptionState& es)
 {
     if (!isValidContextNode(contextNode)) {
-        ec = NOT_SUPPORTED_ERR;
+        es.throwDOMException(NotSupportedError);
         return 0;
     }
 
@@ -73,14 +74,13 @@ PassRefPtr<XPathResult> XPathExpression::evaluate(Node* contextNode, unsigned sh
 
     if (evaluationContext.hadTypeConversionError) {
         // It is not specified what to do if type conversion fails while evaluating an expression.
-        ec = SYNTAX_ERR;
+        es.throwDOMException(SyntaxError);
         return 0;
     }
 
     if (type != XPathResult::ANY_TYPE) {
-        ec = 0;
-        result->convertTo(type, ec);
-        if (ec)
+        result->convertTo(type, es);
+        if (es.hadException())
             return 0;
     }
 

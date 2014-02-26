@@ -29,7 +29,7 @@
 #ifndef Panner_h
 #define Panner_h
 
-#include <wtf/PassOwnPtr.h>
+#include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
@@ -45,7 +45,7 @@ public:
         PanningModelHRTF = 1,
         PanningModelSoundField = 2
     };
-    
+
     typedef unsigned PanningModel;
 
     static PassOwnPtr<Panner> create(PanningModel, float sampleRate, HRTFDatabaseLoader*);

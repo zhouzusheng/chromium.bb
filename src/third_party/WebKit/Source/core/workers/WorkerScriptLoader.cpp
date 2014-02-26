@@ -21,7 +21,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -33,7 +33,7 @@
 #include "core/loader/TextResourceDecoder.h"
 #include "core/loader/WorkerThreadableLoader.h"
 #include "core/platform/network/ResourceResponse.h"
-#include "core/workers/WorkerContext.h"
+#include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerScriptLoaderClient.h"
 
 #include <wtf/OwnPtr.h>
@@ -63,7 +63,7 @@ void WorkerScriptLoader::loadSynchronously(ScriptExecutionContext* scriptExecuti
     if (!request)
         return;
 
-    ASSERT_WITH_SECURITY_IMPLICATION(scriptExecutionContext->isWorkerContext());
+    ASSERT_WITH_SECURITY_IMPLICATION(scriptExecutionContext->isWorkerGlobalScope());
 
     ThreadableLoaderOptions options;
     options.allowCredentials = AllowStoredCredentials;
@@ -72,9 +72,9 @@ void WorkerScriptLoader::loadSynchronously(ScriptExecutionContext* scriptExecuti
     // FIXME: Should we add EnforceScriptSrcDirective here?
     options.contentSecurityPolicyEnforcement = DoNotEnforceContentSecurityPolicy;
 
-    WorkerThreadableLoader::loadResourceSynchronously(static_cast<WorkerContext*>(scriptExecutionContext), *request, *this, options);
+    WorkerThreadableLoader::loadResourceSynchronously(toWorkerGlobalScope(scriptExecutionContext), *request, *this, options);
 }
-    
+
 void WorkerScriptLoader::loadAsynchronously(ScriptExecutionContext* scriptExecutionContext, const KURL& url, CrossOriginRequestPolicy crossOriginRequestPolicy, WorkerScriptLoaderClient* client)
 {
     ASSERT(client);
@@ -108,7 +108,7 @@ PassOwnPtr<ResourceRequest> WorkerScriptLoader::createResourceRequest()
     request->setTargetType(m_targetType);
     return request.release();
 }
-    
+
 void WorkerScriptLoader::didReceiveResponse(unsigned long identifier, const ResourceResponse& response)
 {
     if (response.httpStatusCode() / 100 != 2 && response.httpStatusCode()) {
@@ -135,10 +135,10 @@ void WorkerScriptLoader::didReceiveData(const char* data, int len)
 
     if (!len)
         return;
-    
+
     if (len == -1)
         len = strlen(data);
-    
+
     m_script.append(m_decoder->decode(data, len));
 }
 

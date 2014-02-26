@@ -21,15 +21,15 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
- 
+
 #ifndef TextControlInnerElements_h
 #define TextControlInnerElements_h
 
 #include "core/html/HTMLDivElement.h"
 #include "core/page/SpeechInputListener.h"
-#include <wtf/Forward.h>
+#include "wtf/Forward.h"
 
 namespace WebCore {
 
@@ -52,7 +52,7 @@ protected:
     virtual PassRefPtr<RenderStyle> customStyleForRenderer() OVERRIDE;
 
 private:
-    virtual bool isMouseFocusable() const { return false; }
+    virtual bool supportsFocus() const OVERRIDE { return false; }
 };
 
 class TextControlInnerTextElement FINAL : public HTMLDivElement {
@@ -65,7 +65,7 @@ private:
     TextControlInnerTextElement(Document*);
     virtual RenderObject* createRenderer(RenderStyle*);
     virtual PassRefPtr<RenderStyle> customStyleForRenderer() OVERRIDE;
-    virtual bool isMouseFocusable() const { return false; }
+    virtual bool supportsFocus() const OVERRIDE { return false; }
 };
 
 class SearchFieldDecorationElement FINAL : public HTMLDivElement {
@@ -77,8 +77,8 @@ public:
 
 private:
     SearchFieldDecorationElement(Document*);
-    virtual const AtomicString& shadowPseudoId() const;
-    virtual bool isMouseFocusable() const { return false; }
+    virtual const AtomicString& part() const OVERRIDE;
+    virtual bool supportsFocus() const OVERRIDE { return false; }
 };
 
 class SearchFieldCancelButtonElement FINAL : public HTMLDivElement {
@@ -91,7 +91,7 @@ public:
 private:
     SearchFieldCancelButtonElement(Document*);
     virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual bool isMouseFocusable() const { return false; }
+    virtual bool supportsFocus() const OVERRIDE { return false; }
 
     bool m_capturing;
 };

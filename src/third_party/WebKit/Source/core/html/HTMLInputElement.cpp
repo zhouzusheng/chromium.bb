@@ -32,6 +32,7 @@
 #include "CSSPropertyNames.h"
 #include "HTMLNames.h"
 #include "RuntimeEnabledFeatures.h"
+#include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScriptEventListener.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/dom/BeforeTextInsertedEvent.h"
@@ -93,7 +94,7 @@ private:
 // large. However, due to https://bugs.webkit.org/show_bug.cgi?id=14536 things
 // get rather sluggish when a text field has a larger number of characters than
 // this, even when just clicking in the text field.
-const int HTMLInputElement::maximumLength = 524288;
+const unsigned HTMLInputElement::maximumLength = 524288;
 const int defaultSize = 20;
 const int maxSavedResults = 256;
 
@@ -187,22 +188,17 @@ HTMLElement* HTMLInputElement::innerSpinButtonElement() const
     return m_inputType->innerSpinButtonElement();
 }
 
-HTMLElement* HTMLInputElement::searchDecorationElement() const
-{
-    return m_inputType->searchDecorationElement();
-}
-
-HTMLElement* HTMLInputElement::cancelButtonElement() const
-{
-    return m_inputType->cancelButtonElement();
-}
-
 #if ENABLE(INPUT_SPEECH)
 HTMLElement* HTMLInputElement::speechButtonElement() const
 {
     return m_inputType->speechButtonElement();
 }
 #endif
+
+HTMLElement* HTMLInputElement::passwordGeneratorButtonElement() const
+{
+    return m_inputType->passwordGeneratorButtonElement();
+}
 
 HTMLElement* HTMLInputElement::sliderThumbElement() const
 {
@@ -335,14 +331,14 @@ Decimal HTMLInputElement::findClosestTickMarkValue(const Decimal& value)
     return m_inputType->findClosestTickMarkValue(value);
 }
 
-void HTMLInputElement::stepUp(int n, ExceptionCode& ec)
+void HTMLInputElement::stepUp(int n, ExceptionState& es)
 {
-    m_inputType->stepUp(n, ec);
+    m_inputType->stepUp(n, es);
 }
 
-void HTMLInputElement::stepDown(int n, ExceptionCode& ec)
+void HTMLInputElement::stepDown(int n, ExceptionState& es)
 {
-    m_inputType->stepUp(-n, ec);
+    m_inputType->stepUp(-n, es);
 }
 
 void HTMLInputElement::blur()
@@ -360,24 +356,14 @@ bool HTMLInputElement::hasCustomFocusLogic() const
     return m_inputType->hasCustomFocusLogic();
 }
 
-bool HTMLInputElement::isKeyboardFocusable(KeyboardEvent* event) const
+bool HTMLInputElement::isKeyboardFocusable() const
 {
-    return m_inputType->isKeyboardFocusable(event);
+    return m_inputType->isKeyboardFocusable();
 }
 
-bool HTMLInputElement::isMouseFocusable() const
+bool HTMLInputElement::shouldShowFocusRingOnMouseFocus() const
 {
-    return m_inputType->isMouseFocusable();
-}
-
-bool HTMLInputElement::isTextFormControlKeyboardFocusable(KeyboardEvent* event) const
-{
-    return HTMLTextFormControlElement::isKeyboardFocusable(event);
-}
-
-bool HTMLInputElement::isTextFormControlMouseFocusable() const
-{
-    return HTMLTextFormControlElement::isMouseFocusable();
+    return m_inputType->shouldShowFocusRingOnMouseFocus();
 }
 
 void HTMLInputElement::updateFocusAppearance(bool restorePreviousSelection)
@@ -391,6 +377,15 @@ void HTMLInputElement::updateFocusAppearance(bool restorePreviousSelection)
             document()->frame()->selection()->revealSelection();
     } else
         HTMLTextFormControlElement::updateFocusAppearance(restorePreviousSelection);
+}
+
+void HTMLInputElement::beginEditing()
+{
+    if (!isTextField())
+        return;
+
+    if (Frame* frame = document()->frame())
+        frame->editor()->textFieldDidBeginEditing(this);
 }
 
 void HTMLInputElement::endEditing()
@@ -407,9 +402,9 @@ bool HTMLInputElement::shouldUseInputMethod()
     return m_inputType->shouldUseInputMethod();
 }
 
-void HTMLInputElement::handleFocusEvent(Node* oldFocusedNode, FocusDirection direction)
+void HTMLInputElement::handleFocusEvent(Element* oldFocusedElement, FocusDirection direction)
 {
-    m_inputType->handleFocusEvent(oldFocusedNode, direction);
+    m_inputType->handleFocusEvent(oldFocusedElement, direction);
 }
 
 void HTMLInputElement::handleBlurEvent()
@@ -497,13 +492,10 @@ void HTMLInputElement::updateType()
     }
 
     if (wasAttached) {
-        attach();
-        if (document()->focusedNode() == this)
-            updateFocusAppearance(true);
+        lazyAttach();
+        if (document()->focusedElement() == this)
+            document()->updateFocusAppearanceSoon(true /* restore selection */);
     }
-
-    if (ElementShadow* elementShadow = shadowOfParentForDistribution(this))
-        elementShadow->invalidateDistribution();
 
     setChangedSinceLastFormControlChangeEvent(false);
 
@@ -555,73 +547,73 @@ bool HTMLInputElement::canHaveSelection() const
     return isTextField();
 }
 
-int HTMLInputElement::selectionStartForBinding(ExceptionCode& ec) const
+int HTMLInputElement::selectionStartForBinding(ExceptionState& es) const
 {
     if (!canHaveSelection()) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return 0;
     }
     return HTMLTextFormControlElement::selectionStart();
 }
 
-int HTMLInputElement::selectionEndForBinding(ExceptionCode& ec) const
+int HTMLInputElement::selectionEndForBinding(ExceptionState& es) const
 {
     if (!canHaveSelection()) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return 0;
     }
     return HTMLTextFormControlElement::selectionEnd();
 }
 
-String HTMLInputElement::selectionDirectionForBinding(ExceptionCode& ec) const
+String HTMLInputElement::selectionDirectionForBinding(ExceptionState& es) const
 {
     if (!canHaveSelection()) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return String();
     }
     return HTMLTextFormControlElement::selectionDirection();
 }
 
-void HTMLInputElement::setSelectionStartForBinding(int start, ExceptionCode& ec)
+void HTMLInputElement::setSelectionStartForBinding(int start, ExceptionState& es)
 {
     if (!canHaveSelection()) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
     HTMLTextFormControlElement::setSelectionStart(start);
 }
 
-void HTMLInputElement::setSelectionEndForBinding(int end, ExceptionCode& ec)
+void HTMLInputElement::setSelectionEndForBinding(int end, ExceptionState& es)
 {
     if (!canHaveSelection()) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
     HTMLTextFormControlElement::setSelectionEnd(end);
 }
 
-void HTMLInputElement::setSelectionDirectionForBinding(const String& direction, ExceptionCode& ec)
+void HTMLInputElement::setSelectionDirectionForBinding(const String& direction, ExceptionState& es)
 {
     if (!canHaveSelection()) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
     HTMLTextFormControlElement::setSelectionDirection(direction);
 }
 
-void HTMLInputElement::setSelectionRangeForBinding(int start, int end, ExceptionCode& ec)
+void HTMLInputElement::setSelectionRangeForBinding(int start, int end, ExceptionState& es)
 {
     if (!canHaveSelection()) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
     HTMLTextFormControlElement::setSelectionRange(start, end);
 }
 
-void HTMLInputElement::setSelectionRangeForBinding(int start, int end, const String& direction, ExceptionCode& ec)
+void HTMLInputElement::setSelectionRangeForBinding(int start, int end, const String& direction, ExceptionState& es)
 {
     if (!canHaveSelection()) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
     HTMLTextFormControlElement::setSelectionRange(start, end, direction);
@@ -821,7 +813,7 @@ void HTMLInputElement::attach(const AttachContext& context)
 
     m_inputType->attach();
 
-    if (document()->focusedNode() == this)
+    if (document()->focusedElement() == this)
         document()->updateFocusAppearanceSoon(true /* restore selection */);
 }
 
@@ -1029,10 +1021,10 @@ void HTMLInputElement::setEditingValue(const String& value)
     dispatchInputEvent();
 }
 
-void HTMLInputElement::setValue(const String& value, ExceptionCode& ec, TextFieldEventBehavior eventBehavior)
+void HTMLInputElement::setValue(const String& value, ExceptionState& es, TextFieldEventBehavior eventBehavior)
 {
     if (isFileUpload() && !value.isEmpty()) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
     setValue(value, eventBehavior);
@@ -1071,9 +1063,9 @@ double HTMLInputElement::valueAsDate() const
     return m_inputType->valueAsDate();
 }
 
-void HTMLInputElement::setValueAsDate(double value, ExceptionCode& ec)
+void HTMLInputElement::setValueAsDate(double value, ExceptionState& es)
 {
-    m_inputType->setValueAsDate(value, ec);
+    m_inputType->setValueAsDate(value, es);
 }
 
 double HTMLInputElement::valueAsNumber() const
@@ -1081,13 +1073,13 @@ double HTMLInputElement::valueAsNumber() const
     return m_inputType->valueAsDouble();
 }
 
-void HTMLInputElement::setValueAsNumber(double newValue, ExceptionCode& ec, TextFieldEventBehavior eventBehavior)
+void HTMLInputElement::setValueAsNumber(double newValue, ExceptionState& es, TextFieldEventBehavior eventBehavior)
 {
     if (!std::isfinite(newValue)) {
-        ec = NOT_SUPPORTED_ERR;
+        es.throwDOMException(NotSupportedError);
         return;
     }
-    m_inputType->setValueAsDouble(newValue, eventBehavior, ec);
+    m_inputType->setValueAsDouble(newValue, eventBehavior, es);
 }
 
 void HTMLInputElement::setValueFromRenderer(const String& value)
@@ -1100,10 +1092,7 @@ void HTMLInputElement::setValueFromRenderer(const String& value)
     // Renderer and our event handler are responsible for sanitizing values.
     ASSERT(value == sanitizeValue(value) || sanitizeValue(value).isEmpty());
 
-    // Workaround for bug where trailing \n is included in the result of textContent.
-    // The assert macro above may also be simplified to: value == constrainValue(value)
-    // http://bugs.webkit.org/show_bug.cgi?id=9661
-    m_valueIfDirty = value == "\n" ? emptyString() : value;
+    m_valueIfDirty = value;
 
     setFormControlValueMatchesRenderer(true);
     m_wasModifiedByUser = true;
@@ -1156,7 +1145,7 @@ void HTMLInputElement::defaultEventHandler(Event* evt)
     }
 
     if (evt->isKeyboardEvent() && evt->type() == eventNames().keydownEvent) {
-        m_inputType->handleKeydownEvent(static_cast<KeyboardEvent*>(evt));
+        m_inputType->handleKeydownEvent(toKeyboardEvent(evt));
         if (evt->defaultHandled())
             return;
     }
@@ -1183,13 +1172,13 @@ void HTMLInputElement::defaultEventHandler(Event* evt)
     // Use key press event here since sending simulated mouse events
     // on key down blocks the proper sending of the key press event.
     if (evt->isKeyboardEvent() && evt->type() == eventNames().keypressEvent) {
-        m_inputType->handleKeypressEvent(static_cast<KeyboardEvent*>(evt));
+        m_inputType->handleKeypressEvent(toKeyboardEvent(evt));
         if (evt->defaultHandled())
             return;
     }
 
     if (evt->isKeyboardEvent() && evt->type() == eventNames().keyupEvent) {
-        m_inputType->handleKeyupEvent(static_cast<KeyboardEvent*>(evt));
+        m_inputType->handleKeyupEvent(toKeyboardEvent(evt));
         if (evt->defaultHandled())
             return;
     }
@@ -1319,10 +1308,10 @@ int HTMLInputElement::maxLength() const
     return m_maxLength;
 }
 
-void HTMLInputElement::setMaxLength(int maxLength, ExceptionCode& ec)
+void HTMLInputElement::setMaxLength(int maxLength, ExceptionState& es)
 {
     if (maxLength < 0)
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
     else
         setAttribute(maxlengthAttr, String::number(maxLength));
 }
@@ -1337,10 +1326,10 @@ void HTMLInputElement::setSize(unsigned size)
     setAttribute(sizeAttr, String::number(size));
 }
 
-void HTMLInputElement::setSize(unsigned size, ExceptionCode& ec)
+void HTMLInputElement::setSize(unsigned size, ExceptionState& es)
 {
     if (!size)
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
     else
         setSize(size);
 }
@@ -1377,11 +1366,6 @@ bool HTMLInputElement::receiveDroppedFiles(const DragData* dragData)
 String HTMLInputElement::droppedFileSystemId()
 {
     return m_inputType->droppedFileSystemId();
-}
-
-Icon* HTMLInputElement::icon() const
-{
-    return m_inputType->icon();
 }
 
 bool HTMLInputElement::canReceiveDroppedFiles() const
@@ -1744,26 +1728,22 @@ bool HTMLInputElement::shouldAppearIndeterminate() const
 }
 
 #if ENABLE(MEDIA_CAPTURE)
-String HTMLInputElement::capture() const
+bool HTMLInputElement::capture() const
 {
-    if (!isFileUpload())
-        return String();
+    if (!isFileUpload() || !fastHasAttribute(captureAttr))
+        return false;
 
-    String capture = fastGetAttribute(captureAttr).lower();
-    if (capture == "camera"
-        || capture == "camcorder"
-        || capture == "microphone"
-        || capture == "filesystem")
-        return capture;
+    // As per crbug.com/240252, emit a deprecation warning when the "capture"
+    // attribute is used as an enum. The spec has been updated and "capture" is
+    // supposed to be used as a boolean.
+    bool hasDeprecatedUsage = !fastGetAttribute(captureAttr).isNull();
+    if (hasDeprecatedUsage)
+        UseCounter::countDeprecation(document(), UseCounter::CaptureAttributeAsEnum);
+    else
+        UseCounter::count(document(), UseCounter::CaptureAttributeAsEnum);
 
-    return "filesystem";
+    return true;
 }
-
-void HTMLInputElement::setCapture(const String& value)
-{
-    setAttribute(captureAttr, value);
-}
-
 #endif
 
 bool HTMLInputElement::isInRequiredRadioButtonGroup()
@@ -1840,24 +1820,24 @@ void ListAttributeTargetObserver::idTargetChanged()
     m_element->listAttributeTargetChanged();
 }
 
-void HTMLInputElement::setRangeText(const String& replacement, ExceptionCode& ec)
+void HTMLInputElement::setRangeText(const String& replacement, ExceptionState& es)
 {
     if (!m_inputType->supportsSelectionAPI()) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
 
-    HTMLTextFormControlElement::setRangeText(replacement, ec);
+    HTMLTextFormControlElement::setRangeText(replacement, es);
 }
 
-void HTMLInputElement::setRangeText(const String& replacement, unsigned start, unsigned end, const String& selectionMode, ExceptionCode& ec)
+void HTMLInputElement::setRangeText(const String& replacement, unsigned start, unsigned end, const String& selectionMode, ExceptionState& es)
 {
     if (!m_inputType->supportsSelectionAPI()) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
 
-    HTMLTextFormControlElement::setRangeText(replacement, start, end, selectionMode, ec);
+    HTMLTextFormControlElement::setRangeText(replacement, start, end, selectionMode, es);
 }
 
 bool HTMLInputElement::setupDateTimeChooserParameters(DateTimeChooserParameters& parameters)
@@ -1903,15 +1883,9 @@ bool HTMLInputElement::setupDateTimeChooserParameters(DateTimeChooserParameters&
     return true;
 }
 
-void HTMLInputElement::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+bool HTMLInputElement::supportsInputModeAttribute() const
 {
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    HTMLTextFormControlElement::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_name, "name");
-    info.addMember(m_valueIfDirty, "valueIfDirty");
-    info.addMember(m_suggestedValue, "suggestedValue");
-    info.addMember(m_inputType, "inputType");
-    info.addMember(m_listAttributeTargetObserver, "listAttributeTargetObserver");
+    return m_inputType->supportsInputModeAttribute();
 }
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)

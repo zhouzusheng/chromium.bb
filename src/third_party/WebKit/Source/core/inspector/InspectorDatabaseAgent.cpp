@@ -27,11 +27,10 @@
  */
 
 #include "config.h"
-
 #include "core/inspector/InspectorDatabaseAgent.h"
 
 #include "InspectorFrontend.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/html/VoidCallback.h"
 #include "core/inspector/InspectorDatabaseResource.h"
 #include "core/inspector/InspectorState.h"
@@ -50,8 +49,7 @@
 #include "modules/webdatabase/SQLTransaction.h"
 #include "modules/webdatabase/SQLTransactionCallback.h"
 #include "modules/webdatabase/SQLTransactionErrorCallback.h"
-
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 typedef WebCore::InspectorBackendDispatcher::DatabaseCommandHandler::ExecuteSQLCallback ExecuteSQLCallback;
 
@@ -121,7 +119,7 @@ public:
     virtual bool handleEvent(SQLTransaction*, SQLError* error)
     {
         reportTransactionFailed(m_requestCallback.get(), error);
-        return true;  
+        return true;
     }
 
 private:

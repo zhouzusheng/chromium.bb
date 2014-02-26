@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef PerspectiveTransformOperation_h
@@ -40,11 +40,11 @@ public:
     }
 
     Length perspective() const { return m_p; }
-    
+
 private:
     virtual bool isIdentity() const { return !floatValueForLength(m_p, 1); }
-    virtual OperationType getOperationType() const { return PERSPECTIVE; }
-    virtual bool isSameType(const TransformOperation& o) const { return o.getOperationType() == PERSPECTIVE; }
+    virtual OperationType getOperationType() const { return Perspective; }
+    virtual bool isSameType(const TransformOperation& o) const { return o.getOperationType() == Perspective; }
 
     virtual bool operator==(const TransformOperation& o) const
     {

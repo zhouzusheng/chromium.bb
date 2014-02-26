@@ -75,35 +75,35 @@ String AccessibilityMediaControl::controlTypeName() const
 {
     switch (controlType()) {
     case MediaEnterFullscreenButton:
-        return ASCIILiteral("EnterFullscreenButton");
+        return "EnterFullscreenButton";
     case MediaExitFullscreenButton:
-        return ASCIILiteral("ExitFullscreenButton");
+        return "ExitFullscreenButton";
     case MediaMuteButton:
-        return ASCIILiteral("MuteButton");
+        return "MuteButton";
     case MediaPlayButton:
-        return ASCIILiteral("PlayButton");
+        return "PlayButton";
     case MediaSeekBackButton:
-        return ASCIILiteral("SeekBackButton");
+        return "SeekBackButton";
     case MediaSeekForwardButton:
-        return ASCIILiteral("SeekForwardButton");
+        return "SeekForwardButton";
     case MediaRewindButton:
-        return ASCIILiteral("RewindButton");
+        return "RewindButton";
     case MediaReturnToRealtimeButton:
-        return ASCIILiteral("ReturnToRealtimeButton");
+        return "ReturnToRealtimeButton";
     case MediaUnMuteButton:
-        return ASCIILiteral("UnMuteButton");
+        return "UnMuteButton";
     case MediaPauseButton:
-        return ASCIILiteral("PauseButton");
+        return "PauseButton";
     case MediaStatusDisplay:
-        return ASCIILiteral("StatusDisplay");
+        return "StatusDisplay";
     case MediaCurrentTimeDisplay:
-        return ASCIILiteral("CurrentTimeDisplay");
+        return "CurrentTimeDisplay";
     case MediaTimeRemainingDisplay:
-        return ASCIILiteral("TimeRemainingDisplay");
+        return "TimeRemainingDisplay";
     case MediaShowClosedCaptionsButton:
-        return ASCIILiteral("ShowClosedCaptionsButton");
+        return "ShowClosedCaptionsButton";
     case MediaHideClosedCaptionsButton:
-        return ASCIILiteral("HideClosedCaptionsButton");
+        return "HideClosedCaptionsButton";
 
     default:
         break;
@@ -126,12 +126,12 @@ void AccessibilityMediaControl::accessibilityText(Vector<AccessibilityText>& tex
     if (!helptext.isEmpty())
         textOrder.append(AccessibilityText(helptext, HelpText));
 }
-    
+
 
 String AccessibilityMediaControl::title() const
 {
     if (controlType() == MediaControlsPanel)
-        return localizedMediaControlElementString(ASCIILiteral("ControlsPanel"));
+        return localizedMediaControlElementString("ControlsPanel");
 
     return AccessibilityRenderObject::title();
 }
@@ -222,8 +222,8 @@ bool AccessibilityMediaControlsContainer::controllingVideoElement() const
 const String AccessibilityMediaControlsContainer::elementTypeName() const
 {
     if (controllingVideoElement())
-        return ASCIILiteral("VideoElement");
-    return ASCIILiteral("AudioElement");
+        return "VideoElement";
+    return "AudioElement";
 }
 
 bool AccessibilityMediaControlsContainer::computeAccessibilityIsIgnored() const
@@ -255,7 +255,7 @@ String AccessibilityMediaTimeline::valueDescription() const
 
 String AccessibilityMediaTimeline::helpText() const
 {
-    return localizedMediaControlElementHelpText(ASCIILiteral("Slider"));
+    return localizedMediaControlElementHelpText("Slider");
 }
 
 
@@ -279,16 +279,16 @@ bool AccessibilityMediaTimeDisplay::computeAccessibilityIsIgnored() const
 
     if (!m_renderer->style()->width().value())
         return true;
-    
+
     return accessibilityIsIgnoredByDefault();
 }
 
 String AccessibilityMediaTimeDisplay::accessibilityDescription() const
 {
     if (controlType() == MediaCurrentTimeDisplay)
-        return localizedMediaControlElementString(ASCIILiteral("CurrentTimeDisplay"));
+        return localizedMediaControlElementString("CurrentTimeDisplay");
 
-    return localizedMediaControlElementString(ASCIILiteral("TimeRemainingDisplay"));
+    return localizedMediaControlElementString("TimeRemainingDisplay");
 }
 
 String AccessibilityMediaTimeDisplay::stringValue() const

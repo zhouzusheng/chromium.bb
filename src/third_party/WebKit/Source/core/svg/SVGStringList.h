@@ -23,7 +23,7 @@
 
 #include "core/dom/QualifiedName.h"
 #include "core/svg/properties/SVGPropertyTraits.h"
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -45,6 +45,9 @@ public:
     String valueAsString() const;
 
 private:
+    template<typename CharType>
+    void parseInternal(const CharType*& ptr, const CharType* end, UChar delimiter);
+
     const QualifiedName& m_attributeName;
 };
 

@@ -6,7 +6,6 @@
 
 #include "base/strings/string_number_conversions.h"
 #include "net/base/ip_endpoint.h"
-#include "third_party/WebKit/public/web/WebBindings.h"
 #include "ui/base/range/range.h"
 
 namespace {
@@ -66,7 +65,7 @@ bool ParamTraits<ui::Range>::Read(const Message* m,
 }
 
 void ParamTraits<ui::Range>::Log(const ui::Range& r, std::string* l) {
-  l->append(base::StringPrintf("(%"PRIuS", %"PRIuS")", r.start(), r.end()));
+  l->append(base::StringPrintf("(%" PRIuS ", %" PRIuS ")", r.start(), r.end()));
 }
 
 void ParamTraits<WebInputEventPointer>::Write(Message* m, const param_type& p) {

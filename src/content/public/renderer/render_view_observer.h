@@ -62,12 +62,6 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
   virtual void DidCommitProvisionalLoad(WebKit::WebFrame* frame,
                                         bool is_new_navigation) {}
   virtual void DidClearWindowObject(WebKit::WebFrame* frame) {}
-  virtual void WillPerformClientRedirect(
-      WebKit::WebFrame* frame, const WebKit::WebURL& from,
-      const WebKit::WebURL& to, double interval, double fire_time) {}
-  virtual void DidCancelClientRedirect(WebKit::WebFrame* frame) {}
-  virtual void DidCompleteClientRedirect(WebKit::WebFrame* frame,
-                                         const WebKit::WebURL& from) {}
   virtual void DidCreateDocumentElement(WebKit::WebFrame* frame) {}
   virtual void FrameCreated(WebKit::WebFrame* parent,
                             WebKit::WebFrame* frame) {}
@@ -102,15 +96,15 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
   // IPC::Listener implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
- protected:
-  explicit RenderViewObserver(RenderView* render_view);
-  virtual ~RenderViewObserver();
-
   // IPC::Sender implementation.
   virtual bool Send(IPC::Message* message) OVERRIDE;
 
   RenderView* render_view() const;
-  int routing_id() { return routing_id_; }
+  int routing_id() const { return routing_id_; }
+
+ protected:
+  explicit RenderViewObserver(RenderView* render_view);
+  virtual ~RenderViewObserver();
 
  private:
   friend class RenderViewImpl;

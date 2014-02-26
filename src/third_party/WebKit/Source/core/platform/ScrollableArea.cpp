@@ -1,11 +1,11 @@
 /*
  * Copyright (c) 2010, Google Inc. All rights reserved.
  * Copyright (C) 2008, 2011 Apple Inc. All Rights Reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  *     * Redistributions of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
  *     * Redistributions in binary form must reproduce the above
@@ -15,7 +15,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -32,14 +32,16 @@
 #include "config.h"
 #include "core/platform/ScrollableArea.h"
 
-#include "core/platform/PlatformMemoryInstrumentation.h"
 #include "core/platform/ScrollAnimator.h"
 #include "core/platform/ScrollbarTheme.h"
 #include "core/platform/graphics/FloatPoint.h"
 #include "core/platform/graphics/GraphicsLayer.h"
-#include <wtf/PassOwnPtr.h>
+#include "wtf/PassOwnPtr.h"
 
 #include "core/platform/chromium/TraceEvent.h"
+
+static const int kPixelsPerLineStep = 40;
+static const float kMinFractionToStepWhenPaging = 0.875f;
 
 namespace WebCore {
 
@@ -51,6 +53,22 @@ struct SameSizeAsScrollableArea {
 };
 
 COMPILE_ASSERT(sizeof(ScrollableArea) == sizeof(SameSizeAsScrollableArea), ScrollableArea_should_stay_small);
+
+int ScrollableArea::pixelsPerLineStep()
+{
+    return kPixelsPerLineStep;
+}
+
+float ScrollableArea::minFractionToStepWhenPaging()
+{
+    return kMinFractionToStepWhenPaging;
+}
+
+int ScrollableArea::maxOverlapBetweenPages()
+{
+    static int maxOverlapBetweenPages = ScrollbarTheme::theme()->maxOverlapBetweenPages();
+    return maxOverlapBetweenPages;
+}
 
 ScrollableArea::ScrollableArea()
     : m_constrainsScrollingToContentEdge(true)
@@ -85,32 +103,29 @@ void ScrollableArea::setScrollOrigin(const IntPoint& origin)
 bool ScrollableArea::scroll(ScrollDirection direction, ScrollGranularity granularity, float multiplier)
 {
     ScrollbarOrientation orientation;
-    Scrollbar* scrollbar;
-    if (direction == ScrollUp || direction == ScrollDown) {
-        orientation = VerticalScrollbar;
-        scrollbar = verticalScrollbar();
-    } else {
-        orientation = HorizontalScrollbar;
-        scrollbar = horizontalScrollbar();
-    }
 
-    if (!scrollbar)
+    if (direction == ScrollUp || direction == ScrollDown)
+        orientation = VerticalScrollbar;
+    else
+        orientation = HorizontalScrollbar;
+
+    if (!userInputScrollable(orientation))
         return false;
 
     float step = 0;
     switch (granularity) {
     case ScrollByLine:
-        step = scrollbar->lineStep();
+        step = lineStep(orientation);
         break;
     case ScrollByPage:
-        step = scrollbar->pageStep();
+        step = pageStep(orientation);
         break;
     case ScrollByDocument:
-        step = scrollbar->totalSize();
+        step = documentStep(orientation);
         break;
     case ScrollByPixel:
     case ScrollByPrecisePixel:
-        step = scrollbar->pixelStep();
+        step = pixelStep(orientation);
         break;
     }
 
@@ -209,7 +224,7 @@ void ScrollableArea::willEndLiveResize()
     m_inLiveResize = false;
     if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
         scrollAnimator->willEndLiveResize();
-}    
+}
 
 void ScrollableArea::contentAreaWillPaint() const
 {
@@ -309,7 +324,7 @@ void ScrollableArea::setScrollbarOverlayStyle(ScrollbarOverlayStyle overlayStyle
         ScrollbarTheme::theme()->updateScrollbarOverlayStyle(horizontalScrollbar());
         horizontalScrollbar()->invalidate();
     }
-    
+
     if (verticalScrollbar()) {
         ScrollbarTheme::theme()->updateScrollbarOverlayStyle(verticalScrollbar());
         verticalScrollbar()->invalidate();
@@ -364,23 +379,6 @@ void ScrollableArea::serviceScrollAnimations()
         scrollAnimator->serviceScrollAnimations();
 }
 
-IntPoint ScrollableArea::scrollPosition() const
-{
-    int x = horizontalScrollbar() ? horizontalScrollbar()->value() : 0;
-    int y = verticalScrollbar() ? verticalScrollbar()->value() : 0;
-    return IntPoint(x, y);
-}
-
-IntPoint ScrollableArea::minimumScrollPosition() const
-{
-    return IntPoint();
-}
-
-IntPoint ScrollableArea::maximumScrollPosition() const
-{
-    return IntPoint(contentsSize().width() - visibleWidth(), contentsSize().height() - visibleHeight());
-}
-
 IntRect ScrollableArea::visibleContentRect(VisibleContentRectIncludesScrollbars scrollbarInclusion) const
 {
     int verticalScrollbarWidth = 0;
@@ -404,10 +402,19 @@ IntPoint ScrollableArea::clampScrollPosition(const IntPoint& scrollPosition) con
     return scrollPosition.shrunkTo(maximumScrollPosition()).expandedTo(minimumScrollPosition());
 }
 
-void ScrollableArea::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+int ScrollableArea::lineStep(ScrollbarOrientation) const
 {
-    MemoryClassInfo info(memoryObjectInfo, this);
-    info.addMember(m_scrollAnimator, "scrollAnimator");
+    return pixelsPerLineStep();
+}
+
+int ScrollableArea::documentStep(ScrollbarOrientation orientation) const
+{
+    return scrollSize(orientation);
+}
+
+float ScrollableArea::pixelStep(ScrollbarOrientation) const
+{
+    return 1;
 }
 
 } // namespace WebCore

@@ -12,13 +12,13 @@
 
 #include "base/containers/hash_tables.h"
 #include "base/memory/linked_ptr.h"
+#include "base/memory/shared_memory.h"
 #include "base/memory/weak_ptr.h"
-#include "base/shared_memory.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
-#include "webkit/glue/resource_loader_bridge.h"
+#include "webkit/child/resource_loader_bridge.h"
 
 namespace content {
 class ResourceDispatcherDelegate;

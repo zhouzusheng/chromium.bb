@@ -12,10 +12,12 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop.h"
-#include "base/time.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string_util.h"
+#include "base/time/time.h"
 #include "cc/resources/sync_point_helper.h"
 #include "content/common/gpu/client/gl_helper_scaling.h"
+#include "gpu/command_buffer/common/mailbox.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
@@ -124,6 +126,11 @@ class GLHelper::CopyTextureToImpl :
     CancelRequests();
   }
 
+  WebGLId ConsumeMailboxToTexture(const gpu::Mailbox& mailbox,
+                                  uint32 sync_point) {
+    return helper_->ConsumeMailboxToTexture(mailbox, sync_point);
+  }
+
   void CropScaleReadbackAndCleanTexture(
       WebGLId src_texture,
       const gfx::Size& src_size,
@@ -147,7 +154,7 @@ class GLHelper::CopyTextureToImpl :
       const base::Callback<void(bool)>& callback);
 
   void ReadbackPlane(TextureFrameBufferPair* source,
-                     media::VideoFrame* target,
+                     const scoped_refptr<media::VideoFrame>& target,
                      int plane,
                      int size_shift,
                      const gfx::Rect& dst_subrect,
@@ -188,20 +195,24 @@ class GLHelper::CopyTextureToImpl :
             int32 row_stride_bytes_,
             unsigned char* pixels_,
             const base::Callback<void(bool)>& callback_)
-        : size(size_),
+        : done(false),
+          size(size_),
           bytes_per_row(bytes_per_row_),
           row_stride_bytes(row_stride_bytes_),
           pixels(pixels_),
           callback(callback_),
-          buffer(0) {
+          buffer(0),
+          query(0) {
     }
 
+    bool done;
     gfx::Size size;
     int bytes_per_row;
     int row_stride_bytes;
     unsigned char* pixels;
     base::Callback<void(bool)> callback;
     GLuint buffer;
+    WebKit::WebGLId query;
   };
 
   // A readback pipeline that also converts the data to YUV before
@@ -219,8 +230,9 @@ class GLHelper::CopyTextureToImpl :
                     bool flip_vertically);
 
     virtual void ReadbackYUV(
-        WebKit::WebGLId src_texture,
-        media::VideoFrame* target,
+        const gpu::Mailbox& mailbox,
+        uint32 sync_point,
+        const scoped_refptr<media::VideoFrame>& target,
         const base::Callback<void(bool)>& callback) OVERRIDE;
 
     virtual ScalerInterface* scaler() OVERRIDE {
@@ -256,8 +268,9 @@ class GLHelper::CopyTextureToImpl :
                     bool flip_vertically);
 
     virtual void ReadbackYUV(
-        WebKit::WebGLId src_texture,
-        media::VideoFrame* target,
+        const gpu::Mailbox& mailbox,
+        uint32 sync_point,
+        const scoped_refptr<media::VideoFrame>& target,
         const base::Callback<void(bool)>& callback) OVERRIDE;
 
     virtual ScalerInterface* scaler() OVERRIDE {
@@ -292,7 +305,7 @@ class GLHelper::CopyTextureToImpl :
                        GLHelper::ScalerQuality quality);
 
   static void nullcallback(bool success) {}
-  void ReadbackDone(Request* request);
+  void ReadbackDone(Request *request);
   void FinishRequest(Request* request, bool result);
   void CancelRequests();
 
@@ -380,12 +393,16 @@ void GLHelper::CopyTextureToImpl::ReadbackAsync(
                        NULL,
                        GL_STREAM_READ);
 
+  request->query = context_->createQueryEXT();
+  context_->beginQueryEXT(GL_ASYNC_READ_PIXELS_COMPLETED_CHROMIUM,
+                          request->query);
   context_->readPixels(0, 0, dst_size.width(), dst_size.height(),
                        GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+  context_->endQueryEXT(GL_ASYNC_READ_PIXELS_COMPLETED_CHROMIUM);
   context_->bindBuffer(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM, 0);
-  cc::SyncPointHelper::SignalSyncPoint(
+  cc::SyncPointHelper::SignalQuery(
       context_,
-      context_->insertSyncPoint(),
+      request->query,
       base::Bind(&CopyTextureToImpl::ReadbackDone, AsWeakPtr(), request));
 }
 
@@ -463,45 +480,59 @@ WebKit::WebGLId GLHelper::CopyTextureToImpl::CopyAndScaleTexture(
                       quality);
 }
 
-void GLHelper::CopyTextureToImpl::ReadbackDone(Request* request) {
+void GLHelper::CopyTextureToImpl::ReadbackDone(Request* finished_request) {
   TRACE_EVENT0("mirror",
                "GLHelper::CopyTextureToImpl::CheckReadbackFramebufferComplete");
-  DCHECK(request == request_queue_.front());
+  finished_request->done = true;
 
-  bool result = false;
-  if (request->buffer != 0) {
-    context_->bindBuffer(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM,
-                         request->buffer);
-    unsigned char* data = static_cast<unsigned char *>(
-        context_->mapBufferCHROMIUM(
-            GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM, GL_READ_ONLY));
-    if (data) {
-      result = true;
-      if (request->bytes_per_row == request->size.width() * 4 &&
-          request->bytes_per_row == request->row_stride_bytes) {
-        memcpy(request->pixels, data, request->size.GetArea() * 4);
-      } else {
-        unsigned char* out = request->pixels;
-        for (int y = 0; y < request->size.height(); y++) {
-          memcpy(out, data, request->bytes_per_row);
-          out += request->row_stride_bytes;
-          data += request->size.width() * 4;
-        }
-      }
-      context_->unmapBufferCHROMIUM(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM);
+  // We process transfer requests in the order they were received, regardless
+  // of the order we get the callbacks in.
+  while (!request_queue_.empty()) {
+    Request* request = request_queue_.front();
+    if (!request->done) {
+      break;
     }
-    context_->bindBuffer(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM, 0);
-  }
 
-  FinishRequest(request, result);
+    bool result = false;
+    if (request->buffer != 0) {
+      context_->bindBuffer(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM,
+                           request->buffer);
+      unsigned char* data = static_cast<unsigned char *>(
+          context_->mapBufferCHROMIUM(
+              GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM, GL_READ_ONLY));
+      if (data) {
+        result = true;
+        if (request->bytes_per_row == request->size.width() * 4 &&
+            request->bytes_per_row == request->row_stride_bytes) {
+          memcpy(request->pixels, data, request->size.GetArea() * 4);
+        } else {
+          unsigned char* out = request->pixels;
+          for (int y = 0; y < request->size.height(); y++) {
+            memcpy(out, data, request->bytes_per_row);
+            out += request->row_stride_bytes;
+            data += request->size.width() * 4;
+          }
+        }
+        context_->unmapBufferCHROMIUM(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM);
+      }
+      context_->bindBuffer(GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM, 0);
+    }
+
+    FinishRequest(request, result);
+  }
 }
 
 void GLHelper::CopyTextureToImpl::FinishRequest(Request* request,
                                                 bool result) {
+  TRACE_EVENT0("mirror", "GLHelper::CopyTextureToImpl::FinishRequest");
   DCHECK(request_queue_.front() == request);
   request_queue_.pop();
   request->callback.Run(result);
   ScopedFlush flush(context_);
+  if (request->query != 0) {
+    context_->deleteQueryEXT(request->query);
+    request->query = 0;
+  }
   if (request->buffer != 0) {
     context_->deleteBuffer(request->buffer);
     request->buffer = 0;
@@ -539,6 +570,20 @@ void GLHelper::CropScaleReadbackAndCleanTexture(
       out,
       callback,
       GLHelper::SCALER_QUALITY_FAST);
+}
+
+void GLHelper::CropScaleReadbackAndCleanMailbox(
+    const gpu::Mailbox& src_mailbox,
+    uint32 sync_point,
+    const gfx::Size& src_size,
+    const gfx::Rect& src_subrect,
+    const gfx::Size& dst_size,
+    unsigned char* out,
+    const base::Callback<void(bool)>& callback) {
+  WebGLId mailbox_texture = ConsumeMailboxToTexture(src_mailbox, sync_point);
+  CropScaleReadbackAndCleanTexture(
+      mailbox_texture, src_size, src_subrect, dst_size, out, callback);
+  context_->deleteTexture(mailbox_texture);
 }
 
 void GLHelper::ReadbackTextureSync(WebKit::WebGLId texture,
@@ -645,6 +690,19 @@ WebKit::WebGLId GLHelper::CreateTexture() {
   return texture;
 }
 
+WebKit::WebGLId GLHelper::ConsumeMailboxToTexture(const gpu::Mailbox& mailbox,
+                                                  uint32 sync_point) {
+  if (mailbox.IsZero())
+    return 0;
+  if (sync_point)
+    context_->waitSyncPoint(sync_point);
+  WebKit::WebGLId texture = CreateTexture();
+  content::ScopedTextureBinder<GL_TEXTURE_2D> texture_binder(context_,
+                                                             texture);
+  context_->consumeTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name);
+  return texture;
+}
+
 void GLHelper::ResizeTexture(WebKit::WebGLId texture, const gfx::Size& size) {
   content::ScopedTextureBinder<GL_TEXTURE_2D> texture_binder(context_, texture);
   context_->texImage2D(GL_TEXTURE_2D, 0, GL_RGB,
@@ -671,7 +729,7 @@ void GLHelper::CopyTextureFullImage(WebKit::WebGLId texture,
 
 void GLHelper::CopyTextureToImpl::ReadbackPlane(
     TextureFrameBufferPair* source,
-    media::VideoFrame* target,
+    const scoped_refptr<media::VideoFrame>& target,
     int plane,
     int size_shift,
     const gfx::Rect& dst_subrect,
@@ -755,13 +813,24 @@ GLHelper::CopyTextureToImpl::ReadbackYUVImpl::ReadbackYUVImpl(
   DCHECK(!(dst_subrect.y() & 1));
 }
 
+static void CallbackKeepingVideoFrameAlive(
+    scoped_refptr<media::VideoFrame> video_frame,
+    const base::Callback<void(bool)>& callback,
+    bool success) {
+  callback.Run(success);
+}
 
 void GLHelper::CopyTextureToImpl::ReadbackYUVImpl::ReadbackYUV(
-    WebKit::WebGLId src_texture,
-    media::VideoFrame *target,
+    const gpu::Mailbox& mailbox,
+    uint32 sync_point,
+    const scoped_refptr<media::VideoFrame>& target,
     const base::Callback<void(bool)>& callback) {
+  WebGLId mailbox_texture =
+      copy_impl_->ConsumeMailboxToTexture(mailbox, sync_point);
+
   // Scale texture to right size.
-  scaler_.Scale(src_texture);
+  scaler_.Scale(mailbox_texture);
+  context_->deleteTexture(mailbox_texture);
 
   // Convert the scaled texture in to Y, U and V planes.
   y_.Scale(scaler_.texture());
@@ -775,7 +844,8 @@ void GLHelper::CopyTextureToImpl::ReadbackYUVImpl::ReadbackYUV(
     return;
   }
 
-  // Read back planes, one at a time.
+  // Read back planes, one at a time. Keep the video frame alive while doing the
+  // readback.
   copy_impl_->ReadbackPlane(y_.texture_and_framebuffer(),
                             target,
                             media::VideoFrame::kYPlane,
@@ -793,7 +863,9 @@ void GLHelper::CopyTextureToImpl::ReadbackYUVImpl::ReadbackYUV(
                             media::VideoFrame::kVPlane,
                             1,
                             dst_subrect_,
-                            callback);
+                            base::Bind(&CallbackKeepingVideoFrameAlive,
+                                       target,
+                                       callback));
   context_->bindFramebuffer(GL_FRAMEBUFFER, 0);
   media::LetterboxYUV(target, dst_subrect_);
 }
@@ -868,11 +940,17 @@ GLHelper::CopyTextureToImpl::ReadbackYUV_MRT::ReadbackYUV_MRT(
 }
 
 void GLHelper::CopyTextureToImpl::ReadbackYUV_MRT::ReadbackYUV(
-    WebKit::WebGLId src_texture,
-    media::VideoFrame *target,
+    const gpu::Mailbox& mailbox,
+    uint32 sync_point,
+    const scoped_refptr<media::VideoFrame>& target,
     const base::Callback<void(bool)>& callback) {
+  WebGLId mailbox_texture =
+      copy_impl_->ConsumeMailboxToTexture(mailbox, sync_point);
+
   // Scale texture to right size.
-  scaler_.Scale(src_texture);
+  scaler_.Scale(mailbox_texture);
+  context_->deleteTexture(mailbox_texture);
+
   std::vector<WebKit::WebGLId> outputs(2);
   // Convert the scaled texture in to Y, U and V planes.
   outputs[0] = y_.texture();
@@ -907,7 +985,9 @@ void GLHelper::CopyTextureToImpl::ReadbackYUV_MRT::ReadbackYUV(
                             media::VideoFrame::kVPlane,
                             1,
                             dst_subrect_,
-                            callback);
+                            base::Bind(&CallbackKeepingVideoFrameAlive,
+                                       target,
+                                       callback));
   context_->bindFramebuffer(GL_FRAMEBUFFER, 0);
   media::LetterboxYUV(target, dst_subrect_);
 }

@@ -19,15 +19,14 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGTransform.h"
 
 #include "core/platform/FloatConversion.h"
 #include "core/platform/graphics/FloatPoint.h"
 #include "core/platform/graphics/FloatSize.h"
-#include <wtf/MathExtras.h>
-#include <wtf/text/StringBuilder.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/MathExtras.h"
+#include "wtf/text/StringBuilder.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -59,7 +58,7 @@ void SVGTransform::setMatrix(const AffineTransform& matrix)
     m_matrix = matrix;
 }
 
-void SVGTransform::updateMatrix()
+void SVGTransform::updateSVGMatrix()
 {
     // The underlying matrix has been changed, alter the transformation type.
     // Spec: In case the matrix object is changed directly (i.e., without using the methods on the SVGTransform interface itself)
@@ -134,27 +133,27 @@ const String& SVGTransform::transformTypePrefixForParsing(SVGTransformType type)
     case SVG_TRANSFORM_UNKNOWN:
         return emptyString();
     case SVG_TRANSFORM_MATRIX: {
-        DEFINE_STATIC_LOCAL(String, matrixString, (ASCIILiteral("matrix(")));
+        DEFINE_STATIC_LOCAL(String, matrixString, ("matrix("));
         return matrixString;
     }
     case SVG_TRANSFORM_TRANSLATE: {
-        DEFINE_STATIC_LOCAL(String, translateString, (ASCIILiteral("translate(")));
+        DEFINE_STATIC_LOCAL(String, translateString, ("translate("));
         return translateString;
     }
     case SVG_TRANSFORM_SCALE: {
-        DEFINE_STATIC_LOCAL(String, scaleString, (ASCIILiteral("scale(")));
+        DEFINE_STATIC_LOCAL(String, scaleString, ("scale("));
         return scaleString;
     }
     case SVG_TRANSFORM_ROTATE: {
-        DEFINE_STATIC_LOCAL(String, rotateString, (ASCIILiteral("rotate(")));
+        DEFINE_STATIC_LOCAL(String, rotateString, ("rotate("));
         return rotateString;
-    }    
+    }
     case SVG_TRANSFORM_SKEWX: {
-        DEFINE_STATIC_LOCAL(String, skewXString, (ASCIILiteral("skewX(")));
+        DEFINE_STATIC_LOCAL(String, skewXString, ("skewX("));
         return skewXString;
     }
     case SVG_TRANSFORM_SKEWY: {
-        DEFINE_STATIC_LOCAL(String, skewYString, (ASCIILiteral("skewY(")));
+        DEFINE_STATIC_LOCAL(String, skewYString, ("skewY("));
         return skewYString;
     }
     }

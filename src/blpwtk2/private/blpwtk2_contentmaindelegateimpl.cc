@@ -65,13 +65,6 @@ ContentClient::~ContentClient()
 {
 }
 
-void ContentClient::registerPlugin(const char* pluginPath)
-{
-    base::FilePath path = base::FilePath::FromUTF8Unsafe(pluginPath);
-    path = base::MakeAbsoluteFilePath(path);
-    d_pluginPaths.push_back(path);
-}
-
 // Returns the user agent.
 std::string ContentClient::GetUserAgent() const
 {
@@ -86,20 +79,6 @@ base::StringPiece ContentClient::GetDataResource(
 {
     return ui::ResourceBundle::GetSharedInstance().GetRawDataResourceForScale(
         resource_id, scale_factor);
-}
-
-void ContentClient::AddNPAPIPlugins(
-    webkit::npapi::PluginList* plugin_list)
-{
-    for (size_t i = 0; i < d_pluginPaths.size(); ++i) {
-        // Using the PluginService instead of PluginList because we don't want
-        // to link directly to PluginList.  PluginList is linked statically
-        // in plugin_common, which is linked into the content module.  If we
-        // link plugin_common as well, then this also exposes
-        // PluginList::GetInstance(), which (in component builds) would give us
-        // a different instance than the one used in the content module.
-        content::PluginService::GetInstance()->AddExtraPluginPath(d_pluginPaths[i]);
-    }
 }
 
 ContentMainDelegateImpl::ContentMainDelegateImpl(bool isSubProcess,
@@ -126,7 +105,16 @@ void ContentMainDelegateImpl::setRendererInfoMap(
 
 void ContentMainDelegateImpl::registerPlugin(const char* pluginPath)
 {
-    d_contentClient.registerPlugin(pluginPath);
+    base::FilePath path = base::FilePath::FromUTF8Unsafe(pluginPath);
+    path = base::MakeAbsoluteFilePath(path);
+    d_pluginPaths.push_back(path);
+}
+
+void ContentMainDelegateImpl::addPluginsToPluginService()
+{
+    for (size_t i = 0; i < d_pluginPaths.size(); ++i) {
+        content::PluginService::GetInstance()->AddExtraPluginPath(d_pluginPaths[i]);
+    }
 }
 
 // ContentMainDelegate implementation
@@ -170,7 +158,7 @@ void ContentMainDelegateImpl::PreSandboxStartup()
         base::FilePath pak_dir;
         PathService::Get(base::DIR_MODULE, &pak_dir);
         pak_file = pak_dir.AppendASCII(BLPWTK2_DEVTOOLS_PAK_NAME);
-        if (file_util::PathExists(pak_file)) {
+        if (base::PathExists(pak_file)) {
             Statics::hasDevTools = true;
             ui::ResourceBundle::GetSharedInstance().AddDataPackFromPath(
                 pak_file,

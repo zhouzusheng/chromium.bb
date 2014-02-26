@@ -10,7 +10,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_checker.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/disk_cache/cache_util.h"
 #include "net/disk_cache/file_lock.h"
 #include "net/disk_cache/trace.h"
@@ -450,7 +450,7 @@ bool BlockFiles::OpenBlockFile(int index) {
     return false;
   }
 
-  BlockHeader header(file);
+  BlockHeader header(file.get());
   if (kBlockMagic != header->magic || kBlockVersion2 != header->version) {
     LOG(ERROR) << "Invalid file version or magic " << name.value();
     return false;

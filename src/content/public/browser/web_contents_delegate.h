@@ -25,7 +25,6 @@
 #include "ui/gfx/vector2d.h"
 
 class GURL;
-struct WebDropData;
 
 namespace base {
 class FilePath;
@@ -42,8 +41,10 @@ class RenderViewHost;
 class WebContents;
 class WebContentsImpl;
 struct ContextMenuParams;
+struct DropData;
 struct FileChooserParams;
 struct NativeWebKeyboardEvent;
+struct Referrer;
 struct SSLStatus;
 }
 
@@ -55,6 +56,7 @@ class Size;
 
 namespace WebKit {
 class WebLayer;
+struct WebWindowFeatures;
 }
 
 namespace content {
@@ -163,6 +165,10 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Called to determine if the WebContents can be overscrolled with touch/wheel
   // gestures.
   virtual bool CanOverscrollContent() const;
+
+  // Callback that allows vertical overscroll activies to be communicated to the
+  // delegate.
+  virtual void OverscrollUpdate(int delta_y) {}
 
   // Check whether this contents is permitted to load data URLs in WebUI mode.
   // This is normally disallowed for security.
@@ -280,7 +286,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   // true to allow dragging and dropping on the web contents window or false to
   // cancel the operation. This method is used by Chromium Embedded Framework.
   virtual bool CanDragEnter(WebContents* source,
-                            const WebDropData& data,
+                            const DropData& data,
                             WebKit::WebDragOperationsMask operations_allowed);
 
   // Render view drag n drop ended.
@@ -301,7 +307,12 @@ class CONTENT_EXPORT WebContentsDelegate {
       int route_id,
       WindowContainerType window_container_type,
       const string16& frame_name,
-      const GURL& target_url);
+      const GURL& target_url,
+      const Referrer& referrer,
+      WindowOpenDisposition disposition,
+      const WebKit::WebWindowFeatures& features,
+      bool user_gesture,
+      bool opener_suppressed);
 
   // Notifies the delegate about the creation of a new WebContents. This
   // typically happens when popups are created.
@@ -311,10 +322,6 @@ class CONTENT_EXPORT WebContentsDelegate {
                                   const GURL& target_url,
                                   const ContentCreatedParams& params,
                                   WebContents* new_contents) {}
-
-  // Notifies the delegate that the content restrictions for this tab has
-  // changed.
-  virtual void ContentRestrictionsChanged(WebContents* source) {}
 
   // Notification that the tab is hung.
   virtual void RendererUnresponsive(WebContents* source) {}
@@ -426,7 +433,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   virtual void RequestMediaAccessPermission(
       WebContents* web_contents,
       const MediaStreamRequest& request,
-      const MediaResponseCallback& callback) {}
+      const MediaResponseCallback& callback);
 
   // Requests permission to access the PPAPI broker. The delegate should return
   // true and call the passed in |callback| with the result, or return false

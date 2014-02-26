@@ -37,6 +37,8 @@
 
 namespace WebCore {
 
+class ExceptionState;
+
 class FileError : public RefCounted<FileError>, public ScriptWrappable {
 public:
     enum ErrorCode {
@@ -55,9 +57,23 @@ public:
         PATH_EXISTS_ERR = 12,
     };
 
+    static const char abortErrorMessage[];
+    static const char encodingErrorMessage[];
+    static const char invalidStateErrorMessage[];
+    static const char noModificationAllowedErrorMessage[];
+    static const char notFoundErrorMessage[];
+    static const char notReadableErrorMessage[];
+    static const char pathExistsErrorMessage[];
+    static const char quotaExceededErrorMessage[];
+    static const char securityErrorMessage[];
+    static const char syntaxErrorMessage[];
+    static const char typeMismatchErrorMessage[];
+
     static PassRefPtr<FileError> create(ErrorCode code) { return adoptRef(new FileError(code)); }
 
     ErrorCode code() const { return m_code; }
+
+    static void throwDOMException(ExceptionState&, ErrorCode);
 
 private:
     FileError(ErrorCode code)

@@ -38,13 +38,12 @@
 namespace WebCore {
 
 class DOMRequestState;
+class ExceptionState;
 class IDBAny;
 class IDBCallbacks;
 class IDBCursorBackendInterface;
 class IDBRequest;
 class ScriptExecutionContext;
-
-typedef int ExceptionCode;
 
 class IDBCursor : public ScriptWrappable, public RefCounted<IDBCursor> {
 public:
@@ -53,33 +52,34 @@ public:
     static const AtomicString& directionPrev();
     static const AtomicString& directionPrevUnique();
 
-    static IndexedDB::CursorDirection stringToDirection(const String& modeString, ExceptionCode&);
+    static IndexedDB::CursorDirection stringToDirection(const String& modeString, ExceptionState&);
     static const AtomicString& directionToString(unsigned short mode);
 
     static PassRefPtr<IDBCursor> create(PassRefPtr<IDBCursorBackendInterface>, IndexedDB::CursorDirection, IDBRequest*, IDBAny* source, IDBTransaction*);
     virtual ~IDBCursor();
 
     // Implement the IDL
-    const String& direction() const;
-    const ScriptValue& key() const;
-    const ScriptValue& primaryKey() const;
-    const ScriptValue& value() const;
-    IDBAny* source() const;
+    const String& direction() const { return directionToString(m_direction); }
+    const ScriptValue& key() const { return m_currentKeyValue; }
+    const ScriptValue& primaryKey() const { return m_currentPrimaryKeyValue; }
+    const ScriptValue& value() const { return m_currentValue; }
+    IDBAny* source() const { return m_source.get(); }
 
-    PassRefPtr<IDBRequest> update(ScriptState*, ScriptValue&, ExceptionCode&);
-    void advance(unsigned long, ExceptionCode&);
-    void continueFunction(ScriptExecutionContext*, const ScriptValue& key, ExceptionCode&);
-    PassRefPtr<IDBRequest> deleteFunction(ScriptExecutionContext*, ExceptionCode&);
+    PassRefPtr<IDBRequest> update(ScriptState*, ScriptValue&, ExceptionState&);
+    void advance(unsigned long, ExceptionState&);
+    void continueFunction(ScriptExecutionContext*, const ScriptValue& key, ExceptionState&);
+    PassRefPtr<IDBRequest> deleteFunction(ScriptExecutionContext*, ExceptionState&);
 
-    void continueFunction(PassRefPtr<IDBKey>, ExceptionCode&);
+    void continueFunction(PassRefPtr<IDBKey>, ExceptionState&);
     void postSuccessHandlerCallback();
     void close();
     void setValueReady(DOMRequestState*, PassRefPtr<IDBKey>, PassRefPtr<IDBKey> primaryKey, ScriptValue&);
     PassRefPtr<IDBKey> idbPrimaryKey() { return m_currentPrimaryKey; }
+    virtual bool isKeyCursor() const { return true; }
+    virtual bool isCursorWithValue() const { return false; }
 
 protected:
     IDBCursor(PassRefPtr<IDBCursorBackendInterface>, IndexedDB::CursorDirection, IDBRequest*, IDBAny* source, IDBTransaction*);
-    virtual bool isKeyCursor() const { return true; }
 
 private:
     PassRefPtr<IDBObjectStore> effectiveObjectStore();

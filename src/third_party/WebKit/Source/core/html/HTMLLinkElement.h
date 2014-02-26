@@ -32,8 +32,8 @@
 #include "core/html/LinkResource.h"
 #include "core/loader/LinkLoader.h"
 #include "core/loader/LinkLoaderClient.h"
-#include "core/loader/cache/CachedResourceHandle.h"
-#include "core/loader/cache/CachedStyleSheetClient.h"
+#include "core/loader/cache/ResourcePtr.h"
+#include "core/loader/cache/StyleSheetResourceClient.h"
 
 namespace WebCore {
 
@@ -54,7 +54,7 @@ typedef EventSender<HTMLLinkElement> LinkEventSender;
 // changing @rel makes it harder to move such a design so we are
 // sticking current way so far.
 //
-class LinkStyle FINAL : public LinkResource, CachedStyleSheetClient {
+class LinkStyle FINAL : public LinkResource, StyleSheetResourceClient {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     static PassRefPtr<LinkStyle> create(HTMLLinkElement* owner);
@@ -65,6 +65,7 @@ public:
     virtual Type type() const OVERRIDE { return Style; }
     virtual void process() OVERRIDE;
     virtual void ownerRemoved() OVERRIDE;
+    virtual bool hasLoaded() const OVERRIDE { return m_loadedSheet; }
 
     void startLoadingDynamicSheet();
     void notifyLoadedSheetAndAllCriticalSubresources(bool errorOccurred);
@@ -75,7 +76,6 @@ public:
 
     bool styleSheetIsLoading() const;
     bool hasSheet() const { return m_sheet; }
-    bool hasLoadedSheet() const { return m_loadedSheet; }
     bool isDisabled() const { return m_disabledState == Disabled; }
     bool isEnabledViaScript() const { return m_disabledState == EnabledViaScript; }
     bool isUnset() const { return m_disabledState == Unset; }
@@ -83,8 +83,8 @@ public:
     CSSStyleSheet* sheet() const { return m_sheet.get(); }
 
 private:
-    // From CachedResourceClient
-    virtual void setCSSStyleSheet(const String& href, const KURL& baseURL, const String& charset, const CachedCSSStyleSheet*);
+    // From ResourceClient
+    virtual void setCSSStyleSheet(const String& href, const KURL& baseURL, const String& charset, const CSSStyleSheetResource*);
 
     enum DisabledState {
         Unset,
@@ -108,7 +108,7 @@ private:
     void removePendingSheet(RemovePendingSheetNotificationType = RemovePendingSheetNotifyImmediately);
     Document* document();
 
-    CachedResourceHandle<CachedCSSStyleSheet> m_cachedSheet;
+    ResourcePtr<CSSStyleSheetResource> m_resource;
     RefPtr<CSSStyleSheet> m_sheet;
     DisabledState m_disabledState;
     PendingSheetType m_pendingSheetType;
@@ -149,6 +149,7 @@ public:
     DOMSettableTokenList* sizes() const;
 
     void dispatchPendingEvent(LinkEventSender*);
+    void scheduleEvent();
     static void dispatchPendingLoadEvents();
 
     // From LinkLoaderClient
@@ -202,6 +203,12 @@ private:
     bool m_isInShadowTree;
     int m_beforeLoadRecurseCount;
 };
+
+inline HTMLLinkElement* toHTMLLinkElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::linkTag));
+    return static_cast<HTMLLinkElement*>(node);
+}
 
 } //namespace
 

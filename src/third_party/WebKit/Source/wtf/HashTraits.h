@@ -21,9 +21,10 @@
 #ifndef WTF_HashTraits_h
 #define WTF_HashTraits_h
 
-#include <wtf/HashFunctions.h>
-#include <wtf/StdLibExtras.h>
-#include <wtf/TypeTraits.h>
+#include "wtf/HashFunctions.h"
+#include "wtf/HashTableDeletedValueType.h"
+#include "wtf/StdLibExtras.h"
+#include "wtf/TypeTraits.h"
 #include <utility>
 #include <limits>
 
@@ -41,7 +42,7 @@ namespace WTF {
     template<typename T> struct GenericHashTraitsBase<false, T> {
         // The emptyValueIsZero flag is used to optimize allocation of empty hash tables with zeroed memory.
         static const bool emptyValueIsZero = false;
-        
+
         // The hasIsEmptyValueFunction flag allows the hash table to automatically generate code to check
         // for the empty value when it can be done with the equality operator, but allows custom functions
         // for cases like String that need them.
@@ -52,7 +53,11 @@ namespace WTF {
 
         // The starting table size. Can be overridden when we know beforehand that
         // a hash table will have at least N entries.
+#if defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+        static const int minimumTableSize = 1;
+#else
         static const int minimumTableSize = 8;
+#endif
     };
 
     // Default integer traits disallow both 0 and -1 as keys (max value instead of -1 for unsigned).
@@ -75,7 +80,7 @@ namespace WTF {
         typedef const T& PassInType;
         static void store(const T& value, T& storage) { storage = value; }
 
-        // Type for return value of functions that transfer ownership, such as take. 
+        // Type for return value of functions that transfer ownership, such as take.
         typedef T PassOutType;
         static PassOutType passOut(const T& value) { return value; }
         static T& passOut(T& value) { return value; } // Overloaded to avoid copying of non-temporary values.

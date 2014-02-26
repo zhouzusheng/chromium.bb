@@ -36,16 +36,16 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
 class Dictionary;
+class ExceptionState;
 class MutationCallback;
 class MutationObserverRegistration;
 class MutationRecord;
 class Node;
-
-typedef int ExceptionCode;
 
 typedef unsigned char MutationObserverOptions;
 typedef unsigned char MutationRecordDeliveryOptions;
@@ -75,7 +75,7 @@ public:
 
     ~MutationObserver();
 
-    void observe(Node*, const Dictionary&, ExceptionCode&);
+    void observe(Node*, const Dictionary&, ExceptionState&);
     Vector<RefPtr<MutationRecord> > takeRecords();
     void disconnect();
     void observationStarted(MutationObserverRegistration*);

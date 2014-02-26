@@ -6,7 +6,8 @@
 #define CONTENT_PUBLIC_RENDERER_RENDER_THREAD_H_
 
 #include "base/basictypes.h"
-#include "base/shared_memory.h"
+#include "base/callback.h"
+#include "base/memory/shared_memory.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_sender.h"

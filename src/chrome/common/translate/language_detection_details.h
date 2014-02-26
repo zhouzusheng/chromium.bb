@@ -8,9 +8,8 @@
 #include <string>
 
 #include "base/strings/string16.h"
-#include "base/time.h"
-#include "googleurl/src/gurl.h"
-#include "ipc/ipc_message_macros.h"
+#include "base/time/time.h"
+#include "url/gurl.h"
 
 struct LanguageDetectionDetails {
   LanguageDetectionDetails();

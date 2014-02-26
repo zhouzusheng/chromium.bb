@@ -7,9 +7,10 @@
 /**
  * @fileoverview Code for the viewport.
  */
-base.require('base.event_target');
+base.require('base.events');
 base.require('base.guid');
 base.require('base.range');
+
 base.exportTo('tracing', function() {
 
   function SelectionSliceHit(track, slice) {
@@ -53,7 +54,6 @@ base.exportTo('tracing', function() {
         this.track.selectedSamples[this.sampleIndex] = true;
       else
         this.track.selectedSamples[this.sampleIndex] = false;
-      this.track.invalidate();
     },
 
     addBoundsToRange: function(range) {

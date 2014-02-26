@@ -26,7 +26,7 @@
 #include "core/platform/PODFreeListArena.h"
 #include "core/rendering/LayoutState.h"
 #include "core/rendering/RenderBlock.h"
-#include <wtf/OwnPtr.h>
+#include "wtf/OwnPtr.h"
 
 namespace WebCore {
 
@@ -37,6 +37,9 @@ class RenderLazyBlock;
 class RenderQuote;
 class RenderWidget;
 
+// The root of the render tree, corresponding to the CSS initial containing block.
+// It's dimensions match that of the viewport, and it is always at position (0,0)
+// relative to the document (and so isn't necessarily in view).
 class RenderView FINAL : public RenderBlock {
 public:
     explicit RenderView(Document*);
@@ -102,7 +105,7 @@ public:
     void updateWidgetPositions();
     void addWidget(RenderWidget*);
     void removeWidget(RenderWidget*);
-    
+
     // layoutDelta is used transiently during layout to store how far an object has moved from its
     // last layout location, in order to repaint correctly.
     // If we're doing a full repaint m_layoutState will be 0, but in that case layoutDelta doesn't matter.
@@ -110,7 +113,7 @@ public:
     {
         return m_layoutState ? m_layoutState->m_layoutDelta : LayoutSize();
     }
-    void addLayoutDelta(const LayoutSize& delta) 
+    void addLayoutDelta(const LayoutSize& delta)
     {
         if (m_layoutState) {
             m_layoutState->m_layoutDelta += delta;
@@ -120,7 +123,7 @@ public:
 #endif
         }
     }
-    
+
 #if !ASSERT_DISABLED
     bool layoutDeltaMatches(const LayoutSize& delta)
     {
@@ -168,7 +171,7 @@ public:
 
     // Renderer that paints the root background has background-images which all have background-attachment: fixed.
     bool rootBackgroundIsEntirelyFixed() const;
-    
+
     bool hasRenderNamedFlowThreads() const;
     bool checkTwoPassLayoutForAutoHeightRegions() const;
     FlowThreadController* flowThreadController();
@@ -193,7 +196,7 @@ public:
     void addRenderCounter() { m_renderCounterCount++; }
     void removeRenderCounter() { ASSERT(m_renderCounterCount > 0); m_renderCounterCount--; }
     bool hasRenderCounters() { return m_renderCounterCount; }
-    
+
     virtual void addChild(RenderObject* newChild, RenderObject* beforeChild = 0) OVERRIDE;
 
     virtual bool backgroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect) const OVERRIDE FINAL;
@@ -203,7 +206,8 @@ protected:
     virtual const RenderObject* pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap&) const OVERRIDE;
     virtual void mapAbsoluteToLocalPoint(MapCoordinatesFlags, TransformState&) const;
     virtual bool requiresColumns(int desiredColumnCount) const OVERRIDE;
-    
+    virtual void computeSelfHitTestRects(Vector<LayoutRect>&, const LayoutPoint& layerOffset) const OVERRIDE;
+
 private:
     bool initializeLayoutState(LayoutState&);
 
@@ -221,7 +225,7 @@ private:
             || (renderer->isRenderBlock() && toRenderBlock(renderer)->shapeInsideInfo())
             || (m_layoutState->shapeInsideInfo() && renderer->isRenderBlock() && !toRenderBlock(renderer)->allowsShapeInsideInfoSharing())
             ) {
-            m_layoutState = new (renderArena()) LayoutState(m_layoutState, renderer, offset, pageHeight, pageHeightChanged, colInfo);
+            m_layoutState = new LayoutState(m_layoutState, renderer, offset, pageHeight, pageHeightChanged, colInfo);
             return true;
         }
         return false;
@@ -231,7 +235,7 @@ private:
     {
         LayoutState* state = m_layoutState;
         m_layoutState = state->m_next;
-        state->destroy(renderArena());
+        delete state;
     }
 
     // Suspends the LayoutState optimization. Used under transforms that cannot be represented by
@@ -250,11 +254,9 @@ private:
 
     size_t getRetainedWidgets(Vector<RenderWidget*>&);
     void releaseWidgets(Vector<RenderWidget*>&);
-    
+
     friend class LayoutStateMaintainer;
     friend class LayoutStateDisabler;
-
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
 
 protected:
     FrameView* m_frameView;
@@ -320,7 +322,7 @@ public:
     {
         push(root, offset, pageHeight, pageHeightChanged, colInfo);
     }
-    
+
     // ctor to maybe push later
     LayoutStateMaintainer(RenderView* view)
         : m_view(view)
@@ -355,7 +357,7 @@ public:
                 if (m_disabled)
                     m_view->enableLayoutState();
             }
-            
+
             m_didEnd = true;
         }
     }

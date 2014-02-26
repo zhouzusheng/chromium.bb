@@ -23,12 +23,12 @@
 #define SVGFontElement_h
 
 #if ENABLE(SVG_FONTS)
+#include "SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
+#include "core/svg/SVGElement.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
-#include "core/svg/SVGGlyphElement.h"
 #include "core/svg/SVGGlyphMap.h"
 #include "core/svg/SVGParserUtilities.h"
-#include "core/svg/SVGStyledElement.h"
 
 namespace WebCore {
 
@@ -41,7 +41,7 @@ struct SVGKerningPair {
     HashSet<String> unicodeName2;
     HashSet<String> glyphName1;
     HashSet<String> glyphName2;
-    
+
     SVGKerningPair()
         : kerning(0)
     {
@@ -50,9 +50,9 @@ struct SVGKerningPair {
 
 typedef Vector<SVGKerningPair> KerningPairVector;
 
-class SVGMissingGlyphElement;    
+class SVGMissingGlyphElement;
 
-class SVGFontElement FINAL : public SVGStyledElement
+class SVGFontElement FINAL : public SVGElement
                            , public SVGExternalResourcesRequired {
 public:
     static PassRefPtr<SVGFontElement> create(const QualifiedName&, Document*);
@@ -73,7 +73,7 @@ public:
 private:
     SVGFontElement(const QualifiedName&, Document*);
 
-    virtual bool rendererIsNeeded(const NodeRenderingContext&) { return false; }  
+    virtual bool rendererIsNeeded(const NodeRenderingContext&) { return false; }
 
     void ensureGlyphCache();
     void registerLigaturesInGlyphCache(Vector<String>&);
@@ -88,6 +88,12 @@ private:
     Glyph m_missingGlyph;
     bool m_isGlyphCacheValid;
 };
+
+inline SVGFontElement* toSVGFontElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::fontTag));
+    return static_cast<SVGFontElement*>(node);
+}
 
 } // namespace WebCore
 

@@ -47,7 +47,7 @@ class WrappedNodeVisitor;
 class Page;
 class ScriptObject;
 class ScriptValue;
-class WorkerContext;
+class WorkerGlobalScope;
 
 class ScriptProfiler {
     WTF_MAKE_NONCOPYABLE(ScriptProfiler);
@@ -78,10 +78,6 @@ public:
     static unsigned requestHeapStatsUpdate(OutputStream*);
     static void initialize();
     static void visitNodeWrappers(WrappedNodeVisitor*);
-    static void visitExternalStrings(ExternalStringVisitor*);
-    static void visitExternalArrays(ExternalArrayVisitor*);
-    static void collectBindingMemoryInfo(MemoryInstrumentation*);
-    static size_t profilerSnapshotsSize();
     static HashMap<String, double>* currentProfileNameIdleTimeMap();
 };
 

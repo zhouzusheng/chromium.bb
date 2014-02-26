@@ -4,6 +4,7 @@
  */
 
 .analysis-view {
+  background-color: white;
   display: -webkit-flex;
 }
 

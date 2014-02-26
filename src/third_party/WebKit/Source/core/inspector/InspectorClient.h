@@ -21,24 +21,22 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef InspectorClient_h
 #define InspectorClient_h
 
 #include "core/inspector/InspectorStateClient.h"
-#include <wtf/Forward.h>
-#include <wtf/HashMap.h>
-#include <wtf/HashSet.h>
+#include "wtf/Forward.h"
+#include "wtf/HashMap.h"
+#include "wtf/HashSet.h"
 
 namespace WebCore {
 
-class InspectorController;
-class InspectorFrontendChannel;
-class Frame;
 class Page;
 class PlatformKeyboardEvent;
+class PlatformMouseEvent;
 
 class InspectorClient : public InspectorStateClient {
 public:
@@ -61,11 +59,13 @@ public:
     virtual void setShowDebugBorders(bool) { }
     virtual void setShowFPSCounter(bool) { }
     virtual void setContinuousPaintingEnabled(bool) { }
+    virtual void setShowScrollBottleneckRects(bool) { }
 
     virtual void getAllocatedObjects(HashSet<const void*>&) { }
     virtual void dumpUncountedAllocatedObjects(const HashMap<const void*, size_t>&) { }
 
     virtual void dispatchKeyEvent(const PlatformKeyboardEvent&) { }
+    virtual void dispatchMouseEvent(const PlatformMouseEvent&) { }
 
     static bool doDispatchMessageOnFrontendPage(Page* frontendPage, const String& message);
 

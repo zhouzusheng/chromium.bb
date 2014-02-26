@@ -78,7 +78,7 @@ public:
     RenderInline* inlineElementContinuation() const;
 
     virtual void updateDragState(bool dragOn) OVERRIDE FINAL;
-    
+
     LayoutSize offsetForInFlowPositionedInline(const RenderBox* child) const;
 
     virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) OVERRIDE FINAL;
@@ -95,12 +95,12 @@ public:
 
     bool hitTestCulledInline(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset);
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE FINAL;
-
 protected:
     virtual void willBeDestroyed();
 
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
+
+    virtual void computeSelfHitTestRects(Vector<LayoutRect>& rects, const LayoutPoint& layerOffset) const OVERRIDE;
 
 private:
     virtual RenderObjectChildList* virtualChildren() OVERRIDE FINAL { return children(); }
@@ -148,7 +148,7 @@ private:
 
     virtual void mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0) const OVERRIDE;
 
-    virtual VisiblePosition positionForPoint(const LayoutPoint&) OVERRIDE FINAL;
+    virtual PositionWithAffinity positionForPoint(const LayoutPoint&) OVERRIDE FINAL;
 
     virtual LayoutRect frameRectForStickyPositioning() const OVERRIDE FINAL { return linesBoundingBox(); }
 
@@ -164,7 +164,7 @@ private:
 
     virtual LayoutUnit lineHeight(bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const OVERRIDE FINAL;
     virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const OVERRIDE FINAL;
-    
+
     virtual void childBecameNonInline(RenderObject* child) OVERRIDE FINAL;
 
     virtual void updateHitTestResult(HitTestResult&, const LayoutPoint&) OVERRIDE FINAL;
@@ -172,9 +172,9 @@ private:
     virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) OVERRIDE FINAL;
 
     virtual void addAnnotatedRegions(Vector<AnnotatedRegionValue>&) OVERRIDE FINAL;
-    
+
     virtual void updateFromStyle() OVERRIDE FINAL;
-    
+
     RenderInline* clone() const;
 
     void paintOutlineForLine(GraphicsContext*, const LayoutPoint&, const LayoutRect& prevLine, const LayoutRect& thisLine,
@@ -188,13 +188,13 @@ private:
 };
 
 inline RenderInline* toRenderInline(RenderObject* object)
-{ 
+{
     ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isRenderInline());
     return static_cast<RenderInline*>(object);
 }
 
 inline const RenderInline* toRenderInline(const RenderObject* object)
-{ 
+{
     ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isRenderInline());
     return static_cast<const RenderInline*>(object);
 }

@@ -191,7 +191,6 @@ class TetheringHandler::BoundSocket {
       return false;
 
     net::IPEndPoint end_point(ip_number, port);
-    socket_->AllowAddressReuse();
     int result = socket_->Listen(end_point, kListenBacklog);
     if (result < 0)
       return false;
@@ -254,8 +253,8 @@ TetheringHandler::TetheringHandler(DevToolsHttpHandlerDelegate* delegate)
 }
 
 TetheringHandler::~TetheringHandler() {
-   STLDeleteContainerPairSecondPointers(bound_sockets_.begin(),
-                                        bound_sockets_.end());
+  STLDeleteContainerPairSecondPointers(bound_sockets_.begin(),
+                                       bound_sockets_.end());
 }
 
 void TetheringHandler::Accepted(int port, const std::string& name) {
@@ -265,7 +264,7 @@ void TetheringHandler::Accepted(int port, const std::string& name) {
   SendNotification(kTetheringAccepted, params);
 }
 
-static int GetPort(DevToolsProtocol::Command* command) {
+static int GetPort(scoped_refptr<DevToolsProtocol::Command> command) {
   base::DictionaryValue* params = command->params();
   int port = 0;
   if (!params || !params->GetInteger(kPortParam, &port) ||
@@ -274,8 +273,8 @@ static int GetPort(DevToolsProtocol::Command* command) {
   return port;
 }
 
-scoped_ptr<DevToolsProtocol::Response>
-TetheringHandler::OnBind(DevToolsProtocol::Command* command) {
+scoped_refptr<DevToolsProtocol::Response>
+TetheringHandler::OnBind(scoped_refptr<DevToolsProtocol::Command> command) {
   int port = GetPort(command);
   if (port == 0)
     return command->InvalidParamResponse(kPortParam);
@@ -291,8 +290,8 @@ TetheringHandler::OnBind(DevToolsProtocol::Command* command) {
   return command->SuccessResponse(NULL);
 }
 
-scoped_ptr<DevToolsProtocol::Response>
-TetheringHandler::OnUnbind(DevToolsProtocol::Command* command) {
+scoped_refptr<DevToolsProtocol::Response>
+TetheringHandler::OnUnbind(scoped_refptr<DevToolsProtocol::Command> command) {
   int port = GetPort(command);
   if (port == 0)
     return command->InvalidParamResponse(kPortParam);

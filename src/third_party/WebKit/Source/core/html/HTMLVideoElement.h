@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef HTMLVideoElement_h
@@ -30,27 +30,29 @@
 
 namespace WebCore {
 
+class ExceptionState;
 class HTMLImageLoader;
 
 class HTMLVideoElement FINAL : public HTMLMediaElement {
 public:
+    static PassRefPtr<HTMLVideoElement> create(Document* document) { return create(HTMLNames::videoTag, document, false); }
     static PassRefPtr<HTMLVideoElement> create(const QualifiedName&, Document*, bool);
 
     unsigned width() const;
     unsigned height() const;
-    
+
     unsigned videoWidth() const;
     unsigned videoHeight() const;
-    
+
     // Fullscreen
-    void webkitEnterFullscreen(ExceptionCode&);
+    void webkitEnterFullscreen(ExceptionState&);
     void webkitExitFullscreen();
     bool webkitSupportsFullscreen();
     bool webkitDisplayingFullscreen();
 
     // FIXME: Maintain "FullScreen" capitalization scheme for backwards compatibility.
     // https://bugs.webkit.org/show_bug.cgi?id=36081
-    void webkitEnterFullScreen(ExceptionCode& ec) { webkitEnterFullscreen(ec); }
+    void webkitEnterFullScreen(ExceptionState& es) { webkitEnterFullscreen(es); }
     void webkitExitFullScreen() { webkitExitFullscreen(); }
 
     // Statistics
@@ -92,6 +94,22 @@ private:
 
     AtomicString m_defaultPosterURL;
 };
+
+inline bool isHTMLVideoElement(const Node* node)
+{
+    return node->hasTagName(HTMLNames::videoTag);
+}
+
+inline bool isHTMLVideoElement(const Element* element)
+{
+    return element->hasTagName(HTMLNames::videoTag);
+}
+
+inline HTMLVideoElement* toHTMLVideoElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLVideoElement(node));
+    return static_cast<HTMLVideoElement*>(node);
+}
 
 } //namespace
 

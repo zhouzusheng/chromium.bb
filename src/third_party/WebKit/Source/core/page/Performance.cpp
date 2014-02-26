@@ -40,7 +40,9 @@
 #include "core/page/PerformanceResourceTiming.h"
 #include "core/page/PerformanceTiming.h"
 #include "core/page/PerformanceUserTiming.h"
-#include <wtf/CurrentTime.h>
+#include "core/page/ResourceTimingInfo.h"
+#include "weborigin/SecurityOrigin.h"
+#include "wtf/CurrentTime.h"
 
 #include "core/page/Frame.h"
 
@@ -52,7 +54,9 @@ Performance::Performance(Frame* frame)
     : DOMWindowProperty(frame)
     , m_resourceTimingBufferSize(defaultResourceTimingBufferSize)
     , m_userTiming(0)
+    , m_referenceTime(frame->document()->loader()->timing()->referenceMonotonicTime())
 {
+    ASSERT(m_referenceTime);
     ScriptWrappable::init(this);
 }
 
@@ -159,13 +163,80 @@ void Performance::webkitSetResourceTimingBufferSize(unsigned size)
         dispatchEvent(Event::create(eventNames().webkitresourcetimingbufferfullEvent, false, false));
 }
 
-void Performance::addResourceTiming(const String& initiatorName, Document* initiatorDocument, const ResourceRequest& request, const ResourceResponse& response, double initiationTime, double finishTime)
+static bool passesTimingAllowCheck(const ResourceResponse& response, Document* requestingDocument)
+{
+    AtomicallyInitializedStatic(AtomicString&, timingAllowOrigin = *new AtomicString("timing-allow-origin"));
+
+    RefPtr<SecurityOrigin> resourceOrigin = SecurityOrigin::create(response.url());
+    if (resourceOrigin->isSameSchemeHostPort(requestingDocument->securityOrigin()))
+        return true;
+
+    const String& timingAllowOriginString = response.httpHeaderField(timingAllowOrigin);
+    if (timingAllowOriginString.isEmpty() || equalIgnoringCase(timingAllowOriginString, "null"))
+        return false;
+
+    if (timingAllowOriginString == "*")
+        return true;
+
+    const String& securityOrigin = requestingDocument->securityOrigin()->toString();
+    Vector<String> timingAllowOrigins;
+    timingAllowOriginString.split(" ", timingAllowOrigins);
+    for (size_t i = 0; i < timingAllowOrigins.size(); ++i) {
+        if (timingAllowOrigins[i] == securityOrigin)
+            return true;
+    }
+
+    return false;
+}
+
+static bool allowsTimingRedirect(const Vector<ResourceResponse>& redirectChain, const ResourceResponse& finalResponse, Document* initiatorDocument)
+{
+    if (!passesTimingAllowCheck(finalResponse, initiatorDocument))
+        return false;
+
+    for (size_t i = 0; i < redirectChain.size(); i++) {
+        if (!passesTimingAllowCheck(redirectChain[i], initiatorDocument))
+            return false;
+    }
+
+    return true;
+}
+
+void Performance::addResourceTiming(const ResourceTimingInfo& info, Document* initiatorDocument)
 {
     if (isResourceTimingBufferFull())
         return;
 
-    RefPtr<PerformanceEntry> entry = PerformanceResourceTiming::create(initiatorName, request, response, initiationTime, finishTime, initiatorDocument);
+    const ResourceResponse& finalResponse = info.finalResponse();
+    bool allowTimingDetails = passesTimingAllowCheck(finalResponse, initiatorDocument);
+    double startTime = info.initialTime();
 
+    if (info.redirectChain().isEmpty()) {
+        RefPtr<PerformanceEntry> entry = PerformanceResourceTiming::create(info, initiatorDocument, startTime, allowTimingDetails);
+        addResourceTimingBuffer(entry);
+        return;
+    }
+
+    const Vector<ResourceResponse>& redirectChain = info.redirectChain();
+    bool allowRedirectDetails = allowsTimingRedirect(redirectChain, finalResponse, initiatorDocument);
+
+    if (!allowRedirectDetails) {
+        ResourceLoadTiming* finalTiming = finalResponse.resourceLoadTiming();
+        ASSERT(finalTiming);
+        if (finalTiming)
+            startTime = finalTiming->requestTime;
+    }
+
+    ResourceLoadTiming* lastRedirectTiming = redirectChain.last().resourceLoadTiming();
+    ASSERT(lastRedirectTiming);
+    double lastRedirectEndTime = lastRedirectTiming->receiveHeadersEnd;
+
+    RefPtr<PerformanceEntry> entry = PerformanceResourceTiming::create(info, initiatorDocument, startTime, lastRedirectEndTime, allowTimingDetails, allowRedirectDetails);
+    addResourceTimingBuffer(entry);
+}
+
+void Performance::addResourceTimingBuffer(PassRefPtr<PerformanceEntry> entry)
+{
     m_resourceTimingBuffer.append(entry);
 
     if (isResourceTimingBufferFull())
@@ -187,12 +258,11 @@ EventTargetData* Performance::ensureEventTargetData()
     return &m_eventTargetData;
 }
 
-void Performance::mark(const String& markName, ExceptionCode& ec)
+void Performance::mark(const String& markName, ExceptionState& es)
 {
-    ec = 0;
     if (!m_userTiming)
         m_userTiming = UserTiming::create(this);
-    m_userTiming->mark(markName, ec);
+    m_userTiming->mark(markName, es);
 }
 
 void Performance::clearMarks(const String& markName)
@@ -202,12 +272,11 @@ void Performance::clearMarks(const String& markName)
     m_userTiming->clearMarks(markName);
 }
 
-void Performance::measure(const String& measureName, const String& startMark, const String& endMark, ExceptionCode& ec)
+void Performance::measure(const String& measureName, const String& startMark, const String& endMark, ExceptionState& es)
 {
-    ec = 0;
     if (!m_userTiming)
         m_userTiming = UserTiming::create(this);
-    m_userTiming->measure(measureName, startMark, endMark, ec);
+    m_userTiming->measure(measureName, startMark, endMark, es);
 }
 
 void Performance::clearMeasures(const String& measureName)
@@ -219,7 +288,7 @@ void Performance::clearMeasures(const String& measureName)
 
 double Performance::now() const
 {
-    return 1000.0 * m_frame->document()->loader()->timing()->monotonicTimeToZeroBasedDocumentTime(monotonicallyIncreasingTime());
+    return 1000.0 * (monotonicallyIncreasingTime() - m_referenceTime);
 }
 
 } // namespace WebCore

@@ -23,7 +23,7 @@
 
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/SliderThumbElement.h"
-#include <wtf/MathExtras.h>
+#include "wtf/MathExtras.h"
 
 using std::min;
 
@@ -85,7 +85,7 @@ void RenderSlider::computePreferredLogicalWidths()
     m_minPreferredLogicalWidth += toAdd;
     m_maxPreferredLogicalWidth += toAdd;
 
-    setPreferredLogicalWidthsDirty(false); 
+    setPreferredLogicalWidthsDirty(false);
 }
 
 void RenderSlider::layout()

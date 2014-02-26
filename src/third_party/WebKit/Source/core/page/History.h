@@ -28,6 +28,7 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "bindings/v8/SerializedScriptValue.h"
+#include "core/loader/FrameLoaderTypes.h"
 #include "core/page/DOMWindowProperty.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
@@ -38,14 +39,14 @@ namespace WebCore {
 class Frame;
 class KURL;
 class ScriptExecutionContext;
-typedef int ExceptionCode;
+class ExceptionState;
 
 class History : public ScriptWrappable, public RefCounted<History>, public DOMWindowProperty {
 public:
     static PassRefPtr<History> create(Frame* frame) { return adoptRef(new History(frame)); }
 
     unsigned length() const;
-    PassRefPtr<SerializedScriptValue> state();
+    SerializedScriptValue* state();
     void back();
     void forward();
     void go(int distance);
@@ -57,18 +58,14 @@ public:
     bool stateChanged() const;
     bool isSameAsCurrentState(SerializedScriptValue*) const;
 
-    enum StateObjectType {
-        StateObjectPush,
-        StateObjectReplace
-    };
-    void stateObjectAdded(PassRefPtr<SerializedScriptValue>, const String& title, const String& url, StateObjectType, ExceptionCode&);
+    void stateObjectAdded(PassRefPtr<SerializedScriptValue>, const String& title, const String& url, SameDocumentNavigationSource, ExceptionState&);
 
 private:
     explicit History(Frame*);
 
     KURL urlForState(const String& url);
 
-    PassRefPtr<SerializedScriptValue> stateInternal() const;
+    SerializedScriptValue* stateInternal() const;
 
     RefPtr<SerializedScriptValue> m_lastStateObjectRequested;
 };

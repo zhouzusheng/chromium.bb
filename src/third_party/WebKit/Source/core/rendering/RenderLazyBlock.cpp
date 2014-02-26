@@ -164,7 +164,7 @@ void RenderLazyBlock::layoutChildren(bool relayoutChildren)
         updateBlockChildDirtyBitsBeforeLayout(relayoutChildren, child);
 
         if (relayoutChildren)
-            child->setNeedsLayout(true, MarkOnlyThis);
+            child->setNeedsLayout(MarkOnlyThis);
 
         if (child->style()->logicalHeight().isSpecified()) {
             LogicalExtentComputedValues computedValues;
@@ -245,7 +245,7 @@ void RenderLazyBlock::layoutBlock(bool relayoutChildren, LayoutUnit pageLogicalH
     repainter.repaintAfterLayout();
 
     m_isNestedLayout = false;
-    setNeedsLayout(false);
+    clearNeedsLayout();
 }
 
 } // namespace WebCore

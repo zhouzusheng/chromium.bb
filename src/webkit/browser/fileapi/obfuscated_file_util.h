@@ -159,7 +159,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
 
   // TODO(ericu): This doesn't really feel like it belongs in this class.
   // The previous version lives in FileSystemPathManager, but perhaps
-  // SandboxMountPointProvider would be better?
+  // SandboxFileSystemBackend would be better?
   static base::FilePath::StringType GetDirectoryNameForType(
       FileSystemType type);
 
@@ -193,6 +193,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
                            DestroyDirectoryDatabase_Isolated);
   FRIEND_TEST_ALL_PREFIXES(ObfuscatedFileUtilTest,
                            GetDirectoryDatabase_Isolated);
+  FRIEND_TEST_ALL_PREFIXES(ObfuscatedFileUtilTest,
+                           MigrationBackFromIsolated);
 
   base::PlatformFileError GetFileInfoInternal(
       SandboxDirectoryDatabase* db,

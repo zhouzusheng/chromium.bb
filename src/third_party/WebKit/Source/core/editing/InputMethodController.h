@@ -27,6 +27,8 @@
 #define InputMethodController_h
 
 #include "core/editing/CompositionUnderline.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/text/WTFString.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {

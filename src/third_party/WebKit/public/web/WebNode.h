@@ -38,6 +38,11 @@
 
 namespace WebCore { class Node; }
 
+namespace v8 {
+    template <class T> class Handle;
+    class Value;
+}
+
 namespace WebKit {
 class WebDOMEvent;
 class WebDOMEventListener;
@@ -100,6 +105,9 @@ public:
     WEBKIT_EXPORT WebNode nextSibling() const;
     WEBKIT_EXPORT bool hasChildNodes() const;
     WEBKIT_EXPORT WebNodeList childNodes();
+    WEBKIT_EXPORT bool insertBefore(const WebNode& newChild, const WebNode& refChild, bool shouldLazyAttach = false);
+    WEBKIT_EXPORT bool replaceChild(const WebNode& newChild, const WebNode& oldChild, bool shouldLazyAttach = false);
+    WEBKIT_EXPORT bool appendChild(const WebNode& child, bool shouldLazyAttach = false);
     WEBKIT_EXPORT WebString createMarkup() const;
     WEBKIT_EXPORT bool isLink() const;
     WEBKIT_EXPORT bool isTextNode() const;
@@ -115,6 +123,9 @@ public:
     WEBKIT_EXPORT WebElement rootEditableElement() const;
     WEBKIT_EXPORT bool focused() const;
     WEBKIT_EXPORT bool remove();
+    WEBKIT_EXPORT bool setTextContent(const WebString&);
+    WEBKIT_EXPORT bool removeChild(const WebNode& oldChild);
+    WEBKIT_EXPORT WebString textContent() const;
 
     // Returns true if the node has a non-empty bounding box in layout.
     // This does not 100% guarantee the user can see it, but is pretty close.
@@ -122,6 +133,11 @@ public:
     WEBKIT_EXPORT bool hasNonEmptyBoundingBox() const;
     WEBKIT_EXPORT WebPluginContainer* pluginContainer() const;
     WEBKIT_EXPORT WebElement shadowHost() const;
+
+    WEBKIT_EXPORT v8::Handle<v8::Value> toV8Handle() const;
+
+    WEBKIT_EXPORT static bool isWebNode(v8::Handle<v8::Value> handle);
+    WEBKIT_EXPORT static WebNode fromV8Handle(v8::Handle<v8::Value> handle);
 
     template<typename T> T to()
     {

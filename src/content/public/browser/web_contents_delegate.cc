@@ -164,6 +164,30 @@ bool WebContentsDelegate::RequestPpapiBrokerPermission(
   return false;
 }
 
+bool WebContentsDelegate::OnNCHitTest(int* result) {
+  return false;
+}
+
+bool WebContentsDelegate::OnNCDragBegin(
+    int hitTestCode) {
+  return false;
+}
+
+bool WebContentsDelegate::OnSetCursor(int hitTestCode) {
+  return false;
+}
+
+bool WebContentsDelegate::ShouldSetFocusOnMouseDown() {
+  return true;
+}
+
+bool WebContentsDelegate::ShowTooltip(
+    WebContents* web_contents,
+    const string16& tooltip_text,
+    WebKit::WebTextDirection text_direction_hint) {
+  return false;
+}
+
 WebContentsDelegate::~WebContentsDelegate() {
   while (!attached_contents_.empty()) {
     WebContents* web_contents = *attached_contents_.begin();

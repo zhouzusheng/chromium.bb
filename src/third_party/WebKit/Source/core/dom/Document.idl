@@ -170,6 +170,8 @@ callback CustomElementConstructor = Element ();
 
     [EnabledAtRuntime=fontLoadEvents] readonly attribute FontLoader fontloader;
 
+    readonly attribute BBPrintInfo bbPrintInfo;
+
     // Event handler DOM attributes
     [NotEnumerable] attribute EventHandler onabort;
     [NotEnumerable] attribute EventHandler onblur;

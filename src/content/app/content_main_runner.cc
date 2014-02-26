@@ -303,8 +303,8 @@ class ContentClientInitializer {
         content_client->plugin_ = &g_empty_content_plugin_client.Get();
       // Single process not supported in split dll mode.
     } else if (process_type == switches::kRendererProcess ||
-               CommandLine::ForCurrentProcess()->HasSwitch(
-                   switches::kSingleProcess)) {
+               (content_client->browser_ &&
+                   content_client->browser_->SupportsInProcessRenderer())) {
       if (delegate)
         content_client->renderer_ = delegate->CreateContentRendererClient();
       if (!content_client->renderer_)

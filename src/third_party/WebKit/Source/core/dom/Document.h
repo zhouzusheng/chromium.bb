@@ -61,6 +61,7 @@ namespace WebCore {
 
 class AXObjectCache;
 class Attr;
+class BBPrintInfo;
 class CDATASection;
 class CSSStyleDeclaration;
 class CSSStyleSheet;
@@ -1049,6 +1050,8 @@ public:
     PassRefPtr<FontLoader> fontloader();
     DocumentLifecycleNotifier* lifecycleNotifier();
 
+    PassRefPtr<BBPrintInfo> bbPrintInfo();
+
     enum HttpRefreshType {
         HttpRefreshFromHeader,
         HttpRefreshFromMetaTag
@@ -1361,6 +1364,8 @@ private:
     Document* m_templateDocumentHost; // Manually managed weakref (backpointer from m_templateDocument).
 
     RefPtr<FontLoader> m_fontloader;
+
+    RefPtr<BBPrintInfo> m_bbPrintInfo;
 
     Timer<Document> m_didAssociateFormControlsTimer;
     HashSet<RefPtr<Element> > m_associatedFormControls;

@@ -119,7 +119,6 @@
 #include "content/public/common/result_codes.h"
 #include "content/public/common/url_constants.h"
 #include "content/renderer/render_process_impl.h"
-#include "content/renderer/render_thread_impl.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_logging.h"
@@ -157,8 +156,6 @@ static const char* kSiteProcessMapKeyName = "content_site_process_map";
 namespace content {
 namespace {
 
-base::MessageLoop* g_in_process_thread;
-
 void CacheShaderInfo(int32 id, base::FilePath path) {
   ShaderCacheFactory::GetInstance()->SetCacheInfo(id, path);
 }
@@ -166,57 +163,6 @@ void CacheShaderInfo(int32 id, base::FilePath path) {
 void RemoveShaderInfo(int32 id) {
   ShaderCacheFactory::GetInstance()->RemoveCacheInfo(id);
 }
-
-}  // namespace
-
-#if !defined(CHROME_MULTIPLE_DLL)
-
-// This class creates the IO thread for the renderer when running in
-// single-process mode.  It's not used in multi-process mode.
-class RendererMainThread : public base::Thread {
- public:
-  explicit RendererMainThread(const std::string& channel_id)
-      : Thread("Chrome_InProcRendererThread"),
-        channel_id_(channel_id) {
-  }
-
-  virtual ~RendererMainThread() {
-    Stop();
-  }
-
- protected:
-  virtual void Init() OVERRIDE {
-    render_process_.reset(new RenderProcessImpl());
-    new RenderThreadImpl(channel_id_);
-    g_in_process_thread = message_loop();
-  }
-
-  virtual void CleanUp() OVERRIDE {
-    g_in_process_thread = NULL;
-    render_process_.reset();
-
-    // It's a little lame to manually set this flag.  But the single process
-    // RendererThread will receive the WM_QUIT.  We don't need to assert on
-    // this thread, so just force the flag manually.
-    // If we want to avoid this, we could create the InProcRendererThread
-    // directly with _beginthreadex() rather than using the Thread class.
-    // We used to set this flag in the Init function above. However there
-    // other threads like WebThread which are created by this thread
-    // which resets this flag. Please see Thread::StartWithOptions. Setting
-    // this flag to true in Cleanup works around these problems.
-    SetThreadWasQuitProperly(true);
-  }
-
- private:
-  std::string channel_id_;
-  scoped_ptr<RenderProcess> render_process_;
-
-  DISALLOW_COPY_AND_ASSIGN(RendererMainThread);
-};
-
-#endif
-
-namespace {
 
 // Helper class that we pass to ResourceMessageFilter so that it can find the
 // right net::URLRequestContext for a request.
@@ -316,14 +262,19 @@ SiteProcessMap* GetSiteProcessMapForBrowserContext(BrowserContext* context) {
 // NOTE: changes to this class need to be reviewed by the security team.
 class RendererSandboxedProcessLauncherDelegate
     : public content::SandboxedProcessLauncherDelegate {
+  bool in_process_plugins_;
  public:
-  RendererSandboxedProcessLauncherDelegate() {}
+  explicit RendererSandboxedProcessLauncherDelegate(
+      bool in_process_plugins)
+      : in_process_plugins_(in_process_plugins)
+  {
+  }
   virtual ~RendererSandboxedProcessLauncherDelegate() {}
 
   virtual void ShouldSandbox(bool* in_sandbox) OVERRIDE {
 #if !defined (GOOGLE_CHROME_BUILD)
     if (CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kInProcessPlugins)) {
+        switches::kInProcessPlugins) || in_process_plugins_) {
       *in_sandbox = false;
     }
 #endif
@@ -342,6 +293,8 @@ class RendererSandboxedProcessLauncherDelegate
 // Stores the maximum number of renderer processes the content module can
 // create.
 static size_t g_max_renderer_count_override = 0;
+
+int RenderProcessHostImpl::kInvalidId = ChildProcessHostImpl::kInvalidChildProcessId;
 
 // static
 size_t RenderProcessHost::GetMaxRendererProcessCount() {
@@ -383,14 +336,13 @@ size_t RenderProcessHost::GetMaxRendererProcessCount() {
 }
 
 // static
-bool g_run_renderer_in_process_ = false;
-
-// static
 void RenderProcessHost::SetMaxRendererProcessCount(size_t count) {
   g_max_renderer_count_override = count;
 }
 
 RenderProcessHostImpl::RenderProcessHostImpl(
+    int host_id,
+    base::ProcessHandle externally_managed_handle,
     BrowserContext* browser_context,
     StoragePartitionImpl* storage_partition_impl,
     bool supports_browser_plugin,
@@ -404,13 +356,15 @@ RenderProcessHostImpl::RenderProcessHostImpl(
               FROM_HERE, base::TimeDelta::FromSeconds(5),
               this, &RenderProcessHostImpl::ClearTransportDIBCache),
           is_initialized_(false),
-          id_(ChildProcessHostImpl::GenerateChildProcessUniqueId()),
+          externally_managed_handle_(externally_managed_handle),
+          id_(host_id),
           browser_context_(browser_context),
           storage_partition_impl_(storage_partition_impl),
           sudden_termination_allowed_(true),
           ignore_input_events_(false),
           supports_browser_plugin_(supports_browser_plugin),
           is_guest_(is_guest),
+          uses_in_process_plugins_(false),
           gpu_observer_registered_(false),
           power_monitor_broadcaster_(this) {
   widget_helper_ = new RenderWidgetHelper();
@@ -438,7 +392,6 @@ RenderProcessHostImpl::RenderProcessHostImpl(
 }
 
 RenderProcessHostImpl::~RenderProcessHostImpl() {
-  DCHECK(!run_renderer_in_process());
   ChildProcessSecurityPolicyImpl::GetInstance()->Remove(GetID());
 
   if (gpu_observer_registered_) {
@@ -510,28 +463,26 @@ bool RenderProcessHostImpl::Init() {
 
   CreateMessageFilters();
 
+  if (IsProcessManagedExternally() &&
+      !base::Process(externally_managed_handle_).is_current()) {
+    // Renderer is running in a separate process that is being managed
+    // externally.
+    OnProcessLaunched();  // Fake a callback that the process is ready.
+  }
+  else
   // Single-process mode not supported in multiple-dll mode currently.
 #if !defined(CHROME_MULTIPLE_DLL)
-  if (run_renderer_in_process()) {
+  if (IsProcessManagedExternally()) {
+    DCHECK(base::Process(externally_managed_handle_).is_current());
+    DCHECK(GetContentClient()->browser()->SupportsInProcessRenderer());
+
     // Crank up a thread and run the initialization there.  With the way that
     // messages flow between the browser and renderer, this thread is required
     // to prevent a deadlock in single-process mode.  Since the primordial
     // thread in the renderer process runs the WebKit code and can sometimes
     // make blocking calls to the UI thread (i.e. this thread), they need to run
     // on separate threads.
-    in_process_renderer_.reset(new RendererMainThread(channel_id));
-
-    base::Thread::Options options;
-#if defined(OS_WIN) && !defined(OS_MACOSX)
-    // In-process plugins require this to be a UI message loop.
-    options.message_loop_type = base::MessageLoop::TYPE_UI;
-#else
-    // We can't have multiple UI loops on Linux and Android, so we don't support
-    // in-process plugins.
-    options.message_loop_type = base::MessageLoop::TYPE_DEFAULT;
-#endif
-    in_process_renderer_->StartWithOptions(options);
-
+    GetContentClient()->browser()->StartInProcessRendererThread(channel_id);
     OnProcessLaunched();  // Fake a callback that the process is ready.
   } else
 #endif  // !CHROME_MULTIPLE_DLL
@@ -549,7 +500,7 @@ bool RenderProcessHostImpl::Init() {
     // at this stage.
     child_process_launcher_.reset(new ChildProcessLauncher(
 #if defined(OS_WIN)
-        new RendererSandboxedProcessLauncherDelegate,
+        new RendererSandboxedProcessLauncherDelegate(uses_in_process_plugins_),
 #elif defined(OS_POSIX)
         renderer_prefix.empty(),
         base::EnvironmentVector(),
@@ -768,9 +719,13 @@ void RenderProcessHostImpl::RemoveRoute(int32 routing_id) {
     return;
   }
 #endif
-  // Keep the one renderer thread around forever in single process mode.
-  if (!run_renderer_in_process())
+  // Keep the renderer around forever in externally-managed mode.
+  if (!IsProcessManagedExternally())
     Cleanup();
+}
+
+size_t RenderProcessHostImpl::NumListeners() {
+  return listeners_.size();
 }
 
 bool RenderProcessHostImpl::WaitForBackingStoreMsg(
@@ -787,7 +742,7 @@ bool RenderProcessHostImpl::WaitForBackingStoreMsg(
 }
 
 void RenderProcessHostImpl::ReceivedBadMessage() {
-  if (run_renderer_in_process()) {
+  if (base::Process(externally_managed_handle_).is_current()) {
     // In single process mode it is better if we don't suicide but just
     // crash.
     CHECK(false);
@@ -840,6 +795,11 @@ void RenderProcessHostImpl::AppendRendererCommandLine(
   // Now send any options from our own command line we want to propagate.
   const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
   PropagateBrowserCommandLineToRenderer(browser_command_line, command_line);
+
+  if (uses_in_process_plugins_ &&
+      !command_line->HasSwitch(switches::kInProcessPlugins)) {
+    command_line->AppendSwitch(switches::kInProcessPlugins);
+  }
 
   // Pass on the browser locale.
   const std::string locale =
@@ -1087,8 +1047,8 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
 }
 
 base::ProcessHandle RenderProcessHostImpl::GetHandle() const {
-  if (run_renderer_in_process())
-    return base::Process::Current().handle();
+  if (IsProcessManagedExternally())
+    return externally_managed_handle_;
 
   if (!child_process_launcher_.get() || child_process_launcher_->IsStarting())
     return base::kNullProcessHandle;
@@ -1097,8 +1057,8 @@ base::ProcessHandle RenderProcessHostImpl::GetHandle() const {
 }
 
 bool RenderProcessHostImpl::FastShutdownIfPossible() {
-  if (run_renderer_in_process())
-    return false;  // Single process mode never shutdown the renderer.
+  if (IsProcessManagedExternally())
+    return false;  // Externally managed process never shutdown the renderer.
 
   if (!GetContentClient()->browser()->IsFastShutdownPossible())
     return false;
@@ -1344,6 +1304,9 @@ void RenderProcessHostImpl::Cleanup() {
     channel_.reset();
     gpu_message_filter_ = NULL;
 
+    if (base::Process(externally_managed_handle_).is_current())
+      GetContentClient()->browser()->StopInProcessRendererThread();
+
     // Remove ourself from the list of renderer processes so that we can't be
     // reused in between now and when the Delete task runs.
     UnregisterHost(GetID());
@@ -1384,6 +1347,18 @@ void RenderProcessHostImpl::ResumeRequestsForView(int route_id) {
   widget_helper_->ResumeRequestsForView(route_id);
 }
 
+bool RenderProcessHostImpl::IsProcessManagedExternally() const {
+  return externally_managed_handle_ != base::kNullProcessHandle;
+}
+
+bool RenderProcessHostImpl::UsesInProcessPlugins() const {
+  return uses_in_process_plugins_;
+}
+
+void RenderProcessHostImpl::SetUsesInProcessPlugins() {
+  uses_in_process_plugins_ = true;
+}
+
 IPC::ChannelProxy* RenderProcessHostImpl::GetChannel() {
   return channel_.get();
 }
@@ -1396,6 +1371,12 @@ bool RenderProcessHostImpl::FastShutdownForPageCount(size_t count) {
 
 bool RenderProcessHostImpl::FastShutdownStarted() const {
   return fast_shutdown_started_;
+}
+
+// static
+int RenderProcessHostImpl::GenerateUniqueId()
+{
+  return ChildProcessHostImpl::GenerateChildProcessUniqueId();
 }
 
 // static
@@ -1424,7 +1405,7 @@ bool RenderProcessHostImpl::IsSuitableHost(
     RenderProcessHost* host,
     BrowserContext* browser_context,
     const GURL& site_url) {
-  if (run_renderer_in_process())
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
     return true;
 
   if (host->GetBrowserContext() != browser_context)
@@ -1459,25 +1440,6 @@ bool RenderProcessHostImpl::IsSuitableHost(
   return GetContentClient()->browser()->IsSuitableHost(host, site_url);
 }
 
-// static
-bool RenderProcessHost::run_renderer_in_process() {
-  return g_run_renderer_in_process_;
-}
-
-// static
-void RenderProcessHost::SetRunRendererInProcess(bool value) {
-  g_run_renderer_in_process_ = value;
-
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (value && !command_line->HasSwitch(switches::kLang)) {
-    // Modify the current process' command line to include the browser locale,
-    // as the renderer expects this flag to be set.
-    const std::string locale =
-        GetContentClient()->browser()->GetApplicationLocale();
-    command_line->AppendSwitchASCII(switches::kLang, locale);
-  }
-}
-
 RenderProcessHost::iterator RenderProcessHost::AllHostsIterator() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return iterator(g_all_hosts.Pointer());
@@ -1503,7 +1465,7 @@ bool RenderProcessHost::ShouldTryToUseExistingProcessHost(
       command_line.HasSwitch(switches::kSitePerProcess))
     return false;
 
-  if (run_renderer_in_process())
+  if (command_line.HasSwitch(switches::kSingleProcess))
     return true;
 
   // NOTE: Sometimes it's necessary to create more render processes than
@@ -1613,11 +1575,6 @@ void RenderProcessHostImpl::RegisterProcessHostForSite(
     map->RegisterProcess(site, process);
 }
 
-base::MessageLoop*
-    RenderProcessHostImpl::GetInProcessRendererThreadForTesting() {
-  return g_in_process_thread;
-}
-
 void RenderProcessHostImpl::ProcessDied(bool already_dead) {
   // Our child process has died.  If we didn't expect it, it's a crash.
   // In any case, we need to let everyone know it's gone.
@@ -1695,9 +1652,9 @@ void RenderProcessHostImpl::EndFrameSubscription(int route_id) {
 void RenderProcessHostImpl::OnShutdownRequest() {
   // Don't shut down if there are active RenderViews, or if there are pending
   // RenderViews being swapped back in.
-  // In single process mode, we never shutdown the renderer.
+  // We never shutdown externally-managed renderers.
   int num_active_views = GetActiveViewCount();
-  if (pending_views_ || num_active_views > 0 || run_renderer_in_process())
+  if (pending_views_ || num_active_views > 0 || IsProcessManagedExternally())
     return;
 
   // Notify any contents that might have swapped out renderers from this

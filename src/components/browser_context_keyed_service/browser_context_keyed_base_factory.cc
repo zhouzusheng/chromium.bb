@@ -50,11 +50,6 @@ void BrowserContextKeyedBaseFactory::RegisterUserPrefsOnBrowserContext(
   // BrowserContext responsible for all pref registration on every service
   // that used BrowserContext. Now we don't and there are timing issues.
   //
-  // With normal contexts, prefs can simply be registered at
-  // BrowserContextDependencyManager::CreateBrowserContextServices time.
-  // With incognito contexts, we just never register since incognito contexts
-  // share the same pref services with their parent contexts.
-  //
   // TestingBrowserContexts throw a wrench into the mix, in that some tests will
   // swap out the PrefService after we've registered user prefs on the original
   // PrefService. Test code that does this is responsible for either manually
@@ -68,7 +63,6 @@ void BrowserContextKeyedBaseFactory::RegisterUserPrefsOnBrowserContext(
   // to enforce a uniquenes check here because some tests create one context and
   // multiple services of the same type attached to that context (serially, not
   // parallel) and we don't want to register multiple times on the same context.
-  DCHECK(!context->IsOffTheRecord());
 
   std::set<content::BrowserContext*>::iterator it =
       registered_preferences_.find(context);

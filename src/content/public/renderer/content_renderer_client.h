@@ -16,6 +16,7 @@
 #include "third_party/WebKit/public/web/WebNavigationType.h"
 #include "third_party/WebKit/public/web/WebPageVisibilityState.h"
 #include "v8/include/v8.h"
+#include "webkit/child/resource_loader_bridge.h"
 
 class GURL;
 class SkBitmap;
@@ -153,6 +154,11 @@ class CONTENT_EXPORT ContentRendererClient {
   // If it returns NULL the content layer will provide an engine.
   virtual WebKit::WebSpeechSynthesizer* OverrideSpeechSynthesizer(
       WebKit::WebSpeechSynthesizerClient* client);
+
+  // Allows the embedder to override the ResourceLoaderBridge used.
+  // If it returns NULL, the content layer will provide a bridge.
+  virtual webkit_glue::ResourceLoaderBridge* OverrideResourceLoaderBridge(
+      const webkit_glue::ResourceLoaderBridge::RequestInfo& request_info);
 
   // Allows the embedder to override the WebCrypto used.
   // If it returns NULL the content layer will handle crypto.

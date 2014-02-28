@@ -464,12 +464,12 @@ bool ContextMenuClientImpl::fireBbContextMenuEvent(WebFrame* frame, WebContextMe
     exposeString(isolate, detailObj, "selectedText", data.selectedText.utf8());
     exposeInt(isolate, detailObj, "mousePositionX", data.mousePosition.x);
     exposeInt(isolate, detailObj, "mousePositionY", data.mousePosition.y);
-    exposeString(isolate, detailObj, "linkURL", data.linkURL.spec());
+    exposeString(isolate, detailObj, "linkURL", data.linkURL.string().utf8());
     exposeBool(isolate, detailObj, "isEditable", data.isEditable);
     exposeString(isolate, detailObj, "frameEncoding", data.frameEncoding.utf8());
-    exposeString(isolate, detailObj, "frameURL", data.frameURL.spec());
+    exposeString(isolate, detailObj, "frameURL", data.frameURL.string().utf8());
     exposeBool(isolate, detailObj, "isImageBlocked", data.isImageBlocked);
-    exposeString(isolate, detailObj, "srcURL", data.srcURL.spec());
+    exposeString(isolate, detailObj, "srcURL", data.srcURL.string().utf8());
 
     CustomEventInit eventInit;
     eventInit.bubbles = true;

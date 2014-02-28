@@ -53,7 +53,7 @@ void xsltUnicodeSortFunction(xsltTransformContextPtr ctxt, xmlNodePtr *sorts, in
     int tst;
     int depth;
     xmlNodePtr node;
-    xmlXPathObjectPtr tmp;    
+    xmlXPathObjectPtr tmp;
     int tempstype[XSLT_MAX_SORT], temporder[XSLT_MAX_SORT];
 
     if ((ctxt == NULL) || (sorts == NULL) || (nbsorts <= 0) ||
@@ -140,7 +140,7 @@ void xsltUnicodeSortFunction(xsltTransformContextPtr ctxt, xmlNodePtr *sorts, in
             j = i - incr;
             if (results[i] == NULL)
                 continue;
-            
+
             while (j >= 0) {
                 if (results[j] == NULL)
                     tst = 1;
@@ -158,14 +158,16 @@ void xsltUnicodeSortFunction(xsltTransformContextPtr ctxt, xmlNodePtr *sorts, in
                         else if (results[j]->floatval ==
                                 results[j + incr]->floatval)
                             tst = 0;
-                        else if (results[j]->floatval > 
+                        else if (results[j]->floatval >
                                 results[j + incr]->floatval)
                             tst = 1;
                         else tst = -1;
                     } else {
-                        String str1 = String::fromUTF8((const char*)results[j]->stringval);
-                        String str2 = String::fromUTF8((const char*)results[j + incr]->stringval);
-                        tst = collator.collate(str1.characters(), str1.length(), str2.characters(), str2.length());
+                        Vector<UChar> string1;
+                        Vector<UChar> string2;
+                        String::fromUTF8(reinterpret_cast<const char*>(results[j]->stringval)).appendTo(string1);
+                        String::fromUTF8(reinterpret_cast<const char*>(results[j + incr]->stringval)).appendTo(string2);
+                        tst = collator.collate(string1.data(), string1.size(), string2.data(), string2.size());
                     }
                     if (descending)
                         tst = -tst;
@@ -188,11 +190,11 @@ void xsltUnicodeSortFunction(xsltTransformContextPtr ctxt, xmlNodePtr *sorts, in
                          * Compute the result of the next level for the
                          * full set, this might be optimized ... or not
                          */
-                        if (resultsTab[depth] == NULL) 
+                        if (resultsTab[depth] == NULL)
                             resultsTab[depth] = xsltComputeSortResult(ctxt,
                                                         sorts[depth]);
                         res = resultsTab[depth];
-                        if (res == NULL) 
+                        if (res == NULL)
                             break;
                         if (res[j] == NULL) {
                             if (res[j+incr] != NULL)
@@ -213,14 +215,16 @@ void xsltUnicodeSortFunction(xsltTransformContextPtr ctxt, xmlNodePtr *sorts, in
                                 else if (res[j]->floatval == res[j + incr]->
                                                 floatval)
                                     tst = 0;
-                                else if (res[j]->floatval > 
+                                else if (res[j]->floatval >
                                         res[j + incr]->floatval)
                                     tst = 1;
                                 else tst = -1;
                             } else {
-                                String str1 = String::fromUTF8((const char*)res[j]->stringval);
-                                String str2 = String::fromUTF8((const char*)res[j + incr]->stringval);
-                                tst = collator.collate(str1.characters(), str1.length(), str2.characters(), str2.length());
+                                Vector<UChar> string1;
+                                Vector<UChar> string2;
+                                String::fromUTF8(reinterpret_cast<const char*>(res[j]->stringval)).appendTo(string1);
+                                String::fromUTF8(reinterpret_cast<const char*>(res[j + incr]->stringval)).appendTo(string2);
+                                tst = collator.collate(string1.data(), string1.size(), string2.data(), string2.size());
                             }
                             if (desc)
                                 tst = -tst;

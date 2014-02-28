@@ -27,10 +27,12 @@
 
 #include "HTMLNames.h"
 #include "SVGNames.h"
+#include "bindings/v8/ExceptionState.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/MediaList.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/ContextFeatures.h"
+#include "core/dom/DocumentInit.h"
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
 #include "core/dom/ExceptionCode.h"
@@ -62,7 +64,7 @@ static void addString(FeatureSet& set, const char* string)
     set.add(string);
 }
 
-static bool isSVG10Feature(const String &feature, const String &version)
+static bool isSupportedSVG10Feature(const String& feature, const String& version)
 {
     if (!version.isEmpty() && version != "1.0")
         return false;
@@ -91,7 +93,7 @@ static bool isSVG10Feature(const String &feature, const String &version)
         && svgFeatures.contains(feature.right(feature.length() - 8));
 }
 
-static bool isSVG11Feature(const String &feature, const String &version)
+static bool isSupportedSVG11Feature(const String& feature, const String& version)
 {
     if (!version.isEmpty() && version != "1.1")
         return false;
@@ -146,7 +148,7 @@ static bool isSVG11Feature(const String &feature, const String &version)
         addString(svgFeatures, "ExternalResourcesRequired");
         addString(svgFeatures, "View");
         addString(svgFeatures, "Script");
-        addString(svgFeatures, "Animation"); 
+        addString(svgFeatures, "Animation");
 #if ENABLE(SVG_FONTS)
         addString(svgFeatures, "Font");
         addString(svgFeatures, "BasicFont");
@@ -158,50 +160,6 @@ static bool isSVG11Feature(const String &feature, const String &version)
         && svgFeatures.contains(feature.right(feature.length() - 35));
 }
 
-static bool isEvents2Feature(const String &feature, const String &version)
-{
-    if (!version.isEmpty() && version != "2.0")
-        return false;
-
-    static bool initialized = false;
-    DEFINE_STATIC_LOCAL(FeatureSet, events2Features, ());
-    if (!initialized) {
-        addString(events2Features, "Events");
-        addString(events2Features, "HTMLEvents");
-        addString(events2Features, "MouseEvents");
-        addString(events2Features, "MutationEvents");
-        addString(events2Features, "UIEvents");
-        initialized = true;
-    }
-    return events2Features.contains(feature);
-}
-
-static bool isEvents3Feature(const String &feature, const String &version)
-{
-    if (!version.isEmpty() && version != "3.0")
-        return false;
-
-    static bool initialized = false;
-    DEFINE_STATIC_LOCAL(FeatureSet, events3Features, ());
-    if (!initialized) {
-        // FIXME: We probably support many of these features.
-//        addString(events3Features, "CompositionEvents");
-//        addString(events3Features, "Events");
-//        addString(events3Features, "FocusEvents");
-//        addString(events3Features, "HTMLEvents");
-//        addString(events3Features, "KeyboardEvents");
-//        addString(events3Features, "MouseEvents");
-//        addString(events3Features, "MutationEvents");
-//        addString(events3Features, "MutationNameEvents");
-        addString(events3Features, "TextEvents");
-//        addString(events3Features, "UIEvents");
-//        addString(events3Features, "WheelEvents");
-        initialized = true;
-    }
-    // FIXME: We do not yet support Events 3 "extended feature strings".
-    return events3Features.contains(feature);
-}
-
 DOMImplementation::DOMImplementation(Document* document)
     : m_document(document)
 {
@@ -210,36 +168,20 @@ DOMImplementation::DOMImplementation(Document* document)
 
 bool DOMImplementation::hasFeature(const String& feature, const String& version)
 {
-    String lower = feature.lower();
-    if (lower == "core" || lower == "html" || lower == "xml" || lower == "xhtml")
-        return version.isEmpty() || version == "1.0" || version == "2.0";
-    if (lower == "css"
-            || lower == "css2"
-            || lower == "range"
-            || lower == "stylesheets"
-            || lower == "traversal"
-            || lower == "views")
-        return version.isEmpty() || version == "2.0";
-    if (isEvents2Feature(feature, version))
-        return true;
-    if (lower == "xpath")
-        return version.isEmpty() || version == "3.0";
-    if (isEvents3Feature(feature, version))
-        return true;
-
-    if (isSVG11Feature(feature, version))
-        return true;
-    if (isSVG10Feature(feature, version))
-        return true;
-
-    return false;
+    if (feature.startsWith("http://www.w3.org/TR/SVG", false)
+    || feature.startsWith("org.w3c.dom.svg", false)
+    || feature.startsWith("org.w3c.svg", false)) {
+        // FIXME: SVG 2.0 support?
+        return isSupportedSVG10Feature(feature, version) || isSupportedSVG11Feature(feature, version);
+    }
+    return true;
 }
 
 PassRefPtr<DocumentType> DOMImplementation::createDocumentType(const String& qualifiedName,
-    const String& publicId, const String& systemId, ExceptionCode& ec)
+    const String& publicId, const String& systemId, ExceptionState& es)
 {
     String prefix, localName;
-    if (!Document::parseQualifiedName(qualifiedName, prefix, localName, ec))
+    if (!Document::parseQualifiedName(qualifiedName, prefix, localName, es))
         return 0;
 
     return DocumentType::create(0, qualifiedName, publicId, systemId);
@@ -251,33 +193,33 @@ DOMImplementation* DOMImplementation::getInterface(const String& /*feature*/)
 }
 
 PassRefPtr<Document> DOMImplementation::createDocument(const String& namespaceURI,
-    const String& qualifiedName, DocumentType* doctype, ExceptionCode& ec)
+    const String& qualifiedName, DocumentType* doctype, ExceptionState& es)
 {
     RefPtr<Document> doc;
     if (namespaceURI == SVGNames::svgNamespaceURI)
-        doc = SVGDocument::create(0, KURL());
+        doc = SVGDocument::create();
     else if (namespaceURI == HTMLNames::xhtmlNamespaceURI)
-        doc = Document::createXHTML(0, KURL());
+        doc = Document::createXHTML(DocumentInit().withRegistrationContext(m_document->registrationContext()));
     else
-        doc = Document::create(0, KURL());
+        doc = Document::create();
 
     doc->setSecurityOrigin(m_document->securityOrigin());
     doc->setContextFeatures(m_document->contextFeatures());
 
     RefPtr<Node> documentElement;
     if (!qualifiedName.isEmpty()) {
-        documentElement = doc->createElementNS(namespaceURI, qualifiedName, ec);
-        if (ec)
+        documentElement = doc->createElementNS(namespaceURI, qualifiedName, es);
+        if (es.hadException())
             return 0;
     }
 
-    // WRONG_DOCUMENT_ERR: Raised if doctype has already been used with a different document or was
+    // WrongDocumentError: Raised if doctype has already been used with a different document or was
     // created from a different implementation.
     // Hixie's interpretation of the DOM Core spec suggests we should prefer
-    // other exceptions to WRONG_DOCUMENT_ERR (based on order mentioned in spec),
+    // other exceptions to WrongDocumentError (based on order mentioned in spec),
     // but this matches the new DOM Core spec (http://www.w3.org/TR/domcore/).
     if (doctype && doctype->document()) {
-        ec = WRONG_DOCUMENT_ERR;
+        es.throwDOMException(WrongDocumentError);
         return 0;
     }
 
@@ -372,7 +314,7 @@ bool DOMImplementation::isTextMIMEType(const String& mimeType)
 
 PassRefPtr<HTMLDocument> DOMImplementation::createHTMLDocument(const String& title)
 {
-    RefPtr<HTMLDocument> d = HTMLDocument::create(0, KURL());
+    RefPtr<HTMLDocument> d = HTMLDocument::create(DocumentInit().withRegistrationContext(m_document->registrationContext()));
     d->open();
     d->write("<!doctype html><html><body></body></html>");
     if (!title.isNull())
@@ -385,42 +327,42 @@ PassRefPtr<HTMLDocument> DOMImplementation::createHTMLDocument(const String& tit
 PassRefPtr<Document> DOMImplementation::createDocument(const String& type, Frame* frame, const KURL& url, bool inViewSourceMode)
 {
     if (inViewSourceMode)
-        return HTMLViewSourceDocument::create(frame, url, type);
+        return HTMLViewSourceDocument::create(DocumentInit(url, frame), type);
 
     // Plugins cannot take HTML and XHTML from us, and we don't even need to initialize the plugin database for those.
     if (type == "text/html")
-        return HTMLDocument::create(frame, url);
+        return HTMLDocument::create(DocumentInit(url, frame));
     if (type == "application/xhtml+xml")
-        return Document::createXHTML(frame, url);
+        return Document::createXHTML(DocumentInit(url, frame));
 
     PluginData* pluginData = 0;
-    if (frame && frame->page() && frame->loader()->subframeLoader()->allowPlugins(NotAboutToInstantiatePlugin))
+    if (frame && frame->page() && frame->loader()->allowPlugins(NotAboutToInstantiatePlugin))
         pluginData = frame->page()->pluginData();
 
     // PDF is one image type for which a plugin can override built-in support.
     // We do not want QuickTime to take over all image types, obviously.
     if ((type == "application/pdf" || type == "text/pdf") && pluginData && pluginData->supportsMimeType(type))
-        return PluginDocument::create(frame, url);
+        return PluginDocument::create(DocumentInit(url, frame));
     if (Image::supportsType(type))
-        return ImageDocument::create(frame, url);
+        return ImageDocument::create(DocumentInit(url, frame));
 
     // Check to see if the type can be played by our MediaPlayer, if so create a MediaDocument
     if (HTMLMediaElement::supportsType(ContentType(type)))
-        return MediaDocument::create(frame, url);
+        return MediaDocument::create(DocumentInit(url, frame));
 
     // Everything else except text/plain can be overridden by plugins. In particular, Adobe SVG Viewer should be used for SVG, if installed.
     // Disallowing plug-ins to use text/plain prevents plug-ins from hijacking a fundamental type that the browser is expected to handle,
     // and also serves as an optimization to prevent loading the plug-in database in the common case.
-    if (type != "text/plain" && pluginData && pluginData->supportsMimeType(type)) 
-        return PluginDocument::create(frame, url);
+    if (type != "text/plain" && pluginData && pluginData->supportsMimeType(type))
+        return PluginDocument::create(DocumentInit(url, frame));
     if (isTextMIMEType(type))
-        return TextDocument::create(frame, url);
+        return TextDocument::create(DocumentInit(url, frame));
     if (type == "image/svg+xml")
-        return SVGDocument::create(frame, url);
+        return SVGDocument::create(DocumentInit(url, frame));
     if (isXMLMIMEType(type))
-        return Document::create(frame, url);
+        return Document::create(DocumentInit(url, frame));
 
-    return HTMLDocument::create(frame, url);
+    return HTMLDocument::create(DocumentInit(url, frame));
 }
 
 }

@@ -32,6 +32,7 @@
 #include "core/html/DateTimeLocalInputType.h"
 
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionState.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/InputTypeNames.h"
 #include "core/platform/DateComponents.h"
@@ -78,10 +79,10 @@ double DateTimeLocalInputType::valueAsDate() const
     return DateComponents::invalidMilliseconds();
 }
 
-void DateTimeLocalInputType::setValueAsDate(double value, ExceptionCode& ec) const
+void DateTimeLocalInputType::setValueAsDate(double value, ExceptionState& es) const
 {
     // valueAsDate doesn't work for the datetime-local type according to the standard.
-    InputType::setValueAsDate(value, ec);
+    InputType::setValueAsDate(value, es);
 }
 
 StepRange DateTimeLocalInputType::createStepRange(AnyStepHandling anyStepHandling) const
@@ -95,11 +96,11 @@ StepRange DateTimeLocalInputType::createStepRange(AnyStepHandling anyStepHandlin
     return StepRange(stepBase, minimum, maximum, step, stepDescription);
 }
 
-bool DateTimeLocalInputType::parseToDateComponentsInternal(const UChar* characters, unsigned length, DateComponents* out) const
+bool DateTimeLocalInputType::parseToDateComponentsInternal(const String& string, DateComponents* out) const
 {
     ASSERT(out);
     unsigned end;
-    return out->parseDateTimeLocal(characters, length, 0, end) && end == length;
+    return out->parseDateTimeLocal(string, 0, end) && end == string.length();
 }
 
 bool DateTimeLocalInputType::setMillisecondToDateComponents(double value, DateComponents* date) const

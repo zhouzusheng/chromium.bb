@@ -47,7 +47,6 @@ template<typename CharacterType> struct HashAndCharactersTranslator;
 struct HashAndUTF8CharactersTranslator;
 struct LCharBufferTranslator;
 struct CharBufferFromLiteralDataTranslator;
-class MemoryObjectInfo;
 struct SubstringTranslator;
 struct UCharBufferTranslator;
 template<typename> class RetainPtr;
@@ -62,26 +61,18 @@ typedef bool (*IsWhiteSpaceFunctionPtr)(UChar);
 
 #ifdef STRING_STATS
 struct StringStats {
-    inline void add8BitString(unsigned length, bool isSubString = false)
+    inline void add8BitString(unsigned length)
     {
         ++m_totalNumberStrings;
         ++m_number8BitStrings;
-        if (!isSubString)
-            m_total8BitData += length;
+        m_total8BitData += length;
     }
 
-    inline void add16BitString(unsigned length, bool isSubString = false)
+    inline void add16BitString(unsigned length)
     {
         ++m_totalNumberStrings;
         ++m_number16BitStrings;
-        if (!isSubString)
-            m_total16BitData += length;
-    }
-
-    inline void addUpconvertedString(unsigned length)
-    {
-        ++m_numberUpconvertedStrings;
-        m_totalUpconvertedData += length;
+        m_total16BitData += length;
     }
 
     void removeString(StringImpl*);
@@ -93,35 +84,27 @@ struct StringStats {
     unsigned m_totalNumberStrings;
     unsigned m_number8BitStrings;
     unsigned m_number16BitStrings;
-    unsigned m_numberUpconvertedStrings;
     unsigned long long m_total8BitData;
     unsigned long long m_total16BitData;
-    unsigned long long m_totalUpconvertedData;
 };
 
 void addStringForStats(StringImpl*);
 void removeStringForStats(StringImpl*);
 
 #define STRING_STATS_ADD_8BIT_STRING(length) StringImpl::stringStats().add8BitString(length); addStringForStats(this)
-#define STRING_STATS_ADD_8BIT_STRING2(length, isSubString) StringImpl::stringStats().add8BitString(length, isSubString); addStringForStats(this)
 #define STRING_STATS_ADD_16BIT_STRING(length) StringImpl::stringStats().add16BitString(length); addStringForStats(this)
-#define STRING_STATS_ADD_16BIT_STRING2(length, isSubString) StringImpl::stringStats().add16BitString(length, isSubString); addStringForStats(this)
-#define STRING_STATS_ADD_UPCONVERTED_STRING(length) StringImpl::stringStats().addUpconvertedString(length)
 #define STRING_STATS_REMOVE_STRING(string) StringImpl::stringStats().removeString(string); removeStringForStats(this)
 #else
 #define STRING_STATS_ADD_8BIT_STRING(length) ((void)0)
-#define STRING_STATS_ADD_8BIT_STRING2(length, isSubString) ((void)0)
 #define STRING_STATS_ADD_16BIT_STRING(length) ((void)0)
-#define STRING_STATS_ADD_16BIT_STRING2(length, isSubString) ((void)0)
-#define STRING_STATS_ADD_UPCONVERTED_STRING(length) ((void)0)
 #define STRING_STATS_REMOVE_STRING(string) ((void)0)
 #endif
 
+// You can find documentation about this class in this doc:
+// https://docs.google.com/document/d/1kOCUlJdh2WJMJGDf-WoEQhmnjKLaOYRbiHz5TiGJl14/edit?usp=sharing
 class WTF_EXPORT StringImpl {
     WTF_MAKE_NONCOPYABLE(StringImpl);
-    // This is needed because we malloc() space for a StringImpl plus an
-    // immediately following buffer, as a performance tweak.
-    NEW_DELETE_SAME_AS_MALLOC_FREE;
+    WTF_MAKE_FAST_ALLOCATED;
     friend struct WTF::CStringTranslator;
     template<typename CharacterType> friend struct WTF::HashAndCharactersTranslator;
     friend struct WTF::HashAndUTF8CharactersTranslator;
@@ -129,181 +112,64 @@ class WTF_EXPORT StringImpl {
     friend struct WTF::LCharBufferTranslator;
     friend struct WTF::SubstringTranslator;
     friend struct WTF::UCharBufferTranslator;
-    friend class AtomicStringImpl;
-    
+
 private:
-    enum BufferOwnership {
-        BufferInternal,
-        BufferOwned,
-        BufferSubstring,
-        // NOTE: Adding more ownership types needs to extend m_hashAndFlags as we're at capacity
-    };
-
     // Used to construct static strings, which have an special refCount that can never hit zero.
     // This means that the static string will never be destroyed, which is important because
     // static strings will be shared across threads & ref-counted in a non-threadsafe manner.
-    enum ConstructStaticStringTag { ConstructStaticString };
-    StringImpl(const UChar* characters, unsigned length, ConstructStaticStringTag)
-        : m_data16(characters)
-        , m_buffer(0)
-        , m_refCount(s_refCountFlagIsStaticString)
-        , m_length(length)
-        , m_hashAndFlags(s_hashFlagIsIdentifier | BufferOwned)
-    {
-        // Ensure that the hash is computed so that AtomicStringHash can call existingHash()
-        // with impunity. The empty string is special because it is never entered into
-        // AtomicString's HashKey, but still needs to compare correctly.
-        STRING_STATS_ADD_16BIT_STRING(m_length);
-
-        hash();
-    }
-
-    // Used to construct static strings, which have an special refCount that can never hit zero.
-    // This means that the static string will never be destroyed, which is important because
-    // static strings will be shared across threads & ref-counted in a non-threadsafe manner.
-    StringImpl(const LChar* characters, unsigned length, ConstructStaticStringTag)
-        : m_data8(characters)
-        , m_buffer(0)
-        , m_refCount(s_refCountFlagIsStaticString)
-        , m_length(length)
-        , m_hashAndFlags(s_hashFlag8BitBuffer | s_hashFlagIsIdentifier | BufferOwned)
+    enum ConstructEmptyStringTag { ConstructEmptyString };
+    explicit StringImpl(ConstructEmptyStringTag)
+        : m_refCount(s_refCountFlagIsStaticString)
+        , m_length(0)
+        , m_hash(0)
+        , m_isAtomic(false)
+        , m_is8Bit(true)
     {
         // Ensure that the hash is computed so that AtomicStringHash can call existingHash()
         // with impunity. The empty string is special because it is never entered into
         // AtomicString's HashKey, but still needs to compare correctly.
         STRING_STATS_ADD_8BIT_STRING(m_length);
-
         hash();
     }
 
     // FIXME: there has to be a less hacky way to do this.
     enum Force8Bit { Force8BitConstructor };
-    // Create a normal 8-bit string with internal storage (BufferInternal)
     StringImpl(unsigned length, Force8Bit)
-        : m_data8(reinterpret_cast<const LChar*>(this + 1))
-        , m_buffer(0)
-        , m_refCount(s_refCountIncrement)
+        : m_refCount(s_refCountIncrement)
         , m_length(length)
-        , m_hashAndFlags(s_hashFlag8BitBuffer | BufferInternal)
+        , m_hash(0)
+        , m_isAtomic(false)
+        , m_is8Bit(true)
     {
-        ASSERT(m_data8);
         ASSERT(m_length);
-
         STRING_STATS_ADD_8BIT_STRING(m_length);
     }
 
-    // Create a normal 16-bit string with internal storage (BufferInternal)
     StringImpl(unsigned length)
-        : m_data16(reinterpret_cast<const UChar*>(this + 1))
-        , m_buffer(0)
-        , m_refCount(s_refCountIncrement)
+        : m_refCount(s_refCountIncrement)
         , m_length(length)
-        , m_hashAndFlags(BufferInternal)
+        , m_hash(0)
+        , m_isAtomic(false)
+        , m_is8Bit(false)
     {
-        ASSERT(m_data16);
         ASSERT(m_length);
-
         STRING_STATS_ADD_16BIT_STRING(m_length);
     }
 
-    // Create a StringImpl adopting ownership of the provided buffer (BufferOwned)
-    StringImpl(const LChar* characters, unsigned length)
-        : m_data8(characters)
-        , m_buffer(0)
-        , m_refCount(s_refCountIncrement)
+    enum StaticStringTag { StaticString };
+    StringImpl(unsigned length, unsigned hash, StaticStringTag)
+        : m_refCount(s_refCountFlagIsStaticString)
         , m_length(length)
-        , m_hashAndFlags(s_hashFlag8BitBuffer | BufferOwned)
+        , m_hash(hash)
+        , m_isAtomic(false)
+        , m_is8Bit(true)
     {
-        ASSERT(m_data8);
-        ASSERT(m_length);
-
-        STRING_STATS_ADD_8BIT_STRING(m_length);
     }
 
-    enum ConstructFromLiteralTag { ConstructFromLiteral };
-    StringImpl(const char* characters, unsigned length, ConstructFromLiteralTag)
-        : m_data8(reinterpret_cast<const LChar*>(characters))
-        , m_buffer(0)
-        , m_refCount(s_refCountIncrement)
-        , m_length(length)
-        , m_hashAndFlags(s_hashFlag8BitBuffer | BufferInternal | s_hashFlagHasTerminatingNullCharacter)
-    {
-        ASSERT(m_data8);
-        ASSERT(m_length);
-        ASSERT(!characters[length]);
-
-        STRING_STATS_ADD_8BIT_STRING(0);
-    }
-
-    // Create a StringImpl adopting ownership of the provided buffer (BufferOwned)
-    StringImpl(const UChar* characters, unsigned length)
-        : m_data16(characters)
-        , m_buffer(0)
-        , m_refCount(s_refCountIncrement)
-        , m_length(length)
-        , m_hashAndFlags(BufferOwned)
-    {
-        ASSERT(m_data16);
-        ASSERT(m_length);
-
-        STRING_STATS_ADD_16BIT_STRING(m_length);
-    }
-
-    // Used to create new strings that are a substring of an existing 8-bit StringImpl (BufferSubstring)
-    StringImpl(const LChar* characters, unsigned length, PassRefPtr<StringImpl> base)
-        : m_data8(characters)
-        , m_substringBuffer(base.leakRef())
-        , m_refCount(s_refCountIncrement)
-        , m_length(length)
-        , m_hashAndFlags(s_hashFlag8BitBuffer | BufferSubstring)
-    {
-        ASSERT(is8Bit());
-        ASSERT(m_data8);
-        ASSERT(m_length);
-        ASSERT(m_substringBuffer->bufferOwnership() != BufferSubstring);
-
-        STRING_STATS_ADD_8BIT_STRING2(m_length, true);
-    }
-
-    // Used to create new strings that are a substring of an existing 16-bit StringImpl (BufferSubstring)
-    StringImpl(const UChar* characters, unsigned length, PassRefPtr<StringImpl> base)
-        : m_data16(characters)
-        , m_substringBuffer(base.leakRef())
-        , m_refCount(s_refCountIncrement)
-        , m_length(length)
-        , m_hashAndFlags(BufferSubstring)
-    {
-        ASSERT(!is8Bit());
-        ASSERT(m_data16);
-        ASSERT(m_length);
-        ASSERT(m_substringBuffer->bufferOwnership() != BufferSubstring);
-
-        STRING_STATS_ADD_16BIT_STRING2(m_length, true);
-    }
-
-    enum CreateEmptyUnique_T { CreateEmptyUnique };
-    StringImpl(CreateEmptyUnique_T)
-        : m_data16(reinterpret_cast<const UChar*>(1))
-        , m_buffer(0)
-        , m_refCount(s_refCountIncrement)
-        , m_length(0)
-    {
-        ASSERT(m_data16);
-        // Set the hash early, so that all empty unique StringImpls have a hash,
-        // and don't use the normal hashing algorithm - the unique nature of these
-        // keys means that we don't need them to match any other string (in fact,
-        // that's exactly the oposite of what we want!), and teh normal hash would
-        // lead to lots of conflicts.
-        unsigned hash = reinterpret_cast<uintptr_t>(this);
-        hash <<= s_flagCount;
-        if (!hash)
-            hash = 1 << s_flagCount;
-        m_hashAndFlags = hash | BufferInternal;
-
-        STRING_STATS_ADD_16BIT_STRING(m_length);
-    }
 public:
     ~StringImpl();
+
+    static StringImpl* createStatic(const char* string, unsigned length, unsigned hash);
 
     static PassRefPtr<StringImpl> create(const UChar*, unsigned length);
     static PassRefPtr<StringImpl> create(const LChar*, unsigned length);
@@ -318,168 +184,38 @@ public:
     static PassRefPtr<StringImpl> create(const LChar*);
     ALWAYS_INLINE static PassRefPtr<StringImpl> create(const char* s) { return create(reinterpret_cast<const LChar*>(s)); }
 
-    static ALWAYS_INLINE PassRefPtr<StringImpl> create8(PassRefPtr<StringImpl> rep, unsigned offset, unsigned length)
-    {
-        ASSERT(rep);
-        ASSERT(length <= rep->length());
-
-        if (!length)
-            return empty();
-
-        ASSERT(rep->is8Bit());
-        StringImpl* ownerRep = (rep->bufferOwnership() == BufferSubstring) ? rep->m_substringBuffer : rep.get();
-        return adoptRef(new StringImpl(rep->m_data8 + offset, length, ownerRep));
-    }
-
-    static ALWAYS_INLINE PassRefPtr<StringImpl> create(PassRefPtr<StringImpl> rep, unsigned offset, unsigned length)
-    {
-        ASSERT(rep);
-        ASSERT(length <= rep->length());
-
-        if (!length)
-            return empty();
-
-        StringImpl* ownerRep = (rep->bufferOwnership() == BufferSubstring) ? rep->m_substringBuffer : rep.get();
-        if (rep->is8Bit())
-            return adoptRef(new StringImpl(rep->m_data8 + offset, length, ownerRep));
-        return adoptRef(new StringImpl(rep->m_data16 + offset, length, ownerRep));
-    }
-
-    static PassRefPtr<StringImpl> createFromLiteral(const char* characters, unsigned length);
-    template<unsigned charactersCount>
-    ALWAYS_INLINE static PassRefPtr<StringImpl> createFromLiteral(const char (&characters)[charactersCount])
-    {
-        COMPILE_ASSERT(charactersCount > 1, StringImplFromLiteralNotEmpty);
-        COMPILE_ASSERT((charactersCount - 1 <= ((unsigned(~0) - sizeof(StringImpl)) / sizeof(LChar))), StringImplFromLiteralCannotOverflow);
-
-        return createFromLiteral(characters, charactersCount - 1);
-    }
-    static PassRefPtr<StringImpl> createFromLiteral(const char* characters);
-
     static PassRefPtr<StringImpl> createUninitialized(unsigned length, LChar*& data);
     static PassRefPtr<StringImpl> createUninitialized(unsigned length, UChar*& data);
-    template <typename T> static ALWAYS_INLINE PassRefPtr<StringImpl> tryCreateUninitialized(unsigned length, T*& output)
-    {
-        if (!length) {
-            output = 0;
-            return empty();
-        }
 
-        if (length > ((std::numeric_limits<unsigned>::max() - sizeof(StringImpl)) / sizeof(T))) {
-            output = 0;
-            return 0;
-        }
-        StringImpl* resultImpl;
-        if (!tryFastMalloc(sizeof(T) * length + sizeof(StringImpl)).getValue(resultImpl)) {
-            output = 0;
-            return 0;
-        }
-        output = reinterpret_cast<T*>(resultImpl + 1);
-
-        if (sizeof(T) == sizeof(char))
-            return adoptRef(new (NotNull, resultImpl) StringImpl(length, Force8BitConstructor));
-
-        return adoptRef(new (NotNull, resultImpl) StringImpl(length));
-    }
-
-    static PassRefPtr<StringImpl> createEmptyUnique()
-    {
-        return adoptRef(new StringImpl(CreateEmptyUnique));
-    }
-
-    // Reallocate the StringImpl. The originalString must be only owned by the PassRefPtr,
-    // and the buffer ownership must be BufferInternal. Just like the input pointer of realloc(),
-    // the originalString can't be used after this function.
+    // Reallocate the StringImpl. The originalString must be only owned by the PassRefPtr.
+    // Just like the input pointer of realloc(), the originalString can't be used after this function.
     static PassRefPtr<StringImpl> reallocate(PassRefPtr<StringImpl> originalString, unsigned length, LChar*& data);
     static PassRefPtr<StringImpl> reallocate(PassRefPtr<StringImpl> originalString, unsigned length, UChar*& data);
 
-    static unsigned flagsOffset() { return OBJECT_OFFSETOF(StringImpl, m_hashAndFlags); }
-    static unsigned flagIs8Bit() { return s_hashFlag8BitBuffer; }
-    static unsigned dataOffset() { return OBJECT_OFFSETOF(StringImpl, m_data8); }
-    static PassRefPtr<StringImpl> createWithTerminatingNullCharacter(const StringImpl&);
-
-    template<typename CharType, size_t inlineCapacity>
-    static PassRefPtr<StringImpl> adopt(Vector<CharType, inlineCapacity>& vector)
+    // If this StringImpl has only one reference, we can truncate the string by updating
+    // its m_length property without actually re-allocating its buffer.
+    void truncateAssumingIsolated(unsigned length)
     {
-        if (size_t size = vector.size()) {
-            ASSERT(vector.data());
-            RELEASE_ASSERT(size <= std::numeric_limits<unsigned>::max());
-            return adoptRef(new StringImpl(vector.releaseBuffer(), size));
-        }
-        return empty();
+        ASSERT(hasOneRef());
+        ASSERT(length <= m_length);
+        m_length = length;
     }
-
-    static PassRefPtr<StringImpl> adopt(StringBuffer<UChar>&);
-    static PassRefPtr<StringImpl> adopt(StringBuffer<LChar>&);
 
     unsigned length() const { return m_length; }
-    bool is8Bit() const { return m_hashAndFlags & s_hashFlag8BitBuffer; }
-    bool hasInternalBuffer() const { return bufferOwnership() == BufferInternal; }
-    bool hasOwnedBuffer() const { return bufferOwnership() == BufferOwned; }
-    StringImpl* baseString() const { return bufferOwnership() == BufferSubstring ? m_substringBuffer : 0; }
+    bool is8Bit() const { return m_is8Bit; }
 
-    // FIXME: Remove all unnecessary usages of characters()
-    ALWAYS_INLINE const LChar* characters8() const { ASSERT(is8Bit()); return m_data8; }
-    ALWAYS_INLINE const UChar* characters16() const { ASSERT(!is8Bit()); return m_data16; }
-    ALWAYS_INLINE const UChar* characters() const
-    {
-        if (!is8Bit())
-            return m_data16;
-
-        return getData16SlowCase();
-    }
+    ALWAYS_INLINE const LChar* characters8() const { ASSERT(is8Bit()); return reinterpret_cast<const LChar*>(this + 1); }
+    ALWAYS_INLINE const UChar* characters16() const { ASSERT(!is8Bit()); return reinterpret_cast<const UChar*>(this + 1); }
 
     template <typename CharType>
     ALWAYS_INLINE const CharType * getCharacters() const;
 
-    size_t cost()
-    {
-        // For substrings, return the cost of the base string.
-        if (bufferOwnership() == BufferSubstring)
-            return m_substringBuffer->cost();
-
-        if (m_hashAndFlags & s_hashFlagDidReportCost)
-            return 0;
-
-        m_hashAndFlags |= s_hashFlagDidReportCost;
-        return m_length;
-    }
-
     size_t sizeInBytes() const;
 
-    bool has16BitShadow() const { return m_hashAndFlags & s_hashFlagHas16BitShadow; }
-    void upconvertCharacters(unsigned, unsigned) const;
-    bool isIdentifier() const { return m_hashAndFlags & s_hashFlagIsIdentifier; }
-    void setIsIdentifier(bool isIdentifier)
-    {
-        ASSERT(!isStatic());
-        if (isIdentifier)
-            m_hashAndFlags |= s_hashFlagIsIdentifier;
-        else
-            m_hashAndFlags &= ~s_hashFlagIsIdentifier;
-    }
-
-    bool isEmptyUnique() const
-    {
-        return !length() && !isStatic();
-    }
-
-    bool hasTerminatingNullCharacter() const { return m_hashAndFlags & s_hashFlagHasTerminatingNullCharacter; }
-
-    bool isAtomic() const { return m_hashAndFlags & s_hashFlagIsAtomic; }
-    void setIsAtomic(bool isAtomic)
-    {
-        if (isAtomic)
-            m_hashAndFlags |= s_hashFlagIsAtomic;
-        else
-            m_hashAndFlags &= ~s_hashFlagIsAtomic;
-    }
+    bool isAtomic() const { return m_isAtomic; }
+    void setIsAtomic(bool isAtomic) { m_isAtomic = isAtomic; }
 
     bool isStatic() const { return m_refCount & s_refCountFlagIsStaticString; }
-
-#ifdef STRING_STATS
-    bool isSubString() const { return  bufferOwnership() == BufferSubstring; }
-#endif
 
 private:
     // The high bits of 'hash' are always empty, but we prefer to store our flags
@@ -489,19 +225,14 @@ private:
     {
         ASSERT(!hasHash());
         // Multiple clients assume that StringHasher is the canonical string hash function.
-        ASSERT(hash == (is8Bit() ? StringHasher::computeHashAndMaskTop8Bits(m_data8, m_length) : StringHasher::computeHashAndMaskTop8Bits(m_data16, m_length)));
-        ASSERT(!(hash & (s_flagMask << (8 * sizeof(hash) - s_flagCount)))); // Verify that enough high bits are empty.
-        
-        hash <<= s_flagCount;
-        ASSERT(!(hash & m_hashAndFlags)); // Verify that enough low bits are empty after shift.
+        ASSERT(hash == (is8Bit() ? StringHasher::computeHashAndMaskTop8Bits(characters8(), m_length) : StringHasher::computeHashAndMaskTop8Bits(characters16(), m_length)));
+        m_hash = hash;
         ASSERT(hash); // Verify that 0 is a valid sentinel hash value.
-
-        m_hashAndFlags |= hash; // Store hash with flags in low bits.
     }
 
     unsigned rawHash() const
     {
-        return m_hashAndFlags >> s_flagCount;
+        return m_hash;
     }
 
 public:
@@ -553,6 +284,7 @@ public:
             return;
         }
 
+        // FIXME: Is this implementation really faster than memcpy?
         if (numCharacters <= s_copyCharsInlineCutOff) {
             unsigned i = 0;
 #if (CPU(X86) || CPU(X86_64))
@@ -590,8 +322,8 @@ public:
     {
         ASSERT_WITH_SECURITY_IMPLICATION(i < m_length);
         if (is8Bit())
-            return m_data8[i];
-        return m_data16[i];
+            return characters8()[i];
+        return characters16()[i];
     }
     UChar32 characterStartingAt(unsigned);
 
@@ -649,6 +381,8 @@ public:
     size_t reverseFind(StringImpl*, unsigned index = UINT_MAX);
     size_t reverseFindIgnoringCase(StringImpl*, unsigned index = UINT_MAX);
 
+    size_t count(LChar) const;
+
     bool startsWith(StringImpl* str, bool caseSensitive = true) { return (caseSensitive ? reverseFind(str, 0) : reverseFindIgnoringCase(str, 0)) == 0; }
     bool startsWith(UChar) const;
     bool startsWith(const char*, unsigned matchLength, bool caseSensitive) const;
@@ -683,55 +417,20 @@ public:
 #endif
 
 private:
-
-    bool isASCIILiteral() const
-    {
-        return is8Bit() && hasInternalBuffer() && reinterpret_cast<const void*>(m_data8) != reinterpret_cast<const void*>(this + 1);
-    }
-
     // This number must be at least 2 to avoid sharing empty, null as well as 1 character strings from SmallStrings.
     static const unsigned s_copyCharsInlineCutOff = 20;
 
-    BufferOwnership bufferOwnership() const { return static_cast<BufferOwnership>(m_hashAndFlags & s_hashMaskBufferOwnership); }
     template <class UCharPredicate> PassRefPtr<StringImpl> stripMatchedCharacters(UCharPredicate);
     template <typename CharType, class UCharPredicate> PassRefPtr<StringImpl> simplifyMatchedCharactersToSpace(UCharPredicate);
-    NEVER_INLINE const UChar* getData16SlowCase() const;
     NEVER_INLINE unsigned hashSlowCase() const;
 
     // The bottom bit in the ref count indicates a static (immortal) string.
     static const unsigned s_refCountFlagIsStaticString = 0x1;
     static const unsigned s_refCountIncrement = 0x2; // This allows us to ref / deref without disturbing the static string flag.
 
-    // The bottom 8 bits in the hash are flags.
-    static const unsigned s_flagCount = 8;
-    static const unsigned s_flagMask = (1u << s_flagCount) - 1;
-    COMPILE_ASSERT(s_flagCount == StringHasher::flagCount, StringHasher_reserves_enough_bits_for_StringImpl_flags);
-
-    static const unsigned s_hashFlagHas16BitShadow = 1u << 7;
-    static const unsigned s_hashFlag8BitBuffer = 1u << 6;
-    static const unsigned s_hashFlagHasTerminatingNullCharacter = 1u << 5;
-    static const unsigned s_hashFlagIsAtomic = 1u << 4;
-    static const unsigned s_hashFlagDidReportCost = 1u << 3;
-    static const unsigned s_hashFlagIsIdentifier = 1u << 2;
-    static const unsigned s_hashMaskBufferOwnership = 1u | (1u << 1);
-
 #ifdef STRING_STATS
     static StringStats m_stringStats;
 #endif
-
-public:
-    struct StaticASCIILiteral {
-        // These member variables must match the layout of StringImpl.
-        const LChar* m_data8;
-        const UChar* m_copyData16;
-        unsigned m_refCount;
-        unsigned m_length;
-        unsigned m_hashAndFlags;
-
-        static const unsigned s_initialRefCount = s_refCountFlagIsStaticString;
-        static const unsigned s_initialFlags = s_hashFlag8BitBuffer | s_hashFlagHas16BitShadow | BufferInternal | s_hashFlagHasTerminatingNullCharacter;
-        static const unsigned s_hashShift = s_flagCount;
-    };
 
 #ifndef NDEBUG
     void assertHashIsCorrect()
@@ -742,194 +441,42 @@ public:
 #endif
 
 private:
-    // These member variables must match the layout of StaticASCIILiteral.
-    union {  // Pointers first: crbug.com/232031
-        const LChar* m_data8;
-        const UChar* m_data16;
-    };
-    union {
-        void* m_buffer;
-        StringImpl* m_substringBuffer;
-        mutable UChar* m_copyData16;
-    };
     unsigned m_refCount;
     unsigned m_length;
-    mutable unsigned m_hashAndFlags;
+    mutable unsigned m_hash : 24;
+    mutable unsigned m_isAtomic : 1;
+    mutable unsigned m_is8Bit : 1;
 };
-
-COMPILE_ASSERT(sizeof(StringImpl) == sizeof(StringImpl::StaticASCIILiteral), StringImpl_should_match_its_StaticASCIILiteral);
 
 template <>
 ALWAYS_INLINE const LChar* StringImpl::getCharacters<LChar>() const { return characters8(); }
 
 template <>
-ALWAYS_INLINE const UChar* StringImpl::getCharacters<UChar>() const { return characters(); }
+ALWAYS_INLINE const UChar* StringImpl::getCharacters<UChar>() const { return characters16(); }
 
 WTF_EXPORT bool equal(const StringImpl*, const StringImpl*);
 WTF_EXPORT bool equal(const StringImpl*, const LChar*);
 inline bool equal(const StringImpl* a, const char* b) { return equal(a, reinterpret_cast<const LChar*>(b)); }
 WTF_EXPORT bool equal(const StringImpl*, const LChar*, unsigned);
+WTF_EXPORT bool equal(const StringImpl*, const UChar*, unsigned);
 inline bool equal(const StringImpl* a, const char* b, unsigned length) { return equal(a, reinterpret_cast<const LChar*>(b), length); }
 inline bool equal(const LChar* a, StringImpl* b) { return equal(b, a); }
 inline bool equal(const char* a, StringImpl* b) { return equal(b, reinterpret_cast<const LChar*>(a)); }
-WTF_EXPORT bool equal(const StringImpl*, const UChar*, unsigned);
 WTF_EXPORT bool equalNonNull(const StringImpl* a, const StringImpl* b);
 
-// Do comparisons 8 or 4 bytes-at-a-time on architectures where it's safe.
-#if CPU(X86_64)
-ALWAYS_INLINE bool equal(const LChar* a, const LChar* b, unsigned length)
-{
-    unsigned dwordLength = length >> 3;
-
-    if (dwordLength) {
-        const uint64_t* aDWordCharacters = reinterpret_cast<const uint64_t*>(a);
-        const uint64_t* bDWordCharacters = reinterpret_cast<const uint64_t*>(b);
-
-        for (unsigned i = 0; i != dwordLength; ++i) {
-            if (*aDWordCharacters++ != *bDWordCharacters++)
-                return false;
-        }
-
-        a = reinterpret_cast<const LChar*>(aDWordCharacters);
-        b = reinterpret_cast<const LChar*>(bDWordCharacters);
-    }
-
-    if (length & 4) {
-        if (*reinterpret_cast<const uint32_t*>(a) != *reinterpret_cast<const uint32_t*>(b))
-            return false;
-
-        a += 4;
-        b += 4;
-    }
-
-    if (length & 2) {
-        if (*reinterpret_cast<const uint16_t*>(a) != *reinterpret_cast<const uint16_t*>(b))
-            return false;
-
-        a += 2;
-        b += 2;
-    }
-
-    if (length & 1 && (*a != *b))
-        return false;
-
-    return true;
-}
-
-ALWAYS_INLINE bool equal(const UChar* a, const UChar* b, unsigned length)
-{
-    unsigned dwordLength = length >> 2;
-    
-    if (dwordLength) {
-        const uint64_t* aDWordCharacters = reinterpret_cast<const uint64_t*>(a);
-        const uint64_t* bDWordCharacters = reinterpret_cast<const uint64_t*>(b);
-
-        for (unsigned i = 0; i != dwordLength; ++i) {
-            if (*aDWordCharacters++ != *bDWordCharacters++)
-                return false;
-        }
-
-        a = reinterpret_cast<const UChar*>(aDWordCharacters);
-        b = reinterpret_cast<const UChar*>(bDWordCharacters);
-    }
-
-    if (length & 2) {
-        if (*reinterpret_cast<const uint32_t*>(a) != *reinterpret_cast<const uint32_t*>(b))
-            return false;
-
-        a += 2;
-        b += 2;
-    }
-
-    if (length & 1 && (*a != *b))
-        return false;
-
-    return true;
-}
-#elif CPU(X86)
-ALWAYS_INLINE bool equal(const LChar* a, const LChar* b, unsigned length)
-{
-    const uint32_t* aCharacters = reinterpret_cast<const uint32_t*>(a);
-    const uint32_t* bCharacters = reinterpret_cast<const uint32_t*>(b);
-
-    unsigned wordLength = length >> 2;
-    for (unsigned i = 0; i != wordLength; ++i) {
-        if (*aCharacters++ != *bCharacters++)
-            return false;
-    }
-
-    length &= 3;
-
-    if (length) {
-        const LChar* aRemainder = reinterpret_cast<const LChar*>(aCharacters);
-        const LChar* bRemainder = reinterpret_cast<const LChar*>(bCharacters);
-        
-        for (unsigned i = 0; i <  length; ++i) {
-            if (aRemainder[i] != bRemainder[i])
-                return false;
-        }
-    }
-
-    return true;
-}
-
-ALWAYS_INLINE bool equal(const UChar* a, const UChar* b, unsigned length)
-{
-    const uint32_t* aCharacters = reinterpret_cast<const uint32_t*>(a);
-    const uint32_t* bCharacters = reinterpret_cast<const uint32_t*>(b);
-    
-    unsigned wordLength = length >> 1;
-    for (unsigned i = 0; i != wordLength; ++i) {
-        if (*aCharacters++ != *bCharacters++)
-            return false;
-    }
-    
-    if (length & 1 && *reinterpret_cast<const UChar*>(aCharacters) != *reinterpret_cast<const UChar*>(bCharacters))
-        return false;
-    
-    return true;
-}
-#else
-ALWAYS_INLINE bool equal(const LChar* a, const LChar* b, unsigned length)
-{
-    for (unsigned i = 0; i != length; ++i) {
-        if (a[i] != b[i])
-            return false;
-    }
-
-    return true;
-}
-
-ALWAYS_INLINE bool equal(const UChar* a, const UChar* b, unsigned length)
-{
-    for (unsigned i = 0; i != length; ++i) {
-        if (a[i] != b[i])
-            return false;
-    }
-
-    return true;
-}
-#endif
+template<typename CharType>
+ALWAYS_INLINE bool equal(const CharType* a, const CharType* b, unsigned length) { return !memcmp(a, b, length * sizeof(CharType)); }
 
 ALWAYS_INLINE bool equal(const LChar* a, const UChar* b, unsigned length)
 {
-    for (unsigned i = 0; i != length; ++i) {
+    for (unsigned i = 0; i < length; ++i) {
         if (a[i] != b[i])
             return false;
     }
-
     return true;
 }
 
-ALWAYS_INLINE bool equal(const UChar* a, const LChar* b, unsigned length)
-{
-    for (unsigned i = 0; i != length; ++i) {
-        if (a[i] != b[i])
-            return false;
-    }
-
-    return true;
-}
+ALWAYS_INLINE bool equal(const UChar* a, const LChar* b, unsigned length) { return equal(b, a, length); }
 
 WTF_EXPORT bool equalIgnoringCase(const StringImpl*, const StringImpl*);
 WTF_EXPORT bool equalIgnoringCase(const StringImpl*, const LChar*);
@@ -1003,7 +550,7 @@ inline size_t findNextLineStart(const CharacterType* characters, unsigned length
         // There can only be a start of a new line if there are more characters
         // beyond the current character.
         if (index < length) {
-            // The 3 common types of line terminators are 1. \r\n (Windows), 
+            // The 3 common types of line terminators are 1. \r\n (Windows),
             // 2. \r (old MacOS) and 3. \n (Unix'es).
 
             if (c == '\n')
@@ -1017,7 +564,7 @@ inline size_t findNextLineStart(const CharacterType* characters, unsigned length
             // But, there's only a start of a new line if there are more
             // characters beyond the \r\n.
             if (++index < length)
-                return index; 
+                return index;
         }
     }
     return notFound;
@@ -1100,7 +647,9 @@ bool equalIgnoringNullity(const Vector<UChar, inlineCapacity>& a, StringImpl* b)
         return !a.size();
     if (a.size() != b->length())
         return false;
-    return !memcmp(a.data(), b->characters(), b->length() * sizeof(UChar));
+    if (b->is8Bit())
+        return equal(a.data(), b->characters8(), b->length());
+    return equal(a.data(), b->characters16(), b->length());
 }
 
 template<typename CharacterType1, typename CharacterType2>
@@ -1167,11 +716,9 @@ static inline bool isSpaceOrNewline(UChar c)
 
 inline PassRefPtr<StringImpl> StringImpl::isolatedCopy() const
 {
-    if (isASCIILiteral())
-        return StringImpl::createFromLiteral(reinterpret_cast<const char*>(m_data8), m_length);
     if (is8Bit())
-        return create(m_data8, m_length);
-    return create(m_data16, m_length);
+        return create(characters8(), m_length);
+    return create(characters16(), m_length);
 }
 
 struct StringHash;

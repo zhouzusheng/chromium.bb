@@ -22,6 +22,7 @@
 #include "config.h"
 #include "core/dom/CharacterData.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/ExceptionCode.h"
@@ -29,7 +30,6 @@
 #include "core/dom/MutationObserverInterestGroup.h"
 #include "core/dom/MutationRecord.h"
 #include "core/dom/Text.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/editing/FrameSelection.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/platform/text/TextBreakIterator.h"
@@ -66,11 +66,12 @@ void CharacterData::bbSetDataNoRelayout(const String& data)
     g_bbNoRelayoutOnSetCharacterData = false;
 }
 
-String CharacterData::substringData(unsigned offset, unsigned count, ExceptionCode& ec)
+String CharacterData::substringData(unsigned offset, unsigned count, ExceptionState& es)
 {
-    checkCharDataOperation(offset, ec);
-    if (ec)
+    if (offset > length()) {
+        es.throwDOMException(IndexSizeError);
         return String();
+    }
 
     return m_data.substring(offset, count);
 }
@@ -91,8 +92,8 @@ unsigned CharacterData::parserAppendData(const String& string, unsigned offset, 
     ASSERT(!string.is8Bit() || string.containsOnlyLatin1()); // Latin-1 doesn't have unbreakable boundaries.
     if (characterLengthLimit < characterLength && !string.is8Bit()) {
         NonSharedCharacterBreakIterator it(string.characters16() + offset, (characterLengthLimit + 2 > characterLength) ? characterLength : characterLengthLimit + 2);
-        if (!isTextBreak(it, characterLengthLimit))
-            characterLengthLimit = textBreakPreceding(it, characterLengthLimit);
+        if (!it.isBreak(characterLengthLimit))
+            characterLengthLimit = it.preceding(characterLengthLimit);
     }
 
     if (!characterLengthLimit)
@@ -108,36 +109,28 @@ unsigned CharacterData::parserAppendData(const String& string, unsigned offset, 
         toText(this)->updateTextRenderer(oldLength, 0);
 
     document()->incDOMTreeVersion();
-    // We don't call dispatchModifiedEvent here because we don't want the
-    // parser to dispatch DOM mutation events.
+
     if (parentNode())
         parentNode()->childrenChanged();
 
     return characterLengthLimit;
 }
 
-void CharacterData::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    Node::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_data, "data");
-}
-
 void CharacterData::appendData(const String& data)
 {
-    String newStr = m_data;
-    newStr.append(data);
+    String newStr = m_data + data;
 
     setDataAndUpdate(newStr, m_data.length(), 0, data.length());
 
     // FIXME: Should we call textInserted here?
 }
 
-void CharacterData::insertData(unsigned offset, const String& data, ExceptionCode& ec)
+void CharacterData::insertData(unsigned offset, const String& data, ExceptionState& es)
 {
-    checkCharDataOperation(offset, ec);
-    if (ec)
+    if (offset > length()) {
+        es.throwDOMException(IndexSizeError);
         return;
+    }
 
     String newStr = m_data;
     newStr.insert(data, offset);
@@ -147,11 +140,12 @@ void CharacterData::insertData(unsigned offset, const String& data, ExceptionCod
     document()->textInserted(this, offset, data.length());
 }
 
-void CharacterData::deleteData(unsigned offset, unsigned count, ExceptionCode& ec)
+void CharacterData::deleteData(unsigned offset, unsigned count, ExceptionState& es)
 {
-    checkCharDataOperation(offset, ec);
-    if (ec)
+    if (offset > length()) {
+        es.throwDOMException(IndexSizeError);
         return;
+    }
 
     unsigned realCount;
     if (offset + count > length())
@@ -167,11 +161,12 @@ void CharacterData::deleteData(unsigned offset, unsigned count, ExceptionCode& e
     document()->textRemoved(this, offset, realCount);
 }
 
-void CharacterData::replaceData(unsigned offset, unsigned count, const String& data, ExceptionCode& ec)
+void CharacterData::replaceData(unsigned offset, unsigned count, const String& data, ExceptionState& es)
 {
-    checkCharDataOperation(offset, ec);
-    if (ec)
+    if (offset > length()) {
+        es.throwDOMException(IndexSizeError);
         return;
+    }
 
     unsigned realCount;
     if (offset + count > length())
@@ -200,7 +195,7 @@ bool CharacterData::containsOnlyWhitespace() const
     return m_data.containsOnlyWhitespace();
 }
 
-void CharacterData::setNodeValue(const String& nodeValue, ExceptionCode&)
+void CharacterData::setNodeValue(const String& nodeValue)
 {
     setData(nodeValue);
 }
@@ -229,28 +224,12 @@ void CharacterData::didModifyData(const String& oldData)
     if (parentNode())
         parentNode()->childrenChanged();
 
-    if (!isInShadowTree())
-        dispatchModifiedEvent(oldData);
-    InspectorInstrumentation::characterDataModified(document(), this);
-}
-
-void CharacterData::dispatchModifiedEvent(const String& oldData)
-{
-    if (document()->hasListenerType(Document::DOMCHARACTERDATAMODIFIED_LISTENER))
-        dispatchScopedEvent(MutationEvent::create(eventNames().DOMCharacterDataModifiedEvent, true, 0, oldData, m_data));
-    dispatchSubtreeModifiedEvent();
-}
-
-void CharacterData::checkCharDataOperation(unsigned offset, ExceptionCode& ec)
-{
-    ec = 0;
-
-    // INDEX_SIZE_ERR: Raised if the specified offset is negative or greater than the number of 16-bit
-    // units in data.
-    if (offset > length()) {
-        ec = INDEX_SIZE_ERR;
-        return;
+    if (!isInShadowTree()) {
+        if (document()->hasListenerType(Document::DOMCHARACTERDATAMODIFIED_LISTENER))
+            dispatchScopedEvent(MutationEvent::create(eventNames().DOMCharacterDataModifiedEvent, true, 0, oldData, m_data));
+        dispatchSubtreeModifiedEvent();
     }
+    InspectorInstrumentation::characterDataModified(document(), this);
 }
 
 int CharacterData::maxCharacterOffset() const

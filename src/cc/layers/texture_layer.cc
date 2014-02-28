@@ -31,8 +31,8 @@ TextureLayer::TextureLayer(TextureLayerClient* client, bool uses_mailbox)
       uv_top_left_(0.f, 0.f),
       uv_bottom_right_(1.f, 1.f),
       premultiplied_alpha_(true),
+      blend_background_color_(false),
       rate_limit_context_(false),
-      context_lost_(false),
       content_committed_(false),
       texture_id_(0),
       needs_set_mailbox_(false) {
@@ -43,15 +43,11 @@ TextureLayer::TextureLayer(TextureLayerClient* client, bool uses_mailbox)
 }
 
 TextureLayer::~TextureLayer() {
-  if (layer_tree_host()) {
-    if (texture_id_)
-      layer_tree_host()->AcquireLayerTextures();
-    if (rate_limit_context_ && client_)
-      layer_tree_host()->StopRateLimiter(client_->Context3d());
-  }
 }
 
 void TextureLayer::ClearClient() {
+  if (rate_limit_context_ && client_ && layer_tree_host())
+    layer_tree_host()->StopRateLimiter(client_->Context3d());
   client_ = NULL;
   if (uses_mailbox_)
     SetTextureMailbox(TextureMailbox());
@@ -106,6 +102,13 @@ void TextureLayer::SetPremultipliedAlpha(bool premultiplied_alpha) {
   SetNeedsCommit();
 }
 
+void TextureLayer::SetBlendBackgroundColor(bool blend) {
+  if (blend_background_color_ == blend)
+    return;
+  blend_background_color_ = blend;
+  SetNeedsCommit();
+}
+
 void TextureLayer::SetRateLimitContext(bool rate_limit) {
   if (!rate_limit && rate_limit_context_ && client_ && layer_tree_host())
     layer_tree_host()->StopRateLimiter(client_->Context3d());
@@ -151,8 +154,17 @@ void TextureLayer::SetNeedsDisplayRect(const gfx::RectF& dirty_rect) {
 }
 
 void TextureLayer::SetLayerTreeHost(LayerTreeHost* host) {
-  if (texture_id_ && layer_tree_host() && host != layer_tree_host())
-    layer_tree_host()->AcquireLayerTextures();
+  if (layer_tree_host() == host) {
+    Layer::SetLayerTreeHost(host);
+    return;
+  }
+
+  if (layer_tree_host()) {
+    if (texture_id_)
+      layer_tree_host()->AcquireLayerTextures();
+    if (rate_limit_context_ && client_)
+      layer_tree_host()->StopRateLimiter(client_->Context3d());
+  }
   // If we're removed from the tree, the TextureLayerImpl will be destroyed, and
   // we will need to set the mailbox again on a new TextureLayerImpl the next
   // time we push.
@@ -162,30 +174,35 @@ void TextureLayer::SetLayerTreeHost(LayerTreeHost* host) {
 }
 
 bool TextureLayer::DrawsContent() const {
-  return (client_ || texture_id_ || holder_ref_) &&
-         !context_lost_ && Layer::DrawsContent();
+  return (client_ || texture_id_ || holder_ref_) && Layer::DrawsContent();
 }
 
-void TextureLayer::Update(ResourceUpdateQueue* queue,
-                          const OcclusionTracker* occlusion,
-                          RenderingStats* stats) {
+bool TextureLayer::Update(ResourceUpdateQueue* queue,
+                          const OcclusionTracker* occlusion) {
+  bool updated = Layer::Update(queue, occlusion);
   if (client_) {
     if (uses_mailbox_) {
       TextureMailbox mailbox;
-      if (client_->PrepareTextureMailbox(&mailbox)) {
-        if (mailbox.IsTexture())
-          DCHECK(client_->Context3d());
+      if (client_->PrepareTextureMailbox(
+              &mailbox, layer_tree_host()->UsingSharedMemoryResources())) {
         SetTextureMailbox(mailbox);
+        updated = true;
       }
     } else {
       DCHECK(client_->Context3d());
-      texture_id_ = client_->PrepareTexture(queue);
+      texture_id_ = client_->PrepareTexture();
+      if (client_->Context3d() &&
+          client_->Context3d()->getGraphicsResetStatusARB() != GL_NO_ERROR)
+        texture_id_ = 0;
+      updated = true;
+      SetNeedsPushProperties();
     }
-    context_lost_ = client_->Context3d() &&
-        client_->Context3d()->getGraphicsResetStatusARB() != GL_NO_ERROR;
   }
 
-  needs_display_ = false;
+  // SetTextureMailbox could be called externally and the same mailbox used for
+  // different textures.  Such callers notify this layer that the texture has
+  // changed by calling SetNeedsDisplay, so check for that here.
+  return updated || !update_rect_.IsEmpty();
 }
 
 void TextureLayer::PushPropertiesTo(LayerImpl* layer) {
@@ -197,6 +214,7 @@ void TextureLayer::PushPropertiesTo(LayerImpl* layer) {
   texture_layer->set_uv_bottom_right(uv_bottom_right_);
   texture_layer->set_vertex_opacity(vertex_opacity_);
   texture_layer->set_premultiplied_alpha(premultiplied_alpha_);
+  texture_layer->set_blend_background_color(blend_background_color_);
   if (uses_mailbox_ && needs_set_mailbox_) {
     TextureMailbox texture_mailbox;
     if (holder_ref_) {
@@ -211,6 +229,16 @@ void TextureLayer::PushPropertiesTo(LayerImpl* layer) {
     texture_layer->set_texture_id(texture_id_);
   }
   content_committed_ = DrawsContent();
+}
+
+Region TextureLayer::VisibleContentOpaqueRegion() const {
+  if (contents_opaque())
+    return visible_content_rect();
+
+  if (blend_background_color_ && (SkColorGetA(background_color()) == 0xFF))
+    return visible_content_rect();
+
+  return Region();
 }
 
 bool TextureLayer::BlocksPendingCommit() const {

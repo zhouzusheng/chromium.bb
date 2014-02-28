@@ -1,10 +1,10 @@
 /*
  * Copyright (C) 2009 Google Inc. All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  *     * Redistributions of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
  *     * Redistributions in binary form must reproduce the above
@@ -14,7 +14,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -39,8 +39,8 @@
 
 namespace WebCore {
 
-template<typename HolderContainer>
-static v8::Handle<v8::Value> getNamedItems(HTMLFormControlsCollection* collection, const AtomicString& name, const HolderContainer& holder)
+template<typename CallbackInfo>
+static v8::Handle<v8::Value> getNamedItems(HTMLFormControlsCollection* collection, const AtomicString& name, const CallbackInfo& callbackInfo)
 {
     Vector<RefPtr<Node> > namedItems;
     collection->namedItems(name, namedItems);
@@ -49,9 +49,9 @@ static v8::Handle<v8::Value> getNamedItems(HTMLFormControlsCollection* collectio
         return v8Undefined();
 
     if (namedItems.size() == 1)
-        return toV8Fast(namedItems.at(0).release(), holder, collection);
+        return toV8Fast(namedItems.at(0).release(), callbackInfo, collection);
 
-    return toV8Fast(collection->ownerNode()->radioNodeList(name).get(), holder, collection);
+    return toV8Fast(collection->ownerNode()->radioNodeList(name).get(), callbackInfo, collection);
 }
 
 void V8HTMLFormControlsCollection::namedItemMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)

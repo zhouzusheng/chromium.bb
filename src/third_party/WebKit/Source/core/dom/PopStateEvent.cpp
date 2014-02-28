@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -33,10 +33,6 @@
 
 namespace WebCore {
 
-PopStateEventInit::PopStateEventInit()
-{
-}
-
 PopStateEvent::PopStateEvent()
     : Event(eventNames().popstateEvent, false, true)
     , m_serializedState(0)
@@ -47,8 +43,6 @@ PopStateEvent::PopStateEvent()
 
 PopStateEvent::PopStateEvent(const AtomicString& type, const PopStateEventInit& initializer)
     : Event(type, initializer)
-    , m_state(initializer.state)
-    , m_serializedState(0)
     , m_history(0)
 {
     ScriptWrappable::init(this);

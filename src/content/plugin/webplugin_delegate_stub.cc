@@ -9,6 +9,8 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/strings/string_number_conversions.h"
+#include "content/child/npapi/plugin_instance.h"
+#include "content/child/npapi/webplugin_delegate_impl.h"
 #include "content/child/plugin_messages.h"
 #include "content/plugin/plugin_channel.h"
 #include "content/plugin/plugin_thread.h"
@@ -22,19 +24,15 @@
 #include "third_party/npapi/bindings/npapi.h"
 #include "third_party/npapi/bindings/npruntime.h"
 #include "webkit/common/cursors/webcursor.h"
-#include "webkit/plugins/npapi/plugin_instance.h"
-#include "webkit/plugins/npapi/webplugin_delegate_impl.h"
 
 using WebKit::WebBindings;
 using WebKit::WebCursorInfo;
-using webkit::npapi::WebPlugin;
-using webkit::npapi::WebPluginResourceClient;
 
 namespace content {
 
 static void DestroyWebPluginAndDelegate(
     base::WeakPtr<NPObjectStub> scriptable_object,
-    webkit::npapi::WebPluginDelegateImpl* delegate,
+    WebPluginDelegateImpl* delegate,
     WebPlugin* webplugin) {
   // The plugin may not expect us to try to release the scriptable object
   // after calling NPP_Destroy on the instance, so delete the stub now.
@@ -42,11 +40,16 @@ static void DestroyWebPluginAndDelegate(
     scriptable_object->DeleteSoon();
 
   if (delegate) {
-    // Un-register the plugin instance as an object owner.
-    WebBindings::unregisterObjectOwner(delegate->GetPluginNPP());
+    // Save the object owner Id so we can unregister it as a valid owner
+    // after the instance has been destroyed.
+    NPP owner = delegate->GetPluginNPP();
 
     // WebPlugin must outlive WebPluginDelegate.
     delegate->PluginDestroyed();
+
+    // PluginDestroyed can call into script, so only unregister as an object
+    // owner after that has completed.
+    WebBindings::unregisterObjectOwner(owner);
   }
 
   delete webplugin;
@@ -177,8 +180,13 @@ void WebPluginDelegateStub::OnInit(const PluginMsg_Init_Params& params,
                                   instance_id_,
                                   page_url_,
                                   params.host_render_view_routing_id);
-  delegate_ = webkit::npapi::WebPluginDelegateImpl::Create(path, mime_type_);
+  delegate_ = WebPluginDelegateImpl::Create(path, mime_type_);
   if (delegate_) {
+    if (delegate_->GetQuirks() &
+        WebPluginDelegateImpl::PLUGIN_QUIRK_DIE_AFTER_UNLOAD) {
+      PluginThread::current()->SetForcefullyTerminatePluginProcess();
+    }
+
     webplugin_->set_delegate(delegate_);
     std::vector<std::string> arg_names = params.arg_names;
     std::vector<std::string> arg_values = params.arg_values;
@@ -238,7 +246,7 @@ void WebPluginDelegateStub::OnDidFinishLoading(int id) {
   if (!client)
     return;
 
-  client->DidFinishLoading();
+  client->DidFinishLoading(id);
 }
 
 void WebPluginDelegateStub::OnDidFail(int id) {
@@ -246,7 +254,7 @@ void WebPluginDelegateStub::OnDidFail(int id) {
   if (!client)
     return;
 
-  client->DidFail();
+  client->DidFail(id);
 }
 
 void WebPluginDelegateStub::OnDidFinishLoadWithReason(

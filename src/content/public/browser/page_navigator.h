@@ -11,12 +11,14 @@
 
 #include <string>
 
+#include "base/memory/ref_counted.h"
+#include "base/memory/ref_counted_memory.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/global_request_id.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/referrer.h"
-#include "googleurl/src/gurl.h"
 #include "ui/base/window_open_disposition.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -39,6 +41,15 @@ struct CONTENT_EXPORT OpenURLParams {
   // The URL/referrer to be opened.
   GURL url;
   Referrer referrer;
+
+  // Indicates whether this navigation will be sent using POST.
+  // The POST method is limited support for basic POST data by leveraging
+  // NavigationController::LOAD_TYPE_BROWSER_INITIATED_HTTP_POST.
+  // It is not for things like file uploads.
+  bool uses_post;
+
+  // The post data when the navigation uses POST.
+  scoped_refptr<base::RefCountedMemory> browser_initiated_post_data;
 
   // Extra headers to add to the request for this page.  Headers are
   // represented as "<name>: <value>" and separated by \r\n.  The entire string
@@ -64,9 +75,13 @@ struct CONTENT_EXPORT OpenURLParams {
   // transferred to a new renderer.
   GlobalRequestID transferred_global_request_id;
 
-  // Indicates whether this navigation involves a cross-process redirect,
-  // in which case it should replace the current navigation entry.
-  bool is_cross_site_redirect;
+  // Indicates whether this navigation should replace the current
+  // navigation entry.
+  bool should_replace_current_entry;
+
+  // Indicates whether this navigation was triggered while processing a user
+  // gesture if the navigation was initiated by the renderer.
+  bool user_gesture;
 
  private:
   OpenURLParams();
@@ -83,6 +98,6 @@ class PageNavigator {
   virtual WebContents* OpenURL(const OpenURLParams& params) = 0;
 };
 
-}
+}  // namespace content
 
 #endif  // CONTENT_PUBLIC_BROWSER_PAGE_NAVIGATOR_H_

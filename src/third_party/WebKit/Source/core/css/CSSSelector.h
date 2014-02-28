@@ -32,9 +32,7 @@ namespace WebCore {
 
     // this class represents a selector for a StyleRule
     class CSSSelector {
-      // This is needed because CSSSelectorList::adoptSelectorVector() expects
-      // to be able to free() this type of object, as a performance tweak.
-      NEW_DELETE_SAME_AS_MALLOC_FREE;
+        WTF_MAKE_FAST_ALLOCATED;
     public:
         CSSSelector();
         CSSSelector(const CSSSelector&);
@@ -121,6 +119,7 @@ namespace WebCore {
             PseudoTarget,
             PseudoBefore,
             PseudoAfter,
+            PseudoBackdrop,
             PseudoLang,
             PseudoNot,
             PseudoResizer,
@@ -152,7 +151,6 @@ namespace WebCore {
             PseudoFullScreen,
             PseudoFullScreenDocument,
             PseudoFullScreenAncestor,
-            PseudoAnimatingFullScreenTransition,
             PseudoInRange,
             PseudoOutOfRange,
             PseudoUserAgentCustomElement,
@@ -162,7 +160,10 @@ namespace WebCore {
             PseudoPastCue,
             PseudoSeamlessDocument,
             PseudoDistributed,
-            PseudoUnresolved
+            PseudoPart,
+            PseudoUnresolved,
+            PseudoContent,
+            PseudoHost
         };
 
         enum MarginBoxType {
@@ -203,11 +204,13 @@ namespace WebCore {
         const QualifiedName& attribute() const;
         const AtomicString& argument() const { return m_hasRareData ? m_data.m_rareData->m_argument : nullAtom; }
         const CSSSelectorList* selectorList() const { return m_hasRareData ? m_data.m_rareData->m_selectorList.get() : 0; }
+        bool isMatchUserAgentOnly() const { return m_hasRareData ? m_data.m_rareData->m_matchUserAgentOnly : false; }
 
         void setValue(const AtomicString&);
         void setAttribute(const QualifiedName&);
         void setArgument(const AtomicString&);
         void setSelectorList(PassOwnPtr<CSSSelectorList>);
+        void setMatchUserAgentOnly();
 
         bool parseNth() const;
         bool matchNth(int count) const;
@@ -218,6 +221,7 @@ namespace WebCore {
         bool isSiblingSelector() const;
         bool isAttributeSelector() const;
         bool isDistributedPseudoElement() const;
+        bool isContentPseudoElement() const;
 
         Relation relation() const { return static_cast<Relation>(m_relation); }
 
@@ -226,13 +230,14 @@ namespace WebCore {
         bool isLastInTagHistory() const { return m_isLastInTagHistory; }
         void setNotLastInTagHistory() { m_isLastInTagHistory = false; }
 
-        bool isSimple() const;
+        // http://dev.w3.org/csswg/selectors4/#compound
+        bool isCompound() const;
 
         bool isForPage() const { return m_isForPage; }
         void setForPage() { m_isForPage = true; }
 
-        bool relationIsForShadowDistributed() const { return m_relationIsForShadowDistributed; }
-        void setRelationIsForShadowDistributed() { m_relationIsForShadowDistributed = true; }
+        bool relationIsAffectedByPseudoContent() const { return m_relationIsAffectedByPseudoContent; }
+        void setRelationIsAffectedByPseudoContent() { m_relationIsAffectedByPseudoContent = true; }
 
         unsigned m_relation           : 3; // enum Relation
         mutable unsigned m_match      : 4; // enum Match
@@ -245,7 +250,7 @@ namespace WebCore {
         unsigned m_hasRareData            : 1;
         unsigned m_isForPage              : 1;
         unsigned m_tagIsForNamespaceRule  : 1;
-        unsigned m_relationIsForShadowDistributed  : 1;
+        unsigned m_relationIsAffectedByPseudoContent  : 1;
 
         unsigned specificityForOneSelector() const;
         unsigned specificityForPage() const;
@@ -255,27 +260,28 @@ namespace WebCore {
         CSSSelector& operator=(const CSSSelector&);
 
         struct RareData : public RefCounted<RareData> {
-            static PassRefPtr<RareData> create(PassRefPtr<AtomicStringImpl> value) { return adoptRef(new RareData(value)); }
+            static PassRefPtr<RareData> create(PassRefPtr<StringImpl> value) { return adoptRef(new RareData(value)); }
             ~RareData();
 
             bool parseNth();
             bool matchNth(int count);
 
-            AtomicStringImpl* m_value; // Plain pointer to keep things uniform with the union.
+            StringImpl* m_value; // Plain pointer to keep things uniform with the union.
             int m_a; // Used for :nth-*
             int m_b; // Used for :nth-*
             QualifiedName m_attribute; // used for attribute selector
-            AtomicString m_argument; // Used for :contains, :lang and :nth-*
+            AtomicString m_argument; // Used for :contains, :lang, :nth-* and ::part
             OwnPtr<CSSSelectorList> m_selectorList; // Used for :-webkit-any and :not
-        
+            unsigned m_matchUserAgentOnly : 1; // Used to make ::part with "-webkit"-prefixed part name match only elements in UA shadow roots.
+
         private:
-            RareData(PassRefPtr<AtomicStringImpl> value);
+            RareData(PassRefPtr<StringImpl> value);
         };
         void createRareData();
 
         union DataUnion {
             DataUnion() : m_value(0) { }
-            AtomicStringImpl* m_value;
+            StringImpl* m_value;
             QualifiedName::QualifiedNameImpl* m_tagQName;
             RareData* m_rareData;
         } m_data;
@@ -302,7 +308,7 @@ inline bool CSSSelector::isUnknownPseudoElement() const
 
 inline bool CSSSelector::isCustomPseudoElement() const
 {
-    return m_match == PseudoElement && (m_pseudoType == PseudoUserAgentCustomElement || m_pseudoType == PseudoWebKitCustomElement);
+    return m_match == PseudoElement && (m_pseudoType == PseudoUserAgentCustomElement || m_pseudoType == PseudoWebKitCustomElement || m_pseudoType == PseudoPart);
 }
 
 inline bool CSSSelector::isSiblingSelector() const
@@ -339,6 +345,11 @@ inline bool CSSSelector::isDistributedPseudoElement() const
     return m_match == PseudoElement && pseudoType() == PseudoDistributed;
 }
 
+inline bool CSSSelector::isContentPseudoElement() const
+{
+    return m_match == PseudoElement && pseudoType() == PseudoContent;
+}
+
 inline void CSSSelector::setValue(const AtomicString& value)
 {
     ASSERT(m_match != Tag);
@@ -367,7 +378,7 @@ inline CSSSelector::CSSSelector()
     , m_hasRareData(false)
     , m_isForPage(false)
     , m_tagIsForNamespaceRule(false)
-    , m_relationIsForShadowDistributed(false)
+    , m_relationIsAffectedByPseudoContent(false)
 {
 }
 
@@ -381,7 +392,7 @@ inline CSSSelector::CSSSelector(const QualifiedName& tagQName, bool tagIsForName
     , m_hasRareData(false)
     , m_isForPage(false)
     , m_tagIsForNamespaceRule(tagIsForNamespaceRule)
-    , m_relationIsForShadowDistributed(false)
+    , m_relationIsAffectedByPseudoContent(false)
 {
     m_data.m_tagQName = tagQName.impl();
     m_data.m_tagQName->ref();
@@ -397,7 +408,7 @@ inline CSSSelector::CSSSelector(const CSSSelector& o)
     , m_hasRareData(o.m_hasRareData)
     , m_isForPage(o.m_isForPage)
     , m_tagIsForNamespaceRule(o.m_tagIsForNamespaceRule)
-    , m_relationIsForShadowDistributed(o.m_relationIsForShadowDistributed)
+    , m_relationIsAffectedByPseudoContent(o.m_relationIsAffectedByPseudoContent)
 {
     if (o.m_match == Tag) {
         m_data.m_tagQName = o.m_data.m_tagQName;
@@ -430,8 +441,8 @@ inline const QualifiedName& CSSSelector::tagQName() const
 inline const AtomicString& CSSSelector::value() const
 {
     ASSERT(m_match != Tag);
-    // AtomicString is really just an AtomicStringImpl* so the cast below is safe.
-    // FIXME: Perhaps call sites could be changed to accept AtomicStringImpl?
+    // AtomicString is really just a StringImpl* so the cast below is safe.
+    // FIXME: Perhaps call sites could be changed to accept StringImpl?
     return *reinterpret_cast<const AtomicString*>(m_hasRareData ? &m_data.m_rareData->m_value : &m_data.m_value);
 }
 

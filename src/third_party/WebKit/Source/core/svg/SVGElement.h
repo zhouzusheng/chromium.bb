@@ -22,12 +22,15 @@
 #ifndef SVGElement_h
 #define SVGElement_h
 
-#include "core/dom/StyledElement.h"
+#include "core/dom/Element.h"
 #include "core/platform/Timer.h"
+#include "core/svg/SVGAnimatedString.h"
+#include "core/svg/SVGLangSpace.h"
 #include "core/svg/SVGLocatable.h"
 #include "core/svg/SVGParsingError.h"
+#include "core/svg/properties/SVGAnimatedPropertyMacros.h"
 #include "core/svg/properties/SVGPropertyInfo.h"
-#include <wtf/HashMap.h>
+#include "wtf/HashMap.h"
 
 namespace WebCore {
 
@@ -41,12 +44,26 @@ class SVGElementInstance;
 class SVGElementRareData;
 class SVGSVGElement;
 
-class SVGElement : public StyledElement {
+void mapAttributeToCSSProperty(HashMap<StringImpl*, CSSPropertyID>* propertyNameToIdMap, const QualifiedName& attrName);
+
+class SVGElement : public Element, public SVGLangSpace {
 public:
     static PassRefPtr<SVGElement> create(const QualifiedName&, Document*);
     virtual ~SVGElement();
 
     bool isOutermostSVGSVGElement() const;
+
+    virtual String title() const;
+    bool hasRelativeLengths() const { return !m_elementsWithRelativeLengths.isEmpty(); }
+    virtual bool supportsMarkers() const { return false; }
+    PassRefPtr<CSSValue> getPresentationAttribute(const String& name);
+    bool isKnownAttribute(const QualifiedName&);
+    static bool isAnimatableCSSProperty(const QualifiedName&);
+    virtual AffineTransform localCoordinateSpaceTransform(SVGLocatable::CTMScope) const;
+    virtual bool needsPendingResourceHandling() const { return true; }
+
+    bool instanceUpdatesBlocked() const;
+    void setInstanceUpdatesBlocked(bool);
 
     String xmlbase() const;
     void setXmlbase(const String&);
@@ -56,9 +73,7 @@ public:
 
     SVGDocumentExtensions* accessDocumentSVGExtensions();
 
-    virtual bool isSVGStyledElement() const { return false; }
-    virtual bool isStyledTransformable() const { return false; }
-    virtual bool isStyledLocatable() const { return false; }
+    virtual bool isSVGGraphicsElement() const { return false; }
     virtual bool isSVGSVGElement() const { return false; }
     virtual bool isFilterEffect() const { return false; }
     virtual bool isGradientStop() const { return false; }
@@ -67,7 +82,7 @@ public:
     // For SVGTests
     virtual bool isValid() const { return true; }
 
-    virtual void svgAttributeChanged(const QualifiedName&) { }
+    virtual void svgAttributeChanged(const QualifiedName&);
 
     virtual void animatedPropertyTypeForAttribute(const QualifiedName&, Vector<AnimatedPropertyType>&);
 
@@ -93,7 +108,7 @@ public:
     void setCorrespondingElement(SVGElement*);
 
     void synchronizeAnimatedSVGAttribute(const QualifiedName&) const;
- 
+
     virtual PassRefPtr<RenderStyle> customStyleForRenderer() OVERRIDE;
 
     static void synchronizeRequiredFeatures(SVGElement* contextElement);
@@ -103,8 +118,6 @@ public:
     virtual void synchronizeRequiredFeatures() { }
     virtual void synchronizeRequiredExtensions() { }
     virtual void synchronizeSystemLanguage() { }
-
-    virtual SVGAttributeToPropertyMap& localAttributeToPropertyMap() const;
 
 #ifndef NDEBUG
     bool isAnimatableAttribute(const QualifiedName&) const;
@@ -119,6 +132,8 @@ public:
     virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture) OVERRIDE;
     virtual bool removeEventListener(const AtomicString& eventType, EventListener*, bool useCapture) OVERRIDE;
 
+    virtual bool shouldMoveToFlowThread(RenderStyle*) const OVERRIDE;
+
 protected:
     SVGElement(const QualifiedName&, Document*, ConstructionType = CreateSVGElement);
 
@@ -127,13 +142,26 @@ protected:
     virtual void finishParsingChildren();
     virtual void attributeChanged(const QualifiedName&, const AtomicString&, AttributeModificationReason = ModifiedDirectly) OVERRIDE;
     virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const OVERRIDE;
-    
+
+    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
+    virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE;
+
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
+    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
+
+    static CSSPropertyID cssPropertyIdForSVGAttributeName(const QualifiedName&);
+    void updateRelativeLengthsInformation() { updateRelativeLengthsInformation(selfHasRelativeLengths(), this); }
+    void updateRelativeLengthsInformation(bool hasRelativeLengths, SVGElement*);
+
+    virtual bool selfHasRelativeLengths() const { return false; }
 
     SVGElementRareData* svgRareData() const;
     SVGElementRareData* ensureSVGRareData();
 
     void reportAttributeParsingError(SVGParsingError, const QualifiedName&, const AtomicString&);
+    bool hasFocusEventListeners() const;
 
 private:
     friend class SVGElementInstance;
@@ -145,14 +173,20 @@ private:
     RenderStyle* computedStyle(PseudoId = NOPSEUDO);
     virtual RenderStyle* virtualComputedStyle(PseudoId pseudoElementSpecifier = NOPSEUDO) { return computedStyle(pseudoElementSpecifier); }
     virtual void willRecalcStyle(StyleChange) OVERRIDE;
+    virtual bool isKeyboardFocusable() const OVERRIDE;
 
-    virtual bool rendererIsNeeded(const NodeRenderingContext&) { return false; }
+    void buildPendingResourcesIfNeeded();
 
     virtual bool isSupported(StringImpl* feature, StringImpl* version) const;
 
     void mapInstanceToElement(SVGElementInstance*);
     void removeInstanceMapping(SVGElementInstance*);
 
+    HashSet<SVGElement*> m_elementsWithRelativeLengths;
+
+    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGElement)
+        DECLARE_ANIMATED_STRING(ClassName, className)
+    END_DECLARE_ANIMATED_PROPERTIES
 };
 
 struct SVGAttributeHashTranslator {

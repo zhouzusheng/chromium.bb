@@ -20,8 +20,6 @@
 namespace syncer {
 namespace sessions {
 
-struct SyncSourceInfo;
-
 class SYNC_EXPORT_PRIVATE NudgeTracker {
  public:
   static size_t kDefaultMaxPayloadsPerType;
@@ -32,7 +30,11 @@ class SYNC_EXPORT_PRIVATE NudgeTracker {
   // Returns true if there is a good reason for performing a sync cycle.
   // This does not take into account whether or not this is a good *time* to
   // perform a sync cycle; that's the scheduler's job.
-  bool IsSyncRequired();
+  bool IsSyncRequired() const;
+
+  // Returns true if there is a good reason for performing a get updates
+  // request as part of the next sync cycle.
+  bool IsGetUpdatesRequired() const;
 
   // Tells this class that all required update fetching and committing has
   // completed successfully.
@@ -74,10 +76,6 @@ class SYNC_EXPORT_PRIVATE NudgeTracker {
   // Returns the set of currently throttled types.
   ModelTypeSet GetThrottledTypes() const;
 
-  // A helper to return an old-style source info.  Used only to maintain
-  // compatibility with some old code.
-  SyncSourceInfo GetSourceInfo() const;
-
   // Returns the 'source' of the GetUpdate request.
   //
   // This flag is deprecated, but still used by the server.  There can be more
@@ -88,12 +86,19 @@ class SYNC_EXPORT_PRIVATE NudgeTracker {
   // See the implementation for important information about the coalesce logic.
   sync_pb::GetUpdatesCallerInfo::GetUpdatesSource updates_source() const;
 
-  // Fills a ProgressMarker for the next GetUpdates request.  This is used by
-  // the DownloadUpdatesCommand to dump lots of useful per-type state
+  // Fills a GetUpdatesTrigger message for the next GetUpdates request.  This is
+  // used by the DownloadUpdatesCommand to dump lots of useful per-type state
   // information into the GetUpdate request before sending it off to the server.
   void FillProtoMessage(
       ModelType type,
       sync_pb::GetUpdateTriggers* msg) const;
+
+  // Fills a ProgressMarker with single legacy notification hint expected by the
+  // sync server.  Newer servers will rely on the data set by FillProtoMessage()
+  // instead of this.
+  void SetLegacyNotificationHint(
+      ModelType type,
+      sync_pb::DataTypeProgressMarker* progress) const;
 
   // Adjusts the number of hints that can be stored locally.
   void SetHintBufferSize(size_t size);

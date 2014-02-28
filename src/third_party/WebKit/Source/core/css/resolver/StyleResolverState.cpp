@@ -22,131 +22,58 @@
 #include "config.h"
 #include "core/css/resolver/StyleResolverState.h"
 
+#include "core/dom/Element.h"
 #include "core/dom/Node.h"
 #include "core/dom/NodeRenderStyle.h"
-#include "core/dom/NodeRenderingContext.h"
-#include "core/dom/StyledElement.h"
-#include "core/dom/VisitedLinkState.h"
-#include "core/rendering/RenderTheme.h"
+#include "core/page/Page.h"
 
 namespace WebCore {
 
-void StyleResolverState::cacheBorderAndBackground()
+StyleResolverState::StyleResolverState(Document* document, Element* element, RenderStyle* parentStyle, RenderRegion* regionForStyling)
+    : m_regionForStyling(0)
+    , m_applyPropertyToRegularStyle(true)
+    , m_applyPropertyToVisitedLinkStyle(false)
+    , m_lineHeightValue(0)
+    , m_styleMap(*this, m_elementStyleResources)
 {
-    m_hasUAAppearance = m_style->hasAppearance();
-    if (m_hasUAAppearance) {
-        m_borderData = m_style->border();
-        m_backgroundData = *m_style->backgroundLayers();
-        m_backgroundColor = m_style->backgroundColor();
+    if (element) {
+        m_elementContext = ElementResolveContext(element);
+        m_document = m_elementContext.document();
+    } else {
+        m_elementContext = ElementResolveContext();
+        m_document = document;
     }
-}
 
-void StyleResolverState::clear()
-{
-    m_element = 0;
-    m_styledElement = 0;
-    m_parentStyle = 0;
-    m_parentNode = 0;
-    m_regionForStyling = 0;
-    m_pendingImageProperties.clear();
-    m_hasPendingShaders = false;
-    m_pendingSVGDocuments.clear();
-}
-
-void StyleResolverState::initElement(Element* e)
-{
-    m_element = e;
-    m_styledElement = e && e->isStyledElement() ? static_cast<StyledElement*>(e) : 0;
-    m_elementLinkState = e ? e->document()->visitedLinkState()->determineLinkState(e) : NotInsideLink;
-}
-
-void StyleResolverState::initForStyleResolve(Document* document, Element* e, RenderStyle* parentStyle, RenderRegion* regionForStyling)
-{
     m_regionForStyling = regionForStyling;
 
-    if (e) {
-        NodeRenderingContext context(e);
-        m_parentNode = context.parentNodeForRenderingAndStyle();
-        m_parentStyle = context.resetStyleInheritance() ? 0 :
-            parentStyle ? parentStyle :
-            m_parentNode ? m_parentNode->renderStyle() : 0;
-        m_distributedToInsertionPoint = context.insertionPoint();
-    } else {
-        m_parentNode = 0;
+    if (m_elementContext.resetStyleInheritance())
+        m_parentStyle = 0;
+    else if (parentStyle)
         m_parentStyle = parentStyle;
-        m_distributedToInsertionPoint = false;
-    }
-
-    Node* docElement = e ? e->document()->documentElement() : 0;
-    RenderStyle* docStyle = document->renderStyle();
-    m_rootElementStyle = docElement && e != docElement ? docElement->renderStyle() : docStyle;
+    else if (m_elementContext.parentNode())
+        m_parentStyle = m_elementContext.parentNode()->renderStyle();
+    else
+        m_parentStyle = 0;
 
     m_style = 0;
-    m_pendingImageProperties.clear();
-    m_fontDirty = false;
+    m_elementStyleResources.clear();
+    m_fontBuilder.clear();
+
+    // FIXME: StyleResolverState is never passed between documents
+    // so we should be able to do this initialization at StyleResolverState
+    // createion time instead of now, correct?
+    if (Page* page = document->page())
+        m_elementStyleResources.setDeviceScaleFactor(page->deviceScaleFactor());
 }
 
-
-static Color colorForCSSValue(CSSValueID cssValueId)
+StyleResolverState::~StyleResolverState()
 {
-    struct ColorValue {
-        CSSValueID cssValueId;
-        RGBA32 color;
-    };
-
-    static const ColorValue colorValues[] = {
-        { CSSValueAqua, 0xFF00FFFF },
-        { CSSValueBlack, 0xFF000000 },
-        { CSSValueBlue, 0xFF0000FF },
-        { CSSValueFuchsia, 0xFFFF00FF },
-        { CSSValueGray, 0xFF808080 },
-        { CSSValueGreen, 0xFF008000  },
-        { CSSValueGrey, 0xFF808080 },
-        { CSSValueLime, 0xFF00FF00 },
-        { CSSValueMaroon, 0xFF800000 },
-        { CSSValueNavy, 0xFF000080 },
-        { CSSValueOlive, 0xFF808000  },
-        { CSSValueOrange, 0xFFFFA500 },
-        { CSSValuePurple, 0xFF800080 },
-        { CSSValueRed, 0xFFFF0000 },
-        { CSSValueSilver, 0xFFC0C0C0 },
-        { CSSValueTeal, 0xFF008080  },
-        { CSSValueTransparent, 0x00000000 },
-        { CSSValueWhite, 0xFFFFFFFF },
-        { CSSValueYellow, 0xFFFFFF00 },
-        { CSSValueInvalid, CSSValueInvalid }
-    };
-
-    for (const ColorValue* col = colorValues; col->cssValueId; ++col) {
-        if (col->cssValueId == cssValueId)
-            return col->color;
-    }
-    return RenderTheme::defaultTheme()->systemColor(cssValueId);
+    m_elementContext = ElementResolveContext();
+    m_style = 0;
+    m_parentStyle = 0;
+    m_regionForStyling = 0;
+    m_elementStyleResources.clear();
+    m_fontBuilder.clear();
 }
-
-Color StyleResolverState::colorFromPrimitiveValue(CSSPrimitiveValue* value, bool forVisitedLink) const
-{
-    if (value->isRGBColor())
-        return Color(value->getRGBA32Value());
-
-    CSSValueID valueID = value->getValueID();
-    switch (valueID) {
-    case 0:
-        return Color();
-    case CSSValueWebkitText:
-        return document()->textColor();
-    case CSSValueWebkitLink:
-        return (element()->isLink() && forVisitedLink) ? document()->visitedLinkColor() : document()->linkColor();
-    case CSSValueWebkitActivelink:
-        return document()->activeLinkColor();
-    case CSSValueWebkitFocusRingColor:
-        return RenderTheme::focusRingColor();
-    case CSSValueCurrentcolor:
-        return style()->color();
-    default:
-        return colorForCSSValue(valueID);
-    }
-}
-
 
 } // namespace WebCore

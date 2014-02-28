@@ -42,9 +42,9 @@
 // so we will too.
 #include "core/platform/SharedBuffer.h"
 #include "core/platform/image-decoders/gif/GIFImageDecoder.h"
-#include <wtf/OwnPtr.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/Vector.h>
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/Vector.h"
 
 #define MAX_LZW_BITS          12
 #define MAX_BYTES           4097 /* 2^MAX_LZW_BITS+1 */
@@ -58,7 +58,7 @@ enum GIFState {
     GIFType,
     GIFGlobalHeader,
     GIFGlobalColormap,
-    GIFImageStart,            
+    GIFImageStart,
     GIFImageHeader,
     GIFImageColormap,
     GIFImageBody,
@@ -84,8 +84,7 @@ class GIFLZWContext {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     GIFLZWContext(WebCore::GIFImageDecoder* client, const GIFFrameContext* frameContext)
-        : stackp(0)
-        , codesize(0)
+        : codesize(0)
         , codemask(0)
         , clearCode(0)
         , avail(0)
@@ -95,8 +94,9 @@ public:
         , datum(0)
         , ipass(0)
         , irow(0)
-        , rowPosition(0)
         , rowsRemaining(0)
+        , stackp(0)
+        , rowIter(0)
         , m_client(client)
         , m_frameContext(frameContext)
     { }
@@ -108,7 +108,6 @@ public:
 
 private:
     // LZW decoding states and output states.
-    size_t stackp; // Current stack pointer.
     int codesize;
     int codemask;
     int clearCode; // Codeword used to trigger dictionary reset.
@@ -119,13 +118,15 @@ private:
     int datum; // 32-bit input buffer.
     int ipass; // Interlace pass; Ranges 1-4 if interlaced.
     size_t irow; // Current output row, starting at zero.
-    size_t rowPosition;
     size_t rowsRemaining; // Rows remaining to be output.
 
-    Vector<unsigned short> prefix;
-    Vector<unsigned char> suffix;
-    Vector<unsigned char> stack;
+    unsigned short prefix[MAX_BYTES];
+    unsigned char suffix[MAX_BYTES];
+    unsigned char stack[MAX_BYTES];
     Vector<unsigned char> rowBuffer; // Single scanline temporary buffer.
+
+    size_t stackp; // Current stack pointer.
+    Vector<unsigned char>::iterator rowIter;
 
     // Initialized during construction and read-only.
     WebCore::GIFImageDecoder* m_client;
@@ -146,52 +147,61 @@ public:
     size_t blockSize;
 };
 
+class GIFColorMap {
+    WTF_MAKE_FAST_ALLOCATED;
+public:
+    typedef Vector<WebCore::ImageFrame::PixelData> Table;
+
+    GIFColorMap()
+        : m_isDefined(false)
+        , m_position(0)
+        , m_colors(0)
+    {
+    }
+
+    // Set position and number of colors for the RGB table in the data stream.
+    void setTablePositionAndSize(size_t position, size_t colors)
+    {
+        m_position = position;
+        m_colors = colors;
+    }
+    void setDefined() { m_isDefined = true; }
+    bool isDefined() const { return m_isDefined; }
+
+    // Build RGBA table using the data stream.
+    void buildTable(const unsigned char* data, size_t length);
+    const Table& table() const { return m_table; }
+
+private:
+    bool m_isDefined;
+    size_t m_position;
+    size_t m_colors;
+    Table m_table;
+};
+
 // Frame output state machine.
 struct GIFFrameContext {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    // FIXME: Move these members to private section.
-    int frameId;
-    unsigned xOffset;
-    unsigned yOffset; // With respect to "screen" origin.
-    unsigned width;
-    unsigned height;
-    int tpixel; // Index of transparent pixel.
-    WebCore::ImageFrame::FrameDisposalMethod disposalMethod; // Restore to background, leave in place, etc.
-    size_t localColormapPosition; // Per-image colormap.
-    int localColormapSize; // Size of local colormap array.
-    int datasize;
-    
-    bool isLocalColormapDefined : 1;
-    bool progressiveDisplay : 1; // If true, do Haeberli interlace hack.
-    bool interlaced : 1; // True, if scanlines arrive interlaced order.
-    bool isTransparent : 1; // TRUE, if tpixel is valid.
-
-    unsigned delayTime; // Display time, in milliseconds, for this image in a multi-image GIF.
-
     GIFFrameContext(int id)
-        : frameId(id)
-        , xOffset(0)
-        , yOffset(0)
-        , width(0)
-        , height(0)
-        , tpixel(0)
-        , disposalMethod(WebCore::ImageFrame::DisposeNotSpecified)
-        , localColormapPosition(0)
-        , localColormapSize(0)
-        , datasize(0)
-        , isLocalColormapDefined(false)
-        , progressiveDisplay(false)
-        , interlaced(false)
-        , isTransparent(false)
-        , delayTime(0)
+        : m_frameId(id)
+        , m_xOffset(0)
+        , m_yOffset(0)
+        , m_width(0)
+        , m_height(0)
+        , m_transparentPixel(notFound)
+        , m_disposalMethod(WebCore::ImageFrame::DisposeNotSpecified)
+        , m_dataSize(0)
+        , m_progressiveDisplay(false)
+        , m_interlaced(false)
+        , m_delayTime(0)
         , m_currentLzwBlock(0)
         , m_isComplete(false)
         , m_isHeaderDefined(false)
         , m_isDataSizeDefined(false)
     {
     }
-    
+
     ~GIFFrameContext()
     {
     }
@@ -203,20 +213,64 @@ public:
 
     bool decode(const unsigned char* data, size_t length, WebCore::GIFImageDecoder* client, bool* frameDecoded);
 
+    int frameId() const { return m_frameId; }
+    void setRect(unsigned x, unsigned y, unsigned width, unsigned height)
+    {
+        m_xOffset = x;
+        m_yOffset = y;
+        m_width = width;
+        m_height = height;
+    }
+    WebCore::IntRect frameRect() const { return WebCore::IntRect(m_xOffset, m_yOffset, m_width, m_height); }
+    unsigned xOffset() const { return m_xOffset; }
+    unsigned yOffset() const { return m_yOffset; }
+    unsigned width() const { return m_width; }
+    unsigned height() const { return m_height; }
+    size_t transparentPixel() const { return m_transparentPixel; }
+    void setTransparentPixel(size_t pixel) { m_transparentPixel = pixel; }
+    WebCore::ImageFrame::FrameDisposalMethod disposalMethod() const { return m_disposalMethod; }
+    void setDisposalMethod(WebCore::ImageFrame::FrameDisposalMethod method) { m_disposalMethod = method; }
+    unsigned delayTime() const { return m_delayTime; }
+    void setDelayTime(unsigned delay) { m_delayTime = delay; }
     bool isComplete() const { return m_isComplete; }
     void setComplete() { m_isComplete = true; }
     bool isHeaderDefined() const { return m_isHeaderDefined; }
     void setHeaderDefined() { m_isHeaderDefined = true; }
     bool isDataSizeDefined() const { return m_isDataSizeDefined; }
+    int dataSize() const { return m_dataSize; }
     void setDataSize(int size)
     {
-        datasize = size;
+        m_dataSize = size;
         m_isDataSizeDefined = true;
     }
+    bool progressiveDisplay() const { return m_progressiveDisplay; }
+    void setProgressiveDisplay(bool progressiveDisplay) { m_progressiveDisplay = progressiveDisplay; }
+    bool interlaced() const { return m_interlaced; }
+    void setInterlaced(bool interlaced) { m_interlaced = interlaced; }
+
     void clearDecodeState() { m_lzwContext.clear(); }
+    const GIFColorMap& localColorMap() const { return m_localColorMap; }
+    GIFColorMap& localColorMap() { return m_localColorMap; }
+
 private:
+    int m_frameId;
+    unsigned m_xOffset;
+    unsigned m_yOffset; // With respect to "screen" origin.
+    unsigned m_width;
+    unsigned m_height;
+    size_t m_transparentPixel; // Index of transparent pixel. Value is notFound if there is no transparent pixel.
+    WebCore::ImageFrame::FrameDisposalMethod m_disposalMethod; // Restore to background, leave in place, etc.
+    int m_dataSize;
+
+    bool m_progressiveDisplay; // If true, do Haeberli interlace hack.
+    bool m_interlaced; // True, if scanlines arrive interlaced order.
+
+    unsigned m_delayTime; // Display time, in milliseconds, for this image in a multi-image GIF.
+
     OwnPtr<GIFLZWContext> m_lzwContext;
     Vector<GIFLZWBlock> m_lzwBlocks; // LZW blocks for this frame.
+    GIFColorMap m_localColorMap;
+
     size_t m_currentLzwBlock;
     bool m_isComplete;
     bool m_isHeaderDefined;
@@ -235,8 +289,6 @@ public:
         , m_screenWidth(0)
         , m_screenHeight(0)
         , m_isGlobalColormapDefined(false)
-        , m_globalColormapPosition(0)
-        , m_globalColormapSize(0)
         , m_loopCount(cLoopCountNotSeen)
         , m_parseCompleted(false)
     {
@@ -262,22 +314,9 @@ public:
     }
     int loopCount() const { return m_loopCount; }
 
-    const unsigned char* globalColormap() const
+    const GIFColorMap& globalColorMap() const
     {
-        return m_isGlobalColormapDefined ? data(m_globalColormapPosition) : 0;
-    }
-    int globalColormapSize() const
-    {
-        return m_isGlobalColormapDefined ? m_globalColormapSize : 0;
-    }
-
-    const unsigned char* localColormap(const GIFFrameContext* frame) const
-    {
-        return frame->isLocalColormapDefined ? data(frame->localColormapPosition) : 0;
-    }
-    int localColormapSize(const GIFFrameContext* frame) const
-    {
-        return frame->isLocalColormapDefined ? frame->localColormapSize : 0;
+        return m_globalColorMap;
     }
 
     const GIFFrameContext* frameContext(size_t index) const
@@ -310,16 +349,15 @@ private:
     GIFState m_state; // Current decoder master state.
     size_t m_bytesToConsume; // Number of bytes to consume for next stage of parsing.
     size_t m_bytesRead; // Number of bytes processed.
-    
+
     // Global (multi-image) state.
     int m_version; // Either 89 for GIF89 or 87 for GIF87.
     unsigned m_screenWidth; // Logical screen width & height.
     unsigned m_screenHeight;
     bool m_isGlobalColormapDefined;
-    size_t m_globalColormapPosition; // (3* MAX_COLORS in size) Default colormap if local not supplied, 3 bytes for each color.
-    int m_globalColormapSize; // Size of global colormap array.
+    GIFColorMap m_globalColorMap;
     int m_loopCount; // Netscape specific extension block to control the number of animation loops a GIF renders.
-    
+
     Vector<OwnPtr<GIFFrameContext> > m_frames;
 
     RefPtr<WebCore::SharedBuffer> m_data;

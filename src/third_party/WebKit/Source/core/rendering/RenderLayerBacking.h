@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef RenderLayerBacking_h
@@ -44,10 +44,24 @@ enum CompositingLayerType {
     ContainerCompositingLayer // layer with no backing store
 };
 
+
+// A GraphicsLayerPaintInfo contains all the info needed to paint a partial subtree of RenderLayers into a GraphicsLayer.
+struct GraphicsLayerPaintInfo {
+    RenderLayer* renderLayer;
+
+    IntRect compositedBounds;
+
+    IntSize offsetFromRenderer;
+
+    GraphicsLayerPaintingPhase paintingPhase;
+
+    bool isBackgroundLayer;
+};
+
 // RenderLayerBacking controls the compositing behavior for a single RenderLayer.
 // It holds the various GraphicsLayers, and makes decisions about intra-layer rendering
 // optimizations.
-// 
+//
 // There is one RenderLayerBacking for each RenderLayer that is composited.
 
 class RenderLayerBacking : public GraphicsLayerClient {
@@ -65,13 +79,11 @@ public:
     };
     typedef unsigned UpdateAfterLayoutFlags;
     void updateAfterLayout(UpdateAfterLayoutFlags);
-    
+
     // Returns true if layer configuration changed.
     bool updateGraphicsLayerConfiguration();
     // Update graphics layer position and bounds.
     void updateGraphicsLayerGeometry(); // make private
-    // Update contents and clipping structure.
-    void updateDrawsContent();
     // Update whether layer needs blending.
     void updateContentsOpaque();
 
@@ -85,14 +97,12 @@ public:
     bool hasAncestorClippingLayer() const { return m_ancestorClippingLayer != 0; }
     GraphicsLayer* ancestorClippingLayer() const { return m_ancestorClippingLayer.get(); }
 
-    GraphicsLayer* contentsContainmentLayer() const { return m_contentsContainmentLayer.get(); }
-
     bool hasContentsLayer() const { return m_foregroundLayer != 0; }
     GraphicsLayer* foregroundLayer() const { return m_foregroundLayer.get(); }
 
     GraphicsLayer* backgroundLayer() const { return m_backgroundLayer.get(); }
     bool backgroundLayerPaintsFixedRootBackground() const { return m_backgroundLayerPaintsFixedRootBackground; }
-    
+
     bool hasScrollingLayer() const { return m_scrollingLayer; }
     GraphicsLayer* scrollingLayer() const { return m_scrollingLayer.get(); }
     GraphicsLayer* scrollingContentsLayer() const { return m_scrollingContentsLayer.get(); }
@@ -130,12 +140,10 @@ public:
     IntRect compositedBounds() const;
     void setCompositedBounds(const IntRect&);
     void updateCompositedBounds();
-    
+
     void updateAfterWidgetResize();
     void positionOverflowControlsLayers(const IntSize& offsetFromRoot);
     bool hasUnpositionedOverflowControlsLayers() const;
-
-    void updateDebugIndicators(bool showBorder, bool showRepaintCounter);
 
     // GraphicsLayerClient interface
     virtual void notifyAnimationStarted(const GraphicsLayer*, double startTime) OVERRIDE;
@@ -153,10 +161,10 @@ public:
 
     IntRect contentsBox() const;
     IntRect backgroundBox() const;
-    
+
     // For informative purposes only.
     CompositingLayerType compositingLayerType() const;
-    
+
     GraphicsLayer* layerForHorizontalScrollbar() const { return m_layerForHorizontalScrollbar.get(); }
     GraphicsLayer* layerForVerticalScrollbar() const { return m_layerForVerticalScrollbar.get(); }
     GraphicsLayer* layerForScrollCorner() const { return m_layerForScrollCorner.get(); }
@@ -168,12 +176,11 @@ public:
     double backingStoreMemoryEstimate() const;
 
     void setBlendMode(BlendMode);
-    void reportMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     void createPrimaryGraphicsLayer();
     void destroyGraphicsLayers();
-    
+
     PassOwnPtr<GraphicsLayer> createGraphicsLayer(const String& name, CompositingReasons);
 
     RenderLayerModelObject* renderer() const { return m_owningLayer->renderer(); }
@@ -191,13 +198,11 @@ private:
     bool updateScrollingLayers(bool scrollingLayers);
     void updateDrawsContent(bool isSimpleContainer);
     void registerScrollingLayers();
-    
-    void updateRootLayerConfiguration();
 
     void setBackgroundLayerPaintsFixedRootBackground(bool);
 
     GraphicsLayerPaintingPhase paintingPhaseForPrimaryLayer() const;
-    
+
     IntSize contentOffsetInCompostingLayer() const;
     // Result is transform origin in pixels.
     FloatPoint3D computeTransformOrigin(const IntRect& borderBox) const;
@@ -209,16 +214,16 @@ private:
     void updateLayerBlendMode(const RenderStyle*);
     // Return the opacity value that this layer should use for compositing.
     float compositingOpacity(float rendererOpacity) const;
-    
+
     bool isMainFrameRenderViewLayer() const;
-    
+
     bool paintsBoxDecorations() const;
     bool paintsChildren() const;
 
     // Returns true if this compositing layer has no visible content.
     bool isSimpleContainerCompositingLayer() const;
     // Returns true if this layer has content that needs to be rendered by painting into the backing store.
-    bool containsPaintedContent() const;
+    bool containsPaintedContent(bool isSimpleContainer) const;
     // Returns true if the RenderLayer just contains an image that we can composite directly.
     bool isDirectlyCompositedImage() const;
     void updateImageContents();
@@ -233,7 +238,7 @@ private:
 
     bool shouldClipCompositedBounds() const;
 
-    void paintIntoLayer(const GraphicsLayer*, GraphicsContext*, const IntRect& paintDirtyRect, PaintBehavior, GraphicsLayerPaintingPhase);
+    void doPaintTask(GraphicsLayerPaintInfo&, GraphicsContext*, const IntRect& clip);
 
     static CSSPropertyID graphicsLayerToCSSProperty(AnimatedPropertyID);
     static AnimatedPropertyID cssToGraphicsLayerProperty(CSSPropertyID);
@@ -241,7 +246,6 @@ private:
     RenderLayer* m_owningLayer;
 
     OwnPtr<GraphicsLayer> m_ancestorClippingLayer; // Only used if we are clipped by an ancestor which is not a stacking context.
-    OwnPtr<GraphicsLayer> m_contentsContainmentLayer; // Only used if we have a background layer; takes the transform.
     OwnPtr<GraphicsLayer> m_graphicsLayer;
     OwnPtr<GraphicsLayer> m_foregroundLayer; // Only used in cases where we need to draw the foreground separately.
     OwnPtr<GraphicsLayer> m_backgroundLayer; // Only used in cases where we need to draw the background separately.

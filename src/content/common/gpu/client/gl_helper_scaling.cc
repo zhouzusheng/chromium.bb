@@ -13,8 +13,8 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop.h"
-#include "base/time.h"
+#include "base/message_loop/message_loop.h"
+#include "base/time/time.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/gfx/rect.h"
@@ -843,7 +843,7 @@ GLHelperScaling::GetShaderProgram(ShaderType type,
 
     bool result = cache_entry->Setup(vertex_program.c_str(),
                                      fragment_program.c_str());
-    DCHECK(result)
+    DCHECK(result || context_->isContextLost())
         << "vertex_program =\n" << vertex_program
         << "fragment_program =\n" << fragment_program;
   }

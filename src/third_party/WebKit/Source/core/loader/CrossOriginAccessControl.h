@@ -20,17 +20,17 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
 #ifndef CrossOriginAccessControl_h
 #define CrossOriginAccessControl_h
 
-#include "core/platform/network/ResourceHandle.h"
+#include "core/loader/ResourceLoaderOptions.h"
 #include "core/platform/network/ResourceRequest.h"
-#include <wtf/Forward.h>
-#include <wtf/HashSet.h>
+#include "wtf/Forward.h"
+#include "wtf/HashSet.h"
 
 namespace WebCore {
 
@@ -39,6 +39,11 @@ typedef HashSet<String, CaseFoldingHash> HTTPHeaderSet;
 class HTTPHeaderMap;
 class ResourceResponse;
 class SecurityOrigin;
+
+enum AccessControlStatus {
+    NotSharableCrossOrigin,
+    SharableCrossOrigin
+};
 
 bool isSimpleCrossOriginAccessRequest(const String& method, const HTTPHeaderMap&);
 bool isOnAccessControlSimpleRequestMethodWhitelist(const String&);
@@ -49,6 +54,7 @@ void updateRequestForAccessControl(ResourceRequest&, SecurityOrigin*, StoredCred
 ResourceRequest createAccessControlPreflightRequest(const ResourceRequest&, SecurityOrigin*);
 
 bool passesAccessControlCheck(const ResourceResponse&, StoredCredentials, SecurityOrigin*, String& errorDescription);
+bool passesPreflightStatusCheck(const ResourceResponse&, String& errorDescription);
 void parseAccessControlExposeHeadersAllowList(const String& headerValue, HTTPHeaderSet&);
 
 } // namespace WebCore

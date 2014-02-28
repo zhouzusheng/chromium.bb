@@ -13,8 +13,6 @@
 #include "third_party/WebKit/public/web/WebDragOperation.h"
 
 class SkBitmap;
-struct WebDropData;
-struct WebMenuItem;
 
 namespace gfx {
 class ImageSkia;
@@ -23,8 +21,9 @@ class Vector2d;
 }
 
 namespace content {
-
 struct ContextMenuParams;
+struct DropData;
+struct MenuItem;
 
 // This class provides a way for the RenderViewHost to reach out to its
 // delegate's view. It only needs to be implemented by embedders if they don't
@@ -42,16 +41,16 @@ class CONTENT_EXPORT RenderViewHostDelegateView {
                              int item_height,
                              double item_font_size,
                              int selected_item,
-                             const std::vector<WebMenuItem>& items,
+                             const std::vector<MenuItem>& items,
                              bool right_aligned,
                              bool allow_multiple_selection) = 0;
 
   // The user started dragging content of the specified type within the
   // RenderView. Contextual information about the dragged content is supplied
-  // by WebDropData. If the delegate's view cannot start the drag for /any/
+  // by DropData. If the delegate's view cannot start the drag for /any/
   // reason, it must inform the renderer that the drag has ended; otherwise,
   // this results in bugs like http://crbug.com/157134.
-  virtual void StartDragging(const WebDropData& drop_data,
+  virtual void StartDragging(const DropData& drop_data,
                              WebKit::WebDragOperationsMask allowed_ops,
                              const gfx::ImageSkia& image,
                              const gfx::Vector2d& image_offset,

@@ -29,10 +29,11 @@
 #include "core/html/HTMLSelectElement.h"
 
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/EventNames.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/KeyboardEvent.h"
 #include "core/dom/MouseEvent.h"
 #include "core/dom/NodeRenderingContext.h"
@@ -40,6 +41,7 @@
 #include "core/html/FormController.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLFormElement.h"
+#include "core/html/HTMLOptGroupElement.h"
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/HTMLOptionsCollection.h"
 #include "core/page/EventHandler.h"
@@ -77,6 +79,11 @@ HTMLSelectElement::HTMLSelectElement(const QualifiedName& tagName, Document* doc
 {
     ASSERT(hasTagName(selectTag));
     ScriptWrappable::init(this);
+}
+
+PassRefPtr<HTMLSelectElement> HTMLSelectElement::create(Document* document)
+{
+    return adoptRef(new HTMLSelectElement(selectTag, document, 0, false));
 }
 
 PassRefPtr<HTMLSelectElement> HTMLSelectElement::create(const QualifiedName& tagName, Document* document, HTMLFormElement* form, bool createdByParser)
@@ -123,7 +130,7 @@ void HTMLSelectElement::optionSelectedByUser(int optionIndex, bool fireOnChangeN
 bool HTMLSelectElement::hasPlaceholderLabelOption() const
 {
     // The select element has no placeholder label option if it has an attribute "multiple" specified or a display size of non-1.
-    // 
+    //
     // The condition "size() > 1" is not compliant with the HTML5 spec as of Dec 3, 2010. "size() != 1" is correct.
     // Using "size() > 1" here because size() may be 0 in WebKit.
     // See the discussion at https://bugs.webkit.org/show_bug.cgi?id=43887
@@ -204,7 +211,7 @@ int HTMLSelectElement::activeSelectionEndListIndex() const
     return lastSelectedListIndex();
 }
 
-void HTMLSelectElement::add(HTMLElement* element, HTMLElement* before, ExceptionCode& ec)
+void HTMLSelectElement::add(HTMLElement* element, HTMLElement* before, ExceptionState& es)
 {
     // Make sure the element is ref'd and deref'd so we don't leak it.
     RefPtr<HTMLElement> protectNewChild(element);
@@ -212,7 +219,7 @@ void HTMLSelectElement::add(HTMLElement* element, HTMLElement* before, Exception
     if (!element || !(element->hasLocalName(optionTag) || element->hasLocalName(hrTag)))
         return;
 
-    insertBefore(element, before, ec);
+    insertBefore(element, before, es, AttachLazily);
     setNeedsValidityCheck();
 }
 
@@ -312,18 +319,9 @@ void HTMLSelectElement::parseAttribute(const QualifiedName& name, const AtomicSt
         HTMLFormControlElementWithState::parseAttribute(name, value);
 }
 
-bool HTMLSelectElement::isKeyboardFocusable(KeyboardEvent* event) const
+bool HTMLSelectElement::shouldShowFocusRingOnMouseFocus() const
 {
-    if (renderer())
-        return isFocusable();
-    return HTMLFormControlElementWithState::isKeyboardFocusable(event);
-}
-
-bool HTMLSelectElement::isMouseFocusable() const
-{
-    if (renderer())
-        return isFocusable();
-    return HTMLFormControlElementWithState::isMouseFocusable();
+    return true;
 }
 
 bool HTMLSelectElement::canSelectAll() const
@@ -334,8 +332,8 @@ bool HTMLSelectElement::canSelectAll() const
 RenderObject* HTMLSelectElement::createRenderer(RenderStyle*)
 {
     if (usesMenuList())
-        return new (document()->renderArena()) RenderMenuList(this);
-    return new (document()->renderArena()) RenderListBox(this);
+        return new RenderMenuList(this);
+    return new RenderListBox(this);
 }
 
 bool HTMLSelectElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
@@ -343,7 +341,7 @@ bool HTMLSelectElement::childShouldCreateRenderer(const NodeRenderingContext& ch
     if (!HTMLFormControlElementWithState::childShouldCreateRenderer(childContext))
         return false;
     if (!usesMenuList())
-        return childContext.node()->hasTagName(HTMLNames::optionTag) || childContext.node()->hasTagName(HTMLNames::optgroupTag);
+        return childContext.node()->hasTagName(HTMLNames::optionTag) || isHTMLOptGroupElement(childContext.node());
     return false;
 }
 
@@ -419,32 +417,30 @@ Node* HTMLSelectElement::item(unsigned index)
     return options()->item(index);
 }
 
-void HTMLSelectElement::setOption(unsigned index, HTMLOptionElement* option, ExceptionCode& ec)
+void HTMLSelectElement::setOption(unsigned index, HTMLOptionElement* option, ExceptionState& es)
 {
-    ec = 0;
     if (index > maxSelectItems - 1)
         index = maxSelectItems - 1;
     int diff = index - length();
     RefPtr<HTMLElement> before = 0;
     // Out of array bounds? First insert empty dummies.
     if (diff > 0) {
-        setLength(index, ec);
+        setLength(index, es);
         // Replace an existing entry?
     } else if (diff < 0) {
         before = toHTMLElement(options()->item(index+1));
         remove(index);
     }
     // Finally add the new element.
-    if (!ec) {
-        add(option, before.get(), ec);
+    if (!es.hadException()) {
+        add(option, before.get(), es);
         if (diff >= 0 && option->selected())
             optionSelectionStateChanged(option, true);
     }
 }
 
-void HTMLSelectElement::setLength(unsigned newLen, ExceptionCode& ec)
+void HTMLSelectElement::setLength(unsigned newLen, ExceptionState& es)
 {
-    ec = 0;
     if (newLen > maxSelectItems)
         newLen = maxSelectItems;
     int diff = length() - newLen;
@@ -453,8 +449,8 @@ void HTMLSelectElement::setLength(unsigned newLen, ExceptionCode& ec)
         do {
             RefPtr<Element> option = document()->createElement(optionTag, false);
             ASSERT(option);
-            add(toHTMLElement(option.get()), 0, ec);
-            if (ec)
+            add(toHTMLElement(option.get()), 0, es);
+            if (es.hadException())
                 break;
         } while (++diff);
     } else {
@@ -475,7 +471,7 @@ void HTMLSelectElement::setLength(unsigned newLen, ExceptionCode& ec)
         for (size_t i = 0; i < itemsToRemove.size(); ++i) {
             Element* item = itemsToRemove[i].get();
             if (item->parentNode())
-                item->parentNode()->removeChild(item, ec);
+                item->parentNode()->removeChild(item, es);
         }
     }
     setNeedsValidityCheck();
@@ -724,7 +720,7 @@ void HTMLSelectElement::setRecalcListItems()
     }
     if (!inDocument())
         invalidateSelectedItems();
-    
+
     if (renderer()) {
         if (AXObjectCache* cache = renderer()->document()->existingAXObjectCache())
             cache->childrenChanged(this);
@@ -749,7 +745,7 @@ void HTMLSelectElement::recalcListItems(bool updateSelectedStates) const
         // optgroup tags may not nest. However, both FireFox and IE will
         // flatten the tree automatically, so we follow suit.
         // (http://www.w3.org/TR/html401/interact/forms.html#h-17.6)
-        if (current->hasTagName(optgroupTag)) {
+        if (isHTMLOptGroupElement(current)) {
             m_listItems.append(current);
             if (Element* nextElement = ElementTraversal::firstWithin(current)) {
                 currentElement = nextElement;
@@ -904,23 +900,23 @@ int HTMLSelectElement::listToOptionIndex(int listIndex) const
     return optionIndex;
 }
 
-void HTMLSelectElement::dispatchFocusEvent(PassRefPtr<Node> oldFocusedNode, FocusDirection direction)
+void HTMLSelectElement::dispatchFocusEvent(Element* oldFocusedElement, FocusDirection direction)
 {
     // Save the selection so it can be compared to the new selection when
     // dispatching change events during blur event dispatch.
     if (usesMenuList())
         saveLastSelection();
-    HTMLFormControlElementWithState::dispatchFocusEvent(oldFocusedNode, direction);
+    HTMLFormControlElementWithState::dispatchFocusEvent(oldFocusedElement, direction);
 }
 
-void HTMLSelectElement::dispatchBlurEvent(PassRefPtr<Node> newFocusedNode)
+void HTMLSelectElement::dispatchBlurEvent(Element* newFocusedElement)
 {
     // We only need to fire change events here for menu lists, because we fire
     // change events for list boxes whenever the selection change is actually made.
     // This matches other browsers' behavior.
     if (usesMenuList())
         dispatchChangeEventForMenuList();
-    HTMLFormControlElementWithState::dispatchBlurEvent(newFocusedNode);
+    HTMLFormControlElementWithState::dispatchBlurEvent(newFocusedElement);
 }
 
 void HTMLSelectElement::deselectItemsWithoutValidation(HTMLElement* excludeElement)
@@ -1031,7 +1027,7 @@ bool HTMLSelectElement::appendFormData(FormDataList& list, bool)
     // will be submitted (!successful). We won't send a unselected non-disabled
     // option as fallback. This behavior matches to other browsers.
     return successful;
-} 
+}
 
 void HTMLSelectElement::reset()
 {
@@ -1107,7 +1103,7 @@ void HTMLSelectElement::menuListDefaultEventHandler(Event* event)
         if (!renderer() || !event->isKeyboardEvent())
             return;
 
-        if (platformHandleKeydownEvent(static_cast<KeyboardEvent*>(event)))
+        if (platformHandleKeydownEvent(toKeyboardEvent(event)))
             return;
 
         // When using spatial navigation, we want to be able to navigate away
@@ -1118,7 +1114,7 @@ void HTMLSelectElement::menuListDefaultEventHandler(Event* event)
                 return;
         }
 
-        const String& keyIdentifier = static_cast<KeyboardEvent*>(event)->keyIdentifier();
+        const String& keyIdentifier = toKeyboardEvent(event)->keyIdentifier();
         bool handled = true;
         const Vector<HTMLElement*>& listItems = this->listItems();
         int listIndex = optionToListIndex(selectedIndex());
@@ -1151,7 +1147,7 @@ void HTMLSelectElement::menuListDefaultEventHandler(Event* event)
         if (!renderer() || !event->isKeyboardEvent())
             return;
 
-        int keyCode = static_cast<KeyboardEvent*>(event)->keyCode();
+        int keyCode = toKeyboardEvent(event)->keyCode();
         bool handled = false;
 
         if (keyCode == ' ' && isSpatialNavigationEnabled(document()->frame())) {
@@ -1347,7 +1343,7 @@ void HTMLSelectElement::listBoxDefaultEventHandler(Event* event)
     } else if (event->type() == eventNames().keydownEvent) {
         if (!event->isKeyboardEvent())
             return;
-        const String& keyIdentifier = static_cast<KeyboardEvent*>(event)->keyIdentifier();
+        const String& keyIdentifier = toKeyboardEvent(event)->keyIdentifier();
 
         bool handled = false;
         int endIndex = 0;
@@ -1406,12 +1402,12 @@ void HTMLSelectElement::listBoxDefaultEventHandler(Event* event)
             ASSERT_UNUSED(listItems, !listItems.size() || static_cast<size_t>(endIndex) < listItems.size());
             setActiveSelectionEndIndex(endIndex);
 
-            bool selectNewItem = !m_multiple || static_cast<KeyboardEvent*>(event)->shiftKey() || !isSpatialNavigationEnabled(document()->frame());
+            bool selectNewItem = !m_multiple || toKeyboardEvent(event)->shiftKey() || !isSpatialNavigationEnabled(document()->frame());
             if (selectNewItem)
                 m_activeSelectionState = true;
             // If the anchor is unitialized, or if we're going to deselect all
             // other options, then set the anchor index equal to the end index.
-            bool deselectOthers = !m_multiple || (!static_cast<KeyboardEvent*>(event)->shiftKey() && selectNewItem);
+            bool deselectOthers = !m_multiple || (!toKeyboardEvent(event)->shiftKey() && selectNewItem);
             if (m_activeSelectionAnchorIndex < 0 || deselectOthers) {
                 if (deselectOthers)
                     deselectItemsWithoutValidation();
@@ -1430,7 +1426,7 @@ void HTMLSelectElement::listBoxDefaultEventHandler(Event* event)
     } else if (event->type() == eventNames().keypressEvent) {
         if (!event->isKeyboardEvent())
             return;
-        int keyCode = static_cast<KeyboardEvent*>(event)->keyCode();
+        int keyCode = toKeyboardEvent(event)->keyCode();
 
         if (keyCode == '\r') {
             if (form())
@@ -1458,13 +1454,13 @@ void HTMLSelectElement::defaultEventHandler(Event* event)
 
     if (usesMenuList())
         menuListDefaultEventHandler(event);
-    else 
+    else
         listBoxDefaultEventHandler(event);
     if (event->defaultHandled())
         return;
 
     if (event->type() == eventNames().keypressEvent && event->isKeyboardEvent()) {
-        KeyboardEvent* keyboardEvent = static_cast<KeyboardEvent*>(event);
+        KeyboardEvent* keyboardEvent = toKeyboardEvent(event);
         if (!keyboardEvent->ctrlKey() && !keyboardEvent->altKey() && !keyboardEvent->metaKey() && isPrintableChar(keyboardEvent->charCode())) {
             typeAheadFind(keyboardEvent);
             event->setDefaultHandled();
@@ -1498,7 +1494,7 @@ int HTMLSelectElement::optionCount() const
 String HTMLSelectElement::optionAtIndex(int index) const
 {
     const Vector<HTMLElement*>& items = listItems();
-    
+
     HTMLElement* element = items[index];
     if (!element->hasTagName(optionTag) || toHTMLOptionElement(element)->isDisabledFormControl())
         return String();
@@ -1526,11 +1522,11 @@ Node::InsertionNotificationRequest HTMLSelectElement::insertedInto(ContainerNode
 }
 
 void HTMLSelectElement::accessKeySetSelectedIndex(int index)
-{    
+{
     // First bring into focus the list box.
     if (!focused())
         accessKeyAction(false);
-    
+
     // If this index is already selected, unselect. otherwise update the selected index.
     const Vector<HTMLElement*>& items = listItems();
     int listIndex = optionToListIndex(index);
@@ -1572,17 +1568,17 @@ void HTMLSelectElement::finishParsingChildren()
     updateListItemSelectedStates();
 }
 
-bool HTMLSelectElement::anonymousIndexedSetter(unsigned index, PassRefPtr<HTMLOptionElement> value, ExceptionCode& ec)
+bool HTMLSelectElement::anonymousIndexedSetter(unsigned index, PassRefPtr<HTMLOptionElement> value, ExceptionState& es)
 {
     if (!value) {
-        ec = TYPE_MISMATCH_ERR;
+        es.throwDOMException(TypeMismatchError);
         return false;
     }
-    setOption(index, value.get(), ec);
+    setOption(index, value.get(), es);
     return true;
 }
 
-bool HTMLSelectElement::anonymousIndexedSetterRemove(unsigned index, ExceptionCode& ec)
+bool HTMLSelectElement::anonymousIndexedSetterRemove(unsigned index, ExceptionState& es)
 {
     remove(index);
     return true;

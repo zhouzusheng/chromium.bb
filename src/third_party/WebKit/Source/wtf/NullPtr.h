@@ -37,8 +37,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <cstddef>
 
-// libstdc++ supports nullptr_t starting with gcc 4.6.
-#if defined(__GLIBCXX__) && __GLIBCXX__ < 20110325
+// libstdc++ supports nullptr_t starting with gcc 4.6. STLport doesn't define it.
+#if (defined(__GLIBCXX__) && __GLIBCXX__ < 20110325) || defined(_STLPORT_VERSION)
 namespace std {
 typedef decltype(nullptr) nullptr_t;
 }
@@ -51,6 +51,16 @@ class nullptr_t { };
 }
 extern std::nullptr_t nullptr;
 
+#endif
+
+#if COMPILER_SUPPORTS(CXX_DELETED_FUNCTIONS)
+#define WTF_DISALLOW_CONSTRUCTION_FROM_ZERO(ClassName) \
+    private: \
+        ClassName(int) = delete
+#else
+#define WTF_DISALLOW_CONSTRUCTION_FROM_ZERO(ClassName) \
+    private: \
+        ClassName(int)
 #endif
 
 #endif

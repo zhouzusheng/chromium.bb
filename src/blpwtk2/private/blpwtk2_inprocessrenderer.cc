@@ -24,7 +24,7 @@
 
 #include <blpwtk2_statics.h>
 
-#include <base/message_loop.h>
+#include <base/message_loop/message_loop.h>
 #include <content/public/renderer/render_thread.h>
 #include <content/renderer/render_process_impl.h>
 

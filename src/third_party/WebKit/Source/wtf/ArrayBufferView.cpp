@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -33,12 +33,13 @@ namespace WTF {
 ArrayBufferView::ArrayBufferView(PassRefPtr<ArrayBuffer> buffer,
                        unsigned byteOffset)
         : m_byteOffset(byteOffset)
+        , m_isNeuterable(true)
         , m_buffer(buffer)
         , m_prevView(0)
         , m_nextView(0)
 {
     m_baseAddress = m_buffer ? (static_cast<char*>(m_buffer->data()) + m_byteOffset) : 0;
-    if (m_buffer) 
+    if (m_buffer)
         m_buffer->addView(this);
 }
 

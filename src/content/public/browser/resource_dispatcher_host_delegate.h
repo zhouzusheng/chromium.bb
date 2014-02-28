@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/common/content_export.h"
-#include "webkit/glue/resource_type.h"
+#include "webkit/common/resource_type.h"
 
 class GURL;
 template <class T> class ScopedVector;
@@ -52,8 +52,7 @@ class CONTENT_EXPORT ResourceDispatcherHostDelegate {
       const std::string& method,
       const GURL& url,
       ResourceType::Type resource_type,
-      ResourceContext* resource_context,
-      const Referrer& referrer);
+      ResourceContext* resource_context);
 
   // Called after ShouldBeginRequest to allow the embedder to add resource
   // throttles.
@@ -109,23 +108,25 @@ class CONTENT_EXPORT ResourceDispatcherHostDelegate {
   virtual bool ShouldForceDownloadResource(
       const GURL& url, const std::string& mime_type);
 
-  // Returns true and sets |security_origin| and |target_id| if a Stream should
-  // be created for the resource.
-  // If true is returned, a new Stream will be created and OnStreamCreated will
-  // be called with the |target_id| returned by this function and a URL to read
-  // the Stream which is accessible from the |security_origin| returned by this
-  // function.
+  // Returns true and sets |origin| and |target_id| if a Stream should be
+  // created for the resource.
+  // If true is returned, a new Stream will be created and OnStreamCreated()
+  // will be called with
+  // - the |target_id| returned by this function
+  // - a StreamHandle instance for the Stream. The handle contains the URL for
+  //   reading the Stream etc.
+  // The Stream's origin will be set to |origin|.
   virtual bool ShouldInterceptResourceAsStream(
       content::ResourceContext* resource_context,
       const GURL& url,
       const std::string& mime_type,
-      GURL* security_origin,
+      GURL* origin,
       std::string* target_id);
 
-  // Informs the delegate that a stream was created. |target_id| will be filled
+  // Informs the delegate that a Stream was created. |target_id| will be filled
   // with the parameter returned by ShouldInterceptResourceAsStream(). The
-  // Stream can be read from the blob URL owned by |stream|, but can only be
-  // read once.
+  // Stream can be read from the blob URL of the Stream, but can only be read
+  // once.
   virtual void OnStreamCreated(
       content::ResourceContext* resource_context,
       int render_process_id,

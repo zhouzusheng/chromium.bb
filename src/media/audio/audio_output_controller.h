@@ -7,11 +7,11 @@
 
 #include "base/atomic_ref_count.h"
 #include "base/callback.h"
+#include "base/cancelable_callback.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
-#include "base/timer.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_manager.h"
+#include "media/audio/audio_power_monitor.h"
 #include "media/audio/audio_source_diverter.h"
 #include "media/audio/simple_sources.h"
 #include "media/base/media_export.h"
@@ -52,8 +52,6 @@
 
 namespace media {
 
-class AudioSilenceDetector;
-
 class MEDIA_EXPORT AudioOutputController
     : public base::RefCountedThreadSafe<AudioOutputController>,
       public AudioOutputStream::AudioSourceCallback,
@@ -66,7 +64,7 @@ class MEDIA_EXPORT AudioOutputController
    public:
     virtual void OnCreated() = 0;
     virtual void OnPlaying() = 0;
-    virtual void OnAudible(bool is_audible) = 0;
+    virtual void OnPowerMeasured(float power_dbfs, bool clipped) = 0;
     virtual void OnPaused() = 0;
     virtual void OnError() = 0;
     virtual void OnDeviceChange(int new_buffer_size, int new_sample_rate) = 0;
@@ -181,9 +179,9 @@ class MEDIA_EXPORT AudioOutputController
   void DoStartDiverting(AudioOutputStream* to_stream);
   void DoStopDiverting();
 
-  // Called at regular intervals during playback to check for a change in
-  // silence and call EventHandler::OnAudible() when state changes occur.
-  void MaybeInvokeAudibleCallback();
+  // Calls EventHandler::OnPowerMeasured() with the current power level and then
+  // schedules itself to be called again later.
+  void ReportPowerMeasurementPeriodically();
 
   // Helper method that stops the physical stream.
   void StopStream();
@@ -233,10 +231,11 @@ class MEDIA_EXPORT AudioOutputController
   // Number of times left.
   int number_polling_attempts_left_;
 
-  // Scans audio samples from OnMoreIOData() as input and causes
-  // EventHandler::OnAudbile() to be called whenever a transition to a period of
-  // silence or non-silence is detected.
-  scoped_ptr<AudioSilenceDetector> silence_detector_;
+  // Scans audio samples from OnMoreIOData() as input to compute power levels.
+  AudioPowerMonitor power_monitor_;
+
+  // Periodic callback to report power levels during playback.
+  base::CancelableClosure power_poll_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioOutputController);
 };

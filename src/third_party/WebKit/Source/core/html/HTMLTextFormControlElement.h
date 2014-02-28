@@ -29,6 +29,7 @@
 
 namespace WebCore {
 
+class ExceptionState;
 class Position;
 class RenderTextControl;
 class VisiblePosition;
@@ -65,8 +66,8 @@ public:
     void setSelectionEnd(int);
     void setSelectionDirection(const String&);
     void select();
-    virtual void setRangeText(const String& replacement, ExceptionCode&);
-    virtual void setRangeText(const String& replacement, unsigned start, unsigned end, const String& selectionMode, ExceptionCode&);
+    virtual void setRangeText(const String& replacement, ExceptionState&);
+    virtual void setRangeText(const String& replacement, unsigned start, unsigned end, const String& selectionMode, ExceptionState&);
     void setSelectionRange(int start, int end, const String& direction);
     void setSelectionRange(int start, int end, TextFieldSelectionDirection = SelectionHasNoDirection);
     PassRefPtr<Range> selection() const;
@@ -87,8 +88,6 @@ public:
     String directionForFormData() const;
 
     void setTextAsOfLastFormControlChangeEvent(const String& text) { m_textAsOfLastFormControlChangeEvent = text; }
-
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
 
 protected:
     HTMLTextFormControlElement(const QualifiedName&, Document*, HTMLFormElement*);
@@ -119,24 +118,25 @@ private:
     int computeSelectionEnd() const;
     TextFieldSelectionDirection computeSelectionDirection() const;
 
-    virtual void dispatchFocusEvent(PassRefPtr<Node> oldFocusedNode, FocusDirection) OVERRIDE;
-    virtual void dispatchBlurEvent(PassRefPtr<Node> newFocusedNode);
-    virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const OVERRIDE;
+    // FIXME: Author shadows should be allowed
+    // https://bugs.webkit.org/show_bug.cgi?id=92608
+    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
+
+    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusDirection) OVERRIDE;
+    virtual void dispatchBlurEvent(Element* newFocusedElement) OVERRIDE;
 
     // Returns true if user-editable value is empty. Used to check placeholder visibility.
     virtual bool isEmptyValue() const = 0;
     // Returns true if suggested value is empty. Used to check placeholder visibility.
     virtual bool isEmptySuggestedValue() const { return true; }
     // Called in dispatchFocusEvent(), after placeholder process, before calling parent's dispatchFocusEvent().
-    virtual void handleFocusEvent(Node* /* oldFocusedNode */, FocusDirection) { }
+    virtual void handleFocusEvent(Element* /* oldFocusedNode */, FocusDirection) { }
     // Called in dispatchBlurEvent(), after placeholder process, before calling parent's dispatchBlurEvent().
     virtual void handleBlurEvent() { }
 
-    RenderTextControl* textRendererAfterUpdateLayout();
-
     String m_textAsOfLastFormControlChangeEvent;
     bool m_lastChangeWasUserEdit;
-    
+
     int m_cachedSelectionStart;
     int m_cachedSelectionEnd;
     TextFieldSelectionDirection m_cachedSelectionDirection;

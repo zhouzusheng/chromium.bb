@@ -31,7 +31,7 @@
 #include "core/html/HTMLLegendElement.h"
 #include "core/html/HTMLObjectElement.h"
 #include "core/rendering/RenderFieldset.h"
-#include <wtf/StdLibExtras.h>
+#include "wtf/StdLibExtras.h"
 
 namespace WebCore {
 
@@ -87,7 +87,7 @@ const AtomicString& HTMLFieldSetElement::formControlType() const
 
 RenderObject* HTMLFieldSetElement::createRenderer(RenderStyle*)
 {
-    return new (document()->renderArena()) RenderFieldset(this);
+    return new RenderFieldset(this);
 }
 
 HTMLLegendElement* HTMLFieldSetElement::legend() const

@@ -32,7 +32,7 @@
 namespace WebCore {
 
 inline SVGGlyphElement::SVGGlyphElement(const QualifiedName& tagName, Document* document)
-    : SVGStyledElement(tagName, document)
+    : SVGElement(tagName, document)
 {
     ASSERT(hasTagName(SVGNames::glyphTag));
     ScriptWrappable::init(this);
@@ -46,10 +46,8 @@ PassRefPtr<SVGGlyphElement> SVGGlyphElement::create(const QualifiedName& tagName
 void SVGGlyphElement::invalidateGlyphCache()
 {
     ContainerNode* fontNode = parentNode();
-    if (fontNode && fontNode->hasTagName(SVGNames::fontTag)) {
-        if (SVGFontElement* element = static_cast<SVGFontElement*>(fontNode))
-            element->invalidateGlyphCache();
-    }
+    if (fontNode && fontNode->hasTagName(SVGNames::fontTag))
+        toSVGFontElement(fontNode)->invalidateGlyphCache();
 }
 
 void SVGGlyphElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -57,20 +55,20 @@ void SVGGlyphElement::parseAttribute(const QualifiedName& name, const AtomicStri
     if (name == SVGNames::dAttr)
         invalidateGlyphCache();
     else
-        SVGStyledElement::parseAttribute(name, value);
+        SVGElement::parseAttribute(name, value);
 }
 
 Node::InsertionNotificationRequest SVGGlyphElement::insertedInto(ContainerNode* rootParent)
 {
     invalidateGlyphCache();
-    return SVGStyledElement::insertedInto(rootParent);
+    return SVGElement::insertedInto(rootParent);
 }
 
 void SVGGlyphElement::removedFrom(ContainerNode* rootParent)
 {
     if (rootParent->inDocument())
         invalidateGlyphCache();
-    SVGStyledElement::removedFrom(rootParent);
+    SVGElement::removedFrom(rootParent);
 }
 
 static inline SVGGlyph::ArabicForm parseArabicForm(const AtomicString& value)
@@ -125,7 +123,7 @@ SVGGlyph SVGGlyphElement::buildGenericGlyphIdentifier(const SVGElement* element)
 {
     SVGGlyph identifier;
     buildPathFromString(element->fastGetAttribute(SVGNames::dAttr), identifier.pathData);
- 
+
     // Spec: The horizontal advance after rendering the glyph in horizontal orientation.
     // If the attribute is not specified, the effect is as if the attribute were set to the
     // value of the font's horiz-adv-x attribute. Glyph widths are required to be non-negative,

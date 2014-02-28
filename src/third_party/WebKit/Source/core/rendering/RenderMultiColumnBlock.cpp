@@ -27,6 +27,8 @@
 #include "core/rendering/RenderMultiColumnBlock.h"
 
 #include "core/rendering/RenderMultiColumnFlowThread.h"
+#include "core/rendering/RenderMultiColumnSet.h"
+#include "core/rendering/RenderView.h"
 
 using namespace std;
 
@@ -37,8 +39,8 @@ RenderMultiColumnBlock::RenderMultiColumnBlock(Element* element)
     , m_flowThread(0)
     , m_columnCount(1)
     , m_columnWidth(0)
-    , m_columnHeight(0)
-    , m_requiresBalancing(false)
+    , m_columnHeightAvailable(0)
+    , m_inBalancingPass(false)
 {
 }
 
@@ -55,7 +57,7 @@ void RenderMultiColumnBlock::computeColumnCountAndWidth()
     // FIXME: Can overflow on fast/block/float/float-not-removed-from-next-sibling4.html, see https://bugs.webkit.org/show_bug.cgi?id=68744
     m_columnCount = 1;
     m_columnWidth = contentLogicalWidth();
-    
+
     ASSERT(!style()->hasAutoColumnCount() || !style()->hasAutoColumnWidth());
 
     LayoutUnit availWidth = m_columnWidth;
@@ -89,21 +91,49 @@ void RenderMultiColumnBlock::checkForPaginationLogicalHeightChange(LayoutUnit& /
 {
     // We don't actually update any of the variables. We just subclassed to adjust our column height.
     updateLogicalHeight();
-    LayoutUnit newContentLogicalHeight = contentLogicalHeight();
-    m_requiresBalancing = !newContentLogicalHeight;
-    if (!m_requiresBalancing) {
-        // The regions will be invalidated when we lay them out and they change size to
-        // the new column height.
-        if (columnHeight() != newContentLogicalHeight)
-            setColumnHeight(newContentLogicalHeight);
-    }
+    m_columnHeightAvailable = max<LayoutUnit>(contentLogicalHeight(), 0);
     setLogicalHeight(0);
 }
 
-bool RenderMultiColumnBlock::relayoutForPagination(bool, LayoutUnit, LayoutStateMaintainer&)
+bool RenderMultiColumnBlock::relayoutForPagination(bool, LayoutUnit, LayoutStateMaintainer& statePusher)
 {
-    // FIXME: Implement.
-    return false;
+    if (m_inBalancingPass || !requiresBalancing())
+        return false;
+    m_inBalancingPass = true; // Prevent re-entering this method (and recursion into layout).
+
+    bool needsRelayout;
+    bool neededRelayout = false;
+    bool firstPass = true;
+    do {
+        // Column heights may change here because of balancing. We may have to do multiple layout
+        // passes, depending on how the contents is fitted to the changed column heights. In most
+        // cases, laying out again twice or even just once will suffice. Sometimes we need more
+        // passes than that, though, but the number of retries should not exceed the number of
+        // columns, unless we have a bug.
+        needsRelayout = false;
+        for (RenderBox* childBox = firstChildBox(); childBox; childBox = childBox->nextSiblingBox()) {
+            if (childBox != m_flowThread && childBox->isRenderMultiColumnSet()) {
+                RenderMultiColumnSet* multicolSet = toRenderMultiColumnSet(childBox);
+                if (multicolSet->calculateBalancedHeight(firstPass)) {
+                    multicolSet->setChildNeedsLayout(MarkOnlyThis);
+                    needsRelayout = true;
+                }
+            }
+        }
+
+        if (needsRelayout) {
+            // Layout again. Column balancing resulted in a new height.
+            neededRelayout = true;
+            m_flowThread->setChildNeedsLayout(MarkOnlyThis);
+            setChildNeedsLayout(MarkOnlyThis);
+            if (firstPass)
+                statePusher.pop();
+            layoutBlock(false);
+        }
+        firstPass = false;
+    } while (needsRelayout);
+    m_inBalancingPass = false;
+    return neededRelayout;
 }
 
 void RenderMultiColumnBlock::addChild(RenderObject* newChild, RenderObject* beforeChild)
@@ -115,37 +145,37 @@ void RenderMultiColumnBlock::addChild(RenderObject* newChild, RenderObject* befo
     }
     m_flowThread->addChild(newChild, beforeChild);
 }
-    
+
 RenderObject* RenderMultiColumnBlock::layoutSpecialExcludedChild(bool relayoutChildren)
 {
     if (!m_flowThread)
         return 0;
-    
-    // Update the sizes of our regions (but not the placement) before we lay out the flow thread.
+
+    // Update the dimensions of our regions before we lay out the flow thread.
     // FIXME: Eventually this is going to get way more complicated, and we will be destroying regions
     // instead of trying to keep them around.
     bool shouldInvalidateRegions = false;
     for (RenderBox* childBox = firstChildBox(); childBox; childBox = childBox->nextSiblingBox()) {
         if (childBox == m_flowThread)
             continue;
-        
+
         if (relayoutChildren || childBox->needsLayout()) {
-            childBox->updateLogicalWidth();
-            childBox->updateLogicalHeight();
+            if (!m_inBalancingPass && childBox->isRenderMultiColumnSet())
+                toRenderMultiColumnSet(childBox)->prepareForLayout();
             shouldInvalidateRegions = true;
         }
     }
-    
+
     if (shouldInvalidateRegions)
         m_flowThread->invalidateRegions();
 
     if (relayoutChildren)
-        m_flowThread->setChildNeedsLayout(true, MarkOnlyThis);
-    
+        m_flowThread->setChildNeedsLayout(MarkOnlyThis);
+
     setLogicalTopForChild(m_flowThread, borderBefore() + paddingBefore());
     m_flowThread->layoutIfNeeded();
     determineLogicalLeftPositionForChild(m_flowThread);
-    
+
     return m_flowThread;
 }
 

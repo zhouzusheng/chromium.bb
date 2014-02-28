@@ -40,15 +40,14 @@
  * Apply the color mask to a span of rgba values.
  */
 void
-_swrast_mask_rgba_span(GLcontext *ctx, struct gl_renderbuffer *rb,
+_swrast_mask_rgba_span(struct gl_context *ctx, struct gl_renderbuffer *rb,
                        SWspan *span, GLuint buf)
 {
    const GLuint n = span->end;
    void *rbPixels;
 
-   ASSERT(n < MAX_WIDTH);
+   ASSERT(n < SWRAST_MAX_WIDTH);
    ASSERT(span->arrayMask & SPAN_RGBA);
-   ASSERT(rb->DataType == span->array->ChanType);
 
    rbPixels = _swrast_get_dest_rgba(ctx, rb, span);
 

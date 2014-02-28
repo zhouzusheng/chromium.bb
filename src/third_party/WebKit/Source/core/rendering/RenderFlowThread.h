@@ -12,7 +12,7 @@
  *    copyright notice, this list of conditions and the following
  *    disclaimer in the documentation and/or other materials
  *    provided with the distribution.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -49,7 +49,7 @@ typedef ListHashSet<RenderRegion*> RenderRegionList;
 
 // RenderFlowThread is used to collect all the render objects that participate in a
 // flow thread. It will also help in doing the layout. However, it will not render
-// directly to screen. Instead, RenderRegion objects will redirect their paint 
+// directly to screen. Instead, RenderRegion objects will redirect their paint
 // and nodeAtPoint methods to this object. Each RenderRegion will actually be a viewPort
 // of the RenderFlowThread.
 
@@ -57,17 +57,17 @@ class RenderFlowThread: public RenderBlock {
 public:
     RenderFlowThread();
     virtual ~RenderFlowThread() { };
-    
+
     virtual bool isRenderFlowThread() const OVERRIDE FINAL { return true; }
 
     virtual void layout() OVERRIDE FINAL;
 
-    // Always create a RenderLayer for the RenderFlowThread so that we 
+    // Always create a RenderLayer for the RenderFlowThread so that we
     // can easily avoid drawing the children directly.
     virtual bool requiresLayer() const OVERRIDE FINAL { return true; }
 
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
-    
+
     void removeFlowChildInfo(RenderObject*);
 #ifndef NDEBUG
     bool hasChildInfo(RenderObject* child) const { return child && child->isBox() && m_regionRangeMap.contains(toRenderBox(child)); }
@@ -87,6 +87,7 @@ public:
     // Check if the content is flown into at least a region with region styling rules.
     bool hasRegionsWithStyling() const { return m_hasRegionsWithStyling; }
     void checkRegionsWithStyling();
+    virtual void regionChangedWritingMode(RenderRegion*) { }
 
     void validateRegions();
     void invalidateRegions();
@@ -104,7 +105,10 @@ public:
     LayoutUnit pageLogicalWidthForOffset(LayoutUnit);
     LayoutUnit pageLogicalHeightForOffset(LayoutUnit);
     LayoutUnit pageRemainingLogicalHeightForOffset(LayoutUnit, PageBoundaryRule = IncludePageBoundary);
-    
+
+    virtual void setPageBreak(LayoutUnit /*offset*/, LayoutUnit /*spaceShortage*/) { }
+    virtual void updateMinimumPageHeight(LayoutUnit /*offset*/, LayoutUnit /*minHeight*/) { }
+
     enum RegionAutoGenerationPolicy {
         AllowRegionAutoGeneration,
         DisallowRegionAutoGeneration,
@@ -122,7 +126,7 @@ public:
     LayoutUnit contentLogicalWidthOfFirstRegion() const;
     LayoutUnit contentLogicalHeightOfFirstRegion() const;
     LayoutUnit contentLogicalLeftOfFirstRegion() const;
-    
+
     RenderRegion* firstRegion() const;
     RenderRegion* lastRegion() const;
 
@@ -135,10 +139,6 @@ public:
     void clearRenderObjectCustomStyle(const RenderObject*,
         const RenderRegion* oldStartRegion = 0, const RenderRegion* oldEndRegion = 0,
         const RenderRegion* newStartRegion = 0, const RenderRegion* newEndRegion = 0);
-    
-    void computeOversetStateForRegions(LayoutUnit oldClientAfterEdge);
-
-    bool overset() const { return m_overset; }
 
     // Check if the object is in region and the region is part of this flow thread.
     bool objectInFlowRegion(const RenderObject*, const RenderRegion*) const;
@@ -187,12 +187,12 @@ protected:
 
     void setDispatchRegionOversetChangeEvent(bool value) { m_dispatchRegionOversetChangeEvent = value; }
     bool shouldDispatchRegionOversetChangeEvent() const { return m_dispatchRegionOversetChangeEvent; }
-    
+
     // Override if the flow thread implementation supports dispatching events when the flow layout is updated (e.g. for named flows)
     virtual void dispatchRegionLayoutUpdateEvent() { m_dispatchRegionLayoutUpdateEvent = false; }
     virtual void dispatchRegionOversetChangeEvent() { m_dispatchRegionOversetChangeEvent = false; }
 
-    void initializeRegionsOverrideLogicalContentHeight(RenderRegion* = 0);
+    void initializeRegionsComputedAutoHeight(RenderRegion* = 0);
 
     virtual void autoGenerateRegionsToBlockOffset(LayoutUnit) { };
 
@@ -210,7 +210,7 @@ protected:
         {
             setRange(start, end);
         }
-        
+
         void setRange(RenderRegion* start, RenderRegion* end)
         {
             m_startRegion = start;
@@ -262,7 +262,6 @@ protected:
     bool m_regionsInvalidated : 1;
     bool m_regionsHaveUniformLogicalWidth : 1;
     bool m_regionsHaveUniformLogicalHeight : 1;
-    bool m_overset : 1;
     bool m_hasRegionsWithStyling : 1;
     bool m_dispatchRegionLayoutUpdateEvent : 1;
     bool m_dispatchRegionOversetChangeEvent : 1;

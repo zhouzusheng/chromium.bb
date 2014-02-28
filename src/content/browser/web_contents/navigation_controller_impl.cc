@@ -10,9 +10,9 @@
 #include "base/strings/string_number_conversions.h"  // Temporary
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/browser/browser_url_handler_impl.h"
-#include "content/browser/dom_storage/dom_storage_context_impl.h"
+#include "content/browser/dom_storage/dom_storage_context_wrapper.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"  // Temporary
 #include "content/browser/site_instance_impl.h"
@@ -105,18 +105,15 @@ void ConfigureEntriesForRestore(
 // See NavigationController::IsURLInPageNavigation for how this works and why.
 bool AreURLsInPageNavigation(const GURL& existing_url,
                              const GURL& new_url,
-                             bool renderer_says_in_page) {
+                             bool renderer_says_in_page,
+                             NavigationType navigation_type) {
   if (existing_url == new_url)
     return renderer_says_in_page;
 
   if (!new_url.has_ref()) {
-    // TODO(jcampan): what about when navigating back from a ref URL to the top
-    // non ref URL? Nothing is loaded in that case but we return false here.
-    // The user could also navigate from the ref URL to the non ref URL by
-    // entering the non ref URL in the location bar or through a bookmark, in
-    // which case there would be a load.  I am not sure if the non-load/load
-    // scenarios can be differentiated with the TransitionType.
-    return false;
+    // When going back from the ref URL to the non ref one the navigation type
+    // is IN_PAGE.
+    return navigation_type == NAVIGATION_TYPE_IN_PAGE;
   }
 
   url_canon::Replacements<char> replacements;
@@ -684,7 +681,7 @@ void NavigationControllerImpl::LoadURLWithParams(const LoadURLParams& params) {
           params.is_renderer_initiated,
           params.extra_headers,
           browser_context_));
-  if (params.is_cross_site_redirect)
+  if (params.should_replace_current_entry)
     entry->set_should_replace_entry(true);
   entry->set_should_clear_history_list(params.should_clear_history_list);
   entry->SetIsOverridingUserAgent(override);
@@ -740,12 +737,12 @@ bool NavigationControllerImpl::RendererDidNavigate(
   details->did_replace_entry =
       pending_entry_ && pending_entry_->should_replace_entry();
 
-  // is_in_page must be computed before the entry gets committed.
-  details->is_in_page = IsURLInPageNavigation(
-      params.url, params.was_within_same_page);
-
   // Do navigation-type specific actions. These will make and commit an entry.
   details->type = ClassifyNavigation(params);
+
+  // is_in_page must be computed before the entry gets committed.
+  details->is_in_page = IsURLInPageNavigation(
+      params.url, params.was_within_same_page, details->type);
 
   switch (details->type) {
     case NAVIGATION_TYPE_NEW_PAGE:
@@ -956,7 +953,8 @@ NavigationType NavigationControllerImpl::ClassifyNavigation(
   // navigations that don't actually navigate, but it can happen when there is
   // an encoding override (it always sends a navigation request).
   if (AreURLsInPageNavigation(existing_entry->GetURL(), params.url,
-                              params.was_within_same_page)) {
+                              params.was_within_same_page,
+                              NAVIGATION_TYPE_UNKNOWN)) {
     return NAVIGATION_TYPE_IN_PAGE;
   }
 
@@ -1138,8 +1136,8 @@ void NavigationControllerImpl::RendererDidNavigateInPage(
 
 void NavigationControllerImpl::RendererDidNavigateNewSubframe(
     const ViewHostMsg_FrameNavigate_Params& params) {
-  if (PageTransitionStripQualifier(params.transition) ==
-      PAGE_TRANSITION_AUTO_SUBFRAME) {
+  if (PageTransitionCoreTypeIs(params.transition,
+                               PAGE_TRANSITION_AUTO_SUBFRAME)) {
     // This is not user-initiated. Ignore.
     DiscardNonCommittedEntriesInternal();
     return;
@@ -1197,10 +1195,12 @@ int NavigationControllerImpl::GetIndexOfEntry(
 }
 
 bool NavigationControllerImpl::IsURLInPageNavigation(
-    const GURL& url, bool renderer_says_in_page) const {
+    const GURL& url,
+    bool renderer_says_in_page,
+    NavigationType navigation_type) const {
   NavigationEntry* last_committed = GetLastCommittedEntry();
   return last_committed && AreURLsInPageNavigation(
-      last_committed->GetURL(), url, renderer_says_in_page);
+      last_committed->GetURL(), url, renderer_says_in_page, navigation_type);
 }
 
 void NavigationControllerImpl::CopyStateFrom(
@@ -1222,8 +1222,7 @@ void NavigationControllerImpl::CopyStateFrom(
        ++it) {
     SessionStorageNamespaceImpl* source_namespace =
         static_cast<SessionStorageNamespaceImpl*>(it->second.get());
-    session_storage_namespace_map_.insert(
-        make_pair(it->first, source_namespace->Clone()));
+    session_storage_namespace_map_[it->first] = source_namespace->Clone();
   }
 
   FinishRestore(source.last_committed_entry_index_, RESTORE_CURRENT_SESSION);
@@ -1394,7 +1393,7 @@ NavigationControllerImpl::GetSessionStorageNamespace(SiteInstance* instance) {
               BrowserContext::GetStoragePartition(browser_context_, instance);
   SessionStorageNamespaceImpl* session_storage_namespace =
       new SessionStorageNamespaceImpl(
-          static_cast<DOMStorageContextImpl*>(
+          static_cast<DOMStorageContextWrapper*>(
               partition->GetDOMStorageContext()));
   session_storage_namespace_map_[partition_id] = session_storage_namespace;
 
@@ -1624,12 +1623,15 @@ void NavigationControllerImpl::FinishRestore(int selected_index,
 }
 
 void NavigationControllerImpl::DiscardNonCommittedEntriesInternal() {
+  DiscardPendingEntry();
+  DiscardTransientEntry();
+}
+
+void NavigationControllerImpl::DiscardPendingEntry() {
   if (pending_entry_index_ == -1)
     delete pending_entry_;
   pending_entry_ = NULL;
   pending_entry_index_ = -1;
-
-  DiscardTransientEntry();
 }
 
 void NavigationControllerImpl::DiscardTransientEntry() {

@@ -10,6 +10,7 @@ layer-picker {
 
 layer-picker > top-controls {
   -webkit-flex: 0 0 auto;
+  -webkit-user-select: none;
   background-image: -webkit-gradient(linear,
                                      0 0, 100% 0,
                                      from(#E5E5E5),
@@ -19,7 +20,7 @@ layer-picker > top-controls {
   display: inline;
 }
 
-layer-picker > x-list-view {
+layer-picker > .x-list-view {
   -webkit-flex: 1 1 auto;
   font-family: monospace;
   overflow: auto;
@@ -32,6 +33,5 @@ layer-picker > x-generic-object-view {
 }
 
 layer-picker > x-generic-object-view * {
-  -webkit-user-select: text !important;
   cursor: text;
 }

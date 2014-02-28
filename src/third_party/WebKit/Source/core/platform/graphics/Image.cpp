@@ -27,17 +27,24 @@
 #include "config.h"
 #include "core/platform/graphics/Image.h"
 
-#include <math.h>
 #include "core/platform/Length.h"
 #include "core/platform/MIMETypeRegistry.h"
-#include "core/platform/PlatformMemoryInstrumentation.h"
 #include "core/platform/SharedBuffer.h"
+#include "core/platform/chromium/TraceEvent.h"
 #include "core/platform/graphics/BitmapImage.h"
+#include "core/platform/graphics/FloatPoint.h"
+#include "core/platform/graphics/FloatRect.h"
+#include "core/platform/graphics/FloatSize.h"
 #include "core/platform/graphics/GraphicsContext.h"
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
+#include "core/platform/graphics/GraphicsTypes.h"
 #include "core/platform/graphics/IntRect.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebData.h"
 #include "wtf/MainThread.h"
-#include "wtf/MemoryObjectInfo.h"
 #include "wtf/StdLibExtras.h"
+
+#include <math.h>
 
 namespace WebCore {
 
@@ -55,6 +62,17 @@ Image* Image::nullImage()
     ASSERT(isMainThread());
     DEFINE_STATIC_LOCAL(RefPtr<Image>, nullImage, (BitmapImage::create()));;
     return nullImage.get();
+}
+
+PassRefPtr<Image> Image::loadPlatformResource(const char *name)
+{
+    const WebKit::WebData& resource = WebKit::Platform::current()->loadResource(name);
+    if (resource.isEmpty())
+        return Image::nullImage();
+
+    RefPtr<Image> image = BitmapImage::create();
+    image->setData(resource, true);
+    return image.release();
 }
 
 bool Image::supportsType(const String& type)
@@ -148,18 +166,38 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const Fl
 
 // FIXME: Merge with the other drawTiled eventually, since we need a combination of both for some things.
 void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect,
-    const FloatSize& tileScaleFactor, TileRule hRule, TileRule vRule, CompositeOperator op)
+    const FloatSize& providedTileScaleFactor, TileRule hRule, TileRule vRule, CompositeOperator op)
 {
     if (mayFillWithSolidColor()) {
         fillWithSolidColor(ctxt, dstRect, solidColor(), op);
         return;
     }
 
-    // FIXME: We do not support 'round' or 'space' yet. For now just map them to 'repeat'.
-    if (hRule == RoundTile || hRule == SpaceTile)
+    // FIXME: We do not support 'space' yet. For now just map it to 'repeat'.
+    if (hRule == SpaceTile)
         hRule = RepeatTile;
-    if (vRule == RoundTile || vRule == SpaceTile)
+    if (vRule == SpaceTile)
         vRule = RepeatTile;
+
+    // FIXME: if this code is used for background-repeat: round (in addition to
+    // border-image-repeat), then add logic to deal with the background-size: auto
+    // special case. The aspect ratio should be maintained in this case.
+    FloatSize tileScaleFactor = providedTileScaleFactor;
+    bool useLowInterpolationQuality = false;
+    if (hRule == RoundTile) {
+        float hRepetitions = std::max(1.0f, roundf(dstRect.width() / (tileScaleFactor.width() * srcRect.width())));
+        tileScaleFactor.setWidth(dstRect.width() / (srcRect.width() * hRepetitions));
+    }
+    if (vRule == RoundTile) {
+        float vRepetitions = std::max(1.0f, roundf(dstRect.height() / (tileScaleFactor.height() * srcRect.height())));
+        tileScaleFactor.setHeight(dstRect.height() / (srcRect.height() * vRepetitions));
+    }
+    if (hRule == RoundTile || vRule == RoundTile) {
+        // High interpolation quality rounds the scaled tile to an integer size (see Image::drawPattern).
+        // To avoid causing a visual problem, linear interpolation must be used instead.
+        // FIXME: Allow using high-quality interpolation in this case, too.
+        useLowInterpolationQuality = true;
+    }
 
     // We want to construct the phase such that the pattern is centered (when stretch is not
     // set for a particular rule).
@@ -173,9 +211,24 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& dstRect, const Flo
         vPhase -= (dstRect.height() - scaledTileHeight) / 2;
     FloatPoint patternPhase(dstRect.x() - hPhase, dstRect.y() - vPhase);
 
-    drawPattern(ctxt, srcRect, tileScaleFactor, patternPhase, op, dstRect);
+    if (useLowInterpolationQuality) {
+        InterpolationQuality previousInterpolationQuality = ctxt->imageInterpolationQuality();
+        ctxt->setImageInterpolationQuality(InterpolationLow);
+        drawPattern(ctxt, srcRect, tileScaleFactor, patternPhase, op, dstRect);
+        ctxt->setImageInterpolationQuality(previousInterpolationQuality);
+    } else {
+        drawPattern(ctxt, srcRect, tileScaleFactor, patternPhase, op, dstRect);
+    }
 
     startAnimation();
+}
+
+void Image::drawPattern(GraphicsContext* context, const FloatRect& floatSrcRect, const FloatSize& scale,
+    const FloatPoint& phase, CompositeOperator compositeOp, const FloatRect& destRect, BlendMode blendMode)
+{
+    TRACE_EVENT0("skia", "Image::drawPattern");
+    if (RefPtr<NativeImageSkia> bitmap = nativeImageForCurrentFrame())
+        bitmap->drawPattern(context, adjustForNegativeSize(floatSrcRect), scale, phase, compositeOp, destRect, blendMode);
 }
 
 void Image::computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio)
@@ -183,14 +236,6 @@ void Image::computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsic
     intrinsicRatio = size();
     intrinsicWidth = Length(intrinsicRatio.width(), Fixed);
     intrinsicHeight = Length(intrinsicRatio.height(), Fixed);
-}
-
-void Image::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Image);
-    memoryObjectInfo->setClassName("Image");
-    info.addMember(m_encodedImageData, "encodedImageData");
-    info.addWeakPointer(m_imageObserver);
 }
 
 }

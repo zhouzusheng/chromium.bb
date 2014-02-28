@@ -24,19 +24,20 @@
 #define HTMLDocument_h
 
 #include "core/dom/Document.h"
-#include "core/loader/cache/CachedResourceClient.h"
+#include "core/loader/cache/ResourceClient.h"
 #include "wtf/HashCountedSet.h"
 
 namespace WebCore {
 
 class FrameView;
+class HTMLBodyElement;
 class HTMLElement;
 
-class HTMLDocument : public Document, public CachedResourceClient {
+class HTMLDocument : public Document, public ResourceClient {
 public:
-    static PassRefPtr<HTMLDocument> create(Frame* frame, const KURL& url)
+    static PassRefPtr<HTMLDocument> create(const DocumentInit& initializer = DocumentInit())
     {
-        return adoptRef(new HTMLDocument(frame, url));
+        return adoptRef(new HTMLDocument(initializer));
     }
     virtual ~HTMLDocument();
 
@@ -70,32 +71,33 @@ public:
 
     void addNamedItem(const AtomicString& name);
     void removeNamedItem(const AtomicString& name);
-    bool hasNamedItem(AtomicStringImpl* name);
+    bool hasNamedItem(StringImpl* name);
 
     void addExtraNamedItem(const AtomicString& name);
     void removeExtraNamedItem(const AtomicString& name);
-    bool hasExtraNamedItem(AtomicStringImpl* name);
+    bool hasExtraNamedItem(StringImpl* name);
 
     static bool isCaseSensitiveAttribute(const QualifiedName&);
 
 protected:
-    HTMLDocument(Frame*, const KURL&, DocumentClassFlags extendedDocumentClasses = DefaultDocumentClass);
+    HTMLDocument(const DocumentInit&, DocumentClassFlags extendedDocumentClasses = DefaultDocumentClass);
 
 private:
-    void addItemToMap(HashCountedSet<AtomicStringImpl*>&, const AtomicString&);
-    void removeItemFromMap(HashCountedSet<AtomicStringImpl*>&, const AtomicString&);
+    HTMLBodyElement* bodyAsHTMLBodyElement() const;
+    void addItemToMap(HashCountedSet<StringImpl*>&, const AtomicString&);
+    void removeItemFromMap(HashCountedSet<StringImpl*>&, const AtomicString&);
 
-    HashCountedSet<AtomicStringImpl*> m_namedItemCounts;
-    HashCountedSet<AtomicStringImpl*> m_extraNamedItemCounts;
+    HashCountedSet<StringImpl*> m_namedItemCounts;
+    HashCountedSet<StringImpl*> m_extraNamedItemCounts;
 };
 
-inline bool HTMLDocument::hasNamedItem(AtomicStringImpl* name)
+inline bool HTMLDocument::hasNamedItem(StringImpl* name)
 {
     ASSERT(name);
     return m_namedItemCounts.contains(name);
 }
 
-inline bool HTMLDocument::hasExtraNamedItem(AtomicStringImpl* name)
+inline bool HTMLDocument::hasExtraNamedItem(StringImpl* name)
 {
     ASSERT(name);
     return m_extraNamedItemCounts.contains(name);

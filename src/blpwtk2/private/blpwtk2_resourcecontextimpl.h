@@ -51,6 +51,16 @@ class ResourceContextImpl : public content::ResourceContext {
     // with a BrowsingContext.
     virtual net::URLRequestContext* GetRequestContext() OVERRIDE;
 
+    // Returns true if microphone access is allowed for |origin|. Used to
+    // determine what level of authorization is given to |origin| to access
+    // resource metadata.
+    virtual bool AllowMicAccess(const GURL& origin) OVERRIDE;
+
+    // Returns true if web camera access is allowed for |origin|. Used to
+    // determine what level of authorization is given to |origin| to access
+    // resource metadata.
+    virtual bool AllowCameraAccess(const GURL& origin) OVERRIDE;
+
   private:
     scoped_refptr<net::URLRequestContextGetter> d_requestContextGetter;
     scoped_ptr<net::HostResolver> d_hostResolver;

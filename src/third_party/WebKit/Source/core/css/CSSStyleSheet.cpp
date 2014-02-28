@@ -21,10 +21,9 @@
 #include "config.h"
 #include "core/css/CSSStyleSheet.h"
 
-#include <wtf/MemoryInstrumentationVector.h>
-#include <wtf/text/StringBuilder.h>
 #include "HTMLNames.h"
 #include "SVGNames.h"
+#include "bindings/v8/ExceptionState.h"
 #include "core/css/CSSCharsetRule.h"
 #include "core/css/CSSImportRule.h"
 #include "core/css/CSSParser.h"
@@ -35,30 +34,24 @@
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/Node.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "weborigin/SecurityOrigin.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
 class StyleSheetCSSRuleList : public CSSRuleList {
 public:
     StyleSheetCSSRuleList(CSSStyleSheet* sheet) : m_styleSheet(sheet) { }
-    
+
 private:
     virtual void ref() { m_styleSheet->ref(); }
     virtual void deref() { m_styleSheet->deref(); }
-    
+
     virtual unsigned length() const { return m_styleSheet->length(); }
     virtual CSSRule* item(unsigned index) const { return m_styleSheet->item(index); }
-    
+
     virtual CSSStyleSheet* styleSheet() const { return m_styleSheet; }
 
-    virtual void reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const OVERRIDE
-    {
-        MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-        info.addMember(m_styleSheet, "styleSheet");
-    }
-    
     CSSStyleSheet* m_styleSheet;
 };
 
@@ -76,12 +69,12 @@ static bool isAcceptableCSSStyleSheetParent(Node* parentNode)
 #endif
 
 PassRefPtr<CSSStyleSheet> CSSStyleSheet::create(PassRefPtr<StyleSheetContents> sheet, CSSImportRule* ownerRule)
-{ 
+{
     return adoptRef(new CSSStyleSheet(sheet, ownerRule));
 }
 
 PassRefPtr<CSSStyleSheet> CSSStyleSheet::create(PassRefPtr<StyleSheetContents> sheet, Node* ownerNode)
-{ 
+{
     return adoptRef(new CSSStyleSheet(sheet, ownerNode, false, TextPosition::minimumPosition()));
 }
 
@@ -164,7 +157,7 @@ void CSSStyleSheet::didMutate()
     Document* owner = ownerDocument();
     if (!owner)
         return;
-    owner->styleResolverChanged(DeferRecalcStyle);
+    owner->modifiedStyleSheet(this);
 }
 
 void CSSStyleSheet::reattachChildRuleCSSOMWrappers()
@@ -176,21 +169,8 @@ void CSSStyleSheet::reattachChildRuleCSSOMWrappers()
     }
 }
 
-void CSSStyleSheet::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_contents, "contents");
-    info.addMember(m_title, "title");
-    info.addMember(m_mediaQueries, "mediaQueries");
-    info.addMember(m_ownerNode, "ownerNode");
-    info.addMember(m_ownerRule, "ownerRule");
-    info.addMember(m_mediaCSSOMWrapper, "mediaCSSOMWrapper");
-    info.addMember(m_childRuleCSSOMWrappers, "childRuleCSSOMWrappers");
-    info.addMember(m_ruleListCSSOMWrapper, "ruleListCSSOMWrapper");
-}
-
 void CSSStyleSheet::setDisabled(bool disabled)
-{ 
+{
     if (disabled == m_isDisabled)
         return;
     m_isDisabled = disabled;
@@ -265,42 +245,40 @@ PassRefPtr<CSSRuleList> CSSStyleSheet::rules()
     return nonCharsetRules.release();
 }
 
-unsigned CSSStyleSheet::insertRule(const String& ruleString, unsigned index, ExceptionCode& ec)
+unsigned CSSStyleSheet::insertRule(const String& ruleString, unsigned index, ExceptionState& es)
 {
     ASSERT(m_childRuleCSSOMWrappers.isEmpty() || m_childRuleCSSOMWrappers.size() == m_contents->ruleCount());
 
-    ec = 0;
     if (index > length()) {
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
         return 0;
     }
     CSSParser p(m_contents->parserContext(), UseCounter::getFrom(this));
     RefPtr<StyleRuleBase> rule = p.parseRule(m_contents.get(), ruleString);
 
     if (!rule) {
-        ec = SYNTAX_ERR;
+        es.throwDOMException(SyntaxError);
         return 0;
     }
     RuleMutationScope mutationScope(this);
 
     bool success = m_contents->wrapperInsertRule(rule, index);
     if (!success) {
-        ec = HIERARCHY_REQUEST_ERR;
+        es.throwDOMException(HierarchyRequestError);
         return 0;
-    }        
+    }
     if (!m_childRuleCSSOMWrappers.isEmpty())
         m_childRuleCSSOMWrappers.insert(index, RefPtr<CSSRule>());
 
     return index;
 }
 
-void CSSStyleSheet::deleteRule(unsigned index, ExceptionCode& ec)
+void CSSStyleSheet::deleteRule(unsigned index, ExceptionState& es)
 {
     ASSERT(m_childRuleCSSOMWrappers.isEmpty() || m_childRuleCSSOMWrappers.size() == m_contents->ruleCount());
 
-    ec = 0;
     if (index >= length()) {
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
         return;
     }
     RuleMutationScope mutationScope(this);
@@ -314,7 +292,7 @@ void CSSStyleSheet::deleteRule(unsigned index, ExceptionCode& ec)
     }
 }
 
-int CSSStyleSheet::addRule(const String& selector, const String& style, int index, ExceptionCode& ec)
+int CSSStyleSheet::addRule(const String& selector, const String& style, int index, ExceptionState& es)
 {
     StringBuilder text;
     text.append(selector);
@@ -323,15 +301,15 @@ int CSSStyleSheet::addRule(const String& selector, const String& style, int inde
     if (!style.isEmpty())
         text.append(' ');
     text.append('}');
-    insertRule(text.toString(), index, ec);
-    
+    insertRule(text.toString(), index, es);
+
     // As per Microsoft documentation, always return -1.
     return -1;
 }
 
-int CSSStyleSheet::addRule(const String& selector, const String& style, ExceptionCode& ec)
+int CSSStyleSheet::addRule(const String& selector, const String& style, ExceptionState& es)
 {
-    return addRule(selector, style, length(), ec);
+    return addRule(selector, style, length(), es);
 }
 
 
@@ -359,8 +337,8 @@ bool CSSStyleSheet::isLoading() const
     return m_contents->isLoading();
 }
 
-MediaList* CSSStyleSheet::media() const 
-{ 
+MediaList* CSSStyleSheet::media() const
+{
     if (!m_mediaQueries)
         return 0;
 
@@ -369,9 +347,9 @@ MediaList* CSSStyleSheet::media() const
     return m_mediaCSSOMWrapper.get();
 }
 
-CSSStyleSheet* CSSStyleSheet::parentStyleSheet() const 
-{ 
-    return m_ownerRule ? m_ownerRule->parentStyleSheet() : 0; 
+CSSStyleSheet* CSSStyleSheet::parentStyleSheet() const
+{
+    return m_ownerRule ? m_ownerRule->parentStyleSheet() : 0;
 }
 
 Document* CSSStyleSheet::ownerDocument() const

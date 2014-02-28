@@ -31,19 +31,16 @@
 
 #include "core/inspector/InspectorBaseAgent.h"
 #include "core/storage/StorageArea.h"
-#include <wtf/HashMap.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/PassOwnPtr.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 class Frame;
 class InspectorFrontend;
 class InspectorPageAgent;
-class InspectorState;
 class InstrumentingAgents;
 class JSONObject;
-class Page;
 class Storage;
 class StorageArea;
 
@@ -63,6 +60,7 @@ public:
     // Called from the front-end.
     virtual void enable(ErrorString*);
     virtual void disable(ErrorString*);
+    virtual void getValue(ErrorString*, const RefPtr<JSONObject>& storageId, const String& key, TypeBuilder::OptOutput<WTF::String>* value);
     virtual void getDOMStorageItems(ErrorString*, const RefPtr<JSONObject>& storageId, RefPtr<TypeBuilder::Array<TypeBuilder::Array<String> > >& items);
     virtual void setDOMStorageItem(ErrorString*, const RefPtr<JSONObject>& storageId, const String& key, const String& value);
     virtual void removeDOMStorageItem(ErrorString*, const RefPtr<JSONObject>& storageId, const String& key);
@@ -74,14 +72,12 @@ public:
     // Called from InspectorInstrumentation
     void didDispatchDOMStorageEvent(const String& key, const String& oldValue, const String& newValue, StorageType, SecurityOrigin*);
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
-
 private:
 
     InspectorDOMStorageAgent(InstrumentingAgents*, InspectorPageAgent*, InspectorCompositeState*);
 
     bool isEnabled() const;
-    PassRefPtr<StorageArea> findStorageArea(ErrorString*, const RefPtr<JSONObject>&, Frame*&);
+    PassOwnPtr<StorageArea> findStorageArea(ErrorString*, const RefPtr<JSONObject>&, Frame*&);
 
     InspectorPageAgent* m_pageAgent;
     InspectorFrontend* m_frontend;

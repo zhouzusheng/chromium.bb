@@ -30,9 +30,9 @@
 #include "core/svg/SVGFontFaceUriElement.h"
 
 namespace WebCore {
-    
+
 using namespace SVGNames;
-    
+
 inline SVGFontFaceSrcElement::SVGFontFaceSrcElement(const QualifiedName& tagName, Document* document)
     : SVGElement(tagName, document)
 {
@@ -64,7 +64,7 @@ void SVGFontFaceSrcElement::childrenChanged(bool changedByParser, Node* beforeCh
 {
     SVGElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
     if (parentNode() && parentNode()->hasTagName(font_faceTag))
-        static_cast<SVGFontFaceElement*>(parentNode())->rebuildFontFace();
+        toSVGFontFaceElement(parentNode())->rebuildFontFace();
 }
 
 }

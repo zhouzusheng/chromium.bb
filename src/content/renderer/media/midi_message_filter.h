@@ -32,7 +32,7 @@ class CONTENT_EXPORT MIDIMessageFilter
   // If permission is granted, then the client's
   // addInputPort() and addOutputPort() methods will be called,
   // giving the client access to receive and send data.
-  void RequestAccess(WebKit::WebMIDIAccessorClient* client, int access);
+  void StartSession(WebKit::WebMIDIAccessorClient* client);
   void RemoveClient(WebKit::WebMIDIAccessorClient* client);
 
   // A client will only be able to call this method if it has a suitable
@@ -62,8 +62,7 @@ class CONTENT_EXPORT MIDIMessageFilter
 
   // Called when the browser process has approved (or denied) access to
   // MIDI hardware.
-  void OnAccessApproved(int client_id,
-                        int access,
+  void OnSessionStarted(int client_id,
                         bool success,
                         media::MIDIPortInfoList inputs,
                         media::MIDIPortInfoList outputs);
@@ -74,8 +73,12 @@ class CONTENT_EXPORT MIDIMessageFilter
                       const std::vector<uint8>& data,
                       double timestamp);
 
-  void HandleAccessApproved(int client_id,
-                            int access,
+  // From time-to-time, the browser incrementally informs us of how many bytes
+  // it has successfully sent. This is part of our throttling process to avoid
+  // sending too much data before knowing how much has already been sent.
+  void OnAcknowledgeSentData(size_t bytes_sent);
+
+  void HandleSessionStarted(int client_id,
                             bool success,
                             media::MIDIPortInfoList inputs,
                             media::MIDIPortInfoList outputs);
@@ -84,7 +87,7 @@ class CONTENT_EXPORT MIDIMessageFilter
                           const std::vector<uint8>& data,
                           double timestamp);
 
-  void RequestAccessOnIOThread(int client_id, int access);
+  void StartSessionOnIOThread(int client_id);
 
   void SendMIDIDataOnIOThread(int port,
                               const std::vector<uint8>& data,
@@ -98,6 +101,9 @@ class CONTENT_EXPORT MIDIMessageFilter
   // Message loop on which IPC calls are driven.
   const scoped_refptr<base::MessageLoopProxy> io_message_loop_;
 
+  // Main thread's message loop.
+  scoped_refptr<base::MessageLoopProxy> main_message_loop_;
+
   // Keeps track of all MIDI clients.
   // We map client to "client id" used to track permission.
   // When access has been approved, we add the input and output ports to
@@ -107,6 +113,8 @@ class CONTENT_EXPORT MIDIMessageFilter
 
   // Dishes out client ids.
   int next_available_id_;
+
+  size_t unacknowledged_bytes_sent_;
 
   DISALLOW_COPY_AND_ASSIGN(MIDIMessageFilter);
 };

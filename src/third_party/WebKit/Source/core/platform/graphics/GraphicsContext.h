@@ -38,17 +38,17 @@
 #include "core/platform/graphics/ImageBuffer.h"
 #include "core/platform/graphics/ImageOrientation.h"
 #include "core/platform/graphics/skia/OpaqueRegionSkia.h"
+#include "wtf/FastAllocBase.h"
+#include "wtf/Forward.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/PassOwnPtr.h"
 
-#include "third_party/skia/include/core/SkBitmap.h"
-#include "third_party/skia/include/core/SkDevice.h"
-#include "third_party/skia/include/core/SkPaint.h"
-#include "third_party/skia/include/core/SkPath.h"
-#include "third_party/skia/include/core/SkRect.h"
-#include "third_party/skia/include/core/SkRRect.h"
-#include "third_party/skia/include/effects/SkCornerPathEffect.h"
-
-#include <wtf/Noncopyable.h>
-#include <wtf/PassOwnPtr.h>
+class SkBitmap;
+class SkDevice;
+class SkPaint;
+class SkPath;
+class SkRRect;
+struct SkRect;
 
 namespace WebCore {
 
@@ -83,16 +83,8 @@ public:
     const SkCanvas* canvas() const { return m_canvas; }
     bool paintingDisabled() const { return !m_canvas; }
 
-    const SkBitmap* bitmap() const
-    {
-        TRACE_EVENT0("skia", "GraphicsContext::bitmap");
-        return &m_canvas->getDevice()->accessBitmap(false);
-    }
-
-    const SkBitmap& layerBitmap(AccessMode access = ReadOnly) const
-    {
-        return m_canvas->getTopDevice()->accessBitmap(access == ReadWrite);
-    }
+    const SkBitmap* bitmap() const;
+    const SkBitmap& layerBitmap(AccessMode = ReadOnly) const;
 
     SkDevice* createCompatibleDevice(const IntSize&, bool hasAlpha) const;
 
@@ -136,7 +128,7 @@ public:
     void setFillGradient(PassRefPtr<Gradient>);
     Gradient* fillGradient() const { return m_state->m_fillGradient.get(); }
 
-    SkDrawLooper* drawLooper() const { return m_state->m_looper; }
+    SkDrawLooper* drawLooper() const { return m_state->m_looper.get(); }
     SkColor effectiveStrokeColor() const { return m_state->applyAlpha(m_state->m_strokeData.color().rgb()); }
 
     int getNormalizedAlpha() const;
@@ -236,7 +228,6 @@ public:
     void fillRect(const FloatRect&, const Color&, CompositeOperator);
     void fillRoundedRect(const IntRect&, const IntSize& topLeft, const IntSize& topRight, const IntSize& bottomLeft, const IntSize& bottomRight, const Color&);
     void fillRoundedRect(const RoundedRect&, const Color&);
-    void fillRectWithRoundedHole(const IntRect&, const RoundedRect& roundedHoleRect, const Color&);
 
     void clearRect(const FloatRect&);
 
@@ -286,7 +277,7 @@ public:
     void clipOutRoundedRect(const RoundedRect&);
     void clipPath(const Path&, WindRule = RULE_EVENODD);
     void clipConvexPolygon(size_t numPoints, const FloatPoint*, bool antialias = true);
-    void clipToImageBuffer(ImageBuffer*, const FloatRect&);
+    void clipToImageBuffer(const ImageBuffer*, const FloatRect&);
     bool clipRect(const SkRect&, AntiAliasingMode = NotAntiAliased, SkRegion::Op = SkRegion::kIntersect_Op);
 
     void drawText(const Font&, const TextRunPaintInfo&, const FloatPoint&);
@@ -303,10 +294,6 @@ public:
 
     void beginTransparencyLayer(float opacity);
     void endTransparencyLayer();
-    // Begins a layer that is clipped to the image |imageBuffer| at the location
-    // |rect|. This layer is implicitly restored when the next restore is invoked.
-    // NOTE: |imageBuffer| may be deleted before the |restore| is invoked.
-    void beginLayerClippedToImage(const FloatRect&, const ImageBuffer*);
 
     bool hasShadow() const;
     void setShadow(const FloatSize& offset, float blur, const Color&,
@@ -321,6 +308,16 @@ public:
 
     void drawFocusRing(const Vector<IntRect>&, int width, int offset, const Color&);
     void drawFocusRing(const Path&, int width, int offset, const Color&);
+
+    enum Edge {
+        NoEdge = 0,
+        TopEdge = 1 << 1,
+        RightEdge = 1 << 2,
+        BottomEdge = 1 << 3,
+        LeftEdge = 1 << 4
+    };
+    typedef unsigned Edges;
+    void drawInnerShadow(const RoundedRect&, const Color& shadowColor, const IntSize shadowOffset, int shadowBlur, int shadowSpread, Edges clippedEdges = NoEdge);
 
     // This clip function is used only by <canvas> code. It allows
     // implementations to handle clipping on the canvas differently since
@@ -392,8 +389,6 @@ private:
         return value;
     }
 
-    void setDrawLooper(SkDrawLooper* looper) { SkRefCnt_SafeAssign(m_state->m_looper, looper); }
-
     // Sets up the common flags on a paint for antialiasing, effects, etc.
     // This is implicitly called by setupPaintFill and setupPaintStroke, but
     // you may wish to call it directly sometimes if you don't want that other
@@ -430,6 +425,8 @@ private:
     }
 
     void didDrawTextInRect(const SkRect& textRect);
+
+    void fillRectWithRoundedHole(const IntRect&, const RoundedRect& roundedHoleRect, const Color&);
 
     // null indicates painting is disabled. Never delete this object.
     SkCanvas* m_canvas;

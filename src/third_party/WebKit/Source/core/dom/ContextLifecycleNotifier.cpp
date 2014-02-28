@@ -28,46 +28,37 @@
 #include "config.h"
 #include "core/dom/ContextLifecycleNotifier.h"
 
-#include "core/dom/WebCoreMemoryInstrumentation.h"
+#include "core/dom/ScriptExecutionContext.h"
 #include "wtf/TemporaryChange.h"
 
 namespace WebCore {
 
 ContextLifecycleNotifier::ContextLifecycleNotifier(ScriptExecutionContext* context)
-    : m_context(context)
-    , m_iterating(IteratingNone)
-    , m_inDestructor(false)
+    : LifecycleNotifier(context)
 {
 }
 
 ContextLifecycleNotifier::~ContextLifecycleNotifier()
 {
-    m_inDestructor = true;
-    for (ContextObserverSet::iterator iter = m_contextObservers.begin(); iter != m_contextObservers.end(); iter = m_contextObservers.begin()) {
-        ContextLifecycleObserver* observer = *iter;
-        m_contextObservers.remove(observer);
-        ASSERT(observer->scriptExecutionContext() == m_context);
-        observer->contextDestroyed();
-    }
 }
 
-void ContextLifecycleNotifier::addObserver(ContextLifecycleObserver* observer, ContextLifecycleObserver::Type as)
+void ContextLifecycleNotifier::addObserver(LifecycleObserver* observer)
 {
-    RELEASE_ASSERT(!m_inDestructor);
+    LifecycleNotifier::addObserver(observer);
+
     RELEASE_ASSERT(m_iterating != IteratingOverContextObservers);
-    m_contextObservers.add(observer);
-    if (as == ContextLifecycleObserver::ActiveDOMObjectType) {
+    if (observer->observerType() == LifecycleObserver::ActiveDOMObjectType) {
         RELEASE_ASSERT(m_iterating != IteratingOverActiveDOMObjects);
         m_activeDOMObjects.add(static_cast<ActiveDOMObject*>(observer));
     }
 }
 
-void ContextLifecycleNotifier::removeObserver(ContextLifecycleObserver* observer, ContextLifecycleObserver::Type as)
+void ContextLifecycleNotifier::removeObserver(LifecycleObserver* observer)
 {
-    RELEASE_ASSERT(!m_inDestructor);
+    LifecycleNotifier::removeObserver(observer);
+
     RELEASE_ASSERT(m_iterating != IteratingOverContextObservers);
-    m_contextObservers.remove(observer);
-    if (as == ContextLifecycleObserver::ActiveDOMObjectType) {
+    if (observer->observerType() == LifecycleObserver::ActiveDOMObjectType) {
         RELEASE_ASSERT(m_iterating != IteratingOverActiveDOMObjects);
         m_activeDOMObjects.remove(static_cast<ActiveDOMObject*>(observer));
     }
@@ -78,7 +69,7 @@ void ContextLifecycleNotifier::notifyResumingActiveDOMObjects()
     TemporaryChange<IterationType> scope(this->m_iterating, IteratingOverActiveDOMObjects);
     ActiveDOMObjectSet::iterator activeObjectsEnd = m_activeDOMObjects.end();
     for (ActiveDOMObjectSet::iterator iter = m_activeDOMObjects.begin(); iter != activeObjectsEnd; ++iter) {
-        ASSERT((*iter)->scriptExecutionContext() == m_context);
+        ASSERT((*iter)->scriptExecutionContext() == context());
         ASSERT((*iter)->suspendIfNeededCalled());
         (*iter)->resume();
     }
@@ -89,7 +80,7 @@ void ContextLifecycleNotifier::notifySuspendingActiveDOMObjects(ActiveDOMObject:
     TemporaryChange<IterationType> scope(this->m_iterating, IteratingOverActiveDOMObjects);
     ActiveDOMObjectSet::iterator activeObjectsEnd = m_activeDOMObjects.end();
     for (ActiveDOMObjectSet::iterator iter = m_activeDOMObjects.begin(); iter != activeObjectsEnd; ++iter) {
-        ASSERT((*iter)->scriptExecutionContext() == m_context);
+        ASSERT((*iter)->scriptExecutionContext() == context());
         ASSERT((*iter)->suspendIfNeededCalled());
         (*iter)->suspend(why);
     }
@@ -100,7 +91,7 @@ void ContextLifecycleNotifier::notifyStoppingActiveDOMObjects()
     TemporaryChange<IterationType> scope(this->m_iterating, IteratingOverActiveDOMObjects);
     ActiveDOMObjectSet::iterator activeObjectsEnd = m_activeDOMObjects.end();
     for (ActiveDOMObjectSet::iterator iter = m_activeDOMObjects.begin(); iter != activeObjectsEnd; ++iter) {
-        ASSERT((*iter)->scriptExecutionContext() == m_context);
+        ASSERT((*iter)->scriptExecutionContext() == context());
         ASSERT((*iter)->suspendIfNeededCalled());
         (*iter)->stop();
     }
@@ -111,7 +102,7 @@ bool ContextLifecycleNotifier::canSuspendActiveDOMObjects()
     TemporaryChange<IterationType> scope(this->m_iterating, IteratingOverActiveDOMObjects);
     ActiveDOMObjectSet::iterator activeObjectsEnd = m_activeDOMObjects.end();
     for (ActiveDOMObjectSet::const_iterator iter = m_activeDOMObjects.begin(); iter != activeObjectsEnd; ++iter) {
-        ASSERT((*iter)->scriptExecutionContext() == m_context);
+        ASSERT((*iter)->scriptExecutionContext() == context());
         ASSERT((*iter)->suspendIfNeededCalled());
         if (!(*iter)->canSuspend())
             return false;
@@ -129,14 +120,6 @@ bool ContextLifecycleNotifier::hasPendingActivity() const
     }
 
     return false;
-}
-
-void ContextLifecycleNotifier::reportMemoryUsage(WTF::MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    ActiveDOMObjectSet::iterator activeObjectsEnd = m_activeDOMObjects.end();
-    for (ActiveDOMObjectSet::iterator iter = m_activeDOMObjects.begin(); iter != activeObjectsEnd; ++iter)
-        info.addMember(*iter, "activeDOMObject", WTF::RetainingPointer);
 }
 
 } // namespace WebCore

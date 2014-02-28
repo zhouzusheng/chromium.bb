@@ -34,7 +34,9 @@
       'text_input_client.h',
       'text_input_type.h',
     ],
-    'tsf_files': [
+    'win_ime_files': [
+      'win/imm32_manager.cc',
+      'win/imm32_manager.h',
       'win/tsf_bridge.cc',
       'win/tsf_bridge.h',
       'win/tsf_event_router.cc',
@@ -47,7 +49,7 @@
   },
   'sources': [
     '<@(ime_files)',
-    '<@(tsf_files)',
+    '<@(win_ime_files)',
   ],
   'conditions': [
     ['use_aura==0 and OS!="win"', {
@@ -70,14 +72,15 @@
         'input_method_ibus.cc',
         'input_method_ibus.h',
       ],
-    }, {
+    }],
+    ['chromeos==1', {
       'dependencies': [
         '<(DEPTH)/chromeos/chromeos.gyp:chromeos',
       ],
     }],
     ['OS!="win"', {
       'sources!': [
-        '<@(tsf_files)',
+        '<@(win_ime_files)',
         'input_method_imm32.cc',
         'input_method_imm32.h',
         'input_method_tsf.cc',

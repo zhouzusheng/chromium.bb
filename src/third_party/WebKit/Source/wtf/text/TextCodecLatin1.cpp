@@ -20,17 +20,17 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
 #include "wtf/text/TextCodecLatin1.h"
 
 #include "wtf/text/TextCodecASCIIFastPath.h"
-#include <wtf/PassOwnPtr.h>
-#include <wtf/text/CString.h>
-#include <wtf/text/StringBuffer.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/PassOwnPtr.h"
+#include "wtf/text/CString.h"
+#include "wtf/text/StringBuffer.h"
+#include "wtf/text/WTFString.h"
 
 using namespace WTF;
 
@@ -162,7 +162,7 @@ useLookupTable:
     }
 
     return result;
-    
+
 upConvertTo16Bit:
     UChar* characters16;
     String result16 = String::createUninitialized(length, characters16);
@@ -187,15 +187,15 @@ upConvertTo16Bit:
             if (isAlignedToMachineWord(source)) {
                 while (source < alignedEnd) {
                     MachineWord chunk = *reinterpret_cast_ptr<const MachineWord*>(source);
-                    
+
                     if (!isAllASCII<LChar>(chunk))
                         goto useLookupTable16;
-                    
+
                     copyASCIIMachineWord(destination16, source);
                     source += sizeof(MachineWord);
                     destination16 += sizeof(MachineWord);
                 }
-                
+
                 if (source == end)
                     break;
             }
@@ -204,15 +204,16 @@ upConvertTo16Bit:
 useLookupTable16:
             *destination16 = table[*source];
         }
-        
+
         ++source;
         ++destination16;
     }
-    
+
     return result16;
 }
 
-static CString encodeComplexWindowsLatin1(const UChar* characters, size_t length, UnencodableHandling handling)
+template<typename CharType>
+static CString encodeComplexWindowsLatin1(const CharType* characters, size_t length, UnencodableHandling handling)
 {
     Vector<char> result(length);
     char* bytes = result.data();
@@ -244,7 +245,8 @@ static CString encodeComplexWindowsLatin1(const UChar* characters, size_t length
     return CString(bytes, resultLength);
 }
 
-CString TextCodecLatin1::encode(const UChar* characters, size_t length, UnencodableHandling handling)
+template<typename CharType>
+CString TextCodecLatin1::encodeCommon(const CharType* characters, size_t length, UnencodableHandling handling)
 {
     {
         char* bytes;
@@ -264,6 +266,16 @@ CString TextCodecLatin1::encode(const UChar* characters, size_t length, Unencoda
 
     // If it wasn't all ASCII, call the function that handles more-complex cases.
     return encodeComplexWindowsLatin1(characters, length, handling);
+}
+
+CString TextCodecLatin1::encode(const UChar* characters, size_t length, UnencodableHandling handling)
+{
+    return encodeCommon(characters, length, handling);
+}
+
+CString TextCodecLatin1::encode(const LChar* characters, size_t length, UnencodableHandling handling)
+{
+    return encodeCommon(characters, length, handling);
 }
 
 } // namespace WTF

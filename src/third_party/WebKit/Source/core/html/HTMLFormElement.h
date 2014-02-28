@@ -29,7 +29,7 @@
 #include "core/html/HTMLFormControlElement.h"
 #include "core/loader/FormState.h"
 #include "core/loader/FormSubmission.h"
-#include <wtf/OwnPtr.h>
+#include "wtf/OwnPtr.h"
 
 namespace WTF{
 class TextEncoding;
@@ -76,7 +76,7 @@ public:
     void submitFromJavaScript();
     void reset();
 
-    void setDemoted(bool demoted) { m_wasDemoted = demoted; }
+    void setDemoted(bool);
 
     void submitImplicitly(Event*, bool fromImplicitSubmissionTrigger);
     bool formWouldHaveSecureSubmission(const String& url);
@@ -157,7 +157,7 @@ private:
     // are any invalid controls in this form.
     bool checkInvalidControlsAndCollectUnhandled(Vector<RefPtr<FormAssociatedElement> >*, HTMLFormControlElement::CheckValidityDispatchEvents = HTMLFormControlElement::CheckValidityDispatchEventsAllowed);
 
-    typedef HashMap<RefPtr<AtomicStringImpl>, RefPtr<Node> > AliasMap;
+    typedef HashMap<AtomicString, RefPtr<Node> > AliasMap;
 
     FormSubmission::Attributes m_attributes;
     OwnPtr<AliasMap> m_elementAliases;

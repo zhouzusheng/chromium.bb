@@ -23,9 +23,9 @@ base.exportTo('tracing.tracks', function() {
   ThreadTrack.prototype = {
     __proto__: tracing.tracks.ContainerTrack.prototype,
 
-    decorate: function() {
+    decorate: function(viewport) {
+      tracing.tracks.ContainerTrack.prototype.decorate.call(this, viewport);
       this.classList.add('thread-track');
-      this.categoryFilter_ = new tracing.Filter();
     },
 
     get thread() {
@@ -34,111 +34,90 @@ base.exportTo('tracing.tracks', function() {
 
     set thread(thread) {
       this.thread_ = thread;
-      this.updateChildTracks_();
+      this.updateContents_();
     },
 
-    get tooltip() {
-      return this.tooltip_;
+    get hasVisibleContent() {
+      return this.tracks_.length > 0;
     },
 
-    set tooltip(value) {
-      this.tooltip_ = value;
-      this.updateChildTracks_();
-    },
-
-    get heading() {
-      return this.heading_;
-    },
-
-    set heading(h) {
-      this.heading_ = h;
-      this.updateChildTracks_();
-    },
-
-    applyCategoryFilter_: function() {
-      this.updateVisibility_();
-    },
-
-    updateChildTracks_: function() {
+    updateContents_: function() {
       this.detach();
-      if (this.thread_) {
-        var cpuTrack = new tracing.tracks.SliceTrack();
-        cpuTrack.heading = '';
-        cpuTrack.slices = this.thread_.cpuSlices;
-        cpuTrack.height = '4px';
-        cpuTrack.decorateHit = function(hit) {
-          hit.thread = this.thread_;
-        }
-        this.addTrack_(cpuTrack);
 
-        var asyncTrack = new tracing.tracks.AsyncSliceGroupTrack();
+      if (!this.thread_)
+        return;
+
+      this.heading = this.thread_.userFriendlyName + ': ';
+      this.tooltip = this.thread_.userFriendlyDetails;
+
+      if (this.thread_.asyncSliceGroup.length) {
+        var asyncTrack = new tracing.tracks.AsyncSliceGroupTrack(this.viewport);
         asyncTrack.categoryFilter = this.categoryFilter;
         asyncTrack.decorateHit = function(hit) {
           // TODO(simonjam): figure out how to associate subSlice hits back
           // to their parent slice.
-        }
-        asyncTrack.group = this.thread_.asyncSlices;
-        this.addTrack_(asyncTrack);
+        };
+        asyncTrack.group = this.thread_.asyncSliceGroup;
+        if (asyncTrack.hasVisibleContent)
+          this.appendChild(asyncTrack);
+      }
 
-        var track = new tracing.tracks.SliceGroupTrack();
-        track.decorateHit = function(hit) {
+      if (this.thread_.samples.length) {
+        var samplesTrack = new tracing.tracks.SliceTrack(this.viewport);
+        samplesTrack.categoryFilter = samplesTrack;
+        samplesTrack.group = this.thread_;
+        samplesTrack.slices = this.thread_.samples;
+        samplesTrack.decorateHit = function(hit) {
+          // TODO(johnmccutchan): Figure out what else should be associated
+          // with the hit.
           hit.thread = this.thread_;
         }
-        track.group = this.thread_;
-        this.addTrack_(track);
+        this.appendChild(samplesTrack);
+      }
 
-        if (this.thread_.samples.length) {
-          var samplesTrack = new tracing.tracks.SliceTrack();
-          samplesTrack.group = this.thread_;
-          samplesTrack.slices = this.thread_.samples;
-          samplesTrack.decorateHit = function(hit) {
-            // TODO(johnmccutchan): Figure out what else should be associated
-            // with the hit.
-            hit.thread = this.thread_;
-          }
-          this.addTrack_(samplesTrack);
+      if (this.thread_.cpuSlices) {
+        var cpuTrack = new tracing.tracks.SliceTrack(this.viewport);
+        cpuTrack.categoryFilter = this.categoryFilter;
+        cpuTrack.heading = '';
+        cpuTrack.height = '4px';
+        cpuTrack.decorateHit = function(hit) {
+          hit.thread = this.thread_;
         }
+        cpuTrack.slices = this.thread_.cpuSlices;
+        if (cpuTrack.hasVisibleContent)
+          this.appendChild(cpuTrack);
+      }
 
-        this.updateVisibility_();
-      }
-      this.addControlButtonElements_();
-    },
+      if (this.thread_.sliceGroup.length) {
+        var track = new tracing.tracks.SliceGroupTrack(this.viewport);
+        track.categoryFilter = this.categoryFilter;
+        track.heading = this.thread_.userFriendlyName;
+        track.tooltip = this.thread_.userFriendlyDetails;
 
-    updateVisibility_: function() {
-      if (!this.categoryFilter.matchThread(this.thread)) {
-        this.visible = false;
-        return;
+        track.decorateHit = function(hit) {
+          hit.thread = this.thread_;
+        };
+        track.group = this.thread_.sliceGroup;
+        if (track.hasVisibleContent)
+          this.appendChild(track);
       }
-      var shouldBeVisible = false;
-      for (var i = 0; i < this.tracks_.length; ++i) {
-        var track = this.tracks_[i];
-        if (track.visible) {
-          shouldBeVisible = true;
-          if (i >= 1) {
-            track.heading = this.heading_;
-            track.tooltip = this.tooltip_;
-            break;
-          }
-        }
-      }
-      this.visible = shouldBeVisible;
     },
 
     collapsedDidChange: function(collapsed) {
       if (collapsed) {
-        var h = parseInt(this.tracks_[0].height);
-        for (var i = 0; i < this.tracks_.length; ++i) {
+        var h = parseInt(this.tracks[0].height);
+        for (var i = 0; i < this.tracks.length; ++i) {
           if (h > 2) {
-            this.tracks_[i].height = Math.floor(h) + 'px';
+            this.tracks[i].height = Math.floor(h) + 'px';
           } else {
-            this.tracks_[i].style.display = 'none';
+            this.tracks[i].style.display = 'none';
           }
           h = h * 0.5;
         }
       } else {
-        for (var i = 0; i < this.tracks_.length; ++i) {
-          this.tracks_[i].height = this.tracks_[0].height;
-          this.tracks_[i].style.display = '';
+        for (var i = 0; i < this.tracks.length; ++i) {
+          this.tracks[i].height = this.tracks[0].height;
+          this.tracks[i].style.display = '';
         }
       }
     }

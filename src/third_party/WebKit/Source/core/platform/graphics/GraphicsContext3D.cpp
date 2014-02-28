@@ -22,15 +22,13 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
 
 #include "core/platform/graphics/GraphicsContext3D.h"
 
-#include "GrContext.h"
-#include "GrGLInterface.h"
 #include "core/html/ImageData.h"
 #include "core/html/canvas/CheckedInt.h"
 #include "core/platform/graphics/Extensions3D.h"
@@ -40,6 +38,8 @@
 #include "core/platform/graphics/ImageObserver.h"
 #include "core/platform/graphics/gpu/DrawingBuffer.h"
 #include "core/platform/image-decoders/ImageDecoder.h"
+#include "third_party/skia/include/gpu/GrContext.h"
+#include "third_party/skia/include/gpu/gl/GrGLInterface.h"
 #include "wtf/CPU.h"
 #include "wtf/OwnArrayPtr.h"
 #include "wtf/PassOwnArrayPtr.h"
@@ -87,6 +87,7 @@ GraphicsContext3D::GraphicsContext3D(PassOwnPtr<WebKit::WebGraphicsContext3D> we
     , m_initializedAvailableExtensions(false)
     , m_layerComposited(false)
     , m_preserveDrawingBuffer(preserveDrawingBuffer)
+    , m_packAlignment(4)
     , m_resourceSafety(ResourceSafetyUnknown)
     , m_grContext(0)
 {
@@ -98,6 +99,7 @@ GraphicsContext3D::GraphicsContext3D(PassOwnPtr<WebKit::WebGraphicsContext3DProv
     , m_initializedAvailableExtensions(false)
     , m_layerComposited(false)
     , m_preserveDrawingBuffer(preserveDrawingBuffer)
+    , m_packAlignment(4)
     , m_resourceSafety(ResourceSafetyUnknown)
     , m_grContext(m_provider->grContext())
 {
@@ -500,7 +502,14 @@ DELEGATE_TO_WEBCONTEXT_1R(isShader, Platform3DObject, GC3Dboolean)
 DELEGATE_TO_WEBCONTEXT_1R(isTexture, Platform3DObject, GC3Dboolean)
 DELEGATE_TO_WEBCONTEXT_1(lineWidth, GC3Dfloat)
 DELEGATE_TO_WEBCONTEXT_1(linkProgram, Platform3DObject)
-DELEGATE_TO_WEBCONTEXT_2(pixelStorei, GC3Denum, GC3Dint)
+
+void GraphicsContext3D::pixelStorei(GC3Denum pname, GC3Dint param)
+{
+    if (pname == PACK_ALIGNMENT)
+        m_packAlignment = param;
+    m_impl->pixelStorei(pname, param);
+}
+
 DELEGATE_TO_WEBCONTEXT_2(polygonOffset, GC3Dfloat, GC3Dfloat)
 
 DELEGATE_TO_WEBCONTEXT_7(readPixels, GC3Dint, GC3Dint, GC3Dsizei, GC3Dsizei, GC3Denum, GC3Denum, void*)
@@ -604,17 +613,43 @@ PassRefPtr<ImageData> GraphicsContext3D::paintRenderingResultsToImageData(Drawin
 
     RefPtr<ImageData> imageData = ImageData::create(IntSize(width, height));
     unsigned char* pixels = imageData->data()->data();
-    size_t bufferSize = 4 * width * height;
 
-    m_impl->readBackFramebuffer(pixels, bufferSize, framebufferId, width, height);
-
-#if (SK_R32_SHIFT == 16) && !SK_B32_SHIFT
-    // If the implementation swapped the red and blue channels, un-swap them.
-    for (size_t i = 0; i < bufferSize; i += 4)
-        std::swap(pixels[i], pixels[i + 2]);
-#endif
+    m_impl->bindFramebuffer(FRAMEBUFFER, framebufferId);
+    readBackFramebuffer(pixels, width, height, ReadbackRGBA, AlphaDoNothing);
+    flipVertically(pixels, width, height);
 
     return imageData.release();
+}
+
+void GraphicsContext3D::readBackFramebuffer(unsigned char* pixels, int width, int height, ReadbackOrder readbackOrder, AlphaOp op)
+{
+    if (m_packAlignment > 4)
+        m_impl->pixelStorei(PACK_ALIGNMENT, 1);
+    m_impl->readPixels(0, 0, width, height, RGBA, UNSIGNED_BYTE, pixels);
+    if (m_packAlignment > 4)
+        m_impl->pixelStorei(PACK_ALIGNMENT, m_packAlignment);
+
+    size_t bufferSize = 4 * width * height;
+
+    if (readbackOrder == ReadbackSkia) {
+#if (SK_R32_SHIFT == 16) && !SK_B32_SHIFT
+        // Swizzle red and blue channels to match SkBitmap's byte ordering.
+        // TODO(kbr): expose GL_BGRA as extension.
+        for (size_t i = 0; i < bufferSize; i += 4) {
+            std::swap(pixels[i], pixels[i + 2]);
+        }
+#endif
+    }
+
+    if (op == AlphaDoPremultiply) {
+        for (size_t i = 0; i < bufferSize; i += 4) {
+            pixels[i + 0] = std::min(255, pixels[i + 0] * pixels[i + 3] / 255);
+            pixels[i + 1] = std::min(255, pixels[i + 1] * pixels[i + 3] / 255);
+            pixels[i + 2] = std::min(255, pixels[i + 2] * pixels[i + 3] / 255);
+        }
+    } else if (op != AlphaDoNothing) {
+        ASSERT_NOT_REACHED();
+    }
 }
 
 DELEGATE_TO_WEBCONTEXT_R(createBuffer, Platform3DObject)
@@ -804,37 +839,6 @@ bool GraphicsContext3D::ImageExtractor::extractImage(bool premultiplyAlpha, bool
     return true;
 }
 
-unsigned GraphicsContext3D::getClearBitsByAttachmentType(GC3Denum attachment)
-{
-    switch (attachment) {
-    case GraphicsContext3D::COLOR_ATTACHMENT0:
-    case Extensions3D::COLOR_ATTACHMENT1_EXT:
-    case Extensions3D::COLOR_ATTACHMENT2_EXT:
-    case Extensions3D::COLOR_ATTACHMENT3_EXT:
-    case Extensions3D::COLOR_ATTACHMENT4_EXT:
-    case Extensions3D::COLOR_ATTACHMENT5_EXT:
-    case Extensions3D::COLOR_ATTACHMENT6_EXT:
-    case Extensions3D::COLOR_ATTACHMENT7_EXT:
-    case Extensions3D::COLOR_ATTACHMENT8_EXT:
-    case Extensions3D::COLOR_ATTACHMENT9_EXT:
-    case Extensions3D::COLOR_ATTACHMENT10_EXT:
-    case Extensions3D::COLOR_ATTACHMENT11_EXT:
-    case Extensions3D::COLOR_ATTACHMENT12_EXT:
-    case Extensions3D::COLOR_ATTACHMENT13_EXT:
-    case Extensions3D::COLOR_ATTACHMENT14_EXT:
-    case Extensions3D::COLOR_ATTACHMENT15_EXT:
-        return GraphicsContext3D::COLOR_BUFFER_BIT;
-    case GraphicsContext3D::DEPTH_ATTACHMENT:
-        return GraphicsContext3D::DEPTH_BUFFER_BIT;
-    case GraphicsContext3D::STENCIL_ATTACHMENT:
-        return GraphicsContext3D::STENCIL_BUFFER_BIT;
-    case GraphicsContext3D::DEPTH_STENCIL_ATTACHMENT:
-        return GraphicsContext3D::DEPTH_BUFFER_BIT | GraphicsContext3D::STENCIL_BUFFER_BIT;
-    default:
-        return 0;
-    }
-}
-
 unsigned GraphicsContext3D::getClearBitsByFormat(GC3Denum format)
 {
     switch (format) {
@@ -890,7 +894,6 @@ unsigned GraphicsContext3D::getChannelBitsByFormat(GC3Denum format)
 void GraphicsContext3D::paintFramebufferToCanvas(int framebuffer, int width, int height, bool premultiplyAlpha, ImageBuffer* imageBuffer)
 {
     unsigned char* pixels = 0;
-    size_t bufferSize = 4 * width * height;
 
     const SkBitmap* canvasBitmap = imageBuffer->context()->bitmap();
     const SkBitmap* readbackBitmap = 0;
@@ -916,15 +919,9 @@ void GraphicsContext3D::paintFramebufferToCanvas(int framebuffer, int width, int
     SkAutoLockPixels bitmapLock(*readbackBitmap);
     pixels = static_cast<unsigned char*>(readbackBitmap->getPixels());
 
-    m_impl->readBackFramebuffer(pixels, 4 * width * height, framebuffer, width, height);
-
-    if (premultiplyAlpha) {
-        for (size_t i = 0; i < bufferSize; i += 4) {
-            pixels[i + 0] = std::min(255, pixels[i + 0] * pixels[i + 3] / 255);
-            pixels[i + 1] = std::min(255, pixels[i + 1] * pixels[i + 3] / 255);
-            pixels[i + 2] = std::min(255, pixels[i + 2] * pixels[i + 3] / 255);
-        }
-    }
+    m_impl->bindFramebuffer(FRAMEBUFFER, framebuffer);
+    readBackFramebuffer(pixels, width, height, ReadbackSkia, premultiplyAlpha ? AlphaDoPremultiply : AlphaDoNothing);
+    flipVertically(pixels, width, height);
 
     readbackBitmap->notifyPixelsChanged();
     if (m_resizingBitmap.readyToDraw()) {
@@ -1007,6 +1004,21 @@ bool GraphicsContext3D::isExtensionEnabled(const String& name)
     initializeExtensions();
     String mappedName = mapExtensionName(name);
     return m_enabledExtensions.contains(mappedName);
+}
+
+void GraphicsContext3D::flipVertically(uint8_t* framebuffer, int width, int height)
+{
+    m_scanline.resize(width * 4);
+    uint8* scanline = &m_scanline[0];
+    unsigned rowBytes = width * 4;
+    unsigned count = height / 2;
+    for (unsigned i = 0; i < count; i++) {
+        uint8* rowA = framebuffer + i * rowBytes;
+        uint8* rowB = framebuffer + (height - i - 1) * rowBytes;
+        memcpy(scanline, rowB, rowBytes);
+        memcpy(rowB, rowA, rowBytes);
+        memcpy(rowA, scanline, rowBytes);
+    }
 }
 
 } // namespace WebCore

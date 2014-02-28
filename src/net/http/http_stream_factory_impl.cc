@@ -8,7 +8,6 @@
 
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/net_log.h"
 #include "net/base/net_util.h"
 #include "net/http/http_network_session.h"
@@ -19,6 +18,7 @@
 #include "net/http/http_stream_factory_impl_job.h"
 #include "net/http/http_stream_factory_impl_request.h"
 #include "net/spdy/spdy_http_stream.h"
+#include "url/gurl.h"
 
 namespace net {
 
@@ -226,7 +226,8 @@ PortAlternateProtocolPair HttpStreamFactoryImpl::GetAlternateProtocolRequestFor(
     return kNoAlternateProtocol;
 
   origin.set_port(alternate.port);
-  if (alternate.protocol >= NPN_SPDY_2 && alternate.protocol <= NPN_SPDY_3) {
+  if (alternate.protocol >= NPN_SPDY_MINIMUM_VERSION &&
+      alternate.protocol <= NPN_SPDY_MAXIMUM_VERSION) {
     if (!spdy_enabled())
       return kNoAlternateProtocol;
 
@@ -237,8 +238,10 @@ PortAlternateProtocolPair HttpStreamFactoryImpl::GetAlternateProtocolRequestFor(
   } else {
     DCHECK_EQ(QUIC, alternate.protocol);
     if (!session_->params().enable_quic ||
-        !original_url.SchemeIs("http"))
-      return kNoAlternateProtocol;
+        !(original_url.SchemeIs("http") ||
+          session_->params().enable_quic_https)) {
+        return kNoAlternateProtocol;
+    }
     // TODO(rch):  Figure out how to make QUIC iteract with PAC
     // scripts.  By not re-writing the URL, we will query the PAC script
     // for the proxy to use to reach the original URL via TCP.  But
@@ -260,7 +263,7 @@ void HttpStreamFactoryImpl::OrphanJob(Job* job, const Request* request) {
 }
 
 void HttpStreamFactoryImpl::OnNewSpdySessionReady(
-    scoped_refptr<SpdySession> spdy_session,
+    const base::WeakPtr<SpdySession>& spdy_session,
     bool direct,
     const SSLConfig& used_ssl_config,
     const ProxyInfo& used_proxy_info,
@@ -268,15 +271,16 @@ void HttpStreamFactoryImpl::OnNewSpdySessionReady(
     NextProto protocol_negotiated,
     bool using_spdy,
     const BoundNetLog& net_log) {
-  const SpdySessionKey& spdy_session_key =
-      spdy_session->spdy_session_key();
-  while (!spdy_session->IsClosed()) {
-    // Each iteration may empty out the RequestSet for |spdy_session_key_ in
+  while (true) {
+    if (!spdy_session)
+      break;
+    const SpdySessionKey& spdy_session_key = spdy_session->spdy_session_key();
+    // Each iteration may empty out the RequestSet for |spdy_session_key| in
     // |spdy_session_request_map_|. So each time, check for RequestSet and use
     // the first one.
     //
     // TODO(willchan): If it's important, switch RequestSet out for a FIFO
-    // pqueue (Order by priority first, then FIFO within same priority). Unclear
+    // queue (Order by priority first, then FIFO within same priority). Unclear
     // that it matters here.
     if (!ContainsKey(spdy_session_request_map_, spdy_session_key))
       break;
@@ -291,13 +295,17 @@ void HttpStreamFactoryImpl::OnNewSpdySessionReady(
       DCHECK(factory);
       bool use_relative_url = direct || request->url().SchemeIs("wss");
       request->OnWebSocketStreamReady(
-          NULL, used_ssl_config, used_proxy_info,
+          NULL,
+          used_ssl_config,
+          used_proxy_info,
           factory->CreateSpdyStream(spdy_session, use_relative_url));
     } else {
       bool use_relative_url = direct || request->url().SchemeIs("https");
-      request->OnStreamReady(NULL, used_ssl_config, used_proxy_info,
-                             new SpdyHttpStream(spdy_session,
-                                                use_relative_url));
+      request->OnStreamReady(
+          NULL,
+          used_ssl_config,
+          used_proxy_info,
+          new SpdyHttpStream(spdy_session, use_relative_url));
     }
   }
   // TODO(mbelshe): Alert other valid requests.

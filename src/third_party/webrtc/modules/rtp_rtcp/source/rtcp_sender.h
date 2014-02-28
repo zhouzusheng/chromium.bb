@@ -32,6 +32,8 @@ class NACKStringBuilder
 {
 public:
     NACKStringBuilder();
+    ~NACKStringBuilder();
+
     void PushNACK(uint16_t nack);
     std::string GetResult();
 
@@ -269,6 +271,6 @@ private:
     uint32_t      _pliCount;
     uint32_t      _fullIntraRequestCount;
 };
-} // namespace webrtc
+}  // namespace webrtc
 
 #endif // WEBRTC_MODULES_RTP_RTCP_SOURCE_RTCP_SENDER_H_

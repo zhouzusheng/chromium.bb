@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -28,12 +28,15 @@
 #include "core/html/MediaDocument.h"
 
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/EventNames.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/KeyboardEvent.h"
-#include "core/dom/NodeList.h"
+#include "core/dom/NodeTraversal.h"
 #include "core/dom/RawDataDocumentParser.h"
+#include "core/html/HTMLBodyElement.h"
+#include "core/html/HTMLHeadElement.h"
 #include "core/html/HTMLHtmlElement.h"
+#include "core/html/HTMLMetaElement.h"
 #include "core/html/HTMLSourceElement.h"
 #include "core/html/HTMLVideoElement.h"
 #include "core/loader/DocumentLoader.h"
@@ -52,11 +55,11 @@ public:
     {
         return adoptRef(new MediaDocumentParser(document));
     }
-    
+
 private:
-    MediaDocumentParser(Document* document)
+    explicit MediaDocumentParser(Document* document)
         : RawDataDocumentParser(document)
-        , m_mediaElement(0)
+        , m_didBuildDocumentStructure(false)
     {
     }
 
@@ -64,53 +67,58 @@ private:
 
     void createDocumentStructure();
 
-    HTMLMediaElement* m_mediaElement;
+    bool m_didBuildDocumentStructure;
 };
-    
+
 void MediaDocumentParser::createDocumentStructure()
 {
-    RefPtr<Element> rootElement = document()->createElement(htmlTag, false);
-    document()->appendChild(rootElement, IGNORE_EXCEPTION);
-    document()->setCSSTarget(rootElement.get());
-    static_cast<HTMLHtmlElement*>(rootElement.get())->insertedByParser();
+    RefPtr<HTMLHtmlElement> rootElement = HTMLHtmlElement::create(document());
+    rootElement->insertedByParser();
 
     if (document()->frame())
         document()->frame()->loader()->dispatchDocumentElementAvailable();
-        
-    RefPtr<Element> body = document()->createElement(bodyTag, false);
-    rootElement->appendChild(body, IGNORE_EXCEPTION);
 
-    RefPtr<Element> mediaElement = document()->createElement(videoTag, false);
+    RefPtr<HTMLHeadElement> head = HTMLHeadElement::create(document());
+    RefPtr<HTMLMetaElement> meta = HTMLMetaElement::create(document());
+    meta->setAttribute(nameAttr, "viewport");
+    meta->setAttribute(contentAttr, "width=device-width");
+    head->appendChild(meta.release(), ASSERT_NO_EXCEPTION);
 
-    m_mediaElement = static_cast<HTMLVideoElement*>(mediaElement.get());
-    m_mediaElement->setAttribute(controlsAttr, "");
-    m_mediaElement->setAttribute(autoplayAttr, "");
+    RefPtr<HTMLVideoElement> media = HTMLVideoElement::create(document());
+    media->setAttribute(controlsAttr, "");
+    media->setAttribute(autoplayAttr, "");
+    media->setAttribute(nameAttr, "media");
 
-    m_mediaElement->setAttribute(nameAttr, "media");
-
-    RefPtr<Element> sourceElement = document()->createElement(sourceTag, false);
-    HTMLSourceElement* source = static_cast<HTMLSourceElement*>(sourceElement.get());
+    RefPtr<HTMLSourceElement> source = HTMLSourceElement::create(document());
     source->setSrc(document()->url());
 
     if (DocumentLoader* loader = document()->loader())
         source->setType(loader->responseMIMEType());
 
-    m_mediaElement->appendChild(sourceElement, IGNORE_EXCEPTION);
-    body->appendChild(mediaElement, IGNORE_EXCEPTION);
+    media->appendChild(source.release(), ASSERT_NO_EXCEPTION);
+
+    RefPtr<HTMLBodyElement> body = HTMLBodyElement::create(document());
+    body->appendChild(media.release(), ASSERT_NO_EXCEPTION);
+
+    rootElement->appendChild(head.release(), ASSERT_NO_EXCEPTION);
+    rootElement->appendChild(body.release(), ASSERT_NO_EXCEPTION);
+
+    document()->appendChild(rootElement.release(), ASSERT_NO_EXCEPTION, AttachLazily);
+    m_didBuildDocumentStructure = true;
 }
 
 size_t MediaDocumentParser::appendBytes(const char*, size_t)
 {
-    if (m_mediaElement)
+    if (m_didBuildDocumentStructure)
         return 0;
 
     createDocumentStructure();
     finish();
     return 0;
 }
-    
-MediaDocument::MediaDocument(Frame* frame, const KURL& url)
-    : HTMLDocument(frame, url, MediaDocumentClass)
+
+MediaDocument::MediaDocument(const DocumentInit& initializer)
+    : HTMLDocument(initializer, MediaDocumentClass)
 {
     setCompatibilityMode(QuirksMode);
     lockCompatibilityMode();
@@ -121,25 +129,20 @@ PassRefPtr<DocumentParser> MediaDocument::createParser()
     return MediaDocumentParser::create(this);
 }
 
-static inline HTMLVideoElement* descendentVideoElement(Node* node)
+static inline HTMLVideoElement* descendentVideoElement(Node* root)
 {
-    ASSERT(node);
+    ASSERT(root);
 
-    if (node->hasTagName(videoTag))
-        return static_cast<HTMLVideoElement*>(node);
-
-    RefPtr<NodeList> nodeList = node->getElementsByTagNameNS(videoTag.namespaceURI(), videoTag.localName());
-   
-    if (nodeList.get()->length() > 0)
-        return static_cast<HTMLVideoElement*>(nodeList.get()->item(0));
+    for (Node* node = root; node; node = NodeTraversal::next(node, root)) {
+        if (isHTMLVideoElement(node))
+            return toHTMLVideoElement(node);
+    }
 
     return 0;
 }
 
 void MediaDocument::defaultEventHandler(Event* event)
 {
-    // Match the default Quicktime plugin behavior to allow 
-    // clicking and double-clicking to pause and play the media.
     Node* targetNode = event->target()->toNode();
     if (!targetNode)
         return;
@@ -149,7 +152,7 @@ void MediaDocument::defaultEventHandler(Event* event)
         if (!video)
             return;
 
-        KeyboardEvent* keyboardEvent = static_cast<KeyboardEvent*>(event);
+        KeyboardEvent* keyboardEvent = toKeyboardEvent(event);
         if (keyboardEvent->keyIdentifier() == "U+0020" || keyboardEvent->keyCode() == VKEY_MEDIA_PLAY_PAUSE) {
             // space or media key (play/pause)
             if (video->paused()) {

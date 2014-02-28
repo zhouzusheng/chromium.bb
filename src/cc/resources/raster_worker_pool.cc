@@ -7,6 +7,7 @@
 #include "base/json/json_writer.h"
 #include "base/metrics/histogram.h"
 #include "base/values.h"
+#include "cc/debug/benchmark_instrumentation.h"
 #include "cc/debug/devtools_instrumentation.h"
 #include "cc/debug/traced_value.h"
 #include "cc/resources/picture_pile_impl.h"
@@ -16,6 +17,10 @@
 namespace cc {
 
 namespace {
+
+// Flag to indicate whether we should try and detect that
+// a tile is of solid color.
+const bool kUseColorEstimator = true;
 
 class DisableLCDTextFilter : public SkDrawFilter {
  public:
@@ -36,7 +41,6 @@ class RasterWorkerPoolTaskImpl : public internal::RasterWorkerPoolTask {
                            gfx::Rect content_rect,
                            float contents_scale,
                            RasterMode raster_mode,
-                           bool use_color_estimator,
                            bool is_tile_in_pending_tree_now_bin,
                            TileResolution tile_resolution,
                            int layer_id,
@@ -50,7 +54,6 @@ class RasterWorkerPoolTaskImpl : public internal::RasterWorkerPoolTask {
         content_rect_(content_rect),
         contents_scale_(contents_scale),
         raster_mode_(raster_mode),
-        use_color_estimator_(use_color_estimator),
         is_tile_in_pending_tree_now_bin_(is_tile_in_pending_tree_now_bin),
         tile_resolution_(tile_resolution),
         layer_id_(layer_id),
@@ -80,18 +83,17 @@ class RasterWorkerPoolTaskImpl : public internal::RasterWorkerPoolTask {
     // Record the solid color prediction.
     UMA_HISTOGRAM_BOOLEAN("Renderer4.SolidColorTilesAnalyzed",
                           analysis_.is_solid_color);
-    rendering_stats_->AddTileAnalysisResult(duration,
-                                            analysis_.is_solid_color);
+    rendering_stats_->AddAnalysisResult(duration, analysis_.is_solid_color);
 
     // Clear the flag if we're not using the estimator.
-    analysis_.is_solid_color &= use_color_estimator_;
+    analysis_.is_solid_color &= kUseColorEstimator;
   }
 
   bool RunRasterOnThread(SkDevice* device, unsigned thread_index) {
     TRACE_EVENT2(
-        "cc",
-        "RasterWorkerPoolTaskImpl::RunRasterOnThread",
-        "data",
+        benchmark_instrumentation::kCategory,
+        benchmark_instrumentation::kRunRasterOnThread,
+        benchmark_instrumentation::kData,
         TracedValue::FromValue(DataAsValue().release()),
         "raster_mode",
         TracedValue::FromValue(RasterModeAsValue(raster_mode_).release()));
@@ -151,11 +153,12 @@ class RasterWorkerPoolTaskImpl : public internal::RasterWorkerPoolTask {
   }
 
   // Overridden from internal::RasterWorkerPoolTask:
-  virtual bool RunOnThread(SkDevice* device, unsigned thread_index) OVERRIDE {
+  virtual bool RunOnWorkerThread(SkDevice* device, unsigned thread_index)
+      OVERRIDE {
     RunAnalysisOnThread(thread_index);
     return RunRasterOnThread(device, thread_index);
   }
-  virtual void DispatchCompletionCallback() OVERRIDE {
+  virtual void CompleteOnOriginThread() OVERRIDE {
     reply_.Run(analysis_, !HasFinishedRunning() || WasCanceled());
   }
 
@@ -179,7 +182,6 @@ class RasterWorkerPoolTaskImpl : public internal::RasterWorkerPoolTask {
   gfx::Rect content_rect_;
   float contents_scale_;
   RasterMode raster_mode_;
-  bool use_color_estimator_;
   bool is_tile_in_pending_tree_now_bin_;
   TileResolution tile_resolution_;
   int layer_id_;
@@ -203,8 +205,8 @@ class ImageDecodeWorkerPoolTaskImpl : public internal::WorkerPoolTask {
         reply_(reply) {}
 
   // Overridden from internal::WorkerPoolTask:
-  virtual void RunOnThread(unsigned thread_index) OVERRIDE {
-    TRACE_EVENT0("cc", "ImageDecodeWorkerPoolTaskImpl::RunOnThread");
+  virtual void RunOnWorkerThread(unsigned thread_index) OVERRIDE {
+    TRACE_EVENT0("cc", "ImageDecodeWorkerPoolTaskImpl::RunOnWorkerThread");
     devtools_instrumentation::ScopedLayerTask image_decode_task(
         devtools_instrumentation::kImageDecodeTask, layer_id_);
     base::TimeTicks start_time = rendering_stats_->StartRecording();
@@ -212,7 +214,7 @@ class ImageDecodeWorkerPoolTaskImpl : public internal::WorkerPoolTask {
     base::TimeDelta duration = rendering_stats_->EndRecording(start_time);
     rendering_stats_->AddDeferredImageDecode(duration);
   }
-  virtual void DispatchCompletionCallback() OVERRIDE {
+  virtual void CompleteOnOriginThread() OVERRIDE {
     reply_.Run(!HasFinishedRunning());
   }
 
@@ -240,14 +242,14 @@ class RasterFinishedWorkerPoolTaskImpl : public internal::WorkerPoolTask {
   }
 
   // Overridden from internal::WorkerPoolTask:
-  virtual void RunOnThread(unsigned thread_index) OVERRIDE {
+  virtual void RunOnWorkerThread(unsigned thread_index) OVERRIDE {
     TRACE_EVENT0("cc", "RasterFinishedWorkerPoolTaskImpl::RunOnWorkerThread");
     origin_loop_->PostTask(
         FROM_HERE,
         base::Bind(&RasterFinishedWorkerPoolTaskImpl::RunOnOriginThread,
                    this));
   }
-  virtual void DispatchCompletionCallback() OVERRIDE {}
+  virtual void CompleteOnOriginThread() OVERRIDE {}
 
  private:
   virtual ~RasterFinishedWorkerPoolTaskImpl() {}
@@ -292,6 +294,10 @@ bool RasterWorkerPoolTask::HasFinishedRunning() const {
 
 bool RasterWorkerPoolTask::WasCanceled() const {
   return was_canceled_;
+}
+
+void RasterWorkerPoolTask::WillComplete() {
+  DCHECK(!did_complete_);
 }
 
 void RasterWorkerPoolTask::DidComplete() {
@@ -366,7 +372,6 @@ RasterWorkerPool::RasterTask RasterWorkerPool::CreateRasterTask(
     gfx::Rect content_rect,
     float contents_scale,
     RasterMode raster_mode,
-    bool use_color_estimator,
     bool is_tile_in_pending_tree_now_bin,
     TileResolution tile_resolution,
     int layer_id,
@@ -381,7 +386,6 @@ RasterWorkerPool::RasterTask RasterWorkerPool::CreateRasterTask(
                                    content_rect,
                                    contents_scale,
                                    raster_mode,
-                                                 use_color_estimator,
                                    is_tile_in_pending_tree_now_bin,
                                    tile_resolution,
                                    layer_id,

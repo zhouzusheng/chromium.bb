@@ -38,8 +38,11 @@
 #include "third_party/skia/include/core/SkAnnotation.h"
 #include "third_party/skia/include/core/SkColorFilter.h"
 #include "third_party/skia/include/core/SkData.h"
+#include "third_party/skia/include/core/SkDevice.h"
+#include "third_party/skia/include/core/SkRRect.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
 #include "third_party/skia/include/effects/SkBlurMaskFilter.h"
+#include "third_party/skia/include/effects/SkCornerPathEffect.h"
 #include "weborigin/KURL.h"
 #include "wtf/Assertions.h"
 #include "wtf/MathExtras.h"
@@ -86,6 +89,17 @@ GraphicsContext::~GraphicsContext()
     ASSERT(m_stateStack.size() == 1);
     ASSERT(!m_annotationCount);
     ASSERT(!m_transparencyCount);
+}
+
+const SkBitmap* GraphicsContext::bitmap() const
+{
+    TRACE_EVENT0("skia", "GraphicsContext::bitmap");
+    return &m_canvas->getDevice()->accessBitmap(false);
+}
+
+const SkBitmap& GraphicsContext::layerBitmap(AccessMode access) const
+{
+    return m_canvas->getTopDevice()->accessBitmap(access == ReadWrite);
 }
 
 SkDevice* GraphicsContext::createCompatibleDevice(const IntSize& size, bool hasAlpha) const
@@ -265,7 +279,7 @@ void GraphicsContext::setShadow(const FloatSize& offset, float blur, const Color
     if (paintingDisabled())
         return;
 
-    if (!color.isValid() || !color.alpha() || (!offset.width() && !offset.height() && !blur)) {
+    if (!color.alpha() || (!offset.width() && !offset.height() && !blur)) {
         clearShadow();
         return;
     }
@@ -281,7 +295,7 @@ void GraphicsContext::setDrawLooper(const DrawLooper& drawLooper)
     if (paintingDisabled())
         return;
 
-    setDrawLooper(drawLooper.skDrawLooper());
+    m_state->m_looper = drawLooper.skDrawLooper();
 }
 
 void GraphicsContext::clearDrawLooper()
@@ -289,7 +303,7 @@ void GraphicsContext::clearDrawLooper()
     if (paintingDisabled())
         return;
 
-    setDrawLooper(0);
+    m_state->m_looper.clear();
 }
 
 bool GraphicsContext::hasShadow() const
@@ -421,7 +435,7 @@ void GraphicsContext::endTransparencyLayer()
 #endif
 }
 
-void GraphicsContext::beginLayerClippedToImage(const FloatRect& rect, const ImageBuffer* imageBuffer)
+void GraphicsContext::clipToImageBuffer(const ImageBuffer* imageBuffer, const FloatRect& rect)
 {
     if (paintingDisabled())
         return;
@@ -534,14 +548,13 @@ void GraphicsContext::drawFocusRing(const Path& focusRingPath, int width, int of
     if (paintingDisabled())
         return;
 
-    SkPath path = focusRingPath.skPath();
     SkPaint paint;
     paint.setAntiAlias(true);
     paint.setStyle(SkPaint::kStroke_Style);
-
     paint.setColor(color.rgb());
-    drawOuterPath(path, paint, width);
-    drawInnerPath(path, paint, width);
+
+    drawOuterPath(focusRingPath.skPath(), paint, width);
+    drawInnerPath(focusRingPath.skPath(), paint, width);
 }
 
 void GraphicsContext::drawFocusRing(const Vector<IntRect>& rects, int width, int offset, const Color& color)
@@ -570,6 +583,70 @@ void GraphicsContext::drawFocusRing(const Vector<IntRect>& rects, int width, int
     focusRingRegion.getBoundaryPath(&path);
     drawOuterPath(path, paint, width);
     drawInnerPath(path, paint, width);
+}
+
+static inline IntRect areaCastingShadowInHole(const IntRect& holeRect, int shadowBlur, int shadowSpread, const IntSize& shadowOffset)
+{
+    IntRect bounds(holeRect);
+
+    bounds.inflate(shadowBlur);
+
+    if (shadowSpread < 0)
+        bounds.inflate(-shadowSpread);
+
+    IntRect offsetBounds = bounds;
+    offsetBounds.move(-shadowOffset);
+    return unionRect(bounds, offsetBounds);
+}
+
+void GraphicsContext::drawInnerShadow(const RoundedRect& rect, const Color& shadowColor, const IntSize shadowOffset, int shadowBlur, int shadowSpread, Edges clippedEdges)
+{
+    IntRect holeRect(rect.rect());
+    holeRect.inflate(-shadowSpread);
+
+    if (holeRect.isEmpty()) {
+        if (rect.isRounded())
+            fillRoundedRect(rect, shadowColor);
+        else
+            fillRect(rect.rect(), shadowColor);
+        return;
+    }
+
+    if (clippedEdges & LeftEdge) {
+        holeRect.move(-max(shadowOffset.width(), 0) - shadowBlur, 0);
+        holeRect.setWidth(holeRect.width() + max(shadowOffset.width(), 0) + shadowBlur);
+    }
+    if (clippedEdges & TopEdge) {
+        holeRect.move(0, -max(shadowOffset.height(), 0) - shadowBlur);
+        holeRect.setHeight(holeRect.height() + max(shadowOffset.height(), 0) + shadowBlur);
+    }
+    if (clippedEdges & RightEdge)
+        holeRect.setWidth(holeRect.width() - min(shadowOffset.width(), 0) + shadowBlur);
+    if (clippedEdges & BottomEdge)
+        holeRect.setHeight(holeRect.height() - min(shadowOffset.height(), 0) + shadowBlur);
+
+    Color fillColor(shadowColor.red(), shadowColor.green(), shadowColor.blue(), 255);
+
+    IntRect outerRect = areaCastingShadowInHole(rect.rect(), shadowBlur, shadowSpread, shadowOffset);
+    RoundedRect roundedHole(holeRect, rect.radii());
+
+    save();
+    if (rect.isRounded()) {
+        Path path;
+        path.addRoundedRect(rect);
+        clipPath(path);
+        roundedHole.shrinkRadii(shadowSpread);
+    } else {
+        clip(rect.rect());
+    }
+
+    DrawLooper drawLooper;
+    drawLooper.addShadow(shadowOffset, shadowBlur, shadowColor,
+        DrawLooper::ShadowRespectsTransforms, DrawLooper::ShadowIgnoresAlpha);
+    setDrawLooper(drawLooper);
+    fillRectWithRoundedHole(outerRect, roundedHole, fillColor);
+    restore();
+    clearDrawLooper();
 }
 
 // This is only used to draw borders.
@@ -752,20 +829,14 @@ void GraphicsContext::drawLineForDocumentMarker(const FloatPoint& pt, float widt
     originY *= deviceScaleFactor;
 #endif
 
-    // Make a shader for the bitmap with an origin of the box we'll draw. This
-    // shader is refcounted and will have an initial refcount of 1.
-    SkShader* shader = SkShader::CreateBitmapShader(
-        *misspellBitmap[index], SkShader::kRepeat_TileMode,
-        SkShader::kRepeat_TileMode);
+    RefPtr<SkShader> shader = adoptRef(SkShader::CreateBitmapShader(
+        *misspellBitmap[index], SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode));
     SkMatrix matrix;
     matrix.setTranslate(originX, originY);
     shader->setLocalMatrix(matrix);
 
-    // Assign the shader to the paint & release our reference. The paint will
-    // now own the shader and the shader will be destroyed when the paint goes
-    // out of scope.
     SkPaint paint;
-    paint.setShader(shader)->unref();
+    paint.setShader(shader.get());
 
     SkRect rect;
     rect.set(originX, originY, originX + WebCoreFloatToSkScalar(width) * deviceScaleFactor, originY + SkIntToScalar(misspellBitmap[index]->height()));
@@ -1364,11 +1435,6 @@ void GraphicsContext::clipConvexPolygon(size_t numPoints, const FloatPoint* poin
     clipPath(path, antialiased ? AntiAliased : NotAntiAliased);
 }
 
-void GraphicsContext::clipToImageBuffer(ImageBuffer* buffer, const FloatRect& rect)
-{
-    buffer->clip(this, rect);
-}
-
 void GraphicsContext::clipOutRoundedRect(const RoundedRect& rect)
 {
     if (paintingDisabled())
@@ -1679,7 +1745,7 @@ void GraphicsContext::setupPaintCommon(SkPaint* paint) const
 
     paint->setAntiAlias(m_state->m_shouldAntialias);
     paint->setXfermodeMode(m_state->m_xferMode);
-    paint->setLooper(m_state->m_looper);
+    paint->setLooper(m_state->m_looper.get());
 }
 
 void GraphicsContext::drawOuterPath(const SkPath& path, SkPaint& paint, int width)
@@ -1813,7 +1879,7 @@ const SkPMColor GraphicsContext::antiColors2(int index)
 
 void GraphicsContext::setupShader(SkPaint* paint, Gradient* grad, Pattern* pat, SkColor color) const
 {
-    SkShader* shader = 0;
+    RefPtr<SkShader> shader;
 
     if (grad) {
         shader = grad->shader();
@@ -1825,7 +1891,7 @@ void GraphicsContext::setupShader(SkPaint* paint, Gradient* grad, Pattern* pat, 
     }
 
     paint->setColor(m_state->applyAlpha(color));
-    paint->setShader(shader);
+    paint->setShader(shader.get());
 }
 
 

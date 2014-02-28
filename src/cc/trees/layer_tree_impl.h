@@ -5,12 +5,14 @@
 #ifndef CC_TREES_LAYER_TREE_IMPL_H_
 #define CC_TREES_LAYER_TREE_IMPL_H_
 
+#include <list>
 #include <string>
 #include <vector>
 
 #include "base/containers/hash_tables.h"
 #include "base/values.h"
 #include "cc/layers/layer_impl.h"
+#include "cc/resources/ui_resource_client.h"
 #include "ui/base/latency_info.h"
 
 #if defined(COMPILER_GCC)
@@ -40,6 +42,9 @@ class Proxy;
 class ResourceProvider;
 class TileManager;
 struct RendererCapabilities;
+struct UIResourceRequest;
+
+typedef std::list<UIResourceRequest> UIResourceRequestQueue;
 
 class CC_EXPORT LayerTreeImpl {
  public:
@@ -102,13 +107,14 @@ class CC_EXPORT LayerTreeImpl {
   }
 
   LayerImpl* RootScrollLayer() const;
-  LayerImpl* RootClipLayer() const;
+  LayerImpl* RootContainerLayer() const;
   LayerImpl* CurrentlyScrollingLayer() const;
   void SetCurrentlyScrollingLayer(LayerImpl* layer);
   void ClearCurrentlyScrollingLayer();
 
   void FindRootScrollLayer();
   void UpdateMaxScrollOffset();
+  void ApplySentScrollAndScaleDeltas();
 
   SkColor background_color() const { return background_color_; }
   void set_background_color(SkColor color) { background_color_ = color; }
@@ -149,7 +155,7 @@ class CC_EXPORT LayerTreeImpl {
   void set_needs_full_tree_sync(bool needs) { needs_full_tree_sync_ = needs; }
   bool needs_full_tree_sync() const { return needs_full_tree_sync_; }
 
-  void ClearRenderSurfaces();
+  void set_ui_resource_request_queue(const UIResourceRequestQueue& queue);
 
   const LayerImplList& RenderSurfaceLayerList() const;
 
@@ -192,6 +198,13 @@ class CC_EXPORT LayerTreeImpl {
 
   void WillModifyTilePriorities();
 
+  ResourceProvider::ResourceId ResourceIdForUIResource(UIResourceId uid) const;
+  void ProcessUIResourceRequestQueue();
+
+  void AddLayerWithCopyOutputRequest(LayerImpl* layer);
+  void RemoveLayerWithCopyOutputRequest(LayerImpl* layer);
+  const std::vector<LayerImpl*> LayersWithCopyOutputRequest() const;
+
  protected:
   explicit LayerTreeImpl(LayerTreeHostImpl* layer_tree_host_impl);
 
@@ -218,6 +231,8 @@ class CC_EXPORT LayerTreeImpl {
   typedef base::hash_map<int, LayerImpl*> LayerIdMap;
   LayerIdMap layer_id_map_;
 
+  std::vector<LayerImpl*> layers_with_copy_output_request_;
+
   // Persisted state for non-impl-side-painting.
   int scrolling_layer_id_from_previous_tree_;
 
@@ -235,6 +250,9 @@ class CC_EXPORT LayerTreeImpl {
 
   ui::LatencyInfo latency_info_;
 
+  UIResourceRequestQueue ui_resource_request_queue_;
+
+ private:
   DISALLOW_COPY_AND_ASSIGN(LayerTreeImpl);
 };
 

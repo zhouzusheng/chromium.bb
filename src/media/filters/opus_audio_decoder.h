@@ -7,7 +7,7 @@
 
 #include "base/callback.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/base/audio_decoder.h"
 #include "media/base/demuxer_stream.h"
 
@@ -19,8 +19,8 @@ class MessageLoopProxy;
 
 namespace media {
 
+class AudioBuffer;
 class AudioTimestampHelper;
-class DataBuffer;
 class DecoderBuffer;
 struct QueuedAudioBuffer;
 
@@ -51,7 +51,7 @@ class MEDIA_EXPORT OpusAudioDecoder : public AudioDecoder {
   void CloseDecoder();
   void ResetTimestampState();
   bool Decode(const scoped_refptr<DecoderBuffer>& input,
-              scoped_refptr<DataBuffer>* output_buffer);
+              scoped_refptr<AudioBuffer>* output_buffer);
 
   scoped_refptr<base::MessageLoopProxy> message_loop_;
   base::WeakPtrFactory<OpusAudioDecoder> weak_factory_;

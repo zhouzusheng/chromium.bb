@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/cache_type.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
@@ -50,9 +50,11 @@ class Backend;
 NET_EXPORT int CreateCacheBackend(net::CacheType type,
                                   net::BackendType backend_type,
                                   const base::FilePath& path,
-                                  int max_bytes, bool force,
+                                  int max_bytes,
+                                  bool force,
                                   base::MessageLoopProxy* thread,
-                                  net::NetLog* net_log, Backend** backend,
+                                  net::NetLog* net_log,
+                                  scoped_ptr<Backend>* backend,
                                   const net::CompletionCallback& callback);
 
 // The root interface for a disk cache instance.
@@ -306,6 +308,16 @@ class NET_EXPORT Entry {
  protected:
   virtual ~Entry() {}
 };
+
+struct EntryDeleter {
+  void operator()(Entry* entry) {
+    // Note that |entry| is ref-counted.
+    entry->Close();
+  }
+};
+
+// Automatically closes an entry when it goes out of scope.
+typedef scoped_ptr<Entry, EntryDeleter> ScopedEntryPtr;
 
 }  // namespace disk_cache
 

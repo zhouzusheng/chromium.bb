@@ -27,21 +27,19 @@
 
 #include "core/loader/TextTrackLoader.h"
 
+#include "FetchInitiatorTypeNames.h"
 #include "core/dom/Document.h"
 #include "core/html/track/WebVTTParser.h"
-#include "core/inspector/ScriptCallStack.h"
 #include "core/loader/CrossOriginAccessControl.h"
-#include "core/loader/cache/CachedResourceLoader.h"
-#include "core/loader/cache/CachedResourceRequest.h"
-#include "core/loader/cache/CachedResourceRequestInitiators.h"
-#include "core/loader/cache/CachedTextTrack.h"
+#include "core/loader/cache/FetchRequest.h"
+#include "core/loader/cache/ResourceFetcher.h"
+#include "core/loader/cache/TextTrackResource.h"
 #include "core/platform/Logging.h"
 #include "core/platform/SharedBuffer.h"
-#include "core/platform/network/ResourceHandle.h"
 #include "weborigin/SecurityOrigin.h"
 
 namespace WebCore {
-    
+
 TextTrackLoader::TextTrackLoader(TextTrackLoaderClient* client, ScriptExecutionContext* context)
     : m_client(client)
     , m_scriptExecutionContext(context)
@@ -64,7 +62,7 @@ void TextTrackLoader::cueLoadTimerFired(Timer<TextTrackLoader>* timer)
 
     if (m_newCuesAvailable) {
         m_newCuesAvailable = false;
-        m_client->newCuesAvailable(this); 
+        m_client->newCuesAvailable(this);
     }
 
     if (m_state >= Finished)
@@ -79,13 +77,13 @@ void TextTrackLoader::cancelLoad()
     }
 }
 
-void TextTrackLoader::processNewCueData(CachedResource* resource)
+void TextTrackLoader::processNewCueData(Resource* resource)
 {
     ASSERT(m_cachedCueData == resource);
-    
+
     if (m_state == Failed || !resource->resourceBuffer())
         return;
-    
+
     SharedBuffer* buffer = resource->resourceBuffer();
     if (m_parseOffset == buffer->size())
         return;
@@ -102,26 +100,26 @@ void TextTrackLoader::processNewCueData(CachedResource* resource)
     }
 }
 
-// FIXME: This is a very unusual pattern, no other CachedResourceClient does this. Refactor to use notifyFinished() instead.
-void TextTrackLoader::deprecatedDidReceiveCachedResource(CachedResource* resource)
+// FIXME: This is a very unusual pattern, no other ResourceClient does this. Refactor to use notifyFinished() instead.
+void TextTrackLoader::deprecatedDidReceiveResource(Resource* resource)
 {
     ASSERT(m_cachedCueData == resource);
-    
+
     if (!resource->resourceBuffer())
         return;
-    
+
     processNewCueData(resource);
 }
 
 void TextTrackLoader::corsPolicyPreventedLoad()
 {
-    DEFINE_STATIC_LOCAL(String, consoleMessage, (ASCIILiteral("Cross-origin text track load denied by Cross-Origin Resource Sharing policy.")));
+    DEFINE_STATIC_LOCAL(String, consoleMessage, ("Cross-origin text track load denied by Cross-Origin Resource Sharing policy."));
     Document* document = toDocument(m_scriptExecutionContext);
     document->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, consoleMessage);
     m_state = Failed;
 }
 
-void TextTrackLoader::notifyFinished(CachedResource* resource)
+void TextTrackLoader::notifyFinished(Resource* resource)
 {
     ASSERT(m_cachedCueData == resource);
 
@@ -141,7 +139,7 @@ void TextTrackLoader::notifyFinished(CachedResource* resource)
 
     if (!m_cueLoadTimer.isActive())
         m_cueLoadTimer.startOneShot(0);
-    
+
     cancelLoad();
 }
 
@@ -154,7 +152,7 @@ bool TextTrackLoader::load(const KURL& url, const String& crossOriginMode)
 
     ASSERT(m_scriptExecutionContext->isDocument());
     Document* document = toDocument(m_scriptExecutionContext);
-    CachedResourceRequest cueRequest(ResourceRequest(document->completeURL(url)), cachedResourceRequestInitiators().texttrack);
+    FetchRequest cueRequest(ResourceRequest(document->completeURL(url)), FetchInitiatorTypeNames::texttrack);
 
     if (!crossOriginMode.isNull()) {
         m_crossOriginMode = crossOriginMode;
@@ -168,13 +166,13 @@ bool TextTrackLoader::load(const KURL& url, const String& crossOriginMode)
         }
     }
 
-    CachedResourceLoader* cachedResourceLoader = document->cachedResourceLoader();
-    m_cachedCueData = cachedResourceLoader->requestTextTrack(cueRequest);
+    ResourceFetcher* fetcher = document->fetcher();
+    m_cachedCueData = fetcher->requestTextTrack(cueRequest);
     if (m_cachedCueData)
         m_cachedCueData->addClient(this);
-    
+
     m_client->cueLoadingStarted(this);
-    
+
     return true;
 }
 
@@ -190,7 +188,7 @@ void TextTrackLoader::newCuesParsed()
 #if ENABLE(WEBVTT_REGIONS)
 void TextTrackLoader::newRegionsParsed()
 {
-    m_client->newRegionsAvailable(this); 
+    m_client->newRegionsAvailable(this);
 }
 #endif
 

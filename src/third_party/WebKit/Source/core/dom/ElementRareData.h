@@ -22,6 +22,7 @@
 #ifndef ElementRareData_h
 #define ElementRareData_h
 
+#include "core/animation/ActiveAnimations.h"
 #include "core/dom/DatasetDOMStringMap.h"
 #include "core/dom/NamedNodeMap.h"
 #include "core/dom/NodeRareData.h"
@@ -34,7 +35,6 @@
 
 namespace WebCore {
 
-class Animation;
 class HTMLElement;
 
 class ElementRareData : public NodeRareData {
@@ -48,7 +48,7 @@ public:
 
     void resetStyleState();
     void resetDynamicRestyleObservations();
-    
+
     short tabIndex() const { return m_tabIndex; }
     void setTabIndexExplicitly(short index) { m_tabIndex = index; m_tabIndexWasSetExplicitly = true; }
     bool tabIndexSetExplicitly() const { return m_tabIndexWasSetExplicitly; }
@@ -62,6 +62,9 @@ public:
 
     bool isInCanvasSubtree() const { return m_isInCanvasSubtree; }
     void setIsInCanvasSubtree(bool value) { m_isInCanvasSubtree = value; }
+
+    bool isInsideRegion() const { return m_isInsideRegion; }
+    void setIsInsideRegion(bool value) { m_isInsideRegion = value; }
 
     RegionOversetState regionOversetState() const { return m_regionOversetState; }
     void setRegionOversetState(RegionOversetState state) { m_regionOversetState = state; }
@@ -91,9 +94,6 @@ public:
     void setChildrenAffectedByBackwardPositionalRules(bool value) { m_childrenAffectedByBackwardPositionalRules = value; }
     unsigned childIndex() const { return m_childIndex; }
     void setChildIndex(unsigned index) { m_childIndex = index; }
-
-    // Manually called by Node::reportMemoryUsage.
-    void reportMemoryUsage(MemoryObjectInfo*) const;
 
     void clearShadow() { m_shadow = nullptr; }
     ElementShadow* shadow() const { return m_shadow.get(); }
@@ -129,10 +129,10 @@ public:
     IntSize savedLayerScrollOffset() const { return m_savedLayerScrollOffset; }
     void setSavedLayerScrollOffset(IntSize size) { m_savedLayerScrollOffset = size; }
 
-    Vector<Animation*>* activeAnimations() { return m_activeAnimations.get(); }
-    void setActiveAnimations(PassOwnPtr<Vector<Animation*> > animations)
+    ActiveAnimations* activeAnimations() { return m_activeAnimations.get(); }
+    void setActiveAnimations(PassOwnPtr<ActiveAnimations> activeAnimations)
     {
-        m_activeAnimations = animations;
+        m_activeAnimations = activeAnimations;
     }
 
     bool hasPendingResources() const { return m_hasPendingResources; }
@@ -167,6 +167,7 @@ private:
     unsigned m_childrenAffectedByForwardPositionalRules : 1;
     unsigned m_childrenAffectedByBackwardPositionalRules : 1;
 
+    unsigned m_isInsideRegion : 1;
     RegionOversetState m_regionOversetState;
 
     LayoutSize m_minimumSizeForResizing;
@@ -178,11 +179,11 @@ private:
     OwnPtr<ElementShadow> m_shadow;
     OwnPtr<NamedNodeMap> m_attributeMap;
     OwnPtr<InputMethodContext> m_inputMethodContext;
-
-    OwnPtr<Vector<Animation*> > m_activeAnimations;
+    OwnPtr<ActiveAnimations> m_activeAnimations;
 
     RefPtr<PseudoElement> m_generatedBefore;
     RefPtr<PseudoElement> m_generatedAfter;
+    RefPtr<PseudoElement> m_backdrop;
 
     ElementRareData(RenderObject*);
     void releasePseudoElement(PseudoElement*);
@@ -212,6 +213,7 @@ inline ElementRareData::ElementRareData(RenderObject* renderer)
     , m_childrenAffectedByDirectAdjacentRules(false)
     , m_childrenAffectedByForwardPositionalRules(false)
     , m_childrenAffectedByBackwardPositionalRules(false)
+    , m_isInsideRegion(false)
     , m_regionOversetState(RegionUndefined)
     , m_minimumSizeForResizing(defaultMinimumSizeForResizing())
 {
@@ -222,6 +224,7 @@ inline ElementRareData::~ElementRareData()
     ASSERT(!m_shadow);
     ASSERT(!m_generatedBefore);
     ASSERT(!m_generatedAfter);
+    ASSERT(!m_backdrop);
 }
 
 inline void ElementRareData::setPseudoElement(PseudoId pseudoId, PassRefPtr<PseudoElement> element)
@@ -235,6 +238,10 @@ inline void ElementRareData::setPseudoElement(PseudoId pseudoId, PassRefPtr<Pseu
         releasePseudoElement(m_generatedAfter.get());
         m_generatedAfter = element;
         break;
+    case BACKDROP:
+        releasePseudoElement(m_backdrop.get());
+        m_backdrop = element;
+        break;
     default:
         ASSERT_NOT_REACHED();
     }
@@ -247,6 +254,8 @@ inline PseudoElement* ElementRareData::pseudoElement(PseudoId pseudoId) const
         return m_generatedBefore.get();
     case AFTER:
         return m_generatedAfter.get();
+    case BACKDROP:
+        return m_backdrop.get();
     default:
         return 0;
     }
@@ -263,6 +272,7 @@ inline void ElementRareData::releasePseudoElement(PseudoElement* element)
     ASSERT(!element->nextSibling());
     ASSERT(!element->previousSibling());
 
+    element->document()->removeFromTopLayer(element);
     element->setParentOrShadowHostNode(0);
 }
 

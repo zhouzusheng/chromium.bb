@@ -32,20 +32,17 @@
 #define InspectorRuntimeAgent_h
 
 
-#include "bindings/v8/ScriptState.h"
 #include "core/inspector/InspectorBaseAgent.h"
-#include <wtf/Forward.h>
-#include <wtf/Noncopyable.h>
+#include "wtf/Forward.h"
+#include "wtf/Noncopyable.h"
 
 namespace WebCore {
 
 class InjectedScript;
 class InjectedScriptManager;
-class InspectorFrontend;
 class InstrumentingAgents;
 class JSONArray;
 class ScriptDebugServer;
-class WorkerContext;
 
 typedef String ErrorString;
 

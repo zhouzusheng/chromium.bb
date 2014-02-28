@@ -27,8 +27,8 @@
 #define InbandTextTrackPrivateClient_h
 
 #include "core/platform/graphics/Color.h"
-#include <wtf/Noncopyable.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/Noncopyable.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -114,7 +114,7 @@ private:
 class InbandTextTrackPrivateClient {
 public:
     virtual ~InbandTextTrackPrivateClient() { }
-    
+
     virtual void addWebVTTCue(InbandTextTrackPrivate*, double /*start*/, double /*end*/, const String& /*id*/, const String& /*content*/, const String& /*settings*/) = 0;
     virtual void addGenericCue(InbandTextTrackPrivate*, GenericCueData*) = 0;
 };

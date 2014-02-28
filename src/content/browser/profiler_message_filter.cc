@@ -5,7 +5,6 @@
 #include "content/browser/profiler_message_filter.h"
 
 #include "base/tracked_objects.h"
-#include "base/process_util.h"
 #include "content/browser/profiler_controller_impl.h"
 #include "content/browser/tcmalloc_internals_request_job.h"
 #include "content/common/child_process_messages.h"
@@ -50,7 +49,7 @@ void ProfilerMessageFilter::OnChildProfilerData(
 #if defined(USE_TCMALLOC)
 void ProfilerMessageFilter::OnTcmallocStats(const std::string& output) {
   AboutTcmallocOutputs::GetInstance()->OnStatsForChildProcess(
-        base::GetProcId(peer_handle()), process_type_, output);
+        peer_pid(), process_type_, output);
 }
 #endif
 

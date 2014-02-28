@@ -29,6 +29,7 @@
 #include "config.h"
 #include "core/accessibility/AccessibilityRenderObject.h"
 
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/accessibility/AccessibilityImageMapLink.h"
 #include "core/accessibility/AccessibilitySVGRoot.h"
@@ -39,6 +40,7 @@
 #include "core/editing/RenderedPosition.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
+#include "core/html/HTMLHtmlElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLLabelElement.h"
 #include "core/html/HTMLOptionElement.h"
@@ -213,6 +215,8 @@ AccessibilityRenderObject::~AccessibilityRenderObject()
 
 LayoutRect AccessibilityRenderObject::elementRect() const
 {
+    if (!m_explicitElementRect.isEmpty())
+        return m_explicitElementRect;
     if (!m_renderer)
         return LayoutRect();
     if (!m_renderer->isBox())
@@ -270,8 +274,8 @@ HTMLLabelElement* AccessibilityRenderObject::labelElementContainer() const
 
     // find if this has a parent that is a label
     for (Node* parentNode = m_renderer->node(); parentNode; parentNode = parentNode->parentNode()) {
-        if (parentNode->hasTagName(labelTag))
-            return static_cast<HTMLLabelElement*>(parentNode);
+        if (isHTMLLabelElement(parentNode))
+            return toHTMLLabelElement(parentNode);
     }
 
     return 0;
@@ -404,7 +408,7 @@ AccessibilityRole AccessibilityRenderObject::determineAccessibilityRole()
     if (node && node->hasTagName(pTag))
         return ParagraphRole;
 
-    if (node && node->hasTagName(labelTag))
+    if (node && isHTMLLabelElement(node))
         return LabelRole;
 
     if (node && node->hasTagName(divTag))
@@ -432,7 +436,7 @@ AccessibilityRole AccessibilityRenderObject::determineAccessibilityRole()
         return LandmarkContentInfoRole;
 
     // The HTML element should not be exposed as an element. That's what the RenderView element does.
-    if (node && node->hasTagName(htmlTag))
+    if (node && isHTMLHtmlElement(node))
         return IgnoredRole;
 
     // There should only be one banner/contentInfo per page. If header/footer are being used within an article or section
@@ -511,10 +515,10 @@ bool AccessibilityRenderObject::isLinked() const
         return false;
 
     Element* anchor = anchorElement();
-    if (!anchor || !anchor->hasTagName(aTag))
+    if (!anchor || !isHTMLAnchorElement(anchor))
         return false;
 
-    return !static_cast<HTMLAnchorElement*>(anchor)->href().isEmpty();
+    return !toHTMLAnchorElement(anchor)->href().isEmpty();
 }
 
 bool AccessibilityRenderObject::isLoaded() const
@@ -570,13 +574,13 @@ bool AccessibilityRenderObject::isFocused() const
     if (!document)
         return false;
 
-    Node* focusedNode = document->focusedNode();
-    if (!focusedNode)
+    Element* focusedElement = document->focusedElement();
+    if (!focusedElement)
         return false;
 
     // A web area is represented by the Document node in the DOM tree, which isn't focusable.
     // Check instead if the frame's selection controller is focused
-    if (focusedNode == m_renderer->node()
+    if (focusedElement == m_renderer->node()
         || (roleValue() == WebAreaRole && document->frame()->selection()->isFocusedAndActive()))
         return true;
 
@@ -707,7 +711,7 @@ bool AccessibilityRenderObject::computeAccessibilityIsIgnored() const
         }
 
         // text elements that are just empty whitespace should not be returned
-        return renderText->text()->containsOnlyWhitespace();
+        return renderText->text().impl()->containsOnlyWhitespace();
     }
 
     if (isHeading())
@@ -725,7 +729,7 @@ bool AccessibilityRenderObject::computeAccessibilityIsIgnored() const
 
     // don't ignore labels, because they serve as TitleUIElements
     Node* node = m_renderer->node();
-    if (node && node->hasTagName(labelTag))
+    if (node && isHTMLLabelElement(node))
         return false;
 
     // Anything that is content editable should not be ignored.
@@ -928,8 +932,8 @@ AccessibilityObject* AccessibilityRenderObject::titleUIElement() const
 
 KURL AccessibilityRenderObject::url() const
 {
-    if (isAnchor() && m_renderer->node()->hasTagName(aTag)) {
-        if (HTMLAnchorElement* anchor = static_cast<HTMLAnchorElement*>(anchorElement()))
+    if (isAnchor() && isHTMLAnchorElement(m_renderer->node())) {
+        if (HTMLAnchorElement* anchor = toHTMLAnchorElement(anchorElement()))
             return anchor->href();
     }
 
@@ -1397,8 +1401,8 @@ AccessibilityObject* AccessibilityRenderObject::accessibilityHitTest(const IntPo
         return 0;
     Node* node = hitTestResult.innerNode()->deprecatedShadowAncestorNode();
 
-    if (node->hasTagName(areaTag))
-        return accessibilityImageMapHitTest(static_cast<HTMLAreaElement*>(node), point);
+    if (isHTMLAreaElement(node))
+        return accessibilityImageMapHitTest(toHTMLAreaElement(node), point);
 
     if (node->hasTagName(optionTag))
         node = toHTMLOptionElement(node)->ownerSelectElement();
@@ -1664,7 +1668,7 @@ Element* AccessibilityRenderObject::anchorElement() const
     // NOTE: this assumes that any non-image with an anchor is an HTMLAnchorElement
     Node* node = currRenderer->node();
     for ( ; node; node = node->parentNode()) {
-        if (node->hasTagName(aTag) || (node->renderer() && cache->getOrCreate(node->renderer())->isAnchor()))
+        if (isHTMLAnchorElement(node) || (node->renderer() && cache->getOrCreate(node->renderer())->isAnchor()))
             return toElement(node);
     }
 
@@ -1735,19 +1739,20 @@ void AccessibilityRenderObject::setFocused(bool on)
 
     Document* document = this->document();
     if (!on)
-        document->setFocusedNode(0);
+        document->setFocusedElement(0);
     else {
         Node* node = this->node();
         if (node && node->isElementNode()) {
             // If this node is already the currently focused node, then calling focus() won't do anything.
             // That is a problem when focus is removed from the webpage to chrome, and then returns.
             // In these cases, we need to do what keyboard and mouse focus do, which is reset focus first.
-            if (document->focusedNode() == node)
-                document->setFocusedNode(0);
+            if (document->focusedElement() == node)
+                document->setFocusedElement(0);
 
             toElement(node)->focus();
-        } else
-            document->setFocusedNode(node);
+        } else {
+            document->setFocusedElement(0);
+        }
     }
 }
 
@@ -1774,8 +1779,6 @@ void AccessibilityRenderObject::setValue(const String& string)
 {
     if (!m_renderer || !m_renderer->node() || !m_renderer->node()->isElementNode())
         return;
-    Element* element = toElement(m_renderer->node());
-
     if (!m_renderer->isBoxModelObject())
         return;
     RenderBoxModelObject* renderer = toRenderBoxModelObject(m_renderer);
@@ -1783,10 +1786,10 @@ void AccessibilityRenderObject::setValue(const String& string)
     // FIXME: Do we want to do anything here for ARIA textboxes?
     if (renderer->isTextField()) {
         // FIXME: This is not safe!  Other elements could have a TextField renderer.
-        toHTMLInputElement(element)->setValue(string);
+        toHTMLInputElement(m_renderer->node())->setValue(string);
     } else if (renderer->isTextArea()) {
         // FIXME: This is not safe!  Other elements could have a TextArea renderer.
-        static_cast<HTMLTextAreaElement*>(element)->setValue(string);
+        toHTMLTextAreaElement(m_renderer->node())->setValue(string);
     }
 }
 
@@ -1813,7 +1816,7 @@ void AccessibilityRenderObject::handleActiveDescendantChanged()
     if (!element)
         return;
     Document* doc = renderer()->document();
-    if (!doc->frame()->selection()->isFocusedAndActive() || doc->focusedNode() != element)
+    if (!doc->frame()->selection()->isFocusedAndActive() || doc->focusedElement() != element)
         return;
     AccessibilityRenderObject* activedescendant = static_cast<AccessibilityRenderObject*>(activeDescendant());
 
@@ -2083,9 +2086,9 @@ AccessibilityObject* AccessibilityRenderObject::internalLinkElement() const
         return 0;
 
     // Right now, we do not support ARIA links as internal link elements
-    if (!element->hasTagName(aTag))
+    if (!isHTMLAnchorElement(element))
         return 0;
-    HTMLAnchorElement* anchor = static_cast<HTMLAnchorElement*>(element);
+    HTMLAnchorElement* anchor = toHTMLAnchorElement(element);
 
     KURL linkURL = anchor->href();
     String fragmentIdentifier = linkURL.fragmentIdentifier();
@@ -2209,7 +2212,7 @@ AccessibilitySVGRoot* AccessibilityRenderObject::remoteSVGRootElement() const
     if (!m_renderer || !m_renderer->isRenderImage())
         return 0;
 
-    CachedImage* cachedImage = toRenderImage(m_renderer)->cachedImage();
+    ImageResource* cachedImage = toRenderImage(m_renderer)->cachedImage();
     if (!cachedImage)
         return 0;
 
@@ -2351,9 +2354,9 @@ void AccessibilityRenderObject::addImageMapChildren()
 
     for (Element* current = ElementTraversal::firstWithin(map); current; current = ElementTraversal::next(current, map)) {
         // add an <area> element for this child if it has a link
-        if (current->hasTagName(areaTag) && current->isLink()) {
+        if (isHTMLAreaElement(current) && current->isLink()) {
             AccessibilityImageMapLink* areaObject = static_cast<AccessibilityImageMapLink*>(axObjectCache()->getOrCreate(ImageMapLinkRole));
-            areaObject->setHTMLAreaElement(static_cast<HTMLAreaElement*>(current));
+            areaObject->setHTMLAreaElement(toHTMLAreaElement(current));
             areaObject->setHTMLMapElement(map);
             areaObject->setParent(this);
             if (!areaObject->accessibilityIsIgnored())

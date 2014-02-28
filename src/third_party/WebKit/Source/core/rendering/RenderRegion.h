@@ -84,7 +84,9 @@ public:
 
     RegionOversetState regionOversetState() const;
     void setRegionOversetState(RegionOversetState);
-    
+
+    Element* element() const;
+
     // These methods represent the width and height of a "page" and for a RenderRegion they are just the
     // content width and content height of a region. For RenderRegionSets, however, they will be the width and
     // height of a single column or page in the set.
@@ -106,18 +108,37 @@ public:
 
     bool hasAutoLogicalHeight() const { return m_hasAutoLogicalHeight; }
 
+    const LayoutUnit& computedAutoHeight() const
+    {
+        ASSERT(hasComputedAutoHeight());
+        return m_computedAutoHeight;
+    }
+
+    void setComputedAutoHeight(LayoutUnit computedAutoHeight)
+    {
+        ASSERT(computedAutoHeight >= 0);
+        m_computedAutoHeight = computedAutoHeight;
+    }
+
+    void clearComputedAutoHeight()
+    {
+        m_computedAutoHeight = -1;
+    }
+
+    bool hasComputedAutoHeight() const { return (m_computedAutoHeight >= 0); }
+
     virtual void updateLogicalHeight() OVERRIDE;
 
     // The top of the nearest page inside the region. For RenderRegions, this is just the logical top of the
     // flow thread portion we contain. For sets, we have to figure out the top of the nearest column or
     // page.
     virtual LayoutUnit pageLogicalTopForOffset(LayoutUnit offset) const;
-    
+
     virtual void expandToEncompassFlowThreadContentsIfNeeded() { };
 
     // Whether or not this region is a set.
     virtual bool isRenderRegionSet() const { return false; }
-    
+
     virtual void repaintFlowThreadContent(const LayoutRect& repaintRect) const;
 
     virtual void collectLayerFragments(LayerFragments&, const LayoutRect&, const LayoutRect&) { }
@@ -186,6 +207,8 @@ private:
     };
     typedef HashMap<const RenderObject*, ObjectRegionStyleInfo > RenderObjectRegionStyleMap;
     RenderObjectRegionStyleMap m_renderObjectRegionStyle;
+
+    LayoutUnit m_computedAutoHeight;
 
     bool m_isValid : 1;
     bool m_hasCustomRegionStyle : 1;

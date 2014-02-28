@@ -18,12 +18,13 @@
  * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  */
- 
+
 #ifndef SVGZoomEvent_h
 #define SVGZoomEvent_h
 
 #include "core/dom/UIEvent.h"
-#include "core/platform/graphics/FloatRect.h"
+#include "core/svg/SVGPoint.h"
+#include "core/svg/SVGRect.h"
 
 namespace WebCore {
 
@@ -32,17 +33,17 @@ public:
     static PassRefPtr<SVGZoomEvent> create() { return adoptRef(new SVGZoomEvent); }
 
     // 'SVGZoomEvent' functions
-    FloatRect zoomRectScreen() const;
+    SVGRect zoomRectScreen() const;
 
     float previousScale() const;
     void setPreviousScale(float);
 
-    FloatPoint previousTranslate() const;
+    SVGPoint previousTranslate() const;
 
     float newScale() const;
     void setNewScale(float);
 
-    FloatPoint newTranslate() const;
+    SVGPoint newTranslate() const;
 
     virtual const AtomicString& interfaceName() const;
 
@@ -52,10 +53,10 @@ private:
     float m_newScale;
     float m_previousScale;
 
-    FloatRect m_zoomRectScreen;
+    SVGRect m_zoomRectScreen;
 
-    FloatPoint m_newTranslate;
-    FloatPoint m_previousTranslate;
+    SVGPoint m_newTranslate;
+    SVGPoint m_previousTranslate;
 };
 
 } // namespace WebCore

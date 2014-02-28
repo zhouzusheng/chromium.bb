@@ -34,7 +34,9 @@
 #include "core/dom/MouseEvent.h"
 #include "core/dom/NodeRenderingContext.h"
 #include "core/html/HTMLAnchorElement.h"
+#include "core/html/HTMLFormElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderTypes.h"
 #include "core/page/Chrome.h"
@@ -59,15 +61,14 @@ DEFINE_ANIMATED_STRING(SVGAElement, XLinkNames::hrefAttr, Href, href)
 DEFINE_ANIMATED_BOOLEAN(SVGAElement, SVGNames::externalResourcesRequiredAttr, ExternalResourcesRequired, externalResourcesRequired)
 
 BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGAElement)
-     REGISTER_LOCAL_ANIMATED_PROPERTY(svgTarget)
-     REGISTER_LOCAL_ANIMATED_PROPERTY(href)
-     REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
-     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGStyledTransformableElement)
-     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGTests)
+    REGISTER_LOCAL_ANIMATED_PROPERTY(svgTarget)
+    REGISTER_LOCAL_ANIMATED_PROPERTY(href)
+    REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
+    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
 inline SVGAElement::SVGAElement(const QualifiedName& tagName, Document* document)
-    : SVGStyledTransformableElement(tagName, document)
+    : SVGGraphicsElement(tagName, document)
 {
     ASSERT(hasTagName(SVGNames::aTag));
     ScriptWrappable::init(this);
@@ -87,7 +88,7 @@ String SVGAElement::title() const
         return title;
 
     // Otherwise, use the title of this element.
-    return SVGStyledElement::title();
+    return SVGElement::title();
 }
 
 bool SVGAElement::isSupportedAttribute(const QualifiedName& attrName)
@@ -95,8 +96,6 @@ bool SVGAElement::isSupportedAttribute(const QualifiedName& attrName)
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty()) {
         SVGURIReference::addSupportedAttributes(supportedAttributes);
-        SVGTests::addSupportedAttributes(supportedAttributes);
-        SVGLangSpace::addSupportedAttributes(supportedAttributes);
         SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::targetAttr);
     }
@@ -106,7 +105,7 @@ bool SVGAElement::isSupportedAttribute(const QualifiedName& attrName)
 void SVGAElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (!isSupportedAttribute(name)) {
-        SVGStyledTransformableElement::parseAttribute(name, value);
+        SVGGraphicsElement::parseAttribute(name, value);
         return;
     }
 
@@ -117,10 +116,6 @@ void SVGAElement::parseAttribute(const QualifiedName& name, const AtomicString& 
 
     if (SVGURIReference::parseAttribute(name, value))
         return;
-    if (SVGTests::parseAttribute(name, value))
-        return;
-    if (SVGLangSpace::parseAttribute(name, value))
-        return;
     if (SVGExternalResourcesRequired::parseAttribute(name, value))
         return;
 
@@ -130,7 +125,7 @@ void SVGAElement::parseAttribute(const QualifiedName& name, const AtomicString& 
 void SVGAElement::svgAttributeChanged(const QualifiedName& attrName)
 {
     if (!isSupportedAttribute(attrName)) {
-        SVGStyledTransformableElement::svgAttributeChanged(attrName);
+        SVGGraphicsElement::svgAttributeChanged(attrName);
         return;
     }
 
@@ -140,7 +135,7 @@ void SVGAElement::svgAttributeChanged(const QualifiedName& attrName)
     // as none of the other properties changes the linking behaviour for our <a> element.
     if (SVGURIReference::isKnownAttribute(attrName)) {
         bool wasLink = isLink();
-        setIsLink(!href().isNull());
+        setIsLink(!hrefCurrentValue().isNull());
 
         if (wasLink != isLink())
             setNeedsStyleRecalc();
@@ -150,9 +145,9 @@ void SVGAElement::svgAttributeChanged(const QualifiedName& attrName)
 RenderObject* SVGAElement::createRenderer(RenderStyle*)
 {
     if (parentNode() && parentNode()->isSVGElement() && toSVGElement(parentNode())->isTextContent())
-        return new (document()->renderArena()) RenderSVGInline(this);
+        return new RenderSVGInline(this);
 
-    return new (document()->renderArena()) RenderSVGTransformableContainer(this);
+    return new RenderSVGTransformableContainer(this);
 }
 
 void SVGAElement::defaultEventHandler(Event* event)
@@ -165,12 +160,12 @@ void SVGAElement::defaultEventHandler(Event* event)
         }
 
         if (isLinkClick(event)) {
-            String url = stripLeadingAndTrailingHTMLSpaces(href());
+            String url = stripLeadingAndTrailingHTMLSpaces(hrefCurrentValue());
 
             if (url[0] == '#') {
                 Element* targetElement = treeScope()->getElementById(url.substring(1));
                 if (SVGSMILElement::isSMILElement(targetElement)) {
-                    static_cast<SVGSMILElement*>(targetElement)->beginByLinkActivation();
+                    toSVGSMILElement(targetElement)->beginByLinkActivation();
                     event->setDefaultHandled();
                     return;
                 }
@@ -187,18 +182,20 @@ void SVGAElement::defaultEventHandler(Event* event)
             Frame* frame = document()->frame();
             if (!frame)
                 return;
-            frame->loader()->urlSelected(document()->completeURL(url), target, event, false, MaybeSendReferrer);
+            FrameLoadRequest frameRequest(document()->securityOrigin(), ResourceRequest(document()->completeURL(url)), target);
+            frameRequest.setTriggeringEvent(event);
+            frame->loader()->load(frameRequest);
             return;
         }
     }
 
-    SVGStyledTransformableElement::defaultEventHandler(event);
+    SVGGraphicsElement::defaultEventHandler(event);
 }
 
 bool SVGAElement::supportsFocus() const
 {
     if (rendererIsEditable())
-        return SVGStyledTransformableElement::supportsFocus();
+        return SVGGraphicsElement::supportsFocus();
     return true;
 }
 
@@ -212,7 +209,7 @@ bool SVGAElement::rendererIsFocusable() const
 
 bool SVGAElement::isURLAttribute(const Attribute& attribute) const
 {
-    return attribute.name().localName() == hrefAttr || SVGStyledTransformableElement::isURLAttribute(attribute);
+    return attribute.name().localName() == hrefAttr || SVGGraphicsElement::isURLAttribute(attribute);
 }
 
 bool SVGAElement::isMouseFocusable() const
@@ -220,15 +217,15 @@ bool SVGAElement::isMouseFocusable() const
     return false;
 }
 
-bool SVGAElement::isKeyboardFocusable(KeyboardEvent*) const
+bool SVGAElement::isKeyboardFocusable() const
 {
     if (!isFocusable())
         return false;
-    
+
     Page* page = document()->page();
     if (!page)
         return false;
-    
+
     return page->chrome().client()->tabsToLinks();
 }
 

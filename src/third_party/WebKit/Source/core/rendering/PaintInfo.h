@@ -32,18 +32,18 @@
 #include "core/platform/graphics/LayoutRect.h"
 #include "core/platform/graphics/transforms/AffineTransform.h"
 #include "core/rendering/PaintPhase.h"
-#include <wtf/HashMap.h>
-#include <wtf/ListHashSet.h>
+#include "wtf/HashMap.h"
+#include "wtf/ListHashSet.h"
 
 namespace WebCore {
 
-class OverlapTestRequestClient;
 class RenderInline;
 class RenderLayerModelObject;
 class RenderObject;
 class RenderRegion;
+class RenderWidget;
 
-typedef HashMap<OverlapTestRequestClient*, IntRect> OverlapTestRequestMap;
+typedef HashMap<RenderWidget*, IntRect> OverlapTestRequestMap;
 
 /*
  * Paint the object and its children, clipped by (x|y|w|h).
@@ -72,7 +72,7 @@ struct PaintInfo {
 
         // If we're the painting root, kids draw normally, and see root of 0.
         if (paintingRoot == renderer) {
-            paintingRoot = 0; 
+            paintingRoot = 0;
             return;
         }
     }

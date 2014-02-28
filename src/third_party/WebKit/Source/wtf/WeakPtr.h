@@ -26,11 +26,11 @@
 #ifndef WTF_WeakPtr_h
 #define WTF_WeakPtr_h
 
-#include <wtf/Noncopyable.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefPtr.h>
-#include <wtf/ThreadSafeRefCounted.h>
-#include <wtf/Threading.h>
+#include "wtf/Noncopyable.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefPtr.h"
+#include "wtf/ThreadSafeRefCounted.h"
+#include "wtf/Threading.h"
 
 namespace WTF {
 
@@ -87,7 +87,7 @@ public:
     WeakPtr() { }
     WeakPtr(PassRefPtr<WeakReference<T> > ref) : m_ref(ref) { }
 
-    T* get() const { return m_ref->get(); }
+    T* get() const { return m_ref ? m_ref->get() : 0; }
 
 private:
     RefPtr<WeakReference<T> > m_ref;

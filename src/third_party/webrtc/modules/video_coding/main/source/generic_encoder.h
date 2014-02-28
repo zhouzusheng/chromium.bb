@@ -11,7 +11,7 @@
 #ifndef WEBRTC_MODULES_VIDEO_CODING_GENERIC_ENCODER_H_
 #define WEBRTC_MODULES_VIDEO_CODING_GENERIC_ENCODER_H_
 
-#include "video_codec_interface.h"
+#include "webrtc/modules/video_coding/codecs/interface/video_codec_interface.h"
 
 #include <stdio.h>
 
@@ -144,6 +144,6 @@ private:
     bool                        _internalSource;
 }; // end of VCMGenericEncoder class
 
-} // namespace webrtc
+}  // namespace webrtc
 
 #endif // WEBRTC_MODULES_VIDEO_CODING_GENERIC_ENCODER_H_

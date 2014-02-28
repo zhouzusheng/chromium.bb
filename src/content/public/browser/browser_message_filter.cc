@@ -7,8 +7,8 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/logging.h"
-#include "base/process.h"
-#include "base/process_util.h"
+#include "base/process/kill.h"
+#include "base/process/process_handle.h"
 #include "base/task_runner.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/result_codes.h"
@@ -19,7 +19,11 @@ using content::BrowserMessageFilter;
 namespace content {
 
 BrowserMessageFilter::BrowserMessageFilter()
-    : channel_(NULL), peer_handle_(base::kNullProcessHandle) {
+    : channel_(NULL),
+#if defined(OS_WIN)
+      peer_handle_(base::kNullProcessHandle),
+#endif
+      peer_pid_(base::kNullProcessId) {
 }
 
 void BrowserMessageFilter::OnFilterAdded(IPC::Channel* channel) {
@@ -31,9 +35,7 @@ void BrowserMessageFilter::OnChannelClosing() {
 }
 
 void BrowserMessageFilter::OnChannelConnected(int32 peer_pid) {
-  if (!base::OpenPrivilegedProcessHandle(peer_pid, &peer_handle_)) {
-    NOTREACHED();
-  }
+  peer_pid_ = peer_pid;
 }
 
 bool BrowserMessageFilter::OnMessageReceived(const IPC::Message& message) {
@@ -62,6 +64,20 @@ bool BrowserMessageFilter::OnMessageReceived(const IPC::Message& message) {
       base::Bind(base::IgnoreResult(&BrowserMessageFilter::DispatchMessage),
                  this, message));
   return true;
+}
+
+base::ProcessHandle BrowserMessageFilter::PeerHandle() {
+#if defined(OS_WIN)
+  base::AutoLock lock(peer_handle_lock_);
+  if (peer_handle_ == base::kNullProcessHandle)
+    base::OpenPrivilegedProcessHandle(peer_pid_, &peer_handle_);
+
+  return peer_handle_;
+#else
+  base::ProcessHandle result = base::kNullProcessHandle;
+  base::OpenPrivilegedProcessHandle(peer_pid_, &result);
+  return result;
+#endif
 }
 
 bool BrowserMessageFilter::Send(IPC::Message* message) {
@@ -125,12 +141,15 @@ bool BrowserMessageFilter::CheckCanDispatchOnUI(const IPC::Message& message,
 }
 
 void BrowserMessageFilter::BadMessageReceived() {
-  base::KillProcess(peer_handle(), content::RESULT_CODE_KILLED_BAD_MESSAGE,
+  base::KillProcess(PeerHandle(), content::RESULT_CODE_KILLED_BAD_MESSAGE,
                     false);
 }
 
 BrowserMessageFilter::~BrowserMessageFilter() {
-  base::CloseProcessHandle(peer_handle_);
+#if defined(OS_WIN)
+  if (peer_handle_ != base::kNullProcessHandle)
+    base::CloseProcessHandle(peer_handle_);
+#endif
 }
 
 bool BrowserMessageFilter::DispatchMessage(const IPC::Message& message) {

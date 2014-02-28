@@ -20,15 +20,16 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
-#include "core/dom/Document.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/editing/DeleteFromTextNodeCommand.h"
 
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/accessibility/AXObjectCache.h"
+#include "core/dom/Document.h"
 #include "core/dom/Text.h"
 
 namespace WebCore {
@@ -51,16 +52,16 @@ void DeleteFromTextNodeCommand::doApply()
     if (!m_node->isContentEditable(Node::UserSelectAllIsAlwaysNonEditable))
         return;
 
-    ExceptionCode ec = 0;
-    m_text = m_node->substringData(m_offset, m_count, ec);
-    if (ec)
+    TrackExceptionState es;
+    m_text = m_node->substringData(m_offset, m_count, es);
+    if (es.hadException())
         return;
-    
+
     // Need to notify this before actually deleting the text
     if (AXObjectCache* cache = document()->existingAXObjectCache())
         cache->nodeTextChangeNotification(m_node.get(), AXObjectCache::AXTextDeleted, m_offset, m_text);
 
-    m_node->deleteData(m_offset, m_count, ec);
+    m_node->deleteData(m_offset, m_count, es);
 }
 
 void DeleteFromTextNodeCommand::doUnapply()

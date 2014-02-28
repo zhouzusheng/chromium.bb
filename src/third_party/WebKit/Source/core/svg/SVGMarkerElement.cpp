@@ -29,7 +29,7 @@
 #include "core/svg/SVGFitToViewBox.h"
 
 namespace WebCore {
- 
+
 // Define custom animated property 'orientType'.
 const SVGPropertyInfo* SVGMarkerElement::orientTypePropertyInfo()
 {
@@ -67,15 +67,15 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGMarkerElement)
     REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
     REGISTER_LOCAL_ANIMATED_PROPERTY(viewBox)
     REGISTER_LOCAL_ANIMATED_PROPERTY(preserveAspectRatio)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGStyledElement)
+    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
 inline SVGMarkerElement::SVGMarkerElement(const QualifiedName& tagName, Document* document)
-    : SVGStyledElement(tagName, document)
+    : SVGElement(tagName, document)
     , m_refX(LengthModeWidth)
     , m_refY(LengthModeHeight)
     , m_markerWidth(LengthModeWidth, "3")
-    , m_markerHeight(LengthModeHeight, "3") 
+    , m_markerHeight(LengthModeHeight, "3")
     , m_markerUnits(SVGMarkerUnitsStrokeWidth)
     , m_orientType(SVGMarkerOrientAngle)
 {
@@ -104,14 +104,13 @@ const AtomicString& SVGMarkerElement::orientAngleIdentifier()
 
 AffineTransform SVGMarkerElement::viewBoxToViewTransform(float viewWidth, float viewHeight) const
 {
-    return SVGFitToViewBox::viewBoxToViewTransform(viewBox(), preserveAspectRatio(), viewWidth, viewHeight);
+    return SVGFitToViewBox::viewBoxToViewTransform(viewBoxCurrentValue(), preserveAspectRatioCurrentValue(), viewWidth, viewHeight);
 }
 
 bool SVGMarkerElement::isSupportedAttribute(const QualifiedName& attrName)
 {
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty()) {
-        SVGLangSpace::addSupportedAttributes(supportedAttributes);
         SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         SVGFitToViewBox::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::markerUnitsAttr);
@@ -129,7 +128,7 @@ void SVGMarkerElement::parseAttribute(const QualifiedName& name, const AtomicStr
     SVGParsingError parseError = NoError;
 
     if (!isSupportedAttribute(name))
-        SVGStyledElement::parseAttribute(name, value);
+        SVGElement::parseAttribute(name, value);
     else if (name == SVGNames::markerUnitsAttr) {
         SVGMarkerUnitsType propertyValue = SVGPropertyTraits<SVGMarkerUnitsType>::fromString(value);
         if (propertyValue > 0)
@@ -149,8 +148,7 @@ void SVGMarkerElement::parseAttribute(const QualifiedName& name, const AtomicStr
             setOrientTypeBaseValue(orientType);
         if (orientType == SVGMarkerOrientAngle)
             setOrientAngleBaseValue(angle);
-    } else if (SVGLangSpace::parseAttribute(name, value)
-             || SVGExternalResourcesRequired::parseAttribute(name, value)
+    } else if (SVGExternalResourcesRequired::parseAttribute(name, value)
              || SVGFitToViewBox::parseAttribute(this, name, value)) {
     } else
         ASSERT_NOT_REACHED();
@@ -161,12 +159,12 @@ void SVGMarkerElement::parseAttribute(const QualifiedName& name, const AtomicStr
 void SVGMarkerElement::svgAttributeChanged(const QualifiedName& attrName)
 {
     if (!isSupportedAttribute(attrName)) {
-        SVGStyledElement::svgAttributeChanged(attrName);
+        SVGElement::svgAttributeChanged(attrName);
         return;
     }
 
     SVGElementInstance::InvalidationGuard invalidationGuard(this);
-    
+
     if (attrName == SVGNames::refXAttr
         || attrName == SVGNames::refYAttr
         || attrName == SVGNames::markerWidthAttr
@@ -174,25 +172,25 @@ void SVGMarkerElement::svgAttributeChanged(const QualifiedName& attrName)
         updateRelativeLengthsInformation();
 
     if (RenderObject* object = renderer())
-        object->setNeedsLayout(true);
+        object->setNeedsLayout();
 }
 
 void SVGMarkerElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
 {
-    SVGStyledElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    SVGElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
 
     if (changedByParser)
         return;
 
     if (RenderObject* object = renderer())
-        object->setNeedsLayout(true);
+        object->setNeedsLayout();
 }
 
 void SVGMarkerElement::setOrientToAuto()
 {
     setOrientTypeBaseValue(SVGMarkerOrientAuto);
     setOrientAngleBaseValue(SVGAngle());
- 
+
     // Mark orientAttr dirty - the next XML DOM access of that attribute kicks in synchronization.
     m_orientAngle.shouldSynchronize = true;
     m_orientType.shouldSynchronize = true;
@@ -214,15 +212,15 @@ void SVGMarkerElement::setOrientToAngle(const SVGAngle& angle)
 
 RenderObject* SVGMarkerElement::createRenderer(RenderStyle*)
 {
-    return new (document()->renderArena()) RenderSVGResourceMarker(this);
+    return new RenderSVGResourceMarker(this);
 }
 
 bool SVGMarkerElement::selfHasRelativeLengths() const
 {
-    return refX().isRelative()
-        || refY().isRelative()
-        || markerWidth().isRelative()
-        || markerHeight().isRelative();
+    return refXCurrentValue().isRelative()
+        || refYCurrentValue().isRelative()
+        || markerWidthCurrentValue().isRelative()
+        || markerHeightCurrentValue().isRelative();
 }
 
 void SVGMarkerElement::synchronizeOrientType(SVGElement* contextElement)
@@ -247,8 +245,8 @@ PassRefPtr<SVGAnimatedProperty> SVGMarkerElement::lookupOrCreateOrientTypeWrappe
     return SVGAnimatedProperty::lookupOrCreateWrapper<SVGMarkerElement, SVGAnimatedEnumerationPropertyTearOff<SVGMarkerOrientType>, SVGMarkerOrientType>
            (ownerType, orientTypePropertyInfo(), ownerType->m_orientType.value);
 }
-  
-PassRefPtr<SVGAnimatedEnumerationPropertyTearOff<SVGMarkerOrientType> > SVGMarkerElement::orientTypeAnimated()
+
+PassRefPtr<SVGAnimatedEnumerationPropertyTearOff<SVGMarkerOrientType> > SVGMarkerElement::orientType()
 {
     m_orientType.shouldSynchronize = true;
     return static_pointer_cast<SVGAnimatedEnumerationPropertyTearOff<SVGMarkerOrientType> >(lookupOrCreateOrientTypeWrapper(this));

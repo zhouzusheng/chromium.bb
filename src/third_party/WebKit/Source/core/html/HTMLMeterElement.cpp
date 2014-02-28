@@ -23,6 +23,8 @@
 #include "core/html/HTMLMeterElement.h"
 
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NodeRenderingContext.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -59,12 +61,7 @@ RenderObject* HTMLMeterElement::createRenderer(RenderStyle* style)
     if (hasAuthorShadowRoot() || !document()->page()->theme()->supportsMeter(style->appearance()))
         return RenderObject::createObject(this, style);
 
-    return new (document()->renderArena()) RenderMeter(this);
-}
-
-bool HTMLMeterElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
-{
-    return childContext.isOnUpperEncapsulationBoundary() && HTMLElement::childShouldCreateRenderer(childContext);
+    return new RenderMeter(this);
 }
 
 void HTMLMeterElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -80,10 +77,10 @@ double HTMLMeterElement::min() const
     return parseToDoubleForNumberType(getAttribute(minAttr), 0);
 }
 
-void HTMLMeterElement::setMin(double min, ExceptionCode& ec)
+void HTMLMeterElement::setMin(double min, ExceptionState& es)
 {
     if (!std::isfinite(min)) {
-        ec = NOT_SUPPORTED_ERR;
+        es.throwDOMException(NotSupportedError);
         return;
     }
     setAttribute(minAttr, String::number(min));
@@ -94,10 +91,10 @@ double HTMLMeterElement::max() const
     return std::max(parseToDoubleForNumberType(getAttribute(maxAttr), std::max(1.0, min())), min());
 }
 
-void HTMLMeterElement::setMax(double max, ExceptionCode& ec)
+void HTMLMeterElement::setMax(double max, ExceptionState& es)
 {
     if (!std::isfinite(max)) {
-        ec = NOT_SUPPORTED_ERR;
+        es.throwDOMException(NotSupportedError);
         return;
     }
     setAttribute(maxAttr, String::number(max));
@@ -109,10 +106,10 @@ double HTMLMeterElement::value() const
     return std::min(std::max(value, min()), max());
 }
 
-void HTMLMeterElement::setValue(double value, ExceptionCode& ec)
+void HTMLMeterElement::setValue(double value, ExceptionState& es)
 {
     if (!std::isfinite(value)) {
-        ec = NOT_SUPPORTED_ERR;
+        es.throwDOMException(NotSupportedError);
         return;
     }
     setAttribute(valueAttr, String::number(value));
@@ -124,10 +121,10 @@ double HTMLMeterElement::low() const
     return std::min(std::max(low, min()), max());
 }
 
-void HTMLMeterElement::setLow(double low, ExceptionCode& ec)
+void HTMLMeterElement::setLow(double low, ExceptionState& es)
 {
     if (!std::isfinite(low)) {
-        ec = NOT_SUPPORTED_ERR;
+        es.throwDOMException(NotSupportedError);
         return;
     }
     setAttribute(lowAttr, String::number(low));
@@ -139,10 +136,10 @@ double HTMLMeterElement::high() const
     return std::min(std::max(high, low()), max());
 }
 
-void HTMLMeterElement::setHigh(double high, ExceptionCode& ec)
+void HTMLMeterElement::setHigh(double high, ExceptionState& es)
 {
     if (!std::isfinite(high)) {
-        ec = NOT_SUPPORTED_ERR;
+        es.throwDOMException(NotSupportedError);
         return;
     }
     setAttribute(highAttr, String::number(high));
@@ -154,10 +151,10 @@ double HTMLMeterElement::optimum() const
     return std::min(std::max(optimum, min()), max());
 }
 
-void HTMLMeterElement::setOptimum(double optimum, ExceptionCode& ec)
+void HTMLMeterElement::setOptimum(double optimum, ExceptionState& es)
 {
     if (!std::isfinite(optimum)) {
-        ec = NOT_SUPPORTED_ERR;
+        es.throwDOMException(NotSupportedError);
         return;
     }
     setAttribute(optimumAttr, String::number(optimum));
@@ -178,7 +175,7 @@ HTMLMeterElement::GaugeRegion HTMLMeterElement::gaugeRegion() const
             return GaugeRegionSuboptimal;
         return GaugeRegionEvenLessGood;
     }
-    
+
     if (highValue < optimumValue) {
         // The optimum range stays over high
         if (highValue <= theValue)

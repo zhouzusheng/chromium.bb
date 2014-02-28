@@ -18,12 +18,11 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGAnimatedInteger.h"
 
 #include "core/svg/SVGAnimateElement.h"
 #include "core/svg/SVGAnimatedNumber.h"
-#include <wtf/MathExtras.h>
+#include "wtf/MathExtras.h"
 
 namespace WebCore {
 
@@ -99,5 +98,5 @@ float SVGAnimatedIntegerAnimator::calculateDistance(const String& fromString, co
     int to = toString.toIntStrict();
     return abs(to - from);
 }
-    
+
 }

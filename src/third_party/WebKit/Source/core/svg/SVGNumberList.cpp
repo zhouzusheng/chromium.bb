@@ -19,27 +19,38 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGNumberList.h"
 
 #include "core/svg/SVGParserUtilities.h"
-#include <wtf/text/StringBuilder.h>
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
+
+template<typename CharType>
+void SVGNumberList::parseInternal(const CharType*& ptr, const CharType* end)
+{
+    // The spec strangely doesn't allow leading whitespace.  We might choose to violate that intentionally. (section 4.1)
+    while (ptr < end) {
+        float number = 0;
+        if (!parseNumber(ptr, end, number))
+            return;
+        append(number);
+    }
+}
 
 void SVGNumberList::parse(const String& value)
 {
     clear();
-
-    float number = 0;
-    const UChar* ptr = value.characters();
-    const UChar* end = ptr + value.length();
-
-    // The spec strangely doesn't allow leading whitespace.  We might choose to violate that intentionally. (section 4.1)
-    while (ptr < end) {
-        if (!parseNumber(ptr, end, number))
-            return;
-        append(number);
+    if (value.isEmpty())
+        return;
+    if (value.is8Bit()) {
+        const LChar* ptr = value.characters8();
+        const LChar* end = ptr + value.length();
+        parseInternal(ptr, end);
+    } else {
+        const UChar* ptr = value.characters16();
+        const UChar* end = ptr + value.length();
+        parseInternal(ptr, end);
     }
 }
 
@@ -52,7 +63,7 @@ String SVGNumberList::valueAsString() const
         if (i > 0)
             builder.append(' ');
 
-        builder.append(String::number(at(i)));
+        builder.append(at(i).valueAsString());
     }
 
     return builder.toString();

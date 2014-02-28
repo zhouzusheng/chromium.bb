@@ -5,13 +5,13 @@
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
- * 
+ *
  * 1. Redistributions of source code must retain the above copyright
  *    notice, this list of conditions and the following disclaimer.
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
@@ -27,6 +27,7 @@
 #include "config.h"
 #include "core/xml/XPathResult.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/xml/XPathEvaluator.h"
@@ -66,7 +67,7 @@ XPathResult::~XPathResult()
 {
 }
 
-void XPathResult::convertTo(unsigned short type, ExceptionCode& ec)
+void XPathResult::convertTo(unsigned short type, ExceptionState& es)
 {
     switch (type) {
         case ANY_TYPE:
@@ -88,14 +89,14 @@ void XPathResult::convertTo(unsigned short type, ExceptionCode& ec)
         case ANY_UNORDERED_NODE_TYPE:
         case FIRST_ORDERED_NODE_TYPE: // This is correct - singleNodeValue() will take care of ordering.
             if (!m_value.isNodeSet()) {
-                ec = TypeError;
+                es.throwTypeError();
                 return;
             }
             m_resultType = type;
             break;
         case ORDERED_NODE_ITERATOR_TYPE:
             if (!m_value.isNodeSet()) {
-                ec = TypeError;
+                es.throwTypeError();
                 return;
             }
             m_nodeSet.sort();
@@ -103,7 +104,7 @@ void XPathResult::convertTo(unsigned short type, ExceptionCode& ec)
             break;
         case ORDERED_NODE_SNAPSHOT_TYPE:
             if (!m_value.isNodeSet()) {
-                ec = TypeError;
+                es.throwTypeError();
                 return;
             }
             m_value.toNodeSet().sort();
@@ -117,40 +118,40 @@ unsigned short XPathResult::resultType() const
     return m_resultType;
 }
 
-double XPathResult::numberValue(ExceptionCode& ec) const
+double XPathResult::numberValue(ExceptionState& es) const
 {
     if (resultType() != NUMBER_TYPE) {
-        ec = TypeError;
+        es.throwTypeError();
         return 0.0;
     }
     return m_value.toNumber();
 }
 
-String XPathResult::stringValue(ExceptionCode& ec) const
+String XPathResult::stringValue(ExceptionState& es) const
 {
     if (resultType() != STRING_TYPE) {
-        ec = TypeError;
+        es.throwTypeError();
         return String();
     }
     return m_value.toString();
 }
 
-bool XPathResult::booleanValue(ExceptionCode& ec) const
+bool XPathResult::booleanValue(ExceptionState& es) const
 {
     if (resultType() != BOOLEAN_TYPE) {
-        ec = TypeError;
+        es.throwTypeError();
         return false;
     }
     return m_value.toBoolean();
 }
 
-Node* XPathResult::singleNodeValue(ExceptionCode& ec) const
+Node* XPathResult::singleNodeValue(ExceptionState& es) const
 {
     if (resultType() != ANY_UNORDERED_NODE_TYPE && resultType() != FIRST_ORDERED_NODE_TYPE) {
-        ec = TypeError;
+        es.throwTypeError();
         return 0;
     }
-  
+
     const NodeSet& nodes = m_value.toNodeSet();
     if (resultType() == FIRST_ORDERED_NODE_TYPE)
         return nodes.firstNode();
@@ -167,49 +168,49 @@ bool XPathResult::invalidIteratorState() const
     return m_document->domTreeVersion() != m_domTreeVersion;
 }
 
-unsigned long XPathResult::snapshotLength(ExceptionCode& ec) const
+unsigned long XPathResult::snapshotLength(ExceptionState& es) const
 {
     if (resultType() != UNORDERED_NODE_SNAPSHOT_TYPE && resultType() != ORDERED_NODE_SNAPSHOT_TYPE) {
-        ec = TypeError;
+        es.throwTypeError();
         return 0;
     }
 
     return m_value.toNodeSet().size();
 }
 
-Node* XPathResult::iterateNext(ExceptionCode& ec)
+Node* XPathResult::iterateNext(ExceptionState& es)
 {
     if (resultType() != UNORDERED_NODE_ITERATOR_TYPE && resultType() != ORDERED_NODE_ITERATOR_TYPE) {
-        ec = TypeError;
+        es.throwTypeError();
         return 0;
     }
-    
+
     if (invalidIteratorState()) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return 0;
     }
-    
+
     if (m_nodeSetPosition + 1 > m_nodeSet.size())
         return 0;
 
     Node* node = m_nodeSet[m_nodeSetPosition];
-    
+
     m_nodeSetPosition++;
 
     return node;
 }
 
-Node* XPathResult::snapshotItem(unsigned long index, ExceptionCode& ec)
+Node* XPathResult::snapshotItem(unsigned long index, ExceptionState& es)
 {
     if (resultType() != UNORDERED_NODE_SNAPSHOT_TYPE && resultType() != ORDERED_NODE_SNAPSHOT_TYPE) {
-        ec = TypeError;
+        es.throwTypeError();
         return 0;
     }
-    
+
     const NodeSet& nodes = m_value.toNodeSet();
     if (index >= nodes.size())
         return 0;
-    
+
     return nodes[index];
 }
 

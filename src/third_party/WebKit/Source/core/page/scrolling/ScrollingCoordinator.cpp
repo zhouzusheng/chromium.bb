@@ -27,18 +27,26 @@
 
 #include "core/page/scrolling/ScrollingCoordinator.h"
 
+#include "RuntimeEnabledFeatures.h"
 #include "core/dom/Document.h"
+#include "core/dom/Node.h"
+#include "core/html/HTMLElement.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
 #include "core/platform/PlatformWheelEvent.h"
 #include "core/platform/ScrollAnimator.h"
-#include "core/platform/ScrollbarThemeComposite.h"
+#include "core/platform/ScrollbarTheme.h"
+#include "core/platform/chromium/TraceEvent.h"
 #include "core/platform/chromium/support/WebScrollbarImpl.h"
 #include "core/platform/chromium/support/WebScrollbarThemeGeometryNative.h"
 #include "core/platform/graphics/GraphicsLayer.h"
 #include "core/platform/graphics/IntRect.h"
 #include "core/platform/graphics/Region.h"
+#include "core/platform/graphics/transforms/TransformState.h"
+#if OS(DARWIN)
+#include "core/platform/mac/ScrollAnimatorMac.h"
+#endif
 #include "core/plugins/PluginView.h"
 #include "core/rendering/RenderLayerBacking.h"
 #include "core/rendering/RenderLayerCompositor.h"
@@ -46,10 +54,10 @@
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositorSupport.h"
 #include "public/platform/WebLayerPositionConstraint.h"
-#include "public/platform/WebScrollbar.h"
 #include "public/platform/WebScrollbarLayer.h"
 #include "public/platform/WebScrollbarThemeGeometry.h"
 #include "public/platform/WebScrollbarThemePainter.h"
+#include "wtf/text/StringBuilder.h"
 
 using WebKit::WebLayer;
 using WebKit::WebLayerPositionConstraint;
@@ -91,6 +99,12 @@ ScrollingCoordinator::~ScrollingCoordinator()
 
 }
 
+bool ScrollingCoordinator::touchHitTestingEnabled() const
+{
+    RenderView* contentRenderer = m_page->mainFrame()->contentRenderer();
+    return RuntimeEnabledFeatures::touchEnabled() && contentRenderer && contentRenderer->usesCompositing();
+}
+
 void ScrollingCoordinator::setShouldHandleScrollGestureOnMainThreadRegion(const Region& region)
 {
     if (WebLayer* scrollLayer = scrollingWebLayerForScrollableArea(m_page->mainFrame()->view())) {
@@ -104,10 +118,10 @@ void ScrollingCoordinator::setShouldHandleScrollGestureOnMainThreadRegion(const 
 
 void ScrollingCoordinator::frameViewLayoutUpdated(FrameView* frameView)
 {
-    ASSERT(m_page);
+    TRACE_EVENT0("input", "ScrollingCoordinator::frameViewLayoutUpdated");
 
-    // Compute the region of the page that we can't handle scroll gestures on impl thread:
-    // This currently includes:
+    // Compute the region of the page where we can't handle scroll gestures and mousewheel events
+    // on the impl thread. This currently includes:
     // 1. All scrollable areas, such as subframes, overflow divs and list boxes, whose composited
     // scrolling are not enabled. We need to do this even if the frame view whose layout was updated
     // is not the main frame.
@@ -116,9 +130,13 @@ void ScrollingCoordinator::frameViewLayoutUpdated(FrameView* frameView)
     // 3. Plugin areas.
     Region shouldHandleScrollGestureOnMainThreadRegion = computeShouldHandleScrollGestureOnMainThreadRegion(m_page->mainFrame(), IntPoint());
     setShouldHandleScrollGestureOnMainThreadRegion(shouldHandleScrollGestureOnMainThreadRegion);
-    Vector<IntRect> touchEventTargetRects;
-    computeAbsoluteTouchEventTargetRects(m_page->mainFrame()->document(), touchEventTargetRects);
-    setTouchEventTargetRects(touchEventTargetRects);
+
+    if (touchHitTestingEnabled()) {
+        LayerHitTestRects touchEventTargetRects;
+        computeTouchEventTargetRects(touchEventTargetRects);
+        setTouchEventTargetRects(touchEventTargetRects);
+    }
+
     if (WebLayer* scrollLayer = scrollingWebLayerForScrollableArea(frameView))
         scrollLayer->setBounds(frameView->contentsSize());
 }
@@ -159,7 +177,6 @@ void ScrollingCoordinator::updateLayerPositionConstraint(RenderLayer* layer)
 
     // Avoid unnecessary commits
     clearPositionConstraintExceptForLayer(backing->ancestorClippingLayer(), mainLayer);
-    clearPositionConstraintExceptForLayer(backing->contentsContainmentLayer(), mainLayer);
     clearPositionConstraintExceptForLayer(backing->graphicsLayer(), mainLayer);
 
     if (WebLayer* scrollableLayer = scrollingWebLayerForGraphicsLayer(mainLayer))
@@ -181,10 +198,9 @@ void ScrollingCoordinator::removeWebScrollbarLayer(ScrollableArea* scrollableAre
 
 static PassOwnPtr<WebScrollbarLayer> createScrollbarLayer(Scrollbar* scrollbar)
 {
-    // All Chromium scrollbar themes derive from ScrollbarThemeComposite.
-    ScrollbarThemeComposite* themeComposite = static_cast<ScrollbarThemeComposite*>(scrollbar->theme());
-    WebKit::WebScrollbarThemePainter painter(themeComposite, scrollbar);
-    OwnPtr<WebKit::WebScrollbarThemeGeometry> geometry(WebKit::WebScrollbarThemeGeometryNative::create(themeComposite));
+    ScrollbarTheme* theme = scrollbar->theme();
+    WebKit::WebScrollbarThemePainter painter(theme, scrollbar);
+    OwnPtr<WebKit::WebScrollbarThemeGeometry> geometry(WebKit::WebScrollbarThemeGeometryNative::create(theme));
 
     OwnPtr<WebScrollbarLayer> scrollbarLayer = adoptPtr(WebKit::Platform::current()->compositorSupport()->createScrollbarLayer(new WebKit::WebScrollbarImpl(scrollbar), painter, geometry.leakPtr()));
     GraphicsLayer::registerContentsLayer(scrollbarLayer->layer());
@@ -229,7 +245,7 @@ void ScrollingCoordinator::scrollableAreaScrollbarLayerDidChange(ScrollableArea*
 {
 // FIXME: Instead of hardcode here, we should make a setting flag.
 #if OS(DARWIN)
-    static const bool platformSupportsCoordinatedScrollbar = false;
+    static const bool platformSupportsCoordinatedScrollbar = ScrollAnimatorMac::canUseCoordinatedScrollbar();
     static const bool platformSupportsMainFrameOnly = false; // Don't care.
 #elif OS(ANDROID)
     static const bool platformSupportsCoordinatedScrollbar = true;
@@ -241,7 +257,7 @@ void ScrollingCoordinator::scrollableAreaScrollbarLayerDidChange(ScrollableArea*
     if (!platformSupportsCoordinatedScrollbar)
         return;
 
-    bool isMainFrame = (scrollableArea == static_cast<ScrollableArea*>(m_page->mainFrame()->view()));
+    bool isMainFrame = isForMainFrame(scrollableArea);
     if (!isMainFrame && platformSupportsMainFrameOnly)
         return;
 
@@ -269,11 +285,13 @@ void ScrollingCoordinator::scrollableAreaScrollbarLayerDidChange(ScrollableArea*
         removeWebScrollbarLayer(scrollableArea, orientation);
 }
 
-void ScrollingCoordinator::scrollableAreaScrollLayerDidChange(ScrollableArea* scrollableArea)
+bool ScrollingCoordinator::scrollableAreaScrollLayerDidChange(ScrollableArea* scrollableArea)
 {
     GraphicsLayer* scrollLayer = scrollLayerForScrollableArea(scrollableArea);
-    if (scrollLayer)
-        scrollLayer->setScrollableArea(scrollableArea);
+    if (scrollLayer) {
+        bool isMainFrame = isForMainFrame(scrollableArea);
+        scrollLayer->setScrollableArea(scrollableArea, isMainFrame);
+    }
 
     WebLayer* webLayer = scrollingWebLayerForScrollableArea(scrollableArea);
     if (webLayer) {
@@ -291,30 +309,98 @@ void ScrollingCoordinator::scrollableAreaScrollLayerDidChange(ScrollableArea* sc
         if (verticalScrollbarLayer)
             setupScrollbarLayer(verticalScrollbarLayer, scrollbarLayer, webLayer);
     }
+
+    return !!webLayer;
 }
 
-void ScrollingCoordinator::setTouchEventTargetRects(const Vector<IntRect>& absoluteHitTestRects)
+static void convertLayerRectsToEnclosingCompositedLayer(const LayerHitTestRects& layerRects, LayerHitTestRects& compositorRects)
 {
-    if (WebLayer* scrollLayer = scrollingWebLayerForScrollableArea(m_page->mainFrame()->view())) {
-        WebVector<WebRect> webRects(absoluteHitTestRects.size());
-        for (size_t i = 0; i < absoluteHitTestRects.size(); ++i)
-            webRects[i] = absoluteHitTestRects[i];
-        scrollLayer->setTouchEventHandlerRegion(webRects);
+    TRACE_EVENT0("input", "ScrollingCoordinator::convertLayerRectsToEnclosingCompositedLayer");
+
+    // We have a set of rects per RenderLayer, we need to map them to their bounding boxes in their
+    // enclosing composited layer.
+    for (LayerHitTestRects::const_iterator layerIter = layerRects.begin(); layerIter != layerRects.end(); ++layerIter) {
+        // Find the enclosing composited layer when it's in another document (for non-composited iframes).
+        RenderLayer* compositedLayer = 0;
+        for (const RenderLayer* layer = layerIter->key; !compositedLayer;) {
+            compositedLayer = layer->enclosingCompositingLayerForRepaint();
+            if (!compositedLayer) {
+                RenderObject* owner = layer->renderer()->frame()->ownerRenderer();
+                if (!owner)
+                    break;
+                layer = owner->enclosingLayer();
+            }
+        }
+        if (!compositedLayer) {
+            // Since this machinery is used only when accelerated compositing is enabled, we expect
+            // that every layer should have an enclosing composited layer.
+            ASSERT_NOT_REACHED();
+            continue;
+        }
+
+        LayerHitTestRects::iterator compIter = compositorRects.find(compositedLayer);
+        if (compIter == compositorRects.end())
+            compIter = compositorRects.add(compositedLayer, Vector<LayoutRect>()).iterator;
+        // Transform each rect to the co-ordinate space of it's enclosing composited layer.
+        // Ideally we'd compute a transformation matrix once and re-use it for each rect.
+        // RenderGeometryMap can be used for this (but needs to be updated to support crossing
+        // iframe boundaries), but in practice doesn't appear to provide much performance benefit.
+        for (size_t i = 0; i < layerIter->value.size(); ++i) {
+            FloatQuad localQuad(layerIter->value[i]);
+            TransformState transformState(TransformState::ApplyTransformDirection, localQuad);
+            MapCoordinatesFlags flags = ApplyContainerFlip | UseTransforms | TraverseDocumentBoundaries;
+            layerIter->key->renderer()->mapLocalToContainer(compositedLayer->renderer(), transformState, flags);
+            transformState.flatten();
+            LayoutRect compositorRect = LayoutRect(transformState.lastPlanarQuad().boundingBox());
+            compIter->value.append(compositorRect);
+        }
+    }
+}
+
+// Note that in principle this could be called more often than computeTouchEventTargetRects, for
+// example during a non-composited scroll (although that's not yet implemented - crbug.com/261307).
+void ScrollingCoordinator::setTouchEventTargetRects(const LayerHitTestRects& layerRects)
+{
+    TRACE_EVENT0("input", "ScrollingCoordinator::setTouchEventTargetRects");
+
+    LayerHitTestRects compositorRects;
+    convertLayerRectsToEnclosingCompositedLayer(layerRects, compositorRects);
+
+    // Inform any observers (i.e. for testing) of these new rects.
+    HashSet<TouchEventTargetRectsObserver*>::iterator stop = m_touchEventTargetRectsObservers.end();
+    for (HashSet<TouchEventTargetRectsObserver*>::iterator it = m_touchEventTargetRectsObservers.begin(); it != stop; ++it)
+        (*it)->touchEventTargetRectsChanged(compositorRects);
+
+    // Note that ideally we'd clear the touch event handler region on all layers first,
+    // in case there are others that no longer have any handlers. But it's unlikely to
+    // matter much in practice (just makes us more conservative).
+    for (LayerHitTestRects::const_iterator iter = compositorRects.begin(); iter != compositorRects.end(); ++iter) {
+        WebVector<WebRect> webRects(iter->value.size());
+        for (size_t i = 0; i < iter->value.size(); ++i)
+            webRects[i] = enclosingIntRect(iter->value[i]);
+        RenderLayerBacking* backing = iter->key->backing();
+        // If the layer is using composited scrolling, then it's the contents that these
+        // rects apply to.
+        GraphicsLayer* graphicsLayer = backing->scrollingContentsLayer();
+        if (!graphicsLayer)
+            graphicsLayer = backing->graphicsLayer();
+        graphicsLayer->platformLayer()->setTouchEventHandlerRegion(webRects);
     }
 }
 
 void ScrollingCoordinator::touchEventTargetRectsDidChange(const Document*)
 {
-    // The rects are always evaluated and used in the main frame coordinates.
-    FrameView* frameView = m_page->mainFrame()->view();
-    Document* document = m_page->mainFrame()->document();
-
-    // Wait until after layout to update.
-    if (frameView->needsLayout() || !document)
+    if (!touchHitTestingEnabled())
         return;
 
-    Vector<IntRect> touchEventTargetRects;
-    computeAbsoluteTouchEventTargetRects(document, touchEventTargetRects);
+    // Wait until after layout to update.
+    if (m_page->mainFrame()->view()->needsLayout())
+        return;
+
+    TRACE_EVENT0("input", "ScrollingCoordinator::touchEventTargetRectsDidChange");
+
+    LayerHitTestRects touchEventTargetRects;
+    computeTouchEventTargetRects(touchEventTargetRects);
     setTouchEventTargetRects(touchEventTargetRects);
 }
 
@@ -412,75 +498,71 @@ Region ScrollingCoordinator::computeShouldHandleScrollGestureOnMainThreadRegion(
     return shouldHandleScrollGestureOnMainThreadRegion;
 }
 
-static void accumulateRendererTouchEventTargetRects(Vector<IntRect>& rects, const RenderObject* renderer, const IntRect& parentRect = IntRect())
+void ScrollingCoordinator::addTouchEventTargetRectsObserver(TouchEventTargetRectsObserver* observer)
 {
-    IntRect adjustedParentRect = parentRect;
-    if (parentRect.isEmpty() || renderer->isFloating() || renderer->isPositioned() || renderer->hasTransform()) {
-        // FIXME: This method is O(N^2) as it walks the tree to the root for every renderer. RenderGeometryMap would fix this.
-        IntRect r = enclosingIntRect(renderer->clippedOverflowRectForRepaint(0));
-        if (!r.isEmpty()) {
-            // Convert to the top-level view's coordinates.
-            ASSERT(renderer->document()->view());
-            r = renderer->document()->view()->convertToRootView(r);
-
-            if (!parentRect.contains(r)) {
-                rects.append(r);
-                adjustedParentRect = r;
-            }
-        }
-    }
-
-    for (RenderObject* child = renderer->firstChild(); child; child = child->nextSibling())
-        accumulateRendererTouchEventTargetRects(rects, child, adjustedParentRect);
+    m_touchEventTargetRectsObservers.add(observer);
 }
 
-static void accumulateDocumentEventTargetRects(Vector<IntRect>& rects, const Document* document)
+void ScrollingCoordinator::removeTouchEventTargetRectsObserver(TouchEventTargetRectsObserver* observer)
+{
+    m_touchEventTargetRectsObservers.remove(observer);
+}
+
+static void accumulateDocumentTouchEventTargetRects(LayerHitTestRects& rects, const Document* document)
 {
     ASSERT(document);
     if (!document->touchEventTargets())
         return;
 
     const TouchEventTargetSet* targets = document->touchEventTargets();
+
+    // If there's a handler on the document, html or body element (fairly common in practice),
+    // then we can quickly mark the entire document and skip looking at any other handlers.
+    // Note that technically a handler on the body doesn't cover the whole document, but it's
+    // reasonable to be conservative and report the whole document anyway.
     for (TouchEventTargetSet::const_iterator iter = targets->begin(); iter != targets->end(); ++iter) {
-        const Node* touchTarget = iter->key;
-        if (!touchTarget->inDocument())
-            continue;
-
-        if (touchTarget == document) {
-            if (RenderView* view = document->renderView()) {
-                IntRect r;
-                if (touchTarget == document->topDocument())
-                    r = view->documentRect();
-                else
-                    r = enclosingIntRect(view->clippedOverflowRectForRepaint(0));
-
-                if (!r.isEmpty()) {
-                    ASSERT(view->document()->view());
-                    r = view->document()->view()->convertToRootView(r);
-                    rects.append(r);
-                }
+        Node* target = iter->key;
+        if (target == document || target == document->documentElement() || target == document->body()) {
+            if (RenderObject* renderer = document->renderer()) {
+                renderer->computeLayerHitTestRects(rects);
             }
             return;
         }
-
-        if (touchTarget->isDocumentNode() && touchTarget != document) {
-            accumulateDocumentEventTargetRects(rects, toDocument(touchTarget));
-            continue;
-        }
-
-        if (RenderObject* renderer = touchTarget->renderer())
-            accumulateRendererTouchEventTargetRects(rects, renderer);
     }
+
+    for (TouchEventTargetSet::const_iterator iter = targets->begin(); iter != targets->end(); ++iter) {
+        const Node* target = iter->key;
+        if (!target->inDocument())
+            continue;
+
+        if (target->isDocumentNode()) {
+            ASSERT(target != document);
+            accumulateDocumentTouchEventTargetRects(rects, toDocument(target));
+        } else if (RenderObject* renderer = target->renderer()) {
+            // If the set also contains one of our ancestor nodes then processing
+            // this node would be redundant.
+            bool hasTouchEventTargetAncestor = false;
+            for (Node* ancestor = target->parentNode(); ancestor && !hasTouchEventTargetAncestor; ancestor = ancestor->parentNode()) {
+                if (targets->contains(ancestor))
+                    hasTouchEventTargetAncestor = true;
+            }
+            if (!hasTouchEventTargetAncestor)
+                renderer->computeLayerHitTestRects(rects);
+        }
+    }
+
 }
 
-void ScrollingCoordinator::computeAbsoluteTouchEventTargetRects(const Document* document, Vector<IntRect>& rects)
+void ScrollingCoordinator::computeTouchEventTargetRects(LayerHitTestRects& rects)
 {
-    ASSERT(document);
-    if (!document->view())
+    TRACE_EVENT0("input", "ScrollingCoordinator::computeTouchEventTargetRects");
+    ASSERT(touchHitTestingEnabled());
+
+    Document* document = m_page->mainFrame()->document();
+    if (!document || !document->view())
         return;
 
-    // FIXME: These rects won't be properly updated if the renderers are in a sub-tree that scrolls.
-    accumulateDocumentEventTargetRects(rects, document);
+    accumulateDocumentTouchEventTargetRects(rects, document);
 }
 
 unsigned ScrollingCoordinator::computeCurrentWheelEventHandlerCount()
@@ -538,6 +620,11 @@ GraphicsLayer* ScrollingCoordinator::horizontalScrollbarLayerForScrollableArea(S
 GraphicsLayer* ScrollingCoordinator::verticalScrollbarLayerForScrollableArea(ScrollableArea* scrollableArea)
 {
     return scrollableArea->layerForVerticalScrollbar();
+}
+
+bool ScrollingCoordinator::isForMainFrame(ScrollableArea* scrollableArea) const
+{
+    return scrollableArea == m_page->mainFrame()->view();
 }
 
 GraphicsLayer* ScrollingCoordinator::scrollLayerForFrameView(FrameView* frameView)

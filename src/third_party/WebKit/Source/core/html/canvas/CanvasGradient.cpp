@@ -21,12 +21,13 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
 #include "core/html/canvas/CanvasGradient.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/canvas/CanvasPattern.h"
 #include "core/html/canvas/CanvasStyle.h"
@@ -45,16 +46,16 @@ CanvasGradient::CanvasGradient(const FloatPoint& p0, float r0, const FloatPoint&
     ScriptWrappable::init(this);
 }
 
-void CanvasGradient::addColorStop(float value, const String& color, ExceptionCode& ec)
+void CanvasGradient::addColorStop(float value, const String& color, ExceptionState& es)
 {
     if (!(value >= 0 && value <= 1.0f)) {
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
         return;
     }
 
     RGBA32 rgba = 0;
     if (!parseColorOrCurrentColor(rgba, color, 0 /*canvas*/)) {
-        ec = SYNTAX_ERR;
+        es.throwDOMException(SyntaxError);
         return;
     }
 

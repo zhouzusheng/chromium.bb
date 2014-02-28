@@ -16,9 +16,7 @@ class Point;
 class Size;
 }
 
-namespace WebKit {
-class WebGraphicsContext3D;
-}
+namespace WebKit { class WebGraphicsContext3D; }
 
 namespace cc {
 
@@ -131,15 +129,6 @@ class VertexShaderPosTexTransform {
   DISALLOW_COPY_AND_ASSIGN(VertexShaderPosTexTransform);
 };
 
-class VertexShaderPosTexTransformFlip : public VertexShaderPosTexTransform {
- public:
-  VertexShaderPosTexTransformFlip() {}
-  std::string GetShaderString() const;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(VertexShaderPosTexTransformFlip);
-};
-
 class VertexShaderQuad {
  public:
   VertexShaderQuad();
@@ -151,7 +140,9 @@ class VertexShaderQuad {
   std::string GetShaderString() const;
 
   int matrix_location() const { return matrix_location_; }
+  int viewport_location() const { return -1; }
   int quad_location() const { return quad_location_; }
+  int edge_location() const { return -1; }
 
  private:
   int matrix_location_;
@@ -160,9 +151,9 @@ class VertexShaderQuad {
   DISALLOW_COPY_AND_ASSIGN(VertexShaderQuad);
 };
 
-class VertexShaderQuadTexTransform {
+class VertexShaderQuadAA {
  public:
-  VertexShaderQuadTexTransform();
+  VertexShaderQuadAA();
 
   void Init(WebKit::WebGraphicsContext3D* context,
            unsigned program,
@@ -171,15 +162,44 @@ class VertexShaderQuadTexTransform {
   std::string GetShaderString() const;
 
   int matrix_location() const { return matrix_location_; }
+  int viewport_location() const { return viewport_location_; }
   int quad_location() const { return quad_location_; }
+  int edge_location() const { return edge_location_; }
+
+ private:
+  int matrix_location_;
+  int viewport_location_;
+  int quad_location_;
+  int edge_location_;
+
+  DISALLOW_COPY_AND_ASSIGN(VertexShaderQuadAA);
+};
+
+
+class VertexShaderQuadTexTransformAA {
+ public:
+  VertexShaderQuadTexTransformAA();
+
+  void Init(WebKit::WebGraphicsContext3D* context,
+           unsigned program,
+           bool using_bind_uniform,
+           int* base_uniform_index);
+  std::string GetShaderString() const;
+
+  int matrix_location() const { return matrix_location_; }
+  int viewport_location() const { return viewport_location_; }
+  int quad_location() const { return quad_location_; }
+  int edge_location() const { return edge_location_; }
   int tex_transform_location() const { return tex_transform_location_; }
 
  private:
   int matrix_location_;
+  int viewport_location_;
   int quad_location_;
+  int edge_location_;
   int tex_transform_location_;
 
-  DISALLOW_COPY_AND_ASSIGN(VertexShaderQuadTexTransform);
+  DISALLOW_COPY_AND_ASSIGN(VertexShaderQuadTexTransformAA);
 };
 
 class VertexShaderTile {
@@ -193,7 +213,9 @@ class VertexShaderTile {
   std::string GetShaderString() const;
 
   int matrix_location() const { return matrix_location_; }
+  int viewport_location() const { return -1; }
   int quad_location() const { return quad_location_; }
+  int edge_location() const { return -1; }
   int vertex_tex_transform_location() const {
     return vertex_tex_transform_location_;
   }
@@ -206,11 +228,39 @@ class VertexShaderTile {
   DISALLOW_COPY_AND_ASSIGN(VertexShaderTile);
 };
 
+class VertexShaderTileAA {
+ public:
+  VertexShaderTileAA();
+
+  void Init(WebKit::WebGraphicsContext3D* context,
+            unsigned program,
+            bool using_bind_uniform,
+            int* base_uniform_index);
+  std::string GetShaderString() const;
+
+  int matrix_location() const { return matrix_location_; }
+  int viewport_location() const { return viewport_location_; }
+  int quad_location() const { return quad_location_; }
+  int edge_location() const { return edge_location_; }
+  int vertex_tex_transform_location() const {
+    return vertex_tex_transform_location_;
+  }
+
+ private:
+  int matrix_location_;
+  int viewport_location_;
+  int quad_location_;
+  int edge_location_;
+  int vertex_tex_transform_location_;
+
+  DISALLOW_COPY_AND_ASSIGN(VertexShaderTileAA);
+};
+
 class VertexShaderVideoTransform {
  public:
   VertexShaderVideoTransform();
 
-  bool Init(WebKit::WebGraphicsContext3D* context,
+  void Init(WebKit::WebGraphicsContext3D* context,
             unsigned program,
             bool using_bind_uniform,
             int* base_uniform_index);
@@ -235,7 +285,6 @@ class FragmentTexAlphaBinding {
             bool using_bind_uniform,
             int* base_uniform_index);
   int alpha_location() const { return alpha_location_; }
-  int edge_location() const { return -1; }
   int fragment_tex_transform_location() const { return -1; }
   int sampler_location() const { return sampler_location_; }
 
@@ -257,7 +306,6 @@ class FragmentTexColorMatrixAlphaBinding {
     int alpha_location() const { return alpha_location_; }
     int color_matrix_location() const { return color_matrix_location_; }
     int color_offset_location() const { return color_offset_location_; }
-    int edge_location() const { return -1; }
     int fragment_tex_transform_location() const { return -1; }
     int sampler_location() const { return sampler_location_; }
 
@@ -277,8 +325,8 @@ class FragmentTexOpaqueBinding {
             bool using_bind_uniform,
             int* base_uniform_index);
   int alpha_location() const { return -1; }
-  int edge_location() const { return -1; }
   int fragment_tex_transform_location() const { return -1; }
+  int background_color_location() const { return -1; }
   int sampler_location() const { return sampler_location_; }
 
  private:
@@ -287,7 +335,42 @@ class FragmentTexOpaqueBinding {
   DISALLOW_COPY_AND_ASSIGN(FragmentTexOpaqueBinding);
 };
 
+class FragmentTexBackgroundBinding {
+ public:
+  FragmentTexBackgroundBinding();
+
+  void Init(WebKit::WebGraphicsContext3D* context,
+            unsigned program,
+            bool using_bind_uniform,
+            int* base_uniform_index);
+  int background_color_location() const { return background_color_location_; }
+  int sampler_location() const { return sampler_location_; }
+
+ private:
+  int background_color_location_;
+  int sampler_location_;
+
+  DISALLOW_COPY_AND_ASSIGN(FragmentTexBackgroundBinding);
+};
+
 class FragmentShaderRGBATexVaryingAlpha : public FragmentTexOpaqueBinding {
+ public:
+  std::string GetShaderString(TexCoordPrecision precision) const;
+};
+
+class FragmentShaderRGBATexPremultiplyAlpha : public FragmentTexOpaqueBinding {
+ public:
+  std::string GetShaderString(TexCoordPrecision precision) const;
+};
+
+class FragmentShaderTexBackgroundVaryingAlpha
+    : public FragmentTexBackgroundBinding {
+ public:
+  std::string GetShaderString(TexCoordPrecision precision) const;
+};
+
+class FragmentShaderTexBackgroundPremultiplyAlpha
+    : public FragmentTexBackgroundBinding {
  public:
   std::string GetShaderString(TexCoordPrecision precision) const;
 };
@@ -303,7 +386,7 @@ class FragmentShaderRGBATexColorMatrixAlpha
     std::string GetShaderString(TexCoordPrecision precision) const;
 };
 
-class FragmentShaderRGBATexRectVaryingAlpha : public FragmentTexAlphaBinding {
+class FragmentShaderRGBATexRectVaryingAlpha : public FragmentTexOpaqueBinding {
  public:
   std::string GetShaderString(TexCoordPrecision precision) const;
 };
@@ -336,7 +419,7 @@ class FragmentShaderOESImageExternal : public FragmentTexAlphaBinding {
   FragmentShaderOESImageExternal();
 
   std::string GetShaderString(TexCoordPrecision precision) const;
-  bool Init(WebKit::WebGraphicsContext3D* context,
+  void Init(WebKit::WebGraphicsContext3D* context,
             unsigned program,
             bool using_bind_uniform,
             int* base_uniform_index);
@@ -358,12 +441,10 @@ class FragmentShaderRGBATexAlphaAA {
 
   int alpha_location() const { return alpha_location_; }
   int sampler_location() const { return sampler_location_; }
-  int edge_location() const { return edge_location_; }
 
  private:
   int sampler_location_;
   int alpha_location_;
-  int edge_location_;
 
   DISALLOW_COPY_AND_ASSIGN(FragmentShaderRGBATexAlphaAA);
 };
@@ -381,13 +462,11 @@ class FragmentTexClampAlphaAABinding {
   int fragment_tex_transform_location() const {
     return fragment_tex_transform_location_;
   }
-  int edge_location() const { return edge_location_; }
 
  private:
   int sampler_location_;
   int alpha_location_;
   int fragment_tex_transform_location_;
-  int edge_location_;
 
   DISALLOW_COPY_AND_ASSIGN(FragmentTexClampAlphaAABinding);
 };
@@ -446,7 +525,6 @@ class FragmentShaderRGBATexAlphaMaskAA {
   int alpha_location() const { return alpha_location_; }
   int sampler_location() const { return sampler_location_; }
   int mask_sampler_location() const { return mask_sampler_location_; }
-  int edge_location() const { return edge_location_; }
   int mask_tex_coord_scale_location() const {
     return mask_tex_coord_scale_location_;
   }
@@ -458,7 +536,6 @@ class FragmentShaderRGBATexAlphaMaskAA {
   int sampler_location_;
   int mask_sampler_location_;
   int alpha_location_;
-  int edge_location_;
   int mask_tex_coord_scale_location_;
   int mask_tex_coord_offset_location_;
 
@@ -477,7 +554,6 @@ class FragmentShaderRGBATexAlphaMaskColorMatrixAA {
   int alpha_location() const { return alpha_location_; }
   int sampler_location() const { return sampler_location_; }
   int mask_sampler_location() const { return mask_sampler_location_; }
-  int edge_location() const { return edge_location_; }
   int mask_tex_coord_scale_location() const {
     return mask_tex_coord_scale_location_;
   }
@@ -491,7 +567,6 @@ class FragmentShaderRGBATexAlphaMaskColorMatrixAA {
   int sampler_location_;
   int mask_sampler_location_;
   int alpha_location_;
-  int edge_location_;
   int mask_tex_coord_scale_location_;
   int mask_tex_coord_offset_location_;
   int color_matrix_location_;
@@ -509,14 +584,12 @@ class FragmentShaderRGBATexAlphaColorMatrixAA {
             int* base_uniform_index);
   int alpha_location() const { return alpha_location_; }
   int sampler_location() const { return sampler_location_; }
-  int edge_location() const { return edge_location_; }
   int color_matrix_location() const { return color_matrix_location_; }
   int color_offset_location() const { return color_offset_location_; }
 
  private:
   int sampler_location_;
   int alpha_location_;
-  int edge_location_;
   int color_matrix_location_;
   int color_offset_location_;
 };
@@ -619,7 +692,6 @@ class FragmentShaderColor {
             unsigned program,
             bool using_bind_uniform,
             int* base_uniform_index);
-  int edge_location() const { return -1; }
   int color_location() const { return color_location_; }
 
  private:
@@ -637,11 +709,9 @@ class FragmentShaderColorAA {
             unsigned program,
             bool using_bind_uniform,
             int* base_uniform_index);
-  int edge_location() const { return edge_location_; }
   int color_location() const { return color_location_; }
 
  private:
-  int edge_location_;
   int color_location_;
 
   DISALLOW_COPY_AND_ASSIGN(FragmentShaderColorAA);

@@ -26,9 +26,8 @@
 [
     EnabledAtRuntime=videoTrack,
     Constructor(double startTime, double endTime, DOMString text),
-    ConstructorCallWith=ScriptExecutionContext,
-    EventTarget
-] interface TextTrackCue {
+    ConstructorCallWith=ScriptExecutionContext
+] interface TextTrackCue : EventTarget {
     readonly attribute TextTrack track;
 
     attribute DOMString id;
@@ -46,17 +45,8 @@
     attribute DOMString text;
     DocumentFragment getCueAsHTML();
 
-    attribute EventListener onenter;
-    attribute EventListener onexit;
-
-    // EventTarget interface
-    void addEventListener(DOMString type,
-                          EventListener listener,
-                          optional boolean useCapture);
-    void removeEventListener(DOMString type,
-                             EventListener listener,
-                             optional boolean useCapture);
-    [RaisesException] boolean dispatchEvent(Event evt);
+    attribute EventHandler onenter;
+    attribute EventHandler onexit;
 
     [Conditional=WEBVTT_REGIONS] attribute DOMString regionId;
 };

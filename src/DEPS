@@ -5,45 +5,46 @@ vars = {
   # Use this googlecode_url variable only if there is an internal mirror for it.
   # If you do not know, use the full path while defining your new deps entry.
   "googlecode_url": "http://%s.googlecode.com/svn",
-  "sourceforge_url": "http://%(repo)s.svn.sourceforge.net/svnroot/%(repo)s",
+  "sourceforge_url": "http://svn.code.sf.net/p/%(repo)s/code",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "152953",
+  "webkit_revision": "155942",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
+  "skia_git": "https://skia.googlesource.com",
   "swig_revision": "69281",
-  "nacl_revision": "11601",
+  "nacl_revision": "11988",
   # After changing nacl_revision, run 'glient sync' and check native_client/DEPS
   # to update other nacl_*_revision's.
   "nacl_tools_revision": "11437",  # native_client/DEPS: tools_rev
-  "gtm_revision": "608",
+  "gtm_revision": "616",
 
-  "libjingle_revision": "347",
-  "libphonenumber_revision": "456",
-  "libvpx_revision": "208227",
+  "libphonenumber_revision": "584",
+  "libvpx_revision": "212364",
   "lss_revision": "20",
 
   # These two FFmpeg variables must be updated together.  One is used for SVN
   # checkouts and the other for Git checkouts.
-  "ffmpeg_revision": "203786",
-  "ffmpeg_hash": "245a8c0cdfdd5ab3da9045089661017e9ddd8d0e",
+  "ffmpeg_revision": "214392",
+  "ffmpeg_hash": "894e6f715645528e815aee2dad45b59704238dcd",
 
   "sfntly_revision": "134",
-  "skia_revision": "9712",
+  "skia_revision": "10680",
+  "skia_hash": "8f4825bfb1da69439e1e96a0c6ea04488757d95e",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
-  "v8_revision": "15255",
+  "v8_revision": "16159",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
-  "webrtc_revision": "4253",
+  "webrtc_revision": "4533",
   "jsoncpp_revision": "248",
-  "nss_revision": "206843",
+  "nss_revision": "209026",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling swarm_client
   # and whatever else without interference from each other.
-  "swarm_revision": "207216",
+  "swarm_revision": "217028",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling openssl
   # and whatever else without interference from each other.
@@ -52,10 +53,7 @@ vars = {
 
 deps = {
   "src/breakpad/src":
-    (Var("googlecode_url") % "google-breakpad") + "/trunk/src@1182",
-
-  "src/googleurl":
-    (Var("googlecode_url") % "google-url") + "/trunk@185",
+    (Var("googlecode_url") % "google-breakpad") + "/trunk/src@1199",
 
   "src/sdch/open-vcdiff":
     (Var("googlecode_url") % "open-vcdiff") + "/trunk@42",
@@ -68,16 +66,16 @@ deps = {
 
   "src/third_party/angle_dx11":
     Var("chromium_git") +
-    "/external/angle.git@f576cb24c8fc02d3f2fb90faebdcf333fb27892f",
+    "/external/angle.git@b93f84acdecd3eebf316750d8024b8b592c9012b",
 
   "src/third_party/trace-viewer":
-    (Var("googlecode_url") % "trace-viewer") + "/trunk@623",
+    (Var("googlecode_url") % "trace-viewer") + "/trunk@847",
 
   "src/third_party/WebKit":
     Var("webkit_trunk") + "@" + Var("webkit_revision"),
 
   "src/third_party/icu":
-    "/trunk/deps/third_party/icu46@205936",
+    "/trunk/deps/third_party/icu46@214189",
 
   "src/third_party/libexif/sources":
     "/trunk/deps/third_party/libexif/sources@146817",
@@ -102,10 +100,10 @@ deps = {
     (Var("googlecode_url") % "snappy") + "/trunk@74",
 
   "src/tools/grit":
-    (Var("googlecode_url") % "grit-i18n") + "/trunk@127",
+    (Var("googlecode_url") % "grit-i18n") + "/trunk@129",
 
   "src/tools/gyp":
-    (Var("googlecode_url") % "gyp") + "/trunk@1652",
+    (Var("googlecode_url") % "gyp") + "/trunk@1693",
 
   "src/tools/swarm_client":
     "/trunk/tools/swarm_client@" + Var("swarm_revision"),
@@ -151,13 +149,10 @@ deps = {
   "src/third_party/bidichecker":
     (Var("googlecode_url") % "bidichecker") + "/trunk/lib@4",
 
-  "src/third_party/v8-i18n":
-    (Var("googlecode_url") % "v8-i18n") + "/trunk@191",
-
   # When roll to another webgl conformance tests revision, please goto
   # chrome/test/gpu and run generate_webgl_conformance_test_list.py.
   "src/third_party/webgl_conformance":
-    "/trunk/deps/third_party/webgl/sdk/tests@202601",
+    "/trunk/deps/third_party/webgl/sdk/tests@217097",
 
   "src/third_party/swig/Lib":
     "/trunk/deps/third_party/swig/Lib@" + Var("swig_revision"),
@@ -174,16 +169,16 @@ deps = {
     "/trunk/deps/third_party/ffmpeg@" +
     Var("ffmpeg_revision"),
 
-  "src/third_party/libjingle/source":
-    (Var("googlecode_url") % "libjingle") + "/trunk@" +
-    Var("libjingle_revision"),
+  "src/third_party/libjingle/source/talk":
+    (Var("googlecode_url") % "webrtc") + "/stable/talk@" +
+    Var("webrtc_revision"),
 
   "src/third_party/usrsctp/usrsctplib":
     (Var("googlecode_url") % "sctp-refimpl") +
-    "/trunk/KERN/usrsctp/usrsctplib@8463",
+    "/trunk/KERN/usrsctp/usrsctplib@8554",
 
   "src/third_party/libsrtp":
-    "/trunk/deps/third_party/libsrtp@189528",
+    "/trunk/deps/third_party/libsrtp@214783",
 
   "src/third_party/speex":
     "/trunk/deps/third_party/speex@198168",
@@ -208,7 +203,7 @@ deps = {
     (Var("googlecode_url") % "webrtc") + "/stable/webrtc@" + Var("webrtc_revision"),
 
   "src/third_party/openmax_dl":
-    (Var("googlecode_url") % "webrtc") + "/deps/third_party/openmax@4148",
+    (Var("googlecode_url") % "webrtc") + "/deps/third_party/openmax@4261",
 
   "src/third_party/jsoncpp/source/include":
     (Var("sourceforge_url") % {"repo": "jsoncpp"}) +
@@ -235,10 +230,10 @@ deps = {
          Var("libphonenumber_revision"),
 
   "src/tools/deps2git":
-    "/trunk/tools/deps2git@202885",
+    "/trunk/tools/deps2git@214390",
 
   "src/third_party/webpagereplay":
-    (Var("googlecode_url") % "web-page-replay") + "/trunk@515",
+    (Var("googlecode_url") % "web-page-replay") + "/trunk@518",
 
   "src/third_party/pywebsocket/src":
     (Var("googlecode_url") % "pywebsocket") + "/trunk/src@662",
@@ -247,13 +242,13 @@ deps = {
     "/trunk/deps/third_party/opus@185324",
 
   "src/third_party/accessibility-developer-tools":
-    Var("chromium_git") + "/external/accessibility-developer-tools.git@ad5df9a5341d38778658c90e4aa241c4ebe4e8aa",
+    Var("chromium_git") + "/external/accessibility-developer-tools.git@2e3c9c8e49277a0ca1eeba510271eb03f9486d8f",
 
-  "src/webkit/renderer/media/crypto/ppapi/cdm":
+  "src/media/cdm/ppapi/api":
     "/trunk/deps/cdm@181763",
 
   "src/third_party/mesa/src":
-    "/trunk/deps/third_party/mesa@204346",
+    "/trunk/deps/third_party/mesa@210110",
 }
 
 
@@ -316,7 +311,7 @@ deps_os = {
     # Binary level profile guided optimizations. This points to the
     # latest release binaries for the toolchain.
     "src/third_party/syzygy/binaries":
-      (Var("googlecode_url") % "sawbuck") + "/trunk/syzygy/binaries@1584",
+      (Var("googlecode_url") % "sawbuck") + "/trunk/syzygy/binaries@1718",
 
     # Binaries for nacl sdk.
     "src/third_party/nacl_sdk_binaries":
@@ -425,7 +420,7 @@ deps_os = {
     # Used on Linux only. CrOS already has a copy.
     "src/third_party/mtpd/source":
       Var("chromiumos_git") + "/platform/mtpd.git" +
-      "@132604f107368f617a3073ba2d515b78641ceeed",
+      "@5be739c938a0a229ba9479b00b180e1f9c843e81",
 
     # Used on Linux only. CrOS already has a copy.
     "src/third_party/cros_dbus_cplusplus/source":
@@ -435,7 +430,7 @@ deps_os = {
     # For Linux and Chromium OS.
     "src/third_party/cros_system_api":
       Var("chromiumos_git") + "/platform/system_api.git" +
-      "@211c50e14bc96a7b3e040d6287fc66ef80bee44d",
+      "@9bad33f702cd5cefb0d5603d6853b26428425081",
 
     # Note that this is different from Android's freetype repo.
     "src/third_party/freetype2/src":
@@ -445,7 +440,7 @@ deps_os = {
     # Build tools for targeting ChromeOS.
     "src/third_party/chromite":
       Var("chromiumos_git") + "/chromite.git" +
-      "@785fedc51fc430445d8f397440012ea3b489bac9",
+      "@214fb6506eda13715edd74087adf367a29809a3c",
 
     # Dependency of chromite.git.
     "src/third_party/pyelftools":
@@ -458,7 +453,7 @@ deps_os = {
   "android": {
     "src/third_party/android_tools":
       Var("chromium_git") + "/android_tools.git" +
-      "@e9da75d5e88d3e122ac60ee1d642cdcc1acb2bd8",
+      "@ceb64e7621d20573de3c566488ccf87241adc120",
 
     "src/third_party/aosp":
       "/trunk/deps/third_party/aosp@148330",
@@ -506,14 +501,15 @@ include_rules = [
   # Everybody can use some things.
   "+base",
   "+build",
-  "+googleurl",
   "+ipc",
 
   # Everybody can use headers generated by tools/generate_library_loader.
   "+library_loaders",
 
   "+testing",
-  "+third_party/icu/public",
+  "+third_party/icu/source/common/unicode",
+  "+third_party/icu/source/i18n/unicode",
+  "+url",
 ]
 
 
@@ -522,7 +518,6 @@ skip_child_includes = [
   "breakpad",
   "chrome_frame",
   "delegate_execute",
-  "googleurl",
   "metro_driver",
   "native_client_sdk",
   "o3d",
@@ -541,6 +536,7 @@ hooks = [
     # This downloads binaries for Native Client's newlib toolchain.
     # Done in lieu of building the toolchain from scratch as it can take
     # anywhere from 30 minutes to 4 hours depending on platform to build.
+    "name": "nacltools",
     "pattern": ".",
     "action": [
         "python", "src/build/download_nacl_toolchains.py",
@@ -553,6 +549,7 @@ hooks = [
     # at about the same rate that the chrome build deps change.
     # This script is a no-op except for linux users who have
     # target_arch=arm in their GYP_DEFINES.
+    "name": "sysroot",
     "pattern": ".",
     "action": ["python", "src/build/linux/install-arm-sysroot.py",
                "--linux-only"],
@@ -562,6 +559,7 @@ hooks = [
     # This sysroot updates at about the same rate that the chrome build deps
     # change. This script is a no-op except for linux users who are doing
     # official chrome builds.
+    "name": "sysroot",
     "pattern": ".",
     "action": [
         "python",
@@ -571,6 +569,7 @@ hooks = [
   },
   {
     # Same as above, but for 32-bit Linux.
+    "name": "sysroot",
     "pattern": ".",
     "action": [
         "python",
@@ -582,17 +581,20 @@ hooks = [
     # Pull clang on mac. If nothing changed, or on non-mac platforms, this takes
     # zero seconds to run. If something changed, it downloads a prebuilt clang,
     # which takes ~20s, but clang speeds up builds by more than 20s.
+    "name": "clang",
     "pattern": ".",
     "action": ["python", "src/tools/clang/scripts/update.py", "--mac-only"],
   },
   {
     # Update the cygwin mount on Windows.
+    "name": "cygwin",
     "pattern": ".",
     "action": ["python", "src/build/win/setup_cygwin_mount.py", "--win-only"],
   },
   {
     # Update LASTCHANGE. This is also run by export_tarball.py in
     # src/tools/export_tarball - please keep them in sync.
+    "name": "lastchange",
     "pattern": ".",
     "action": ["python", "src/build/util/lastchange.py",
                "-o", "src/build/util/LASTCHANGE"],
@@ -600,6 +602,7 @@ hooks = [
   {
     # Update LASTCHANGE.blink. This is also run by export_tarball.py in
     # src/tools/export_tarball - please keep them in sync.
+    "name": "lastchange",
     "pattern": ".",
     "action": ["python", "src/build/util/lastchange.py",
                "-s", "src/third_party/WebKit",
@@ -607,11 +610,13 @@ hooks = [
   },
   {
     # A change to a .gyp, .gypi, or to GYP itself should run the generator.
+    "name": "gyp",
     "pattern": ".",
     "action": ["python", "src/build/gyp_chromium"],
   },
   {
     # Check for landmines (reasons to clobber the build).
+    "name": "landmines",
     "pattern": ".",
     "action": ["python", "src/build/landmines.py"],
   },

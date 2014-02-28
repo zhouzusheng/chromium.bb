@@ -49,7 +49,7 @@ RenderRubyBase::~RenderRubyBase()
 
 RenderRubyBase* RenderRubyBase::createAnonymous(Document* document)
 {
-    RenderRubyBase* renderer = new (document->renderArena()) RenderRubyBase();
+    RenderRubyBase* renderer = new RenderRubyBase();
     renderer->setDocumentForAnonymous(document);
     return renderer;
 }
@@ -118,8 +118,8 @@ void RenderRubyBase::moveBlockChildren(RenderRubyBase* toBase, RenderObject* bef
     // If an anonymous block would be put next to another such block, then merge those.
     RenderObject* firstChildHere = firstChild();
     RenderObject* lastChildThere = toBase->lastChild();
-    if (firstChildHere->isAnonymousBlock() && firstChildHere->childrenInline() 
-            && lastChildThere && lastChildThere->isAnonymousBlock() && lastChildThere->childrenInline()) {            
+    if (firstChildHere->isAnonymousBlock() && firstChildHere->childrenInline()
+            && lastChildThere && lastChildThere->isAnonymousBlock() && lastChildThere->childrenInline()) {
         RenderBlock* anonBlockHere = toRenderBlock(firstChildHere);
         RenderBlock* anonBlockThere = toRenderBlock(lastChildThere);
         anonBlockHere->moveAllChildrenTo(anonBlockThere, anonBlockThere->children());

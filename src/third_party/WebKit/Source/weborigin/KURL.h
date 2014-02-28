@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef KURL_h
@@ -29,6 +29,7 @@
 #include "weborigin/WebOriginExport.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
+#include "wtf/HashTableDeletedValueType.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/TextEncoding.h"
@@ -78,7 +79,7 @@ public:
     // For conversions from other structures that have already parsed and
     // canonicalized the URL. The input must be exactly what KURL would have
     // done with the same input.
-    KURL(const CString& canonicalSpec, const url_parse::Parsed&, bool isValid);
+    KURL(const AtomicString& canonicalString, const url_parse::Parsed&, bool isValid);
 
     String strippedForUseAsReferrer() const;
 
@@ -176,7 +177,6 @@ public:
     void print() const;
 #endif
 
-    void reportMemoryUsage(MemoryObjectInfo*) const;
     bool isSafeToSendToAnotherThread() const;
 
 private:

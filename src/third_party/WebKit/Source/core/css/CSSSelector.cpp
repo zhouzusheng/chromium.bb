@@ -34,6 +34,7 @@
 #include "wtf/HashMap.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
+#include "wtf/text/StringHash.h"
 
 namespace WebCore {
 
@@ -102,10 +103,12 @@ inline unsigned CSSSelector::specificityForOneSelector() const
     case Contain:
     case Begin:
     case End:
-        // FIXME: PsuedoAny should base the specificity on the sub-selectors.
+        // FIXME: PseudoAny should base the specificity on the sub-selectors.
         // See http://lists.w3.org/Archives/Public/www-style/2010Sep/0530.html
-        if (pseudoType() == PseudoNot && selectorList())
+        if (pseudoType() == PseudoNot) {
+            ASSERT(selectorList());
             return selectorList()->first()->specificityForOneSelector();
+        }
         return 0x100;
     case Tag:
         return (tagQName().localName() != starAtom) ? 1 : 0;
@@ -161,6 +164,8 @@ PseudoId CSSSelector::pseudoId(PseudoType type)
         return BEFORE;
     case PseudoAfter:
         return AFTER;
+    case PseudoBackdrop:
+        return BACKDROP;
     case PseudoScrollbar:
         return SCROLLBAR;
     case PseudoScrollbarButton:
@@ -181,8 +186,6 @@ PseudoId CSSSelector::pseudoId(PseudoType type)
         return FULL_SCREEN_DOCUMENT;
     case PseudoFullScreenAncestor:
         return FULL_SCREEN_ANCESTOR;
-    case PseudoAnimatingFullScreenTransition:
-        return ANIMATING_FULL_SCREEN_TRANSITION;
     case PseudoUnknown:
     case PseudoEmpty:
     case PseudoFirstChild:
@@ -246,7 +249,10 @@ PseudoId CSSSelector::pseudoId(PseudoType type)
     case PseudoPastCue:
     case PseudoSeamlessDocument:
     case PseudoDistributed:
+    case PseudoPart:
     case PseudoUnresolved:
+    case PseudoContent:
+    case PseudoHost:
         return NOPSEUDO;
     case PseudoNotParsed:
         ASSERT_NOT_REACHED();
@@ -257,13 +263,14 @@ PseudoId CSSSelector::pseudoId(PseudoType type)
     return NOPSEUDO;
 }
 
-static HashMap<AtomicStringImpl*, CSSSelector::PseudoType>* nameToPseudoTypeMap()
+static HashMap<StringImpl*, CSSSelector::PseudoType>* nameToPseudoTypeMap()
 {
     DEFINE_STATIC_LOCAL(AtomicString, active, ("active", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, after, ("after", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, any, ("-webkit-any(", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, anyLink, ("-webkit-any-link", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, autofill, ("-webkit-autofill", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(AtomicString, backdrop, ("backdrop", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, before, ("before", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, checked, ("checked", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, defaultString, ("default", AtomicString::ConstructFromLiteral));
@@ -326,8 +333,8 @@ static HashMap<AtomicStringImpl*, CSSSelector::PseudoType>* nameToPseudoTypeMap(
     DEFINE_STATIC_LOCAL(AtomicString, fullScreen, ("-webkit-full-screen", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, fullScreenDocument, ("-webkit-full-screen-document", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, fullScreenAncestor, ("-webkit-full-screen-ancestor", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(AtomicString, animatingFullScreenTransition, ("-webkit-animating-full-screen-transition", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, cue, ("cue(", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(AtomicString, cueWithoutParen, ("cue", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, futureCue, ("future", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, pastCue, ("past", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, seamlessDocument, ("-webkit-seamless-document", AtomicString::ConstructFromLiteral));
@@ -335,16 +342,21 @@ static HashMap<AtomicStringImpl*, CSSSelector::PseudoType>* nameToPseudoTypeMap(
     DEFINE_STATIC_LOCAL(AtomicString, inRange, ("in-range", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, outOfRange, ("out-of-range", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, scope, ("scope", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(AtomicString, part, ("part(", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, unresolved, ("unresolved", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(AtomicString, content, ("content", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(AtomicString, host, ("host", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(AtomicString, hostWithParams, ("host(", AtomicString::ConstructFromLiteral));
 
-    static HashMap<AtomicStringImpl*, CSSSelector::PseudoType>* nameToPseudoType = 0;
+    static HashMap<StringImpl*, CSSSelector::PseudoType>* nameToPseudoType = 0;
     if (!nameToPseudoType) {
-        nameToPseudoType = new HashMap<AtomicStringImpl*, CSSSelector::PseudoType>;
+        nameToPseudoType = new HashMap<StringImpl*, CSSSelector::PseudoType>;
         nameToPseudoType->set(active.impl(), CSSSelector::PseudoActive);
         nameToPseudoType->set(after.impl(), CSSSelector::PseudoAfter);
         nameToPseudoType->set(anyLink.impl(), CSSSelector::PseudoAnyLink);
         nameToPseudoType->set(any.impl(), CSSSelector::PseudoAny);
         nameToPseudoType->set(autofill.impl(), CSSSelector::PseudoAutofill);
+        nameToPseudoType->set(backdrop.impl(), CSSSelector::PseudoBackdrop);
         nameToPseudoType->set(before.impl(), CSSSelector::PseudoBefore);
         nameToPseudoType->set(checked.impl(), CSSSelector::PseudoChecked);
         nameToPseudoType->set(defaultString.impl(), CSSSelector::PseudoDefault);
@@ -407,15 +419,21 @@ static HashMap<AtomicStringImpl*, CSSSelector::PseudoType>* nameToPseudoTypeMap(
         nameToPseudoType->set(fullScreen.impl(), CSSSelector::PseudoFullScreen);
         nameToPseudoType->set(fullScreenDocument.impl(), CSSSelector::PseudoFullScreenDocument);
         nameToPseudoType->set(fullScreenAncestor.impl(), CSSSelector::PseudoFullScreenAncestor);
-        nameToPseudoType->set(animatingFullScreenTransition.impl(), CSSSelector::PseudoAnimatingFullScreenTransition);
         nameToPseudoType->set(cue.impl(), CSSSelector::PseudoCue);
+        nameToPseudoType->set(cueWithoutParen.impl(), CSSSelector::PseudoWebKitCustomElement);
         nameToPseudoType->set(futureCue.impl(), CSSSelector::PseudoFutureCue);
         nameToPseudoType->set(pastCue.impl(), CSSSelector::PseudoPastCue);
         nameToPseudoType->set(seamlessDocument.impl(), CSSSelector::PseudoSeamlessDocument);
         nameToPseudoType->set(distributed.impl(), CSSSelector::PseudoDistributed);
         nameToPseudoType->set(inRange.impl(), CSSSelector::PseudoInRange);
         nameToPseudoType->set(outOfRange.impl(), CSSSelector::PseudoOutOfRange);
-        if (RuntimeEnabledFeatures::customDOMElementsEnabled())
+        if (RuntimeEnabledFeatures::shadowDOMEnabled()) {
+            nameToPseudoType->set(part.impl(), CSSSelector::PseudoPart);
+            nameToPseudoType->set(host.impl(), CSSSelector::PseudoHost);
+            nameToPseudoType->set(hostWithParams.impl(), CSSSelector::PseudoHost);
+            nameToPseudoType->set(content.impl(), CSSSelector::PseudoContent);
+        }
+        if (RuntimeEnabledFeatures::customDOMElementsEnabled() || RuntimeEnabledFeatures::embedderCustomElementsEnabled())
             nameToPseudoType->set(unresolved.impl(), CSSSelector::PseudoUnresolved);
     }
     return nameToPseudoType;
@@ -425,8 +443,8 @@ CSSSelector::PseudoType CSSSelector::parsePseudoType(const AtomicString& name)
 {
     if (name.isNull())
         return PseudoUnknown;
-    HashMap<AtomicStringImpl*, CSSSelector::PseudoType>* nameToPseudoType = nameToPseudoTypeMap();
-    HashMap<AtomicStringImpl*, CSSSelector::PseudoType>::iterator slot = nameToPseudoType->find(name.impl());
+    HashMap<StringImpl*, CSSSelector::PseudoType>* nameToPseudoType = nameToPseudoTypeMap();
+    HashMap<StringImpl*, CSSSelector::PseudoType>::iterator slot = nameToPseudoType->find(name.impl());
 
     if (slot != nameToPseudoType->end())
         return slot->value;
@@ -457,6 +475,7 @@ void CSSSelector::extractPseudoType() const
     case PseudoFirstLetter:
     case PseudoFirstLine:
         compat = true;
+    case PseudoBackdrop:
     case PseudoDistributed:
     case PseudoResizer:
     case PseudoScrollbar:
@@ -468,6 +487,8 @@ void CSSSelector::extractPseudoType() const
     case PseudoSelection:
     case PseudoUserAgentCustomElement:
     case PseudoWebKitCustomElement:
+    case PseudoPart:
+    case PseudoContent:
         element = true;
         break;
     case PseudoUnknown:
@@ -525,12 +546,12 @@ void CSSSelector::extractPseudoType() const
     case PseudoFullScreen:
     case PseudoFullScreenDocument:
     case PseudoFullScreenAncestor:
-    case PseudoAnimatingFullScreenTransition:
     case PseudoSeamlessDocument:
     case PseudoInRange:
     case PseudoOutOfRange:
     case PseudoFutureCue:
     case PseudoPastCue:
+    case PseudoHost:
     case PseudoUnresolved:
         break;
     case PseudoFirstPage:
@@ -608,8 +629,8 @@ String CSSSelector::selectorText(const String& rightSide) const
 
             switch (cs->pseudoType()) {
             case PseudoNot:
-                if (const CSSSelectorList* selectorList = cs->selectorList())
-                    str.append(selectorList->first()->selectorText());
+                ASSERT(cs->selectorList());
+                str.append(cs->selectorList()->first()->selectorText());
                 str.append(')');
                 break;
             case PseudoLang:
@@ -630,12 +651,37 @@ String CSSSelector::selectorText(const String& rightSide) const
                 str.append(')');
                 break;
             }
+            case PseudoHost: {
+                if (cs->selectorList()) {
+                    const CSSSelector* firstSubSelector = cs->selectorList()->first();
+                    for (const CSSSelector* subSelector = firstSubSelector; subSelector; subSelector = CSSSelectorList::next(subSelector)) {
+                        if (subSelector != firstSubSelector)
+                            str.append(',');
+                        str.append(subSelector->selectorText());
+                    }
+                    str.append(')');
+                }
+                break;
+            }
             default:
                 break;
             }
         } else if (cs->m_match == CSSSelector::PseudoElement) {
             str.appendLiteral("::");
             str.append(cs->value());
+
+            switch (cs->pseudoType()) {
+            case PseudoPart:
+                str.append(cs->argument());
+                str.append(')');
+                break;
+            case PseudoContent:
+                if (cs->relation() == CSSSelector::SubSelector && cs->tagHistory())
+                    return cs->tagHistory()->selectorText() + str.toString() + rightSide;
+                break;
+            default:
+                break;
+            }
         } else if (cs->isAttributeSelector()) {
             str.append('[');
             const AtomicString& prefix = cs->attribute().prefix();
@@ -683,11 +729,11 @@ String CSSSelector::selectorText(const String& rightSide) const
     if (const CSSSelector* tagHistory = cs->tagHistory()) {
         switch (cs->relation()) {
         case CSSSelector::Descendant:
-            if (cs->relationIsForShadowDistributed())
+            if (cs->relationIsAffectedByPseudoContent() && tagHistory->pseudoType() != CSSSelector::PseudoContent)
                 return tagHistory->selectorText("::-webkit-distributed(" + str.toString() + rightSide + ")");
             return tagHistory->selectorText(" " + str.toString() + rightSide);
         case CSSSelector::Child:
-            if (cs->relationIsForShadowDistributed())
+            if (cs->relationIsAffectedByPseudoContent() && tagHistory->pseudoType() != CSSSelector::PseudoContent)
                 return tagHistory->selectorText("::-webkit-distributed(> " + str.toString() + rightSide + ")");
             return tagHistory->selectorText(" > " + str.toString() + rightSide);
         case CSSSelector::DirectAdjacent:
@@ -721,6 +767,78 @@ void CSSSelector::setSelectorList(PassOwnPtr<CSSSelectorList> selectorList)
     m_data.m_rareData->m_selectorList = selectorList;
 }
 
+void CSSSelector::setMatchUserAgentOnly()
+{
+    createRareData();
+    m_data.m_rareData->m_matchUserAgentOnly = true;
+}
+
+static bool validateSubSelector(const CSSSelector* selector)
+{
+    switch (selector->m_match) {
+    case CSSSelector::Tag:
+    case CSSSelector::Id:
+    case CSSSelector::Class:
+    case CSSSelector::Exact:
+    case CSSSelector::Set:
+    case CSSSelector::List:
+    case CSSSelector::Hyphen:
+    case CSSSelector::Contain:
+    case CSSSelector::Begin:
+    case CSSSelector::End:
+        return true;
+    case CSSSelector::PseudoElement:
+        return false;
+    case CSSSelector::PagePseudoClass:
+    case CSSSelector::PseudoClass:
+        break;
+    }
+
+    switch (selector->pseudoType()) {
+    case CSSSelector::PseudoEmpty:
+    case CSSSelector::PseudoLink:
+    case CSSSelector::PseudoVisited:
+    case CSSSelector::PseudoTarget:
+    case CSSSelector::PseudoEnabled:
+    case CSSSelector::PseudoDisabled:
+    case CSSSelector::PseudoChecked:
+    case CSSSelector::PseudoIndeterminate:
+    case CSSSelector::PseudoNthChild:
+    case CSSSelector::PseudoNthLastChild:
+    case CSSSelector::PseudoNthOfType:
+    case CSSSelector::PseudoNthLastOfType:
+    case CSSSelector::PseudoFirstChild:
+    case CSSSelector::PseudoLastChild:
+    case CSSSelector::PseudoFirstOfType:
+    case CSSSelector::PseudoLastOfType:
+    case CSSSelector::PseudoOnlyOfType:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool CSSSelector::isCompound() const
+{
+    if (!validateSubSelector(this))
+        return false;
+
+    const CSSSelector* prevSubSelector = this;
+    const CSSSelector* subSelector = tagHistory();
+
+    while (subSelector) {
+        if (prevSubSelector->relation() != CSSSelector::SubSelector)
+            return false;
+        if (!validateSubSelector(subSelector))
+            return false;
+
+        prevSubSelector = subSelector;
+        subSelector = subSelector->tagHistory();
+    }
+
+    return true;
+}
+
 bool CSSSelector::parseNth() const
 {
     if (!m_hasRareData)
@@ -737,12 +855,13 @@ bool CSSSelector::matchNth(int count) const
     return m_data.m_rareData->matchNth(count);
 }
 
-CSSSelector::RareData::RareData(PassRefPtr<AtomicStringImpl> value)
+CSSSelector::RareData::RareData(PassRefPtr<StringImpl> value)
     : m_value(value.leakRef())
     , m_a(0)
     , m_b(0)
     , m_attribute(anyQName())
     , m_argument(nullAtom)
+    , m_matchUserAgentOnly(0)
 {
 }
 

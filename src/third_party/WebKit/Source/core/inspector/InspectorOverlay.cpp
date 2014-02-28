@@ -35,8 +35,6 @@
 #include "bindings/v8/ScriptSourceCode.h"
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
-#include "core/dom/StyledElement.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/inspector/InspectorClient.h"
 #include "core/inspector/InspectorOverlayHost.h"
 #include "core/loader/DocumentLoader.h"
@@ -49,12 +47,11 @@
 #include "core/page/Settings.h"
 #include "core/platform/JSONValues.h"
 #include "core/platform/PlatformMouseEvent.h"
-#include "core/platform/PlatformTouchEvent.h"
 #include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/rendering/RenderBoxModelObject.h"
 #include "core/rendering/RenderInline.h"
 #include "core/rendering/RenderObject.h"
-#include <wtf/text/StringBuilder.h>
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -234,6 +231,8 @@ InspectorOverlay::InspectorOverlay(Page* page, InspectorClient* client)
     , m_drawViewSizeWithGrid(false)
     , m_timer(this, &InspectorOverlay::onTimer)
     , m_overlayHost(InspectorOverlayHost::create())
+    , m_overrides(0)
+    , m_overridesTopOffset(0)
 {
 }
 
@@ -256,18 +255,37 @@ void InspectorOverlay::invalidate()
     m_client->highlight();
 }
 
+bool InspectorOverlay::handleGestureEvent(const PlatformGestureEvent& event)
+{
+    if (isEmpty())
+        return false;
+
+    return overlayPage()->mainFrame()->eventHandler()->handleGestureEvent(event);
+}
+
 bool InspectorOverlay::handleMouseEvent(const PlatformMouseEvent& event)
 {
     if (isEmpty())
         return false;
 
     EventHandler* eventHandler = overlayPage()->mainFrame()->eventHandler();
+    bool result;
     switch (event.type()) {
-    case PlatformEvent::MouseMoved: return eventHandler->mouseMoved(event);
-    case PlatformEvent::MousePressed: return eventHandler->handleMousePressEvent(event);
-    case PlatformEvent::MouseReleased: return eventHandler->handleMouseReleaseEvent(event);
-    default: return false;
+    case PlatformEvent::MouseMoved:
+        result = eventHandler->mouseMoved(event);
+        break;
+    case PlatformEvent::MousePressed:
+        result = eventHandler->handleMousePressEvent(event);
+        break;
+    case PlatformEvent::MouseReleased:
+        result = eventHandler->handleMouseReleaseEvent(event);
+        break;
+    default:
+        return false;
     }
+
+    overlayPage()->mainFrame()->document()->updateLayout();
+    return result;
 }
 
 bool InspectorOverlay::handleTouchEvent(const PlatformTouchEvent& event)
@@ -314,6 +332,25 @@ void InspectorOverlay::setInspectModeEnabled(bool enabled)
     update();
 }
 
+void InspectorOverlay::setOverride(OverrideType type, bool enabled)
+{
+    bool currentEnabled = m_overrides & type;
+    if (currentEnabled == enabled)
+        return;
+    if (enabled)
+        m_overrides |= type;
+    else
+        m_overrides &= ~type;
+    update();
+}
+
+void InspectorOverlay::setOverridesTopOffset(int offset)
+{
+    m_overridesTopOffset = offset;
+    if (m_overrides)
+        update();
+}
+
 void InspectorOverlay::hideHighlight()
 {
     m_highlightNode.clear();
@@ -352,7 +389,7 @@ Node* InspectorOverlay::highlightedNode() const
 
 bool InspectorOverlay::isEmpty()
 {
-    bool hasAlwaysVisibleElements = m_highlightNode || m_eventTargetNode || m_highlightQuad || !m_size.isEmpty() || m_drawViewSize;
+    bool hasAlwaysVisibleElements = m_highlightNode || m_eventTargetNode || m_highlightQuad || m_overrides || !m_size.isEmpty() || m_drawViewSize;
     bool hasInvisibleInInspectModeElements = !m_pausedInDebuggerMessage.isNull();
     return !(hasAlwaysVisibleElements || (hasInvisibleInInspectModeElements && !m_inspectModeEnabled));
 }
@@ -384,6 +421,7 @@ void InspectorOverlay::update()
     if (!m_inspectModeEnabled)
         drawPausedInDebuggerMessage();
     drawViewSize();
+    drawOverridesMessage();
 
     // Position DOM elements.
     overlayPage()->mainFrame()->document()->recalcStyle(Node::Force);
@@ -404,6 +442,8 @@ void InspectorOverlay::hide()
     m_size = IntSize();
     m_drawViewSize = false;
     m_drawViewSizeWithGrid = false;
+    m_overrides = 0;
+    m_overridesTopOffset = 0;
     update();
 }
 
@@ -479,7 +519,7 @@ void InspectorOverlay::drawNodeHighlight()
         HashSet<AtomicString> usedClassNames;
         if (element->hasClass() && element->isStyledElement()) {
             StringBuilder classNames;
-            const SpaceSplitString& classNamesString = static_cast<StyledElement*>(element)->classNames();
+            const SpaceSplitString& classNamesString = element->classNames();
             size_t classNameCount = classNamesString.size();
             for (size_t i = 0; i < classNameCount; ++i) {
                 const AtomicString& className = classNamesString[i];
@@ -525,6 +565,15 @@ void InspectorOverlay::drawViewSize()
         evaluateInOverlay("drawViewSize", m_drawViewSizeWithGrid ? "true" : "false");
 }
 
+void InspectorOverlay::drawOverridesMessage()
+{
+    RefPtr<JSONObject> data = JSONObject::create();
+    if (!m_drawViewSize)
+        data->setNumber("overrides", m_overrides);
+    data->setNumber("topOffset", m_overridesTopOffset);
+    evaluateInOverlay("drawOverridesMessage", data.release());
+}
+
 Page* InspectorOverlay::overlayPage()
 {
     if (m_overlayPage)
@@ -564,7 +613,7 @@ Page* InspectorOverlay::overlayPage()
     ASSERT(loader->activeDocumentLoader());
     DocumentWriter* writer = loader->activeDocumentLoader()->beginWriting("text/html", "UTF-8");
     writer->addData(reinterpret_cast<const char*>(InspectorOverlayPage_html), sizeof(InspectorOverlayPage_html));
-    writer->end();
+    loader->activeDocumentLoader()->endWriting(writer);
     v8::HandleScope handleScope;
     v8::Handle<v8::Context> frameContext = frame->script()->currentWorldContext();
     v8::Context::Scope contextScope(frameContext);
@@ -616,20 +665,6 @@ void InspectorOverlay::onTimer(Timer<InspectorOverlay>*)
 {
     m_drawViewSize = false;
     update();
-}
-
-void InspectorOverlay::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::InspectorOverlay);
-    info.addMember(m_page, "page");
-    info.addWeakPointer(m_client);
-    info.addMember(m_pausedInDebuggerMessage, "pausedInDebuggerMessage");
-    info.addMember(m_highlightNode, "highlightNode");
-    info.addMember(m_nodeHighlightConfig, "nodeHighlightConfig");
-    info.addMember(m_highlightQuad, "highlightQuad");
-    info.addMember(m_overlayPage, "overlayPage");
-    info.addMember(m_quadHighlightConfig, "quadHighlightConfig");
-    info.addMember(m_size, "size");
 }
 
 void InspectorOverlay::freePage()

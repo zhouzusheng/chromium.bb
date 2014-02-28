@@ -22,8 +22,8 @@
 #define Rect_h
 
 #include "core/css/CSSPrimitiveValue.h"
-#include <wtf/RefPtr.h>
-#include <wtf/text/StringBuilder.h>
+#include "wtf/RefPtr.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -77,7 +77,7 @@ private:
 class Rect : public RectBase, public RefCounted<Rect> {
 public:
     static PassRefPtr<Rect> create() { return adoptRef(new Rect); }
-    
+
     PassRefPtr<Rect> cloneForCSSOM() const { return adoptRef(new Rect(*this)); }
 
     String cssText() const
@@ -105,7 +105,7 @@ private:
 class Quad : public RectBase, public RefCounted<Quad> {
 public:
     static PassRefPtr<Quad> create() { return adoptRef(new Quad); }
-    
+
     PassRefPtr<Quad> cloneForCSSOM() const { return adoptRef(new Quad(*this)); }
 
     String cssText() const

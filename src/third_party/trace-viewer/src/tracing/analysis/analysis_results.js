@@ -10,6 +10,7 @@ base.require('tracing.analysis.util');
 base.require('tracing.analysis.analysis_link');
 base.require('tracing.analysis.generic_object_view');
 base.require('ui');
+
 base.exportTo('tracing.analysis', function() {
   var AnalysisResults = ui.define('div');
 
@@ -108,7 +109,7 @@ base.exportTo('tracing.analysis', function() {
 
       this.appendTableCell_(table, row, 0, label);
 
-      if (opt_value) {
+      if (opt_value !== undefined) {
         var objectView = new tracing.analysis.GenericObjectView();
         objectView.object = opt_value;
         objectView.classList.add('analysis-table-col-1');
@@ -196,8 +197,13 @@ base.exportTo('tracing.analysis', function() {
       }
 
       if (opt_duration !== undefined) {
-        this.appendTableCellWithTooltip_(table, row, 1,
-            tracing.analysis.tsRound(opt_duration) + ' ms', tooltip);
+        if (opt_duration instanceof Array) {
+          this.appendTableCellWithTooltip_(table, row, 1,
+              '[' + opt_duration.join(', ') + ']', tooltip);
+        } else {
+          this.appendTableCellWithTooltip_(table, row, 1,
+              tracing.analysis.tsRound(opt_duration) + ' ms', tooltip);
+        }
       } else {
         this.appendTableCell_(table, row, 1, '');
       }

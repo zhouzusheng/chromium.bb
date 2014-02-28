@@ -28,6 +28,7 @@
 
 #include "modules/webaudio/DefaultAudioDestinationNode.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/platform/Logging.h"
 #include "wtf/MainThread.h"
@@ -35,7 +36,7 @@
 const unsigned EnabledInputChannels = 2;
 
 namespace WebCore {
-    
+
 DefaultAudioDestinationNode::DefaultAudioDestinationNode(AudioContext* context)
     : AudioDestinationNode(context, AudioDestination::hardwareSampleRate())
     , m_numberOfInputChannels(0)
@@ -53,7 +54,7 @@ DefaultAudioDestinationNode::~DefaultAudioDestinationNode()
 
 void DefaultAudioDestinationNode::initialize()
 {
-    ASSERT(isMainThread()); 
+    ASSERT(isMainThread());
     if (isInitialized())
         return;
 
@@ -63,7 +64,7 @@ void DefaultAudioDestinationNode::initialize()
 
 void DefaultAudioDestinationNode::uninitialize()
 {
-    ASSERT(isMainThread()); 
+    ASSERT(isMainThread());
     if (!isInitialized())
         return;
 
@@ -77,7 +78,7 @@ void DefaultAudioDestinationNode::createDestination()
 {
     float hardwareSampleRate = AudioDestination::hardwareSampleRate();
     LOG(WebAudio, ">>>> hardwareSampleRate = %f\n", hardwareSampleRate);
-    
+
     m_destination = AudioDestination::create(*this, m_inputDeviceId, m_numberOfInputChannels, channelCount(), hardwareSampleRate);
 }
 
@@ -109,7 +110,7 @@ unsigned long DefaultAudioDestinationNode::maxChannelCount() const
     return AudioDestination::maxChannelCount();
 }
 
-void DefaultAudioDestinationNode::setChannelCount(unsigned long channelCount, ExceptionCode& ec)
+void DefaultAudioDestinationNode::setChannelCount(unsigned long channelCount, ExceptionState& es)
 {
     // The channelCount for the input to this node controls the actual number of channels we
     // send to the audio hardware. It can only be set depending on the maximum number of
@@ -118,14 +119,14 @@ void DefaultAudioDestinationNode::setChannelCount(unsigned long channelCount, Ex
     ASSERT(isMainThread());
 
     if (!maxChannelCount() || channelCount > maxChannelCount()) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
 
     unsigned long oldChannelCount = this->channelCount();
-    AudioNode::setChannelCount(channelCount, ec);
+    AudioNode::setChannelCount(channelCount, es);
 
-    if (!ec && this->channelCount() != oldChannelCount && isInitialized()) {
+    if (!es.hadException() && this->channelCount() != oldChannelCount && isInitialized()) {
         // Re-create destination.
         m_destination->stop();
         createDestination();

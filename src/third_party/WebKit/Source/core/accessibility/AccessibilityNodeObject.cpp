@@ -33,6 +33,7 @@
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Text.h"
 #include "core/dom/UserGestureIndicator.h"
+#include "core/html/HTMLAnchorElement.h"
 #include "core/html/HTMLFrameElementBase.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLLabelElement.h"
@@ -200,7 +201,7 @@ AccessibilityRole AccessibilityNodeObject::determineAccessibilityRole()
         HTMLSelectElement* selectElement = toHTMLSelectElement(node());
         return selectElement->multiple() ? ListBoxRole : PopUpButtonRole;
     }
-    if (node()->hasTagName(textareaTag))
+    if (isHTMLTextAreaElement(node()))
         return TextAreaRole;
     if (headingLevel())
         return HeadingRole;
@@ -208,9 +209,9 @@ AccessibilityRole AccessibilityNodeObject::determineAccessibilityRole()
         return DivRole;
     if (node()->hasTagName(pTag))
         return ParagraphRole;
-    if (node()->hasTagName(labelTag))
+    if (isHTMLLabelElement(node()))
         return LabelRole;
-    if (node()->isFocusable())
+    if (node()->isElementNode() && toElement(node())->isFocusable())
         return GroupRole;
 
     return UnknownRole;
@@ -350,8 +351,8 @@ HTMLLabelElement* AccessibilityNodeObject::labelForElement(Element* element) con
     }
 
     for (Element* parent = element->parentElement(); parent; parent = parent->parentElement()) {
-        if (parent->hasTagName(labelTag))
-            return static_cast<HTMLLabelElement*>(parent);
+        if (isHTMLLabelElement(parent))
+            return toHTMLLabelElement(parent);
     }
 
     return 0;
@@ -581,7 +582,7 @@ bool AccessibilityNodeObject::isNativeTextControl() const
     if (!node)
         return false;
 
-    if (node->hasTagName(textareaTag))
+    if (isHTMLTextAreaElement(node))
         return true;
 
     if (node->hasTagName(inputTag)) {
@@ -696,7 +697,7 @@ bool AccessibilityNodeObject::isReadOnly() const
     if (!node)
         return true;
 
-    if (node->hasTagName(textareaTag))
+    if (isHTMLTextAreaElement(node))
         return toHTMLFormControlElement(node)->isReadOnly();
 
     if (node->hasTagName(inputTag)) {
@@ -738,7 +739,7 @@ bool AccessibilityNodeObject::canSetFocusAttribute() const
     if (isDisabledFormControl(node))
         return false;
 
-    return node->supportsFocus();
+    return node->isElementNode() && toElement(node)->supportsFocus();
 }
 
 bool AccessibilityNodeObject::canvasHasFallbackContent() const
@@ -830,7 +831,7 @@ String AccessibilityNodeObject::text() const
     if (!node)
         return String();
 
-    if (isNativeTextControl() && (node->hasTagName(textareaTag) || node->hasTagName(inputTag)))
+    if (isNativeTextControl() && (isHTMLTextAreaElement(node) || node->hasTagName(inputTag)))
         return toHTMLTextFormControlElement(node)->value();
 
     if (!node->isElementNode())
@@ -865,7 +866,7 @@ void AccessibilityNodeObject::colorValue(int& r, int& g, int& b) const
         return;
 
     // HTMLInputElement::value always returns a string parseable by Color().
-    Color color(input->value());
+    StyleColor color(input->value());
     r = color.red();
     g = color.green();
     b = color.blue();
@@ -1038,7 +1039,7 @@ String AccessibilityNodeObject::textUnderElement() const
     if (node && node->isTextNode())
         return toText(node)->wholeText();
 
-    String result;
+    StringBuilder builder;
     for (AccessibilityObject* child = firstChild(); child; child = child->nextSibling()) {
         if (!shouldUseAccessiblityObjectInnerText(child))
             continue;
@@ -1047,15 +1048,15 @@ String AccessibilityNodeObject::textUnderElement() const
             Vector<AccessibilityText> textOrder;
             toAccessibilityNodeObject(child)->alternativeText(textOrder);
             if (textOrder.size() > 0) {
-                result.append(textOrder[0].text);
+                builder.append(textOrder[0].text);
                 continue;
             }
         }
 
-        result.append(child->textUnderElement());
+        builder.append(child->textUnderElement());
     }
 
-    return result;
+    return builder.toString();
 }
 
 String AccessibilityNodeObject::accessibilityDescription() const
@@ -1183,6 +1184,10 @@ String AccessibilityNodeObject::helpText() const
 
 LayoutRect AccessibilityNodeObject::elementRect() const
 {
+    // First check if it has a custom rect, for example if this element is tied to a canvas path.
+    if (!m_explicitElementRect.isEmpty())
+        return m_explicitElementRect;
+
     // AccessibilityNodeObjects have no mechanism yet to return a size or position.
     // For now, let's return the position of the ancestor that does have a position,
     // and make it the width of that parent, and about the height of a line of text, so that it's clear the object is a child of the parent.
@@ -1368,7 +1373,7 @@ Element* AccessibilityNodeObject::anchorElement() const
     // search up the DOM tree for an anchor element
     // NOTE: this assumes that any non-image with an anchor is an HTMLAnchorElement
     for ( ; node; node = node->parentNode()) {
-        if (node->hasTagName(aTag) || (node->renderer() && cache->getOrCreate(node->renderer())->isAnchor()))
+        if (isHTMLAnchorElement(node) || (node->renderer() && cache->getOrCreate(node->renderer())->isAnchor()))
             return toElement(node);
     }
 

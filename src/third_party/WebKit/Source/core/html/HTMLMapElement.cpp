@@ -62,8 +62,8 @@ bool HTMLMapElement::mapMouseEvent(LayoutPoint location, const LayoutSize& size,
     HTMLAreaElement* defaultArea = 0;
     Element* element = this;
     while ((element = ElementTraversal::next(element, this))) {
-        if (element->hasTagName(areaTag)) {
-            HTMLAreaElement* areaElt = static_cast<HTMLAreaElement*>(element);
+        if (isHTMLAreaElement(element)) {
+            HTMLAreaElement* areaElt = toHTMLAreaElement(element);
             if (areaElt->isDefault()) {
                 if (!defaultArea)
                     defaultArea = areaElt;
@@ -71,7 +71,7 @@ bool HTMLMapElement::mapMouseEvent(LayoutPoint location, const LayoutSize& size,
                 return true;
         }
     }
-    
+
     if (defaultArea) {
         result.setInnerNode(defaultArea);
         result.setURLElement(defaultArea);
@@ -85,7 +85,7 @@ HTMLImageElement* HTMLMapElement::imageElement()
     for (unsigned i = 0; Node* curr = images->item(i); i++) {
         if (!curr->hasTagName(imgTag))
             continue;
-        
+
         // The HTMLImageElement's useMap() value includes the '#' symbol at the beginning,
         // which has to be stripped off.
         HTMLImageElement* imageElement = toHTMLImageElement(curr);
@@ -93,8 +93,8 @@ HTMLImageElement* HTMLMapElement::imageElement()
         if (equalIgnoringCase(useMapName, m_name))
             return imageElement;
     }
-    
-    return 0;    
+
+    return 0;
 }
 
 void HTMLMapElement::parseAttribute(const QualifiedName& name, const AtomicString& value)

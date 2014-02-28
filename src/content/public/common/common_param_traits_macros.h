@@ -13,15 +13,16 @@
 #include "content/public/common/password_form.h"
 #include "content/public/common/security_style.h"
 #include "content/public/common/ssl_status.h"
+#include "content/public/common/webplugininfo.h"
 #include "ipc/ipc_message_macros.h"
 #include "net/base/request_priority.h"
 #include "third_party/WebKit/public/platform/WebPoint.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/public/web/WebWindowFeatures.h"
 #include "ui/base/window_open_disposition.h"
 #include "webkit/common/webpreferences.h"
-#include "webkit/plugins/webplugininfo.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
@@ -76,7 +77,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::SSLStatus)
   IPC_STRUCT_TRAITS_MEMBER(content_status)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(webkit::WebPluginMimeType)
+IPC_STRUCT_TRAITS_BEGIN(content::WebPluginMimeType)
   IPC_STRUCT_TRAITS_MEMBER(mime_type)
   IPC_STRUCT_TRAITS_MEMBER(file_extensions)
   IPC_STRUCT_TRAITS_MEMBER(description)
@@ -84,7 +85,7 @@ IPC_STRUCT_TRAITS_BEGIN(webkit::WebPluginMimeType)
   IPC_STRUCT_TRAITS_MEMBER(additional_param_values)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(webkit::WebPluginInfo)
+IPC_STRUCT_TRAITS_BEGIN(content::WebPluginInfo)
   IPC_STRUCT_TRAITS_MEMBER(name)
   IPC_STRUCT_TRAITS_MEMBER(path)
   IPC_STRUCT_TRAITS_MEMBER(version)
@@ -174,7 +175,6 @@ IPC_STRUCT_TRAITS_BEGIN(WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(password_echo_enabled)
   IPC_STRUCT_TRAITS_MEMBER(css_sticky_position_enabled)
   IPC_STRUCT_TRAITS_MEMBER(css_shaders_enabled)
-  IPC_STRUCT_TRAITS_MEMBER(css_grid_layout_enabled)
   IPC_STRUCT_TRAITS_MEMBER(lazy_layout_enabled)
   IPC_STRUCT_TRAITS_MEMBER(region_based_columns_enabled)
   IPC_STRUCT_TRAITS_MEMBER(touch_enabled)
@@ -201,8 +201,31 @@ IPC_STRUCT_TRAITS_BEGIN(WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(user_gesture_required_for_media_playback)
   IPC_STRUCT_TRAITS_MEMBER(default_video_poster_url)
   IPC_STRUCT_TRAITS_MEMBER(support_deprecated_target_density_dpi)
+  IPC_STRUCT_TRAITS_MEMBER(use_legacy_background_size_shorthand_behavior)
+  IPC_STRUCT_TRAITS_MEMBER(wide_viewport_quirk)
   IPC_STRUCT_TRAITS_MEMBER(use_wide_viewport)
+  IPC_STRUCT_TRAITS_MEMBER(viewport_meta_layout_size_quirk)
+  IPC_STRUCT_TRAITS_MEMBER(viewport_meta_zero_values_quirk)
 #endif
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(WebKit::WebWindowFeatures)
+  IPC_STRUCT_TRAITS_MEMBER(x)
+  IPC_STRUCT_TRAITS_MEMBER(xSet)
+  IPC_STRUCT_TRAITS_MEMBER(y)
+  IPC_STRUCT_TRAITS_MEMBER(ySet)
+  IPC_STRUCT_TRAITS_MEMBER(width)
+  IPC_STRUCT_TRAITS_MEMBER(widthSet)
+  IPC_STRUCT_TRAITS_MEMBER(height)
+  IPC_STRUCT_TRAITS_MEMBER(heightSet)
+  IPC_STRUCT_TRAITS_MEMBER(menuBarVisible)
+  IPC_STRUCT_TRAITS_MEMBER(statusBarVisible)
+  IPC_STRUCT_TRAITS_MEMBER(toolBarVisible)
+  IPC_STRUCT_TRAITS_MEMBER(locationBarVisible)
+  IPC_STRUCT_TRAITS_MEMBER(scrollbarsVisible)
+  IPC_STRUCT_TRAITS_MEMBER(resizable)
+  IPC_STRUCT_TRAITS_MEMBER(fullscreen)
+  IPC_STRUCT_TRAITS_MEMBER(dialog)
 IPC_STRUCT_TRAITS_END()
 
 #endif  // CONTENT_PUBLIC_COMMON_COMMON_PARAM_TRAITS_MACROS_H_

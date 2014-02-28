@@ -21,13 +21,13 @@
 #ifndef TextCheckingHelper_h
 #define TextCheckingHelper_h
 
-#include "core/dom/ExceptionCode.h"
 #include "core/page/EditorClient.h"
 #include "core/platform/text/TextChecking.h"
-#include <wtf/text/WTFString.h>
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
+class ExceptionState;
 class Range;
 class Position;
 struct TextCheckingResult;
@@ -40,12 +40,12 @@ public:
 
     int rangeLength() const;
     PassRefPtr<Range> subrange(int characterOffset, int characterCount) const;
-    int offsetTo(const Position&, ExceptionCode&) const;
+    int offsetTo(const Position&, ExceptionState&) const;
     void expandRangeToNextEnd();
 
-    int textLength() const { return text().length(); }
+    const String& text() const;
+    // Why not let clients call these functions on text() themselves?
     String textSubstring(unsigned pos, unsigned len = INT_MAX) const { return text().substring(pos, len); }
-    const UChar* textCharacters() const { return text().characters(); }
     UChar textCharAt(int index) const { return text()[static_cast<unsigned>(index)]; }
 
     bool isEmpty() const;
@@ -64,7 +64,6 @@ private:
     void invalidateParagraphRangeValues();
     PassRefPtr<Range> checkingRange() const { return m_checkingRange; }
     PassRefPtr<Range> offsetAsRange() const;
-    const String& text() const;
 
     RefPtr<Range> m_checkingRange;
     mutable RefPtr<Range> m_paragraphRange;
@@ -84,7 +83,6 @@ public:
     String findFirstMisspelling(int& firstMisspellingOffset, bool markAll, RefPtr<Range>& firstMisspellingRange);
     String findFirstMisspellingOrBadGrammar(bool checkGrammar, bool& outIsSpelling, int& outFirstFoundOffset, GrammarDetail& outGrammarDetail);
     String findFirstBadGrammar(GrammarDetail& outGrammarDetail, int& outGrammarPhraseOffset, bool markAll);
-    int findFirstGrammarDetail(const Vector<GrammarDetail>& grammarDetails, int badGrammarPhraseLocation, int badGrammarPhraseLength, int startOffset, int endOffset, bool markAll);
     void markAllMisspellings(RefPtr<Range>& firstMisspellingRange);
     void markAllBadGrammar();
 
@@ -92,11 +90,11 @@ private:
     EditorClient* m_client;
     RefPtr<Range> m_range;
 
+    int findFirstGrammarDetail(const Vector<GrammarDetail>& grammarDetails, int badGrammarPhraseLocation, int startOffset, int endOffset, bool markAll) const;
     bool unifiedTextCheckerEnabled() const;
 };
 
-void checkTextOfParagraph(TextCheckerClient*, const UChar* text, int length,
-    TextCheckingTypeMask checkingTypes, Vector<TextCheckingResult>& results);
+void checkTextOfParagraph(TextCheckerClient*, const String&, TextCheckingTypeMask, Vector<TextCheckingResult>&);
 
 bool unifiedTextCheckerEnabled(const Frame*);
 

@@ -88,12 +88,14 @@ private:
     virtual void updateWidget(PluginCreationOption);
     void updateDocNamedItem();
 
+    void reattachFallbackContent();
+
     bool hasFallbackContent() const;
-    
+
     // FIXME: This function should not deal with url or serviceType
     // so that we can better share code between <object> and <embed>.
     void parametersForPlugin(Vector<String>& paramNames, Vector<String>& paramValues, String& url, String& serviceType);
-    
+
     bool shouldAllowQuickTimeClassIdQuirk();
     bool hasValidClassId();
 

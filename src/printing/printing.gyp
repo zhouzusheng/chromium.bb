@@ -37,6 +37,7 @@
         'emf_win.cc',
         'emf_win.h',
         'image.cc',
+        'image_android.cc',
         'image_linux.cc',
         'image_mac.cc',
         'image_win.cc',
@@ -92,11 +93,16 @@
         ],
       },
       'conditions': [
-        ['enable_printing!=1', {
+        ['enable_printing==0', {
           'sources/': [
             ['exclude', '.'],
           ],
         }],
+        ['use_aura==1', {
+          'dependencies': [
+            '<(DEPTH)/ui/aura/aura.gyp:aura',
+          ],
+        }], 
         ['toolkit_uses_gtk == 0',{
             'sources/': [['exclude', '_cairo\\.cc$']]
         }],
@@ -131,6 +137,12 @@
           'dependencies': [
             '../win8/win8.gyp:win8_util',
           ],
+          'conditions': [
+            ['use_aura==1', {
+              'dependencies': [
+                '<(DEPTH)/ui/aura/aura.gyp:aura',
+              ],
+          }]],
           'defines': [
             # PRINT_BACKEND_AVAILABLE disables the default dummy implementation
             # of the print backend and enables a custom implementation instead.
@@ -217,6 +229,11 @@
             'printing_context_gtk.h',
           ],
         }],
+        ['OS=="android"', {
+          'sources': [
+            'printing_context_android.h',
+          ],
+        }],
       ],
     },
     {
@@ -241,7 +258,7 @@
         'units_unittest.cc',
       ],
       'conditions': [
-        ['enable_printing!=1', {
+        ['enable_printing==0', {
           'sources/': [
             ['exclude', '.'],
             ['include', 'run_all_unittests.cc'],

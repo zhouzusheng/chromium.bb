@@ -39,9 +39,9 @@
 #include "core/platform/graphics/chromium/FontPlatformDataChromiumWin.h"
 #include "core/platform/graphics/chromium/FontUtilsChromiumWin.h"
 #include "core/platform/win/HWndDC.h"
-#include <wtf/HashMap.h>
-#include <wtf/HashSet.h>
-#include <wtf/text/StringHash.h>
+#include "wtf/HashMap.h"
+#include "wtf/HashSet.h"
+#include "wtf/text/StringHash.h"
 
 #include <windows.h>
 #include <mlang.h>
@@ -235,8 +235,7 @@ static bool LookupAltName(const String& name, String& altName)
 
 static HFONT createFontIndirectAndGetWinName(const String& family, LOGFONT* winfont, String* winName)
 {
-    int len = min(static_cast<int>(family.length()), LF_FACESIZE - 1);
-    memcpy(winfont->lfFaceName, family.characters(), len * sizeof(WORD));
+    unsigned len = family.copyTo(winfont->lfFaceName, 0, LF_FACESIZE - 1);
     winfont->lfFaceName[len] = '\0';
 
     HFONT hfont = CreateFontIndirect(winfont);
@@ -320,7 +319,7 @@ static bool fontContainsCharacter(const FontPlatformData* fontData,
 // Tries the given font and save it |outFontFamilyName| if it succeeds.
 PassRefPtr<SimpleFontData> FontCache::fontDataFromDescriptionAndLogFont(const FontDescription& fontDescription, ShouldRetain shouldRetain, const LOGFONT& font, wchar_t* outFontFamilyName)
 {
-    RefPtr<SimpleFontData> fontData = getCachedFontData(fontDescription, font.lfFaceName, false, shouldRetain);
+    RefPtr<SimpleFontData> fontData = getFontResourceData(fontDescription, font.lfFaceName, false, shouldRetain);
     if (fontData)
         memcpy(outFontFamilyName, font.lfFaceName, sizeof(font.lfFaceName));
     return fontData.release();
@@ -423,18 +422,30 @@ void FontCache::platformInit()
 
 // Given the desired base font, this will create a SimpleFontData for a specific
 // font that can be used to render the given range of characters.
-PassRefPtr<SimpleFontData> FontCache::getFontDataForCharacters(const Font& font, const UChar* characters, int length)
+PassRefPtr<SimpleFontData> FontCache::getFontDataForCharacter(const Font& font, UChar32 inputC)
 {
+    // FIXME: We should fix getFallbackFamily to take a UChar32
+    // and remove this split-to-UChar16 code.
+    UChar codeUnits[2];
+    int codeUnitsLength;
+    if (inputC <= 0xFFFF) {
+        codeUnits[0] = inputC;
+        codeUnitsLength = 1;
+    } else {
+        codeUnits[0] = U16_LEAD(inputC);
+        codeUnits[1] = U16_TRAIL(inputC);
+        codeUnitsLength = 2;
+    }
+
     // FIXME: Consider passing fontDescription.dominantScript()
     // to GetFallbackFamily here.
     FontDescription fontDescription = font.fontDescription();
     UChar32 c;
     UScriptCode script;
-    const wchar_t* family = getFallbackFamily(characters, length,
-        fontDescription.genericFamily(), &c, &script);
+    const wchar_t* family = getFallbackFamily(codeUnits, codeUnitsLength, fontDescription.genericFamily(), &c, &script);
     FontPlatformData* data = 0;
     if (family)
-        data = getCachedFontPlatformData(font.fontDescription(),  AtomicString(family, wcslen(family)), false);
+        data = getFontResourcePlatformData(font.fontDescription(),  AtomicString(family, wcslen(family)), false);
 
     // Last resort font list : PanUnicode. CJK fonts have a pretty
     // large repertoire. Eventually, we need to scan all the fonts
@@ -494,7 +505,7 @@ PassRefPtr<SimpleFontData> FontCache::getFontDataForCharacters(const Font& font,
     int i;
     for (i = 0; (!data || !fontContainsCharacter(data, family, c)) && i < numFonts; ++i) {
         family = panUniFonts[i];
-        data = getCachedFontPlatformData(font.fontDescription(), AtomicString(family, wcslen(family)));
+        data = getFontResourcePlatformData(font.fontDescription(), AtomicString(family, wcslen(family)));
     }
     // When i-th font (0-base) in |panUniFonts| contains a character and
     // we get out of the loop, |i| will be |i + 1|. That is, if only the
@@ -502,7 +513,7 @@ PassRefPtr<SimpleFontData> FontCache::getFontDataForCharacters(const Font& font,
     // So, we have to use '<=" rather than '<' to see if we found a font
     // covering the character.
     if (i <= numFonts)
-        return getCachedFontData(data, DoNotRetain);
+        return getFontResourceData(data, DoNotRetain);
 
     return 0;
 
@@ -530,7 +541,7 @@ PassRefPtr<SimpleFontData> FontCache::getLastResortFallbackFont(const FontDescri
     else if (generic == FontDescription::MonospaceFamily)
         fontStr = courierStr;
 
-    RefPtr<SimpleFontData> simpleFont = getCachedFontData(description, fontStr, false, shouldRetain);
+    RefPtr<SimpleFontData> simpleFont = getFontResourceData(description, fontStr, false, shouldRetain);
     if (simpleFont)
         return simpleFont.release();
 
@@ -539,7 +550,7 @@ PassRefPtr<SimpleFontData> FontCache::getLastResortFallbackFont(const FontDescri
     // to a static variable and use it to prevent trying system fonts again.
     static wchar_t fallbackFontName[LF_FACESIZE] = {0};
     if (fallbackFontName[0])
-        return getCachedFontData(description, fallbackFontName, false, shouldRetain);
+        return getFontResourceData(description, fallbackFontName, false, shouldRetain);
 
     // Fall back to the DEFAULT_GUI_FONT if no known Unicode fonts are available.
     if (HFONT defaultGUIFont = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT))) {
@@ -590,7 +601,7 @@ void FontCache::getTraitsInFamily(const AtomicString& familyName, Vector<unsigne
     LOGFONT logFont;
     logFont.lfCharSet = DEFAULT_CHARSET;
     unsigned familyLength = min(familyName.length(), static_cast<unsigned>(LF_FACESIZE - 1));
-    memcpy(logFont.lfFaceName, familyName.characters(), familyLength * sizeof(UChar));
+    familyName.string().copyTo(logFont.lfFaceName, 0, familyLength);
     logFont.lfFaceName[familyLength] = 0;
     logFont.lfPitchAndFamily = 0;
 

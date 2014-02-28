@@ -32,19 +32,16 @@ namespace WTF {
     template<typename T> class PassRefPtr;
     template<typename T> class RefPtr;
     template<typename T, size_t inlineCapacity> class Vector;
-    
+
     class ArrayBuffer;
     class ArrayBufferView;
     class AtomicString;
-    class AtomicStringImpl;
     class CString;
     class Float32Array;
     class Float64Array;
     class Int8Array;
     class Int16Array;
     class Int32Array;
-    class MemoryInstrumentation;
-    class MemoryObjectInfo;
     class String;
     template <typename T> class StringBuffer;
     class StringBuilder;
@@ -67,15 +64,12 @@ using WTF::Vector;
 using WTF::ArrayBuffer;
 using WTF::ArrayBufferView;
 using WTF::AtomicString;
-using WTF::AtomicStringImpl;
 using WTF::CString;
 using WTF::Float32Array;
 using WTF::Float64Array;
 using WTF::Int8Array;
 using WTF::Int16Array;
 using WTF::Int32Array;
-using WTF::MemoryInstrumentation;
-using WTF::MemoryObjectInfo;
 using WTF::String;
 using WTF::StringBuffer;
 using WTF::StringBuilder;

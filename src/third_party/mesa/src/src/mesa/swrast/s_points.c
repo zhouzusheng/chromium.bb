@@ -51,8 +51,8 @@
  * or just the glPointSize value.
  * Must also clamp to user-defined range and implmentation limits.
  */
-static INLINE GLfloat
-get_size(const GLcontext *ctx, const SWvertex *vert, GLboolean smoothed)
+static inline GLfloat
+get_size(const struct gl_context *ctx, const SWvertex *vert, GLboolean smoothed)
 {
    GLfloat size;
 
@@ -80,7 +80,7 @@ get_size(const GLcontext *ctx, const SWvertex *vert, GLboolean smoothed)
  * Draw a point sprite
  */
 static void
-sprite_point(GLcontext *ctx, const SWvertex *vert)
+sprite_point(struct gl_context *ctx, const SWvertex *vert)
 {
    SWcontext *swrast = SWRAST_CONTEXT(ctx);
    SWspan span;
@@ -240,7 +240,7 @@ sprite_point(GLcontext *ctx, const SWvertex *vert)
  * Draw smooth/antialiased point.  RGB or CI mode.
  */
 static void
-smooth_point(GLcontext *ctx, const SWvertex *vert)
+smooth_point(struct gl_context *ctx, const SWvertex *vert)
 {
    SWcontext *swrast = SWRAST_CONTEXT(ctx);
    SWspan span;
@@ -360,7 +360,7 @@ smooth_point(GLcontext *ctx, const SWvertex *vert)
  * Draw large (size >= 1) non-AA point.  RGB or CI mode.
  */
 static void
-large_point(GLcontext *ctx, const SWvertex *vert)
+large_point(struct gl_context *ctx, const SWvertex *vert)
 {
    SWcontext *swrast = SWRAST_CONTEXT(ctx);
    SWspan span;
@@ -439,7 +439,7 @@ large_point(GLcontext *ctx, const SWvertex *vert)
             span.end++;
          }
       }
-      assert(span.end <= MAX_WIDTH);
+      assert(span.end <= SWRAST_MAX_WIDTH);
       _swrast_write_rgba_span(ctx, &span);
    }
 }
@@ -449,7 +449,7 @@ large_point(GLcontext *ctx, const SWvertex *vert)
  * Draw size=1, single-pixel point
  */
 static void
-pixel_point(GLcontext *ctx, const SWvertex *vert)
+pixel_point(struct gl_context *ctx, const SWvertex *vert)
 {
    SWcontext *swrast = SWRAST_CONTEXT(ctx);
    /*
@@ -475,7 +475,7 @@ pixel_point(GLcontext *ctx, const SWvertex *vert)
    span->attrStepY[FRAG_ATTRIB_WPOS][3] = 0.0F;
 
    /* check if we need to flush */
-   if (span->end >= MAX_WIDTH ||
+   if (span->end >= SWRAST_MAX_WIDTH ||
        (swrast->_RasterMask & (BLEND_BIT | LOGIC_OP_BIT | MASKING_BIT)) ||
        span->facing != swrast->PointLineFacing) {
       if (span->end > 0) {
@@ -504,7 +504,7 @@ pixel_point(GLcontext *ctx, const SWvertex *vert)
    span->array->z[count] = (GLint) (vert->attrib[FRAG_ATTRIB_WPOS][2] + 0.5F);
 
    span->end = count + 1;
-   ASSERT(span->end <= MAX_WIDTH);
+   ASSERT(span->end <= SWRAST_MAX_WIDTH);
 }
 
 
@@ -513,7 +513,7 @@ pixel_point(GLcontext *ctx, const SWvertex *vert)
  * primary color.
  */
 void
-_swrast_add_spec_terms_point(GLcontext *ctx, const SWvertex *v0)
+_swrast_add_spec_terms_point(struct gl_context *ctx, const SWvertex *v0)
 {
    SWvertex *ncv0 = (SWvertex *) v0; /* cast away const */
    GLfloat rSum, gSum, bSum;
@@ -539,7 +539,7 @@ _swrast_add_spec_terms_point(GLcontext *ctx, const SWvertex *v0)
  * Examine current state to determine which point drawing function to use.
  */
 void
-_swrast_choose_point(GLcontext *ctx)
+_swrast_choose_point(struct gl_context *ctx)
 {
    SWcontext *swrast = SWRAST_CONTEXT(ctx);
    const GLfloat size = CLAMP(ctx->Point.Size,

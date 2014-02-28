@@ -53,13 +53,13 @@ public:
 
     void appendLineBox(InlineFlowBox*);
 
-    void deleteLineBoxTree(RenderArena*);
-    void deleteLineBoxes(RenderArena*);
+    void deleteLineBoxTree();
+    void deleteLineBoxes();
 
     void extractLineBox(InlineFlowBox*);
     void attachLineBox(InlineFlowBox*);
     void removeLineBox(InlineFlowBox*);
-    
+
     void dirtyLineBoxes();
     void dirtyLinesFromChangedChild(RenderObject* parent, RenderObject* child);
 

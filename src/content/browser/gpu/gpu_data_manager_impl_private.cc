@@ -10,6 +10,7 @@
 #include "base/debug/trace_event.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/sys_info.h"
@@ -33,7 +34,6 @@
 #include "ui/gl/gl_switches.h"
 #include "ui/gl/gpu_switching_manager.h"
 #include "webkit/common/webpreferences.h"
-#include "webkit/plugins/plugin_switches.h"
 
 #if defined(OS_MACOSX)
 #include <ApplicationServices/ApplicationServices.h>
@@ -42,6 +42,7 @@
 #include "base/win/windows_version.h"
 #endif  // OS_WIN
 #if defined(OS_ANDROID)
+#include "base/android/build_info.h"
 #include "ui/gfx/android/device_display_info.h"
 #endif  // OS_ANDROID
 
@@ -63,6 +64,7 @@ enum WinSubVersion {
   kWinXP,
   kWinVista,
   kWin7,
+  kWin8,
   kNumWinSubVersions
 };
 
@@ -83,6 +85,8 @@ int GetGpuBlacklistHistogramValueWin(GpuFeatureStatus status) {
         sub_version = kWinVista;
       else if (version_numbers[0] == 6 && version_numbers[1] == 1)
         sub_version = kWin7;
+      else if (version_numbers[0] == 6 && version_numbers[1] == 2)
+        sub_version = kWin8;
     }
   }
   int entry_index = static_cast<int>(sub_version) * kGpuFeatureNumStatus;
@@ -100,8 +104,9 @@ int GetGpuBlacklistHistogramValueWin(GpuFeatureStatus status) {
 }
 #endif  // OS_WIN
 
-// Send UMA histograms about the enabled features.
-void UpdateStats(const gpu::GpuBlacklist* blacklist,
+// Send UMA histograms about the enabled features and GPU properties.
+void UpdateStats(const gpu::GPUInfo& gpu_info,
+                 const gpu::GpuBlacklist* blacklist,
                  const std::set<int>& blacklisted_features) {
   uint32 max_entry_id = blacklist->max_entry_id();
   if (max_entry_id == 0) {
@@ -111,10 +116,15 @@ void UpdateStats(const gpu::GpuBlacklist* blacklist,
 
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   bool disabled = false;
-  if (blacklisted_features.size() == 0) {
-    UMA_HISTOGRAM_ENUMERATION("GPU.BlacklistTestResultsPerEntry",
-        0, max_entry_id + 1);
-  } else {
+
+  // Use entry 0 to capture the total number of times that data
+  // was recorded in this histogram in order to have a convenient
+  // denominator to compute blacklist percentages for the rest of the
+  // entries.
+  UMA_HISTOGRAM_ENUMERATION("GPU.BlacklistTestResultsPerEntry",
+      0, max_entry_id + 1);
+
+  if (blacklisted_features.size() != 0) {
     std::vector<uint32> flag_entries;
     blacklist->GetDecisionEntries(&flag_entries, disabled);
     DCHECK_GT(flag_entries.size(), 0u);
@@ -137,27 +147,27 @@ void UpdateStats(const gpu::GpuBlacklist* blacklist,
   const gpu::GpuFeatureType kGpuFeatures[] = {
       gpu::GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS,
       gpu::GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING,
-      gpu::GPU_FEATURE_TYPE_WEBGL
+      gpu::GPU_FEATURE_TYPE_WEBGL,
+      gpu::GPU_FEATURE_TYPE_TEXTURE_SHARING
   };
   const std::string kGpuBlacklistFeatureHistogramNames[] = {
       "GPU.BlacklistFeatureTestResults.Accelerated2dCanvas",
       "GPU.BlacklistFeatureTestResults.AcceleratedCompositing",
-      "GPU.BlacklistFeatureTestResults.Webgl"
+      "GPU.BlacklistFeatureTestResults.Webgl",
+      "GPU.BlacklistFeatureTestResults.TextureSharing"
   };
   const bool kGpuFeatureUserFlags[] = {
       command_line.HasSwitch(switches::kDisableAccelerated2dCanvas),
       command_line.HasSwitch(switches::kDisableAcceleratedCompositing),
-#if defined(OS_ANDROID)
-      !command_line.HasSwitch(switches::kEnableExperimentalWebGL)
-#else
-      command_line.HasSwitch(switches::kDisableExperimentalWebGL)
-#endif
+      command_line.HasSwitch(switches::kDisableExperimentalWebGL),
+      command_line.HasSwitch(switches::kDisableImageTransportSurface)
   };
 #if defined(OS_WIN)
   const std::string kGpuBlacklistFeatureHistogramNamesWin[] = {
       "GPU.BlacklistFeatureTestResultsWindows.Accelerated2dCanvas",
       "GPU.BlacklistFeatureTestResultsWindows.AcceleratedCompositing",
-      "GPU.BlacklistFeatureTestResultsWindows.Webgl"
+      "GPU.BlacklistFeatureTestResultsWindows.Webgl",
+      "GPU.BlacklistFeatureTestResultsWindows.TextureSharing"
   };
 #endif
   const size_t kNumFeatures =
@@ -184,6 +194,9 @@ void UpdateStats(const gpu::GpuBlacklist* blacklist,
     histogram_pointer->Add(GetGpuBlacklistHistogramValueWin(value));
 #endif
   }
+
+  UMA_HISTOGRAM_SPARSE_SLOWLY("GPU.GLResetNotificationStrategy",
+      gpu_info.gl_reset_notification_strategy);
 }
 
 // Strip out the non-digital info; if after that, we get an empty string,
@@ -266,12 +279,15 @@ void ApplyAndroidWorkarounds(const gpu::GPUInfo& gpu_info,
   bool is_nexus10 =
       gpu_info.machine_model.find("Nexus 10") != std::string::npos;
 
+  int sdk_int = base::android::BuildInfo::GetInstance()->sdk_int();
+
   // IMG: avoid context switching perf problems, crashes with share groups
   // Mali-T604: http://crbug.com/154715
   // QualComm, NVIDIA: Crashes with share groups
-  if (is_vivante || is_img || is_mali_t604 || is_nvidia || is_qualcomm ||
-      is_broadcom)
+  if (is_vivante || is_img || is_mali_t604 || (is_nvidia && (sdk_int < 18)) ||
+      is_qualcomm || is_broadcom) {
     command_line->AppendSwitch(switches::kEnableVirtualGLContexts);
+  }
 
   gfx::DeviceDisplayInfo info;
   int default_tile_size = 256;
@@ -292,6 +308,11 @@ void ApplyAndroidWorkarounds(const gpu::GPUInfo& gpu_info,
   // http://crbug.com/168099
   if (is_img)
     default_tile_size -= 8;
+
+  // If we are using the MapImage API double the tile size to reduce
+  // the number of zero-copy buffers being used.
+  if (command_line->HasSwitch(cc::switches::kUseMapImage))
+    default_tile_size *= 2;
 
   // Set the command line if it isn't already set and we changed
   // the default tile size.
@@ -540,7 +561,8 @@ void GpuDataManagerImplPrivate::GetGLStrings(std::string* gl_vendor,
 void GpuDataManagerImplPrivate::Initialize() {
   TRACE_EVENT0("startup", "GpuDataManagerImpl::Initialize");
   CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kSkipGpuDataLoading))
+  if (command_line->HasSwitch(switches::kSkipGpuDataLoading) &&
+      !command_line->HasSwitch(switches::kUseGpuInTests))
     return;
 
   gpu::GPUInfo gpu_info;
@@ -557,7 +579,8 @@ void GpuDataManagerImplPrivate::Initialize() {
   std::string gpu_blacklist_string;
   std::string gpu_switching_list_string;
   std::string gpu_driver_bug_list_string;
-  if (!command_line->HasSwitch(switches::kIgnoreGpuBlacklist)) {
+  if (!command_line->HasSwitch(switches::kIgnoreGpuBlacklist) &&
+      !command_line->HasSwitch(switches::kUseGpuInTests)) {
     gpu_blacklist_string = gpu::kSoftwareRenderingListJson;
     gpu_switching_list_string = gpu::kGpuSwitchingListJson;
   }
@@ -585,7 +608,7 @@ void GpuDataManagerImplPrivate::UpdateGpuInfo(const gpu::GPUInfo& gpu_info) {
     std::set<int> features = gpu_blacklist_->MakeDecision(
         gpu::GpuControlList::kOsAny, std::string(), gpu_info_);
     if (update_histograms_)
-      UpdateStats(gpu_blacklist_.get(), features);
+      UpdateStats(gpu_info_, gpu_blacklist_.get(), features);
 
     UpdateBlacklistedFeatures(features);
   }
@@ -622,10 +645,8 @@ void GpuDataManagerImplPrivate::AppendRendererCommandLine(
   DCHECK(command_line);
 
   if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_WEBGL)) {
-#if !defined(OS_ANDROID)
     if (!command_line->HasSwitch(switches::kDisableExperimentalWebGL))
       command_line->AppendSwitch(switches::kDisableExperimentalWebGL);
-#endif
     if (!command_line->HasSwitch(switches::kDisablePepper3d))
       command_line->AppendSwitch(switches::kDisablePepper3d);
   }
@@ -641,6 +662,17 @@ void GpuDataManagerImplPrivate::AppendRendererCommandLine(
   if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE) &&
       !command_line->HasSwitch(switches::kDisableAcceleratedVideoDecode))
     command_line->AppendSwitch(switches::kDisableAcceleratedVideoDecode);
+
+  if (use_software_compositor_ &&
+      !command_line->HasSwitch(switches::kEnableSoftwareCompositing))
+    command_line->AppendSwitch(switches::kEnableSoftwareCompositing);
+
+#if defined(USE_AURA)
+  if (!CanUseGpuBrowserCompositor()) {
+    command_line->AppendSwitch(switches::kDisableGpuCompositing);
+    command_line->AppendSwitch(switches::kDisablePepper3d);
+  }
+#endif
 }
 
 void GpuDataManagerImplPrivate::AppendGpuCommandLine(
@@ -662,6 +694,8 @@ void GpuDataManagerImplPrivate::AppendGpuCommandLine(
     command_line->AppendSwitch(switches::kDisableImageTransportSurface);
     reduce_sandbox = true;
   }
+  if (gpu_driver_bugs_.find(gpu::DISABLE_D3D11) != gpu_driver_bugs_.end())
+    command_line->AppendSwitch(switches::kDisableD3D11);
   if (use_swiftshader_) {
     command_line->AppendSwitchASCII(switches::kUseGL, "swiftshader");
     if (swiftshader_path.empty())
@@ -720,13 +754,6 @@ void GpuDataManagerImplPrivate::AppendGpuCommandLine(
 
   if (gpu_info_.optimus)
     reduce_sandbox = true;
-
-  if (gpu_info_.amd_switchable) {
-    // The image transport surface currently doesn't work with AMD Dynamic
-    // Switchable graphics.
-    reduce_sandbox = true;
-    command_line->AppendSwitch(switches::kDisableImageTransportSurface);
-  }
 
   if (reduce_sandbox)
     command_line->AppendSwitch(switches::kReduceGpuSandbox);
@@ -800,6 +827,18 @@ void GpuDataManagerImplPrivate::UpdateRendererWebPrefs(
     prefs->accelerated_compositing_for_3d_transforms_enabled = false;
     prefs->accelerated_compositing_for_plugins_enabled = false;
   }
+
+  if (use_software_compositor_) {
+    prefs->force_compositing_mode = true;
+    prefs->accelerated_compositing_enabled = true;
+    prefs->accelerated_compositing_for_3d_transforms_enabled = true;
+    prefs->accelerated_compositing_for_plugins_enabled = true;
+  }
+
+#if defined(USE_AURA)
+  if (!CanUseGpuBrowserCompositor())
+    prefs->accelerated_2d_canvas_enabled = false;
+#endif
 }
 
 gpu::GpuSwitchingOption
@@ -892,8 +931,6 @@ bool GpuDataManagerImplPrivate::IsUsingAcceleratedSurface() const {
   if (base::win::GetVersion() < base::win::VERSION_VISTA)
     return false;
 
-  if (gpu_info_.amd_switchable)
-    return false;
   if (use_swiftshader_)
     return false;
   CommandLine* command_line = CommandLine::ForCurrentProcess();
@@ -902,6 +939,12 @@ bool GpuDataManagerImplPrivate::IsUsingAcceleratedSurface() const {
   return !IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_TEXTURE_SHARING);
 }
 #endif
+
+bool GpuDataManagerImplPrivate::CanUseGpuBrowserCompositor() const {
+  return !ShouldUseSwiftShader() &&
+         !IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING) &&
+         !IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_FORCE_COMPOSITING_MODE);
+}
 
 void GpuDataManagerImplPrivate::BlockDomainFrom3DAPIs(
     const GURL& url, GpuDataManagerImpl::DomainGuilt guilt) {
@@ -949,7 +992,8 @@ GpuDataManagerImplPrivate::GpuDataManagerImplPrivate(
       domain_blocking_enabled_(true),
       owner_(owner),
       display_count_(0),
-      gpu_process_accessible_(true) {
+      gpu_process_accessible_(true),
+      use_software_compositor_(false) {
   DCHECK(owner_);
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kDisableAcceleratedCompositing)) {
@@ -958,6 +1002,12 @@ GpuDataManagerImplPrivate::GpuDataManagerImplPrivate(
   }
   if (command_line->HasSwitch(switches::kDisableGpu))
     DisableHardwareAcceleration();
+  if (command_line->HasSwitch(switches::kEnableSoftwareCompositing))
+    use_software_compositor_ = true;
+  //TODO(jbauman): enable for Chrome OS and Linux
+#if defined(USE_AURA) && defined(OS_WIN)
+  use_software_compositor_ = true;
+#endif
   if (command_line->HasSwitch(switches::kGpuSwitching)) {
     std::string option_string = command_line->GetSwitchValueASCII(
         switches::kGpuSwitching);

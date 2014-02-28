@@ -11,11 +11,17 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "net/base/net_export.h"
+#include "net/socket/next_proto.h"
 #include "net/spdy/spdy_framer.h"
 #include "net/spdy/spdy_header_block.h"
 #include "net/spdy/spdy_protocol.h"
 
 namespace net {
+
+// Returns the SPDY major version corresponding to the given NextProto
+// value, which must represent a SPDY-like protocol.
+NET_EXPORT_PRIVATE SpdyMajorVersion NextProtoToSpdyMajorVersion(
+    NextProto next_proto);
 
 class NET_EXPORT_PRIVATE BufferedSpdyFramerVisitorInterface {
  public:
@@ -82,11 +88,9 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramerVisitorInterface {
   virtual void OnWindowUpdate(SpdyStreamId stream_id,
                               uint32 delta_window_size) = 0;
 
-  // Called after a control frame has been compressed to allow the visitor
-  // to record compression statistics.
-  virtual void OnSynStreamCompressed(
-      size_t uncompressed_size,
-      size_t compressed_size) = 0;
+  // Called when a PUSH_PROMISE frame has been parsed.
+  virtual void OnPushPromise(SpdyStreamId stream_id,
+                             SpdyStreamId promised_stream_id) = 0;
 
  protected:
   virtual ~BufferedSpdyFramerVisitorInterface() {}
@@ -107,6 +111,11 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramer
   // visitor to do nothing.  If this is called multiple times, only the last
   // visitor will be used.
   void set_visitor(BufferedSpdyFramerVisitorInterface* visitor);
+
+  // Set debug callbacks to be called from the framer. The debug visitor is
+  // completely optional and need not be set in order for normal operation.
+  // If this is called multiple times, only the last visitor will be used.
+  void set_debug_visitor(SpdyFramerDebugVisitorInterface* debug_visitor);
 
   // SpdyFramerVisitorInterface
   virtual void OnError(SpdyFramer* spdy_framer) OVERRIDE;
@@ -137,15 +146,11 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramer
                         SpdyGoAwayStatus status) OVERRIDE;
   virtual void OnWindowUpdate(SpdyStreamId stream_id,
                               uint32 delta_window_size) OVERRIDE;
+  virtual void OnPushPromise(SpdyStreamId stream_id,
+                             SpdyStreamId promised_stream_id) OVERRIDE;
   virtual void OnDataFrameHeader(SpdyStreamId stream_id,
                                  size_t length,
                                  bool fin) OVERRIDE;
-
-  // Called after a syn stream control frame has been compressed to
-  // allow the visitor to record compression statistics.
-  virtual void OnSynStreamCompressed(
-      size_t uncompressed_size,
-      size_t compressed_size) OVERRIDE;
 
   // SpdyFramer methods.
   size_t ProcessInput(const char* data, size_t len);
@@ -186,6 +191,12 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramer
                              const char* data,
                              uint32 len,
                              SpdyDataFlags flags);
+
+  // Serialize a frame of unknown type.
+  SpdySerializedFrame* SerializeFrame(const SpdyFrameIR& frame) {
+    return spdy_framer_.SerializeFrame(frame);
+  }
+
   SpdyPriority GetHighestPriority() const;
 
   size_t GetDataFrameMinimumSize() const {
@@ -194,6 +205,10 @@ class NET_EXPORT_PRIVATE BufferedSpdyFramer
 
   size_t GetControlFrameHeaderSize() const {
     return spdy_framer_.GetControlFrameHeaderSize();
+  }
+
+  size_t GetSynStreamMinimumSize() const {
+    return spdy_framer_.GetSynStreamMinimumSize();
   }
 
   size_t GetFrameMinimumSize() const {

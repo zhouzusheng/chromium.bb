@@ -45,7 +45,7 @@
 #include <base/command_line.h>
 #include <base/file_util.h>
 #include <base/files/file_enumerator.h>
-#include <base/message_loop.h>
+#include <base/message_loop/message_loop.h>
 #include <base/path_service.h>
 #include <base/synchronization/waitable_event.h>
 #include <base/threading/thread_restrictions.h>
@@ -165,7 +165,7 @@ static void deleteTemporaryScopedDirs()
         int pid;
         if (isScopedDir(baseName, prefixes, &pid)) {
             if (pids.end() == pids.find(pid)) {
-                file_util::Delete(path, true);
+                base::DeleteFile(path, true);
                 ++count;
                 if (count == 100) {
                     // There are thousands of these directories currently in
@@ -246,11 +246,16 @@ void ToolkitImpl::startupThreads()
         new base::MessageLoop(base::MessageLoop::TYPE_UI);
         if (d_hostChannel.empty()) {
             d_browserThread.reset(new BrowserThread(&d_sandboxInfo));
+            d_browserThread->messageLoop()->PostTask(
+                FROM_HERE,
+                base::Bind(&ContentMainDelegateImpl::addPluginsToPluginService,
+                           base::Unretained(&d_mainDelegate)));
         }
     }
     else {
         DCHECK(Statics::isOriginalThreadMode());
         d_browserMainRunner.reset(new BrowserMainRunner(&d_sandboxInfo));
+        d_mainDelegate.addPluginsToPluginService();
     }
 
     InProcessRenderer::init(d_inProcessRendererInfo.d_usesInProcessPlugins);

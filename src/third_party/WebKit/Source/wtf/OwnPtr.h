@@ -21,11 +21,11 @@
 #ifndef WTF_OwnPtr_h
 #define WTF_OwnPtr_h
 
-#include <wtf/Assertions.h>
-#include <wtf/Noncopyable.h>
-#include <wtf/NullPtr.h>
-#include <wtf/OwnPtrCommon.h>
-#include <wtf/TypeTraits.h>
+#include "wtf/Assertions.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/NullPtr.h"
+#include "wtf/OwnPtrCommon.h"
+#include "wtf/TypeTraits.h"
 #include <algorithm>
 #include <memory>
 
@@ -42,6 +42,7 @@ namespace WTF {
         // public so OwnPtr cannot be marked noncopyable. See note below.
         WTF_MAKE_NONCOPYABLE(OwnPtr);
 #endif
+        WTF_DISALLOW_CONSTRUCTION_FROM_ZERO(OwnPtr);
     public:
         typedef typename RemovePointer<T>::Type ValueType;
         typedef ValueType* PtrType;
@@ -190,22 +191,22 @@ namespace WTF {
 
     template<typename T, typename U> inline bool operator==(const OwnPtr<T>& a, U* b)
     {
-        return a.get() == b; 
+        return a.get() == b;
     }
 
-    template<typename T, typename U> inline bool operator==(T* a, const OwnPtr<U>& b) 
+    template<typename T, typename U> inline bool operator==(T* a, const OwnPtr<U>& b)
     {
-        return a == b.get(); 
+        return a == b.get();
     }
 
     template<typename T, typename U> inline bool operator!=(const OwnPtr<T>& a, U* b)
     {
-        return a.get() != b; 
+        return a.get() != b;
     }
 
     template<typename T, typename U> inline bool operator!=(T* a, const OwnPtr<U>& b)
     {
-        return a != b.get(); 
+        return a != b.get();
     }
 
     template<typename T> inline typename OwnPtr<T>::PtrType getPtr(const OwnPtr<T>& p)

@@ -35,13 +35,15 @@
 #include "modules/filesystem/DirectoryReaderBase.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
+#include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class EntryArraySync;
+class EntrySync;
+class ExceptionState;
 
-typedef int ExceptionCode;
+typedef Vector<RefPtr<EntrySync> > EntrySyncVector;
 
 class DirectoryReaderSync : public DirectoryReaderBase, public ScriptWrappable {
 public:
@@ -50,7 +52,7 @@ public:
         return adoptRef(new DirectoryReaderSync(fileSystem, fullPath));
     }
 
-    PassRefPtr<EntryArraySync> readEntries(ExceptionCode&);
+    EntrySyncVector readEntries(ExceptionState&);
 
 private:
     DirectoryReaderSync(PassRefPtr<DOMFileSystemBase>, const String& fullPath);

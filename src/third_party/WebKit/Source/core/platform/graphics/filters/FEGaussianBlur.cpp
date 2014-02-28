@@ -34,9 +34,9 @@
 #include "core/platform/text/TextStream.h"
 #include "core/rendering/RenderTreeAsText.h"
 
-#include <wtf/MathExtras.h>
-#include <wtf/ParallelJobs.h>
-#include <wtf/Uint8ClampedArray.h>
+#include "wtf/MathExtras.h"
+#include "wtf/ParallelJobs.h"
+#include "wtf/Uint8ClampedArray.h"
 
 #include "SkBlurImageFilter.h"
 
@@ -241,7 +241,7 @@ void FEGaussianBlur::calculateUnscaledKernelSize(unsigned& kernelSizeX, unsigned
     kernelSizeY = 0;
     if (stdY)
         kernelSizeY = max<unsigned>(2, static_cast<unsigned>(floorf(stdY * gaussianKernelFactor() + 0.5f)));
-    
+
     // Limit the kernel size to 1000. A bigger radius won't make a big difference for the result image but
     // inflates the absolute paint rect to much. This is compatible with Firefox' behavior.
     if (kernelSizeX > gMaxKernelSize)
@@ -338,10 +338,12 @@ bool FEGaussianBlur::applySkia()
     return true;
 }
 
-SkImageFilter* FEGaussianBlur::createImageFilter(SkiaImageFilterBuilder* builder)
+PassRefPtr<SkImageFilter> FEGaussianBlur::createImageFilter(SkiaImageFilterBuilder* builder)
 {
-    SkAutoTUnref<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
-    return new SkBlurImageFilter(SkFloatToScalar(m_stdX), SkFloatToScalar(m_stdY), input);
+    RefPtr<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
+    float stdX = filter()->applyHorizontalScale(m_stdX);
+    float stdY = filter()->applyVerticalScale(m_stdY);
+    return adoptRef(new SkBlurImageFilter(SkFloatToScalar(stdX), SkFloatToScalar(stdY), input.get()));
 }
 
 TextStream& FEGaussianBlur::externalRepresentation(TextStream& ts, int indent) const

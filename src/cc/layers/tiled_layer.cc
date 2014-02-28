@@ -201,7 +201,7 @@ void TiledLayer::PushPropertiesTo(LayerImpl* layer) {
     int i = iter->first.first;
     int j = iter->first.second;
     UpdatableTile* tile = static_cast<UpdatableTile*>(iter->second);
-    // FIXME: This should not ever be null.
+    // TODO(enne): This should not ever be null.
     if (!tile)
       continue;
 
@@ -228,6 +228,11 @@ void TiledLayer::PushPropertiesTo(LayerImpl* layer) {
        iter != invalid_tiles.end();
        ++iter)
     tiler_->TakeTile((*iter)->i(), (*iter)->j());
+
+  // TiledLayer must push properties every frame, since viewport state and
+  // occlusion from anywhere in the tree can change what the layer decides to
+  // push to the impl tree.
+  needs_push_properties_ = true;
 }
 
 bool TiledLayer::BlocksPendingCommit() const { return true; }
@@ -253,7 +258,7 @@ void TiledLayer::SetLayerTreeHost(LayerTreeHost* host) {
          iter != tiler_->tiles().end();
          ++iter) {
       UpdatableTile* tile = static_cast<UpdatableTile*>(iter->second);
-      // FIXME: This should not ever be null.
+      // TODO(enne): This should not ever be null.
       if (!tile)
         continue;
       tile->managed_resource()->SetTextureManager(
@@ -301,7 +306,7 @@ void TiledLayer::InvalidateContentRect(gfx::Rect content_rect) {
        ++iter) {
     UpdatableTile* tile = static_cast<UpdatableTile*>(iter->second);
     DCHECK(tile);
-    // FIXME: This should not ever be null.
+    // TODO(enne): This should not ever be null.
     if (!tile)
       continue;
     gfx::Rect bound = tiler_->TileRect(tile);
@@ -322,9 +327,7 @@ bool TiledLayer::UpdateTiles(int left,
                              int bottom,
                              ResourceUpdateQueue* queue,
                              const OcclusionTracker* occlusion,
-                             RenderingStats* stats,
-                             bool* did_paint) {
-  *did_paint = false;
+                             bool* updated) {
   CreateUpdaterIfNeeded();
 
   bool ignore_occlusions = !occlusion;
@@ -342,9 +345,9 @@ bool TiledLayer::UpdateTiles(int left,
   if (paint_rect.IsEmpty())
     return true;
 
-  *did_paint = true;
+  *updated = true;
   UpdateTileTextures(
-      paint_rect, left, top, right, bottom, queue, occlusion, stats);
+      paint_rect, left, top, right, bottom, queue, occlusion);
   return true;
 }
 
@@ -366,7 +369,7 @@ void TiledLayer::MarkOcclusionsAndRequestTextures(
     for (int i = left; i <= right; ++i) {
       UpdatableTile* tile = TileAt(i, j);
       DCHECK(tile);  // Did SetTexturePriorities get skipped?
-      // FIXME: This should not ever be null.
+      // TODO(enne): This should not ever be null.
       if (!tile)
         continue;
       // Did ResetUpdateState get skipped? Are we doing more than one occlusion
@@ -404,7 +407,7 @@ bool TiledLayer::HaveTexturesForTiles(int left,
     for (int i = left; i <= right; ++i) {
       UpdatableTile* tile = TileAt(i, j);
       DCHECK(tile);  // Did SetTexturePriorites get skipped?
-                     // FIXME: This should not ever be null.
+                     // TODO(enne): This should not ever be null.
       if (!tile)
         continue;
 
@@ -434,12 +437,12 @@ gfx::Rect TiledLayer::MarkTilesForUpdate(int left,
     for (int i = left; i <= right; ++i) {
       UpdatableTile* tile = TileAt(i, j);
       DCHECK(tile);  // Did SetTexturePriorites get skipped?
-                     // FIXME: This should not ever be null.
+                     // TODO(enne): This should not ever be null.
       if (!tile)
         continue;
       if (tile->occluded && !ignore_occlusions)
         continue;
-      // FIXME: Decide if partial update should be allowed based on cost
+      // TODO(reveman): Decide if partial update should be allowed based on cost
       // of update. https://bugs.webkit.org/show_bug.cgi?id=77376
       if (tile->is_dirty() && layer_tree_host() &&
           layer_tree_host()->buffered_updates()) {
@@ -470,8 +473,7 @@ void TiledLayer::UpdateTileTextures(gfx::Rect paint_rect,
                                     int right,
                                     int bottom,
                                     ResourceUpdateQueue* queue,
-                                    const OcclusionTracker* occlusion,
-                                    RenderingStats* stats) {
+                                    const OcclusionTracker* occlusion) {
   // The update_rect should be in layer space. So we have to convert the
   // paint_rect from content space to layer space.
   float width_scale =
@@ -493,14 +495,13 @@ void TiledLayer::UpdateTileTextures(gfx::Rect paint_rect,
                              tiler_->tile_size(),
                              1.f / width_scale,
                              1.f / height_scale,
-                             &painted_opaque_rect,
-                             stats);
+                             &painted_opaque_rect);
 
   for (int j = top; j <= bottom; ++j) {
     for (int i = left; i <= right; ++i) {
       UpdatableTile* tile = TileAt(i, j);
       DCHECK(tile);  // Did SetTexturePriorites get skipped?
-                     // FIXME: This should not ever be null.
+                     // TODO(enne): This should not ever be null.
       if (!tile)
         continue;
 
@@ -560,7 +561,7 @@ void TiledLayer::UpdateTileTextures(gfx::Rect paint_rect,
       CHECK_LE(paint_offset.y() + source_rect.height(), paint_rect.height());
 
       tile->updater_resource()->Update(
-          queue, source_rect, dest_offset, tile->partial_update, stats);
+          queue, source_rect, dest_offset, tile->partial_update);
       if (occlusion) {
         occlusion->overdraw_metrics()->
             DidUpload(gfx::Transform(), source_rect, tile->opaque_rect());
@@ -587,8 +588,8 @@ bool TiledLayer::IsSmallAnimatedLayer() const {
 }
 
 namespace {
-// FIXME: Remove this and make this based on distance once distance can be
-// calculated for offscreen layers. For now, prioritize all small animated
+// TODO(epenner): Remove this and make this based on distance once distance can
+// be calculated for offscreen layers. For now, prioritize all small animated
 // layers after 512 pixels of pre-painting.
 void SetPriorityForTexture(gfx::Rect visible_rect,
                            gfx::Rect tile_rect,
@@ -644,7 +645,7 @@ void TiledLayer::SetTexturePriorities(const PriorityCalculator& priority_calc) {
        iter != tiler_->tiles().end();
        ++iter) {
     UpdatableTile* tile = static_cast<UpdatableTile*>(iter->second);
-    // FIXME: This should not ever be null.
+    // TODO(enne): This should not ever be null.
     if (!tile)
       continue;
     gfx::Rect tile_rect = tiler_->TileRect(tile);
@@ -673,7 +674,7 @@ void TiledLayer::ResetUpdateState() {
        iter != end;
        ++iter) {
     UpdatableTile* tile = static_cast<UpdatableTile*>(iter->second);
-    // FIXME: This should not ever be null.
+    // TODO(enne): This should not ever be null.
     if (!tile)
       continue;
     tile->ResetUpdateState();
@@ -726,22 +727,22 @@ void TiledLayer::UpdateScrollPrediction() {
   previous_visible_rect_ = visible_content_rect();
 }
 
-void TiledLayer::Update(ResourceUpdateQueue* queue,
-                        const OcclusionTracker* occlusion,
-                        RenderingStats* stats) {
+bool TiledLayer::Update(ResourceUpdateQueue* queue,
+                        const OcclusionTracker* occlusion) {
   DCHECK(!skips_draw_ && !failed_update_);  // Did ResetUpdateState get skipped?
+
+  bool updated = false;
+
   {
     base::AutoReset<bool> ignore_set_needs_commit(&ignore_set_needs_commit_,
                                                   true);
 
-    ContentsScalingLayer::Update(queue, occlusion, stats);
+    updated |= ContentsScalingLayer::Update(queue, occlusion);
     UpdateBounds();
   }
 
   if (tiler_->has_empty_bounds() || !DrawsContent())
-    return;
-
-  bool did_paint = false;
+    return false;
 
   // Animation pre-paint. If the layer is small, try to paint it all
   // immediately whether or not it is occluded, to avoid paint/upload
@@ -753,16 +754,16 @@ void TiledLayer::Update(ResourceUpdateQueue* queue,
                                      &top,
                                      &right,
                                      &bottom);
-    UpdateTiles(left, top, right, bottom, queue, NULL, stats, &did_paint);
-    if (did_paint)
-      return;
+    UpdateTiles(left, top, right, bottom, queue, NULL, &updated);
+    if (updated)
+      return updated;
     // This was an attempt to paint the entire layer so if we fail it's okay,
     // just fallback on painting visible etc. below.
     failed_update_ = false;
   }
 
   if (predicted_visible_rect_.IsEmpty())
-    return;
+    return updated;
 
   // Visible painting. First occlude visible tiles and paint the non-occluded
   // tiles.
@@ -771,22 +772,22 @@ void TiledLayer::Update(ResourceUpdateQueue* queue,
       predicted_visible_rect_, &left, &top, &right, &bottom);
   MarkOcclusionsAndRequestTextures(left, top, right, bottom, occlusion);
   skips_draw_ = !UpdateTiles(
-      left, top, right, bottom, queue, occlusion, stats, &did_paint);
+      left, top, right, bottom, queue, occlusion, &updated);
   if (skips_draw_)
     tiler_->reset();
-  if (skips_draw_ || did_paint)
-    return;
+  if (skips_draw_ || updated)
+    return true;
 
   // If we have already painting everything visible. Do some pre-painting while
   // idle.
   gfx::Rect idle_paint_content_rect = IdlePaintRect();
   if (idle_paint_content_rect.IsEmpty())
-    return;
+    return updated;
 
   // Prepaint anything that was occluded but inside the layer's visible region.
-  if (!UpdateTiles(left, top, right, bottom, queue, NULL, stats, &did_paint) ||
-      did_paint)
-    return;
+  if (!UpdateTiles(left, top, right, bottom, queue, NULL, &updated) ||
+      updated)
+    return updated;
 
   int prepaint_left, prepaint_top, prepaint_right, prepaint_bottom;
   tiler_->ContentRectToTileIndices(idle_paint_content_rect,
@@ -802,10 +803,10 @@ void TiledLayer::Update(ResourceUpdateQueue* queue,
   delta = gfx::Vector2d(delta.x() == 0 ? 1 : delta.x(),
                         delta.y() == 0 ? 1 : delta.y());
   gfx::Vector2d major_delta =
-      (abs(delta.x()) > abs(delta.y())) ? gfx::Vector2d(delta.x(), 0)
+      (std::abs(delta.x()) > std::abs(delta.y())) ? gfx::Vector2d(delta.x(), 0)
                                         : gfx::Vector2d(0, delta.y());
   gfx::Vector2d minor_delta =
-      (abs(delta.x()) <= abs(delta.y())) ? gfx::Vector2d(delta.x(), 0)
+      (std::abs(delta.x()) <= std::abs(delta.y())) ? gfx::Vector2d(delta.x(), 0)
                                          : gfx::Vector2d(0, delta.y());
   gfx::Vector2d deltas[4] = { major_delta, minor_delta, -major_delta,
                               -minor_delta };
@@ -814,39 +815,40 @@ void TiledLayer::Update(ResourceUpdateQueue* queue,
       while (bottom < prepaint_bottom) {
         ++bottom;
         if (!UpdateTiles(
-                left, bottom, right, bottom, queue, NULL, stats, &did_paint) ||
-            did_paint)
-          return;
+                left, bottom, right, bottom, queue, NULL, &updated) ||
+            updated)
+          return updated;
       }
     }
     if (deltas[i].y() < 0) {
       while (top > prepaint_top) {
         --top;
         if (!UpdateTiles(
-                left, top, right, top, queue, NULL, stats, &did_paint) ||
-            did_paint)
-          return;
+                left, top, right, top, queue, NULL, &updated) ||
+            updated)
+          return updated;
       }
     }
     if (deltas[i].x() < 0) {
       while (left > prepaint_left) {
         --left;
         if (!UpdateTiles(
-                left, top, left, bottom, queue, NULL, stats, &did_paint) ||
-            did_paint)
-          return;
+                left, top, left, bottom, queue, NULL, &updated) ||
+            updated)
+          return updated;
       }
     }
     if (deltas[i].x() > 0) {
       while (right < prepaint_right) {
         ++right;
         if (!UpdateTiles(
-                right, top, right, bottom, queue, NULL, stats, &did_paint) ||
-            did_paint)
-          return;
+                right, top, right, bottom, queue, NULL, &updated) ||
+            updated)
+          return updated;
       }
     }
   }
+  return updated;
 }
 
 bool TiledLayer::NeedsIdlePaint() {

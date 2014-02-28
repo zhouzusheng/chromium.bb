@@ -38,7 +38,7 @@
 #include "core/platform/DateComponents.h"
 #include "core/platform/LocalizedStrings.h"
 #include "core/platform/text/PlatformLocale.h"
-#include <wtf/PassOwnPtr.h>
+#include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
@@ -84,11 +84,11 @@ StepRange DateInputType::createStepRange(AnyStepHandling anyStepHandling) const
     return StepRange(stepBase, minimum, maximum, step, stepDescription);
 }
 
-bool DateInputType::parseToDateComponentsInternal(const UChar* characters, unsigned length, DateComponents* out) const
+bool DateInputType::parseToDateComponentsInternal(const String& string, DateComponents* out) const
 {
     ASSERT(out);
     unsigned end;
-    return out->parseDate(characters, length, 0, end) && end == length;
+    return out->parseDate(string, 0, end) && end == string.length();
 }
 
 bool DateInputType::setMillisecondToDateComponents(double value, DateComponents* date) const
@@ -114,7 +114,7 @@ String DateInputType::formatDateTimeFieldsState(const DateTimeFieldsState& dateT
 void DateInputType::setupLayoutParameters(DateTimeEditElement::LayoutParameters& layoutParameters, const DateComponents& date) const
 {
     layoutParameters.dateTimeFormat = layoutParameters.locale.dateFormat();
-    layoutParameters.fallbackDateTimeFormat = ASCIILiteral("yyyy-MM-dd");
+    layoutParameters.fallbackDateTimeFormat = "yyyy-MM-dd";
     if (!parseToDateComponents(element()->fastGetAttribute(minAttr), &layoutParameters.minimum))
         layoutParameters.minimum = DateComponents();
     if (!parseToDateComponents(element()->fastGetAttribute(maxAttr), &layoutParameters.maximum))

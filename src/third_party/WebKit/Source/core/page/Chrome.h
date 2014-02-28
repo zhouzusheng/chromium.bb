@@ -22,11 +22,11 @@
 #ifndef Chrome_h
 #define Chrome_h
 
+#include "core/loader/NavigationPolicy.h"
 #include "core/page/FocusDirection.h"
 #include "core/platform/Cursor.h"
 #include "core/platform/HostWindow.h"
-#include <wtf/Forward.h>
-#include <wtf/RefPtr.h>
+#include "wtf/Forward.h"
 
 namespace WebCore {
 
@@ -36,13 +36,11 @@ class ColorChooserClient;
 class DateTimeChooser;
 class DateTimeChooserClient;
 class FileChooser;
-class FileIconLoader;
 class FloatRect;
 class Frame;
 class Geolocation;
 class HitTestResult;
 class IntRect;
-class NavigationAction;
 class Node;
 class Page;
 class PopupMenu;
@@ -51,10 +49,9 @@ class PopupOpeningObserver;
 class SearchPopupMenu;
 
 struct DateTimeChooserParameters;
-struct FrameLoadRequest;
 struct ViewportArguments;
 struct WindowFeatures;
-    
+
 class Chrome : public HostWindow {
 public:
     ~Chrome();
@@ -90,26 +87,18 @@ public:
 
     void focusedNodeChanged(Node*) const;
 
-    Page* createWindow(Frame*, const FrameLoadRequest&, const WindowFeatures&, const NavigationAction&) const;
-    void show() const;
+    void show(NavigationPolicy = NavigationPolicyIgnore) const;
 
     bool canRunModal() const;
     bool canRunModalNow() const;
     void runModal() const;
 
-    void setToolbarsVisible(bool) const;
+    void setWindowFeatures(const WindowFeatures&) const;
+
     bool toolbarsVisible() const;
-
-    void setStatusbarVisible(bool) const;
     bool statusbarVisible() const;
-
-    void setScrollbarsVisible(bool) const;
     bool scrollbarsVisible() const;
-
-    void setMenubarVisible(bool) const;
     bool menubarVisible() const;
-
-    void setResizable(bool) const;
 
     bool canRunBeforeUnloadConfirmPanel();
     bool runBeforeUnloadConfirmPanel(const String& message, Frame*);
@@ -133,7 +122,6 @@ public:
     PassRefPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&);
 
     void runOpenPanel(Frame*, PassRefPtr<FileChooser>);
-    void loadIconForFiles(const Vector<String>&, FileIconLoader*);
     void enumerateChosenDirectory(FileChooser*);
 
     void dispatchViewportPropertiesDidChange(const ViewportArguments&) const;

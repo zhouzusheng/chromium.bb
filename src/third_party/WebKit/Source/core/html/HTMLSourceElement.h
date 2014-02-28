@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef HTMLSourceElement_h
@@ -33,20 +33,21 @@ namespace WebCore {
 
 class HTMLSourceElement FINAL : public HTMLElement {
 public:
+    static PassRefPtr<HTMLSourceElement> create(Document* document) { return create(HTMLNames::sourceTag, document); }
     static PassRefPtr<HTMLSourceElement> create(const QualifiedName&, Document*);
 
     String media() const;
     String type() const;
-    void setSrc(const String&);    
+    void setSrc(const String&);
     void setMedia(const String&);
     void setType(const String&);
-    
+
     void scheduleErrorEvent();
     void cancelPendingErrorEvent();
 
 private:
     HTMLSourceElement(const QualifiedName&, Document*);
-    
+
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;

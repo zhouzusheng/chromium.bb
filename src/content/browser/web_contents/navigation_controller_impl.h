@@ -5,12 +5,12 @@
 #ifndef CONTENT_BROWSER_WEB_CONTENTS_NAVIGATION_CONTROLLER_IMPL_H_
 #define CONTENT_BROWSER_WEB_CONTENTS_NAVIGATION_CONTROLLER_IMPL_H_
 
-#include "build/build_config.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/linked_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
+#include "build/build_config.h"
 #include "content/browser/ssl/ssl_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_type.h"
@@ -155,7 +155,7 @@ class CONTENT_EXPORT NavigationControllerImpl
   // be a reload, while only a different ref would be in-page (pages can't clear
   // refs without reload, only change to "#" which we don't count as empty).
   bool IsURLInPageNavigation(const GURL& url) const {
-    return IsURLInPageNavigation(url, false);
+    return IsURLInPageNavigation(url, false, NAVIGATION_TYPE_UNKNOWN);
   }
 
   // The situation is made murkier by history.replaceState(), which could
@@ -163,7 +163,10 @@ class CONTENT_EXPORT NavigationControllerImpl
   // we need this form which lets the (untrustworthy) renderer resolve the
   // ambiguity, but only when the URLs are equal. This should be safe since the
   // origin isn't changing.
-  bool IsURLInPageNavigation(const GURL& url, bool renderer_says_in_page) const;
+  bool IsURLInPageNavigation(
+      const GURL& url,
+      bool renderer_says_in_page,
+      NavigationType navigation_type) const;
 
   // Sets the SessionStorageNamespace for the given |partition_id|. This is
   // used during initialization of a new NavigationController to allow
@@ -213,8 +216,6 @@ class CONTENT_EXPORT NavigationControllerImpl
 
   // Helper class to smooth out runs of duplicate timestamps while still
   // allowing time to jump backwards.
-  //
-  // TODO(akalin): Use CONTENT_EXPORT_PRIVATE once we have that.
   class CONTENT_EXPORT TimeSmoother {
    public:
     // Returns |t| with possibly some time added on.
@@ -288,10 +289,13 @@ class CONTENT_EXPORT NavigationControllerImpl
   // Removes the entry at |index|, as long as it is not the current entry.
   void RemoveEntryAtIndexInternal(int index);
 
-  // Discards the pending and transient entries.
+  // Discards both the pending and transient entries.
   void DiscardNonCommittedEntriesInternal();
 
-  // Discards the transient entry.
+  // Discards only the pending entry.
+  void DiscardPendingEntry();
+
+  // Discards only the transient entry.
   void DiscardTransientEntry();
 
   // If we have the maximum number of entries, remove the oldest one in

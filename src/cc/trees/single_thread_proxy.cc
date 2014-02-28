@@ -98,6 +98,9 @@ void SingleThreadProxy::SetLayerTreeHostClientReady() {
 void SingleThreadProxy::SetVisible(bool visible) {
   DebugScopedSetImplThread impl(this);
   layer_tree_host_impl_->SetVisible(visible);
+
+  // Changing visibility could change ShouldComposite().
+  layer_tree_host_impl_->UpdateBackgroundAnimateTicking(!ShouldComposite());
 }
 
 void SingleThreadProxy::CreateAndInitializeOutputSurface() {
@@ -171,6 +174,11 @@ void SingleThreadProxy::SetNeedsAnimate() {
   NOTREACHED();
 }
 
+void SingleThreadProxy::SetNeedsUpdateLayers() {
+  DCHECK(Proxy::IsMainThread());
+  layer_tree_host_->ScheduleComposite();
+}
+
 void SingleThreadProxy::DoCommit(scoped_ptr<ResourceUpdateQueue> queue) {
   DCHECK(Proxy::IsMainThread());
   // Commit immediately.
@@ -203,11 +211,12 @@ void SingleThreadProxy::DoCommit(scoped_ptr<ResourceUpdateQueue> queue) {
     layer_tree_host_impl_->CommitComplete();
 
 #ifndef NDEBUG
-    // In the single-threaded case, the scroll deltas should never be
+    // In the single-threaded case, the scale and scroll deltas should never be
     // touched on the impl layer tree.
     scoped_ptr<ScrollAndScaleSet> scroll_info =
         layer_tree_host_impl_->ProcessScrollDeltas();
     DCHECK(!scroll_info->scrolls.size());
+    DCHECK_EQ(1.f, scroll_info->page_scale_delta);
 #endif
 
     base::TimeDelta duration = stats_instrumentation->EndRecording(start_time);
@@ -266,8 +275,9 @@ void SingleThreadProxy::SetNeedsRedrawOnImplThread() {
 }
 
 void SingleThreadProxy::SetNeedsRedrawRectOnImplThread(gfx::Rect damage_rect) {
-  // FIXME: Once we move render_widget scheduling into this class, we can
-  // treat redraw requests more efficiently than CommitAndRedraw requests.
+  // TODO(brianderson): Once we move render_widget scheduling into this class,
+  // we can treat redraw requests more efficiently than CommitAndRedraw
+  // requests.
   layer_tree_host_impl_->SetViewportDamage(damage_rect);
   SetNeedsCommit();
 }
@@ -484,11 +494,5 @@ void SingleThreadProxy::DidSwapFrame() {
 }
 
 bool SingleThreadProxy::CommitPendingForTesting() { return false; }
-
-skia::RefPtr<SkPicture> SingleThreadProxy::CapturePicture() {
-  // Impl-side painting only.
-  NOTREACHED();
-  return skia::RefPtr<SkPicture>();
-}
 
 }  // namespace cc

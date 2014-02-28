@@ -31,10 +31,9 @@
 
 #include "core/dom/DOMImplementation.h"
 #include "core/loader/TextResourceDecoder.h"
-#include "core/loader/cache/CachedResource.h"
+#include "core/loader/cache/Resource.h"
 #include "core/platform/SharedBuffer.h"
 #include "core/platform/network/ResourceResponse.h"
-#include <wtf/MemoryInstrumentationHashMap.h>
 
 namespace {
 // 100MB
@@ -64,15 +63,6 @@ XHRReplayData::XHRReplayData(const String &method, const KURL& url, bool async, 
     , m_formData(formData)
     , m_includeCredentials(includeCredentials)
 {
-}
-
-void XHRReplayData::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this);
-    info.addMember(m_method, "method");
-    info.addMember(m_url, "url");
-    info.addMember(m_formData, "formData");
-    info.addMember(m_headers, "headers");
 }
 
 // ResourceData
@@ -144,22 +134,6 @@ size_t NetworkResourcesData::ResourceData::decodeDataToContent()
     m_content.append(m_decoder->flush());
     m_dataBuffer = nullptr;
     return contentSizeInBytes(m_content) - dataLength;
-}
-
-void NetworkResourcesData::ResourceData::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this);
-    info.addMember(m_requestId, "requestId");
-    info.addMember(m_loaderId, "loaderId");
-    info.addMember(m_frameId, "frameId");
-    info.addMember(m_url, "url");
-    info.addMember(m_content, "content");
-    info.addMember(m_xhrReplayData, "xhrReplayData");
-    info.addMember(m_dataBuffer, "dataBuffer");
-    info.addMember(m_textEncodingName, "textEncodingName");
-    info.addMember(m_decoder, "decoder");
-    info.addMember(m_buffer, "buffer");
-    info.addMember(m_cachedResource, "cachedResource");
 }
 
 // NetworkResourcesData
@@ -274,12 +248,12 @@ void NetworkResourcesData::maybeDecodeDataToContent(const String& requestId)
         m_contentSize -= resourceData->evictContent();
 }
 
-void NetworkResourcesData::addCachedResource(const String& requestId, CachedResource* cachedResource)
+void NetworkResourcesData::addResource(const String& requestId, Resource* cachedResource)
 {
     ResourceData* resourceData = resourceDataForRequestId(requestId);
     if (!resourceData)
         return;
-    resourceData->setCachedResource(cachedResource);
+    resourceData->setResource(cachedResource);
 }
 
 void NetworkResourcesData::addResourceSharedBuffer(const String& requestId, PassRefPtr<SharedBuffer> buffer, const String& textEncodingName)
@@ -336,7 +310,7 @@ void NetworkResourcesData::reuseXHRReplayData(const String& requestId, const Str
     resourceData->setXHRReplayData(reusedResourceData->xhrReplayData());
 }
 
-Vector<String> NetworkResourcesData::removeCachedResource(CachedResource* cachedResource)
+Vector<String> NetworkResourcesData::removeResource(Resource* cachedResource)
 {
     Vector<String> result;
     ResourceDataMap::iterator it;
@@ -344,7 +318,7 @@ Vector<String> NetworkResourcesData::removeCachedResource(CachedResource* cached
     for (it = m_requestIdToResourceDataMap.begin(); it != end; ++it) {
         ResourceData* resourceData = it->value;
         if (resourceData->cachedResource() == cachedResource) {
-            resourceData->setCachedResource(0);
+            resourceData->setResource(0);
             result.append(it->key);
         }
     }
@@ -410,14 +384,6 @@ bool NetworkResourcesData::ensureFreeSpace(size_t size)
             m_contentSize -= resourceData->evictContent();
     }
     return true;
-}
-
-void NetworkResourcesData::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this);
-    info.addMember(m_requestIdsDeque, "requestIdsDeque");
-    info.addMember(m_reusedXHRReplayDataRequestIds, "reusedXHRReplayDataRequestIds");
-    info.addMember(m_requestIdToResourceDataMap, "requestIdToResourceDataMap");
 }
 
 } // namespace WebCore

@@ -20,26 +20,21 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
 #ifndef PopStateEvent_h
 #define PopStateEvent_h
 
-#include "bindings/v8/ScriptValue.h"
 #include "core/dom/Event.h"
 
 namespace WebCore {
 
-struct PopStateEventInit : public EventInit {
-    PopStateEventInit();
-
-    ScriptValue state;
-};
-
 class History;
 class SerializedScriptValue;
+
+typedef EventInit PopStateEventInit;
 
 class PopStateEvent : public Event {
 public:
@@ -48,8 +43,12 @@ public:
     static PassRefPtr<PopStateEvent> create(PassRefPtr<SerializedScriptValue>, PassRefPtr<History>);
     static PassRefPtr<PopStateEvent> create(const AtomicString&, const PopStateEventInit&);
 
-    PassRefPtr<SerializedScriptValue> serializedState() const { return m_serializedState; }
-    const ScriptValue& state() const { return m_state; }
+    SerializedScriptValue* serializedState() const { return m_serializedState.get(); }
+    void setSerializedState(PassRefPtr<SerializedScriptValue> state)
+    {
+        ASSERT(!m_serializedState);
+        m_serializedState = state;
+    }
     History* history() const { return m_history.get(); }
 
     virtual const AtomicString& interfaceName() const;
@@ -59,7 +58,6 @@ private:
     PopStateEvent(const AtomicString&, const PopStateEventInit&);
     explicit PopStateEvent(PassRefPtr<SerializedScriptValue>, PassRefPtr<History>);
 
-    ScriptValue m_state;
     RefPtr<SerializedScriptValue> m_serializedState;
     RefPtr<History> m_history;
 };

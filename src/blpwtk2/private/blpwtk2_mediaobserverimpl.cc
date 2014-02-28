@@ -54,6 +54,7 @@ void MediaObserverImpl::OnVideoCaptureDevicesChanged(
 void MediaObserverImpl::OnMediaRequestStateChanged(
     int render_process_id,
     int render_view_id,
+    int page_request_id,
     const content::MediaStreamDevice& device,
     content::MediaRequestState state)
 {
@@ -64,7 +65,16 @@ void MediaObserverImpl::OnAudioStreamPlayingChanged(
     int render_process_id,
     int render_view_id,
     int stream_id,
-    bool playing)
+    bool playing,
+    float power_dbfs,
+    bool clipped)
+{
+    //LILIT: what should we do here?
+}
+
+void MediaObserverImpl::OnCreatingAudioStream(
+    int render_process_id,
+    int render_view_id)
 {
     //LILIT: what should we do here?
 }

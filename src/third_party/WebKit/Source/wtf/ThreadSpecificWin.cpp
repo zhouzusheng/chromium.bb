@@ -26,9 +26,7 @@
 
 #include "StdLibExtras.h"
 #include "ThreadingPrimitives.h"
-#include <wtf/DoublyLinkedList.h>
-
-#if !USE(PTHREADS)
+#include "wtf/DoublyLinkedList.h"
 
 namespace WTF {
 
@@ -133,7 +131,5 @@ void ThreadSpecificThreadExit()
 }
 
 } // namespace WTF
-
-#endif // !USE(PTHREADS)
 
 #endif // OS(WINDOWS)

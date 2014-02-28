@@ -25,12 +25,13 @@
 #include "config.h"
 #include "core/dom/TreeWalker.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScriptState.h"
 #include "core/dom/ContainerNode.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NodeFilter.h"
 #include "core/dom/NodeTraversal.h"
-#include <wtf/PassRefPtr.h>
+#include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
@@ -41,10 +42,10 @@ TreeWalker::TreeWalker(PassRefPtr<Node> rootNode, unsigned whatToShow, PassRefPt
     ScriptWrappable::init(this);
 }
 
-void TreeWalker::setCurrentNode(PassRefPtr<Node> node, ExceptionCode& ec)
+void TreeWalker::setCurrentNode(PassRefPtr<Node> node, ExceptionState& es)
 {
     if (!node) {
-        ec = NOT_SUPPORTED_ERR;
+        es.throwDOMException(NotSupportedError);
         return;
     }
     m_current = node;

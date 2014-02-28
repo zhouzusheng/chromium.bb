@@ -705,9 +705,9 @@ public:
      *  bitmap is the "center", then the center-rect should be [2, 2, 3, 3].
      *
      *  If the dst is >= the bitmap size, then...
-     *  - The 4 corners are not stretch at all.
-     *  - The sides are stretch in only one axis.
-     *  - The center is stretch in both axes.
+     *  - The 4 corners are not stretched at all.
+     *  - The sides are stretched in only one axis.
+     *  - The center is stretched in both axes.
      * Else, for each axis where dst < bitmap,
      *  - The corners shrink proportionally
      *  - The sides (along the shrink axis) and center are not drawn
@@ -828,7 +828,7 @@ public:
                     corresponding texs and colors arrays if non-null)
         @param vertices Array of vertices for the mesh
         @param texs May be null. If not null, specifies the coordinate
-                             in texture space for each vertex.
+                    in _texture_ space (not uv space) for each vertex.
         @param colors May be null. If not null, specifies a color for each
                       vertex, to be interpolated across the triangle.
         @param xmode Used if both texs and colors are present. In this
@@ -1002,10 +1002,6 @@ protected:
     // is not released or deleted by the caller.
     virtual SkCanvas* canvasForDrawIter();
 
-    // all of the drawBitmap variants call this guy
-    void commonDrawBitmap(const SkBitmap&, const SkIRect*, const SkMatrix&,
-                          const SkPaint& paint);
-
     // Clip rectangle bounds. Called internally by saveLayer.
     // returns false if the entire rectangle is entirely clipped out
     bool clipRectBounds(const SkRect* bounds, SaveFlags flags,
@@ -1067,8 +1063,7 @@ private:
 
     // internal methods are not virtual, so they can safely be called by other
     // canvas apis, without confusing subclasses (like SkPictureRecording)
-    void internalDrawBitmap(const SkBitmap&, const SkIRect*, const SkMatrix& m,
-                                  const SkPaint* paint);
+    void internalDrawBitmap(const SkBitmap&, const SkMatrix& m, const SkPaint* paint);
     void internalDrawBitmapRect(const SkBitmap& bitmap, const SkRect* src,
                                 const SkRect& dst, const SkPaint* paint);
     void internalDrawBitmapNine(const SkBitmap& bitmap, const SkIRect& center,

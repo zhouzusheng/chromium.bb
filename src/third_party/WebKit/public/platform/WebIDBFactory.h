@@ -47,11 +47,9 @@ class WebIDBFactory {
 public:
     virtual ~WebIDBFactory() { }
 
-    virtual void getDatabaseNames(WebIDBCallbacks* callbacks, const WebString& databaseIdentifier, const WebString& dataDir) { }
-
-    virtual void open(const WebString& name, long long version, long long transactionId, WebIDBCallbacks* callbacks, WebIDBDatabaseCallbacks* databaseCallbacks, const WebString& databaseIdentifier, const WebString& dataDir) { WEBKIT_ASSERT_NOT_REACHED(); }
-
-    virtual void deleteDatabase(const WebString& name, WebIDBCallbacks* callbacks, const WebString& databaseIdentifier, const WebString& dataDir) { WEBKIT_ASSERT_NOT_REACHED(); }
+    virtual void getDatabaseNames(WebIDBCallbacks* callbacks, const WebString& databaseIdentifier) { WEBKIT_ASSERT_NOT_REACHED(); }
+    virtual void open(const WebString& name, long long version, long long transactionId, WebIDBCallbacks* callbacks, WebIDBDatabaseCallbacks* databaseCallbacks, const WebString& databaseIdentifier) { WEBKIT_ASSERT_NOT_REACHED(); }
+    virtual void deleteDatabase(const WebString& name, WebIDBCallbacks* callbacks, const WebString& databaseIdentifier) { WEBKIT_ASSERT_NOT_REACHED(); }
 };
 
 } // namespace WebKit

@@ -5,13 +5,15 @@
 // IPC messages for the file system.
 // Multiply-included message file, hence no include guard.
 
-#include "googleurl/src/gurl.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_platform_file.h"
+#include "url/gurl.h"
 #include "webkit/common/fileapi/directory_entry.h"
 #include "webkit/common/fileapi/file_system_types.h"
 #include "webkit/common/quota/quota_types.h"
 
+#undef IPC_MESSAGE_EXPORT
+#define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 #define IPC_MESSAGE_START FileSystemMsgStart
 
 IPC_STRUCT_TRAITS_BEGIN(fileapi::DirectoryEntry)

@@ -40,14 +40,12 @@ extern const base::FilePath::CharType* const kHelperFlavorSuffixes[];
 extern const base::FilePath::CharType kMetroDriverDll[];
 extern const wchar_t kStatusTrayWindowClass[];
 #endif  // defined(OS_WIN)
-extern const wchar_t kMessageWindowClass[];
 extern const wchar_t kCrashReportLog[];
 extern const wchar_t kTestingInterfaceDLL[];
 extern const char    kInitialProfile[];
 extern const char    kMultiProfileDirPrefix[];
+extern const base::FilePath::CharType kGuestProfileDir[];
 extern const wchar_t kBrowserResourcesDll[];
-extern const base::FilePath::CharType kExtensionFileExtension[];
-extern const base::FilePath::CharType kExtensionKeyFileExtension[];
 
 // filenames
 #if defined(OS_ANDROID)
@@ -98,11 +96,10 @@ extern const bool kRecordModeEnabled;
 // (Matches what the CLD -Compact Language Detection- library reports.)
 extern const char* const kUnknownLanguageCode;
 
-// If another javascript message box is displayed within
-// kJavascriptMessageExpectedDelay of a previous javascript message box being
-// dismissed, display an option to suppress future message boxes from this
-// contents.
-extern const int kJavascriptMessageExpectedDelay;
+// If a WebContents is impolite and displays a second JavaScript alert within
+// kJavaScriptMessageExpectedDelay of a previous JavaScript alert being
+// dismissed, display an option to suppress future alerts from this WebContents.
+extern const int kJavaScriptMessageExpectedDelay;
 
 // Are touch icons enabled? False by default.
 extern const bool kEnableTouchIcon;
@@ -141,6 +138,9 @@ extern const wchar_t kLaunchModeValue[];
 // Ex.: /home/chronos/u-0123456789
 extern const char kProfileDirPrefix[];
 #endif
+
+// Used to identify the application to the system AV function in Windows.
+extern const char kApplicationClientIDStringForAVScanning[];
 
 }  // namespace chrome
 

@@ -26,12 +26,12 @@
 #include "core/platform/graphics/filters/FilterEffect.h"
 
 #include "core/platform/graphics/filters/Filter.h"
-#include <wtf/text/WTFString.h>
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 enum CompositeOperationType {
-    FECOMPOSITE_OPERATOR_UNKNOWN    = 0, 
+    FECOMPOSITE_OPERATOR_UNKNOWN    = 0,
     FECOMPOSITE_OPERATOR_OVER       = 1,
     FECOMPOSITE_OPERATOR_IN         = 2,
     FECOMPOSITE_OPERATOR_OUT        = 3,
@@ -65,7 +65,7 @@ public:
 
     virtual TextStream& externalRepresentation(TextStream&, int indention) const;
 
-    virtual SkImageFilter* createImageFilter(SkiaImageFilterBuilder*);
+    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
 
 protected:
     virtual bool requiresValidPreMultipliedPixels() OVERRIDE { return m_type != FECOMPOSITE_OPERATOR_ARITHMETIC; }

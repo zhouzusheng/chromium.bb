@@ -6,30 +6,30 @@
 
 base.requireStylesheet('tracing.tracks.counter_track');
 
-base.require('tracing.tracks.canvas_based_track');
+base.require('tracing.tracks.heading_track');
 base.require('tracing.color_scheme');
 base.require('ui');
 
 base.exportTo('tracing.tracks', function() {
 
   var palette = tracing.getColorPalette();
+  var LAST_SAMPLE_PIXELS = 8;
 
   /**
    * A track that displays a Counter object.
    * @constructor
-   * @extends {CanvasBasedTrack}
+   * @extends {HeadingTrack}
    */
 
   var CounterTrack =
-      ui.define('counter-track', tracing.tracks.CanvasBasedTrack);
+      ui.define('counter-track', tracing.tracks.HeadingTrack);
 
   CounterTrack.prototype = {
+    __proto__: tracing.tracks.HeadingTrack.prototype,
 
-    __proto__: tracing.tracks.CanvasBasedTrack.prototype,
-
-    decorate: function() {
+    decorate: function(viewport) {
+      tracing.tracks.HeadingTrack.prototype.decorate.call(this, viewport);
       this.classList.add('counter-track');
-      this.addControlButtonElements_(false);
       this.selectedSamples_ = {};
       this.categoryFilter_ = new tracing.Filter();
     },
@@ -48,45 +48,45 @@ base.exportTo('tracing.tracks', function() {
 
     set counter(counter) {
       this.counter_ = counter;
-      this.invalidate();
-      this.updateVisibility_();
+      this.heading = counter.name + ': ';
+    },
+
+    get categoryFilter() {
+      return this.categoryFilter_;
     },
 
     set categoryFilter(v) {
       this.categoryFilter_ = v;
-      this.updateVisibility_();
     },
 
     /**
      * @return {Object} A sparse, mutable map from sample index to bool. Samples
-     * indices the map that are true are drawn as selected. Callers that mutate
-     * the map must manually call invalidate on the track to trigger a redraw.
+     * indices the map that are true are drawn as selected.
      */
     get selectedSamples() {
       return this.selectedSamples_;
     },
 
-    updateVisibility_: function() {
-      this.visible = (this.counter_ &&
-                      this.categoryFilter_.matchCounter(this.counter_));
+    draw: function(type, viewLWorld, viewRWorld) {
+      switch (type) {
+        case tracing.tracks.DrawType.SLICE:
+          this.drawSlices_(viewLWorld, viewRWorld);
+          break;
+      }
     },
 
-    redraw: function() {
-      var ctr = this.counter_;
-      var ctx = this.ctx_;
-      var canvasW = this.canvas_.width;
-      var canvasH = this.canvas_.height;
+    drawSlices_: function(viewLWorld, viewRWorld) {
+      var ctx = this.context();
+      var pixelRatio = window.devicePixelRatio || 1;
 
-      ctx.clearRect(0, 0, canvasW, canvasH);
+      var bounds = this.getBoundingClientRect();
+      var height = bounds.height * pixelRatio;
+
+      var counter = this.counter_;
 
       // Culling parametrs.
-      var vp = this.viewport_;
+      var vp = this.viewport;
       var pixWidth = vp.xViewVectorToWorld(1);
-      var viewLWorld = vp.xViewToWorld(0);
-      var viewRWorld = vp.xViewToWorld(canvasW);
-
-      // Give the viewport a chance to draw onto this canvas.
-      vp.drawUnderContent(ctx, viewLWorld, viewRWorld, canvasH);
 
       // Drop sampels that are less than skipDistancePix apart.
       var skipDistancePix = 1;
@@ -97,56 +97,56 @@ base.exportTo('tracing.tracks', function() {
       vp.applyTransformToCanvas(ctx);
 
       // Figure out where drawing should begin.
-      var numSeries = ctr.numSeries;
-      var numSamples = ctr.numSamples;
-      var startIndex = base.findLowIndexInSortedArray(ctr.timestamps,
-                                                      function(x) {
-                                                        return x;
-                                                      },
-                                                      viewLWorld);
-      startIndex = startIndex - 1 > 0 ? startIndex - 1 : 0;
+      var numSeries = counter.numSeries;
+      var numSamples = counter.numSamples;
+      var startIndex = base.findLowIndexInSortedArray(
+          counter.timestamps,
+          function(x) { return x; },
+          viewLWorld);
 
+      startIndex = startIndex - 1 > 0 ? startIndex - 1 : 0;
       // Draw indices one by one until we fall off the viewRWorld.
-      var yScale = canvasH / ctr.maxTotal;
-      for (var seriesIndex = ctr.numSeries - 1;
+      var yScale = height / counter.maxTotal;
+      for (var seriesIndex = counter.numSeries - 1;
            seriesIndex >= 0; seriesIndex--) {
-        var colorId = ctr.seriesColors[seriesIndex];
+        var colorId = counter.series[seriesIndex].color;
         ctx.fillStyle = palette[colorId];
         ctx.beginPath();
 
         // Set iLast and xLast such that the first sample we draw is the
         // startIndex sample.
         var iLast = startIndex - 1;
-        var xLast = iLast >= 0 ? ctr.timestamps[iLast] - skipDistanceWorld : -1;
-        var yLastView = canvasH;
+        var xLast = iLast >= 0 ?
+            counter.timestamps[iLast] - skipDistanceWorld : -1;
+        var yLastView = height;
 
         // Iterate over samples from iLast onward until we either fall off the
         // viewRWorld or we run out of samples. To avoid drawing too much, after
         // drawing a sample at xLast, skip subsequent samples that are less than
         // skipDistanceWorld from xLast.
         var hasMoved = false;
+
         while (true) {
           var i = iLast + 1;
           if (i >= numSamples) {
             ctx.lineTo(xLast, yLastView);
-            ctx.lineTo(xLast + 8 * pixWidth, yLastView);
-            ctx.lineTo(xLast + 8 * pixWidth, canvasH);
+            ctx.lineTo(xLast + LAST_SAMPLE_PIXELS * pixWidth, yLastView);
+            ctx.lineTo(xLast + LAST_SAMPLE_PIXELS * pixWidth, height);
             break;
           }
 
-          var x = ctr.timestamps[i];
-
-          var y = ctr.totals[i * numSeries + seriesIndex];
-          var yView = canvasH - (yScale * y);
+          var x = counter.timestamps[i];
+          var y = counter.totals[i * numSeries + seriesIndex];
+          var yView = height - (yScale * y);
 
           if (x > viewRWorld) {
             ctx.lineTo(x, yLastView);
-            ctx.lineTo(x, canvasH);
+            ctx.lineTo(x, height);
             break;
           }
 
           if (i + 1 < numSamples) {
-            var xNext = ctr.timestamps[i + 1];
+            var xNext = counter.timestamps[i + 1];
             if (xNext - xLast <= skipDistanceWorld && xNext < viewRWorld) {
               iLast = i;
               continue;
@@ -154,9 +154,10 @@ base.exportTo('tracing.tracks', function() {
           }
 
           if (!hasMoved) {
-            ctx.moveTo(viewLWorld, canvasH);
+            ctx.moveTo(viewLWorld, height);
             hasMoved = true;
           }
+
           if (x - xLast < skipDistanceWorld) {
             // We know that xNext > xLast + skipDistanceWorld, so we can
             // safely move this sample's x over that much without passing
@@ -166,6 +167,7 @@ base.exportTo('tracing.tracks', function() {
           }
           ctx.lineTo(x, yLastView);
           ctx.lineTo(x, yView);
+
           iLast = i;
           xLast = x;
           yLastView = yView;
@@ -173,49 +175,53 @@ base.exportTo('tracing.tracks', function() {
         ctx.closePath();
         ctx.fill();
       }
+
       ctx.fillStyle = 'rgba(255, 0, 0, 1)';
       for (var i in this.selectedSamples_) {
         if (!this.selectedSamples_[i])
           continue;
 
-        var x = ctr.timestamps[i];
-        for (var seriesIndex = ctr.numSeries - 1;
+        var x = counter.timestamps[i];
+        for (var seriesIndex = counter.numSeries - 1;
              seriesIndex >= 0; seriesIndex--) {
-          var y = ctr.totals[i * numSeries + seriesIndex];
-          var yView = canvasH - (yScale * y);
+          var y = counter.totals[i * numSeries + seriesIndex];
+          var yView = height - (yScale * y);
           ctx.fillRect(x - pixWidth, yView - 1, 3 * pixWidth, 3);
         }
       }
       ctx.restore();
+    },
 
-      // Give the viewport a chance to draw over this canvas.
-      vp.drawOverContent(ctx, viewLWorld, viewRWorld, canvasH);
+    memoizeSlices_: function() {
+      this.viewport_.sliceMemoization(this.counter_, this);
     },
 
     addIntersectingItemsInRangeToSelectionInWorldSpace: function(
         loWX, hiWX, viewPixWidthWorld, selection) {
 
       function getSampleWidth(x, i) {
-        if (i == ctr.timestamps.length - 1)
-          return 0;
-        return ctr.timestamps[i + 1] - ctr.timestamps[i];
+        if (i === counter.timestamps.length - 1) {
+          var pixWidth = this.viewport.xViewVectorToWorld(1);
+          return LAST_SAMPLE_PIXELS * pixWidth;
+        }
+        return counter.timestamps[i + 1] - counter.timestamps[i];
       }
 
-      var ctr = this.counter_;
-      var iLo = base.findLowIndexInSortedIntervals(ctr.timestamps,
+      var counter = this.counter_;
+      var iLo = base.findLowIndexInSortedIntervals(counter.timestamps,
                                                    function(x) { return x; },
-                                                   getSampleWidth,
+                                                   getSampleWidth.bind(this),
                                                    loWX);
-      var iHi = base.findLowIndexInSortedIntervals(ctr.timestamps,
+      var iHi = base.findLowIndexInSortedIntervals(counter.timestamps,
                                                    function(x) { return x; },
-                                                   getSampleWidth,
+                                                   getSampleWidth.bind(this),
                                                    hiWX);
 
       // Iterate over every sample intersecting..
       for (var i = iLo; i <= iHi; i++) {
         if (i < 0)
           continue;
-        if (i >= ctr.timestamps.length)
+        if (i >= counter.timestamps.length)
           continue;
 
         // TODO(nduca): Pick the seriesIndexHit based on the loY - hiY values.

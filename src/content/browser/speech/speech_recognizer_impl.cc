@@ -6,7 +6,7 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/speech/audio_buffer.h"
 #include "content/browser/speech/google_one_shot_remote_engine.h"
@@ -511,7 +511,6 @@ SpeechRecognizerImpl::StartRecording(const FSMEventArgs&) {
 
   int chunk_duration_ms = recognition_engine_->GetDesiredAudioChunkDurationMs();
 
-  // TODO(xians): use the correct input device here.
   AudioParameters in_params = audio_manager->GetInputStreamParameters(
       device_id_);
   if (!in_params.IsValid() && !unit_test_is_active) {
@@ -564,11 +563,10 @@ SpeechRecognizerImpl::StartRecording(const FSMEventArgs&) {
   audio_converter_.reset(
       new OnDataConverter(input_parameters, output_parameters));
 
-  // TODO(xians): use the correct input device here.
   audio_controller_ = AudioInputController::Create(
       audio_manager, this, input_parameters, device_id_);
 
-  if (!audio_controller_) {
+  if (!audio_controller_.get()) {
     return Abort(SpeechRecognitionError(SPEECH_RECOGNITION_ERROR_AUDIO));
   }
 

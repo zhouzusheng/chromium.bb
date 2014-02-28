@@ -11,7 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/threading/platform_thread.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "cc/output/begin_frame_args.h"
 #include "cc/output/output_surface.h"
 #include "ipc/ipc_sync_message_filter.h"
@@ -44,6 +44,7 @@ class CompositorOutputSurface
       base::TaskRunner* target_task_runner);
 
   CompositorOutputSurface(int32 routing_id,
+                          uint32 output_surface_id,
                           WebGraphicsContext3DCommandBufferImpl* context3d,
                           cc::SoftwareOutputDevice* software,
                           bool use_swap_compositor_frame_message);
@@ -61,7 +62,9 @@ class CompositorOutputSurface
   virtual void UpdateSmoothnessTakesPriority(bool prefer_smoothness) OVERRIDE;
 
  protected:
-  virtual void OnSwapAck(const cc::CompositorFrameAck& ack);
+  virtual void OnSwapAck(uint32 output_surface_id,
+                         const cc::CompositorFrameAck& ack);
+  uint32 output_surface_id_;
 
  private:
   class CompositorOutputSurfaceProxy :

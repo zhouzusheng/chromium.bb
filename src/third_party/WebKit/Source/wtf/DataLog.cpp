@@ -20,15 +20,15 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
 #include "DataLog.h"
 #include <stdarg.h>
-#include <wtf/FilePrintStream.h>
-#include <wtf/WTFThreadData.h>
-#include <wtf/Threading.h>
+#include "wtf/FilePrintStream.h"
+#include "wtf/WTFThreadData.h"
+#include "wtf/Threading.h"
 
 #if OS(UNIX)
 #include <unistd.h>
@@ -70,7 +70,7 @@ static void initializeLogFileOnce()
 #endif // DATA_LOG_TO_FILE
     if (!file)
         file = new FilePrintStream(stderr, FilePrintStream::Borrow);
-    
+
     setvbuf(file->file(), 0, _IONBF, 0); // Prefer unbuffered output, so that we get a full log upon crash or deadlock.
 }
 

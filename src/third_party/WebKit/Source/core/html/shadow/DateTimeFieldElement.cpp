@@ -32,7 +32,7 @@
 #include "core/dom/Text.h"
 #include "core/platform/LocalizedStrings.h"
 #include "core/platform/text/PlatformLocale.h"
-#include <wtf/text/WTFString.h>
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -57,7 +57,7 @@ void DateTimeFieldElement::defaultEventHandler(Event* event)
         didFocus();
 
     if (event->isKeyboardEvent()) {
-        KeyboardEvent* keyboardEvent = static_cast<KeyboardEvent*>(event);
+        KeyboardEvent* keyboardEvent = toKeyboardEvent(event);
         if (!isDisabled() && !isFieldOwnerDisabled() && !isFieldOwnerReadOnly()) {
             handleKeyboardEvent(keyboardEvent);
             if (keyboardEvent->defaultHandled())
@@ -153,7 +153,7 @@ void DateTimeFieldElement::initialize(const AtomicString& pseudo, const String& 
     setAttribute(aria_valuemaxAttr, String::number(axMaximum));
 
     setAttribute(aria_helpAttr, axHelpText);
-    setPseudo(pseudo);
+    setPart(pseudo);
     appendChild(Text::create(document(), visibleValue()));
 }
 

@@ -923,12 +923,12 @@
   void ReadPixels(
       GLint x, GLint y, GLsizei width, GLsizei height, GLenum format,
       GLenum type, uint32 pixels_shm_id, uint32 pixels_shm_offset,
-      uint32 result_shm_id, uint32 result_shm_offset) {
+      uint32 result_shm_id, uint32 result_shm_offset, GLboolean async) {
     gles2::cmds::ReadPixels* c = GetCmdSpace<gles2::cmds::ReadPixels>();
     if (c) {
       c->Init(
           x, y, width, height, format, type, pixels_shm_id, pixels_shm_offset,
-          result_shm_id, result_shm_offset);
+          result_shm_id, result_shm_offset, async);
     }
   }
 
@@ -1574,6 +1574,16 @@
         GetCmdSpace<gles2::cmds::RenderbufferStorageMultisampleEXT>();
     if (c) {
       c->Init(target, samples, internalformat, width, height);
+    }
+  }
+
+  void FramebufferTexture2DMultisampleEXT(
+      GLenum target, GLenum attachment, GLenum textarget, GLuint texture,
+      GLint level, GLsizei samples) {
+    gles2::cmds::FramebufferTexture2DMultisampleEXT* c =
+        GetCmdSpace<gles2::cmds::FramebufferTexture2DMultisampleEXT>();
+    if (c) {
+      c->Init(target, attachment, textarget, texture, level, samples);
     }
   }
 

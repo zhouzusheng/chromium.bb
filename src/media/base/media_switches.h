@@ -16,8 +16,6 @@ MEDIA_EXPORT extern const char kAudioBufferSize[];
 
 MEDIA_EXPORT extern const char kEnableEac3Playback[];
 
-MEDIA_EXPORT extern const char kEnableInbandTextTracks[];
-
 MEDIA_EXPORT extern const char kEnableOpusPlayback[];
 
 MEDIA_EXPORT extern const char kEnableVp8AlphaPlayback[];
@@ -41,6 +39,7 @@ MEDIA_EXPORT extern const char kDisableMainThreadAudio[];
 
 #if defined(OS_WIN)
 MEDIA_EXPORT extern const char kEnableExclusiveAudio[];
+MEDIA_EXPORT extern const char kForceDirectShowVideoCapture[];
 MEDIA_EXPORT extern const char kForceWaveAudio[];
 MEDIA_EXPORT extern const char kTrySupportedChannelLayouts[];
 MEDIA_EXPORT extern const char kWaveOutBuffers[];

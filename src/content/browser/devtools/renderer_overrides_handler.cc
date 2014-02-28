@@ -14,7 +14,10 @@
 #include "base/values.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/devtools/devtools_protocol_constants.h"
+#include "content/browser/devtools/devtools_tracing_handler.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
+#include "content/port/browser/render_widget_host_view_port.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/javascript_dialog_manager.h"
 #include "content/public/browser/navigation_controller.h"
@@ -25,13 +28,27 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/referrer.h"
-#include "googleurl/src/gurl.h"
+#include "ui/gfx/codec/jpeg_codec.h"
+#include "ui/gfx/codec/png_codec.h"
+#include "ui/gfx/size_conversions.h"
 #include "ui/snapshot/snapshot.h"
+#include "url/gurl.h"
+
+using base::TimeTicks;
+
+namespace {
+
+static const char kPng[] = "png";
+static const char kJpeg[] = "jpeg";
+static int kDefaultScreenshotQuality = 80;
+
+}  // namespace
 
 namespace content {
 
 RendererOverridesHandler::RendererOverridesHandler(DevToolsAgentHost* agent)
-    : agent_(agent) {
+    : agent_(agent),
+      weak_factory_(this) {
   RegisterCommandHandler(
       devtools::DOM::setFileInputFiles::kName,
       base::Bind(
@@ -56,9 +73,9 @@ RendererOverridesHandler::RendererOverridesHandler(DevToolsAgentHost* agent)
 
 RendererOverridesHandler::~RendererOverridesHandler() {}
 
-scoped_ptr<DevToolsProtocol::Response>
+scoped_refptr<DevToolsProtocol::Response>
 RendererOverridesHandler::GrantPermissionsForSetFileInputFiles(
-    DevToolsProtocol::Command* command) {
+    scoped_refptr<DevToolsProtocol::Command> command) {
   base::DictionaryValue* params = command->params();
   base::ListValue* file_list = NULL;
   const char* param =
@@ -67,7 +84,7 @@ RendererOverridesHandler::GrantPermissionsForSetFileInputFiles(
     return command->InvalidParamResponse(param);
   RenderViewHost* host = agent_->GetRenderViewHost();
   if (!host)
-    return scoped_ptr<DevToolsProtocol::Response>();
+    return NULL;
 
   for (size_t i = 0; i < file_list->GetSize(); ++i) {
     base::FilePath::StringType file;
@@ -76,12 +93,12 @@ RendererOverridesHandler::GrantPermissionsForSetFileInputFiles(
     ChildProcessSecurityPolicyImpl::GetInstance()->GrantReadFile(
         host->GetProcess()->GetID(), base::FilePath(file));
   }
-  return scoped_ptr<DevToolsProtocol::Response>();
+  return NULL;
 }
 
-scoped_ptr<DevToolsProtocol::Response>
+scoped_refptr<DevToolsProtocol::Response>
 RendererOverridesHandler::PageHandleJavaScriptDialog(
-    DevToolsProtocol::Command* command) {
+    scoped_refptr<DevToolsProtocol::Command> command) {
   base::DictionaryValue* params = command->params();
   const char* paramAccept =
       devtools::Page::handleJavaScriptDialog::kParamAccept;
@@ -104,16 +121,16 @@ RendererOverridesHandler::PageHandleJavaScriptDialog(
           web_contents->GetDelegate()->GetJavaScriptDialogManager();
       if (manager && manager->HandleJavaScriptDialog(
               web_contents, accept, prompt_override_ptr)) {
-        return scoped_ptr<DevToolsProtocol::Response>();
+        return NULL;
       }
     }
   }
   return command->InternalErrorResponse("No JavaScript dialog to handle");
 }
 
-scoped_ptr<DevToolsProtocol::Response>
+scoped_refptr<DevToolsProtocol::Response>
 RendererOverridesHandler::PageNavigate(
-    DevToolsProtocol::Command* command) {
+    scoped_refptr<DevToolsProtocol::Command> command) {
   base::DictionaryValue* params = command->params();
   std::string url;
   const char* param = devtools::Page::navigate::kParamUrl;
@@ -135,34 +152,122 @@ RendererOverridesHandler::PageNavigate(
   return command->InternalErrorResponse("No WebContents to navigate");
 }
 
-scoped_ptr<DevToolsProtocol::Response>
+scoped_refptr<DevToolsProtocol::Response>
 RendererOverridesHandler::PageCaptureScreenshot(
-    DevToolsProtocol::Command* command) {
+    scoped_refptr<DevToolsProtocol::Command> command) {
+  // Parse input parameters.
+  std::string format;
+  int quality = kDefaultScreenshotQuality;
+  double scale = 1;
+  base::DictionaryValue* params = command->params();
+  if (params) {
+    params->GetString(devtools::Page::captureScreenshot::kParamFormat,
+                      &format);
+    params->GetInteger(devtools::Page::captureScreenshot::kParamQuality,
+                       &quality);
+    params->GetDouble(devtools::Page::captureScreenshot::kParamScale,
+                      &scale);
+  }
+  if (format.empty())
+    format = kPng;
+  if (quality < 0 || quality > 100)
+    quality = kDefaultScreenshotQuality;
+  if (scale <= 0 || scale > 1)
+    scale = 1;
+
+  RenderViewHost* host = agent_->GetRenderViewHost();
+  gfx::Rect view_bounds = host->GetView()->GetViewBounds();
+
+  // Grab screen pixels if available for current platform.
+  // TODO(pfeldman): support format, scale and quality in ui::GrabViewSnapshot.
+  std::vector<unsigned char> png;
+  bool is_unscaled_png = scale == 1 && format == kPng;
+  if (is_unscaled_png && ui::GrabViewSnapshot(host->GetView()->GetNativeView(),
+                                              &png, view_bounds)) {
+    std::string base64_data;
+    bool success = base::Base64Encode(
+        base::StringPiece(reinterpret_cast<char*>(&*png.begin()), png.size()),
+        &base64_data);
+    if (success) {
+      base::DictionaryValue* result = new base::DictionaryValue();
+      result->SetString(
+          devtools::Page::captureScreenshot::kResponseData, base64_data);
+      return command->SuccessResponse(result);
+    }
+    return command->InternalErrorResponse("Unable to base64encode screenshot");
+  }
+
+  // Fallback to copying from compositing surface.
+  RenderWidgetHostViewPort* view_port =
+      RenderWidgetHostViewPort::FromRWHV(host->GetView());
+
+  gfx::Size snapshot_size = gfx::ToFlooredSize(
+      gfx::ScaleSize(view_bounds.size(), scale));
+  view_port->CopyFromCompositingSurface(
+      view_bounds, snapshot_size,
+      base::Bind(&RendererOverridesHandler::ScreenshotCaptured,
+                 weak_factory_.GetWeakPtr(), command, format, quality, scale));
+  return command->AsyncResponsePromise();
+}
+
+void RendererOverridesHandler::ScreenshotCaptured(
+    scoped_refptr<DevToolsProtocol::Command> command,
+    const std::string& format,
+    int quality,
+    double scale,
+    bool success,
+    const SkBitmap& bitmap) {
+  if (!success) {
+    SendRawMessage(
+        command->InternalErrorResponse("Unable to capture screenshot")->
+            Serialize());
+    return;
+  }
+
+  std::vector<unsigned char> data;
+  SkAutoLockPixels lock_image(bitmap);
+  bool encoded;
+  if (format == kPng) {
+    encoded = gfx::PNGCodec::Encode(
+        reinterpret_cast<unsigned char*>(bitmap.getAddr32(0, 0)),
+        gfx::PNGCodec::FORMAT_SkBitmap,
+        gfx::Size(bitmap.width(), bitmap.height()),
+        bitmap.width() * bitmap.bytesPerPixel(),
+        false, std::vector<gfx::PNGCodec::Comment>(), &data);
+  } else if (format == kJpeg) {
+    encoded = gfx::JPEGCodec::Encode(
+        reinterpret_cast<unsigned char*>(bitmap.getAddr32(0, 0)),
+        gfx::JPEGCodec::FORMAT_SkBitmap,
+        bitmap.width(),
+        bitmap.height(),
+        bitmap.width() * bitmap.bytesPerPixel(),
+        quality, &data);
+  } else {
+    encoded = false;
+  }
+
+  if (!encoded) {
+    SendRawMessage(
+        command->InternalErrorResponse("Unable to encode screenshot")->
+            Serialize());
+    return;
+  }
+
   std::string base_64_data;
-  if (!CaptureScreenshot(&base_64_data))
-    return command->InternalErrorResponse("Unable to capture a screenshot");
+  if (!base::Base64Encode(base::StringPiece(
+                             reinterpret_cast<char*>(&data[0]),
+                             data.size()),
+                          &base_64_data)) {
+    SendRawMessage(
+        command->InternalErrorResponse("Unable to base64 encode screenshot")->
+            Serialize());
+    return;
+  }
 
   base::DictionaryValue* response = new base::DictionaryValue();
   response->SetString(
       devtools::Page::captureScreenshot::kResponseData, base_64_data);
-  return command->SuccessResponse(response);
-}
-
-bool RendererOverridesHandler::CaptureScreenshot(std::string* base_64_data) {
-  RenderViewHost* host = agent_->GetRenderViewHost();
-  gfx::Rect view_bounds = host->GetView()->GetViewBounds();
-  gfx::Rect snapshot_bounds(view_bounds.size());
-  gfx::Size snapshot_size = snapshot_bounds.size();
-  std::vector<unsigned char> png;
-  if (!ui::GrabViewSnapshot(host->GetView()->GetNativeView(),
-                            &png,
-                            snapshot_bounds))
-    return false;
-
-  return base::Base64Encode(base::StringPiece(
-                                reinterpret_cast<char*>(&*png.begin()),
-                                png.size()),
-                            base_64_data);
+  SendRawMessage(command->SuccessResponse(response)->Serialize());
 }
 
 }  // namespace content

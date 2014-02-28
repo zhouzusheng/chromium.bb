@@ -33,8 +33,9 @@
 
 #include "V8DOMStringList.h"
 #include "V8Element.h"
+#include "V8NodeFilter.h"
 #include "V8Window.h"
-#include "V8WorkerContext.h"
+#include "V8WorkerGlobalScope.h"
 #include "V8XPathNSResolver.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8NodeFilterCondition.h"
@@ -46,14 +47,14 @@
 #include "core/dom/Element.h"
 #include "core/dom/NodeFilter.h"
 #include "core/dom/QualifiedName.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/inspector/BindingVisitors.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/page/Frame.h"
 #include "core/page/Settings.h"
-#include "core/workers/WorkerContext.h"
+#include "core/workers/WorkerGlobalScope.h"
 #include "core/xml/XPathNSResolver.h"
+#include "wtf/ArrayBufferContents.h"
 #include "wtf/MainThread.h"
 #include "wtf/MathExtras.h"
 #include "wtf/StdLibExtras.h"
@@ -68,20 +69,30 @@ namespace WebCore {
 
 v8::Handle<v8::Value> setDOMException(int exceptionCode, v8::Isolate* isolate)
 {
-    return V8ThrowException::setDOMException(exceptionCode, isolate);
+    return V8ThrowException::throwDOMException(exceptionCode, isolate);
 }
 
-v8::Handle<v8::Value> throwError(V8ErrorType errorType, const char* message, v8::Isolate* isolate)
+v8::Handle<v8::Value> setDOMException(int exceptionCode, const String& message, v8::Isolate* isolate)
+{
+    return V8ThrowException::throwDOMException(exceptionCode, message, isolate);
+}
+
+v8::Handle<v8::Value> throwError(V8ErrorType errorType, const String& message, v8::Isolate* isolate)
 {
     return V8ThrowException::throwError(errorType, message, isolate);
 }
 
-v8::Handle<v8::Value> throwError(v8::Handle<v8::Value> exception, v8::Isolate* isolate)
+v8::Handle<v8::Value> throwError(v8::Handle<v8::Value> exception)
 {
-    return V8ThrowException::throwError(exception, isolate);
+    return V8ThrowException::throwError(exception);
 }
 
-v8::Handle<v8::Value> throwTypeError(const char* message, v8::Isolate* isolate)
+v8::Handle<v8::Value> throwTypeError(v8::Isolate* isolate)
+{
+    return V8ThrowException::throwTypeError(String(), isolate);
+}
+
+v8::Handle<v8::Value> throwTypeError(const String& message, v8::Isolate* isolate)
 {
     return V8ThrowException::throwTypeError(message, isolate);
 }
@@ -90,6 +101,39 @@ v8::Handle<v8::Value> throwNotEnoughArgumentsError(v8::Isolate* isolate)
 {
     return V8ThrowException::throwNotEnoughArgumentsError(isolate);
 }
+
+class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
+    virtual void* Allocate(size_t size) OVERRIDE
+    {
+        void* data;
+        WTF::ArrayBufferContents::allocateMemory(size, WTF::ArrayBufferContents::ZeroInitialize, data);
+        return data;
+    }
+
+    virtual void* AllocateUninitialized(size_t size) OVERRIDE
+    {
+        void* data;
+        WTF::ArrayBufferContents::allocateMemory(size, WTF::ArrayBufferContents::DontInitialize, data);
+        return data;
+    }
+
+    virtual void Free(void*)
+    {
+        IMMEDIATE_CRASH();
+    }
+
+    virtual void Free(void* data, size_t size) OVERRIDE
+    {
+        WTF::ArrayBufferContents::freeMemory(data, size);
+    }
+};
+
+v8::ArrayBuffer::Allocator* v8ArrayBufferAllocator()
+{
+    DEFINE_STATIC_LOCAL(ArrayBufferAllocator, arrayBufferAllocator, ());
+    return &arrayBufferAllocator;
+}
+
 
 v8::Handle<v8::Value> v8Array(PassRefPtr<DOMStringList> stringList, v8::Isolate* isolate)
 {
@@ -110,9 +154,17 @@ Vector<v8::Handle<v8::Value> > toVectorOfArguments(const v8::FunctionCallbackInf
     return result;
 }
 
-PassRefPtr<NodeFilter> toNodeFilter(v8::Handle<v8::Value> callback)
+PassRefPtr<NodeFilter> toNodeFilter(v8::Handle<v8::Value> callback, v8::Isolate* isolate)
 {
-    return NodeFilter::create(V8NodeFilterCondition::create(callback));
+    RefPtr<NodeFilter> filter = NodeFilter::create();
+
+    // FIXME: Should pass in appropriate creationContext
+    v8::Handle<v8::Object> filterWrapper = toV8(filter, v8::Handle<v8::Object>(), isolate).As<v8::Object>();
+
+    RefPtr<NodeFilterCondition> condition = V8NodeFilterCondition::create(callback, filterWrapper);
+    filter->setCondition(condition.release());
+
+    return filter.release();
 }
 
 static const int8_t kMaxInt8 = 127;
@@ -352,7 +404,7 @@ v8::Handle<v8::FunctionTemplate> createRawTemplate(v8::Isolate* isolate)
     v8::HandleScope scope(isolate);
     v8::Local<v8::FunctionTemplate> result = v8::FunctionTemplate::New(V8ObjectConstructor::isValidConstructorMode);
     return scope.Close(result);
-}        
+}
 
 PassRefPtr<DOMStringList> toDOMStringList(v8::Handle<v8::Value> value, v8::Isolate* isolate)
 {
@@ -413,9 +465,9 @@ ScriptExecutionContext* toScriptExecutionContext(v8::Handle<v8::Context> context
     windowWrapper = global->FindInstanceInPrototypeChain(V8Window::GetTemplate(context->GetIsolate(), IsolatedWorld));
     if (!windowWrapper.IsEmpty())
         return V8Window::toNative(windowWrapper)->scriptExecutionContext();
-    v8::Handle<v8::Object> workerWrapper = global->FindInstanceInPrototypeChain(V8WorkerContext::GetTemplate(context->GetIsolate(), WorkerWorld));
+    v8::Handle<v8::Object> workerWrapper = global->FindInstanceInPrototypeChain(V8WorkerGlobalScope::GetTemplate(context->GetIsolate(), WorkerWorld));
     if (!workerWrapper.IsEmpty())
-        return V8WorkerContext::toNative(workerWrapper)->scriptExecutionContext();
+        return V8WorkerGlobalScope::toNative(workerWrapper)->scriptExecutionContext();
     // FIXME: Is this line of code reachable?
     return 0;
 }
@@ -462,9 +514,9 @@ v8::Local<v8::Context> toV8Context(ScriptExecutionContext* context, DOMWrapperWo
         ASSERT(world);
         if (Frame* frame = toDocument(context)->frame())
             return frame->script()->windowShell(world)->context();
-    } else if (context->isWorkerContext()) {
+    } else if (context->isWorkerGlobalScope()) {
         ASSERT(!world);
-        if (WorkerScriptController* script = static_cast<WorkerContext*>(context)->script())
+        if (WorkerScriptController* script = toWorkerGlobalScope(context)->script())
             return script->context();
     }
     return v8::Local<v8::Context>();
@@ -532,8 +584,14 @@ DOMWrapperWorld* isolatedWorldForIsolate(v8::Isolate* isolate)
         return 0;
     if (!DOMWrapperWorld::isolatedWorldsExist())
         return 0;
-    ASSERT(!v8::Context::GetEntered().IsEmpty());
-    return DOMWrapperWorld::isolatedWorld(v8::Context::GetEntered());
+    ASSERT(v8::Context::InContext());
+    return DOMWrapperWorld::isolatedWorld(v8::Context::GetCurrent());
+}
+
+v8::Local<v8::Value> getHiddenValueFromMainWorldWrapper(v8::Isolate* isolate, ScriptWrappable* wrappable, v8::Handle<v8::String> key)
+{
+    v8::Local<v8::Object> wrapper = wrappable->newLocalWrapper(isolate);
+    return wrapper.IsEmpty() ? v8::Local<v8::Value>() : wrapper->GetHiddenValue(key);
 }
 
 } // namespace WebCore

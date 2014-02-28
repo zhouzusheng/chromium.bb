@@ -14,20 +14,20 @@
 #include "base/containers/hash_tables.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/browser/gpu/gpu_surface_tracker.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/gpu_memory_uma_stats.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/public/browser/browser_child_process_host_delegate.h"
 #include "content/public/browser/gpu_data_manager.h"
-#include "googleurl/src/gurl.h"
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/config/gpu_info.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_sender.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
+#include "url/gurl.h"
 
 struct GPUCreateCommandBufferConfig;
 struct GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params;
@@ -214,7 +214,9 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   bool swiftshader_rendering_;
   GpuProcessKind kind_;
 
+#if !defined(CHROME_MULTIPLE_DLL)
   scoped_ptr<GpuMainThread> in_process_gpu_thread_;
+#endif
 
   // Whether we actually launched a GPU process.
   bool process_launched_;

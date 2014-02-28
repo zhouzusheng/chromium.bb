@@ -6,13 +6,13 @@
  * are met:
  *
  * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer. 
+ *     notice, this list of conditions and the following disclaimer.
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution. 
+ *     documentation and/or other materials provided with the distribution.
  * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission. 
+ *     from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -30,11 +30,11 @@
 #define GlyphMetricsMap_h
 
 #include "core/platform/graphics/Glyph.h"
-#include <wtf/FixedArray.h>
-#include <wtf/HashMap.h>
-#include <wtf/OwnPtr.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/unicode/Unicode.h>
+#include "wtf/Assertions.h"
+#include "wtf/HashMap.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/unicode/Unicode.h"
 
 namespace WebCore {
 
@@ -55,9 +55,9 @@ public:
     }
 
 private:
-    struct GlyphMetricsPage {
+    class GlyphMetricsPage {
+    public:
         static const size_t size = 256; // Usually covers Latin-1 in a single page.
-        FixedArray<T, size> m_metrics;
 
         T metricsForGlyph(Glyph glyph) const { return m_metrics[glyph % size]; }
         void setMetricsForGlyph(Glyph glyph, const T& metrics)
@@ -66,10 +66,14 @@ private:
         }
         void setMetricsForIndex(unsigned index, const T& metrics)
         {
+            ASSERT_WITH_SECURITY_IMPLICATION(index < size);
             m_metrics[index] = metrics;
         }
+
+    private:
+        T m_metrics[size];
     };
-    
+
     GlyphMetricsPage* locatePage(unsigned pageNumber)
     {
         if (!pageNumber && m_filledPrimaryPage)
@@ -78,7 +82,7 @@ private:
     }
 
     GlyphMetricsPage* locatePageSlowCase(unsigned pageNumber);
-    
+
     static T unknownMetrics();
 
     bool m_filledPrimaryPage;
@@ -119,7 +123,7 @@ template<class T> typename GlyphMetricsMap<T>::GlyphMetricsPage* GlyphMetricsMap
 
     return page;
 }
-    
+
 } // namespace WebCore
 
 #endif

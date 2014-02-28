@@ -39,12 +39,36 @@ public:
 private:
     HTMLTitleElement(const QualifiedName&, Document*);
 
+    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
+    virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
+
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
 
-    StringWithDirection m_title;
+    void updateNonRenderStyle();
+    virtual RenderStyle* nonRendererStyle() const OVERRIDE;
+    virtual PassRefPtr<RenderStyle> customStyleForRenderer() OVERRIDE;
+    virtual void didRecalcStyle(StyleChange) OVERRIDE;
+
+    RefPtr<RenderStyle> m_style;
 };
+
+inline bool isHTMLTitleElement(const Node* node)
+{
+    return node->hasTagName(HTMLNames::titleTag);
+}
+
+inline bool isHTMLTitleElement(const Element* element)
+{
+    return element->hasTagName(HTMLNames::titleTag);
+}
+
+inline HTMLTitleElement* toHTMLTitleElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLTitleElement(node));
+    return static_cast<HTMLTitleElement*>(node);
+}
 
 } //namespace
 

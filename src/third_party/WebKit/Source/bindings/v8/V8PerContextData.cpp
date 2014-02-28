@@ -53,7 +53,7 @@ void V8PerContextData::dispose()
 
     disposeMapWithUnsafePersistentValues(&m_wrapperBoilerplates);
     disposeMapWithUnsafePersistentValues(&m_constructorMap);
-    disposeMapWithUnsafePersistentValues(&m_customElementPrototypeMap);
+    m_customElementBindings.clear();
 
     m_context.Dispose();
 }
@@ -115,6 +115,13 @@ v8::Local<v8::Function> V8PerContextData::constructorForTypeSlowCase(WrapperType
     if (function.IsEmpty())
         return v8::Local<v8::Function>();
 
+    if (type->parentClass) {
+        v8::Local<v8::Object> proto = constructorForType(const_cast<WrapperTypeInfo*>(type->parentClass));
+        if (proto.IsEmpty())
+            return v8::Local<v8::Function>();
+        function->SetPrototype(proto);
+    }
+
     v8::Local<v8::Value> prototypeValue = function->Get(v8::String::NewSymbol("prototype"));
     if (!prototypeValue.IsEmpty() && prototypeValue->IsObject()) {
         v8::Local<v8::Object> prototypeObject = v8::Local<v8::Object>::Cast(prototypeValue);
@@ -130,13 +137,35 @@ v8::Local<v8::Function> V8PerContextData::constructorForTypeSlowCase(WrapperType
 
     return function;
 }
-static v8::Handle<v8::Value> createDebugData(const char* worldName, int debugId) 
+
+void V8PerContextData::addCustomElementBinding(CustomElementDefinition* definition, PassOwnPtr<CustomElementBinding> binding)
+{
+    ASSERT(!m_customElementBindings->contains(definition));
+    m_customElementBindings->add(definition, binding);
+}
+
+void V8PerContextData::clearCustomElementBinding(CustomElementDefinition* definition)
+{
+    CustomElementBindingMap::iterator it = m_customElementBindings->find(definition);
+    ASSERT(it != m_customElementBindings->end());
+    m_customElementBindings->remove(it);
+}
+
+CustomElementBinding* V8PerContextData::customElementBinding(CustomElementDefinition* definition)
+{
+    CustomElementBindingMap::const_iterator it = m_customElementBindings->find(definition);
+    ASSERT(it != m_customElementBindings->end());
+    return it->value.get();
+}
+
+
+static v8::Handle<v8::Value> createDebugData(const char* worldName, int debugId)
 {
     char buffer[32];
     unsigned wanted;
     if (debugId == -1)
         wanted = snprintf(buffer, sizeof(buffer), "%s", worldName);
-    else 
+    else
         wanted = snprintf(buffer, sizeof(buffer), "%s,%d", worldName, debugId);
 
     if (wanted < sizeof(buffer))
@@ -157,7 +186,7 @@ static void setDebugData(v8::Handle<v8::Context> context, v8::Handle<v8::Value> 
     context->SetEmbedderData(v8ContextDebugIdIndex, value);
 }
 
-bool V8PerContextDebugData::setContextDebugData(v8::Handle<v8::Context> context, const char* worldName, int debugId) 
+bool V8PerContextDebugData::setContextDebugData(v8::Handle<v8::Context> context, const char* worldName, int debugId)
 {
     if (!debugData(context)->IsUndefined())
         return false;
@@ -167,7 +196,7 @@ bool V8PerContextDebugData::setContextDebugData(v8::Handle<v8::Context> context,
     return true;
 }
 
-int V8PerContextDebugData::contextDebugId(v8::Handle<v8::Context> context) 
+int V8PerContextDebugData::contextDebugId(v8::Handle<v8::Context> context)
 {
     v8::HandleScope scope;
     v8::Handle<v8::Value> data = debugData(context);

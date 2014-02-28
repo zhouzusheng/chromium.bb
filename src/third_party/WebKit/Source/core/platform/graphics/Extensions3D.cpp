@@ -30,7 +30,7 @@
 #include "core/platform/NotImplemented.h"
 #include "core/platform/graphics/GraphicsContext3D.h"
 #include "public/platform/WebGraphicsContext3D.h"
-#include <wtf/text/CString.h>
+#include "wtf/text/CString.h"
 
 namespace WebCore {
 
@@ -228,6 +228,11 @@ void Extensions3D::drawElementsInstancedANGLE(GC3Denum mode, GC3Dsizei count, GC
 void Extensions3D::vertexAttribDivisorANGLE(GC3Duint index, GC3Duint divisor)
 {
     m_context->webContext()->vertexAttribDivisorANGLE(index, divisor);
+}
+
+void Extensions3D::loseContextCHROMIUM(GC3Denum current, GC3Denum other)
+{
+    m_context->webContext()->loseContextCHROMIUM(current, other);
 }
 
 } // namespace WebCore

@@ -1,11 +1,11 @@
 /*
  * Copyright (C) 2006, 2007 Apple Computer, Inc.
  * Copyright (c) 2006, 2007, 2008, 2009, Google Inc. All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  *     * Redistributions of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
  *     * Redistributions in binary form must reproduce the above
@@ -15,7 +15,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -39,10 +39,13 @@
 #include "core/platform/SharedBuffer.h"
 #include "core/platform/graphics/FontOrientation.h"
 #include "core/platform/graphics/opentype/OpenTypeVerticalData.h"
-#include <wtf/Forward.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/StringImpl.h> 
+#include "wtf/Forward.h"
+#include "wtf/HashTableDeletedValueType.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/RefPtr.h"
+#include "wtf/text/StringImpl.h"
 
 #include <usp10.h>
 
@@ -51,9 +54,8 @@ typedef struct HFONT__ *HFONT;
 namespace WebCore {
 
 // Return a typeface associated with the hfont, and return its size and
-// lfQuality from the hfont's LOGFONT. The caller is now an owner of the
-// typeface.
-SkTypeface* CreateTypefaceFromHFont(HFONT, int* size, int* paintTextFlags);
+// lfQuality from the hfont's LOGFONT.
+PassRefPtr<SkTypeface> CreateTypefaceFromHFont(HFONT, int* size, int* paintTextFlags);
 
 class FontDescription;
 
@@ -78,14 +80,14 @@ public:
 
     FontPlatformData& operator=(const FontPlatformData&);
 
-    bool isHashTableDeletedValue() const { return m_font == hashTableDeletedFontValue(); }
+    bool isHashTableDeletedValue() const { return m_isHashTableDeletedValue; }
 
     ~FontPlatformData();
 
     bool isFixedPitch() const;
     HFONT hfont() const { return m_font ? m_font->hfont() : 0; }
     float size() const { return m_size; }
-    SkTypeface* typeface() const { return m_typeface; }
+    SkTypeface* typeface() const { return m_typeface.get(); }
     int paintTextFlags() const { return m_paintTextFlags; }
 
     FontOrientation orientation() const { return m_orientation; }
@@ -97,7 +99,7 @@ public:
     }
 
     bool operator==(const FontPlatformData& other) const
-    { 
+    {
         return m_font == other.m_font && m_size == other.m_size && m_orientation == other.m_orientation;
     }
 
@@ -140,7 +142,7 @@ private:
         }
 
     private:
-        // The create() function assumes there is already a refcount of one 
+        // The create() function assumes there is already a refcount of one
         // so it can do adoptRef.
         RefCountedHFONT(HFONT hfont) : m_hfont(hfont)
         {
@@ -149,17 +151,17 @@ private:
         HFONT m_hfont;
     };
 
-    static RefCountedHFONT* hashTableDeletedFontValue();
-
     RefPtr<RefCountedHFONT> m_font;
     float m_size;  // Point size of the font in pixels.
     FontOrientation m_orientation;
 
-    SkTypeface* m_typeface; // cached from m_font
+    RefPtr<SkTypeface> m_typeface; // cached from m_font
     int m_paintTextFlags; // cached from m_font
 
     mutable SCRIPT_CACHE m_scriptCache;
-    mutable SCRIPT_FONTPROPERTIES* m_scriptFontProperties;
+    mutable OwnPtr<SCRIPT_FONTPROPERTIES> m_scriptFontProperties;
+
+    bool m_isHashTableDeletedValue;
 };
 
 } // WebCore

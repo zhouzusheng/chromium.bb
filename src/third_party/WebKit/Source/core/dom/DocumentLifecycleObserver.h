@@ -44,15 +44,15 @@ public:
     virtual void documentWasDisposed() { }
 };
 
-class DocumentLifecycleNotifier  : public ContextLifecycleNotifier {
+class DocumentLifecycleNotifier : public ContextLifecycleNotifier {
 public:
     static PassOwnPtr<DocumentLifecycleNotifier> create(ScriptExecutionContext*);
 
     void notifyDocumentWasDetached();
     void notifyDocumentWasDisposed();
 
-    virtual void addObserver(ContextLifecycleObserver*, ContextLifecycleObserver::Type as) OVERRIDE;
-    virtual void removeObserver(ContextLifecycleObserver*, ContextLifecycleObserver::Type as) OVERRIDE;
+    virtual void addObserver(LifecycleObserver*) OVERRIDE;
+    virtual void removeObserver(LifecycleObserver*) OVERRIDE;
 
 private:
     explicit DocumentLifecycleNotifier(ScriptExecutionContext*);

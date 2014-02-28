@@ -29,7 +29,6 @@
 #include "config.h"
 #include "core/css/resolver/FilterOperationResolver.h"
 
-
 #include "core/css/CSSFilterValue.h"
 #include "core/css/CSSMixFunctionValue.h"
 #include "core/css/CSSParser.h"
@@ -45,17 +44,15 @@
 #include "core/platform/graphics/filters/custom/CustomFilterProgramInfo.h"
 #include "core/platform/graphics/filters/custom/CustomFilterTransformParameter.h"
 #include "core/rendering/style/StyleCustomFilterProgram.h"
-#include "core/rendering/style/StyleCustomFilterProgramCache.h"
 #include "core/rendering/style/StyleShader.h"
 #include "core/svg/SVGURIReference.h"
 
 namespace WebCore {
 
-static Length convertToFloatLength(CSSPrimitiveValue* primitiveValue, RenderStyle* style, RenderStyle* rootStyle, double multiplier)
+static Length convertToFloatLength(CSSPrimitiveValue* primitiveValue, const RenderStyle* style, const RenderStyle* rootStyle, double multiplier)
 {
-    return primitiveValue ? primitiveValue->convertToLength<FixedFloatConversion | PercentConversion | CalculatedConversion | FractionConversion | ViewportPercentageConversion>(style, rootStyle, multiplier) : Length(Undefined);
+    return primitiveValue ? primitiveValue->convertToLength<FixedFloatConversion | PercentConversion | FractionConversion>(style, rootStyle, multiplier) : Length(Undefined);
 }
-
 
 static FilterOperation::OperationType filterOperationForType(CSSFilterValue::FilterOperationType type)
 {
@@ -99,7 +96,7 @@ static StyleShader* cachedOrPendingStyleShaderFromValue(CSSShaderValue* value, S
 {
     StyleShader* shader = value->cachedOrPendingShader();
     if (shader && shader->isPendingShader())
-        state.setHasPendingShaders(true);
+        state.elementStyleResources().setHasPendingShaders(true);
     return shader;
 }
 
@@ -232,26 +229,21 @@ static PassRefPtr<CustomFilterOperation> createCustomFilterOperationWithAtRuleRe
     return 0;
 }
 
-static PassRefPtr<CustomFilterProgram> lookupCustomFilterProgram(CSSShaderValue* vertexShader, CSSShaderValue* fragmentShader,
+static PassRefPtr<CustomFilterProgram> createCustomFilterProgram(CSSShaderValue* vertexShader, CSSShaderValue* fragmentShader,
     CustomFilterProgramType programType, const CustomFilterProgramMixSettings& mixSettings, CustomFilterMeshType meshType,
-    StyleCustomFilterProgramCache* customFilterProgramCache, StyleResolverState& state)
+    StyleResolverState& state)
 {
-    CachedResourceLoader* cachedResourceLoader = state.document()->cachedResourceLoader();
-    KURL vertexShaderURL = vertexShader ? vertexShader->completeURL(cachedResourceLoader) : KURL();
-    KURL fragmentShaderURL = fragmentShader ? fragmentShader->completeURL(cachedResourceLoader) : KURL();
-    RefPtr<StyleCustomFilterProgram> program;
-    if (customFilterProgramCache)
-        program = customFilterProgramCache->lookup(CustomFilterProgramInfo(vertexShaderURL.string(), fragmentShaderURL.string(), programType, mixSettings, meshType));
-    if (!program) {
-        // Create a new StyleCustomFilterProgram that will be resolved during the loadPendingShaders and added to the cache.
-        program = StyleCustomFilterProgram::create(vertexShaderURL, vertexShader ? styleShader(vertexShader, state) : 0,
+    ResourceFetcher* fetcher = state.document()->fetcher();
+    KURL vertexShaderURL = vertexShader ? vertexShader->completeURL(fetcher) : KURL();
+    KURL fragmentShaderURL = fragmentShader ? fragmentShader->completeURL(fetcher) : KURL();
+    RefPtr<StyleCustomFilterProgram> program = StyleCustomFilterProgram::create(vertexShaderURL, vertexShader ? styleShader(vertexShader, state) : 0,
             fragmentShaderURL, fragmentShader ? styleShader(fragmentShader, state) : 0, programType, mixSettings, meshType);
         // FIXME
-    }
+        // FIXME: Find out what the fixme above means.
     return program.release();
 }
 
-static PassRefPtr<CustomFilterOperation> createCustomFilterOperationWithInlineSyntax(CSSFilterValue* filterValue, StyleCustomFilterProgramCache* customFilterProgramCache, StyleResolverState& state)
+static PassRefPtr<CustomFilterOperation> createCustomFilterOperationWithInlineSyntax(CSSFilterValue* filterValue, StyleResolverState& state)
 {
     CSSValue* shadersValue = filterValue->itemWithoutBoundsCheck(0);
     ASSERT_WITH_SECURITY_IMPLICATION(shadersValue->isValueList());
@@ -350,19 +342,19 @@ static PassRefPtr<CustomFilterOperation> createCustomFilterOperationWithInlineSy
     if (parametersValue && !parseCustomFilterParameterList(parametersValue, parameterList, state))
         return 0;
 
-    RefPtr<CustomFilterProgram> program = lookupCustomFilterProgram(vertexShader, fragmentShader, programType, mixSettings, meshType, customFilterProgramCache, state);
+    RefPtr<CustomFilterProgram> program = createCustomFilterProgram(vertexShader, fragmentShader, programType, mixSettings, meshType, state);
     return CustomFilterOperation::create(program.release(), parameterList, meshRows, meshColumns, meshType);
 }
 
-static PassRefPtr<CustomFilterOperation> createCustomFilterOperation(CSSFilterValue* filterValue, StyleCustomFilterProgramCache* customFilterProgramCache, StyleResolverState& state)
+static PassRefPtr<CustomFilterOperation> createCustomFilterOperation(CSSFilterValue* filterValue, StyleResolverState& state)
 {
     ASSERT(filterValue->length());
     bool isAtRuleReferenceSyntax = filterValue->itemWithoutBoundsCheck(0)->isPrimitiveValue();
-    return isAtRuleReferenceSyntax ? createCustomFilterOperationWithAtRuleReferenceSyntax(filterValue) : createCustomFilterOperationWithInlineSyntax(filterValue, customFilterProgramCache, state);
+    return isAtRuleReferenceSyntax ? createCustomFilterOperationWithAtRuleReferenceSyntax(filterValue) : createCustomFilterOperationWithInlineSyntax(filterValue, state);
 }
 
 
-bool FilterOperationResolver::createFilterOperations(CSSValue* inValue, RenderStyle* style, RenderStyle* rootStyle, FilterOperations& outOperations, StyleCustomFilterProgramCache* customFilterProgramCache, StyleResolverState& state)
+bool FilterOperationResolver::createFilterOperations(CSSValue* inValue, const RenderStyle* style, const RenderStyle* rootStyle, FilterOperations& outOperations, StyleResolverState& state)
 {
     ASSERT(outOperations.isEmpty());
 
@@ -378,7 +370,7 @@ bool FilterOperationResolver::createFilterOperations(CSSValue* inValue, RenderSt
     if (!inValue->isValueList())
         return false;
 
-    float zoomFactor = style ? style->effectiveZoom() : 1;
+    float zoomFactor = (style ? style->effectiveZoom() : 1) * state.elementStyleResources().deviceScaleFactor();
     FilterOperations operations;
     for (CSSValueListIterator i = inValue; i.hasMore(); i.advance()) {
         CSSValue* currValue = i.value();
@@ -394,7 +386,7 @@ bool FilterOperationResolver::createFilterOperations(CSSValue* inValue, RenderSt
             continue;
         }
         if (operationType == FilterOperation::CUSTOM) {
-            RefPtr<CustomFilterOperation> operation = createCustomFilterOperation(filterValue, customFilterProgramCache, state);
+            RefPtr<CustomFilterOperation> operation = createCustomFilterOperation(filterValue, state);
             if (!operation)
                 return false;
 
@@ -415,9 +407,9 @@ bool FilterOperationResolver::createFilterOperations(CSSValue* inValue, RenderSt
             RefPtr<ReferenceFilterOperation> operation = ReferenceFilterOperation::create(svgDocumentValue->url(), url.fragmentIdentifier(), operationType);
             if (SVGURIReference::isExternalURIReference(svgDocumentValue->url(), state.document())) {
                 if (!svgDocumentValue->loadRequested())
-                    state.pendingSVGDocuments().set(operation.get(), svgDocumentValue);
+                    state.elementStyleResources().addPendingSVGDocument(operation.get(), svgDocumentValue);
                 else if (svgDocumentValue->cachedSVGDocument())
-                    operation->setCachedSVGDocumentReference(adoptPtr(new CachedSVGDocumentReference(svgDocumentValue->cachedSVGDocument())));
+                    operation->setDocumentResourceReference(adoptPtr(new DocumentResourceReference(svgDocumentValue->cachedSVGDocument())));
             }
             operations.operations().append(operation);
             continue;
@@ -495,11 +487,11 @@ bool FilterOperationResolver::createFilterOperations(CSSValue* inValue, RenderSt
             ShadowValue* item = static_cast<ShadowValue*>(cssValue);
             IntPoint location(item->x->computeLength<int>(style, rootStyle, zoomFactor), item->y->computeLength<int>(style, rootStyle, zoomFactor));
             int blur = item->blur ? item->blur->computeLength<int>(style, rootStyle, zoomFactor) : 0;
-            Color color;
+            StyleColor shadowColor;
             if (item->color)
-                color = state.colorFromPrimitiveValue(item->color.get());
+                shadowColor = state.document()->textLinkColors().colorFromPrimitiveValue(item->color.get());
 
-            operations.operations().append(DropShadowFilterOperation::create(location, blur, color.isValid() ? color : Color::transparent, operationType));
+            operations.operations().append(DropShadowFilterOperation::create(location, blur, shadowColor.isValid() ? shadowColor.color() : Color::transparent, operationType));
             break;
         }
         case CSSFilterValue::UnknownFilterOperation:

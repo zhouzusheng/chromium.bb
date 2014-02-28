@@ -309,6 +309,8 @@ WebInspector.HeapSnapshotViewportDataGrid.prototype = {
             ++i;
         }
 
+        var selectedNode = this.selectedNode;
+
         this.rootNode().removeChildren();
         // The height of the view port + invisible top part.
         var heightToFill = viewPortHeight + (scrollTop - topPadding);
@@ -328,6 +330,15 @@ WebInspector.HeapSnapshotViewportDataGrid.prototype = {
         }
 
         this._addPaddingRows(topPadding, bottomPadding);
+
+        if (selectedNode) {
+            if (selectedNode.parent) {
+                selectedNode.select(true);
+            } else {
+                // Keep selection even if the node is not in the current viewport.
+                this.selectedNode = selectedNode;
+            }
+        }
     },
 
     appendTopLevelNode: function(node)
@@ -431,6 +442,7 @@ WebInspector.HeapSnapshotContainmentDataGrid = function(columns)
 {
     columns = columns || [
         {id: "object", title: WebInspector.UIString("Object"), disclosure: true, sortable: true},
+        {id: "distance", title: WebInspector.UIString("Distance"), width: "80px", sortable: true},
         {id: "shallowSize", title: WebInspector.UIString("Shallow Size"), width: "120px", sortable: true},
         {id: "retainedSize", title: WebInspector.UIString("Retained Size"), width: "120px", sortable: true, sort: WebInspector.DataGrid.Order.Descending}
     ];
@@ -465,9 +477,9 @@ WebInspector.HeapSnapshotRetainmentDataGrid = function()
     this.showRetainingEdges = true;
     var columns = [
         {id: "object", title: WebInspector.UIString("Object"), disclosure: true, sortable: true},
+        {id: "distance", title: WebInspector.UIString("Distance"), width: "80px", sortable: true, sort: WebInspector.DataGrid.Order.Ascending},
         {id: "shallowSize", title: WebInspector.UIString("Shallow Size"), width: "120px", sortable: true},
-        {id: "retainedSize", title: WebInspector.UIString("Retained Size"), width: "120px", sortable: true},
-        {id: "distance", title: WebInspector.UIString("Distance"), width: "80px", sortable: true, sort: WebInspector.DataGrid.Order.Ascending}
+        {id: "retainedSize", title: WebInspector.UIString("Retained Size"), width: "120px", sortable: true}
     ];
     WebInspector.HeapSnapshotContainmentDataGrid.call(this, columns);
 }
@@ -511,12 +523,15 @@ WebInspector.HeapSnapshotRetainmentDataGrid.prototype = {
         {
             this.removeEventListener(WebInspector.HeapSnapshotGridNode.Events.PopulateComplete, populateComplete, this);
             this.expand();
-            if (--maxExpandLevels > 0 && this.children.length > 0 && (!this._distance || this._distance > 2)) {
+            if (--maxExpandLevels > 0 && this.children.length > 0) {
                 var retainer = this.children[0];
-                retainer.addEventListener(WebInspector.HeapSnapshotGridNode.Events.PopulateComplete, populateComplete, retainer);
-                retainer.populate();
-            } else
-                dataGrid.dispatchEventToListeners(WebInspector.HeapSnapshotRetainmentDataGrid.Events.ExpandRetainersComplete);
+                if (retainer._distance > 1) {
+                    retainer.addEventListener(WebInspector.HeapSnapshotGridNode.Events.PopulateComplete, populateComplete, retainer);
+                    retainer.populate();
+                    return;
+                }
+            }
+            dataGrid.dispatchEventToListeners(WebInspector.HeapSnapshotRetainmentDataGrid.Events.ExpandRetainersComplete);
         }
         this.rootNode().addEventListener(WebInspector.HeapSnapshotGridNode.Events.PopulateComplete, populateComplete, this.rootNode());
     },

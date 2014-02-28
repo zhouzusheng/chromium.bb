@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef LayoutState_h
@@ -28,12 +28,11 @@
 
 #include "core/platform/graphics/LayoutRect.h"
 #include "core/rendering/ColumnInfo.h"
-#include <wtf/HashMap.h>
-#include <wtf/Noncopyable.h>
+#include "wtf/HashMap.h"
+#include "wtf/Noncopyable.h"
 
 namespace WebCore {
 
-class RenderArena;
 class RenderBlock;
 class RenderBox;
 class RenderObject;
@@ -65,24 +64,20 @@ public:
     LayoutState(LayoutState*, RenderBox*, const LayoutSize& offset, LayoutUnit pageHeight, bool pageHeightChanged, ColumnInfo*);
     LayoutState(RenderObject*);
 
-    void destroy(RenderArena*);
-
-    // Overloaded new operator.
-    void* operator new(size_t, RenderArena*);
-
-    // Overridden to prevent the normal delete from being called.
-    void operator delete(void*, size_t);
+    // LayoutState is allocated out of the rendering partition.
+    void* operator new(size_t);
+    void operator delete(void*);
 
     void clearPaginationInformation();
     bool isPaginatingColumns() const { return m_columnInfo && m_columnInfo->paginationUnit() == ColumnInfo::Column; }
     bool isPaginated() const { return m_isPaginated; }
-    
+
     // The page logical offset is the object's offset from the top of the page in the page progression
     // direction (so an x-offset in vertical text and a y-offset for horizontal text).
     LayoutUnit pageLogicalOffset(RenderBox*, LayoutUnit childLogicalOffset) const;
 
     void addForcedColumnBreak(RenderBox*, LayoutUnit childLogicalOffset);
-    
+
     LayoutUnit pageLogicalHeight() const { return m_pageLogicalHeight; }
     bool pageLogicalHeightChanged() const { return m_pageLogicalHeightChanged; }
 
@@ -96,9 +91,6 @@ public:
 
     ShapeInsideInfo* shapeInsideInfo() const { return m_shapeInsideInfo; }
 private:
-    // The normal operator new is disallowed.
-    void* operator new(size_t) throw();
-
     void propagateLineGridInfo(RenderBox*);
     void establishLineGrid(RenderBlock*);
 
@@ -124,14 +116,14 @@ public:
     // FIXME: Distinguish between the layout clip rect and the paint clip rect which may be larger,
     // e.g., because of composited scrolling.
     LayoutRect m_clipRect;
-    
+
     // x/y offset from container. Includes relative positioning and scroll offsets.
     LayoutSize m_paintOffset;
     // x/y offset from container. Does not include relative positioning or scroll offsets.
     LayoutSize m_layoutOffset;
     // Transient offset from the final position of the object
     // used to ensure that repaints happen in the correct place.
-    // This is a total delta accumulated from the root. 
+    // This is a total delta accumulated from the root.
     LayoutSize m_layoutDelta;
 
     // The current page height for the pagination model that encloses us.

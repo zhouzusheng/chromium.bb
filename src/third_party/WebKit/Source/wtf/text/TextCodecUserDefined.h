@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef TextCodecUserDefined_h
@@ -35,8 +35,13 @@ namespace WTF {
         static void registerEncodingNames(EncodingNameRegistrar);
         static void registerCodecs(TextCodecRegistrar);
 
-        virtual String decode(const char*, size_t length, bool flush, bool stopOnError, bool& sawError);
-        virtual CString encode(const UChar*, size_t length, UnencodableHandling);
+    private:
+        virtual String decode(const char*, size_t length, bool flush, bool stopOnError, bool& sawError) OVERRIDE;
+        virtual CString encode(const UChar*, size_t length, UnencodableHandling) OVERRIDE;
+        virtual CString encode(const LChar*, size_t length, UnencodableHandling) OVERRIDE;
+
+        template<typename CharType>
+        CString encodeCommon(const CharType*, size_t length, UnencodableHandling);
     };
 
 } // namespace WTF

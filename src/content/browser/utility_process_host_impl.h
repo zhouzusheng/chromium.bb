@@ -22,6 +22,7 @@ class SequencedTaskRunner;
 
 namespace content {
 class BrowserChildProcessHostImpl;
+class UtilityMainThread;
 
 class CONTENT_EXPORT UtilityProcessHostImpl
     : public NON_EXPORTED_BASE(UtilityProcessHost),
@@ -36,6 +37,7 @@ class CONTENT_EXPORT UtilityProcessHostImpl
   virtual bool StartBatchMode() OVERRIDE;
   virtual void EndBatchMode() OVERRIDE;
   virtual void SetExposedDir(const base::FilePath& dir) OVERRIDE;
+  virtual void EnableMDns() OVERRIDE;
   virtual void DisableSandbox() OVERRIDE;
   virtual void EnableZygote() OVERRIDE;
   virtual const ChildProcessData& GetData() OVERRIDE;
@@ -63,6 +65,9 @@ class CONTENT_EXPORT UtilityProcessHostImpl
 
   base::FilePath exposed_dir_;
 
+  // Whether utility process needs perform presandbox initialization for MDns.
+  bool is_mdns_enabled_;
+
   // Whether to pass switches::kNoSandbox to the child.
   bool no_sandbox_;
 
@@ -77,6 +82,11 @@ class CONTENT_EXPORT UtilityProcessHostImpl
   bool started_;
 
   scoped_ptr<BrowserChildProcessHostImpl> process_;
+
+#if !defined(CHROME_MULTIPLE_DLL)
+  // Used in single-process mode instead of process_.
+  scoped_ptr<UtilityMainThread> in_process_thread_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(UtilityProcessHostImpl);
 };

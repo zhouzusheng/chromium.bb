@@ -63,9 +63,10 @@ void ClearSyncingBits(syncable::Directory* dir,
 // return value of this function is true.
 bool PrepareCommitMessage(
     sessions::SyncSession* session,
+    ModelTypeSet requested_types,
     sessions::OrderedCommitSet* commit_set,
     sync_pb::ClientToServerMessage* commit_message,
-    ExtensionsActivityMonitor::Records* extensions_activity_buffer) {
+    ExtensionsActivity::Records* extensions_activity_buffer) {
   TRACE_EVENT0("sync", "PrepareCommitMessage");
 
   commit_set->Clear();
@@ -75,7 +76,10 @@ bool PrepareCommitMessage(
 
   // Fetch the items to commit.
   const size_t batch_size = session->context()->max_commit_batch_size();
-  GetCommitIdsCommand get_commit_ids_command(&trans, batch_size, commit_set);
+  GetCommitIdsCommand get_commit_ids_command(&trans,
+                                             requested_types,
+                                             batch_size,
+                                             commit_set);
   get_commit_ids_command.Execute(session);
 
   DVLOG(1) << "Commit message will contain " << commit_set->Size() << " items.";
@@ -94,19 +98,26 @@ bool PrepareCommitMessage(
   return true;
 }
 
-SyncerError BuildAndPostCommitsImpl(Syncer* syncer,
+SyncerError BuildAndPostCommitsImpl(ModelTypeSet requested_types,
+                                    Syncer* syncer,
                                     sessions::SyncSession* session,
                                     sessions::OrderedCommitSet* commit_set) {
+  ModelTypeSet commit_request_types;
   while (!syncer->ExitRequested()) {
     sync_pb::ClientToServerMessage commit_message;
-    ExtensionsActivityMonitor::Records extensions_activity_buffer;
+    ExtensionsActivity::Records extensions_activity_buffer;
 
     if (!PrepareCommitMessage(session,
+                              requested_types,
                               commit_set,
                               &commit_message,
                               &extensions_activity_buffer)) {
       break;
     }
+
+    commit_request_types.PutAll(commit_set->Types());
+    session->mutable_status_controller()->set_commit_request_types(
+        commit_request_types);
 
     sync_pb::ClientToServerResponse commit_response;
 
@@ -148,9 +159,9 @@ SyncerError BuildAndPostCommitsImpl(Syncer* syncer,
     // If the commit failed, return the data to the ExtensionsActivityMonitor.
     if (session->status_controller().
         model_neutral_state().num_successful_bookmark_commits == 0) {
-      ExtensionsActivityMonitor* extensions_activity_monitor =
-          session->context()->extensions_monitor();
-      extensions_activity_monitor->PutRecords(extensions_activity_buffer);
+      ExtensionsActivity* extensions_activity =
+          session->context()->extensions_activity();
+      extensions_activity->PutRecords(extensions_activity_buffer);
     }
 
     if (processing_result != SYNCER_OK) {
@@ -165,10 +176,12 @@ SyncerError BuildAndPostCommitsImpl(Syncer* syncer,
 }  // namespace
 
 
-SyncerError BuildAndPostCommits(Syncer* syncer,
+SyncerError BuildAndPostCommits(ModelTypeSet requested_types,
+                                Syncer* syncer,
                                 sessions::SyncSession* session) {
   sessions::OrderedCommitSet commit_set(session->context()->routing_info());
-  SyncerError result = BuildAndPostCommitsImpl(syncer, session, &commit_set);
+  SyncerError result =
+      BuildAndPostCommitsImpl(requested_types, syncer, session, &commit_set);
   if (result != SYNCER_OK) {
     ClearSyncingBits(session->context()->directory(), commit_set);
   }

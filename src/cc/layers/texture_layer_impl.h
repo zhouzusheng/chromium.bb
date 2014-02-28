@@ -12,6 +12,7 @@
 #include "cc/layers/layer_impl.h"
 
 namespace cc {
+class ScopedResource;
 
 class CC_EXPORT TextureLayerImpl : public LayerImpl {
  public:
@@ -31,15 +32,16 @@ class CC_EXPORT TextureLayerImpl : public LayerImpl {
   virtual void AppendQuads(QuadSink* quad_sink,
                            AppendQuadsData* append_quads_data) OVERRIDE;
   virtual void DidDraw(ResourceProvider* resource_provider) OVERRIDE;
-
+  virtual Region VisibleContentOpaqueRegion() const OVERRIDE;
   virtual void DidLoseOutputSurface() OVERRIDE;
-
-  virtual void DidBecomeActive() OVERRIDE;
 
   unsigned texture_id() const { return texture_id_; }
   void set_texture_id(unsigned id) { texture_id_ = id; }
   void set_premultiplied_alpha(bool premultiplied_alpha) {
     premultiplied_alpha_ = premultiplied_alpha;
+  }
+  void set_blend_background_color(bool blend) {
+    blend_background_color_ = blend;
   }
   void set_flipped(bool flipped) { flipped_ = flipped; }
   void set_uv_top_left(gfx::PointF top_left) { uv_top_left_ = top_left; }
@@ -70,14 +72,18 @@ class CC_EXPORT TextureLayerImpl : public LayerImpl {
   unsigned texture_id_;
   ResourceProvider::ResourceId external_texture_resource_;
   bool premultiplied_alpha_;
+  bool blend_background_color_;
   bool flipped_;
   gfx::PointF uv_top_left_;
   gfx::PointF uv_bottom_right_;
   float vertex_opacity_[4];
+  // This is a resource that's a GL copy of a software texture mailbox.
+  scoped_ptr<ScopedResource> texture_copy_;
 
   TextureMailbox texture_mailbox_;
   bool uses_mailbox_;
   bool own_mailbox_;
+  bool valid_texture_copy_;
 
   DISALLOW_COPY_AND_ASSIGN(TextureLayerImpl);
 };

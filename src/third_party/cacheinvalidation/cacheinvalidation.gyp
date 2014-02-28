@@ -150,7 +150,6 @@
       'dependencies': [
         '../../base/base.gyp:base',
         '../../base/base.gyp:run_all_unittests',
-        '../../testing/gmock.gyp:gmock',
         '../../testing/gtest.gyp:gtest',
         'cacheinvalidation',
         'cacheinvalidation_proto_cpp',

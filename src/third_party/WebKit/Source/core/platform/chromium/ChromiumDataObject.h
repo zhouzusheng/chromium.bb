@@ -1,10 +1,10 @@
 /*
  * Copyright (c) 2008, 2009, Google Inc. All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  *     * Redistributions of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
  *     * Redistributions in binary form must reproduce the above
@@ -14,7 +14,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -33,19 +33,18 @@
 
 #include "core/platform/Supplementable.h"
 #include "core/platform/chromium/ChromiumDataObjectItem.h"
-#include <wtf/ListHashSet.h>
-#include <wtf/RefCounted.h>
-#include <wtf/RefPtr.h>
-#include <wtf/text/StringHash.h>
-#include <wtf/text/WTFString.h>
-#include <wtf/Vector.h>
+#include "wtf/ListHashSet.h"
+#include "wtf/RefCounted.h"
+#include "wtf/RefPtr.h"
+#include "wtf/text/StringHash.h"
+#include "wtf/text/WTFString.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
+class ExceptionState;
 class KURL;
 class SharedBuffer;
-
-typedef int ExceptionCode;
 
 // A data object for holding data that would be in a clipboard or moved
 // during a drag-n-drop operation.  This is the data that WebCore is aware
@@ -63,7 +62,7 @@ public:
     // FIXME: Implement V8DataTransferItemList::indexedPropertyDeleter to get this called.
     void deleteItem(unsigned long index);
     void clearAll();
-    void add(const String& data, const String& type, ExceptionCode&);
+    void add(const String& data, const String& type, ExceptionState&);
     void add(PassRefPtr<File>, ScriptExecutionContext*);
 
     // WebCore helpers.

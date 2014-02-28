@@ -43,7 +43,6 @@
 #include "core/platform/graphics/FloatRect.h"
 #include "core/platform/network/ResourceError.h"
 #include "core/platform/text/TextCheckerClient.h"
-#include "modules/device_orientation/DeviceMotionClient.h"
 #include "public/platform/WebScreenInfo.h"
 #include "wtf/Forward.h"
 
@@ -85,8 +84,8 @@ public:
     virtual void takeFocus(FocusDirection) OVERRIDE { }
 
     virtual void focusedNodeChanged(Node*) OVERRIDE { }
-    virtual Page* createWindow(Frame*, const FrameLoadRequest&, const WindowFeatures&, const NavigationAction&) OVERRIDE { return 0; }
-    virtual void show() OVERRIDE { }
+    virtual Page* createWindow(Frame*, const FrameLoadRequest&, const WindowFeatures&, const NavigationAction&, NavigationPolicy) OVERRIDE { return 0; }
+    virtual void show(NavigationPolicy) OVERRIDE { }
 
     virtual bool canRunModal() OVERRIDE { return false; }
     virtual void runModal() OVERRIDE { }
@@ -152,7 +151,6 @@ public:
     virtual PassRefPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) OVERRIDE;
 
     virtual void runOpenPanel(Frame*, PassRefPtr<FileChooser>) OVERRIDE;
-    virtual void loadIconForFiles(const Vector<String>&, FileIconLoader*) OVERRIDE { }
 
     virtual void formStateDidChange(const Node*) OVERRIDE { }
 
@@ -162,11 +160,11 @@ public:
     virtual void scheduleCompositingLayerFlush() OVERRIDE { }
 
     virtual void needTouchEvents(bool) OVERRIDE { }
-    
+
     virtual void numWheelEventHandlersChanged(unsigned) OVERRIDE { }
-    
+
     virtual bool shouldRubberBandInDirection(WebCore::ScrollDirection) const OVERRIDE { return false; }
-    
+
     virtual bool isEmptyChromeClient() const OVERRIDE { return true; }
 
     virtual void didAssociateFormControls(const Vector<RefPtr<Element> >&) OVERRIDE { }
@@ -194,14 +192,10 @@ public:
     virtual void dispatchWillSendRequest(DocumentLoader*, unsigned long, ResourceRequest&, const ResourceResponse&) OVERRIDE { }
     virtual void dispatchDidReceiveResponse(DocumentLoader*, unsigned long, const ResourceResponse&) OVERRIDE { }
     virtual void dispatchDidFinishLoading(DocumentLoader*, unsigned long) OVERRIDE { }
-    virtual void dispatchDidFailLoading(DocumentLoader*, unsigned long, const ResourceError&) OVERRIDE { }
     virtual void dispatchDidLoadResourceFromMemoryCache(DocumentLoader*, const ResourceRequest&, const ResourceResponse&, int) OVERRIDE { }
 
     virtual void dispatchDidHandleOnloadEvents() OVERRIDE { }
     virtual void dispatchDidReceiveServerRedirectForProvisionalLoad() OVERRIDE { }
-    virtual void dispatchDidCancelClientRedirect() OVERRIDE { }
-    virtual void dispatchWillPerformClientRedirect(const KURL&, double, double) OVERRIDE { }
-    virtual void dispatchDidChangeLocationWithinPage() OVERRIDE { }
     virtual void dispatchWillClose() OVERRIDE { }
     virtual void dispatchDidStartProvisionalLoad() OVERRIDE { }
     virtual void dispatchDidReceiveTitle(const StringWithDirection&) OVERRIDE { }
@@ -213,42 +207,18 @@ public:
     virtual void dispatchDidFinishLoad() OVERRIDE { }
     virtual void dispatchDidLayout(LayoutMilestones) OVERRIDE { }
 
-    virtual Frame* dispatchCreatePage(const NavigationAction&) OVERRIDE { return 0; }
-    virtual void dispatchShow() OVERRIDE { }
-
-    virtual PolicyAction policyForNewWindowAction(const NavigationAction&, const String&) OVERRIDE;
-    virtual PolicyAction decidePolicyForNavigationAction(const NavigationAction&, const ResourceRequest&) OVERRIDE;
-
-    virtual void dispatchUnableToImplementPolicy(const ResourceError&) OVERRIDE { }
+    virtual NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy) OVERRIDE;
 
     virtual void dispatchWillSendSubmitEvent(PassRefPtr<FormState>) OVERRIDE;
     virtual void dispatchWillSubmitForm(PassRefPtr<FormState>) OVERRIDE;
-
-    virtual void setMainDocumentError(DocumentLoader*, const ResourceError&) OVERRIDE { }
 
     virtual void postProgressStartedNotification() OVERRIDE { }
     virtual void postProgressEstimateChangedNotification() OVERRIDE { }
     virtual void postProgressFinishedNotification() OVERRIDE { }
 
-    virtual void startDownload(const ResourceRequest&, const String& suggestedName = String()) OVERRIDE { UNUSED_PARAM(suggestedName); }
+    virtual void loadURLExternally(const ResourceRequest&, NavigationPolicy, const String& = String()) OVERRIDE { }
 
-    virtual void committedLoad(DocumentLoader*, const char*, int) OVERRIDE { }
-    virtual void finishedLoading(DocumentLoader*) OVERRIDE { }
-
-    virtual ResourceError cancelledError(const ResourceRequest&) OVERRIDE { ResourceError error("", 0, "", ""); error.setIsCancellation(true); return error; }
-    virtual ResourceError cannotShowURLError(const ResourceRequest&) OVERRIDE { return ResourceError("", 0, "", ""); }
     virtual ResourceError interruptedForPolicyChangeError(const ResourceRequest&) OVERRIDE { return ResourceError("", 0, "", ""); }
-
-    virtual ResourceError cannotShowMIMETypeError(const ResourceResponse&) OVERRIDE { return ResourceError("", 0, "", ""); }
-    virtual ResourceError fileDoesNotExistError(const ResourceResponse&) OVERRIDE { return ResourceError("", 0, "", ""); }
-    virtual ResourceError pluginWillHandleLoadError(const ResourceResponse&) OVERRIDE { return ResourceError("", 0, "", ""); }
-
-    virtual bool shouldFallBack(const ResourceError&) OVERRIDE { return false; }
-
-    virtual bool canShowMIMEType(const String&) const OVERRIDE { return false; }
-    virtual String generatedMIMETypeForURLScheme(const String&) const OVERRIDE { return ""; }
-
-    virtual void didFinishLoad() OVERRIDE { }
 
     virtual PassRefPtr<DocumentLoader> createDocumentLoader(const ResourceRequest&, const SubstituteData&) OVERRIDE;
 
@@ -263,13 +233,13 @@ public:
     virtual void didDisplayInsecureContent() OVERRIDE { }
     virtual void didRunInsecureContent(SecurityOrigin*, const KURL&) OVERRIDE { }
     virtual void didDetectXSS(const KURL&, bool) OVERRIDE { }
+    virtual void didDispatchPingLoader(const KURL&) OVERRIDE { }
     virtual PassRefPtr<Frame> createFrame(const KURL&, const String&, HTMLFrameOwnerElement*, const String&, bool, int, int) OVERRIDE;
     virtual PassRefPtr<Widget> createPlugin(const IntSize&, HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool) OVERRIDE;
     virtual PassRefPtr<Widget> createJavaAppletWidget(const IntSize&, HTMLAppletElement*, const KURL&, const Vector<String>&, const Vector<String>&) OVERRIDE;
 
     virtual ObjectContentType objectContentType(const KURL&, const String&, bool) OVERRIDE { return ObjectContentType(); }
 
-    virtual void redirectDataToPlugin(Widget*) OVERRIDE { }
     virtual void dispatchDidClearWindowObjectInWorld(DOMWrapperWorld*) OVERRIDE { }
     virtual void documentElementAvailable() OVERRIDE { }
 
@@ -285,9 +255,9 @@ public:
 class EmptyTextCheckerClient : public TextCheckerClient {
 public:
     virtual bool shouldEraseMarkersAfterChangeSelection(TextCheckingType) const OVERRIDE { return true; }
-    virtual void checkSpellingOfString(const UChar*, int, int*, int*) OVERRIDE { }
+    virtual void checkSpellingOfString(const String&, int*, int*) OVERRIDE { }
     virtual String getAutoCorrectSuggestionForMisspelledWord(const String&) OVERRIDE { return String(); }
-    virtual void checkGrammarOfString(const UChar*, int, Vector<GrammarDetail>&, int*, int*) OVERRIDE { }
+    virtual void checkGrammarOfString(const String&, Vector<GrammarDetail>&, int*, int*) OVERRIDE { }
     virtual void requestCheckingOfString(PassRefPtr<TextCheckingRequest>) OVERRIDE;
 };
 
@@ -380,13 +350,6 @@ class EmptyDeviceClient : public DeviceClient {
 public:
     virtual void startUpdating() OVERRIDE { }
     virtual void stopUpdating() OVERRIDE { }
-};
-
-class EmptyDeviceMotionClient : public DeviceMotionClient {
-public:
-    virtual void setController(DeviceMotionController*) OVERRIDE { }
-    virtual DeviceMotionData* lastMotion() const OVERRIDE { return 0; }
-    virtual void deviceMotionControllerDestroyed() OVERRIDE { }
 };
 
 class EmptyDeviceOrientationClient : public DeviceOrientationClient {

@@ -6,6 +6,7 @@
 #define NET_DISK_CACHE_SIMPLE_SIMPLE_INDEX_FILE_H_
 
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
@@ -26,6 +27,16 @@ class TaskRunner;
 namespace disk_cache {
 
 const uint64 kSimpleIndexMagicNumber = GG_UINT64_C(0x656e74657220796f);
+
+struct NET_EXPORT_PRIVATE SimpleIndexLoadResult {
+  SimpleIndexLoadResult();
+  ~SimpleIndexLoadResult();
+  void Reset();
+
+  bool did_load;
+  SimpleIndex::EntrySet entries;
+  bool flush_required;
+};
 
 // Simple Index File format is a pickle serialized data of IndexMetadata and
 // EntryMetadata objects.  The file format is as follows: one instance of
@@ -62,19 +73,15 @@ class NET_EXPORT_PRIVATE SimpleIndexFile {
     uint64 cache_size_;  // Total cache storage size in bytes.
   };
 
-  typedef base::Callback<void(
-      scoped_ptr<SimpleIndex::EntrySet>, bool force_index_flush)>
-      IndexCompletionCallback;
-
-  explicit SimpleIndexFile(base::SingleThreadTaskRunner* cache_thread,
-                           base::TaskRunner* worker_pool,
-                           const base::FilePath& index_file_directory);
+  SimpleIndexFile(base::SingleThreadTaskRunner* cache_thread,
+                  base::TaskRunner* worker_pool,
+                  const base::FilePath& cache_directory);
   virtual ~SimpleIndexFile();
 
   // Get index entries based on current disk context.
-  virtual void LoadIndexEntries(
-      scoped_refptr<base::SingleThreadTaskRunner> response_thread,
-      const SimpleIndexFile::IndexCompletionCallback& completion_callback);
+  virtual void LoadIndexEntries(base::Time cache_last_modified,
+                                const base::Closure& callback,
+                                SimpleIndexLoadResult* out_result);
 
   // Write the specified set of entries to disk.
   virtual void WriteToDisk(const SimpleIndex::EntrySet& entry_set,
@@ -88,20 +95,25 @@ class NET_EXPORT_PRIVATE SimpleIndexFile {
                             const base::Callback<void(int)>& reply_callback);
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(SimpleIndexFileTest, IsIndexFileCorrupt);
-  FRIEND_TEST_ALL_PREFIXES(SimpleIndexFileTest, IsIndexFileStale);
-  FRIEND_TEST_ALL_PREFIXES(SimpleIndexFileTest, Serialize);
-  FRIEND_TEST_ALL_PREFIXES(SimpleIndexFileTest, WriteThenLoadIndex);
+  friend class WrappedSimpleIndexFile;
 
-  // Using the mtime of the file and its mtime, detects if the index file is
-  // stale.
-  static bool IsIndexFileStale(const base::FilePath& index_filename);
+  // Used for cache directory traversal.
+  typedef base::Callback<void (const base::FilePath&)> EntryFileCallback;
 
-  // Load the index file from disk, deserializing it and returning the
-  // corresponding EntrySet in a scoped_ptr<>, if successful.
-  // Uppon failure, the scoped_ptr<> will contain NULL.
-  static scoped_ptr<SimpleIndex::EntrySet> LoadFromDisk(
-      const base::FilePath& index_filename);
+  // When loading the entries from disk, add this many extra hash buckets to
+  // prevent reallocation on the IO thread when merging in new live entries.
+  static const int kExtraSizeForMerge = 512;
+
+  // Synchronous (IO performing) implementation of LoadIndexEntries.
+  static void SyncLoadIndexEntries(base::Time cache_last_modified,
+                                   const base::FilePath& cache_directory,
+                                   const base::FilePath& index_file_path,
+                                   SimpleIndexLoadResult* out_result);
+
+  // Load the index file from disk returning an EntrySet. Upon failure, returns
+  // NULL.
+  static void SyncLoadFromDisk(const base::FilePath& index_filename,
+                               SimpleIndexLoadResult* out_result);
 
   // Returns a scoped_ptr for a newly allocated Pickle containing the serialized
   // data to be written to a file.
@@ -109,17 +121,30 @@ class NET_EXPORT_PRIVATE SimpleIndexFile {
       const SimpleIndexFile::IndexMetadata& index_metadata,
       const SimpleIndex::EntrySet& entries);
 
-  static void LoadIndexEntriesInternal(
-      const base::FilePath& index_file_path,
-      scoped_refptr<base::SingleThreadTaskRunner> response_thread,
-      const SimpleIndexFile::IndexCompletionCallback& completion_callback);
+  // Given the contents of an index file |data| of length |data_len|, returns
+  // the corresponding EntrySet. Returns NULL on error.
+  static void Deserialize(const char* data, int data_len,
+                          SimpleIndexLoadResult* out_result);
 
-  // Deserialize() is separate from LoadFromDisk() for easier testing.
-  static scoped_ptr<SimpleIndex::EntrySet> Deserialize(const char* data,
-                                                       int data_len);
+  // Implemented either in simple_index_file_posix.cc or
+  // simple_index_file_win.cc. base::FileEnumerator turned out to be very
+  // expensive in terms of memory usage therefore it's used only on non-POSIX
+  // environments for convenience (for now). Returns whether the traversal
+  // succeeded.
+  static bool TraverseCacheDirectory(
+      const base::FilePath& cache_path,
+      const EntryFileCallback& entry_file_callback);
 
-  static scoped_ptr<SimpleIndex::EntrySet> RestoreFromDisk(
-      const base::FilePath& index_file_path);
+  // Scan the index directory for entries, returning an EntrySet of all entries
+  // found.
+  static void SyncRestoreFromDisk(const base::FilePath& cache_directory,
+                                  const base::FilePath& index_file_path,
+                                  SimpleIndexLoadResult* out_result);
+
+  // Determines if an index file is stale relative to the time of last
+  // modification of the cache directory.
+  static bool IsIndexFileStale(base::Time cache_last_modified,
+                               const base::FilePath& index_file_path);
 
   struct PickleHeader : public Pickle::Header {
     uint32 crc;
@@ -127,9 +152,9 @@ class NET_EXPORT_PRIVATE SimpleIndexFile {
 
   const scoped_refptr<base::SingleThreadTaskRunner> cache_thread_;
   const scoped_refptr<base::TaskRunner> worker_pool_;
-  const base::FilePath index_file_path_;
-
-  static const char kIndexFileName[];
+  const base::FilePath cache_directory_;
+  const base::FilePath index_file_;
+  const base::FilePath temp_index_file_;
 
   DISALLOW_COPY_AND_ASSIGN(SimpleIndexFile);
 };

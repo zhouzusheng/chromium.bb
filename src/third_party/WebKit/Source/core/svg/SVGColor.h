@@ -24,10 +24,11 @@
 
 #include "core/css/CSSValue.h"
 #include "core/platform/graphics/Color.h"
-#include <wtf/PassRefPtr.h>
+#include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
+class ExceptionState;
 class RGBColor;
 
 class SVGColor : public CSSValue {
@@ -42,7 +43,7 @@ public:
     static PassRefPtr<SVGColor> createFromString(const String& rgbColor)
     {
         RefPtr<SVGColor> color = adoptRef(new SVGColor(SVG_COLORTYPE_RGBCOLOR));
-        color->setColor(colorFromRGBColorString(rgbColor));
+        color->m_valid = colorFromRGBColorString(rgbColor, color->m_color);
         return color.release();
     }
 
@@ -62,21 +63,25 @@ public:
     const SVGColorType& colorType() const { return m_colorType; }
     PassRefPtr<RGBColor> rgbColor() const;
 
-    static Color colorFromRGBColorString(const String&);
+    static bool colorFromRGBColorString(const String&, Color&);
+    static Color colorFromRGBColorString(const String& s)
+    {
+        Color color;
+        colorFromRGBColorString(s, color);
+        return color;
+    }
 
-    void setRGBColor(const String& rgbColor, ExceptionCode&);
-    void setRGBColorICCColor(const String& rgbColor, const String& iccColor, ExceptionCode&);
-    void setColor(unsigned short colorType, const String& rgbColor, const String& iccColor, ExceptionCode&);
+    void setRGBColor(const String& rgbColor, ExceptionState&);
+    void setRGBColorICCColor(const String& rgbColor, const String& iccColor, ExceptionState&);
+    void setColor(unsigned short colorType, const String& rgbColor, const String& iccColor, ExceptionState&);
 
     String customCssText() const;
 
     ~SVGColor() { }
-    
+
     PassRefPtr<SVGColor> cloneForCSSOM() const;
 
     bool equals(const SVGColor&) const;
-
-    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
 protected:
     friend class CSSComputedStyleDeclaration;
@@ -84,7 +89,7 @@ protected:
     SVGColor(ClassType, const SVGColorType&);
     SVGColor(ClassType, const SVGColor& cloneFrom);
 
-    void setColor(const Color& color) { m_color = color; }
+    void setColor(const Color& color) { m_color = color; m_valid = true; }
     void setColorType(const SVGColorType& type) { m_colorType = type; }
 
 private:
@@ -92,6 +97,7 @@ private:
 
     Color m_color;
     SVGColorType m_colorType;
+    bool m_valid;
 };
 
 } // namespace WebCore

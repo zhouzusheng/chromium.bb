@@ -20,7 +20,7 @@
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 
 // Older style trace macros with explicit id and extra data
 // Only these macros result in publishing data to ETW as currently implemented.
@@ -40,7 +40,7 @@
         name, reinterpret_cast<const void*>(id), extra)
 
 template <typename Type>
-struct StaticMemorySingletonTraits;
+struct DefaultSingletonTraits;
 
 namespace base {
 
@@ -55,7 +55,7 @@ class ConvertableToTraceFormat {
   virtual ~ConvertableToTraceFormat() {}
 
   // Append the class info to the provided |out| string. The appended
-  // data must be a valid JSON object. Strings must be propertly quoted, and
+  // data must be a valid JSON object. Strings must be properly quoted, and
   // escaped. There is no processing applied to the content after it is
   // appended.
   virtual void AppendAsTraceFormat(std::string* out) const = 0;
@@ -65,7 +65,7 @@ const int kTraceMaxNumArgs = 2;
 
 // Output records are "Events" and can be obtained via the
 // OutputCallback whenever the tracing system decides to flush. This
-// can happen at any time, on any thread, or you can programatically
+// can happen at any time, on any thread, or you can programmatically
 // force it to happen.
 class BASE_EXPORT TraceEvent {
  public:
@@ -101,6 +101,7 @@ class BASE_EXPORT TraceEvent {
                                  size_t count,
                                  std::string* out);
   void AppendAsJSON(std::string* out) const;
+  void AppendPrettyPrinted(std::ostringstream* out) const;
 
   static void AppendValueAsJSON(unsigned char type,
                                 TraceValue value,
@@ -290,8 +291,8 @@ class BASE_EXPORT TraceLog {
     // Enable the sampling profiler.
     ENABLE_SAMPLING = 1 << 2,
 
-    // Echo to VLOG. Events are discared.
-    ECHO_TO_VLOG = 1 << 3
+    // Echo to console. Events are discarded.
+    ECHO_TO_CONSOLE = 1 << 3
   };
 
   static TraceLog* GetInstance();
@@ -344,6 +345,7 @@ class BASE_EXPORT TraceLog {
   };
   void AddEnabledStateObserver(EnabledStateObserver* listener);
   void RemoveEnabledStateObserver(EnabledStateObserver* listener);
+  bool HasEnabledStateObserver(EnabledStateObserver* listener) const;
 
   float GetBufferPercentFull() const;
 
@@ -355,8 +357,8 @@ class BASE_EXPORT TraceLog {
   typedef base::Callback<void(int)> NotificationCallback;
   void SetNotificationCallback(const NotificationCallback& cb);
 
-  // Not using base::Callback because of its limited by 7 parameteters.
-  // Also, using primitive type allows directly passsing callback from WebCore.
+  // Not using base::Callback because of its limited by 7 parameters.
+  // Also, using primitive type allows directly passing callback from WebCore.
   // WARNING: It is possible for the previously set callback to be called
   // after a call to SetEventCallback() that replaces or clears the callback.
   // This callback may be invoked on any thread.
@@ -391,7 +393,7 @@ class BASE_EXPORT TraceLog {
   // into the event; see "Memory scoping note" and TRACE_EVENT_COPY_XXX above.
   void AddTraceEvent(char phase,
                      const unsigned char* category_group_enabled,
-                     const char* category_group,
+                     const char* name,
                      unsigned long long id,
                      int num_args,
                      const char** arg_names,
@@ -440,9 +442,6 @@ class BASE_EXPORT TraceLog {
   // Allows deleting our singleton instance.
   static void DeleteForTesting();
 
-  // Allows resurrecting our singleton instance post-AtExit processing.
-  static void Resurrect();
-
   // Allow tests to inspect TraceEvents.
   size_t GetEventsSize() const { return logged_events_->Size(); }
   const TraceEvent& GetEventAt(size_t index) const {
@@ -450,6 +449,24 @@ class BASE_EXPORT TraceLog {
   }
 
   void SetProcessID(int process_id);
+
+  // Process sort indices, if set, override the order of a process will appear
+  // relative to other processes in the trace viewer. Processes are sorted first
+  // on their sort index, ascending, then by their name, and then tid.
+  void SetProcessSortIndex(int sort_index);
+
+  // Sets the name of the process.
+  void SetProcessName(const std::string& process_name);
+
+  // Processes can have labels in addition to their names. Use labels, for
+  // instance, to list out the web page titles that a process is handling.
+  void UpdateProcessLabel(int label_id, const std::string& current_label);
+  void RemoveProcessLabel(int label_id);
+
+  // Thread sort indices, if set, override the order of a thread will appear
+  // within its process in the trace viewer. Threads are sorted first on their
+  // sort index, ascending, then by their name, and then tid.
+  void SetThreadSortIndex(PlatformThreadId , int sort_index);
 
   // Allow setting an offset between the current TimeTicks time and the time
   // that should be reported.
@@ -460,13 +477,15 @@ class BASE_EXPORT TraceLog {
  private:
   // This allows constructor and destructor to be private and usable only
   // by the Singleton class.
-  friend struct StaticMemorySingletonTraits<TraceLog>;
+  friend struct DefaultSingletonTraits<TraceLog>;
 
-  // Enable/disable each category group based on the current category_filter_.
-  // If the category group contains a category that matches an included category
+  // Enable/disable each category group based on the current enable_count_
+  // and category_filter_. Disable the category group if enabled_count_ is 0, or
+  // if the category group contains a category that matches an included category
   // pattern, that category group will be enabled.
-  void EnableIncludedCategoryGroups();
-  void EnableIncludedCategoryGroup(int category_index);
+  // On Android, ATRACE_ENABLED flag will be applied if atrace is started.
+  void UpdateCategoryGroupEnabledFlags();
+  void UpdateCategoryGroupEnabledFlag(int category_index);
 
   static void SetCategoryGroupEnabled(int category_index, bool enabled);
   static bool IsCategoryGroupEnabled(
@@ -475,9 +494,9 @@ class BASE_EXPORT TraceLog {
   // The pointer returned from GetCategoryGroupEnabledInternal() points to a
   // value with zero or more of the following bits. Used in this class only.
   // The TRACE_EVENT macros should only use the value as a bool.
-  enum CategoryEnabledFlags {
-    // Normal enabled flag for categories enabled with Enable().
-    CATEGORY_ENABLED = 1 << 0,
+  enum CategoryGroupEnabledFlags {
+    // Normal enabled flag for category groups enabled with Enable().
+    CATEGORY_GROUP_ENABLED = 1 << 0,
     // On Android if ATrace is enabled, all categories will have this bit.
     // Not used on other platforms.
     ATRACE_ENABLED = 1 << 1
@@ -492,7 +511,7 @@ class BASE_EXPORT TraceLog {
     inline ~NotificationHelper();
 
     // Called only while TraceLog::lock_ is held. This ORs the given
-    // notification with any existing notifcations.
+    // notification with any existing notifications.
     inline void AddNotificationWhileLocked(int notification);
 
     // Called only while TraceLog::lock_ is NOT held. If there are any pending
@@ -509,7 +528,7 @@ class BASE_EXPORT TraceLog {
   TraceLog();
   ~TraceLog();
   const unsigned char* GetCategoryGroupEnabledInternal(const char* name);
-  void AddThreadNameMetadataEvents();
+  void AddMetadataEvents();
 
 #if defined(OS_ANDROID)
   void SendToATrace(char phase,
@@ -538,6 +557,11 @@ class BASE_EXPORT TraceLog {
   EventCallback event_callback_;
   bool dispatching_to_observer_list_;
   std::vector<EnabledStateObserver*> enabled_state_observer_list_;
+
+  std::string process_name_;
+  base::hash_map<int, std::string> process_labels_;
+  int process_sort_index_;
+  base::hash_map<int, int> thread_sort_indices_;
 
   base::hash_map<int, std::string> thread_names_;
   base::hash_map<int, std::stack<TimeTicks> > thread_event_start_times_;

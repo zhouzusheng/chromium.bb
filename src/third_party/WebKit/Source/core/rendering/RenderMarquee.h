@@ -70,7 +70,7 @@ public:
     int computePosition(EMarqueeDirection, bool stopAtClientEdge);
 
     void setEnd(int end) { m_end = end; }
-    
+
     void start();
     void suspend();
     void stop();
@@ -85,6 +85,8 @@ private:
     virtual bool isMarquee() const OVERRIDE FINAL { return true; }
 
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE FINAL;
+
+    virtual void layoutBlock(bool relayoutChildren, LayoutUnit pageLogicalHeight = 0) OVERRIDE FINAL;
 
     void timerFired(Timer<RenderMarquee>*);
 

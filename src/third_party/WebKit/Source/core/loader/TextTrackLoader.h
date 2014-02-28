@@ -27,11 +27,11 @@
 #define TextTrackLoader_h
 
 #include "core/html/track/WebVTTParser.h"
-#include "core/loader/cache/CachedResourceClient.h"
-#include "core/loader/cache/CachedResourceHandle.h"
-#include "core/loader/cache/CachedTextTrack.h"
+#include "core/loader/cache/ResourceClient.h"
+#include "core/loader/cache/ResourcePtr.h"
+#include "core/loader/cache/TextTrackResource.h"
 #include "core/platform/Timer.h"
-#include <wtf/OwnPtr.h>
+#include "wtf/OwnPtr.h"
 
 namespace WebCore {
 
@@ -42,7 +42,7 @@ class ScriptExecutionContext;
 class TextTrackLoaderClient {
 public:
     virtual ~TextTrackLoaderClient() { }
-    
+
     virtual bool shouldLoadCues(TextTrackLoader*) = 0;
     virtual void newCuesAvailable(TextTrackLoader*) = 0;
     virtual void cueLoadingStarted(TextTrackLoader*) = 0;
@@ -52,8 +52,8 @@ public:
 #endif
 };
 
-class TextTrackLoader : public CachedResourceClient, private WebVTTParserClient {
-    WTF_MAKE_NONCOPYABLE(TextTrackLoader); 
+class TextTrackLoader : public ResourceClient, private WebVTTParserClient {
+    WTF_MAKE_NONCOPYABLE(TextTrackLoader);
     WTF_MAKE_FAST_ALLOCATED;
 public:
     static PassOwnPtr<TextTrackLoader> create(TextTrackLoaderClient* client, ScriptExecutionContext* context)
@@ -61,7 +61,7 @@ public:
         return adoptPtr(new TextTrackLoader(client, context));
     }
     virtual ~TextTrackLoader();
-    
+
     bool load(const KURL&, const String& crossOriginMode);
     void cancelLoad();
 
@@ -74,26 +74,26 @@ public:
 #endif
 private:
 
-    // CachedResourceClient
-    virtual void notifyFinished(CachedResource*);
-    virtual void deprecatedDidReceiveCachedResource(CachedResource*);
-    
+    // ResourceClient
+    virtual void notifyFinished(Resource*);
+    virtual void deprecatedDidReceiveResource(Resource*);
+
     // WebVTTParserClient
     virtual void newCuesParsed();
 #if ENABLE(WEBVTT_REGIONS)
     virtual void newRegionsParsed();
 #endif
     virtual void fileFailedToParse();
-    
+
     TextTrackLoader(TextTrackLoaderClient*, ScriptExecutionContext*);
-    
-    void processNewCueData(CachedResource*);
+
+    void processNewCueData(Resource*);
     void cueLoadTimerFired(Timer<TextTrackLoader>*);
     void corsPolicyPreventedLoad();
 
     TextTrackLoaderClient* m_client;
     OwnPtr<WebVTTParser> m_cueParser;
-    CachedResourceHandle<CachedTextTrack> m_cachedCueData;
+    ResourcePtr<TextTrackResource> m_cachedCueData;
     ScriptExecutionContext* m_scriptExecutionContext;
     Timer<TextTrackLoader> m_cueLoadTimer;
     String m_crossOriginMode;

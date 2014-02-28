@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /**
  * @fileoverview State and UI for trace data collection.
  */
 base.requireStylesheet('about_tracing.tracing_controller');
 
-base.require('base.event_target');
+base.require('base.properties');
+base.require('base.events');
 base.require('ui.overlay');
 
 base.exportTo('about_tracing', function() {
@@ -38,8 +41,8 @@ base.exportTo('about_tracing', function() {
     this.traceEventData_ = undefined;
     this.systemTraceEvents_ = undefined;
 
-    this.onKeydownBoundToThis_ = this.onKeydown_.bind(this);
-    this.onKeypressBoundToThis_ = this.onKeypress_.bind(this);
+    this.onKeydown_ = this.onKeydown_.bind(this);
+    this.onKeypress_ = this.onKeypress_.bind(this);
 
     this.supportsSystemTracing_ = base.isChromeOS;
 
@@ -93,13 +96,13 @@ base.exportTo('about_tracing', function() {
      * Example: beginTracing("-excluded_category1,-excluded_category2");
      */
     beginTracing: function(opt_systemTracingEnabled, opt_trace_continuous,
-                           opt_trace_categories) {
+                           opt_enableSampling, opt_trace_categories) {
       if (this.tracingEnabled_)
         throw new Error('Tracing already begun.');
 
       this.stopButton_.hidden = false;
       this.statusDiv_.textContent = 'Tracing active.';
-      this.overlay_.defaultClickShouldClose = false;
+      this.overlay_.obeyCloseEvents = false;
       this.overlay_.visible = true;
 
       this.tracingEnabled_ = true;
@@ -107,8 +110,11 @@ base.exportTo('about_tracing', function() {
       console.log('Beginning to trace...');
       this.statusDiv_.textContent = 'Tracing active.';
 
-      var trace_options = (opt_trace_continuous ? 'record-continuously' :
-                                                  'record-until-full');
+      var trace_options = [];
+      trace_options.push(opt_trace_continuous ? 'record-continuously' :
+                                                'record-until-full');
+      if (opt_enableSampling)
+        trace_options.push('enable-sampling');
 
       this.traceEventData_ = undefined;
       this.systemTraceEvents_ = undefined;
@@ -117,13 +123,13 @@ base.exportTo('about_tracing', function() {
           [
            opt_systemTracingEnabled || false,
            opt_trace_categories || '-test_*',
-           trace_options
+           trace_options.join(',')
           ]
       );
       this.beginRequestBufferPercentFull_();
 
-      window.addEventListener('keypress', this.onKeypressBoundToThis_);
-      window.addEventListener('keydown', this.onKeydownBoundToThis_);
+      window.addEventListener('keypress', this.onKeypress_);
+      window.addEventListener('keydown', this.onKeydown_);
     },
 
     onKeydown_: function(e) {
@@ -191,8 +197,8 @@ base.exportTo('about_tracing', function() {
      * Called by the browser when all processes complete tracing.
      */
     onEndTracingComplete: function(traceDataString) {
-      window.removeEventListener('keydown', this.onKeydownBoundToThis_);
-      window.removeEventListener('keypress', this.onKeypressBoundToThis_);
+      window.removeEventListener('keydown', this.onKeydown_);
+      window.removeEventListener('keypress', this.onKeypress_);
       this.overlay_.visible = false;
       this.tracingEnabled_ = false;
       this.tracingEnding_ = false;

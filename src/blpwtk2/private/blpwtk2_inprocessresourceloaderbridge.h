@@ -27,7 +27,7 @@
 
 #include <blpwtk2_resourcecontext.h>
 
-#include <webkit/glue/resource_loader_bridge.h>
+#include <webkit/child/resource_loader_bridge.h>
 
 namespace base {
 class MessageLoop;

@@ -34,10 +34,9 @@
 
 #include "core/inspector/InspectorBaseAgent.h"
 #include "core/inspector/InspectorDebuggerAgent.h"
-#include <wtf/HashMap.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/HashMap.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -47,7 +46,6 @@ class Event;
 class InspectorDOMAgent;
 class InspectorDebuggerAgent;
 class InspectorFrontend;
-class InspectorState;
 class InstrumentingAgents;
 class JSONObject;
 class Node;
@@ -87,6 +85,8 @@ public:
     void willFireAnimationFrame(Document*, int callbackId);
     void willHandleEvent(Event*);
     void didFireWebGLError(const String& errorName);
+    void didFireWebGLWarning();
+    void didFireWebGLErrorOrWarning(const String& message);
 
     void didProcessTask();
 

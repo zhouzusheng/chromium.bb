@@ -20,8 +20,7 @@
 class SkCanvas;
 
 namespace WebKit {
-class WebMediaPlayer;
-class WebMediaPlayerClient;
+class WebDeviceMotionData;
 struct WebRect;
 }
 
@@ -30,7 +29,6 @@ class WebTestProxyBase;
 }
 
 namespace content {
-class ShellMediaStreamClient;
 
 // This is the renderer side of the webkit test runner.
 class WebKitTestRunner : public RenderViewObserver,
@@ -54,6 +52,7 @@ class WebKitTestRunner : public RenderViewObserver,
   virtual void setEditCommand(const std::string& name,
                               const std::string& value);
   virtual void setGamepadData(const WebKit::WebGamepads& gamepads);
+  virtual void setDeviceMotionData(const WebKit::WebDeviceMotionData& data);
   virtual void printMessage(const std::string& message);
   virtual void postTask(::WebTestRunner::WebTask* task);
   virtual void postDelayedTask(::WebTestRunner::WebTask* task,
@@ -84,6 +83,7 @@ class WebKitTestRunner : public RenderViewObserver,
   virtual void setLocale(const std::string& locale);
   virtual void testFinished();
   virtual void closeRemainingWindows();
+  virtual void deleteAllCookies();
   virtual int navigationEntryCount();
   virtual void goToOffset(int offset);
   virtual void reload();
@@ -94,10 +94,6 @@ class WebKitTestRunner : public RenderViewObserver,
       WebTestRunner::WebTestProxyBase* proxy,
       WebKit::WebVector<WebKit::WebHistoryItem>* history,
       size_t* currentEntryIndex);
-  virtual WebKit::WebMediaPlayer* createWebMediaPlayer(
-      WebKit::WebFrame* frame,
-      const WebKit::WebURL& url,
-      WebKit::WebMediaPlayerClient* client);
 
   void Reset();
 
@@ -133,8 +129,6 @@ class WebKitTestRunner : public RenderViewObserver,
   bool is_main_window_;
 
   bool focus_on_next_commit_;
-
-  scoped_ptr<ShellMediaStreamClient> shell_media_stream_client_;
 
   DISALLOW_COPY_AND_ASSIGN(WebKitTestRunner);
 };

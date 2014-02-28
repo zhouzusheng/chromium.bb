@@ -25,11 +25,13 @@
 #include "content/shell/shell_browser_main_parts.h"
 #include "content/shell/shell_devtools_delegate.h"
 #include "content/shell/shell_message_filter.h"
+#include "content/shell/shell_net_log.h"
 #include "content/shell/shell_quota_permission_context.h"
 #include "content/shell/shell_resource_dispatcher_host_delegate.h"
 #include "content/shell/shell_web_contents_view_delegate_creator.h"
 #include "content/shell/webkit_test_controller.h"
-#include "googleurl/src/gurl.h"
+#include "net/url_request/url_request_context_getter.h"
+#include "url/gurl.h"
 #include "webkit/common/webpreferences.h"
 
 #include "chrome/browser/spellchecker/spellcheck_message_filter.h"
@@ -46,6 +48,7 @@ namespace content {
 namespace {
 
 ShellContentBrowserClient* g_browser_client;
+bool g_swap_processes_for_redirect = false;
 
 // This class creates the IO thread for the renderer when running in
 // single-process mode.  It's not used in multi-process mode.
@@ -93,22 +96,17 @@ ShellContentBrowserClient* ShellContentBrowserClient::Get() {
   return g_browser_client;
 }
 
+void ShellContentBrowserClient::SetSwapProcessesForRedirect(bool swap) {
+  g_swap_processes_for_redirect = swap;
+}
+
 ShellContentBrowserClient::ShellContentBrowserClient()
-    : hyphen_dictionary_file_(base::kInvalidPlatformFileValue),
-      shell_browser_main_parts_(NULL) {
+    : shell_browser_main_parts_(NULL) {
   DCHECK(!g_browser_client);
   g_browser_client = this;
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return;
   webkit_source_dir_ = GetWebKitRootDirFilePath();
-  base::FilePath dictionary_file_path = base::MakeAbsoluteFilePath(
-      GetChromiumRootDirFilePath().Append(
-          FILE_PATH_LITERAL("third_party/hyphen/hyph_en_US.dic")));
-  hyphen_dictionary_file_ = base::CreatePlatformFile(dictionary_file_path,
-                                                     base::PLATFORM_FILE_READ |
-                                                     base::PLATFORM_FILE_OPEN,
-                                                     NULL,
-                                                     NULL);
 }
 
 ShellContentBrowserClient::~ShellContentBrowserClient() {
@@ -132,7 +130,9 @@ void ShellContentBrowserClient::RenderProcessHostCreated(
       BrowserContext::GetDefaultStoragePartition(browser_context())
           ->GetDatabaseTracker(),
       BrowserContext::GetDefaultStoragePartition(browser_context())
-          ->GetQuotaManager()));
+          ->GetQuotaManager(),
+      BrowserContext::GetDefaultStoragePartition(browser_context())
+          ->GetURLRequestContext()));
   host->Send(new ShellViewMsg_SetWebKitSourceDir(webkit_source_dir_));
   registrar_.Add(this,
                  NOTIFICATION_RENDERER_PROCESS_CREATED,
@@ -187,6 +187,9 @@ void ShellContentBrowserClient::AppendExtraCommandLineSwitches(
     CommandLine* command_line, int child_process_id) {
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     command_line->AppendSwitch(switches::kDumpRenderTree);
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kExposeInternalsForTesting))
+    command_line->AppendSwitch(switches::kExposeInternalsForTesting);
 }
 
 void ShellContentBrowserClient::OverrideWebkitPrefs(
@@ -264,6 +267,17 @@ ShellContentBrowserClient::CreateQuotaPermissionContext() {
   return new ShellQuotaPermissionContext();
 }
 
+net::NetLog* ShellContentBrowserClient::GetNetLog() {
+  return shell_browser_main_parts_->net_log();
+}
+
+bool ShellContentBrowserClient::ShouldSwapProcessesForRedirect(
+    ResourceContext* resource_context,
+    const GURL& current_url,
+    const GURL& new_url) {
+  return g_swap_processes_for_redirect;
+}
+
 #if defined(OS_ANDROID)
 void ShellContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
     const CommandLine& command_line,
@@ -299,12 +313,6 @@ void ShellContentBrowserClient::Observe(int type,
       registrar_.Remove(this,
                         NOTIFICATION_RENDERER_PROCESS_TERMINATED,
                         source);
-      if (hyphen_dictionary_file_ != base::kInvalidPlatformFileValue) {
-        RenderProcessHost* host = Source<RenderProcessHost>(source).ptr();
-        IPC::PlatformFileForTransit file = IPC::GetFileHandleForProcess(
-            hyphen_dictionary_file_, host->GetHandle(), false);
-        host->Send(new ShellViewMsg_LoadHyphenDictionary(file));
-      }
       break;
     }
 

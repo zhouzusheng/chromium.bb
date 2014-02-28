@@ -34,7 +34,7 @@ class AnalysisCanvas;
 namespace cc {
 
 class ContentLayerClient;
-struct RenderingStats;
+class RenderingStatsInstrumentation;
 
 class CC_EXPORT Picture
     : public base::RefCountedThreadSafe<Picture> {
@@ -60,11 +60,11 @@ class CC_EXPORT Picture
   // playback on a different thread this can only be called once.
   void Record(ContentLayerClient* client,
               const SkTileGridPicture::TileGridInfo& tile_grid_info,
-              RenderingStats* stats);
+              RenderingStatsInstrumentation* stats_instrumentation);
 
   // Gather pixel refs from recording.
   void GatherPixelRefs(const SkTileGridPicture::TileGridInfo& tile_grid_info,
-                       RenderingStats* stats);
+                       RenderingStatsInstrumentation* stats_instrumentation);
 
   // Has Record() been called yet?
   bool HasRecording() const { return picture_.get() != NULL; }
@@ -74,6 +74,10 @@ class CC_EXPORT Picture
               SkDrawPictureCallback* callback,
               gfx::Rect content_rect,
               float contents_scale);
+
+  // Draw the picture directly into the given canvas, without applying any
+  // clip/scale/layer transformations.
+  void Replay(SkCanvas* canvas);
 
   scoped_ptr<base::Value> AsValue() const;
 
@@ -114,13 +118,16 @@ class CC_EXPORT Picture
 
  private:
   explicit Picture(gfx::Rect layer_rect);
-  Picture(const base::Value*, bool* success);
   // This constructor assumes SkPicture is already ref'd and transfers
   // ownership to this picture.
   Picture(const skia::RefPtr<SkPicture>&,
           gfx::Rect layer_rect,
           gfx::Rect opaque_rect,
           const PixelRefMap& pixel_refs);
+  // This constructor will call AdoptRef on the SkPicture.
+  Picture(SkPicture*,
+          gfx::Rect layer_rect,
+          gfx::Rect opaque_rect);
   ~Picture();
 
   gfx::Rect layer_rect_;
@@ -136,7 +143,9 @@ class CC_EXPORT Picture
   gfx::Size cell_size_;
 
   scoped_ptr<base::debug::ConvertableToTraceFormat>
-    AsTraceableRasterData(gfx::Rect rect, float scale);
+    AsTraceableRasterData(gfx::Rect rect, float scale) const;
+  scoped_ptr<base::debug::ConvertableToTraceFormat>
+    AsTraceableRecordData() const;
 
   friend class base::RefCountedThreadSafe<Picture>;
   friend class PixelRefIterator;

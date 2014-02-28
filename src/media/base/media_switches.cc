@@ -12,9 +12,6 @@ const char kAudioBufferSize[] = "audio-buffer-size";
 // Enable EAC3 playback in MSE.
 const char kEnableEac3Playback[] = "enable-eac3-playback";
 
-// Enables support for inband text tracks in media content.
-const char kEnableInbandTextTracks[] = "enable-inband-text-tracks";
-
 // Enables Opus playback in media elements.
 const char kEnableOpusPlayback[] = "enable-opus-playback";
 
@@ -59,6 +56,12 @@ const char kDisableMainThreadAudio[] = "disable-main-thread-audio";
 // See http://msdn.microsoft.com/en-us/library/windows/desktop/dd370844.aspx
 // for details.
 const char kEnableExclusiveAudio[] = "enable-exclusive-audio";
+
+// Used to troubleshoot problems with different video capture implementations
+// on Windows.  By default we use the Media Foundation API on Windows 7 and up,
+// but specifying this switch will force use of DirectShow always.
+// See bug: http://crbug.com/268412
+const char kForceDirectShowVideoCapture[] = "force-directshow";
 
 // Use Windows WaveOut/In audio API even if Core Audio is supported.
 const char kForceWaveAudio[] = "force-wave-audio";

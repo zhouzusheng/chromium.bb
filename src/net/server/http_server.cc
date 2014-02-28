@@ -7,12 +7,15 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/sys_byteorder.h"
 #include "build/build_config.h"
+#include "net/base/net_errors.h"
 #include "net/server/http_connection.h"
 #include "net/server/http_server_request_info.h"
+#include "net/server/http_server_response_info.h"
 #include "net/server/web_socket.h"
 #include "net/socket/tcp_listen_socket.h"
 
@@ -22,7 +25,6 @@ HttpServer::HttpServer(const StreamListenSocketFactory& factory,
                        HttpServer::Delegate* delegate)
     : delegate_(delegate),
       server_(factory.CreateAndListen(this)) {
-  DCHECK(server_.get());
 }
 
 void HttpServer::AcceptWebSocket(
@@ -45,14 +47,21 @@ void HttpServer::SendOverWebSocket(int connection_id,
   connection->web_socket_->Send(data);
 }
 
+void HttpServer::SendResponse(int connection_id,
+                              const HttpServerResponseInfo& response) {
+  HttpConnection* connection = FindConnection(connection_id);
+  if (connection == NULL)
+    return;
+  connection->Send(response);
+}
+
 void HttpServer::Send(int connection_id,
                       HttpStatusCode status_code,
                       const std::string& data,
                       const std::string& content_type) {
-  HttpConnection* connection = FindConnection(connection_id);
-  if (connection == NULL)
-    return;
-  connection->Send(status_code, data, content_type);
+  HttpServerResponseInfo response(status_code);
+  response.SetBody(data, content_type);
+  SendResponse(connection_id, response);
 }
 
 void HttpServer::Send200(int connection_id,
@@ -62,11 +71,11 @@ void HttpServer::Send200(int connection_id,
 }
 
 void HttpServer::Send404(int connection_id) {
-  Send(connection_id, HTTP_NOT_FOUND, std::string(), "text/html");
+  SendResponse(connection_id, HttpServerResponseInfo::CreateFor404());
 }
 
 void HttpServer::Send500(int connection_id, const std::string& message) {
-  Send(connection_id, HTTP_INTERNAL_SERVER_ERROR, message, "text/html");
+  SendResponse(connection_id, HttpServerResponseInfo::CreateFor500(message));
 }
 
 void HttpServer::Close(int connection_id) {
@@ -80,6 +89,8 @@ void HttpServer::Close(int connection_id) {
 }
 
 int HttpServer::GetLocalAddress(IPEndPoint* address) {
+  if (!server_)
+    return ERR_SOCKET_NOT_CONNECTED;
   return server_->GetLocalAddress(address);
 }
 
@@ -120,19 +131,39 @@ void HttpServer::DidRead(StreamListenSocket* socket,
     if (!ParseHeaders(connection, &request, &pos))
       break;
 
-    std::string connection_header = request.GetHeaderValue("Connection");
+    std::string connection_header = request.GetHeaderValue("connection");
     if (connection_header == "Upgrade") {
       connection->web_socket_.reset(WebSocket::CreateWebSocket(connection,
                                                                request,
                                                                &pos));
 
-      if (!connection->web_socket_.get())  // Not enought data was received.
+      if (!connection->web_socket_.get())  // Not enough data was received.
         break;
       delegate_->OnWebSocketRequest(connection->id(), request);
       connection->Shift(pos);
       continue;
     }
-    // Request body is not supported. It is always empty.
+
+    const char kContentLength[] = "content-length";
+    if (request.headers.count(kContentLength)) {
+      size_t content_length = 0;
+      const size_t kMaxBodySize = 100 << 20;
+      if (!base::StringToSizeT(request.GetHeaderValue(kContentLength),
+                               &content_length) ||
+          content_length > kMaxBodySize) {
+        connection->Send(HttpServerResponseInfo::CreateFor500(
+            "request content-length too big or unknown: " +
+            request.GetHeaderValue(kContentLength)));
+        DidClose(socket);
+        break;
+      }
+
+      if (connection->recv_data_.length() - pos < content_length)
+        break;  // Not enough data was received yet.
+      request.data = connection->recv_data_.substr(pos, content_length);
+      pos += content_length;
+    }
+
     delegate_->OnHttpRequest(connection->id(), request);
     connection->Shift(pos);
   }
@@ -192,8 +223,8 @@ int parser_state[MAX_STATES][MAX_INPUTS] = {
 /* URL       */ { ST_PROTO,     ST_ERR,     ST_ERR,   ST_URL,       ST_URL },
 /* PROTOCOL  */ { ST_ERR,       ST_HEADER,  ST_NAME,  ST_ERR,       ST_PROTO },
 /* HEADER    */ { ST_ERR,       ST_ERR,     ST_NAME,  ST_ERR,       ST_ERR },
-/* NAME      */ { ST_SEPARATOR, ST_DONE,    ST_ERR,   ST_SEPARATOR, ST_NAME },
-/* SEPARATOR */ { ST_SEPARATOR, ST_ERR,     ST_ERR,   ST_SEPARATOR, ST_VALUE },
+/* NAME      */ { ST_SEPARATOR, ST_DONE,    ST_ERR,   ST_VALUE,     ST_NAME },
+/* SEPARATOR */ { ST_SEPARATOR, ST_ERR,     ST_ERR,   ST_VALUE,     ST_ERR },
 /* VALUE     */ { ST_VALUE,     ST_HEADER,  ST_NAME,  ST_VALUE,     ST_VALUE },
 /* DONE      */ { ST_DONE,      ST_DONE,    ST_DONE,  ST_DONE,      ST_DONE },
 /* ERR       */ { ST_ERR,       ST_ERR,     ST_ERR,   ST_ERR,       ST_ERR }
@@ -246,18 +277,17 @@ bool HttpServer::ParseHeaders(HttpConnection* connection,
           buffer.clear();
           break;
         case ST_NAME:
-          header_name = buffer;
+          header_name = StringToLowerASCII(buffer);
           buffer.clear();
           break;
         case ST_VALUE:
-          header_value = buffer;
+          TrimWhitespaceASCII(buffer, TRIM_LEADING, &header_value);
           // TODO(mbelshe): Deal better with duplicate headers
           DCHECK(info->headers.find(header_name) == info->headers.end());
           info->headers[header_name] = header_value;
           buffer.clear();
           break;
         case ST_SEPARATOR:
-          buffer.append(&ch, 1);
           break;
       }
       state = next_state;

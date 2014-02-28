@@ -106,7 +106,7 @@ int SVGInlineTextBox::offsetForPositionInFragment(const SVGTextFragment& fragmen
 
 float SVGInlineTextBox::positionForOffset(int) const
 {
-    // SVG doesn't use the offset <-> position selection system. 
+    // SVG doesn't use the offset <-> position selection system.
     ASSERT_NOT_REACHED();
     return 0;
 }
@@ -206,7 +206,7 @@ void SVGInlineTextBox::paintSelectionBackground(PaintInfo& paintInfo)
         return;
 
     Color backgroundColor = renderer()->selectionBackgroundColor();
-    if (!backgroundColor.isValid() || !backgroundColor.alpha())
+    if (!backgroundColor.alpha())
         return;
 
     RenderSVGInlineText* textRenderer = toRenderSVGInlineText(this->textRenderer());
@@ -355,7 +355,7 @@ bool SVGInlineTextBox::acquirePaintingResource(GraphicsContext*& context, float 
     ASSERT(style);
     ASSERT(m_paintingResourceMode != ApplyToDefaultMode);
 
-    Color fallbackColor;
+    StyleColor fallbackColor;
     if (m_paintingResourceMode & ApplyToFillMode)
         m_paintingResource = RenderSVGResource::fillPaintingResource(renderer, style, fallbackColor);
     else if (m_paintingResourceMode & ApplyToStrokeMode)
@@ -371,7 +371,7 @@ bool SVGInlineTextBox::acquirePaintingResource(GraphicsContext*& context, float 
     if (!m_paintingResource->applyResource(renderer, style, context, m_paintingResourceMode)) {
         if (fallbackColor.isValid()) {
             RenderSVGResourceSolidColor* fallbackResource = RenderSVGResource::sharedSolidPaintingResource();
-            fallbackResource->setColor(fallbackColor);
+            fallbackResource->setColor(fallbackColor.color());
 
             m_paintingResource = fallbackResource;
             m_paintingResource->applyResource(renderer, style, context, m_paintingResourceMode);
@@ -432,13 +432,24 @@ TextRun SVGInlineTextBox::constructTextRun(RenderStyle* style, const SVGTextFrag
     RenderText* text = textRenderer();
     ASSERT(text);
 
-    TextRun run(text->characters() + fragment.characterOffset
-                , fragment.length
-                , 0 /* xPos, only relevant with allowTabs=true */
-                , 0 /* padding, only relevant for justified text, not relevant for SVG */
+    // FIXME(crbug.com/264211): This should not be necessary but can occur if we
+    //                          layout during layout. Remove this when 264211 is fixed.
+    RELEASE_ASSERT(!text->needsLayout());
+
+    TextRun run(static_cast<const LChar*>(0) // characters, will be set below if non-zero.
+                , 0 // length, will be set below if non-zero.
+                , 0 // xPos, only relevant with allowTabs=true
+                , 0 // padding, only relevant for justified text, not relevant for SVG
                 , TextRun::AllowTrailingExpansion
                 , direction()
                 , dirOverride() || style->rtlOrdering() == VisualOrder /* directionalOverride */);
+
+    if (fragment.length) {
+        if (text->is8Bit())
+            run.setText(text->characters8() + fragment.characterOffset, fragment.length);
+        else
+            run.setText(text->characters16() + fragment.characterOffset, fragment.length);
+    }
 
     if (textRunNeedsRenderingContext(style->font()))
         run.setRenderingContext(SVGTextRunRenderingContext::create(text));
@@ -617,7 +628,7 @@ void SVGInlineTextBox::paintTextWithShadows(GraphicsContext* context, RenderStyl
         DrawLooper drawLooper;
         do {
             FloatSize offset(shadow->x(), shadow->y());
-            drawLooper.addShadow(offset, shadow->blur(), shadow->color(),
+            drawLooper.addShadow(offset, shadow->blur(), textRenderer->resolveColor(shadow->color(), Color::stdShadowColor),
                 DrawLooper::ShadowRespectsTransforms, DrawLooper::ShadowRespectsAlpha);
         } while ((shadow = shadow->next()));
         drawLooper.addUnmodifiedContent();

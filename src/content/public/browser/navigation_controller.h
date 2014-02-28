@@ -15,7 +15,7 @@
 #include "content/public/browser/global_request_id.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/referrer.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace base {
 
@@ -151,9 +151,9 @@ class NavigationController {
     // True if this URL should be able to access local resources.
     bool can_load_local_resources;
 
-    // Indicates whether this navigation involves a cross-process redirect,
-    // in which case it should replace the current navigation entry.
-    bool is_cross_site_redirect;
+    // Indicates whether this navigation should replace the current
+    // navigation entry.
+    bool should_replace_current_entry;
 
     // Used to specify which frame to navigate. If empty, the main frame is
     // navigated. This is currently only used in tests.
@@ -376,9 +376,9 @@ class NavigationController {
   // Returns false after the initial navigation has committed.
   virtual bool IsInitialNavigation() const = 0;
 
-  // Broadcasts the NOTIFY_NAV_ENTRY_CHANGED notification for the given entry
-  // (which must be at the given index). This will keep things in sync like
-  // the saved session.
+  // Broadcasts the NOTIFICATION_NAV_ENTRY_CHANGED notification for the given
+  // entry (which must be at the given index). This will keep things in sync
+  // like the saved session.
   virtual void NotifyEntryChanged(const NavigationEntry* entry, int index) = 0;
 
   // Copies the navigation state from the given controller to this one. This

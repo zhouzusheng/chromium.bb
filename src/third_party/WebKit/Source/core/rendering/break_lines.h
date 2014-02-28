@@ -21,8 +21,8 @@
 #ifndef break_lines_h
 #define break_lines_h
 
-#include <wtf/unicode/Unicode.h>
 #include "core/rendering/style/RenderStyleConstants.h"
+#include "wtf/unicode/Unicode.h"
 
 namespace WebCore {
 

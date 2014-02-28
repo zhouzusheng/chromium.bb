@@ -29,6 +29,8 @@
 #define DocumentStyleSheetCollection_h
 
 #include "core/dom/Document.h"
+#include "core/dom/DocumentOrderedList.h"
+#include "core/dom/StyleSheetCollection.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/ListHashSet.h"
 #include "wtf/RefPtr.h"
@@ -39,6 +41,7 @@ namespace WebCore {
 
 class CSSStyleSheet;
 class Node;
+class RuleFeatureSet;
 class StyleSheet;
 class StyleSheetContents;
 class StyleSheetList;
@@ -50,9 +53,8 @@ public:
 
     ~DocumentStyleSheetCollection();
 
-    const Vector<RefPtr<StyleSheet> >& styleSheetsForStyleSheetList() const { return m_styleSheetsForStyleSheetList; }
-
-    const Vector<RefPtr<CSSStyleSheet> >& activeAuthorStyleSheets() const { return m_activeAuthorStyleSheets; }
+    const Vector<RefPtr<StyleSheet> >& styleSheetsForStyleSheetList();
+    const Vector<RefPtr<CSSStyleSheet> >& activeAuthorStyleSheets() const;
 
     CSSStyleSheet* pageUserSheet();
     const Vector<RefPtr<CSSStyleSheet> >& documentUserStyleSheets() const { return m_userStyleSheets; }
@@ -61,7 +63,7 @@ public:
     const Vector<RefPtr<CSSStyleSheet> >& injectedAuthorStyleSheets() const;
 
     void addStyleSheetCandidateNode(Node*, bool createdByParser);
-    void removeStyleSheetCandidateNode(Node*);
+    void removeStyleSheetCandidateNode(Node*, ContainerNode* scopingNode = 0);
 
     void clearPageUserSheet();
     void updatePageUserSheet();
@@ -98,27 +100,15 @@ public:
     void setUsesBeforeAfterRulesOverride(bool b) { m_usesBeforeAfterRulesOverride = b; }
     bool usesRemUnits() const { return m_usesRemUnits; }
     void setUsesRemUnit(bool b) { m_usesRemUnits = b; }
+    bool hasScopedStyleSheet() { return m_collectionForDocument.scopingNodesForStyleScoped(); }
 
-    void combineCSSFeatureFlags();
-    void resetCSSFeatureFlags();
-
-    void reportMemoryUsage(MemoryObjectInfo*) const;
+    void combineCSSFeatureFlags(const RuleFeatureSet&);
+    void resetCSSFeatureFlags(const RuleFeatureSet&);
 
 private:
     DocumentStyleSheetCollection(Document*);
 
-    void collectActiveStyleSheets(Vector<RefPtr<StyleSheet> >&);
-    enum StyleResolverUpdateType {
-        Reconstruct,
-        Reset,
-        Additive
-    };
-    void analyzeStyleSheetChange(StyleResolverUpdateMode, const Vector<RefPtr<CSSStyleSheet> >& newStylesheets, StyleResolverUpdateType&, bool& requiresFullStyleRecalc);
-
     Document* m_document;
-
-    Vector<RefPtr<StyleSheet> > m_styleSheetsForStyleSheetList;
-    Vector<RefPtr<CSSStyleSheet> > m_activeAuthorStyleSheets;
 
     // Track the number of currently loading top-level stylesheets needed for rendering.
     // Sheets loaded using the @import directive are not included in this count.
@@ -138,8 +128,7 @@ private:
     bool m_hadActiveLoadingStylesheet;
     bool m_needsUpdateActiveStylesheetsOnStyleRecalc;
 
-    typedef ListHashSet<Node*, 32> StyleSheetCandidateListHashSet;
-    StyleSheetCandidateListHashSet m_styleSheetCandidateNodes;
+    StyleSheetCollection m_collectionForDocument;
 
     String m_preferredStylesheetSetName;
     String m_selectedStylesheetSetName;

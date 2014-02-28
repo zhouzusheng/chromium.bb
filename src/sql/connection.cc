@@ -8,6 +8,7 @@
 
 #include "base/files/file_path.h"
 #include "base/file_util.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
@@ -15,8 +16,13 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/synchronization/lock.h"
 #include "sql/statement.h"
 #include "third_party/sqlite/sqlite3.h"
+
+#if defined(OS_IOS) && defined(USE_SYSTEM_SQLITE)
+#include "third_party/sqlite/src/ext/icu/sqliteicu.h"
+#endif
 
 namespace {
 
@@ -63,6 +69,61 @@ class ScopedWritableSchema {
  private:
   sqlite3* db_;
 };
+
+// Helper to wrap the sqlite3_backup_*() step of Raze().  Return
+// SQLite error code from running the backup step.
+int BackupDatabase(sqlite3* src, sqlite3* dst, const char* db_name) {
+  DCHECK_NE(src, dst);
+  sqlite3_backup* backup = sqlite3_backup_init(dst, db_name, src, db_name);
+  if (!backup) {
+    // Since this call only sets things up, this indicates a gross
+    // error in SQLite.
+    DLOG(FATAL) << "Unable to start sqlite3_backup(): " << sqlite3_errmsg(dst);
+    return sqlite3_errcode(dst);
+  }
+
+  // -1 backs up the entire database.
+  int rc = sqlite3_backup_step(backup, -1);
+  int pages = sqlite3_backup_pagecount(backup);
+  sqlite3_backup_finish(backup);
+
+  // If successful, exactly one page should have been backed up.  If
+  // this breaks, check this function to make sure assumptions aren't
+  // being broken.
+  if (rc == SQLITE_DONE)
+    DCHECK_EQ(pages, 1);
+
+  return rc;
+}
+
+// Be very strict on attachment point.  SQLite can handle a much wider
+// character set with appropriate quoting, but Chromium code should
+// just use clean names to start with.
+bool ValidAttachmentPoint(const char* attachment_point) {
+  for (size_t i = 0; attachment_point[i]; ++i) {
+    if (!((attachment_point[i] >= '0' && attachment_point[i] <= '9') ||
+          (attachment_point[i] >= 'a' && attachment_point[i] <= 'z') ||
+          (attachment_point[i] >= 'A' && attachment_point[i] <= 'Z') ||
+          attachment_point[i] == '_')) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// SQLite automatically calls sqlite3_initialize() lazily, but
+// sqlite3_initialize() uses double-checked locking and thus can have
+// data races.
+//
+// TODO(shess): Another alternative would be to have
+// sqlite3_initialize() called as part of process bring-up.  If this
+// is changed, remove the dynamic_annotations dependency in sql.gyp.
+base::LazyInstance<base::Lock>::Leaky
+    g_sqlite_init_lock = LAZY_INSTANCE_INITIALIZER;
+void InitializeSqlite() {
+  base::AutoLock lock(g_sqlite_init_lock.Get());
+  sqlite3_initialize();
+}
 
 }  // namespace
 
@@ -138,6 +199,7 @@ Connection::Connection()
       page_size_(0),
       cache_size_(0),
       exclusive_locking_(false),
+      restrict_to_user_(false),
       transaction_nesting_(0),
       needs_rollback_(false),
       in_memory_(false),
@@ -164,15 +226,19 @@ bool Connection::Open(const base::FilePath& path) {
   }
 
 #if defined(OS_WIN)
-  return OpenInternal(WideToUTF8(path.value()));
+  return OpenInternal(WideToUTF8(path.value()), RETRY_ON_POISON);
 #elif defined(OS_POSIX)
-  return OpenInternal(path.value());
+  return OpenInternal(path.value(), RETRY_ON_POISON);
 #endif
 }
 
 bool Connection::OpenInMemory() {
   in_memory_ = true;
-  return OpenInternal(":memory:");
+  return OpenInternal(":memory:", NO_RETRY);
+}
+
+bool Connection::OpenTemporary() {
+  return OpenInternal("", NO_RETRY);
 }
 
 void Connection::CloseInternal(bool forced) {
@@ -206,10 +272,14 @@ void Connection::CloseInternal(bool forced) {
     // TODO(paivanof@gmail.com): This should move to the beginning
     // of the function. http://crbug.com/136655.
     AssertIOAllowed();
-    // TODO(shess): Histogram for failure.
-    sqlite3_close(db_);
-    db_ = NULL;
+
+    int rc = sqlite3_close(db_);
+    if (rc != SQLITE_OK) {
+      UMA_HISTOGRAM_SPARSE_SLOWLY("Sqlite.CloseFailure", rc);
+      DLOG(FATAL) << "sqlite3_close failed: " << GetErrorMessage();
+    }
   }
+  db_ = NULL;
 }
 
 void Connection::Close() {
@@ -246,6 +316,35 @@ void Connection::Preload() {
   // Do not call it when using system sqlite.
   sqlite3_preload(db_);
 #endif
+}
+
+void Connection::TrimMemory(bool aggressively) {
+  if (!db_)
+    return;
+
+  // TODO(shess): investigate using sqlite3_db_release_memory() when possible.
+  int original_cache_size;
+  {
+    Statement sql_get_original(GetUniqueStatement("PRAGMA cache_size"));
+    if (!sql_get_original.Step()) {
+      DLOG(WARNING) << "Could not get cache size " << GetErrorMessage();
+      return;
+    }
+    original_cache_size = sql_get_original.ColumnInt(0);
+  }
+  int shrink_cache_size = aggressively ? 1 : (original_cache_size / 2);
+
+  // Force sqlite to try to reduce page cache usage.
+  const std::string sql_shrink =
+      base::StringPrintf("PRAGMA cache_size=%d", shrink_cache_size);
+  if (!Execute(sql_shrink.c_str()))
+    DLOG(WARNING) << "Could not shrink cache size: " << GetErrorMessage();
+
+  // Restore cache size.
+  const std::string sql_restore =
+      base::StringPrintf("PRAGMA cache_size=%d", original_cache_size);
+  if (!Execute(sql_restore.c_str()))
+    DLOG(WARNING) << "Could not restore cache size: " << GetErrorMessage();
 }
 
 // Create an in-memory database with the existing database's page
@@ -313,32 +412,53 @@ bool Connection::Raze() {
   // page_size" can be used to query such a database.
   ScopedWritableSchema writable_schema(db_);
 
-  sqlite3_backup* backup = sqlite3_backup_init(db_, "main",
-                                               null_db.db_, "main");
-  if (!backup) {
-    DLOG(FATAL) << "Unable to start sqlite3_backup().";
-    return false;
-  }
-
-  // -1 backs up the entire database.
-  int rc = sqlite3_backup_step(backup, -1);
-  int pages = sqlite3_backup_pagecount(backup);
-  sqlite3_backup_finish(backup);
+  const char* kMain = "main";
+  int rc = BackupDatabase(null_db.db_, db_, kMain);
+  UMA_HISTOGRAM_SPARSE_SLOWLY("Sqlite.RazeDatabase",rc);
 
   // The destination database was locked.
   if (rc == SQLITE_BUSY) {
     return false;
   }
 
+  // SQLITE_NOTADB can happen if page 1 of db_ exists, but is not
+  // formatted correctly.  SQLITE_IOERR_SHORT_READ can happen if db_
+  // isn't even big enough for one page.  Either way, reach in and
+  // truncate it before trying again.
+  // TODO(shess): Maybe it would be worthwhile to just truncate from
+  // the get-go?
+  if (rc == SQLITE_NOTADB || rc == SQLITE_IOERR_SHORT_READ) {
+    sqlite3_file* file = NULL;
+    rc = sqlite3_file_control(db_, "main", SQLITE_FCNTL_FILE_POINTER, &file);
+    if (rc != SQLITE_OK) {
+      DLOG(FATAL) << "Failure getting file handle.";
+      return false;
+    } else if (!file) {
+      DLOG(FATAL) << "File handle is empty.";
+      return false;
+    }
+
+    rc = file->pMethods->xTruncate(file, 0);
+    if (rc != SQLITE_OK) {
+      UMA_HISTOGRAM_SPARSE_SLOWLY("Sqlite.RazeDatabaseTruncate",rc);
+      DLOG(FATAL) << "Failed to truncate file.";
+      return false;
+    }
+
+    rc = BackupDatabase(null_db.db_, db_, kMain);
+    UMA_HISTOGRAM_SPARSE_SLOWLY("Sqlite.RazeDatabase2",rc);
+
+    if (rc != SQLITE_DONE) {
+      DLOG(FATAL) << "Failed retrying Raze().";
+    }
+  }
+
   // The entire database should have been backed up.
   if (rc != SQLITE_DONE) {
+    // TODO(shess): Figure out which other cases can happen.
     DLOG(FATAL) << "Unable to copy entire null database.";
     return false;
   }
-
-  // Exactly one page should have been backed up.  If this breaks,
-  // check this function to make sure assumptions aren't being broken.
-  DCHECK_EQ(pages, 1);
 
   return true;
 }
@@ -361,9 +481,7 @@ bool Connection::RazeAndClose() {
   }
 
   // Raze() cannot run in a transaction.
-  while (transaction_nesting_) {
-    RollbackTransaction();
-  }
+  RollbackAllTransactions();
 
   bool result = Raze();
 
@@ -375,6 +493,21 @@ bool Connection::RazeAndClose() {
   poisoned_ = true;
 
   return result;
+}
+
+void Connection::Poison() {
+  if (!db_) {
+    DLOG_IF(FATAL, !poisoned_) << "Cannot poison null db";
+    return;
+  }
+
+  RollbackAllTransactions();
+  CloseInternal(true);
+
+  // Mark the database so that future API calls fail appropriately,
+  // but don't DCHECK (because after calling this function they are
+  // expected to fail).
+  poisoned_ = true;
 }
 
 // TODO(shess): To the extent possible, figure out the optimal
@@ -394,13 +527,13 @@ bool Connection::Delete(const base::FilePath& path) {
   base::FilePath journal_path(path.value() + FILE_PATH_LITERAL("-journal"));
   base::FilePath wal_path(path.value() + FILE_PATH_LITERAL("-wal"));
 
-  file_util::Delete(journal_path, false);
-  file_util::Delete(wal_path, false);
-  file_util::Delete(path, false);
+  base::DeleteFile(journal_path, false);
+  base::DeleteFile(wal_path, false);
+  base::DeleteFile(path, false);
 
-  return !file_util::PathExists(journal_path) &&
-      !file_util::PathExists(wal_path) &&
-      !file_util::PathExists(path);
+  return !base::PathExists(journal_path) &&
+      !base::PathExists(wal_path) &&
+      !base::PathExists(path);
 }
 
 bool Connection::BeginTransaction() {
@@ -460,6 +593,35 @@ bool Connection::CommitTransaction() {
 
   Statement commit(GetCachedStatement(SQL_FROM_HERE, "COMMIT"));
   return commit.Run();
+}
+
+void Connection::RollbackAllTransactions() {
+  if (transaction_nesting_ > 0) {
+    transaction_nesting_ = 0;
+    DoRollback();
+  }
+}
+
+bool Connection::AttachDatabase(const base::FilePath& other_db_path,
+                                const char* attachment_point) {
+  DCHECK(ValidAttachmentPoint(attachment_point));
+
+  Statement s(GetUniqueStatement("ATTACH DATABASE ? AS ?"));
+#if OS_WIN
+  s.BindString16(0, other_db_path.value());
+#else
+  s.BindString(0, other_db_path.value());
+#endif
+  s.BindString(1, attachment_point);
+  return s.Run();
+}
+
+bool Connection::DetachDatabase(const char* attachment_point) {
+  DCHECK(ValidAttachmentPoint(attachment_point));
+
+  Statement s(GetUniqueStatement("DETACH DATABASE ?"));
+  s.BindString(0, attachment_point);
+  return s.Run();
 }
 
 int Connection::ExecuteAndReturnErrorCode(const char* sql) {
@@ -648,13 +810,17 @@ const char* Connection::GetErrorMessage() const {
   return sqlite3_errmsg(db_);
 }
 
-bool Connection::OpenInternal(const std::string& file_name) {
+bool Connection::OpenInternal(const std::string& file_name,
+                              Connection::Retry retry_flag) {
   AssertIOAllowed();
 
   if (db_) {
     DLOG(FATAL) << "sql::Connection is already open.";
     return false;
   }
+
+  // Make sure sqlite3_initialize() is called before anything else.
+  InitializeSqlite();
 
   // If |poisoned_| is set, it means an error handler called
   // RazeAndClose().  Until regular Close() is called, the caller
@@ -663,18 +829,50 @@ bool Connection::OpenInternal(const std::string& file_name) {
   // TODO(shess): Revise is_open() to consider poisoned_, and review
   // to see if any non-testing code even depends on it.
   DLOG_IF(FATAL, poisoned_) << "sql::Connection is already open.";
+  poisoned_ = false;
 
   int err = sqlite3_open(file_name.c_str(), &db_);
   if (err != SQLITE_OK) {
+    // Extended error codes cannot be enabled until a handle is
+    // available, fetch manually.
+    err = sqlite3_extended_errcode(db_);
+
     // Histogram failures specific to initial open for debugging
     // purposes.
-    UMA_HISTOGRAM_ENUMERATION("Sqlite.OpenFailure", err & 0xff, 50);
+    UMA_HISTOGRAM_SPARSE_SLOWLY("Sqlite.OpenFailure", err);
 
     OnSqliteError(err, NULL);
+    bool was_poisoned = poisoned_;
     Close();
-    db_ = NULL;
+
+    if (was_poisoned && retry_flag == RETRY_ON_POISON)
+      return OpenInternal(file_name, NO_RETRY);
     return false;
   }
+
+  // TODO(shess): OS_WIN support?
+#if defined(OS_POSIX)
+  if (restrict_to_user_) {
+    DCHECK_NE(file_name, std::string(":memory"));
+    base::FilePath file_path(file_name);
+    int mode = 0;
+    // TODO(shess): Arguably, failure to retrieve and change
+    // permissions should be fatal if the file exists.
+    if (file_util::GetPosixFilePermissions(file_path, &mode)) {
+      mode &= file_util::FILE_PERMISSION_USER_MASK;
+      file_util::SetPosixFilePermissions(file_path, mode);
+
+      // SQLite sets the permissions on these files from the main
+      // database on create.  Set them here in case they already exist
+      // at this point.  Failure to set these permissions should not
+      // be fatal unless the file doesn't exist.
+      base::FilePath journal_path(file_name + FILE_PATH_LITERAL("-journal"));
+      base::FilePath wal_path(file_name + FILE_PATH_LITERAL("-wal"));
+      file_util::SetPosixFilePermissions(journal_path, mode);
+      file_util::SetPosixFilePermissions(wal_path, mode);
+    }
+  }
+#endif  // defined(OS_POSIX)
 
   // SQLite uses a lookaside buffer to improve performance of small mallocs.
   // Chromium already depends on small mallocs being efficient, so we disable
@@ -682,6 +880,14 @@ bool Connection::OpenInternal(const std::string& file_name) {
   // This must be called immediatly after opening the database before any SQL
   // statements are run.
   sqlite3_db_config(db_, SQLITE_DBCONFIG_LOOKASIDE, NULL, 0, 0);
+
+  // Enable extended result codes to provide more color on I/O errors.
+  // Not having extended result codes is not a fatal problem, as
+  // Chromium code does not attempt to handle I/O errors anyhow.  The
+  // current implementation always returns SQLITE_OK, the DCHECK is to
+  // quickly notify someone if SQLite changes.
+  err = sqlite3_extended_result_codes(db_, 1);
+  DCHECK_EQ(err, SQLITE_OK) << "Could not enable extended result codes";
 
   // sqlite3_open() does not actually read the database file (unless a
   // hot journal is found).  Successfully executing this pragma on an
@@ -691,15 +897,14 @@ bool Connection::OpenInternal(const std::string& file_name) {
   // be razed.
   err = ExecuteAndReturnErrorCode("PRAGMA auto_vacuum");
   if (err != SQLITE_OK)
-    UMA_HISTOGRAM_ENUMERATION("Sqlite.OpenProbeFailure", err & 0xff, 50);
+    UMA_HISTOGRAM_SPARSE_SLOWLY("Sqlite.OpenProbeFailure", err);
 
-  // Enable extended result codes to provide more color on I/O errors.
-  // Not having extended result codes is not a fatal problem, as
-  // Chromium code does not attempt to handle I/O errors anyhow.  The
-  // current implementation always returns SQLITE_OK, the DCHECK is to
-  // quickly notify someone if SQLite changes.
-  err = sqlite3_extended_result_codes(db_, 1);
-  DCHECK_EQ(err, SQLITE_OK) << "Could not enable extended result codes";
+#if defined(OS_IOS) && defined(USE_SYSTEM_SQLITE)
+  // The version of SQLite shipped with iOS doesn't enable ICU, which includes
+  // REGEXP support. Add it in dynamically.
+  err = sqlite3IcuInit(db_);
+  DCHECK_EQ(err, SQLITE_OK) << "Could not enable ICU support";
+#endif  // OS_IOS && USE_SYSTEM_SQLITE
 
   // If indicated, lock up the database before doing anything else, so
   // that the following code doesn't have to deal with locking.
@@ -747,7 +952,10 @@ bool Connection::OpenInternal(const std::string& file_name) {
   }
 
   if (!ExecuteWithTimeout("PRAGMA secure_delete=ON", kBusyTimeout)) {
+    bool was_poisoned = poisoned_;
     Close();
+    if (was_poisoned && retry_flag == RETRY_ON_POISON)
+      return OpenInternal(file_name, NO_RETRY);
     return false;
   }
 
@@ -801,7 +1009,10 @@ int Connection::OnSqliteError(int err, sql::Statement *stmt) {
              << ": " << GetErrorMessage();
 
   if (!error_callback_.is_null()) {
-    error_callback_.Run(err, stmt);
+    // Fire from a copy of the callback in case of reentry into
+    // re/set_error_callback().
+    // TODO(shess): <http://crbug.com/254584>
+    ErrorCallback(error_callback_).Run(err, stmt);
     return err;
   }
 

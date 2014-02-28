@@ -51,7 +51,6 @@ const char* DOMWindowCrypto::supplementName()
     return "DOMWindowCrypto";
 }
 
-// static
 DOMWindowCrypto* DOMWindowCrypto::from(DOMWindow* window)
 {
     DOMWindowCrypto* supplement = static_cast<DOMWindowCrypto*>(Supplement<DOMWindow>::from(window, supplementName()));
@@ -62,7 +61,6 @@ DOMWindowCrypto* DOMWindowCrypto::from(DOMWindow* window)
     return supplement;
 }
 
-// static
 Crypto* DOMWindowCrypto::crypto(DOMWindow* window)
 {
     return DOMWindowCrypto::from(window)->crypto();

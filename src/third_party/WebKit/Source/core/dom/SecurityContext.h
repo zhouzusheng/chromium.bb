@@ -27,9 +27,9 @@
 #ifndef SecurityContext_h
 #define SecurityContext_h
 
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefPtr.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefPtr.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -72,8 +72,6 @@ public:
     void setSecurityOrigin(PassRefPtr<SecurityOrigin>);
 
     static SandboxFlags parseSandboxPolicy(const String& policy, String& invalidTokensErrorMessage);
-
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
 
 protected:
     SecurityContext();

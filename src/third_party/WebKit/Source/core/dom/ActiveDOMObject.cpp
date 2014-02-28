@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -28,7 +28,6 @@
 #include "core/dom/ActiveDOMObject.h"
 
 #include "core/dom/ScriptExecutionContext.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 
 namespace WebCore {
 
@@ -39,10 +38,7 @@ ActiveDOMObject::ActiveDOMObject(ScriptExecutionContext* scriptExecutionContext)
     , m_suspendIfNeededCalled(false)
 #endif
 {
-    if (!m_scriptExecutionContext)
-        return;
-
-    ASSERT(m_scriptExecutionContext->isContextThread());
+    ASSERT(!scriptExecutionContext || scriptExecutionContext->isContextThread());
 }
 
 ActiveDOMObject::~ActiveDOMObject()
@@ -53,12 +49,11 @@ ActiveDOMObject::~ActiveDOMObject()
     // ContextLifecycleObserver::contextDestroyed() (which we implement /
     // inherit). Hence, we should ensure that this is not 0 before use it
     // here.
-    if (!m_scriptExecutionContext)
+    if (!scriptExecutionContext())
         return;
 
     ASSERT(m_suspendIfNeededCalled);
-    ASSERT(m_scriptExecutionContext->isContextThread());
-    observeContext(0, ActiveDOMObjectType);
+    ASSERT(scriptExecutionContext()->isContextThread());
 }
 
 void ActiveDOMObject::suspendIfNeeded()
@@ -67,10 +62,8 @@ void ActiveDOMObject::suspendIfNeeded()
     ASSERT(!m_suspendIfNeededCalled);
     m_suspendIfNeededCalled = true;
 #endif
-    if (!m_scriptExecutionContext)
-        return;
-
-    m_scriptExecutionContext->suspendActiveDOMObjectIfNeeded(this);
+    if (ScriptExecutionContext* context = scriptExecutionContext())
+        scriptExecutionContext()->suspendActiveDOMObjectIfNeeded(this);
 }
 
 bool ActiveDOMObject::hasPendingActivity() const
@@ -94,11 +87,5 @@ void ActiveDOMObject::resume()
 void ActiveDOMObject::stop()
 {
 }
-
-void ActiveDOMObject::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-}
-
 
 } // namespace WebCore

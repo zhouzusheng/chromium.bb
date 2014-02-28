@@ -8,11 +8,32 @@
 // http://msdn.microsoft.com/workshop/author/css/reference/attributes.asp
 //
 
-// high-priority property names have to be listed first, to simplify the check
-// for applying them first.
+// properties that generate animations must be listed first
+display
+-webkit-animation
+-webkit-animation-delay
+-webkit-animation-direction
+-webkit-animation-duration
+-webkit-animation-fill-mode
+-webkit-animation-iteration-count
+-webkit-animation-name
+-webkit-animation-play-state
+-webkit-animation-timing-function
+-webkit-transition
+-webkit-transition-delay
+-webkit-transition-duration
+-webkit-transition-property
+-webkit-transition-timing-function
+transition
+transition-delay
+transition-duration
+transition-property
+transition-timing-function
+
+// next, high-priority properties (those on which other properties can depend)
+// must be listed
 color
 direction
-display
 font
 font-family
 font-size
@@ -156,6 +177,7 @@ speak
 table-layout
 tab-size
 text-align
+text-align-last
 text-decoration
 text-decoration-line
 text-decoration-style
@@ -179,11 +201,6 @@ text-underline-style
 text-underline-width
 top
 touch-action
-transition
-transition-delay
-transition-duration
-transition-property
-transition-timing-function
 
 unicode-bidi
 unicode-range
@@ -197,15 +214,6 @@ word-break
 word-spacing
 word-wrap
 z-index
--webkit-animation
--webkit-animation-delay
--webkit-animation-direction
--webkit-animation-duration
--webkit-animation-fill-mode
--webkit-animation-iteration-count
--webkit-animation-name
--webkit-animation-play-state
--webkit-animation-timing-function
 -webkit-appearance
 -webkit-aspect-ratio
 -webkit-backface-visibility
@@ -290,24 +298,20 @@ justify-content
 -webkit-justify-content alias_for=justify-content
 -webkit-font-size-delta
 grid-auto-columns
-grid-auto-rows
-grid-columns
-grid-rows
-grid-start
-grid-end
-grid-before
-grid-after
-grid-column
-grid-row
 grid-auto-flow
+grid-auto-rows
 grid-area
+grid-column
+grid-column-end
+grid-column-start
+grid-definition-columns
+grid-definition-rows
+grid-row
+grid-row-end
+grid-row-start
+grid-template
 -webkit-highlight
 -webkit-hyphenate-character
--webkit-hyphenate-limit-after
--webkit-hyphenate-limit-before
--webkit-hyphenate-limit-lines
--webkit-hyphens
--epub-hyphens alias_for=-webkit-hyphens
 -webkit-line-box-contain
 -webkit-line-align
 -webkit-line-break
@@ -368,7 +372,6 @@ order
 -webkit-ruby-position
 -webkit-text-combine
 -epub-text-combine alias_for=-webkit-text-combine
--webkit-text-align-last condition=CSS3_TEXT
 -webkit-text-underline-position condition=CSS3_TEXT
 -webkit-text-decorations-in-effect
 -webkit-text-emphasis
@@ -389,11 +392,6 @@ order
 -webkit-transform-origin-y
 -webkit-transform-origin-z
 -webkit-transform-style
--webkit-transition
--webkit-transition-delay
--webkit-transition-duration
--webkit-transition-property
--webkit-transition-timing-function
 -webkit-user-drag
 -webkit-user-modify
 -webkit-user-select
@@ -415,4 +413,3 @@ orientation
 user-zoom
 -webkit-tap-highlight-color
 -webkit-app-region
--webkit-overflow-scrolling condition=ACCELERATED_OVERFLOW_SCROLLING

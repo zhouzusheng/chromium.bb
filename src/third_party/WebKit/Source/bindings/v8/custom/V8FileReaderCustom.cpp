@@ -32,8 +32,8 @@
 
 #include "V8FileReader.h"
 
-#include "V8ArrayBuffer.h"
 #include "bindings/v8/V8Binding.h"
+#include "bindings/v8/custom/V8ArrayBufferCustom.h"
 #include "core/dom/ScriptExecutionContext.h"
 
 namespace WebCore {
@@ -46,7 +46,7 @@ void V8FileReader::resultAttrGetterCustom(v8::Local<v8::String> name, const v8::
         v8SetReturnValue(info, toV8Fast(imp->arrayBufferResult(), info, imp));
         return;
     }
-    v8SetReturnValue(info, v8StringOrNull(imp->stringResult(), info.GetIsolate()));
+    v8SetReturnValueStringOrNull(info, imp->stringResult(), info.GetIsolate());
 }
 
 } // namespace WebCore

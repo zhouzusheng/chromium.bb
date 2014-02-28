@@ -34,7 +34,7 @@
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLMapElement.h"
-#include "core/loader/cache/CachedImage.h"
+#include "core/loader/cache/ImageResource.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
 #include "core/platform/graphics/Font.h"
@@ -45,7 +45,7 @@
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderView.h"
 #include "core/svg/graphics/SVGImage.h"
-#include <wtf/UnusedParam.h>
+#include "wtf/UnusedParam.h"
 
 using namespace std;
 
@@ -64,7 +64,7 @@ RenderImage::RenderImage(Element* element)
 
 RenderImage* RenderImage::createAnonymous(Document* document)
 {
-    RenderImage* image = new (document->renderArena()) RenderImage(0);
+    RenderImage* image = new RenderImage(0);
     image->setDocumentForAnonymous(document);
     return image;
 }
@@ -91,7 +91,7 @@ static const unsigned short paddingHeight = 4;
 static const float maxAltTextWidth = 1024;
 static const int maxAltTextHeight = 256;
 
-IntSize RenderImage::imageSizeForError(CachedImage* newImage) const
+IntSize RenderImage::imageSizeForError(ImageResource* newImage) const
 {
     ASSERT_ARG(newImage, newImage);
     ASSERT_ARG(newImage, newImage->imageForRenderer(this));
@@ -112,7 +112,7 @@ IntSize RenderImage::imageSizeForError(CachedImage* newImage) const
 
 // Sets the image height and width to fit the alt text.  Returns true if the
 // image size changed.
-bool RenderImage::setImageSizeForAltText(CachedImage* newImage /* = 0 */)
+bool RenderImage::setImageSizeForAltText(ImageResource* newImage /* = 0 */)
 {
     IntSize imageSize;
     if (newImage && newImage->imageForRenderer(this))
@@ -159,9 +159,9 @@ void RenderImage::imageChanged(WrappedImagePtr newImage, const IntRect* rect)
     if (!m_imageResource)
         return;
 
-    if (newImage != m_imageResource->imagePtr() || !newImage)
+    if (newImage != m_imageResource->imagePtr())
         return;
-    
+
     if (!m_didIncrementVisuallyNonEmptyPixelCount) {
         // At a zoom level of 1 the image is guaranteed to have an integer size.
         view()->frameView()->incrementVisuallyNonEmptyPixelCount(flooredIntSize(m_imageResource->imageSize(1.0f)));
@@ -171,12 +171,12 @@ void RenderImage::imageChanged(WrappedImagePtr newImage, const IntRect* rect)
     bool imageSizeChanged = false;
 
     // Set image dimensions, taking into account the size of the alt text.
-    if (m_imageResource->errorOccurred()) {
+    if (m_imageResource->errorOccurred() || !newImage) {
         if (!m_altText.isEmpty() && document()->hasPendingStyleRecalc()) {
             ASSERT(node());
             if (node()) {
                 m_needsToSetSizeForAltText = true;
-                node()->setNeedsStyleRecalc(SyntheticStyleChange);
+                node()->setNeedsStyleRecalc(LocalStyleChange, StyleChangeFromRenderer);
             }
             return;
         }
@@ -190,7 +190,7 @@ bool RenderImage::updateIntrinsicSizeIfNeeded(const LayoutSize& newSize, bool im
 {
     if (newSize == intrinsicSize() && !imageSizeChanged)
         return false;
-    if (m_imageResource->errorOccurred())
+    if (m_imageResource->errorOccurred() || !m_imageResource->hasImage())
         return imageSizeChanged;
     setIntrinsicSize(newSize);
     return true;
@@ -234,7 +234,7 @@ void RenderImage::imageDimensionsChanged(bool imageSizeChanged, const IntRect* r
         if (imageSizeChanged || hasOverrideSize || containingBlockNeedsToRecomputePreferredSize) {
             shouldRepaint = false;
             if (!selfNeedsLayout())
-                setNeedsLayout(true);
+                setNeedsLayout();
         }
     }
 
@@ -248,7 +248,7 @@ void RenderImage::imageDimensionsChanged(bool imageSizeChanged, const IntRect* r
             repaintRect.intersect(contentBoxRect());
         } else
             repaintRect = contentBoxRect();
-        
+
         repaintRectangle(repaintRect);
 
         // Tell any potential compositing layers that the image needs updating.
@@ -256,11 +256,11 @@ void RenderImage::imageDimensionsChanged(bool imageSizeChanged, const IntRect* r
     }
 }
 
-void RenderImage::notifyFinished(CachedResource* newImage)
+void RenderImage::notifyFinished(Resource* newImage)
 {
     if (!m_imageResource)
         return;
-    
+
     if (documentBeingDestroyed())
         return;
 
@@ -347,7 +347,7 @@ void RenderImage::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paintOf
                 LayoutUnit textWidth = font.width(textRun);
                 TextRunPaintInfo textRunPaintInfo(textRun);
                 textRunPaintInfo.bounds = FloatRect(textRectOrigin, FloatSize(textWidth, fontMetrics.height()));
-                context->setFillColor(style()->visitedDependentColor(CSSPropertyColor));
+                context->setFillColor(resolveColor(CSSPropertyColor));
                 if (errorPictureDrawn) {
                     if (usableWidth >= textWidth && fontMetrics.height() <= imageOffset.height())
                         context->drawText(font, textRunPaintInfo, textOrigin);
@@ -367,9 +367,9 @@ void RenderImage::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paintOf
         LayoutPoint contentLocation = paintOffset;
         contentLocation.move(leftBorder + leftPad, topBorder + topPad);
         paintIntoRect(context, LayoutRect(contentLocation, contentSize));
-        
+
         if (cachedImage() && page && paintInfo.phase == PaintPhaseForeground) {
-            // For now, count images as unpainted if they are still progressively loading. We may want 
+            // For now, count images as unpainted if they are still progressively loading. We may want
             // to refine this in the future to account for the portion of the image that has painted.
             if (cachedImage()->isLoading())
                 page->addRelevantUnpaintedObject(this, LayoutRect(contentLocation, contentSize));
@@ -386,22 +386,22 @@ void RenderImage::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
     if (paintInfo.phase == PaintPhaseOutline)
         paintAreaElementFocusRing(paintInfo);
 }
-    
+
 void RenderImage::paintAreaElementFocusRing(PaintInfo& paintInfo)
 {
     Document* document = this->document();
-    
+
     if (document->printing() || !document->frame()->selection()->isFocusedAndActive())
         return;
-    
+
     if (paintInfo.context->paintingDisabled() && !paintInfo.context->updatingControlTints())
         return;
 
-    Node* focusedNode = document->focusedNode();
-    if (!focusedNode || !focusedNode->hasTagName(areaTag))
+    Element* focusedElement = document->focusedElement();
+    if (!focusedElement || !isHTMLAreaElement(focusedElement))
         return;
 
-    HTMLAreaElement* areaElement = static_cast<HTMLAreaElement*>(focusedNode);
+    HTMLAreaElement* areaElement = toHTMLAreaElement(focusedElement);
     if (areaElement->imageElement() != node())
         return;
 
@@ -423,7 +423,7 @@ void RenderImage::paintAreaElementFocusRing(PaintInfo& paintInfo)
     paintInfo.context->clip(absoluteContentBox());
     paintInfo.context->drawFocusRing(path, outlineWidth,
         areaElementStyle->outlineOffset(),
-        areaElementStyle->visitedDependentColor(CSSPropertyOutlineColor));
+        resolveColor(areaElementStyle, CSSPropertyOutlineColor));
 }
 
 void RenderImage::areaElementFocusChanged(HTMLAreaElement* areaElement)
@@ -585,7 +585,7 @@ RenderBox* RenderImage::embeddedContentBox() const
     if (!m_imageResource)
         return 0;
 
-    CachedImage* cachedImage = m_imageResource->cachedImage();
+    ImageResource* cachedImage = m_imageResource->cachedImage();
     if (cachedImage && cachedImage->image() && cachedImage->image()->isSVGImage())
         return static_cast<SVGImage*>(cachedImage->image())->embeddedContentBox();
 

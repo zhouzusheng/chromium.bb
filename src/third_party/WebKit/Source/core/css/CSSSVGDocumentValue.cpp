@@ -26,13 +26,12 @@
 
 #include "core/css/CSSSVGDocumentValue.h"
 
+#include "FetchInitiatorTypeNames.h"
 #include "core/css/CSSParser.h"
 #include "core/dom/Document.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "core/loader/cache/CachedDocument.h"
-#include "core/loader/cache/CachedResourceLoader.h"
-#include "core/loader/cache/CachedResourceRequest.h"
-#include "core/loader/cache/CachedResourceRequestInitiators.h"
+#include "core/loader/cache/DocumentResource.h"
+#include "core/loader/cache/FetchRequest.h"
+#include "core/loader/cache/ResourceFetcher.h"
 
 namespace WebCore {
 
@@ -47,14 +46,14 @@ CSSSVGDocumentValue::~CSSSVGDocumentValue()
 {
 }
 
-CachedDocument* CSSSVGDocumentValue::load(CachedResourceLoader* loader)
+DocumentResource* CSSSVGDocumentValue::load(ResourceFetcher* loader)
 {
     ASSERT(loader);
 
     if (!m_loadRequested) {
         m_loadRequested = true;
 
-        CachedResourceRequest request(ResourceRequest(loader->document()->completeURL(m_url)), cachedResourceRequestInitiators().css);
+        FetchRequest request(ResourceRequest(loader->document()->completeURL(m_url)), FetchInitiatorTypeNames::css);
         m_document = loader->requestSVGDocument(request);
     }
 
@@ -69,13 +68,6 @@ String CSSSVGDocumentValue::customCssText() const
 bool CSSSVGDocumentValue::equals(const CSSSVGDocumentValue& other) const
 {
     return m_url == other.m_url;
-}
-
-void CSSSVGDocumentValue::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_url, "url");
-    // FIXME: add m_document when cached resources are instrumented.
 }
 
 } // namespace WebCore

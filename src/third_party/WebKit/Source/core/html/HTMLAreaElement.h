@@ -25,7 +25,6 @@
 
 #include "core/html/HTMLAnchorElement.h"
 #include "core/platform/graphics/LayoutRect.h"
-#include <wtf/OwnArrayPtr.h>
 
 namespace WebCore {
 
@@ -46,14 +45,14 @@ public:
 
     // The parent map's image.
     HTMLImageElement* imageElement() const;
-    
+
 private:
     HTMLAreaElement(const QualifiedName&, Document*);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool supportsFocus() const;
     virtual String target() const;
-    virtual bool isKeyboardFocusable(KeyboardEvent*) const;
+    virtual bool isKeyboardFocusable() const OVERRIDE;
     virtual bool isMouseFocusable() const;
     virtual bool rendererIsFocusable() const OVERRIDE;
     virtual void updateFocusAppearance(bool /*restorePreviousSelection*/);
@@ -64,11 +63,26 @@ private:
     void invalidateCachedRegion();
 
     OwnPtr<Path> m_region;
-    OwnArrayPtr<Length> m_coords;
-    int m_coordsLen;
+    Vector<Length> m_coords;
     LayoutSize m_lastSize;
     Shape m_shape;
 };
+
+inline bool isHTMLAreaElement(const Node* node)
+{
+    return node->hasTagName(HTMLNames::areaTag);
+}
+
+inline bool isHTMLAreaElement(const Element* element)
+{
+    return element->hasTagName(HTMLNames::areaTag);
+}
+
+inline HTMLAreaElement* toHTMLAreaElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLAreaElement(node));
+    return static_cast<HTMLAreaElement*>(node);
+}
 
 } //namespace
 

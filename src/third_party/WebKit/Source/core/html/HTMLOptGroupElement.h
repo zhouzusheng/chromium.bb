@@ -27,7 +27,7 @@
 #include "core/html/HTMLElement.h"
 
 namespace WebCore {
-    
+
 class HTMLSelectElement;
 
 class HTMLOptGroupElement FINAL : public HTMLElement {
@@ -36,7 +36,7 @@ public:
 
     virtual bool isDisabledFormControl() const OVERRIDE;
     HTMLSelectElement* ownerSelectElement() const;
-    
+
     String groupLabelText() const;
 
 private:
@@ -62,6 +62,22 @@ private:
 
     RefPtr<RenderStyle> m_style;
 };
+
+inline bool isHTMLOptGroupElement(const Node* node)
+{
+    return node->hasTagName(HTMLNames::optgroupTag);
+}
+
+inline bool isHTMLOptGroupElement(const Element* element)
+{
+    return element->hasTagName(HTMLNames::optgroupTag);
+}
+
+inline HTMLOptGroupElement* toHTMLOptGroupElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLOptGroupElement(node));
+    return static_cast<HTMLOptGroupElement*>(node);
+}
 
 } //namespace
 

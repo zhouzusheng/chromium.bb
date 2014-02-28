@@ -24,9 +24,11 @@
 #define SVGPaint_h
 
 #include "core/svg/SVGColor.h"
-#include <wtf/text/WTFString.h>
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
+
+class ExceptionState;
 
 class SVGPaint : public SVGColor {
 public:
@@ -88,15 +90,13 @@ public:
     String uri() const { return m_uri; }
 
     void setUri(const String&);
-    void setPaint(unsigned short paintType, const String& uri, const String& rgbColor, const String& iccColor, ExceptionCode&);
+    void setPaint(unsigned short paintType, const String& uri, const String& rgbColor, const String& iccColor, ExceptionState&);
 
     String customCssText() const;
 
     PassRefPtr<SVGPaint> cloneForCSSOM() const;
 
     bool equals(const SVGPaint&) const;
-
-    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     friend class CSSComputedStyleDeclaration;

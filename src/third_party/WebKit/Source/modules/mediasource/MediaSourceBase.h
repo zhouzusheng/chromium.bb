@@ -33,16 +33,19 @@
 
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/EventTarget.h"
+#include "core/html/HTMLMediaSource.h"
 #include "core/html/URLRegistry.h"
 #include "core/platform/graphics/MediaSourcePrivate.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
+class ExceptionState;
 class GenericEventQueue;
 
-class MediaSourceBase : public RefCounted<MediaSourceBase>, public ActiveDOMObject, public EventTarget, public URLRegistrable {
+class MediaSourceBase : public RefCounted<MediaSourceBase>, public HTMLMediaSource, public ActiveDOMObject, public EventTarget {
 public:
     static const AtomicString& openKeyword();
     static const AtomicString& closedKeyword();
@@ -50,19 +53,25 @@ public:
 
     virtual ~MediaSourceBase();
 
-    void setPrivateAndOpen(PassOwnPtr<MediaSourcePrivate>);
     void addedToRegistry();
     void removedFromRegistry();
     void openIfInEndedState();
     bool isOpen() const;
-    bool isClosed() const;
-    void close();
 
-    double duration() const;
-    void setDuration(double, ExceptionCode&);
+    // HTMLMediaSource
+    virtual bool attachToElement(HTMLMediaElement*) OVERRIDE;
+    virtual void setPrivateAndOpen(PassOwnPtr<MediaSourcePrivate>) OVERRIDE;
+    virtual void close() OVERRIDE;
+    virtual bool isClosed() const OVERRIDE;
+    virtual double duration() const OVERRIDE;
+    virtual PassRefPtr<TimeRanges> buffered() const OVERRIDE;
+    virtual void refHTMLMediaSource() OVERRIDE { ref(); }
+    virtual void derefHTMLMediaSource() OVERRIDE { deref(); }
+
+    void setDuration(double, ExceptionState&);
     const AtomicString& readyState() const { return m_readyState; }
-    virtual void setReadyState(const AtomicString&);
-    void endOfStream(const AtomicString& error, ExceptionCode&);
+    void setReadyState(const AtomicString&);
+    void endOfStream(const AtomicString& error, ExceptionState&);
 
 
     // ActiveDOMObject interface
@@ -79,15 +88,16 @@ public:
     // URLRegistrable interface
     virtual URLRegistry& registry() const OVERRIDE;
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
-
     using RefCounted<MediaSourceBase>::ref;
     using RefCounted<MediaSourceBase>::deref;
 
 protected:
     explicit MediaSourceBase(ScriptExecutionContext*);
 
-    PassOwnPtr<SourceBufferPrivate> createSourceBufferPrivate(const String& type, const MediaSourcePrivate::CodecsArray&, ExceptionCode&);
+    virtual void onReadyStateChange(const AtomicString& oldState, const AtomicString& newState) = 0;
+    virtual Vector<RefPtr<TimeRanges> > activeRanges() const = 0;
+
+    PassOwnPtr<SourceBufferPrivate> createSourceBufferPrivate(const String& type, const MediaSourcePrivate::CodecsArray&, ExceptionState&);
     void scheduleEvent(const AtomicString& eventName);
     GenericEventQueue* asyncEventQueue() const { return m_asyncEventQueue.get(); }
 
@@ -96,6 +106,7 @@ private:
     EventTargetData m_eventTargetData;
     AtomicString m_readyState;
     OwnPtr<GenericEventQueue> m_asyncEventQueue;
+    HTMLMediaElement* m_attachedElement;
 };
 
 }

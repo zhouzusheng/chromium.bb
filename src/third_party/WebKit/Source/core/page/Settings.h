@@ -21,7 +21,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef Settings_h
@@ -30,13 +30,11 @@
 #include "SettingsMacros.h"
 #include "core/editing/EditingBehaviorTypes.h"
 #include "core/platform/Timer.h"
-#include "core/platform/graphics/FontRenderingMode.h"
 #include "core/platform/graphics/IntSize.h"
 #include "weborigin/KURL.h"
 #include "wtf/HashMap.h"
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/AtomicStringHash.h"
-#include "wtf/unicode/Unicode.h"
 
 namespace WebCore {
 
@@ -135,9 +133,6 @@ public:
     void setUserStyleSheetLocation(const KURL&);
     const KURL& userStyleSheetLocation() const { return m_userStyleSheetLocation; }
 
-    void setFontRenderingMode(FontRenderingMode mode);
-    FontRenderingMode fontRenderingMode() const;
-
     void setCSSCustomFilterEnabled(bool enabled) { m_isCSSCustomFilterEnabled = enabled; }
     bool isCSSCustomFilterEnabled() const { return m_isCSSCustomFilterEnabled; }
 
@@ -155,6 +150,11 @@ public:
 
     void setOpenGLMultisamplingEnabled(bool flag);
     bool openGLMultisamplingEnabled();
+
+    // FIXME: This is a temporary flag and should be removed once accelerated
+    // overflow scroll is ready (crbug.com/254111).
+    void setCompositorDrivenAcceleratedScrollingEnabled(bool enabled) { m_compositorDrivenAcceleratedScrollingEnabled = enabled; }
+    bool isCompositorDrivenAcceleratedScrollingEnabled() const { return m_compositorDrivenAcceleratedScrollingEnabled; }
 
 private:
     explicit Settings(Page*);
@@ -183,13 +183,16 @@ private:
     bool m_areImagesEnabled : 1;
     bool m_arePluginsEnabled : 1;
     bool m_isScriptEnabled : 1;
-    unsigned m_fontRenderingMode : 1;
     bool m_isCSSCustomFilterEnabled : 1;
     bool m_cssStickyPositionEnabled : 1;
     bool m_dnsPrefetchingEnabled : 1;
 
     bool m_touchEventEmulationEnabled : 1;
     bool m_openGLMultisamplingEnabled : 1;
+
+    // FIXME: This is a temporary flag and should be removed once accelerated
+    // overflow scroll is ready (crbug.com/254111).
+    bool m_compositorDrivenAcceleratedScrollingEnabled : 1;
 
     Timer<Settings> m_setImageLoadingSettingsTimer;
     void imageLoadingSettingsTimerFired(Timer<Settings>*);

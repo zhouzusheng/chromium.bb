@@ -1,10 +1,10 @@
 // Copyright (c) 2008, Google Inc.
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
-// 
+//
 //     * Redistributions of source code must retain the above copyright
 // notice, this list of conditions and the following disclaimer.
 //     * Redistributions in binary form must reproduce the above
@@ -14,7 +14,7 @@
 //     * Neither the name of Google Inc. nor the names of its
 // contributors may be used to endorse or promote products derived from
 // this software without specific prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
 // "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
 // LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -32,12 +32,12 @@
 
 #include "core/dom/Clipboard.h"
 #include "core/dom/DataTransferItem.h"
-#include "core/loader/cache/CachedImageClient.h"
+#include "core/loader/cache/ImageResourceClient.h"
 #include "core/platform/chromium/ChromiumDataObject.h"
 
 namespace WebCore {
 
-    class CachedImage;
+class ImageResource;
     class ChromiumDataObjectItem;
     class ClipboardChromium;
     class Frame;
@@ -64,7 +64,7 @@ namespace WebCore {
         RefPtr<ChromiumDataObjectItem> m_item;
     };
 
-    class ClipboardChromium : public Clipboard, public CachedImageClient {
+    class ClipboardChromium : public Clipboard, public ImageResourceClient {
         WTF_MAKE_FAST_ALLOCATED;
     public:
         ~ClipboardChromium();
@@ -87,7 +87,7 @@ namespace WebCore {
         virtual ListHashSet<String> types() const;
         virtual PassRefPtr<FileList> files() const;
 
-        void setDragImage(CachedImage*, const IntPoint&);
+        void setDragImage(ImageResource*, const IntPoint&);
         void setDragImageElement(Node*, const IntPoint&);
 
         PassRefPtr<ChromiumDataObject> dataObject()
@@ -110,7 +110,7 @@ namespace WebCore {
         ClipboardChromium(ClipboardType, PassRefPtr<ChromiumDataObject>, ClipboardAccessPolicy, Frame*);
 
         void resetFromClipboard();
-        void setDragImage(CachedImage*, Node*, const IntPoint&);
+        void setDragImage(ImageResource*, Node*, const IntPoint&);
         RefPtr<ChromiumDataObject> m_dataObject;
         Frame* m_frame;
     };

@@ -26,7 +26,6 @@
 #include "glsl_parser_extras.h"
 #include "ast.h"
 #include "glsl_types.h"
-#include "safe_strcmp.h"
 
 ir_rvalue *
 _mesa_ast_field_selection_to_hir(const ast_expression *expr,
@@ -82,7 +81,7 @@ _mesa_ast_field_selection_to_hir(const ast_expression *expr,
       const char *method;
       method = call->subexpressions[0]->primary_expression.identifier;
 
-      if (op->type->is_array() && safe_strcmp(method, "length") == 0) {
+      if (op->type->is_array() && strcmp(method, "length") == 0) {
 	 if (!call->expressions.is_empty())
 	    _mesa_glsl_error(&loc, state, "length method takes no arguments.");
 
@@ -99,5 +98,5 @@ _mesa_ast_field_selection_to_hir(const ast_expression *expr,
 		       expr->primary_expression.identifier);
    }
 
-   return result ? result : ir_call::get_error_instruction(ctx);
+   return result ? result : ir_rvalue::error_value(ctx);
 }

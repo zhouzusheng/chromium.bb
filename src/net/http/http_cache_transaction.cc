@@ -22,7 +22,7 @@
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
@@ -1538,6 +1538,20 @@ int HttpCache::Transaction::DoCacheQueryData() {
 }
 
 int HttpCache::Transaction::DoCacheQueryDataComplete(int result) {
+#if defined(OS_ANDROID)
+  if (result == ERR_NOT_IMPLEMENTED) {
+    // Restart the request overwriting the cache entry.
+    //
+    // Note: this would have fixed range requests for debug builds on all OSes,
+    // not just Android, but karen@ prefers to limit the effect based on OS for
+    // cherry-picked fixes.
+    // TODO(pasko): remove the OS_ANDROID limitation as soon as the fix proves
+    // useful after the cherry-pick.
+    // TODO(pasko): remove this workaround as soon as the SimpleBackendImpl
+    // supports Sparse IO.
+    return DoRestartPartialRequest();
+  }
+#endif
   DCHECK_EQ(OK, result);
   if (!cache_.get())
     return ERR_UNEXPECTED;

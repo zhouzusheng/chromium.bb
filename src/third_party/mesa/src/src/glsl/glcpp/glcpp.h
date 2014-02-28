@@ -24,12 +24,10 @@
 #ifndef GLCPP_H
 #define GLCPP_H
 
-/* Windows does not currently have stdint.h. */
-#ifndef _MSC_VER
 #include <stdint.h>
-#endif
+#include <stdbool.h>
 
-#include <talloc.h>
+#include "../ralloc.h"
 
 #include "program/hash_table.h"
 
@@ -52,11 +50,7 @@ typedef struct token_list token_list_t;
 
 typedef union YYSTYPE
 {
-#ifndef _MSC_VER
 	intmax_t ival;
-#else
-        __int64 ival;
-#endif
 	char *str;
 	string_list_t *string_list;
 	token_t *token;
@@ -181,7 +175,13 @@ struct glcpp_parser {
 	token_node_t *lex_from_node;
 	char *output;
 	char *info_log;
+	size_t output_length;
+	size_t info_log_length;
 	int error;
+	bool has_new_line_number;
+	int new_line_number;
+	bool has_new_source_number;
+	int new_source_number;
 };
 
 struct gl_extensions;
@@ -196,7 +196,7 @@ void
 glcpp_parser_destroy (glcpp_parser_t *parser);
 
 int
-preprocess(void *talloc_ctx, const char **shader, char **info_log,
+glcpp_preprocess(void *ralloc_ctx, const char **shader, char **info_log,
 	   const struct gl_extensions *extensions, int api);
 
 /* Functions for writing to the info log */

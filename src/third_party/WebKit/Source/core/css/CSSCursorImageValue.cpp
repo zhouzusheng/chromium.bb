@@ -25,11 +25,10 @@
 #include "SVGNames.h"
 #include "core/css/CSSImageSetValue.h"
 #include "core/css/CSSImageValue.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "core/loader/cache/CachedImage.h"
-#include "core/loader/cache/CachedResourceLoader.h"
-#include "core/rendering/style/StyleCachedImage.h"
-#include "core/rendering/style/StyleCachedImageSet.h"
+#include "core/loader/cache/ImageResource.h"
+#include "core/loader/cache/ResourceFetcher.h"
+#include "core/rendering/style/StyleFetchedImage.h"
+#include "core/rendering/style/StyleFetchedImageSet.h"
 #include "core/rendering/style/StyleImage.h"
 #include "core/rendering/style/StylePendingImage.h"
 #include "core/svg/SVGCursorElement.h"
@@ -101,14 +100,14 @@ bool CSSCursorImageValue::updateIfSVGCursorIsUsed(Element* element)
         // FIXME: This will override hot spot specified in CSS, which is probably incorrect.
         SVGLengthContext lengthContext(0);
         m_hasHotSpot = true;
-        float x = roundf(cursorElement->x().value(lengthContext));
+        float x = roundf(cursorElement->xCurrentValue().value(lengthContext));
         m_hotSpot.setX(static_cast<int>(x));
 
-        float y = roundf(cursorElement->y().value(lengthContext));
+        float y = roundf(cursorElement->yCurrentValue().value(lengthContext));
         m_hotSpot.setY(static_cast<int>(y));
 
-        if (cachedImageURL() != element->document()->completeURL(cursorElement->href()))
-            clearCachedImage();
+        if (cachedImageURL() != element->document()->completeURL(cursorElement->hrefCurrentValue()))
+            clearImageResource();
 
         SVGElement* svgElement = toSVGElement(element);
         m_referencedElements.add(svgElement);
@@ -120,10 +119,10 @@ bool CSSCursorImageValue::updateIfSVGCursorIsUsed(Element* element)
     return false;
 }
 
-StyleImage* CSSCursorImageValue::cachedImage(CachedResourceLoader* loader)
+StyleImage* CSSCursorImageValue::cachedImage(ResourceFetcher* loader, float deviceScaleFactor)
 {
     if (m_imageValue->isImageSetValue())
-        return static_cast<CSSImageSetValue*>(m_imageValue.get())->cachedImageSet(loader);
+        return static_cast<CSSImageSetValue*>(m_imageValue.get())->cachedImageSet(loader, deviceScaleFactor);
 
     if (!m_accessedImage) {
         m_accessedImage = true;
@@ -135,8 +134,8 @@ StyleImage* CSSCursorImageValue::cachedImage(CachedResourceLoader* loader)
             RefPtr<CSSImageValue> imageValue = toCSSImageValue(m_imageValue.get());
             // FIXME: This will fail if the <cursor> element is in a shadow DOM (bug 59827)
             if (SVGCursorElement* cursorElement = resourceReferencedByCursorElement(imageValue->url(), loader->document())) {
-                RefPtr<CSSImageValue> svgImageValue = CSSImageValue::create(cursorElement->href());
-                StyleCachedImage* cachedImage = svgImageValue->cachedImage(loader);
+                RefPtr<CSSImageValue> svgImageValue = CSSImageValue::create(cursorElement->hrefCurrentValue());
+                StyleFetchedImage* cachedImage = svgImageValue->cachedImage(loader);
                 m_image = cachedImage;
                 return cachedImage;
             }
@@ -146,17 +145,17 @@ StyleImage* CSSCursorImageValue::cachedImage(CachedResourceLoader* loader)
             m_image = toCSSImageValue(m_imageValue.get())->cachedImage(loader);
     }
 
-    if (m_image && m_image->isCachedImage())
-        return static_cast<StyleCachedImage*>(m_image.get());
+    if (m_image && m_image->isImageResource())
+        return static_cast<StyleFetchedImage*>(m_image.get());
 
     return 0;
 }
 
-StyleImage* CSSCursorImageValue::cachedOrPendingImage(Document* document)
+StyleImage* CSSCursorImageValue::cachedOrPendingImage(float deviceScaleFactor)
 {
     // Need to delegate completely so that changes in device scale factor can be handled appropriately.
     if (m_imageValue->isImageSetValue())
-        return static_cast<CSSImageSetValue*>(m_imageValue.get())->cachedOrPendingImageSet(document);
+        return static_cast<CSSImageSetValue*>(m_imageValue.get())->cachedOrPendingImageSet(deviceScaleFactor);
 
     if (!m_image)
         m_image = StylePendingImage::create(this);
@@ -176,12 +175,12 @@ bool CSSCursorImageValue::isSVGCursor() const
 
 String CSSCursorImageValue::cachedImageURL()
 {
-    if (!m_image || !m_image->isCachedImage())
+    if (!m_image || !m_image->isImageResource())
         return String();
-    return static_cast<StyleCachedImage*>(m_image.get())->cachedImage()->url().string();
+    return static_cast<StyleFetchedImage*>(m_image.get())->cachedImage()->url().string();
 }
 
-void CSSCursorImageValue::clearCachedImage()
+void CSSCursorImageValue::clearImageResource()
 {
     m_image = 0;
     m_accessedImage = false;
@@ -196,14 +195,6 @@ bool CSSCursorImageValue::equals(const CSSCursorImageValue& other) const
 {
     return m_hasHotSpot ? other.m_hasHotSpot && m_hotSpot == other.m_hotSpot : !other.m_hasHotSpot
         && compareCSSValuePtr(m_imageValue, other.m_imageValue);
-}
-
-void CSSCursorImageValue::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    m_imageValue->reportMemoryUsage(memoryObjectInfo);
-    // No need to report m_image as it is counted as part of RenderArena.
-    info.addMember(m_referencedElements, "referencedElements");
 }
 
 } // namespace WebCore

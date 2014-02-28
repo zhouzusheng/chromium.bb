@@ -43,8 +43,6 @@ class ContentClient : public content::ContentClient {
     ContentClient();
     virtual ~ContentClient();
 
-    void registerPlugin(const char* pluginPath);
-
     // Returns the user agent.
     virtual std::string GetUserAgent() const OVERRIDE;
 
@@ -53,13 +51,7 @@ class ContentClient : public content::ContentClient {
         int resource_id,
         ui::ScaleFactor scale_factor) const OVERRIDE;
 
-    // Gives the embedder a chance to register its own internal NPAPI plugins.
-    virtual void AddNPAPIPlugins(
-        webkit::npapi::PluginList* plugin_list) OVERRIDE;
-
   private:
-    std::vector<base::FilePath> d_pluginPaths;
-
     DISALLOW_COPY_AND_ASSIGN(ContentClient);
 };
 
@@ -76,6 +68,10 @@ class ContentMainDelegateImpl : public content::ContentMainDelegate {
     void setRendererInfoMap(RendererInfoMap* rendererInfoMap);
     void registerPlugin(const char* pluginPath);
 
+    // Must be called on the browser-main thread.
+    // TODO: clean this up
+    void addPluginsToPluginService();
+
     // ContentMainDelegate implementation
     virtual bool BasicStartupComplete(int* exit_code) OVERRIDE;
     virtual void PreSandboxStartup() OVERRIDE;
@@ -85,6 +81,7 @@ class ContentMainDelegateImpl : public content::ContentMainDelegate {
         CreateContentRendererClient() OVERRIDE;
 
   private:
+    std::vector<base::FilePath> d_pluginPaths;
     ContentClient d_contentClient;
     scoped_ptr<content::ContentBrowserClient> d_contentBrowserClient;
     scoped_ptr<content::ContentRendererClient> d_contentRendererClient;

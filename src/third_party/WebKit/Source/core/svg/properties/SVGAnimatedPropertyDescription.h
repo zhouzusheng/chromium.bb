@@ -22,14 +22,15 @@
 #ifndef SVGAnimatedPropertyDescription_h
 #define SVGAnimatedPropertyDescription_h
 
-#include <wtf/HashMap.h>
-#include <wtf/text/AtomicString.h>
+#include "wtf/HashMap.h"
+#include "wtf/HashTableDeletedValueType.h"
+#include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
 class SVGElement;
 
-struct SVGAnimatedPropertyDescription {            
+struct SVGAnimatedPropertyDescription {
     // Empty value
     SVGAnimatedPropertyDescription()
         : m_element(0)
@@ -62,7 +63,7 @@ struct SVGAnimatedPropertyDescription {
     }
 
     SVGElement* m_element;
-    AtomicStringImpl* m_attributeName;
+    StringImpl* m_attributeName;
 };
 
 struct SVGAnimatedPropertyDescriptionHash {
@@ -80,7 +81,7 @@ struct SVGAnimatedPropertyDescriptionHash {
 };
 
 struct SVGAnimatedPropertyDescriptionHashTraits : WTF::SimpleClassHashTraits<SVGAnimatedPropertyDescription> { };
- 
+
 }
 
 #endif // SVGAnimatedPropertyDescription_h

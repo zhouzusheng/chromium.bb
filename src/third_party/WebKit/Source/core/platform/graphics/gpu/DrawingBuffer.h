@@ -37,11 +37,12 @@
 
 #include "public/platform/WebExternalTextureLayerClient.h"
 #include "public/platform/WebExternalTextureMailbox.h"
-#include <wtf/Noncopyable.h>
-#include <wtf/OwnPtr.h>
-#include <wtf/PassOwnPtr.h>
+#include "wtf/Noncopyable.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
 
 namespace WebKit {
+class WebExternalBitmap;
 class WebExternalTextureLayer;
 class WebGraphicsContext3D;
 class WebLayer;
@@ -123,9 +124,8 @@ public:
     void paintCompositedResultsToCanvas(ImageBuffer*);
 
     // WebExternalTextureLayerClient implementation.
-    virtual unsigned prepareTexture(WebKit::WebTextureUpdater& updater) OVERRIDE;
     virtual WebKit::WebGraphicsContext3D* context() OVERRIDE;
-    virtual bool prepareMailbox(WebKit::WebExternalTextureMailbox*) OVERRIDE;
+    virtual bool prepareMailbox(WebKit::WebExternalTextureMailbox*, WebKit::WebExternalBitmap*) OVERRIDE;
     virtual void mailboxReleased(const WebKit::WebExternalTextureMailbox&) OVERRIDE;
 
 private:
@@ -134,8 +134,6 @@ private:
 
     void initialize(const IntSize&);
 
-    void prepareBackBuffer();
-    bool requiresCopyFromBackToFrontBuffer() const;
     Platform3DObject frontColorBuffer() const;
     Platform3DObject colorBuffer() const { return m_colorBuffer; }
 

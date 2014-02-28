@@ -58,7 +58,7 @@ using namespace MediaFeatureNames;
 enum MediaFeaturePrefix { MinPrefix, MaxPrefix, NoPrefix };
 
 typedef bool (*EvalFunc)(CSSValue*, RenderStyle*, Frame*, MediaFeaturePrefix);
-typedef HashMap<AtomicStringImpl*, EvalFunc> FunctionMap;
+typedef HashMap<StringImpl*, EvalFunc> FunctionMap;
 static FunctionMap* gFunctionMap;
 
 MediaQueryEvaluator::MediaQueryEvaluator(bool mediaFeatureResult)
@@ -68,7 +68,7 @@ MediaQueryEvaluator::MediaQueryEvaluator(bool mediaFeatureResult)
 {
 }
 
-MediaQueryEvaluator::MediaQueryEvaluator(const String& acceptedMediaType, bool mediaFeatureResult)
+MediaQueryEvaluator::MediaQueryEvaluator(const AtomicString& acceptedMediaType, bool mediaFeatureResult)
     : m_mediaType(acceptedMediaType)
     , m_frame(0)
     , m_style(0)
@@ -84,7 +84,7 @@ MediaQueryEvaluator::MediaQueryEvaluator(const char* acceptedMediaType, bool med
 {
 }
 
-MediaQueryEvaluator::MediaQueryEvaluator(const String& acceptedMediaType, Frame* frame, RenderStyle* style)
+MediaQueryEvaluator::MediaQueryEvaluator(const AtomicString& acceptedMediaType, Frame* frame, RenderStyle* style)
     : m_mediaType(acceptedMediaType)
     , m_frame(frame)
     , m_style(style)
@@ -96,7 +96,7 @@ MediaQueryEvaluator::~MediaQueryEvaluator()
 {
 }
 
-bool MediaQueryEvaluator::mediaTypeMatch(const String& mediaTypeToMatch) const
+bool MediaQueryEvaluator::mediaTypeMatch(const AtomicString& mediaTypeToMatch) const
 {
     return mediaTypeToMatch.isEmpty()
         || equalIgnoringCase(mediaTypeToMatch, "all")
@@ -108,7 +108,7 @@ bool MediaQueryEvaluator::mediaTypeMatchSpecific(const char* mediaTypeToMatch) c
     // Like mediaTypeMatch, but without the special cases for "" and "all".
     ASSERT(mediaTypeToMatch);
     ASSERT(mediaTypeToMatch[0] != '\0');
-    ASSERT(!equalIgnoringCase(mediaTypeToMatch, String("all")));
+    ASSERT(!equalIgnoringCase(mediaTypeToMatch, AtomicString("all")));
     return equalIgnoringCase(mediaTypeToMatch, m_mediaType);
 }
 
@@ -138,6 +138,9 @@ bool MediaQueryEvaluator::eval(const MediaQuerySet* querySet, StyleResolver* sty
             size_t j = 0;
             for (; j < exps->size(); ++j) {
                 bool exprResult = eval(exps->at(j).get());
+                // FIXME: Instead of storing these on StyleResolver, we should store them locally
+                // and then any client of this method can grab at them afterwords.
+                // Alternatively we could use an explicit out-paramemter of this method.
                 if (styleResolver && exps->at(j)->isViewportDependent())
                     styleResolver->addViewportDependentMediaQueryResult(exps->at(j).get(), exprResult);
                 if (!exprResult)
@@ -334,7 +337,7 @@ static bool gridMediaFeatureEval(CSSValue* value, RenderStyle*, Frame*, MediaFea
     return false;
 }
 
-static bool computeLength(CSSValue* value, bool strict, RenderStyle* style, RenderStyle* rootStyle, int& result)
+static bool computeLength(CSSValue* value, bool strict, RenderStyle* initialStyle, int& result)
 {
     if (!value->isPrimitiveValue())
         return false;
@@ -347,7 +350,9 @@ static bool computeLength(CSSValue* value, bool strict, RenderStyle* style, Rend
     }
 
     if (primitiveValue->isLength()) {
-        result = primitiveValue->computeLength<int>(style, rootStyle, 1.0 /* multiplier */, true /* computingFontSize */);
+        // Relative (like EM) and root relative (like REM) units are always resolved against the initial values
+        // for media queries, hence the two initialStyle parameters.
+        result = primitiveValue->computeLength<int>(initialStyle, initialStyle, 1.0 /* multiplier */, true /* computingFontSize */);
         return true;
     }
 
@@ -358,11 +363,10 @@ static bool deviceHeightMediaFeatureEval(CSSValue* value, RenderStyle* style, Fr
 {
     if (value) {
         FloatRect sg = screenRect(frame->page()->mainFrame()->view());
-        RenderStyle* rootStyle = frame->document()->documentElement()->renderStyle();
         int length;
         long height = sg.height();
         InspectorInstrumentation::applyScreenHeightOverride(frame, &height);
-        return computeLength(value, !frame->document()->inQuirksMode(), style, rootStyle, length) && compareValue(static_cast<int>(height), length, op);
+        return computeLength(value, !frame->document()->inQuirksMode(), style, length) && compareValue(static_cast<int>(height), length, op);
     }
     // ({,min-,max-}device-height)
     // assume if we have a device, assume non-zero
@@ -373,11 +377,10 @@ static bool deviceWidthMediaFeatureEval(CSSValue* value, RenderStyle* style, Fra
 {
     if (value) {
         FloatRect sg = screenRect(frame->page()->mainFrame()->view());
-        RenderStyle* rootStyle = frame->document()->documentElement()->renderStyle();
         int length;
         long width = sg.width();
         InspectorInstrumentation::applyScreenWidthOverride(frame, &width);
-        return computeLength(value, !frame->document()->inQuirksMode(), style, rootStyle, length) && compareValue(static_cast<int>(width), length, op);
+        return computeLength(value, !frame->document()->inQuirksMode(), style, length) && compareValue(static_cast<int>(width), length, op);
     }
     // ({,min-,max-}device-width)
     // assume if we have a device, assume non-zero
@@ -392,9 +395,8 @@ static bool heightMediaFeatureEval(CSSValue* value, RenderStyle* style, Frame* f
     if (value) {
         if (RenderView* renderView = frame->document()->renderView())
             height = adjustForAbsoluteZoom(height, renderView);
-        RenderStyle* rootStyle = frame->document()->documentElement()->renderStyle();
         int length;
-        return computeLength(value, !frame->document()->inQuirksMode(), style, rootStyle, length) && compareValue(height, length, op);
+        return computeLength(value, !frame->document()->inQuirksMode(), style, length) && compareValue(height, length, op);
     }
 
     return height;
@@ -408,9 +410,8 @@ static bool widthMediaFeatureEval(CSSValue* value, RenderStyle* style, Frame* fr
     if (value) {
         if (RenderView* renderView = frame->document()->renderView())
             width = adjustForAbsoluteZoom(width, renderView);
-        RenderStyle* rootStyle = frame->document()->documentElement()->renderStyle();
         int length;
-        return computeLength(value, !frame->document()->inQuirksMode(), style, rootStyle, length) && compareValue(width, length, op);
+        return computeLength(value, !frame->document()->inQuirksMode(), style, length) && compareValue(width, length, op);
     }
 
     return width;

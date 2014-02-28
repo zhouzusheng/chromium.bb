@@ -25,7 +25,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/threading/non_thread_safe.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/cache_type.h"
 #include "net/base/completion_callback.h"
 #include "net/base/load_states.h"
@@ -89,7 +89,7 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
     // The implementation must not access the factory object after invoking the
     // |callback| because the object can be deleted from within the callback.
     virtual int CreateBackend(NetLog* net_log,
-                              disk_cache::Backend** backend,
+                              scoped_ptr<disk_cache::Backend>* backend,
                               const CompletionCallback& callback) = 0;
   };
 
@@ -109,7 +109,7 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
 
     // BackendFactory implementation.
     virtual int CreateBackend(NetLog* net_log,
-                              disk_cache::Backend** backend,
+                              scoped_ptr<disk_cache::Backend>* backend,
                               const CompletionCallback& callback) OVERRIDE;
 
    private:

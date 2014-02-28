@@ -27,13 +27,13 @@
 #define CSSFontFaceSrcValue_h
 
 #include "core/css/CSSValue.h"
-#include "core/loader/cache/CachedResourceHandle.h"
-#include <wtf/PassRefPtr.h>
-#include <wtf/text/WTFString.h>
+#include "core/loader/cache/ResourcePtr.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class CachedFont;
+class FontResource;
 class Document;
 class SVGFontFaceElement;
 
@@ -69,11 +69,9 @@ public:
 
     bool hasFailedOrCanceledSubresources() const;
 
-    CachedFont* cachedFont(Document*);
+    FontResource* fetch(Document*);
 
     bool equals(const CSSFontFaceSrcValue&) const;
-
-    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     CSSFontFaceSrcValue(const String& resource, bool local)
@@ -90,7 +88,7 @@ private:
     String m_format;
     bool m_isLocal;
 
-    CachedResourceHandle<CachedFont> m_cachedFont;
+    ResourcePtr<FontResource> m_fetched;
 
 #if ENABLE(SVG_FONTS)
     SVGFontFaceElement* m_svgFontFaceElement;

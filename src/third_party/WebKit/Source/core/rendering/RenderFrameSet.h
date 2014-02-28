@@ -27,6 +27,7 @@
 
 namespace WebCore {
 
+class HTMLDimension;
 class HTMLFrameSetElement;
 class MouseEvent;
 class RenderFrame;
@@ -76,8 +77,6 @@ public:
 
     void notifyFrameEdgeInfoChanged();
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
-
 private:
     static const int noSplit = -1;
 
@@ -86,8 +85,6 @@ private:
     public:
         GridAxis();
         void resize(int);
-
-        void reportMemoryUsage(MemoryObjectInfo*) const;
 
         Vector<int> m_sizes;
         Vector<int> m_deltas;
@@ -112,7 +109,7 @@ private:
 
     void setIsResizing(bool);
 
-    void layOutAxis(GridAxis&, const Length*, int availableSpace);
+    void layOutAxis(GridAxis&, const Vector<HTMLDimension>&, int availableSpace);
     void computeEdgeInfo();
     void fillFromEdgeInfo(const FrameEdgeInfo& edgeInfo, int r, int c);
     void positionFrames();

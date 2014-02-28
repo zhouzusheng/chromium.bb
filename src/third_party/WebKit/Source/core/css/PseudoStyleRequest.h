@@ -28,6 +28,7 @@
 namespace WebCore {
 
 class RenderScrollbar;
+class RenderStyle;
 
 class PseudoStyleRequest {
 public:
@@ -36,6 +37,12 @@ public:
         , scrollbarPart(scrollbarPart)
         , scrollbar(scrollbar)
     {
+    }
+
+    // The spec disallows inheritance for ::backdrop.
+    bool allowsInheritance(const RenderStyle* parentStyle) const
+    {
+        return parentStyle && pseudoId != BACKDROP;
     }
 
     PseudoId pseudoId;

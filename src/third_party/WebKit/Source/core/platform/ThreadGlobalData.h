@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -44,7 +44,6 @@ namespace WebCore {
     class ThreadLocalInspectorCounters;
     class ThreadTimers;
 
-    struct CachedResourceRequestInitiators;
     struct TECConverterWrapper;
 
     class ThreadGlobalData {
@@ -54,14 +53,12 @@ namespace WebCore {
         ~ThreadGlobalData();
         void destroy(); // called on workers to clean up the ThreadGlobalData before the thread exits.
 
-        const CachedResourceRequestInitiators& cachedResourceRequestInitiators() { return *m_cachedResourceRequestInitiators; }
         EventNames& eventNames() { return *m_eventNames; }
         ThreadTimers& threadTimers() { return *m_threadTimers; }
 
         ThreadLocalInspectorCounters& inspectorCounters() { return *m_inspectorCounters; }
 
     private:
-        OwnPtr<CachedResourceRequestInitiators> m_cachedResourceRequestInitiators;
         OwnPtr<EventNames> m_eventNames;
         OwnPtr<ThreadTimers> m_threadTimers;
 
@@ -75,7 +72,7 @@ namespace WebCore {
         friend ThreadGlobalData& threadGlobalData();
     };
 
-inline ThreadGlobalData& threadGlobalData() 
+inline ThreadGlobalData& threadGlobalData()
 {
     // FIXME: Workers are not necessarily the only feature that make per-thread global data necessary.
     // We need to check for e.g. database objects manipulating strings on secondary threads.

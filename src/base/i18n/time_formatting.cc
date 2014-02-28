@@ -7,10 +7,10 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time.h"
-#include "third_party/icu/public/i18n/unicode/datefmt.h"
-#include "third_party/icu/public/i18n/unicode/dtptngen.h"
-#include "third_party/icu/public/i18n/unicode/smpdtfmt.h"
+#include "base/time/time.h"
+#include "third_party/icu/source/i18n/unicode/datefmt.h"
+#include "third_party/icu/source/i18n/unicode/dtptngen.h"
+#include "third_party/icu/source/i18n/unicode/smpdtfmt.h"
 
 using base::Time;
 

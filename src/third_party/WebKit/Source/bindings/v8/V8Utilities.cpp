@@ -31,19 +31,21 @@
 #include "config.h"
 #include "bindings/v8/V8Utilities.h"
 
-#include "V8ArrayBuffer.h"
 #include "V8MessagePort.h"
 #include "bindings/v8/ScriptState.h"
 #include "bindings/v8/V8AbstractEventListener.h"
 #include "bindings/v8/V8Binding.h"
+#include "bindings/v8/custom/V8ArrayBufferCustom.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/MessagePort.h"
 #include "core/dom/ScriptExecutionContext.h"
 #include "core/page/Frame.h"
-#include "core/workers/WorkerContext.h"
-#include <v8.h>
+#include "core/workers/WorkerGlobalScope.h"
 #include "wtf/ArrayBuffer.h"
+#include "wtf/text/WTFString.h"
+#include <v8.h>
+
 
 namespace WebCore {
 
@@ -85,7 +87,7 @@ bool extractTransferables(v8::Local<v8::Value> value, MessagePortArray& ports, A
         v8::Local<v8::Value> transferrable = transferrables->Get(i);
         // Validation of non-null objects, per HTML5 spec 10.3.3.
         if (isUndefinedOrNull(transferrable)) {
-            setDOMException(INVALID_STATE_ERR, isolate);
+            setDOMException(DataCloneError, isolate);
             return false;
         }
         // Validation of Objects implementing an interface, per WebIDL spec 4.1.15.
@@ -93,14 +95,14 @@ bool extractTransferables(v8::Local<v8::Value> value, MessagePortArray& ports, A
             RefPtr<MessagePort> port = V8MessagePort::toNative(v8::Handle<v8::Object>::Cast(transferrable));
             // Check for duplicate MessagePorts.
             if (ports.contains(port)) {
-                setDOMException(INVALID_STATE_ERR, isolate);
+                setDOMException(DataCloneError, isolate);
                 return false;
             }
             ports.append(port.release());
         } else if (V8ArrayBuffer::HasInstance(transferrable, isolate, worldType(isolate)))
             arrayBuffers.append(V8ArrayBuffer::toNative(v8::Handle<v8::Object>::Cast(transferrable)));
         else {
-            throwTypeError(0, isolate);
+            setDOMException(DataCloneError, isolate);
             return false;
         }
     }
@@ -109,15 +111,17 @@ bool extractTransferables(v8::Local<v8::Value> value, MessagePortArray& ports, A
 
 bool getMessagePortArray(v8::Local<v8::Value> value, MessagePortArray& ports, v8::Isolate* isolate)
 {
-    ArrayBufferArray arrayBuffers;
-    bool result = extractTransferables(value, ports, arrayBuffers, isolate);
-    if (!result)
-        return false;
-    if (arrayBuffers.size() > 0) {
-        throwTypeError("MessagePortArray argument must contain only MessagePorts", isolate);
+    if (isUndefinedOrNull(value)) {
+        ports.resize(0);
+        return true;
+    }
+    if (!value->IsArray()) {
+        throwTypeError(isolate);
         return false;
     }
-    return true;
+    bool success = false;
+    ports = toRefPtrNativeArray<MessagePort, V8MessagePort>(value, isolate, &success);
+    return success;
 }
 
 void removeHiddenDependency(v8::Handle<v8::Object> object, v8::Local<v8::Value> value, int cacheIndex, v8::Isolate* isolate)
@@ -134,7 +138,7 @@ void removeHiddenDependency(v8::Handle<v8::Object> object, v8::Local<v8::Value> 
         }
     }
 }
-    
+
 void transferHiddenDependency(v8::Handle<v8::Object> object, EventListener* oldValue, v8::Local<v8::Value> newValue, int cacheIndex, v8::Isolate* isolate)
 {
     if (oldValue) {
@@ -152,7 +156,7 @@ void transferHiddenDependency(v8::Handle<v8::Object> object, EventListener* oldV
 ScriptExecutionContext* getScriptExecutionContext()
 {
     if (WorkerScriptController* controller = WorkerScriptController::controllerForContext())
-        return controller->workerContext();
+        return controller->workerGlobalScope();
 
     return currentDocument();
 }

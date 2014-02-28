@@ -8,6 +8,8 @@
  * @fileoverview Filter Control.
  */
 base.requireStylesheet('ui.filter_control');
+
+base.require('base.properties');
 base.require('tracing.filter');
 base.require('ui');
 base.require('ui.overlay');
@@ -59,6 +61,24 @@ base.exportTo('ui', function() {
       this.hitCountText = '0 of 0';
     },
 
+    // Input, internal control of text field
+    get filterText() {
+      return this.filterText_;
+    },
+
+    set filterText(newValue) {
+      base.setPropertyAndDispatchChange(this, 'filterText', newValue);
+    },
+
+    // Output, result of filterText updates.
+    get hitCountText() {
+      return this.hitCountText_;
+    },
+
+    set hitCountText(newValue) {
+      base.setPropertyAndDispatchChange(this, 'hitCountText', newValue);
+    },
+
     focus: function() {
       this.filterEl_.selectionStart = 0;
       this.filterEl_.selectionEnd = this.filterEl_.value.length;
@@ -73,14 +93,6 @@ base.exportTo('ui', function() {
       this.filterEl_.value = event.newValue;
     }
   };
-
-  // Outgoing change events
-  base.defineProperty(FilterControl, 'filterText',
-      base.PropertyKind.JS, null, true);
-
-  // Incoming change events
-  base.defineProperty(FilterControl, 'hitCountText',
-      base.PropertyKind.JS, null, true);
 
   return {
     FilterControl: FilterControl

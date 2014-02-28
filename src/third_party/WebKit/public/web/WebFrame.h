@@ -232,6 +232,7 @@ public:
     // WebKit::registerExtension for the corresponding specifier.
     //
     // worldID must be > 0 (as 0 represents the main world).
+    // worldID must be < EmbedderWorldIdLimit, high number used internally.
     virtual void executeScriptInIsolatedWorld(
         int worldID, const WebScriptSource* sources, unsigned numSources,
         int extensionGroup) = 0;
@@ -268,6 +269,7 @@ public:
         const WebScriptSource&) = 0;
 
     // worldID must be > 0 (as 0 represents the main world).
+    // worldID must be < EmbedderWorldIdLimit, high number used internally.
     virtual void executeScriptInIsolatedWorld(
         int worldID, const WebScriptSource* sourcesIn, unsigned numSources,
         int extensionGroup, WebVector<v8::Local<v8::Value> >* results) = 0;
@@ -383,11 +385,6 @@ public:
     // will, for example, be cancelled when WebFrame::stopLoading is called.
     // FIXME: stopLoading does not yet cancel an associated loader!!
     virtual WebURLLoader* createAssociatedURLLoader(const WebURLLoaderOptions& = WebURLLoaderOptions()) = 0;
-
-    // Called from within WebFrameClient::didReceiveDocumentData to commit
-    // data for the frame that will be used to construct the frame's
-    // document.
-    virtual void commitDocumentData(const char* data, size_t length) = 0;
 
     // Returns the number of registered unload listeners.
     virtual unsigned unloadListenerCount() const = 0;

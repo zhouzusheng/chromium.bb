@@ -23,6 +23,7 @@
 #include "core/html/FileInputType.h"
 
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "bindings/v8/ScriptController.h"
 #include "core/dom/Event.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -37,11 +38,10 @@
 #include "core/platform/DragData.h"
 #include "core/platform/FileSystem.h"
 #include "core/platform/LocalizedStrings.h"
-#include "core/platform/graphics/Icon.h"
 #include "core/rendering/RenderFileUploadControl.h"
-#include <wtf/PassOwnPtr.h>
-#include <wtf/text/StringBuilder.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/PassOwnPtr.h"
+#include "wtf/text/StringBuilder.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -151,7 +151,7 @@ void FileInputType::handleDOMActivateEvent(Event* event)
         settings.acceptFileExtensions = input->acceptFileExtensions();
         settings.selectedFiles = m_fileList->paths();
 #if ENABLE(MEDIA_CAPTURE)
-        settings.capture = input->capture();
+        settings.useMediaCapture = input->capture();
 #endif
         chrome->runOpenPanel(input->document()->frame(), newFileChooser(settings));
     }
@@ -160,7 +160,7 @@ void FileInputType::handleDOMActivateEvent(Event* event)
 
 RenderObject* FileInputType::createRenderer(RenderStyle*) const
 {
-    return new (element()->document()->renderArena()) RenderFileUploadControl(element());
+    return new RenderFileUploadControl(element());
 }
 
 bool FileInputType::canSetStringValue() const
@@ -212,7 +212,6 @@ bool FileInputType::getTypeSpecificValue(String& value)
 void FileInputType::setValue(const String&, bool, TextFieldEventBehavior)
 {
     m_fileList->clear();
-    m_icon.clear();
     element()->setNeedsStyleRecalc();
 }
 
@@ -260,7 +259,7 @@ void FileInputType::createShadowSubtree()
     RefPtr<HTMLInputElement> button = HTMLInputElement::create(inputTag, element()->document(), 0, false);
     button->setType(InputTypeNames::button());
     button->setAttribute(valueAttr, element()->multiple() ? fileButtonChooseMultipleFilesLabel() : fileButtonChooseFileLabel());
-    button->setPseudo(AtomicString("-webkit-file-upload-button", AtomicString::ConstructFromLiteral));
+    button->setPart(AtomicString("-webkit-file-upload-button", AtomicString::ConstructFromLiteral));
     element()->userAgentShadowRoot()->appendChild(button.release(), IGNORE_EXCEPTION);
 }
 
@@ -276,15 +275,6 @@ void FileInputType::multipleAttributeChanged()
     ASSERT(element()->shadow());
     if (Element* button = toElement(element()->userAgentShadowRoot()->firstChild()))
         button->setAttribute(valueAttr, element()->multiple() ? fileButtonChooseMultipleFilesLabel() : fileButtonChooseFileLabel());
-}
-
-void FileInputType::requestIcon(const Vector<String>& paths)
-{
-    if (!paths.size())
-        return;
-
-    if (Chrome* chrome = this->chrome())
-        chrome->loadIconForFiles(paths, newFileIconLoader());
 }
 
 void FileInputType::setFiles(PassRefPtr<FileList> files)
@@ -315,7 +305,6 @@ void FileInputType::setFiles(PassRefPtr<FileList> files)
     Vector<String> paths;
     for (unsigned i = 0; i < m_fileList->length(); ++i)
         paths.append(m_fileList->item(i)->path());
-    requestIcon(paths);
 
     if (input->renderer())
         input->renderer()->repaint();
@@ -345,16 +334,6 @@ void FileInputType::receiveDropForDirectoryUpload(const Vector<String>& paths)
         settings.acceptFileExtensions = input->acceptFileExtensions();
         chrome->enumerateChosenDirectory(newFileChooser(settings));
     }
-}
-
-void FileInputType::updateRendering(PassRefPtr<Icon> icon)
-{
-    if (m_icon == icon)
-        return;
-
-    m_icon = icon;
-    if (element()->renderer())
-        element()->renderer()->repaint();
 }
 
 bool FileInputType::receiveDroppedFiles(const DragData* dragData)
@@ -389,11 +368,6 @@ bool FileInputType::receiveDroppedFiles(const DragData* dragData)
 String FileInputType::droppedFileSystemId()
 {
     return m_droppedFileSystemId;
-}
-
-Icon* FileInputType::icon() const
-{
-    return m_icon.get();
 }
 
 String FileInputType::defaultToolTip() const

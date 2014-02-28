@@ -26,6 +26,8 @@
 
 namespace WebCore {
 
+class ExceptionState;
+
 class CSSCharsetRule : public CSSRule {
 public:
     static PassRefPtr<CSSCharsetRule> create(CSSStyleSheet* parent, const String& encoding)
@@ -38,10 +40,9 @@ public:
     virtual CSSRule::Type type() const OVERRIDE { return CHARSET_RULE; }
     virtual String cssText() const OVERRIDE;
     virtual void reattach(StyleRuleBase* rule) OVERRIDE { ASSERT_UNUSED(rule, !rule); }
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
 
     const String& encoding() const { return m_encoding; }
-    void setEncoding(const String& encoding, ExceptionCode&) { m_encoding = encoding; }
+    void setEncoding(const String& encoding, ExceptionState&) { m_encoding = encoding; }
 
 private:
     CSSCharsetRule(CSSStyleSheet* parent, const String& encoding);

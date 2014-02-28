@@ -27,8 +27,7 @@
 
 #include "HTMLNames.h"
 #include "core/dom/Document.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "core/loader/cache/CachedImage.h"
+#include "core/loader/cache/ImageResource.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderTableCell.h"
@@ -77,7 +76,7 @@ void RenderTableRow::styleDidChange(StyleDifference diff, const RenderStyle* old
         RenderTable* table = this->table();
         if (table && !table->selfNeedsLayout() && !table->normalChildNeedsLayout() && oldStyle && oldStyle->border() != style()->border())
             table->invalidateCollapsedBorders();
-        
+
         if (table && oldStyle && diff == StyleDifferenceLayout && needsLayout() && table->collapseBorders() && borderWidthChanged(oldStyle, style())) {
             // If the border width changes on a row, we need to make sure the cells in the row know to lay out again.
             // This only happens when borders are collapsed, since they end up affecting the border sides of the cell
@@ -85,7 +84,7 @@ void RenderTableRow::styleDidChange(StyleDifference diff, const RenderStyle* old
             for (RenderBox* childBox = firstChildBox(); childBox; childBox = childBox->nextSiblingBox()) {
                 if (!childBox->isTableCell())
                     continue;
-                childBox->setChildNeedsLayout(true, MarkOnlyThis);
+                childBox->setChildNeedsLayout(MarkOnlyThis);
             }
         }
     }
@@ -136,10 +135,10 @@ void RenderTableRow::addChild(RenderObject* child, RenderObject* beforeChild)
         addChild(cell, beforeChild);
         cell->addChild(child);
         return;
-    } 
+    }
 
     if (beforeChild && beforeChild->parent() != this)
-        beforeChild = splitAnonymousBoxesAroundChild(beforeChild);    
+        beforeChild = splitAnonymousBoxesAroundChild(beforeChild);
 
     RenderTableCell* cell = toRenderTableCell(child);
 
@@ -163,12 +162,12 @@ void RenderTableRow::layout()
     LayoutStateMaintainer statePusher(view(), this, LayoutSize(), style()->isFlippedBlocksWritingMode());
 
     bool paginated = view()->layoutState()->isPaginated();
-                
+
     for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
         if (child->isTableCell()) {
             RenderTableCell* cell = toRenderTableCell(child);
             if (!cell->needsLayout() && paginated && view()->layoutState()->pageLogicalHeight() && view()->layoutState()->pageLogicalOffset(cell, cell->logicalTop()) != cell->pageLogicalOffset())
-                cell->setChildNeedsLayout(true, MarkOnlyThis);
+                cell->setChildNeedsLayout(MarkOnlyThis);
 
             if (child->needsLayout()) {
                 cell->computeAndSetBlockDirectionMargins(table());
@@ -191,7 +190,7 @@ void RenderTableRow::layout()
 
     statePusher.pop();
     // RenderTableSection::layoutRows will set our logical height and width later, so it calls updateLayerTransform().
-    setNeedsLayout(false);
+    clearNeedsLayout();
 }
 
 LayoutRect RenderTableRow::clippedOverflowRectForRepaint(const RenderLayerModelObject* repaintContainer) const
@@ -268,7 +267,7 @@ void RenderTableRow::imageChanged(WrappedImagePtr, const IntRect*)
 
 RenderTableRow* RenderTableRow::createAnonymous(Document* document)
 {
-    RenderTableRow* renderer = new (document->renderArena()) RenderTableRow(0);
+    RenderTableRow* renderer = new RenderTableRow(0);
     renderer->setDocumentForAnonymous(document);
     return renderer;
 }
@@ -279,13 +278,6 @@ RenderTableRow* RenderTableRow::createAnonymousWithParentRenderer(const RenderOb
     RefPtr<RenderStyle> newStyle = RenderStyle::createAnonymousStyleWithDisplay(parent->style(), TABLE_ROW);
     newRow->setStyle(newStyle.release());
     return newRow;
-}
-
-void RenderTableRow::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Rendering);
-    RenderBox::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_children, "children");
 }
 
 } // namespace WebCore

@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -29,14 +29,11 @@
 #include "core/dom/Document.h"
 #include "core/dom/DocumentStyleSheetCollection.h"
 #include "core/page/Frame.h"
-#include "core/page/GroupSettings.h"
 #include "core/page/Page.h"
-#include "core/storage/StorageNamespace.h"
 
 namespace WebCore {
 
 PageGroup::PageGroup()
-    : m_groupSettings(GroupSettings::create())
 {
 }
 
@@ -69,16 +66,6 @@ void PageGroup::removePage(Page* page)
     ASSERT(page);
     ASSERT(m_pages.contains(page));
     m_pages.remove(page);
-}
-
-StorageNamespace* PageGroup::localStorage()
-{
-    if (!m_localStorage) {
-        unsigned quota = m_groupSettings->localStorageQuotaBytes();
-        m_localStorage = StorageNamespace::localStorageNamespace(quota);
-    }
-
-    return m_localStorage.get();
 }
 
 void PageGroup::addUserStyleSheet(const String& source, const KURL& url,

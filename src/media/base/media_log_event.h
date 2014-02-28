@@ -5,7 +5,7 @@
 #ifndef MEDIA_BASE_MEDIA_LOG_EVENT_H_
 #define MEDIA_BASE_MEDIA_LOG_EVENT_H_
 
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 
 namespace media {
@@ -87,12 +87,15 @@ struct MediaLogEvent {
     // Errors reported by Media Source Extensions code.
     MEDIA_SOURCE_ERROR,
     // params: "error": Error string describing the error detected.
+
+    // A property has changed without any special event occurring.
+    PROPERTY_CHANGE,
   };
 
   int32 id;
   Type type;
   base::DictionaryValue params;
-  base::Time time;
+  base::TimeTicks time;
 };
 
 }  // namespace media

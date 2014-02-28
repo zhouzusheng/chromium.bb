@@ -24,19 +24,19 @@
  */
 
 #include "config.h"
+#include "core/rendering/RenderTableSection.h"
+
+// FIXME: Remove 'RuntimeEnabledFeatures.h' when http://crbug.com/78724 is closed.
+#include "RuntimeEnabledFeatures.h"
 #include <limits>
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderTableCell.h"
 #include "core/rendering/RenderTableCol.h"
 #include "core/rendering/RenderTableRow.h"
-#include "core/rendering/RenderTableSection.h"
 #include "core/rendering/RenderView.h"
-#include <wtf/HashSet.h>
-#include <wtf/MemoryInstrumentationHashMap.h>
-#include <wtf/MemoryInstrumentationHashSet.h>
-#include <wtf/MemoryInstrumentationVector.h>
-#include <wtf/Vector.h>
+#include "wtf/HashSet.h"
+#include "wtf/Vector.h"
 
 using namespace std;
 
@@ -48,12 +48,10 @@ using namespace HTMLNames;
 static unsigned gMinTableSizeToUseFastPaintPathWithOverflowingCell = 75 * 75;
 static float gMaxAllowedOverflowingCellRatioForFastPaintPath = 0.1f;
 
-static inline void setRowLogicalHeightToRowStyleLogicalHeightIfNotRelative(RenderTableSection::RowStruct& row)
+static inline void setRowLogicalHeightToRowStyleLogicalHeight(RenderTableSection::RowStruct& row)
 {
     ASSERT(row.rowRenderer);
     row.logicalHeight = row.rowRenderer->style()->logicalHeight();
-    if (row.logicalHeight.isRelative())
-        row.logicalHeight = Length();
 }
 
 static inline void updateLogicalHeightForCell(RenderTableSection::RowStruct& row, const RenderTableCell* cell)
@@ -63,7 +61,7 @@ static inline void updateLogicalHeightForCell(RenderTableSection::RowStruct& row
         return;
 
     Length logicalHeight = cell->style()->logicalHeight();
-    if (logicalHeight.isPositive() || (logicalHeight.isRelative() && logicalHeight.value() >= 0)) {
+    if (logicalHeight.isPositive()) {
         Length cRowLogicalHeight = row.logicalHeight;
         switch (logicalHeight.type()) {
         case Percent:
@@ -76,7 +74,6 @@ static inline void updateLogicalHeightForCell(RenderTableSection::RowStruct& row
                 || (cRowLogicalHeight.isFixed() && cRowLogicalHeight.value() < logicalHeight.value()))
                 row.logicalHeight = logicalHeight;
             break;
-        case Relative:
         default:
             break;
         }
@@ -174,7 +171,7 @@ void RenderTableSection::addChild(RenderObject* child, RenderObject* beforeChild
     row->setRowIndex(insertionRow);
 
     if (!beforeChild)
-        setRowLogicalHeightToRowStyleLogicalHeightIfNotRelative(m_grid[insertionRow]);
+        setRowLogicalHeightToRowStyleLogicalHeight(m_grid[insertionRow]);
 
     if (beforeChild && beforeChild->parent() != this)
         beforeChild = splitAnonymousBoxesAroundChild(beforeChild);
@@ -255,6 +252,250 @@ void RenderTableSection::addCell(RenderTableCell* cell, RenderTableRow* row)
     cell->setCol(table()->effColToCol(col));
 }
 
+void RenderTableSection::populateSpanningRowsHeightFromCell(RenderTableCell* cell, struct SpanningRowsHeight& spanningRowsHeight)
+{
+    const unsigned rowSpan = cell->rowSpan();
+    const unsigned rowIndex = cell->rowIndex();
+
+    spanningRowsHeight.spanningCellHeightIgnoringBorderSpacing = cell->logicalHeightForRowSizing();
+
+    spanningRowsHeight.rowHeight.resize(rowSpan);
+    spanningRowsHeight.totalRowsHeight = 0;
+    for (unsigned row = 0; row < rowSpan; row++) {
+        unsigned actualRow = row + rowIndex;
+        spanningRowsHeight.rowHeight[row] = m_rowPos[actualRow + 1] - m_rowPos[actualRow] - borderSpacingForRow(actualRow);
+        spanningRowsHeight.totalRowsHeight += spanningRowsHeight.rowHeight[row];
+        spanningRowsHeight.spanningCellHeightIgnoringBorderSpacing -= borderSpacingForRow(actualRow);
+    }
+    // We don't span the following row so its border-spacing (if any) should be included.
+    spanningRowsHeight.spanningCellHeightIgnoringBorderSpacing += borderSpacingForRow(rowIndex + rowSpan - 1);
+}
+
+void RenderTableSection::distributeExtraRowSpanHeightToPercentRows(RenderTableCell* cell, int totalPercent, int& extraRowSpanningHeight, Vector<int>& rowsHeight)
+{
+    if (!extraRowSpanningHeight || !totalPercent)
+        return;
+
+    const unsigned rowSpan = cell->rowSpan();
+    const unsigned rowIndex = cell->rowIndex();
+    int percent = min(totalPercent, 100);
+    const int tableHeight = m_rowPos[m_grid.size()] + extraRowSpanningHeight;
+
+    // Our algorithm matches Firefox. Extra spanning height would be distributed Only in first percent height rows
+    // those total percent is 100. Other percent rows would be uneffected even extra spanning height is remain.
+    int accumulatedPositionIncrease = 0;
+    for (unsigned row = rowIndex; row < (rowIndex + rowSpan); row++) {
+        if (percent > 0 && extraRowSpanningHeight > 0) {
+            if (m_grid[row].logicalHeight.isPercent()) {
+                int toAdd = (tableHeight * m_grid[row].logicalHeight.percent() / 100) - rowsHeight[row - rowIndex];
+                // FIXME: Note that this is wrong if we have a percentage above 100% and may make us grow
+                // above the available space.
+
+                toAdd = min(toAdd, extraRowSpanningHeight);
+                accumulatedPositionIncrease += toAdd;
+                extraRowSpanningHeight -= toAdd;
+                percent -= m_grid[row].logicalHeight.percent();
+            }
+        }
+        m_rowPos[row + 1] += accumulatedPositionIncrease;
+    }
+}
+
+void RenderTableSection::distributeExtraRowSpanHeightToAutoRows(RenderTableCell* cell, int totalAutoRowsHeight, int& extraRowSpanningHeight, Vector<int>& rowsHeight)
+{
+    if (!extraRowSpanningHeight || !totalAutoRowsHeight)
+        return;
+
+    const unsigned rowSpan = cell->rowSpan();
+    const unsigned rowIndex = cell->rowIndex();
+    int accumulatedPositionIncrease = 0;
+    int remainder = 0;
+
+    // Aspect ratios of auto rows should not change otherwise table may look different than user expected.
+    // So extra height distributed in auto spanning rows based on their weight in spanning cell.
+    for (unsigned row = rowIndex; row < (rowIndex + rowSpan); row++) {
+        if (m_grid[row].logicalHeight.isAuto()) {
+            accumulatedPositionIncrease += (extraRowSpanningHeight * rowsHeight[row - rowIndex]) / totalAutoRowsHeight;
+            remainder += (extraRowSpanningHeight * rowsHeight[row - rowIndex]) % totalAutoRowsHeight;
+
+            // While whole extra spanning height is distributing in auto spanning rows, rational parts remains
+            // in every integer division. So accumulating all remainder part in integer division and when total remainder
+            // is equvalent to divisor then 1 unit increased in row position.
+            // Note that this algorithm is biased towards adding more space towards the lower rows.
+            if (remainder >= totalAutoRowsHeight) {
+                remainder -= totalAutoRowsHeight;
+                accumulatedPositionIncrease++;
+            }
+        }
+        m_rowPos[row + 1] += accumulatedPositionIncrease;
+    }
+
+    ASSERT(!remainder);
+
+    extraRowSpanningHeight -= accumulatedPositionIncrease;
+}
+
+void RenderTableSection::distributeExtraRowSpanHeightToRemainingRows(RenderTableCell* cell, int totalRemainingRowsHeight, int& extraRowSpanningHeight, Vector<int>& rowsHeight)
+{
+    if (!extraRowSpanningHeight || !totalRemainingRowsHeight)
+        return;
+
+    const unsigned rowSpan = cell->rowSpan();
+    const unsigned rowIndex = cell->rowIndex();
+    int accumulatedPositionIncrease = 0;
+    int remainder = 0;
+
+    // Aspect ratios of the rows should not change otherwise table may look different than user expected.
+    // So extra height distribution in remaining spanning rows based on their weight in spanning cell.
+    for (unsigned row = rowIndex; row < (rowIndex + rowSpan); row++) {
+        if (!m_grid[row].logicalHeight.isPercent()) {
+            accumulatedPositionIncrease += (extraRowSpanningHeight * rowsHeight[row - rowIndex]) / totalRemainingRowsHeight;
+            remainder += (extraRowSpanningHeight * rowsHeight[row - rowIndex]) % totalRemainingRowsHeight;
+
+            // While whole extra spanning height is distributing in remaining spanning rows, rational parts remains
+            // in every integer division. So accumulating all remainder part in integer division and when total remainder
+            // is equvalent to divisor then 1 unit increased in row position.
+            // Note that this algorithm is biased towards adding more space towards the lower rows.
+            if (remainder >= totalRemainingRowsHeight) {
+                remainder -= totalRemainingRowsHeight;
+                accumulatedPositionIncrease++;
+            }
+        }
+        m_rowPos[row + 1] += accumulatedPositionIncrease;
+    }
+
+    ASSERT(!remainder);
+
+    extraRowSpanningHeight -= accumulatedPositionIncrease;
+}
+
+// To avoid unneeded extra height distributions, we apply the following sorting algorithm:
+// 1. We sort by increasing start row but decreasing last row (ie the top-most, shortest cells first).
+// 2. For cells spanning the same rows, we sort by intrinsic size.
+static bool compareRowSpanCellsInHeightDistributionOrder(const RenderTableCell* cell2, const RenderTableCell* cell1)
+{
+    unsigned cellRowIndex1 = cell1->rowIndex();
+    unsigned cellRowSpan1 = cell1->rowSpan();
+    unsigned cellRowIndex2 = cell2->rowIndex();
+    unsigned cellRowSpan2 = cell2->rowSpan();
+
+    if (cellRowIndex1 == cellRowIndex2 && cellRowSpan1 == cellRowSpan2)
+        return (cell2->logicalHeightForRowSizing() > cell1->logicalHeightForRowSizing());
+
+    return (cellRowIndex2 >= cellRowIndex1 && (cellRowIndex2 + cellRowSpan2) <= (cellRowIndex1 + cellRowSpan1));
+}
+
+// Distribute rowSpan cell height in rows those comes in rowSpan cell based on the ratio of row's height if
+// 1. RowSpan cell height is greater then the total height of rows in rowSpan cell
+void RenderTableSection::distributeRowSpanHeightToRows(SpanningRenderTableCells& rowSpanCells)
+{
+    ASSERT(rowSpanCells.size());
+
+    // 'rowSpanCells' list is already sorted based on the cells rowIndex in ascending order
+    // Arrange row spanning cell in the order in which we need to process first.
+    std::sort(rowSpanCells.begin(), rowSpanCells.end(), compareRowSpanCellsInHeightDistributionOrder);
+
+    unsigned extraHeightToPropagate = 0;
+    unsigned lastRowIndex = 0;
+    unsigned lastRowSpan = 0;
+
+    for (unsigned i = 0; i < rowSpanCells.size(); i++) {
+        RenderTableCell* cell = rowSpanCells[i];
+
+        unsigned rowIndex = cell->rowIndex();
+
+        unsigned rowSpan = cell->rowSpan();
+
+        unsigned spanningCellEndIndex = rowIndex + rowSpan;
+        unsigned lastSpanningCellEndIndex = lastRowIndex + lastRowSpan;
+
+        // Only heightest spanning cell will distribute it's extra height in row if more then one spanning cells
+        // present at same level.
+        if (rowIndex == lastRowIndex && rowSpan == lastRowSpan)
+            continue;
+
+        int originalBeforePosition = m_rowPos[spanningCellEndIndex];
+
+        // When 2 spanning cells are ending at same row index then while extra height distribution of first spanning
+        // cell updates position of the last row so getting the original position of the last row in second spanning
+        // cell need to reduce the height changed by first spanning cell.
+        if (spanningCellEndIndex == lastSpanningCellEndIndex)
+            originalBeforePosition -= extraHeightToPropagate;
+
+        if (extraHeightToPropagate) {
+            for (unsigned row = lastSpanningCellEndIndex + 1; row <= spanningCellEndIndex; row++)
+                m_rowPos[row] += extraHeightToPropagate;
+        }
+
+        lastRowIndex = rowIndex;
+        lastRowSpan = rowSpan;
+
+        struct SpanningRowsHeight spanningRowsHeight;
+
+        populateSpanningRowsHeightFromCell(cell, spanningRowsHeight);
+
+        if (!spanningRowsHeight.totalRowsHeight || spanningRowsHeight.spanningCellHeightIgnoringBorderSpacing <= spanningRowsHeight.totalRowsHeight)
+            continue;
+
+        int totalPercent = 0;
+        int totalAutoRowsHeight = 0;
+        int totalRemainingRowsHeight = spanningRowsHeight.totalRowsHeight;
+
+        // FIXME: Inner spanning cell height should not change if it have fixed height when it's parent spanning cell
+        // is distributing it's extra height in rows.
+
+        // Calculate total percentage, total auto rows height and total rows height except percent rows.
+        for (unsigned row = rowIndex; row < spanningCellEndIndex; row++) {
+            if (m_grid[row].logicalHeight.isPercent()) {
+                totalPercent += m_grid[row].logicalHeight.percent();
+                totalRemainingRowsHeight -= spanningRowsHeight.rowHeight[row - rowIndex];
+            } else if (m_grid[row].logicalHeight.isAuto()) {
+                totalAutoRowsHeight += spanningRowsHeight.rowHeight[row - rowIndex];
+            }
+        }
+
+        int extraRowSpanningHeight = spanningRowsHeight.spanningCellHeightIgnoringBorderSpacing - spanningRowsHeight.totalRowsHeight;
+
+        distributeExtraRowSpanHeightToPercentRows(cell, totalPercent, extraRowSpanningHeight, spanningRowsHeight.rowHeight);
+        distributeExtraRowSpanHeightToAutoRows(cell, totalAutoRowsHeight, extraRowSpanningHeight, spanningRowsHeight.rowHeight);
+        distributeExtraRowSpanHeightToRemainingRows(cell, totalRemainingRowsHeight, extraRowSpanningHeight, spanningRowsHeight.rowHeight);
+
+        ASSERT(!extraRowSpanningHeight);
+
+        // Getting total changed height in the table
+        extraHeightToPropagate = m_rowPos[spanningCellEndIndex] - originalBeforePosition;
+    }
+
+    if (extraHeightToPropagate) {
+        // Apply changed height by rowSpan cells to rows present at the end of the table
+        for (unsigned row = lastRowIndex + lastRowSpan + 1; row <= m_grid.size(); row++)
+            m_rowPos[row] += extraHeightToPropagate;
+    }
+}
+
+// Find out the baseline of the cell
+// If the cell's baseline is more then the row's baseline then the cell's baseline become the row's baseline
+// and if the row's baseline goes out of the row's boundries then adjust row height accordingly.
+void RenderTableSection::updateBaselineForCell(RenderTableCell* cell, unsigned row, LayoutUnit& baselineDescent)
+{
+    if (!cell->isBaselineAligned())
+        return;
+
+    // Ignoring the intrinsic padding as it depends on knowing the row's baseline, which won't be accurate
+    // until the end of this function.
+    LayoutUnit baselinePosition = cell->cellBaselinePosition() - cell->intrinsicPaddingBefore();
+    if (baselinePosition > cell->borderBefore() + (cell->paddingBefore() - cell->intrinsicPaddingBefore())) {
+        m_grid[row].baseline = max(m_grid[row].baseline, baselinePosition);
+
+        int cellStartRowBaselineDescent = 0;
+        if (cell->rowSpan() == 1) {
+            baselineDescent = max(baselineDescent, cell->logicalHeightForRowSizing() - baselinePosition);
+            cellStartRowBaselineDescent = baselineDescent;
+        }
+        m_rowPos[row + 1] = max<int>(m_rowPos[row + 1], m_rowPos[row] + m_grid[row].baseline + cellStartRowBaselineDescent);
+    }
+}
+
 static LayoutUnit shezOffsetFromLogicalTopOfFirstPage(LayoutState* layoutState)
 {
     ASSERT(layoutState);
@@ -287,13 +528,13 @@ int RenderTableSection::calcRowLogicalHeight()
 
     RenderTableCell* cell;
 
-    int spacing = table()->vBorderSpacing();
-    
     RenderView* viewRenderer = view();
     LayoutStateMaintainer statePusher(viewRenderer);
 
     m_rowPos.resize(m_grid.size() + 1);
-    m_rowPos[0] = spacing;
+    m_rowPos[0] = table()->vBorderSpacing();
+
+    SpanningRenderTableCells rowSpanCells;
 
     for (unsigned r = 0; r < m_grid.size(); r++) {
         m_grid[r].baseline = 0;
@@ -312,13 +553,26 @@ int RenderTableSection::calcRowLogicalHeight()
                 if (current.inColSpan && cell->rowSpan() == 1)
                     continue;
 
-                // FIXME: We are always adding the height of a rowspan to the last rows which doesn't match
-                // other browsers. See webkit.org/b/52185 for example.
-                if ((cell->rowIndex() + cell->rowSpan() - 1) != r)
-                    continue;
+                if (RuntimeEnabledFeatures::rowSpanLogicalHeightSpreadingEnabled()) {
+                    if (cell->rowSpan() > 1) {
+                        // For row spanning cells, we only handle them for the first row they span. This ensures we take their baseline into account.
+                        if (cell->rowIndex() == r) {
+                            rowSpanCells.append(cell);
 
-                // For row spanning cells, |r| is the last row in the span.
-                unsigned cellStartRow = cell->rowIndex();
+                            // Find out the baseline. The baseline is set on the first row in a rowSpan.
+                            updateBaselineForCell(cell, r, baselineDescent);
+                        }
+                        continue;
+                    }
+
+                    ASSERT(cell->rowSpan() == 1);
+                } else {
+                    // FIXME: We add all the logical row of a rowspan to the last rows
+                    // until crbug.com/78724 is fixed and the runtime flag removed.
+                    // This avoids propagating temporary regressions while we fix the bug.
+                    if ((cell->rowIndex() + cell->rowSpan() - 1) != r)
+                        continue;
+                }
 
                 if (cell->hasOverrideHeight()) {
                     if (!statePusher.didPush()) {
@@ -328,35 +582,34 @@ int RenderTableSection::calcRowLogicalHeight()
                     }
                     cell->clearIntrinsicPadding();
                     cell->clearOverrideSize();
-                    cell->setChildNeedsLayout(true, MarkOnlyThis);
-                    cell->layoutIfNeeded();
+                    cell->forceChildLayout();
                 }
 
-                int cellLogicalHeight = cell->logicalHeightForRowSizing();
-                m_rowPos[r + 1] = max(m_rowPos[r + 1], m_rowPos[cellStartRow] + cellLogicalHeight);
+                if (RuntimeEnabledFeatures::rowSpanLogicalHeightSpreadingEnabled()) {
+                    m_rowPos[r + 1] = max(m_rowPos[r + 1], m_rowPos[r] + cell->logicalHeightForRowSizing());
 
-                // Find out the baseline. The baseline is set on the first row in a rowspan.
-                if (cell->isBaselineAligned()) {
-                    LayoutUnit baselinePosition = cell->cellBaselinePosition();
-                    if (baselinePosition > cell->borderBefore() + cell->paddingBefore()) {
-                        m_grid[cellStartRow].baseline = max(m_grid[cellStartRow].baseline, baselinePosition);
-                        // The descent of a cell that spans multiple rows does not affect the height of the first row it spans, so don't let it
-                        // become the baseline descent applied to the rest of the row. Also we don't account for the baseline descent of
-                        // non-spanning cells when computing a spanning cell's extent.
-                        int cellStartRowBaselineDescent = 0;
-                        if (cell->rowSpan() == 1) {
-                            baselineDescent = max(baselineDescent, cellLogicalHeight - (baselinePosition - cell->intrinsicPaddingBefore()));
-                            cellStartRowBaselineDescent = baselineDescent;
-                        }
-                        m_rowPos[cellStartRow + 1] = max<int>(m_rowPos[cellStartRow + 1], m_rowPos[cellStartRow] + m_grid[cellStartRow].baseline + cellStartRowBaselineDescent);
-                    }
+                    // Find out the baseline.
+                    updateBaselineForCell(cell, r, baselineDescent);
+                } else {
+                    // For row spanning cells, |r| is the last row in the span.
+                    unsigned cellStartRow = cell->rowIndex();
+
+                    m_rowPos[r + 1] = max(m_rowPos[r + 1], m_rowPos[cellStartRow] + cell->logicalHeightForRowSizing());
+
+                    // Find out the baseline.
+                    updateBaselineForCell(cell, cellStartRow, baselineDescent);
                 }
             }
         }
 
         // Add the border-spacing to our final position.
-        m_rowPos[r + 1] += m_grid[r].rowRenderer ? spacing : 0;
+        m_rowPos[r + 1] += borderSpacingForRow(r);
         m_rowPos[r + 1] = max(m_rowPos[r + 1], m_rowPos[r]);
+    }
+
+    if (!rowSpanCells.isEmpty()) {
+        ASSERT(RuntimeEnabledFeatures::rowSpanLogicalHeightSpreadingEnabled());
+        distributeRowSpanHeightToRows(rowSpanCells);
     }
 
     if (view()->layoutState()->pageLogicalHeight()) {
@@ -417,7 +670,7 @@ void RenderTableSection::layout()
     }
 
     statePusher.pop();
-    setNeedsLayout(false);
+    clearNeedsLayout();
 }
 
 void RenderTableSection::distributeExtraLogicalHeightToPercentRows(int& extraLogicalHeight, int totalPercent)
@@ -587,7 +840,7 @@ redoLayout:
                 if (!o->isText() && o->style()->logicalHeight().isPercent() && (flexAllChildren || o->isReplaced() || (o->isBox() && toRenderBox(o)->scrollsOverflow()))) {
                     // Tables with no sections do not flex.
                     if (!o->isTable() || toRenderTable(o)->hasSections()) {
-                        o->setNeedsLayout(true, MarkOnlyThis);
+                        o->setNeedsLayout(MarkOnlyThis);
                         cellChildrenFlex = true;
                     }
                 }
@@ -603,7 +856,7 @@ redoLayout:
                     while (box != cell) {
                         if (box->normalChildNeedsLayout())
                             break;
-                        box->setChildNeedsLayout(true, MarkOnlyThis);
+                        box->setChildNeedsLayout(MarkOnlyThis);
                         box = box->containingBlock();
                         ASSERT(box);
                         if (!box)
@@ -614,12 +867,11 @@ redoLayout:
             }
 
             if (cellChildrenFlex) {
-                cell->setChildNeedsLayout(true, MarkOnlyThis);
                 // Alignment within a cell is based off the calculated
                 // height, which becomes irrelevant once the cell has
                 // been resized based off its percentage.
                 cell->setOverrideLogicalContentHeightFromRowHeight(rHeight);
-                cell->layoutIfNeeded();
+                cell->forceChildLayout();
 
                 // If the baseline moved, we may have to update the data for our row. Find out the new baseline.
                 if (cell->isBaselineAligned()) {
@@ -636,7 +888,7 @@ redoLayout:
             setLogicalPositionForCell(cell, c);
 
             if (!cell->needsLayout() && view()->layoutState()->pageLogicalHeight() && view()->layoutState()->pageLogicalOffset(cell, cell->logicalTop()) != cell->pageLogicalOffset())
-                cell->setChildNeedsLayout(true, MarkOnlyThis);
+                cell->setChildNeedsLayout(MarkOnlyThis);
 
             cell->layoutIfNeeded();
 
@@ -957,7 +1209,7 @@ void RenderTableSection::paint(PaintInfo& paintInfo, const LayoutPoint& paintOff
     // avoid crashing on bugs that cause us to paint with dirty layout
     if (needsLayout())
         return;
-    
+
     unsigned totalRows = m_grid.size();
     unsigned totalCols = table()->columns().size();
 
@@ -967,7 +1219,7 @@ void RenderTableSection::paint(PaintInfo& paintInfo, const LayoutPoint& paintOff
     LayoutPoint adjustedPaintOffset = paintOffset + location();
 
     PaintPhase phase = paintInfo.phase;
-    bool pushedClip = pushContentsClip(paintInfo, adjustedPaintOffset);
+    bool pushedClip = pushContentsClip(paintInfo, adjustedPaintOffset, ForceContentsClip);
     paintObject(paintInfo, adjustedPaintOffset);
     if (pushedClip)
         popContentsClip(paintInfo, phase, adjustedPaintOffset);
@@ -1042,7 +1294,7 @@ LayoutRect RenderTableSection::logicalRectForWritingModeAndDirection(const Layou
 
 CellSpan RenderTableSection::dirtiedRows(const LayoutRect& damageRect) const
 {
-    if (m_forceSlowPaintPathWithOverflowingCell) 
+    if (m_forceSlowPaintPathWithOverflowingCell)
         return fullTableRowSpan();
 
     CellSpan coveredRows = spannedRows(damageRect);
@@ -1059,7 +1311,7 @@ CellSpan RenderTableSection::dirtiedRows(const LayoutRect& damageRect) const
 
 CellSpan RenderTableSection::dirtiedColumns(const LayoutRect& damageRect) const
 {
-    if (m_forceSlowPaintPathWithOverflowingCell) 
+    if (m_forceSlowPaintPathWithOverflowingCell)
         return fullTableColumnSpan();
 
     CellSpan coveredColumns = spannedColumns(damageRect);
@@ -1256,7 +1508,7 @@ void RenderTableSection::recalcCells()
             RenderTableRow* tableRow = toRenderTableRow(row);
             m_grid[insertionRow].rowRenderer = tableRow;
             tableRow->setRowIndex(insertionRow);
-            setRowLogicalHeightToRowStyleLogicalHeightIfNotRelative(m_grid[insertionRow]);
+            setRowLogicalHeightToRowStyleLogicalHeight(m_grid[insertionRow]);
 
             for (RenderObject* cell = row->firstChild(); cell; cell = cell->nextSibling()) {
                 if (!cell->isTableCell())
@@ -1269,7 +1521,7 @@ void RenderTableSection::recalcCells()
     }
 
     m_grid.shrinkToFit();
-    setNeedsLayout(true);
+    setNeedsLayout();
 }
 
 // FIXME: This function could be made O(1) in certain cases (like for the non-most-constrainive cells' case).
@@ -1278,7 +1530,7 @@ void RenderTableSection::rowLogicalHeightChanged(unsigned rowIndex)
     if (needsCellRecalc())
         return;
 
-    setRowLogicalHeightToRowStyleLogicalHeightIfNotRelative(m_grid[rowIndex]);
+    setRowLogicalHeightToRowStyleLogicalHeight(m_grid[rowIndex]);
 
     for (RenderObject* cell = m_grid[rowIndex].rowRenderer->firstChild(); cell; cell = cell->nextSibling()) {
         if (!cell->isTableCell())
@@ -1298,7 +1550,7 @@ void RenderTableSection::setNeedsCellRecalc()
 unsigned RenderTableSection::numColumns() const
 {
     unsigned result = 0;
-    
+
     for (unsigned r = 0; r < m_grid.size(); ++r) {
         for (unsigned c = result; c < table()->numEffCols(); ++c) {
             const CellStruct& cell = cellAt(r, c);
@@ -1306,7 +1558,7 @@ unsigned RenderTableSection::numColumns() const
                 result = c;
         }
     }
-    
+
     return result + 1;
 }
 
@@ -1439,7 +1691,7 @@ void RenderTableSection::removeCachedCollapsedBorders(const RenderTableCell* cel
 {
     if (!table()->collapseBorders())
         return;
-    
+
     for (int side = CBSBefore; side <= CBSEnd; ++side)
         m_cellsCollapsedBorders.remove(make_pair(cell, side));
 }
@@ -1461,7 +1713,7 @@ CollapsedBorderValue& RenderTableSection::cachedCollapsedBorder(const RenderTabl
 RenderTableSection* RenderTableSection::createAnonymousWithParentRenderer(const RenderObject* parent)
 {
     RefPtr<RenderStyle> newStyle = RenderStyle::createAnonymousStyleWithDisplay(parent->style(), TABLE_ROW_GROUP);
-    RenderTableSection* newSection = new (parent->renderArena()) RenderTableSection(0);
+    RenderTableSection* newSection = new RenderTableSection(0);
     newSection->setDocumentForAnonymous(parent->document());
     newSection->setStyle(newStyle.release());
     return newSection;
@@ -1482,31 +1734,6 @@ void RenderTableSection::setLogicalPositionForCell(RenderTableCell* cell, unsign
 
     cell->setLogicalLocation(cellLocation);
     view()->addLayoutDelta(oldCellLocation - cell->location());
-}
-
-void RenderTableSection::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Rendering);
-    RenderBox::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_children, "children");
-    info.addMember(m_grid, "grid");
-    info.addMember(m_rowPos, "rowPos");
-    info.addMember(m_overflowingCells, "overflowingCells");
-    info.addMember(m_cellsCollapsedBorders, "cellsCollapsedBorders");
-}
-
-void RenderTableSection::RowStruct::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Rendering);
-    info.addMember(row, "row");
-    info.addMember(rowRenderer, "rowRenderer");
-    info.addMember(logicalHeight, "logicalHeight");
-}
-
-void RenderTableSection::CellStruct::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Rendering);
-    info.addMember(cells, "cells");
 }
 
 } // namespace WebCore

@@ -25,7 +25,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -39,12 +39,13 @@
 namespace WebCore {
 
     class AudioContext;
-    class DedicatedWorkerContext;
     class DOMApplicationCache;
     class DOMWindow;
+    class DedicatedWorkerGlobalScope;
     class Event;
     class EventListener;
     class EventSource;
+    class ExceptionState;
     class FileReader;
     class FileWriter;
     class IDBDatabase;
@@ -63,15 +64,13 @@ namespace WebCore {
     class ScriptExecutionContext;
     class ScriptProcessorNode;
     class SharedWorker;
-    class SharedWorkerContext;
+    class SharedWorkerGlobalScope;
     class TextTrack;
     class TextTrackCue;
     class WebSocket;
     class Worker;
     class XMLHttpRequest;
     class XMLHttpRequestUpload;
-
-    typedef int ExceptionCode;
 
     struct FiringEventIterator {
         FiringEventIterator(const AtomicString& eventType, size_t& iterator, size_t& end)
@@ -112,7 +111,7 @@ namespace WebCore {
         virtual bool removeEventListener(const AtomicString& eventType, EventListener*, bool useCapture);
         virtual void removeAllEventListeners();
         virtual bool dispatchEvent(PassRefPtr<Event>);
-        bool dispatchEvent(PassRefPtr<Event>, ExceptionCode&); // DOM API
+        bool dispatchEvent(PassRefPtr<Event>, ExceptionState&); // DOM API
         virtual void uncaughtExceptionInEventHandler();
 
         // Used for legacy "onEvent" attribute APIs.
@@ -121,6 +120,7 @@ namespace WebCore {
 
         bool hasEventListeners();
         bool hasEventListeners(const AtomicString& eventType);
+        bool hasCapturingEventListeners(const AtomicString& eventType);
         const EventListenerVector& getEventListeners(const AtomicString& eventType);
 
         bool fireEventListeners(Event*);
@@ -128,14 +128,15 @@ namespace WebCore {
 
     protected:
         virtual ~EventTarget();
-        
+
         virtual EventTargetData* eventTargetData() = 0;
         virtual EventTargetData* ensureEventTargetData() = 0;
 
     private:
         virtual void refEventTarget() = 0;
         virtual void derefEventTarget() = 0;
-        
+
+        DOMWindow* executingWindow();
         void fireEventListeners(Event*, EventTargetData*, EventListenerVector&);
 
         bool clearAttributeEventListener(const AtomicString& eventType, DOMWrapperWorld* isolatedWorld);
@@ -165,9 +166,13 @@ namespace WebCore {
         EventListener* on##attribute(DOMWrapperWorld* isolatedWorld) { return getAttributeEventListener(eventNames().eventName##Event, isolatedWorld); } \
         void setOn##attribute(PassRefPtr<EventListener> listener, DOMWrapperWorld* isolatedWorld) { setAttributeEventListener(eventNames().eventName##Event, listener, isolatedWorld); } \
 
-    #define DEFINE_FORWARDING_ATTRIBUTE_EVENT_LISTENER(recipient, attribute) \
-        EventListener* on##attribute(DOMWrapperWorld* isolatedWorld) { return recipient ? recipient->getAttributeEventListener(eventNames().attribute##Event, isolatedWorld) : 0; } \
-        void setOn##attribute(PassRefPtr<EventListener> listener, DOMWrapperWorld* isolatedWorld) { if (recipient) recipient->setAttributeEventListener(eventNames().attribute##Event, listener, isolatedWorld); } \
+    #define DECLARE_FORWARDING_ATTRIBUTE_EVENT_LISTENER(recipient, attribute) \
+        EventListener* on##attribute(DOMWrapperWorld* isolatedWorld); \
+        void setOn##attribute(PassRefPtr<EventListener> listener, DOMWrapperWorld* isolatedWorld);
+
+    #define DEFINE_FORWARDING_ATTRIBUTE_EVENT_LISTENER(type, recipient, attribute) \
+        EventListener* type::on##attribute(DOMWrapperWorld* isolatedWorld) { return recipient ? recipient->getAttributeEventListener(eventNames().attribute##Event, isolatedWorld) : 0; } \
+        void type::setOn##attribute(PassRefPtr<EventListener> listener, DOMWrapperWorld* isolatedWorld) { if (recipient) recipient->setAttributeEventListener(eventNames().attribute##Event, listener, isolatedWorld); }
 
     inline bool EventTarget::isFiringEventListeners()
     {
@@ -191,6 +196,14 @@ namespace WebCore {
         if (!d)
             return false;
         return d->eventListenerMap.contains(eventType);
+    }
+
+    inline bool EventTarget::hasCapturingEventListeners(const AtomicString& eventType)
+    {
+        EventTargetData* d = eventTargetData();
+        if (!d)
+            return false;
+        return d->eventListenerMap.containsCapturing(eventType);
     }
 
 } // namespace WebCore

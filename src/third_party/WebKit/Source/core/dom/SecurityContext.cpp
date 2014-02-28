@@ -27,11 +27,10 @@
 #include "config.h"
 #include "core/dom/SecurityContext.h"
 
-#include <wtf/text/StringBuilder.h>
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/page/ContentSecurityPolicy.h"
 #include "weborigin/SecurityOrigin.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -90,18 +89,17 @@ SandboxFlags SecurityContext::parseSandboxPolicy(const String& policy, String& i
     // http://www.w3.org/TR/html5/the-iframe-element.html#attr-iframe-sandbox
     // Parse the unordered set of unique space-separated tokens.
     SandboxFlags flags = SandboxAll;
-    const UChar* characters = policy.characters();
     unsigned length = policy.length();
     unsigned start = 0;
     unsigned numberOfTokenErrors = 0;
     StringBuilder tokenErrors;
     while (true) {
-        while (start < length && isHTMLSpace(characters[start]))
+        while (start < length && isHTMLSpace(policy[start]))
             ++start;
         if (start >= length)
             break;
         unsigned end = start + 1;
-        while (end < length && !isHTMLSpace(characters[end]))
+        while (end < length && !isHTMLSpace(policy[end]))
             ++end;
 
         // Turn off the corresponding sandbox flag if it's set as "allowed".
@@ -141,13 +139,6 @@ SandboxFlags SecurityContext::parseSandboxPolicy(const String& policy, String& i
     }
 
     return flags;
-}
-
-void SecurityContext::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    info.addMember(m_securityOrigin, "securityOrigin");
-    info.addMember(m_contentSecurityPolicy, "contentSecurityPolicy");
 }
 
 }

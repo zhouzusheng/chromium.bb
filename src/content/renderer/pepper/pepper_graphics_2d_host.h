@@ -15,29 +15,20 @@
 #include "ppapi/host/host_message_context.h"
 #include "ppapi/host/resource_host.h"
 #include "third_party/WebKit/public/platform/WebCanvas.h"
-#include "webkit/plugins/ppapi/plugin_delegate.h"
 
 namespace gfx {
 class Point;
 class Rect;
 }
 
-namespace webkit {
-namespace ppapi {
-class PPB_ImageData_Impl;
-class PluginInstance;
-}  // namespace ppapi
-}  // namespace webkit
-
-using webkit::ppapi::PPB_ImageData_Impl;
-
 namespace content {
-
+  
+class PepperPluginInstanceImpl;
+class PPB_ImageData_Impl;
 class RendererPpapiHost;
 
 class CONTENT_EXPORT PepperGraphics2DHost
     : public ppapi::host::ResourceHost,
-      public webkit::ppapi::PluginDelegate::PlatformGraphics2D,
       public base::SupportsWeakPtr<PepperGraphics2DHost> {
  public:
   static PepperGraphics2DHost* Create(RendererPpapiHost* host,
@@ -52,23 +43,30 @@ class CONTENT_EXPORT PepperGraphics2DHost
   virtual int32_t OnResourceMessageReceived(
       const IPC::Message& msg,
       ppapi::host::HostMessageContext* context) OVERRIDE;
-  virtual PepperGraphics2DHost* AsPepperGraphics2DHost() OVERRIDE;
+  virtual bool IsGraphics2DHost() OVERRIDE;
 
-  // PlatformGraphics2D overrides.
-  virtual bool ReadImageData(PP_Resource image,
-                             const PP_Point* top_left) OVERRIDE;
-  virtual bool BindToInstance(
-      webkit::ppapi::PluginInstance* new_instance) OVERRIDE;
-  virtual void Paint(WebKit::WebCanvas* canvas,
-                     const gfx::Rect& plugin_rect,
-                     const gfx::Rect& paint_rect) OVERRIDE;
-  virtual void ViewWillInitiatePaint() OVERRIDE;
-  virtual void ViewInitiatedPaint() OVERRIDE;
-  virtual void ViewFlushedPaint() OVERRIDE;
-  virtual void SetScale(float scale) OVERRIDE;
-  virtual float GetScale() const OVERRIDE;
-  virtual bool IsAlwaysOpaque() const OVERRIDE;
-  virtual PPB_ImageData_Impl* ImageData() OVERRIDE;
+  bool ReadImageData(PP_Resource image,
+                     const PP_Point* top_left);
+  // Assciates this device with the given plugin instance. You can pass NULL
+  // to clear the existing device. Returns true on success. In this case, a
+  // repaint of the page will also be scheduled. Failure means that the device
+  // is already bound to a different instance, and nothing will happen.
+  bool BindToInstance(PepperPluginInstanceImpl* new_instance);
+  // Paints the current backing store to the web page.
+  void Paint(WebKit::WebCanvas* canvas,
+             const gfx::Rect& plugin_rect,
+             const gfx::Rect& paint_rect);
+
+  // Notifications about the view's progress painting.  See PluginInstance.
+  // These messages are used to send Flush callbacks to the plugin.
+  void ViewWillInitiatePaint();
+  void ViewInitiatedPaint();
+  void ViewFlushedPaint();
+
+  void SetScale(float scale);
+  float GetScale() const;
+  bool IsAlwaysOpaque() const;
+  PPB_ImageData_Impl* ImageData();
 
  private:
   PepperGraphics2DHost(RendererPpapiHost* host,
@@ -142,7 +140,7 @@ class CONTENT_EXPORT PepperGraphics2DHost
 
   // Non-owning pointer to the plugin instance this context is currently bound
   // to, if any. If the context is currently unbound, this will be NULL.
-  webkit::ppapi::PluginInstance* bound_instance_;
+  PepperPluginInstanceImpl* bound_instance_;
 
   // Keeps track of all drawing commands queued before a Flush call.
   struct QueuedOperation;

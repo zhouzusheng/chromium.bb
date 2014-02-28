@@ -36,9 +36,9 @@
 
 #include "core/css/CSSPropertySourceData.h"
 
-#include <wtf/StaticConstructors.h>
-#include <wtf/text/StringBuilder.h>
-#include <wtf/text/StringHash.h>
+#include "wtf/StaticConstructors.h"
+#include "wtf/text/StringBuilder.h"
+#include "wtf/text/StringHash.h"
 
 namespace WebCore {
 
@@ -91,7 +91,7 @@ CSSPropertySourceData::CSSPropertySourceData()
 
 String CSSPropertySourceData::toString() const
 {
-    DEFINE_STATIC_LOCAL(String, emptyValue, (ASCIILiteral("e")));
+    DEFINE_STATIC_LOCAL(String, emptyValue, ("e"));
     if (!name && value == emptyValue)
         return String();
 

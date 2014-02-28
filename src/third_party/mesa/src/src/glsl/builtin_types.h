@@ -24,10 +24,15 @@
 const glsl_type glsl_type::_error_type =
    glsl_type(GL_INVALID_ENUM, GLSL_TYPE_ERROR, 0, 0, "");
 
-const glsl_type glsl_type::void_type =
+const glsl_type glsl_type::_void_type =
    glsl_type(GL_INVALID_ENUM, GLSL_TYPE_VOID, 0, 0, "void");
 
+const glsl_type glsl_type::_sampler3D_type =
+   glsl_type(GL_SAMPLER_3D, GLSL_SAMPLER_DIM_3D, 0, 0, GLSL_TYPE_FLOAT,
+	     "sampler3D");
+
 const glsl_type *const glsl_type::error_type = & glsl_type::_error_type;
+const glsl_type *const glsl_type::void_type = & glsl_type::_void_type;
 
 /** \name Core built-in types
  *
@@ -58,7 +63,12 @@ const glsl_type glsl_type::builtin_core_types[] = {
 };
 
 const glsl_type *const glsl_type::bool_type  = & builtin_core_types[0];
+const glsl_type *const glsl_type::bvec2_type = & builtin_core_types[1];
+const glsl_type *const glsl_type::bvec3_type = & builtin_core_types[2];
+const glsl_type *const glsl_type::bvec4_type = & builtin_core_types[3];
 const glsl_type *const glsl_type::int_type   = & builtin_core_types[4];
+const glsl_type *const glsl_type::ivec2_type = & builtin_core_types[5];
+const glsl_type *const glsl_type::ivec3_type = & builtin_core_types[6];
 const glsl_type *const glsl_type::ivec4_type = & builtin_core_types[7];
 const glsl_type *const glsl_type::float_type = & builtin_core_types[8];
 const glsl_type *const glsl_type::vec2_type = & builtin_core_types[9];
@@ -180,8 +190,6 @@ const glsl_type glsl_type::builtin_110_types[] = {
 	     "sampler1DShadow"),
    glsl_type(GL_SAMPLER_2D_SHADOW, GLSL_SAMPLER_DIM_2D, 1, 0, GLSL_TYPE_FLOAT,
 	     "sampler2DShadow"),
-   glsl_type(GL_SAMPLER_3D,   GLSL_SAMPLER_DIM_3D, 0, 0, GLSL_TYPE_FLOAT,
-	     "sampler3D"),
 };
 /*@}*/
 
@@ -251,7 +259,21 @@ const glsl_type glsl_type::builtin_130_types[] = {
 };
 
 const glsl_type *const glsl_type::uint_type = & builtin_130_types[0];
+const glsl_type *const glsl_type::uvec2_type = & builtin_130_types[1];
+const glsl_type *const glsl_type::uvec3_type = & builtin_130_types[2];
 const glsl_type *const glsl_type::uvec4_type = & builtin_130_types[3];
+/*@}*/
+
+
+/** \name Types added in GLSL 1.40
+ */
+/*@{*/
+const glsl_type glsl_type::builtin_140_types[] = {
+   glsl_type(GL_INT_SAMPLER_2D_RECT,
+	     GLSL_SAMPLER_DIM_RECT, 0, 0, GLSL_TYPE_INT, "isampler2DRect"),
+   glsl_type(GL_UNSIGNED_INT_SAMPLER_2D_RECT,
+	     GLSL_SAMPLER_DIM_RECT, 0, 0, GLSL_TYPE_UINT, "usampler2DRect"),
+};
 /*@}*/
 
 /** \name Sampler types added by GL_ARB_texture_rectangle
@@ -273,9 +295,9 @@ const glsl_type glsl_type::builtin_ARB_texture_rectangle_types[] = {
 const glsl_type glsl_type::builtin_EXT_texture_array_types[] = {
    glsl_type(GL_SAMPLER_1D_ARRAY,
 	     GLSL_SAMPLER_DIM_1D, 0, 1, GLSL_TYPE_FLOAT, "sampler1DArray"),
-   glsl_type(GL_SAMPLER_1D_ARRAY_SHADOW,
-	     GLSL_SAMPLER_DIM_2D, 0, 1, GLSL_TYPE_FLOAT, "sampler2DArray"),
    glsl_type(GL_SAMPLER_2D_ARRAY,
+	     GLSL_SAMPLER_DIM_2D, 0, 1, GLSL_TYPE_FLOAT, "sampler2DArray"),
+   glsl_type(GL_SAMPLER_1D_ARRAY_SHADOW,
 	     GLSL_SAMPLER_DIM_1D, 1, 1, GLSL_TYPE_FLOAT, "sampler1DArrayShadow"),
    glsl_type(GL_SAMPLER_2D_ARRAY_SHADOW,
 	     GLSL_SAMPLER_DIM_2D, 1, 1, GLSL_TYPE_FLOAT, "sampler2DArrayShadow"),
@@ -293,5 +315,15 @@ const glsl_type glsl_type::builtin_EXT_texture_buffer_object_types[] = {
 	     GLSL_SAMPLER_DIM_BUF, 0, 0,   GLSL_TYPE_INT, "isamplerBuffer"),
    glsl_type(GL_UNSIGNED_INT_SAMPLER_BUFFER,
 	     GLSL_SAMPLER_DIM_BUF, 0, 0,  GLSL_TYPE_UINT, "usamplerBuffer"),
+};
+/*@}*/
+
+/** \name Sampler types added by GL_OES_EGL_image_external
+ */
+/*@{*/
+
+const glsl_type glsl_type::builtin_OES_EGL_image_external_types[] = {
+   glsl_type(GL_SAMPLER_EXTERNAL_OES,
+	     GLSL_SAMPLER_DIM_EXTERNAL, 0, 0, GLSL_TYPE_FLOAT, "samplerExternalOES"),
 };
 /*@}*/

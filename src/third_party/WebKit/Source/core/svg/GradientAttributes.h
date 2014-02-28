@@ -20,8 +20,7 @@
 #ifndef GradientAttributes_h
 #define GradientAttributes_h
 
-#include "core/svg/SVGGradientElement.h"
-#include "core/svg/SVGLength.h"
+#include "core/svg/SVGUnitTypes.h"
 
 namespace WebCore {
 
@@ -63,7 +62,7 @@ struct GradientAttributes {
     {
         m_stops = value;
         m_stopsSet = true;
-    } 
+    }
 
     bool hasSpreadMethod() const { return m_spreadMethodSet; }
     bool hasGradientUnits() const { return m_gradientUnitsSet; }

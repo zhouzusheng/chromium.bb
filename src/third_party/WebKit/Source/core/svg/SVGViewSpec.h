@@ -29,6 +29,7 @@
 
 namespace WebCore {
 
+class ExceptionState;
 class SVGElement;
 class SVGTransformListPropertyTearOff;
 
@@ -60,7 +61,7 @@ public:
 
     SVGZoomAndPanType zoomAndPan() const { return m_zoomAndPan; }
     void setZoomAndPan(unsigned short zoomAndPan) { setZoomAndPanBaseValue(zoomAndPan); }
-    void setZoomAndPan(unsigned short, ExceptionCode&);
+    void setZoomAndPan(unsigned short, ExceptionState&);
     void setZoomAndPanBaseValue(unsigned short zoomAndPan) { m_zoomAndPan = SVGZoomAndPan::parseFromNumber(zoomAndPan); }
 
     SVGElement* contextElement() const { return m_contextElement; }
@@ -71,19 +72,19 @@ public:
     SVGTransformList transformBaseValue() const { return m_transform; }
 
     // Custom animated 'viewBox' property.
-    PassRefPtr<SVGAnimatedRect> viewBoxAnimated();
-    FloatRect& viewBox() { return m_viewBox; }
+    PassRefPtr<SVGAnimatedRect> viewBox();
+    FloatRect& viewBoxCurrentValue() { return m_viewBox; }
     FloatRect viewBoxBaseValue() const { return m_viewBox; }
     void setViewBoxBaseValue(const FloatRect& viewBox) { m_viewBox = viewBox; }
 
     // Custom animated 'preserveAspectRatio' property.
-    PassRefPtr<SVGAnimatedPreserveAspectRatio> preserveAspectRatioAnimated();
-    SVGPreserveAspectRatio& preserveAspectRatio() { return m_preserveAspectRatio; }
+    PassRefPtr<SVGAnimatedPreserveAspectRatio> preserveAspectRatio();
+    SVGPreserveAspectRatio& preserveAspectRatioCurrentValue() { return m_preserveAspectRatio; }
     SVGPreserveAspectRatio preserveAspectRatioBaseValue() const { return m_preserveAspectRatio; }
     void setPreserveAspectRatioBaseValue(const SVGPreserveAspectRatio& preserveAspectRatio) { m_preserveAspectRatio = preserveAspectRatio; }
 
 private:
-    SVGViewSpec(SVGElement*);
+    explicit SVGViewSpec(SVGElement*);
 
     static const SVGPropertyInfo* transformPropertyInfo();
     static const SVGPropertyInfo* viewBoxPropertyInfo();
@@ -96,6 +97,9 @@ private:
     static PassRefPtr<SVGAnimatedProperty> lookupOrCreateTransformWrapper(SVGViewSpec* contextElement);
     static PassRefPtr<SVGAnimatedProperty> lookupOrCreateViewBoxWrapper(SVGViewSpec* contextElement);
     static PassRefPtr<SVGAnimatedProperty> lookupOrCreatePreserveAspectRatioWrapper(SVGViewSpec* contextElement);
+
+    template<typename CharType>
+    bool parseViewSpecInternal(const CharType* ptr, const CharType* end);
 
     SVGElement* m_contextElement;
     SVGZoomAndPanType m_zoomAndPan;

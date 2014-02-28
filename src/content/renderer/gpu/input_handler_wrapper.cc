@@ -4,6 +4,7 @@
 
 #include "content/renderer/gpu/input_handler_wrapper.h"
 
+#include "base/message_loop/message_loop_proxy.h"
 #include "content/renderer/gpu/input_event_filter.h"
 #include "content/renderer/gpu/input_handler_manager.h"
 #include "third_party/WebKit/public/platform/Platform.h"
@@ -49,11 +50,8 @@ WebKit::WebGestureCurve* InputHandlerWrapper::CreateFlingAnimationCurve(
       deviceSource, velocity, cumulative_scroll);
 }
 
-void InputHandlerWrapper::DidOverscroll(gfx::Vector2dF accumulated_overscroll,
-                                        gfx::Vector2dF current_fling_velocity) {
-  input_handler_manager_->DidOverscroll(routing_id_,
-                                        accumulated_overscroll,
-                                        current_fling_velocity);
+void InputHandlerWrapper::DidOverscroll(const cc::DidOverscrollParams& params) {
+  input_handler_manager_->DidOverscroll(routing_id_, params);
 }
 
 }  // namespace content

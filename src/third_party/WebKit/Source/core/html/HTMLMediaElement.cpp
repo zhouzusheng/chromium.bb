@@ -28,6 +28,8 @@
 
 #include "HTMLNames.h"
 #include "RuntimeEnabledFeatures.h"
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptEventListener.h"
 #include "core/css/MediaList.h"
@@ -36,11 +38,10 @@
 #include "core/dom/Event.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
-#include "core/dom/FullscreenController.h"
+#include "core/dom/FullscreenElementStack.h"
 #include "core/dom/NodeRenderingContext.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/html/HTMLMediaSource.h"
 #include "core/html/HTMLSourceElement.h"
 #include "core/html/HTMLTrackElement.h"
 #include "core/html/MediaController.h"
@@ -67,14 +68,11 @@
 #include "core/platform/graphics/InbandTextTrackPrivate.h"
 #include "core/platform/graphics/MediaPlayer.h"
 #include "core/rendering/RenderVideo.h"
-#include "modules/mediasource/MediaSourceBase.h"
-#include "modules/mediasource/MediaSourceRegistry.h"
 #include "modules/mediastream/MediaStreamRegistry.h"
 #include "public/platform/Platform.h"
 #include "weborigin/SecurityOrigin.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/MathExtras.h"
-#include "wtf/MemoryInstrumentationVector.h"
 #include "wtf/NonCopyingSort.h"
 #include "wtf/Uint8Array.h"
 #include "wtf/text/CString.h"
@@ -154,19 +152,21 @@ static void removeElementFromDocumentMap(HTMLMediaElement* element, Document* do
         map.add(document, set);
 }
 
-static ExceptionCode exceptionCodeForMediaKeyException(MediaPlayer::MediaKeyException exception)
+static void throwExceptionForMediaKeyException(MediaPlayer::MediaKeyException exception, ExceptionState& es)
 {
     switch (exception) {
     case MediaPlayer::NoError:
-        return 0;
+        return;
     case MediaPlayer::InvalidPlayerState:
-        return INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
+        return;
     case MediaPlayer::KeySystemNotSupported:
-        return NOT_SUPPORTED_ERR;
+        es.throwDOMException(NotSupportedError);
+        return;
     }
 
     ASSERT_NOT_REACHED();
-    return INVALID_STATE_ERR;
+    return;
 }
 
 class TrackDisplayUpdateScope {
@@ -188,7 +188,7 @@ private:
 
 static bool canLoadURL(const KURL& url, const ContentType& contentType, const String& keySystem)
 {
-    DEFINE_STATIC_LOCAL(const String, codecs, (ASCIILiteral("codecs")));
+    DEFINE_STATIC_LOCAL(const String, codecs, ("codecs"));
 
     String contentMIMEType = contentType.type().lower();
     String contentTypeCodecs = contentType.parameter(codecs);
@@ -197,16 +197,6 @@ static bool canLoadURL(const KURL& url, const ContentType& contentType, const St
     if (contentMIMEType.isEmpty() || contentMIMEType == "application/octet-stream" || contentMIMEType == "text/plain") {
         if (url.protocolIsData())
             contentMIMEType = mimeTypeFromDataURL(url.string());
-        else {
-            String lastPathComponent = url.lastPathComponent();
-            size_t pos = lastPathComponent.reverseFind('.');
-            if (pos != notFound) {
-                String extension = lastPathComponent.substring(pos + 1);
-                String mediaType = MIMETypeRegistry::getMediaMIMETypeForExtension(extension);
-                if (!mediaType.isEmpty())
-                    return true;
-            }
-        }
     }
 
     // If no MIME type is specified, always attempt to load.
@@ -226,7 +216,7 @@ static bool canLoadURL(const KURL& url, const ContentType& contentType, const St
 
 WebMimeRegistry::SupportsType HTMLMediaElement::supportsType(const ContentType& contentType, const String& keySystem)
 {
-    DEFINE_STATIC_LOCAL(const String, codecs, (ASCIILiteral("codecs")));
+    DEFINE_STATIC_LOCAL(const String, codecs, ("codecs"));
 
     if (!RuntimeEnabledFeatures::mediaEnabled())
         return WebMimeRegistry::IsNotSupported;
@@ -265,6 +255,7 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tagName, Document* docum
     , m_volume(1.0f)
     , m_lastSeekTime(0)
     , m_previousProgressTime(numeric_limits<double>::max())
+    , m_duration(numeric_limits<double>::quiet_NaN())
     , m_lastTimeUpdateEventWallTime(0)
     , m_lastTimeUpdateEventMovieTime(numeric_limits<double>::max())
     , m_loadState(WaitingForSource)
@@ -351,7 +342,20 @@ HTMLMediaElement::~HTMLMediaElement()
     // us to dispatch an abort event, which would result in a crash.
     // See http://crbug.com/233654 for more details.
     m_completelyLoaded = true;
+
+    // Destroying the player may cause a resource load to be canceled,
+    // which could result in Document::dispatchWindowLoadEvent() being
+    // called via ResourceFetch::didLoadResource() then
+    // FrameLoader::loadDone(). To prevent load event dispatching during
+    // object destruction, we use Document::incrementLoadEventDelayCount().
+    // See http://crbug.com/275223 for more details.
+    document()->incrementLoadEventDelayCount();
     m_player.clear();
+#if ENABLE(WEB_AUDIO)
+    if (audioSourceProvider())
+        audioSourceProvider()->setClient(0);
+#endif
+    document()->decrementLoadEventDelayCount();
 }
 
 void HTMLMediaElement::didMoveToNewDocument(Document* oldDocument)
@@ -498,19 +502,12 @@ bool HTMLMediaElement::rendererIsNeeded(const NodeRenderingContext& context)
 
 RenderObject* HTMLMediaElement::createRenderer(RenderStyle*)
 {
-    return new (document()->renderArena()) RenderMedia(this);
+    return new RenderMedia(this);
 }
 
 bool HTMLMediaElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
 {
-    if (!hasMediaControls())
-        return false;
-    // <media> doesn't allow its content, including shadow subtree, to
-    // be rendered. So this should return false for most of the children.
-    // One exception is a shadow tree built for rendering controls which should be visible.
-    // So we let them go here by comparing its subtree root with one of the controls.
-    return (mediaControls()->treeScope() == childContext.node()->treeScope()
-            && childContext.isOnUpperEncapsulationBoundary() && HTMLElement::childShouldCreateRenderer(childContext));
+    return hasMediaControls() && HTMLElement::childShouldCreateRenderer(childContext);
 }
 
 Node::InsertionNotificationRequest HTMLMediaElement::insertedInto(ContainerNode* insertionPoint)
@@ -636,10 +633,10 @@ String HTMLMediaElement::canPlayType(const String& mimeType, const String& keySy
             canPlay = emptyString();
             break;
         case WebMimeRegistry::MayBeSupported:
-            canPlay = ASCIILiteral("maybe");
+            canPlay = "maybe";
             break;
         case WebMimeRegistry::IsSupported:
-            canPlay = ASCIILiteral("probably");
+            canPlay = "probably";
             break;
     }
 
@@ -730,6 +727,7 @@ void HTMLMediaElement::prepareForLoad()
 
     m_playedTimeRanges = TimeRanges::create();
     m_lastSeekTime = 0;
+    m_duration = numeric_limits<double>::quiet_NaN();
 
     // The spec doesn't say to block the load event until we actually run the asynchronous section
     // algorithm, but do it now because we won't start that until after the timer fires and the
@@ -903,14 +901,22 @@ void HTMLMediaElement::loadResource(const KURL& initialURL, ContentType& content
     ASSERT(!m_mediaSource);
 
     if (url.protocolIs(mediaSourceBlobProtocol))
-        m_mediaSource = MediaSourceRegistry::registry().lookupMediaSource(url.string());
+        m_mediaSource = HTMLMediaSource::lookup(url.string());
 
-    if (m_mediaSource)
-        m_player->load(url, m_mediaSource);
-    else if (canLoadURL(url, contentType, keySystem))
+    if (m_mediaSource) {
+        if (m_mediaSource->attachToElement(this)) {
+            m_player->load(url, m_mediaSource);
+        } else {
+            // Forget our reference to the MediaSource, so we leave it alone
+            // while processing remainder of load failure.
+            m_mediaSource = 0;
+            mediaLoadingFailed(MediaPlayer::FormatError);
+        }
+    } else if (canLoadURL(url, contentType, keySystem)) {
         m_player->load(url);
-    else
+    } else {
         mediaLoadingFailed(MediaPlayer::FormatError);
+    }
 
     // If there is no poster to display, allow the media engine to render video frames as soon as
     // they are available.
@@ -1014,7 +1020,7 @@ void HTMLMediaElement::updateActiveTextTrackCues(double movieTime)
     // element. (In the other cases, such as explicit seeks, relevant events get
     // fired as part of the overall process of changing the current playback
     // position.)
-    if (m_lastSeekTime <= lastTime)
+    if (!m_seeking && m_lastSeekTime <= lastTime)
         scheduleTimeupdateEvent(false);
 
     // Explicitly cache vector sizes, as their content is constant from here.
@@ -1271,9 +1277,11 @@ void HTMLMediaElement::endIgnoringTrackDisplayUpdateRequests()
         updateActiveTextTrackCues(currentTime());
 }
 
-void HTMLMediaElement::textTrackAddCues(TextTrack*, const TextTrackCueList* cues)
+void HTMLMediaElement::textTrackAddCues(TextTrack* track, const TextTrackCueList* cues)
 {
     LOG(Media, "HTMLMediaElement::textTrackAddCues");
+    if (track->mode() == TextTrack::disabledKeyword())
+        return;
 
     TrackDisplayUpdateScope scope(this);
     for (size_t i = 0; i < cues->length(); ++i)
@@ -1289,8 +1297,11 @@ void HTMLMediaElement::textTrackRemoveCues(TextTrack*, const TextTrackCueList* c
         textTrackRemoveCue(cues->item(i)->track(), cues->item(i));
 }
 
-void HTMLMediaElement::textTrackAddCue(TextTrack*, PassRefPtr<TextTrackCue> cue)
+void HTMLMediaElement::textTrackAddCue(TextTrack* track, PassRefPtr<TextTrackCue> cue)
 {
+    if (track->mode() == TextTrack::disabledKeyword())
+        return;
+
     // Negative duration cues need be treated in the interval tree as
     // zero-length cues.
     double endTime = max(cue->startTime(), cue->endTime());
@@ -1587,11 +1598,13 @@ void HTMLMediaElement::setReadyState(MediaPlayer::ReadyState state)
         return;
 
     if (m_seeking) {
-        // 4.8.10.9, step 11
+        // 4.8.10.9, step 9 note: If the media element was potentially playing immediately before
+        // it started seeking, but seeking caused its readyState attribute to change to a value
+        // lower than HAVE_FUTURE_DATA, then a waiting will be fired at the element.
         if (wasPotentiallyPlaying && m_readyState < HAVE_FUTURE_DATA)
             scheduleEvent(eventNames().waitingEvent);
 
-        // 4.8.10.10 step 14 & 15.
+        // 4.8.10.9 steps 12-14
         if (m_readyState >= HAVE_CURRENT_DATA)
             finishSeek();
     } else {
@@ -1829,15 +1842,15 @@ void HTMLMediaElement::prepareToPlay()
     m_player->prepareToPlay();
 }
 
-void HTMLMediaElement::seek(double time, ExceptionCode& ec)
+void HTMLMediaElement::seek(double time, ExceptionState& es)
 {
     LOG(Media, "HTMLMediaElement::seek(%f)", time);
 
-    // 4.8.9.9 Seeking
+    // 4.8.10.9 Seeking
 
-    // 1 - If the media element's readyState is HAVE_NOTHING, then raise an INVALID_STATE_ERR exception.
+    // 1 - If the media element's readyState is HAVE_NOTHING, then raise an InvalidStateError exception.
     if (m_readyState == HAVE_NOTHING || !m_player) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
 
@@ -1896,6 +1909,8 @@ void HTMLMediaElement::seek(double time, ExceptionCode& ec)
     if (noSeekRequired) {
         if (time == now) {
             scheduleEvent(eventNames().seekingEvent);
+            // FIXME: There must be a stable state before timeupdate+seeked are dispatched and seeking
+            // is reset to false. See http://crbug.com/266631
             scheduleTimeupdateEvent(false);
             scheduleEvent(eventNames().seekedEvent);
         }
@@ -1911,26 +1926,28 @@ void HTMLMediaElement::seek(double time, ExceptionCode& ec)
     m_lastSeekTime = time;
     m_sentEndEvent = false;
 
-    // 8 - Set the current playback position to the given new playback position
-    m_player->seek(time);
-
-    // 9 - Queue a task to fire a simple event named seeking at the element.
+    // 8 - Queue a task to fire a simple event named seeking at the element.
     scheduleEvent(eventNames().seekingEvent);
 
-    // 10 - Queue a task to fire a simple event named timeupdate at the element.
-    scheduleTimeupdateEvent(false);
+    // 9 - Set the current playback position to the given new playback position
+    m_player->seek(time);
 
-    // 11-15 are handled, if necessary, when the engine signals a readystate change.
+    // 10-14 are handled, if necessary, when the engine signals a readystate change or otherwise
+    // satisfies seek completion and signals a time change.
 }
 
 void HTMLMediaElement::finishSeek()
 {
     LOG(Media, "HTMLMediaElement::finishSeek");
 
-    // 4.8.10.9 Seeking step 14
+    // 4.8.10.9 Seeking completion
+    // 12 - Set the seeking IDL attribute to false.
     m_seeking = false;
 
-    // 4.8.10.9 Seeking step 15
+    // 13 - Queue a task to fire a simple event named timeupdate at the element.
+    scheduleTimeupdateEvent(false);
+
+    // 14 - Queue a task to fire a simple event named seeked at the element.
     scheduleEvent(eventNames().seekedEvent);
 
     setDisplayMode(Video);
@@ -1999,13 +2016,13 @@ double HTMLMediaElement::currentTime() const
     return m_cachedTime;
 }
 
-void HTMLMediaElement::setCurrentTime(double time, ExceptionCode& ec)
+void HTMLMediaElement::setCurrentTime(double time, ExceptionState& es)
 {
     if (m_mediaController) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
-    seek(time, ec);
+    seek(time, es);
 }
 
 double HTMLMediaElement::startTime() const
@@ -2025,6 +2042,16 @@ double HTMLMediaElement::duration() const
 {
     if (!m_player || m_readyState < HAVE_METADATA)
         return numeric_limits<double>::quiet_NaN();
+
+    // FIXME: Refactor so m_duration is kept current (in both MSE and
+    // non-MSE cases) once we have transitioned from HAVE_NOTHING ->
+    // HAVE_METADATA. Currently, m_duration may be out of date for at least MSE
+    // case because MediaSourceBase and SourceBuffer do not notify the element
+    // directly upon duration changes caused by endOfStream, remove, or append
+    // operations; rather the notification is triggered by the WebMediaPlayer
+    // implementation observing that the underlying engine has updated duration
+    // and notifying the element to consult its MediaSource for current
+    // duration. See http://crbug.com/266644
 
     if (m_mediaSource)
         return m_mediaSource->duration();
@@ -2112,13 +2139,13 @@ String HTMLMediaElement::preload() const
 {
     switch (m_preload) {
     case MediaPlayer::None:
-        return ASCIILiteral("none");
+        return "none";
         break;
     case MediaPlayer::MetaData:
-        return ASCIILiteral("metadata");
+        return "metadata";
         break;
     case MediaPlayer::Auto:
-        return ASCIILiteral("auto");
+        return "auto";
         break;
     }
 
@@ -2223,15 +2250,15 @@ void HTMLMediaElement::closeMediaSource()
     m_mediaSource = 0;
 }
 
-void HTMLMediaElement::webkitGenerateKeyRequest(const String& keySystem, PassRefPtr<Uint8Array> initData, ExceptionCode& ec)
+void HTMLMediaElement::webkitGenerateKeyRequest(const String& keySystem, PassRefPtr<Uint8Array> initData, ExceptionState& es)
 {
     if (keySystem.isEmpty()) {
-        ec = SYNTAX_ERR;
+        es.throwDOMException(SyntaxError);
         return;
     }
 
     if (!m_player) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
 
@@ -2243,33 +2270,33 @@ void HTMLMediaElement::webkitGenerateKeyRequest(const String& keySystem, PassRef
     }
 
     MediaPlayer::MediaKeyException result = m_player->generateKeyRequest(keySystem, initDataPointer, initDataLength);
-    ec = exceptionCodeForMediaKeyException(result);
+    throwExceptionForMediaKeyException(result, es);
 }
 
-void HTMLMediaElement::webkitGenerateKeyRequest(const String& keySystem, ExceptionCode& ec)
+void HTMLMediaElement::webkitGenerateKeyRequest(const String& keySystem, ExceptionState& es)
 {
-    webkitGenerateKeyRequest(keySystem, Uint8Array::create(0), ec);
+    webkitGenerateKeyRequest(keySystem, Uint8Array::create(0), es);
 }
 
-void HTMLMediaElement::webkitAddKey(const String& keySystem, PassRefPtr<Uint8Array> key, PassRefPtr<Uint8Array> initData, const String& sessionId, ExceptionCode& ec)
+void HTMLMediaElement::webkitAddKey(const String& keySystem, PassRefPtr<Uint8Array> key, PassRefPtr<Uint8Array> initData, const String& sessionId, ExceptionState& es)
 {
     if (keySystem.isEmpty()) {
-        ec = SYNTAX_ERR;
+        es.throwDOMException(SyntaxError);
         return;
     }
 
     if (!key) {
-        ec = SYNTAX_ERR;
+        es.throwDOMException(SyntaxError);
         return;
     }
 
     if (!key->length()) {
-        ec = TYPE_MISMATCH_ERR;
+        es.throwDOMException(TypeMismatchError);
         return;
     }
 
     if (!m_player) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
 
@@ -2281,28 +2308,28 @@ void HTMLMediaElement::webkitAddKey(const String& keySystem, PassRefPtr<Uint8Arr
     }
 
     MediaPlayer::MediaKeyException result = m_player->addKey(keySystem, key->data(), key->length(), initDataPointer, initDataLength, sessionId);
-    ec = exceptionCodeForMediaKeyException(result);
+    throwExceptionForMediaKeyException(result, es);
 }
 
-void HTMLMediaElement::webkitAddKey(const String& keySystem, PassRefPtr<Uint8Array> key, ExceptionCode& ec)
+void HTMLMediaElement::webkitAddKey(const String& keySystem, PassRefPtr<Uint8Array> key, ExceptionState& es)
 {
-    webkitAddKey(keySystem, key, Uint8Array::create(0), String(), ec);
+    webkitAddKey(keySystem, key, Uint8Array::create(0), String(), es);
 }
 
-void HTMLMediaElement::webkitCancelKeyRequest(const String& keySystem, const String& sessionId, ExceptionCode& ec)
+void HTMLMediaElement::webkitCancelKeyRequest(const String& keySystem, const String& sessionId, ExceptionState& es)
 {
     if (keySystem.isEmpty()) {
-        ec = SYNTAX_ERR;
+        es.throwDOMException(SyntaxError);
         return;
     }
 
     if (!m_player) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
 
     MediaPlayer::MediaKeyException result = m_player->cancelKeyRequest(keySystem, sessionId);
-    ec = exceptionCodeForMediaKeyException(result);
+    throwExceptionForMediaKeyException(result, es);
 }
 
 bool HTMLMediaElement::loop() const
@@ -2342,12 +2369,12 @@ double HTMLMediaElement::volume() const
     return m_volume;
 }
 
-void HTMLMediaElement::setVolume(double vol, ExceptionCode& ec)
+void HTMLMediaElement::setVolume(double vol, ExceptionState& es)
 {
     LOG(Media, "HTMLMediaElement::setVolume(%f)", vol);
 
     if (vol < 0.0f || vol > 1.0f) {
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
         return;
     }
 
@@ -2443,7 +2470,8 @@ void HTMLMediaElement::playbackProgressTimerFired(Timer<HTMLMediaElement>*)
         }
     }
 
-    scheduleTimeupdateEvent(true);
+    if (!m_seeking)
+        scheduleTimeupdateEvent(true);
 
     if (!m_playbackRate)
         return;
@@ -2588,7 +2616,7 @@ void HTMLMediaElement::removeAllInbandTracks()
     }
 }
 
-PassRefPtr<TextTrack> HTMLMediaElement::addTextTrack(const String& kind, const String& label, const String& language, ExceptionCode& ec)
+PassRefPtr<TextTrack> HTMLMediaElement::addTextTrack(const String& kind, const String& label, const String& language, ExceptionState& es)
 {
     if (!RuntimeEnabledFeatures::videoTrackEnabled())
         return 0;
@@ -2598,7 +2626,7 @@ PassRefPtr<TextTrack> HTMLMediaElement::addTextTrack(const String& kind, const S
 
     // 1. If kind is not one of the following strings, then throw a SyntaxError exception and abort these steps
     if (!TextTrack::isValidKindKeyword(kind)) {
-        ec = SYNTAX_ERR;
+        es.throwDOMException(SyntaxError);
         return 0;
     }
 
@@ -3078,7 +3106,7 @@ void HTMLMediaElement::mediaPlayerTimeChanged()
 
     invalidateCachedTime();
 
-    // 4.8.10.9 step 14 & 15.  Needed if no ReadyState change is associated with the seek.
+    // 4.8.10.9 steps 12-14. Needed if no ReadyState change is associated with the seek.
     if (m_seeking && m_readyState >= HAVE_CURRENT_DATA && !m_player->seeking())
         finishSeek();
 
@@ -3126,7 +3154,18 @@ void HTMLMediaElement::mediaPlayerTimeChanged()
 void HTMLMediaElement::mediaPlayerDurationChanged()
 {
     LOG(Media, "HTMLMediaElement::mediaPlayerDurationChanged");
+    durationChanged(duration());
+}
 
+void HTMLMediaElement::durationChanged(double duration)
+{
+    LOG(Media, "HTMLMediaElement::durationChanged(%f)", duration);
+
+    // Abort if duration unchanged.
+    if (m_duration == duration)
+        return;
+
+    m_duration = duration;
     scheduleEvent(eventNames().durationchangeEvent);
 
     if (hasMediaControls())
@@ -3134,10 +3173,8 @@ void HTMLMediaElement::mediaPlayerDurationChanged()
     if (renderer())
         renderer()->updateFromElement();
 
-    double now = currentTime();
-    double dur = duration();
-    if (now > dur)
-        seek(dur, IGNORE_EXCEPTION);
+    if (currentTime() > duration)
+        seek(duration, IGNORE_EXCEPTION);
 }
 
 void HTMLMediaElement::mediaPlayerPlaybackStateChanged()
@@ -3180,6 +3217,10 @@ PassRefPtr<TimeRanges> HTMLMediaElement::buffered() const
 {
     if (!m_player)
         return TimeRanges::create();
+
+    if (m_mediaSource)
+        return m_mediaSource->buffered();
+
     return m_player->buffered();
 }
 
@@ -3418,6 +3459,10 @@ void HTMLMediaElement::clearMediaPlayer(int flags)
     closeMediaSource();
 
     m_player.clear();
+#if ENABLE(WEB_AUDIO)
+    if (audioSourceProvider())
+        audioSourceProvider()->setClient(0);
+#endif
     stopPeriodicTimers();
     m_loadTimer.stop();
 
@@ -3496,7 +3541,7 @@ bool HTMLMediaElement::hasPendingActivity() const
 
 bool HTMLMediaElement::isFullscreen() const
 {
-    return FullscreenController::isActiveFullScreenElement(this);
+    return FullscreenElementStack::isActiveFullScreenElement(this);
 }
 
 void HTMLMediaElement::enterFullscreen()
@@ -3504,7 +3549,7 @@ void HTMLMediaElement::enterFullscreen()
     LOG(Media, "HTMLMediaElement::enterFullscreen");
 
     if (document()->settings() && document()->settings()->fullScreenEnabled())
-        FullscreenController::from(document())->requestFullScreenForElement(this, 0, FullscreenController::ExemptIFrameAllowFullScreenRequirement);
+        FullscreenElementStack::from(document())->requestFullScreenForElement(this, 0, FullscreenElementStack::ExemptIFrameAllowFullScreenRequirement);
 }
 
 void HTMLMediaElement::exitFullscreen()
@@ -3512,7 +3557,7 @@ void HTMLMediaElement::exitFullscreen()
     LOG(Media, "HTMLMediaElement::exitFullscreen");
 
     if (document()->settings() && document()->settings()->fullScreenEnabled() && isFullscreen())
-        FullscreenController::from(document())->webkitCancelFullScreen();
+        FullscreenElementStack::from(document())->webkitCancelFullScreen();
 }
 
 void HTMLMediaElement::didBecomeFullscreenElement()
@@ -3946,38 +3991,9 @@ void HTMLMediaElement::removeBehaviorsRestrictionsAfterFirstUserGesture()
     m_restrictions = NoRestrictions;
 }
 
-void HTMLMediaElement::mediaPlayerNeedsStyleRecalc()
+void HTMLMediaElement::mediaPlayerScheduleLayerUpdate()
 {
-    setNeedsStyleRecalc(WebCore::SyntheticStyleChange);
-}
-
-void HTMLMediaElement::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    HTMLElement::reportMemoryUsage(memoryObjectInfo);
-    ActiveDOMObject::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_loadTimer, "loadTimer");
-    info.addMember(m_progressEventTimer, "progressEventTimer");
-    info.addMember(m_playbackProgressTimer, "playbackProgressTimer");
-    info.addMember(m_playedTimeRanges, "playedTimeRanges");
-    info.addMember(m_asyncEventQueue, "asyncEventQueue");
-    info.addMember(m_currentSrc, "currentSrc");
-    info.addMember(m_error, "error");
-    info.addMember(m_currentSourceNode, "currentSourceNode");
-    info.addMember(m_nextChildNodeToConsider, "nextChildNodeToConsider");
-    info.addMember(m_player, "player");
-    info.addMember(m_mediaSource, "mediaSource");
-    info.addMember(m_textTracks, "textTracks");
-    info.addMember(m_textTracksWhenResourceSelectionBegan, "textTracksWhenResourceSelectionBegan");
-    info.addMember(m_cueTree, "cueTree");
-    info.addMember(m_currentlyActiveCues, "currentlyActiveCues");
-    info.addMember(m_mediaGroup, "mediaGroup");
-    info.addMember(m_mediaController, "mediaController");
-
-#if ENABLE(WEB_AUDIO)
-    info.addMember(m_audioSourceNode, "audioSourceNode");
-#endif
-
+    scheduleLayerUpdate();
 }
 
 }

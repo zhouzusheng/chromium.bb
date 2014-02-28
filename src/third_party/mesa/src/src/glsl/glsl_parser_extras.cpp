@@ -26,19 +26,20 @@
 #include <assert.h>
 
 extern "C" {
-#include <talloc.h>
-#include "main/core.h" /* for struct __GLcontextRec */
+#include "main/core.h" /* for struct gl_context */
+#include "main/context.h"
 }
 
+#include "ralloc.h"
 #include "ast.h"
 #include "glsl_parser_extras.h"
 #include "glsl_parser.h"
 #include "ir_optimization.h"
 #include "loop_analysis.h"
-#include "safe_strcmp.h"
 
-_mesa_glsl_parse_state::_mesa_glsl_parse_state(struct __GLcontextRec *ctx,
+_mesa_glsl_parse_state::_mesa_glsl_parse_state(struct gl_context *_ctx,
 					       GLenum target, void *mem_ctx)
+ : ctx(_ctx)
 {
    switch (target) {
    case GL_VERTEX_SHADER:   this->target = vertex_shader; break;
@@ -49,9 +50,12 @@ _mesa_glsl_parse_state::_mesa_glsl_parse_state(struct __GLcontextRec *ctx,
    this->scanner = NULL;
    this->translation_unit.make_empty();
    this->symbols = new(mem_ctx) glsl_symbol_table;
-   this->info_log = talloc_strdup(mem_ctx, "");
+   this->info_log = ralloc_strdup(mem_ctx, "");
    this->error = false;
-   this->loop_or_switch_nesting = NULL;
+   this->loop_nesting_ast = NULL;
+   this->switch_state.switch_nesting_ast = NULL;
+
+   this->num_builtins_to_link = 0;
 
    /* Set default language version and extensions */
    this->language_version = 110;
@@ -80,6 +84,33 @@ _mesa_glsl_parse_state::_mesa_glsl_parse_state(struct __GLcontextRec *ctx,
    this->Const.MaxFragmentUniformComponents = ctx->Const.FragmentProgram.MaxUniformComponents;
 
    this->Const.MaxDrawBuffers = ctx->Const.MaxDrawBuffers;
+
+   const unsigned lowest_version =
+      (ctx->API == API_OPENGLES2) || ctx->Extensions.ARB_ES2_compatibility
+      ? 100 : 110;
+   const unsigned highest_version =
+      _mesa_is_desktop_gl(ctx) ? ctx->Const.GLSLVersion : 100;
+   char *supported = ralloc_strdup(this, "");
+
+   for (unsigned ver = lowest_version; ver <= highest_version; ver += 10) {
+      const char *const prefix = (ver == lowest_version)
+	 ? ""
+	 : ((ver == highest_version) ? ", and " : ", ");
+
+      ralloc_asprintf_append(& supported, "%s%d.%02d%s",
+			     prefix,
+			     ver / 100, ver % 100,
+			     (ver == 100) ? " ES" : "");
+   }
+
+   this->supported_version_string = supported;
+
+   if (ctx->Const.ForceGLSLExtensionsWarn)
+      _mesa_glsl_process_extension("all", NULL, "warn", NULL, this);
+
+   this->default_uniform_qualifier = new(this) ast_type_qualifier();
+   this->default_uniform_qualifier->flags.q.shared = 1;
+   this->default_uniform_qualifier->flags.q.column_major = 1;
 }
 
 const char *
@@ -89,32 +120,55 @@ _mesa_glsl_shader_target_name(enum _mesa_glsl_parser_targets target)
    case vertex_shader:   return "vertex";
    case fragment_shader: return "fragment";
    case geometry_shader: return "geometry";
-   case ir_shader:       break;
    }
 
    assert(!"Should not get here.");
    return "unknown";
 }
 
+/* This helper function will append the given message to the shader's
+   info log and report it via GL_ARB_debug_output. Per that extension,
+   'type' is one of the enum values classifying the message, and
+   'id' is the implementation-defined ID of the given message. */
+static void
+_mesa_glsl_msg(const YYLTYPE *locp, _mesa_glsl_parse_state *state,
+               GLenum type, GLuint id, const char *fmt, va_list ap)
+{
+   bool error = (type == GL_DEBUG_TYPE_ERROR_ARB);
+
+   assert(state->info_log != NULL);
+
+   /* Get the offset that the new message will be written to. */
+   int msg_offset = strlen(state->info_log);
+
+   ralloc_asprintf_append(&state->info_log, "%u:%u(%u): %s: ",
+					    locp->source,
+					    locp->first_line,
+					    locp->first_column,
+					    error ? "error" : "warning");
+   ralloc_vasprintf_append(&state->info_log, fmt, ap);
+
+   const char *const msg = &state->info_log[msg_offset];
+   struct gl_context *ctx = state->ctx;
+   /* Report the error via GL_ARB_debug_output. */
+   if (error)
+      _mesa_shader_debug(ctx, type, id, msg, strlen(msg));
+
+   ralloc_strcat(&state->info_log, "\n");
+}
 
 void
 _mesa_glsl_error(YYLTYPE *locp, _mesa_glsl_parse_state *state,
 		 const char *fmt, ...)
 {
    va_list ap;
+   GLenum type = GL_DEBUG_TYPE_ERROR_ARB;
 
    state->error = true;
 
-   assert(state->info_log != NULL);
-   state->info_log = talloc_asprintf_append(state->info_log,
-					    "%u:%u(%u): error: ",
-					    locp->source,
-					    locp->first_line,
-					    locp->first_column);
    va_start(ap, fmt);
-   state->info_log = talloc_vasprintf_append(state->info_log, fmt, ap);
+   _mesa_glsl_msg(locp, state, type, SHADER_ERROR_UNKNOWN, fmt, ap);
    va_end(ap);
-   state->info_log = talloc_strdup_append(state->info_log, "\n");
 }
 
 
@@ -123,94 +177,255 @@ _mesa_glsl_warning(const YYLTYPE *locp, _mesa_glsl_parse_state *state,
 		   const char *fmt, ...)
 {
    va_list ap;
+   GLenum type = GL_DEBUG_TYPE_OTHER_ARB;
 
-   assert(state->info_log != NULL);
-   state->info_log = talloc_asprintf_append(state->info_log,
-					    "%u:%u(%u): warning: ",
-					    locp->source,
-					    locp->first_line,
-					    locp->first_column);
    va_start(ap, fmt);
-   state->info_log = talloc_vasprintf_append(state->info_log, fmt, ap);
+   _mesa_glsl_msg(locp, state, type, 0, fmt, ap);
    va_end(ap);
-   state->info_log = talloc_strdup_append(state->info_log, "\n");
+}
+
+
+/**
+ * Enum representing the possible behaviors that can be specified in
+ * an #extension directive.
+ */
+enum ext_behavior {
+   extension_disable,
+   extension_enable,
+   extension_require,
+   extension_warn
+};
+
+/**
+ * Element type for _mesa_glsl_supported_extensions
+ */
+struct _mesa_glsl_extension {
+   /**
+    * Name of the extension when referred to in a GLSL extension
+    * statement
+    */
+   const char *name;
+
+   /** True if this extension is available to vertex shaders */
+   bool avail_in_VS;
+
+   /** True if this extension is available to geometry shaders */
+   bool avail_in_GS;
+
+   /** True if this extension is available to fragment shaders */
+   bool avail_in_FS;
+
+   /** True if this extension is available to desktop GL shaders */
+   bool avail_in_GL;
+
+   /** True if this extension is available to GLES shaders */
+   bool avail_in_ES;
+
+   /**
+    * Flag in the gl_extensions struct indicating whether this
+    * extension is supported by the driver, or
+    * &gl_extensions::dummy_true if supported by all drivers.
+    *
+    * Note: the type (GLboolean gl_extensions::*) is a "pointer to
+    * member" type, the type-safe alternative to the "offsetof" macro.
+    * In a nutshell:
+    *
+    * - foo bar::* p declares p to be an "offset" to a field of type
+    *   foo that exists within struct bar
+    * - &bar::baz computes the "offset" of field baz within struct bar
+    * - x.*p accesses the field of x that exists at "offset" p
+    * - x->*p is equivalent to (*x).*p
+    */
+   const GLboolean gl_extensions::* supported_flag;
+
+   /**
+    * Flag in the _mesa_glsl_parse_state struct that should be set
+    * when this extension is enabled.
+    *
+    * See note in _mesa_glsl_extension::supported_flag about "pointer
+    * to member" types.
+    */
+   bool _mesa_glsl_parse_state::* enable_flag;
+
+   /**
+    * Flag in the _mesa_glsl_parse_state struct that should be set
+    * when the shader requests "warn" behavior for this extension.
+    *
+    * See note in _mesa_glsl_extension::supported_flag about "pointer
+    * to member" types.
+    */
+   bool _mesa_glsl_parse_state::* warn_flag;
+
+
+   bool compatible_with_state(const _mesa_glsl_parse_state *state) const;
+   void set_flags(_mesa_glsl_parse_state *state, ext_behavior behavior) const;
+};
+
+#define EXT(NAME, VS, GS, FS, GL, ES, SUPPORTED_FLAG)                   \
+   { "GL_" #NAME, VS, GS, FS, GL, ES, &gl_extensions::SUPPORTED_FLAG,   \
+         &_mesa_glsl_parse_state::NAME##_enable,                        \
+         &_mesa_glsl_parse_state::NAME##_warn }
+
+/**
+ * Table of extensions that can be enabled/disabled within a shader,
+ * and the conditions under which they are supported.
+ */
+static const _mesa_glsl_extension _mesa_glsl_supported_extensions[] = {
+   /*                                  target availability  API availability */
+   /* name                             VS     GS     FS     GL     ES         supported flag */
+   EXT(ARB_conservative_depth,         false, false, true,  true,  false,     ARB_conservative_depth),
+   EXT(ARB_draw_buffers,               false, false, true,  true,  false,     dummy_true),
+   EXT(ARB_draw_instanced,             true,  false, false, true,  false,     ARB_draw_instanced),
+   EXT(ARB_explicit_attrib_location,   true,  false, true,  true,  false,     ARB_explicit_attrib_location),
+   EXT(ARB_fragment_coord_conventions, true,  false, true,  true,  false,     ARB_fragment_coord_conventions),
+   EXT(ARB_texture_rectangle,          true,  false, true,  true,  false,     dummy_true),
+   EXT(EXT_texture_array,              true,  false, true,  true,  false,     EXT_texture_array),
+   EXT(ARB_shader_texture_lod,         true,  false, true,  true,  false,     ARB_shader_texture_lod),
+   EXT(ARB_shader_stencil_export,      false, false, true,  true,  false,     ARB_shader_stencil_export),
+   EXT(AMD_conservative_depth,         false, false, true,  true,  false,     ARB_conservative_depth),
+   EXT(AMD_shader_stencil_export,      false, false, true,  true,  false,     ARB_shader_stencil_export),
+   EXT(OES_texture_3D,                 true,  false, true,  false, true,      EXT_texture3D),
+   EXT(OES_EGL_image_external,         true,  false, true,  false, true,      OES_EGL_image_external),
+   EXT(ARB_shader_bit_encoding,        true,  true,  true,  true,  false,     ARB_shader_bit_encoding),
+   EXT(ARB_uniform_buffer_object,      true,  false, true,  true,  false,     ARB_uniform_buffer_object),
+   EXT(OES_standard_derivatives,       false, false, true,  false,  true,     OES_standard_derivatives),
+};
+
+#undef EXT
+
+
+/**
+ * Determine whether a given extension is compatible with the target,
+ * API, and extension information in the current parser state.
+ */
+bool _mesa_glsl_extension::compatible_with_state(const _mesa_glsl_parse_state *
+                                                 state) const
+{
+   /* Check that this extension matches the type of shader we are
+    * compiling to.
+    */
+   switch (state->target) {
+   case vertex_shader:
+      if (!this->avail_in_VS) {
+         return false;
+      }
+      break;
+   case geometry_shader:
+      if (!this->avail_in_GS) {
+         return false;
+      }
+      break;
+   case fragment_shader:
+      if (!this->avail_in_FS) {
+         return false;
+      }
+      break;
+   default:
+      assert (!"Unrecognized shader target");
+      return false;
+   }
+
+   /* Check that this extension matches whether we are compiling
+    * for desktop GL or GLES.
+    */
+   if (state->es_shader) {
+      if (!this->avail_in_ES) return false;
+   } else {
+      if (!this->avail_in_GL) return false;
+   }
+
+   /* Check that this extension is supported by the OpenGL
+    * implementation.
+    *
+    * Note: the ->* operator indexes into state->extensions by the
+    * offset this->supported_flag.  See
+    * _mesa_glsl_extension::supported_flag for more info.
+    */
+   return state->extensions->*(this->supported_flag);
+}
+
+/**
+ * Set the appropriate flags in the parser state to establish the
+ * given behavior for this extension.
+ */
+void _mesa_glsl_extension::set_flags(_mesa_glsl_parse_state *state,
+                                     ext_behavior behavior) const
+{
+   /* Note: the ->* operator indexes into state by the
+    * offsets this->enable_flag and this->warn_flag.  See
+    * _mesa_glsl_extension::supported_flag for more info.
+    */
+   state->*(this->enable_flag) = (behavior != extension_disable);
+   state->*(this->warn_flag)   = (behavior == extension_warn);
+}
+
+/**
+ * Find an extension by name in _mesa_glsl_supported_extensions.  If
+ * the name is not found, return NULL.
+ */
+static const _mesa_glsl_extension *find_extension(const char *name)
+{
+   for (unsigned i = 0; i < Elements(_mesa_glsl_supported_extensions); ++i) {
+      if (strcmp(name, _mesa_glsl_supported_extensions[i].name) == 0) {
+         return &_mesa_glsl_supported_extensions[i];
+      }
+   }
+   return NULL;
 }
 
 
 bool
 _mesa_glsl_process_extension(const char *name, YYLTYPE *name_locp,
-			     const char *behavior, YYLTYPE *behavior_locp,
+			     const char *behavior_string, YYLTYPE *behavior_locp,
 			     _mesa_glsl_parse_state *state)
 {
-   enum {
-      extension_disable,
-      extension_enable,
-      extension_require,
-      extension_warn
-   } ext_mode;
-
-   if (safe_strcmp(behavior, "warn") == 0) {
-      ext_mode = extension_warn;
-   } else if (safe_strcmp(behavior, "require") == 0) {
-      ext_mode = extension_require;
-   } else if (safe_strcmp(behavior, "enable") == 0) {
-      ext_mode = extension_enable;
-   } else if (safe_strcmp(behavior, "disable") == 0) {
-      ext_mode = extension_disable;
+   ext_behavior behavior;
+   if (strcmp(behavior_string, "warn") == 0) {
+      behavior = extension_warn;
+   } else if (strcmp(behavior_string, "require") == 0) {
+      behavior = extension_require;
+   } else if (strcmp(behavior_string, "enable") == 0) {
+      behavior = extension_enable;
+   } else if (strcmp(behavior_string, "disable") == 0) {
+      behavior = extension_disable;
    } else {
       _mesa_glsl_error(behavior_locp, state,
 		       "Unknown extension behavior `%s'",
-		       behavior);
+		       behavior_string);
       return false;
    }
 
-   bool unsupported = false;
-
-   if (safe_strcmp(name, "all") == 0) {
-      if ((ext_mode == extension_enable) || (ext_mode == extension_require)) {
+   if (strcmp(name, "all") == 0) {
+      if ((behavior == extension_enable) || (behavior == extension_require)) {
 	 _mesa_glsl_error(name_locp, state, "Cannot %s all extensions",
-			  (ext_mode == extension_enable)
+			  (behavior == extension_enable)
 			  ? "enable" : "require");
 	 return false;
-      }
-   } else if (safe_strcmp(name, "GL_ARB_draw_buffers") == 0) {
-      /* This extension is only supported in fragment shaders.
-       */
-      if (state->target != fragment_shader) {
-	 unsupported = true;
       } else {
-	 state->ARB_draw_buffers_enable = (ext_mode != extension_disable);
-	 state->ARB_draw_buffers_warn = (ext_mode == extension_warn);
+         for (unsigned i = 0;
+              i < Elements(_mesa_glsl_supported_extensions); ++i) {
+            const _mesa_glsl_extension *extension
+               = &_mesa_glsl_supported_extensions[i];
+            if (extension->compatible_with_state(state)) {
+               _mesa_glsl_supported_extensions[i].set_flags(state, behavior);
+            }
+         }
       }
-   } else if (safe_strcmp(name, "GL_ARB_fragment_coord_conventions") == 0) {
-      state->ARB_fragment_coord_conventions_enable =
-	 (ext_mode != extension_disable);
-      state->ARB_fragment_coord_conventions_warn =
-	 (ext_mode == extension_warn);
-
-      unsupported = !state->extensions->ARB_fragment_coord_conventions;
-   } else if (safe_strcmp(name, "GL_ARB_texture_rectangle") == 0) {
-      state->ARB_texture_rectangle_enable = (ext_mode != extension_disable);
-      state->ARB_texture_rectangle_warn = (ext_mode == extension_warn);
-   } else if (safe_strcmp(name, "GL_EXT_texture_array") == 0) {
-      state->EXT_texture_array_enable = (ext_mode != extension_disable);
-      state->EXT_texture_array_warn = (ext_mode == extension_warn);
-
-      unsupported = !state->extensions->EXT_texture_array;
    } else {
-      unsupported = true;
-   }
-
-   if (unsupported) {
-      static const char *const fmt = "extension `%s' unsupported in %s shader";
-
-      if (ext_mode == extension_require) {
-	 _mesa_glsl_error(name_locp, state, fmt,
-			  name, _mesa_glsl_shader_target_name(state->target));
-	 return false;
+      const _mesa_glsl_extension *extension = find_extension(name);
+      if (extension && extension->compatible_with_state(state)) {
+         extension->set_flags(state, behavior);
       } else {
-	 _mesa_glsl_warning(name_locp, state, fmt,
-			    name, _mesa_glsl_shader_target_name(state->target));
+         static const char *const fmt = "extension `%s' unsupported in %s shader";
+
+         if (behavior == extension_require) {
+            _mesa_glsl_error(name_locp, state, fmt,
+                             name, _mesa_glsl_shader_target_name(state->target));
+            return false;
+         } else {
+            _mesa_glsl_warning(name_locp, state, fmt,
+                               name, _mesa_glsl_shader_target_name(state->target));
+         }
       }
    }
 
@@ -220,37 +435,37 @@ _mesa_glsl_process_extension(const char *name, YYLTYPE *name_locp,
 void
 _mesa_ast_type_qualifier_print(const struct ast_type_qualifier *q)
 {
-   if (q->constant)
+   if (q->flags.q.constant)
       printf("const ");
 
-   if (q->invariant)
+   if (q->flags.q.invariant)
       printf("invariant ");
 
-   if (q->attribute)
+   if (q->flags.q.attribute)
       printf("attribute ");
 
-   if (q->varying)
+   if (q->flags.q.varying)
       printf("varying ");
 
-   if (q->in && q->out) 
+   if (q->flags.q.in && q->flags.q.out)
       printf("inout ");
    else {
-      if (q->in)
+      if (q->flags.q.in)
 	 printf("in ");
 
-      if (q->out)
+      if (q->flags.q.out)
 	 printf("out ");
    }
 
-   if (q->centroid)
+   if (q->flags.q.centroid)
       printf("centroid ");
-   if (q->uniform)
+   if (q->flags.q.uniform)
       printf("uniform ");
-   if (q->smooth)
+   if (q->flags.q.smooth)
       printf("smooth ");
-   if (q->flat)
+   if (q->flags.q.flat)
       printf("flat ");
-   if (q->noperspective)
+   if (q->flags.q.noperspective)
       printf("noperspective ");
 }
 
@@ -355,7 +570,7 @@ ast_expression::print(void) const
       printf("? ");
       subexpressions[1]->print();
       printf(": ");
-      subexpressions[1]->print();
+      subexpressions[2]->print();
       break;
 
    case ast_array_index:
@@ -431,6 +646,7 @@ ast_expression::ast_expression(int oper,
    this->subexpressions[0] = ex0;
    this->subexpressions[1] = ex1;
    this->subexpressions[2] = ex2;
+   this->non_lvalue_description = NULL;
 }
 
 
@@ -512,7 +728,7 @@ ast_declaration::print(void) const
 }
 
 
-ast_declaration::ast_declaration(char *identifier, int is_array,
+ast_declaration::ast_declaration(const char *identifier, int is_array,
 				 ast_expression *array_size,
 				 ast_expression *initializer)
 {
@@ -549,6 +765,7 @@ ast_declarator_list::ast_declarator_list(ast_fully_specified_type *type)
 {
    this->type = type;
    this->invariant = false;
+   this->ubo_qualifiers_valid = false;
 }
 
 void
@@ -608,6 +825,106 @@ ast_selection_statement::ast_selection_statement(ast_expression *condition,
    this->condition = condition;
    this->then_statement = then_statement;
    this->else_statement = else_statement;
+}
+
+
+void
+ast_switch_statement::print(void) const
+{
+   printf("switch ( ");
+   test_expression->print();
+   printf(") ");
+
+   body->print();
+}
+
+
+ast_switch_statement::ast_switch_statement(ast_expression *test_expression,
+					   ast_node *body)
+{
+   this->test_expression = test_expression;
+   this->body = body;
+}
+
+
+void
+ast_switch_body::print(void) const
+{
+   printf("{\n");
+   if (stmts != NULL) {
+      stmts->print();
+   }
+   printf("}\n");
+}
+
+
+ast_switch_body::ast_switch_body(ast_case_statement_list *stmts)
+{
+   this->stmts = stmts;
+}
+
+
+void ast_case_label::print(void) const
+{
+   if (test_value != NULL) {
+      printf("case ");
+      test_value->print();
+      printf(": ");
+   } else {
+      printf("default: ");
+   }
+}
+
+
+ast_case_label::ast_case_label(ast_expression *test_value)
+{
+   this->test_value = test_value;
+}
+
+
+void ast_case_label_list::print(void) const
+{
+   foreach_list_const(n, & this->labels) {
+      ast_node *ast = exec_node_data(ast_node, n, link);
+      ast->print();
+   }
+   printf("\n");
+}
+
+
+ast_case_label_list::ast_case_label_list(void)
+{
+}
+
+
+void ast_case_statement::print(void) const
+{
+   labels->print();
+   foreach_list_const(n, & this->stmts) {
+      ast_node *ast = exec_node_data(ast_node, n, link);
+      ast->print();
+      printf("\n");
+   }
+}
+
+
+ast_case_statement::ast_case_statement(ast_case_label_list *labels)
+{
+   this->labels = labels;
+}
+
+
+void ast_case_statement_list::print(void) const
+{
+   foreach_list_const(n, & this->cases) {
+      ast_node *ast = exec_node_data(ast_node, n, link);
+      ast->print();
+   }
+}
+
+
+ast_case_statement_list::ast_case_statement_list(void)
+{
 }
 
 
@@ -678,34 +995,54 @@ ast_struct_specifier::print(void) const
 }
 
 
-ast_struct_specifier::ast_struct_specifier(char *identifier,
-					   ast_node *declarator_list)
+ast_struct_specifier::ast_struct_specifier(const char *identifier,
+					   ast_declarator_list *declarator_list)
 {
    if (identifier == NULL) {
       static unsigned anon_count = 1;
-      identifier = talloc_asprintf(this, "#anon_struct_%04x", anon_count);
+      identifier = ralloc_asprintf(this, "#anon_struct_%04x", anon_count);
       anon_count++;
    }
    name = identifier;
    this->declarations.push_degenerate_list_at_head(&declarator_list->link);
 }
 
+/**
+ * Do the set of common optimizations passes
+ *
+ * \param ir                          List of instructions to be optimized
+ * \param linked                      Is the shader linked?  This enables
+ *                                    optimizations passes that remove code at
+ *                                    global scope and could cause linking to
+ *                                    fail.
+ * \param uniform_locations_assigned  Have locations already been assigned for
+ *                                    uniforms?  This prevents the declarations
+ *                                    of unused uniforms from being removed.
+ *                                    The setting of this flag only matters if
+ *                                    \c linked is \c true.
+ * \param max_unroll_iterations       Maximum number of loop iterations to be
+ *                                    unrolled.  Setting to 0 forces all loops
+ *                                    to be unrolled.
+ */
 bool
-do_common_optimization(exec_list *ir, bool linked, unsigned max_unroll_iterations)
+do_common_optimization(exec_list *ir, bool linked,
+		       bool uniform_locations_assigned,
+		       unsigned max_unroll_iterations)
 {
    GLboolean progress = GL_FALSE;
 
-   progress = do_sub_to_add_neg(ir) || progress;
+   progress = lower_instructions(ir, SUB_TO_ADD_NEG) || progress;
 
    if (linked) {
       progress = do_function_inlining(ir) || progress;
       progress = do_dead_functions(ir) || progress;
+      progress = do_structure_splitting(ir) || progress;
    }
-   progress = do_structure_splitting(ir) || progress;
    progress = do_if_simplification(ir) || progress;
    progress = do_copy_propagation(ir) || progress;
+   progress = do_copy_propagation_elements(ir) || progress;
    if (linked)
-      progress = do_dead_code(ir) || progress;
+      progress = do_dead_code(ir, uniform_locations_assigned) || progress;
    else
       progress = do_dead_code_unlinked(ir) || progress;
    progress = do_dead_code_local(ir) || progress;
@@ -722,11 +1059,14 @@ do_common_optimization(exec_list *ir, bool linked, unsigned max_unroll_iteration
    progress = do_swizzle_swizzle(ir) || progress;
    progress = do_noop_swizzle(ir) || progress;
 
+   progress = optimize_split_arrays(ir, linked) || progress;
    progress = optimize_redundant_jumps(ir) || progress;
 
    loop_state *ls = analyze_loop_variables(ir);
-   progress = set_loop_controls(ir, ls) || progress;
-   progress = unroll_loops(ir, ls, max_unroll_iterations) || progress;
+   if (ls->loop_found) {
+      progress = set_loop_controls(ir, ls) || progress;
+      progress = unroll_loops(ir, ls, max_unroll_iterations) || progress;
+   }
    delete ls;
 
    return progress;

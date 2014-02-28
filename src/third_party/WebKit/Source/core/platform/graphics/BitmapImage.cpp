@@ -21,13 +21,12 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
 #include "core/platform/graphics/BitmapImage.h"
 
-#include "core/platform/PlatformMemoryInstrumentation.h"
 #include "core/platform/Timer.h"
 #include "core/platform/graphics/FloatRect.h"
 #include "core/platform/graphics/GraphicsContextStateSaver.h"
@@ -35,8 +34,6 @@
 #include "core/platform/graphics/skia/NativeImageSkia.h"
 #include "core/platform/graphics/skia/SkiaUtils.h"
 #include "wtf/CurrentTime.h"
-#include "wtf/MemoryInstrumentationVector.h"
-#include "wtf/MemoryObjectInfo.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
@@ -114,7 +111,7 @@ bool BitmapImage::hasSingleSecurityOrigin() const
 }
 
 
-void BitmapImage::destroyDecodedData()
+void BitmapImage::destroyDecodedData(bool destroyAll)
 {
     for (size_t i = 0; i < m_frames.size(); ++i) {
         // The underlying frame isn't actually changing (we're just trying to
@@ -123,7 +120,7 @@ void BitmapImage::destroyDecodedData()
         m_frames[i].clear(false);
     }
 
-    destroyMetadataAndNotify(m_source.clearCacheExceptFrame(m_currentFrame));
+    destroyMetadataAndNotify(m_source.clearCacheExceptFrame(destroyAll ? notFound : m_currentFrame));
 }
 
 void BitmapImage::destroyDecodedDataIfNecessary()
@@ -136,7 +133,7 @@ void BitmapImage::destroyDecodedDataIfNecessary()
         allFrameBytes += m_frames[i].m_frameBytes;
 
     if (allFrameBytes > cLargeAnimationCutoff)
-        destroyDecodedData();
+        destroyDecodedData(false);
 }
 
 void BitmapImage::destroyMetadataAndNotify(size_t frameBytesCleared)
@@ -273,11 +270,11 @@ bool BitmapImage::dataChanged(bool allDataReceived)
             frameBytesCleared += (m_frames[i].clear(true) ? frameBytes : 0);
     }
     destroyMetadataAndNotify(frameBytesCleared);
-    
+
     // Feed all the data we've seen so far to the image decoder.
     m_allDataReceived = allDataReceived;
     m_source.setData(data(), allDataReceived);
-    
+
     m_haveFrameCount = false;
     m_hasUniformFrameSize = true;
     return isSizeAvailable();
@@ -332,7 +329,7 @@ void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dstRect, const Fl
         }
     }
 
-    paintSkBitmap(ctxt, *bm, normSrcRect, normDstRect, WebCoreCompositeToSkiaComposite(compositeOp, blendMode));
+    bm->draw(ctxt, normSrcRect, normDstRect, WebCoreCompositeToSkiaComposite(compositeOp, blendMode));
 
     if (ImageObserver* observer = imageObserver())
         observer->didDraw(this);
@@ -569,7 +566,7 @@ void BitmapImage::resetAnimation()
     m_repetitionsComplete = 0;
     m_desiredFrameStartTime = 0;
     m_animationFinished = false;
-    
+
     // For extremely large animations, when the animation is reset, we just throw everything away.
     destroyDecodedDataIfNecessary();
 }
@@ -593,7 +590,7 @@ bool BitmapImage::internalAdvanceAnimation(bool skippingFrames)
 {
     // Stop the animation.
     stopAnimation();
-    
+
     // See if anyone is still paying attention to this animation.  If not, we don't
     // advance and will remain suspended at the current frame until the animation is resumed.
     if (!skippingFrames && imageObserver()->shouldPauseAnimation(this))
@@ -658,23 +655,6 @@ bool BitmapImage::mayFillWithSolidColor()
 Color BitmapImage::solidColor() const
 {
     return m_solidColor;
-}
-
-void BitmapImage::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Image);
-    memoryObjectInfo->setClassName("BitmapImage");
-    Image::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_source, "source");
-    info.addMember(m_frameTimer, "frameTimer");
-    info.addMember(m_frames, "frames");
-}
-
-void FrameData::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Image);
-    memoryObjectInfo->setClassName("FrameData");
-    info.addMember(m_frame, "frame");
 }
 
 }

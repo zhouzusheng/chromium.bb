@@ -32,7 +32,7 @@
 #define DetailsMarkerControl_h
 
 #include "core/html/HTMLDivElement.h"
-#include <wtf/Forward.h>
+#include "wtf/Forward.h"
 
 namespace WebCore {
 
@@ -53,7 +53,7 @@ private:
 inline PassRefPtr<DetailsMarkerControl> DetailsMarkerControl::create(Document* document)
 {
     RefPtr<DetailsMarkerControl> element = adoptRef(new DetailsMarkerControl(document));
-    element->setPseudo(AtomicString("-webkit-details-marker", AtomicString::ConstructFromLiteral));
+    element->setPart(AtomicString("-webkit-details-marker", AtomicString::ConstructFromLiteral));
     return element.release();
 }
 

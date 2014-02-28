@@ -30,8 +30,8 @@
 #define AudioArray_h
 
 #include <string.h>
-#include <wtf/FastMalloc.h>
-#include <wtf/Vector.h>
+#include "wtf/FastMalloc.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -57,7 +57,7 @@ public:
         // and copyToRange(). Also check for integer overflow.
         if (n > std::numeric_limits<unsigned>::max() / sizeof(T))
             CRASH();
-      
+
         unsigned initialSize = sizeof(T) * n;
 
 #if USE(WEBAUDIO_FFMPEG) || USE(WEBAUDIO_OPENMAX_DL_FFT)
@@ -68,9 +68,9 @@ public:
 
         if (m_allocation)
             fastFree(m_allocation);
-        
+
         bool isAllocationGood = false;
-        
+
         while (!isAllocationGood) {
             // Initially we try to allocate the exact size, but if it's not aligned
             // then we'll have to reallocate and from then on allocate extra.
@@ -140,14 +140,6 @@ public:
         // This expression cannot overflow because end - start cannot be
         // greater than m_size, which is safe due to the check in allocate().
         memcpy(this->data() + start, sourceData, sizeof(T) * (end - start));
-    }
-
-    template<typename MemoryObjectInfo>
-    void reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-    {
-        typename MemoryObjectInfo::ClassInfo info(memoryObjectInfo, this);
-        info.addRawBuffer(m_allocation, m_size * sizeof(T), "AudioArrayData", "allocation");
-        info.ignoreMember(m_alignedData);
     }
 
 private:

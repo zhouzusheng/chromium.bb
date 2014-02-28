@@ -57,9 +57,11 @@ PassRefPtr<MouseEvent> MouseEvent::create(const AtomicString& eventType, PassRef
 {
     ASSERT(event.type() == PlatformEvent::MouseMoved || event.button() != NoButton);
 
-    bool isCancelable = eventType != eventNames().mousemoveEvent;
+    bool isMouseEnterOrLeave = eventType == eventNames().mouseenterEvent || eventType == eventNames().mouseleaveEvent;
+    bool isCancelable = eventType != eventNames().mousemoveEvent && !isMouseEnterOrLeave;
+    bool isBubbling = !isMouseEnterOrLeave;
 
-    return MouseEvent::create(eventType, true, isCancelable, view,
+    return MouseEvent::create(eventType, isBubbling, isCancelable, view,
         detail, event.globalPosition().x(), event.globalPosition().y(), event.position().x(), event.position().y(),
         event.movementDelta().x(), event.movementDelta().y(),
         event.ctrlKey(), event.altKey(), event.shiftKey(), event.metaKey(), event.button(),
@@ -179,7 +181,7 @@ bool MouseEvent::isDragEvent() const
 int MouseEvent::which() const
 {
     // For the DOM, the return values for left, middle and right mouse buttons are 0, 1, 2, respectively.
-    // For the Netscape "which" property, the return values for left, middle and right mouse buttons are 1, 2, 3, respectively. 
+    // For the Netscape "which" property, the return values for left, middle and right mouse buttons are 1, 2, 3, respectively.
     // So we must add 1.
     if (!m_buttonDown)
         return 0;
@@ -189,49 +191,19 @@ int MouseEvent::which() const
 Node* MouseEvent::toElement() const
 {
     // MSIE extension - "the object toward which the user is moving the mouse pointer"
-    if (type() == eventNames().mouseoutEvent) 
+    if (type() == eventNames().mouseoutEvent || type() == eventNames().mouseleaveEvent)
         return relatedTarget() ? relatedTarget()->toNode() : 0;
-    
+
     return target() ? target()->toNode() : 0;
 }
 
 Node* MouseEvent::fromElement() const
 {
     // MSIE extension - "object from which activation or the mouse pointer is exiting during the event" (huh?)
-    if (type() != eventNames().mouseoutEvent)
+    if (type() != eventNames().mouseoutEvent && type() != eventNames().mouseleaveEvent)
         return relatedTarget() ? relatedTarget()->toNode() : 0;
-    
+
     return target() ? target()->toNode() : 0;
-}
-
-// FIXME: Fix positioning. e.g. We need to consider border/padding.
-// https://bugs.webkit.org/show_bug.cgi?id=93696
-inline static int adjustedClientX(int innerClientX, HTMLIFrameElement* iframe, FrameView* frameView)
-{
-    return iframe->offsetLeft() - frameView->scrollX() + innerClientX;
-}
-
-inline static int adjustedClientY(int innerClientY, HTMLIFrameElement* iframe, FrameView* frameView)
-{
-    return iframe->offsetTop() - frameView->scrollY() + innerClientY;
-}
-
-PassRefPtr<Event> MouseEvent::cloneFor(HTMLIFrameElement* iframe) const
-{
-    ASSERT(iframe);
-    RefPtr<MouseEvent> clonedMouseEvent = MouseEvent::create();
-    Frame* frame = iframe->document()->frame();
-    FrameView* frameView = frame ? frame->view() : 0;
-    clonedMouseEvent->initMouseEvent(type(), bubbles(), cancelable(),
-            iframe->document()->defaultView(),
-            detail(), screenX(), screenY(),
-            frameView ? adjustedClientX(clientX(), iframe, frameView) : 0,
-            frameView ? adjustedClientY(clientY(), iframe, frameView) : 0,
-            ctrlKey(), altKey(), shiftKey(), metaKey(),
-            button(),
-            // Nullifies relatedTarget.
-            0);
-    return clonedMouseEvent.release();
 }
 
 PassRefPtr<SimulatedMouseEvent> SimulatedMouseEvent::create(const AtomicString& eventType, PassRefPtr<AbstractView> view, PassRefPtr<Event> underlyingEvent)

@@ -29,6 +29,8 @@
  * \author Brian Paul
  */
 
+#include <inttypes.h>  /* for PRIx64 macro */
+
 #include "main/glheader.h"
 #include "main/context.h"
 #include "main/imports.h"
@@ -42,8 +44,8 @@
 /**
  * Return string name for given program/register file.
  */
-static const char *
-file_string(gl_register_file f, gl_prog_print_mode mode)
+const char *
+_mesa_register_file_name(gl_register_file f)
 {
    switch (f) {
    case PROGRAM_TEMPORARY:
@@ -72,6 +74,8 @@ file_string(gl_register_file f, gl_prog_print_mode mode)
       return "ADDR";
    case PROGRAM_SAMPLER:
       return "SAMPLER";
+   case PROGRAM_SYSTEM_VALUE:
+      return "SYSVAL";
    case PROGRAM_UNDEFINED:
       return "UNDEFINED";
    default:
@@ -93,15 +97,15 @@ arb_input_attrib_string(GLint index, GLenum progType)
    /*
     * These strings should match the VERT_ATTRIB_x and FRAG_ATTRIB_x tokens.
     */
-   const char *vertAttribs[] = {
+   static const char *const vertAttribs[] = {
       "vertex.position",
       "vertex.weight",
       "vertex.normal",
       "vertex.color.primary",
       "vertex.color.secondary",
       "vertex.fogcoord",
-      "vertex.(six)",
-      "vertex.(seven)",
+      "vertex.(six)", /* VERT_ATTRIB_COLOR_INDEX */
+      "vertex.(seven)", /* VERT_ATTRIB_EDGEFLAG */
       "vertex.texcoord[0]",
       "vertex.texcoord[1]",
       "vertex.texcoord[2]",
@@ -110,6 +114,7 @@ arb_input_attrib_string(GLint index, GLenum progType)
       "vertex.texcoord[5]",
       "vertex.texcoord[6]",
       "vertex.texcoord[7]",
+      "vertex.(sixteen)", /* VERT_ATTRIB_POINT_SIZE */
       "vertex.attrib[0]",
       "vertex.attrib[1]",
       "vertex.attrib[2]",
@@ -125,9 +130,9 @@ arb_input_attrib_string(GLint index, GLenum progType)
       "vertex.attrib[12]",
       "vertex.attrib[13]",
       "vertex.attrib[14]",
-      "vertex.attrib[15]"
+      "vertex.attrib[15]" /* MAX_VARYING = 16 */
    };
-   const char *fragAttribs[] = {
+   static const char *const fragAttribs[] = {
       "fragment.position",
       "fragment.color.primary",
       "fragment.color.secondary",
@@ -140,6 +145,10 @@ arb_input_attrib_string(GLint index, GLenum progType)
       "fragment.texcoord[5]",
       "fragment.texcoord[6]",
       "fragment.texcoord[7]",
+      "fragment.(twelve)", /* FRAG_ATTRIB_FACE */
+      "fragment.(thirteen)", /* FRAG_ATTRIB_PNTC */
+      "fragment.(fourteen)", /* FRAG_ATTRIB_CLIP_DIST0 */
+      "fragment.(fifteen)", /* FRAG_ATTRIB_CLIP_DIST1 */
       "fragment.varying[0]",
       "fragment.varying[1]",
       "fragment.varying[2]",
@@ -147,19 +156,48 @@ arb_input_attrib_string(GLint index, GLenum progType)
       "fragment.varying[4]",
       "fragment.varying[5]",
       "fragment.varying[6]",
-      "fragment.varying[7]"
+      "fragment.varying[7]",
+      "fragment.varying[8]",
+      "fragment.varying[9]",
+      "fragment.varying[10]",
+      "fragment.varying[11]",
+      "fragment.varying[12]",
+      "fragment.varying[13]",
+      "fragment.varying[14]",
+      "fragment.varying[15]",
+      "fragment.varying[16]",
+      "fragment.varying[17]",
+      "fragment.varying[18]",
+      "fragment.varying[19]",
+      "fragment.varying[20]",
+      "fragment.varying[21]",
+      "fragment.varying[22]",
+      "fragment.varying[23]",
+      "fragment.varying[24]",
+      "fragment.varying[25]",
+      "fragment.varying[26]",
+      "fragment.varying[27]",
+      "fragment.varying[28]",
+      "fragment.varying[29]",
+      "fragment.varying[30]",
+      "fragment.varying[31]", /* MAX_VARYING = 32 */
    };
 
    /* sanity checks */
+   STATIC_ASSERT(Elements(vertAttribs) == VERT_ATTRIB_MAX);
+   STATIC_ASSERT(Elements(fragAttribs) == FRAG_ATTRIB_MAX);
    assert(strcmp(vertAttribs[VERT_ATTRIB_TEX0], "vertex.texcoord[0]") == 0);
    assert(strcmp(vertAttribs[VERT_ATTRIB_GENERIC15], "vertex.attrib[15]") == 0);
+   assert(strcmp(fragAttribs[FRAG_ATTRIB_TEX0], "fragment.texcoord[0]") == 0);
+   assert(strcmp(fragAttribs[FRAG_ATTRIB_VAR0+15], "fragment.varying[15]") == 0);
 
    if (progType == GL_VERTEX_PROGRAM_ARB) {
-      assert(index < sizeof(vertAttribs) / sizeof(vertAttribs[0]));
+      assert(index < Elements(vertAttribs));
       return vertAttribs[index];
    }
    else {
-      assert(index < sizeof(fragAttribs) / sizeof(fragAttribs[0]));
+      assert(progType == GL_FRAGMENT_PROGRAM_ARB);
+      assert(index < Elements(fragAttribs));
       return fragAttribs[index];
    }
 }
@@ -174,7 +212,7 @@ _mesa_print_vp_inputs(GLbitfield inputs)
 {
    printf("VP Inputs 0x%x: \n", inputs);
    while (inputs) {
-      GLint attr = _mesa_ffs(inputs) - 1;
+      GLint attr = ffs(inputs) - 1;
       const char *name = arb_input_attrib_string(attr,
                                                  GL_VERTEX_PROGRAM_ARB);
       printf("  %d: %s\n", attr, name);
@@ -192,7 +230,7 @@ _mesa_print_fp_inputs(GLbitfield inputs)
 {
    printf("FP Inputs 0x%x: \n", inputs);
    while (inputs) {
-      GLint attr = _mesa_ffs(inputs) - 1;
+      GLint attr = ffs(inputs) - 1;
       const char *name = arb_input_attrib_string(attr,
                                                  GL_FRAGMENT_PROGRAM_ARB);
       printf("  %d: %s\n", attr, name);
@@ -211,7 +249,7 @@ arb_output_attrib_string(GLint index, GLenum progType)
    /*
     * These strings should match the VERT_RESULT_x and FRAG_RESULT_x tokens.
     */
-   const char *vertResults[] = {
+   static const char *const vertResults[] = {
       "result.position",
       "result.color.primary",
       "result.color.secondary",
@@ -224,6 +262,13 @@ arb_output_attrib_string(GLint index, GLenum progType)
       "result.texcoord[5]",
       "result.texcoord[6]",
       "result.texcoord[7]",
+      "result.pointsize", /* VERT_RESULT_PSIZ */
+      "result.(thirteen)", /* VERT_RESULT_BFC0 */
+      "result.(fourteen)", /* VERT_RESULT_BFC1 */
+      "result.(fifteen)", /* VERT_RESULT_EDGE */
+      "result.(sixteen)", /* VERT_RESULT_CLIP_VERTEX */
+      "result.(seventeen)", /* VERT_RESULT_CLIP_DIST0 */
+      "result.(eighteen)", /* VERT_RESULT_CLIP_DIST1 */
       "result.varying[0]",
       "result.varying[1]",
       "result.varying[2]",
@@ -231,24 +276,60 @@ arb_output_attrib_string(GLint index, GLenum progType)
       "result.varying[4]",
       "result.varying[5]",
       "result.varying[6]",
-      "result.varying[7]"
+      "result.varying[7]",
+      "result.varying[8]",
+      "result.varying[9]",
+      "result.varying[10]",
+      "result.varying[11]",
+      "result.varying[12]",
+      "result.varying[13]",
+      "result.varying[14]",
+      "result.varying[15]",
+      "result.varying[16]",
+      "result.varying[17]",
+      "result.varying[18]",
+      "result.varying[19]",
+      "result.varying[20]",
+      "result.varying[21]",
+      "result.varying[22]",
+      "result.varying[23]",
+      "result.varying[24]",
+      "result.varying[25]",
+      "result.varying[26]",
+      "result.varying[27]",
+      "result.varying[28]",
+      "result.varying[29]",
+      "result.varying[30]",
+      "result.varying[31]", /* MAX_VARYING = 32 */
    };
-   const char *fragResults[] = {
-      "result.color",
-      "result.color(half)",
-      "result.depth",
-      "result.color[0]",
+   static const char *const fragResults[] = {
+      "result.depth", /* FRAG_RESULT_DEPTH */
+      "result.(one)", /* FRAG_RESULT_STENCIL */
+      "result.color", /* FRAG_RESULT_COLOR */
+      "result.color[0]", /* FRAG_RESULT_DATA0 (named for GLSL's gl_FragData) */
       "result.color[1]",
       "result.color[2]",
-      "result.color[3]"
+      "result.color[3]",
+      "result.color[4]",
+      "result.color[5]",
+      "result.color[6]",
+      "result.color[7]" /* MAX_DRAW_BUFFERS = 8 */
    };
 
+   /* sanity checks */
+   STATIC_ASSERT(Elements(vertResults) == VERT_RESULT_MAX);
+   STATIC_ASSERT(Elements(fragResults) == FRAG_RESULT_MAX);
+   assert(strcmp(vertResults[VERT_RESULT_HPOS], "result.position") == 0);
+   assert(strcmp(vertResults[VERT_RESULT_VAR0], "result.varying[0]") == 0);
+   assert(strcmp(fragResults[FRAG_RESULT_DATA0], "result.color[0]") == 0);
+
    if (progType == GL_VERTEX_PROGRAM_ARB) {
-      assert(index < sizeof(vertResults) / sizeof(vertResults[0]));
+      assert(index < Elements(vertResults));
       return vertResults[index];
    }
    else {
-      assert(index < sizeof(fragResults) / sizeof(fragResults[0]));
+      assert(progType == GL_FRAGMENT_PROGRAM_ARB);
+      assert(index < Elements(fragResults));
       return fragResults[index];
    }
 }
@@ -275,7 +356,8 @@ reg_string(gl_register_file f, GLint index, gl_prog_print_mode mode,
 
    switch (mode) {
    case PROG_PRINT_DEBUG:
-      sprintf(str, "%s[%s%d]", file_string(f, mode), addr, index);
+      sprintf(str, "%s[%s%d]",
+              _mesa_register_file_name(f), addr, index);
       if (hasIndex2) {
          int offset = strlen(str);
          const char *addr2 = relAddr2 ? "ADDR+" : "";
@@ -308,6 +390,9 @@ reg_string(gl_register_file f, GLint index, gl_prog_print_mode mode,
          break;
       case PROGRAM_UNIFORM: /* extension */
          sprintf(str, "uniform[%s%d]", addr, index);
+         break;
+      case PROGRAM_SYSTEM_VALUE:
+         sprintf(str, "sysvalue[%s%d]", addr, index);
          break;
       case PROGRAM_STATE_VAR:
          {
@@ -497,7 +582,7 @@ fprint_dst_reg(FILE * f,
 
 #if 0
    fprintf(f, "%s[%d]%s",
-	   file_string((gl_register_file) dstReg->File, mode),
+	   _mesa_register_file_name((gl_register_file) dstReg->File),
 	   dstReg->Index,
 	   _mesa_writemask_string(dstReg->WriteMask));
 #endif
@@ -522,7 +607,7 @@ fprint_src_reg(FILE *f,
 	   abs);
 #if 0
    fprintf(f, "%s[%d]%s",
-	   file_string((gl_register_file) srcReg->File, mode),
+	   _mesa_register_file_name((gl_register_file) srcReg->File),
 	   srcReg->Index,
 	   _mesa_swizzle_string(srcReg->Swizzle,
 				srcReg->Negate, GL_FALSE));
@@ -615,8 +700,7 @@ _mesa_fprint_instruction_opt(FILE *f,
       if (inst->SrcReg[0].File != PROGRAM_UNDEFINED) {
          fprintf(f, ", ");
          fprintf(f, "%s[%d]%s",
-		 file_string((gl_register_file) inst->SrcReg[0].File,
-			     mode),
+                 _mesa_register_file_name((gl_register_file) inst->SrcReg[0].File),
 		 inst->SrcReg[0].Index,
 		 _mesa_swizzle_string(inst->SrcReg[0].Swizzle,
 				      inst->SrcReg[0].Negate, GL_FALSE));
@@ -632,8 +716,7 @@ _mesa_fprint_instruction_opt(FILE *f,
       fprintf(f, " ");
       fprint_dst_reg(f, &inst->DstReg, mode, prog);
       fprintf(f, ", %s[%d], %s",
-	      file_string((gl_register_file) inst->SrcReg[0].File,
-			  mode),
+	      _mesa_register_file_name((gl_register_file) inst->SrcReg[0].File),
 	      inst->SrcReg[0].Index,
 	      _mesa_swizzle_string(inst->SrcReg[0].Swizzle,
 				   inst->SrcReg[0].Negate, GL_TRUE));
@@ -643,6 +726,7 @@ _mesa_fprint_instruction_opt(FILE *f,
    case OPCODE_TXP:
    case OPCODE_TXL:
    case OPCODE_TXB:
+   case OPCODE_TXD:
       fprintf(f, "%s", _mesa_opcode_string(inst->Opcode));
       if (inst->SaturateMode == SATURATE_ZERO_ONE)
          fprintf(f, "_SAT");
@@ -650,6 +734,12 @@ _mesa_fprint_instruction_opt(FILE *f,
       fprint_dst_reg(f, &inst->DstReg, mode, prog);
       fprintf(f, ", ");
       fprint_src_reg(f, &inst->SrcReg[0], mode, prog);
+      if (inst->Opcode == OPCODE_TXD) {
+         fprintf(f, ", ");
+         fprint_src_reg(f, &inst->SrcReg[1], mode, prog);
+         fprintf(f, ", ");
+         fprint_src_reg(f, &inst->SrcReg[2], mode, prog);
+      }
       fprintf(f, ", texture[%d], ", inst->TexSrcUnit);
       switch (inst->TexSrcTarget) {
       case TEXTURE_1D_INDEX:   fprintf(f, "1D");    break;
@@ -909,16 +999,15 @@ binary(GLbitfield64 val)
  */
 static void
 _mesa_fprint_program_parameters(FILE *f,
-                                GLcontext *ctx,
+                                struct gl_context *ctx,
                                 const struct gl_program *prog)
 {
    GLuint i;
 
-   fprintf(f, "InputsRead: 0x%x (0b%s)\n",
-                 prog->InputsRead, binary(prog->InputsRead));
-   fprintf(f, "OutputsWritten: 0x%llx (0b%s)\n",
-                 (unsigned long long)prog->OutputsWritten, 
-		 binary(prog->OutputsWritten));
+   fprintf(f, "InputsRead: %" PRIx64 " (0b%s)\n",
+           (uint64_t) prog->InputsRead, binary(prog->InputsRead));
+   fprintf(f, "OutputsWritten: %" PRIx64 " (0b%s)\n",
+           (uint64_t) prog->OutputsWritten, binary(prog->OutputsWritten));
    fprintf(f, "NumInstructions=%d\n", prog->NumInstructions);
    fprintf(f, "NumTemporaries=%d\n", prog->NumTemporaries);
    fprintf(f, "NumParameters=%d\n", prog->NumParameters);
@@ -951,7 +1040,7 @@ _mesa_fprint_program_parameters(FILE *f,
  * Print all of a program's parameters/fields to stderr.
  */
 void
-_mesa_print_program_parameters(GLcontext *ctx, const struct gl_program *prog)
+_mesa_print_program_parameters(struct gl_context *ctx, const struct gl_program *prog)
 {
    _mesa_fprint_program_parameters(stderr, ctx, prog);
 }
@@ -964,7 +1053,6 @@ static void
 _mesa_fprint_parameter_list(FILE *f,
                             const struct gl_program_parameter_list *list)
 {
-   const gl_prog_print_mode mode = PROG_PRINT_DEBUG;
    GLuint i;
 
    if (!list)
@@ -975,10 +1063,10 @@ _mesa_fprint_parameter_list(FILE *f,
    fprintf(f, "dirty state flags: 0x%x\n", list->StateFlags);
    for (i = 0; i < list->NumParameters; i++){
       struct gl_program_parameter *param = list->Parameters + i;
-      const GLfloat *v = list->ParameterValues[i];
+      const GLfloat *v = (GLfloat *) list->ParameterValues[i];
       fprintf(f, "param[%d] sz=%d %s %s = {%.3g, %.3g, %.3g, %.3g}",
 	      i, param->Size,
-	      file_string(list->Parameters[i].Type, mode),
+	      _mesa_register_file_name(list->Parameters[i].Type),
 	      param->Name, v[0], v[1], v[2], v[3]);
       if (param->Flags & PROG_PARAM_BIT_CENTROID)
          fprintf(f, " Centroid");
@@ -1058,9 +1146,9 @@ _mesa_write_shader_to_file(const struct gl_shader *shader)
  * _mesa_write_shader_to_file function.
  */
 void
-_mesa_append_uniforms_to_file(const struct gl_shader *shader,
-                              const struct gl_program *prog)
+_mesa_append_uniforms_to_file(const struct gl_shader *shader)
 {
+   const struct gl_program *const prog = shader->Program;
    const char *type;
    char filename[100];
    FILE *f;

@@ -13,7 +13,6 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/metrics/histogram.h"
-#include "base/process_util.h"
 #include "base/sha1.h"
 #include "base/threading/thread.h"
 #include "content/browser/browser_child_process_host_impl.h"
@@ -141,6 +140,7 @@ void AcceleratedSurfaceBuffersSwappedCompletedForRenderer(
   if (interval != base::TimeDelta())
     RenderWidgetHostImpl::From(rwh)->UpdateVSyncParameters(timebase, interval);
   RenderWidgetHostImpl::From(rwh)->FrameSwapped(latency_info);
+  RenderWidgetHostImpl::From(rwh)->DidReceiveRendererFrame();
 }
 
 void AcceleratedSurfaceBuffersSwappedCompleted(
@@ -278,6 +278,8 @@ class GpuSandboxedProcessLauncherDelegate
 
 }  // anonymous namespace
 
+// Single process not supported in multiple dll mode currently.
+#if !defined(CHROME_MULTIPLE_DLL)
 // This class creates a GPU thread (instead of a GPU process), when running
 // with --in-process-gpu or --single-process.
 class GpuMainThread : public base::Thread {
@@ -285,8 +287,7 @@ class GpuMainThread : public base::Thread {
   explicit GpuMainThread(const std::string& channel_id)
       : base::Thread("Chrome_InProcGpuThread"),
         channel_id_(channel_id),
-        gpu_process_(NULL),
-        child_thread_(NULL) {
+        gpu_process_(NULL) {
   }
 
   virtual ~GpuMainThread() {
@@ -295,30 +296,24 @@ class GpuMainThread : public base::Thread {
 
  protected:
   virtual void Init() OVERRIDE {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess)) {
-      child_thread_ = new GpuChildThread(channel_id_);
-    } else {
-      gpu_process_ = new GpuProcess();
-      // The process object takes ownership of the thread object, so do not
-      // save and delete the pointer.
-      gpu_process_->set_main_thread(new GpuChildThread(channel_id_));
-    }
+    gpu_process_ = new GpuProcess();
+    // The process object takes ownership of the thread object, so do not
+    // save and delete the pointer.
+    gpu_process_->set_main_thread(new GpuChildThread(channel_id_));
   }
 
   virtual void CleanUp() OVERRIDE {
     delete gpu_process_;
-    if (child_thread_)
-      delete child_thread_;
   }
 
  private:
   std::string channel_id_;
   // Deleted in CleanUp() on the gpu thread, so don't use smart pointers.
   GpuProcess* gpu_process_;
-  GpuChildThread* child_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuMainThread);
 };
+#endif  // !CHROME_MULTIPLE_DLL
 
 // static
 bool GpuProcessHost::ValidateHost(GpuProcessHost* host) {
@@ -603,6 +598,8 @@ bool GpuProcessHost::Init() {
   if (channel_id.empty())
     return false;
 
+  // Single process not supported in multiple dll mode currently.
+#if !defined(CHROME_MULTIPLE_DLL)
   if (in_process_) {
     CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kDisableGpuWatchdog);
@@ -611,7 +608,9 @@ bool GpuProcessHost::Init() {
     in_process_gpu_thread_->Start();
 
     OnProcessLaunched();  // Fake a callback that the process is ready.
-  } else if (!LaunchGpuProcess(channel_id)) {
+  } else
+#endif  // !CHROME_MULTIPLE_DLL
+      if (!LaunchGpuProcess(channel_id)) {
     return false;
   }
 
@@ -1151,12 +1150,12 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
     switches::kEnableShareGroupAsyncTextureUpload,
     switches::kEnableVirtualGLContexts,
     switches::kGpuStartupDialog,
+    switches::kGpuSandboxAllowSysVShm,
     switches::kLoggingLevel,
     switches::kNoSandbox,
     switches::kReduceGpuSandbox,
     switches::kTestGLLib,
     switches::kTraceStartup,
-    switches::kUseExynosVda,
     switches::kV,
     switches::kVModule,
 #if defined(OS_MACOSX)

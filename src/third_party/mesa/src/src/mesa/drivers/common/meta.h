@@ -26,93 +26,106 @@
 #ifndef META_H
 #define META_H
 
+#include "main/mtypes.h"
+
+/**
+ * \name Flags for meta operations
+ * \{
+ *
+ * These flags are passed to _mesa_meta_begin().
+ */
+#define MESA_META_ALL                      ~0x0
+#define MESA_META_ALPHA_TEST                0x1
+#define MESA_META_BLEND                     0x2  /**< includes logicop */
+#define MESA_META_COLOR_MASK                0x4
+#define MESA_META_DEPTH_TEST                0x8
+#define MESA_META_FOG                      0x10
+#define MESA_META_PIXEL_STORE              0x20
+#define MESA_META_PIXEL_TRANSFER           0x40
+#define MESA_META_RASTERIZATION            0x80
+#define MESA_META_SCISSOR                 0x100
+#define MESA_META_SHADER                  0x200
+#define MESA_META_STENCIL_TEST            0x400
+#define MESA_META_TRANSFORM               0x800 /**< modelview/projection matrix state */
+#define MESA_META_TEXTURE                0x1000
+#define MESA_META_VERTEX                 0x2000
+#define MESA_META_VIEWPORT               0x4000
+#define MESA_META_CLAMP_FRAGMENT_COLOR   0x8000
+#define MESA_META_CLAMP_VERTEX_COLOR    0x10000
+#define MESA_META_CONDITIONAL_RENDER    0x20000
+#define MESA_META_CLIP                  0x40000
+#define MESA_META_SELECT_FEEDBACK       0x80000
+#define MESA_META_MULTISAMPLE          0x100000
+/**\}*/
 
 extern void
-_mesa_meta_init(GLcontext *ctx);
+_mesa_meta_init(struct gl_context *ctx);
 
 extern void
-_mesa_meta_free(GLcontext *ctx);
+_mesa_meta_free(struct gl_context *ctx);
 
 extern void
-_mesa_meta_BlitFramebuffer(GLcontext *ctx,
+_mesa_meta_begin(struct gl_context *ctx, GLbitfield state);
+
+extern void
+_mesa_meta_end(struct gl_context *ctx);
+
+extern GLboolean
+_mesa_meta_in_progress(struct gl_context *ctx);
+
+extern void
+_mesa_meta_BlitFramebuffer(struct gl_context *ctx,
                            GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1,
                            GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1,
                            GLbitfield mask, GLenum filter);
 
 extern void
-_mesa_meta_Clear(GLcontext *ctx, GLbitfield buffers);
+_mesa_meta_Clear(struct gl_context *ctx, GLbitfield buffers);
 
 extern void
-_mesa_meta_CopyPixels(GLcontext *ctx, GLint srcx, GLint srcy,
+_mesa_meta_glsl_Clear(struct gl_context *ctx, GLbitfield buffers);
+
+extern void
+_mesa_meta_CopyPixels(struct gl_context *ctx, GLint srcx, GLint srcy,
                       GLsizei width, GLsizei height,
                       GLint dstx, GLint dsty, GLenum type);
 
 extern void
-_mesa_meta_DrawPixels(GLcontext *ctx,
+_mesa_meta_DrawPixels(struct gl_context *ctx,
                       GLint x, GLint y, GLsizei width, GLsizei height,
                       GLenum format, GLenum type,
                       const struct gl_pixelstore_attrib *unpack,
                       const GLvoid *pixels);
 
 extern void
-_mesa_meta_Bitmap(GLcontext *ctx,
+_mesa_meta_Bitmap(struct gl_context *ctx,
                   GLint x, GLint y, GLsizei width, GLsizei height,
                   const struct gl_pixelstore_attrib *unpack,
                   const GLubyte *bitmap);
 
 extern GLboolean
-_mesa_meta_check_generate_mipmap_fallback(GLcontext *ctx, GLenum target,
+_mesa_meta_check_generate_mipmap_fallback(struct gl_context *ctx, GLenum target,
                                           struct gl_texture_object *texObj);
 
 extern void
-_mesa_meta_GenerateMipmap(GLcontext *ctx, GLenum target,
+_mesa_meta_GenerateMipmap(struct gl_context *ctx, GLenum target,
                           struct gl_texture_object *texObj);
 
 extern void
-_mesa_meta_CopyTexImage1D(GLcontext *ctx, GLenum target, GLint level,
-                          GLenum internalFormat, GLint x, GLint y,
-                          GLsizei width, GLint border);
+_mesa_meta_CopyTexSubImage(struct gl_context *ctx, GLuint dims,
+                           struct gl_texture_image *texImage,
+                           GLint xoffset, GLint yoffset, GLint zoffset,
+                           struct gl_renderbuffer *rb,
+                           GLint x, GLint y,
+                           GLsizei width, GLsizei height);
 
 extern void
-_mesa_meta_CopyTexImage2D(GLcontext *ctx, GLenum target, GLint level,
-                          GLenum internalFormat, GLint x, GLint y,
-                          GLsizei width, GLsizei height, GLint border);
+_mesa_meta_GetTexImage(struct gl_context *ctx,
+                       GLenum format, GLenum type, GLvoid *pixels,
+                       struct gl_texture_image *texImage);
 
 extern void
-_mesa_meta_CopyTexSubImage1D(GLcontext *ctx, GLenum target, GLint level,
-                             GLint xoffset,
-                             GLint x, GLint y, GLsizei width);
-
-extern void
-_mesa_meta_CopyTexSubImage2D(GLcontext *ctx, GLenum target, GLint level,
-                             GLint xoffset, GLint yoffset,
-                             GLint x, GLint y,
-                             GLsizei width, GLsizei height);
-
-extern void
-_mesa_meta_CopyTexSubImage3D(GLcontext *ctx, GLenum target, GLint level,
-                             GLint xoffset, GLint yoffset, GLint zoffset,
-                             GLint x, GLint y,
-                             GLsizei width, GLsizei height);
-
-extern void
-_mesa_meta_CopyColorTable(GLcontext *ctx,
-                          GLenum target, GLenum internalformat,
-                          GLint x, GLint y, GLsizei width);
-
-extern void
-_mesa_meta_CopyColorSubTable(GLcontext *ctx,GLenum target, GLsizei start,
-                             GLint x, GLint y, GLsizei width);
-
-extern void
-_mesa_meta_CopyConvolutionFilter1D(GLcontext *ctx, GLenum target,
-                                   GLenum internalFormat,
-                                   GLint x, GLint y, GLsizei width);
-
-extern void
-_mesa_meta_CopyConvolutionFilter2D(GLcontext *ctx, GLenum target,
-                                   GLenum internalFormat, GLint x, GLint y,
-                                   GLsizei width, GLsizei height);
-
+_mesa_meta_DrawTex(struct gl_context *ctx, GLfloat x, GLfloat y, GLfloat z,
+                   GLfloat width, GLfloat height);
 
 #endif /* META_H */

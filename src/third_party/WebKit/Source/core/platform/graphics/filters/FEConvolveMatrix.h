@@ -28,7 +28,7 @@
 #include "core/platform/graphics/FloatSize.h"
 #include "core/platform/graphics/filters/Filter.h"
 #include "core/platform/graphics/filters/FilterEffect.h"
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -69,7 +69,7 @@ public:
     bool preserveAlpha() const;
     bool setPreserveAlpha(bool);
 
-    virtual SkImageFilter* createImageFilter(SkiaImageFilterBuilder*);
+    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
 
     virtual void determineAbsolutePaintRect() { setAbsolutePaintRect(enclosingIntRect(maxEffectRect())); }
 

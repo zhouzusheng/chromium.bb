@@ -22,21 +22,20 @@
 #include "webrtc/system_wrappers/interface/scoped_ptr.h"
 #include "webrtc/typedefs.h"
 #include "webrtc/video_engine/vie_defines.h"
-#include "webrtc/video_engine/vie_file_recorder.h"
 #include "webrtc/video_engine/vie_frame_provider_base.h"
 
 namespace webrtc {
 
-class CriticalSectionWrapper;
 class Config;
+class CriticalSectionWrapper;
 class PacedSender;
 class ProcessThread;
 class QMVideoSettingsCallback;
 class RtpRtcp;
-class VideoCodingModule;
 class ViEBitrateObserver;
 class ViEEffectFilter;
 class ViEEncoderObserver;
+class VideoCodingModule;
 class ViEPacedSenderCallback;
 
 class ViEEncoder
@@ -156,9 +155,6 @@ class ViEEncoder
   // Effect filter.
   int32_t RegisterEffectFilter(ViEEffectFilter* effect_filter);
 
-  // Recording.
-  ViEFileRecorder& GetOutgoingFileRecorder();
-
   // Enables recording of debugging information.
   virtual int StartDebugRecording(const char* fileNameUTF8);
 
@@ -216,8 +212,6 @@ class ViEEncoder
   bool has_received_rpsi_;
   uint64_t picture_id_rpsi_;
   std::map<unsigned int, int> ssrc_streams_;
-
-  ViEFileRecorder file_recorder_;
 
   // Quality modes callback
   QMVideoSettingsCallback* qm_callback_;

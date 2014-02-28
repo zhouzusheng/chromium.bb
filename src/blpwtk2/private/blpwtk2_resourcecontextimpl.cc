@@ -48,5 +48,17 @@ net::URLRequestContext* ResourceContextImpl::GetRequestContext()
     return d_requestContextGetter->GetURLRequestContext();
 }
 
+bool ResourceContextImpl::AllowMicAccess(const GURL& origin)
+{
+    // TODO: implement
+    return false;
+}
+
+bool ResourceContextImpl::AllowCameraAccess(const GURL& origin)
+{
+    // TODO: implement
+    return false;
+}
+
 }  // close namespace blpwtk2
 

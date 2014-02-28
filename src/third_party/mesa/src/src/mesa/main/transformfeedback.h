@@ -25,22 +25,24 @@
 #ifndef TRANSFORM_FEEDBACK_H
 #define TRANSFORM_FEEDBACK_H
 
-#include "main/mtypes.h"
+#include "compiler.h"
+#include "glheader.h"
+#include "mfeatures.h"
 
+struct _glapi_table;
+struct dd_function_table;
+struct gl_context;
 
 extern void
-_mesa_init_transform_feedback(GLcontext *ctx);
+_mesa_init_transform_feedback(struct gl_context *ctx);
 
 extern void
-_mesa_free_transform_feedback(GLcontext *ctx);
+_mesa_free_transform_feedback(struct gl_context *ctx);
 
 #if FEATURE_EXT_transform_feedback
 
 extern GLboolean
-_mesa_validate_primitive_mode(GLcontext *ctx, GLenum mode);
-
-extern GLboolean
-_mesa_validate_transform_feedback_buffers(GLcontext *ctx);
+_mesa_validate_transform_feedback_buffers(struct gl_context *ctx);
 
 
 extern void
@@ -58,12 +60,17 @@ _mesa_BeginTransformFeedback(GLenum mode);
 extern void GLAPIENTRY
 _mesa_EndTransformFeedback(void);
 
-extern void GLAPIENTRY
-_mesa_BindBufferRange(GLenum target, GLuint index,
-                      GLuint buffer, GLintptr offset, GLsizeiptr size);
+extern void
+_mesa_bind_buffer_range_transform_feedback(struct gl_context *ctx,
+					   GLuint index,
+					   struct gl_buffer_object *bufObj,
+					   GLintptr offset,
+					   GLsizeiptr size);
 
-extern void GLAPIENTRY
-_mesa_BindBufferBase(GLenum target, GLuint index, GLuint buffer);
+extern void
+_mesa_bind_buffer_base_transform_feedback(struct gl_context *ctx,
+					  GLuint index,
+					  struct gl_buffer_object *bufObj);
 
 extern void GLAPIENTRY
 _mesa_BindBufferOffsetEXT(GLenum target, GLuint index, GLuint buffer,
@@ -81,6 +88,9 @@ _mesa_GetTransformFeedbackVarying(GLuint program, GLuint index,
 
 
 /*** GL_ARB_transform_feedback2 ***/
+
+struct gl_transform_feedback_object *
+_mesa_lookup_transform_feedback_object(struct gl_context *ctx, GLuint name);
 
 extern void GLAPIENTRY
 _mesa_GenTransformFeedbacks(GLsizei n, GLuint *names);
@@ -100,29 +110,26 @@ _mesa_PauseTransformFeedback(void);
 extern void GLAPIENTRY
 _mesa_ResumeTransformFeedback(void);
 
-extern void GLAPIENTRY
-_mesa_DrawTransformFeedback(GLenum mode, GLuint name);
-
 #else /* FEATURE_EXT_transform_feedback */
 
-static INLINE GLboolean
-_mesa_validate_primitive_mode(GLcontext *ctx, GLenum mode)
+static inline GLboolean
+_mesa_validate_primitive_mode(struct gl_context *ctx, GLenum mode)
 {
    return GL_TRUE;
 }
 
-static INLINE GLboolean
-_mesa_validate_transform_feedback_buffers(GLcontext *ctx)
+static inline GLboolean
+_mesa_validate_transform_feedback_buffers(struct gl_context *ctx)
 {
    return GL_TRUE;
 }
 
-static INLINE void
+static inline void
 _mesa_init_transform_feedback_functions(struct dd_function_table *driver)
 {
 }
 
-static INLINE void
+static inline void
 _mesa_init_transform_feedback_dispatch(struct _glapi_table *disp)
 {
 }

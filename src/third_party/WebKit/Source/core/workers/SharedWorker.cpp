@@ -30,9 +30,9 @@
  */
 
 #include "config.h"
-
 #include "core/workers/SharedWorker.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/MessageChannel.h"
 #include "core/dom/MessagePort.h"
@@ -51,10 +51,10 @@ inline SharedWorker::SharedWorker(ScriptExecutionContext* context)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SharedWorker> SharedWorker::create(ScriptExecutionContext* context, const String& url, const String& name, ExceptionCode& ec)
+PassRefPtr<SharedWorker> SharedWorker::create(ScriptExecutionContext* context, const String& url, const String& name, ExceptionState& es)
 {
     ASSERT(isMainThread());
-    UseCounter::count(static_cast<Document*>(context)->domWindow(), UseCounter::SharedWorkerStart);
+    UseCounter::count(toDocument(context)->domWindow(), UseCounter::SharedWorkerStart);
 
     RefPtr<SharedWorker> worker = adoptRef(new SharedWorker(context));
 
@@ -65,19 +65,19 @@ PassRefPtr<SharedWorker> SharedWorker::create(ScriptExecutionContext* context, c
 
     worker->suspendIfNeeded();
 
-    KURL scriptURL = worker->resolveURL(url, ec);
+    KURL scriptURL = worker->resolveURL(url, es);
     if (scriptURL.isEmpty())
         return 0;
 
     // We don't currently support nested workers, so workers can only be created from documents.
     ASSERT_WITH_SECURITY_IMPLICATION(context->isDocument());
-    Document* document = static_cast<Document*>(context);
-    if (!document->securityOrigin()->canAccessSharedWorkers(document->topOrigin())) {
-        ec = SECURITY_ERR;
+    Document* document = toDocument(context);
+    if (!document->securityOrigin()->canAccessSharedWorkers()) {
+        es.throwDOMException(SecurityError);
         return 0;
     }
 
-    SharedWorkerRepository::connect(worker.get(), remotePort.release(), scriptURL, name, ec);
+    SharedWorkerRepository::connect(worker.get(), remotePort.release(), scriptURL, name, es);
 
     return worker.release();
 }

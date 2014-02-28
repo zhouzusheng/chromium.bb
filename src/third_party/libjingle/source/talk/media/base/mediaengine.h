@@ -125,10 +125,6 @@ class MediaEngineInterface {
   // TODO(tschmelcher): Add method for selecting the soundclip device.
   virtual bool SetSoundDevices(const Device* in_device,
                                const Device* out_device) = 0;
-  // Sets the externally provided video capturer. The ssrc is the ssrc of the
-  // (video) stream for which the video capturer should be set.
-  virtual bool SetVideoCapturer(VideoCapturer* capturer) = 0;
-  virtual VideoCapturer* GetVideoCapturer() const = 0;
 
   // Device configuration
   // Gets the current speaker volume, as a value between 0 and 255.
@@ -145,8 +141,6 @@ class MediaEngineInterface {
   virtual bool SetLocalMonitor(bool enable) = 0;
   // Installs a callback for raw frames from the local camera.
   virtual bool SetLocalRenderer(VideoRenderer* renderer) = 0;
-  // Starts/stops local camera.
-  virtual bool SetVideoCapture(bool capture) = 0;
 
   virtual const std::vector<AudioCodec>& audio_codecs() = 0;
   virtual const std::vector<RtpHeaderExtension>&
@@ -159,16 +153,13 @@ class MediaEngineInterface {
   virtual void SetVoiceLogging(int min_sev, const char* filter) = 0;
   virtual void SetVideoLogging(int min_sev, const char* filter) = 0;
 
-  // media processors for effects
-  virtual bool RegisterVideoProcessor(VideoProcessor* video_processor) = 0;
-  virtual bool UnregisterVideoProcessor(VideoProcessor* video_processor) = 0;
+  // Voice processors for effects.
   virtual bool RegisterVoiceProcessor(uint32 ssrc,
                                       VoiceProcessor* video_processor,
                                       MediaProcessorDirection direction) = 0;
   virtual bool UnregisterVoiceProcessor(uint32 ssrc,
                                         VoiceProcessor* video_processor,
                                         MediaProcessorDirection direction) = 0;
-
 
   virtual VideoFormat GetStartCaptureFormat() const = 0;
 
@@ -236,12 +227,6 @@ class CompositeMediaEngine : public MediaEngineInterface {
                                const Device* out_device) {
     return voice_.SetDevices(in_device, out_device);
   }
-  virtual bool SetVideoCapturer(VideoCapturer* capturer) {
-    return video_.SetVideoCapturer(capturer);
-  }
-  virtual VideoCapturer* GetVideoCapturer() const {
-    return video_.GetVideoCapturer();
-  }
 
   virtual bool GetOutputVolume(int* level) {
     return voice_.GetOutputVolume(level);
@@ -258,9 +243,6 @@ class CompositeMediaEngine : public MediaEngineInterface {
   }
   virtual bool SetLocalRenderer(VideoRenderer* renderer) {
     return video_.SetLocalRenderer(renderer);
-  }
-  virtual bool SetVideoCapture(bool capture) {
-    return video_.SetCapture(capture);
   }
 
   virtual const std::vector<AudioCodec>& audio_codecs() {
@@ -283,12 +265,6 @@ class CompositeMediaEngine : public MediaEngineInterface {
     return video_.SetLogging(min_sev, filter);
   }
 
-  virtual bool RegisterVideoProcessor(VideoProcessor* processor) {
-    return video_.RegisterProcessor(processor);
-  }
-  virtual bool UnregisterVideoProcessor(VideoProcessor* processor) {
-    return video_.UnregisterProcessor(processor);
-  }
   virtual bool RegisterVoiceProcessor(uint32 ssrc,
                                       VoiceProcessor* processor,
                                       MediaProcessorDirection direction) {
@@ -373,17 +349,12 @@ class NullVideoEngine {
     return true;
   }
   bool SetLocalRenderer(VideoRenderer* renderer) { return true; }
-  bool SetCapture(bool capture) { return true;  }
   const std::vector<VideoCodec>& codecs() { return codecs_; }
   const std::vector<RtpHeaderExtension>& rtp_header_extensions() {
     return rtp_header_extensions_;
   }
   void SetLogging(int min_sev, const char* filter) {}
-  bool RegisterProcessor(VideoProcessor* video_processor) { return true; }
-  bool UnregisterProcessor(VideoProcessor* video_processor) { return true; }
   VideoFormat GetStartCaptureFormat() const { return VideoFormat(); }
-  bool SetVideoCapturer(VideoCapturer* capturer) { return true; }
-  VideoCapturer* GetVideoCapturer() const { return NULL; }
 
   sigslot::signal2<VideoCapturer*, CaptureState> SignalCaptureStateChange;
  private:

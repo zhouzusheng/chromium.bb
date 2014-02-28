@@ -27,9 +27,6 @@ class WebCompositorSupportImpl : public WebKit::WebCompositorSupport {
       WebKit::WebContentLayerClient* client);
   virtual WebKit::WebExternalTextureLayer* createExternalTextureLayer(
       WebKit::WebExternalTextureLayerClient* client);
-  virtual WebKit::WebExternalTextureLayer*
-      createExternalTextureLayerForMailbox(
-          WebKit::WebExternalTextureLayerClient* client);
   virtual WebKit::WebImageLayer* createImageLayer();
   virtual WebKit::WebSolidColorLayer* createSolidColorLayer();
   virtual WebKit::WebScrollbarLayer* createScrollbarLayer(
@@ -43,6 +40,7 @@ class WebCompositorSupportImpl : public WebKit::WebCompositorSupport {
   virtual WebKit::WebFloatAnimationCurve* createFloatAnimationCurve();
   virtual WebKit::WebTransformAnimationCurve* createTransformAnimationCurve();
   virtual WebKit::WebTransformOperations* createTransformOperations();
+  virtual WebKit::WebFilterOperations* createFilterOperations();
 
  private:
   DISALLOW_COPY_AND_ASSIGN(WebCompositorSupportImpl);

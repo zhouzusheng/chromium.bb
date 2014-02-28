@@ -30,9 +30,10 @@
 
 #include <limits>
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/KeyboardEvent.h"
 #include "core/dom/NodeRenderStyle.h"
 #include "core/dom/ScopedEventQueue.h"
@@ -74,9 +75,9 @@
 #include "core/platform/text/TextBreakIterator.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderTheme.h"
-#include <wtf/Assertions.h>
-#include <wtf/HashMap.h>
-#include <wtf/text/StringHash.h>
+#include "wtf/Assertions.h"
+#include "wtf/HashMap.h"
+#include "wtf/text/StringHash.h"
 
 namespace WebCore {
 
@@ -192,9 +193,9 @@ double InputType::valueAsDate() const
     return DateComponents::invalidMilliseconds();
 }
 
-void InputType::setValueAsDate(double, ExceptionCode& ec) const
+void InputType::setValueAsDate(double, ExceptionState& es) const
 {
-    ec = INVALID_STATE_ERR;
+    es.throwDOMException(InvalidStateError);
 }
 
 double InputType::valueAsDouble() const
@@ -202,14 +203,14 @@ double InputType::valueAsDouble() const
     return numeric_limits<double>::quiet_NaN();
 }
 
-void InputType::setValueAsDouble(double doubleValue, TextFieldEventBehavior eventBehavior, ExceptionCode& ec) const
+void InputType::setValueAsDouble(double doubleValue, TextFieldEventBehavior eventBehavior, ExceptionState& es) const
 {
-    setValueAsDecimal(Decimal::fromDouble(doubleValue), eventBehavior, ec);
+    setValueAsDecimal(Decimal::fromDouble(doubleValue), eventBehavior, es);
 }
 
-void InputType::setValueAsDecimal(const Decimal&, TextFieldEventBehavior, ExceptionCode& ec) const
+void InputType::setValueAsDecimal(const Decimal&, TextFieldEventBehavior, ExceptionState& es) const
 {
-    ec = INVALID_STATE_ERR;
+    es.throwDOMException(InvalidStateError);
 }
 
 bool InputType::supportsValidation() const
@@ -429,7 +430,7 @@ void InputType::forwardEvent(Event*)
 
 bool InputType::shouldSubmitImplicitly(Event* event)
 {
-    return event->isKeyboardEvent() && event->type() == eventNames().keypressEvent && static_cast<KeyboardEvent*>(event)->charCode() == '\r';
+    return event->isKeyboardEvent() && event->type() == eventNames().keypressEvent && toKeyboardEvent(event)->charCode() == '\r';
 }
 
 PassRefPtr<HTMLFormElement> InputType::formForSubmission() const
@@ -465,18 +466,12 @@ void InputType::destroyShadowSubtree()
     root->removeChildren();
 
     // It's ok to clear contents of all other ShadowRoots because they must have
-    // been created by TextFieldDecorationElement, and we don't allow adding
+    // been created by InputFieldPasswordGeneratorButtonElement, and we don't allow adding
     // AuthorShadowRoot to HTMLInputElement.
     while ((root = root->youngerShadowRoot())) {
         root->removeChildren();
         root->appendChild(HTMLShadowElement::create(shadowTag, element()->document()));
     }
-}
-
-Element* InputType::elementById(const AtomicString& id) const
-{
-    ShadowRoot* shadowRoot = element()->userAgentShadowRoot();
-    return shadowRoot ? shadowRoot->getElementById(id) : 0;
 }
 
 Decimal InputType::parseToNumber(const String&, const Decimal& defaultValue) const
@@ -526,14 +521,14 @@ bool InputType::hasCustomFocusLogic() const
     return true;
 }
 
-bool InputType::isKeyboardFocusable(KeyboardEvent* event) const
+bool InputType::isKeyboardFocusable() const
 {
-    return element()->isTextFormControlKeyboardFocusable(event);
+    return element()->isFocusable();
 }
 
-bool InputType::isMouseFocusable() const
+bool InputType::shouldShowFocusRingOnMouseFocus() const
 {
-    return element()->isTextFormControlMouseFocusable();
+    return false;
 }
 
 bool InputType::shouldUseInputMethod() const
@@ -541,7 +536,7 @@ bool InputType::shouldUseInputMethod() const
     return false;
 }
 
-void InputType::handleFocusEvent(Node*, FocusDirection)
+void InputType::handleFocusEvent(Element*, FocusDirection)
 {
 }
 
@@ -700,12 +695,6 @@ String InputType::droppedFileSystemId()
 {
     ASSERT_NOT_REACHED();
     return String();
-}
-
-Icon* InputType::icon() const
-{
-    ASSERT_NOT_REACHED();
-    return 0;
 }
 
 bool InputType::shouldResetOnDocumentActivation()
@@ -919,6 +908,11 @@ bool InputType::supportsIndeterminateAppearance() const
     return false;
 }
 
+bool InputType::supportsInputModeAttribute() const
+{
+    return false;
+}
+
 bool InputType::supportsSelectionAPI() const
 {
     return false;
@@ -934,28 +928,28 @@ unsigned InputType::width() const
     return 0;
 }
 
-void InputType::applyStep(int count, AnyStepHandling anyStepHandling, TextFieldEventBehavior eventBehavior, ExceptionCode& ec)
+void InputType::applyStep(int count, AnyStepHandling anyStepHandling, TextFieldEventBehavior eventBehavior, ExceptionState& es)
 {
     StepRange stepRange(createStepRange(anyStepHandling));
     if (!stepRange.hasStep()) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
 
     const Decimal current = parseToNumberOrNaN(element()->value());
     if (!current.isFinite()) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
     Decimal newValue = current + stepRange.step() * count;
     if (!newValue.isFinite()) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
 
     const Decimal acceptableErrorValue = stepRange.acceptableError();
     if (newValue - stepRange.minimum() < -acceptableErrorValue) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
     if (newValue < stepRange.minimum())
@@ -966,13 +960,13 @@ void InputType::applyStep(int count, AnyStepHandling anyStepHandling, TextFieldE
         newValue = stepRange.alignValueForStep(current, newValue);
 
     if (newValue - stepRange.maximum() > acceptableErrorValue) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
     if (newValue > stepRange.maximum())
         newValue = stepRange.maximum();
 
-    setValueAsDecimal(newValue, eventBehavior, ec);
+    setValueAsDecimal(newValue, eventBehavior, es);
 
     if (AXObjectCache* cache = element()->document()->existingAXObjectCache())
         cache->postNotification(element(), AXObjectCache::AXValueChanged, true);
@@ -991,13 +985,13 @@ StepRange InputType::createStepRange(AnyStepHandling) const
     return StepRange();
 }
 
-void InputType::stepUp(int n, ExceptionCode& ec)
+void InputType::stepUp(int n, ExceptionState& es)
 {
     if (!isSteppable()) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
-    applyStep(n, RejectAny, DispatchNoEvent, ec);
+    applyStep(n, RejectAny, DispatchNoEvent, es);
 }
 
 void InputType::stepUpFromRenderer(int n)
@@ -1097,8 +1091,9 @@ void InputType::stepUpFromRenderer(int n)
                 applyStep(n - 1, AnyIsDefaultStep, DispatchInputAndChangeEvent, IGNORE_EXCEPTION);
             else if (n < -1)
                 applyStep(n + 1, AnyIsDefaultStep, DispatchInputAndChangeEvent, IGNORE_EXCEPTION);
-        } else
+        } else {
             applyStep(n, AnyIsDefaultStep, DispatchInputAndChangeEvent, IGNORE_EXCEPTION);
+        }
     }
 }
 

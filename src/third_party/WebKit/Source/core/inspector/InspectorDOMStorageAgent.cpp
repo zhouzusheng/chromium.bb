@@ -30,11 +30,11 @@
 #include "config.h"
 #include "core/inspector/InspectorDOMStorageAgent.h"
 
-#include "DOMException.h"
 #include "InspectorFrontend.h"
+#include "bindings/v8/ExceptionState.h"
+#include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
@@ -48,21 +48,19 @@
 #include "core/storage/StorageNamespace.h"
 #include "weborigin/SecurityOrigin.h"
 
-#include <wtf/MemoryInstrumentationHashMap.h>
-#include <wtf/Vector.h>
-
 namespace WebCore {
 
 namespace DOMStorageAgentState {
 static const char domStorageAgentEnabled[] = "domStorageAgentEnabled";
 };
 
-static bool hadException(ExceptionCode ec, ErrorString* errorString)
+static bool hadException(ExceptionState& es, ErrorString* errorString)
 {
-    switch (ec) {
-    case 0:
+    if (!es.hadException())
         return false;
-    case SECURITY_ERR:
+
+    switch (es.code()) {
+    case SecurityError:
         *errorString = "Security error";
         return true;
     default:
@@ -110,22 +108,38 @@ void InspectorDOMStorageAgent::disable(ErrorString*)
     m_state->setBoolean(DOMStorageAgentState::domStorageAgentEnabled, false);
 }
 
+void InspectorDOMStorageAgent::getValue(ErrorString* errorString, const RefPtr<JSONObject>& storageId, const String& key, TypeBuilder::OptOutput<WTF::String>* value)
+{
+    Frame* frame;
+    OwnPtr<StorageArea> storageArea = findStorageArea(errorString, storageId, frame);
+    if (!storageArea)
+        return;
+
+    TrackExceptionState es;
+    bool keyPresent = storageArea->contains(key, es, frame);
+    if (hadException(es, errorString) || !keyPresent)
+        return;
+
+    *value = storageArea->getItem(key, es, frame);
+    hadException(es, errorString);
+}
+
 void InspectorDOMStorageAgent::getDOMStorageItems(ErrorString* errorString, const RefPtr<JSONObject>& storageId, RefPtr<TypeBuilder::Array<TypeBuilder::Array<String> > >& items)
 {
     Frame* frame;
-    RefPtr<StorageArea> storageArea = findStorageArea(errorString, storageId, frame);
+    OwnPtr<StorageArea> storageArea = findStorageArea(errorString, storageId, frame);
     if (!storageArea)
         return;
 
     RefPtr<TypeBuilder::Array<TypeBuilder::Array<String> > > storageItems = TypeBuilder::Array<TypeBuilder::Array<String> >::create();
 
-    ExceptionCode ec = 0;
-    for (unsigned i = 0; i < storageArea->length(ec, frame); ++i) {
-        String name(storageArea->key(i, ec, frame));
-        if (hadException(ec, errorString))
+    TrackExceptionState es;
+    for (unsigned i = 0; i < storageArea->length(es, frame); ++i) {
+        String name(storageArea->key(i, es, frame));
+        if (hadException(es, errorString))
             return;
-        String value(storageArea->getItem(name, ec, frame));
-        if (hadException(ec, errorString))
+        String value(storageArea->getItem(name, es, frame));
+        if (hadException(es, errorString))
             return;
         RefPtr<TypeBuilder::Array<String> > entry = TypeBuilder::Array<String>::create();
         entry->addItem(name);
@@ -135,41 +149,39 @@ void InspectorDOMStorageAgent::getDOMStorageItems(ErrorString* errorString, cons
     items = storageItems.release();
 }
 
-static String toErrorString(const ExceptionCode& ec)
+static String toErrorString(ExceptionState& es)
 {
-    if (ec) {
-        ExceptionCodeDescription description(ec);
-        return description.name;
-    }
+    if (es.hadException())
+        return DOMException::getErrorName(es.code());
     return "";
 }
 
 void InspectorDOMStorageAgent::setDOMStorageItem(ErrorString* errorString, const RefPtr<JSONObject>& storageId, const String& key, const String& value)
 {
     Frame* frame;
-    RefPtr<StorageArea> storageArea = findStorageArea(0, storageId, frame);
+    OwnPtr<StorageArea> storageArea = findStorageArea(0, storageId, frame);
     if (!storageArea) {
         *errorString = "Storage not found";
         return;
     }
 
-    ExceptionCode exception = 0;
-    storageArea->setItem(key, value, exception, frame);
-    *errorString = toErrorString(exception);
+    TrackExceptionState es;
+    storageArea->setItem(key, value, es, frame);
+    *errorString = toErrorString(es);
 }
 
 void InspectorDOMStorageAgent::removeDOMStorageItem(ErrorString* errorString, const RefPtr<JSONObject>& storageId, const String& key)
 {
     Frame* frame;
-    RefPtr<StorageArea> storageArea = findStorageArea(0, storageId, frame);
+    OwnPtr<StorageArea> storageArea = findStorageArea(0, storageId, frame);
     if (!storageArea) {
         *errorString = "Storage not found";
         return;
     }
 
-    ExceptionCode exception = 0;
-    storageArea->removeItem(key, exception, frame);
-    *errorString = toErrorString(exception);
+    TrackExceptionState es;
+    storageArea->removeItem(key, es, frame);
+    *errorString = toErrorString(es);
 }
 
 String InspectorDOMStorageAgent::storageId(Storage* storage)
@@ -208,7 +220,7 @@ void InspectorDOMStorageAgent::didDispatchDOMStorageEvent(const String& key, con
         m_frontend->domstorage()->domStorageItemUpdated(id, key, oldValue, newValue);
 }
 
-PassRefPtr<StorageArea> InspectorDOMStorageAgent::findStorageArea(ErrorString* errorString, const RefPtr<JSONObject>& storageId, Frame*& targetFrame)
+PassOwnPtr<StorageArea> InspectorDOMStorageAgent::findStorageArea(ErrorString* errorString, const RefPtr<JSONObject>& storageId, Frame*& targetFrame)
 {
     String securityOrigin;
     bool isLocalStorage = false;
@@ -218,28 +230,20 @@ PassRefPtr<StorageArea> InspectorDOMStorageAgent::findStorageArea(ErrorString* e
     if (!success) {
         if (errorString)
             *errorString = "Invalid storageId format";
-        return 0;
+        return nullptr;
     }
 
     Frame* frame = m_pageAgent->findFrameWithSecurityOrigin(securityOrigin);
     if (!frame) {
         if (errorString)
             *errorString = "Frame not found for the given security origin";
-        return 0;
+        return nullptr;
     }
     targetFrame = frame;
 
-    Page* page = m_pageAgent->page();
     if (isLocalStorage)
-        return page->group().localStorage()->storageArea(frame->document()->securityOrigin());
-    return page->sessionStorage()->storageArea(frame->document()->securityOrigin());
-}
-
-void InspectorDOMStorageAgent::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::InspectorDOMStorageAgent);
-    InspectorBaseAgent<InspectorDOMStorageAgent>::reportMemoryUsage(memoryObjectInfo);
-    info.addWeakPointer(m_frontend);
+        return StorageNamespace::localStorageArea(frame->document()->securityOrigin());
+    return m_pageAgent->page()->sessionStorage()->storageArea(frame->document()->securityOrigin());
 }
 
 } // namespace WebCore

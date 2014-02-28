@@ -30,26 +30,22 @@
 #ifndef InspectorProfilerAgent_h
 #define InspectorProfilerAgent_h
 
-
 #include "InspectorFrontend.h"
 #include "core/inspector/InspectorBaseAgent.h"
-#include <wtf/Forward.h>
-#include <wtf/HashMap.h>
-#include <wtf/Noncopyable.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/Forward.h"
+#include "wtf/HashMap.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 class InjectedScriptManager;
 class InspectorConsoleAgent;
 class InspectorFrontend;
-class InspectorState;
 class InstrumentingAgents;
-class Page;
 class ScriptCallStack;
 class ScriptProfile;
-class WorkerContext;
 
 typedef String ErrorString;
 
@@ -80,8 +76,6 @@ public:
     virtual void restore();
 
     void toggleRecordButton(bool isProfiling);
-
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
 
     void willProcessTask();
     void didProcessTask();

@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2007 Apple Inc.  All rights reserved.
+ * Copyright (C) 2013 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,8 +34,11 @@
  */
 (function (InjectedScriptHost, inspectedWindow, injectedScriptId) {
 
-// Protect against Object overwritten by the user code.
-var Object = {}.constructor;
+/**
+ * Protect against Object overwritten by the user code.
+ * @suppress {duplicate}
+ */
+var Object = /** @type {function(new:Object, *=)} */ ({}.constructor);
 
 /**
  * @param {Arguments} array
@@ -407,6 +411,8 @@ InjectedScript.prototype = {
                             continue;
                     } else {
                         // Not all bindings provide proper descriptors. Fall back to the writable, configurable property.
+                        if (accessorPropertiesOnly)
+                            continue;
                         try {
                             descriptor = { name: name, value: o[name], writable: false, configurable: false, enumerable: false};
                             if (o === object) 
@@ -418,6 +424,8 @@ InjectedScript.prototype = {
                         continue;
                     }
                 } catch (e) {
+                    if (accessorPropertiesOnly)
+                        continue;
                     var descriptor = {};
                     descriptor.value = e;
                     descriptor.wasThrown = true;
@@ -429,7 +437,7 @@ InjectedScript.prototype = {
                 descriptors.push(descriptor);
             }
             if (ownProperties) {
-                if (object.__proto__)
+                if (object.__proto__ && !accessorPropertiesOnly)
                     descriptors.push({ name: "__proto__", value: object.__proto__, writable: true, configurable: true, enumerable: false, isOwn: true});
                 break;
             }
@@ -629,6 +637,22 @@ InjectedScript.prototype = {
         if (result === false)
             result = "Restart frame is not supported"; 
         return result;
+    },
+
+    /**
+     * @param {Object} topCallFrame
+     * @param {string} callFrameId
+     * @return {*} a stepIn position array ready for protocol JSON or a string error
+     */
+    getStepInPositions: function(topCallFrame, callFrameId)
+    {
+        var callFrame = this._callFrameForId(topCallFrame, callFrameId);
+        if (!callFrame)
+            return "Could not find call frame with given id";
+        var stepInPositionsUnpacked = JSON.parse(callFrame.stepInPositions);
+        if (typeof stepInPositionsUnpacked !== "object")
+            return "Step in positions not available";
+        return stepInPositionsUnpacked;
     },
 
     /**
@@ -1303,7 +1327,10 @@ CommandLineAPIImpl.prototype = {
     {
         if (injectedScript._subtype(object) === "node")
             object = object.outerHTML;
-        InjectedScriptHost.copyText(object);
+        var string = object + "";
+        var hints = { copyToClipboard: true };
+        var remoteObject = injectedScript._wrapObject(string, "")
+        InjectedScriptHost.inspect(remoteObject, hints);
     },
 
     clear: function()

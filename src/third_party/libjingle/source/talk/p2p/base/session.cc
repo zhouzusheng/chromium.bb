@@ -194,7 +194,6 @@ TransportChannelImpl* TransportProxy::GetOrCreateChannelProxyImpl(
   TransportChannelImpl* impl = transport_->get()->GetChannel(component);
   if (impl == NULL) {
     impl = transport_->get()->CreateChannel(component);
-    impl->SetSessionId(sid_);
   }
   return impl;
 }
@@ -239,8 +238,8 @@ bool TransportProxy::SetupMux(TransportProxy* target) {
   return true;
 }
 
-void TransportProxy::SetRole(TransportRole role) {
-  transport_->get()->SetRole(role);
+void TransportProxy::SetIceRole(IceRole role) {
+  transport_->get()->SetIceRole(role);
 }
 
 bool TransportProxy::SetLocalTransportDescription(
@@ -286,6 +285,11 @@ bool TransportProxy::OnRemoteCandidates(const Candidates& candidates,
   }
   transport_->get()->OnRemoteCandidates(candidates);
   return true;
+}
+
+void TransportProxy::SetIdentity(
+    talk_base::SSLIdentity* identity) {
+  transport_->get()->SetIdentity(identity);
 }
 
 std::string BaseSession::StateToString(State state) {
@@ -366,6 +370,17 @@ BaseSession::~BaseSession() {
 
   delete remote_description_;
   delete local_description_;
+}
+
+bool BaseSession::SetIdentity(talk_base::SSLIdentity* identity) {
+  if (identity_)
+    return false;
+  identity_ = identity;
+  for (TransportMap::iterator iter = transports_.begin();
+       iter != transports_.end(); ++iter) {
+    iter->second->SetIdentity(identity_);
+  }
+  return true;
 }
 
 bool BaseSession::PushdownTransportDescription(ContentSource source,
@@ -455,8 +470,8 @@ TransportProxy* BaseSession::GetOrCreateTransportProxy(
     return transproxy;
 
   Transport* transport = CreateTransport(content_name);
-  transport->SetRole(initiator_ ? ROLE_CONTROLLING : ROLE_CONTROLLED);
-  transport->SetTiebreaker(ice_tiebreaker_);
+  transport->SetIceRole(initiator_ ? ICEROLE_CONTROLLING : ICEROLE_CONTROLLED);
+  transport->SetIceTiebreaker(ice_tiebreaker_);
   // TODO: Connect all the Transport signals to TransportProxy
   // then to the BaseSession.
   transport->SignalConnecting.connect(
@@ -727,8 +742,8 @@ void BaseSession::OnRoleConflict() {
   for (TransportMap::iterator iter = transports_.begin();
        iter != transports_.end(); ++iter) {
     // Role will be reverse of initial role setting.
-    TransportRole role = initiator_ ? ROLE_CONTROLLED : ROLE_CONTROLLING;
-    iter->second->SetRole(role);
+    IceRole role = initiator_ ? ICEROLE_CONTROLLED : ICEROLE_CONTROLLING;
+    iter->second->SetIceRole(role);
   }
 }
 
@@ -1374,7 +1389,7 @@ bool Session::OnDescriptionInfoMessage(const SessionMessage& msg,
     return false;
   }
 
-  ContentInfos updated_contents = description_info.ClearContents();
+  ContentInfos& updated_contents = description_info.contents;
 
   // TODO: Currently, reflector sends back
   // video stream updates even for an audio-only call, which causes

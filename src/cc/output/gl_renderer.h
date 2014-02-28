@@ -10,6 +10,7 @@
 #include "cc/base/scoped_ptr_vector.h"
 #include "cc/output/direct_renderer.h"
 #include "cc/output/gl_renderer_draw_cache.h"
+#include "cc/output/program_binding.h"
 #include "cc/output/renderer.h"
 #include "cc/quads/checkerboard_draw_quad.h"
 #include "cc/quads/debug_border_draw_quad.h"
@@ -18,11 +19,11 @@
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
 #include "cc/quads/yuv_video_draw_quad.h"
-#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
-#include "third_party/WebKit/public/platform/WebGraphicsMemoryAllocation.h"
 #include "ui/gfx/quad_f.h"
 
 class SkBitmap;
+
+namespace WebKit { class WebGraphicsContext3D; }
 
 namespace cc {
 
@@ -36,11 +37,7 @@ class GeometryBinding;
 class ScopedEnsureFramebufferAllocation;
 
 // Class that handles drawing of composited render layers using GL.
-class CC_EXPORT GLRenderer
-  : public DirectRenderer,
-    public NON_EXPORTED_BASE(
-        WebKit::WebGraphicsContext3D::
-            WebGraphicsMemoryAllocationChangedCallbackCHROMIUM) {
+class CC_EXPORT GLRenderer : public DirectRenderer {
  public:
   static scoped_ptr<GLRenderer> Create(RendererClient* client,
                                        OutputSurface* output_surface,
@@ -72,12 +69,15 @@ class CC_EXPORT GLRenderer
                                       size_t bytes_visible_and_nearby,
                                       size_t bytes_allocated) OVERRIDE;
 
+  virtual void SetDiscardBackBufferWhenNotVisible(bool discard) OVERRIDE;
+
   static void DebugGLCall(WebKit::WebGraphicsContext3D* context,
                           const char* command,
                           const char* file,
                           int line);
 
   bool CanUseSkiaGPUBackend() const;
+  void LazyLabelOffscreenContext();
 
  protected:
   GLRenderer(RendererClient* client,
@@ -100,6 +100,11 @@ class CC_EXPORT GLRenderer
                              unsigned texture_format,
                              gfx::Rect device_rect);
   void ReleaseRenderPassTextures();
+
+  void SetStencilEnabled(bool enabled);
+  bool stencil_enabled() const { return stencil_shadow_; }
+  void SetBlendEnabled(bool enabled);
+  bool blend_enabled() const { return blend_shadow_; }
 
   virtual void BindFramebufferToOutputSurface(DrawingFrame* frame) OVERRIDE;
   virtual bool BindFramebufferToTexture(DrawingFrame* frame,
@@ -124,8 +129,6 @@ class CC_EXPORT GLRenderer
   friend class GLRendererShaderTest;
 
   static void ToGLMatrix(float* gl_matrix, const gfx::Transform& transform);
-  static ManagedMemoryPolicy::PriorityCutoff PriorityCutoff(
-      WebKit::WebGraphicsMemoryAllocation::PriorityCutoff priority_cutoff);
 
   void DrawCheckerboardQuad(const DrawingFrame* frame,
                             const CheckerboardDrawQuad* quad);
@@ -141,7 +144,6 @@ class CC_EXPORT GLRenderer
                           const SolidColorDrawQuad* quad);
   void DrawStreamVideoQuad(const DrawingFrame* frame,
                            const StreamVideoDrawQuad* quad);
-  void DrawTextureQuad(const DrawingFrame* frame, const TextureDrawQuad* quad);
   void EnqueueTextureQuad(const DrawingFrame* frame,
                           const TextureDrawQuad* quad);
   void FlushTextureQuadCache();
@@ -164,8 +166,6 @@ class CC_EXPORT GLRenderer
                         const gfx::Transform& draw_transform,
                         const gfx::RectF& quad_rect,
                         int matrix_location);
-  void SetBlendEnabled(bool enabled);
-  bool blend_enabled() const { return blend_shadow_; }
   void SetUseProgram(unsigned program);
 
   void CopyTextureToFramebuffer(const DrawingFrame* frame,
@@ -204,26 +204,29 @@ class CC_EXPORT GLRenderer
   void FinishedReadback(
       const AsyncGetFramebufferPixelsCleanupCallback& cleanup_callback,
       unsigned source_buffer,
+      unsigned query,
       uint8_t* dest_pixels,
       gfx::Size size);
   void PassOnSkBitmap(scoped_ptr<SkBitmap> bitmap,
                       scoped_ptr<SkAutoLockPixels> lock,
                       scoped_ptr<CopyOutputRequest> request,
                       bool success);
-  void DeleteTextureReleaseCallback(unsigned texture_id,
-                                    unsigned sync_point,
-                                    bool lost_resource);
+
+  static void DeleteTextureReleaseCallback(
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+      base::WeakPtr<GLRenderer> gl_renderer,
+      unsigned texture_id,
+      unsigned sync_point,
+      bool lost_resource);
+  void DeleteTextureReleaseCallbackOnImplThread(unsigned texture_id,
+                                                unsigned sync_point,
+                                                bool lost_resource);
 
   void ReinitializeGrCanvas();
   void ReinitializeGLState();
 
-  // WebKit::
-  // WebGraphicsContext3D::WebGraphicsMemoryAllocationChangedCallbackCHROMIUM
-  // implementation.
-  virtual void onMemoryAllocationChanged(
-      WebKit::WebGraphicsMemoryAllocation allocation) OVERRIDE;
-  void DiscardBackbuffer();
-  void EnsureBackbuffer();
+  virtual void DiscardBackbuffer() OVERRIDE;
+  virtual void EnsureBackbuffer() OVERRIDE;
   void EnforceMemoryPolicy();
 
   RendererCapabilities capabilities_;
@@ -239,9 +242,9 @@ class CC_EXPORT GLRenderer
   // Tiled layer shaders.
   typedef ProgramBinding<VertexShaderTile, FragmentShaderRGBATexAlpha>
       TileProgram;
-  typedef ProgramBinding<VertexShaderTile, FragmentShaderRGBATexClampAlphaAA>
+  typedef ProgramBinding<VertexShaderTileAA, FragmentShaderRGBATexClampAlphaAA>
       TileProgramAA;
-  typedef ProgramBinding<VertexShaderTile,
+  typedef ProgramBinding<VertexShaderTileAA,
                          FragmentShaderRGBATexClampSwizzleAlphaAA>
       TileProgramSwizzleAA;
   typedef ProgramBinding<VertexShaderTile, FragmentShaderRGBATexOpaque>
@@ -256,8 +259,15 @@ class CC_EXPORT GLRenderer
   // Texture shaders.
   typedef ProgramBinding<VertexShaderPosTexTransform,
                          FragmentShaderRGBATexVaryingAlpha> TextureProgram;
-  typedef ProgramBinding<VertexShaderPosTexTransformFlip,
-                         FragmentShaderRGBATexVaryingAlpha> TextureProgramFlip;
+  typedef ProgramBinding<VertexShaderPosTexTransform,
+                         FragmentShaderRGBATexPremultiplyAlpha>
+      NonPremultipliedTextureProgram;
+  typedef ProgramBinding<VertexShaderPosTexTransform,
+                         FragmentShaderTexBackgroundVaryingAlpha>
+      TextureBackgroundProgram;
+  typedef ProgramBinding<VertexShaderPosTexTransform,
+                         FragmentShaderTexBackgroundPremultiplyAlpha>
+      NonPremultipliedTextureBackgroundProgram;
   typedef ProgramBinding<VertexShaderPosTexTransform,
                          FragmentShaderRGBATexRectVaryingAlpha>
       TextureIOSurfaceProgram;
@@ -267,18 +277,18 @@ class CC_EXPORT GLRenderer
                          FragmentShaderRGBATexAlpha> RenderPassProgram;
   typedef ProgramBinding<VertexShaderPosTexTransform,
                          FragmentShaderRGBATexAlphaMask> RenderPassMaskProgram;
-  typedef ProgramBinding<VertexShaderQuadTexTransform,
+  typedef ProgramBinding<VertexShaderQuadTexTransformAA,
                          FragmentShaderRGBATexAlphaAA> RenderPassProgramAA;
-  typedef ProgramBinding<VertexShaderQuadTexTransform,
+  typedef ProgramBinding<VertexShaderQuadTexTransformAA,
                          FragmentShaderRGBATexAlphaMaskAA>
       RenderPassMaskProgramAA;
   typedef ProgramBinding<VertexShaderPosTexTransform,
                          FragmentShaderRGBATexColorMatrixAlpha>
       RenderPassColorMatrixProgram;
-  typedef ProgramBinding<VertexShaderQuadTexTransform,
+  typedef ProgramBinding<VertexShaderQuadTexTransformAA,
                          FragmentShaderRGBATexAlphaMaskColorMatrixAA>
       RenderPassMaskColorMatrixProgramAA;
-  typedef ProgramBinding<VertexShaderQuadTexTransform,
+  typedef ProgramBinding<VertexShaderQuadTexTransformAA,
                          FragmentShaderRGBATexAlphaColorMatrixAA>
       RenderPassColorMatrixProgramAA;
   typedef ProgramBinding<VertexShaderPosTexTransform,
@@ -299,7 +309,7 @@ class CC_EXPORT GLRenderer
       DebugBorderProgram;
   typedef ProgramBinding<VertexShaderQuad, FragmentShaderColor>
       SolidColorProgram;
-  typedef ProgramBinding<VertexShaderQuad, FragmentShaderColorAA>
+  typedef ProgramBinding<VertexShaderQuadAA, FragmentShaderColorAA>
       SolidColorProgramAA;
 
   const TileProgram* GetTileProgram(TexCoordPrecision precision);
@@ -331,8 +341,12 @@ class CC_EXPORT GLRenderer
 
   const TextureProgram* GetTextureProgram(
       TexCoordPrecision precision);
-  const TextureProgramFlip* GetTextureProgramFlip(
+  const NonPremultipliedTextureProgram* GetNonPremultipliedTextureProgram(
       TexCoordPrecision precision);
+  const TextureBackgroundProgram* GetTextureBackgroundProgram(
+      TexCoordPrecision precision);
+  const NonPremultipliedTextureBackgroundProgram*
+      GetNonPremultipliedTextureBackgroundProgram(TexCoordPrecision precision);
   const TextureIOSurfaceProgram* GetTextureIOSurfaceProgram(
       TexCoordPrecision precision);
 
@@ -363,11 +377,18 @@ class CC_EXPORT GLRenderer
   scoped_ptr<TileProgramSwizzleAA> tile_program_swizzle_aa_highp_;
 
   scoped_ptr<TextureProgram> texture_program_;
-  scoped_ptr<TextureProgramFlip> texture_program_flip_;
+  scoped_ptr<NonPremultipliedTextureProgram> nonpremultiplied_texture_program_;
+  scoped_ptr<TextureBackgroundProgram> texture_background_program_;
+  scoped_ptr<NonPremultipliedTextureBackgroundProgram>
+      nonpremultiplied_texture_background_program_;
   scoped_ptr<TextureIOSurfaceProgram> texture_io_surface_program_;
 
   scoped_ptr<TextureProgram> texture_program_highp_;
-  scoped_ptr<TextureProgramFlip> texture_program_flip_highp_;
+  scoped_ptr<NonPremultipliedTextureProgram>
+      nonpremultiplied_texture_program_highp_;
+  scoped_ptr<TextureBackgroundProgram> texture_background_program_highp_;
+  scoped_ptr<NonPremultipliedTextureBackgroundProgram>
+      nonpremultiplied_texture_background_program_highp_;
   scoped_ptr<TextureIOSurfaceProgram> texture_io_surface_program_highp_;
 
   scoped_ptr<RenderPassProgram> render_pass_program_;
@@ -414,16 +435,19 @@ class CC_EXPORT GLRenderer
 
   gfx::Rect swap_buffer_rect_;
   gfx::Rect scissor_rect_;
+  gfx::Rect viewport_;
   bool is_backbuffer_discarded_;
   bool discard_backbuffer_when_not_visible_;
   bool is_using_bind_uniform_;
   bool visible_;
   bool is_scissor_enabled_;
+  bool stencil_shadow_;
   bool blend_shadow_;
   unsigned program_shadow_;
   TexturedQuadDrawCache draw_cache_;
   int highp_threshold_min_;
   int highp_threshold_cache_;
+  bool offscreen_context_labelled_;
 
   struct PendingAsyncReadPixels;
   ScopedPtrVector<PendingAsyncReadPixels> pending_async_read_pixels_;

@@ -31,7 +31,7 @@ class SVGElement;
 
 class RenderSVGContainer : public RenderSVGModelObject {
 public:
-    explicit RenderSVGContainer(SVGStyledElement*);
+    explicit RenderSVGContainer(SVGElement*);
     virtual ~RenderSVGContainer();
 
     RenderObject* firstChild() const { ASSERT(children() == virtualChildren()); return children()->firstChild(); }
@@ -86,7 +86,7 @@ private:
     FloatRect m_repaintBoundingBox;
     bool m_needsBoundariesUpdate : 1;
 };
-  
+
 inline RenderSVGContainer* toRenderSVGContainer(RenderObject* object)
 {
     ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isSVGContainer());

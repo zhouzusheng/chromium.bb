@@ -14,6 +14,8 @@ const float kMaxBitrateReduction = 0.9f;
 const float kMinBitrateReduction = 0.05f;
 const uint64 kMinBitrateKbit = 10;
 const int kInitialRttMs = 60;  // At a typical RTT 60 ms.
+const float kAlpha = 0.125f;
+const float kOneMinusAlpha = 1 - kAlpha;
 
 static const int kBitrateSmoothingPeriodMs = 1000;
 static const int kMinBitrateSmoothingPeriodMs = 500;
@@ -200,18 +202,25 @@ void InterArrivalSender::OnIncomingAck(
     QuicPacketSequenceNumber /*acked_sequence_number*/,
     QuicByteCount acked_bytes,
     QuicTime::Delta rtt) {
-  DCHECK(!rtt.IsZero());
-  DCHECK(!rtt.IsInfinite());
+  // RTT can't be negative.
+  DCHECK_LE(0, rtt.ToMicroseconds());
+
+  if (probing_) {
+    probe_->OnAcknowledgedPacket(acked_bytes);
+  }
+
+  if (rtt.IsInfinite()) {
+    return;
+  }
+
   if (smoothed_rtt_.IsZero()) {
     smoothed_rtt_ = rtt;
   } else {
     smoothed_rtt_ = QuicTime::Delta::FromMicroseconds(
-        (smoothed_rtt_.ToMicroseconds() * 3 + rtt.ToMicroseconds()) / 4);
+        kOneMinusAlpha * smoothed_rtt_.ToMicroseconds() +
+        kAlpha * rtt.ToMicroseconds());
   }
-  state_machine_->set_rtt(SmoothedRtt());
-  if (probing_) {
-    probe_->OnAcknowledgedPacket(acked_bytes);
-  }
+  state_machine_->set_rtt(smoothed_rtt_);
 }
 
 void InterArrivalSender::OnIncomingLoss(QuicTime ack_receive_time) {
@@ -248,7 +257,8 @@ void InterArrivalSender::AbandoningPacket(
 QuicTime::Delta InterArrivalSender::TimeUntilSend(
     QuicTime now,
     Retransmission /*retransmit*/,
-    HasRetransmittableData has_retransmittable_data) {
+    HasRetransmittableData has_retransmittable_data,
+    IsHandshake /* handshake */) {
   // TODO(pwestin): implement outer_congestion_window_ logic.
   QuicTime::Delta outer_window = QuicTime::Delta::Zero();
 
@@ -303,6 +313,12 @@ QuicTime::Delta InterArrivalSender::SmoothedRtt() {
     return QuicTime::Delta::FromMilliseconds(kInitialRttMs);
   }
   return smoothed_rtt_;
+}
+
+QuicTime::Delta InterArrivalSender::RetransmissionDelay() {
+  // TODO(pwestin): Calculate and return retransmission delay.
+  // Use 2 * the smoothed RTT for now.
+  return smoothed_rtt_.Add(smoothed_rtt_);
 }
 
 void InterArrivalSender::EstimateNewBandwidth(QuicTime feedback_receive_time,

@@ -7,18 +7,21 @@
 #include <algorithm>
 #include <list>
 
+#include "base/command_line.h"
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/win/scoped_variant.h"
+#include "media/base/media_switches.h"
 #include "media/video/capture/win/video_capture_device_mf_win.h"
 
 using base::win::ScopedComPtr;
 using base::win::ScopedVariant;
 
+namespace media {
 namespace {
 
 // Finds and creates a DirectShow Video Capture filter matching the device_name.
-HRESULT GetDeviceFilter(const media::VideoCaptureDevice::Name& device_name,
+HRESULT GetDeviceFilter(const VideoCaptureDevice::Name& device_name,
                         IBaseFilter** filter) {
   DCHECK(filter);
 
@@ -58,7 +61,7 @@ HRESULT GetDeviceFilter(const media::VideoCaptureDevice::Name& device_name,
     }
     if (name.type() == VT_BSTR) {
       std::string device_path(base::SysWideToUTF8(V_BSTR(&name)));
-      if (device_path.compare(device_name.unique_id) == 0) {
+      if (device_path.compare(device_name.id()) == 0) {
         // We have found the requested device
         hr = moniker->BindToObject(0, 0, IID_IBaseFilter,
                                    capture_filter.ReceiveVoid());
@@ -145,30 +148,44 @@ void DeleteMediaType(AM_MEDIA_TYPE* mt) {
 
 }  // namespace
 
-namespace media {
-
 // static
 void VideoCaptureDevice::GetDeviceNames(Names* device_names) {
-  if (VideoCaptureDeviceMFWin::PlatformSupported()) {
+  Names::iterator it;
+
+  const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
+  if (VideoCaptureDeviceMFWin::PlatformSupported() &&
+      !cmd_line->HasSwitch(switches::kForceDirectShowVideoCapture)) {
     VideoCaptureDeviceMFWin::GetDeviceNames(device_names);
-  } else {
-    VideoCaptureDeviceWin::GetDeviceNames(device_names);
   }
+  // Retrieve the devices with DirectShow (DS) interface. They might (partially)
+  // overlap with the MediaFoundation (MF), so the list has to be consolidated.
+  Names temp_names;
+  VideoCaptureDeviceWin::GetDeviceNames(&temp_names);
+
+  // Merge the DS devices into the MF device list, and next remove
+  // the duplicates, giving priority to the MF "versions".
+  device_names->merge(temp_names);
+  device_names->unique();
 }
 
 // static
 VideoCaptureDevice* VideoCaptureDevice::Create(const Name& device_name) {
   VideoCaptureDevice* ret = NULL;
-  if (VideoCaptureDeviceMFWin::PlatformSupported()) {
+  if (device_name.capture_api_type() == Name::MEDIA_FOUNDATION) {
+    DCHECK(VideoCaptureDeviceMFWin::PlatformSupported());
     scoped_ptr<VideoCaptureDeviceMFWin> device(
         new VideoCaptureDeviceMFWin(device_name));
+    DVLOG(1) << " MediaFoundation Device: " << device_name.name();
     if (device->Init())
       ret = device.release();
-  } else {
+  } else if (device_name.capture_api_type() == Name::DIRECT_SHOW) {
     scoped_ptr<VideoCaptureDeviceWin> device(
         new VideoCaptureDeviceWin(device_name));
+    DVLOG(1) << " DirectShow Device: " << device_name.name();
     if (device->Init())
       ret = device.release();
+  } else{
+    NOTREACHED() << " Couldn't recognize VideoCaptureDevice type";
   }
 
   return ret;
@@ -202,7 +219,6 @@ void VideoCaptureDeviceWin::GetDeviceNames(Names* device_names) {
   ScopedComPtr<IMoniker> moniker;
   int index = 0;
   while (enum_moniker->Next(1, moniker.Receive(), NULL) == S_OK) {
-    Name device;
     ScopedComPtr<IPropertyBag> prop_bag;
     hr = moniker->BindToStorage(0, 0, IID_IPropertyBag, prop_bag.ReceiveVoid());
     if (FAILED(hr)) {
@@ -227,16 +243,18 @@ void VideoCaptureDeviceWin::GetDeviceNames(Names* device_names) {
           lstrlenW(str_ptr) < name_length ||
           (!(LowerCaseEqualsASCII(str_ptr, str_ptr + name_length,
                                   kGoogleCameraAdapter)))) {
-        device.device_name = base::SysWideToUTF8(str_ptr);
+        std::string id;
+        std::string device_name(base::SysWideToUTF8(str_ptr));
         name.Reset();
         hr = prop_bag->Read(L"DevicePath", name.Receive(), 0);
-        if (FAILED(hr)) {
-          device.unique_id = device.device_name;
-        } else if (name.type() == VT_BSTR) {
-          device.unique_id = base::SysWideToUTF8(V_BSTR(&name));
+        if (FAILED(hr) || name.type() != VT_BSTR) {
+          id = device_name;
+        } else {
+          DCHECK_EQ(name.type(), VT_BSTR);
+          id = base::SysWideToUTF8(V_BSTR(&name));
         }
 
-        device_names->push_back(device);
+        device_names->push_back(Name(device_name, id, Name::DIRECT_SHOW));
       }
     }
     moniker.Release();
@@ -322,9 +340,7 @@ bool VideoCaptureDeviceWin::Init() {
 }
 
 void VideoCaptureDeviceWin::Allocate(
-    int width,
-    int height,
-    int frame_rate,
+    const VideoCaptureCapability& capture_format,
     VideoCaptureDevice::EventHandler* observer) {
   DCHECK(CalledOnValidThread());
   if (state_ != kIdle)
@@ -334,13 +350,15 @@ void VideoCaptureDeviceWin::Allocate(
 
   // Get the camera capability that best match the requested resolution.
   const VideoCaptureCapabilityWin& found_capability =
-      capabilities_.GetBestMatchedCapability(width, height, frame_rate);
+      capabilities_.GetBestMatchedCapability(capture_format.width,
+                                             capture_format.height,
+                                             capture_format.frame_rate);
   VideoCaptureCapability capability = found_capability;
 
   // Reduce the frame rate if the requested frame rate is lower
   // than the capability.
-  if (capability.frame_rate > frame_rate)
-    capability.frame_rate = frame_rate;
+  if (capability.frame_rate > capture_format.frame_rate)
+    capability.frame_rate = capture_format.frame_rate;
 
   AM_MEDIA_TYPE* pmt = NULL;
   VIDEO_STREAM_CONFIG_CAPS caps;
@@ -562,6 +580,10 @@ bool VideoCaptureDeviceWin::CreateCapabilityMap() {
         capability.frame_rate = (time_per_frame > 0) ?
             static_cast<int>(kSecondsToReferenceTime / time_per_frame) : 0;
       }
+      // DirectShow works at the moment only on integer frame_rate but the
+      // best capability matching class works on rational frame rates.
+      capability.frame_rate_numerator = capability.frame_rate;
+      capability.frame_rate_denominator = 1;
 
       // We can't switch MEDIATYPE :~(.
       if (media_type->subtype == kMediaSubTypeI420) {
@@ -575,10 +597,14 @@ bool VideoCaptureDeviceWin::CreateCapabilityMap() {
         capability.color = VideoCaptureCapability::kYUY2;
       } else if (media_type->subtype == MEDIASUBTYPE_MJPG) {
         capability.color = VideoCaptureCapability::kMJPEG;
+      } else if (media_type->subtype == MEDIASUBTYPE_UYVY) {
+        capability.color = VideoCaptureCapability::kUYVY;
+      } else if (media_type->subtype == MEDIASUBTYPE_ARGB32) {
+        capability.color = VideoCaptureCapability::kARGB;
       } else {
         WCHAR guid_str[128];
         StringFromGUID2(media_type->subtype, guid_str, arraysize(guid_str));
-        DVLOG(2) << "Device support unknown media type " << guid_str;
+        DVLOG(2) << "Device supports (also) an unknown media type " << guid_str;
         continue;
       }
       capabilities_.Add(capability);
@@ -596,5 +622,4 @@ void VideoCaptureDeviceWin::SetErrorState(const char* reason) {
   state_ = kError;
   observer_->OnError();
 }
-
 }  // namespace media

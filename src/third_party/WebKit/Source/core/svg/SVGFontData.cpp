@@ -31,9 +31,11 @@
 #include "core/rendering/svg/SVGTextRunRenderingContext.h"
 #include "core/svg/SVGAltGlyphElement.h"
 #include "core/svg/SVGFontElement.h"
-#include <wtf/text/StringBuilder.h>
-#include <wtf/unicode/CharacterNames.h>
-#include <wtf/unicode/Unicode.h>
+#include "core/svg/SVGFontFaceElement.h"
+#include "core/svg/SVGGlyphElement.h"
+#include "wtf/text/StringBuilder.h"
+#include "wtf/unicode/CharacterNames.h"
+#include "wtf/unicode/Unicode.h"
 
 using namespace WTF;
 using namespace Unicode;
@@ -145,7 +147,7 @@ bool SVGFontData::applySVGGlyphSelection(WidthIterator& iterator, GlyphData& gly
     }
 
     if (mirror)
-        remainingTextInRun = createStringWithMirroredCharacters(remainingTextInRun.characters(), remainingTextInRun.length());
+        remainingTextInRun = createStringWithMirroredCharacters(remainingTextInRun);
     if (!currentCharacter && arabicForms.isEmpty())
         arabicForms = charactersWithArabicForm(remainingTextInRun, mirror);
 
@@ -286,16 +288,28 @@ bool SVGFontData::fillNonBMPGlyphs(SVGFontElement* fontElement, GlyphPage* pageT
     return haveGlyphs;
 }
 
-String SVGFontData::createStringWithMirroredCharacters(const UChar* characters, unsigned length) const
+String SVGFontData::createStringWithMirroredCharacters(const String& string) const
 {
+    if (string.isEmpty())
+        return emptyString();
+
+    unsigned length = string.length();
+
     StringBuilder mirroredCharacters;
     mirroredCharacters.reserveCapacity(length);
 
-    unsigned i = 0;
-    while (i < length) {
-        UChar32 character;
-        U16_NEXT(characters, i, length, character);
-        mirroredCharacters.append(mirroredChar(character));
+    if (string.is8Bit()) {
+        const LChar* characters = string.characters8();
+        for (unsigned i = 0; i < length; ++i)
+            mirroredCharacters.append(mirroredChar(characters[i]));
+    } else {
+        const UChar* characters = string.characters16();
+        unsigned i = 0;
+        while (i < length) {
+            UChar32 character;
+            U16_NEXT(characters, i, length, character);
+            mirroredCharacters.append(mirroredChar(character));
+        }
     }
 
     return mirroredCharacters.toString();

@@ -27,6 +27,7 @@
 #define WebIDBKeyPath_h
 
 #include "WebCommon.h"
+#include "WebIDBTypes.h"
 #include "WebPrivateOwnPtr.h"
 #include "WebString.h"
 #include "WebVector.h"
@@ -52,14 +53,8 @@ public:
     WEBKIT_EXPORT void reset();
     WEBKIT_EXPORT void assign(const WebIDBKeyPath&);
 
-    enum Type {
-        NullType = 0,
-        StringType,
-        ArrayType,
-    };
-
     WEBKIT_EXPORT bool isValid() const;
-    WEBKIT_EXPORT Type type() const;
+    WEBKIT_EXPORT WebIDBKeyPathType keyPathType() const;
     WEBKIT_EXPORT WebVector<WebString> array() const; // Only valid for ArrayType.
     WEBKIT_EXPORT WebString string() const; // Only valid for StringType.
 

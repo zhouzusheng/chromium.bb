@@ -19,23 +19,21 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGLengthList.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/svg/SVGParserUtilities.h"
-#include <wtf/text/StringBuilder.h>
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
-void SVGLengthList::parse(const String& value, SVGLengthMode mode)
+template<typename CharType>
+void SVGLengthList::parseInternal(const CharType*& ptr, const CharType* end, SVGLengthMode mode)
 {
-    clear();
-    ExceptionCode ec = 0;
+    TrackExceptionState es;
 
-    const UChar* ptr = value.characters();
-    const UChar* end = ptr + value.length();
     while (ptr < end) {
-        const UChar* start = ptr;
+        const CharType* start = ptr;
         while (ptr < end && *ptr != ',' && !isSVGSpace(*ptr))
             ptr++;
         if (ptr == start)
@@ -45,11 +43,27 @@ void SVGLengthList::parse(const String& value, SVGLengthMode mode)
         String valueString(start, ptr - start);
         if (valueString.isEmpty())
             return;
-        length.setValueAsString(valueString, ec);
-        if (ec)
+        length.setValueAsString(valueString, es);
+        if (es.hadException())
             return;
         append(length);
         skipOptionalSVGSpacesOrDelimiter(ptr, end);
+    }
+}
+
+void SVGLengthList::parse(const String& value, SVGLengthMode mode)
+{
+    clear();
+    if (value.isEmpty())
+        return;
+    if (value.is8Bit()) {
+        const LChar* ptr = value.characters8();
+        const LChar* end = ptr + value.length();
+        parseInternal(ptr, end, mode);
+    } else {
+        const UChar* ptr = value.characters16();
+        const UChar* end = ptr + value.length();
+        parseInternal(ptr, end, mode);
     }
 }
 

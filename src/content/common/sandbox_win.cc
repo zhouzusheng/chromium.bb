@@ -9,11 +9,12 @@
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/debug/debugger.h"
+#include "base/debug/profiler.h"
 #include "base/debug/trace_event.h"
 #include "base/file_util.h"
 #include "base/hash.h"
 #include "base/path_service.h"
-#include "base/process_util.h"
+#include "base/process/launch.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/win/iat_patch_function.h"
@@ -82,7 +83,8 @@ const wchar_t* const kTroublesomeDlls[] = {
   L"rapportnikko.dll",            // Trustware Rapport.
   L"rlhook.dll",                  // Trustware Bufferzone.
   L"rooksdol.dll",                // Trustware Rapport.
-  L"rpchromebrowserrecordhelper.dll",  // RealPlayer.
+  L"rndlpepperbrowserrecordhelper.dll", // RealPlayer.
+  L"rpchromebrowserrecordhelper.dll",   // RealPlayer.
   L"r3hook.dll",                  // Kaspersky Internet Security.
   L"sahook.dll",                  // McAfee Site Advisor.
   L"sbrige.dll",                  // Unknown.
@@ -525,7 +527,11 @@ bool InitBrokerServices(sandbox::BrokerServices* broker_services) {
 #ifndef OFFICIAL_BUILD
   BOOL is_in_job = FALSE;
   CHECK(::IsProcessInJob(::GetCurrentProcess(), NULL, &is_in_job));
-  if (!is_in_job && !g_iat_patch_duplicate_handle.is_patched()) {
+  // In a Syzygy-profiled binary, instrumented for import profiling, this
+  // patch will end in infinite recursion on the attempted delegation to the
+  // original function.
+  if (!base::debug::IsBinaryInstrumented() &&
+      !is_in_job && !g_iat_patch_duplicate_handle.is_patched()) {
     HMODULE module = NULL;
     wchar_t module_name[MAX_PATH];
     CHECK(::GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
@@ -673,13 +679,15 @@ base::ProcessHandle StartSandboxedProcess(
   TRACE_EVENT_END_ETW("StartProcessWithAccess::LAUNCHPROCESS", 0, 0);
 
   if (sandbox::SBOX_ALL_OK != result) {
-    DLOG(ERROR) << "Failed to launch process. Error: " << result;
+    if (result == sandbox::SBOX_ERROR_GENERIC)
+      DPLOG(ERROR) << "Failed to launch process";
+    else
+      DLOG(ERROR) << "Failed to launch process. Error: " << result;
     return 0;
   }
 
   if (delegate)
     delegate->PostSpawnTarget(target.process_handle());
-
 
   ResumeThread(target.thread_handle());
 

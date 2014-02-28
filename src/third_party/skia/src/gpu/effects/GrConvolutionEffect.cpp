@@ -33,10 +33,15 @@ public:
 
 private:
     int width() const { return Gr1DKernelEffect::WidthFromRadius(fRadius); }
+    bool useBounds() const { return fUseBounds; }
+    Gr1DKernelEffect::Direction direction() const { return fDirection; }
 
     int                 fRadius;
+    bool                fUseBounds;
+    Gr1DKernelEffect::Direction    fDirection;
     UniformHandle       fKernelUni;
     UniformHandle       fImageIncrementUni;
+    UniformHandle       fBoundsUni;
     GrGLEffectMatrix    fEffectMatrix;
 
     typedef GrGLEffect INHERITED;
@@ -47,9 +52,12 @@ GrGLConvolutionEffect::GrGLConvolutionEffect(const GrBackendEffectFactory& facto
     : INHERITED(factory)
     , fKernelUni(kInvalidUniformHandle)
     , fImageIncrementUni(kInvalidUniformHandle)
+    , fBoundsUni(kInvalidUniformHandle)
     , fEffectMatrix(drawEffect.castEffect<GrConvolutionEffect>().coordsType()) {
     const GrConvolutionEffect& c = drawEffect.castEffect<GrConvolutionEffect>();
     fRadius = c.radius();
+    fUseBounds = c.useBounds();
+    fDirection = c.direction();
 }
 
 void GrGLConvolutionEffect::emitCode(GrGLShaderBuilder* builder,
@@ -62,12 +70,16 @@ void GrGLConvolutionEffect::emitCode(GrGLShaderBuilder* builder,
     fEffectMatrix.emitCodeMakeFSCoords2D(builder, key, &coords);
     fImageIncrementUni = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType,
                                              kVec2f_GrSLType, "ImageIncrement");
+    if (this->useBounds()) {
+        fBoundsUni = builder->addUniform(GrGLShaderBuilder::kFragment_ShaderType,
+                                         kVec2f_GrSLType, "Bounds");
+    }
     fKernelUni = builder->addUniformArray(GrGLShaderBuilder::kFragment_ShaderType,
                                           kFloat_GrSLType, "Kernel", this->width());
 
     builder->fsCodeAppendf("\t\t%s = vec4(0, 0, 0, 0);\n", outputColor);
 
-    int width = this ->width();
+    int width = this->width();
     const GrGLShaderVar& kernel = builder->getUniformVariable(fKernelUni);
     const char* imgInc = builder->getUniformCStr(fImageIncrementUni);
 
@@ -81,9 +93,16 @@ void GrGLConvolutionEffect::emitCode(GrGLShaderBuilder* builder,
         kernel.appendArrayAccess(index.c_str(), &kernelIndex);
         builder->fsCodeAppendf("\t\t%s += ", outputColor);
         builder->appendTextureLookup(GrGLShaderBuilder::kFragment_ShaderType, samplers[0], "coord");
+        if (this->useBounds()) {
+            const char* bounds = builder->getUniformCStr(fBoundsUni);
+            const char* component = this->direction() == Gr1DKernelEffect::kY_Direction ? "y" : "x";
+            builder->fsCodeAppendf(" * float(coord.%s >= %s.x && coord.%s <= %s.y)",
+                component, bounds, component, bounds);
+        }
         builder->fsCodeAppendf(" * %s;\n", kernelIndex.c_str());
         builder->fsCodeAppendf("\t\tcoord += %s;\n", imgInc);
     }
+
     SkString modulate;
     GrGLSLMulVarBy4f(&modulate, 2, outputColor, inputColor);
     builder->fsCodeAppend(modulate.c_str());
@@ -96,17 +115,27 @@ void GrGLConvolutionEffect::setData(const GrGLUniformManager& uman,
     // the code we generated was for a specific kernel radius
     GrAssert(conv.radius() == fRadius);
     float imageIncrement[2] = { 0 };
+    float ySign = texture.origin() != kTopLeft_GrSurfaceOrigin ? 1.0f : -1.0f;
     switch (conv.direction()) {
         case Gr1DKernelEffect::kX_Direction:
             imageIncrement[0] = 1.0f / texture.width();
             break;
         case Gr1DKernelEffect::kY_Direction:
-            imageIncrement[1] = 1.0f / texture.height();
+            imageIncrement[1] = ySign / texture.height();
             break;
         default:
             GrCrash("Unknown filter direction.");
     }
     uman.set2fv(fImageIncrementUni, 0, 1, imageIncrement);
+    if (conv.useBounds()) {
+        const float* bounds = conv.bounds();
+        if (Gr1DKernelEffect::kY_Direction == conv.direction() &&
+            texture.origin() != kTopLeft_GrSurfaceOrigin) {
+            uman.set2f(fBoundsUni, 1.0f - bounds[1], 1.0f - bounds[0]);
+        } else {
+            uman.set2f(fBoundsUni, bounds[0], bounds[1]);
+        }
+    }
     uman.set1fv(fKernelUni, 0, this->width(), conv.kernel());
     fEffectMatrix.setData(uman, conv.getMatrix(), drawEffect, conv.texture(0));
 }
@@ -115,6 +144,11 @@ GrGLEffect::EffectKey GrGLConvolutionEffect::GenKey(const GrDrawEffect& drawEffe
                                                     const GrGLCaps&) {
     const GrConvolutionEffect& conv = drawEffect.castEffect<GrConvolutionEffect>();
     EffectKey key = conv.radius();
+    key <<= 2;
+    if (conv.useBounds()) {
+        key |= 0x2;
+        key |= GrConvolutionEffect::kY_Direction == conv.direction() ? 0x1 : 0x0;
+    }
     key <<= GrGLEffectMatrix::kKeyBits;
     EffectKey matrixKey = GrGLEffectMatrix::GenKey(conv.getMatrix(),
                                                    drawEffect,
@@ -128,21 +162,26 @@ GrGLEffect::EffectKey GrGLConvolutionEffect::GenKey(const GrDrawEffect& drawEffe
 GrConvolutionEffect::GrConvolutionEffect(GrTexture* texture,
                                          Direction direction,
                                          int radius,
-                                         const float* kernel)
-    : Gr1DKernelEffect(texture, direction, radius) {
+                                         const float* kernel,
+                                         bool useBounds,
+                                         float bounds[2])
+    : Gr1DKernelEffect(texture, direction, radius), fUseBounds(useBounds) {
     GrAssert(radius <= kMaxKernelRadius);
     GrAssert(NULL != kernel);
     int width = this->width();
     for (int i = 0; i < width; i++) {
         fKernel[i] = kernel[i];
     }
+    memcpy(fBounds, bounds, sizeof(fBounds));
 }
 
 GrConvolutionEffect::GrConvolutionEffect(GrTexture* texture,
                                          Direction direction,
                                          int radius,
-                                         float gaussianSigma)
-    : Gr1DKernelEffect(texture, direction, radius) {
+                                         float gaussianSigma,
+                                         bool useBounds,
+                                         float bounds[2])
+    : Gr1DKernelEffect(texture, direction, radius), fUseBounds(useBounds) {
     GrAssert(radius <= kMaxKernelRadius);
     int width = this->width();
 
@@ -160,6 +199,7 @@ GrConvolutionEffect::GrConvolutionEffect(GrTexture* texture,
     for (int i = 0; i < width; ++i) {
         fKernel[i] *= scale;
     }
+    memcpy(fBounds, bounds, sizeof(fBounds));
 }
 
 GrConvolutionEffect::~GrConvolutionEffect() {
@@ -174,6 +214,8 @@ bool GrConvolutionEffect::onIsEqual(const GrEffect& sBase) const {
     return (this->texture(0) == s.texture(0) &&
             this->radius() == s.radius() &&
             this->direction() == s.direction() &&
+            this->useBounds() == s.useBounds() &&
+            0 == memcmp(fBounds, s.fBounds, sizeof(fBounds)) &&
             0 == memcmp(fKernel, s.fKernel, this->width() * sizeof(float)));
 }
 
@@ -193,6 +235,16 @@ GrEffectRef* GrConvolutionEffect::TestCreate(SkMWCRandom* random,
     for (int i = 0; i < kMaxKernelRadius; ++i) {
         kernel[i] = random->nextSScalar1();
     }
+    float bounds[2];
+    for (int i = 0; i < 2; ++i) {
+        bounds[i] = random->nextF();
+    }
 
-    return GrConvolutionEffect::Create(textures[texIdx], dir, radius,kernel);
+    bool useBounds = random->nextBool();
+    return GrConvolutionEffect::Create(textures[texIdx],
+                                       dir,
+                                       radius,
+                                       kernel,
+                                       useBounds,
+                                       bounds);
 }

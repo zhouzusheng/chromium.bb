@@ -36,7 +36,7 @@
 namespace WebCore {
 
 class AudioContext;
-class WaveTable;
+class PeriodicWave;
 
 // OscillatorNode is an audio generator of periodic waveforms.
 
@@ -55,7 +55,7 @@ public:
     static PassRefPtr<OscillatorNode> create(AudioContext*, float sampleRate);
 
     virtual ~OscillatorNode();
-    
+
     // AudioNode
     virtual void process(size_t framesToProcess);
     virtual void reset();
@@ -68,7 +68,7 @@ public:
     AudioParam* frequency() { return m_frequency.get(); }
     AudioParam* detune() { return m_detune.get(); }
 
-    void setWaveTable(WaveTable*);
+    void setPeriodicWave(PeriodicWave*);
 
 private:
     OscillatorNode(AudioContext*, float sampleRate);
@@ -80,7 +80,7 @@ private:
 
     // One of the waveform types defined in the enum.
     unsigned short m_type;
-    
+
     // Frequency value in Hertz.
     RefPtr<AudioParam> m_frequency;
 
@@ -99,14 +99,14 @@ private:
     // Stores sample-accurate values calculated according to frequency and detune.
     AudioFloatArray m_phaseIncrements;
     AudioFloatArray m_detuneValues;
-    
-    RefPtr<WaveTable> m_waveTable;
+
+    RefPtr<PeriodicWave> m_periodicWave;
 
     // Cache the wave tables for different waveform types, except CUSTOM.
-    static WaveTable* s_waveTableSine;
-    static WaveTable* s_waveTableSquare;
-    static WaveTable* s_waveTableSawtooth;
-    static WaveTable* s_waveTableTriangle;
+    static PeriodicWave* s_periodicWaveSine;
+    static PeriodicWave* s_periodicWaveSquare;
+    static PeriodicWave* s_periodicWaveSawtooth;
+    static PeriodicWave* s_periodicWaveTriangle;
 };
 
 } // namespace WebCore

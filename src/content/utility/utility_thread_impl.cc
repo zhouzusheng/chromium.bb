@@ -12,10 +12,12 @@
 #include "content/child/child_process.h"
 #include "content/child/webkitplatformsupport_impl.h"
 #include "content/common/child_process_messages.h"
+#include "content/common/plugin_list.h"
 #include "content/common/utility_messages.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/utility/content_utility_client.h"
+#include "ipc/ipc_sync_channel.h"
 #include "third_party/WebKit/public/web/WebKit.h"
-#include "webkit/plugins/npapi/plugin_list.h"
 
 #if defined(TOOLKIT_GTK)
 #include <gtk/gtk.h>
@@ -36,19 +38,24 @@ void ConvertVector(const SRC& src, DEST* dest) {
 
 }  // namespace
 
-UtilityThreadImpl::UtilityThreadImpl()
-    : batch_mode_(false) {
-  ChildProcess::current()->AddRefProcess();
-  webkit_platform_support_.reset(new WebKitPlatformSupportImpl);
-  WebKit::initialize(webkit_platform_support_.get());
-  GetContentClient()->utility()->UtilityThreadStarted();
+UtilityThreadImpl::UtilityThreadImpl() : single_process_(false) {
+  Init();
+}
+
+UtilityThreadImpl::UtilityThreadImpl(const std::string& channel_name)
+    : ChildThread(channel_name),
+      single_process_(true) {
+  Init();
 }
 
 UtilityThreadImpl::~UtilityThreadImpl() {
 }
 
 void UtilityThreadImpl::Shutdown() {
-  WebKit::shutdown();
+  ChildThread::Shutdown();
+
+  if (!single_process_)
+    WebKit::shutdown();
 }
 
 bool UtilityThreadImpl::Send(IPC::Message* msg) {
@@ -56,8 +63,18 @@ bool UtilityThreadImpl::Send(IPC::Message* msg) {
 }
 
 void UtilityThreadImpl::ReleaseProcessIfNeeded() {
-  if (!batch_mode_)
+  if (batch_mode_)
+    return;
+
+  if (single_process_) {
+    // Close the channel to cause UtilityProcessHostImpl to be deleted. We need
+    // to take a different code path than the multi-process case because that
+    // depends on the child process going away to close the channel, but that
+    // can't happen when we're in single process mode.
+    channel()->Close();
+  } else {
     ChildProcess::current()->ReleaseProcess();
+  }
 }
 
 #if defined(OS_WIN)
@@ -72,6 +89,19 @@ void UtilityThreadImpl::ReleaseCachedFonts() {
 
 #endif  // OS_WIN
 
+void UtilityThreadImpl::Init() {
+  batch_mode_ = false;
+  ChildProcess::current()->AddRefProcess();
+  if (!single_process_) {
+    // We can only initialize WebKit on one thread, and in single process mode
+    // we run the utility thread on separate thread. This means that if any code
+    // needs WebKit initialized in the utility process, they need to have
+    // another path to support single process mode.
+    webkit_platform_support_.reset(new WebKitPlatformSupportImpl);
+    WebKit::initialize(webkit_platform_support_.get());
+  }
+  GetContentClient()->utility()->UtilityThreadStarted();
+}
 
 bool UtilityThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
   if (GetContentClient()->utility()->OnMessageReceived(msg))
@@ -100,8 +130,7 @@ void UtilityThreadImpl::OnBatchModeFinished() {
 #if defined(OS_POSIX)
 void UtilityThreadImpl::OnLoadPlugins(
     const std::vector<base::FilePath>& plugin_paths) {
-  webkit::npapi::PluginList* plugin_list =
-      webkit::npapi::PluginList::Singleton();
+  PluginList* plugin_list = PluginList::Singleton();
 
   // On Linux, some plugins expect the browser to have loaded glib/gtk. Do that
   // before attempting to call into the plugin.
@@ -116,12 +145,12 @@ void UtilityThreadImpl::OnLoadPlugins(
   gfx::GtkInitFromCommandLine(*CommandLine::ForCurrentProcess());
 #endif
 
-  std::vector<webkit::WebPluginInfo> plugins;
+  std::vector<WebPluginInfo> plugins;
   // TODO(bauerb): If we restart loading plug-ins, we might mess up the logic in
   // PluginList::ShouldLoadPlugin due to missing the previously loaded plug-ins
   // in |plugin_groups|.
   for (size_t i = 0; i < plugin_paths.size(); ++i) {
-    webkit::WebPluginInfo plugin;
+    WebPluginInfo plugin;
     if (!plugin_list->LoadPluginIntoPluginList(
         plugin_paths[i], &plugins, &plugin))
       Send(new UtilityHostMsg_LoadPluginFailed(i, plugin_paths[i]));

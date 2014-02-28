@@ -6,16 +6,13 @@
 #define CONTENT_RENDERER_GPU_RENDER_WIDGET_COMPOSITOR_H_
 
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "cc/debug/rendering_stats.h"
 #include "cc/input/top_controls_state.h"
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_settings.h"
-#include "skia/ext/refptr.h"
 #include "third_party/WebKit/public/platform/WebLayerTreeView.h"
 #include "ui/gfx/rect.h"
-
-class SkPicture;
 
 namespace ui {
 struct LatencyInfo;
@@ -34,7 +31,8 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
  public:
   // Attempt to construct and initialize a compositor instance for the widget
   // with the given settings. Returns NULL if initialization fails.
-  static scoped_ptr<RenderWidgetCompositor> Create(RenderWidget* widget);
+  static scoped_ptr<RenderWidgetCompositor> Create(RenderWidget* widget,
+                                                   bool threaded);
 
   virtual ~RenderWidgetCompositor();
 
@@ -45,13 +43,14 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
   void SetNeedsDisplayOnAllLayers();
   void SetRasterizeOnlyVisibleContent();
   void GetRenderingStats(cc::RenderingStats* stats);
-  skia::RefPtr<SkPicture> CapturePicture();
   void UpdateTopControlsState(cc::TopControlsState constraints,
                               cc::TopControlsState current,
                               bool animate);
   void SetOverdrawBottomHeight(float overdraw_bottom_height);
   void SetNeedsRedrawRect(gfx::Rect damage_rect);
   void SetLatencyInfo(const ui::LatencyInfo& latency_info);
+  int GetLayerTreeId() const;
+  void NotifyInputThrottledUntilCommit();
 
   // WebLayerTreeView implementation.
   virtual void setSurfaceReady();
@@ -89,6 +88,7 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
   virtual void setShowPaintRects(bool show);
   virtual void setShowDebugBorders(bool show);
   virtual void setContinuousPaintingEnabled(bool enabled);
+  virtual void setShowScrollBottleneckRects(bool show);
 
   // cc::LayerTreeHostClient implementation.
   virtual void WillBeginFrame() OVERRIDE;
@@ -97,7 +97,8 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
   virtual void Layout() OVERRIDE;
   virtual void ApplyScrollAndScale(gfx::Vector2d scroll_delta,
                                    float page_scale) OVERRIDE;
-  virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface() OVERRIDE;
+  virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(bool fallback)
+      OVERRIDE;
   virtual void DidInitializeOutputSurface(bool success) OVERRIDE;
   virtual void WillCommit() OVERRIDE;
   virtual void DidCommit() OVERRIDE;
@@ -110,7 +111,7 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
       OffscreenContextProviderForCompositorThread() OVERRIDE;
 
  private:
-  explicit RenderWidgetCompositor(RenderWidget* widget);
+  RenderWidgetCompositor(RenderWidget* widget, bool threaded);
 
   bool initialize(cc::LayerTreeSettings settings);
 

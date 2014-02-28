@@ -26,6 +26,7 @@
 #include "config.h"
 
 #include "core/platform/chromium/support/WebScrollbarThemeClientImpl.h"
+#include "core/platform/ScrollbarTheme.h"
 
 using WebKit::WebScrollbar;
 
@@ -34,6 +35,12 @@ namespace WebCore {
 WebScrollbarThemeClientImpl::WebScrollbarThemeClientImpl(WebScrollbar* scrollbar)
     : m_scrollbar(scrollbar)
 {
+    ScrollbarTheme::theme()->registerScrollbar(this);
+}
+
+WebScrollbarThemeClientImpl::~WebScrollbarThemeClientImpl()
+{
+    ScrollbarTheme::theme()->unregisterScrollbar(this);
 }
 
 int WebScrollbarThemeClientImpl::x() const
@@ -174,18 +181,6 @@ int WebScrollbarThemeClientImpl::maximum() const
 WebCore::ScrollbarControlSize WebScrollbarThemeClientImpl::controlSize() const
 {
     return static_cast<WebCore::ScrollbarControlSize>(m_scrollbar->controlSize());
-}
-
-int WebScrollbarThemeClientImpl::lineStep() const
-{
-    ASSERT_NOT_REACHED();
-    return 0;
-}
-
-int WebScrollbarThemeClientImpl::pageStep() const
-{
-    ASSERT_NOT_REACHED();
-    return 0;
 }
 
 WebCore::ScrollbarPart WebScrollbarThemeClientImpl::pressedPart() const

@@ -12,8 +12,8 @@
 #include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
-#include "third_party/icu/public/common/unicode/uchar.h"
-#include "third_party/icu/public/common/unicode/uscript.h"
+#include "third_party/icu/source/common/unicode/uchar.h"
+#include "third_party/icu/source/common/unicode/uscript.h"
 #include "webkit/common/webpreferences.h"
 
 using WebKit::WebNetworkStateNotifier;
@@ -169,7 +169,6 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   // change this, since it would break existing rich text editors.
   settings->setEditableLinkBehaviorNeverLive();
 
-  settings->setFontRenderingModeNormal();
   settings->setJavaEnabled(prefs.java_enabled);
 
   // By default, allow_universal_access_from_file_urls is set to false and thus
@@ -287,7 +286,6 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
 
   settings->setCSSStickyPositionEnabled(prefs.css_sticky_position_enabled);
   settings->setExperimentalCSSCustomFilterEnabled(prefs.css_shaders_enabled);
-  settings->setExperimentalCSSGridLayoutEnabled(prefs.css_grid_layout_enabled);
   settings->setRegionBasedColumnsEnabled(prefs.region_based_columns_enabled);
 
   WebRuntimeFeatures::enableLazyLayout(prefs.lazy_layout_enabled);
@@ -324,7 +322,7 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setAllowCustomScrollbarInMainFrame(false);
   settings->setTextAutosizingEnabled(prefs.text_autosizing_enabled);
   settings->setTextAutosizingFontScaleFactor(prefs.font_scale_factor);
-  web_view->setIgnoreViewportTagMaximumScale(prefs.force_enable_zoom);
+  web_view->setIgnoreViewportTagScaleLimits(prefs.force_enable_zoom);
   settings->setAutoZoomFocusedNodeToLegibleScale(true);
   settings->setDoubleTapToZoomEnabled(prefs.double_tap_to_zoom_enabled);
   settings->setMediaPlaybackRequiresUserGesture(
@@ -333,7 +331,14 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
         ASCIIToUTF16(prefs.default_video_poster_url.spec()));
   settings->setSupportDeprecatedTargetDensityDPI(
       prefs.support_deprecated_target_density_dpi);
+  settings->setUseLegacyBackgroundSizeShorthandBehavior(
+      prefs.use_legacy_background_size_shorthand_behavior);
+  settings->setWideViewportQuirkEnabled(prefs.wide_viewport_quirk);
   settings->setUseWideViewport(prefs.use_wide_viewport);
+  settings->setViewportMetaLayoutSizeQuirk(
+      prefs.viewport_meta_layout_size_quirk);
+  settings->setViewportMetaZeroValuesQuirk(
+      prefs.viewport_meta_zero_values_quirk);
 #endif
 
   WebNetworkStateNotifier::setOnLine(prefs.is_online);

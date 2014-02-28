@@ -42,8 +42,6 @@ extern "C" {
 #endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include <ws2ipdef.h>
-#include <ws2def.h>
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -1019,6 +1017,7 @@ USRSCTP_SYSCTL_DECL(sctp_init_rtx_max_default)
 USRSCTP_SYSCTL_DECL(sctp_assoc_rtx_max_default)
 USRSCTP_SYSCTL_DECL(sctp_path_rtx_max_default)
 USRSCTP_SYSCTL_DECL(sctp_add_more_threshold)
+USRSCTP_SYSCTL_DECL(sctp_nr_incoming_streams_default)
 USRSCTP_SYSCTL_DECL(sctp_nr_outgoing_streams_default)
 USRSCTP_SYSCTL_DECL(sctp_cmt_on_off)
 USRSCTP_SYSCTL_DECL(sctp_cmt_use_dac)

@@ -5,143 +5,139 @@
 'use strict';
 
 base.require('base.range');
-base.require('base.event_target');
+base.require('base.events');
 
 base.exportTo('ui', function() {
-  var DEFAULT_PAD_PERCENTAGE = 0.75;
+  // FIXME(pdr): Replace this padding with just what's necessary for
+  //             drawing borders / highlights.
+  //             https://code.google.com/p/trace-viewer/issues/detail?id=228
+  var constants = {
+    // The ratio of quad stack pixels to world pixels before CSS scaling.
+    DEVICE_PIXELS_PER_WORLD_PIXEL: .125,
+    // Extra area surrounding the quad bounding box to help
+    // see border/highlights
+    DEFAULT_PAD_PERCENTAGE: 0.50
+  };
 
-  function QuadViewViewport(bbox,
-                            opt_scale,
-                            opt_deviceViewport,
+  function QuadViewViewport(worldRect,
+                            opt_devicePixelsPerWorldPixel,
                             opt_padding,
                             opt_devicePixelRatio) {
     base.EventTarget.call(this);
-    if (bbox.isEmpty)
-      throw new Error('Cannot initialize a viewport with an empty bbox');
+    if (!worldRect)
+      throw new Error('Cannot initialize a viewport with an empty worldRect');
 
-    this.layoutRect = undefined;
-    this.setWorldBBox(bbox, opt_padding);
+    // Physical pixels / device-independent pixels;
+    // 1 is normal; higher for eg Retina
+    this.devicePixelsPerLayoutPixel_ =
+        opt_devicePixelRatio || window.devicePixelRatio || 1;
 
-    var devicePixelRatio;
-    if (opt_devicePixelRatio)
-      this.devicePixelRatio = opt_devicePixelRatio;
-    else
-      this.devicePixelRatio = window.devicePixelRatio || 1;
+    this.layoutRect_ = undefined;
+    this.setWorldRect_(worldRect, opt_padding);
 
-    var scale;
-    if (opt_scale) {
-      scale = opt_scale;
-    } else {
-      if (this.devicePixelRatio > 1)
-        scale = 0.25;
-      else
-        scale = 0.125;
-    }
-    this.scale_ = scale;
+    this.devicePixelsPerWorldPixel_ = opt_devicePixelsPerWorldPixel ||
+        constants.DEVICE_PIXELS_PER_WORLD_PIXEL;
 
-    this.deviceViewport_ = opt_deviceViewport;
-
-    this.updateScale_();
+    this.updateScale_(opt_devicePixelsPerWorldPixel ||
+        constants.DEVICE_PIXELS_PER_WORLD_PIXEL);
   }
 
   QuadViewViewport.prototype = {
 
     __proto__: base.EventTarget.prototype,
 
-    set scale(scale) {
-      this.scale_ = scale;
-      this.updateScale_();
-      this.didChange_();
+    get devicePixelsPerWorldPixel() {
+      return this.devicePixelsPerWorldPixel_;
+    },
+
+    get layoutPixelsPerWorldPixel() {
+      return this.layoutPixelsPerWorldPixel_;
+    },
+
+    get devicePixelsPerLayoutPixel() {
+      return this.devicePixelsPerLayoutPixel_;
+    },
+
+    // The browsers internal coordinate limits, padded, no scaling.
+    get worldRect() {
+      return this.worldRect_;
+    },
+
+    // The browsers original internal coodinate limits.
+    get unpaddedWorldRect() {
+      return this.unpaddedWorldRect_;
+    },
+
+    // Our DOM representation of the coordinate limits.
+    // A DOM element with this w x h will enclose the
+    // the world as represented by our canvases.
+    get layoutRect() {
+      return this.layoutRect_;
+    },
+
+    get transformDevicePixelsToWorld() {
+      return this.transformDevicePixelsToWorld_;
+    },
+
+    get transformWorldToDevicePixels() {
+      return this.transformWorldToDevicePixels_;
     },
 
     get scale() {
-      return this.scale_;
+      return this.devicePixelsPerWorldPixel_;
     },
 
-    // The area of the world that is visible by users, in world pixels
-    get deviceViewport() {
-      return this.deviceViewport_;
+    set scale(newValue) {
+      this.updateScale_(newValue);
     },
 
-    updateScale_: function() {
-      this.worldPixelsPerDevicePixel_ = this.scale_;
-      this.devicePixelsPerLayoutPixel_ = 1 / this.devicePixelRatio;
-
-      this.deviceWidth =
-          this.worldRect.width * this.worldPixelsPerDevicePixel_;
-      this.deviceHeight =
-          this.worldRect.height * this.worldPixelsPerDevicePixel_;
-
-      this.layoutRect = base.Rect.FromXYWH(
-          this.worldRect.x * this.devicePixelsPerLayoutPixel_,
-          this.worldRect.y * this.devicePixelsPerLayoutPixel_,
-          this.deviceWidth * this.devicePixelsPerLayoutPixel_,
-          this.deviceHeight * this.devicePixelsPerLayoutPixel_);
-      this.effectiveWorldRect = this.worldRect.clone().scale(this.scale_);
-
-      this.transformWorldToDevicePixels_ = mat2d.create();
-      this.transformDevicePixelsToWorld_ = mat2d.create();
-      this.updateTransform_();
-    },
-
-    setWorldBBox: function(bbox, opt_padding) {
-      var worldRect = bbox.asRect();
-      var worldPad;
-      var padding;
-      if (opt_padding !== undefined) {
-        padding = opt_padding;
-      } else {
-        padding = DEFAULT_PAD_PERCENTAGE;
+    updateBoxSize: function(canvas) {
+      var resizedCanvas = false;
+      if (canvas.width !== this.worldWidthInDevicePixels_) {
+        canvas.width = this.worldWidthInDevicePixels_ * ui.RASTER_SCALE;
+        canvas.style.width = this.layoutRect_.width + 'px';
+        resizedCanvas = true;
       }
-      worldPad = Math.min(worldRect.width,
-                          worldRect.height) * padding;
-
-      worldRect = worldRect.enlarge(worldPad);
-      this.worldRect = worldRect;
-      this.updateScale_();
-      this.updateTransform_();
-      this.didChange_();
+      if (canvas.height !== this.worldHeightInDevicePixels_) {
+        canvas.height = this.worldHeightInDevicePixels_ * ui.RASTER_SCALE;
+        canvas.style.height = this.layoutRect_.height + 'px';
+        resizedCanvas = true;
+      }
+      return resizedCanvas;
     },
 
-    updateTransform_: function() {
-      if (!this.transformWorldToDevicePixels_)
-        return;
-
-      mat2d.identity(this.transformWorldToDevicePixels_);
-      mat2d.translateXY(
-          this.transformWorldToDevicePixels_,
-          -this.worldRect.x, -this.worldRect.y);
-      mat2d.scaleXY(this.transformWorldToDevicePixels_,
-          this.worldPixelsPerDevicePixel_,
-          this.worldPixelsPerDevicePixel_);
-
-      mat2d.invert(this.transformDevicePixelsToWorld_,
-                   this.transformWorldToDevicePixels_);
+    layoutPixelsToWorldPixels: function(v) {
+      var tmp = this.layoutPixelsToDevicePixels(v);
+      return this.devicePixelsToWorldPixels(tmp);
     },
 
-    layoutPixelsToWorldPixels2: function(v) {
-      var tmp = this.layoutPixelsToDevicePixels2(v);
-      return this.devicePixelsToWorldPixels2(tmp);
-    },
-
-    layoutPixelsToDevicePixels2: function(v) {
+    layoutPixelsToDevicePixels: function(v) {
       var res = vec2.create();
-      return vec2.scale(res, v, 1 / this.devicePixelsPerLayoutPixel_);
+      return vec2.scale(res, v, this.devicePixelsPerLayoutPixel_);
     },
 
-    devicePixelsToWorldPixels2: function(v) {
+    devicePixelsToWorldPixels: function(v) {
       var res = vec2.create();
       vec2.transformMat2d(res, v, this.transformDevicePixelsToWorld_);
       return res;
     },
 
-    getWorldToDevicePixelTransform: function() {
-      return this.transformDevicePixelsToWorld_;
+    worldPixelsToLayoutPixels: function(v) {
+      var devicePixels = vec2.create();
+      vec2.transformMat2d(devicePixels, v,
+          this.transformWorldToDevicePixels_);
+      var res = vec2.create();
+      return vec2.scale(res, devicePixels,
+          1 / this.devicePixelsPerLayoutPixel_);
+    },
+
+    getWorldToDevicePixelsTransform: function() {
+      return this.transformWorldToDevicePixels_;
     },
 
     getDeviceLineWidthAssumingTransformIsApplied: function(
         desiredDeviceLineWidth) {
-      return desiredDeviceLineWidth / this.worldPixelsPerDevicePixel_;
+      return desiredDeviceLineWidth / this.devicePixelsPerWorldPixel_;
     },
 
     applyTransformToContext: function(ctx) {
@@ -151,6 +147,66 @@ base.exportTo('ui', function() {
     },
 
     forceRedrawAll: function() {
+      this.didChange_();
+    },
+
+    //-------------------------------------------
+
+    updateScale_: function(newValue) {
+      this.devicePixelsPerWorldPixel_ = newValue;
+
+      this.layoutPixelsPerWorldPixel_ = this.devicePixelsPerWorldPixel_ /
+          this.devicePixelsPerLayoutPixel_;
+
+
+      this.worldWidthInDevicePixels_ =
+          this.worldRect_.width * this.devicePixelsPerWorldPixel_;
+      this.worldHeightInDevicePixels_ =
+          this.worldRect_.height * this.devicePixelsPerWorldPixel_;
+
+      this.updateLayoutRect_();
+
+      this.transformWorldToDevicePixels_ = mat2d.create();
+      this.transformDevicePixelsToWorld_ = mat2d.create();
+      this.updateTransform_();
+    },
+
+    /** Adjust the scaled world box for Retina-like displays */
+    updateLayoutRect_: function() {
+      var devicePixelsPerLayoutPixel =
+          this.devicePixelsPerWorldPixel_ / this.devicePixelsPerLayoutPixel_;
+      this.layoutRect_ = this.worldRect.scale(devicePixelsPerLayoutPixel);
+    },
+
+    setWorldRect_: function(worldRect, opt_padding) {
+      var worldPad;
+      var padding;
+      if (opt_padding !== undefined) {
+        padding = opt_padding;
+      } else {
+        padding = constants.DEFAULT_PAD_PERCENTAGE;
+      }
+      worldPad = Math.min(worldRect.width,
+                          worldRect.height) * padding;
+
+      this.unpaddedWorldRect_ = worldRect;
+      this.worldRect_ = worldRect.clone().enlarge(worldPad);
+    },
+
+    updateTransform_: function() {
+      if (!this.transformWorldToDevicePixels_)
+        return;
+
+      mat2d.identity(this.transformWorldToDevicePixels_);
+      mat2d.translateXY(
+          this.transformWorldToDevicePixels_,
+          -this.worldRect_.x, -this.worldRect_.y);
+      mat2d.scaleXY(this.transformWorldToDevicePixels_,
+          this.devicePixelsPerWorldPixel_,
+          this.devicePixelsPerWorldPixel_);
+
+      mat2d.invert(this.transformDevicePixelsToWorld_,
+                   this.transformWorldToDevicePixels_);
       this.didChange_();
     },
 

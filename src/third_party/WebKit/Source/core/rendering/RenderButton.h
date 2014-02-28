@@ -47,14 +47,13 @@ public:
     virtual bool createsAnonymousWrapper() const { return true; }
 
     void setupInnerStyle(RenderStyle*);
-    virtual void updateFromElement();
+
+    // <button> should allow whitespace even though RenderFlexibleBox doesn't.
+    virtual bool canHaveWhitespaceChildren() const OVERRIDE { return true; }
 
     virtual bool canHaveGeneratedChildren() const OVERRIDE;
     virtual bool hasControlClip() const { return true; }
     virtual LayoutRect controlClipRect(const LayoutPoint&) const;
-
-    void setText(const String&);
-    String text() const;
 
     virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode) const OVERRIDE;
 
@@ -66,18 +65,17 @@ private:
 
     virtual bool requiresForcedStyleRecalcPropagation() const { return true; }
 
-    RenderTextFragment* m_buttonText;
     RenderBlock* m_inner;
 };
 
 inline RenderButton* toRenderButton(RenderObject* object)
-{ 
+{
     ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isRenderButton());
     return static_cast<RenderButton*>(object);
 }
 
 inline const RenderButton* toRenderButton(const RenderObject* object)
-{ 
+{
     ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isRenderButton());
     return static_cast<const RenderButton*>(object);
 }

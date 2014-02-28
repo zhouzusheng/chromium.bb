@@ -703,7 +703,6 @@ public:
     // determine this.
     Extensions3D* getExtensions();
 
-    static unsigned getClearBitsByAttachmentType(GC3Denum);
     static unsigned getClearBitsByFormat(GC3Denum);
 
     enum ChannelBits {
@@ -789,6 +788,16 @@ public:
 
     // End GraphicsContext3DImagePacking.cpp functions
 
+    // This is the order of bytes to use when doing a readback.
+    enum ReadbackOrder {
+        ReadbackRGBA,
+        ReadbackSkia
+    };
+
+    // Helper function which does a readback from the currently-bound
+    // framebuffer into a buffer of a certain size with 4-byte pixels.
+    void readBackFramebuffer(unsigned char* pixels, int width, int height, ReadbackOrder, AlphaOp);
+
 private:
     friend class Extensions3D;
 
@@ -804,6 +813,8 @@ private:
     static bool packPixels(const uint8_t* sourceData, DataFormat sourceDataFormat, unsigned width, unsigned height, unsigned sourceUnpackAlignment, unsigned destinationFormat, unsigned destinationType, AlphaOp, void* destinationData, bool flipY);
 
     void paintFramebufferToCanvas(int framebuffer, int width, int height, bool premultiplyAlpha, ImageBuffer*);
+    // Helper function to flip a bitmap vertically.
+    void flipVertically(uint8_t* data, int width, int height);
 
     // Extensions3D support.
     bool supportsExtension(const String& name);
@@ -816,16 +827,17 @@ private:
 
     OwnPtr<WebKit::WebGraphicsContext3DProvider> m_provider;
     WebKit::WebGraphicsContext3D* m_impl;
-    OwnPtr<WebKit::WebGraphicsContext3D> m_ownedWebContext;
-    OwnPtr<Extensions3D> m_extensions;
     OwnPtr<GraphicsContext3DContextLostCallbackAdapter> m_contextLostCallbackAdapter;
     OwnPtr<GraphicsContext3DErrorMessageCallbackAdapter> m_errorMessageCallbackAdapter;
+    OwnPtr<WebKit::WebGraphicsContext3D> m_ownedWebContext;
+    OwnPtr<Extensions3D> m_extensions;
     OwnPtr<GrMemoryAllocationChangedCallbackAdapter> m_grContextMemoryAllocationCallbackAdapter;
     bool m_initializedAvailableExtensions;
     HashSet<String> m_enabledExtensions;
     HashSet<String> m_requestableExtensions;
     bool m_layerComposited;
     bool m_preserveDrawingBuffer;
+    int m_packAlignment;
 
     enum ResourceSafety {
         ResourceSafetyUnknown,
@@ -843,6 +855,9 @@ private:
 
     GrContext* m_grContext;
     SkAutoTUnref<GrContext> m_ownedGrContext;
+
+    // Used to flip a bitmap vertically.
+    Vector<uint8_t> m_scanline;
 };
 
 } // namespace WebCore

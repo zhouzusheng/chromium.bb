@@ -14,7 +14,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -42,7 +42,7 @@ class DOMWindow;
 class DOMWrapperWorld;
 class Frame;
 class ScriptExecutionContext;
-class WorkerContext;
+class WorkerGlobalScope;
 
 class ScriptState {
     WTF_MAKE_NONCOPYABLE(ScriptState);
@@ -123,7 +123,7 @@ private:
 
 ScriptState* mainWorldScriptState(Frame*);
 
-ScriptState* scriptStateFromWorkerContext(WorkerContext*);
+ScriptState* scriptStateFromWorkerGlobalScope(WorkerGlobalScope*);
 
 }
 

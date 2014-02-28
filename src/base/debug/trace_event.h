@@ -17,13 +17,14 @@
 // Events are issued against categories. Whereas LOG's
 // categories are statically defined, TRACE categories are created
 // implicitly with a string. For example:
-//   TRACE_EVENT_INSTANT0("MY_SUBSYSTEM", "SomeImportantEvent")
+//   TRACE_EVENT_INSTANT0("MY_SUBSYSTEM", "SomeImportantEvent",
+//                        TRACE_EVENT_SCOPE_THREAD)
 //
 // It is often the case that one trace may belong in multiple categories at the
 // same time. The first argument to the trace can be a comma-separated list of
 // categories, forming a category group, like:
 //
-// TRACE_EVENT_INSTANT0("input,views", "OnMouseOver")
+// TRACE_EVENT_INSTANT0("input,views", "OnMouseOver", TRACE_EVENT_SCOPE_THREAD)
 //
 // We can enable/disable tracing of OnMouseOver by enabling/disabling either
 // category.
@@ -97,7 +98,7 @@
 // This indicates to the tracing UI that these counters should be displayed
 // in a single graph, as a summed area chart.
 //
-// Since counters are in a global namespace, you may want to disembiguate with a
+// Since counters are in a global namespace, you may want to disambiguate with a
 // unique ID, by using the TRACE_COUNTER_ID* variations.
 //
 // By default, trace collection is compiled in, but turned off at runtime.
@@ -132,7 +133,7 @@
 //                  "arg1", std::string("string will be copied"));
 //
 //
-// Convertable notes:
+// Convertible notes:
 // Converting a large data type to a string can be costly. To help with this,
 // the trace framework provides an interface ConvertableToTraceFormat. If you
 // inherit from it and implement the AppendAsTraceFormat method the trace
@@ -183,7 +184,7 @@
 // again under lock.
 //
 // Without the use of these static category pointers and enabled flags all
-// trace points would carry a significant performance cost of aquiring a lock
+// trace points would carry a significant performance cost of acquiring a lock
 // and resolving the category.
 
 #ifndef BASE_DEBUG_TRACE_EVENT_H_
@@ -193,6 +194,7 @@
 
 #include "base/atomicops.h"
 #include "base/debug/trace_event_impl.h"
+#include "base/debug/trace_event_memory.h"
 #include "build/build_config.h"
 
 // By default, const char* argument values are assumed to have long-lived scope
@@ -220,16 +222,28 @@
 // - category and name strings must have application lifetime (statics or
 //   literals). They may not include " chars.
 #define TRACE_EVENT0(category_group, name) \
+    INTERNAL_TRACE_MEMORY(category_group, name) \
     INTERNAL_TRACE_EVENT_ADD_SCOPED(category_group, name)
 #define TRACE_EVENT1(category_group, name, arg1_name, arg1_val) \
+    INTERNAL_TRACE_MEMORY(category_group, name) \
     INTERNAL_TRACE_EVENT_ADD_SCOPED(category_group, name, arg1_name, arg1_val)
-#define TRACE_EVENT2(category_group, name, arg1_name, arg1_val, arg2_name, \
-                     arg2_val) \
-    INTERNAL_TRACE_EVENT_ADD_SCOPED(category_group, name, arg1_name, arg1_val, \
-        arg2_name, arg2_val)
+#define TRACE_EVENT2( \
+    category_group, name, arg1_name, arg1_val, arg2_name, arg2_val) \
+  INTERNAL_TRACE_MEMORY(category_group, name) \
+  INTERNAL_TRACE_EVENT_ADD_SCOPED( \
+      category_group, name, arg1_name, arg1_val, arg2_name, arg2_val)
 
-// Same as TRACE_EVENT except that they are not included in official builds.
-#ifdef OFFICIAL_BUILD
+// UNSHIPPED_TRACE_EVENT* are like TRACE_EVENT* except that they are not
+// included in official builds.
+
+#if OFFICIAL_BUILD
+#undef TRACING_IS_OFFICIAL_BUILD
+#define TRACING_IS_OFFICIAL_BUILD 1
+#elif !defined(TRACING_IS_OFFICIAL_BUILD)
+#define TRACING_IS_OFFICIAL_BUILD 0
+#endif
+
+#if TRACING_IS_OFFICIAL_BUILD
 #define UNSHIPPED_TRACE_EVENT0(category_group, name) (void)0
 #define UNSHIPPED_TRACE_EVENT1(category_group, name, arg1_name, arg1_val) \
     (void)0
@@ -299,10 +313,34 @@
 // want the inconsistency/expense of storing two pointers.
 // |thread_bucket| is [0..2] and is used to statically isolate samples in one
 // thread from others.
-#define TRACE_EVENT_SAMPLE_STATE(thread_bucket, category, name)                \
-  TRACE_EVENT_API_ATOMIC_STORE(                                                \
-      TRACE_EVENT_API_THREAD_BUCKET(thread_bucket),                            \
-      reinterpret_cast<TRACE_EVENT_API_ATOMIC_WORD>(category "\0" name));
+#define TRACE_EVENT_SET_SAMPLING_STATE_FOR_BUCKET( \
+    bucket_number, category, name)                 \
+        trace_event_internal::                     \
+        TraceEventSamplingStateScope<bucket_number>::Set(category "\0" name)
+
+// Returns a current sampling state of the given bucket.
+#define TRACE_EVENT_GET_SAMPLING_STATE_FOR_BUCKET(bucket_number) \
+    trace_event_internal::TraceEventSamplingStateScope<bucket_number>::Current()
+
+// Creates a scope of a sampling state of the given bucket.
+//
+// {  // The sampling state is set within this scope.
+//    TRACE_EVENT_SAMPLING_STATE_SCOPE_FOR_BUCKET(0, "category", "name");
+//    ...;
+// }
+#define TRACE_EVENT_SCOPED_SAMPLING_STATE_FOR_BUCKET(                   \
+    bucket_number, category, name)                                      \
+    trace_event_internal::TraceEventSamplingStateScope<bucket_number>   \
+        traceEventSamplingScope(category "\0" name);
+
+// Syntactic sugars for the sampling tracing in the main thread.
+#define TRACE_EVENT_SCOPED_SAMPLING_STATE(category, name) \
+    TRACE_EVENT_SCOPED_SAMPLING_STATE_FOR_BUCKET(0, category, name)
+#define TRACE_EVENT_GET_SAMPLING_STATE() \
+    TRACE_EVENT_GET_SAMPLING_STATE_FOR_BUCKET(0)
+#define TRACE_EVENT_SET_SAMPLING_STATE(category, name) \
+    TRACE_EVENT_SET_SAMPLING_STATE_FOR_BUCKET(0, category, name)
+
 
 // Records a single BEGIN event called "name" immediately, with 0, 1 or 2
 // associated arguments. If the category is not enabled, then this
@@ -651,7 +689,7 @@
         category_group, name, id, TRACE_EVENT_FLAG_COPY, \
         arg1_name, arg1_val, arg2_name, arg2_val)
 
-// Macros to track the life time and value of arbitratry client objects.
+// Macros to track the life time and value of arbitrary client objects.
 // See also TraceTrackableObject.
 #define TRACE_EVENT_OBJECT_CREATED_WITH_ID(category_group, name, id) \
     INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_CREATE_OBJECT, \
@@ -755,21 +793,18 @@
 // Defines visibility for classes in trace_event.h
 #define TRACE_EVENT_API_CLASS_EXPORT BASE_EXPORT
 
-// Not supported in split-dll build. http://crbug.com/237249
-#if !defined(CHROME_SPLIT_DLL)
 // The thread buckets for the sampling profiler.
-TRACE_EVENT_API_CLASS_EXPORT extern TRACE_EVENT_API_ATOMIC_WORD g_trace_state0;
-TRACE_EVENT_API_CLASS_EXPORT extern TRACE_EVENT_API_ATOMIC_WORD g_trace_state1;
-TRACE_EVENT_API_CLASS_EXPORT extern TRACE_EVENT_API_ATOMIC_WORD g_trace_state2;
+TRACE_EVENT_API_CLASS_EXPORT extern \
+    TRACE_EVENT_API_ATOMIC_WORD g_trace_state[3];
+
 #define TRACE_EVENT_API_THREAD_BUCKET(thread_bucket)                           \
-  g_trace_state##thread_bucket
-#endif
+    g_trace_state[thread_bucket]
 
 ////////////////////////////////////////////////////////////////////////////////
 
 // Implementation detail: trace event macros create temporary variables
 // to keep instrumentation overhead low. These macros give each temporary
-// variable a unique name based on the line number to prevent name collissions.
+// variable a unique name based on the line number to prevent name collisions.
 #define INTERNAL_TRACE_EVENT_UID3(a,b) \
     trace_event_unique_##a##b
 #define INTERNAL_TRACE_EVENT_UID2(a,b) \
@@ -1438,6 +1473,37 @@ class TRACE_EVENT_API_CLASS_EXPORT ScopedTrace {
 // when debugging.
 #define TRACE_EVENT_BINARY_EFFICIENT0(category_group, name) \
     INTERNAL_TRACE_EVENT_BINARY_EFFICIENT_ADD_SCOPED(category_group, name)
+
+// TraceEventSamplingStateScope records the current sampling state
+// and sets a new sampling state. When the scope exists, it restores
+// the sampling state having recorded.
+template<size_t BucketNumber>
+class TraceEventSamplingStateScope {
+ public:
+  TraceEventSamplingStateScope(const char* category_and_name) {
+    previous_state_ = TraceEventSamplingStateScope<BucketNumber>::Current();
+    TraceEventSamplingStateScope<BucketNumber>::Set(category_and_name);
+  }
+
+  ~TraceEventSamplingStateScope() {
+    TraceEventSamplingStateScope<BucketNumber>::Set(previous_state_);
+  }
+
+  static inline const char* Current() {
+    return reinterpret_cast<const char*>(TRACE_EVENT_API_ATOMIC_LOAD(
+      g_trace_state[BucketNumber]));
+  }
+
+  static inline void Set(const char* category_and_name) {
+    TRACE_EVENT_API_ATOMIC_STORE(
+      g_trace_state[BucketNumber],
+      reinterpret_cast<TRACE_EVENT_API_ATOMIC_WORD>(
+        const_cast<char*>(category_and_name)));
+  }
+
+ private:
+  const char* previous_state_;
+};
 
 }  // namespace trace_event_internal
 

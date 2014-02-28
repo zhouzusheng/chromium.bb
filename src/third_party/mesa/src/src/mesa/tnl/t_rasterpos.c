@@ -84,7 +84,7 @@ viewclip_point_z( const GLfloat v[] )
  * \return zero if the point was clipped, or one otherwise.
  */
 static GLuint
-userclip_point( GLcontext *ctx, const GLfloat v[] )
+userclip_point( struct gl_context *ctx, const GLfloat v[] )
 {
    GLuint p;
 
@@ -105,16 +105,15 @@ userclip_point( GLcontext *ctx, const GLfloat v[] )
 
 
 /**
- * Compute lighting for the raster position.  Both RGB and CI modes computed.
+ * Compute lighting for the raster position.  RGB modes computed.
  * \param ctx the context
  * \param vertex vertex location
  * \param normal normal vector
  * \param Rcolor returned color
  * \param Rspec returned specular color (if separate specular enabled)
- * \param Rindex returned color index
  */
 static void
-shade_rastpos(GLcontext *ctx,
+shade_rastpos(struct gl_context *ctx,
               const GLfloat vertex[4],
               const GLfloat normal[3],
               GLfloat Rcolor[4],
@@ -123,9 +122,6 @@ shade_rastpos(GLcontext *ctx,
    /*const*/ GLfloat (*base)[3] = ctx->Light._BaseColor;
    const struct gl_light *light;
    GLfloat diffuseColor[4], specularColor[4];  /* for RGB mode only */
-   GLfloat diffuseCI = 0.0, specularCI = 0.0;  /* for CI mode only */
-
-   _mesa_validate_all_lighting_tables( ctx );
 
    COPY_3V(diffuseColor, base[0]);
    diffuseColor[3] = CLAMP( 
@@ -169,10 +165,7 @@ shade_rastpos(GLcontext *ctx,
 	       continue;
 	    }
 	    else {
-	       double x = PV_dot_dir * (EXP_TABLE_SIZE-1);
-	       int k = (int) x;
-	       GLfloat spot = (GLfloat) (light->_SpotExpTable[k][0]
-			       + (x-k)*light->_SpotExpTable[k][1]);
+               GLfloat spot = powf(PV_dot_dir, light->SpotExponent);
 	       attenuation *= spot;
 	    }
 	 }
@@ -191,7 +184,6 @@ shade_rastpos(GLcontext *ctx,
       /* Ambient + diffuse */
       COPY_3V(diffuseContrib, light->_MatAmbient[0]);
       ACC_SCALE_SCALAR_3V(diffuseContrib, n_dot_VP, light->_MatDiffuse[0]);
-      diffuseCI += n_dot_VP * light->_dli * attenuation;
 
       /* Specular */
       {
@@ -220,8 +212,11 @@ shade_rastpos(GLcontext *ctx,
 	 n_dot_h = DOT3(normal, h);
 
 	 if (n_dot_h > 0.0F) {
+	    GLfloat shine;
 	    GLfloat spec_coef;
-	    GET_SHINE_TAB_ENTRY( ctx->_ShineTable[0], n_dot_h, spec_coef );
+
+	    shine = ctx->Light.Material.Attrib[MAT_ATTRIB_FRONT_SHININESS][0];
+	    spec_coef = powf(n_dot_h, shine);
 
 	    if (spec_coef > 1.0e-10) {
                if (ctx->Light.Model.ColorControl==GL_SEPARATE_SPECULAR_COLOR) {
@@ -232,8 +227,6 @@ shade_rastpos(GLcontext *ctx,
                   ACC_SCALE_SCALAR_3V( diffuseContrib, spec_coef,
                                        light->_MatSpecular[0]);
                }
-               /*assert(light->_sli > 0.0);*/
-               specularCI += spec_coef * light->_sli * attenuation;
 	    }
 	 }
       }
@@ -263,7 +256,7 @@ shade_rastpos(GLcontext *ctx,
  * \param texcoord  incoming texcoord and resulting texcoord
  */
 static void
-compute_texgen(GLcontext *ctx, const GLfloat vObj[4], const GLfloat vEye[4],
+compute_texgen(struct gl_context *ctx, const GLfloat vObj[4], const GLfloat vEye[4],
                const GLfloat normal[3], GLuint unit, GLfloat texcoord[4])
 {
    const struct gl_texture_unit *texUnit = &ctx->Texture.Unit[unit];
@@ -278,7 +271,7 @@ compute_texgen(GLcontext *ctx, const GLfloat vObj[4], const GLfloat vEye[4],
    rz = u[2] - normal[2] * two_nu;
    m = rx * rx + ry * ry + (rz + 1.0F) * (rz + 1.0F);
    if (m > 0.0F)
-      mInv = 0.5F * _mesa_inv_sqrtf(m);
+      mInv = 0.5F * INV_SQRTF(m);
    else
       mInv = 0.0F;
 
@@ -373,7 +366,7 @@ compute_texgen(GLcontext *ctx, const GLfloat vObj[4], const GLfloat vEye[4],
  * \param vObj  vertex position in object space
  */
 void
-_tnl_RasterPos(GLcontext *ctx, const GLfloat vObj[4])
+_tnl_RasterPos(struct gl_context *ctx, const GLfloat vObj[4])
 {
    if (ctx->VertexProgram._Enabled) {
       /* XXX implement this */

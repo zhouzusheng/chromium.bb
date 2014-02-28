@@ -26,6 +26,7 @@
 #include "config.h"
 #include "core/html/HTMLDialogElement.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/page/FrameView.h"
 #include "core/rendering/RenderBlock.h"
@@ -44,6 +45,7 @@ HTMLDialogElement::HTMLDialogElement(const QualifiedName& tagName, Document* doc
     : HTMLElement(tagName, document)
     , m_topIsValid(false)
     , m_top(0)
+    , m_returnValue("")
 {
     ASSERT(hasTagName(dialogTag));
     setHasCustomStyleCallbacks();
@@ -55,15 +57,18 @@ PassRefPtr<HTMLDialogElement> HTMLDialogElement::create(const QualifiedName& tag
     return adoptRef(new HTMLDialogElement(tagName, document));
 }
 
-void HTMLDialogElement::close(ExceptionCode& ec)
+void HTMLDialogElement::close(const String& returnValue, ExceptionState& es)
 {
     if (!fastHasAttribute(openAttr)) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
     setBooleanAttribute(openAttr, false);
     document()->removeFromTopLayer(this);
     m_topIsValid = false;
+
+    if (!returnValue.isNull())
+        m_returnValue = returnValue;
 }
 
 PassRefPtr<RenderStyle> HTMLDialogElement::customStyleForRenderer()
@@ -97,7 +102,7 @@ void HTMLDialogElement::reposition()
         m_top += (visibleHeight - box->height()) / 2;
     m_topIsValid = true;
 
-    setNeedsStyleRecalc(InlineStyleChange);
+    setNeedsStyleRecalc(LocalStyleChange);
 }
 
 void HTMLDialogElement::show()
@@ -108,10 +113,10 @@ void HTMLDialogElement::show()
     reposition();
 }
 
-void HTMLDialogElement::showModal(ExceptionCode& ec)
+void HTMLDialogElement::showModal(ExceptionState& es)
 {
     if (fastHasAttribute(openAttr) || !inDocument()) {
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
         return;
     }
     document()->addToTopLayer(this);

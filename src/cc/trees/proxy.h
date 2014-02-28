@@ -11,11 +11,9 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "cc/base/cc_export.h"
-#include "skia/ext/refptr.h"
-#include "third_party/skia/include/core/SkPicture.h"
 
 namespace base { class SingleThreadTaskRunner; }
 
@@ -68,8 +66,11 @@ class CC_EXPORT Proxy {
   virtual const RendererCapabilities& GetRendererCapabilities() const = 0;
 
   virtual void SetNeedsAnimate() = 0;
+  virtual void SetNeedsUpdateLayers() = 0;
   virtual void SetNeedsCommit() = 0;
   virtual void SetNeedsRedraw(gfx::Rect damage_rect) = 0;
+
+  virtual void NotifyInputThrottledUntilCommit() = 0;
 
   // Defers commits until it is reset. It is only supported when in threaded
   // mode. It's an error to make a sync call like CompositeAndReadback while
@@ -93,7 +94,6 @@ class CC_EXPORT Proxy {
 
   virtual void AcquireLayerTextures() = 0;
 
-  virtual skia::RefPtr<SkPicture> CapturePicture() = 0;
   virtual scoped_ptr<base::Value> AsValue() const = 0;
 
   // Testing hooks

@@ -8,6 +8,7 @@
 #include "base/callback.h"
 #include "content/child/child_thread.h"
 #include "content/child/fileapi/file_system_dispatcher.h"
+#include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
 #include "ppapi/c/pp_errors.h"
@@ -21,7 +22,6 @@
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "webkit/common/fileapi/file_system_util.h"
-#include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 
 namespace content {
 
@@ -71,8 +71,8 @@ int32_t PepperFileSystemHost::OnResourceMessageReceived(
   return PP_ERROR_FAILED;
 }
 
-PepperFileSystemHost* PepperFileSystemHost::AsPepperFileSystemHost() {
-  return this;
+bool PepperFileSystemHost::IsFileSystemHost() {
+  return true;
 }
 
 void PepperFileSystemHost::DidOpenFileSystem(
@@ -117,7 +117,7 @@ int32_t PepperFileSystemHost::OnHostMsgOpen(
       return PP_ERROR_FAILED;
   }
 
-  webkit::ppapi::PluginInstance* plugin_instance =
+  PepperPluginInstance* plugin_instance =
       renderer_ppapi_host_->GetPluginInstance(pp_instance());
   if (!plugin_instance)
     return PP_ERROR_FAILED;
@@ -125,17 +125,14 @@ int32_t PepperFileSystemHost::OnHostMsgOpen(
   FileSystemDispatcher* file_system_dispatcher =
       ChildThread::current()->file_system_dispatcher();
   reply_context_ = context->MakeReplyMessageContext();
-  if (!file_system_dispatcher->OpenFileSystem(
-      GURL(plugin_instance->container()->element().document().url()).
+  file_system_dispatcher->OpenFileSystem(
+      GURL(plugin_instance->GetContainer()->element().document().url()).
           GetOrigin(),
       file_system_type, expected_size, true /* create */,
       base::Bind(&PepperFileSystemHost::DidOpenFileSystem,
                  weak_factory_.GetWeakPtr()),
       base::Bind(&PepperFileSystemHost::DidFailOpenFileSystem,
-                 weak_factory_.GetWeakPtr()))) {
-    return PP_ERROR_FAILED;
-  }
-
+                 weak_factory_.GetWeakPtr()));
   return PP_OK_COMPLETIONPENDING;
 }
 

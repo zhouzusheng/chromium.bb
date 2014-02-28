@@ -38,27 +38,37 @@ struct WebRTCDataChannelInit;
 namespace WebCore {
 
 class Blob;
+class ExceptionState;
 class RTCDataChannelHandler;
 class RTCPeerConnectionHandler;
 
 class RTCDataChannel : public RefCounted<RTCDataChannel>, public ScriptWrappable, public EventTarget, public RTCDataChannelHandlerClient {
 public:
     static PassRefPtr<RTCDataChannel> create(ScriptExecutionContext*, PassOwnPtr<RTCDataChannelHandler>);
-    static PassRefPtr<RTCDataChannel> create(ScriptExecutionContext*, RTCPeerConnectionHandler*, const String& label, const WebKit::WebRTCDataChannelInit&, ExceptionCode&);
+    static PassRefPtr<RTCDataChannel> create(ScriptExecutionContext*, RTCPeerConnectionHandler*, const String& label, const WebKit::WebRTCDataChannelInit&, ExceptionState&);
     ~RTCDataChannel();
 
     String label() const;
+
+    // DEPRECATED
     bool reliable() const;
+
+    bool ordered() const;
+    unsigned short maxRetransmitTime() const;
+    unsigned short maxRetransmits() const;
+    String protocol() const;
+    bool negotiated() const;
+    unsigned short id() const;
     String readyState() const;
     unsigned long bufferedAmount() const;
 
     String binaryType() const;
-    void setBinaryType(const String&, ExceptionCode&);
+    void setBinaryType(const String&, ExceptionState&);
 
-    void send(const String&, ExceptionCode&);
-    void send(PassRefPtr<ArrayBuffer>, ExceptionCode&);
-    void send(PassRefPtr<ArrayBufferView>, ExceptionCode&);
-    void send(PassRefPtr<Blob>, ExceptionCode&);
+    void send(const String&, ExceptionState&);
+    void send(PassRefPtr<ArrayBuffer>, ExceptionState&);
+    void send(PassRefPtr<ArrayBufferView>, ExceptionState&);
+    void send(PassRefPtr<Blob>, ExceptionState&);
 
     void close();
 

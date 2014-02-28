@@ -6,7 +6,8 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
+#include "net/base/load_timing_info.h"
 
 namespace net {
 
@@ -36,7 +37,17 @@ bool URLRequestRedirectJob::IsRedirectResponse(GURL* location,
 URLRequestRedirectJob::~URLRequestRedirectJob() {}
 
 void URLRequestRedirectJob::StartAsync() {
+  receive_headers_end_ = base::TimeTicks::Now();
   NotifyHeadersComplete();
+}
+
+void URLRequestRedirectJob::GetLoadTimingInfo(
+    LoadTimingInfo* load_timing_info) const {
+  // Set send_start and send_end to receive_headers_end_ to keep consistent
+  // with network cache behavior.
+  load_timing_info->send_start = receive_headers_end_;
+  load_timing_info->send_end = receive_headers_end_;
+  load_timing_info->receive_headers_end = receive_headers_end_;
 }
 
 }  // namespace net

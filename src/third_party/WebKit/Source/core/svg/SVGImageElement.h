@@ -21,21 +21,18 @@
 #ifndef SVGImageElement_h
 #define SVGImageElement_h
 
+#include "SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGAnimatedPreserveAspectRatio.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
+#include "core/svg/SVGGraphicsElement.h"
 #include "core/svg/SVGImageLoader.h"
-#include "core/svg/SVGLangSpace.h"
-#include "core/svg/SVGStyledTransformableElement.h"
-#include "core/svg/SVGTests.h"
 #include "core/svg/SVGURIReference.h"
 
 namespace WebCore {
 
-class SVGImageElement FINAL : public SVGStyledTransformableElement,
-                              public SVGTests,
-                              public SVGLangSpace,
+class SVGImageElement FINAL : public SVGGraphicsElement,
                               public SVGExternalResourcesRequired,
                               public SVGURIReference {
 public:
@@ -43,9 +40,9 @@ public:
 
 private:
     SVGImageElement(const QualifiedName&, Document*);
-    
+
     virtual bool isValid() const { return SVGTests::isValid(); }
-    virtual bool supportsFocus() const { return true; }
+    virtual bool supportsFocus() const OVERRIDE { return hasFocusEventListeners(); }
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
@@ -76,13 +73,14 @@ private:
         DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
     END_DECLARE_ANIMATED_PROPERTIES
 
-    // SVGTests
-    virtual void synchronizeRequiredFeatures() { SVGTests::synchronizeRequiredFeatures(this); }
-    virtual void synchronizeRequiredExtensions() { SVGTests::synchronizeRequiredExtensions(this); }
-    virtual void synchronizeSystemLanguage() { SVGTests::synchronizeSystemLanguage(this); }
-
     SVGImageLoader m_imageLoader;
 };
+
+inline SVGImageElement* toSVGImageElement(Node* node)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(SVGNames::imageTag));
+    return static_cast<SVGImageElement*>(node);
+}
 
 } // namespace WebCore
 

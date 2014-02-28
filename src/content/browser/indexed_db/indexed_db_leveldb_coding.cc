@@ -6,18 +6,16 @@
 
 #include <iterator>
 #include <limits>
-#include <string>
 
 #include "base/logging.h"
 #include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/sys_byteorder.h"
-#include "content/browser/indexed_db/leveldb/leveldb_slice.h"
 #include "content/common/indexed_db/indexed_db_key.h"
 #include "content/common/indexed_db/indexed_db_key_path.h"
-#include "third_party/WebKit/public/platform/WebIDBKeyPath.h"
 
 // LevelDB stores key/value pairs. Keys and values are strings of bytes,
-// normally of type std::vector<char>.
+// normally of type std::string.
 //
 // The keys in the backing store are variable-length tuples with different types
 // of fields. Each key in the backing store starts with a ternary prefix:
@@ -151,8 +149,18 @@
 // IndexKeyCursorImpl::load_current_row).
 
 using base::StringPiece;
-using WebKit::WebIDBKey;
-using WebKit::WebIDBKeyPath;
+using WebKit::WebIDBKeyType;
+using WebKit::WebIDBKeyTypeArray;
+using WebKit::WebIDBKeyTypeDate;
+using WebKit::WebIDBKeyTypeInvalid;
+using WebKit::WebIDBKeyTypeMin;
+using WebKit::WebIDBKeyTypeNull;
+using WebKit::WebIDBKeyTypeNumber;
+using WebKit::WebIDBKeyTypeString;
+using WebKit::WebIDBKeyPathType;
+using WebKit::WebIDBKeyPathTypeArray;
+using WebKit::WebIDBKeyPathTypeNull;
+using WebKit::WebIDBKeyPathTypeString;
 
 namespace content {
 
@@ -194,32 +202,32 @@ static const unsigned char kIndexMetaDataTypeMaximum = 255;
 
 const unsigned char kMinimumIndexId = 30;
 
-inline void EncodeIntSafely(int64 nParam, int64 max, std::vector<char>* into) {
+inline void EncodeIntSafely(int64 nParam, int64 max, std::string* into) {
   DCHECK_LE(nParam, max);
   return EncodeInt(nParam, into);
 }
 
-std::vector<char> MaxIDBKey() {
-  std::vector<char> ret;
+std::string MaxIDBKey() {
+  std::string ret;
   EncodeByte(kIndexedDBKeyNullTypeByte, &ret);
   return ret;
 }
 
-std::vector<char> MinIDBKey() {
-  std::vector<char> ret;
+std::string MinIDBKey() {
+  std::string ret;
   EncodeByte(kIndexedDBKeyMinKeyTypeByte, &ret);
   return ret;
 }
 
-void EncodeByte(unsigned char value, std::vector<char>* into) {
+void EncodeByte(unsigned char value, std::string* into) {
   into->push_back(value);
 }
 
-void EncodeBool(bool value, std::vector<char>* into) {
+void EncodeBool(bool value, std::string* into) {
   into->push_back(value ? 1 : 0);
 }
 
-void EncodeInt(int64 value, std::vector<char>* into) {
+void EncodeInt(int64 value, std::string* into) {
 #ifndef NDEBUG
   // Exercised by unit tests in debug only.
   DCHECK_GE(value, 0);
@@ -233,7 +241,7 @@ void EncodeInt(int64 value, std::vector<char>* into) {
   } while (n);
 }
 
-void EncodeVarInt(int64 value, std::vector<char>* into) {
+void EncodeVarInt(int64 value, std::string* into) {
 #ifndef NDEBUG
   // Exercised by unit tests in debug only.
   DCHECK_GE(value, 0);
@@ -249,7 +257,7 @@ void EncodeVarInt(int64 value, std::vector<char>* into) {
   } while (n);
 }
 
-void EncodeString(const string16& value, std::vector<char>* into) {
+void EncodeString(const string16& value, std::string* into) {
   if (value.empty())
     return;
   // Backing store is UTF-16BE, convert from host endianness.
@@ -263,29 +271,29 @@ void EncodeString(const string16& value, std::vector<char>* into) {
     *dst++ = htons(*src++);
 }
 
-void EncodeStringWithLength(const string16& value, std::vector<char>* into) {
+void EncodeStringWithLength(const string16& value, std::string* into) {
   EncodeVarInt(value.length(), into);
   EncodeString(value, into);
 }
 
-void EncodeDouble(double value, std::vector<char>* into) {
+void EncodeDouble(double value, std::string* into) {
   // This always has host endianness.
   const char* p = reinterpret_cast<char*>(&value);
   into->insert(into->end(), p, p + sizeof(value));
 }
 
-void EncodeIDBKey(const IndexedDBKey& value, std::vector<char>* into) {
+void EncodeIDBKey(const IndexedDBKey& value, std::string* into) {
   size_t previous_size = into->size();
   DCHECK(value.IsValid());
   switch (value.type()) {
-    case WebIDBKey::NullType:
-    case WebIDBKey::InvalidType:
-    case WebIDBKey::MinType: {
+    case WebIDBKeyTypeNull:
+    case WebIDBKeyTypeInvalid:
+    case WebIDBKeyTypeMin: {
       NOTREACHED();
       EncodeByte(kIndexedDBKeyNullTypeByte, into);
       return;
     }
-    case WebIDBKey::ArrayType: {
+    case WebIDBKeyTypeArray: {
       EncodeByte(kIndexedDBKeyArrayTypeByte, into);
       size_t length = value.array().size();
       EncodeVarInt(length, into);
@@ -294,20 +302,20 @@ void EncodeIDBKey(const IndexedDBKey& value, std::vector<char>* into) {
       DCHECK_GT(into->size(), previous_size);
       return;
     }
-    case WebIDBKey::StringType: {
+    case WebIDBKeyTypeString: {
       EncodeByte(kIndexedDBKeyStringTypeByte, into);
       EncodeStringWithLength(value.string(), into);
       DCHECK_GT(into->size(), previous_size);
       return;
     }
-    case WebIDBKey::DateType: {
+    case WebIDBKeyTypeDate: {
       EncodeByte(kIndexedDBKeyDateTypeByte, into);
       EncodeDouble(value.date(), into);
       DCHECK_EQ(static_cast<size_t>(9),
                 static_cast<size_t>(into->size() - previous_size));
       return;
     }
-    case WebIDBKey::NumberType: {
+    case WebIDBKeyTypeNumber: {
       EncodeByte(kIndexedDBKeyNumberTypeByte, into);
       EncodeDouble(value.number(), into);
       DCHECK_EQ(static_cast<size_t>(9),
@@ -319,7 +327,7 @@ void EncodeIDBKey(const IndexedDBKey& value, std::vector<char>* into) {
   NOTREACHED();
 }
 
-void EncodeIDBKeyPath(const IndexedDBKeyPath& value, std::vector<char>* into) {
+void EncodeIDBKeyPath(const IndexedDBKeyPath& value, std::string* into) {
   // May be typed, or may be a raw string. An invalid leading
   // byte is used to identify typed coding. New records are
   // always written as typed.
@@ -327,13 +335,13 @@ void EncodeIDBKeyPath(const IndexedDBKeyPath& value, std::vector<char>* into) {
   EncodeByte(kIndexedDBKeyPathTypeCodedByte2, into);
   EncodeByte(static_cast<char>(value.type()), into);
   switch (value.type()) {
-    case WebIDBKeyPath::NullType:
+    case WebIDBKeyPathTypeNull:
       break;
-    case WebIDBKeyPath::StringType: {
+    case WebIDBKeyPathTypeString: {
       EncodeStringWithLength(value.string(), into);
       break;
     }
-    case WebIDBKeyPath::ArrayType: {
+    case WebIDBKeyPathTypeArray: {
       const std::vector<string16>& array = value.array();
       size_t count = array.size();
       EncodeVarInt(count, into);
@@ -476,14 +484,14 @@ bool DecodeIDBKey(StringPiece* slice, scoped_ptr<IndexedDBKey>* value) {
       double d;
       if (!DecodeDouble(slice, &d))
         return false;
-      *value = make_scoped_ptr(new IndexedDBKey(d, WebIDBKey::DateType));
+      *value = make_scoped_ptr(new IndexedDBKey(d, WebIDBKeyTypeDate));
       return true;
     }
     case kIndexedDBKeyNumberTypeByte: {
       double d;
       if (!DecodeDouble(slice, &d))
         return false;
-      *value = make_scoped_ptr(new IndexedDBKey(d, WebIDBKey::NumberType));
+      *value = make_scoped_ptr(new IndexedDBKey(d, WebIDBKeyTypeNumber));
       return true;
     }
   }
@@ -516,15 +524,15 @@ bool DecodeIDBKeyPath(StringPiece* slice, IndexedDBKeyPath* value) {
 
   slice->remove_prefix(2);
   DCHECK(!slice->empty());
-  WebIDBKeyPath::Type type = static_cast<WebIDBKeyPath::Type>((*slice)[0]);
+  WebIDBKeyPathType type = static_cast<WebIDBKeyPathType>((*slice)[0]);
   slice->remove_prefix(1);
 
   switch (type) {
-    case WebIDBKeyPath::NullType:
+    case WebIDBKeyPathTypeNull:
       DCHECK(slice->empty());
       *value = IndexedDBKeyPath();
       return true;
-    case WebIDBKeyPath::StringType: {
+    case WebIDBKeyPathTypeString: {
       string16 string;
       if (!DecodeStringWithLength(slice, &string))
         return false;
@@ -532,7 +540,7 @@ bool DecodeIDBKeyPath(StringPiece* slice, IndexedDBKeyPath* value) {
       *value = IndexedDBKeyPath(string);
       return true;
     }
-    case WebIDBKeyPath::ArrayType: {
+    case WebIDBKeyPathTypeArray: {
       std::vector<string16> array;
       int64 count;
       if (!DecodeVarInt(slice, &count))
@@ -553,7 +561,7 @@ bool DecodeIDBKeyPath(StringPiece* slice, IndexedDBKeyPath* value) {
   return false;
 }
 
-bool ExtractEncodedIDBKey(StringPiece* slice) {
+bool ConsumeEncodedIDBKey(StringPiece* slice) {
   unsigned char type = (*slice)[0];
   slice->remove_prefix(1);
 
@@ -566,7 +574,7 @@ bool ExtractEncodedIDBKey(StringPiece* slice) {
       if (!DecodeVarInt(slice, &length))
         return false;
       while (length--) {
-        if (!ExtractEncodedIDBKey(slice))
+        if (!ConsumeEncodedIDBKey(slice))
           return false;
       }
       return true;
@@ -591,34 +599,34 @@ bool ExtractEncodedIDBKey(StringPiece* slice) {
   return false;
 }
 
-bool ExtractEncodedIDBKey(StringPiece* slice, std::vector<char>* result) {
+bool ExtractEncodedIDBKey(StringPiece* slice, std::string* result) {
   const char* start = slice->begin();
-  if (!ExtractEncodedIDBKey(slice))
-    return 0;
+  if (!ConsumeEncodedIDBKey(slice))
+    return false;
 
   if (result)
     result->assign(start, slice->begin());
   return true;
 }
 
-static WebIDBKey::Type KeyTypeByteToKeyType(unsigned char type) {
+static WebIDBKeyType KeyTypeByteToKeyType(unsigned char type) {
   switch (type) {
     case kIndexedDBKeyNullTypeByte:
-      return WebIDBKey::InvalidType;
+      return WebIDBKeyTypeInvalid;
     case kIndexedDBKeyArrayTypeByte:
-      return WebIDBKey::ArrayType;
+      return WebIDBKeyTypeArray;
     case kIndexedDBKeyStringTypeByte:
-      return WebIDBKey::StringType;
+      return WebIDBKeyTypeString;
     case kIndexedDBKeyDateTypeByte:
-      return WebIDBKey::DateType;
+      return WebIDBKeyTypeDate;
     case kIndexedDBKeyNumberTypeByte:
-      return WebIDBKey::NumberType;
+      return WebIDBKeyTypeNumber;
     case kIndexedDBKeyMinKeyTypeByte:
-      return WebIDBKey::MinType;
+      return WebIDBKeyTypeMin;
   }
 
   NOTREACHED();
-  return WebIDBKey::InvalidType;
+  return WebIDBKeyTypeInvalid;
 }
 
 int CompareEncodedStringsWithLength(StringPiece* slice1,
@@ -667,7 +675,7 @@ static int CompareInts(int64 a, int64 b) {
   return 0;
 }
 
-static int CompareTypes(WebIDBKey::Type a, WebIDBKey::Type b) { return b - a; }
+static int CompareTypes(WebIDBKeyType a, WebIDBKeyType b) { return b - a; }
 
 int CompareEncodedIDBKeys(StringPiece* slice_a,
                           StringPiece* slice_b,
@@ -722,33 +730,31 @@ int CompareEncodedIDBKeys(StringPiece* slice_a,
   return 0;
 }
 
-int CompareEncodedIDBKeys(const std::vector<char>& key_a,
-                          const std::vector<char>& key_b,
+int CompareEncodedIDBKeys(const std::string& key_a,
+                          const std::string& key_b,
                           bool* ok) {
   DCHECK(!key_a.empty());
   DCHECK(!key_b.empty());
 
-  StringPiece slice_a(&*key_a.begin(), key_a.size());
-  StringPiece slice_b(&*key_b.begin(), key_b.size());
+  StringPiece slice_a(key_a);
+  StringPiece slice_b(key_b);
   return CompareEncodedIDBKeys(&slice_a, &slice_b, ok);
 }
 
 namespace {
 
 template <typename KeyType>
-int Compare(const LevelDBSlice& a, const LevelDBSlice& b, bool, bool* ok) {
+int Compare(const StringPiece& a, const StringPiece& b, bool, bool* ok) {
   KeyType key_a;
   KeyType key_b;
 
-  const char* ptr_a = KeyType::Decode(a.begin(), a.end(), &key_a);
-  DCHECK(ptr_a);
-  if (!ptr_a) {
+  StringPiece slice_a(a);
+  if (!KeyType::Decode(&slice_a, &key_a)) {
     *ok = false;
     return 0;
   }
-  const char* ptr_b = KeyType::Decode(b.begin(), b.end(), &key_b);
-  DCHECK(ptr_b);
-  if (!ptr_b) {
+  StringPiece slice_b(b);
+  if (!KeyType::Decode(&slice_b, &key_b)) {
     *ok = false;
     return 0;
   }
@@ -758,85 +764,84 @@ int Compare(const LevelDBSlice& a, const LevelDBSlice& b, bool, bool* ok) {
 }
 
 template <>
-int Compare<ExistsEntryKey>(const LevelDBSlice& a,
-                            const LevelDBSlice& b,
+int Compare<ExistsEntryKey>(const StringPiece& a,
+                            const StringPiece& b,
                             bool,
                             bool* ok) {
   KeyPrefix prefix_a;
   KeyPrefix prefix_b;
-  const char* ptr_a = KeyPrefix::Decode(a.begin(), a.end(), &prefix_a);
-  const char* ptr_b = KeyPrefix::Decode(b.begin(), b.end(), &prefix_b);
-  DCHECK(ptr_a);
-  DCHECK(ptr_b);
+  StringPiece slice_a(a);
+  StringPiece slice_b(b);
+  bool ok_a = KeyPrefix::Decode(&slice_a, &prefix_a);
+  bool ok_b = KeyPrefix::Decode(&slice_b, &prefix_b);
+  DCHECK(ok_a);
+  DCHECK(ok_b);
   DCHECK(prefix_a.database_id_);
   DCHECK(prefix_a.object_store_id_);
   DCHECK_EQ(prefix_a.index_id_, ExistsEntryKey::kSpecialIndexNumber);
   DCHECK(prefix_b.database_id_);
   DCHECK(prefix_b.object_store_id_);
   DCHECK_EQ(prefix_b.index_id_, ExistsEntryKey::kSpecialIndexNumber);
-  DCHECK_NE(ptr_a, a.end());
-  DCHECK_NE(ptr_b, b.end());
+  DCHECK(!slice_a.empty());
+  DCHECK(!slice_b.empty());
   // Prefixes are not compared - it is assumed this was already done.
   DCHECK(!prefix_a.Compare(prefix_b));
 
-  StringPiece slice_a(ptr_a, a.end() - ptr_a);
-  StringPiece slice_b(ptr_b, b.end() - ptr_b);
   return CompareEncodedIDBKeys(&slice_a, &slice_b, ok);
 }
 
 template <>
-int Compare<ObjectStoreDataKey>(const LevelDBSlice& a,
-                                const LevelDBSlice& b,
+int Compare<ObjectStoreDataKey>(const StringPiece& a,
+                                const StringPiece& b,
                                 bool,
                                 bool* ok) {
   KeyPrefix prefix_a;
   KeyPrefix prefix_b;
-  const char* ptr_a = KeyPrefix::Decode(a.begin(), a.end(), &prefix_a);
-  const char* ptr_b = KeyPrefix::Decode(b.begin(), b.end(), &prefix_b);
-  DCHECK(ptr_a);
-  DCHECK(ptr_b);
+  StringPiece slice_a(a);
+  StringPiece slice_b(b);
+  bool ok_a = KeyPrefix::Decode(&slice_a, &prefix_a);
+  bool ok_b = KeyPrefix::Decode(&slice_b, &prefix_b);
+  DCHECK(ok_a);
+  DCHECK(ok_b);
   DCHECK(prefix_a.database_id_);
   DCHECK(prefix_a.object_store_id_);
   DCHECK_EQ(prefix_a.index_id_, ObjectStoreDataKey::kSpecialIndexNumber);
   DCHECK(prefix_b.database_id_);
   DCHECK(prefix_b.object_store_id_);
   DCHECK_EQ(prefix_b.index_id_, ObjectStoreDataKey::kSpecialIndexNumber);
-  DCHECK_NE(ptr_a, a.end());
-  DCHECK_NE(ptr_b, b.end());
+  DCHECK(!slice_a.empty());
+  DCHECK(!slice_b.empty());
   // Prefixes are not compared - it is assumed this was already done.
   DCHECK(!prefix_a.Compare(prefix_b));
 
-  StringPiece slice_a(ptr_a, a.end() - ptr_a);
-  StringPiece slice_b(ptr_b, b.end() - ptr_b);
   return CompareEncodedIDBKeys(&slice_a, &slice_b, ok);
 }
 
 template <>
-int Compare<IndexDataKey>(const LevelDBSlice& a,
-                          const LevelDBSlice& b,
+int Compare<IndexDataKey>(const StringPiece& a,
+                          const StringPiece& b,
                           bool ignore_duplicates,
                           bool* ok) {
   KeyPrefix prefix_a;
   KeyPrefix prefix_b;
-  const char* ptr_a = KeyPrefix::Decode(a.begin(), a.end(), &prefix_a);
-  const char* ptr_b = KeyPrefix::Decode(b.begin(), b.end(), &prefix_b);
-  DCHECK(ptr_a);
-  DCHECK(ptr_b);
+  StringPiece slice_a(a);
+  StringPiece slice_b(b);
+  bool ok_a = KeyPrefix::Decode(&slice_a, &prefix_a);
+  bool ok_b = KeyPrefix::Decode(&slice_b, &prefix_b);
+  DCHECK(ok_a);
+  DCHECK(ok_b);
   DCHECK(prefix_a.database_id_);
   DCHECK(prefix_a.object_store_id_);
   DCHECK_GE(prefix_a.index_id_, kMinimumIndexId);
   DCHECK(prefix_b.database_id_);
   DCHECK(prefix_b.object_store_id_);
   DCHECK_GE(prefix_b.index_id_, kMinimumIndexId);
-  DCHECK_NE(ptr_a, a.end());
-  DCHECK_NE(ptr_b, b.end());
+  DCHECK(!slice_a.empty());
+  DCHECK(!slice_b.empty());
   // Prefixes are not compared - it is assumed this was already done.
   DCHECK(!prefix_a.Compare(prefix_b));
 
   // index key
-
-  StringPiece slice_a(ptr_a, a.end() - ptr_a);
-  StringPiece slice_b(ptr_b, b.end() - ptr_b);
   int result = CompareEncodedIDBKeys(&slice_a, &slice_b, ok);
   if (!*ok || result)
     return result;
@@ -870,23 +875,19 @@ int Compare<IndexDataKey>(const LevelDBSlice& a,
   return CompareInts(sequence_number_a, sequence_number_b);
 }
 
-int Compare(const LevelDBSlice& a,
-            const LevelDBSlice& b,
+int Compare(const StringPiece& a,
+            const StringPiece& b,
             bool index_keys,
             bool* ok) {
-  const char* ptr_a = a.begin();
-  const char* ptr_b = b.begin();
-  const char* end_a = a.end();
-  const char* end_b = b.end();
-
+  StringPiece slice_a(a);
+  StringPiece slice_b(b);
   KeyPrefix prefix_a;
   KeyPrefix prefix_b;
-
-  ptr_a = KeyPrefix::Decode(ptr_a, end_a, &prefix_a);
-  ptr_b = KeyPrefix::Decode(ptr_b, end_b, &prefix_b);
-  DCHECK(ptr_a);
-  DCHECK(ptr_b);
-  if (!ptr_a || !ptr_b) {
+  bool ok_a = KeyPrefix::Decode(&slice_a, &prefix_a);
+  bool ok_b = KeyPrefix::Decode(&slice_b, &prefix_b);
+  DCHECK(ok_a);
+  DCHECK(ok_b);
+  if (!ok_a || !ok_b) {
     *ok = false;
     return 0;
   }
@@ -897,11 +898,20 @@ int Compare(const LevelDBSlice& a,
 
   switch (prefix_a.type()) {
     case KeyPrefix::GLOBAL_METADATA: {
-      DCHECK_NE(ptr_a, end_a);
-      DCHECK_NE(ptr_b, end_b);
+      DCHECK(!slice_a.empty());
+      DCHECK(!slice_b.empty());
 
-      unsigned char type_byte_a = *ptr_a++;
-      unsigned char type_byte_b = *ptr_b++;
+      unsigned char type_byte_a;
+      if (!DecodeByte(&slice_a, &type_byte_a)) {
+        *ok = false;
+        return 0;
+      }
+
+      unsigned char type_byte_b;
+      if (!DecodeByte(&slice_b, &type_byte_b)) {
+        *ok = false;
+        return 0;
+      }
 
       if (int x = type_byte_a - type_byte_b)
         return x;
@@ -917,11 +927,20 @@ int Compare(const LevelDBSlice& a,
     }
 
     case KeyPrefix::DATABASE_METADATA: {
-      DCHECK_NE(ptr_a, end_a);
-      DCHECK_NE(ptr_b, end_b);
+      DCHECK(!slice_a.empty());
+      DCHECK(!slice_b.empty());
 
-      unsigned char type_byte_a = *ptr_a++;
-      unsigned char type_byte_b = *ptr_b++;
+      unsigned char type_byte_a;
+      if (!DecodeByte(&slice_a, &type_byte_a)) {
+        *ok = false;
+        return 0;
+      }
+
+      unsigned char type_byte_b;
+      if (!DecodeByte(&slice_b, &type_byte_b)) {
+        *ok = false;
+        return 0;
+      }
 
       if (int x = type_byte_a - type_byte_b)
         return x;
@@ -945,12 +964,8 @@ int Compare(const LevelDBSlice& a,
     }
 
     case KeyPrefix::OBJECT_STORE_DATA: {
-      if (ptr_a == end_a && ptr_b == end_b)
-        return 0;
-      if (ptr_a == end_a)
-        return -1;
-      if (ptr_b == end_b)
-        return 1;
+      if (slice_a.empty() || slice_b.empty())
+        return slice_a.size() - slice_b.size();
       // TODO(jsbell): This case of non-existing user keys should not have to be
       // handled this way.
 
@@ -959,12 +974,8 @@ int Compare(const LevelDBSlice& a,
     }
 
     case KeyPrefix::EXISTS_ENTRY: {
-      if (ptr_a == end_a && ptr_b == end_b)
-        return 0;
-      if (ptr_a == end_a)
-        return -1;
-      if (ptr_b == end_b)
-        return 1;
+      if (slice_a.empty() || slice_b.empty())
+        return slice_a.size() - slice_b.size();
       // TODO(jsbell): This case of non-existing user keys should not have to be
       // handled this way.
 
@@ -973,12 +984,8 @@ int Compare(const LevelDBSlice& a,
     }
 
     case KeyPrefix::INDEX_DATA: {
-      if (ptr_a == end_a && ptr_b == end_b)
-        return 0;
-      if (ptr_a == end_a)
-        return -1;
-      if (ptr_b == end_b)
-        return 1;
+      if (slice_a.empty() || slice_b.empty())
+        return slice_a.size() - slice_b.size();
       // TODO(jsbell): This case of non-existing user keys should not have to be
       // handled this way.
 
@@ -997,7 +1004,7 @@ int Compare(const LevelDBSlice& a,
 
 }  // namespace
 
-int Compare(const LevelDBSlice& a, const LevelDBSlice& b, bool index_keys) {
+int Compare(const StringPiece& a, const StringPiece& b, bool index_keys) {
   bool ok;
   int result = Compare(a, b, index_keys, &ok);
   DCHECK(ok);
@@ -1067,63 +1074,59 @@ bool KeyPrefix::IsValidIndexId(int64 index_id) {
   return (index_id >= kMinimumIndexId) && (index_id < KeyPrefix::kMaxIndexId);
 }
 
-const char* KeyPrefix::Decode(const char* start,
-                              const char* limit,
-                              KeyPrefix* result) {
-  if (start == limit)
-    return 0;
+bool KeyPrefix::Decode(StringPiece* slice, KeyPrefix* result) {
+  unsigned char first_byte;
+  if (!DecodeByte(slice, &first_byte))
+    return false;
 
-  unsigned char first_byte = *start++;
+  size_t database_id_bytes = ((first_byte >> 5) & 0x7) + 1;
+  size_t object_store_id_bytes = ((first_byte >> 2) & 0x7) + 1;
+  size_t index_id_bytes = (first_byte & 0x3) + 1;
 
-  int database_id_bytes = ((first_byte >> 5) & 0x7) + 1;
-  int object_store_id_bytes = ((first_byte >> 2) & 0x7) + 1;
-  int index_id_bytes = (first_byte & 0x3) + 1;
-
-  if (start + database_id_bytes + object_store_id_bytes + index_id_bytes >
-      limit)
-    return 0;
+  if (database_id_bytes + object_store_id_bytes + index_id_bytes >
+      slice->size())
+    return false;
 
   {
-    StringPiece slice(start, database_id_bytes);
-    if (!DecodeInt(&slice, &result->database_id_))
-      return 0;
+    StringPiece tmp(slice->begin(), database_id_bytes);
+    if (!DecodeInt(&tmp, &result->database_id_))
+      return false;
   }
-  start += database_id_bytes;
+  slice->remove_prefix(database_id_bytes);
   {
-    StringPiece slice(start, object_store_id_bytes);
-    if (!DecodeInt(&slice, &result->object_store_id_))
-      return 0;
+    StringPiece tmp(slice->begin(), object_store_id_bytes);
+    if (!DecodeInt(&tmp, &result->object_store_id_))
+      return false;
   }
-  start += object_store_id_bytes;
+  slice->remove_prefix(object_store_id_bytes);
   {
-    StringPiece slice(start, index_id_bytes);
-    if (!DecodeInt(&slice, &result->index_id_))
-      return 0;
+    StringPiece tmp(slice->begin(), index_id_bytes);
+    if (!DecodeInt(&tmp, &result->index_id_))
+      return false;
   }
-  start += index_id_bytes;
-
-  return start;
+  slice->remove_prefix(index_id_bytes);
+  return true;
 }
 
-std::vector<char> KeyPrefix::EncodeEmpty() {
-  const std::vector<char> result(4, 0);
-  DCHECK(EncodeInternal(0, 0, 0) == std::vector<char>(4, 0));
+std::string KeyPrefix::EncodeEmpty() {
+  const std::string result(4, 0);
+  DCHECK(EncodeInternal(0, 0, 0) == std::string(4, 0));
   return result;
 }
 
-std::vector<char> KeyPrefix::Encode() const {
+std::string KeyPrefix::Encode() const {
   DCHECK(database_id_ != kInvalidId);
   DCHECK(object_store_id_ != kInvalidId);
   DCHECK(index_id_ != kInvalidId);
   return EncodeInternal(database_id_, object_store_id_, index_id_);
 }
 
-std::vector<char> KeyPrefix::EncodeInternal(int64 database_id,
-                                            int64 object_store_id,
-                                            int64 index_id) {
-  std::vector<char> database_id_string;
-  std::vector<char> object_store_id_string;
-  std::vector<char> index_id_string;
+std::string KeyPrefix::EncodeInternal(int64 database_id,
+                                      int64 object_store_id,
+                                      int64 index_id) {
+  std::string database_id_string;
+  std::string object_store_id_string;
+  std::string index_id_string;
 
   EncodeIntSafely(database_id, kMaxDatabaseId, &database_id_string);
   EncodeIntSafely(object_store_id, kMaxObjectStoreId, &object_store_id_string);
@@ -1134,21 +1137,20 @@ std::vector<char> KeyPrefix::EncodeInternal(int64 database_id,
   DCHECK(index_id_string.size() <= kMaxIndexIdSizeBytes);
 
   unsigned char first_byte =
-      (database_id_string.size() - 1)
-          << (kMaxObjectStoreIdSizeBits + kMaxIndexIdSizeBits) |
+      (database_id_string.size() - 1) << (kMaxObjectStoreIdSizeBits +
+                                          kMaxIndexIdSizeBits) |
       (object_store_id_string.size() - 1) << kMaxIndexIdSizeBits |
       (index_id_string.size() - 1);
   COMPILE_ASSERT(kMaxDatabaseIdSizeBits + kMaxObjectStoreIdSizeBits +
                          kMaxIndexIdSizeBits ==
                      sizeof(first_byte) * 8,
                  CANT_ENCODE_IDS);
-  std::vector<char> ret;
+  std::string ret;
   ret.reserve(kDefaultInlineBufferSize);
   ret.push_back(first_byte);
-  ret.insert(ret.end(), database_id_string.begin(), database_id_string.end());
-  ret.insert(
-      ret.end(), object_store_id_string.begin(), object_store_id_string.end());
-  ret.insert(ret.end(), index_id_string.begin(), index_id_string.end());
+  ret.append(database_id_string);
+  ret.append(object_store_id_string);
+  ret.append(index_id_string);
 
   DCHECK_LE(ret.size(), kDefaultInlineBufferSize);
   return ret;
@@ -1188,58 +1190,51 @@ KeyPrefix::Type KeyPrefix::type() const {
   return INVALID_TYPE;
 }
 
-std::vector<char> SchemaVersionKey::Encode() {
-  std::vector<char> ret = KeyPrefix::EncodeEmpty();
+std::string SchemaVersionKey::Encode() {
+  std::string ret = KeyPrefix::EncodeEmpty();
   ret.push_back(kSchemaVersionTypeByte);
   return ret;
 }
 
-std::vector<char> MaxDatabaseIdKey::Encode() {
-  std::vector<char> ret = KeyPrefix::EncodeEmpty();
+std::string MaxDatabaseIdKey::Encode() {
+  std::string ret = KeyPrefix::EncodeEmpty();
   ret.push_back(kMaxDatabaseIdTypeByte);
   return ret;
 }
 
-std::vector<char> DataVersionKey::Encode() {
-  std::vector<char> ret = KeyPrefix::EncodeEmpty();
+std::string DataVersionKey::Encode() {
+  std::string ret = KeyPrefix::EncodeEmpty();
   ret.push_back(kDataVersionTypeByte);
   return ret;
 }
 
 DatabaseFreeListKey::DatabaseFreeListKey() : database_id_(-1) {}
 
-const char* DatabaseFreeListKey::Decode(const char* start,
-                                        const char* limit,
-                                        DatabaseFreeListKey* result) {
+bool DatabaseFreeListKey::Decode(StringPiece* slice,
+                                 DatabaseFreeListKey* result) {
   KeyPrefix prefix;
-  const char* p = KeyPrefix::Decode(start, limit, &prefix);
-  if (!p)
-    return 0;
+  if (!KeyPrefix::Decode(slice, &prefix))
+    return false;
   DCHECK(!prefix.database_id_);
   DCHECK(!prefix.object_store_id_);
   DCHECK(!prefix.index_id_);
-  if (p == limit)
-    return 0;
   unsigned char type_byte = 0;
-  StringPiece slice(p, limit - p);
-  if (!DecodeByte(&slice, &type_byte))
-    return 0;
+  if (!DecodeByte(slice, &type_byte))
+    return false;
   DCHECK_EQ(type_byte, kDatabaseFreeListTypeByte);
-  if (slice.empty())
-    return 0;
-  if (!DecodeVarInt(&slice, &result->database_id_))
-    return 0;
-  return slice.begin();
+  if (!DecodeVarInt(slice, &result->database_id_))
+    return false;
+  return true;
 }
 
-std::vector<char> DatabaseFreeListKey::Encode(int64 database_id) {
-  std::vector<char> ret = KeyPrefix::EncodeEmpty();
+std::string DatabaseFreeListKey::Encode(int64 database_id) {
+  std::string ret = KeyPrefix::EncodeEmpty();
   ret.push_back(kDatabaseFreeListTypeByte);
   EncodeVarInt(database_id, &ret);
   return ret;
 }
 
-std::vector<char> DatabaseFreeListKey::EncodeMaxKey() {
+std::string DatabaseFreeListKey::EncodeMaxKey() {
   return Encode(std::numeric_limits<int64>::max());
 }
 
@@ -1253,48 +1248,42 @@ int DatabaseFreeListKey::Compare(const DatabaseFreeListKey& other) const {
   return CompareInts(database_id_, other.database_id_);
 }
 
-const char* DatabaseNameKey::Decode(const char* start,
-                                    const char* limit,
-                                    DatabaseNameKey* result) {
+bool DatabaseNameKey::Decode(StringPiece* slice, DatabaseNameKey* result) {
   KeyPrefix prefix;
-  const char* p = KeyPrefix::Decode(start, limit, &prefix);
-  if (!p)
-    return p;
+  if (!KeyPrefix::Decode(slice, &prefix))
+    return false;
   DCHECK(!prefix.database_id_);
   DCHECK(!prefix.object_store_id_);
   DCHECK(!prefix.index_id_);
-  if (p == limit)
-    return 0;
   unsigned char type_byte = 0;
-  StringPiece slice(p, limit - p);
-  if (!DecodeByte(&slice, &type_byte))
-    return 0;
+  if (!DecodeByte(slice, &type_byte))
+    return false;
   DCHECK_EQ(type_byte, kDatabaseNameTypeByte);
-  if (!DecodeStringWithLength(&slice, &result->origin_))
-    return 0;
-  if (!DecodeStringWithLength(&slice, &result->database_name_))
-    return 0;
-  return slice.begin();
+  if (!DecodeStringWithLength(slice, &result->origin_))
+    return false;
+  if (!DecodeStringWithLength(slice, &result->database_name_))
+    return false;
+  return true;
 }
 
-std::vector<char> DatabaseNameKey::Encode(const string16& origin,
-                                          const string16& database_name) {
-  std::vector<char> ret = KeyPrefix::EncodeEmpty();
+std::string DatabaseNameKey::Encode(const std::string& origin_identifier,
+                                    const string16& database_name) {
+  std::string ret = KeyPrefix::EncodeEmpty();
   ret.push_back(kDatabaseNameTypeByte);
-  EncodeStringWithLength(origin, &ret);
+  EncodeStringWithLength(base::ASCIIToUTF16(origin_identifier), &ret);
   EncodeStringWithLength(database_name, &ret);
   return ret;
 }
 
-std::vector<char> DatabaseNameKey::EncodeMinKeyForOrigin(
-    const string16& origin) {
-  return Encode(origin, string16());
+std::string DatabaseNameKey::EncodeMinKeyForOrigin(
+    const std::string& origin_identifier) {
+  return Encode(origin_identifier, string16());
 }
 
-std::vector<char> DatabaseNameKey::EncodeStopKeyForOrigin(
-    const string16& origin) {
+std::string DatabaseNameKey::EncodeStopKeyForOrigin(
+    const std::string& origin_identifier) {
   // just after origin in collation order
-  return EncodeMinKeyForOrigin(origin + base::char16('\x01'));
+  return EncodeMinKeyForOrigin(origin_identifier + '\x01');
 }
 
 int DatabaseNameKey::Compare(const DatabaseNameKey& other) {
@@ -1303,10 +1292,10 @@ int DatabaseNameKey::Compare(const DatabaseNameKey& other) {
   return database_name_.compare(other.database_name_);
 }
 
-std::vector<char> DatabaseMetaDataKey::Encode(int64 database_id,
-                                              MetaDataType meta_data_type) {
+std::string DatabaseMetaDataKey::Encode(int64 database_id,
+                                        MetaDataType meta_data_type) {
   KeyPrefix prefix(database_id);
-  std::vector<char> ret = prefix.Encode();
+  std::string ret = prefix.Encode();
   ret.push_back(meta_data_type);
   return ret;
 }
@@ -1314,50 +1303,45 @@ std::vector<char> DatabaseMetaDataKey::Encode(int64 database_id,
 ObjectStoreMetaDataKey::ObjectStoreMetaDataKey()
     : object_store_id_(-1), meta_data_type_(-1) {}
 
-const char* ObjectStoreMetaDataKey::Decode(const char* start,
-                                           const char* limit,
-                                           ObjectStoreMetaDataKey* result) {
+bool ObjectStoreMetaDataKey::Decode(StringPiece* slice,
+                                    ObjectStoreMetaDataKey* result) {
   KeyPrefix prefix;
-  const char* p = KeyPrefix::Decode(start, limit, &prefix);
-  if (!p)
-    return 0;
+  if (!KeyPrefix::Decode(slice, &prefix))
+    return false;
   DCHECK(prefix.database_id_);
   DCHECK(!prefix.object_store_id_);
   DCHECK(!prefix.index_id_);
-  if (p == limit)
-    return 0;
   unsigned char type_byte = 0;
-  StringPiece slice(p, limit - p);
-  if (!DecodeByte(&slice, &type_byte))
-    return 0;
+  if (!DecodeByte(slice, &type_byte))
+    return false;
   DCHECK_EQ(type_byte, kObjectStoreMetaDataTypeByte);
-  if (!DecodeVarInt(&slice, &result->object_store_id_))
-    return 0;
+  if (!DecodeVarInt(slice, &result->object_store_id_))
+    return false;
   DCHECK(result->object_store_id_);
-  if (!DecodeByte(&slice, &result->meta_data_type_))
-    return 0;
-  return slice.begin();
+  if (!DecodeByte(slice, &result->meta_data_type_))
+    return false;
+  return true;
 }
 
-std::vector<char> ObjectStoreMetaDataKey::Encode(int64 database_id,
-                                                 int64 object_store_id,
-                                                 unsigned char meta_data_type) {
+std::string ObjectStoreMetaDataKey::Encode(int64 database_id,
+                                           int64 object_store_id,
+                                           unsigned char meta_data_type) {
   KeyPrefix prefix(database_id);
-  std::vector<char> ret = prefix.Encode();
+  std::string ret = prefix.Encode();
   ret.push_back(kObjectStoreMetaDataTypeByte);
   EncodeVarInt(object_store_id, &ret);
   ret.push_back(meta_data_type);
   return ret;
 }
 
-std::vector<char> ObjectStoreMetaDataKey::EncodeMaxKey(int64 database_id) {
+std::string ObjectStoreMetaDataKey::EncodeMaxKey(int64 database_id) {
   return Encode(database_id,
                 std::numeric_limits<int64>::max(),
                 kObjectMetaDataTypeMaximum);
 }
 
-std::vector<char> ObjectStoreMetaDataKey::EncodeMaxKey(int64 database_id,
-                                                       int64 object_store_id) {
+std::string ObjectStoreMetaDataKey::EncodeMaxKey(int64 database_id,
+                                                 int64 object_store_id) {
   return Encode(database_id, object_store_id, kObjectMetaDataTypeMaximum);
 }
 
@@ -1382,38 +1366,32 @@ int ObjectStoreMetaDataKey::Compare(const ObjectStoreMetaDataKey& other) {
 IndexMetaDataKey::IndexMetaDataKey()
     : object_store_id_(-1), index_id_(-1), meta_data_type_(0) {}
 
-const char* IndexMetaDataKey::Decode(const char* start,
-                                     const char* limit,
-                                     IndexMetaDataKey* result) {
+bool IndexMetaDataKey::Decode(StringPiece* slice, IndexMetaDataKey* result) {
   KeyPrefix prefix;
-  const char* p = KeyPrefix::Decode(start, limit, &prefix);
-  if (!p)
-    return 0;
+  if (!KeyPrefix::Decode(slice, &prefix))
+    return false;
   DCHECK(prefix.database_id_);
   DCHECK(!prefix.object_store_id_);
   DCHECK(!prefix.index_id_);
-  if (p == limit)
-    return 0;
   unsigned char type_byte = 0;
-  StringPiece slice(p, limit - p);
-  if (!DecodeByte(&slice, &type_byte))
-    return 0;
+  if (!DecodeByte(slice, &type_byte))
+    return false;
   DCHECK_EQ(type_byte, kIndexMetaDataTypeByte);
-  if (!DecodeVarInt(&slice, &result->object_store_id_))
-    return 0;
-  if (!DecodeVarInt(&slice, &result->index_id_))
-    return 0;
-  if (!DecodeByte(&slice, &result->meta_data_type_))
-    return 0;
-  return slice.begin();
+  if (!DecodeVarInt(slice, &result->object_store_id_))
+    return false;
+  if (!DecodeVarInt(slice, &result->index_id_))
+    return false;
+  if (!DecodeByte(slice, &result->meta_data_type_))
+    return false;
+  return true;
 }
 
-std::vector<char> IndexMetaDataKey::Encode(int64 database_id,
-                                           int64 object_store_id,
-                                           int64 index_id,
-                                           unsigned char meta_data_type) {
+std::string IndexMetaDataKey::Encode(int64 database_id,
+                                     int64 object_store_id,
+                                     int64 index_id,
+                                     unsigned char meta_data_type) {
   KeyPrefix prefix(database_id);
-  std::vector<char> ret = prefix.Encode();
+  std::string ret = prefix.Encode();
   ret.push_back(kIndexMetaDataTypeByte);
   EncodeVarInt(object_store_id, &ret);
   EncodeVarInt(index_id, &ret);
@@ -1421,17 +1399,17 @@ std::vector<char> IndexMetaDataKey::Encode(int64 database_id,
   return ret;
 }
 
-std::vector<char> IndexMetaDataKey::EncodeMaxKey(int64 database_id,
-                                                 int64 object_store_id) {
+std::string IndexMetaDataKey::EncodeMaxKey(int64 database_id,
+                                           int64 object_store_id) {
   return Encode(database_id,
                 object_store_id,
                 std::numeric_limits<int64>::max(),
                 kIndexMetaDataTypeMaximum);
 }
 
-std::vector<char> IndexMetaDataKey::EncodeMaxKey(int64 database_id,
-                                                 int64 object_store_id,
-                                                 int64 index_id) {
+std::string IndexMetaDataKey::EncodeMaxKey(int64 database_id,
+                                           int64 object_store_id,
+                                           int64 index_id) {
   return Encode(
       database_id, object_store_id, index_id, kIndexMetaDataTypeMaximum);
 }
@@ -1454,38 +1432,33 @@ int64 IndexMetaDataKey::IndexId() const {
 
 ObjectStoreFreeListKey::ObjectStoreFreeListKey() : object_store_id_(-1) {}
 
-const char* ObjectStoreFreeListKey::Decode(const char* start,
-                                           const char* limit,
-                                           ObjectStoreFreeListKey* result) {
+bool ObjectStoreFreeListKey::Decode(StringPiece* slice,
+                                    ObjectStoreFreeListKey* result) {
   KeyPrefix prefix;
-  const char* p = KeyPrefix::Decode(start, limit, &prefix);
-  if (!p)
-    return 0;
+  if (!KeyPrefix::Decode(slice, &prefix))
+    return false;
   DCHECK(prefix.database_id_);
   DCHECK(!prefix.object_store_id_);
   DCHECK(!prefix.index_id_);
-  if (p == limit)
-    return 0;
   unsigned char type_byte = 0;
-  StringPiece slice(p, limit - p);
-  if (!DecodeByte(&slice, &type_byte))
-    return 0;
+  if (!DecodeByte(slice, &type_byte))
+    return false;
   DCHECK_EQ(type_byte, kObjectStoreFreeListTypeByte);
-  if (!DecodeVarInt(&slice, &result->object_store_id_))
-    return 0;
-  return slice.begin();
+  if (!DecodeVarInt(slice, &result->object_store_id_))
+    return false;
+  return true;
 }
 
-std::vector<char> ObjectStoreFreeListKey::Encode(int64 database_id,
-                                                 int64 object_store_id) {
+std::string ObjectStoreFreeListKey::Encode(int64 database_id,
+                                           int64 object_store_id) {
   KeyPrefix prefix(database_id);
-  std::vector<char> ret = prefix.Encode();
+  std::string ret = prefix.Encode();
   ret.push_back(kObjectStoreFreeListTypeByte);
   EncodeVarInt(object_store_id, &ret);
   return ret;
 }
 
-std::vector<char> ObjectStoreFreeListKey::EncodeMaxKey(int64 database_id) {
+std::string ObjectStoreFreeListKey::EncodeMaxKey(int64 database_id) {
   return Encode(database_id, std::numeric_limits<int64>::max());
 }
 
@@ -1504,43 +1477,37 @@ int ObjectStoreFreeListKey::Compare(const ObjectStoreFreeListKey& other) {
 
 IndexFreeListKey::IndexFreeListKey() : object_store_id_(-1), index_id_(-1) {}
 
-const char* IndexFreeListKey::Decode(const char* start,
-                                     const char* limit,
-                                     IndexFreeListKey* result) {
+bool IndexFreeListKey::Decode(StringPiece* slice, IndexFreeListKey* result) {
   KeyPrefix prefix;
-  const char* p = KeyPrefix::Decode(start, limit, &prefix);
-  if (!p)
-    return 0;
+  if (!KeyPrefix::Decode(slice, &prefix))
+    return false;
   DCHECK(prefix.database_id_);
   DCHECK(!prefix.object_store_id_);
   DCHECK(!prefix.index_id_);
-  if (p == limit)
-    return 0;
   unsigned char type_byte = 0;
-  StringPiece slice(p, limit - p);
-  if (!DecodeByte(&slice, &type_byte))
-    return 0;
+  if (!DecodeByte(slice, &type_byte))
+    return false;
   DCHECK_EQ(type_byte, kIndexFreeListTypeByte);
-  if (!DecodeVarInt(&slice, &result->object_store_id_))
-    return 0;
-  if (!DecodeVarInt(&slice, &result->index_id_))
-    return 0;
-  return slice.begin();
+  if (!DecodeVarInt(slice, &result->object_store_id_))
+    return false;
+  if (!DecodeVarInt(slice, &result->index_id_))
+    return false;
+  return true;
 }
 
-std::vector<char> IndexFreeListKey::Encode(int64 database_id,
-                                           int64 object_store_id,
-                                           int64 index_id) {
+std::string IndexFreeListKey::Encode(int64 database_id,
+                                     int64 object_store_id,
+                                     int64 index_id) {
   KeyPrefix prefix(database_id);
-  std::vector<char> ret = prefix.Encode();
+  std::string ret = prefix.Encode();
   ret.push_back(kIndexFreeListTypeByte);
   EncodeVarInt(object_store_id, &ret);
   EncodeVarInt(index_id, &ret);
   return ret;
 }
 
-std::vector<char> IndexFreeListKey::EncodeMaxKey(int64 database_id,
-                                                 int64 object_store_id) {
+std::string IndexFreeListKey::EncodeMaxKey(int64 database_id,
+                                           int64 object_store_id) {
   return Encode(
       database_id, object_store_id, std::numeric_limits<int64>::max());
 }
@@ -1566,33 +1533,27 @@ int64 IndexFreeListKey::IndexId() const {
 // TODO(jsbell): We never use this to look up object store ids,
 // because a mapping is kept in the IndexedDBDatabase. Can the
 // mapping become unreliable?  Can we remove this?
-const char* ObjectStoreNamesKey::Decode(const char* start,
-                                        const char* limit,
-                                        ObjectStoreNamesKey* result) {
+bool ObjectStoreNamesKey::Decode(StringPiece* slice,
+                                 ObjectStoreNamesKey* result) {
   KeyPrefix prefix;
-  const char* p = KeyPrefix::Decode(start, limit, &prefix);
-  if (!p)
-    return 0;
+  if (!KeyPrefix::Decode(slice, &prefix))
+    return false;
   DCHECK(prefix.database_id_);
   DCHECK(!prefix.object_store_id_);
   DCHECK(!prefix.index_id_);
-  if (p == limit)
-    return 0;
   unsigned char type_byte = 0;
-  StringPiece slice(p, limit - p);
-  if (!DecodeByte(&slice, &type_byte))
-    return 0;
+  if (!DecodeByte(slice, &type_byte))
+    return false;
   DCHECK_EQ(type_byte, kObjectStoreNamesTypeByte);
-  if (!DecodeStringWithLength(&slice, &result->object_store_name_))
-    return 0;
-  return slice.begin();
+  if (!DecodeStringWithLength(slice, &result->object_store_name_))
+    return false;
+  return true;
 }
 
-std::vector<char> ObjectStoreNamesKey::Encode(
-    int64 database_id,
-    const string16& object_store_name) {
+std::string ObjectStoreNamesKey::Encode(int64 database_id,
+                                        const string16& object_store_name) {
   KeyPrefix prefix(database_id);
-  std::vector<char> ret = prefix.Encode();
+  std::string ret = prefix.Encode();
   ret.push_back(kObjectStoreNamesTypeByte);
   EncodeStringWithLength(object_store_name, &ret);
   return ret;
@@ -1606,35 +1567,29 @@ IndexNamesKey::IndexNamesKey() : object_store_id_(-1) {}
 
 // TODO(jsbell): We never use this to look up index ids, because a mapping
 // is kept at a higher level.
-const char* IndexNamesKey::Decode(const char* start,
-                                  const char* limit,
-                                  IndexNamesKey* result) {
+bool IndexNamesKey::Decode(StringPiece* slice, IndexNamesKey* result) {
   KeyPrefix prefix;
-  const char* p = KeyPrefix::Decode(start, limit, &prefix);
-  if (!p)
-    return 0;
+  if (!KeyPrefix::Decode(slice, &prefix))
+    return false;
   DCHECK(prefix.database_id_);
   DCHECK(!prefix.object_store_id_);
   DCHECK(!prefix.index_id_);
-  if (p == limit)
-    return 0;
   unsigned char type_byte = 0;
-  StringPiece slice(p, limit - p);
-  if (!DecodeByte(&slice, &type_byte))
-    return 0;
+  if (!DecodeByte(slice, &type_byte))
+    return false;
   DCHECK_EQ(type_byte, kIndexNamesKeyTypeByte);
-  if (!DecodeVarInt(&slice, &result->object_store_id_))
-    return 0;
-  if (!DecodeStringWithLength(&slice, &result->index_name_))
-    return 0;
-  return slice.begin();
+  if (!DecodeVarInt(slice, &result->object_store_id_))
+    return false;
+  if (!DecodeStringWithLength(slice, &result->index_name_))
+    return false;
+  return true;
 }
 
-std::vector<char> IndexNamesKey::Encode(int64 database_id,
-                                        int64 object_store_id,
-                                        const string16& index_name) {
+std::string IndexNamesKey::Encode(int64 database_id,
+                                  int64 object_store_id,
+                                  const string16& index_name) {
   KeyPrefix prefix(database_id);
-  std::vector<char> ret = prefix.Encode();
+  std::string ret = prefix.Encode();
   ret.push_back(kIndexNamesKeyTypeByte);
   EncodeVarInt(object_store_id, &ret);
   EncodeStringWithLength(index_name, &ret);
@@ -1651,40 +1606,34 @@ int IndexNamesKey::Compare(const IndexNamesKey& other) {
 ObjectStoreDataKey::ObjectStoreDataKey() {}
 ObjectStoreDataKey::~ObjectStoreDataKey() {}
 
-const char* ObjectStoreDataKey::Decode(const char* start,
-                                       const char* end,
-                                       ObjectStoreDataKey* result) {
+bool ObjectStoreDataKey::Decode(StringPiece* slice,
+                                ObjectStoreDataKey* result) {
   KeyPrefix prefix;
-  const char* p = KeyPrefix::Decode(start, end, &prefix);
-  if (!p)
-    return 0;
+  if (!KeyPrefix::Decode(slice, &prefix))
+    return false;
   DCHECK(prefix.database_id_);
   DCHECK(prefix.object_store_id_);
   DCHECK_EQ(prefix.index_id_, kSpecialIndexNumber);
-  if (p == end)
-    return 0;
-  StringPiece slice(p, end - p);
-  if (!ExtractEncodedIDBKey(&slice, &result->encoded_user_key_))
-    return 0;
-  return slice.begin();
+  if (!ExtractEncodedIDBKey(slice, &result->encoded_user_key_))
+    return false;
+  return true;
 }
 
-std::vector<char> ObjectStoreDataKey::Encode(
-    int64 database_id,
-    int64 object_store_id,
-    const std::vector<char> encoded_user_key) {
+std::string ObjectStoreDataKey::Encode(int64 database_id,
+                                       int64 object_store_id,
+                                       const std::string encoded_user_key) {
   KeyPrefix prefix(KeyPrefix::CreateWithSpecialIndex(
       database_id, object_store_id, kSpecialIndexNumber));
-  std::vector<char> ret = prefix.Encode();
-  ret.insert(ret.end(), encoded_user_key.begin(), encoded_user_key.end());
+  std::string ret = prefix.Encode();
+  ret.append(encoded_user_key);
 
   return ret;
 }
 
-std::vector<char> ObjectStoreDataKey::Encode(int64 database_id,
-                                             int64 object_store_id,
-                                             const IndexedDBKey& user_key) {
-  std::vector<char> encoded_key;
+std::string ObjectStoreDataKey::Encode(int64 database_id,
+                                       int64 object_store_id,
+                                       const IndexedDBKey& user_key) {
+  std::string encoded_key;
   EncodeIDBKey(user_key, &encoded_key);
   return Encode(database_id, object_store_id, encoded_key);
 }
@@ -1695,7 +1644,7 @@ int ObjectStoreDataKey::Compare(const ObjectStoreDataKey& other, bool* ok) {
 
 scoped_ptr<IndexedDBKey> ObjectStoreDataKey::user_key() const {
   scoped_ptr<IndexedDBKey> key;
-  StringPiece slice(&encoded_user_key_[0], encoded_user_key_.size());
+  StringPiece slice(encoded_user_key_);
   if (!DecodeIDBKey(&slice, &key)) {
     // TODO(jsbell): Return error.
   }
@@ -1707,38 +1656,32 @@ const int64 ObjectStoreDataKey::kSpecialIndexNumber = kObjectStoreDataIndexId;
 ExistsEntryKey::ExistsEntryKey() {}
 ExistsEntryKey::~ExistsEntryKey() {}
 
-const char* ExistsEntryKey::Decode(const char* start,
-                                   const char* end,
-                                   ExistsEntryKey* result) {
+bool ExistsEntryKey::Decode(StringPiece* slice, ExistsEntryKey* result) {
   KeyPrefix prefix;
-  const char* p = KeyPrefix::Decode(start, end, &prefix);
-  if (!p)
-    return 0;
+  if (!KeyPrefix::Decode(slice, &prefix))
+    return false;
   DCHECK(prefix.database_id_);
   DCHECK(prefix.object_store_id_);
   DCHECK_EQ(prefix.index_id_, kSpecialIndexNumber);
-  if (p == end)
-    return 0;
-  StringPiece slice(p, end - p);
-  if (!ExtractEncodedIDBKey(&slice, &result->encoded_user_key_))
-    return 0;
-  return slice.begin();
+  if (!ExtractEncodedIDBKey(slice, &result->encoded_user_key_))
+    return false;
+  return true;
 }
 
-std::vector<char> ExistsEntryKey::Encode(int64 database_id,
-                                         int64 object_store_id,
-                                         const std::vector<char>& encoded_key) {
+std::string ExistsEntryKey::Encode(int64 database_id,
+                                   int64 object_store_id,
+                                   const std::string& encoded_key) {
   KeyPrefix prefix(KeyPrefix::CreateWithSpecialIndex(
       database_id, object_store_id, kSpecialIndexNumber));
-  std::vector<char> ret = prefix.Encode();
-  ret.insert(ret.end(), encoded_key.begin(), encoded_key.end());
+  std::string ret = prefix.Encode();
+  ret.append(encoded_key);
   return ret;
 }
 
-std::vector<char> ExistsEntryKey::Encode(int64 database_id,
-                                         int64 object_store_id,
-                                         const IndexedDBKey& user_key) {
-  std::vector<char> encoded_key;
+std::string ExistsEntryKey::Encode(int64 database_id,
+                                   int64 object_store_id,
+                                   const IndexedDBKey& user_key) {
+  std::string encoded_key;
   EncodeIDBKey(user_key, &encoded_key);
   return Encode(database_id, object_store_id, encoded_key);
 }
@@ -1749,7 +1692,7 @@ int ExistsEntryKey::Compare(const ExistsEntryKey& other, bool* ok) {
 
 scoped_ptr<IndexedDBKey> ExistsEntryKey::user_key() const {
   scoped_ptr<IndexedDBKey> key;
-  StringPiece slice(&encoded_user_key_[0], encoded_user_key_.size());
+  StringPiece slice(encoded_user_key_);
   if (!DecodeIDBKey(&slice, &key)) {
     // TODO(jsbell): Return error.
   }
@@ -1766,13 +1709,10 @@ IndexDataKey::IndexDataKey()
 
 IndexDataKey::~IndexDataKey() {}
 
-const char* IndexDataKey::Decode(const char* start,
-                                 const char* limit,
-                                 IndexDataKey* result) {
+bool IndexDataKey::Decode(StringPiece* slice, IndexDataKey* result) {
   KeyPrefix prefix;
-  const char* p = KeyPrefix::Decode(start, limit, &prefix);
-  if (!p)
-    return 0;
+  if (!KeyPrefix::Decode(slice, &prefix))
+    return false;
   DCHECK(prefix.database_id_);
   DCHECK(prefix.object_store_id_);
   DCHECK_GE(prefix.index_id_, kMinimumIndexId);
@@ -1782,60 +1722,57 @@ const char* IndexDataKey::Decode(const char* start,
   result->sequence_number_ = -1;
   result->encoded_primary_key_ = MinIDBKey();
 
-  StringPiece slice(p, limit - p);
-  if (!ExtractEncodedIDBKey(&slice, &result->encoded_user_key_))
-    return 0;
+  if (!ExtractEncodedIDBKey(slice, &result->encoded_user_key_))
+    return false;
 
   // [optional] sequence number
-  if (slice.empty())
-    return slice.begin();
-  if (!DecodeVarInt(&slice, &result->sequence_number_))
-    return 0;
+  if (slice->empty())
+    return true;
+  if (!DecodeVarInt(slice, &result->sequence_number_))
+    return false;
 
   // [optional] primary key
-  if (slice.empty())
-    return slice.begin();
-  if (!ExtractEncodedIDBKey(&slice, &result->encoded_primary_key_))
-    return 0;
-
-  return slice.begin();
+  if (slice->empty())
+    return true;
+  if (!ExtractEncodedIDBKey(slice, &result->encoded_primary_key_))
+    return false;
+  return true;
 }
 
-std::vector<char> IndexDataKey::Encode(
-    int64 database_id,
-    int64 object_store_id,
-    int64 index_id,
-    const std::vector<char>& encoded_user_key,
-    const std::vector<char>& encoded_primary_key,
-    int64 sequence_number) {
+std::string IndexDataKey::Encode(int64 database_id,
+                                 int64 object_store_id,
+                                 int64 index_id,
+                                 const std::string& encoded_user_key,
+                                 const std::string& encoded_primary_key,
+                                 int64 sequence_number) {
   KeyPrefix prefix(database_id, object_store_id, index_id);
-  std::vector<char> ret = prefix.Encode();
-  ret.insert(ret.end(), encoded_user_key.begin(), encoded_user_key.end());
+  std::string ret = prefix.Encode();
+  ret.append(encoded_user_key);
   EncodeVarInt(sequence_number, &ret);
-  ret.insert(ret.end(), encoded_primary_key.begin(), encoded_primary_key.end());
+  ret.append(encoded_primary_key);
   return ret;
 }
 
-std::vector<char> IndexDataKey::Encode(int64 database_id,
-                                       int64 object_store_id,
-                                       int64 index_id,
-                                       const IndexedDBKey& user_key) {
-  std::vector<char> encoded_key;
+std::string IndexDataKey::Encode(int64 database_id,
+                                 int64 object_store_id,
+                                 int64 index_id,
+                                 const IndexedDBKey& user_key) {
+  std::string encoded_key;
   EncodeIDBKey(user_key, &encoded_key);
   return Encode(
-      database_id, object_store_id, index_id, encoded_key, MinIDBKey());
+      database_id, object_store_id, index_id, encoded_key, MinIDBKey(), 0);
 }
 
-std::vector<char> IndexDataKey::EncodeMinKey(int64 database_id,
-                                             int64 object_store_id,
-                                             int64 index_id) {
+std::string IndexDataKey::EncodeMinKey(int64 database_id,
+                                       int64 object_store_id,
+                                       int64 index_id) {
   return Encode(
-      database_id, object_store_id, index_id, MinIDBKey(), MinIDBKey());
+      database_id, object_store_id, index_id, MinIDBKey(), MinIDBKey(), 0);
 }
 
-std::vector<char> IndexDataKey::EncodeMaxKey(int64 database_id,
-                                             int64 object_store_id,
-                                             int64 index_id) {
+std::string IndexDataKey::EncodeMaxKey(int64 database_id,
+                                       int64 object_store_id,
+                                       int64 index_id) {
   return Encode(database_id,
                 object_store_id,
                 index_id,
@@ -1880,7 +1817,7 @@ int64 IndexDataKey::IndexId() const {
 
 scoped_ptr<IndexedDBKey> IndexDataKey::user_key() const {
   scoped_ptr<IndexedDBKey> key;
-  StringPiece slice(&encoded_user_key_[0], encoded_user_key_.size());
+  StringPiece slice(encoded_user_key_);
   if (!DecodeIDBKey(&slice, &key)) {
     // TODO(jsbell): Return error.
   }
@@ -1889,7 +1826,7 @@ scoped_ptr<IndexedDBKey> IndexDataKey::user_key() const {
 
 scoped_ptr<IndexedDBKey> IndexDataKey::primary_key() const {
   scoped_ptr<IndexedDBKey> key;
-  StringPiece slice(&encoded_primary_key_[0], encoded_primary_key_.size());
+  StringPiece slice(encoded_primary_key_);
   if (!DecodeIDBKey(&slice, &key)) {
     // TODO(jsbell): Return error.
   }

@@ -9,7 +9,6 @@
 #include "cc/base/cc_export.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/renderer.h"
-#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 
 namespace cc {
 
@@ -43,7 +42,9 @@ class CC_EXPORT DelegatingRenderer : public Renderer {
 
   virtual void SendManagedMemoryStats(size_t bytes_visible,
                                       size_t bytes_visible_and_nearby,
-                                      size_t bytes_allocated) OVERRIDE {}
+                                      size_t bytes_allocated) OVERRIDE;
+
+  virtual void SetDiscardBackBufferWhenNotVisible(bool discard) OVERRIDE;
 
  private:
   DelegatingRenderer(RendererClient* client,

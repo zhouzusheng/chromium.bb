@@ -31,15 +31,13 @@
 #include "config.h"
 
 #include "V8Worker.h"
-
-#include "core/workers/Worker.h"
-
+#include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/SerializedScriptValue.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8Utilities.h"
-#include "core/dom/ExceptionCode.h"
 #include "core/page/Frame.h"
-#include "core/workers/WorkerContext.h"
+#include "core/workers/Worker.h"
+#include "core/workers/WorkerGlobalScope.h"
 #include "wtf/ArrayBuffer.h"
 
 namespace WebCore {
@@ -62,9 +60,9 @@ void V8Worker::postMessageMethodCustom(const v8::FunctionCallbackInfo<v8::Value>
                                       args.GetIsolate());
     if (didThrow)
         return;
-    ExceptionCode ec = 0;
-    worker->postMessage(message.release(), &ports, ec);
-    setDOMException(ec, args.GetIsolate());
+    ExceptionState es(args.GetIsolate());
+    worker->postMessage(message.release(), &ports, es);
+    es.throwIfNeeded();
 }
 
 } // namespace WebCore

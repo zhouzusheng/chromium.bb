@@ -11,8 +11,8 @@
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "content/public/common/javascript_message_type.h"
-#include "googleurl/src/gurl.h"
 #include "ui/gfx/native_widget_types.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -52,9 +52,12 @@ class CONTENT_EXPORT JavaScriptDialogManager {
                                       bool accept,
                                       const string16* prompt_override);
 
-  // Cancels all pending dialogs and resets any saved JavaScript dialog state
-  // for the given WebContents.
-  virtual void ResetJavaScriptState(WebContents* web_contents) = 0;
+  // Cancels all active and pending dialogs for the given WebContents.
+  virtual void CancelActiveAndPendingDialogs(WebContents* web_contents) = 0;
+
+  // The given WebContents is being destroyed; discards any saved state tied
+  // to it.
+  virtual void WebContentsDestroyed(WebContents* web_contents) = 0;
 
   virtual ~JavaScriptDialogManager() {}
 };

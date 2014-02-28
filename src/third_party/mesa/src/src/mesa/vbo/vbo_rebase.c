@@ -85,6 +85,17 @@ GLboolean vbo_all_varyings_in_vbos( const struct gl_client_array *arrays[] )
    return GL_TRUE;
 }
 
+GLboolean vbo_any_varyings_in_vbos( const struct gl_client_array *arrays[] )
+{
+   GLuint i;
+
+   for (i = 0; i < VERT_ATTRIB_MAX; i++)
+      if (arrays[i]->BufferObj->Name != 0)
+	 return GL_TRUE;
+
+   return GL_FALSE;
+}
+
 /* Adjust primitives, indices and vertex definitions so that min_index
  * becomes zero. There are lots of reasons for wanting to do this, eg:
  *
@@ -104,7 +115,7 @@ GLboolean vbo_all_varyings_in_vbos( const struct gl_client_array *arrays[] )
  *    - can't save time by trying to upload half a vbo - typically it is
  *      all or nothing.
  */
-void vbo_rebase_prims( GLcontext *ctx,
+void vbo_rebase_prims( struct gl_context *ctx,
 		       const struct gl_client_array *arrays[],
 		       const struct _mesa_prim *prim,
 		       GLuint nr_prims,
@@ -118,6 +129,7 @@ void vbo_rebase_prims( GLcontext *ctx,
 
    struct _mesa_index_buffer tmp_ib;
    struct _mesa_prim *tmp_prims = NULL;
+   const struct gl_client_array **saved_arrays = ctx->Array._DrawArrays;
    void *tmp_indices = NULL;
    GLuint i;
 
@@ -149,10 +161,8 @@ void vbo_rebase_prims( GLcontext *ctx,
       void *ptr;
 
       if (map_ib) 
-	 ctx->Driver.MapBuffer(ctx, 
-			       GL_ELEMENT_ARRAY_BUFFER,
-			       GL_READ_ONLY_ARB,
-			       ib->obj);
+	 ctx->Driver.MapBufferRange(ctx, 0, ib->obj->Size, GL_MAP_READ_BIT,
+				    ib->obj);
 
 
       ptr = ADD_POINTERS(ib->obj->Pointer, ib->ptr);
@@ -173,9 +183,7 @@ void vbo_rebase_prims( GLcontext *ctx,
       }      
 
       if (map_ib) 
-	 ctx->Driver.UnmapBuffer(ctx, 
-				 GL_ELEMENT_ARRAY_BUFFER,
-				 ib->obj);
+	 ctx->Driver.UnmapBuffer(ctx, ib->obj);
 
       tmp_ib.obj = ctx->Shared->NullBufferObj;
       tmp_ib.ptr = tmp_indices;
@@ -219,14 +227,20 @@ void vbo_rebase_prims( GLcontext *ctx,
    
    /* Re-issue the draw call.
     */
+   ctx->Array._DrawArrays = tmp_array_pointers;
+   ctx->NewDriverState |= ctx->DriverFlags.NewArray;
+
    draw( ctx, 
-	 tmp_array_pointers, 
-	 prim, 
+	 prim,
 	 nr_prims, 
 	 ib, 
 	 GL_TRUE,
 	 0, 
-	 max_index - min_index );
+	 max_index - min_index,
+	 NULL );
+
+   ctx->Array._DrawArrays = saved_arrays;
+   ctx->NewDriverState |= ctx->DriverFlags.NewArray;
    
    if (tmp_indices)
       free(tmp_indices);

@@ -7,12 +7,15 @@
 base.requireStylesheet('ui.quad_view');
 
 base.require('base.color');
-base.require('base.event_target');
+base.require('base.events');
 base.require('base.raf');
 base.require('ui');
 base.require('ui.quad_view_viewport');
 
 base.exportTo('ui', function() {
+  // FIXME(pdr): Remove this extra scaling so our rasters are pixel-perfect.
+  //             https://code.google.com/p/trace-viewer/issues/detail?id=228
+  // FIXME(jjb): simplify until we have the camera working (or 228 happens ;-)
   var RASTER_SCALE = 0.75; // Adjust the resolution of our backing canvases.
 
   // Care of bckenney@ via
@@ -67,7 +70,6 @@ base.exportTo('ui', function() {
 
       this.quads_ = undefined;
       this.viewport_ = undefined;
-      this.drawDeviceViewportMask_ = false;
       this.canvas_ = document.createElement('canvas');
 
       this.appendChild(this.canvas_);
@@ -113,37 +115,8 @@ base.exportTo('ui', function() {
         this.updateChildren_();
         return;
       }
-      this.quads_.forEach(function(quad) {
-        if (!quad.backgroundRasterData)
-          return;
-        var tex = quad.backgroundRasterData;
-        var helperCanvas = document.createElement('canvas');
-        helperCanvas.width = tex.width;
-        helperCanvas.height = tex.height;
-        var ctx = helperCanvas.getContext('2d');
-        var imageData = ctx.createImageData(tex.width, tex.height);
-        imageData.data.set(tex.data);
-        ctx.putImageData(imageData, 0, 0);
-        var img = document.createElement('img');
-        img.onload = function() {
-          quad.backgroundImage = img;
-          this.scheduleRedrawCanvas_();
-        }.bind(this);
-        img.src = helperCanvas.toDataURL();
-      }, this);
-      this.updateChildren_();
-    },
-
-    get drawDeviceViewportMask() {
-      return this.drawDeviceViewportMask_;
-    },
-
-    /**
-     * When true, darkens the canvas outside of the viewport in order to
-     * make waht is inside vs outside the viewport more obvious.
-     */
-    set drawDeviceViewportMask(draw) {
-      this.drawDeviceViewportMask_ = draw;
+      this.viewport_ = this.viewport_ ||
+          this.createViewportFromQuads_(this.quads_);
       this.updateChildren_();
     },
 
@@ -174,17 +147,7 @@ base.exportTo('ui', function() {
     redrawCanvas_: function() {
       this.redrawScheduled_ = false;
 
-      var resizedCanvas = false;
-      if (this.canvas_.width != this.viewport_.deviceWidth) {
-        this.canvas_.width = this.viewport_.deviceWidth * ui.RASTER_SCALE;
-        this.canvas_.style.width = this.viewport_.layoutRect.width + 'px';
-        resizedCanvas = true;
-      }
-      if (this.canvas_.height != this.viewport_.deviceHeight) {
-        this.canvas_.height = this.viewport_.deviceHeight * ui.RASTER_SCALE;
-        this.canvas_.style.height = this.viewport_.layoutRect.height + 'px';
-        resizedCanvas = true;
-      }
+      var resizedCanvas = this.viewport_.updateBoxSize(this.canvas_);
 
       var ctx = this.canvas_.getContext('2d');
 
@@ -195,6 +158,10 @@ base.exportTo('ui', function() {
 
       ctx.save();
       ctx.scale(ui.RASTER_SCALE, ui.RASTER_SCALE);
+
+      // The quads are in the world coordinate system. We are drawing
+      // into a canvas with 0,0 in the top left corner. Tell the canvas to
+      // transform drawing ops from world to canvas coordinates.
       vp.applyTransformToContext(ctx);
       ctx.lineWidth = vp.getDeviceLineWidthAssumingTransformIsApplied(1.0);
 
@@ -203,32 +170,37 @@ base.exportTo('ui', function() {
       // Background colors.
       for (var i = 0; i < quads.length; i++) {
         var quad = quads[i];
-        if (quad.backgroundImage) {
+        if (quad.imageData) {
+          var quadCanvas = document.createElement('canvas');
+          quadCanvas.width = quad.imageData.width;
+          quadCanvas.height = quad.imageData.height;
+          quadCanvas.getContext('2d').putImageData(quad.imageData, 0, 0);
           if (quad.isRectangle()) {
             var bounds = quad.boundingRect();
-            ctx.drawImage(quad.backgroundImage, 0, 0,
-                quad.backgroundImage.width, quad.backgroundImage.height,
+            ctx.drawImage(quadCanvas, 0, 0,
+                quadCanvas.width, quadCanvas.height,
                 bounds.x, bounds.y, bounds.width, bounds.height);
           } else {
             ctx.save();
             var quadBBox = new base.BBox2();
             quadBBox.addQuad(quad);
-            var iw = quad.backgroundImage.width;
-            var ih = quad.backgroundImage.height;
+            var iw = quadCanvas.width;
+            var ih = quadCanvas.height;
             drawTexturedTriangle(
-                ctx, quad.backgroundImage,
+                ctx, quadCanvas,
                 quad.p1[0], quad.p1[1],
                 quad.p2[0], quad.p2[1],
                 quad.p4[0], quad.p4[1],
                 0, 0, iw, 0, 0, ih);
             drawTexturedTriangle(
-                ctx, quad.backgroundImage,
+                ctx, quadCanvas,
                 quad.p2[0], quad.p2[1],
                 quad.p3[0], quad.p3[1],
                 quad.p4[0], quad.p4[1],
                 iw, 0, iw, ih, 0, ih);
             ctx.restore();
           }
+          quadCanvas.width = 0; // Free the GPU texture.
         }
 
         if (quad.backgroundColor) {
@@ -256,6 +228,12 @@ base.exportTo('ui', function() {
           ctx.strokeStyle = quad.borderColor;
         else
           ctx.strokeStyle = 'rgb(128,128,128)';
+
+        if (quad.borderWidth)
+          ctx.lineWidth = quad.borderWidth;
+        else
+          ctx.lineWidth = 1;
+
         ctx.stroke();
       }
 
@@ -284,9 +262,6 @@ base.exportTo('ui', function() {
         ctx.stroke();
       }
 
-      if (this.viewport.deviceViewport)
-        this.drawDeviceViewport_(this.viewport.deviceViewport, ctx);
-
       ctx.restore();
     },
 
@@ -306,7 +281,7 @@ base.exportTo('ui', function() {
       var vecInLayout = vec2.createXY(clientX - bounds.left,
                                       clientY - bounds.top);
       var vecInWorldPixels =
-          this.viewport_.layoutPixelsToWorldPixels2(vecInLayout);
+          this.viewport_.layoutPixelsToWorldPixels(vecInLayout);
 
       var quads = this.quads_;
       var hitIndices = [];
@@ -318,42 +293,13 @@ base.exportTo('ui', function() {
       return hitIndices;
     },
 
-    drawDeviceViewport_: function(deviceViewport, ctx) {
-      if (!this.drawDeviceViewportMask_ || !this.viewport_)
-        return;
-      var vW = deviceViewport.width;
-      var vH = deviceViewport.height;
-      var vp = this.viewport_;
-
-      ctx.fillStyle = 'rgba(0,0,0,0.2)';
-
-      // Cover above and below the viewport with dark grey.
-      ctx.fillRect(vp.worldRect.x,
-                   vp.worldRect.y,
-                   vp.worldRect.width,
-                   -vp.worldRect.y);
-      ctx.fillRect(vp.worldRect.x,
-                   vH,
-                   vp.worldRect.width,
-                   vp.worldRect.height - vH);
-
-      // Cover left and right of the viewport with dark grey.
-      ctx.fillRect(vp.worldRect.x,
-                   0,
-                   -vp.worldRect.x,
-                   vH);
-      ctx.fillRect(vW,
-                   0,
-                   vp.worldRect.width - vW,
-                   vH);
-
-      // Stroke area around viewport.
-      ctx.lineWidth = vp.getDeviceLineWidthAssumingTransformIsApplied(2.0);
-      ctx.strokeStyle = 'rgba(0,0,255,1)';
-      ctx.strokeRect(0,
-                     0,
-                     deviceViewport.width,
-                     deviceViewport.height);
+    createViewportFromQuads_: function() {
+      var quads = this.quads_ || [];
+      var quadBBox = new base.BBox2();
+      quads.forEach(function(quad) {
+        quadBBox.addQuad(quad);
+      });
+      return new ui.QuadViewViewport(quadBBox.asRect());
     },
 
     onMouseDown_: function(e) {

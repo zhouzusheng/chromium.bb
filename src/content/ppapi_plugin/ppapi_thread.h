@@ -11,17 +11,18 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "base/scoped_native_library.h"
 #include "build/build_config.h"
 #include "content/child/child_thread.h"
+#include "content/public/common/pepper_plugin_info.h"
 #include "ipc/ipc_listener.h"
 #include "ppapi/c/pp_module.h"
 #include "ppapi/c/trusted/ppp_broker.h"
+#include "ppapi/proxy/connection.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
 #include "ppapi/proxy/plugin_globals.h"
 #include "ppapi/proxy/plugin_proxy_delegate.h"
-#include "webkit/plugins/ppapi/plugin_module.h"
 
 #if defined(OS_WIN)
 #include "base/win/scoped_handle.h"
@@ -101,6 +102,11 @@ class PpapiThread : public ChildThread,
   virtual std::string GetUILanguage() OVERRIDE;
   virtual void PreCacheFont(const void* logfontw) OVERRIDE;
   virtual void SetActiveURL(const std::string& url) OVERRIDE;
+  virtual PP_Resource CreateBrowserFont(
+      ppapi::proxy::Connection connection,
+      PP_Instance instance,
+      const PP_BrowserFont_Trusted_Description& desc,
+      const ppapi::Preferences& prefs) OVERRIDE;
 
   // Message handlers.
   void OnLoadPlugin(const base::FilePath& path,
@@ -138,7 +144,7 @@ class PpapiThread : public ChildThread,
   ppapi::proxy::PluginGlobals plugin_globals_;
 
   // Storage for plugin entry points.
-  webkit::ppapi::PluginModule::EntryPoints plugin_entry_points_;
+  PepperPluginInfo::EntryPoints plugin_entry_points_;
 
   // Callback to call when a new instance connects to the broker.
   // Used only when is_broker_.

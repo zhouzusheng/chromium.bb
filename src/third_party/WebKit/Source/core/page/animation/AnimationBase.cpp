@@ -6,13 +6,13 @@
  * are met:
  *
  * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer. 
+ *     notice, this list of conditions and the following disclaimer.
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution. 
+ *     documentation and/or other materials provided with the distribution.
  * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission. 
+ *     from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -29,18 +29,11 @@
 #include "config.h"
 #include "core/page/animation/AnimationBase.h"
 
-#include "core/css/CSSPrimitiveValue.h"
-#include "core/dom/Document.h"
-#include "core/dom/EventNames.h"
 #include "core/page/animation/AnimationControllerPrivate.h"
-#include "core/page/animation/CSSPropertyAnimation.h"
 #include "core/page/animation/CompositeAnimation.h"
-#include "core/platform/FloatConversion.h"
 #include "core/platform/animation/AnimationUtilities.h"
 #include "core/platform/animation/TimingFunction.h"
 #include "core/rendering/RenderBox.h"
-#include "core/rendering/style/RenderStyle.h"
-#include "wtf/CurrentTime.h"
 #include <algorithm>
 
 using namespace std;
@@ -69,7 +62,7 @@ AnimationBase::AnimationBase(const CSSAnimationData* transition, RenderObject* r
 void AnimationBase::setNeedsStyleRecalc(Node* node)
 {
     if (node)
-        node->setNeedsStyleRecalc(SyntheticStyleChange);
+        node->setNeedsStyleRecalc(LocalStyleChange);
 }
 
 double AnimationBase::duration() const
@@ -130,7 +123,7 @@ void AnimationBase::updateStateMachine(AnimStateInput input, double param)
 
     if (input == AnimationStateInputPauseOverride) {
         if (m_animState == AnimationStateStartWaitResponse) {
-            // If we are in AnimationStateStartWaitResponse, the animation will get canceled before 
+            // If we are in AnimationStateStartWaitResponse, the animation will get canceled before
             // we get a response, so move to the next state.
             endAnimation();
             updateStateMachine(AnimationStateInputStartTimeSet, beginAnimationUpdateTime());
@@ -229,7 +222,7 @@ void AnimationBase::updateStateMachine(AnimStateInput input, double param)
                 if (m_object)
                     m_compAnim->animationController()->addNodeChangeToDispatch(m_object->node());
             } else {
-                // We are pausing while waiting for a start response. Cancel the animation and wait. When 
+                // We are pausing while waiting for a start response. Cancel the animation and wait. When
                 // we unpause, we will act as though the start timer just fired
                 m_pauseTime = beginAnimationUpdateTime();
                 pauseAnimation(beginAnimationUpdateTime() - m_startTime);
@@ -265,7 +258,7 @@ void AnimationBase::updateStateMachine(AnimStateInput input, double param)
                 onAnimationEnd(param);
 
                 m_animState = AnimationStateDone;
-                
+
                 if (m_object) {
                     if (m_animation->fillsForwards())
                         m_animState = AnimationStateFillingForwards;
@@ -303,7 +296,7 @@ void AnimationBase::updateStateMachine(AnimStateInput input, double param)
             // that we have already set the startTime and will ignore it.
             ASSERT(input == AnimationStateInputPlayStateRunning || input == AnimationStateInputStartTimeSet || input == AnimationStateInputStyleAvailable);
             ASSERT(paused());
-            
+
             if (input == AnimationStateInputPlayStateRunning) {
                 // Update the times
                 if (m_animState == AnimationStatePausedRun)
@@ -334,10 +327,10 @@ void AnimationBase::updateStateMachine(AnimStateInput input, double param)
                 }
                 break;
             }
-            
+
             if (input == AnimationStateInputStartTimeSet) {
                 ASSERT(m_animState == AnimationStatePausedWaitResponse);
-                
+
                 // We are paused but we got the callback that notifies us that an accelerated animation started.
                 // We ignore the start time and just move into the paused-run state.
                 m_animState = AnimationStatePausedRun;
@@ -346,7 +339,7 @@ void AnimationBase::updateStateMachine(AnimStateInput input, double param)
                 m_pauseTime += m_startTime;
                 break;
             }
-            
+
             ASSERT(m_animState == AnimationStatePausedWaitStyleAvailable);
             // We are paused but we got the callback that notifies us that style has been updated.
             // We move to the AnimationStatePausedWaitResponse state
@@ -359,7 +352,7 @@ void AnimationBase::updateStateMachine(AnimStateInput input, double param)
             break;
     }
 }
-    
+
 void AnimationBase::fireAnimationEventsIfNeeded()
 {
     if (!m_compAnim)
@@ -375,16 +368,16 @@ void AnimationBase::fireAnimationEventsIfNeeded()
     // can still access the resources of its CompositeAnimation as needed.
     RefPtr<AnimationBase> protector(this);
     RefPtr<CompositeAnimation> compProtector(m_compAnim);
-    
+
     // Check for start timeout
     if (m_animState == AnimationStateStartWaitTimer) {
         if (beginAnimationUpdateTime() - m_requestedStartTime >= m_animation->delay())
             updateStateMachine(AnimationStateInputStartTimerFired, 0);
         return;
     }
-    
+
     double elapsedDuration = getElapsedTime();
-    
+
     // Check for end timeout
     if (m_totalDuration >= 0 && elapsedDuration >= m_totalDuration) {
         // We may still be in AnimationStateLooping if we've managed to skip a
@@ -400,13 +393,13 @@ void AnimationBase::fireAnimationEventsIfNeeded()
             double durationLeft = m_animation->duration() - fmod(elapsedDuration, m_animation->duration());
             m_nextIterationDuration = elapsedDuration + durationLeft;
         }
-        
+
         if (elapsedDuration >= m_nextIterationDuration) {
             // Set to the next iteration
             double previous = m_nextIterationDuration;
             double durationLeft = m_animation->duration() - fmod(elapsedDuration, m_animation->duration());
             m_nextIterationDuration = elapsedDuration + durationLeft;
-            
+
             // Send the event
             updateStateMachine(AnimationStateInputLoopTimerFired, previous);
         }
@@ -422,27 +415,27 @@ void AnimationBase::updatePlayState(EAnimPlayState playState)
     // The state machine can be in one of two states: running, paused.
     // Set the state machine to the desired state.
     bool pause = playState == AnimPlayStatePaused || m_compAnim->suspended();
-    
+
     if (pause == paused() && !isNew())
         return;
-    
+
     updateStateMachine(pause ?  AnimationStateInputPlayStatePaused : AnimationStateInputPlayStateRunning, -1);
 }
 
 double AnimationBase::timeToNextService()
 {
-    // Returns the time at which next service is required. -1 means no service is required. 0 means 
+    // Returns the time at which next service is required. -1 means no service is required. 0 means
     // service is required now, and > 0 means service is required that many seconds in the future.
     if (paused() || isNew() || m_animState == AnimationStateFillingForwards)
         return -1;
-    
+
     if (m_animState == AnimationStateStartWaitTimer) {
         double timeFromNow = m_animation->delay() - (beginAnimationUpdateTime() - m_requestedStartTime);
         return max(timeFromNow, 0.0);
     }
-    
+
     fireAnimationEventsIfNeeded();
-        
+
     // In all other cases, we need service right away.
     return 0;
 }
@@ -525,7 +518,7 @@ void AnimationBase::getTimeToNextEvent(double& time, bool& isLooping) const
         durationLeft = m_animation->duration() > 0 ? (m_animation->duration() - fmod(elapsedDuration, m_animation->duration())) : 0;
         nextIterationTime = elapsedDuration + durationLeft;
     }
-    
+
     if (m_totalDuration < 0 || nextIterationTime < m_totalDuration) {
         // We are not at the end yet
         ASSERT(nextIterationTime > 0);
@@ -534,7 +527,7 @@ void AnimationBase::getTimeToNextEvent(double& time, bool& isLooping) const
         // We are at the end
         isLooping = false;
     }
-    
+
     time = durationLeft;
 }
 
@@ -545,7 +538,7 @@ void AnimationBase::goIntoEndingOrLoopingState()
     getTimeToNextEvent(t, isLooping);
     m_animState = isLooping ? AnimationStateLooping : AnimationStateEnding;
 }
-  
+
 void AnimationBase::freezeAtTime(double t)
 {
     if (!m_compAnim)
@@ -583,7 +576,11 @@ double AnimationBase::getElapsedTime() const
     if (m_startTime <= 0)
         return 0;
 
-    return beginAnimationUpdateTime() - m_startTime;
+    double elapsedTime = beginAnimationUpdateTime() - m_startTime;
+    // It's possible for the start time to be ahead of the last update time
+    // if the compositor has just sent notification for the start of an
+    // accelerated animation.
+    return max(elapsedTime, 0.0);
 }
 
 } // namespace WebCore

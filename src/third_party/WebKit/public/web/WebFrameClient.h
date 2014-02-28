@@ -37,6 +37,7 @@
 #include "../platform/WebURLError.h"
 #include "../platform/WebURLRequest.h"
 #include "WebDOMMessageEvent.h"
+#include "WebDataSource.h"
 #include "WebIconURL.h"
 #include "WebNavigationPolicy.h"
 #include "WebNavigationType.h"
@@ -137,20 +138,8 @@ public:
     // The client may choose to alter the navigation policy.  Otherwise,
     // defaultPolicy should just be returned.
     virtual WebNavigationPolicy decidePolicyForNavigation(
-        WebFrame*, const WebURLRequest&, WebNavigationType,
+        WebFrame*, WebDataSource::ExtraData*, const WebURLRequest&, WebNavigationType,
         WebNavigationPolicy defaultPolicy, bool isRedirect) { return defaultPolicy; }
-
-    // Returns an error corresponding to canHandledRequest() returning false.
-    virtual WebURLError cannotHandleRequestError(
-        WebFrame*, const WebURLRequest& request) { return WebURLError(); }
-
-    // Returns an error corresponding to a user cancellation event.
-    virtual WebURLError cancelledError(
-        WebFrame*, const WebURLRequest& request) { return WebURLError(); }
-
-    // Notify that a URL cannot be handled.
-    virtual void unableToImplementPolicyWithError(
-        WebFrame*, const WebURLError&) { }
 
 
     // Navigational notifications ------------------------------------------
@@ -161,18 +150,6 @@ public:
 
     // A form submission is about to occur.
     virtual void willSubmitForm(WebFrame*, const WebFormElement&) { }
-
-    // A client-side redirect will occur.  This may correspond to a <META
-    // refresh> or some script activity.
-    virtual void willPerformClientRedirect(
-        WebFrame*, const WebURL& from, const WebURL& to,
-        double interval, double fireTime) { }
-
-    // A client-side redirect was cancelled.
-    virtual void didCancelClientRedirect(WebFrame*) { }
-
-    // A client-side redirect completed.
-    virtual void didCompleteClientRedirect(WebFrame*, const WebURL& fromURL) { }
 
     // A datasource has been created for a new navigation.  The given
     // datasource will become the provisional datasource for the frame.
@@ -186,16 +163,6 @@ public:
 
     // The provisional load failed.
     virtual void didFailProvisionalLoad(WebFrame*, const WebURLError&) { }
-
-    // Notifies the client to commit data for the given frame.  The client
-    // may optionally prevent default processing by setting preventDefault
-    // to true before returning.  If default processing is prevented, then
-    // it is up to the client to manually call commitDocumentData on the
-    // WebFrame.  It is only valid to call commitDocumentData within a call
-    // to didReceiveDocumentData.  If commitDocumentData is not called,
-    // then an empty document will be loaded.
-    virtual void didReceiveDocumentData(
-        WebFrame*, const char* data, size_t length, bool& preventDefault) { }
 
     // The provisional datasource is now committed.  The first part of the
     // response body has been received, and the encoding of the response
@@ -233,10 +200,6 @@ public:
     // named anchor or a PopState event may have been dispatched.
     virtual void didNavigateWithinPage(WebFrame*, bool isNewNavigation) { }
 
-    // The navigation resulted in scrolling the page to a named anchor instead
-    // of downloading a new document.
-    virtual void didChangeLocationWithinPage(WebFrame*) { }
-
     // Called upon update to scroll position, document state, and other
     // non-navigational events related to the data held by WebHistoryItem.
     // WARNING: This method may be called very frequently.
@@ -247,6 +210,9 @@ public:
 
     // An element will request a resource.
     virtual void willRequestResource(WebFrame*, const WebCachedURLRequest&) { }
+
+    // The request is after preconnect is triggered.
+    virtual void willRequestAfterPreconnect(WebFrame*, WebURLRequest&) { }
 
     // A request is about to be sent out, and the client may modify it.  Request
     // is writable, and changes to the URL, for example, will change the request
@@ -268,10 +234,6 @@ public:
     virtual void didFinishResourceLoad(
         WebFrame*, unsigned identifier) { }
 
-    // The resource request given by identifier failed.
-    virtual void didFailResourceLoad(
-        WebFrame*, unsigned identifier, const WebURLError&) { }
-
     // The specified request was satified from WebCore's memory cache.
     virtual void didLoadResourceFromMemoryCache(
         WebFrame*, const WebURLRequest&, const WebURLResponse&) { }
@@ -287,6 +249,9 @@ public:
 
     // A reflected XSS was encountered in the page and suppressed.
     virtual void didDetectXSS(WebFrame*, const WebURL&, bool didBlockEntirePage) { }
+
+    // A PingLoader was created, and a request dispatched to a URL.
+    virtual void didDispatchPingLoader(WebFrame*, const WebURL&) { }
 
     // Script notifications ------------------------------------------------
 
@@ -360,16 +325,6 @@ public:
         WebFrame*, WebFileSystemType, WebFileSystemCallbacks*) { }
 
     // Quota ---------------------------------------------------------
-
-    // Queries the origin's storage usage and quota information.
-    // WebStorageQuotaCallbacks::didQueryStorageUsageAndQuota will be called
-    // with the current usage and quota information for the origin. When
-    // an error occurs WebStorageQuotaCallbacks::didFail is called with an
-    // error code.
-    // The callbacks object is deleted when the callback method is called
-    // and does not need to be (and should not be) deleted manually.
-    virtual void queryStorageUsageAndQuota(
-        WebFrame*, WebStorageQuotaType, WebStorageQuotaCallbacks*) { }
 
     // Requests a new quota size for the origin's storage.
     // |newQuotaInBytes| indicates how much storage space (in bytes) the

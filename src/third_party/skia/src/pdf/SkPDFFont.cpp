@@ -226,7 +226,7 @@ SkStream* handleType1Stream(SkStream* srcStream, size_t* headerLen,
         uint8_t dataByte = 0;  // To hush compiler.
         bool highNibble = true;
         for (; hexData < trailer; hexData++) {
-            char curNibble = hexToBin(*hexData);
+            int8_t curNibble = hexToBin(*hexData);
             if (curNibble < 0) {
                 continue;
             }
@@ -582,6 +582,7 @@ static int get_subset_font_stream(const char* fontName,
         *fontStream = subsetFontStream;
         return fontSize;
     }
+    fontData->rewind();
 #else
     sk_ignore_unused_variable(fontName);
     sk_ignore_unused_variable(subset);

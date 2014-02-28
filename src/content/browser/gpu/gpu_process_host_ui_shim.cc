@@ -11,7 +11,6 @@
 #include "base/debug/trace_event.h"
 #include "base/id_map.h"
 #include "base/lazy_instance.h"
-#include "base/process_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_process_host.h"
@@ -336,6 +335,7 @@ void GpuProcessHostUIShim::OnAcceleratedSurfaceBuffersSwapped(
 
   // View must send ACK message after next composite.
   view->AcceleratedSurfaceBuffersSwapped(params, host_id_);
+  view->DidReceiveRendererFrame();
 }
 
 void GpuProcessHostUIShim::OnFrameDrawn(const ui::LatencyInfo& latency_info) {
@@ -368,6 +368,7 @@ void GpuProcessHostUIShim::OnAcceleratedSurfacePostSubBuffer(
 
   // View must send ACK message after next composite.
   view->AcceleratedSurfacePostSubBuffer(params, host_id_);
+  view->DidReceiveRendererFrame();
 }
 
 void GpuProcessHostUIShim::OnAcceleratedSurfaceSuspend(int32 surface_id) {

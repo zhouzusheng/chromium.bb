@@ -29,13 +29,13 @@
 #define WTF_Platform_h
 
 /* Include compiler specific macros */
-#include <wtf/Compiler.h>
+#include "wtf/Compiler.h"
 
 /* ==== Platform adaptation macros: these describe properties of the target environment. ==== */
 
 /* HAVE() - specific system features (headers, functions or similar) that are present or not */
 #define HAVE(WTF_FEATURE) (defined HAVE_##WTF_FEATURE  && HAVE_##WTF_FEATURE)
-/* OS() - underlying operating system; only to be used for mandated low-level services like 
+/* OS() - underlying operating system; only to be used for mandated low-level services like
    virtual memory, not to choose a GUI toolkit */
 #define OS(WTF_FEATURE) (defined WTF_OS_##WTF_FEATURE  && WTF_OS_##WTF_FEATURE)
 
@@ -46,7 +46,7 @@
 /* ENABLE() - turn on a specific feature of WebKit */
 #define ENABLE(WTF_FEATURE) (defined ENABLE_##WTF_FEATURE  && ENABLE_##WTF_FEATURE)
 
-/* ==== OS() - underlying operating system; only to be used for mandated low-level services like 
+/* ==== OS() - underlying operating system; only to be used for mandated low-level services like
    virtual memory, not to choose a GUI toolkit ==== */
 
 /* OS(ANDROID) - Android */
@@ -136,27 +136,15 @@
 #endif /* !defined(HAVE_ACCESSIBILITY) */
 
 #if OS(UNIX)
-#define HAVE_ERRNO_H 1
-#define HAVE_MMAP 1   
+#define HAVE_MMAP 1
 #define HAVE_SIGNAL_H 1
-#define HAVE_STRINGS_H 1
-#define HAVE_SYS_TIME_H 1 
+#define HAVE_SYS_TIME_H 1
 #define WTF_USE_PTHREADS 1
 #endif /* OS(UNIX) */
-
-#if (OS(FREEBSD) || OS(OPENBSD)) && !defined(__GLIBC__)
-#define HAVE_PTHREAD_NP_H 1
-#endif
 
 #if !defined(HAVE_VASPRINTF)
 #if !COMPILER(MSVC)
 #define HAVE_VASPRINTF 1
-#endif
-#endif
-
-#if !defined(HAVE_STRNSTR)
-#if OS(DARWIN) || (OS(FREEBSD) && !defined(__GLIBC__))
-#define HAVE_STRNSTR 1
 #endif
 #endif
 
@@ -167,7 +155,6 @@
 #endif
 
 #if OS(DARWIN)
-#define HAVE_SYS_TIMEB_H 1
 #define HAVE_DISPATCH_H 1
 #define HAVE_MADV_FREE 1
 #define HAVE_PTHREAD_SETNAME_NP 1
@@ -175,8 +162,6 @@
 #endif /* OS(DARWIN) */
 
 #if OS(WINDOWS)
-#define HAVE_SYS_TIMEB_H 1
-#define HAVE_ALIGNED_MALLOC 1
 #define HAVE_ISDEBUGGERPRESENT 1
 #define HAVE_VIRTUALALLOC 1
 #endif

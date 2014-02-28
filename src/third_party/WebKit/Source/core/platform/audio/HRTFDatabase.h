@@ -30,11 +30,11 @@
 #define HRTFDatabase_h
 
 #include "core/platform/audio/HRTFElevation.h"
-#include <wtf/Forward.h>
-#include <wtf/Noncopyable.h>
-#include <wtf/OwnPtr.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/Vector.h>
+#include "wtf/Forward.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -59,8 +59,6 @@ public:
     // Number of elevations loaded from resource.
     static const unsigned NumberOfRawElevations;
 
-    void reportMemoryUsage(MemoryObjectInfo*) const;
-
 private:
     explicit HRTFDatabase(float sampleRate);
 
@@ -71,14 +69,14 @@ private:
 
     // Interpolates by this factor to get the total number of elevations from every elevation loaded from resource.
     static const unsigned InterpolationFactor;
-    
+
     // Total number of elevations after interpolation.
     static const unsigned NumberOfTotalElevations;
 
     // Returns the index for the correct HRTFElevation given the elevation angle.
     static unsigned indexFromElevationAngle(double);
 
-    Vector<OwnPtr<HRTFElevation> > m_elevations;                                            
+    Vector<OwnPtr<HRTFElevation> > m_elevations;
     float m_sampleRate;
 };
 

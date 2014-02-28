@@ -35,9 +35,12 @@ void RequestTransferURLOnUIThread(int render_process_id,
   if (!delegate)
     return;
 
+  // We don't know whether the original request had |user_action| set to true.
+  // However, since we force the navigation to be in the current tab, it doesn't
+  // matter.
   delegate->RequestTransferURL(
       new_url, referrer, window_open_disposition,
-      frame_id, global_request_id, false);
+      frame_id, global_request_id, false, true);
 }
 
 }  // namespace
@@ -67,7 +70,8 @@ void TransferNavigationResourceThrottle::WillRedirectRequest(
     if (info->GetAssociatedRenderView(&render_process_id, &render_view_id)) {
       GlobalRequestID global_id(info->GetChildID(), info->GetRequestID());
 
-      ResourceDispatcherHostImpl::Get()->MarkAsTransferredNavigation(global_id);
+      ResourceDispatcherHostImpl::Get()->MarkAsTransferredNavigation(global_id,
+                                                                     new_url);
 
       BrowserThread::PostTask(
           BrowserThread::UI,

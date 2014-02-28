@@ -31,12 +31,11 @@
 #ifndef InspectorController_h
 #define InspectorController_h
 
-
 #include "core/inspector/InspectorBaseAgent.h"
-#include <wtf/Forward.h>
-#include <wtf/HashMap.h>
-#include <wtf/Noncopyable.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/Forward.h"
+#include "wtf/HashMap.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -50,11 +49,13 @@ class InspectorFrontend;
 class InspectorFrontendChannel;
 class InspectorFrontendClient;
 class InspectorMemoryAgent;
+class InspectorTimelineAgent;
 class InspectorOverlay;
 class InspectorState;
 class InstrumentingAgents;
 class IntSize;
 class Page;
+class PlatformGestureEvent;
 class PlatformMouseEvent;
 class PlatformTouchEvent;
 class PostWorkerNotificationToFrontendTask;
@@ -85,6 +86,7 @@ public:
     void reconnectFrontend();
     void reuseFrontend(InspectorFrontendChannel*, const String& inspectorStateCookie);
     void setProcessId(long);
+    void setLayerTreeId(int);
     void webViewResized(const IntSize&);
 
     void inspect(Node*);
@@ -93,6 +95,7 @@ public:
     void hideHighlight();
     Node* highlightedNode() const;
 
+    bool handleGestureEvent(Frame*, const PlatformGestureEvent&);
     bool handleMouseEvent(Frame*, const PlatformMouseEvent&);
     bool handleTouchEvent(Frame*, const PlatformTouchEvent&);
 
@@ -105,8 +108,6 @@ public:
 
     InspectorClient* inspectorClient() const { return m_inspectorClient; }
 
-    void reportMemoryUsage(MemoryObjectInfo*) const;
-
     void willProcessTask();
     void didProcessTask();
 
@@ -114,8 +115,6 @@ public:
     void didCancelFrame();
     void willComposite();
     void didComposite();
-
-    HashMap<String, size_t> processMemoryDistribution() const;
 
 private:
     InspectorController(Page*, InspectorClient*);
@@ -129,6 +128,7 @@ private:
     OwnPtr<InspectorOverlay> m_overlay;
 
     InspectorMemoryAgent* m_memoryAgent;
+    InspectorTimelineAgent* m_timelineAgent;
 
     RefPtr<InspectorBackendDispatcher> m_inspectorBackendDispatcher;
     OwnPtr<InspectorFrontendClient> m_inspectorFrontendClient;

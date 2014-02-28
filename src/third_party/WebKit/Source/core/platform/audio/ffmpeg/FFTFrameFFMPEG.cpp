@@ -34,14 +34,13 @@
 
 #include "core/platform/audio/FFTFrame.h"
 
-#include "core/platform/PlatformMemoryInstrumentation.h"
 #include "core/platform/audio/VectorMath.h"
 
 extern "C" {
     #include <libavcodec/avfft.h>
 }
 
-#include <wtf/MathExtras.h>
+#include "wtf/MathExtras.h"
 
 namespace {
 
@@ -79,18 +78,6 @@ struct RDFTContextProxy {
     void (*rdft_calc)();
 };
 
-}
-
-void reportMemoryUsage(const struct RDFTContext* const& object, WTF::MemoryObjectInfo* memoryObjectInfo)
-{
-    const RDFTContextProxy* proxyObject = reinterpret_cast<const RDFTContextProxy*>(object);
-
-    WTF::MemoryClassInfo info(memoryObjectInfo, proxyObject, 0, sizeof(RDFTContextProxy));
-
-    // The size of buffers is counted the same way as it is counted in ff_rdft_init && ff_fft_init.
-    size_t count = 1 << (proxyObject->nbits - 1);
-    info.addRawBuffer(proxyObject->fft.revtab, count * sizeof(uint16_t), "FFTBuffer", "revtab");
-    info.addRawBuffer(proxyObject->fft.tmpBuf, count * sizeof(FFTComplex), "FFTBuffer", "tmpBuf");
 }
 
 namespace WebCore {
@@ -170,7 +157,7 @@ void FFTFrame::multiply(const FFTFrame& frame)
     float real0 = realP1[0];
     float imag0 = imagP1[0];
 
-    VectorMath::zvmul(realP1, imagP1, realP2, imagP2, realP1, imagP1, halfSize); 
+    VectorMath::zvmul(realP1, imagP1, realP2, imagP2, realP1, imagP1, halfSize);
 
     // Multiply the packed DC/nyquist component
     realP1[0] = real0 * realP2[0];

@@ -12,7 +12,7 @@
 #include "base/location.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/task_runner_util.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/common/content_export.h"
 
 #if defined(UNIT_TEST)
@@ -63,12 +63,6 @@ class CONTENT_EXPORT BrowserThread {
 
     // This is the thread that interacts with the database.
     DB,
-
-    // This is the "main" thread for WebKit within the browser process when
-    // NOT in --single-process mode.
-    // Deprecated: Do not design new code to use this thread; see
-    // http://crbug.com/106839
-    WEBKIT_DEPRECATED,
 
     // This is the thread that interacts with the file system.
     FILE,
@@ -185,9 +179,9 @@ class CONTENT_EXPORT BrowserThread {
   // Windows registry.
   static base::SequencedWorkerPool* GetBlockingPool();
 
-  // Callable on any thread.  Returns whether the given ID corresponds to a well
-  // known thread.
-  static bool IsWellKnownThread(ID identifier);
+  // Callable on any thread.  Returns whether the given well-known thread is
+  // initialized.
+  static bool IsThreadInitialized(ID identifier);
 
   // Callable on any thread.  Returns whether you're currently on a particular
   // thread.

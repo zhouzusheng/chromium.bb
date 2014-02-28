@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/version.h"
 #include "build/build_config.h"
 #include "gpu/config/dx_diag_node.h"
@@ -119,6 +119,10 @@ struct GPU_EXPORT GPUInfo {
 
   // GL window system binding extensions.  "" if not available.
   std::string gl_ws_extensions;
+
+  // GL reset notification strategy as defined by GL_ARB_robustness. 0 if GPU
+  // reset detection or notification not available.
+  uint32 gl_reset_notification_strategy;
 
   // The device semantics, i.e. whether the Vista and Windows 7 specific
   // semantics are available.

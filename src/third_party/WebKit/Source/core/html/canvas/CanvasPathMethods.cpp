@@ -35,9 +35,10 @@
 #include "config.h"
 #include "core/html/canvas/CanvasPathMethods.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/platform/graphics/FloatRect.h"
-#include <wtf/MathExtras.h>
+#include "wtf/MathExtras.h"
 
 namespace WebCore {
 
@@ -105,14 +106,13 @@ void CanvasPathMethods::bezierCurveTo(float cp1x, float cp1y, float cp2x, float 
         m_path.addBezierCurveTo(cp1, cp2, p1);
 }
 
-void CanvasPathMethods::arcTo(float x1, float y1, float x2, float y2, float r, ExceptionCode& ec)
+void CanvasPathMethods::arcTo(float x1, float y1, float x2, float y2, float r, ExceptionState& es)
 {
-    ec = 0;
     if (!std::isfinite(x1) || !std::isfinite(y1) || !std::isfinite(x2) || !std::isfinite(y2) || !std::isfinite(r))
         return;
 
     if (r < 0) {
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
         return;
     }
 
@@ -130,14 +130,13 @@ void CanvasPathMethods::arcTo(float x1, float y1, float x2, float y2, float r, E
         m_path.addArcTo(p1, p2, r);
 }
 
-void CanvasPathMethods::arc(float x, float y, float r, float sa, float ea, bool anticlockwise, ExceptionCode& ec)
+void CanvasPathMethods::arc(float x, float y, float r, float sa, float ea, bool anticlockwise, ExceptionState& es)
 {
-    ec = 0;
     if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(r) || !std::isfinite(sa) || !std::isfinite(ea))
         return;
 
     if (r < 0) {
-        ec = INDEX_SIZE_ERR;
+        es.throwDOMException(IndexSizeError);
         return;
     }
 

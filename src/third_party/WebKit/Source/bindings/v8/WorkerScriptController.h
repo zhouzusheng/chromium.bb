@@ -33,41 +33,43 @@
 
 #include "bindings/v8/ScriptValue.h"
 #include "bindings/v8/V8Binding.h"
-#include <v8.h>
+#include "core/dom/ErrorEvent.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/Threading.h"
 #include "wtf/text/TextPosition.h"
+#include <v8.h>
 
 namespace WebCore {
 
     class ScriptSourceCode;
     class ScriptValue;
-    class WorkerContext;
+    class WorkerGlobalScope;
 
-    struct WorkerContextExecutionState {
-        WorkerContextExecutionState()
+    struct WorkerGlobalScopeExecutionState {
+        WorkerGlobalScopeExecutionState()
             : hadException(false)
             , lineNumber(0)
+            , columnNumber(0)
         {
         }
 
         bool hadException;
-        ScriptValue exception;
         String errorMessage;
         int lineNumber;
+        int columnNumber;
         String sourceURL;
     };
 
     class WorkerScriptController {
     public:
-        WorkerScriptController(WorkerContext*);
+        WorkerScriptController(WorkerGlobalScope*);
         ~WorkerScriptController();
 
-        WorkerContext* workerContext() { return m_workerContext; }
+        WorkerGlobalScope* workerGlobalScope() { return m_workerGlobalScope; }
 
-        void evaluate(const ScriptSourceCode&, ScriptValue* = 0);
+        void evaluate(const ScriptSourceCode&, RefPtr<ErrorEvent>* = 0);
 
-        void setException(const ScriptValue&);
+        void rethrowExceptionFromImportedScript(PassRefPtr<ErrorEvent>);
 
         // Async request to terminate a future JS execution. Eventually causes termination
         // exception raised during JS execution, if the worker thread happens to run JS.
@@ -88,16 +90,21 @@ namespace WebCore {
         static WorkerScriptController* controllerForContext();
 
         // Evaluate a script file in the current execution environment.
-        ScriptValue evaluate(const String& script, const String& fileName, const TextPosition& scriptStartPosition, WorkerContextExecutionState*);
+        ScriptValue evaluate(const String& script, const String& fileName, const TextPosition& scriptStartPosition, WorkerGlobalScopeExecutionState*);
 
         // Returns a local handle of the context.
         v8::Local<v8::Context> context() { return m_context.newLocal(v8::Isolate::GetCurrent()); }
+
+        // Send a notification about current thread is going to be idle.
+        // Returns true if the embedder should stop calling idleNotification
+        // until real work has been done.
+        bool idleNotification() { return v8::V8::IdleNotification(); }
 
     private:
         bool initializeContextIfNeeded();
         void disposeContext();
 
-        WorkerContext* m_workerContext;
+        WorkerGlobalScope* m_workerGlobalScope;
         v8::Isolate* m_isolate;
         ScopedPersistent<v8::Context> m_context;
         OwnPtr<V8PerContextData> m_perContextData;
@@ -106,6 +113,7 @@ namespace WebCore {
         bool m_executionForbidden;
         bool m_executionScheduledToTerminate;
         mutable Mutex m_scheduledTerminationMutex;
+        RefPtr<ErrorEvent> m_errorEventFromImportedScript;
     };
 
 } // namespace WebCore

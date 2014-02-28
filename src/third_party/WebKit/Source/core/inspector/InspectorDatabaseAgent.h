@@ -31,9 +31,9 @@
 
 #include "InspectorFrontend.h"
 #include "core/inspector/InspectorBaseAgent.h"
-#include <wtf/HashMap.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/HashMap.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -42,7 +42,6 @@ class DocumentLoader;
 class Frame;
 class InspectorDatabaseResource;
 class InspectorFrontend;
-class InspectorState;
 class InstrumentingAgents;
 
 typedef String ErrorString;

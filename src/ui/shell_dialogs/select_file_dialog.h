@@ -31,9 +31,21 @@ class SHELL_DIALOGS_EXPORT SelectFileDialog
  public:
   enum Type {
     SELECT_NONE,
+
+    // For opening a folder.
     SELECT_FOLDER,
+
+    // Like SELECT_FOLDER, but the dialog UI should explicitly show it's
+    // specifically for "upload".
+    SELECT_UPLOAD_FOLDER,
+
+    // For saving into a file, allowing a nonexistent file to be selected.
     SELECT_SAVEAS_FILE,
+
+    // For opening a file.
     SELECT_OPEN_FILE,
+
+    // Like SELECT_OPEN_FILE, but allowing multiple files to open.
     SELECT_OPEN_MULTI_FILE
   };
 
@@ -115,7 +127,11 @@ class SHELL_DIALOGS_EXPORT SelectFileDialog
     // Specifies whether there will be a filter added for all files (i.e. *.*).
     bool include_all_files;
 
-    // Specifies whether the caller can support files/folders that are on Drive.
+    // Specifies whether the caller can directly support file paths pointing to
+    // files/folders on Google Drive. If the flag is true, the file dialog does
+    // nothing special; just returns a Drive path. If it is false, the dialog
+    // creates a local replica of the Drive file and returns its path, so that
+    // the caller can use it without any difference than when it were local.
     bool support_drive;
   };
 

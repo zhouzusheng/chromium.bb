@@ -42,7 +42,9 @@
 #include "WebGraphicsContext3D.h"
 #include "WebLocalizedString.h"
 #include "WebSpeechSynthesizer.h"
+#include "WebStorageQuotaType.h"
 #include "WebString.h"
+#include "WebURLError.h"
 #include "WebVector.h"
 
 class GrContext;
@@ -55,7 +57,9 @@ class WebContentDecryptionModule;
 class WebClipboard;
 class WebCompositorSupport;
 class WebCookieJar;
+class WebCrypto;
 class WebDeviceMotionListener;
+class WebDeviceOrientationListener;
 class WebDiscardableMemory;
 class WebFallbackThemeEngine;
 class WebFileSystem;
@@ -64,7 +68,6 @@ class WebFlingAnimator;
 class WebGestureCurveTarget;
 class WebGestureCurve;
 class WebGraphicsContext3DProvider;
-class WebHyphenator;
 class WebIDBFactory;
 class WebMIDIAccessor;
 class WebMIDIAccessorClient;
@@ -81,6 +84,7 @@ class WebSocketStreamHandle;
 class WebSpeechSynthesizer;
 class WebSpeechSynthesizerClient;
 class WebStorageNamespace;
+class WebStorageQuotaCallbacks;
 class WebUnitTestSupport;
 class WebThemeEngine;
 class WebThread;
@@ -90,7 +94,6 @@ class WebWorkerRunLoop;
 struct WebFloatPoint;
 struct WebLocalizedString;
 struct WebSize;
-struct WebURLError;
 
 class Platform {
 public:
@@ -125,9 +128,6 @@ public:
     virtual WebThemeEngine* themeEngine() { return 0; }
 
     virtual WebFallbackThemeEngine* fallbackThemeEngine() { return 0; }
-
-    // Must return non-null.
-    virtual WebHyphenator* hyphenator() { return 0; }
 
     // May return null.
     virtual WebSpeechSynthesizer* createSpeechSynthesizer(WebSpeechSynthesizerClient*) { return 0; }
@@ -188,8 +188,8 @@ public:
 
     // DOM Storage --------------------------------------------------
 
-    // Return a LocalStorage namespace that corresponds to the following path.
-    virtual WebStorageNamespace* createLocalStorageNamespace(const WebString& path, unsigned quota) { return 0; }
+    // Return a LocalStorage namespace
+    virtual WebStorageNamespace* createLocalStorageNamespace() { return 0; }
 
 
     // FileSystem ----------------------------------------------------------
@@ -246,15 +246,6 @@ public:
     // Same as above, but always returns actual value, without any caches.
     virtual size_t actualMemoryUsageMB() { return 0; }
 
-    // If memory usage is below this threshold, do not bother forcing GC.
-    virtual size_t lowMemoryUsageMB() { return 256; }
-
-    // If memory usage is above this threshold, force GC more aggressively.
-    virtual size_t highMemoryUsageMB() { return 1024; }
-
-    // Delta of memory usage growth (vs. last actualMemoryUsageMB()) to force GC when memory usage is high.
-    virtual size_t highUsageDeltaMB() { return 128; }
-
     // Returns private and shared usage, in bytes. Private bytes is the amount of
     // memory currently allocated to this process that cannot be shared. Returns
     // false on platform specific error conditions.
@@ -283,6 +274,15 @@ public:
     // discardable.
     virtual WebDiscardableMemory* allocateAndLockDiscardableMemory(size_t bytes) { return 0; }
 
+    // A wrapper for tcmalloc's HeapProfilerStart();
+    virtual void startHeapProfiling(const WebString& /*prefix*/) { }
+    // A wrapper for tcmalloc's HeapProfilerStop();
+    virtual void stopHeapProfiling() { }
+    // A wrapper for tcmalloc's HeapProfilerDump()
+    virtual void dumpHeapProfiling(const WebString& /*reason*/) { }
+    // A wrapper for tcmalloc's GetHeapProfile()
+    virtual WebString getHeapProfile() { return WebString(); }
+
 
     // Message Ports -------------------------------------------------------
 
@@ -295,9 +295,6 @@ public:
 
     // Returns a new WebURLLoader instance.
     virtual WebURLLoader* createURLLoader() { return 0; }
-
-    // A suggestion to prefetch IP information for the given hostname.
-    virtual void prefetchHostName(const WebString&) { }
 
     // May return null.
     virtual WebPrescientNetworking* prescientNetworking() { return 0; }
@@ -313,6 +310,8 @@ public:
 
     // Returns the decoded data url if url had a supported mimetype and parsing was successful.
     virtual WebData parseDataURL(const WebURL&, WebString& mimetype, WebString& charset) { return WebData(); }
+
+    virtual WebURLError cancelledError(const WebURL&) const { return WebURLError(); }
 
 
     // Plugins -------------------------------------------------------------
@@ -494,6 +493,8 @@ public:
     virtual void histogramCustomCounts(const char* name, int sample, int min, int max, int bucketCount) { }
     // Enumeration histogram buckets are linear, boundaryValue should be larger than any possible sample value.
     virtual void histogramEnumeration(const char* name, int sample, int boundaryValue) { }
+    // Unlike enumeration histograms, sparse histograms only allocate memory for non-empty buckets.
+    virtual void histogramSparse(const char* name, int sample) { }
 
 
     // GPU ----------------------------------------------------------------
@@ -523,6 +524,7 @@ public:
     // with |velocity| and already scrolled |cumulativeScroll| pixels.
     virtual WebGestureCurve* createFlingAnimationCurve(int deviceSource, const WebFloatPoint& velocity, const WebSize& cumulativeScroll) { return 0; }
 
+
     // WebRTC ----------------------------------------------------------
 
     // Creates an WebRTCPeerConnectionHandler for RTCPeerConnection.
@@ -539,11 +541,36 @@ public:
     virtual void didStopWorkerRunLoop(const WebWorkerRunLoop&) { }
 
 
+    // WebCrypto ----------------------------------------------------------
+
+    // May return 0.
+    virtual WebCrypto* crypto() { return 0; }
+
+
     // Device Motion / Orientation ----------------------------------------
 
     // Sets a Listener to listen for device motion data updates.
     // If null, the platform stops providing device motion data to the current listener.
     virtual void setDeviceMotionListener(WebKit::WebDeviceMotionListener*) { }
+
+    // Sets a Listener to listen for device orientation data updates.
+    // If null, the platform stops proving device orientation data to the current listener.
+    virtual void setDeviceOrientationListener(WebKit::WebDeviceOrientationListener*) { }
+
+
+    // Quota -----------------------------------------------------------
+
+    // Queries the storage partition's storage usage and quota information.
+    // WebStorageQuotaCallbacks::didQueryStorageUsageAndQuota will be called
+    // with the current usage and quota information for the partition. When
+    // an error occurs WebStorageQuotaCallbacks::didFail is called with an
+    // error code.
+    // The callbacks object is deleted when the callback method is called
+    // and does not need to be (and should not be) deleted manually.
+    virtual void queryStorageUsageAndQuota(
+        const WebURL& storagePartition,
+        WebStorageQuotaType,
+        WebStorageQuotaCallbacks*) { }
 
 protected:
     virtual ~Platform() { }

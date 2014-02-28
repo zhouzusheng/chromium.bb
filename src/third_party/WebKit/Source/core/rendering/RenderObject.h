@@ -28,8 +28,8 @@
 
 #include "core/dom/DocumentStyleSheetCollection.h"
 #include "core/dom/Element.h"
-#include "core/editing/TextAffinity.h"
-#include "core/loader/cache/CachedImageClient.h"
+#include "core/dom/Position.h"
+#include "core/loader/cache/ImageResourceClient.h"
 #include "core/platform/graphics/FloatQuad.h"
 #include "core/platform/graphics/LayoutRect.h"
 #include "core/platform/graphics/transforms/TransformationMatrix.h"
@@ -38,9 +38,9 @@
 #include "core/rendering/ScrollBehavior.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/StyleInheritedData.h"
-#include <wtf/HashSet.h>
-#include <wtf/StackStats.h>
-#include <wtf/UnusedParam.h>
+#include "wtf/HashSet.h"
+#include "wtf/StackStats.h"
+#include "wtf/UnusedParam.h"
 
 namespace WebCore {
 
@@ -52,7 +52,6 @@ class HitTestLocation;
 class HitTestResult;
 class InlineBox;
 class InlineFlowBox;
-class OverlapTestRequestClient;
 class Path;
 class Position;
 class PseudoStyleRequest;
@@ -68,7 +67,6 @@ class RenderSVGResourceContainer;
 class RenderTable;
 class RenderTheme;
 class TransformState;
-class VisiblePosition;
 
 struct PaintInfo;
 
@@ -108,7 +106,8 @@ enum MarkingBehavior {
 enum MapCoordinatesMode {
     IsFixed = 1 << 0,
     UseTransforms = 1 << 1,
-    ApplyContainerFlip = 1 << 2
+    ApplyContainerFlip = 1 << 2,
+    TraverseDocumentBoundaries = 1 << 3,
 };
 typedef unsigned MapCoordinatesFlags;
 
@@ -129,13 +128,14 @@ struct AnnotatedRegionValue {
 };
 
 typedef WTF::HashSet<const RenderObject*> RenderObjectAncestorLineboxDirtySet;
+typedef WTF::HashMap<const RenderLayer*, Vector<LayoutRect> > LayerHitTestRects;
 
 #ifndef NDEBUG
 const int showTreeCharacterOffset = 39;
 #endif
 
 // Base class for all rendering tree objects.
-class RenderObject : public CachedImageClient, public MemoryReporterTag {
+class RenderObject : public ImageResourceClient {
     friend class RenderBlock;
     friend class RenderLayer;
     friend class RenderObjectChildList;
@@ -243,7 +243,7 @@ public:
     // again.  We have to make sure the render tree updates as needed to accommodate the new
     // normal flow object.
     void handleDynamicFloatPositionChange();
-    
+
     // RenderObject tree manipulation
     //////////////////////////////////////////
     virtual bool canHaveChildren() const { return virtualChildren(); }
@@ -255,8 +255,6 @@ public:
     virtual bool createsAnonymousWrapper() const { return false; }
     //////////////////////////////////////////
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
-
 protected:
     //////////////////////////////////////////
     // Helper functions. Dangerous to use!
@@ -265,7 +263,7 @@ protected:
     void setParent(RenderObject* parent)
     {
         m_parent = parent;
-        
+
         // Only update if our flow thread state is different from our new parent and if we're not a RenderFlowThread.
         // A RenderFlowThread is always considered to be inside itself, so it never has to change its state
         // in response to parent changes.
@@ -301,20 +299,11 @@ public:
 
     static RenderObject* createObject(Element*, RenderStyle*);
 
-    // Overloaded new operator.  Derived classes must override operator new
-    // in order to allocate out of the RenderArena.
-    void* operator new(size_t, RenderArena*);
-
-    // Overridden to prevent the normal delete from being called.
-    void operator delete(void*, size_t);
-
-private:
-    // The normal operator new is disallowed on all render objects.
-    void* operator new(size_t) throw();
+    // RenderObjects are allocated out of the rendering partition.
+    void* operator new(size_t);
+    void operator delete(void*);
 
 public:
-    RenderArena* renderArena() const { return document()->renderArena(); }
-
     bool isPseudoElement() const { return node() && node()->isPseudoElement(); }
 
     virtual bool isBR() const { return false; }
@@ -342,6 +331,7 @@ public:
     virtual bool isMeter() const { return false; }
     virtual bool isProgress() const { return false; }
     virtual bool isRenderBlock() const { return false; }
+    virtual bool isRenderSVGBlock() const { return false; };
     virtual bool isRenderLazyBlock() const { return false; }
     virtual bool isRenderButton() const { return false; }
     virtual bool isRenderIFrame() const { return false; }
@@ -416,7 +406,7 @@ public:
             if (!s_ancestorLineboxDirtySet)
                 s_ancestorLineboxDirtySet = new RenderObjectAncestorLineboxDirtySet;
             s_ancestorLineboxDirtySet->add(this);
-            setNeedsLayout(true);
+            setNeedsLayout();
         } else if (s_ancestorLineboxDirtySet) {
             s_ancestorLineboxDirtySet->remove(this);
             if (s_ancestorLineboxDirtySet->isEmpty()) {
@@ -494,13 +484,20 @@ public:
     // rest of the rendering tree will move to a similar model.
     virtual bool nodeAtFloatPoint(const HitTestRequest&, HitTestResult&, const FloatPoint& pointInParent, HitTestAction);
 
+    virtual bool canHaveWhitespaceChildren() const
+    {
+        if (isTable() || isTableRow() || isTableSection() || isRenderTableCol() || isFrameSet() || isFlexibleBox() || isRenderGrid())
+            return false;
+        return true;
+    }
+
     bool isAnonymous() const { return m_bitfields.isAnonymous(); }
     bool isAnonymousBlock() const
     {
         // This function is kept in sync with anonymous block creation conditions in
         // RenderBlock::createAnonymousBlock(). This includes creating an anonymous
         // RenderBlock having a BLOCK or BOX display. Other classes such as RenderTextFragment
-        // are not RenderBlocks and will return false. See https://bugs.webkit.org/show_bug.cgi?id=56709. 
+        // are not RenderBlocks and will return false. See https://bugs.webkit.org/show_bug.cgi?id=56709.
         return isAnonymous() && (style()->display() == BLOCK || style()->display() == BOX) && style()->styleType() == NOPSEUDO && isRenderBlock() && !isListMarker() && !isRenderFlowThread()
             && !isRenderFullScreen()
             && !isRenderFullScreenPlaceholder();
@@ -516,14 +513,6 @@ public:
 
     bool isOutOfFlowPositioned() const { return m_bitfields.isOutOfFlowPositioned(); } // absolute or fixed positioning
     bool isInFlowPositioned() const { return m_bitfields.isRelPositioned() || m_bitfields.isStickyPositioned(); } // relative or sticky positioning
-    bool hasPaintOffset() const
-    {
-        bool positioned = isInFlowPositioned();
-        // Shape outside on a float can reposition the float in much the
-        // same way as relative positioning, so treat it as such.
-        positioned = positioned || isFloatingWithShapeOutside();
-        return positioned;
-    }
     bool isRelPositioned() const { return m_bitfields.isRelPositioned(); } // relative positioning
     bool isStickyPositioned() const { return m_bitfields.isStickyPositioned(); }
     bool isPositioned() const { return m_bitfields.isPositioned(); }
@@ -548,7 +537,13 @@ public:
     bool backgroundIsKnownToBeObscured();
     bool borderImageIsLoadedAndCanBeRendered() const;
     bool mustRepaintBackgroundOrBorder() const;
-    bool hasBackground() const { return style()->hasBackground(); }
+    bool hasBackground() const
+    {
+        StyleColor color = resolveColor(CSSPropertyBackgroundColor);
+        if (color.isValid() && color.alpha())
+            return true;
+        return style()->hasBackgroundImage();
+    }
     bool hasEntirelyFixedBackground() const;
 
     bool needsLayout() const
@@ -568,7 +563,7 @@ public:
     bool posChildNeedsLayout() const { return m_bitfields.posChildNeedsLayout(); }
     bool needsSimplifiedNormalFlowLayout() const { return m_bitfields.needsSimplifiedNormalFlowLayout(); }
     bool normalChildNeedsLayout() const { return m_bitfields.normalChildNeedsLayout(); }
-    
+
     bool preferredLogicalWidthsDirty() const { return m_bitfields.preferredLogicalWidthsDirty(); }
 
     bool isSelectionBorder() const;
@@ -592,7 +587,7 @@ public:
     // any pseudo classes (and therefore has no concept of changing state).
     RenderStyle* getCachedPseudoStyle(PseudoId, RenderStyle* parentStyle = 0) const;
     PassRefPtr<RenderStyle> getUncachedPseudoStyle(const PseudoStyleRequest&, RenderStyle* parentStyle = 0, RenderStyle* ownStyle = 0) const;
-    
+
     virtual void updateDragState(bool dragOn);
 
     RenderView* view() const { return document()->renderView(); };
@@ -622,21 +617,22 @@ public:
     // is true if the renderer returned is an ancestor of repaintContainer.
     RenderObject* container(const RenderLayerModelObject* repaintContainer = 0, bool* repaintContainerSkipped = 0) const;
 
-    virtual RenderObject* hoverAncestor() const { return parent(); }
+    virtual RenderObject* hoverAncestor() const;
 
     Element* offsetParent() const;
 
     void markContainingBlocksForLayout(bool scheduleRelayout = true, RenderObject* newRoot = 0);
-    void setNeedsLayout(bool needsLayout, MarkingBehavior = MarkContainingBlockChain);
-    void setChildNeedsLayout(bool childNeedsLayout, MarkingBehavior = MarkContainingBlockChain);
+    void setNeedsLayout(MarkingBehavior = MarkContainingBlockChain);
+    void clearNeedsLayout();
+    void setChildNeedsLayout(MarkingBehavior = MarkContainingBlockChain);
     void setNeedsPositionedMovementLayout();
     void setNeedsSimplifiedNormalFlowLayout();
     void setPreferredLogicalWidthsDirty(bool, MarkingBehavior = MarkContainingBlockChain);
     void invalidateContainerPreferredLogicalWidths();
-    
+
     void setNeedsLayoutAndPrefWidthsRecalc()
     {
-        setNeedsLayout(true);
+        setNeedsLayout();
         setPreferredLogicalWidthsDirty(true);
     }
 
@@ -675,7 +671,10 @@ public:
 
     /* This function performs a layout only if one is needed. */
     void layoutIfNeeded() { if (needsLayout()) layout(); }
-    
+
+    void forceLayout();
+    void forceChildLayout();
+
     // used for element state updates that cannot be fixed with a
     // repaint and do not need a relayout
     virtual void updateFromElement() { }
@@ -689,9 +688,9 @@ public:
     virtual void updateHitTestResult(HitTestResult&, const LayoutPoint&);
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction);
 
-    virtual VisiblePosition positionForPoint(const LayoutPoint&);
-    VisiblePosition createVisiblePosition(int offset, EAffinity);
-    VisiblePosition createVisiblePosition(const Position&);
+    virtual PositionWithAffinity positionForPoint(const LayoutPoint&);
+    PositionWithAffinity createPositionWithAffinity(int offset, EAffinity);
+    PositionWithAffinity createPositionWithAffinity(const Position&);
 
     virtual void dirtyLinesFromChangedChild(RenderObject*);
 
@@ -740,7 +739,7 @@ public:
     virtual LayoutSize offsetFromContainer(RenderObject*, const LayoutPoint&, bool* offsetDependsOnPoint = 0) const;
     // Return the offset from an object up the container() chain. Asserts that none of the intermediate objects have transforms.
     LayoutSize offsetFromAncestorContainer(RenderObject*) const;
-    
+
     virtual void absoluteRects(Vector<IntRect>&, const LayoutPoint&) const { }
 
     // FIXME: useTransforms should go away eventually
@@ -764,6 +763,45 @@ public:
     RenderStyle* firstLineStyle() const { return document()->styleSheetCollection()->usesFirstLineRules() ? cachedFirstLineStyle() : style(); }
     RenderStyle* style(bool firstLine) const { return firstLine ? firstLineStyle() : style(); }
 
+    inline Color resolveColor(const RenderStyle* styleToUse, int colorProperty) const
+    {
+        StyleColor styleColor = resolveCurrentColor(styleToUse, colorProperty);
+        return styleColor.color();
+    }
+
+    inline Color resolveColor(int colorProperty) const
+    {
+        StyleColor styleColor = resolveCurrentColor(style(), colorProperty);
+        return styleColor.color();
+    }
+
+    inline Color resolveColor(int colorProperty, Color fallbackIfInvalid) const
+    {
+        StyleColor styleColor = resolveCurrentColor(style(), colorProperty);
+        return styleColor.isValid() ? styleColor.color() : fallbackIfInvalid;
+    }
+
+    inline Color resolveColor(StyleColor color) const
+    {
+        return resolveCurrentColor(color).color();
+    }
+
+    inline Color resolveColor(StyleColor color, Color fallbackIfInvalid) const
+    {
+        StyleColor styleColor = resolveCurrentColor(color);
+        return styleColor.isValid() ? styleColor.color() : fallbackIfInvalid;
+    }
+
+    inline StyleColor resolveStyleColor(int colorProperty) const
+    {
+        return resolveCurrentColor(style(), colorProperty);
+    }
+
+    inline StyleColor resolveStyleColor(const RenderStyle* styleToUse, int colorProperty) const
+    {
+        return resolveCurrentColor(styleToUse, colorProperty);
+    }
+
     // Used only by Element::pseudoStyleCacheIsInvalid to get a first line style based off of a
     // given new style, without accessing the cache.
     PassRefPtr<RenderStyle> uncachedFirstLineStyle(RenderStyle*) const;
@@ -771,7 +809,7 @@ public:
     // Anonymous blocks that are part of of a continuation chain will return their inline continuation's outline style instead.
     // This is typically only relevant when repainting.
     virtual RenderStyle* outlineStyleForRepaint() const { return style(); }
-    
+
     virtual CursorDirective getCursor(const LayoutPoint&, Cursor&) const;
 
     void getTextDecorationColors(int decorations, Color& underline, Color& overline, Color& linethrough, bool quirksMode = false, bool firstlineStyle = false);
@@ -783,7 +821,7 @@ public:
     // Actually do the repaint of rect r for this object which has been computed in the coordinate space
     // of repaintContainer. If repaintContainer is 0, repaint via the view.
     void repaintUsingContainer(const RenderLayerModelObject* repaintContainer, const IntRect&) const;
-    
+
     // Repaint the entire object.  Called when, e.g., the color of a border changes, or when a border
     // style changes.
     void repaint() const;
@@ -908,12 +946,12 @@ public:
     virtual int previousOffsetForBackwardDeletion(int current) const;
     virtual int nextOffset(int current) const;
 
-    virtual void imageChanged(CachedImage*, const IntRect* = 0);
+    virtual void imageChanged(ImageResource*, const IntRect* = 0);
     virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) { }
-    virtual bool willRenderImage(CachedImage*);
+    virtual bool willRenderImage(ImageResource*);
 
     void selectionStartEnd(int& spos, int& epos) const;
-    
+
     void remove() { if (parent()) parent()->removeChild(this); }
 
     AnimationController* animation() const;
@@ -930,14 +968,17 @@ public:
     // Pushes state onto RenderGeometryMap about how to map coordinates from this renderer to its container, or ancestorToStopAt (whichever is encountered first).
     // Returns the renderer which was mapped to (container or ancestorToStopAt).
     virtual const RenderObject* pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap&) const;
-    
+
     bool shouldUseTransformFromContainer(const RenderObject* container) const;
     void getTransformFromContainer(const RenderObject* container, const LayoutSize& offsetInContainer, TransformationMatrix&) const;
-    
+
     // return true if this object requires a new stacking context
-    bool createsGroup() const { return isTransparent() || hasMask() || hasFilter() || hasBlendMode(); } 
-    
+    bool createsGroup() const { return isTransparent() || hasMask() || hasFilter() || hasBlendMode(); }
+
     virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& /* additionalOffset */, const RenderLayerModelObject* /* paintContainer */ = 0) { };
+
+    // Compute a list of hit-test rectangles per layer rooted at this renderer.
+    virtual void computeLayerHitTestRects(LayerHitTestRects&) const;
 
     LayoutRect absoluteOutlineBounds() const
     {
@@ -964,14 +1005,14 @@ protected:
     void paintFocusRing(PaintInfo&, const LayoutPoint&, RenderStyle*);
     void paintOutline(PaintInfo&, const LayoutRect&);
     void addPDFURLRect(GraphicsContext*, const LayoutRect&);
-    
+
     virtual LayoutRect viewRect() const;
 
     void adjustRectForOutlineAndShadow(LayoutRect&) const;
 
     void clearLayoutRootIfNeeded() const;
     virtual void willBeDestroyed();
-    void arenaDelete(RenderArena*, void* objectBase);
+    void postDestroy();
 
     virtual bool canBeReplacedWithInlineRunIn() const;
 
@@ -979,6 +1020,20 @@ protected:
     virtual void willBeRemovedFromTree();
 
     void setDocumentForAnonymous(Document* document) { ASSERT(isAnonymous()); m_node = document; }
+
+    // Add hit-test rects for the render tree rooted at this node to the provided collection on a
+    // per-RenderLayer basis.
+    // currentLayer must be the enclosing layer, and layerOffset is the current offset within
+    // this layer. Subclass implementations will add any offset for this renderer within it's
+    // container, so callers should provide only the offset of the container within it's layer.
+    // containerRect is a rect that has already been added for the currentLayer which is likely to
+    // be a container for child elements. Any rect wholly contained by containerRect can be
+    // skipped.
+    virtual void addLayerHitTestRects(LayerHitTestRects&, const RenderLayer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const;
+
+    // Add hit-test rects for this renderer only to the provided list. layerOffset is the offset
+    // of this renderer within the current layer that should be used for each result.
+    virtual void computeSelfHitTestRects(Vector<LayoutRect>&, const LayoutPoint& layerOffset) const { };
 
 private:
     RenderFlowThread* locateFlowThreadContainingBlock() const;
@@ -992,6 +1047,28 @@ private:
     StyleDifference adjustStyleDifference(StyleDifference, unsigned contextSensitiveProperties) const;
 
     Color selectionColor(int colorProperty) const;
+
+    inline StyleColor resolveCurrentColor(const RenderStyle* styleToUse, int colorProperty) const
+    {
+        StyleColor styleColor = styleToUse->visitedDependentColor(colorProperty);
+        if (UNLIKELY(styleColor.isCurrentColor()))
+            styleColor = styleToUse->visitedDependentColor(CSSPropertyColor);
+
+        // In the unlikely case that CSSPropertyColor is also 'currentColor'
+        // the color of the nearest ancestor with a valid color is used.
+        for (const RenderObject* object = this; UNLIKELY(styleColor.isCurrentColor()) && object && object->style(); object = object->parent())
+            styleColor = object->style()->visitedDependentColor(CSSPropertyColor);
+
+        return styleColor;
+    }
+
+    inline StyleColor resolveCurrentColor(StyleColor color) const
+    {
+        StyleColor styleColor = color;
+        for (const RenderObject* object = this; UNLIKELY(styleColor.isCurrentColor()) && object && object->style(); object = object->parent())
+            styleColor = object->style()->visitedDependentColor(CSSPropertyColor);
+        return styleColor;
+    }
 
 #ifndef NDEBUG
     void checkBlockPositionedObjectsNeedLayout();
@@ -1008,8 +1085,8 @@ private:
     static RenderObjectAncestorLineboxDirtySet* s_ancestorLineboxDirtySet;
 
 #ifndef NDEBUG
-    bool m_hasAXObject             : 1;
-    bool m_setNeedsLayoutForbidden : 1;
+    unsigned m_hasAXObject             : 1;
+    unsigned m_setNeedsLayoutForbidden : 1;
 #endif
 
 #define ADD_BOOLEAN_BITFIELD(name, Name) \
@@ -1057,7 +1134,7 @@ private:
             , m_boxDecorationState(NoBoxDecorations)
         {
         }
-        
+
         // 31 bits have been used here. There is one bit available.
         ADD_BOOLEAN_BITFIELD(needsLayout, NeedsLayout);
         ADD_BOOLEAN_BITFIELD(needsPositionedMovementLayout, NeedsPositionedMovementLayout);
@@ -1108,7 +1185,7 @@ private:
 
         ALWAYS_INLINE SelectionState selectionState() const { return static_cast<SelectionState>(m_selectionState); }
         ALWAYS_INLINE void setSelectionState(SelectionState selectionState) { m_selectionState = selectionState; }
-        
+
         ALWAYS_INLINE FlowThreadState flowThreadState() const { return static_cast<FlowThreadState>(m_flowThreadState); }
         ALWAYS_INLINE void setFlowThreadState(FlowThreadState flowThreadState) { m_flowThreadState = flowThreadState; }
 
@@ -1120,6 +1197,7 @@ private:
 
     RenderObjectBitfields m_bitfields;
 
+    // FIXME: These private methods are silly. We should just call m_bitfields.setXXX(b) directly.
     void setNeedsPositionedMovementLayout(bool b) { m_bitfields.setNeedsPositionedMovementLayout(b); }
     void setNormalChildNeedsLayout(bool b) { m_bitfields.setNormalChildNeedsLayout(b); }
     void setPosChildNeedsLayout(bool b) { m_bitfields.setPosChildNeedsLayout(b); }
@@ -1162,45 +1240,40 @@ inline bool RenderObject::isBeforeOrAfterContent() const
     return isBeforeContent() || isAfterContent();
 }
 
-inline void RenderObject::setNeedsLayout(bool needsLayout, MarkingBehavior markParents)
+inline void RenderObject::setNeedsLayout(MarkingBehavior markParents)
 {
+    ASSERT(!isSetNeedsLayoutForbidden());
     bool alreadyNeededLayout = m_bitfields.needsLayout();
-    m_bitfields.setNeedsLayout(needsLayout);
-    if (needsLayout) {
-        ASSERT(!isSetNeedsLayoutForbidden());
-        if (!alreadyNeededLayout) {
-            if (markParents == MarkContainingBlockChain)
-                markContainingBlocksForLayout();
-            if (hasLayer())
-                setLayerNeedsFullRepaint();
-        }
-    } else {
-        setEverHadLayout(true);
-        setPosChildNeedsLayout(false);
-        setNeedsSimplifiedNormalFlowLayout(false);
-        setNormalChildNeedsLayout(false);
-        setNeedsPositionedMovementLayout(false);
-        setAncestorLineBoxDirty(false);
-#ifndef NDEBUG
-        checkBlockPositionedObjectsNeedLayout();
-#endif
+    m_bitfields.setNeedsLayout(true);
+    if (!alreadyNeededLayout) {
+        if (markParents == MarkContainingBlockChain)
+            markContainingBlocksForLayout();
+        if (hasLayer())
+            setLayerNeedsFullRepaint();
     }
 }
 
-inline void RenderObject::setChildNeedsLayout(bool childNeedsLayout, MarkingBehavior markParents)
+inline void RenderObject::clearNeedsLayout()
 {
+    m_bitfields.setNeedsLayout(false);
+    setEverHadLayout(true);
+    setPosChildNeedsLayout(false);
+    setNeedsSimplifiedNormalFlowLayout(false);
+    setNormalChildNeedsLayout(false);
+    setNeedsPositionedMovementLayout(false);
+    setAncestorLineBoxDirty(false);
+#ifndef NDEBUG
+    checkBlockPositionedObjectsNeedLayout();
+#endif
+}
+
+inline void RenderObject::setChildNeedsLayout(MarkingBehavior markParents)
+{
+    ASSERT(!isSetNeedsLayoutForbidden());
     bool alreadyNeededLayout = normalChildNeedsLayout();
-    setNormalChildNeedsLayout(childNeedsLayout);
-    if (childNeedsLayout) {
-        ASSERT(!isSetNeedsLayoutForbidden());
-        if (!alreadyNeededLayout && markParents == MarkContainingBlockChain)
-            markContainingBlocksForLayout();
-    } else {
-        setPosChildNeedsLayout(false);
-        setNeedsSimplifiedNormalFlowLayout(false);
-        setNormalChildNeedsLayout(false);
-        setNeedsPositionedMovementLayout(false);
-    }
+    setNormalChildNeedsLayout(true);
+    if (!alreadyNeededLayout && markParents == MarkContainingBlockChain)
+        markContainingBlocksForLayout();
 }
 
 inline void RenderObject::setNeedsPositionedMovementLayout()

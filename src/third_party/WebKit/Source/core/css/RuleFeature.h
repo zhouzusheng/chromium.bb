@@ -24,29 +24,31 @@
 
 #include "wtf/Forward.h"
 #include "wtf/HashSet.h"
-#include "wtf/text/AtomicString.h"
+#include "wtf/text/AtomicStringHash.h"
 
 namespace WebCore {
 
 class StyleRule;
 class CSSSelector;
+class CSSSelectorList;
 
 struct RuleFeature {
     RuleFeature(StyleRule* rule, unsigned selectorIndex, bool hasDocumentSecurityOrigin)
         : rule(rule)
         , selectorIndex(selectorIndex)
-        , hasDocumentSecurityOrigin(hasDocumentSecurityOrigin) 
-    { 
+        , hasDocumentSecurityOrigin(hasDocumentSecurityOrigin)
+    {
     }
     StyleRule* rule;
     unsigned selectorIndex;
     bool hasDocumentSecurityOrigin;
 };
 
-struct RuleFeatureSet {
+class RuleFeatureSet {
+public:
     RuleFeatureSet()
-        : usesFirstLineRules(false)
-        , usesBeforeAfterRules(false)
+        : m_usesFirstLineRules(false)
+        , m_usesBeforeAfterRules(false)
     { }
 
     void add(const RuleFeatureSet&);
@@ -54,15 +56,38 @@ struct RuleFeatureSet {
 
     void collectFeaturesFromSelector(const CSSSelector*);
 
-    void reportMemoryUsage(MemoryObjectInfo*) const;
+    bool usesSiblingRules() const { return !siblingRules.isEmpty(); }
+    bool usesFirstLineRules() const { return m_usesFirstLineRules; }
+    bool usesBeforeAfterRules() const { return m_usesBeforeAfterRules; }
 
-    HashSet<AtomicStringImpl*> idsInRules;
-    HashSet<AtomicStringImpl*> classesInRules;
-    HashSet<AtomicStringImpl*> attrsInRules;
+    inline bool hasSelectorForAttribute(const AtomicString& attributeName) const
+    {
+        ASSERT(!attributeName.isEmpty());
+        return attrsInRules.contains(attributeName);
+    }
+
+    inline bool hasSelectorForClass(const AtomicString& classValue) const
+    {
+        ASSERT(!classValue.isEmpty());
+        return classesInRules.contains(classValue);
+    }
+
+    inline bool hasSelectorForId(const AtomicString& idValue) const
+    {
+        ASSERT(!idValue.isEmpty());
+        return idsInRules.contains(idValue);
+    }
+
+    HashSet<AtomicString> idsInRules;
+    HashSet<AtomicString> classesInRules;
+    HashSet<AtomicString> attrsInRules;
     Vector<RuleFeature> siblingRules;
     Vector<RuleFeature> uncommonAttributeRules;
-    bool usesFirstLineRules;
-    bool usesBeforeAfterRules;
+private:
+    void collectFeaturesFromSelectorList(const CSSSelectorList*);
+
+    bool m_usesFirstLineRules;
+    bool m_usesBeforeAfterRules;
 };
 
 } // namespace WebCore

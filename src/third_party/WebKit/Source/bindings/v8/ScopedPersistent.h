@@ -57,13 +57,6 @@ public:
         return v8::Local<T>::New(isolate, m_handle);
     }
 
-    // FIXME: This function does an unsafe handle access. Remove it.
-    ALWAYS_INLINE v8::Handle<T> get() const
-    {
-        const v8::Handle<T>* handle = reinterpret_cast<const v8::Handle<T>*>(&m_handle);
-        return *handle;
-    }
-
     template<typename P>
     void makeWeak(P* parameters, void (*callback)(v8::Isolate*, v8::Persistent<T>*, P*))
     {
@@ -71,11 +64,6 @@ public:
     }
 
     bool isEmpty() const { return m_handle.IsEmpty(); }
-    bool isNull() { return get()->IsNull(); }
-    bool isUndefined() { return get()->IsUndefined(); }
-    bool isFunction() { return get()->IsFunction(); }
-    bool isObject() { return get()->IsObject(); }
-    bool isString() { return get()->IsString(); }
 
     void set(v8::Isolate* isolate, v8::Handle<T> handle)
     {

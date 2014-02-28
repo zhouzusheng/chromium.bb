@@ -17,8 +17,6 @@
 #include "cc/output/copy_output_result.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_impl.h"
-#include "third_party/WebKit/public/platform/WebAnimationDelegate.h"
-#include "third_party/WebKit/public/platform/WebLayerScrollClient.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "ui/gfx/rect_conversions.h"
 
@@ -31,7 +29,8 @@ scoped_refptr<Layer> Layer::Create() {
 }
 
 Layer::Layer()
-    : needs_display_(false),
+    : needs_push_properties_(false),
+      num_dependents_need_push_properties_(false),
       stacking_order_changed_(false),
       layer_id_(s_next_layer_id++),
       ignore_set_needs_commit_(false),
@@ -56,8 +55,7 @@ Layer::Layer()
       draw_checkerboard_for_missing_tiles_(false),
       force_render_surface_(false),
       replica_layer_(NULL),
-      raster_scale_(0.f),
-      layer_scroll_client_(NULL) {
+      raster_scale_(0.f) {
   if (layer_id_ < 0) {
     s_next_layer_id = 1;
     layer_id_ = s_next_layer_id++;
@@ -71,6 +69,9 @@ Layer::~Layer() {
   // Our parent should be holding a reference to us so there should be no
   // way for us to be destroyed while we still have a parent.
   DCHECK(!parent());
+  // Similarly we shouldn't have a layer tree host since it also keeps a
+  // reference to us.
+  DCHECK(!layer_tree_host());
 
   layer_animation_controller_->RemoveValueObserver(this);
 
@@ -92,6 +93,10 @@ void Layer::SetLayerTreeHost(LayerTreeHost* host) {
 
   layer_tree_host_ = host;
 
+  // When changing hosts, the layer needs to commit its properties to the impl
+  // side for the new host.
+  SetNeedsPushProperties();
+
   for (size_t i = 0; i < children_.size(); ++i)
     children_[i]->SetLayerTreeHost(host);
 
@@ -111,20 +116,32 @@ void Layer::SetLayerTreeHost(LayerTreeHost* host) {
   if (host && layer_animation_controller_->has_any_animation())
     host->SetNeedsCommit();
   if (host &&
-      (!filters_.isEmpty() || !background_filters_.isEmpty() || filter_))
+      (!filters_.IsEmpty() || !background_filters_.IsEmpty() || filter_))
     layer_tree_host_->set_needs_filter_context();
 }
 
+void Layer::SetNeedsUpdate() {
+  if (layer_tree_host_ && !ignore_set_needs_commit_)
+    layer_tree_host_->SetNeedsUpdateLayers();
+}
+
 void Layer::SetNeedsCommit() {
+  if (!layer_tree_host_)
+    return;
+
+  SetNeedsPushProperties();
+
   if (ignore_set_needs_commit_)
     return;
-  if (layer_tree_host_)
-    layer_tree_host_->SetNeedsCommit();
+
+  layer_tree_host_->SetNeedsCommit();
 }
 
 void Layer::SetNeedsFullTreeSync() {
-  if (layer_tree_host_)
-    layer_tree_host_->SetNeedsFullTreeSync();
+  if (!layer_tree_host_)
+    return;
+
+  layer_tree_host_->SetNeedsFullTreeSync();
 }
 
 bool Layer::IsPropertyChangeAllowed() const {
@@ -135,6 +152,31 @@ bool Layer::IsPropertyChangeAllowed() const {
     return true;
 
   return !layer_tree_host_->in_paint_layer_contents();
+}
+
+void Layer::SetNeedsPushProperties() {
+  if (needs_push_properties_)
+    return;
+  if (!parent_should_know_need_push_properties() && parent_)
+    parent_->AddDependentNeedsPushProperties();
+  needs_push_properties_ = true;
+}
+
+void Layer::AddDependentNeedsPushProperties() {
+  DCHECK_GE(num_dependents_need_push_properties_, 0);
+
+  if (!parent_should_know_need_push_properties() && parent_)
+    parent_->AddDependentNeedsPushProperties();
+
+  num_dependents_need_push_properties_++;
+}
+
+void Layer::RemoveDependentNeedsPushProperties() {
+  num_dependents_need_push_properties_--;
+  DCHECK_GE(num_dependents_need_push_properties_, 0);
+
+  if (!parent_should_know_need_push_properties() && parent_)
+      parent_->RemoveDependentNeedsPushProperties();
 }
 
 gfx::Rect Layer::LayerRectToContentRect(const gfx::RectF& layer_rect) const {
@@ -170,6 +212,14 @@ bool Layer::BlocksPendingCommitRecursive() const {
 
 void Layer::SetParent(Layer* layer) {
   DCHECK(!layer || !layer->HasAncestor(this));
+
+  if (parent_should_know_need_push_properties()) {
+    if (parent_)
+      parent_->RemoveDependentNeedsPushProperties();
+    if (layer)
+      layer->AddDependentNeedsPushProperties();
+  }
+
   parent_ = layer;
   SetLayerTreeHost(parent_ ? parent_->layer_tree_host() : NULL);
 
@@ -184,14 +234,6 @@ void Layer::SetParent(Layer* layer) {
     mask_layer_->reset_raster_scale_to_unknown();
   if (replica_layer_.get() && replica_layer_->mask_layer_.get())
     replica_layer_->mask_layer_->reset_raster_scale_to_unknown();
-}
-
-bool Layer::HasAncestor(Layer* ancestor) const {
-  for (const Layer* layer = parent(); layer; layer = layer->parent()) {
-    if (layer == ancestor)
-      return true;
-  }
-  return false;
 }
 
 void Layer::AddChild(scoped_refptr<Layer> child) {
@@ -277,14 +319,8 @@ void Layer::SetBounds(gfx::Size size) {
   if (bounds() == size)
     return;
 
-  bool first_resize = bounds().IsEmpty() && !size.IsEmpty();
-
   bounds_ = size;
-
-  if (first_resize)
-    SetNeedsDisplay();
-  else
-    SetNeedsCommit();
+  SetNeedsCommit();
 }
 
 Layer* Layer::RootLayer() {
@@ -311,6 +347,14 @@ void Layer::SetChildren(const LayerList& children) {
   RemoveAllChildren();
   for (size_t i = 0; i < children.size(); ++i)
     AddChild(children[i]);
+}
+
+bool Layer::HasAncestor(const Layer* ancestor) const {
+  for (const Layer* layer = parent(); layer; layer = layer->parent()) {
+    if (layer == ancestor)
+      return true;
+  }
+  return false;
 }
 
 void Layer::RequestCopyOfOutput(
@@ -373,6 +417,8 @@ void Layer::CalculateContentsScale(
     float* contents_scale_x,
     float* contents_scale_y,
     gfx::Size* content_bounds) {
+  DCHECK(layer_tree_host_);
+
   *contents_scale_x = 1;
   *contents_scale_y = 1;
   *content_bounds = bounds();
@@ -421,14 +467,14 @@ void Layer::SetReplicaLayer(Layer* layer) {
   SetNeedsFullTreeSync();
 }
 
-void Layer::SetFilters(const WebKit::WebFilterOperations& filters) {
+void Layer::SetFilters(const FilterOperations& filters) {
   DCHECK(IsPropertyChangeAllowed());
   if (filters_ == filters)
     return;
   DCHECK(!filter_);
   filters_ = filters;
   SetNeedsCommit();
-  if (!filters.isEmpty() && layer_tree_host_)
+  if (!filters.IsEmpty() && layer_tree_host_)
     layer_tree_host_->set_needs_filter_context();
 }
 
@@ -436,20 +482,20 @@ void Layer::SetFilter(const skia::RefPtr<SkImageFilter>& filter) {
   DCHECK(IsPropertyChangeAllowed());
   if (filter_.get() == filter.get())
     return;
-  DCHECK(filters_.isEmpty());
+  DCHECK(filters_.IsEmpty());
   filter_ = filter;
   SetNeedsCommit();
   if (filter && layer_tree_host_)
     layer_tree_host_->set_needs_filter_context();
 }
 
-void Layer::SetBackgroundFilters(const WebKit::WebFilterOperations& filters) {
+void Layer::SetBackgroundFilters(const FilterOperations& filters) {
   DCHECK(IsPropertyChangeAllowed());
   if (background_filters_ == filters)
     return;
   background_filters_ = filters;
   SetNeedsCommit();
-  if (!filters.isEmpty() && layer_tree_host_)
+  if (!filters.IsEmpty() && layer_tree_host_)
     layer_tree_host_->set_needs_filter_context();
 }
 
@@ -523,14 +569,17 @@ void Layer::SetScrollOffset(gfx::Vector2d scroll_offset) {
 
 void Layer::SetScrollOffsetFromImplSide(gfx::Vector2d scroll_offset) {
   DCHECK(IsPropertyChangeAllowed());
+  // This function only gets called during a begin frame, so there
+  // is no need to call SetNeedsUpdate here.
   DCHECK(layer_tree_host_ && layer_tree_host_->CommitRequested());
   if (scroll_offset_ == scroll_offset)
     return;
   scroll_offset_ = scroll_offset;
-  if (layer_scroll_client_)
-    layer_scroll_client_->didScroll();
-  // Note: didScroll() could potentially change the layer structure.
-  //       "this" may have been destroyed during the process.
+  SetNeedsPushProperties();
+  if (!did_scroll_callback_.is_null())
+    did_scroll_callback_.Run();
+  // The callback could potentially change the layer structure:
+  // "this" may have been destroyed during the process.
 }
 
 void Layer::SetMaxScrollOffset(gfx::Vector2d max_scroll_offset) {
@@ -623,14 +672,14 @@ void Layer::SetHideLayerAndSubtree(bool hide) {
 }
 
 void Layer::SetNeedsDisplayRect(const gfx::RectF& dirty_rect) {
-  update_rect_.Union(dirty_rect);
-  needs_display_ = true;
+  if (dirty_rect.IsEmpty())
+    return;
 
-  // Simply mark the contents as dirty. For non-root layers, the call to
-  // SetNeedsCommit will schedule a fresh compositing pass.
-  // For the root layer, SetNeedsCommit has no effect.
-  if (DrawsContent() && !update_rect_.IsEmpty())
-    SetNeedsCommit();
+  SetNeedsPushProperties();
+  update_rect_.Union(dirty_rect);
+
+  if (DrawsContent())
+    SetNeedsUpdate();
 }
 
 bool Layer::DescendantIsFixedToContainerLayer() const {
@@ -679,10 +728,18 @@ static void PostCopyCallbackToMainThread(
 }
 
 void Layer::PushPropertiesTo(LayerImpl* layer) {
+  DCHECK(layer_tree_host_);
+
+  // If we did not SavePaintProperties() for the layer this frame, then push the
+  // real property values, not the paint property values.
+  bool use_paint_properties = paint_properties_.source_frame_number ==
+                              layer_tree_host_->source_frame_number();
+
   layer->SetAnchorPoint(anchor_point_);
   layer->SetAnchorPointZ(anchor_point_z_);
   layer->SetBackgroundColor(background_color_);
-  layer->SetBounds(paint_properties_.bounds);
+  layer->SetBounds(use_paint_properties ? paint_properties_.bounds
+                                        : bounds_);
   layer->SetContentBounds(content_bounds());
   layer->SetContentsScale(contents_scale_x(), contents_scale_y());
   layer->SetDebugName(debug_name_);
@@ -773,6 +830,11 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   // Reset any state that should be cleared for the next update.
   stacking_order_changed_ = false;
   update_rect_ = gfx::RectF();
+
+  // Animating layers require further push properties to clean up the animation.
+  // crbug.com/259088
+  needs_push_properties_ = layer_animation_controller_->has_any_animation();
+  num_dependents_need_push_properties_ = 0;
 }
 
 scoped_ptr<LayerImpl> Layer::CreateLayerImpl(LayerTreeImpl* tree_impl) {
@@ -784,9 +846,22 @@ bool Layer::DrawsContent() const {
 }
 
 void Layer::SavePaintProperties() {
+  DCHECK(layer_tree_host_);
+
   // TODO(reveman): Save all layer properties that we depend on not
   // changing until PushProperties() has been called. crbug.com/231016
   paint_properties_.bounds = bounds_;
+  paint_properties_.source_frame_number =
+      layer_tree_host_->source_frame_number();
+}
+
+bool Layer::Update(ResourceUpdateQueue* queue,
+                   const OcclusionTracker* occlusion) {
+  DCHECK(layer_tree_host_);
+  DCHECK_EQ(layer_tree_host_->source_frame_number(),
+            paint_properties_.source_frame_number) <<
+      "SavePaintProperties must be called for any layer that is painted.";
+  return false;
 }
 
 bool Layer::NeedMoreUpdates() {

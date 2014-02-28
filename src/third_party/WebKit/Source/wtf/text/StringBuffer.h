@@ -6,13 +6,13 @@
  * are met:
  *
  * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer. 
+ *     notice, this list of conditions and the following disclaimer.
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution. 
+ *     documentation and/or other materials provided with the distribution.
  * 3.  Neither the name of Apple Inc. ("Apple") nor the names of its
  *     contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission. 
+ *     from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -29,9 +29,9 @@
 #ifndef StringBuffer_h
 #define StringBuffer_h
 
-#include <wtf/Assertions.h>
-#include <wtf/unicode/Unicode.h>
-#include <limits>
+#include "wtf/Assertions.h"
+#include "wtf/text/StringImpl.h"
+#include "wtf/unicode/Unicode.h"
 
 namespace WTF {
 
@@ -39,43 +39,49 @@ template <typename CharType>
 class StringBuffer {
     WTF_MAKE_NONCOPYABLE(StringBuffer);
 public:
+    StringBuffer() { }
+
     explicit StringBuffer(unsigned length)
-        : m_length(length)
     {
-        RELEASE_ASSERT(m_length <= std::numeric_limits<unsigned>::max() / sizeof(CharType));
-        m_data = static_cast<CharType*>(fastMalloc(m_length * sizeof(CharType)));
+        CharType* characters;
+        m_data = StringImpl::createUninitialized(length, characters);
     }
 
     ~StringBuffer()
     {
-        fastFree(m_data);
     }
 
     void shrink(unsigned newLength)
     {
-        ASSERT(newLength <= m_length);
-        m_length = newLength;
+        if (m_data->length() == newLength)
+            return;
+        m_data->truncateAssumingIsolated(newLength);
     }
 
     void resize(unsigned newLength)
     {
-        if (newLength > m_length) {
-            RELEASE_ASSERT(newLength <= std::numeric_limits<unsigned>::max() / sizeof(UChar));
-            m_data = static_cast<UChar*>(fastRealloc(m_data, newLength * sizeof(UChar)));
+        if (!m_data) {
+            CharType* characters;
+            m_data = StringImpl::createUninitialized(newLength, characters);
+            return;
         }
-        m_length = newLength;
+        if (newLength > m_data->length()) {
+            CharType* characters;
+            m_data = StringImpl::reallocate(m_data.release(), newLength, characters);
+            return;
+        }
+        shrink(newLength);
     }
 
-    unsigned length() const { return m_length; }
-    CharType* characters() { return m_data; }
+    unsigned length() const { return m_data ? m_data->length() : 0; }
+    CharType* characters() { return length() ? const_cast<CharType*>(m_data->getCharacters<CharType>()) : 0; }
 
-    CharType& operator[](unsigned i) { ASSERT_WITH_SECURITY_IMPLICATION(i < m_length); return m_data[i]; }
+    CharType& operator[](unsigned i) { ASSERT_WITH_SECURITY_IMPLICATION(i < length()); return characters()[i]; }
 
-    CharType* release() { CharType* data = m_data; m_data = 0; return data; }
+    PassRefPtr<StringImpl> release() { return m_data.release(); }
 
 private:
-    CharType* m_data;  // Pointers first: crbug.com/232031
-    unsigned m_length;
+    RefPtr<StringImpl> m_data;
 };
 
 } // namespace WTF

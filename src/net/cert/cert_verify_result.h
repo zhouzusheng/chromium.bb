@@ -24,6 +24,11 @@ class NET_EXPORT CertVerifyResult {
 
   void Reset();
 
+  // Copies from |other| to |this|.
+  void CopyFrom(const CertVerifyResult& other) {
+    *this = other;
+  }
+
   // The certificate and chain that was constructed during verification.
   // Note that the though the verified certificate will match the originally
   // supplied certificate, the intermediate certificates stored within may
@@ -42,8 +47,6 @@ class NET_EXPORT CertVerifyResult {
   bool has_md5;
   bool has_md2;
   bool has_md4;
-  bool has_md5_ca;
-  bool has_md2_ca;
 
   // If the certificate was successfully verified then this contains the
   // hashes, in several hash algorithms, of the SubjectPublicKeyInfos of the

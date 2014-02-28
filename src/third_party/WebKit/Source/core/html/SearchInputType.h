@@ -54,18 +54,16 @@ private:
     virtual bool isSearchField() const OVERRIDE;
     virtual bool needsContainer() const OVERRIDE;
     virtual void createShadowSubtree() OVERRIDE;
-    virtual void destroyShadowSubtree() OVERRIDE;
-    virtual HTMLElement* searchDecorationElement() const OVERRIDE;
-    virtual HTMLElement* cancelButtonElement() const OVERRIDE;
     virtual void handleKeydownEvent(KeyboardEvent*) OVERRIDE;
     virtual void didSetValueByUserEdit(ValueChangeState) OVERRIDE;
+    virtual bool supportsInputModeAttribute() const OVERRIDE;
 
     void searchEventTimerFired(Timer<SearchInputType>*);
     bool searchEventsShouldBeDispatched() const;
     void startSearchEventTimer();
+    HTMLElement* searchDecorationElement() const;
+    HTMLElement* cancelButtonElement() const;
 
-    HTMLElement* m_searchDecoration;
-    HTMLElement* m_cancelButton;
     Timer<SearchInputType> m_searchEventTimer;
 };
 

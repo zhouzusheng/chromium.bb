@@ -29,8 +29,6 @@
 #include "weborigin/KURL.h"
 
 #include "wtf/HashMap.h"
-#include "wtf/MemoryInstrumentation.h"
-#include "wtf/MemoryInstrumentationString.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringHash.h"
@@ -103,7 +101,7 @@ public:
 
     virtual void ConvertFromUTF16(const url_parse::UTF16Char* input, int inputLength, url_canon::CanonOutput* output)
     {
-        CString encoded = m_encoding->encode(input, inputLength, WTF::URLEncodedEntitiesForUnencodables);
+        CString encoded = m_encoding->normalizeAndEncode(String(input, inputLength), WTF::URLEncodedEntitiesForUnencodables);
         output->Append(encoded.data(), static_cast<int>(encoded.length()));
     }
 
@@ -209,11 +207,11 @@ KURL::KURL(const KURL& base, const String& relative, const WTF::TextEncoding& en
     init(base, relative, &encoding.encodingForFormSubmission());
 }
 
-KURL::KURL(const CString& canonicalSpec, const url_parse::Parsed& parsed, bool isValid)
+KURL::KURL(const AtomicString& canonicalString, const url_parse::Parsed& parsed, bool isValid)
     : m_isValid(isValid)
     , m_protocolIsInHTTPFamily(false)
     , m_parsed(parsed)
-    , m_string(AtomicString::fromUTF8(canonicalSpec.data(), canonicalSpec.length()))
+    , m_string(canonicalString)
 {
     initProtocolIsInHTTPFamily();
     initInnerURL();
@@ -608,10 +606,7 @@ String decodeURLEscapeSequences(const String& string, const WTF::TextEncoding& e
 
 String encodeWithURLEscapeSequences(const String& notEncodedString)
 {
-    CString utf8 = UTF8Encoding().encode(
-        reinterpret_cast<const UChar*>(notEncodedString.characters()),
-        notEncodedString.length(),
-        WTF::URLEncodedEntitiesForUnencodables);
+    CString utf8 = UTF8Encoding().normalizeAndEncode(notEncodedString, WTF::URLEncodedEntitiesForUnencodables);
 
     url_canon::RawCanonOutputT<char> buffer;
     int inputLength = utf8.length();
@@ -845,14 +840,6 @@ void KURL::replaceComponents(const url_canon::Replacements<CHAR>& replacements)
 
     m_parsed = newParsed;
     m_string = AtomicString::fromUTF8(output.data(), output.length());
-}
-
-void KURL::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    WTF::MemoryClassInfo info(memoryObjectInfo, this);
-    info.addMember(m_string, "string");
-    info.addMember(m_innerURL, "innerURL");
-    info.addMember(m_parsed, "parsed");
 }
 
 bool KURL::isSafeToSendToAnotherThread() const

@@ -22,10 +22,12 @@
 #define HTMLFrameOwnerElement_h
 
 #include "core/html/HTMLElement.h"
+#include "wtf/HashCountedSet.h"
 
 namespace WebCore {
 
 class DOMWindow;
+class ExceptionState;
 class Frame;
 class RenderPart;
 class SVGDocument;
@@ -48,7 +50,7 @@ public:
     // RenderObject when using fallback content.
     RenderPart* renderPart() const;
 
-    SVGDocument* getSVGDocument(ExceptionCode&) const;
+    SVGDocument* getSVGDocument(ExceptionState&) const;
 
     virtual ScrollbarMode scrollingMode() const { return ScrollbarAuto; }
 
@@ -61,8 +63,14 @@ protected:
     HTMLFrameOwnerElement(const QualifiedName& tagName, Document*);
     void setSandboxFlags(SandboxFlags);
 
+    bool loadOrRedirectSubframe(const KURL&, const AtomicString& frameName, bool lockBackForwardList);
+
+    virtual bool allowScrollingInContentFrame() { return true; }
+    virtual int marginWidth() const { return -1; }
+    virtual int marginHeight() const { return -1; }
+
 private:
-    virtual bool isKeyboardFocusable(KeyboardEvent*) const;
+    virtual bool isKeyboardFocusable() const OVERRIDE;
     virtual bool isFrameOwnerElement() const OVERRIDE { return true; }
 
     Frame* m_contentFrame;
@@ -98,9 +106,9 @@ public:
     }
 
 private:
-    static HashSet<Node*>& disabledSubtreeRoots()
+    static HashCountedSet<Node*>& disabledSubtreeRoots()
     {
-        DEFINE_STATIC_LOCAL(HashSet<Node*>, nodes, ());
+        DEFINE_STATIC_LOCAL(HashCountedSet<Node*>, nodes, ());
         return nodes;
     }
 

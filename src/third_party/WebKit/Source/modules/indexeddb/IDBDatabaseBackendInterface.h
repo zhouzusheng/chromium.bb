@@ -26,7 +26,6 @@
 #ifndef IDBDatabaseBackendInterface_h
 #define IDBDatabaseBackendInterface_h
 
-#include "modules/indexeddb/IDBDatabaseError.h"
 #include "modules/indexeddb/IndexedDB.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -41,8 +40,6 @@ class IDBKeyPath;
 class IDBKeyRange;
 struct IDBDatabaseMetadata;
 class SharedBuffer;
-
-typedef int ExceptionCode;
 
 // This is implemented by IDBDatabaseBackendImpl and optionally others (in order to proxy
 // calls across process barriers). All calls to these classes should be non-blocking and
@@ -59,7 +56,6 @@ public:
     // Transaction-specific operations.
     virtual void commit(int64_t transactionId) = 0;
     virtual void abort(int64_t transactionId) = 0;
-    virtual void abort(int64_t transactionId, PassRefPtr<IDBDatabaseError>) = 0;
 
     virtual void createIndex(int64_t transactionId, int64_t objectStoreId, int64_t indexId, const String& name, const IDBKeyPath&, bool unique, bool multiEntry) = 0;
     virtual void deleteIndex(int64_t transactionId, int64_t objectStoreId, int64_t indexId) = 0;

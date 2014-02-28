@@ -10,11 +10,11 @@
 
 #include <assert.h>
 
-#include "critical_section_wrapper.h"
-#include "file_wrapper.h"
-#include "media_file_impl.h"
-#include "tick_util.h"
-#include "trace.h"
+#include "webrtc/modules/media_file/source/media_file_impl.h"
+#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/interface/file_wrapper.h"
+#include "webrtc/system_wrappers/interface/tick_util.h"
+#include "webrtc/system_wrappers/interface/trace.h"
 
 #if (defined(WIN32) || defined(WINCE))
     #define STR_CASE_CMP _stricmp
@@ -1368,4 +1368,4 @@ bool MediaFileImpl::ValidFrequency(const uint32_t frequency)
                  "Frequency should be 8000, 16000 or 32000 (Hz)");
     return false;
 }
-} // namespace webrtc
+}  // namespace webrtc

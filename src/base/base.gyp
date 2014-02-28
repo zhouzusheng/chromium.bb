@@ -132,7 +132,6 @@
           ],
           'dependencies': [
             'base_jni_headers',
-            'symbolize',
             '../third_party/ashmem/ashmem.gyp:ashmem',
           ],
           'include_dirs': [
@@ -143,9 +142,6 @@
               '-llog',
             ],
           },
-          'defines': [
-            'USE_SYMBOLIZE',
-          ],
           'sources!': [
             'debug/stack_trace_posix.cc',
           ],
@@ -395,7 +391,6 @@
       'dependencies': [
         'base',
         'base_prefs',
-        '../testing/gmock.gyp:gmock',
       ],
       'sources': [
         'prefs/mock_pref_change_callback.cc',
@@ -471,7 +466,9 @@
         'cpu_unittest.cc',
         'debug/crash_logging_unittest.cc',
         'debug/leak_tracker_unittest.cc',
+        'debug/proc_maps_linux_unittest.cc',
         'debug/stack_trace_unittest.cc',
+        'debug/trace_event_memory_unittest.cc',
         'debug/trace_event_unittest.cc',
         'debug/trace_event_unittest.h',
         'debug/trace_event_win_unittest.cc',
@@ -486,7 +483,6 @@
         'files/scoped_temp_dir_unittest.cc',
         'gmock_unittest.cc',
         'guid_unittest.cc',
-        'hi_res_timer_manager_unittest.cc',
         'id_map_unittest.cc',
         'i18n/break_iterator_unittest.cc',
         'i18n/char_iterator_unittest.cc',
@@ -550,7 +546,6 @@
         'posix/file_descriptor_shuffle_unittest.cc',
         'posix/unix_domain_socket_linux_unittest.cc',
         'power_monitor/power_monitor_unittest.cc',
-        'pr_time_unittest.cc',
         'prefs/default_pref_store_unittest.cc',
         'prefs/json_pref_store_unittest.cc',
         'prefs/mock_pref_change_callback.h',
@@ -561,10 +556,11 @@
         'prefs/pref_service_unittest.cc',
         'prefs/pref_value_map_unittest.cc',
         'prefs/pref_value_store_unittest.cc',
-        'process_util_unittest.cc',
-        'process_util_unittest_ios.cc',
-        'process_util_unittest_mac.h',
-        'process_util_unittest_mac.mm',
+        'process/memory_unittest.cc',
+        'process/memory_unittest_mac.h',
+        'process/memory_unittest_mac.mm',
+        'process/process_util_unittest.cc',
+        'process/process_util_unittest_ios.cc',
         'profiler/tracked_time_unittest.cc',
         'rand_util_unittest.cc',
         'safe_numerics_unittest.cc',
@@ -574,7 +570,6 @@
         'scoped_observer.h',
         'security_unittest.cc',
         'sequence_checker_unittest.cc',
-        'sequence_checker_impl_unittest.cc',
         'sha1_unittest.cc',
         'stl_util_unittest.cc',
         'strings/nullable_string16_unittest.cc',
@@ -615,9 +610,11 @@
         'threading/watchdog_unittest.cc',
         'threading/worker_pool_posix_unittest.cc',
         'threading/worker_pool_unittest.cc',
-        'time_unittest.cc',
-        'time_win_unittest.cc',
-        'timer_unittest.cc',
+        'time/pr_time_unittest.cc',
+        'time/time_unittest.cc',
+        'time/time_win_unittest.cc',
+        'timer/hi_res_timer_manager_unittest.cc',
+        'timer/timer_unittest.cc',
         'tools_sanity_unittest.cc',
         'tracked_objects_unittest.cc',
         'tuple_unittest.cc',
@@ -655,7 +652,6 @@
         'run_all_unittests',
         'test_support_base',
         'third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
@@ -666,6 +662,11 @@
         'module_dir': 'base'
       },
       'conditions': [
+        ['use_glib==1', {
+          'defines': [
+            'USE_SYMBOLIZE',
+          ],
+        }],
         ['OS == "android"', {
           'dependencies': [
             'android/jni_generator/jni_generator.gyp:jni_generator_tests',
@@ -677,16 +678,13 @@
               ],
             }],
           ],
-          'sources!': [
-            # Broken on Android, and already disabled there.
-            'debug/stack_trace_unittest.cc',
-          ],
         }],
         ['OS == "ios" and _toolset != "host"', {
           'sources/': [
             # Only test the iOS-meaningful portion of process_utils.
-            ['exclude', '^process_util_unittest'],
-            ['include', '^process_util_unittest_ios\\.cc$'],
+            ['exclude', '^process/memory_unittest'],
+            ['exclude', '^process/process_util_unittest\\.cc$'],
+            ['include', '^process/process_util_unittest_ios\\.cc$'],
             # Requires spawning processes.
             ['exclude', '^metrics/stats_table_unittest\\.cc$'],
             # iOS does not use message_pump_libevent.
@@ -797,7 +795,7 @@
           ],
           'sources!': [
             'debug/trace_event_win_unittest.cc',
-            'time_win_unittest.cc',
+            'time/time_win_unittest.cc',
             'win/win_util_unittest.cc',
           ],
         }],
@@ -818,6 +816,11 @@
             ['include', '^sys_string_conversions_mac_unittest\\.mm$'],
           ],
         }],
+        ['OS == "android"', {
+          'sources/': [
+            ['include', '^debug/proc_maps_linux_unittest\\.cc$'],
+          ],
+        }],
       ],  # target_conditions
     },
     {
@@ -827,7 +830,6 @@
         'base',
         'base_static',
         'base_i18n',
-        '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         'third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
       ],
@@ -859,12 +861,6 @@
         'test/expectations/expectation.h',
         'test/expectations/parser.cc',
         'test/expectations/parser.h',
-        'test/mock_chrome_application_mac.h',
-        'test/mock_chrome_application_mac.mm',
-        'test/mock_devices_changed_observer.cc',
-        'test/mock_devices_changed_observer.h',
-        'test/mock_time_provider.cc',
-        'test/mock_time_provider.h',
         'test/multiprocess_test.cc',
         'test/multiprocess_test.h',
         'test/multiprocess_test_android.cc',
@@ -872,6 +868,8 @@
         'test/null_task_runner.h',
         'test/perf_test_suite.cc',
         'test/perf_test_suite.h',
+        'test/power_monitor_test_base.cc',
+        'test/power_monitor_test_base.h',
         'test/scoped_locale.cc',
         'test/scoped_locale.h',
         'test/scoped_path_override.cc',
@@ -1155,6 +1153,7 @@
             'android/java/src/org/chromium/base/CpuFeatures.java',
             'android/java/src/org/chromium/base/ImportantFileWriterAndroid.java',
             'android/java/src/org/chromium/base/MemoryPressureListener.java',
+            'android/java/src/org/chromium/base/JavaHandlerThread.java',
             'android/java/src/org/chromium/base/PathService.java',
             'android/java/src/org/chromium/base/PathUtils.java',
             'android/java/src/org/chromium/base/PowerMonitor.java',

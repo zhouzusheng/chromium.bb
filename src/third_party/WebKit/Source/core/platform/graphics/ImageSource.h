@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef ImageSource_h
@@ -122,8 +122,6 @@ public:
     // Return the number of bytes in the decoded frame. If the frame is not yet
     // decoded then return 0.
     unsigned frameBytesAtIndex(size_t) const;
-
-    void reportMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     OwnPtr<DeferredImageDecoder> m_decoder;

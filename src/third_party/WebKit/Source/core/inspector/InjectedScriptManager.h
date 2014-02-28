@@ -31,9 +31,9 @@
 #define InjectedScriptManager_h
 
 #include "bindings/v8/ScriptState.h"
-#include <wtf/Forward.h>
-#include <wtf/HashMap.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/Forward.h"
+#include "wtf/HashMap.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -72,7 +72,7 @@ private:
     ScriptObject createInjectedScript(const String& source, ScriptState*, int id);
 
     static bool canAccessInspectedWindow(ScriptState*);
-    static bool canAccessInspectedWorkerContext(ScriptState*);
+    static bool canAccessInspectedWorkerGlobalScope(ScriptState*);
 
     int m_nextInjectedScriptId;
     typedef HashMap<int, InjectedScript> IdToInjectedScriptMap;

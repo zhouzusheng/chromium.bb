@@ -29,9 +29,9 @@
 #include "config.h"
 #include "core/css/RuleFeature.h"
 
+#include "HTMLNames.h"
 #include "core/css/CSSSelector.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "wtf/MemoryInstrumentationVector.h"
+#include "core/css/CSSSelectorList.h"
 
 namespace WebCore {
 
@@ -45,32 +45,49 @@ void RuleFeatureSet::collectFeaturesFromSelector(const CSSSelector* selector)
         attrsInRules.add(selector->attribute().localName().impl());
     switch (selector->pseudoType()) {
     case CSSSelector::PseudoFirstLine:
-        usesFirstLineRules = true;
+        m_usesFirstLineRules = true;
         break;
     case CSSSelector::PseudoBefore:
     case CSSSelector::PseudoAfter:
-        usesBeforeAfterRules = true;
+        m_usesBeforeAfterRules = true;
+        break;
+    case CSSSelector::PseudoPart:
+        attrsInRules.add(HTMLNames::partAttr.localName().impl());
+        break;
+    case CSSSelector::PseudoHost:
+        collectFeaturesFromSelectorList(selector->selectorList());
         break;
     default:
         break;
     }
 }
 
+void RuleFeatureSet::collectFeaturesFromSelectorList(const CSSSelectorList* selectorList)
+{
+    if (!selectorList)
+        return;
+
+    for (const CSSSelector* selector = selectorList->first(); selector; selector = CSSSelectorList::next(selector)) {
+        for (const CSSSelector* subSelector = selector; subSelector; subSelector = subSelector->tagHistory())
+            collectFeaturesFromSelector(subSelector);
+    }
+}
+
 void RuleFeatureSet::add(const RuleFeatureSet& other)
 {
-    HashSet<AtomicStringImpl*>::const_iterator end = other.idsInRules.end();
-    for (HashSet<AtomicStringImpl*>::const_iterator it = other.idsInRules.begin(); it != end; ++it)
+    HashSet<AtomicString>::const_iterator end = other.idsInRules.end();
+    for (HashSet<AtomicString>::const_iterator it = other.idsInRules.begin(); it != end; ++it)
         idsInRules.add(*it);
     end = other.classesInRules.end();
-    for (HashSet<AtomicStringImpl*>::const_iterator it = other.classesInRules.begin(); it != end; ++it)
+    for (HashSet<AtomicString>::const_iterator it = other.classesInRules.begin(); it != end; ++it)
         classesInRules.add(*it);
     end = other.attrsInRules.end();
-    for (HashSet<AtomicStringImpl*>::const_iterator it = other.attrsInRules.begin(); it != end; ++it)
+    for (HashSet<AtomicString>::const_iterator it = other.attrsInRules.begin(); it != end; ++it)
         attrsInRules.add(*it);
     siblingRules.append(other.siblingRules);
     uncommonAttributeRules.append(other.uncommonAttributeRules);
-    usesFirstLineRules = usesFirstLineRules || other.usesFirstLineRules;
-    usesBeforeAfterRules = usesBeforeAfterRules || other.usesBeforeAfterRules;
+    m_usesFirstLineRules = m_usesFirstLineRules || other.m_usesFirstLineRules;
+    m_usesBeforeAfterRules = m_usesBeforeAfterRules || other.m_usesBeforeAfterRules;
 }
 
 void RuleFeatureSet::clear()
@@ -80,18 +97,8 @@ void RuleFeatureSet::clear()
     attrsInRules.clear();
     siblingRules.clear();
     uncommonAttributeRules.clear();
-    usesFirstLineRules = false;
-    usesBeforeAfterRules = false;
-}
-
-void RuleFeatureSet::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(idsInRules, "idsInRules");
-    info.addMember(classesInRules, "classesInRules");
-    info.addMember(attrsInRules, "attrsInRules");
-    info.addMember(siblingRules, "siblingRules");
-    info.addMember(uncommonAttributeRules, "uncommonAttributeRules");
+    m_usesFirstLineRules = false;
+    m_usesBeforeAfterRules = false;
 }
 
 } // namespace WebCore

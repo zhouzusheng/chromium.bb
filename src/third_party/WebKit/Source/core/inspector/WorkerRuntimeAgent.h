@@ -32,15 +32,15 @@
 #define WorkerRuntimeAgent_h
 
 #include "core/inspector/InspectorRuntimeAgent.h"
-#include <wtf/PassOwnPtr.h>
+#include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
-class WorkerContext;
+class WorkerGlobalScope;
 
 class WorkerRuntimeAgent : public InspectorRuntimeAgent {
 public:
-    static PassOwnPtr<WorkerRuntimeAgent> create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer, WorkerContext* context)
+    static PassOwnPtr<WorkerRuntimeAgent> create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer, WorkerGlobalScope* context)
     {
         return adoptPtr(new WorkerRuntimeAgent(instrumentingAgents, state, injectedScriptManager, scriptDebugServer, context));
     }
@@ -49,14 +49,14 @@ public:
     // Protocol commands.
     virtual void run(ErrorString*);
 
-    void willEvaluateWorkerScript(WorkerContext*, int workerThreadStartMode);
+    void willEvaluateWorkerScript(WorkerGlobalScope*, int workerThreadStartMode);
 
 private:
-    WorkerRuntimeAgent(InstrumentingAgents*, InspectorCompositeState*, InjectedScriptManager*, ScriptDebugServer*, WorkerContext*);
+    WorkerRuntimeAgent(InstrumentingAgents*, InspectorCompositeState*, InjectedScriptManager*, ScriptDebugServer*, WorkerGlobalScope*);
     virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId);
     virtual void muteConsole();
     virtual void unmuteConsole();
-    WorkerContext* m_workerContext;
+    WorkerGlobalScope* m_workerGlobalScope;
     bool m_paused;
 };
 

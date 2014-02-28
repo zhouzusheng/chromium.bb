@@ -25,9 +25,11 @@
 // This file would be called String.h, but that conflicts with <string.h>
 // on systems without case-sensitive file systems.
 
+#include "wtf/HashTableDeletedValueType.h"
 #include "wtf/WTFExport.h"
 #include "wtf/text/ASCIIFastPath.h"
 #include "wtf/text/StringImpl.h"
+#include "wtf/text/StringView.h"
 
 #ifdef __OBJC__
 #include <objc/objc.h>
@@ -36,7 +38,6 @@
 namespace WTF {
 
 class CString;
-class MemoryObjectInfo;
 struct StringHash;
 
 // Declarations of string operations
@@ -73,8 +74,6 @@ WTF_EXPORT float charactersToFloat(const UChar*, size_t, bool* ok = 0);
 WTF_EXPORT float charactersToFloat(const LChar*, size_t, size_t& parsedLength);
 WTF_EXPORT float charactersToFloat(const UChar*, size_t, size_t& parsedLength);
 
-class ASCIILiteral;
-
 enum TrailingZerosTruncatingPolicy {
     KeepTrailingZeros,
     TruncateTrailingZeros
@@ -83,6 +82,8 @@ enum TrailingZerosTruncatingPolicy {
 template<bool isSpecialCharacter(UChar), typename CharacterType>
 bool isAllSpecialCharacters(const CharacterType*, size_t);
 
+// You can find documentation about this class in this doc:
+// https://docs.google.com/document/d/1kOCUlJdh2WJMJGDf-WoEQhmnjKLaOYRbiHz5TiGJl14/edit?usp=sharing
 class WTF_EXPORT String {
 public:
     // Construct a null string, distinguishable from an empty string.
@@ -91,8 +92,7 @@ public:
     // Construct a string with UTF-16 data.
     String(const UChar* characters, unsigned length);
 
-    // Construct a string by copying the contents of a vector.  To avoid
-    // copying, consider using String::adopt instead.
+    // Construct a string by copying the contents of a vector.
     // This method will never create a null string. Vectors with size() == 0
     // will return the empty string.
     // NOTE: This is different from String(vector.data(), vector.size())
@@ -118,14 +118,9 @@ public:
     String(PassRefPtr<StringImpl> impl) : m_impl(impl) { }
     String(RefPtr<StringImpl> impl) : m_impl(impl) { }
 
-    // Construct a string from a constant string literal.
-    String(ASCIILiteral characters);
-
-    // Construct a string from a constant string literal.
-    // This constructor is the "big" version, as it put the length in the function call and generate bigger code.
+    // FIXME: Remove this API once all callers are gone.
     enum ConstructFromLiteralTag { ConstructFromLiteral };
-    template<unsigned charactersCount>
-    String(const char (&characters)[charactersCount], ConstructFromLiteralTag) : m_impl(StringImpl::createFromLiteral<charactersCount>(characters)) { }
+    String(const char* characters, ConstructFromLiteralTag) : m_impl(StringImpl::create(reinterpret_cast<const LChar*>(characters))) { }
 
 #if COMPILER_SUPPORTS(CXX_RVALUE_REFERENCES)
     // We have to declare the copy constructor and copy assignment operator as well, otherwise
@@ -141,10 +136,13 @@ public:
 
     void swap(String& o) { m_impl.swap(o.m_impl); }
 
-    static String adopt(StringBuffer<LChar>& buffer) { return StringImpl::adopt(buffer); }
-    static String adopt(StringBuffer<UChar>& buffer) { return StringImpl::adopt(buffer); }
-    template<typename CharacterType, size_t inlineCapacity>
-    static String adopt(Vector<CharacterType, inlineCapacity>& vector) { return StringImpl::adopt(vector); }
+    template<typename CharType>
+    static String adopt(StringBuffer<CharType>& buffer)
+    {
+        if (!buffer.length())
+            return StringImpl::empty();
+        return String(buffer.release());
+    }
 
     bool isNull() const { return !m_impl; }
     bool isEmpty() const { return !m_impl || !m_impl->length(); }
@@ -159,13 +157,6 @@ public:
         return m_impl->length();
     }
 
-    const UChar* characters() const
-    {
-        if (!m_impl)
-            return 0;
-        return m_impl->characters();
-    }
-    
     const LChar* characters8() const
     {
         if (!m_impl)
@@ -185,10 +176,6 @@ public:
     // Return characters8() or characters16() depending on CharacterType.
     template <typename CharacterType>
     inline const CharacterType* getCharacters() const;
-
-    // Like getCharacters() and upconvert if CharacterType is UChar on a 8bit string.
-    template <typename CharacterType>
-    inline const CharacterType* getCharactersWithUpconvert() const;
 
     bool is8Bit() const { return m_impl->is8Bit(); }
 
@@ -269,10 +256,20 @@ public:
     size_t reverseFind(const String& str, unsigned start, bool caseSensitive) const
         { return caseSensitive ? reverseFind(str, start) : reverseFindIgnoringCase(str, start); }
 
-    const UChar* charactersWithNullTermination();
-    
-    UChar32 characterStartingAt(unsigned) const; // Ditto.
-    
+    Vector<UChar> charactersWithNullTermination() const;
+    unsigned copyTo(UChar* buffer, unsigned pos, unsigned maxLength) const;
+
+    template<size_t inlineCapacity>
+    void appendTo(Vector<UChar, inlineCapacity>&, unsigned pos = 0, unsigned len = UINT_MAX) const;
+
+    template<typename BufferType>
+    void appendTo(BufferType&, unsigned pos = 0, unsigned len = UINT_MAX) const;
+
+    template<size_t inlineCapacity>
+    void prependTo(Vector<UChar, inlineCapacity>&, unsigned pos = 0, unsigned len = UINT_MAX) const;
+
+    UChar32 characterStartingAt(unsigned) const;
+
     bool contains(UChar c) const { return find(c) != notFound; }
     bool contains(const LChar* str, bool caseSensitive = true) const { return find(str, 0, caseSensitive) != notFound; }
     bool contains(const String& str, bool caseSensitive = true) const { return find(str, 0, caseSensitive) != notFound; }
@@ -300,6 +297,7 @@ public:
     void append(const LChar*, unsigned length);
     void append(const UChar*, unsigned length);
     void insert(const String&, unsigned pos);
+    void insert(const LChar*, unsigned length, unsigned pos);
     void insert(const UChar*, unsigned length, unsigned pos);
 
     String& replace(UChar a, UChar b) { if (m_impl) m_impl = m_impl->replace(a, b); return *this; }
@@ -320,13 +318,17 @@ public:
     void makeUpper() { if (m_impl) m_impl = m_impl->upper(); }
     void fill(UChar c) { if (m_impl) m_impl = m_impl->fill(c); }
 
+    void ensure16Bit();
+
     void truncate(unsigned len);
     void remove(unsigned pos, int len = 1);
 
     String substring(unsigned pos, unsigned len = UINT_MAX) const;
-    String substringSharingImpl(unsigned pos, unsigned len = UINT_MAX) const;
     String left(unsigned len) const { return substring(0, len); }
     String right(unsigned len) const { return substring(length() - len, len); }
+
+    StringView createView() const { return StringView(impl()); }
+    StringView createView(unsigned offset, unsigned length) const { return StringView(impl(), offset, length); }
 
     // Returns a lowercase/uppercase version of the string
     String lower() const;
@@ -399,8 +401,8 @@ public:
 
 #ifdef __OBJC__
     String(NSString*);
-    
-    // This conversion maps NULL to "", which loses the meaning of NULL, but we 
+
+    // This conversion maps NULL to "", which loses the meaning of NULL, but we
     // need this mapping because AppKit crashes when passed nil NSStrings.
     operator NSString*() const { if (!m_impl) return @""; return *m_impl; }
 #endif
@@ -425,7 +427,7 @@ public:
     // Tries to convert the passed in string to UTF-8, but will fall back to Latin-1 if the string is not valid UTF-8.
     static String fromUTF8WithLatin1Fallback(const LChar*, size_t);
     static String fromUTF8WithLatin1Fallback(const char* s, size_t length) { return fromUTF8WithLatin1Fallback(reinterpret_cast<const LChar*>(s), length); };
-    
+
     // Determines the writing direction using the Unicode Bidi Algorithm rules P2 and P3.
     WTF::Unicode::Direction defaultWritingDirection(bool* hasStrongDirectionality = 0) const
     {
@@ -460,6 +462,9 @@ private:
     template <typename CharacterType>
     void removeInternal(const CharacterType*, unsigned, int);
 
+    template <typename CharacterType>
+    void appendInternal(CharacterType);
+
     RefPtr<StringImpl> m_impl;
 };
 
@@ -490,7 +495,7 @@ inline bool equalIgnoringCase(const String& a, const char* b) { return equalIgno
 inline bool equalIgnoringCase(const LChar* a, const String& b) { return equalIgnoringCase(a, b.impl()); }
 inline bool equalIgnoringCase(const char* a, const String& b) { return equalIgnoringCase(reinterpret_cast<const LChar*>(a), b.impl()); }
 
-inline bool equalPossiblyIgnoringCase(const String& a, const String& b, bool ignoreCase) 
+inline bool equalPossiblyIgnoringCase(const String& a, const String& b, bool ignoreCase)
 {
     return ignoreCase ? equalIgnoringCase(a, b) : (a == b);
 }
@@ -524,19 +529,6 @@ inline const UChar* String::getCharacters<UChar>() const
 {
     ASSERT(!is8Bit());
     return characters16();
-}
-
-template<>
-inline const LChar* String::getCharactersWithUpconvert<LChar>() const
-{
-    ASSERT(is8Bit());
-    return characters8();
-}
-
-template<>
-inline const UChar* String::getCharactersWithUpconvert<UChar>() const
-{
-    return characters();
 }
 
 inline bool String::containsOnlyLatin1() const
@@ -583,7 +575,17 @@ inline bool codePointCompareLessThan(const String& a, const String& b)
 template<size_t inlineCapacity>
 inline void append(Vector<UChar, inlineCapacity>& vector, const String& string)
 {
-    vector.append(string.characters(), string.length());
+    unsigned length = string.length();
+    if (!length)
+        return;
+    if (string.is8Bit()) {
+        const LChar* characters8 = string.characters8();
+        vector.reserveCapacity(vector.size() + length);
+        for (size_t i = 0; i < length; ++i)
+            vector.uncheckedAppend(characters8[i]);
+    } else {
+        vector.append(string.characters16(), length);
+    }
 }
 
 template<typename CharacterType>
@@ -627,7 +629,52 @@ inline bool String::isAllSpecialCharacters() const
 
     if (is8Bit())
         return WTF::isAllSpecialCharacters<isSpecialCharacter, LChar>(characters8(), len);
-    return WTF::isAllSpecialCharacters<isSpecialCharacter, UChar>(characters(), len);
+    return WTF::isAllSpecialCharacters<isSpecialCharacter, UChar>(characters16(), len);
+}
+
+template<size_t inlineCapacity>
+inline void String::appendTo(Vector<UChar, inlineCapacity>& result, unsigned pos, unsigned len) const
+{
+    unsigned numberOfCharactersToCopy = std::min(len, length() - pos);
+    if (numberOfCharactersToCopy <= 0)
+        return;
+    result.reserveCapacity(result.size() + numberOfCharactersToCopy);
+    if (is8Bit()) {
+        const LChar* characters8 = m_impl->characters8();
+        for (size_t i = 0; i < numberOfCharactersToCopy; ++i)
+            result.uncheckedAppend(characters8[pos + i]);
+    } else {
+        const UChar* characters16 = m_impl->characters16();
+        result.append(characters16 + pos, numberOfCharactersToCopy);
+    }
+}
+
+template<typename BufferType>
+inline void String::appendTo(BufferType& result, unsigned pos, unsigned len) const
+{
+    unsigned numberOfCharactersToCopy = std::min(len, length() - pos);
+    if (numberOfCharactersToCopy <= 0)
+        return;
+    if (is8Bit())
+        result.append(m_impl->characters8() + pos, numberOfCharactersToCopy);
+    else
+        result.append(m_impl->characters16() + pos, numberOfCharactersToCopy);
+}
+
+template<size_t inlineCapacity>
+inline void String::prependTo(Vector<UChar, inlineCapacity>& result, unsigned pos, unsigned len) const
+{
+    unsigned numberOfCharactersToCopy = std::min(len, length() - pos);
+    if (numberOfCharactersToCopy <= 0)
+        return;
+    if (is8Bit()) {
+        size_t oldSize = result.size();
+        result.resize(oldSize + numberOfCharactersToCopy);
+        memmove(result.data() + numberOfCharactersToCopy, result.data(), oldSize * sizeof(UChar));
+        StringImpl::copyChars(result.data(), m_impl->characters8() + pos, numberOfCharactersToCopy);
+    } else {
+        result.prepend(m_impl->characters16() + pos, numberOfCharactersToCopy);
+    }
 }
 
 // StringHash is the default hash for String
@@ -637,15 +684,6 @@ template<> struct DefaultHash<String> {
 };
 
 template <> struct VectorTraits<String> : SimpleClassVectorTraits { };
-
-class ASCIILiteral {
-public:
-    explicit ASCIILiteral(const char* characters) : m_characters(characters) { }
-    operator const char*() { return m_characters; }
-
-private:
-    const char* m_characters;
-};
 
 // Shared global empty string.
 WTF_EXPORT const String& emptyString();
@@ -677,7 +715,6 @@ using WTF::find;
 using WTF::isAllSpecialCharacters;
 using WTF::isSpaceOrNewline;
 using WTF::reverseFind;
-using WTF::ASCIILiteral;
 
-#include <wtf/text/AtomicString.h>
+#include "wtf/text/AtomicString.h"
 #endif

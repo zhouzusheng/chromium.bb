@@ -100,6 +100,8 @@ void StringToWorkarounds(
 
 FeatureInfo::FeatureFlags::FeatureFlags()
     : chromium_framebuffer_multisample(false),
+      multisampled_render_to_texture(false),
+      use_img_for_multisampled_render_to_texture(false),
       oes_standard_derivatives(false),
       oes_egl_image_external(false),
       npot_ok(false),
@@ -117,7 +119,8 @@ FeatureInfo::FeatureFlags::FeatureFlags()
       enable_shader_name_hashing(false),
       enable_samplers(false),
       ext_draw_buffers(false),
-      ext_frag_depth(false) {
+      ext_frag_depth(false),
+      use_async_readpixels(false) {
 }
 
 FeatureInfo::Workarounds::Workarounds() :
@@ -452,20 +455,37 @@ void FeatureInfo::AddFeatures(const CommandLine& command_line) {
   }
 
   // Check for multisample support
-  bool ext_has_multisample =
-      extensions.Contains("GL_EXT_framebuffer_multisample");
-  if (!workarounds_.disable_angle_framebuffer_multisample) {
-    ext_has_multisample |=
-       extensions.Contains("GL_ANGLE_framebuffer_multisample");
-  }
-  if (!disallowed_features_.multisampling && ext_has_multisample) {
-    feature_flags_.chromium_framebuffer_multisample = true;
-    validators_.frame_buffer_target.AddValue(GL_READ_FRAMEBUFFER_EXT);
-    validators_.frame_buffer_target.AddValue(GL_DRAW_FRAMEBUFFER_EXT);
-    validators_.g_l_state.AddValue(GL_READ_FRAMEBUFFER_BINDING_EXT);
-    validators_.g_l_state.AddValue(GL_MAX_SAMPLES_EXT);
-    validators_.render_buffer_parameter.AddValue(GL_RENDERBUFFER_SAMPLES_EXT);
-    AddExtensionString("GL_CHROMIUM_framebuffer_multisample");
+  if (!disallowed_features_.multisampling) {
+    bool ext_has_multisample =
+        extensions.Contains("GL_EXT_framebuffer_multisample");
+    if (!workarounds_.disable_angle_framebuffer_multisample) {
+      ext_has_multisample |=
+         extensions.Contains("GL_ANGLE_framebuffer_multisample");
+    }
+    if (ext_has_multisample) {
+      feature_flags_.chromium_framebuffer_multisample = true;
+      validators_.frame_buffer_target.AddValue(GL_READ_FRAMEBUFFER_EXT);
+      validators_.frame_buffer_target.AddValue(GL_DRAW_FRAMEBUFFER_EXT);
+      validators_.g_l_state.AddValue(GL_READ_FRAMEBUFFER_BINDING_EXT);
+      validators_.g_l_state.AddValue(GL_MAX_SAMPLES_EXT);
+      validators_.render_buffer_parameter.AddValue(GL_RENDERBUFFER_SAMPLES_EXT);
+      AddExtensionString("GL_CHROMIUM_framebuffer_multisample");
+    } else {
+      if (extensions.Contains("GL_EXT_multisampled_render_to_texture")) {
+        feature_flags_.multisampled_render_to_texture = true;
+      } else if (extensions.Contains("GL_IMG_multisampled_render_to_texture")) {
+        feature_flags_.multisampled_render_to_texture = true;
+        feature_flags_.use_img_for_multisampled_render_to_texture = true;
+      }
+      if (feature_flags_.multisampled_render_to_texture) {
+        validators_.render_buffer_parameter.AddValue(
+            GL_RENDERBUFFER_SAMPLES_EXT);
+        validators_.g_l_state.AddValue(GL_MAX_SAMPLES_EXT);
+        validators_.frame_buffer_parameter.AddValue(
+            GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_SAMPLES_EXT);
+        AddExtensionString("GL_EXT_multisampled_render_to_texture");
+      }
+    }
   }
 
   if (extensions.Contains("GL_OES_depth24") || gfx::HasDesktopGLFeatures()) {
@@ -585,9 +605,10 @@ void FeatureInfo::AddFeatures(const CommandLine& command_line) {
         !have_arb_occlusion_query2;
   }
 
-  if (extensions.Contains("GL_ANGLE_instanced_arrays") ||
-      (extensions.Contains("GL_ARB_instanced_arrays") &&
-       extensions.Contains("GL_ARB_draw_instanced"))) {
+  if (!workarounds_.disable_angle_instanced_arrays &&
+      (extensions.Contains("GL_ANGLE_instanced_arrays") ||
+       (extensions.Contains("GL_ARB_instanced_arrays") &&
+        extensions.Contains("GL_ARB_draw_instanced")))) {
     AddExtensionString("GL_ANGLE_instanced_arrays");
     feature_flags_.angle_instanced_arrays = true;
     validators_.vertex_attribute.AddValue(GL_VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE);
@@ -621,6 +642,16 @@ void FeatureInfo::AddFeatures(const CommandLine& command_line) {
   if (extensions.Contains("GL_EXT_frag_depth") || gfx::HasDesktopGLFeatures()) {
     AddExtensionString("GL_EXT_frag_depth");
     feature_flags_.ext_frag_depth = true;
+  }
+
+  bool ui_gl_fence_works =
+      extensions.Contains("GL_NV_fence") ||
+      extensions.Contains("GL_ARB_sync");
+
+  if (ui_gl_fence_works &&
+      extensions.Contains("GL_ARB_pixel_buffer_object") &&
+      !workarounds_.disable_async_readpixels) {
+    feature_flags_.use_async_readpixels = true;
   }
 
   if (!disallowed_features_.swap_buffer_complete_callback)

@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef CanvasPattern_h
@@ -34,13 +34,12 @@
 
 namespace WebCore {
 
+class ExceptionState;
 class Image;
-
-typedef int ExceptionCode;
 
 class CanvasPattern : public RefCounted<CanvasPattern>, public ScriptWrappable {
 public:
-    static void parseRepetitionType(const String&, bool& repeatX, bool& repeatY, ExceptionCode&);
+    static void parseRepetitionType(const String&, bool& repeatX, bool& repeatY, ExceptionState&);
 
     static PassRefPtr<CanvasPattern> create(PassRefPtr<Image> image, bool repeatX, bool repeatY, bool originClean)
     {

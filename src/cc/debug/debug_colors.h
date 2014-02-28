@@ -67,33 +67,44 @@ class DebugColors {
   static SkColor InvalidatedTileCheckerboardColor();
 
   static SkColor PaintRectBorderColor();
-  static int PaintRectBorderWidth(const LayerTreeImpl* tree_impl);
+  static int PaintRectBorderWidth();
   static SkColor PaintRectFillColor();
 
   static SkColor PropertyChangedRectBorderColor();
-  static int PropertyChangedRectBorderWidth(const LayerTreeImpl* tree_impl);
+  static int PropertyChangedRectBorderWidth();
   static SkColor PropertyChangedRectFillColor();
 
   static SkColor SurfaceDamageRectBorderColor();
-  static int SurfaceDamageRectBorderWidth(const LayerTreeImpl* tree_impl);
+  static int SurfaceDamageRectBorderWidth();
   static SkColor SurfaceDamageRectFillColor();
 
   static SkColor ScreenSpaceLayerRectBorderColor();
-  static int ScreenSpaceLayerRectBorderWidth(const LayerTreeImpl* tree_impl);
+  static int ScreenSpaceLayerRectBorderWidth();
   static SkColor ScreenSpaceLayerRectFillColor();
 
   static SkColor ScreenSpaceSurfaceReplicaRectBorderColor();
-  static int ScreenSpaceSurfaceReplicaRectBorderWidth(
-      const LayerTreeImpl* tree_impl);
+  static int ScreenSpaceSurfaceReplicaRectBorderWidth();
   static SkColor ScreenSpaceSurfaceReplicaRectFillColor();
 
   static SkColor OccludingRectBorderColor();
-  static int OccludingRectBorderWidth(const LayerTreeImpl* tree_impl);
+  static int OccludingRectBorderWidth();
   static SkColor OccludingRectFillColor();
 
   static SkColor NonOccludingRectBorderColor();
-  static int NonOccludingRectBorderWidth(const LayerTreeImpl* tree_impl);
+  static int NonOccludingRectBorderWidth();
   static SkColor NonOccludingRectFillColor();
+
+  static SkColor TouchEventHandlerRectBorderColor();
+  static int TouchEventHandlerRectBorderWidth();
+  static SkColor TouchEventHandlerRectFillColor();
+
+  static SkColor WheelEventHandlerRectBorderColor();
+  static int WheelEventHandlerRectBorderWidth();
+  static SkColor WheelEventHandlerRectFillColor();
+
+  static SkColor NonFastScrollableRectBorderColor();
+  static int NonFastScrollableRectBorderWidth();
+  static SkColor NonFastScrollableRectFillColor();
 
   static SkColor NonPaintedFillColor();
   static SkColor MissingPictureFillColor();

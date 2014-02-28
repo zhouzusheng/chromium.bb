@@ -37,9 +37,10 @@
 
 namespace WebKit {
 
+struct WebFileInfo;
+class WebFileWriter;
 class WebString;
 class WebURL;
-struct WebFileInfo;
 
 class WebFileSystemCallbacks {
 public:
@@ -65,9 +66,18 @@ public:
     // root URL for the FileSystem when the request is accepted.
     virtual void didOpenFileSystem(const WebString& name, const WebURL& rootURL) = 0;
 
+    // Callback for WebFrameClient::createFileWriter. Called with an instance
+    // of WebFileWriter and the target file length. The writer's ownership
+    // is transferred to the callback.
+    virtual void didCreateFileWriter(WebFileWriter* writer, long long length) { WEBKIT_ASSERT_NOT_REACHED(); }
+
     // Called with an error code when a requested operation hasn't been
     // completed.
     virtual void didFail(WebFileError) = 0;
+
+    // Returns true if the caller expects to be blocked until the request
+    // is fullfilled.
+    virtual bool shouldBlockUntilCompletion() const = 0;
 
 protected:
     virtual ~WebFileSystemCallbacks() { }

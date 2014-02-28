@@ -79,12 +79,17 @@ _mesa_Fogiv(GLenum pname, const GLint *params )
 }
 
 
-#define UPDATE_FOG_SCALE(ctx) do {\
-      if (ctx->Fog.End == ctx->Fog.Start)\
-         ctx->Fog._Scale = 1.0f;\
-      else\
-         ctx->Fog._Scale = 1.0f / (ctx->Fog.End - ctx->Fog.Start);\
-   } while(0)
+/**
+ * Update the gl_fog_attrib::_Scale field.
+ */
+static void
+update_fog_scale(struct gl_context *ctx)
+{
+   if (ctx->Fog.End == ctx->Fog.Start)
+      ctx->Fog._Scale = 1.0f;
+   else
+      ctx->Fog._Scale = 1.0f / (ctx->Fog.End - ctx->Fog.Start);
+}
 
 
 void GLAPIENTRY
@@ -126,16 +131,18 @@ _mesa_Fogfv( GLenum pname, const GLfloat *params )
             return;
          FLUSH_VERTICES(ctx, _NEW_FOG);
          ctx->Fog.Start = *params;
-         UPDATE_FOG_SCALE(ctx);
+         update_fog_scale(ctx);
          break;
       case GL_FOG_END:
          if (ctx->Fog.End == *params)
             return;
          FLUSH_VERTICES(ctx, _NEW_FOG);
          ctx->Fog.End = *params;
-         UPDATE_FOG_SCALE(ctx);
+         update_fog_scale(ctx);
          break;
       case GL_FOG_INDEX:
+         if (ctx->API != API_OPENGL)
+            goto invalid_pname;
  	 if (ctx->Fog.Index == *params)
 	    return;
 	 FLUSH_VERTICES(ctx, _NEW_FOG);
@@ -145,6 +152,10 @@ _mesa_Fogfv( GLenum pname, const GLfloat *params )
 	 if (TEST_EQ_4V(ctx->Fog.Color, params))
 	    return;
 	 FLUSH_VERTICES(ctx, _NEW_FOG);
+	 ctx->Fog.ColorUnclamped[0] = params[0];
+	 ctx->Fog.ColorUnclamped[1] = params[1];
+	 ctx->Fog.ColorUnclamped[2] = params[2];
+	 ctx->Fog.ColorUnclamped[3] = params[3];
 	 ctx->Fog.Color[0] = CLAMP(params[0], 0.0F, 1.0F);
 	 ctx->Fog.Color[1] = CLAMP(params[1], 0.0F, 1.0F);
 	 ctx->Fog.Color[2] = CLAMP(params[2], 0.0F, 1.0F);
@@ -152,7 +163,7 @@ _mesa_Fogfv( GLenum pname, const GLfloat *params )
          break;
       case GL_FOG_COORDINATE_SOURCE_EXT: {
 	 GLenum p = (GLenum) (GLint) *params;
-         if (!ctx->Extensions.EXT_fog_coord ||
+         if (ctx->API != API_OPENGL || !ctx->Extensions.EXT_fog_coord ||
              (p != GL_FOG_COORDINATE_EXT && p != GL_FRAGMENT_DEPTH_EXT)) {
 	    _mesa_error(ctx, GL_INVALID_ENUM, "glFog");
 	    return;
@@ -163,14 +174,32 @@ _mesa_Fogfv( GLenum pname, const GLfloat *params )
 	 ctx->Fog.FogCoordinateSource = p;
 	 break;
       }
+      case GL_FOG_DISTANCE_MODE_NV: {
+	 GLenum p = (GLenum) (GLint) *params;
+         if (ctx->API != API_OPENGL || !ctx->Extensions.NV_fog_distance ||
+             (p != GL_EYE_RADIAL_NV && p != GL_EYE_PLANE && p != GL_EYE_PLANE_ABSOLUTE_NV)) {
+	    _mesa_error(ctx, GL_INVALID_ENUM, "glFog");
+	    return;
+	 }
+	 if (ctx->Fog.FogDistanceMode == p)
+	    return;
+	 FLUSH_VERTICES(ctx, _NEW_FOG);
+	 ctx->Fog.FogDistanceMode = p;
+	 break;
+      }
       default:
-         _mesa_error( ctx, GL_INVALID_ENUM, "glFog" );
-         return;
+         goto invalid_pname;
    }
 
    if (ctx->Driver.Fogfv) {
       (*ctx->Driver.Fogfv)( ctx, pname, params );
    }
+
+   return;
+
+invalid_pname:
+   _mesa_error( ctx, GL_INVALID_ENUM, "glFog" );
+   return;
 }
 
 
@@ -178,12 +207,13 @@ _mesa_Fogfv( GLenum pname, const GLfloat *params )
 /*****                      Initialization                        *****/
 /**********************************************************************/
 
-void _mesa_init_fog( GLcontext * ctx )
+void _mesa_init_fog( struct gl_context * ctx )
 {
    /* Fog group */
    ctx->Fog.Enabled = GL_FALSE;
    ctx->Fog.Mode = GL_EXP;
    ASSIGN_4V( ctx->Fog.Color, 0.0, 0.0, 0.0, 0.0 );
+   ASSIGN_4V( ctx->Fog.ColorUnclamped, 0.0, 0.0, 0.0, 0.0 );
    ctx->Fog.Index = 0.0;
    ctx->Fog.Density = 1.0;
    ctx->Fog.Start = 0.0;
@@ -191,4 +221,5 @@ void _mesa_init_fog( GLcontext * ctx )
    ctx->Fog.ColorSumEnabled = GL_FALSE;
    ctx->Fog.FogCoordinateSource = GL_FRAGMENT_DEPTH_EXT;
    ctx->Fog._Scale = 1.0f;
+   ctx->Fog.FogDistanceMode = GL_EYE_PLANE_ABSOLUTE_NV;
 }

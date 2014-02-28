@@ -40,7 +40,6 @@ public:
     virtual CSSRule::Type type() const OVERRIDE { return PAGE_RULE; }
     virtual String cssText() const OVERRIDE;
     virtual void reattach(StyleRuleBase*) OVERRIDE;
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
 
     CSSStyleDeclaration* style() const;
 
@@ -49,7 +48,7 @@ public:
 
 private:
     CSSPageRule(StyleRulePage*, CSSStyleSheet*);
-    
+
     RefPtr<StyleRulePage> m_pageRule;
     mutable RefPtr<StyleRuleCSSStyleDeclaration> m_propertiesCSSOMWrapper;
 };

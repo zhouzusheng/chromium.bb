@@ -14,7 +14,7 @@
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/platform_file.h"
 #include "base/posix/eintr_wrapper.h"
@@ -205,9 +205,10 @@ class ChromiumSequentialFile: public SequentialFile {
 
   virtual Status Skip(uint64_t n) {
     if (fseek(file_, n, SEEK_CUR)) {
+      int saved_errno = errno;
       uma_logger_->RecordErrorAt(kSequentialFileSkip);
       return MakeIOError(
-          filename_, strerror(errno), kSequentialFileSkip, errno);
+          filename_, strerror(saved_errno), kSequentialFileSkip, saved_errno);
     }
     return Status::OK();
   }
@@ -471,8 +472,10 @@ Status ChromiumWritableFile::Append(const Slice& data) {
 
   size_t r = fwrite_wrapper(data.data(), 1, data.size(), file_);
   if (r != data.size()) {
-    uma_logger_->RecordOSError(kWritableFileAppend, errno);
-    return MakeIOError(filename_, strerror(errno), kWritableFileAppend, errno);
+    int saved_errno = errno;
+    uma_logger_->RecordOSError(kWritableFileAppend, saved_errno);
+    return MakeIOError(
+        filename_, strerror(saved_errno), kWritableFileAppend, saved_errno);
   }
   return Status::OK();
 }
@@ -583,8 +586,10 @@ Status ChromiumEnv::NewWritableFile(const std::string& fname,
   *result = NULL;
   FILE* f = fopen_internal(fname.c_str(), "wb");
   if (f == NULL) {
+    int saved_errno = errno;
     RecordErrorAt(kNewWritableFile);
-    return MakeIOError(fname, strerror(errno), kNewWritableFile, errno);
+    return MakeIOError(
+        fname, strerror(saved_errno), kNewWritableFile, saved_errno);
   } else {
     *result = new ChromiumWritableFile(fname, f, this, this);
     return Status::OK();
@@ -592,7 +597,7 @@ Status ChromiumEnv::NewWritableFile(const std::string& fname,
 }
 
 bool ChromiumEnv::FileExists(const std::string& fname) {
-  return ::file_util::PathExists(CreateFilePath(fname));
+  return ::base::PathExists(CreateFilePath(fname));
 }
 
 Status ChromiumEnv::GetChildren(const std::string& dir,
@@ -614,7 +619,7 @@ Status ChromiumEnv::GetChildren(const std::string& dir,
 Status ChromiumEnv::DeleteFile(const std::string& fname) {
   Status result;
   // TODO(jorlow): Should we assert this is a file?
-  if (!::file_util::Delete(CreateFilePath(fname), false)) {
+  if (!::base::DeleteFile(CreateFilePath(fname), false)) {
     result = MakeIOError(fname, "Could not delete file.", kDeleteFile);
     RecordErrorAt(kDeleteFile);
   }
@@ -629,7 +634,7 @@ Status ChromiumEnv::CreateDir(const std::string& name) {
     if (::file_util::CreateDirectoryAndGetError(CreateFilePath(name), &error))
       return result;
   } while (retrier.ShouldKeepTrying(error));
-  result = MakeIOError(name, "Could not create directory.", kCreateDir);
+  result = MakeIOError(name, "Could not create directory.", kCreateDir, error);
   RecordOSError(kCreateDir, error);
   return result;
 }
@@ -637,7 +642,7 @@ Status ChromiumEnv::CreateDir(const std::string& name) {
 Status ChromiumEnv::DeleteDir(const std::string& name) {
   Status result;
   // TODO(jorlow): Should we assert this is a directory?
-  if (!::file_util::Delete(CreateFilePath(name), false)) {
+  if (!::base::DeleteFile(CreateFilePath(name), false)) {
     result = MakeIOError(name, "Could not delete directory.", kDeleteDir);
     RecordErrorAt(kDeleteDir);
   }
@@ -660,17 +665,15 @@ Status ChromiumEnv::GetFileSize(const std::string& fname, uint64_t* size) {
 Status ChromiumEnv::RenameFile(const std::string& src, const std::string& dst) {
   Status result;
   base::FilePath src_file_path = CreateFilePath(src);
-  if (!::file_util::PathExists(src_file_path))
+  if (!::base::PathExists(src_file_path))
     return result;
   base::FilePath destination = CreateFilePath(dst);
 
   Retrier retrier(kRenameFile, this);
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   do {
-    if (::file_util::ReplaceFileAndGetError(
-            src_file_path, destination, &error)) {
+    if (base::ReplaceFile(src_file_path, destination, &error))
       return result;
-    }
   } while (retrier.ShouldKeepTrying(error));
 
   DCHECK(error != base::PLATFORM_FILE_OK);
@@ -706,7 +709,7 @@ Status ChromiumEnv::LockFile(const std::string& fname, FileLock** lock) {
     ::base::FilePath last_parent;
     int num_missing_ancestors = 0;
     do {
-      if (file_util::DirectoryExists(parent))
+      if (base::DirectoryExists(parent))
         break;
       ++num_missing_ancestors;
       last_parent = parent;

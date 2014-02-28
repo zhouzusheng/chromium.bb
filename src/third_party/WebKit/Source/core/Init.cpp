@@ -31,6 +31,7 @@
 #include "config.h"
 #include "Init.h"
 
+#include "FetchInitiatorTypeNames.h"
 #include "FontFamilyNames.h"
 #include "HTMLNames.h"
 #include "MathMLNames.h"
@@ -39,8 +40,8 @@
 #include "XMLNSNames.h"
 #include "XMLNames.h"
 #include "core/css/MediaFeatureNames.h"
-#include "core/dom/Node.h"
 #include "core/platform/EventTracer.h"
+#include "core/platform/Partitions.h"
 #include "wtf/text/StringStatics.h"
 
 namespace WebCore {
@@ -52,6 +53,8 @@ void init()
         return;
     isInited = true;
 
+    // It would make logical sense to do this and WTF::StringStatics::init() in
+    // WTF::initialize() but there are ordering dependencies.
     AtomicString::init();
     HTMLNames::init();
     SVGNames::init();
@@ -60,16 +63,17 @@ void init()
     XMLNSNames::init();
     XMLNames::init();
     FontFamilyNames::init();
+    FetchInitiatorTypeNames::init();
     MediaFeatureNames::init();
     WTF::StringStatics::init();
     QualifiedName::init();
-    Node::init();
+    Partitions::init();
     EventTracer::initialize();
 }
 
 void shutdown()
 {
-    Node::shutdown();
+    Partitions::shutdown();
 }
 
 } // namespace WebCore

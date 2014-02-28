@@ -30,7 +30,7 @@
 #include "core/platform/graphics/Image.h"
 #include "core/platform/graphics/ImageObserver.h"
 #include "core/platform/graphics/IntSize.h"
-#include <wtf/RefPtr.h>
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
@@ -49,8 +49,6 @@ public:
     virtual bool hasRelativeHeight() const { return false; }
 
     virtual IntSize size() const { return m_crossfadeSize; }
-
-    void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
 
 protected:
     virtual void draw(GraphicsContext*, const FloatRect&, const FloatRect&,

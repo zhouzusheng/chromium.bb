@@ -32,25 +32,15 @@
 #include "core/dom/ErrorEvent.h"
 #include "core/dom/EventTarget.h"
 #include "core/dom/MessagePort.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/html/PublicURLManager.h"
+#include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/ScriptCallStack.h"
-#include "core/loader/cache/CachedScript.h"
 #include "core/page/DOMTimer.h"
-#include "core/workers/WorkerContext.h"
+#include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerThread.h"
 #include "modules/webdatabase/DatabaseContext.h"
-#include <wtf/MainThread.h>
-#include <wtf/MemoryInstrumentationHashMap.h>
-#include <wtf/MemoryInstrumentationVector.h>
+#include "wtf/MainThread.h"
 
-namespace WTF {
-
-template<> struct SequenceMemoryInstrumentationTraits<WebCore::ContextLifecycleObserver*> {
-    template <typename I> static void reportMemoryUsage(I, I, MemoryClassInfo&) { }
-};
-
-}
 namespace WebCore {
 
 class ProcessMessagesSoonTask : public ScriptExecutionContext::Task {
@@ -69,15 +59,17 @@ public:
 class ScriptExecutionContext::PendingException {
     WTF_MAKE_NONCOPYABLE(PendingException);
 public:
-    PendingException(const String& errorMessage, int lineNumber, const String& sourceURL, PassRefPtr<ScriptCallStack> callStack)
+    PendingException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL, PassRefPtr<ScriptCallStack> callStack)
         : m_errorMessage(errorMessage)
         , m_lineNumber(lineNumber)
+        , m_columnNumber(columnNumber)
         , m_sourceURL(sourceURL)
         , m_callStack(callStack)
     {
     }
     String m_errorMessage;
     int m_lineNumber;
+    int m_columnNumber;
     String m_sourceURL;
     RefPtr<ScriptCallStack> m_callStack;
 };
@@ -132,7 +124,7 @@ void ScriptExecutionContext::createdMessagePort(MessagePort* port)
 {
     ASSERT(port);
     ASSERT((isDocument() && isMainThread())
-        || (isWorkerContext() && static_cast<WorkerContext*>(this)->thread()->isCurrentThread()));
+        || (isWorkerGlobalScope() && toWorkerGlobalScope(this)->thread()->isCurrentThread()));
 
     m_messagePorts.add(port);
 }
@@ -141,7 +133,7 @@ void ScriptExecutionContext::destroyedMessagePort(MessagePort* port)
 {
     ASSERT(port);
     ASSERT((isDocument() && isMainThread())
-        || (isWorkerContext() && static_cast<WorkerContext*>(this)->thread()->isCurrentThread()));
+        || (isWorkerGlobalScope() && toWorkerGlobalScope(this)->thread()->isCurrentThread()));
 
     m_messagePorts.remove(port);
 }
@@ -194,16 +186,6 @@ void ScriptExecutionContext::suspendActiveDOMObjectIfNeeded(ActiveDOMObject* obj
         object->suspend(m_reasonForSuspendingActiveDOMObjects);
 }
 
-void ScriptExecutionContext::wasObservedBy(ContextLifecycleObserver* observer, ContextLifecycleObserver::Type as)
-{
-    lifecycleNotifier()->addObserver(observer, as);
-}
-
-void ScriptExecutionContext::wasUnobservedBy(ContextLifecycleObserver* observer, ContextLifecycleObserver::Type as)
-{
-    lifecycleNotifier()->removeObserver(observer, as);
-}
-
 void ScriptExecutionContext::closeMessagePorts() {
     HashSet<MessagePort*>::iterator messagePortsEnd = m_messagePorts.end();
     for (HashSet<MessagePort*>::iterator iter = m_messagePorts.begin(); iter != messagePortsEnd; ++iter) {
@@ -212,36 +194,31 @@ void ScriptExecutionContext::closeMessagePorts() {
     }
 }
 
-bool ScriptExecutionContext::sanitizeScriptError(String& errorMessage, int& lineNumber, String& sourceURL, CachedScript* cachedScript)
+bool ScriptExecutionContext::shouldSanitizeScriptError(const String& sourceURL, AccessControlStatus corsStatus)
 {
-    KURL targetURL = completeURL(sourceURL);
-    if (securityOrigin()->canRequest(targetURL) || (cachedScript && cachedScript->passesAccessControlCheck(securityOrigin())))
-        return false;
-    errorMessage = "Script error.";
-    sourceURL = String();
-    lineNumber = 0;
-    return true;
+    return !(securityOrigin()->canRequest(completeURL(sourceURL)) || corsStatus == SharableCrossOrigin);
 }
 
-void ScriptExecutionContext::reportException(const String& errorMessage, int lineNumber, const String& sourceURL, PassRefPtr<ScriptCallStack> callStack, CachedScript* cachedScript)
+void ScriptExecutionContext::reportException(PassRefPtr<ErrorEvent> event, PassRefPtr<ScriptCallStack> callStack, AccessControlStatus corsStatus)
 {
+    RefPtr<ErrorEvent> errorEvent = event;
     if (m_inDispatchErrorEvent) {
         if (!m_pendingExceptions)
             m_pendingExceptions = adoptPtr(new Vector<OwnPtr<PendingException> >());
-        m_pendingExceptions->append(adoptPtr(new PendingException(errorMessage, lineNumber, sourceURL, callStack)));
+        m_pendingExceptions->append(adoptPtr(new PendingException(errorEvent->message(), errorEvent->lineno(), errorEvent->colno(), errorEvent->filename(), callStack)));
         return;
     }
 
     // First report the original exception and only then all the nested ones.
-    if (!dispatchErrorEvent(errorMessage, lineNumber, sourceURL, cachedScript))
-        logExceptionToConsole(errorMessage, sourceURL, lineNumber, callStack);
+    if (!dispatchErrorEvent(errorEvent, corsStatus))
+        logExceptionToConsole(errorEvent->message(), errorEvent->filename(), errorEvent->lineno(), errorEvent->colno(), callStack);
 
     if (!m_pendingExceptions)
         return;
 
     for (size_t i = 0; i < m_pendingExceptions->size(); i++) {
         PendingException* e = m_pendingExceptions->at(i).get();
-        logExceptionToConsole(e->m_errorMessage, e->m_sourceURL, e->m_lineNumber, e->m_callStack);
+        logExceptionToConsole(e->m_errorMessage, e->m_sourceURL, e->m_lineNumber, e->m_columnNumber, e->m_callStack);
     }
     m_pendingExceptions.clear();
 }
@@ -251,20 +228,18 @@ void ScriptExecutionContext::addConsoleMessage(MessageSource source, MessageLeve
     addMessage(source, level, message, sourceURL, lineNumber, 0, state, requestIdentifier);
 }
 
-bool ScriptExecutionContext::dispatchErrorEvent(const String& errorMessage, int lineNumber, const String& sourceURL, CachedScript* cachedScript)
+bool ScriptExecutionContext::dispatchErrorEvent(PassRefPtr<ErrorEvent> event, AccessControlStatus corsStatus)
 {
     EventTarget* target = errorEventTarget();
     if (!target)
         return false;
 
-    String message = errorMessage;
-    int line = lineNumber;
-    String sourceName = sourceURL;
-    sanitizeScriptError(message, line, sourceName, cachedScript);
+    RefPtr<ErrorEvent> errorEvent = event;
+    if (shouldSanitizeScriptError(errorEvent->filename(), corsStatus))
+        errorEvent = ErrorEvent::createSanitizedError();
 
     ASSERT(!m_inDispatchErrorEvent);
     m_inDispatchErrorEvent = true;
-    RefPtr<ErrorEvent> errorEvent = ErrorEvent::create(message, sourceName, line);
     target->dispatchEvent(errorEvent);
     m_inDispatchErrorEvent = false;
     return errorEvent->defaultPrevented();
@@ -278,6 +253,30 @@ int ScriptExecutionContext::circularSequentialID()
     return m_circularSequentialID;
 }
 
+int ScriptExecutionContext::installNewTimeout(PassOwnPtr<ScheduledAction> action, int timeout, bool singleShot)
+{
+    int timeoutID;
+    while (true) {
+        timeoutID = circularSequentialID();
+        if (!m_timeouts.contains(timeoutID))
+            break;
+    }
+    TimeoutMap::AddResult result = m_timeouts.add(timeoutID, DOMTimer::create(this, action, timeout, singleShot, timeoutID));
+    ASSERT(result.isNewEntry);
+    DOMTimer* timer = result.iterator->value.get();
+
+    timer->suspendIfNeeded();
+
+    return timer->timeoutID();
+}
+
+void ScriptExecutionContext::removeTimeoutByID(int timeoutID)
+{
+    if (timeoutID <= 0)
+        return;
+    m_timeouts.remove(timeoutID);
+}
+
 PublicURLManager& ScriptExecutionContext::publicURLManager()
 {
     if (!m_publicURLManager)
@@ -287,10 +286,8 @@ PublicURLManager& ScriptExecutionContext::publicURLManager()
 
 void ScriptExecutionContext::didChangeTimerAlignmentInterval()
 {
-    for (TimeoutMap::iterator iter = m_timeouts.begin(); iter != m_timeouts.end(); ++iter) {
-        DOMTimer* timer = iter->value;
-        timer->didChangeAlignmentInterval();
-    }
+    for (TimeoutMap::iterator iter = m_timeouts.begin(); iter != m_timeouts.end(); ++iter)
+        iter->value->didChangeAlignmentInterval();
 }
 
 double ScriptExecutionContext::timerAlignmentInterval() const
@@ -300,25 +297,12 @@ double ScriptExecutionContext::timerAlignmentInterval() const
 
 ContextLifecycleNotifier* ScriptExecutionContext::lifecycleNotifier()
 {
-    if (!m_lifecycleNotifier)
-        m_lifecycleNotifier = const_cast<ScriptExecutionContext*>(this)->createLifecycleNotifier();
-    return m_lifecycleNotifier.get();
+    return static_cast<ContextLifecycleNotifier*>(LifecycleContext::lifecycleNotifier());
 }
 
-PassOwnPtr<ContextLifecycleNotifier> ScriptExecutionContext::createLifecycleNotifier()
+PassOwnPtr<LifecycleNotifier> ScriptExecutionContext::createLifecycleNotifier()
 {
     return ContextLifecycleNotifier::create(this);
-}
-
-void ScriptExecutionContext::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    SecurityContext::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_messagePorts, "messagePorts");
-    info.addMember(m_lifecycleNotifier, "lifecycleObserver");
-    info.addMember(m_timeouts, "timeouts");
-    info.addMember(m_pendingExceptions, "pendingExceptions");
-    info.addMember(m_publicURLManager, "publicURLManager");
 }
 
 ScriptExecutionContext::Task::~Task()

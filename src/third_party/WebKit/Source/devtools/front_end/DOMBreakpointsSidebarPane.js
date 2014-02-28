@@ -301,9 +301,13 @@ WebInspector.DOMBreakpointsSidebarPane.prototype = {
     {
         var pathToBreakpoints = {};
 
+        /**
+         * @param {string} path
+         * @param {?DOMAgent.NodeId} nodeId
+         */
         function didPushNodeByPathToFrontend(path, nodeId)
         {
-            var node = WebInspector.domAgent.nodeForId(nodeId);
+            var node = nodeId ? WebInspector.domAgent.nodeForId(nodeId) : null;
             if (!node)
                 return;
 
@@ -375,10 +379,9 @@ WebInspector.DOMBreakpointsSidebarPane.Proxy.prototype = {
 
     onContentReady: function()
     {
-        if (!this._panel.isShowing())
-            return;
+        if (this._panel.isShowing())
+            this._reattachBody();
 
-        this._reattachBody();
         WebInspector.SidebarPane.prototype.onContentReady.call(this);
     },
 

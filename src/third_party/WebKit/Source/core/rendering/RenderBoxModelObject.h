@@ -61,7 +61,7 @@ class RenderBoxModelObject : public RenderLayerModelObject {
 public:
     RenderBoxModelObject(ContainerNode*);
     virtual ~RenderBoxModelObject();
-    
+
     LayoutSize relativePositionOffset() const;
     LayoutSize relativePositionLogicalOffset() const { return style()->isHorizontalWritingMode() ? relativePositionOffset() : relativePositionOffset().transposedSize(); }
 
@@ -70,7 +70,6 @@ public:
     LayoutSize stickyPositionLogicalOffset() const { return style()->isHorizontalWritingMode() ? stickyPositionOffset() : stickyPositionOffset().transposedSize(); }
 
     LayoutSize offsetForInFlowPosition() const;
-    LayoutSize paintOffset() const;
 
     // IE extensions. Used to calculate offsetWidth/Height.  Overridden by inlines (RenderFlow)
     // to return the remaining width on a given line (and the height of a single line).
@@ -121,20 +120,23 @@ public:
     virtual int borderStart() const { return style()->borderStartWidth(); }
     virtual int borderEnd() const { return style()->borderEndWidth(); }
 
+    LayoutUnit borderAndPaddingStart() const { return borderStart() + paddingStart(); }
+    LayoutUnit borderAndPaddingBefore() const { return borderBefore() + paddingBefore(); }
+    LayoutUnit borderAndPaddingAfter() const { return borderAfter() + paddingAfter(); }
+
     LayoutUnit borderAndPaddingHeight() const { return borderTop() + borderBottom() + paddingTop() + paddingBottom(); }
     LayoutUnit borderAndPaddingWidth() const { return borderLeft() + borderRight() + paddingLeft() + paddingRight(); }
-    LayoutUnit borderAndPaddingLogicalHeight() const { return borderBefore() + borderAfter() + paddingBefore() + paddingAfter(); }
+    LayoutUnit borderAndPaddingLogicalHeight() const { return borderAndPaddingBefore() + borderAndPaddingAfter(); }
     LayoutUnit borderAndPaddingLogicalWidth() const { return borderStart() + borderEnd() + paddingStart() + paddingEnd(); }
     LayoutUnit borderAndPaddingLogicalLeft() const { return style()->isHorizontalWritingMode() ? borderLeft() + paddingLeft() : borderTop() + paddingTop(); }
 
-    LayoutUnit borderAndPaddingStart() const { return borderStart() + paddingStart(); }
-    LayoutUnit borderAndPaddingBefore() const { return borderBefore() + paddingBefore(); }
+
     LayoutUnit borderLogicalLeft() const { return style()->isHorizontalWritingMode() ? borderLeft() : borderTop(); }
     LayoutUnit borderLogicalRight() const { return style()->isHorizontalWritingMode() ? borderRight() : borderBottom(); }
 
     LayoutUnit paddingLogicalLeft() const { return style()->isHorizontalWritingMode() ? paddingLeft() : paddingTop(); }
     LayoutUnit paddingLogicalRight() const { return style()->isHorizontalWritingMode() ? paddingRight() : paddingBottom(); }
-    
+
     virtual LayoutUnit marginTop() const = 0;
     virtual LayoutUnit marginBottom() const = 0;
     virtual LayoutUnit marginLeft() const = 0;
@@ -173,7 +175,7 @@ public:
 
     virtual void setSelectionState(SelectionState s);
 
-    bool canHaveBoxInfoInRegion() const { return !isFloating() && !isReplaced() && !isInline() && !hasColumns() && !isTableCell() && isBlockFlow(); }
+    bool canHaveBoxInfoInRegion() const { return !isFloating() && !isReplaced() && !isInline() && !hasColumns() && !isTableCell() && isBlockFlow() && !isRenderSVGBlock(); }
 
     void contentChanged(ContentChangeType);
     bool hasAcceleratedCompositing() const;
@@ -188,6 +190,8 @@ public:
 
     void suspendAnimations(double time = 0);
 
+    virtual void computeLayerHitTestRects(LayerHitTestRects&) const OVERRIDE;
+
 protected:
     virtual void willBeDestroyed();
 
@@ -198,7 +202,7 @@ protected:
         {
             m_destOrigin = destOrigin;
         }
-        
+
         IntRect destRect() const { return m_destRect; }
         void setDestRect(const IntRect& destRect)
         {
@@ -207,27 +211,27 @@ protected:
 
         // Returns the phase relative to the destination rectangle.
         IntPoint relativePhase() const;
-        
-        IntPoint phase() const { return m_phase; }   
+
+        IntPoint phase() const { return m_phase; }
         void setPhase(const IntPoint& phase)
         {
             m_phase = phase;
         }
 
-        IntSize tileSize() const { return m_tileSize; }    
+        IntSize tileSize() const { return m_tileSize; }
         void setTileSize(const IntSize& tileSize)
         {
             m_tileSize = tileSize;
         }
-        
+
         void setPhaseX(int x) { m_phase.setX(x); }
         void setPhaseY(int y) { m_phase.setY(y); }
-        
+
         void setNoRepeatX(int xOffset);
         void setNoRepeatY(int yOffset);
-        
+
         void useFixedAttachment(const IntPoint& attachmentPoint);
-        
+
         void clip(const IntRect&);
     private:
         IntRect m_destRect;
@@ -290,7 +294,7 @@ public:
 private:
     LayoutUnit computedCSSPadding(Length) const;
     virtual bool isBoxModelObject() const OVERRIDE FINAL { return true; }
-    
+
     virtual LayoutRect frameRectForStickyPositioning() const = 0;
 
     IntSize calculateFillTileSize(const FillLayer*, const IntSize& scaledPositioningAreaSize) const;
@@ -300,7 +304,7 @@ private:
 
     RoundedRect getBackgroundRoundedRect(const LayoutRect&, InlineFlowBox*, LayoutUnit inlineBoxWidth, LayoutUnit inlineBoxHeight,
         bool includeLogicalLeftEdge, bool includeLogicalRightEdge) const;
-    
+
     bool fixedBackgroundPaintsInLocalCoordinates() const;
 
     void clipBorderSidePolygon(GraphicsContext*, const RoundedRect& outerBorder, const RoundedRect& innerBorder,
@@ -315,18 +319,18 @@ private:
         const IntPoint& innerBorderAdjustment, const class BorderEdge[], BorderEdgeFlags, BackgroundBleedAvoidance,
         bool includeLogicalLeftEdge, bool includeLogicalRightEdge, bool antialias = false, const Color* overrideColor = 0);
     void drawBoxSideFromPath(GraphicsContext*, const LayoutRect&, const Path&, const class BorderEdge[],
-                            float thickness, float drawThickness, BoxSide, const RenderStyle*, 
+                            float thickness, float drawThickness, BoxSide, const RenderStyle*,
                             Color, EBorderStyle, BackgroundBleedAvoidance, bool includeLogicalLeftEdge, bool includeLogicalRightEdge);
 };
 
 inline RenderBoxModelObject* toRenderBoxModelObject(RenderObject* object)
-{ 
+{
     ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isBoxModelObject());
     return static_cast<RenderBoxModelObject*>(object);
 }
 
 inline const RenderBoxModelObject* toRenderBoxModelObject(const RenderObject* object)
-{ 
+{
     ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isBoxModelObject());
     return static_cast<const RenderBoxModelObject*>(object);
 }

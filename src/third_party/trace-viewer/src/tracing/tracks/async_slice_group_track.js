@@ -22,7 +22,8 @@ base.exportTo('tracing.tracks', function() {
 
     __proto__: tracing.tracks.SliceGroupTrack.prototype,
 
-    decorate: function() {
+    decorate: function(viewport) {
+      tracing.tracks.SliceGroupTrack.prototype.decorate.call(this, viewport);
       this.classList.add('async-slice-group-track');
     },
 

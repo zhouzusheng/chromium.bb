@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /**
  * @fileoverview Parses Mali DDK/kernel events in the Linux event trace format.
  */
@@ -219,7 +221,7 @@ base.exportTo('tracing.importer.linux_perf', function() {
       var thread = this.importer.model_.getOrCreateProcess(pid)
         .getOrCreateThread(tid);
       var funcArgs = /^([\w\d_]*)(?:\(\))?:?\s*(.*)$/.exec(func);
-      thread.beginSlice('gpu-driver', funcArgs[1], ts,
+      thread.sliceGroup.beginSlice('gpu-driver', funcArgs[1], ts,
           { 'args': funcArgs[2],
             'blockinfo': blockinfo });
     },
@@ -227,11 +229,11 @@ base.exportTo('tracing.importer.linux_perf', function() {
     maliDDKCloseSlice: function(pid, tid, ts, args, blockinfo) {
       var thread = this.importer.model_.getOrCreateProcess(pid)
         .getOrCreateThread(tid);
-      if (!thread.openSliceCount) {
+      if (!thread.sliceGroup.openSliceCount) {
         // Discard unmatched ends.
         return;
       }
-      thread.endSlice(ts);
+      thread.sliceGroup.endSlice(ts);
     },
 
     /**
@@ -297,12 +299,13 @@ base.exportTo('tracing.importer.linux_perf', function() {
       var value = parseInt(s);
       var counter = this.model_.getOrCreateProcess(0).
           getOrCreateCounter('DVFS', counterName);
-      if (counter.numSeries == 0) {
-        counter.seriesNames.push(seriesName);
-        counter.seriesColors.push(tracing.getStringColorId(counter.name));
+      if (counter.numSeries === 0) {
+        counter.addSeries(new tracing.trace_model.CounterSeries(seriesName,
+            tracing.getStringColorId(counter.name)));
       }
-      counter.timestamps.push(ts);
-      counter.samples.push(value);
+      counter.series.forEach(function(series) {
+        series.addSample(ts, value);
+      });
     },
 
     dvfsEventEvent: function(eventName, cpuNumber, pid, ts, eventBase) {
@@ -340,12 +343,13 @@ base.exportTo('tracing.importer.linux_perf', function() {
 
       var counter = this.model_.getOrCreateProcess(0).
           getOrCreateCounter(cat, counterName);
-      if (counter.numSeries == 0) {
-        counter.seriesNames.push(seriesName);
-        counter.seriesColors.push(tracing.getStringColorId(counter.name));
+      if (counter.numSeries === 0) {
+        counter.addSeries(new tracing.trace_model.CounterSeries(seriesName,
+            tracing.getStringColorId(counter.name)));
       }
-      counter.timestamps.push(ts);
-      counter.samples.push(value);
+      counter.series.forEach(function(series) {
+        series.addSample(ts, value);
+      });
       return true;
     },
 

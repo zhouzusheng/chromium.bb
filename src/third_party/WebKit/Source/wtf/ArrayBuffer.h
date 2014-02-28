@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef ArrayBuffer_h
@@ -53,6 +53,8 @@ public:
     inline const void* data() const;
     inline unsigned byteLength() const;
 
+    // Creates a new ArrayBuffer object with copy of bytes in this object
+    // ranging from |begin| upto but not including |end|.
     inline PassRefPtr<ArrayBuffer> slice(int begin, int end) const;
     inline PassRefPtr<ArrayBuffer> slice(int begin) const;
 
@@ -60,7 +62,7 @@ public:
     void removeView(ArrayBufferView*);
 
     bool transfer(ArrayBufferContents&, Vector<RefPtr<ArrayBufferView> >& neuteredViews);
-    bool isNeutered() { return !m_contents.data(); }
+    bool isNeutered() { return m_isNeutered; }
 
     bool hasDeallocationObserver() { return m_contents.hasDeallocationObserver(); }
     void setDeallocationObserver(ArrayBufferDeallocationObserver* observer) { m_contents.setDeallocationObserver(observer); }
@@ -77,6 +79,7 @@ private:
 
     ArrayBufferContents m_contents;
     ArrayBufferView* m_firstView;
+    bool m_isNeutered;
 };
 
 int ArrayBuffer::clampValue(int x, int left, int right)
@@ -128,7 +131,7 @@ PassRefPtr<ArrayBuffer> ArrayBuffer::create(unsigned numElements, unsigned eleme
 }
 
 ArrayBuffer::ArrayBuffer(ArrayBufferContents& contents)
-    : m_firstView(0)
+    : m_firstView(0), m_isNeutered(false)
 {
     contents.transfer(m_contents);
 }

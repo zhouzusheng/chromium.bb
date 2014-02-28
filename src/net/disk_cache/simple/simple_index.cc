@@ -11,7 +11,7 @@
 #include "base/file_util.h"
 #include "base/files/file_enumerator.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/pickle.h"
@@ -19,7 +19,7 @@
 #include "base/strings/string_tokenizer.h"
 #include "base/task_runner.h"
 #include "base/threading/worker_pool.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/net_errors.h"
 #include "net/disk_cache/simple/simple_entry_format.h"
 #include "net/disk_cache/simple/simple_index_file.h"
@@ -126,7 +126,7 @@ SimpleIndex::~SimpleIndex() {
   }
 }
 
-void SimpleIndex::Initialize() {
+void SimpleIndex::Initialize(base::Time cache_mtime) {
   DCHECK(io_thread_checker_.CalledOnValidThread());
 
   // Take the foreground and background index flush delays from the experiment
@@ -152,8 +152,13 @@ void SimpleIndex::Initialize() {
       base::Bind(&SimpleIndex::OnActivityStateChange, AsWeakPtr())));
 #endif
 
-  index_file_->LoadIndexEntries(
-      io_thread_, base::Bind(&SimpleIndex::MergeInitializingSet, AsWeakPtr()));
+  SimpleIndexLoadResult* load_result = new SimpleIndexLoadResult();
+  scoped_ptr<SimpleIndexLoadResult> load_result_scoped(load_result);
+  base::Closure reply = base::Bind(
+      &SimpleIndex::MergeInitializingSet,
+      AsWeakPtr(),
+      base::Passed(&load_result_scoped));
+  index_file_->LoadIndexEntries(cache_mtime, reply, load_result);
 }
 
 bool SimpleIndex::SetMaxSize(int max_bytes) {
@@ -179,26 +184,14 @@ int SimpleIndex::ExecuteWhenReady(const net::CompletionCallback& task) {
   return net::ERR_IO_PENDING;
 }
 
-scoped_ptr<std::vector<uint64> > SimpleIndex::RemoveEntriesBetween(
+scoped_ptr<SimpleIndex::HashList> SimpleIndex::RemoveEntriesBetween(
     const base::Time initial_time, const base::Time end_time) {
-  DCHECK_EQ(true, initialized_);
-  const base::Time extended_end_time =
-      end_time.is_null() ? base::Time::Max() : end_time;
-  DCHECK(extended_end_time >= initial_time);
-  scoped_ptr<std::vector<uint64> > ret_hashes(new std::vector<uint64>());
-  for (EntrySet::iterator it = entries_set_.begin(), end = entries_set_.end();
-       it != end;) {
-    EntryMetadata& metadata = it->second;
-    base::Time entry_time = metadata.GetLastUsedTime();
-    if (initial_time <= entry_time && entry_time < extended_end_time) {
-      ret_hashes->push_back(it->first);
-      cache_size_ -= metadata.GetEntrySize();
-      entries_set_.erase(it++);
-    } else {
-      it++;
-    }
-  }
-  return ret_hashes.Pass();
+  return ExtractEntriesBetween(initial_time, end_time, true);
+}
+
+scoped_ptr<SimpleIndex::HashList> SimpleIndex::GetAllHashes() {
+  const base::Time null_time = base::Time();
+  return ExtractEntriesBetween(null_time, null_time, false);
 }
 
 int32 SimpleIndex::GetEntryCount() const {
@@ -233,11 +226,10 @@ void SimpleIndex::Remove(const std::string& key) {
   PostponeWritingToDisk();
 }
 
-bool SimpleIndex::Has(const std::string& key) const {
+bool SimpleIndex::Has(uint64 hash) const {
   DCHECK(io_thread_checker_.CalledOnValidThread());
   // If not initialized, always return true, forcing it to go to the disk.
-  return !initialized_ ||
-         entries_set_.count(simple_util::GetEntryHashKey(key)) > 0;
+  return !initialized_ || entries_set_.count(hash) > 0;
 }
 
 bool SimpleIndex::UseIfExists(const std::string& key) {
@@ -353,10 +345,12 @@ void SimpleIndex::UpdateEntryIteratorSize(EntrySet::iterator* it,
   (*it)->second.SetEntrySize(entry_size);
 }
 
-void SimpleIndex::MergeInitializingSet(scoped_ptr<EntrySet> index_file_entries,
-                                       bool force_index_flush) {
+void SimpleIndex::MergeInitializingSet(
+    scoped_ptr<SimpleIndexLoadResult> load_result) {
   DCHECK(io_thread_checker_.CalledOnValidThread());
-  DCHECK(index_file_entries);
+  DCHECK(load_result->did_load);
+
+  SimpleIndex::EntrySet* index_file_entries = &load_result->entries;
   // First, remove the entries that are in the |removed_entries_| from both
   // sets.
   for (base::hash_set<uint64>::const_iterator it =
@@ -365,24 +359,30 @@ void SimpleIndex::MergeInitializingSet(scoped_ptr<EntrySet> index_file_entries,
     index_file_entries->erase(*it);
   }
 
-  // Recalculate the cache size while merging the two sets.
-  for (EntrySet::const_iterator it = index_file_entries->begin();
-       it != index_file_entries->end(); ++it) {
-    // If there is already an entry in the current entries_set_, we need to
-    // merge the new data there with the data loaded in the initialization.
-    EntrySet::iterator current_entry = entries_set_.find(it->first);
-    // When Merging, existing data in the |current_entry| will prevail.
-    if (current_entry == entries_set_.end()) {
-      InsertInEntrySet(it->first, it->second, &entries_set_);
-      cache_size_ += it->second.GetEntrySize();
-    }
+  for (EntrySet::const_iterator it = entries_set_.begin();
+       it != entries_set_.end(); ++it) {
+    const uint64 entry_hash = it->first;
+    std::pair<EntrySet::iterator, bool> insert_result =
+        index_file_entries->insert(EntrySet::value_type(entry_hash,
+                                                        EntryMetadata()));
+    EntrySet::iterator& possibly_inserted_entry = insert_result.first;
+    possibly_inserted_entry->second = it->second;
   }
+
+  uint64 merged_cache_size = 0;
+  for (EntrySet::iterator it = index_file_entries->begin();
+       it != index_file_entries->end(); ++it) {
+    merged_cache_size += it->second.GetEntrySize();
+  }
+
+  entries_set_.swap(*index_file_entries);
+  cache_size_ = merged_cache_size;
   initialized_ = true;
   removed_entries_.clear();
 
-  // The actual IO is asynchronous, so calling WriteToDisk() shouldn't slow down
-  // much the merge.
-  if (force_index_flush)
+  // The actual IO is asynchronous, so calling WriteToDisk() shouldn't slow the
+  // merge down much.
+  if (load_result->flush_required)
     WriteToDisk();
 
   UMA_HISTOGRAM_CUSTOM_COUNTS("SimpleCache.IndexInitializationWaiters",
@@ -431,6 +431,31 @@ void SimpleIndex::WriteToDisk() {
 
   index_file_->WriteToDisk(entries_set_, cache_size_,
                            start, app_on_background_);
+}
+
+scoped_ptr<SimpleIndex::HashList> SimpleIndex::ExtractEntriesBetween(
+    const base::Time initial_time, const base::Time end_time,
+    bool delete_entries) {
+  DCHECK_EQ(true, initialized_);
+  const base::Time extended_end_time =
+      end_time.is_null() ? base::Time::Max() : end_time;
+  DCHECK(extended_end_time >= initial_time);
+  scoped_ptr<HashList> ret_hashes(new HashList());
+  for (EntrySet::iterator it = entries_set_.begin(), end = entries_set_.end();
+       it != end;) {
+    EntryMetadata& metadata = it->second;
+    base::Time entry_time = metadata.GetLastUsedTime();
+    if (initial_time <= entry_time && entry_time < extended_end_time) {
+      ret_hashes->push_back(it->first);
+      if (delete_entries) {
+        cache_size_ -= metadata.GetEntrySize();
+        entries_set_.erase(it++);
+        continue;
+      }
+    }
+    ++it;
+  }
+  return ret_hashes.Pass();
 }
 
 }  // namespace disk_cache

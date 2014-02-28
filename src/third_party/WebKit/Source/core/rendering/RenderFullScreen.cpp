@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2010 Apple Inc. All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
@@ -9,7 +9,7 @@
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
  *     documentation and/or other materials provided with the distribution.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY APPLE INC. AND ITS CONTRIBUTORS ``AS IS'' AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -25,15 +25,15 @@
 #include "config.h"
 #include "core/rendering/RenderFullScreen.h"
 
-#include "core/dom/FullscreenController.h"
+#include "core/dom/FullscreenElementStack.h"
 
 using namespace WebCore;
 
 class RenderFullScreenPlaceholder FINAL : public RenderBlock {
 public:
-    RenderFullScreenPlaceholder(RenderFullScreen* owner) 
+    RenderFullScreenPlaceholder(RenderFullScreen* owner)
         : RenderBlock(0)
-        , m_owner(owner) 
+        , m_owner(owner)
     {
         setDocumentForAnonymous(owner->document());
     }
@@ -53,12 +53,12 @@ RenderFullScreen::RenderFullScreen()
     : RenderFlexibleBox(0)
     , m_placeholder(0)
 {
-    setReplaced(false); 
+    setReplaced(false);
 }
 
 RenderFullScreen* RenderFullScreen::createAnonymous(Document* document)
 {
-    RenderFullScreen* renderer = new (document->renderArena()) RenderFullScreen();
+    RenderFullScreen* renderer = new RenderFullScreen();
     renderer->setDocumentForAnonymous(document);
     return renderer;
 }
@@ -75,7 +75,7 @@ void RenderFullScreen::willBeDestroyed()
     // RenderObjects are unretained, so notify the document (which holds a pointer to a RenderFullScreen)
     // if it's RenderFullScreen is destroyed.
     if (document()) {
-        FullscreenController* controller = FullscreenController::from(document());
+        FullscreenElementStack* controller = FullscreenElementStack::from(document());
         if (controller->fullScreenRenderer() == this)
             controller->fullScreenRendererDestroyed();
     }
@@ -97,15 +97,15 @@ static PassRefPtr<RenderStyle> createFullScreenStyle()
     fullscreenStyle->setJustifyContent(JustifyCenter);
     fullscreenStyle->setAlignItems(AlignCenter);
     fullscreenStyle->setFlexDirection(FlowColumn);
-    
+
     fullscreenStyle->setPosition(FixedPosition);
     fullscreenStyle->setWidth(Length(100.0, Percent));
     fullscreenStyle->setHeight(Length(100.0, Percent));
     fullscreenStyle->setLeft(Length(0, WebCore::Fixed));
     fullscreenStyle->setTop(Length(0, WebCore::Fixed));
-    
+
     fullscreenStyle->setBackgroundColor(Color::black);
-    
+
     return fullscreenStyle.release();
 }
 
@@ -129,7 +129,7 @@ RenderObject* RenderFullScreen::wrapRenderer(RenderObject* object, RenderObject*
 
             parent->addChild(fullscreenRenderer, object);
             object->remove();
-            
+
             // Always just do a full layout to ensure that line boxes get deleted properly.
             // Because objects moved from |parent| to |fullscreenRenderer|, we want to
             // make new line boxes instead of leaving the old ones around.
@@ -140,7 +140,7 @@ RenderObject* RenderFullScreen::wrapRenderer(RenderObject* object, RenderObject*
         fullscreenRenderer->setNeedsLayoutAndPrefWidthsRecalc();
     }
 
-    FullscreenController::from(document)->setFullScreenRenderer(fullscreenRenderer);
+    FullscreenElementStack::from(document)->setFullScreenRenderer(fullscreenRenderer);
     return fullscreenRenderer;
 }
 
@@ -162,7 +162,7 @@ void RenderFullScreen::unwrapRenderer()
     if (placeholder())
         placeholder()->remove();
     remove();
-    FullscreenController::from(document())->setFullScreenRenderer(0);
+    FullscreenElementStack::from(document())->setFullScreenRenderer(0);
 }
 
 void RenderFullScreen::setPlaceholder(RenderBlock* placeholder)
@@ -178,7 +178,7 @@ void RenderFullScreen::createPlaceholder(PassRefPtr<RenderStyle> style, const La
         style->setHeight(Length(frameRect.height(), Fixed));
 
     if (!m_placeholder) {
-        m_placeholder = new (document()->renderArena()) RenderFullScreenPlaceholder(this);
+        m_placeholder = new RenderFullScreenPlaceholder(this);
         m_placeholder->setStyle(style);
         if (parent()) {
             parent()->addChild(m_placeholder, this);

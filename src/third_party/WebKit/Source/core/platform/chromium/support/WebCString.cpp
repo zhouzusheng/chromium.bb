@@ -33,7 +33,8 @@
 #include "public/platform/WebCString.h"
 
 #include "public/platform/WebString.h"
-#include <wtf/text/CString.h>
+#include "wtf/text/CString.h"
+#include <string.h>
 
 namespace WebKit {
 

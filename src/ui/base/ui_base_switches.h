@@ -37,16 +37,10 @@ UI_EXPORT extern const char kTouchOptimizedUI[];
 UI_EXPORT extern const char kTouchOptimizedUIAuto[];
 UI_EXPORT extern const char kTouchOptimizedUIDisabled[];
 UI_EXPORT extern const char kTouchOptimizedUIEnabled[];
+UI_EXPORT extern const char kTouchSideBezels[];
 
 #if defined(USE_XI2_MT)
 UI_EXPORT extern const char kTouchCalibration[];
-#endif
-
-#if defined(OS_MACOSX)
-// This isn't really the right place for this switch, but is the most
-// convenient place where it can be shared between
-// src/webkit/plugins/npapi/ and src/content/plugin/ .
-UI_EXPORT extern const char kDisableCoreAnimationPlugins[];
 #endif
 
 #if defined(TOOLKIT_VIEWS) && defined(OS_LINUX)

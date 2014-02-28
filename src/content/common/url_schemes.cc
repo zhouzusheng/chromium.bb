@@ -15,7 +15,7 @@
 #include "content/common/savable_url_schemes.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/url_constants.h"
-#include "googleurl/src/url_util.h"
+#include "url/url_util.h"
 
 namespace {
 
@@ -38,8 +38,8 @@ void RegisterContentSchemes(bool lock_standard_schemes) {
   // the new tab page.
   url_util::AddStandardScheme(chrome::kChromeDevToolsScheme);
   url_util::AddStandardScheme(chrome::kChromeUIScheme);
-  url_util::AddStandardScheme(chrome::kMetadataScheme);
   url_util::AddStandardScheme(chrome::kGuestScheme);
+  url_util::AddStandardScheme(kMetadataScheme);
   std::for_each(additional_standard_schemes.begin(),
                 additional_standard_schemes.end(),
                 AddStandardSchemeHelper);

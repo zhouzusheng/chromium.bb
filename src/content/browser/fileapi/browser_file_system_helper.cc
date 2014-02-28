@@ -12,6 +12,7 @@
 #include "base/sequenced_task_runner.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "content/browser/child_process_security_policy_impl.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_client.h"
@@ -19,10 +20,9 @@
 #include "content/public/common/url_constants.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
 #include "webkit/browser/fileapi/file_permission_policy.h"
-#include "webkit/browser/fileapi/file_system_mount_point_provider.h"
+#include "webkit/browser/fileapi/file_system_backend.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
 #include "webkit/browser/fileapi/file_system_options.h"
-#include "webkit/browser/fileapi/file_system_task_runners.h"
 #include "webkit/browser/quota/quota_manager.h"
 
 namespace content {
@@ -48,34 +48,54 @@ FileSystemOptions CreateBrowserFileSystemOptions(bool is_incognito) {
 }  // namespace
 
 scoped_refptr<fileapi::FileSystemContext> CreateFileSystemContext(
+    BrowserContext* browser_context,
     const base::FilePath& profile_path,
     bool is_incognito,
-    fileapi::ExternalMountPoints* external_mount_points,
-    quota::SpecialStoragePolicy* special_storage_policy,
     quota::QuotaManagerProxy* quota_manager_proxy) {
 
   base::SequencedWorkerPool* pool = content::BrowserThread::GetBlockingPool();
   scoped_refptr<base::SequencedTaskRunner> file_task_runner =
-      pool->GetSequencedTaskRunner(pool->GetNamedSequenceToken("FileAPI"));
+      pool->GetSequencedTaskRunnerWithShutdownBehavior(
+          pool->GetNamedSequenceToken("FileAPI"),
+          base::SequencedWorkerPool::SKIP_ON_SHUTDOWN);
 
-  scoped_ptr<fileapi::FileSystemTaskRunners> task_runners(
-      new fileapi::FileSystemTaskRunners(
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO).get(),
-          file_task_runner.get()));
-
-  // Setting up additional mount point providers.
-  ScopedVector<fileapi::FileSystemMountPointProvider> additional_providers;
-  GetContentClient()->browser()->GetAdditionalFileSystemMountPointProviders(
-      profile_path, &additional_providers);
-
-  return new fileapi::FileSystemContext(
-      task_runners.Pass(),
-      external_mount_points,
-      special_storage_policy,
-      quota_manager_proxy,
-      additional_providers.Pass(),
+  // Setting up additional filesystem backends.
+  ScopedVector<fileapi::FileSystemBackend> additional_backends;
+  GetContentClient()->browser()->GetAdditionalFileSystemBackends(
+      browser_context,
       profile_path,
-      CreateBrowserFileSystemOptions(is_incognito));
+      &additional_backends);
+
+  scoped_refptr<fileapi::FileSystemContext> file_system_context =
+      new fileapi::FileSystemContext(
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO).get(),
+          file_task_runner.get(),
+          BrowserContext::GetMountPoints(browser_context),
+          browser_context->GetSpecialStoragePolicy(),
+          quota_manager_proxy,
+          additional_backends.Pass(),
+          profile_path,
+          CreateBrowserFileSystemOptions(is_incognito));
+
+  std::vector<fileapi::FileSystemType> types;
+  file_system_context->GetFileSystemTypes(&types);
+  for (size_t i = 0; i < types.size(); ++i) {
+    ChildProcessSecurityPolicyImpl::GetInstance()->
+        RegisterFileSystemPermissionPolicy(
+            types[i],
+            fileapi::FileSystemContext::GetPermissionPolicy(types[i]));
+  }
+
+  return file_system_context;
+}
+
+bool FileSystemURLIsValid(
+    fileapi::FileSystemContext* context,
+    const fileapi::FileSystemURL& url) {
+  if (!url.is_valid())
+    return false;
+
+  return context->GetFileSystemBackend(url.type()) != NULL;
 }
 
 bool CheckFileSystemPermissionsForProcess(
@@ -83,81 +103,49 @@ bool CheckFileSystemPermissionsForProcess(
     const fileapi::FileSystemURL& url, int permissions,
     base::PlatformFileError* error) {
   DCHECK(error);
+
+  if (!FileSystemURLIsValid(context, url)) {
+    *error = base::PLATFORM_FILE_ERROR_INVALID_URL;
+    return false;
+  }
+
+  if (!ChildProcessSecurityPolicyImpl::GetInstance()->
+          HasPermissionsForFileSystemFile(process_id, url, permissions)) {
+    *error = base::PLATFORM_FILE_ERROR_SECURITY;
+    return false;
+  }
+
   *error = base::PLATFORM_FILE_OK;
-
-  if (!url.is_valid()) {
-    *error = base::PLATFORM_FILE_ERROR_INVALID_URL;
-    return false;
-  }
-
-  fileapi::FileSystemMountPointProvider* mount_point_provider =
-      context->GetMountPointProvider(url.type());
-  if (!mount_point_provider) {
-    *error = base::PLATFORM_FILE_ERROR_INVALID_URL;
-    return false;
-  }
-
-  base::FilePath file_path;
-  ChildProcessSecurityPolicyImpl* policy =
-      ChildProcessSecurityPolicyImpl::GetInstance();
-
-  switch (mount_point_provider->GetPermissionPolicy(url, permissions)) {
-    case fileapi::FILE_PERMISSION_ALWAYS_DENY:
-      *error = base::PLATFORM_FILE_ERROR_SECURITY;
-      return false;
-    case fileapi::FILE_PERMISSION_ALWAYS_ALLOW:
-      CHECK(context->IsSandboxFileSystem(url.type()));
-      return true;
-    case fileapi::FILE_PERMISSION_USE_FILE_PERMISSION: {
-      const bool success = policy->HasPermissionsForFile(
-          process_id, url.path(), permissions);
-      if (!success)
-        *error = base::PLATFORM_FILE_ERROR_SECURITY;
-      return success;
-    }
-    case fileapi::FILE_PERMISSION_USE_FILESYSTEM_PERMISSION: {
-      const bool success = policy->HasPermissionsForFileSystem(
-          process_id, url.mount_filesystem_id(), permissions);
-      if (!success)
-        *error = base::PLATFORM_FILE_ERROR_SECURITY;
-      return success;
-    }
-  }
-  NOTREACHED();
-  *error = base::PLATFORM_FILE_ERROR_SECURITY;
-  return false;
+  return true;
 }
 
 void SyncGetPlatformPath(fileapi::FileSystemContext* context,
                          int process_id,
                          const GURL& path,
                          base::FilePath* platform_path) {
-  DCHECK(context->task_runners()->file_task_runner()->
+  DCHECK(context->default_file_task_runner()->
          RunsTasksOnCurrentThread());
   DCHECK(platform_path);
   *platform_path = base::FilePath();
   fileapi::FileSystemURL url(context->CrackURL(path));
-  if (!url.is_valid())
+  if (!FileSystemURLIsValid(context, url))
     return;
 
   // Make sure if this file is ok to be read (in the current architecture
   // which means roughly same as the renderer is allowed to get the platform
   // path to the file).
-  base::PlatformFileError error;
-  if (!CheckFileSystemPermissionsForProcess(
-      context, process_id, url, fileapi::kReadFilePermissions, &error))
+  ChildProcessSecurityPolicyImpl* policy =
+      ChildProcessSecurityPolicyImpl::GetInstance();
+  if (!policy->CanReadFileSystemFile(process_id, url))
     return;
 
   context->operation_runner()->SyncGetPlatformPath(url, platform_path);
 
   // The path is to be attached to URLLoader so we grant read permission
-  // for the file. (We first need to check if it can already be read not to
-  // overwrite existing permissions)
-  if (!ChildProcessSecurityPolicyImpl::GetInstance()->CanReadFile(
-          process_id, *platform_path)) {
-    ChildProcessSecurityPolicyImpl::GetInstance()->GrantReadFile(
-        process_id, *platform_path);
-  }
+  // for the file. (We need to check first because a parent directory may
+  // already have the permissions and we don't need to grant it to the file.)
+  if (!policy->CanReadFile(process_id, *platform_path))
+    policy->GrantReadFile(process_id, *platform_path);
 }
 
 }  // namespace content

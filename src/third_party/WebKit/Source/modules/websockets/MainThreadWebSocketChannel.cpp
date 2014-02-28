@@ -29,12 +29,11 @@
  */
 
 #include "config.h"
-
 #include "modules/websockets/MainThreadWebSocketChannel.h"
 
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "bindings/v8/ScriptCallStackFactory.h"
 #include "core/dom/Document.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
 #include "core/dom/ScriptExecutionContext.h"
 #include "core/fileapi/Blob.h"
 #include "core/fileapi/FileError.h"
@@ -54,7 +53,6 @@
 #include "modules/websockets/WebSocketChannel.h"
 #include "modules/websockets/WebSocketChannelClient.h"
 #include "modules/websockets/WebSocketHandshake.h"
-
 #include "wtf/ArrayBuffer.h"
 #include "wtf/Deque.h"
 #include "wtf/FastMalloc.h"
@@ -380,7 +378,7 @@ void MainThreadWebSocketChannel::didFinishLoading()
     deref();
 }
 
-void MainThreadWebSocketChannel::didFail(int errorCode)
+void MainThreadWebSocketChannel::didFail(FileError::ErrorCode errorCode)
 {
     LOG(Network, "MainThreadWebSocketChannel %p didFail() errorCode=%d", this, errorCode);
     ASSERT(m_blobLoader);
@@ -746,7 +744,7 @@ void MainThreadWebSocketChannel::processOutgoingFrameQueue()
                 ASSERT(!m_blobLoader);
                 m_blobLoader = adoptPtr(new FileReaderLoader(FileReaderLoader::ReadAsArrayBuffer, this));
                 m_blobLoaderStatus = BlobLoaderStarted;
-                m_blobLoader->start(m_document, frame->blobData.get());
+                m_blobLoader->start(m_document, *frame->blobData);
                 m_outgoingFrameQueue.prepend(frame.release());
                 return;
 

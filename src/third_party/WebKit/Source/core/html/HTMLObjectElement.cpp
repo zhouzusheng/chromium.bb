@@ -37,7 +37,7 @@
 #include "core/html/HTMLMetaElement.h"
 #include "core/html/HTMLParamElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/loader/cache/CachedImage.h"
+#include "core/loader/cache/ImageResource.h"
 #include "core/page/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
@@ -50,7 +50,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLObjectElement::HTMLObjectElement(const QualifiedName& tagName, Document* document, HTMLFormElement* form, bool createdByParser) 
+inline HTMLObjectElement::HTMLObjectElement(const QualifiedName& tagName, Document* document, HTMLFormElement* form, bool createdByParser)
     : HTMLPlugInImageElement(tagName, document, createdByParser, ShouldNotPreferPlugInsForImages)
     , m_docNamedItem(true)
     , m_useFallbackContent(false)
@@ -132,7 +132,7 @@ static void mapDataParamToSrc(Vector<String>* paramNames, Vector<String>* paramV
         else if (equalIgnoringCase((*paramNames)[i], "data"))
             dataIndex = i;
     }
-    
+
     if (srcIndex == -1 && dataIndex != -1) {
         paramNames->append("src");
         paramValues->append((*paramValues)[dataIndex]);
@@ -144,7 +144,7 @@ void HTMLObjectElement::parametersForPlugin(Vector<String>& paramNames, Vector<S
 {
     HashSet<StringImpl*, CaseFoldingHash> uniqueParamNames;
     String urlParameter;
-    
+
     // Scan the PARAM children and store their name/value pairs.
     // Get the URL and type from the params if we don't already have them.
     for (Node* child = firstChild(); child; child = child->nextSibling()) {
@@ -171,7 +171,7 @@ void HTMLObjectElement::parametersForPlugin(Vector<String>& paramNames, Vector<S
                 serviceType = serviceType.left(pos);
         }
     }
-    
+
     // When OBJECT is used for an applet via Sun's Java plugin, the CODEBASE attribute in the tag
     // points to the Java plugin itself (an ActiveX component) while the actual applet CODEBASE is
     // in a PARAM tag. See <http://java.sun.com/products/plugin/1.2/docs/tags.html>. This means
@@ -182,7 +182,7 @@ void HTMLObjectElement::parametersForPlugin(Vector<String>& paramNames, Vector<S
         codebase = "codebase";
         uniqueParamNames.add(codebase.impl()); // pretend we found it in a PARAM already
     }
-    
+
     // Turn the attributes of the <object> element into arrays, but don't override <param> values.
     if (hasAttributes()) {
         for (unsigned i = 0; i < attributeCount(); ++i) {
@@ -194,21 +194,22 @@ void HTMLObjectElement::parametersForPlugin(Vector<String>& paramNames, Vector<S
             }
         }
     }
-    
+
     mapDataParamToSrc(&paramNames, &paramValues);
-    
+
     // HTML5 says that an object resource's URL is specified by the object's data
     // attribute, not by a param element. However, for compatibility, allow the
     // resource's URL to be given by a param named "src", "movie", "code" or "url"
     // if we know that resource points to a plug-in.
     if (url.isEmpty() && !urlParameter.isEmpty()) {
-        SubframeLoader* loader = document()->frame()->loader()->subframeLoader();
-        if (loader->resourceWillUsePlugin(urlParameter, serviceType, shouldPreferPlugInsForImages()))
+        KURL completedURL = document()->completeURL(urlParameter);
+        bool useFallback;
+        if (shouldUsePlugin(completedURL, serviceType, false, useFallback))
             url = urlParameter;
     }
 }
 
-    
+
 bool HTMLObjectElement::hasFallbackContent() const
 {
     for (Node* child = firstChild(); child; child = child->nextSibling()) {
@@ -221,7 +222,7 @@ bool HTMLObjectElement::hasFallbackContent() const
     }
     return false;
 }
-    
+
 bool HTMLObjectElement::shouldAllowQuickTimeClassIdQuirk()
 {
     // This site-specific hack maintains compatibility with Mac OS X Wiki Server,
@@ -244,15 +245,15 @@ bool HTMLObjectElement::shouldAllowQuickTimeClassIdQuirk()
         if (equalIgnoringCase(metaElement->name(), "generator") && metaElement->content().startsWith("Mac OS X Server Web Services Server", false))
             return true;
     }
-    
+
     return false;
 }
-    
+
 bool HTMLObjectElement::hasValidClassId()
 {
     if (MIMETypeRegistry::isJavaAppletMIMEType(serviceType()) && classId().startsWith("java:", false))
         return true;
-    
+
     if (shouldAllowQuickTimeClassIdQuirk())
         return true;
 
@@ -307,8 +308,7 @@ void HTMLObjectElement::updateWidget(PluginCreationOption pluginCreationOption)
     if (!renderer()) // Do not load the plugin if beforeload removed this element or its renderer.
         return;
 
-    SubframeLoader* loader = document()->frame()->loader()->subframeLoader();
-    bool success = beforeLoadAllowedLoad && hasValidClassId() && loader->requestObject(this, url, getNameAttribute(), serviceType, paramNames, paramValues);
+    bool success = beforeLoadAllowedLoad && hasValidClassId() && requestObject(url, serviceType, paramNames, paramValues);
     if (!success && fallbackContent)
         renderFallbackContent();
 }
@@ -356,21 +356,32 @@ const AtomicString& HTMLObjectElement::imageSourceURL() const
     return getAttribute(dataAttr);
 }
 
+// FIXME: Remove this hack.
+void HTMLObjectElement::reattachFallbackContent()
+{
+    // This can happen inside of attach() in the middle of a recalcStyle so we need to
+    // reattach synchronously here.
+    if (document()->inStyleRecalc())
+        reattach();
+    else
+        lazyReattach();
+}
+
 void HTMLObjectElement::renderFallbackContent()
 {
     if (useFallbackContent())
         return;
-    
+
     if (!inDocument())
         return;
 
     // Before we give up and use fallback content, check to see if this is a MIME type issue.
-    if (m_imageLoader && m_imageLoader->image() && m_imageLoader->image()->status() != CachedResource::LoadError) {
+    if (m_imageLoader && m_imageLoader->image() && m_imageLoader->image()->status() != Resource::LoadError) {
         m_serviceType = m_imageLoader->image()->response().mimeType();
         if (!isImageType()) {
             // If we don't think we have an image type anymore, then clear the image from the loader.
             m_imageLoader->setImage(0);
-            lazyReattach();
+            reattachFallbackContent();
             return;
         }
     }
@@ -378,13 +389,13 @@ void HTMLObjectElement::renderFallbackContent()
     m_useFallbackContent = true;
 
     // FIXME: Style gets recalculated which is suboptimal.
-    lazyReattach();
+    reattachFallbackContent();
 }
 
 // FIXME: This should be removed, all callers are almost certainly wrong.
 static bool isRecognizedTagName(const QualifiedName& tagName)
 {
-    DEFINE_STATIC_LOCAL(HashSet<AtomicStringImpl*>, tagList, ());
+    DEFINE_STATIC_LOCAL(HashSet<StringImpl*>, tagList, ());
     if (tagList.isEmpty()) {
         QualifiedName** tags = HTMLNames::getHTMLTags();
         for (size_t i = 0; i < HTMLNames::HTMLTagsCount; i++) {
@@ -444,7 +455,7 @@ bool HTMLObjectElement::containsJavaApplet() const
 {
     if (MIMETypeRegistry::isJavaAppletMIMEType(getAttribute(typeAttr)))
         return true;
-        
+
     for (Element* child = ElementTraversal::firstWithin(this); child; child = ElementTraversal::nextSkippingChildren(child, this)) {
         if (child->hasTagName(paramTag)
                 && equalIgnoringCase(child->getNameAttribute(), "type")
@@ -456,7 +467,7 @@ bool HTMLObjectElement::containsJavaApplet() const
         if (child->hasTagName(appletTag))
             return true;
     }
-    
+
     return false;
 }
 

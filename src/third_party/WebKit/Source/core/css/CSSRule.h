@@ -23,15 +23,14 @@
 #ifndef CSSRule_h
 #define CSSRule_h
 
-#include "core/dom/WebCoreMemoryInstrumentation.h"
-#include <wtf/RefCounted.h>
+#include "wtf/RefCounted.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 class CSSStyleSheet;
 class StyleRuleBase;
 struct CSSParserContext;
-typedef int ExceptionCode;
 
 class CSSRule : public RefCounted<CSSRule> {
 public:
@@ -60,7 +59,6 @@ public:
     virtual Type type() const = 0;
     virtual String cssText() const = 0;
     virtual void reattach(StyleRuleBase*) = 0;
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
 
     void setParentStyleSheet(CSSStyleSheet* styleSheet)
     {

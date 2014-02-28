@@ -28,6 +28,7 @@
 
 namespace WebCore {
 
+class ExceptionState;
 class RenderMarquee;
 
 class HTMLMarqueeElement FINAL : public HTMLElement, private ActiveDOMObject {
@@ -40,16 +41,16 @@ public:
 
     void start();
     void stop();
-    
+
     int scrollAmount() const;
-    void setScrollAmount(int, ExceptionCode&);
-    
+    void setScrollAmount(int, ExceptionState&);
+
     int scrollDelay() const;
-    void setScrollDelay(int, ExceptionCode&);
-    
+    void setScrollDelay(int, ExceptionState&);
+
     int loop() const;
-    void setLoop(int, ExceptionCode&);
-    
+    void setLoop(int, ExceptionState&);
+
 private:
     HTMLMarqueeElement(const QualifiedName&, Document*);
 

@@ -6,8 +6,9 @@
 
 #include <vector>
 
-#include "content/child/child_thread.h"
+#include "content/child/thread_safe_sender.h"
 #include "content/child/indexed_db/indexed_db_dispatcher.h"
+#include "content/child/indexed_db/indexed_db_key_builders.h"
 #include "content/common/indexed_db/indexed_db_messages.h"
 
 using WebKit::WebData;
@@ -16,12 +17,15 @@ using WebKit::WebIDBKey;
 
 namespace content {
 
-RendererWebIDBCursorImpl::RendererWebIDBCursorImpl(int32 ipc_cursor_id)
+RendererWebIDBCursorImpl::RendererWebIDBCursorImpl(
+    int32 ipc_cursor_id,
+    ThreadSafeSender* thread_safe_sender)
     : ipc_cursor_id_(ipc_cursor_id),
       continue_count_(0),
       used_prefetches_(0),
       pending_onsuccess_callbacks_(0),
-      prefetch_amount_(kMinPrefetchAmount) {}
+      prefetch_amount_(kMinPrefetchAmount),
+      thread_safe_sender_(thread_safe_sender) {}
 
 RendererWebIDBCursorImpl::~RendererWebIDBCursorImpl() {
   // It's not possible for there to be pending callbacks that address this
@@ -31,18 +35,18 @@ RendererWebIDBCursorImpl::~RendererWebIDBCursorImpl() {
 
   if (ipc_cursor_id_ != kInvalidCursorId) {
     // Invalid ID used in tests to avoid really sending this message.
-    IndexedDBDispatcher::Send(
+    thread_safe_sender_->Send(
         new IndexedDBHostMsg_CursorDestroyed(ipc_cursor_id_));
   }
   IndexedDBDispatcher* dispatcher =
-      IndexedDBDispatcher::ThreadSpecificInstance();
+      IndexedDBDispatcher::ThreadSpecificInstance(thread_safe_sender_.get());
   dispatcher->CursorDestroyed(ipc_cursor_id_);
 }
 
 void RendererWebIDBCursorImpl::advance(unsigned long count,
                                        WebIDBCallbacks* callbacks_ptr) {
   IndexedDBDispatcher* dispatcher =
-      IndexedDBDispatcher::ThreadSpecificInstance();
+      IndexedDBDispatcher::ThreadSpecificInstance(thread_safe_sender_.get());
   scoped_ptr<WebIDBCallbacks> callbacks(callbacks_ptr);
   ResetPrefetchCache();
   dispatcher->RequestIDBCursorAdvance(
@@ -53,10 +57,10 @@ void RendererWebIDBCursorImpl::continueFunction(
     const WebIDBKey& key,
     WebIDBCallbacks* callbacks_ptr) {
   IndexedDBDispatcher* dispatcher =
-      IndexedDBDispatcher::ThreadSpecificInstance();
+      IndexedDBDispatcher::ThreadSpecificInstance(thread_safe_sender_.get());
   scoped_ptr<WebIDBCallbacks> callbacks(callbacks_ptr);
 
-  if (key.type() == WebIDBKey::NullType) {
+  if (key.keyType() == WebKit::WebIDBKeyTypeNull) {
     // No key, so this would qualify for a prefetch.
     ++continue_count_;
 
@@ -85,7 +89,7 @@ void RendererWebIDBCursorImpl::continueFunction(
   }
 
   dispatcher->RequestIDBCursorContinue(
-      IndexedDBKey(key), callbacks.release(), ipc_cursor_id_);
+      IndexedDBKeyBuilder::Build(key), callbacks.release(), ipc_cursor_id_);
 }
 
 void RendererWebIDBCursorImpl::postSuccessHandlerCallback() {
@@ -113,8 +117,7 @@ void RendererWebIDBCursorImpl::SetPrefetchData(
   pending_onsuccess_callbacks_ = 0;
 }
 
-void RendererWebIDBCursorImpl::CachedContinue(
-    WebKit::WebIDBCallbacks* callbacks) {
+void RendererWebIDBCursorImpl::CachedContinue(WebIDBCallbacks* callbacks) {
   DCHECK_GT(prefetch_keys_.size(), 0ul);
   DCHECK(prefetch_primary_keys_.size() == prefetch_keys_.size());
   DCHECK(prefetch_values_.size() == prefetch_keys_.size());
@@ -131,7 +134,8 @@ void RendererWebIDBCursorImpl::CachedContinue(
 
   pending_onsuccess_callbacks_++;
 
-  callbacks->onSuccess(key, primary_key, value);
+  callbacks->onSuccess(WebIDBKeyBuilder::Build(key),
+                       WebIDBKeyBuilder::Build(primary_key), value);
 }
 
 void RendererWebIDBCursorImpl::ResetPrefetchCache() {
@@ -144,7 +148,7 @@ void RendererWebIDBCursorImpl::ResetPrefetchCache() {
   }
 
   IndexedDBDispatcher* dispatcher =
-      IndexedDBDispatcher::ThreadSpecificInstance();
+      IndexedDBDispatcher::ThreadSpecificInstance(thread_safe_sender_.get());
   dispatcher->RequestIDBCursorPrefetchReset(
       used_prefetches_, prefetch_keys_.size(), ipc_cursor_id_);
   prefetch_keys_.clear();

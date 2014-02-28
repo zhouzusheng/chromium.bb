@@ -50,6 +50,9 @@
       ],
       'conditions': [
         ['use_aura==1', {
+          'dependencies': [
+            'aura/aura.gyp:aura',
+          ],
           'sources/': [
             ['exclude', 'shell_dialogs/select_file_dialog_mac.mm'],
            ],

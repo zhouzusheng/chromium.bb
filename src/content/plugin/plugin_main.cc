@@ -10,12 +10,12 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/hi_res_timer_manager.h"
-#include "base/message_loop.h"
-#include "base/power_monitor/power_monitor.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/threading/platform_thread.h"
+#include "base/timer/hi_res_timer_manager.h"
 #include "content/child/child_process.h"
+#include "content/common/content_constants_internal.h"
 #include "content/plugin/plugin_thread.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
@@ -54,9 +54,9 @@ int PluginMain(const MainFunctionParams& parameters) {
 #endif
   base::MessageLoop main_message_loop(base::MessageLoop::TYPE_UI);
   base::PlatformThread::SetName("CrPluginMain");
-
-  base::PowerMonitor power_monitor;
-  HighResolutionTimerManager high_resolution_timer_manager;
+  base::debug::TraceLog::GetInstance()->SetProcessName("Plugin Process");
+  base::debug::TraceLog::GetInstance()->SetProcessSortIndex(
+      kTraceEventPluginProcessSortIndex);
 
   const CommandLine& parsed_command_line = parameters.command_line;
 
@@ -77,6 +77,7 @@ int PluginMain(const MainFunctionParams& parameters) {
   {
     ChildProcess plugin_process;
     plugin_process.set_main_thread(new PluginThread());
+    base::HighResolutionTimerManager hi_res_timer_manager;
     base::MessageLoop::current()->Run();
   }
 

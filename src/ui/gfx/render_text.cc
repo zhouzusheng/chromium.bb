@@ -9,8 +9,8 @@
 #include "base/i18n/break_iterator.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
-#include "third_party/icu/public/common/unicode/rbbi.h"
-#include "third_party/icu/public/common/unicode/utf16.h"
+#include "third_party/icu/source/common/unicode/rbbi.h"
+#include "third_party/icu/source/common/unicode/utf16.h"
 #include "third_party/skia/include/core/SkTypeface.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/base/text/text_elider.h"
@@ -357,18 +357,16 @@ void RenderText::SetFont(const Font& font) {
 }
 
 void RenderText::SetFontSize(int size) {
-  font_list_ = font_list_.DeriveFontListWithSize(size);
-  cached_bounds_and_offset_valid_ = false;
-  ResetLayout();
+  SetFontList(font_list_.DeriveFontListWithSize(size));
+}
+
+const Font& RenderText::GetPrimaryFont() const {
+  return font_list_.GetPrimaryFont();
 }
 
 void RenderText::SetCursorEnabled(bool cursor_enabled) {
   cursor_enabled_ = cursor_enabled;
   cached_bounds_and_offset_valid_ = false;
-}
-
-const Font& RenderText::GetFont() const {
-  return font_list_.GetFonts()[0];
 }
 
 void RenderText::ToggleInsertMode() {
@@ -644,7 +642,7 @@ void RenderText::Draw(Canvas* canvas) {
     canvas->ClipRect(clip_rect);
   }
 
-  if (!text().empty())
+  if (!text().empty() && focused())
     DrawSelection(canvas);
 
   if (cursor_enabled() && cursor_visible() && focused())
@@ -663,15 +661,27 @@ void RenderText::DrawCursor(Canvas* canvas, const SelectionModel& position) {
   canvas->FillRect(GetCursorBounds(position, true), cursor_color_);
 }
 
-void RenderText::DrawSelectedText(Canvas* canvas) {
+void RenderText::DrawSelectedTextForDrag(Canvas* canvas) {
   EnsureLayout();
   const std::vector<Rect> sel = GetSubstringBounds(selection());
+
+  // Override the selection color with black, and force the background to be
+  // transparent so that it's rendered without subpixel antialiasing.
+  const bool saved_background_is_transparent = background_is_transparent();
+  const SkColor saved_selection_color = selection_color();
+  set_background_is_transparent(true);
+  set_selection_color(SK_ColorBLACK);
+
   for (size_t i = 0; i < sel.size(); ++i) {
     canvas->Save();
     canvas->ClipRect(sel[i]);
     DrawVisualText(canvas);
     canvas->Restore();
   }
+
+  // Restore saved transparency and selection color.
+  set_selection_color(saved_selection_color);
+  set_background_is_transparent(saved_background_is_transparent);
 }
 
 Rect RenderText::GetCursorBounds(const SelectionModel& caret,
@@ -757,7 +767,6 @@ RenderText::RenderText()
       cursor_color_(kDefaultColor),
       selection_color_(kDefaultColor),
       selection_background_focused_color_(kDefaultSelectionBackgroundColor),
-      selection_background_unfocused_color_(kDefaultSelectionBackgroundColor),
       focused_(false),
       composition_range_(ui::Range::InvalidRange()),
       colors_(kDefaultColor),
@@ -876,7 +885,8 @@ void RenderText::ApplyFadeEffects(internal::SkiaTextRenderer* renderer) {
   if (text_width <= display_width)
     return;
 
-  int gradient_width = CalculateFadeGradientWidth(GetFont(), display_width);
+  int gradient_width = CalculateFadeGradientWidth(GetPrimaryFont(),
+                                                  display_width);
   if (gradient_width == 0)
     return;
 
@@ -989,13 +999,13 @@ void RenderText::UpdateCachedBoundsAndOffset() {
     // Don't pan if the text fits in the display width or when the cursor is
     // disabled.
     delta_x = -display_offset_.x();
-  } else if (cursor_bounds_.right() >= display_rect_.right()) {
+  } else if (cursor_bounds_.right() > display_rect_.right()) {
     // TODO(xji): when the character overflow is a RTL character, currently, if
     // we pan cursor at the rightmost position, the entered RTL character is not
     // displayed. Should pan cursor to show the last logical characters.
     //
-    // Pan to show the cursor when it overflows to the right,
-    delta_x = display_rect_.right() - cursor_bounds_.right() - 1;
+    // Pan to show the cursor when it overflows to the right.
+    delta_x = display_rect_.right() - cursor_bounds_.right();
   } else if (cursor_bounds_.x() < display_rect_.x()) {
     // TODO(xji): have similar problem as above when overflow character is a
     // LTR character.
@@ -1018,12 +1028,9 @@ void RenderText::UpdateCachedBoundsAndOffset() {
 }
 
 void RenderText::DrawSelection(Canvas* canvas) {
-  const SkColor color = focused() ?
-      selection_background_focused_color_ :
-      selection_background_unfocused_color_;
   const std::vector<Rect> sel = GetSubstringBounds(selection());
   for (std::vector<Rect>::const_iterator i = sel.begin(); i < sel.end(); ++i)
-    canvas->FillRect(*i, color);
+    canvas->FillRect(*i, selection_background_focused_color_);
 }
 
 }  // namespace gfx

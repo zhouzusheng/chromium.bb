@@ -68,7 +68,6 @@
         'ssl/win32err.c',
         'ssl/win32err.h',
         'ssl/bodge/secitem_array.c',
-        'ssl/bodge/secure_memcmp.c',
       ],
       'sources!': [
         'ssl/os2_err.c',
@@ -78,10 +77,6 @@
         'NO_PKCS11_BYPASS',
         'NSS_ENABLE_ECC',
         'USE_UTIL_DIRECTLY',
-      ],
-      'defines!': [
-        # Regrettably, NSS can't be compiled with NO_NSPR_10_SUPPORT yet.
-        'NO_NSPR_10_SUPPORT',
       ],
       'msvs_disabled_warnings': [4018, 4244, 4267],
       'conditions': [
@@ -107,6 +102,10 @@
             # See http://crbug.com/138571#c8. In short, sslsecur.c picks up the
             # system's cert.h because cert.h isn't in chromium's repo.
             '-Wno-incompatible-pointer-types',
+
+            # There is a broken header guard in /usr/include/nss/secmod.h:
+            # https://bugzilla.mozilla.org/show_bug.cgi?id=884072
+            '-Wno-header-guard',
           ],
         }],
         [ 'OS == "mac" or OS == "ios"', {

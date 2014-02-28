@@ -27,7 +27,7 @@
 #ifndef TextCodecASCIIFastPath_h
 #define TextCodecASCIIFastPath_h
 
-#include <wtf/text/ASCIIFastPath.h>
+#include "wtf/text/ASCIIFastPath.h"
 
 namespace WTF {
 
@@ -37,7 +37,7 @@ template<> struct UCharByteFiller<4> {
     {
         memcpy(destination, source, 4);
     }
-    
+
     static void copy(UChar* destination, const uint8_t* source)
     {
         destination[0] = source[0];

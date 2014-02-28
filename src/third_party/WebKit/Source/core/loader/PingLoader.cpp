@@ -32,22 +32,22 @@
 #include "config.h"
 #include "core/loader/PingLoader.h"
 
-#include <wtf/OwnPtr.h>
-#include <wtf/text/CString.h>
-#include <wtf/UnusedParam.h>
 #include "core/dom/Document.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/UniqueIdentifier.h"
 #include "core/page/Frame.h"
-#include "core/page/Page.h"
+#include "core/platform/chromium/support/WrappedResourceRequest.h"
 #include "core/platform/network/FormData.h"
-#include "core/platform/network/ResourceHandle.h"
 #include "core/platform/network/ResourceRequest.h"
 #include "core/platform/network/ResourceResponse.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebURLLoader.h"
 #include "weborigin/SecurityOrigin.h"
 #include "weborigin/SecurityPolicy.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/UnusedParam.h"
 
 namespace WebCore {
 
@@ -102,12 +102,12 @@ void PingLoader::sendPing(Frame* frame, const KURL& pingURL, const KURL& destina
     UNUSED_PARAM(leakedPingLoader);
 }
 
-void PingLoader::sendViolationReport(Frame* frame, const KURL& reportURL, PassRefPtr<FormData> report)
+void PingLoader::sendViolationReport(Frame* frame, const KURL& reportURL, PassRefPtr<FormData> report, ViolationReportType type)
 {
     ResourceRequest request(reportURL);
     request.setTargetType(ResourceRequest::TargetIsSubresource);
     request.setHTTPMethod("POST");
-    request.setHTTPContentType("application/json");
+    request.setHTTPContentType(type == ContentSecurityPolicyViolationReport ? "application/csp-report" : "application/json");
     request.setHTTPBody(report);
     frame->loader()->addExtraFieldsToRequest(request);
 
@@ -124,8 +124,14 @@ void PingLoader::sendViolationReport(Frame* frame, const KURL& reportURL, PassRe
 PingLoader::PingLoader(Frame* frame, ResourceRequest& request, StoredCredentials credentialsAllowed)
     : m_timeout(this, &PingLoader::timeout)
 {
+    frame->loader()->client()->didDispatchPingLoader(request.url());
+
     unsigned long identifier = createUniqueIdentifier();
-    m_handle = ResourceHandle::create(request, this, false, false, credentialsAllowed);
+    m_loader = adoptPtr(WebKit::Platform::current()->createURLLoader());
+    ASSERT(m_loader);
+    WebKit::WrappedResourceRequest wrappedRequest(request);
+    wrappedRequest.setAllowStoredCredentials(credentialsAllowed == AllowStoredCredentials);
+    m_loader->loadAsynchronously(wrappedRequest, this);
 
     InspectorInstrumentation::continueAfterPingLoader(frame, identifier, frame->loader()->activeDocumentLoader(), request, ResourceResponse());
 
@@ -136,8 +142,8 @@ PingLoader::PingLoader(Frame* frame, ResourceRequest& request, StoredCredentials
 
 PingLoader::~PingLoader()
 {
-    if (m_handle)
-        m_handle->cancel();
+    if (m_loader)
+        m_loader->cancel();
 }
 
 }

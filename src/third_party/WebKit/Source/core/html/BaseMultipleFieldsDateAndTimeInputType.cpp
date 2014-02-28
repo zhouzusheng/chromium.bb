@@ -50,7 +50,7 @@
 #include "core/platform/text/DateTimeFormat.h"
 #include "core/platform/text/PlatformLocale.h"
 #include "core/rendering/RenderTheme.h"
-#include <wtf/DateMath.h>
+#include "wtf/DateMath.h"
 
 namespace WebCore {
 
@@ -130,27 +130,27 @@ bool DateTimeFormatValidator::validateFormat(const String& format, const BaseMul
 
 DateTimeEditElement* BaseMultipleFieldsDateAndTimeInputType::dateTimeEditElement() const
 {
-    return toDateTimeEditElement(elementById(ShadowElementNames::dateTimeEdit()));
+    return toDateTimeEditElement(element()->uaShadowElementById(ShadowElementNames::dateTimeEdit()));
 }
 
 SpinButtonElement* BaseMultipleFieldsDateAndTimeInputType::spinButtonElement() const
 {
-    return toSpinButtonElement(elementById(ShadowElementNames::spinButton()));
+    return toSpinButtonElement(element()->uaShadowElementById(ShadowElementNames::spinButton()));
 }
 
 ClearButtonElement* BaseMultipleFieldsDateAndTimeInputType::clearButtonElement() const
 {
-    return toClearButtonElement(elementById(ShadowElementNames::clearButton()));
+    return toClearButtonElement(element()->uaShadowElementById(ShadowElementNames::clearButton()));
 }
 
 PickerIndicatorElement* BaseMultipleFieldsDateAndTimeInputType::pickerIndicatorElement() const
 {
-    return toPickerIndicatorElement(elementById(ShadowElementNames::pickerIndicator()));
+    return toPickerIndicatorElement(element()->uaShadowElementById(ShadowElementNames::pickerIndicator()));
 }
 
 inline bool BaseMultipleFieldsDateAndTimeInputType::containsFocusedShadowElement() const
 {
-    return element()->userAgentShadowRoot()->contains(element()->document()->focusedNode());
+    return element()->userAgentShadowRoot()->contains(element()->document()->focusedElement());
 }
 
 void BaseMultipleFieldsDateAndTimeInputType::didBlurFromControl()
@@ -259,7 +259,7 @@ void BaseMultipleFieldsDateAndTimeInputType::pickerIndicatorChooseValue(const St
         return;
     DateComponents date;
     unsigned end;
-    if (date.parseDate(value.characters(), value.length(), 0, end) && end == value.length())
+    if (date.parseDate(value, 0, end) && end == value.length())
         edit->setOnlyYearMonthDay(date);
 }
 
@@ -273,11 +273,14 @@ BaseMultipleFieldsDateAndTimeInputType::BaseMultipleFieldsDateAndTimeInputType(H
     , m_isDestroyingShadowSubtree(false)
     , m_pickerIndicatorIsVisible(false)
     , m_pickerIndicatorIsAlwaysVisible(false)
+    , m_didCreateShadowElements(false)
 {
 }
 
 BaseMultipleFieldsDateAndTimeInputType::~BaseMultipleFieldsDateAndTimeInputType()
 {
+    if (!m_didCreateShadowElements)
+        return;
     if (SpinButtonElement* element = spinButtonElement())
         element->removeSpinButtonOwner();
     if (ClearButtonElement* element = clearButtonElement())
@@ -321,10 +324,11 @@ void BaseMultipleFieldsDateAndTimeInputType::createShadowSubtree()
 {
     ASSERT(element()->shadow());
 
-    // Element must not be attached here, because if it was attached
+    // Element must not have a renderer here, because if it did
     // DateTimeEditElement::customStyleForRenderer() is called in appendChild()
     // before the field wrapper element is created.
-    ASSERT(!element()->attached());
+    // FIXME: This code should not depend on such craziness.
+    ASSERT(!element()->renderer());
 
     Document* document = element()->document();
     ContainerNode* container = element()->userAgentShadowRoot();
@@ -347,6 +351,7 @@ void BaseMultipleFieldsDateAndTimeInputType::createShadowSubtree()
         m_pickerIndicatorIsVisible = true;
         updatePickerIndicatorVisibility();
     }
+    m_didCreateShadowElements = true;
 }
 
 void BaseMultipleFieldsDateAndTimeInputType::destroyShadowSubtree()
@@ -371,16 +376,16 @@ void BaseMultipleFieldsDateAndTimeInputType::destroyShadowSubtree()
     m_isDestroyingShadowSubtree = false;
 }
 
-void BaseMultipleFieldsDateAndTimeInputType::handleFocusEvent(Node* oldFocusedNode, FocusDirection direction)
+void BaseMultipleFieldsDateAndTimeInputType::handleFocusEvent(Element* oldFocusedElement, FocusDirection direction)
 {
     DateTimeEditElement* edit = dateTimeEditElement();
     if (!edit || m_isDestroyingShadowSubtree)
         return;
     if (direction == FocusDirectionBackward) {
         if (element()->document()->page())
-            element()->document()->page()->focusController()->advanceFocus(direction, 0);
-    } else if (direction == FocusDirectionNone) {
-        edit->focusByOwner(oldFocusedNode);
+            element()->document()->page()->focusController().advanceFocus(direction);
+    } else if (direction == FocusDirectionNone || direction == FocusDirectionMouse || direction == FocusDirectionPage) {
+        edit->focusByOwner(oldFocusedElement);
     } else
         edit->focusByOwner();
 }
@@ -392,7 +397,7 @@ void BaseMultipleFieldsDateAndTimeInputType::forwardEvent(Event* event)
         if (event->defaultHandled())
             return;
     }
-        
+
     if (DateTimeEditElement* edit = dateTimeEditElement())
         edit->defaultEventHandler(event);
 }
@@ -428,16 +433,6 @@ bool BaseMultipleFieldsDateAndTimeInputType::hasBadInput() const
 {
     DateTimeEditElement* edit = dateTimeEditElement();
     return element()->value().isEmpty() && edit && edit->anyEditableFieldsHaveValues();
-}
-
-bool BaseMultipleFieldsDateAndTimeInputType::isKeyboardFocusable(KeyboardEvent*) const
-{
-    return element()->isFocusable();
-}
-
-bool BaseMultipleFieldsDateAndTimeInputType::isMouseFocusable() const
-{
-    return element()->isFocusable();
 }
 
 AtomicString BaseMultipleFieldsDateAndTimeInputType::localeIdentifier() const

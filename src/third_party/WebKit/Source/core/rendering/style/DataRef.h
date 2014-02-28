@@ -24,7 +24,7 @@
 #ifndef DataRef_h
 #define DataRef_h
 
-#include <wtf/RefPtr.h>
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
@@ -54,20 +54,12 @@ public:
         ASSERT(o.m_data);
         return m_data == o.m_data || *m_data == *o.m_data;
     }
-    
+
     bool operator!=(const DataRef<T>& o) const
     {
         ASSERT(m_data);
         ASSERT(o.m_data);
         return m_data != o.m_data && *m_data != *o.m_data;
-    }
-
-    // Template helps us to write the implementation without MemoryInstrumentation.h include.
-    template<typename MemoryObjectInfo>
-    void reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-    {
-        typename MemoryObjectInfo::ClassInfo info(memoryObjectInfo, this);
-        info.addMember(m_data, "data");
     }
 
 private:

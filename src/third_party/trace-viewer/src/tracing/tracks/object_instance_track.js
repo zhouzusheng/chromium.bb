@@ -7,7 +7,7 @@
 base.requireStylesheet('tracing.tracks.object_instance_track');
 
 base.require('base.sorted_array_utils');
-base.require('tracing.tracks.canvas_based_track');
+base.require('tracing.tracks.heading_track');
 base.require('tracing.color_scheme');
 base.require('ui');
 
@@ -19,17 +19,17 @@ base.exportTo('tracing.tracks', function() {
   /**
    * A track that displays an array of Slice objects.
    * @constructor
-   * @extends {CanvasBasedTrack}
+   * @extends {HeadingTrack}
    */
 
   var ObjectInstanceTrack = ui.define(
-      'object-instance-track', tracing.tracks.CanvasBasedTrack);
+      'object-instance-track', tracing.tracks.HeadingTrack);
 
   ObjectInstanceTrack.prototype = {
+    __proto__: tracing.tracks.HeadingTrack.prototype,
 
-    __proto__: tracing.tracks.CanvasBasedTrack.prototype,
-
-    decorate: function() {
+    decorate: function(viewport) {
+      tracing.tracks.HeadingTrack.prototype.decorate.call(this, viewport);
       this.classList.add('object-instance-track');
       this.objectInstances_ = [];
       this.objectSnapshots_ = [];
@@ -40,15 +40,13 @@ base.exportTo('tracing.tracks', function() {
     },
 
     set objectInstances(objectInstances) {
-      this.invalidate();
-      if (!objectInstances) {
+      if (!objectInstances || objectInstances.length == 0) {
+        this.heading = '';
         this.objectInstances_ = [];
         this.objectSnapshots_ = [];
-        this.objectSnapshots_ = [];
-        this.visible = false;
         return;
       }
-      this.visible = true;
+      this.heading = objectInstances[0].typeName;
       this.objectInstances_ = objectInstances;
       this.objectSnapshots_ = [];
       this.objectInstances_.forEach(function(instance) {
@@ -63,34 +61,34 @@ base.exportTo('tracing.tracks', function() {
 
     set height(height) {
       this.style.height = height;
-      this.invalidate();
     },
 
     get snapshotRadiusView() {
       return 7 * (window.devicePixelRatio || 1);
     },
 
-    redraw: function() {
-      var ctx = this.ctx_;
-      var canvasW = this.canvas_.width;
-      var canvasH = this.canvas_.height;
-      var halfCanvasH = canvasH * 0.5;
-      var twoPi = Math.PI * 2;
+    draw: function(type, viewLWorld, viewRWorld) {
+      switch (type) {
+        case tracing.tracks.DrawType.SLICE:
+          this.drawSlices_(viewLWorld, viewRWorld);
+          break;
+      }
+    },
+
+    drawSlices_: function(viewLWorld, viewRWorld) {
+      var ctx = this.context();
       var pixelRatio = window.devicePixelRatio || 1;
 
-      ctx.clearRect(0, 0, canvasW, canvasH);
+      var bounds = this.getBoundingClientRect();
+      var height = bounds.height * pixelRatio;
+      var halfHeight = height * 0.5;
+      var twoPi = Math.PI * 2;
 
       // Culling parameters.
-      var vp = this.viewport_;
-      var pixWidthWorld = vp.xViewVectorToWorld(1);
-      var viewLWorld = vp.xViewToWorld(0);
-      var viewRWorld = vp.xViewToWorld(canvasW);
+      var vp = this.viewport;
       var snapshotRadiusView = this.snapshotRadiusView;
-      var snapshotRadiusWorld = vp.xViewVectorToWorld(canvasH);
+      var snapshotRadiusWorld = vp.xViewVectorToWorld(height);
       var loI;
-
-      // Give the viewport a chance to draw onto this canvas.
-      vp.drawUnderContent(ctx, viewLWorld, viewRWorld, canvasH);
 
       // Begin rendering in world space.
       ctx.save();
@@ -119,7 +117,7 @@ base.exportTo('tracing.tracks', function() {
         var right = instance.deletionTs == Number.MAX_VALUE ?
             viewRWorld : instance.deletionTs;
         ctx.fillStyle = palette[colorId];
-        ctx.fillRect(x, pixelRatio, right - x, canvasH - 2 * pixelRatio);
+        ctx.fillRect(x, pixelRatio, right - x, height - 2 * pixelRatio);
       }
       ctx.globalAlpha = 1;
       ctx.restore();
@@ -146,7 +144,7 @@ base.exportTo('tracing.tracks', function() {
 
         ctx.fillStyle = palette[colorId];
         ctx.beginPath();
-        ctx.arc(xView, halfCanvasH, snapshotRadiusView, 0, twoPi);
+        ctx.arc(xView, halfHeight, snapshotRadiusView, 0, twoPi);
         ctx.fill();
         if (snapshot.selected) {
           ctx.lineWidth = 5;
@@ -154,7 +152,7 @@ base.exportTo('tracing.tracks', function() {
           ctx.stroke();
 
           ctx.beginPath();
-          ctx.arc(xView, halfCanvasH, snapshotRadiusView - 1, 0, twoPi);
+          ctx.arc(xView, halfHeight, snapshotRadiusView - 1, 0, twoPi);
           ctx.lineWidth = 2;
           ctx.strokeStyle = 'rgb(255,255,0)';
           ctx.stroke();
@@ -165,9 +163,22 @@ base.exportTo('tracing.tracks', function() {
         }
       }
       ctx.lineWidth = 1;
+    },
 
-      // Give the viewport a chance to draw over this canvas.
-      vp.drawOverContent(ctx, viewLWorld, viewRWorld, canvasH);
+    memoizeSlices_: function() {
+      var vp = this.viewport_;
+
+      if (this.objectInstance_ !== undefined) {
+        this.objectInstance_.forEach(function(obj) {
+          vp.sliceMemoization(obj, this);
+        }.bind(this));
+      }
+
+      if (this.objectSnapshots_ !== undefined) {
+        this.objectSnapshots_.forEach(function(obj) {
+          vp.sliceMemoization(obj, this);
+        }.bind(this));
+      }
     },
 
     addIntersectingItemsInRangeToSelectionInWorldSpace: function(

@@ -35,10 +35,9 @@
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/TimelineRecordFactory.h"
 
-#include <wtf/CurrentTime.h>
-#include <wtf/MainThread.h>
-#include <wtf/ThreadSpecific.h>
-#include <wtf/Vector.h>
+#include "wtf/CurrentTime.h"
+#include "wtf/MainThread.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -153,15 +152,18 @@ TimelineTraceEventProcessor::TimelineTraceEventProcessor(WeakPtr<InspectorTimeli
     , m_timeConverter(timelineAgent.get()->timeConverter())
     , m_inspectorClient(client)
     , m_pageId(reinterpret_cast<unsigned long long>(m_timelineAgent.get()->page()))
+    , m_layerTreeId(m_timelineAgent.get()->layerTreeId())
     , m_layerId(0)
     , m_paintSetupStart(0)
     , m_paintSetupEnd(0)
 {
     registerHandler(InstrumentationEvents::BeginFrame, TracePhaseInstant, &TimelineTraceEventProcessor::onBeginFrame);
-    registerHandler(InstrumentationEvents::PaintSetup, TracePhaseBegin, &TimelineTraceEventProcessor::onPaintSetupBegin);
-    registerHandler(InstrumentationEvents::PaintSetup, TracePhaseEnd, &TimelineTraceEventProcessor::onPaintSetupEnd);
+    registerHandler(InstrumentationEvents::UpdateLayer, TracePhaseBegin, &TimelineTraceEventProcessor::onUpdateLayerBegin);
+    registerHandler(InstrumentationEvents::UpdateLayer, TracePhaseEnd, &TimelineTraceEventProcessor::onUpdateLayerEnd);
     registerHandler(InstrumentationEvents::PaintLayer, TracePhaseBegin, &TimelineTraceEventProcessor::onPaintLayerBegin);
     registerHandler(InstrumentationEvents::PaintLayer, TracePhaseEnd, &TimelineTraceEventProcessor::onPaintLayerEnd);
+    registerHandler(InstrumentationEvents::PaintSetup, TracePhaseBegin, &TimelineTraceEventProcessor::onPaintSetupBegin);
+    registerHandler(InstrumentationEvents::PaintSetup, TracePhaseEnd, &TimelineTraceEventProcessor::onPaintSetupEnd);
     registerHandler(InstrumentationEvents::RasterTask, TracePhaseBegin, &TimelineTraceEventProcessor::onRasterTaskBegin);
     registerHandler(InstrumentationEvents::RasterTask, TracePhaseEnd, &TimelineTraceEventProcessor::onRasterTaskEnd);
     registerHandler(InstrumentationEvents::ImageDecodeTask, TracePhaseBegin, &TimelineTraceEventProcessor::onImageDecodeTaskBegin);
@@ -231,27 +233,46 @@ void TimelineTraceEventProcessor::onBeginFrame(const TraceEvent&)
     processBackgroundEvents();
 }
 
-void TimelineTraceEventProcessor::onPaintSetupBegin(const TraceEvent& event)
+void TimelineTraceEventProcessor::onUpdateLayerBegin(const TraceEvent& event)
 {
-    ASSERT(!m_paintSetupStart);
-    m_paintSetupStart = m_timeConverter.fromMonotonicallyIncreasingTime(event.timestamp());
+    unsigned long long layerTreeId = event.asUInt(InstrumentationEventArguments::LayerTreeId);
+    if (layerTreeId != m_layerTreeId)
+        return;
+    m_layerId = event.asUInt(InstrumentationEventArguments::LayerId);
+    // We don't know the node yet. For content layers, the node will be updated
+    // by paint. For others, let it remain 0 -- we just need the fact that
+    // the layer belongs to the page (see cookie check).
+    m_layerToNodeMap.add(m_layerId, 0);
 }
 
-void TimelineTraceEventProcessor::onPaintSetupEnd(const TraceEvent& event)
+void TimelineTraceEventProcessor::onUpdateLayerEnd(const TraceEvent& event)
 {
-    ASSERT(m_paintSetupStart);
-    m_paintSetupEnd = m_timeConverter.fromMonotonicallyIncreasingTime(event.timestamp());
+    m_layerId = 0;
 }
 
 void TimelineTraceEventProcessor::onPaintLayerBegin(const TraceEvent& event)
 {
     m_layerId = event.asUInt(InstrumentationEventArguments::LayerId);
     ASSERT(m_layerId);
+    ASSERT(!m_paintSetupStart);
 }
 
-void TimelineTraceEventProcessor::onPaintLayerEnd(const TraceEvent&)
+void TimelineTraceEventProcessor::onPaintLayerEnd(const TraceEvent& event)
 {
     m_layerId = 0;
+    ASSERT(m_paintSetupStart);
+}
+
+void TimelineTraceEventProcessor::onPaintSetupBegin(const TraceEvent& event)
+{
+    ASSERT(!m_paintSetupStart);
+    m_paintSetupStart = m_timeConverter.toProtocolTimestamp(event.timestamp());
+}
+
+void TimelineTraceEventProcessor::onPaintSetupEnd(const TraceEvent& event)
+{
+    ASSERT(m_paintSetupStart);
+    m_paintSetupEnd = m_timeConverter.toProtocolTimestamp(event.timestamp());
 }
 
 void TimelineTraceEventProcessor::onRasterTaskBegin(const TraceEvent& event)
@@ -272,7 +293,7 @@ void TimelineTraceEventProcessor::onRasterTaskEnd(const TraceEvent& event)
     if (!state.inKnownLayerTask)
         return;
     ASSERT(state.recordStack.isOpenRecordOfType(TimelineRecordType::Rasterize));
-    state.recordStack.closeScopedRecord(m_timeConverter.fromMonotonicallyIncreasingTime(event.timestamp()));
+    state.recordStack.closeScopedRecord(m_timeConverter.toProtocolTimestamp(event.timestamp()));
     leaveLayerTask(state);
 }
 
@@ -315,7 +336,7 @@ void TimelineTraceEventProcessor::onImageDecodeEnd(const TraceEvent& event)
     if (!state.inKnownLayerTask)
         return;
     ASSERT(state.recordStack.isOpenRecordOfType(TimelineRecordType::DecodeImage));
-    state.recordStack.closeScopedRecord(m_timeConverter.fromMonotonicallyIncreasingTime(event.timestamp()));
+    state.recordStack.closeScopedRecord(m_timeConverter.toProtocolTimestamp(event.timestamp()));
 }
 
 void TimelineTraceEventProcessor::onLayerDeleted(const TraceEvent& event)
@@ -349,7 +370,7 @@ void TimelineTraceEventProcessor::onPaint(const TraceEvent& event)
 
 PassRefPtr<JSONObject> TimelineTraceEventProcessor::createRecord(const TraceEvent& event, const String& recordType, PassRefPtr<JSONObject> data)
 {
-    double startTime = m_timeConverter.fromMonotonicallyIncreasingTime(event.timestamp());
+    double startTime = m_timeConverter.toProtocolTimestamp(event.timestamp());
     RefPtr<JSONObject> record = TimelineRecordFactory::createBackgroundRecord(startTime, String::number(event.threadIdentifier()));
     record->setString("type", recordType);
     record->setObject("data", data ? data : JSONObject::create());

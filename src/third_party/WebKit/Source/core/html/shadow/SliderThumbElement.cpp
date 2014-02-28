@@ -176,7 +176,7 @@ void RenderSliderContainer::layout()
     // Force a layout to reset the position of the thumb so the code below doesn't move the thumb to the wrong place.
     // FIXME: Make a custom Render class for the track and move the thumb positioning code there.
     if (track)
-        track->setChildNeedsLayout(true, MarkOnlyThis);
+        track->setChildNeedsLayout(MarkOnlyThis);
 
     RenderFlexibleBox::layout();
 
@@ -216,12 +216,12 @@ void SliderThumbElement::setPositionFromValue()
     // path, we don't actually update the value here. Instead, we poke at the
     // renderer directly to trigger layout.
     if (renderer())
-        renderer()->setNeedsLayout(true);
+        renderer()->setNeedsLayout();
 }
 
 RenderObject* SliderThumbElement::createRenderer(RenderStyle*)
 {
-    return new (document()->renderArena()) RenderSliderThumb(this);
+    return new RenderSliderThumb(this);
 }
 
 bool SliderThumbElement::isDisabledFormControl() const
@@ -246,21 +246,22 @@ Node* SliderThumbElement::focusDelegate()
 
 void SliderThumbElement::dragFrom(const LayoutPoint& point)
 {
+    RefPtr<SliderThumbElement> protector(this);
     setPositionFromPoint(point);
     startDragging();
 }
 
 void SliderThumbElement::setPositionFromPoint(const LayoutPoint& point)
 {
-    HTMLInputElement* input = hostInput();
-    HTMLElement* trackElement = sliderTrackElementOf(input);
+    RefPtr<HTMLInputElement> input(hostInput());
+    HTMLElement* trackElement = sliderTrackElementOf(input.get());
 
     if (!input->renderer() || !renderBox() || !trackElement->renderBox())
         return;
 
     input->setTextAsOfLastFormControlChangeEvent(input->value());
     LayoutPoint offset = roundedLayoutPoint(input->renderer()->absoluteToLocal(point, UseTransforms));
-    bool isVertical = hasVerticalAppearance(input);
+    bool isVertical = hasVerticalAppearance(input.get());
     bool isLeftToRightDirection = renderBox()->style()->isLeftToRightDirection();
     LayoutUnit trackSize;
     LayoutUnit position;
@@ -307,7 +308,8 @@ void SliderThumbElement::setPositionFromPoint(const LayoutPoint& point)
 
     // FIXME: This is no longer being set from renderer. Consider updating the method name.
     input->setValueFromRenderer(valueString);
-    renderer()->setNeedsLayout(true);
+    if (renderer())
+        renderer()->setNeedsLayout();
     input->dispatchFormControlChangeEvent();
 }
 
@@ -328,7 +330,7 @@ void SliderThumbElement::stopDragging()
         frame->eventHandler()->setCapturingMouseEventsNode(0);
     m_inDragMode = false;
     if (renderer())
-        renderer()->setNeedsLayout(true);
+        renderer()->setNeedsLayout();
 }
 
 void SliderThumbElement::defaultEventHandler(Event* event)
@@ -403,23 +405,23 @@ HTMLInputElement* SliderThumbElement::hostInput() const
     return toHTMLInputElement(shadowHost());
 }
 
-static const AtomicString& sliderThumbShadowPseudoId()
+static const AtomicString& sliderThumbShadowPartId()
 {
     DEFINE_STATIC_LOCAL(const AtomicString, sliderThumb, ("-webkit-slider-thumb", AtomicString::ConstructFromLiteral));
     return sliderThumb;
 }
 
-static const AtomicString& mediaSliderThumbShadowPseudoId()
+static const AtomicString& mediaSliderThumbShadowPartId()
 {
     DEFINE_STATIC_LOCAL(const AtomicString, mediaSliderThumb, ("-webkit-media-slider-thumb", AtomicString::ConstructFromLiteral));
     return mediaSliderThumb;
 }
 
-const AtomicString& SliderThumbElement::shadowPseudoId() const
+const AtomicString& SliderThumbElement::part() const
 {
     HTMLInputElement* input = hostInput();
     if (!input)
-        return sliderThumbShadowPseudoId();
+        return sliderThumbShadowPartId();
 
     RenderStyle* sliderStyle = input->renderer()->style();
     switch (sliderStyle->appearance()) {
@@ -429,9 +431,9 @@ const AtomicString& SliderThumbElement::shadowPseudoId() const
     case MediaVolumeSliderThumbPart:
     case MediaFullScreenVolumeSliderPart:
     case MediaFullScreenVolumeSliderThumbPart:
-        return mediaSliderThumbShadowPseudoId();
+        return mediaSliderThumbShadowPartId();
     default:
-        return sliderThumbShadowPseudoId();
+        return sliderThumbShadowPartId();
     }
 }
 
@@ -449,10 +451,10 @@ PassRefPtr<SliderContainerElement> SliderContainerElement::create(Document* docu
 
 RenderObject* SliderContainerElement::createRenderer(RenderStyle*)
 {
-    return new (document()->renderArena()) RenderSliderContainer(this);
+    return new RenderSliderContainer(this);
 }
 
-const AtomicString& SliderContainerElement::shadowPseudoId() const
+const AtomicString& SliderContainerElement::part() const
 {
     DEFINE_STATIC_LOCAL(const AtomicString, mediaSliderContainer, ("-webkit-media-slider-container", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(const AtomicString, sliderContainer, ("-webkit-slider-container", AtomicString::ConstructFromLiteral));

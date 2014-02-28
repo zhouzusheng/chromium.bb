@@ -6,13 +6,13 @@
  * are met:
  *
  * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer. 
+ *     notice, this list of conditions and the following disclaimer.
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution. 
+ *     documentation and/or other materials provided with the distribution.
  * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission. 
+ *     from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -29,6 +29,7 @@
 #include "config.h"
 #include "core/page/Location.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/loader/FrameLoader.h"
@@ -151,13 +152,13 @@ void Location::setHref(DOMWindow* activeWindow, DOMWindow* firstWindow, const St
     setLocation(url, activeWindow, firstWindow);
 }
 
-void Location::setProtocol(DOMWindow* activeWindow, DOMWindow* firstWindow, const String& protocol, ExceptionCode& ec)
+void Location::setProtocol(DOMWindow* activeWindow, DOMWindow* firstWindow, const String& protocol, ExceptionState& es)
 {
     if (!m_frame)
         return;
     KURL url = m_frame->document()->url();
     if (!url.setProtocol(protocol)) {
-        ec = SYNTAX_ERR;
+        es.throwDOMException(SyntaxError);
         return;
     }
     setLocation(url.string(), activeWindow, firstWindow);
@@ -222,9 +223,9 @@ void Location::setHash(DOMWindow* activeWindow, DOMWindow* firstWindow, const St
     if (hash[0] == '#')
         newFragmentIdentifier = hash.substring(1);
     url.setFragmentIdentifier(newFragmentIdentifier);
-    // Note that by parsing the URL and *then* comparing fragments, we are 
-    // comparing fragments post-canonicalization, and so this handles the 
-    // cases where fragment identifiers are ignored or invalid. 
+    // Note that by parsing the URL and *then* comparing fragments, we are
+    // comparing fragments post-canonicalization, and so this handles the
+    // cases where fragment identifiers are ignored or invalid.
     if (equalIgnoringNullity(oldFragmentIdentifier, url.fragmentIdentifier()))
         return;
     setLocation(url.string(), activeWindow, firstWindow);
@@ -242,21 +243,13 @@ void Location::replace(DOMWindow* activeWindow, DOMWindow* firstWindow, const St
     if (!m_frame)
         return;
     // Note: We call DOMWindow::setLocation directly here because replace() always operates on the current frame.
-    m_frame->document()->domWindow()->setLocation(url, activeWindow, firstWindow, LockHistoryAndBackForwardList);
+    m_frame->domWindow()->setLocation(url, activeWindow, firstWindow, LockHistoryAndBackForwardList);
 }
 
 void Location::reload(DOMWindow* activeWindow)
 {
     if (!m_frame)
         return;
-    // FIXME: It's not clear this cross-origin security check is valuable.
-    // We allow one page to change the location of another. Why block attempts to reload?
-    // Other location operations simply block use of JavaScript URLs cross origin.
-    DOMWindow* targetWindow = m_frame->document()->domWindow();
-    if (!activeWindow->document()->securityOrigin()->canAccess(m_frame->document()->securityOrigin())) {
-        targetWindow->printErrorMessage(targetWindow->crossDomainAccessErrorMessage(activeWindow));
-        return;
-    }
     if (protocolIsJavaScript(m_frame->document()->url()))
         return;
     m_frame->navigationScheduler()->scheduleRefresh();
@@ -269,7 +262,7 @@ void Location::setLocation(const String& url, DOMWindow* activeWindow, DOMWindow
     Frame* frame = m_frame->loader()->findFrameForNavigation(String(), activeWindow->document());
     if (!frame)
         return;
-    frame->document()->domWindow()->setLocation(url, activeWindow, firstWindow);
+    frame->domWindow()->setLocation(url, activeWindow, firstWindow);
 }
 
 } // namespace WebCore

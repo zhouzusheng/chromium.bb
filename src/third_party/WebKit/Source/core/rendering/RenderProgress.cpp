@@ -24,8 +24,8 @@
 
 #include "core/html/HTMLProgressElement.h"
 #include "core/rendering/RenderTheme.h"
-#include <wtf/CurrentTime.h>
-#include <wtf/RefPtr.h>
+#include "wtf/CurrentTime.h"
+#include "wtf/RefPtr.h"
 
 using namespace std;
 
@@ -108,6 +108,6 @@ HTMLProgressElement* RenderProgress::progressElement() const
 
     ASSERT(node()->shadowHost());
     return toHTMLProgressElement(node()->shadowHost());
-}    
+}
 
 } // namespace WebCore

@@ -26,7 +26,7 @@
 #ifndef CSSFontSelector_h
 #define CSSFontSelector_h
 
-#include "core/loader/cache/CachedResourceHandle.h"
+#include "core/loader/cache/ResourcePtr.h"
 #include "core/platform/Timer.h"
 #include "core/platform/graphics/FontSelector.h"
 #include "wtf/Forward.h"
@@ -39,7 +39,7 @@ namespace WebCore {
 class CSSFontFace;
 class CSSFontFaceRule;
 class CSSSegmentedFontFace;
-class CachedFont;
+class FontResource;
 class Document;
 class FontDescription;
 class StyleRuleFontFace;
@@ -51,7 +51,7 @@ public:
         return adoptRef(new CSSFontSelector(document));
     }
     virtual ~CSSFontSelector();
-    
+
     virtual unsigned version() const OVERRIDE { return m_version; }
 
     virtual PassRefPtr<FontData> getFontData(const FontDescription&, const AtomicString&);
@@ -71,7 +71,7 @@ public:
 
     Document* document() const { return m_document; }
 
-    void beginLoadingFontSoon(CachedFont*);
+    void beginLoadingFontSoon(FontResource*);
 
 private:
     CSSFontSelector(Document*);
@@ -86,9 +86,9 @@ private:
     HashMap<String, OwnPtr<HashMap<unsigned, RefPtr<CSSSegmentedFontFace> > >, CaseFoldingHash> m_fonts;
     HashSet<FontSelectorClient*> m_clients;
 
-    Vector<CachedResourceHandle<CachedFont> > m_fontsToBeginLoading;
+    Vector<ResourcePtr<FontResource> > m_fontsToBeginLoading;
     Timer<CSSFontSelector> m_beginLoadingTimer;
-    
+
     unsigned m_version;
 };
 

@@ -13,7 +13,7 @@
 #include "base/bind_helpers.h"
 #include "base/file_util.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "net/base/cache_type.h"
@@ -1811,7 +1811,7 @@ void AppCacheStorageImpl::OnDiskCacheInitialized(int rv) {
     if (!is_incognito_) {
       VLOG(1) << "Deleting existing appcache data and starting over.";
       db_thread_->PostTask(
-          FROM_HERE, base::Bind(base::IgnoreResult(&file_util::Delete),
+          FROM_HERE, base::Bind(base::IgnoreResult(&base::DeleteFile),
                                 cache_directory_, true));
     }
   }

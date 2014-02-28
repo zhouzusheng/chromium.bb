@@ -25,12 +25,12 @@
 
 #include "SVGNames.h"
 #include "core/rendering/svg/SVGRenderSupport.h"
-#include "core/svg/SVGStyledTransformableElement.h"
+#include "core/svg/SVGGraphicsElement.h"
 #include "core/svg/SVGUseElement.h"
 
 namespace WebCore {
-    
-RenderSVGTransformableContainer::RenderSVGTransformableContainer(SVGStyledTransformableElement* node)
+
+RenderSVGTransformableContainer::RenderSVGTransformableContainer(SVGGraphicsElement* node)
     : RenderSVGContainer(node)
     , m_needsTransformUpdate(true)
     , m_didTransformToRootUpdate(false)
@@ -39,23 +39,23 @@ RenderSVGTransformableContainer::RenderSVGTransformableContainer(SVGStyledTransf
 
 bool RenderSVGTransformableContainer::calculateLocalTransform()
 {
-    SVGStyledTransformableElement* element = toSVGStyledTransformableElement(node());
+    SVGGraphicsElement* element = toSVGGraphicsElement(node());
 
     // If we're either the renderer for a <use> element, or for any <g> element inside the shadow
     // tree, that was created during the use/symbol/svg expansion in SVGUseElement. These containers
     // need to respect the translations induced by their corresponding use elements x/y attributes.
     SVGUseElement* useElement = 0;
     if (element->hasTagName(SVGNames::useTag))
-        useElement = static_cast<SVGUseElement*>(element);
+        useElement = toSVGUseElement(element);
     else if (element->isInShadowTree() && element->hasTagName(SVGNames::gTag)) {
         SVGElement* correspondingElement = element->correspondingElement();
         if (correspondingElement && correspondingElement->hasTagName(SVGNames::useTag))
-            useElement = static_cast<SVGUseElement*>(correspondingElement);
+            useElement = toSVGUseElement(correspondingElement);
     }
 
     if (useElement) {
         SVGLengthContext lengthContext(useElement);
-        FloatSize translation(useElement->x().value(lengthContext), useElement->y().value(lengthContext));
+        FloatSize translation(useElement->xCurrentValue().value(lengthContext), useElement->yCurrentValue().value(lengthContext));
         if (translation != m_lastTranslation)
             m_needsTransformUpdate = true;
         m_lastTranslation = translation;

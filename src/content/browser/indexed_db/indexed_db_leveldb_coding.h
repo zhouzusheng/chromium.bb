@@ -5,7 +5,7 @@
 #ifndef CONTENT_BROWSER_INDEXED_DB_INDEXED_DB_LEVELDB_CODING_H_
 #define CONTENT_BROWSER_INDEXED_DB_INDEXED_DB_LEVELDB_CODING_H_
 
-#include <vector>
+#include <string>
 
 #include "base/basictypes.h"
 #include "base/logging.h"
@@ -18,26 +18,22 @@
 
 namespace content {
 
-class LevelDBSlice;
-
 CONTENT_EXPORT extern const unsigned char kMinimumIndexId;
 
-CONTENT_EXPORT std::vector<char> MaxIDBKey();
-CONTENT_EXPORT std::vector<char> MinIDBKey();
+CONTENT_EXPORT std::string MaxIDBKey();
+CONTENT_EXPORT std::string MinIDBKey();
 
-CONTENT_EXPORT void EncodeByte(unsigned char value, std::vector<char>* into);
-CONTENT_EXPORT void EncodeBool(bool value, std::vector<char>* into);
-CONTENT_EXPORT void EncodeInt(int64 value, std::vector<char>* into);
-CONTENT_EXPORT void EncodeVarInt(int64 value, std::vector<char>* into);
-CONTENT_EXPORT void EncodeString(const string16& value,
-                                 std::vector<char>* into);
+CONTENT_EXPORT void EncodeByte(unsigned char value, std::string* into);
+CONTENT_EXPORT void EncodeBool(bool value, std::string* into);
+CONTENT_EXPORT void EncodeInt(int64 value, std::string* into);
+CONTENT_EXPORT void EncodeVarInt(int64 value, std::string* into);
+CONTENT_EXPORT void EncodeString(const string16& value, std::string* into);
 CONTENT_EXPORT void EncodeStringWithLength(const string16& value,
-                                           std::vector<char>* into);
-CONTENT_EXPORT void EncodeDouble(double value, std::vector<char>* into);
-CONTENT_EXPORT void EncodeIDBKey(const IndexedDBKey& value,
-                                 std::vector<char>* into);
+                                           std::string* into);
+CONTENT_EXPORT void EncodeDouble(double value, std::string* into);
+CONTENT_EXPORT void EncodeIDBKey(const IndexedDBKey& value, std::string* into);
 CONTENT_EXPORT void EncodeIDBKeyPath(const IndexedDBKeyPath& value,
-                                     std::vector<char>* into);
+                                     std::string* into);
 
 CONTENT_EXPORT WARN_UNUSED_RESULT bool DecodeByte(base::StringPiece* slice,
                                                   unsigned char* value);
@@ -67,15 +63,15 @@ CONTENT_EXPORT int CompareEncodedStringsWithLength(base::StringPiece* slice1,
 
 CONTENT_EXPORT WARN_UNUSED_RESULT bool ExtractEncodedIDBKey(
     base::StringPiece* slice,
-    std::vector<char>* result);
+    std::string* result);
 
-CONTENT_EXPORT int CompareEncodedIDBKeys(const std::vector<char>& a,
-                                         const std::vector<char>& b,
+CONTENT_EXPORT int CompareEncodedIDBKeys(const std::string& a,
+                                         const std::string& b,
                                          bool* ok);
 
-CONTENT_EXPORT int Compare(const LevelDBSlice& a,
-                           const LevelDBSlice& b,
-                           bool index_keys = false);
+CONTENT_EXPORT int Compare(const base::StringPiece& a,
+                           const base::StringPiece& b,
+                           bool index_keys);
 
 class KeyPrefix {
  public:
@@ -87,11 +83,9 @@ class KeyPrefix {
                                           int64 object_store_id,
                                           int64 index_id);
 
-  static const char* Decode(const char* start,
-                            const char* limit,
-                            KeyPrefix* result);
-  std::vector<char> Encode() const;
-  static std::vector<char> EncodeEmpty();
+  static bool Decode(base::StringPiece* slice, KeyPrefix* result);
+  std::string Encode() const;
+  static std::string EncodeEmpty();
   int Compare(const KeyPrefix& other) const;
 
   enum Type {
@@ -149,9 +143,9 @@ class KeyPrefix {
   static const int64 kInvalidId = -1;
 
  private:
-  static std::vector<char> EncodeInternal(int64 database_id,
-                                          int64 object_store_id,
-                                          int64 index_id);
+  static std::string EncodeInternal(int64 database_id,
+                                    int64 object_store_id,
+                                    int64 index_id);
   // Special constructor for CreateWithSpecialIndex()
   KeyPrefix(enum Type,
             int64 database_id,
@@ -161,27 +155,25 @@ class KeyPrefix {
 
 class SchemaVersionKey {
  public:
-  CONTENT_EXPORT static std::vector<char> Encode();
+  CONTENT_EXPORT static std::string Encode();
 };
 
 class MaxDatabaseIdKey {
  public:
-  CONTENT_EXPORT static std::vector<char> Encode();
+  CONTENT_EXPORT static std::string Encode();
 };
 
 class DataVersionKey {
  public:
-  static std::vector<char> Encode();
+  static std::string Encode();
 };
 
 class DatabaseFreeListKey {
  public:
   DatabaseFreeListKey();
-  static const char* Decode(const char* start,
-                            const char* limit,
-                            DatabaseFreeListKey* result);
-  CONTENT_EXPORT static std::vector<char> Encode(int64 database_id);
-  static CONTENT_EXPORT std::vector<char> EncodeMaxKey();
+  static bool Decode(base::StringPiece* slice, DatabaseFreeListKey* result);
+  CONTENT_EXPORT static std::string Encode(int64 database_id);
+  static CONTENT_EXPORT std::string EncodeMaxKey();
   int64 DatabaseId() const;
   int Compare(const DatabaseFreeListKey& other) const;
 
@@ -191,13 +183,13 @@ class DatabaseFreeListKey {
 
 class DatabaseNameKey {
  public:
-  static const char* Decode(const char* start,
-                            const char* limit,
-                            DatabaseNameKey* result);
-  CONTENT_EXPORT static std::vector<char> Encode(const string16& origin,
-                                                 const string16& database_name);
-  static std::vector<char> EncodeMinKeyForOrigin(const string16& origin);
-  static std::vector<char> EncodeStopKeyForOrigin(const string16& origin);
+  static bool Decode(base::StringPiece* slice, DatabaseNameKey* result);
+  CONTENT_EXPORT static std::string Encode(const std::string& origin_identifier,
+                                           const string16& database_name);
+  static std::string EncodeMinKeyForOrigin(
+      const std::string& origin_identifier);
+  static std::string EncodeStopKeyForOrigin(
+      const std::string& origin_identifier);
   string16 origin() const { return origin_; }
   string16 database_name() const { return database_name_; }
   int Compare(const DatabaseNameKey& other);
@@ -218,8 +210,8 @@ class DatabaseMetaDataKey {
     MAX_SIMPLE_METADATA_TYPE = 5
   };
 
-  CONTENT_EXPORT static std::vector<char> Encode(int64 database_id,
-                                                 MetaDataType type);
+  CONTENT_EXPORT static std::string Encode(int64 database_id,
+                                           MetaDataType type);
 };
 
 class ObjectStoreMetaDataKey {
@@ -236,15 +228,13 @@ class ObjectStoreMetaDataKey {
   };
 
   ObjectStoreMetaDataKey();
-  static const char* Decode(const char* start,
-                            const char* limit,
-                            ObjectStoreMetaDataKey* result);
-  CONTENT_EXPORT static std::vector<char> Encode(int64 database_id,
-                                                 int64 object_store_id,
-                                                 unsigned char meta_data_type);
-  CONTENT_EXPORT static std::vector<char> EncodeMaxKey(int64 database_id);
-  CONTENT_EXPORT static std::vector<char> EncodeMaxKey(int64 database_id,
-                                                       int64 object_store_id);
+  static bool Decode(base::StringPiece* slice, ObjectStoreMetaDataKey* result);
+  CONTENT_EXPORT static std::string Encode(int64 database_id,
+                                           int64 object_store_id,
+                                           unsigned char meta_data_type);
+  CONTENT_EXPORT static std::string EncodeMaxKey(int64 database_id);
+  CONTENT_EXPORT static std::string EncodeMaxKey(int64 database_id,
+                                                 int64 object_store_id);
   int64 ObjectStoreId() const;
   unsigned char MetaDataType() const;
   int Compare(const ObjectStoreMetaDataKey& other);
@@ -264,18 +254,16 @@ class IndexMetaDataKey {
   };
 
   IndexMetaDataKey();
-  static const char* Decode(const char* start,
-                            const char* limit,
-                            IndexMetaDataKey* result);
-  CONTENT_EXPORT static std::vector<char> Encode(int64 database_id,
+  static bool Decode(base::StringPiece* slice, IndexMetaDataKey* result);
+  CONTENT_EXPORT static std::string Encode(int64 database_id,
+                                           int64 object_store_id,
+                                           int64 index_id,
+                                           unsigned char meta_data_type);
+  CONTENT_EXPORT static std::string EncodeMaxKey(int64 database_id,
+                                                 int64 object_store_id);
+  CONTENT_EXPORT static std::string EncodeMaxKey(int64 database_id,
                                                  int64 object_store_id,
-                                                 int64 index_id,
-                                                 unsigned char meta_data_type);
-  CONTENT_EXPORT static std::vector<char> EncodeMaxKey(int64 database_id,
-                                                       int64 object_store_id);
-  CONTENT_EXPORT static std::vector<char> EncodeMaxKey(int64 database_id,
-                                                       int64 object_store_id,
-                                                       int64 index_id);
+                                                 int64 index_id);
   int Compare(const IndexMetaDataKey& other);
   int64 IndexId() const;
   unsigned char meta_data_type() const { return meta_data_type_; }
@@ -289,12 +277,10 @@ class IndexMetaDataKey {
 class ObjectStoreFreeListKey {
  public:
   ObjectStoreFreeListKey();
-  static const char* Decode(const char* start,
-                            const char* limit,
-                            ObjectStoreFreeListKey* result);
-  CONTENT_EXPORT static std::vector<char> Encode(int64 database_id,
-                                                 int64 object_store_id);
-  CONTENT_EXPORT static std::vector<char> EncodeMaxKey(int64 database_id);
+  static bool Decode(base::StringPiece* slice, ObjectStoreFreeListKey* result);
+  CONTENT_EXPORT static std::string Encode(int64 database_id,
+                                           int64 object_store_id);
+  CONTENT_EXPORT static std::string EncodeMaxKey(int64 database_id);
   int64 ObjectStoreId() const;
   int Compare(const ObjectStoreFreeListKey& other);
 
@@ -305,14 +291,12 @@ class ObjectStoreFreeListKey {
 class IndexFreeListKey {
  public:
   IndexFreeListKey();
-  static const char* Decode(const char* start,
-                            const char* limit,
-                            IndexFreeListKey* result);
-  CONTENT_EXPORT static std::vector<char> Encode(int64 database_id,
-                                                 int64 object_store_id,
-                                                 int64 index_id);
-  CONTENT_EXPORT static std::vector<char> EncodeMaxKey(int64 database_id,
-                                                       int64 object_store_id);
+  static bool Decode(base::StringPiece* slice, IndexFreeListKey* result);
+  CONTENT_EXPORT static std::string Encode(int64 database_id,
+                                           int64 object_store_id,
+                                           int64 index_id);
+  CONTENT_EXPORT static std::string EncodeMaxKey(int64 database_id,
+                                                 int64 object_store_id);
   int Compare(const IndexFreeListKey& other);
   int64 ObjectStoreId() const;
   int64 IndexId() const;
@@ -327,19 +311,15 @@ class ObjectStoreNamesKey {
   // TODO(jsbell): We never use this to look up object store ids,
   // because a mapping is kept in the IndexedDBDatabase. Can the
   // mapping become unreliable?  Can we remove this?
-  static const char* Decode(const char* start,
-                            const char* limit,
-                            ObjectStoreNamesKey* result);
-  CONTENT_EXPORT static std::vector<char> Encode(
-      int64 database_id,
-      const string16& object_store_name);
+  static bool Decode(base::StringPiece* slice, ObjectStoreNamesKey* result);
+  CONTENT_EXPORT static std::string Encode(int64 database_id,
+                                           const string16& object_store_name);
   int Compare(const ObjectStoreNamesKey& other);
   string16 object_store_name() const { return object_store_name_; }
 
  private:
-  string16
-      object_store_name_;  // TODO(jsbell): Store the encoded string, or just
-                           // pointers to it.
+  // TODO(jsbell): Store the encoded string, or just pointers to it.
+  string16 object_store_name_;
 };
 
 class IndexNamesKey {
@@ -347,12 +327,10 @@ class IndexNamesKey {
   IndexNamesKey();
   // TODO(jsbell): We never use this to look up index ids, because a mapping
   // is kept at a higher level.
-  static const char* Decode(const char* start,
-                            const char* limit,
-                            IndexNamesKey* result);
-  CONTENT_EXPORT static std::vector<char> Encode(int64 database_id,
-                                                 int64 object_store_id,
-                                                 const string16& index_name);
+  static bool Decode(base::StringPiece* slice, IndexNamesKey* result);
+  CONTENT_EXPORT static std::string Encode(int64 database_id,
+                                           int64 object_store_id,
+                                           const string16& index_name);
   int Compare(const IndexNamesKey& other);
   string16 index_name() const { return index_name_; }
 
@@ -363,16 +341,13 @@ class IndexNamesKey {
 
 class ObjectStoreDataKey {
  public:
-  static const char* Decode(const char* start,
-                            const char* end,
-                            ObjectStoreDataKey* result);
-  CONTENT_EXPORT static std::vector<char> Encode(
-      int64 database_id,
-      int64 object_store_id,
-      const std::vector<char> encoded_user_key);
-  static std::vector<char> Encode(int64 database_id,
-                                  int64 object_store_id,
-                                  const IndexedDBKey& user_key);
+  static bool Decode(base::StringPiece* slice, ObjectStoreDataKey* result);
+  CONTENT_EXPORT static std::string Encode(int64 database_id,
+                                           int64 object_store_id,
+                                           const std::string encoded_user_key);
+  static std::string Encode(int64 database_id,
+                            int64 object_store_id,
+                            const IndexedDBKey& user_key);
   int Compare(const ObjectStoreDataKey& other, bool* ok);
   scoped_ptr<IndexedDBKey> user_key() const;
   static const int64 kSpecialIndexNumber;
@@ -380,7 +355,7 @@ class ObjectStoreDataKey {
   ~ObjectStoreDataKey();
 
  private:
-  std::vector<char> encoded_user_key_;
+  std::string encoded_user_key_;
 };
 
 class ExistsEntryKey {
@@ -388,23 +363,20 @@ class ExistsEntryKey {
   ExistsEntryKey();
   ~ExistsEntryKey();
 
-  static const char* Decode(const char* start,
-                            const char* end,
-                            ExistsEntryKey* result);
-  CONTENT_EXPORT static std::vector<char> Encode(
-      int64 database_id,
-      int64 object_store_id,
-      const std::vector<char>& encoded_key);
-  static std::vector<char> Encode(int64 database_id,
-                                  int64 object_store_id,
-                                  const IndexedDBKey& user_key);
+  static bool Decode(base::StringPiece* slice, ExistsEntryKey* result);
+  CONTENT_EXPORT static std::string Encode(int64 database_id,
+                                           int64 object_store_id,
+                                           const std::string& encoded_key);
+  static std::string Encode(int64 database_id,
+                            int64 object_store_id,
+                            const IndexedDBKey& user_key);
   int Compare(const ExistsEntryKey& other, bool* ok);
   scoped_ptr<IndexedDBKey> user_key() const;
 
   static const int64 kSpecialIndexNumber;
 
  private:
-  std::vector<char> encoded_user_key_;
+  std::string encoded_user_key_;
   DISALLOW_COPY_AND_ASSIGN(ExistsEntryKey);
 };
 
@@ -412,26 +384,24 @@ class IndexDataKey {
  public:
   IndexDataKey();
   ~IndexDataKey();
-  static const char* Decode(const char* start,
-                            const char* limit,
-                            IndexDataKey* result);
-  CONTENT_EXPORT static std::vector<char> Encode(
+  static bool Decode(base::StringPiece* slice, IndexDataKey* result);
+  CONTENT_EXPORT static std::string Encode(
       int64 database_id,
       int64 object_store_id,
       int64 index_id,
-      const std::vector<char>& encoded_user_key,
-      const std::vector<char>& encoded_primary_key,
-      int64 sequence_number = 0);
-  static std::vector<char> Encode(int64 database_id,
+      const std::string& encoded_user_key,
+      const std::string& encoded_primary_key,
+      int64 sequence_number);
+  static std::string Encode(int64 database_id,
+                            int64 object_store_id,
+                            int64 index_id,
+                            const IndexedDBKey& user_key);
+  static std::string EncodeMinKey(int64 database_id,
                                   int64 object_store_id,
-                                  int64 index_id,
-                                  const IndexedDBKey& user_key);
-  static std::vector<char> EncodeMinKey(int64 database_id,
-                                        int64 object_store_id,
-                                        int64 index_id);
-  CONTENT_EXPORT static std::vector<char> EncodeMaxKey(int64 database_id,
-                                                       int64 object_store_id,
-                                                       int64 index_id);
+                                  int64 index_id);
+  CONTENT_EXPORT static std::string EncodeMaxKey(int64 database_id,
+                                                 int64 object_store_id,
+                                                 int64 index_id);
   int Compare(const IndexDataKey& other, bool ignore_duplicates, bool* ok);
   int64 DatabaseId() const;
   int64 ObjectStoreId() const;
@@ -443,8 +413,8 @@ class IndexDataKey {
   int64 database_id_;
   int64 object_store_id_;
   int64 index_id_;
-  std::vector<char> encoded_user_key_;
-  std::vector<char> encoded_primary_key_;
+  std::string encoded_user_key_;
+  std::string encoded_primary_key_;
   int64 sequence_number_;
 
   DISALLOW_COPY_AND_ASSIGN(IndexDataKey);

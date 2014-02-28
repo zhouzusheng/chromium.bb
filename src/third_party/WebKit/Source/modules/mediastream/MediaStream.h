@@ -29,7 +29,6 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ContextLifecycleObserver.h"
 #include "core/dom/EventTarget.h"
-#include "core/dom/ExceptionBase.h"
 #include "core/html/URLRegistry.h"
 #include "core/platform/Timer.h"
 #include "core/platform/mediastream/MediaStreamDescriptor.h"
@@ -38,6 +37,8 @@
 #include "wtf/RefPtr.h"
 
 namespace WebCore {
+
+class ExceptionState;
 
 class MediaStream : public RefCounted<MediaStream>, public ScriptWrappable, public URLRegistrable, public MediaStreamDescriptorClient, public EventTarget, public ContextLifecycleObserver {
 public:
@@ -52,8 +53,8 @@ public:
 
     String id() const { return m_descriptor->id(); }
 
-    void addTrack(PassRefPtr<MediaStreamTrack>, ExceptionCode&);
-    void removeTrack(PassRefPtr<MediaStreamTrack>, ExceptionCode&);
+    void addTrack(PassRefPtr<MediaStreamTrack>, ExceptionState&);
+    void removeTrack(PassRefPtr<MediaStreamTrack>, ExceptionState&);
     MediaStreamTrack* getTrackById(String);
 
     MediaStreamTrackVector getAudioTracks() const { return m_audioTracks; }

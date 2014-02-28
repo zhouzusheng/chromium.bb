@@ -26,13 +26,13 @@
 #ifndef Supplementable_h
 #define Supplementable_h
 
-#include <wtf/Assertions.h>
-#include <wtf/HashMap.h>
-#include <wtf/OwnPtr.h>
-#include <wtf/PassOwnPtr.h>
+#include "wtf/Assertions.h"
+#include "wtf/HashMap.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
 
 #if !ASSERT_DISABLED
-#include <wtf/Threading.h>
+#include "wtf/Threading.h"
 #endif
 
 namespace WebCore {
@@ -71,6 +71,21 @@ namespace WebCore {
 //     {
 //         return reinterpret_cast<MyClass*>(Supplement<MySupplementable>::from(host, supplementName()));
 //     }
+//
+// What you should know about thread checks
+// ========================================
+// When assertion is enabled this class performs thread-safety check so that
+// provideTo and from happen on the same thread. If you want to provide
+// some value for Workers this thread check may not work very well though,
+// since in most case you'd provide the value while worker preparation is
+// being done on the main thread, even before the worker thread is started.
+// If that's the case you can explicitly call reattachThread() when the
+// Supplementable object is passed to the final destination thread (i.e.
+// worker thread). Please be extremely careful to use the method though,
+// as randomly calling the method could easily cause racy condition.
+//
+// Note that reattachThread() does nothing if assertion is not enabled.
+//
 
 template<typename T>
 class Supplementable;
@@ -116,6 +131,13 @@ public:
         return m_supplements.get(key);
     }
 
+    void reattachThread()
+    {
+#if !ASSERT_DISABLED
+        m_threadId = currentThread();
+#endif
+    }
+
 #if !ASSERT_DISABLED
 protected:
     Supplementable() : m_threadId(currentThread()) { }
@@ -132,4 +154,3 @@ private:
 } // namespace WebCore
 
 #endif // Supplementable_h
-

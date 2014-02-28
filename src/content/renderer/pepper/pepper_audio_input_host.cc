@@ -6,7 +6,11 @@
 
 #include "base/logging.h"
 #include "build/build_config.h"
-#include "content/public/renderer/renderer_ppapi_host.h"
+#include "content/renderer/pepper/pepper_media_device_manager.h"
+#include "content/renderer/pepper/pepper_platform_audio_input.h"
+#include "content/renderer/pepper/pepper_plugin_instance_impl.h"
+#include "content/renderer/pepper/renderer_ppapi_host_impl.h"
+#include "content/renderer/render_view_impl.h"
 #include "ipc/ipc_message.h"
 #include "media/audio/shared_memory_util.h"
 #include "ppapi/c/pp_errors.h"
@@ -17,7 +21,6 @@
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
-#include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 
 namespace content {
 
@@ -41,13 +44,17 @@ base::PlatformFile ConvertSharedMemoryHandle(
 }  // namespace
 
 PepperAudioInputHost::PepperAudioInputHost(
-    RendererPpapiHost* host,
+    RendererPpapiHostImpl* host,
     PP_Instance instance,
     PP_Resource resource)
     : ResourceHost(host->GetPpapiHost(), instance, resource),
       renderer_ppapi_host_(host),
       audio_input_(NULL),
-      enumeration_helper_(this, this, PP_DEVICETYPE_DEV_AUDIOCAPTURE) {
+      enumeration_helper_(
+          this,
+          PepperMediaDeviceManager::GetForRenderView(
+              host->GetRenderViewForInstance(pp_instance())),
+          PP_DEVICETYPE_DEV_AUDIOCAPTURE) {
 }
 
 PepperAudioInputHost::~PepperAudioInputHost() {
@@ -83,14 +90,6 @@ void PepperAudioInputHost::StreamCreationFailed() {
                  base::SyncSocket::kInvalidHandle);
 }
 
-webkit::ppapi::PluginDelegate* PepperAudioInputHost::GetPluginDelegate() {
-  webkit::ppapi::PluginInstance* instance =
-      renderer_ppapi_host_->GetPluginInstance(pp_instance());
-  if (instance)
-    return instance->delegate();
-  return NULL;
-}
-
 int32_t PepperAudioInputHost::OnOpen(
     ppapi::host::HostMessageContext* context,
     const std::string& device_id,
@@ -101,20 +100,21 @@ int32_t PepperAudioInputHost::OnOpen(
   if (audio_input_)
     return PP_ERROR_FAILED;
 
-  webkit::ppapi::PluginDelegate* plugin_delegate = GetPluginDelegate();
-  if (!plugin_delegate)
-    return PP_ERROR_FAILED;
-
-  webkit::ppapi::PluginInstance* instance =
-      renderer_ppapi_host_->GetPluginInstance(pp_instance());
+  PepperPluginInstanceImpl* instance =
+      renderer_ppapi_host_->GetPluginInstanceImpl(pp_instance());
   if (!instance)
     return PP_ERROR_FAILED;
 
   // When it is done, we'll get called back on StreamCreated() or
   // StreamCreationFailed().
-  audio_input_ = plugin_delegate->CreateAudioInput(
-      device_id, instance->container()->element().document().url(),
-      sample_rate, sample_frame_count, this);
+  RenderViewImpl* render_view = static_cast<RenderViewImpl*>(
+      renderer_ppapi_host_->GetRenderViewForInstance(pp_instance()));
+
+  audio_input_ = PepperPlatformAudioInput::Create(
+      render_view->AsWeakPtr(), device_id,
+      instance->container()->element().document().url(),
+      static_cast<int>(sample_rate),
+      static_cast<int>(sample_frame_count), this);
   if (audio_input_) {
     open_context_.reset(new ppapi::host::ReplyMessageContext(
         context->MakeReplyMessageContext()));

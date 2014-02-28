@@ -45,7 +45,7 @@
 #include "wtf/WeakPtr.h"
 
 namespace WebCore {
-struct CachedResourceInitiatorInfo;
+struct FetchInitiatorInfo;
 class DOMWindow;
 class Document;
 class DocumentLoader;
@@ -58,9 +58,7 @@ class InspectorDOMAgent;
 class InspectorFrontend;
 class InspectorMemoryAgent;
 class InspectorPageAgent;
-class InspectorState;
 class InstrumentingAgents;
-class IntRect;
 class KURL;
 class Node;
 class Page;
@@ -88,14 +86,18 @@ extern const char PaintSetup[];
 class TimelineTimeConverter {
 public:
     TimelineTimeConverter()
-        : m_startOffset(0)
+        : m_timestampsBaseMs(0)
+        , m_startTimeMs(0)
     {
     }
-    double fromMonotonicallyIncreasingTime(double time) const  { return (time - m_startOffset) * 1000.0; }
+    double toProtocolTimestamp(double seconds) const  { return seconds * 1000.0 - m_timestampsBaseMs; }
+    double startTimeMs() const { return m_startTimeMs; }
+    double timestampsBaseMs() const { return m_timestampsBaseMs; }
     void reset();
 
 private:
-    double m_startOffset;
+    double m_timestampsBaseMs;
+    double m_startTimeMs;
 };
 
 class InspectorTimelineAgent
@@ -121,6 +123,8 @@ public:
     virtual void start(ErrorString*, const int* maxCallStackDepth, const bool* includeDomCounters, const bool* includeNativeMemoryStatistics);
     virtual void stop(ErrorString*);
 
+    void setLayerTreeId(int layerTreeId) { m_layerTreeId = layerTreeId; }
+    int layerTreeId() const { return m_layerTreeId; }
     int id() const { return m_id; }
 
     void didCommitLoad();
@@ -149,7 +153,7 @@ public:
     void willPaint(RenderObject*);
     void didPaint(RenderObject*, GraphicsContext*, const LayoutRect&);
 
-    void willScrollLayer(Frame*);
+    void willScrollLayer(RenderObject*);
     void didScrollLayer();
 
     void willComposite();
@@ -179,7 +183,7 @@ public:
     void stopConsoleTiming(Frame*, const String&, PassRefPtr<ScriptCallStack>);
 
     void didScheduleResourceRequest(Document*, const String& url);
-    void willSendRequest(unsigned long, DocumentLoader*, const ResourceRequest&, const ResourceResponse&, const CachedResourceInitiatorInfo&);
+    void willSendRequest(unsigned long, DocumentLoader*, const ResourceRequest&, const ResourceResponse&, const FetchInitiatorInfo&);
     bool willReceiveResourceResponse(Frame*, unsigned long, const ResourceResponse&);
     void didReceiveResourceResponse(unsigned long, DocumentLoader*, const ResourceResponse&, ResourceLoader*);
     void didFinishLoading(unsigned long, DocumentLoader*, double monotonicFinishTime);
@@ -224,7 +228,7 @@ private:
         String type;
         size_t usedHeapSizeAtStart;
     };
-        
+
     InspectorTimelineAgent(InstrumentingAgents*, InspectorPageAgent*, InspectorMemoryAgent*, InspectorDOMAgent*, InspectorCompositeState*, InspectorType, InspectorClient*);
 
     void didFinishLoadingResource(unsigned long, bool didFail, double finishTime, Frame*);
@@ -252,7 +256,7 @@ private:
     long long idForNode(Node*);
     void releaseNodeIds();
 
-    double timestamp();
+    double timestamp() const;
     Page* page();
 
     InspectorPageAgent* m_pageAgent;
@@ -285,6 +289,7 @@ private:
     WeakPtrFactory<InspectorTimelineAgent> m_weakFactory;
     RefPtr<TimelineTraceEventProcessor> m_traceEventProcessor;
     unsigned m_styleRecalcElementCounter;
+    int m_layerTreeId;
 };
 
 } // namespace WebCore

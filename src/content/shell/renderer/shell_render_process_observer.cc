@@ -14,12 +14,12 @@
 
 #include "content/shell/common/shell_messages.h"
 #include "content/shell/common/shell_switches.h"
+#include "content/shell/renderer/gc_extension.h"
 #include "content/shell/renderer/shell_content_renderer_client.h"
 #include "content/shell/renderer/webkit_test_runner.h"
 #include "third_party/WebKit/public/testing/WebTestInterfaces.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "webkit/glue/webkit_glue.h"
-#include "webkit/support/gc_extension.h"
 
 using WebKit::WebFrame;
 using WebTestRunner::WebTestDelegate;
@@ -81,8 +81,6 @@ bool ShellRenderProcessObserver::OnControlMessageReceived(
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ShellRenderProcessObserver, message)
     IPC_MESSAGE_HANDLER(ShellViewMsg_SetWebKitSourceDir, OnSetWebKitSourceDir)
-    IPC_MESSAGE_HANDLER(ShellViewMsg_LoadHyphenDictionary,
-                        OnLoadHyphenDictionary)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -92,12 +90,6 @@ bool ShellRenderProcessObserver::OnControlMessageReceived(
 void ShellRenderProcessObserver::OnSetWebKitSourceDir(
     const base::FilePath& webkit_source_dir) {
   webkit_source_dir_ = webkit_source_dir;
-}
-
-void ShellRenderProcessObserver::OnLoadHyphenDictionary(
-    const IPC::PlatformFileForTransit& dict_file) {
-  ShellContentRendererClient::Get()->LoadHyphenDictionary(
-      IPC::PlatformFileForTransitToPlatformFile(dict_file));
 }
 
 }  // namespace content

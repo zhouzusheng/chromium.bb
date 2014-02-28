@@ -9,6 +9,7 @@
 
 #include "base/bind.h"
 #include "base/prefs/pref_service.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
 #include "chrome/browser/spellchecker/spellcheck_host_metrics.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
@@ -85,17 +86,13 @@ void SpellCheckMessageFilter::OnSpellCheckerRequestDictionary() {
 
 void SpellCheckMessageFilter::OnNotifyChecked(const string16& word,
                                               bool misspelled) {
-  content::RenderProcessHost* host =
-      content::RenderProcessHost::FromID(render_process_id_);
-  if (!host)
-    return;  // Teardown.
-  // Delegates to SpellCheckHost which tracks the stats of our spellchecker.
-  SpellcheckService* spellcheck_service =
-      SpellcheckServiceFactory::GetForContext(host->GetBrowserContext());
-  if (!spellcheck_service)
+  SpellcheckService* spellcheck = GetSpellcheckService();
+  // Spellcheck service may not be available for a renderer process that is
+  // shutting down.
+  if (!spellcheck)
     return;
-  if (spellcheck_service->GetMetrics())
-    spellcheck_service->GetMetrics()->RecordCheckedWordStats(word, misspelled);
+  if (spellcheck->GetMetrics())
+    spellcheck->GetMetrics()->RecordCheckedWordStats(word, misspelled);
 }
 
 void SpellCheckMessageFilter::OnRespondDocumentMarkers(
@@ -127,8 +124,9 @@ void SpellCheckMessageFilter::OnTextCheckComplete(
     bool success,
     const string16& text,
     const std::vector<SpellCheckResult>& results) {
-  SpellcheckService* spellcheck =
-      SpellcheckServiceFactory::GetForRenderProcessId(render_process_id_);
+  SpellcheckService* spellcheck = GetSpellcheckService();
+  // Spellcheck service may not be available for a renderer process that is
+  // shutting down.
   if (!spellcheck)
     return;
   std::vector<SpellCheckResult> results_copy = results;
@@ -157,3 +155,7 @@ void SpellCheckMessageFilter::CallSpellingService(
                markers));
 }
 #endif
+
+SpellcheckService* SpellCheckMessageFilter::GetSpellcheckService() const {
+  return SpellcheckServiceFactory::GetForRenderProcessId(render_process_id_);
+}

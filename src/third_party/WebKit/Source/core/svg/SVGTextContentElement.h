@@ -25,11 +25,11 @@
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGExternalResourcesRequired.h"
-#include "core/svg/SVGLangSpace.h"
-#include "core/svg/SVGStyledElement.h"
-#include "core/svg/SVGTests.h"
+#include "core/svg/SVGGraphicsElement.h"
 
 namespace WebCore {
+
+class ExceptionState;
 
 enum SVGLengthAdjustType {
     SVGLengthAdjustUnknown,
@@ -66,9 +66,7 @@ struct SVGPropertyTraits<SVGLengthAdjustType> {
     }
 };
 
-class SVGTextContentElement : public SVGStyledElement,
-                              public SVGTests,
-                              public SVGLangSpace,
+class SVGTextContentElement : public SVGGraphicsElement,
                               public SVGExternalResourcesRequired {
 public:
     // Forward declare enumerations in the W3C naming scheme, for IDL generation.
@@ -80,20 +78,20 @@ public:
 
     unsigned getNumberOfChars();
     float getComputedTextLength();
-    float getSubStringLength(unsigned charnum, unsigned nchars, ExceptionCode&);
-    FloatPoint getStartPositionOfChar(unsigned charnum, ExceptionCode&);
-    FloatPoint getEndPositionOfChar(unsigned charnum, ExceptionCode&);
-    FloatRect getExtentOfChar(unsigned charnum, ExceptionCode&);
-    float getRotationOfChar(unsigned charnum, ExceptionCode&);
-    int getCharNumAtPosition(const FloatPoint&);
-    void selectSubString(unsigned charnum, unsigned nchars, ExceptionCode&);
+    float getSubStringLength(unsigned charnum, unsigned nchars, ExceptionState&);
+    SVGPoint getStartPositionOfChar(unsigned charnum, ExceptionState&);
+    SVGPoint getEndPositionOfChar(unsigned charnum, ExceptionState&);
+    SVGRect getExtentOfChar(unsigned charnum, ExceptionState&);
+    float getRotationOfChar(unsigned charnum, ExceptionState&);
+    int getCharNumAtPosition(const SVGPoint&);
+    void selectSubString(unsigned charnum, unsigned nchars, ExceptionState&);
 
     static SVGTextContentElement* elementFromRenderer(RenderObject*);
 
     // textLength is not declared using the standard DECLARE_ANIMATED_LENGTH macro
     // as its getter needs special handling (return getComputedTextLength(), instead of m_textLength).
     SVGLength& specifiedTextLength() { return m_specifiedTextLength; }
-    PassRefPtr<SVGAnimatedLength> textLengthAnimated();
+    PassRefPtr<SVGAnimatedLength> textLength();
     static const SVGPropertyInfo* textLengthPropertyInfo();
 
 protected:
@@ -117,16 +115,11 @@ private:
     static PassRefPtr<SVGAnimatedProperty> lookupOrCreateTextLengthWrapper(SVGElement* contextElement);
     mutable SVGSynchronizableAnimatedProperty<SVGLength> m_textLength;
     SVGLength m_specifiedTextLength;
-  
+
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGTextContentElement)
         DECLARE_ANIMATED_ENUMERATION(LengthAdjust, lengthAdjust, SVGLengthAdjustType)
-        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired) 
+        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
     END_DECLARE_ANIMATED_PROPERTIES
-
-    // SVGTests
-    virtual void synchronizeRequiredFeatures() { SVGTests::synchronizeRequiredFeatures(this); }
-    virtual void synchronizeRequiredExtensions() { SVGTests::synchronizeRequiredExtensions(this); }
-    virtual void synchronizeSystemLanguage() { SVGTests::synchronizeSystemLanguage(this); }
 };
 
 inline SVGTextContentElement* toSVGTextContentElement(SVGElement* element)

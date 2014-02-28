@@ -24,15 +24,14 @@
  */
 
 #include "config.h"
-
 #include "core/html/track/InbandTextTrack.h"
 
-#include <math.h>
-#include "core/dom/ExceptionCodePlaceholder.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/html/track/TextTrackCueGeneric.h"
 #include "core/platform/Logging.h"
 #include "core/platform/graphics/InbandTextTrackPrivate.h"
-#include <wtf/UnusedParam.h>
+#include "wtf/UnusedParam.h"
+#include <math.h>
 
 namespace WebCore {
 
@@ -46,7 +45,7 @@ InbandTextTrack::InbandTextTrack(ScriptExecutionContext* context, TextTrackClien
     , m_private(tracksPrivate)
 {
     m_private->setClient(this);
-    
+
     switch (m_private->kind()) {
     case InbandTextTrackPrivate::Subtitles:
         setKind(TextTrack::subtitlesKeyword());
@@ -72,12 +71,16 @@ InbandTextTrack::InbandTextTrack(ScriptExecutionContext* context, TextTrackClien
 
 InbandTextTrack::~InbandTextTrack()
 {
-    m_private->setClient(0);
+    // Make sure m_private was cleared by trackRemoved() before destruction.
+    ASSERT(!m_private);
 }
 
 void InbandTextTrack::setMode(const AtomicString& mode)
 {
     TextTrack::setMode(mode);
+
+    if (!m_private)
+        return;
 
     if (mode == TextTrack::disabledKeyword())
         m_private->setMode(InbandTextTrackPrivate::Disabled);
@@ -101,7 +104,7 @@ bool InbandTextTrack::containsOnlyForcedSubtitles() const
 {
     if (!m_private)
         return false;
-    
+
     return m_private->containsOnlyForcedSubtitles();
 }
 
@@ -109,7 +112,7 @@ bool InbandTextTrack::isMainProgramContent() const
 {
     if (!m_private)
         return false;
-    
+
     return m_private->isMainProgramContent();
 }
 
@@ -117,14 +120,22 @@ bool InbandTextTrack::isEasyToRead() const
 {
     if (!m_private)
         return false;
-    
+
     return m_private->isEasyToRead();
 }
-    
+
 size_t InbandTextTrack::inbandTrackIndex()
 {
     ASSERT(m_private);
     return m_private->textTrackIndex();
+}
+
+void InbandTextTrack::trackRemoved()
+{
+    ASSERT(m_private);
+    m_private->setClient(0);
+    m_private = 0;
+    clearClient();
 }
 
 void InbandTextTrack::addGenericCue(InbandTextTrackPrivate* trackPrivate, GenericCueData* cueData)
@@ -145,17 +156,17 @@ void InbandTextTrack::addGenericCue(InbandTextTrackPrivate* trackPrivate, Generi
         cue->setLine(lround(cueData->line()), IGNORE_EXCEPTION);
     if (cueData->size() > 0)
         cue->setSize(lround(cueData->size()), IGNORE_EXCEPTION);
-    if (cueData->backgroundColor().isValid())
+    if (cueData->backgroundColor().alpha())
         cue->setBackgroundColor(cueData->backgroundColor().rgb());
-    if (cueData->foregroundColor().isValid())
+    if (cueData->foregroundColor().alpha())
         cue->setForegroundColor(cueData->foregroundColor().rgb());
 
     if (cueData->align() == GenericCueData::Start)
-        cue->setAlign(ASCIILiteral("start"), IGNORE_EXCEPTION);
+        cue->setAlign("start", IGNORE_EXCEPTION);
     else if (cueData->align() == GenericCueData::Middle)
-        cue->setAlign(ASCIILiteral("middle"), IGNORE_EXCEPTION);
+        cue->setAlign("middle", IGNORE_EXCEPTION);
     else if (cueData->align() == GenericCueData::End)
-        cue->setAlign(ASCIILiteral("end"), IGNORE_EXCEPTION);
+        cue->setAlign("end", IGNORE_EXCEPTION);
     cue->setSnapToLines(false);
 
     if (hasCue(cue.get())) {
@@ -175,7 +186,7 @@ void InbandTextTrack::addWebVTTCue(InbandTextTrackPrivate* trackPrivate, double 
     RefPtr<TextTrackCue> cue = TextTrackCue::create(scriptExecutionContext(), start, end, content);
     cue->setId(id);
     cue->setCueSettings(settings);
-    
+
     if (hasCue(cue.get()))
         return;
 
@@ -183,4 +194,3 @@ void InbandTextTrack::addWebVTTCue(InbandTextTrackPrivate* trackPrivate, double 
 }
 
 } // namespace WebCore
-

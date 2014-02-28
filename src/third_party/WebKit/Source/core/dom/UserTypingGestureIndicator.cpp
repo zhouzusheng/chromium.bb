@@ -27,9 +27,8 @@
 #include "core/dom/UserTypingGestureIndicator.h"
 
 #include "core/dom/Document.h"
-#include "core/dom/Node.h"
+#include "core/dom/Element.h"
 #include "core/page/Frame.h"
-#include <wtf/StdLibExtras.h>
 
 namespace WebCore {
 
@@ -39,29 +38,29 @@ bool UserTypingGestureIndicator::processingUserTypingGesture()
     return s_processingUserTypingGesture;
 }
 
-static RefPtr<Node>& focusedNode()
+static RefPtr<Element>& focusedElement()
 {
-    DEFINE_STATIC_LOCAL(RefPtr<Node>, node, ());
-    return node;
+    DEFINE_STATIC_LOCAL(RefPtr<Element>, element, ());
+    return element;
 }
 
-Node* UserTypingGestureIndicator::focusedElementAtGestureStart()
+Element* UserTypingGestureIndicator::focusedElementAtGestureStart()
 {
-    return focusedNode().get();
+    return focusedElement().get();
 }
 
 UserTypingGestureIndicator::UserTypingGestureIndicator(Frame* frame)
     : m_previousProcessingUserTypingGesture(s_processingUserTypingGesture)
-    , m_previousFocusedNode(focusedNode())
+    , m_previousFocusedElement(focusedElement())
 {
     s_processingUserTypingGesture = true;
-    focusedNode() = frame->document() ? frame->document()->focusedNode() : 0;
+    focusedElement() = frame->document() ? frame->document()->focusedElement() : 0;
 }
 
 UserTypingGestureIndicator::~UserTypingGestureIndicator()
 {
     s_processingUserTypingGesture = m_previousProcessingUserTypingGesture;
-    focusedNode() = m_previousFocusedNode;
+    focusedElement() = m_previousFocusedElement;
 }
 
 } // namespace WebCore

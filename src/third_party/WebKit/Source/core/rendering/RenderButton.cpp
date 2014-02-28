@@ -23,8 +23,6 @@
 
 #include "HTMLNames.h"
 #include "core/dom/Document.h"
-#include "core/html/HTMLInputElement.h"
-#include "core/rendering/RenderTextFragment.h"
 
 namespace WebCore {
 
@@ -32,7 +30,6 @@ using namespace HTMLNames;
 
 RenderButton::RenderButton(Element* element)
     : RenderFlexibleBox(element)
-    , m_buttonText(0)
     , m_inner(0)
 {
 }
@@ -50,7 +47,7 @@ void RenderButton::addChild(RenderObject* newChild, RenderObject* beforeChild)
         setupInnerStyle(m_inner->style());
         RenderFlexibleBox::addChild(m_inner);
     }
-    
+
     m_inner->addChild(newChild, beforeChild);
 }
 
@@ -86,13 +83,11 @@ void RenderButton::styleDidChange(StyleDifference diff, const RenderStyle* oldSt
 {
     RenderBlock::styleDidChange(diff, oldStyle);
 
-    if (m_buttonText)
-        m_buttonText->setStyle(style());
     if (m_inner) // RenderBlock handled updating the anonymous block's style.
         setupInnerStyle(m_inner->style());
 }
 
-void RenderButton::setupInnerStyle(RenderStyle* innerStyle) 
+void RenderButton::setupInnerStyle(RenderStyle* innerStyle)
 {
     ASSERT(innerStyle->refCount() == 1);
     // RenderBlock::createAnonymousBlock creates a new RenderStyle, so this is
@@ -103,39 +98,6 @@ void RenderButton::setupInnerStyle(RenderStyle* innerStyle)
     innerStyle->setMarginTop(Length());
     innerStyle->setMarginBottom(Length());
     innerStyle->setFlexDirection(style()->flexDirection());
-}
-
-void RenderButton::updateFromElement()
-{
-    // If we're an input element, we may need to change our button text.
-    if (node()->hasTagName(inputTag)) {
-        HTMLInputElement* input = toHTMLInputElement(node());
-        String value = input->valueWithDefault();
-        setText(value);
-    }
-}
-
-void RenderButton::setText(const String& str)
-{
-    if (str.isEmpty()) {
-        if (m_buttonText) {
-            m_buttonText->destroy();
-            m_buttonText = 0;
-        }
-    } else {
-        if (m_buttonText)
-            m_buttonText->setText(str.impl());
-        else {
-            m_buttonText = new (renderArena()) RenderTextFragment(document(), str.impl());
-            m_buttonText->setStyle(style());
-            addChild(m_buttonText);
-        }
-    }
-}
-
-String RenderButton::text() const
-{
-    return m_buttonText ? m_buttonText->text() : 0;
 }
 
 bool RenderButton::canHaveGeneratedChildren() const

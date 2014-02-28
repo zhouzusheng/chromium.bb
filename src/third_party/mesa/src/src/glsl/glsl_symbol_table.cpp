@@ -26,44 +26,43 @@
 
 class symbol_table_entry {
 public:
-   /* Callers of this talloc-based new need not call delete. It's
-    * easier to just talloc_free 'ctx' (or any of its ancestors). */
+   /* Callers of this ralloc-based new need not call delete. It's
+    * easier to just ralloc_free 'ctx' (or any of its ancestors). */
    static void* operator new(size_t size, void *ctx)
    {
-      void *entry = talloc_size(ctx, size);
+      void *entry = ralloc_size(ctx, size);
       assert(entry != NULL);
       return entry;
    }
 
-   /* If the user *does* call delete, that's OK, we will just
-    * talloc_free in that case. Here, C++ will have already called the
-    * destructor so tell talloc not to do that again. */
-   static void operator delete(void *table)
+   /* If the user *does* call delete, that's OK, we will just ralloc_free. */
+   static void operator delete(void *entry)
    {
-      talloc_set_destructor(table, NULL);
-      talloc_free(table);
+      ralloc_free(entry);
    }
 
-   symbol_table_entry(ir_variable *v)                     : v(v), f(0), t(0) {}
-   symbol_table_entry(ir_function *f)                     : v(0), f(f), t(0) {}
-   symbol_table_entry(const glsl_type *t)                 : v(0), f(0), t(t) {}
+   symbol_table_entry(ir_variable *v)               : v(v), f(0), t(0), u(0) {}
+   symbol_table_entry(ir_function *f)               : v(0), f(f), t(0), u(0) {}
+   symbol_table_entry(const glsl_type *t)           : v(0), f(0), t(t), u(0) {}
+   symbol_table_entry(struct gl_uniform_block *u)   : v(0), f(0), t(0), u(u) {}
 
    ir_variable *v;
    ir_function *f;
    const glsl_type *t;
+   struct gl_uniform_block *u;
 };
 
 glsl_symbol_table::glsl_symbol_table()
 {
    this->language_version = 120;
    this->table = _mesa_symbol_table_ctor();
-   this->mem_ctx = talloc_init("symbol table entries");
+   this->mem_ctx = ralloc_context(NULL);
 }
 
 glsl_symbol_table::~glsl_symbol_table()
 {
    _mesa_symbol_table_dtor(table);
-   talloc_free(mem_ctx);
+   ralloc_free(mem_ctx);
 }
 
 void glsl_symbol_table::push_scope()
@@ -81,12 +80,12 @@ bool glsl_symbol_table::name_declared_this_scope(const char *name)
    return _mesa_symbol_table_symbol_scope(table, -1, name) == 0;
 }
 
-bool glsl_symbol_table::add_variable(const char *name, ir_variable *v)
+bool glsl_symbol_table::add_variable(ir_variable *v)
 {
    if (this->language_version == 110) {
       /* In 1.10, functions and variables have separate namespaces. */
-      symbol_table_entry *existing = get_entry(name);
-      if (name_declared_this_scope(name)) {
+      symbol_table_entry *existing = get_entry(v->name);
+      if (name_declared_this_scope(v->name)) {
 	 /* If there's already an existing function (not a constructor!) in
 	  * the current scope, just update the existing entry to include 'v'.
 	  */
@@ -102,7 +101,7 @@ bool glsl_symbol_table::add_variable(const char *name, ir_variable *v)
 	 symbol_table_entry *entry = new(mem_ctx) symbol_table_entry(v);
 	 if (existing != NULL)
 	    entry->f = existing->f;
-	 int added = _mesa_symbol_table_add_symbol(table, -1, name, entry);
+	 int added = _mesa_symbol_table_add_symbol(table, -1, v->name, entry);
 	 assert(added == 0);
 	 (void)added;
 	 return true;
@@ -112,7 +111,7 @@ bool glsl_symbol_table::add_variable(const char *name, ir_variable *v)
 
    /* 1.20+ rules: */
    symbol_table_entry *entry = new(mem_ctx) symbol_table_entry(v);
-   return _mesa_symbol_table_add_symbol(table, -1, name, entry) == 0;
+   return _mesa_symbol_table_add_symbol(table, -1, v->name, entry) == 0;
 }
 
 bool glsl_symbol_table::add_type(const char *name, const glsl_type *t)
@@ -121,18 +120,32 @@ bool glsl_symbol_table::add_type(const char *name, const glsl_type *t)
    return _mesa_symbol_table_add_symbol(table, -1, name, entry) == 0;
 }
 
-bool glsl_symbol_table::add_function(const char *name, ir_function *f)
+bool glsl_symbol_table::add_function(ir_function *f)
 {
-   if (this->language_version == 110 && name_declared_this_scope(name)) {
+   if (this->language_version == 110 && name_declared_this_scope(f->name)) {
       /* In 1.10, functions and variables have separate namespaces. */
-      symbol_table_entry *existing = get_entry(name);
+      symbol_table_entry *existing = get_entry(f->name);
       if ((existing->f == NULL) && (existing->t == NULL)) {
 	 existing->f = f;
 	 return true;
       }
    }
    symbol_table_entry *entry = new(mem_ctx) symbol_table_entry(f);
-   return _mesa_symbol_table_add_symbol(table, -1, name, entry) == 0;
+   return _mesa_symbol_table_add_symbol(table, -1, f->name, entry) == 0;
+}
+
+bool glsl_symbol_table::add_uniform_block(struct gl_uniform_block *u)
+{
+   symbol_table_entry *entry = new(mem_ctx) symbol_table_entry(u);
+   return _mesa_symbol_table_add_symbol(table, -1, u->Name, entry) == 0;
+}
+
+void glsl_symbol_table::add_global_function(ir_function *f)
+{
+   symbol_table_entry *entry = new(mem_ctx) symbol_table_entry(f);
+   int added = _mesa_symbol_table_add_global_symbol(table, -1, f->name, entry);
+   assert(added == 0);
+   (void)added;
 }
 
 ir_variable *glsl_symbol_table::get_variable(const char *name)

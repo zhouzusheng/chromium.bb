@@ -175,7 +175,6 @@ SyncManagerImpl::SyncManagerImpl(const std::string& name)
       invalidator_state_(DEFAULT_INVALIDATION_ERROR),
       traffic_recorder_(kMaxMessagesToRecord, kMaxMessageSizeToRecord),
       encryptor_(NULL),
-      unrecoverable_error_handler_(NULL),
       report_unrecoverable_error_function_(NULL) {
   // Pre-fill |notification_info_map_|.
   for (int i = FIRST_REAL_MODEL_TYPE; i < MODEL_TYPE_COUNT; ++i) {
@@ -346,16 +345,15 @@ void SyncManagerImpl::Init(
     bool use_ssl,
     scoped_ptr<HttpPostProviderFactory> post_factory,
     const std::vector<ModelSafeWorker*>& workers,
-    ExtensionsActivityMonitor* extensions_activity_monitor,
+    ExtensionsActivity* extensions_activity,
     SyncManager::ChangeDelegate* change_delegate,
     const SyncCredentials& credentials,
-    scoped_ptr<Invalidator> invalidator,
     const std::string& invalidator_client_id,
     const std::string& restored_key_for_bootstrapping,
     const std::string& restored_keystore_key_for_bootstrapping,
-    scoped_ptr<InternalComponentsFactory> internal_components_factory,
+    InternalComponentsFactory* internal_components_factory,
     Encryptor* encryptor,
-    UnrecoverableErrorHandler* unrecoverable_error_handler,
+    scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
     ReportUnrecoverableErrorFunction report_unrecoverable_error_function,
     bool use_oauth2_token) {
   CHECK(!initialized_);
@@ -369,9 +367,6 @@ void SyncManagerImpl::Init(
 
   change_delegate_ = change_delegate;
 
-  invalidator_ = invalidator.Pass();
-  invalidator_->RegisterHandler(this);
-
   AddObserver(&js_sync_manager_observer_);
   SetJsEventHandler(event_handler);
 
@@ -380,7 +375,7 @@ void SyncManagerImpl::Init(
   database_path_ = database_location.Append(
       syncable::Directory::kSyncDatabaseFilename);
   encryptor_ = encryptor;
-  unrecoverable_error_handler_ = unrecoverable_error_handler;
+  unrecoverable_error_handler_ = unrecoverable_error_handler.Pass();
   report_unrecoverable_error_function_ = report_unrecoverable_error_function;
 
   allstatus_.SetHasKeystoreKey(
@@ -406,7 +401,7 @@ void SyncManagerImpl::Init(
   share_.directory.reset(
       new syncable::Directory(
           backing_store.release(),
-          unrecoverable_error_handler_,
+          unrecoverable_error_handler_.get(),
           report_unrecoverable_error_function_,
           sync_encryption_handler_.get(),
           sync_encryption_handler_->GetCryptographerUnsafe()));
@@ -446,7 +441,7 @@ void SyncManagerImpl::Init(
       connection_manager_.get(),
       directory(),
       workers,
-      extensions_activity_monitor,
+      extensions_activity,
       listeners,
       &debug_info_event_listener_,
       &traffic_recorder_,
@@ -609,47 +604,9 @@ void SyncManagerImpl::UpdateCredentials(const SyncCredentials& credentials) {
   if (!connection_manager_->SetAuthToken(credentials.sync_token))
     return;  // Auth token is known to be invalid, so exit early.
 
-  invalidator_->UpdateCredentials(credentials.email, credentials.sync_token);
   scheduler_->OnCredentialsUpdated();
 
   // TODO(zea): pass the credential age to the debug info event listener.
-}
-
-void SyncManagerImpl::UpdateEnabledTypes(ModelTypeSet enabled_types) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK(initialized_);
-  invalidator_->UpdateRegisteredIds(
-      this,
-      ModelTypeSetToObjectIdSet(enabled_types));
-}
-
-void SyncManagerImpl::RegisterInvalidationHandler(
-    InvalidationHandler* handler) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK(initialized_);
-  invalidator_->RegisterHandler(handler);
-}
-
-void SyncManagerImpl::UpdateRegisteredInvalidationIds(
-    InvalidationHandler* handler,
-    const ObjectIdSet& ids) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK(initialized_);
-  invalidator_->UpdateRegisteredIds(handler, ids);
-}
-
-void SyncManagerImpl::UnregisterInvalidationHandler(
-    InvalidationHandler* handler) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK(initialized_);
-  invalidator_->UnregisterHandler(handler);
-}
-
-void SyncManagerImpl::AcknowledgeInvalidation(
-    const invalidation::ObjectId& id, const syncer::AckHandle& ack_handle) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK(initialized_);
-  invalidator_->Acknowledge(id, ack_handle);
 }
 
 void SyncManagerImpl::AddObserver(SyncManager::Observer* observer) {
@@ -662,9 +619,9 @@ void SyncManagerImpl::RemoveObserver(SyncManager::Observer* observer) {
   observers_.RemoveObserver(observer);
 }
 
-void SyncManagerImpl::StopSyncingForShutdown(const base::Closure& callback) {
+void SyncManagerImpl::StopSyncingForShutdown() {
   DVLOG(2) << "StopSyncingForShutdown";
-  scheduler_->RequestStop(callback);
+  scheduler_->RequestStop();
   if (connection_manager_)
     connection_manager_->TerminateAllIO();
 }
@@ -690,15 +647,10 @@ void SyncManagerImpl::ShutdownOnSyncThread() {
 
   RemoveObserver(&debug_info_event_listener_);
 
-  // |invalidator_| and |connection_manager_| may end up being NULL here in
-  // tests (in synchronous initialization mode).
+  // |connection_manager_| may end up being NULL here in tests (in synchronous
+  // initialization mode).
   //
   // TODO(akalin): Fix this behavior.
-
-  if (invalidator_)
-    invalidator_->UnregisterHandler(this);
-  invalidator_.reset();
-
   if (connection_manager_)
     connection_manager_->RemoveListener(this);
   connection_manager_.reset();
@@ -988,20 +940,6 @@ void SyncManagerImpl::OnSyncEngineEvent(const SyncEngineEvent& event) {
     DVLOG(1) << "Sending OnSyncCycleCompleted";
     FOR_EACH_OBSERVER(SyncManager::Observer, observers_,
                       OnSyncCycleCompleted(event.snapshot));
-
-    // This is here for tests, which are still using p2p notifications.
-    bool is_notifiable_commit =
-        (event.snapshot.model_neutral_state().num_successful_commits > 0);
-    if (is_notifiable_commit) {
-      if (invalidator_) {
-        const ObjectIdInvalidationMap& invalidation_map =
-            ModelTypeInvalidationMapToObjectIdInvalidationMap(
-                event.snapshot.source().types);
-        invalidator_->SendInvalidation(invalidation_map);
-      } else {
-        DVLOG(1) << "Not sending invalidation: invalidator_ is NULL";
-      }
-    }
   }
 
   if (event.what_happened == SyncEngineEvent::STOP_SYNCING_PERMANENTLY) {
@@ -1224,6 +1162,8 @@ void SyncManagerImpl::UpdateNotificationInfo(
 }
 
 void SyncManagerImpl::OnInvalidatorStateChange(InvalidatorState state) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+
   const std::string& state_str = InvalidatorStateToString(state);
   invalidator_state_ = state;
   DVLOG(1) << "Invalidator state changed to: " << state_str;
@@ -1245,15 +1185,6 @@ void SyncManagerImpl::OnInvalidatorStateChange(InvalidatorState state) {
 void SyncManagerImpl::OnIncomingInvalidation(
     const ObjectIdInvalidationMap& invalidation_map) {
   DCHECK(thread_checker_.CalledOnValidThread());
-
-  // TODO(dcheng): Acknowledge immediately for now. Fix this once the
-  // invalidator doesn't repeatedly ping for unacknowledged invaliations, since
-  // it conflicts with the sync scheduler's internal backoff algorithm.
-  // See http://crbug.com/124149 for more information.
-  for (ObjectIdInvalidationMap::const_iterator it = invalidation_map.begin();
-       it != invalidation_map.end(); ++it) {
-    invalidator_->Acknowledge(it->first, it->second.ack_handle);
-  }
 
   const ModelTypeInvalidationMap& type_invalidation_map =
       ObjectIdInvalidationMapToModelTypeInvalidationMap(invalidation_map);
@@ -1343,15 +1274,6 @@ bool SyncManagerImpl::ReceivedExperiment(Experiments* experiments) {
   }
   bool found_experiment = false;
 
-  ReadNode keystore_node(&trans);
-  if (keystore_node.InitByClientTagLookup(
-          syncer::EXPERIMENTS,
-          syncer::kKeystoreEncryptionTag) == BaseNode::INIT_OK &&
-      keystore_node.GetExperimentsSpecifics().keystore_encryption().enabled()) {
-    experiments->keystore_encryption = true;
-    found_experiment = true;
-  }
-
   ReadNode autofill_culling_node(&trans);
   if (autofill_culling_node.InitByClientTagLookup(
           syncer::EXPERIMENTS,
@@ -1366,12 +1288,21 @@ bool SyncManagerImpl::ReceivedExperiment(Experiments* experiments) {
   if (favicon_sync_node.InitByClientTagLookup(
           syncer::EXPERIMENTS,
           syncer::kFaviconSyncTag) == BaseNode::INIT_OK) {
-    experiments->favicon_sync = favicon_sync_node.GetExperimentsSpecifics().
-        favicon_sync().enabled();
     experiments->favicon_sync_limit =
         favicon_sync_node.GetExperimentsSpecifics().favicon_sync().
             favicon_sync_limit();
     found_experiment = true;
+  }
+
+  ReadNode pre_commit_update_avoidance_node(&trans);
+  if (pre_commit_update_avoidance_node.InitByClientTagLookup(
+          syncer::EXPERIMENTS,
+          syncer::kPreCommitUpdateAvoidanceTag) == BaseNode::INIT_OK) {
+    session_context_->set_server_enabled_pre_commit_update_avoidance(
+        pre_commit_update_avoidance_node.GetExperimentsSpecifics().
+            pre_commit_update_avoidance().enabled());
+    // We don't bother setting found_experiment.  The frontend doesn't need to
+    // know about this.
   }
 
   return found_experiment;

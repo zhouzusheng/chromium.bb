@@ -7,32 +7,38 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/shared_memory.h"
 #include "base/memory/weak_ptr.h"
-#include "base/shared_memory.h"
+#include "base/power_monitor/power_monitor.h"
 #include "base/tracked_objects.h"
 #include "content/common/content_export.h"
 #include "content/common/message_router.h"
 #include "ipc/ipc_message.h"  // For IPC_MESSAGE_LOG_ENABLED.
-#include "webkit/glue/resource_loader_bridge.h"
+#include "webkit/child/resource_loader_bridge.h"
 
 namespace base {
 class MessageLoop;
-}
+
+namespace debug {
+class TraceMemoryController;
+}  // namespace debug
+}  // namespace base
 
 namespace IPC {
 class SyncChannel;
 class SyncMessageFilter;
-}
+}  // namespace IPC
 
 namespace WebKit {
 class WebFrame;
-}
+}  // namespace WebKit
 
 namespace content {
 class ChildHistogramMessageFilter;
 class ChildResourceMessageFilter;
 class FileSystemDispatcher;
 class QuotaDispatcher;
+class QuotaMessageFilter;
 class ResourceDispatcher;
 class SocketStreamDispatcher;
 class ThreadSafeSender;
@@ -51,7 +57,7 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
   // has a thread that post tasks to ChildProcess::main_thread(), that thread
   // should be joined in Shutdown().
   virtual ~ChildThread();
-  virtual void Shutdown() = 0;
+  virtual void Shutdown();
 
   // IPC::Sender implementation:
   virtual bool Send(IPC::Message* msg) OVERRIDE;
@@ -103,9 +109,6 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
     return quota_dispatcher_.get();
   }
 
-  // Safe to call on any thread, as long as it's guaranteed that the thread's
-  // lifetime is less than the main thread. The |filter| returned may only
-  // be used on background threads.
   IPC::SyncMessageFilter* sync_message_filter() const {
     return sync_message_filter_.get();
   }
@@ -121,12 +124,20 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
     return histogram_message_filter_.get();
   }
 
+  QuotaMessageFilter* quota_message_filter() const {
+    return quota_message_filter_.get();
+  }
+
   base::MessageLoop* message_loop() const { return message_loop_; }
 
-  // Returns the one child thread.
+  // Returns the one child thread. Can only be called on the main thread.
   static ChildThread* current();
 
-  virtual bool IsWebFrameValid(WebKit::WebFrame* frame);
+#if defined(OS_ANDROID)
+  // Called on Android's service thread to shutdown the main thread of this
+  // process.
+  static void ShutdownThread();
+#endif
 
  protected:
   friend class ChildProcess;
@@ -194,7 +205,15 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
 
   scoped_refptr<ChildResourceMessageFilter> resource_message_filter_;
 
+  scoped_refptr<QuotaMessageFilter> quota_message_filter_;
+
   base::WeakPtrFactory<ChildThread> channel_connected_factory_;
+
+  // Observes the trace event system. When tracing is enabled, optionally
+  // starts profiling the tcmalloc heap.
+  scoped_ptr<base::debug::TraceMemoryController> trace_memory_controller_;
+
+  scoped_ptr<base::PowerMonitor> power_monitor_;
 
   DISALLOW_COPY_AND_ASSIGN(ChildThread);
 };

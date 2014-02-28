@@ -30,9 +30,9 @@
 #ifndef StyleCustomFilterProgram_h
 #define StyleCustomFilterProgram_h
 
-#include "core/loader/cache/CachedResourceClient.h"
-#include "core/loader/cache/CachedResourceHandle.h"
-#include "core/loader/cache/CachedShader.h"
+#include "core/loader/cache/ResourceClient.h"
+#include "core/loader/cache/ResourcePtr.h"
+#include "core/loader/cache/ShaderResource.h"
 #include "core/platform/graphics/filters/custom/CustomFilterProgram.h"
 #include "core/rendering/style/StyleShader.h"
 #include "weborigin/KURL.h"
@@ -44,38 +44,38 @@ namespace WebCore {
 
 class StyleCustomFilterProgramCache;
 
-class StyleCustomFilterProgram : public CustomFilterProgram, public CachedResourceClient {
+class StyleCustomFilterProgram : public CustomFilterProgram, public ResourceClient {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    static PassRefPtr<StyleCustomFilterProgram> create(KURL vertexShaderURL, PassRefPtr<StyleShader> vertexShader, 
+    static PassRefPtr<StyleCustomFilterProgram> create(KURL vertexShaderURL, PassRefPtr<StyleShader> vertexShader,
         KURL fragmentShaderURL, PassRefPtr<StyleShader> fragmentShader, CustomFilterProgramType programType,
         const CustomFilterProgramMixSettings& mixSettings, CustomFilterMeshType meshType)
     {
         return adoptRef(new StyleCustomFilterProgram(vertexShaderURL, vertexShader, fragmentShaderURL, fragmentShader, programType, mixSettings, meshType));
     }
-    
+
     void setVertexShader(PassRefPtr<StyleShader> shader)
     {
         // The shader is immutable while in the cache.
         ASSERT(!m_cache);
-        m_vertexShader = shader; 
+        m_vertexShader = shader;
     }
     StyleShader* vertexShader() const { return m_vertexShader.get(); }
-    
+
     void setFragmentShader(PassRefPtr<StyleShader> shader)
     {
         // The shader is immutable while in the cache.
         ASSERT(!m_cache);
-        m_fragmentShader = shader; 
+        m_fragmentShader = shader;
     }
     StyleShader* fragmentShader() const { return m_fragmentShader.get(); }
-    
+
     virtual String vertexShaderString() const
     {
         ASSERT(isLoaded());
         return m_cachedVertexShader.get() ? m_cachedVertexShader->shaderString() : String();
     }
-    
+
     virtual String fragmentShaderString() const
     {
         ASSERT(isLoaded());
@@ -84,10 +84,10 @@ public:
 
     virtual bool isLoaded() const
     {
-        // Do not use the CachedResource:isLoaded method here, because it actually means !isLoading(),
+        // Do not use the Resource:isLoaded method here, because it actually means !isLoading(),
         // so missing and canceled resources will have isLoaded set to true, even if they are not loaded yet.
-        ASSERT(!m_vertexShader || m_vertexShader->isCachedShader());
-        ASSERT(!m_fragmentShader || m_fragmentShader->isCachedShader());
+        ASSERT(!m_vertexShader || m_vertexShader->isShaderResource());
+        ASSERT(!m_fragmentShader || m_fragmentShader->isShaderResource());
         ASSERT(m_cachedVertexShader.get() || m_cachedFragmentShader.get());
         return (!m_cachedVertexShader.get() || m_isVertexShaderLoaded)
             && (!m_cachedFragmentShader.get() || m_isFragmentShaderLoaded);
@@ -96,15 +96,15 @@ public:
     virtual void willHaveClients()
     {
         if (m_vertexShader) {
-            m_cachedVertexShader = m_vertexShader->cachedShader();
+            m_cachedVertexShader = m_vertexShader->resource();
             m_cachedVertexShader->addClient(this);
         }
         if (m_fragmentShader) {
-            m_cachedFragmentShader = m_fragmentShader->cachedShader();
+            m_cachedFragmentShader = m_fragmentShader->resource();
             m_cachedFragmentShader->addClient(this);
         }
     }
-    
+
     virtual void didRemoveLastClient()
     {
         if (m_cachedVertexShader.get()) {
@@ -118,8 +118,8 @@ public:
             m_isFragmentShaderLoaded = false;
         }
     }
-    
-    virtual void notifyFinished(CachedResource* resource)
+
+    virtual void notifyFinished(Resource* resource)
     {
         if (resource->errorOccurred())
             return;
@@ -134,19 +134,19 @@ public:
 
     bool hasPendingShaders() const
     {
-        return (m_vertexShader && m_vertexShader->isPendingShader()) 
+        return (m_vertexShader && m_vertexShader->isPendingShader())
             || (m_fragmentShader && m_fragmentShader->isPendingShader());
     }
 
     // StyleCustomFilterProgramCache is responsible with updating the reference to the cache.
     void setCache(StyleCustomFilterProgramCache* cache) { m_cache = cache; }
     bool inCache() const { return m_cache; }
-    
+
     KURL vertexShaderURL() const { return m_vertexShaderURL; }
     KURL fragmentShaderURL() const { return m_fragmentShaderURL; }
 
 private:
-    StyleCustomFilterProgram(KURL vertexShaderURL, PassRefPtr<StyleShader> vertexShader, KURL fragmentShaderURL, PassRefPtr<StyleShader> fragmentShader, 
+    StyleCustomFilterProgram(KURL vertexShaderURL, PassRefPtr<StyleShader> vertexShader, KURL fragmentShaderURL, PassRefPtr<StyleShader> fragmentShader,
         CustomFilterProgramType programType, const CustomFilterProgramMixSettings& mixSettings, CustomFilterMeshType meshType)
         : CustomFilterProgram(programType, mixSettings, meshType)
         , m_vertexShader(vertexShader)
@@ -160,12 +160,12 @@ private:
     }
 
     ~StyleCustomFilterProgram();
-    
+
     RefPtr<StyleShader> m_vertexShader;
     RefPtr<StyleShader> m_fragmentShader;
 
-    CachedResourceHandle<CachedShader> m_cachedVertexShader;
-    CachedResourceHandle<CachedShader> m_cachedFragmentShader;
+    ResourcePtr<ShaderResource> m_cachedVertexShader;
+    ResourcePtr<ShaderResource> m_cachedFragmentShader;
 
     // The URLs form the key of the StyleCustomFilterProgram in the cache and are used
     // to lookup the StyleCustomFilterProgram when it's removed from the cache.
@@ -174,7 +174,7 @@ private:
 
     // The Cache is responsible of invalidating this reference.
     StyleCustomFilterProgramCache* m_cache;
-    
+
     bool m_isVertexShaderLoaded;
     bool m_isFragmentShaderLoaded;
 };

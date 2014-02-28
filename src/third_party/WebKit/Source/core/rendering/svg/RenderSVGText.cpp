@@ -28,7 +28,6 @@
 
 #include "core/rendering/svg/RenderSVGText.h"
 
-#include "core/editing/VisiblePosition.h"
 #include "core/platform/FloatConversion.h"
 #include "core/platform/graphics/FloatQuad.h"
 #include "core/platform/graphics/FontCache.h"
@@ -54,7 +53,7 @@
 
 namespace WebCore {
 
-RenderSVGText::RenderSVGText(SVGTextElement* node) 
+RenderSVGText::RenderSVGText(SVGTextElement* node)
     : RenderSVGBlock(node)
     , m_needsReordering(false)
     , m_needsPositioningValuesUpdate(false)
@@ -70,7 +69,7 @@ RenderSVGText::~RenderSVGText()
 
 bool RenderSVGText::isChildAllowed(RenderObject* child, RenderStyle*) const
 {
-    return child->isInline();
+    return child->isInline() && !SVGRenderSupport::isEmptySVGInlineText(child);
 }
 
 RenderSVGText* RenderSVGText::locateRenderSVGTextAncestor(RenderObject* start)
@@ -429,12 +428,12 @@ void RenderSVGText::layout()
         RenderSVGBlock::setNeedsBoundariesUpdate();
 
     repainter.repaintAfterLayout();
-    setNeedsLayout(false);
+    clearNeedsLayout();
 }
 
-RootInlineBox* RenderSVGText::createRootInlineBox() 
+RootInlineBox* RenderSVGText::createRootInlineBox()
 {
-    RootInlineBox* box = new (renderArena()) SVGRootInlineBox(this);
+    RootInlineBox* box = new SVGRootInlineBox(this);
     box->setHasVirtualLogicalHeight();
     return box;
 }
@@ -449,7 +448,7 @@ bool RenderSVGText::nodeAtFloatPoint(const HitTestRequest& request, HitTestResul
             FloatPoint localPoint = localToParentTransform().inverse().mapPoint(pointInParent);
 
             if (!SVGRenderSupport::pointInClippingArea(this, localPoint))
-                return false;       
+                return false;
 
             HitTestLocation hitTestLocation(LayoutPoint(flooredIntPoint(localPoint)));
             return RenderBlock::nodeAtPoint(request, result, hitTestLocation, LayoutPoint(), hitTestAction);
@@ -465,11 +464,11 @@ bool RenderSVGText::nodeAtPoint(const HitTestRequest&, HitTestResult&, const Hit
     return false;
 }
 
-VisiblePosition RenderSVGText::positionForPoint(const LayoutPoint& pointInContents)
+PositionWithAffinity RenderSVGText::positionForPoint(const LayoutPoint& pointInContents)
 {
     RootInlineBox* rootBox = firstRootBox();
     if (!rootBox)
-        return createVisiblePosition(0, DOWNSTREAM);
+        return createPositionWithAffinity(0, DOWNSTREAM);
 
     ASSERT_WITH_SECURITY_IMPLICATION(rootBox->isSVGRootInlineBox());
     ASSERT(!rootBox->nextRootBox());
@@ -477,7 +476,7 @@ VisiblePosition RenderSVGText::positionForPoint(const LayoutPoint& pointInConten
 
     InlineBox* closestBox = static_cast<SVGRootInlineBox*>(rootBox)->closestLeafChildForPosition(pointInContents);
     if (!closestBox)
-        return createVisiblePosition(0, DOWNSTREAM);
+        return createPositionWithAffinity(0, DOWNSTREAM);
 
     return closestBox->renderer()->positionForPoint(LayoutPoint(pointInContents.x(), closestBox->y()));
 }

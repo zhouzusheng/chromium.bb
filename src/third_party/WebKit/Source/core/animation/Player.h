@@ -41,10 +41,12 @@ class DocumentTimeline;
 class Player FINAL : public RefCounted<Player> {
 
 public:
+    ~Player();
     static PassRefPtr<Player> create(DocumentTimeline*, TimedItem*);
 
     // Returns whether this player is still current or in effect.
     bool update();
+    void cancel();
     double currentTime() const;
     void setCurrentTime(double);
     bool paused() const { return !isNull(m_pauseStartTime); }
@@ -53,6 +55,7 @@ public:
     void setPlaybackRate(double);
     double startTime() const { return m_startTime; }
     double timeDrift() const;
+    DocumentTimeline* timeline() { return m_timeline; }
 
 private:
     Player(DocumentTimeline*, TimedItem*);

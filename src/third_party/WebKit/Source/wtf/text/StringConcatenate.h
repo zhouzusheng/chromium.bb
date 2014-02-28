@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef StringConcatenate_h
@@ -29,7 +29,7 @@
 #include <string.h>
 
 #ifndef WTFString_h
-#include <wtf/text/AtomicString.h>
+#include "wtf/text/AtomicString.h"
 #endif
 
 // This macro is helpful for testing how many intermediate Strings are created while evaluating an
@@ -268,34 +268,6 @@ private:
 };
 
 template<>
-class StringTypeAdapter<ASCIILiteral> {
-public:
-    StringTypeAdapter<ASCIILiteral>(ASCIILiteral buffer)
-        : m_buffer(reinterpret_cast<const LChar*>(static_cast<const char*>(buffer)))
-        , m_length(strlen(buffer))
-    {
-    }
-
-    size_t length() { return m_length; }
-
-    bool is8Bit() { return true; }
-
-    void writeTo(LChar* destination)
-    {
-        memcpy(destination, m_buffer, static_cast<size_t>(m_length));
-    }
-
-    void writeTo(UChar* destination)
-    {
-        StringImpl::copyChars(destination, m_buffer, m_length);
-    }
-
-private:
-    const LChar* m_buffer;
-    unsigned m_length;
-};
-
-template<>
 class StringTypeAdapter<Vector<char> > {
 public:
     StringTypeAdapter<Vector<char> >(const Vector<char>& buffer)
@@ -371,7 +343,7 @@ public:
         const LChar* data = m_buffer.characters8();
         for (unsigned i = 0; i < length; ++i)
             destination[i] = data[i];
-        
+
         WTF_STRINGTYPEADAPTER_COPIED_WTF_STRING();
     }
 
@@ -388,7 +360,7 @@ public:
             for (unsigned i = 0; i < length; ++i)
                 destination[i] = data[i];
         }
-        
+
         WTF_STRINGTYPEADAPTER_COPIED_WTF_STRING();
     }
 
@@ -424,7 +396,7 @@ inline void sumWithOverflow(unsigned& total, unsigned addend, bool& overflow)
 }
 
 template<typename StringType1, typename StringType2>
-PassRefPtr<StringImpl> tryMakeString(StringType1 string1, StringType2 string2)
+PassRefPtr<StringImpl> makeString(StringType1 string1, StringType2 string2)
 {
     StringTypeAdapter<StringType1> adapter1(string1);
     StringTypeAdapter<StringType2> adapter2(string2);
@@ -437,7 +409,7 @@ PassRefPtr<StringImpl> tryMakeString(StringType1 string1, StringType2 string2)
 
     if (adapter1.is8Bit() && adapter2.is8Bit()) {
         LChar* buffer;
-        RefPtr<StringImpl> resultImpl = StringImpl::tryCreateUninitialized(length, buffer);
+        RefPtr<StringImpl> resultImpl = StringImpl::createUninitialized(length, buffer);
         if (!resultImpl)
             return 0;
 
@@ -450,7 +422,7 @@ PassRefPtr<StringImpl> tryMakeString(StringType1 string1, StringType2 string2)
     }
 
     UChar* buffer;
-    RefPtr<StringImpl> resultImpl = StringImpl::tryCreateUninitialized(length, buffer);
+    RefPtr<StringImpl> resultImpl = StringImpl::createUninitialized(length, buffer);
     if (!resultImpl)
         return 0;
 
@@ -464,5 +436,5 @@ PassRefPtr<StringImpl> tryMakeString(StringType1 string1, StringType2 string2)
 
 } // namespace WTF
 
-#include <wtf/text/StringOperators.h>
+#include "wtf/text/StringOperators.h"
 #endif

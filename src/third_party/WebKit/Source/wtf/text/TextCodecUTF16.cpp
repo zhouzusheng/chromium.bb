@@ -20,16 +20,16 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
 #include "wtf/text/TextCodecUTF16.h"
 
-#include <wtf/PassOwnPtr.h>
-#include <wtf/text/CString.h>
-#include <wtf/text/StringBuffer.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/PassOwnPtr.h"
+#include "wtf/text/CString.h"
+#include "wtf/text/StringBuffer.h"
+#include "wtf/text/WTFString.h"
 
 using namespace std;
 
@@ -128,7 +128,7 @@ CString TextCodecUTF16::encode(const UChar* characters, size_t length, Unencodab
     ASSERT(length <= numeric_limits<size_t>::max() / 2);
 
     char* bytes;
-    CString string = CString::newUninitialized(length * 2, bytes);
+    CString result = CString::newUninitialized(length * 2, bytes);
 
     // FIXME: CString is not a reasonable data structure for encoded UTF-16, which will have
     // null characters inside it. Perhaps the result of encode should not be a CString.
@@ -146,7 +146,30 @@ CString TextCodecUTF16::encode(const UChar* characters, size_t length, Unencodab
         }
     }
 
-    return string;
+    return result;
+}
+
+CString TextCodecUTF16::encode(const LChar* characters, size_t length, UnencodableHandling)
+{
+    // In the LChar case, we do actually need to perform this check in release.  :)
+    RELEASE_ASSERT(length <= numeric_limits<size_t>::max() / 2);
+
+    char* bytes;
+    CString result = CString::newUninitialized(length * 2, bytes);
+
+    if (m_littleEndian) {
+        for (size_t i = 0; i < length; ++i) {
+            bytes[i * 2] = characters[i];
+            bytes[i * 2 + 1] = 0;
+        }
+    } else {
+        for (size_t i = 0; i < length; ++i) {
+            bytes[i * 2] = 0;
+            bytes[i * 2 + 1] = characters[i];
+        }
+    }
+
+    return result;
 }
 
 } // namespace WTF

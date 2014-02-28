@@ -138,14 +138,12 @@ const base::FilePath::CharType kMetroDriverDll[] = FPL("metro_driver.dll");
 const wchar_t kStatusTrayWindowClass[] = L"Chrome_StatusTrayWindow";
 #endif  // defined(OS_WIN)
 
-const wchar_t kMessageWindowClass[] = L"Chrome_MessageWindow";
 const wchar_t kCrashReportLog[] = L"Reported Crashes.txt";
 const wchar_t kTestingInterfaceDLL[] = L"testing_interface.dll";
 const char    kInitialProfile[] = "Default";
 const char    kMultiProfileDirPrefix[] = "Profile ";
+const base::FilePath::CharType kGuestProfileDir[] = FPL("Guest Profile");
 const wchar_t kBrowserResourcesDll[] = L"chrome.dll";
-const base::FilePath::CharType kExtensionFileExtension[] = FPL(".crx");
-const base::FilePath::CharType kExtensionKeyFileExtension[] = FPL(".pem");
 
 // filenames
 #if defined(OS_ANDROID)
@@ -222,7 +220,7 @@ const bool kRecordModeEnabled = true;
 
 const char* const kUnknownLanguageCode = "und";
 
-const int kJavascriptMessageExpectedDelay = 1000;
+const int kJavaScriptMessageExpectedDelay = 1000;
 
 #if defined(OS_ANDROID)
 const bool kEnableTouchIcon = true;
@@ -254,6 +252,12 @@ const wchar_t kLaunchModeValue[] = L"launch_mode";
 #if defined(OS_CHROMEOS)
 const char kProfileDirPrefix[] = "u-";
 #endif
+
+// This GUID is associated with any 'don't ask me again' settings that the
+// user can select for different file types.
+// {2676A9A2-D919-4FEE-9187-152100393AB2}
+const char kApplicationClientIDStringForAVScanning[] =
+    "2676A9A2-D919-4FEE-9187-152100393AB2";
 
 }  // namespace chrome
 

@@ -31,6 +31,7 @@
 #ifndef WebView_h
 #define WebView_h
 
+#include "../platform/WebColor.h"
 #include "../platform/WebString.h"
 #include "../platform/WebVector.h"
 #include "WebDragOperation.h"
@@ -56,7 +57,7 @@ class WebRange;
 class WebSettings;
 class WebSpellCheckClient;
 class WebString;
-class WebTextFieldDecoratorClient;
+class WebPasswordGeneratorClient;
 class WebValidationMessageClient;
 class WebViewBenchmarkSupport;
 class WebViewClient;
@@ -64,6 +65,7 @@ struct WebActiveWheelFlingParameters;
 struct WebMediaPlayerAction;
 struct WebPluginAction;
 struct WebPoint;
+struct WebWindowFeatures;
 
 class WebView : public WebWidget {
 public:
@@ -108,8 +110,7 @@ public:
     virtual void setPrerendererClient(WebPrerendererClient*) = 0;
     virtual void setSpellCheckClient(WebSpellCheckClient*) = 0;
     virtual void setValidationMessageClient(WebValidationMessageClient*) = 0;
-    virtual void addTextFieldDecoratorClient(WebTextFieldDecoratorClient*) = 0;
-
+    virtual void setPasswordGeneratorClient(WebPasswordGeneratorClient*) = 0;
 
     // Options -------------------------------------------------------------
 
@@ -125,6 +126,16 @@ public:
     // some custom background rendered behind it.
     virtual bool isTransparent() const = 0;
     virtual void setIsTransparent(bool) = 0;
+
+    // Sets the base color used for this WebView's background. This is in effect
+    // the default background color used for pages with no background-color
+    // style in effect, or used as the alpha-blended basis for any pages with
+    // translucent background-color style. (For pages with opaque
+    // background-color style, this property is effectively ignored).
+    // Setting this takes effect for the currently loaded page, if any, and
+    // persists across subsequent navigations. Defaults to white prior to the
+    // first call to this method.
+    virtual void setBaseBackgroundColor(WebColor) = 0;
 
     // Controls whether pressing Tab key advances focus to links.
     virtual bool tabsToLinks() const = 0;
@@ -142,6 +153,11 @@ public:
 
     // Allows disabling domain relaxation.
     virtual void setDomainRelaxationForbidden(bool, const WebString& scheme) = 0;
+
+    // Allows setting the state of the various bars exposed via BarProp
+    // properties on the window object. The size related fields of
+    // WebWindowFeatures are ignored.
+    virtual void setWindowFeatures(const WebWindowFeatures&) = 0;
 
 
     // Closing -------------------------------------------------------------
@@ -195,6 +211,11 @@ public:
     // Animate a scale into the specified find-in-page rect.
     virtual void zoomToFindInPageRect(const WebRect&) = 0;
 
+    // Animate a scale into the specified rect where multiple targets were
+    // found from previous tap gesture.
+    // Returns false if it doesn't do any zooming.
+    virtual bool zoomToMultipleTargetsRect(const WebRect&) = 0;
+
 
     // Zoom ----------------------------------------------------------------
 
@@ -208,11 +229,9 @@ public:
     // Changes the zoom level to the specified level, clamping at the limits
     // noted above, and returns the current zoom level after applying the
     // change.
-    //
-    // If |textOnly| is set, only the text will be zoomed; otherwise the entire
-    // page will be zoomed. You can only have either text zoom or full page zoom
-    // at one time.  Changing the mode while the page is zoomed will have odd
-    // effects.
+    virtual double setZoomLevel(double) = 0;
+
+    // FIXME: Deprecated, delete once Chromium side is updated.
     virtual double setZoomLevel(bool textOnly, double zoomLevel) = 0;
 
     // Updates the zoom limits for this view.
@@ -223,6 +242,14 @@ public:
     // factor is zoom percent / 100, so 300% = 3.0.
     WEBKIT_EXPORT static double zoomLevelToZoomFactor(double zoomLevel);
     WEBKIT_EXPORT static double zoomFactorToZoomLevel(double factor);
+
+    // Returns the current text zoom factor, where 1.0 is the normal size, > 1.0
+    // is scaled up and < 1.0 is scaled down.
+    virtual float textZoomFactor() = 0;
+
+    // Scales the text in the page by a factor of textZoomFactor.
+    // Note: this has no effect on plugins.
+    virtual float setTextZoomFactor(float) = 0;
 
     // Sets the initial page scale to the given factor. This scale setting overrides
     // page scale set in the page's viewport meta tag.
@@ -269,9 +296,6 @@ public:
     // and the minimum height required to display the main document without scrollbars.
     // The returned size has the page zoom factor applied.
     virtual WebSize contentsPreferredMinimumSize() = 0;
-
-    // FIXME(aelias): Delete this after Chromium switches to the other name.
-    void setIgnoreViewportTagMaximumScale(bool ignore) { setIgnoreViewportTagScaleLimits(ignore); }
 
     // The ratio of the current device's screen DPI to the target device's screen DPI.
     virtual float deviceScaleFactor() const = 0;
@@ -472,6 +496,7 @@ public:
     virtual void setShowPaintRects(bool) = 0;
     virtual void setShowFPSCounter(bool) = 0;
     virtual void setContinuousPaintingEnabled(bool) = 0;
+    virtual void setShowScrollBottleneckRects(bool) = 0;
 
     // Benchmarking support -------------------------------------------------
 

@@ -10,7 +10,7 @@
 #include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/platform_file.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "webkit/common/fileapi/directory_entry.h"
 
 namespace base {
@@ -31,7 +31,7 @@ namespace fileapi {
 
 class FileSystemURL;
 class FileWriterDelegate;
-class LocalFileSystemOperation;
+class FileSystemOperationImpl;
 
 // The interface class for FileSystemOperation implementations.
 //
@@ -69,7 +69,7 @@ class FileSystemOperation {
 
   // Used for OpenFile(). |result| is the return code of the operation.
   // |on_close_callback| will be called after the file is closed in the child
-  // process.
+  // process. It can be null, if no operation is needed on closing a file.
   typedef base::Callback<
       void(base::PlatformFileError result,
            base::PlatformFile file,
@@ -230,10 +230,10 @@ class FileSystemOperation {
                         base::ProcessHandle peer_handle,
                         const OpenFileCallback& callback) = 0;
 
-  // For downcasting to FileSystemOperation.
+  // For downcasting to FileSystemOperationImpl.
   // TODO(kinuko): this hack should go away once appropriate upload-stream
   // handling based on element types is supported.
-  virtual LocalFileSystemOperation* AsLocalFileSystemOperation() = 0;
+  virtual FileSystemOperationImpl* AsFileSystemOperationImpl() = 0;
 
   // Creates a local snapshot file for a given |path| and returns the
   // metadata and platform path of the snapshot file via |callback|.

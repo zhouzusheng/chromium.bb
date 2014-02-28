@@ -1,10 +1,10 @@
 /*
  * Copyright (C) 2009 Google Inc. All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  *     * Redistributions of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
  *     * Redistributions in binary form must reproduce the above
@@ -14,7 +14,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -31,37 +31,37 @@
 #include "config.h"
 #include "V8HTMLOptionsCollection.h"
 
+#include "V8HTMLOptionElement.h"
+#include "V8Node.h"
+#include "V8NodeList.h"
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/V8Binding.h"
+#include "bindings/v8/custom/V8HTMLSelectElementCustom.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NamedNodesCollection.h"
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/HTMLOptionsCollection.h"
-
-#include "V8HTMLOptionElement.h"
-#include "V8Node.h"
-#include "V8NodeList.h"
-#include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8Collection.h"
-#include "bindings/v8/custom/V8HTMLSelectElementCustom.h"
+#include "core/html/HTMLSelectElement.h"
 
 namespace WebCore {
 
-template<typename HolderContainer>
-static void getNamedItems(HTMLOptionsCollection* collection, const AtomicString& name, const HolderContainer& holder)
+template<typename CallbackInfo>
+static void getNamedItems(HTMLOptionsCollection* collection, const AtomicString& name, const CallbackInfo& callbackInfo)
 {
     Vector<RefPtr<Node> > namedItems;
     collection->namedItems(name, namedItems);
 
     if (!namedItems.size()) {
-        v8SetReturnValueNull(holder);
+        v8SetReturnValueNull(callbackInfo);
         return;
     }
 
     if (namedItems.size() == 1) {
-        v8SetReturnValue(holder, toV8Fast(namedItems.at(0).release(), holder, collection));
+        v8SetReturnValue(callbackInfo, toV8Fast(namedItems.at(0).release(), callbackInfo, collection));
         return;
     }
 
-    v8SetReturnValue(holder, toV8Fast(NamedNodesCollection::create(namedItems), holder, collection));
+    v8SetReturnValue(callbackInfo, toV8Fast(NamedNodesCollection::create(namedItems), callbackInfo, collection));
 }
 
 void V8HTMLOptionsCollection::namedItemMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
@@ -80,27 +80,25 @@ void V8HTMLOptionsCollection::removeMethodCustom(const v8::FunctionCallbackInfo<
 void V8HTMLOptionsCollection::addMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)
 {
     if (!V8HTMLOptionElement::HasInstance(args[0], args.GetIsolate(), worldType(args.GetIsolate()))) {
-        setDOMException(TYPE_MISMATCH_ERR, args.GetIsolate());
+        setDOMException(TypeMismatchError, args.GetIsolate());
         return;
     }
     HTMLOptionsCollection* imp = V8HTMLOptionsCollection::toNative(args.Holder());
     HTMLOptionElement* option = V8HTMLOptionElement::toNative(v8::Handle<v8::Object>(v8::Handle<v8::Object>::Cast(args[0])));
 
-    ExceptionCode ec = 0;
+    ExceptionState es(args.GetIsolate());
     if (args.Length() < 2)
-        imp->add(option, ec);
+        imp->add(option, es);
     else {
         bool ok;
         V8TRYCATCH_VOID(int, index, toInt32(args[1], ok));
         if (!ok)
-            ec = TYPE_MISMATCH_ERR;
+            es.throwDOMException(TypeMismatchError);
         else
-            imp->add(option, index, ec);
+            imp->add(option, index, es);
     }
 
-    if (!ec)
-        return;
-    setDOMException(ec, args.GetIsolate());
+    es.throwIfNeeded();
 }
 
 void V8HTMLOptionsCollection::lengthAttrSetterCustom(v8::Local<v8::String> name, v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info)
@@ -108,19 +106,20 @@ void V8HTMLOptionsCollection::lengthAttrSetterCustom(v8::Local<v8::String> name,
     HTMLOptionsCollection* imp = V8HTMLOptionsCollection::toNative(info.Holder());
     double v = value->NumberValue();
     unsigned newLength = 0;
-    ExceptionCode ec = 0;
+    ExceptionState es(info.GetIsolate());
     if (!std::isnan(v) && !std::isinf(v)) {
         if (v < 0.0)
-            ec = INDEX_SIZE_ERR;
+            es.throwDOMException(IndexSizeError);
         else if (v > static_cast<double>(UINT_MAX))
             newLength = UINT_MAX;
         else
             newLength = static_cast<unsigned>(v);
     }
-    if (!ec)
-        imp->setLength(newLength, ec);
 
-    setDOMException(ec, info.GetIsolate());
+    if (es.throwIfNeeded())
+        return;
+
+    imp->setLength(newLength, es);
 }
 
 } // namespace WebCore

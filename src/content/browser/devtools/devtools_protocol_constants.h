@@ -43,9 +43,36 @@ namespace navigate {
 }  // navigate
 namespace captureScreenshot {
   extern const char kName[];
+  extern const char kParamFormat[];
+  extern const char kParamQuality[];
+  extern const char kParamScale[];
   extern const char kResponseData[];
 }  // captureScreenshot
 }  // Page
+
+namespace Tracing {
+  extern const char kName[];
+
+namespace start {
+  extern const char kName[];
+  extern const char kCategories[];
+  extern const char kTraceOptions[];
+}  // start
+
+namespace end {
+  extern const char kName[];
+}
+
+namespace tracingComplete {
+  extern const char kName[];
+}
+
+namespace dataCollected {
+  extern const char kName[];
+  extern const char kValue[];
+}
+}  // Tracing
+
 
 namespace Worker {
 namespace disconnectedFromWorker {

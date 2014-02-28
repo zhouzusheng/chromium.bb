@@ -21,18 +21,16 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
 #include "core/platform/SharedBuffer.h"
 
-#include "core/platform/PlatformMemoryInstrumentation.h"
 #include "core/platform/PurgeableBuffer.h"
-#include <wtf/MemoryInstrumentationVector.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/unicode/Unicode.h>
-#include <wtf/unicode/UTF8.h>
+#include "wtf/PassOwnPtr.h"
+#include "wtf/unicode/Unicode.h"
+#include "wtf/unicode/UTF8.h"
 
 #undef SHARED_BUFFER_STATS
 
@@ -187,7 +185,7 @@ SharedBuffer::SharedBuffer(const unsigned char* data, int size)
     didCreateSharedBuffer(this);
 #endif
 }
-    
+
 SharedBuffer::~SharedBuffer()
 {
     clear();
@@ -205,8 +203,8 @@ PassRefPtr<SharedBuffer> SharedBuffer::adoptVector(Vector<char>& vector)
     return buffer.release();
 }
 
-PassRefPtr<SharedBuffer> SharedBuffer::adoptPurgeableBuffer(PassOwnPtr<PurgeableBuffer> purgeableBuffer) 
-{ 
+PassRefPtr<SharedBuffer> SharedBuffer::adoptPurgeableBuffer(PassOwnPtr<PurgeableBuffer> purgeableBuffer)
+{
     ASSERT(!purgeableBuffer->isPurgeable());
     RefPtr<SharedBuffer> buffer = create();
     buffer->m_purgeableBuffer = purgeableBuffer;
@@ -217,7 +215,7 @@ unsigned SharedBuffer::size() const
 {
     if (m_purgeableBuffer)
         return m_purgeableBuffer->size();
-    
+
     return m_size;
 }
 
@@ -233,8 +231,38 @@ const char* SharedBuffer::data() const
 {
     if (m_purgeableBuffer)
         return m_purgeableBuffer->data();
-    
+
     return this->buffer().data();
+}
+
+void SharedBuffer::moveTo(Vector<char>& result)
+{
+    ASSERT(result.isEmpty());
+    if (m_purgeableBuffer) {
+        result.reserveCapacity(m_purgeableBuffer->size());
+        result.append(m_purgeableBuffer->data(), m_purgeableBuffer->size());
+        clear();
+        return;
+    }
+
+    unsigned bufferSize = m_buffer.size();
+    if (m_size == bufferSize) {
+        m_buffer.swap(result);
+        clear();
+        return;
+    }
+
+    result.reserveCapacity(m_size);
+
+    const char* segment = 0;
+    unsigned position = 0;
+    while (unsigned segmentSize = getSomeData(segment, position)) {
+        result.append(segment, segmentSize);
+        position += segmentSize;
+    }
+    ASSERT(result.size() == m_size);
+    clear();
+    return;
 }
 
 void SharedBuffer::append(SharedBuffer* data)
@@ -309,21 +337,28 @@ PassRefPtr<SharedBuffer> SharedBuffer::copy() const
     RefPtr<SharedBuffer> clone(adoptRef(new SharedBuffer));
     if (m_purgeableBuffer) {
         clone->append(data(), size());
-        return clone;
+        return clone.release();
     }
 
     clone->m_size = m_size;
     clone->m_buffer.reserveCapacity(m_size);
     clone->m_buffer.append(m_buffer.data(), m_buffer.size());
-    for (unsigned i = 0; i < m_segments.size(); ++i)
-        clone->m_buffer.append(m_segments[i], segmentSize);
-    return clone;
+    if (!m_segments.isEmpty()) {
+        const char* segment = 0;
+        unsigned position = m_buffer.size();
+        while (unsigned segmentSize = getSomeData(segment, position)) {
+            clone->m_buffer.append(segment, segmentSize);
+            position += segmentSize;
+        }
+        ASSERT(position == clone->size());
+    }
+    return clone.release();
 }
 
 PassOwnPtr<PurgeableBuffer> SharedBuffer::releasePurgeableBuffer()
-{ 
-    ASSERT(hasOneRef()); 
-    return m_purgeableBuffer.release(); 
+{
+    ASSERT(hasOneRef());
+    return m_purgeableBuffer.release();
 }
 
 const Vector<char>& SharedBuffer::buffer() const
@@ -343,16 +378,6 @@ const Vector<char>& SharedBuffer::buffer() const
         m_segments.clear();
     }
     return m_buffer;
-}
-
-void SharedBuffer::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this);
-    info.addMember(m_buffer, "buffer");
-    for (unsigned i = 0; i < m_segments.size(); ++i)
-        info.addRawBuffer(m_segments[i], segmentSize, "RawBufferSegment", "segment");
-    info.addMember(m_segments, "segments");
-    info.addMember(m_purgeableBuffer, "purgeableBuffer");
 }
 
 unsigned SharedBuffer::getSomeData(const char*& someData, unsigned position) const
@@ -375,7 +400,7 @@ unsigned SharedBuffer::getSomeData(const char*& someData, unsigned position) con
         someData = m_buffer.data() + position;
         return consecutiveSize - position;
     }
- 
+
     position -= consecutiveSize;
     unsigned segments = m_segments.size();
     unsigned maxSegmentedSize = segments * segmentSize;

@@ -1,6 +1,6 @@
 /**
  * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
- *           (C) 2008 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/) 
+ *           (C) 2008 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/)
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -36,7 +36,7 @@ RenderTextControlMultiLine::RenderTextControlMultiLine(HTMLTextAreaElement* elem
 RenderTextControlMultiLine::~RenderTextControlMultiLine()
 {
     if (node() && node()->inDocument())
-        static_cast<HTMLTextAreaElement*>(node())->rendererWillBeDestroyed();
+        toHTMLTextAreaElement(node())->rendererWillBeDestroyed();
 }
 
 bool RenderTextControlMultiLine::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction hitTestAction)
@@ -63,13 +63,13 @@ float RenderTextControlMultiLine::getAvgCharWidth(AtomicString family)
 
 LayoutUnit RenderTextControlMultiLine::preferredContentLogicalWidth(float charWidth) const
 {
-    int factor = static_cast<HTMLTextAreaElement*>(node())->cols();
+    int factor = toHTMLTextAreaElement(node())->cols();
     return static_cast<LayoutUnit>(ceilf(charWidth * factor)) + scrollbarThickness();
 }
 
 LayoutUnit RenderTextControlMultiLine::computeControlLogicalHeight(LayoutUnit lineHeight, LayoutUnit nonContentHeight) const
 {
-    return lineHeight * static_cast<HTMLTextAreaElement*>(node())->rows() + nonContentHeight;
+    return lineHeight * toHTMLTextAreaElement(node())->rows() + nonContentHeight;
 }
 
 int RenderTextControlMultiLine::baselinePosition(FontBaseline baselineType, bool firstLine, LineDirectionMode direction, LinePositionMode linePositionMode) const
@@ -106,5 +106,5 @@ RenderObject* RenderTextControlMultiLine::layoutSpecialExcludedChild(bool relayo
     placeholderBox->setY(borderTop() + paddingTop());
     return placeholderRenderer;
 }
-    
+
 }

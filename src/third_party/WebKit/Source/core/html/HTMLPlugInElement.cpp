@@ -35,7 +35,7 @@
 #include "core/plugins/PluginView.h"
 #include "core/rendering/RenderEmbeddedObject.h"
 #include "core/rendering/RenderWidget.h"
-#include <wtf/UnusedParam.h>
+#include "wtf/UnusedParam.h"
 
 
 namespace WebCore {
@@ -200,9 +200,8 @@ void HTMLPlugInElement::defaultEventHandler(Event* event)
     HTMLFrameOwnerElement::defaultEventHandler(event);
 }
 
-bool HTMLPlugInElement::isKeyboardFocusable(KeyboardEvent* event) const
+bool HTMLPlugInElement::isKeyboardFocusable() const
 {
-    UNUSED_PARAM(event);
     if (!document()->page())
         return false;
 

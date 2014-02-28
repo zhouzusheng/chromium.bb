@@ -8,6 +8,28 @@
 
 namespace net {
 
+SpdyMajorVersion NextProtoToSpdyMajorVersion(NextProto next_proto) {
+  switch (next_proto) {
+    case kProtoSPDY2:
+    case kProtoSPDY21:
+      return SPDY2;
+    case kProtoSPDY3:
+    case kProtoSPDY31:
+      return SPDY3;
+    // SPDY/4 and HTTP/2 share the same framing for now.
+    case kProtoSPDY4a2:
+    case kProtoHTTP2Draft04:
+      return SPDY4;
+    case kProtoUnknown:
+    case kProtoHTTP11:
+    case kProtoSPDY1:
+    case kProtoQUIC1SPDY3:
+      break;
+  }
+  NOTREACHED();
+  return SPDY2;
+}
+
 BufferedSpdyFramer::BufferedSpdyFramer(SpdyMajorVersion version,
                                        bool enable_compression)
     : spdy_framer_(version),
@@ -27,6 +49,11 @@ void BufferedSpdyFramer::set_visitor(
     BufferedSpdyFramerVisitorInterface* visitor) {
   visitor_ = visitor;
   spdy_framer_.set_visitor(this);
+}
+
+void BufferedSpdyFramer::set_debug_visitor(
+    SpdyFramerDebugVisitorInterface* debug_visitor) {
+  spdy_framer_.set_debug_visitor(debug_visitor);
 }
 
 void BufferedSpdyFramer::OnError(SpdyFramer* spdy_framer) {
@@ -187,10 +214,9 @@ void BufferedSpdyFramer::OnWindowUpdate(SpdyStreamId stream_id,
   visitor_->OnWindowUpdate(stream_id, delta_window_size);
 }
 
-void BufferedSpdyFramer::OnSynStreamCompressed(
-    size_t uncompressed_size,
-    size_t compressed_size) {
-  visitor_->OnSynStreamCompressed(uncompressed_size, compressed_size);
+void BufferedSpdyFramer::OnPushPromise(SpdyStreamId stream_id,
+                                       SpdyStreamId promised_stream_id) {
+  visitor_->OnPushPromise(stream_id, promised_stream_id);
 }
 
 int BufferedSpdyFramer::protocol_version() {

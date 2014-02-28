@@ -157,24 +157,24 @@ do {						\
 
 
 
-static INLINE void
-logicop_uint1(GLcontext *ctx, GLuint n, GLuint src[], const GLuint dest[],
+static inline void
+logicop_uint1(struct gl_context *ctx, GLuint n, GLuint src[], const GLuint dest[],
               const GLubyte mask[])
 {
    LOGIC_OP_LOOP(ctx->Color.LogicOp, 1);
 }
 
 
-static INLINE void
-logicop_uint2(GLcontext *ctx, GLuint n, GLuint src[], const GLuint dest[],
+static inline void
+logicop_uint2(struct gl_context *ctx, GLuint n, GLuint src[], const GLuint dest[],
               const GLubyte mask[])
 {
    LOGIC_OP_LOOP(ctx->Color.LogicOp, 2);
 }
 
 
-static INLINE void
-logicop_uint4(GLcontext *ctx, GLuint n, GLuint src[], const GLuint dest[],
+static inline void
+logicop_uint4(struct gl_context *ctx, GLuint n, GLuint src[], const GLuint dest[],
               const GLubyte mask[])
 {
    LOGIC_OP_LOOP(ctx->Color.LogicOp, 4);
@@ -188,14 +188,13 @@ logicop_uint4(GLcontext *ctx, GLuint n, GLuint src[], const GLuint dest[],
  * pixel coordinates.
  */
 void
-_swrast_logicop_rgba_span(GLcontext *ctx, struct gl_renderbuffer *rb,
+_swrast_logicop_rgba_span(struct gl_context *ctx, struct gl_renderbuffer *rb,
                           SWspan *span)
 {
    void *rbPixels;
 
-   ASSERT(span->end < MAX_WIDTH);
+   ASSERT(span->end < SWRAST_MAX_WIDTH);
    ASSERT(span->arrayMask & SPAN_RGBA);
-   ASSERT(rb->DataType == span->array->ChanType);
 
    rbPixels = _swrast_get_dest_rgba(ctx, rb, span);
 

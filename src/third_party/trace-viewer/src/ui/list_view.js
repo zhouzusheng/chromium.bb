@@ -9,68 +9,32 @@
  */
 base.requireStylesheet('ui.list_view');
 
+base.require('base.events');
 base.require('ui');
+base.require('ui.container_that_decorates_its_children');
 
 base.exportTo('ui', function() {
-
   /**
    * @constructor
    */
-  var ListView = ui.define('x-list-view');
+  var ListView = ui.define('x-list-view', ui.ContainerThatDecoratesItsChildren);
 
   ListView.prototype = {
-    __proto__: HTMLUnknownElement.prototype,
+    __proto__: ui.ContainerThatDecoratesItsChildren.prototype,
 
     decorate: function() {
+      ui.ContainerThatDecoratesItsChildren.prototype.decorate.call(this);
+
+      this.classList.add('x-list-view');
       this.onItemClicked_ = this.onItemClicked_.bind(this);
       this.onKeyDown_ = this.onKeyDown_.bind(this);
-      this.observer_ = new WebKitMutationObserver(this.didMutate_.bind(this));
-      this.observer_.observe(this, { childList: true });
       this.tabIndex = 0;
       this.addEventListener('keydown', this.onKeyDown_);
+
+      this.selectionChanged_ = false;
     },
 
-    appendChild: function(x) {
-      HTMLUnknownElement.prototype.appendChild.call(this, x);
-      this.didMutate_(this.observer_.takeRecords());
-    },
-
-    insertBefore: function(x, y) {
-      HTMLUnknownElement.prototype.insertBefore.call(this, x, y);
-      this.didMutate_(this.observer_.takeRecords());
-    },
-
-    removeChild: function(x) {
-      HTMLUnknownElement.prototype.removeChild.call(this, x);
-      this.didMutate_(this.observer_.takeRecords());
-    },
-
-    replaceChild: function(x, y) {
-      HTMLUnknownElement.prototype.replaceChild.call(this, x, y);
-      this.didMutate_(this.observer_.takeRecords());
-    },
-
-    didMutate_: function(records) {
-      var selectionChanged = false;
-      for (var i = 0; i < records.length; i++) {
-        var addedNodes = records[i].addedNodes;
-        if (addedNodes) {
-          for (var j = 0; j < addedNodes.length; j++)
-            this.decorateItem_(addedNodes[j]);
-        }
-        var removedNodes = records[i].removedNodes;
-        if (removedNodes) {
-          for (var j = 0; j < removedNodes.length; j++) {
-            selectionChanged |= removedNodes[j].selected;
-            this.undecorateItem_(removedNodes[j]);
-          }
-        }
-      }
-      if (selectionChanged)
-        base.dispatchSimpleEvent(this, 'selection-changed', false);
-    },
-
-    decorateItem_: function(item) {
+    decorateChild_: function(item) {
       item.classList.add('list-item');
       item.addEventListener('click', this.onItemClicked_, true);
 
@@ -97,10 +61,21 @@ base.exportTo('ui', function() {
           });
     },
 
-    undecorateItem_: function(item) {
+    undecorateChild_: function(item) {
+      this.selectionChanged_ |= item.selected;
+
       item.classList.remove('list-item');
       item.removeEventListener('click', this.onItemClicked_);
       delete item.selected;
+    },
+
+    beginDecorating_: function() {
+      this.selectionChanged_ = false;
+    },
+
+    doneDecoratingForNow_: function() {
+      if (this.selectionChanged_)
+        base.dispatchSimpleEvent(this, 'selection-changed', false);
     },
 
     get selectedElement() {
@@ -125,7 +100,7 @@ base.exportTo('ui', function() {
 
     clear: function() {
       var changed = this.selectedElement !== undefined;
-      this.textContent = '';
+      ui.ContainerThatDecoratesItsChildren.prototype.clear.call(this);
       if (changed)
         base.dispatchSimpleEvent(this, 'selection-changed', false);
     },
@@ -142,6 +117,9 @@ base.exportTo('ui', function() {
     },
 
     onKeyDown_: function(e) {
+      if (this.selectedElement === undefined)
+        return;
+
       if (e.keyCode == 38) { // Up arrow.
         var prev = this.selectedElement.previousSibling;
         if (prev) {

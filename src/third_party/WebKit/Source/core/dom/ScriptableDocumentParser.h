@@ -22,13 +22,13 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
- 
+
 #ifndef ScriptableDocumentParser_h
 #define ScriptableDocumentParser_h
 
 #include "core/dom/DecodedDataDocumentParser.h"
 #include "core/dom/ParserContentPolicy.h"
-#include <wtf/text/TextPosition.h>
+#include "wtf/text/TextPosition.h"
 
 namespace WebCore {
 

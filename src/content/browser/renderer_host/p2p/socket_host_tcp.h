@@ -11,7 +11,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "content/browser/renderer_host/p2p/socket_host.h"
 #include "content/common/p2p_sockets.h"
 #include "net/base/completion_callback.h"
@@ -59,6 +59,10 @@ class CONTENT_EXPORT P2PSocketHostTcpBase : public P2PSocketHost {
   friend class P2PSocketHostTcpTestBase;
   friend class P2PSocketHostTcpServerTest;
 
+  // SSL/TLS connection functions.
+  void StartTls();
+  void ProcessTlsConnectDone(int status);
+
   void DidCompleteRead(int result);
   void DoRead();
 
@@ -69,6 +73,8 @@ class CONTENT_EXPORT P2PSocketHostTcpBase : public P2PSocketHost {
   void OnConnected(int result);
   void OnRead(int result);
   void OnWritten(int result);
+
+  void DoSendSocketCreateMsg();
 
   net::IPEndPoint remote_address_;
 

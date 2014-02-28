@@ -25,6 +25,7 @@
 
 namespace WebCore {
 
+class ExceptionState;
 class ProgressValueElement;
 class RenderProgress;
 
@@ -36,10 +37,10 @@ public:
     static PassRefPtr<HTMLProgressElement> create(const QualifiedName&, Document*);
 
     double value() const;
-    void setValue(double, ExceptionCode&);
+    void setValue(double, ExceptionState&);
 
     double max() const;
-    void setMax(double, ExceptionCode&);
+    void setMax(double, ExceptionState&);
 
     double position() const;
 
@@ -54,7 +55,6 @@ private:
     virtual bool supportLabels() const OVERRIDE { return true; }
 
     virtual RenderObject* createRenderer(RenderStyle*);
-    virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const OVERRIDE;
     RenderProgress* renderProgress() const;
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;

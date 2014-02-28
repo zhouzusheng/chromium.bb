@@ -6,10 +6,10 @@
 #define CONTENT_BROWSER_RENDERER_HOST_MEDIA_AUDIO_SYNC_READER_H_
 
 #include "base/file_descriptor_posix.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "base/sync_socket.h"
 #include "base/synchronization/lock.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/audio/audio_output_controller.h"
 #include "media/base/audio_bus.h"
 
@@ -57,6 +57,10 @@ class AudioSyncReader : public media::AudioOutputController::SyncReader {
 
   // Number of input channels for synchronized I/O.
   int input_channels_;
+
+  // Mutes all incoming samples. This is used to prevent audible sound
+  // during automated testing.
+  bool mute_audio_;
 
   // Socket for transmitting audio data.
   scoped_ptr<base::CancelableSyncSocket> socket_;

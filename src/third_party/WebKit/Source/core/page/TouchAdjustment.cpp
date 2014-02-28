@@ -69,13 +69,13 @@ typedef float (*DistanceFunction)(const IntPoint&, const IntRect&, const Subtarg
 // Takes non-const Node* because isContentEditable is a non-const function.
 bool nodeRespondsToTapGesture(Node* node)
 {
-    if (node->isMouseFocusable())
-        return true;
     if (node->willRespondToMouseClickEvents() || node->willRespondToMouseMoveEvents())
         return true;
-    // Accept nodes that has a CSS effect when touched.
     if (node->isElementNode()) {
         Element* element = toElement(node);
+        if (element->isMouseFocusable())
+            return true;
+        // Accept nodes that has a CSS effect when touched.
         if (element->childrenAffectedByActive() || element->childrenAffectedByHover())
             return true;
     }
@@ -156,7 +156,7 @@ static inline void appendContextSubtargetsForNode(Node* node, SubtargetGeometryL
     if (textRenderer->frame()->editor()->behavior().shouldSelectOnContextualMenuClick()) {
         // Make subtargets out of every word.
         String textValue = textNode->data();
-        TextBreakIterator* wordIterator = wordBreakIterator(textValue.characters(), textValue.length());
+        TextBreakIterator* wordIterator = wordBreakIterator(textValue, 0, textValue.length());
         int lastOffset = textBreakFirst(wordIterator);
         if (lastOffset == -1)
             return;
@@ -344,7 +344,7 @@ float hybridDistanceFunction(const IntPoint& touchHotspot, const IntRect& touchR
 
     // Convert from frame coordinates to window coordinates.
     rect = subtarget.node()->document()->view()->contentsToWindow(rect);
-   
+
     float radiusSquared = 0.25f * (touchRect.size().diagonalLengthSquared());
     float distanceToAdjustScore = rect.distanceSquaredToPoint(touchHotspot) / radiusSquared;
 

@@ -31,9 +31,9 @@
 
 namespace WebCore {
 
-class CachedResourceLoader;
+class ResourceFetcher;
 class XSLImportRule;
-    
+
 class XSLStyleSheet : public StyleSheet {
 public:
     static PassRefPtr<XSLStyleSheet> create(XSLImportRule* parentImport, const String& originalURL, const KURL& finalURL)
@@ -59,15 +59,15 @@ public:
     virtual ~XSLStyleSheet();
 
     bool parseString(const String&);
-    
+
     void checkLoaded();
-    
+
     const KURL& finalURL() const { return m_finalURL; }
 
     void loadChildSheets();
     void loadChildSheet(const String& href);
 
-    CachedResourceLoader* cachedResourceLoader();
+    ResourceFetcher* fetcher();
 
     Document* ownerDocument();
     virtual XSLStyleSheet* parentStyleSheet() const OVERRIDE { return m_parentStyleSheet; }
@@ -81,7 +81,7 @@ public:
 
     void markAsProcessed();
     bool processed() const { return m_processed; }
-    
+
     virtual String type() const OVERRIDE { return "text/xml"; }
     virtual bool disabled() const OVERRIDE { return m_isDisabled; }
     virtual void setDisabled(bool b) OVERRIDE { m_isDisabled = b; }
@@ -111,6 +111,7 @@ private:
 
     xmlDocPtr m_stylesheetDoc;
     bool m_stylesheetDocTaken;
+    bool m_compilationFailed;
 
     XSLStyleSheet* m_parentStyleSheet;
 };

@@ -31,7 +31,7 @@
 #include <base/compiler_specific.h>
 #include <base/id_map.h>
 #include <base/memory/scoped_ptr.h>
-#include <base/process.h>
+#include <base/process/process_handle.h>
 #include <ipc/ipc_listener.h>
 
 #include <string>

@@ -54,6 +54,11 @@ WebInspector.TextEditor.prototype = {
 
     markClean: function() { },
 
+    /**
+     * @return {string}
+     */
+    indent: function() { },
+
     /*
      * @param {number} lineNumber
      * @param {number} column
@@ -78,7 +83,7 @@ WebInspector.TextEditor.prototype = {
     /**
      * @param {string} mimeType
      */
-    set mimeType(mimeType) { },
+    setMimeType: function(mimeType) { },
 
     /**
      * @param {boolean} readOnly
@@ -151,9 +156,10 @@ WebInspector.TextEditor.prototype = {
     removeDecoration: function(lineNumber, element) { },
 
     /**
+     * @param {!RegExp} regex
      * @param {WebInspector.TextRange} range
      */
-    markAndRevealRange: function(range) { },
+    highlightSearchResults: function(regex, range) { },
 
     /**
      * @param {number} lineNumber
@@ -190,6 +196,16 @@ WebInspector.TextEditor.prototype = {
      * @param {number} lineNumber
      */
     scrollToLine: function(lineNumber) { },
+
+    /**
+     * @return {number}
+     */
+    firstVisibleLine: function() { },
+
+    /**
+     * @return {number}
+     */
+    lastVisibleLine: function() { },
 
     /**
      * @return {WebInspector.TextRange}
@@ -291,6 +307,8 @@ WebInspector.TextEditorDelegate.prototype = {
      * @param {number} lineNumber
      */
     scrollChanged: function(lineNumber) { },
+
+    editorFocused: function() { },
 
     /**
      * @param {WebInspector.ContextMenu} contextMenu

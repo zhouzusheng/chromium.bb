@@ -34,6 +34,7 @@
 #include "wtf/Assertions.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
+#include "wtf/HashTableDeletedValueType.h"
 
 using namespace WebCore;
 
@@ -431,10 +432,8 @@ void _NPN_UnregisterObject(NPObject* npObject)
 
             // Script objects hold a refernce to their DOMWindow*, which is going away if
             // we're unregistering the associated owner NPObject. Clear it out.
-            if (sub_object->_class == npScriptObjectClass) {
-                V8NPObject* v8npObject = reinterpret_cast<V8NPObject*>(sub_object);
+            if (V8NPObject* v8npObject = npObjectToV8NPObject(sub_object))
                 v8npObject->rootObject = 0;
-            }
 
             // Remove the JS references to the object.
             forgetV8ObjectForNPObject(sub_object);

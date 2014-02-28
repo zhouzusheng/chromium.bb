@@ -145,7 +145,7 @@ class UI_EXPORT RenderText {
   void SetFontSize(int size);
 
   // Get the first font in |font_list_|.
-  const Font& GetFont() const;
+  const Font& GetPrimaryFont() const;
 
   bool cursor_enabled() const { return cursor_enabled_; }
   void SetCursorEnabled(bool cursor_enabled);
@@ -167,13 +167,6 @@ class UI_EXPORT RenderText {
   }
   void set_selection_background_focused_color(SkColor color) {
     selection_background_focused_color_ = color;
-  }
-
-  SkColor selection_background_unfocused_color() const {
-    return selection_background_unfocused_color_;
-  }
-  void set_selection_background_unfocused_color(SkColor color) {
-    selection_background_unfocused_color_ = color;
   }
 
   bool focused() const { return focused_; }
@@ -307,8 +300,9 @@ class UI_EXPORT RenderText {
   // Draws a cursor at |position|.
   void DrawCursor(Canvas* canvas, const SelectionModel& position);
 
-  // Draw the selected text without a cursor or selection highlight.
-  void DrawSelectedText(Canvas* canvas);
+  // Draw the selected text without a cursor or selection highlight. Subpixel
+  // antialiasing is disabled and foreground color is forced to black.
+  void DrawSelectedTextForDrag(Canvas* canvas);
 
   // Gets the SelectionModel from a visual point in local coordinates.
   virtual SelectionModel FindCursorPosition(const Point& point) = 0;
@@ -524,9 +518,6 @@ class UI_EXPORT RenderText {
 
   // The background color used for drawing the selection when focused.
   SkColor selection_background_focused_color_;
-
-  // The background color used for drawing the selection when not focused.
-  SkColor selection_background_unfocused_color_;
 
   // The focus state of the text.
   bool focused_;

@@ -21,7 +21,7 @@
 #ifndef WTF_Alignment_h
 #define WTF_Alignment_h
 
-#include <wtf/Platform.h>
+#include "wtf/Platform.h"
 #include <algorithm>
 #include <stdint.h>
 
@@ -39,9 +39,9 @@ namespace WTF {
 #endif
 
 #if COMPILER(GCC)
-    typedef char __attribute__((__may_alias__)) AlignedBufferChar; 
+    typedef char __attribute__((__may_alias__)) AlignedBufferChar;
 #else
-    typedef char AlignedBufferChar; 
+    typedef char AlignedBufferChar;
 #endif
 
     template<size_t size, size_t alignment> struct AlignedBuffer;

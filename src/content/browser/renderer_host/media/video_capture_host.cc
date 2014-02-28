@@ -83,12 +83,22 @@ void VideoCaptureHost::OnBufferReady(
 
 void VideoCaptureHost::OnFrameInfo(
     const VideoCaptureControllerID& controller_id,
+    const media::VideoCaptureCapability& format) {
+  BrowserThread::PostTask(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&VideoCaptureHost::DoSendFrameInfoOnIOThread,
+                 this, controller_id, format));
+}
+
+void VideoCaptureHost::OnFrameInfoChanged(
+    const VideoCaptureControllerID& controller_id,
     int width,
     int height,
     int frame_per_second) {
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      base::Bind(&VideoCaptureHost::DoSendFrameInfoOnIOThread,
+      base::Bind(&VideoCaptureHost::DoSendFrameInfoChangedOnIOThread,
                  this, controller_id, width, height, frame_per_second));
 }
 
@@ -151,7 +161,27 @@ void VideoCaptureHost::DoEndedOnIOThread(
 
 void VideoCaptureHost::DoSendFrameInfoOnIOThread(
     const VideoCaptureControllerID& controller_id,
-    int width, int height, int frame_per_second) {
+    const media::VideoCaptureCapability& format) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+
+  if (entries_.find(controller_id) == entries_.end())
+    return;
+
+  media::VideoCaptureParams params;
+  params.width = format.width;
+  params.height = format.height;
+  params.frame_per_second = format.frame_rate;
+  params.frame_size_type = format.frame_size_type;
+  Send(new VideoCaptureMsg_DeviceInfo(controller_id.device_id, params));
+  Send(new VideoCaptureMsg_StateChanged(controller_id.device_id,
+                                        VIDEO_CAPTURE_STATE_STARTED));
+}
+
+void VideoCaptureHost::DoSendFrameInfoChangedOnIOThread(
+    const VideoCaptureControllerID& controller_id,
+    int width,
+    int height,
+    int frame_per_second) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
   if (entries_.find(controller_id) == entries_.end())
@@ -161,9 +191,7 @@ void VideoCaptureHost::DoSendFrameInfoOnIOThread(
   params.width = width;
   params.height = height;
   params.frame_per_second = frame_per_second;
-  Send(new VideoCaptureMsg_DeviceInfo(controller_id.device_id, params));
-  Send(new VideoCaptureMsg_StateChanged(controller_id.device_id,
-                                        VIDEO_CAPTURE_STATE_STARTED));
+  Send(new VideoCaptureMsg_DeviceInfoChanged(controller_id.device_id, params));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -186,11 +214,12 @@ void VideoCaptureHost::OnStartCapture(int device_id,
                                       const media::VideoCaptureParams& params) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DVLOG(1) << "VideoCaptureHost::OnStartCapture, device_id " << device_id
-           << ", (" << params.width
-           << ", " << params.height
-           << ", " << params.frame_per_second
-           << ", " << params.session_id
-           << ")";
+           << ", (" << params.width << ", " << params.height << ", "
+           << params.frame_per_second << ", " << params.session_id
+           << ", variable resolution device:"
+           << ((params.frame_size_type ==
+               media::VariableResolutionVideoCaptureDevice) ? "yes" : "no")
+            << ")";
   VideoCaptureControllerID controller_id(device_id);
   DCHECK(entries_.find(controller_id) == entries_.end());
 
@@ -232,7 +261,7 @@ void VideoCaptureHost::DoControllerAddedOnIOThread(
   }
 
   it->second->controller = controller;
-  controller->StartCapture(controller_id, this, peer_handle(), params);
+  controller->StartCapture(controller_id, this, PeerHandle(), params);
 }
 
 void VideoCaptureHost::OnStopCapture(int device_id) {

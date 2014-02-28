@@ -25,7 +25,7 @@
 #define HTMLQuoteElement_h
 
 #include "core/html/HTMLElement.h"
-#include <wtf/Forward.h>
+#include "wtf/Forward.h"
 
 namespace WebCore {
 
@@ -35,7 +35,7 @@ public:
 
 private:
     HTMLQuoteElement(const QualifiedName&, Document*);
-    
+
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
 };

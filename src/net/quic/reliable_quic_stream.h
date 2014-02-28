@@ -26,6 +26,7 @@ class ReliableQuicStreamPeer;
 
 class IPEndPoint;
 class QuicSession;
+class SSLInfo;
 
 // All this does right now is send data to subclasses via the sequencer.
 class NET_EXPORT_PRIVATE ReliableQuicStream : public
@@ -112,6 +113,11 @@ class NET_EXPORT_PRIVATE ReliableQuicStream : public
 
   QuicSpdyCompressor* compressor();
 
+  // Gets the SSL connection information.
+  bool GetSSLInfo(SSLInfo* ssl_info);
+
+  bool headers_decompressed() const { return headers_decompressed_; }
+
  protected:
   // Returns a pair with the number of bytes consumed from data, and a boolean
   // indicating if the fin bit was consumed.  This does not indicate the data
@@ -168,6 +174,8 @@ class NET_EXPORT_PRIVATE ReliableQuicStream : public
   // Contains a copy of the decompressed headers_ until they are consumed
   // via ProcessData or Readv.
   string decompressed_headers_;
+  // True if an error was encountered during decompression.
+  bool decompression_failed_;
 
   // Stream error code received from a RstStreamFrame or error code sent by the
   // visitor or sequencer in the RstStreamFrame.

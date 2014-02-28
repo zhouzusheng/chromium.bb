@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -36,7 +36,7 @@ public:
     {
         return adoptRef(new SinkDocumentParser(document));
     }
-    
+
 private:
     SinkDocumentParser(SinkDocument* document)
         : RawDataDocumentParser(document)
@@ -47,8 +47,8 @@ private:
     virtual size_t appendBytes(const char*, size_t) OVERRIDE { return 0; }
 };
 
-SinkDocument::SinkDocument(Frame* frame, const KURL& url)
-    : HTMLDocument(frame, url)
+SinkDocument::SinkDocument(const DocumentInit& initializer)
+    : HTMLDocument(initializer)
 {
     setCompatibilityMode(QuirksMode);
     lockCompatibilityMode();

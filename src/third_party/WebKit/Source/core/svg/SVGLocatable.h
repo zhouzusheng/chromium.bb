@@ -23,13 +23,12 @@
 #define SVGLocatable_h
 
 #include "core/platform/graphics/transforms/AffineTransform.h"
+#include "core/svg/SVGRect.h"
 
 namespace WebCore {
 
-class FloatRect;
+class ExceptionState;
 class SVGElement;
-
-typedef int ExceptionCode;
 
 class SVGLocatable {
 public:
@@ -40,11 +39,11 @@ public:
     virtual SVGElement* farthestViewportElement() const = 0;
 
     enum StyleUpdateStrategy { AllowStyleUpdate, DisallowStyleUpdate };
-    
-    virtual FloatRect getBBox(StyleUpdateStrategy) = 0;
+
+    virtual SVGRect getBBox(StyleUpdateStrategy) = 0;
     virtual AffineTransform getCTM(StyleUpdateStrategy) = 0;
     virtual AffineTransform getScreenCTM(StyleUpdateStrategy) = 0;
-    AffineTransform getTransformToElement(SVGElement*, ExceptionCode&, StyleUpdateStrategy = AllowStyleUpdate);
+    AffineTransform getTransformToElement(SVGElement*, ExceptionState&, StyleUpdateStrategy = AllowStyleUpdate);
 
     static SVGElement* nearestViewportElement(const SVGElement*);
     static SVGElement* farthestViewportElement(const SVGElement*);
@@ -57,7 +56,7 @@ public:
 protected:
     virtual AffineTransform localCoordinateSpaceTransform(SVGLocatable::CTMScope) const { return AffineTransform(); }
 
-    static FloatRect getBBox(SVGElement*, StyleUpdateStrategy);
+    static SVGRect getBBox(SVGElement*, StyleUpdateStrategy);
     static AffineTransform computeCTM(SVGElement*, CTMScope, StyleUpdateStrategy);
 };
 

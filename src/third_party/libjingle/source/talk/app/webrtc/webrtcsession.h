@@ -39,7 +39,6 @@
 #include "talk/base/thread.h"
 #include "talk/media/base/mediachannel.h"
 #include "talk/p2p/base/session.h"
-#include "talk/p2p/base/transportdescriptionfactory.h"
 #include "talk/session/media/mediasession.h"
 
 namespace cricket {
@@ -59,10 +58,12 @@ namespace webrtc {
 
 class IceRestartAnswerLatch;
 class MediaStreamSignaling;
+class WebRtcSessionDescriptionFactory;
 
 extern const char kSetLocalSdpFailed[];
 extern const char kSetRemoteSdpFailed[];
 extern const char kCreateChannelFailed[];
+extern const char kBundleWithoutRtcpMux[];
 extern const char kInvalidCandidates[];
 extern const char kInvalidSdp[];
 extern const char kMlineMismatch[];
@@ -106,7 +107,8 @@ class WebRtcSession : public cricket::BaseSession,
                 MediaStreamSignaling* mediastream_signaling);
   virtual ~WebRtcSession();
 
-  bool Initialize(const MediaConstraintsInterface* constraints);
+  bool Initialize(const MediaConstraintsInterface* constraints,
+                  DTLSIdentityServiceInterface* dtls_identity_service);
   // Deletes the voice, video and data channel and changes the session state
   // to STATE_RECEIVEDTERMINATE.
   void Terminate();
@@ -126,22 +128,20 @@ class WebRtcSession : public cricket::BaseSession,
   }
 
   void set_secure_policy(cricket::SecureMediaPolicy secure_policy);
-  cricket::SecureMediaPolicy secure_policy() const {
-    return session_desc_factory_.secure();
-  }
+  cricket::SecureMediaPolicy secure_policy() const;
 
   // Generic error message callback from WebRtcSession.
   // TODO - It may be necessary to supply error code as well.
   sigslot::signal0<> SignalError;
 
-  SessionDescriptionInterface* CreateOffer(
-      const MediaConstraintsInterface* constraints);
-
-  SessionDescriptionInterface* CreateAnswer(
-      const MediaConstraintsInterface* constraints);
-
+  void CreateOffer(CreateSessionDescriptionObserver* observer,
+                   const MediaConstraintsInterface* constraints);
+  void CreateAnswer(CreateSessionDescriptionObserver* observer,
+                    const MediaConstraintsInterface* constraints);
+  // The ownership of |desc| will be transferred after this call.
   bool SetLocalDescription(SessionDescriptionInterface* desc,
                            std::string* err_desc);
+  // The ownership of |desc| will be transferred after this call.
   bool SetRemoteDescription(SessionDescriptionInterface* desc,
                             std::string* err_desc);
   bool ProcessIceMessage(const IceCandidateInterface* ice_candidate);
@@ -152,15 +152,18 @@ class WebRtcSession : public cricket::BaseSession,
     return remote_desc_.get();
   }
 
+  void set_secure(cricket::SecureMediaPolicy secure_policy);
+  cricket::SecureMediaPolicy secure();
+
   // Get the id used as a media stream track's "id" field from ssrc.
   virtual bool GetTrackIdBySsrc(uint32 ssrc, std::string* id);
 
   // AudioMediaProviderInterface implementation.
-  virtual void SetAudioPlayout(uint32 ssrc, bool enable) OVERRIDE;
+  virtual void SetAudioPlayout(uint32 ssrc, bool enable,
+                               cricket::AudioRenderer* renderer) OVERRIDE;
   virtual void SetAudioSend(uint32 ssrc, bool enable,
-                            const cricket::AudioOptions& options) OVERRIDE;
-  virtual bool SetAudioRenderer(uint32 ssrc,
-                                cricket::AudioRenderer* renderer) OVERRIDE;
+                            const cricket::AudioOptions& options,
+                            cricket::AudioRenderer* renderer) OVERRIDE;
 
   // Implements VideoMediaProviderInterface.
   virtual bool SetCaptureDevice(uint32 ssrc,
@@ -183,6 +186,17 @@ class WebRtcSession : public cricket::BaseSession,
 
   cricket::DataChannelType data_channel_type() const;
 
+  bool IceRestartPending() const;
+
+  void ResetIceRestartLatch();
+
+  // Called when an SSLIdentity is generated or retrieved by
+  // WebRTCSessionDescriptionFactory. Should happen before setLocalDescription.
+  void OnIdentityReady(talk_base::SSLIdentity* identity);
+
+  // For unit test.
+  bool waiting_for_identity() const;
+
  private:
   // Indicates the type of SessionDescription in a call to SetLocalDescription
   // and SetRemoteDescription.
@@ -191,6 +205,7 @@ class WebRtcSession : public cricket::BaseSession,
     kPrAnswer,
     kAnswer,
   };
+
   // Invokes ConnectChannels() on transport proxies, which initiates ice
   // candidates allocation.
   bool StartCandidatesAllocation();
@@ -241,18 +256,18 @@ class WebRtcSession : public cricket::BaseSession,
   bool CreateChannels(const cricket::SessionDescription* desc);
 
   // Helper methods to create media channels.
-  bool CreateVoiceChannel(const cricket::SessionDescription* desc);
-  bool CreateVideoChannel(const cricket::SessionDescription* desc);
-  bool CreateDataChannel(const cricket::SessionDescription* desc);
+  bool CreateVoiceChannel(const cricket::ContentInfo* content);
+  bool CreateVideoChannel(const cricket::ContentInfo* content);
+  bool CreateDataChannel(const cricket::ContentInfo* content);
+
   // Copy the candidates from |saved_candidates_| to |dest_desc|.
   // The |saved_candidates_| will be cleared after this function call.
   void CopySavedCandidates(SessionDescriptionInterface* dest_desc);
 
-  // Forces |desc->crypto_required| to the appropriate state based on the
-  // current security policy, to ensure a failure occurs if there is an error
-  // in crypto negotiation.
-  // Called when processing the local session description.
-  void UpdateSessionDescriptionSecurePolicy(cricket::SessionDescription* desc);
+  void OnDataReceived(
+      cricket::DataChannel* channel,
+      const cricket::ReceiveDataParams& params,
+      const talk_base::Buffer& payload);
 
   bool GetLocalTrackId(uint32 ssrc, std::string* track_id);
   bool GetRemoteTrackId(uint32 ssrc, std::string* track_id);
@@ -260,12 +275,13 @@ class WebRtcSession : public cricket::BaseSession,
   std::string BadStateErrMsg(const std::string& type, State state);
   void SetIceConnectionState(PeerConnectionInterface::IceConnectionState state);
 
+  bool VerifyBundleSettings(const cricket::SessionDescription* desc);
+  bool HasRtcpMuxEnabled(const cricket::ContentInfo* content);
+
   talk_base::scoped_ptr<cricket::VoiceChannel> voice_channel_;
   talk_base::scoped_ptr<cricket::VideoChannel> video_channel_;
   talk_base::scoped_ptr<cricket::DataChannel> data_channel_;
   cricket::ChannelManager* channel_manager_;
-  cricket::TransportDescriptionFactory transport_desc_factory_;
-  cricket::MediaSessionDescriptionFactory session_desc_factory_;
   MediaStreamSignaling* mediastream_signaling_;
   IceObserver* ice_observer_;
   PeerConnectionInterface::IceConnectionState ice_connection_state_;
@@ -273,7 +289,6 @@ class WebRtcSession : public cricket::BaseSession,
   talk_base::scoped_ptr<SessionDescriptionInterface> remote_desc_;
   // Candidates that arrived before the remote description was set.
   std::vector<IceCandidateInterface*> saved_candidates_;
-  uint64 session_version_;
   // If the remote peer is using a older version of implementation.
   bool older_version_remote_peer_;
   // Specifies which kind of data channel is allowed. This is controlled
@@ -285,6 +300,10 @@ class WebRtcSession : public cricket::BaseSession,
   // 3. If both 1&2 are false, data channel is not allowed (DCT_NONE).
   cricket::DataChannelType data_channel_type_;
   talk_base::scoped_ptr<IceRestartAnswerLatch> ice_restart_latch_;
+
+  talk_base::scoped_ptr<WebRtcSessionDescriptionFactory>
+      webrtc_session_desc_factory_;
+
   sigslot::signal0<> SignalVoiceChannelDestroyed;
   sigslot::signal0<> SignalVideoChannelDestroyed;
   sigslot::signal0<> SignalDataChannelDestroyed;

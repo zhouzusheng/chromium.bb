@@ -33,7 +33,6 @@
 #include "core/loader/Prerenderer.h"
 
 #include "core/dom/Document.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/PrerendererClient.h"
 #include "core/page/Frame.h"
@@ -41,11 +40,10 @@
 #include "weborigin/ReferrerPolicy.h"
 #include "weborigin/SecurityPolicy.h"
 
-#include <wtf/MemoryInstrumentationVector.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefPtr.h>
-#include <wtf/text/WTFString.h>
+#include "wtf/PassOwnPtr.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefPtr.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -73,7 +71,7 @@ PassRefPtr<PrerenderHandle> Prerenderer::render(PrerenderClient* prerenderClient
     // Prerenders are unlike requests in most ways (for instance, they pass down fragments, and they don't return data),
     // but they do have referrers.
     const ReferrerPolicy referrerPolicy = document()->referrerPolicy();
-    
+
     if (!document()->frame())
         return 0;
 
@@ -140,15 +138,6 @@ PrerendererClient* Prerenderer::client()
         m_client = PrerendererClient::from(document()->page());
     }
     return m_client;
-}
-
-void Prerenderer::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    ActiveDOMObject::reportMemoryUsage(memoryObjectInfo);
-    info.ignoreMember(m_client);
-    info.addMember(m_activeHandles, "activeHandles");
-    info.addMember(m_suspendedHandles, "suspendedHandles");
 }
 
 }

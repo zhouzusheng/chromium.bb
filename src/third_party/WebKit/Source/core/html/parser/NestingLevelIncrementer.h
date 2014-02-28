@@ -26,7 +26,7 @@
 #ifndef NestingLevelIncrementer_h
 #define NestingLevelIncrementer_h
 
-#include <wtf/Noncopyable.h>
+#include "wtf/Noncopyable.h"
 
 namespace WebCore {
 
@@ -38,12 +38,12 @@ public:
     {
         ++(*m_nestingLevel);
     }
-            
+
     ~NestingLevelIncrementer()
     {
         --(*m_nestingLevel);
     }
-            
+
 private:
     unsigned* m_nestingLevel;
 };

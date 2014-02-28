@@ -66,8 +66,8 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLDocument::HTMLDocument(Frame* frame, const KURL& url, DocumentClassFlags extendedDocumentClasses)
-    : Document(frame, url, HTMLDocumentClass | extendedDocumentClasses)
+HTMLDocument::HTMLDocument(const DocumentInit& initializer, DocumentClassFlags extendedDocumentClasses)
+    : Document(initializer, HTMLDocumentClass | extendedDocumentClasses)
 {
     ScriptWrappable::init(this);
     clearXMLVersion();
@@ -125,8 +125,8 @@ void HTMLDocument::setDesignMode(const String& value)
 
 Element* HTMLDocument::activeElement()
 {
-    if (Node* node = treeScope()->focusedNode())
-        return node->isElementNode() ? toElement(node) : body();
+    if (Element* element = treeScope()->adjustedFocusedElement())
+        return element;
     return body();
 }
 
@@ -135,69 +135,57 @@ bool HTMLDocument::hasFocus()
     Page* page = this->page();
     if (!page)
         return false;
-    if (!page->focusController()->isActive())
+    if (!page->focusController().isActive() || !page->focusController().isFocused())
         return false;
-    if (Frame* focusedFrame = page->focusController()->focusedFrame()) {
+    if (Frame* focusedFrame = page->focusController().focusedFrame()) {
         if (focusedFrame->tree()->isDescendantOf(frame()))
             return true;
     }
     return false;
 }
 
+inline HTMLBodyElement* HTMLDocument::bodyAsHTMLBodyElement() const
+{
+    HTMLElement* element = body();
+    return (element && element->hasTagName(bodyTag)) ? toHTMLBodyElement(element) : 0;
+}
+
 String HTMLDocument::bgColor()
 {
-    HTMLElement* b = body();
-    HTMLBodyElement* bodyElement = (b && b->hasTagName(bodyTag)) ? static_cast<HTMLBodyElement*>(b) : 0;
-
-    if (!bodyElement)
-        return String();
-    return bodyElement->bgColor();
+    if (HTMLBodyElement* bodyElement = bodyAsHTMLBodyElement())
+        return bodyElement->bgColor();
+    return String();
 }
 
 void HTMLDocument::setBgColor(const String& value)
 {
-    HTMLElement* b = body();
-    HTMLBodyElement* bodyElement = (b && b->hasTagName(bodyTag)) ? static_cast<HTMLBodyElement*>(b) : 0;
-
-    if (bodyElement)
+    if (HTMLBodyElement* bodyElement = bodyAsHTMLBodyElement())
         bodyElement->setBgColor(value);
 }
 
 String HTMLDocument::fgColor()
 {
-    HTMLElement* b = body();
-    HTMLBodyElement* bodyElement = (b && b->hasTagName(bodyTag)) ? static_cast<HTMLBodyElement*>(b) : 0;
-
-    if (!bodyElement)
-        return String();
-    return bodyElement->text();
+    if (HTMLBodyElement* bodyElement = bodyAsHTMLBodyElement())
+        return bodyElement->text();
+    return String();
 }
 
 void HTMLDocument::setFgColor(const String& value)
 {
-    HTMLElement* b = body();
-    HTMLBodyElement* bodyElement = (b && b->hasTagName(bodyTag)) ? static_cast<HTMLBodyElement*>(b) : 0;
-
-    if (bodyElement)
+    if (HTMLBodyElement* bodyElement = bodyAsHTMLBodyElement())
         bodyElement->setText(value);
 }
 
 String HTMLDocument::alinkColor()
 {
-    HTMLElement* b = body();
-    HTMLBodyElement* bodyElement = (b && b->hasTagName(bodyTag)) ? static_cast<HTMLBodyElement*>(b) : 0;
-
-    if (!bodyElement)
-        return String();
-    return bodyElement->aLink();
+    if (HTMLBodyElement* bodyElement = bodyAsHTMLBodyElement())
+        return bodyElement->aLink();
+    return String();
 }
 
 void HTMLDocument::setAlinkColor(const String& value)
 {
-    HTMLElement* b = body();
-    HTMLBodyElement* bodyElement = (b && b->hasTagName(bodyTag)) ? static_cast<HTMLBodyElement*>(b) : 0;
-
-    if (bodyElement) {
+    if (HTMLBodyElement* bodyElement = bodyAsHTMLBodyElement()) {
         // This check is a bit silly, but some benchmarks like to set the
         // document's link colors over and over to the same value and we
         // don't want to incur a style update each time.
@@ -208,20 +196,14 @@ void HTMLDocument::setAlinkColor(const String& value)
 
 String HTMLDocument::linkColor()
 {
-    HTMLElement* b = body();
-    HTMLBodyElement* bodyElement = (b && b->hasTagName(bodyTag)) ? static_cast<HTMLBodyElement*>(b) : 0;
-
-    if (!bodyElement)
-        return String();
-    return bodyElement->link();
+    if (HTMLBodyElement* bodyElement = bodyAsHTMLBodyElement())
+        return bodyElement->link();
+    return String();
 }
 
 void HTMLDocument::setLinkColor(const String& value)
 {
-    HTMLElement* b = body();
-    HTMLBodyElement* bodyElement = (b && b->hasTagName(bodyTag)) ? static_cast<HTMLBodyElement*>(b) : 0;
-
-    if (bodyElement) {
+    if (HTMLBodyElement* bodyElement = bodyAsHTMLBodyElement()) {
         // This check is a bit silly, but some benchmarks like to set the
         // document's link colors over and over to the same value and we
         // don't want to incur a style update each time.
@@ -232,20 +214,14 @@ void HTMLDocument::setLinkColor(const String& value)
 
 String HTMLDocument::vlinkColor()
 {
-    HTMLElement* b = body();
-    HTMLBodyElement* bodyElement = (b && b->hasTagName(bodyTag)) ? static_cast<HTMLBodyElement*>(b) : 0;
-
-    if (!bodyElement)
-        return String();
-    return bodyElement->vLink();
+    if (HTMLBodyElement* bodyElement = bodyAsHTMLBodyElement())
+        return bodyElement->vLink();
+    return String();
 }
 
 void HTMLDocument::setVlinkColor(const String& value)
 {
-    HTMLElement* b = body();
-    HTMLBodyElement* bodyElement = (b && b->hasTagName(bodyTag)) ? static_cast<HTMLBodyElement*>(b) : 0;
-
-    if (bodyElement) {
+    if (HTMLBodyElement* bodyElement = bodyAsHTMLBodyElement()) {
         // This check is a bit silly, but some benchmarks like to set the
         // document's link colors over and over to the same value and we
         // don't want to incur a style update each time.
@@ -258,7 +234,7 @@ void HTMLDocument::setVlinkColor(const String& value)
 // not part of the DOM
 // --------------------------------------------------------------------------
 
-void HTMLDocument::addItemToMap(HashCountedSet<AtomicStringImpl*>& map, const AtomicString& name)
+void HTMLDocument::addItemToMap(HashCountedSet<StringImpl*>& map, const AtomicString& name)
 {
     if (name.isEmpty())
         return;
@@ -267,7 +243,7 @@ void HTMLDocument::addItemToMap(HashCountedSet<AtomicStringImpl*>& map, const At
         f->script()->namedItemAdded(this, name);
 }
 
-void HTMLDocument::removeItemFromMap(HashCountedSet<AtomicStringImpl*>& map, const AtomicString& name)
+void HTMLDocument::removeItemFromMap(HashCountedSet<StringImpl*>& map, const AtomicString& name)
 {
     if (name.isEmpty())
         return;
@@ -282,7 +258,7 @@ void HTMLDocument::addNamedItem(const AtomicString& name)
 }
 
 void HTMLDocument::removeNamedItem(const AtomicString& name)
-{ 
+{
     removeItemFromMap(m_namedItemCounts, name);
 }
 
@@ -292,20 +268,20 @@ void HTMLDocument::addExtraNamedItem(const AtomicString& name)
 }
 
 void HTMLDocument::removeExtraNamedItem(const AtomicString& name)
-{ 
+{
     removeItemFromMap(m_extraNamedItemCounts, name);
 }
 
-static void addLocalNameToSet(HashSet<AtomicStringImpl*>* set, const QualifiedName& qName)
+static void addLocalNameToSet(HashSet<StringImpl*>* set, const QualifiedName& qName)
 {
     set->add(qName.localName().impl());
 }
 
-static HashSet<AtomicStringImpl*>* createHtmlCaseInsensitiveAttributesSet()
+static HashSet<StringImpl*>* createHtmlCaseInsensitiveAttributesSet()
 {
     // This is the list of attributes in HTML 4.01 with values marked as "[CI]" or case-insensitive
     // Mozilla treats all other values as case-sensitive, thus so do we.
-    HashSet<AtomicStringImpl*>* attrSet = new HashSet<AtomicStringImpl*>;
+    HashSet<StringImpl*>* attrSet = new HashSet<StringImpl*>;
 
     addLocalNameToSet(attrSet, accept_charsetAttr);
     addLocalNameToSet(attrSet, acceptAttr);
@@ -358,7 +334,7 @@ static HashSet<AtomicStringImpl*>* createHtmlCaseInsensitiveAttributesSet()
 
 bool HTMLDocument::isCaseSensitiveAttribute(const QualifiedName& attributeName)
 {
-    static HashSet<AtomicStringImpl*>* htmlCaseInsensitiveAttributesSet = createHtmlCaseInsensitiveAttributesSet();
+    static HashSet<StringImpl*>* htmlCaseInsensitiveAttributesSet = createHtmlCaseInsensitiveAttributesSet();
     bool isPossibleHTMLAttr = !attributeName.hasPrefix() && (attributeName.namespaceURI() == nullAtom);
     return !isPossibleHTMLAttr || !htmlCaseInsensitiveAttributesSet->contains(attributeName.localName().impl());
 }

@@ -28,6 +28,7 @@
 #include "config.h"
 #include "core/rendering/RenderMediaControlsChromium.h"
 
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/TimeRanges.h"
 #include "core/platform/graphics/Gradient.h"

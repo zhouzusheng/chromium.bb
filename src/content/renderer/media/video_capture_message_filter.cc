@@ -90,15 +90,18 @@ void VideoCaptureMessageFilter::OnChannelClosing() {
 
 VideoCaptureMessageFilter::~VideoCaptureMessageFilter() {}
 
+VideoCaptureMessageFilter::Delegate* VideoCaptureMessageFilter::find_delegate(
+    int device_id) const {
+  Delegates::const_iterator i = delegates_.find(device_id);
+  return i != delegates_.end() ? i->second : NULL;
+}
+
 void VideoCaptureMessageFilter::OnBufferCreated(
     int device_id,
     base::SharedMemoryHandle handle,
     int length,
     int buffer_id) {
-  Delegate* delegate = NULL;
-  if (delegates_.find(device_id) != delegates_.end())
-    delegate = delegates_.find(device_id)->second;
-
+  Delegate* delegate = find_delegate(device_id);
   if (!delegate) {
     DLOG(WARNING) << "OnBufferCreated: Got video frame buffer for a "
         "non-existent or removed video capture.";
@@ -117,10 +120,7 @@ void VideoCaptureMessageFilter::OnBufferReceived(
     int device_id,
     int buffer_id,
     base::Time timestamp) {
-  Delegate* delegate = NULL;
-  if (delegates_.find(device_id) != delegates_.end())
-    delegate = delegates_.find(device_id)->second;
-
+  Delegate* delegate = find_delegate(device_id);
   if (!delegate) {
     DLOG(WARNING) << "OnBufferReceived: Got video frame buffer for a "
         "non-existent or removed video capture.";
@@ -137,9 +137,7 @@ void VideoCaptureMessageFilter::OnBufferReceived(
 void VideoCaptureMessageFilter::OnDeviceStateChanged(
     int device_id,
     VideoCaptureState state) {
-  Delegate* delegate = NULL;
-  if (delegates_.find(device_id) != delegates_.end())
-    delegate = delegates_.find(device_id)->second;
+  Delegate* delegate = find_delegate(device_id);
   if (!delegate) {
     DLOG(WARNING) << "OnDeviceStateChanged: Got video capture event for a "
         "non-existent or removed video capture.";
@@ -151,9 +149,7 @@ void VideoCaptureMessageFilter::OnDeviceStateChanged(
 void VideoCaptureMessageFilter::OnDeviceInfoReceived(
     int device_id,
     const media::VideoCaptureParams& params) {
-  Delegate* delegate = NULL;
-  if (delegates_.find(device_id) != delegates_.end())
-    delegate = delegates_.find(device_id)->second;
+  Delegate* delegate = find_delegate(device_id);
   if (!delegate) {
     DLOG(WARNING) << "OnDeviceInfoReceived: Got video capture event for a "
         "non-existent or removed video capture.";

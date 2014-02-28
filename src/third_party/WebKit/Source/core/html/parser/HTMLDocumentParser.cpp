@@ -41,6 +41,7 @@
 #include "core/html/parser/HTMLTreeBuilder.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/page/Frame.h"
+#include "core/platform/chromium/TraceEvent.h"
 #include "wtf/Functional.h"
 
 namespace WebCore {
@@ -207,7 +208,9 @@ bool HTMLDocumentParser::processingData() const
 
 void HTMLDocumentParser::pumpTokenizerIfPossible(SynchronousMode mode)
 {
-    if (isStopped() || isWaitingForScripts())
+    if (isStopped())
+        return;
+    if (isWaitingForScripts())
         return;
 
     // Once a resume is scheduled, HTMLParserScheduler controls when we next pump.
@@ -227,6 +230,7 @@ bool HTMLDocumentParser::isScheduledForResume() const
 // Used by HTMLParserScheduler
 void HTMLDocumentParser::resumeParsingAfterYield()
 {
+    ASSERT(!m_isPinnedToMainThread);
     // pumpTokenizer can cause this parser to be detached from the Document,
     // but we need to ensure it isn't deleted yet.
     RefPtr<HTMLDocumentParser> protect(this);
@@ -270,7 +274,9 @@ bool HTMLDocumentParser::canTakeNextToken(SynchronousMode mode, PumpSession& ses
 
         // If we're paused waiting for a script, we try to execute scripts before continuing.
         runScriptsForPausedTreeBuilder();
-        if (isWaitingForScripts() || isStopped())
+        if (isStopped())
+            return false;
+        if (isWaitingForScripts())
             return false;
     }
 
@@ -391,7 +397,7 @@ void HTMLDocumentParser::processParsedChunkFromBackgroundParser(PassOwnPtr<Parse
 
     for (XSSInfoStream::const_iterator it = chunk->xssInfos.begin(); it != chunk->xssInfos.end(); ++it) {
         m_textPosition = (*it)->m_textPosition;
-        m_xssAuditorDelegate.didBlockScript(**it); 
+        m_xssAuditorDelegate.didBlockScript(**it);
         if (isStopped())
             break;
     }
@@ -460,7 +466,11 @@ void HTMLDocumentParser::pumpPendingSpeculations()
     while (!m_speculations.isEmpty()) {
         processParsedChunkFromBackgroundParser(m_speculations.takeFirst());
 
-        if (isWaitingForScripts() || isStopped())
+        // The order matters! If this isStopped(), isWaitingForScripts() can hit and ASSERT since
+        // m_document can be null which is used to decide the readiness.
+        if (isStopped())
+            break;
+        if (isWaitingForScripts())
             break;
 
         if (currentTime() - startTime > parserTimeLimit && !m_speculations.isEmpty()) {
@@ -674,10 +684,11 @@ void HTMLDocumentParser::append(PassRefPtr<StringImpl> inputSource)
             startBackgroundParser();
 
         ASSERT(inputSource->hasOneRef());
-        Closure closure = bind(&BackgroundHTMLParser::append, m_backgroundParser, String(inputSource));
+        TRACE_EVENT1("net", "HTMLDocumentParser::append", "size", inputSource->length());
         // NOTE: Important that the String temporary is destroyed before we post the task
         // otherwise the String could call deref() on a StringImpl now owned by the background parser.
         // We would like to ASSERT(closure.arg3()->hasOneRef()) but sadly the args are private.
+        Closure closure = bind(&BackgroundHTMLParser::append, m_backgroundParser, String(inputSource));
         HTMLParserThread::shared()->postTask(closure);
         return;
     }
@@ -685,6 +696,7 @@ void HTMLDocumentParser::append(PassRefPtr<StringImpl> inputSource)
     // pumpTokenizer can cause this parser to be detached from the Document,
     // but we need to ensure it isn't deleted yet.
     RefPtr<HTMLDocumentParser> protect(this);
+    TRACE_EVENT1("net", "HTMLDocumentParser::append", "size", inputSource->length());
     String source(inputSource);
 
     if (m_preloadScanner) {
@@ -708,7 +720,15 @@ void HTMLDocumentParser::append(PassRefPtr<StringImpl> inputSource)
         return;
     }
 
-    pumpTokenizerIfPossible(AllowYield);
+    // A couple pinToMainThread() callers require synchronous parsing, but can't
+    // easily use the insert() method, so we hack append() for them to be synchronous.
+    // javascript: url handling is one such caller.
+    // FIXME: This is gross, and we should separate the concept of synchronous parsing
+    // from insert() so that only document.write() uses insert.
+    if (m_isPinnedToMainThread)
+        pumpTokenizerIfPossible(ForceSynchronous);
+    else
+        pumpTokenizerIfPossible(AllowYield);
 
     endIfDelayed();
 }
@@ -858,20 +878,20 @@ void HTMLDocumentParser::resumeParsingAfterScriptExecution()
     endIfDelayed();
 }
 
-void HTMLDocumentParser::watchForLoad(CachedResource* cachedScript)
+void HTMLDocumentParser::watchForLoad(Resource* resource)
 {
-    ASSERT(!cachedScript->isLoaded());
+    ASSERT(!resource->isLoaded());
     // addClient would call notifyFinished if the load were complete.
     // Callers do not expect to be re-entered from this call, so they should
-    // not an already-loaded CachedResource.
-    cachedScript->addClient(this);
+    // not an already-loaded Resource.
+    resource->addClient(this);
 }
 
-void HTMLDocumentParser::stopWatchingForLoad(CachedResource* cachedScript)
+void HTMLDocumentParser::stopWatchingForLoad(Resource* resource)
 {
-    cachedScript->removeClient(this);
+    resource->removeClient(this);
 }
-    
+
 void HTMLDocumentParser::appendCurrentInputStreamToPreloadScannerAndScan()
 {
     ASSERT(m_preloadScanner);
@@ -879,7 +899,7 @@ void HTMLDocumentParser::appendCurrentInputStreamToPreloadScannerAndScan()
     m_preloadScanner->scan(m_preloader.get(), document()->baseElementURL());
 }
 
-void HTMLDocumentParser::notifyFinished(CachedResource* cachedResource)
+void HTMLDocumentParser::notifyFinished(Resource* cachedResource)
 {
     // pumpTokenizer can cause this parser to be detached from the Document,
     // but we need to ensure it isn't deleted yet.
@@ -924,7 +944,7 @@ void HTMLDocumentParser::parseDocumentFragment(const String& source, DocumentFra
     ASSERT(!parser->processingData()); // Make sure we're done. <rdar://problem/3963151>
     parser->detach(); // Allows ~DocumentParser to assert it was detached before destruction.
 }
-    
+
 void HTMLDocumentParser::suspendScheduledTasks()
 {
     if (m_parserScheduler)

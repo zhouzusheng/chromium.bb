@@ -56,7 +56,7 @@ namespace WebCore {
             TargetIsSubresource, // Resource is a generic subresource. (Generally a specific type should be specified)
             TargetIsStyleSheet,
             TargetIsScript,
-            TargetIsFontResource,
+            TargetIsFont,
             TargetIsImage,
             TargetIsObject,
             TargetIsMedia,
@@ -204,8 +204,6 @@ namespace WebCore {
         // What this request is for.
         TargetType targetType() const { return m_targetType; }
         void setTargetType(TargetType type) { m_targetType = type; }
-
-        void reportMemoryUsage(MemoryObjectInfo*) const;
 
         static double defaultTimeoutInterval(); // May return 0 when using platform default.
         static void setDefaultTimeoutInterval(double);

@@ -13,7 +13,6 @@
 
 #include "base/memory/weak_ptr.h"
 #include "media/base/pipeline_status.h"
-#include "media/base/demuxer_stream.h"
 #include "media/base/video_decoder.h"
 #include "media/video/video_decode_accelerator.h"
 
@@ -24,70 +23,31 @@ class MessageLoopProxy;
 class SharedMemory;
 }
 
-class SkBitmap;
-
 namespace media {
 
 class DecoderBuffer;
-class VDAClientProxy;
+class GpuVideoDecoderFactories;
 
 // GPU-accelerated video decoder implementation.  Relies on
 // AcceleratedVideoDecoderMsg_Decode and friends.
-// All methods internally trampoline to the |message_loop| passed to the ctor.
 class MEDIA_EXPORT GpuVideoDecoder
     : public VideoDecoder,
       public VideoDecodeAccelerator::Client {
  public:
-  // Helper interface for specifying factories needed to instantiate a
-  // GpuVideoDecoder.
-  class MEDIA_EXPORT Factories : public base::RefCountedThreadSafe<Factories> {
-   public:
-    // Caller owns returned pointer.
-    virtual VideoDecodeAccelerator* CreateVideoDecodeAccelerator(
-        VideoCodecProfile, VideoDecodeAccelerator::Client*) = 0;
-
-    // Allocate & delete native textures.
-    virtual bool CreateTextures(int32 count, const gfx::Size& size,
-                                std::vector<uint32>* texture_ids,
-                                uint32 texture_target) = 0;
-    virtual void DeleteTexture(uint32 texture_id) = 0;
-
-    // Read pixels from a native texture and store into |pixels| as RGBA.
-    virtual void ReadPixels(uint32 texture_id, uint32 texture_target,
-                            const gfx::Size& size, const SkBitmap& pixels) = 0;
-
-    // Allocate & return a shared memory segment.  Caller is responsible for
-    // Close()ing the returned pointer.
-    virtual base::SharedMemory* CreateSharedMemory(size_t size) = 0;
-
-    // Returns the message loop the VideoDecodeAccelerator runs on.
-    virtual scoped_refptr<base::MessageLoopProxy> GetMessageLoop() = 0;
-
-    // Abort any outstanding factory operations and error any future
-    // attempts at factory operations
-    virtual void Abort() = 0;
-
-    // Returns true if Abort() has been called.
-    virtual bool IsAborted() = 0;
-
-   protected:
-    friend class base::RefCountedThreadSafe<Factories>;
-    virtual ~Factories();
-  };
-
-  GpuVideoDecoder(const scoped_refptr<base::MessageLoopProxy>& message_loop,
-                  const scoped_refptr<Factories>& factories);
+  // The message loop of |factories| will be saved to |gvd_loop_proxy_|.
+  explicit GpuVideoDecoder(
+      const scoped_refptr<GpuVideoDecoderFactories>& factories);
 
   // VideoDecoder implementation.
-  virtual void Initialize(DemuxerStream* stream,
-                          const PipelineStatusCB& status_cb,
-                          const StatisticsCB& statistics_cb) OVERRIDE;
-  virtual void Read(const ReadCB& read_cb) OVERRIDE;
+  virtual void Initialize(const VideoDecoderConfig& config,
+                          const PipelineStatusCB& status_cb) OVERRIDE;
+  virtual void Decode(const scoped_refptr<DecoderBuffer>& buffer,
+                      const DecodeCB& decode_cb) OVERRIDE;
   virtual void Reset(const base::Closure& closure) OVERRIDE;
   virtual void Stop(const base::Closure& closure) OVERRIDE;
   virtual bool HasAlpha() const OVERRIDE;
   virtual bool NeedsBitstreamConversion() const OVERRIDE;
-  virtual bool HasOutputFrameAvailable() const OVERRIDE;
+  virtual bool CanReadWithoutStalling() const OVERRIDE;
 
   // VideoDecodeAccelerator::Client implementation.
   virtual void NotifyInitializeDone() OVERRIDE;
@@ -112,16 +72,8 @@ class MEDIA_EXPORT GpuVideoDecoder
     kError
   };
 
-  // If no demuxer read is in flight and no bitstream buffers are in the
-  // decoder, kick some off demuxing/decoding.
-  void EnsureDemuxOrDecode();
-
   // Return true if more decode work can be piled on to the VDA.
   bool CanMoreDecodeWorkBeDone();
-
-  // Callback to pass to demuxer_stream_->Read() for receiving encoded bits.
-  void RequestBufferDecode(DemuxerStream::Status status,
-                           const scoped_refptr<DecoderBuffer>& buffer);
 
   // Enqueue a frame for later delivery (or drop it on the floor if a
   // vda->Reset() is in progress) and trigger out-of-line delivery of the oldest
@@ -132,20 +84,13 @@ class MEDIA_EXPORT GpuVideoDecoder
       const scoped_refptr<VideoFrame>& frame);
 
   // Indicate the picture buffer can be reused by the decoder.
-  void ReusePictureBuffer(int64 picture_buffer_id);
+  void ReusePictureBuffer(int64 picture_buffer_id, uint32 sync_point);
 
   void RecordBufferData(
       const BitstreamBuffer& bitstream_buffer, const DecoderBuffer& buffer);
   void GetBufferData(int32 id, base::TimeDelta* timetamp,
                      gfx::Rect* visible_rect, gfx::Size* natural_size);
 
-  // Sets |vda_| and |weak_vda_| on the GVD thread and runs |status_cb|.
-  void SetVDA(const PipelineStatusCB& status_cb,
-              VideoDecodeAccelerator* vda,
-              base::WeakPtr<VideoDecodeAccelerator> weak_vda);
-
-  // Call VDA::Destroy() on |vda_loop_proxy_| ensuring that |this| outlives the
-  // Destroy() call.
   void DestroyVDA();
 
   // A shared memory segment and its allocated size.
@@ -165,45 +110,27 @@ class MEDIA_EXPORT GpuVideoDecoder
 
   void DestroyTextures();
 
-  StatisticsCB statistics_cb_;
-
-  // Pointer to the demuxer stream that will feed us compressed buffers.
-  DemuxerStream* demuxer_stream_;
-
   bool needs_bitstream_conversion_;
 
-  // Message loop on which to fire callbacks and trampoline calls to this class
-  // if they arrive on other loops.
+  // Message loop which this class and |factories_| run on.
   scoped_refptr<base::MessageLoopProxy> gvd_loop_proxy_;
   base::WeakPtrFactory<GpuVideoDecoder> weak_factory_;
   base::WeakPtr<GpuVideoDecoder> weak_this_;
 
-  // Message loop on which to makes all calls to vda_.  (beware this loop may be
-  // paused during the Pause/Flush/Stop dance PipelineImpl::Stop() goes
-  // through).
-  scoped_refptr<base::MessageLoopProxy> vda_loop_proxy_;
+  scoped_refptr<GpuVideoDecoderFactories> factories_;
 
-  scoped_refptr<Factories> factories_;
-
-  // Proxies calls from |vda_| to |gvd_loop_proxy_| and used to safely detach
-  // during shutdown.
-  scoped_refptr<VDAClientProxy> client_proxy_;
-
-  // Populated during Initialize() via SetVDA() (on success) and unchanged
-  // until an error occurs.
+  // Populated during Initialize() (on success) and unchanged until an error
+  // occurs.
   scoped_ptr<VideoDecodeAccelerator> vda_;
-  // Used to post tasks from the GVD thread to the VDA thread safely.
-  base::WeakPtr<VideoDecodeAccelerator> weak_vda_;
 
   // Callbacks that are !is_null() only during their respective operation being
   // asynchronously executed.
-  ReadCB pending_read_cb_;
+  DecodeCB pending_decode_cb_;
   base::Closure pending_reset_cb_;
 
   State state_;
 
-  // Is a demuxer read in flight?
-  bool demuxer_read_in_progress_;
+  VideoDecoderConfig config_;
 
   // Shared-memory buffer pool.  Since allocating SHM segments requires a
   // round-trip to the browser process, we keep allocation out of the
@@ -221,7 +148,7 @@ class MEDIA_EXPORT GpuVideoDecoder
   std::map<int32, PictureBuffer> assigned_picture_buffers_;
   std::map<int32, PictureBuffer> dismissed_picture_buffers_;
   // PictureBuffers given to us by VDA via PictureReady, which we sent forward
-  // as VideoFrames to be rendered via read_cb_, and which will be returned
+  // as VideoFrames to be rendered via decode_cb_, and which will be returned
   // to us via ReusePictureBuffer.
   std::set<int32> picture_buffers_at_display_;
 
@@ -240,7 +167,7 @@ class MEDIA_EXPORT GpuVideoDecoder
   std::list<BufferData> input_buffer_data_;
 
   // picture_buffer_id and the frame wrapping the corresponding Picture, for
-  // frames that have been decoded but haven't been requested by a Read() yet.
+  // frames that have been decoded but haven't been requested by a Decode() yet.
   std::list<scoped_refptr<VideoFrame> > ready_video_frames_;
   int32 next_picture_buffer_id_;
   int32 next_bitstream_buffer_id_;

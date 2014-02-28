@@ -31,7 +31,6 @@
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderLayerBacking.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/RenderWidgetProtector.h"
 
 using namespace std;
 
@@ -97,7 +96,7 @@ void RenderWidget::willBeDestroyed()
 {
     if (RenderView* v = view())
         v->removeWidget(this);
-    
+
     if (AXObjectCache* cache = document()->existingAXObjectCache()) {
         cache->childrenChanged(this->parent());
         cache->remove(this);
@@ -111,12 +110,8 @@ void RenderWidget::willBeDestroyed()
 void RenderWidget::destroy()
 {
     willBeDestroyed();
-
-    // Grab the arena from node()->document()->renderArena() before clearing the node pointer.
-    // Clear the node before deref-ing, as this may be deleted when deref is called.
-    RenderArena* arena = renderArena();
     clearNode();
-    deref(arena);
+    deref();
 }
 
 RenderWidget::~RenderWidget()
@@ -148,13 +143,13 @@ bool RenderWidget::setWidgetGeometry(const LayoutRect& frame)
 
     m_clipRect = clipRect;
 
-    RenderWidgetProtector protector(this);
+    RefPtr<RenderWidget> protector(this);
     RefPtr<Node> protectedNode(node());
     m_widget->setFrameRect(newFrame);
 
     if (clipChanged && !boundsChanged)
         m_widget->clipRectChanged();
-    
+
     if (hasLayer() && layer()->isComposited())
         layer()->backing()->updateAfterWidgetResize();
 
@@ -212,7 +207,7 @@ void RenderWidget::layout()
     StackStats::LayoutCheckPoint layoutCheckPoint;
     ASSERT(needsLayout());
 
-    setNeedsLayout(false);
+    clearNeedsLayout();
 }
 
 void RenderWidget::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
@@ -311,17 +306,17 @@ void RenderWidget::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
         layer()->paintResizer(paintInfo.context, roundedIntPoint(adjustedPaintOffset), paintInfo.rect);
 }
 
-void RenderWidget::setOverlapTestResult(bool isOverlapped)
+void RenderWidget::setIsOverlapped(bool isOverlapped)
 {
     ASSERT(m_widget);
     ASSERT(m_widget->isFrameView());
     toFrameView(m_widget.get())->setIsOverlapped(isOverlapped);
 }
 
-void RenderWidget::deref(RenderArena *arena)
+void RenderWidget::deref()
 {
     if (--m_refCount <= 0)
-        arenaDelete(arena, this);
+        postDestroy();
 }
 
 void RenderWidget::updateWidgetPosition()
@@ -330,7 +325,7 @@ void RenderWidget::updateWidgetPosition()
         return;
 
     bool boundsChanged = updateWidgetGeometry();
-    
+
     // if the frame bounds got changed, or if view needs layout (possibly indicating
     // content size is wrong) we have to do a layout to set the right widget size
     if (m_widget && m_widget->isFrameView()) {

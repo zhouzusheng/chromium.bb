@@ -4,6 +4,7 @@
 
 #include "sync/internal_api/public/engine/model_safe_worker.h"
 
+#include "base/bind.h"
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
@@ -84,7 +85,9 @@ std::string ModelSafeGroupToString(ModelSafeGroup group) {
 ModelSafeWorker::ModelSafeWorker(WorkerLoopDestructionObserver* observer)
     : stopped_(false),
       work_done_or_stopped_(false, false),
-      observer_(observer) {}
+      observer_(observer),
+      working_loop_(NULL),
+      working_loop_set_wait_(true, false) {}
 
 ModelSafeWorker::~ModelSafeWorker() {}
 
@@ -131,8 +134,53 @@ void ModelSafeWorker::WillDestroyCurrentMessageLoop() {
         << " worker stops on destruction of its working thread.";
   }
 
+  {
+    base::AutoLock l(working_loop_lock_);
+    working_loop_ = NULL;
+  }
+
   if (observer_)
     observer_->OnWorkerLoopDestroyed(GetModelSafeGroup());
+}
+
+void ModelSafeWorker::SetWorkingLoopToCurrent() {
+  base::AutoLock l(working_loop_lock_);
+  DCHECK(!working_loop_);
+  working_loop_ = base::MessageLoop::current();
+  working_loop_set_wait_.Signal();
+}
+
+void ModelSafeWorker::UnregisterForLoopDestruction(
+    base::Callback<void(ModelSafeGroup)> unregister_done_callback) {
+  // Ok to wait until |working_loop_| is set because this is called on sync
+  // loop.
+  working_loop_set_wait_.Wait();
+
+  {
+    base::AutoLock l(working_loop_lock_);
+    if (working_loop_ != NULL) {
+      // Should be called on sync loop.
+      DCHECK_NE(base::MessageLoop::current(), working_loop_);
+      working_loop_->PostTask(
+          FROM_HERE,
+          base::Bind(&ModelSafeWorker::UnregisterForLoopDestructionAsync,
+                     this, unregister_done_callback));
+    }
+  }
+}
+
+void ModelSafeWorker::UnregisterForLoopDestructionAsync(
+    base::Callback<void(ModelSafeGroup)> unregister_done_callback) {
+  {
+    base::AutoLock l(working_loop_lock_);
+    if (!working_loop_)
+      return;
+    DCHECK_EQ(base::MessageLoop::current(), working_loop_);
+  }
+
+  DCHECK(stopped_);
+  base::MessageLoop::current()->RemoveDestructionObserver(this);
+  unregister_done_callback.Run(GetModelSafeGroup());
 }
 
 }  // namespace syncer

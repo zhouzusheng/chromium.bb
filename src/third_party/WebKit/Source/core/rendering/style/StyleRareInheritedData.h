@@ -25,11 +25,11 @@
 #ifndef StyleRareInheritedData_h
 #define StyleRareInheritedData_h
 
+#include "core/css/StyleColor.h"
 #include "core/platform/Length.h"
-#include "core/platform/graphics/Color.h"
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/AtomicString.h>
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/text/AtomicString.h"
 
 #include "core/rendering/style/DataRef.h"
 #include "core/rendering/style/StyleVariableData.h"
@@ -57,18 +57,16 @@ public:
     }
     bool shadowDataEquivalent(const StyleRareInheritedData&) const;
 
-    void reportMemoryUsage(MemoryObjectInfo*) const;
-
     RefPtr<StyleImage> listStyleImage;
 
-    Color textStrokeColor;
+    StyleColor textStrokeColor;
     float textStrokeWidth;
-    Color textFillColor;
-    Color textEmphasisColor;
+    StyleColor textFillColor;
+    StyleColor textEmphasisColor;
 
-    Color visitedLinkTextStrokeColor;
-    Color visitedLinkTextFillColor;
-    Color visitedLinkTextEmphasisColor;
+    StyleColor visitedLinkTextStrokeColor;
+    StyleColor visitedLinkTextFillColor;
+    StyleColor visitedLinkTextEmphasisColor;
 
     OwnPtr<ShadowData> textShadow; // Our text shadow information for shadowed text drawing.
     AtomicString highlight; // Apple-specific extension for custom highlight rendering.
@@ -95,6 +93,7 @@ public:
     unsigned textEmphasisFill : 1; // TextEmphasisFill
     unsigned textEmphasisMark : 3; // TextEmphasisMark
     unsigned textEmphasisPosition : 1; // TextEmphasisPosition
+    unsigned m_textAlignLast : 3; // TextAlignLast
     unsigned m_textOrientation : 2; // TextOrientation
 #if ENABLE(CSS3_TEXT)
     unsigned m_textIndentLine : 1; // TextIndentEachLine
@@ -105,7 +104,6 @@ public:
     unsigned m_lineSnap : 2; // LineSnap
     unsigned m_lineAlign : 1; // LineAlign
 #if ENABLE(CSS3_TEXT)
-    unsigned m_textAlignLast : 3; // TextAlignLast
     unsigned m_textUnderlinePosition : 3; // TextUnderlinePosition
 #endif // CSS3_TEXT
     unsigned m_rubyPosition : 1; // RubyPosition
@@ -123,9 +121,9 @@ public:
     AtomicString m_lineGrid;
     unsigned m_tabSize;
 
-    Color tapHighlightColor;
+    StyleColor tapHighlightColor;
 
-    Color caretColor;
+    StyleColor caretColor;
 
     DataRef<StyleVariableData> m_variables;
 

@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -28,19 +28,14 @@
 
 #include <limits>
 #include "core/dom/Document.h"
-#include "core/history/BackForwardController.h"
-#include "core/history/HistoryItem.h"
-#include "core/html/HTMLMediaElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/loader/cache/CachedResourceLoader.h"
+#include "core/loader/cache/ResourceFetcher.h"
 #include "core/page/Chrome.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameTree.h"
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
-#include "core/platform/network/ResourceHandle.h"
 #include "core/rendering/TextAutosizer.h"
-#include "modules/webdatabase/Database.h"
 
 using namespace std;
 
@@ -49,8 +44,8 @@ namespace WebCore {
 static void setImageLoadingSettings(Page* page)
 {
     for (Frame* frame = page->mainFrame(); frame; frame = frame->tree()->traverseNext()) {
-        frame->document()->cachedResourceLoader()->setImagesEnabled(page->settings()->areImagesEnabled());
-        frame->document()->cachedResourceLoader()->setAutoLoadImages(page->settings()->loadsImagesAutomatically());
+        frame->document()->fetcher()->setImagesEnabled(page->settings()->areImagesEnabled());
+        frame->document()->fetcher()->setAutoLoadImages(page->settings()->loadsImagesAutomatically());
     }
 }
 
@@ -138,7 +133,6 @@ Settings::Settings(Page* page)
     , m_areImagesEnabled(true)
     , m_arePluginsEnabled(false)
     , m_isScriptEnabled(false)
-    , m_fontRenderingMode(0)
     , m_isCSSCustomFilterEnabled(false)
     , m_cssStickyPositionEnabled(true)
     , m_dnsPrefetchingEnabled(false)
@@ -151,7 +145,7 @@ Settings::Settings(Page* page)
 PassOwnPtr<Settings> Settings::create(Page* page)
 {
     return adoptPtr(new Settings(page));
-} 
+}
 
 SETTINGS_SETTER_BODIES
 
@@ -293,7 +287,7 @@ void Settings::setMediaTypeOverride(const String& mediaTypeOverride)
 void Settings::setLoadsImagesAutomatically(bool loadsImagesAutomatically)
 {
     m_loadsImagesAutomatically = loadsImagesAutomatically;
-    
+
     // Changing this setting to true might immediately start new loads for images that had previously had loading disabled.
     // If this happens while a WebView is being dealloc'ed, and we don't know the WebView is being dealloc'ed, these new loads
     // can cause crashes downstream when the WebView memory has actually been free'd.
@@ -341,19 +335,6 @@ void Settings::setUserStyleSheetLocation(const KURL& userStyleSheetLocation)
     m_userStyleSheetLocation = userStyleSheetLocation;
 
     m_page->userStyleSheetLocationChanged();
-}
-
-void Settings::setFontRenderingMode(FontRenderingMode mode)
-{
-    if (fontRenderingMode() == mode)
-        return;
-    m_fontRenderingMode = mode;
-    m_page->setNeedsRecalcStyleInAllFrames();
-}
-
-FontRenderingMode Settings::fontRenderingMode() const
-{
-    return static_cast<FontRenderingMode>(m_fontRenderingMode);
 }
 
 void Settings::setDNSPrefetchingEnabled(bool dnsPrefetchingEnabled)

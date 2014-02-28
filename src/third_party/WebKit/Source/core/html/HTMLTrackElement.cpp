@@ -27,6 +27,7 @@
 #include "core/html/HTMLTrackElement.h"
 
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Event.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/page/ContentSecurityPolicy.h"

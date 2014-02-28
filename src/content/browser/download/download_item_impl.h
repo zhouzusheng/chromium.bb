@@ -13,17 +13,16 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "content/browser/download/download_net_log_parameters.h"
 #include "content/browser/download/download_request_handle.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/download_destination_observer.h"
-#include "content/public/browser/download_id.h"
 #include "content/public/browser/download_item.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
+#include "url/gurl.h"
 
 namespace content {
 class DownloadFile;
@@ -52,13 +51,15 @@ class CONTENT_EXPORT DownloadItemImpl
   // Constructing from persistent store:
   // |bound_net_log| is constructed externally for our use.
   DownloadItemImpl(DownloadItemImplDelegate* delegate,
-                   DownloadId download_id,
+                   uint32 id,
                    const base::FilePath& current_path,
                    const base::FilePath& target_path,
                    const std::vector<GURL>& url_chain,
                    const GURL& referrer_url,
                    const base::Time& start_time,
                    const base::Time& end_time,
+                   const std::string& etag,
+                   const std::string& last_modified,
                    int64 received_bytes,
                    int64 total_bytes,
                    DownloadItem::DownloadState state,
@@ -70,14 +71,14 @@ class CONTENT_EXPORT DownloadItemImpl
   // Constructing for a regular download.
   // |bound_net_log| is constructed externally for our use.
   DownloadItemImpl(DownloadItemImplDelegate* delegate,
-                   DownloadId download_id,
+                   uint32 id,
                    const DownloadCreateInfo& info,
                    const net::BoundNetLog& bound_net_log);
 
   // Constructing for the "Save Page As..." feature:
   // |bound_net_log| is constructed externally for our use.
   DownloadItemImpl(DownloadItemImplDelegate* delegate,
-                   DownloadId download_id,
+                   uint32 id,
                    const base::FilePath& path,
                    const GURL& url,
                    const std::string& mime_type,
@@ -99,8 +100,7 @@ class CONTENT_EXPORT DownloadItemImpl
   virtual void Remove() OVERRIDE;
   virtual void OpenDownload() OVERRIDE;
   virtual void ShowDownloadInShell() OVERRIDE;
-  virtual int32 GetId() const OVERRIDE;
-  virtual DownloadId GetGlobalId() const OVERRIDE;
+  virtual uint32 GetId() const OVERRIDE;
   virtual DownloadState GetState() const OVERRIDE;
   virtual DownloadInterruptReason GetLastReason() const OVERRIDE;
   virtual bool IsPaused() const OVERRIDE;
@@ -129,6 +129,7 @@ class CONTENT_EXPORT DownloadItemImpl
   virtual const std::string& GetHash() const OVERRIDE;
   virtual const std::string& GetHashState() const OVERRIDE;
   virtual bool GetFileExternallyRemoved() const OVERRIDE;
+  virtual void DeleteFile() OVERRIDE;
   virtual bool IsDangerous() const OVERRIDE;
   virtual DownloadDangerType GetDangerType() const OVERRIDE;
   virtual bool TimeRemaining(base::TimeDelta* remaining) const OVERRIDE;
@@ -276,6 +277,13 @@ class CONTENT_EXPORT DownloadItemImpl
     MAX_DOWNLOAD_INTERNAL_STATE,
   };
 
+  // Used with TransitionTo() to indicate whether or not to call
+  // UpdateObservers() after the state transition.
+  enum ShouldUpdateObservers {
+    UPDATE_OBSERVERS,
+    DONT_UPDATE_OBSERVERS
+  };
+
   // Normal progression of a download ------------------------------------------
 
   // These are listed in approximately chronological order.  There are also
@@ -346,7 +354,10 @@ class CONTENT_EXPORT DownloadItemImpl
   bool IsDownloadReadyForCompletion(const base::Closure& state_change_notify);
 
   // Call to transition state; all state transitions should go through this.
-  void TransitionTo(DownloadInternalState new_state);
+  // |notify_action| specifies whether or not to call UpdateObservers() after
+  // the state transition.
+  void TransitionTo(DownloadInternalState new_state,
+                    ShouldUpdateObservers notify_action);
 
   // Set the |danger_type_| and invoke obserers if necessary.
   void SetDangerType(DownloadDangerType danger_type);
@@ -374,8 +385,7 @@ class CONTENT_EXPORT DownloadItemImpl
   // download system.
   scoped_ptr<DownloadRequestHandleInterface> request_handle_;
 
-  // Download ID assigned by DownloadResourceHandler.
-  DownloadId download_id_;
+  uint32 download_id_;
 
   // Display name for the download. If this is empty, then the display name is
   // considered to be |target_path_.BaseName()|.

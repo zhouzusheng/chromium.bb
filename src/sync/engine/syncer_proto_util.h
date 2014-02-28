@@ -8,7 +8,7 @@
 #include <string>
 
 #include "base/gtest_prod_util.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "sync/base/sync_export.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/util/syncer_error.h"
@@ -129,6 +129,10 @@ class SYNC_EXPORT_PRIVATE SyncerProtoUtil {
       const sync_pb::ClientToServerResponse& response,
       syncable::Directory* dir);
 
+  // Returns true if sync is disabled by admin for a dasher account.
+  static bool IsSyncDisabledByAdmin(
+      const sync_pb::ClientToServerResponse& response);
+
   // Post the message using the scm, and do some processing on the returned
   // headers. Decode the server response.
   static bool PostAndProcessHeaders(ServerConnectionManager* scm,
@@ -142,6 +146,7 @@ class SYNC_EXPORT_PRIVATE SyncerProtoUtil {
   friend class SyncerProtoUtilTest;
   FRIEND_TEST_ALL_PREFIXES(SyncerProtoUtilTest, AddRequestBirthday);
   FRIEND_TEST_ALL_PREFIXES(SyncerProtoUtilTest, PostAndProcessHeaders);
+  FRIEND_TEST_ALL_PREFIXES(SyncerProtoUtilTest, VerifyDisabledByAdmin);
   FRIEND_TEST_ALL_PREFIXES(SyncerProtoUtilTest, VerifyResponseBirthday);
   FRIEND_TEST_ALL_PREFIXES(SyncerProtoUtilTest, HandleThrottlingNoDatatypes);
   FRIEND_TEST_ALL_PREFIXES(SyncerProtoUtilTest, HandleThrottlingWithDatatypes);

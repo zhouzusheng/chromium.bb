@@ -41,8 +41,13 @@
 #include "main/config.h"
 #include "m_eval.h"
 
-#if defined(_MSC_VER)
-#pragma optimize("", off)
+/*
+ * XXX: MSVC takes forever to compile this module for x86 unless we disable
+ * optimizations.
+ *
+ */
+#if defined(_MSC_VER) && defined(_M_IX86)
+#  pragma optimize( "", off )
 #endif
 
 static GLfloat inv_tab[MAX_EVAL_ORDER];

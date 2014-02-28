@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/debug/trace_event.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "cc/input/input_handler.h"
 #include "content/renderer/gpu/input_event_filter.h"
 #include "content/renderer/gpu/input_handler_manager_client.h"
@@ -121,11 +122,8 @@ InputEventAckState InputHandlerManager::HandleInputEvent(
 }
 
 void InputHandlerManager::DidOverscroll(int routing_id,
-                                        gfx::Vector2dF accumulated_overscroll,
-                                        gfx::Vector2dF current_fling_velocity) {
-  client_->DidOverscroll(routing_id,
-                         accumulated_overscroll,
-                         current_fling_velocity);
+                                        const cc::DidOverscrollParams& params) {
+  client_->DidOverscroll(routing_id, params);
 }
 
 

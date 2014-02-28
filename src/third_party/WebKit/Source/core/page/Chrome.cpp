@@ -23,10 +23,6 @@
 #include "core/page/Chrome.h"
 
 #include "public/platform/WebScreenInfo.h"
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefPtr.h>
-#include <wtf/text/StringBuilder.h>
-#include <wtf/Vector.h>
 #include "HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/html/HTMLInputElement.h"
@@ -37,13 +33,15 @@
 #include "core/page/Page.h"
 #include "core/page/PageGroupLoadDeferrer.h"
 #include "core/page/PopupOpeningObserver.h"
+#include "core/page/WindowFeatures.h"
 #include "core/platform/ColorChooser.h"
 #include "core/platform/DateTimeChooser.h"
 #include "core/platform/FileChooser.h"
 #include "core/platform/graphics/FloatRect.h"
 #include "core/platform/network/DNS.h"
 #include "core/rendering/HitTestResult.h"
-#include "core/storage/StorageNamespace.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -148,21 +146,9 @@ void Chrome::focusedNodeChanged(Node* node) const
     m_client->focusedNodeChanged(node);
 }
 
-Page* Chrome::createWindow(Frame* frame, const FrameLoadRequest& request, const WindowFeatures& features, const NavigationAction& action) const
+void Chrome::show(NavigationPolicy policy) const
 {
-    Page* newPage = m_client->createWindow(frame, request, features, action);
-
-    if (newPage) {
-        if (StorageNamespace* oldSessionStorage = m_page->sessionStorage(false))
-            newPage->setSessionStorage(oldSessionStorage->copy());
-    }
-
-    return newPage;
-}
-
-void Chrome::show() const
-{
-    m_client->show();
+    m_client->show(policy);
 }
 
 bool Chrome::canRunModal() const
@@ -195,9 +181,13 @@ void Chrome::runModal() const
     m_client->runModal();
 }
 
-void Chrome::setToolbarsVisible(bool b) const
+void Chrome::setWindowFeatures(const WindowFeatures& features) const
 {
-    m_client->setToolbarsVisible(b);
+    m_client->setToolbarsVisible(features.toolBarVisible || features.locationBarVisible);
+    m_client->setStatusbarVisible(features.statusBarVisible);
+    m_client->setScrollbarsVisible(features.scrollbarsVisible);
+    m_client->setMenubarVisible(features.menuBarVisible);
+    m_client->setResizable(features.resizable);
 }
 
 bool Chrome::toolbarsVisible() const
@@ -205,19 +195,9 @@ bool Chrome::toolbarsVisible() const
     return m_client->toolbarsVisible();
 }
 
-void Chrome::setStatusbarVisible(bool b) const
-{
-    m_client->setStatusbarVisible(b);
-}
-
 bool Chrome::statusbarVisible() const
 {
     return m_client->statusbarVisible();
-}
-
-void Chrome::setScrollbarsVisible(bool b) const
-{
-    m_client->setScrollbarsVisible(b);
 }
 
 bool Chrome::scrollbarsVisible() const
@@ -225,19 +205,9 @@ bool Chrome::scrollbarsVisible() const
     return m_client->scrollbarsVisible();
 }
 
-void Chrome::setMenubarVisible(bool b) const
-{
-    m_client->setMenubarVisible(b);
-}
-
 bool Chrome::menubarVisible() const
 {
     return m_client->menubarVisible();
-}
-
-void Chrome::setResizable(bool b) const
-{
-    m_client->setResizable(b);
 }
 
 bool Chrome::canRunBeforeUnloadConfirmPanel()
@@ -400,11 +370,6 @@ void Chrome::runOpenPanel(Frame* frame, PassRefPtr<FileChooser> fileChooser)
 {
     notifyPopupOpeningObservers();
     m_client->runOpenPanel(frame, fileChooser);
-}
-
-void Chrome::loadIconForFiles(const Vector<String>& filenames, FileIconLoader* loader)
-{
-    m_client->loadIconForFiles(filenames, loader);
 }
 
 void Chrome::dispatchViewportPropertiesDidChange(const ViewportArguments& arguments) const

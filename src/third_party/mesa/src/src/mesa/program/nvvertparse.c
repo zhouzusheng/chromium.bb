@@ -54,7 +54,7 @@
  * program attributes.
  */
 struct parse_state {
-   GLcontext *ctx;
+   struct gl_context *ctx;
    const GLubyte *start;
    const GLubyte *pos;
    const GLubyte *curLine;
@@ -573,7 +573,8 @@ Parse_MaskedDstReg(struct parse_state *parseState, struct prog_dst_register *dst
          RETURN_ERROR;
       dstReg->Index = idx;
    }
-   else if (parseState->isStateProgram && token[0] == 'c') {
+   else if (parseState->isStateProgram && token[0] == 'c' &&
+            parseState->isStateProgram) {
       /* absolute program parameter register */
       /* Only valid for vertex state programs */
       dstReg->File = PROGRAM_ENV_PARAM;
@@ -1281,7 +1282,7 @@ Parse_Program(struct parse_state *parseState,
  * indicates the position of the error in 'str'.
  */
 void
-_mesa_parse_nv_vertex_program(GLcontext *ctx, GLenum dstTarget,
+_mesa_parse_nv_vertex_program(struct gl_context *ctx, GLenum dstTarget,
                               const GLubyte *str, GLsizei len,
                               struct gl_vertex_program *program)
 {
@@ -1423,10 +1424,11 @@ _mesa_parse_nv_vertex_program(GLcontext *ctx, GLenum dstTarget,
 	 index = _mesa_add_state_reference(program->Base.Parameters,
 					   state_tokens);
 	 assert(index == i);
+	 (void)index;
       }
       program->Base.NumParameters = program->Base.Parameters->NumParameters;
 
-      _mesa_setup_nv_temporary_count(ctx, &program->Base);
+      _mesa_setup_nv_temporary_count(&program->Base);
       _mesa_emit_nv_temp_initialization(ctx, &program->Base);
    }
    else {

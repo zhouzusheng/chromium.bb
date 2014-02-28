@@ -21,7 +21,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -32,9 +32,9 @@
 #include "core/platform/sql/SQLiteFileSystem.h"
 #include "core/platform/sql/SQLiteStatement.h"
 #include "modules/webdatabase/DatabaseAuthorizer.h"
-#include <wtf/text/CString.h>
-#include <wtf/text/WTFString.h>
-#include <wtf/Threading.h>
+#include "wtf/text/CString.h"
+#include "wtf/text/WTFString.h"
+#include "wtf/Threading.h"
 
 namespace WebCore {
 
@@ -95,7 +95,7 @@ bool SQLiteDatabase::open(const String& filename, bool forWebSQLDatabase)
     else
         m_openErrorMessage = "sqlite_open returned null";
 
-    if (!SQLiteStatement(*this, ASCIILiteral("PRAGMA temp_store = MEMORY;")).executeCommand())
+    if (!SQLiteStatement(*this, "PRAGMA temp_store = MEMORY;").executeCommand())
         LOG_ERROR("SQLite database could not set temp_store to memory");
 
     return isOpen();
@@ -139,12 +139,12 @@ bool SQLiteDatabase::isInterrupted()
     return m_interrupted;
 }
 
-void SQLiteDatabase::setFullsync(bool fsync) 
+void SQLiteDatabase::setFullsync(bool fsync)
 {
-    if (fsync) 
-        executeCommand(ASCIILiteral("PRAGMA fullfsync = 1;"));
+    if (fsync)
+        executeCommand("PRAGMA fullfsync = 1;");
     else
-        executeCommand(ASCIILiteral("PRAGMA fullfsync = 0;"));
+        executeCommand("PRAGMA fullfsync = 0;");
 }
 
 int64_t SQLiteDatabase::maximumSize()
@@ -154,7 +154,7 @@ int64_t SQLiteDatabase::maximumSize()
     {
         MutexLocker locker(m_authorizerLock);
         enableAuthorizer(false);
-        SQLiteStatement statement(*this, ASCIILiteral("PRAGMA max_page_count"));
+        SQLiteStatement statement(*this, "PRAGMA max_page_count");
         maxPageCount = statement.getColumnInt64(0);
         enableAuthorizer(true);
     }
@@ -166,12 +166,12 @@ void SQLiteDatabase::setMaximumSize(int64_t size)
 {
     if (size < 0)
         size = 0;
-    
+
     int currentPageSize = pageSize();
 
     ASSERT(currentPageSize || !m_db);
     int64_t newMaxPageCount = currentPageSize ? size / currentPageSize : 0;
-    
+
     MutexLocker locker(m_authorizerLock);
     enableAuthorizer(false);
 
@@ -190,15 +190,15 @@ void SQLiteDatabase::setMaximumSize(int64_t size)
 
 int SQLiteDatabase::pageSize()
 {
-    // Since the page size of a database is locked in at creation and therefore cannot be dynamic, 
+    // Since the page size of a database is locked in at creation and therefore cannot be dynamic,
     // we can cache the value for future use
     if (m_pageSize == -1) {
         MutexLocker locker(m_authorizerLock);
         enableAuthorizer(false);
-        
-        SQLiteStatement statement(*this, ASCIILiteral("PRAGMA page_size"));
+
+        SQLiteStatement statement(*this, "PRAGMA page_size");
         m_pageSize = statement.getColumnInt(0);
-        
+
         enableAuthorizer(true);
     }
 
@@ -213,7 +213,7 @@ int64_t SQLiteDatabase::freeSpaceSize()
         MutexLocker locker(m_authorizerLock);
         enableAuthorizer(false);
         // Note: freelist_count was added in SQLite 3.4.1.
-        SQLiteStatement statement(*this, ASCIILiteral("PRAGMA freelist_count"));
+        SQLiteStatement statement(*this, "PRAGMA freelist_count");
         freelistCount = statement.getColumnInt64(0);
         enableAuthorizer(true);
     }
@@ -228,7 +228,7 @@ int64_t SQLiteDatabase::totalSize()
     {
         MutexLocker locker(m_authorizerLock);
         enableAuthorizer(false);
-        SQLiteStatement statement(*this, ASCIILiteral("PRAGMA page_count"));
+        SQLiteStatement statement(*this, "PRAGMA page_count");
         pageCount = statement.getColumnInt64(0);
         enableAuthorizer(true);
     }
@@ -281,13 +281,13 @@ bool SQLiteDatabase::tableExists(const String& tablename)
 
 void SQLiteDatabase::clearAllTables()
 {
-    String query = ASCIILiteral("SELECT name FROM sqlite_master WHERE type='table';");
+    String query = "SELECT name FROM sqlite_master WHERE type='table';";
     Vector<String> tables;
     if (!SQLiteStatement(*this, query).returnTextResults(0, tables)) {
         LOG(SQLDatabase, "Unable to retrieve list of tables from database");
         return;
     }
-    
+
     for (Vector<String>::iterator table = tables.begin(); table != tables.end(); ++table ) {
         if (*table == "sqlite_sequence")
             continue;
@@ -298,7 +298,7 @@ void SQLiteDatabase::clearAllTables()
 
 int SQLiteDatabase::runVacuumCommand()
 {
-    if (!executeCommand(ASCIILiteral("VACUUM;")))
+    if (!executeCommand("VACUUM;"))
         LOG(SQLDatabase, "Unable to vacuum database - %s", lastErrorMsg());
     return lastError();
 }
@@ -308,7 +308,7 @@ int SQLiteDatabase::runIncrementalVacuumCommand()
     MutexLocker locker(m_authorizerLock);
     enableAuthorizer(false);
 
-    if (!executeCommand(ASCIILiteral("PRAGMA incremental_vacuum")))
+    if (!executeCommand("PRAGMA incremental_vacuum"))
         LOG(SQLDatabase, "Unable to run incremental vacuum - %s", lastErrorMsg());
 
     enableAuthorizer(true);
@@ -422,7 +422,7 @@ int SQLiteDatabase::authorizerFunction(void* userData, int actionCode, const cha
             return auth->allowAlterTable(parameter1, parameter2);
         case SQLITE_REINDEX:
             return auth->allowReindex(parameter1);
-#if SQLITE_VERSION_NUMBER >= 3003013 
+#if SQLITE_VERSION_NUMBER >= 3003013
         case SQLITE_ANALYZE:
             return auth->allowAnalyze(parameter1);
         case SQLITE_CREATE_VTABLE:
@@ -449,7 +449,7 @@ void SQLiteDatabase::setAuthorizer(PassRefPtr<DatabaseAuthorizer> auth)
     MutexLocker locker(m_authorizerLock);
 
     m_authorizer = auth;
-    
+
     enableAuthorizer(true);
 }
 
@@ -468,7 +468,7 @@ bool SQLiteDatabase::isAutoCommitOn() const
 
 bool SQLiteDatabase::turnOnIncrementalAutoVacuum()
 {
-    SQLiteStatement statement(*this, ASCIILiteral("PRAGMA auto_vacuum"));
+    SQLiteStatement statement(*this, "PRAGMA auto_vacuum");
     int autoVacuumMode = statement.getColumnInt(0);
     int error = lastError();
 
@@ -485,10 +485,10 @@ bool SQLiteDatabase::turnOnIncrementalAutoVacuum()
     case AutoVacuumIncremental:
         return true;
     case AutoVacuumFull:
-        return executeCommand(ASCIILiteral("PRAGMA auto_vacuum = 2"));
+        return executeCommand("PRAGMA auto_vacuum = 2");
     case AutoVacuumNone:
     default:
-        if (!executeCommand(ASCIILiteral("PRAGMA auto_vacuum = 2")))
+        if (!executeCommand("PRAGMA auto_vacuum = 2"))
             return false;
         runVacuumCommand();
         error = lastError();

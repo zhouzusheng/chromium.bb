@@ -7,7 +7,7 @@
 base.requireStylesheet('tcmalloc.heap_instance_track');
 
 base.require('base.sorted_array_utils');
-base.require('tracing.tracks.canvas_based_track');
+base.require('tracing.tracks.heading_track');
 base.require('tracing.tracks.object_instance_track');
 base.require('tracing.color_scheme');
 base.require('ui');
@@ -20,31 +20,29 @@ base.exportTo('tcmalloc', function() {
   /**
    * A track that displays heap memory data.
    * @constructor
-   * @extends {CanvasBasedTrack}
+   * @extends {HeadingTrack}
    */
 
   var HeapInstanceTrack = ui.define(
-      'heap-instance-track', tracing.tracks.CanvasBasedTrack);
+      'heap-instance-track', tracing.tracks.HeadingTrack);
 
   HeapInstanceTrack.prototype = {
 
-    __proto__: tracing.tracks.CanvasBasedTrack.prototype,
+    __proto__: tracing.tracks.HeadingTrack.prototype,
 
-    decorate: function() {
+    decorate: function(viewport) {
+      tracing.tracks.HeadingTrack.prototype.decorate.call(this, viewport);
       this.classList.add('heap-instance-track');
       this.objectInstance_ = null;
     },
 
     set objectInstances(objectInstances) {
-      this.invalidate();
       if (!objectInstances) {
         this.objectInstance_ = [];
-        this.visible = false;
         return;
       }
       if (objectInstances.length != 1)
         throw new Error('Bad object instance count.');
-      this.visible = true;
       this.objectInstance_ = objectInstances[0];
       this.maxBytes_ = this.computeMaxBytes_(
           this.objectInstance_.snapshots);
@@ -73,42 +71,46 @@ base.exportTo('tcmalloc', function() {
 
     set height(height) {
       this.style.height = height;
-      this.invalidate();
     },
 
-    redraw: function() {
-      var ctx = this.ctx_;
-      var canvasWidth = this.canvas_.width;
-      var canvasHeight = this.canvas_.height;
-      var halfcanvasHeight = canvasHeight * 0.5;
-      var twoPi = Math.PI * 2;
+    draw: function(type, viewLWorld, viewRWorld) {
+      switch (type) {
+        case tracing.tracks.DrawType.SLICE:
+          this.drawSlices_(viewLWorld, viewRWorld);
+          break;
+      }
+    },
+
+    drawSlices_: function(viewLWorld, viewRWorld) {
+      var ctx = this.context();
       var pixelRatio = window.devicePixelRatio || 1;
 
-      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+      var bounds = this.getBoundingClientRect();
+      var width = bounds.width * pixelRatio;
+      var height = bounds.height * pixelRatio;
 
       // Culling parameters.
-      var vp = this.viewport_;
-      var pixWidthWorld = vp.xViewVectorToWorld(1);
-      var viewLeftWorld = vp.xViewToWorld(0);
-      var viewRightWorld = vp.xViewToWorld(canvasWidth);
-      var snapshotRadiusWorld = vp.xViewVectorToWorld(canvasHeight);
+      var vp = this.viewport;
 
-      // Give the viewport a chance to draw onto this canvas.
-      vp.drawUnderContent(ctx, viewLeftWorld, viewRightWorld, canvasHeight);
+      // Scale by the size of the largest snapshot.
+      var maxBytes = this.maxBytes_;
 
-      // Snapshots. Has to run in worldspace because ctx.arc gets transformed.
       var objectSnapshots = this.objectInstance_.snapshots;
       var lowIndex = base.findLowIndexInSortedArray(
           objectSnapshots,
           function(snapshot) {
-            return snapshot.ts +
-                snapshotRadiusWorld;
+            return snapshot.ts;
           },
-          viewLeftWorld);
+          viewLWorld);
+      // Assure that the stack with the left edge off screen still gets drawn
+      if (lowIndex > 0)
+        lowIndex -= 1;
+
       for (var i = lowIndex; i < objectSnapshots.length; ++i) {
         var snapshot = objectSnapshots[i];
+
         var left = snapshot.ts;
-        if (left - snapshotRadiusWorld > viewRightWorld)
+        if (left > viewRWorld)
           break;
         var leftView = vp.xWorldToView(left);
         if (leftView < 0)
@@ -121,14 +123,17 @@ base.exportTo('tcmalloc', function() {
         else
           right = objectSnapshots[objectSnapshots.length - 1].ts + 5000;
         var rightView = vp.xWorldToView(right);
+        if (rightView > width)
+          rightView = width;
 
-        // Scale by the size of the largest snapshot.
-        var maxBytes = this.maxBytes_;
+        // Floor the bounds to avoid a small gap between stacks.
+        leftView = Math.floor(leftView);
+        rightView = Math.floor(rightView);
 
         // Draw a stacked bar graph. Largest item is stored first in the
         // heap data structure, so iterate backwards. Likewise draw from
         // the bottom of the bar upwards.
-        var currentY = canvasHeight;
+        var currentY = height;
         var keys = Object.keys(snapshot.heap_.children);
         for (var k = keys.length - 1; k >= 0; k--) {
           var trace = snapshot.heap_.children[keys[k]];
@@ -144,16 +149,22 @@ base.exportTo('tcmalloc', function() {
                 snapshot.objectInstance.colorId;
             ctx.fillStyle = palette[colorId + k];
           }
-          var barHeight = canvasHeight * trace.currentBytes / maxBytes;
+
+          var barHeight = height * trace.currentBytes / maxBytes;
           ctx.fillRect(leftView, currentY - barHeight,
-                       rightView - leftView + 1, barHeight);
+                       Math.max(rightView - leftView, 1), barHeight);
           currentY -= barHeight;
         }
       }
       ctx.lineWidth = 1;
+    },
 
-      // Give the viewport a chance to draw over this canvas.
-      vp.drawOverContent(ctx, viewLeftWorld, viewRightWorld, canvasHeight);
+    memoizeSlices_: function() {
+      var vp = this.viewport_;
+      var objectSnapshots = this.objectInstance_.snapshots;
+      objectSnapshots.forEach(function(obj) {
+        vp.sliceMemoization(obj, this);
+      }.bind(this));
     },
 
     /**

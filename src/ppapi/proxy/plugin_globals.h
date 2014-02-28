@@ -11,17 +11,26 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_local_storage.h"
+#include "ppapi/proxy/connection.h"
 #include "ppapi/proxy/plugin_resource_tracker.h"
 #include "ppapi/proxy/plugin_var_tracker.h"
 #include "ppapi/proxy/ppapi_proxy_export.h"
 #include "ppapi/shared_impl/callback_tracker.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
 
+namespace base {
+class Thread;
+}
 namespace IPC {
 class Sender;
 }
 
+struct PP_BrowserFont_Trusted_Description;
+
 namespace ppapi {
+
+struct Preferences;
+
 namespace proxy {
 
 class MessageLoopResource;
@@ -65,6 +74,7 @@ class PPAPI_PROXY_EXPORT PluginGlobals : public PpapiGlobals {
                                       const std::string& source,
                                       const std::string& value) OVERRIDE;
   virtual MessageLoopShared* GetCurrentMessageLoop() OVERRIDE;
+  base::TaskRunner* GetFileTaskRunner(PP_Instance instance) OVERRIDE;
 
   // Returns the channel for sending to the browser.
   IPC::Sender* GetBrowserSender();
@@ -74,6 +84,12 @@ class PPAPI_PROXY_EXPORT PluginGlobals : public PpapiGlobals {
 
   // Sets the active url which is reported by breakpad.
   void SetActiveURL(const std::string& url);
+
+  PP_Resource CreateBrowserFont(
+      Connection connection,
+      PP_Instance instance,
+      const PP_BrowserFont_Trusted_Description& desc,
+      const Preferences& prefs);
 
   // Getters for the plugin-specific versions.
   PluginResourceTracker* plugin_resource_tracker() {
@@ -143,6 +159,10 @@ class PPAPI_PROXY_EXPORT PluginGlobals : public PpapiGlobals {
   std::string command_line_;
 
   scoped_ptr<BrowserSender> browser_sender_;
+
+  // Thread for performing potentially blocking file operations. It's created
+  // lazily, since it might not be needed.
+  scoped_ptr<base::Thread> file_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginGlobals);
 };

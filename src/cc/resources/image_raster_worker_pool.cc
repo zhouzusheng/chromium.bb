@@ -29,7 +29,8 @@ class ImageWorkerPoolTaskImpl : public internal::WorkerPoolTask {
   }
 
   // Overridden from internal::WorkerPoolTask:
-  virtual void RunOnThread(unsigned thread_index) OVERRIDE {
+  virtual void RunOnWorkerThread(unsigned thread_index) OVERRIDE {
+    TRACE_EVENT0("cc", "ImageWorkerPoolTaskImpl::RunOnWorkerThread");
     if (!buffer_)
       return;
 
@@ -40,9 +41,9 @@ class ImageWorkerPoolTaskImpl : public internal::WorkerPoolTask {
                      stride_);
     bitmap.setPixels(buffer_);
     SkDevice device(bitmap);
-    task_->RunOnThread(&device, thread_index);
+    task_->RunOnWorkerThread(&device, thread_index);
   }
-  virtual void DispatchCompletionCallback() OVERRIDE {
+  virtual void CompleteOnOriginThread() OVERRIDE {
     reply_.Run(!HasFinishedRunning());
   }
 
@@ -159,7 +160,7 @@ void ImageRasterWorkerPool::OnRasterTasksFinished() {
   DCHECK(raster_tasks_pending_);
   raster_tasks_pending_ = false;
   TRACE_EVENT_ASYNC_END0("cc", "ScheduledTasks", this);
-  client()->DidFinishedRunningTasks();
+  client()->DidFinishRunningTasks();
 }
 
 void ImageRasterWorkerPool::OnRasterTasksRequiredForActivationFinished() {
@@ -168,7 +169,7 @@ void ImageRasterWorkerPool::OnRasterTasksRequiredForActivationFinished() {
   TRACE_EVENT_ASYNC_STEP1(
       "cc", "ScheduledTasks", this, "rasterizing",
       "state", TracedValue::FromValue(StateAsValue().release()));
-  client()->DidFinishedRunningTasksRequiredForActivation();
+  client()->DidFinishRunningTasksRequiredForActivation();
 }
 
 void ImageRasterWorkerPool::OnRasterTaskCompleted(
@@ -182,12 +183,10 @@ void ImageRasterWorkerPool::OnRasterTaskCompleted(
   // Balanced with MapImage() call in ScheduleTasks().
   resource_provider()->UnmapImage(task->resource()->id());
 
-  // Bind image to resource.
-  resource_provider()->BindImage(task->resource()->id());
-
   task->DidRun(was_canceled);
+  task->WillComplete();
+  task->CompleteOnOriginThread();
   task->DidComplete();
-  task->DispatchCompletionCallback();
 
   image_tasks_.erase(task.get());
 }

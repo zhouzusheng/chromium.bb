@@ -46,15 +46,15 @@ void  BBClipboard::setCustomString(const String& format, const String& data, boo
     String mutableData(data);
 
     std::string formatUtf8;
-    UtfUtil::utf16ToUtf8(std::wstring(mutableFormat.charactersWithNullTermination()), &formatUtf8);
+    UtfUtil::utf16ToUtf8(std::wstring(mutableFormat.charactersWithNullTermination().data()), &formatUtf8);
 
     if (useUtf8) {
         std::string dataUtf8;
-        UtfUtil::utf16ToUtf8(std::wstring(mutableData.charactersWithNullTermination()), &dataUtf8);
+        UtfUtil::utf16ToUtf8(std::wstring(mutableData.charactersWithNullTermination().data()), &dataUtf8);
         ClipboardUtil::setStringData(dataUtf8, formatUtf8);
     } else {
         ClipboardUtil::setWStringData(
-            std::wstring(mutableData.charactersWithNullTermination()), formatUtf8);
+            std::wstring(mutableData.charactersWithNullTermination().data()), formatUtf8);
     }
 }
 
@@ -63,7 +63,7 @@ String BBClipboard::getCustomString(const String& format, bool useUtf8)
     String mutableFormat(format);
 
     std::string formatUtf8;
-    UtfUtil::utf16ToUtf8(std::wstring(mutableFormat.charactersWithNullTermination()), &formatUtf8);
+    UtfUtil::utf16ToUtf8(std::wstring(mutableFormat.charactersWithNullTermination().data()), &formatUtf8);
 
     std::wstring wDataOut;
     if (useUtf8) {
@@ -81,7 +81,7 @@ bool  BBClipboard::hasCustomFormat(const String& format)
     String mutableFormat(format);
 
     std::string formatUtf8;
-    UtfUtil::utf16ToUtf8(std::wstring(mutableFormat.charactersWithNullTermination()), &formatUtf8);
+    UtfUtil::utf16ToUtf8(std::wstring(mutableFormat.charactersWithNullTermination().data()), &formatUtf8);
 
     return ClipboardUtil::hasFormat(formatUtf8);
 }
@@ -91,7 +91,7 @@ void BBClipboard::setCustomBinaryData(const String& format, ArrayBuffer* arrayBu
     String mutableFormat(format);
 
     std::string formatUtf8;
-    UtfUtil::utf16ToUtf8(std::wstring(mutableFormat.charactersWithNullTermination()), &formatUtf8);
+    UtfUtil::utf16ToUtf8(std::wstring(mutableFormat.charactersWithNullTermination().data()), &formatUtf8);
 
     ClipboardUtil::setCustomData(arrayBuffer->data(), arrayBuffer->byteLength(), formatUtf8);
 }

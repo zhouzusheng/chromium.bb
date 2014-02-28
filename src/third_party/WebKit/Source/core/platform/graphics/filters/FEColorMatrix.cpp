@@ -32,8 +32,8 @@
 #include "core/platform/text/TextStream.h"
 #include "core/rendering/RenderTreeAsText.h"
 
-#include <wtf/MathExtras.h>
-#include <wtf/Uint8ClampedArray.h>
+#include "wtf/MathExtras.h"
+#include "wtf/Uint8ClampedArray.h"
 
 #include "SkColorFilterImageFilter.h"
 #include "SkColorMatrixFilter.h"
@@ -166,7 +166,7 @@ void FEColorMatrix::applySoftware()
     case FECOLORMATRIX_TYPE_MATRIX:
         effectType<FECOLORMATRIX_TYPE_MATRIX>(pixelArray.get(), m_values);
         break;
-    case FECOLORMATRIX_TYPE_SATURATE: 
+    case FECOLORMATRIX_TYPE_SATURATE:
         effectType<FECOLORMATRIX_TYPE_SATURATE>(pixelArray.get(), m_values);
         break;
     case FECOLORMATRIX_TYPE_HUEROTATE:
@@ -281,11 +281,11 @@ bool FEColorMatrix::applySkia()
     return true;
 }
 
-SkImageFilter* FEColorMatrix::createImageFilter(SkiaImageFilterBuilder* builder)
+PassRefPtr<SkImageFilter> FEColorMatrix::createImageFilter(SkiaImageFilterBuilder* builder)
 {
-    SkAutoTUnref<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
+    RefPtr<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
     SkAutoTUnref<SkColorFilter> filter(createColorFilter(m_type, m_values.data()));
-    return SkColorFilterImageFilter::Create(filter, input);
+    return adoptRef(SkColorFilterImageFilter::Create(filter, input.get()));
 }
 
 static TextStream& operator<<(TextStream& ts, const ColorMatrixType& type)
@@ -323,7 +323,7 @@ TextStream& FEColorMatrix::externalRepresentation(TextStream& ts, int indent) co
         while (ptr < end) {
             ts << *ptr;
             ++ptr;
-            if (ptr < end) 
+            if (ptr < end)
                 ts << " ";
         }
         ts << "\"";

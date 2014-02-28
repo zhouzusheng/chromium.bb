@@ -22,7 +22,7 @@
 
 #if ENABLE(SVG_FONTS)
 #include "core/svg/SVGElement.h"
-#include <wtf/Vector.h>
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -34,6 +34,8 @@ public:
 
 private:
     SVGAltGlyphDefElement(const QualifiedName&, Document*);
+
+    virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE { return false; }
 };
 
 }

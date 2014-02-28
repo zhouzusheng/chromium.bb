@@ -26,13 +26,13 @@
 #include "config.h"
 #include "core/dom/NodeRenderingContext.h"
 
-#include "SVGNames.h"
+#include "RuntimeEnabledFeatures.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/ContainerNode.h"
-#include "core/dom/FullscreenController.h"
+#include "core/dom/FullscreenElementStack.h"
 #include "core/dom/Node.h"
 #include "core/dom/Text.h"
-#include "core/html/shadow/HTMLShadowElement.h"
+#include "core/dom/shadow/InsertionPoint.h"
 #include "core/rendering/FlowThreadController.h"
 #include "core/rendering/RenderFullScreen.h"
 #include "core/rendering/RenderNamedFlowThread.h"
@@ -42,31 +42,13 @@
 
 namespace WebCore {
 
-NodeRenderingContext::NodeRenderingContext(Node* node)
-    : m_node(node)
-    , m_parentFlowRenderer(0)
-{
-    m_renderingParent = NodeRenderingTraversal::parent(node, &m_parentDetails);
-}
-
 NodeRenderingContext::NodeRenderingContext(Node* node, RenderStyle* style)
     : m_node(node)
     , m_renderingParent(0)
     , m_style(style)
     , m_parentFlowRenderer(0)
 {
-}
-
-NodeRenderingContext::NodeRenderingContext(Node* node, const Node::AttachContext& context)
-: m_node(node)
-, m_style(context.resolvedStyle)
-, m_parentFlowRenderer(0)
-{
     m_renderingParent = NodeRenderingTraversal::parent(node, &m_parentDetails);
-}
-
-NodeRenderingContext::~NodeRenderingContext()
-{
 }
 
 static bool isRendererReparented(const RenderObject* renderer)
@@ -184,48 +166,42 @@ bool NodeRenderingContext::shouldCreateRenderer() const
     return true;
 }
 
+// Check the specific case of elements that are children of regions but are flowed into a flow thread themselves.
+bool NodeRenderingContext::elementInsideRegionNeedsRenderer()
+{
+    Element* element = toElement(m_node);
+    bool elementInsideRegionNeedsRenderer = false;
+    RenderObject* parentRenderer = this->parentRenderer();
+    if ((parentRenderer && !parentRenderer->canHaveChildren() && parentRenderer->isRenderRegion())
+        || (!parentRenderer && element->parentElement() && element->parentElement()->isInsideRegion())) {
+
+        if (!m_style)
+            m_style = element->styleForRenderer();
+
+        elementInsideRegionNeedsRenderer = element->shouldMoveToFlowThread(m_style.get());
+
+        // Children of this element will only be allowed to be flowed into other flow-threads if display is NOT none.
+        if (element->rendererIsNeeded(*this))
+            element->setIsInsideRegion(true);
+    }
+
+    return elementInsideRegionNeedsRenderer;
+}
+
 void NodeRenderingContext::moveToFlowThreadIfNeeded()
 {
-    ASSERT(m_node->isElementNode());
-    ASSERT(m_style);
     if (!RuntimeEnabledFeatures::cssRegionsEnabled())
         return;
 
-    if (m_style->flowThread().isEmpty())
+    Element* element = toElement(m_node);
+
+    if (!element->shouldMoveToFlowThread(m_style.get()))
         return;
 
-    // As per http://dev.w3.org/csswg/css3-regions/#flow-into, pseudo-elements such as ::first-line, ::first-letter, ::before or ::after
-    // cannot be directly collected into a named flow.
-    if (m_node->isPseudoElement())
-        return;
-
-    // FIXME: Do not collect elements if they are in shadow tree.
-    if (m_node->isInShadowTree())
-        return;
-
-    if (m_node->isElementNode() && FullscreenController::isActiveFullScreenElement(toElement(m_node)))
-        return;
-
-    // Allow only svg root elements to be directly collected by a render flow thread.
-    if (m_node->isSVGElement()
-        && (!(m_node->hasTagName(SVGNames::svgTag) && m_node->parentNode() && !m_node->parentNode()->isSVGElement())))
-        return;
-
-    m_flowThread = m_style->flowThread();
     ASSERT(m_node->document()->renderView());
     FlowThreadController* flowThreadController = m_node->document()->renderView()->flowThreadController();
-    m_parentFlowRenderer = flowThreadController->ensureRenderFlowThreadWithName(m_flowThread);
+    m_parentFlowRenderer = flowThreadController->ensureRenderFlowThreadWithName(m_style->flowThread());
     flowThreadController->registerNamedFlowContentNode(m_node, m_parentFlowRenderer);
-}
-
-bool NodeRenderingContext::isOnEncapsulationBoundary() const
-{
-    return isOnUpperEncapsulationBoundary() || isLowerEncapsulationBoundary(m_parentDetails.insertionPoint()) || isLowerEncapsulationBoundary(m_node->parentNode());
-}
-
-bool NodeRenderingContext::isOnUpperEncapsulationBoundary() const
-{
-    return m_node->parentNode() && m_node->parentNode()->isShadowRoot();
 }
 
 void NodeRenderingContext::createRendererForElementIfNeeded()
@@ -234,8 +210,11 @@ void NodeRenderingContext::createRendererForElementIfNeeded()
 
     Element* element = toElement(m_node);
 
-    if (!shouldCreateRenderer())
+    element->setIsInsideRegion(false);
+
+    if (!shouldCreateRenderer() && !elementInsideRegionNeedsRenderer())
         return;
+
     if (!m_style)
         m_style = element->styleForRenderer();
     ASSERT(m_style);
@@ -245,13 +224,11 @@ void NodeRenderingContext::createRendererForElementIfNeeded()
     if (!element->rendererIsNeeded(*this))
         return;
 
-    RenderObject* parentRenderer = this->parentRenderer();
-    RenderObject* nextRenderer = this->nextRenderer();
-
-    Document* document = element->document();
     RenderObject* newRenderer = element->createRenderer(m_style.get());
     if (!newRenderer)
         return;
+
+    RenderObject* parentRenderer = this->parentRenderer();
 
     if (!parentRenderer->isChildAllowed(newRenderer, m_style.get())) {
         newRenderer->destroy();
@@ -262,11 +239,12 @@ void NodeRenderingContext::createRendererForElementIfNeeded()
     // for the first time. Otherwise code using inRenderFlowThread() in the styleWillChange and styleDidChange will fail.
     newRenderer->setFlowThreadState(parentRenderer->flowThreadState());
 
+    RenderObject* nextRenderer = this->nextRenderer();
     element->setRenderer(newRenderer);
     newRenderer->setAnimatableStyle(m_style.release()); // setAnimatableStyle() can depend on renderer() already being set.
 
-    if (FullscreenController::isActiveFullScreenElement(element)) {
-        newRenderer = RenderFullScreen::wrapRenderer(newRenderer, parentRenderer, document);
+    if (FullscreenElementStack::isActiveFullScreenElement(element)) {
+        newRenderer = RenderFullScreen::wrapRenderer(newRenderer, parentRenderer, element->document());
         if (!newRenderer)
             return;
     }
@@ -285,19 +263,16 @@ void NodeRenderingContext::createRendererForTextIfNeeded()
         return;
 
     RenderObject* parentRenderer = this->parentRenderer();
-    ASSERT(parentRenderer);
-    Document* document = textNode->document();
 
-    if (resetStyleInheritance())
-        m_style = document->styleResolver()->defaultStyleForElement();
+    if (m_parentDetails.resetStyleInheritance())
+        m_style = textNode->document()->styleResolver()->defaultStyleForElement();
     else
         m_style = parentRenderer->style();
 
     if (!textNode->textRendererIsNeeded(*this))
         return;
+
     RenderText* newRenderer = textNode->createTextRenderer(m_style.get());
-    if (!newRenderer)
-        return;
     if (!parentRenderer->isChildAllowed(newRenderer, m_style.get())) {
         newRenderer->destroy();
         return;

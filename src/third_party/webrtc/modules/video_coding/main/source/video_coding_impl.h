@@ -11,7 +11,7 @@
 #ifndef WEBRTC_MODULES_VIDEO_CODING_VIDEO_CODING_IMPL_H_
 #define WEBRTC_MODULES_VIDEO_CODING_VIDEO_CODING_IMPL_H_
 
-#include "modules/video_coding/main/interface/video_coding.h"
+#include "webrtc/modules/video_coding/main/interface/video_coding.h"
 
 #include <vector>
 
@@ -113,7 +113,7 @@ public:
         uint8_t lossRate,
         uint32_t rtt);
 
-    // Set recieve channel parameters
+    // Set receive channel parameters.
     virtual int32_t SetReceiveChannelParameters(uint32_t rtt);
 
     // Register a transport callback which will be called to deliver the
@@ -262,11 +262,15 @@ public:
 
     // Set the receiver robustness mode.
     virtual int SetReceiverRobustnessMode(ReceiverRobustness robustnessMode,
-                                          DecodeErrors errorMode);
+                                          VCMDecodeErrorMode errorMode);
 
     virtual void SetNackSettings(size_t max_nack_list_size,
                                  int max_packet_age_to_nack,
                                  int max_incomplete_time_ms);
+
+    // Sets jitter buffer decode error mode.
+    void SetDecodeErrorMode(VCMDecodeErrorMode decode_error_mode);
+
 
     // Set the video delay for the receiver (default = 0).
     virtual int SetMinReceiverDelay(int desired_delay_ms);
@@ -327,5 +331,5 @@ private:
     bool                                owns_event_factory_;
     bool                                frame_dropper_enabled_;
 };
-} // namespace webrtc
+}  // namespace webrtc
 #endif // WEBRTC_MODULES_VIDEO_CODING_VIDEO_CODING_IMPL_H_

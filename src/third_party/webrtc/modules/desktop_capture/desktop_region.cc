@@ -10,8 +10,9 @@
 
 #include "webrtc/modules/desktop_capture/desktop_region.h"
 
+#include <assert.h>
+
 #include <algorithm>
-#include <cassert>
 
 namespace webrtc {
 
@@ -22,6 +23,8 @@ DesktopRegion::RowSpan::RowSpan(int32_t left, int32_t right)
 DesktopRegion::Row::Row(int32_t top, int32_t bottom)
     : top(top), bottom(bottom) {
 }
+
+DesktopRegion::Row::~Row() {}
 
 DesktopRegion::DesktopRegion() {}
 

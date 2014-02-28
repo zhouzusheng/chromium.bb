@@ -10,7 +10,7 @@
 
 #include "webrtc/modules/rtp_rtcp/source/rtp_rtcp_impl.h"
 
-#include <cassert>
+#include <assert.h>
 #include <string.h>
 
 #include "webrtc/common_types.h"
@@ -286,7 +286,7 @@ int32_t ModuleRtpRtcpImpl::Process() {
             "Timeout: No increase in RTCP RR extended highest sequence number.";
       }
 
-      if (remote_bitrate_ && TMMBR()) {
+      if (remote_bitrate_ && rtcp_sender_.TMMBR()) {
         unsigned int target_bitrate = 0;
         std::vector<unsigned int> ssrcs;
         if (remote_bitrate_->LatestEstimate(&ssrcs, &target_bitrate)) {

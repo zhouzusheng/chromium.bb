@@ -27,7 +27,7 @@
         'chromium_code': 1,
       },
       'dependencies': [
-        'content_app',
+        'content_app_both',
         'content_browser',
         'content_common',
         'content_gpu',
@@ -46,15 +46,13 @@
         '../net/net.gyp:net',
         '../net/net.gyp:net_resources',
         '../skia/skia.gyp:skia',
-        '../third_party/WebKit/public/blink.gyp:blink',
-        '../third_party/WebKit/Source/WebKit/chromium/WebKit.gyp:webkit_test_support',
-        '../third_party/WebKit/Tools/DumpRenderTree/DumpRenderTree.gyp/DumpRenderTree.gyp:TestRunner',
+        '../third_party/WebKit/public/blink_test_runner.gyp:blink_test_runner',
         '../ui/gl/gl.gyp:gl',
         '../ui/ui.gyp:ui',
         '../url/url.gyp:url_lib',
         '../v8/tools/gyp/v8.gyp:v8',
-        '../webkit/support/webkit_support.gyp:webkit_resources',
         '../webkit/support/webkit_support.gyp:webkit_support',
+        '../webkit/webkit_resources.gyp:webkit_resources',
       ],
       'include_dirs': [
         '..',
@@ -64,8 +62,17 @@
         'shell/android/shell_jni_registrar.h',
         'shell/android/shell_manager.cc',
         'shell/android/shell_manager.h',
+        'shell/app/paths_mac.h',
+        'shell/app/paths_mac.mm',
         'shell/app/shell_main_delegate.cc',
         'shell/app/shell_main_delegate.h',
+        'shell/app/shell_main_delegate_mac.h',
+        'shell/app/shell_main_delegate_mac.mm',
+        'shell/app/webkit_test_platform_support.h',
+        'shell/app/webkit_test_platform_support_android.cc',
+        'shell/app/webkit_test_platform_support_linux.cc',
+        'shell/app/webkit_test_platform_support_mac.mm',
+        'shell/app/webkit_test_platform_support_win.cc',
         'shell/common/shell_content_client.cc',
         'shell/common/shell_content_client.h',
         'shell/common/shell_messages.cc',
@@ -78,18 +85,18 @@
         'shell/common/webkit_test_helpers.h',
         'shell/geolocation/shell_access_token_store.cc',
         'shell/geolocation/shell_access_token_store.h',
-        'shell/minimal_ash.cc',
-        'shell/minimal_ash.h',
+        'shell/minimal_shell.cc',
+        'shell/minimal_shell.h',
         'shell/notify_done_forwarder.cc',
         'shell/notify_done_forwarder.h',
-        'shell/paths_mac.h',
-        'shell/paths_mac.mm',
+        'shell/renderer/gc_extension.cc',
+        'shell/renderer/gc_extension.h',
         'shell/renderer/shell_content_renderer_client.cc',
         'shell/renderer/shell_content_renderer_client.h',
-        'shell/renderer/shell_media_stream_client.cc',
-        'shell/renderer/shell_media_stream_client.h',
         'shell/renderer/shell_render_process_observer.cc',
         'shell/renderer/shell_render_process_observer.h',
+        'shell/renderer/shell_render_view_observer.cc',
+        'shell/renderer/shell_render_view_observer.h',
         'shell/renderer/webkit_test_runner.cc',
         'shell/renderer/webkit_test_runner.h',
         'shell/shell.cc',
@@ -130,6 +137,8 @@
         'shell/shell_login_dialog.h',
         'shell/shell_message_filter.cc',
         'shell/shell_message_filter.h',
+        'shell/shell_net_log.cc',
+        'shell/shell_net_log.h',
         'shell/shell_network_delegate.cc',
         'shell/shell_network_delegate.h',
         'shell/shell_plugin_service_filter.cc',
@@ -148,11 +157,6 @@
         'shell/shell_web_contents_view_delegate.h',
         'shell/webkit_test_controller.cc',
         'shell/webkit_test_controller.h',
-        'shell/webkit_test_platform_support.h',
-        'shell/webkit_test_platform_support_android.cc',
-        'shell/webkit_test_platform_support_linux.cc',
-        'shell/webkit_test_platform_support_mac.mm',
-        'shell/webkit_test_platform_support_win.cc',
       ],
       'msvs_settings': {
         'VCLinkerTool': {
@@ -170,7 +174,7 @@
             '<(SHARED_INTERMEDIATE_DIR)/webkit',
           ],
           'dependencies': [
-            '<(DEPTH)/webkit/support/webkit_support.gyp:webkit_strings',
+            '<(DEPTH)/webkit/webkit_resources.gyp:webkit_strings',
           ],
           'configurations': {
             'Debug_Base': {
@@ -206,16 +210,6 @@
             '../base/allocator/allocator.gyp:allocator',
           ],
         }],
-        ['use_aura==1', {
-          'dependencies': [
-            '../ui/base/strings/ui_strings.gyp:ui_strings',
-            '../ui/ui.gyp:ui_resources',
-          ],
-          'sources/': [
-            ['exclude', 'shell/shell_gtk.cc'],
-            ['exclude', 'shell/shell_win.cc'],
-          ],
-        }],  # use_aura==1
         ['chromeos==1', {
           'dependencies': [
             '../chromeos/chromeos.gyp:chromeos',
@@ -286,8 +280,15 @@
         '<(DEPTH)/net/net.gyp:net_resources',
         '<(DEPTH)/ui/base/strings/ui_strings.gyp:ui_strings',
         '<(DEPTH)/ui/ui.gyp:ui_resources',
-        '<(DEPTH)/webkit/support/webkit_support.gyp:webkit_resources',
-        '<(DEPTH)/webkit/support/webkit_support.gyp:webkit_strings',
+        '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
+        '<(DEPTH)/webkit/webkit_resources.gyp:webkit_strings',
+      ],
+      'conditions': [
+        ['OS!="android" and OS!="ios"', {
+          'dependencies': [
+            'browser/tracing/tracing_resources.gyp:tracing_resources',
+          ],
+        }],
       ],
       'variables': {
         'repack_path': '<(DEPTH)/tools/grit/grit/format/repack.py',
@@ -298,6 +299,7 @@
           'variables': {
             'pak_inputs': [
               '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/content/browser/tracing/tracing_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/content/shell_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/app_locale_settings/app_locale_settings_en-US.pak',
@@ -305,7 +307,7 @@
               '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/webui_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/ui_strings/ui_strings_en-US.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/devtools_resources.pak',
-              '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources_100_percent.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_strings_en-US.pak',
             ],
@@ -342,6 +344,7 @@
         'content_shell_lib',
         'content_shell_pak',
         '../third_party/mesa/mesa.gyp:osmesa',
+        '../tools/imagediff/image_diff.gyp:image_diff',
       ],
       'include_dirs': [
         '..',
@@ -368,7 +371,9 @@
           'SubSystem': '2',  # Set /SUBSYSTEM:WINDOWS
         },
         'VCManifestTool': {
-          'AdditionalManifestFiles': 'shell/app/shell.exe.manifest',
+          'AdditionalManifestFiles': [
+            'shell/app/shell.exe.manifest',
+          ],
         },
       },
       'conditions': [
@@ -470,6 +475,16 @@
             },
           ],
         }],  # OS=="mac"
+        ['OS=="android"', {
+          'dependencies!': [
+            '../tools/imagediff/image_diff.gyp:image_diff',
+          ],
+        }],  # OS=="android"
+        ['OS=="android" and android_webview_build==0', {
+          'dependencies': [
+            '../tools/imagediff/image_diff.gyp:image_diff#host',
+          ],
+        }],  # OS=="android" and android_webview_build==0
       ],
     },
     {
@@ -500,8 +515,8 @@
             '..',
           ],
           'sources': [
-            'shell/shell_content_main.cc',
-            'shell/shell_content_main.h',
+            'shell/app/shell_content_main.cc',
+            'shell/app/shell_content_main.h',
           ],
           'copies': [
             {
@@ -705,6 +720,13 @@
             'additional_input_paths': ['<(PRODUCT_DIR)/content_shell/assets/content_shell.pak'],
             'asset_location': '<(ant_build_out)/content_shell/assets',
           },
+          'conditions': [
+            ['android_webview_build==0', {
+              'dependencies': [
+                '../tools/imagediff/image_diff.gyp:image_diff#host',
+              ],
+            }],
+          ],
           'includes': [ '../build/java_apk.gypi' ],
         },
       ],

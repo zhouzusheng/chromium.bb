@@ -13,8 +13,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "cc/debug/rendering_stats.h"
 #include "content/common/browser_rendering_stats.h"
 #include "content/common/content_export.h"
@@ -27,8 +27,10 @@
 #include "third_party/WebKit/public/web/WebPopupType.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "third_party/WebKit/public/web/WebTextInputInfo.h"
+#include "third_party/WebKit/public/web/WebWidget.h"
 #include "third_party/WebKit/public/web/WebWidgetClient.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/base/range/range.h"
 #include "ui/gfx/native_widget_types.h"
@@ -62,20 +64,12 @@ namespace ui {
 class Range;
 }
 
-namespace webkit {
-namespace npapi {
-struct WebPluginGeometry;
-}  // namespace npapi
-
-namespace ppapi {
-class PluginInstance;
-}  // namespace ppapi
-}  // namespace webkit
-
 namespace content {
-struct GpuRenderingStats;
+class PepperPluginInstanceImpl;
 class RenderWidgetCompositor;
 class RenderWidgetTest;
+struct GpuRenderingStats;
+struct WebPluginGeometry;
 
 // RenderWidget provides a communication bridge between a WebWidget and
 // a RenderWidgetHost, the latter of which lives in a different process.
@@ -160,7 +154,7 @@ class CONTENT_EXPORT RenderWidget
 
   // Called when a plugin is moved.  These events are queued up and sent with
   // the next paint or scroll message to the host.
-  void SchedulePluginMove(const webkit::npapi::WebPluginGeometry& move);
+  void SchedulePluginMove(const WebPluginGeometry& move);
 
   // Called when a plugin window has been destroyed, to make sure the currently
   // pending moves don't try to reference it.
@@ -180,7 +174,7 @@ class CONTENT_EXPORT RenderWidget
 
   RenderWidgetCompositor* compositor() const;
 
-  virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface();
+  virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(bool fallback);
 
   // Callback for use with BeginSmoothScroll.
   typedef base::Callback<void()> SmoothScrollCompletionCallback;
@@ -204,11 +198,6 @@ class CONTENT_EXPORT RenderWidget
   float filtered_time_per_frame() const {
     return filtered_time_per_frame_;
   }
-
-  enum ShowIme {
-    DO_NOT_SHOW_IME,
-    SHOW_IME_IF_NEEDED
-  };
 
   // Handle common setup/teardown for handling IME events.
   void StartHandlingImeEvent();
@@ -316,8 +305,9 @@ class CONTENT_EXPORT RenderWidget
       const std::vector<WebKit::WebCompositionUnderline>& underlines,
       int selection_start,
       int selection_end);
-  virtual void OnImeConfirmComposition(
-      const string16& text, const ui::Range& replacement_range);
+  virtual void OnImeConfirmComposition(const string16& text,
+                                       const ui::Range& replacement_range,
+                                       bool keep_selection);
   void OnPaintAtSize(const TransportDIB::Handle& dib_id,
                      int tag,
                      const gfx::Size& page_size,
@@ -331,7 +321,19 @@ class CONTENT_EXPORT RenderWidget
 #if defined(OS_ANDROID)
   void OnImeBatchStateChanged(bool is_begin);
   void OnShowImeIfNeeded();
+
+  // Whenever an IME event that needs an acknowledgement is sent to the browser,
+  // the number of outstanding IME events that needs acknowledgement should be
+  // incremented. All IME events will be dropped until we receive an ack from
+  // the browser.
+  void IncrementOutstandingImeEventAcks();
+
+  // Called by the browser process for every required IME acknowledgement.
+  void OnImeEventAck();
 #endif
+  // Returns whether we currently should handle an IME event.
+  bool ShouldHandleImeEvent();
+
   void OnSnapshot(const gfx::Rect& src_subrect);
   void OnSetBrowserRenderingStats(const BrowserRenderingStats& stats);
 
@@ -381,7 +383,7 @@ class CONTENT_EXPORT RenderWidget
   //
   // A return value of null means optimized painting can not be used and we
   // should continue with the normal painting code path.
-  virtual webkit::ppapi::PluginInstance* GetBitmapForOptimizedPluginPaint(
+  virtual PepperPluginInstanceImpl* GetBitmapForOptimizedPluginPaint(
       const gfx::Rect& paint_bounds,
       TransportDIB** dib,
       gfx::Rect* location,
@@ -411,19 +413,18 @@ class CONTENT_EXPORT RenderWidget
   void UpdateTextInputType();
 
 #if defined(OS_ANDROID)
-  // |show_ime_if_needed| should be SHOW_IME_IF_NEEDED iff the update may cause
-  // the ime to be displayed, e.g. after a tap on an input field on mobile.
-  void UpdateTextInputState(ShowIme show_ime);
+  // |show_ime_if_needed| should be true iff the update may cause the ime to be
+  // displayed, e.g. after a tap on an input field on mobile.
+  // |send_ime_ack| should be true iff the browser side is required to
+  // acknowledge the change before the renderer handles any more IME events.
+  // This is when the event did not originate from the browser side IME, such as
+  // changes from JavaScript or autofill.
+  void UpdateTextInputState(bool show_ime_if_needed, bool send_ime_ack);
 #endif
 
   // Checks if the selection bounds have been changed. If they are changed,
   // the new value will be sent to the browser process.
   virtual void UpdateSelectionBounds();
-
-  // Checks if the composition range or composition character bounds have been
-  // changed. If they are changed, the new value will be sent to the browser
-  // process.
-  virtual void UpdateCompositionInfo(bool should_update_range);
 
   // Override point to obtain that the current input method state and caret
   // position.
@@ -431,6 +432,12 @@ class CONTENT_EXPORT RenderWidget
   virtual void GetSelectionBounds(gfx::Rect* start, gfx::Rect* end);
   virtual ui::TextInputType WebKitToUiTextInputType(
       WebKit::WebTextInputType type);
+
+#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+  // Checks if the composition range or composition character bounds have been
+  // changed. If they are changed, the new value will be sent to the browser
+  // process.
+  void UpdateCompositionInfo(bool should_update_range);
 
   // Override point to obtain that the current composition character bounds.
   // In the case of surrogate pairs, the character is treated as two characters:
@@ -448,6 +455,7 @@ class CONTENT_EXPORT RenderWidget
   bool ShouldUpdateCompositionInfo(
       const ui::Range& range,
       const std::vector<gfx::Rect>& bounds);
+#endif
 
   // Override point to obtain that the current input method state about
   // composition text.
@@ -635,6 +643,9 @@ class CONTENT_EXPORT RenderWidget
   // Stores the current type of composition text rendering of |webwidget_|.
   bool can_compose_inline_;
 
+  // Stores the current text input mode of |webwidget_|.
+  ui::TextInputMode text_input_mode_;
+
   // Stores the current selection bounds.
   gfx::Rect selection_focus_rect_;
   gfx::Rect selection_anchor_rect_;
@@ -649,7 +660,7 @@ class CONTENT_EXPORT RenderWidget
   WebKit::WebPopupType popup_type_;
 
   // Holds all the needed plugin window moves for a scroll.
-  typedef std::vector<webkit::npapi::WebPluginGeometry> WebPluginGeometryVector;
+  typedef std::vector<WebPluginGeometry> WebPluginGeometryVector;
   WebPluginGeometryVector plugin_window_moves_;
 
   // A custom background for the widget.
@@ -714,6 +725,15 @@ class CONTENT_EXPORT RenderWidget
   // The latency information for any current non-accelerated-compositing
   // frame.
   ui::LatencyInfo latency_info_;
+
+  uint32 next_output_surface_id_;
+
+#if defined(OS_ANDROID)
+  // A counter for number of outstanding messages from the renderer to the
+  // browser regarding IME-type events that have not been acknowledged by the
+  // browser. If this value is not 0 IME events will be dropped.
+  int outstanding_ime_acks_;
+#endif
 
   base::WeakPtrFactory<RenderWidget> weak_ptr_factory_;
 

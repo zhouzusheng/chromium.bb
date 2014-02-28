@@ -19,14 +19,14 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
 #include "core/html/PluginDocument.h"
 
 #include "HTMLNames.h"
-#include "core/dom/ExceptionCodePlaceholder.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/RawDataDocumentParser.h"
 #include "core/html/HTMLEmbedElement.h"
 #include "core/html/HTMLHtmlElement.h"
@@ -35,10 +35,11 @@
 #include "core/loader/FrameLoaderClient.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
+#include "core/plugins/PluginView.h"
 #include "core/rendering/RenderEmbeddedObject.h"
 
 namespace WebCore {
-    
+
 using namespace HTMLNames;
 
 // FIXME: Share more code with MediaDocumentParser.
@@ -58,7 +59,11 @@ private:
 
     virtual size_t appendBytes(const char*, size_t) OVERRIDE;
 
+    virtual void finish() OVERRIDE;
+
     void createDocumentStructure();
+
+    PluginView* pluginView() const;
 
     HTMLEmbedElement* m_embedElement;
 };
@@ -67,7 +72,7 @@ void PluginDocumentParser::createDocumentStructure()
 {
     RefPtr<Element> rootElement = document()->createElement(htmlTag, false);
     document()->appendChild(rootElement, IGNORE_EXCEPTION);
-    static_cast<HTMLHtmlElement*>(rootElement.get())->insertedByParser();
+    toHTMLHtmlElement(rootElement.get())->insertedByParser();
 
     if (document()->frame() && document()->frame()->loader())
         document()->frame()->loader()->dispatchDocumentElementAvailable();
@@ -78,16 +83,16 @@ void PluginDocumentParser::createDocumentStructure()
     body->setAttribute(styleAttr, "background-color: rgb(38,38,38)");
 
     rootElement->appendChild(body, IGNORE_EXCEPTION);
-        
+
     RefPtr<Element> embedElement = document()->createElement(embedTag, false);
-        
+
     m_embedElement = static_cast<HTMLEmbedElement*>(embedElement.get());
     m_embedElement->setAttribute(widthAttr, "100%");
     m_embedElement->setAttribute(heightAttr, "100%");
-    
+
     m_embedElement->setAttribute(nameAttr, "plugin");
     m_embedElement->setAttribute(srcAttr, document()->url().string());
-    
+
     DocumentLoader* loader = document()->loader();
     ASSERT(loader);
     if (loader)
@@ -96,45 +101,63 @@ void PluginDocumentParser::createDocumentStructure()
     toPluginDocument(document())->setPluginNode(m_embedElement);
 
     body->appendChild(embedElement, IGNORE_EXCEPTION);
-}
-
-size_t PluginDocumentParser::appendBytes(const char*, size_t)
-{
-    if (m_embedElement)
-        return 0;
-
-    createDocumentStructure();
 
     Frame* frame = document()->frame();
     if (!frame)
-        return 0;
+        return;
     Settings* settings = frame->settings();
-    if (!settings || !frame->loader()->subframeLoader()->allowPlugins(NotAboutToInstantiatePlugin))
-        return 0;
+    if (!settings || !frame->loader()->allowPlugins(NotAboutToInstantiatePlugin))
+        return;
 
     document()->updateLayout();
 
     // Below we assume that renderer->widget() to have been created by
-    // document()->updateLayout(). However, in some cases, updateLayout() will 
+    // document()->updateLayout(). However, in some cases, updateLayout() will
     // recurse too many times and delay its post-layout tasks (such as creating
     // the widget). Here we kick off the pending post-layout tasks so that we
     // can synchronously redirect data to the plugin.
     frame->view()->flushAnyPendingPostLayoutTasks();
 
-    if (RenderPart* renderer = m_embedElement->renderPart()) {
-        if (Widget* widget = renderer->widget()) {
-            // In a plugin document, the main resource is the plugin. If we have a null widget, that means
-            // the loading of the plugin was cancelled, which gives us a null mainResourceLoader(), so we
-            // need to have this call in a null check of the widget or of mainResourceLoader().
-            frame->loader()->client()->redirectDataToPlugin(widget);
-        }
-    }
+    if (PluginView* view = pluginView())
+        view->didReceiveResponse(document()->loader()->response());
+}
+
+size_t PluginDocumentParser::appendBytes(const char* data, size_t length)
+{
+    if (!m_embedElement)
+        createDocumentStructure();
+
+    if (!length)
+        return 0;
+    if (PluginView* view = pluginView())
+        view->didReceiveData(data, length);
 
     return 0;
 }
 
-PluginDocument::PluginDocument(Frame* frame, const KURL& url)
-    : HTMLDocument(frame, url, PluginDocumentClass)
+void PluginDocumentParser::finish()
+{
+    if (PluginView* view = pluginView()) {
+        const ResourceError& error = document()->loader()->mainDocumentError();
+        if (error.isNull())
+            view->didFinishLoading();
+        else
+            view->didFailLoading(error);
+    }
+    RawDataDocumentParser::finish();
+}
+
+PluginView* PluginDocumentParser::pluginView() const
+{
+    if (Widget* widget = static_cast<PluginDocument*>(document())->pluginWidget()) {
+        ASSERT_WITH_SECURITY_IMPLICATION(widget->isPluginContainer());
+        return static_cast<PluginView*>(widget);
+    }
+    return 0;
+}
+
+PluginDocument::PluginDocument(const DocumentInit& initializer)
+    : HTMLDocument(initializer, PluginDocumentClass)
     , m_shouldLoadPluginManually(true)
 {
     setCompatibilityMode(QuirksMode);
@@ -164,8 +187,6 @@ void PluginDocument::detach(const AttachContext& context)
 {
     // Release the plugin node so that we don't have a circular reference.
     m_pluginNode = 0;
-    if (FrameLoader* loader = frame()->loader())
-        loader->client()->redirectDataToPlugin(0);
     HTMLDocument::detach(context);
 }
 
@@ -177,7 +198,7 @@ void PluginDocument::cancelManualPluginLoad()
         return;
 
     DocumentLoader* documentLoader = frame()->loader()->activeDocumentLoader();
-    documentLoader->cancelMainResourceLoad(frame()->loader()->cancelledError(documentLoader->request()));
+    documentLoader->cancelMainResourceLoad(ResourceError::cancelledError(documentLoader->request().url()));
     setShouldLoadPluginManually(false);
 }
 

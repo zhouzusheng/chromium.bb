@@ -4,13 +4,13 @@
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
- * 
+ *
  * 1. Redistributions of source code must retain the above copyright
  *    notice, this list of conditions and the following disclaimer.
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
@@ -53,7 +53,7 @@ static void sortBlock(unsigned from, unsigned to, Vector<Vector<Node*> >& parent
         if (minDepth > depth)
             minDepth = depth;
     }
-    
+
     // Find the common ancestor.
     unsigned commonAncestorDepth = minDepth;
     Node* commonAncestor;
@@ -71,7 +71,7 @@ static void sortBlock(unsigned from, unsigned to, Vector<Vector<Node*> >& parent
         }
         if (allEqual)
             break;
-        
+
         --commonAncestorDepth;
     }
 
@@ -86,7 +86,7 @@ static void sortBlock(unsigned from, unsigned to, Vector<Vector<Node*> >& parent
                 return;
             }
     }
-    
+
     if (mayContainAttributeNodes && commonAncestor->isElementNode()) {
         // The attribute nodes and namespace nodes of an element occur before the children of the element.
         // The namespace nodes are defined to occur before the attribute nodes.
@@ -96,7 +96,7 @@ static void sortBlock(unsigned from, unsigned to, Vector<Vector<Node*> >& parent
         // FIXME: namespace nodes are not implemented.
         for (unsigned i = sortedEnd; i < to; ++i) {
             Node* n = parentMatrix[i][0];
-            if (n->isAttributeNode() && static_cast<Attr*>(n)->ownerElement() == commonAncestor)
+            if (n->isAttributeNode() && toAttr(n)->ownerElement() == commonAncestor)
                 parentMatrix[i].swap(parentMatrix[sortedEnd++]);
         }
         if (sortedEnd != from) {
@@ -152,14 +152,14 @@ void NodeSet::sort() const
     }
 
     bool containsAttributeNodes = false;
-    
+
     Vector<Vector<Node*> > parentMatrix(nodeCount);
     for (unsigned i = 0; i < nodeCount; ++i) {
         Vector<Node*>& parentsVector = parentMatrix[i];
         Node* n = m_nodes[i].get();
         parentsVector.append(n);
         if (n->isAttributeNode()) {
-            n = static_cast<Attr*>(n)->ownerElement();
+            n = toAttr(n)->ownerElement();
             parentsVector.append(n);
             containsAttributeNodes = true;
         }
@@ -167,20 +167,20 @@ void NodeSet::sort() const
             parentsVector.append(n);
     }
     sortBlock(0, nodeCount, parentMatrix, containsAttributeNodes);
-    
+
     // It is not possible to just assign the result to m_nodes, because some nodes may get dereferenced and destroyed.
     Vector<RefPtr<Node> > sortedNodes;
     sortedNodes.reserveInitialCapacity(nodeCount);
     for (unsigned i = 0; i < nodeCount; ++i)
         sortedNodes.append(parentMatrix[i][0]);
-    
+
     const_cast<Vector<RefPtr<Node> >&>(m_nodes).swap(sortedNodes);
 }
 
 static Node* findRootNode(Node* node)
 {
     if (node->isAttributeNode())
-        node = static_cast<Attr*>(node)->ownerElement();
+        node = toAttr(node)->ownerElement();
     if (node->inDocument())
         node = node->document();
     else {

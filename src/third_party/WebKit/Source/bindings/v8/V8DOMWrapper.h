@@ -1,10 +1,10 @@
 /*
  * Copyright (C) 2009 Google Inc. All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  *     * Redistributions of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
  *     * Redistributions in binary form must reproduce the above
@@ -14,7 +14,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -49,7 +49,7 @@ struct WrapperTypeInfo;
 
         static v8::Local<v8::Object> createWrapper(v8::Handle<v8::Object> creationContext, WrapperTypeInfo*, void*, v8::Isolate*);
 
-        template<typename T>
+        template<typename V8T, typename T>
         static inline v8::Handle<v8::Object> associateObjectWithWrapper(PassRefPtr<T>, WrapperTypeInfo*, v8::Handle<v8::Object>, v8::Isolate*, WrapperConfiguration::Lifetime);
         static inline void setNativeInfo(v8::Handle<v8::Object>, WrapperTypeInfo*, void*);
         static inline void clearNativeInfo(v8::Handle<v8::Object>, WrapperTypeInfo*);
@@ -75,13 +75,13 @@ struct WrapperTypeInfo;
         wrapper->SetAlignedPointerInInternalField(v8DOMWrapperObjectIndex, 0);
     }
 
-    template<typename T>
+    template<typename V8T, typename T>
     inline v8::Handle<v8::Object> V8DOMWrapper::associateObjectWithWrapper(PassRefPtr<T> object, WrapperTypeInfo* type, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate, WrapperConfiguration::Lifetime lifetime)
     {
-        setNativeInfo(wrapper, type, object.get());
+        setNativeInfo(wrapper, type, V8T::toInternalPointer(object.get()));
         ASSERT(maybeDOMWrapper(wrapper));
         WrapperConfiguration configuration = buildWrapperConfiguration(object.get(), lifetime);
-        DOMDataStore::setWrapper(object.leakRef(), wrapper, isolate, configuration);
+        DOMDataStore::setWrapper<V8T>(object.leakRef(), wrapper, isolate, configuration);
         return wrapper;
     }
 

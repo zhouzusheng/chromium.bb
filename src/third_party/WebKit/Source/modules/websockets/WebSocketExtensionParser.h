@@ -49,6 +49,20 @@ public:
     bool parseExtension(String& extensionToken, HashMap<String, String>& parameters);
 
 private:
+    class ParserStateBackup {
+    public:
+        ParserStateBackup(WebSocketExtensionParser* parser)
+            : m_parser(parser)
+            , m_current(parser->m_current)
+            , m_isDisposed(false) { }
+        ~ParserStateBackup();
+
+        void dispose() { m_isDisposed = true; }
+    private:
+        WebSocketExtensionParser* m_parser;
+        const char* m_current;
+        bool m_isDisposed;
+    };
     const String& currentToken() { return m_currentToken; }
 
     // The following member functions basically follow the grammar defined
@@ -61,7 +75,7 @@ private:
     void skipSpaces();
 
     const char* m_current;
-    const char* m_end;
+    const char* const m_end;
     String m_currentToken;
 };
 

@@ -29,13 +29,19 @@
  * glTexParameter-related functions
  */
 
-
+#include <stdbool.h>
 #include "main/glheader.h"
 #include "main/colormac.h"
 #include "main/context.h"
+#include "main/enums.h"
 #include "main/formats.h"
+#include "main/glformats.h"
 #include "main/macros.h"
+#include "main/mfeatures.h"
+#include "main/mtypes.h"
+#include "main/state.h"
 #include "main/texcompress.h"
+#include "main/texobj.h"
 #include "main/texparam.h"
 #include "main/teximage.h"
 #include "main/texstate.h"
@@ -47,31 +53,59 @@
  * \return GL_TRUE if legal, GL_FALSE otherwise
  */
 static GLboolean 
-validate_texture_wrap_mode(GLcontext * ctx, GLenum target, GLenum wrap)
+validate_texture_wrap_mode(struct gl_context * ctx, GLenum target, GLenum wrap)
 {
    const struct gl_extensions * const e = & ctx->Extensions;
+   const bool is_desktop_gl = _mesa_is_desktop_gl(ctx);
+   bool supported;
 
-   if (wrap == GL_CLAMP || wrap == GL_CLAMP_TO_EDGE ||
-       (wrap == GL_CLAMP_TO_BORDER && e->ARB_texture_border_clamp)) {
-      /* any texture target */
-      return GL_TRUE;
-   }
-   else if (target != GL_TEXTURE_RECTANGLE_NV &&
-	    (wrap == GL_REPEAT ||
-	     (wrap == GL_MIRRORED_REPEAT &&
-	      e->ARB_texture_mirrored_repeat) ||
-	     (wrap == GL_MIRROR_CLAMP_EXT &&
-	      (e->ATI_texture_mirror_once || e->EXT_texture_mirror_clamp)) ||
-	     (wrap == GL_MIRROR_CLAMP_TO_EDGE_EXT &&
-	      (e->ATI_texture_mirror_once || e->EXT_texture_mirror_clamp)) ||
-	     (wrap == GL_MIRROR_CLAMP_TO_BORDER_EXT &&
-	      (e->EXT_texture_mirror_clamp)))) {
-      /* non-rectangle texture */
-      return GL_TRUE;
+   switch (wrap) {
+   case GL_CLAMP:
+      /* GL_CLAMP was removed in the core profile, and it has never existed in
+       * OpenGL ES.
+       */
+      supported = (ctx->API == API_OPENGL)
+         && (target != GL_TEXTURE_EXTERNAL_OES);
+      break;
+
+   case GL_CLAMP_TO_EDGE:
+      supported = true;
+      break;
+
+   case GL_CLAMP_TO_BORDER:
+      supported = is_desktop_gl && e->ARB_texture_border_clamp
+         && (target != GL_TEXTURE_EXTERNAL_OES);
+      break;
+
+   case GL_REPEAT:
+   case GL_MIRRORED_REPEAT:
+      supported = (target != GL_TEXTURE_RECTANGLE_NV)
+         && (target != GL_TEXTURE_EXTERNAL_OES);
+      break;
+
+   case GL_MIRROR_CLAMP_EXT:
+   case GL_MIRROR_CLAMP_TO_EDGE_EXT:
+      supported = is_desktop_gl 
+         && (e->ATI_texture_mirror_once || e->EXT_texture_mirror_clamp)
+	 && (target != GL_TEXTURE_RECTANGLE_NV)
+         && (target != GL_TEXTURE_EXTERNAL_OES);
+      break;
+
+   case GL_MIRROR_CLAMP_TO_BORDER_EXT:
+      supported = is_desktop_gl && e->EXT_texture_mirror_clamp
+	 && (target != GL_TEXTURE_RECTANGLE_NV)
+         && (target != GL_TEXTURE_EXTERNAL_OES);
+      break;
+
+   default:
+      supported = false;
+      break;
    }
 
-   _mesa_error( ctx, GL_INVALID_ENUM, "glTexParameter(param=0x%x)", wrap );
-   return GL_FALSE;
+   if (!supported)
+      _mesa_error( ctx, GL_INVALID_ENUM, "glTexParameter(param=0x%x)", wrap );
+
+   return supported;
 }
 
 
@@ -83,7 +117,7 @@ validate_texture_wrap_mode(GLcontext * ctx, GLenum target, GLenum wrap)
  * Only the glGetTexLevelParameter() functions accept proxy targets.
  */
 static struct gl_texture_object *
-get_texobj(GLcontext *ctx, GLenum target, GLboolean get)
+get_texobj(struct gl_context *ctx, GLenum target, GLboolean get)
 {
    struct gl_texture_unit *texUnit;
 
@@ -97,29 +131,43 @@ get_texobj(GLcontext *ctx, GLenum target, GLboolean get)
 
    switch (target) {
    case GL_TEXTURE_1D:
-      return texUnit->CurrentTex[TEXTURE_1D_INDEX];
+      if (_mesa_is_desktop_gl(ctx))
+         return texUnit->CurrentTex[TEXTURE_1D_INDEX];
+      break;
    case GL_TEXTURE_2D:
       return texUnit->CurrentTex[TEXTURE_2D_INDEX];
    case GL_TEXTURE_3D:
-      return texUnit->CurrentTex[TEXTURE_3D_INDEX];
+      if (ctx->API != API_OPENGLES)
+         return texUnit->CurrentTex[TEXTURE_3D_INDEX];
+      break;
    case GL_TEXTURE_CUBE_MAP:
       if (ctx->Extensions.ARB_texture_cube_map) {
          return texUnit->CurrentTex[TEXTURE_CUBE_INDEX];
       }
       break;
    case GL_TEXTURE_RECTANGLE_NV:
-      if (ctx->Extensions.NV_texture_rectangle) {
+      if (_mesa_is_desktop_gl(ctx)
+          && ctx->Extensions.NV_texture_rectangle) {
          return texUnit->CurrentTex[TEXTURE_RECT_INDEX];
       }
       break;
    case GL_TEXTURE_1D_ARRAY_EXT:
-      if (ctx->Extensions.MESA_texture_array) {
+      if (_mesa_is_desktop_gl(ctx)
+          && (ctx->Extensions.MESA_texture_array ||
+              ctx->Extensions.EXT_texture_array)) {
          return texUnit->CurrentTex[TEXTURE_1D_ARRAY_INDEX];
       }
       break;
    case GL_TEXTURE_2D_ARRAY_EXT:
-      if (ctx->Extensions.MESA_texture_array) {
+      if ((_mesa_is_desktop_gl(ctx) || _mesa_is_gles3(ctx))
+          && (ctx->Extensions.MESA_texture_array ||
+              ctx->Extensions.EXT_texture_array)) {
          return texUnit->CurrentTex[TEXTURE_2D_ARRAY_INDEX];
+      }
+      break;
+   case GL_TEXTURE_EXTERNAL_OES:
+      if (_mesa_is_gles(ctx) && ctx->Extensions.OES_EGL_image_external) {
+         return texUnit->CurrentTex[TEXTURE_EXTERNAL_INDEX];
       }
       break;
    default:
@@ -172,16 +220,28 @@ set_swizzle_component(GLuint *swizzle, GLuint comp, GLuint swz)
 
 
 /**
- * This is called just prior to changing any texture object state.
+ * This is called just prior to changing any texture object state which
+ * will not effect texture completeness.
+ */
+static inline void
+flush(struct gl_context *ctx)
+{
+   FLUSH_VERTICES(ctx, _NEW_TEXTURE);
+}
+
+
+/**
+ * This is called just prior to changing any texture object state which
+ * can effect texture completeness (texture base level, max level).
  * Any pending rendering will be flushed out, we'll set the _NEW_TEXTURE
  * state flag and then mark the texture object as 'incomplete' so that any
  * per-texture derived state gets recomputed.
  */
-static INLINE void
-flush(GLcontext *ctx, struct gl_texture_object *texObj)
+static inline void
+incomplete(struct gl_context *ctx, struct gl_texture_object *texObj)
 {
    FLUSH_VERTICES(ctx, _NEW_TEXTURE);
-   texObj->_Complete = GL_FALSE;
+   _mesa_dirty_texobj(ctx, texObj, GL_TRUE);
 }
 
 
@@ -190,82 +250,84 @@ flush(GLcontext *ctx, struct gl_texture_object *texObj)
  * \return GL_TRUE if legal AND the value changed, GL_FALSE otherwise
  */
 static GLboolean
-set_tex_parameteri(GLcontext *ctx,
+set_tex_parameteri(struct gl_context *ctx,
                    struct gl_texture_object *texObj,
                    GLenum pname, const GLint *params)
 {
    switch (pname) {
    case GL_TEXTURE_MIN_FILTER:
-      if (texObj->MinFilter == params[0])
+      if (texObj->Sampler.MinFilter == params[0])
          return GL_FALSE;
       switch (params[0]) {
       case GL_NEAREST:
       case GL_LINEAR:
-         flush(ctx, texObj);
-         texObj->MinFilter = params[0];
+         flush(ctx);
+         texObj->Sampler.MinFilter = params[0];
          return GL_TRUE;
       case GL_NEAREST_MIPMAP_NEAREST:
       case GL_LINEAR_MIPMAP_NEAREST:
       case GL_NEAREST_MIPMAP_LINEAR:
       case GL_LINEAR_MIPMAP_LINEAR:
-         if (texObj->Target != GL_TEXTURE_RECTANGLE_NV) {
-            flush(ctx, texObj);
-            texObj->MinFilter = params[0];
+         if (texObj->Target != GL_TEXTURE_RECTANGLE_NV &&
+             texObj->Target != GL_TEXTURE_EXTERNAL_OES) {
+            flush(ctx);
+            texObj->Sampler.MinFilter = params[0];
             return GL_TRUE;
          }
          /* fall-through */
       default:
-         _mesa_error( ctx, GL_INVALID_ENUM, "glTexParameter(param=0x%x)",
-                      params[0] );
+         goto invalid_param;
       }
       return GL_FALSE;
 
    case GL_TEXTURE_MAG_FILTER:
-      if (texObj->MagFilter == params[0])
+      if (texObj->Sampler.MagFilter == params[0])
          return GL_FALSE;
       switch (params[0]) {
       case GL_NEAREST:
       case GL_LINEAR:
-         flush(ctx, texObj);
-         texObj->MagFilter = params[0];
+         flush(ctx); /* does not effect completeness */
+         texObj->Sampler.MagFilter = params[0];
          return GL_TRUE;
       default:
-         _mesa_error( ctx, GL_INVALID_ENUM, "glTexParameter(param=0x%x)",
-                      params[0]);
+         goto invalid_param;
       }
       return GL_FALSE;
 
    case GL_TEXTURE_WRAP_S:
-      if (texObj->WrapS == params[0])
+      if (texObj->Sampler.WrapS == params[0])
          return GL_FALSE;
       if (validate_texture_wrap_mode(ctx, texObj->Target, params[0])) {
-         flush(ctx, texObj);
-         texObj->WrapS = params[0];
+         flush(ctx);
+         texObj->Sampler.WrapS = params[0];
          return GL_TRUE;
       }
       return GL_FALSE;
 
    case GL_TEXTURE_WRAP_T:
-      if (texObj->WrapT == params[0])
+      if (texObj->Sampler.WrapT == params[0])
          return GL_FALSE;
       if (validate_texture_wrap_mode(ctx, texObj->Target, params[0])) {
-         flush(ctx, texObj);
-         texObj->WrapT = params[0];
+         flush(ctx);
+         texObj->Sampler.WrapT = params[0];
          return GL_TRUE;
       }
       return GL_FALSE;
 
    case GL_TEXTURE_WRAP_R:
-      if (texObj->WrapR == params[0])
+      if (texObj->Sampler.WrapR == params[0])
          return GL_FALSE;
       if (validate_texture_wrap_mode(ctx, texObj->Target, params[0])) {
-         flush(ctx, texObj);
-         texObj->WrapR = params[0];
+         flush(ctx);
+         texObj->Sampler.WrapR = params[0];
          return GL_TRUE;
       }
       return GL_FALSE;
 
    case GL_TEXTURE_BASE_LEVEL:
+      if (!_mesa_is_desktop_gl(ctx) && !_mesa_is_gles3(ctx))
+         goto invalid_pname;
+
       if (texObj->BaseLevel == params[0])
          return GL_FALSE;
       if (params[0] < 0 ||
@@ -274,7 +336,7 @@ set_tex_parameteri(GLcontext *ctx,
                      "glTexParameter(param=%d)", params[0]);
          return GL_FALSE;
       }
-      flush(ctx, texObj);
+      incomplete(ctx, texObj);
       texObj->BaseLevel = params[0];
       return GL_TRUE;
 
@@ -286,51 +348,48 @@ set_tex_parameteri(GLcontext *ctx,
                      "glTexParameter(param=%d)", params[0]);
          return GL_FALSE;
       }
-      flush(ctx, texObj);
+      incomplete(ctx, texObj);
       texObj->MaxLevel = params[0];
       return GL_TRUE;
 
    case GL_GENERATE_MIPMAP_SGIS:
-      if (ctx->Extensions.SGIS_generate_mipmap) {
-         if (texObj->GenerateMipmap != params[0]) {
-            flush(ctx, texObj);
-            texObj->GenerateMipmap = params[0] ? GL_TRUE : GL_FALSE;
-            return GL_TRUE;
-         }
-         return GL_FALSE;
-      }
-      else {
-         _mesa_error(ctx, GL_INVALID_ENUM,
-                     "glTexParameter(pname=GL_GENERATE_MIPMAP_SGIS)");
+      if (ctx->API != API_OPENGL && ctx->API != API_OPENGLES)
+         goto invalid_pname;
+
+      if (params[0] && texObj->Target == GL_TEXTURE_EXTERNAL_OES)
+         goto invalid_param;
+      if (texObj->GenerateMipmap != params[0]) {
+         /* no flush() */
+	 texObj->GenerateMipmap = params[0] ? GL_TRUE : GL_FALSE;
+	 return GL_TRUE;
       }
       return GL_FALSE;
 
    case GL_TEXTURE_COMPARE_MODE_ARB:
-      if (ctx->Extensions.ARB_shadow &&
-          (params[0] == GL_NONE ||
-           params[0] == GL_COMPARE_R_TO_TEXTURE_ARB)) {
-         if (texObj->CompareMode != params[0]) {
-            flush(ctx, texObj);
-            texObj->CompareMode = params[0];
+      if ((_mesa_is_desktop_gl(ctx) && ctx->Extensions.ARB_shadow)
+          || _mesa_is_gles3(ctx)) {
+         if (texObj->Sampler.CompareMode == params[0])
+            return GL_FALSE;
+         if (params[0] == GL_NONE ||
+             params[0] == GL_COMPARE_R_TO_TEXTURE_ARB) {
+            flush(ctx);
+            texObj->Sampler.CompareMode = params[0];
             return GL_TRUE;
          }
-         return GL_FALSE;
+         goto invalid_param;
       }
-      else {
-         _mesa_error(ctx, GL_INVALID_ENUM,
-                     "glTexParameter(GL_TEXTURE_COMPARE_MODE_ARB)");
-      }
-      return GL_FALSE;
+      goto invalid_pname;
 
    case GL_TEXTURE_COMPARE_FUNC_ARB:
-      if (ctx->Extensions.ARB_shadow) {
-         if (texObj->CompareFunc == params[0])
+      if ((_mesa_is_desktop_gl(ctx) && ctx->Extensions.ARB_shadow)
+          || _mesa_is_gles3(ctx)) {
+         if (texObj->Sampler.CompareFunc == params[0])
             return GL_FALSE;
          switch (params[0]) {
          case GL_LEQUAL:
          case GL_GEQUAL:
-            flush(ctx, texObj);
-            texObj->CompareFunc = params[0];
+            flush(ctx);
+            texObj->Sampler.CompareFunc = params[0];
             return GL_TRUE;
          case GL_EQUAL:
          case GL_NOTEQUAL:
@@ -339,40 +398,41 @@ set_tex_parameteri(GLcontext *ctx,
          case GL_ALWAYS:
          case GL_NEVER:
             if (ctx->Extensions.EXT_shadow_funcs) {
-               flush(ctx, texObj);
-               texObj->CompareFunc = params[0];
+               flush(ctx);
+               texObj->Sampler.CompareFunc = params[0];
                return GL_TRUE;
             }
             /* fall-through */
          default:
-            _mesa_error(ctx, GL_INVALID_ENUM,
-                        "glTexParameter(GL_TEXTURE_COMPARE_FUNC_ARB)");
+            goto invalid_param;
          }
       }
-      else {
-         _mesa_error(ctx, GL_INVALID_ENUM, "glTexParameter(pname=0x%x)", pname);
-      }
-      return GL_FALSE;
+      goto invalid_pname;
 
    case GL_DEPTH_TEXTURE_MODE_ARB:
-      if (ctx->Extensions.ARB_depth_texture &&
-          (params[0] == GL_LUMINANCE ||
-           params[0] == GL_INTENSITY ||
-           params[0] == GL_ALPHA)) {
-         if (texObj->DepthMode != params[0]) {
-            flush(ctx, texObj);
+      /* GL_DEPTH_TEXTURE_MODE_ARB is removed in core-profile and it has never
+       * existed in OpenGL ES.
+       */
+      if (ctx->API == API_OPENGL && ctx->Extensions.ARB_depth_texture) {
+         if (texObj->DepthMode == params[0])
+            return GL_FALSE;
+         if (params[0] == GL_LUMINANCE ||
+             params[0] == GL_INTENSITY ||
+             params[0] == GL_ALPHA ||
+             (ctx->Extensions.ARB_texture_rg && params[0] == GL_RED)) {
+            flush(ctx);
             texObj->DepthMode = params[0];
             return GL_TRUE;
          }
+         goto invalid_param;
       }
-      else {
-         _mesa_error(ctx, GL_INVALID_ENUM,
-                     "glTexParameter(GL_DEPTH_TEXTURE_MODE_ARB)");
-      }
-      return GL_FALSE;
+      goto invalid_pname;
 
 #if FEATURE_OES_draw_texture
    case GL_TEXTURE_CROP_RECT_OES:
+      if (ctx->API != API_OPENGLES || !ctx->Extensions.OES_draw_texture)
+         goto invalid_pname;
+
       texObj->CropRect[0] = params[0];
       texObj->CropRect[1] = params[1];
       texObj->CropRect[2] = params[2];
@@ -384,7 +444,8 @@ set_tex_parameteri(GLcontext *ctx,
    case GL_TEXTURE_SWIZZLE_G_EXT:
    case GL_TEXTURE_SWIZZLE_B_EXT:
    case GL_TEXTURE_SWIZZLE_A_EXT:
-      if (ctx->Extensions.EXT_texture_swizzle) {
+      if ((_mesa_is_desktop_gl(ctx) && ctx->Extensions.EXT_texture_swizzle)
+          || _mesa_is_gles3(ctx)) {
          const GLuint comp = pname - GL_TEXTURE_SWIZZLE_R_EXT;
          const GLint swz = comp_to_swizzle(params[0]);
          if (swz < 0) {
@@ -393,20 +454,19 @@ set_tex_parameteri(GLcontext *ctx,
             return GL_FALSE;
          }
          ASSERT(comp < 4);
-         if (swz >= 0) {
-            flush(ctx, texObj);
-            texObj->Swizzle[comp] = params[0];
-            set_swizzle_component(&texObj->_Swizzle, comp, swz);
-            return GL_TRUE;
-         }
+
+         flush(ctx);
+         texObj->Swizzle[comp] = params[0];
+         set_swizzle_component(&texObj->_Swizzle, comp, swz);
+         return GL_TRUE;
       }
-      _mesa_error(ctx, GL_INVALID_ENUM, "glTexParameter(pname=0x%x)", pname);
-      return GL_FALSE;
+      goto invalid_pname;
 
    case GL_TEXTURE_SWIZZLE_RGBA_EXT:
-      if (ctx->Extensions.EXT_texture_swizzle) {
+      if ((_mesa_is_desktop_gl(ctx) && ctx->Extensions.EXT_texture_swizzle)
+          || _mesa_is_gles3(ctx)) {
          GLuint comp;
-         flush(ctx, texObj);
+         flush(ctx);
          for (comp = 0; comp < 4; comp++) {
             const GLint swz = comp_to_swizzle(params[comp]);
             if (swz >= 0) {
@@ -421,12 +481,49 @@ set_tex_parameteri(GLcontext *ctx,
          }
          return GL_TRUE;
       }
-      _mesa_error(ctx, GL_INVALID_ENUM, "glTexParameter(pname=0x%x)", pname);
-      return GL_FALSE;
+      goto invalid_pname;
+
+   case GL_TEXTURE_SRGB_DECODE_EXT:
+      if (_mesa_is_desktop_gl(ctx)
+          && ctx->Extensions.EXT_texture_sRGB_decode) {
+	 GLenum decode = params[0];
+	 if (decode == GL_DECODE_EXT || decode == GL_SKIP_DECODE_EXT) {
+	    if (texObj->Sampler.sRGBDecode != decode) {
+	       flush(ctx);
+	       texObj->Sampler.sRGBDecode = decode;
+	    }
+	    return GL_TRUE;
+	 }
+      }
+      goto invalid_pname;
+
+   case GL_TEXTURE_CUBE_MAP_SEAMLESS:
+      if (_mesa_is_desktop_gl(ctx)
+          && ctx->Extensions.AMD_seamless_cubemap_per_texture) {
+         GLenum param = params[0];
+         if (param != GL_TRUE && param != GL_FALSE) {
+            goto invalid_param;
+         }
+         if (param != texObj->Sampler.CubeMapSeamless) {
+            flush(ctx);
+            texObj->Sampler.CubeMapSeamless = param;
+         }
+         return GL_TRUE;
+      }
+      goto invalid_pname;
 
    default:
-      _mesa_error(ctx, GL_INVALID_ENUM, "glTexParameter(pname=0x%x)", pname);
+      goto invalid_pname;
    }
+
+invalid_pname:
+   _mesa_error(ctx, GL_INVALID_ENUM, "glTexParameter(pname=%s)",
+               _mesa_lookup_enum_by_nr(pname));
+   return GL_FALSE;
+
+invalid_param:
+   _mesa_error(ctx, GL_INVALID_ENUM, "glTexParameter(param=%s)",
+               _mesa_lookup_enum_by_nr(params[0]));
    return GL_FALSE;
 }
 
@@ -436,89 +533,102 @@ set_tex_parameteri(GLcontext *ctx,
  * \return GL_TRUE if legal AND the value changed, GL_FALSE otherwise
  */
 static GLboolean
-set_tex_parameterf(GLcontext *ctx,
+set_tex_parameterf(struct gl_context *ctx,
                    struct gl_texture_object *texObj,
                    GLenum pname, const GLfloat *params)
 {
    switch (pname) {
    case GL_TEXTURE_MIN_LOD:
-      if (texObj->MinLod == params[0])
+      if (!_mesa_is_desktop_gl(ctx) && !_mesa_is_gles3(ctx))
+         goto invalid_pname;
+
+      if (texObj->Sampler.MinLod == params[0])
          return GL_FALSE;
-      flush(ctx, texObj);
-      texObj->MinLod = params[0];
+      flush(ctx);
+      texObj->Sampler.MinLod = params[0];
       return GL_TRUE;
 
    case GL_TEXTURE_MAX_LOD:
-      if (texObj->MaxLod == params[0])
+      if (!_mesa_is_desktop_gl(ctx) && !_mesa_is_gles3(ctx))
+         goto invalid_pname;
+
+      if (texObj->Sampler.MaxLod == params[0])
          return GL_FALSE;
-      flush(ctx, texObj);
-      texObj->MaxLod = params[0];
+      flush(ctx);
+      texObj->Sampler.MaxLod = params[0];
       return GL_TRUE;
 
    case GL_TEXTURE_PRIORITY:
-      flush(ctx, texObj);
+      if (ctx->API != API_OPENGL)
+         goto invalid_pname;
+
+      flush(ctx);
       texObj->Priority = CLAMP(params[0], 0.0F, 1.0F);
       return GL_TRUE;
 
    case GL_TEXTURE_MAX_ANISOTROPY_EXT:
       if (ctx->Extensions.EXT_texture_filter_anisotropic) {
-         if (texObj->MaxAnisotropy == params[0])
+         if (texObj->Sampler.MaxAnisotropy == params[0])
             return GL_FALSE;
          if (params[0] < 1.0) {
             _mesa_error(ctx, GL_INVALID_VALUE, "glTexParameter(param)" );
             return GL_FALSE;
          }
-         flush(ctx, texObj);
+         flush(ctx);
          /* clamp to max, that's what NVIDIA does */
-         texObj->MaxAnisotropy = MIN2(params[0],
+         texObj->Sampler.MaxAnisotropy = MIN2(params[0],
                                       ctx->Const.MaxTextureMaxAnisotropy);
          return GL_TRUE;
       }
       else {
          static GLuint count = 0;
          if (count++ < 10)
-            _mesa_error(ctx, GL_INVALID_ENUM,
-                        "glTexParameter(pname=GL_TEXTURE_MAX_ANISOTROPY_EXT)");
-      }
-      return GL_FALSE;
-
-   case GL_TEXTURE_COMPARE_FAIL_VALUE_ARB:
-      if (ctx->Extensions.ARB_shadow_ambient) {
-         if (texObj->CompareFailValue != params[0]) {
-            flush(ctx, texObj);
-            texObj->CompareFailValue = CLAMP(params[0], 0.0F, 1.0F);
-            return GL_TRUE;
-         }
-      }
-      else {
-         _mesa_error(ctx, GL_INVALID_ENUM,
-                    "glTexParameter(pname=GL_TEXTURE_COMPARE_FAIL_VALUE_ARB)");
+            goto invalid_pname;
       }
       return GL_FALSE;
 
    case GL_TEXTURE_LOD_BIAS:
-      /* NOTE: this is really part of OpenGL 1.4, not EXT_texture_lod_bias */
-      if (ctx->Extensions.EXT_texture_lod_bias) {
-         if (texObj->LodBias != params[0]) {
-            flush(ctx, texObj);
-            texObj->LodBias = params[0];
-            return GL_TRUE;
-         }
-         return GL_FALSE;
+      /* NOTE: this is really part of OpenGL 1.4, not EXT_texture_lod_bias.
+       * It was removed in core-profile, and it has never existed in OpenGL
+       * ES.
+       */
+      if (ctx->API != API_OPENGL)
+         goto invalid_pname;
+
+      if (texObj->Sampler.LodBias != params[0]) {
+	 flush(ctx);
+	 texObj->Sampler.LodBias = params[0];
+	 return GL_TRUE;
       }
       break;
 
    case GL_TEXTURE_BORDER_COLOR:
-      flush(ctx, texObj);
-      texObj->BorderColor.f[RCOMP] = params[0];
-      texObj->BorderColor.f[GCOMP] = params[1];
-      texObj->BorderColor.f[BCOMP] = params[2];
-      texObj->BorderColor.f[ACOMP] = params[3];
+      if (!_mesa_is_desktop_gl(ctx))
+         goto invalid_pname;
+
+      flush(ctx);
+      /* ARB_texture_float disables clamping */
+      if (ctx->Extensions.ARB_texture_float) {
+         texObj->Sampler.BorderColor.f[RCOMP] = params[0];
+         texObj->Sampler.BorderColor.f[GCOMP] = params[1];
+         texObj->Sampler.BorderColor.f[BCOMP] = params[2];
+         texObj->Sampler.BorderColor.f[ACOMP] = params[3];
+      } else {
+         texObj->Sampler.BorderColor.f[RCOMP] = CLAMP(params[0], 0.0F, 1.0F);
+         texObj->Sampler.BorderColor.f[GCOMP] = CLAMP(params[1], 0.0F, 1.0F);
+         texObj->Sampler.BorderColor.f[BCOMP] = CLAMP(params[2], 0.0F, 1.0F);
+         texObj->Sampler.BorderColor.f[ACOMP] = CLAMP(params[3], 0.0F, 1.0F);
+      }
       return GL_TRUE;
 
    default:
-      _mesa_error(ctx, GL_INVALID_ENUM, "glTexParameter(pname=0x%x)", pname);
+      goto invalid_pname;
    }
+   return GL_FALSE;
+
+invalid_pname:
+   _mesa_error(ctx, GL_INVALID_ENUM, "glTexParameter(pname=%s)",
+               _mesa_lookup_enum_by_nr(pname));
    return GL_FALSE;
 }
 
@@ -547,8 +657,21 @@ _mesa_TexParameterf(GLenum target, GLenum pname, GLfloat param)
    case GL_TEXTURE_COMPARE_MODE_ARB:
    case GL_TEXTURE_COMPARE_FUNC_ARB:
    case GL_DEPTH_TEXTURE_MODE_ARB:
+   case GL_TEXTURE_SRGB_DECODE_EXT:
+   case GL_TEXTURE_CUBE_MAP_SEAMLESS:
       {
          /* convert float param to int */
+         GLint p[4];
+         p[0] = (GLint) param;
+         p[1] = p[2] = p[3] = 0;
+         need_update = set_tex_parameteri(ctx, texObj, pname, p);
+      }
+      break;
+   case GL_TEXTURE_SWIZZLE_R_EXT:
+   case GL_TEXTURE_SWIZZLE_G_EXT:
+   case GL_TEXTURE_SWIZZLE_B_EXT:
+   case GL_TEXTURE_SWIZZLE_A_EXT:
+      {
          GLint p[4];
          p[0] = (GLint) param;
          p[1] = p[2] = p[3] = 0;
@@ -595,6 +718,8 @@ _mesa_TexParameterfv(GLenum target, GLenum pname, const GLfloat *params)
    case GL_TEXTURE_COMPARE_MODE_ARB:
    case GL_TEXTURE_COMPARE_FUNC_ARB:
    case GL_DEPTH_TEXTURE_MODE_ARB:
+   case GL_TEXTURE_SRGB_DECODE_EXT:
+   case GL_TEXTURE_CUBE_MAP_SEAMLESS:
       {
          /* convert float param to int */
          GLint p[4];
@@ -618,6 +743,22 @@ _mesa_TexParameterfv(GLenum target, GLenum pname, const GLfloat *params)
       break;
 #endif
 
+   case GL_TEXTURE_SWIZZLE_R_EXT:
+   case GL_TEXTURE_SWIZZLE_G_EXT:
+   case GL_TEXTURE_SWIZZLE_B_EXT:
+   case GL_TEXTURE_SWIZZLE_A_EXT:
+   case GL_TEXTURE_SWIZZLE_RGBA_EXT:
+      {
+         GLint p[4] = {0, 0, 0, 0};
+         p[0] = (GLint) params[0];
+         if (pname == GL_TEXTURE_SWIZZLE_RGBA_EXT) {
+            p[1] = (GLint) params[1];
+            p[2] = (GLint) params[2];
+            p[3] = (GLint) params[3];
+         }
+         need_update = set_tex_parameteri(ctx, texObj, pname, p);
+      }
+      break;
    default:
       /* this will generate an error if pname is illegal */
       need_update = set_tex_parameterf(ctx, texObj, pname, params);
@@ -750,7 +891,7 @@ _mesa_TexParameterIiv(GLenum target, GLenum pname, const GLint *params)
    case GL_TEXTURE_BORDER_COLOR:
       FLUSH_VERTICES(ctx, _NEW_TEXTURE);
       /* set the integer-valued border color */
-      COPY_4V(texObj->BorderColor.i, params);
+      COPY_4V(texObj->Sampler.BorderColor.i, params);
       break;
    default:
       _mesa_TexParameteriv(target, pname, params);
@@ -780,7 +921,7 @@ _mesa_TexParameterIuiv(GLenum target, GLenum pname, const GLuint *params)
    case GL_TEXTURE_BORDER_COLOR:
       FLUSH_VERTICES(ctx, _NEW_TEXTURE);
       /* set the unsigned integer-valued border color */
-      COPY_4V(texObj->BorderColor.ui, params);
+      COPY_4V(texObj->Sampler.BorderColor.ui, params);
       break;
    default:
       _mesa_TexParameteriv(target, pname, (const GLint *) params);
@@ -790,6 +931,303 @@ _mesa_TexParameterIuiv(GLenum target, GLenum pname, const GLuint *params)
 }
 
 
+static GLboolean
+legal_get_tex_level_parameter_target(struct gl_context *ctx, GLenum target)
+{
+   switch (target) {
+   case GL_TEXTURE_1D:
+   case GL_PROXY_TEXTURE_1D:
+   case GL_TEXTURE_2D:
+   case GL_PROXY_TEXTURE_2D:
+   case GL_TEXTURE_3D:
+   case GL_PROXY_TEXTURE_3D:
+      return GL_TRUE;
+   case GL_TEXTURE_CUBE_MAP_POSITIVE_X_ARB:
+   case GL_TEXTURE_CUBE_MAP_NEGATIVE_X_ARB:
+   case GL_TEXTURE_CUBE_MAP_POSITIVE_Y_ARB:
+   case GL_TEXTURE_CUBE_MAP_NEGATIVE_Y_ARB:
+   case GL_TEXTURE_CUBE_MAP_POSITIVE_Z_ARB:
+   case GL_TEXTURE_CUBE_MAP_NEGATIVE_Z_ARB:
+   case GL_PROXY_TEXTURE_CUBE_MAP_ARB:
+      return ctx->Extensions.ARB_texture_cube_map;
+   case GL_TEXTURE_RECTANGLE_NV:
+   case GL_PROXY_TEXTURE_RECTANGLE_NV:
+      return ctx->Extensions.NV_texture_rectangle;
+   case GL_TEXTURE_1D_ARRAY_EXT:
+   case GL_PROXY_TEXTURE_1D_ARRAY_EXT:
+   case GL_TEXTURE_2D_ARRAY_EXT:
+   case GL_PROXY_TEXTURE_2D_ARRAY_EXT:
+      return (ctx->Extensions.MESA_texture_array ||
+              ctx->Extensions.EXT_texture_array);
+   case GL_TEXTURE_BUFFER:
+      /* GetTexLevelParameter accepts GL_TEXTURE_BUFFER in GL 3.1+ contexts,
+       * but not in earlier versions that expose ARB_texture_buffer_object.
+       *
+       * From the ARB_texture_buffer_object spec:
+       * "(7) Do buffer textures support texture parameters (TexParameter) or
+       *      queries (GetTexParameter, GetTexLevelParameter, GetTexImage)?
+       *
+       *    RESOLVED:  No. [...] Note that the spec edits above don't add
+       *    explicit error language for any of these cases.  That is because
+       *    each of the functions enumerate the set of valid <target>
+       *    parameters.  Not editing the spec to allow TEXTURE_BUFFER_ARB in
+       *    these cases means that target is not legal, and an INVALID_ENUM
+       *    error should be generated."
+       *
+       * From the OpenGL 3.1 spec:
+       * "target may also be TEXTURE_BUFFER, indicating the texture buffer."
+       */
+      return _mesa_is_desktop_gl(ctx) && ctx->Version >= 31;
+   default:
+      return GL_FALSE;
+   }
+}
+
+
+static void
+get_tex_level_parameter_image(struct gl_context *ctx,
+                              const struct gl_texture_object *texObj,
+                              GLenum target, GLint level,
+                              GLenum pname, GLint *params)
+{
+   const struct gl_texture_image *img = NULL;
+   gl_format texFormat;
+
+   img = _mesa_select_tex_image(ctx, texObj, target, level);
+   if (!img || img->TexFormat == MESA_FORMAT_NONE) {
+      /* undefined texture image */
+      if (pname == GL_TEXTURE_COMPONENTS)
+         *params = 1;
+      else
+         *params = 0;
+      return;
+   }
+
+   texFormat = img->TexFormat;
+
+   switch (pname) {
+      case GL_TEXTURE_WIDTH:
+         *params = img->Width;
+         break;
+      case GL_TEXTURE_HEIGHT:
+         *params = img->Height;
+         break;
+      case GL_TEXTURE_DEPTH:
+         *params = img->Depth;
+         break;
+      case GL_TEXTURE_INTERNAL_FORMAT:
+         if (_mesa_is_format_compressed(texFormat)) {
+            /* need to return the actual compressed format */
+            *params = _mesa_compressed_format_to_glenum(ctx, texFormat);
+         }
+         else {
+	    /* If the true internal format is not compressed but the user
+	     * requested a generic compressed format, we have to return the
+	     * generic base format that matches.
+	     *
+	     * From page 119 (page 129 of the PDF) of the OpenGL 1.3 spec:
+	     *
+	     *     "If no specific compressed format is available,
+	     *     internalformat is instead replaced by the corresponding base
+	     *     internal format."
+	     *
+	     * Otherwise just return the user's requested internal format
+	     */
+	    const GLenum f =
+	       _mesa_gl_compressed_format_base_format(img->InternalFormat);
+
+	    *params = (f != 0) ? f : img->InternalFormat;
+	 }
+         break;
+      case GL_TEXTURE_BORDER:
+         *params = img->Border;
+         break;
+      case GL_TEXTURE_RED_SIZE:
+      case GL_TEXTURE_GREEN_SIZE:
+      case GL_TEXTURE_BLUE_SIZE:
+      case GL_TEXTURE_ALPHA_SIZE:
+         if (_mesa_base_format_has_channel(img->_BaseFormat, pname))
+            *params = _mesa_get_format_bits(texFormat, pname);
+         else
+            *params = 0;
+         break;
+      case GL_TEXTURE_INTENSITY_SIZE:
+      case GL_TEXTURE_LUMINANCE_SIZE:
+         if (_mesa_base_format_has_channel(img->_BaseFormat, pname)) {
+            *params = _mesa_get_format_bits(texFormat, pname);
+            if (*params == 0) {
+               /* intensity or luminance is probably stored as RGB[A] */
+               *params = MIN2(_mesa_get_format_bits(texFormat,
+                                                    GL_TEXTURE_RED_SIZE),
+                              _mesa_get_format_bits(texFormat,
+                                                    GL_TEXTURE_GREEN_SIZE));
+            }
+         }
+         else {
+            *params = 0;
+         }
+         break;
+      case GL_TEXTURE_DEPTH_SIZE_ARB:
+         if (!ctx->Extensions.ARB_depth_texture)
+            goto invalid_pname;
+         *params = _mesa_get_format_bits(texFormat, pname);
+         break;
+      case GL_TEXTURE_STENCIL_SIZE_EXT:
+         if (!ctx->Extensions.EXT_packed_depth_stencil &&
+             !ctx->Extensions.ARB_framebuffer_object)
+            goto invalid_pname;
+         *params = _mesa_get_format_bits(texFormat, pname);
+         break;
+      case GL_TEXTURE_SHARED_SIZE:
+         if (ctx->Version < 30 &&
+             !ctx->Extensions.EXT_texture_shared_exponent)
+            goto invalid_pname;
+         *params = texFormat == MESA_FORMAT_RGB9_E5_FLOAT ? 5 : 0;
+         break;
+
+      /* GL_ARB_texture_compression */
+      case GL_TEXTURE_COMPRESSED_IMAGE_SIZE:
+	 if (_mesa_is_format_compressed(texFormat) &&
+             !_mesa_is_proxy_texture(target)) {
+            *params = _mesa_format_image_size(texFormat, img->Width,
+                                              img->Height, img->Depth);
+	 }
+	 else {
+	    _mesa_error(ctx, GL_INVALID_OPERATION,
+			"glGetTexLevelParameter[if]v(pname)");
+	 }
+         break;
+      case GL_TEXTURE_COMPRESSED:
+         *params = (GLint) _mesa_is_format_compressed(texFormat);
+         break;
+
+      /* GL_ARB_texture_float */
+      case GL_TEXTURE_RED_TYPE_ARB:
+      case GL_TEXTURE_GREEN_TYPE_ARB:
+      case GL_TEXTURE_BLUE_TYPE_ARB:
+      case GL_TEXTURE_ALPHA_TYPE_ARB:
+      case GL_TEXTURE_LUMINANCE_TYPE_ARB:
+      case GL_TEXTURE_INTENSITY_TYPE_ARB:
+      case GL_TEXTURE_DEPTH_TYPE_ARB:
+         if (!ctx->Extensions.ARB_texture_float)
+            goto invalid_pname;
+	 if (_mesa_base_format_has_channel(img->_BaseFormat, pname))
+	    *params = _mesa_get_format_datatype(texFormat);
+	 else
+	    *params = GL_NONE;
+         break;
+
+      default:
+         goto invalid_pname;
+   }
+
+   /* no error if we get here */
+   return;
+
+invalid_pname:
+   _mesa_error(ctx, GL_INVALID_ENUM,
+               "glGetTexLevelParameter[if]v(pname=%s)",
+               _mesa_lookup_enum_by_nr(pname));
+}
+
+
+static void
+get_tex_level_parameter_buffer(struct gl_context *ctx,
+                               const struct gl_texture_object *texObj,
+                               GLenum pname, GLint *params)
+{
+   const struct gl_buffer_object *bo = texObj->BufferObject;
+   gl_format texFormat = texObj->_BufferObjectFormat;
+   GLenum internalFormat = texObj->BufferObjectFormat;
+   GLenum baseFormat = _mesa_get_format_base_format(texFormat);
+
+   if (!bo) {
+      /* undefined texture buffer object */
+      *params = pname == GL_TEXTURE_COMPONENTS ? 1 : 0;
+      return;
+   }
+
+   switch (pname) {
+      case GL_TEXTURE_BUFFER_DATA_STORE_BINDING:
+         *params = bo->Name;
+         break;
+      case GL_TEXTURE_WIDTH:
+         *params = bo->Size;
+         break;
+      case GL_TEXTURE_HEIGHT:
+      case GL_TEXTURE_DEPTH:
+      case GL_TEXTURE_BORDER:
+      case GL_TEXTURE_SHARED_SIZE:
+      case GL_TEXTURE_COMPRESSED:
+         *params = 0;
+         break;
+      case GL_TEXTURE_INTERNAL_FORMAT:
+         *params = internalFormat;
+         break;
+      case GL_TEXTURE_RED_SIZE:
+      case GL_TEXTURE_GREEN_SIZE:
+      case GL_TEXTURE_BLUE_SIZE:
+      case GL_TEXTURE_ALPHA_SIZE:
+         if (_mesa_base_format_has_channel(baseFormat, pname))
+            *params = _mesa_get_format_bits(texFormat, pname);
+         else
+            *params = 0;
+         break;
+      case GL_TEXTURE_INTENSITY_SIZE:
+      case GL_TEXTURE_LUMINANCE_SIZE:
+         if (_mesa_base_format_has_channel(baseFormat, pname)) {
+            *params = _mesa_get_format_bits(texFormat, pname);
+            if (*params == 0) {
+               /* intensity or luminance is probably stored as RGB[A] */
+               *params = MIN2(_mesa_get_format_bits(texFormat,
+                                                    GL_TEXTURE_RED_SIZE),
+                              _mesa_get_format_bits(texFormat,
+                                                    GL_TEXTURE_GREEN_SIZE));
+            }
+         } else {
+            *params = 0;
+         }
+         break;
+      case GL_TEXTURE_DEPTH_SIZE_ARB:
+      case GL_TEXTURE_STENCIL_SIZE_EXT:
+         *params = _mesa_get_format_bits(texFormat, pname);
+         break;
+
+      /* GL_ARB_texture_compression */
+      case GL_TEXTURE_COMPRESSED_IMAGE_SIZE:
+         /* Always illegal for GL_TEXTURE_BUFFER */
+         _mesa_error(ctx, GL_INVALID_OPERATION,
+                     "glGetTexLevelParameter[if]v(pname)");
+         break;
+
+      /* GL_ARB_texture_float */
+      case GL_TEXTURE_RED_TYPE_ARB:
+      case GL_TEXTURE_GREEN_TYPE_ARB:
+      case GL_TEXTURE_BLUE_TYPE_ARB:
+      case GL_TEXTURE_ALPHA_TYPE_ARB:
+      case GL_TEXTURE_LUMINANCE_TYPE_ARB:
+      case GL_TEXTURE_INTENSITY_TYPE_ARB:
+      case GL_TEXTURE_DEPTH_TYPE_ARB:
+         if (!ctx->Extensions.ARB_texture_float)
+            goto invalid_pname;
+         if (_mesa_base_format_has_channel(baseFormat, pname))
+            *params = _mesa_get_format_datatype(texFormat);
+         else
+            *params = GL_NONE;
+         break;
+
+      default:
+         goto invalid_pname;
+   }
+
+   /* no error if we get here */
+   return;
+
+invalid_pname:
+   _mesa_error(ctx, GL_INVALID_ENUM,
+               "glGetTexLevelParameter[if]v(pname=%s)",
+               _mesa_lookup_enum_by_nr(pname));
+}
 
 
 void GLAPIENTRY
@@ -808,10 +1246,7 @@ _mesa_GetTexLevelParameteriv( GLenum target, GLint level,
 {
    const struct gl_texture_unit *texUnit;
    struct gl_texture_object *texObj;
-   const struct gl_texture_image *img = NULL;
-   GLboolean isProxy;
    GLint maxLevels;
-   gl_format texFormat;
    GET_CURRENT_CONTEXT(ctx);
    ASSERT_OUTSIDE_BEGIN_END(ctx);
 
@@ -823,13 +1258,14 @@ _mesa_GetTexLevelParameteriv( GLenum target, GLint level,
 
    texUnit = _mesa_get_current_tex_unit(ctx);
 
-   /* this will catch bad target values */
-   maxLevels = _mesa_max_texture_levels(ctx, target);
-   if (maxLevels == 0) {
+   if (!legal_get_tex_level_parameter_target(ctx, target)) {
       _mesa_error(ctx, GL_INVALID_ENUM,
                   "glGetTexLevelParameter[if]v(target=0x%x)", target);
       return;
    }
+
+   maxLevels = _mesa_max_texture_levels(ctx, target);
+   assert(maxLevels != 0);
 
    if (level < 0 || level >= maxLevels) {
       _mesa_error( ctx, GL_INVALID_VALUE, "glGetTexLevelParameter[if]v" );
@@ -837,225 +1273,18 @@ _mesa_GetTexLevelParameteriv( GLenum target, GLint level,
    }
 
    texObj = _mesa_select_tex_object(ctx, texUnit, target);
-   _mesa_lock_texture(ctx, texObj);
 
-   img = _mesa_select_tex_image(ctx, texObj, target, level);
-   if (!img || !img->TexFormat) {
-      /* undefined texture image */
-      if (pname == GL_TEXTURE_COMPONENTS)
-         *params = 1;
-      else
-         *params = 0;
-      goto out;
-   }
-
-   texFormat = img->TexFormat;
-
-   isProxy = _mesa_is_proxy_texture(target);
-
-   switch (pname) {
-      case GL_TEXTURE_WIDTH:
-         *params = img->Width;
-         break;
-      case GL_TEXTURE_HEIGHT:
-         *params = img->Height;
-         break;
-      case GL_TEXTURE_DEPTH:
-         *params = img->Depth;
-         break;
-      case GL_TEXTURE_INTERNAL_FORMAT:
-         if (_mesa_is_format_compressed(img->TexFormat)) {
-            /* need to return the actual compressed format */
-            *params = _mesa_compressed_format_to_glenum(ctx, img->TexFormat);
-         }
-         else {
-            /* return the user's requested internal format */
-            *params = img->InternalFormat;
-         }
-         break;
-      case GL_TEXTURE_BORDER:
-         *params = img->Border;
-         break;
-      case GL_TEXTURE_RED_SIZE:
-      case GL_TEXTURE_GREEN_SIZE:
-      case GL_TEXTURE_BLUE_SIZE:
-         if (img->_BaseFormat == GL_RGB || img->_BaseFormat == GL_RGBA)
-            *params = _mesa_get_format_bits(texFormat, pname);
-         else
-            *params = 0;
-         break;
-      case GL_TEXTURE_ALPHA_SIZE:
-         if (img->_BaseFormat == GL_ALPHA ||
-             img->_BaseFormat == GL_LUMINANCE_ALPHA ||
-             img->_BaseFormat == GL_RGBA)
-            *params = _mesa_get_format_bits(texFormat, pname);
-         else
-            *params = 0;
-         break;
-      case GL_TEXTURE_INTENSITY_SIZE:
-         if (img->_BaseFormat != GL_INTENSITY)
-            *params = 0;
-         else {
-            *params = _mesa_get_format_bits(texFormat, pname);
-            if (*params == 0) {
-               /* intensity probably stored as rgb texture */
-               *params = MIN2(_mesa_get_format_bits(texFormat, GL_TEXTURE_RED_SIZE),
-                              _mesa_get_format_bits(texFormat, GL_TEXTURE_GREEN_SIZE));
-            }
-         }
-         break;
-      case GL_TEXTURE_LUMINANCE_SIZE:
-         if (img->_BaseFormat != GL_LUMINANCE &&
-             img->_BaseFormat != GL_LUMINANCE_ALPHA)
-            *params = 0;
-         else {
-            *params = _mesa_get_format_bits(texFormat, pname);
-            if (*params == 0) {
-               /* luminance probably stored as rgb texture */
-               *params = MIN2(_mesa_get_format_bits(texFormat, GL_TEXTURE_RED_SIZE),
-                              _mesa_get_format_bits(texFormat, GL_TEXTURE_GREEN_SIZE));
-            }
-         }
-         break;
-      case GL_TEXTURE_INDEX_SIZE_EXT:
-         if (img->_BaseFormat == GL_COLOR_INDEX)
-            *params = _mesa_get_format_bits(texFormat, pname);
-         else
-            *params = 0;
-         break;
-      case GL_TEXTURE_DEPTH_SIZE_ARB:
-         if (ctx->Extensions.ARB_depth_texture)
-            *params = _mesa_get_format_bits(texFormat, pname);
-         else
-            _mesa_error(ctx, GL_INVALID_ENUM,
-                        "glGetTexLevelParameter[if]v(pname)");
-         break;
-      case GL_TEXTURE_STENCIL_SIZE_EXT:
-         if (ctx->Extensions.EXT_packed_depth_stencil ||
-             ctx->Extensions.ARB_framebuffer_object) {
-            *params = _mesa_get_format_bits(texFormat, pname);
-         }
-         else {
-            _mesa_error(ctx, GL_INVALID_ENUM,
-                        "glGetTexLevelParameter[if]v(pname)");
-         }
-         break;
-      case GL_TEXTURE_SHARED_SIZE:
-         if (ctx->VersionMajor >= 3) {
-            /* XXX return number of exponent bits for shared exponent texture
-             * formats, like GL_RGB9_E5.
-             */
-            *params = 0;
-         }
-         else {
-            _mesa_error(ctx, GL_INVALID_ENUM,
-                        "glGetTexLevelParameter[if]v(pname)");
-         }
-         break;
-
-      /* GL_ARB_texture_compression */
-      case GL_TEXTURE_COMPRESSED_IMAGE_SIZE:
-	 if (_mesa_is_format_compressed(img->TexFormat) && !isProxy) {
-            *params = _mesa_format_image_size(texFormat, img->Width,
-                                              img->Height, img->Depth);
-	 }
-	 else {
-	    _mesa_error(ctx, GL_INVALID_OPERATION,
-			"glGetTexLevelParameter[if]v(pname)");
-	 }
-         break;
-      case GL_TEXTURE_COMPRESSED:
-         *params = (GLint) _mesa_is_format_compressed(img->TexFormat);
-         break;
-
-      /* GL_ARB_texture_float */
-      case GL_TEXTURE_RED_TYPE_ARB:
-         if (ctx->Extensions.ARB_texture_float) {
-            *params = _mesa_get_format_bits(texFormat, GL_TEXTURE_RED_SIZE) ?
-               _mesa_get_format_datatype(texFormat) : GL_NONE;
-         }
-         else {
-            _mesa_error(ctx, GL_INVALID_ENUM,
-                        "glGetTexLevelParameter[if]v(pname)");
-         }
-         break;
-      case GL_TEXTURE_GREEN_TYPE_ARB:
-         if (ctx->Extensions.ARB_texture_float) {
-            *params = _mesa_get_format_bits(texFormat, GL_TEXTURE_GREEN_SIZE) ?
-               _mesa_get_format_datatype(texFormat) : GL_NONE;
-         }
-         else {
-            _mesa_error(ctx, GL_INVALID_ENUM,
-                        "glGetTexLevelParameter[if]v(pname)");
-         }
-         break;
-      case GL_TEXTURE_BLUE_TYPE_ARB:
-         if (ctx->Extensions.ARB_texture_float) {
-            *params = _mesa_get_format_bits(texFormat, GL_TEXTURE_BLUE_SIZE) ?
-               _mesa_get_format_datatype(texFormat) : GL_NONE;
-         }
-         else {
-            _mesa_error(ctx, GL_INVALID_ENUM,
-                        "glGetTexLevelParameter[if]v(pname)");
-         }
-         break;
-      case GL_TEXTURE_ALPHA_TYPE_ARB:
-         if (ctx->Extensions.ARB_texture_float) {
-            *params = _mesa_get_format_bits(texFormat, GL_TEXTURE_ALPHA_SIZE) ?
-               _mesa_get_format_datatype(texFormat) : GL_NONE;
-         }
-         else {
-            _mesa_error(ctx, GL_INVALID_ENUM,
-                        "glGetTexLevelParameter[if]v(pname)");
-         }
-         break;
-      case GL_TEXTURE_LUMINANCE_TYPE_ARB:
-         if (ctx->Extensions.ARB_texture_float) {
-            *params = _mesa_get_format_bits(texFormat, GL_TEXTURE_LUMINANCE_SIZE) ?
-               _mesa_get_format_datatype(texFormat) : GL_NONE;
-         }
-         else {
-            _mesa_error(ctx, GL_INVALID_ENUM,
-                        "glGetTexLevelParameter[if]v(pname)");
-         }
-         break;
-      case GL_TEXTURE_INTENSITY_TYPE_ARB:
-         if (ctx->Extensions.ARB_texture_float) {
-            *params = _mesa_get_format_bits(texFormat, GL_TEXTURE_INTENSITY_SIZE) ?
-               _mesa_get_format_datatype(texFormat) : GL_NONE;
-         }
-         else {
-            _mesa_error(ctx, GL_INVALID_ENUM,
-                        "glGetTexLevelParameter[if]v(pname)");
-         }
-         break;
-      case GL_TEXTURE_DEPTH_TYPE_ARB:
-         if (ctx->Extensions.ARB_texture_float) {
-            *params = _mesa_get_format_bits(texFormat, GL_TEXTURE_DEPTH_SIZE) ?
-               _mesa_get_format_datatype(texFormat) : GL_NONE;
-         }
-         else {
-            _mesa_error(ctx, GL_INVALID_ENUM,
-                        "glGetTexLevelParameter[if]v(pname)");
-         }
-         break;
-
-      default:
-         _mesa_error(ctx, GL_INVALID_ENUM,
-                     "glGetTexLevelParameter[if]v(pname)");
-   }
-
- out:
-   _mesa_unlock_texture(ctx, texObj);
+   if (target == GL_TEXTURE_BUFFER)
+      get_tex_level_parameter_buffer(ctx, texObj, pname, params);
+   else
+      get_tex_level_parameter_image(ctx, texObj, target, level, pname, params);
 }
-
 
 
 void GLAPIENTRY
 _mesa_GetTexParameterfv( GLenum target, GLenum pname, GLfloat *params )
 {
    struct gl_texture_object *obj;
-   GLboolean error = GL_FALSE;
    GET_CURRENT_CONTEXT(ctx);
    ASSERT_OUTSIDE_BEGIN_END(ctx);
 
@@ -1066,102 +1295,114 @@ _mesa_GetTexParameterfv( GLenum target, GLenum pname, GLfloat *params )
    _mesa_lock_texture(ctx, obj);
    switch (pname) {
       case GL_TEXTURE_MAG_FILTER:
-	 *params = ENUM_TO_FLOAT(obj->MagFilter);
+	 *params = ENUM_TO_FLOAT(obj->Sampler.MagFilter);
 	 break;
       case GL_TEXTURE_MIN_FILTER:
-         *params = ENUM_TO_FLOAT(obj->MinFilter);
+         *params = ENUM_TO_FLOAT(obj->Sampler.MinFilter);
          break;
       case GL_TEXTURE_WRAP_S:
-         *params = ENUM_TO_FLOAT(obj->WrapS);
+         *params = ENUM_TO_FLOAT(obj->Sampler.WrapS);
          break;
       case GL_TEXTURE_WRAP_T:
-         *params = ENUM_TO_FLOAT(obj->WrapT);
+         *params = ENUM_TO_FLOAT(obj->Sampler.WrapT);
          break;
       case GL_TEXTURE_WRAP_R:
-         *params = ENUM_TO_FLOAT(obj->WrapR);
+         *params = ENUM_TO_FLOAT(obj->Sampler.WrapR);
          break;
       case GL_TEXTURE_BORDER_COLOR:
-         params[0] = CLAMP(obj->BorderColor.f[0], 0.0F, 1.0F);
-         params[1] = CLAMP(obj->BorderColor.f[1], 0.0F, 1.0F);
-         params[2] = CLAMP(obj->BorderColor.f[2], 0.0F, 1.0F);
-         params[3] = CLAMP(obj->BorderColor.f[3], 0.0F, 1.0F);
-         break;
-      case GL_TEXTURE_RESIDENT:
-         {
-            GLboolean resident;
-            if (ctx->Driver.IsTextureResident)
-               resident = ctx->Driver.IsTextureResident(ctx, obj);
-            else
-               resident = GL_TRUE;
-            *params = ENUM_TO_FLOAT(resident);
+         if (!_mesa_is_desktop_gl(ctx))
+            goto invalid_pname;
+
+         if (ctx->NewState & (_NEW_BUFFERS | _NEW_FRAG_CLAMP))
+            _mesa_update_state_locked(ctx);
+         if (ctx->Color._ClampFragmentColor) {
+            params[0] = CLAMP(obj->Sampler.BorderColor.f[0], 0.0F, 1.0F);
+            params[1] = CLAMP(obj->Sampler.BorderColor.f[1], 0.0F, 1.0F);
+            params[2] = CLAMP(obj->Sampler.BorderColor.f[2], 0.0F, 1.0F);
+            params[3] = CLAMP(obj->Sampler.BorderColor.f[3], 0.0F, 1.0F);
+         }
+         else {
+            params[0] = obj->Sampler.BorderColor.f[0];
+            params[1] = obj->Sampler.BorderColor.f[1];
+            params[2] = obj->Sampler.BorderColor.f[2];
+            params[3] = obj->Sampler.BorderColor.f[3];
          }
          break;
+      case GL_TEXTURE_RESIDENT:
+         if (ctx->API != API_OPENGL)
+            goto invalid_pname;
+
+         *params = 1.0F;
+         break;
       case GL_TEXTURE_PRIORITY:
+         if (ctx->API != API_OPENGL)
+            goto invalid_pname;
+
          *params = obj->Priority;
          break;
       case GL_TEXTURE_MIN_LOD:
-         *params = obj->MinLod;
+         if (!_mesa_is_desktop_gl(ctx) && !_mesa_is_gles3(ctx))
+            goto invalid_pname;
+
+         *params = obj->Sampler.MinLod;
          break;
       case GL_TEXTURE_MAX_LOD:
-         *params = obj->MaxLod;
+         if (!_mesa_is_desktop_gl(ctx) && !_mesa_is_gles3(ctx))
+            goto invalid_pname;
+
+         *params = obj->Sampler.MaxLod;
          break;
       case GL_TEXTURE_BASE_LEVEL:
+         if (!_mesa_is_desktop_gl(ctx) && !_mesa_is_gles3(ctx))
+            goto invalid_pname;
+
          *params = (GLfloat) obj->BaseLevel;
          break;
       case GL_TEXTURE_MAX_LEVEL:
          *params = (GLfloat) obj->MaxLevel;
          break;
       case GL_TEXTURE_MAX_ANISOTROPY_EXT:
-         if (ctx->Extensions.EXT_texture_filter_anisotropic) {
-            *params = obj->MaxAnisotropy;
-         }
-	 else
-	    error = GL_TRUE;
-         break;
-      case GL_TEXTURE_COMPARE_FAIL_VALUE_ARB:
-         if (ctx->Extensions.ARB_shadow_ambient) {
-            *params = obj->CompareFailValue;
-         }
-	 else 
-	    error = GL_TRUE;
+         if (!ctx->Extensions.EXT_texture_filter_anisotropic)
+            goto invalid_pname;
+         *params = obj->Sampler.MaxAnisotropy;
          break;
       case GL_GENERATE_MIPMAP_SGIS:
-         if (ctx->Extensions.SGIS_generate_mipmap) {
-            *params = (GLfloat) obj->GenerateMipmap;
-         }
-	 else 
-	    error = GL_TRUE;
+         if (ctx->API != API_OPENGL && ctx->API != API_OPENGLES)
+            goto invalid_pname;
+
+	 *params = (GLfloat) obj->GenerateMipmap;
          break;
       case GL_TEXTURE_COMPARE_MODE_ARB:
-         if (ctx->Extensions.ARB_shadow) {
-            *params = (GLfloat) obj->CompareMode;
-         }
-	 else 
-	    error = GL_TRUE;
+         if ((!_mesa_is_desktop_gl(ctx) || !ctx->Extensions.ARB_shadow)
+             && !_mesa_is_gles3(ctx))
+            goto invalid_pname;
+         *params = (GLfloat) obj->Sampler.CompareMode;
          break;
       case GL_TEXTURE_COMPARE_FUNC_ARB:
-         if (ctx->Extensions.ARB_shadow) {
-            *params = (GLfloat) obj->CompareFunc;
-         }
-	 else 
-	    error = GL_TRUE;
+         if ((!_mesa_is_desktop_gl(ctx) || !ctx->Extensions.ARB_shadow)
+             && !_mesa_is_gles3(ctx))
+            goto invalid_pname;
+         *params = (GLfloat) obj->Sampler.CompareFunc;
          break;
       case GL_DEPTH_TEXTURE_MODE_ARB:
-         if (ctx->Extensions.ARB_depth_texture) {
-            *params = (GLfloat) obj->DepthMode;
-         }
-	 else 
-	    error = GL_TRUE;
+         /* GL_DEPTH_TEXTURE_MODE_ARB is removed in core-profile and it has
+          * never existed in OpenGL ES.
+          */
+         if (ctx->API != API_OPENGL || !ctx->Extensions.ARB_depth_texture)
+            goto invalid_pname;
+         *params = (GLfloat) obj->DepthMode;
          break;
       case GL_TEXTURE_LOD_BIAS:
-         if (ctx->Extensions.EXT_texture_lod_bias) {
-            *params = obj->LodBias;
-         }
-	 else 
-	    error = GL_TRUE;
+         if (ctx->API != API_OPENGL)
+            goto invalid_pname;
+
+         *params = obj->Sampler.LodBias;
          break;
 #if FEATURE_OES_draw_texture
       case GL_TEXTURE_CROP_RECT_OES:
+         if (ctx->API != API_OPENGLES || !ctx->Extensions.OES_draw_texture)
+            goto invalid_pname;
+
          params[0] = obj->CropRect[0];
          params[1] = obj->CropRect[1];
          params[2] = obj->CropRect[2];
@@ -1173,37 +1414,57 @@ _mesa_GetTexParameterfv( GLenum target, GLenum pname, GLfloat *params )
       case GL_TEXTURE_SWIZZLE_G_EXT:
       case GL_TEXTURE_SWIZZLE_B_EXT:
       case GL_TEXTURE_SWIZZLE_A_EXT:
-         if (ctx->Extensions.EXT_texture_swizzle) {
-            GLuint comp = pname - GL_TEXTURE_SWIZZLE_R_EXT;
-            *params = (GLfloat) obj->Swizzle[comp];
-         }
-         else {
-            error = GL_TRUE;
-         }
+         if ((!_mesa_is_desktop_gl(ctx)
+              || !ctx->Extensions.EXT_texture_swizzle)
+             && !_mesa_is_gles3(ctx))
+            goto invalid_pname;
+         *params = (GLfloat) obj->Swizzle[pname - GL_TEXTURE_SWIZZLE_R_EXT];
          break;
 
       case GL_TEXTURE_SWIZZLE_RGBA_EXT:
-         if (ctx->Extensions.EXT_texture_swizzle) {
+         if ((!_mesa_is_desktop_gl(ctx)
+              || !ctx->Extensions.EXT_texture_swizzle)
+             && !_mesa_is_gles3(ctx)) {
+            goto invalid_pname;
+         }
+         else {
             GLuint comp;
             for (comp = 0; comp < 4; comp++) {
                params[comp] = (GLfloat) obj->Swizzle[comp];
             }
          }
-         else {
-            error = GL_TRUE;
-         }
+         break;
+
+      case GL_TEXTURE_CUBE_MAP_SEAMLESS:
+         if (!_mesa_is_desktop_gl(ctx)
+             || !ctx->Extensions.AMD_seamless_cubemap_per_texture)
+            goto invalid_pname;
+         *params = (GLfloat) obj->Sampler.CubeMapSeamless;
+         break;
+
+      case GL_TEXTURE_IMMUTABLE_FORMAT:
+         if (!ctx->Extensions.ARB_texture_storage)
+            goto invalid_pname;
+         *params = (GLfloat) obj->Immutable;
+         break;
+
+      case GL_TEXTURE_SRGB_DECODE_EXT:
+         if (!ctx->Extensions.EXT_texture_sRGB_decode)
+            goto invalid_pname;
+         *params = (GLfloat) obj->Sampler.sRGBDecode;
          break;
 
       default:
-	 error = GL_TRUE;
-	 break;
+         goto invalid_pname;
    }
 
-   if (error)
-      _mesa_error(ctx, GL_INVALID_ENUM, "glGetTexParameterfv(pname=0x%x)",
-		  pname);
-
+   /* no error if we get here */
    _mesa_unlock_texture(ctx, obj);
+   return;
+
+invalid_pname:
+   _mesa_unlock_texture(ctx, obj);
+   _mesa_error(ctx, GL_INVALID_ENUM, "glGetTexParameterfv(pname=0x%x)", pname);
 }
 
 
@@ -1211,127 +1472,118 @@ void GLAPIENTRY
 _mesa_GetTexParameteriv( GLenum target, GLenum pname, GLint *params )
 {
    struct gl_texture_object *obj;
-   GLboolean error = GL_FALSE;
    GET_CURRENT_CONTEXT(ctx);
    ASSERT_OUTSIDE_BEGIN_END(ctx);
 
-    obj = get_texobj(ctx, target, GL_TRUE);
-    if (!obj)
-       return;
+   obj = get_texobj(ctx, target, GL_TRUE);
+   if (!obj)
+      return;
 
    _mesa_lock_texture(ctx, obj);
    switch (pname) {
       case GL_TEXTURE_MAG_FILTER:
-         *params = (GLint) obj->MagFilter;
-         break;;
+         *params = (GLint) obj->Sampler.MagFilter;
+         break;
       case GL_TEXTURE_MIN_FILTER:
-         *params = (GLint) obj->MinFilter;
-         break;;
+         *params = (GLint) obj->Sampler.MinFilter;
+         break;
       case GL_TEXTURE_WRAP_S:
-         *params = (GLint) obj->WrapS;
-         break;;
+         *params = (GLint) obj->Sampler.WrapS;
+         break;
       case GL_TEXTURE_WRAP_T:
-         *params = (GLint) obj->WrapT;
-         break;;
+         *params = (GLint) obj->Sampler.WrapT;
+         break;
       case GL_TEXTURE_WRAP_R:
-         *params = (GLint) obj->WrapR;
-         break;;
+         *params = (GLint) obj->Sampler.WrapR;
+         break;
       case GL_TEXTURE_BORDER_COLOR:
+         if (!_mesa_is_desktop_gl(ctx))
+            goto invalid_pname;
+
          {
             GLfloat b[4];
-            b[0] = CLAMP(obj->BorderColor.f[0], 0.0F, 1.0F);
-            b[1] = CLAMP(obj->BorderColor.f[1], 0.0F, 1.0F);
-            b[2] = CLAMP(obj->BorderColor.f[2], 0.0F, 1.0F);
-            b[3] = CLAMP(obj->BorderColor.f[3], 0.0F, 1.0F);
+            b[0] = CLAMP(obj->Sampler.BorderColor.f[0], 0.0F, 1.0F);
+            b[1] = CLAMP(obj->Sampler.BorderColor.f[1], 0.0F, 1.0F);
+            b[2] = CLAMP(obj->Sampler.BorderColor.f[2], 0.0F, 1.0F);
+            b[3] = CLAMP(obj->Sampler.BorderColor.f[3], 0.0F, 1.0F);
             params[0] = FLOAT_TO_INT(b[0]);
             params[1] = FLOAT_TO_INT(b[1]);
             params[2] = FLOAT_TO_INT(b[2]);
             params[3] = FLOAT_TO_INT(b[3]);
          }
-         break;;
+         break;
       case GL_TEXTURE_RESIDENT:
-         {
-            GLboolean resident;
-            if (ctx->Driver.IsTextureResident)
-               resident = ctx->Driver.IsTextureResident(ctx, obj);
-            else
-               resident = GL_TRUE;
-            *params = (GLint) resident;
-         }
-         break;;
+         if (ctx->API != API_OPENGL)
+            goto invalid_pname;
+
+         *params = 1;
+         break;
       case GL_TEXTURE_PRIORITY:
+         if (ctx->API != API_OPENGL)
+            goto invalid_pname;
+
          *params = FLOAT_TO_INT(obj->Priority);
-         break;;
+         break;
       case GL_TEXTURE_MIN_LOD:
-         *params = (GLint) obj->MinLod;
-         break;;
+         if (!_mesa_is_desktop_gl(ctx) && !_mesa_is_gles3(ctx))
+            goto invalid_pname;
+
+         *params = (GLint) obj->Sampler.MinLod;
+         break;
       case GL_TEXTURE_MAX_LOD:
-         *params = (GLint) obj->MaxLod;
-         break;;
+         if (!_mesa_is_desktop_gl(ctx) && !_mesa_is_gles3(ctx))
+            goto invalid_pname;
+
+         *params = (GLint) obj->Sampler.MaxLod;
+         break;
       case GL_TEXTURE_BASE_LEVEL:
+         if (!_mesa_is_desktop_gl(ctx) && !_mesa_is_gles3(ctx))
+            goto invalid_pname;
+
          *params = obj->BaseLevel;
-         break;;
+         break;
       case GL_TEXTURE_MAX_LEVEL:
          *params = obj->MaxLevel;
-         break;;
-      case GL_TEXTURE_MAX_ANISOTROPY_EXT:
-         if (ctx->Extensions.EXT_texture_filter_anisotropic) {
-            *params = (GLint) obj->MaxAnisotropy;
-         }
-         else {
-            error = GL_TRUE;
-         }
          break;
-      case GL_TEXTURE_COMPARE_FAIL_VALUE_ARB:
-         if (ctx->Extensions.ARB_shadow_ambient) {
-            *params = (GLint) FLOAT_TO_INT(obj->CompareFailValue);
-         }
-         else {
-            error = GL_TRUE;
-         }
+      case GL_TEXTURE_MAX_ANISOTROPY_EXT:
+         if (!ctx->Extensions.EXT_texture_filter_anisotropic)
+            goto invalid_pname;
+         *params = (GLint) obj->Sampler.MaxAnisotropy;
          break;
       case GL_GENERATE_MIPMAP_SGIS:
-         if (ctx->Extensions.SGIS_generate_mipmap) {
-            *params = (GLint) obj->GenerateMipmap;
-         }
-         else {
-            error = GL_TRUE;
-         }
+         if (ctx->API != API_OPENGL && ctx->API != API_OPENGLES)
+            goto invalid_pname;
+
+	 *params = (GLint) obj->GenerateMipmap;
          break;
       case GL_TEXTURE_COMPARE_MODE_ARB:
-         if (ctx->Extensions.ARB_shadow) {
-            *params = (GLint) obj->CompareMode;
-         }
-         else {
-            error = GL_TRUE;
-         }
+         if ((!_mesa_is_desktop_gl(ctx) || !ctx->Extensions.ARB_shadow)
+             && !_mesa_is_gles3(ctx))
+            goto invalid_pname;
+         *params = (GLint) obj->Sampler.CompareMode;
          break;
       case GL_TEXTURE_COMPARE_FUNC_ARB:
-         if (ctx->Extensions.ARB_shadow) {
-            *params = (GLint) obj->CompareFunc;
-         }
-         else {
-            error = GL_TRUE;
-         }
+         if ((!_mesa_is_desktop_gl(ctx) || !ctx->Extensions.ARB_shadow)
+             && !_mesa_is_gles3(ctx))
+            goto invalid_pname;
+         *params = (GLint) obj->Sampler.CompareFunc;
          break;
       case GL_DEPTH_TEXTURE_MODE_ARB:
-         if (ctx->Extensions.ARB_depth_texture) {
-            *params = (GLint) obj->DepthMode;
-         }
-         else {
-            error = GL_TRUE;
-         }
+         if (ctx->API != API_OPENGL || !ctx->Extensions.ARB_depth_texture)
+            goto invalid_pname;
+         *params = (GLint) obj->DepthMode;
          break;
       case GL_TEXTURE_LOD_BIAS:
-         if (ctx->Extensions.EXT_texture_lod_bias) {
-            *params = (GLint) obj->LodBias;
-         }
-         else {
-            error = GL_TRUE;
-         }
+         if (ctx->API != API_OPENGL)
+            goto invalid_pname;
+
+         *params = (GLint) obj->Sampler.LodBias;
          break;
 #if FEATURE_OES_draw_texture
       case GL_TEXTURE_CROP_RECT_OES:
+         if (ctx->API != API_OPENGLES || !ctx->Extensions.OES_draw_texture)
+            goto invalid_pname;
+
          params[0] = obj->CropRect[0];
          params[1] = obj->CropRect[1];
          params[2] = obj->CropRect[2];
@@ -1342,33 +1594,57 @@ _mesa_GetTexParameteriv( GLenum target, GLenum pname, GLint *params )
       case GL_TEXTURE_SWIZZLE_G_EXT:
       case GL_TEXTURE_SWIZZLE_B_EXT:
       case GL_TEXTURE_SWIZZLE_A_EXT:
-         if (ctx->Extensions.EXT_texture_swizzle) {
-            GLuint comp = pname - GL_TEXTURE_SWIZZLE_R_EXT;
-            *params = obj->Swizzle[comp];
-         }
-         else {
-            error = GL_TRUE;
-         }
+         if ((!_mesa_is_desktop_gl(ctx)
+              || !ctx->Extensions.EXT_texture_swizzle)
+             && !_mesa_is_gles3(ctx))
+            goto invalid_pname;
+         *params = obj->Swizzle[pname - GL_TEXTURE_SWIZZLE_R_EXT];
          break;
 
       case GL_TEXTURE_SWIZZLE_RGBA_EXT:
-         if (ctx->Extensions.EXT_texture_swizzle) {
-            COPY_4V(params, obj->Swizzle);
-         }
-         else {
-            error = GL_TRUE;
-         }
+         if ((!_mesa_is_desktop_gl(ctx)
+              || !ctx->Extensions.EXT_texture_swizzle)
+             && !_mesa_is_gles3(ctx))
+            goto invalid_pname;
+         COPY_4V(params, obj->Swizzle);
+         break;
+
+      case GL_TEXTURE_CUBE_MAP_SEAMLESS:
+         if (!_mesa_is_desktop_gl(ctx)
+             || !ctx->Extensions.AMD_seamless_cubemap_per_texture)
+            goto invalid_pname;
+         *params = (GLint) obj->Sampler.CubeMapSeamless;
+         break;
+
+      case GL_TEXTURE_IMMUTABLE_FORMAT:
+         if (!ctx->Extensions.ARB_texture_storage)
+            goto invalid_pname;
+         *params = (GLint) obj->Immutable;
+         break;
+
+      case GL_REQUIRED_TEXTURE_IMAGE_UNITS_OES:
+         if (!_mesa_is_gles(ctx) || !ctx->Extensions.OES_EGL_image_external)
+            goto invalid_pname;
+         *params = obj->RequiredTextureImageUnits;
+         break;
+
+      case GL_TEXTURE_SRGB_DECODE_EXT:
+         if (!ctx->Extensions.EXT_texture_sRGB_decode)
+            goto invalid_pname;
+         *params = obj->Sampler.sRGBDecode;
          break;
 
       default:
-         ; /* silence warnings */
+         goto invalid_pname;
    }
 
-   if (error)
-      _mesa_error(ctx, GL_INVALID_ENUM, "glGetTexParameteriv(pname=0x%x)",
-		  pname);
-
+   /* no error if we get here */
    _mesa_unlock_texture(ctx, obj);
+   return;
+
+invalid_pname:
+   _mesa_unlock_texture(ctx, obj);
+   _mesa_error(ctx, GL_INVALID_ENUM, "glGetTexParameteriv(pname=0x%x)", pname);
 }
 
 
@@ -1381,10 +1657,12 @@ _mesa_GetTexParameterIiv(GLenum target, GLenum pname, GLint *params)
    ASSERT_OUTSIDE_BEGIN_END(ctx);
 
    texObj = get_texobj(ctx, target, GL_TRUE);
+   if (!texObj)
+      return;
    
    switch (pname) {
    case GL_TEXTURE_BORDER_COLOR:
-      COPY_4V(params, texObj->BorderColor.i);
+      COPY_4V(params, texObj->Sampler.BorderColor.i);
       break;
    default:
       _mesa_GetTexParameteriv(target, pname, params);
@@ -1401,10 +1679,12 @@ _mesa_GetTexParameterIuiv(GLenum target, GLenum pname, GLuint *params)
    ASSERT_OUTSIDE_BEGIN_END(ctx);
 
    texObj = get_texobj(ctx, target, GL_TRUE);
+   if (!texObj)
+      return;
    
    switch (pname) {
    case GL_TEXTURE_BORDER_COLOR:
-      COPY_4V(params, texObj->BorderColor.i);
+      COPY_4V(params, texObj->Sampler.BorderColor.i);
       break;
    default:
       {

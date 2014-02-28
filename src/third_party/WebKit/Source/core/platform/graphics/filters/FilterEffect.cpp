@@ -27,7 +27,8 @@
 
 #include "core/platform/graphics/ImageBuffer.h"
 #include "core/platform/graphics/filters/Filter.h"
-#include <wtf/Uint8ClampedArray.h>
+#include "third_party/skia/include/core/SkImageFilter.h"
+#include "wtf/Uint8ClampedArray.h"
 
 #if HAVE(ARM_NEON_INTRINSICS)
 #include <arm_neon.h>
@@ -67,13 +68,13 @@ void FilterEffect::determineAbsolutePaintRect()
     unsigned size = m_inputEffects.size();
     for (unsigned i = 0; i < size; ++i)
         m_absolutePaintRect.unite(m_inputEffects.at(i)->absolutePaintRect());
-    
+
     // Filters in SVG clip to primitive subregion, while CSS doesn't.
     if (m_clipsToBounds)
         m_absolutePaintRect.intersect(enclosingIntRect(m_maxEffectRect));
     else
         m_absolutePaintRect.unite(enclosingIntRect(m_maxEffectRect));
-    
+
 }
 
 FloatRect FilterEffect::mapRectRecursive(const FloatRect& rect)
@@ -160,7 +161,7 @@ void FilterEffect::apply()
         for (unsigned i = 0; i < size; ++i)
             inputEffect(i)->correctFilterResultIfNeeded();
     }
-    
+
     if (applySkia())
         return;
 
@@ -473,6 +474,11 @@ FloatRect FilterEffect::determineFilterPrimitiveSubregion()
 
     setMaxEffectRect(absoluteSubregion);
     return subregion;
+}
+
+PassRefPtr<SkImageFilter> FilterEffect::createImageFilter(SkiaImageFilterBuilder* builder)
+{
+    return 0;
 }
 
 } // namespace WebCore

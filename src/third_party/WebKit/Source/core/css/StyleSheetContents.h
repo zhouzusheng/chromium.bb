@@ -28,11 +28,13 @@
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 #include "wtf/text/AtomicStringHash.h"
+#include "wtf/text/TextPosition.h"
+
 
 namespace WebCore {
 
 class CSSStyleSheet;
-class CachedCSSStyleSheet;
+class CSSStyleSheetResource;
 class Document;
 class Node;
 class SecurityOrigin;
@@ -55,14 +57,14 @@ public:
     }
 
     ~StyleSheetContents();
-    
+
     const CSSParserContext& parserContext() const { return m_parserContext; }
 
     const AtomicString& determineNamespace(const AtomicString& prefix);
 
-    void parseAuthorStyleSheet(const CachedCSSStyleSheet*, const SecurityOrigin*);
+    void parseAuthorStyleSheet(const CSSStyleSheetResource*, const SecurityOrigin*);
     bool parseString(const String&);
-    bool parseStringAtLine(const String&, int startLineNumber, bool);
+    bool parseStringAtPosition(const String&, const TextPosition&, bool);
 
     bool isCacheable() const;
 
@@ -91,7 +93,7 @@ public:
 
     void parserAddNamespace(const AtomicString& prefix, const AtomicString& uri);
     void parserAppendRule(PassRefPtr<StyleRuleBase>);
-    void parserSetEncodingFromCharsetRule(const String& encoding); 
+    void parserSetEncodingFromCharsetRule(const String& encoding);
     void parserSetUsesRemUnits(bool b) { m_usesRemUnits = b; }
 
     void clearRules();
@@ -102,12 +104,12 @@ public:
     const Vector<RefPtr<StyleRuleBase> >& childRules() const { return m_childRules; }
     const Vector<RefPtr<StyleRuleImport> >& importRules() const { return m_importRules; }
 
-    void notifyLoadedSheet(const CachedCSSStyleSheet*);
-    
+    void notifyLoadedSheet(const CSSStyleSheetResource*);
+
     StyleSheetContents* parentStyleSheet() const;
     StyleRuleImport* ownerRule() const { return m_ownerRule; }
     void clearOwnerRule() { m_ownerRule = 0; }
-    
+
     // Note that href is the URL that started the redirect chain that led to
     // this style sheet. This property probably isn't useful for much except
     // the JavaScript binding (which needs to use this value for security).
@@ -120,7 +122,7 @@ public:
     bool usesRemUnits() const { return m_usesRemUnits; }
 
     unsigned estimatedSizeInBytes() const;
-    
+
     bool wrapperInsertRule(PassRefPtr<StyleRuleBase>, unsigned index);
     void wrapperDeleteRule(unsigned index);
 
@@ -136,8 +138,6 @@ public:
     bool isInMemoryCache() const { return m_isInMemoryCache; }
     void addedToMemoryCache();
     void removedFromMemoryCache();
-
-    void reportMemoryUsage(MemoryObjectInfo*) const;
 
     void shrinkToFit();
 
@@ -164,7 +164,7 @@ private:
     bool m_usesRemUnits : 1;
     bool m_isMutable : 1;
     bool m_isInMemoryCache : 1;
-    
+
     CSSParserContext m_parserContext;
 
     Vector<CSSStyleSheet*> m_clients;

@@ -24,22 +24,26 @@
 #ifndef HTMLScriptElement_h
 #define HTMLScriptElement_h
 
-#include "core/dom/ScriptElement.h"
+#include "core/dom/ScriptLoaderClient.h"
 #include "core/html/HTMLElement.h"
 
 namespace WebCore {
 
-class HTMLScriptElement FINAL : public HTMLElement, public ScriptElement {
+class ScriptLoader;
+
+class HTMLScriptElement FINAL : public HTMLElement, public ScriptLoaderClient {
 public:
     static PassRefPtr<HTMLScriptElement> create(const QualifiedName&, Document*, bool wasInsertedByParser, bool alreadyStarted = false);
 
-    String text() const { return scriptContent(); }
+    String text() { return textFromChildren(); }
     void setText(const String&);
 
     KURL src() const;
 
     void setAsync(bool);
     bool async() const;
+
+    ScriptLoader* loader() const { return m_loader.get(); }
 
 private:
     HTMLScriptElement(const QualifiedName&, Document*, bool wasInsertedByParser, bool alreadyStarted);
@@ -65,6 +69,8 @@ private:
     virtual void dispatchLoadEvent();
 
     virtual PassRefPtr<Element> cloneElementWithoutAttributesAndChildren();
+
+    OwnPtr<ScriptLoader> m_loader;
 };
 
 inline HTMLScriptElement* toHTMLScriptElement(Node* node)

@@ -33,7 +33,7 @@
 
 #include "core/platform/LocalizedStrings.h"
 #include "core/platform/text/DateTimeFormat.h"
-#include <wtf/text/StringBuilder.h>
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -346,7 +346,7 @@ String Locale::formatDateTime(const DateComponents& date, FormatType formatType)
     case DateComponents::Month:
         builder.build(formatType == FormatTypeShort ? shortMonthFormat() : monthFormat());
         break;
-    case DateComponents::Week:    
+    case DateComponents::Week:
         builder.build(weekFormatInLDML());
         break;
     case DateComponents::DateTime:

@@ -25,7 +25,7 @@
 #include "EventInterfaces.h"
 #include "EventTargetInterfaces.h"
 #include "core/platform/ThreadGlobalData.h"
-#include <wtf/text/AtomicString.h>
+#include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
@@ -92,6 +92,8 @@ namespace WebCore {
     macro(message) \
     macro(midimessage) \
     macro(mousedown) \
+    macro(mouseenter) \
+    macro(mouseleave) \
     macro(mousemove) \
     macro(mouseout) \
     macro(mouseover) \

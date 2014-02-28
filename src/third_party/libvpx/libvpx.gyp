@@ -13,7 +13,7 @@
         'asm_obj_extension': 'obj',
       }],
 
-      ['target_arch=="arm" and arm_neon==1', {
+      ['(target_arch=="arm" or target_arch=="armv7") and arm_neon==1', {
         'target_arch_full': 'arm-neon',
       }, {
         'conditions': [
@@ -49,7 +49,7 @@
     ['target_arch=="x64"', {
       'includes': ['libvpx_srcs_x86_64_intrinsics.gypi', ],
     }],
-    [ 'target_arch != "arm" and target_arch != "mipsel"', {
+    [ '(target_arch != "arm" and target_arch != "armv7") and target_arch != "mipsel"', {
       'targets': [
         {
           # This libvpx target contains both encoder and decoder.
@@ -186,7 +186,7 @@
     },
     ],
     # 'libvpx' target for ARM builds.
-    [ 'target_arch=="arm" ', {
+    [ '(target_arch=="arm" or target_arch=="armv7") ', {
       'targets': [
         {
           # This libvpx target contains both encoder and decoder.
@@ -231,19 +231,37 @@
           ],
 
           'variables': {
+            'variables': {
+              'conditions': [
+                ['OS=="ios"', {
+                  'ads2gas_script%': 'ads2gas_apple.pl',
+                }, {
+                  'ads2gas_script%': 'ads2gas.pl',
+                }],
+              ],
+            },
+            'ads2gas_script%': '<(ads2gas_script)',
             # Location of the assembly conversion script.
-            'ads2gas_script': 'ads2gas.pl',
             'ads2gas_script_path': '<(libvpx_source)/build/make/<(ads2gas_script)',
             'ads2gas_script_include': '<(libvpx_source)/build/make/thumb.pm',
+            'assembler_include_flags': [
+              # We need to explicitly tell the GCC assembler to look for
+              # .include directive files from the place where they're
+              # generated to.
+              '-Wa,-I,<!(pwd)/source/config/<(OS_CATEGORY)/<(target_arch_full)',
+              '-Wa,-I,<!(pwd)/source/config',
+              '-Wa,-I,<(shared_generated_dir)',
+            ],
           },
           'cflags': [
-            # We need to explicitly tell the GCC assembler to look for
-            # .include directive files from the place where they're
-            # generated to.
-            '-Wa,-I,<!(pwd)/source/config/<(OS_CATEGORY)/<(target_arch_full)',
-            '-Wa,-I,<!(pwd)/source/config',
-            '-Wa,-I,<(shared_generated_dir)',
+            '<@(assembler_include_flags)',
           ],
+          'xcode_settings': {
+            'OTHER_CFLAGS': [
+              '-no-integrated-as',
+              '<@(assembler_include_flags)',
+            ],
+          },
           'include_dirs': [
             'source/config/<(OS_CATEGORY)/<(target_arch_full)',
             'source/config',
@@ -299,7 +317,7 @@
   ],
   'targets': [
     {
-      # A tool that runs on host to tract integers from object file.
+      # A tool that runs on host to extract integers from object file.
       'target_name': 'libvpx_obj_int_extract',
       'type': 'executable',
       'toolsets': ['host'],
@@ -437,7 +455,7 @@
           ],
           'variables': {
             'conditions': [
-              ['target_arch=="arm"', {
+              ['(target_arch=="arm" or target_arch=="armv7")', {
                 'asm_format': 'gas',
               }, {
                 'asm_format': 'rvds',
@@ -534,7 +552,7 @@
           ],
           'variables': {
             'conditions': [
-              ['target_arch=="arm"', {
+              ['(target_arch=="arm" or target_arch=="armv7")', {
                 'asm_format': 'gas',
               }, {
                 'asm_format': 'rvds',

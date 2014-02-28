@@ -40,7 +40,8 @@ RenderMultiColumnSet::RenderMultiColumnSet(RenderFlowThread* flowThread)
     , m_computedColumnCount(1)
     , m_computedColumnWidth(0)
     , m_computedColumnHeight(0)
-    , m_requiresBalancing(false)
+    , m_maxColumnHeight(LayoutUnit::max())
+    , m_minSpaceShortage(LayoutUnit::max())
     , m_minimumColumnHeight(0)
     , m_forcedBreaksCount(0)
     , m_maximumDistanceBetweenForcedBreaks(0)
@@ -51,32 +52,100 @@ RenderMultiColumnSet::RenderMultiColumnSet(RenderFlowThread* flowThread)
 RenderMultiColumnSet* RenderMultiColumnSet::createAnonymous(RenderFlowThread* flowThread)
 {
     Document* document = flowThread->document();
-    RenderMultiColumnSet* renderer = new (document->renderArena()) RenderMultiColumnSet(flowThread);
+    RenderMultiColumnSet* renderer = new RenderMultiColumnSet(flowThread);
     renderer->setDocumentForAnonymous(document);
     return renderer;
+}
+
+LayoutUnit RenderMultiColumnSet::heightAdjustedForSetOffset(LayoutUnit height) const
+{
+    RenderMultiColumnBlock* multicolBlock = toRenderMultiColumnBlock(parent());
+    LayoutUnit contentLogicalTop = logicalTop() - multicolBlock->borderBefore() - multicolBlock->paddingBefore();
+
+    height -= contentLogicalTop;
+    return max(height, LayoutUnit(1)); // Let's avoid zero height, as that would probably cause an infinite amount of columns to be created.
 }
 
 LayoutUnit RenderMultiColumnSet::pageLogicalTopForOffset(LayoutUnit offset) const
 {
     LayoutUnit portionLogicalTop = (isHorizontalWritingMode() ? flowThreadPortionRect().y() : flowThreadPortionRect().x());
-    unsigned columnIndex = (offset - portionLogicalTop) / computedColumnHeight();
+    unsigned columnIndex = columnIndexAtOffset(offset, AssumeNewColumns);
     return portionLogicalTop + columnIndex * computedColumnHeight();
+}
+
+void RenderMultiColumnSet::setAndConstrainColumnHeight(LayoutUnit newHeight)
+{
+    m_computedColumnHeight = newHeight;
+    if (m_computedColumnHeight > m_maxColumnHeight)
+        m_computedColumnHeight = m_maxColumnHeight;
+    // FIXME: the height may also be affected by the enclosing pagination context, if any.
+}
+
+bool RenderMultiColumnSet::calculateBalancedHeight(bool initial)
+{
+    ASSERT(toRenderMultiColumnBlock(parent())->requiresBalancing());
+    LayoutUnit oldColumnHeight = m_computedColumnHeight;
+    LayoutUnit currentMinSpaceShortage = m_minSpaceShortage;
+    m_minSpaceShortage = LayoutUnit::max();
+
+    if (initial) {
+        // Start with the lowest imaginable column height.
+        LayoutUnit logicalHeightGuess = ceilf(float(flowThread()->logicalHeight()) / float(m_computedColumnCount));
+        logicalHeightGuess = max(logicalHeightGuess, m_minimumColumnHeight);
+        setAndConstrainColumnHeight(logicalHeightGuess);
+
+        // The multicol container now typically needs at least one more layout pass with a new
+        // column height, but if height was specified, we only need to do this if we found that we
+        // might need less space than that. On the other hand, if we determined that the columns
+        // need to be as tall as the specified height of the container, we have already laid it out
+        // correctly, and there's no need for another pass.
+        return m_computedColumnHeight != oldColumnHeight;
+    }
+
+    if (columnCount() <= computedColumnCount()) {
+        // With the current column height, the content fits without creating overflowing columns. We're done.
+        return false;
+    }
+
+    // If the initial guessed column height wasn't enough, stretch it now. Stretch by the lowest
+    // amount of space shortage found during layout.
+
+    ASSERT(currentMinSpaceShortage != LayoutUnit::max()); // If this can actually happen, we probably have a bug.
+    if (currentMinSpaceShortage == LayoutUnit::max())
+        return false; // So bail out rather than looping infinitely.
+
+    setAndConstrainColumnHeight(m_computedColumnHeight + currentMinSpaceShortage);
+
+    // If we reach the maximum column height (typically set by the height or max-height property),
+    // we may not be allowed to stretch further. Return true only if stretching
+    // succeeded. Otherwise, we're done.
+    ASSERT(m_computedColumnHeight >= oldColumnHeight); // We shouldn't be able to shrink the height!
+    return m_computedColumnHeight > oldColumnHeight;
+}
+
+void RenderMultiColumnSet::recordSpaceShortage(LayoutUnit spaceShortage)
+{
+    if (spaceShortage >= m_minSpaceShortage)
+        return;
+
+    // The space shortage is what we use as our stretch amount. We need a positive number here in
+    // order to get anywhere.
+    ASSERT(spaceShortage > 0);
+
+    m_minSpaceShortage = spaceShortage;
 }
 
 void RenderMultiColumnSet::updateLogicalWidth()
 {
     RenderMultiColumnBlock* parentBlock = toRenderMultiColumnBlock(parent());
     setComputedColumnWidthAndCount(parentBlock->columnWidth(), parentBlock->columnCount()); // FIXME: This will eventually vary if we are contained inside regions.
-    
+
     // FIXME: When we add regions support, we'll start it off at the width of the multi-column
     // block in that particular region.
     setLogicalWidth(parentBox()->contentLogicalWidth());
 
     // If we overflow, increase our logical width.
     unsigned colCount = columnCount();
-    if (!colCount)
-        return;
-    
     LayoutUnit colGap = columnGap();
     LayoutUnit minimumContentLogicalWidth = colCount * computedColumnWidth() + (colCount - 1) * colGap;
     LayoutUnit currentContentLogicalWidth = contentLogicalWidth();
@@ -88,23 +157,42 @@ void RenderMultiColumnSet::updateLogicalWidth()
     setLogicalWidth(logicalWidth() + delta);
 }
 
-void RenderMultiColumnSet::updateLogicalHeight()
+void RenderMultiColumnSet::prepareForLayout()
 {
-    // FIXME: This is the only class that overrides updateLogicalHeight. If we didn't have to set computedColumnHeight,
-    // we could remove this and make updateLogicalHeight non-virtual. https://bugs.webkit.org/show_bug.cgi?id=96804
-    // Make sure our column height is up to date.
-    LogicalExtentComputedValues computedValues;
-    computeLogicalHeight(0, 0, computedValues);
-    setComputedColumnHeight(computedValues.m_extent); // FIXME: Once we make more than one column set, this will become variable.
-    
-    // Our logical height is always just the height of our columns.
-    setLogicalHeight(computedColumnHeight());
+    RenderMultiColumnBlock* multicolBlock = toRenderMultiColumnBlock(parent());
+    RenderStyle* multicolStyle = multicolBlock->style();
+
+    // Set box logical top.
+    ASSERT(!previousSiblingBox() || !previousSiblingBox()->isRenderMultiColumnSet()); // FIXME: multiple set not implemented; need to examine previous set to calculate the correct logical top.
+    setLogicalTop(multicolBlock->borderBefore() + multicolBlock->paddingBefore());
+
+    // Set box width.
+    updateLogicalWidth();
+
+    if (multicolBlock->requiresBalancing()) {
+        // Set maximum column height. We will not stretch beyond this.
+        m_maxColumnHeight = LayoutUnit::max();
+        if (!multicolStyle->logicalHeight().isAuto())
+            m_maxColumnHeight = multicolBlock->computeContentLogicalHeight(multicolStyle->logicalHeight(), -1);
+        if (!multicolStyle->logicalMaxHeight().isUndefined()) {
+            LayoutUnit logicalMaxHeight = multicolBlock->computeContentLogicalHeight(multicolStyle->logicalMaxHeight(), -1);
+            if (m_maxColumnHeight > logicalMaxHeight)
+                m_maxColumnHeight = logicalMaxHeight;
+        }
+        m_maxColumnHeight = heightAdjustedForSetOffset(m_maxColumnHeight);
+        m_computedColumnHeight = 0; // Restart balancing.
+    } else {
+        setAndConstrainColumnHeight(heightAdjustedForSetOffset(multicolBlock->columnHeightAvailable()));
+    }
+
+    // Nuke previously stored minimum column height. Contents may have changed for all we know.
+    m_minimumColumnHeight = 0;
 }
 
-void RenderMultiColumnSet::computeLogicalHeight(LayoutUnit, LayoutUnit, LogicalExtentComputedValues& computedValues) const
+void RenderMultiColumnSet::computeLogicalHeight(LayoutUnit, LayoutUnit logicalTop, LogicalExtentComputedValues& computedValues) const
 {
-    RenderMultiColumnBlock* parentBlock = toRenderMultiColumnBlock(parent());
-    computedValues.m_extent = parentBlock->columnHeight();
+    computedValues.m_extent = m_computedColumnHeight;
+    computedValues.m_position = logicalTop;
 }
 
 LayoutUnit RenderMultiColumnSet::columnGap() const
@@ -119,12 +207,16 @@ LayoutUnit RenderMultiColumnSet::columnGap() const
 
 unsigned RenderMultiColumnSet::columnCount() const
 {
+    // We must always return a value of 1 or greater. Column count = 0 is a meaningless situation,
+    // and will confuse and cause problems in other parts of the code.
     if (!computedColumnHeight())
-        return 0;
-    
+        return 1;
+
     // Our portion rect determines our column count. We have as many columns as needed to fit all the content.
     LayoutUnit logicalHeightInColumns = flowThread()->isHorizontalWritingMode() ? flowThreadPortionRect().height() : flowThreadPortionRect().width();
-    return ceil(static_cast<float>(logicalHeightInColumns) / computedColumnHeight());
+    unsigned count = ceil(static_cast<float>(logicalHeightInColumns) / computedColumnHeight());
+    ASSERT(count >= 1);
+    return count;
 }
 
 LayoutRect RenderMultiColumnSet::columnRectAt(unsigned index) const
@@ -144,18 +236,22 @@ LayoutRect RenderMultiColumnSet::columnRectAt(unsigned index) const
     return LayoutRect(colLogicalTop, colLogicalLeft, colLogicalHeight, colLogicalWidth);
 }
 
-unsigned RenderMultiColumnSet::columnIndexAtOffset(LayoutUnit offset) const
+unsigned RenderMultiColumnSet::columnIndexAtOffset(LayoutUnit offset, ColumnIndexCalculationMode mode) const
 {
     LayoutRect portionRect(flowThreadPortionRect());
-    LayoutUnit flowThreadLogicalTop = isHorizontalWritingMode() ? portionRect.y() : portionRect.x();
-    LayoutUnit flowThreadLogicalBottom = isHorizontalWritingMode() ? portionRect.maxY() : portionRect.maxX();
-    
+
     // Handle the offset being out of range.
+    LayoutUnit flowThreadLogicalTop = isHorizontalWritingMode() ? portionRect.y() : portionRect.x();
     if (offset < flowThreadLogicalTop)
         return 0;
-    if (offset >= flowThreadLogicalBottom)
-        return columnCount() - 1;
-    
+    // If we're laying out right now, we cannot constrain against some logical bottom, since it
+    // isn't known yet. Otherwise, just return the last column if we're past the logical bottom.
+    if (mode == ClampToExistingColumns) {
+        LayoutUnit flowThreadLogicalBottom = isHorizontalWritingMode() ? portionRect.maxY() : portionRect.maxX();
+        if (offset >= flowThreadLogicalBottom)
+            return columnCount() - 1;
+    }
+
     // Just divide by the column height to determine the correct column.
     return static_cast<float>(offset - flowThreadLogicalTop) / computedColumnHeight();
 }
@@ -245,7 +341,7 @@ void RenderMultiColumnSet::paintColumnRules(PaintInfo& paintInfo, const LayoutPo
         return;
 
     RenderStyle* blockStyle = toRenderMultiColumnBlock(parent())->style();
-    const Color& ruleColor = blockStyle->visitedDependentColor(CSSPropertyWebkitColumnRuleColor);
+    const Color& ruleColor = resolveColor(blockStyle, CSSPropertyWebkitColumnRuleColor);
     bool ruleTransparent = blockStyle->columnRuleIsTransparent();
     EBorderStyle ruleStyle = blockStyle->columnRuleStyle();
     LayoutUnit ruleThickness = blockStyle->columnRuleWidth();
@@ -288,7 +384,7 @@ void RenderMultiColumnSet::paintColumnRules(PaintInfo& paintInfo, const LayoutPo
             IntRect pixelSnappedRuleRect = pixelSnappedIntRectFromEdges(ruleLeft, ruleTop, ruleRight, ruleBottom);
             drawLineForBoxSide(paintInfo.context, pixelSnappedRuleRect.x(), pixelSnappedRuleRect.y(), pixelSnappedRuleRect.maxX(), pixelSnappedRuleRect.maxY(), boxSide, ruleColor, ruleStyle, 0, 0, antialias);
         }
-        
+
         ruleLogicalLeft = currLogicalLeftOffset;
     }
 }
@@ -299,30 +395,30 @@ void RenderMultiColumnSet::repaintFlowThreadContent(const LayoutRect& repaintRec
     // entire column set. Put the repaint rect into flow thread coordinates by flipping it first.
     LayoutRect flowThreadRepaintRect(repaintRect);
     flowThread()->flipForWritingMode(flowThreadRepaintRect);
-    
+
     // Now we can compare this rect with the flow thread portions owned by each column. First let's
     // just see if the repaint rect intersects our flow thread portion at all.
     LayoutRect clippedRect(flowThreadRepaintRect);
     clippedRect.intersect(RenderRegion::flowThreadPortionOverflowRect());
     if (clippedRect.isEmpty())
         return;
-    
+
     // Now we know we intersect at least one column. Let's figure out the logical top and logical
     // bottom of the area we're repainting.
     LayoutUnit repaintLogicalTop = isHorizontalWritingMode() ? flowThreadRepaintRect.y() : flowThreadRepaintRect.x();
     LayoutUnit repaintLogicalBottom = (isHorizontalWritingMode() ? flowThreadRepaintRect.maxY() : flowThreadRepaintRect.maxX()) - 1;
-    
+
     unsigned startColumn = columnIndexAtOffset(repaintLogicalTop);
     unsigned endColumn = columnIndexAtOffset(repaintLogicalBottom);
-    
+
     LayoutUnit colGap = columnGap();
     unsigned colCount = columnCount();
     for (unsigned i = startColumn; i <= endColumn; i++) {
         LayoutRect colRect = columnRectAt(i);
-        
+
         // Get the portion of the flow thread that corresponds to this column.
         LayoutRect flowThreadPortion = flowThreadPortionRectAt(i);
-        
+
         // Now get the overflow rect that corresponds to the column.
         LayoutRect flowThreadOverflowPortion = flowThreadPortionOverflowRect(flowThreadPortion, i, colCount, colGap);
 
@@ -347,25 +443,25 @@ void RenderMultiColumnSet::collectLayerFragments(LayerFragments& fragments, cons
     clippedRect.intersect(RenderRegion::flowThreadPortionOverflowRect());
     if (clippedRect.isEmpty())
         return;
-    
+
     // Now we know we intersect at least one column. Let's figure out the logical top and logical
     // bottom of the area we're checking.
     LayoutUnit layerLogicalTop = isHorizontalWritingMode() ? layerBoundsInFlowThread.y() : layerBoundsInFlowThread.x();
     LayoutUnit layerLogicalBottom = (isHorizontalWritingMode() ? layerBoundsInFlowThread.maxY() : layerBoundsInFlowThread.maxX()) - 1;
-    
+
     // Figure out the start and end columns and only check within that range so that we don't walk the
     // entire column set.
     unsigned startColumn = columnIndexAtOffset(layerLogicalTop);
     unsigned endColumn = columnIndexAtOffset(layerLogicalBottom);
-    
+
     LayoutUnit colLogicalWidth = computedColumnWidth();
     LayoutUnit colGap = columnGap();
     unsigned colCount = columnCount();
-    
+
     for (unsigned i = startColumn; i <= endColumn; i++) {
         // Get the portion of the flow thread that corresponds to this column.
         LayoutRect flowThreadPortion = flowThreadPortionRectAt(i);
-        
+
         // Now get the overflow rect that corresponds to the column.
         LayoutRect flowThreadOverflowPortion = flowThreadPortionOverflowRect(flowThreadPortion, i, colCount, colGap);
 
@@ -374,7 +470,7 @@ void RenderMultiColumnSet::collectLayerFragments(LayerFragments& fragments, cons
         clippedRect.intersect(flowThreadOverflowPortion);
         if (clippedRect.isEmpty())
             continue;
-        
+
         // We also need to intersect the dirty rect. We have to apply a translation and shift based off
         // our column index.
         LayoutPoint translationOffset;
@@ -394,18 +490,18 @@ void RenderMultiColumnSet::collectLayerFragments(LayerFragments& fragments, cons
         // Shift the dirty rect to be in flow thread coordinates with this translation applied.
         LayoutRect translatedDirtyRect(dirtyRectInFlowThread);
         translatedDirtyRect.moveBy(-translationOffset);
-        
+
         // See if we intersect the dirty rect.
         clippedRect = layerBoundsInFlowThread;
         clippedRect.intersect(translatedDirtyRect);
         if (clippedRect.isEmpty())
             continue;
-        
+
         // Something does need to paint in this column. Make a fragment now and supply the physical translation
         // offset and the clip rect for the column with that offset applied.
         LayerFragment fragment;
         fragment.paginationOffset = translationOffset;
-        
+
         LayoutRect flippedFlowThreadOverflowPortion(flowThreadOverflowPortion);
         flipForWritingMode(flippedFlowThreadOverflowPortion);
         fragment.paginationClip = flippedFlowThreadOverflowPortion;
@@ -414,7 +510,7 @@ void RenderMultiColumnSet::collectLayerFragments(LayerFragments& fragments, cons
 }
 
 const char* RenderMultiColumnSet::renderName() const
-{    
+{
     return "RenderMultiColumnSet";
 }
 

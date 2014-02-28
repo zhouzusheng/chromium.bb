@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /**
  * @fileoverview Base class for linux perf event parsers.
  *
@@ -33,7 +35,7 @@
  *
  * If the routine returns false the caller will generate an import error
  * saying there was a problem parsing it.  Handlers can also emit import
- * messages using this.importer.importError.  If this is done in lieu of
+ * messages using this.importer.model.importWarning.  If this is done in lieu of
  * the generic import error it may be desirable for the handler to return
  * true.
  *

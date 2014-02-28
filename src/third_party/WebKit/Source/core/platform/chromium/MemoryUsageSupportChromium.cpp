@@ -33,7 +33,7 @@
 
 #include <SkGraphics.h>
 #include "public/platform/Platform.h"
-#include <wtf/OwnPtr.h>
+#include "wtf/OwnPtr.h"
 
 namespace WebCore {
 
@@ -45,21 +45,6 @@ int MemoryUsageSupport::memoryUsageMB()
 int MemoryUsageSupport::actualMemoryUsageMB()
 {
     return WebKit::Platform::current()->actualMemoryUsageMB();
-}
-
-int MemoryUsageSupport::lowMemoryUsageMB()
-{
-    return WebKit::Platform::current()->lowMemoryUsageMB();
-}
-
-int MemoryUsageSupport::highMemoryUsageMB()
-{
-    return WebKit::Platform::current()->highMemoryUsageMB();
-}
-
-int MemoryUsageSupport::highUsageDeltaMB()
-{
-    return WebKit::Platform::current()->highUsageDeltaMB();
 }
 
 bool MemoryUsageSupport::processMemorySizesInBytes(size_t* privateBytes, size_t* sharedBytes)
@@ -82,15 +67,6 @@ void MemoryUsageSupport::requestProcessMemorySizes(PassOwnPtr<WebCore::MemoryUsa
     };
     WebKit::Platform::ProcessMemorySizesCallback* callback = new ProcessMemorySizesCallbackImpl(requestCallback);
     WebKit::Platform::current()->requestProcessMemorySizes(callback);
-}
-
-void MemoryUsageSupport::memoryUsageByComponents(Vector<ComponentInfo>& components)
-{
-    size_t size = SkGraphics::GetFontCacheUsed();
-    components.append(ComponentInfo("GlyphCache", size));
-
-    if (WebKit::Platform::current()->memoryAllocatorWasteInBytes(&size))
-        components.append(ComponentInfo("MallocWaste", size));
 }
 
 } // namespace WebCore

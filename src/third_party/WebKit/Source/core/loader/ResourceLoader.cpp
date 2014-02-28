@@ -7,13 +7,13 @@
  * are met:
  *
  * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer. 
+ *     notice, this list of conditions and the following disclaimer.
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution. 
+ *     documentation and/or other materials provided with the distribution.
  * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission. 
+ *     from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -30,51 +30,52 @@
 #include "config.h"
 #include "core/loader/ResourceLoader.h"
 
-#include "core/inspector/InspectorInstrumentation.h"
-#include "core/loader/DocumentLoader.h"
-#include "core/loader/FrameLoader.h"
-#include "core/loader/FrameLoaderClient.h"
-#include "core/loader/appcache/ApplicationCacheHost.h"
-#include "core/loader/cache/CachedResourceLoader.h"
-#include "core/page/Frame.h"
-#include "core/page/Page.h"
+#include "core/loader/ResourceLoaderHost.h"
+#include "core/loader/cache/Resource.h"
+#include "core/loader/cache/ResourcePtr.h"
 #include "core/platform/Logging.h"
+#include "core/platform/SharedBuffer.h"
+#include "core/platform/chromium/support/WrappedResourceRequest.h"
+#include "core/platform/chromium/support/WrappedResourceResponse.h"
 #include "core/platform/network/ResourceError.h"
-#include "core/platform/network/ResourceHandle.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebData.h"
+#include "public/platform/WebURLError.h"
+#include "public/platform/WebURLRequest.h"
+#include "public/platform/WebURLResponse.h"
+#include "wtf/Assertions.h"
 
 namespace WebCore {
 
-ResourceLoader::RequestCountTracker::RequestCountTracker(CachedResourceLoader* cachedResourceLoader, CachedResource* resource)
-    : m_cachedResourceLoader(cachedResourceLoader)
+ResourceLoader::RequestCountTracker::RequestCountTracker(ResourceLoaderHost* host, Resource* resource)
+    : m_host(host)
     , m_resource(resource)
 {
-    m_cachedResourceLoader->incrementRequestCount(m_resource);
+    m_host->incrementRequestCount(m_resource);
 }
 
 ResourceLoader::RequestCountTracker::~RequestCountTracker()
 {
-    m_cachedResourceLoader->decrementRequestCount(m_resource);
+    m_host->decrementRequestCount(m_resource);
 }
 
-PassRefPtr<ResourceLoader> ResourceLoader::create(DocumentLoader* documentLoader, CachedResource* resource, const ResourceRequest& request, const ResourceLoaderOptions& options)
+PassRefPtr<ResourceLoader> ResourceLoader::create(ResourceLoaderHost* host, Resource* resource, const ResourceRequest& request, const ResourceLoaderOptions& options)
 {
-    RefPtr<ResourceLoader> loader(adoptRef(new ResourceLoader(documentLoader, resource, options)));
-    if (!loader->init(request))
-        return 0;
+    RefPtr<ResourceLoader> loader(adoptRef(new ResourceLoader(host, resource, options)));
+    loader->init(request);
     loader->start();
     return loader.release();
 }
 
-ResourceLoader::ResourceLoader(DocumentLoader* documentLoader, CachedResource* resource, ResourceLoaderOptions options)
-    : m_frame(documentLoader->frame())
-    , m_documentLoader(documentLoader)
-    , m_loadingMultipartContent(false)
+ResourceLoader::ResourceLoader(ResourceLoaderHost* host, Resource* resource, const ResourceLoaderOptions& options)
+    : m_host(host)
     , m_notifiedLoadComplete(false)
-    , m_defersLoading(m_frame->page()->defersLoading())
+    , m_defersLoading(host->defersLoading())
     , m_options(options)
     , m_resource(resource)
-    , m_state(Uninitialized)
-    , m_requestCountTracker(adoptPtr(new RequestCountTracker(documentLoader->cachedResourceLoader(), resource)))
+    , m_state(Initialized)
+    , m_connectionState(ConnectionStateNew)
+    , m_requestCountTracker(adoptPtr(new RequestCountTracker(host, resource)))
 {
 }
 
@@ -86,82 +87,74 @@ ResourceLoader::~ResourceLoader()
 void ResourceLoader::releaseResources()
 {
     ASSERT(m_state != Terminated);
-    if (m_state != Uninitialized) {
-        m_requestCountTracker.clear();
-        m_documentLoader->cachedResourceLoader()->loadDone(m_resource);
-        if (m_state == Terminated)
-            return;
-        m_resource->clearLoader();
-        m_documentLoader->removeResourceLoader(this);
-    }
+    m_requestCountTracker.clear();
+    m_host->didLoadResource(m_resource);
+    if (m_state == Terminated)
+        return;
+    m_resource->clearLoader();
+    m_host->willTerminateResourceLoader(this);
 
     ASSERT(m_state != Terminated);
-    
-    // It's possible that when we release the handle, it will be
+
+    // It's possible that when we release the loader, it will be
     // deallocated and release the last reference to this object.
     // We need to retain to avoid accessing the object after it
     // has been deallocated and also to avoid reentering this method.
     RefPtr<ResourceLoader> protector(this);
 
-    m_frame = 0;
-    m_documentLoader = 0;
-
+    m_host.clear();
     m_state = Terminated;
 
-    if (m_handle) {
-        // Clear out the ResourceHandle's client so that it doesn't try to call
-        // us back after we release it, unless it has been replaced by someone else.
-        if (m_handle->client() == this)
-            m_handle->setClient(0);
-        m_handle = 0;
+    if (m_loader) {
+        m_loader->cancel();
+        m_loader.clear();
     }
 
     m_deferredRequest = ResourceRequest();
 }
 
-bool ResourceLoader::init(const ResourceRequest& r)
+void ResourceLoader::init(const ResourceRequest& passedRequest)
 {
-    ASSERT(!m_handle);
-    ASSERT(m_request.isNull());
-    ASSERT(m_deferredRequest.isNull());
-    
-    ResourceRequest clientRequest(r);
-
-    willSendRequest(0, clientRequest, ResourceResponse());
-    if (clientRequest.isNull()) {
-        cancel();
-        return false;
-    }
+    ResourceRequest request(passedRequest);
+    m_host->willSendRequest(m_resource, request, ResourceResponse(), m_options);
+    request.setReportLoadTiming(true);
     ASSERT(m_state != Terminated);
-
-    m_originalRequest = m_request = clientRequest;
-    m_state = Initialized;
-    m_documentLoader->addResourceLoader(this);
-    return true;
+    ASSERT(!request.isNull());
+    m_originalRequest = m_request = request;
+    m_host->didInitializeResourceLoader(this);
 }
 
 void ResourceLoader::start()
 {
-    ASSERT(!m_handle);
+    ASSERT(!m_loader);
     ASSERT(!m_request.isNull());
     ASSERT(m_deferredRequest.isNull());
 
-    m_documentLoader->applicationCacheHost()->willStartLoadingResource(m_request);
+    m_host->willStartLoadingResource(m_request);
 
     if (m_defersLoading) {
         m_deferredRequest = m_request;
         return;
     }
 
-    if (m_state != Terminated)
-        m_handle = ResourceHandle::create(m_request, this, m_defersLoading, m_options.sniffContent == SniffContent, m_options.allowCredentials);
+    if (m_state == Terminated)
+        return;
+
+    RELEASE_ASSERT(m_connectionState == ConnectionStateNew);
+    m_connectionState = ConnectionStateStarted;
+
+    m_loader = adoptPtr(WebKit::Platform::current()->createURLLoader());
+    ASSERT(m_loader);
+    WebKit::WrappedResourceRequest wrappedRequest(m_request);
+    wrappedRequest.setAllowStoredCredentials(m_options.allowCredentials == AllowStoredCredentials);
+    m_loader->loadAsynchronously(wrappedRequest, this);
 }
 
 void ResourceLoader::setDefersLoading(bool defers)
 {
     m_defersLoading = defers;
-    if (m_handle)
-        m_handle->setDefersLoading(defers);
+    if (m_loader)
+        m_loader->setDefersLoading(defers);
     if (!defers && !m_deferredRequest.isNull()) {
         m_request = m_deferredRequest;
         m_deferredRequest = ResourceRequest();
@@ -169,16 +162,10 @@ void ResourceLoader::setDefersLoading(bool defers)
     }
 }
 
-FrameLoader* ResourceLoader::frameLoader() const
-{
-    if (!m_frame)
-        return 0;
-    return m_frame->loader();
-}
-
-void ResourceLoader::didDownloadData(ResourceHandle*, int length)
+void ResourceLoader::didDownloadData(WebKit::WebURLLoader*, int length)
 {
     RefPtr<ResourceLoader> protect(this);
+    RELEASE_ASSERT(m_connectionState == ConnectionStateReceivedResponse);
     m_resource->didDownloadData(length);
 }
 
@@ -192,15 +179,14 @@ void ResourceLoader::didFinishLoadingOnePart(double finishTime)
     if (m_notifiedLoadComplete)
         return;
     m_notifiedLoadComplete = true;
-    if (m_options.sendLoadCallbacks == SendCallbacks)
-        frameLoader()->notifier()->dispatchDidFinishLoading(m_documentLoader.get(), m_resource->identifier(), finishTime);
+    m_host->didFinishLoading(m_resource, finishTime, m_options);
 }
 
 void ResourceLoader::didChangePriority(ResourceLoadPriority loadPriority)
 {
-    if (handle()) {
-        frameLoader()->client()->dispatchDidChangeResourcePriority(m_resource->identifier(), loadPriority);
-        handle()->didChangePriority(loadPriority);
+    if (m_loader) {
+        m_host->didChangeLoadingPriority(m_resource, loadPriority);
+        m_loader->didChangePriority(static_cast<WebKit::WebURLRequest::Priority>(loadPriority));
     }
 }
 
@@ -226,7 +212,7 @@ void ResourceLoader::cancel(const ResourceError& error)
         return;
     }
 
-    ResourceError nonNullError = error.isNull() ? cancelledError() : error;
+    ResourceError nonNullError = error.isNull() ? ResourceError::cancelledError(m_request.url()) : error;
 
     // This function calls out to clients at several points that might do
     // something that causes the last reference to this object to go away.
@@ -237,121 +223,107 @@ void ResourceLoader::cancel(const ResourceError& error)
         m_state = Finishing;
     m_resource->setResourceError(nonNullError);
 
-    if (m_handle) {
-        m_handle->cancel();
-        m_handle = 0;
+    if (m_loader) {
+        m_connectionState = ConnectionStateCanceled;
+        m_loader->cancel();
+        m_loader.clear();
     }
 
-    if (m_options.sendLoadCallbacks == SendCallbacks && !m_notifiedLoadComplete)
-        frameLoader()->notifier()->dispatchDidFail(m_documentLoader.get(), m_resource->identifier(), nonNullError);
+    m_host->didFailLoading(m_resource, nonNullError, m_options);
 
     if (m_state == Finishing)
-        m_resource->error(CachedResource::LoadError);
+        m_resource->error(Resource::LoadError);
     if (m_state != Terminated)
         releaseResources();
 }
 
-ResourceError ResourceLoader::cancelledError()
+void ResourceLoader::willSendRequest(WebKit::WebURLLoader*, WebKit::WebURLRequest& passedRequest, const WebKit::WebURLResponse& passedRedirectResponse)
 {
-    return frameLoader()->cancelledError(m_request);
-}
-
-ResourceError ResourceLoader::cannotShowURLError()
-{
-    return frameLoader()->client()->cannotShowURLError(m_request);
-}
-
-void ResourceLoader::willSendRequest(ResourceHandle*, ResourceRequest& request, const ResourceResponse& redirectResponse)
-{
-    // Store the previous URL because we may modify it.
-    KURL previousURL = m_request.url();
     RefPtr<ResourceLoader> protect(this);
 
+    ResourceRequest& request(passedRequest.toMutableResourceRequest());
     ASSERT(!request.isNull());
-    if (!redirectResponse.isNull()) {
-        if (!m_documentLoader->cachedResourceLoader()->canRequest(m_resource->type(), request.url(), m_options)) {
-            cancel();
-            return;
-        }
-        if (m_resource->type() == CachedResource::ImageResource && m_documentLoader->cachedResourceLoader()->shouldDeferImageLoad(request.url())) {
-            cancel();
-            return;
-        }
-        m_resource->willSendRequest(request, redirectResponse);
+    const ResourceResponse& redirectResponse(passedRedirectResponse.toResourceResponse());
+    ASSERT(!redirectResponse.isNull());
+    if (!m_host->shouldRequest(m_resource, request, m_options)) {
+        cancel();
+        return;
     }
-
+    m_host->redirectReceived(m_resource, redirectResponse);
+    m_resource->willSendRequest(request, redirectResponse);
     if (request.isNull() || m_state == Terminated)
         return;
 
-    if (m_options.sendLoadCallbacks == SendCallbacks)
-        frameLoader()->notifier()->dispatchWillSendRequest(m_documentLoader.get(), m_resource->identifier(), request, redirectResponse, m_options.initiatorInfo);
-    else
-        InspectorInstrumentation::willSendRequest(m_frame.get(), m_resource->identifier(), m_documentLoader.get(), request, redirectResponse, m_options.initiatorInfo);
-
+    m_host->willSendRequest(m_resource, request, redirectResponse, m_options);
+    request.setReportLoadTiming(true);
+    ASSERT(!request.isNull());
     m_request = request;
-
-    if (request.isNull())
-        cancel();
 }
 
-void ResourceLoader::didReceiveCachedMetadata(ResourceHandle*, const char* data, int length)
+void ResourceLoader::didReceiveCachedMetadata(WebKit::WebURLLoader*, const char* data, int length)
 {
+    RELEASE_ASSERT(m_connectionState == ConnectionStateReceivedResponse || m_connectionState == ConnectionStateReceivingData);
     ASSERT(m_state == Initialized);
     m_resource->setSerializedCachedMetadata(data, length);
 }
 
-void ResourceLoader::didSendData(ResourceHandle*, unsigned long long bytesSent, unsigned long long totalBytesToBeSent)
+void ResourceLoader::didSendData(WebKit::WebURLLoader*, unsigned long long bytesSent, unsigned long long totalBytesToBeSent)
 {
     ASSERT(m_state == Initialized);
     RefPtr<ResourceLoader> protect(this);
     m_resource->didSendData(bytesSent, totalBytesToBeSent);
 }
 
-void ResourceLoader::didReceiveResponse(ResourceHandle*, const ResourceResponse& response)
+void ResourceLoader::didReceiveResponse(WebKit::WebURLLoader*, const WebKit::WebURLResponse& response)
 {
     ASSERT(!response.isNull());
     ASSERT(m_state == Initialized);
 
+    bool isMultipartPayload = response.isMultipartPayload();
+    bool isValidStateTransition = (m_connectionState == ConnectionStateStarted || m_connectionState == ConnectionStateReceivedResponse);
+    // In the case of multipart loads, calls to didReceiveData & didReceiveResponse can be interleaved.
+    RELEASE_ASSERT(isMultipartPayload || isValidStateTransition);
+    m_connectionState = ConnectionStateReceivedResponse;
+
     // Reference the object in this method since the additional processing can do
     // anything including removing the last reference to this object.
     RefPtr<ResourceLoader> protect(this);
-    m_resource->responseReceived(response);
+    m_resource->responseReceived(response.toResourceResponse());
     if (m_state == Terminated)
         return;
 
-    if (m_options.sendLoadCallbacks == SendCallbacks)
-        frameLoader()->notifier()->dispatchDidReceiveResponse(m_documentLoader.get(), m_resource->identifier(), response);
+    m_host->didReceiveResponse(m_resource, response.toResourceResponse(), m_options);
 
-    if (response.isMultipart()) {
-        m_loadingMultipartContent = true;
-
-        // We don't count multiParts in a CachedResourceLoader's request count
+    if (response.toResourceResponse().isMultipart()) {
+        // We don't count multiParts in a ResourceFetcher's request count
         m_requestCountTracker.clear();
         if (!m_resource->isImage()) {
             cancel();
             return;
         }
-    } else if (m_loadingMultipartContent) {
+    } else if (isMultipartPayload) {
         // Since a subresource loader does not load multipart sections progressively, data was delivered to the loader all at once.
         // After the first multipart section is complete, signal to delegates that this load is "finished"
-        m_documentLoader->subresourceLoaderFinishedLoadingOnePart(this);
+        m_host->subresourceLoaderFinishedLoadingOnePart(this);
         didFinishLoadingOnePart(0);
     }
 
     if (m_resource->response().httpStatusCode() < 400 || m_resource->shouldIgnoreHTTPStatusCodeErrors())
         return;
     m_state = Finishing;
-    m_resource->error(CachedResource::LoadError);
+    m_resource->error(Resource::LoadError);
     cancel();
 }
 
-void ResourceLoader::didReceiveData(ResourceHandle*, const char* data, int length, int encodedDataLength)
+void ResourceLoader::didReceiveData(WebKit::WebURLLoader*, const char* data, int length, int encodedDataLength)
 {
+    RELEASE_ASSERT(m_connectionState == ConnectionStateReceivedResponse || m_connectionState == ConnectionStateReceivingData);
+    m_connectionState = ConnectionStateReceivingData;
+
     // It is possible to receive data on uninitialized resources if it had an error status code, and we are running a nested message
     // loop. When this occurs, ignoring the data is the correct action.
     if (m_resource->response().httpStatusCode() >= 400 && !m_resource->shouldIgnoreHTTPStatusCodeErrors())
         return;
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willReceiveResourceData(m_frame.get(), m_resource->identifier(), encodedDataLength);
     ASSERT(m_state == Initialized);
 
     // Reference the object in this method since the additional processing can do
@@ -361,23 +333,21 @@ void ResourceLoader::didReceiveData(ResourceHandle*, const char* data, int lengt
     // FIXME: If we get a resource with more than 2B bytes, this code won't do the right thing.
     // However, with today's computers and networking speeds, this won't happen in practice.
     // Could be an issue with a giant local file.
-    if (m_options.sendLoadCallbacks == SendCallbacks && m_frame)
-        frameLoader()->notifier()->dispatchDidReceiveData(m_documentLoader.get(), m_resource->identifier(), data, length, static_cast<int>(encodedDataLength));
-
+    m_host->didReceiveData(m_resource, data, length, encodedDataLength, m_options);
     m_resource->appendData(data, length);
-
-    InspectorInstrumentation::didReceiveResourceData(cookie);
 }
 
-void ResourceLoader::didFinishLoading(ResourceHandle*, double finishTime)
+void ResourceLoader::didFinishLoading(WebKit::WebURLLoader*, double finishTime)
 {
+    RELEASE_ASSERT(m_connectionState == ConnectionStateReceivedResponse || m_connectionState == ConnectionStateReceivingData);
+    m_connectionState = ConnectionStateFinishedLoading;
     if (m_state != Initialized)
         return;
     ASSERT(m_state != Terminated);
     LOG(ResourceLoading, "Received '%s'.", m_resource->url().string().latin1().data());
 
     RefPtr<ResourceLoader> protect(this);
-    CachedResourceHandle<CachedResource> protectResource(m_resource);
+    ResourcePtr<Resource> protectResource(m_resource);
     m_state = Finishing;
     m_resource->finish(finishTime);
     didFinishLoadingOnePart(finishTime);
@@ -389,42 +359,53 @@ void ResourceLoader::didFinishLoading(ResourceHandle*, double finishTime)
     releaseResources();
 }
 
-void ResourceLoader::didFail(ResourceHandle*, const ResourceError& error)
+void ResourceLoader::didFail(WebKit::WebURLLoader*, const WebKit::WebURLError& error)
 {
+    m_connectionState = ConnectionStateFailed;
     ASSERT(m_state != Terminated);
     LOG(ResourceLoading, "Failed to load '%s'.\n", m_resource->url().string().latin1().data());
 
     RefPtr<ResourceLoader> protect(this);
-    CachedResourceHandle<CachedResource> protectResource(m_resource);
+    RefPtr<ResourceLoaderHost> protectHost(m_host);
+    ResourcePtr<Resource> protectResource(m_resource);
     m_state = Finishing;
     m_resource->setResourceError(error);
-    m_resource->error(CachedResource::LoadError);
+    m_resource->error(Resource::LoadError);
 
     if (m_state == Terminated)
         return;
 
     if (!m_notifiedLoadComplete) {
         m_notifiedLoadComplete = true;
-        if (m_options.sendLoadCallbacks == SendCallbacks)
-            frameLoader()->notifier()->dispatchDidFail(m_documentLoader.get(), m_resource->identifier(), error);
+        m_host->didFailLoading(m_resource, error, m_options);
     }
 
     releaseResources();
 }
 
-void ResourceLoader::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+bool ResourceLoader::isLoadedBy(ResourceLoaderHost* loader) const
 {
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Loader);
-    info.addMember(m_handle, "handle");
-    info.addMember(m_frame, "frame");
-    info.addMember(m_documentLoader, "documentLoader");
-    info.addMember(m_request, "request");
-    info.addMember(m_originalRequest, "originalRequest");
-    info.addMember(m_deferredRequest, "deferredRequest");
-    info.addMember(m_options, "options");
-    info.addMember(m_resource, "resource");
-    info.addMember(m_documentLoader, "documentLoader");
-    info.addMember(m_requestCountTracker, "requestCountTracker");
+    return m_host->isLoadedBy(loader);
+}
+
+void ResourceLoader::loadResourceSynchronously(const ResourceRequest& request, StoredCredentials storedCredentials, ResourceError& error, ResourceResponse& response, Vector<char>& data)
+{
+    OwnPtr<WebKit::WebURLLoader> loader = adoptPtr(WebKit::Platform::current()->createURLLoader());
+    ASSERT(loader);
+
+    WebKit::WrappedResourceRequest requestIn(request);
+    requestIn.setAllowStoredCredentials(storedCredentials == AllowStoredCredentials);
+    WebKit::WrappedResourceResponse responseOut(response);
+    WebKit::WebURLError errorOut;
+    WebKit::WebData dataOut;
+
+    loader->loadSynchronously(requestIn, responseOut, errorOut, dataOut);
+
+    error = errorOut;
+    data.clear();
+    RefPtr<SharedBuffer> buffer = dataOut;
+    if (buffer)
+        buffer->moveTo(data);
 }
 
 }

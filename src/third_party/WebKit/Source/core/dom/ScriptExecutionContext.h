@@ -29,18 +29,23 @@
 #define ScriptExecutionContext_h
 
 #include "core/dom/ActiveDOMObject.h"
+#include "core/dom/ErrorEvent.h"
 #include "core/dom/SecurityContext.h"
+#include "core/loader/CrossOriginAccessControl.h"
 #include "core/page/ConsoleTypes.h"
+#include "core/page/DOMTimer.h"
+#include "core/platform/LifecycleContext.h"
 #include "core/platform/Supplementable.h"
 #include "weborigin/KURL.h"
 #include "wtf/HashSet.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
-class CachedScript;
 class ContextLifecycleNotifier;
+class DOMWindow;
 class DatabaseContext;
-class DOMTimer;
 class EventListener;
 class EventQueue;
 class EventTarget;
@@ -49,16 +54,18 @@ class PublicURLManager;
 class ScriptCallStack;
 class ScriptState;
 
-class ScriptExecutionContext : public SecurityContext, public Supplementable<ScriptExecutionContext> {
+class ScriptExecutionContext : public LifecycleContext, public SecurityContext, public Supplementable<ScriptExecutionContext> {
 public:
     ScriptExecutionContext();
     virtual ~ScriptExecutionContext();
 
     virtual bool isDocument() const { return false; }
-    virtual bool isWorkerContext() const { return false; }
+    virtual bool isWorkerGlobalScope() const { return false; }
 
-    virtual bool isContextThread() const { return true; }
     virtual bool isJSExecutionForbidden() const = 0;
+
+    virtual DOMWindow* executingWindow() { return 0; }
+    virtual void userEventWasHandled() { }
 
     const KURL& url() const { return virtualURL(); }
     KURL completeURL(const String& url) const { return virtualCompleteURL(url); }
@@ -67,13 +74,11 @@ public:
 
     virtual void disableEval(const String& errorMessage) = 0;
 
-    bool sanitizeScriptError(String& errorMessage, int& lineNumber, String& sourceURL, CachedScript* = 0);
-    void reportException(const String& errorMessage, int lineNumber, const String& sourceURL, PassRefPtr<ScriptCallStack>, CachedScript* = 0);
+    bool shouldSanitizeScriptError(const String& sourceURL, AccessControlStatus);
+    void reportException(PassRefPtr<ErrorEvent>, PassRefPtr<ScriptCallStack>, AccessControlStatus);
 
     void addConsoleMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, ScriptState* = 0, unsigned long requestIdentifier = 0);
     virtual void addConsoleMessage(MessageSource, MessageLevel, const String& message, unsigned long requestIdentifier = 0) = 0;
-
-    virtual const SecurityOrigin* topOrigin() const = 0;
 
     PublicURLManager& publicURLManager();
 
@@ -92,10 +97,6 @@ public:
 
     // Called after the construction of an ActiveDOMObject to synchronize suspend state.
     void suspendActiveDOMObjectIfNeeded(ActiveDOMObject*);
-
-    // Called from the constructor and destructors of ContextLifecycleObserver
-    void wasObservedBy(ContextLifecycleObserver*, ContextLifecycleObserver::Type as);
-    void wasUnobservedBy(ContextLifecycleObserver*, ContextLifecycleObserver::Type as);
 
     // MessagePort is conceptually a kind of ActiveDOMObject, but it needs to be tracked separately for message dispatch.
     void processMessagePortMessagesSoon();
@@ -123,16 +124,10 @@ public:
     // Gets the next id in a circular sequence from 1 to 2^31-1.
     int circularSequentialID();
 
-    bool addTimeout(int timeoutId, DOMTimer* timer) { return m_timeouts.add(timeoutId, timer).isNewEntry; }
-    void removeTimeout(int timeoutId) { m_timeouts.remove(timeoutId); }
-    DOMTimer* findTimeout(int timeoutId) { return m_timeouts.get(timeoutId); }
-
     void didChangeTimerAlignmentInterval();
     virtual double timerAlignmentInterval() const;
 
     virtual EventQueue* eventQueue() const = 0;
-
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
 
     void setDatabaseContext(DatabaseContext*);
 
@@ -159,25 +154,30 @@ protected:
     ContextLifecycleNotifier* lifecycleNotifier();
 
 private:
+    friend class DOMTimer; // For installNewTimeout() and removeTimeoutByID() below.
+
     virtual const KURL& virtualURL() const = 0;
     virtual KURL virtualCompleteURL(const String&) const = 0;
 
     virtual void addMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, PassRefPtr<ScriptCallStack>, ScriptState* = 0, unsigned long requestIdentifier = 0) = 0;
     virtual EventTarget* errorEventTarget() = 0;
-    virtual void logExceptionToConsole(const String& errorMessage, const String& sourceURL, int lineNumber, PassRefPtr<ScriptCallStack>) = 0;
-    bool dispatchErrorEvent(const String& errorMessage, int lineNumber, const String& sourceURL, CachedScript*);
+    virtual void logExceptionToConsole(const String& errorMessage, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtr<ScriptCallStack>) = 0;
+    bool dispatchErrorEvent(PassRefPtr<ErrorEvent>, AccessControlStatus);
 
     void closeMessagePorts();
 
     virtual void refScriptExecutionContext() = 0;
     virtual void derefScriptExecutionContext() = 0;
-    virtual PassOwnPtr<ContextLifecycleNotifier> createLifecycleNotifier();
+    virtual PassOwnPtr<LifecycleNotifier> createLifecycleNotifier() OVERRIDE;
 
-    OwnPtr<ContextLifecycleNotifier> m_lifecycleNotifier;
+    // Implementation details for DOMTimer. No other classes should call these functions.
+    int installNewTimeout(PassOwnPtr<ScheduledAction>, int timeout, bool singleShot);
+    void removeTimeoutByID(int timeoutID); // This makes underlying DOMTimer instance destructed.
+
     HashSet<MessagePort*> m_messagePorts;
 
     int m_circularSequentialID;
-    typedef HashMap<int, DOMTimer*> TimeoutMap;
+    typedef HashMap<int, OwnPtr<DOMTimer> > TimeoutMap;
     TimeoutMap m_timeouts;
 
     bool m_inDispatchErrorEvent;
@@ -191,6 +191,11 @@ private:
     OwnPtr<PublicURLManager> m_publicURLManager;
 
     RefPtr<DatabaseContext> m_databaseContext;
+
+    // The location of this member is important; to make sure contextDestroyed() notification on
+    // ScriptExecutionContext's members (notably m_timeouts) is called before they are destructed,
+    // m_lifecycleNotifer should be placed *after* such members.
+    OwnPtr<ContextLifecycleNotifier> m_lifecycleNotifier;
 };
 
 } // namespace WebCore

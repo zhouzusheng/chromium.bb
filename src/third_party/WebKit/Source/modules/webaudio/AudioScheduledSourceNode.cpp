@@ -28,6 +28,7 @@
 
 #include "modules/webaudio/AudioScheduledSourceNode.h"
 
+#include "core/dom/Event.h"
 #include "core/platform/audio/AudioUtilities.h"
 #include "modules/webaudio/AudioContext.h"
 #include <algorithm>
@@ -44,6 +45,7 @@ AudioScheduledSourceNode::AudioScheduledSourceNode(AudioContext* context, float 
     , m_playbackState(UNSCHEDULED_STATE)
     , m_startTime(0)
     , m_endTime(UnknownTime)
+    , m_hasEndedListener(false)
 {
 }
 
@@ -147,7 +149,7 @@ void AudioScheduledSourceNode::stop(double when)
     ASSERT(isMainThread());
     if (!(m_playbackState == SCHEDULED_STATE || m_playbackState == PLAYING_STATE))
         return;
-    
+
     when = max(0.0, when);
     m_endTime = when;
 }
@@ -162,6 +164,12 @@ void AudioScheduledSourceNode::noteOff(double when)
     stop(when);
 }
 
+void AudioScheduledSourceNode::setOnended(PassRefPtr<EventListener> listener, DOMWrapperWorld* isolatedWorld)
+{
+    m_hasEndedListener = listener;
+    setAttributeEventListener(eventNames().endedEvent, listener, isolatedWorld);
+}
+
 void AudioScheduledSourceNode::finish()
 {
     if (m_playbackState != FINISHED_STATE) {
@@ -170,6 +178,31 @@ void AudioScheduledSourceNode::finish()
         m_playbackState = FINISHED_STATE;
         context()->decrementActiveSourceCount();
     }
+
+    if (m_hasEndedListener) {
+        // |task| will keep the AudioScheduledSourceNode alive until the listener has been handled.
+        OwnPtr<NotifyEndedTask> task = adoptPtr(new NotifyEndedTask(this));
+        callOnMainThread(&AudioScheduledSourceNode::notifyEndedDispatch, task.leakPtr());
+    }
+}
+
+void AudioScheduledSourceNode::notifyEndedDispatch(void* userData)
+{
+    OwnPtr<NotifyEndedTask> task = adoptPtr(static_cast<NotifyEndedTask*>(userData));
+
+    task->notifyEnded();
+}
+
+AudioScheduledSourceNode::NotifyEndedTask::NotifyEndedTask(PassRefPtr<AudioScheduledSourceNode> sourceNode)
+    : m_scheduledNode(sourceNode)
+{
+}
+
+void AudioScheduledSourceNode::NotifyEndedTask::notifyEnded()
+{
+    RefPtr<Event> event = Event::create(eventNames().endedEvent, FALSE, FALSE);
+    event->setTarget(m_scheduledNode);
+    m_scheduledNode->dispatchEvent(event.get());
 }
 
 } // namespace WebCore

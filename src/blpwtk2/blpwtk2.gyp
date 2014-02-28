@@ -69,8 +69,8 @@
           'action_name': 'Generate angle bindings',
           'inputs': [
             'gen_angle_bindings.py',
-            '<(angle_path)/src/libGLESv2/libGLESv2.def',
-            '<(angle_path)/src/libEGL/libEGL.def',
+            '<(DEPTH)/third_party/angle_dx11/src/libGLESv2/libGLESv2.def',
+            '<(DEPTH)/third_party/angle_dx11/src/libEGL/libEGL.def',
           ],
           'outputs': [
             '<(angle_bindings_cc)',
@@ -97,8 +97,9 @@
         'blpwtk2_generate_sources',
         'blpangle',
         '../chrome/chrome_blpwtk2.gyp:chrome_blpwtk2',
-        '../content/content.gyp:content_app',
+        '../content/content.gyp:content_app_browser',
         '../content/content.gyp:content_browser',
+        '../content/content.gyp:content_child',
         '../content/content.gyp:content_common',
         '../content/content.gyp:content_gpu',
         '../content/content.gyp:content_plugin',
@@ -110,15 +111,17 @@
         '../ipc/ipc.gyp:ipc',
         '../net/net.gyp:net',
         '../skia/skia.gyp:skia',
-        '../third_party/WebKit/Source/WebKit/chromium/WebKit.gyp:blink_common',
+        '../third_party/WebKit/Source/web/web.gyp:blink_common',
         '../ui/gl/gl.gyp:gl',
         '../ui/ui.gyp:ui',
         '../url/url.gyp:url_lib',
         '../v8/tools/gyp/v8.gyp:v8',
         '../sandbox/sandbox.gyp:sandbox',
         '../webkit/common/user_agent/webkit_user_agent.gyp:user_agent',
+        '../webkit/common/webkit_common.gyp:webkit_common',
         '../webkit/support/webkit_support.gyp:glue',
-        '../webkit/support/webkit_support.gyp:webkit_resources',
+        '../webkit/support/webkit_support.gyp:glue_child',
+        '../webkit/webkit_resources.gyp:webkit_resources',
       ],
       'conditions': [
         ['OS=="win" and win_use_allocator_shim==1', {
@@ -319,8 +322,8 @@
       'type': 'loadable_module',
       'dependencies': [
         'blpwtk2_generate_sources',
-        '<(angle_path)/src/build_angle.gyp:libGLESv2_static',
-        '<(angle_path)/src/build_angle.gyp:libEGL_static',
+        '<(DEPTH)/third_party/angle_dx11/src/build_angle.gyp:libGLESv2_static',
+        '<(DEPTH)/third_party/angle_dx11/src/build_angle.gyp:libEGL_static',
       ],
       'conditions': [
         ['bb_version!=""', {

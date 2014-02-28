@@ -38,15 +38,14 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/url_constants.h"
-#include "googleurl/src/gurl.h"
 #include "grit/devtools_resources_map.h"
 #include "net/base/escape.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
 #include "net/server/http_server_request_info.h"
-#include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/web/WebDevToolsAgent.h"
+#include "net/server/http_server_response_info.h"
 #include "ui/base/layout.h"
+#include "url/gurl.h"
 #include "webkit/common/user_agent/user_agent.h"
 #include "webkit/common/user_agent/user_agent_util.h"
 
@@ -55,6 +54,8 @@ namespace content {
 const int kBufferSize = 16 * 1024;
 
 namespace {
+
+static const char* kProtocolVersion = "1.0";
 
 static const char* kDevToolsHandlerThreadName = "Chrome_DevToolsHandlerThread";
 
@@ -164,6 +165,12 @@ static bool TimeComparator(const PageInfo& info1, const PageInfo& info2) {
 }
 
 }  // namespace
+
+// static
+bool DevToolsHttpHandler::IsSupportedProtocolVersion(
+    const std::string& version) {
+  return version == kProtocolVersion;
+}
 
 // static
 int DevToolsHttpHandler::GetFrontendResourceId(const std::string& name) {
@@ -359,6 +366,28 @@ void DevToolsHttpHandlerImpl::OnHttpRequest(
 void DevToolsHttpHandlerImpl::OnWebSocketRequest(
     int connection_id,
     const net::HttpServerRequestInfo& request) {
+  std::string browser_prefix = "/devtools/browser";
+  size_t browser_pos = request.path.find(browser_prefix);
+  if (browser_pos == 0) {
+    if (browser_target_) {
+      server_->Send500(connection_id, "Another client already attached");
+      return;
+    }
+    browser_target_ = new DevToolsBrowserTarget(
+        thread_->message_loop_proxy().get(), server_.get(), connection_id);
+    browser_target_->RegisterDomainHandler(
+        devtools::Tracing::kName,
+        new DevToolsTracingHandler(),
+        true /* handle on UI thread */);
+    browser_target_->RegisterDomainHandler(
+        TetheringHandler::kDomain,
+        new TetheringHandler(delegate_.get()),
+        false /* handle on this thread */);
+
+    server_->AcceptWebSocket(connection_id, request);
+    return;
+  }
+
   BrowserThread::PostTask(
       BrowserThread::UI,
       FROM_HERE,
@@ -372,27 +401,8 @@ void DevToolsHttpHandlerImpl::OnWebSocketRequest(
 void DevToolsHttpHandlerImpl::OnWebSocketMessage(
     int connection_id,
     const std::string& data) {
-  std::string error_response;
-  scoped_ptr<DevToolsProtocol::Command> command(
-      DevToolsProtocol::ParseCommand(data, &error_response));
-  if (command && command->domain() == TetheringHandler::kDomain) {
-    TetheringHandlers::iterator it = tethering_handlers_.find(connection_id);
-    TetheringHandler* tethering_handler;
-    if (it == tethering_handlers_.end()) {
-      tethering_handler = new TetheringHandler(delegate_.get());
-      tethering_handlers_[connection_id] = tethering_handler;
-      tethering_handler->SetNotifier(
-          base::Bind(&net::HttpServer::SendOverWebSocket,
-                     server_,
-                     connection_id));
-    } else {
-      tethering_handler = it->second;
-    }
-    scoped_ptr<DevToolsProtocol::Response> response(
-        tethering_handler->HandleCommand(command.get()));
-    if (!response)
-      response = command->NoSuchMethodErrorResponse();
-    server_->SendOverWebSocket(connection_id, response->Serialize());
+  if (browser_target_ && connection_id == browser_target_->connection_id()) {
+    browser_target_->HandleMessage(data);
     return;
   }
 
@@ -407,10 +417,10 @@ void DevToolsHttpHandlerImpl::OnWebSocketMessage(
 }
 
 void DevToolsHttpHandlerImpl::OnClose(int connection_id) {
-  TetheringHandlers::iterator it = tethering_handlers_.find(connection_id);
-  if (it != tethering_handlers_.end()) {
-    delete it->second;
-    tethering_handlers_.erase(connection_id);
+  if (browser_target_ && browser_target_->connection_id() == connection_id) {
+    browser_target_->Detach();
+    browser_target_ = NULL;
+    return;
   }
 
   BrowserThread::PostTask(
@@ -486,12 +496,9 @@ void DevToolsHttpHandlerImpl::OnJsonRequestUI(
 
   if (command == "version") {
     base::DictionaryValue version;
-    version.SetString("Protocol-Version",
-                      WebKit::WebDevToolsAgent::inspectorProtocolVersion());
-    version.SetString("WebKit-Version",
-                      webkit_glue::GetWebKitVersion());
-    version.SetString("Browser",
-                      content::GetContentClient()->GetProduct());
+    version.SetString("Protocol-Version", kProtocolVersion);
+    version.SetString("WebKit-Version", webkit_glue::GetWebKitVersion());
+    version.SetString("Browser", content::GetContentClient()->GetProduct());
     version.SetString("User-Agent",
                       webkit_glue::GetUserAgent(GURL(kAboutBlankURL)));
     SendJson(connection_id, net::HTTP_OK, &version, std::string());
@@ -511,7 +518,7 @@ void DevToolsHttpHandlerImpl::OnJsonRequestUI(
     std::sort(page_list.begin(), page_list.end(), TimeComparator);
 
     base::ListValue* target_list = new base::ListValue();
-    std::string host = info.headers["Host"];
+    std::string host = info.headers["host"];
     for (PageList::iterator i = page_list.begin(); i != page_list.end(); ++i)
       target_list->Append(SerializePageInfo(i->first, host));
 
@@ -539,7 +546,7 @@ void DevToolsHttpHandlerImpl::OnJsonRequestUI(
                "Could not create new page");
       return;
     }
-    std::string host = info.headers["Host"];
+    std::string host = info.headers["host"];
     scoped_ptr<base::DictionaryValue> dictionary(SerializePageInfo(rvh, host));
     SendJson(connection_id, net::HTTP_OK, dictionary.get(), std::string());
     return;
@@ -611,20 +618,6 @@ void DevToolsHttpHandlerImpl::OnWebSocketRequestUI(
     const net::HttpServerRequestInfo& request) {
   if (!thread_)
     return;
-  std::string browser_prefix = "/devtools/browser";
-  size_t browser_pos = request.path.find(browser_prefix);
-  if (browser_pos == 0) {
-    if (browser_target_) {
-      Send500(connection_id, "Another client already attached");
-      return;
-    }
-    browser_target_.reset(new DevToolsBrowserTarget(
-        thread_->message_loop_proxy().get(), server_.get(), connection_id));
-    browser_target_->RegisterDomainHandler(
-        DevToolsTracingHandler::kDomain, new DevToolsTracingHandler());
-    AcceptWebSocket(connection_id, request);
-    return;
-  }
 
   size_t pos = request.path.find(kPageUrlPrefix);
   if (pos != 0) {
@@ -658,18 +651,6 @@ void DevToolsHttpHandlerImpl::OnWebSocketRequestUI(
 void DevToolsHttpHandlerImpl::OnWebSocketMessageUI(
     int connection_id,
     const std::string& data) {
-  if (browser_target_ && connection_id == browser_target_->connection_id()) {
-    std::string json_response = browser_target_->HandleMessage(data);
-
-    thread_->message_loop()->PostTask(
-        FROM_HERE,
-        base::Bind(&net::HttpServer::SendOverWebSocket,
-                   server_.get(),
-                   connection_id,
-                   json_response));
-    return;
-  }
-
   ConnectionToClientHostMap::iterator it =
       connection_to_client_host_ui_.find(connection_id);
   if (it == connection_to_client_host_ui_.end())
@@ -688,10 +669,6 @@ void DevToolsHttpHandlerImpl::OnCloseUI(int connection_id) {
     DevToolsManager::GetInstance()->ClientHostClosing(client_host);
     delete client_host;
     connection_to_client_host_ui_.erase(connection_id);
-  }
-  if (browser_target_ && browser_target_->connection_id() == connection_id) {
-    browser_target_.reset();
-    return;
   }
 }
 
@@ -719,8 +696,6 @@ void DevToolsHttpHandlerImpl::Init() {
 
 // Runs on the handler thread
 void DevToolsHttpHandlerImpl::Teardown() {
-  STLDeleteContainerPairSecondPointers(tethering_handlers_.begin(),
-                                       tethering_handlers_.end());
   server_ = NULL;
 }
 
@@ -754,19 +729,15 @@ void DevToolsHttpHandlerImpl::SendJson(int connection_id,
   scoped_ptr<base::Value> message_object(new base::StringValue(message));
   base::JSONWriter::Write(message_object.get(), &json_message);
 
-  std::string response;
-  std::string mime_type = "application/json; charset=UTF-8";
-
-  response = base::StringPrintf("%s%s", json_value.c_str(), message.c_str());
+  net::HttpServerResponseInfo response(status_code);
+  response.SetBody(json_value + message, "application/json; charset=UTF-8");
 
   thread_->message_loop()->PostTask(
       FROM_HERE,
-      base::Bind(&net::HttpServer::Send,
+      base::Bind(&net::HttpServer::SendResponse,
                  server_.get(),
                  connection_id,
-                 status_code,
-                 response,
-                 mime_type));
+                 response));
 }
 
 void DevToolsHttpHandlerImpl::Send200(int connection_id,

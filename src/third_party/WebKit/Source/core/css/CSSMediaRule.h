@@ -38,7 +38,6 @@ public:
 
     virtual CSSRule::Type type() const OVERRIDE { return MEDIA_RULE; }
     virtual void reattach(StyleRuleBase*) OVERRIDE;
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
     virtual String cssText() const OVERRIDE;
 
     MediaList* media() const;
@@ -47,7 +46,7 @@ private:
     CSSMediaRule(StyleRuleMedia*, CSSStyleSheet*);
 
     MediaQuerySet* mediaQueries() const;
-    
+
     mutable RefPtr<MediaList> m_mediaCSSOMWrapper;
 };
 

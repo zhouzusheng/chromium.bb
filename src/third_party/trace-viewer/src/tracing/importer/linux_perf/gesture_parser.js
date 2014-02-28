@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /**
  * @fileoverview Parses gesture events in the Linux event trace format.
  */
@@ -34,20 +36,24 @@ base.exportTo('tracing.importer.linux_perf', function() {
      * events in gesture library
      */
     gestureOpenSlice: function(title, ts, opt_args) {
-      this.importer.getOrCreatePseudoThread('gesture').thread.beginSlice(
+      var thread = this.importer.getOrCreatePseudoThread('gesture').thread;
+      thread.sliceGroup.beginSlice(
           'touchpad_gesture', title, ts, opt_args);
     },
 
     gestureCloseSlice: function(title, ts) {
       var thread = this.importer.getOrCreatePseudoThread('gesture').thread;
-      if (thread.openSliceCount) {
-        var slice = thread.openPartialSlices_[thread.openSliceCount - 1];
+      if (thread.sliceGroup.openSliceCount) {
+        var slice = thread.sliceGroup.mostRecentlyOpenedPartialSlice;
         if (slice.title != title) {
-          this.importer.importError('Titles do not match. Title is ' +
-              slice.title + ' in openSlice, and is ' +
-              title + ' in endSlice');
+          this.importer.model.importWarning({
+            type: 'title_match_error',
+            message: 'Titles do not match. Title is ' +
+                slice.title + ' in openSlice, and is ' +
+                title + ' in endSlice'
+          });
         } else {
-          thread.endSlice(ts);
+          thread.sliceGroup.endSlice(ts);
         }
       }
     },

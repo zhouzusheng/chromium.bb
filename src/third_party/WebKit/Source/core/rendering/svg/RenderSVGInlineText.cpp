@@ -100,7 +100,7 @@ void RenderSVGInlineText::styleDidChange(StyleDifference diff, const RenderStyle
 
 InlineTextBox* RenderSVGInlineText::createTextBox()
 {
-    InlineTextBox* box = new (renderArena()) SVGInlineTextBox(this);
+    InlineTextBox* box = new SVGInlineTextBox(this);
     box->setHasVirtualLogicalHeight();
     return box;
 }
@@ -155,10 +155,10 @@ bool RenderSVGInlineText::characterStartsNewTextChunk(int position) const
     return it->value.x != SVGTextLayoutAttributes::emptyValue() || it->value.y != SVGTextLayoutAttributes::emptyValue();
 }
 
-VisiblePosition RenderSVGInlineText::positionForPoint(const LayoutPoint& point)
+PositionWithAffinity RenderSVGInlineText::positionForPoint(const LayoutPoint& point)
 {
     if (!firstTextBox() || !textLength())
-        return createVisiblePosition(0, DOWNSTREAM);
+        return createPositionWithAffinity(0, DOWNSTREAM);
 
     float baseline = m_scaledFont.fontMetrics().floatAscent();
 
@@ -179,7 +179,7 @@ VisiblePosition RenderSVGInlineText::positionForPoint(const LayoutPoint& point)
         if (!box->isSVGInlineTextBox())
             continue;
 
-        SVGInlineTextBox* textBox = static_cast<SVGInlineTextBox*>(box);
+        SVGInlineTextBox* textBox = toSVGInlineTextBox(box);
         Vector<SVGTextFragment>& fragments = textBox->textFragments();
 
         unsigned textFragmentsSize = fragments.size();
@@ -203,10 +203,10 @@ VisiblePosition RenderSVGInlineText::positionForPoint(const LayoutPoint& point)
     }
 
     if (!closestDistanceFragment)
-        return createVisiblePosition(0, DOWNSTREAM);
+        return createPositionWithAffinity(0, DOWNSTREAM);
 
     int offset = closestDistanceBox->offsetForPositionInFragment(*closestDistanceFragment, absolutePoint.x() - closestDistancePosition, true);
-    return createVisiblePosition(offset + closestDistanceBox->start(), offset > 0 ? VP_UPSTREAM_IF_POSSIBLE : DOWNSTREAM);
+    return createPositionWithAffinity(offset + closestDistanceBox->start(), offset > 0 ? VP_UPSTREAM_IF_POSSIBLE : DOWNSTREAM);
 }
 
 void RenderSVGInlineText::updateScaledFont()
@@ -221,22 +221,25 @@ void RenderSVGInlineText::computeNewScaledFontForStyle(RenderObject* renderer, c
 
     Document* document = renderer->document();
     ASSERT(document);
-    
+
     StyleResolver* styleResolver = document->styleResolver();
     ASSERT(styleResolver);
 
-    // Alter font-size to the right on-screen value to avoid scaling the glyphs themselves, except when GeometricPrecision is specified
+    // Alter font-size to the right on-screen value to avoid scaling the glyphs themselves, except when GeometricPrecision is specified.
     scalingFactor = SVGRenderingContext::calculateScreenFontSizeScalingFactor(renderer);
-    if (scalingFactor == 1 || !scalingFactor || style->fontDescription().textRenderingMode() == GeometricPrecision) {
+    if (scalingFactor == 1 || !scalingFactor) {
         scalingFactor = 1;
         scaledFont = style->font();
         return;
     }
 
+    if (style->fontDescription().textRenderingMode() == GeometricPrecision)
+        scalingFactor = 1;
+
     FontDescription fontDescription(style->fontDescription());
 
     // FIXME: We need to better handle the case when we compute very small fonts below (below 1pt).
-    fontDescription.setComputedSize(FontSize::getComputedSizeFromSpecifiedSize(document, scalingFactor, fontDescription.isAbsoluteSize(), fontDescription.computedSize(), DoNotUseSmartMinimumForFontSize));
+    fontDescription.setComputedSize(FontSize::getComputedSizeFromSpecifiedSize(document, scalingFactor, fontDescription.isAbsoluteSize(), fontDescription.specifiedSize(), DoNotUseSmartMinimumForFontSize));
 
     scaledFont = Font(fontDescription, 0, 0);
     scaledFont.update(styleResolver->fontSelector());

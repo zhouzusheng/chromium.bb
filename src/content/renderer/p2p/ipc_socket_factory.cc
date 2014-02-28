@@ -8,7 +8,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/debug/trace_event.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "content/renderer/p2p/socket_client.h"
 #include "content/renderer/p2p/socket_dispatcher.h"
@@ -23,7 +23,9 @@ bool IsTcpClientSocket(P2PSocketType type) {
   return (type == P2P_SOCKET_STUN_TCP_CLIENT) ||
          (type == P2P_SOCKET_TCP_CLIENT) ||
          (type == P2P_SOCKET_STUN_SSLTCP_CLIENT) ||
-         (type == P2P_SOCKET_SSLTCP_CLIENT);
+         (type == P2P_SOCKET_SSLTCP_CLIENT) ||
+         (type == P2P_SOCKET_TLS_CLIENT) ||
+         (type == P2P_SOCKET_STUN_TLS_CLIENT);
 }
 
 // TODO(miu): This needs tuning.  http://crbug.com/237960
@@ -433,6 +435,9 @@ talk_base::AsyncPacketSocket* IpcPacketSocketFactory::CreateClientTcpSocket(
   if (opts & talk_base::PacketSocketFactory::OPT_SSLTCP) {
     type = (opts & talk_base::PacketSocketFactory::OPT_STUN) ?
         P2P_SOCKET_STUN_SSLTCP_CLIENT : P2P_SOCKET_SSLTCP_CLIENT;
+  } else if (opts & talk_base::PacketSocketFactory::OPT_TLS) {
+    type = (opts & talk_base::PacketSocketFactory::OPT_STUN) ?
+        P2P_SOCKET_STUN_TLS_CLIENT : P2P_SOCKET_TLS_CLIENT;
   } else {
     type = (opts & talk_base::PacketSocketFactory::OPT_STUN) ?
         P2P_SOCKET_STUN_TCP_CLIENT : P2P_SOCKET_TCP_CLIENT;

@@ -31,6 +31,7 @@
 #ifndef WebElement_h
 #define WebElement_h
 
+#include "../platform/WebImage.h"
 #include "WebNode.h"
 
 #if WEBKIT_IMPLEMENTATION
@@ -96,6 +97,10 @@ struct WebRect;
 
         WEBKIT_EXPORT static bool isWebElement(v8::Handle<v8::Value> handle);
         WEBKIT_EXPORT static WebElement fromV8Handle(v8::Handle<v8::Value> handle);
+
+        // Returns the image contents of this element or a null WebImage
+        // if there isn't any.
+        WEBKIT_EXPORT WebImage imageContents();
 
 #if WEBKIT_IMPLEMENTATION
         WebElement(const WTF::PassRefPtr<WebCore::Element>&);

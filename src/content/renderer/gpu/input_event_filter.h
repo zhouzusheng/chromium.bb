@@ -48,8 +48,7 @@ class CONTENT_EXPORT InputEventFilter
                                   cc::InputHandler* input_handler) OVERRIDE;
   virtual void DidRemoveInputHandler(int routing_id) OVERRIDE;
   virtual void DidOverscroll(int routing_id,
-                             gfx::Vector2dF accumulated_overscroll,
-                             gfx::Vector2dF current_fling_velocity) OVERRIDE;
+                             const cc::DidOverscrollParams& params) OVERRIDE;
 
   // IPC::ChannelProxy::MessageFilter methods:
   virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE;
@@ -57,18 +56,16 @@ class CONTENT_EXPORT InputEventFilter
   virtual void OnChannelClosing() OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
-  // Expects a InputMsg_HandleInputEvent message.
-  static const WebKit::WebInputEvent* CrackMessage(
-      const IPC::Message& message,
-      ui::LatencyInfo* latency_info);
-
  private:
   friend class IPC::ChannelProxy::MessageFilter;
   virtual ~InputEventFilter();
 
   void ForwardToMainListener(const IPC::Message& message);
   void ForwardToHandler(const IPC::Message& message);
-  void SendACK(const IPC::Message& message, InputEventAckState ack_result);
+  void SendACK(WebKit::WebInputEvent::Type type,
+               InputEventAckState ack_result,
+               const ui::LatencyInfo& latency_info,
+               int routing_id);
   void SendMessageOnIOThread(const IPC::Message& message);
 
   scoped_refptr<base::MessageLoopProxy> main_loop_;

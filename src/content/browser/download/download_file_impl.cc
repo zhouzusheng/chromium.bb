@@ -9,7 +9,8 @@
 #include "base/bind.h"
 #include "base/file_util.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/time.h"
+#include "base/strings/stringprintf.h"
+#include "base/time/time.h"
 #include "content/browser/byte_stream.h"
 #include "content/browser/download/download_create_info.h"
 #include "content/browser/download/download_interrupt_reasons_impl.h"
@@ -199,6 +200,10 @@ std::string DownloadFileImpl::GetHashState() {
   return file_.GetHashState();
 }
 
+void DownloadFileImpl::SetClientGuid(const std::string& guid) {
+  file_.SetClientGuid(guid);
+}
+
 void DownloadFileImpl::StreamActive() {
   base::TimeTicks start(base::TimeTicks::Now());
   base::TimeTicks now;
@@ -231,7 +236,8 @@ void DownloadFileImpl::StreamActive() {
         break;
       case ByteStreamReader::STREAM_COMPLETE:
         {
-          reason = stream_reader_->GetStatus();
+          reason = static_cast<DownloadInterruptReason>(
+              stream_reader_->GetStatus());
           SendUpdate();
           base::TimeTicks close_start(base::TimeTicks::Now());
           file_.Finish();

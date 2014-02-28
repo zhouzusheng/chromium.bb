@@ -43,6 +43,7 @@ namespace content {
 class IpcNetworkManager;
 class IpcPacketSocketFactory;
 class VideoCaptureImplManager;
+class WebRtcAudioCapturer;
 class WebRtcAudioDeviceImpl;
 class WebRtcLoggingHandlerImpl;
 class WebRtcLoggingMessageFilter;
@@ -57,7 +58,7 @@ class CONTENT_EXPORT MediaStreamDependencyFactory
     : NON_EXPORTED_BASE(public base::NonThreadSafe) {
  public:
   // MediaSourcesCreatedCallback is used in CreateNativeMediaSources.
-  typedef base::Callback<void(WebKit::WebMediaStream* description,
+  typedef base::Callback<void(WebKit::WebMediaStream* web_stream,
                               bool live)> MediaSourcesCreatedCallback;
   MediaStreamDependencyFactory(
       VideoCaptureImplManager* vc_manager,
@@ -70,7 +71,7 @@ class CONTENT_EXPORT MediaStreamDependencyFactory
       WebKit::WebRTCPeerConnectionHandlerClient* client);
 
   // CreateNativeMediaSources creates libjingle representations of
-  // the underlying sources to the tracks in |description|.
+  // the underlying sources to the tracks in |web_stream|.
   // |sources_created| is invoked when the sources have either been created and
   // transitioned to a live state or failed.
   // The libjingle sources is stored in the extra data field of
@@ -80,20 +81,20 @@ class CONTENT_EXPORT MediaStreamDependencyFactory
       int render_view_id,
       const WebKit::WebMediaConstraints& audio_constraints,
       const WebKit::WebMediaConstraints& video_constraints,
-      WebKit::WebMediaStream* description,
+      WebKit::WebMediaStream* web_stream,
       const MediaSourcesCreatedCallback& sources_created);
 
   // Creates a libjingle representation of a MediaStream and stores
-  // it in the extra data field of |description|.
+  // it in the extra data field of |web_stream|.
   void CreateNativeLocalMediaStream(
-      WebKit::WebMediaStream* description);
+      WebKit::WebMediaStream* web_stream);
 
   // Creates a libjingle representation of a MediaStream and stores
-  // it in the extra data field of |description|.
+  // it in the extra data field of |web_stream|.
   // |stream_stopped| is a callback that is run when a MediaStream have been
   // stopped.
   void CreateNativeLocalMediaStream(
-      WebKit::WebMediaStream* description,
+      WebKit::WebMediaStream* web_stream,
       const MediaStreamExtraData::StreamStopCallback& stream_stop);
 
   // Adds a libjingle representation of a MediaStreamTrack to |stream| based
@@ -135,11 +136,6 @@ class CONTENT_EXPORT MediaStreamDependencyFactory
 
   WebRtcAudioDeviceImpl* GetWebRtcAudioDevice();
 
-  // Stop the audio source for local audio tracks.
-  // TODO(xians): Remove this function if each audio track takes care of their
-  // own source.
-  void StopLocalAudioSource(const WebKit::WebMediaStream& description);
-
 #if defined(GOOGLE_TV)
   RTCVideoDecoderFactoryTv* decoder_factory_tv() { return decoder_factory_tv_; }
 #endif
@@ -161,21 +157,17 @@ class CONTENT_EXPORT MediaStreamDependencyFactory
           bool is_screen_cast,
           const webrtc::MediaConstraintsInterface* constraints);
 
-  // Initializes the source using audio parameters for the selected
-  // capture device and specifies which capture device to use as capture
-  // source.
-  virtual bool InitializeAudioSource(int render_view_id,
-                                     const StreamDeviceInfo& device_info);
-
   // Creates a media::AudioCapturerSource with an implementation that is
   // specific for a WebAudio source. The created WebAudioCapturerSource
   // instance will function as audio source instead of the default
   // WebRtcAudioCapturer.
-  virtual bool CreateWebAudioSource(WebKit::WebMediaStreamSource* source);
+  virtual scoped_refptr<WebRtcAudioCapturer> CreateWebAudioSource(
+      WebKit::WebMediaStreamSource* source);
 
   // Asks the PeerConnection factory to create a Local AudioTrack object.
   virtual scoped_refptr<webrtc::AudioTrackInterface>
       CreateLocalAudioTrack(const std::string& id,
+                            const scoped_refptr<WebRtcAudioCapturer>& capturer,
                             webrtc::AudioSourceInterface* source);
 
   // Asks the PeerConnection factory to create a Local VideoTrack object.
@@ -191,6 +183,12 @@ class CONTENT_EXPORT MediaStreamDependencyFactory
 
   virtual bool EnsurePeerConnectionFactory();
   virtual bool PeerConnectionFactoryCreated();
+
+  // Returns a new capturer or existing capturer based on the |render_view_id|
+  // and |device_info|. When the |render_view_id| and |device_info| are valid,
+  // it reuses existing capture if any; otherwise it creates a new capturer.
+  virtual scoped_refptr<WebRtcAudioCapturer> MaybeCreateAudioCapturer(
+      int render_view_id, const StreamDeviceInfo& device_info);
 
  private:
   // Creates and deletes |pc_factory_|, which in turn is used for

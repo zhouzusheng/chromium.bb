@@ -35,7 +35,7 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/singleton.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/stl_util.h"
@@ -50,13 +50,13 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
 #include "base/sys_byteorder.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
-#include "googleurl/src/gurl.h"
-#include "googleurl/src/url_canon.h"
-#include "googleurl/src/url_canon_ip.h"
-#include "googleurl/src/url_parse.h"
 #include "grit/net_resources.h"
+#include "url/gurl.h"
+#include "url/url_canon.h"
+#include "url/url_canon_ip.h"
+#include "url/url_parse.h"
 #if defined(OS_ANDROID)
 #include "net/android/network_library.h"
 #endif
@@ -64,17 +64,18 @@
 #include "net/base/escape.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_module.h"
+#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #if defined(OS_WIN)
 #include "net/base/winsock_init.h"
 #endif
 #include "net/http/http_content_disposition.h"
-#include "third_party/icu/public/common/unicode/uidna.h"
-#include "third_party/icu/public/common/unicode/uniset.h"
-#include "third_party/icu/public/common/unicode/uscript.h"
-#include "third_party/icu/public/common/unicode/uset.h"
-#include "third_party/icu/public/i18n/unicode/datefmt.h"
-#include "third_party/icu/public/i18n/unicode/regex.h"
-#include "third_party/icu/public/i18n/unicode/ulocdata.h"
+#include "third_party/icu/source/common/unicode/uidna.h"
+#include "third_party/icu/source/common/unicode/uniset.h"
+#include "third_party/icu/source/common/unicode/uscript.h"
+#include "third_party/icu/source/common/unicode/uset.h"
+#include "third_party/icu/source/i18n/unicode/datefmt.h"
+#include "third_party/icu/source/i18n/unicode/regex.h"
+#include "third_party/icu/source/i18n/unicode/ulocdata.h"
 
 using base::Time;
 
@@ -1024,14 +1025,10 @@ std::string GetDirectoryListingHeader(const base::string16& title) {
   return result;
 }
 
-inline bool IsHostCharAlpha(char c) {
+inline bool IsHostCharAlphanumeric(char c) {
   // We can just check lowercase because uppercase characters have already been
   // normalized.
-  return (c >= 'a') && (c <= 'z');
-}
-
-inline bool IsHostCharDigit(char c) {
-  return (c >= '0') && (c <= '9');
+  return ((c >= 'a') && (c <= 'z')) || ((c >= '0') && (c <= '9'));
 }
 
 bool IsCanonicalizedHostCompliant(const std::string& host,
@@ -1040,15 +1037,14 @@ bool IsCanonicalizedHostCompliant(const std::string& host,
     return false;
 
   bool in_component = false;
-  bool most_recent_component_started_alpha = false;
+  bool most_recent_component_started_alphanumeric = false;
   bool last_char_was_underscore = false;
 
   for (std::string::const_iterator i(host.begin()); i != host.end(); ++i) {
     const char c = *i;
     if (!in_component) {
-      most_recent_component_started_alpha = IsHostCharAlpha(c);
-      if (!most_recent_component_started_alpha && !IsHostCharDigit(c) &&
-          (c != '-'))
+      most_recent_component_started_alphanumeric = IsHostCharAlphanumeric(c);
+      if (!most_recent_component_started_alphanumeric && (c != '-'))
         return false;
       in_component = true;
     } else {
@@ -1056,7 +1052,7 @@ bool IsCanonicalizedHostCompliant(const std::string& host,
         if (last_char_was_underscore)
           return false;
         in_component = false;
-      } else if (IsHostCharAlpha(c) || IsHostCharDigit(c) || (c == '-')) {
+      } else if (IsHostCharAlphanumeric(c) || (c == '-')) {
         last_char_was_underscore = false;
       } else if (c == '_') {
         last_char_was_underscore = true;
@@ -1066,8 +1062,8 @@ bool IsCanonicalizedHostCompliant(const std::string& host,
     }
   }
 
-  return most_recent_component_started_alpha ||
-      (!desired_tld.empty() && IsHostCharAlpha(desired_tld[0]));
+  return most_recent_component_started_alphanumeric ||
+      (!desired_tld.empty() && IsHostCharAlphanumeric(desired_tld[0]));
 }
 
 std::string GetDirectoryListingEntry(const base::string16& name,
@@ -1393,6 +1389,40 @@ std::string GetHostAndOptionalPort(const GURL& url) {
   if (url.has_port())
     return base::StringPrintf("%s:%s", url.host().c_str(), url.port().c_str());
   return url.host();
+}
+
+// static
+bool IsHostnameNonUnique(const std::string& hostname) {
+  // CanonicalizeHost requires surrounding brackets to parse an IPv6 address.
+  const std::string host_or_ip = hostname.find(':') != std::string::npos ?
+      "[" + hostname + "]" : hostname;
+  url_canon::CanonHostInfo host_info;
+  std::string canonical_name = CanonicalizeHost(host_or_ip, &host_info);
+
+  // If canonicalization fails, then the input is truly malformed. However,
+  // to avoid mis-reporting bad inputs as "non-unique", treat them as unique.
+  if (canonical_name.empty())
+    return false;
+
+  // If |hostname| is an IP address, presume it's unique.
+  // TODO(rsleevi): In the future, this should also reject IP addresses in
+  // IANA-reserved ranges.
+  if (host_info.IsIPAddress())
+    return false;
+
+  // Check for a registry controlled portion of |hostname|, ignoring private
+  // registries, as they already chain to ICANN-administered registries,
+  // and explicitly ignoring unknown registries.
+  //
+  // Note: This means that as new gTLDs are introduced on the Internet, they
+  // will be treated as non-unique until the registry controlled domain list
+  // is updated. However, because gTLDs are expected to provide significant
+  // advance notice to deprecate older versions of this code, this an
+  // acceptable tradeoff.
+  return 0 == registry_controlled_domains::GetRegistryLength(
+                  canonical_name,
+                  registry_controlled_domains::EXCLUDE_UNKNOWN_REGISTRIES,
+                  registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
 }
 
 // Extracts the address and port portions of a sockaddr.
@@ -1793,179 +1823,6 @@ ScopedPortException::~ScopedPortException() {
     g_explicitly_allowed_ports.Get().erase(it);
   else
     NOTREACHED();
-}
-
-namespace {
-
-const char* kFinalStatusNames[] = {
-  "Cannot create sockets",
-  "Can create sockets",
-  "Can't get addresses",
-  "Global ipv6 address missing",
-  "Global ipv6 address present",
-  "Interface array too short",
-  "Probing not supported",  // IPV6_SUPPORT_MAX
-};
-COMPILE_ASSERT(arraysize(kFinalStatusNames) == IPV6_SUPPORT_MAX + 1,
-               IPv6SupportStatus_name_count_mismatch);
-
-// TODO(jar): The following is a simple estimate of IPv6 support.  We may need
-// to do a test resolution, and a test connection, to REALLY verify support.
-IPv6SupportResult TestIPv6SupportInternal() {
-#if defined(OS_ANDROID)
-  // TODO: We should fully implement IPv6 probe once 'getifaddrs' API available;
-  // Another approach is implementing the similar feature by
-  // java.net.NetworkInterface through JNI.
-  NOTIMPLEMENTED();
-  return IPv6SupportResult(true, IPV6_SUPPORT_MAX, 0);
-#elif defined(OS_POSIX)
-  int test_socket = socket(AF_INET6, SOCK_STREAM, 0);
-  if (test_socket == -1)
-    return IPv6SupportResult(false, IPV6_CANNOT_CREATE_SOCKETS, errno);
-  close(test_socket);
-
-  // Check to see if any interface has a IPv6 address.
-  struct ifaddrs* interface_addr = NULL;
-  int rv = getifaddrs(&interface_addr);
-  if (rv != 0) {
-    // Don't yet block IPv6.
-    return IPv6SupportResult(true, IPV6_GETIFADDRS_FAILED, errno);
-  }
-
-  bool found_ipv6 = false;
-  for (struct ifaddrs* interface = interface_addr;
-       interface != NULL;
-       interface = interface->ifa_next) {
-    if (!(IFF_UP & interface->ifa_flags))
-      continue;
-    if (IFF_LOOPBACK & interface->ifa_flags)
-      continue;
-    struct sockaddr* addr = interface->ifa_addr;
-    if (!addr)
-      continue;
-    if (addr->sa_family != AF_INET6)
-      continue;
-    // Safe cast since this is AF_INET6.
-    struct sockaddr_in6* addr_in6 =
-        reinterpret_cast<struct sockaddr_in6*>(addr);
-    struct in6_addr* sin6_addr = &addr_in6->sin6_addr;
-    if (IN6_IS_ADDR_LOOPBACK(sin6_addr) || IN6_IS_ADDR_LINKLOCAL(sin6_addr))
-      continue;
-    found_ipv6 = true;
-    break;
-  }
-  freeifaddrs(interface_addr);
-  if (!found_ipv6)
-    return IPv6SupportResult(false, IPV6_GLOBAL_ADDRESS_MISSING, 0);
-
-  return IPv6SupportResult(true, IPV6_GLOBAL_ADDRESS_PRESENT, 0);
-#elif defined(OS_WIN)
-  EnsureWinsockInit();
-  SOCKET test_socket = socket(AF_INET6, SOCK_STREAM, 0);
-  if (test_socket == INVALID_SOCKET) {
-    return IPv6SupportResult(false,
-                             IPV6_CANNOT_CREATE_SOCKETS,
-                             WSAGetLastError());
-  }
-  closesocket(test_socket);
-
-  // Check to see if any interface has a IPv6 address.
-  // The GetAdaptersAddresses MSDN page recommends using a size of 15000 to
-  // avoid reallocation.
-  ULONG adapters_size = 15000;
-  scoped_ptr_malloc<IP_ADAPTER_ADDRESSES> adapters;
-  ULONG error;
-  int num_tries = 0;
-  do {
-    adapters.reset(
-        reinterpret_cast<PIP_ADAPTER_ADDRESSES>(malloc(adapters_size)));
-    // Return only unicast addresses.
-    error = GetAdaptersAddresses(AF_UNSPEC,
-                                 GAA_FLAG_SKIP_ANYCAST |
-                                 GAA_FLAG_SKIP_MULTICAST |
-                                 GAA_FLAG_SKIP_DNS_SERVER |
-                                 GAA_FLAG_SKIP_FRIENDLY_NAME,
-                                 NULL, adapters.get(), &adapters_size);
-    num_tries++;
-  } while (error == ERROR_BUFFER_OVERFLOW && num_tries <= 3);
-  if (error == ERROR_NO_DATA)
-    return IPv6SupportResult(false, IPV6_GLOBAL_ADDRESS_MISSING, error);
-  if (error != ERROR_SUCCESS) {
-    // Don't yet block IPv6.
-    return IPv6SupportResult(true, IPV6_GETIFADDRS_FAILED, error);
-  }
-
-  PIP_ADAPTER_ADDRESSES adapter;
-  for (adapter = adapters.get(); adapter; adapter = adapter->Next) {
-    if (adapter->OperStatus != IfOperStatusUp)
-      continue;
-    if (adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK)
-      continue;
-    PIP_ADAPTER_UNICAST_ADDRESS unicast_address;
-    for (unicast_address = adapter->FirstUnicastAddress;
-         unicast_address;
-         unicast_address = unicast_address->Next) {
-      if (unicast_address->Address.lpSockaddr->sa_family != AF_INET6)
-        continue;
-      // Safe cast since this is AF_INET6.
-      struct sockaddr_in6* addr_in6 = reinterpret_cast<struct sockaddr_in6*>(
-          unicast_address->Address.lpSockaddr);
-      struct in6_addr* sin6_addr = &addr_in6->sin6_addr;
-      if (IN6_IS_ADDR_LOOPBACK(sin6_addr) || IN6_IS_ADDR_LINKLOCAL(sin6_addr))
-        continue;
-      const uint8 kTeredoPrefix[] = { 0x20, 0x01, 0, 0 };
-      if (!memcmp(sin6_addr->s6_addr, kTeredoPrefix, arraysize(kTeredoPrefix)))
-        continue;
-      return IPv6SupportResult(true, IPV6_GLOBAL_ADDRESS_PRESENT, 0);
-    }
-  }
-
-  return IPv6SupportResult(false, IPV6_GLOBAL_ADDRESS_MISSING, 0);
-#else
-  NOTIMPLEMENTED();
-  return IPv6SupportResult(true, IPV6_SUPPORT_MAX, 0);
-#endif  // defined(various platforms)
-}
-
-}  // namespace
-
-IPv6SupportResult::IPv6SupportResult(bool ipv6_supported,
-                                     IPv6SupportStatus ipv6_support_status,
-                                     int os_error)
-                                     : ipv6_supported(ipv6_supported),
-                                       ipv6_support_status(ipv6_support_status),
-                                       os_error(os_error) {
-}
-
-base::Value* IPv6SupportResult::ToNetLogValue(
-    NetLog::LogLevel /* log_level */) const {
-  base::DictionaryValue* dict = new base::DictionaryValue();
-  dict->SetBoolean("ipv6_supported", ipv6_supported);
-  dict->SetString("ipv6_support_status",
-                  kFinalStatusNames[ipv6_support_status]);
-  if (os_error)
-    dict->SetInteger("os_error", os_error);
-  return dict;
-}
-
-IPv6SupportResult TestIPv6Support() {
-  IPv6SupportResult result = TestIPv6SupportInternal();
-
-  // Record UMA.
-  if (result.ipv6_support_status != IPV6_SUPPORT_MAX) {
-    static bool run_once = false;
-    if (!run_once) {
-      run_once = true;
-      UMA_HISTOGRAM_ENUMERATION("Net.IPv6Status",
-                                result.ipv6_support_status,
-                                IPV6_SUPPORT_MAX);
-    } else {
-      UMA_HISTOGRAM_ENUMERATION("Net.IPv6Status_retest",
-                                result.ipv6_support_status,
-                                IPV6_SUPPORT_MAX);
-    }
-  }
-  return result;
 }
 
 bool HaveOnlyLoopbackAddresses() {

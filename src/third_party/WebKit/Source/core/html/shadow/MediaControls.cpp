@@ -25,10 +25,9 @@
  */
 
 #include "config.h"
-
 #include "core/html/shadow/MediaControls.h"
 
-#include "core/dom/ExceptionCodePlaceholder.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 
 namespace WebCore {
 
@@ -332,7 +331,7 @@ void MediaControls::stopHideFullscreenControlsTimer()
     m_hideFullscreenControlsTimer.stop();
 }
 
-const AtomicString& MediaControls::shadowPseudoId() const
+const AtomicString& MediaControls::part() const
 {
     DEFINE_STATIC_LOCAL(AtomicString, id, ("-webkit-media-controls"));
     return id;

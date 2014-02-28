@@ -21,17 +21,15 @@
  *
  */
 base.require('base.range');
-base.require('base.event_target');
+base.require('base.events');
 base.require('tracing.trace_model.process');
 base.require('tracing.trace_model.kernel');
-base.require('tracing.trace_model.cpu');
 base.require('tracing.filter');
 
 base.exportTo('tracing', function() {
 
   var Process = tracing.trace_model.Process;
   var Kernel = tracing.trace_model.Kernel;
-  var Cpu = tracing.trace_model.Cpu;
 
   /**
    * Builds a model from an array of TraceEvent objects.
@@ -43,13 +41,16 @@ base.exportTo('tracing', function() {
    * @constructor
    */
   function TraceModel(opt_eventData, opt_shiftWorldToZero) {
-    this.kernel = new Kernel();
-    this.cpus = {};
+    this.kernel = new Kernel(this);
     this.processes = {};
-    this.importErrors = [];
     this.metadata = [];
     this.categories = [];
     this.bounds = new base.Range();
+    this.instantEvents = [];
+    this.flowEvents = [];
+
+    this.importWarnings_ = [];
+    this.reportedImportWarnings_ = {};
 
     if (opt_eventData)
       this.importTraces([opt_eventData], opt_shiftWorldToZero);
@@ -78,23 +79,17 @@ base.exportTo('tracing', function() {
     },
 
     /**
-     * @return {Cpu} Gets a specific Cpu or creates one if
-     * it does not exist.
-     */
-    getOrCreateCpu: function(cpuNumber) {
-      if (!this.cpus[cpuNumber])
-        this.cpus[cpuNumber] = new Cpu(cpuNumber);
-      return this.cpus[cpuNumber];
-    },
-
-    /**
      * @return {Process} Gets a TimlineProcess for a specified pid or
      * creates one if it does not exist.
      */
     getOrCreateProcess: function(pid) {
       if (!this.processes[pid])
-        this.processes[pid] = new Process(pid);
+        this.processes[pid] = new Process(this, pid);
       return this.processes[pid];
+    },
+
+    pushInstantEvent: function(instantEvent) {
+      this.instantEvents.push(instantEvent);
     },
 
     /**
@@ -105,8 +100,6 @@ base.exportTo('tracing', function() {
       this.kernel.addCategoriesToDict(categoriesDict);
       for (var pid in this.processes)
         this.processes[pid].addCategoriesToDict(categoriesDict);
-      for (var cpuNumber in this.cpus)
-        this.cpus[cpuNumber].addCategoriesToDict(categoriesDict);
 
       this.categories = [];
       for (var category in categoriesDict)
@@ -124,11 +117,6 @@ base.exportTo('tracing', function() {
         this.processes[pid].updateBounds();
         this.bounds.addRange(this.processes[pid].bounds);
       }
-
-      for (var cpuNumber in this.cpus) {
-        this.cpus[cpuNumber].updateBounds();
-        this.bounds.addRange(this.cpus[cpuNumber].bounds);
-      }
     },
 
     shiftWorldToZero: function() {
@@ -136,10 +124,13 @@ base.exportTo('tracing', function() {
         return;
       var timeBase = this.bounds.min;
       this.kernel.shiftTimestampsForward(-timeBase);
+
+      for (var id in this.instantEvents)
+        this.instantEvents[id].start -= timeBase;
+
       for (var pid in this.processes)
         this.processes[pid].shiftTimestampsForward(-timeBase);
-      for (var cpuNumber in this.cpus)
-        this.cpus[cpuNumber].shiftTimestampsForward(-timeBase);
+
       this.updateBounds();
     },
 
@@ -158,16 +149,6 @@ base.exportTo('tracing', function() {
     },
 
     /**
-     * @return {Array} An array of all cpus in the model.
-     */
-    getAllCpus: function() {
-      var cpus = [];
-      for (var cpu in this.cpus)
-        cpus.push(this.cpus[cpu]);
-      return cpus;
-    },
-
-    /**
      * @return {Array} An array of all processes in the model.
      */
     getAllProcesses: function() {
@@ -182,16 +163,13 @@ base.exportTo('tracing', function() {
      */
     getAllCounters: function() {
       var counters = [];
+      counters.push.apply(
+          counters, base.dictionaryValues(this.kernel.counters));
       for (var pid in this.processes) {
         var process = this.processes[pid];
         for (var tid in process.counters) {
           counters.push(process.counters[tid]);
         }
-      }
-      for (var cpuNumber in this.cpus) {
-        var cpu = this.cpus[cpuNumber];
-        for (var counterName in cpu.counters)
-          counters.push(cpu.counters[counterName]);
       }
       return counters;
     },
@@ -245,11 +223,16 @@ base.exportTo('tracing', function() {
      * a separate importer.
      * @param {bool=} opt_shiftWorldToZero Whether to shift the world to zero.
      * Defaults to true.
+     * @param {bool=} opt_pruneEmptyContainers Whether to prune empty
+     * containers. Defaults to true.
      */
     importTraces: function(traces,
-                           opt_shiftWorldToZero) {
+                           opt_shiftWorldToZero,
+                           opt_pruneEmptyContainers) {
       if (opt_shiftWorldToZero === undefined)
         opt_shiftWorldToZero = true;
+      if (opt_pruneEmptyContainers === undefined)
+        opt_pruneEmptyContainers = true;
 
       // Copy the traces array, we may mutate it.
       traces = traces.slice(0);
@@ -295,9 +278,11 @@ base.exportTo('tracing', function() {
         this.processes[pid].preInitializeObjects();
 
       // Prune empty containers.
-      this.kernel.pruneEmptyContainers();
-      for (var pid in this.processes) {
-        this.processes[pid].pruneEmptyContainers();
+      if (opt_pruneEmptyContainers) {
+        this.kernel.pruneEmptyContainers();
+        for (var pid in this.processes) {
+          this.processes[pid].pruneEmptyContainers();
+        }
       }
 
       // Merge kernel and userland slices on each thread.
@@ -323,6 +308,32 @@ base.exportTo('tracing', function() {
       // Run initializers.
       for (var pid in this.processes)
         this.processes[pid].initializeObjects();
+    },
+
+    /**
+     * @param {Object} data The import warning data. Data must provide two
+     *    accessors: type, message. The types are used to determine if we
+     *    should output the message, we'll only output one message of each type.
+     *    The message is the actual warning content.
+     */
+    importWarning: function(data) {
+      this.importWarnings_.push(data);
+
+      // Only log each warning type once. We may want to add some kind of
+      // flag to allow reporting all importer warnings.
+      if (this.reportedImportWarnings_[data.type] === true)
+        return;
+
+      console.warn(data.message);
+      this.reportedImportWarnings_[data.type] = true;
+    },
+
+    get hasImportWarnings() {
+      return (this.importWarnings_.length > 0);
+    },
+
+    get importWarnings() {
+      return this.importWarnings_;
     }
   };
 

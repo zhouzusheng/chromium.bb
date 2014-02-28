@@ -14,7 +14,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -72,7 +72,7 @@ void V8XSLTProcessor::getParameterMethodCustom(const v8::FunctionCallbackInfo<v8
     if (result.isNull())
         return;
 
-    v8SetReturnValue(args, v8String(result, args.GetIsolate()));
+    v8SetReturnValueString(args, result, args.GetIsolate());
 }
 
 void V8XSLTProcessor::removeParameterMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& args)

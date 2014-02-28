@@ -35,15 +35,15 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/InputTypeNames.h"
 #include "core/platform/DateComponents.h"
-#include <wtf/CurrentTime.h>
-#include <wtf/DateMath.h>
-#include <wtf/MathExtras.h>
-#include <wtf/PassOwnPtr.h>
+#include "wtf/CurrentTime.h"
+#include "wtf/DateMath.h"
+#include "wtf/MathExtras.h"
+#include "wtf/PassOwnPtr.h"
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/html/DateTimeFieldsState.h"
 #include "core/platform/text/PlatformLocale.h"
-#include <wtf/text/WTFString.h>
+#include "wtf/text/WTFString.h"
 #endif
 
 namespace WebCore {
@@ -128,11 +128,11 @@ Decimal MonthInputType::parseToNumber(const String& src, const Decimal& defaultV
     return Decimal::fromDouble(months);
 }
 
-bool MonthInputType::parseToDateComponentsInternal(const UChar* characters, unsigned length, DateComponents* out) const
+bool MonthInputType::parseToDateComponentsInternal(const String& string, DateComponents* out) const
 {
     ASSERT(out);
     unsigned end;
-    return out->parseMonth(characters, length, 0, end) && end == length;
+    return out->parseMonth(string, 0, end) && end == string.length();
 }
 
 bool MonthInputType::setMillisecondToDateComponents(double value, DateComponents* date) const

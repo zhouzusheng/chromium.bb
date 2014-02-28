@@ -1,10 +1,10 @@
 /*
  * Copyright (C) 2009 Google Inc. All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  *     * Redistributions of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
  *     * Redistributions in binary form must reproduce the above
@@ -14,7 +14,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -27,15 +27,15 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
- 
+
 #include "config.h"
+#include "core/workers/WorkerRunLoop.h"
 
 #include "core/dom/ScriptExecutionContext.h"
 #include "core/platform/SharedTimer.h"
 #include "core/platform/ThreadGlobalData.h"
 #include "core/platform/ThreadTimers.h"
-#include "core/workers/WorkerContext.h"
-#include "core/workers/WorkerRunLoop.h"
+#include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerThread.h"
 #include <wtf/CurrentTime.h>
 
@@ -124,7 +124,7 @@ private:
     WorkerRunLoop& m_runLoop;
 };
 
-void WorkerRunLoop::run(WorkerContext* context)
+void WorkerRunLoop::run(WorkerGlobalScope* context)
 {
     RunLoopSetup setup(*this);
     ModePredicate modePredicate(defaultMode());
@@ -135,7 +135,7 @@ void WorkerRunLoop::run(WorkerContext* context)
     runCleanupTasks(context);
 }
 
-MessageQueueWaitResult WorkerRunLoop::runInMode(WorkerContext* context, const String& mode, WaitMode waitMode)
+MessageQueueWaitResult WorkerRunLoop::runInMode(WorkerGlobalScope* context, const String& mode, WaitMode waitMode)
 {
     RunLoopSetup setup(*this);
     ModePredicate modePredicate(mode);
@@ -143,19 +143,42 @@ MessageQueueWaitResult WorkerRunLoop::runInMode(WorkerContext* context, const St
     return result;
 }
 
-MessageQueueWaitResult WorkerRunLoop::runInMode(WorkerContext* context, const ModePredicate& predicate, WaitMode waitMode)
+MessageQueueWaitResult WorkerRunLoop::runInMode(WorkerGlobalScope* context, const ModePredicate& predicate, WaitMode waitMode)
 {
     ASSERT(context);
     ASSERT(context->thread());
     ASSERT(context->thread()->isCurrentThread());
 
-    double absoluteTime = 0.0;
-    if (waitMode == WaitForMessage)
-        absoluteTime = (predicate.isDefaultMode() && m_sharedTimer->isActive()) ? m_sharedTimer->fireTime() : MessageQueue<Task>::infiniteTime();
+    bool nextTimeoutEventIsIdleWatchdog;
     MessageQueueWaitResult result;
-    OwnPtr<WorkerRunLoop::Task> task = m_messageQueue.waitForMessageFilteredWithTimeout(result, predicate, absoluteTime);
+    OwnPtr<WorkerRunLoop::Task> task;
+    do {
+        double absoluteTime = 0.0;
+        nextTimeoutEventIsIdleWatchdog = false;
+        if (waitMode == WaitForMessage) {
+            absoluteTime = (predicate.isDefaultMode() && m_sharedTimer->isActive()) ? m_sharedTimer->fireTime() : MessageQueue<Task>::infiniteTime();
 
-    // If the context is closing, don't execute any further JavaScript tasks (per section 4.1.1 of the Web Workers spec).  However, there may be implementation cleanup tasks in the queue, so keep running through it.
+            // Do a script engine idle notification if the next event is distant enough.
+            const double kMinIdleTimespan = 0.3; // seconds
+            if (m_messageQueue.isEmpty() && absoluteTime > currentTime() + kMinIdleTimespan) {
+                bool hasMoreWork = !context->idleNotification();
+                if (hasMoreWork) {
+                    // Schedule a watchdog, so if there are no events within a particular time interval
+                    // idle notifications won't stop firing.
+                    const double kWatchdogInterval = 3; // seconds
+                    double nextWatchdogTime = currentTime() + kWatchdogInterval;
+                    if (absoluteTime > nextWatchdogTime) {
+                        absoluteTime = nextWatchdogTime;
+                        nextTimeoutEventIsIdleWatchdog = true;
+                    }
+                }
+            }
+        }
+        task = m_messageQueue.waitForMessageFilteredWithTimeout(result, predicate, absoluteTime);
+    } while (result == MessageQueueTimeout && nextTimeoutEventIsIdleWatchdog);
+
+    // If the context is closing, don't execute any further JavaScript tasks (per section 4.1.1 of the Web Workers spec).
+    // However, there may be implementation cleanup tasks in the queue, so keep running through it.
 
     switch (result) {
     case MessageQueueTerminated:
@@ -174,7 +197,7 @@ MessageQueueWaitResult WorkerRunLoop::runInMode(WorkerContext* context, const Mo
     return result;
 }
 
-void WorkerRunLoop::runCleanupTasks(WorkerContext* context)
+void WorkerRunLoop::runCleanupTasks(WorkerGlobalScope* context)
 {
     ASSERT(context);
     ASSERT(context->thread());
@@ -194,9 +217,9 @@ void WorkerRunLoop::terminate()
     m_messageQueue.kill();
 }
 
-void WorkerRunLoop::postTask(PassOwnPtr<ScriptExecutionContext::Task> task)
+bool WorkerRunLoop::postTask(PassOwnPtr<ScriptExecutionContext::Task> task)
 {
-    postTaskForMode(task, defaultMode());
+    return postTaskForMode(task, defaultMode());
 }
 
 void WorkerRunLoop::postTaskAndTerminate(PassOwnPtr<ScriptExecutionContext::Task> task)
@@ -204,9 +227,9 @@ void WorkerRunLoop::postTaskAndTerminate(PassOwnPtr<ScriptExecutionContext::Task
     m_messageQueue.appendAndKill(Task::create(task, defaultMode().isolatedCopy()));
 }
 
-void WorkerRunLoop::postTaskForMode(PassOwnPtr<ScriptExecutionContext::Task> task, const String& mode)
+bool WorkerRunLoop::postTaskForMode(PassOwnPtr<ScriptExecutionContext::Task> task, const String& mode)
 {
-    m_messageQueue.append(Task::create(task, mode.isolatedCopy()));
+    return m_messageQueue.append(Task::create(task, mode.isolatedCopy()));
 }
 
 PassOwnPtr<WorkerRunLoop::Task> WorkerRunLoop::Task::create(PassOwnPtr<ScriptExecutionContext::Task> task, const String& mode)
@@ -216,8 +239,8 @@ PassOwnPtr<WorkerRunLoop::Task> WorkerRunLoop::Task::create(PassOwnPtr<ScriptExe
 
 void WorkerRunLoop::Task::performTask(const WorkerRunLoop& runLoop, ScriptExecutionContext* context)
 {
-    WorkerContext* workerContext = static_cast<WorkerContext *>(context);
-    if ((!workerContext->isClosing() && !runLoop.terminated()) || m_task->isCleanupTask())
+    WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
+    if ((!workerGlobalScope->isClosing() && !runLoop.terminated()) || m_task->isCleanupTask())
         m_task->performTask(context);
 }
 

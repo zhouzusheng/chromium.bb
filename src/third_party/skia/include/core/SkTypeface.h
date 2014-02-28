@@ -22,6 +22,7 @@ class SkAdvancedTypefaceMetrics;
 class SkWStream;
 
 typedef uint32_t SkFontID;
+/** Machine endian. */
 typedef uint32_t SkFontTableTag;
 
 /** \class SkTypeface
@@ -148,6 +149,36 @@ public:
             const uint32_t* glyphIDs = NULL,
             uint32_t glyphIDsCount = 0) const;
 
+    enum Encoding {
+        kUTF8_Encoding,
+        kUTF16_Encoding,
+        kUTF32_Encoding
+    };
+
+    /**
+     *  Given an array of character codes, of the specified encoding,
+     *  optionally return their corresponding glyph IDs (if glyphs is not NULL).
+     *
+     *  @param chars pointer to the array of character codes
+     *  @param encoding how the characteds are encoded
+     *  @param glyphs (optional) returns the corresponding glyph IDs for each
+     *          character code, up to glyphCount values. If a character code is
+     *          not found in the typeface, the corresponding glyph ID will be 0.
+     *  @param glyphCount number of code points in 'chars' to process. If glyphs
+     *          is not NULL, then it must point sufficient memory to write
+     *          glyphCount values into it.
+     *  @return the number of number of continuous non-zero glyph IDs computed
+     *          from the beginning of chars. This value is valid, even if the
+     *          glyphs parameter is NULL.
+     */
+    int charsToGlyphs(const void* chars, Encoding encoding, uint16_t glyphs[],
+                      int glyphCount) const;
+
+    /**
+     *  Return the number of glyphs in the typeface.
+     */
+    int countGlyphs() const;
+
     // Table getters -- may fail if the underlying font format is not organized
     // as 4-byte tables.
 
@@ -194,6 +225,30 @@ public:
      */
     int getUnitsPerEm() const;
 
+    struct LocalizedString {
+        SkString fString;
+        SkString fLanguage;
+    };
+    class LocalizedStrings : ::SkNoncopyable {
+    public:
+        virtual ~LocalizedStrings() { }
+        virtual bool next(LocalizedString* localizedString) = 0;
+        void unref() { SkDELETE(this); }
+    };
+    /**
+     *  Returns an iterator which will attempt to enumerate all of the
+     *  family names specified by the font.
+     *  It is the caller's responsibility to unref() the returned pointer.
+     */
+    LocalizedStrings* createFamilyNameIterator() const;
+
+    /**
+     *  Return the family name for this typeface. It will always be returned
+     *  encoded as UTF8, but the language of the name is whatever the host
+     *  platform chooses.
+     */
+    void getFamilyName(SkString* name) const;
+
     /**
      *  Return a stream for the contents of the font data, or NULL on failure.
      *  If ttcIndex is not null, it is set to the TrueTypeCollection index
@@ -201,7 +256,25 @@ public:
      *  collection.
      */
     SkStream* openStream(int* ttcIndex) const;
-    SkScalerContext* createScalerContext(const SkDescriptor*) const;
+
+    /**
+     *  Search within this typeface's family for a best match to the
+     *  specified style, and return a ref to that typeface. Note: the
+     *  returned object could be this, if it is the best match, or it
+     *  could be a different typeface. Either way, the caller must balance
+     *  this call with unref() on the returned object.
+     *
+     *  Will never return NULL.
+     */
+    SkTypeface* refMatchingStyle(Style) const;
+
+    /**
+     *  Return a scalercontext for the given descriptor. If this fails, then
+     *  if allowFailure is true, this returns NULL, else it returns a
+     *  dummy scalercontext that will not crash, but will draw nothing.
+     */
+    SkScalerContext* createScalerContext(const SkDescriptor*,
+                                         bool allowFailure = false) const;
 
     // PRIVATE / EXPERIMENTAL -- do not call
     void filterRec(SkScalerContextRec* rec) const {
@@ -233,11 +306,19 @@ protected:
     virtual SkStream* onOpenStream(int* ttcIndex) const = 0;
     virtual void onGetFontDescriptor(SkFontDescriptor*, bool* isLocal) const = 0;
 
-    virtual int onGetUPEM() const;
+    virtual int onCharsToGlyphs(const void* chars, Encoding, uint16_t glyphs[],
+                                int glyphCount) const;
+    virtual int onCountGlyphs() const = 0;
 
-    virtual int onGetTableTags(SkFontTableTag tags[]) const;
+    virtual int onGetUPEM() const = 0;
+
+    virtual LocalizedStrings* onCreateFamilyNameIterator() const = 0;
+
+    virtual int onGetTableTags(SkFontTableTag tags[]) const = 0;
     virtual size_t onGetTableData(SkFontTableTag, size_t offset,
-                                  size_t length, void* data) const;
+                                  size_t length, void* data) const = 0;
+
+    virtual SkTypeface* onRefMatchingStyle(Style styleBits) const = 0;
 
 private:
     SkFontID    fUniqueID;

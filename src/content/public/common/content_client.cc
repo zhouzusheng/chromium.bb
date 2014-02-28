@@ -9,10 +9,6 @@
 #include "ui/gfx/image/image.h"
 #include "webkit/common/user_agent/user_agent.h"
 
-#if defined(ENABLE_PLUGINS)
-#include "webkit/plugins/ppapi/host_globals.h"
-#endif
-
 namespace content {
 
 static ContentClient* g_client;
@@ -28,6 +24,12 @@ class InternalTestInitializer {
   static ContentRendererClient* SetRenderer(ContentRendererClient* r) {
     ContentRendererClient* rv = g_client->renderer_;
     g_client->renderer_ = r;
+    return rv;
+  }
+
+  static ContentUtilityClient* SetUtility(ContentUtilityClient* u) {
+    ContentUtilityClient* rv = g_client->utility_;
+    g_client->utility_ = u;
     return rv;
   }
 };
@@ -55,17 +57,13 @@ ContentRendererClient* SetRendererClientForTesting(ContentRendererClient* r) {
   return InternalTestInitializer::SetRenderer(r);
 }
 
+ContentUtilityClient* SetUtilityClientForTesting(ContentUtilityClient* u) {
+  return InternalTestInitializer::SetUtility(u);
+}
+
 const std::string& GetUserAgent(const GURL& url) {
   DCHECK(g_client);
   return webkit_glue::GetUserAgent(url);
-}
-
-webkit::ppapi::HostGlobals* GetHostGlobals() {
-#if defined(ENABLE_PLUGINS)
-  return webkit::ppapi::HostGlobals::Get();
-#else
-  return NULL;
-#endif
 }
 
 ContentClient::ContentClient()

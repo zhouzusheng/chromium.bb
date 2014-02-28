@@ -32,7 +32,6 @@
 #include "CSSPropertyNames.h"
 #include "core/css/CSSParserValues.h"
 #include "core/css/CSSValue.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
 
 namespace WebCore {
 
@@ -48,13 +47,6 @@ public:
 
     bool equals(const CSSVariableValue& other) const { return m_name == other.m_name && m_value == other.m_value; }
 
-    void reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-    {
-        MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-        info.addMember(m_name, "name");
-        info.addMember(m_value, "value");
-    }
-
 private:
     CSSVariableValue(const AtomicString& name, const String& value)
         : CSSValue(VariableClass)
@@ -66,6 +58,18 @@ private:
     const AtomicString m_name;
     const String m_value;
 };
+
+inline CSSVariableValue* toCSSVariableValue(CSSValue* value)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!value || value->isVariableValue());
+    return static_cast<CSSVariableValue*>(value);
+}
+
+inline const CSSVariableValue* toCSSVariableValue(const CSSValue* value)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!value || value->isVariableValue());
+    return static_cast<const CSSVariableValue*>(value);
+}
 
 }
 

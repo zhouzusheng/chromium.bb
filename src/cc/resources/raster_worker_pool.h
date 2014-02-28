@@ -36,12 +36,13 @@ class CC_EXPORT RasterWorkerPoolTask
   // Returns true if |device| was written to. False indicate that
   // the content of |device| is undefined and the resource doesn't
   // need to be initialized.
-  virtual bool RunOnThread(SkDevice* device, unsigned thread_index) = 0;
-  virtual void DispatchCompletionCallback() = 0;
+  virtual bool RunOnWorkerThread(SkDevice* device, unsigned thread_index) = 0;
+  virtual void CompleteOnOriginThread() = 0;
 
   void DidRun(bool was_canceled);
   bool HasFinishedRunning() const;
   bool WasCanceled() const;
+  void WillComplete();
   void DidComplete();
   bool HasCompleted() const;
 
@@ -80,8 +81,8 @@ namespace cc {
 class CC_EXPORT RasterWorkerPoolClient {
  public:
   virtual bool ShouldForceTasksRequiredForActivationToComplete() const = 0;
-  virtual void DidFinishedRunningTasks() = 0;
-  virtual void DidFinishedRunningTasksRequiredForActivation() = 0;
+  virtual void DidFinishRunningTasks() = 0;
+  virtual void DidFinishRunningTasksRequiredForActivation() = 0;
 
  protected:
   virtual ~RasterWorkerPoolClient() {}
@@ -189,7 +190,6 @@ class CC_EXPORT RasterWorkerPool : public WorkerPool {
       gfx::Rect content_rect,
       float contents_scale,
       RasterMode raster_mode,
-      bool use_color_estimator,
       bool is_tile_in_pending_tree_now_bin,
       TileResolution tile_resolution,
       int layer_id,

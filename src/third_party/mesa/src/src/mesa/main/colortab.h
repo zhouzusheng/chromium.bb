@@ -27,7 +27,11 @@
 #define COLORTAB_H
 
 
-#include "main/mtypes.h"
+#include "compiler.h"
+#include "glheader.h"
+#include "mfeatures.h"
+
+struct _glapi_table;
 
 #if FEATURE_colortable
 
@@ -46,9 +50,7 @@ _mesa_init_colortable_dispatch(struct _glapi_table *disp);
 
 #else /* FEATURE_colortable */
 
-#include "main/compiler.h"
-
-static INLINE void GLAPIENTRY
+static inline void GLAPIENTRY
 _mesa_ColorTable( GLenum target, GLenum internalformat,
                   GLsizei width, GLenum format, GLenum type,
                   const GLvoid *table )
@@ -56,7 +58,7 @@ _mesa_ColorTable( GLenum target, GLenum internalformat,
    ASSERT_NO_FEATURE();
 }
 
-static INLINE void GLAPIENTRY
+static inline void GLAPIENTRY
 _mesa_ColorSubTable( GLenum target, GLsizei start,
                      GLsizei count, GLenum format, GLenum type,
                      const GLvoid *table )
@@ -64,25 +66,11 @@ _mesa_ColorSubTable( GLenum target, GLsizei start,
    ASSERT_NO_FEATURE();
 }
 
-static INLINE void
+static inline void
 _mesa_init_colortable_dispatch(struct _glapi_table *disp)
 {
 }
 
 #endif /* FEATURE_colortable */
-
-
-extern void
-_mesa_init_colortable( struct gl_color_table *table );
-
-extern void
-_mesa_free_colortable_data( struct gl_color_table *table );
-
-extern void 
-_mesa_init_colortables( GLcontext *ctx );
-
-extern void 
-_mesa_free_colortables_data( GLcontext *ctx );
-
 
 #endif /* COLORTAB_H */

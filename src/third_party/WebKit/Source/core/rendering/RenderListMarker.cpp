@@ -26,15 +26,14 @@
 #include "core/rendering/RenderListMarker.h"
 
 #include "core/dom/Document.h"
-#include "core/dom/WebCoreMemoryInstrumentation.h"
-#include "core/loader/cache/CachedImage.h"
+#include "core/loader/cache/ImageResource.h"
 #include "core/platform/graphics/Font.h"
 #include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderListItem.h"
 #include "core/rendering/RenderView.h"
-#include <wtf/text/StringBuilder.h>
-#include <wtf/unicode/CharacterNames.h>
+#include "wtf/text/StringBuilder.h"
+#include "wtf/unicode/CharacterNames.h"
 
 using namespace std;
 using namespace WTF;
@@ -166,7 +165,7 @@ static inline String toNumeric(int number, const CharacterType(&alphabet)[size])
 
 template <typename CharacterType, size_t size>
 static inline String toSymbolic(int number, const CharacterType(&alphabet)[size])
-{    
+{
     return toSymbolic(number, alphabet, size);
 }
 
@@ -1072,7 +1071,7 @@ RenderListMarker::~RenderListMarker()
 RenderListMarker* RenderListMarker::createAnonymous(RenderListItem* item)
 {
     Document* document = item->document();
-    RenderListMarker* renderer = new (document->renderArena()) RenderListMarker(item);
+    RenderListMarker* renderer = new RenderListMarker(item);
     renderer->setDocumentForAnonymous(document);
     return renderer;
 }
@@ -1081,7 +1080,7 @@ void RenderListMarker::styleWillChange(StyleDifference diff, const RenderStyle* 
 {
     if (style() && (newStyle->listStylePosition() != style()->listStylePosition() || newStyle->listStyleType() != style()->listStyleType()))
         setNeedsLayoutAndPrefWidthsRecalc();
-    
+
     RenderBox::styleWillChange(diff, newStyle);
 }
 
@@ -1152,7 +1151,7 @@ void RenderListMarker::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffse
         return;
     }
 
-    const Color color(style()->visitedDependentColor(CSSPropertyColor));
+    const Color color(resolveColor(CSSPropertyColor));
     context->setStrokeColor(color);
     context->setStrokeStyle(SolidStroke);
     context->setStrokeThickness(1.0f);
@@ -1284,7 +1283,8 @@ void RenderListMarker::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffse
             reversedText.reserveCapacity(length);
             for (int i = length - 1; i >= 0; --i)
                 reversedText.append(m_text[i]);
-            textRun.setText(reversedText.characters(), length);
+            ASSERT(reversedText.length() == reversedText.capacity());
+            textRun.setText(reversedText.toString());
         }
 
         const UChar suffix = listMarkerSuffix(type, m_listItem->value());
@@ -1312,7 +1312,7 @@ void RenderListMarker::layout()
 {
     StackStats::LayoutCheckPoint layoutCheckPoint;
     ASSERT(needsLayout());
- 
+
     if (isImage()) {
         updateMarginsAndContent();
         setWidth(minPreferredLogicalWidth());
@@ -1332,7 +1332,7 @@ void RenderListMarker::layout()
     if (endMargin.isFixed())
         setMarginEnd(endMargin.value());
 
-    setNeedsLayout(false);
+    clearNeedsLayout();
 }
 
 void RenderListMarker::imageChanged(WrappedImagePtr o, const IntRect*)
@@ -1790,22 +1790,13 @@ LayoutRect RenderListMarker::selectionRectForRepaint(const RenderLayerModelObjec
 
     RootInlineBox* root = inlineBoxWrapper()->root();
     LayoutRect rect(0, root->selectionTop() - y(), width(), root->selectionHeight());
-            
+
     if (clipToVisibleContent)
         computeRectForRepaint(repaintContainer, rect);
     else
         rect = localToContainerQuad(FloatRect(rect), repaintContainer).enclosingBoundingBox();
-    
-    return rect;
-}
 
-void RenderListMarker::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Rendering);
-    RenderBox::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_text, "text");
-    info.addMember(m_image, "image");
-    info.addMember(m_listItem, "listItem");
+    return rect;
 }
 
 } // namespace WebCore

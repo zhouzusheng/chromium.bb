@@ -26,7 +26,7 @@
 
 namespace WebCore {
 
-class CachedCSSStyleSheet;
+class CSSStyleSheetResource;
 class MediaList;
 class MediaQuerySet;
 class StyleRuleImport;
@@ -34,13 +34,12 @@ class StyleRuleImport;
 class CSSImportRule : public CSSRule {
 public:
     static PassRefPtr<CSSImportRule> create(StyleRuleImport* rule, CSSStyleSheet* sheet) { return adoptRef(new CSSImportRule(rule, sheet)); }
-    
+
     virtual ~CSSImportRule();
 
     virtual CSSRule::Type type() const OVERRIDE { return IMPORT_RULE; }
     virtual String cssText() const OVERRIDE;
     virtual void reattach(StyleRuleBase*) OVERRIDE;
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
 
     String href() const;
     MediaList* media() const;

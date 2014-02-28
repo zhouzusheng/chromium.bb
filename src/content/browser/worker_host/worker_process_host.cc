@@ -13,7 +13,7 @@
 #include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/command_line.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/appcache/appcache_dispatcher_host.h"
@@ -23,11 +23,11 @@
 #include "content/browser/devtools/worker_devtools_manager.h"
 #include "content/browser/devtools/worker_devtools_message_filter.h"
 #include "content/browser/fileapi/fileapi_message_filter.h"
-#include "content/browser/in_process_webkit/indexed_db_dispatcher_host.h"
+#include "content/browser/indexed_db/indexed_db_dispatcher_host.h"
 #include "content/browser/mime_registry_message_filter.h"
+#include "content/browser/quota_dispatcher_host.h"
 #include "content/browser/renderer_host/database_message_filter.h"
 #include "content/browser/renderer_host/file_utilities_message_filter.h"
-#include "content/browser/renderer_host/quota_dispatcher_host.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/socket_stream_dispatcher_host.h"
@@ -49,8 +49,8 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "ui/base/ui_base_switches.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/sandbox_mount_point_provider.h"
-#include "webkit/glue/resource_type.h"
+#include "webkit/browser/fileapi/sandbox_file_system_backend.h"
+#include "webkit/common/resource_type.h"
 
 #if defined(OS_WIN)
 #include "content/common/sandbox_win.h"
@@ -175,7 +175,7 @@ bool WorkerProcessHost::Init(int render_process_id) {
 #endif
     switches::kDisableFileSystem,
     switches::kDisableSeccompFilterSandbox,
-    switches::kEnableExperimentalWebKitFeatures,
+    switches::kEnableExperimentalWebPlatformFeatures,
 #if defined(OS_MACOSX)
     switches::kEnableSandboxLogging,
 #endif
@@ -229,6 +229,8 @@ bool WorkerProcessHost::Init(int render_process_id) {
 void WorkerProcessHost::CreateMessageFilters(int render_process_id) {
   ChromeBlobStorageContext* blob_storage_context =
       GetChromeBlobStorageContextForResourceContext(resource_context_);
+  StreamContext* stream_context =
+      GetStreamContextForResourceContext(resource_context_);
 
   net::URLRequestContextGetter* url_request_context =
       partition_.url_request_context();
@@ -255,7 +257,8 @@ void WorkerProcessHost::CreateMessageFilters(int render_process_id) {
       process_->GetData().id,
       url_request_context,
       partition_.filesystem_context(),
-      blob_storage_context));
+      blob_storage_context,
+      stream_context));
   process_->GetHost()->AddFilter(new FileUtilitiesMessageFilter(
       process_->GetData().id));
   process_->GetHost()->AddFilter(new MimeRegistryMessageFilter());
@@ -469,7 +472,7 @@ void WorkerProcessHost::RelayMessage(
 }
 
 void WorkerProcessHost::ShutdownSocketStreamDispatcherHostIfNecessary() {
-  if (!instances_.size() && socket_stream_dispatcher_host_) {
+  if (!instances_.size() && socket_stream_dispatcher_host_.get()) {
     // We can assume that this object is going to delete, because
     // currently a WorkerInstance will never be added to a WorkerProcessHost
     // once it is initialized.

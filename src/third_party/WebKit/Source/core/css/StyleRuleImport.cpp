@@ -22,12 +22,12 @@
 #include "config.h"
 #include "core/css/StyleRuleImport.h"
 
+#include "FetchInitiatorTypeNames.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Document.h"
-#include "core/loader/cache/CachedCSSStyleSheet.h"
-#include "core/loader/cache/CachedResourceLoader.h"
-#include "core/loader/cache/CachedResourceRequest.h"
-#include "core/loader/cache/CachedResourceRequestInitiators.h"
+#include "core/loader/cache/CSSStyleSheetResource.h"
+#include "core/loader/cache/FetchRequest.h"
+#include "core/loader/cache/ResourceFetcher.h"
 
 namespace WebCore {
 
@@ -37,12 +37,12 @@ PassRefPtr<StyleRuleImport> StyleRuleImport::create(const String& href, PassRefP
 }
 
 StyleRuleImport::StyleRuleImport(const String& href, PassRefPtr<MediaQuerySet> media)
-    : StyleRuleBase(Import, 0)
+    : StyleRuleBase(Import)
     , m_parentStyleSheet(0)
     , m_styleSheetClient(this)
     , m_strHref(href)
     , m_mediaQueries(media)
-    , m_cachedSheet(0)
+    , m_resource(0)
     , m_loading(false)
 {
     if (!m_mediaQueries)
@@ -53,11 +53,11 @@ StyleRuleImport::~StyleRuleImport()
 {
     if (m_styleSheet)
         m_styleSheet->clearOwnerRule();
-    if (m_cachedSheet)
-        m_cachedSheet->removeClient(&m_styleSheetClient);
+    if (m_resource)
+        m_resource->removeClient(&m_styleSheetClient);
 }
 
-void StyleRuleImport::setCSSStyleSheet(const String& href, const KURL& baseURL, const String& charset, const CachedCSSStyleSheet* cachedStyleSheet)
+void StyleRuleImport::setCSSStyleSheet(const String& href, const KURL& baseURL, const String& charset, const CSSStyleSheetResource* cachedStyleSheet)
 {
     if (m_styleSheet)
         m_styleSheet->clearOwnerRule();
@@ -93,8 +93,8 @@ void StyleRuleImport::requestStyleSheet()
     if (!document)
         return;
 
-    CachedResourceLoader* cachedResourceLoader = document->cachedResourceLoader();
-    if (!cachedResourceLoader)
+    ResourceFetcher* fetcher = document->fetcher();
+    if (!fetcher)
         return;
 
     KURL absURL;
@@ -114,28 +114,20 @@ void StyleRuleImport::requestStyleSheet()
         rootSheet = sheet;
     }
 
-    CachedResourceRequest request(ResourceRequest(absURL), cachedResourceRequestInitiators().css, m_parentStyleSheet->charset());
+    FetchRequest request(ResourceRequest(absURL), FetchInitiatorTypeNames::css, m_parentStyleSheet->charset());
     if (m_parentStyleSheet->isUserStyleSheet())
-        m_cachedSheet = cachedResourceLoader->requestUserCSSStyleSheet(request);
+        m_resource = fetcher->requestUserCSSStyleSheet(request);
     else
-        m_cachedSheet = cachedResourceLoader->requestCSSStyleSheet(request);
-    if (m_cachedSheet) {
+        m_resource = fetcher->requestCSSStyleSheet(request);
+    if (m_resource) {
         // if the import rule is issued dynamically, the sheet may be
         // removed from the pending sheet count, so let the doc know
         // the sheet being imported is pending.
         if (m_parentStyleSheet && m_parentStyleSheet->loadCompleted() && rootSheet == m_parentStyleSheet)
             m_parentStyleSheet->startLoadingDynamicSheet();
         m_loading = true;
-        m_cachedSheet->addClient(&m_styleSheetClient);
+        m_resource->addClient(&m_styleSheetClient);
     }
-}
-
-void StyleRuleImport::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_strHref, "strHref");
-    info.addMember(m_mediaQueries, "mediaQueries");
-    info.addMember(m_styleSheet, "styleSheet");
 }
 
 } // namespace WebCore

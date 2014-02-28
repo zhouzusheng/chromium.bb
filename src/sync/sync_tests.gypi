@@ -17,12 +17,10 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
-        '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         'sync',
       ],
       'export_dependent_settings': [
-        '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         'sync',
       ],
@@ -49,8 +47,6 @@
         'test/fake_encryptor.h',
         'test/fake_sync_encryption_handler.h',
         'test/fake_sync_encryption_handler.cc',
-        'test/fake_extensions_activity_monitor.cc',
-        'test/fake_extensions_activity_monitor.h',
         'test/test_transaction_observer.cc',
         'test/test_transaction_observer.h',
         'test/null_directory_change_delegate.cc',
@@ -101,12 +97,10 @@
         'SYNC_TEST'
       ],
       'dependencies': [
-        '../testing/gmock.gyp:gmock',
         '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_proto_cpp',
         'sync',
       ],
       'export_dependent_settings': [
-        '../testing/gmock.gyp:gmock',
         '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_proto_cpp',
         'sync',
       ],
@@ -175,11 +169,9 @@
         'SYNC_TEST'
       ],
       'dependencies': [
-        '../testing/gmock.gyp:gmock',
         'sync',
       ],
       'export_dependent_settings': [
-        '../testing/gmock.gyp:gmock',
         'sync',
       ],
       'sources': [
@@ -202,7 +194,6 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../sql/sql.gyp:sql',
-        '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         'sync',
         'test_support_sync_core',
@@ -220,7 +211,6 @@
       'export_dependent_settings': [
         '../base/base.gyp:base',
         '../sql/sql.gyp:sql',
-        '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         'sync',
         'test_support_sync_core',
@@ -241,7 +231,7 @@
           'engine/apply_control_data_updates_unittest.cc',
           'engine/apply_updates_and_resolve_conflicts_command_unittest.cc',
           'engine/backoff_delay_provider_unittest.cc',
-          'engine/download_updates_command_unittest.cc',
+          'engine/download_unittest.cc',
           'engine/model_changing_syncer_command_unittest.cc',
           'engine/process_commit_response_command_unittest.cc',
           'engine/process_updates_command_unittest.cc',
@@ -268,7 +258,6 @@
           'syncable/syncable_unittest.cc',
           'syncable/syncable_util_unittest.cc',
           'util/cryptographer_unittest.cc',
-          'util/data_encryption_win_unittest.cc',
           'util/data_type_histogram_unittest.cc',
           'util/get_session_name_unittest.cc',
           'util/nigori_unittest.cc',
@@ -304,7 +293,6 @@
         '../base/base.gyp:base',
         '../jingle/jingle.gyp:notifier_test_util',
         '../net/net.gyp:net_test_support',
-        '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation',
         '../third_party/libjingle/libjingle.gyp:libjingle',
@@ -317,7 +305,6 @@
         '../base/base.gyp:base',
         '../jingle/jingle.gyp:notifier_test_util',
         '../net/net.gyp:net_test_support',
-        '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation',
         '../third_party/libjingle/libjingle.gyp:libjingle',
@@ -327,9 +314,6 @@
       'direct_dependent_settings': {
         'include_dirs': [
           '..',
-        ],
-        'sources': [
-          'notifier/invalidator_factory_unittest.cc',
         ],
         'conditions': [
           ['OS != "android"', {
@@ -363,7 +347,6 @@
         '../base/base.gyp:base',
         '../net/net.gyp:net',
         '../net/net.gyp:net_test_support',
-        '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         'sync',
         'test_support_sync_internal_api',
@@ -374,7 +357,6 @@
         '../base/base.gyp:base',
         '../net/net.gyp:net',
         '../net/net.gyp:net_test_support',
-        '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         'sync',
         'test_support_sync_internal_api',
@@ -391,7 +373,6 @@
           'internal_api/js_sync_manager_observer_unittest.cc',
           'internal_api/public/change_record_unittest.cc',
           'internal_api/public/sessions/sync_session_snapshot_unittest.cc',
-          'internal_api/public/sessions/sync_source_info_unittest.cc',
           'internal_api/syncapi_server_connection_manager_unittest.cc',
           'internal_api/sync_encryption_handler_impl_unittest.cc',
           'internal_api/sync_manager_impl_unittest.cc',
@@ -501,7 +482,6 @@
       'type': '<(gtest_target_type)',
       'dependencies': [
         '../base/base.gyp:run_all_unittests',
-        '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../url/url.gyp:url_lib',
         'test_support_accounts_client',

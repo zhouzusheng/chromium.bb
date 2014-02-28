@@ -13,7 +13,8 @@
 #include "base/values.h"
 #include "cc/base/math_util.h"
 #include "cc/base/util.h"
-#include "cc/debug/rendering_stats.h"
+#include "cc/debug/benchmark_instrumentation.h"
+#include "cc/debug/rendering_stats_instrumentation.h"
 #include "cc/debug/traced_picture.h"
 #include "cc/debug/traced_value.h"
 #include "cc/layers/content_layer_client.h"
@@ -86,61 +87,56 @@ scoped_refptr<Picture> Picture::Create(gfx::Rect layer_rect) {
   return make_scoped_refptr(new Picture(layer_rect));
 }
 
-scoped_refptr<Picture> Picture::CreateFromValue(const base::Value* value) {
-  bool success;
-  scoped_refptr<Picture> picture =
-    make_scoped_refptr(new Picture(value, &success));
-  if (!success)
-    picture = NULL;
-  return picture;
-}
-
 Picture::Picture(gfx::Rect layer_rect)
     : layer_rect_(layer_rect) {
   // Instead of recording a trace event for object creation here, we wait for
   // the picture to be recorded in Picture::Record.
 }
 
-Picture::Picture(const base::Value* raw_value, bool* success) {
+scoped_refptr<Picture> Picture::CreateFromValue(const base::Value* raw_value) {
   const base::DictionaryValue* value = NULL;
-  if (!raw_value->GetAsDictionary(&value)) {
-    *success = false;
-    return;
-  }
+  if (!raw_value->GetAsDictionary(&value))
+    return NULL;
 
   // Decode the picture from base64.
   std::string encoded;
-  if (!value->GetString("skp64", &encoded)) {
-    *success = false;
-    return;
-  }
+  if (!value->GetString("skp64", &encoded))
+    return NULL;
 
   std::string decoded;
   base::Base64Decode(encoded, &decoded);
   SkMemoryStream stream(decoded.data(), decoded.size());
 
-  const base::Value* layer_rect = NULL;
-  if (!value->Get("params.layer_rect", &layer_rect)) {
-    *success = false;
-    return;
-  }
-  if (!MathUtil::FromValue(layer_rect, &layer_rect_)) {
-    *success = false;
-    return;
-  }
+  const base::Value* layer_rect_value = NULL;
+  if (!value->Get("params.layer_rect", &layer_rect_value))
+    return NULL;
 
-  const base::Value* opaque_rect = NULL;
-  if (!value->Get("params.opaque_rect", &opaque_rect)) {
-    *success = false;
-    return;
-  }
-  if (!MathUtil::FromValue(opaque_rect, &opaque_rect_)) {
-    *success = false;
-    return;
-  }
+  gfx::Rect layer_rect;
+  if (!MathUtil::FromValue(layer_rect_value, &layer_rect))
+    return NULL;
+
+  const base::Value* opaque_rect_value = NULL;
+  if (!value->Get("params.opaque_rect", &opaque_rect_value))
+    return NULL;
+
+  gfx::Rect opaque_rect;
+  if (!MathUtil::FromValue(opaque_rect_value, &opaque_rect))
+    return NULL;
 
   // Read the picture. This creates an empty picture on failure.
-  picture_ = skia::AdoptRef(new SkPicture(&stream, success, &DecodeBitmap));
+  SkPicture* skpicture = SkPicture::CreateFromStream(&stream, &DecodeBitmap);
+  if (skpicture == NULL)
+    return NULL;
+
+  return make_scoped_refptr(new Picture(skpicture, layer_rect, opaque_rect));
+}
+
+Picture::Picture(SkPicture* picture,
+                 gfx::Rect layer_rect,
+                 gfx::Rect opaque_rect) :
+    layer_rect_(layer_rect),
+    opaque_rect_(opaque_rect),
+    picture_(skia::AdoptRef(picture)) {
 }
 
 Picture::Picture(const skia::RefPtr<SkPicture>& picture,
@@ -188,10 +184,10 @@ void Picture::CloneForDrawing(int num_threads) {
 
 void Picture::Record(ContentLayerClient* painter,
                      const SkTileGridPicture::TileGridInfo& tile_grid_info,
-                     RenderingStats* stats) {
-  TRACE_EVENT2("cc", "Picture::Record",
-               "width", layer_rect_.width(),
-               "height", layer_rect_.height());
+                     RenderingStatsInstrumentation* stats_instrumentation) {
+  TRACE_EVENT1(benchmark_instrumentation::kCategory,
+               benchmark_instrumentation::kPictureRecord,
+               benchmark_instrumentation::kData, AsTraceableRecordData());
 
   DCHECK(!tile_grid_info.fTileInterval.isEmpty());
   picture_ = skia::AdoptRef(new SkTileGridPicture(
@@ -214,15 +210,13 @@ void Picture::Record(ContentLayerClient* painter,
   canvas->clipRect(layer_skrect);
 
   gfx::RectF opaque_layer_rect;
-  base::TimeTicks begin_record_time;
-  if (stats)
-    begin_record_time = base::TimeTicks::Now();
+  base::TimeTicks start_time = stats_instrumentation->StartRecording();
+
   painter->PaintContents(canvas, layer_rect_, &opaque_layer_rect);
-  if (stats) {
-    stats->total_record_time += base::TimeTicks::Now() - begin_record_time;
-    stats->total_pixels_recorded +=
-        layer_rect_.width() * layer_rect_.height();
-  }
+
+  base::TimeDelta duration = stats_instrumentation->EndRecording(start_time);
+  stats_instrumentation->AddRecord(duration,
+                                   layer_rect_.width() * layer_rect_.height());
 
   canvas->restore();
   picture_->endRecording();
@@ -234,7 +228,7 @@ void Picture::Record(ContentLayerClient* painter,
 
 void Picture::GatherPixelRefs(
     const SkTileGridPicture::TileGridInfo& tile_grid_info,
-    RenderingStats* stats) {
+    RenderingStatsInstrumentation* stats_instrumentation) {
   TRACE_EVENT2("cc", "Picture::GatherPixelRefs",
                "width", layer_rect_.width(),
                "height", layer_rect_.height());
@@ -253,9 +247,7 @@ void Picture::GatherPixelRefs(
   int max_x = 0;
   int max_y = 0;
 
-  base::TimeTicks begin_image_gathering_time;
-  if (stats)
-    begin_image_gathering_time = base::TimeTicks::Now();
+  base::TimeTicks start_time = stats_instrumentation->StartRecording();
 
   skia::LazyPixelRefList pixel_refs;
   skia::LazyPixelRefUtils::GatherPixelRefs(picture_.get(), &pixel_refs);
@@ -286,11 +278,8 @@ void Picture::GatherPixelRefs(
     max_y = std::max(max_y, max.y());
   }
 
-  if (stats) {
-    stats->total_image_gathering_time +=
-        base::TimeTicks::Now() - begin_image_gathering_time;
-    stats->total_image_gathering_count++;
-  }
+  base::TimeDelta duration = stats_instrumentation->EndRecording(start_time);
+  stats_instrumentation->AddImageGathering(duration);
 
   min_pixel_cell_ = gfx::Point(min_x, min_y);
   max_pixel_cell_ = gfx::Point(max_x, max_y);
@@ -301,8 +290,10 @@ void Picture::Raster(
     SkDrawPictureCallback* callback,
     gfx::Rect content_rect,
     float contents_scale) {
-  TRACE_EVENT_BEGIN1("cc", "Picture::Raster",
-    "data", AsTraceableRasterData(content_rect, contents_scale));
+  TRACE_EVENT_BEGIN1(benchmark_instrumentation::kCategory,
+                     benchmark_instrumentation::kPictureRaster,
+                     "data",
+                     AsTraceableRasterData(content_rect, contents_scale));
 
   DCHECK(picture_);
 
@@ -314,8 +305,21 @@ void Picture::Raster(
   SkIRect bounds;
   canvas->getClipDeviceBounds(&bounds);
   canvas->restore();
-  TRACE_EVENT_END1("cc", "Picture::Raster",
-                   "num_pixels_rasterized", bounds.width() * bounds.height());
+  TRACE_EVENT_END1(benchmark_instrumentation::kCategory,
+                   benchmark_instrumentation::kPictureRaster,
+                   benchmark_instrumentation::kNumPixelsRasterized,
+                   bounds.width() * bounds.height());
+}
+
+void Picture::Replay(SkCanvas* canvas) {
+  TRACE_EVENT_BEGIN0("cc", "Picture::Replay");
+  DCHECK(picture_);
+
+  picture_->draw(canvas);
+  SkIRect bounds;
+  canvas->getClipDeviceBounds(&bounds);
+  TRACE_EVENT_END1("cc", "Picture::Replay",
+                   "num_pixels_replayed", bounds.width() * bounds.height());
 }
 
 scoped_ptr<base::Value> Picture::AsValue() const {
@@ -443,7 +447,7 @@ Picture::PixelRefIterator& Picture::PixelRefIterator::operator++() {
 }
 
 scoped_ptr<base::debug::ConvertableToTraceFormat>
-    Picture::AsTraceableRasterData(gfx::Rect rect, float scale) {
+    Picture::AsTraceableRasterData(gfx::Rect rect, float scale) const {
   scoped_ptr<base::DictionaryValue> raster_data(new base::DictionaryValue());
   raster_data->Set("picture_id", TracedValue::CreateIDRef(this).release());
   raster_data->SetDouble("scale", scale);
@@ -452,6 +456,17 @@ scoped_ptr<base::debug::ConvertableToTraceFormat>
   raster_data->SetDouble("rect_width", rect.width());
   raster_data->SetDouble("rect_height", rect.height());
   return TracedValue::FromValue(raster_data.release());
+}
+
+scoped_ptr<base::debug::ConvertableToTraceFormat>
+    Picture::AsTraceableRecordData() const {
+  scoped_ptr<base::DictionaryValue> record_data(new base::DictionaryValue());
+  record_data->Set("picture_id", TracedValue::CreateIDRef(this).release());
+  record_data->SetInteger(benchmark_instrumentation::kWidth,
+                          layer_rect_.width());
+  record_data->SetInteger(benchmark_instrumentation::kHeight,
+                          layer_rect_.height());
+  return TracedValue::FromValue(record_data.release());
 }
 
 }  // namespace cc

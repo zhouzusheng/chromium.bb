@@ -57,10 +57,6 @@ BASE_EXPORT FilePath MakeAbsoluteFilePath(const FilePath& input);
 // particularly speedy in any platform.
 BASE_EXPORT int64 ComputeDirectorySize(const FilePath& root_path);
 
-}  // namespace base
-
-namespace file_util {
-
 // Deletes the given path, whether it's a file or a directory.
 // If it's a directory, it's perfectly happy to delete all of the
 // directory's contents.  Passing true to recursive deletes
@@ -73,7 +69,7 @@ namespace file_util {
 //
 // WARNING: USING THIS WITH recursive==true IS EQUIVALENT
 //          TO "rm -rf", SO USE WITH CAUTION.
-BASE_EXPORT bool Delete(const base::FilePath& path, bool recursive);
+BASE_EXPORT bool DeleteFile(const FilePath& path, bool recursive);
 
 #if defined(OS_WIN)
 // Schedules to delete the given path, whether it's a file or a directory, until
@@ -81,7 +77,7 @@ BASE_EXPORT bool Delete(const base::FilePath& path, bool recursive);
 // Note:
 // 1) The file/directory to be deleted should exist in a temp folder.
 // 2) The directory to be deleted must be empty.
-BASE_EXPORT bool DeleteAfterReboot(const base::FilePath& path);
+BASE_EXPORT bool DeleteFileAfterReboot(const FilePath& path);
 #endif
 
 // Moves the given path, whether it's a file or a directory.
@@ -89,13 +85,7 @@ BASE_EXPORT bool DeleteAfterReboot(const base::FilePath& path);
 // on different volumes, this will attempt to copy and delete. Returns
 // true for success.
 // This function fails if either path contains traversal components ('..').
-BASE_EXPORT bool Move(const base::FilePath& from_path,
-                      const base::FilePath& to_path);
-
-// Same as Move but allows paths with traversal components.
-// Use only with extreme care.
-BASE_EXPORT bool MoveUnsafe(const base::FilePath& from_path,
-                            const base::FilePath& to_path);
+BASE_EXPORT bool Move(const FilePath& from_path, const FilePath& to_path);
 
 // Renames file |from_path| to |to_path|. Both paths must be on the same
 // volume, or the function will fail. Destination file will be created
@@ -103,23 +93,13 @@ BASE_EXPORT bool MoveUnsafe(const base::FilePath& from_path,
 // temporary files. On Windows it preserves attributes of the target file.
 // Returns true on success, leaving *error unchanged.
 // Returns false on failure and sets *error appropriately, if it is non-NULL.
-BASE_EXPORT bool ReplaceFileAndGetError(const base::FilePath& from_path,
-                                        const base::FilePath& to_path,
-                                        base::PlatformFileError* error);
-
-// Backward-compatible convenience method for the above.
-BASE_EXPORT bool ReplaceFile(const base::FilePath& from_path,
-                             const base::FilePath& to_path);
+BASE_EXPORT bool ReplaceFile(const FilePath& from_path,
+                             const FilePath& to_path,
+                             PlatformFileError* error);
 
 // Copies a single file. Use CopyDirectory to copy directories.
 // This function fails if either path contains traversal components ('..').
-BASE_EXPORT bool CopyFile(const base::FilePath& from_path,
-                          const base::FilePath& to_path);
-
-// Same as CopyFile but allows paths with traversal components.
-// Use only with extreme care.
-BASE_EXPORT bool CopyFileUnsafe(const base::FilePath& from_path,
-                                const base::FilePath& to_path);
+BASE_EXPORT bool CopyFile(const FilePath& from_path, const FilePath& to_path);
 
 // Copies the given path, and optionally all subdirectories and their contents
 // as well.
@@ -128,29 +108,35 @@ BASE_EXPORT bool CopyFileUnsafe(const base::FilePath& from_path,
 // if successful, false otherwise. Wildcards on the names are not supported.
 //
 // If you only need to copy a file use CopyFile, it's faster.
-BASE_EXPORT bool CopyDirectory(const base::FilePath& from_path,
-                               const base::FilePath& to_path,
+BASE_EXPORT bool CopyDirectory(const FilePath& from_path,
+                               const FilePath& to_path,
                                bool recursive);
 
 // Returns true if the given path exists on the local filesystem,
 // false otherwise.
-BASE_EXPORT bool PathExists(const base::FilePath& path);
+BASE_EXPORT bool PathExists(const FilePath& path);
 
 // Returns true if the given path is writable by the user, false otherwise.
-BASE_EXPORT bool PathIsWritable(const base::FilePath& path);
+BASE_EXPORT bool PathIsWritable(const FilePath& path);
 
 // Returns true if the given path exists and is a directory, false otherwise.
-BASE_EXPORT bool DirectoryExists(const base::FilePath& path);
+BASE_EXPORT bool DirectoryExists(const FilePath& path);
 
 // Returns true if the contents of the two files given are equal, false
 // otherwise.  If either file can't be read, returns false.
-BASE_EXPORT bool ContentsEqual(const base::FilePath& filename1,
-                               const base::FilePath& filename2);
+BASE_EXPORT bool ContentsEqual(const FilePath& filename1,
+                               const FilePath& filename2);
 
 // Returns true if the contents of the two text files given are equal, false
 // otherwise.  This routine treats "\r\n" and "\n" as equivalent.
-BASE_EXPORT bool TextContentsEqual(const base::FilePath& filename1,
-                                   const base::FilePath& filename2);
+BASE_EXPORT bool TextContentsEqual(const FilePath& filename1,
+                                   const FilePath& filename2);
+
+}  // namespace base
+
+// -----------------------------------------------------------------------------
+
+namespace file_util {
 
 // Read the file at |path| into |contents|, returning true on success.
 // This function fails if the |path| contains path traversal components ('..').
@@ -163,7 +149,7 @@ BASE_EXPORT bool ReadFileToString(const base::FilePath& path,
 #if defined(OS_POSIX)
 // Read exactly |bytes| bytes from file descriptor |fd|, storing the result
 // in |buffer|. This function is protected against EINTR and partial reads.
-// Returns true iff |bytes| bytes have been successfuly read from |fd|.
+// Returns true iff |bytes| bytes have been successfully read from |fd|.
 BASE_EXPORT bool ReadFromFD(int fd, char* buffer, size_t bytes);
 
 // Creates a symbolic link at |symlink| pointing to |target|.  Returns
@@ -205,15 +191,6 @@ BASE_EXPORT bool SetPosixFilePermissions(const base::FilePath& path,
                                          int mode);
 #endif  // defined(OS_POSIX)
 
-#if defined(OS_WIN)
-// Copy from_path to to_path recursively and then delete from_path recursively.
-// Returns true if all operations succeed.
-// This function simulates Move(), but unlike Move() it works across volumes.
-// This fuction is not transactional.
-BASE_EXPORT bool CopyAndDeleteDirectory(const base::FilePath& from_path,
-                                        const base::FilePath& to_path);
-#endif  // defined(OS_WIN)
-
 // Return true if the given directory is empty
 BASE_EXPORT bool IsDirectoryEmpty(const base::FilePath& dir_path);
 
@@ -240,7 +217,7 @@ BASE_EXPORT bool CreateTemporaryFileInDir(const base::FilePath& dir,
 
 // Create and open a temporary file.  File is opened for read/write.
 // The full path is placed in |path|.
-// Returns a handle to the opened file or NULL if an error occured.
+// Returns a handle to the opened file or NULL if an error occurred.
 BASE_EXPORT FILE* CreateAndOpenTemporaryFile(base::FilePath* path);
 // Like above but for shmem files.  Only useful for POSIX.
 // The executable flag says the file needs to support using
@@ -381,7 +358,7 @@ BASE_EXPORT base::FilePath MakeUniqueDirectory(const base::FilePath& path);
 // * Exist.
 // * Are owned by a specific user.
 // * Are not writable by all users.
-// * Are owned by a memeber of a given set of groups, or are not writable by
+// * Are owned by a member of a given set of groups, or are not writable by
 //   their group.
 // * Are not symbolic links.
 // This is useful for checking that a config file is administrator-controlled.
@@ -456,5 +433,32 @@ BASE_EXPORT bool GetFileSystemType(const base::FilePath& path,
 #endif
 
 }  // namespace file_util
+
+// Internal --------------------------------------------------------------------
+
+namespace base {
+namespace internal {
+
+// Same as Move but allows paths with traversal components.
+// Use only with extreme care.
+BASE_EXPORT bool MoveUnsafe(const FilePath& from_path,
+                            const FilePath& to_path);
+
+// Same as CopyFile but allows paths with traversal components.
+// Use only with extreme care.
+BASE_EXPORT bool CopyFileUnsafe(const FilePath& from_path,
+                                const FilePath& to_path);
+
+#if defined(OS_WIN)
+// Copy from_path to to_path recursively and then delete from_path recursively.
+// Returns true if all operations succeed.
+// This function simulates Move(), but unlike Move() it works across volumes.
+// This function is not transactional.
+BASE_EXPORT bool CopyAndDeleteDirectory(const FilePath& from_path,
+                                        const FilePath& to_path);
+#endif  // defined(OS_WIN)
+
+}  // namespace internal
+}  // namespace base
 
 #endif  // BASE_FILE_UTIL_H_

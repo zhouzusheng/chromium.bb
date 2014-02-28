@@ -20,16 +20,16 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef MarkupAccumulator_h
 #define MarkupAccumulator_h
 
 #include "core/editing/markup.h"
-#include <wtf/HashMap.h>
-#include <wtf/text/StringBuilder.h>
-#include <wtf/Vector.h>
+#include "wtf/HashMap.h"
+#include "wtf/Vector.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -39,7 +39,7 @@ class Element;
 class Node;
 class Range;
 
-typedef HashMap<AtomicStringImpl*, AtomicStringImpl*> Namespaces;
+typedef HashMap<StringImpl*, StringImpl*> Namespaces;
 
 enum EntityMask {
     EntityAmp = 0x0001,

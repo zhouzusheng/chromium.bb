@@ -13,6 +13,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../third_party/sqlite/sqlite.gyp:sqlite',
+        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
       ],
       'export_dependent_settings': [
         '../base/base.gyp:base',
@@ -26,6 +27,8 @@
         'init_status.h',
         'meta_table.cc',
         'meta_table.h',
+        'recovery.cc',
+        'recovery.h',
         'statement.cc',
         'statement.h',
         'transaction.cc',
@@ -55,6 +58,8 @@
         '../base/base.gyp:base',
       ],
       'sources': [
+        'test/error_callback_support.cc',
+        'test/error_callback_support.h',
         'test/scoped_error_ignorer.cc',
         'test/scoped_error_ignorer.h',
       ],
@@ -75,10 +80,12 @@
         'test_support_sql',
         '../base/base.gyp:test_support_base',
         '../testing/gtest.gyp:gtest',
+        '../third_party/sqlite/sqlite.gyp:sqlite',
       ],
       'sources': [
         'run_all_unittests.cc',
         'connection_unittest.cc',
+        'recovery_unittest.cc',
         'sqlite_features_unittest.cc',
         'statement_unittest.cc',
         'transaction_unittest.cc',

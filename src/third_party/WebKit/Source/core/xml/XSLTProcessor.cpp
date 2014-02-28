@@ -69,7 +69,7 @@ PassRefPtr<Document> XSLTProcessor::createDocumentFromSource(const String& sourc
 
     RefPtr<Document> result;
     if (sourceMIMEType == "text/plain") {
-        result = Document::create(frame, sourceIsDocument ? ownerDocument->url() : KURL());
+        result = Document::create(DocumentInit(sourceIsDocument ? ownerDocument->url() : KURL(), frame));
         transformTextStringToXHTMLDocumentString(documentSource);
     } else
         result = DOMImplementation::createDocument(sourceMIMEType, frame, sourceIsDocument ? ownerDocument->url() : KURL(), false);
@@ -84,7 +84,6 @@ PassRefPtr<Document> XSLTProcessor::createDocumentFromSource(const String& sourc
             result->setTransformSourceDocument(oldDocument);
             result->setSecurityOrigin(oldDocument->securityOrigin());
             result->setCookieURL(oldDocument->cookieURL());
-            result->setFirstPartyForCookies(oldDocument->firstPartyForCookies());
             result->contentSecurityPolicy()->copyStateFrom(oldDocument->contentSecurityPolicy());
         }
 

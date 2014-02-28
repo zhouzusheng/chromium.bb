@@ -237,6 +237,7 @@ WebKit::WebGestureEvent MakeWebGestureEventFromUIEvent(
 
 int EventFlagsToWebEventModifiers(int flags) {
   int modifiers = 0;
+
   if (flags & ui::EF_SHIFT_DOWN)
     modifiers |= WebKit::WebInputEvent::ShiftKey;
   if (flags & ui::EF_CONTROL_DOWN)

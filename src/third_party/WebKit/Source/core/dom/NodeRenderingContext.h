@@ -29,78 +29,40 @@
 #include "core/dom/NodeRenderingTraversal.h"
 
 #include "wtf/RefPtr.h"
-#include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
 class ContainerNode;
-class Document;
-class InsertionPoint;
 class Node;
 class RenderNamedFlowThread;
 class RenderObject;
 class RenderStyle;
-class ElementShadow;
 
 class NodeRenderingContext {
 public:
-    explicit NodeRenderingContext(Node*);
-    NodeRenderingContext(Node*, RenderStyle*);
-    NodeRenderingContext(Node*, const Node::AttachContext&);
-    ~NodeRenderingContext();
+    NodeRenderingContext(Node*, RenderStyle* = 0);
 
     void createRendererForTextIfNeeded();
     void createRendererForElementIfNeeded();
 
-    Node* node() const;
-    ContainerNode* parentNodeForRenderingAndStyle() const;
-    bool resetStyleInheritance() const;
+    Node* node() const { return m_node; }
     RenderObject* parentRenderer() const;
     RenderObject* nextRenderer() const;
     RenderObject* previousRenderer() const;
-    InsertionPoint* insertionPoint() const;
 
-    const RenderStyle* style() const;
-
-    bool isOnUpperEncapsulationBoundary() const;
-    bool isOnEncapsulationBoundary() const;
+    const RenderStyle* style() const { return m_style.get(); }
 
 private:
     bool shouldCreateRenderer() const;
     void moveToFlowThreadIfNeeded();
+    bool elementInsideRegionNeedsRenderer();
 
     Node* m_node;
     ContainerNode* m_renderingParent;
     NodeRenderingTraversal::ParentDetails m_parentDetails;
     RefPtr<RenderStyle> m_style;
     RenderNamedFlowThread* m_parentFlowRenderer;
-    AtomicString m_flowThread;
 };
-
-inline Node* NodeRenderingContext::node() const
-{
-    return m_node;
-}
-
-inline ContainerNode* NodeRenderingContext::parentNodeForRenderingAndStyle() const
-{
-    return m_renderingParent;
-}
-
-inline bool NodeRenderingContext::resetStyleInheritance() const
-{
-    return m_parentDetails.resetStyleInheritance();
-}
-
-inline const RenderStyle* NodeRenderingContext::style() const
-{
-    return m_style.get();
-}
-
-inline InsertionPoint* NodeRenderingContext::insertionPoint() const
-{
-    return m_parentDetails.insertionPoint();
-}
 
 } // namespace WebCore
 

@@ -24,18 +24,16 @@
 #include "config.h"
 #include "core/html/HTMLAnchorElement.h"
 
-#include "public/platform/Platform.h"
-#include "public/platform/WebPrescientNetworking.h"
-#include "public/platform/WebURL.h"
-#include <wtf/text/StringBuilder.h>
 #include "HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/EventNames.h"
 #include "core/dom/KeyboardEvent.h"
 #include "core/dom/MouseEvent.h"
 #include "core/editing/FrameSelection.h"
+#include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/FrameLoaderTypes.h"
@@ -50,9 +48,13 @@
 #include "core/platform/network/DNS.h"
 #include "core/platform/network/ResourceRequest.h"
 #include "core/rendering/RenderImage.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebPrescientNetworking.h"
+#include "public/platform/WebURL.h"
 #include "weborigin/KnownPorts.h"
 #include "weborigin/SecurityOrigin.h"
 #include "weborigin/SecurityPolicy.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -76,13 +78,14 @@ public:
         return adoptPtr(new HTMLAnchorElement::PrefetchEventHandler(anchorElement));
     }
 
+    void reset();
+
     void handleEvent(Event* e);
     void didChangeHREF() { m_hadHREFChanged = true; }
+    bool hasIssuedPreconnect() const { return m_hasIssuedPreconnect; }
 
 private:
     explicit PrefetchEventHandler(HTMLAnchorElement*);
-
-    void reset();
 
     void handleMouseOver(Event* event);
     void handleMouseOut(Event* event);
@@ -157,14 +160,14 @@ bool HTMLAnchorElement::isMouseFocusable() const
     return HTMLElement::isMouseFocusable();
 }
 
-bool HTMLAnchorElement::isKeyboardFocusable(KeyboardEvent* event) const
+bool HTMLAnchorElement::isKeyboardFocusable() const
 {
     if (!isLink())
-        return HTMLElement::isKeyboardFocusable(event);
+        return HTMLElement::isKeyboardFocusable();
 
     if (!isFocusable())
         return false;
-    
+
     Page* page = document()->page();
     if (!page)
         return false;
@@ -220,6 +223,7 @@ void HTMLAnchorElement::defaultEventHandler(Event* event)
 
         if (isLinkClick(event) && treatLinkAsLiveForEventType(eventType(event))) {
             handleClick(event);
+            prefetchEventHandler()->reset();
             return;
         }
 
@@ -247,7 +251,7 @@ void HTMLAnchorElement::setActive(bool down, bool pause)
         EditableLinkBehavior editableLinkBehavior = EditableLinkDefaultBehavior;
         if (Settings* settings = document()->settings())
             editableLinkBehavior = settings->editableLinkBehavior();
-            
+
         switch (editableLinkBehavior) {
             default:
             case EditableLinkDefaultBehavior:
@@ -263,13 +267,13 @@ void HTMLAnchorElement::setActive(bool down, bool pause)
                 if (down && document()->frame() && document()->frame()->selection()->rootEditableElement() == rootEditableElement())
                     return;
                 break;
-            
+
             case EditableLinkOnlyLiveWithShiftKey:
                 return;
         }
 
     }
-    
+
     ContainerNode::setActive(down, pause);
 }
 
@@ -278,8 +282,14 @@ void HTMLAnchorElement::parseAttribute(const QualifiedName& name, const AtomicSt
     if (name == hrefAttr) {
         bool wasLink = isLink();
         setIsLink(!value.isNull());
-        if (wasLink != isLink())
+        if (wasLink != isLink()) {
             didAffectSelector(AffectedSelectorLink | AffectedSelectorVisited | AffectedSelectorEnabled);
+            if (wasLink && treeScope()->adjustedFocusedElement() == this) {
+                // We might want to call blur(), but it's dangerous to dispatch
+                // events here.
+                document()->setNeedsFocusedElementCheck();
+            }
+        }
         if (isLink()) {
             String parsedURL = stripLeadingAndTrailingHTMLSpaces(value);
             if (document()->isDNSPrefetchEnabled()) {
@@ -371,7 +381,9 @@ String HTMLAnchorElement::target() const
 String HTMLAnchorElement::hash() const
 {
     String fragmentIdentifier = href().fragmentIdentifier();
-    return fragmentIdentifier.isEmpty() ? emptyString() : "#" + fragmentIdentifier;
+    if (fragmentIdentifier.isEmpty())
+        return emptyString();
+    return AtomicString(String("#" + fragmentIdentifier));
 }
 
 void HTMLAnchorElement::setHash(const String& value)
@@ -547,7 +559,7 @@ bool HTMLAnchorElement::isLiveLink() const
 
 void HTMLAnchorElement::sendPings(const KURL& destinationURL)
 {
-    if (!hasAttribute(pingAttr) || !document()->settings()->hyperlinkAuditingEnabled())
+    if (!hasAttribute(pingAttr) || !document()->settings() || !document()->settings()->hyperlinkAuditingEnabled())
         return;
 
     SpaceSplitString pingURLs(getAttribute(pingAttr), false);
@@ -566,22 +578,28 @@ void HTMLAnchorElement::handleClick(Event* event)
     StringBuilder url;
     url.append(stripLeadingAndTrailingHTMLSpaces(fastGetAttribute(hrefAttr)));
     appendServerMapMousePosition(url, event);
-    KURL kurl = document()->completeURL(url.toString());
+    KURL completedURL = document()->completeURL(url.toString());
 
+    ResourceRequest request(completedURL);
+    if (prefetchEventHandler()->hasIssuedPreconnect())
+        frame->loader()->client()->dispatchWillRequestAfterPreconnect(request);
     if (hasAttribute(downloadAttr)) {
-        ResourceRequest request(kurl);
-
         if (!hasRel(RelationNoReferrer)) {
-            String referrer = SecurityPolicy::generateReferrerHeader(document()->referrerPolicy(), kurl, frame->loader()->outgoingReferrer());
+            String referrer = SecurityPolicy::generateReferrerHeader(document()->referrerPolicy(), completedURL, frame->loader()->outgoingReferrer());
             if (!referrer.isEmpty())
                 request.setHTTPReferrer(referrer);
         }
 
-        frame->loader()->client()->startDownload(request, fastGetAttribute(downloadAttr));
-    } else
-        frame->loader()->urlSelected(kurl, target(), event, false, hasRel(RelationNoReferrer) ? NeverSendReferrer : MaybeSendReferrer);
+        frame->loader()->client()->loadURLExternally(request, NavigationPolicyDownload, fastGetAttribute(downloadAttr));
+    } else {
+        FrameLoadRequest frameRequest(document()->securityOrigin(), request, target());
+        frameRequest.setTriggeringEvent(event);
+        if (hasRel(RelationNoReferrer))
+            frameRequest.setShouldSendReferrer(NeverSendReferrer);
+        frame->loader()->load(frameRequest);
+    }
 
-    sendPings(kurl);
+    sendPings(completedURL);
 }
 
 HTMLAnchorElement::EventType HTMLAnchorElement::eventType(Event* event)
@@ -623,7 +641,7 @@ bool HTMLAnchorElement::treatLinkAsLiveForEventType(EventType eventType) const
 
 bool isEnterKeyKeydownEvent(Event* event)
 {
-    return event->type() == eventNames().keydownEvent && event->isKeyboardEvent() && static_cast<KeyboardEvent*>(event)->keyIdentifier() == "Enter";
+    return event->type() == eventNames().keydownEvent && event->isKeyboardEvent() && toKeyboardEvent(event)->keyIdentifier() == "Enter";
 }
 
 bool isLinkClick(Event* event)
@@ -790,8 +808,6 @@ void HTMLAnchorElement::PrefetchEventHandler::handleClick(Event* event)
 
     int flags = (m_hadTapUnconfirmed ? 2 : 0) | (capturedTapDown ? 1 : 0);
     HistogramSupport::histogramEnumeration("MouseEventPrefetch.PreTapEventsFollowedByClick", flags, 4);
-
-    reset();
 }
 
 bool HTMLAnchorElement::PrefetchEventHandler::shouldPrefetch(const KURL& url)
@@ -833,7 +849,12 @@ void HTMLAnchorElement::PrefetchEventHandler::prefetch(WebKit::WebPreconnectMoti
     if (!shouldPrefetch(url))
         return;
 
+    // The precision of current MouseOver trigger is too low to actually trigger preconnects.
+    if (motivation == WebKit::WebPreconnectMotivationLinkMouseOver)
+        return;
+
     preconnectToURL(url, motivation);
+    m_hasIssuedPreconnect = true;
 }
 
 }

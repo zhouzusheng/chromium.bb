@@ -19,72 +19,27 @@
 # PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
 # OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 package StaticString;
 
 use strict;
 use Hasher;
 
-sub GenerateStrings($)
+sub GenerateStringImpls($)
 {
     my $stringsRef = shift;
     my %strings = %$stringsRef;
 
     my @result = ();
-
-    while ( my ($name, $value) = each %strings ) {
-        my $characterList = join("', '", split("", $value));
-        push(@result, "static const UChar ${name}String16[] = { '$characterList', 0 };\n");
-    }
-
-    push(@result, "\n");
-
-    while ( my ($name, $value) = each %strings ) {
-        push(@result, "static const LChar ${name}String8[] = \"${value}\";\n");
-    }
 
     push(@result, "\n");
 
     while ( my ($name, $value) = each %strings ) {
         my $length = length($value);
         my $hash = Hasher::GenerateHashValue($value);
-        push(@result, <<END);
-static StringImpl::StaticASCIILiteral ${name}Data = {
-    ${name}String8,
-    ${name}String16,
-    StringImpl::StaticASCIILiteral::s_initialRefCount,
-    $length,
-    StringImpl::StaticASCIILiteral::s_initialFlags | (${hash} << StringImpl::StaticASCIILiteral::s_hashShift)
-};
-END
+        push(@result, "    StringImpl* ${name}Impl = StringImpl::createStatic(\"$value\", $length, $hash);\n");
     }
-
-    push(@result, "\n");
-
-    while ( my ($name, $value) = each %strings ) {
-        push(@result, "static StringImpl* ${name}Impl = reinterpret_cast<StringImpl*>(&${name}Data);\n");
-    }
-
-    push(@result, "\n");
-
-    return join "", @result;
-}
-
-sub GenerateStringAsserts($)
-{
-    my $stringsRef = shift;
-    my %strings = %$stringsRef;
-
-    my @result = ();
-
-    push(@result, "#ifndef NDEBUG\n");
-
-    while ( my ($name, $value) = each %strings ) {
-        push(@result, "    ${name}Impl->assertHashIsCorrect();\n");
-    }
-
-    push(@result, "#endif // NDEBUG\n");
 
     push(@result, "\n");
 

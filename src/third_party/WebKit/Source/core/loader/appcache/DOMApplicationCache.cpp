@@ -20,12 +20,13 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
 #include "core/loader/appcache/DOMApplicationCache.h"
 
+#include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/EventListener.h"
 #include "core/dom/EventNames.h"
@@ -68,18 +69,18 @@ unsigned short DOMApplicationCache::status() const
     return cacheHost->status();
 }
 
-void DOMApplicationCache::update(ExceptionCode& ec)
+void DOMApplicationCache::update(ExceptionState& es)
 {
     ApplicationCacheHost* cacheHost = applicationCacheHost();
     if (!cacheHost || !cacheHost->update())
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
 }
 
-void DOMApplicationCache::swapCache(ExceptionCode& ec)
+void DOMApplicationCache::swapCache(ExceptionState& es)
 {
     ApplicationCacheHost* cacheHost = applicationCacheHost();
     if (!cacheHost || !cacheHost->swapCache())
-        ec = INVALID_STATE_ERR;
+        es.throwDOMException(InvalidStateError);
 }
 
 void DOMApplicationCache::abort()
@@ -118,7 +119,7 @@ const AtomicString& DOMApplicationCache::toEventType(ApplicationCacheHost::Event
         return eventNames().updatereadyEvent;
     case ApplicationCacheHost::CACHED_EVENT:
         return eventNames().cachedEvent;
-    case ApplicationCacheHost::OBSOLETE_EVENT:            
+    case ApplicationCacheHost::OBSOLETE_EVENT:
         return eventNames().obsoleteEvent;
     }
     ASSERT_NOT_REACHED();

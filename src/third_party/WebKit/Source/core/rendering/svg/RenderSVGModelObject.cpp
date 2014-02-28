@@ -1,10 +1,10 @@
 /*
  * Copyright (c) 2009, Google Inc. All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  *     * Redistributions of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
  *     * Redistributions in binary form must reproduce the above
@@ -14,7 +14,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -33,14 +33,14 @@
 #include "core/rendering/svg/RenderSVGModelObject.h"
 
 #include "SVGNames.h"
+#include "core/rendering/svg/RenderSVGRoot.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
-#include "core/svg/SVGStyledElement.h"
+#include "core/svg/SVGElement.h"
 
 namespace WebCore {
 
-RenderSVGModelObject::RenderSVGModelObject(SVGStyledElement* node)
+RenderSVGModelObject::RenderSVGModelObject(SVGElement* node)
     : RenderObject(node)
-    , m_hasSVGShadow(false)
 {
 }
 
@@ -94,6 +94,17 @@ void RenderSVGModelObject::willBeDestroyed()
     RenderObject::willBeDestroyed();
 }
 
+void RenderSVGModelObject::computeLayerHitTestRects(LayerHitTestRects& rects) const
+{
+    // Using just the rect for the SVGRoot is good enough for now.
+    SVGRenderSupport::findTreeRootObject(this)->computeLayerHitTestRects(rects);
+}
+
+void RenderSVGModelObject::addLayerHitTestRects(LayerHitTestRects&, const RenderLayer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const
+{
+    // We don't walk into SVG trees at all - just report their container.
+}
+
 void RenderSVGModelObject::styleWillChange(StyleDifference diff, const RenderStyle* newStyle)
 {
     if (diff == StyleDifferenceLayout) {
@@ -129,10 +140,8 @@ static void getElementCTM(SVGElement* element, AffineTransform& transform)
 
     while (current && current->isSVGElement()) {
         SVGElement* currentElement = toSVGElement(current);
-        if (currentElement->isSVGStyledElement()) {
-            localTransform = currentElement->renderer()->localToParentTransform();
-            transform = localTransform.multiply(transform);
-        }
+        localTransform = currentElement->renderer()->localToParentTransform();
+        transform = localTransform.multiply(transform);
         // For getCTM() computation, stop at the nearest viewport element
         if (currentElement == stopAtElement)
             break;
@@ -169,8 +178,8 @@ void RenderSVGModelObject::absoluteFocusRingQuads(Vector<FloatQuad>& quads)
 {
     quads.append(localToAbsoluteQuad(FloatQuad(repaintRectInLocalCoordinates())));
 }
-    
-bool RenderSVGModelObject::checkIntersection(RenderObject* renderer, const FloatRect& rect)
+
+bool RenderSVGModelObject::checkIntersection(RenderObject* renderer, const SVGRect& rect)
 {
     if (!renderer || renderer->style()->pointerEvents() == PE_NONE)
         return false;
@@ -183,7 +192,7 @@ bool RenderSVGModelObject::checkIntersection(RenderObject* renderer, const Float
     return intersectsAllowingEmpty(rect, ctm.mapRect(svgElement->renderer()->repaintRectInLocalCoordinates()));
 }
 
-bool RenderSVGModelObject::checkEnclosure(RenderObject* renderer, const FloatRect& rect)
+bool RenderSVGModelObject::checkEnclosure(RenderObject* renderer, const SVGRect& rect)
 {
     if (!renderer || renderer->style()->pointerEvents() == PE_NONE)
         return false;

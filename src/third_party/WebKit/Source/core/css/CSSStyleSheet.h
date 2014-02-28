@@ -34,13 +34,12 @@ class CSSParser;
 class CSSRule;
 class CSSRuleList;
 class CSSStyleSheet;
-class CachedCSSStyleSheet;
+class CSSStyleSheetResource;
 class Document;
+class ExceptionState;
 class MediaQuerySet;
 class SecurityOrigin;
 class StyleSheetContents;
-
-typedef int ExceptionCode;
 
 class CSSStyleSheet : public StyleSheet {
 public:
@@ -57,26 +56,26 @@ public:
     virtual String title() const OVERRIDE { return m_title; }
     virtual bool disabled() const OVERRIDE { return m_isDisabled; }
     virtual void setDisabled(bool) OVERRIDE;
-    
+
     PassRefPtr<CSSRuleList> cssRules();
-    unsigned insertRule(const String& rule, unsigned index, ExceptionCode&);
-    void deleteRule(unsigned index, ExceptionCode&);
-    
+    unsigned insertRule(const String& rule, unsigned index, ExceptionState&);
+    void deleteRule(unsigned index, ExceptionState&);
+
     // IE Extensions
     PassRefPtr<CSSRuleList> rules();
-    int addRule(const String& selector, const String& style, int index, ExceptionCode&);
-    int addRule(const String& selector, const String& style, ExceptionCode&);
-    void removeRule(unsigned index, ExceptionCode& ec) { deleteRule(index, ec); }
-    
+    int addRule(const String& selector, const String& style, int index, ExceptionState&);
+    int addRule(const String& selector, const String& style, ExceptionState&);
+    void removeRule(unsigned index, ExceptionState& es) { deleteRule(index, es); }
+
     // For CSSRuleList.
     unsigned length() const;
     CSSRule* item(unsigned index);
 
     virtual void clearOwnerNode() OVERRIDE { didMutate(); m_ownerNode = 0; }
-    virtual CSSImportRule* ownerRule() const OVERRIDE { return m_ownerRule; }
+    virtual CSSRule* ownerRule() const OVERRIDE { return m_ownerRule; }
     virtual KURL baseURL() const OVERRIDE;
     virtual bool isLoading() const OVERRIDE;
-    
+
     void clearOwnerRule() { m_ownerRule = 0; }
     Document* ownerDocument() const;
     MediaQuerySet* mediaQueries() const { return m_mediaQueries.get(); }
@@ -97,7 +96,7 @@ public:
     void willMutateRules();
     void didMutateRules();
     void didMutate();
-    
+
     void clearChildRuleCSSOMWrappers();
     void reattachChildRuleCSSOMWrappers();
 
@@ -105,8 +104,6 @@ public:
 
     bool isInline() const { return m_isInlineStylesheet; }
     TextPosition startPositionInSource() const { return m_startPosition; }
-
-    void reportMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     CSSStyleSheet(PassRefPtr<StyleSheetContents>, CSSImportRule* ownerRule);
@@ -116,7 +113,7 @@ private:
     virtual String type() const { return "text/css"; }
 
     bool canAccessRules() const;
-    
+
     RefPtr<StyleSheetContents> m_contents;
     bool m_isInlineStylesheet;
     bool m_isDisabled;
@@ -124,7 +121,7 @@ private:
     RefPtr<MediaQuerySet> m_mediaQueries;
 
     Node* m_ownerNode;
-    CSSImportRule* m_ownerRule;
+    CSSRule* m_ownerRule;
 
     TextPosition m_startPosition;
 

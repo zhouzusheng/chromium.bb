@@ -9,12 +9,12 @@
 #include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/file_util.h"
-#include "base/time.h"
-#include "googleurl/src/gurl.h"
+#include "base/time/time.h"
 #include "sql/connection.h"
 #include "sql/meta_table.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
+#include "url/gurl.h"
 #include "webkit/browser/quota/special_storage_policy.h"
 
 namespace quota {
@@ -440,7 +440,7 @@ bool QuotaDatabase::LazyOpen(bool create_if_needed) {
 
   bool in_memory_only = db_file_path_.empty();
   if (!create_if_needed &&
-      (in_memory_only || !file_util::PathExists(db_file_path_))) {
+      (in_memory_only || !base::PathExists(db_file_path_))) {
     return false;
   }
 
@@ -552,17 +552,13 @@ bool QuotaDatabase::CreateSchema(
 
 bool QuotaDatabase::ResetSchema() {
   DCHECK(!db_file_path_.empty());
-  DCHECK(file_util::PathExists(db_file_path_));
+  DCHECK(base::PathExists(db_file_path_));
   VLOG(1) << "Deleting existing quota data and starting over.";
 
   db_.reset();
   meta_table_.reset();
 
-  if (!file_util::Delete(db_file_path_, true))
-    return false;
-
-  // Make sure the steps above actually deleted things.
-  if (file_util::PathExists(db_file_path_))
+  if (!sql::Connection::Delete(db_file_path_))
     return false;
 
   // So we can't go recursive.

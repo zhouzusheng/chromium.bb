@@ -25,10 +25,9 @@
 
 namespace WebCore {
 
+class ExceptionState;
 class SVGElement;
 class SVGLength;
-
-typedef int ExceptionCode;
 
 enum SVGLengthType {
     LengthTypeUnknown = 0,
@@ -57,29 +56,29 @@ public:
     template<typename T>
     static FloatRect resolveRectangle(const T* context, SVGUnitTypes::SVGUnitType type, const FloatRect& viewport)
     {
-        return SVGLengthContext::resolveRectangle(context, type, viewport, context->x(), context->y(), context->width(), context->height());
+        return SVGLengthContext::resolveRectangle(context, type, viewport, context->xCurrentValue(), context->yCurrentValue(), context->widthCurrentValue(), context->heightCurrentValue());
     }
 
     static FloatRect resolveRectangle(const SVGElement*, SVGUnitTypes::SVGUnitType, const FloatRect& viewport, const SVGLength& x, const SVGLength& y, const SVGLength& width, const SVGLength& height);
     static FloatPoint resolvePoint(const SVGElement*, SVGUnitTypes::SVGUnitType, const SVGLength& x, const SVGLength& y);
     static float resolveLength(const SVGElement*, SVGUnitTypes::SVGUnitType, const SVGLength&);
 
-    float convertValueToUserUnits(float, SVGLengthMode, SVGLengthType fromUnit, ExceptionCode&) const;
-    float convertValueFromUserUnits(float, SVGLengthMode, SVGLengthType toUnit, ExceptionCode&) const;
+    float convertValueToUserUnits(float, SVGLengthMode, SVGLengthType fromUnit, ExceptionState&) const;
+    float convertValueFromUserUnits(float, SVGLengthMode, SVGLengthType toUnit, ExceptionState&) const;
 
     bool determineViewport(float& width, float& height) const;
 
 private:
     SVGLengthContext(const SVGElement*, const FloatRect& viewport);
 
-    float convertValueFromUserUnitsToPercentage(float value, SVGLengthMode, ExceptionCode&) const;
-    float convertValueFromPercentageToUserUnits(float value, SVGLengthMode, ExceptionCode&) const;
+    float convertValueFromUserUnitsToPercentage(float value, SVGLengthMode, ExceptionState&) const;
+    float convertValueFromPercentageToUserUnits(float value, SVGLengthMode, ExceptionState&) const;
 
-    float convertValueFromUserUnitsToEMS(float value, ExceptionCode&) const;
-    float convertValueFromEMSToUserUnits(float value, ExceptionCode&) const;
+    float convertValueFromUserUnitsToEMS(float value, ExceptionState&) const;
+    float convertValueFromEMSToUserUnits(float value, ExceptionState&) const;
 
-    float convertValueFromUserUnitsToEXS(float value, ExceptionCode&) const;
-    float convertValueFromEXSToUserUnits(float value, ExceptionCode&) const;
+    float convertValueFromUserUnitsToEXS(float value, ExceptionState&) const;
+    float convertValueFromEXSToUserUnits(float value, ExceptionState&) const;
 
     const SVGElement* m_context;
     FloatRect m_overridenViewport;

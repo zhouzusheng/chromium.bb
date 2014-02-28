@@ -35,9 +35,6 @@
 #include "bindings/v8/ScriptString.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "wtf/PassOwnPtr.h"
-#include "wtf/RefCounted.h"
-#include "wtf/Vector.h"
-#include "wtf/text/TextPosition.h"
 #include "wtf/text/WTFString.h"
 
 
@@ -47,8 +44,8 @@ class String;
 
 namespace WebCore {
 
-class CachedResource;
-struct CachedResourceInitiatorInfo;
+class Resource;
+struct FetchInitiatorInfo;
 class Document;
 class DocumentLoader;
 class FormData;
@@ -56,8 +53,8 @@ class Frame;
 class HTTPHeaderMap;
 class InspectorClient;
 class InspectorFrontend;
+class InspectorOverlay;
 class InspectorPageAgent;
-class InspectorState;
 class InstrumentingAgents;
 class JSONObject;
 class KURL;
@@ -67,10 +64,8 @@ class ResourceError;
 class ResourceLoader;
 class ResourceRequest;
 class ResourceResponse;
-class SharedBuffer;
 class ThreadableLoaderClient;
 class XHRReplayData;
-class XMLHttpRequest;
 
 struct WebSocketFrame;
 class WebSocketHandshakeRequest;
@@ -80,9 +75,9 @@ typedef String ErrorString;
 
 class InspectorResourceAgent : public InspectorBaseAgent<InspectorResourceAgent>, public InspectorBackendDispatcher::NetworkCommandHandler {
 public:
-    static PassOwnPtr<InspectorResourceAgent> create(InstrumentingAgents* instrumentingAgents, InspectorPageAgent* pageAgent, InspectorClient* client, InspectorCompositeState* state)
+    static PassOwnPtr<InspectorResourceAgent> create(InstrumentingAgents* instrumentingAgents, InspectorPageAgent* pageAgent, InspectorClient* client, InspectorCompositeState* state, InspectorOverlay* overlay)
     {
-        return adoptPtr(new InspectorResourceAgent(instrumentingAgents, pageAgent, client, state));
+        return adoptPtr(new InspectorResourceAgent(instrumentingAgents, pageAgent, client, state, overlay));
     }
 
     virtual void setFrontend(InspectorFrontend*);
@@ -93,7 +88,7 @@ public:
 
     ~InspectorResourceAgent();
 
-    void willSendRequest(unsigned long identifier, DocumentLoader*, ResourceRequest&, const ResourceResponse& redirectResponse, const CachedResourceInitiatorInfo&);
+    void willSendRequest(unsigned long identifier, DocumentLoader*, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo&);
     void markResourceAsCached(unsigned long identifier);
     void didReceiveResourceResponse(unsigned long identifier, DocumentLoader*, const ResourceResponse&, ResourceLoader*);
     void didReceiveData(unsigned long identifier, const char* data, int dataLength, int encodedDataLength);
@@ -111,7 +106,7 @@ public:
     void willLoadXHRSynchronously();
     void didLoadXHRSynchronously();
 
-    void willDestroyCachedResource(CachedResource*);
+    void willDestroyResource(Resource*);
 
     void applyUserAgentOverride(String* userAgent);
 
@@ -120,7 +115,7 @@ public:
     void didRecalculateStyle();
     void didScheduleStyleRecalculation(Document*);
 
-    PassRefPtr<TypeBuilder::Network::Initiator> buildInitiatorObject(Document*, const CachedResourceInitiatorInfo&);
+    PassRefPtr<TypeBuilder::Network::Initiator> buildInitiatorObject(Document*, const FetchInitiatorInfo&);
 
     void didCreateWebSocket(Document*, unsigned long identifier, const KURL& requestURL, const String&);
     void willSendWebSocketHandshakeRequest(Document*, unsigned long identifier, const WebSocketHandshakeRequest&);
@@ -148,17 +143,16 @@ public:
     virtual void clearBrowserCookies(ErrorString*);
     virtual void setCacheDisabled(ErrorString*, bool cacheDisabled);
 
-    virtual void loadResourceForFrontend(ErrorString*, const String& frameId, const String& url, PassRefPtr<LoadResourceForFrontendCallback>);
-
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
+    virtual void loadResourceForFrontend(ErrorString*, const String& frameId, const String& url, const RefPtr<JSONObject>* requestHeaders, PassRefPtr<LoadResourceForFrontendCallback>);
 
 private:
-    InspectorResourceAgent(InstrumentingAgents*, InspectorPageAgent*, InspectorClient*, InspectorCompositeState*);
+    InspectorResourceAgent(InstrumentingAgents*, InspectorPageAgent*, InspectorClient*, InspectorCompositeState*, InspectorOverlay*);
 
     void enable();
 
     InspectorPageAgent* m_pageAgent;
     InspectorClient* m_client;
+    InspectorOverlay* m_overlay;
     InspectorFrontend::Network* m_frontend;
     String m_userAgentOverride;
     OwnPtr<NetworkResourcesData> m_resourcesData;

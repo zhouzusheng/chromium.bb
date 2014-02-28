@@ -207,7 +207,7 @@ RenderRubyBase* RenderRubyRun::createRubyBase() const
 RenderRubyRun* RenderRubyRun::staticCreateRubyRun(const RenderObject* parentRuby)
 {
     ASSERT(parentRuby && parentRuby->isRuby());
-    RenderRubyRun* rr = new (parentRuby->renderArena()) RenderRubyRun();
+    RenderRubyRun* rr = new RenderRubyRun();
     rr->setDocumentForAnonymous(parentRuby->document());
     RefPtr<RenderStyle> newStyle = RenderStyle::createAnonymousStyleWithDisplay(parentRuby->style(), INLINE_BLOCK);
     rr->setStyle(newStyle.release());
@@ -222,7 +222,7 @@ RenderObject* RenderRubyRun::layoutSpecialExcludedChild(bool relayoutChildren)
     if (!rt)
         return 0;
     if (relayoutChildren)
-        rt->setChildNeedsLayout(true, MarkOnlyThis);
+        rt->setChildNeedsLayout(MarkOnlyThis);
     rt->layoutIfNeeded();
     return rt;
 }
@@ -230,13 +230,13 @@ RenderObject* RenderRubyRun::layoutSpecialExcludedChild(bool relayoutChildren)
 void RenderRubyRun::layout()
 {
     RenderBlock::layout();
-    
+
     RenderRubyText* rt = rubyText();
     if (!rt)
         return;
 
     rt->setLogicalLeft(0);
-    
+
     // Place the RenderRubyText such that its bottom is flush with the lineTop of the first line of the RenderRubyBase.
     LayoutUnit lastLineRubyTextBottom = rt->logicalHeight();
     LayoutUnit firstLineRubyTextTop = 0;
@@ -255,7 +255,7 @@ void RenderRubyRun::layout()
                 firstLineTop = rootBox->logicalTopLayoutOverflow();
             firstLineTop += rb->logicalTop();
         }
-        
+
         rt->setLogicalTop(-lastLineRubyTextBottom + firstLineTop);
     } else {
         LayoutUnit lastLineBottom = logicalHeight();

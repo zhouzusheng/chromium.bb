@@ -33,16 +33,20 @@ glcpp_error (YYLTYPE *locp, glcpp_parser_t *parser, const char *fmt, ...)
 	va_list ap;
 
 	parser->error = 1;
-	parser->info_log = talloc_asprintf_append(parser->info_log,
-						  "%u:%u(%u): "
-						  "preprocessor error: ",
-						  locp->source,
-						  locp->first_line,
-						  locp->first_column);
+	ralloc_asprintf_rewrite_tail(&parser->info_log,
+				     &parser->info_log_length,
+				     "%u:%u(%u): "
+				     "preprocessor error: ",
+				     locp->source,
+				     locp->first_line,
+				     locp->first_column);
 	va_start(ap, fmt);
-	parser->info_log = talloc_vasprintf_append(parser->info_log, fmt, ap);
+	ralloc_vasprintf_rewrite_tail(&parser->info_log,
+				      &parser->info_log_length,
+				      fmt, ap);
 	va_end(ap);
-	parser->info_log = talloc_strdup_append(parser->info_log, "\n");
+	ralloc_asprintf_rewrite_tail(&parser->info_log,
+				     &parser->info_log_length, "\n");
 }
 
 void
@@ -50,16 +54,20 @@ glcpp_warning (YYLTYPE *locp, glcpp_parser_t *parser, const char *fmt, ...)
 {
 	va_list ap;
 
-	parser->info_log = talloc_asprintf_append(parser->info_log,
-						  "%u:%u(%u): "
-						  "preprocessor warning: ",
-						  locp->source,
-						  locp->first_line,
-						  locp->first_column);
+	ralloc_asprintf_rewrite_tail(&parser->info_log,
+				     &parser->info_log_length,
+				     "%u:%u(%u): "
+				     "preprocessor warning: ",
+				     locp->source,
+				     locp->first_line,
+				     locp->first_column);
 	va_start(ap, fmt);
-	parser->info_log = talloc_vasprintf_append(parser->info_log, fmt, ap);
+	ralloc_vasprintf_rewrite_tail(&parser->info_log,
+				      &parser->info_log_length,
+				      fmt, ap);
 	va_end(ap);
-	parser->info_log = talloc_strdup_append(parser->info_log, "\n");
+	ralloc_asprintf_rewrite_tail(&parser->info_log,
+				     &parser->info_log_length, "\n");
 }
 
 /* Searches backwards for '^ *#' from a given starting point. */
@@ -92,7 +100,7 @@ remove_line_continuations(glcpp_parser_t *ctx, const char *shader)
 {
 	int in_continued_line = 0;
 	int extra_newlines = 0;
-	char *clean = talloc_strdup(ctx, "");
+	char *clean = ralloc_strdup(ctx, "");
 	const char *search_start = shader;
 	const char *newline;
 	while ((newline = strchr(search_start, '\n')) != NULL) {
@@ -122,27 +130,27 @@ remove_line_continuations(glcpp_parser_t *ctx, const char *shader)
 			}
 			if (in_continued_line) {
 				/* Copy everything before the \ */
-				clean = talloc_strndup_append(clean, shader, backslash - shader);
+				ralloc_strncat(&clean, shader, backslash - shader);
 				shader = newline + 1;
 				extra_newlines++;
 			}
 		} else if (in_continued_line) {
 			/* Copy everything up to and including the \n */
-			clean = talloc_strndup_append(clean, shader, newline - shader + 1);
+			ralloc_strncat(&clean, shader, newline - shader + 1);
 			shader = newline + 1;
 			/* Output extra newlines to make line numbers match */
 			for (; extra_newlines > 0; extra_newlines--)
-				clean = talloc_strdup_append(clean, "\n");
+				ralloc_strcat(&clean, "\n");
 			in_continued_line = 0;
 		}
 		search_start = newline + 1;
 	}
-	clean = talloc_strdup_append(clean, shader);
+	ralloc_strcat(&clean, shader);
 	return clean;
 }
 
 int
-preprocess(void *talloc_ctx, const char **shader, char **info_log,
+glcpp_preprocess(void *ralloc_ctx, const char **shader, char **info_log,
 	   const struct gl_extensions *extensions, int api)
 {
 	int errors;
@@ -156,9 +164,9 @@ preprocess(void *talloc_ctx, const char **shader, char **info_log,
 	if (parser->skip_stack)
 		glcpp_error (&parser->skip_stack->loc, parser, "Unterminated #if\n");
 
-	*info_log = talloc_strdup_append(*info_log, parser->info_log);
+	ralloc_strcat(info_log, parser->info_log);
 
-	talloc_steal(talloc_ctx, parser->output);
+	ralloc_steal(ralloc_ctx, parser->output);
 	*shader = parser->output;
 
 	errors = parser->error;

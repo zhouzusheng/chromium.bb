@@ -33,18 +33,17 @@
 
 
 #include "InspectorFrontend.h"
-#include "core/dom/DeviceOrientationData.h"
 #include "core/inspector/InspectorBaseAgent.h"
+#include "modules/device_orientation/DeviceOrientationData.h"
 #include "modules/geolocation/GeolocationPosition.h"
-#include <wtf/HashMap.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
-#include <wtf/Vector.h>
+#include "wtf/HashMap.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class CachedResource;
+class Resource;
 class DOMWrapperWorld;
+class Document;
 class DocumentLoader;
 class Frame;
 class GraphicsContext;
@@ -68,7 +67,7 @@ public:
         DocumentResource,
         StylesheetResource,
         ImageResource,
-        FontResource,
+        Font,
         ScriptResource,
         XHRResource,
         WebSocketResource,
@@ -77,15 +76,15 @@ public:
 
     static PassOwnPtr<InspectorPageAgent> create(InstrumentingAgents*, Page*, InspectorCompositeState*, InjectedScriptManager*, InspectorClient*, InspectorOverlay*);
 
-    static bool cachedResourceContent(CachedResource*, String* result, bool* base64Encoded);
+    static bool cachedResourceContent(Resource*, String* result, bool* base64Encoded);
     static bool sharedBufferContent(PassRefPtr<SharedBuffer>, const String& textEncodingName, bool withBase64Encode, String* result);
     static void resourceContent(ErrorString*, Frame*, const KURL&, String* result, bool* base64Encoded);
 
     static PassRefPtr<SharedBuffer> resourceData(Frame*, const KURL&, String* textEncodingName);
-    static CachedResource* cachedResource(Frame*, const KURL&);
+    static Resource* cachedResource(Frame*, const KURL&);
     static TypeBuilder::Page::ResourceType::Enum resourceTypeJson(ResourceType);
-    static ResourceType cachedResourceType(const CachedResource&);
-    static TypeBuilder::Page::ResourceType::Enum cachedResourceTypeJson(const CachedResource&);
+    static ResourceType cachedResourceType(const Resource&);
+    static TypeBuilder::Page::ResourceType::Enum cachedResourceTypeJson(const Resource&);
 
     // Page API for InspectorFrontend
     virtual void enable(ErrorString*);
@@ -106,6 +105,7 @@ public:
     virtual void setShowDebugBorders(ErrorString*, bool show);
     virtual void setShowFPSCounter(ErrorString*, bool show);
     virtual void setContinuousPaintingEnabled(ErrorString*, bool enabled);
+    virtual void setShowScrollBottleneckRects(ErrorString*, bool show);
     virtual void getScriptExecutionStatus(ErrorString*, PageCommandHandler::Result::Enum*);
     virtual void setScriptExecutionDisabled(ErrorString*, bool);
     virtual void setGeolocationOverride(ErrorString*, const double*, const double*, const double*);
@@ -115,8 +115,6 @@ public:
     virtual void setTouchEmulationEnabled(ErrorString*, bool);
     virtual void setEmulatedMedia(ErrorString*, const String&);
     virtual void setForceCompositingMode(ErrorString*, bool force);
-    virtual void getCompositingBordersVisible(ErrorString*, bool* out_param);
-    virtual void setCompositingBordersVisible(ErrorString*, bool);
     virtual void captureScreenshot(ErrorString*, String* data);
     virtual void handleJavaScriptDialog(ErrorString*, bool accept, const String* promptText);
     virtual void setShowViewportSizeOnResize(ErrorString*, bool show, const bool* showGrid);
@@ -131,6 +129,7 @@ public:
     void didClearWindowObjectInWorld(Frame*, DOMWrapperWorld*);
     void domContentLoadedEventFired(Frame*);
     void loadEventFired(Frame*);
+    void childDocumentOpened(Document*);
     void didCommitLoad(Frame*, DocumentLoader*);
     void frameDetachedFromParent(Frame*);
     void loaderDetachedFromFrame(DocumentLoader*);
@@ -178,6 +177,7 @@ private:
     bool deviceMetricsChanged(int width, int height, double fontScaleFactor, bool fitWindow);
     void updateViewMetrics(int, int, double, bool);
     void updateTouchEventEmulationInPage(bool);
+    void updateOverridesTopOffset();
 
     static bool dataContent(const char* data, unsigned size, const String& textEncodingName, bool withBase64Encode, String* result);
 

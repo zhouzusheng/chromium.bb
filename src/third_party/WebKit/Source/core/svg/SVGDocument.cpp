@@ -22,8 +22,8 @@
 #include "core/svg/SVGDocument.h"
 
 #include "SVGNames.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/EventNames.h"
-#include "core/dom/ExceptionCode.h"
 #include "core/dom/NodeRenderingContext.h"
 #include "core/page/FrameView.h"
 #include "core/rendering/RenderView.h"
@@ -35,8 +35,8 @@
 
 namespace WebCore {
 
-SVGDocument::SVGDocument(Frame* frame, const KURL& url)
-    : Document(frame, url, SVGDocumentClass)
+SVGDocument::SVGDocument(const DocumentInit& initializer)
+    : Document(initializer, SVGDocumentClass)
 {
     ScriptWrappable::init(this);
 }

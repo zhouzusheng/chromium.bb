@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+'use strict';
+
 /**
  * @fileoverview Parses workqueue events in the Linux event trace format.
  */
@@ -67,7 +69,7 @@ base.exportTo('tracing.importer.linux_perf', function() {
             {},
             ts - kthread.openSliceTS);
 
-        kthread.thread.pushSlice(slice);
+        kthread.thread.sliceGroup.pushSlice(slice);
       }
       kthread.openSlice = undefined;
       return true;

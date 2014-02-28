@@ -86,6 +86,12 @@ void InProcessResourceLoaderBridge::Cancel()
 {
     DCHECK(Statics::isInApplicationMainThread());
 
+    if (d_waitingForCancelLoad || d_canceled) {
+        // Sometimes Cancel() gets called twice.  If we already got canceled,
+        // then ignore any further calls to Cancel().
+        return;
+    }
+
     d_waitingForCancelLoad = true;
     base::MessageLoop::current()->PostTask(
         FROM_HERE,

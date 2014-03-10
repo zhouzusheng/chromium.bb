@@ -49,7 +49,9 @@ WebViewProxy::WebViewProxy(ProcessClient* processClient,
                            gfx::NativeView parent,
                            int rendererAffinity,
                            bool initiallyVisible,
-                           bool takeFocusOnMouseDown)
+                           bool takeFocusOnMouseDown,
+                           bool domPasteEnabled,
+                           bool javascriptCanAccessClipboard)
 : d_profileProxy(profileProxy)
 , d_processClient(processClient)
 , d_delegate(delegate)
@@ -72,6 +74,8 @@ WebViewProxy::WebViewProxy(ProcessClient* processClient,
     params.profileId = profileProxy->routingId();
     params.initiallyVisible = initiallyVisible;
     params.takeFocusOnMouseDown = takeFocusOnMouseDown;
+    params.domPasteEnabled = domPasteEnabled;
+    params.javascriptCanAccessClipboard = javascriptCanAccessClipboard;
     params.rendererAffinity = rendererAffinity;
     params.parent = (NativeViewForTransit)parent;
     Send(new BlpWebViewHostMsg_New(params));

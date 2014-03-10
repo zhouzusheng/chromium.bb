@@ -453,7 +453,9 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
                                 parent,
                                 rendererAffinity,
                                 params.initiallyVisible(),
-                                params.takeFocusOnMouseDown());
+                                params.takeFocusOnMouseDown(),
+                                params.domPasteEnabled(),
+                                params.javascriptCanAccessClipboard());
     }
     else if (Statics::isOriginalThreadMode()) {
         BrowserContextImpl* browserContext =
@@ -488,7 +490,9 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
                                browserContext,
                                hostAffinity,
                                params.initiallyVisible(),
-                               params.takeFocusOnMouseDown());
+                               params.takeFocusOnMouseDown(),
+                               params.domPasteEnabled(),
+                               params.javascriptCanAccessClipboard());
     }
 
     NOTREACHED();

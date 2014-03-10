@@ -73,7 +73,9 @@ class WebViewProxy : public WebView,
                  gfx::NativeView parent,
                  int rendererAffinity,
                  bool initiallyVisible,
-                 bool takeFocusOnMouseDown);
+                 bool takeFocusOnMouseDown,
+                 bool domPasteEnabled,
+                 bool javascriptCanAccessClipboard);
     WebViewProxy(ProcessClient* processClient,
                  int routingId,
                  ProfileProxy* profileProxy);

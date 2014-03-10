@@ -45,6 +45,15 @@ class BLPWTK2_EXPORT WebViewCreateParams {
     // that behavior.
     void setTakeFocusOnMouseDown(bool enable);
 
+    // By default, Javascript will not be able to paste into the DOM.  However,
+    // setting this flag will enable that behavior.  Note that this will only
+    // work if "setJavascriptCanAccessClipboard(true)" is also set.
+    void setDOMPasteEnabled(bool enable);
+
+    // By default, Javascript will not be able to access the clipboard.
+    // However, setting this flag will enable that behavior.
+    void setJavascriptCanAccessClipboard(bool enable);
+
     // By default, WebViews dynamically instantiate renderer processes each
     // time a new navigation request is made.  This is known as the
     // "process-per-site-instance" model.  For more information, please refer
@@ -91,12 +100,16 @@ class BLPWTK2_EXPORT WebViewCreateParams {
 
     bool initiallyVisible() const { return d_initiallyVisible; }
     bool takeFocusOnMouseDown() const { return d_takeFocusOnMouseDown; }
+    bool domPasteEnabled() const { return d_domPasteEnabled; }
+    bool javascriptCanAccessClipboard() const { return d_javascriptCanAccessClipboard; }
     int rendererAffinity() const { return d_rendererAffinity; }
     Profile* profile() const { return d_profile; }
 
   private:
     bool d_initiallyVisible;
     bool d_takeFocusOnMouseDown;
+    bool d_domPasteEnabled;
+    bool d_javascriptCanAccessClipboard;
     int d_rendererAffinity;
     Profile* d_profile;
 };

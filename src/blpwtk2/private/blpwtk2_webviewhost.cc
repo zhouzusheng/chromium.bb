@@ -38,7 +38,9 @@ WebViewHost::WebViewHost(ProcessHost* processHost,
                          NativeView parent,
                          int hostAffinity,
                          bool initiallyVisible,
-                         bool takeFocusOnMouseDown)
+                         bool takeFocusOnMouseDown,
+                         bool domPasteEnabled,
+                         bool javascriptCanAccessClipboard)
 : d_processHost(processHost)
 , d_routingId(routingId)
 , d_implMoveAckPending(false)
@@ -54,7 +56,9 @@ WebViewHost::WebViewHost(ProcessHost* processHost,
                                 browserContext,
                                 hostAffinity,
                                 initiallyVisible,
-                                takeFocusOnMouseDown);
+                                takeFocusOnMouseDown,
+                                domPasteEnabled,
+                                javascriptCanAccessClipboard);
     d_webView->setImplClient(this);
 }
 

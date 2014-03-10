@@ -63,7 +63,9 @@ class WebViewHost : public IPC::Listener,
                 NativeView parent,
                 int hostAffinity,
                 bool initiallyVisible,
-                bool takeFocusOnMouseDown);
+                bool takeFocusOnMouseDown,
+                bool domPasteEnabled,
+                bool javascriptCanAccessClipboard);
     WebViewHost(ProcessHost* processHost,
                 WebViewImpl* webView,
                 int routingId,

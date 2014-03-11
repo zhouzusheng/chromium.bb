@@ -135,6 +135,22 @@ void ContentBrowserClientImpl::RenderProcessHostCreated(
     host->GetChannel()->AddFilter(new SpellCheckMessageFilter(id));
 }
 
+void ContentBrowserClientImpl::OverrideWebkitPrefs(
+    content::RenderViewHost* render_view_host,
+    const GURL& url,
+    WebPreferences* prefs)
+{
+    content::WebContents* webContents =
+        content::WebContents::FromRenderViewHost(render_view_host);
+    DCHECK(webContents);
+
+    WebViewImpl* webViewImpl =
+        static_cast<WebViewImpl*>(webContents->GetDelegate());
+    DCHECK(webViewImpl);
+
+    webViewImpl->overrideWebkitPrefs(prefs);
+}
+
 bool ContentBrowserClientImpl::SupportsInProcessRenderer()
 {
     return true;

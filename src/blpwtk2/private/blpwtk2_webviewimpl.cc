@@ -45,6 +45,7 @@
 #include <content/public/browser/site_instance.h>
 #include <third_party/WebKit/public/web/WebFindOptions.h>
 #include <third_party/WebKit/public/web/WebView.h>
+#include <webkit/common/webpreferences.h>
 
 namespace blpwtk2 {
 
@@ -53,7 +54,9 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
                          BrowserContextImpl* browserContext,
                          int hostAffinity,
                          bool initiallyVisible,
-                         bool takeFocusOnMouseDown)
+                         bool takeFocusOnMouseDown,
+                         bool domPasteEnabled,
+                         bool javascriptCanAccessClipboard)
 : d_delegate(delegate)
 , d_implClient(0)
 , d_browserContext(browserContext)
@@ -64,6 +67,8 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
 , d_isDeletingSoon(false)
 , d_isPopup(false)
 , d_takeFocusOnMouseDown(takeFocusOnMouseDown)
+, d_domPasteEnabled(domPasteEnabled)
+, d_javascriptCanAccessClipboard(javascriptCanAccessClipboard)
 , d_customTooltipEnabled(false)
 , d_ncHitTestEnabled(false)
 , d_ncHitTestPendingAck(false)
@@ -89,7 +94,9 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
 
 WebViewImpl::WebViewImpl(content::WebContents* contents,
                          BrowserContextImpl* browserContext,
-                         bool takeFocusOnMouseDown)
+                         bool takeFocusOnMouseDown,
+                         bool domPasteEnabled,
+                         bool javascriptCanAccessClipboard)
 : d_delegate(0)
 , d_implClient(0)
 , d_browserContext(browserContext)
@@ -100,6 +107,8 @@ WebViewImpl::WebViewImpl(content::WebContents* contents,
 , d_isDeletingSoon(false)
 , d_isPopup(false)
 , d_takeFocusOnMouseDown(takeFocusOnMouseDown)
+, d_domPasteEnabled(domPasteEnabled)
+, d_javascriptCanAccessClipboard(javascriptCanAccessClipboard)
 , d_customTooltipEnabled(false)
 , d_ncHitTestEnabled(false)
 , d_ncHitTestPendingAck(false)
@@ -183,6 +192,12 @@ void WebViewImpl::handleExternalProtocol(const GURL& url)
     if (d_wasDestroyed || !d_delegate) return;
 
     d_delegate->handleExternalProtocol(this, url.spec());
+}
+
+void WebViewImpl::overrideWebkitPrefs(WebPreferences* prefs)
+{
+    prefs->dom_paste_enabled = d_domPasteEnabled;
+    prefs->javascript_can_access_clipboard = d_javascriptCanAccessClipboard;
 }
 
 void WebViewImpl::destroy()
@@ -540,7 +555,9 @@ void WebViewImpl::WebContentsCreated(content::WebContents* source_contents,
     DCHECK(source_contents == d_webContents);
     WebViewImpl* newView = new WebViewImpl(new_contents,
                                            d_browserContext,
-                                           d_takeFocusOnMouseDown);
+                                           d_takeFocusOnMouseDown,
+                                           d_domPasteEnabled,
+                                           d_javascriptCanAccessClipboard);
     if (d_wasDestroyed || !d_delegate) {
         newView->destroy();
         return;

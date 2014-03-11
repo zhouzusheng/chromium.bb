@@ -34,6 +34,8 @@
 #include <ui/gfx/native_widget_types.h>
 #include <third_party/WebKit/public/web/WebTextDirection.h>
 
+struct WebPreferences;
+
 namespace content {
     class WebContents;
 }  // close namespace content
@@ -69,10 +71,14 @@ class WebViewImpl : public WebView,
                 BrowserContextImpl* browserContext,
                 int hostAffinity,
                 bool initiallyVisible,
-                bool takeFocusOnMouseDown);
+                bool takeFocusOnMouseDown,
+                bool domPasteEnabled,
+                bool javascriptCanAccessClipboard);
     WebViewImpl(content::WebContents* contents,
                 BrowserContextImpl* browserContext,
-                bool takeFocusOnMouseDown);
+                bool takeFocusOnMouseDown,
+                bool domPasteEnabled,
+                bool javascriptCanAccessClipboard);
     virtual ~WebViewImpl();
 
     void setImplClient(WebViewImplClient* client);
@@ -82,6 +88,7 @@ class WebViewImpl : public WebView,
     void saveCustomContextMenuContext(const content::CustomContextMenuContext& context);
     void handleFindRequest(const FindOnPageRequest& request);
     void handleExternalProtocol(const GURL& url);
+    void overrideWebkitPrefs(WebPreferences* prefs);
 
     /////////////// WebView overrides
 
@@ -253,6 +260,8 @@ class WebViewImpl : public WebView,
     bool d_isDeletingSoon;    // when DeleteSoon has been called
     bool d_isPopup;           // if this view is a popup view
     bool d_takeFocusOnMouseDown;
+    bool d_domPasteEnabled;
+    bool d_javascriptCanAccessClipboard;
     bool d_customTooltipEnabled;
     bool d_ncHitTestEnabled;
     bool d_ncHitTestPendingAck;

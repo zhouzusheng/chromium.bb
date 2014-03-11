@@ -53,6 +53,13 @@ class ContentBrowserClientImpl : public content::ContentBrowserClient {
     virtual void RenderProcessHostCreated(
         content::RenderProcessHost* host) OVERRIDE;
 
+    // Called by WebContents to override the WebKit preferences that are used by
+    // the renderer. The content layer will add its own settings, and then it's up
+    // to the embedder to update it if it wants.
+    virtual void OverrideWebkitPrefs(content::RenderViewHost* render_view_host,
+                                     const GURL& url,
+                                     WebPreferences* prefs) OVERRIDE;
+
     // Returns true whether the embedder supports in-process renderers or not.
     // When running "in process", the browser maintains a RenderProcessHost which
     // communicates to a RenderProcess which is instantiated in the same process

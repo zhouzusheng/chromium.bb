@@ -99,7 +99,6 @@
             '<(DEPTH)/base/base.gyp:run_all_unittests',
             '<(DEPTH)/media/media.gyp:media',
             '<(DEPTH)/skia/skia.gyp:skia',
-            '<(DEPTH)/testing/gtest.gyp:gtest',
             '<(DEPTH)/ui/ui.gyp:ui',
             'surface',
           ],

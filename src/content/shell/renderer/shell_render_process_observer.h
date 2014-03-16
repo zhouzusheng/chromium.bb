@@ -40,6 +40,8 @@ class ShellRenderProcessObserver : public RenderProcessObserver {
   virtual void WebKitInitialized() OVERRIDE;
   virtual bool OnControlMessageReceived(const IPC::Message& message) OVERRIDE;
 
+  // SHEZ: Remove test-only code.
+#if 0
   WebTestRunner::WebTestDelegate* test_delegate() const {
     return test_delegate_;
   }
@@ -47,6 +49,7 @@ class ShellRenderProcessObserver : public RenderProcessObserver {
     return test_interfaces_.get();
   }
   WebKitTestRunner* main_test_runner() const { return main_test_runner_; }
+#endif
   const base::FilePath& webkit_source_dir() const { return webkit_source_dir_; }
 
  private:
@@ -54,9 +57,12 @@ class ShellRenderProcessObserver : public RenderProcessObserver {
   void OnResetAll();
   void OnSetWebKitSourceDir(const base::FilePath& webkit_source_dir);
 
+  // SHEZ: Remove test-only code.
+#if 0
   WebKitTestRunner* main_test_runner_;
   WebTestRunner::WebTestDelegate* test_delegate_;
   scoped_ptr<WebTestRunner::WebTestInterfaces> test_interfaces_;
+#endif
 
   base::FilePath webkit_source_dir_;
 

@@ -15,6 +15,8 @@
 
 #define IPC_MESSAGE_START ShellMsgStart
 
+// SHEZ: Remove test code.
+#if 0
 IPC_STRUCT_TRAITS_BEGIN(content::ShellTestConfiguration)
 IPC_STRUCT_TRAITS_MEMBER(current_working_directory)
 IPC_STRUCT_TRAITS_MEMBER(temp_path)
@@ -24,6 +26,7 @@ IPC_STRUCT_TRAITS_MEMBER(allow_external_pages)
 IPC_STRUCT_TRAITS_MEMBER(expected_pixel_hash)
 IPC_STRUCT_TRAITS_MEMBER(initial_size)
 IPC_STRUCT_TRAITS_END()
+#endif
 
 // Tells the renderer to reset all test runners.
 IPC_MESSAGE_ROUTED0(ShellViewMsg_Reset)
@@ -32,9 +35,12 @@ IPC_MESSAGE_ROUTED0(ShellViewMsg_Reset)
 IPC_MESSAGE_CONTROL1(ShellViewMsg_SetWebKitSourceDir,
                      base::FilePath /* webkit source dir */)
 
+// SHEZ: Remove test code.
+#if 0
 // Sets the initial configuration to use for layout tests.
 IPC_MESSAGE_ROUTED1(ShellViewMsg_SetTestConfiguration,
                     content::ShellTestConfiguration)
+#endif
 
 // Tells the main window that a secondary window in a different process invoked
 // notifyDone().

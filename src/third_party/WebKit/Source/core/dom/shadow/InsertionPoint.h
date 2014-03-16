@@ -32,8 +32,7 @@
 #define InsertionPoint_h
 
 #include "core/css/CSSSelectorList.h"
-#include "core/dom/shadow/ContentDistributor.h"
-#include "core/dom/shadow/ElementShadow.h"
+#include "core/dom/shadow/ContentDistribution.h"
 #include "core/html/HTMLElement.h"
 #include "wtf/Forward.h"
 
@@ -44,7 +43,7 @@ public:
     virtual ~InsertionPoint();
 
     bool hasDistribution() const { return !m_distribution.isEmpty(); }
-    void setDistribution(ContentDistribution& distribution) { m_distribution.swap(distribution); }
+    void setDistribution(ContentDistribution&);
     void clearDistribution() { m_distribution.clear(); }
     bool isActive() const;
 
@@ -68,13 +67,13 @@ public:
     Node* previousTo(const Node* node) const { return m_distribution.previousTo(node); }
 
 protected:
-    InsertionPoint(const QualifiedName&, Document*);
-    virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE;
+    InsertionPoint(const QualifiedName&, Document&);
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
     virtual void childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta) OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void willRecalcStyle(StyleChange) OVERRIDE;
+    virtual void willRecalcStyle(StyleRecalcChange) OVERRIDE;
 
 private:
 

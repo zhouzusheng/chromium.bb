@@ -78,6 +78,8 @@ public:
     virtual void setWebLayer(WebLayer*) = 0;
     virtual void addTextTrack(WebInbandTextTrack*) = 0;
     virtual void removeTextTrack(WebInbandTextTrack*) = 0;
+    virtual void mediaSourceOpened(WebMediaSource*) = 0;
+    virtual void requestSeek(double) = 0;
 
 protected:
     ~WebMediaPlayerClient() { }

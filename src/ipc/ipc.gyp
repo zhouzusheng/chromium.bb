@@ -34,12 +34,9 @@
       'type': '<(gtest_target_type)',
       'dependencies': [
         'ipc',
-        'test_support_ipc',
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
         '../base/base.gyp:run_all_unittests',
-        '../base/base.gyp:test_support_base',
-        '../testing/gtest.gyp:gtest',
       ],
       'include_dirs': [
         '..'
@@ -93,12 +90,9 @@
       # TODO(viettrungluu): Figure out which dependencies are really needed.
       'dependencies': [
         'ipc',
-        'test_support_ipc',
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
-        '../base/base.gyp:test_support_base',
         '../base/base.gyp:test_support_perf',
-        '../testing/gtest.gyp:gtest',
       ],
       'include_dirs': [
         '..'
@@ -136,7 +130,6 @@
       'dependencies': [
         'ipc',
         '../base/base.gyp:base',
-        '../testing/gtest.gyp:gtest',
       ],
       'sources': [
         'ipc_multiprocess_test.cc',

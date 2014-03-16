@@ -39,9 +39,6 @@
     [DeprecateAs=CaptureEvents] void captureEvents();
     [DeprecateAs=ReleaseEvents] void releaseEvents();
 
-    readonly attribute long width;
-    readonly attribute long height;
-
     [TreatNullAs=NullString, CustomElementCallbacks=Enable] attribute DOMString dir;
     [TreatNullAs=NullString, CustomElementCallbacks=Enable] attribute DOMString designMode;
     readonly attribute DOMString compatMode;

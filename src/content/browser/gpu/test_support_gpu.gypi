@@ -61,5 +61,9 @@
         '<(src_dir)/build/linux/system.gyp:ssl',
       ],
     }],
+    ['toolkit_views==1', {
+      'dependencies': [
+      ],
+    }],
   ],
 }

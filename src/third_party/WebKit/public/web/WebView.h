@@ -40,7 +40,7 @@
 
 namespace WebKit {
 
-class WebAccessibilityObject;
+class WebAXObject;
 class WebAutofillClient;
 class WebDevToolsAgent;
 class WebDevToolsAgentClient;
@@ -59,7 +59,6 @@ class WebSpellCheckClient;
 class WebString;
 class WebPasswordGeneratorClient;
 class WebValidationMessageClient;
-class WebViewBenchmarkSupport;
 class WebViewClient;
 struct WebActiveWheelFlingParameters;
 struct WebMediaPlayerAction;
@@ -410,7 +409,7 @@ public:
     // Accessibility -------------------------------------------------------
 
     // Returns the accessibility object for this view.
-    virtual WebAccessibilityObject accessibilityObject() = 0;
+    virtual WebAXObject accessibilityObject() = 0;
 
 
     // Autofill  -----------------------------------------------------------
@@ -497,10 +496,6 @@ public:
     virtual void setShowFPSCounter(bool) = 0;
     virtual void setContinuousPaintingEnabled(bool) = 0;
     virtual void setShowScrollBottleneckRects(bool) = 0;
-
-    // Benchmarking support -------------------------------------------------
-
-    virtual WebViewBenchmarkSupport* benchmarkSupport() { return 0; }
 
     // Visibility -----------------------------------------------------------
 

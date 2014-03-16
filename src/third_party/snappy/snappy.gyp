@@ -70,7 +70,6 @@
       'dependencies': [
         'snappy',
         '../../base/base.gyp:base',
-        '../../testing/gtest.gyp:gtest',
         '../../third_party/zlib/zlib.gyp:zlib',
       ],
     },

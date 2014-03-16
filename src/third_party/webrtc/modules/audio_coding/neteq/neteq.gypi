@@ -94,7 +94,6 @@
             'NetEq',
             'NetEqTestTools',
             'neteq_unittest_tools',
-            '<(DEPTH)/testing/gtest.gyp:gtest',
             '<(webrtc_root)/test/test.gyp:test_support_main',
           ],
           'sources': [
@@ -158,6 +157,20 @@
         },
 
         {
+          'target_name': 'neteq3_speed_test',
+          'type': 'executable',
+          'dependencies': [
+            'NetEq',
+            'PCM16B',
+            'neteq_unittest_tools',
+            '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
+          ],
+          'sources': [
+            'test/neteq_speed_test.cc',
+          ],
+        },
+
+        {
          'target_name': 'NetEqTestTools',
           # Collection of useful functions used in other tests
           'type': 'static_library',
@@ -172,7 +185,6 @@
             'iLBC',
             'iSAC',
             'CNG',
-            '<(DEPTH)/testing/gtest.gyp:gtest',
           ],
           'direct_dependent_settings': {
             'include_dirs': [
@@ -227,6 +239,24 @@
               'type': 'none',
               'dependencies': [
                 '<(apk_tests_path):neteq_unittests_apk',
+              ],
+            },
+          ],
+        }],
+        ['test_isolation_mode != "noop"', {
+          'targets': [
+            {
+              'target_name': 'neteq_unittests_run',
+              'type': 'none',
+              'dependencies': [
+                '<(import_isolate_path):import_isolate_gypi',
+                'neteq_unittests',
+              ],
+              'includes': [
+                'neteq_unittests.isolate',
+              ],
+              'sources': [
+                'neteq_unittests.isolate',
               ],
             },
           ],

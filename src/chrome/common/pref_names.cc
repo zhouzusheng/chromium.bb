@@ -411,6 +411,11 @@ const char kDefaultSearchProviderInstantURL[] =
 const char kDefaultSearchProviderImageURL[] =
     "default_search_provider.image_url";
 
+// The URL (as understood by TemplateURLRef) the default search provider uses
+// for the new tab page.
+const char kDefaultSearchProviderNewTabURL[] =
+    "default_search_provider.new_tab_url";
+
 // The string of post parameters (as understood by TemplateURLRef) the default
 // search provider uses for searches by using POST.
 const char kDefaultSearchProviderSearchURLPostParams[] =
@@ -652,108 +657,6 @@ const char kLanguagePreloadEngines[] = "settings.language.preload_engines";
 const char kLanguageEnabledExtensionImes[] =
     "settings.language.enabled_extension_imes";
 
-// Boolean prefs for ibus-chewing Chinese input method.
-const char kLanguageChewingAutoShiftCur[] =
-    "settings.language.chewing_auto_shift_cur";
-const char kLanguageChewingAddPhraseDirection[] =
-    "settings.language.chewing_add_phrase_direction";
-const char kLanguageChewingEasySymbolInput[] =
-    "settings.language.chewing_easy_symbol_input";
-const char kLanguageChewingEscCleanAllBuf[] =
-    "settings.language.chewing_esc_clean_all_buf";
-const char kLanguageChewingForceLowercaseEnglish[] =
-    "settings.language.chewing_force_lowercase_english";
-const char kLanguageChewingPlainZhuyin[] =
-    "settings.language.chewing_plain_zhuyin";
-const char kLanguageChewingPhraseChoiceRearward[] =
-    "settings.language.chewing_phrase_choice_rearward";
-const char kLanguageChewingSpaceAsSelection[] =
-    "settings.language.chewing_space_as_selection";
-
-// Integer prefs for ibus-chewing Chinese input method.
-const char kLanguageChewingMaxChiSymbolLen[] =
-    "settings.language.chewing_max_chi_symbol_len";
-const char kLanguageChewingCandPerPage[] =
-    "settings.language.chewing_cand_per_page";
-
-// String prefs for ibus-chewing Chinese input method.
-const char kLanguageChewingKeyboardType[] =
-    "settings.language.chewing_keyboard_type";
-const char kLanguageChewingSelKeys[] =
-    "settings.language.chewing_sel_keys";
-
-const char kLanguageChewingHsuSelKeyType[] =
-    "settings.language.chewing_hsu_sel_key_type";
-
-// A string pref which determines the keyboard layout for Hangul input method.
-const char kLanguageHangulKeyboard[] = "settings.language.hangul_keyboard";
-const char kLanguageHangulHanjaBindingKeys[] =
-    "settings.language.hangul_hanja_binding_keys";
-
-// A boolean prefs for ibus-pinyin Chinese input method.
-const char kLanguagePinyinCorrectPinyin[] =
-    "settings.language.pinyin_correct_pinyin";
-const char kLanguagePinyinFuzzyPinyin[] =
-    "settings.language.pinyin_fuzzy_pinyin";
-const char kLanguagePinyinShiftSelectCandidate[] =
-    "settings.language.pinyin_shift_select_candidate";
-const char kLanguagePinyinMinusEqualPage[] =
-    "settings.language.pinyin_minus_equal_page";
-const char kLanguagePinyinCommaPeriodPage[] =
-    "settings.language.pinyin_comma_period_page";
-const char kLanguagePinyinAutoCommit[] =
-    "settings.language.pinyin_auto_commit";
-const char kLanguagePinyinDoublePinyin[] =
-    "settings.language.pinyin_double_pinyin";
-const char kLanguagePinyinInitChinese[] =
-    "settings.language.pinyin_init_chinese";
-const char kLanguagePinyinInitFull[] =
-    "settings.language.pinyin_init_full";
-const char kLanguagePinyinInitFullPunct[] =
-    "settings.language.pinyin_init_full_punct";
-const char kLanguagePinyinInitSimplifiedChinese[] =
-    "settings.language.pinyin_init_simplified_chinese";
-const char kLanguagePinyinTradCandidate[] =
-    "settings.language.pinyin_trad_candidate";
-
-// A integer prefs for ibus-pinyin Chinese input method.
-const char kLanguagePinyinDoublePinyinSchema[] =
-    "settings.language.pinyin_double_pinyin_schema";
-const char kLanguagePinyinLookupTablePageSize[] =
-    "settings.language.pinyin_lookup_table_page_size";
-
-// A string prefs for ibus-mozc Japanese input method.
-// ibus-mozc converts the string values to protobuf enum values defined in
-// third_party/ibus-mozc/files/src/session/config.proto.
-const char kLanguageMozcPreeditMethod[] =
-    "settings.language.mozc_preedit_method";
-const char kLanguageMozcSessionKeymap[] =
-    "settings.language.mozc_session_keymap";
-const char kLanguageMozcPunctuationMethod[] =
-    "settings.language.mozc_punctuation_method";
-const char kLanguageMozcSymbolMethod[] =
-    "settings.language.mozc_symbol_method";
-const char kLanguageMozcSpaceCharacterForm[] =
-    "settings.language.mozc_space_character_form";
-const char kLanguageMozcHistoryLearningLevel[] =
-    "settings.language.mozc_history_learning_level";
-const char kLanguageMozcSelectionShortcut[] =
-    "settings.language.mozc_selection_shortcut";
-const char kLanguageMozcShiftKeyModeSwitch[] =
-    "settings.language.mozc_shift_key_mode_switch";
-const char kLanguageMozcNumpadCharacterForm[] =
-    "settings.language.mozc_numpad_character_form";
-const char kLanguageMozcIncognitoMode[] =
-    "settings.language.mozc_incognito_mode";
-const char kLanguageMozcUseAutoImeTurnOff[] =
-    "settings.language.mozc_use_auto_ime_turn_off";
-const char kLanguageMozcUseHistorySuggest[] =
-    "settings.language.mozc_use_history_suggest";
-const char kLanguageMozcUseDictionarySuggest[] =
-    "settings.language.mozc_use_dictionary_suggest";
-const char kLanguageMozcSuggestionsSize[] =
-    "settings.language.mozc_suggestions_size";
-
 // A integer prefs which determine how we remap modifier keys (e.g. swap Alt and
 // Control.) Possible values for these prefs are 0-4. See ModifierKey enum in
 // src/chrome/browser/chromeos/input_method/xkeyboard.h
@@ -931,6 +834,26 @@ const char kTouchHudProjectionEnabled[] = "touch_hud.projection_enabled";
 // Currently, this pref is only used to store the policy. The user's
 // configuration is still stored in Shill.
 const char kOpenNetworkConfiguration[] = "onc";
+
+// A boolean pref that tracks whether the user has already given consent for
+// enabling remote attestation for content protection.
+const char kRAConsentFirstTime[] = "settings.privacy.ra_consent";
+// A DictionaryValue pref that tracks domains for which the user has explicitly
+// allowed or denied.
+const char kRAConsentDomains[] = "settings.privacy.ra_consent_domains";
+// A boolean pref that tracks whether the user indicated they wish to be asked
+// for consent for every site that uses remote attestation.
+const char kRAConsentAlways[] = "settings.privacy.ra_consent_always";
+
+// A boolean pref recording whether user has dismissed the multiprofile
+// notification.
+const char kMultiProfileNotificationDismissed[] =
+    "settings.multi_profile_notification_dismissed";
+
+// A string pref that holds string enum values of how the user should behave
+// in a multiprofile session. See ChromeOsMultiProfileUserBehavior policy
+// for more details of the valid values.
+const char kMultiProfileUserBehavior[] = "settings.multiprofile_user_behavior";
 #endif  // defined(OS_CHROMEOS)
 
 // The disabled messages in IPC logging.
@@ -1013,6 +936,9 @@ const char kExtensionToolbar[] = "extensions.toolbar";
 // Dictionary pref that tracks which command belongs to which
 // extension + named command pair.
 const char kExtensionCommands[] = "extensions.commands";
+
+// A list of known disabled extensions IDs.
+const char kExtensionKnownDisabled[] = "extensions.known_disabled";
 
 // Pref containing the directory for internal plugins as written to the plugins
 // list (below).
@@ -1155,6 +1081,9 @@ const char kAutofillDialogPayWithoutWallet[] = "autofill.pay_without_wallet";
 // The number of times the dialog has been shown (all time).
 const char kAutofillDialogShowCount[] = "autofill.show_count";
 
+// Whether a user wants to save data locally in Autofill.
+const char kAutofillDialogSaveData[] = "autofill.save_data";
+
 // The number of times the generated credit card bubble has been shown.
 const char kAutofillGeneratedCardBubbleTimesShown[] =
     "autofill.generated_card_bubble_times_shown";
@@ -1293,6 +1222,34 @@ const char kMessageCenterDisabledSystemComponentIds[] =
 // notifications to the message center.
 extern const char kMessageCenterEnabledSyncNotifierIds[] =
     "message_center.enabled_sync_notifier_ids";
+
+// List pref containing synced notification sending services that are currently
+// enabled.
+extern const char kEnabledSyncedNotificationSendingServices[] =
+    "synced_notification.enabled_sending_services";
+
+// List pref containing which synced notification sending services have already
+// been turned on once for the user (so we don't turn them on again).
+extern const char kInitializedSyncedNotificationSendingServices[] =
+    "synced_notification.initialized_sending_services";
+
+// Dictionary pref that keeps track of per-extension settings. The keys are
+// extension ids.
+const char kExtensionsPref[] = "extensions.settings";
+
+// String pref for what version chrome was last time the extension prefs were
+// loaded.
+const char kExtensionsLastChromeVersion[] = "extensions.last_chrome_version";
+
+// Boolean pref that determines whether the user can enter fullscreen mode.
+// Disabling fullscreen mode also makes kiosk mode unavailable on desktop
+// platforms.
+extern const char kFullscreenAllowed[] = "fullscreen.allowed";
+
+// Enable notifications for new devices on the local network that can be
+// registered to the user's account, e.g. Google Cloud Print printers.
+const char kLocalDiscoveryNotificationsEnabled[] =
+    "local_discovery.notifications_enabled";
 
 // *************** LOCAL STATE ***************
 // These are attached to the machine/installation
@@ -1803,6 +1760,11 @@ const char kDevToolsOpenDocked[] = "devtools.open_docked";
 const char kDevToolsPortForwardingEnabled[] =
     "devtools.port_forwarding_enabled";
 
+// A boolean specifying whether default port forwarding configuration has been
+// set.
+const char kDevToolsPortForwardingDefaultSet[] =
+    "devtools.port_forwarding_default_set";
+
 // A dictionary of port->location pairs for port forwarding.
 const char kDevToolsPortForwardingConfig[] = "devtools.port_forwarding_config";
 
@@ -2055,29 +2017,35 @@ const char kHttpReceivedContentLength[] = "http_received_content_length";
 const char kHttpOriginalContentLength[] = "http_original_content_length";
 
 #if defined(OS_ANDROID) || defined(OS_IOS)
-// A List pref that contains daily totals of the original size of all HTTP
-// that was received over the network.
+// A List pref that contains daily totals of the original size of all HTTP/HTTPS
+// that was received from the network.
 const char kDailyHttpOriginalContentLength[] =
     "data_reduction.daily_original_length";
 
-// A List pref that contains daily totals of the size of all HTTP content that
-// has been received from the network.
+// A List pref that contains daily totals of the size of all HTTP/HTTPS content
+// that was received from the network.
 const char kDailyHttpReceivedContentLength[] =
     "data_reduction.daily_received_length";
 
-// A List pref that contains daily totals of the size of all HTTP content that
-// has been received via the data reduction proxy.
-const char kDailyHttpReceivedContentLengthViaDataReductionProxy[] =
-    "data_reduction.daily_received_length_via_data_reduction_proxy";
+// A List pref that contains daily totals of the original size of all HTTP/HTTPS
+// that was received while the data reduction proxy is enabled.
+const char kDailyOriginalContentLengthWithDataReductionProxyEnabled[] =
+    "data_reduction.daily_original_length_with_data_reduction_proxy_enabled";
 
-// A List pref that contains daily totals of the size of all HTTP content that
-// has been received when the data reduction proxy is enabled.
-// Note: this is different from
-// kDailyHttpReceivedContentLengthViaDataReductionProxy because content
-// doesn't necessarily go through the data reduction proxy when it is enabled.
-// E.g., the proxy doesn't handle HTTPS traffic.
-const char kDailyHttpReceivedContentLengthWithDataReductionProxyEnabled[] =
+// A List pref that contains daily totals of the size of all HTTP/HTTPS
+// that was received while the data reduction proxy is enabled.
+const char kDailyContentLengthWithDataReductionProxyEnabled[] =
     "data_reduction.daily_received_length_with_data_reduction_proxy_enabled";
+
+// A List pref that contains daily totals of the original size of all HTTP/HTTPS
+// that was received via the data reduction proxy.
+const char kDailyOriginalContentLengthViaDataReductionProxy[] =
+    "data_reduction.daily_original_length_via_data_reduction_proxy";
+
+// A List pref that contains daily totals of the size of all HTTP/HTTPS
+// that was received via the data reduction proxy.
+const char kDailyContentLengthViaDataReductionProxy[] =
+    "data_reduction.daily_received_length_via_data_reduction_proxy";
 
 // An int64 pref that contains an internal representation of midnight on the
 // date of the last update to |kDailyHttp{Original,Received}ContentLength|.
@@ -2107,6 +2075,12 @@ const char kVideoCaptureAllowed[] = "hardware.video_capture_enabled";
 // supported when running in kiosk mode.
 // TODO(tommi): Update comment when this is supported for all modes.
 const char kVideoCaptureAllowedUrls[] = "hardware.video_capture_allowed_urls";
+
+#if defined(OS_ANDROID)
+// Boolean that controls the global enabled-state of protected media identifier.
+const char kProtectedMediaIdentifierEnabled[] =
+    "protected_media_identifier.enabled";
+#endif
 
 #if defined(OS_CHROMEOS)
 // Dictionary for transient storage of settings that should go into device
@@ -2190,6 +2164,14 @@ const char kDeviceEnrollmentCanExit[] = "enrollment.can_exit";
 // Dictionary of per-user Least Recently Used input method (used at login
 // screen).
 extern const char kUsersLRUInputMethod[] = "UsersLRUInputMethod";
+
+// A dictionary pref of the echo offer check flag. It sets offer info when
+// an offer is checked.
+extern const char kEchoCheckedOffers[] = "EchoCheckedOffers";
+
+// Key name of a dictionary in local state to store cached multiprofle user
+// behavior policy value.
+const char kCachedMultiProfileUserBehavior[] = "CachedMultiProfileUserBehavior";
 #endif
 
 // Whether there is a Flash version installed that supports clearing LSO data.
@@ -2451,6 +2433,8 @@ const char kMinRailBreakVelocity[] =
     "gesture.min_rail_break_velocity";
 const char kMinScrollDeltaSquared[] =
     "gesture.min_scroll_delta_squared";
+const char kMinScrollSuccessiveVelocityEvents[] =
+    "gesture.min_scroll_successive_velocity_events";
 const char kMinSwipeSpeed[] =
     "gesture.min_swipe_speed";
 const char kMinTouchDownDurationInSecondsForClick[] =
@@ -2491,6 +2475,8 @@ const char kOverscrollVerticalThresholdComplete[] =
     "overscroll.vertical_threshold_complete";
 const char kOverscrollMinimumThresholdStart[] =
     "overscroll.minimum_threshold_start";
+const char kOverscrollMinimumThresholdStartTouchpad[] =
+    "overscroll.minimum_threshold_start_touchpad";
 const char kOverscrollVerticalThresholdStart[] =
     "overscroll.vertical_threshold_start";
 const char kOverscrollHorizontalResistThreshold[] =
@@ -2510,10 +2496,6 @@ const char kNetworkProfileWarningsLeft[] = "network_profile.warnings_left";
 // |network_profile.warnings_left| after a silence period.
 const char kNetworkProfileLastWarningTime[] =
     "network_profile.last_warning_time";
-
-// 64-bit serialization of the time last policy usage statistics were collected
-// by UMA_HISTOGRAM_ENUMERATION.
-const char kLastPolicyStatisticsUpdate[] = "policy.last_statistics_update";
 
 #if defined(OS_CHROMEOS)
 // The RLZ brand code, if enabled.
@@ -2545,8 +2527,15 @@ extern const char kModuleConflictBubbleShown[] = "module_conflict.bubble_shown";
 
 // A string pref for storing the salt used to compute the pepper device ID.
 const char kDRMSalt[] = "settings.privacy.drm_salt";
-// A boolean pref that enables the (private) pepper GetDeviceID() call.
+// A boolean pref that enables the (private) pepper GetDeviceID() call and
+// enables the use of remote attestation for content protection.
 const char kEnableDRM[] = "settings.privacy.drm_enabled";
+
+// A boolean per-profile pref that signals if the watchdog extension is
+// installed and active. We need to know if the watchdog extension active for
+// ActivityLog initialization before the extension system is initialized.
+const char kWatchdogExtensionActive[] =
+    "profile.extensions.activity_log.watchdog_extension_active";
 
 // A dictionary pref which maps profile names to dictionary values which hold
 // hashes of profile prefs that we track to detect changes that happen outside

@@ -178,8 +178,6 @@
       'type': '<(gtest_target_type)',
       'dependencies': [
         'leveldatabase',
-        '../../base/base.gyp:test_support_base',
-        '../../testing/gtest.gyp:gtest',
       ],
       'sources': [
         'env_chromium_unittest.cc',

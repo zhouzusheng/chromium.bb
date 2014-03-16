@@ -62,54 +62,54 @@ IDBAny::~IDBAny()
 {
 }
 
-PassRefPtr<DOMStringList> IDBAny::domStringList()
+DOMStringList* IDBAny::domStringList()
 {
     ASSERT(m_type == DOMStringListType);
-    return m_domStringList;
+    return m_domStringList.get();
 }
 
-PassRefPtr<IDBCursor> IDBAny::idbCursor()
+IDBCursor* IDBAny::idbCursor()
 {
     ASSERT(m_type == IDBCursorType);
     ASSERT_WITH_SECURITY_IMPLICATION(m_idbCursor->isKeyCursor());
-    return m_idbCursor;
+    return m_idbCursor.get();
 }
 
-PassRefPtr<IDBCursorWithValue> IDBAny::idbCursorWithValue()
+IDBCursorWithValue* IDBAny::idbCursorWithValue()
 {
     ASSERT(m_type == IDBCursorWithValueType);
     ASSERT_WITH_SECURITY_IMPLICATION(m_idbCursor->isCursorWithValue());
     return toIDBCursorWithValue(m_idbCursor.get());
 }
 
-PassRefPtr<IDBDatabase> IDBAny::idbDatabase()
+IDBDatabase* IDBAny::idbDatabase()
 {
     ASSERT(m_type == IDBDatabaseType);
-    return m_idbDatabase;
+    return m_idbDatabase.get();
 }
 
-PassRefPtr<IDBFactory> IDBAny::idbFactory()
+IDBFactory* IDBAny::idbFactory()
 {
     ASSERT(m_type == IDBFactoryType);
-    return m_idbFactory;
+    return m_idbFactory.get();
 }
 
-PassRefPtr<IDBIndex> IDBAny::idbIndex()
+IDBIndex* IDBAny::idbIndex()
 {
     ASSERT(m_type == IDBIndexType);
-    return m_idbIndex;
+    return m_idbIndex.get();
 }
 
-PassRefPtr<IDBObjectStore> IDBAny::idbObjectStore()
+IDBObjectStore* IDBAny::idbObjectStore()
 {
     ASSERT(m_type == IDBObjectStoreType);
-    return m_idbObjectStore;
+    return m_idbObjectStore.get();
 }
 
-PassRefPtr<IDBTransaction> IDBAny::idbTransaction()
+IDBTransaction* IDBAny::idbTransaction()
 {
     ASSERT(m_type == IDBTransactionType);
-    return m_idbTransaction;
+    return m_idbTransaction.get();
 }
 
 const ScriptValue& IDBAny::scriptValue()

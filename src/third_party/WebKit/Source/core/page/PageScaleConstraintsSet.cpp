@@ -29,7 +29,9 @@
  */
 
 #include "config.h"
-#include "PageScaleConstraintsSet.h"
+#include "core/page/PageScaleConstraintsSet.h"
+
+#include "wtf/Assertions.h"
 
 namespace WebCore {
 
@@ -49,9 +51,9 @@ PageScaleConstraints PageScaleConstraintsSet::defaultConstraints() const
     return PageScaleConstraints(-1, defaultMinimumScale, defaultMaximumScale);
 }
 
-void PageScaleConstraintsSet::updatePageDefinedConstraints(const ViewportArguments& arguments, IntSize viewSize, int layoutFallbackWidth)
+void PageScaleConstraintsSet::updatePageDefinedConstraints(const ViewportArguments& arguments, IntSize viewSize)
 {
-    m_pageDefinedConstraints = arguments.resolve(viewSize, viewSize, layoutFallbackWidth);
+    m_pageDefinedConstraints = arguments.resolve(viewSize);
 
     m_constraintsDirty = true;
 }
@@ -128,9 +130,9 @@ void PageScaleConstraintsSet::adjustForAndroidWebViewQuirks(const ViewportArgume
     if (!loadWithOverviewMode) {
         bool resetInitialScale = false;
         if (arguments.zoom == -1) {
-            if (arguments.width == -1)
+            if (arguments.maxWidth.isAuto())
                 resetInitialScale = true;
-            if (useWideViewport && arguments.width != ViewportArguments::ValueDeviceWidth)
+            if (useWideViewport && arguments.maxWidth.isFixed())
                 resetInitialScale = true;
         }
         if (resetInitialScale)
@@ -150,7 +152,7 @@ void PageScaleConstraintsSet::adjustForAndroidWebViewQuirks(const ViewportArgume
     }
 
     if (wideViewportQuirkEnabled) {
-        if (useWideViewport && arguments.width == -1 && arguments.zoom != 1.0f)
+        if (useWideViewport && (arguments.maxWidth.isAuto() || arguments.maxWidth.type() == ExtendToZoom) && arguments.zoom != 1.0f)
             adjustedLayoutSizeWidth = layoutFallbackWidth;
         else if (!useWideViewport)
             adjustedLayoutSizeWidth = getLayoutWidthForNonWideViewport(viewSize, initialScale) / targetDensityDPIFactor;

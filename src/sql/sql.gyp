@@ -51,7 +51,6 @@
       'dependencies': [
         'sql',
         '../base/base.gyp:base',
-        '../testing/gtest.gyp:gtest',
       ],
       'export_dependent_settings': [
         'sql',
@@ -62,6 +61,8 @@
         'test/error_callback_support.h',
         'test/scoped_error_ignorer.cc',
         'test/scoped_error_ignorer.h',
+        'test/test_helpers.cc',
+        'test/test_helpers.h',
       ],
       'include_dirs': [
         '..',
@@ -78,13 +79,12 @@
       'dependencies': [
         'sql',
         'test_support_sql',
-        '../base/base.gyp:test_support_base',
-        '../testing/gtest.gyp:gtest',
+        '../base/base.gyp:run_all_unittests',
         '../third_party/sqlite/sqlite.gyp:sqlite',
       ],
       'sources': [
-        'run_all_unittests.cc',
         'connection_unittest.cc',
+        'meta_table_unittest.cc',
         'recovery_unittest.cc',
         'sqlite_features_unittest.cc',
         'statement_unittest.cc',

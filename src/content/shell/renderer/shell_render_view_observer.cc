@@ -18,10 +18,13 @@ ShellRenderViewObserver::ShellRenderViewObserver(RenderView* render_view)
 }
 
 void ShellRenderViewObserver::DidClearWindowObject(WebKit::WebFrame* frame) {
+  // SHEZ: Remove test code.
+#if 0
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kExposeInternalsForTesting)) {
     WebKit::WebTestingSupport::injectInternalsObject(frame);
   }
+#endif
 }
 
 }  // namespace content

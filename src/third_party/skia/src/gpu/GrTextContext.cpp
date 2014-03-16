@@ -31,8 +31,8 @@ void GrTextContext::flushGlyphs() {
 
     if (fCurrVertex > 0) {
         // setup our sampler state for our text texture/atlas
-        GrAssert(GrIsALIGN4(fCurrVertex));
-        GrAssert(fCurrTexture);
+        SkASSERT(GrIsALIGN4(fCurrVertex));
+        SkASSERT(fCurrTexture);
         GrTextureParams params(SkShader::kRepeat_TileMode, GrTextureParams::kNone_FilterMode);
 
         // This effect could be stored with one of the cache objects (atlas?)
@@ -67,7 +67,7 @@ void GrTextContext::flushGlyphs() {
         fVertices = NULL;
         fMaxVertices = 0;
         fCurrVertex = 0;
-        GrSafeSetNull(fCurrTexture);
+        SkSafeSetNull(fCurrTexture);
     }
 }
 
@@ -152,19 +152,20 @@ void GrTextContext::drawPackedGlyph(GrGlyph::PackedID packed,
         if (fStrike->getGlyphAtlas(glyph, scaler)) {
             goto HAS_ATLAS;
         }
-#if 0 // M30 specific revert of font cache improvement to fix https://code.google.com/p/chromium/issues/detail?id=303803
+
         // try to clear out an unused atlas before we flush
         fContext->getFontCache()->freeAtlasExceptFor(fStrike);
         if (fStrike->getGlyphAtlas(glyph, scaler)) {
             goto HAS_ATLAS;
         }
-#endif
+
         // before we purge the cache, we must flush any accumulated draws
         this->flushGlyphs();
         fContext->flush();
 
         // try to purge
         fContext->getFontCache()->purgeExceptFor(fStrike);
+        // need to use new flush count here
         if (fStrike->getGlyphAtlas(glyph, scaler)) {
             goto HAS_ATLAS;
         }
@@ -191,14 +192,16 @@ void GrTextContext::drawPackedGlyph(GrGlyph::PackedID packed,
     }
 
 HAS_ATLAS:
-    GrAssert(glyph->fAtlas);
+    SkASSERT(glyph->fAtlas);
+    GrDrawTarget::DrawToken drawToken = fDrawTarget->getCurrentDrawToken();
+    glyph->fAtlas->setDrawToken(drawToken);
 
     // now promote them to fixed (TODO: Rethink using fixed pt).
     width = SkIntToFixed(width);
     height = SkIntToFixed(height);
 
     GrTexture* texture = glyph->fAtlas->texture();
-    GrAssert(texture);
+    SkASSERT(texture);
 
     if (fCurrTexture != texture || fCurrVertex + 4 > fMaxVertices) {
         this->flushGlyphs();
@@ -235,7 +238,7 @@ HAS_ATLAS:
                                                                GrTCast<void**>(&fVertices),
                                                                NULL);
         GrAlwaysAssert(success);
-        GrAssert(2*sizeof(GrPoint) == fDrawTarget->getDrawState().getVertexSize());
+        SkASSERT(2*sizeof(GrPoint) == fDrawTarget->getDrawState().getVertexSize());
     }
 
     GrFixed tx = SkIntToFixed(glyph->fAtlasLocation.fX);

@@ -173,7 +173,6 @@
         'sandbox_windows_target': 1,
       },
       'dependencies': [
-        '../testing/gtest.gyp:gtest',
         '../base/base.gyp:base',
         '../base/base.gyp:base_static',
       ],
@@ -208,7 +207,6 @@
       'type': 'executable',
       'dependencies': [
         'sandbox',
-        '../testing/gtest.gyp:gtest',
       ],
       'sources': [
         'src/app_container_test.cc',
@@ -239,7 +237,6 @@
       'type': 'executable',
       'dependencies': [
         'sandbox',
-        '../testing/gtest.gyp:gtest',
       ],
       'sources': [
         'tests/common/controller.cc',
@@ -255,7 +252,6 @@
       'type': 'executable',
       'dependencies': [
         'sandbox',
-        '../testing/gtest.gyp:gtest',
       ],
       'sources': [
         'src/app_container_unittest.cc',
@@ -336,7 +332,6 @@
             'target_arch': 'x64',
           },
           'dependencies': [
-            '../testing/gtest.gyp:gtest',
             '../base/base.gyp:base_nacl_win64',
             '../base/base.gyp:base_static_win64',
           ],

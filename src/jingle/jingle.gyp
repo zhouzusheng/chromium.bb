@@ -181,7 +181,6 @@
             'notifier/listener/send_ping_task_unittest.cc',
             'notifier/listener/xml_element_util_unittest.cc',
             'notifier/listener/xmpp_push_client_unittest.cc',
-            'run_all_unittests.cc',
           ],
           'conditions': [
             ['OS=="android"', {
@@ -202,10 +201,8 @@
             'notifier',
             'notifier_test_util',
             '../base/base.gyp:base',
-            '../base/base.gyp:test_support_base',
+            '../base/base.gyp:run_all_unittests',
             '../net/net.gyp:net',
-            '../net/net.gyp:net_test_support',
-            '../testing/gtest.gyp:gtest',
             '../third_party/libjingle/libjingle.gyp:libjingle',
           ],
         },

@@ -22,7 +22,8 @@ namespace WebTestRunner {
 class WebTestProxyBase;
 }
 
-class MockWebClipboardImpl;
+// SHEZ: Remove test code.
+// class MockWebClipboardImpl;
 
 namespace content {
 
@@ -63,7 +64,8 @@ class ShellContentRendererClient : public ContentRendererClient {
                             WebTestRunner::WebTestProxyBase* proxy);
 
   scoped_ptr<ShellRenderProcessObserver> shell_observer_;
-  scoped_ptr<MockWebClipboardImpl> clipboard_;
+  // SHEZ: Remove test code.
+  // scoped_ptr<MockWebClipboardImpl> clipboard_;
   scoped_ptr<SpellCheck> spellcheck_;
 };
 

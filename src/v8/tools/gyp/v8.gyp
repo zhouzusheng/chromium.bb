@@ -55,8 +55,8 @@
             'v8_nosnapshot.<(v8_target_arch)',
           ],
         }],
-        ['component=="shared_library"', {
-          'type': '<(component)',
+        ['v8_as_shared_library==1', {
+          'type': 'shared_library',
           'sources': [
             '../../src/blpv8.rc',
             # Note: on non-Windows we still build this file so that gyp
@@ -124,7 +124,7 @@
           'toolsets': ['target'],
           'dependencies': ['mksnapshot.<(v8_target_arch)', 'js2c'],
         }],
-        ['component=="shared_library"', {
+        ['v8_as_shared_library==1', {
           'defines': [
             'V8_SHARED',
             'BUILDING_V8_SHARED',
@@ -198,7 +198,7 @@
           'toolsets': ['target'],
           'dependencies': ['js2c'],
         }],
-        ['component=="shared_library"', {
+        ['v8_as_shared_library==1', {
           'defines': [
             'BUILDING_V8_SHARED',
             'V8_SHARED',
@@ -817,7 +817,7 @@
             }],
           ],
         }],
-        ['component=="shared_library"', {
+        ['v8_as_shared_library', {
           'defines': [
             'BUILDING_V8_SHARED',
             'V8_SHARED',

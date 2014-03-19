@@ -471,12 +471,6 @@ void ParamTraits<SpellCheckConfig>::Write(Message* m, const param_type& p)
         m->WriteInt(str.length());
         m->WriteBytes(str.data(), str.length());
     }
-    m->WriteInt(p.numCustomWords());
-    for (size_t i = 0; i < p.numCustomWords(); ++i) {
-        StringRef str = p.customWordAt(i);
-        m->WriteInt(str.length());
-        m->WriteBytes(str.data(), str.length());
-    }
 }
 
 bool ParamTraits<SpellCheckConfig>::Read(const Message* m,
@@ -509,18 +503,6 @@ bool ParamTraits<SpellCheckConfig>::Read(const Message* m,
         strs[i].assign(bytes, length);
     }
     r->setLanguages(strs.data(), strs.size());
-
-    if (!m->ReadLength(iter, &length))
-        return false;
-    strs.resize(length);
-    for (size_t i = 0; i < strs.size(); ++i) {
-        if (!m->ReadLength(iter, &length))
-            return false;
-        if (!m->ReadBytes(iter, &bytes, length))
-            return false;
-        strs[i].assign(bytes, length);
-    }
-    r->setCustomWords(strs.data(), strs.size());
 
     return true;
 }

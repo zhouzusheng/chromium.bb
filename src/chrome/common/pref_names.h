@@ -555,7 +555,6 @@ extern const char kPluginMessageResponseTimeout[];
 extern const char kSpellCheckDictionary[];
 extern const char kSpellCheckConfirmDialogShown[];
 extern const char kSpellCheckUseSpellingService[];
-extern const char kSpellCheckCustomWords[];
 
 extern const char kExcludedSchemes[];
 

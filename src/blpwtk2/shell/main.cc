@@ -48,7 +48,6 @@ blpwtk2::Profile* g_profile = 0;
 bool g_spellCheckEnabled;
 bool g_autoCorrectEnabled;
 std::set<std::string> g_languages;
-std::set<std::string> g_customWords;
 std::string g_url;
 std::string g_dataDir;
 bool g_no_disk_cache = false;
@@ -837,10 +836,25 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
     g_spellCheckEnabled = true;
     g_autoCorrectEnabled = true;
     g_languages.insert(LANGUAGE_EN_US);
-    g_customWords.insert("foo");
-    g_customWords.insert("zzzx");
-    g_customWords.insert("Bloomberg");
     updateSpellCheckConfig(g_profile);
+
+    // Configure custom words.
+    std::vector<blpwtk2::StringRef> customWords;
+    customWords.push_back("foo");
+    customWords.push_back("zzzx");
+    customWords.push_back("Bloomberg");
+    g_profile->addCustomWords(customWords.data(), customWords.size());
+
+    // Configure autocorrect words.
+    std::vector<blpwtk2::StringRef> badWords, goodWords;
+    badWords.push_back("speling");           goodWords.push_back("spelling");
+    badWords.push_back("ambigous");          goodWords.push_back("ambiguous");
+    badWords.push_back("restraunt");         goodWords.push_back("restaurant");
+    badWords.push_back("comitee");           goodWords.push_back("committee");
+    badWords.push_back("misunderestimate");  goodWords.push_back("underestimate");
+    badWords.push_back("speeking");          goodWords.push_back("speaking");
+    assert(badWords.size() == goodWords.size());
+    g_profile->addAutocorrectWords(badWords.data(), goodWords.data(), badWords.size());
 
     Shell* firstShell = createShell(g_profile);
     firstShell->d_webView->loadUrl(g_url);
@@ -1010,8 +1024,10 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
             shell->d_inspectorShell->d_webView->focus();
             return 0;
         case IDM_ADD_TO_DICTIONARY:
-            g_customWords.insert(std::string(shell->d_misspelledWord.data(), shell->d_misspelledWord.length()));
-            updateSpellCheckConfig(shell->d_profile);
+            {
+                blpwtk2::StringRef word = shell->d_misspelledWord;
+                shell->d_profile->addCustomWords(&word, 1);
+            }
             return 0;
         case IDM_EXIT:
             std::vector<Shell*> shells(Shell::s_shells.begin(), Shell::s_shells.end());
@@ -1305,14 +1321,6 @@ void updateSpellCheckConfig(blpwtk2::Profile* profile)
         languages.push_back(it->c_str());
     }
     config.setLanguages(languages.data(), languages.size());
-
-    std::vector<blpwtk2::StringRef> customWords;
-    for (std::set<std::string>::const_iterator it = g_customWords.begin();
-                                               it != g_customWords.end();
-                                               ++it) {
-        customWords.push_back(it->c_str());
-    }
-    config.setCustomWords(customWords.data(), customWords.size());
 
     profile->setSpellCheckConfig(config);
 }

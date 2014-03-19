@@ -171,6 +171,8 @@
     'public/browser/speech_recognition_session_config.h',
     'public/browser/speech_recognition_session_context.cc',
     'public/browser/speech_recognition_session_context.h',
+    'public/browser/spellcheck_data.cc',
+    'public/browser/spellcheck_data.h',
     'public/browser/storage_partition.h',
     'public/browser/stream_handle.h',
     'public/browser/trace_controller.h',

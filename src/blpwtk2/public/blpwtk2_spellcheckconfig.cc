@@ -35,7 +35,6 @@ struct SpellCheckConfigImpl {
     bool d_isSpellCheckEnabled;
     bool d_isAutoCorrectEnabled;
     std::vector<std::string> d_languages;
-    std::vector<std::string> d_customWords;
 
     SpellCheckConfigImpl()
     : d_isSpellCheckEnabled(false)
@@ -86,14 +85,6 @@ void SpellCheckConfig::setLanguages(const StringRef *languages, size_t numLangua
     }
 }
 
-void SpellCheckConfig::setCustomWords(const StringRef *words, size_t numWords)
-{
-    d_impl->d_customWords.resize(numWords);
-    for (size_t i = 0; i < numWords; ++i) {
-        d_impl->d_customWords[i].assign(words[i].data(), words[i].length());
-    }
-}
-
 bool SpellCheckConfig::isSpellCheckEnabled() const
 {
     return d_impl->d_isSpellCheckEnabled;
@@ -113,17 +104,6 @@ StringRef SpellCheckConfig::languageAt(size_t index) const
 {
     DCHECK(index < d_impl->d_languages.size());
     return d_impl->d_languages[index];
-}
-
-size_t SpellCheckConfig::numCustomWords() const
-{
-    return d_impl->d_customWords.size();
-}
-
-StringRef SpellCheckConfig::customWordAt(size_t index) const
-{
-    DCHECK(index < d_impl->d_customWords.size());
-    return d_impl->d_customWords[index];
 }
 
 }  // close namespace blpwtk2

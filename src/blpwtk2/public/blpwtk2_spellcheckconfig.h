@@ -52,16 +52,10 @@ class BLPWTK2_EXPORT SpellCheckConfig {
     // blpwtk2::Toolkit.
     void setLanguages(const StringRef *languages, size_t numLanguages);
 
-    // Set the list of custom words that will be not be treated as spelling
-    // errors.
-    void setCustomWords(const StringRef *words, size_t numWords);
-
     bool isSpellCheckEnabled() const;
     bool isAutoCorrectEnabled() const;
     size_t numLanguages() const;
     StringRef languageAt(size_t index) const;
-    size_t numCustomWords() const;
-    StringRef customWordAt(size_t index) const;
 
   private:
     SpellCheckConfigImpl* d_impl;

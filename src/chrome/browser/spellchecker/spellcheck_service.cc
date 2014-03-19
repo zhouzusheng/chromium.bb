@@ -68,13 +68,13 @@ SpellcheckService::SpellcheckService(content::BrowserContext* context)
 
   OnSpellCheckDictionaryChanged();
 
-  if (prefs->FindPreference(prefs::kSpellCheckCustomWords)) {
-    // Don't use SpellcheckCustomDictionary to read & write a words list to disk,
-    // just allow apps to set kSpellCheckCustomWords.
-    pref_change_registrar_.Add(
-        prefs::kSpellCheckCustomWords,
-        base::Bind(&SpellcheckService::OnSpellCheckCustomWordsChanged,
-                   base::Unretained(this)));
+  content::SpellcheckData* spellcheckData =
+      content::SpellcheckData::FromContext(context);
+  if (spellcheckData) {
+    // If the browser-context has SpellcheckData, then we will use that instead
+    // of SpellcheckCustomDictionary, which reads & writes the words list to
+    // disk.
+    spellcheckData->AddObserver(this);
   }
   else {
     custom_dictionary_.reset(new SpellcheckCustomDictionary(context_->GetPath()));
@@ -201,23 +201,26 @@ void SpellcheckService::InitForRenderer(content::RenderProcessHost* process) {
     languages.push_back(FileLanguagePair(file, d->GetLanguage()));
   }
 
-  std::set<std::string> custom_words;
-  if (prefs->FindPreference(prefs::kSpellCheckCustomWords)) {
-    const base::ListValue *words = prefs->GetList(prefs::kSpellCheckCustomWords);
-    for (size_t wordIndex = 0; wordIndex < words->GetSize(); wordIndex++) {
-      std::string word;
-      words->GetString(wordIndex, &word);
-      custom_words.insert(word);
-    }
+  const std::set<std::string>* custom_words_ptr;
+  const std::map<std::string, std::string> empty_autocorrect_words;
+  const std::map<std::string, std::string>* autocorrect_words_ptr;
+
+  content::SpellcheckData* spellcheckData =
+      content::SpellcheckData::FromContext(context_);
+  if (spellcheckData) {
+    custom_words_ptr = &spellcheckData->custom_words();
+    autocorrect_words_ptr = &spellcheckData->autocorrect_words();
   }
   else {
     DCHECK(custom_dictionary_);
-    custom_words = custom_dictionary_->GetWords();
+    custom_words_ptr = &custom_dictionary_->GetWords();
+    autocorrect_words_ptr = &empty_autocorrect_words;
   }
 
   process->Send(new SpellCheckMsg_Init(
       languages,
-      custom_words,
+      *custom_words_ptr,
+      *autocorrect_words_ptr,
       prefs->GetBoolean(prefs::kEnableAutoSpellCorrect)));
   process->Send(new SpellCheckMsg_EnableSpellCheck(
       prefs->GetBoolean(prefs::kEnableContinuousSpellcheck)));
@@ -249,6 +252,55 @@ void SpellcheckService::Observe(int type,
   content::RenderProcessHost* process =
       content::Source<content::RenderProcessHost>(source).ptr();
   InitForRenderer(process);
+}
+
+// content::SpellcheckData::Observer implementation.
+void SpellcheckService::OnCustomWordsChanged(
+    const std::vector<base::StringPiece>& words_added,
+    const std::vector<base::StringPiece>& words_removed) {
+  std::vector<std::string> words_added_copy(words_added.size());
+  std::vector<std::string> words_removed_copy(words_removed.size());
+  for (size_t i = 0; i < words_added.size(); ++i) {
+    words_added[i].CopyToString(&words_added_copy[i]);
+  }
+  for (size_t i = 0; i < words_removed.size(); ++i) {
+    words_removed[i].CopyToString(&words_removed_copy[i]);
+  }
+  for (content::RenderProcessHost::iterator i(
+          content::RenderProcessHost::AllHostsIterator());
+       !i.IsAtEnd(); i.Advance()) {
+    content::RenderProcessHost* process = i.GetCurrentValue();
+    if (!process || context_ != process->GetBrowserContext())
+      continue;
+    process->Send(new SpellCheckMsg_CustomDictionaryChanged(
+        words_added_copy,
+        words_removed_copy));
+  }
+}
+
+void SpellcheckService::OnAutocorrectWordsChanged(
+    const std::map<base::StringPiece, base::StringPiece>& words_added,
+    const std::vector<base::StringPiece>& words_removed) {
+  typedef std::map<base::StringPiece,
+                   base::StringPiece>::const_iterator Iterator;
+  std::map<std::string, std::string> words_added_copy;
+  std::vector<std::string> words_removed_copy(words_removed.size());
+  for (Iterator it = words_added.begin(); it != words_added.end(); ++it) {
+    it->second.CopyToString(&words_added_copy[it->first.as_string()]);
+  }
+  for (size_t i = 0; i < words_removed.size(); ++i) {
+    words_removed[i].CopyToString(&words_removed_copy[i]);
+  }
+  for (content::RenderProcessHost::iterator i(
+          content::RenderProcessHost::AllHostsIterator());
+       !i.IsAtEnd(); i.Advance()) {
+    content::RenderProcessHost* process = i.GetCurrentValue();
+    if (!process || context_ != process->GetBrowserContext())
+      continue;
+    process->Send(new SpellCheckMsg_AutocorrectWordsChanged(
+        words_added_copy,
+        words_removed_copy));
+  }
 }
 
 void SpellcheckService::OnCustomDictionaryLoaded() {
@@ -348,27 +400,4 @@ void SpellcheckService::OnUseSpellingServiceChanged() {
       prefs::kSpellCheckUseSpellingService);
   if (metrics_)
     metrics_->RecordSpellingServiceStats(enabled);
-}
-
-void SpellcheckService::OnSpellCheckCustomWordsChanged() {
-  PrefService* prefs = user_prefs::UserPrefs::Get(context_);
-  DCHECK(prefs);
-
-  const base::ListValue *words = prefs->GetList(prefs::kSpellCheckCustomWords);
-  std::set<std::string> to_add;
-
-  for (size_t wordIndex = 0; wordIndex < words->GetSize(); wordIndex++) {
-    std::string word;
-    words->GetString(wordIndex, &word);
-    to_add.insert(word);
-  }
-
-  for (content::RenderProcessHost::iterator i(
-          content::RenderProcessHost::AllHostsIterator());
-       !i.IsAtEnd(); i.Advance()) {
-    content::RenderProcessHost* process = i.GetCurrentValue();
-    if (!process || context_ != process->GetBrowserContext())
-      continue;
-    process->Send(new SpellCheckMsg_ResetCustomDictionary(to_add));
-  }
 }

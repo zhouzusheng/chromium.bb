@@ -17,6 +17,7 @@
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/spellcheck_data.h"
 
 class PrefService;
 class SpellCheckHostMetrics;
@@ -35,6 +36,7 @@ class BrowserContext;
 // SpellcheckService maintains any per-profile information about spellcheck.
 class SpellcheckService : public BrowserContextKeyedService,
                           public content::NotificationObserver,
+                          public content::SpellcheckData::Observer,
                           public SpellcheckCustomDictionary::Observer,
                           public SpellcheckHunspellDictionary::Observer {
  public:
@@ -107,6 +109,14 @@ class SpellcheckService : public BrowserContextKeyedService,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  // content::SpellcheckData::Observer implementation.
+  virtual void OnCustomWordsChanged(
+      const std::vector<base::StringPiece>& words_added,
+      const std::vector<base::StringPiece>& words_removed) OVERRIDE;
+  virtual void OnAutocorrectWordsChanged(
+      const std::map<base::StringPiece, base::StringPiece>& words_added,
+      const std::vector<base::StringPiece>& words_removed) OVERRIDE;
+
   // SpellcheckCustomDictionary::Observer implementation.
   virtual void OnCustomDictionaryLoaded() OVERRIDE;
   virtual void OnCustomDictionaryChanged(
@@ -137,8 +147,6 @@ class SpellcheckService : public BrowserContextKeyedService,
   // Reacts to a change in user preference on which language should be used for
   // spellchecking.
   void OnSpellCheckDictionaryChanged();
-
-  void OnSpellCheckCustomWordsChanged();
 
   // Notification handler for changes to prefs::kSpellCheckUseSpellingService.
   void OnUseSpellingServiceChanged();

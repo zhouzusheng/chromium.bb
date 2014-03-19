@@ -5,6 +5,7 @@
 #ifndef CHROME_RENDERER_SPELLCHECKER_SPELLCHECK_H_
 #define CHROME_RENDERER_SPELLCHECKER_SPELLCHECK_H_
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -46,7 +47,8 @@ class SpellCheck : public content::RenderProcessObserver,
 
   // TODO: Try to move that all to SpellcheckLanguage.
   void Init(const std::vector<chrome::spellcheck_common::FileLanguagePair>& languages,
-            const std::set<std::string>& custom_words);
+            const std::set<std::string>& custom_words,
+            const std::map<std::string, std::string>& autocorrect_words);
 
   // If there is no dictionary file, then this requests one from the browser
   // and does not block. In this case it returns true.
@@ -120,11 +122,14 @@ class SpellCheck : public content::RenderProcessObserver,
   // Message handlers.
   void OnInit(const std::vector<chrome::spellcheck_common::FileLanguagePair>& languages,
               const std::set<std::string>& custom_words,
+              const std::map<std::string, std::string>& autocorrect_words,
               bool auto_spell_correct);
   void OnCustomDictionaryChanged(
       const std::vector<std::string>& words_added,
       const std::vector<std::string>& words_removed);
-  void OnCustomDictionaryReset(const std::set<std::string>& custom_words);
+  void OnAutocorrectWordsChanged(
+      const std::map<std::string, std::string>& words_added,
+      const std::vector<std::string>& words_removed);
   void OnEnableAutoSpellCorrect(bool enable);
   void OnEnableSpellCheck(bool enable);
   void OnRequestDocumentMarkers();
@@ -149,6 +154,9 @@ class SpellCheck : public content::RenderProcessObserver,
 
   // Custom dictionary spelling engine.
   CustomDictionaryEngine custom_dictionary_;
+
+  // Mapping of bad words to good words for autocorrect.
+  std::map<string16, string16> autocorrect_words_;
 
   // Remember state for auto spell correct.
   bool auto_spell_correct_turned_on_;

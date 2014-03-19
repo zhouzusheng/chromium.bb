@@ -29,6 +29,7 @@
 #include <ipc/ipc_listener.h>
 
 #include <string>
+#include <vector>
 
 namespace blpwtk2 {
 
@@ -61,6 +62,11 @@ class ProfileHost : public IPC::Listener {
     void onSetProxyConfig(const ProxyConfig& config);
     void onUseSystemProxyConfig();
     void onSetSpellCheckConfig(const SpellCheckConfig& config);
+    void onAddCustomWords(const std::vector<std::string>& words);
+    void onRemoveCustomWords(const std::vector<std::string>& words);
+    void onAddAutocorrectWords(const std::vector<std::string>& badWords,
+                               const std::vector<std::string>& goodWords);
+    void onRemoveAutocorrectWords(const std::vector<std::string>& badWords);
 
     BrowserContextImpl* d_browserContext;
     ProcessHost* d_processHost;

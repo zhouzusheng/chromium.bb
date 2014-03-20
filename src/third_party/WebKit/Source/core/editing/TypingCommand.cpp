@@ -301,6 +301,9 @@ void TypingCommand::markMisspellingsAfterTyping(ETypingCommand commandType)
 
     frame->editor()->spellChecker()->cancelCheck();
 
+    if (commandType != InsertText)
+        return;
+
     // Take a look at the selection that results after typing and determine whether we need to spellcheck.
     // Since the word containing the current selection is never marked, this does a check to
     // see if typing made a new word that is not in the current selection. Basically, you
@@ -323,9 +326,10 @@ void TypingCommand::typingAddedToOpenCommand(ETypingCommand commandTypeForAddedT
 
     updatePreservesTypingStyle(commandTypeForAddedTyping);
 
-    // The old spellchecking code requires that checking be done first, to prevent issues like that in 6864072, where <doesn't> is marked as misspelled.
-    markMisspellingsAfterTyping(commandTypeForAddedTyping);
     frame->editor()->appliedEditing(this);
+
+    // Do this after appliedEditing so that autocorrections can be undone.
+    markMisspellingsAfterTyping(commandTypeForAddedTyping);
 }
 
 void TypingCommand::insertText(const String &text, bool selectInsertedText)

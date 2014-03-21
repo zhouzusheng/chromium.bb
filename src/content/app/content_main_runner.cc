@@ -704,6 +704,9 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     RegisterContentSchemes(true);
 
     CHECK(icu_util::Initialize());
+#if !defined(COMPONENT_BUILD) && defined(USING_V8_SHARED)
+    CHECK(v8::V8::InitializeICU());
+#endif
 
     InitializeStatsTable(command_line);
 

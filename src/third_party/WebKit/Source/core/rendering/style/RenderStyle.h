@@ -1289,7 +1289,7 @@ public:
     void setWrapFlow(WrapFlow wrapFlow) { SET_VAR(rareNonInheritedData, m_wrapFlow, wrapFlow); }
     void setWrapThrough(WrapThrough wrapThrough) { SET_VAR(rareNonInheritedData, m_wrapThrough, wrapThrough); }
 
-    void setCaretColor(const StyleColor& c) { SET_VAR(rareInheritedData, caretColor, c); }
+    void setCaretColor(const Color& c) { SET_VAR(rareInheritedData, caretColor, c); }
 
     // Apple-specific property setters
     void setPointerEvents(EPointerEvents p) { inherited_flags._pointerEvents = p; }
@@ -1473,7 +1473,7 @@ public:
     static NinePieceImage initialNinePieceImage() { return NinePieceImage(); }
     static LengthSize initialBorderRadius() { return LengthSize(Length(0, Fixed), Length(0, Fixed)); }
     static ECaptionSide initialCaptionSide() { return CAPTOP; }
-    static StyleColor initialCaretColor() { return StyleColor(); }
+    static Color initialCaretColor() { return Color(); }
     static EClear initialClear() { return CNONE; }
     static ColumnAxis initialColumnAxis() { return AutoColumnAxis; }
     static ColumnProgression initialColumnProgression() { return NormalColumnProgression; }

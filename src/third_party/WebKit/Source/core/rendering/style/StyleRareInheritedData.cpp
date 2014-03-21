@@ -48,7 +48,7 @@ struct SameSizeAsStyleRareInheritedData : public RefCounted<SameSizeAsStyleRareI
 
     Color touchColors;
 
-    StyleColor caretColor;
+    Color caretColor;
 
     void* variableDataRefs[1];
 };

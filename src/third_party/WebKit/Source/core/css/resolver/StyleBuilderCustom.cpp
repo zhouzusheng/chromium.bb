@@ -1574,7 +1574,7 @@ void StyleBuilder::oldApplyProperty(CSSPropertyID id, StyleResolverState& state,
         if (!primitiveValue)
             break;
 
-        StyleColor col = state.document()->textLinkColors().colorFromPrimitiveValue(primitiveValue);
+        Color col = state.document().textLinkColors().colorFromPrimitiveValue(primitiveValue, state.style()->visitedDependentColor(CSSPropertyWebkitCaretColor));
         state.style()->setCaretColor(col);
         return;
     }

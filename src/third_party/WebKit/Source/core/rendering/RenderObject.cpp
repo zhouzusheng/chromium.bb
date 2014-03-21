@@ -1665,6 +1665,10 @@ Color RenderObject::selectionBackgroundColor() const
 {
     Color backgroundColor;
     if (isSelectable()) {
+        // anonymous blocks don't have pseudo styles
+        if (isAnonymous() && parent())
+            return parent()->selectionBackgroundColor();
+
         RefPtr<RenderStyle> pseudoStyle = getUncachedPseudoStyle(PseudoStyleRequest(SELECTION));
         if (pseudoStyle && resolveColor(pseudoStyle.get(), CSSPropertyBackgroundColor).isValid()) {
             backgroundColor = resolveColor(pseudoStyle.get(), CSSPropertyBackgroundColor).blendWithWhite();
@@ -1684,6 +1688,10 @@ Color RenderObject::selectionColor(int colorProperty) const
     // don't override the foreground color with the selection foreground color.
     if (!isSelectable() || (frame()->view()->paintBehavior() & PaintBehaviorSelectionOnly))
         return Color::transparent;
+
+    // anonymous blocks don't have pseudo styles
+    if (isAnonymous() && parent())
+        return parent()->selectionColor(colorProperty);
 
     Color color;
     if (RefPtr<RenderStyle> pseudoStyle = getUncachedPseudoStyle(PseudoStyleRequest(SELECTION))) {

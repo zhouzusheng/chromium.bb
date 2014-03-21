@@ -510,7 +510,8 @@ static bool executeInsertHTML(Frame& frame, Event*, EditorCommandSource, const S
 
 static bool executeInsertHTMLNested(Frame& frame, Event*, EditorCommandSource, const String& value)
 {
-    applyCommand(ReplaceSelectionCommand::create(*frame.document(), createFragmentFromMarkup(*frame.document(), value, ""), ReplaceSelectionCommand::InsertNested, EditActionUnspecified));
+    ASSERT(frame.document());
+    ReplaceSelectionCommand::create(*frame.document(), createFragmentFromMarkup(*frame.document(), value, ""), ReplaceSelectionCommand::InsertNested, EditActionUnspecified)->apply();
     return true;
 }
 

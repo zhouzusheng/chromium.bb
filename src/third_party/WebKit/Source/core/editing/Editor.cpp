@@ -54,6 +54,7 @@
 #include "core/editing/ReplaceSelectionCommand.h"
 #include "core/editing/SimplifyMarkupCommand.h"
 #include "core/editing/SpellChecker.h"
+#include "core/editing/SpellingCorrectionCommand.h"
 #include "core/editing/TextCheckingHelper.h"
 #include "core/editing/TextIterator.h"
 #include "core/editing/TypingCommand.h"
@@ -1389,7 +1390,7 @@ void Editor::markMisspellingsAfterTypingToWord(const VisiblePosition &wordStart,
 
     // Check spelling of one word
     RefPtr<Range> misspellingRange;
-    markMisspellings(VisibleSelection(startOfWord(wordStart, LeftWordIfOnBoundary), endOfWord(wordStart, RightWordIfOnBoundary)), misspellingRange);
+    markMisspellings(VisibleSelection(startOfWord(wordStart, RightWordIfOnBoundary), endOfWord(wordStart, RightWordIfOnBoundary)), misspellingRange);
 
     // Autocorrect the misspelled word.
     if (!misspellingRange)
@@ -1401,6 +1402,8 @@ void Editor::markMisspellingsAfterTypingToWord(const VisiblePosition &wordStart,
 
     // If autocorrected word is non empty, replace the misspelled word by this word.
     if (!autocorrectedString.isEmpty()) {
+        // Set the starting selection for the SpellingCorrectionCommand.  This will be the selected text
+        // when undo is performed.
         VisibleSelection newSelection(misspellingRange.get(), DOWNSTREAM);
         if (newSelection != frame()->selection()->selection()) {
             if (!frame()->selection()->shouldChangeSelection(newSelection))
@@ -1408,12 +1411,14 @@ void Editor::markMisspellingsAfterTypingToWord(const VisiblePosition &wordStart,
             frame()->selection()->setSelection(newSelection);
         }
 
-        if (!frame()->editor()->shouldInsertText(autocorrectedString, misspellingRange.get(), EditorInsertActionTyped))
-            return;
-        frame()->editor()->replaceSelectionWithText(autocorrectedString, false, false);
+        // Extend the selection to include the space that was typed.  This is so that the user
+        // can continue typing after undo then right-arrow.
+        frame()->selection()->modify(FrameSelection::AlterationExtend, DirectionForward, CharacterGranularity);
+
+        // Apply a SpellingCorrectionCommand, this will close typing and add itself to the undo stack.
+        SpellingCorrectionCommand::create(misspellingRange, autocorrectedString)->apply();
 
         // Reset the charet one character further.
-        frame()->selection()->moveTo(frame()->selection()->end());
         frame()->selection()->modify(FrameSelection::AlterationMove, DirectionForward, CharacterGranularity);
     }
 

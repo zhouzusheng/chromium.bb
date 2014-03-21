@@ -117,7 +117,8 @@ void ProfileProxy::setSpellCheckConfig(const SpellCheckConfig& config)
     DCHECK(Statics::isInApplicationMainThread());
 
     // Auto-correct cannot be enabled if spellcheck is disabled.
-    DCHECK(!config.isAutoCorrectEnabled() || config.isSpellCheckEnabled());
+    DCHECK(SpellCheckConfig::AUTOCORRECT_NONE == config.autocorrectBehavior()
+        || config.isSpellCheckEnabled());
 
     Send(new BlpProfileHostMsg_SetSpellCheckConfig(d_routingId, config));
 }

@@ -41,7 +41,7 @@ IPC_MESSAGE_CONTROL4(SpellCheckMsg_Init,
                      std::vector<chrome::spellcheck_common::FileLanguagePair> /* languages */,
                      std::set<std::string> /* custom_dict_words */,
                      AutocorrectWordMap /* autocorrect_words */,
-                     bool /* auto spell correct */)
+                     int /* auto spell correct behavior */)
 
 // Words have been added and removed in the custom dictionary; update the local
 // custom word list.
@@ -55,9 +55,9 @@ IPC_MESSAGE_CONTROL2(SpellCheckMsg_AutocorrectWordsChanged,
                      AutocorrectWordMap /* words_added */,
                      std::vector<std::string> /* words_removed */)
 
-// Toggle the auto spell correct functionality.
-IPC_MESSAGE_CONTROL1(SpellCheckMsg_EnableAutoSpellCorrect,
-                     bool /* enable */)
+// Set the auto spell correct behavior (see spellcheck_common for flag enum).
+IPC_MESSAGE_CONTROL1(SpellCheckMsg_SetAutoSpellCorrectBehavior,
+                     int /* flags */)
 
 // Request a list of all document markers in the renderer for spelling service
 // feedback.

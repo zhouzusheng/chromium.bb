@@ -123,14 +123,14 @@ class SpellCheck : public content::RenderProcessObserver,
   void OnInit(const std::vector<chrome::spellcheck_common::FileLanguagePair>& languages,
               const std::set<std::string>& custom_words,
               const std::map<std::string, std::string>& autocorrect_words,
-              bool auto_spell_correct);
+              int auto_spell_correct_behavior);
   void OnCustomDictionaryChanged(
       const std::vector<std::string>& words_added,
       const std::vector<std::string>& words_removed);
   void OnAutocorrectWordsChanged(
       const std::map<std::string, std::string>& words_added,
       const std::vector<std::string>& words_removed);
-  void OnEnableAutoSpellCorrect(bool enable);
+  void OnSetAutoSpellCorrectBehavior(int flags);
   void OnEnableSpellCheck(bool enable);
   void OnRequestDocumentMarkers();
 
@@ -158,8 +158,9 @@ class SpellCheck : public content::RenderProcessObserver,
   // Mapping of bad words to good words for autocorrect.
   std::map<string16, string16> autocorrect_words_;
 
-  // Remember state for auto spell correct.
-  bool auto_spell_correct_turned_on_;
+  // Flags for auto-spell-correct behavior.  See spellcheck_common for flags
+  // enum.
+  int auto_spell_correct_behavior_;
 
   // Remember state for spellchecking.
   bool spellcheck_enabled_;

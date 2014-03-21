@@ -464,7 +464,7 @@ void ParamTraits<SpellCheckConfig>::Write(Message* m, const param_type& p)
     // TODO: simpler.
 
     WriteParam(m, p.isSpellCheckEnabled());
-    WriteParam(m, p.isAutoCorrectEnabled());
+    WriteParam(m, p.autocorrectBehavior());
     m->WriteInt(p.numLanguages());
     for (size_t i = 0; i < p.numLanguages(); ++i) {
         StringRef str = p.languageAt(i);
@@ -481,6 +481,7 @@ bool ParamTraits<SpellCheckConfig>::Read(const Message* m,
     // TODO: simpler.
 
     bool boolValue;
+    int intValue;
     int length;
     const char* bytes;
     std::vector<StringRef> strs;
@@ -488,9 +489,9 @@ bool ParamTraits<SpellCheckConfig>::Read(const Message* m,
     if (!ReadParam(m, iter, &boolValue))
         return false;
     r->enableSpellCheck(boolValue);
-    if (!ReadParam(m, iter, &boolValue))
+    if (!ReadParam(m, iter, &intValue))
         return false;
-    r->enableAutoCorrect(boolValue);
+    r->setAutocorrectBehavior(intValue);
 
     if (!m->ReadLength(iter, &length))
         return false;

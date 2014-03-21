@@ -50,8 +50,8 @@ SpellcheckService::SpellcheckService(content::BrowserContext* context)
       &country_code);
 
   pref_change_registrar_.Add(
-      prefs::kEnableAutoSpellCorrect,
-      base::Bind(&SpellcheckService::OnEnableAutoSpellCorrectChanged,
+      prefs::kAutoSpellCorrectBehavior,
+      base::Bind(&SpellcheckService::OnAutoSpellCorrectBehaviorChanged,
                  base::Unretained(this)));
   pref_change_registrar_.Add(
       prefs::kSpellCheckDictionary,
@@ -221,7 +221,7 @@ void SpellcheckService::InitForRenderer(content::RenderProcessHost* process) {
       languages,
       *custom_words_ptr,
       *autocorrect_words_ptr,
-      prefs->GetBoolean(prefs::kEnableAutoSpellCorrect)));
+      prefs->GetInteger(prefs::kAutoSpellCorrectBehavior)));
   process->Send(new SpellCheckMsg_EnableSpellCheck(
       prefs->GetBoolean(prefs::kEnableContinuousSpellcheck)));
 }
@@ -355,14 +355,14 @@ void SpellcheckService::InitForAllRenderers() {
   }
 }
 
-void SpellcheckService::OnEnableAutoSpellCorrectChanged() {
-  bool enabled = pref_change_registrar_.prefs()->GetBoolean(
-      prefs::kEnableAutoSpellCorrect);
+void SpellcheckService::OnAutoSpellCorrectBehaviorChanged() {
+  int flags = pref_change_registrar_.prefs()->GetInteger(
+      prefs::kAutoSpellCorrectBehavior);
   for (content::RenderProcessHost::iterator i(
            content::RenderProcessHost::AllHostsIterator());
        !i.IsAtEnd(); i.Advance()) {
     content::RenderProcessHost* process = i.GetCurrentValue();
-    process->Send(new SpellCheckMsg_EnableAutoSpellCorrect(enabled));
+    process->Send(new SpellCheckMsg_SetAutoSpellCorrectBehavior(flags));
   }
 }
 

@@ -39,6 +39,7 @@
 #include <base/threading/thread_restrictions.h>
 #include <chrome/browser/spellchecker/spellcheck_factory.h>
 #include <chrome/common/pref_names.h>
+#include <chrome/common/spellcheck_common.h>
 #include <content/public/browser/browser_thread.h>
 #include <content/public/browser/render_process_host.h>
 #include <content/public/browser/spellcheck_data.h>
@@ -217,11 +218,20 @@ void BrowserContextImpl::setSpellCheckConfig(const SpellCheckConfig& config)
     DCHECK(!d_isDestroyed);
 
     // Auto-correct cannot be enabled if spellcheck is disabled.
-    DCHECK(!config.isAutoCorrectEnabled() || config.isSpellCheckEnabled());
+    DCHECK(SpellCheckConfig::AUTOCORRECT_NONE == config.autocorrectBehavior()
+        || config.isSpellCheckEnabled());
 
     PrefService* prefs = user_prefs::UserPrefs::Get(this);
 
     bool wasEnabled = prefs->GetBoolean(prefs::kEnableContinuousSpellcheck);
+
+    // Convert from blpwtk2::SpellCheckConfig::AutocorrectFlags to
+    // chrome::spellcheck_common::AutocorrectFlags.
+    int autocorrectBehavior = chrome::spellcheck_common::AUTOCORRECT_NONE;
+    if (config.autocorrectBehavior() & SpellCheckConfig::AUTOCORRECT_WORD_MAP)
+        autocorrectBehavior |= chrome::spellcheck_common::AUTOCORRECT_WORD_MAP;
+    if (config.autocorrectBehavior() & SpellCheckConfig::AUTOCORRECT_SWAP_ADJACENT_CHARS)
+        autocorrectBehavior |= chrome::spellcheck_common::AUTOCORRECT_SWAP_ADJACENT_CHARS;
 
     std::string languages;
     for (size_t i = 0; i < config.numLanguages(); ++i) {
@@ -233,8 +243,7 @@ void BrowserContextImpl::setSpellCheckConfig(const SpellCheckConfig& config)
     }
     prefs->SetBoolean(prefs::kEnableContinuousSpellcheck,
                       config.isSpellCheckEnabled());
-    prefs->SetBoolean(prefs::kEnableAutoSpellCorrect,
-                      config.isAutoCorrectEnabled());
+    prefs->SetInteger(prefs::kAutoSpellCorrectBehavior, autocorrectBehavior);
     prefs->SetString(prefs::kSpellCheckDictionary, languages);
 
     if (!wasEnabled && config.isSpellCheckEnabled()) {

@@ -32,6 +32,27 @@ struct SpellCheckConfigImpl;
 
 class BLPWTK2_EXPORT SpellCheckConfig {
   public:
+    // A set of flags to control autocorrect behavior.  These flags can be used
+    // when calling 'setAutocorrectBehavior'.
+    enum AutocorrectFlags {
+        // Use this without any other flags to disable autocorrect
+        // completely.
+        AUTOCORRECT_NONE = 0,
+
+        // Use this flag to enable the use the Profile's mapping of bad words
+        // to good words.  This mapping can be configured using the
+        // 'addAutocorrectWords' and 'removeAutocorrectWords' methods in the
+        // Profile interface.
+        AUTOCORRECT_WORD_MAP = 1 << 0,
+
+        // Use this flag to enable an internal autocorrect algorithm where
+        // adjacent characters in a misspelled word are swapped and the
+        // resulting word is checked for validity.  This algorithm is effective
+        // in handling the common case where users mistype a word by typing two
+        // characters in the wrong odrer.
+        AUTOCORRECT_SWAP_ADJACENT_CHARS = 1 << 1,
+    };
+
     SpellCheckConfig();
     SpellCheckConfig(const SpellCheckConfig& other);
     ~SpellCheckConfig();
@@ -41,9 +62,10 @@ class BLPWTK2_EXPORT SpellCheckConfig {
     // spellcheck config have no effect if spellchecking is not enabled.
     void enableSpellCheck(bool enabled);
 
-    // Enable or disable autocorrect.  Note that it is undefined behavior to
-    // enable autocorrect without having spellcheck also enabled.
-    void enableAutoCorrect(bool enabled);
+    // Set the autocorrect behavior (using the flags in the AutocorrectFlags
+    // enum).  Note that it is undefined behavior to enable one of the
+    // autocorrect flags without having spellcheck also enabled.
+    void setAutocorrectBehavior(int flags);
 
     // Set the list of languages to be used when spellchecking.  Note that
     // blpwtk2 does not automatically download dictionary files, so it is the
@@ -53,7 +75,7 @@ class BLPWTK2_EXPORT SpellCheckConfig {
     void setLanguages(const StringRef *languages, size_t numLanguages);
 
     bool isSpellCheckEnabled() const;
-    bool isAutoCorrectEnabled() const;
+    int autocorrectBehavior() const;
     size_t numLanguages() const;
     StringRef languageAt(size_t index) const;
 

@@ -121,7 +121,7 @@ class SpellCheck::SpellcheckRequest {
 // values.
 // TODO(groby): Simplify this.
 SpellCheck::SpellCheck()
-    : auto_spell_correct_turned_on_(false),
+    : auto_spell_correct_behavior_(chrome::spellcheck_common::AUTOCORRECT_NONE),
       spellcheck_enabled_(true) {
 }
 
@@ -136,8 +136,8 @@ bool SpellCheck::OnControlMessageReceived(const IPC::Message& message) {
                         OnCustomDictionaryChanged)
     IPC_MESSAGE_HANDLER(SpellCheckMsg_AutocorrectWordsChanged,
                         OnAutocorrectWordsChanged)
-    IPC_MESSAGE_HANDLER(SpellCheckMsg_EnableAutoSpellCorrect,
-                        OnEnableAutoSpellCorrect)
+    IPC_MESSAGE_HANDLER(SpellCheckMsg_SetAutoSpellCorrectBehavior,
+                        OnSetAutoSpellCorrectBehavior)
     IPC_MESSAGE_HANDLER(SpellCheckMsg_EnableSpellCheck, OnEnableSpellCheck)
     IPC_MESSAGE_HANDLER(SpellCheckMsg_RequestDocumentMarkers,
                         OnRequestDocumentMarkers)
@@ -150,9 +150,9 @@ bool SpellCheck::OnControlMessageReceived(const IPC::Message& message) {
 void SpellCheck::OnInit(const std::vector<FileLanguagePair>& languages,
                         const std::set<std::string>& custom_words,
                         const std::map<std::string, std::string>& autocorrect_words,
-                        bool auto_spell_correct) {
+                        int auto_spell_correct_behavior) {
   Init(languages, custom_words, autocorrect_words);
-  auto_spell_correct_turned_on_ = auto_spell_correct;
+  auto_spell_correct_behavior_ = auto_spell_correct_behavior;
 #if !defined(OS_MACOSX)
   PostDelayedSpellCheckTask(pending_request_param_.release());
 #endif
@@ -185,8 +185,8 @@ void SpellCheck::OnAutocorrectWordsChanged(
   }
 }
 
-void SpellCheck::OnEnableAutoSpellCorrect(bool enable) {
-  auto_spell_correct_turned_on_ = enable;
+void SpellCheck::OnSetAutoSpellCorrectBehavior(int flags) {
+  auto_spell_correct_behavior_ = flags;
 }
 
 void SpellCheck::OnEnableSpellCheck(bool enable) {
@@ -376,18 +376,17 @@ bool SpellCheck::SpellCheckParagraph(
 }
 
 string16 SpellCheck::GetAutoCorrectionWord(const string16& word, int tag) {
-  string16 autocorrect_word;
-  if (!auto_spell_correct_turned_on_)
-    return autocorrect_word;  // Return the empty string.
-
-  if (!autocorrect_words_.empty()) {
+  if (auto_spell_correct_behavior_ & chrome::spellcheck_common::AUTOCORRECT_WORD_MAP) {
     typedef std::map<string16, string16> WordMap;
     WordMap::const_iterator it = autocorrect_words_.find(word);
     if (it != autocorrect_words_.end()) {
       return it->second;  // Return the configured correction for 'word'.
     }
-    return autocorrect_word;  // Return the empty string.
   }
+
+  string16 autocorrect_word;
+  if (!(auto_spell_correct_behavior_ & chrome::spellcheck_common::AUTOCORRECT_SWAP_ADJACENT_CHARS))
+    return autocorrect_word;  // Return the empty string.
 
   int word_length = static_cast<int>(word.size());
   if (word_length < 2 ||

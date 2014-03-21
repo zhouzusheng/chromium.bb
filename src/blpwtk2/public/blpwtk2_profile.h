@@ -77,20 +77,13 @@ class Profile {
                                    size_t numWords) = 0;
 
     // Add the specified 'badWords' to the list of words that will be
-    // autocorrected to the corresponding word from 'goodWords'.  If the
-    // autocorrect mapping in this profile is empty, and autocorrect has been
-    // turned on, then autocorrection will be performed based on an internal
-    // algorithm of swapping adjacent characters until a valid word is found
-    // from the dictionary.
+    // autocorrected to the corresponding word from 'goodWords'.
     virtual void addAutocorrectWords(const StringRef* badWords,
                                      const StringRef* goodWords,
                                      size_t numWords) = 0;
 
     // Remove the specified 'badWords' from the list of words that will be
-    // autocorrected.  If the autocorrect mapping in this profile is empty, and
-    // autocorrect has been turned on, then autocorrection will be performed
-    // based on an internal algorithm of swapping adjacent characters until a
-    // valid word is found from the dictionary.
+    // autocorrected.
     virtual void removeAutocorrectWords(const StringRef* badWords,
                                         size_t numWords) = 0;
 

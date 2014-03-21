@@ -33,12 +33,12 @@ namespace blpwtk2 {
 
 struct SpellCheckConfigImpl {
     bool d_isSpellCheckEnabled;
-    bool d_isAutoCorrectEnabled;
+    int  d_autocorrectBehavior;
     std::vector<std::string> d_languages;
 
     SpellCheckConfigImpl()
     : d_isSpellCheckEnabled(false)
-    , d_isAutoCorrectEnabled(false)
+    , d_autocorrectBehavior(SpellCheckConfig::AUTOCORRECT_NONE)
     {
     }
 };
@@ -72,9 +72,13 @@ void SpellCheckConfig::enableSpellCheck(bool enable)
     d_impl->d_isSpellCheckEnabled = enable;
 }
 
-void SpellCheckConfig::enableAutoCorrect(bool enable)
+void SpellCheckConfig::setAutocorrectBehavior(int flags)
 {
-    d_impl->d_isAutoCorrectEnabled = enable;
+    const int ALL_FLAGS =
+        SpellCheckConfig::AUTOCORRECT_WORD_MAP |
+        SpellCheckConfig::AUTOCORRECT_SWAP_ADJACENT_CHARS;
+    DCHECK(flags == (flags & ALL_FLAGS));
+    d_impl->d_autocorrectBehavior = flags;
 }
 
 void SpellCheckConfig::setLanguages(const StringRef *languages, size_t numLanguages)
@@ -90,9 +94,9 @@ bool SpellCheckConfig::isSpellCheckEnabled() const
     return d_impl->d_isSpellCheckEnabled;
 }
 
-bool SpellCheckConfig::isAutoCorrectEnabled() const
+int SpellCheckConfig::autocorrectBehavior() const
 {
-    return d_impl->d_isAutoCorrectEnabled;
+    return d_impl->d_autocorrectBehavior;
 }
 
 size_t SpellCheckConfig::numLanguages() const

@@ -48,6 +48,8 @@ struct SameSizeAsStyleRareInheritedData : public RefCounted<SameSizeAsStyleRareI
 
     Color touchColors;
 
+    StyleColor caretColor;
+
     void* variableDataRefs[1];
 };
 
@@ -91,6 +93,7 @@ StyleRareInheritedData::StyleRareInheritedData()
     , m_lineGrid(RenderStyle::initialLineGrid())
     , m_tabSize(RenderStyle::initialTabSize())
     , tapHighlightColor(RenderStyle::initialTapHighlightColor())
+    , caretColor(RenderStyle::initialCaretColor())
 {
     m_variables.init();
 }
@@ -146,6 +149,7 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , m_lineGrid(o.m_lineGrid)
     , m_tabSize(o.m_tabSize)
     , tapHighlightColor(o.tapHighlightColor)
+    , caretColor(o.caretColor)
     , m_variables(o.m_variables)
 {
 }
@@ -213,6 +217,7 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
 #endif // CSS3_TEXT
         && m_rubyPosition == o.m_rubyPosition
         && m_lineSnap == o.m_lineSnap
+        && caretColor == o.caretColor
         && m_variables == o.m_variables
         && m_lineAlign == o.m_lineAlign
         && StyleImage::imagesEquivalent(listStyleImage.get(), o.listStyleImage.get());

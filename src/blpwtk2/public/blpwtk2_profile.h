@@ -29,6 +29,7 @@ namespace blpwtk2 {
 
 class ProxyConfig;
 class SpellCheckConfig;
+class StringRef;
 
 // A profile represents a collection of settings that are used to control how
 // WebViews operate.  In a browser, multiple profiles may exist simultaneously,
@@ -65,6 +66,26 @@ class Profile {
     // Set the spellcheck configuration for this profile.  This method may be
     // called even after WebViews have been created.
     virtual void setSpellCheckConfig(const SpellCheckConfig& config) = 0;
+
+    // Add the specified 'words' to the list of custom words used in this
+    // profile.
+    virtual void addCustomWords(const StringRef* words, size_t numWords) = 0;
+
+    // Remove the specified 'words' from the list of custom words used in this
+    // profile.
+    virtual void removeCustomWords(const StringRef* words,
+                                   size_t numWords) = 0;
+
+    // Add the specified 'badWords' to the list of words that will be
+    // autocorrected to the corresponding word from 'goodWords'.
+    virtual void addAutocorrectWords(const StringRef* badWords,
+                                     const StringRef* goodWords,
+                                     size_t numWords) = 0;
+
+    // Remove the specified 'badWords' from the list of words that will be
+    // autocorrected.
+    virtual void removeAutocorrectWords(const StringRef* badWords,
+                                        size_t numWords) = 0;
 
   protected:
     // Destroy this Profile object.  Note that clients of blpwtk2 should use

@@ -343,7 +343,7 @@ extern const char kEnableContinuousSpellcheck[];
 extern const char kSpeechRecognitionFilterProfanities[];
 extern const char kSpeechRecognitionTrayNotificationShownContexts[];
 extern const char kEnabledLabsExperiments[];
-extern const char kEnableAutoSpellCorrect[];
+extern const char kAutoSpellCorrectBehavior[];
 extern const char kSavingBrowserHistoryDisabled[];
 extern const char kAllowDeletingBrowserHistory[];
 extern const char kForceSafeSearch[];
@@ -555,7 +555,6 @@ extern const char kPluginMessageResponseTimeout[];
 extern const char kSpellCheckDictionary[];
 extern const char kSpellCheckConfirmDialogShown[];
 extern const char kSpellCheckUseSpellingService[];
-extern const char kSpellCheckCustomWords[];
 
 extern const char kExcludedSchemes[];
 

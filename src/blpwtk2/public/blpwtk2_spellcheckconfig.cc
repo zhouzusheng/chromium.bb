@@ -33,13 +33,12 @@ namespace blpwtk2 {
 
 struct SpellCheckConfigImpl {
     bool d_isSpellCheckEnabled;
-    bool d_isAutoCorrectEnabled;
+    int  d_autocorrectBehavior;
     std::vector<std::string> d_languages;
-    std::vector<std::string> d_customWords;
 
     SpellCheckConfigImpl()
     : d_isSpellCheckEnabled(false)
-    , d_isAutoCorrectEnabled(false)
+    , d_autocorrectBehavior(SpellCheckConfig::AUTOCORRECT_NONE)
     {
     }
 };
@@ -73,9 +72,13 @@ void SpellCheckConfig::enableSpellCheck(bool enable)
     d_impl->d_isSpellCheckEnabled = enable;
 }
 
-void SpellCheckConfig::enableAutoCorrect(bool enable)
+void SpellCheckConfig::setAutocorrectBehavior(int flags)
 {
-    d_impl->d_isAutoCorrectEnabled = enable;
+    const int ALL_FLAGS =
+        SpellCheckConfig::AUTOCORRECT_WORD_MAP |
+        SpellCheckConfig::AUTOCORRECT_SWAP_ADJACENT_CHARS;
+    DCHECK(flags == (flags & ALL_FLAGS));
+    d_impl->d_autocorrectBehavior = flags;
 }
 
 void SpellCheckConfig::setLanguages(const StringRef *languages, size_t numLanguages)
@@ -86,22 +89,14 @@ void SpellCheckConfig::setLanguages(const StringRef *languages, size_t numLangua
     }
 }
 
-void SpellCheckConfig::setCustomWords(const StringRef *words, size_t numWords)
-{
-    d_impl->d_customWords.resize(numWords);
-    for (size_t i = 0; i < numWords; ++i) {
-        d_impl->d_customWords[i].assign(words[i].data(), words[i].length());
-    }
-}
-
 bool SpellCheckConfig::isSpellCheckEnabled() const
 {
     return d_impl->d_isSpellCheckEnabled;
 }
 
-bool SpellCheckConfig::isAutoCorrectEnabled() const
+int SpellCheckConfig::autocorrectBehavior() const
 {
-    return d_impl->d_isAutoCorrectEnabled;
+    return d_impl->d_autocorrectBehavior;
 }
 
 size_t SpellCheckConfig::numLanguages() const
@@ -113,17 +108,6 @@ StringRef SpellCheckConfig::languageAt(size_t index) const
 {
     DCHECK(index < d_impl->d_languages.size());
     return d_impl->d_languages[index];
-}
-
-size_t SpellCheckConfig::numCustomWords() const
-{
-    return d_impl->d_customWords.size();
-}
-
-StringRef SpellCheckConfig::customWordAt(size_t index) const
-{
-    DCHECK(index < d_impl->d_customWords.size());
-    return d_impl->d_customWords[index];
 }
 
 }  // close namespace blpwtk2

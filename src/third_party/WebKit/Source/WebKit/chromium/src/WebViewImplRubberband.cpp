@@ -349,6 +349,8 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, W
         localContext.m_layoutTopLeft.moveBy(offset);
     }
 
+    bool isVisible = !renderer->style() || renderer->style()->visibility() == VISIBLE;
+
     if (renderer->isBox()) {
         WebCore::RenderBox* renderBox = toRenderBox(renderer);
 
@@ -360,7 +362,7 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, W
             localContext.m_layoutTopLeft.move(renderBox->frameRect().x(), renderBox->frameRect().y());
         }
 
-        if (renderer->isRenderIFrame()) {
+        if (renderer->isRenderIFrame() && isVisible) {
             RenderIFrame* renderIFrame = toRenderIFrame(renderer);
             if (renderIFrame->widget() && renderIFrame->widget()->isFrameView()) {
                 FrameView* frameView = static_cast<FrameView*>(renderIFrame->widget());
@@ -381,7 +383,7 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, W
             localContext.m_layerContext->m_colBlock = toRenderBlock(renderer);
         }
     }
-    else if (renderer->isText() && isTextRubberbandable(renderer)) {
+    else if (renderer->isText() && isVisible && isTextRubberbandable(renderer)) {
         WebCore::RenderText* renderText = toRenderText(renderer);
 
         WTF::String text(renderText->text());

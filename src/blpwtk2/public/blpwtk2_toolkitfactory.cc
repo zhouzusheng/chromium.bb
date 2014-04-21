@@ -95,6 +95,12 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
                                            params.hostChannel(),
                                            params.pluginDiscoveryDisabled());
 
+    for (size_t i = 0; i < params.numCommandLineSwitches(); ++i) {
+        StringRef switchRef = params.commandLineSwitchAt(i);
+        std::string switchString(switchRef.data(), switchRef.length());
+        toolkit->appendCommandLineSwitch(switchString.c_str());
+    }
+
     for (size_t i = 0; i < params.numRegisteredPlugins(); ++i) {
         StringRef pathRef = params.registeredPluginAt(i);
         std::string path(pathRef.data(), pathRef.length());

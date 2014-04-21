@@ -57,6 +57,13 @@ class ToolkitCreateParams {
     // behavior is undefined if 'count' is less than 1, or more than 99.
     BLPWTK2_EXPORT void setMaxSocketsPerProxy(int count);
 
+    // Add the specified 'switchString' to the list of command-line switches.
+    // A list of switches can be found at:
+    // http://peter.sh/experiments/chromium-command-line-switches/
+    // Note, however, that blpwtk2 is based on a different version of chromium,
+    // so it may not support *all* the switches mentioned on that page.
+    BLPWTK2_EXPORT void appendCommandLineSwitch(const StringRef& switchString);
+
     // Register a plugin at the specified 'pluginPath'.  The 'pluginPath'
     // should point to a DLL that exports the standard NPAPI entry points.
     BLPWTK2_EXPORT void registerPlugin(const StringRef& pluginPath);
@@ -106,6 +113,8 @@ class ToolkitCreateParams {
     PumpMode::Value pumpMode() const;
     bool isMaxSocketsPerProxySet() const;
     int maxSocketsPerProxy() const;
+    size_t numCommandLineSwitches() const;
+    StringRef commandLineSwitchAt(size_t index) const;
     size_t numRegisteredPlugins() const;
     StringRef registeredPluginAt(size_t index) const;
     bool pluginDiscoveryDisabled() const;

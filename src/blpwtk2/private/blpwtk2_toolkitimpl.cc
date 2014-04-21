@@ -364,6 +364,11 @@ void ToolkitImpl::setRendererUsesInProcessPlugins(int renderer)
     d_rendererInfoMap.setRendererUsesInProcessPlugins(renderer);
 }
 
+void ToolkitImpl::appendCommandLineSwitch(const char* switchString)
+{
+    d_mainDelegate.appendCommandLineSwitch(switchString);
+}
+
 void ToolkitImpl::registerPlugin(const char* pluginPath)
 {
     d_mainDelegate.registerPlugin(pluginPath);

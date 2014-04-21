@@ -103,6 +103,13 @@ void ContentMainDelegateImpl::setRendererInfoMap(
     d_rendererInfoMap = rendererInfoMap;
 }
 
+void ContentMainDelegateImpl::appendCommandLineSwitch(const char* switchString)
+{
+    if (0 == std::strncmp(switchString, "--", 2))
+        switchString += 2;
+    d_commandLineSwitches.push_back(switchString);
+}
+
 void ContentMainDelegateImpl::registerPlugin(const char* pluginPath)
 {
     base::FilePath path = base::FilePath::FromUTF8Unsafe(pluginPath);
@@ -121,6 +128,21 @@ void ContentMainDelegateImpl::addPluginsToPluginService()
 bool ContentMainDelegateImpl::BasicStartupComplete(int* exit_code)
 {
     CommandLine* commandLine = CommandLine::ForCurrentProcess();
+
+    // Add all the command-line switches provided by the application.
+    for (size_t i = 0; i < d_commandLineSwitches.size(); ++i) {
+        const std::string& switchString = d_commandLineSwitches[i];
+        size_t eqPos = switchString.find('=');
+        if (std::string::npos == eqPos) {
+            if (!commandLine->HasSwitch(switchString)) {
+                commandLine->AppendSwitch(switchString);
+            }
+        }
+        else {
+            commandLine->AppendSwitchASCII(switchString.substr(0, eqPos),
+                                           switchString.substr(eqPos+1));
+        }
+    }
 
     // point to our renderer
     if (!commandLine->HasSwitch(switches::kBrowserSubprocessPath)) {

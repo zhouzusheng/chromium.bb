@@ -37,6 +37,7 @@ struct ToolkitCreateParamsImpl {
     ThreadMode::Value d_threadMode;
     PumpMode::Value d_pumpMode;
     int d_maxSocketsPerProxy;
+    std::vector<std::string> d_commandLineSwitches;
     std::vector<std::string> d_plugins;
     bool d_pluginDiscoveryDisabled;
     std::vector<int> d_renderersUsingInProcessPlugins;
@@ -93,6 +94,13 @@ void ToolkitCreateParams::setMaxSocketsPerProxy(int count)
     DCHECK(1 <= count);
     DCHECK(99 >= count);
     d_impl->d_maxSocketsPerProxy = count;
+}
+
+void ToolkitCreateParams::appendCommandLineSwitch(const StringRef& switchString)
+{
+    d_impl->d_commandLineSwitches.push_back(std::string());
+    d_impl->d_commandLineSwitches.back().assign(switchString.data(),
+                                                switchString.length());
 }
 
 void ToolkitCreateParams::registerPlugin(const StringRef& pluginPath)
@@ -161,6 +169,17 @@ int ToolkitCreateParams::maxSocketsPerProxy() const
 {
     DCHECK(isMaxSocketsPerProxySet());
     return d_impl->d_maxSocketsPerProxy;
+}
+
+size_t ToolkitCreateParams::numCommandLineSwitches() const
+{
+    return d_impl->d_commandLineSwitches.size();
+}
+
+StringRef ToolkitCreateParams::commandLineSwitchAt(size_t index) const
+{
+    DCHECK(index < d_impl->d_commandLineSwitches.size());
+    return d_impl->d_commandLineSwitches[index];
 }
 
 size_t ToolkitCreateParams::numRegisteredPlugins() const

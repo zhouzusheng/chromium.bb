@@ -73,6 +73,7 @@ class ToolkitImpl : public Toolkit {
     void shutdownThreads();
 
     void setRendererUsesInProcessPlugins(int renderer);
+    void appendCommandLineSwitch(const char* switchString);
     void registerPlugin(const char* pluginPath);
 
     virtual Profile* createProfile(const ProfileCreateParams& params) OVERRIDE;

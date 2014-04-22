@@ -148,6 +148,11 @@ public:
     // tooltip. Otherwise, the default tooltip will be used.
     virtual void enableCustomTooltip(bool enabled) = 0;
 
+    // If set the 'true', rubberbanding will be enabled via Alt+Mousedrag.
+    // This allows users to draw a rectangle within this WebView to copy text
+    // to the clipboard.
+    virtual void enableAltDragRubberbanding(bool enabled) = 0;
+
     // Set zoom percent for the WebView. 100 is the "original size" or 100%,
     // 150 is 150% etc. up to default limits of 500% and 25% of original size,
     // respectively.

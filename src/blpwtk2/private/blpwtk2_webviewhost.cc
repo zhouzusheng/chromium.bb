@@ -116,6 +116,7 @@ bool WebViewHost::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_NCDragMoveAck, onNCDragMoveAck)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_NCDragEndAck, onNCDragEndAck)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_PerformContextMenuAction, onPerformCustomContextMenuAction)
+        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_EnableAltDragRubberbanding, onEnableAltDragRubberbanding)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_EnableCustomTooltip, onEnableCustomTooltip)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_SetZoomPercent, onSetZoomPercent)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Find, onFind)
@@ -288,6 +289,11 @@ void WebViewHost::onNCDragEndAck()
 void WebViewHost::onPerformCustomContextMenuAction(int actionId)
 {
     d_webView->performCustomContextMenuAction(actionId);
+}
+
+void WebViewHost::onEnableAltDragRubberbanding(bool enabled)
+{
+    d_webView->enableAltDragRubberbanding(enabled);
 }
 
 void WebViewHost::onEnableCustomTooltip(bool enabled)

@@ -96,6 +96,8 @@ IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_NCDragMoveAck,
 IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_NCDragEndAck)
 IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_PerformContextMenuAction,
                     int /* actionId */)
+IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_EnableAltDragRubberbanding,
+                    bool /* enabled */)
 IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_EnableCustomTooltip,
                     bool /* enabled */)
 IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_SetZoomPercent,

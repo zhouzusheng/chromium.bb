@@ -69,6 +69,7 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
 , d_takeFocusOnMouseDown(takeFocusOnMouseDown)
 , d_domPasteEnabled(domPasteEnabled)
 , d_javascriptCanAccessClipboard(javascriptCanAccessClipboard)
+, d_altDragRubberbandingEnabled(false)
 , d_customTooltipEnabled(false)
 , d_ncHitTestEnabled(false)
 , d_ncHitTestPendingAck(false)
@@ -109,6 +110,7 @@ WebViewImpl::WebViewImpl(content::WebContents* contents,
 , d_takeFocusOnMouseDown(takeFocusOnMouseDown)
 , d_domPasteEnabled(domPasteEnabled)
 , d_javascriptCanAccessClipboard(javascriptCanAccessClipboard)
+, d_altDragRubberbandingEnabled(false)
 , d_customTooltipEnabled(false)
 , d_ncHitTestEnabled(false)
 , d_ncHitTestPendingAck(false)
@@ -427,6 +429,19 @@ void WebViewImpl::performCustomContextMenuAction(int actionId)
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
     d_webContents->GetRenderViewHost()->ExecuteCustomContextMenuCommand(actionId, d_customContext);
+}
+
+void WebViewImpl::enableAltDragRubberbanding(bool enabled)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+    d_altDragRubberbandingEnabled = enabled;
+
+#ifdef BB_RENDER_VIEW_HOST_SUPPORTS_RUBBERBANDING
+    if (d_webContents->GetRenderViewHost()) {
+        d_webContents->GetRenderViewHost()->EnableAltDragRubberbanding(enabled);
+    }
+#endif
 }
 
 void WebViewImpl::enableCustomTooltip(bool enabled)
@@ -797,9 +812,14 @@ void WebViewImpl::RenderViewCreated(content::RenderViewHost* render_view_host)
 void WebViewImpl::AboutToNavigateRenderView(content::RenderViewHost* render_view_host)
 {
     DCHECK(Statics::isInBrowserMainThread());
-    if (d_wasDestroyed || !d_implClient) return;
-    int routingId = render_view_host->GetRoutingID();
-    d_implClient->aboutToNativateRenderView(routingId);
+    if (d_wasDestroyed) return;
+    if (d_implClient) {
+        int routingId = render_view_host->GetRoutingID();
+        d_implClient->aboutToNativateRenderView(routingId);
+    }
+#ifdef BB_RENDER_VIEW_HOST_SUPPORTS_RUBBERBANDING
+    render_view_host->EnableAltDragRubberbanding(d_altDragRubberbandingEnabled);
+#endif
 }
 
 void WebViewImpl::DidFinishLoad(int64 frame_id,

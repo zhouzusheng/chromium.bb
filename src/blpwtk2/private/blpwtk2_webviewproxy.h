@@ -108,6 +108,7 @@ class WebViewProxy : public WebView,
     virtual void enableNCHitTest(bool enabled) OVERRIDE;
     virtual void onNCHitTestResult(int x, int y, int result) OVERRIDE;
     virtual void performCustomContextMenuAction(int actionId) OVERRIDE;
+    virtual void enableAltDragRubberbanding(bool enabled) OVERRIDE;
     virtual void enableCustomTooltip(bool enabled) OVERRIDE;
     virtual void setZoomPercent(int value) OVERRIDE;
     virtual void find(const StringRef& text, bool matchCase, bool forward) OVERRIDE;

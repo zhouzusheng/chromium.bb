@@ -101,6 +101,7 @@ class WebViewHost : public IPC::Listener,
     void onNCDragMoveAck(const gfx::Point& movePoint);
     void onNCDragEndAck();
     void onPerformCustomContextMenuAction(int actionId);
+    void onEnableAltDragRubberbanding(bool enabled);
     void onEnableCustomTooltip(bool enabled);
     void onSetZoomPercent(int value);
     void onFind(const FindOnPageRequest& value);

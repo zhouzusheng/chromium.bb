@@ -60,7 +60,7 @@ class ContentClient : public content::ContentClient {
 // content::ContentMainRunner class).
 class ContentMainDelegateImpl : public content::ContentMainDelegate {
   public:
-    ContentMainDelegateImpl(bool isSubProcess, bool sandboxDisabled);
+    explicit ContentMainDelegateImpl(bool isSubProcess);
     virtual ~ContentMainDelegateImpl();
 
     void setRendererInfoMap(RendererInfoMap* rendererInfoMap);
@@ -87,7 +87,6 @@ class ContentMainDelegateImpl : public content::ContentMainDelegate {
     scoped_ptr<content::ContentRendererClient> d_contentRendererClient;
     RendererInfoMap* d_rendererInfoMap;
     bool d_isSubProcess;
-    bool d_sandboxDisabled;
 
     DISALLOW_COPY_AND_ASSIGN(ContentMainDelegateImpl);
 };

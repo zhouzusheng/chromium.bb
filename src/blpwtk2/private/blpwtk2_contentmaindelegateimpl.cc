@@ -81,11 +81,9 @@ base::StringPiece ContentClient::GetDataResource(
         resource_id, scale_factor);
 }
 
-ContentMainDelegateImpl::ContentMainDelegateImpl(bool isSubProcess,
-                                                 bool sandboxDisabled)
+ContentMainDelegateImpl::ContentMainDelegateImpl(bool isSubProcess)
 : d_rendererInfoMap(0)
 , d_isSubProcess(isSubProcess)
-, d_sandboxDisabled(sandboxDisabled)
 {
 }
 
@@ -150,11 +148,6 @@ bool ContentMainDelegateImpl::BasicStartupComplete(int* exit_code)
         subprocess = subprocess.AppendASCII(BLPWTK2_SUBPROCESS_EXE_NAME);
         commandLine->AppendSwitchNative(switches::kBrowserSubprocessPath,
                                         subprocess.value().c_str());
-    }
-
-    if (d_sandboxDisabled &&
-        !commandLine->HasSwitch(switches::kNoSandbox)) {
-        commandLine->AppendSwitch(switches::kNoSandbox);
     }
 
     InitLogging();

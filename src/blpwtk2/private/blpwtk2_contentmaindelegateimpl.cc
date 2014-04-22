@@ -82,10 +82,8 @@ base::StringPiece ContentClient::GetDataResource(
 }
 
 ContentMainDelegateImpl::ContentMainDelegateImpl(bool isSubProcess,
-                                                 bool pluginDiscoveryDisabled,
                                                  bool sandboxDisabled)
 : d_rendererInfoMap(0)
-, d_pluginDiscoveryDisabled(pluginDiscoveryDisabled)
 , d_isSubProcess(isSubProcess)
 , d_sandboxDisabled(sandboxDisabled)
 {
@@ -152,11 +150,6 @@ bool ContentMainDelegateImpl::BasicStartupComplete(int* exit_code)
         subprocess = subprocess.AppendASCII(BLPWTK2_SUBPROCESS_EXE_NAME);
         commandLine->AppendSwitchNative(switches::kBrowserSubprocessPath,
                                         subprocess.value().c_str());
-    }
-
-    if (d_pluginDiscoveryDisabled &&
-        !commandLine->HasSwitch(switches::kDisablePluginsDiscovery)) {
-        commandLine->AppendSwitch(switches::kDisablePluginsDiscovery);
     }
 
     if (d_sandboxDisabled &&

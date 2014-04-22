@@ -117,7 +117,6 @@ class ToolkitCreateParams {
     StringRef commandLineSwitchAt(size_t index) const;
     size_t numRegisteredPlugins() const;
     StringRef registeredPluginAt(size_t index) const;
-    bool pluginDiscoveryDisabled() const;
     size_t numRenderersUsingInProcessPlugins() const;
     int rendererUsingInProcessPluginsAt(size_t index) const;
     ResourceLoader* inProcessResourceLoader() const;

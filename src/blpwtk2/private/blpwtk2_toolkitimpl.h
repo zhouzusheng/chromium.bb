@@ -65,8 +65,7 @@ class ToolkitImpl : public Toolkit {
     static ToolkitImpl* instance();
 
     ToolkitImpl(const StringRef& dictionaryPath,
-                const StringRef& hostChannel,
-                bool pluginDiscoveryDisabled);
+                const StringRef& hostChannel);
     virtual ~ToolkitImpl();
 
     void startupThreads();

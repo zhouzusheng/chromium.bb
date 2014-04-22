@@ -27,6 +27,7 @@
 #include <blpwtk2_stringref.h>
 
 #include <base/logging.h>  // for DCHECK
+#include <content/public/common/content_switches.h>
 
 #include <string>
 #include <vector>
@@ -39,7 +40,6 @@ struct ToolkitCreateParamsImpl {
     int d_maxSocketsPerProxy;
     std::vector<std::string> d_commandLineSwitches;
     std::vector<std::string> d_plugins;
-    bool d_pluginDiscoveryDisabled;
     std::vector<int> d_renderersUsingInProcessPlugins;
     ResourceLoader* d_inProcessResourceLoader;
     std::string d_dictionaryPath;
@@ -49,7 +49,6 @@ struct ToolkitCreateParamsImpl {
     : d_threadMode(ThreadMode::ORIGINAL)
     , d_pumpMode(PumpMode::MANUAL)
     , d_maxSocketsPerProxy(-1)
-    , d_pluginDiscoveryDisabled(false)
     , d_inProcessResourceLoader(0)
     {
     }
@@ -111,7 +110,7 @@ void ToolkitCreateParams::registerPlugin(const StringRef& pluginPath)
 
 void ToolkitCreateParams::disablePluginDiscovery()
 {
-    d_impl->d_pluginDiscoveryDisabled = true;
+    appendCommandLineSwitch(switches::kDisablePluginsDiscovery);
 }
 
 void ToolkitCreateParams::setRendererUsesInProcessPlugins(int renderer)
@@ -191,11 +190,6 @@ StringRef ToolkitCreateParams::registeredPluginAt(size_t index) const
 {
     DCHECK(index < d_impl->d_plugins.size());
     return d_impl->d_plugins[index];
-}
-
-bool ToolkitCreateParams::pluginDiscoveryDisabled() const
-{
-    return d_impl->d_pluginDiscoveryDisabled;
 }
 
 size_t ToolkitCreateParams::numRenderersUsingInProcessPlugins() const

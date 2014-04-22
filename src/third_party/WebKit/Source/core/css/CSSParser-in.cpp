@@ -893,6 +893,10 @@ static inline bool isValidKeywordPropertyAndValue(CSSPropertyID propertyId, int 
         if (valueID == CSSValueAuto || valueID == CSSValueNone || valueID == CSSValueText || valueID == CSSValueAll)
             return true;
         break;
+    case CSSPropertyBbRubberbandable: // auto | none | text
+        if (valueID == CSSValueAuto || valueID == CSSValueNone || valueID == CSSValueText)
+            return true;
+        break;
     case CSSPropertyWebkitWrapFlow:
         if (!RuntimeEnabledFeatures::cssExclusionsEnabled())
             return false;
@@ -1019,6 +1023,7 @@ static inline bool isKeywordPropertyID(CSSPropertyID propertyId)
     case CSSPropertyWebkitUserDrag:
     case CSSPropertyWebkitUserModify:
     case CSSPropertyWebkitUserSelect:
+    case CSSPropertyBbRubberbandable:
     case CSSPropertyWebkitWrapFlow:
     case CSSPropertyWebkitWrapThrough:
     case CSSPropertyWebkitWritingMode:
@@ -2828,6 +2833,7 @@ bool CSSParser::parseValue(CSSPropertyID propId, bool important)
     case CSSPropertyWebkitUserDrag:
     case CSSPropertyWebkitUserModify:
     case CSSPropertyWebkitUserSelect:
+    case CSSPropertyBbRubberbandable:
     case CSSPropertyWebkitWrapFlow:
     case CSSPropertyWebkitWrapThrough:
     case CSSPropertyWebkitWritingMode:

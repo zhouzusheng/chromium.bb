@@ -257,6 +257,7 @@
       'WebUserMediaRequest.cpp',
       'WebViewBenchmarkSupportImpl.cpp',
       'WebViewBenchmarkSupportImpl.h',
+      'WebViewImplRubberband.cpp',
       'WebViewImpl.cpp',
       'WebViewImpl.h',
       'WebWorkerBase.cpp',

@@ -124,6 +124,21 @@ class WebTouchEvent;
 class WebViewBenchmarkSupport;
 class FullscreenController;
 
+class RubberbandContext;
+class RubberbandStateImpl;
+class RubberbandState {
+
+    // Not implemented.
+    RubberbandState(const RubberbandState&);
+    RubberbandState& operator=(const RubberbandState&);
+
+  public:
+    RubberbandState();
+    ~RubberbandState();
+
+    RubberbandStateImpl* m_impl;
+};
+
 class WebViewImpl : public WebView
     , public RefCounted<WebViewImpl>
     , public WebGestureCurveTarget
@@ -330,6 +345,23 @@ public:
     WebDevToolsAgentPrivate* devToolsAgentPrivate() { return m_devToolsAgent.get(); }
 
     WebCore::Color baseBackgroundColor() const { return m_baseBackgroundColor; }
+
+    // Rubberbanding
+    void rubberbandWalkFrame(const RubberbandContext&, WebCore::Frame*, const WebCore::LayoutPoint&);
+    void rubberbandWalkRenderObject(const RubberbandContext&, WebCore::RenderObject*);
+    WTF::String getTextInRubberbandImpl(const WebRect&);
+    bool handleAltDragRubberbandEvent(const WebInputEvent&);
+
+    virtual bool isAltDragRubberbandingEnabled() const OVERRIDE;
+    virtual void enableAltDragRubberbanding(bool) OVERRIDE;
+    virtual bool isRubberbanding() const OVERRIDE;
+    virtual bool preStartRubberbanding() OVERRIDE;
+    virtual void startRubberbanding() OVERRIDE;
+    virtual WebRect expandRubberbandRect(const WebRect&) OVERRIDE;
+    virtual WebString finishRubberbanding(const WebRect&) OVERRIDE;
+    virtual void abortRubberbanding() OVERRIDE;
+    virtual WebString getTextInRubberband(const WebRect&) OVERRIDE;
+
 
     PageOverlayList* pageOverlays() const { return m_pageOverlays.get(); }
 
@@ -765,6 +797,10 @@ private:
 
     OwnPtr<WebDevToolsAgentPrivate> m_devToolsAgent;
     OwnPtr<PageOverlayList> m_pageOverlays;
+    OwnPtr<RubberbandState> m_rubberbandState;
+
+    // Whether Alt+Mousedrag rubberbanding is enabled or not.
+    bool m_isAltDragRubberbandingEnabled;
 
     // Whether the webview is rendering transparently.
     bool m_isTransparent;

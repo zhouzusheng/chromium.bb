@@ -394,6 +394,7 @@ order
 -webkit-user-drag
 -webkit-user-modify
 -webkit-user-select
+-bb-rubberbandable
 -webkit-flow-into
 -webkit-flow-from
 -webkit-region-fragment

@@ -217,7 +217,7 @@ void InProcessResourceLoaderBridge::cancelLoad()
 
     d_waitingForCancelLoad = false;
     d_canceled = true;
-    Statics::inProcessResourceLoader->cancel(this, &d_userData);
+    Statics::inProcessResourceLoader->cancel(this, d_userData);
 }
 
 void InProcessResourceLoaderBridge::ensureResponseHeadersSent(

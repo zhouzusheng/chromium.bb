@@ -278,6 +278,7 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // Informs the renderer process of a change in timezone.
   virtual void NotifyTimezoneChange() = 0;
 
+#define BB_RENDER_VIEW_HOST_SUPPORTS_RUBBERBANDING
   // Enable alt-drag rubberbanding.
   virtual void EnableAltDragRubberbanding(bool enable) = 0;
 

@@ -226,6 +226,19 @@ static bool isTextRubberbandable(RenderObject* renderer)
     return !renderer->style() || RUBBERBANDABLE_TEXT == renderer->style()->rubberbandable();
 }
 
+template <typename CHAR_TYPE>
+static void appendWithoutNewlines(WTF::StringBuilder *builder, const CHAR_TYPE* chars, unsigned length)
+{
+    builder->reserveCapacity(length);
+    const CHAR_TYPE* end = chars + length;
+    while (chars != end) {
+        if ('\n' != *chars) {
+            builder->append(*chars);
+        }
+        ++chars;
+    }
+}
+
 static WebCore::IntRect getRubberbandRect(const WebCore::IntPoint& start, const WebCore::IntPoint& extent)
 {
     WebCore::IntRect rc;
@@ -577,10 +590,10 @@ WTF::String WebViewImpl::getTextInRubberbandImpl(const WebRect& rcOrig)
 
         if (hit.m_clipRect.x() == hit.m_absRect.x() && hit.m_clipRect.maxX() == hit.m_absRect.maxX()) {
             if (hit.m_text.is8Bit()) {
-                builder.append(hit.m_text.characters8() + hit.m_start, hit.m_len);
+                appendWithoutNewlines(&builder, hit.m_text.characters8() + hit.m_start, hit.m_len);
             }
             else {
-                builder.append(hit.m_text.characters16() + hit.m_start, hit.m_len);
+                appendWithoutNewlines(&builder, hit.m_text.characters16() + hit.m_start, hit.m_len);
             }
         }
         else {
@@ -619,12 +632,14 @@ WTF::String WebViewImpl::getTextInRubberbandImpl(const WebRect& rcOrig)
             ASSERT(endOffset <= hit.m_len);
 
             if (hit.m_text.is8Bit()) {
-                builder.append(hit.m_text.characters8() + hit.m_start + startOffset,
-                               endOffset - startOffset);
+                appendWithoutNewlines(&builder,
+                                      hit.m_text.characters8() + hit.m_start + startOffset,
+                                      endOffset - startOffset);
             }
             else {
-                builder.append(hit.m_text.characters16() + hit.m_start + startOffset,
-                               endOffset - startOffset);
+                appendWithoutNewlines(&builder,
+                                      hit.m_text.characters16() + hit.m_start + startOffset,
+                                      endOffset - startOffset);
             }
         }
 

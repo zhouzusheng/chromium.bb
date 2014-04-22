@@ -36,6 +36,7 @@
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderText.h"
+#include "wtf/text/StringBuilder.h"
 
 #include "WebViewClient.h"
 
@@ -57,11 +58,13 @@ class RubberbandCandidate {
 
     bool isAllWhitespaces() const
     {
-        int end = m_start + m_len;
-        const UChar* chars = m_text.characters();
-        for (int i = m_start; i < end; ++i) {
-            if (!isSpaceOrNewline(chars[i])) {
-                return false;
+        if (m_text.impl()) {
+            int end = m_start + m_len;
+            const StringImpl& impl = *m_text.impl();
+            for (int i = m_start; i < end; ++i) {
+                if (!isSpaceOrNewline(impl[i])) {
+                    return false;
+                }
             }
         }
         return true;
@@ -573,7 +576,12 @@ WTF::String WebViewImpl::getTextInRubberbandImpl(const WebRect& rcOrig)
         ASSERT(hit.m_clipRect.maxX() <= hit.m_absRect.maxX());
 
         if (hit.m_clipRect.x() == hit.m_absRect.x() && hit.m_clipRect.maxX() == hit.m_absRect.maxX()) {
-            builder.append(hit.m_text.characters() + hit.m_start, hit.m_len);
+            if (hit.m_text.is8Bit()) {
+                builder.append(hit.m_text.characters8() + hit.m_start, hit.m_len);
+            }
+            else {
+                builder.append(hit.m_text.characters16() + hit.m_start, hit.m_len);
+            }
         }
         else {
             int startOffset = 0, endOffset = hit.m_len;
@@ -610,8 +618,14 @@ WTF::String WebViewImpl::getTextInRubberbandImpl(const WebRect& rcOrig)
             ASSERT(0 <= endOffset);
             ASSERT(endOffset <= hit.m_len);
 
-            builder.append(hit.m_text.characters() + hit.m_start + startOffset,
-                           endOffset - startOffset);
+            if (hit.m_text.is8Bit()) {
+                builder.append(hit.m_text.characters8() + hit.m_start + startOffset,
+                               endOffset - startOffset);
+            }
+            else {
+                builder.append(hit.m_text.characters16() + hit.m_start + startOffset,
+                               endOffset - startOffset);
+            }
         }
 
         lastX = hit.m_clipRect.maxX();

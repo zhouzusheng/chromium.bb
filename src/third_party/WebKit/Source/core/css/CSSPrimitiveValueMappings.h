@@ -2724,20 +2724,21 @@ template<> inline CSSPrimitiveValue::operator EUserSelect() const
 template<> inline CSSPrimitiveValue::CSSPrimitiveValue(ERubberbandable e)
     : CSSValue(PrimitiveClass)
 {
-    m_primitiveUnitType = CSS_IDENT;
+    m_primitiveUnitType = CSS_VALUE_ID;
     switch (e) {
         case RUBBERBANDABLE_NONE:
-            m_value.ident = CSSValueNone;
+            m_value.valueID = CSSValueNone;
             break;
         case RUBBERBANDABLE_TEXT:
-            m_value.ident = CSSValueText;
+            m_value.valueID = CSSValueText;
             break;
     }
 }
 
 template<> inline CSSPrimitiveValue::operator ERubberbandable() const
 {
-    switch (m_value.ident) {
+    ASSERT(isValueID());
+    switch (m_value.valueID) {
         case CSSValueAuto:
             return RUBBERBANDABLE_TEXT;
         case CSSValueNone:

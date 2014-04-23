@@ -285,6 +285,7 @@ public:
         else
             d_webView->setParent(d_mainWnd);
 
+        d_webView->enableAltDragRubberbanding(true);
         d_webView->enableFocusBefore(true);
         d_webView->enableFocusAfter(true);
         d_webView->enableCustomTooltip(g_custom_tooltip);

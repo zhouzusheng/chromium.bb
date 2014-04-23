@@ -60,12 +60,11 @@ class ContentClient : public content::ContentClient {
 // content::ContentMainRunner class).
 class ContentMainDelegateImpl : public content::ContentMainDelegate {
   public:
-    ContentMainDelegateImpl(bool isSubProcess,
-                            bool pluginDiscoveryDisabled,
-                            bool sandboxDisabled);
+    explicit ContentMainDelegateImpl(bool isSubProcess);
     virtual ~ContentMainDelegateImpl();
 
     void setRendererInfoMap(RendererInfoMap* rendererInfoMap);
+    void appendCommandLineSwitch(const char* switchString);
     void registerPlugin(const char* pluginPath);
 
     // Must be called on the browser-main thread.
@@ -82,13 +81,12 @@ class ContentMainDelegateImpl : public content::ContentMainDelegate {
 
   private:
     std::vector<base::FilePath> d_pluginPaths;
+    std::vector<std::string> d_commandLineSwitches;
     ContentClient d_contentClient;
     scoped_ptr<content::ContentBrowserClient> d_contentBrowserClient;
     scoped_ptr<content::ContentRendererClient> d_contentRendererClient;
     RendererInfoMap* d_rendererInfoMap;
-    bool d_pluginDiscoveryDisabled;
     bool d_isSubProcess;
-    bool d_sandboxDisabled;
 
     DISALLOW_COPY_AND_ASSIGN(ContentMainDelegateImpl);
 };

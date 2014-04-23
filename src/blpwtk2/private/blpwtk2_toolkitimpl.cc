@@ -189,12 +189,11 @@ ToolkitImpl* ToolkitImpl::instance()
 }
 
 ToolkitImpl::ToolkitImpl(const StringRef& dictionaryPath,
-                         const StringRef& hostChannel,
-                         bool pluginDiscoveryDisabled)
+                         const StringRef& hostChannel)
 : d_threadsStarted(false)
 , d_threadsStopped(false)
 , d_defaultProfile(0)
-, d_mainDelegate(false, pluginDiscoveryDisabled, !hostChannel.isEmpty())
+, d_mainDelegate(false)
 , d_dictionaryPath(dictionaryPath.data(), dictionaryPath.length())
 , d_hostChannel(hostChannel.data(), hostChannel.length())
 {
@@ -207,6 +206,14 @@ ToolkitImpl::ToolkitImpl(const StringRef& dictionaryPath,
     if (d_hostChannel.empty()) {
         // Do this only if we are the host.
         deleteTemporaryScopedDirs();
+    }
+    else {
+        // If another process is our host, then explicitly disable sandbox
+        // in *this* process.
+        // Since both 'broker_services' and 'target_services' will be null in
+        // our SandboxInterfaceInfo, we don't want chromium to touch it.  This
+        // flag prevents chromium from trying to use these services.
+        d_mainDelegate.appendCommandLineSwitch(switches::kNoSandbox);
     }
 
     d_mainDelegate.setRendererInfoMap(&d_rendererInfoMap);
@@ -362,6 +369,11 @@ void ToolkitImpl::setRendererUsesInProcessPlugins(int renderer)
         return;
     }
     d_rendererInfoMap.setRendererUsesInProcessPlugins(renderer);
+}
+
+void ToolkitImpl::appendCommandLineSwitch(const char* switchString)
+{
+    d_mainDelegate.appendCommandLineSwitch(switchString);
 }
 
 void ToolkitImpl::registerPlugin(const char* pluginPath)

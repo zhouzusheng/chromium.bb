@@ -81,13 +81,9 @@ base::StringPiece ContentClient::GetDataResource(
         resource_id, scale_factor);
 }
 
-ContentMainDelegateImpl::ContentMainDelegateImpl(bool isSubProcess,
-                                                 bool pluginDiscoveryDisabled,
-                                                 bool sandboxDisabled)
+ContentMainDelegateImpl::ContentMainDelegateImpl(bool isSubProcess)
 : d_rendererInfoMap(0)
-, d_pluginDiscoveryDisabled(pluginDiscoveryDisabled)
 , d_isSubProcess(isSubProcess)
-, d_sandboxDisabled(sandboxDisabled)
 {
 }
 
@@ -101,6 +97,13 @@ void ContentMainDelegateImpl::setRendererInfoMap(
     DCHECK(!d_isSubProcess);
     DCHECK(rendererInfoMap);
     d_rendererInfoMap = rendererInfoMap;
+}
+
+void ContentMainDelegateImpl::appendCommandLineSwitch(const char* switchString)
+{
+    if (0 == std::strncmp(switchString, "--", 2))
+        switchString += 2;
+    d_commandLineSwitches.push_back(switchString);
 }
 
 void ContentMainDelegateImpl::registerPlugin(const char* pluginPath)
@@ -122,6 +125,21 @@ bool ContentMainDelegateImpl::BasicStartupComplete(int* exit_code)
 {
     CommandLine* commandLine = CommandLine::ForCurrentProcess();
 
+    // Add all the command-line switches provided by the application.
+    for (size_t i = 0; i < d_commandLineSwitches.size(); ++i) {
+        const std::string& switchString = d_commandLineSwitches[i];
+        size_t eqPos = switchString.find('=');
+        if (std::string::npos == eqPos) {
+            if (!commandLine->HasSwitch(switchString)) {
+                commandLine->AppendSwitch(switchString);
+            }
+        }
+        else {
+            commandLine->AppendSwitchASCII(switchString.substr(0, eqPos),
+                                           switchString.substr(eqPos+1));
+        }
+    }
+
     // point to our renderer
     if (!commandLine->HasSwitch(switches::kBrowserSubprocessPath)) {
         base::FilePath subprocess;
@@ -130,16 +148,6 @@ bool ContentMainDelegateImpl::BasicStartupComplete(int* exit_code)
         subprocess = subprocess.AppendASCII(BLPWTK2_SUBPROCESS_EXE_NAME);
         commandLine->AppendSwitchNative(switches::kBrowserSubprocessPath,
                                         subprocess.value().c_str());
-    }
-
-    if (d_pluginDiscoveryDisabled &&
-        !commandLine->HasSwitch(switches::kDisablePluginsDiscovery)) {
-        commandLine->AppendSwitch(switches::kDisablePluginsDiscovery);
-    }
-
-    if (d_sandboxDisabled &&
-        !commandLine->HasSwitch(switches::kNoSandbox)) {
-        commandLine->AppendSwitch(switches::kNoSandbox);
     }
 
     InitLogging();

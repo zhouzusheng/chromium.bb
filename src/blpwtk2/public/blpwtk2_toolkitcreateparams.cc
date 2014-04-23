@@ -27,6 +27,7 @@
 #include <blpwtk2_stringref.h>
 
 #include <base/logging.h>  // for DCHECK
+#include <content/public/common/content_switches.h>
 
 #include <string>
 #include <vector>
@@ -37,8 +38,8 @@ struct ToolkitCreateParamsImpl {
     ThreadMode::Value d_threadMode;
     PumpMode::Value d_pumpMode;
     int d_maxSocketsPerProxy;
+    std::vector<std::string> d_commandLineSwitches;
     std::vector<std::string> d_plugins;
-    bool d_pluginDiscoveryDisabled;
     std::vector<int> d_renderersUsingInProcessPlugins;
     ResourceLoader* d_inProcessResourceLoader;
     std::string d_dictionaryPath;
@@ -48,7 +49,6 @@ struct ToolkitCreateParamsImpl {
     : d_threadMode(ThreadMode::ORIGINAL)
     , d_pumpMode(PumpMode::MANUAL)
     , d_maxSocketsPerProxy(-1)
-    , d_pluginDiscoveryDisabled(false)
     , d_inProcessResourceLoader(0)
     {
     }
@@ -95,6 +95,13 @@ void ToolkitCreateParams::setMaxSocketsPerProxy(int count)
     d_impl->d_maxSocketsPerProxy = count;
 }
 
+void ToolkitCreateParams::appendCommandLineSwitch(const StringRef& switchString)
+{
+    d_impl->d_commandLineSwitches.push_back(std::string());
+    d_impl->d_commandLineSwitches.back().assign(switchString.data(),
+                                                switchString.length());
+}
+
 void ToolkitCreateParams::registerPlugin(const StringRef& pluginPath)
 {
     d_impl->d_plugins.push_back(std::string());
@@ -103,7 +110,7 @@ void ToolkitCreateParams::registerPlugin(const StringRef& pluginPath)
 
 void ToolkitCreateParams::disablePluginDiscovery()
 {
-    d_impl->d_pluginDiscoveryDisabled = true;
+    appendCommandLineSwitch(switches::kDisablePluginsDiscovery);
 }
 
 void ToolkitCreateParams::setRendererUsesInProcessPlugins(int renderer)
@@ -163,6 +170,17 @@ int ToolkitCreateParams::maxSocketsPerProxy() const
     return d_impl->d_maxSocketsPerProxy;
 }
 
+size_t ToolkitCreateParams::numCommandLineSwitches() const
+{
+    return d_impl->d_commandLineSwitches.size();
+}
+
+StringRef ToolkitCreateParams::commandLineSwitchAt(size_t index) const
+{
+    DCHECK(index < d_impl->d_commandLineSwitches.size());
+    return d_impl->d_commandLineSwitches[index];
+}
+
 size_t ToolkitCreateParams::numRegisteredPlugins() const
 {
     return d_impl->d_plugins.size();
@@ -172,11 +190,6 @@ StringRef ToolkitCreateParams::registeredPluginAt(size_t index) const
 {
     DCHECK(index < d_impl->d_plugins.size());
     return d_impl->d_plugins[index];
-}
-
-bool ToolkitCreateParams::pluginDiscoveryDisabled() const
-{
-    return d_impl->d_pluginDiscoveryDisabled;
 }
 
 size_t ToolkitCreateParams::numRenderersUsingInProcessPlugins() const

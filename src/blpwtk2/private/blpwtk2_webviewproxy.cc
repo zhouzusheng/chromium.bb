@@ -323,6 +323,12 @@ void WebViewProxy::performCustomContextMenuAction(int actionId)
                                                         actionId));
 }
 
+void WebViewProxy::enableAltDragRubberbanding(bool enabled)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    Send(new BlpWebViewHostMsg_EnableAltDragRubberbanding(d_routingId, enabled));
+}
+
 void WebViewProxy::enableCustomTooltip(bool enabled)
 {
     DCHECK(Statics::isInApplicationMainThread());

@@ -203,6 +203,10 @@ enum EUserSelect {
     SELECT_NONE, SELECT_TEXT, SELECT_ALL
 };
 
+enum ERubberbandable {
+    RUBBERBANDABLE_NONE, RUBBERBANDABLE_TEXT
+};
+
 // Word Break Values. Matches WinIE, rather than CSS3
 
 enum EWordBreak {

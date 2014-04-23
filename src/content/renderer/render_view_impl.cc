@@ -1448,6 +1448,7 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
                         OnReleaseDisambiguationPopupDIB)
     IPC_MESSAGE_HANDLER(ViewMsg_WindowSnapshotCompleted,
                         OnWindowSnapshotCompleted)
+    IPC_MESSAGE_HANDLER(ViewMsg_EnableAltDragRubberbanding, OnEnableAltDragRubberbanding)
 
     // Have the super handle all other messages.
     IPC_MESSAGE_UNHANDLED(handled = RenderWidget::OnMessageReceived(message))
@@ -2267,6 +2268,10 @@ void RenderViewImpl::OnWindowSnapshotCompleted(const int snapshot_id,
   pending_snapshots_.erase(it);
 }
 
+void RenderViewImpl::OnEnableAltDragRubberbanding(bool enable) {
+  webview()->enableAltDragRubberbanding(enable);
+}
+
 // WebKit::WebViewClient ------------------------------------------------------
 
 WebView* RenderViewImpl::createView(
@@ -2828,6 +2833,14 @@ void RenderViewImpl::didUpdateLayout() {
 
 void RenderViewImpl::navigateBackForwardSoon(int offset) {
   Send(new ViewHostMsg_GoToEntryAtOffset(routing_id_, offset));
+}
+
+void RenderViewImpl::setRubberbandRect(const WebRect& rect) {
+  Send(new ViewHostMsg_SetRubberbandRect(routing_id_, rect));
+}
+
+void RenderViewImpl::hideRubberbandRect() {
+  Send(new ViewHostMsg_HideRubberbandRect(routing_id_));
 }
 
 int RenderViewImpl::historyBackListCount() {

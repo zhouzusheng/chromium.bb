@@ -313,7 +313,7 @@ void TypingCommand::markMisspellingsAfterTyping(ETypingCommand commandType)
     if (previous.isNotNull()) {
         VisiblePosition p1 = startOfWord(previous, LeftWordIfOnBoundary);
         VisiblePosition p2 = startOfWord(start, LeftWordIfOnBoundary);
-        if (p1 != p2)
+        if (p1 != p2 && previous.characterAfter() != '\'' && 0 > comparePositions(p1.deepEquivalent(), p2.deepEquivalent()))
             frame->editor()->markMisspellingsAfterTypingToWord(p1, endingSelection());
     }
 }

@@ -385,6 +385,7 @@ bool WebViewProxy::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_FocusBefore, onFocusBefore)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_FocusAfter, onFocusAfter)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_Focused, onFocused)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_Blurred, onBlurred)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_ShowContextMenu, onShowContextMenu)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_HandleExternalProtocol, onHandleExternalProtocol)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_MoveView, onMoveView)
@@ -492,6 +493,12 @@ void WebViewProxy::onFocused()
 {
     if (d_delegate)
         d_delegate->focused(this);
+}
+
+void WebViewProxy::onBlurred()
+{
+    if (d_delegate)
+        d_delegate->blurred(this);
 }
 
 void WebViewProxy::onShowContextMenu(const ContextMenuParams& params)

@@ -104,6 +104,9 @@ class BLPWTK2_EXPORT WebViewDelegate {
     // Invoked when the WebView has gained focus.
     virtual void focused(WebView* source) {}
 
+    // Invoked when the WebView has lost focus.
+    virtual void blurred(WebView* source) {}
+
     // Invoked when the user wants a context menu, for example upon
     // right-clicking inside the WebView.  The specified 'params' contain
     // information about the operations that may be performed on the WebView

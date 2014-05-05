@@ -1505,7 +1505,7 @@ void RenderWidgetHostViewWin::OnKillFocus(HWND window) {
     return;
 
   render_widget_host_->SetActive(false);
-  render_widget_host_->Blur();
+  render_widget_host_->LostFocus();
 
   last_touch_location_ = gfx::Point(-1, -1);
 

@@ -454,6 +454,12 @@ void WebViewHost::focused(WebView* source)
     Send(new BlpWebViewMsg_Focused(d_routingId));
 }
 
+void WebViewHost::blurred(WebView* source)
+{
+    DCHECK(source == d_webView);
+    Send(new BlpWebViewMsg_Blurred(d_routingId));
+}
+
 void WebViewHost::showContextMenu(WebView* source,
                                   const ContextMenuParams& params)
 {

@@ -235,6 +235,9 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Notification that |contents| has gained focus.
   virtual void WebContentsFocused(WebContents* contents) {}
 
+  // Notification that |contents| has lost focus.
+  virtual void WebContentsBlurred(WebContents* contents) {}
+
   // Asks the delegate if the given tab can download.
   // Invoking the |callback| synchronously is OK.
   virtual void CanDownload(RenderViewHost* render_view_host,

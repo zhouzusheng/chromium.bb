@@ -466,6 +466,13 @@ public:
         OutputDebugStringA("DELEGATE: focused\n");
     }
 
+    // Notification that |source| has lost focus.
+    virtual void blurred(blpwtk2::WebView* source) OVERRIDE
+    {
+        assert(source == d_webView);
+        OutputDebugStringA("DELEGATE: blurred\n");
+    }
+
     virtual void showContextMenu(blpwtk2::WebView* source, const blpwtk2::ContextMenuParams& params) OVERRIDE
     {
         assert(source == d_webView);

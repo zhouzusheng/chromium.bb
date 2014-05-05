@@ -2133,7 +2133,9 @@ void Editor::spellCheckAfterBlur()
 void Editor::spellCheckOldSelection(const VisibleSelection& oldSelection, const VisibleSelection& newAdjacentWords, const VisibleSelection& newSelectedSentence)
 {
     VisiblePosition oldStart(oldSelection.visibleStart());
-    VisibleSelection oldAdjacentWords = VisibleSelection(startOfWord(oldStart, LeftWordIfOnBoundary), endOfWord(oldStart, RightWordIfOnBoundary));
+    VisiblePosition checkStartPos = startOfWord(oldStart, LeftWordIfOnBoundary);
+    VisiblePosition checkEndPos = endOfWord(checkStartPos, RightWordIfOnBoundary);
+    VisibleSelection oldAdjacentWords = VisibleSelection(checkStartPos, checkEndPos);
     if (oldAdjacentWords  != newAdjacentWords) {
         if (isContinuousSpellCheckingEnabled() && isGrammarCheckingEnabled()) {
             VisibleSelection selectedSentence = VisibleSelection(startOfSentence(oldStart), endOfSentence(oldStart));

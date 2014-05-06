@@ -116,9 +116,13 @@ def copyBin(destDir, version):
     'blpwtk2_devtools' + productAppend + '.pak',
     'content_shell.pak',
     'blpv8' + productAppend + '.dll.pdb',
+    'blpv8' + productAppend + '.map',
     'blpwtk2' + productAppend + '.dll.pdb',
+    'blpwtk2' + productAppend + '.map',
     'blpangle' + productAppend + '.dll.pdb',
+    'blpangle' + productAppend + '.map',
     'blpwtk2_subprocess' + productAppend + '.exe.pdb',
+    'blpwtk2_subprocess' + productAppend + '.map',
   ]
 
   configs = ['Debug', 'Release']
@@ -182,7 +186,7 @@ def addGenFiles():
 
 
 def main(args):
-  version = "bb4"   # SET BB VERSION NUMBER HERE
+  version = "bb5"   # SET BB VERSION NUMBER HERE
 
   outDir = None
   doClean = True
@@ -226,6 +230,7 @@ def main(args):
     bbutil.shellExec('git clean -fdx')
 
   applyVariableToEnvironment('GYP_DEFINES', 'component', 'static_library')
+  applyVariableToEnvironment('GYP_DEFINES', 'bb_generate_map_files', '1')
   applyVariableToEnvironment('GYP_DEFINES', 'bb_version', version)
   applyVariableToEnvironment('GYP_DEFINES', 'bb_ppapi_examples', '0')
   applyVariableToEnvironment('GYP_DEFINES', 'build_ffmpegsumo', '0')

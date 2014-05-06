@@ -559,6 +559,15 @@ void WebViewImpl::WebContentsFocused(content::WebContents* contents)
         d_delegate->focused(this);
 }
 
+void WebViewImpl::WebContentsBlurred(content::WebContents* contents)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(contents == d_webContents);
+    if (d_wasDestroyed) return;
+    if (d_delegate)
+        d_delegate->blurred(this);
+}
+
 void WebViewImpl::WebContentsCreated(content::WebContents* source_contents,
                                      int64 source_frame_id,
                                      const string16& frame_name,

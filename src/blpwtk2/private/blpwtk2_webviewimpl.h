@@ -146,6 +146,9 @@ class WebViewImpl : public WebView,
     // Notification that |contents| has gained focus.
     virtual void WebContentsFocused(content::WebContents* contents) OVERRIDE;
 
+    // Notification that |contents| has lost focus.
+    virtual void WebContentsBlurred(content::WebContents* contents) OVERRIDE;
+
     // Notifies the delegate about the creation of a new WebContents. This
     // typically happens when popups are created.
     virtual void WebContentsCreated(content::WebContents* source_contents,

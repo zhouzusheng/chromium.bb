@@ -141,6 +141,7 @@ class WebViewProxy : public WebView,
     void onFocusBefore();
     void onFocusAfter();
     void onFocused();
+    void onBlurred();
     void onShowContextMenu(const ContextMenuParams& params);
     void onHandleExternalProtocol(const std::string& url);
     void onMoveView(const gfx::Rect& rect);

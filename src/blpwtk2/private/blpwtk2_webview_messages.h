@@ -135,6 +135,7 @@ IPC_MESSAGE_ROUTED0(BlpWebViewMsg_DestroyView)
 IPC_MESSAGE_ROUTED0(BlpWebViewMsg_FocusBefore)
 IPC_MESSAGE_ROUTED0(BlpWebViewMsg_FocusAfter)
 IPC_MESSAGE_ROUTED0(BlpWebViewMsg_Focused)
+IPC_MESSAGE_ROUTED0(BlpWebViewMsg_Blurred)
 IPC_MESSAGE_ROUTED1(BlpWebViewMsg_ShowContextMenu,
                     blpwtk2::ContextMenuParams /* params */)
 IPC_MESSAGE_ROUTED1(BlpWebViewMsg_HandleExternalProtocol,

@@ -289,6 +289,11 @@ void WebContentsViewWin::GotFocus() {
     web_contents_->GetDelegate()->WebContentsFocused(web_contents_);
 }
 
+void WebContentsViewWin::LostFocus() {
+  if (web_contents_->GetDelegate())
+    web_contents_->GetDelegate()->WebContentsBlurred(web_contents_);
+}
+
 void WebContentsViewWin::TakeFocus(bool reverse) {
   if (web_contents_->GetDelegate() &&
       !web_contents_->GetDelegate()->TakeFocus(web_contents_, reverse) &&

@@ -223,6 +223,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // Called to notify the RenderWidget that its associated native window
   // got/lost focused.
   virtual void GotFocus();
+  virtual void LostFocus();
   virtual void LostCapture();
 
   // Called to notify the RenderWidget that it has lost the mouse lock.

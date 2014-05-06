@@ -617,6 +617,10 @@ void RenderWidgetHostImpl::GotFocus() {
   Focus();
 }
 
+void RenderWidgetHostImpl::LostFocus() {
+  Blur();
+}
+
 void RenderWidgetHostImpl::Focus() {
   Send(new InputMsg_SetFocus(routing_id_, true));
 }

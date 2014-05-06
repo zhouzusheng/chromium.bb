@@ -107,6 +107,7 @@ class CONTENT_EXPORT WebContentsViewWin
                              const DragEventSourceInfo& event_info) OVERRIDE;
   virtual void UpdateDragCursor(WebKit::WebDragOperation operation) OVERRIDE;
   virtual void GotFocus() OVERRIDE;
+  virtual void LostFocus() OVERRIDE;
   virtual void TakeFocus(bool reverse) OVERRIDE;
 
   WebContentsImpl* web_contents() const { return web_contents_; }

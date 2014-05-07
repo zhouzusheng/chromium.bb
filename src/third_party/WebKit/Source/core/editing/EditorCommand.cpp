@@ -493,7 +493,7 @@ static bool executeIndent(Frame& frame, Event*, EditorCommandSource, const Strin
 static bool executeIndentBlock(Frame& frame, Event*, EditorCommandSource, const String&)
 {
     ASSERT(frame.document());
-    IndentBlockCommand::create(frame->document())->apply();
+    IndentBlockCommand::create(*frame.document())->apply();
     return true;
 }
 
@@ -942,7 +942,7 @@ static bool executeOutdent(Frame& frame, Event*, EditorCommandSource, const Stri
 static bool executeOutdentBlock(Frame& frame, Event*, EditorCommandSource, const String&)
 {
     ASSERT(frame.document());
-    OutdentBlockCommand::create(frame->document())->apply();
+    OutdentBlockCommand::create(*frame.document())->apply();
     return true;
 }
 

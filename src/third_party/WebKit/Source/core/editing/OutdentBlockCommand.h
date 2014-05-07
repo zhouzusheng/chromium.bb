@@ -32,7 +32,7 @@ namespace WebCore {
 
 class OutdentBlockCommand : public BlockCommand {
 public:
-    static PassRefPtr<OutdentBlockCommand> create(Document* document)
+    static PassRefPtr<OutdentBlockCommand> create(Document& document)
     {
         return adoptRef(new OutdentBlockCommand(document));
     }
@@ -40,7 +40,7 @@ public:
     virtual bool preservesTypingStyle() const { return true; }
 
 private:
-    explicit OutdentBlockCommand(Document*);
+    explicit OutdentBlockCommand(Document&);
 
     virtual EditAction editingAction() const OVERRIDE { return EditActionOutdent; }
     PassRefPtr<Node> splitStart(Node* ancestor, PassRefPtr<Node> prpChild);

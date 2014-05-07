@@ -78,7 +78,7 @@ static bool hasVisibleChildren(Node* node)
     return false;
 }
 
-OutdentBlockCommand::OutdentBlockCommand(Document* document)
+OutdentBlockCommand::OutdentBlockCommand(Document& document)
     : BlockCommand(document)
 {
 }

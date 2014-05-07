@@ -41,7 +41,7 @@ static bool isTableCellOrRootEditable(const Node* node)
     return isTableCell(node) || (node && node->isRootEditableElement());
 }
 
-BlockCommand::BlockCommand(Document* document)
+BlockCommand::BlockCommand(Document& document)
     : CompositeEditCommand(document)
 {
 }

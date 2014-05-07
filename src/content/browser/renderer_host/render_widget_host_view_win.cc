@@ -67,6 +67,7 @@
 #include "ui/base/ui_base_switches.h"
 #include "ui/base/view_prop.h"
 #include "ui/base/win/mouse_wheel_util.h"
+#include "ui/base/win/rubberband_windows.h"
 #include "ui/base/win/touch_input.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
@@ -1434,6 +1435,20 @@ void RenderWidgetHostViewWin::OnNCPaint(HRGN update_region) {
 
 void RenderWidgetHostViewWin::SetClickthroughRegion(SkRegion* region) {
   transparent_region_.reset(region);
+}
+
+void RenderWidgetHostViewWin::SetRubberbandRect(const gfx::Rect& rect) {
+  if (!rubberband_outline_.get())
+    rubberband_outline_.reset(new ui::RubberbandOutline());
+
+  if (rubberband_outline_.get()) {
+    RECT wrect = rect.ToRECT();
+    rubberband_outline_->SetRect(m_hWnd, wrect);
+  }
+}
+
+void RenderWidgetHostViewWin::HideRubberbandRect() {
+  rubberband_outline_.reset();
 }
 
 LRESULT RenderWidgetHostViewWin::OnNCHitTest(const CPoint& point) {

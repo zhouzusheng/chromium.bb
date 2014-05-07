@@ -212,6 +212,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   virtual void UpdateWebkitPreferences(
       const WebPreferences& prefs) OVERRIDE;
   virtual void NotifyTimezoneChange() OVERRIDE;
+  virtual void EnableAltDragRubberbanding(bool enable) OVERRIDE;
 
 #if defined(OS_ANDROID)
   virtual void ActivateNearestFindResult(int request_id,

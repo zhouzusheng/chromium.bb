@@ -88,6 +88,7 @@ public:
     unsigned lineBreak : 3; // LineBreak
     unsigned resize : 2; // EResize
     unsigned userSelect : 2; // EUserSelect
+    unsigned rubberbandable : 1;  // ERubberbandable
     unsigned speak : 3; // ESpeak
     unsigned hyphens : 2; // Hyphens
     unsigned textEmphasisFill : 1; // TextEmphasisFill

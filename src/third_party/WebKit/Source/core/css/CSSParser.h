@@ -209,6 +209,7 @@ public:
 
     template<typename StringType>
     static bool fastParseColor(RGBA32&, const StringType&, bool strict);
+    static bool fastParseColorAtomicString(RGBA32&, const AtomicString&, bool strict);
 
     bool parseLineHeight(bool important);
     bool parseFontSize(bool important);

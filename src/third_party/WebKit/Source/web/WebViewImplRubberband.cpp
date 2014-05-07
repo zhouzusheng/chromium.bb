@@ -36,6 +36,7 @@
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderText.h"
+#include "core/rendering/RenderView.h"
 #include "wtf/text/StringBuilder.h"
 
 #include "WebViewClient.h"
@@ -386,7 +387,6 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, W
             RenderIFrame* renderIFrame = toRenderIFrame(renderer);
             if (renderIFrame->widget() && renderIFrame->widget()->isFrameView()) {
                 FrameView* frameView = static_cast<FrameView*>(renderIFrame->widget());
-                ASSERT(frameView->frame());
                 LayoutPoint topLeft;
                 if (!renderer->hasLayer()) {
                     topLeft.move((localContext.m_layoutTopLeft.x() + renderBox->frameRect().x()) * context.m_layerContext->m_scaleX,
@@ -394,7 +394,7 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, W
                 }
                 topLeft.move((renderBox->borderLeft() + renderBox->paddingLeft()) * localContext.m_layerContext->m_scaleX,
                              (renderBox->borderTop() + renderBox->paddingTop()) * localContext.m_layerContext->m_scaleY);
-                rubberbandWalkFrame(localContext, frameView->frame(), topLeft);
+                rubberbandWalkFrame(localContext, &frameView->frame(), topLeft);
             }
         }
 
@@ -730,7 +730,7 @@ bool WebViewImpl::preStartRubberbanding()
     if (!m_page || !m_page->mainFrame() || !m_page->mainFrame()->document())
         return false;
 
-    RefPtr<Event> event = Event::create("rubberbandstarting", false, true);
+    RefPtr<Event> event = Event::createCancelable("rubberbandstarting");
     if (!m_page->mainFrame()->document()->dispatchEvent(event))
         return false;
 
@@ -822,7 +822,7 @@ WebString WebViewImpl::finishRubberbanding(const WebRect& rc)
 
     m_rubberbandState.clear();
     if (m_page && m_page->mainFrame() && m_page->mainFrame()->document()) {
-        RefPtr<Event> event = Event::create("rubberbandfinished", false, false);
+        RefPtr<Event> event = Event::create("rubberbandfinished");
         m_page->mainFrame()->document()->dispatchEvent(event);
     }
 
@@ -836,7 +836,7 @@ void WebViewImpl::abortRubberbanding()
     m_rubberbandState.clear();
 
     if (m_page && m_page->mainFrame() && m_page->mainFrame()->document()) {
-        RefPtr<Event> event = Event::create("rubberbandaborted", false, false);
+        RefPtr<Event> event = Event::create("rubberbandaborted");
         m_page->mainFrame()->document()->dispatchEvent(event);
     }
 }

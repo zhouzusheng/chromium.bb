@@ -12,11 +12,11 @@
 
 #include "base/logging.h"
 #include "ui/base/ui_export.h"
-#include "ui/base/win/window_impl.h"
+#include "ui/gfx/win/window_impl.h"
 
 namespace ui {
 
-class RubberbandWindow : public ui::WindowImpl {
+class RubberbandWindow : public gfx::WindowImpl {
  public:
   RubberbandWindow();
   virtual ~RubberbandWindow();

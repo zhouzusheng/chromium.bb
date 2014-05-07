@@ -388,6 +388,17 @@ uint64_t toUInt64(v8::Handle<v8::Value> value, IntegerConversionConfiguration co
     return integer;
 }
 
+static bool s_nonWindowContextsAllowed = false;
+bool isNonWindowContextsAllowed()
+{
+    return s_nonWindowContextsAllowed;
+}
+
+void setNonWindowContextsAllowed(bool allowed)
+{
+    s_nonWindowContextsAllowed = allowed;
+}
+
 v8::Handle<v8::FunctionTemplate> createRawTemplate(v8::Isolate* isolate)
 {
     v8::HandleScope scope(isolate);
@@ -439,7 +450,9 @@ DOMWindow* toDOMWindow(v8::Handle<v8::Context> context)
     v8::Handle<v8::Object> window = global->FindInstanceInPrototypeChain(V8Window::GetTemplate(context->GetIsolate(), MainWorld));
     if (!window.IsEmpty())
         return V8Window::toNative(window);
+    if (isNonWindowContextsAllowed() && !DOMWrapperWorld::isolatedWorldsExist()) return 0;
     window = global->FindInstanceInPrototypeChain(V8Window::GetTemplate(context->GetIsolate(), IsolatedWorld));
+    if (isNonWindowContextsAllowed() && window.IsEmpty()) return 0;
     ASSERT(!window.IsEmpty());
     return V8Window::toNative(window);
 }
@@ -463,7 +476,9 @@ ScriptExecutionContext* toScriptExecutionContext(v8::Handle<v8::Context> context
 DOMWindow* activeDOMWindow()
 {
     v8::Handle<v8::Context> context = v8::Context::GetCalling();
-    if (context.IsEmpty()) {
+    if (context.IsEmpty() ||
+            (isNonWindowContextsAllowed() &&
+             !DOMWrapperWorld::contextHasCorrectPrototype(context))) {
         // Unfortunately, when processing script from a plug-in, we might not
         // have a calling context. In those cases, we fall back to the
         // entered context.
@@ -497,6 +512,7 @@ Document* currentDocument()
 Frame* toFrameIfNotDetached(v8::Handle<v8::Context> context)
 {
     DOMWindow* window = toDOMWindow(context);
+    if (isNonWindowContextsAllowed() && !window) return 0;
     if (window->isCurrentlyDisplayedInFrame())
         return window->frame();
     // We return 0 here because |context| is detached from the Frame. If we

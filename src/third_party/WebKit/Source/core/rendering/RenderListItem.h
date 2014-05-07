@@ -70,6 +70,8 @@ private:
 
     virtual bool supportsPartialLayout() const OVERRIDE { return false; }
 
+    virtual LayoutUnit additionalMarginStart() const OVERRIDE;
+
     void positionListMarker();
 
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);

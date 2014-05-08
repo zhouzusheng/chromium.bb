@@ -109,7 +109,7 @@ BrowserContextImpl::BrowserContextImpl(const std::string& dataDir,
     SpellcheckServiceFactory::GetInstance();  // This needs to be initialized before
                                               // calling CreateBrowserContextServices.
 
-    BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(this, false);
+    BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(this);
 }
 
 BrowserContextImpl::~BrowserContextImpl()

@@ -69,9 +69,9 @@ class WebNode {
     BLPWTK2_EXPORT WebNode nextSibling() const;
     BLPWTK2_EXPORT bool isTextNode() const;
     BLPWTK2_EXPORT bool isElementNode() const;
-    BLPWTK2_EXPORT bool insertBefore(const WebNode& newChild, const WebNode& refChild, bool shouldLazyAttach = false);
-    BLPWTK2_EXPORT bool replaceChild(const WebNode& newChild, const WebNode& oldChild, bool shouldLazyAttach = false);
-    BLPWTK2_EXPORT bool appendChild(const WebNode& child, bool shouldLazyAttach = false);
+    BLPWTK2_EXPORT bool insertBefore(const WebNode& newChild, const WebNode& refChild);
+    BLPWTK2_EXPORT bool replaceChild(const WebNode& newChild, const WebNode& oldChild);
+    BLPWTK2_EXPORT bool appendChild(const WebNode& child);
     BLPWTK2_EXPORT bool remove();
     BLPWTK2_EXPORT bool setTextContent(const StringRef&);
     BLPWTK2_EXPORT bool removeChild(const WebNode& oldChild);

@@ -34,18 +34,19 @@
 #include "bindings/v8/ExceptionState.h"
 #include "core/css/CSSStyleDeclaration.h"
 #include "core/dom/CustomElementCallbackDispatcher.h"
+#include "core/dom/DOMTokenList.h"
 #include "core/dom/Element.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/dom/NamedNodeMap.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Position.h"
 #include "core/dom/Range.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/Editor.h"
-#include "core/editing/SpellChecker.h"
+#include "core/editing/SpellCheckRequester.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/HTMLTextFormControlElement.h"
-#include "core/html/DOMTokenList.h"
 #include "core/page/Frame.h"
 #include "core/rendering/RenderBoxModelObject.h"
 #include "core/rendering/RenderObject.h"
@@ -235,19 +236,16 @@ void WebElement::requestSpellCheck()
 {
     Element* element = unwrap<Element>();
     if (!element ||
-        !element->document() ||
-        !element->document()->frame() ||
-        !element->document()->frame()->editor() ||
-        !element->document()->frame()->editor()->isContinuousSpellCheckingEnabled() ||
-        !element->document()->frame()->editor()->spellChecker()) {
+        !element->document().frame() ||
+        !element->document().frame()->editor().isContinuousSpellCheckingEnabled()) {
         return;
     }
 
-    SpellChecker* spellChecker = element->document()->frame()->editor()->spellChecker();
+    SpellCheckRequester& spellCheckRequester = element->document().frame()->editor().spellCheckRequester();
     Node* stayWithin = element;
     while (element) {
         if (element->isFrameOwnerElement()) {
-            Document* contentDocument = toFrameOwnerElement(element)->contentDocument();
+            Document* contentDocument = toHTMLFrameOwnerElement(element)->contentDocument();
             if (contentDocument && contentDocument->documentElement()) {
                 WebElement documentElement = contentDocument->documentElement();
                 documentElement.requestSpellCheck();
@@ -258,13 +256,13 @@ void WebElement::requestSpellCheck()
             HTMLElement* innerElement = toHTMLTextFormControlElement(element)->innerTextElement();
             if (innerElement && innerElement->rendererIsEditable()) {
                 RefPtr<Range> rangeToCheck = Range::create(innerElement->document(), firstPositionInNode(innerElement), lastPositionInNode(innerElement));
-                spellChecker->requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
+                spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
             }
             element = ElementTraversal::nextSkippingChildren(element, stayWithin);
         }
         else if (element->rendererIsEditable()) {
             RefPtr<Range> rangeToCheck = Range::create(element->document(), firstPositionInNode(element), lastPositionInNode(element));
-            spellChecker->requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
+            spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
             element = ElementTraversal::nextSkippingChildren(element, stayWithin);
         }
         else {

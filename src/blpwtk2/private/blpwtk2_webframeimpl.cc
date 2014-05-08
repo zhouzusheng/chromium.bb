@@ -44,5 +44,10 @@ v8::Local<v8::Context> WebFrameImpl::mainWorldScriptContext() const
     return d_impl->mainWorldScriptContext();
 }
 
+v8::Isolate* WebFrameImpl::scriptIsolate() const
+{
+    return d_impl->scriptIsolate();
+}
+
 }  // close namespace blpwtk2
 

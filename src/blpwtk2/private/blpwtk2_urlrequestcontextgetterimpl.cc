@@ -28,6 +28,7 @@
 #include <base/command_line.h>
 #include <base/logging.h>  // for DCHECK
 #include <base/strings/string_util.h>
+#include <base/threading/sequenced_worker_pool.h>
 #include <base/threading/worker_pool.h>
 #include <content/browser/net/sqlite_persistent_cookie_store.h>
 #include <content/public/browser/browser_thread.h>
@@ -277,7 +278,10 @@ void URLRequestContextGetterImpl::initialize()
     DCHECK(setProtocol);
     setProtocol = jobFactory->SetProtocolHandler(
         chrome::kFileScheme,
-        new net::FileProtocolHandler);
+        new net::FileProtocolHandler(
+            content::BrowserThread::GetBlockingPool()->
+                GetTaskRunnerWithShutdownBehavior(
+                    base::SequencedWorkerPool::SKIP_ON_SHUTDOWN)));
     DCHECK(setProtocol);
     d_storage->set_job_factory(jobFactory.release());
 }

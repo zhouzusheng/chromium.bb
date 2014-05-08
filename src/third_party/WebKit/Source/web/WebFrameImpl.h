@@ -128,6 +128,7 @@ public:
         int argc,
         v8::Handle<v8::Value> argv[]);
     virtual v8::Local<v8::Context> mainWorldScriptContext() const;
+    virtual v8::Isolate* scriptIsolate() const;
     virtual v8::Handle<v8::Value> createFileSystem(WebFileSystemType,
         const WebString& name,
         const WebString& path);

@@ -293,20 +293,6 @@ class RendererSandboxedProcessLauncherDelegate
 
 }  // namespace
 
-RendererMainThreadFactoryFunction g_renderer_main_thread_factory = NULL;
-
-void RenderProcessHost::RegisterRendererMainThreadFactory(
-    RendererMainThreadFactoryFunction create) {
-  g_renderer_main_thread_factory = create;
-}
-
-base::MessageLoop* g_in_process_thread;
-
-base::MessageLoop*
-    RenderProcessHostImpl::GetInProcessRendererThreadForTesting() {
-  return g_in_process_thread;
-}
-
 // Stores the maximum number of renderer processes the content module can
 // create.
 static size_t g_max_renderer_count_override = 0;

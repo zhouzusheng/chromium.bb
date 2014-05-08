@@ -251,9 +251,6 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // Returns the current max number of renderer processes used by the content
   // module.
   static size_t GetMaxRendererProcessCount();
-
-  static void RegisterRendererMainThreadFactory(
-      RendererMainThreadFactoryFunction create);
 };
 
 }  // namespace content.

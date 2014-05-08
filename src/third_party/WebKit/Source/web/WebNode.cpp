@@ -155,30 +155,24 @@ WebNodeList WebNode::childNodes()
     return WebNodeList(m_private->childNodes());
 }
 
-bool WebNode::insertBefore(const WebNode& newChild, const WebNode& refChild, bool shouldLazyAttach)
+bool WebNode::insertBefore(const WebNode& newChild, const WebNode& refChild)
 {
     TrackExceptionState es;
-    WebCore::AttachBehavior attachBehavior =
-        shouldLazyAttach ? WebCore::AttachLazily : WebCore::AttachNow;
-    m_private->insertBefore(newChild, refChild.m_private.get(), es, attachBehavior);
+    m_private->insertBefore(newChild, refChild.m_private.get(), es);
     return !es.hadException();
 }
 
-bool WebNode::replaceChild(const WebNode& newChild, const WebNode& oldChild, bool shouldLazyAttach)
+bool WebNode::replaceChild(const WebNode& newChild, const WebNode& oldChild)
 {
     TrackExceptionState es;
-    WebCore::AttachBehavior attachBehavior =
-        shouldLazyAttach ? WebCore::AttachLazily : WebCore::AttachNow;
-    m_private->replaceChild(newChild, oldChild.m_private.get(), es, attachBehavior);
+    m_private->replaceChild(newChild, oldChild.m_private.get(), es);
     return !es.hadException();
 }
 
-bool WebNode::appendChild(const WebNode& child, bool shouldLazyAttach)
+bool WebNode::appendChild(const WebNode& child)
 {
     TrackExceptionState es;
-    WebCore::AttachBehavior attachBehavior =
-        shouldLazyAttach ? WebCore::AttachLazily : WebCore::AttachNow;
-    m_private->appendChild(child, es, attachBehavior);
+    m_private->appendChild(child, es);
     return !es.hadException();
 }
 
@@ -320,7 +314,7 @@ WebElement WebNode::shadowHost() const
 
 v8::Handle<v8::Value> WebNode::toV8Handle() const
 {
-    v8::Handle<v8::Context> context = WebCore::ScriptController::mainWorldContext(m_private->document()->frame());
+    v8::Handle<v8::Context> context = WebCore::ScriptController::mainWorldContext(m_private->document().frame());
     v8::Handle<v8::Context>* v8ContextToOpen = 0;
     if (!v8::Context::InContext()) {
         // If there is no current context, toV8 will crash, so force

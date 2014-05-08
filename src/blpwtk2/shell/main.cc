@@ -169,7 +169,7 @@ void appendTable(blpwtk2::WebView* webView)
 void v8AppendElement(blpwtk2::WebView* webView)
 {
     blpwtk2::WebFrame* mainFrame = webView->mainFrame();
-    v8::HandleScope handleScope;
+    v8::HandleScope handleScope(mainFrame->scriptIsolate());
     v8::Local<v8::Context> context = mainFrame->mainWorldScriptContext();
     static const char SCRIPT[] =
         "var div = document.createElement('div');\n"
@@ -197,7 +197,7 @@ void testV8Conversions(blpwtk2::WebView* webView)
     blpwtk2::WebElement divElem = document.createElement("div");
     divElem.setTextContent("Element V8 Conversion failed.");
     document.body().appendChild(divElem);
-    v8::HandleScope handleScope;
+    v8::HandleScope handleScope(mainFrame->scriptIsolate());
     v8::Handle<v8::Value> v8Handle = divElem.toV8Handle();
     if (v8Handle->IsObject()) {
         v8::Local<v8::Object> obj = v8Handle->ToObject();

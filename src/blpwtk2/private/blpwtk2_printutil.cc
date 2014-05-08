@@ -203,8 +203,7 @@ void PrintUtil::PrintPage(WebKit::WebFrame* frame, WebKit::WebView* view)
     params.printerDPI = dpi;
 
     WebKit::WebNode node;
-    bool useBrowserOverlays;
-    int pageCount = frame->printBegin(params, node, &useBrowserOverlays);
+    int pageCount = frame->printBegin(params, node);
 
     // TODO: Use printDc to draw directly into?
     WebKit::WebCanvas *canvas = skia::CreateBitmapCanvas(w, h, true);

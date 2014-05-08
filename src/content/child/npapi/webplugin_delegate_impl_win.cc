@@ -872,7 +872,7 @@ ATOM WebPluginDelegateImpl::RegisterNativeWindowClass() {
   // dont implement WM_ERASEBKGND, which causes painting issues, when the
   // window where the media is rendered is moved around. DefWindowProc does
   // implement WM_ERASEBKGND correctly if we have a valid background brush.
-  wcex.hbrBackground  = reinterpret_cast<HBRUSH>(COLOR_WINDOW+1);
+  wcex.hbrBackground  = reinterpret_cast<HBRUSH>(::GetStockObject(BLACK_BRUSH));
   wcex.lpszMenuName   = 0;
   wcex.lpszClassName  = kNativeWindowClassName;
   wcex.hIconSm        = 0;

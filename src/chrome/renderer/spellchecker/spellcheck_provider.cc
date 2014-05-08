@@ -13,6 +13,8 @@
 #include "chrome/renderer/spellchecker/spellcheck.h"
 #include "content/public/renderer/render_view.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebTextCheckingCompletion.h"
 #include "third_party/WebKit/public/web/WebTextCheckingResult.h"
@@ -84,6 +86,12 @@ void SpellCheckProvider::RequestTextChecking(
       string16(text),
       markers));
 #endif  // !OS_MACOSX
+}
+
+void SpellCheckProvider::DidFinishLoad(WebKit::WebFrame* frame) {
+  if (spellcheck_->is_spellcheck_enabled()) {
+    frame->document().documentElement().requestSpellCheck();
+  }
 }
 
 bool SpellCheckProvider::OnMessageReceived(const IPC::Message& message) {
@@ -301,8 +309,21 @@ void SpellCheckProvider::EnableSpellcheck(bool enable) {
 
   WebFrame* frame = render_view()->GetWebView()->focusedFrame();
   frame->enableContinuousSpellChecking(enable);
-  if (!enable)
+  if (!enable) {
     frame->removeSpellingMarkers();
+  }
+  else {
+    frame->document().documentElement().requestSpellCheck();
+  }
+}
+
+void SpellCheckProvider::RequestSpellcheck() {
+  if (!render_view()->GetWebView())
+    return;
+
+  WebFrame* frame = render_view()->GetWebView()->focusedFrame();
+  DCHECK(frame->isContinuousSpellCheckingEnabled());
+  frame->document().documentElement().requestSpellCheck();
 }
 
 bool SpellCheckProvider::SatisfyRequestFromCache(

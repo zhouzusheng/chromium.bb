@@ -5,10 +5,10 @@
 // IPC messages for spellcheck.
 // Multiply-included message file, hence no include guard.
 
+#include "chrome/common/spellcheck_common.h"
 #include "chrome/common/spellcheck_marker.h"
 #include "chrome/common/spellcheck_result.h"
 #include "ipc/ipc_message_macros.h"
-#include "ipc/ipc_platform_file.h"
 
 
 #define IPC_MESSAGE_START SpellCheckMsgStart
@@ -36,11 +36,12 @@ IPC_MESSAGE_CONTROL1(SpellCheckMsg_EnableSpellCheck,
 // Passes some initialization params from the browser to the renderer's
 // spellchecker. This can be called directly after startup or in (async)
 // response to a RequestDictionary ViewHost message.
+typedef std::map<std::string, std::string> AutocorrectWordMap;
 IPC_MESSAGE_CONTROL4(SpellCheckMsg_Init,
-                     IPC::PlatformFileForTransit /* bdict_file */,
+                     std::vector<chrome::spellcheck_common::FileLanguagePair> /* languages */,
                      std::set<std::string> /* custom_dict_words */,
-                     std::string /* language */,
-                     bool /* auto spell correct */)
+                     AutocorrectWordMap /* autocorrect_words */,
+                     int /* auto spell correct behavior */)
 
 // Words have been added and removed in the custom dictionary; update the local
 // custom word list.
@@ -48,9 +49,15 @@ IPC_MESSAGE_CONTROL2(SpellCheckMsg_CustomDictionaryChanged,
                      std::vector<std::string> /* words_added */,
                      std::vector<std::string> /* words_removed */)
 
-// Toggle the auto spell correct functionality.
-IPC_MESSAGE_CONTROL1(SpellCheckMsg_EnableAutoSpellCorrect,
-                     bool /* enable */)
+// Words have been added and removed in the profile's autocorrect list; update
+// the local autocorrect word list.
+IPC_MESSAGE_CONTROL2(SpellCheckMsg_AutocorrectWordsChanged,
+                     AutocorrectWordMap /* words_added */,
+                     std::vector<std::string> /* words_removed */)
+
+// Set the auto spell correct behavior (see spellcheck_common for flag enum).
+IPC_MESSAGE_CONTROL1(SpellCheckMsg_SetAutoSpellCorrectBehavior,
+                     int /* flags */)
 
 // Request a list of all document markers in the renderer for spelling service
 // feedback.

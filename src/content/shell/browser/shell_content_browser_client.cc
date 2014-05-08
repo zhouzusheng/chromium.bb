@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
+#include "base/threading/thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
@@ -14,6 +15,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/renderer/render_thread.h"
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_browser_context.h"
 #include "content/shell/browser/shell_browser_main_parts.h"
@@ -47,6 +49,46 @@ namespace {
 
 ShellContentBrowserClient* g_browser_client;
 bool g_swap_processes_for_redirect = false;
+
+// This class creates the IO thread for the renderer when running in
+// single-process mode.  It's not used in multi-process mode.
+class RendererMainThread : public base::Thread {
+ public:
+  explicit RendererMainThread(const std::string& channel_id)
+      : Thread("Chrome_InProcRendererThread"),
+        channel_id_(channel_id) {
+  }
+
+  virtual ~RendererMainThread() {
+    Stop();
+  }
+
+ protected:
+  virtual void Init() OVERRIDE {
+    RenderThread::InitInProcessRenderer(channel_id_);
+  }
+
+  virtual void CleanUp() OVERRIDE {
+    RenderThread::CleanUpInProcessRenderer();
+
+    // It's a little lame to manually set this flag.  But the single process
+    // RendererThread will receive the WM_QUIT.  We don't need to assert on
+    // this thread, so just force the flag manually.
+    // If we want to avoid this, we could create the InProcRendererThread
+    // directly with _beginthreadex() rather than using the Thread class.
+    // We used to set this flag in the Init function above. However there
+    // other threads like WebThread which are created by this thread
+    // which resets this flag. Please see Thread::StartWithOptions. Setting
+    // this flag to true in Cleanup works around these problems.
+    SetThreadWasQuitProperly(true);
+  }
+
+ private:
+  std::string channel_id_;
+
+  DISALLOW_COPY_AND_ASSIGN(RendererMainThread);
+};
+RendererMainThread* g_in_process_renderer = 0;
 
 }  // namespace
 
@@ -165,6 +207,41 @@ void ShellContentBrowserClient::OverrideWebkitPrefs(
 #if 0
   WebKitTestController::Get()->OverrideWebkitPrefs(prefs);
 #endif
+}
+
+bool ShellContentBrowserClient::SupportsInProcessRenderer()
+{
+#if !defined(OS_IOS) && (!defined(GOOGLE_CHROME_BUILD) || defined(OS_ANDROID))
+  return CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess);
+#else
+  // Single-process is an unsupported and not fully tested mode, so don't
+  // enable it for official Chrome builds (except on Android).
+  return false;
+#endif
+}
+
+void ShellContentBrowserClient::StartInProcessRendererThread(
+    const std::string& channel_id) {
+  DCHECK(!g_in_process_renderer);
+  g_in_process_renderer = new RendererMainThread(channel_id);
+
+  base::Thread::Options options;
+#if defined(OS_WIN) && !defined(OS_MACOSX)
+  // In-process plugins require this to be a UI message loop.
+  options.message_loop_type = base::MessageLoop::TYPE_UI;
+#else
+  // We can't have multiple UI loops on Linux and Android, so we don't support
+  // in-process plugins.
+  options.message_loop_type = base::MessageLoop::TYPE_DEFAULT;
+#endif
+
+  g_in_process_renderer->StartWithOptions(options);
+}
+
+void ShellContentBrowserClient::StopInProcessRendererThread() {
+  DCHECK(g_in_process_renderer);
+  delete g_in_process_renderer;
+  g_in_process_renderer = 0;
 }
 
 void ShellContentBrowserClient::ResourceDispatcherHostCreated() {

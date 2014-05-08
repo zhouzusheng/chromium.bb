@@ -64,6 +64,7 @@ import os, sys, glob, shlex
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 chrome_src = os.path.abspath(os.path.join(script_dir, os.pardir))
+blpwtk2_dir = os.path.join(chrome_src, 'blpwtk2')
 
 sys.path.insert(0, os.path.join(chrome_src, 'tools', 'gyp', 'pylib'))
 import gyp

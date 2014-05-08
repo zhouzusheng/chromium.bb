@@ -424,10 +424,13 @@ __declspec(noinline) void MessageLoop::RunInternalInSEHFrame() {
 }
 #endif
 
-void MessageLoop::RunInternal() {
+void MessageLoop::PrepareRunInternal() {
   DCHECK_EQ(this, current());
-
   StartHistogrammer();
+}
+
+void MessageLoop::RunInternal() {
+  PrepareRunInternal();
 
 #if !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
     !defined(USE_GTK_MESSAGE_PUMP)

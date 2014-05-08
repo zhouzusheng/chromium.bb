@@ -559,7 +559,8 @@ void RenderWidgetHostViewWin::CreateBrowserAccessibilityManagerIfNeeded() {
 void RenderWidgetHostViewWin::MovePluginWindows(
     const gfx::Vector2d& scroll_offset,
     const std::vector<WebPluginGeometry>& plugin_window_moves) {
-  MovePluginWindowsHelper(m_hWnd, plugin_window_moves);
+  bool ipp = GetRenderWidgetHost()->GetProcess()->UsesInProcessPlugins();
+  MovePluginWindowsHelper(m_hWnd, plugin_window_moves, ipp);
 }
 
 static BOOL CALLBACK AddChildWindowToVector(HWND hwnd, LPARAM lparam) {
@@ -1258,6 +1259,8 @@ void RenderWidgetHostViewWin::OnDestroy() {
 
 void RenderWidgetHostViewWin::OnPaint(HDC unused_dc) {
   TRACE_EVENT0("browser", "RenderWidgetHostViewWin::OnPaint");
+  if (is_hidden_)
+    return;
 
   // Grab the region to paint before creation of paint_dc since it clears the
   // damage region.
@@ -1445,6 +1448,20 @@ LRESULT RenderWidgetHostViewWin::OnNCHitTest(const CPoint& point) {
     SetMsgHandled(TRUE);
     return HTTRANSPARENT;
   }
+  // Give the parent a chance to set non-client regions.  If the parent returns
+  // HTTRANSPARENT (the default behavior of WebContentsViewWin), then we will
+  // do the default here (i.e. not handle the message).  If the parent returns
+  // HTCLIENT, then we will assume it means our client because
+  // WebContentsViewWin doesn't have any client area, so again, do the default
+  // and not handle the message.  But if the parent returns anything else, that
+  // means the parent wants to handle NC events specially, so we will return
+  // HTTRANSPARENT to let the parent handle it.
+  LRESULT parentHitTest = SendMessage(GetParent(), WM_NCHITTEST, 0,
+                                      MAKELPARAM(point.x, point.y));
+  if (parentHitTest != HTTRANSPARENT && parentHitTest != HTCLIENT) {
+    SetMsgHandled(TRUE);
+    return HTTRANSPARENT;
+  }
   SetMsgHandled(FALSE);
   return 0;
 }
@@ -1457,6 +1474,12 @@ LRESULT RenderWidgetHostViewWin::OnEraseBkgnd(HDC dc) {
 LRESULT RenderWidgetHostViewWin::OnSetCursor(HWND window, UINT hittest_code,
                                              UINT mouse_message_id) {
   TRACE_EVENT0("browser", "RenderWidgetHostViewWin::OnSetCursor");
+  // Give the parent a chance to handle the cursor first.
+  if (SendMessage(GetParent(), WM_SETCURSOR, (WPARAM)window,
+                  MAKELPARAM(hittest_code, mouse_message_id)) != 0) {
+    TRACE_EVENT0("browser", "EarlyOut_SentToParent");
+    return 1;
+  }
   UpdateCursorIfOverSelf();
   return 0;
 }
@@ -1482,7 +1505,7 @@ void RenderWidgetHostViewWin::OnKillFocus(HWND window) {
     return;
 
   render_widget_host_->SetActive(false);
-  render_widget_host_->Blur();
+  render_widget_host_->LostFocus();
 
   last_touch_location_ = gfx::Point(-1, -1);
 
@@ -2942,7 +2965,10 @@ void RenderWidgetHostViewWin::ForwardMouseEventToRenderer(UINT message,
     // mouse is clicked. This happens after the mouse down event is sent to
     // the renderer because normally Windows does a WM_SETFOCUS after
     // WM_LBUTTONDOWN.
-    SetFocus();
+    if (render_widget_host_ &&
+        render_widget_host_->ShouldSetFocusOnMouseDown()) {
+      SetFocus();
+    }
   }
 }
 

@@ -864,3 +864,26 @@ std::wstring GetLogFileFullPath() {
 std::ostream& operator<<(std::ostream& out, const wchar_t* wstr) {
   return out << WideToUTF8(std::wstring(wstr));
 }
+
+static bool g_debugWithTimeEnabled = false;
+void EnableDebugWithTime(bool enabled)
+{
+    g_debugWithTimeEnabled = enabled;
+}
+
+void DebugWithTime(const char *format, ...)
+{
+    if (!g_debugWithTimeEnabled) return;
+
+    va_list arglist;
+    va_start(arglist, format);
+
+    static base::TimeTicks START_TIME = base::TimeTicks::Now();
+    int milliseconds = (base::TimeTicks::Now() - START_TIME).InMilliseconds();
+    int threadId = base::PlatformThread::CurrentId();
+
+    char buf[1024];
+    int timeLen = sprintf_s(buf, sizeof(buf), "DWT: %d - %d: ", threadId, milliseconds);
+    _vsprintf_s_l(buf+timeLen, sizeof(buf)-timeLen, format, NULL, arglist);
+    OutputDebugStringA(buf);
+}

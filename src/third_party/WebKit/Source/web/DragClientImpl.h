@@ -50,6 +50,7 @@ public:
     DragClientImpl(WebViewImpl* webView) : m_webView(webView) { }
 
     virtual WebCore::DragDestinationAction actionMaskForDrag(WebCore::DragData*);
+    virtual void willDrag();
     virtual void startDrag(
         WebCore::DragImage*,
         const WebCore::IntPoint& dragImageOrigin,

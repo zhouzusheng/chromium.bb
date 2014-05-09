@@ -39,6 +39,7 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/html/HTMLTextAreaElement.h"
+#include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
@@ -392,11 +393,11 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
     }
 
     if (e && e->hasTagName(htmlTag)) {
-        if (e->document()->frame() &&
-            e->document()->frame()->ownerElement() &&
-            e->document()->frame()->ownerElement()->renderer()) {
+        if (e->document().frame() &&
+            e->document().frame()->ownerElement() &&
+            e->document().frame()->ownerElement()->renderer()) {
             float ownerEffectiveZoom
-                = e->document()->frame()->ownerElement()->renderer()->style()->effectiveZoom();
+                = e->document().frame()->ownerElement()->renderer()->style()->effectiveZoom();
             float childZoom = style->zoom();
             style->setEffectiveZoom(ownerEffectiveZoom * childZoom);
         }

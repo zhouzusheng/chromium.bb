@@ -313,7 +313,7 @@ void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& 
                 TrackExceptionState es;
                 range->selectNode(this, es);
                 if (!es.hadException())
-                    document()->frame()->editor()->clearMisspellingsAndBadGrammar(VisibleSelection(range.get()));
+                    document().frame()->editor().clearMisspellingsAndBadGrammar(VisibleSelection(range.get()));
             }
         }
 

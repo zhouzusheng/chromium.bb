@@ -31,7 +31,6 @@
       ],
       'dependencies': [
         '../third_party/angle_dx11/src/build_angle.gyp:libEGL',
-        '../third_party/angle_dx11/src/build_angle.gyp:libGLESv2',
       ],
       'link_settings': {
         'libraries': [

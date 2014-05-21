@@ -498,6 +498,8 @@ RenderViewHost* InterstitialPageImpl::CreateRenderViewHost() {
   session_storage_namespace_ =
       new SessionStorageNamespaceImpl(dom_storage_context);
 
+  // TODO: should this interstitial page support process affinity?
+
   RenderViewHostImpl* render_view_host =
       new RenderViewHostImpl(site_instance.get(),
                              this,

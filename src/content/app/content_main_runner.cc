@@ -309,8 +309,8 @@ class ContentClientInitializer {
         content_client->plugin_ = &g_empty_content_plugin_client.Get();
       // Single process not supported in split dll mode.
     } else if (process_type == switches::kRendererProcess ||
-               CommandLine::ForCurrentProcess()->HasSwitch(
-                   switches::kSingleProcess)) {
+               (content_client->browser_ &&
+                   content_client->browser_->SupportsInProcessRenderer())) {
       if (delegate)
         content_client->renderer_ = delegate->CreateContentRendererClient();
       if (!content_client->renderer_)
@@ -433,8 +433,6 @@ int RunNamedProcessTypeMain(
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER)
   UtilityProcessHost::RegisterUtilityMainThreadFactory(
       CreateInProcessUtilityThread);
-  RenderProcessHost::RegisterRendererMainThreadFactory(
-      CreateInProcessRendererThread);
   GpuProcessHost::RegisterGpuMainThreadFactory(
       CreateInProcessGpuThread);
 #endif
@@ -718,6 +716,9 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     RegisterContentSchemes(true);
 
     CHECK(base::i18n::InitializeICU());
+#if !defined(COMPONENT_BUILD) && defined(USING_V8_SHARED)
+    CHECK(v8::V8::InitializeICU());
+#endif
 
     InitializeStatsTable(command_line);
 

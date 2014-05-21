@@ -110,6 +110,7 @@
       'ViewportAnchor.h',
       'WebAXObject.cpp',
       'WebArrayBufferView.cpp',
+      'WebBBPrintInfo.cpp',
       'WebBindings.cpp',
       'WebBlob.cpp',
       'WebBlobData.cpp',

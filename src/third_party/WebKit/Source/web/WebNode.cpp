@@ -42,6 +42,7 @@
 #include "WebPluginContainer.h"
 #include "WebPluginContainerImpl.h"
 #include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ScriptController.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Event.h"
@@ -53,8 +54,23 @@
 #include "core/rendering/RenderWidget.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebVector.h"
+#include <bindings/V8Node.h>
 
 using namespace WebCore;
+
+namespace {
+
+class OptionalContextScope {
+public:
+    explicit inline OptionalContextScope(v8::Handle<v8::Context>* context) : context_(context) {
+        if (context_) (*context_)->Enter();
+    }
+    inline ~OptionalContextScope() { if (context_) (*context_)->Exit(); }
+private:
+    v8::Handle<v8::Context>* context_;
+};
+
+};
 
 namespace WebKit {
 
@@ -137,6 +153,27 @@ bool WebNode::hasChildNodes() const
 WebNodeList WebNode::childNodes()
 {
     return WebNodeList(m_private->childNodes());
+}
+
+bool WebNode::insertBefore(const WebNode& newChild, const WebNode& refChild)
+{
+    TrackExceptionState es;
+    m_private->insertBefore(newChild, refChild.m_private.get(), es);
+    return !es.hadException();
+}
+
+bool WebNode::replaceChild(const WebNode& newChild, const WebNode& oldChild)
+{
+    TrackExceptionState es;
+    m_private->replaceChild(newChild, oldChild.m_private.get(), es);
+    return !es.hadException();
+}
+
+bool WebNode::appendChild(const WebNode& child)
+{
+    TrackExceptionState es;
+    m_private->appendChild(child, es);
+    return !es.hadException();
 }
 
 WebString WebNode::createMarkup() const
@@ -226,6 +263,25 @@ bool WebNode::remove()
     return !es.hadException();
 }
 
+bool WebNode::setTextContent(const WebString& text)
+{
+    TrackExceptionState es;
+    m_private->setTextContent(text, es);
+    return !es.hadException();
+}
+
+bool WebNode::removeChild(const WebNode& oldChild)
+{
+    TrackExceptionState es;
+    m_private->removeChild(oldChild.m_private.get(), es);
+    return !es.hadException();
+}
+
+WebString WebNode::textContent() const
+{
+    return m_private->textContent();
+}
+
 bool WebNode::hasNonEmptyBoundingBox() const
 {
     m_private->document().updateLayoutIgnorePendingStylesheets();
@@ -254,6 +310,39 @@ WebElement WebNode::shadowHost() const
         return WebElement();
     const Node* coreNode = constUnwrap<Node>();
     return WebElement(coreNode->shadowHost());
+}
+
+v8::Handle<v8::Value> WebNode::toV8Handle() const
+{
+    v8::Handle<v8::Context> context = WebCore::ScriptController::mainWorldContext(m_private->document().frame());
+    v8::Handle<v8::Context>* v8ContextToOpen = 0;
+    if (!v8::Context::InContext()) {
+        // If there is no current context, toV8 will crash, so force
+        // our context to open if we aren't in a context.
+        v8ContextToOpen = &context;
+    }
+
+    OptionalContextScope contextScope(v8ContextToOpen);
+    return  WebCore::toV8(m_private.get(), context->Global(), context->GetIsolate());
+}
+
+bool WebNode::isWebNode(v8::Handle<v8::Value> handle)
+{
+    if (!handle->IsObject()) {
+        return false;
+    }
+    v8::TryCatch tryCatch;
+    v8::Handle<v8::Object> obj = handle->ToObject();
+    if (!WebCore::V8Node::HasInstance(obj, obj->CreationContext()->GetIsolate(), WebCore::MainWorld)) {
+        return false;
+    }
+    WebCore::V8Node::toNative(obj);
+    return !tryCatch.HasCaught();
+}
+
+WebNode WebNode::fromV8Handle(v8::Handle<v8::Value> handle)
+{
+    return WebCore::V8Node::toNative(handle->ToObject());
 }
 
 WebNode::WebNode(const PassRefPtr<Node>& node)

@@ -11,7 +11,6 @@
 #include "content/common/content_export.h"
 
 namespace content {
-class RenderProcess;
 
 // This class creates the IO thread for the renderer when running in
 // single-process mode.  It's not used in multi-process mode.
@@ -26,7 +25,6 @@ class InProcessRendererThread : public base::Thread {
 
  private:
   std::string channel_id_;
-  scoped_ptr<RenderProcess> render_process_;
 
   DISALLOW_COPY_AND_ASSIGN(InProcessRendererThread);
 };

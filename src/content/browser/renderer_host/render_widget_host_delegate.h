@@ -8,6 +8,8 @@
 #include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "ui/gfx/native_widget_types.h"
+#include "base/strings/string16.h"
+#include "third_party/WebKit/public/web/WebTextDirection.h"
 
 namespace WebKit {
 class WebMouseWheelEvent;
@@ -45,6 +47,19 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // event before sending it to the renderer.
   // Returns true if the |event| was handled.
   virtual bool PreHandleWheelEvent(const WebKit::WebMouseWheelEvent& event);
+
+  // Callback to notify the browser that the backing store has been updated.
+  virtual void DidUpdateBackingStore() {}
+
+  // Returns true if RWHV should take focus on mouse-down.
+  virtual bool ShouldSetFocusOnMouseDown();
+
+  // Allows delegate to show a custom tooltip. If the delegate doesn't want a
+  // custom tooltip, it should just return 'false'. Otherwise, it should show
+  // the tooltip and return 'true'. By default, the delegate doesn't provide a
+  // custom tooltip.
+  virtual bool ShowTooltip(const string16& tooltip_text,
+                           WebKit::WebTextDirection text_direction_hint);
 
   // Notifies that screen rects were sent to renderer process.
   virtual void DidSendScreenRects(RenderWidgetHostImpl* rwh) {}

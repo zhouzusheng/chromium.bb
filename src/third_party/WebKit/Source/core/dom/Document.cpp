@@ -139,6 +139,7 @@
 #include "core/loader/ImageLoader.h"
 #include "core/loader/Prerenderer.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
+#include "core/page/BBPrintInfo.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/ContentSecurityPolicy.h"
@@ -462,6 +463,7 @@ Document::Document(const DocumentInit& initializer, DocumentClassFlags documentC
     , m_timeline(DocumentTimeline::create(this))
     , m_templateDocumentHost(0)
     , m_fonts(0)
+    , m_bbPrintInfo(0)
     , m_didAssociateFormControlsTimer(this, &Document::didAssociateFormControlsTimerFired)
 {
     ScriptWrappable::init(this);
@@ -5416,6 +5418,13 @@ PassRefPtr<FontFaceSet> Document::fonts()
     if (!m_fonts)
         m_fonts = FontFaceSet::create(this);
     return m_fonts;
+}
+
+PassRefPtr<BBPrintInfo> Document::bbPrintInfo()
+{
+    if (!m_bbPrintInfo)
+        m_bbPrintInfo = BBPrintInfo::create(this);
+    return m_bbPrintInfo;
 }
 
 void Document::didAssociateFormControl(Element* element)

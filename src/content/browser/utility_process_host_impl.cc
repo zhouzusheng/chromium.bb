@@ -53,6 +53,7 @@ private:
 
 
 UtilityMainThreadFactoryFunction g_utility_main_thread_factory = NULL;
+static bool g_run_utility_in_process_ = false;
 
 UtilityProcessHost* UtilityProcessHost::Create(
     UtilityProcessHostClient* client,
@@ -63,6 +64,16 @@ UtilityProcessHost* UtilityProcessHost::Create(
 void UtilityProcessHost::RegisterUtilityMainThreadFactory(
     UtilityMainThreadFactoryFunction create) {
   g_utility_main_thread_factory = create;
+}
+
+// static
+bool UtilityProcessHost::run_utility_in_process() {
+  return g_run_utility_in_process_;
+}
+
+// static
+void UtilityProcessHost::SetRunUtilityInProcess(bool value) {
+  g_run_utility_in_process_ = value;
 }
 
 UtilityProcessHostImpl::UtilityProcessHostImpl(
@@ -154,7 +165,7 @@ bool UtilityProcessHostImpl::StartProcess() {
     return false;
 
   // Single process not supported in multiple dll mode currently.
-  if (RenderProcessHost::run_renderer_in_process() &&
+  if (UtilityProcessHost::run_utility_in_process() &&
       g_utility_main_thread_factory) {
     // See comment in RenderProcessHostImpl::Init() for the background on why we
     // support single process mode this way.

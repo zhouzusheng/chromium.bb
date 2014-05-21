@@ -175,6 +175,12 @@ void ResourceBundle::InitSharedInstanceWithPakPath(const base::FilePath& path) {
 }
 
 // static
+void ResourceBundle::InitSharedInstance() {
+  DCHECK(g_shared_instance_ == NULL) << "ResourceBundle initialized twice";
+  g_shared_instance_ = new ResourceBundle(NULL);
+}
+
+// static
 void ResourceBundle::CleanupSharedInstance() {
   if (g_shared_instance_) {
     delete g_shared_instance_;

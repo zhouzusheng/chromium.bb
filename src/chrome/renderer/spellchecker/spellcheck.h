@@ -73,6 +73,7 @@ class SpellCheck : public content::RenderProcessObserver,
                       int tag,
                       int* misspelling_start,
                       int* misspelling_len,
+                      bool checkForContractions,
                       std::vector<string16>* optional_suggestions);
 
   // SpellCheck a paragraph.

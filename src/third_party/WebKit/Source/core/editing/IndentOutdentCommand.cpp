@@ -43,7 +43,7 @@ static bool isListOrIndentBlockquote(const Node* node)
     return node && (node->hasTagName(ulTag) || node->hasTagName(olTag) || node->hasTagName(blockquoteTag));
 }
 
-IndentOutdentCommand::IndentOutdentCommand(Document* document, EIndentType typeOfAction, int marginInPixels)
+IndentOutdentCommand::IndentOutdentCommand(Document& document, EIndentType typeOfAction, int marginInPixels)
     : ApplyBlockElementCommand(document, blockquoteTag, "margin: 0 0 0 40px; border: none; padding: 0px;")
     , m_typeOfAction(typeOfAction)
     , m_marginInPixels(marginInPixels)
@@ -69,7 +69,7 @@ bool IndentOutdentCommand::tryIndentingAsListItem(const Position& start, const P
     RefPtr<Element> previousList = selectedListItem->previousElementSibling();
     RefPtr<Element> nextList = selectedListItem->nextElementSibling();
 
-    RefPtr<Element> newList = document()->createElement(listNode->tagQName(), false);
+    RefPtr<Element> newList = document().createElement(listNode->tagQName(), false);
     insertNodeBefore(newList, selectedListItem.get());
 
     moveParagraphWithClones(start, end, newList.get(), selectedListItem.get());
@@ -156,7 +156,7 @@ void IndentOutdentCommand::outdentParagraph()
             }
         }
 
-        document()->updateLayoutIgnorePendingStylesheets();
+        document().updateLayoutIgnorePendingStylesheets();
         visibleStartOfParagraph = VisiblePosition(visibleStartOfParagraph.deepEquivalent());
         visibleEndOfParagraph = VisiblePosition(visibleEndOfParagraph.deepEquivalent());
         if (visibleStartOfParagraph.isNotNull() && !isStartOfParagraph(visibleStartOfParagraph))
@@ -206,10 +206,10 @@ void IndentOutdentCommand::outdentRegion(const VisiblePosition& startOfSelection
         // outdentParagraph could move more than one paragraph if the paragraph
         // is in a list item. As a result, endAfterSelection and endOfNextParagraph
         // could refer to positions no longer in the document.
-        if (endAfterSelection.isNotNull() && !endAfterSelection.deepEquivalent().anchorNode()->inDocument())
+        if (endAfterSelection.isNotNull() && !endAfterSelection.deepEquivalent().inDocument())
             break;
 
-        if (endOfNextParagraph.isNotNull() && !endOfNextParagraph.deepEquivalent().anchorNode()->inDocument()) {
+        if (endOfNextParagraph.isNotNull() && !endOfNextParagraph.deepEquivalent().inDocument()) {
             endOfCurrentParagraph = endingSelection().end();
             endOfNextParagraph = endOfParagraph(endOfCurrentParagraph.next());
         }

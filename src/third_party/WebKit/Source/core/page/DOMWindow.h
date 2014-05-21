@@ -30,17 +30,18 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/EventTarget.h"
 #include "core/page/FrameDestructionObserver.h"
+#include "core/platform/LifecycleContext.h"
 #include "core/platform/Supplementable.h"
 
 #include "wtf/Forward.h"
 
 namespace WebCore {
+    class ApplicationCache;
     class BarProp;
     class BBDragData;
     class CSSRuleList;
     class CSSStyleDeclaration;
     class Console;
-    class DOMApplicationCache;
     class DOMPoint;
     class DOMSelection;
     class DOMURL;
@@ -48,6 +49,7 @@ namespace WebCore {
     class Database;
     class DatabaseCallback;
     class Document;
+    class DOMWindowLifecycleNotifier;
     class Element;
     class EventListener;
     class ExceptionState;
@@ -82,7 +84,7 @@ namespace WebCore {
 
     enum SetLocationLocking { LockHistoryBasedOnGestureState, LockHistoryAndBackForwardList };
 
-    class DOMWindow : public RefCounted<DOMWindow>, public ScriptWrappable, public EventTarget, public FrameDestructionObserver, public Supplementable<DOMWindow> {
+    class DOMWindow : public RefCounted<DOMWindow>, public ScriptWrappable, public EventTarget, public FrameDestructionObserver, public Supplementable<DOMWindow>, public LifecycleContext {
     public:
         static PassRefPtr<DOMWindow> create(Frame* frame) { return adoptRef(new DOMWindow(frame)); }
         virtual ~DOMWindow();
@@ -223,6 +225,7 @@ namespace WebCore {
 
         void printErrorMessage(const String&);
         String crossDomainAccessErrorMessage(DOMWindow* activeWindow);
+        String sanitizedCrossDomainAccessErrorMessage(DOMWindow* activeWindow);
 
         void postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray*, const String& targetOrigin, DOMWindow* source, ExceptionState&);
         void postMessageTimerFired(PassOwnPtr<PostMessageTimer>);
@@ -257,6 +260,9 @@ namespace WebCore {
         void dispatchLoadEvent();
 
         DEFINE_ATTRIBUTE_EVENT_LISTENER(abort);
+        DEFINE_ATTRIBUTE_EVENT_LISTENER(animationend);
+        DEFINE_ATTRIBUTE_EVENT_LISTENER(animationiteration);
+        DEFINE_ATTRIBUTE_EVENT_LISTENER(animationstart);
         DEFINE_ATTRIBUTE_EVENT_LISTENER(beforeunload);
         DEFINE_ATTRIBUTE_EVENT_LISTENER(blur);
         DEFINE_ATTRIBUTE_EVENT_LISTENER(canplay);
@@ -318,15 +324,16 @@ namespace WebCore {
         DEFINE_ATTRIBUTE_EVENT_LISTENER(submit);
         DEFINE_ATTRIBUTE_EVENT_LISTENER(suspend);
         DEFINE_ATTRIBUTE_EVENT_LISTENER(timeupdate);
+        DEFINE_ATTRIBUTE_EVENT_LISTENER(transitionend);
         DEFINE_ATTRIBUTE_EVENT_LISTENER(unload);
         DEFINE_ATTRIBUTE_EVENT_LISTENER(volumechange);
         DEFINE_ATTRIBUTE_EVENT_LISTENER(waiting);
+        DEFINE_ATTRIBUTE_EVENT_LISTENER(wheel);
 
         DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(webkitanimationstart, webkitAnimationStart);
         DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(webkitanimationiteration, webkitAnimationIteration);
         DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(webkitanimationend, webkitAnimationEnd);
         DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(webkittransitionend, webkitTransitionEnd);
-        DEFINE_ATTRIBUTE_EVENT_LISTENER(transitionend);
 
         void captureEvents() { }
         void releaseEvents() { }
@@ -345,8 +352,8 @@ namespace WebCore {
         Storage* optionalSessionStorage() const { return m_sessionStorage.get(); }
         Storage* optionalLocalStorage() const { return m_localStorage.get(); }
 
-        DOMApplicationCache* applicationCache() const;
-        DOMApplicationCache* optionalApplicationCache() const { return m_applicationCache.get(); }
+        ApplicationCache* applicationCache() const;
+        ApplicationCache* optionalApplicationCache() const { return m_applicationCache.get(); }
 
 #if ENABLE(ORIENTATION_EVENTS)
         // This is the interface orientation in degrees. Some examples are:
@@ -380,10 +387,15 @@ namespace WebCore {
         BBWindowHooks* bbWindowHooks() const;
         PassRefPtr<BBDragData> bbDragData();
 
+    protected:
+        DOMWindowLifecycleNotifier* lifecycleNotifier();
+
     private:
         explicit DOMWindow(Frame*);
 
         Page* page();
+
+        virtual PassOwnPtr<LifecycleNotifier> createLifecycleNotifier() OVERRIDE;
 
         virtual void frameDestroyed() OVERRIDE;
         virtual void willDetachPage() OVERRIDE;
@@ -425,7 +437,7 @@ namespace WebCore {
 
         mutable RefPtr<Storage> m_sessionStorage;
         mutable RefPtr<Storage> m_localStorage;
-        mutable RefPtr<DOMApplicationCache> m_applicationCache;
+        mutable RefPtr<ApplicationCache> m_applicationCache;
 
         mutable RefPtr<Performance> m_performance;
 

@@ -32,7 +32,7 @@ namespace WebCore {
 
 class BlockCommand : public CompositeEditCommand {
 protected:
-    explicit BlockCommand(Document*);
+    explicit BlockCommand(Document&);
 
     virtual void formatBlockExtent(PassRefPtr<Node> prpFirstNode, PassRefPtr<Node> prpLastNode, Node* stayWithin);
     virtual void formatBlockSiblings(PassRefPtr<Node> prpFirstSibling, PassRefPtr<Node> prpLastSibling, Node* stayWithin, Node* lastNode);

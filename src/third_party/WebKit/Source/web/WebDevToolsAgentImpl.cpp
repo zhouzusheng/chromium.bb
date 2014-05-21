@@ -46,9 +46,9 @@
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8Utilities.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/fetch/MemoryCache.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InspectorController.h"
-#include "core/loader/cache/MemoryCache.h"
 #include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
@@ -212,7 +212,7 @@ public:
         m_originalZoomFactor = 0;
         m_webView->setTextZoomFactor(textZoomFactor);
         applySizeOverrideInternal(view, FitWindowAllowed);
-        autoZoomPageToFitWidth(view->frame());
+        autoZoomPageToFitWidth(&view->frame());
 
         m_webView->sendResizeEventAndRepaint();
     }
@@ -228,9 +228,6 @@ public:
 
     void autoZoomPageToFitWidth(Frame* frame)
     {
-        if (!frame)
-            return;
-
         frame->setTextZoomFactor(m_webView->textZoomFactor());
         ensureOriginalZoomFactor(frame->view());
         Document* document = frame->document();
@@ -338,7 +335,7 @@ private:
         if (IntSize(overrideWidth, overrideHeight) != frameView->size())
             frameView->resize(overrideWidth, overrideHeight);
 
-        Document* doc = frameView->frame()->document();
+        Document* doc = frameView->frame().document();
         doc->styleResolverChanged(RecalcStyleImmediately);
         doc->updateLayout();
     }
@@ -642,7 +639,7 @@ void WebDevToolsAgentImpl::inspectElementAt(const WebPoint& point)
 InspectorController* WebDevToolsAgentImpl::inspectorController()
 {
     if (Page* page = m_webViewImpl->page())
-        return page->inspectorController();
+        return &page->inspectorController();
     return 0;
 }
 

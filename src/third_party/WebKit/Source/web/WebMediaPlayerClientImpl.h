@@ -44,7 +44,7 @@
 #include "weborigin/KURL.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
-#include "wtf/Threading.h"
+#include "wtf/ThreadingPrimitives.h"
 
 namespace WebCore {
 class AudioSourceProviderClient;
@@ -90,6 +90,8 @@ public:
     virtual void setWebLayer(WebLayer*);
     virtual void addTextTrack(WebInbandTextTrack*);
     virtual void removeTextTrack(WebInbandTextTrack*);
+    virtual void mediaSourceOpened(WebMediaSource*);
+    virtual void requestSeek(double);
 
     // MediaPlayer methods:
     virtual void load(const WTF::String& url) OVERRIDE;
@@ -129,11 +131,9 @@ public:
     virtual unsigned droppedFrameCount() const OVERRIDE;
     virtual unsigned audioDecodedByteCount() const OVERRIDE;
     virtual unsigned videoDecodedByteCount() const OVERRIDE;
-#if USE(NATIVE_FULLSCREEN_VIDEO)
-    virtual void enterFullscreen() OVERRIDE;
-    virtual void exitFullscreen() OVERRIDE;
-    virtual bool canEnterFullscreen() const OVERRIDE;
-#endif
+    virtual void showFullscreenOverlay() OVERRIDE;
+    virtual void hideFullscreenOverlay() OVERRIDE;
+    virtual bool canShowFullscreenOverlay() const OVERRIDE;
 
 #if ENABLE(WEB_AUDIO)
     virtual WebCore::AudioSourceProvider* audioSourceProvider() OVERRIDE;

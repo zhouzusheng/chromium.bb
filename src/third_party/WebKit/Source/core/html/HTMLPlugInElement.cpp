@@ -42,7 +42,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLPlugInElement::HTMLPlugInElement(const QualifiedName& tagName, Document* doc)
+HTMLPlugInElement::HTMLPlugInElement(const QualifiedName& tagName, Document& doc)
     : HTMLFrameOwnerElement(tagName, doc)
     , m_NPObject(0)
     , m_isCapturingMouseEvents(false)
@@ -63,7 +63,7 @@ HTMLPlugInElement::~HTMLPlugInElement()
 
 bool HTMLPlugInElement::canProcessDrag() const
 {
-    const PluginView* plugin = pluginWidget() && pluginWidget()->isPluginView() ? static_cast<const PluginView*>(pluginWidget()) : 0;
+    const PluginView* plugin = pluginWidget() && pluginWidget()->isPluginView() ? toPluginView(pluginWidget()) : 0;
     return plugin ? plugin->canProcessDrag() : false;
 }
 
@@ -79,12 +79,21 @@ bool HTMLPlugInElement::willRespondToMouseClickEvents()
     return true;
 }
 
+void HTMLPlugInElement::removeAllEventListeners()
+{
+    HTMLFrameOwnerElement::removeAllEventListeners();
+    if (RenderWidget* renderer = existingRenderWidget()) {
+        if (Widget* widget = renderer->widget())
+            widget->eventListenersRemoved();
+    }
+}
+
 void HTMLPlugInElement::detach(const AttachContext& context)
 {
     m_instance.clear();
 
     if (m_isCapturingMouseEvents) {
-        if (Frame* frame = document()->frame())
+        if (Frame* frame = document().frame())
             frame->eventHandler()->setCapturingMouseEventsNode(0);
         m_isCapturingMouseEvents = false;
     }
@@ -104,7 +113,7 @@ void HTMLPlugInElement::resetInstance()
 
 PassScriptInstance HTMLPlugInElement::getInstance()
 {
-    Frame* frame = document()->frame();
+    Frame* frame = document().frame();
     if (!frame)
         return 0;
 
@@ -200,12 +209,18 @@ void HTMLPlugInElement::defaultEventHandler(Event* event)
     HTMLFrameOwnerElement::defaultEventHandler(event);
 }
 
+RenderWidget* HTMLPlugInElement::renderWidgetForJSBindings() const
+{
+    document().updateLayoutIgnorePendingStylesheets();
+    return existingRenderWidget();
+}
+
 bool HTMLPlugInElement::isKeyboardFocusable() const
 {
-    if (!document()->page())
+    if (!document().page())
         return false;
 
-    const PluginView* plugin = pluginWidget() && pluginWidget()->isPluginView() ? static_cast<const PluginView*>(pluginWidget()) : 0;
+    const PluginView* plugin = pluginWidget() && pluginWidget()->isPluginView() ? toPluginView(pluginWidget()) : 0;
     if (plugin)
         return plugin->supportsKeyboardFocus();
 
@@ -229,9 +244,9 @@ bool HTMLPlugInElement::rendererIsFocusable() const
 
 NPObject* HTMLPlugInElement::getNPObject()
 {
-    ASSERT(document()->frame());
+    ASSERT(document().frame());
     if (!m_NPObject)
-        m_NPObject = document()->frame()->script()->createScriptObjectForPluginElement(this);
+        m_NPObject = document().frame()->script()->createScriptObjectForPluginElement(this);
     return m_NPObject;
 }
 

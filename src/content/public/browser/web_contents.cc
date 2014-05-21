@@ -16,6 +16,7 @@ WebContents::CreateParams::CreateParams(BrowserContext* context)
       routing_id(MSG_ROUTING_NONE),
       main_frame_routing_id(MSG_ROUTING_NONE),
       render_process_affinity(SiteInstance::kNoProcessAffinity),
+      initially_hidden(false),
       context(NULL) {}
 
 WebContents::CreateParams::CreateParams(
@@ -26,6 +27,7 @@ WebContents::CreateParams::CreateParams(
       routing_id(MSG_ROUTING_NONE),
       main_frame_routing_id(MSG_ROUTING_NONE),
       render_process_affinity(SiteInstance::kNoProcessAffinity),
+      initially_hidden(false),
       context(NULL) {}
 
 }  // namespace content

@@ -64,6 +64,7 @@ public:
     virtual void setAcceleratedCompositingForFixedPositionEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForFixedRootBackgroundEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForOverflowScrollEnabled(bool) = 0;
+    virtual void setCompositorDrivenAcceleratedScrollingEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForTransitionEnabled(bool)  = 0;
     virtual void setAcceleratedCompositingForPluginsEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForScrollableFramesEnabled(bool) = 0;
@@ -111,6 +112,7 @@ public:
     virtual void setFullScreenEnabled(bool) = 0;
     virtual void setGestureTapHighlightEnabled(bool) = 0;
     virtual void setHyperlinkAuditingEnabled(bool) = 0;
+    virtual void setIgnoreMainFrameOverflowHiddenQuirk(bool) = 0;
     virtual void setImagesEnabled(bool) = 0;
     virtual void setJavaEnabled(bool) = 0;
     virtual void setJavaScriptCanAccessClipboard(bool) = 0;
@@ -121,6 +123,7 @@ public:
     virtual void setLoadWithOverviewMode(bool) = 0;
     virtual void setLocalStorageEnabled(bool) = 0;
     virtual void setMediaPlaybackRequiresUserGesture(bool) = 0;
+    virtual void setMediaFullscreenRequiresUserGesture(bool) = 0;
     virtual void setMemoryInfoEnabled(bool) = 0;
     virtual void setMinimumAccelerated2dCanvasSize(int) = 0;
     virtual void setMinimumFontSize(int) = 0;
@@ -171,6 +174,7 @@ public:
     virtual void setUserStyleSheetLocation(const WebURL&) = 0;
     virtual void setUsesEncodingDetector(bool) = 0;
     virtual void setUseLegacyBackgroundSizeShorthandBehavior(bool) = 0;
+    virtual void setUseSolidColorScrollbars(bool) = 0;
     virtual void setUseWideViewport(bool) = 0;
     virtual void setValidationMessageTimerMagnification(int) = 0;
     virtual void setViewportEnabled(bool) = 0;

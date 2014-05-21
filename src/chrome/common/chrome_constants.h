@@ -66,7 +66,7 @@ extern const base::FilePath::CharType kJumpListIconDirname[];
 extern const base::FilePath::CharType kLocalStateFilename[];
 extern const base::FilePath::CharType kLocalStorePoolName[];
 extern const base::FilePath::CharType kLoginDataFileName[];
-extern const base::FilePath::CharType kManagedModePolicyFilename[];
+extern const base::FilePath::CharType kManagedUserSettingsFilename[];
 extern const base::FilePath::CharType kMediaCacheDirname[];
 extern const base::FilePath::CharType kNewTabThumbnailsFilename[];
 extern const base::FilePath::CharType kOBCertFilename[];
@@ -111,6 +111,9 @@ extern const bool kEnableTouchIcon;
 // installed.
 extern const float kMaxShareOfExtensionProcesses;
 
+// This is used by the PreRead experiment.
+extern const char kPreReadEnvironmentVariable[];
+
 #if defined(OS_LINUX)
 // The highest and lowest assigned OOM score adjustment
 // (oom_score_adj) used by the OomPriority Manager.
@@ -119,8 +122,6 @@ extern const int kHighestRendererOomScore;
 #endif
 
 #if defined(OS_WIN)
-// This is used by the PreRead experiment.
-extern const char kPreReadEnvironmentVariable[];
 // Used by Metro Chrome to create the profile under a custom subdirectory.
 extern const wchar_t kMetroChromeUserDataSubDir[];
 // Used by Metro Chrome to initiate navigation and search requests.
@@ -130,6 +131,11 @@ extern const wchar_t kMetroGetCurrentTabInfoMessage[];
 // Used by Metro Chrome to store activation state.
 extern const wchar_t kMetroRegistryPath[];
 extern const wchar_t kLaunchModeValue[];
+// Used by the browser as a container in which to track unreported crash dump
+// attempts. The actual values (each representing one crash dump attempt) are
+// stored in a subkey named with the version number of the build. Each value
+// under the subkey represents an additional attempt.
+extern const wchar_t kBrowserCrashDumpAttemptsRegistryPath[];
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -137,6 +143,12 @@ extern const wchar_t kLaunchModeValue[];
 // Profile path format: [user_data_dir]/u-[$hash]
 // Ex.: /home/chronos/u-0123456789
 extern const char kProfileDirPrefix[];
+
+// Legacy profile dir that was used when only one cryptohome has been mounted.
+extern const char kLegacyProfileDir[];
+
+// This must be kept in sync with TestingProfile::kTestUserProfileDir.
+extern const char kTestUserProfileDir[];
 #endif
 
 // Used to identify the application to the system AV function in Windows.

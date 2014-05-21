@@ -402,8 +402,7 @@ static void paintTextWithShadows(GraphicsContext* context,
             int shadowX = horizontal ? shadow->x() : shadow->y();
             int shadowY = horizontal ? shadow->y() : -shadow->x();
             FloatSize offset(shadowX, shadowY);
-            drawLooper.addShadow(offset, shadow->blur(),
-                renderer->resolveColor(shadow->color(), Color::stdShadowColor),
+            drawLooper.addShadow(offset, shadow->blur(), renderer->resolveColor(shadow->color()),
                 DrawLooper::ShadowRespectsTransforms, DrawLooper::ShadowIgnoresAlpha);
         } while ((shadow = shadow->next()));
         drawLooper.addUnmodifiedContent();
@@ -494,7 +493,7 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
     if (logicalStart >= paintEnd || logicalStart + logicalExtent <= paintStart)
         return;
 
-    bool isPrinting = textRenderer()->document()->printing();
+    bool isPrinting = textRenderer()->document().printing();
 
     // Determine whether or not we're selected.
     bool haveSelection = !isPrinting && paintInfo.phase != PaintPhaseTextClip && selectionState() != RenderObject::SelectionNone;
@@ -561,7 +560,7 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
         if (isPrinting) {
             if (styleToUse->printColorAdjust() == PrintColorAdjustEconomy)
                 forceBackgroundToWhite = true;
-            if (textRenderer()->document()->settings() && textRenderer()->document()->settings()->shouldPrintBackgrounds())
+            if (textRenderer()->document().settings() && textRenderer()->document().settings()->shouldPrintBackgrounds())
                 forceBackgroundToWhite = false;
         }
 
@@ -593,14 +592,14 @@ void InlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, 
     if (haveSelection) {
         // Check foreground color first.
         Color foreground = paintInfo.forceBlackText() ? Color::black : renderer()->selectionForegroundColor();
-        if (foreground != Color::transparent && foreground != selectionFillColor) {
+        if (foreground.isValid() && foreground != selectionFillColor && foreground != Color::transparent) {
             if (!paintSelectedTextOnly)
                 paintSelectedTextSeparately = true;
             selectionFillColor = foreground;
         }
 
         Color emphasisMarkForeground = paintInfo.forceBlackText() ? Color::black : renderer()->selectionEmphasisMarkColor();
-        if (emphasisMarkForeground != Color::transparent && emphasisMarkForeground != selectionEmphasisMarkColor) {
+        if (emphasisMarkForeground.isValid() && emphasisMarkForeground != selectionEmphasisMarkColor) {
             if (!paintSelectedTextOnly)
                 paintSelectedTextSeparately = true;
             selectionEmphasisMarkColor = emphasisMarkForeground;
@@ -840,7 +839,7 @@ void InlineTextBox::paintSelection(GraphicsContext* context, const FloatPoint& b
         return;
 
     Color c = renderer()->selectionBackgroundColor();
-    if (!c.alpha())
+    if (!c.isValid() || !c.alpha())
         return;
 
     // If the text color ends up being the same as the selection background, invert the selection
@@ -1100,7 +1099,7 @@ void InlineTextBox::paintDecoration(GraphicsContext* context, const FloatPoint& 
         renderer()->getTextDecorationColors(deco, underline, overline, linethrough, true, true);
 
     // Use a special function for underlines to get the positioning exactly right.
-    bool isPrinting = textRenderer()->document()->printing();
+    bool isPrinting = textRenderer()->document().printing();
     context->setStrokeThickness(textDecorationThickness);
 
     bool linesAreOpaque = !isPrinting && (!(deco & TextDecorationUnderline) || underline.alpha() == 255) && (!(deco & TextDecorationOverline) || overline.alpha() == 255) && (!(deco & TextDecorationLineThrough) || linethrough.alpha() == 255);
@@ -1134,8 +1133,7 @@ void InlineTextBox::paintDecoration(GraphicsContext* context, const FloatPoint& 
             }
             int shadowX = isHorizontal() ? shadow->x() : shadow->y();
             int shadowY = isHorizontal() ? shadow->y() : -shadow->x();
-            context->setShadow(FloatSize(shadowX, shadowY - extraOffset), shadow->blur(),
-                renderer()->resolveColor(shadow->color(), Color::stdShadowColor));
+            context->setShadow(FloatSize(shadowX, shadowY - extraOffset), shadow->blur(), shadow->color());
             shadow = shadow->next();
         }
 
@@ -1214,7 +1212,7 @@ static GraphicsContext::DocumentMarkerLineStyle lineStyleForMarkerType(DocumentM
 void InlineTextBox::paintDocumentMarker(GraphicsContext* pt, const FloatPoint& boxOrigin, DocumentMarker* marker, RenderStyle* style, const Font& font, bool grammar)
 {
     // Never print spelling/grammar markers (5327887)
-    if (textRenderer()->document()->printing())
+    if (textRenderer()->document().printing())
         return;
 
     if (m_truncation == cFullTruncation)
@@ -1325,10 +1323,10 @@ void InlineTextBox::paintTextMatchMarker(GraphicsContext* pt, const FloatPoint& 
     toRenderedDocumentMarker(marker)->setRenderedRect(markerRect);
 
     // Optionally highlight the text
-    if (renderer()->frame()->editor()->markedTextMatchesAreHighlighted()) {
+    if (renderer()->frame()->editor().markedTextMatchesAreHighlighted()) {
         Color color = marker->activeMatch() ?
-            renderer()->theme()->platformActiveTextSearchHighlightColor() :
-            renderer()->theme()->platformInactiveTextSearchHighlightColor();
+            RenderTheme::theme().platformActiveTextSearchHighlightColor() :
+            RenderTheme::theme().platformInactiveTextSearchHighlightColor();
         GraphicsContextStateSaver stateSaver(*pt);
         updateGraphicsContext(pt, color, color, 0); // Don't draw text at all!
         pt->clip(FloatRect(boxOrigin.x(), boxOrigin.y() - deltaY, m_logicalWidth, selHeight));
@@ -1341,7 +1339,7 @@ void InlineTextBox::paintDocumentMarkers(GraphicsContext* pt, const FloatPoint& 
     if (!renderer()->node())
         return;
 
-    Vector<DocumentMarker*> markers = renderer()->document()->markers()->markersFor(renderer()->node());
+    Vector<DocumentMarker*> markers = renderer()->document().markers()->markersFor(renderer()->node());
     Vector<DocumentMarker*>::const_iterator markerIt = markers.begin();
 
     // Give any document markers that touch this run a chance to draw before the text has been drawn.
@@ -1433,7 +1431,7 @@ void InlineTextBox::paintCompositionUnderline(GraphicsContext* ctx, const FloatP
 
     ctx->setStrokeColor(color);
     ctx->setStrokeThickness(lineThickness);
-    ctx->drawLineForText(FloatPoint(boxOrigin.x() + start, boxOrigin.y() + logicalHeight() - lineThickness), width, textRenderer()->document()->printing());
+    ctx->drawLineForText(FloatPoint(boxOrigin.x() + start, boxOrigin.y() + logicalHeight() - lineThickness), width, textRenderer()->document().printing());
 }
 
 int InlineTextBox::caretMinOffset() const
@@ -1562,6 +1560,11 @@ TextRun InlineTextBox::constructTextRun(RenderStyle* style, const Font& font, St
     run.setCharactersLength(maximumLength);
     ASSERT(run.charactersLength() >= run.length());
     return run;
+}
+
+TextRun InlineTextBox::constructTextRunForInspector(RenderStyle* style, const Font& font) const
+{
+    return InlineTextBox::constructTextRun(style, font);
 }
 
 #ifndef NDEBUG

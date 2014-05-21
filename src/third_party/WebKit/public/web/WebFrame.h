@@ -46,6 +46,7 @@ struct NPObject;
 namespace v8 {
 class Context;
 class Function;
+class Isolate;
 class Object;
 class Value;
 template <class T> class Handle;
@@ -289,6 +290,9 @@ public:
     // be calling this API.
     virtual v8::Local<v8::Context> mainWorldScriptContext() const = 0;
 
+    // Returns the V8 isolate for this frame.
+    virtual v8::Isolate* scriptIsolate() const = 0;
+
     // Creates an instance of file system object.
     virtual v8::Handle<v8::Value> createFileSystem(WebFileSystemType,
         const WebString& name,
@@ -456,6 +460,8 @@ public:
     virtual void moveRangeSelection(const WebPoint& base, const WebPoint& extent) = 0;
     virtual void moveCaretSelection(const WebPoint&) = 0;
 
+    virtual void setCaretVisible(bool) = 0;
+
     // Printing ------------------------------------------------------------
 
     // Reformats the WebFrame for printing. WebPrintParams specifies the printable
@@ -463,12 +469,8 @@ public:
     // scaling option. If constrainToNode node is specified, then only the given node
     // is printed (for now only plugins are supported), instead of the entire frame.
     // Returns the number of pages that can be printed at the given
-    // page size. The out param useBrowserOverlays specifies whether the browser
-    // process should use its overlays (header, footer, margins etc) or whether
-    // the renderer controls this.
-    virtual int printBegin(const WebPrintParams&,
-                           const WebNode& constrainToNode = WebNode(),
-                           bool* useBrowserOverlays = 0) = 0;
+    // page size.
+    virtual int printBegin(const WebPrintParams&, const WebNode& constrainToNode = WebNode()) = 0;
 
     // Returns the page shrinking factor calculated by webkit (usually
     // between 1/1.25 and 1/2). Returns 0 if the page number is invalid or

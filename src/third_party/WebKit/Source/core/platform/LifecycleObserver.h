@@ -37,7 +37,8 @@ public:
         ActiveDOMObjectType,
         DocumentLifecycleObserverType,
         GenericType,
-        PageLifecycleObserverType
+        PageLifecycleObserverType,
+        DOMWindowLifecycleObserverType
     };
 
     explicit LifecycleObserver(LifecycleContext*, Type = GenericType);

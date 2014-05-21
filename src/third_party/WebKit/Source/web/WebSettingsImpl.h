@@ -47,7 +47,7 @@ public:
     virtual bool deviceSupportsTouch();
     virtual bool scrollAnimatorEnabled() const;
     virtual bool touchEditingEnabled() const;
-    virtual bool viewportEnabled() const { return m_viewportEnabled; }
+    virtual bool viewportEnabled() const;
     virtual void setAccelerated2dCanvasEnabled(bool);
     virtual void setAcceleratedCompositingEnabled(bool);
     virtual void setAcceleratedCompositingFor3DTransformsEnabled(bool);
@@ -56,6 +56,7 @@ public:
     virtual void setAcceleratedCompositingForFiltersEnabled(bool);
     virtual void setAcceleratedCompositingForFixedPositionEnabled(bool);
     virtual void setAcceleratedCompositingForOverflowScrollEnabled(bool);
+    virtual void setCompositorDrivenAcceleratedScrollingEnabled(bool);
     virtual void setAcceleratedCompositingForTransitionEnabled(bool);
     virtual void setAcceleratedCompositingForFixedRootBackgroundEnabled(bool);
     virtual void setAcceleratedCompositingForPluginsEnabled(bool);
@@ -104,6 +105,7 @@ public:
     virtual void setFullScreenEnabled(bool);
     virtual void setGestureTapHighlightEnabled(bool);
     virtual void setHyperlinkAuditingEnabled(bool);
+    virtual void setIgnoreMainFrameOverflowHiddenQuirk(bool);
     virtual void setImagesEnabled(bool);
     virtual void setJavaEnabled(bool);
     virtual void setJavaScriptCanAccessClipboard(bool);
@@ -114,6 +116,7 @@ public:
     virtual void setLoadWithOverviewMode(bool);
     virtual void setLocalStorageEnabled(bool);
     virtual void setMediaPlaybackRequiresUserGesture(bool);
+    virtual void setMediaFullscreenRequiresUserGesture(bool);
     virtual void setMemoryInfoEnabled(bool);
     virtual void setMinimumAccelerated2dCanvasSize(int);
     virtual void setMinimumFontSize(int);
@@ -160,6 +163,7 @@ public:
     virtual void setUserStyleSheetLocation(const WebURL&);
     virtual void setUsesEncodingDetector(bool);
     virtual void setUseLegacyBackgroundSizeShorthandBehavior(bool);
+    virtual void setUseSolidColorScrollbars(bool);
     virtual void setUseWideViewport(bool);
     virtual void setValidationMessageTimerMagnification(int);
     virtual void setViewportEnabled(bool);
@@ -188,7 +192,6 @@ private:
     bool m_showFPSCounter;
     bool m_showPaintRects;
     bool m_renderVSyncNotificationEnabled;
-    bool m_viewportEnabled;
     bool m_gestureTapHighlightEnabled;
     bool m_autoZoomFocusedNodeToLegibleScale;
     bool m_deferredImageDecodingEnabled;

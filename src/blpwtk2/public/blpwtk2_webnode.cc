@@ -128,24 +128,21 @@ bool WebNode::isElementNode() const
     return internalToConst<WebKit::WebNode>().isElementNode();
 }
 
-bool WebNode::insertBefore(const WebNode& newChild, const WebNode& refChild, bool shouldLazyAttach)
+bool WebNode::insertBefore(const WebNode& newChild, const WebNode& refChild)
 {
     return internalTo<WebKit::WebNode>().insertBefore(newChild.internalToConst<WebKit::WebNode>(),
-                                                      refChild.internalToConst<WebKit::WebNode>(),
-                                                      shouldLazyAttach);
+                                                      refChild.internalToConst<WebKit::WebNode>());
 }
 
-bool WebNode::replaceChild(const WebNode& newChild, const WebNode& oldChild, bool shouldLazyAttach)
+bool WebNode::replaceChild(const WebNode& newChild, const WebNode& oldChild)
 {
     return internalTo<WebKit::WebNode>().replaceChild(newChild.internalToConst<WebKit::WebNode>(),
-                                                      oldChild.internalToConst<WebKit::WebNode>(),
-                                                      shouldLazyAttach);
+                                                      oldChild.internalToConst<WebKit::WebNode>());
 }
 
-bool WebNode::appendChild(const WebNode& child, bool shouldLazyAttach)
+bool WebNode::appendChild(const WebNode& child)
 {
-    return internalTo<WebKit::WebNode>().appendChild(child.internalToConst<WebKit::WebNode>(),
-                                                     shouldLazyAttach);
+    return internalTo<WebKit::WebNode>().appendChild(child.internalToConst<WebKit::WebNode>());
 }
 
 bool WebNode::remove()

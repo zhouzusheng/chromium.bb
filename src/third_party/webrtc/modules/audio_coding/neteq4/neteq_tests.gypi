@@ -15,7 +15,7 @@
         'NetEq4',
         'NetEq4TestTools',
         '<(webrtc_root)/test/test.gyp:test_support_main',
-        '<(DEPTH)/third_party/google-gflags/google-gflags.gyp:google-gflags',
+        '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
       ],
       'sources': [
         'tools/neteq_rtpplay.cc',
@@ -70,7 +70,6 @@
       'target_name': 'RTPjitter',
       'type': 'executable',
       'dependencies': [
-        '<(DEPTH)/testing/gtest.gyp:gtest',
       ],
       'sources': [
         'test/RTPjitter.cc',
@@ -82,7 +81,6 @@
       'type': 'executable',
       'dependencies': [
         'NetEq4TestTools',
-        '<(DEPTH)/testing/gtest.gyp:gtest',
       ],
       'sources': [
         'test/RTPanalyze.cc',
@@ -94,7 +92,6 @@
       'type': 'executable',
       'dependencies': [
         'NetEq4TestTools',
-        '<(DEPTH)/testing/gtest.gyp:gtest',
       ],
       'sources': [
        'test/RTPchange.cc',
@@ -106,7 +103,6 @@
       'type': 'executable',
       'dependencies': [
        'NetEq4TestTools',
-        '<(DEPTH)/testing/gtest.gyp:gtest',
       ],
       'sources': [
         'test/RTPtimeshift.cc',
@@ -118,7 +114,6 @@
       'type': 'executable',
       'dependencies': [
         'NetEq4TestTools',
-        '<(DEPTH)/testing/gtest.gyp:gtest',
       ],
       'sources': [
         'test/RTPcat.cc',
@@ -138,6 +133,20 @@
     },
 
     {
+      'target_name': 'neteq4_speed_test',
+      'type': 'executable',
+      'dependencies': [
+        'NetEq4',
+        'neteq_unittest_tools',
+        'PCM16B',
+        '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
+      ],
+      'sources': [
+        'test/neteq_speed_test.cc',
+      ],
+    },
+
+    {
      'target_name': 'NetEq4TestTools',
       # Collection of useful functions used in other tests.
       'type': 'static_library',
@@ -152,7 +161,6 @@
         'iLBC',
         'iSAC',
         'CNG',
-        '<(DEPTH)/testing/gtest.gyp:gtest',
       ],
       'direct_dependent_settings': {
         'include_dirs': [

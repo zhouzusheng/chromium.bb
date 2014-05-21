@@ -100,7 +100,6 @@
         }],
         ['use_aura==1', {
           'dependencies': [
-            '<(DEPTH)/ui/aura/aura.gyp:aura',
           ],
         }], 
         ['toolkit_uses_gtk == 0',{
@@ -140,7 +139,6 @@
           'conditions': [
             ['use_aura==1', {
               'dependencies': [
-                '<(DEPTH)/ui/aura/aura.gyp:aura',
               ],
           }]],
           'defines': [
@@ -241,8 +239,7 @@
       'type': 'executable',
       'dependencies': [
         'printing',
-        '../testing/gtest.gyp:gtest',
-        '../base/base.gyp:test_support_base',
+        '../base/base.gyp:run_all_unittests',
         '../ui/ui.gyp:ui',
       ],
       'sources': [
@@ -254,14 +251,12 @@
         'page_setup_unittest.cc',
         'pdf_metafile_cg_mac_unittest.cc',
         'printed_page_unittest.cc',
-        'run_all_unittests.cc',
         'units_unittest.cc',
       ],
       'conditions': [
         ['enable_printing==0', {
           'sources/': [
             ['exclude', '.'],
-            ['include', 'run_all_unittests.cc'],
           ],
         }],
         ['toolkit_uses_gtk == 0', {'sources/': [['exclude', '_gtk_unittest\\.cc$']]}],

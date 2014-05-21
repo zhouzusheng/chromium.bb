@@ -77,9 +77,6 @@
                 ['component=="shared_library"', {
                     'dependencies': [
                         '../core/core.gyp:webcore_derived',
-                        '../core/core.gyp:webcore_test_support',
-                        '<(DEPTH)/base/base.gyp:test_support_base',
-                        '<(DEPTH)/testing/gtest.gyp:gtest',
                         '<(DEPTH)/third_party/icu/icu.gyp:*',
                         '<(libjpeg_gyp_path):libjpeg',
                         '<(DEPTH)/third_party/libpng/libpng.gyp:libpng',
@@ -238,7 +235,6 @@
                 }, {
                     'type': 'static_library',
                     'dependencies': [
-                        '../core/core.gyp:webcore_test_support',
                         '../wtf/wtf.gyp:wtf',
                         '<(DEPTH)/skia/skia.gyp:skia',
                     ],
@@ -294,7 +290,6 @@
                 {
                     'target_name': 'copy_mesa',
                     'type': 'none',
-                    'dependencies': ['<(DEPTH)/third_party/mesa/mesa.gyp:osmesa'],
                     'copies': [{
                         'destination': '<(PRODUCT_DIR)/DumpRenderTree.app/Contents/MacOS/',
                         'files': ['<(PRODUCT_DIR)/osmesa.so'],

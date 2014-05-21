@@ -34,7 +34,7 @@ class QualifiedName;
 
 class IndentBlockCommand : public BlockCommand {
 public:
-    static PassRefPtr<IndentBlockCommand> create(Document* document)
+    static PassRefPtr<IndentBlockCommand> create(Document& document)
     {
         return adoptRef(new IndentBlockCommand(document));
     }
@@ -42,7 +42,7 @@ public:
     virtual bool preservesTypingStyle() const { return true; }
 
 private:
-    explicit IndentBlockCommand(Document*);
+    explicit IndentBlockCommand(Document&);
 
     virtual EditAction editingAction() const OVERRIDE { return EditActionIndent; }
     PassRefPtr<Element> createIndentBlock(const QualifiedName& tagName) const;

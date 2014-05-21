@@ -18,15 +18,21 @@
 #include "content/shell/common/shell_switches.h"
 #include "content/shell/renderer/shell_render_process_observer.h"
 #include "content/shell/renderer/shell_render_view_observer.h"
-#include "content/shell/renderer/webkit_test_runner.h"
+
+// SHEZ: Disable the following (used for test only)
+// #include "content/shell/renderer/webkit_test_runner.h"
+// #include "content/test/mock_webclipboard_impl.h"
+
 #include "third_party/WebKit/public/platform/WebMediaStreamCenter.h"
-#include "third_party/WebKit/public/testing/WebTestInterfaces.h"
-#include "third_party/WebKit/public/testing/WebTestProxy.h"
-#include "third_party/WebKit/public/testing/WebTestRunner.h"
+
+// SHEZ: Disable the following (used for test only)
+// #include "third_party/WebKit/public/testing/WebTestInterfaces.h"
+// #include "third_party/WebKit/public/testing/WebTestProxy.h"
+// #include "third_party/WebKit/public/testing/WebTestRunner.h"
+
 #include "third_party/WebKit/public/web/WebPluginParams.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "v8/include/v8.h"
-#include "webkit/support/mock_webclipboard_impl.h"
 
 #include "chrome/renderer/spellchecker/spellcheck.h"
 #include "chrome/renderer/spellchecker/spellcheck_provider.h"
@@ -90,6 +96,8 @@ void ShellContentRendererClient::RenderViewCreated(RenderView* render_view) {
 
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return;
+  // SHEZ: Remove test code.
+#if 0
   WebKitTestRunner* test_runner = WebKitTestRunner::Get(render_view);
   test_runner->Reset();
   render_view->GetWebView()->setSpellCheckClient(
@@ -103,6 +111,7 @@ void ShellContentRendererClient::RenderViewCreated(RenderView* render_view) {
       ShellRenderProcessObserver::GetInstance()->test_delegate();
   if (delegate == static_cast<WebTestDelegate*>(test_runner))
     ShellRenderProcessObserver::GetInstance()->SetMainWindow(render_view);
+#endif
 }
 
 bool ShellContentRendererClient::OverrideCreatePlugin(
@@ -125,7 +134,8 @@ ShellContentRendererClient::OverrideCreateWebMediaStreamCenter(
     WebMediaStreamCenterClient* client) {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return NULL;
-#if defined(ENABLE_WEBRTC)
+  // SHEZ: Remove test-only code.
+#if 0 && defined(ENABLE_WEBRTC)
   WebTestInterfaces* interfaces =
       ShellRenderProcessObserver::GetInstance()->test_interfaces();
   return interfaces->createMediaStreamCenter(client);
@@ -139,7 +149,8 @@ ShellContentRendererClient::OverrideCreateWebRTCPeerConnectionHandler(
     WebRTCPeerConnectionHandlerClient* client) {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return NULL;
-#if defined(ENABLE_WEBRTC)
+  // SHEZ: Remove test-only code.
+#if 0 && defined(ENABLE_WEBRTC)
   WebTestInterfaces* interfaces =
       ShellRenderProcessObserver::GetInstance()->test_interfaces();
   return interfaces->createWebRTCPeerConnectionHandler(client);
@@ -151,44 +162,71 @@ ShellContentRendererClient::OverrideCreateWebRTCPeerConnectionHandler(
 WebMIDIAccessor*
 ShellContentRendererClient::OverrideCreateMIDIAccessor(
     WebMIDIAccessorClient* client) {
+  // SHEZ: Remove test code
+#if 0
   WebTestInterfaces* interfaces =
       ShellRenderProcessObserver::GetInstance()->test_interfaces();
   return interfaces->createMIDIAccessor(client);
+#else
+  return 0;
+#endif
 }
 
 WebAudioDevice*
 ShellContentRendererClient::OverrideCreateAudioDevice(
     double sample_rate) {
+  // SHEZ: Remove test code
+#if 0
   WebTestInterfaces* interfaces =
       ShellRenderProcessObserver::GetInstance()->test_interfaces();
   return interfaces->createAudioDevice(sample_rate);
+#else
+  return 0;
+#endif
 }
 
 WebClipboard* ShellContentRendererClient::OverrideWebClipboard() {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return NULL;
+  // SHEZ: Remove test code.
+#if 0
   if (!clipboard_)
     clipboard_.reset(new MockWebClipboardImpl);
   return clipboard_.get();
+#else
+  return NULL;
+#endif
 }
 
 WebKit::WebCrypto* ShellContentRendererClient::OverrideWebCrypto() {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return NULL;
+  // SHEZ: Remove test code.
+#if 0
   WebTestInterfaces* interfaces =
       ShellRenderProcessObserver::GetInstance()->test_interfaces();
   return interfaces->crypto();
+#else
+  return NULL;
+#endif
 }
 
 WebThemeEngine* ShellContentRendererClient::OverrideThemeEngine() {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return NULL;
+  // SHEZ: Remove test code.
+#if 0
   return ShellRenderProcessObserver::GetInstance()->test_interfaces()
       ->themeEngine();
+#else
+  return NULL;
+#endif
 }
 
 void ShellContentRendererClient::WebTestProxyCreated(RenderView* render_view,
                                                      WebTestProxyBase* proxy) {
+  // SHEZ: Remove test code.
+#if 0
   WebKitTestRunner* test_runner = new WebKitTestRunner(render_view);
   test_runner->set_proxy(proxy);
   if (!ShellRenderProcessObserver::GetInstance()->test_delegate())
@@ -197,6 +235,7 @@ void ShellContentRendererClient::WebTestProxyCreated(RenderView* render_view,
       ShellRenderProcessObserver::GetInstance()->test_interfaces());
   test_runner->proxy()->setDelegate(
       ShellRenderProcessObserver::GetInstance()->test_delegate());
+#endif
 }
 
 bool ShellContentRendererClient::AllowBrowserPlugin(

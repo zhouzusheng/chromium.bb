@@ -495,6 +495,8 @@ class CONTENT_EXPORT RenderViewImpl
       const WebKit::WebGestureEvent& event,
       const WebKit::WebVector<WebKit::WebRect>& target_rects);
 #endif
+  virtual void setRubberbandRect(const WebKit::WebRect&);
+  virtual void hideRubberbandRect();
   virtual void navigateBackForwardSoon(int offset);
   virtual int historyBackListCount();
   virtual int historyForwardListCount();
@@ -1036,6 +1038,7 @@ class CONTENT_EXPORT RenderViewImpl
 
   void OnWindowSnapshotCompleted(const int snapshot_id,
       const gfx::Size& size, const std::vector<unsigned char>& png);
+  void OnEnableAltDragRubberbanding(bool enable);
 
 
   // Adding a new message handler? Please add it in alphabetical order above

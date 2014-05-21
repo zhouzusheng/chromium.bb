@@ -244,6 +244,7 @@ z-index type_name=int, custom_all
 -webkit-user-drag
 -webkit-user-modify
 -webkit-user-select
+-bb-rubberbandable name_for_methods=Rubberbandable
 -webkit-wrap-flow type_name=WrapFlow
 -webkit-wrap-through type_name=WrapThrough
 

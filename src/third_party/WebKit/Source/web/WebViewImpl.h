@@ -446,6 +446,8 @@ public:
 
     void updatePageDefinedPageScaleConstraints(const WebCore::ViewportArguments&);
 
+    void willDrag();
+
     // Start a system drag and drop operation.
     void startDragging(
         WebCore::Frame*,

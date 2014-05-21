@@ -38,6 +38,7 @@
 namespace WebCore {
     class ApplicationCache;
     class BarProp;
+    class BBDragData;
     class CSSRuleList;
     class CSSStyleDeclaration;
     class Console;
@@ -74,6 +75,8 @@ namespace WebCore {
     class Storage;
     class StyleMedia;
     class DOMWindowCSS;
+    class BBClipboard;
+    class BBWindowHooks;
 
     struct WindowFeatures;
 
@@ -379,6 +382,11 @@ namespace WebCore {
 
         bool isInsecureScriptAccess(DOMWindow* activeWindow, const String& urlString);
 
+        // Bloomberg specific objects/methods
+        BBClipboard* bbClipboard() const;
+        BBWindowHooks* bbWindowHooks() const;
+        PassRefPtr<BBDragData> bbDragData();
+
     protected:
         DOMWindowLifecycleNotifier* lifecycleNotifier();
 
@@ -418,6 +426,9 @@ namespace WebCore {
         mutable RefPtr<Navigator> m_navigator;
         mutable RefPtr<Location> m_location;
         mutable RefPtr<StyleMedia> m_media;
+        mutable RefPtr<BBClipboard> m_bbClipboard;
+        mutable RefPtr<BBWindowHooks> m_bbWindowHooks;
+        mutable RefPtr<BBDragData> m_bbDragData;
 
         EventTargetData m_eventTargetData;
 

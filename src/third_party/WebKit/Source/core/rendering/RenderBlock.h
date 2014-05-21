@@ -744,6 +744,9 @@ private:
     RenderBoxModelObject* createReplacementRunIn(RenderBoxModelObject* runIn);
     void moveRunInUnderSiblingBlockIfNeeded(RenderObject* runIn);
     void moveRunInToOriginalPosition(RenderObject* runIn);
+
+    virtual LayoutUnit additionalMarginStart() const OVERRIDE;
+
     // End helper functions and structs used by layoutBlockChildren.
 
     // Helper function for layoutInlineChildren()

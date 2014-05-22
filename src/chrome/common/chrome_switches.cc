@@ -290,9 +290,6 @@ const char kDisableBackgroundMode[]         = "disable-background-mode";
 // measurements.
 const char kDisableBackgroundNetworking[]   = "disable-background-networking";
 
-// Disables more strict popup blocking.
-const char kDisableBetterPopupBlocking[]    = "disable-better-popup-blocking";
-
 // Disables the bundled PPAPI version of Flash.
 const char kDisableBundledPpapiFlash[]      = "disable-bundled-ppapi-flash";
 
@@ -307,6 +304,9 @@ const char kDisableBookmarkAutocompleteProvider[] =
 const char kDisableClientSidePhishingDetection[] =
     "disable-client-side-phishing-detection";
 
+// Disables pushing cloud policy to Chrome using an invalidation service.
+const char kDisableCloudPolicyPush[]        = "disable-cloud-policy-push";
+
 const char kDisableComponentUpdate[]        = "disable-component-update";
 
 // Disables establishing certificate revocation information by downloading a
@@ -319,6 +319,13 @@ const char kDisableCustomJumpList[]         = "disable-custom-jumplist";
 // Disables installation of default apps on first run. This is used during
 // automated testing.
 const char kDisableDefaultApps[]            = "disable-default-apps";
+
+// Disables device discovery.
+const char kDisableDeviceDiscovery[]        = "disable-device-discovery";
+
+// Disables device discovery notifications.
+const char kDisableDeviceDiscoveryNotifications[] =
+    "disable-device-discovery-notifications";
 
 // Disables retrieval of PAC URLs from DHCP as per the WPAD standard.
 const char kDisableDhcpWpad[]               = "disable-dhcp-wpad";
@@ -480,6 +487,15 @@ const char kDisableTranslate[]              = "disable-translate";
 // Disables TLS Channel ID extension.
 const char kDisableTLSChannelID[]           = "disable-tls-channel-id";
 
+// Disables some security measures when accessing user media devices like
+// webcams and microphones, especially on non-HTTPS pages.
+const char kDisableUserMediaSecurity[]      = "disable-user-media-security";
+
+// Do not expose WebGL extension WEBGL_debug_renderer_info to unprivileged code
+// in the browser.
+const char kDisableWebGLDebugRendererInfo[] =
+    "disable-webgl-debug-renderer-info";
+
 // Disables the backend service for web resources.
 const char kDisableWebResources[]           = "disable-web-resources";
 
@@ -502,6 +518,14 @@ const char kDnsLogDetails[]                 = "dns-log-details";
 
 // Disables prefetching of DNS information.
 const char kDnsPrefetchDisable[]            = "dns-prefetch-disable";
+
+// If set, Flash fullscreen widgets are embedded within the browser window and
+// with the same UX as HTML5 fullscreen.
+//
+// TODO(miu): This feature is a work in-progress.  It should not be enabled by
+// default until going through a formal UX review, and all comments/concerns on
+// the crbug are addressed.  http://crbug.com/290403
+const char kEmbedFlashFullscreen[] = "embed-flash-fullscreen";
 
 // Enables the <adview> tag in packaged apps.
 const char kEnableAdview[]                  = "enable-adview";
@@ -533,6 +557,10 @@ const char kEnablePasswordAutofillPublicSuffixDomainMatching[] =
 // GAIA login page, an info bar can help the user login.
 const char kEnableAutologin[]               = "enable-autologin";
 
+// Enables running all beforeunload handlers before closing any browser windows
+// on shutdown.
+const char kEnableBatchedShutdown[]         = "enable-batched-shutdown";
+
 // Enables the benchmarking extensions.
 const char kEnableBenchmarking[]            = "enable-benchmarking";
 
@@ -551,15 +579,19 @@ const char kEnableComponentCloudPolicy[]    = "enable-component-cloud-policy";
 // Chrome OS apps list.
 const char kEnableContacts[]                = "enable-contacts";
 
-// Enables device discovery.
-const char kEnableDeviceDiscovery[]        = "enable-device-discovery";
-
 // If true devtools experimental settings are enabled.
 const char kEnableDevToolsExperiments[]     = "enable-devtools-experiments";
+
+// Enable device discovery notifications.
+const char kEnableDeviceDiscoveryNotifications[] =
+    "enable-device-discovery-notifications";
 
 // Force-enables DNS probes on main frame DNS errors.  (The user must still
 // opt in to "Use web service to resolve navigation errors".)
 const char kEnableDnsProbes[]               = "enable-dns-probes";
+
+// Enables the DOM distiller.
+const char kEnableDomDistiller[]               = "enable-dom-distiller";
 
 // Enables extensions to be easily installed from sites other than the web
 // store. Without this flag, they can still be installed, but must be manually
@@ -654,8 +686,14 @@ const char kEnablePanels[]                  = "enable-panels";
 // account creation.
 const char kEnablePasswordGeneration[]      = "enable-password-generation";
 
-// Enables the usage of Portable Native Client.
-const char kEnablePnacl[]                   = "enable-pnacl";
+// Enables searching for people from the apps list search box.
+const char kEnablePeopleSearch[]            = "enable-people-search";
+
+// Disables the usage of Portable Native Client.
+const char kDisablePnacl[]                  = "disable-pnacl";
+
+// Disables crash throttling for Portable Native Client.
+const char kDisablePnaclCrashThrottling[]   = "disable-pnacl-crash-throttling";
 
 // Disables the installation of Portable Native Client.
 const char kDisablePnaclInstall[]           = "disable-pnacl-install";
@@ -676,10 +714,6 @@ const char kEnableQuicHttps[]               = "enable-quic-https";
 
 // Enables the Quickoffoce/Chrome document viewer rather than the editor.
 const char kEnableQuickofficeViewing[]      = "enable-quickoffice-viewing";
-
-// Enables support in chrome://settings to reset settings in your profile
-// that are often touched by malware.
-const char kEnableResetProfileSettings[]    = "enable-reset-profile-settings";
 
 // Enables content settings based on host *and* plug-in in the user
 // preferences.
@@ -734,8 +768,8 @@ const char kEnableTabGroupsContextMenu[]    = "enable-tab-groups-context-menu";
 // instant-extended-api, where thumbnails are generally smaller.
 const char kEnableThumbnailRetargeting[]   = "enable-thumbnail-retargeting";
 
-// Enables Translate settings in chrome://settings/languages.
-const char kEnableTranslateSettings[]      = "enable-translate-settings";
+// Enables Translate experimental new UX which replaces the infobar.
+const char kEnableTranslateNewUX[]         = "enable-translate-new-ux";
 
 // Enables unrestricted SSL 3.0 fallback.
 // With this switch, SSL 3.0 fallback will be enabled for all sites.
@@ -896,9 +930,6 @@ const char kIncognito[]                     = "incognito";
 // Causes Chrome to attempt to get metadata from the webstore for the
 // app/extension ID given, and then prompt the user to download and install it.
 const char kInstallFromWebstore[]           = "install-from-webstore";
-
-// Causes Chrome to load this URL instead of chrome://newtab for New Tab pages.
-const char kInstantNewTabURL[]              = "instant-new-tab-url";
 
 // Marks a renderer as an Instant process.
 const char kInstantProcess[]                = "instant-process";
@@ -1113,6 +1144,9 @@ const char kPrerenderModeSwitchValuePrefetchOnly[] = "prefetch_only";
 // Enable conversion from vector to raster for any page.
 const char kPrintRaster[]                   = "print-raster";
 
+// Use IPv6 only for privet HTTP.
+const char kPrivetIPv6Only[]                   = "privet-ipv6-only";
+
 // Outputs the product version information and quit. Used as an internal api to
 // detect the installed version of Chrome on Linux.
 const char kProductVersion[]                = "product-version";
@@ -1259,9 +1293,6 @@ const char kShowAppList[]                   = "show-app-list";
 
 // See kHideIcons.
 const char kShowIcons[]                     = "show-icons";
-
-// If true the alignment of the shelf can be changed.
-const char kShowShelfAlignmentMenu[]        = "show-launcher-alignment-menu";
 
 // Marks a renderer as the signin process.
 const char kSigninProcess[]                 = "signin-process";
@@ -1427,6 +1458,9 @@ const char kUninstall[]                     = "uninstall";
 // apps/origins.  This should be used only for testing purpose.
 const char kUnlimitedStorage[]              = "unlimited-storage";
 
+// Use the cacheable New Tab page for Embedded Search.
+const char kUseCacheableNewTabPage[]        = "use-cacheable-new-tab-page";
+
 // Uses Spdy for the transport protocol instead of HTTP. This is a temporary
 // testing flag.
 const char kUseSpdy[]                       = "use-spdy";
@@ -1456,9 +1490,6 @@ const char kVariationsServerURL[]           = "variations-server-url";
 // Prints version information and quits.
 const char kVersion[]                       = "version";
 
-// Cycle through a series of URLs listed in the specified file.
-const char kVisitURLs[]                     = "visit-urls";
-
 // Adds the given extension ID to all the permission whitelists.
 const char kWhitelistedExtensionID[]        = "whitelisted-extension-id";
 
@@ -1480,22 +1511,41 @@ const char kPluginsMetadataServerURL[]      = "plugins-metadata-server-url";
 #if defined(OS_ANDROID) || defined(OS_IOS)
 // Enable SPDY proxy.
 const char kEnableSpdyProxyAuth[]           = "enable-spdy-proxy-auth";
+
+// Registers for cloud policy using the BROWSER client type instead of the
+// ANDROID_BROWSER or IOS_BROWSER types.
+// This allows skipping the server whitelist.
+// TODO(joaodasilva): remove this. http://crbug.com/248527
+const char kFakeCloudPolicyType[]           = "fake-cloud-policy-type";
+
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
 #if defined(OS_ANDROID)
+// Makes the "Add to Homescreen" shortcut invisible.
+const char kDisableAddToHomescreen[]         = "disable-add-to-homescreen";
+
+// Disables the new NTP.
+const char kDisableNewNTP[]                  = "disable-new-ntp";
+
+// Enable the accessibility tab switcher.
+const char kEnableAccessibilityTabSwitcher[] =
+    "enable-accessibility-tab-switcher";
+
+// Makes the "Add to Homescreen" shortcut visible.
+const char kEnableAddToHomescreen[]         = "enable-add-to-homescreen";
+
 // Enables the new NTP.
 const char kEnableNewNTP[]                  = "enable-new-ntp";
 
 // Pops the translate infobar if possible.
 const char kEnableTranslate[]               = "enable-translate";
 
-// Registers for cloud policy using the BROWSER client type instead of the
-// ANDROID_BROWSER type. This enables skipping the server whitelist.
-// TODO(joaodasilva): remove this. http://crbug.com/248527
-const char kFakeCloudPolicyType[]           = "fake-cloud-policy-type";
-
 // Uses the tablet specific UI components when available.
 const char kTabletUI[]                      = "tablet-ui";
+
+// Enables support for playing videos on Chromecast devices.
+const char kEnableCast[]                    = "enable-cast";
+
 #endif
 
 #if defined(USE_ASH)
@@ -1515,16 +1565,19 @@ const char kPasswordStore[]                 = "password-store";
 #endif
 #endif  // OS_POSIX
 
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+// Triggers migration of user data directory to another directory
+// specified as a parameter. The migration is done under singleton lock,
+// and sanity checks are made to avoid corrupting the profile.
+// The browser exits after migration is complete.
+const char kMigrateDataDirForSxS[]          = "migrate-data-dir-for-sxs";
+#endif  // defined(OS_LINUX) && !defined(OS_CHROMEOS)
+
 #if defined(OS_MACOSX)
 // Forcibly disables Lion-style on newer OSes, to allow developers to test the
 // older, SnowLeopard-style fullscreen.
 const char kDisableSystemFullscreenForTesting[] =
     "disable-system-fullscreen-for-testing";
-
-// Enables the app list OSX .app shim, for showing the app list. If the flag is
-// not present, Chrome will check if the shim exists at startup, and delete it
-// if it does.
-const char kEnableAppListShim[]             = "enable-app-list-shim";
 
 // Enable to allow creation and launch of app shims for platform apps.
 const char kEnableAppShims[]                = "enable-app-shims";
@@ -1556,12 +1609,6 @@ const char kForceImmersive[]                = "force-immersive";
 // For the DelegateExecute verb handler to launch Chrome in desktop mode on
 // Windows 8 and higher.  Used when relaunching metro Chrome.
 const char kForceDesktop[]                  = "force-desktop";
-
-// Allows for disabling the overlapped I/O for TCP reads.
-// Possible values are "on" or "off".
-// The default is "on" which matches the existing behavior.
-// "off" switches to use non-blocking reads and WSAEventSelect.
-const char kOverlappedRead[]                = "overlapped-reads";
 
 // Relaunches metro Chrome on Windows 8 and higher using a given shortcut.
 const char kRelaunchShortcut[]              = "relaunch-shortcut";

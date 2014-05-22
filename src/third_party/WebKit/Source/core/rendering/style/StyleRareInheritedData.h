@@ -25,8 +25,8 @@
 #ifndef StyleRareInheritedData_h
 #define StyleRareInheritedData_h
 
-#include "core/css/StyleColor.h"
 #include "core/platform/Length.h"
+#include "core/platform/graphics/Color.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/AtomicString.h"
@@ -59,14 +59,14 @@ public:
 
     RefPtr<StyleImage> listStyleImage;
 
-    StyleColor textStrokeColor;
+    Color textStrokeColor;
     float textStrokeWidth;
-    StyleColor textFillColor;
-    StyleColor textEmphasisColor;
+    Color textFillColor;
+    Color textEmphasisColor;
 
-    StyleColor visitedLinkTextStrokeColor;
-    StyleColor visitedLinkTextFillColor;
-    StyleColor visitedLinkTextEmphasisColor;
+    Color visitedLinkTextStrokeColor;
+    Color visitedLinkTextFillColor;
+    Color visitedLinkTextEmphasisColor;
 
     OwnPtr<ShadowData> textShadow; // Our text shadow information for shadowed text drawing.
     AtomicString highlight; // Apple-specific extension for custom highlight rendering.
@@ -96,9 +96,7 @@ public:
     unsigned textEmphasisPosition : 1; // TextEmphasisPosition
     unsigned m_textAlignLast : 3; // TextAlignLast
     unsigned m_textOrientation : 2; // TextOrientation
-#if ENABLE(CSS3_TEXT)
     unsigned m_textIndentLine : 1; // TextIndentEachLine
-#endif
     unsigned m_lineBoxContain: 7; // LineBoxContain
     // CSS Image Values Level 3
     unsigned m_imageRendering : 2; // EImageRendering
@@ -122,9 +120,9 @@ public:
     AtomicString m_lineGrid;
     unsigned m_tabSize;
 
-    StyleColor tapHighlightColor;
+    Color tapHighlightColor;
 
-    StyleColor caretColor;
+    Color caretColor;
 
     DataRef<StyleVariableData> m_variables;
 

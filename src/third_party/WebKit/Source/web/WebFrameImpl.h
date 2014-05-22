@@ -128,6 +128,7 @@ public:
         int argc,
         v8::Handle<v8::Value> argv[]);
     virtual v8::Local<v8::Context> mainWorldScriptContext() const;
+    virtual v8::Isolate* scriptIsolate() const;
     virtual v8::Handle<v8::Value> createFileSystem(WebFileSystemType,
         const WebString& name,
         const WebString& path);
@@ -188,9 +189,8 @@ public:
     virtual void moveCaretSelectionTowardsWindowPoint(const WebPoint&);
     virtual void moveRangeSelection(const WebPoint& base, const WebPoint& extent);
     virtual void moveCaretSelection(const WebPoint&);
-    virtual int printBegin(const WebPrintParams&,
-                           const WebNode& constrainToNode,
-                           bool* useBrowserOverlays);
+    virtual void setCaretVisible(bool);
+    virtual int printBegin(const WebPrintParams&, const WebNode& constrainToNode);
     virtual float printPage(int pageToPrint, WebCanvas*);
     virtual float getPrintPageShrink(int page);
     virtual void printEnd();
@@ -497,6 +497,19 @@ private:
     // from HistoryItems
     bool m_inSameDocumentHistoryLoad;
 };
+
+inline WebFrameImpl* toWebFrameImpl(WebFrame* webFrame)
+{
+    return static_cast<WebFrameImpl*>(webFrame);
+}
+
+inline const WebFrameImpl* toWebFrameImpl(const WebFrame* webFrame)
+{
+    return static_cast<const WebFrameImpl*>(webFrame);
+}
+
+// This will catch anyone doing an unnecessary cast.
+void toWebFrameImpl(const WebFrameImpl*);
 
 } // namespace WebKit
 

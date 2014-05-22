@@ -34,6 +34,7 @@ class WebFrame {
 public:
     virtual WebDocument document() const = 0;
     virtual v8::Local<v8::Context> mainWorldScriptContext() const = 0;
+    virtual v8::Isolate* scriptIsolate() const = 0;
 
 protected:
     // Destroy this WebView.  Note that clients of blpwtk2 should not delete

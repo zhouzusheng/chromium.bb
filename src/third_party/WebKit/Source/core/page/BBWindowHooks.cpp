@@ -129,8 +129,7 @@ void BBWindowHooks::fakePaint(Document* document)
 void BBWindowHooks::setTextMatchMarkerVisibility(Document* document, bool highlight)
 {
     Frame *frame = document->frame();
-    Editor *editor = frame->editor();
-    editor->setMarkedTextMatchesAreHighlighted(highlight);
+    frame->editor().setMarkedTextMatchesAreHighlighted(highlight);
 }
 
 bool BBWindowHooks::checkSpellingForRange(Range* range)
@@ -141,17 +140,16 @@ bool BBWindowHooks::checkSpellingForRange(Range* range)
         return false;
     }
 
-    WebCore::Frame *frame = range->ownerDocument()->frame();
+    WebCore::Frame *frame = range->ownerDocument().frame();
     WebCore::VisibleSelection s(range);
-    frame->editor()->clearMisspellingsAndBadGrammar(s);
-    frame->editor()->markMisspellingsAndBadGrammar(s, false, s);
+    frame->editor().clearMisspellingsAndBadGrammar(s);
+    frame->editor().markMisspellingsAndBadGrammar(s, false, s);
     return true;
 }
 
 void BBWindowHooks::removeMarker(Range* range, long mask, long removeMarkerFlag)
 {
-    Document *document = range->ownerDocument();
-    document->markers()->removeMarkers(range,
+    range->ownerDocument().markers()->removeMarkers(range,
         DocumentMarker::MarkerTypes(mask),
         static_cast<WebCore::DocumentMarkerController::RemovePartiallyOverlappingMarkerOrNot>
         (removeMarkerFlag));
@@ -159,8 +157,7 @@ void BBWindowHooks::removeMarker(Range* range, long mask, long removeMarkerFlag)
 
 void BBWindowHooks::addMarker(Range* range, long markerType)
 {
-    Document *document = range->ownerDocument();
-    document->markers()->addMarker(range,
+    range->ownerDocument().markers()->addMarker(range,
         static_cast<WebCore::DocumentMarker::MarkerType>(markerType));
 
 }
@@ -179,14 +176,14 @@ bool BBWindowHooks::checkSpellingForNode(Node* node)
     WTF::RefPtr<WebCore::Element> e = toElement(node);
 
     if (e && e->isSpellCheckingEnabled()) {
-        WebCore::Frame *frame = e->document()->frame();
+        WebCore::Frame *frame = e->document().frame();
         if (frame) {
             WebCore::VisibleSelection s(WebCore::firstPositionInOrBeforeNode(e.get()),
                 WebCore::lastPositionInOrAfterNode(e.get()));
             if (frame->settings() && !frame->settings()->asynchronousSpellCheckingEnabled()) {
-                frame->editor()->clearMisspellingsAndBadGrammar(s);
+                frame->editor().clearMisspellingsAndBadGrammar(s);
             }
-            frame->editor()->markMisspellingsAndBadGrammar(s, false, s);
+            frame->editor().markMisspellingsAndBadGrammar(s, false, s);
         }
         return true;
     }

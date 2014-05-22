@@ -35,7 +35,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-IndentBlockCommand::IndentBlockCommand(Document* document)
+IndentBlockCommand::IndentBlockCommand(Document& document)
     : BlockCommand(document)
 {
 }

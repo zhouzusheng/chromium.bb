@@ -41,6 +41,7 @@ class WebFrameImpl : public WebFrame {
     WebFrameImpl(WebKit::WebFrame* impl);
     virtual WebDocument document() const OVERRIDE;
     virtual v8::Local<v8::Context> mainWorldScriptContext() const OVERRIDE;
+    virtual v8::Isolate* scriptIsolate() const OVERRIDE;
 
   private:
     WebKit::WebFrame* d_impl;

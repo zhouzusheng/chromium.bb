@@ -62,6 +62,11 @@ def writeBindingCCFile(fCC, symbols):
       'arguments': 'GLuint program, GLint location, GLsizei bufSize, '
                    'GLint* params',
     },
+    'SetTraceFunctionPointers': {
+      'return_type': 'void',
+      'arguments': 'GetCategoryEnabledFlagFunc get_category_enabled_flag, '
+                   'AddTraceEventFunc add_trace_event_func',
+    },
   })
 
   fCC.write('// generated file -- DO NOT EDIT\n')
@@ -98,6 +103,12 @@ def writeBindingCCFile(fCC, symbols):
   fCC.write('typedef void            *EGLDisplay;\n')
   fCC.write('typedef void            *EGLSurface;\n')
   fCC.write('typedef void            *EGLClientBuffer;\n')
+  fCC.write('\n')
+  fCC.write('typedef const unsigned char* (*GetCategoryEnabledFlagFunc)(const char* name);\n')
+  fCC.write('typedef void (*AddTraceEventFunc)(char phase, const unsigned char* categoryGroupEnabled, const char* name,\n')
+  fCC.write('                                  unsigned long long id, int numArgs, const char** argNames,\n')
+  fCC.write('                                  const unsigned char* argTypes, const unsigned long long* argValues,\n')
+  fCC.write('                                  unsigned char flags);\n')
   fCC.write('\n')
   fCC.write('typedef void (__stdcall *angleFunctionPointer)(void);\n')
   fCC.write('typedef angleFunctionPointer __eglMustCastToProperFunctionPointerType;\n')

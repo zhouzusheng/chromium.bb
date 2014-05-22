@@ -39,6 +39,7 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/html/HTMLTextAreaElement.h"
+#include "core/page/Frame.h"
 #include "core/page/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
@@ -95,7 +96,6 @@ static EDisplay equivalentBlockDisplay(EDisplay display, bool isFloating, bool s
     case BOX:
     case FLEX:
     case GRID:
-    case LAZY_BLOCK:
         return display;
 
     case LIST_ITEM:
@@ -158,6 +158,11 @@ static bool isDisplayFlexibleBox(EDisplay display)
 static bool isDisplayGridBox(EDisplay display)
 {
     return display == GRID || display == INLINE_GRID;
+}
+
+static bool parentStyleForcesZIndexToCreateStackingContext(const RenderStyle* parentStyle)
+{
+    return isDisplayFlexibleBox(parentStyle->display()) || isDisplayGridBox(parentStyle->display());
 }
 
 void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentStyle, Element *e)
@@ -223,7 +228,7 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
             style->setPosition(AbsolutePosition);
 
         // Absolute/fixed positioned elements, floating elements and the document element need block-like outside display.
-        if (style->hasOutOfFlowPosition() || style->isFloating() || (e && e->document()->documentElement() == e))
+        if (style->hasOutOfFlowPosition() || style->isFloating() || (e && e->document().documentElement() == e))
             style->setDisplay(equivalentBlockDisplay(style->display(), style->isFloating(), !m_useQuirksModeStyles));
 
         // FIXME: Don't support this mutation for pseudo styles like first-letter or first-line, since it's not completely
@@ -259,13 +264,13 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
     }
 
     // Make sure our z-index value is only applied if the object is positioned.
-    if (style->position() == StaticPosition && !isDisplayFlexibleBox(parentStyle->display()))
+    if (style->position() == StaticPosition && !parentStyleForcesZIndexToCreateStackingContext(parentStyle))
         style->setHasAutoZIndex();
 
     // Auto z-index becomes 0 for the root element and transparent objects. This prevents
     // cases where objects that should be blended as a single unit end up with a non-transparent
     // object wedged in between them. Auto z-index also becomes 0 for objects that specify transforms/masks/reflections.
-    if (style->hasAutoZIndex() && ((e && e->document()->documentElement() == e)
+    if (style->hasAutoZIndex() && ((e && e->document().documentElement() == e)
         || style->opacity() < 1.0f
         || style->hasTransformRelatedProperty()
         || style->hasMask()
@@ -274,7 +279,7 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
         || style->hasFilter()
         || style->hasBlendMode()
         || style->position() == StickyPosition
-        || (style->position() == FixedPosition && e && e->document()->page() && e->document()->page()->settings()->fixedPositionCreatesStackingContext())
+        || (style->position() == FixedPosition && e && e->document().page() && e->document().page()->settings().fixedPositionCreatesStackingContext())
         || isInTopLayer(e, style)
         ))
         style->setZIndex(0);
@@ -347,7 +352,7 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
 
     // Let the theme also have a crack at adjusting the style.
     if (style->hasAppearance())
-        RenderTheme::defaultTheme()->adjustStyle(style, e, m_cachedUAStyle);
+        RenderTheme::theme().adjustStyle(style, e, m_cachedUAStyle);
 
     // If we have first-letter pseudo style, do not share this style.
     if (style->hasPseudoStyle(FIRST_LETTER))
@@ -388,11 +393,11 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
     }
 
     if (e && e->hasTagName(htmlTag)) {
-        if (e->document()->frame() &&
-            e->document()->frame()->ownerElement() &&
-            e->document()->frame()->ownerElement()->renderer()) {
+        if (e->document().frame() &&
+            e->document().frame()->ownerElement() &&
+            e->document().frame()->ownerElement()->renderer()) {
             float ownerEffectiveZoom
-                = e->document()->frame()->ownerElement()->renderer()->style()->effectiveZoom();
+                = e->document().frame()->ownerElement()->renderer()->style()->effectiveZoom();
             float childZoom = style->zoom();
             style->setEffectiveZoom(ownerEffectiveZoom * childZoom);
         }

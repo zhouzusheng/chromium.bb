@@ -33,6 +33,7 @@ class Size;
 }
 
 namespace content {
+class BrowserDemuxerAndroid;
 class GpuMessageFilter;
 class PeerConnectionTrackerHost;
 class RenderWidgetHelper;
@@ -186,6 +187,12 @@ class CONTENT_EXPORT RenderProcessHostImpl
       RenderProcessHost* process,
       const GURL& url);
 
+#if defined(OS_ANDROID)
+  const scoped_refptr<BrowserDemuxerAndroid>& browser_demuxer_android() {
+    return browser_demuxer_android_;
+  }
+#endif
+
  protected:
   // A proxy for our IPC::Channel that lives on the IO thread (see
   // browser_process.h)
@@ -335,6 +342,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // Forwards power state messages to the renderer process.
   PowerMonitorMessageBroadcaster power_monitor_broadcaster_;
+
+#if defined(OS_ANDROID)
+  scoped_refptr<BrowserDemuxerAndroid> browser_demuxer_android_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(RenderProcessHostImpl);
 };

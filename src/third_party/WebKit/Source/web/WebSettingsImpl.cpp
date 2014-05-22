@@ -38,7 +38,7 @@
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 
-#if OS(WINDOWS)
+#if OS(WIN)
 #include "core/rendering/RenderThemeChromiumWin.h"
 #endif
 
@@ -51,7 +51,6 @@ WebSettingsImpl::WebSettingsImpl(Settings* settings)
     , m_showFPSCounter(false)
     , m_showPaintRects(false)
     , m_renderVSyncNotificationEnabled(false)
-    , m_viewportEnabled(false)
     , m_gestureTapHighlightEnabled(true)
     , m_autoZoomFocusedNodeToLegibleScale(false)
     , m_deferredImageDecodingEnabled(false)
@@ -101,7 +100,7 @@ void WebSettingsImpl::setPictographFontFamily(const WebString& font, UScriptCode
 void WebSettingsImpl::setDefaultFontSize(int size)
 {
     m_settings->setDefaultFontSize(size);
-#if OS(WINDOWS)
+#if OS(WIN)
     // RenderTheme is a singleton that needs to know the default font size to
     // draw some form controls. We let it know each time the size changes.
     WebCore::RenderThemeChromiumWin::setDefaultFontSize(size);
@@ -191,6 +190,11 @@ void WebSettingsImpl::setViewportMetaLayoutSizeQuirk(bool viewportMetaLayoutSize
 void WebSettingsImpl::setViewportMetaZeroValuesQuirk(bool viewportMetaZeroValuesQuirk)
 {
     m_settings->setViewportMetaZeroValuesQuirk(viewportMetaZeroValuesQuirk);
+}
+
+void WebSettingsImpl::setIgnoreMainFrameOverflowHiddenQuirk(bool ignoreMainFrameOverflowHiddenQuirk)
+{
+    m_settings->setIgnoreMainFrameOverflowHiddenQuirk(ignoreMainFrameOverflowHiddenQuirk);
 }
 
 void WebSettingsImpl::setSupportsMultipleWindows(bool supportsMultipleWindows)
@@ -457,6 +461,11 @@ void WebSettingsImpl::setAcceleratedCompositingForOverflowScrollEnabled(bool ena
     m_settings->setAcceleratedCompositingForOverflowScrollEnabled(enabled);
 }
 
+void WebSettingsImpl::setCompositorDrivenAcceleratedScrollingEnabled(bool enabled)
+{
+    m_settings->setCompositorDrivenAcceleratedScrollingEnabled(enabled);
+}
+
 void WebSettingsImpl::setAcceleratedCompositingForFixedRootBackgroundEnabled(bool enabled)
 {
     m_settings->setAcceleratedCompositingForFixedRootBackgroundEnabled(enabled);
@@ -612,6 +621,11 @@ bool WebSettingsImpl::touchEditingEnabled() const
     return m_settings->touchEditingEnabled();
 }
 
+bool WebSettingsImpl::viewportEnabled() const
+{
+    return m_settings->viewportEnabled();
+}
+
 void WebSettingsImpl::setVisualWordMovementEnabled(bool enabled)
 {
     m_settings->setVisualWordMovementEnabled(enabled);
@@ -642,6 +656,11 @@ void WebSettingsImpl::setMediaPlaybackRequiresUserGesture(bool required)
     m_settings->setMediaPlaybackRequiresUserGesture(required);
 }
 
+void WebSettingsImpl::setMediaFullscreenRequiresUserGesture(bool required)
+{
+    m_settings->setMediaFullscreenRequiresUserGesture(required);
+}
+
 void WebSettingsImpl::setFixedPositionCreatesStackingContext(bool creates)
 {
     m_settings->setFixedPositionCreatesStackingContext(creates);
@@ -649,7 +668,7 @@ void WebSettingsImpl::setFixedPositionCreatesStackingContext(bool creates)
 
 void WebSettingsImpl::setViewportEnabled(bool enabled)
 {
-    m_viewportEnabled = enabled;
+    m_settings->setViewportEnabled(enabled);
 }
 
 void WebSettingsImpl::setSyncXHRInDocumentsEnabled(bool enabled)
@@ -700,6 +719,11 @@ void WebSettingsImpl::setPinchOverlayScrollbarThickness(int thickness)
 void WebSettingsImpl::setPinchVirtualViewportEnabled(bool enabled)
 {
     m_settings->setPinchVirtualViewportEnabled(enabled);
+}
+
+void WebSettingsImpl::setUseSolidColorScrollbars(bool enabled)
+{
+    m_settings->setUseSolidColorScrollbars(enabled);
 }
 
 } // namespace WebKit

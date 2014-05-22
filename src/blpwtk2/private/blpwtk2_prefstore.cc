@@ -44,9 +44,9 @@ void PrefStore::RemoveObserver(PrefStore::Observer* observer)
     d_observers.RemoveObserver(observer);
 }
 
-size_t PrefStore::NumberOfObservers() const
+bool PrefStore::HasObservers() const
 {
-    return d_observers.size();
+    return !d_observers.might_have_observers();
 }
 
 bool PrefStore::IsInitializationComplete() const

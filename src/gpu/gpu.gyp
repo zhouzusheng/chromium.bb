@@ -123,7 +123,6 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../testing/gtest.gyp:gtest',
         '../third_party/angle_dx11/src/build_angle.gyp:translator_glsl',
         '../ui/gl/gl.gyp:gl',
         '../ui/ui.gyp:ui',
@@ -249,7 +248,6 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../testing/gtest.gyp:gtest',
         '../third_party/angle_dx11/src/build_angle.gyp:translator_glsl',
         '../ui/ui.gyp:ui',
         'command_buffer/command_buffer.gyp:gles2_utils',
@@ -307,7 +305,6 @@
       'target_name': 'gpu_unittest_utils',
       'type': 'static_library',
       'dependencies': [
-        '../testing/gtest.gyp:gtest',
         '../third_party/khronos/khronos.gyp:khronos_headers',
         '../ui/gl/gl.gyp:gl_unittest_utils',
         'gpu',

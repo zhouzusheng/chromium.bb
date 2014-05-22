@@ -88,10 +88,7 @@
       'dependencies': [
         'ppapi_proxy',
         'ppapi_shared',
-        '../base/base.gyp:test_support_base',
         '../ipc/ipc.gyp:ipc',
-        '../ipc/ipc.gyp:test_support_ipc',
-        '../testing/gtest.gyp:gtest',
       ],
       'sources': [
         'proxy/ppapi_proxy_test.cc',
@@ -114,9 +111,6 @@
       'dependencies': [
         'ppapi_proxy',
         'ppapi_shared',
-        'ppapi_unittest_shared',
-        '../base/base.gyp:test_support_base',
-        '../testing/gtest.gyp:gtest',
       ],
       'sources': [
         'proxy/ppapi_perftests.cc',
@@ -141,13 +135,10 @@
         'ppapi_host',
         'ppapi_proxy',
         'ppapi_shared',
-        'ppapi_unittest_shared',
-        '../base/base.gyp:test_support_base',
+        '../base/base.gyp:run_all_unittests',
         '../gpu/gpu.gyp:gpu_ipc',
         '../ipc/ipc.gyp:ipc',
-        '../ipc/ipc.gyp:test_support_ipc',
         '../media/media.gyp:shared_memory_support',
-        '../testing/gtest.gyp:gtest',
         '../ui/surface/surface.gyp:surface',
       ],
       # For the nacl_http_response_headers_unittest below.
@@ -155,8 +146,6 @@
         '../ppapi',
       ],
       'sources': [
-        'proxy/run_all_unittests.cc',
-
         'host/resource_message_filter_unittest.cc',
         # Piggy back on ppapi_unittests for a simple NaCl unittest,
         # which must not have dependencies on anything other than stdlibs.
@@ -217,9 +206,6 @@
           ['os_posix==1 and OS!="mac"', {
             'cflags': ['-fvisibility=hidden'],
             'type': 'shared_library',
-            # -gstabs, used in the official builds, causes an ICE. Simply remove
-            # it.
-            'cflags!': ['-gstabs'],
           }],
           ['OS=="win"', {
             'type': 'shared_library',

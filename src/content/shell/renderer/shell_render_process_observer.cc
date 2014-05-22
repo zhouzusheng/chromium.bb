@@ -16,12 +16,17 @@
 #include "content/shell/common/shell_switches.h"
 #include "content/shell/renderer/gc_extension.h"
 #include "content/shell/renderer/shell_content_renderer_client.h"
-#include "content/shell/renderer/webkit_test_runner.h"
-#include "third_party/WebKit/public/testing/WebTestInterfaces.h"
+
+// SHEZ: disable test code
+// #include "content/shell/renderer/webkit_test_runner.h"
+// #include "third_party/WebKit/public/testing/WebTestInterfaces.h"
+
+#include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "webkit/glue/webkit_glue.h"
 
 using WebKit::WebFrame;
+using WebKit::WebRuntimeFeatures;
 using WebTestRunner::WebTestDelegate;
 using WebTestRunner::WebTestInterfaces;
 
@@ -37,8 +42,10 @@ ShellRenderProcessObserver* ShellRenderProcessObserver::GetInstance() {
 }
 
 ShellRenderProcessObserver::ShellRenderProcessObserver()
-    : main_test_runner_(NULL),
-      test_delegate_(NULL) {
+    // SHEZ: Remove test-only code.
+    // : main_test_runner_(NULL),
+    //   test_delegate_(NULL)
+{
   CHECK(!g_instance);
   g_instance = this;
   RenderThread::Get()->AddObserver(this);
@@ -54,26 +61,40 @@ ShellRenderProcessObserver::~ShellRenderProcessObserver() {
 }
 
 void ShellRenderProcessObserver::SetTestDelegate(WebTestDelegate* delegate) {
+  // SHEZ: Remove test-only code.
+#if 0
   test_interfaces_->setDelegate(delegate);
   test_delegate_ = delegate;
+#endif
 }
 
 void ShellRenderProcessObserver::SetMainWindow(RenderView* view) {
+  // SHEZ: Remove test-only code.
+#if 0
   WebKitTestRunner* test_runner = WebKitTestRunner::Get(view);
   test_interfaces_->setWebView(view->GetWebView(), test_runner->proxy());
   main_test_runner_ = test_runner;
+#endif
 }
 
 void ShellRenderProcessObserver::WebKitInitialized() {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return;
 
+  // SHEZ: Remove test-only code.
+#if 0
   // We always expose GC to layout tests.
   webkit_glue::SetJavaScriptFlags(" --expose-gc");
   RenderThread::Get()->RegisterExtension(extensions_v8::GCExtension::Get());
 
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+    switches::kStableReleaseMode)) {
+    WebRuntimeFeatures::enableTestOnlyFeatures(true);
+  }
+
   test_interfaces_.reset(new WebTestInterfaces);
   test_interfaces_->resetAll();
+#endif
 }
 
 bool ShellRenderProcessObserver::OnControlMessageReceived(

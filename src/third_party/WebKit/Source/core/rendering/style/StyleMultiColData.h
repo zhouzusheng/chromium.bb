@@ -25,7 +25,6 @@
 #ifndef StyleMultiColData_h
 #define StyleMultiColData_h
 
-#include "core/css/StyleColor.h"
 #include "core/platform/Length.h"
 #include "core/rendering/style/BorderValue.h"
 #include "core/rendering/style/RenderStyleConstants.h"
@@ -59,7 +58,7 @@ public:
     unsigned short m_columnSpanCount;
     float m_gap;
     BorderValue m_rule;
-    StyleColor m_visitedLinkColumnRuleColor;
+    Color m_visitedLinkColumnRuleColor;
 
     bool m_autoWidth : 1;
     bool m_autoCount : 1;

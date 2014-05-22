@@ -54,6 +54,10 @@ class WebNodeList;
 class WebPluginContainer;
 
 // Provides access to some properties of a DOM node.
+// Note that the class design requires that neither this class nor any of its subclasses have any virtual
+// methods (other than the destructor), so that it is possible to safely static_cast an instance of one
+// class to the appropriate subclass based on the actual type of the wrapped WebCore::Node. For the same
+// reason, subclasses must not add any additional data members.
 class WebNode {
 public:
     virtual ~WebNode() { reset(); }
@@ -105,9 +109,9 @@ public:
     WEBKIT_EXPORT WebNode nextSibling() const;
     WEBKIT_EXPORT bool hasChildNodes() const;
     WEBKIT_EXPORT WebNodeList childNodes();
-    WEBKIT_EXPORT bool insertBefore(const WebNode& newChild, const WebNode& refChild, bool shouldLazyAttach = false);
-    WEBKIT_EXPORT bool replaceChild(const WebNode& newChild, const WebNode& oldChild, bool shouldLazyAttach = false);
-    WEBKIT_EXPORT bool appendChild(const WebNode& child, bool shouldLazyAttach = false);
+    WEBKIT_EXPORT bool insertBefore(const WebNode& newChild, const WebNode& refChild);
+    WEBKIT_EXPORT bool replaceChild(const WebNode& newChild, const WebNode& oldChild);
+    WEBKIT_EXPORT bool appendChild(const WebNode& child);
     WEBKIT_EXPORT WebString createMarkup() const;
     WEBKIT_EXPORT bool isLink() const;
     WEBKIT_EXPORT bool isTextNode() const;

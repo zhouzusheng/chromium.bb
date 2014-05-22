@@ -97,7 +97,7 @@
         'blpwtk2_generate_sources',
         'blpangle',
         '../chrome/chrome_blpwtk2.gyp:chrome_blpwtk2',
-        '../content/content.gyp:content_app_browser',
+        '../content/content.gyp:content_app_both',
         '../content/content.gyp:content_browser',
         '../content/content.gyp:content_child',
         '../content/content.gyp:content_common',

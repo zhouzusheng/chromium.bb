@@ -40,9 +40,22 @@ void BrowserContextDependencyManager::AddEdge(
 }
 
 void BrowserContextDependencyManager::CreateBrowserContextServices(
-    content::BrowserContext* context, bool is_testing_context) {
+    content::BrowserContext* context) {
+  DoCreateBrowserContextServices(context, false, false);
+}
+
+void BrowserContextDependencyManager::CreateBrowserContextServicesForTest(
+    content::BrowserContext* context,
+    bool force_register_prefs) {
+  DoCreateBrowserContextServices(context, true, force_register_prefs);
+}
+
+void BrowserContextDependencyManager::DoCreateBrowserContextServices(
+    content::BrowserContext* context,
+    bool is_testing_context,
+    bool force_register_prefs) {
   TRACE_EVENT0("browser",
-    "BrowserContextDependencyManager::CreateBrowserContextServices")
+    "BrowserContextDependencyManager::DoCreateBrowserContextServices")
 #ifndef NDEBUG
   // Unmark |context| as dead. This exists because of unit tests, which will
   // often have similar stack structures. 0xWhatever might be created, go out

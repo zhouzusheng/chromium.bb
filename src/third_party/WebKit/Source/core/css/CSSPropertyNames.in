@@ -19,6 +19,15 @@ display
 -webkit-animation-name
 -webkit-animation-play-state
 -webkit-animation-timing-function
+animation
+animation-delay
+animation-direction
+animation-duration
+animation-fill-mode
+animation-iteration-count
+animation-name
+animation-play-state
+animation-timing-function
 -webkit-transition
 -webkit-transition-delay
 -webkit-transition-duration
@@ -127,6 +136,7 @@ float
 font-stretch
 height
 image-rendering
+isolation
 left
 letter-spacing
 list-style
@@ -138,6 +148,7 @@ margin-bottom
 margin-left
 margin-right
 margin-top
+mask-source-type
 max-height
 max-width
 min-height
@@ -153,6 +164,8 @@ outline-color
 outline-offset
 outline-style
 outline-width
+object-fit
+object-position
 overflow
 overflow-wrap
 overflow-x
@@ -329,12 +342,6 @@ grid-template
 -webkit-margin-before
 -webkit-margin-end
 -webkit-margin-start
--webkit-marquee
--webkit-marquee-direction
--webkit-marquee-increment
--webkit-marquee-repetition
--webkit-marquee-speed
--webkit-marquee-style
 -webkit-mask
 -webkit-mask-box-image
 -webkit-mask-box-image-outset
@@ -414,3 +421,10 @@ orientation
 user-zoom
 -webkit-tap-highlight-color
 -webkit-app-region
+
+// Internal properties.
+-internal-marquee-direction
+-internal-marquee-increment
+-internal-marquee-repetition
+-internal-marquee-speed
+-internal-marquee-style

@@ -66,7 +66,6 @@
       'dependencies': [
         '../base/base.gyp:base_i18n',
         '../base/base.gyp:run_all_unittests',
-        '../testing/gtest.gyp:gtest',
         '../third_party/icu/icu.gyp:icuuc',
         'url_lib',
       ],

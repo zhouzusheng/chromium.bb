@@ -105,12 +105,6 @@ bool BitmapImage::isBitmapImage() const
     return true;
 }
 
-bool BitmapImage::hasSingleSecurityOrigin() const
-{
-    return true;
-}
-
-
 void BitmapImage::destroyDecodedData(bool destroyAll)
 {
     for (size_t i = 0; i < m_frames.size(); ++i) {
@@ -120,7 +114,7 @@ void BitmapImage::destroyDecodedData(bool destroyAll)
         m_frames[i].clear(false);
     }
 
-    destroyMetadataAndNotify(m_source.clearCacheExceptFrame(destroyAll ? notFound : m_currentFrame));
+    destroyMetadataAndNotify(m_source.clearCacheExceptFrame(destroyAll ? kNotFound : m_currentFrame));
 }
 
 void BitmapImage::destroyDecodedDataIfNecessary()

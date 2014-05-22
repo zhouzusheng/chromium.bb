@@ -169,7 +169,7 @@ const base::FilePath::CharType kJumpListIconDirname[] = FPL("JumpListIcons");
 const base::FilePath::CharType kLocalStateFilename[] = FPL("Local State");
 const base::FilePath::CharType kLocalStorePoolName[] = FPL("LocalStorePool");
 const base::FilePath::CharType kLoginDataFileName[] = FPL("Login Data");
-const base::FilePath::CharType kManagedModePolicyFilename[] =
+const base::FilePath::CharType kManagedUserSettingsFilename[] =
     FPL("Managed Mode Settings");
 const base::FilePath::CharType kMediaCacheDirname[] = FPL("Media Cache");
 const base::FilePath::CharType kNewTabThumbnailsFilename[] =
@@ -230,14 +230,15 @@ const bool kEnableTouchIcon = false;
 
 const float kMaxShareOfExtensionProcesses = 0.30f;
 
+// This is used by the PreRead experiment.
+const char kPreReadEnvironmentVariable[] = "CHROME_PRE_READ_EXPERIMENT";
+
 #if defined(OS_LINUX)
 const int kLowestRendererOomScore = 300;
 const int kHighestRendererOomScore = 1000;
 #endif
 
 #if defined(OS_WIN)
-// This is used by the PreRead experiment.
-const char kPreReadEnvironmentVariable[] = "CHROME_PRE_READ_EXPERIMENT";
 // This is used by chrome in Windows 8 metro mode.
 const wchar_t kMetroChromeUserDataSubDir[] = L"Metro";
 const wchar_t kMetroNavigationAndSearchMessage[] =
@@ -247,10 +248,15 @@ const wchar_t kMetroGetCurrentTabInfoMessage[] =
 const wchar_t kMetroRegistryPath[] =
     L"Software\\" PRODUCT_STRING_PATH L"\\Metro";
 const wchar_t kLaunchModeValue[] = L"launch_mode";
+// This is used by breakpad and the metrics reporting.
+const wchar_t kBrowserCrashDumpAttemptsRegistryPath[] =
+    L"Software\\" PRODUCT_STRING_PATH L"\\BrowserCrashDumpAttempts";
 #endif
 
 #if defined(OS_CHROMEOS)
 const char kProfileDirPrefix[] = "u-";
+const char kLegacyProfileDir[] = "user";
+const char kTestUserProfileDir[] = "test-user";
 #endif
 
 // This GUID is associated with any 'don't ask me again' settings that the

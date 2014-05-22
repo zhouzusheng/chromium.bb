@@ -30,6 +30,9 @@ class TimeDelta;
 
 namespace content {
 
+typedef base::Thread* (*RendererMainThreadFactoryFunction)(
+    const std::string& id);
+
 // Interface that represents the browser side of the browser <-> renderer
 // communication channel. There will generally be one RenderProcessHost per
 // renderer process.

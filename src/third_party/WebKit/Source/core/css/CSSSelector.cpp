@@ -129,7 +129,7 @@ unsigned CSSSelector::specificityForPage() const
         case Tag:
             s += tagQName().localName() == starAtom ? 0 : 4;
             break;
-        case PseudoClass:
+        case PagePseudoClass:
             switch (component->pseudoType()) {
             case PseudoFirstPage:
                 s += 2;
@@ -433,7 +433,7 @@ static HashMap<StringImpl*, CSSSelector::PseudoType>* nameToPseudoTypeMap()
             nameToPseudoType->set(hostWithParams.impl(), CSSSelector::PseudoHost);
             nameToPseudoType->set(content.impl(), CSSSelector::PseudoContent);
         }
-        if (RuntimeEnabledFeatures::customDOMElementsEnabled() || RuntimeEnabledFeatures::embedderCustomElementsEnabled())
+        if (RuntimeEnabledFeatures::customElementsEnabled() || RuntimeEnabledFeatures::embedderCustomElementsEnabled())
             nameToPseudoType->set(unresolved.impl(), CSSSelector::PseudoUnresolved);
     }
     return nameToPseudoType;
@@ -889,7 +889,7 @@ bool CSSSelector::RareData::parseNth()
         m_b = 0;
     } else {
         size_t n = argument.find('n');
-        if (n != notFound) {
+        if (n != kNotFound) {
             if (argument[0] == '-') {
                 if (n == 1)
                     m_a = -1; // -n == -1n
@@ -901,11 +901,11 @@ bool CSSSelector::RareData::parseNth()
                 m_a = argument.substring(0, n).toInt();
 
             size_t p = argument.find('+', n);
-            if (p != notFound)
+            if (p != kNotFound)
                 m_b = argument.substring(p + 1, argument.length() - p - 1).toInt();
             else {
                 p = argument.find('-', n);
-                if (p != notFound)
+                if (p != kNotFound)
                     m_b = -argument.substring(p + 1, argument.length() - p - 1).toInt();
             }
         } else

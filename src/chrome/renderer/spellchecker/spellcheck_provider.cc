@@ -139,7 +139,7 @@ void SpellCheckProvider::spellCheck(
   std::vector<string16> suggestions;
   spellcheck_->SpellCheckWord(
       word.c_str(), word.size(), routing_id(),
-      &offset, &length, optional_suggestions ? & suggestions : NULL);
+      &offset, &length, true, optional_suggestions ? & suggestions : NULL);
   if (optional_suggestions) {
     *optional_suggestions = suggestions;
     UMA_HISTOGRAM_COUNTS("SpellCheck.api.check.suggestions", word.size());

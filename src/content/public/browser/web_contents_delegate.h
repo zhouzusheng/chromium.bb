@@ -68,7 +68,7 @@ struct ContentCreatedParams {
     WindowOpenDisposition disposition;
     float x, y, width, height;
     bool x_set, y_set, width_set, height_set;
-    bool hidden, nofocus, topmost;
+    std::vector<std::string> additional_features;
 };
 
 // Objects implement this interface to get notified about changes in the

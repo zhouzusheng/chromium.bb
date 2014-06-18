@@ -628,9 +628,10 @@ void WebViewImpl::WebContentsCreated(content::WebContents* source_contents,
     if (params.width_set) delegateParams.setWidth(params.width);
     if (params.height_set) delegateParams.setHeight(params.height);
     delegateParams.setTargetUrl(target_url.spec());
-    delegateParams.setIsHidden(params.hidden);
-    delegateParams.setIsTopMost(params.topmost);
-    delegateParams.setIsNoFocus(params.nofocus);
+
+    for (size_t i = 0; i < params.additional_features.size(); ++i) {
+        delegateParams.addAdditionalFeature(params.additional_features[i]);
+    }
 
     d_delegate->didCreateNewView(this,
                                  newView,

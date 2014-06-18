@@ -423,9 +423,20 @@ public:
         assert(source == d_webView);
 
         char buf[1024];
-        sprintf_s(buf, sizeof(buf), "DELEGATE: didCreateNewView('%s')\n",
-                  params.targetUrl().c_str());
+        blpwtk2::StringRef targetUrlRef = params.targetUrl();
+        std::string targetUrl(targetUrlRef.data(), targetUrlRef.length());
+
+        sprintf_s(buf, sizeof(buf), "DELEGATE: didCreateNewView('%s', numFeatures=%d)\n",
+                  targetUrl.c_str(), params.additionalFeatureCount());
         OutputDebugStringA(buf);
+
+        for (size_t i = 0; i < params.additionalFeatureCount(); ++i) {
+            blpwtk2::StringRef featureStringRef = params.additionalFeatureAt(i);
+            std::string featureString(featureStringRef.data(), featureStringRef.length());
+            sprintf_s(buf, sizeof(buf), "DELEGATE:    additionalFeature(%s)\n",
+                      featureString.c_str());
+            OutputDebugStringA(buf);
+        }
 
         Shell* newShell = createShell(d_profile, newView);
         *newViewDelegate = newShell;

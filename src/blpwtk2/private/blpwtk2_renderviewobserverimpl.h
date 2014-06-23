@@ -39,9 +39,6 @@ class RenderViewObserverImpl : public content::RenderViewObserver {
     RenderViewObserverImpl(content::RenderView* renderView);
     virtual ~RenderViewObserverImpl();
 
-    virtual void PrintPage(WebKit::WebFrame* frame,
-                           bool userInitiated) OVERRIDE;
-
   private:
     DISALLOW_COPY_AND_ASSIGN(RenderViewObserverImpl);
 };

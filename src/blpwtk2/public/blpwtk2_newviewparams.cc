@@ -29,7 +29,6 @@ struct NewViewParamsImpl {
     NewViewDisposition::Value d_disposition;
     float d_x, d_y, d_width, d_height;
     bool d_isXSet, d_isYSet, d_isWidthSet, d_isHeightSet;
-    bool d_isHidden, d_isTopMost, d_isNoFocus;
     std::string d_targetUrl;
     std::vector<std::string> d_additionalFeatures;
 
@@ -39,9 +38,6 @@ struct NewViewParamsImpl {
     , d_isYSet(false)
     , d_isWidthSet(false)
     , d_isHeightSet(false)
-    , d_isHidden(false)
-    , d_isTopMost(false)
-    , d_isNoFocus(false)
     {
     }
 };

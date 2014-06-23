@@ -188,7 +188,7 @@ public:
     virtual void didAssociateFormControls(const Vector<RefPtr<WebCore::Element> >&) OVERRIDE;
 
 private:
-    WebNavigationPolicy getNavigationPolicy();
+    WebNavigationPolicy getNavigationPolicy(bool isPopupRequested);
     void getPopupMenuInfo(WebCore::PopupContainer*, WebPopupMenuInfo*);
     void setCursor(const WebCursorInfo&);
 

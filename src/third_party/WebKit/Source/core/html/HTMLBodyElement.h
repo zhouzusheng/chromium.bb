@@ -89,6 +89,12 @@ private:
     virtual int scrollHeight();
     virtual int scrollWidth();
 
+    // Bloomberg-specific extensions
+    virtual int bbScrollLeftNoZoomAdjust();
+    virtual int bbScrollTopNoZoomAdjust();
+    virtual int bbScrollWidthNoZoomAdjust();
+    virtual int bbScrollHeightNoZoomAdjust();
+
     virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
 };
 

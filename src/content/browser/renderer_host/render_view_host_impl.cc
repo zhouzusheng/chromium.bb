@@ -1543,7 +1543,7 @@ void RenderViewHostImpl::OnAddMessageToConsole(
     return;
 
   // Pass through log level only on WebUI pages to limit console spew.
-  int32 resolved_level = HasWebUIScheme(delegate_->GetURL()) ? level : 0;
+  int32 resolved_level = level;  // upstream: HasWebUIScheme(delegate_->GetURL()) ? level : 0;
 
   if (resolved_level >= ::logging::GetMinLogLevel()) {
     logging::LogMessage("CONSOLE", line_no, resolved_level).stream() << "\"" <<

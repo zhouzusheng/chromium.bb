@@ -21,7 +21,6 @@
  */
 
 #include <blpwtk2_renderviewobserverimpl.h>
-#include <blpwtk2_printutil.h>
 #include <content/public/renderer/render_view.h>
 
 namespace blpwtk2 {
@@ -33,15 +32,6 @@ RenderViewObserverImpl::RenderViewObserverImpl(content::RenderView* renderView)
 
 RenderViewObserverImpl::~RenderViewObserverImpl()
 {
-}
-
-void RenderViewObserverImpl::PrintPage(
-    WebKit::WebFrame* frame,
-    bool userInitiated)
-{
-    WebKit::WebView* view = render_view()->GetWebView();
-
-    PrintUtil::PrintPage(frame, view);
 }
 
 }  // close namespace blpwtk2

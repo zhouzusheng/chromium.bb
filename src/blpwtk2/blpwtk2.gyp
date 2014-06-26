@@ -277,8 +277,6 @@
         'private/blpwtk2_dllmain.cc',
         'private/blpwtk2_prefstore.cc',
         'private/blpwtk2_prefstore.h',
-        'private/blpwtk2_printutil.cc',
-        'private/blpwtk2_printutil.h',
         'private/blpwtk2_findonpage.cc',
         'private/blpwtk2_findonpage.h',
       ],

@@ -70,16 +70,10 @@
             'V8_SHARED',
             'BUILDING_V8_SHARED',
           ],
-          'msvs_disabled_warnings': [
-            4251,  # class 'std::xx' needs to have dll-interface.
-          ],
           'direct_dependent_settings': {
             'defines': [
               'V8_SHARED',
               'USING_V8_SHARED',
-            ],
-            'msvs_disabled_warnings': [
-              4251,  # class 'std::xx' needs to have dll-interface.
             ],
           },
           'target_conditions': [
@@ -141,16 +135,10 @@
             'V8_SHARED',
             'BUILDING_V8_SHARED',
           ],
-          'msvs_disabled_warnings': [
-            4251,  # class 'std::xx' needs to have dll-interface.
-          ],
           'direct_dependent_settings': {
             'defines': [
               'V8_SHARED',
               'USING_V8_SHARED',
-            ],
-            'msvs_disabled_warnings': [
-              4251,  # class 'std::xx' needs to have dll-interface.
             ],
           },
         }],
@@ -215,9 +203,6 @@
           'defines': [
             'BUILDING_V8_SHARED',
             'V8_SHARED',
-          ],
-          'msvs_disabled_warnings': [
-            4251,  # class 'std::xx' needs to have dll-interface.
           ],
         }],
       ]
@@ -874,9 +859,6 @@
           'defines': [
             'BUILDING_V8_SHARED',
             'V8_SHARED',
-          ],
-          'msvs_disabled_warnings': [
-            4251,  # class 'std::xx' needs to have dll-interface.
           ],
         }],
         ['v8_postmortem_support=="true"', {

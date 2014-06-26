@@ -122,6 +122,7 @@ class WebViewImpl : public WebView,
     virtual void replaceMisspelledRange(const StringRef& text) OVERRIDE;
     virtual void rootWindowPositionChanged() OVERRIDE;
     virtual void rootWindowSettingsChanged() OVERRIDE;
+    virtual void print() OVERRIDE;
 
     /////// WebContentsDelegate overrides
 

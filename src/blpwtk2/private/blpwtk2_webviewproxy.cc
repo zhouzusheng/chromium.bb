@@ -150,6 +150,12 @@ void WebViewProxy::find(const StringRef& text, bool matchCase, bool forward)
     Send(new BlpWebViewHostMsg_Find(d_routingId, request));
 }
 
+void WebViewProxy::print()
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    Send(new BlpWebViewHostMsg_Print(d_routingId));
+}
+
 void WebViewProxy::loadInspector(WebView* inspectedView)
 {
     DCHECK(Statics::isInApplicationMainThread());

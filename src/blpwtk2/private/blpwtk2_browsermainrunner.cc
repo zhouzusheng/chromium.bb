@@ -29,7 +29,12 @@
 
 #include <base/logging.h>  // for DCHECK
 #include <base/message_loop/message_loop.h>
+#include <chrome/browser/printing/print_job_manager.h>
 #include <content/public/browser/browser_main_runner.h>
+
+namespace printing {
+    extern PrintJobManager* g_print_job_manager;
+}
 
 namespace blpwtk2 {
 
@@ -53,6 +58,8 @@ BrowserMainRunner::BrowserMainRunner(
     d_devToolsHttpHandlerDelegate.reset(
         new DevToolsHttpHandlerDelegateImpl());
 
+    printing::g_print_job_manager = new printing::PrintJobManager();
+
     Statics::processHostManager = new ProcessHostManager();
 }
 
@@ -60,6 +67,7 @@ BrowserMainRunner::~BrowserMainRunner()
 {
     DCHECK(!Statics::processHostManager);
 
+    delete printing::g_print_job_manager;
     d_devToolsHttpHandlerDelegate.reset();
     Statics::browserMainMessageLoop = 0;
 

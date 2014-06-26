@@ -123,6 +123,7 @@ bool WebViewHost::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_ReplaceMisspelledRange, onReplaceMisspelledRange)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_RootWindowPositionChanged, onRootWindowPositionChanged)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_RootWindowSettingsChanged, onRootWindowSettingsChanged)
+        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Print, onPrint)
         IPC_MESSAGE_UNHANDLED(handled = false)
     IPC_END_MESSAGE_MAP_EX()
 
@@ -324,6 +325,11 @@ void WebViewHost::onRootWindowPositionChanged()
 void WebViewHost::onRootWindowSettingsChanged()
 {
     d_webView->rootWindowSettingsChanged();
+}
+
+void WebViewHost::onPrint()
+{
+    d_webView->print();
 }
 
 // IPC::Sender override

@@ -32,6 +32,7 @@
 #include <net/base/net_errors.h>
 #include <third_party/WebKit/public/platform/WebURLError.h>
 #include <third_party/WebKit/public/platform/WebURLRequest.h>
+#include <chrome/renderer/printing/print_web_view_helper.h>
 #include <content/public/renderer/render_thread.h>
 #include <chrome/renderer/spellchecker/spellcheck_provider.h>
 #include <chrome/renderer/spellchecker/spellcheck.h>
@@ -64,6 +65,7 @@ void ContentRendererClientImpl::RenderViewCreated(
     new RenderViewObserverImpl(render_view);
 
     new SpellCheckProvider(render_view, d_spellcheck.get());
+    new printing::PrintWebViewHelper(render_view);
 }
 
 void ContentRendererClientImpl::GetNavigationErrorStrings(

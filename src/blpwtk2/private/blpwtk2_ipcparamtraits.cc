@@ -256,14 +256,20 @@ void ParamTraits<NewViewParams>::Write(Message* m, const param_type& p)
     if (p.isHeightSet()) {
         m->WriteFloat(p.height());
     }
-    m->WriteBool(p.isHidden());
-    m->WriteBool(p.isTopMost());
-    m->WriteBool(p.isNoFocus());
+
+    m->WriteInt(p.additionalFeatureCount());
+    for (size_t i = 0; i < p.additionalFeatureCount(); ++i) {
+        StringRef str = p.additionalFeatureAt(i);
+        m->WriteInt(str.length());
+        m->WriteBytes(str.data(), str.length());
+    }
 }
 
 bool ParamTraits<NewViewParams>::Read(const Message* m, PickleIterator* iter, param_type* r)
 {
     int intValue;
+    int length, strLength;
+    const char* bytes;
     bool boolValue;
     float floatValue;
 
@@ -307,15 +313,17 @@ bool ParamTraits<NewViewParams>::Read(const Message* m, PickleIterator* iter, pa
             return false;
         r->setHeight(floatValue);
     }
-    if (!m->ReadBool(iter, &boolValue))
+
+    if (!m->ReadLength(iter, &length))
         return false;
-    r->setIsHidden(boolValue);
-    if (!m->ReadBool(iter, &boolValue))
-        return false;
-    r->setIsTopMost(boolValue);
-    if (!m->ReadBool(iter, &boolValue))
-        return false;
-    r->setIsNoFocus(boolValue);
+    for (int i = 0; i < length; ++i) {
+        if (!m->ReadLength(iter, &strLength))
+            return false;
+        if (!m->ReadBytes(iter, &bytes, strLength))
+            return false;
+        r->addAdditionalFeature(StringRef(bytes, strLength));
+    }
+
     return true;
 }
 
@@ -342,12 +350,13 @@ void ParamTraits<NewViewParams>::Log(const param_type& p, std::string* l)
         l->append(", height:");
         LogParam(p.height(), l);
     }
-    l->append(", ");
-    LogParam(p.isHidden(), l);
-    l->append(", ");
-    LogParam(p.isTopMost(), l);
-    l->append(", ");
-    LogParam(p.isNoFocus(), l);
+
+    for (size_t i = 0; i < p.additionalFeatureCount(); ++i) {
+        StringRef feature = p.additionalFeatureAt(i);
+        l->append(", ");
+        LogParam(std::string(feature.data(), feature.length()), l);
+    }
+
     l->append(")");
 }
 

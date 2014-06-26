@@ -40,55 +40,38 @@ struct NewViewDisposition {
     };
 };
 
-class NewViewParams {
+struct NewViewParamsImpl;
+
+class BLPWTK2_EXPORT NewViewParams {
   public:
-    NewViewParams()
-    : d_disposition(NewViewDisposition::NEW_WINDOW)
-    , d_isXSet(false)
-    , d_isYSet(false)
-    , d_isWidthSet(false)
-    , d_isHeightSet(false)
-    , d_isHidden(false)
-    , d_isTopMost(false)
-    , d_isNoFocus(false)
-    {
-    }
+    NewViewParams();
+    NewViewParams(const NewViewParams& other);
+    ~NewViewParams();
+    NewViewParams& operator=(const NewViewParams& rhs);
 
-    void setDisposition(NewViewDisposition::Value value)
-    {
-        d_disposition = value;
-    }
-    void setTargetUrl(const StringRef& value) { d_targetUrl.assign(value); }
-    void setX(float value) { d_x = value; d_isXSet = true; }
-    void setY(float value) { d_y = value; d_isYSet = true; }
-    void setWidth(float value) { d_width = value; d_isWidthSet = true; }
-    void setHeight(float value) { d_height = value; d_isHeightSet = true; }
+    void setDisposition(NewViewDisposition::Value value);
+    void setTargetUrl(const StringRef& value);
+    void setX(float value);
+    void setY(float value);
+    void setWidth(float value);
+    void setHeight(float value);
+    void addAdditionalFeature(const StringRef& feature);
 
-    void setIsHidden(bool value) { d_isHidden = value; }
-    void setIsTopMost(bool value) { d_isTopMost = value; }
-    void setIsNoFocus(bool value) { d_isNoFocus = value; }
-
-    NewViewDisposition::Value disposition() const { return d_disposition; }
-    const String& targetUrl() const { return d_targetUrl; }
-    bool isXSet() const { return d_isXSet; }
-    float x() const { return d_x; }
-    bool isYSet() const { return d_isYSet; }
-    float y() const { return d_y; }
-    bool isWidthSet() const { return d_isWidthSet; }
-    float width() const { return d_width; }
-    bool isHeightSet() const { return d_isHeightSet; }
-    float height() const { return d_height; }
-
-    bool isHidden() const { return d_isHidden; }
-    bool isTopMost() const { return d_isTopMost; }
-    bool isNoFocus() const { return d_isNoFocus; }
+    NewViewDisposition::Value disposition() const;
+    StringRef targetUrl() const;
+    bool isXSet() const;
+    float x() const;
+    bool isYSet() const;
+    float y() const;
+    bool isWidthSet() const;
+    float width() const;
+    bool isHeightSet() const;
+    float height() const;
+    size_t additionalFeatureCount() const;
+    StringRef additionalFeatureAt(size_t index) const;
 
   private:
-    NewViewDisposition::Value d_disposition;
-    float d_x, d_y, d_width, d_height;
-    bool d_isXSet, d_isYSet, d_isWidthSet, d_isHeightSet;
-    bool d_isHidden, d_isTopMost, d_isNoFocus;
-    String d_targetUrl;
+    NewViewParamsImpl *d_impl;
 };
 
 }  // close namespace blpwtk2

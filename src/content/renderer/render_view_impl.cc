@@ -2280,10 +2280,11 @@ WebView* RenderViewImpl::createView(
   params.height = features.height;
   params.height_set = features.heightSet;
 
-  // blpwtk-specific flags.
-  params.hidden = features.additionalFeatures.contains("hidden");
-  params.nofocus = features.additionalFeatures.contains("nofocus");
-  params.topmost = features.additionalFeatures.contains("topmost");
+  const WebVector<WebString>& additionalFeatures = features.additionalFeatures;
+  size_t additionalFeatureCount = additionalFeatures.size();
+  for (size_t i = 0; i < additionalFeatureCount; ++i) {
+      params.additional_features.push_back(additionalFeatures[i].utf8());
+  }
 
   if (frame_name != "_blank")
     params.frame_name = frame_name;

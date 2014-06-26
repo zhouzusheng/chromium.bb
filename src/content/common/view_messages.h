@@ -379,10 +379,10 @@ IPC_STRUCT_BEGIN(ViewHostMsg_CreateWindow_Params)
   IPC_STRUCT_MEMBER(float, height)
   IPC_STRUCT_MEMBER(bool, height_set)
 
-  // blpwtk-specific flags.
-  IPC_STRUCT_MEMBER(bool, hidden)
-  IPC_STRUCT_MEMBER(bool, nofocus)
-  IPC_STRUCT_MEMBER(bool, topmost)
+  // Additional features.  Adding a separate vector here because the
+  // WebVector<WebString> in WebWindowFeatures is not serialized.
+  // TODO: serialize 'additionalFeatures' in WebWindowFeatures.
+  IPC_STRUCT_MEMBER(std::vector<std::string>, additional_features)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewHostMsg_CreateWorker_Params)

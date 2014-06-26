@@ -102,6 +102,10 @@ BrowserContextImpl::BrowserContextImpl(const std::string& dataDir,
         builder.WithUserPrefs(d_userPrefs);
         d_prefService.reset(builder.Create(d_prefRegistry.get()));
         user_prefs::UserPrefs::Set(this, d_prefService.get());
+        d_prefRegistry->RegisterBooleanPref(
+            prefs::kPrintingEnabled,
+            true,
+            user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
     }
 
     content::SpellcheckData::CreateForContext(this);

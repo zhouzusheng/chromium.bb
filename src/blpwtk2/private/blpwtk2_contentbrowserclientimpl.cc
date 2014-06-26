@@ -40,6 +40,7 @@
 #include <content/public/browser/web_contents.h>
 #include <content/public/common/url_constants.h>
 #include <chrome/browser/spellchecker/spellcheck_message_filter.h>
+#include <chrome/browser/printing/printing_message_filter.h>
 
 namespace blpwtk2 {
 
@@ -132,7 +133,9 @@ void ContentBrowserClientImpl::RenderProcessHostCreated(
             host->SetUsesInProcessPlugins();
         }
     }
-    host->GetChannel()->AddFilter(new SpellCheckMessageFilter(id));
+    IPC::ChannelProxy* channel = host->GetChannel();
+    channel->AddFilter(new SpellCheckMessageFilter(id));
+    channel->AddFilter(new PrintingMessageFilter(id));
 }
 
 void ContentBrowserClientImpl::OverrideWebkitPrefs(

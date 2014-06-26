@@ -235,6 +235,7 @@ bool SpellCheck::SpellCheckWord(
     int tag,
     int* misspelling_start,
     int* misspelling_len,
+    bool checkForContractions,
     std::vector<string16>* optional_suggestions) {
   DCHECK(in_word_len >= 0);
   DCHECK(misspelling_start && misspelling_len) << "Out vars must be given.";
@@ -265,6 +266,7 @@ bool SpellCheck::SpellCheckWord(
         tag,
         &segment_misspelling_start,
         &segment_misspelling_len,
+        checkForContractions,
         optional_suggestions ? &suggestions_vector : 0)) {
       // Everything is OK in the first language, no need to check the other
       // languages.
@@ -297,6 +299,7 @@ bool SpellCheck::SpellCheckWord(
           segment_misspelling_len,
           tag,
           &tmpStart, &tmpLen,
+          checkForContractions,
           optional_suggestions ? &suggestions_vector : 0);
 
       if (optional_suggestions) {
@@ -349,6 +352,7 @@ bool SpellCheck::SpellCheckParagraph(
                        0,
                        &misspelling_start,
                        &misspelling_length,
+                       true,
                        NULL)) {
       results->assign(textcheck_results);
       return true;
@@ -416,7 +420,7 @@ string16 SpellCheck::GetAutoCorrectionWord(const string16& word, int tag) {
     // Check spelling.
     misspelling_start = misspelling_len = 0;
     SpellCheckWord(misspelled_word, word_length, tag, &misspelling_start,
-        &misspelling_len, NULL);
+                   &misspelling_len, false, NULL);
 
     // Make decision: if only one swap produced a valid word, then we want to
     // return it. If we found two or more, we don't do autocorrection.
@@ -517,7 +521,7 @@ void SpellCheck::CreateTextCheckingResults(
     if (type == WebKit::WebTextCheckingTypeSpelling &&
         filter == USE_NATIVE_CHECKER) {
       if (SpellCheckWord(text + word_location, word_length, 0,
-                         &misspelling_start, &misspelling_length, NULL)) {
+                         &misspelling_start, &misspelling_length, true, NULL)) {
         type = WebKit::WebTextCheckingTypeGrammar;
       }
     }

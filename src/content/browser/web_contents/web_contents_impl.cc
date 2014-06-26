@@ -1574,9 +1574,7 @@ void WebContentsImpl::CreateNewWindow(
     delegate_params.y_set = params.y_set;
     delegate_params.width_set = params.width_set;
     delegate_params.height_set = params.height_set;
-    delegate_params.nofocus = params.nofocus;
-    delegate_params.hidden = params.hidden;
-    delegate_params.topmost = params.topmost;
+    delegate_params.additional_features = params.additional_features;
     delegate_->WebContentsCreated(
         this, params.opener_frame_id, params.frame_name,
         params.target_url, delegate_params, new_contents);

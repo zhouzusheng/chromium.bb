@@ -70,16 +70,10 @@
             'V8_SHARED',
             'BUILDING_V8_SHARED',
           ],
-          'msvs_disabled_warnings': [
-            4251,  # class 'std::xx' needs to have dll-interface.
-          ],
           'direct_dependent_settings': {
             'defines': [
               'V8_SHARED',
               'USING_V8_SHARED',
-            ],
-            'msvs_disabled_warnings': [
-              4251,  # class 'std::xx' needs to have dll-interface.
             ],
           },
           'target_conditions': [
@@ -95,6 +89,12 @@
           'conditions': [
             ['bb_version!=""', {
               'product_name': 'blpv8.<(bb_version)',
+            }],
+            ['OS=="win" and win_use_allocator_shim==1', {
+              'dependencies': [
+                '<(DEPTH)/base/allocator/allocator.gyp:allocator',
+                '<(DEPTH)/base/base.gyp:base',
+              ],
             }],
             ['OS=="mac"', {
               'xcode_settings': {
@@ -135,16 +135,10 @@
             'V8_SHARED',
             'BUILDING_V8_SHARED',
           ],
-          'msvs_disabled_warnings': [
-            4251,  # class 'std::xx' needs to have dll-interface.
-          ],
           'direct_dependent_settings': {
             'defines': [
               'V8_SHARED',
               'USING_V8_SHARED',
-            ],
-            'msvs_disabled_warnings': [
-              4251,  # class 'std::xx' needs to have dll-interface.
             ],
           },
         }],
@@ -209,9 +203,6 @@
           'defines': [
             'BUILDING_V8_SHARED',
             'V8_SHARED',
-          ],
-          'msvs_disabled_warnings': [
-            4251,  # class 'std::xx' needs to have dll-interface.
           ],
         }],
       ]
@@ -868,9 +859,6 @@
           'defines': [
             'BUILDING_V8_SHARED',
             'V8_SHARED',
-          ],
-          'msvs_disabled_warnings': [
-            4251,  # class 'std::xx' needs to have dll-interface.
           ],
         }],
         ['v8_postmortem_support=="true"', {

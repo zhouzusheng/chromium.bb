@@ -108,6 +108,7 @@ class WebViewHost : public IPC::Listener,
     void onReplaceMisspelledRange(const std::string& text);
     void onRootWindowPositionChanged();
     void onRootWindowSettingsChanged();
+    void onPrint();
 
     // IPC::Sender override
     virtual bool Send(IPC::Message* message) OVERRIDE;

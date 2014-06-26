@@ -21,4 +21,148 @@
  */
 
 #include <blpwtk2_newviewparams.h>
+#include <vector>
 
+namespace blpwtk2 {
+
+struct NewViewParamsImpl {
+    NewViewDisposition::Value d_disposition;
+    float d_x, d_y, d_width, d_height;
+    bool d_isXSet, d_isYSet, d_isWidthSet, d_isHeightSet;
+    std::string d_targetUrl;
+    std::vector<std::string> d_additionalFeatures;
+
+    NewViewParamsImpl()
+    : d_disposition(NewViewDisposition::NEW_WINDOW)
+    , d_isXSet(false)
+    , d_isYSet(false)
+    , d_isWidthSet(false)
+    , d_isHeightSet(false)
+    {
+    }
+};
+
+NewViewParams::NewViewParams()
+: d_impl(new NewViewParamsImpl())
+{
+
+}
+
+NewViewParams::NewViewParams(const NewViewParams& other)
+: d_impl(new NewViewParamsImpl(*other.d_impl))
+{
+}
+
+NewViewParams::~NewViewParams()
+{
+    delete d_impl;
+}
+
+NewViewParams& NewViewParams::operator=(const NewViewParams& rhs)
+{
+    if (this != &rhs) {
+        *d_impl = *rhs.d_impl;
+    }
+    return *this;
+}
+
+void NewViewParams::setDisposition(NewViewDisposition::Value value)
+{
+    d_impl->d_disposition = value;
+}
+
+void NewViewParams::setTargetUrl(const StringRef& value)
+{
+    d_impl->d_targetUrl.assign(value.data(), value.length());
+}
+
+void NewViewParams::setX(float value)
+{
+    d_impl->d_x = value;
+    d_impl->d_isXSet = true;
+}
+
+void NewViewParams::setY(float value)
+{
+    d_impl->d_y = value;
+    d_impl->d_isYSet = true;
+}
+
+void NewViewParams::setWidth(float value)
+{
+    d_impl->d_width = value;
+    d_impl->d_isWidthSet = true;
+}
+
+void NewViewParams::setHeight(float value)
+{
+    d_impl->d_height = value;
+    d_impl->d_isHeightSet = true;
+}
+
+void NewViewParams::addAdditionalFeature(const StringRef& feature)
+{
+    d_impl->d_additionalFeatures.push_back(std::string(feature.data(), feature.length()));
+}
+
+NewViewDisposition::Value NewViewParams::disposition() const
+{
+    return d_impl->d_disposition;
+}
+
+StringRef NewViewParams::targetUrl() const
+{
+    return d_impl->d_targetUrl;
+}
+
+bool NewViewParams::isXSet() const
+{
+    return d_impl->d_isXSet;
+}
+
+float NewViewParams::x() const
+{
+    return d_impl->d_x;
+}
+
+bool NewViewParams::isYSet() const
+{
+    return d_impl->d_isYSet;
+}
+
+float NewViewParams::y() const
+{
+    return d_impl->d_y;
+}
+
+bool NewViewParams::isWidthSet() const
+{
+    return d_impl->d_isWidthSet;
+}
+
+float NewViewParams::width() const
+{
+    return d_impl->d_width;
+}
+
+bool NewViewParams::isHeightSet() const
+{
+    return d_impl->d_isHeightSet;
+}
+
+float NewViewParams::height() const
+{
+    return d_impl->d_height;
+}
+
+size_t NewViewParams::additionalFeatureCount() const
+{
+    return d_impl->d_additionalFeatures.size();
+}
+
+StringRef NewViewParams::additionalFeatureAt(size_t index) const
+{
+    return d_impl->d_additionalFeatures[index];
+}
+
+}  // close namespace blpwtk2

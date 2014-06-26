@@ -82,6 +82,7 @@ enum {
     IDM_FILE,
     IDM_NEW_WINDOW,
     IDM_CLOSE_WINDOW,
+    IDM_PRINT,
     IDM_EXIT,
     IDM_ZOOM,
     IDM_ZOOM_025,
@@ -422,9 +423,20 @@ public:
         assert(source == d_webView);
 
         char buf[1024];
-        sprintf_s(buf, sizeof(buf), "DELEGATE: didCreateNewView('%s')\n",
-                  params.targetUrl().c_str());
+        blpwtk2::StringRef targetUrlRef = params.targetUrl();
+        std::string targetUrl(targetUrlRef.data(), targetUrlRef.length());
+
+        sprintf_s(buf, sizeof(buf), "DELEGATE: didCreateNewView('%s', numFeatures=%d)\n",
+                  targetUrl.c_str(), params.additionalFeatureCount());
         OutputDebugStringA(buf);
+
+        for (size_t i = 0; i < params.additionalFeatureCount(); ++i) {
+            blpwtk2::StringRef featureStringRef = params.additionalFeatureAt(i);
+            std::string featureString(featureStringRef.data(), featureStringRef.length());
+            sprintf_s(buf, sizeof(buf), "DELEGATE:    additionalFeature(%s)\n",
+                      featureString.c_str());
+            OutputDebugStringA(buf);
+        }
 
         Shell* newShell = createShell(d_profile, newView);
         *newViewDelegate = newShell;
@@ -966,6 +978,9 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
         case IDM_CLOSE_WINDOW:
             DestroyWindow(shell->d_mainWnd);
             return 0;
+        case IDM_PRINT:
+            shell->d_webView->print();
+            return 0;
         case IDM_TEST_APPEND_ELEMENT:
             appendElement(shell->d_webView);
             return 0;
@@ -1188,6 +1203,7 @@ Shell* createShell(blpwtk2::Profile* profile, blpwtk2::WebView* webView)
     HMENU fileMenu = CreateMenu();
     AppendMenu(fileMenu, MF_STRING, IDM_NEW_WINDOW, L"&New Window");
     AppendMenu(fileMenu, MF_STRING, IDM_CLOSE_WINDOW, L"&Close Window");
+    AppendMenu(fileMenu, MF_STRING, IDM_PRINT, L"P&rint");
     AppendMenu(fileMenu, MF_SEPARATOR, 0, 0);
     AppendMenu(fileMenu, MF_STRING, IDM_EXIT, L"E&xit");
     AppendMenu(menu, MF_POPUP, (UINT_PTR)fileMenu, L"&File");

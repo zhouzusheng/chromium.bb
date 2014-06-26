@@ -10,17 +10,11 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/printing/printer_query.h"
 #include "chrome/browser/printing/print_job_manager.h"
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_io_data.h"
 #include "chrome/common/print_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
-
-#if defined(ENABLE_FULL_PRINTING)
-#include "chrome/browser/ui/webui/print_preview/print_preview_ui.h"
-#endif
 
 #if defined(OS_CHROMEOS)
 #include <fcntl.h>
@@ -88,12 +82,13 @@ void RenderParamsFromPrintSettings(const printing::PrintSettings& settings,
 
 }  // namespace
 
-PrintingMessageFilter::PrintingMessageFilter(int render_process_id,
-                                             Profile* profile)
-    : profile_io_data_(ProfileIOData::FromResourceContext(
-          profile->GetResourceContext())),
-      render_process_id_(render_process_id),
-      queue_(g_browser_process->print_job_manager()->queue()) {
+namespace printing {
+extern PrintJobManager* g_print_job_manager;
+}
+
+PrintingMessageFilter::PrintingMessageFilter(int render_process_id)
+    : render_process_id_(render_process_id),
+      queue_(printing::g_print_job_manager->queue()) {
   DCHECK(queue_);
 }
 
@@ -298,17 +293,12 @@ void PrintingMessageFilter::OnGetPrintSettingsFailed(
 
 void PrintingMessageFilter::OnIsPrintingEnabled(bool* is_enabled) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  *is_enabled = profile_io_data_->printing_enabled()->GetValue();
+  *is_enabled = true;
 }
 
 void PrintingMessageFilter::OnGetDefaultPrintSettings(IPC::Message* reply_msg) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   scoped_refptr<printing::PrinterQuery> printer_query;
-  if (!profile_io_data_->printing_enabled()->GetValue()) {
-    // Reply with NULL query.
-    OnGetDefaultPrintSettingsReply(printer_query, reply_msg);
-    return;
-  }
   printer_query = queue_->PopPrinterQuery(0);
   if (!printer_query)
     printer_query = queue_->CreatePrinterQuery();
@@ -428,11 +418,6 @@ void PrintingMessageFilter::OnUpdatePrintSettings(
     int document_cookie, const DictionaryValue& job_settings,
     IPC::Message* reply_msg) {
   scoped_refptr<printing::PrinterQuery> printer_query;
-  if (!profile_io_data_->printing_enabled()->GetValue()) {
-    // Reply with NULL query.
-    OnUpdatePrintSettingsReply(printer_query, reply_msg);
-    return;
-  }
   printer_query = queue_->PopPrinterQuery(document_cookie);
   if (!printer_query)
     printer_query = queue_->CreatePrinterQuery();
@@ -471,8 +456,6 @@ void PrintingMessageFilter::OnUpdatePrintSettingsReply(
 void PrintingMessageFilter::OnCheckForCancel(int32 preview_ui_id,
                                              int preview_request_id,
                                              bool* cancel) {
-  PrintPreviewUI::GetCurrentPrintPreviewStatus(preview_ui_id,
-                                               preview_request_id,
-                                               cancel);
+  *cancel = false;
 }
 #endif

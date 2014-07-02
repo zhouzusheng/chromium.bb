@@ -331,6 +331,32 @@ int HTMLBodyElement::bbScrollTopNoZoomAdjust()
     return view ? view->scrollY() : 0;
 }
 
+void HTMLBodyElement::setBbScrollLeftNoZoomAdjust(int scrollLeft)
+{
+    Document& document = this->document();
+    document.updateLayoutIgnorePendingStylesheets();
+    Frame* frame = document.frame();
+    if (!frame)
+        return;
+    FrameView* view = frame->view();
+    if (!view)
+        return;
+    view->setScrollPosition(IntPoint(scrollLeft, view->scrollY()));
+}
+
+void HTMLBodyElement::setBbScrollTopNoZoomAdjust(int scrollTop)
+{
+    Document& document = this->document();
+    document.updateLayoutIgnorePendingStylesheets();
+    Frame* frame = document.frame();
+    if (!frame)
+        return;
+    FrameView* view = frame->view();
+    if (!view)
+        return;
+    view->setScrollPosition(IntPoint(view->scrollX(), scrollTop));
+}
+
 int HTMLBodyElement::bbScrollWidthNoZoomAdjust()
 {
     // Update the document's layout.

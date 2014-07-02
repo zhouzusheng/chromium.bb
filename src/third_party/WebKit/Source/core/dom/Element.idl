@@ -83,8 +83,8 @@
     [PerWorldBindings] readonly attribute long scrollHeight;
 
     // Bloomberg-specific extensions
-    [PerWorldBindings] readonly attribute long bbScrollLeftNoZoomAdjust;
-    [PerWorldBindings] readonly attribute long bbScrollTopNoZoomAdjust;
+             [PerWorldBindings] attribute long bbScrollLeftNoZoomAdjust;
+             [PerWorldBindings] attribute long bbScrollTopNoZoomAdjust;
     [PerWorldBindings] readonly attribute long bbScrollWidthNoZoomAdjust;
     [PerWorldBindings] readonly attribute long bbScrollHeightNoZoomAdjust;
 

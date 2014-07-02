@@ -745,6 +745,20 @@ int Element::bbScrollTopNoZoomAdjust()
     return 0;
 }
 
+void Element::setBbScrollLeftNoZoomAdjust(int newLeft)
+{
+    document().updateLayoutIgnorePendingStylesheets();
+    if (RenderBox* rend = renderBox())
+        rend->setScrollLeft(newLeft);
+}
+
+void Element::setBbScrollTopNoZoomAdjust(int newTop)
+{
+    document().updateLayoutIgnorePendingStylesheets();
+    if (RenderBox* rend = renderBox())
+        rend->setScrollTop(newTop);
+}
+
 int Element::bbScrollWidthNoZoomAdjust()
 {
     document().updateLayoutIgnorePendingStylesheets();

@@ -38,6 +38,7 @@
 #include <base/process/process_iterator.h>  // for kProcessAccess* constants
 #include <base/process/process_handle.h>
 #include <content/public/browser/browser_thread.h>
+#include <content/public/browser/render_process_host.h>
 #include <ipc/ipc_channel_proxy.h>
 
 namespace blpwtk2 {
@@ -116,6 +117,7 @@ bool ProcessHostImpl::OnMessageReceived(const IPC::Message& message)
             IPC_MESSAGE_HANDLER(BlpControlHostMsg_Sync, onSync)
             IPC_MESSAGE_HANDLER(BlpControlHostMsg_SetInProcessRendererInfo, onSetInProcessRendererInfo)
             IPC_MESSAGE_HANDLER(BlpControlHostMsg_CreateNewHostChannel, onCreateNewHostChannel)
+            IPC_MESSAGE_HANDLER(BlpControlHostMsg_ClearWebCache, onClearWebCache)
             IPC_MESSAGE_HANDLER(BlpProfileHostMsg_New, onProfileNew)
             IPC_MESSAGE_HANDLER(BlpProfileHostMsg_Destroy, onProfileDestroy)
             IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_New, onWebViewNew)
@@ -197,6 +199,11 @@ void ProcessHostImpl::onCreateNewHostChannel(int timeoutInMilliseconds,
     Statics::processHostManager->addProcessHost(
         new ProcessHostImpl(*channelId, d_rendererInfoMap),
         base::TimeDelta::FromMilliseconds(timeoutInMilliseconds));
+}
+
+void ProcessHostImpl::onClearWebCache()
+{
+    content::RenderProcessHost::ClearWebCacheOnAllRenderers();
 }
 
 void ProcessHostImpl::onProfileNew(int routingId,

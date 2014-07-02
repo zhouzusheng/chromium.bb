@@ -44,6 +44,10 @@ IPC_SYNC_MESSAGE_CONTROL1_1(BlpControlHostMsg_CreateNewHostChannel,
                             int /* timeoutInMilliseconds */,
                             std::string /* channelId */)
 
+// Clear the web cache on all renderer processes managed by the ProcessHost.
+IPC_MESSAGE_CONTROL0(BlpControlHostMsg_ClearWebCache)
+
+
 // ============= Messages from host to client =======================
 
 IPC_MESSAGE_CONTROL1(BlpControlMsg_SetInProcessRendererChannelName,

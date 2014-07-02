@@ -343,6 +343,14 @@ void RenderProcessHost::SetMaxRendererProcessCount(size_t count) {
   g_max_renderer_count_override = count;
 }
 
+// static
+void RenderProcessHost::ClearWebCacheOnAllRenderers() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  for (iterator i(AllHostsIterator()); !i.IsAtEnd(); i.Advance()) {
+    i.GetCurrentValue()->Send(new ViewMsg_ClearWebCache());
+  }
+}
+
 RenderProcessHostImpl::RenderProcessHostImpl(
     int host_id,
     base::ProcessHandle externally_managed_handle,

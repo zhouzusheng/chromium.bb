@@ -91,6 +91,7 @@
 #include "net/base/net_util.h"
 #include "third_party/skia/include/core/SkGraphics.h"
 #include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/Webkit/public/web/WebCache.h"
 #include "third_party/WebKit/public/web/WebColorName.h"
 #include "third_party/WebKit/public/web/WebDatabase.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -1201,6 +1202,7 @@ bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewMsg_TempCrashWithData, OnTempCrashWithData)
     IPC_MESSAGE_HANDLER(ViewMsg_SetWebKitSharedTimersSuspended,
                         OnSetWebKitSharedTimersSuspended)
+    IPC_MESSAGE_HANDLER(ViewMsg_ClearWebCache, OnClearWebCache)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -1338,6 +1340,10 @@ void RenderThreadImpl::OnTempCrashWithData(const GURL& data) {
 
 void RenderThreadImpl::OnSetWebKitSharedTimersSuspended(bool suspend) {
   ToggleWebKitSharedTimer(suspend);
+}
+
+void RenderThreadImpl::OnClearWebCache() {
+    WebKit::WebCache::clear();
 }
 
 void RenderThreadImpl::OnMemoryPressure(

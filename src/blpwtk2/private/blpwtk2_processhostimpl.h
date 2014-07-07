@@ -76,6 +76,7 @@ class ProcessHostImpl : public ProcessHost,
     void onSetInProcessRendererInfo(bool usesInProcessPlugins);
     void onCreateNewHostChannel(int timeoutInMilliseconds,
                              std::string* channelId);
+    void onClearWebCache();
     void onProfileNew(int routingId,
                       const std::string& dataDir,
                       bool diskCacheEnabled,

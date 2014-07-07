@@ -52,6 +52,7 @@
 #include <chrome/common/chrome_paths.h>
 #include <content/public/app/content_main_runner.h>
 #include <content/public/app/startup_helper_win.h>  // for InitializeSandboxInfo
+#include <content/public/browser/render_process_host.h>
 #include <content/public/common/content_switches.h>
 #include <content/browser/web_contents/web_contents_view_win.h>
 #include <ipc/ipc_channel.h>
@@ -570,6 +571,17 @@ void ToolkitImpl::destroyInProcessHost()
 {
     DCHECK(Statics::isInBrowserMainThread());
     d_inProcessHost.reset();
+}
+
+void ToolkitImpl::clearWebCache()
+{
+    if (Statics::isRendererMainThreadMode()) {
+        DCHECK(d_processClient.get());
+        d_processClient->Send(new BlpControlHostMsg_ClearWebCache());
+    }
+    else {
+        content::RenderProcessHost::ClearWebCacheOnAllRenderers();
+    }
 }
 
 }  // close namespace blpwtk2

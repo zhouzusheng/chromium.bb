@@ -2035,6 +2035,8 @@ void RenderWidget::OnUpdateScreenRects(const gfx::Rect& view_screen_rect,
                                        const gfx::Rect& window_screen_rect) {
   view_screen_rect_ = view_screen_rect;
   window_screen_rect_ = window_screen_rect;
+  if (webwidget_)
+    webwidget_->didChangeWindowRect();
   Send(new ViewHostMsg_UpdateScreenRects_ACK(routing_id()));
 }
 

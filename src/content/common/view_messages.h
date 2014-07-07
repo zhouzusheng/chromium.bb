@@ -1292,6 +1292,9 @@ IPC_MESSAGE_ROUTED3(ViewMsg_WindowSnapshotCompleted,
 IPC_MESSAGE_CONTROL1(ViewMsg_SetWebKitSharedTimersSuspended,
                      bool /* suspend */)
 
+// Tells the renderer to clear unused resources from its global web cache
+IPC_MESSAGE_CONTROL0(ViewMsg_ClearWebCache)
+
 // Tells the renderer to enable/disable alt-mousedrag rubberbanding.
 IPC_MESSAGE_ROUTED1(ViewMsg_EnableAltDragRubberbanding,
                     bool /* enable */)

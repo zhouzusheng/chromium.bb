@@ -166,6 +166,10 @@ class Toolkit {
     virtual bool preHandleMessage(const NativeMsg* msg) = 0;
     virtual void postHandleMessage(const NativeMsg* msg) = 0;
 
+    // Clears unused resources from the global web cache on all renderer
+    // processes.
+    virtual void clearWebCache() = 0;
+
     // Do not use this function unless you know what you're doing.  It relaxes
     // a bunch of security checks in the V8 binding layer in order to allow non
     // window contexts.  Note that it has been explicitly marked 'Unsafe' in

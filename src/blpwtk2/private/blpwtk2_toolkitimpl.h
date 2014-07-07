@@ -89,6 +89,7 @@ class ToolkitImpl : public Toolkit {
 
     virtual bool preHandleMessage(const NativeMsg* msg) OVERRIDE;
     virtual void postHandleMessage(const NativeMsg* msg) OVERRIDE;
+    virtual void clearWebCache() OVERRIDE;
 
   private:
     void createInProcessHost(const std::string& channelId);

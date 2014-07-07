@@ -241,6 +241,9 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   static RenderProcessHost* GetExistingProcessHost(
       content::BrowserContext* browser_context, const GURL& site_url);
 
+  // Clear the web cache on all renderers.
+  static void ClearWebCacheOnAllRenderers();
+
   // Overrides the default heuristic for limiting the max renderer process
   // count.  This is useful for unit testing process limit behaviors.  It is
   // also used to allow a command line parameter to configure the max number of

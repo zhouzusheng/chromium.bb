@@ -95,6 +95,7 @@
 #include "WebWindowFeatures.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/css/resolver/StyleResolver.h"
+#include "core/dom/CustomEvent.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/KeyboardEvent.h"
@@ -2524,6 +2525,21 @@ void WebViewImpl::didLosePointerLock()
 {
     if (page())
         page()->pointerLockController().didLosePointerLock();
+}
+
+void WebViewImpl::didChangeWindowRect()
+{
+    if (!mainFrameImpl()
+        || !mainFrameImpl()->frame()
+        || !mainFrameImpl()->frame()->document()) {
+        return;
+    }
+
+    CustomEventInit eventInit;
+    eventInit.bubbles = false;
+    eventInit.cancelable = false;
+    RefPtr<CustomEvent> event = CustomEvent::create("bbWindowRectChanged", eventInit);
+    mainFrameImpl()->frame()->document()->dispatchWindowEvent(event);
 }
 
 void WebViewImpl::didChangeWindowResizerRect()

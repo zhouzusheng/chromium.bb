@@ -430,13 +430,6 @@ int RunNamedProcessTypeMain(
 #endif  // !CHROME_MULTIPLE_DLL_BROWSER
   };
 
-#if !defined(CHROME_MULTIPLE_DLL_BROWSER)
-  UtilityProcessHost::RegisterUtilityMainThreadFactory(
-      CreateInProcessUtilityThread);
-  GpuProcessHost::RegisterGpuMainThreadFactory(
-      CreateInProcessGpuThread);
-#endif
-
   for (size_t i = 0; i < arraysize(kMainFunctions); ++i) {
     if (process_type == kMainFunctions[i].name) {
       if (delegate) {
@@ -641,6 +634,13 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     if (!GetContentClient())
       SetContentClient(&empty_content_client_);
     ContentClientInitializer::Set(process_type, delegate_);
+
+#if !defined(CHROME_MULTIPLE_DLL_BROWSER)
+    UtilityProcessHost::RegisterUtilityMainThreadFactory(
+        CreateInProcessUtilityThread);
+    GpuProcessHost::RegisterGpuMainThreadFactory(
+        CreateInProcessGpuThread);
+#endif
 
 #if defined(OS_WIN)
     // Route stdio to parent console (if any) or create one.

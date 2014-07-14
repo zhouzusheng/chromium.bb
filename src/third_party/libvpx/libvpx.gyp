@@ -137,9 +137,9 @@
             ['chromeos == 1', {
               # ChromeOS needs these files for animated WebM avatars.
               'sources': [
-                '<(libvpx_source)/libmkv/EbmlIDs.h',
-                '<(libvpx_source)/libmkv/EbmlWriter.c',
-                '<(libvpx_source)/libmkv/EbmlWriter.h',
+                '<(libvpx_source)/third_party/libmkv/EbmlIDs.h',
+                '<(libvpx_source)/third_party/libmkv/EbmlWriter.c',
+                '<(libvpx_source)/third_party/libmkv/EbmlWriter.h',
               ],
             }],
           ],
@@ -303,9 +303,9 @@
             ['chromeos == 1', {
               # ChromeOS needs these files for animated WebM avatars.
               'sources': [
-                '<(libvpx_source)/libmkv/EbmlIDs.h',
-                '<(libvpx_source)/libmkv/EbmlWriter.c',
-                '<(libvpx_source)/libmkv/EbmlWriter.h',
+                '<(libvpx_source)/third_party/libmkv/EbmlIDs.h',
+                '<(libvpx_source)/third_party/libmkv/EbmlWriter.c',
+                '<(libvpx_source)/third_party/libmkv/EbmlWriter.h',
               ],
             }],
           ],

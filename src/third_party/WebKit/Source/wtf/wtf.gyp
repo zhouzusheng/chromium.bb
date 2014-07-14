@@ -28,7 +28,7 @@
 {
   'includes': [
     '../build/win/precompile.gypi',
-    '../core/features.gypi',
+    '../build/features.gypi',
     'wtf.gypi',
   ],
   'conditions': [
@@ -149,6 +149,7 @@
           }
         }, { # OS!="mac"
           'sources/': [
+            ['exclude', 'CF\\.cpp$'],
             ['exclude', 'Mac\\.mm$'],
             # mac is the only OS that uses WebKit's copy of TCMalloc.
             ['exclude', 'TC.*\\.(cpp|h)$'],

@@ -198,19 +198,6 @@ WebClipboard* ShellContentRendererClient::OverrideWebClipboard() {
 #endif
 }
 
-WebKit::WebCrypto* ShellContentRendererClient::OverrideWebCrypto() {
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
-    return NULL;
-  // SHEZ: Remove test code.
-#if 0
-  WebTestInterfaces* interfaces =
-      ShellRenderProcessObserver::GetInstance()->test_interfaces();
-  return interfaces->crypto();
-#else
-  return NULL;
-#endif
-}
-
 WebThemeEngine* ShellContentRendererClient::OverrideThemeEngine() {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return NULL;

@@ -544,6 +544,8 @@ class BASE_EXPORT TimeTicks {
   // SHOULD ONLY BE USED WHEN IT IS REALLY NEEDED.
   static TimeTicks HighResNow();
 
+  static bool IsHighResNowFastAndReliable();
+
   // Returns true if ThreadNow() is supported on this system.
   static bool IsThreadNowSupported() {
 #if defined(_POSIX_THREAD_CPUTIME) && (_POSIX_THREAD_CPUTIME >= 0)
@@ -601,6 +603,14 @@ class BASE_EXPORT TimeTicks {
   static TimeTicks FromInternalValue(int64 ticks) {
     return TimeTicks(ticks);
   }
+
+  // Get the TimeTick value at the time of the UnixEpoch. This is useful when
+  // you need to relate the value of TimeTicks to a real time and date.
+  // Note: Upon first invocation, this function takes a snapshot of the realtime
+  // clock to establish a reference point.  This function will return the same
+  // value for the duration of the application, but will be different in future
+  // application runs.
+  static TimeTicks UnixEpoch();
 
   // Returns the internal numeric value of the TimeTicks object.
   // For serializing, use FromInternalValue to reconstitute.

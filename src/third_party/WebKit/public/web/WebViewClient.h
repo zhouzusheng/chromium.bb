@@ -37,7 +37,6 @@
 #include "WebAXEnums.h"
 #include "WebContentDetectionResult.h"
 #include "WebDragOperation.h"
-#include "WebEditingAction.h"
 #include "WebFileChooserCompletion.h"
 #include "WebFileChooserParams.h"
 #include "WebPageVisibilityState.h"
@@ -53,7 +52,6 @@ class WebColorChooser;
 class WebColorChooserClient;
 class WebCompositorOutputSurface;
 class WebDateTimeChooserCompletion;
-class WebDeviceOrientationClient;
 class WebDragData;
 class WebElement;
 class WebExternalPopupMenu;
@@ -151,7 +149,6 @@ public:
     // Called by WebHelperPlugin to provide the WebFrameClient interface for the WebFrame.
     virtual void initializeHelperPluginWebFrame(WebHelperPlugin*) { }
 
-
     // Navigational --------------------------------------------------------
 
     // These notifications bracket any loading that occurs in the WebView.
@@ -167,25 +164,10 @@ public:
 
     // These methods allow the client to intercept and overrule editing
     // operations.
-    virtual bool shouldBeginEditing(const WebRange&) { return true; }
-    virtual bool shouldEndEditing(const WebRange&) { return true; }
-    virtual bool shouldInsertNode(
-        const WebNode&, const WebRange&, WebEditingAction) { return true; }
-    virtual bool shouldInsertText(
-        const WebString&, const WebRange&, WebEditingAction) { return true; }
-    virtual bool shouldChangeSelectedRange(
-        const WebRange& from, const WebRange& to, WebTextAffinity,
-        bool stillSelecting) { return true; }
-    virtual bool shouldDeleteRange(const WebRange&) { return true; }
-    virtual bool shouldApplyStyle(const WebString& style, const WebRange&) { return true; }
-
-    virtual void didBeginEditing() { }
     virtual void didCancelCompositionOnSelectionChange() { }
     virtual void didChangeSelection(bool isSelectionEmpty) { }
     virtual void didChangeContents() { }
     virtual void didExecuteCommand(const WebString& commandName) { }
-    virtual void didEndEditing() { }
-    virtual void didChangeFormState(const WebNode&) { }
 
     // This method is called in response to WebView's handleInputEvent()
     // when the default action for the current keyboard event is not
@@ -348,11 +330,6 @@ public:
 
     // Access the embedder API for speech recognition services.
     virtual WebSpeechRecognizer* speechRecognizer() { return 0; }
-
-    // Device Orientation --------------------------------------------------
-
-    // Access the embedder API for device orientation services.
-    virtual WebDeviceOrientationClient* deviceOrientationClient() { return 0; }
 
     // Zoom ----------------------------------------------------------------
 

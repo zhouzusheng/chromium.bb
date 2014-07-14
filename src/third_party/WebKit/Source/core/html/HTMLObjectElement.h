@@ -24,13 +24,13 @@
 #define HTMLObjectElement_h
 
 #include "core/html/FormAssociatedElement.h"
-#include "core/html/HTMLPlugInImageElement.h"
+#include "core/html/HTMLPlugInElement.h"
 
 namespace WebCore {
 
 class HTMLFormElement;
 
-class HTMLObjectElement FINAL : public HTMLPlugInImageElement, public FormAssociatedElement {
+class HTMLObjectElement FINAL : public HTMLPlugInElement, public FormAssociatedElement {
 public:
     static PassRefPtr<HTMLObjectElement> create(const QualifiedName&, Document&, HTMLFormElement*, bool createdByParser);
     virtual ~HTMLObjectElement();
@@ -77,7 +77,7 @@ private:
     virtual void removedFrom(ContainerNode*) OVERRIDE;
 
     virtual bool rendererIsNeeded(const RenderStyle&);
-    virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
+    virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
 
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
 
@@ -114,11 +114,7 @@ private:
     bool m_useFallbackContent : 1;
 };
 
-inline HTMLObjectElement* toHTMLObjectElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::objectTag));
-    return static_cast<HTMLObjectElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLObjectElement, hasTagName(HTMLNames::objectTag));
 
 inline const HTMLObjectElement* toHTMLObjectElement(const FormAssociatedElement* element)
 {

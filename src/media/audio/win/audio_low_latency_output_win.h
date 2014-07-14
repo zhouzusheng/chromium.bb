@@ -138,17 +138,6 @@ class MEDIA_EXPORT WASAPIAudioOutputStream :
   virtual void SetVolume(double volume) OVERRIDE;
   virtual void GetVolume(double* volume) OVERRIDE;
 
-  // Retrieves the number of channels the audio engine uses for its internal
-  // processing/mixing of shared-mode streams for the default endpoint device.
-  static int HardwareChannelCount();
-
-  // Retrieves the channel layout the audio engine uses for its internal
-  // processing/mixing of shared-mode streams for the default endpoint device.
-  // Note that we convert an internal channel layout mask (see ChannelMask())
-  // into a Chrome-specific channel layout enumerator in this method, hence
-  // the match might not be perfect.
-  static ChannelLayout HardwareChannelLayout();
-
   // Retrieves the sample rate the audio engine uses for its internal
   // processing/mixing of shared-mode streams.  To fetch the settings for the
   // default device, pass an empty string as the |device_id|.
@@ -168,10 +157,7 @@ class MEDIA_EXPORT WASAPIAudioOutputStream :
   // Checks available amount of space in the endpoint buffer and reads
   // data from the client to fill up the buffer without causing audio
   // glitches.
-  void RenderAudioFromSource(IAudioClock* audio_clock, UINT64 device_frequency);
-
-  // Issues the OnError() callback to the |sink_|.
-  void HandleError(HRESULT err);
+  bool RenderAudioFromSource(IAudioClock* audio_clock, UINT64 device_frequency);
 
   // Called when the device will be opened in exclusive mode and use the
   // application specified format.
@@ -180,6 +166,11 @@ class MEDIA_EXPORT WASAPIAudioOutputStream :
   HRESULT ExclusiveModeInitialization(IAudioClient* client,
                                       HANDLE event_handle,
                                       uint32* endpoint_buffer_size);
+
+  // If |render_thread_| is valid, sets |stop_render_event_| and blocks until
+  // the thread has stopped.  |stop_render_event_| is reset after the call.
+  // |source_| is set to NULL.
+  void StopThread();
 
   // Contains the thread ID of the creating thread.
   base::PlatformThreadId creating_thread_id_;

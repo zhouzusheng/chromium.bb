@@ -26,8 +26,8 @@
 #define TimingFunction_h
 
 #include "RuntimeEnabledFeatures.h"
-#include "core/platform/animation/AnimationUtilities.h" // For blend()
-#include "core/platform/graphics/UnitBezier.h"
+#include "platform/animation/AnimationUtilities.h" // For blend()
+#include "platform/animation/UnitBezier.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
@@ -274,11 +274,10 @@ public:
         RELEASE_ASSERT_WITH_MESSAGE(fraction >= 0 && fraction <= 1, "Web Animations not yet implemented: Timing function behavior outside the range [0, 1] is not yet specified");
         ASSERT(!m_segments.isEmpty());
         ASSERT(m_segments.last().max() == 1);
-        const Segment* segment;
-        for (size_t i = 0; i < m_segments.size(); ++i) {
-            segment = &m_segments[i];
-            if (fraction < segment->max())
-                break;
+        size_t i = 0;
+        const Segment* segment = &m_segments[i++];
+        while (fraction >= segment->max() && i < m_segments.size()) {
+            segment = &m_segments[i++];
         }
         return segment->evaluate(fraction, accuracy);
     }

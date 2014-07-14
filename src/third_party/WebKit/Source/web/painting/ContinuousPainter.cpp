@@ -30,8 +30,8 @@
 #include "ContinuousPainter.h"
 
 #include "PageOverlayList.h"
-#include "core/platform/chromium/TraceEvent.h"
 #include "core/platform/graphics/GraphicsLayer.h"
+#include "platform/TraceEvent.h"
 
 using namespace WebCore;
 
@@ -49,6 +49,7 @@ void ContinuousPainter::setNeedsDisplayRecursive(GraphicsLayer* layer, PageOverl
     layer->setNeedsDisplay();
 
     setNeedsDisplayRecursive(layer->maskLayer(), pageOverlays);
+    setNeedsDisplayRecursive(layer->contentsClippingMaskLayer(), pageOverlays);
     setNeedsDisplayRecursive(layer->replicaLayer(), pageOverlays);
 
     const Vector<GraphicsLayer*>& children = layer->children();

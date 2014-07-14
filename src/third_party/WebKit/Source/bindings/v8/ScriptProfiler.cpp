@@ -173,7 +173,7 @@ class GlobalObjectNameResolver : public v8::HeapProfiler::ObjectNameResolver {
 public:
     virtual const char* GetName(v8::Handle<v8::Object> object)
     {
-        if (V8DOMWrapper::isWrapperOfType(object, &V8Window::info)) {
+        if (V8DOMWrapper::isWrapperOfType(object, &V8Window::wrapperTypeInfo)) {
             DOMWindow* window = V8Window::toNative(object);
             if (window) {
                 CString url = window->document()->url().string().utf8();
@@ -292,7 +292,7 @@ void ScriptProfiler::visitNodeWrappers(WrappedNodeVisitor* visitor)
             // Casting to Handle is safe here, since the Persistent cannot get
             // GCd during visiting.
             v8::Handle<v8::Object>* wrapper = reinterpret_cast<v8::Handle<v8::Object>*>(value);
-            ASSERT(V8Node::HasInstanceInAnyWorld(*wrapper, m_isolate));
+            ASSERT_UNUSED(m_isolate, V8Node::HasInstanceInAnyWorld(*wrapper, m_isolate));
             ASSERT((*wrapper)->IsObject());
             m_visitor->visitNode(V8Node::toNative(*wrapper));
         }

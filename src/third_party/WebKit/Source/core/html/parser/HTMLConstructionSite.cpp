@@ -46,8 +46,9 @@
 #include "core/html/parser/HTMLToken.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/page/Frame.h"
-#include "core/platform/NotImplemented.h"
+#include "core/frame/Frame.h"
+#include "platform/NotImplemented.h"
+#include "platform/text/TextBreakIterator.h"
 #include <limits>
 
 namespace WebCore {
@@ -82,6 +83,11 @@ static bool shouldUseLengthLimit(const ContainerNode* node)
         && !node->hasTagName(SVGNames::scriptTag);
 }
 
+static unsigned textLengthLimitForContainer(const ContainerNode* node)
+{
+    return shouldUseLengthLimit(node) ? Text::defaultLengthLimit : std::numeric_limits<unsigned>::max();
+}
+
 static inline bool isAllWhitespace(const String& string)
 {
     return string.isAllSpecialCharacters<isHTMLSpace<UChar> >();
@@ -93,10 +99,10 @@ static inline void insert(HTMLConstructionSiteTask& task)
         task.parent = toHTMLTemplateElement(task.parent.get())->content();
 
     if (ContainerNode* parent = task.child->parentNode())
-        parent->parserRemoveChild(task.child.get());
+        parent->parserRemoveChild(*task.child);
 
     if (task.nextChild)
-        task.parent->parserInsertBefore(task.child.get(), task.nextChild.get());
+        task.parent->parserInsertBefore(task.child.get(), *task.nextChild);
     else
         task.parent->parserAppendChild(task.child.get());
 }
@@ -118,7 +124,7 @@ static inline void executeReparentTask(HTMLConstructionSiteTask& task)
     ASSERT(task.operation == HTMLConstructionSiteTask::Reparent);
 
     if (ContainerNode* parent = task.child->parentNode())
-        parent->parserRemoveChild(task.child.get());
+        parent->parserRemoveChild(*task.child);
 
     task.parent->parserAppendChild(task.child);
 }
@@ -134,13 +140,12 @@ static inline void executeTakeAllChildrenTask(HTMLConstructionSiteTask& task)
 {
     ASSERT(task.operation == HTMLConstructionSiteTask::TakeAllChildren);
 
-    task.parent->takeAllChildrenFrom(task.oldParent());
-    // Notice that we don't need to manually attach the moved children
-    // because takeAllChildrenFrom does that work for us.
+    task.parent->parserTakeAllChildrenFrom(*task.oldParent());
 }
 
-static inline void executeTask(HTMLConstructionSiteTask& task)
+void HTMLConstructionSite::executeTask(HTMLConstructionSiteTask& task)
 {
+    ASSERT(m_taskQueue.isEmpty());
     if (task.operation == HTMLConstructionSiteTask::Insert)
         return executeInsertTask(task);
 
@@ -156,6 +161,50 @@ static inline void executeTask(HTMLConstructionSiteTask& task)
         return executeTakeAllChildrenTask(task);
 
     ASSERT_NOT_REACHED();
+}
+
+// This is only needed for TextDocuments where we might have text nodes
+// approaching the default length limit (~64k) and we don't want to
+// break a text node in the middle of a combining character.
+static unsigned findBreakIndexBetween(const String& string, unsigned currentPosition, unsigned proposedBreakIndex)
+{
+    ASSERT(currentPosition < proposedBreakIndex);
+    ASSERT(proposedBreakIndex <= string.length());
+    // The end of the string is always a valid break.
+    if (proposedBreakIndex == string.length())
+        return proposedBreakIndex;
+
+    // Latin-1 does not have breakable boundaries. If we ever moved to a differnet 8-bit encoding this could be wrong.
+    if (string.is8Bit())
+        return proposedBreakIndex;
+
+    const UChar* breakSearchCharacters = string.characters16() + currentPosition;
+    // We need at least two characters look-ahead to account for UTF-16 surrogates, but can't search off the end of the buffer!
+    unsigned breakSearchLength = std::min(proposedBreakIndex - currentPosition + 2, string.length() - currentPosition);
+    NonSharedCharacterBreakIterator it(breakSearchCharacters, breakSearchLength);
+
+    if (it.isBreak(proposedBreakIndex - currentPosition))
+        return proposedBreakIndex;
+
+    int adjustedBreakIndexInSubstring = it.preceding(proposedBreakIndex - currentPosition);
+    if (adjustedBreakIndexInSubstring > 0)
+        return currentPosition + adjustedBreakIndexInSubstring;
+    // We failed to find a breakable point, let the caller figure out what to do.
+    return 0;
+}
+
+static String atomizeIfAllWhitespace(const String& string, WhitespaceMode whitespaceMode)
+{
+    // Strings composed entirely of whitespace are likely to be repeated.
+    // Turn them into AtomicString so we share a single string for each.
+    if (whitespaceMode == AllWhitespace || (whitespaceMode == WhitespaceUnknown && isAllWhitespace(string)))
+        return AtomicString(string).string();
+    return string;
+}
+
+void HTMLConstructionSite::queueTask(const HTMLConstructionSiteTask& task)
+{
+    m_taskQueue.append(task);
 }
 
 void HTMLConstructionSite::attachLater(ContainerNode* parent, PassRefPtr<Node> prpChild, bool selfClosing)
@@ -178,7 +227,7 @@ void HTMLConstructionSite::attachLater(ContainerNode* parent, PassRefPtr<Node> p
         task.parent = task.parent->parentNode();
 
     ASSERT(task.parent);
-    m_taskQueue.append(task);
+    queueTask(task);
 }
 
 void HTMLConstructionSite::executeQueuedTasks()
@@ -222,6 +271,9 @@ HTMLConstructionSite::HTMLConstructionSite(DocumentFragment* fragment, ParserCon
 
 HTMLConstructionSite::~HTMLConstructionSite()
 {
+    // Depending on why we're being destroyed it might be OK
+    // to forget queued tasks, but currently we don't expect to.
+    ASSERT(m_taskQueue.isEmpty());
 }
 
 void HTMLConstructionSite::detach()
@@ -246,7 +298,7 @@ void HTMLConstructionSite::dispatchDocumentElementAvailableIfNeeded()
 {
     ASSERT(m_document);
     if (m_document->frame() && !m_isParsingFragment)
-        m_document->frame()->loader()->dispatchDocumentElementAvailable();
+        m_document->frame()->loader().dispatchDocumentElementAvailable();
 }
 
 void HTMLConstructionSite::insertHTMLHtmlStartTagBeforeHTML(AtomicHTMLToken* token)
@@ -392,8 +444,15 @@ void HTMLConstructionSite::setCompatibilityModeFromDoctype(const String& name, c
     setCompatibilityMode(Document::NoQuirksMode);
 }
 
+void HTMLConstructionSite::processEndOfFile()
+{
+    ASSERT(currentNode());
+    openElements()->popAll();
+}
+
 void HTMLConstructionSite::finishedParsing()
 {
+    ASSERT(m_taskQueue.isEmpty());
     m_document->finishedParsing();
 }
 
@@ -457,7 +516,7 @@ void HTMLConstructionSite::insertHTMLBodyElement(AtomicHTMLToken* token)
     attachLater(currentNode(), body);
     m_openElements.pushHTMLBodyElement(HTMLStackItem::create(body.release(), token));
     if (Frame* frame = m_document->frame())
-        frame->loader()->client()->dispatchWillInsertBody();
+        frame->loader().client()->dispatchWillInsertBody();
 }
 
 void HTMLConstructionSite::insertHTMLFormElement(AtomicHTMLToken* token, bool isDemoted)
@@ -525,48 +584,64 @@ void HTMLConstructionSite::insertForeignElement(AtomicHTMLToken* token, const At
         m_openElements.push(HTMLStackItem::create(element.release(), token, namespaceURI));
 }
 
-void HTMLConstructionSite::insertTextNode(const String& characters, WhitespaceMode whitespaceMode)
+void HTMLConstructionSite::insertTextNode(const String& string, WhitespaceMode whitespaceMode)
 {
-    HTMLConstructionSiteTask task(HTMLConstructionSiteTask::Insert);
-    task.parent = currentNode();
+    HTMLConstructionSiteTask protoTask(HTMLConstructionSiteTask::Insert);
+    protoTask.parent = currentNode();
 
     if (shouldFosterParent())
-        findFosterSite(task);
+        findFosterSite(protoTask);
 
-    if (task.parent->hasTagName(templateTag))
-        task.parent = toHTMLTemplateElement(task.parent.get())->content();
+    // FIXME: This probably doesn't need to be done both here and in insert(Task).
+    if (protoTask.parent->hasTagName(templateTag))
+        protoTask.parent = toHTMLTemplateElement(protoTask.parent.get())->content();
 
-    // Strings composed entirely of whitespace are likely to be repeated.
-    // Turn them into AtomicString so we share a single string for each.
-    bool shouldUseAtomicString = whitespaceMode == AllWhitespace
-        || (whitespaceMode == WhitespaceUnknown && isAllWhitespace(characters));
-
+    // Splitting text nodes into smaller chunks contradicts HTML5 spec, but is necessary
+    // for performance, see: https://bugs.webkit.org/show_bug.cgi?id=55898
+    unsigned lengthLimit = textLengthLimitForContainer(protoTask.parent.get());
     unsigned currentPosition = 0;
-    unsigned lengthLimit = shouldUseLengthLimit(task.parent.get()) ? Text::defaultLengthLimit : std::numeric_limits<unsigned>::max();
 
-    // FIXME: Splitting text nodes into smaller chunks contradicts HTML5 spec, but is currently necessary
-    // for performance, see <https://bugs.webkit.org/show_bug.cgi?id=55898>.
-
-    Node* previousChild = task.nextChild ? task.nextChild->previousSibling() : task.parent->lastChild();
+    // Merge text nodes into previous ones if possible:
+    // http://www.whatwg.org/specs/web-apps/current-work/multipage/tree-construction.html#insert-a-character
+    Node* previousChild = protoTask.nextChild ? protoTask.nextChild->previousSibling() : protoTask.parent->lastChild();
     if (previousChild && previousChild->isTextNode()) {
-        // FIXME: We're only supposed to append to this text node if it
-        // was the last text node inserted by the parser.
-        currentPosition = toCharacterData(previousChild)->parserAppendData(characters, 0, lengthLimit);
+        Text* previousText = toText(previousChild);
+        unsigned appendLengthLimit = lengthLimit - previousText->length();
+
+        unsigned proposedBreakIndex = std::min(currentPosition + appendLengthLimit, string.length());
+        unsigned breakIndex = findBreakIndexBetween(string, currentPosition, proposedBreakIndex);
+        ASSERT(breakIndex <= string.length());
+        // If we didn't find a breable piece to append, forget it.
+        if (breakIndex) {
+            String substring = string.substring(currentPosition, breakIndex - currentPosition);
+            substring = atomizeIfAllWhitespace(substring, whitespaceMode);
+            previousText->parserAppendData(substring);
+            currentPosition += substring.length();
+        }
     }
 
-    while (currentPosition < characters.length()) {
-        RefPtr<Text> textNode = Text::createWithLengthLimit(task.parent->document(), shouldUseAtomicString ? AtomicString(characters).string() : characters, currentPosition, lengthLimit);
-        // If we have a whole string of unbreakable characters the above could lead to an infinite loop. Exceeding the length limit is the lesser evil.
-        if (!textNode->length()) {
-            String substring = characters.substring(currentPosition);
-            textNode = Text::create(task.parent->document(), shouldUseAtomicString ? AtomicString(substring).string() : substring);
-        }
+    while (currentPosition < string.length()) {
+        unsigned proposedBreakIndex = std::min(currentPosition + lengthLimit, string.length());
+        unsigned breakIndex = findBreakIndexBetween(string, currentPosition, proposedBreakIndex);
+        // We failed to find a breakable boudary between the minimum and the proposed, just give up and break at the proposed index.
+        // We could go searching after the proposed index, but current callers are attempting to break after 65k chars!
+        // 65k of unbreakable characters isn't worth trying to handle "correctly".
+        if (!breakIndex)
+            breakIndex = proposedBreakIndex;
+        ASSERT(breakIndex <= string.length());
+        String substring = string.substring(currentPosition, breakIndex - currentPosition);
+        substring = atomizeIfAllWhitespace(substring, whitespaceMode);
 
-        currentPosition += textNode->length();
-        ASSERT(currentPosition <= characters.length());
-        task.child = textNode.release();
+        HTMLConstructionSiteTask task(HTMLConstructionSiteTask::Insert);
+        task.parent = protoTask.parent;
+        task.nextChild = protoTask.nextChild;
+        task.child = Text::create(task.parent->document(), substring);
+        queueTask(task);
 
-        executeTask(task);
+        ASSERT(breakIndex > currentPosition);
+        ASSERT(breakIndex - currentPosition == substring.length());
+        ASSERT(toText(task.child)->length() == substring.length());
+        currentPosition = breakIndex;
     }
 }
 
@@ -575,7 +650,7 @@ void HTMLConstructionSite::reparent(HTMLElementStack::ElementRecord* newParent, 
     HTMLConstructionSiteTask task(HTMLConstructionSiteTask::Reparent);
     task.parent = newParent->node();
     task.child = child->node();
-    m_taskQueue.append(task);
+    queueTask(task);
 }
 
 void HTMLConstructionSite::reparent(HTMLElementStack::ElementRecord* newParent, HTMLStackItem* child)
@@ -583,7 +658,7 @@ void HTMLConstructionSite::reparent(HTMLElementStack::ElementRecord* newParent, 
     HTMLConstructionSiteTask task(HTMLConstructionSiteTask::Reparent);
     task.parent = newParent->node();
     task.child = child->node();
-    m_taskQueue.append(task);
+    queueTask(task);
 }
 
 void HTMLConstructionSite::insertAlreadyParsedChild(HTMLStackItem* newParent, HTMLElementStack::ElementRecord* child)
@@ -596,7 +671,7 @@ void HTMLConstructionSite::insertAlreadyParsedChild(HTMLStackItem* newParent, HT
     HTMLConstructionSiteTask task(HTMLConstructionSiteTask::InsertAlreadyParsedChild);
     task.parent = newParent->node();
     task.child = child->node();
-    m_taskQueue.append(task);
+    queueTask(task);
 }
 
 void HTMLConstructionSite::takeAllChildren(HTMLStackItem* newParent, HTMLElementStack::ElementRecord* oldParent)
@@ -604,7 +679,7 @@ void HTMLConstructionSite::takeAllChildren(HTMLStackItem* newParent, HTMLElement
     HTMLConstructionSiteTask task(HTMLConstructionSiteTask::TakeAllChildren);
     task.parent = newParent->node();
     task.child = oldParent->node();
-    m_taskQueue.append(task);
+    queueTask(task);
 }
 
 PassRefPtr<Element> HTMLConstructionSite::createElement(AtomicHTMLToken* token, const AtomicString& namespaceURI)
@@ -746,8 +821,7 @@ void HTMLConstructionSite::fosterParent(PassRefPtr<Node> node)
     findFosterSite(task);
     task.child = node;
     ASSERT(task.parent);
-
-    m_taskQueue.append(task);
+    queueTask(task);
 }
 
 }

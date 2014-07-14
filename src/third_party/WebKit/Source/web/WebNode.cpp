@@ -44,13 +44,13 @@
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "core/dom/Node.h"
 #include "core/dom/NodeList.h"
 #include "core/editing/markup.h"
-#include "core/platform/Widget.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderWidget.h"
+#include "platform/Widget.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebVector.h"
 
@@ -96,12 +96,6 @@ WebString WebNode::nodeName() const
 WebString WebNode::nodeValue() const
 {
     return m_private->nodeValue();
-}
-
-bool WebNode::setNodeValue(const WebString& value)
-{
-    m_private->setNodeValue(value);
-    return true;
 }
 
 WebDocument WebNode::document() const

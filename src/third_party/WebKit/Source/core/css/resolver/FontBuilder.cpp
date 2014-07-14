@@ -24,13 +24,13 @@
 #include "core/css/resolver/FontBuilder.h"
 
 #include "core/css/CSSCalculationValue.h"
-#include "core/css/FontFeatureValue.h"
+#include "core/css/CSSFontFeatureValue.h"
 #include "core/css/FontSize.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Settings.h"
-#include "core/platform/text/LocaleToScriptMapping.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
+#include "platform/text/LocaleToScriptMapping.h"
 
 namespace WebCore {
 
@@ -74,13 +74,6 @@ void FontBuilder::initForStyleResolve(const Document& document, RenderStyle* sty
     m_document = &document;
     m_useSVGZoomRules = useSVGZoomRules;
     m_style = style;
-    m_fontDirty = false;
-}
-
-void FontBuilder::clear()
-{
-    m_document = 0;
-    m_style = 0;
     m_fontDirty = false;
 }
 
@@ -192,27 +185,27 @@ void FontBuilder::setFontFamilyValue(CSSValue* value, float effectiveZoom)
                 face = settings->standardFontFamily();
                 break;
             case CSSValueSerif:
-                face = serifFamily;
+                face = FontFamilyNames::webkit_serif;
                 scope.fontDescription().setGenericFamily(FontDescription::SerifFamily);
                 break;
             case CSSValueSansSerif:
-                face = sansSerifFamily;
+                face = FontFamilyNames::webkit_sans_serif;
                 scope.fontDescription().setGenericFamily(FontDescription::SansSerifFamily);
                 break;
             case CSSValueCursive:
-                face = cursiveFamily;
+                face = FontFamilyNames::webkit_cursive;
                 scope.fontDescription().setGenericFamily(FontDescription::CursiveFamily);
                 break;
             case CSSValueFantasy:
-                face = fantasyFamily;
+                face = FontFamilyNames::webkit_fantasy;
                 scope.fontDescription().setGenericFamily(FontDescription::FantasyFamily);
                 break;
             case CSSValueMonospace:
-                face = monospaceFamily;
+                face = FontFamilyNames::webkit_monospace;
                 scope.fontDescription().setGenericFamily(FontDescription::MonospaceFamily);
                 break;
             case CSSValueWebkitPictograph:
-                face = pictographFamily;
+                face = FontFamilyNames::webkit_pictograph;
                 scope.fontDescription().setGenericFamily(FontDescription::PictographFamily);
                 break;
             default:
@@ -505,7 +498,7 @@ void FontBuilder::setFeatureSettingsValue(CSSValue* value)
         CSSValue* item = list->itemWithoutBoundsCheck(i);
         if (!item->isFontFeatureValue())
             continue;
-        FontFeatureValue* feature = static_cast<FontFeatureValue*>(item);
+        CSSFontFeatureValue* feature = toCSSFontFeatureValue(item);
         settings->append(FontFeature(feature->tag(), feature->value()));
     }
     scope.fontDescription().setFeatureSettings(settings.release());

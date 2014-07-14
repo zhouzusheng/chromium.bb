@@ -28,12 +28,12 @@
 #ifndef BitmapImage_h
 #define BitmapImage_h
 
-#include "core/platform/graphics/Color.h"
 #include "core/platform/graphics/FrameData.h"
 #include "core/platform/graphics/Image.h"
-#include "core/platform/graphics/ImageOrientation.h"
 #include "core/platform/graphics/ImageSource.h"
-#include "core/platform/graphics/IntSize.h"
+#include "platform/geometry/IntSize.h"
+#include "platform/graphics/Color.h"
+#include "platform/graphics/ImageOrientation.h"
 #include "wtf/Forward.h"
 
 namespace WebCore {
@@ -44,7 +44,7 @@ template <typename T> class Timer;
 class BitmapImage : public Image {
     friend class GeneratedImage;
     friend class CrossfadeGeneratedImage;
-    friend class GeneratorGeneratedImage;
+    friend class GradientGeneratedImage;
     friend class GraphicsContext;
 public:
     static PassRefPtr<BitmapImage> create(PassRefPtr<NativeImageSkia> nativeImage, ImageObserver* observer = 0)
@@ -74,8 +74,6 @@ public:
     // automatically pause once all observers no longer want to render the image anywhere.
     virtual void stopAnimation() OVERRIDE;
     virtual void resetAnimation() OVERRIDE;
-
-    virtual unsigned decodedSize() const OVERRIDE;
 
     virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() OVERRIDE;
     virtual bool currentFrameKnownToBeOpaque() OVERRIDE;
@@ -137,12 +135,6 @@ protected:
     // Whether or not size is available yet.
     bool isSizeAvailable();
 
-    // Called after asking the source for any information that may require
-    // decoding part of the image (e.g., the image size).  We need to report
-    // the partially decoded data to our observer so it has an accurate
-    // account of the BitmapImage's memory usage.
-    void didDecodeProperties() const;
-
     // Animation.
     int repetitionCount(bool imageKnownToBeComplete);  // |imageKnownToBeComplete| should be set if the caller knows the entire image has been decoded.
     bool shouldAnimate();
@@ -179,8 +171,6 @@ protected:
 
     Color m_solidColor;  // If we're a 1x1 solid color, this is the color to use to fill.
 
-    unsigned m_decodedSize; // The current size of all decoded frames.
-    mutable unsigned m_decodedPropertiesSize; // The size of data decoded by the source to determine image properties (e.g. size, frame count, etc).
     size_t m_frameCount;
 
     bool m_isSolidColor : 1; // Whether or not we are a 1x1 solid image.

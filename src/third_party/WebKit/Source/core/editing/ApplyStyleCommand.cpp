@@ -39,6 +39,7 @@
 #include "core/dom/Text.h"
 #include "core/editing/EditingStyle.h"
 #include "core/editing/HTMLInterchange.h"
+#include "core/editing/PlainTextRange.h"
 #include "core/editing/TextIterator.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
@@ -272,9 +273,9 @@ void ApplyStyleCommand::applyBlockStyle(EditingStyle *style)
             }
             ASSERT(!block || block->isHTMLElement());
             if (block && block->isHTMLElement()) {
-                removeCSSStyle(style, toHTMLElement(block.get()));
+                removeCSSStyle(style, toHTMLElement(block));
                 if (!m_removeOnly)
-                    addBlockStyle(styleChange, toHTMLElement(block.get()));
+                    addBlockStyle(styleChange, toHTMLElement(block));
             }
 
             if (nextParagraphStart.isOrphan())
@@ -285,8 +286,8 @@ void ApplyStyleCommand::applyBlockStyle(EditingStyle *style)
         nextParagraphStart = endOfParagraph(paragraphStart).next();
     }
 
-    startRange = TextIterator::rangeFromLocationAndLength(toContainerNode(scope), startIndex, 0, true);
-    endRange = TextIterator::rangeFromLocationAndLength(toContainerNode(scope), endIndex, 0, true);
+    startRange = PlainTextRange(startIndex).createRangeForSelection(*toContainerNode(scope));
+    endRange = PlainTextRange(endIndex).createRangeForSelection(*toContainerNode(scope));
     if (startRange && endRange)
         updateStartEnd(startRange->startPosition(), endRange->startPosition());
 }
@@ -758,11 +759,13 @@ void ApplyStyleCommand::applyInlineStyleToNodeRange(EditingStyle* style, PassRef
             if (pastEndNode && pastEndNode->isDescendantOf(node.get()))
                 break;
             // Add to this element's inline style and skip over its contents.
-            HTMLElement* element = toHTMLElement(node.get());
+            HTMLElement* element = toHTMLElement(node);
+            next = NodeTraversal::nextSkippingChildren(node.get());
+            if (!style->style())
+                continue;
             RefPtr<MutableStylePropertySet> inlineStyle = copyStyleOrCreateEmpty(element->inlineStyle());
             inlineStyle->mergeAndOverrideOnConflict(style->style());
             setNodeAttribute(element, styleAttr, inlineStyle->asText());
-            next = NodeTraversal::nextSkippingChildren(node.get());
             continue;
         }
 
@@ -853,7 +856,7 @@ void ApplyStyleCommand::removeConflictingInlineStyleFromRun(EditingStyle* style,
         RefPtr<Node> previousSibling = node->previousSibling();
         RefPtr<Node> nextSibling = node->nextSibling();
         RefPtr<ContainerNode> parent = node->parentNode();
-        removeInlineStyleFromElement(style, toHTMLElement(node.get()), RemoveAlways);
+        removeInlineStyleFromElement(style, toHTMLElement(node), RemoveAlways);
         if (!node->inDocument()) {
             // FIXME: We might need to update the start and the end of current selection here but need a test.
             if (runStart == node)
@@ -1025,16 +1028,16 @@ void ApplyStyleCommand::pushDownInlineStyleAroundNode(EditingStyle* style, Node*
     Vector<RefPtr<Element> > elementsToPushDown;
     while (current && current != targetNode && current->contains(targetNode)) {
         NodeVector currentChildren;
-        getChildNodes(current.get(), currentChildren);
+        getChildNodes(*current, currentChildren);
         RefPtr<Element> styledElement;
-        if (current->isStyledElement() && isStyledInlineElementToRemove(toElement(current.get()))) {
-            styledElement = toElement(current.get());
+        if (current->isStyledElement() && isStyledInlineElementToRemove(toElement(current))) {
+            styledElement = toElement(current);
             elementsToPushDown.append(styledElement);
         }
 
         RefPtr<EditingStyle> styleToPushDown = EditingStyle::create();
         if (current->isHTMLElement())
-            removeInlineStyleFromElement(style, toHTMLElement(current.get()), RemoveIfNeeded, styleToPushDown.get());
+            removeInlineStyleFromElement(style, toHTMLElement(current), RemoveIfNeeded, styleToPushDown.get());
 
         // The inner loop will go through children on each level
         // FIXME: we should aggregate inline child elements together so that we don't wrap each child separately.
@@ -1108,7 +1111,7 @@ void ApplyStyleCommand::removeInlineStyle(EditingStyle* style, const Position &s
             next = NodeTraversal::next(node.get());
         }
         if (node->isHTMLElement() && nodeFullySelected(node.get(), start, end)) {
-            RefPtr<HTMLElement> elem = toHTMLElement(node.get());
+            RefPtr<HTMLElement> elem = toHTMLElement(node);
             RefPtr<Node> prev = NodeTraversal::previousPostOrder(elem.get());
             RefPtr<Node> next = NodeTraversal::next(elem.get());
             RefPtr<EditingStyle> styleToPushDown;
@@ -1351,14 +1354,14 @@ void ApplyStyleCommand::surroundNodeRangeWithElement(PassRefPtr<Node> passedStar
     RefPtr<Node> nextSibling = element->nextSibling();
     RefPtr<Node> previousSibling = element->previousSibling();
     if (nextSibling && nextSibling->isElementNode() && nextSibling->rendererIsEditable()
-        && areIdenticalElements(element.get(), toElement(nextSibling.get())))
-        mergeIdenticalElements(element.get(), toElement(nextSibling.get()));
+        && areIdenticalElements(element.get(), toElement(nextSibling)))
+        mergeIdenticalElements(element.get(), toElement(nextSibling));
 
     if (previousSibling && previousSibling->isElementNode() && previousSibling->rendererIsEditable()) {
         Node* mergedElement = previousSibling->nextSibling();
         if (mergedElement->isElementNode() && mergedElement->rendererIsEditable()
-            && areIdenticalElements(toElement(previousSibling.get()), toElement(mergedElement)))
-            mergeIdenticalElements(toElement(previousSibling.get()), toElement(mergedElement));
+            && areIdenticalElements(toElement(previousSibling), toElement(mergedElement)))
+            mergeIdenticalElements(toElement(previousSibling), toElement(mergedElement));
     }
 
     // FIXME: We should probably call updateStartEnd if the start or end was in the node
@@ -1402,7 +1405,6 @@ void ApplyStyleCommand::addInlineStyleIfNeeded(EditingStyle* style, PassRefPtr<N
 Position ApplyStyleCommand::positionToComputeInlineStyleChange(PassRefPtr<Node> startNode, RefPtr<Node>& dummyElement)
 {
     // It's okay to obtain the style at the startNode because we've removed all relevant styles from the current run.
-    Position positionForStyleComparison;
     if (!startNode->isElementNode()) {
         dummyElement = createStyleSpanElement(document());
         insertNodeAt(dummyElement, positionBeforeNode(startNode.get()));

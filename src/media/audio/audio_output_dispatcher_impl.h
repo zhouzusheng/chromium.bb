@@ -59,6 +59,9 @@ class MEDIA_EXPORT AudioOutputDispatcherImpl : public AudioOutputDispatcher {
 
   virtual void Shutdown() OVERRIDE;
 
+  virtual void CloseStreamsForWedgeFix() OVERRIDE;
+  virtual void RestartStreamsForWedgeFix() OVERRIDE;
+
  private:
   typedef std::map<AudioOutputProxy*, AudioOutputStream*> AudioStreamMap;
   friend class base::RefCountedThreadSafe<AudioOutputDispatcherImpl>;
@@ -70,10 +73,6 @@ class MEDIA_EXPORT AudioOutputDispatcherImpl : public AudioOutputDispatcher {
   // |idle_streams_|.  Returns false if the stream couldn't be created or
   // opened.
   bool CreateAndOpenStream();
-
-  // A task scheduled by StartStream(). Opens a new stream and puts
-  // it in |idle_streams_|.
-  void OpenTask();
 
   // Before a stream is reused, it should sit idle for a bit.  This task is
   // called once that time has elapsed.

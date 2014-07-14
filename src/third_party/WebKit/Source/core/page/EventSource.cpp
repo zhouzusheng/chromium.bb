@@ -38,18 +38,18 @@
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/SerializedScriptValue.h"
 #include "core/dom/Document.h"
-#include "core/dom/Event.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/MessageEvent.h"
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
+#include "core/events/Event.h"
+#include "core/events/MessageEvent.h"
 #include "core/fetch/TextResourceDecoder.h"
+#include "core/frame/ContentSecurityPolicy.h"
+#include "core/frame/DOMWindow.h"
+#include "core/frame/Frame.h"
 #include "core/loader/ThreadableLoader.h"
-#include "core/page/ContentSecurityPolicy.h"
-#include "core/page/DOMWindow.h"
-#include "core/page/Frame.h"
-#include "core/platform/network/ResourceError.h"
-#include "core/platform/network/ResourceRequest.h"
-#include "core/platform/network/ResourceResponse.h"
+#include "platform/network/ResourceError.h"
+#include "platform/network/ResourceRequest.h"
+#include "platform/network/ResourceResponse.h"
 #include "weborigin/SecurityOrigin.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -57,7 +57,7 @@ namespace WebCore {
 
 const unsigned long long EventSource::defaultReconnectDelay = 3000;
 
-inline EventSource::EventSource(ScriptExecutionContext* context, const KURL& url, const Dictionary& eventSourceInit)
+inline EventSource::EventSource(ExecutionContext* context, const KURL& url, const Dictionary& eventSourceInit)
     : ActiveDOMObject(context)
     , m_url(url)
     , m_withCredentials(false)
@@ -72,7 +72,7 @@ inline EventSource::EventSource(ScriptExecutionContext* context, const KURL& url
     eventSourceInit.get("withCredentials", m_withCredentials);
 }
 
-PassRefPtr<EventSource> EventSource::create(ScriptExecutionContext* context, const String& url, const Dictionary& eventSourceInit, ExceptionState& es)
+PassRefPtr<EventSource> EventSource::create(ExecutionContext* context, const String& url, const Dictionary& eventSourceInit, ExceptionState& es)
 {
     if (url.isEmpty()) {
         es.throwDOMException(SyntaxError, "Cannot open an EventSource to an empty URL.");
@@ -89,7 +89,7 @@ PassRefPtr<EventSource> EventSource::create(ScriptExecutionContext* context, con
     bool shouldBypassMainWorldContentSecurityPolicy = false;
     if (context->isDocument()) {
         Document* document = toDocument(context);
-        shouldBypassMainWorldContentSecurityPolicy = document->frame()->script()->shouldBypassMainWorldContentSecurityPolicy();
+        shouldBypassMainWorldContentSecurityPolicy = document->frame()->script().shouldBypassMainWorldContentSecurityPolicy();
     }
     if (!shouldBypassMainWorldContentSecurityPolicy && !context->contentSecurityPolicy()->allowConnectToSource(fullURL)) {
         // We can safely expose the URL to JavaScript, as this exception is generate synchronously before any redirects take place.
@@ -124,7 +124,7 @@ void EventSource::connect()
     if (!m_lastEventId.isEmpty())
         request.setHTTPHeaderField("Last-Event-ID", m_lastEventId);
 
-    SecurityOrigin* origin = scriptExecutionContext()->securityOrigin();
+    SecurityOrigin* origin = executionContext()->securityOrigin();
 
     ThreadableLoaderOptions options;
     options.sendLoadCallbacks = SendCallbacks;
@@ -135,9 +135,9 @@ void EventSource::connect()
     options.crossOriginRequestPolicy = UseAccessControl;
     options.dataBufferingPolicy = DoNotBufferData;
     options.securityOrigin = origin;
-    options.contentSecurityPolicyEnforcement = ContentSecurityPolicy::shouldBypassMainWorld(scriptExecutionContext()) ? DoNotEnforceContentSecurityPolicy : EnforceConnectSrcDirective;
+    options.contentSecurityPolicyEnforcement = ContentSecurityPolicy::shouldBypassMainWorld(executionContext()) ? DoNotEnforceContentSecurityPolicy : EnforceConnectSrcDirective;
 
-    m_loader = ThreadableLoader::create(scriptExecutionContext(), this, request, options);
+    m_loader = ThreadableLoader::create(executionContext(), this, request, options);
 
     if (m_loader)
         m_requestInFlight = true;
@@ -160,7 +160,7 @@ void EventSource::scheduleReconnect()
 {
     m_state = CONNECTING;
     m_reconnectTimer.startOneShot(m_reconnectDelay / 1000.0);
-    dispatchEvent(Event::create(eventNames().errorEvent));
+    dispatchEvent(Event::create(EventTypeNames::error));
 }
 
 void EventSource::reconnectTimerFired(Timer<EventSource>*)
@@ -204,12 +204,12 @@ void EventSource::close()
 
 const AtomicString& EventSource::interfaceName() const
 {
-    return eventNames().interfaceForEventSource;
+    return EventTargetNames::EventSource;
 }
 
-ScriptExecutionContext* EventSource::scriptExecutionContext() const
+ExecutionContext* EventSource::executionContext() const
 {
-    return ActiveDOMObject::scriptExecutionContext();
+    return ActiveDOMObject::executionContext();
 }
 
 void EventSource::didReceiveResponse(unsigned long, const ResourceResponse& response)
@@ -231,7 +231,7 @@ void EventSource::didReceiveResponse(unsigned long, const ResourceResponse& resp
             message.append(charset);
             message.appendLiteral("\") that is not UTF-8. Aborting the connection.");
             // FIXME: We are missing the source line.
-            scriptExecutionContext()->addConsoleMessage(JSMessageSource, ErrorMessageLevel, message.toString());
+            executionContext()->addConsoleMessage(JSMessageSource, ErrorMessageLevel, message.toString());
         }
     } else {
         // To keep the signal-to-noise ratio low, we only log 200-response with an invalid MIME type.
@@ -241,16 +241,16 @@ void EventSource::didReceiveResponse(unsigned long, const ResourceResponse& resp
             message.append(response.mimeType());
             message.appendLiteral("\") that is not \"text/event-stream\". Aborting the connection.");
             // FIXME: We are missing the source line.
-            scriptExecutionContext()->addConsoleMessage(JSMessageSource, ErrorMessageLevel, message.toString());
+            executionContext()->addConsoleMessage(JSMessageSource, ErrorMessageLevel, message.toString());
         }
     }
 
     if (responseIsValid) {
         m_state = OPEN;
-        dispatchEvent(Event::create(eventNames().openEvent));
+        dispatchEvent(Event::create(EventTypeNames::open));
     } else {
         m_loader->cancel();
-        dispatchEvent(Event::create(eventNames().errorEvent));
+        dispatchEvent(Event::create(EventTypeNames::error));
     }
 }
 
@@ -293,7 +293,7 @@ void EventSource::didFail(const ResourceError& error)
 void EventSource::didFailAccessControlCheck(const ResourceError& error)
 {
     String message = "EventSource cannot load " + error.failingURL() + ". " + error.localizedDescription();
-    scriptExecutionContext()->addConsoleMessage(JSMessageSource, ErrorMessageLevel, message);
+    executionContext()->addConsoleMessage(JSMessageSource, ErrorMessageLevel, message);
 
     abortConnectionAttempt();
 }
@@ -311,7 +311,7 @@ void EventSource::abortConnectionAttempt()
     m_loader->cancel();
 
     ASSERT(m_state == CLOSED);
-    dispatchEvent(Event::create(eventNames().errorEvent));
+    dispatchEvent(Event::create(EventTypeNames::error));
 }
 
 void EventSource::parseEventStream()
@@ -416,19 +416,9 @@ void EventSource::stop()
 PassRefPtr<MessageEvent> EventSource::createMessageEvent()
 {
     RefPtr<MessageEvent> event = MessageEvent::create();
-    event->initMessageEvent(m_eventName.isEmpty() ? eventNames().messageEvent : AtomicString(m_eventName), false, false, SerializedScriptValue::create(String(m_data)), m_eventStreamOrigin, m_lastEventId, 0, nullptr);
+    event->initMessageEvent(m_eventName.isEmpty() ? EventTypeNames::message : AtomicString(m_eventName), false, false, SerializedScriptValue::create(String(m_data)), m_eventStreamOrigin, m_lastEventId, 0, nullptr);
     m_data.clear();
     return event.release();
-}
-
-EventTargetData* EventSource::eventTargetData()
-{
-    return &m_eventTargetData;
-}
-
-EventTargetData* EventSource::ensureEventTargetData()
-{
-    return &m_eventTargetData;
 }
 
 } // namespace WebCore

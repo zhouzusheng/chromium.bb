@@ -29,9 +29,9 @@
 
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
-#include "core/dom/KeyboardEvent.h"
+#include "core/events/KeyboardEvent.h"
 #include "core/platform/graphics/Font.h"
-#include "core/platform/text/PlatformLocale.h"
+#include "platform/text/PlatformLocale.h"
 #include "wtf/text/StringBuilder.h"
 
 using namespace WTF::Unicode;
@@ -117,7 +117,7 @@ String DateTimeNumericFieldElement::formatValue(int value) const
 void DateTimeNumericFieldElement::handleKeyboardEvent(KeyboardEvent* keyboardEvent)
 {
     ASSERT(!isDisabled());
-    if (keyboardEvent->type() != eventNames().keypressEvent)
+    if (keyboardEvent->type() != EventTypeNames::keypress)
         return;
 
     UChar charCode = static_cast<UChar>(keyboardEvent->charCode());

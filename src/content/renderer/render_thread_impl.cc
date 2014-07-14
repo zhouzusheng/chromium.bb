@@ -44,7 +44,9 @@
 #include "content/common/dom_storage/dom_storage_messages.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
+#include "content/common/gpu/client/gpu_memory_buffer_impl.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/common/resource_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_constants.h"
@@ -102,7 +104,6 @@
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "third_party/WebKit/public/web/WebScriptController.h"
 #include "third_party/WebKit/public/web/WebSecurityPolicy.h"
-#include "third_party/WebKit/public/web/WebSharedWorkerRepository.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/base/layout.h"
 #include "ui/base/ui_base_switches.h"
@@ -398,6 +399,8 @@ void RenderThreadImpl::Init() {
   memory_pressure_listener_.reset(new base::MemoryPressureListener(
       base::Bind(&RenderThreadImpl::OnMemoryPressure, base::Unretained(this))));
 
+  renderer_process_id_ = base::kNullProcessId;
+
   TRACE_EVENT_END_ETW("RenderThreadImpl::Init", 0, "");
 }
 
@@ -464,8 +467,8 @@ void RenderThreadImpl::Shutdown() {
 
   // Leak shared contexts on other threads, as we can not get to the correct
   // thread to destroy them.
-  if (shared_contexts_compositor_thread_.get())
-    shared_contexts_compositor_thread_->set_leak_on_destroy();
+  if (offscreen_compositor_contexts_.get())
+    offscreen_compositor_contexts_->set_leak_on_destroy();
 }
 
 bool RenderThreadImpl::Send(IPC::Message* msg) {
@@ -592,10 +595,6 @@ void RenderThreadImpl::RemoveFilter(IPC::ChannelProxy::MessageFilter* filter) {
   channel()->RemoveFilter(filter);
 }
 
-void RenderThreadImpl::SetOutgoingMessageFilter(
-    IPC::ChannelProxy::OutgoingMessageFilter* filter) {
-}
-
 void RenderThreadImpl::AddObserver(RenderProcessObserver* observer) {
   observers_.AddObserver(observer);
 }
@@ -642,8 +641,6 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
 
   webkit_platform_support_.reset(new RendererWebKitPlatformSupportImpl);
   WebKit::initialize(webkit_platform_support_.get());
-  WebKit::setSharedWorkerRepository(
-      webkit_platform_support_.get()->sharedWorkerRepository());
 
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
@@ -657,18 +654,7 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
 #endif
     if (!compositor_message_loop_proxy_.get()) {
       compositor_thread_.reset(new base::Thread("Compositor"));
-#if defined(OS_POSIX)
-      // Workaround for crbug.com/293736
-      // On Posix, MessagePumpDefault uses system time, so delayed tasks (for
-      // compositor scheduling) work incorrectly across system time changes
-      // (e.g.  tlsdate). So instead, use an IO loop, which uses libevent, that
-      // uses monotonic time (immune to these problems).
-      base::Thread::Options options;
-      options.message_loop_type = base::MessageLoop::TYPE_IO;
-      compositor_thread_->StartWithOptions(options);
-#else
       compositor_thread_->Start();
-#endif
 #if defined(OS_ANDROID)
       compositor_thread_->SetPriority(base::kThreadPriority_Display);
 #endif
@@ -883,28 +869,31 @@ void RenderThreadImpl::PostponeIdleNotification() {
 }
 
 scoped_refptr<RendererGpuVideoAcceleratorFactories>
-RenderThreadImpl::GetGpuFactories(
-    const scoped_refptr<base::MessageLoopProxy>& factories_loop) {
+RenderThreadImpl::GetGpuFactories() {
   DCHECK(IsMainThread());
 
+  scoped_refptr<GpuChannelHost> gpu_channel_host = GetGpuChannel();
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
   scoped_refptr<RendererGpuVideoAcceleratorFactories> gpu_factories;
   if (!cmd_line->HasSwitch(switches::kDisableAcceleratedVideoDecode)) {
     if (!gpu_va_context_provider_ ||
         gpu_va_context_provider_->DestroyedOnMainThread()) {
+      if (!gpu_channel_host) {
+        gpu_channel_host = EstablishGpuChannelSync(
+            CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE);
+      }
       gpu_va_context_provider_ = ContextProviderCommandBuffer::Create(
           make_scoped_ptr(
               WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
-                  this,
+                  gpu_channel_host.get(),
                   WebKit::WebGraphicsContext3D::Attributes(),
                   GURL("chrome://gpu/RenderThreadImpl::GetGpuVDAContext3D"))),
           "GPU-VideoAccelerator-Offscreen");
     }
   }
-  GpuChannelHost* gpu_channel_host = GetGpuChannel();
   if (gpu_channel_host) {
     gpu_factories = new RendererGpuVideoAcceleratorFactories(
-        gpu_channel_host, factories_loop, gpu_va_context_provider_);
+        gpu_channel_host.get(), gpu_va_context_provider_);
   }
   return gpu_factories;
 }
@@ -918,53 +907,66 @@ RenderThreadImpl::CreateOffscreenContext3d() {
   attributes.antialias = false;
   attributes.noAutomaticFlushes = true;
 
+  scoped_refptr<GpuChannelHost> gpu_channel_host(EstablishGpuChannelSync(
+      CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE));
   return make_scoped_ptr(
       WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
-          this,
+          gpu_channel_host.get(),
           attributes,
           GURL("chrome://gpu/RenderThreadImpl::CreateOffscreenContext3d")));
 }
 
 scoped_refptr<cc::ContextProvider>
-RenderThreadImpl::OffscreenContextProviderForMainThread() {
+RenderThreadImpl::OffscreenCompositorContextProvider() {
   DCHECK(IsMainThread());
 
 #if defined(OS_ANDROID)
   if (SynchronousCompositorFactory* factory =
       SynchronousCompositorFactory::GetInstance()) {
+    if (compositor_message_loop_proxy_)
+      return factory->GetOffscreenContextProviderForCompositorThread();
     return factory->GetOffscreenContextProviderForMainThread();
   }
 #endif
 
-  if (!shared_contexts_main_thread_.get() ||
-      shared_contexts_main_thread_->DestroyedOnMainThread()) {
-    shared_contexts_main_thread_ = ContextProviderCommandBuffer::Create(
+  if (!offscreen_compositor_contexts_.get() ||
+      offscreen_compositor_contexts_->DestroyedOnMainThread()) {
+    offscreen_compositor_contexts_ = ContextProviderCommandBuffer::Create(
         CreateOffscreenContext3d(),
-        "Compositor-Offscreen-MainThread");
-    if (shared_contexts_main_thread_.get() &&
-        !shared_contexts_main_thread_->BindToCurrentThread())
-      shared_contexts_main_thread_ = NULL;
+        "Compositor-Offscreen");
   }
-  return shared_contexts_main_thread_;
+  return offscreen_compositor_contexts_;
 }
 
 scoped_refptr<cc::ContextProvider>
-RenderThreadImpl::OffscreenContextProviderForCompositorThread() {
+RenderThreadImpl::SharedMainThreadContextProvider() {
   DCHECK(IsMainThread());
-
 #if defined(OS_ANDROID)
   if (SynchronousCompositorFactory* factory =
-      SynchronousCompositorFactory::GetInstance()) {
-    return factory->GetOffscreenContextProviderForCompositorThread();
-  }
+      SynchronousCompositorFactory::GetInstance())
+    return factory->GetOffscreenContextProviderForMainThread();
 #endif
 
-  if (!shared_contexts_compositor_thread_.get() ||
-      shared_contexts_compositor_thread_->DestroyedOnMainThread()) {
-    shared_contexts_compositor_thread_ = ContextProviderCommandBuffer::Create(
-        CreateOffscreenContext3d(), "Compositor-Offscreen");
+  if (!shared_main_thread_contexts_ ||
+      shared_main_thread_contexts_->DestroyedOnMainThread()) {
+    if (compositor_message_loop_proxy_) {
+      // In threaded compositing mode, we have to create a new ContextProvider
+      // to bind to the main thread since the compositor's is bound to the
+      // compositor thread.
+      shared_main_thread_contexts_ =
+          ContextProviderCommandBuffer::Create(CreateOffscreenContext3d(),
+                                               "Offscreen-MainThread");
+    } else {
+      // In single threaded mode, we can use the same context provider.
+      shared_main_thread_contexts_ =
+          static_cast<ContextProviderCommandBuffer*>(
+                OffscreenCompositorContextProvider().get());
+    }
   }
-  return shared_contexts_compositor_thread_;
+  if (shared_main_thread_contexts_ &&
+      !shared_main_thread_contexts_->BindToCurrentThread())
+    shared_main_thread_contexts_ = NULL;
+  return shared_main_thread_contexts_;
 }
 
 AudioRendererMixerManager* RenderThreadImpl::GetAudioRendererMixerManager() {
@@ -1059,6 +1061,47 @@ void RenderThreadImpl::DeleteImage(int32 image_id, int32 sync_point) {
   NOTREACHED();
 }
 
+scoped_ptr<gfx::GpuMemoryBuffer> RenderThreadImpl::AllocateGpuMemoryBuffer(
+    size_t width,
+    size_t height,
+    unsigned internalformat) {
+  if (!GpuMemoryBufferImpl::IsFormatValid(internalformat))
+    return scoped_ptr<gfx::GpuMemoryBuffer>();
+
+  size_t size = width * height *
+      GpuMemoryBufferImpl::BytesPerPixel(internalformat);
+  if (size > static_cast<size_t>(std::numeric_limits<int>::max()))
+    return scoped_ptr<gfx::GpuMemoryBuffer>();
+
+  gfx::GpuMemoryBufferHandle handle;
+  bool success;
+  IPC::Message* message =
+      new ChildProcessHostMsg_SyncAllocateGpuMemoryBuffer(size, &handle);
+
+  // Allow calling this from the compositor thread.
+  if (base::MessageLoop::current() == message_loop())
+    success = ChildThread::Send(message);
+  else
+    success = sync_message_filter()->Send(message);
+
+  if (!success)
+    return scoped_ptr<gfx::GpuMemoryBuffer>();
+
+  // Currently, shared memory is the only supported buffer type.
+  if (handle.type != gfx::SHARED_MEMORY_BUFFER)
+    return scoped_ptr<gfx::GpuMemoryBuffer>();
+
+  if (!base::SharedMemory::IsHandleValid(handle.handle))
+    return scoped_ptr<gfx::GpuMemoryBuffer>();
+
+  return make_scoped_ptr<gfx::GpuMemoryBuffer>(
+      new GpuMemoryBufferImpl(
+          make_scoped_ptr(new base::SharedMemory(handle.handle, false)),
+          width,
+          height,
+          internalformat));
+}
+
 void RenderThreadImpl::DoNotSuspendWebKitSharedTimer() {
   suspend_webkit_shared_timer_ = false;
 }
@@ -1098,6 +1141,7 @@ bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewMsg_PurgePluginListCache, OnPurgePluginListCache)
     IPC_MESSAGE_HANDLER(ViewMsg_NetworkStateChanged, OnNetworkStateChanged)
     IPC_MESSAGE_HANDLER(ViewMsg_TempCrashWithData, OnTempCrashWithData)
+    IPC_MESSAGE_HANDLER(ViewMsg_SetRendererProcessID, OnSetRendererProcessID)
     IPC_MESSAGE_HANDLER(ViewMsg_SetWebKitSharedTimersSuspended,
                         OnSetWebKitSharedTimersSuspended)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -1235,6 +1279,10 @@ void RenderThreadImpl::OnTempCrashWithData(const GURL& data) {
   CHECK(false);
 }
 
+void RenderThreadImpl::OnSetRendererProcessID(base::ProcessId process_id) {
+  renderer_process_id_ = process_id;
+}
+
 void RenderThreadImpl::OnSetWebKitSharedTimersSuspended(bool suspend) {
   ToggleWebKitSharedTimer(suspend);
 }
@@ -1275,18 +1323,7 @@ RenderThreadImpl::GetMediaThreadMessageLoopProxy() {
   DCHECK(message_loop() == base::MessageLoop::current());
   if (!media_thread_) {
     media_thread_.reset(new base::Thread("Media"));
-#if defined(OS_POSIX)
-    // Workaround for crbug.com/293736
-    // On Posix, MessagePumpDefault uses system time, so delayed tasks (for
-    // compositor scheduling) work incorrectly across system time changes
-    // (e.g.  tlsdate). So instead, use an IO loop, which uses libevent, that
-    // uses monotonic time (immune to these problems).
-    base::Thread::Options options;
-    options.message_loop_type = base::MessageLoop::TYPE_IO;
-    media_thread_->StartWithOptions(options);
-#else
     media_thread_->Start();
-#endif
 
 #if defined(OS_ANDROID)
     renderer_demuxer_ = new RendererDemuxerAndroid();
@@ -1308,6 +1345,10 @@ void RenderThreadImpl::SampleGamepads(WebKit::WebGamepads* data) {
   if (!gamepad_shared_memory_reader_)
     gamepad_shared_memory_reader_.reset(new GamepadSharedMemoryReader);
   gamepad_shared_memory_reader_->SampleGamepads(*data);
+}
+
+base::ProcessId RenderThreadImpl::renderer_process_id() const {
+  return renderer_process_id_;
 }
 
 }  // namespace content

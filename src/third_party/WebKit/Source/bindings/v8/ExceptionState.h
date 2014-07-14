@@ -48,9 +48,13 @@ public:
         : m_code(0)
         , m_isolate(isolate) { }
 
-    virtual void throwDOMException(const ExceptionCode&,  const String& message = String());
-    virtual void throwTypeError(const String& message = String());
+    virtual void throwDOMException(const ExceptionCode&,  const String& message);
+    virtual void throwTypeError(const String& message);
     virtual void throwSecurityError(const String& sanitizedMessage, const String& unsanitizedMessage = String());
+
+    // Please don't use these methods. Use ::throwDOMException and ::throwTypeError, and pass in a useful exception message.
+    virtual void throwUninformativeAndGenericDOMException(const ExceptionCode& ec) { throwDOMException(ec, String()); }
+    virtual void throwUninformativeAndGenericTypeError() { throwTypeError(String()); }
 
     bool hadException() const { return !m_exception.isEmpty() || m_code; }
     void clearException();
@@ -62,7 +66,7 @@ public:
         if (m_exception.isEmpty()) {
             if (!m_code)
                 return false;
-            throwDOMException(m_code);
+            throwUninformativeAndGenericDOMException(m_code);
         }
 
         V8ThrowException::throwError(m_exception.newLocal(m_isolate), m_isolate);
@@ -82,7 +86,7 @@ private:
 class TrackExceptionState : public ExceptionState {
 public:
     TrackExceptionState(): ExceptionState(0) { }
-    virtual void throwDOMException(const ExceptionCode&, const String& message = String()) OVERRIDE FINAL;
+    virtual void throwDOMException(const ExceptionCode&, const String& message) OVERRIDE FINAL;
     virtual void throwTypeError(const String& message = String()) OVERRIDE FINAL;
     virtual void throwSecurityError(const String& sanitizedMessage, const String& unsanitizedMessage = String()) OVERRIDE FINAL;
 };

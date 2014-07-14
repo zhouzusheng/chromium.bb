@@ -81,7 +81,7 @@ void FontFallbackList::determinePitch(const Font* font) const
     else {
         const SegmentedFontData* segmentedFontData = static_cast<const SegmentedFontData*>(fontData);
         unsigned numRanges = segmentedFontData->numRanges();
-        if (numRanges == 1)
+        if (numRanges == 1 && segmentedFontData->rangeAt(0).isEntireRange())
             m_pitch = segmentedFontData->rangeAt(0).fontData()->pitch();
         else
             m_pitch = VariablePitch;
@@ -101,6 +101,30 @@ bool FontFallbackList::loadingCustomFonts() const
         }
     }
     return false;
+}
+
+const FontData* FontFallbackList::primaryFontData(const Font* f) const
+{
+    for (unsigned fontIndex = 0; ; ++fontIndex) {
+        const FontData* fontData = fontDataAt(f, fontIndex);
+        if (!fontData) {
+            // All fonts are custom fonts and are loading. Return the first FontData.
+            // FIXME: Correct fallback to the default font.
+            return fontDataAt(f, 0);
+        }
+
+        // When a custom font is loading, we should use the correct fallback font to layout the text.
+        // Here skip the temporary font for the loading custom font which may not act as the correct fallback font.
+        if (!fontData->isLoadingFallback())
+            return fontData;
+
+        // Begin to load the first custom font if needed.
+        if (!fontIndex) {
+            const SimpleFontData* simpleFontData = fontData->fontDataForCharacter(' ');
+            if (simpleFontData)
+                simpleFontData->beginLoadIfNeeded();
+        }
+    }
 }
 
 const FontData* FontFallbackList::fontDataAt(const Font* font, unsigned realizedFontIndex) const

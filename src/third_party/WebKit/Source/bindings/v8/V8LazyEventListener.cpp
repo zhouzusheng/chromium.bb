@@ -45,8 +45,8 @@
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/page/ContentSecurityPolicy.h"
-#include "core/page/Frame.h"
+#include "core/frame/ContentSecurityPolicy.h"
+#include "core/frame/Frame.h"
 
 #include "wtf/StdLibExtras.h"
 
@@ -74,7 +74,7 @@ v8::Handle<v8::Object> toObjectWrapper(T* domObject, v8::Isolate* isolate)
     return v8::Local<v8::Object>::New(isolate, value.As<v8::Object>());
 }
 
-v8::Local<v8::Value> V8LazyEventListener::callListenerFunction(ScriptExecutionContext* context, v8::Handle<v8::Value> jsEvent, Event* event)
+v8::Local<v8::Value> V8LazyEventListener::callListenerFunction(ExecutionContext* context, v8::Handle<v8::Value> jsEvent, Event* event)
 {
     v8::Local<v8::Object> listenerObject = getListenerObject(context);
     if (listenerObject.IsEmpty())
@@ -96,19 +96,19 @@ v8::Local<v8::Value> V8LazyEventListener::callListenerFunction(ScriptExecutionCo
     if (!frame)
         return v8::Local<v8::Value>();
 
-    if (!frame->script()->canExecuteScripts(AboutToExecuteScript))
+    if (!frame->script().canExecuteScripts(AboutToExecuteScript))
         return v8::Local<v8::Value>();
 
     v8::Handle<v8::Value> parameters[1] = { jsEvent };
-    return frame->script()->callFunction(handlerFunction, receiver, WTF_ARRAY_LENGTH(parameters), parameters);
+    return frame->script().callFunction(handlerFunction, receiver, WTF_ARRAY_LENGTH(parameters), parameters);
 }
 
-static void V8LazyEventListenerToString(const v8::FunctionCallbackInfo<v8::Value>& args)
+static void V8LazyEventListenerToString(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    v8SetReturnValue(args, args.Holder()->GetHiddenValue(V8HiddenPropertyName::toStringString(args.GetIsolate())));
+    v8SetReturnValue(info, info.Holder()->GetHiddenValue(V8HiddenPropertyName::toStringString(info.GetIsolate())));
 }
 
-void V8LazyEventListener::prepareListenerObject(ScriptExecutionContext* context)
+void V8LazyEventListener::prepareListenerObject(ExecutionContext* context)
 {
     if (context->isDocument() && !toDocument(context)->allowInlineEventHandlers(m_node, this, m_sourceURL, m_position.m_line)) {
         clearListenerObject();

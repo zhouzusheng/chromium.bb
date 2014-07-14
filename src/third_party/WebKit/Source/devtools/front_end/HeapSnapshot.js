@@ -565,11 +565,9 @@ function HeapSnapshotMetainfo()
     this.node_types = [];
     this.edge_fields = [];
     this.edge_types = [];
+    this.trace_function_info_fields = [];
+    this.trace_node_fields = [];
     this.type_strings = {};
-
-    // Old format.
-    this.fields = [];
-    this.types = [];
 }
 
 /**
@@ -672,7 +670,6 @@ WebInspector.HeapSnapshot.prototype = {
         var edgeFieldsCount = this._edgeFieldsCount;
         var nodeFieldCount = this._nodeFieldCount;
         var edgeToNodeOffset = this._edgeToNodeOffset;
-        var nodes = this._nodes;
         var firstEdgeIndexes = this._firstEdgeIndexes;
         var nodeCount = this.nodeCount;
 
@@ -924,7 +921,6 @@ WebInspector.HeapSnapshot.prototype = {
         var firstEdgeIndexes = this._firstEdgeIndexes;
         var edgeToNodeOffset = this._edgeToNodeOffset;
         var edgeTypeOffset = this._edgeTypeOffset;
-        var nodes = this._nodes;
         var nodeCount = this.nodeCount;
         var containmentEdgesLength = containmentEdges.length;
         var edgeWeakType = this._edgeWeakType;

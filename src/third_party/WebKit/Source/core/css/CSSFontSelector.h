@@ -26,13 +26,13 @@
 #ifndef CSSFontSelector_h
 #define CSSFontSelector_h
 
+#include "core/css/CSSSegmentedFontFaceCache.h"
 #include "core/fetch/ResourcePtr.h"
-#include "core/platform/Timer.h"
-#include "core/platform/graphics/FontSelector.h"
+#include "platform/Timer.h"
+#include "platform/fonts/FontSelector.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
-#include "wtf/text/StringHash.h"
 
 namespace WebCore {
 
@@ -44,6 +44,22 @@ class Document;
 class FontDescription;
 class StyleRuleFontFace;
 
+class FontLoader {
+public:
+    explicit FontLoader(ResourceFetcher*);
+
+    void addFontToBeginLoading(FontResource*);
+
+    void clearResourceFetcher();
+
+private:
+    void beginLoadTimerFired(Timer<FontLoader>*);
+
+    Timer<FontLoader> m_beginLoadingTimer;
+    Vector<ResourcePtr<FontResource> > m_fontsToBeginLoading;
+    ResourceFetcher* m_resourceFetcher;
+};
+
 class CSSFontSelector : public FontSelector {
 public:
     static PassRefPtr<CSSFontSelector> create(Document* document)
@@ -52,7 +68,7 @@ public:
     }
     virtual ~CSSFontSelector();
 
-    virtual unsigned version() const OVERRIDE { return m_version; }
+    virtual unsigned version() const OVERRIDE { return m_cssSegmentedFontFaceCache.version(); }
 
     virtual PassRefPtr<FontData> getFontData(const FontDescription&, const AtomicString&);
     CSSSegmentedFontFace* getFontFace(const FontDescription&, const AtomicString& family);
@@ -64,8 +80,6 @@ public:
 
     void fontLoaded();
     virtual void fontCacheInvalidated();
-
-    bool isEmpty() const;
 
     virtual void registerForInvalidationCallbacks(FontSelectorClient*);
     virtual void unregisterForInvalidationCallbacks(FontSelectorClient*);
@@ -79,18 +93,12 @@ private:
 
     void dispatchInvalidationCallbacks();
 
-    void beginLoadTimerFired(Timer<CSSFontSelector>*);
-
     Document* m_document;
-    HashMap<String, OwnPtr<HashMap<unsigned, RefPtr<CSSSegmentedFontFace> > >, CaseFoldingHash> m_fontFaces;
-    HashMap<String, OwnPtr<Vector<RefPtr<CSSSegmentedFontFace> > >, CaseFoldingHash> m_locallyInstalledFontFaces;
-    HashMap<String, OwnPtr<HashMap<unsigned, RefPtr<CSSSegmentedFontFace> > >, CaseFoldingHash> m_fonts;
+    // FIXME: Move to Document or StyleEngine.
+    CSSSegmentedFontFaceCache m_cssSegmentedFontFaceCache;
     HashSet<FontSelectorClient*> m_clients;
 
-    Vector<ResourcePtr<FontResource> > m_fontsToBeginLoading;
-    Timer<CSSFontSelector> m_beginLoadingTimer;
-
-    unsigned m_version;
+    FontLoader m_fontLoader;
 };
 
 } // namespace WebCore

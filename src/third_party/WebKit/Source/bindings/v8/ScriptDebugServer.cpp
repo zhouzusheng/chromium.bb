@@ -74,8 +74,8 @@ v8::Local<v8::Value> ScriptDebugServer::callDebuggerMethod(const char* functionN
 ScriptDebugServer::ScriptDebugServer(v8::Isolate* isolate)
     : m_pauseOnExceptionsState(DontPauseOnExceptions)
     , m_breakpointsActivated(true)
-    , m_runningNestedMessageLoop(false)
     , m_isolate(isolate)
+    , m_runningNestedMessageLoop(false)
 {
 }
 
@@ -89,19 +89,19 @@ String ScriptDebugServer::setBreakpoint(const String& sourceID, const ScriptBrea
     v8::Local<v8::Context> debuggerContext = v8::Debug::GetDebugContext();
     v8::Context::Scope contextScope(debuggerContext);
 
-    v8::Local<v8::Object> args = v8::Object::New();
-    args->Set(v8::String::NewSymbol("sourceID"), v8String(sourceID, debuggerContext->GetIsolate()));
-    args->Set(v8::String::NewSymbol("lineNumber"), v8::Integer::New(scriptBreakpoint.lineNumber, debuggerContext->GetIsolate()));
-    args->Set(v8::String::NewSymbol("columnNumber"), v8::Integer::New(scriptBreakpoint.columnNumber, debuggerContext->GetIsolate()));
-    args->Set(v8::String::NewSymbol("interstatementLocation"), v8Boolean(interstatementLocation, debuggerContext->GetIsolate()));
-    args->Set(v8::String::NewSymbol("condition"), v8String(scriptBreakpoint.condition, debuggerContext->GetIsolate()));
+    v8::Local<v8::Object> info = v8::Object::New();
+    info->Set(v8::String::NewSymbol("sourceID"), v8String(sourceID, debuggerContext->GetIsolate()));
+    info->Set(v8::String::NewSymbol("lineNumber"), v8::Integer::New(scriptBreakpoint.lineNumber, debuggerContext->GetIsolate()));
+    info->Set(v8::String::NewSymbol("columnNumber"), v8::Integer::New(scriptBreakpoint.columnNumber, debuggerContext->GetIsolate()));
+    info->Set(v8::String::NewSymbol("interstatementLocation"), v8Boolean(interstatementLocation, debuggerContext->GetIsolate()));
+    info->Set(v8::String::NewSymbol("condition"), v8String(scriptBreakpoint.condition, debuggerContext->GetIsolate()));
 
     v8::Handle<v8::Function> setBreakpointFunction = v8::Local<v8::Function>::Cast(m_debuggerScript.newLocal(m_isolate)->Get(v8::String::NewSymbol("setBreakpoint")));
-    v8::Handle<v8::Value> breakpointId = v8::Debug::Call(setBreakpointFunction, args);
+    v8::Handle<v8::Value> breakpointId = v8::Debug::Call(setBreakpointFunction, info);
     if (!breakpointId->IsString())
         return "";
-    *actualLineNumber = args->Get(v8::String::NewSymbol("lineNumber"))->Int32Value();
-    *actualColumnNumber = args->Get(v8::String::NewSymbol("columnNumber"))->Int32Value();
+    *actualLineNumber = info->Get(v8::String::NewSymbol("lineNumber"))->Int32Value();
+    *actualColumnNumber = info->Get(v8::String::NewSymbol("columnNumber"))->Int32Value();
     return toWebCoreString(breakpointId.As<v8::String>());
 }
 
@@ -111,11 +111,11 @@ void ScriptDebugServer::removeBreakpoint(const String& breakpointId)
     v8::Local<v8::Context> debuggerContext = v8::Debug::GetDebugContext();
     v8::Context::Scope contextScope(debuggerContext);
 
-    v8::Local<v8::Object> args = v8::Object::New();
-    args->Set(v8::String::NewSymbol("breakpointId"), v8String(breakpointId, debuggerContext->GetIsolate()));
+    v8::Local<v8::Object> info = v8::Object::New();
+    info->Set(v8::String::NewSymbol("breakpointId"), v8String(breakpointId, debuggerContext->GetIsolate()));
 
     v8::Handle<v8::Function> removeBreakpointFunction = v8::Local<v8::Function>::Cast(m_debuggerScript.newLocal(m_isolate)->Get(v8::String::NewSymbol("removeBreakpoint")));
-    v8::Debug::Call(removeBreakpointFunction, args);
+    v8::Debug::Call(removeBreakpointFunction, info);
 }
 
 void ScriptDebugServer::clearBreakpoints()
@@ -136,10 +136,10 @@ void ScriptDebugServer::setBreakpointsActivated(bool activated)
     v8::Local<v8::Context> debuggerContext = v8::Debug::GetDebugContext();
     v8::Context::Scope contextScope(debuggerContext);
 
-    v8::Local<v8::Object> args = v8::Object::New();
-    args->Set(v8::String::NewSymbol("enabled"), v8::Boolean::New(activated));
+    v8::Local<v8::Object> info = v8::Object::New();
+    info->Set(v8::String::NewSymbol("enabled"), v8::Boolean::New(activated));
     v8::Handle<v8::Function> setBreakpointsActivated = v8::Local<v8::Function>::Cast(m_debuggerScript.newLocal(m_isolate)->Get(v8::String::NewSymbol("setBreakpointsActivated")));
-    v8::Debug::Call(setBreakpointsActivated, args);
+    v8::Debug::Call(setBreakpointsActivated, info);
 
     m_breakpointsActivated = activated;
 }
@@ -222,22 +222,35 @@ void ScriptDebugServer::stepIntoStatement()
     continueProgram();
 }
 
-void ScriptDebugServer::stepOverStatement()
+void ScriptDebugServer::stepCommandWithFrame(const char* functionName, const ScriptValue& frame)
 {
     ASSERT(isPaused());
     v8::HandleScope handleScope(m_isolate);
-    v8::Handle<v8::Value> argv[] = { m_executionState.newLocal(m_isolate) };
-    callDebuggerMethod("stepOverStatement", 1, argv);
+    v8::Handle<v8::Value> callFrame;
+    if (frame.hasNoValue()) {
+        callFrame = v8::Undefined(m_isolate);
+    } else {
+        JavaScriptCallFrame* impl = V8JavaScriptCallFrame::toNative(v8::Handle<v8::Object>::Cast(frame.v8Value()));
+        callFrame = impl->innerCallFrame();
+    }
+
+    v8::Handle<v8::Value> argv[] = {
+        m_executionState.newLocal(m_isolate),
+        callFrame
+    };
+
+    callDebuggerMethod(functionName, 2, argv);
     continueProgram();
 }
 
-void ScriptDebugServer::stepOutOfFunction()
+void ScriptDebugServer::stepOverStatement(const ScriptValue& frame)
 {
-    ASSERT(isPaused());
-    v8::HandleScope handleScope(m_isolate);
-    v8::Handle<v8::Value> argv[] = { m_executionState.newLocal(m_isolate) };
-    callDebuggerMethod(stepOutV8MethodName, 1, argv);
-    continueProgram();
+    stepCommandWithFrame("stepOverStatement", frame);
+}
+
+void ScriptDebugServer::stepOutOfFunction(const ScriptValue& frame)
+{
+    stepCommandWithFrame(stepOutV8MethodName, frame);
 }
 
 bool ScriptDebugServer::setScriptSource(const String& sourceID, const String& newContent, bool preview, String* error, RefPtr<TypeBuilder::Debugger::SetScriptSourceError>& errorData, ScriptValue* newCallFrames, ScriptObject* result)
@@ -351,14 +364,14 @@ static ScriptDebugServer* toScriptDebugServer(v8::Handle<v8::Value> data)
     return static_cast<ScriptDebugServer*>(p);
 }
 
-void ScriptDebugServer::breakProgramCallback(const v8::FunctionCallbackInfo<v8::Value>& args)
+void ScriptDebugServer::breakProgramCallback(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    ASSERT(2 == args.Length());
+    ASSERT(2 == info.Length());
 
-    ScriptDebugServer* thisPtr = toScriptDebugServer(args.Data());
+    ScriptDebugServer* thisPtr = toScriptDebugServer(info.Data());
     v8::Handle<v8::Value> exception;
     v8::Handle<v8::Array> hitBreakpoints;
-    thisPtr->handleProgramBreak(v8::Handle<v8::Object>::Cast(args[0]), exception, hitBreakpoints);
+    thisPtr->handleProgramBreak(v8::Handle<v8::Object>::Cast(info[0]), exception, hitBreakpoints);
 }
 
 void ScriptDebugServer::handleProgramBreak(v8::Handle<v8::Object> executionState, v8::Handle<v8::Value> exception, v8::Handle<v8::Array> hitBreakpointNumbers)
@@ -402,16 +415,14 @@ void ScriptDebugServer::v8DebugEventCallback(const v8::Debug::EventDetails& even
 
 bool ScriptDebugServer::executeSkipPauseRequest(ScriptDebugListener::SkipPauseRequest request, v8::Handle<v8::Object> executionState)
 {
-    const char* v8MethodName;
     switch (request) {
     case ScriptDebugListener::NoSkip:
         return false;
     case ScriptDebugListener::Continue:
         return true;
     case ScriptDebugListener::StepInto:
-        v8MethodName = stepIntoV8MethodName;
     case ScriptDebugListener::StepOut:
-        v8MethodName = stepOutV8MethodName;
+        break;
     }
     v8::Handle<v8::Value> argv[] = { executionState };
     callDebuggerMethod(stepIntoV8MethodName, 1, argv);
@@ -598,7 +609,7 @@ void ScriptDebugServer::runScript(ScriptState* state, const String& scriptId, Sc
         return;
     v8::Context::Scope contextScope(context);
     v8::TryCatch tryCatch;
-    v8::Local<v8::Value> value = V8ScriptRunner::runCompiledScript(script, state->scriptExecutionContext(), m_isolate);
+    v8::Local<v8::Value> value = V8ScriptRunner::runCompiledScript(script, state->executionContext(), m_isolate);
     *wasThrown = false;
     if (tryCatch.HasCaught()) {
         *wasThrown = true;

@@ -30,17 +30,17 @@
 #include "core/dom/Position.h"
 #include "core/dom/StyleEngine.h"
 #include "core/fetch/ImageResourceClient.h"
-#include "core/platform/graphics/FloatQuad.h"
-#include "core/platform/graphics/LayoutRect.h"
-#include "core/platform/graphics/transforms/TransformationMatrix.h"
+#include "core/rendering/CompositingState.h"
 #include "core/rendering/LayoutIndicator.h"
 #include "core/rendering/PaintPhase.h"
 #include "core/rendering/RenderObjectChildList.h"
-#include "core/rendering/RenderingNodeProxy.h"
 #include "core/rendering/ScrollBehavior.h"
 #include "core/rendering/SubtreeLayoutScope.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/StyleInheritedData.h"
+#include "platform/geometry/FloatQuad.h"
+#include "platform/geometry/LayoutRect.h"
+#include "platform/transforms/TransformationMatrix.h"
 #include "wtf/HashSet.h"
 
 namespace WebCore {
@@ -140,6 +140,7 @@ const int showTreeCharacterOffset = 39;
 class RenderObject : public ImageResourceClient {
     friend class RenderBlock;
     friend class RenderLayer; // For setParent.
+    friend class RenderLayerReflectionInfo; // For setParent
     friend class RenderLayerScrollableArea; // For setParent.
     friend class RenderObjectChildList;
 public:
@@ -205,6 +206,8 @@ public:
     // Convenience function for getting to the nearest enclosing box of a RenderObject.
     RenderBox* enclosingBox() const;
     RenderBoxModelObject* enclosingBoxModelObject() const;
+
+    RenderBox* enclosingScrollableBox() const;
 
     // Function to return our enclosing flow thread if we are contained inside one. This
     // function follows the containing block chain.
@@ -322,7 +325,6 @@ public:
     virtual bool isBR() const { return false; }
     virtual bool isBoxModelObject() const { return false; }
     virtual bool isCounter() const { return false; }
-    virtual bool isDialog() const { return false; }
     virtual bool isQuote() const { return false; }
 
     virtual bool isDetailsMarker() const { return false; }
@@ -388,7 +390,7 @@ public:
 
     virtual bool isRenderScrollbarPart() const { return false; }
 
-    bool isRoot() const { return document().documentElement() == m_nodeProxy.unsafeNode(); }
+    bool isRoot() const { return document().documentElement() == m_node; }
     bool isBody() const;
     bool isHR() const;
     bool isLegend() const;
@@ -461,8 +463,6 @@ public:
     virtual bool isSVGResourceFilter() const { return false; }
     virtual bool isSVGResourceFilterPrimitive() const { return false; }
 
-    virtual RenderSVGResourceContainer* toRenderSVGResourceContainer();
-
     // FIXME: Those belong into a SVG specific base-class for all renderers (see above)
     // Unfortunately we don't have such a class yet, because it's not possible for all renderers
     // to inherit from RenderSVGObject -> RenderObject (some need RenderBlock inheritance for instance)
@@ -532,7 +532,6 @@ public:
     bool isText() const  { return m_bitfields.isText(); }
     bool isBox() const { return m_bitfields.isBox(); }
     bool isInline() const { return m_bitfields.isInline(); } // inline object
-    bool isRunIn() const { return style()->display() == RUN_IN; } // run-in object
     bool isDragging() const { return m_bitfields.isDragging(); }
     bool isReplaced() const { return m_bitfields.isReplaced(); } // a "replaced" element (see CSS)
     bool isHorizontalWritingMode() const { return m_bitfields.horizontalWritingMode(); }
@@ -602,7 +601,7 @@ public:
     // Returns true if this renderer is rooted, and optionally returns the hosting view (the root of the hierarchy).
     bool isRooted(RenderView** = 0) const;
 
-    Node* node() const { return isAnonymous() ? 0 : m_nodeProxy.unsafeNode(); }
+    Node* node() const { return isAnonymous() ? 0 : m_node; }
     Node* nonPseudoNode() const
     {
         ASSERT(!LayoutIndicator::inLayout());
@@ -610,14 +609,14 @@ public:
     }
 
     // FIXME: Why does RenderWidget need this?
-    void clearNode() { m_nodeProxy.clear(); }
+    void clearNode() { m_node = 0; }
 
     // Returns the styled node that caused the generation of this renderer.
     // This is the same as node() except for renderers of :before and :after
     // pseudo elements for which their parent node is returned.
     Node* generatingNode() const { return isPseudoElement() ? node()->parentOrShadowHostNode() : node(); }
 
-    Document& document() const { return m_nodeProxy.unsafeNode()->document(); }
+    Document& document() const { return m_node->document(); }
     Frame* frame() const { return document().frame(); }
 
     bool hasOutlineAnnotation() const;
@@ -698,12 +697,7 @@ public:
     virtual void addAnnotatedRegions(Vector<AnnotatedRegionValue>&);
     void collectAnnotatedRegions(Vector<AnnotatedRegionValue>&);
 
-    bool isComposited() const;
-
-    // FIXME: This should be moved to RenderBox once the scrolling code
-    // has been completely separated from RenderLayer and made to assume
-    // it talks to a RenderBox, not just a RenderObject.
-    bool canResize() const;
+    CompositingState compositingState() const;
 
     bool hitTest(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestFilter = HitTestAll);
     virtual void updateHitTestResult(HitTestResult&, const LayoutPoint&);
@@ -766,6 +760,8 @@ public:
     // FIXME: useTransforms should go away eventually
     IntRect absoluteBoundingBoxRect(bool useTransform = true) const;
     IntRect absoluteBoundingBoxRectIgnoringTransforms() const { return absoluteBoundingBoxRect(false); }
+
+    bool isContainedInParentBoundingBox() const;
 
     // Build an array of quads in absolute coords for line boxes
     virtual void absoluteQuads(Vector<FloatQuad>&, bool* /*wasFixed*/ = 0) const { }
@@ -921,7 +917,7 @@ public:
      */
     virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = 0);
 
-    // When performing a global document tear-down, the renderer of the document is cleared.  We use this
+    // When performing a global document tear-down, the renderer of the document is cleared. We use this
     // as a hook to detect the case of document destruction and don't waste time doing unnecessary work.
     bool documentBeingDestroyed() const;
 
@@ -957,7 +953,7 @@ public:
 
     void remove() { if (parent()) parent()->removeChild(this); }
 
-    AnimationController* animation() const;
+    AnimationController& animation() const;
 
     bool isInert() const;
     bool visibleToHitTestRequest(const HitTestRequest& request) const { return style()->visibility() == VISIBLE && (request.ignorePointerEventsNone() || style()->pointerEvents() != PE_NONE) && !isInert(); }
@@ -993,6 +989,8 @@ public:
 
     RespectImageOrientationEnum shouldRespectImageOrientation() const;
 
+    bool isRelayoutBoundaryForInspector() const;
+
 protected:
     inline bool layerCreationAllowedForSubtree() const;
 
@@ -1004,6 +1002,14 @@ protected:
 
     void drawLineForBoxSide(GraphicsContext*, int x1, int y1, int x2, int y2, BoxSide,
                             Color, EBorderStyle, int adjbw1, int adjbw2, bool antialias = false);
+    void drawDashedOrDottedBoxSide(GraphicsContext*, int x1, int y1, int x2, int y2,
+        BoxSide, Color, int thickness, EBorderStyle, bool antialias);
+    void drawDoubleBoxSide(GraphicsContext*, int x1, int y1, int x2, int y2,
+        int length, BoxSide, Color, int thickness, int adjacentWidth1, int adjacentWidth2, bool antialias);
+    void drawRidgeOrGrooveBoxSide(GraphicsContext*, int x1, int y1, int x2, int y2,
+        BoxSide, Color, EBorderStyle, int adjacentWidth1, int adjacentWidth2, bool antialias);
+    void drawSolidBoxSide(GraphicsContext*, int x1, int y1, int x2, int y2,
+        BoxSide, Color, int adjacentWidth1, int adjacentWidth2, bool antialias);
 
     void paintFocusRing(PaintInfo&, const LayoutPoint&, RenderStyle*);
     void paintOutline(PaintInfo&, const LayoutRect&);
@@ -1017,12 +1023,10 @@ protected:
     virtual void willBeDestroyed();
     void postDestroy();
 
-    virtual bool canBeReplacedWithInlineRunIn() const;
-
     virtual void insertedIntoTree();
     virtual void willBeRemovedFromTree();
 
-    void setDocumentForAnonymous(Document* document) { ASSERT(isAnonymous()); m_nodeProxy.set(document); }
+    void setDocumentForAnonymous(Document* document) { ASSERT(isAnonymous()); m_node = document; }
 
     // Add hit-test rects for the render tree rooted at this node to the provided collection on a
     // per-RenderLayer basis.
@@ -1044,7 +1048,7 @@ private:
     void removeFromRenderFlowThreadRecursive(RenderFlowThread*);
 
     bool shouldRepaintForStyleDifference(StyleDifference) const;
-    bool hasImmediateNonWhitespaceTextChild() const;
+    bool hasImmediateNonWhitespaceTextChildOrPropertiesDependentOnColor() const;
 
     RenderStyle* cachedFirstLineStyle() const;
     StyleDifference adjustStyleDifference(StyleDifference, unsigned contextSensitiveProperties) const;
@@ -1060,7 +1064,7 @@ private:
 
     RefPtr<RenderStyle> m_style;
 
-    RenderingNodeProxy m_nodeProxy;
+    Node* m_node;
 
     RenderObject* m_parent;
     RenderObject* m_previous;
@@ -1375,6 +1379,9 @@ inline void adjustFloatRectForAbsoluteZoom(FloatRect& rect, RenderObject* render
     if (zoom != 1)
         rect.scale(1 / zoom, 1 / zoom);
 }
+
+#define DEFINE_RENDER_OBJECT_TYPE_CASTS(thisType, predicate) \
+    DEFINE_TYPE_CASTS(thisType, RenderObject, object, object->predicate, object.predicate)
 
 } // namespace WebCore
 

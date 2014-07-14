@@ -21,8 +21,6 @@
 
 namespace content {
 
-namespace {
-
 // DevTools frontend path for inspector LayoutTests.
 GURL GetDevToolsPathAsURL() {
   base::FilePath dir_exe;
@@ -40,8 +38,6 @@ GURL GetDevToolsPathAsURL() {
       "resources/inspector/devtools.html");
   return net::FilePathToFileURL(dev_tools_path);
 }
-
-}  // namespace
 
 // static
 ShellDevToolsFrontend* ShellDevToolsFrontend::Show(
@@ -61,9 +57,16 @@ ShellDevToolsFrontend* ShellDevToolsFrontend::Show(
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     shell->LoadURL(GetDevToolsPathAsURL());
   else
-    shell->LoadURL(delegate->devtools_http_handler()->GetFrontendURL(NULL));
+    shell->LoadURL(delegate->devtools_http_handler()->GetFrontendURL());
+
+  devtools_frontend->Activate();
+  devtools_frontend->Focus();
 
   return devtools_frontend;
+}
+
+void ShellDevToolsFrontend::Activate() {
+  frontend_shell_->ActivateContents(web_contents());
 }
 
 void ShellDevToolsFrontend::Focus() {

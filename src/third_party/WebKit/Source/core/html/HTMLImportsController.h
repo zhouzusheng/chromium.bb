@@ -34,8 +34,8 @@
 #include "core/fetch/RawResource.h"
 #include "core/html/HTMLImport.h"
 #include "core/html/LinkResource.h"
-#include "core/platform/Supplementable.h"
-#include "core/platform/Timer.h"
+#include "platform/Supplementable.h"
+#include "platform/Timer.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
@@ -43,12 +43,12 @@
 namespace WebCore {
 
 class FetchRequest;
-class ScriptExecutionContext;
+class ExecutionContext;
 class ResourceFetcher;
 class HTMLImportLoader;
 class HTMLImportLoaderClient;
 
-class HTMLImportsController : public HTMLImportRoot, public Supplement<ScriptExecutionContext> {
+class HTMLImportsController : public HTMLImportRoot, public DocumentSupplement {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     static void provideTo(Document*);

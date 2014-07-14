@@ -29,9 +29,7 @@
 
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/filters/Filter.h"
-#include "core/platform/text/TextStream.h"
-#include "core/rendering/RenderTreeAsText.h"
-
+#include "platform/text/TextStream.h"
 #include "wtf/Uint8ClampedArray.h"
 
 #include "SkBitmapSource.h"
@@ -247,7 +245,8 @@ PassRefPtr<SkImageFilter> FEBlend::createImageFilter(SkiaImageFilterBuilder* bui
     RefPtr<SkImageFilter> foreground(builder->build(inputEffect(0), operatingColorSpace()));
     RefPtr<SkImageFilter> background(builder->build(inputEffect(1), operatingColorSpace()));
     SkAutoTUnref<SkXfermode> mode(SkXfermode::Create(toSkiaMode(m_mode)));
-    return adoptRef(new SkXfermodeImageFilter(mode, background.get(), foreground.get()));
+    SkImageFilter::CropRect cropRect = getCropRect(builder->cropOffset());
+    return adoptRef(new SkXfermodeImageFilter(mode, background.get(), foreground.get(), &cropRect));
 }
 
 static TextStream& operator<<(TextStream& ts, const BlendModeType& type)

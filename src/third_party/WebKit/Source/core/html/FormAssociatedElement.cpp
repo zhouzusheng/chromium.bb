@@ -66,10 +66,10 @@ ValidityState* FormAssociatedElement::validity()
     return m_validityState.get();
 }
 
-void FormAssociatedElement::didMoveToNewDocument(Document* oldDocument)
+void FormAssociatedElement::didMoveToNewDocument(Document& oldDocument)
 {
     HTMLElement* element = toHTMLElement(this);
-    if (oldDocument && element->fastHasAttribute(formAttr))
+    if (element->fastHasAttribute(formAttr))
         m_formAttributeTargetObserver = nullptr;
 }
 
@@ -122,8 +122,9 @@ HTMLFormElement* FormAssociatedElement::findAssociatedForm(const HTMLElement* el
 void FormAssociatedElement::formRemovedFromTree(const Node* formRoot)
 {
     ASSERT(m_form);
-    if (toHTMLElement(this)->highestAncestor() != formRoot)
-        setForm(0);
+    if (toHTMLElement(this)->highestAncestor() == formRoot)
+        return;
+    setForm(0);
 }
 
 void FormAssociatedElement::setForm(HTMLFormElement* newForm)

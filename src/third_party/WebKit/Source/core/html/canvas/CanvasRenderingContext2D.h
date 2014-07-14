@@ -29,13 +29,14 @@
 #include "core/html/canvas/Canvas2DContextAttributes.h"
 #include "core/html/canvas/CanvasPathMethods.h"
 #include "core/html/canvas/CanvasRenderingContext.h"
-#include "core/platform/graphics/Color.h"
-#include "core/platform/graphics/FloatSize.h"
 #include "core/platform/graphics/Font.h"
-#include "core/platform/graphics/GraphicsTypes.h"
 #include "core/platform/graphics/ImageBuffer.h"
 #include "core/platform/graphics/Path.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
+#include "core/svg/SVGMatrix.h"
+#include "platform/geometry/FloatSize.h"
+#include "platform/graphics/Color.h"
+#include "platform/graphics/GraphicsTypes.h"
+#include "platform/transforms/AffineTransform.h"
 #include "wtf/HashMap.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
@@ -116,6 +117,12 @@ public:
 
     void save() { ++m_unrealizedSaveCount; }
     void restore();
+
+    SVGMatrix currentTransform() const
+    {
+        return SVGMatrix(state().m_transform);
+    }
+    void setCurrentTransform(const SVGMatrix&);
 
     void scale(float sx, float sy);
     void rotate(float angleInRadians);

@@ -11,6 +11,7 @@
 #include "cc/output/compositor_frame_metadata.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/output/output_surface.h"
+#include "cc/output/render_surface_filters.h"
 #include "cc/output/software_output_device.h"
 #include "cc/quads/checkerboard_draw_quad.h"
 #include "cc/quads/debug_border_draw_quad.h"
@@ -323,7 +324,8 @@ void SoftwareRenderer::DrawPictureQuad(const DrawingFrame* frame,
   // cases and fall back to a persistent bitmap backing
   // (http://crbug.com/280374).
   skia::RefPtr<SkDrawFilter> opacity_filter =
-      skia::AdoptRef(new skia::OpacityDrawFilter(quad->opacity(), true));
+      skia::AdoptRef(new skia::OpacityDrawFilter(
+          quad->opacity(), frame->disable_picture_quad_image_filtering));
   DCHECK(!current_canvas_->getDrawFilter());
   current_canvas_->setDrawFilter(opacity_filter.get());
 
@@ -414,7 +416,7 @@ void SoftwareRenderer::DrawTileQuad(const DrawingFrame* frame,
 
 void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
                                           const RenderPassDrawQuad* quad) {
-  CachedResource* content_texture =
+  ScopedResource* content_texture =
       render_pass_textures_.get(quad->render_pass_id);
   if (!content_texture || !content_texture->id())
     return;
@@ -433,16 +435,45 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
                             SkMatrix::kFill_ScaleToFit);
 
   const SkBitmap* content = lock.sk_bitmap();
-  skia::RefPtr<SkShader> shader = skia::AdoptRef(
-      SkShader::CreateBitmapShader(*content,
-                                   SkShader::kClamp_TileMode,
-                                   SkShader::kClamp_TileMode));
+
+  SkBitmap filter_bitmap;
+  if (!quad->filters.IsEmpty()) {
+    skia::RefPtr<SkImageFilter> filter = RenderSurfaceFilters::BuildImageFilter(
+        quad->filters, content_texture->size());
+    // TODO(ajuma): In addition origin translation, the canvas should also be
+    // scaled to accomodate device pixel ratio and pinch zoom. See
+    // crbug.com/281516 and crbug.com/281518.
+    // TODO(ajuma): Apply the filter in the same pass as the content where
+    // possible (e.g. when there's no origin offset). See crbug.com/308201.
+    if (filter) {
+      bool is_opaque = false;
+      skia::RefPtr<SkBaseDevice> device =
+          skia::AdoptRef(new SkBitmapDevice(SkBitmap::kARGB_8888_Config,
+                                            content_texture->size().width(),
+                                            content_texture->size().height(),
+                                            is_opaque));
+      SkCanvas canvas(device.get());
+      SkPaint paint;
+      paint.setImageFilter(filter.get());
+      canvas.clear(SK_ColorTRANSPARENT);
+      canvas.translate(SkIntToScalar(-quad->rect.origin().x()),
+                       SkIntToScalar(-quad->rect.origin().y()));
+      canvas.drawSprite(*content, 0, 0, &paint);
+      bool will_change_pixels = false;
+      filter_bitmap = device->accessBitmap(will_change_pixels);
+    }
+  }
+
+  skia::RefPtr<SkShader> shader;
+  if (filter_bitmap.isNull()) {
+    shader = skia::AdoptRef(SkShader::CreateBitmapShader(
+        *content, SkShader::kClamp_TileMode, SkShader::kClamp_TileMode));
+  } else {
+    shader = skia::AdoptRef(SkShader::CreateBitmapShader(
+        filter_bitmap, SkShader::kClamp_TileMode, SkShader::kClamp_TileMode));
+  }
   shader->setLocalMatrix(content_mat);
   current_paint_.setShader(shader.get());
-
-  SkImageFilter* filter = quad->filter.get();
-  if (filter)
-    current_paint_.setImageFilter(filter);
 
   if (quad->mask_resource_id) {
     ResourceProvider::ScopedReadLockSoftware mask_lock(resource_provider_,
@@ -549,10 +580,6 @@ void SoftwareRenderer::SetVisible(bool visible) {
     EnsureBackbuffer();
   else
     DiscardBackbuffer();
-}
-
-void SoftwareRenderer::SetDiscardBackBufferWhenNotVisible(bool discard) {
-  // The software renderer always discards the backbuffer when not visible.
 }
 
 }  // namespace cc

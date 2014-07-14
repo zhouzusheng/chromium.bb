@@ -35,7 +35,7 @@
 
 #include "bindings/v8/ScriptFunctionCall.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/platform/JSONValues.h"
+#include "platform/JSONValues.h"
 #include "wtf/text/WTFString.h"
 
 using WebCore::TypeBuilder::Runtime::RemoteObject;
@@ -73,8 +73,8 @@ const ScriptObject& InjectedScriptBase::injectedScriptObject() const
 
 ScriptValue InjectedScriptBase::callFunctionWithEvalEnabled(ScriptFunctionCall& function, bool& hadException) const
 {
-    ScriptExecutionContext* scriptExecutionContext = m_injectedScriptObject.scriptState()->scriptExecutionContext();
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willCallFunction(scriptExecutionContext, name(), 1);
+    ExecutionContext* executionContext = m_injectedScriptObject.scriptState()->executionContext();
+    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willCallFunction(executionContext, name(), 1);
 
     ScriptState* scriptState = m_injectedScriptObject.scriptState();
     bool evalIsDisabled = false;

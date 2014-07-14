@@ -42,7 +42,6 @@
 #include "bindings/v8/V8Utilities.h"
 #include "bindings/v8/custom/V8ArrayBufferViewCustom.h"
 #include "bindings/v8/custom/V8Uint8ArrayCustom.h"
-#include "core/dom/DOMStringList.h"
 #include "modules/indexeddb/IDBKeyRange.h"
 #include "modules/speech/SpeechRecognitionError.h"
 #include "modules/speech/SpeechRecognitionResult.h"
@@ -288,7 +287,7 @@ bool Dictionary::get(const String& key, MessagePortArray& value) const
 
     ASSERT(m_isolate);
     ASSERT(m_isolate == v8::Isolate::GetCurrent());
-    return getMessagePortArray(v8Value, value, m_isolate);
+    return getMessagePortArray(v8Value, key, value, m_isolate);
 }
 
 bool Dictionary::get(const String& key, HashSet<AtomicString>& value) const
@@ -545,7 +544,7 @@ bool Dictionary::get(const String& key, RefPtr<VoidCallback>& value) const
     if (!v8Value->IsFunction())
         return false;
 
-    value = V8VoidCallback::create(v8Value, getScriptExecutionContext());
+    value = V8VoidCallback::create(v8Value, getExecutionContext());
     return true;
 }
 

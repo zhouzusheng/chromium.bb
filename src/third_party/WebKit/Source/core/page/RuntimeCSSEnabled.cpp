@@ -60,20 +60,23 @@ static void setPropertySwitchesFromRuntimeFeatures()
     };
     setCSSPropertiesEnabled(exclusionProperties, WTF_ARRAY_LENGTH(exclusionProperties), RuntimeEnabledFeatures::cssExclusionsEnabled());
     CSSPropertyID shapeProperties[] = {
-        CSSPropertyWebkitShapeMargin,
-        CSSPropertyWebkitShapePadding,
-        CSSPropertyWebkitShapeInside,
-        CSSPropertyWebkitShapeOutside,
+        CSSPropertyShapeMargin,
+        CSSPropertyShapePadding,
+        CSSPropertyShapeImageThreshold,
+        CSSPropertyShapeInside,
+        CSSPropertyShapeOutside,
     };
     setCSSPropertiesEnabled(shapeProperties, WTF_ARRAY_LENGTH(shapeProperties), RuntimeEnabledFeatures::cssShapesEnabled());
     CSSPropertyID css3TextDecorationProperties[] = {
         CSSPropertyTextDecorationColor,
         CSSPropertyTextDecorationLine,
         CSSPropertyTextDecorationStyle,
+        CSSPropertyTextUnderlinePosition,
     };
     setCSSPropertiesEnabled(css3TextDecorationProperties, WTF_ARRAY_LENGTH(css3TextDecorationProperties), RuntimeEnabledFeatures::css3TextDecorationsEnabled());
     CSSPropertyID css3TextProperties[] = {
         CSSPropertyTextAlignLast,
+        CSSPropertyTextJustify,
     };
     setCSSPropertiesEnabled(css3TextProperties, WTF_ARRAY_LENGTH(css3TextProperties), RuntimeEnabledFeatures::css3TextEnabled());
     CSSPropertyID cssGridLayoutProperties[] = {
@@ -118,6 +121,10 @@ static void setPropertySwitchesFromRuntimeFeatures()
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyPaintOrder, RuntimeEnabledFeatures::svgPaintOrderEnabled());
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyVariable, RuntimeEnabledFeatures::cssVariablesEnabled());
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyMaskSourceType, RuntimeEnabledFeatures::cssMaskSourceTypeEnabled());
+    RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyColumnFill, RuntimeEnabledFeatures::regionBasedColumnsEnabled());
+
+    // InternalCallback is an implementation detail, rather than an experimental feature, and should never be exposed to the web.
+    RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyInternalCallback, false);
 }
 
 static BoolVector& propertySwitches()

@@ -39,7 +39,7 @@
 #include "bindings/v8/V8DOMWrapper.h"
 #include "bindings/v8/V8WindowShell.h"
 #include "bindings/v8/WrapperTypeInfo.h"
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
 #include "wtf/HashTraits.h"
 #include "wtf/MainThread.h"
 #include "wtf/StdLibExtras.h"
@@ -71,7 +71,7 @@ DOMWrapperWorld* DOMWrapperWorld::current()
 {
     ASSERT(v8::Context::InContext());
     v8::Handle<v8::Context> context = v8::Context::GetCurrent();
-    if (!V8DOMWrapper::isWrapperOfType(toInnerGlobalObject(context), &V8Window::info))
+    if (!V8DOMWrapper::isWrapperOfType(toInnerGlobalObject(context), &V8Window::wrapperTypeInfo))
         return 0;
     ASSERT(isMainThread());
     if (DOMWrapperWorld* world = isolatedWorld(context))
@@ -98,7 +98,7 @@ bool DOMWrapperWorld::contextHasCorrectPrototype(v8::Handle<v8::Context> context
     ASSERT(isMainThread());
     if (initializingWindow)
         return true;
-    return V8DOMWrapper::isWrapperOfType(toInnerGlobalObject(context), &V8Window::info);
+    return V8DOMWrapper::isWrapperOfType(toInnerGlobalObject(context), &V8Window::wrapperTypeInfo);
 }
 
 void DOMWrapperWorld::setIsolatedWorldField(v8::Handle<v8::Context> context)
@@ -163,9 +163,9 @@ PassRefPtr<DOMWrapperWorld> DOMWrapperWorld::ensureIsolatedWorld(int worldId, in
     return world.release();
 }
 
-v8::Handle<v8::Context> DOMWrapperWorld::context(ScriptController* controller)
+v8::Handle<v8::Context> DOMWrapperWorld::context(ScriptController& controller)
 {
-    return controller->windowShell(this)->context();
+    return controller.windowShell(this)->context();
 }
 
 typedef HashMap<int, RefPtr<SecurityOrigin> > IsolatedWorldSecurityOriginMap;

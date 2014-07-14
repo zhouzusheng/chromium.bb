@@ -518,19 +518,21 @@ void P2PTransportChannel::OnUnknownAddress(
     // request came from.
 
     // There shouldn't be an existing connection with this remote address.
-    // When ports are muxed, this channel might get multiple unknown addres
+    // When ports are muxed, this channel might get multiple unknown address
     // signals. In that case if the connection is already exists, we should
     // simply ignore the signal othewise send server error.
-    if (port->GetConnection(new_remote_candidate.address()) && port_muxed) {
-      LOG(LS_INFO) << "Connection already exist for PeerReflexive candidate: "
-                   << new_remote_candidate.ToString();
-      return;
-    } else if (port->GetConnection(new_remote_candidate.address())) {
-      ASSERT(false);
-      port->SendBindingErrorResponse(stun_msg, address,
-                                     STUN_ERROR_SERVER_ERROR,
-                                     STUN_ERROR_REASON_SERVER_ERROR);
-      return;
+    if (port->GetConnection(new_remote_candidate.address())) {
+      if (port_muxed) {
+        LOG(LS_INFO) << "Connection already exists for peer reflexive "
+                     << "candidate: " << new_remote_candidate.ToString();
+        return;
+      } else {
+        ASSERT(false);
+        port->SendBindingErrorResponse(stun_msg, address,
+                                       STUN_ERROR_SERVER_ERROR,
+                                       STUN_ERROR_REASON_SERVER_ERROR);
+        return;
+      }
     }
 
     Connection* connection = port->CreateConnection(
@@ -798,6 +800,7 @@ int P2PTransportChannel::SendPacket(const char *data, size_t len,
     error_ = EWOULDBLOCK;
     return -1;
   }
+
   int sent = best_connection_->Send(data, len, dscp);
   if (sent <= 0) {
     ASSERT(sent < 0);

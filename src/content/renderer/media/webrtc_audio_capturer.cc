@@ -12,7 +12,6 @@
 #include "content/renderer/media/audio_device_factory.h"
 #include "content/renderer/media/webrtc_audio_device_impl.h"
 #include "content/renderer/media/webrtc_local_audio_track.h"
-#include "media/audio/audio_util.h"
 #include "media/audio/sample_rates.h"
 
 namespace content {
@@ -134,7 +133,9 @@ bool WebRtcAudioCapturer::Initialize(int render_view_id,
                                      int sample_rate,
                                      int buffer_size,
                                      int session_id,
-                                     const std::string& device_id) {
+                                     const std::string& device_id,
+                                     int paired_output_sample_rate,
+                                     int paired_output_frames_per_buffer) {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK_GE(render_view_id, 0);
   DVLOG(1) << "WebRtcAudioCapturer::Initialize()";
@@ -147,6 +148,8 @@ bool WebRtcAudioCapturer::Initialize(int render_view_id,
   session_id_ = session_id;
   device_id_ = device_id;
   hardware_buffer_size_ = buffer_size;
+  output_sample_rate_ = paired_output_sample_rate;
+  output_frames_per_buffer_= paired_output_frames_per_buffer;
 
   if (render_view_id == -1) {
     // Return true here to allow injecting a new source via SetCapturerSource()
@@ -181,8 +184,6 @@ bool WebRtcAudioCapturer::Initialize(int render_view_id,
     return false;
   }
 
-  Reconfigure(sample_rate, channel_layout);
-
   // Create and configure the default audio capturing source. The |source_|
   // will be overwritten if an external client later calls SetCapturerSource()
   // providing an alternative media::AudioCapturerSource.
@@ -196,13 +197,14 @@ bool WebRtcAudioCapturer::Initialize(int render_view_id,
 WebRtcAudioCapturer::WebRtcAudioCapturer()
     : source_(NULL),
       running_(false),
-      agc_is_enabled_(false),
       render_view_id_(-1),
       hardware_buffer_size_(0),
       session_id_(0),
       volume_(0),
       source_provider_(new WebRtcLocalAudioSourceProvider()),
-      peer_connection_mode_(false) {
+      peer_connection_mode_(false),
+      output_sample_rate_(0),
+      output_frames_per_buffer_(0) {
   DCHECK(source_provider_.get());
   DVLOG(1) << "WebRtcAudioCapturer::WebRtcAudioCapturer()";
 }
@@ -317,9 +319,13 @@ void WebRtcAudioCapturer::EnablePeerConnectionMode() {
     render_view_id = render_view_id_;
   }
 
+  // Do nothing if the current buffer size is the WebRtc native buffer size.
+  media::AudioParameters params = audio_parameters();
+  if (GetBufferSize(params.sample_rate()) == params.frames_per_buffer())
+    return;
+
   // Create a new audio stream as source which will open the hardware using
   // WebRtc native buffer size.
-  media::AudioParameters params = audio_parameters();
   SetCapturerSource(AudioDeviceFactory::NewInputDevice(render_view_id),
                     params.channel_layout(),
                     static_cast<float>(params.sample_rate()));
@@ -335,7 +341,7 @@ void WebRtcAudioCapturer::Start() {
   // Note that, the source does not have to be a microphone.
   if (source_.get()) {
     // We need to set the AGC control before starting the stream.
-    source_->SetAutomaticGainControl(agc_is_enabled_);
+    source_->SetAutomaticGainControl(true);
     source_->Start();
   }
 
@@ -374,16 +380,6 @@ int WebRtcAudioCapturer::Volume() const {
 
 int WebRtcAudioCapturer::MaxVolume() const {
   return WebRtcAudioDeviceImpl::kMaxVolumeLevel;
-}
-
-void WebRtcAudioCapturer::SetAutomaticGainControl(bool enable) {
-  base::AutoLock auto_lock(lock_);
-  // Store the setting since SetAutomaticGainControl() can be called before
-  // Initialize(), in this case stored setting will be applied in Start().
-  agc_is_enabled_ = enable;
-
-  if (source_.get())
-    source_->SetAutomaticGainControl(enable);
 }
 
 void WebRtcAudioCapturer::Capture(media::AudioBus* audio_source,
@@ -442,6 +438,17 @@ media::AudioParameters WebRtcAudioCapturer::audio_parameters() const {
   return params_;
 }
 
+bool WebRtcAudioCapturer::GetPairedOutputParameters(
+    int* session_id,
+    int* output_sample_rate,
+    int* output_frames_per_buffer) const {
+  *session_id = session_id_;
+  *output_sample_rate = output_sample_rate_;
+  *output_frames_per_buffer = output_frames_per_buffer_;
+  return session_id_ > 0 && output_sample_rate_ > 0 &&
+      output_frames_per_buffer_> 0;
+}
+
 int WebRtcAudioCapturer::GetBufferSize(int sample_rate) const {
   DCHECK(thread_checker_.CalledOnValidThread());
 #if defined(OS_ANDROID)
@@ -449,9 +456,11 @@ int WebRtcAudioCapturer::GetBufferSize(int sample_rate) const {
   return (2 * sample_rate / 100);
 #endif
 
-  // Use the native hardware buffer size in non peer connection mode.
+#if defined(OS_MACOSX)
+  // Use the native hardware buffer size in non peer connection mode on Mac.
   if (!peer_connection_mode_ && hardware_buffer_size_)
     return hardware_buffer_size_;
+#endif
 
   // WebRtc is running at a buffer size of 10ms data. Use a multiple of 10ms
   // as the buffer size to achieve the best performance for WebRtc.

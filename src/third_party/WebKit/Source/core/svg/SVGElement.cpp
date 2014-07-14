@@ -35,7 +35,7 @@
 #include "core/dom/DOMImplementation.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/svg/RenderSVGResourceContainer.h"
@@ -76,6 +76,8 @@ SVGElement::SVGElement(const QualifiedName& tagName, Document& document, Constru
 #if !ASSERT_DISABLED
     , m_inRelativeLengthClientsInvalidation(false)
 #endif
+    , m_animatedPropertiesDestructed(false)
+    , m_isContextElement(false)
 {
     ScriptWrappable::init(this);
     registerAnimatedPropertiesForSVGElement();
@@ -84,6 +86,16 @@ SVGElement::SVGElement(const QualifiedName& tagName, Document& document, Constru
 
 SVGElement::~SVGElement()
 {
+    ASSERT(inDocument() || !hasRelativeLengths());
+}
+
+void
+SVGElement::cleanupAnimatedProperties()
+{
+    if (m_animatedPropertiesDestructed)
+        return;
+    m_animatedPropertiesDestructed = true;
+
     if (!hasSVGRareData())
         ASSERT(!SVGElementRareData::rareDataMap().contains(this));
     else {
@@ -111,8 +123,7 @@ SVGElement::~SVGElement()
     }
     document().accessSVGExtensions()->rebuildAllElementReferencesForTarget(this);
     document().accessSVGExtensions()->removeAllElementReferencesForTarget(this);
-
-    ASSERT(inDocument() || !hasRelativeLengths());
+    SVGAnimatedProperty::detachAnimatedPropertiesForElement(this);
 }
 
 void SVGElement::willRecalcStyle(StyleRecalcChange change)
@@ -318,7 +329,7 @@ String SVGElement::xmlbase() const
     return fastGetAttribute(XMLNames::baseAttr);
 }
 
-void SVGElement::setXmlbase(const String& value)
+void SVGElement::setXMLbase(const String& value)
 {
     setAttribute(XMLNames::baseAttr, value);
 }
@@ -447,6 +458,8 @@ CSSPropertyID SVGElement::cssPropertyIdForSVGAttributeName(const QualifiedName& 
 
 void SVGElement::updateRelativeLengthsInformation(bool clientHasRelativeLengths, SVGElement* clientElement)
 {
+    ASSERT(clientElement);
+
     // If we're not yet in a document, this function will be called again from insertedInto(). Do nothing now.
     if (!inDocument())
         return;
@@ -464,12 +477,21 @@ void SVGElement::updateRelativeLengthsInformation(bool clientHasRelativeLengths,
         else
             currentElement->m_elementsWithRelativeLengths.remove(clientElement);
 
-        // If the relative length state hasn't changed, we can stop propagating the notfication.
+        // If the relative length state hasn't changed, we can stop propagating the notification.
         if (hadRelativeLengths == currentElement->hasRelativeLengths())
-            break;
+            return;
 
         clientElement = currentElement;
         clientHasRelativeLengths = clientElement->hasRelativeLengths();
+    }
+
+    // Register root SVG elements for top level viewport change notifications.
+    if (clientElement->isSVGSVGElement()) {
+        SVGDocumentExtensions* svgExtensions = accessDocumentSVGExtensions();
+        if (clientElement->hasRelativeLengths())
+            svgExtensions->addSVGRootWithRelativeLengthDescendents(toSVGSVGElement(clientElement));
+        else
+            svgExtensions->removeSVGRootWithRelativeLengthDescendents(toSVGSVGElement(clientElement));
     }
 }
 
@@ -483,15 +505,18 @@ void SVGElement::invalidateRelativeLengthClients(SubtreeLayoutScope* layoutScope
     TemporaryChange<bool> inRelativeLengthClientsInvalidationChange(m_inRelativeLengthClientsInvalidation, true);
 #endif
 
+    RenderObject* renderer = this->renderer();
+    if (renderer && selfHasRelativeLengths()) {
+        if (renderer->isSVGResourceContainer())
+            toRenderSVGResourceContainer(renderer)->invalidateCacheAndMarkForLayout(layoutScope);
+        else
+            renderer->setNeedsLayout(MarkContainingBlockChain, layoutScope);
+    }
+
     HashSet<SVGElement*>::iterator end = m_elementsWithRelativeLengths.end();
     for (HashSet<SVGElement*>::iterator it = m_elementsWithRelativeLengths.begin(); it != end; ++it) {
-        if (*it == this)
-            continue;
-
-        if ((*it)->renderer() && (*it)->selfHasRelativeLengths())
-            (*it)->renderer()->setNeedsLayout(MarkContainingBlockChain, layoutScope);
-
-        (*it)->invalidateRelativeLengthClients(layoutScope);
+        if (*it != this)
+            (*it)->invalidateRelativeLengthClients(layoutScope);
     }
 }
 
@@ -560,13 +585,13 @@ const HashSet<SVGElementInstance*>& SVGElement::instancesForElement() const
     return svgRareData()->elementInstances();
 }
 
-bool SVGElement::getBoundingBox(FloatRect& rect, SVGLocatable::StyleUpdateStrategy styleUpdateStrategy)
+bool SVGElement::getBoundingBox(FloatRect& rect)
 {
-    if (isSVGGraphicsElement()) {
-        rect = toSVGGraphicsElement(this)->getBBox(styleUpdateStrategy);
-        return true;
-    }
-    return false;
+    if (!isSVGGraphicsElement())
+        return false;
+
+    rect = toSVGGraphicsElement(this)->getBBox();
+    return true;
 }
 
 void SVGElement::setCursorElement(SVGCursorElement* cursorElement)
@@ -618,29 +643,29 @@ void SVGElement::parseAttribute(const QualifiedName& name, const AtomicString& v
 {
     // standard events
     if (name == onloadAttr)
-        setAttributeEventListener(eventNames().loadEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::load, createAttributeEventListener(this, name, value));
     else if (name == onclickAttr)
-        setAttributeEventListener(eventNames().clickEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::click, createAttributeEventListener(this, name, value));
     else if (name == onmousedownAttr)
-        setAttributeEventListener(eventNames().mousedownEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::mousedown, createAttributeEventListener(this, name, value));
     else if (name == onmouseenterAttr)
-        setAttributeEventListener(eventNames().mouseenterEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::mouseenter, createAttributeEventListener(this, name, value));
     else if (name == onmouseleaveAttr)
-        setAttributeEventListener(eventNames().mouseleaveEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::mouseleave, createAttributeEventListener(this, name, value));
     else if (name == onmousemoveAttr)
-        setAttributeEventListener(eventNames().mousemoveEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::mousemove, createAttributeEventListener(this, name, value));
     else if (name == onmouseoutAttr)
-        setAttributeEventListener(eventNames().mouseoutEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::mouseout, createAttributeEventListener(this, name, value));
     else if (name == onmouseoverAttr)
-        setAttributeEventListener(eventNames().mouseoverEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::mouseover, createAttributeEventListener(this, name, value));
     else if (name == onmouseupAttr)
-        setAttributeEventListener(eventNames().mouseupEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::mouseup, createAttributeEventListener(this, name, value));
     else if (name == SVGNames::onfocusinAttr)
-        setAttributeEventListener(eventNames().focusinEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::focusin, createAttributeEventListener(this, name, value));
     else if (name == SVGNames::onfocusoutAttr)
-        setAttributeEventListener(eventNames().focusoutEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::focusout, createAttributeEventListener(this, name, value));
     else if (name == SVGNames::onactivateAttr)
-        setAttributeEventListener(eventNames().DOMActivateEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::DOMActivate, createAttributeEventListener(this, name, value));
     else if (name == HTMLNames::classAttr) {
         // SVG animation has currently requires special storage of values so we set
         // the className here. svgAttributeChanged actually causes the resulting
@@ -842,11 +867,11 @@ bool SVGElement::removeEventListener(const AtomicString& eventType, EventListene
 
 static bool hasLoadListener(Element* element)
 {
-    if (element->hasEventListeners(eventNames().loadEvent))
+    if (element->hasEventListeners(EventTypeNames::load))
         return true;
 
     for (element = element->parentOrShadowHostElement(); element; element = element->parentOrShadowHostElement()) {
-        const EventListenerVector& entry = element->getEventListeners(eventNames().loadEvent);
+        const EventListenerVector& entry = element->getEventListeners(EventTypeNames::load);
         for (size_t i = 0; i < entry.size(); ++i) {
             if (entry[i].useCapture)
                 return true;
@@ -870,9 +895,9 @@ void SVGElement::sendSVGLoadEventIfPossible(bool sendParentLoadEvents)
         if (sendParentLoadEvents)
             parent = currentTarget->parentOrShadowHostElement(); // save the next parent to dispatch too incase dispatching the event changes the tree
         if (hasLoadListener(currentTarget.get()))
-            currentTarget->dispatchEvent(Event::create(eventNames().loadEvent));
+            currentTarget->dispatchEvent(Event::create(EventTypeNames::load));
         currentTarget = (parent && parent->isSVGElement()) ? static_pointer_cast<SVGElement>(parent) : RefPtr<SVGElement>();
-        SVGElement* element = toSVGElement(currentTarget.get());
+        SVGElement* element = currentTarget.get();
         if (!element || !element->isOutermostSVGSVGElement())
             continue;
 
@@ -970,7 +995,7 @@ void SVGElement::svgAttributeChanged(const QualifiedName& attrName)
         RenderObject* object = renderer();
         // Notify resources about id changes, this is important as we cache resources by id in SVGDocumentExtensions
         if (object && object->isSVGResourceContainer())
-            object->toRenderSVGResourceContainer()->idChanged();
+            toRenderSVGResourceContainer(object)->idChanged();
         if (inDocument())
             buildPendingResourcesIfNeeded();
         SVGElementInstance::invalidateAllInstancesOfElement(this);
@@ -1057,9 +1082,7 @@ RenderStyle* SVGElement::computedStyle(PseudoId pseudoElementSpecifier)
 
 bool SVGElement::hasFocusEventListeners() const
 {
-    // FIXME: EventTarget::hasEventListeners should be const.
-    SVGElement* mutableThis = const_cast<SVGElement*>(this);
-    return mutableThis->hasEventListeners(eventNames().focusinEvent) || mutableThis->hasEventListeners(eventNames().focusoutEvent);
+    return hasEventListeners(EventTypeNames::focusin) || hasEventListeners(EventTypeNames::focusout);
 }
 
 bool SVGElement::isKeyboardFocusable() const

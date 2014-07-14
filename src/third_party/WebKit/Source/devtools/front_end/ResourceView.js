@@ -124,12 +124,10 @@ WebInspector.ResourceSourceFrameFallback.prototype = {
         }
     },
 
- /**
+    /**
      * @param {?string} content
-     * @param {boolean} contentEncoded
-     * @param {string} mimeType
      */
-    _contentLoaded: function(content, contentEncoded, mimeType)
+    _contentLoaded: function(content)
     {
         this._content.textContent = content;
     },

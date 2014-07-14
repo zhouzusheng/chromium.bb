@@ -11,12 +11,14 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "net/base/net_errors.h"
 #include "net/cert/cert_verifier.h"
 #include "net/dns/host_resolver.h"
 #include "net/dns/single_request_host_resolver.h"
 #include "net/http/http_server_properties.h"
+#include "net/quic/congestion_control/tcp_receiver.h"
 #include "net/quic/crypto/proof_verifier_chromium.h"
 #include "net/quic/crypto/quic_random.h"
 #include "net/quic/quic_client_session.h"
@@ -24,6 +26,7 @@
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_connection_helper.h"
 #include "net/quic/quic_crypto_client_stream_factory.h"
+#include "net/quic/quic_default_packet_writer.h"
 #include "net/quic/quic_http_stream.h"
 #include "net/quic/quic_protocol.h"
 #include "net/socket/client_socket_factory.h"
@@ -256,6 +259,7 @@ QuicStreamFactory::QuicStreamFactory(
 }
 
 QuicStreamFactory::~QuicStreamFactory() {
+  CloseAllSessions(ERR_ABORTED);
   STLDeleteElements(&all_sessions_);
   STLDeleteValues(&active_jobs_);
   STLDeleteValues(&all_crypto_configs_);
@@ -335,14 +339,14 @@ scoped_ptr<QuicHttpStream> QuicStreamFactory::CreateIfSessionExists(
 
   QuicClientSession* session = active_sessions_[host_port_proxy_pair];
   DCHECK(session);
-  return scoped_ptr<QuicHttpStream>(new QuicHttpStream(session->GetWeakPtr()));
+  return scoped_ptr<QuicHttpStream>(
+      new QuicHttpStream(session->GetWeakPtr()));
 }
 
 void QuicStreamFactory::OnIdleSession(QuicClientSession* session) {
 }
 
-void QuicStreamFactory::OnSessionClose(QuicClientSession* session) {
-  DCHECK_EQ(0u, session->GetNumOpenStreams());
+void QuicStreamFactory::OnSessionGoingAway(QuicClientSession* session) {
   const AliasSet& aliases = session_aliases_[session];
   for (AliasSet::const_iterator it = aliases.begin(); it != aliases.end();
        ++it) {
@@ -357,8 +361,13 @@ void QuicStreamFactory::OnSessionClose(QuicClientSession* session) {
       http_server_properties_->SetBrokenAlternateProtocol(it->first);
     }
   }
-  all_sessions_.erase(session);
   session_aliases_.erase(session);
+}
+
+void QuicStreamFactory::OnSessionClosed(QuicClientSession* session) {
+  DCHECK_EQ(0u, session->GetNumOpenStreams());
+  OnSessionGoingAway(session);
+  all_sessions_.erase(session);
   delete session;
 }
 
@@ -421,31 +430,36 @@ QuicClientSession* QuicStreamFactory::CreateSession(
   socket->Connect(addr);
 
   // We should adaptively set this buffer size, but for now, we'll use a size
-  // that is more than large enough for a 100 packet congestion window, and yet
+  // that is more than large enough for a full receive window, and yet
   // does not consume "too much" memory.  If we see bursty packet loss, we may
   // revisit this setting and test for its impact.
-  const int32 kSocketBufferSize(kMaxPacketSize * 100);  // Support 100 packets.
+  const int32 kSocketBufferSize(TcpReceiver::kReceiveWindowTCP);
   socket->SetReceiveBufferSize(kSocketBufferSize);
   // Set a buffer large enough to contain the initial CWND's worth of packet
   // to work around the problem with CHLO packets being sent out with the
   // wrong encryption level, when the send buffer is full.
   socket->SetSendBufferSize(kMaxPacketSize * 20); // Support 20 packets.
 
-  QuicConnectionHelper* helper = new QuicConnectionHelper(
-      base::MessageLoop::current()->message_loop_proxy().get(),
-      clock_.get(),
-      random_generator_,
-      socket.get());
+  scoped_ptr<QuicDefaultPacketWriter> writer(
+      new QuicDefaultPacketWriter(socket.get()));
 
-  QuicConnection* connection = new QuicConnection(guid, addr, helper, false,
-                                                  QuicVersionMax());
+  if (!helper_.get()) {
+    helper_.reset(new QuicConnectionHelper(
+        base::MessageLoop::current()->message_loop_proxy().get(),
+        clock_.get(), random_generator_));
+  }
+
+  QuicConnection* connection = new QuicConnection(guid, addr, helper_.get(),
+                                                  writer.get(), false,
+                                                  QuicSupportedVersions());
+  writer->SetConnection(connection);
 
   QuicCryptoClientConfig* crypto_config =
       GetOrCreateCryptoConfig(host_port_proxy_pair);
   DCHECK(crypto_config);
 
   QuicClientSession* session =
-      new QuicClientSession(connection, socket.Pass(), this,
+      new QuicClientSession(connection, socket.Pass(), writer.Pass(), this,
                             quic_crypto_client_stream_factory_,
                             host_port_proxy_pair.first.host(), config_,
                             crypto_config, net_log.net_log());
@@ -473,15 +487,53 @@ void QuicStreamFactory::ActivateSession(
 QuicCryptoClientConfig* QuicStreamFactory::GetOrCreateCryptoConfig(
     const HostPortProxyPair& host_port_proxy_pair) {
   QuicCryptoClientConfig* crypto_config;
+
   if (ContainsKey(all_crypto_configs_, host_port_proxy_pair)) {
     crypto_config = all_crypto_configs_[host_port_proxy_pair];
     DCHECK(crypto_config);
   } else {
+    // TODO(rtenneti): if two quic_sessions for the same host_port_proxy_pair
+    // share the same crypto_config, will it cause issues?
     crypto_config = new QuicCryptoClientConfig();
     crypto_config->SetDefaults();
     all_crypto_configs_[host_port_proxy_pair] = crypto_config;
+    PopulateFromCanonicalConfig(host_port_proxy_pair, crypto_config);
   }
   return crypto_config;
+}
+
+void QuicStreamFactory::PopulateFromCanonicalConfig(
+    const HostPortProxyPair& host_port_proxy_pair,
+    QuicCryptoClientConfig* crypto_config) {
+  const string server_hostname = host_port_proxy_pair.first.host();
+  const string kYouTubeSuffix(".c.youtube.com");
+  if (!EndsWith(server_hostname, kYouTubeSuffix, false)) {
+    return;
+  }
+
+  HostPortPair canonical_host_port(kYouTubeSuffix,
+                                   host_port_proxy_pair.first.port());
+  if (!ContainsKey(canonical_hostname_to_origin_map_, canonical_host_port)) {
+    // This is the first host we've seen which matches the suffix, so make it
+    // canonical.
+    canonical_hostname_to_origin_map_[canonical_host_port] =
+        host_port_proxy_pair;
+    return;
+  }
+
+  const HostPortProxyPair& canonical_host_port_proxy_pair =
+      canonical_hostname_to_origin_map_[canonical_host_port];
+  QuicCryptoClientConfig* canonical_crypto_config =
+      all_crypto_configs_[canonical_host_port_proxy_pair];
+  DCHECK(canonical_crypto_config);
+
+  // Copy the CachedState for the canonical server from canonical_crypto_config
+  // as the initial CachedState for the server_hostname in crypto_config.
+  crypto_config->InitializeFrom(server_hostname,
+                                canonical_host_port_proxy_pair.first.host(),
+                                canonical_crypto_config);
+  // Update canonical version to point at the "most recent" crypto_config.
+  canonical_hostname_to_origin_map_[canonical_host_port] = host_port_proxy_pair;
 }
 
 }  // namespace net

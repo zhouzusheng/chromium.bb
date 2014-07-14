@@ -101,6 +101,23 @@ void RecordOfflineStatus(int load_flags, RequestOfflineStatus status) {
   }
 }
 
+// TODO(rvargas): Remove once we get the data.
+void RecordVaryHeaderHistogram(const net::HttpResponseInfo* response) {
+  enum VaryType {
+    VARY_NOT_PRESENT,
+    VARY_UA,
+    VARY_OTHER,
+    VARY_MAX
+  };
+  VaryType vary = VARY_NOT_PRESENT;
+  if (response->vary_data.is_valid()) {
+    vary = VARY_OTHER;
+    if (response->headers->HasHeaderValue("vary", "user-agent"))
+      vary = VARY_UA;
+  }
+  UMA_HISTOGRAM_ENUMERATION("HttpCache.Vary", vary, VARY_MAX);
+}
+
 }  // namespace
 
 namespace net {
@@ -963,6 +980,8 @@ int HttpCache::Transaction::DoSuccessfulSendRequest() {
     cache_->DoomMainEntryForUrl(request_->url);
   }
 
+  RecordVaryHeaderHistogram(new_response);
+
   // Are we expecting a response to a conditional query?
   if (mode_ == READ_WRITE || mode_ == UPDATE) {
     if (new_response->headers->response_code() == 304 || handling_206_) {
@@ -1499,20 +1518,12 @@ int HttpCache::Transaction::DoCacheQueryData() {
 }
 
 int HttpCache::Transaction::DoCacheQueryDataComplete(int result) {
-#if defined(OS_ANDROID)
   if (result == ERR_NOT_IMPLEMENTED) {
     // Restart the request overwriting the cache entry.
-    //
-    // Note: this would have fixed range requests for debug builds on all OSes,
-    // not just Android, but karen@ prefers to limit the effect based on OS for
-    // cherry-picked fixes.
-    // TODO(pasko): remove the OS_ANDROID limitation as soon as the fix proves
-    // useful after the cherry-pick.
     // TODO(pasko): remove this workaround as soon as the SimpleBackendImpl
     // supports Sparse IO.
     return DoRestartPartialRequest();
   }
-#endif
   DCHECK_EQ(OK, result);
   if (!cache_.get())
     return ERR_UNEXPECTED;
@@ -2388,6 +2399,8 @@ bool HttpCache::Transaction::CanResume(bool has_data) {
   if (request_->method != "GET")
     return false;
 
+  // Note that if this is a 206, content-length was already fixed after calling
+  // PartialData::ResponseHeadersOK().
   if (response_.headers->GetContentLength() <= 0 ||
       response_.headers->HasHeaderValue("Accept-Ranges", "none") ||
       !response_.headers->HasStrongValidators()) {

@@ -125,16 +125,6 @@ static inline size_t GrSizeAlignDown(size_t x, uint32_t alignment) {
  */
 #define GR_ARRAY_COUNT(array)  SK_ARRAY_COUNT(array)
 
-//!< allocate a block of memory, will never return NULL
-extern void* GrMalloc(size_t bytes);
-
-//!< free block allocated by GrMalloc. ptr may be NULL
-extern void GrFree(void* ptr);
-
-static inline void Gr_bzero(void* dst, size_t size) {
-    memset(dst, 0, size);
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
@@ -249,8 +239,9 @@ enum GrMaskFormat {
     kA565_GrMaskFormat,  //!< 2-bytes per pixel
     kA888_GrMaskFormat,  //!< 4-bytes per pixel
 
-    kCount_GrMaskFormats //!< used to allocate arrays sized for mask formats
+    kLast_GrMaskFormat = kA888_GrMaskFormat
 };
+static const int kMaskFormatCount = kLast_GrMaskFormat + 1;
 
 /**
  *  Return the number of bytes-per-pixel for the specified mask format.
@@ -617,6 +608,7 @@ enum GrGLBackendState {
     kProgram_GrGLBackendState          = 1 << 8,
     kFixedFunction_GrGLBackendState    = 1 << 9,
     kMisc_GrGLBackendState             = 1 << 10,
+    kPathRendering_GrGLBackendState    = 1 << 11,
     kALL_GrGLBackendState              = 0xffff
 };
 

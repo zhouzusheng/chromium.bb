@@ -145,7 +145,6 @@ public:
 
     bool isDisabled() const { return linkStyle() && linkStyle()->isDisabled(); }
     bool isEnabledViaScript() const { return linkStyle() && linkStyle()->isEnabledViaScript(); }
-    void setSizes(const String&);
     DOMSettableTokenList* sizes() const;
 
     void dispatchPendingEvent(LinkEventSender*);
@@ -204,11 +203,7 @@ private:
     int m_beforeLoadRecurseCount;
 };
 
-inline HTMLLinkElement* toHTMLLinkElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::linkTag));
-    return static_cast<HTMLLinkElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLLinkElement, hasTagName(HTMLNames::linkTag));
 
 } //namespace
 

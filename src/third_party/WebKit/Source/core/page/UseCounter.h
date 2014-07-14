@@ -38,7 +38,7 @@ namespace WebCore {
 class CSSStyleSheet;
 class DOMWindow;
 class Document;
-class ScriptExecutionContext;
+class ExecutionContext;
 class StyleSheetContents;
 
 // UseCounter is used for counting the number of times features of
@@ -213,15 +213,58 @@ public:
         HTMLAppletElementLegacyCall,
         HTMLEmbedElementLegacyCall,
         HTMLObjectElementLegacyCall,
+        BeforeLoadEvent,
+        GetMatchedCSSRules,
+        SVGFontInCSS,
+        ScrollTopBodyNotQuirksMode,
+        ScrollLeftBodyNotQuirksMode,
+        AttributeIsId, // Removed in DOM4.
+        AttributeOwnerElement, // Removed in DOM4.
+        AttributeSetPrefix, // Attribute prefix is readonly in DOM4.
+        AttributeSpecified, // Removed in DOM4.
+        BeforeLoadEventInIsolatedWorld,
+        PrefixedAudioDecodedByteCount,
+        PrefixedVideoDecodedByteCount,
+        PrefixedVideoSupportsFullscreen,
+        PrefixedVideoDisplayingFullscreen,
+        PrefixedVideoEnterFullscreen,
+        PrefixedVideoExitFullscreen,
+        PrefixedVideoEnterFullScreen,
+        PrefixedVideoExitFullScreen,
+        PrefixedVideoDecodedFrameCount,
+        PrefixedVideoDroppedFrameCount,
+        SourceElementCandidate,
+        SourceElementNonMatchingMedia,
+        PrefixedElementRequestFullscreen,
+        PrefixedElementRequestFullScreen,
+        BarPropLocationbar,
+        BarPropMenubar,
+        BarPropPersonalbar,
+        BarPropScrollbars,
+        BarPropStatusbar,
+        BarPropToolbar,
+        InputTypeEmailMultiple,
+        InputTypeEmailMaxLength,
+        InputTypeEmailMultipleMaxLength,
+        TextTrackCueConstructor,
+        CSSStyleDeclarationPropertyName, // Removed in CSSOM.
+        CSSStyleDeclarationFloatPropertyName, // Pending removal in CSSOM.
+        InputTypeText,
+        InputTypeTextMaxLength,
+        InputTypePassword,
+        InputTypePasswordMaxLength,
+        SVGInstanceRoot,
+        ShowModalDialog,
+        CSSStyleSheetInsertRuleOptionalArg = 198, // Inconsistent with the specification and other browsers.
         // Add new features immediately above this line. Don't change assigned
         // numbers of each items, and don't reuse unused slots.
         NumberOfFeatures, // This enum value must be last.
     };
 
     // "count" sets the bit for this feature to 1. Repeated calls are ignored.
-    static void count(Document*, Feature);
-    static void count(DOMWindow*, Feature);
-    void count(CSSPropertyID);
+    static void count(const Document&, Feature);
+    static void count(const DOMWindow*, Feature);
+    void count(CSSParserContext, CSSPropertyID);
     void count(Feature);
 
     // "countDeprecation" sets the bit for this feature to 1, and sends a deprecation
@@ -229,9 +272,9 @@ public:
     //
     // Be considerate to developers' consoles: features should only send deprecation warnings
     // when we're actively interested in removing them from the platform.
-    static void countDeprecation(DOMWindow*, Feature);
-    static void countDeprecation(ScriptExecutionContext*, Feature);
-    static void countDeprecation(Document*, Feature);
+    static void countDeprecation(const DOMWindow*, Feature);
+    static void countDeprecation(ExecutionContext*, Feature);
+    static void countDeprecation(const Document&, Feature);
     String deprecationMessage(Feature);
 
     void didCommitLoad();

@@ -32,6 +32,7 @@ class CONTENT_EXPORT ContextProviderCommandBuffer
 
   virtual bool BindToCurrentThread() OVERRIDE;
   virtual WebGraphicsContext3DCommandBufferImpl* Context3d() OVERRIDE;
+  virtual gpu::ContextSupport* ContextSupport() OVERRIDE;
   virtual class GrContext* GrContext() OVERRIDE;
   virtual Capabilities ContextCapabilities() OVERRIDE;
   virtual void VerifyContexts() OVERRIDE;
@@ -58,11 +59,10 @@ class CONTENT_EXPORT ContextProviderCommandBuffer
 
   void OnLostContext();
   void OnSwapBuffersComplete();
-  void OnMemoryAllocationChanged(
-      const WebKit::WebGraphicsMemoryAllocation& allocation);
+  void OnMemoryAllocationChanged(const gpu::MemoryAllocation& allocation);
 
  private:
-  void InitializeCapabilities();
+  bool InitializeCapabilities();
 
   base::ThreadChecker main_thread_checker_;
   base::ThreadChecker context_thread_checker_;
@@ -87,9 +87,6 @@ class CONTENT_EXPORT ContextProviderCommandBuffer
   class SwapBuffersCompleteCallbackProxy;
   scoped_ptr<SwapBuffersCompleteCallbackProxy>
       swap_buffers_complete_callback_proxy_;
-
-  class MemoryAllocationCallbackProxy;
-  scoped_ptr<MemoryAllocationCallbackProxy> memory_allocation_callback_proxy_;
 };
 
 }  // namespace content

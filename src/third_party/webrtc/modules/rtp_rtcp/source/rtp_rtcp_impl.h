@@ -171,8 +171,6 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
   // Reset RoundTripTime statistics.
   virtual int32_t ResetRTT(const uint32_t remote_ssrc) OVERRIDE;
 
-  virtual void SetRtt(uint32_t rtt) OVERRIDE;
-
   // Force a send of an RTCP packet.
   // Normal SR and RR are triggered via the process function.
   virtual int32_t SendRTCP(uint32_t rtcp_packet_type = kRtcpReport) OVERRIDE;
@@ -255,6 +253,9 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
   // (XR) VOIP metric.
   virtual int32_t SetRTCPVoIPMetrics(const RTCPVoIPMetric* VoIPMetric) OVERRIDE;
 
+  // (XR) Receiver reference time report.
+  virtual void SetRtcpXrRrtrStatus(bool enable) OVERRIDE;
+
   // Audio part.
 
   // Set audio packet size, used to determine when it's time to send a DTMF
@@ -324,6 +325,8 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
                                   uint32_t& NTPfrac,
                                   uint32_t& remote_sr);
 
+  virtual bool LastReceivedXrReferenceTimeInfo(RtcpReceiveTimeInfo* info) const;
+
   virtual int32_t BoundingSet(bool& tmmbr_owner, TMMBRSet*& bounding_set_rec);
 
   virtual void BitrateSent(uint32_t* total_rate,
@@ -332,6 +335,8 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
                            uint32_t* nackRate) const OVERRIDE;
 
   virtual uint32_t SendTimeOfSendReport(const uint32_t send_report);
+
+  virtual bool SendTimeOfXrRrReport(uint32_t mid_ntp, int64_t* time_ms) const;
 
   // Good state of RTP receiver inform sender.
   virtual int32_t SendRTCPReferencePictureSelection(

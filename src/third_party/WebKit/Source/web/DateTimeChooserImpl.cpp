@@ -37,15 +37,12 @@
 #include "PickerCommon.h"
 #include "WebViewImpl.h"
 #include "core/html/forms/InputTypeNames.h"
-#include "core/page/FrameView.h"
-#include "core/platform/DateComponents.h"
-#include "core/platform/DateTimeChooserClient.h"
-#include "core/platform/Language.h"
-#include "core/platform/NotImplemented.h"
-#include "core/platform/text/PlatformLocale.h"
+#include "core/frame/FrameView.h"
 #include "core/rendering/RenderTheme.h"
-#include "public/platform/Platform.h"
-#include "public/platform/WebLocalizedString.h"
+#include "platform/DateComponents.h"
+#include "platform/DateTimeChooserClient.h"
+#include "platform/Language.h"
+#include "platform/text/PlatformLocale.h"
 
 #if !ENABLE(CALENDAR_PICKER)
 #error "ENABLE_INPUT_MULTIPLE_FIELDS_UI requires ENABLE_CALENDAR_PICKER in Chromium."
@@ -108,22 +105,21 @@ void DateTimeChooserImpl::writeDocument(WebCore::DocumentWriter& writer)
     String todayLabelString;
     String otherDateLabelString;
     if (m_parameters.type == WebCore::InputTypeNames::month()) {
-        todayLabelString = Platform::current()->queryLocalizedString(WebLocalizedString::ThisMonthButtonLabel);
-        otherDateLabelString = Platform::current()->queryLocalizedString(WebLocalizedString::OtherMonthLabel);
+        todayLabelString = locale().queryString(WebLocalizedString::ThisMonthButtonLabel);
+        otherDateLabelString = locale().queryString(WebLocalizedString::OtherMonthLabel);
     } else if (m_parameters.type == WebCore::InputTypeNames::week()) {
-        todayLabelString = Platform::current()->queryLocalizedString(WebLocalizedString::ThisWeekButtonLabel);
-        otherDateLabelString = Platform::current()->queryLocalizedString(WebLocalizedString::OtherWeekLabel);
+        todayLabelString = locale().queryString(WebLocalizedString::ThisWeekButtonLabel);
+        otherDateLabelString = locale().queryString(WebLocalizedString::OtherWeekLabel);
     } else {
-        todayLabelString = Platform::current()->queryLocalizedString(WebLocalizedString::CalendarToday);
-        otherDateLabelString = Platform::current()->queryLocalizedString(WebLocalizedString::OtherDateLabel);
+        todayLabelString = locale().queryString(WebLocalizedString::CalendarToday);
+        otherDateLabelString = locale().queryString(WebLocalizedString::OtherDateLabel);
     }
 
     addString("<!DOCTYPE html><head><meta charset='UTF-8'><style>\n", writer);
-    writer.addData(WebCore::pickerCommonCss, sizeof(WebCore::pickerCommonCss));
-    writer.addData(WebCore::pickerCommonChromiumCss, sizeof(WebCore::pickerCommonChromiumCss));
-    writer.addData(WebCore::suggestionPickerCss, sizeof(WebCore::suggestionPickerCss));
-    writer.addData(WebCore::calendarPickerCss, sizeof(WebCore::calendarPickerCss));
-    writer.addData(WebCore::calendarPickerChromiumCss, sizeof(WebCore::calendarPickerChromiumCss));
+    writer.addData(pickerCommonCss, sizeof(pickerCommonCss));
+    writer.addData(pickerButtonCss, sizeof(pickerButtonCss));
+    writer.addData(suggestionPickerCss, sizeof(suggestionPickerCss));
+    writer.addData(calendarPickerCss, sizeof(calendarPickerCss));
     addString("</style></head><body><div id=main>Loading...</div><script>\n"
                "window.dialogArguments = {\n", writer);
     addProperty("anchorRectInScreen", anchorRectInScreen, writer);
@@ -135,8 +131,8 @@ void DateTimeChooserImpl::writeDocument(WebCore::DocumentWriter& writer)
     addProperty("currentValue", m_parameters.currentValue, writer);
     addProperty("locale", m_parameters.locale.string(), writer);
     addProperty("todayLabel", todayLabelString, writer);
-    addProperty("clearLabel", Platform::current()->queryLocalizedString(WebLocalizedString::CalendarClear), writer);
-    addProperty("weekLabel", Platform::current()->queryLocalizedString(WebLocalizedString::WeekNumberLabel), writer);
+    addProperty("clearLabel", locale().queryString(WebLocalizedString::CalendarClear), writer);
+    addProperty("weekLabel", locale().queryString(WebLocalizedString::WeekNumberLabel), writer);
     addProperty("weekStartDay", m_locale->firstDayOfWeek(), writer);
     addProperty("shortMonthLabels", m_locale->shortMonthLabels(), writer);
     addProperty("dayLabels", m_locale->weekDayShortLabels(), writer);
@@ -155,9 +151,9 @@ void DateTimeChooserImpl::writeDocument(WebCore::DocumentWriter& writer)
     }
     addString("}\n", writer);
 
-    writer.addData(WebCore::pickerCommonJs, sizeof(WebCore::pickerCommonJs));
-    writer.addData(WebCore::suggestionPickerJs, sizeof(WebCore::suggestionPickerJs));
-    writer.addData(WebCore::calendarPickerJs, sizeof(WebCore::calendarPickerJs));
+    writer.addData(pickerCommonJs, sizeof(pickerCommonJs));
+    writer.addData(suggestionPickerJs, sizeof(suggestionPickerJs));
+    writer.addData(calendarPickerJs, sizeof(calendarPickerJs));
     addString("</script></body>\n", writer);
 }
 

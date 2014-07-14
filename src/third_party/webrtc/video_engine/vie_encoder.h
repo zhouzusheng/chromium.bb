@@ -21,6 +21,7 @@
 #include "webrtc/modules/video_processing/main/interface/video_processing.h"
 #include "webrtc/system_wrappers/interface/scoped_ptr.h"
 #include "webrtc/typedefs.h"
+#include "webrtc/frame_callback.h"
 #include "webrtc/video_engine/vie_defines.h"
 #include "webrtc/video_engine/vie_frame_provider_base.h"
 
@@ -162,6 +163,15 @@ class ViEEncoder
   // Disables recording of debugging information.
   virtual int StopDebugRecording();
 
+  // Enables AutoMuter to turn off video when the rate drops below
+  // |threshold_bps|, and turns back on when the rate goes back up above
+  // |threshold_bps| + |window_bps|.
+  virtual void EnableAutoMuting();
+
+  // New-style callback, used by VideoSendStream.
+  void RegisterPreEncodeCallback(I420FrameCallback* pre_encode_callback);
+  void DeRegisterPreEncodeCallback();
+
   int channel_id() const { return channel_id_; }
  protected:
   // Called by BitrateObserver.
@@ -173,7 +183,6 @@ class ViEEncoder
   bool TimeToSendPacket(uint32_t ssrc, uint16_t sequence_number,
                         int64_t capture_time_ms);
   int TimeToSendPadding(int bytes);
-
  private:
   bool EncoderPaused() const;
 
@@ -192,6 +201,7 @@ class ViEEncoder
 
   BitrateController* bitrate_controller_;
 
+  int64_t time_of_last_incoming_frame_ms_;
   bool send_padding_;
   int target_delay_ms_;
   bool network_is_transmitting_;
@@ -216,6 +226,8 @@ class ViEEncoder
 
   // Quality modes callback
   QMVideoSettingsCallback* qm_callback_;
+  bool video_auto_muted_;
+  I420FrameCallback* pre_encode_callback_;
 };
 
 }  // namespace webrtc

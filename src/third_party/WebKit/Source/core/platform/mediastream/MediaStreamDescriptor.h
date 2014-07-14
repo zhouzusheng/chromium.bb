@@ -49,7 +49,7 @@ public:
     virtual void removeRemoteTrack(MediaStreamComponent*) = 0;
 };
 
-class MediaStreamDescriptor : public RefCounted<MediaStreamDescriptor> {
+class MediaStreamDescriptor FINAL : public RefCounted<MediaStreamDescriptor> {
 public:
     class ExtraData : public RefCounted<ExtraData> {
     public:
@@ -59,6 +59,8 @@ public:
     static PassRefPtr<MediaStreamDescriptor> create(const MediaStreamSourceVector& audioSources, const MediaStreamSourceVector& videoSources);
 
     static PassRefPtr<MediaStreamDescriptor> create(const String& id, const MediaStreamComponentVector& audioComponents, const MediaStreamComponentVector& videoComponents);
+
+    ~MediaStreamDescriptor();
 
     MediaStreamDescriptorClient* client() const { return m_client; }
     void setClient(MediaStreamDescriptorClient* client) { m_client = client; }

@@ -106,17 +106,17 @@ bool HTMLContentElement::validateSelect() const
     return true;
 }
 
-static inline bool checkOneSelector(const CSSSelector* selector, const Vector<Node*>& siblings, int nth)
+static inline bool checkOneSelector(const CSSSelector* selector, const Vector<Node*, 32>& siblings, int nth)
 {
     Element* element = toElement(siblings[nth]);
-    SelectorChecker selectorChecker(element->document(), SelectorChecker::CollectingRules);
+    SelectorChecker selectorChecker(element->document(), SelectorChecker::CollectingCSSRules);
     SelectorChecker::SelectorCheckingContext context(selector, element, SelectorChecker::VisitedMatchEnabled);
     ShadowDOMSiblingTraversalStrategy strategy(siblings, nth);
     PseudoId ignoreDynamicPseudo = NOPSEUDO;
     return selectorChecker.match(context, ignoreDynamicPseudo, strategy) == SelectorChecker::SelectorMatches;
 }
 
-bool HTMLContentElement::matchSelector(const Vector<Node*>& siblings, int nth) const
+bool HTMLContentElement::matchSelector(const Vector<Node*, 32>& siblings, int nth) const
 {
     for (const CSSSelector* selector = selectorList().first(); selector; selector = CSSSelectorList::next(selector)) {
         if (checkOneSelector(selector, siblings, nth))

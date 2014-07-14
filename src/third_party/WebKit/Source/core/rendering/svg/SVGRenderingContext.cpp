@@ -26,8 +26,8 @@
 
 #include "core/rendering/svg/SVGRenderingContext.h"
 
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/svg/RenderSVGImage.h"
@@ -226,7 +226,9 @@ void SVGRenderingContext::calculateTransformationToOutermostCoordinateSystem(con
             absoluteTransform = layerTransform->toAffineTransform() * absoluteTransform;
 
         // We can stop at compositing layers, to match the backing resolution.
-        if (layer->isComposited())
+        // FIXME: should we be computing the transform to the nearest composited layer,
+        // or the nearest composited layer that does not paint into its ancestor?
+        if (layer->compositedLayerMapping())
             break;
 
         layer = layer->parent();

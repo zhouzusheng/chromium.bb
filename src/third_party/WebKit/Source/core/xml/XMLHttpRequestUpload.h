@@ -27,8 +27,8 @@
 #define XMLHttpRequestUpload_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/EventNames.h"
+#include "core/events/EventListener.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/xml/XMLHttpRequest.h"
 #include "core/xml/XMLHttpRequestEventTarget.h"
 #include "wtf/Forward.h"
@@ -41,7 +41,7 @@
 
 namespace WebCore {
 
-class ScriptExecutionContext;
+class ExecutionContext;
 class XMLHttpRequest;
 
 class XMLHttpRequestUpload : public ScriptWrappable, public XMLHttpRequestEventTarget {
@@ -56,7 +56,7 @@ public:
     XMLHttpRequest* xmlHttpRequest() const { return m_xmlHttpRequest; }
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ScriptExecutionContext* scriptExecutionContext() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE;
 
     void dispatchEventAndLoadEnd(PassRefPtr<Event>);
 

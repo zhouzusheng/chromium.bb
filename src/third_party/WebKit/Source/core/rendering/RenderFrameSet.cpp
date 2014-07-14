@@ -25,14 +25,15 @@
 #include "core/rendering/RenderFrameSet.h"
 
 #include "core/dom/Document.h"
-#include "core/dom/EventNames.h"
-#include "core/dom/MouseEvent.h"
+#include "core/events/MouseEvent.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/html/HTMLDimension.h"
 #include "core/html/HTMLFrameSetElement.h"
 #include "core/page/EventHandler.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/platform/Cursor.h"
 #include "core/platform/graphics/GraphicsContext.h"
+#include "core/rendering/GraphicsContextAnnotator.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderFrame.h"
 #include "core/rendering/RenderView.h"
@@ -562,7 +563,7 @@ bool RenderFrameSet::userResize(MouseEvent* evt)
     if (!m_isResizing) {
         if (needsLayout())
             return false;
-        if (evt->type() == eventNames().mousedownEvent && evt->button() == LeftButton) {
+        if (evt->type() == EventTypeNames::mousedown && evt->button() == LeftButton) {
             FloatPoint localPos = absoluteToLocal(evt->absoluteLocation(), UseTransforms);
             startResizing(m_cols, localPos.x());
             startResizing(m_rows, localPos.y());
@@ -572,11 +573,11 @@ bool RenderFrameSet::userResize(MouseEvent* evt)
             }
         }
     } else {
-        if (evt->type() == eventNames().mousemoveEvent || (evt->type() == eventNames().mouseupEvent && evt->button() == LeftButton)) {
+        if (evt->type() == EventTypeNames::mousemove || (evt->type() == EventTypeNames::mouseup && evt->button() == LeftButton)) {
             FloatPoint localPos = absoluteToLocal(evt->absoluteLocation(), UseTransforms);
             continueResizing(m_cols, localPos.x());
             continueResizing(m_rows, localPos.y());
-            if (evt->type() == eventNames().mouseupEvent && evt->button() == LeftButton) {
+            if (evt->type() == EventTypeNames::mouseup && evt->button() == LeftButton) {
                 setIsResizing(false);
                 return true;
             }
@@ -594,7 +595,7 @@ void RenderFrameSet::setIsResizing(bool isResizing)
             toRenderFrameSet(ancestor)->m_isChildResizing = isResizing;
     }
     if (Frame* frame = this->frame())
-        frame->eventHandler()->setResizingFrameSet(isResizing ? frameSet() : 0);
+        frame->eventHandler().setResizingFrameSet(isResizing ? frameSet() : 0);
 }
 
 bool RenderFrameSet::isResizingRow() const

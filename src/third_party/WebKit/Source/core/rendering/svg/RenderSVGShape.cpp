@@ -29,8 +29,8 @@
 
 #include "core/rendering/svg/RenderSVGShape.h"
 
-#include "core/platform/graphics/FloatPoint.h"
 #include "core/platform/graphics/GraphicsContextStateSaver.h"
+#include "core/rendering/GraphicsContextAnnotator.h"
 #include "core/rendering/HitTestRequest.h"
 #include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/PointerEventsHitRules.h"
@@ -41,6 +41,7 @@
 #include "core/rendering/svg/SVGResources.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
 #include "core/svg/SVGGraphicsElement.h"
+#include "platform/geometry/FloatPoint.h"
 #include "wtf/MathExtras.h"
 
 namespace WebCore {
@@ -405,6 +406,8 @@ FloatRect RenderSVGShape::calculateStrokeBoundingBox() const
 void RenderSVGShape::updateRepaintBoundingBox()
 {
     m_repaintBoundingBox = strokeBoundingBox();
+    if (strokeWidth() < 1.0f)
+        m_repaintBoundingBox.inflate(1);
     SVGRenderSupport::intersectRepaintRectWithResources(this, m_repaintBoundingBox);
 }
 

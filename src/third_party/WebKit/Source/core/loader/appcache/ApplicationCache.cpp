@@ -29,13 +29,13 @@
 #include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/EventNames.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/events/EventListener.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 
 namespace WebCore {
 
@@ -57,9 +57,9 @@ void ApplicationCache::willDestroyGlobalObjectInFrame()
 
 ApplicationCacheHost* ApplicationCache::applicationCacheHost() const
 {
-    if (!m_frame || !m_frame->loader()->documentLoader())
+    if (!m_frame || !m_frame->loader().documentLoader())
         return 0;
-    return m_frame->loader()->documentLoader()->applicationCacheHost();
+    return m_frame->loader().documentLoader()->applicationCacheHost();
 }
 
 unsigned short ApplicationCache::status() const
@@ -93,10 +93,10 @@ void ApplicationCache::abort()
 
 const AtomicString& ApplicationCache::interfaceName() const
 {
-    return eventNames().interfaceForApplicationCache;
+    return EventTargetNames::ApplicationCache;
 }
 
-ScriptExecutionContext* ApplicationCache::scriptExecutionContext() const
+ExecutionContext* ApplicationCache::executionContext() const
 {
     if (m_frame)
         return m_frame->document();
@@ -107,34 +107,24 @@ const AtomicString& ApplicationCache::toEventType(ApplicationCacheHost::EventID 
 {
     switch (id) {
     case ApplicationCacheHost::CHECKING_EVENT:
-        return eventNames().checkingEvent;
+        return EventTypeNames::checking;
     case ApplicationCacheHost::ERROR_EVENT:
-        return eventNames().errorEvent;
+        return EventTypeNames::error;
     case ApplicationCacheHost::NOUPDATE_EVENT:
-        return eventNames().noupdateEvent;
+        return EventTypeNames::noupdate;
     case ApplicationCacheHost::DOWNLOADING_EVENT:
-        return eventNames().downloadingEvent;
+        return EventTypeNames::downloading;
     case ApplicationCacheHost::PROGRESS_EVENT:
-        return eventNames().progressEvent;
+        return EventTypeNames::progress;
     case ApplicationCacheHost::UPDATEREADY_EVENT:
-        return eventNames().updatereadyEvent;
+        return EventTypeNames::updateready;
     case ApplicationCacheHost::CACHED_EVENT:
-        return eventNames().cachedEvent;
+        return EventTypeNames::cached;
     case ApplicationCacheHost::OBSOLETE_EVENT:
-        return eventNames().obsoleteEvent;
+        return EventTypeNames::obsolete;
     }
     ASSERT_NOT_REACHED();
-    return eventNames().errorEvent;
-}
-
-EventTargetData* ApplicationCache::eventTargetData()
-{
-    return &m_eventTargetData;
-}
-
-EventTargetData* ApplicationCache::ensureEventTargetData()
-{
-    return &m_eventTargetData;
+    return EventTypeNames::error;
 }
 
 } // namespace WebCore

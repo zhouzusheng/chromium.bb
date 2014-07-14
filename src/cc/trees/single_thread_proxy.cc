@@ -6,6 +6,7 @@
 
 #include "base/auto_reset.h"
 #include "base/debug/trace_event.h"
+#include "cc/debug/benchmark_instrumentation.h"
 #include "cc/output/context_provider.h"
 #include "cc/output/output_surface.h"
 #include "cc/quads/draw_quad.h"
@@ -14,6 +15,7 @@
 #include "cc/trees/blocking_task_runner.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_impl.h"
+#include "ui/gfx/frame_time.h"
 
 namespace cc {
 
@@ -58,7 +60,7 @@ bool SingleThreadProxy::CompositeAndReadback(void* pixels, gfx::Rect rect) {
   gfx::Rect device_viewport_damage_rect = rect;
 
   LayerTreeHostImpl::FrameData frame;
-  if (!CommitAndComposite(base::TimeTicks::Now(),
+  if (!CommitAndComposite(gfx::FrameTime::Now(),
                           device_viewport_damage_rect,
                           true,  // for_readback
                           &frame))
@@ -117,8 +119,9 @@ void SingleThreadProxy::CreateAndInitializeOutputSurface() {
   scoped_refptr<cc::ContextProvider> offscreen_context_provider;
   if (created_offscreen_context_provider_) {
     offscreen_context_provider =
-        layer_tree_host_->client()->OffscreenContextProviderForMainThread();
-    if (!offscreen_context_provider.get()) {
+        layer_tree_host_->client()->OffscreenContextProvider();
+    if (!offscreen_context_provider.get() ||
+        !offscreen_context_provider->BindToCurrentThread()) {
       OnOutputSurfaceInitializeAttempted(false);
       return;
     }
@@ -190,10 +193,6 @@ void SingleThreadProxy::DoCommit(scoped_ptr<ResourceUpdateQueue> queue) {
     // to receive its callbacks before that.
     BlockingTaskRunner::CapturePostTasks blocked;
 
-    RenderingStatsInstrumentation* stats_instrumentation =
-        layer_tree_host_->rendering_stats_instrumentation();
-    base::TimeTicks start_time = stats_instrumentation->StartRecording();
-
     layer_tree_host_impl_->BeginCommit();
 
     if (layer_tree_host_->contents_texture_manager()) {
@@ -226,9 +225,10 @@ void SingleThreadProxy::DoCommit(scoped_ptr<ResourceUpdateQueue> queue) {
     DCHECK_EQ(1.f, scroll_info->page_scale_delta);
 #endif
 
-    base::TimeDelta duration = stats_instrumentation->EndRecording(start_time);
-    stats_instrumentation->AddCommit(duration);
-    stats_instrumentation->IssueTraceEventForMainThreadStats();
+    RenderingStatsInstrumentation* stats_instrumentation =
+        layer_tree_host_->rendering_stats_instrumentation();
+    BenchmarkInstrumentation::IssueMainThreadRenderingStatsEvent(
+        stats_instrumentation->main_thread_rendering_stats());
     stats_instrumentation->AccumulateAndClearMainThreadStats();
   }
   layer_tree_host_->CommitComplete();
@@ -254,6 +254,8 @@ void SingleThreadProxy::SetDeferCommits(bool defer_commits) {
 }
 
 bool SingleThreadProxy::CommitRequested() const { return false; }
+
+bool SingleThreadProxy::BeginMainFrameRequested() const { return false; }
 
 size_t SingleThreadProxy::MaxPartialTextureUpdates() const {
   return std::numeric_limits<size_t>::max();
@@ -323,14 +325,11 @@ bool SingleThreadProxy::ReduceContentsTextureMemoryOnImplThread(
   DCHECK(IsImplThread());
   if (!layer_tree_host_->contents_texture_manager())
     return false;
+  if (!layer_tree_host_impl_->resource_provider())
+    return false;
 
   return layer_tree_host_->contents_texture_manager()->ReduceMemoryOnImplThread(
       limit_bytes, priority_cutoff, layer_tree_host_impl_->resource_provider());
-}
-
-void SingleThreadProxy::ReduceWastedContentsTextureMemoryOnImplThread() {
-  // Impl-side painting only.
-  NOTREACHED();
 }
 
 void SingleThreadProxy::SendManagedMemoryStats() {
@@ -420,15 +419,6 @@ bool SingleThreadProxy::CommitAndComposite(
 
   layer_tree_host_->AnimateLayers(frame_begin_time);
 
-  scoped_refptr<cc::ContextProvider> offscreen_context_provider;
-  if (renderer_capabilities_for_main_thread_.using_offscreen_context3d &&
-      layer_tree_host_->needs_offscreen_context()) {
-    offscreen_context_provider =
-        layer_tree_host_->client()->OffscreenContextProviderForMainThread();
-    if (offscreen_context_provider.get())
-      created_offscreen_context_provider_ = true;
-  }
-
   if (layer_tree_host_->contents_texture_manager()) {
     layer_tree_host_->contents_texture_manager()
         ->UnlinkAndClearEvictedBackings();
@@ -443,13 +433,27 @@ bool SingleThreadProxy::CommitAndComposite(
   layer_tree_host_->UpdateLayers(queue.get());
 
   layer_tree_host_->WillCommit();
+
+  scoped_refptr<cc::ContextProvider> offscreen_context_provider;
+  if (renderer_capabilities_for_main_thread_.using_offscreen_context3d &&
+      layer_tree_host_->needs_offscreen_context()) {
+    offscreen_context_provider =
+        layer_tree_host_->client()->OffscreenContextProvider();
+    if (offscreen_context_provider.get() &&
+        !offscreen_context_provider->BindToCurrentThread())
+      offscreen_context_provider = NULL;
+
+    if (offscreen_context_provider.get())
+      created_offscreen_context_provider_ = true;
+  }
+
   DoCommit(queue.Pass());
   bool result = DoComposite(offscreen_context_provider,
                             frame_begin_time,
                             device_viewport_damage_rect,
                             for_readback,
                             frame);
-  layer_tree_host_->DidBeginFrame();
+  layer_tree_host_->DidBeginMainFrame();
   return result;
 }
 

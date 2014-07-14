@@ -27,7 +27,7 @@ namespace {
 void WriteObjectsOnUIThread(ui::Clipboard::ObjectMap* objects) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   static ui::Clipboard* clipboard = ui::Clipboard::GetForCurrentThread();
-  clipboard->WriteObjects(ui::Clipboard::BUFFER_STANDARD, *objects);
+  clipboard->WriteObjects(ui::CLIPBOARD_TYPE_COPY_PASTE, *objects);
 }
 
 }  // namespace
@@ -94,7 +94,9 @@ void ClipboardMessageFilter::OnWriteObjectsSync(
   DCHECK(base::SharedMemory::IsHandleValid(bitmap_handle))
       << "Bad bitmap handle";
   // Splice the shared memory handle into the clipboard data.
-  ui::Clipboard::ReplaceSharedMemHandle(&objects, bitmap_handle, PeerHandle());
+  if (!ui::Clipboard::ReplaceSharedMemHandle(
+           &objects, bitmap_handle, PeerHandle()))
+    return;
 #if defined(OS_WIN)
   // We cannot write directly from the IO thread, and cannot service the IPC
   // on the UI thread. We'll copy the relevant data and get a handle to any
@@ -108,7 +110,7 @@ void ClipboardMessageFilter::OnWriteObjectsSync(
       FROM_HERE,
       base::Bind(&WriteObjectsOnUIThread, base::Owned(long_living_objects)));
 #else
-  GetClipboard()->WriteObjects(ui::Clipboard::BUFFER_STANDARD, objects);
+  GetClipboard()->WriteObjects(ui::CLIPBOARD_TYPE_COPY_PASTE, objects);
 #endif
 }
 
@@ -131,58 +133,61 @@ void ClipboardMessageFilter::OnWriteObjectsAsync(
           &WriteObjectsOnUIThread, base::Owned(sanitized_objects.release())));
 #else
   GetClipboard()->WriteObjects(
-      ui::Clipboard::BUFFER_STANDARD, *sanitized_objects.get());
+      ui::CLIPBOARD_TYPE_COPY_PASTE, *sanitized_objects.get());
 #endif
 }
 
-void ClipboardMessageFilter::OnGetSequenceNumber(
-    ui::Clipboard::Buffer buffer, uint64* sequence_number) {
-  *sequence_number = GetClipboard()->GetSequenceNumber(buffer);
+void ClipboardMessageFilter::OnGetSequenceNumber(ui::ClipboardType type,
+                                                 uint64* sequence_number) {
+  *sequence_number = GetClipboard()->GetSequenceNumber(type);
 }
 
-void ClipboardMessageFilter::OnReadAvailableTypes(
-    ui::Clipboard::Buffer buffer, std::vector<string16>* types,
-    bool* contains_filenames) {
-  GetClipboard()->ReadAvailableTypes(buffer, types, contains_filenames);
+void ClipboardMessageFilter::OnReadAvailableTypes(ui::ClipboardType type,
+                                                  std::vector<string16>* types,
+                                                  bool* contains_filenames) {
+  GetClipboard()->ReadAvailableTypes(type, types, contains_filenames);
 }
 
 void ClipboardMessageFilter::OnIsFormatAvailable(
-    const ui::Clipboard::FormatType& format, ui::Clipboard::Buffer buffer,
+    const ui::Clipboard::FormatType& format,
+    ui::ClipboardType type,
     bool* result) {
-  *result = GetClipboard()->IsFormatAvailable(format, buffer);
+  *result = GetClipboard()->IsFormatAvailable(format, type);
 }
 
-void ClipboardMessageFilter::OnClear(ui::Clipboard::Buffer buffer) {
-  GetClipboard()->Clear(buffer);
+void ClipboardMessageFilter::OnClear(ui::ClipboardType type) {
+  GetClipboard()->Clear(type);
 }
 
-void ClipboardMessageFilter::OnReadText(
-    ui::Clipboard::Buffer buffer, string16* result) {
-  GetClipboard()->ReadText(buffer, result);
+void ClipboardMessageFilter::OnReadText(ui::ClipboardType type,
+                                        string16* result) {
+  GetClipboard()->ReadText(type, result);
 }
 
-void ClipboardMessageFilter::OnReadAsciiText(
-    ui::Clipboard::Buffer buffer, std::string* result) {
-  GetClipboard()->ReadAsciiText(buffer, result);
+void ClipboardMessageFilter::OnReadAsciiText(ui::ClipboardType type,
+                                             std::string* result) {
+  GetClipboard()->ReadAsciiText(type, result);
 }
 
-void ClipboardMessageFilter::OnReadHTML(
-    ui::Clipboard::Buffer buffer, string16* markup, GURL* url,
-    uint32* fragment_start, uint32* fragment_end) {
+void ClipboardMessageFilter::OnReadHTML(ui::ClipboardType type,
+                                        string16* markup,
+                                        GURL* url,
+                                        uint32* fragment_start,
+                                        uint32* fragment_end) {
   std::string src_url_str;
-  GetClipboard()->ReadHTML(buffer, markup, &src_url_str, fragment_start,
+  GetClipboard()->ReadHTML(type, markup, &src_url_str, fragment_start,
                            fragment_end);
   *url = GURL(src_url_str);
 }
 
-void ClipboardMessageFilter::OnReadRTF(
-    ui::Clipboard::Buffer buffer, std::string* result) {
-  GetClipboard()->ReadRTF(buffer, result);
+void ClipboardMessageFilter::OnReadRTF(ui::ClipboardType type,
+                                       std::string* result) {
+  GetClipboard()->ReadRTF(type, result);
 }
 
-void ClipboardMessageFilter::OnReadImage(
-    ui::Clipboard::Buffer buffer, IPC::Message* reply_msg) {
-  SkBitmap bitmap = GetClipboard()->ReadImage(buffer);
+void ClipboardMessageFilter::OnReadImage(ui::ClipboardType type,
+                                         IPC::Message* reply_msg) {
+  SkBitmap bitmap = GetClipboard()->ReadImage(type);
 
 #if defined(USE_X11)
   BrowserThread::PostTask(
@@ -215,9 +220,10 @@ void ClipboardMessageFilter::OnReadImageReply(
   Send(reply_msg);
 }
 
-void ClipboardMessageFilter::OnReadCustomData(
-    ui::Clipboard::Buffer buffer, const string16& type, string16* result) {
-  GetClipboard()->ReadCustomData(buffer, type, result);
+void ClipboardMessageFilter::OnReadCustomData(ui::ClipboardType clipboard_type,
+                                              const string16& type,
+                                              string16* result) {
+  GetClipboard()->ReadCustomData(clipboard_type, type, result);
 }
 
 void ClipboardMessageFilter::OnReadData(const ui::Clipboard::FormatType& format,

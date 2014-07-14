@@ -30,14 +30,14 @@
 #include "config.h"
 #include "core/rendering/shapes/Shape.h"
 
-#include "core/css/LengthFunctions.h"
 #include "core/fetch/ImageResource.h"
-#include "core/platform/graphics/FloatSize.h"
 #include "core/platform/graphics/ImageBuffer.h"
-#include "core/platform/graphics/WindRule.h"
 #include "core/rendering/shapes/PolygonShape.h"
 #include "core/rendering/shapes/RasterShape.h"
 #include "core/rendering/shapes/RectangleShape.h"
+#include "platform/LengthFunctions.h"
+#include "platform/geometry/FloatSize.h"
+#include "platform/graphics/WindRule.h"
 #include "wtf/MathExtras.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -135,7 +135,11 @@ PassOwnPtr<Shape> Shape::createShape(const BasicShape* basicShape, const LayoutS
         const BasicShapeCircle* circle = static_cast<const BasicShapeCircle*>(basicShape);
         float centerX = floatValueForLength(circle->centerX(), boxWidth);
         float centerY = floatValueForLength(circle->centerY(), boxHeight);
-        float radius = floatValueForLength(circle->radius(), std::min(boxHeight, boxWidth));
+        // This method of computing the radius is as defined in SVG
+        // (http://www.w3.org/TR/SVG/coords.html#Units). It bases the radius
+        // off of the diagonal of the box and ensures that if the box is
+        // square, the radius is equal to half the diagonal.
+        float radius = floatValueForLength(circle->radius(), sqrtf((boxWidth * boxWidth + boxHeight * boxHeight) / 2));
         FloatPoint logicalCenter = physicalPointToLogical(FloatPoint(centerX, centerY), logicalBoxSize.height(), writingMode);
 
         shape = createCircleShape(logicalCenter, radius);
@@ -236,7 +240,7 @@ PassOwnPtr<Shape> Shape::createShape(const StyleImage* styleImage, float thresho
         }
     }
 
-    OwnPtr<RasterShape> rasterShape = adoptPtr(new RasterShape(intervals.release()));
+    OwnPtr<RasterShape> rasterShape = adoptPtr(new RasterShape(intervals.release(), imageSize));
     rasterShape->m_writingMode = writingMode;
     rasterShape->m_margin = floatValueForLength(margin, 0);
     rasterShape->m_padding = floatValueForLength(padding, 0);

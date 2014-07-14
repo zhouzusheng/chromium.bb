@@ -311,10 +311,6 @@ IPC_MESSAGE_ROUTED2(ChromeViewMsg_SearchBoxFocusChanged,
                     OmniboxFocusState /* new_focus_state */,
                     OmniboxFocusChangeReason /* reason */)
 
-IPC_MESSAGE_ROUTED2(ChromeViewMsg_SearchBoxFontInformation,
-                    string16 /* omnibox_font */,
-                    size_t /* omnibox_font_size */)
-
 IPC_MESSAGE_ROUTED2(ChromeViewMsg_SearchBoxMarginChange,
                     int /* start */,
                     int /* width */)
@@ -336,6 +332,10 @@ IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxSubmit,
 
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxThemeChanged,
                     ThemeBackgroundInfo /* value */)
+
+IPC_MESSAGE_ROUTED2(ChromeViewMsg_ChromeIdentityCheckResult,
+                    string16 /* identity */,
+                    bool /* identity_match */)
 
 IPC_MESSAGE_ROUTED0(ChromeViewMsg_SearchBoxToggleVoiceSearch)
 
@@ -379,10 +379,6 @@ IPC_MESSAGE_ROUTED1(ChromeViewMsg_AddStrictSecurityHost,
 // Sent when the profile changes the kSafeBrowsingEnabled preference.
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_SetClientSidePhishingDetection,
                     bool /* enable_phishing_detection */)
-
-// This message asks frame sniffer start.
-IPC_MESSAGE_ROUTED1(ChromeViewMsg_StartFrameSniffer,
-                    string16 /* frame-name */)
 
 // Asks the renderer for a thumbnail of the image selected by the most
 // recently opened context menu, if there is one. If the image's area
@@ -511,10 +507,15 @@ IPC_SYNC_MESSAGE_CONTROL4_1(ChromeViewHostMsg_GetPluginInfo,
 // Returns whether any internal plugin supporting |mime_type| is registered
 // Does not determine whether the plugin can actually be instantiated
 // (e.g. whether it is allowed or has all its dependencies).
-IPC_SYNC_MESSAGE_CONTROL1_1(
+// When the returned *|is_registered| is true, |additional_param_names| and
+// |additional_param_values| contain the name-value pairs, if any, specified
+// for the *first* plugin found that is registered for |mime_type|.
+IPC_SYNC_MESSAGE_CONTROL1_3(
     ChromeViewHostMsg_IsInternalPluginRegisteredForMimeType,
     std::string /* mime_type */,
-    bool /* registered */)
+    bool /* registered */,
+    std::vector<base::string16> /* additional_param_names */,
+    std::vector<base::string16> /* additional_param_values */)
 
 #if defined(ENABLE_PLUGIN_INSTALLATION)
 // Tells the browser to search for a plug-in that can handle the given MIME
@@ -665,12 +666,6 @@ IPC_MESSAGE_ROUTED4(ChromeViewHostMsg_DidRetrieveWebappInformation,
                     GURL /* expected_url */)
 #endif  // defined(OS_ANDROID)
 
-// Message sent from renderer to the browser when the element that is focused
-// has been touched. A bool is passed in this message which indicates if the
-// node is editable.
-IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_FocusedNodeTouched,
-                    bool /* editable */)
-
 // The currently displayed PDF has an unsupported feature.
 IPC_MESSAGE_ROUTED0(ChromeViewHostMsg_PDFHasUnsupportedFeature)
 
@@ -721,6 +716,11 @@ IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_LogEvent,
                     int /* page_id */,
                     NTPLoggingEventType /* event */)
 
+// The Instant page asks for Chrome identity check against |identity|.
+IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_ChromeIdentityCheck,
+                    int /* page_id */,
+                    string16 /* identity */)
+
 // Tells InstantExtended to set the omnibox focus state.
 IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_FocusOmnibox,
                     int /* page_id */,
@@ -744,14 +744,13 @@ IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_SearchBoxDeleteMostVisitedItem,
                     int /* page_id */,
                     GURL /* url */)
 
-// Tells InstantExtended to navigate the active tab to a possibly priveleged
+// Tells InstantExtended to navigate the active tab to a possibly privileged
 // URL.
-IPC_MESSAGE_ROUTED5(ChromeViewHostMsg_SearchBoxNavigate,
+IPC_MESSAGE_ROUTED4(ChromeViewHostMsg_SearchBoxNavigate,
                     int /* page_id */,
                     GURL /* destination */,
-                    content::PageTransition /* transition */,
                     WindowOpenDisposition /* disposition */,
-                    bool /* is_search_type */)
+                    bool /*is_most_visited_item_url*/)
 
 // Tells InstantExtended to undo all most visited item deletions.
 IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_SearchBoxUndoAllMostVisitedDeletions,
@@ -766,6 +765,12 @@ IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_SearchBoxUndoMostVisitedDeletion,
 IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_SetVoiceSearchSupported,
                     int /* page_id */,
                     bool /* supported */)
+
+// Tells the renderer a list of URLs which should be bounced back to the browser
+// process so that they can be assigned to an Instant renderer.
+IPC_MESSAGE_CONTROL2(ChromeViewMsg_SetSearchURLs,
+                     std::vector<GURL> /* search_urls */,
+                     GURL /* new_tab_page_url */)
 
 // Tells listeners that a detailed message was reported to the console by
 // WebKit.

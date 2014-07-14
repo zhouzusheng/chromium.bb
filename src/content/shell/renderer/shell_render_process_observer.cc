@@ -97,6 +97,13 @@ void ShellRenderProcessObserver::WebKitInitialized() {
 #endif
 }
 
+void ShellRenderProcessObserver::OnRenderProcessShutdown() {
+  // SHEZ: Remove test-only code
+#if 0
+  test_interfaces_.reset();
+#endif
+}
+
 bool ShellRenderProcessObserver::OnControlMessageReceived(
     const IPC::Message& message) {
   bool handled = true;

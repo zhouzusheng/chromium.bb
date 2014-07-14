@@ -34,26 +34,29 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/ExecutionContext.h"
 #include "core/dom/MessageChannel.h"
 #include "core/dom/MessagePort.h"
-#include "core/dom/ScriptExecutionContext.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/page/Page.h"
 #include "core/page/UseCounter.h"
-#include "core/workers/SharedWorkerRepository.h"
+#include "core/workers/SharedWorkerRepositoryClient.h"
 #include "weborigin/KURL.h"
 #include "weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
-inline SharedWorker::SharedWorker(ScriptExecutionContext* context)
+inline SharedWorker::SharedWorker(ExecutionContext* context)
     : AbstractWorker(context)
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SharedWorker> SharedWorker::create(ScriptExecutionContext* context, const String& url, const String& name, ExceptionState& es)
+PassRefPtr<SharedWorker> SharedWorker::create(ExecutionContext* context, const String& url, const String& name, ExceptionState& es)
 {
     ASSERT(isMainThread());
+    ASSERT_WITH_SECURITY_IMPLICATION(context->isDocument());
+
     UseCounter::count(toDocument(context)->domWindow(), UseCounter::SharedWorkerStart);
 
     RefPtr<SharedWorker> worker = adoptRef(new SharedWorker(context));
@@ -66,7 +69,6 @@ PassRefPtr<SharedWorker> SharedWorker::create(ScriptExecutionContext* context, c
     worker->suspendIfNeeded();
 
     // We don't currently support nested workers, so workers can only be created from documents.
-    ASSERT_WITH_SECURITY_IMPLICATION(context->isDocument());
     Document* document = toDocument(context);
     if (!document->securityOrigin()->canAccessSharedWorkers()) {
         es.throwSecurityError("Failed to create 'SharedWorker': access to shared workers is denied to origin '" + document->securityOrigin()->toString() + "'.");
@@ -77,7 +79,8 @@ PassRefPtr<SharedWorker> SharedWorker::create(ScriptExecutionContext* context, c
     if (scriptURL.isEmpty())
         return 0;
 
-    SharedWorkerRepository::connect(worker.get(), remotePort.release(), scriptURL, name, es);
+    if (document->page() && document->page()->sharedWorkerRepositoryClient())
+        document->page()->sharedWorkerRepositoryClient()->connect(worker.get(), remotePort.release(), scriptURL, name, es);
 
     return worker.release();
 }
@@ -88,7 +91,7 @@ SharedWorker::~SharedWorker()
 
 const AtomicString& SharedWorker::interfaceName() const
 {
-    return eventNames().interfaceForSharedWorker;
+    return EventTargetNames::SharedWorker;
 }
 
 } // namespace WebCore

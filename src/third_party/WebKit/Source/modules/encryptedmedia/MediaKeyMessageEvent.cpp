@@ -29,7 +29,7 @@
 
 #include "modules/encryptedmedia/MediaKeyMessageEvent.h"
 
-#include "core/dom/EventNames.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "wtf/Uint8Array.h"
 
 namespace WebCore {
@@ -57,7 +57,7 @@ MediaKeyMessageEvent::~MediaKeyMessageEvent()
 
 const AtomicString& MediaKeyMessageEvent::interfaceName() const
 {
-    return eventNames().interfaceForMediaKeyMessageEvent;
+    return EventNames::MediaKeyMessageEvent;
 }
 
 } // namespace WebCore

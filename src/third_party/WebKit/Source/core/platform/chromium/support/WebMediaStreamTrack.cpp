@@ -28,15 +28,29 @@
 
 #include "core/platform/mediastream/MediaStreamComponent.h"
 #include "core/platform/mediastream/MediaStreamSource.h"
+#include "public/platform/WebAudioSourceProvider.h"
 #include "public/platform/WebMediaStream.h"
 #include "public/platform/WebMediaStreamSource.h"
 #include "public/platform/WebString.h"
-#include "public/web/WebAudioSourceProvider.h"
 #include "wtf/Vector.h"
 
 using namespace WebCore;
 
 namespace WebKit {
+
+namespace {
+
+class ExtraDataContainer : public MediaStreamComponent::ExtraData {
+public:
+    explicit ExtraDataContainer(PassOwnPtr<WebMediaStreamTrack::ExtraData> extraData) : m_extraData(extraData) { }
+
+    WebMediaStreamTrack::ExtraData* extraData() { return m_extraData.get(); }
+
+private:
+    OwnPtr<WebMediaStreamTrack::ExtraData> m_extraData;
+};
+
+} // namespace
 
 WebMediaStreamTrack::WebMediaStreamTrack(PassRefPtr<WebCore::MediaStreamComponent> mediaStreamComponent)
     : m_private(mediaStreamComponent)
@@ -101,6 +115,19 @@ WebMediaStreamSource WebMediaStreamTrack::source() const
 {
     ASSERT(!m_private.isNull());
     return WebMediaStreamSource(m_private->source());
+}
+
+WebMediaStreamTrack::ExtraData* WebMediaStreamTrack::extraData() const
+{
+    RefPtr<MediaStreamComponent::ExtraData> data = m_private->extraData();
+    if (!data)
+        return 0;
+    return static_cast<ExtraDataContainer*>(data.get())->extraData();
+}
+
+void WebMediaStreamTrack::setExtraData(ExtraData* extraData)
+{
+    m_private->setExtraData(adoptRef(new ExtraDataContainer(adoptPtr(extraData))));
 }
 
 void WebMediaStreamTrack::setSourceProvider(WebAudioSourceProvider* provider)

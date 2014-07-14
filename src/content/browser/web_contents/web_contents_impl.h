@@ -15,22 +15,23 @@
 #include "base/observer_list.h"
 #include "base/process/process.h"
 #include "base/values.h"
+#include "content/browser/frame_host/frame_tree.h"
+#include "content/browser/frame_host/navigation_controller_delegate.h"
+#include "content/browser/frame_host/navigation_controller_impl.h"
+#include "content/browser/frame_host/render_view_host_manager.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
-#include "content/browser/web_contents/frame_tree_node.h"
-#include "content/browser/web_contents/navigation_controller_impl.h"
-#include "content/browser/web_contents/render_view_host_manager.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/page_transition_types.h"
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/three_d_api_types.h"
 #include "net/base/load_states.h"
 #include "third_party/WebKit/public/web/WebDragOperation.h"
 #include "ui/gfx/rect_f.h"
 #include "ui/gfx/size.h"
-#include "ui/gfx/vector2d.h"
 #include "webkit/common/resource_type.h"
 
 struct BrowserPluginHostMsg_ResizeGuest_Params;
@@ -77,7 +78,8 @@ class CONTENT_EXPORT WebContentsImpl
       public RenderViewHostDelegate,
       public RenderWidgetHostDelegate,
       public RenderViewHostManager::Delegate,
-      public NotificationObserver {
+      public NotificationObserver,
+      public NON_EXPORTED_BASE(NavigationControllerDelegate) {
  public:
   virtual ~WebContentsImpl();
 
@@ -96,10 +98,6 @@ class CONTENT_EXPORT WebContentsImpl
       int guest_instance_id,
       scoped_ptr<base::DictionaryValue> extra_params);
 
-  // Returns the content specific prefs for the given RVH.
-  static WebPreferences GetWebkitPrefs(
-      RenderViewHost* rvh, const GURL& url);
-
   // Creates a swapped out RenderView. This is used by the browser plugin to
   // create a swapped out RenderView in the embedder render process for the
   // guest, to expose the guest's window object to the embedder.
@@ -112,42 +110,6 @@ class CONTENT_EXPORT WebContentsImpl
 
   // Returns the SavePackage which manages the page saving job. May be NULL.
   SavePackage* save_package() const { return save_package_.get(); }
-
-  // Updates the max page ID for the current SiteInstance in this
-  // WebContentsImpl to be at least |page_id|.
-  void UpdateMaxPageID(int32 page_id);
-
-  // Updates the max page ID for the given SiteInstance in this WebContentsImpl
-  // to be at least |page_id|.
-  void UpdateMaxPageIDForSiteInstance(SiteInstance* site_instance,
-                                      int32 page_id);
-
-  // Copy the current map of SiteInstance ID to max page ID from another tab.
-  // This is necessary when this tab adopts the NavigationEntries from
-  // |web_contents|.
-  void CopyMaxPageIDsFrom(WebContentsImpl* web_contents);
-
-  // Called by the NavigationController to cause the WebContentsImpl to navigate
-  // to the current pending entry. The NavigationController should be called
-  // back with RendererDidNavigate on success or DiscardPendingEntry on failure.
-  // The callbacks can be inside of this function, or at some future time.
-  //
-  // The entry has a PageID of -1 if newly created (corresponding to navigation
-  // to a new URL).
-  //
-  // If this method returns false, then the navigation is discarded (equivalent
-  // to calling DiscardPendingEntry on the NavigationController).
-  bool NavigateToPendingEntry(NavigationController::ReloadType reload_type);
-
-  // Called by InterstitialPageImpl when it creates a RenderViewHost.
-  void RenderViewForInterstitialPageCreated(RenderViewHost* render_view_host);
-
-  // Sets the passed interstitial as the currently showing interstitial.
-  // No interstitial page should already be attached.
-  void AttachInterstitialPage(InterstitialPageImpl* interstitial_page);
-
-  // Unsets the currently showing interstitial.
-  void DetachInterstitialPage();
 
 #if defined(OS_ANDROID)
   JavaBridgeDispatcherHostManager* java_bridge_dispatcher_host_manager() const {
@@ -189,10 +151,6 @@ class CONTENT_EXPORT WebContentsImpl
   // Invoked when visible SSL state (as defined by SSLStatus) changes.
   void DidChangeVisibleSSLState();
 
-  // Invoked before a form repost warning is shown.
-  void NotifyBeforeFormRepostWarningShow();
-
-
   // Informs the render view host and the BrowserPluginEmbedder, if present, of
   // a Drag Source End.
   void DragSourceEndedAt(int client_x, int client_y, int screen_x,
@@ -202,10 +160,6 @@ class CONTENT_EXPORT WebContentsImpl
   // a Drag Source Move.
   void DragSourceMovedTo(int client_x, int client_y,
                          int screen_x, int screen_y);
-
-  FrameTreeNode* GetFrameTreeRootForTesting() {
-    return frame_tree_root_.get();
-  }
 
   // WebContents ------------------------------------------------------
   virtual WebContentsDelegate* GetDelegate() OVERRIDE;
@@ -388,7 +342,9 @@ class CONTENT_EXPORT WebContentsImpl
                               bool user_gesture) OVERRIDE;
   virtual void RequestTransferURL(
       const GURL& url,
+      const std::vector<GURL>& redirect_chain,
       const Referrer& referrer,
+      PageTransition page_transition,
       WindowOpenDisposition disposition,
       int64 source_frame_id,
       const GlobalRequestID& transferred_global_request_id,
@@ -466,6 +422,7 @@ class CONTENT_EXPORT WebContentsImpl
       const MediaResponseCallback& callback) OVERRIDE;
   virtual SessionStorageNamespace* GetSessionStorageNamespace(
       SiteInstance* instance) OVERRIDE;
+  virtual FrameTree* GetFrameTree() OVERRIDE;
 
   // RenderWidgetHostDelegate --------------------------------------------------
 
@@ -495,7 +452,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void UpdateRenderViewSizeForRenderManager() OVERRIDE;
   virtual void CancelModalDialogsForRenderManager() OVERRIDE;
   virtual void NotifySwappedFromRenderManager(
-      RenderViewHost* old_render_view_host) OVERRIDE;
+      RenderViewHost* old_host, RenderViewHost* new_host) OVERRIDE;
   virtual int CreateOpenerRenderViewsForRenderManager(
       SiteInstance* instance) OVERRIDE;
   virtual NavigationControllerImpl&
@@ -513,6 +470,73 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void Observe(int type,
                        const NotificationSource& source,
                        const NotificationDetails& details) OVERRIDE;
+
+  // NavigationControllerDelegate ----------------------------------------------
+
+  virtual WebContents* GetWebContents() OVERRIDE;
+  virtual void NotifyNavigationEntryCommitted(
+      const LoadCommittedDetails& load_details) OVERRIDE;
+
+  // Invoked before a form repost warning is shown.
+  virtual void NotifyBeforeFormRepostWarningShow() OVERRIDE;
+
+  // Activate this WebContents and show a form repost warning.
+  virtual void ActivateAndShowRepostFormWarningDialog() OVERRIDE;
+
+  // Updates the max page ID for the current SiteInstance in this
+  // WebContentsImpl to be at least |page_id|.
+  virtual void UpdateMaxPageID(int32 page_id) OVERRIDE;
+
+  // Updates the max page ID for the given SiteInstance in this WebContentsImpl
+  // to be at least |page_id|.
+  virtual void UpdateMaxPageIDForSiteInstance(SiteInstance* site_instance,
+                                              int32 page_id) OVERRIDE;
+
+  // Copy the current map of SiteInstance ID to max page ID from another tab.
+  // This is necessary when this tab adopts the NavigationEntries from
+  // |web_contents|.
+  virtual void CopyMaxPageIDsFrom(WebContents* web_contents) OVERRIDE;
+
+  // Called by the NavigationController to cause the WebContentsImpl to navigate
+  // to the current pending entry. The NavigationController should be called
+  // back with RendererDidNavigate on success or DiscardPendingEntry on failure.
+  // The callbacks can be inside of this function, or at some future time.
+  //
+  // The entry has a PageID of -1 if newly created (corresponding to navigation
+  // to a new URL).
+  //
+  // If this method returns false, then the navigation is discarded (equivalent
+  // to calling DiscardPendingEntry on the NavigationController).
+  virtual bool NavigateToPendingEntry(
+      NavigationController::ReloadType reload_type) OVERRIDE;
+
+  // Sets the history for this WebContentsImpl to |history_length| entries, and
+  // moves the current page_id to the last entry in the list if it's valid.
+  // This is mainly used when a prerendered page is swapped into the current
+  // tab. The method is virtual for testing.
+  virtual void SetHistoryLengthAndPrune(
+      const SiteInstance* site_instance,
+      int merge_history_length,
+      int32 minimum_page_id) OVERRIDE;
+
+  // Called by InterstitialPageImpl when it creates a RenderViewHost.
+  virtual void RenderViewForInterstitialPageCreated(
+      RenderViewHost* render_view_host) OVERRIDE;
+
+  // Sets the passed interstitial as the currently showing interstitial.
+  // No interstitial page should already be attached.
+  virtual void AttachInterstitialPage(
+      InterstitialPageImpl* interstitial_page) OVERRIDE;
+
+  // Unsets the currently showing interstitial.
+  virtual void DetachInterstitialPage() OVERRIDE;
+
+  // Changes the IsLoading state and notifies the delegate as needed.
+  // |details| is used to provide details on the load that just finished
+  // (but can be null if not applicable).
+  virtual void SetIsLoading(RenderViewHost* render_view_host,
+                            bool is_loading,
+                            LoadNotificationDetails* details) OVERRIDE;
 
 
  private:
@@ -605,7 +629,6 @@ class CONTENT_EXPORT WebContentsImpl
                    const gfx::Rect& selection_rect,
                    int active_match_ordinal,
                    bool final_update);
-  void OnDidProgrammaticallyScroll(const gfx::Vector2d& scroll_point);
 #if defined(OS_ANDROID)
   void OnFindMatchRectsReply(int version,
                              const std::vector<gfx::RectF>& rects,
@@ -613,6 +636,7 @@ class CONTENT_EXPORT WebContentsImpl
 
   void OnOpenDateTimeDialog(
       const ViewHostMsg_DateTimeDialogValue_Params& value);
+  void OnJavaBridgeGetChannelHandle(IPC::Message* reply_msg);
 #endif
   void OnCrashedPlugin(const base::FilePath& plugin_path,
                        base::ProcessId plugin_pid);
@@ -637,21 +661,11 @@ class CONTENT_EXPORT WebContentsImpl
                           const std::vector<gfx::Size>& original_bitmap_sizes);
   void OnUpdateFaviconURL(int32 page_id,
                           const std::vector<FaviconURL>& candidates);
-  void OnFrameAttached(int64 parent_frame_id,
-                       int64 frame_id,
-                       const std::string& frame_name);
-  void OnFrameDetached(int64 parent_frame_id, int64 frame_id);
 
   void OnMediaNotification(int64 player_cookie,
                            bool has_video,
                            bool has_audio,
                            bool is_playing);
-
-  // Changes the IsLoading state and notifies delegate as needed
-  // |details| is used to provide details on the load that just finished
-  // (but can be null if not applicable). Can be overridden.
-  void SetIsLoading(bool is_loading,
-                    LoadNotificationDetails* details);
 
   // Called by derived classes to indicate that we're no longer waiting for a
   // response. This won't actually update the throbber, but it will get picked
@@ -701,15 +715,6 @@ class CONTENT_EXPORT WebContentsImpl
   bool NavigateToEntry(const NavigationEntryImpl& entry,
                        NavigationController::ReloadType reload_type);
 
-  // Sets the history for this WebContentsImpl to |history_length| entries, and
-  // moves the current page_id to the last entry in the list if it's valid.
-  // This is mainly used when a prerendered page is swapped into the current
-  // tab. The method is virtual for testing.
-  virtual void SetHistoryLengthAndPrune(
-      const SiteInstance* site_instance,
-      int merge_history_length,
-      int32 minimum_page_id);
-
   // Recursively creates swapped out RenderViews for this tab's opener chain
   // (including this tab) in the given SiteInstance, allowing other tabs to send
   // cross-process JavaScript calls to their opener(s).  Returns the route ID of
@@ -745,15 +750,12 @@ class CONTENT_EXPORT WebContentsImpl
   // Misc non-view stuff -------------------------------------------------------
 
   // Helper functions for sending notifications.
-  void NotifySwapped(RenderViewHost* old_render_view_host);
+  void NotifySwapped(RenderViewHost* old_host, RenderViewHost* new_host);
   void NotifyDisconnected();
-  void NotifyNavigationEntryCommitted(const LoadCommittedDetails& load_details);
 
   void SetEncoding(const std::string& encoding);
 
   RenderViewHostImpl* GetRenderViewHostImpl();
-
-  FrameTreeNode* FindFrameTreeNodeByID(int64 frame_id);
 
   // Removes browser plugin embedder if there is one.
   void RemoveBrowserPluginEmbedder();
@@ -766,6 +768,8 @@ class CONTENT_EXPORT WebContentsImpl
 
   // Helper function to invoke WebContentsDelegate::GetSizeForNewRenderView().
   gfx::Size GetSizeForNewRenderView() const;
+
+  void OnFrameRemoved(RenderViewHostImpl* render_view_host, int64 frame_id);
 
   // Data for core operation ---------------------------------------------------
 
@@ -822,6 +826,9 @@ class CONTENT_EXPORT WebContentsImpl
   // Manages creation and swapping of render views.
   RenderViewHostManager render_manager_;
 
+  // The frame tree structure of the current page.
+  FrameTree frame_tree_;
+
 #if defined(OS_ANDROID)
   // Manages injecting Java objects into all RenderViewHosts associated with
   // this WebContentsImpl.
@@ -876,9 +883,6 @@ class CONTENT_EXPORT WebContentsImpl
 
   // True if this is a secure page which displayed insecure content.
   bool displayed_insecure_content_;
-
-  // The frame tree structure of the current page.
-  scoped_ptr<FrameTreeNode> frame_tree_root_;
 
   // Data for misc internal state ----------------------------------------------
 

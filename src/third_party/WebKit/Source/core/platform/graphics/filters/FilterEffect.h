@@ -23,9 +23,11 @@
 #ifndef FilterEffect_h
 #define FilterEffect_h
 
-#include "core/platform/graphics/ColorSpace.h"
-#include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/IntRect.h"
+#include "platform/geometry/FloatRect.h"
+#include "platform/geometry/IntRect.h"
+#include "platform/graphics/ColorSpace.h"
+
+#include "third_party/skia/include/core/SkImageFilter.h"
 
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
@@ -34,8 +36,6 @@
 #include "wtf/Vector.h"
 
 static const float kMaxFilterSize = 5000.0f;
-
-class SkImageFilter;
 
 namespace WebCore {
 
@@ -170,7 +170,7 @@ protected:
 
     // If a pre-multiplied image, check every pixel for validity and correct if necessary.
     void forceValidPreMultipliedPixels();
-    SkIRect getCropRect(const FloatSize& cropOffset) const;
+    SkImageFilter::CropRect getCropRect(const FloatSize& cropOffset) const;
 
 private:
     virtual void applySoftware() = 0;

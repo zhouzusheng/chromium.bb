@@ -59,8 +59,13 @@ class VisitorShim : public QuicConnectionVisitorInterface {
     session_->OnSuccessfulVersionNegotiation(version);
   }
 
-  virtual void ConnectionClose(QuicErrorCode error, bool from_peer) OVERRIDE {
-    session_->ConnectionClose(error, from_peer);
+  virtual void OnConfigNegotiated() OVERRIDE {
+    session_->OnConfigNegotiated();
+  }
+
+  virtual void OnConnectionClosed(QuicErrorCode error,
+                                  bool from_peer) OVERRIDE {
+    session_->OnConnectionClosed(error, from_peer);
     // The session will go away, so don't bother with cleanup.
   }
 
@@ -88,12 +93,11 @@ QuicSession::QuicSession(QuicConnection* connection,
       has_pending_handshake_(false) {
 
   connection_->set_visitor(visitor_shim_.get());
-  connection_->SetIdleNetworkTimeout(config_.idle_connection_state_lifetime());
+  connection_->SetFromConfig(config_);
   if (connection_->connected()) {
     connection_->SetOverallConnectionTimeout(
         config_.max_time_before_crypto_handshake());
   }
-  // TODO(satyamshekhar): Set congestion control and ICSL also.
 }
 
 QuicSession::~QuicSession() {
@@ -183,7 +187,7 @@ void QuicSession::OnGoAway(const QuicGoAwayFrame& frame) {
   goaway_received_ = true;
 }
 
-void QuicSession::ConnectionClose(QuicErrorCode error, bool from_peer) {
+void QuicSession::OnConnectionClosed(QuicErrorCode error, bool from_peer) {
   DCHECK(!connection_->connected());
   if (error_ == QUIC_NO_ERROR) {
     error_ = error;
@@ -192,10 +196,11 @@ void QuicSession::ConnectionClose(QuicErrorCode error, bool from_peer) {
   while (stream_map_.size() != 0) {
     ReliableStreamMap::iterator it = stream_map_.begin();
     QuicStreamId id = it->first;
-    it->second->ConnectionClose(error, from_peer);
-    // The stream should call CloseStream as part of ConnectionClose.
+    it->second->OnConnectionClosed(error, from_peer);
+    // The stream should call CloseStream as part of OnConnectionClosed.
     if (stream_map_.find(id) != stream_map_.end()) {
-      LOG(DFATAL) << ENDPOINT << "Stream failed to close under ConnectionClose";
+      LOG(DFATAL) << ENDPOINT
+                  << "Stream failed to close under OnConnectionClosed";
       CloseStream(id);
     }
   }
@@ -240,7 +245,9 @@ QuicConsumedData QuicSession::WritevData(QuicStreamId id,
                                          int iov_count,
                                          QuicStreamOffset offset,
                                          bool fin) {
-  return connection_->SendvStreamData(id, iov, iov_count, offset, fin);
+  IOVector data;
+  data.AppendIovec(iov, iov_count);
+  return connection_->SendStreamData(id, data, offset, fin);
 }
 
 void QuicSession::SendRstStream(QuicStreamId id,
@@ -335,6 +342,10 @@ bool QuicSession::IsCryptoHandshakeConfirmed() {
   return GetCryptoStream()->handshake_confirmed();
 }
 
+void QuicSession::OnConfigNegotiated() {
+  connection_->SetFromConfig(config_);
+}
+
 void QuicSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
   switch (event) {
     // TODO(satyamshekhar): Move the logic of setting the encrypter/decrypter
@@ -352,8 +363,6 @@ void QuicSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
     case HANDSHAKE_CONFIRMED:
       LOG_IF(DFATAL, !config_.negotiated()) << ENDPOINT
           << "Handshake confirmed without parameter negotiation.";
-      connection_->SetIdleNetworkTimeout(
-          config_.idle_connection_state_lifetime());
       connection_->SetOverallConnectionTimeout(QuicTime::Delta::Infinite());
       max_open_streams_ = config_.max_streams_per_connection();
       break;

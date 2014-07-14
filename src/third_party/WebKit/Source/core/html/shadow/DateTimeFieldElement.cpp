@@ -28,15 +28,19 @@
 #include "core/html/shadow/DateTimeFieldElement.h"
 
 #include "HTMLNames.h"
-#include "core/dom/KeyboardEvent.h"
 #include "core/dom/Text.h"
-#include "core/platform/LocalizedStrings.h"
-#include "core/platform/text/PlatformLocale.h"
+#include "core/events/KeyboardEvent.h"
+#include "platform/text/PlatformLocale.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
+
+static String emptyValueAXText()
+{
+    return Locale::defaultLocale().queryString(WebKit::WebLocalizedString::AXDateTimeFieldEmptyValueText);
+}
 
 DateTimeFieldElement::FieldOwner::~FieldOwner()
 {
@@ -50,10 +54,10 @@ DateTimeFieldElement::DateTimeFieldElement(Document& document, FieldOwner& field
 
 void DateTimeFieldElement::defaultEventHandler(Event* event)
 {
-    if (event->type() == eventNames().blurEvent)
+    if (event->type() == EventTypeNames::blur)
         didBlur();
 
-    if (event->type() == eventNames().focusEvent)
+    if (event->type() == EventTypeNames::focus)
         didFocus();
 
     if (event->isKeyboardEvent()) {
@@ -73,7 +77,7 @@ void DateTimeFieldElement::defaultEventHandler(Event* event)
 
 void DateTimeFieldElement::defaultKeyboardEventHandler(KeyboardEvent* keyboardEvent)
 {
-    if (keyboardEvent->type() != eventNames().keydownEvent)
+    if (keyboardEvent->type() != EventTypeNames::keydown)
         return;
 
     if (isDisabled() || isFieldOwnerDisabled())
@@ -148,7 +152,7 @@ void DateTimeFieldElement::initialize(const AtomicString& pseudo, const String& 
 {
     // On accessibility, DateTimeFieldElement acts like spin button.
     setAttribute(roleAttr, AtomicString("spinbutton", AtomicString::ConstructFromLiteral));
-    setAttribute(aria_valuetextAttr, AXDateTimeFieldEmptyValueText());
+    setAttribute(aria_valuetextAttr, emptyValueAXText());
     setAttribute(aria_valueminAttr, String::number(axMinimum));
     setAttribute(aria_valuemaxAttr, String::number(axMaximum));
 
@@ -219,7 +223,7 @@ void DateTimeFieldElement::updateVisibleValue(EventBehavior eventBehavior)
         setAttribute(aria_valuetextAttr, newVisibleValue);
         setAttribute(aria_valuenowAttr, String::number(valueForARIAValueNow()));
     } else {
-        setAttribute(aria_valuetextAttr, AXDateTimeFieldEmptyValueText());
+        setAttribute(aria_valuetextAttr, emptyValueAXText());
         removeAttribute(aria_valuenowAttr);
     }
 

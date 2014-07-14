@@ -42,7 +42,7 @@
 #include "core/editing/FrameSelection.h"
 #include "core/editing/TextIterator.h"
 #include "core/editing/htmlediting.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -465,7 +465,7 @@ bool DOMSelection::containsNode(const Node* n, bool allowPartial) const
 
     FrameSelection& selection = m_frame->selection();
 
-    if (!n || m_frame->document() != &n->document() || selection.isNone())
+    if (!n || m_frame->document() != n->document() || selection.isNone())
         return false;
 
     unsigned nodeIndex = n->nodeIndex();
@@ -547,7 +547,7 @@ bool DOMSelection::isValidForPosition(Node* node) const
     ASSERT(m_frame);
     if (!node)
         return true;
-    return &node->document() == m_frame->document();
+    return node->document() == m_frame->document();
 }
 
 } // namespace WebCore

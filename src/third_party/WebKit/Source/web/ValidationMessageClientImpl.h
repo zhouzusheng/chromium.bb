@@ -27,8 +27,8 @@
 #define ValidationMessageClientImpl_h
 
 #include "core/page/ValidationMessageClient.h"
-#include "core/platform/Timer.h"
-#include "core/platform/graphics/IntRect.h"
+#include "platform/Timer.h"
+#include "platform/geometry/IntRect.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {

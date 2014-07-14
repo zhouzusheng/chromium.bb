@@ -29,7 +29,7 @@
 #include "SkDeferredCanvas.h"
 #include "SkImage.h"
 #include "core/platform/graphics/GraphicsContext3D.h"
-#include "core/platform/graphics/IntSize.h"
+#include "platform/geometry/IntSize.h"
 #include "public/platform/WebExternalTextureLayer.h"
 #include "public/platform/WebExternalTextureLayerClient.h"
 #include "public/platform/WebExternalTextureMailbox.h"
@@ -69,7 +69,7 @@ public:
         NonOpaque
     };
 
-    static PassRefPtr<Canvas2DLayerBridge> create(PassRefPtr<GraphicsContext3D>, const IntSize&, OpacityMode);
+    static PassRefPtr<Canvas2DLayerBridge> create(PassRefPtr<GraphicsContext3D>, const IntSize&, OpacityMode, int msaaSampleCount);
 
     virtual ~Canvas2DLayerBridge();
 
@@ -102,12 +102,13 @@ public:
 protected:
     void destroy();
     friend class Canvas2DLayerBridgePtr;
-    Canvas2DLayerBridge(PassRefPtr<GraphicsContext3D>, PassRefPtr<SkDeferredCanvas>, OpacityMode);
+    Canvas2DLayerBridge(PassRefPtr<GraphicsContext3D>, PassRefPtr<SkDeferredCanvas>, int, OpacityMode);
     void setRateLimitingEnabled(bool);
 
     RefPtr<SkDeferredCanvas> m_canvas;
     OwnPtr<WebKit::WebExternalTextureLayer> m_layer;
     RefPtr<GraphicsContext3D> m_context;
+    int m_msaaSampleCount;
     size_t m_bytesAllocated;
     bool m_didRecordDrawCommand;
     bool m_surfaceIsValid;

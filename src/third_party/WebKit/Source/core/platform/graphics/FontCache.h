@@ -106,12 +106,16 @@ public:
     PassRefPtr<OpenTypeVerticalData> getVerticalData(const FontFileKey&, const FontPlatformData&);
 #endif
 
+#if OS(ANDROID)
+    static AtomicString getGenericFamilyNameForScript(const AtomicString& familyName, UScriptCode);
+#else
     struct SimpleFontFamily {
         String name;
         bool isBold;
         bool isItalic;
     };
     static void getFontFamilyForCharacter(UChar32, const char* preferredLocale, SimpleFontFamily*);
+#endif
 
 private:
     FontCache();
@@ -132,13 +136,12 @@ private:
 
     // These methods are implemented by each platform.
     PassRefPtr<SimpleFontData> getSimilarFontPlatformData(const Font&);
-    FontPlatformData* createFontPlatformData(const FontDescription&, const AtomicString& family);
+    FontPlatformData* createFontPlatformData(const FontDescription&, const AtomicString& family, float fontSize);
 
     // Implemented on skia platforms.
-    SkTypeface* createTypeface(const FontDescription&, const AtomicString& family, CString& name);
+    PassRefPtr<SkTypeface> createTypeface(const FontDescription&, const AtomicString& family, CString& name);
 
     PassRefPtr<SimpleFontData> getFontResourceData(const FontPlatformData*, ShouldRetain = Retain);
-    const FontPlatformData* getFallbackFontData(const FontDescription&);
 
     // Don't purge if this count is > 0;
     int m_purgePreventCount;

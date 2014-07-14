@@ -28,7 +28,7 @@
 #include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ScriptEventListener.h"
 #include "core/dom/Attribute.h"
-#include "core/dom/EventNames.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/fetch/ImageResource.h"
 #include "core/html/HTMLAnchorElement.h"
 #include "core/html/HTMLFormElement.h"
@@ -47,6 +47,7 @@ HTMLImageElement::HTMLImageElement(const QualifiedName& tagName, Document& docum
     , m_imageLoader(this)
     , m_form(form)
     , m_compositeOperator(CompositeSourceOver)
+    , m_imageDevicePixelRatio(1.0f)
 {
     ASSERT(hasTagName(imgTag));
     ScriptWrappable::init(this);
@@ -70,13 +71,13 @@ HTMLImageElement::~HTMLImageElement()
         m_form->removeImgElement(this);
 }
 
-PassRefPtr<HTMLImageElement> HTMLImageElement::createForJSConstructor(Document& document, const int* optionalWidth, const int* optionalHeight)
+PassRefPtr<HTMLImageElement> HTMLImageElement::createForJSConstructor(Document& document, int width, int height)
 {
     RefPtr<HTMLImageElement> image = adoptRef(new HTMLImageElement(imgTag, document));
-    if (optionalWidth)
-        image->setWidth(*optionalWidth);
-    if (optionalHeight)
-        image->setHeight(*optionalHeight);
+    if (width)
+        image->setWidth(width);
+    if (height)
+        image->setHeight(height);
     return image.release();
 }
 
@@ -120,14 +121,21 @@ void HTMLImageElement::parseAttribute(const QualifiedName& name, const AtomicStr
         if (renderer() && renderer()->isImage())
             toRenderImage(renderer())->updateAltText();
     } else if (name == srcAttr || name == srcsetAttr) {
-        if (RuntimeEnabledFeatures::srcsetEnabled())
-            m_bestFitImageURL = bestFitSourceForImageAttributes(document().devicePixelRatio(), fastGetAttribute(srcAttr), fastGetAttribute(srcsetAttr));
+        if (RuntimeEnabledFeatures::srcsetEnabled()) {
+            ImageCandidate candidate = bestFitSourceForImageAttributes(document().devicePixelRatio(), fastGetAttribute(srcAttr), fastGetAttribute(srcsetAttr));
+            m_bestFitImageURL = candidate.toString();
+            float candidateScaleFactor = candidate.scaleFactor();
+            if (candidateScaleFactor > 0)
+                m_imageDevicePixelRatio = 1 / candidateScaleFactor;
+            if (renderer() && renderer()->isImage())
+                toRenderImage(renderer())->setImageDevicePixelRatio(m_imageDevicePixelRatio);
+        }
         m_imageLoader.updateFromElementIgnoringPreviousError();
     }
     else if (name == usemapAttr)
         setIsLink(!value.isNull());
     else if (name == onbeforeloadAttr)
-        setAttributeEventListener(eventNames().beforeloadEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::beforeload, createAttributeEventListener(this, name, value));
     else if (name == compositeAttr) {
         // FIXME: images don't support blend modes in their compositing attribute.
         BlendMode blendOp = BlendModeNormal;
@@ -156,6 +164,7 @@ RenderObject* HTMLImageElement::createRenderer(RenderStyle* style)
 
     RenderImage* image = new RenderImage(this);
     image->setImageResource(RenderImageResource::create());
+    image->setImageDevicePixelRatio(m_imageDevicePixelRatio);
     return image;
 }
 
@@ -355,7 +364,7 @@ void HTMLImageElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) cons
     addSubresourceURL(urls, document().completeURL(getAttribute(usemapAttr)));
 }
 
-void HTMLImageElement::didMoveToNewDocument(Document* oldDocument)
+void HTMLImageElement::didMoveToNewDocument(Document& oldDocument)
 {
     m_imageLoader.elementDidMoveToNewDocument();
     HTMLElement::didMoveToNewDocument(oldDocument);

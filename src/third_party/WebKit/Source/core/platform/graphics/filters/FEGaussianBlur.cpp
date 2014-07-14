@@ -31,9 +31,7 @@
 #include "core/platform/graphics/cpu/arm/filters/FEGaussianBlurNEON.h"
 #include "core/platform/graphics/filters/Filter.h"
 #include "core/platform/graphics/filters/SkiaImageFilterBuilder.h"
-#include "core/platform/text/TextStream.h"
-#include "core/rendering/RenderTreeAsText.h"
-
+#include "platform/text/TextStream.h"
 #include "wtf/MathExtras.h"
 #include "wtf/ParallelJobs.h"
 #include "wtf/Uint8ClampedArray.h"
@@ -343,7 +341,7 @@ PassRefPtr<SkImageFilter> FEGaussianBlur::createImageFilter(SkiaImageFilterBuild
     RefPtr<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
     float stdX = filter()->applyHorizontalScale(m_stdX);
     float stdY = filter()->applyVerticalScale(m_stdY);
-    SkIRect rect = getCropRect(builder->cropOffset());
+    SkImageFilter::CropRect rect = getCropRect(builder->cropOffset());
     return adoptRef(new SkBlurImageFilter(SkFloatToScalar(stdX), SkFloatToScalar(stdY), input.get(), &rect));
 }
 

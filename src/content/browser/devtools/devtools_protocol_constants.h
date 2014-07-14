@@ -18,6 +18,7 @@ extern const char kParamX[];
 extern const char kParamY[];
 extern const char kParamWidth[];
 extern const char kParamHeight[];
+extern const char kResult[];
 
 namespace DOM {
 
@@ -117,6 +118,10 @@ namespace Page {
     extern const char kParamMaxHeight[];
   }  // captureScreenshot
 
+  namespace canScreencast {
+    extern const char kName[];
+  }  // canScreencast
+
   namespace startScreencast {
     extern const char kName[];
   }  // startScreencast
@@ -128,6 +133,35 @@ namespace Page {
   namespace screencastFrame {
     extern const char kName[];
   }  // screencastFrame
+
+  namespace queryUsageAndQuota {
+    extern const char kName[];
+    extern const char kParamSecurityOrigin[];
+    extern const char kResponseQuota[];
+    extern const char kResponseUsage[];
+  }  // queryUsageAndQuota
+
+  namespace Quota {
+    extern const char kItemTemporary[];
+    extern const char kItemPersistent[];
+  }  // Quota
+
+  namespace Usage {
+    extern const char kItemTemporary[];
+    extern const char kItemPersistent[];
+    extern const char kItemSyncable[];
+  }  // Usage
+
+  namespace UsageItem {
+    namespace ID {
+      extern const char kFilesystem[];
+      extern const char kDatabase[];
+      extern const char kAppcache[];
+      extern const char kIndexedDatabase[];
+    }  // ID
+    extern const char kItemID[];
+    extern const char kItemValue[];
+  }  // UsageItem
 
   namespace screencastVisibilityChanged {
     extern const char kName[];

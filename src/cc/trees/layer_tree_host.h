@@ -7,6 +7,7 @@
 
 #include <limits>
 #include <list>
+#include <string>
 #include <vector>
 
 #include "base/basictypes.h"
@@ -19,6 +20,8 @@
 #include "cc/animation/animation_events.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/scoped_ptr_vector.h"
+#include "cc/debug/micro_benchmark.h"
+#include "cc/debug/micro_benchmark_controller.h"
 #include "cc/input/input_handler.h"
 #include "cc/input/scrollbar.h"
 #include "cc/input/top_controls_state.h"
@@ -64,6 +67,7 @@ class Region;
 class RenderingStatsInstrumentation;
 class ResourceProvider;
 class ResourceUpdateQueue;
+class SharedBitmapManager;
 class TopControlsManager;
 struct RenderingStats;
 struct ScrollAndScaleSet;
@@ -120,8 +124,10 @@ class CC_EXPORT UIResourceRequest {
 
 class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
  public:
+  // The SharedBitmapManager will be used on the compositor thread.
   static scoped_ptr<LayerTreeHost> Create(
       LayerTreeHostClient* client,
+      SharedBitmapManager* manager,
       const LayerTreeSettings& settings,
       scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
   virtual ~LayerTreeHost();
@@ -137,8 +143,8 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   }
 
   // LayerTreeHost interface to Proxy.
-  void WillBeginFrame() { client_->WillBeginFrame(); }
-  void DidBeginFrame();
+  void WillBeginMainFrame() { client_->WillBeginMainFrame(); }
+  void DidBeginMainFrame();
   void UpdateClientAnimations(base::TimeTicks monotonic_frame_begin_time);
   void AnimateLayers(base::TimeTicks monotonic_frame_begin_time);
   void DidStopFlinging();
@@ -209,8 +215,11 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   void SetNeedsRedraw();
   void SetNeedsRedrawRect(gfx::Rect damage_rect);
   bool CommitRequested() const;
+  bool BeginMainFrameRequested() const;
 
   void SetNextCommitWaitsForActivation();
+
+  void SetNextCommitForcesRedraw();
 
   void SetAnimationEvents(scoped_ptr<AnimationEventsVector> events,
                           base::Time wall_clock_time);
@@ -218,6 +227,7 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   void SetRootLayer(scoped_refptr<Layer> root_layer);
   Layer* root_layer() { return root_layer_.get(); }
   const Layer* root_layer() const { return root_layer_.get(); }
+  const Layer* page_scale_layer() const { return page_scale_layer_.get(); }
   void RegisterViewportLayers(
       scoped_refptr<Layer> page_scale_layer,
       scoped_refptr<Layer> inner_viewport_scroll_layer,
@@ -272,10 +282,8 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   // RateLimiterClient implementation.
   virtual void RateLimit() OVERRIDE;
 
-  bool buffered_updates() const {
-    return settings_.max_partial_texture_updates !=
-        std::numeric_limits<size_t>::max();
-  }
+  bool AlwaysUsePartialTextureUpdates();
+  size_t MaxPartialTextureUpdates() const;
   bool RequestPartialTextureUpdate();
 
   void SetDeviceScaleFactor(float device_scale_factor);
@@ -316,10 +324,19 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   bool UsingSharedMemoryResources();
   int id() const { return tree_id_; }
 
+  bool ScheduleMicroBenchmark(const std::string& benchmark_name,
+                              scoped_ptr<base::Value> value,
+                              const MicroBenchmark::DoneCallback& callback);
+
  protected:
-  LayerTreeHost(LayerTreeHostClient* client, const LayerTreeSettings& settings);
+  LayerTreeHost(LayerTreeHostClient* client,
+                SharedBitmapManager* manager,
+                const LayerTreeSettings& settings);
   bool Initialize(scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
   bool InitializeForTesting(scoped_ptr<Proxy> proxy_for_testing);
+  void SetOutputSurfaceLostForTesting(bool is_lost) {
+    output_surface_lost_ = is_lost;
+  }
 
  private:
   bool InitializeProxy(scoped_ptr<Proxy> proxy);
@@ -375,6 +392,8 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
 
   int source_frame_number_;
   scoped_ptr<RenderingStatsInstrumentation> rendering_stats_instrumentation_;
+  MicroBenchmarkController micro_benchmark_controller_;
+
 
   bool output_surface_can_be_initialized_;
   bool output_surface_lost_;
@@ -389,7 +408,7 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   base::WeakPtr<InputHandler> input_handler_weak_ptr_;
   base::WeakPtr<TopControlsManager> top_controls_manager_weak_ptr_;
 
-  LayerTreeSettings settings_;
+  const LayerTreeSettings settings_;
   LayerTreeDebugState debug_state_;
 
   gfx::Size device_viewport_size_;
@@ -447,10 +466,13 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   };
   LCDTextMetrics lcd_text_metrics_;
   int tree_id_;
+  bool next_commit_forces_redraw_;
 
   scoped_refptr<Layer> page_scale_layer_;
   scoped_refptr<Layer> inner_viewport_scroll_layer_;
   scoped_refptr<Layer> outer_viewport_scroll_layer_;
+
+  SharedBitmapManager* shared_bitmap_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerTreeHost);
 };

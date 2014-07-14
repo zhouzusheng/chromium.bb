@@ -41,19 +41,19 @@
 #include "core/html/shadow/SpinButtonElement.h"
 #include "core/html/shadow/TextControlInnerElements.h"
 #include "core/page/FocusController.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
-#include "core/platform/FileSystem.h"
-#include "core/platform/FloatConversion.h"
-#include "core/platform/LocalizedStrings.h"
-#include "core/platform/graphics/FontSelector.h"
 #include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/platform/graphics/StringTruncator.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderMeter.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/style/RenderStyle.h"
+#include "platform/FileMetadata.h"
+#include "platform/FloatConversion.h"
+#include "platform/fonts/FontSelector.h"
+#include "platform/text/PlatformLocale.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebFallbackThemeEngine.h"
 #include "public/platform/WebRect.h"
@@ -103,7 +103,7 @@ void RenderTheme::adjustStyle(RenderStyle* style, Element* e, const CachedUAStyl
         || style->display() == TABLE_ROW || style->display() == TABLE_COLUMN_GROUP || style->display() == TABLE_COLUMN
         || style->display() == TABLE_CELL || style->display() == TABLE_CAPTION)
         style->setDisplay(INLINE_BLOCK);
-    else if (style->display() == COMPACT || style->display() == RUN_IN || style->display() == LIST_ITEM || style->display() == TABLE)
+    else if (style->display() == LIST_ITEM || style->display() == TABLE)
         style->setDisplay(BLOCK);
 
     if (uaStyle.hasAppearance && isControlStyled(style, uaStyle)) {
@@ -215,28 +215,10 @@ void RenderTheme::adjustStyle(RenderStyle* style, Element* e, const CachedUAStyl
     case InnerSpinButtonPart:
         return adjustInnerSpinButtonStyle(style, e);
 #endif
-    case TextFieldPart:
-        return adjustTextFieldStyle(style, e);
-    case TextAreaPart:
-        return adjustTextAreaStyle(style, e);
     case MenulistPart:
         return adjustMenuListStyle(style, e);
     case MenulistButtonPart:
         return adjustMenuListButtonStyle(style, e);
-    case MediaPlayButtonPart:
-    case MediaCurrentTimePart:
-    case MediaTimeRemainingPart:
-    case MediaEnterFullscreenButtonPart:
-    case MediaExitFullscreenButtonPart:
-    case MediaMuteButtonPart:
-    case MediaVolumeSliderContainerPart:
-        return adjustMediaControlStyle(style, e);
-    case MediaSliderPart:
-    case MediaVolumeSliderPart:
-    case MediaFullScreenVolumeSliderPart:
-    case SliderHorizontalPart:
-    case SliderVerticalPart:
-        return adjustSliderTrackStyle(style, e);
     case SliderThumbHorizontalPart:
     case SliderThumbVerticalPart:
         return adjustSliderThumbStyle(style, e);
@@ -248,14 +230,6 @@ void RenderTheme::adjustStyle(RenderStyle* style, Element* e, const CachedUAStyl
         return adjustSearchFieldDecorationStyle(style, e);
     case SearchFieldResultsDecorationPart:
         return adjustSearchFieldResultsDecorationStyle(style, e);
-    case ProgressBarPart:
-        return adjustProgressBarStyle(style, e);
-    case MeterPart:
-    case RelevancyLevelIndicatorPart:
-    case ContinuousCapacityLevelIndicatorPart:
-    case DiscreteCapacityLevelIndicatorPart:
-    case RatingLevelIndicatorPart:
-        return adjustMeterStyle(style, e);
 #if ENABLE(INPUT_SPEECH)
     case InputSpeechButtonPart:
         return adjustInputFieldSpeechButtonStyle(style, e);
@@ -497,7 +471,7 @@ String RenderTheme::extraDefaultStyleSheet()
     if (RuntimeEnabledFeatures::dialogElementEnabled()) {
         runtimeCSS.appendLiteral("dialog:not([open]) { display: none; }");
         runtimeCSS.appendLiteral("dialog { position: absolute; left: 0; right: 0; width: -webkit-fit-content; height: -webkit-fit-content; margin: auto; border: solid; padding: 1em; background: white; color: black;}");
-        runtimeCSS.appendLiteral("dialog::backdrop { background: rgba(0,0,0,0.1); }");
+        runtimeCSS.appendLiteral("dialog::backdrop { position: fixed; top: 0; right: 0; bottom: 0; left: 0; background: rgba(0,0,0,0.1); }");
     }
 
     return runtimeCSS.toString();
@@ -893,24 +867,12 @@ void RenderTheme::adjustRadioStyle(RenderStyle* style, Element*) const
 
 void RenderTheme::adjustButtonStyle(RenderStyle* style, Element*) const
 {
-    // Most platforms will completely honor all CSS, and so we have no need to
-    // adjust the style at all by default. We will still allow the theme a crack
-    // at setting up a desired vertical size.
-    setButtonSize(style);
 }
 
 void RenderTheme::adjustInnerSpinButtonStyle(RenderStyle*, Element*) const
 {
 }
 #endif
-
-void RenderTheme::adjustTextFieldStyle(RenderStyle*, Element*) const
-{
-}
-
-void RenderTheme::adjustTextAreaStyle(RenderStyle*, Element*) const
-{
-}
 
 void RenderTheme::adjustMenuListStyle(RenderStyle*, Element*) const
 {
@@ -928,10 +890,6 @@ bool RenderTheme::paintInputFieldSpeechButton(RenderObject* object, const PaintI
 }
 #endif
 
-void RenderTheme::adjustMeterStyle(RenderStyle* style, Element*) const
-{
-}
-
 IntSize RenderTheme::meterSizeForBounds(const RenderMeter*, const IntRect& bounds) const
 {
     return bounds.size();
@@ -945,11 +903,6 @@ bool RenderTheme::supportsMeter(ControlPart) const
 bool RenderTheme::paintMeter(RenderObject*, const PaintInfo&, const IntRect&)
 {
     return true;
-}
-
-LayoutUnit RenderTheme::sliderTickSnappingThreshold() const
-{
-    return 5;
 }
 
 void RenderTheme::paintSliderTicks(RenderObject* o, const PaintInfo& paintInfo, const IntRect& rect)
@@ -1041,24 +994,12 @@ double RenderTheme::animationDurationForProgressBar(RenderProgress*) const
     return 0;
 }
 
-void RenderTheme::adjustProgressBarStyle(RenderStyle*, Element*) const
-{
-}
-
 bool RenderTheme::shouldHaveSpinButton(HTMLInputElement* inputElement) const
 {
     return inputElement->isSteppable() && !inputElement->isRangeControl();
 }
 
 void RenderTheme::adjustMenuListButtonStyle(RenderStyle*, Element*) const
-{
-}
-
-void RenderTheme::adjustMediaControlStyle(RenderStyle*, Element*) const
-{
-}
-
-void RenderTheme::adjustSliderTrackStyle(RenderStyle*, Element*) const
 {
 }
 
@@ -1206,25 +1147,20 @@ Color RenderTheme::focusRingColor()
     return customFocusRingColor().isValid() ? customFocusRingColor() : theme().platformFocusRingColor();
 }
 
-String RenderTheme::fileListDefaultLabel(bool multipleFilesAllowed) const
-{
-    if (multipleFilesAllowed)
-        return fileButtonNoFilesSelectedLabel();
-    return fileButtonNoFileSelectedLabel();
-}
-
-String RenderTheme::fileListNameForWidth(const FileList* fileList, const Font& font, int width, bool multipleFilesAllowed) const
+String RenderTheme::fileListNameForWidth(Locale& locale, const FileList* fileList, const Font& font, int width) const
 {
     if (width <= 0)
         return String();
 
     String string;
-    if (fileList->isEmpty())
-        string = fileListDefaultLabel(multipleFilesAllowed);
-    else if (fileList->length() == 1)
+    if (fileList->isEmpty()) {
+        string = locale.queryString(WebKit::WebLocalizedString::FileButtonNoFileSelectedLabel);
+    } else if (fileList->length() == 1) {
         string = fileList->item(0)->name();
-    else
-        return StringTruncator::rightTruncate(multipleFileUploadText(fileList->length()), width, font, StringTruncator::EnableRoundingHacks);
+    } else {
+        // FIXME: Localization of fileList->length().
+        return StringTruncator::rightTruncate(locale.queryString(WebKit::WebLocalizedString::MultipleFileUploadText, String::number(fileList->length())), width, font, StringTruncator::EnableRoundingHacks);
+    }
 
     return StringTruncator::centerTruncate(string, width, font, StringTruncator::EnableRoundingHacks);
 }

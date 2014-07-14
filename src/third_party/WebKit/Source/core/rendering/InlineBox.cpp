@@ -20,12 +20,12 @@
 #include "config.h"
 #include "core/rendering/InlineBox.h"
 
-#include "core/platform/Partitions.h"
-#include "core/platform/graphics/FontMetrics.h"
 #include "core/rendering/InlineFlowBox.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/RootInlineBox.h"
+#include "platform/Partitions.h"
+#include "platform/fonts/FontMetrics.h"
 
 #ifndef NDEBUG
 #include <stdio.h>
@@ -47,10 +47,6 @@ struct SameSizeAsInlineBox {
 };
 
 COMPILE_ASSERT(sizeof(InlineBox) == sizeof(SameSizeAsInlineBox), InlineBox_size_guard);
-
-#ifndef NDEBUG
-static bool inInlineBoxDetach;
-#endif
 
 #ifndef NDEBUG
 

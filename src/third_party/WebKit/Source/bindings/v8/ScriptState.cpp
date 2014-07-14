@@ -36,7 +36,7 @@
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8HiddenPropertyName.h"
 #include "bindings/v8/WorkerScriptController.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include <v8.h>
 #include "wtf/Assertions.h"
@@ -60,10 +60,10 @@ DOMWindow* ScriptState::domWindow() const
     return toDOMWindow(m_context.newLocal(m_isolate));
 }
 
-ScriptExecutionContext* ScriptState::scriptExecutionContext() const
+ExecutionContext* ScriptState::executionContext() const
 {
     v8::HandleScope handleScope(m_isolate);
-    return toScriptExecutionContext(m_context.newLocal(m_isolate));
+    return toExecutionContext(m_context.newLocal(m_isolate));
 }
 
 ScriptState* ScriptState::forContext(v8::Handle<v8::Context> context)
@@ -110,7 +110,7 @@ void ScriptState::setEvalEnabled(bool enabled)
 ScriptState* mainWorldScriptState(Frame* frame)
 {
     v8::HandleScope handleScope(toIsolate(frame));
-    return ScriptState::forContext(frame->script()->mainWorldContext());
+    return ScriptState::forContext(frame->script().mainWorldContext());
 }
 
 ScriptState* scriptStateFromWorkerGlobalScope(WorkerGlobalScope* workerGlobalScope)

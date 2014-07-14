@@ -26,7 +26,7 @@
 #ifndef SegmentedFontData_h
 #define SegmentedFontData_h
 
-#include "core/platform/graphics/FontData.h"
+#include "platform/fonts/FontData.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
@@ -43,6 +43,7 @@ struct FontDataRange {
 
     UChar32 from() const { return m_from; }
     UChar32 to() const { return m_to; }
+    bool isEntireRange() const { return !m_from && m_to >= 0x10ffff; }
     PassRefPtr<SimpleFontData> fontData() const { return m_fontData; }
 
 private:
@@ -68,12 +69,13 @@ public:
 private:
     SegmentedFontData() { }
 
-    virtual const SimpleFontData* fontDataForCharacter(UChar32) const;
-    virtual bool containsCharacters(const UChar*, int length) const;
+    virtual const SimpleFontData* fontDataForCharacter(UChar32) const OVERRIDE;
+    virtual bool containsCharacters(const UChar*, int length) const OVERRIDE;
 
-    virtual bool isCustomFont() const;
-    virtual bool isLoading() const;
-    virtual bool isSegmented() const;
+    virtual bool isCustomFont() const OVERRIDE;
+    virtual bool isLoading() const OVERRIDE;
+    virtual bool isLoadingFallback() const OVERRIDE;
+    virtual bool isSegmented() const OVERRIDE;
 
     bool containsCharacter(UChar32) const;
 

@@ -419,12 +419,6 @@ class RtpRtcp : public Module {
     virtual int32_t ResetRTT(const uint32_t remoteSSRC)= 0 ;
 
     /*
-     * Sets the estimated RTT, to be used for receive only modules without
-     * possibility of calculating its own RTT.
-     */
-    virtual void SetRtt(uint32_t rtt) = 0;
-
-    /*
     *   Force a send of a RTCP packet
     *   normal SR and RR are triggered via the process function
     *
@@ -508,6 +502,11 @@ class RtpRtcp : public Module {
     */
     virtual int32_t SetRTCPVoIPMetrics(
         const RTCPVoIPMetric* VoIPMetric) = 0;
+
+    /*
+    *   (XR) Receiver Reference Time Report
+    */
+    virtual void SetRtcpXrRrtrStatus(bool enable) = 0;
 
     /*
     *  (REMB) Receiver Estimated Max Bitrate

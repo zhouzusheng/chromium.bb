@@ -31,28 +31,34 @@
 #include "config.h"
 #include "core/platform/chromium/ChromiumDataObject.h"
 
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/DataTransferItem.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/platform/chromium/ClipboardMimeTypes.h"
-#include "core/platform/chromium/ClipboardUtilitiesChromium.h"
+#include "core/platform/Pasteboard.h"
+#include "platform/clipboard/ClipboardMimeTypes.h"
+#include "platform/clipboard/ClipboardUtilities.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebClipboard.h"
 
 namespace WebCore {
 
-PassRefPtr<ChromiumDataObject> ChromiumDataObject::createFromPasteboard()
+PassRefPtr<ChromiumDataObject> ChromiumDataObject::createFromPasteboard(PasteMode pasteMode)
 {
     RefPtr<ChromiumDataObject> dataObject = create();
-    uint64_t sequenceNumber = WebKit::Platform::current()->clipboard()->sequenceNumber(currentPasteboardBuffer());
+    WebKit::WebClipboard::Buffer buffer = Pasteboard::generalPasteboard()->buffer();
+    uint64_t sequenceNumber = WebKit::Platform::current()->clipboard()->sequenceNumber(buffer);
     bool ignored;
-    WebKit::WebVector<WebKit::WebString> webTypes = WebKit::Platform::current()->clipboard()->readAvailableTypes(currentPasteboardBuffer(), &ignored);
+    WebKit::WebVector<WebKit::WebString> webTypes = WebKit::Platform::current()->clipboard()->readAvailableTypes(buffer, &ignored);
     ListHashSet<String> types;
     for (size_t i = 0; i < webTypes.size(); ++i)
         types.add(webTypes[i]);
-    for (ListHashSet<String>::const_iterator it = types.begin(); it != types.end(); ++it)
+    for (ListHashSet<String>::const_iterator it = types.begin(); it != types.end(); ++it) {
+        if (pasteMode == PlainTextOnly && *it != mimeTypeTextPlain)
+            continue;
         dataObject->m_itemList.append(ChromiumDataObjectItem::createFromPasteboard(*it, sequenceNumber));
+    }
     return dataObject.release();
 }
 
@@ -94,13 +100,13 @@ PassRefPtr<ChromiumDataObjectItem> ChromiumDataObject::add(const String& data, c
 {
     RefPtr<ChromiumDataObjectItem> item = ChromiumDataObjectItem::createFromString(type, data);
     if (!internalAddStringItem(item)) {
-        es.throwDOMException(NotSupportedError);
+        es.throwDOMException(NotSupportedError, ExceptionMessages::failedToExecute("add", "DataTransferItemList"));
         return 0;
     }
     return item;
 }
 
-PassRefPtr<ChromiumDataObjectItem> ChromiumDataObject::add(PassRefPtr<File> file, ScriptExecutionContext* context)
+PassRefPtr<ChromiumDataObjectItem> ChromiumDataObject::add(PassRefPtr<File> file)
 {
     if (!file)
         return 0;

@@ -246,6 +246,12 @@ void CheckLineIntegrity(const std::vector<internal::Line>& lines,
   }
 }
 
+// Returns true if characters of |block_code| may trigger font fallback.
+bool IsUnusualBlockCode(const UBlockCode block_code) {
+  return block_code == UBLOCK_GEOMETRIC_SHAPES ||
+         block_code == UBLOCK_MISCELLANEOUS_SYMBOLS;
+}
+
 }  // namespace
 
 namespace internal {
@@ -493,11 +499,6 @@ Size RenderTextWin::GetStringSize() {
   return multiline_string_size_;
 }
 
-int RenderTextWin::GetBaseline() {
-  EnsureLayout();
-  return lines()[0].baseline;
-}
-
 SelectionModel RenderTextWin::FindCursorPosition(const Point& point) {
   if (text().empty())
     return SelectionModel();
@@ -539,6 +540,11 @@ std::vector<RenderText::FontSpan> RenderTextWin::GetFontSpansForTesting() {
   }
 
   return spans;
+}
+
+int RenderTextWin::GetLayoutTextBaseline() {
+  EnsureLayout();
+  return lines()[0].baseline;
 }
 
 SelectionModel RenderTextWin::AdjacentCharSelectionModel(
@@ -914,27 +920,31 @@ void RenderTextWin::ItemizeLogicalText() {
     // Clamp run lengths to avoid exceeding the maximum supported glyph count.
     if ((run_break - run->range.start()) > max_run_length) {
       run_break = run->range.start() + max_run_length;
-      if (!gfx::IsValidCodePointIndex(layout_text, run_break))
+      if (!IsValidCodePointIndex(layout_text, run_break))
         --run_break;
     }
 
-    // Break runs between characters in different code blocks. This avoids using
-    // fallback fonts for more characters than needed. http://crbug.com/278913
+    // Break runs adjacent to character substrings in certain code blocks.
+    // This avoids using their fallback fonts for more characters than needed,
+    // in cases like "\x25B6 Media Title", etc. http://crbug.com/278913
     if (run_break > run->range.start()) {
       const size_t run_start = run->range.start();
       const int32 run_length = static_cast<int32>(run_break - run_start);
       base::i18n::UTF16CharIterator iter(layout_text.c_str() + run_start,
                                          run_length);
       const UBlockCode first_block_code = ublock_getCode(iter.get());
+      const bool first_block_unusual = IsUnusualBlockCode(first_block_code);
       while (iter.Advance() && iter.array_pos() < run_length) {
-        if (ublock_getCode(iter.get()) != first_block_code) {
+        const UBlockCode current_block_code = ublock_getCode(iter.get());
+        if (current_block_code != first_block_code &&
+            (first_block_unusual || IsUnusualBlockCode(current_block_code))) {
           run_break = run_start + iter.array_pos();
           break;
         }
       }
     }
 
-    DCHECK(gfx::IsValidCodePointIndex(layout_text, run_break));
+    DCHECK(IsValidCodePointIndex(layout_text, run_break));
 
     style.UpdatePosition(LayoutIndexToTextIndex(run_break));
     if (script_item_break == run_break)

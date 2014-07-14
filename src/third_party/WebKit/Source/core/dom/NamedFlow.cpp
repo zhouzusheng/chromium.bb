@@ -31,10 +31,10 @@
 #include "core/dom/NamedFlow.h"
 
 #include "RuntimeEnabledFeatures.h"
-#include "core/dom/EventNames.h"
 #include "core/dom/NamedFlowCollection.h"
 #include "core/dom/StaticNodeList.h"
-#include "core/dom/UIEvent.h"
+#include "core/events/ThreadLocalEventNames.h"
+#include "core/events/UIEvent.h"
 #include "core/rendering/RenderNamedFlowThread.h"
 #include "core/rendering/RenderRegion.h"
 
@@ -204,16 +204,6 @@ void NamedFlow::setRenderer(RenderNamedFlowThread* parentFlowThread)
     m_parentFlowThread = parentFlowThread;
 }
 
-EventTargetData* NamedFlow::eventTargetData()
-{
-    return &m_eventTargetData;
-}
-
-EventTargetData* NamedFlow::ensureEventTargetData()
-{
-    return &m_eventTargetData;
-}
-
 void NamedFlow::dispatchRegionLayoutUpdateEvent()
 {
     ASSERT(!NoEventDispatchAssertion::isEventDispatchForbidden());
@@ -222,7 +212,7 @@ void NamedFlow::dispatchRegionLayoutUpdateEvent()
     if (flowState() == FlowStateNull)
         return;
 
-    RefPtr<Event> event = UIEvent::create(eventNames().webkitregionlayoutupdateEvent, false, false, m_flowManager->document()->defaultView(), 0);
+    RefPtr<Event> event = UIEvent::create(EventTypeNames::webkitregionlayoutupdate, false, false, m_flowManager->document()->domWindow(), 0);
 
     dispatchEvent(event);
 }
@@ -235,17 +225,17 @@ void NamedFlow::dispatchRegionOversetChangeEvent()
     if (flowState() == FlowStateNull)
         return;
 
-    RefPtr<Event> event = UIEvent::create(eventNames().webkitregionoversetchangeEvent, false, false, m_flowManager->document()->defaultView(), 0);
+    RefPtr<Event> event = UIEvent::create(EventTypeNames::webkitregionoversetchange, false, false, m_flowManager->document()->domWindow(), 0);
 
     dispatchEvent(event);
 }
 
 const AtomicString& NamedFlow::interfaceName() const
 {
-    return eventNames().interfaceForNamedFlow;
+    return EventTargetNames::NamedFlow;
 }
 
-ScriptExecutionContext* NamedFlow::scriptExecutionContext() const
+ExecutionContext* NamedFlow::executionContext() const
 {
     return m_flowManager->document();
 }

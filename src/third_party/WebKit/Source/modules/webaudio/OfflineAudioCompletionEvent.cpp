@@ -28,7 +28,7 @@
 
 #include "modules/webaudio/OfflineAudioCompletionEvent.h"
 
-#include "core/dom/EventNames.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "modules/webaudio/AudioBuffer.h"
 
 namespace WebCore {
@@ -49,7 +49,7 @@ OfflineAudioCompletionEvent::OfflineAudioCompletionEvent()
 }
 
 OfflineAudioCompletionEvent::OfflineAudioCompletionEvent(PassRefPtr<AudioBuffer> renderedBuffer)
-    : Event(eventNames().completeEvent, true, false)
+    : Event(EventTypeNames::complete, true, false)
     , m_renderedBuffer(renderedBuffer)
 {
     ScriptWrappable::init(this);
@@ -61,7 +61,7 @@ OfflineAudioCompletionEvent::~OfflineAudioCompletionEvent()
 
 const AtomicString& OfflineAudioCompletionEvent::interfaceName() const
 {
-    return eventNames().interfaceForOfflineAudioCompletionEvent;
+    return EventNames::OfflineAudioCompletionEvent;
 }
 
 } // namespace WebCore

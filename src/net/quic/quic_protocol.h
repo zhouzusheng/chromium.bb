@@ -45,8 +45,18 @@ typedef std::vector<QuicTag> QuicTagVector;
 typedef uint32 QuicPriority;
 
 // TODO(rch): Consider Quic specific names for these constants.
-// Maximum size in bytes of a QUIC packet.
-const QuicByteCount kMaxPacketSize = 1200;
+// Default and initial maximum size in bytes of a QUIC packet.
+const QuicByteCount kDefaultMaxPacketSize = 1200;
+// The maximum packet size of any QUIC packet, based on ethernet's max size,
+// minus the IP and UDP headers.
+const QuicByteCount kMaxPacketSize = 1472;
+
+// Maximum size of the initial congestion window in packets.
+const size_t kDefaultInitialWindow = 10;
+const size_t kMaxInitialWindow = 100;
+
+// Don't allow a client to suggest an RTT longer than 15 seconds.
+const uint32 kMaxInitialRoundTripTimeUs = 15 * kNumMicrosPerSecond;
 
 // Maximum number of open streams per connection.
 const size_t kDefaultMaxStreamsPerConnection = 100;
@@ -83,9 +93,27 @@ const int64 kDefaultInitialTimeoutSecs = 120;  // 2 mins.
 const int64 kDefaultTimeoutSecs = 60 * 10;  // 10 minutes.
 const int64 kDefaultMaxTimeForCryptoHandshakeSecs = 5;  // 5 secs.
 
-enum Retransmission {
+// We define an unsigned 16-bit floating point value, inspired by IEEE floats
+// (http://en.wikipedia.org/wiki/Half_precision_floating-point_format),
+// with 5-bit exponent (bias 1), 11-bit mantissa (effective 12 with hidden
+// bit) and denormals, but without signs, transfinites or fractions. Wire format
+// 16 bits (little-endian byte order) are split into exponent (high 5) and
+// mantissa (low 11) and decoded as:
+//   uint64 value;
+//   if (exponent == 0) value = mantissa;
+//   else value = (mantissa | 1 << 11) << (exponent - 1)
+const int kUFloat16ExponentBits = 5;
+const int kUFloat16MaxExponent = (1 << kUFloat16ExponentBits) - 2;  // 30
+const int kUFloat16MantissaBits = 16 - kUFloat16ExponentBits;  // 11
+const int kUFloat16MantissaEffectiveBits = kUFloat16MantissaBits + 1;  // 12
+const uint64 kUFloat16MaxValue =  // 0x3FFC0000000
+    ((GG_UINT64_C(1) << kUFloat16MantissaEffectiveBits) - 1) <<
+    kUFloat16MaxExponent;
+
+enum TransmissionType {
   NOT_RETRANSMISSION,
-  IS_RETRANSMISSION,
+  NACK_RETRANSMISSION,
+  RTO_RETRANSMISSION,
 };
 
 enum HasRetransmittableData {
@@ -128,6 +156,14 @@ enum QuicSequenceNumberLength {
   PACKET_6BYTE_SEQUENCE_NUMBER = 6
 };
 
+// Used to indicate a QuicSequenceNumberLength using two flag bits.
+enum QuicSequenceNumberLengthFlags {
+  PACKET_FLAGS_1BYTE_SEQUENCE = 0,  // 00
+  PACKET_FLAGS_2BYTE_SEQUENCE = 1,  // 01
+  PACKET_FLAGS_4BYTE_SEQUENCE = 1 << 1,  // 10
+  PACKET_FLAGS_6BYTE_SEQUENCE = 1 << 1 | 1,  // 11
+};
+
 // The public flags are specified in one byte.
 enum QuicPacketPublicFlags {
   PACKET_PUBLIC_FLAGS_NONE = 0,
@@ -153,10 +189,10 @@ enum QuicPacketPublicFlags {
   // --01----: 2 bytes
   // --10----: 4 bytes
   // --11----: 6 bytes
-  PACKET_PUBLIC_FLAGS_1BYTE_SEQUENCE = 0,
-  PACKET_PUBLIC_FLAGS_2BYTE_SEQUENCE = 1 << 4,
-  PACKET_PUBLIC_FLAGS_4BYTE_SEQUENCE = 1 << 5,
-  PACKET_PUBLIC_FLAGS_6BYTE_SEQUENCE = 1 << 5 | 1 << 4,
+  PACKET_PUBLIC_FLAGS_1BYTE_SEQUENCE = PACKET_FLAGS_1BYTE_SEQUENCE << 4,
+  PACKET_PUBLIC_FLAGS_2BYTE_SEQUENCE = PACKET_FLAGS_2BYTE_SEQUENCE << 4,
+  PACKET_PUBLIC_FLAGS_4BYTE_SEQUENCE = PACKET_FLAGS_4BYTE_SEQUENCE << 4,
+  PACKET_PUBLIC_FLAGS_6BYTE_SEQUENCE = PACKET_FLAGS_6BYTE_SEQUENCE << 4,
 
   // All bits set (bits 6 and 7 are not currently used): 00111111
   PACKET_PUBLIC_FLAGS_MAX = (1 << 6) - 1
@@ -189,9 +225,9 @@ enum QuicVersion {
   // Special case to indicate unknown/unsupported QUIC version.
   QUIC_VERSION_UNSUPPORTED = 0,
 
-  QUIC_VERSION_8 = 8,
-  QUIC_VERSION_9 = 9,
-  QUIC_VERSION_10 = 10,  // Current version.
+  QUIC_VERSION_10 = 10,
+  QUIC_VERSION_11 = 11,
+  QUIC_VERSION_12 = 12,  // Current version.
 };
 
 // This vector contains QUIC versions which we currently support.
@@ -199,15 +235,12 @@ enum QuicVersion {
 // element, with subsequent elements in descending order (versions can be
 // skipped as necessary).
 static const QuicVersion kSupportedQuicVersions[] =
-    {QUIC_VERSION_10, QUIC_VERSION_9};
+    {QUIC_VERSION_11};
 
 typedef std::vector<QuicVersion> QuicVersionVector;
 
-// Upper limit on versions we support.
-NET_EXPORT_PRIVATE QuicVersion QuicVersionMax();
-
-// Lower limit on versions we support.
-NET_EXPORT_PRIVATE QuicVersion QuicVersionMin();
+// Returns a vector of QUIC versions in kSupportedQuicVersions.
+NET_EXPORT_PRIVATE QuicVersionVector QuicSupportedVersions();
 
 // QuicTag is written to and read from the wire, but we prefer to use
 // the more readable QuicVersion at other levels.
@@ -219,18 +252,14 @@ NET_EXPORT_PRIVATE QuicTag QuicVersionToQuicTag(const QuicVersion version);
 // Returns QUIC_VERSION_UNSUPPORTED if version_tag cannot be understood.
 NET_EXPORT_PRIVATE QuicVersion QuicTagToQuicVersion(const QuicTag version_tag);
 
-// Returns the appropriate QuicTag for a properly formed version string
-// (e.g. Q008).
-NET_EXPORT_PRIVATE QuicTag StringToQuicTag(std::string version);
-
 // Helper function which translates from a QuicVersion to a string.
 // Returns strings corresponding to enum names (e.g. QUIC_VERSION_6).
 NET_EXPORT_PRIVATE std::string QuicVersionToString(const QuicVersion version);
 
 // Returns comma separated list of string representations of QuicVersion enum
-// values in the supplied QuicVersionArray.
-NET_EXPORT_PRIVATE std::string QuicVersionArrayToString(
-    const QuicVersion versions[], int num_versions);
+// values in the supplied |versions| vector.
+NET_EXPORT_PRIVATE std::string QuicVersionVectorToString(
+    const QuicVersionVector& versions);
 
 // Version and Crypto tags are written to the wire with a big-endian
 // representation of the name of the tag.  For example
@@ -377,6 +406,8 @@ enum QuicErrorCode {
   QUIC_INVALID_CRYPTO_MESSAGE_TYPE = 33,
   // A crypto message was received with an illegal parameter.
   QUIC_INVALID_CRYPTO_MESSAGE_PARAMETER = 34,
+  // An invalid channel id signature was supplied.
+  QUIC_INVALID_CHANNEL_ID_SIGNATURE = 52,
   // A crypto message was received with a mandatory parameter missing.
   QUIC_CRYPTO_MESSAGE_PARAMETER_NOT_FOUND = 35,
   // A crypto message was received with a parameter that has no overlap
@@ -403,9 +434,11 @@ enum QuicErrorCode {
   QUIC_CRYPTO_ENCRYPTION_LEVEL_INCORRECT = 44,
   // The server config for a server has expired.
   QUIC_CRYPTO_SERVER_CONFIG_EXPIRED = 45,
+  // We failed to setup the symmetric keys for a connection.
+  QUIC_CRYPTO_SYMMETRIC_KEY_SETUP_FAILED = 53,
 
   // No error. Used as bound while iterating.
-  QUIC_LAST_ERROR = 52,
+  QUIC_LAST_ERROR = 54,
 };
 
 struct NET_EXPORT_PRIVATE QuicPacketPublicHeader {
@@ -519,6 +552,9 @@ struct NET_EXPORT_PRIVATE ReceivedPacketInfo {
   // structure.
   // The set of packets which we're expecting and have not received.
   SequenceNumberSet missing_packets;
+
+  // Whether the ack had to be truncated when sent.
+  bool is_truncated;
 };
 
 // True if the sequence number is greater than largest_observed or is listed
@@ -620,6 +656,7 @@ struct NET_EXPORT_PRIVATE QuicRstStreamFrame {
 struct NET_EXPORT_PRIVATE QuicConnectionCloseFrame {
   QuicErrorCode error_code;
   std::string error_details;
+  // TODO(ianswett): Remove this once QUIC_VERSION_11 is removed.
   QuicAckFrame ack_frame;
 };
 
@@ -868,6 +905,26 @@ struct QuicConsumedData {
 
   // True if an incoming fin was consumed.
   bool fin_consumed;
+};
+
+enum WriteStatus {
+  WRITE_STATUS_OK,
+  WRITE_STATUS_BLOCKED,
+  WRITE_STATUS_ERROR,
+};
+
+// A struct used to return the result of write calls including either the number
+// of bytes written or the error code, depending upon the status.
+struct NET_EXPORT_PRIVATE WriteResult {
+  WriteResult(WriteStatus status, int bytes_written_or_error_code) :
+    status(status), bytes_written(bytes_written_or_error_code) {
+  }
+
+  WriteStatus status;
+  union {
+    int bytes_written;  // only valid when status is OK
+    int error_code;  // only valid when status is ERROR
+  };
 };
 
 }  // namespace net

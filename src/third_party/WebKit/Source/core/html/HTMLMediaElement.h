@@ -27,13 +27,13 @@
 #define HTMLMediaElement_h
 
 #include "core/dom/ActiveDOMObject.h"
-#include "core/dom/GenericEventQueue.h"
+#include "core/events/GenericEventQueue.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/MediaControllerInterface.h"
 #include "core/html/track/TextTrack.h"
 #include "core/html/track/TextTrackCue.h"
-#include "core/platform/PODIntervalTree.h"
 #include "core/platform/graphics/MediaPlayer.h"
+#include "platform/PODIntervalTree.h"
 #include "public/platform/WebMimeRegistry.h"
 
 namespace WebKit { class WebLayer; }
@@ -79,13 +79,13 @@ public:
     MediaPlayer* player() const { return m_player.get(); }
 
     virtual bool isVideo() const = 0;
-    virtual bool hasVideo() const { return false; }
-    virtual bool hasAudio() const;
+    virtual bool hasVideo() const OVERRIDE { return false; }
+    virtual bool hasAudio() const OVERRIDE;
 
     // Eventually overloaded in HTMLVideoElement
-    virtual bool supportsFullscreen() const { return false; };
+    virtual bool supportsFullscreen() const OVERRIDE { return false; };
 
-    virtual bool supportsSave() const;
+    bool supportsSave() const;
 
     WebKit::WebLayer* platformLayer() const;
 
@@ -96,13 +96,12 @@ public:
     };
     void scheduleDelayedAction(DelayedActionType);
 
-    bool inActiveDocument() const { return m_inActiveDocument; }
+    bool isActive() const { return m_active; }
 
-// DOM API
-// error state
+    // error state
     PassRefPtr<MediaError> error() const;
 
-// network state
+    // network state
     void setSrc(const String&);
     const KURL& currentSrc() const { return m_currentSrc; }
 
@@ -116,15 +115,13 @@ public:
     void load();
     String canPlayType(const String& mimeType, const String& keySystem = String(), const KURL& = KURL()) const;
 
-// ready state
+    // ready state
     ReadyState readyState() const;
     bool seeking() const;
 
-// playback state
+    // playback state
     double currentTime() const;
     void setCurrentTime(double, ExceptionState&);
-    double initialTime() const;
-    double startTime() const;
     double duration() const;
     bool paused() const;
     double defaultPlaybackRate() const;
@@ -132,32 +129,24 @@ public:
     double playbackRate() const;
     void setPlaybackRate(double);
     void updatePlaybackRate();
-    bool webkitPreservesPitch() const;
-    void setWebkitPreservesPitch(bool);
     PassRefPtr<TimeRanges> played();
     PassRefPtr<TimeRanges> seekable() const;
     bool ended() const;
     bool autoplay() const;
-    void setAutoplay(bool b);
     bool loop() const;
     void setLoop(bool b);
     void play();
     void pause();
 
-// captions
-    bool webkitHasClosedCaptions() const;
-    bool webkitClosedCaptionsVisible() const;
-    void setWebkitClosedCaptionsVisible(bool);
-
-// Statistics
+    // statistics
     unsigned webkitAudioDecodedByteCount() const;
     unsigned webkitVideoDecodedByteCount() const;
 
-//  Media Source.
+    // media source extensions
     void closeMediaSource();
-
     void durationChanged(double duration);
 
+    // encrypted media extensions
     void webkitGenerateKeyRequest(const String& keySystem, PassRefPtr<Uint8Array> initData, ExceptionState&);
     void webkitGenerateKeyRequest(const String& keySystem, ExceptionState&);
     void webkitAddKey(const String& keySystem, PassRefPtr<Uint8Array> key, PassRefPtr<Uint8Array> initData, const String& sessionId, ExceptionState&);
@@ -174,7 +163,7 @@ public:
     void setMediaKeys(MediaKeys*);
 #endif
 
-// controls
+    // controls
     bool controls() const;
     void setControls(bool);
     double volume() const;
@@ -203,8 +192,8 @@ public:
     void closeCaptionTracksChanged();
     void notifyMediaPlayerOfTextTrackChanges();
 
-    virtual void didAddTrack(HTMLTrackElement*);
-    virtual void didRemoveTrack(HTMLTrackElement*);
+    void didAddTrack(HTMLTrackElement*);
+    void didRemoveTrack(HTMLTrackElement*);
 
     virtual void mediaPlayerDidAddTrack(PassRefPtr<InbandTextTrackPrivate>) OVERRIDE;
     virtual void mediaPlayerDidRemoveTrack(PassRefPtr<InbandTextTrackPrivate>) OVERRIDE;
@@ -232,24 +221,28 @@ public:
     void configureTextTrackGroup(const TrackGroup&);
 
     bool textTracksAreReady() const;
-    void configureTextTrackDisplay();
+    enum VisibilityChangeAssumption {
+        AssumeNoVisibleChange,
+        AssumeVisibleChange
+    };
+    void configureTextTrackDisplay(VisibilityChangeAssumption);
     void updateTextTrackDisplay();
+    void textTrackReadyStateChanged(TextTrack*);
 
     // TextTrackClient
-    virtual void textTrackReadyStateChanged(TextTrack*);
-    virtual void textTrackKindChanged(TextTrack*);
-    virtual void textTrackModeChanged(TextTrack*);
-    virtual void textTrackAddCues(TextTrack*, const TextTrackCueList*);
-    virtual void textTrackRemoveCues(TextTrack*, const TextTrackCueList*);
-    virtual void textTrackAddCue(TextTrack*, PassRefPtr<TextTrackCue>);
-    virtual void textTrackRemoveCue(TextTrack*, PassRefPtr<TextTrackCue>);
+    virtual void textTrackKindChanged(TextTrack*) OVERRIDE;
+    virtual void textTrackModeChanged(TextTrack*) OVERRIDE;
+    virtual void textTrackAddCues(TextTrack*, const TextTrackCueList*) OVERRIDE;
+    virtual void textTrackRemoveCues(TextTrack*, const TextTrackCueList*) OVERRIDE;
+    virtual void textTrackAddCue(TextTrack*, PassRefPtr<TextTrackCue>) OVERRIDE;
+    virtual void textTrackRemoveCue(TextTrack*, PassRefPtr<TextTrackCue>) OVERRIDE;
 
     // EventTarget function.
     // Both Node (via HTMLElement) and ActiveDOMObject define this method, which
     // causes an ambiguity error at compile time. This class's constructor
     // ensures that both implementations return document, so return the result
     // of one of them here.
-    virtual ScriptExecutionContext* scriptExecutionContext() const OVERRIDE { return HTMLElement::scriptExecutionContext(); }
+    virtual ExecutionContext* executionContext() const OVERRIDE { return HTMLElement::executionContext(); }
 
     bool hasSingleSecurityOrigin() const { return !m_player || m_player->hasSingleSecurityOrigin(); }
 
@@ -268,7 +261,9 @@ public:
 
     bool isPlaying() const { return m_playing; }
 
-    virtual bool hasPendingActivity() const;
+    // ActiveDOMObject functions.
+    virtual bool hasPendingActivity() const OVERRIDE;
+    virtual void contextDestroyed() OVERRIDE;
 
 #if ENABLE(WEB_AUDIO)
     MediaElementAudioSourceNode* audioSourceNode() { return m_audioSourceNode; }
@@ -286,24 +281,22 @@ public:
     MediaController* controller() const;
     void setController(PassRefPtr<MediaController>);
 
-    virtual bool dispatchEvent(PassRefPtr<Event>) OVERRIDE;
-
 protected:
     HTMLMediaElement(const QualifiedName&, Document&, bool);
     virtual ~HTMLMediaElement();
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void finishParsingChildren();
+    virtual void finishParsingChildren() OVERRIDE;
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
 
-    virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
+    virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
 
     enum DisplayMode { Unknown, None, Poster, PosterWaitingForVideo, Video };
     DisplayMode displayMode() const { return m_displayMode; }
     virtual void setDisplayMode(DisplayMode mode) { m_displayMode = mode; }
 
-    virtual bool isMediaElement() const { return true; }
+    virtual bool isMediaElement() const OVERRIDE { return true; }
 
     // Restrictions to change default behaviors.
     enum BehaviorRestrictionFlags {
@@ -334,24 +327,21 @@ private:
     virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
     virtual bool hasCustomFocusLogic() const OVERRIDE;
-    virtual bool supportsFocus() const;
-    virtual bool isMouseFocusable() const;
-    virtual bool rendererIsNeeded(const RenderStyle&);
-    virtual RenderObject* createRenderer(RenderStyle*);
+    virtual bool supportsFocus() const OVERRIDE;
+    virtual bool isMouseFocusable() const OVERRIDE;
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
     virtual bool childShouldCreateRenderer(const Node& child) const OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
-    virtual void didRecalcStyle(StyleRecalcChange);
+    virtual void didRecalcStyle(StyleRecalcChange) OVERRIDE;
 
-    virtual void didBecomeFullscreenElement();
-    virtual void willStopBeingFullscreenElement();
+    virtual void didBecomeFullscreenElement() OVERRIDE;
+    virtual void willStopBeingFullscreenElement() OVERRIDE;
     virtual bool isInteractiveContent() const OVERRIDE;
 
     // ActiveDOMObject functions.
-    virtual bool canSuspend() const;
-    virtual void suspend(ReasonForSuspension);
-    virtual void resume();
-    virtual void stop();
+    virtual void stop() OVERRIDE;
 
     virtual void updateDisplayState() { }
 
@@ -363,6 +353,7 @@ private:
     virtual void mediaPlayerTimeChanged() OVERRIDE;
     virtual void mediaPlayerDurationChanged() OVERRIDE;
     virtual void mediaPlayerPlaybackStateChanged() OVERRIDE;
+    virtual void mediaPlayerRequestFullscreen() OVERRIDE;
     virtual void mediaPlayerRequestSeek(double) OVERRIDE;
     virtual void mediaPlayerRepaint() OVERRIDE;
     virtual void mediaPlayerSizeChanged() OVERRIDE;
@@ -403,6 +394,7 @@ private:
     void loadNextSourceChild();
     void userCancelledLoad();
     void clearMediaPlayer(int flags);
+    void clearMediaPlayerAndAudioSourceProviderClient();
     bool havePotentialSourceChild();
     void noneSupported();
     void mediaEngineError(PassRefPtr<MediaError> err);
@@ -454,7 +446,7 @@ private:
     void prepareMediaFragmentURI();
     void applyMediaFragmentURI();
 
-    virtual void* preDispatchEventHandler(Event*);
+    virtual void* preDispatchEventHandler(Event*) OVERRIDE;
 
     void changeNetworkStateFromLoadingToIdle();
 
@@ -474,7 +466,6 @@ private:
 
     double m_playbackRate;
     double m_defaultPlaybackRate;
-    bool m_webkitPreservesPitch;
     NetworkState m_networkState;
     ReadyState m_readyState;
     ReadyState m_readyStateMaximum;
@@ -523,10 +514,11 @@ private:
     typedef unsigned PendingActionFlags;
     PendingActionFlags m_pendingActionFlags;
 
+    // FIXME: MediaElement has way too many state bits.
     bool m_playing : 1;
     bool m_shouldDelayLoadEvent : 1;
     bool m_haveFiredLoadedData : 1;
-    bool m_inActiveDocument : 1;
+    bool m_active : 1;
     bool m_autoplaying : 1;
     bool m_muted : 1;
     bool m_paused : 1;
@@ -540,13 +532,8 @@ private:
 
     bool m_pausedInternal : 1;
 
-    // Not all media engines provide enough information about a file to be able to
-    // support progress events so setting m_sendProgressEvents disables them
-    bool m_sendProgressEvents : 1;
-
     bool m_closedCaptionsVisible : 1;
 
-    bool m_dispatchingCanPlayEvent : 1;
     bool m_loadInitiatedByUserGesture : 1;
     bool m_completelyLoaded : 1;
     bool m_havePreparedToPlay : 1;
@@ -607,11 +594,12 @@ inline bool isHTMLMediaElement(Node* node)
     return node && node->isElementNode() && toElement(node)->isMediaElement();
 }
 
-inline HTMLMediaElement* toHTMLMediaElement(Node* node)
+inline bool isHTMLMediaElement(const Node& node)
 {
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLMediaElement(node));
-    return static_cast<HTMLMediaElement*>(node);
+    return node.isElementNode() && toElement(node).isMediaElement();
 }
+
+DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(HTMLMediaElement);
 
 } //namespace
 

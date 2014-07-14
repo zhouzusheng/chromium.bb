@@ -40,7 +40,7 @@
 #include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
-class AccessibilityObject;
+class AXObject;
 class ColorChooser;
 class ColorChooserClient;
 class Element;
@@ -122,12 +122,11 @@ public:
     virtual WebScreenInfo screenInfo() const;
     virtual void contentsSizeChanged(WebCore::Frame*, const WebCore::IntSize&) const;
     virtual void deviceOrPageScaleFactorChanged() const;
-    virtual void didProgrammaticallyScroll(WebCore::Frame*, const WebCore::IntPoint&) const;
     virtual void layoutUpdated(WebCore::Frame*) const;
     virtual void mouseDidMoveOverElement(
         const WebCore::HitTestResult& result, unsigned modifierFlags);
     virtual void setToolTip(const WTF::String& tooltipText, WebCore::TextDirection);
-    virtual void dispatchViewportPropertiesDidChange(const WebCore::ViewportArguments&) const;
+    virtual void dispatchViewportPropertiesDidChange(const WebCore::ViewportDescription&) const;
     virtual void print(WebCore::Frame*);
     virtual void annotatedRegionsChanged();
     virtual bool paintCustomOverhangArea(WebCore::GraphicsContext*, const WebCore::IntRect&, const WebCore::IntRect&, const WebCore::IntRect&);
@@ -159,7 +158,7 @@ public:
                              const WebCore::IntRect& bounds,
                              bool handleExternally);
     virtual void popupClosed(WebCore::PopupContainer* popupContainer);
-    virtual void postAccessibilityNotification(WebCore::AccessibilityObject*, WebCore::AXObjectCache::AXNotification);
+    virtual void postAccessibilityNotification(WebCore::AXObject*, WebCore::AXObjectCache::AXNotification);
     virtual String acceptLanguages() OVERRIDE;
 
     // ChromeClientImpl:
@@ -188,6 +187,8 @@ public:
     virtual void didAssociateFormControls(const Vector<RefPtr<WebCore::Element> >&) OVERRIDE;
 
 private:
+    virtual bool isChromeClientImpl() const OVERRIDE { return true; }
+
     WebNavigationPolicy getNavigationPolicy();
     void getPopupMenuInfo(WebCore::PopupContainer*, WebPopupMenuInfo*);
     void setCursor(const WebCursorInfo&);
@@ -216,6 +217,12 @@ private:
     WebViewImpl* m_webView;
 };
 #endif
+
+inline ChromeClientImpl* toChromeClientImpl(WebCore::ChromeClient& client)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(client.isChromeClientImpl());
+    return static_cast<ChromeClientImpl*>(&client);
+}
 
 } // namespace WebKit
 

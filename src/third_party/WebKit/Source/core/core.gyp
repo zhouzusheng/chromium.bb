@@ -31,7 +31,8 @@
 {
   'includes': [
     '../build/win/precompile.gypi',
-    'features.gypi',
+    '../build/features.gypi',
+    '../build/scripts/scripts.gypi',
     '../modules/modules.gypi',
     '../bindings/bindings.gypi',
     'core.gypi',
@@ -172,7 +173,7 @@
         'output_file_path': '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorOverlayPage.h',
         'character_array_name': 'InspectorOverlayPage_html',
       },
-      'includes': [ 'ConvertFileToHeaderWithCharacterArray.gypi' ],
+      'includes': [ '../build/ConvertFileToHeaderWithCharacterArray.gypi' ],
     },
     {
       'target_name': 'injected_canvas_script_source',
@@ -182,7 +183,7 @@
         'output_file_path': '<(SHARED_INTERMEDIATE_DIR)/blink/InjectedScriptCanvasModuleSource.h',
         'character_array_name': 'InjectedScriptCanvasModuleSource_js',
       },
-      'includes': [ 'ConvertFileToHeaderWithCharacterArray.gypi' ],
+      'includes': [ '../build/ConvertFileToHeaderWithCharacterArray.gypi' ],
     },
     {
       'target_name': 'injected_script_source',
@@ -192,7 +193,7 @@
         'output_file_path': '<(SHARED_INTERMEDIATE_DIR)/blink/InjectedScriptSource.h',
         'character_array_name': 'InjectedScriptSource_js',
       },
-      'includes': [ 'ConvertFileToHeaderWithCharacterArray.gypi' ],
+      'includes': [ '../build/ConvertFileToHeaderWithCharacterArray.gypi' ],
     },
     {
       'target_name': 'debugger_script_source',
@@ -202,7 +203,7 @@
         'output_file_path': '<(SHARED_INTERMEDIATE_DIR)/blink/DebuggerScriptSource.h',
         'character_array_name': 'DebuggerScriptSource_js',
       },
-      'includes': [ 'ConvertFileToHeaderWithCharacterArray.gypi' ],
+      'includes': [ '../build/ConvertFileToHeaderWithCharacterArray.gypi' ],
     },
     {
       'target_name': 'webcore_derived',
@@ -211,13 +212,14 @@
       'dependencies': [
         'webcore_prerequisites',
         '../bindings/derived_sources.gyp:bindings_derived_sources',
-        'core_derived_sources.gyp:make_derived_sources',
+        'core_derived_sources.gyp:make_core_derived_sources',
         'inspector_overlay_page',
         'inspector_protocol_sources',
         'inspector_instrumentation_sources',
         'injected_canvas_script_source',
         'injected_script_source',
         'debugger_script_source',
+        '../platform/platform_derived_sources.gyp:make_platform_derived_sources',
         '../wtf/wtf.gyp:wtf',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/iccjpeg/iccjpeg.gyp:iccjpeg',
@@ -240,13 +242,9 @@
         # FIXME: Remove these once the bindings script generates qualified
         # includes for these correctly. (Sequences don't work yet.)
         '<(bindings_dir)/v8/custom',
-        '../modules/mediastream',
-        '../modules/speech',
-        'dom',
         'html',
         'html/shadow',
         'inspector',
-        'page',
         'svg',
       ],
       'sources': [
@@ -256,41 +254,46 @@
         '<@(bindings_files)',
 
         # Additional .cpp files for HashTools.h
-        '<(SHARED_INTERMEDIATE_DIR)/blink/ColorData.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/blink/CSSPropertyNames.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/blink/CSSValueKeywords.cpp',
 
-        # Additional .cpp files from make_derived_sources actions.
-        '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLElementFactory.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLNames.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/FetchInitiatorTypeNames.cpp',
+        # Additional .cpp files from make_core_derived_sources actions.
         '<(SHARED_INTERMEDIATE_DIR)/blink/CalendarPicker.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/blink/ColorSuggestionPicker.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/blink/Event.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/blink/EventHeaders.h',
         '<(SHARED_INTERMEDIATE_DIR)/blink/EventInterfaces.h',
+        '<(SHARED_INTERMEDIATE_DIR)/blink/EventNames.cpp',
+        '<(SHARED_INTERMEDIATE_DIR)/blink/EventNames.h',
         '<(SHARED_INTERMEDIATE_DIR)/blink/EventTargetHeaders.h',
         '<(SHARED_INTERMEDIATE_DIR)/blink/EventTargetInterfaces.h',
+        '<(SHARED_INTERMEDIATE_DIR)/blink/EventTargetNames.cpp',
+        '<(SHARED_INTERMEDIATE_DIR)/blink/EventTargetNames.h',
+        '<(SHARED_INTERMEDIATE_DIR)/blink/EventTypeNames.cpp',
+        '<(SHARED_INTERMEDIATE_DIR)/blink/EventTypeNames.h',
+        '<(SHARED_INTERMEDIATE_DIR)/blink/FetchInitiatorTypeNames.cpp',
+        '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLElementFactory.cpp',
+        '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLElementFactory.h',
+        '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLNames.cpp',
+        '<(SHARED_INTERMEDIATE_DIR)/blink/MathMLNames.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/blink/PickerCommon.cpp',
+        '<(SHARED_INTERMEDIATE_DIR)/blink/SVGNames.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/blink/UserAgentStyleSheetsData.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/blink/V8HTMLElementWrapperFactory.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/blink/XLinkNames.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/blink/XMLNSNames.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/blink/XMLNames.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/SVGNames.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/MathMLNames.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/FontFamilyNames.cpp',
 
         # Generated from HTMLEntityNames.in
         '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLEntityTable.cpp',
 
-        # Generated from RuntimeEnabledFeatures.in
-        '<(SHARED_INTERMEDIATE_DIR)/blink/RuntimeEnabledFeatures.cpp',
-
         # Generated from CSSParser-in.cpp
         '<(SHARED_INTERMEDIATE_DIR)/blink/CSSParser.cpp',
 
-        # Additional .cpp files from the make_derived_sources rules.
+        # Generated from HTMLMetaElement-in.cpp
+        '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLMetaElement.cpp',
+
+        # Additional .cpp files from the make_core_derived_sources rules.
         '<(SHARED_INTERMEDIATE_DIR)/blink/CSSGrammar.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/blink/XPathGrammar.cpp',
 
@@ -326,9 +329,6 @@
           ],
         }],
         ['OS=="win"', {
-          'defines': [
-            '__PRETTY_FUNCTION__=__FUNCTION__',
-          ],
           # In generated bindings code: 'switch contains default but no case'.
           # Disable c4267 warnings until we fix size_t to int truncations.
           'msvs_disabled_warnings': [ 4065, 4267 ],
@@ -353,13 +353,14 @@
         'inspector_protocol_sources',
         'inspector_instrumentation_sources',
         '../bindings/derived_sources.gyp:bindings_derived_sources',
-        'core_derived_sources.gyp:make_derived_sources',
+        'core_derived_sources.gyp:make_core_derived_sources',
         '../wtf/wtf.gyp:wtf',
         '../config.gyp:config',
+        '../platform/blink_platform.gyp:blink_platform',
         '../weborigin/weborigin.gyp:weborigin',
-        '<(DEPTH)/third_party/angle_dx11/src/build_angle.gyp:translator_glsl',
         '<(DEPTH)/gpu/gpu.gyp:gles2_c_lib',
         '<(DEPTH)/skia/skia.gyp:skia',
+        '<(DEPTH)/third_party/angle_dx11/src/build_angle.gyp:translator',
         '<(DEPTH)/third_party/iccjpeg/iccjpeg.gyp:iccjpeg',
         '<(DEPTH)/third_party/libpng/libpng.gyp:libpng',
         '<(DEPTH)/third_party/libwebp/libwebp.gyp:libwebp',
@@ -377,9 +378,9 @@
       'export_dependent_settings': [
         '../wtf/wtf.gyp:wtf',
         '../config.gyp:config',
-        '<(DEPTH)/third_party/angle_dx11/src/build_angle.gyp:translator_glsl',
         '<(DEPTH)/gpu/gpu.gyp:gles2_c_lib',
         '<(DEPTH)/skia/skia.gyp:skia',
+        '<(DEPTH)/third_party/angle_dx11/src/build_angle.gyp:translator',
         '<(DEPTH)/third_party/iccjpeg/iccjpeg.gyp:iccjpeg',
         '<(DEPTH)/third_party/libpng/libpng.gyp:libpng',
         '<(DEPTH)/third_party/libwebp/libwebp.gyp:libwebp',
@@ -396,13 +397,13 @@
       ],
       'direct_dependent_settings': {
         'defines': [
-          'WEBKIT_IMPLEMENTATION=1',
-          'INSIDE_WEBKIT',
+          'BLINK_IMPLEMENTATION=1',
+          'INSIDE_BLINK',
         ],
         'include_dirs': [
           '<@(webcore_include_dirs)',
           '<(DEPTH)/gpu',
-          '<(DEPTH)/third_party/angle_dx11/include/GLSLANG',
+          '<(DEPTH)/third_party/angle_dx11/include',
         ],
         'msvs_disabled_warnings': [
           4138, 4244, 4291, 4305, 4344, 4355, 4521, 4099,
@@ -491,23 +492,16 @@
                 'postbuild_name': 'Check Objective-C Rename',
                 'variables': {
                   'class_whitelist_regex':
-                      'ChromiumWebCoreObjC|TCMVisibleView|RTCMFlippedView',
+                      'ChromiumWebCoreObjC|TCMVisibleView|RTCMFlippedView|ScrollerStyleObserver',
                   'category_whitelist_regex':
                       'TCMInterposing|ScrollAnimatorChromiumMacExt|WebCoreTheme',
                 },
                 'action': [
-                  'scripts/check_objc_rename.sh',
+                  '../build/scripts/check_objc_rename.sh',
                   '<(class_whitelist_regex)',
                   '<(category_whitelist_regex)',
                 ],
               },
-            ],
-          },
-        }],
-        ['OS=="win"', {
-          'direct_dependent_settings': {
-            'defines': [
-              '__PRETTY_FUNCTION__=__FUNCTION__',
             ],
           },
         }],
@@ -555,10 +549,6 @@
       ],
       'sources': [
         '<@(webcore_dom_files)',
-      ],
-      'sources!': [
-        'dom/default/PlatformMessagePortChannel.cpp',
-        'dom/default/PlatformMessagePortChannel.h',
       ],
       # Disable c4267 warnings until we fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
@@ -654,6 +644,11 @@
           'sources': [
             'editing/SmartReplaceCF.cpp',
           ],
+          'link_settings': {
+            'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/Carbon.framework',
+            ],
+          },
           'sources/': [
             # Additional files from the WebCore Mac build that are presently
             # used in the WebCore Chromium Mac build too.
@@ -664,9 +659,6 @@
             # Use native Mac font code from core.
             ['include', 'platform/(graphics/)?mac/[^/]*Font[^/]*\\.(cpp|mm?)$'],
             ['include', 'platform/graphics/mac/ComplexText[^/]*\\.(cpp|h)$'],
-
-            # We can use this for the fast Accelerate.framework FFT.
-            ['include', 'platform/audio/mac/FFTFrameMac\\.cpp$'],
 
             # Cherry-pick some files that can't be included by broader regexps.
             # Some of these are used instead of Chromium platform files, see
@@ -693,12 +685,6 @@
             ['include', 'platform/text/mac/String(Impl)?Mac\\.mm$'],
             # Use USE_NEW_THEME on Mac.
             ['include', 'platform/Theme\\.cpp$'],
-
-            # We use LocaleMac.mm instead of LocaleICU.cpp in order to
-            # apply system locales.
-            ['exclude', 'platform/text/LocaleICU\\.cpp$'],
-            ['exclude', 'platform/text/LocaleICU\\.h$'],
-            ['include', 'platform/text/mac/LocaleMac\\.mm$'],
 
             # The Mac uses platform/mac/KillRingMac.mm instead of the dummy
             # implementation.
@@ -750,29 +736,23 @@
             ['exclude', 'Posix\\.cpp$'],
 
             ['include', 'platform/ScrollbarThemeWin\\.(cpp|h)$'],
+            ['include', 'platform/graphics/chromium/FontFallbackWin\\.(cpp|h)$'],
             ['include', 'platform/graphics/chromium/TransparencyWin\\.(cpp|h)$'],
             ['include', 'platform/graphics/opentype/'],
             ['include', 'platform/graphics/skia/SkiaFontWin\\.(cpp|h)$'],
 
-            # Windows currently uses FontCustomPlatformDataWin.cpp instead.
-            ['exclude', 'platform/graphics/skia/FontCustomPlatformDataSkia\\.cpp$'],
-            ['include', 'platform/graphics/win/FontCustomPlatformDataWin\\.cpp$'],
-
             # SystemInfo.cpp is useful and we don't want to copy it.
             ['include', 'platform/win/SystemInfo\\.cpp$'],
-
-            ['exclude', 'platform/text/LocaleICU\\.cpp$'],
-            ['exclude', 'platform/text/LocaleICU\\.h$'],
-            ['include', 'platform/text/win/LocaleWin\.cpp$'],
-            ['include', 'platform/text/win/LocaleWin\.h$'],
           ],
           'conditions': [
             ['"ENABLE_GDI_FONTS_ON_WINDOWS=1" in feature_defines', {
               'sources/': [
+                ['include', 'platform/graphics/win/FontCustomPlatformDataWin\\.cpp$'],
                 ['exclude', 'platform/graphics/skia/SimpleFontDataSkia\\.cpp$'],
                 ['exclude', 'platform/graphics/skia/GlyphPageTreeNodeSkia\\.cpp$'],
                 ['exclude', 'platform/graphics/skia/FontCacheSkia\\.cpp$'],
                 ['exclude', 'platform/graphics/skia/FontCacheSkiaWin\\.cpp$'],
+                ['exclude', 'platform/graphics/skia/FontCustomPlatformDataSkia\\.cpp$'],
               ],
             },{ # ENABLE_GDI_FONTS_ON_WINDOWS!=1
               'sources/': [
@@ -780,10 +760,25 @@
                 ['include', 'platform/graphics/skia/GlyphPageTreeNodeSkia\\.cpp$'],
                 ['include', 'platform/graphics/skia/FontCacheSkiaWin\\.cpp$'],
                 ['include', 'platform/graphics/skia/FontCustomPlatformDataSkia\\.cpp$'],
+                ['include', 'platform/graphics/skia/FontCustomPlatformDataSkia\\.cpp$'],
                 ['exclude', 'platform/graphics/chromium/SimpleFontDataChromiumWin\\.cpp$'],
                 ['exclude', 'platform/graphics/chromium/GlyphPageTreeNodeChromiumWin\\.cpp$'],
                 ['exclude', 'platform/graphics/chromium/FontCacheChromiumWin\\.cpp$'],
                 ['exclude', 'platform/graphics/win/FontCustomPlatformDataWin\\.cpp$'],
+              ],
+            }],
+            ['"ENABLE_HARFBUZZ_ON_WINDOWS=1" in feature_defines', {
+              'sources/': [
+                ['include', 'platform/graphics/harfbuzz/FontHarfBuzz\\.cpp$'],
+                ['include', 'platform/graphics/harfbuzz/HarfBuzzFace\\.(cpp|h)$'],
+                ['include', 'platform/graphics/harfbuzz/HarfBuzzShaper\\.(cpp|h)$'],
+                ['include', 'platform/graphics/harfbuzz/HarfBuzzShaperBase\\.(cpp|h)$'],
+                ['include', 'platform/graphics/harfbuzz/HarfBuzzFaceSkia\\.cpp$'],
+                ['exclude', 'platform/graphics/chromium/FontChromiumWin\\.cpp$'],
+                ['exclude', '/(Uniscribe)[^/]*\\.(cpp|h)$'],
+              ],
+              'dependencies': [
+                '<(DEPTH)/third_party/harfbuzz-ng/harfbuzz.gyp:harfbuzz-ng',
               ],
             }],
           ],
@@ -818,20 +813,10 @@
           ],
         }, { # use_default_render_theme==0
           'sources/': [
-            ['exclude', 'platform/ScrollbarThemeAuraOrGtk\\.(cpp|h)'],
+            ['exclude', 'platform/ScrollbarThemeGtkOrAura\\.(cpp|h)'],
             ['exclude', 'platform/chromium/PlatformThemeChromiumDefault\\.(cpp|h)'],
           ],
         }],
-      ],
-    },
-    {
-      'target_name': 'webcore_platform_geometry',
-      'type': 'static_library',
-      'dependencies': [
-        'webcore_prerequisites',
-      ],
-      'sources': [
-        '<@(webcore_platform_geometry_files)',
       ],
     },
     # The *NEON.cpp files fail to compile when -mthumb is passed. Force
@@ -1011,7 +996,6 @@
         'webcore_dom',
         'webcore_html',
         'webcore_platform',
-        'webcore_platform_geometry',
         'webcore_remaining',
         'webcore_rendering',
         'webcore_svg',
@@ -1044,13 +1028,6 @@
             'webcore_arm_neon',
           ],
         }],
-        ['OS=="mac"', {
-          'direct_dependent_settings': {
-            'include_dirs': [
-              '../WebKit/mac/WebCoreSupport',
-            ],
-          },
-        }],
         ['OS=="linux" and "WTF_USE_WEBAUDIO_IPP=1" in feature_defines', {
           'link_settings': {
             'ldflags': [
@@ -1070,49 +1047,6 @@
             ]
           },
         }],
-      ],
-    },
-    {
-      'target_name': 'webcore_test_support',
-      'type': 'static_library',
-      'dependencies': [
-        '../config.gyp:config',
-        'webcore',
-      ],
-      'defines': [
-        'WEBKIT_IMPLEMENTATION=1',
-        'INSIDE_WEBKIT',
-      ],
-      'include_dirs': [
-        '<(bindings_dir)/v8',  # FIXME: Remove once http://crbug.com/236119 is fixed.
-        'testing',
-        'testing/v8',
-      ],
-      'sources': [
-        '<@(webcore_test_support_files)',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8GCObservation.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8GCObservation.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8MallocStatistics.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8MallocStatistics.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8TypeConversions.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8TypeConversions.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8Internals.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8Internals.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8InternalProfilers.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8InternalProfilers.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8InternalSettings.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8InternalSettings.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8InternalSettingsGenerated.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8InternalSettingsGenerated.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8InternalRuntimeFlags.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8InternalRuntimeFlags.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8LayerRect.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8LayerRect.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8LayerRectList.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8LayerRectList.h',
-      ],
-      'sources/': [
-        ['exclude', 'testing/js'],
       ],
     },
   ],  # targets

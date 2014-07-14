@@ -39,12 +39,12 @@
 #include "core/inspector/ScriptCallStack.h"
 #include "core/inspector/ScriptProfile.h"
 #include "core/inspector/WorkerInspectorController.h"
-#include "core/page/ConsoleBase.h"
-#include "core/page/ConsoleTypes.h"
-#include "core/platform/chromium/TraceEvent.h"
+#include "core/frame/ConsoleBase.h"
+#include "core/frame/ConsoleTypes.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerReportingProxy.h"
 #include "core/workers/WorkerThread.h"
+#include "platform/TraceEvent.h"
 
 #include "wtf/text/WTFString.h"
 
@@ -66,11 +66,11 @@ void WorkerConsole::reportMessageToClient(MessageLevel level, const String& mess
     m_scope->thread()->workerReportingProxy().postConsoleMessageToWorkerObject(ConsoleAPIMessageSource, level, message, lastCaller.lineNumber(), lastCaller.sourceURL());
 }
 
-ScriptExecutionContext* WorkerConsole::context()
+ExecutionContext* WorkerConsole::context()
 {
     if (!m_scope)
         return 0;
-    return m_scope->scriptExecutionContext();
+    return m_scope->executionContext();
 }
 
 bool WorkerConsole::profilerEnabled()

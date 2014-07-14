@@ -49,6 +49,7 @@ public:
     String markerTextWithSuffix() const;
 
     void updateListMarkerNumbers();
+    void updateMarkerLocation();
 
     static void updateItemValuesForOrderedList(const HTMLOListElement*);
     static unsigned itemCountForOrderedList(const HTMLOListElement*);
@@ -78,7 +79,6 @@ private:
 
     virtual void addOverflowFromChildren();
 
-    void updateMarkerLocation();
     inline int calcValue() const;
     void updateValueNow() const;
     void explicitValueChanged();
@@ -92,14 +92,7 @@ private:
     bool m_notInList : 1;
 };
 
-inline RenderListItem* toRenderListItem(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isListItem());
-    return static_cast<RenderListItem*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderListItem(const RenderListItem*);
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderListItem, isListItem());
 
 } // namespace WebCore
 

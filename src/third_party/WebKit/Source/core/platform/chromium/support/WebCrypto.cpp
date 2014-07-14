@@ -31,7 +31,7 @@
 #include "config.h"
 #include "public/platform/WebCrypto.h"
 
-#include "modules/crypto/CryptoResult.h"
+#include "core/platform/CryptoResult.h"
 #include "public/platform/WebArrayBuffer.h"
 #include <string.h>
 
@@ -66,12 +66,15 @@ void WebCryptoResult::completeWithBoolean(bool b)
 
 void WebCryptoResult::completeWithKey(const WebCryptoKey& key)
 {
+    ASSERT(!key.isNull());
     m_impl->completeWithKey(key);
     reset();
 }
 
 void WebCryptoResult::completeWithKeyPair(const WebCryptoKey& publicKey, const WebCryptoKey& privateKey)
 {
+    ASSERT(!publicKey.isNull());
+    ASSERT(!privateKey.isNull());
     m_impl->completeWithKeyPair(publicKey, privateKey);
     reset();
 }

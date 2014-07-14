@@ -39,15 +39,14 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/html/HTMLTextAreaElement.h"
-#include "core/page/FrameView.h"
-#include "core/page/Page.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Settings.h"
-#include "core/platform/Length.h"
 #include "core/rendering/Pagination.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/style/GridPosition.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/RenderStyleConstants.h"
+#include "platform/Length.h"
 #include "wtf/Assertions.h"
 
 namespace WebCore {
@@ -112,8 +111,6 @@ static EDisplay equivalentBlockDisplay(EDisplay display, bool isFloating, bool s
         return GRID;
 
     case INLINE:
-    case RUN_IN:
-    case COMPACT:
     case INLINE_BLOCK:
     case TABLE_ROW_GROUP:
     case TABLE_HEADER_GROUP:
@@ -133,11 +130,11 @@ static EDisplay equivalentBlockDisplay(EDisplay display, bool isFloating, bool s
 }
 
 // CSS requires text-decoration to be reset at each DOM element for tables,
-// inline blocks, inline tables, run-ins, shadow DOM crossings, floating elements,
+// inline blocks, inline tables, shadow DOM crossings, floating elements,
 // and absolute or relatively positioned elements.
 static bool doesNotInheritTextDecoration(const RenderStyle* style, const Element* e)
 {
-    return style->display() == TABLE || style->display() == INLINE_TABLE || style->display() == RUN_IN
+    return style->display() == TABLE || style->display() == INLINE_TABLE
         || style->display() == INLINE_BLOCK || style->display() == INLINE_BOX || isAtShadowBoundary(e)
         || style->isFloating() || style->hasOutOfFlowPosition();
 }
@@ -278,8 +275,9 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
         || style->hasFilter()
         || style->hasBlendMode()
         || style->position() == StickyPosition
-        || (style->position() == FixedPosition && e && e->document().page() && e->document().page()->settings().fixedPositionCreatesStackingContext())
+        || (style->position() == FixedPosition && e && e->document().settings() && e->document().settings()->fixedPositionCreatesStackingContext())
         || isInTopLayer(e, style)
+        || style->hasFlowFrom()
         ))
         style->setZIndex(0);
 
@@ -335,10 +333,6 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
     // Cull out any useless layers and also repeat patterns into additional layers.
     style->adjustBackgroundLayers();
     style->adjustMaskLayers();
-
-    // Do the same for animations and transitions.
-    style->adjustAnimations();
-    style->adjustTransitions();
 
     // Important: Intrinsic margins get added to controls before the theme has adjusted the style, since the theme will
     // alter fonts and heights/widths.

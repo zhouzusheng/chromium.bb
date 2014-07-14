@@ -41,9 +41,11 @@
       'SK_SUPPORT_GPU=<(skia_support_gpu)',
       'GR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"',
       'SK_ENABLE_LEGACY_API_ALIASING=1',
+      'SK_ATTR_DEPRECATED=SK_NOTHING_ARG1',
+      'SK_SUPPORT_LEGACY_COLORTYPE=1',
     ],
 
-    'default_font_cache_limit': '(20*1024*1024)',
+    'default_font_cache_limit%': '(20*1024*1024)',
 
     'conditions': [
       ['OS== "android"', {
@@ -67,9 +69,6 @@
   'sources': [
     # this should likely be moved into src/utils in skia
     '../third_party/skia/src/core/SkFlate.cpp',
-    # We don't want to add this to Skia's core.gypi since it is
-    # Android only. Include it here and remove it for everyone
-    # but Android later.
     '../third_party/skia/src/core/SkPaintOptionsAndroid.cpp',
 
     '../third_party/skia/src/ports/SkImageDecoder_empty.cpp',
@@ -152,9 +151,6 @@
     '../third_party/skia/include/utils/SkProxyCanvas.h',
   ],
   'include_dirs': [
-    '..',
-    'config',
-    '../third_party/skia/include/config',
     '../third_party/skia/include/core',
     '../third_party/skia/include/effects',
     '../third_party/skia/include/images',
@@ -165,6 +161,7 @@
     '../third_party/skia/include/ports',
     '../third_party/skia/include/utils',
     '../third_party/skia/src/core',
+    '../third_party/skia/src/opts',
     '../third_party/skia/src/image',
     '../third_party/skia/src/ports',
     '../third_party/skia/src/sfnt',
@@ -224,7 +221,7 @@
 
     # For POSIX platforms, prefer the Mutex implementation provided by Skia
     # since it does not generate static initializers.
-    [ 'OS == "android" or OS == "linux" or OS == "mac" or OS == "ios"', {
+    [ 'os_posix == 1', {
       'defines+': [
         'SK_USE_POSIX_THREADS',
       ],
@@ -235,11 +232,6 @@
       },
     }],
 
-    [ 'OS != "android"', {
-      'sources!': [
-        '../third_party/skia/src/core/SkPaintOptionsAndroid.cpp',
-      ],
-    }],
     [ 'OS != "ios"', {
       'dependencies': [
         '../third_party/WebKit/public/blink_skia_config.gyp:blink_skia_config',
@@ -408,6 +400,15 @@
         '-Wstring-conversion',
       ],
     }],
+    # On windows, GDI handles are a scarse system-wide resource so we have to keep
+    # the glyph cache, which holds up to 4 GDI handles per entry, to a fairly small
+    # size.
+    # http://crbug.com/314387
+    [ 'OS == "win"', {
+      'defines': [
+        'SK_DEFAULT_FONT_CACHE_COUNT_LIMIT=256',
+      ],
+    }],
   ],
   'target_conditions': [
     # Pull in specific Mac files for iOS (which have been filtered out
@@ -430,11 +431,17 @@
     # SkGraphics::Init().
     'SK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0',
 
+    # Forcing the unoptimized path for the offset image filter in skia until
+    # all filters used in Blink support the optimized path properly
+    'SK_DISABLE_OFFSETIMAGEFILTER_OPTIMIZATION',
+
     # Disable this check because it is too strict for some Chromium-specific
     # subclasses of SkPixelRef. See bug: crbug.com/171776.
     'SK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK',
 
     'IGNORE_ROT_AA_RECT_OPT',
+
+    'SK_IGNORE_QUAD_RR_CORNERS_OPT',
 
     'SKIA_IGNORE_GPU_MIPMAPS',
 
@@ -449,8 +456,6 @@
       #temporary until we can hide SkFontHost
       '../third_party/skia/src/core',
 
-      'config',
-      '../third_party/skia/include/config',
       '../third_party/skia/include/core',
       '../third_party/skia/include/effects',
       '../third_party/skia/include/pdf',

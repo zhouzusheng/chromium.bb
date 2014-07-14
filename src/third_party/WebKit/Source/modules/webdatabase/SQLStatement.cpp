@@ -28,10 +28,10 @@
 #include "config.h"
 #include "modules/webdatabase/SQLStatement.h"
 
-#include "core/platform/Logging.h"
-#include "core/platform/sql/SQLValue.h"
-#include "core/platform/sql/SQLiteDatabase.h"
-#include "core/platform/sql/SQLiteStatement.h"
+#include "platform/Logging.h"
+#include "modules/webdatabase/sqlite/SQLValue.h"
+#include "modules/webdatabase/sqlite/SQLiteDatabase.h"
+#include "modules/webdatabase/sqlite/SQLiteStatement.h"
 #include "modules/webdatabase/AbstractDatabaseServer.h"
 #include "modules/webdatabase/AbstractSQLStatementBackend.h"
 #include "modules/webdatabase/Database.h"
@@ -51,8 +51,8 @@ PassOwnPtr<SQLStatement> SQLStatement::create(Database* database,
 
 SQLStatement::SQLStatement(Database* database, PassRefPtr<SQLStatementCallback> callback,
     PassRefPtr<SQLStatementErrorCallback> errorCallback)
-    : m_statementCallbackWrapper(callback, database->scriptExecutionContext())
-    , m_statementErrorCallbackWrapper(errorCallback, database->scriptExecutionContext())
+    : m_statementCallbackWrapper(callback, database->executionContext())
+    , m_statementErrorCallbackWrapper(errorCallback, database->executionContext())
 {
 }
 

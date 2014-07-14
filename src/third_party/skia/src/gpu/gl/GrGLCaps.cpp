@@ -48,6 +48,7 @@ void GrGLCaps::reset() {
     fIsCoreProfile = false;
     fFixedFunctionSupport = false;
     fDiscardFBSupport = false;
+    fFullClearIsFree = false;
 }
 
 GrGLCaps::GrGLCaps(const GrGLCaps& caps) : GrDrawTargetCaps() {
@@ -84,6 +85,7 @@ GrGLCaps& GrGLCaps::operator = (const GrGLCaps& caps) {
     fIsCoreProfile = caps.fIsCoreProfile;
     fFixedFunctionSupport = caps.fFixedFunctionSupport;
     fDiscardFBSupport = caps.fDiscardFBSupport;
+    fFullClearIsFree = caps.fFullClearIsFree;
 
     return *this;
 }
@@ -224,6 +226,10 @@ void GrGLCaps::init(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
 
     fDiscardFBSupport = ctxInfo.hasExtension("GL_EXT_discard_framebuffer");
 
+    if (kARM_GrGLVendor == ctxInfo.vendor() || kImagination_GrGLVendor == ctxInfo.vendor()) {
+        fFullClearIsFree = true;
+    }
+
     if (kDesktop_GrGLBinding == binding) {
         fVertexArrayObjectSupport = version >= GR_GL_VER(3, 0) ||
                                     ctxInfo.hasExtension("GL_ARB_vertex_array_object");
@@ -302,20 +308,14 @@ void GrGLCaps::init(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
     // attachment, hence this min:
     fMaxRenderTargetSize = GrMin(fMaxTextureSize, fMaxRenderTargetSize);
 
-    fPathStencilingSupport = GR_GL_USE_NV_PATH_RENDERING &&
-                             ctxInfo.hasExtension("GL_NV_path_rendering");
+    fPathRenderingSupport = GR_GL_USE_NV_PATH_RENDERING &&
+                            ctxInfo.hasExtension("GL_NV_path_rendering");
 
     fDstReadInShaderSupport = kNone_FBFetchType != fFBFetchType;
 
-#if 0
-    // This has to be temporarily disabled. On Android it causes the texture
-    // usage to become front loaded and the OS kills the process. It can
-    // be re-enabled once the more dynamic (ref-driven) cache clearing
-    // system is in place.
-    fReuseScratchTextures = kARM_GrGLVendor != ctxInfo.vendor();
-#else
-    fReuseScratchTextures = true;
-#endif
+    // Disable scratch texture reuse on Mali and Adreno devices
+    fReuseScratchTextures = kARM_GrGLVendor != ctxInfo.vendor() &&
+                            kQualcomm_GrGLVendor != ctxInfo.vendor();
 
     // Enable supported shader-related caps
     if (kDesktop_GrGLBinding == binding) {
@@ -333,6 +333,94 @@ void GrGLCaps::init(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
         GR_GL_GetIntegerv(gli, GR_GL_MAX_SAMPLES_IMG, &fMaxSampleCount);
     } else if (GrGLCaps::kNone_MSFBOType != fMSFBOType) {
         GR_GL_GetIntegerv(gli, GR_GL_MAX_SAMPLES, &fMaxSampleCount);
+    }
+
+    this->initConfigRenderableTable(ctxInfo);
+}
+
+void GrGLCaps::initConfigRenderableTable(const GrGLContextInfo& ctxInfo) {
+
+    // OpenGL < 3.0
+    //  no support for render targets unless the GL_ARB_framebuffer_object
+    //  extension is supported (in which case we get ALPHA, RED, RG, RGB,
+    //  RGBA (ALPHA8, RGBA4, RGBA8) for OpenGL > 1.1). Note that we
+    //  probably don't get R8 in this case.
+
+    // OpenGL 3.0
+    //  base color renderable: ALPHA, RED, RG, RGB, and RGBA
+    //  sized derivatives: ALPHA8, R8, RGBA4, RGBA8
+
+    // >= OpenGL 3.1
+    //  base color renderable: RED, RG, RGB, and RGBA
+    //  sized derivatives: R8, RGBA4, RGBA8
+    //  if the GL_ARB_compatibility extension is supported then we get back
+    //  support for GL_ALPHA and ALPHA8
+
+    // GL_EXT_bgra adds BGRA render targets to any version
+
+    // ES 2.0
+    //  color renderable: RGBA4, RGB5_A1, RGB565
+    //  GL_EXT_texture_rg adds support for R8 as a color render target
+    //  GL_OES_rgb8_rgba8 and/or GL_ARM_rgba8 adds support for RGBA8
+    //  GL_EXT_texture_format_BGRA8888 and/or GL_APPLE_texture_format_BGRA8888 added BGRA support
+
+    // ES 3.0
+    // Same as ES 2.0 except R8 and RGBA8 are supported without extensions (the functions called
+    // below already account for this).
+
+    enum {
+        kNo_MSAA = 0,
+        kYes_MSAA = 1,
+    };
+
+    if (kDesktop_GrGLBinding == ctxInfo.binding()) {
+        // Post 3.0 we will get R8
+        // Prior to 3.0 we will get ALPHA8 (with GL_ARB_framebuffer_object)
+        if (ctxInfo.version() >= GR_GL_VER(3,0) ||
+            ctxInfo.hasExtension("GL_ARB_framebuffer_object")) {
+            fConfigRenderSupport[kAlpha_8_GrPixelConfig][kNo_MSAA] = true;
+            fConfigRenderSupport[kAlpha_8_GrPixelConfig][kYes_MSAA] = true;
+        }
+    } else {
+        // On ES we can only hope for R8
+        fConfigRenderSupport[kAlpha_8_GrPixelConfig][kNo_MSAA] = fTextureRedSupport;
+        fConfigRenderSupport[kAlpha_8_GrPixelConfig][kYes_MSAA] = fTextureRedSupport;
+    }
+
+    if (kDesktop_GrGLBinding != ctxInfo.binding()) {
+        // only available in ES
+        fConfigRenderSupport[kRGB_565_GrPixelConfig][kNo_MSAA] = true;
+        fConfigRenderSupport[kRGB_565_GrPixelConfig][kYes_MSAA] = true;
+    }
+
+    // we no longer support 444 as a render target
+    fConfigRenderSupport[kRGBA_4444_GrPixelConfig][kNo_MSAA]  = false;
+    fConfigRenderSupport[kRGBA_4444_GrPixelConfig][kYes_MSAA]  = false;
+
+    if (this->fRGBA8RenderbufferSupport) {
+        fConfigRenderSupport[kRGBA_8888_GrPixelConfig][kNo_MSAA]  = true;
+        fConfigRenderSupport[kRGBA_8888_GrPixelConfig][kYes_MSAA]  = true;
+    }
+
+    if (this->fBGRAFormatSupport) {
+        fConfigRenderSupport[kBGRA_8888_GrPixelConfig][kNo_MSAA]  = true;
+        // The GL_EXT_texture_format_BGRA8888 extension does not add BGRA to the list of
+        // configs that are color-renderable and can be passed to glRenderBufferStorageMultisample.
+        // Chromium may have an extension to allow BGRA renderbuffers to work on desktop platforms.
+        if (ctxInfo.extensions().has("GL_CHROMIUM_renderbuffer_format_BGRA8888")) {
+            fConfigRenderSupport[kBGRA_8888_GrPixelConfig][kYes_MSAA] = true;
+        } else {
+            fConfigRenderSupport[kBGRA_8888_GrPixelConfig][kYes_MSAA] =
+                !fBGRAIsInternalFormat || !this->usesMSAARenderBuffers();
+        }
+    }
+
+    // If we don't support MSAA then undo any places above where we set a config as renderable with
+    // msaa.
+    if (kNone_MSFBOType == fMSFBOType) {
+        for (int i = 0; i < kGrPixelConfigCnt; ++i) {
+            fConfigRenderSupport[i][kYes_MSAA] = false;
+        }
     }
 }
 
@@ -569,4 +657,5 @@ void GrGLCaps::print() const {
     GrPrintf("Use non-VBO for dynamic data: %s\n",
              (fUseNonVBOVertexAndIndexDynamicData ? "YES" : "NO"));
     GrPrintf("Discard FrameBuffer support: %s\n", (fDiscardFBSupport ? "YES" : "NO"));
+    GrPrintf("Full screen clear is free: %s\n", (fFullClearIsFree ? "YES" : "NO"));
 }

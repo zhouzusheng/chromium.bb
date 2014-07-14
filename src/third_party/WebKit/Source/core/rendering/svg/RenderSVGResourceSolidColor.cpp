@@ -21,8 +21,8 @@
 
 #include "core/rendering/svg/RenderSVGResourceSolidColor.h"
 
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/svg/RenderSVGShape.h"
@@ -30,7 +30,7 @@
 
 namespace WebCore {
 
-RenderSVGResourceType RenderSVGResourceSolidColor::s_resourceType = SolidColorResourceType;
+const RenderSVGResourceType RenderSVGResourceSolidColor::s_resourceType = SolidColorResourceType;
 
 RenderSVGResourceSolidColor::RenderSVGResourceSolidColor()
 {

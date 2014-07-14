@@ -35,12 +35,13 @@
 #include "core/fetch/ResourceClient.h"
 #include "core/fetch/ResourcePtr.h"
 #include "core/loader/LinkLoaderClient.h"
-#include "core/platform/PrerenderClient.h"
-#include "core/platform/Timer.h"
-#include "wtf/RefPtr.h"
+#include "platform/PrerenderClient.h"
+#include "platform/Timer.h"
+#include "wtf/OwnPtr.h"
 
 namespace WebCore {
 
+class Document;
 class LinkRelAttribute;
 class PrerenderHandle;
 
@@ -73,7 +74,7 @@ private:
     Timer<LinkLoader> m_linkLoadTimer;
     Timer<LinkLoader> m_linkLoadingErrorTimer;
 
-    RefPtr<PrerenderHandle> m_prerenderHandle;
+    OwnPtr<PrerenderHandle> m_prerender;
 };
 
 }

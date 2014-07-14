@@ -21,10 +21,6 @@ const char kDisableVp8AlphaPlayback[] = "disable-vp8-alpha-playback";
 // Set number of threads to use for video decoding.
 const char kVideoThreads[] = "video-threads";
 
-// Override suppressed responses to canPlayType().
-const char kOverrideEncryptedMediaCanPlayType[] =
-    "override-encrypted-media-canplaytype";
-
 // Enables MP3 stream parser for Media Source Extensions.
 const char kEnableMP3StreamParser[] = "enable-mp3-stream-parser";
 
@@ -32,9 +28,6 @@ const char kEnableMP3StreamParser[] = "enable-mp3-stream-parser";
 // Disables the infobar popup for accessing protected media identifier.
 const char kDisableInfobarForProtectedMediaIdentifier[] =
     "disable-infobar-for-protected-media-identifier";
-
-// Enables use of MediaDrm for Encrypted Media Extensions implementation.
-const char kEnableMediaDrm[] = "enable-mediadrm";
 
 // Enables use of non-compositing MediaDrm decoding by default for Encrypted
 // Media Extensions implementation.
@@ -97,5 +90,8 @@ const char kWaveOutBuffers[] = "waveout-buffers";
 // Use CRAS, the ChromeOS audio server.
 const char kUseCras[] = "use-cras";
 #endif
+
+// Disables system sounds manager.
+const char kDisableSystemSoundsManager[] = "disable-system-sounds-manager";
 
 }  // namespace switches

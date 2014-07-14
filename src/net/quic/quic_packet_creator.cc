@@ -17,6 +17,10 @@ using std::min;
 using std::pair;
 using std::vector;
 
+// If true, then QUIC handshake packets will be padded to the maximium packet
+// size.
+bool FLAGS_pad_quic_handshake_packets = false;
+
 namespace net {
 
 QuicPacketCreator::QuicPacketCreator(QuicGuid guid,
@@ -41,6 +45,7 @@ QuicPacketCreator::~QuicPacketCreator() {
 void QuicPacketCreator::OnBuiltFecProtectedPayload(
     const QuicPacketHeader& header, StringPiece payload) {
   if (fec_group_.get()) {
+    DCHECK_NE(0u, header.fec_group);
     fec_group_->Update(header, payload);
   }
 }
@@ -85,15 +90,8 @@ void QuicPacketCreator::UpdateSequenceNumberLength(
       bytes_per_second / options_.max_packet_length;
   const uint64 delta = max(current_delta, congestion_window);
 
-  if (delta < 1 << ((PACKET_1BYTE_SEQUENCE_NUMBER * 8) - 2)) {
-    options_.send_sequence_number_length = PACKET_1BYTE_SEQUENCE_NUMBER;
-  } else if (delta < 1 << ((PACKET_2BYTE_SEQUENCE_NUMBER * 8) - 2)) {
-    options_.send_sequence_number_length = PACKET_2BYTE_SEQUENCE_NUMBER;
-  } else if (delta < 1 << ((PACKET_4BYTE_SEQUENCE_NUMBER * 8) - 2)) {
-    options_.send_sequence_number_length = PACKET_4BYTE_SEQUENCE_NUMBER;
-  } else {
-    options_.send_sequence_number_length = PACKET_6BYTE_SEQUENCE_NUMBER;
-  }
+  options_.send_sequence_number_length =
+      QuicFramer::GetMinSequenceNumberLength(delta * 4);
 }
 
 bool QuicPacketCreator::HasRoomForStreamFrame(QuicStreamId id,
@@ -131,40 +129,43 @@ size_t QuicPacketCreator::CreateStreamFrame(QuicStreamId id,
                     framer_->version(), id, offset, true);
   }
 
+  if (data.size() == 0) {
+    if (!fin) {
+      LOG(DFATAL) << "Creating a stream frame with no data or fin.";
+    }
+    // Create a new packet for the fin, if necessary.
+    *frame = QuicFrame(new QuicStreamFrame(id, true, offset, ""));
+    return 0;
+  }
+
   const size_t free_bytes = BytesFree();
   size_t bytes_consumed = 0;
 
-  if (data.size() != 0) {
-    // When a STREAM frame is the last frame in a packet, it consumes two fewer
-    // bytes of framing overhead.
-    // Anytime more data is available than fits in with the extra two bytes,
-    // the frame will be the last, and up to two extra bytes are consumed.
-    // TODO(ianswett): If QUIC pads, the 1 byte PADDING frame does not fit when
-    // 1 byte is available, because then the STREAM frame isn't the last.
+  // When a STREAM frame is the last frame in a packet, it consumes two fewer
+  // bytes of framing overhead.
+  // Anytime more data is available than fits in with the extra two bytes,
+  // the frame will be the last, and up to two extra bytes are consumed.
+  // TODO(ianswett): If QUIC pads, the 1 byte PADDING frame does not fit when
+  // 1 byte is available, because then the STREAM frame isn't the last.
 
-    // The minimum frame size(0 bytes of data) if it's not the last frame.
-    size_t min_frame_size = QuicFramer::GetMinStreamFrameSize(
-        framer_->version(), id, offset, false);
-    // Check if it's the last frame in the packet.
-    if (data.size() + min_frame_size > free_bytes) {
-      // The minimum frame size(0 bytes of data) if it is the last frame.
-      size_t min_last_frame_size = QuicFramer::GetMinStreamFrameSize(
-          framer_->version(), id, offset, true);
-      bytes_consumed =
-          min<size_t>(free_bytes - min_last_frame_size, data.size());
-    } else {
-      DCHECK_LT(data.size(), BytesFree());
-      bytes_consumed = data.size();
-    }
-
-    bool set_fin = fin && bytes_consumed == data.size();  // Last frame.
-    StringPiece data_frame(data.data(), bytes_consumed);
-    *frame = QuicFrame(new QuicStreamFrame(id, set_fin, offset, data_frame));
+  // The minimum frame size(0 bytes of data) if it's not the last frame.
+  size_t min_frame_size = QuicFramer::GetMinStreamFrameSize(
+      framer_->version(), id, offset, false);
+  // Check if it's the last frame in the packet.
+  if (data.size() + min_frame_size > free_bytes) {
+    // The minimum frame size(0 bytes of data) if it is the last frame.
+    size_t min_last_frame_size = QuicFramer::GetMinStreamFrameSize(
+        framer_->version(), id, offset, true);
+    bytes_consumed =
+        min<size_t>(free_bytes - min_last_frame_size, data.size());
   } else {
-    DCHECK(fin);
-    // Create a new packet for the fin, if necessary.
-    *frame = QuicFrame(new QuicStreamFrame(id, true, offset, ""));
+    DCHECK_LT(data.size(), BytesFree());
+    bytes_consumed = data.size();
   }
+
+  bool set_fin = fin && bytes_consumed == data.size();  // Last frame.
+  StringPiece data_frame(data.data(), bytes_consumed);
+  *frame = QuicFrame(new QuicStreamFrame(id, set_fin, offset, data_frame));
 
   return bytes_consumed;
 }
@@ -189,18 +190,26 @@ size_t QuicPacketCreator::CreateStreamFrameWithNotifier(
 SerializedPacket QuicPacketCreator::ReserializeAllFrames(
     const QuicFrames& frames,
     QuicSequenceNumberLength original_length) {
-  // Temporarily set the sequence number length and disable FEC.
   const QuicSequenceNumberLength start_length = sequence_number_length_;
   const QuicSequenceNumberLength start_options_length =
       options_.send_sequence_number_length;
   const QuicFecGroupNumber start_fec_group = fec_group_number_;
+  const size_t start_max_packets_per_fec_group =
+      options_.max_packets_per_fec_group;
+
+  // Temporarily set the sequence number length and disable FEC.
   sequence_number_length_ = original_length;
   options_.send_sequence_number_length = original_length;
   fec_group_number_ = 0;
+  options_.max_packets_per_fec_group = 0;
+
+  // Serialize the packet and restore the fec and sequence number length state.
   SerializedPacket serialized_packet = SerializeAllFrames(frames);
   sequence_number_length_ = start_length;
   options_.send_sequence_number_length = start_options_length;
   fec_group_number_ = start_fec_group;
+  options_.max_packets_per_fec_group = start_max_packets_per_fec_group;
+
   return serialized_packet;
 }
 
@@ -229,10 +238,20 @@ bool QuicPacketCreator::HasPendingFrames() {
 size_t QuicPacketCreator::BytesFree() const {
   const size_t max_plaintext_size =
       framer_->GetMaxPlaintextSize(options_.max_packet_length);
-  if (PacketSize() >= max_plaintext_size) {
+  DCHECK_GE(max_plaintext_size, PacketSize());
+
+  // If the last frame in the packet is a stream frame, then it can be
+  // two bytes smaller than if it were not the last.  So this means that
+  // there are two fewer bytes available to the next frame in this case.
+  bool has_trailing_stream_frame =
+      !queued_frames_.empty() && queued_frames_.back().type == STREAM_FRAME;
+  size_t expanded_packet_size = PacketSize() +
+      (has_trailing_stream_frame ? kQuicStreamPayloadLengthSize : 0);
+
+  if (expanded_packet_size  >= max_plaintext_size) {
     return 0;
   }
-  return max_plaintext_size - PacketSize();
+  return max_plaintext_size - expanded_packet_size;
 }
 
 size_t QuicPacketCreator::PacketSize() const {
@@ -246,7 +265,7 @@ size_t QuicPacketCreator::PacketSize() const {
     packet_size_ = GetPacketHeaderSize(options_.send_guid_length,
                                        send_version_in_packet_,
                                        sequence_number_length_,
-                                       fec_group_number_ == 0 ?
+                                       options_.max_packets_per_fec_group == 0 ?
                                            NOT_IN_FEC_GROUP : IN_FEC_GROUP);
   }
   return packet_size_;
@@ -263,18 +282,31 @@ SerializedPacket QuicPacketCreator::SerializePacket() {
   QuicPacketHeader header;
   FillPacketHeader(fec_group_number_, false, false, &header);
 
+  if (FLAGS_pad_quic_handshake_packets) {
+    MaybeAddPadding();
+  }
+
+  size_t max_plaintext_size =
+      framer_->GetMaxPlaintextSize(options_.max_packet_length);
+  DCHECK_GE(max_plaintext_size, packet_size_);
+  // ACK and CONNECTION_CLOSE Frames will be truncated only if they're
+  // the first frame in the packet.  If truncation is to occur, then
+  // GetSerializedFrameLength will have returned all bytes free.
+  bool possibly_truncated =
+      packet_size_ != max_plaintext_size ||
+      queued_frames_.size() != 1 ||
+      (queued_frames_.back().type == ACK_FRAME ||
+       queued_frames_.back().type == CONNECTION_CLOSE_FRAME);
   SerializedPacket serialized =
       framer_->BuildDataPacket(header, queued_frames_, packet_size_);
-
-  // Run through all the included frames and if any of them have an AckNotifier
-  // registered, then inform the AckNotifier that it should be interested in
-  // this packet's sequence number.
-  for (QuicFrames::iterator it = queued_frames_.begin();
-       it != queued_frames_.end(); ++it) {
-    if (it->type == STREAM_FRAME && it->stream_frame->notifier != NULL) {
-      it->stream_frame->notifier->AddSequenceNumber(serialized.sequence_number);
-    }
+  if (!serialized.packet) {
+    LOG(DFATAL) << "Failed to serialize " << queued_frames_.size()
+                << " frames.";
   }
+  // Because of possible truncation, we can't be confident that our
+  // packet size calculation worked correctly.
+  if (!possibly_truncated)
+    DCHECK_EQ(packet_size_, serialized.packet->length());
 
   packet_size_ = 0;
   queued_frames_.clear();
@@ -295,7 +327,10 @@ SerializedPacket QuicPacketCreator::SerializeFec() {
   fec_group_.reset(NULL);
   fec_group_number_ = 0;
   packet_size_ = 0;
-  DCHECK(serialized.packet);
+  if (!serialized.packet) {
+    LOG(DFATAL) << "Failed to serialize fec packet for group:"
+                << fec_data.fec_group;
+  }
   DCHECK_GE(options_.max_packet_length, serialized.packet->length());
   return serialized;
 }
@@ -359,13 +394,19 @@ bool QuicPacketCreator::ShouldRetransmit(const QuicFrame& frame) {
 bool QuicPacketCreator::AddFrame(const QuicFrame& frame,
                                  bool save_retransmittable_frames) {
   size_t frame_len = framer_->GetSerializedFrameLength(
-      frame, BytesFree(), queued_frames_.empty());
+      frame, BytesFree(), queued_frames_.empty(), true,
+      options()->send_sequence_number_length);
   if (frame_len == 0) {
     return false;
   }
   DCHECK_LT(0u, packet_size_);
+  MaybeStartFEC();
   packet_size_ += frame_len;
-
+  // If the last frame in the packet was a stream frame, then once we add the
+  // new frame it's serialization will be two bytes larger.
+  if (!queued_frames_.empty() && queued_frames_.back().type == STREAM_FRAME) {
+    packet_size_ += kQuicStreamPayloadLengthSize;
+  }
   if (save_retransmittable_frames && ShouldRetransmit(frame)) {
     if (queued_retransmittable_frames_.get() == NULL) {
       queued_retransmittable_frames_.reset(new RetransmittableFrames());
@@ -381,6 +422,31 @@ bool QuicPacketCreator::AddFrame(const QuicFrame& frame,
     queued_frames_.push_back(frame);
   }
   return true;
+}
+
+void QuicPacketCreator::MaybeAddPadding() {
+  if (BytesFree() == 0) {
+    // Don't pad full packets.
+    return;
+  }
+
+  // If any of the frames in the current packet are on the crypto stream
+  // then they contain handshake messagses, and we should pad them.
+  bool is_handshake = false;
+  for (size_t i = 0; i < queued_frames_.size(); ++i) {
+    if (queued_frames_[i].type == STREAM_FRAME &&
+        queued_frames_[i].stream_frame->stream_id == kCryptoStreamId) {
+      is_handshake = true;
+      break;
+    }
+  }
+  if (!is_handshake) {
+    return;
+  }
+
+  QuicPaddingFrame padding;
+  bool success = AddFrame(QuicFrame(&padding), false);
+  DCHECK(success);
 }
 
 }  // namespace net

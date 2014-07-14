@@ -126,6 +126,14 @@ WebInspector.SourcesNavigator.prototype = {
 
     /**
      * @param {WebInspector.UISourceCode} uiSourceCode
+     */
+    updateIcon: function(uiSourceCode)
+    {
+        this._navigatorViewForUISourceCode(uiSourceCode).updateIcon(uiSourceCode);
+    },
+
+    /**
+     * @param {WebInspector.UISourceCode} uiSourceCode
      * @param {function(boolean)=} callback
      */
     rename: function(uiSourceCode, callback)
@@ -220,7 +228,7 @@ WebInspector.SnippetsNavigatorView.prototype = {
     {
         if (uiSourceCode.project().type() !== WebInspector.projectTypes.Snippets)
             return;
-        uiSourceCode.project().deleteFile(uiSourceCode);
+        uiSourceCode.project().deleteFile(uiSourceCode.path());
     },
 
     _handleCreateSnippet: function()
@@ -229,6 +237,14 @@ WebInspector.SnippetsNavigatorView.prototype = {
         data.project = WebInspector.scriptSnippetModel.project();
         data.path = "";
         this.dispatchEventToListeners(WebInspector.NavigatorView.Events.ItemCreationRequested, data);
+    },
+
+    /**
+     * @override
+     */
+    sourceDeleted: function(uiSourceCode)
+    {
+        this._handleRemoveSnippet(uiSourceCode);
     },
 
     __proto__: WebInspector.NavigatorView.prototype

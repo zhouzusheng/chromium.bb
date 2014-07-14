@@ -45,7 +45,7 @@ class SharedBuffer;
 
 struct SerializedResource;
 
-class MHTMLArchive : public RefCounted<MHTMLArchive> {
+class MHTMLArchive FINAL : public RefCounted<MHTMLArchive> {
 public:
     static PassRefPtr<MHTMLArchive> create();
     static PassRefPtr<MHTMLArchive> create(const KURL&, SharedBuffer*);
@@ -58,7 +58,7 @@ public:
     // Binary encoding results in smaller MHTML files but they might not work in other browsers.
     static PassRefPtr<SharedBuffer> generateMHTMLData(const Vector<SerializedResource>&, EncodingPolicy, const String& title, const String& mimeType);
 
-    virtual ~MHTMLArchive();
+    ~MHTMLArchive();
     ArchiveResource* mainResource() { return m_mainResource.get(); }
     const Vector<RefPtr<ArchiveResource> >& subresources() const { return m_subresources; }
     const Vector<RefPtr<MHTMLArchive> >& subframeArchives() const { return m_subframeArchives; }

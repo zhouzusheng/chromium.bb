@@ -34,13 +34,13 @@ class IDBDatabaseCallbacksImpl;
 
 class IDBOpenDBRequest : public IDBRequest {
 public:
-    static PassRefPtr<IDBOpenDBRequest> create(ScriptExecutionContext*, PassRefPtr<IDBDatabaseCallbacksImpl>, int64_t transactionId, int64_t version);
+    static PassRefPtr<IDBOpenDBRequest> create(ExecutionContext*, PassRefPtr<IDBDatabaseCallbacksImpl>, int64_t transactionId, int64_t version);
     virtual ~IDBOpenDBRequest();
 
     using IDBRequest::onSuccess;
 
     virtual void onBlocked(int64_t existingVersion) OVERRIDE;
-    virtual void onUpgradeNeeded(int64_t oldVersion, PassRefPtr<IDBDatabaseBackendInterface>, const IDBDatabaseMetadata&, WebKit::WebIDBCallbacks::DataLoss) OVERRIDE;
+    virtual void onUpgradeNeeded(int64_t oldVersion, PassRefPtr<IDBDatabaseBackendInterface>, const IDBDatabaseMetadata&, WebKit::WebIDBCallbacks::DataLoss, String dataLossMessage) OVERRIDE;
     virtual void onSuccess(PassRefPtr<IDBDatabaseBackendInterface>, const IDBDatabaseMetadata&) OVERRIDE;
 
     // EventTarget
@@ -54,7 +54,7 @@ protected:
     virtual bool shouldEnqueueEvent() const OVERRIDE;
 
 private:
-    IDBOpenDBRequest(ScriptExecutionContext*, PassRefPtr<IDBDatabaseCallbacksImpl>, int64_t transactionId, int64_t version);
+    IDBOpenDBRequest(ExecutionContext*, PassRefPtr<IDBDatabaseCallbacksImpl>, int64_t transactionId, int64_t version);
 
     RefPtr<IDBDatabaseCallbacksImpl> m_databaseCallbacks;
     const int64_t m_transactionId;

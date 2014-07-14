@@ -33,8 +33,8 @@
 
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/page/Frame.h"
-#include "core/page/Navigator.h"
+#include "core/frame/Frame.h"
+#include "core/frame/Navigator.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
@@ -70,7 +70,7 @@ String NavigatorDoNotTrack::doNotTrack(Navigator* navigator)
 
 String NavigatorDoNotTrack::doNotTrack()
 {
-    return frame() ? frame()->loader()->client()->doNotTrackValue() : String();
+    return frame() ? frame()->loader().client()->doNotTrackValue() : String();
 }
 
 } // namespace WebCore

@@ -131,6 +131,31 @@ WebInspector.DebuggerModel.prototype = {
     },
 
     /**
+     * @param {boolean} skip
+     * @param {boolean=} untilReload
+     */
+    skipAllPauses: function(skip, untilReload)
+    {
+        if (this._skipAllPausesTimeout) {
+            clearTimeout(this._skipAllPausesTimeout);
+            delete this._skipAllPausesTimeout;
+        }
+        DebuggerAgent.setSkipAllPauses(skip, untilReload);
+    },
+
+    /**
+     * @param {number} timeout
+     */
+    skipAllPausesUntilReloadOrTimeout: function(timeout)
+    {
+        if (this._skipAllPausesTimeout)
+            clearTimeout(this._skipAllPausesTimeout);
+        DebuggerAgent.setSkipAllPauses(true, true);
+        // If reload happens before the timeout, the flag will be already unset and the timeout callback won't change anything.
+        this._skipAllPausesTimeout = setTimeout(this.skipAllPauses.bind(this, false), timeout);
+    },
+
+    /**
      * @return {boolean}
      */
     canSetScriptSource: function()
@@ -180,6 +205,42 @@ WebInspector.DebuggerModel.prototype = {
            this._pendingStepIntoLocation = requestedLocation;
         };
         DebuggerAgent.continueToLocation(rawLocation, true, callback.bind(this, rawLocation));
+    },
+
+    stepInto: function()
+    {
+        function callback()
+        {
+            DebuggerAgent.stepInto();
+        }
+        DebuggerAgent.setOverlayMessage(undefined, callback.bind(this));
+    },
+
+    stepOver: function()
+    {
+        function callback()
+        {
+            DebuggerAgent.stepOver();
+        }
+        DebuggerAgent.setOverlayMessage(undefined, callback.bind(this));
+    },
+
+    stepOut: function()
+    {
+        function callback()
+        {
+            DebuggerAgent.stepOut();
+        }
+        DebuggerAgent.setOverlayMessage(undefined, callback.bind(this));
+    },
+
+    resume: function()
+    {
+        function callback()
+        {
+            DebuggerAgent.resume();
+        }
+        DebuggerAgent.setOverlayMessage(undefined, callback.bind(this));
     },
 
     /**
@@ -337,13 +398,13 @@ WebInspector.DebuggerModel.prototype = {
     {
         callback(error, errorData);
         if (needsStepIn)
-            DebuggerAgent.stepInto();
+            this.stepInto();
         else if (!error && callFrames && callFrames.length)
             this._pausedScript(callFrames, this._debuggerPausedDetails.reason, this._debuggerPausedDetails.auxData, this._debuggerPausedDetails.breakpointIds);
     },
 
     /**
-     * @return {Array.<DebuggerAgent.CallFrame>}
+     * @return {Array.<WebInspector.DebuggerModel.CallFrame>}
      */
     get callFrames()
     {
@@ -392,7 +453,7 @@ WebInspector.DebuggerModel.prototype = {
             if (callFrames.length > 0) {
                 var topLocation = callFrames[0].location;
                 if (topLocation.lineNumber == requestedLocation.lineNumber && topLocation.columnNumber == requestedLocation.columnNumber && topLocation.scriptId == requestedLocation.scriptId) {
-                    DebuggerAgent.stepInto();
+                    this.stepInto();
                     return;
                 }
             }
@@ -508,6 +569,15 @@ WebInspector.DebuggerModel.prototype = {
     },
 
     /**
+     * @return {DebuggerAgent.CallFrameId|undefined}
+     */
+    _selectedCallFrameId: function()
+    {
+        var callFrame = this.selectedCallFrame();
+        return callFrame ? callFrame.id : undefined;
+    },
+
+    /**
      * @param {string} code
      * @param {string} objectGroup
      * @param {boolean} includeCommandLineAPI
@@ -618,7 +688,7 @@ WebInspector.DebuggerModel.prototype = {
     {
         // FIXME: declare this property in protocol and in JavaScript.
         if (details && details["stack_update_needs_step_in"])
-            DebuggerAgent.stepInto();
+            this.stepInto();
         else {
             if (newCallFrames && newCallFrames.length)
                 this._pausedScript(newCallFrames, this._debuggerPausedDetails.reason, this._debuggerPausedDetails.auxData, this._debuggerPausedDetails.breakpointIds);

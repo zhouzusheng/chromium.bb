@@ -83,6 +83,8 @@ WorkerWebKitPlatformSupportImpl::WorkerWebKitPlatformSupportImpl(
       child_thread_loop_(base::MessageLoopProxy::current()),
       sync_message_filter_(sync_message_filter),
       quota_message_filter_(quota_message_filter) {
+  if (sender)
+    blob_registry_.reset(new WebBlobRegistryImpl(sender));
 }
 
 WorkerWebKitPlatformSupportImpl::~WorkerWebKitPlatformSupportImpl() {
@@ -230,13 +232,6 @@ WorkerWebKitPlatformSupportImpl::supportsJavaScriptMIMEType(const WebString&) {
 
 WebMimeRegistry::SupportsType
 WorkerWebKitPlatformSupportImpl::supportsMediaMIMEType(
-    const WebString&, const WebString&) {
-  NOTREACHED();
-  return WebMimeRegistry::IsSupported;
-}
-
-WebMimeRegistry::SupportsType
-WorkerWebKitPlatformSupportImpl::supportsMediaMIMEType(
     const WebString&, const WebString&, const WebString&) {
   NOTREACHED();
   return WebMimeRegistry::IsSupported;
@@ -282,8 +277,6 @@ WebString WorkerWebKitPlatformSupportImpl::mimeTypeFromFile(
 }
 
 WebBlobRegistry* WorkerWebKitPlatformSupportImpl::blobRegistry() {
-  if (!blob_registry_.get() && thread_safe_sender_.get())
-    blob_registry_.reset(new WebBlobRegistryImpl(thread_safe_sender_.get()));
   return blob_registry_.get();
 }
 

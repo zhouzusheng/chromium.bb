@@ -51,15 +51,18 @@ class MEDIA_EXPORT VideoCaptureFormat {
   VideoCaptureResolutionType frame_size_type;
 };
 
-// Parameters for starting video capture and device information.
-class MEDIA_EXPORT VideoCaptureParams : public VideoCaptureFormat {
+// Parameters for starting video capture.
+class MEDIA_EXPORT VideoCaptureParams {
  public:
   VideoCaptureParams();
-
+  // Identifies which device is to be started.
   VideoCaptureSessionId session_id;
+
+  // Requests a resolution and format at which the capture will occur.
+  VideoCaptureFormat requested_format;
 };
 
-// Capabilities describe the format a camera capture video in.
+// Capabilities describe the format a camera captures video in.
 class MEDIA_EXPORT VideoCaptureCapability : public VideoCaptureFormat {
  public:
   VideoCaptureCapability();
@@ -67,15 +70,12 @@ class MEDIA_EXPORT VideoCaptureCapability : public VideoCaptureFormat {
                          int height,
                          int frame_rate,
                          VideoPixelFormat color,
-                         int delay,
-                         bool interlaced,
                          VideoCaptureResolutionType frame_size_type);
 
   VideoPixelFormat color;      // Desired video type.
-  int expected_capture_delay;  // Expected delay in millisecond.
-  bool interlaced;             // Need interlace format.
-  VideoCaptureSessionId session_id;
 };
+
+typedef std::vector<VideoCaptureCapability> VideoCaptureCapabilities;
 
 }  // namespace media
 

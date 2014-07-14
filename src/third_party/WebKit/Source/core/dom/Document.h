@@ -30,25 +30,26 @@
 
 #include "bindings/v8/ScriptValue.h"
 #include "core/dom/ContainerNode.h"
-#include "core/dom/CustomElement.h"
 #include "core/dom/DOMTimeStamp.h"
-#include "core/dom/DocumentEventQueue.h"
 #include "core/dom/DocumentInit.h"
+#include "core/dom/DocumentLifecycle.h"
+#include "core/dom/DocumentSupplementable.h"
 #include "core/dom/DocumentTiming.h"
+#include "core/dom/ExecutionContext.h"
 #include "core/dom/IconURL.h"
 #include "core/dom/MutationObserver.h"
 #include "core/dom/QualifiedName.h"
-#include "core/dom/ScriptExecutionContext.h"
 #include "core/dom/TextLinkColors.h"
 #include "core/dom/TreeScope.h"
 #include "core/dom/UserActionElementSet.h"
-#include "core/dom/ViewportArguments.h"
+#include "core/dom/ViewportDescription.h"
+#include "core/dom/custom/CustomElement.h"
 #include "core/html/CollectionType.h"
 #include "core/page/FocusDirection.h"
 #include "core/page/PageVisibilityState.h"
-#include "weborigin/ReferrerPolicy.h"
-#include "core/platform/Timer.h"
 #include "core/rendering/HitTestRequest.h"
+#include "platform/Timer.h"
+#include "weborigin/ReferrerPolicy.h"
 #include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -58,12 +59,12 @@
 namespace WebCore {
 
 class AXObjectCache;
+class AnimationClock;
 class Attr;
 class CDATASection;
 class CSSStyleDeclaration;
 class CSSStyleSheet;
 class CSSStyleSheetResource;
-class ScriptResource;
 class CanvasRenderingContext;
 class CharacterData;
 class Chrome;
@@ -118,6 +119,7 @@ class LayoutPoint;
 class LayoutRect;
 class LiveNodeListBase;
 class Locale;
+class Location;
 class MediaQueryList;
 class MediaQueryMatcher;
 class MouseEventWithHitTestResults;
@@ -126,7 +128,6 @@ class NodeFilter;
 class NodeIterator;
 class Page;
 class PlatformMouseEvent;
-class Prerenderer;
 class ProcessingInstruction;
 class Range;
 class RegisteredEventListener;
@@ -135,6 +136,7 @@ class RequestAnimationFrameCallback;
 class ResourceFetcher;
 class SVGDocumentExtensions;
 class ScriptElementData;
+class ScriptResource;
 class ScriptRunner;
 class ScriptableDocumentParser;
 class ScriptedAnimationController;
@@ -143,9 +145,9 @@ class SegmentedString;
 class SelectorQueryCache;
 class SerializedScriptValue;
 class Settings;
+class StyleEngine;
 class StyleResolver;
 class StyleSheet;
-class StyleEngine;
 class StyleSheetContents;
 class StyleSheetList;
 class Text;
@@ -164,12 +166,10 @@ class FontFaceSet;
 
 typedef int ExceptionCode;
 
-enum PageshowEventPersistence {
-    PageshowEventNotPersisted = 0,
-    PageshowEventPersisted = 1
+enum RecalcStyleTime {
+    RecalcStyleImmediately, // synchronous
+    RecalcStyleDeferred // asynchronous
 };
-
-enum StyleResolverUpdateType { RecalcStyleImmediately, RecalcStyleDeferred };
 
 enum StyleResolverUpdateMode {
     // Discards the StyleResolver and rebuilds it.
@@ -205,7 +205,8 @@ enum DocumentClass {
 
 typedef unsigned char DocumentClassFlags;
 
-class Document : public ContainerNode, public TreeScope, public ScriptExecutionContext {
+class Document : public ContainerNode, public TreeScope, public SecurityContext, public ExecutionContext, public ExecutionContextClient
+    , public DocumentSupplementable, public LifecycleContext<Document> {
 public:
     static PassRefPtr<Document> create(const DocumentInit& initializer = DocumentInit())
     {
@@ -217,82 +218,49 @@ public:
     }
     virtual ~Document();
 
-    MediaQueryMatcher* mediaQueryMatcher();
+    MediaQueryMatcher& mediaQueryMatcher();
 
     using ContainerNode::ref;
     using ContainerNode::deref;
+    using SecurityContext::securityOrigin;
+    using SecurityContext::contentSecurityPolicy;
+    using ExecutionContextClient::addConsoleMessage;
 
     virtual bool canContainRangeEndPoint() const { return true; }
 
-    SelectorQueryCache* selectorQueryCache();
+    SelectorQueryCache& selectorQueryCache();
 
     // DOM methods & attributes for Document
 
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(abort);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(change);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(click);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(contextmenu);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(dblclick);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(dragenter);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(dragover);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(dragleave);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(drop);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(dragstart);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(drag);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(dragend);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(input);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(invalid);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(keydown);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(keypress);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(keyup);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(mousedown);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(mouseenter);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(mouseleave);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(mousemove);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(mouseout);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(mouseover);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(mouseup);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(mousewheel);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(scroll);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(select);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(submit);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(wheel);
-
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(blur);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(focus);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(load);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(readystatechange);
-
-    // WebKit extensions
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(beforecut);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(cut);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(beforecopy);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(copy);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(beforecut);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(beforepaste);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(copy);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(cut);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(paste);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(reset);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(readystatechange);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(search);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(selectstart);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(securitypolicyviolation);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(selectionchange);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(touchstart);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(touchmove);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(touchend);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(selectstart);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(touchcancel);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(touchend);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(touchmove);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(touchstart);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitfullscreenchange);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitfullscreenerror);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitpointerlockchange);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitpointerlockerror);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitvisibilitychange);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(securitypolicyviolation);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(wheel);
 
-    bool shouldOverrideLegacyViewport(ViewportArguments::Type);
-    void setViewportArguments(const ViewportArguments&);
-    const ViewportArguments& viewportArguments() const { return m_viewportArguments; }
+    bool shouldMergeWithLegacyDescription(ViewportDescription::Type);
+    bool shouldOverrideLegacyDescription(ViewportDescription::Type);
+    void setViewportDescription(const ViewportDescription&);
+    const ViewportDescription& viewportDescription() const { return m_viewportDescription; }
 #ifndef NDEBUG
     bool didDispatchViewportPropertiesChanged() const { return m_didDispatchViewportPropertiesChanged; }
 #endif
-    bool hasLegacyViewportTag() const { return m_legacyViewportArguments.isLegacyViewportType(); }
+    bool hasLegacyViewportTag() const { return m_legacyViewportDescription.isLegacyViewportType(); }
 
     void setReferrerPolicy(ReferrerPolicy referrerPolicy) { m_referrerPolicy = referrerPolicy; }
     ReferrerPolicy referrerPolicy() const { return m_referrerPolicy; }
@@ -309,6 +277,8 @@ public:
 
     bool hasManifest() const;
 
+    Location* location() const;
+
     PassRefPtr<Element> createElement(const AtomicString& name, ExceptionState&);
     PassRefPtr<DocumentFragment> createDocumentFragment();
     PassRefPtr<Text> createTextNode(const String& data);
@@ -322,7 +292,6 @@ public:
     PassRefPtr<Element> createElementNS(const String& namespaceURI, const String& qualifiedName, ExceptionState&);
     PassRefPtr<Element> createElement(const QualifiedName&, bool createdByParser);
 
-    bool cssStickyPositionEnabled() const;
     bool cssCompositingEnabled() const;
     PassRefPtr<DOMNamedFlowCollection> webkitGetNamedFlows();
 
@@ -343,7 +312,7 @@ public:
      */
     PassRefPtr<NodeList> nodesFromRect(int centerX, int centerY,
         unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding,
-        HitTestRequest::HitTestRequestType hitType = HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::DisallowShadowContent) const;
+        HitTestRequest::HitTestRequestType hitType = HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent) const;
     Element* elementFromPoint(int x, int y) const;
     PassRefPtr<Range> caretRangeFromPoint(int x, int y);
 
@@ -446,15 +415,16 @@ public:
     void setGotoAnchorNeededAfterStylesheetsLoad(bool b) { m_gotoAnchorNeededAfterStylesheetsLoad = b; }
 
     // Called when one or more stylesheets in the document may have been added, removed, or changed.
-    void styleResolverChanged(StyleResolverUpdateType, StyleResolverUpdateMode = FullStyleUpdate);
+    void styleResolverChanged(RecalcStyleTime, StyleResolverUpdateMode = FullStyleUpdate);
 
     // FIXME: Switch all callers of styleResolverChanged to these or better ones and then make them
     // do something smarter.
-    void removedStyleSheet(StyleSheet*, StyleResolverUpdateType type = RecalcStyleDeferred) { styleResolverChanged(type); }
-    void addedStyleSheet(StyleSheet*, StyleResolverUpdateType type = RecalcStyleDeferred) { styleResolverChanged(type); }
-    void modifiedStyleSheet(StyleSheet*, StyleResolverUpdateType type = RecalcStyleDeferred) { styleResolverChanged(type); }
+    void removedStyleSheet(StyleSheet*, RecalcStyleTime when = RecalcStyleDeferred, StyleResolverUpdateMode = FullStyleUpdate);
+    void addedStyleSheet(StyleSheet*, RecalcStyleTime when = RecalcStyleDeferred) { styleResolverChanged(when); }
+    void modifiedStyleSheet(StyleSheet*, RecalcStyleTime when = RecalcStyleDeferred, StyleResolverUpdateMode = FullStyleUpdate);
+    void changedSelectorWatch() { styleResolverChanged(RecalcStyleDeferred); }
 
-    void didAccessStyleResolver();
+    void didAccessStyleResolver() { ++m_styleResolverAccessCount; }
 
     void evaluateMediaQueryList();
 
@@ -514,21 +484,7 @@ public:
     virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
     void prepareForDestruction();
 
-    // Override ScriptExecutionContext methods to do additional work
-    virtual void suspendActiveDOMObjects(ActiveDOMObject::ReasonForSuspension) OVERRIDE;
-    virtual void resumeActiveDOMObjects() OVERRIDE;
-
-    // Implemented in RenderView.h to avoid a cyclic header dependency this just
-    // returns renderer so callers can avoid verbose casts.
-    RenderView* renderView() const;
-
-    // Shadow the implementations on Node to provide faster access for documents.
-    RenderObject* renderer() const { return m_renderer; }
-    void setRenderer(RenderObject* renderer)
-    {
-        m_renderer = renderer;
-        Node::setRenderer(renderer);
-    }
+    RenderView* renderView() const { return m_renderView; }
 
     AXObjectCache* existingAXObjectCache() const;
     AXObjectCache* axObjectCache() const;
@@ -587,7 +543,6 @@ public:
     KURL completeURL(const String&, const KURL& baseURLOverride) const;
 
     virtual String userAgent(const KURL&) const;
-
     virtual void disableEval(const String& errorMessage);
 
     bool canNavigate(Frame* targetFrame);
@@ -625,6 +580,8 @@ public:
         Complete
     };
     void setReadyState(ReadyState);
+    bool isLoadCompleted();
+
     void setParsing(bool);
     bool parsing() const { return m_bParsing; }
     int minimumLayoutDelay();
@@ -634,7 +591,7 @@ public:
     int elapsedTime() const;
 
     TextLinkColors& textLinkColors() { return m_textLinkColors; }
-    VisitedLinkState* visitedLinkState() const { return m_visitedLinkState.get(); }
+    VisitedLinkState& visitedLinkState() const { return *m_visitedLinkState; }
 
     MouseEventWithHitTestResults prepareMouseEvent(const HitTestRequest&, const LayoutPoint&, const PlatformMouseEvent&);
 
@@ -652,11 +609,6 @@ public:
     const UserActionElementSet& userActionElements() const { return m_userActionElements; }
     void setNeedsFocusedElementCheck();
     void didRunCheckFocusedElementTask() { m_didPostCheckFocusedElementTask = false; }
-
-    // The m_ignoreAutofocus flag specifies whether or not the document has been changed by the user enough
-    // for WebCore to ignore the autofocus attribute on any form controls
-    bool ignoreAutofocus() const { return m_ignoreAutofocus; };
-    void setIgnoreAutofocus(bool shouldIgnore = true) { m_ignoreAutofocus = shouldIgnore; };
 
     void setHoverNode(PassRefPtr<Node>);
     Node* hoverNode() const { return m_hoverNode.get(); }
@@ -696,23 +648,20 @@ public:
     // nodeChildrenWillBeRemoved is used when removing all node children at once.
     void nodeChildrenWillBeRemoved(ContainerNode*);
     // nodeWillBeRemoved is only safe when removing one node at a time.
-    void nodeWillBeRemoved(Node*);
-    bool canReplaceChild(Node* newChild, Node* oldChild);
+    void nodeWillBeRemoved(Node&);
+    bool canReplaceChild(Node& newChild, Node& oldChild);
 
     void didInsertText(Node*, unsigned offset, unsigned length);
     void didRemoveText(Node*, unsigned offset, unsigned length);
     void didMergeTextNodes(Text* oldNode, unsigned offset);
     void didSplitTextNode(Text* oldNode);
 
-    void setDOMWindow(DOMWindow* domWindow) { m_domWindow = domWindow; }
+    void clearDOMWindow() { m_domWindow = 0; }
     DOMWindow* domWindow() const { return m_domWindow; }
-    // In DOM Level 2, the Document's DOMWindow is called the defaultView.
-    DOMWindow* defaultView() const { return domWindow(); }
 
     // Helper functions for forwarding DOMWindow event related tasks to the DOMWindow if it exists.
     void setWindowAttributeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, DOMWrapperWorld* isolatedWorld = 0);
     EventListener* getWindowAttributeEventListener(const AtomicString& eventType, DOMWrapperWorld* isolatedWorld);
-    void dispatchWindowEvent(PassRefPtr<Event>, PassRefPtr<EventTarget> = 0);
 
     PassRefPtr<Event> createEvent(const String& eventType, ExceptionState&);
 
@@ -757,8 +706,8 @@ public:
      * @param content The header value (value of the meta tag's "content" attribute)
      */
     void processHttpEquiv(const String& equiv, const String& content);
-    void processViewport(const String& features, ViewportArguments::Type origin);
-    void updateViewportArguments();
+    void processViewport(const String& features, ViewportDescription::Type origin);
+    void updateViewportDescription();
     void processReferrerPolicy(const String& policy);
 
     // Returns the owning element in the parent document.
@@ -884,31 +833,18 @@ public:
     bool isDNSPrefetchEnabled() const { return m_isDNSPrefetchEnabled; }
     void parseDNSPrefetchControlHeader(const String&);
 
-    virtual void postTask(PassOwnPtr<Task>); // Executes the task on context's thread asynchronously.
+    virtual void postTask(PassOwnPtr<ExecutionContextTask>); // Executes the task on context's thread asynchronously.
 
     void suspendScriptedAnimationControllerCallbacks();
     void resumeScriptedAnimationControllerCallbacks();
 
     void finishedParsing();
 
-    void documentWillBecomeInactive();
-
     void setDecoder(PassRefPtr<TextResourceDecoder>);
     TextResourceDecoder* decoder() const { return m_decoder.get(); }
 
     void setEncoding(const WTF::TextEncoding&);
     const WTF::TextEncoding& encoding() const { return m_encoding; }
-
-    String displayStringModifiedByEncoding(const String&) const;
-    PassRefPtr<StringImpl> displayStringModifiedByEncoding(PassRefPtr<StringImpl>) const;
-    void displayBufferModifiedByEncoding(LChar* buffer, unsigned len) const
-    {
-        displayBufferModifiedByEncodingInternal(buffer, len);
-    }
-    void displayBufferModifiedByEncoding(UChar* buffer, unsigned len) const
-    {
-        displayBufferModifiedByEncodingInternal(buffer, len);
-    }
 
     void setAnnotatedRegionsDirty(bool f) { m_annotatedRegionsDirty = f; }
     bool annotatedRegionsDirty() const { return m_annotatedRegionsDirty; }
@@ -946,18 +882,17 @@ public:
     bool processingLoadEvent() const { return m_loadEventProgress == LoadEventInProgress; }
     bool loadEventFinished() const { return m_loadEventProgress >= LoadEventCompleted; }
 
+    void setContainsPlugins() { m_containsPlugins = true; }
+    bool containsPlugins() const { return m_containsPlugins; }
+
     virtual bool isContextThread() const;
     virtual bool isJSExecutionForbidden() const { return false; }
 
     bool containsValidityStyleRules() const { return m_containsValidityStyleRules; }
     void setContainsValidityStyleRules() { m_containsValidityStyleRules = true; }
 
-    void enqueueWindowEvent(PassRefPtr<Event>);
-    void enqueueDocumentEvent(PassRefPtr<Event>);
-    void enqueuePageshowEvent(PageshowEventPersistence);
-    void enqueueHashchangeEvent(const String& oldURL, const String& newURL);
-    void enqueuePopstateEvent(PassRefPtr<SerializedScriptValue> stateObject);
-    virtual DocumentEventQueue* eventQueue() const { return m_eventQueue.get(); }
+    void enqueueScrollEventForNode(Node*);
+    void scheduleAnimationFrameEvent(PassRefPtr<Event>);
 
     const QualifiedName& idAttributeName() const { return m_idAttributeName; }
 
@@ -1000,12 +935,10 @@ public:
 
     bool isInDocumentWrite() { return m_writeRecursionDepth > 0; }
 
-    void suspendScheduledTasks(ActiveDOMObject::ReasonForSuspension);
+    void suspendScheduledTasks();
     void resumeScheduledTasks();
 
     IntSize initialViewportSize() const;
-
-    Prerenderer* prerenderer() { return m_prerenderer.get(); }
 
     TextAutosizer* textAutosizer() { return m_textAutosizer.get(); }
 
@@ -1029,7 +962,7 @@ public:
     void decrementActiveParserCount();
 
     void setContextFeatures(PassRefPtr<ContextFeatures>);
-    ContextFeatures* contextFeatures() { return m_contextFeatures.get(); }
+    ContextFeatures* contextFeatures() const { return m_contextFeatures.get(); }
 
     DocumentSharedObjectPool* sharedObjectPool() { return m_sharedObjectPool.get(); }
 
@@ -1043,7 +976,9 @@ public:
     // Return a Locale for the default locale if the argument is null or empty.
     Locale& getCachedLocale(const AtomicString& locale = nullAtom);
 
+    AnimationClock& animationClock() { return *m_animationClock; }
     DocumentTimeline* timeline() const { return m_timeline.get(); }
+    DocumentTimeline* transitionTimeline() const { return m_transitionTimeline.get(); }
 
     void addToTopLayer(Element*, const Element* before = 0);
     void removeFromTopLayer(Element*);
@@ -1062,14 +997,18 @@ public:
     virtual DOMWindow* executingWindow() OVERRIDE { return domWindow(); }
     virtual void userEventWasHandled() OVERRIDE { resetLastHandledUserGestureTimestamp(); }
 
-    PassRefPtr<FontFaceSet> fonts();
-    DocumentLifecycleNotifier* lifecycleNotifier();
+    DocumentLifecycleNotifier& lifecycleNotifier();
+    bool isActive() const { return m_lifecyle.state() == DocumentLifecycle::Active; }
+    bool isStopped() const { return m_lifecyle.state() == DocumentLifecycle::Stopped; }
 
     enum HttpRefreshType {
         HttpRefreshFromHeader,
         HttpRefreshFromMetaTag
     };
     void maybeHandleHttpRefresh(const String&, HttpRefreshType);
+
+    void updateSecurityOrigin(PassRefPtr<SecurityOrigin>);
+    PassOwnPtr<LifecycleNotifier<Document> > createLifecycleNotifier();
 
 protected:
     Document(const DocumentInit&, DocumentClassFlags = DefaultDocumentClass);
@@ -1080,16 +1019,19 @@ protected:
 
     virtual void dispose() OVERRIDE;
 
+    virtual PassRefPtr<Document> cloneDocumentWithoutChildren();
+
 private:
     friend class Node;
     friend class IgnoreDestructiveWriteCountIncrementer;
 
+    ScriptedAnimationController& ensureScriptedAnimationController();
+    virtual SecurityContext& securityContext() OVERRIDE { return *this; }
+    virtual EventQueue* eventQueue() const FINAL;
+
     void updateDistributionIfNeeded();
 
     void detachParser();
-
-    typedef void (*ArgumentsCallback)(const String& keyString, const String& valueString, Document*, void* data);
-    void processArguments(const String& features, void* data, ArgumentsCallback);
 
     virtual bool isDocument() const OVERRIDE { return true; }
 
@@ -1099,14 +1041,15 @@ private:
     virtual NodeType nodeType() const;
     virtual bool childTypeAllowed(NodeType) const;
     virtual PassRefPtr<Node> cloneNode(bool deep = true);
+    void cloneDataFromDocument(const Document&);
 
-    virtual void refScriptExecutionContext() { ref(); }
-    virtual void derefScriptExecutionContext() { deref(); }
-    virtual PassOwnPtr<LifecycleNotifier> createLifecycleNotifier() OVERRIDE;
+    virtual void refExecutionContext() { ref(); }
+    virtual void derefExecutionContext() { deref(); }
 
-    virtual const KURL& virtualURL() const; // Same as url(), but needed for ScriptExecutionContext to implement it without a performance loss for direct calls.
+    virtual const KURL& virtualURL() const; // Same as url(), but needed for ExecutionContext to implement it without a performance loss for direct calls.
     virtual KURL virtualCompleteURL(const String&) const; // Same as completeURL() for the same reason as above.
 
+    virtual void reportBlockedScriptExecutionToInspector(const String& directiveText) OVERRIDE;
     virtual void addMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, ScriptState*);
     void internalAddMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, PassRefPtr<ScriptCallStack>, ScriptState*);
 
@@ -1132,9 +1075,6 @@ private:
 
     static void didReceiveTask(void*);
 
-    template <typename CharacterType>
-    void displayBufferModifiedByEncodingInternal(CharacterType*, unsigned) const;
-
     PageVisibilityState visibilityState() const;
 
     PassRefPtr<HTMLCollection> ensureCachedCollection(CollectionType);
@@ -1156,8 +1096,12 @@ private:
     void processHttpEquivXFrameOptions(const String& content);
     void processHttpEquivContentSecurityPolicy(const String& equiv, const String& content);
 
+    DocumentLifecycle m_lifecyle;
+
+    // FIXME: This should probably be handled inside the style resolver itself.
     Timer<Document> m_styleResolverThrowawayTimer;
-    double m_lastStyleResolverAccessTime;
+    unsigned m_styleResolverAccessCount;
+    unsigned m_lastStyleResolverAccessCount;
 
     OwnPtr<StyleResolver> m_styleResolver;
     bool m_didCalculateStyleResolver;
@@ -1208,8 +1152,6 @@ private:
     bool m_printing;
     bool m_paginatedForScreen;
 
-    bool m_ignoreAutofocus;
-
     CompatibilityMode m_compatibilityMode;
     bool m_compatibilityModeLocked; // This is cheaper than making setCompatibilityMode virtual.
 
@@ -1236,7 +1178,7 @@ private:
     OwnPtr<FormController> m_formController;
 
     TextLinkColors m_textLinkColors;
-    OwnPtr<VisitedLinkState> m_visitedLinkState;
+    const OwnPtr<VisitedLinkState> m_visitedLinkState;
 
     bool m_loadingSheet;
     bool m_visuallyOrdered;
@@ -1251,6 +1193,7 @@ private:
     bool m_haveExplicitlyDisabledDNSPrefetch;
     bool m_containsValidityStyleRules;
     bool m_updateFocusAppearanceRestoresSelection;
+    bool m_containsPlugins;
 
     // http://www.whatwg.org/specs/web-apps/current-work/#ignore-destructive-writes-counter
     unsigned m_ignoreDestructiveWriteCount;
@@ -1269,7 +1212,6 @@ private:
 
     LoadEventProgress m_loadEventProgress;
 
-    RefPtr<SerializedScriptValue> m_pendingStateObject;
     double m_startTime;
     bool m_overMinimumLayoutThreshold;
 
@@ -1315,9 +1257,11 @@ private:
     bool m_sawElementsInKnownNamespaces;
     bool m_isSrcdocDocument;
     bool m_isMobileDocument;
+    // Set in Document::initSecurityContext() at Document creation, per:
+    // http://www.whatwg.org/specs/web-apps/current-work/#attr-iframe-seamless
+    bool m_mayDisplaySeamlesslyWithParent;
 
-    RenderObject* m_renderer;
-    RefPtr<DocumentEventQueue> m_eventQueue;
+    RenderView* m_renderView;
 
     WeakPtrFactory<Document> m_weakFactory;
     WeakPtr<Document> m_contextDocument;
@@ -1331,8 +1275,8 @@ private:
     int m_loadEventDelayCount;
     Timer<Document> m_loadEventDelayTimer;
 
-    ViewportArguments m_viewportArguments;
-    ViewportArguments m_legacyViewportArguments;
+    ViewportDescription m_viewportDescription;
+    ViewportDescription m_legacyViewportDescription;
 
     ReferrerPolicy m_referrerPolicy;
 
@@ -1350,9 +1294,7 @@ private:
     RefPtr<ScriptedAnimationController> m_scriptedAnimationController;
 
     Timer<Document> m_pendingTasksTimer;
-    Vector<OwnPtr<Task> > m_pendingTasks;
-
-    OwnPtr<Prerenderer> m_prerenderer;
+    Vector<OwnPtr<ExecutionContextTask> > m_pendingTasks;
 
     OwnPtr<TextAutosizer> m_textAutosizer;
 
@@ -1376,12 +1318,12 @@ private:
     typedef HashMap<AtomicString, OwnPtr<Locale> > LocaleIdentifierToLocaleMap;
     LocaleIdentifierToLocaleMap m_localeCache;
 
+    OwnPtr<AnimationClock> m_animationClock;
     RefPtr<DocumentTimeline> m_timeline;
+    RefPtr<DocumentTimeline> m_transitionTimeline;
 
     RefPtr<Document> m_templateDocument;
     Document* m_templateDocumentHost; // Manually managed weakref (backpointer from m_templateDocument).
-
-    RefPtr<FontFaceSet> m_fonts;
 
     Timer<Document> m_didAssociateFormControlsTimer;
     HashSet<RefPtr<Element> > m_associatedFormControls;
@@ -1402,40 +1344,35 @@ inline const Document* Document::templateDocument() const
     return m_templateDocument.get();
 }
 
-inline bool Document::shouldOverrideLegacyViewport(ViewportArguments::Type origin)
+inline bool Document::shouldOverrideLegacyDescription(ViewportDescription::Type origin)
 {
     // The different (legacy) meta tags have different priorities based on the type
     // regardless of which order they appear in the DOM. The priority is given by the
-    // ViewportArguments::Type enum.
-    return origin >= m_legacyViewportArguments.type;
+    // ViewportDescription::Type enum.
+    return origin >= m_legacyViewportDescription.type;
 }
 
-inline Document* toDocument(ScriptExecutionContext* scriptExecutionContext)
+inline Document* toDocument(ExecutionContext* executionContext)
 {
-    ASSERT_WITH_SECURITY_IMPLICATION(!scriptExecutionContext || scriptExecutionContext->isDocument());
-    return static_cast<Document*>(scriptExecutionContext);
+    ASSERT_WITH_SECURITY_IMPLICATION(!executionContext || executionContext->isDocument());
+    return static_cast<Document*>(executionContext);
 }
 
-inline const Document* toDocument(const ScriptExecutionContext* scriptExecutionContext)
+inline const Document* toDocument(const ExecutionContext* executionContext)
 {
-    ASSERT_WITH_SECURITY_IMPLICATION(!scriptExecutionContext || scriptExecutionContext->isDocument());
-    return static_cast<const Document*>(scriptExecutionContext);
+    ASSERT_WITH_SECURITY_IMPLICATION(!executionContext || executionContext->isDocument());
+    return static_cast<const Document*>(executionContext);
 }
 
-inline Document* toDocument(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isDocumentNode());
-    return static_cast<Document*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(Document, isDocumentNode());
 
-inline const Document* toDocument(const Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isDocumentNode());
-    return static_cast<const Document*>(node);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toDocument(const Document*);
+// All these varations are needed to avoid ambiguous overloads with the Node and TreeScope versions.
+inline bool operator==(const Document& a, const Document& b) { return &a == &b; }
+inline bool operator==(const Document& a, const Document* b) { return &a == b; }
+inline bool operator==(const Document* a, const Document& b) { return a == &b; }
+inline bool operator!=(const Document& a, const Document& b) { return !(a == b); }
+inline bool operator!=(const Document& a, const Document* b) { return !(a == b); }
+inline bool operator!=(const Document* a, const Document& b) { return !(a == b); }
 
 // Put these methods here, because they require the Document definition, but we really want to inline them.
 

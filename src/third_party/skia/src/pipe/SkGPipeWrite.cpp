@@ -48,7 +48,6 @@ static SkFlattenable* get_paintflat(const SkPaint& paint, unsigned paintFlat) {
         case kShader_PaintFlat:         return paint.getShader();
         case kImageFilter_PaintFlat:    return paint.getImageFilter();
         case kXfermode_PaintFlat:       return paint.getXfermode();
-        case kAnnotation_PaintFlat:     return paint.getAnnotation();
     }
     SkDEBUGFAIL("never gets here");
     return NULL;
@@ -295,7 +294,7 @@ private:
 
     inline void doNotify() {
         if (!fDone) {
-            size_t bytes = fWriter.size() - fBytesNotified;
+            size_t bytes = fWriter.bytesWritten() - fBytesNotified;
             if (bytes > 0) {
                 fController->notifyWritten(bytes);
                 fBytesNotified += bytes;
@@ -468,7 +467,7 @@ bool SkGPipeCanvas::needOpBytes(size_t needed) {
     }
 
     needed += 4;  // size of DrawOp atom
-    if (fWriter.size() + needed > fBlockSize) {
+    if (fWriter.bytesWritten() + needed > fBlockSize) {
         // Before we wipe out any data that has already been written, read it
         // out.
         this->doNotify();
@@ -695,7 +694,7 @@ void SkGPipeCanvas::drawPaint(const SkPaint& paint) {
 }
 
 void SkGPipeCanvas::drawPoints(PointMode mode, size_t count,
-                                   const SkPoint pts[], const SkPaint& paint) {
+                               const SkPoint pts[], const SkPaint& paint) {
     if (count) {
         NOTIFY_SETUP(this);
         this->writePaint(paint);
@@ -1122,6 +1121,26 @@ void SkGPipeCanvas::writePaint(const SkPaint& paint) {
         for (size_t i = 0; i < size/4; i++) {
 //            SkDebugf("[%d] %08X\n", i, storage[i]);
         }
+    }
+
+    //
+    //  Do these after we've written kPaintOp_DrawOp
+
+    if (base.getAnnotation() != paint.getAnnotation()) {
+        if (NULL == paint.getAnnotation()) {
+            if (this->needOpBytes()) {
+                this->writeOp(kSetAnnotation_DrawOp, 0, 0);
+            }
+        } else {
+            SkOrderedWriteBuffer buffer(1024);
+            paint.getAnnotation()->writeToBuffer(buffer);
+            const size_t size = buffer.bytesWritten();
+            if (this->needOpBytes(size)) {
+                this->writeOp(kSetAnnotation_DrawOp, 0, size);
+                buffer.writeToMemory(fWriter.reserve(size));
+            }
+        }
+        base.setAnnotation(paint.getAnnotation());
     }
 }
 

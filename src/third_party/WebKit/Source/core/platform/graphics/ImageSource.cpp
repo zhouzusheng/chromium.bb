@@ -28,9 +28,9 @@
 #include "config.h"
 #include "core/platform/graphics/ImageSource.h"
 
-#include "core/platform/graphics/ImageOrientation.h"
 #include "core/platform/graphics/chromium/DeferredImageDecoder.h"
 #include "core/platform/image-decoders/ImageDecoder.h"
+#include "platform/graphics/ImageOrientation.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 
@@ -99,11 +99,6 @@ IntSize ImageSource::frameSizeAtIndex(size_t index, RespectImageOrientationEnum 
 bool ImageSource::getHotSpot(IntPoint& hotSpot) const
 {
     return m_decoder ? m_decoder->hotSpot(hotSpot) : false;
-}
-
-size_t ImageSource::bytesDecodedToDetermineProperties() const
-{
-    return 0;
 }
 
 int ImageSource::repetitionCount()

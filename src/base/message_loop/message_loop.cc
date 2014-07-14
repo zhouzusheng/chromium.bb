@@ -348,13 +348,12 @@ Closure MessageLoop::QuitWhenIdleClosure() {
 }
 
 void MessageLoop::SetNestableTasksAllowed(bool allowed) {
-  if (nestable_tasks_allowed_ != allowed) {
-    nestable_tasks_allowed_ = allowed;
-    if (!nestable_tasks_allowed_)
-      return;
-    // Start the native pump if we are not already pumping.
+  if (allowed) {
+    // Kick the native pump just in case we enter a OS-driven nested message
+    // loop.
     pump_->ScheduleWork();
   }
+  nestable_tasks_allowed_ = allowed;
 }
 
 bool MessageLoop::NestableTasksAllowed() const {
@@ -694,12 +693,6 @@ void MessageLoop::ReleaseSoonInternal(
 
 //------------------------------------------------------------------------------
 // MessageLoopForUI
-
-#if defined(OS_WIN)
-void MessageLoopForUI::DidProcessMessage(const MSG& message) {
-  pump_win()->DidProcessMessage(message);
-}
-#endif  // defined(OS_WIN)
 
 #if defined(OS_ANDROID)
 void MessageLoopForUI::Start() {

@@ -27,7 +27,7 @@
       'target_name': 'blpwtk2_all',
       'type': 'none',
       'dependencies': [
-        '../content/content.gyp:content_shell',
+        '../content/content_shell_and_tests.gyp:content_shell',
         '../chrome/chrome_blpwtk2.gyp:chrome_blpwtk2',
       ],
       'conditions': [

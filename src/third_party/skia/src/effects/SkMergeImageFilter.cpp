@@ -9,6 +9,7 @@
 #include "SkCanvas.h"
 #include "SkDevice.h"
 #include "SkFlattenableBuffers.h"
+#include "SkValidationUtils.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -40,7 +41,7 @@ void SkMergeImageFilter::initModes(const SkXfermode::Mode modes[]) {
 
 SkMergeImageFilter::SkMergeImageFilter(SkImageFilter* first, SkImageFilter* second,
                                        SkXfermode::Mode mode,
-                                       const SkIRect* cropRect) : INHERITED(first, second, cropRect) {
+                                       const CropRect* cropRect) : INHERITED(first, second, cropRect) {
     if (SkXfermode::kSrcOver_Mode != mode) {
         SkXfermode::Mode modes[] = { mode, mode };
         this->initModes(modes);
@@ -51,7 +52,7 @@ SkMergeImageFilter::SkMergeImageFilter(SkImageFilter* first, SkImageFilter* seco
 
 SkMergeImageFilter::SkMergeImageFilter(SkImageFilter* filters[], int count,
                                        const SkXfermode::Mode modes[],
-                                       const SkIRect* cropRect) : INHERITED(count, filters, cropRect) {
+                                       const CropRect* cropRect) : INHERITED(count, filters, cropRect) {
     this->initModes(modes);
 }
 
@@ -159,8 +160,13 @@ SkMergeImageFilter::SkMergeImageFilter(SkFlattenableReadBuffer& buffer) : INHERI
     bool hasModes = buffer.readBool();
     if (hasModes) {
         this->initAllocModes();
-        SkASSERT(buffer.getArrayCount() == countInputs() * sizeof(fModes[0]));
-        buffer.readByteArray(fModes);
+        int nbInputs = countInputs();
+        size_t size = nbInputs * sizeof(fModes[0]);
+        SkASSERT(buffer.getArrayCount() == size);
+        buffer.readByteArray(fModes, size);
+        for (int i = 0; i < nbInputs; ++i) {
+            buffer.validate(SkIsValidMode((SkXfermode::Mode)fModes[i]));
+        }
     } else {
         fModes = 0;
     }

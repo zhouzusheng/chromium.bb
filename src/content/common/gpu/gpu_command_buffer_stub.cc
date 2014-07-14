@@ -18,7 +18,6 @@
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/gpu/gpu_watchdog.h"
 #include "content/common/gpu/image_transport_surface.h"
-#include "content/common/gpu/media/gl_surface_capturer.h"
 #include "content/common/gpu/media/gpu_video_decode_accelerator.h"
 #include "content/common/gpu/sync_point_manager.h"
 #include "content/public/common/content_client.h"
@@ -27,6 +26,8 @@
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/service/gl_context_virtual.h"
 #include "gpu/command_buffer/service/gl_state_restorer_impl.h"
+#include "gpu/command_buffer/service/gpu_control_service.h"
+#include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/logger.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/query_manager.h"
@@ -207,8 +208,6 @@ bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
                                     OnGetTransferBuffer);
     IPC_MESSAGE_HANDLER_DELAY_REPLY(GpuCommandBufferMsg_CreateVideoDecoder,
                                     OnCreateVideoDecoder)
-    IPC_MESSAGE_HANDLER_DELAY_REPLY(GpuCommandBufferMsg_CreateSurfaceCapturer,
-                                    OnCreateSurfaceCapturer)
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_SetSurfaceVisible,
                         OnSetSurfaceVisible)
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_DiscardBackbuffer,
@@ -226,6 +225,10 @@ bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(
         GpuCommandBufferMsg_SetClientHasMemoryAllocationChangedCallback,
         OnSetClientHasMemoryAllocationChangedCallback)
+    IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_RegisterGpuMemoryBuffer,
+                        OnRegisterGpuMemoryBuffer);
+    IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_DestroyGpuMemoryBuffer,
+                        OnDestroyGpuMemoryBuffer);
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -405,6 +408,12 @@ void GpuCommandBufferStub::OnInitialize(
     OnInitializeFailed(reply_message);
     return;
   }
+
+  gpu_control_.reset(
+      new gpu::GpuControlService(context_group_->image_manager(),
+                                 NULL,
+                                 context_group_->mailbox_manager(),
+                                 NULL));
 
   decoder_.reset(::gpu::gles2::GLES2Decoder::Create(context_group_.get()));
 
@@ -727,18 +736,6 @@ void GpuCommandBufferStub::OnCreateVideoDecoder(
   // self-delete during destruction of this stub.
 }
 
-void GpuCommandBufferStub::OnCreateSurfaceCapturer(
-    IPC::Message* reply_message) {
-  TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnCreateSurfaceCapturer");
-  int capturer_route_id = channel_->GenerateRouteID();
-  new GLSurfaceCapturer(capturer_route_id, this);
-  // The capturer is registered as a DestructionObserver of this stub and will
-  // self-delete during destruction of this stub.
-  GpuCommandBufferMsg_CreateSurfaceCapturer::WriteReplyParams(
-      reply_message, capturer_route_id);
-  Send(reply_message);
-}
-
 void GpuCommandBufferStub::OnSetSurfaceVisible(bool visible) {
   TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnSetSurfaceVisible");
   if (memory_manager_client_state_)
@@ -840,7 +837,7 @@ void GpuCommandBufferStub::OnSignalQuery(uint32 query_id, uint32 id) {
 
 
 void GpuCommandBufferStub::OnReceivedClientManagedMemoryStats(
-    const GpuManagedMemoryStats& stats) {
+    const gpu::ManagedMemoryStats& stats) {
   TRACE_EVENT0(
       "gpu",
       "GpuCommandBufferStub::OnReceivedClientManagedMemoryStats");
@@ -861,6 +858,28 @@ void GpuCommandBufferStub::OnSetClientHasMemoryAllocationChangedCallback(
   } else {
     memory_manager_client_state_.reset();
   }
+}
+
+void GpuCommandBufferStub::OnRegisterGpuMemoryBuffer(
+    int32 id,
+    gfx::GpuMemoryBufferHandle gpu_memory_buffer,
+    uint32 width,
+    uint32 height,
+    uint32 internalformat) {
+  TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnRegisterGpuMemoryBuffer");
+  if (gpu_control_) {
+    gpu_control_->RegisterGpuMemoryBuffer(id,
+                                          gpu_memory_buffer,
+                                          width,
+                                          height,
+                                          internalformat);
+  }
+}
+
+void GpuCommandBufferStub::OnDestroyGpuMemoryBuffer(int32 id) {
+  TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnDestroyGpuMemoryBuffer");
+  if (gpu_control_)
+    gpu_control_->DestroyGpuMemoryBuffer(id);
 }
 
 void GpuCommandBufferStub::SendConsoleMessage(
@@ -913,26 +932,23 @@ gpu::gles2::MemoryTracker* GpuCommandBufferStub::GetMemoryTracker() const {
 }
 
 void GpuCommandBufferStub::SetMemoryAllocation(
-    const GpuMemoryAllocation& allocation) {
+    const gpu::MemoryAllocation& allocation) {
   if (!last_memory_allocation_valid_ ||
-      !allocation.renderer_allocation.Equals(
-          last_memory_allocation_.renderer_allocation)) {
+      !allocation.Equals(last_memory_allocation_)) {
     Send(new GpuCommandBufferMsg_SetMemoryAllocation(
-        route_id_, allocation.renderer_allocation));
-  }
-
-  if (!last_memory_allocation_valid_ ||
-      !allocation.browser_allocation.Equals(
-          last_memory_allocation_.browser_allocation)) {
-    // This can be called outside of OnMessageReceived, so the context needs
-    // to be made current before calling methods on the surface.
-    if (surface_.get() && MakeCurrent())
-      surface_->SetFrontbufferAllocation(
-          allocation.browser_allocation.suggest_have_frontbuffer);
+        route_id_, allocation));
   }
 
   last_memory_allocation_valid_ = true;
   last_memory_allocation_ = allocation;
+}
+
+void GpuCommandBufferStub::SuggestHaveFrontBuffer(
+    bool suggest_have_frontbuffer) {
+  // This can be called outside of OnMessageReceived, so the context needs
+  // to be made current before calling methods on the surface.
+  if (surface_.get() && MakeCurrent())
+    surface_->SetFrontbufferAllocation(suggest_have_frontbuffer);
 }
 
 bool GpuCommandBufferStub::CheckContextLost() {

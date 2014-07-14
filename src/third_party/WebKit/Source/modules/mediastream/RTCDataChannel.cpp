@@ -25,11 +25,12 @@
 #include "config.h"
 #include "modules/mediastream/RTCDataChannel.h"
 
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/MessageEvent.h"
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
+#include "core/events/MessageEvent.h"
 #include "core/fileapi/Blob.h"
 #include "core/platform/mediastream/RTCDataChannelHandler.h"
 #include "core/platform/mediastream/RTCPeerConnectionHandler.h"
@@ -38,24 +39,39 @@
 
 namespace WebCore {
 
-PassRefPtr<RTCDataChannel> RTCDataChannel::create(ScriptExecutionContext* context, PassOwnPtr<RTCDataChannelHandler> handler)
+static void throwNotOpenException(ExceptionState& es)
+{
+    es.throwDOMException(InvalidStateError, "RTCDataChannel.readyState is not 'open'");
+}
+
+static void throwCouldNotSendDataException(ExceptionState& es)
+{
+    es.throwDOMException(NetworkError, "Could not send data");
+}
+
+static void throwNoBlobSupportException(ExceptionState& es)
+{
+    es.throwDOMException(NotSupportedError, ExceptionMessages::failedToExecute("send", "RTCDataChannel", "Blob support not implemented yet"));
+}
+
+PassRefPtr<RTCDataChannel> RTCDataChannel::create(ExecutionContext* context, PassOwnPtr<RTCDataChannelHandler> handler)
 {
     ASSERT(handler);
     return adoptRef(new RTCDataChannel(context, handler));
 }
 
-PassRefPtr<RTCDataChannel> RTCDataChannel::create(ScriptExecutionContext* context, RTCPeerConnectionHandler* peerConnectionHandler, const String& label, const WebKit::WebRTCDataChannelInit& init, ExceptionState& es)
+PassRefPtr<RTCDataChannel> RTCDataChannel::create(ExecutionContext* context, RTCPeerConnectionHandler* peerConnectionHandler, const String& label, const WebKit::WebRTCDataChannelInit& init, ExceptionState& es)
 {
     OwnPtr<RTCDataChannelHandler> handler = peerConnectionHandler->createDataChannel(label, init);
     if (!handler) {
-        es.throwDOMException(NotSupportedError);
+        es.throwDOMException(NotSupportedError, "RTCDataChannel is not supported");
         return 0;
     }
     return adoptRef(new RTCDataChannel(context, handler.release()));
 }
 
-RTCDataChannel::RTCDataChannel(ScriptExecutionContext* context, PassOwnPtr<RTCDataChannelHandler> handler)
-    : m_scriptExecutionContext(context)
+RTCDataChannel::RTCDataChannel(ExecutionContext* context, PassOwnPtr<RTCDataChannelHandler> handler)
+    : m_executionContext(context)
     , m_handler(handler)
     , m_stopped(false)
     , m_readyState(ReadyStateConnecting)
@@ -147,29 +163,29 @@ String RTCDataChannel::binaryType() const
 void RTCDataChannel::setBinaryType(const String& binaryType, ExceptionState& es)
 {
     if (binaryType == "blob")
-        es.throwDOMException(NotSupportedError);
+        throwNoBlobSupportException(es);
     else if (binaryType == "arraybuffer")
         m_binaryType = BinaryTypeArrayBuffer;
     else
-        es.throwDOMException(TypeMismatchError);
+        es.throwDOMException(TypeMismatchError, "Unknown binary type : " + binaryType);
 }
 
 void RTCDataChannel::send(const String& data, ExceptionState& es)
 {
     if (m_readyState != ReadyStateOpen) {
-        es.throwDOMException(InvalidStateError);
+        throwNotOpenException(es);
         return;
     }
     if (!m_handler->sendStringData(data)) {
-        // FIXME: Decide what the right exception here is.
-        es.throwDOMException(SyntaxError);
+        // FIXME: This should not throw an exception but instead forcefully close the data channel.
+        throwCouldNotSendDataException(es);
     }
 }
 
 void RTCDataChannel::send(PassRefPtr<ArrayBuffer> prpData, ExceptionState& es)
 {
     if (m_readyState != ReadyStateOpen) {
-        es.throwDOMException(InvalidStateError);
+        throwNotOpenException(es);
         return;
     }
 
@@ -182,8 +198,8 @@ void RTCDataChannel::send(PassRefPtr<ArrayBuffer> prpData, ExceptionState& es)
     const char* dataPointer = static_cast<const char*>(data->data());
 
     if (!m_handler->sendRawData(dataPointer, dataLength)) {
-        // FIXME: Decide what the right exception here is.
-        es.throwDOMException(SyntaxError);
+        // FIXME: This should not throw an exception but instead forcefully close the data channel.
+        throwCouldNotSendDataException(es);
     }
 }
 
@@ -196,7 +212,7 @@ void RTCDataChannel::send(PassRefPtr<ArrayBufferView> data, ExceptionState& es)
 void RTCDataChannel::send(PassRefPtr<Blob> data, ExceptionState& es)
 {
     // FIXME: implement
-    es.throwDOMException(NotSupportedError);
+    throwNoBlobSupportException(es);
 }
 
 void RTCDataChannel::close()
@@ -216,10 +232,10 @@ void RTCDataChannel::didChangeReadyState(ReadyState newState)
 
     switch (m_readyState) {
     case ReadyStateOpen:
-        scheduleDispatchEvent(Event::create(eventNames().openEvent));
+        scheduleDispatchEvent(Event::create(EventTypeNames::open));
         break;
     case ReadyStateClosed:
-        scheduleDispatchEvent(Event::create(eventNames().closeEvent));
+        scheduleDispatchEvent(Event::create(EventTypeNames::close));
         break;
     default:
         break;
@@ -256,17 +272,17 @@ void RTCDataChannel::didDetectError()
     if (m_stopped)
         return;
 
-    scheduleDispatchEvent(Event::create(eventNames().errorEvent));
+    scheduleDispatchEvent(Event::create(EventTypeNames::error));
 }
 
 const AtomicString& RTCDataChannel::interfaceName() const
 {
-    return eventNames().interfaceForRTCDataChannel;
+    return EventTargetNames::RTCDataChannel;
 }
 
-ScriptExecutionContext* RTCDataChannel::scriptExecutionContext() const
+ExecutionContext* RTCDataChannel::executionContext() const
 {
-    return m_scriptExecutionContext;
+    return m_executionContext;
 }
 
 void RTCDataChannel::stop()
@@ -274,17 +290,7 @@ void RTCDataChannel::stop()
     m_stopped = true;
     m_readyState = ReadyStateClosed;
     m_handler->setClient(0);
-    m_scriptExecutionContext = 0;
-}
-
-EventTargetData* RTCDataChannel::eventTargetData()
-{
-    return &m_eventTargetData;
-}
-
-EventTargetData* RTCDataChannel::ensureEventTargetData()
-{
-    return &m_eventTargetData;
+    m_executionContext = 0;
 }
 
 void RTCDataChannel::scheduleDispatchEvent(PassRefPtr<Event> event)

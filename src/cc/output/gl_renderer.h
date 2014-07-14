@@ -73,8 +73,6 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
                                       size_t bytes_visible_and_nearby,
                                       size_t bytes_allocated) OVERRIDE;
 
-  virtual void SetDiscardBackBufferWhenNotVisible(bool discard) OVERRIDE;
-
   static void DebugGLCall(WebKit::WebGraphicsContext3D* context,
                           const char* command,
                           const char* file,
@@ -427,6 +425,7 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   scoped_ptr<SolidColorProgramAA> solid_color_program_aa_;
 
   WebKit::WebGraphicsContext3D* context_;
+  gpu::ContextSupport* context_support_;
 
   skia::RefPtr<GrContext> gr_context_;
   skia::RefPtr<SkCanvas> sk_canvas_;
@@ -437,7 +436,6 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   gfx::Rect scissor_rect_;
   gfx::Rect viewport_;
   bool is_backbuffer_discarded_;
-  bool discard_backbuffer_when_not_visible_;
   bool is_using_bind_uniform_;
   bool visible_;
   bool is_scissor_enabled_;

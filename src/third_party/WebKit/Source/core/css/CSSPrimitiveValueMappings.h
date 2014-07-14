@@ -34,19 +34,19 @@
 #include "core/css/CSSCalculationValue.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSReflectionDirection.h"
-#include "core/platform/graphics/FontDescription.h"
-#include "core/platform/graphics/FontSmoothingMode.h"
-#include "core/platform/graphics/GraphicsTypes.h"
-#include "core/platform/Length.h"
 #include "core/platform/ThemeTypes.h"
 #include "core/platform/graphics/Path.h"
-#include "core/platform/graphics/TextRenderingMode.h"
-#include "core/platform/text/TextDirection.h"
-#include "core/platform/text/UnicodeBidi.h"
-#include "core/platform/text/WritingMode.h"
 #include "core/rendering/style/LineClampValue.h"
 #include "core/rendering/style/RenderStyleConstants.h"
 #include "core/rendering/style/SVGRenderStyleDefs.h"
+#include "platform/Length.h"
+#include "platform/fonts/FontDescription.h"
+#include "platform/fonts/FontSmoothingMode.h"
+#include "platform/fonts/TextRenderingMode.h"
+#include "platform/graphics/GraphicsTypes.h"
+#include "platform/text/TextDirection.h"
+#include "platform/text/UnicodeBidi.h"
+#include "platform/text/WritingMode.h"
 #include "wtf/MathExtras.h"
 
 namespace WebCore {
@@ -174,6 +174,32 @@ template<> inline CSSPrimitiveValue::operator CSSReflectionDirection() const
 
     ASSERT_NOT_REACHED();
     return ReflectionBelow;
+}
+
+template<> inline CSSPrimitiveValue::CSSPrimitiveValue(ColumnFill columnFill)
+    : CSSValue(PrimitiveClass)
+{
+    m_primitiveUnitType = CSS_VALUE_ID;
+    switch (columnFill) {
+    case ColumnFillAuto:
+        m_value.valueID = CSSValueAuto;
+        break;
+    case ColumnFillBalance:
+        m_value.valueID = CSSValueBalance;
+        break;
+    }
+}
+
+template<> inline CSSPrimitiveValue::operator ColumnFill() const
+{
+    if (m_primitiveUnitType == CSS_VALUE_ID) {
+        if (m_value.valueID == CSSValueBalance)
+            return ColumnFillBalance;
+        if (m_value.valueID == CSSValueAuto)
+            return ColumnFillAuto;
+    }
+    ASSERT_NOT_REACHED();
+    return ColumnFillBalance;
 }
 
 template<> inline CSSPrimitiveValue::CSSPrimitiveValue(ColumnSpan columnSpan)
@@ -1215,12 +1241,6 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(EDisplay e)
         break;
     case LIST_ITEM:
         m_value.valueID = CSSValueListItem;
-        break;
-    case RUN_IN:
-        m_value.valueID = CSSValueRunIn;
-        break;
-    case COMPACT:
-        m_value.valueID = CSSValueCompact;
         break;
     case INLINE_BLOCK:
         m_value.valueID = CSSValueInlineBlock;
@@ -2394,6 +2414,45 @@ template<> inline CSSPrimitiveValue::operator TextAlignLast() const
     return TextAlignLastAuto;
 }
 
+template<> inline CSSPrimitiveValue::CSSPrimitiveValue(TextJustify e)
+    : CSSValue(PrimitiveClass)
+{
+    m_primitiveUnitType = CSS_VALUE_ID;
+    switch (e) {
+    case TextJustifyAuto:
+        m_value.valueID = CSSValueAuto;
+        break;
+    case TextJustifyNone:
+        m_value.valueID = CSSValueNone;
+        break;
+    case TextJustifyInterWord:
+        m_value.valueID = CSSValueInterWord;
+        break;
+    case TextJustifyDistribute:
+        m_value.valueID = CSSValueDistribute;
+        break;
+    }
+}
+
+template<> inline CSSPrimitiveValue::operator TextJustify() const
+{
+    switch (m_value.valueID) {
+    case CSSValueAuto:
+        return TextJustifyAuto;
+    case CSSValueNone:
+        return TextJustifyNone;
+    case CSSValueInterWord:
+        return TextJustifyInterWord;
+    case CSSValueDistribute:
+        return TextJustifyDistribute;
+    default:
+        break;
+    }
+
+    ASSERT_NOT_REACHED();
+    return TextJustifyAuto;
+}
+
 template<> inline CSSPrimitiveValue::operator TextDecoration() const
 {
     ASSERT(isValueID());
@@ -2438,7 +2497,6 @@ template<> inline CSSPrimitiveValue::operator TextDecorationStyle() const
     return TextDecorationStyleSolid;
 }
 
-#if ENABLE(CSS3_TEXT)
 template<> inline CSSPrimitiveValue::CSSPrimitiveValue(TextUnderlinePosition e)
     : CSSValue(PrimitiveClass)
 {
@@ -2477,7 +2535,6 @@ template<> inline CSSPrimitiveValue::operator TextUnderlinePosition() const
     ASSERT_NOT_REACHED();
     return TextUnderlinePositionAuto;
 }
-#endif // CSS3_TEXT
 
 template<> inline CSSPrimitiveValue::CSSPrimitiveValue(ETextSecurity e)
     : CSSValue(PrimitiveClass)
@@ -3395,6 +3452,26 @@ template<> inline CSSPrimitiveValue::operator ObjectFit() const
     default:
         ASSERT_NOT_REACHED();
         return ObjectFitFill;
+    }
+}
+
+template<> inline CSSPrimitiveValue::CSSPrimitiveValue(EFillSizeType fillSize)
+    : CSSValue(PrimitiveClass)
+{
+    m_primitiveUnitType = CSS_VALUE_ID;
+    switch (fillSize) {
+    case Contain:
+        m_value.valueID = CSSValueContain;
+        break;
+    case Cover:
+        m_value.valueID = CSSValueCover;
+        break;
+    case SizeNone:
+        m_value.valueID = CSSValueNone;
+        break;
+    case SizeLength:
+    default:
+        ASSERT_NOT_REACHED();
     }
 }
 
@@ -4854,6 +4931,35 @@ template<> inline CSSPrimitiveValue::operator EIsolation() const
 
     ASSERT_NOT_REACHED();
     return IsolationAuto;
+}
+
+template<> inline CSSPrimitiveValue::CSSPrimitiveValue(TouchActionDelay t)
+    : CSSValue(PrimitiveClass)
+{
+    m_primitiveUnitType = CSS_VALUE_ID;
+    switch (t) {
+    case TouchActionDelayNone:
+        m_value.valueID = CSSValueNone;
+        break;
+    case TouchActionDelayScript:
+        m_value.valueID = CSSValueScript;
+        break;
+    }
+}
+
+template<> inline CSSPrimitiveValue::operator TouchActionDelay() const
+{
+    switch (m_value.valueID) {
+    case CSSValueNone:
+        return TouchActionDelayNone;
+    case CSSValueScript:
+        return TouchActionDelayScript;
+    default:
+        break;
+    }
+
+    ASSERT_NOT_REACHED();
+    return TouchActionDelayNone;
 }
 
 }

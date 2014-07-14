@@ -58,8 +58,7 @@
 #include "core/fileapi/FileList.h"
 #include "core/html/ImageData.h"
 #include "core/html/canvas/DataView.h"
-#include "core/platform/AsyncFileSystem.h"
-#include "core/platform/SharedBuffer.h"
+#include "platform/SharedBuffer.h"
 #include "wtf/ArrayBuffer.h"
 #include "wtf/ArrayBufferContents.h"
 #include "wtf/ArrayBufferView.h"
@@ -239,10 +238,6 @@ static bool shouldCheckForCycles(int depth)
     return !(depth & (depth - 1));
 }
 
-// Increment this for each incompatible change to the wire format.
-// Version 2: Added StringUCharTag for UChar v8 strings.
-static const uint32_t wireFormatVersion = 2;
-
 static const int maxDepth = 20000;
 
 // VarInt encoding constants.
@@ -366,7 +361,7 @@ public:
     void writeVersion()
     {
         append(VersionTag);
-        doWriteUint32(wireFormatVersion);
+        doWriteUint32(SerializedScriptValue::wireFormatVersion);
     }
 
     void writeInt32(int32_t value)
@@ -399,10 +394,10 @@ public:
         doWriteNumber(number);
     }
 
-    void writeBlob(const String& url, const String& type, unsigned long long size)
+    void writeBlob(const String& uuid, const String& type, unsigned long long size)
     {
         append(BlobTag);
-        doWriteWebCoreString(url);
+        doWriteWebCoreString(uuid);
         doWriteWebCoreString(type);
         doWriteUint64(size);
     }
@@ -415,12 +410,10 @@ public:
         doWriteWebCoreString(url);
     }
 
-    void writeFile(const String& path, const String& url, const String& type)
+    void writeFile(const File& file)
     {
         append(FileTag);
-        doWriteWebCoreString(path);
-        doWriteWebCoreString(url);
-        doWriteWebCoreString(type);
+        doWriteFile(file);
     }
 
     void writeFileList(const FileList& fileList)
@@ -428,11 +421,8 @@ public:
         append(FileListTag);
         uint32_t length = fileList.length();
         doWriteUint32(length);
-        for (unsigned i = 0; i < length; ++i) {
-            doWriteWebCoreString(fileList.item(i)->path());
-            doWriteWebCoreString(fileList.item(i)->url().string());
-            doWriteWebCoreString(fileList.item(i)->type());
-        }
+        for (unsigned i = 0; i < length; ++i)
+            doWriteFile(*fileList.item(i));
     }
 
     void writeArrayBuffer(const ArrayBuffer& arrayBuffer)
@@ -567,6 +557,13 @@ public:
     v8::Isolate* getIsolate() { return m_isolate; }
 
 private:
+    void doWriteFile(const File& file)
+    {
+        doWriteWebCoreString(file.path());
+        doWriteWebCoreString(file.uuid());
+        doWriteWebCoreString(file.type());
+    }
+
     void doWriteArrayBuffer(const ArrayBuffer& arrayBuffer)
     {
         uint32_t byteLength = arrayBuffer.byteLength();
@@ -706,14 +703,14 @@ public:
         JSFailure
     };
 
-    Serializer(Writer& writer, MessagePortArray* messagePorts, ArrayBufferArray* arrayBuffers, Vector<String>& blobURLs, v8::TryCatch& tryCatch, v8::Isolate* isolate)
+    Serializer(Writer& writer, MessagePortArray* messagePorts, ArrayBufferArray* arrayBuffers, BlobDataHandleMap& blobDataHandles, v8::TryCatch& tryCatch, v8::Isolate* isolate)
         : m_writer(writer)
         , m_tryCatch(tryCatch)
         , m_depth(0)
         , m_execDepth(0)
         , m_status(Success)
         , m_nextObjectReference(0)
-        , m_blobURLs(blobURLs)
+        , m_blobDataHandles(blobDataHandles)
         , m_isolate(isolate)
     {
         ASSERT(!tryCatch.HasCaught());
@@ -1081,8 +1078,8 @@ private:
         Blob* blob = V8Blob::toNative(value.As<v8::Object>());
         if (!blob)
             return;
-        m_writer.writeBlob(blob->url().string(), blob->type(), blob->size());
-        m_blobURLs.append(blob->url().string());
+        m_writer.writeBlob(blob->uuid(), blob->type(), blob->size());
+        m_blobDataHandles.add(blob->uuid(), blob->blobDataHandle());
     }
 
     StateBase* writeDOMFileSystem(v8::Handle<v8::Value> value, StateBase* next)
@@ -1101,8 +1098,8 @@ private:
         File* file = V8File::toNative(value.As<v8::Object>());
         if (!file)
             return;
-        m_writer.writeFile(file->path(), file->url().string(), file->type());
-        m_blobURLs.append(file->url().string());
+        m_writer.writeFile(*file);
+        m_blobDataHandles.add(file->uuid(), file->blobDataHandle());
     }
 
     void writeFileList(v8::Handle<v8::Value> value)
@@ -1113,7 +1110,7 @@ private:
         m_writer.writeFileList(*fileList);
         unsigned length = fileList->length();
         for (unsigned i = 0; i < length; ++i)
-            m_blobURLs.append(fileList->item(i)->url().string());
+            m_blobDataHandles.add(fileList->item(i)->uuid(), fileList->item(i)->blobDataHandle());
     }
 
     void writeImageData(v8::Handle<v8::Value> value)
@@ -1232,7 +1229,7 @@ private:
     ObjectPool m_transferredMessagePorts;
     ObjectPool m_transferredArrayBuffers;
     uint32_t m_nextObjectReference;
-    Vector<String>& m_blobURLs;
+    BlobDataHandleMap& m_blobDataHandles;
     v8::Isolate* m_isolate;
 };
 
@@ -1342,12 +1339,13 @@ public:
 // restoring information about saved objects of composite types.
 class Reader {
 public:
-    Reader(const uint8_t* buffer, int length, v8::Isolate* isolate)
+    Reader(const uint8_t* buffer, int length, v8::Isolate* isolate,  const BlobDataHandleMap& blobDataHandles)
         : m_buffer(buffer)
         , m_length(length)
         , m_position(0)
         , m_version(0)
         , m_isolate(isolate)
+        , m_blobDataHandles(blobDataHandles)
     {
         ASSERT(!(reinterpret_cast<size_t>(buffer) & 1));
         ASSERT(length >= 0);
@@ -1857,17 +1855,19 @@ private:
 
     bool readBlob(v8::Handle<v8::Value>* value)
     {
-        String url;
+        if (m_version < 3)
+            return false;
+        String uuid;
         String type;
         uint64_t size;
-        if (!readWebCoreString(&url))
+        if (!readWebCoreString(&uuid))
             return false;
         if (!readWebCoreString(&type))
             return false;
         if (!doReadUint64(&size))
             return false;
-        PassRefPtr<Blob> blob = Blob::create(KURL(ParsedURLString, url), type, size);
-        *value = toV8(blob, v8::Handle<v8::Object>(), m_isolate);
+        RefPtr<Blob> blob = Blob::create(getOrCreateBlobDataHandle(uuid, type, size));
+        *value = toV8(blob.release(), v8::Handle<v8::Object>(), m_isolate);
         return true;
     }
 
@@ -1882,47 +1882,52 @@ private:
             return false;
         if (!readWebCoreString(&url))
             return false;
-        RefPtr<DOMFileSystem> fs = DOMFileSystem::create(getScriptExecutionContext(), name, static_cast<WebCore::FileSystemType>(type), KURL(ParsedURLString, url));
+        RefPtr<DOMFileSystem> fs = DOMFileSystem::create(getExecutionContext(), name, static_cast<WebCore::FileSystemType>(type), KURL(ParsedURLString, url));
         *value = toV8(fs.release(), v8::Handle<v8::Object>(), m_isolate);
         return true;
     }
 
     bool readFile(v8::Handle<v8::Value>* value)
     {
-        String path;
-        String url;
-        String type;
-        if (!readWebCoreString(&path))
+        RefPtr<File> file = doReadFileHelper();
+        if (!file)
             return false;
-        if (!readWebCoreString(&url))
-            return false;
-        if (!readWebCoreString(&type))
-            return false;
-        PassRefPtr<File> file = File::create(path, KURL(ParsedURLString, url), type);
-        *value = toV8(file, v8::Handle<v8::Object>(), m_isolate);
+        *value = toV8(file.release(), v8::Handle<v8::Object>(), m_isolate);
         return true;
     }
 
     bool readFileList(v8::Handle<v8::Value>* value)
     {
+        if (m_version < 3)
+            return false;
         uint32_t length;
         if (!doReadUint32(&length))
             return false;
-        PassRefPtr<FileList> fileList = FileList::create();
+        RefPtr<FileList> fileList = FileList::create();
         for (unsigned i = 0; i < length; ++i) {
-            String path;
-            String urlString;
-            String type;
-            if (!readWebCoreString(&path))
+            RefPtr<File> file = doReadFileHelper();
+            if (!file)
                 return false;
-            if (!readWebCoreString(&urlString))
-                return false;
-            if (!readWebCoreString(&type))
-                return false;
-            fileList->append(File::create(path, KURL(ParsedURLString, urlString), type));
+            fileList->append(file.release());
         }
-        *value = toV8(fileList, v8::Handle<v8::Object>(), m_isolate);
+        *value = toV8(fileList.release(), v8::Handle<v8::Object>(), m_isolate);
         return true;
+    }
+
+    PassRefPtr<File> doReadFileHelper()
+    {
+        if (m_version < 3)
+            return 0;
+        String path;
+        String uuid;
+        String type;
+        if (!readWebCoreString(&path))
+            return 0;
+        if (!readWebCoreString(&uuid))
+            return 0;
+        if (!readWebCoreString(&type))
+            return 0;
+        return File::create(path, getOrCreateBlobDataHandle(uuid, type));
     }
 
     template<class T>
@@ -1961,11 +1966,32 @@ private:
         return true;
     }
 
+    PassRefPtr<BlobDataHandle> getOrCreateBlobDataHandle(const String& uuid, const String& type, long long size = -1)
+    {
+        // The containing ssv may have a BDH for this uuid if this ssv is just being
+        // passed from main to worker thread (for example). We use those values when creating
+        // the new blob instead of cons'ing up a new BDH.
+        //
+        // FIXME: Maybe we should require that it work that way where the ssv must have a BDH for any
+        // blobs it comes across during deserialization. Would require callers to explicitly populate
+        // the collection of BDH's for blobs to work, which would encourage lifetimes to be considered
+        // when passing ssv's around cross process. At present, we get 'lucky' in some cases because
+        // the blob in the src process happens to still exist at the time the dest process is deserializing.
+        // For example in sharedWorker.postMesssage(...).
+        BlobDataHandleMap::const_iterator it = m_blobDataHandles.find(uuid);
+        if (it != m_blobDataHandles.end()) {
+            // make assertions about type and size?
+            return it->value;
+        }
+        return BlobDataHandle::create(uuid, type, size);
+    }
+
     const uint8_t* m_buffer;
     const unsigned m_length;
     unsigned m_position;
     uint32_t m_version;
     v8::Isolate* m_isolate;
+    const BlobDataHandleMap& m_blobDataHandles;
 };
 
 
@@ -1984,7 +2010,7 @@ public:
 
     v8::Handle<v8::Value> deserialize()
     {
-        if (!m_reader.readVersion(m_version) || m_version > wireFormatVersion)
+        if (!m_reader.readVersion(m_version) || m_version > SerializedScriptValue::wireFormatVersion)
             return v8NullWithCheck(m_reader.getIsolate());
         m_reader.setVersion(m_version);
         v8::HandleScope scope(m_reader.getIsolate());
@@ -2434,7 +2460,7 @@ SerializedScriptValue::SerializedScriptValue(v8::Handle<v8::Value> value, Messag
     Serializer::Status status;
     {
         v8::TryCatch tryCatch;
-        Serializer serializer(writer, messagePorts, arrayBuffers, m_blobURLs, tryCatch, isolate);
+        Serializer serializer(writer, messagePorts, arrayBuffers, m_blobDataHandles, tryCatch, isolate);
         status = serializer.serialize(value);
         if (status == Serializer::JSException) {
             didThrow = true;
@@ -2498,7 +2524,7 @@ v8::Handle<v8::Value> SerializedScriptValue::deserialize(v8::Isolate* isolate, M
     // storage. Instead, it should use SharedBuffer or Vector<uint8_t>. The
     // information stored in m_data isn't even encoded in UTF-16. Instead,
     // unicode characters are encoded as UTF-8 with two code units per UChar.
-    Reader reader(reinterpret_cast<const uint8_t*>(m_data.impl()->characters16()), 2 * m_data.length(), isolate);
+    Reader reader(reinterpret_cast<const uint8_t*>(m_data.impl()->characters16()), 2 * m_data.length(), isolate, m_blobDataHandles);
     Deserializer deserializer(reader, messagePorts, m_arrayBufferContentsArray.get());
 
     // deserialize() can run arbitrary script (e.g., setters), which could result in |this| being destroyed.
@@ -2533,11 +2559,6 @@ SerializedScriptValue::~SerializedScriptValue()
         ASSERT(v8::Isolate::GetCurrent());
         v8::V8::AdjustAmountOfExternalAllocatedMemory(-m_externallyAllocatedMemory);
     }
-}
-
-uint32_t SerializedScriptValue::wireFormatVersion()
-{
-    return WebCore::wireFormatVersion;
 }
 
 } // namespace WebCore

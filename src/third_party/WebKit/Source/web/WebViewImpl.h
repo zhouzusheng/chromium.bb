@@ -39,20 +39,17 @@
 #include "InspectorClientImpl.h"
 #include "NotificationPresenterImpl.h"
 #include "PageOverlayList.h"
+#include "PageScaleConstraintsSet.h"
 #include "PageWidgetDelegate.h"
 #include "UserMediaClientImpl.h"
 #include "WebInputEvent.h"
 #include "WebNavigationPolicy.h"
 #include "WebView.h"
 #include "core/page/PagePopupDriver.h"
-#include "core/page/PageScaleConstraintsSet.h"
-#include "core/platform/Timer.h"
-#include "core/platform/graphics/FloatSize.h"
-#include "core/platform/graphics/GraphicsContext3D.h"
 #include "core/platform/graphics/GraphicsLayer.h"
-#include "core/platform/graphics/IntPoint.h"
-#include "core/platform/graphics/IntRect.h"
-#include "public/platform/WebFloatQuad.h"
+#include "platform/Timer.h"
+#include "platform/geometry/IntPoint.h"
+#include "platform/geometry/IntRect.h"
 #include "public/platform/WebGestureCurveTarget.h"
 #include "public/platform/WebLayer.h"
 #include "public/platform/WebPoint.h"
@@ -66,10 +63,7 @@
 namespace WebCore {
 class ChromiumDataObject;
 class Color;
-class DocumentLoader;
-class FloatSize;
 class Frame;
-class GraphicsContext3D;
 class GraphicsLayerFactory;
 class HistoryItem;
 class HitTestResult;
@@ -81,10 +75,7 @@ class PagePopupClient;
 class PlatformKeyboardEvent;
 class PopupContainer;
 class PopupMenuClient;
-class Range;
 class RenderLayerCompositor;
-class RenderTheme;
-class Widget;
 }
 
 namespace WebKit {
@@ -92,12 +83,12 @@ class AutocompletePopupMenuClient;
 class AutofillPopupMenuClient;
 class ContextFeaturesClientImpl;
 class ContextMenuClientImpl;
-class DeviceOrientationClientProxy;
 class GeolocationClientProxy;
 class LinkHighlight;
 class MIDIClientProxy;
 class PinchViewports;
 class PrerendererClientImpl;
+class SharedWorkerRepositoryClientImpl;
 class SpeechInputClientImpl;
 class SpeechRecognitionClientProxy;
 class UserMediaClientImpl;
@@ -128,6 +119,7 @@ class WebViewImpl : public WebView
     , public WebCore::PagePopupDriver
     , public PageWidgetEventHandler {
 public:
+    static WebViewImpl* create(WebViewClient*);
 
     // WebWidget methods:
     virtual void close();
@@ -168,6 +160,9 @@ public:
     virtual bool isSelectionEditable() const;
     virtual WebColor backgroundColor() const;
     virtual bool selectionBounds(WebRect& anchor, WebRect& focus) const;
+    virtual void didShowCandidateWindow();
+    virtual void didUpdateCandidateWindow();
+    virtual void didHideCandidateWindow();
     virtual bool selectionTextDirection(WebTextDirection& start, WebTextDirection& end) const;
     virtual bool isSelectionAnchorFirst() const;
     virtual bool caretOrSelectionRange(size_t* location, size_t* length);
@@ -181,8 +176,8 @@ public:
     virtual void didExitCompositingMode();
 
     // WebView methods:
+    virtual void setMainFrame(WebFrame*);
     virtual void initializeMainFrame(WebFrameClient*);
-    virtual void initializeHelperPluginFrame(WebFrameClient*);
     virtual void setAutofillClient(WebAutofillClient*);
     virtual void setDevToolsAgentClient(WebDevToolsAgentClient*);
     virtual void setPermissionClient(WebPermissionClient*);
@@ -190,6 +185,7 @@ public:
     virtual void setSpellCheckClient(WebSpellCheckClient*);
     virtual void setValidationMessageClient(WebValidationMessageClient*) OVERRIDE;
     virtual void setPasswordGeneratorClient(WebPasswordGeneratorClient*) OVERRIDE;
+    virtual void setSharedWorkerRepositoryClient(WebSharedWorkerRepositoryClient*) OVERRIDE;
     virtual WebSettings* settings();
     virtual WebString pageEncoding() const;
     virtual void setPageEncoding(const WebString& encoding);
@@ -219,7 +215,6 @@ public:
     virtual void advanceFocus(bool reverse);
     virtual double zoomLevel();
     virtual double setZoomLevel(double);
-    virtual double setZoomLevel(bool textOnly, double zoomLevel);
     virtual void zoomLimitsChanged(double minimumZoomLevel,
                                    double maximumZoomLevel);
     virtual float textZoomFactor();
@@ -240,10 +235,9 @@ public:
 
     virtual float deviceScaleFactor() const;
     virtual void setDeviceScaleFactor(float);
-    virtual bool isFixedLayoutModeEnabled() const;
-    virtual void enableFixedLayoutMode(bool enable);
-    virtual WebSize fixedLayoutSize() const;
+
     virtual void setFixedLayoutSize(const WebSize&);
+
     virtual void enableAutoResizeMode(
         const WebSize& minSize,
         const WebSize& maxSize);
@@ -289,6 +283,8 @@ public:
     virtual bool inspectorSetting(const WebString& key, WebString* value) const;
     virtual void setInspectorSetting(const WebString& key,
                                      const WebString& value);
+    virtual void setCompositorDeviceScaleFactorOverride(float);
+    virtual void setRootLayerScaleTransform(float);
     virtual WebDevToolsAgent* devToolsAgent();
     virtual WebAXObject accessibilityObject();
     virtual void applyAutofillSuggestions(
@@ -300,9 +296,6 @@ public:
         int separatorIndex);
     virtual void hidePopups();
     virtual void selectAutofillSuggestionAtIndex(unsigned listIndex);
-    virtual void setScrollbarColors(unsigned inactiveColor,
-                                    unsigned activeColor,
-                                    unsigned trackColor);
     virtual void setSelectionColors(unsigned activeBackgroundColor,
                                     unsigned activeForegroundColor,
                                     unsigned inactiveBackgroundColor,
@@ -324,6 +317,7 @@ public:
     void invalidateRect(const WebCore::IntRect&);
 
     void setIgnoreInputEvents(bool newValue);
+    void setBackgroundColorOverride(WebColor);
     WebDevToolsAgentPrivate* devToolsAgentPrivate() { return m_devToolsAgent.get(); }
 
     WebCore::Color baseBackgroundColor() const { return m_baseBackgroundColor; }
@@ -380,9 +374,6 @@ public:
     // the page is shutting down, but will be valid at all other times.
     WebFrameImpl* mainFrameImpl();
 
-    // History related methods:
-    void observeNewNavigation();
-
     // Event related methods:
     void mouseContextMenu(const WebMouseEvent&);
     void mouseDoubleClick(const WebMouseEvent&);
@@ -408,7 +399,7 @@ public:
     // will be true if a new session history item should be created for that
     // load. isNavigationWithinPage will be true if the navigation does
     // not take the user away from the current page.
-    void didCommitLoad(bool* isNewNavigation, bool isNavigationWithinPage);
+    void didCommitLoad(bool isNewNavigation, bool isNavigationWithinPage);
 
     // Indicates two things:
     //   1) This view may have a new layout now.
@@ -444,7 +435,8 @@ public:
         return m_maxAutoSize;
     }
 
-    void updatePageDefinedPageScaleConstraints(const WebCore::ViewportArguments&);
+    void updateMainFrameLayoutSize();
+    void updatePageDefinedViewportConstraints(const WebCore::ViewportDescription&);
 
     // Start a system drag and drop operation.
     void startDragging(
@@ -495,8 +487,6 @@ public:
     WebCore::RenderLayerCompositor* compositor() const;
     void registerForAnimations(WebLayer*);
     void scheduleAnimation();
-
-    void didProgrammaticallyScroll(const WebCore::IntPoint& scrollPoint);
 
     virtual void setVisibilityState(WebPageVisibilityState, bool);
 
@@ -584,7 +574,7 @@ private:
       DragOver
     };
 
-    WebViewImpl(WebViewClient*);
+    explicit WebViewImpl(WebViewClient*);
     virtual ~WebViewImpl();
 
     WebTextInputType textInputType();
@@ -628,6 +618,9 @@ private:
     void doPixelReadbackToCanvas(WebCanvas*, const WebCore::IntRect&);
     void reallocateRenderer();
     void updateLayerTreeViewport();
+    void updateLayerTreeBackgroundColor();
+    void updateRootLayerTransform();
+    void updateLayerTreeDeviceScaleFactor();
 
     // Helper function: Widens the width of |source| by the specified margins
     // while keeping it smaller than page width.
@@ -645,6 +638,8 @@ private:
     virtual bool handleCharEvent(const WebKeyboardEvent&) OVERRIDE;
 
     void closePendingHelperPlugins(WebCore::Timer<WebViewImpl>*);
+
+    WebCore::InputMethodContext* inputMethodContext();
 
     WebViewClient* m_client; // Can be 0 (e.g. unittests, shared workers, etc.)
     WebAutofillClient* m_autofillClient;
@@ -669,15 +664,6 @@ private:
     WebCore::IntSize m_maxAutoSize;
 
     OwnPtr<WebCore::Page> m_page;
-
-    // This flag is set when a new navigation is detected. It is used to satisfy
-    // the corresponding argument to WebFrameClient::didCommitProvisionalLoad.
-    bool m_observedNewNavigation;
-#ifndef NDEBUG
-    // Used to assert that the new navigation we observed is the same navigation
-    // when we make use of m_observedNewNavigation.
-    const WebCore::DocumentLoader* m_newNavigationLoader;
-#endif
 
     // An object that can be used to manipulate m_page->settings() without linking
     // against WebCore. This is lazily allocated the first time GetWebSettings()
@@ -704,7 +690,7 @@ private:
 
     double m_maximumZoomLevel;
 
-    WebCore::PageScaleConstraintsSet m_pageScaleConstraintsSet;
+    PageScaleConstraintsSet m_pageScaleConstraintsSet;
 
     // Saved page scale state.
     float m_savedPageScaleFactor; // 0 means that no page scale factor is saved.
@@ -726,6 +712,9 @@ private:
     bool m_doingDragAndDrop;
 
     bool m_ignoreInputEvents;
+
+    float m_compositorDeviceScaleFactorOverride;
+    float m_rootLayerScale;
 
     // Webkit expects keyPress events to be suppressed if the associated keyDown
     // event was handled. Safari implements this behavior by peeking out the
@@ -801,7 +790,6 @@ private:
 #endif
     OwnPtr<SpeechRecognitionClientProxy> m_speechRecognitionClient;
 
-    OwnPtr<DeviceOrientationClientProxy> m_deviceOrientationClientProxy;
     OwnPtr<GeolocationClientProxy> m_geolocationClientProxy;
 
     UserMediaClientImpl m_userMediaClientImpl;
@@ -817,6 +805,7 @@ private:
     Vector<OwnPtr<LinkHighlight> > m_linkHighlights;
     OwnPtr<ValidationMessageClientImpl> m_validationMessage;
     OwnPtr<FullscreenController> m_fullscreenController;
+    OwnPtr<SharedWorkerRepositoryClientImpl> m_sharedWorkerRepositoryClient;
 
     bool m_showFPSCounter;
     bool m_showPaintRects;
@@ -824,6 +813,7 @@ private:
     bool m_continuousPaintingEnabled;
     bool m_showScrollBottleneckRects;
     WebColor m_baseBackgroundColor;
+    WebColor m_backgroundColorOverride;
 
     WebCore::Timer<WebViewImpl> m_helperPluginCloseTimer;
     Vector<RefPtr<WebHelperPluginImpl> > m_helperPluginsPendingClose;

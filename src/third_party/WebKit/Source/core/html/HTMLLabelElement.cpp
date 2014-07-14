@@ -27,8 +27,8 @@
 
 #include "HTMLNames.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/dom/Event.h"
-#include "core/dom/EventNames.h"
+#include "core/events/Event.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/html/FormAssociatedElement.h"
 
 namespace WebCore {
@@ -138,7 +138,7 @@ void HTMLLabelElement::defaultEventHandler(Event* evt)
 {
     static bool processingClick = false;
 
-    if (evt->type() == eventNames().clickEvent && !processingClick) {
+    if (evt->type() == EventTypeNames::click && !processingClick) {
         RefPtr<HTMLElement> element = control();
 
         // If we can't find a control or if the control received the click

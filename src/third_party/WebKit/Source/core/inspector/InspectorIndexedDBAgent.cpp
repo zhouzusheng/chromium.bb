@@ -36,13 +36,12 @@
 #include "bindings/v8/ScriptController.h"
 #include "core/dom/DOMStringList.h"
 #include "core/dom/Document.h"
-#include "core/dom/Event.h"
-#include "core/dom/EventListener.h"
+#include "core/events/Event.h"
+#include "core/events/EventListener.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorState.h"
-#include "core/page/Frame.h"
-#include "core/platform/JSONValues.h"
+#include "core/frame/Frame.h"
 #include "modules/indexeddb/DOMWindowIndexedDatabase.h"
 #include "modules/indexeddb/IDBCursor.h"
 #include "modules/indexeddb/IDBCursorWithValue.h"
@@ -58,6 +57,7 @@
 #include "modules/indexeddb/IDBPendingTransactionMonitor.h"
 #include "modules/indexeddb/IDBRequest.h"
 #include "modules/indexeddb/IDBTransaction.h"
+#include "platform/JSONValues.h"
 #include "weborigin/SecurityOrigin.h"
 #include "wtf/Vector.h"
 
@@ -99,11 +99,11 @@ public:
         return this == &other;
     }
 
-    virtual void handleEvent(ScriptExecutionContext*, Event* event) OVERRIDE
+    virtual void handleEvent(ExecutionContext*, Event* event) OVERRIDE
     {
         if (!m_requestCallback->isActive())
             return;
-        if (event->type() != eventNames().successEvent) {
+        if (event->type() != EventTypeNames::success) {
             m_requestCallback->sendFailure("Unexpected event type.");
             return;
         }
@@ -138,15 +138,15 @@ private:
 
 class ExecutableWithDatabase : public RefCounted<ExecutableWithDatabase> {
 public:
-    ExecutableWithDatabase(ScriptExecutionContext* context)
+    ExecutableWithDatabase(ExecutionContext* context)
         : m_context(context) { }
     virtual ~ExecutableWithDatabase() { };
     void start(IDBFactory*, SecurityOrigin*, const String& databaseName);
     virtual void execute(PassRefPtr<IDBDatabase>) = 0;
     virtual RequestCallback* requestCallback() = 0;
-    ScriptExecutionContext* context() { return m_context; };
+    ExecutionContext* context() { return m_context; };
 private:
-    ScriptExecutionContext* m_context;
+    ExecutionContext* m_context;
 };
 
 class OpenDatabaseCallback : public EventListener {
@@ -163,9 +163,9 @@ public:
         return this == &other;
     }
 
-    virtual void handleEvent(ScriptExecutionContext*, Event* event) OVERRIDE
+    virtual void handleEvent(ExecutionContext*, Event* event) OVERRIDE
     {
-        if (event->type() != eventNames().successEvent) {
+        if (event->type() != EventTypeNames::success) {
             m_executableWithDatabase->requestCallback()->sendFailure("Unexpected event type.");
             return;
         }
@@ -204,13 +204,13 @@ void ExecutableWithDatabase::start(IDBFactory* idbFactory, SecurityOrigin*, cons
         requestCallback()->sendFailure("Could not open database.");
         return;
     }
-    idbOpenDBRequest->addEventListener(eventNames().successEvent, callback, false);
+    idbOpenDBRequest->addEventListener(EventTypeNames::success, callback, false);
 }
 
-static PassRefPtr<IDBTransaction> transactionForDatabase(ScriptExecutionContext* scriptExecutionContext, IDBDatabase* idbDatabase, const String& objectStoreName, const String& mode = IDBTransaction::modeReadOnly())
+static PassRefPtr<IDBTransaction> transactionForDatabase(ExecutionContext* executionContext, IDBDatabase* idbDatabase, const String& objectStoreName, const String& mode = IDBTransaction::modeReadOnly())
 {
     TrackExceptionState es;
-    RefPtr<IDBTransaction> idbTransaction = idbDatabase->transaction(scriptExecutionContext, objectStoreName, mode, es);
+    RefPtr<IDBTransaction> idbTransaction = idbDatabase->transaction(executionContext, objectStoreName, mode, es);
     if (es.hadException())
         return 0;
     return idbTransaction;
@@ -263,7 +263,7 @@ static PassRefPtr<KeyPath> keyPathFromIDBKeyPath(const IDBKeyPath& idbKeyPath)
 
 class DatabaseLoader : public ExecutableWithDatabase {
 public:
-    static PassRefPtr<DatabaseLoader> create(ScriptExecutionContext* context, PassRefPtr<RequestDatabaseCallback> requestCallback)
+    static PassRefPtr<DatabaseLoader> create(ExecutionContext* context, PassRefPtr<RequestDatabaseCallback> requestCallback)
     {
         return adoptRef(new DatabaseLoader(context, requestCallback));
     }
@@ -314,7 +314,7 @@ public:
 
     virtual RequestCallback* requestCallback() { return m_requestCallback.get(); }
 private:
-    DatabaseLoader(ScriptExecutionContext* context, PassRefPtr<RequestDatabaseCallback> requestCallback)
+    DatabaseLoader(ExecutionContext* context, PassRefPtr<RequestDatabaseCallback> requestCallback)
         : ExecutableWithDatabase(context)
         , m_requestCallback(requestCallback) { }
     RefPtr<RequestDatabaseCallback> m_requestCallback;
@@ -407,9 +407,9 @@ public:
         return this == &other;
     }
 
-    virtual void handleEvent(ScriptExecutionContext* context, Event* event) OVERRIDE
+    virtual void handleEvent(ExecutionContext* context, Event* event) OVERRIDE
     {
-        if (event->type() != eventNames().successEvent) {
+        if (event->type() != EventTypeNames::success) {
             m_requestCallback->sendFailure("Unexpected event type.");
             return;
         }
@@ -487,7 +487,7 @@ private:
 
 class DataLoader : public ExecutableWithDatabase {
 public:
-    static PassRefPtr<DataLoader> create(ScriptExecutionContext* context, PassRefPtr<RequestDataCallback> requestCallback, const InjectedScript& injectedScript, const String& objectStoreName, const String& indexName, PassRefPtr<IDBKeyRange> idbKeyRange, int skipCount, unsigned pageSize)
+    static PassRefPtr<DataLoader> create(ExecutionContext* context, PassRefPtr<RequestDataCallback> requestCallback, const InjectedScript& injectedScript, const String& objectStoreName, const String& indexName, PassRefPtr<IDBKeyRange> idbKeyRange, int skipCount, unsigned pageSize)
     {
         return adoptRef(new DataLoader(context, requestCallback, injectedScript, objectStoreName, indexName, idbKeyRange, skipCount, pageSize));
     }
@@ -524,12 +524,12 @@ public:
         } else {
             idbRequest = idbObjectStore->openCursor(context(), PassRefPtr<IDBKeyRange>(m_idbKeyRange), IndexedDB::CursorNext);
         }
-        idbRequest->addEventListener(eventNames().successEvent, openCursorCallback, false);
+        idbRequest->addEventListener(EventTypeNames::success, openCursorCallback, false);
     }
 
     virtual RequestCallback* requestCallback() { return m_requestCallback.get(); }
-    DataLoader(ScriptExecutionContext* scriptExecutionContext, PassRefPtr<RequestDataCallback> requestCallback, const InjectedScript& injectedScript, const String& objectStoreName, const String& indexName, PassRefPtr<IDBKeyRange> idbKeyRange, int skipCount, unsigned pageSize)
-        : ExecutableWithDatabase(scriptExecutionContext)
+    DataLoader(ExecutionContext* executionContext, PassRefPtr<RequestDataCallback> requestCallback, const InjectedScript& injectedScript, const String& objectStoreName, const String& indexName, PassRefPtr<IDBKeyRange> idbKeyRange, int skipCount, unsigned pageSize)
+        : ExecutableWithDatabase(executionContext)
         , m_requestCallback(requestCallback)
         , m_injectedScript(injectedScript)
         , m_objectStoreName(objectStoreName)
@@ -619,7 +619,7 @@ void InspectorIndexedDBAgent::requestDatabaseNames(ErrorString* errorString, con
 
     // FIXME: This should probably use ScriptState/ScriptScope instead of V8 API
     v8::HandleScope handleScope(toIsolate(frame));
-    v8::Handle<v8::Context> context = document->frame()->script()->mainWorldContext();
+    v8::Handle<v8::Context> context = document->frame()->script().mainWorldContext();
     ASSERT(!context.IsEmpty());
     v8::Context::Scope contextScope(context);
 
@@ -629,7 +629,7 @@ void InspectorIndexedDBAgent::requestDatabaseNames(ErrorString* errorString, con
         requestCallback->sendFailure("Could not obtain database names.");
         return;
     }
-    idbRequest->addEventListener(eventNames().successEvent, GetDatabaseNamesCallback::create(requestCallback, document->securityOrigin()->toRawString()), false);
+    idbRequest->addEventListener(EventTypeNames::success, GetDatabaseNamesCallback::create(requestCallback, document->securityOrigin()->toRawString()), false);
 }
 
 void InspectorIndexedDBAgent::requestDatabase(ErrorString* errorString, const String& securityOrigin, const String& databaseName, PassRefPtr<RequestDatabaseCallback> requestCallback)
@@ -644,7 +644,7 @@ void InspectorIndexedDBAgent::requestDatabase(ErrorString* errorString, const St
 
     // FIXME: This should probably use ScriptState/ScriptScope instead of V8 API
     v8::HandleScope handleScope(toIsolate(frame));
-    v8::Handle<v8::Context> context = document->frame()->script()->mainWorldContext();
+    v8::Handle<v8::Context> context = document->frame()->script().mainWorldContext();
     ASSERT(!context.IsEmpty());
     v8::Context::Scope contextScope(context);
 
@@ -672,7 +672,7 @@ void InspectorIndexedDBAgent::requestData(ErrorString* errorString, const String
 
     // FIXME: This should probably use ScriptState/ScriptScope instead of V8 API
     v8::HandleScope handleScope(toIsolate(frame));
-    v8::Handle<v8::Context> context = document->frame()->script()->mainWorldContext();
+    v8::Handle<v8::Context> context = document->frame()->script().mainWorldContext();
     ASSERT(!context.IsEmpty());
     v8::Context::Scope contextScope(context);
 
@@ -695,11 +695,11 @@ public:
         return this == &other;
     }
 
-    virtual void handleEvent(ScriptExecutionContext*, Event* event) OVERRIDE
+    virtual void handleEvent(ExecutionContext*, Event* event) OVERRIDE
     {
         if (!m_requestCallback->isActive())
             return;
-        if (event->type() != eventNames().completeEvent) {
+        if (event->type() != EventTypeNames::complete) {
             m_requestCallback->sendFailure("Unexpected event type.");
             return;
         }
@@ -719,12 +719,12 @@ private:
 
 class ClearObjectStore : public ExecutableWithDatabase {
 public:
-    static PassRefPtr<ClearObjectStore> create(ScriptExecutionContext* context, const String& objectStoreName, PassRefPtr<ClearObjectStoreCallback> requestCallback)
+    static PassRefPtr<ClearObjectStore> create(ExecutionContext* context, const String& objectStoreName, PassRefPtr<ClearObjectStoreCallback> requestCallback)
     {
         return adoptRef(new ClearObjectStore(context, objectStoreName, requestCallback));
     }
 
-    ClearObjectStore(ScriptExecutionContext* context, const String& objectStoreName, PassRefPtr<ClearObjectStoreCallback> requestCallback)
+    ClearObjectStore(ExecutionContext* context, const String& objectStoreName, PassRefPtr<ClearObjectStoreCallback> requestCallback)
         : ExecutableWithDatabase(context)
         , m_objectStoreName(objectStoreName)
         , m_requestCallback(requestCallback)
@@ -755,7 +755,7 @@ public:
             m_requestCallback->sendFailure(String::format("Could not clear object store '%s': %d", m_objectStoreName.utf8().data(), ec));
             return;
         }
-        idbTransaction->addEventListener(eventNames().completeEvent, ClearObjectStoreListener::create(m_requestCallback), false);
+        idbTransaction->addEventListener(EventTypeNames::complete, ClearObjectStoreListener::create(m_requestCallback), false);
     }
 
     virtual RequestCallback* requestCallback() { return m_requestCallback.get(); }
@@ -776,7 +776,7 @@ void InspectorIndexedDBAgent::clearObjectStore(ErrorString* errorString, const S
 
     // FIXME: This should probably use ScriptState/ScriptScope instead of V8 API
     v8::HandleScope handleScope(toIsolate(frame));
-    v8::Handle<v8::Context> context = document->frame()->script()->mainWorldContext();
+    v8::Handle<v8::Context> context = document->frame()->script().mainWorldContext();
     ASSERT(!context.IsEmpty());
     v8::Context::Scope contextScope(context);
 

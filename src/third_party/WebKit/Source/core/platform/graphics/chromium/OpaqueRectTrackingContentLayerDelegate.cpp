@@ -26,10 +26,10 @@
 
 #include "core/platform/graphics/chromium/OpaqueRectTrackingContentLayerDelegate.h"
 
-#include "core/platform/EventTracer.h"
 #include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/IntRect.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
+#include "platform/EventTracer.h"
+#include "platform/geometry/IntRect.h"
+#include "platform/transforms/AffineTransform.h"
 #include "public/platform/WebFloatRect.h"
 #include "public/platform/WebRect.h"
 
@@ -50,12 +50,16 @@ OpaqueRectTrackingContentLayerDelegate::~OpaqueRectTrackingContentLayerDelegate(
 
 void OpaqueRectTrackingContentLayerDelegate::paintContents(SkCanvas* canvas, const WebRect& clip, bool canPaintLCDText, WebFloatRect& opaque)
 {
+    static const unsigned char* annotationsEnabled = 0;
+    if (UNLIKELY(!annotationsEnabled))
+        annotationsEnabled = EventTracer::getTraceCategoryEnabledFlag(TRACE_DISABLED_BY_DEFAULT("blink.graphics_context_annotations"));
+
     GraphicsContext context(canvas);
     context.setTrackOpaqueRegion(!m_opaque);
     context.setCertainlyOpaque(m_opaque);
     context.setShouldSmoothFonts(canPaintLCDText);
 
-    if (*EventTracer::getTraceCategoryEnabledFlag(TRACE_DISABLED_BY_DEFAULT("blink.graphics_context_annotations")))
+    if (*annotationsEnabled)
         context.setAnnotationMode(AnnotateAll);
 
     // Record transform prior to painting, as all opaque tracking will be

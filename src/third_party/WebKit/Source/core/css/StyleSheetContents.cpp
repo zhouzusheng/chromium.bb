@@ -29,6 +29,7 @@
 #include "core/css/StyleRuleImport.h"
 #include "core/dom/Node.h"
 #include "core/fetch/CSSStyleSheetResource.h"
+#include "platform/TraceEvent.h"
 #include "weborigin/SecurityOrigin.h"
 #include "wtf/Deque.h"
 
@@ -271,7 +272,11 @@ const AtomicString& StyleSheetContents::determineNamespace(const AtomicString& p
 
 void StyleSheetContents::parseAuthorStyleSheet(const CSSStyleSheetResource* cachedStyleSheet, const SecurityOrigin* securityOrigin)
 {
-    bool enforceMIMEType = isStrictParserMode(m_parserContext.mode);
+    TRACE_EVENT0("webkit", "StyleSheetContents::parseAuthorStyleSheet");
+
+    bool quirksMode = isQuirksModeBehavior(m_parserContext.mode);
+
+    bool enforceMIMEType = !quirksMode;
     bool hasValidMIMEType = false;
     String sheetText = cachedStyleSheet->sheetText(enforceMIMEType, &hasValidMIMEType);
 
@@ -288,7 +293,7 @@ void StyleSheetContents::parseAuthorStyleSheet(const CSSStyleSheetResource* cach
             return;
         }
     }
-    if (m_parserContext.needsSiteSpecificQuirks && isStrictParserMode(m_parserContext.mode)) {
+    if (!quirksMode && m_parserContext.needsSiteSpecificQuirks) {
         // Work around <https://bugs.webkit.org/show_bug.cgi?id=28350>.
         DEFINE_STATIC_LOCAL(const String, mediaWikiKHTMLFixesStyleSheet, ("/* KHTML fix stylesheet */\n/* work around the horizontal scrollbars */\n#column-content { margin-left: 0; }\n\n"));
         // There are two variants of KHTMLFixes.css. One is equal to mediaWikiKHTMLFixesStyleSheet,

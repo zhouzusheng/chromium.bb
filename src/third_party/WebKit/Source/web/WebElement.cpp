@@ -32,9 +32,9 @@
 #include "WebDocument.h"
 #include "WebElement.h"
 #include "bindings/v8/ExceptionState.h"
-#include "core/dom/CustomElementCallbackDispatcher.h"
 #include "core/dom/Element.h"
 #include "core/dom/NamedNodeMap.h"
+#include "core/dom/custom/CustomElementCallbackDispatcher.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/rendering/RenderBoxModelObject.h"
 #include "core/rendering/RenderObject.h"
@@ -148,11 +148,6 @@ WebString WebElement::computeInheritedLanguage() const
 void WebElement::requestFullScreen()
 {
     unwrap<Element>()->webkitRequestFullScreen(Element::ALLOW_KEYBOARD_INPUT);
-}
-
-WebDocument WebElement::document() const
-{
-    return WebDocument(&constUnwrap<Element>()->document());
 }
 
 WebRect WebElement::boundsInViewportSpace()

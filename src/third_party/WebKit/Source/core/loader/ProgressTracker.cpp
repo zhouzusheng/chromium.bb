@@ -26,13 +26,13 @@
 #include "config.h"
 #include "core/loader/ProgressTracker.h"
 
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
-#include "core/platform/Logging.h"
-#include "core/platform/network/ResourceResponse.h"
+#include "platform/Logging.h"
+#include "platform/network/ResourceResponse.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/text/CString.h"
 
@@ -104,14 +104,14 @@ void ProgressTracker::reset()
 
 void ProgressTracker::progressStarted(Frame* frame)
 {
-    LOG(Progress, "Progress started (%p) - frame %p(\"%s\"), value %f, tracked frames %d, originating frame %p", this, frame, frame->tree()->uniqueName().string().utf8().data(), m_progressValue, m_numProgressTrackedFrames, m_originatingProgressFrame.get());
+    LOG(Progress, "Progress started (%p) - frame %p(\"%s\"), value %f, tracked frames %d, originating frame %p", this, frame, frame->tree().uniqueName().string().utf8().data(), m_progressValue, m_numProgressTrackedFrames, m_originatingProgressFrame.get());
 
     if (m_numProgressTrackedFrames == 0 || m_originatingProgressFrame == frame) {
         reset();
         m_progressValue = initialProgressValue;
         m_originatingProgressFrame = frame;
 
-        m_originatingProgressFrame->loader()->client()->postProgressStartedNotification();
+        m_originatingProgressFrame->loader().client()->postProgressStartedNotification();
     }
     m_numProgressTrackedFrames++;
     InspectorInstrumentation::frameStartedLoading(frame);
@@ -119,7 +119,7 @@ void ProgressTracker::progressStarted(Frame* frame)
 
 void ProgressTracker::progressCompleted(Frame* frame)
 {
-    LOG(Progress, "Progress completed (%p) - frame %p(\"%s\"), value %f, tracked frames %d, originating frame %p", this, frame, frame->tree()->uniqueName().string().utf8().data(), m_progressValue, m_numProgressTrackedFrames, m_originatingProgressFrame.get());
+    LOG(Progress, "Progress completed (%p) - frame %p(\"%s\"), value %f, tracked frames %d, originating frame %p", this, frame, frame->tree().uniqueName().string().utf8().data(), m_progressValue, m_numProgressTrackedFrames, m_originatingProgressFrame.get());
 
     if (m_numProgressTrackedFrames <= 0)
         return;
@@ -138,11 +138,11 @@ void ProgressTracker::finalProgressComplete()
     // with final progress value.
     if (!m_finalProgressChangedSent) {
         m_progressValue = 1;
-        frame->loader()->client()->postProgressEstimateChangedNotification();
+        frame->loader().client()->postProgressEstimateChangedNotification();
     }
 
     reset();
-    frame->loader()->client()->postProgressFinishedNotification();
+    frame->loader().client()->postProgressFinishedNotification();
     InspectorInstrumentation::frameStoppedLoading(frame.get());
 }
 
@@ -186,7 +186,7 @@ void ProgressTracker::incrementProgress(unsigned long identifier, const char*, i
         item->estimatedLength = item->bytesReceived * 2;
     }
 
-    int numPendingOrLoadingRequests = frame->loader()->numPendingOrLoadingRequests(true);
+    int numPendingOrLoadingRequests = frame->loader().numPendingOrLoadingRequests(true);
     estimatedBytesForPendingRequests = progressItemDefaultEstimatedLength * numPendingOrLoadingRequests;
     remainingBytes = ((m_totalPageAndResourceBytesToLoad + estimatedBytesForPendingRequests) - m_totalBytesReceived);
     if (remainingBytes > 0)  // Prevent divide by 0.
@@ -216,7 +216,7 @@ void ProgressTracker::incrementProgress(unsigned long identifier, const char*, i
             if (m_progressValue == 1)
                 m_finalProgressChangedSent = true;
 
-            frame->loader()->client()->postProgressEstimateChangedNotification();
+            frame->loader().client()->postProgressEstimateChangedNotification();
 
             m_lastNotifiedProgressValue = m_progressValue;
             m_lastNotifiedProgressTime = now;

@@ -29,7 +29,7 @@
 #
 {
     'includes': [
-        '../Source/core/features.gypi',
+        '../Source/build/features.gypi',
     ],
     'targets': [
         {
@@ -37,10 +37,12 @@
             'type': 'none',
             'dependencies': [
                 '../Source/web/web.gyp:webkit',
+                '../Source/platform/blink_platform.gyp:blink_platform',
                 'blink_minimal',
             ],
             'export_dependent_settings': [
                 '../Source/web/web.gyp:webkit',
+                '../Source/platform/blink_platform.gyp:blink_platform',
                 'blink_minimal',
             ]
         },
@@ -52,10 +54,10 @@
             'target_name': 'blink_minimal',
             'type': 'none',
             'dependencies': [
-                '../Source/web/web.gyp:blink_common',
+                '../Source/platform/blink_platform.gyp:blink_common',
             ],
             'export_dependent_settings': [
-                '../Source/web/web.gyp:blink_common',
+                '../Source/platform/blink_platform.gyp:blink_common',
             ],
         },
     ],

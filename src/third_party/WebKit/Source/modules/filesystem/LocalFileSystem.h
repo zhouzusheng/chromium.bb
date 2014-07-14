@@ -32,14 +32,14 @@
 #define LocalFileSystem_h
 
 #include "core/page/Page.h"
-#include "modules/filesystem/FileSystemType.h"
+#include "platform/FileSystemType.h"
 #include "wtf/Forward.h"
 
 namespace WebCore {
 
 class AsyncFileSystemCallbacks;
 class FileSystemClient;
-class ScriptExecutionContext;
+class ExecutionContext;
 
 // Base class of LocalFileSystem and WorkerLocalFileSystem.
 class LocalFileSystemBase {
@@ -47,12 +47,11 @@ class LocalFileSystemBase {
 public:
     virtual ~LocalFileSystemBase();
 
-    // Does not create the new file system if it doesn't exist, just reads it if available.
-    void readFileSystem(ScriptExecutionContext*, FileSystemType, PassOwnPtr<AsyncFileSystemCallbacks>);
+    void resolveURL(ExecutionContext*, const KURL&, PassOwnPtr<AsyncFileSystemCallbacks>);
 
-    void requestFileSystem(ScriptExecutionContext*, FileSystemType, long long size, PassOwnPtr<AsyncFileSystemCallbacks>);
+    void requestFileSystem(ExecutionContext*, FileSystemType, long long size, PassOwnPtr<AsyncFileSystemCallbacks>);
 
-    void deleteFileSystem(ScriptExecutionContext*, FileSystemType, PassOwnPtr<AsyncFileSystemCallbacks>);
+    void deleteFileSystem(ExecutionContext*, FileSystemType, PassOwnPtr<AsyncFileSystemCallbacks>);
 
     FileSystemClient* client() { return m_client.get(); }
 
@@ -66,7 +65,7 @@ class LocalFileSystem : public LocalFileSystemBase, public Supplement<Page> {
 public:
     static PassOwnPtr<LocalFileSystem> create(PassOwnPtr<FileSystemClient>);
     static const char* supplementName();
-    static LocalFileSystem* from(ScriptExecutionContext*);
+    static LocalFileSystem* from(ExecutionContext*);
     virtual ~LocalFileSystem();
 
 private:

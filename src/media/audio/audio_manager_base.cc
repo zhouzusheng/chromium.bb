@@ -8,12 +8,12 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/threading/thread.h"
 #include "build/build_config.h"
 #include "media/audio/audio_output_dispatcher_impl.h"
 #include "media/audio/audio_output_proxy.h"
 #include "media/audio/audio_output_resampler.h"
-#include "media/audio/audio_util.h"
 #include "media/audio/fake_audio_input_stream.h"
 #include "media/audio/fake_audio_output_stream.h"
 #include "media/base/media_switches.h"
@@ -421,6 +421,45 @@ std::string AudioManagerBase::GetAssociatedOutputDeviceID(
 std::string AudioManagerBase::GetDefaultOutputDeviceID() {
   NOTIMPLEMENTED();
   return "";
+}
+
+int AudioManagerBase::GetUserBufferSize() {
+  const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
+  int buffer_size = 0;
+  std::string buffer_size_str(cmd_line->GetSwitchValueASCII(
+      switches::kAudioBufferSize));
+  if (base::StringToInt(buffer_size_str, &buffer_size) && buffer_size > 0)
+    return buffer_size;
+
+  return 0;
+}
+
+void AudioManagerBase::FixWedgedAudio() {
+  DCHECK(message_loop_->BelongsToCurrentThread());
+#if defined(OS_MACOSX)
+  // Through trial and error, we've found that one way to restore audio after a
+  // hang is to close all outstanding audio streams.  Once all streams have been
+  // closed, new streams appear to work correctly.
+  //
+  // In Chrome terms, this means we need to ask all AudioOutputDispatchers to
+  // close all Open()'d streams.  Once all streams across all dispatchers have
+  // been closed, we ask for all previously Start()'d streams to be recreated
+  // using the same AudioSourceCallback they had before.
+  //
+  // Since this operation takes place on the audio thread we can be sure that no
+  // other state-changing stream operations will take place while the fix is in
+  // progress.
+  //
+  // See http://crbug.com/160920 for additional details.
+  for (AudioOutputDispatchers::iterator it = output_dispatchers_.begin();
+       it != output_dispatchers_.end(); ++it) {
+    (*it)->dispatcher->CloseStreamsForWedgeFix();
+  }
+  for (AudioOutputDispatchers::iterator it = output_dispatchers_.begin();
+       it != output_dispatchers_.end(); ++it) {
+    (*it)->dispatcher->RestartStreamsForWedgeFix();
+  }
+#endif
 }
 
 }  // namespace media

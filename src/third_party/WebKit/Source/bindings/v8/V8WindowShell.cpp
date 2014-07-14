@@ -37,7 +37,6 @@
 #include "V8HTMLDocument.h"
 #include "V8Window.h"
 #include "bindings/v8/DOMWrapperWorld.h"
-#include "bindings/v8/DateExtension.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8GCForContextDispose.h"
@@ -51,13 +50,14 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/page/ContentSecurityPolicy.h"
-#include "core/page/Frame.h"
+#include "core/frame/ContentSecurityPolicy.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/platform/HistogramSupport.h"
+#include "platform/TraceEvent.h"
+#include "public/platform/Platform.h"
 #include "weborigin/SecurityOrigin.h"
 #include "wtf/Assertions.h"
-#include "wtf/OwnArrayPtr.h"
+#include "wtf/OwnPtr.h"
 #include "wtf/StringExtras.h"
 #include "wtf/text/CString.h"
 #include <algorithm>
@@ -98,7 +98,7 @@ void V8WindowShell::disposeContext()
         return;
 
     v8::HandleScope handleScope(m_isolate);
-    m_frame->loader()->client()->willReleaseScriptContext(m_context.newLocal(m_isolate), m_world->worldId());
+    m_frame->loader().client()->willReleaseScriptContext(m_context.newLocal(m_isolate), m_world->worldId());
 
     m_context.clear();
 
@@ -184,6 +184,8 @@ bool V8WindowShell::initializeIfNeeded()
     if (!m_context.isEmpty())
         return true;
 
+    TRACE_EVENT0("v8", "V8WindowShell::initializeIfNeeded");
+
     v8::HandleScope handleScope(m_isolate);
 
     V8Initializer::initializeMainThreadIfNeeded(m_isolate);
@@ -209,9 +211,9 @@ bool V8WindowShell::initializeIfNeeded()
     }
 
     if (!isMainWorld) {
-        V8WindowShell* mainWindow = m_frame->script()->existingWindowShell(mainThreadNormalWorld());
+        V8WindowShell* mainWindow = m_frame->script().existingWindowShell(mainThreadNormalWorld());
         if (mainWindow && !mainWindow->context().IsEmpty())
-            setInjectedScriptContextDebugId(context, m_frame->script()->contextDebugId(mainWindow->context()));
+            setInjectedScriptContextDebugId(context, m_frame->script().contextDebugId(mainWindow->context()));
     }
 
     m_perContextData = V8PerContextData::create(context);
@@ -248,7 +250,7 @@ bool V8WindowShell::initializeIfNeeded()
             InspectorInstrumentation::didCreateIsolatedContext(m_frame, scriptState, origin);
         }
     }
-    m_frame->loader()->client()->didCreateScriptContext(context, m_world->extensionGroup(), m_world->worldId());
+    m_frame->loader().client()->didCreateScriptContext(context, m_world->extensionGroup(), m_world->worldId());
     return true;
 }
 
@@ -256,7 +258,7 @@ void V8WindowShell::createContext()
 {
     // The activeDocumentLoader pointer could be 0 during frame shutdown.
     // FIXME: Can we remove this check?
-    if (!m_frame->loader()->activeDocumentLoader())
+    if (!m_frame->loader().activeDocumentLoader())
         return;
 
     // Create a new environment using an empty template for the shadow
@@ -267,19 +269,14 @@ void V8WindowShell::createContext()
 
     double contextCreationStartInSeconds = currentTime();
 
-    // Used to avoid sleep calls in unload handlers.
-    ScriptController::registerExtensionIfNeeded(DateExtension::get());
-
     // Dynamically tell v8 about our extensions now.
     const V8Extensions& extensions = ScriptController::registeredExtensions();
-    OwnArrayPtr<const char*> extensionNames = adoptArrayPtr(new const char*[extensions.size()]);
+    OwnPtr<const char*[]> extensionNames = adoptArrayPtr(new const char*[extensions.size()]);
     int index = 0;
     int extensionGroup = m_world->extensionGroup();
     int worldId = m_world->worldId();
     for (size_t i = 0; i < extensions.size(); ++i) {
-        // Ensure our date extension is always allowed.
-        if (extensions[i] != DateExtension::get()
-            && !m_frame->loader()->client()->allowScriptExtension(extensions[i]->name(), extensionGroup, worldId))
+        if (!m_frame->loader().client()->allowScriptExtension(extensions[i]->name(), extensionGroup, worldId))
             continue;
 
         extensionNames[index++] = extensions[i]->name();
@@ -293,20 +290,20 @@ void V8WindowShell::createContext()
     const char* histogramName = "WebCore.V8WindowShell.createContext.MainWorld";
     if (!m_world->isMainWorld())
         histogramName = "WebCore.V8WindowShell.createContext.IsolatedWorld";
-    HistogramSupport::histogramCustomCounts(histogramName, contextCreationDurationInMilliseconds, 0, 10000, 50);
+    WebKit::Platform::current()->histogramCustomCounts(histogramName, contextCreationDurationInMilliseconds, 0, 10000, 50);
 }
 
 bool V8WindowShell::installDOMWindow()
 {
     DOMWrapperWorld::setInitializingWindow(true);
     DOMWindow* window = m_frame->domWindow();
-    v8::Local<v8::Object> windowWrapper = V8ObjectConstructor::newInstance(V8PerContextData::from(m_context.newLocal(m_isolate))->constructorForType(&V8Window::info));
+    v8::Local<v8::Object> windowWrapper = V8ObjectConstructor::newInstance(V8PerContextData::from(m_context.newLocal(m_isolate))->constructorForType(&V8Window::wrapperTypeInfo));
     if (windowWrapper.IsEmpty())
         return false;
 
-    V8Window::installPerContextProperties(windowWrapper, window, m_isolate);
+    V8Window::installPerContextEnabledProperties(windowWrapper, window, m_isolate);
 
-    V8DOMWrapper::setNativeInfo(v8::Handle<v8::Object>::Cast(windowWrapper->GetPrototype()), &V8Window::info, window);
+    V8DOMWrapper::setNativeInfo(v8::Handle<v8::Object>::Cast(windowWrapper->GetPrototype()), &V8Window::wrapperTypeInfo, window);
 
     // Install the windowWrapper as the prototype of the innerGlobalObject.
     // The full structure of the global object is as follows:
@@ -322,9 +319,9 @@ bool V8WindowShell::installDOMWindow()
     //       JavaScript object.
     //
     v8::Handle<v8::Object> innerGlobalObject = toInnerGlobalObject(m_context.newLocal(m_isolate));
-    V8DOMWrapper::setNativeInfo(innerGlobalObject, &V8Window::info, window);
+    V8DOMWrapper::setNativeInfo(innerGlobalObject, &V8Window::wrapperTypeInfo, window);
     innerGlobalObject->SetPrototype(windowWrapper);
-    V8DOMWrapper::associateObjectWithWrapper<V8Window>(PassRefPtr<DOMWindow>(window), &V8Window::info, windowWrapper, m_isolate, WrapperConfiguration::Dependent);
+    V8DOMWrapper::associateObjectWithWrapper<V8Window>(PassRefPtr<DOMWindow>(window), &V8Window::wrapperTypeInfo, windowWrapper, m_isolate, WrapperConfiguration::Dependent);
     DOMWrapperWorld::setInitializingWindow(false);
     return true;
 }
@@ -390,7 +387,7 @@ void V8WindowShell::setSecurityToken()
     // are in the initial empty document, so that we can do a full canAccess
     // check in those cases.
     if (!origin->domainWasSetInDOM()
-        && !m_frame->loader()->stateMachine()->isDisplayingInitialEmptyDocument())
+        && !m_frame->loader().stateMachine()->isDisplayingInitialEmptyDocument())
         token = document->securityOrigin()->toString();
 
     // An empty or "null" token means we always have to call

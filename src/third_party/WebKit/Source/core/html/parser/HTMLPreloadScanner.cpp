@@ -35,7 +35,7 @@
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/parser/HTMLSrcsetParser.h"
 #include "core/html/parser/HTMLTokenizer.h"
-#include "core/platform/chromium/TraceEvent.h"
+#include "platform/TraceEvent.h"
 #include "wtf/MainThread.h"
 
 namespace WebCore {
@@ -179,7 +179,7 @@ private:
             if (match(attributeName, srcAttr))
                 setUrlToLoad(attributeValue, DisallowURLReplacement);
             else if (match(attributeName, typeAttr))
-                m_inputIsImage = equalIgnoringCase(attributeValue, InputTypeNames::image());
+                m_inputIsImage = equalIgnoringCase(attributeValue, "image");
         }
     }
 

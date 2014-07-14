@@ -62,10 +62,16 @@ class MEDIA_EXPORT AudioManager {
   // which must initially be empty. It is not guaranteed that all the
   // devices in the list support all formats and sample rates for
   // recording.
+  //
+  // Not threadsafe; in production this should only be called from the
+  // Audio IO thread (see GetMessageLoop).
   virtual void GetAudioInputDeviceNames(AudioDeviceNames* device_names) = 0;
 
   // Appends a list of available output devices to |device_names|,
   // which must initially be empty.
+  //
+  // Not threadsafe; in production this should only be called from the
+  // Audio IO thread (see GetMessageLoop).
   virtual void GetAudioOutputDeviceNames(AudioDeviceNames* device_names) = 0;
 
   // Factory for all the supported stream formats. |params| defines parameters
@@ -168,6 +174,11 @@ class MEDIA_EXPORT AudioManager {
   // an empty string.
   virtual std::string GetAssociatedOutputDeviceID(
       const std::string& input_device_id) = 0;
+
+  // Called when a component has detected a OS level audio wedge.  Shuts down
+  // all active audio streams and then restarts them transparently.  See
+  // http://crbug.com/160920
+  virtual void FixWedgedAudio() = 0;
 
  protected:
   AudioManager();

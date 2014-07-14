@@ -54,7 +54,6 @@ class PlatformKeyboardEvent;
 
 namespace WebKit {
 
-class DeviceMetricsSupport;
 class WebDevToolsAgentClient;
 class WebFrame;
 class WebFrameImpl;
@@ -77,8 +76,6 @@ public:
 
     // WebDevToolsAgentPrivate implementation.
     virtual void didCreateScriptContext(WebFrameImpl*, int worldId);
-    virtual void mainFrameViewCreated(WebFrameImpl*);
-    virtual bool metricsOverridden();
     virtual void webViewResized(const WebSize&);
     virtual bool handleInputEvent(WebCore::Page*, const WebInputEvent&);
 
@@ -87,7 +84,7 @@ public:
     virtual void reattach(const WebString& savedState);
     virtual void detach();
     virtual void didNavigate();
-    virtual void didBeginFrame();
+    virtual void didBeginFrame(int frameId);
     virtual void didCancelFrame();
     virtual void willComposite();
     virtual void didComposite();
@@ -106,8 +103,7 @@ public:
     virtual void clearBrowserCache();
     virtual void clearBrowserCookies();
 
-    virtual void overrideDeviceMetrics(int width, int height, float fontScaleFactor, bool fitWindow);
-    virtual void autoZoomPageToFitWidth();
+    virtual void overrideDeviceMetrics(int width, int height, float deviceScaleFactor, bool emulateViewport, bool fitWindow);
 
     virtual void getAllocatedObjects(HashSet<const void*>&);
     virtual void dumpUncountedAllocatedObjects(const HashMap<const void*, size_t>&);
@@ -121,10 +117,15 @@ public:
     // WebPageOverlay
     virtual void paintPageOverlay(WebCanvas*);
 
+    virtual WebSize deviceMetricsOffset() OVERRIDE;
+
 private:
     // WebThread::TaskObserver
     virtual void willProcessTask();
     virtual void didProcessTask();
+
+    void enableViewportEmulation();
+    void disableViewportEmulation();
 
     WebCore::InspectorController* inspectorController();
     WebCore::Frame* mainFrame();
@@ -133,7 +134,11 @@ private:
     WebDevToolsAgentClient* m_client;
     WebViewImpl* m_webViewImpl;
     bool m_attached;
-    OwnPtr<DeviceMetricsSupport> m_metricsSupport;
+    bool m_generatingEvent;
+    bool m_deviceMetricsEnabled;
+    bool m_emulateViewportEnabled;
+    bool m_originalViewportEnabled;
+    bool m_isOverlayScrollbarsEnabled;
 };
 
 } // namespace WebKit

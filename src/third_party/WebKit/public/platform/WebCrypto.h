@@ -37,7 +37,7 @@
 
 namespace WebCore { class CryptoResult; }
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
 namespace WTF { template <typename T> class PassRefPtr; }
 #endif
 
@@ -63,20 +63,20 @@ public:
         return *this;
     }
 
-    WEBKIT_EXPORT void completeWithError();
-    WEBKIT_EXPORT void completeWithBuffer(const WebArrayBuffer&);
-    WEBKIT_EXPORT void completeWithBuffer(const void*, unsigned);
-    WEBKIT_EXPORT void completeWithBoolean(bool);
-    WEBKIT_EXPORT void completeWithKey(const WebCryptoKey&);
-    WEBKIT_EXPORT void completeWithKeyPair(const WebCryptoKey& publicKey, const WebCryptoKey& privateKey);
+    BLINK_EXPORT void completeWithError();
+    BLINK_EXPORT void completeWithBuffer(const WebArrayBuffer&);
+    BLINK_EXPORT void completeWithBuffer(const void*, unsigned);
+    BLINK_EXPORT void completeWithBoolean(bool);
+    BLINK_EXPORT void completeWithKey(const WebCryptoKey&);
+    BLINK_EXPORT void completeWithKeyPair(const WebCryptoKey& publicKey, const WebCryptoKey& privateKey);
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
     explicit WebCryptoResult(const WTF::PassRefPtr<WebCore::CryptoResult>&);
 #endif
 
 private:
-    WEBKIT_EXPORT void reset();
-    WEBKIT_EXPORT void assign(const WebCryptoResult&);
+    BLINK_EXPORT void reset();
+    BLINK_EXPORT void assign(const WebCryptoResult&);
 
     WebPrivatePtr<WebCore::CryptoResult> m_impl;
 };
@@ -90,14 +90,21 @@ public:
     //
     // The result should be set exactly once, from the same thread which
     // initiated the operation.
-    virtual void encrypt(const WebCryptoAlgorithm&, const WebCryptoKey&, const unsigned char* data, unsigned dataSize, WebCryptoResult) { WEBKIT_ASSERT_NOT_REACHED(); }
-    virtual void decrypt(const WebCryptoAlgorithm&, const WebCryptoKey&, const unsigned char* data, unsigned dataSize, WebCryptoResult) { WEBKIT_ASSERT_NOT_REACHED(); }
-    virtual void sign(const WebCryptoAlgorithm&, const WebCryptoKey&, const unsigned char* data, unsigned dataSize, WebCryptoResult) { WEBKIT_ASSERT_NOT_REACHED(); }
-    virtual void verifySignature(const WebCryptoAlgorithm&, const WebCryptoKey&, const unsigned char* signature, unsigned signatureSize, const unsigned char* data, unsigned dataSize, WebCryptoResult) { WEBKIT_ASSERT_NOT_REACHED(); }
-    virtual void digest(const WebCryptoAlgorithm&, const unsigned char* data, unsigned dataSize, WebCryptoResult) { WEBKIT_ASSERT_NOT_REACHED(); }
-    virtual void generateKey(const WebCryptoAlgorithm&, bool extractable, WebCryptoKeyUsageMask, WebCryptoResult) { WEBKIT_ASSERT_NOT_REACHED(); }
-    virtual void importKey(WebCryptoKeyFormat, const unsigned char* keyData, unsigned keyDataSize, const WebCryptoAlgorithm&, bool extractable, WebCryptoKeyUsageMask, WebCryptoResult) { WEBKIT_ASSERT_NOT_REACHED(); }
-    virtual void exportKey(WebCryptoKeyFormat, const WebCryptoKey&, WebCryptoResult) { WEBKIT_ASSERT_NOT_REACHED(); }
+    //
+    //   * WebCryptoAlgorithms parameters are guaranteed to be !isNull(),
+    //     unless noted otherwise.
+    //   * WebCryptoKey parameters are guaranteeed to be !isNull().
+    //   * const unsigned char* data buffers are not valid after return.
+    virtual void encrypt(const WebCryptoAlgorithm&, const WebCryptoKey&, const unsigned char* data, unsigned dataSize, WebCryptoResult result) { result.completeWithError(); }
+    virtual void decrypt(const WebCryptoAlgorithm&, const WebCryptoKey&, const unsigned char* data, unsigned dataSize, WebCryptoResult result) { result.completeWithError(); }
+    virtual void sign(const WebCryptoAlgorithm&, const WebCryptoKey&, const unsigned char* data, unsigned dataSize, WebCryptoResult result) { result.completeWithError(); }
+    virtual void verifySignature(const WebCryptoAlgorithm&, const WebCryptoKey&, const unsigned char* signature, unsigned signatureSize, const unsigned char* data, unsigned dataSize, WebCryptoResult result) { result.completeWithError(); }
+    virtual void digest(const WebCryptoAlgorithm&, const unsigned char* data, unsigned dataSize, WebCryptoResult result) { result.completeWithError(); }
+    virtual void generateKey(const WebCryptoAlgorithm&, bool extractable, WebCryptoKeyUsageMask, WebCryptoResult result) { result.completeWithError(); }
+    // The WebCryptoAlgorithm for importKey may be "isNull()" meaning that it
+    // was unspecified by the caller.
+    virtual void importKey(WebCryptoKeyFormat, const unsigned char* keyData, unsigned keyDataSize, const WebCryptoAlgorithm&, bool extractable, WebCryptoKeyUsageMask, WebCryptoResult result) { result.completeWithError(); }
+    virtual void exportKey(WebCryptoKeyFormat, const WebCryptoKey&, WebCryptoResult result) { result.completeWithError(); }
 
 protected:
     virtual ~WebCrypto() { }

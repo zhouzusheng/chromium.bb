@@ -715,6 +715,18 @@ int ViECodecImpl::StopDebugRecording(int video_channel) {
   return vie_encoder->StopDebugRecording();
 }
 
+void ViECodecImpl::EnableAutoMuting(int video_channel) {
+  ViEChannelManagerScoped cs(*(shared_data_->channel_manager()));
+  ViEEncoder* vie_encoder = cs.Encoder(video_channel);
+  if (!vie_encoder) {
+    WEBRTC_TRACE(kTraceError, kTraceVideo,
+                 ViEId(shared_data_->instance_id(), video_channel),
+                 "%s: No encoder %d", __FUNCTION__, video_channel);
+    return;
+  }
+  return vie_encoder->EnableAutoMuting();
+}
+
 bool ViECodecImpl::CodecValid(const VideoCodec& video_codec) {
   // Check pl_name matches codec_type.
   if (video_codec.codecType == kVideoCodecRED) {

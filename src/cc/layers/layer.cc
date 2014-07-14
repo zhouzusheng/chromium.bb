@@ -41,6 +41,8 @@ Layer::Layer()
       scrollable_(false),
       should_scroll_on_main_thread_(false),
       have_wheel_event_handlers_(false),
+      user_scrollable_horizontal_(true),
+      user_scrollable_vertical_(true),
       anchor_point_(0.5f, 0.5f),
       background_color_(0),
       compositing_reasons_(kCompositingReasonUnknown),
@@ -123,8 +125,7 @@ void Layer::SetLayerTreeHost(LayerTreeHost* host) {
 
   if (host && layer_animation_controller_->has_any_animation())
     host->SetNeedsCommit();
-  if (host &&
-      (!filters_.IsEmpty() || !background_filters_.IsEmpty() || filter_))
+  if (host && (!filters_.IsEmpty() || !background_filters_.IsEmpty()))
     layer_tree_host_->set_needs_filter_context();
 }
 
@@ -205,10 +206,6 @@ gfx::Rect Layer::LayerRectToContentRect(const gfx::RectF& layer_rect) const {
 
 skia::RefPtr<SkPicture> Layer::GetPicture() const {
   return skia::RefPtr<SkPicture>();
-}
-
-bool Layer::CanClipSelf() const {
-  return false;
 }
 
 void Layer::SetParent(Layer* layer) {
@@ -472,22 +469,14 @@ void Layer::SetFilters(const FilterOperations& filters) {
   DCHECK(IsPropertyChangeAllowed());
   if (filters_ == filters)
     return;
-  DCHECK(!filter_);
   filters_ = filters;
   SetNeedsCommit();
   if (!filters.IsEmpty() && layer_tree_host_)
     layer_tree_host_->set_needs_filter_context();
 }
 
-void Layer::SetFilter(const skia::RefPtr<SkImageFilter>& filter) {
-  DCHECK(IsPropertyChangeAllowed());
-  if (filter_.get() == filter.get())
-    return;
-  DCHECK(filters_.IsEmpty());
-  filter_ = filter;
-  SetNeedsCommit();
-  if (filter && layer_tree_host_)
-    layer_tree_host_->set_needs_filter_context();
+bool Layer::FilterIsAnimating() const {
+  return layer_animation_controller_->IsAnimatingProperty(Animation::Filter);
 }
 
 void Layer::SetBackgroundFilters(const FilterOperations& filters) {
@@ -630,7 +619,7 @@ void Layer::SetScrollOffset(gfx::Vector2d scroll_offset) {
 
 void Layer::SetScrollOffsetFromImplSide(gfx::Vector2d scroll_offset) {
   DCHECK(IsPropertyChangeAllowed());
-  // This function only gets called during a begin frame, so there
+  // This function only gets called during a BeginMainFrame, so there
   // is no need to call SetNeedsUpdate here.
   DCHECK(layer_tree_host_ && layer_tree_host_->CommitRequested());
   if (scroll_offset_ == scroll_offset)
@@ -656,6 +645,16 @@ void Layer::SetScrollable(bool scrollable) {
   if (scrollable_ == scrollable)
     return;
   scrollable_ = scrollable;
+  SetNeedsCommit();
+}
+
+void Layer::SetUserScrollable(bool horizontal, bool vertical) {
+  DCHECK(IsPropertyChangeAllowed());
+  if (user_scrollable_horizontal_ == horizontal &&
+      user_scrollable_vertical_ == vertical)
+    return;
+  user_scrollable_horizontal_ = horizontal;
+  user_scrollable_vertical_ = vertical;
   SetNeedsCommit();
 }
 
@@ -820,8 +819,9 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   layer->SetForceRenderSurface(force_render_surface_);
   layer->SetDrawsContent(DrawsContent());
   layer->SetHideLayerAndSubtree(hide_layer_and_subtree_);
-  layer->SetFilters(filters());
-  layer->SetFilter(filter());
+  if (!layer->FilterIsAnimatingOnImplOnly() && !FilterIsAnimating())
+    layer->SetFilters(filters_);
+  DCHECK(!(FilterIsAnimating() && layer->FilterIsAnimatingOnImplOnly()));
   layer->SetBackgroundFilters(background_filters());
   layer->SetMasksToBounds(masks_to_bounds_);
   layer->SetShouldScrollOnMainThread(should_scroll_on_main_thread_);
@@ -845,6 +845,8 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   DCHECK(!(TransformIsAnimating() && layer->TransformIsAnimatingOnImplOnly()));
 
   layer->SetScrollable(scrollable_);
+  layer->set_user_scrollable_horizontal(user_scrollable_horizontal_);
+  layer->set_user_scrollable_vertical(user_scrollable_vertical_);
   layer->SetMaxScrollOffset(max_scroll_offset_);
 
   LayerImpl* scroll_parent = NULL;
@@ -879,8 +881,8 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   }
 
   // Adjust the scroll delta to be just the scrolls that have happened since
-  // the begin frame was sent.  This happens for impl-side painting
-  // in LayerImpl::ApplyScrollDeltasSinceBeginFrame in a separate tree walk.
+  // the BeginMainFrame was sent.  This happens for impl-side painting
+  // in LayerImpl::ApplyScrollDeltasSinceBeginMainFrame in a separate tree walk.
   if (layer->layer_tree_impl()->settings().impl_side_painting) {
     layer->SetScrollOffset(scroll_offset_);
   } else {
@@ -980,19 +982,19 @@ void Layer::ClearRenderSurface() {
   draw_properties_.render_surface.reset();
 }
 
+// On<Property>Animated is called due to an ongoing accelerated animation.
+// Since this animation is also being run on the compositor thread, there
+// is no need to request a commit to push this value over, so the value is
+// set directly rather than by calling Set<Property>.
+void Layer::OnFilterAnimated(const FilterOperations& filters) {
+  filters_ = filters;
+}
+
 void Layer::OnOpacityAnimated(float opacity) {
-  // This is called due to an ongoing accelerated animation. Since this
-  // animation is also being run on the impl thread, there is no need to request
-  // a commit to push this value over, so set the value directly rather than
-  // calling SetOpacity.
   opacity_ = opacity;
 }
 
 void Layer::OnTransformAnimated(const gfx::Transform& transform) {
-  // This is called due to an ongoing accelerated animation. Since this
-  // animation is also being run on the impl thread, there is no need to request
-  // a commit to push this value over, so set this value directly rather than
-  // calling SetTransform.
   transform_ = transform;
 }
 
@@ -1018,16 +1020,6 @@ void Layer::PauseAnimation(int animation_id, double time_offset) {
 
 void Layer::RemoveAnimation(int animation_id) {
   layer_animation_controller_->RemoveAnimation(animation_id);
-  SetNeedsCommit();
-}
-
-void Layer::SuspendAnimations(double monotonic_time) {
-  layer_animation_controller_->SuspendAnimations(monotonic_time);
-  SetNeedsCommit();
-}
-
-void Layer::ResumeAnimations(double monotonic_time) {
-  layer_animation_controller_->ResumeAnimations(monotonic_time);
   SetNeedsCommit();
 }
 
@@ -1096,6 +1088,10 @@ void Layer::RemoveFromClipTree() {
     clip_parent_->RemoveClipChild(this);
 
   clip_parent_ = NULL;
+}
+
+void Layer::RunMicroBenchmark(MicroBenchmark* benchmark) {
+  benchmark->RunOnLayer(this);
 }
 
 }  // namespace cc

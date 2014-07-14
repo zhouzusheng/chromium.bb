@@ -29,8 +29,10 @@
 
 #include "core/css/CSSValue.h"
 #include "core/css/resolver/StyleResolverState.h"
-#include "core/platform/LengthSize.h"
+#include "core/rendering/RenderView.h"
+#include "core/rendering/style/ShadowList.h"
 #include "core/svg/SVGLength.h"
+#include "platform/LengthSize.h"
 
 namespace WebCore {
 
@@ -46,6 +48,7 @@ public:
     static Length convertLengthMaxSizing(StyleResolverState&, CSSValue*);
     static LengthPoint convertLengthPoint(StyleResolverState&, CSSValue*);
     static LengthSize convertRadius(StyleResolverState&, CSSValue*);
+    static PassRefPtr<ShadowList> convertShadow(StyleResolverState&, CSSValue*);
     static float convertSpacing(StyleResolverState&, CSSValue*);
     template <CSSValueID IdForNone> static AtomicString convertString(StyleResolverState&, CSSValue*);
 };
@@ -53,9 +56,8 @@ public:
 template <typename T>
 T StyleBuilderConverter::convertComputedLength(StyleResolverState& state, CSSValue* value)
 {
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
     float zoom = state.style()->effectiveZoom();
-    return primitiveValue->computeLength<T>(state.style(), state.rootElementStyle(), zoom);
+    return toCSSPrimitiveValue(value)->computeLength<T>(state.style(), state.rootElementStyle(), zoom);
 }
 
 template <typename T>
@@ -69,6 +71,8 @@ T StyleBuilderConverter::convertLineWidth(StyleResolverState& state, CSSValue* v
         return 3;
     if (valueID == CSSValueThick)
         return 5;
+    if (primitiveValue->isViewportPercentageLength())
+        return intValueForLength(primitiveValue->viewportPercentageLength(), 0, state.document().renderView());
     if (valueID == CSSValueInvalid) {
         float zoom = state.style()->effectiveZoom();
         // Any original result that was >= 1 should not be allowed to fall below 1.

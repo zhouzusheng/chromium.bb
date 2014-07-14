@@ -11,6 +11,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "content/public/common/content_switches.h"
 #include "content/renderer/media/media_stream_source_extra_data.h"
+#include "content/renderer/media/media_stream_track_extra_data.h"
 #include "content/renderer/media/peer_connection_identity_service.h"
 #include "content/renderer/media/rtc_media_constraints.h"
 #include "content/renderer/media/rtc_peer_connection_handler.h"
@@ -21,7 +22,6 @@
 #include "content/renderer/media/webaudio_capturer_source.h"
 #include "content/renderer/media/webrtc_audio_device_impl.h"
 #include "content/renderer/media/webrtc_local_audio_track.h"
-#include "content/renderer/media/webrtc_logging_initializer.h"
 #include "content/renderer/media/webrtc_uma_histograms.h"
 #include "content/renderer/p2p/ipc_network_manager.h"
 #include "content/renderer/p2p/ipc_socket_factory.h"
@@ -50,10 +50,6 @@
 
 namespace content {
 
-// The constraint key for the PeerConnection constructor for enabling diagnostic
-// WebRTC logging. It's a Google specific key, hence the "goog" prefix.
-const char kWebRtcLoggingConstraint[] = "googLog";
-
 // Constant constraint keys which enables default audio constraints on
 // mediastreams with audio.
 struct {
@@ -62,6 +58,11 @@ struct {
 } const kDefaultAudioConstraints[] = {
   { webrtc::MediaConstraintsInterface::kEchoCancellation,
     webrtc::MediaConstraintsInterface::kValueTrue },
+#if defined(OS_CHROMEOS) || defined(OS_MACOSX)
+  // Enable the extended filter mode AEC on platforms with known echo issues.
+  { webrtc::MediaConstraintsInterface::kExperimentalEchoCancellation,
+    webrtc::MediaConstraintsInterface::kValueTrue },
+#endif
   { webrtc::MediaConstraintsInterface::kAutoGainControl,
     webrtc::MediaConstraintsInterface::kValueTrue },
   { webrtc::MediaConstraintsInterface::kExperimentalAutoGainControl,
@@ -281,11 +282,13 @@ void MediaStreamDependencyFactory::CreateNativeMediaSources(
     const WebKit::WebMediaStreamSource& source = video_tracks[i].source();
     MediaStreamSourceExtraData* source_data =
         static_cast<MediaStreamSourceExtraData*>(source.extraData());
-    if (!source_data) {
-      // TODO(perkj): Implement support for sources from remote MediaStreams.
-      NOTIMPLEMENTED();
+
+    // Check if the source has already been created. This happens when the same
+    // source is used in multiple MediaStreams as a result of calling
+    // getUserMedia.
+    if (source_data->video_source())
       continue;
-    }
+
     const bool is_screencast =
         source_data->device_info().device.type == MEDIA_TAB_VIDEO_CAPTURE ||
         source_data->device_info().device.type == MEDIA_DESKTOP_VIDEO_CAPTURE;
@@ -302,20 +305,16 @@ void MediaStreamDependencyFactory::CreateNativeMediaSources(
   ApplyFixedAudioConstraints(&native_audio_constraints);
   WebKit::WebVector<WebKit::WebMediaStreamTrack> audio_tracks;
   web_stream->audioTracks(audio_tracks);
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kEnableWebRtcAecRecordings)) {
-    native_audio_constraints.AddOptional(
-        RTCMediaConstraints::kInternalAecDump, "true");
-  }
   for (size_t i = 0; i < audio_tracks.size(); ++i) {
     const WebKit::WebMediaStreamSource& source = audio_tracks[i].source();
     MediaStreamSourceExtraData* source_data =
         static_cast<MediaStreamSourceExtraData*>(source.extraData());
-    if (!source_data) {
-      // TODO(henrika): Implement support for sources from remote MediaStreams.
-      NOTIMPLEMENTED();
+
+    // Check if the source has already been created. This happens when the same
+    // source is used in multiple MediaStreams as a result of calling
+    // getUserMedia.
+    if (source_data->local_audio_source())
       continue;
-    }
 
     // TODO(xians): Create a new capturer for difference microphones when we
     // support multiple microphones. See issue crbug/262117 .
@@ -332,6 +331,7 @@ void MediaStreamDependencyFactory::CreateNativeMediaSources(
       // be called multiple times which is likely also a bug.
       return;
     }
+    source_data->SetAudioCapturer(capturer);
 
     // Creates a LocalAudioSource object which holds audio options.
     // TODO(xians): The option should apply to the track instead of the source.
@@ -437,6 +437,8 @@ bool MediaStreamDependencyFactory::AddNativeMediaStreamTrack(
                               webaudio_source.get(),
                               source_data->local_audio_source(),
                               &track_constraints));
+    AddNativeTrackToBlinkTrack(audio_track.get(), track);
+
     audio_track->set_enabled(track.isEnabled());
     if (capturer.get()) {
       WebKit::WebMediaStreamTrack writable_track = track;
@@ -447,6 +449,7 @@ bool MediaStreamDependencyFactory::AddNativeMediaStreamTrack(
     DCHECK(source.type() == WebKit::WebMediaStreamSource::TypeVideo);
     scoped_refptr<webrtc::VideoTrackInterface> video_track(
         CreateLocalVideoTrack(track_id, source_data->video_source()));
+    AddNativeTrackToBlinkTrack(video_track.get(), track);
     video_track->set_enabled(track.isEnabled());
     return native_stream->AddTrack(video_track.get());
   }
@@ -479,7 +482,9 @@ bool MediaStreamDependencyFactory::AddNativeVideoMediaTrack(
   WebKit::WebMediaStreamSource::Type type =
       WebKit::WebMediaStreamSource::TypeVideo;
   webkit_source.initialize(webkit_track_id, type, webkit_track_id);
+
   webkit_track.initialize(webkit_track_id, webkit_source);
+  AddNativeTrackToBlinkTrack(native_track.get(), webkit_track);
 
   // Add the track to WebMediaStream.
   stream->addTrack(webkit_track);
@@ -498,10 +503,12 @@ bool MediaStreamDependencyFactory::RemoveNativeMediaStreamTrack(
   DCHECK(type == WebKit::WebMediaStreamSource::TypeAudio ||
          type == WebKit::WebMediaStreamSource::TypeVideo);
 
+  WebKit::WebMediaStreamTrack writable_track = track;
+  writable_track.setExtraData(NULL);
+
   std::string track_id = UTF16ToUTF8(track.id());
   if (type == WebKit::WebMediaStreamSource::TypeAudio) {
     // Remove the source provider as the track is going away.
-    WebKit::WebMediaStreamTrack writable_track = track;
     writable_track.setSourceProvider(NULL);
     return native_stream->RemoveTrack(native_stream->FindAudioTrack(track_id));
   }
@@ -511,47 +518,56 @@ bool MediaStreamDependencyFactory::RemoveNativeMediaStreamTrack(
 }
 
 bool MediaStreamDependencyFactory::CreatePeerConnectionFactory() {
+  DCHECK(!pc_factory_.get());
+  DCHECK(!audio_device_.get());
   DVLOG(1) << "MediaStreamDependencyFactory::CreatePeerConnectionFactory()";
-  if (!pc_factory_.get()) {
-    DCHECK(!audio_device_.get());
-    audio_device_ = new WebRtcAudioDeviceImpl();
 
-    scoped_ptr<cricket::WebRtcVideoDecoderFactory> decoder_factory;
-    scoped_ptr<cricket::WebRtcVideoEncoderFactory> encoder_factory;
+  scoped_ptr<cricket::WebRtcVideoDecoderFactory> decoder_factory;
+  scoped_ptr<cricket::WebRtcVideoEncoderFactory> encoder_factory;
 
-    const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-    scoped_refptr<base::MessageLoopProxy> media_loop_proxy =
-        RenderThreadImpl::current()->GetMediaThreadMessageLoopProxy();
-    scoped_refptr<RendererGpuVideoAcceleratorFactories> gpu_factories =
-        RenderThreadImpl::current()->GetGpuFactories(media_loop_proxy);
+  const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
+  scoped_refptr<RendererGpuVideoAcceleratorFactories> gpu_factories =
+      RenderThreadImpl::current()->GetGpuFactories();
 #if !defined(GOOGLE_TV)
-    if (!cmd_line->HasSwitch(switches::kDisableWebRtcHWDecoding)) {
-      if (gpu_factories)
-        decoder_factory.reset(new RTCVideoDecoderFactory(gpu_factories));
-    }
+  if (!cmd_line->HasSwitch(switches::kDisableWebRtcHWDecoding)) {
+    if (gpu_factories)
+      decoder_factory.reset(new RTCVideoDecoderFactory(gpu_factories));
+  }
 #else
-    // PeerConnectionFactory will hold the ownership of this
-    // VideoDecoderFactory.
-    decoder_factory.reset(decoder_factory_tv_ = new RTCVideoDecoderFactoryTv());
+  // PeerConnectionFactory will hold the ownership of this
+  // VideoDecoderFactory.
+  decoder_factory.reset(decoder_factory_tv_ = new RTCVideoDecoderFactoryTv());
 #endif
 
-    if (!cmd_line->HasSwitch(switches::kDisableWebRtcHWEncoding)) {
-      if (gpu_factories)
-        encoder_factory.reset(new RTCVideoEncoderFactory(gpu_factories));
-    }
-
-    scoped_refptr<webrtc::PeerConnectionFactoryInterface> factory(
-        webrtc::CreatePeerConnectionFactory(worker_thread_,
-                                            signaling_thread_,
-                                            audio_device_.get(),
-                                            encoder_factory.release(),
-                                            decoder_factory.release()));
-    if (factory.get())
-      pc_factory_ = factory;
-    else
-      audio_device_ = NULL;
+  if (!cmd_line->HasSwitch(switches::kDisableWebRtcHWEncoding)) {
+    if (gpu_factories)
+      encoder_factory.reset(new RTCVideoEncoderFactory(gpu_factories));
   }
-  return pc_factory_.get() != NULL;
+
+  scoped_refptr<WebRtcAudioDeviceImpl> audio_device(
+      new WebRtcAudioDeviceImpl());
+
+  scoped_refptr<webrtc::PeerConnectionFactoryInterface> factory(
+      webrtc::CreatePeerConnectionFactory(worker_thread_,
+                                          signaling_thread_,
+                                          audio_device.get(),
+                                          encoder_factory.release(),
+                                          decoder_factory.release()));
+  if (!factory.get()) {
+    return false;
+  }
+
+  audio_device_ = audio_device;
+  pc_factory_ = factory;
+  webrtc::PeerConnectionFactoryInterface::Options factory_options;
+  factory_options.enable_aec_dump =
+      cmd_line->HasSwitch(switches::kEnableWebRtcAecRecordings);
+  factory_options.disable_sctp_data_channels =
+      cmd_line->HasSwitch(switches::kDisableSCTPDataChannels);
+  factory_options.disable_encryption =
+      cmd_line->HasSwitch(switches::kDisableWebRtcEncryption);
+  pc_factory_->SetOptions(factory_options);
+  return true;
 }
 
 bool MediaStreamDependencyFactory::PeerConnectionFactoryCreated() {
@@ -567,19 +583,6 @@ MediaStreamDependencyFactory::CreatePeerConnection(
   CHECK(web_frame);
   CHECK(observer);
 
-  webrtc::MediaConstraintsInterface::Constraints optional_constraints =
-      constraints->GetOptional();
-  std::string constraint_value;
-  if (optional_constraints.FindFirst(kWebRtcLoggingConstraint,
-                                     &constraint_value)) {
-    std::string url = web_frame->document().url().spec();
-    RenderThreadImpl::current()->GetIOMessageLoopProxy()->PostTask(
-        FROM_HERE, base::Bind(
-            &InitWebRtcLogging,
-            constraint_value,
-            url));
-  }
-
   scoped_refptr<P2PPortAllocatorFactory> pa_factory =
         new talk_base::RefCountedObject<P2PPortAllocatorFactory>(
             p2p_socket_dispatcher_.get(),
@@ -588,7 +591,7 @@ MediaStreamDependencyFactory::CreatePeerConnection(
             web_frame);
 
   PeerConnectionIdentityService* identity_service =
-      PeerConnectionIdentityService::Create(
+      new PeerConnectionIdentityService(
           GURL(web_frame->document().url().spec()).GetOrigin());
 
   return pc_factory_->CreatePeerConnection(ice_servers,
@@ -843,7 +846,9 @@ MediaStreamDependencyFactory::MaybeCreateAudioCapturer(
           device_info.device.input.sample_rate,
           device_info.device.input.frames_per_buffer,
           device_info.session_id,
-          device_info.device.id)) {
+          device_info.device.id,
+          device_info.device.matched_output.sample_rate,
+          device_info.device.matched_output.frames_per_buffer)) {
     return NULL;
   }
 
@@ -852,6 +857,34 @@ MediaStreamDependencyFactory::MaybeCreateAudioCapturer(
     GetWebRtcAudioDevice()->AddAudioCapturer(capturer);
 
   return capturer;
+}
+
+void MediaStreamDependencyFactory::AddNativeTrackToBlinkTrack(
+    webrtc::MediaStreamTrackInterface* native_track,
+    const WebKit::WebMediaStreamTrack& webkit_track) {
+  DCHECK(!webkit_track.isNull() && !webkit_track.extraData());
+  WebKit::WebMediaStreamTrack track = webkit_track;
+  track.setExtraData(new MediaStreamTrackExtraData(native_track));
+}
+
+webrtc::MediaStreamInterface*
+MediaStreamDependencyFactory::GetNativeMediaStream(
+    const WebKit::WebMediaStream& stream) {
+  if (stream.isNull())
+    return NULL;
+  MediaStreamExtraData* extra_data =
+      static_cast<MediaStreamExtraData*>(stream.extraData());
+  return extra_data ? extra_data->stream().get() : NULL;
+}
+
+webrtc::MediaStreamTrackInterface*
+MediaStreamDependencyFactory::GetNativeMediaStreamTrack(
+      const WebKit::WebMediaStreamTrack& track) {
+  if (track.isNull())
+    return NULL;
+  MediaStreamTrackExtraData* extra_data =
+      static_cast<MediaStreamTrackExtraData*>(track.extraData());
+  return extra_data ? extra_data->track().get() : NULL;
 }
 
 }  // namespace content

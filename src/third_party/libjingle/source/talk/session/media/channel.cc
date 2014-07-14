@@ -81,6 +81,7 @@ enum {
   MSG_SETSCREENCASTFACTORY,
   MSG_FIRSTPACKETRECEIVED,
   MSG_SESSION_ERROR,
+  MSG_NEWSTREAMRECEIVED,
 };
 
 // Value specified in RFC 5764.
@@ -398,7 +399,6 @@ BaseChannel::BaseChannel(talk_base::Thread* thread,
       writable_(false),
       rtp_ready_to_send_(false),
       rtcp_ready_to_send_(false),
-      optimistic_data_send_(false),
       was_ever_writable_(false),
       local_content_direction_(MD_INACTIVE),
       remote_content_direction_(MD_INACTIVE),
@@ -411,6 +411,7 @@ BaseChannel::BaseChannel(talk_base::Thread* thread,
 
 BaseChannel::~BaseChannel() {
   ASSERT(worker_thread_ == talk_base::Thread::Current());
+  Deinit();
   StopConnectionMonitor();
   FlushRtcpMessages();  // Send any outstanding RTCP packets.
   Clear();  // eats any outstanding messages or packets
@@ -438,7 +439,6 @@ bool BaseChannel::Init(TransportChannel* transport_channel,
     return false;
   }
 
-  media_channel_->SetInterface(this);
   transport_channel_->SignalWritableState.connect(
       this, &BaseChannel::OnWritableState);
   transport_channel_->SignalReadPacket.connect(
@@ -452,7 +452,14 @@ bool BaseChannel::Init(TransportChannel* transport_channel,
       this, &BaseChannel::OnNewRemoteDescription);
 
   set_rtcp_transport_channel(rtcp_transport_channel);
+  // Both RTP and RTCP channels are set, we can call SetInterface on
+  // media channel and it can set network options.
+  media_channel_->SetInterface(this);
   return true;
+}
+
+void BaseChannel::Deinit() {
+  media_channel_->SetInterface(NULL);
 }
 
 // Can be called from thread other than worker thread
@@ -641,12 +648,6 @@ bool BaseChannel::PacketIsRtcp(const TransportChannel* channel,
 
 bool BaseChannel::SendPacket(bool rtcp, talk_base::Buffer* packet,
                              talk_base::DiffServCodePoint dscp) {
-  // Unless we're sending optimistically, we only allow packets through when we
-  // are completely writable.
-  if (!optimistic_data_send_ && !writable_) {
-    return false;
-  }
-
   // SendPacket gets called from MediaEngine, typically on an encoder thread.
   // If the thread is not our worker thread, we will post to our worker
   // so that the real work happens on our worker. This avoids us having to
@@ -670,7 +671,7 @@ bool BaseChannel::SendPacket(bool rtcp, talk_base::Buffer* packet,
   // transport.
   TransportChannel* channel = (!rtcp || rtcp_mux_filter_.IsActive()) ?
       transport_channel_ : rtcp_transport_channel_;
-  if (!channel || (!optimistic_data_send_ && !channel->writable())) {
+  if (!channel || !channel->writable()) {
     return false;
   }
 
@@ -1082,32 +1083,42 @@ bool BaseChannel::SetMaxSendBandwidth_w(int max_bandwidth) {
   return media_channel()->SetSendBandwidth(true, max_bandwidth);
 }
 
+// |dtls| will be set to true if DTLS is active for transport channel and
+// crypto is empty.
+bool BaseChannel::CheckSrtpConfig(const std::vector<CryptoParams>& cryptos,
+                                  bool* dtls) {
+  *dtls = transport_channel_->IsDtlsActive();
+  if (*dtls && !cryptos.empty()) {
+    LOG(LS_WARNING) << "Cryptos must be empty when DTLS is active.";
+    return false;
+  }
+  return true;
+}
+
 bool BaseChannel::SetSrtp_w(const std::vector<CryptoParams>& cryptos,
                             ContentAction action, ContentSource src) {
   bool ret = false;
+  bool dtls = false;
+  ret = CheckSrtpConfig(cryptos, &dtls);
   switch (action) {
     case CA_OFFER:
-      ret = srtp_filter_.SetOffer(cryptos, src);
+      // If DTLS is already active on the channel, we could be renegotiating
+      // here. We don't update the srtp filter.
+      if (ret && !dtls) {
+        ret = srtp_filter_.SetOffer(cryptos, src);
+      }
       break;
     case CA_PRANSWER:
       // If we're doing DTLS-SRTP, we don't want to update the filter
       // with an answer, because we already have SRTP parameters.
-      if (transport_channel_->IsDtlsActive()) {
-        LOG(LS_INFO) <<
-          "Ignoring SDES answer parameters because we are using DTLS-SRTP";
-        ret = true;
-      } else {
+      if (ret && !dtls) {
         ret = srtp_filter_.SetProvisionalAnswer(cryptos, src);
       }
       break;
     case CA_ANSWER:
       // If we're doing DTLS-SRTP, we don't want to update the filter
       // with an answer, because we already have SRTP parameters.
-      if (transport_channel_->IsDtlsActive()) {
-        LOG(LS_INFO) <<
-          "Ignoring SDES answer parameters because we are using DTLS-SRTP";
-        ret = true;
-      } else {
+      if (ret && !dtls) {
         ret = srtp_filter_.SetAnswer(cryptos, src);
       }
       break;
@@ -1472,6 +1483,7 @@ VoiceChannel::~VoiceChannel() {
   StopMediaMonitor();
   // this can't be done in the base class, since it calls a virtual
   DisableMedia_w();
+  Deinit();
 }
 
 bool VoiceChannel::Init() {
@@ -1967,6 +1979,8 @@ VideoChannel::~VideoChannel() {
   StopMediaMonitor();
   // this can't be done in the base class, since it calls a virtual
   DisableMedia_w();
+
+  Deinit();
 }
 
 bool VideoChannel::SetRenderer(uint32 ssrc, VideoRenderer* renderer) {
@@ -2463,13 +2477,16 @@ DataChannel::DataChannel(talk_base::Thread* thread,
                          bool rtcp)
     // MediaEngine is NULL
     : BaseChannel(thread, NULL, media_channel, session, content_name, rtcp),
-      data_channel_type_(cricket::DCT_NONE) {
+      data_channel_type_(cricket::DCT_NONE),
+      ready_to_send_data_(false) {
 }
 
 DataChannel::~DataChannel() {
   StopMediaMonitor();
   // this can't be done in the base class, since it calls a virtual
   DisableMedia_w();
+
+  Deinit();
 }
 
 bool DataChannel::Init() {
@@ -2486,6 +2503,8 @@ bool DataChannel::Init() {
       this, &DataChannel::OnDataChannelError);
   media_channel()->SignalReadyToSend.connect(
       this, &DataChannel::OnDataChannelReadyToSend);
+  media_channel()->SignalNewStreamReceived.connect(
+      this, &DataChannel::OnDataChannelNewStreamReceived);
   srtp_filter()->SignalSrtpError.connect(
       this, &DataChannel::OnSrtpError);
   return true;
@@ -2578,6 +2597,9 @@ bool DataChannel::SetLocalContent_w(const MediaContentDescription* content,
     ret = UpdateLocalStreams_w(data->streams(), action);
     if (ret) {
       set_local_content_direction(content->direction());
+      // As in SetRemoteContent_w, make sure we set the local SCTP port
+      // number as specified in our DataContentDescription.
+      ret = media_channel()->SetRecvCodecs(data->codecs());
     }
   } else {
     ret = SetBaseLocalContent_w(content, action);
@@ -2616,6 +2638,9 @@ bool DataChannel::SetRemoteContent_w(const MediaContentDescription* content,
     ret = UpdateRemoteStreams_w(content->streams(), action);
     if (ret) {
       set_remote_content_direction(content->direction());
+      // We send the SCTP port number (not to be confused with the underlying
+      // UDP port number) as a codec parameter.  Make sure it gets there.
+      ret = media_channel()->SetSendCodecs(data->codecs());
     }
   } else {
     // If the remote data doesn't have codecs and isn't an update, it
@@ -2677,7 +2702,8 @@ void DataChannel::OnMessage(talk_base::Message *pmsg) {
     case MSG_READYTOSENDDATA: {
       DataChannelReadyToSendMessageData* data =
           static_cast<DataChannelReadyToSendMessageData*>(pmsg->pdata);
-      SignalReadyToSendData(data->data());
+      ready_to_send_data_ = data->data();
+      SignalReadyToSendData(ready_to_send_data_);
       delete data;
       break;
     }
@@ -2699,6 +2725,13 @@ void DataChannel::OnMessage(talk_base::Message *pmsg) {
       const DataChannelErrorMessageData* data =
           static_cast<DataChannelErrorMessageData*>(pmsg->pdata);
       SignalMediaError(this, data->ssrc, data->error);
+      delete data;
+      break;
+    }
+    case MSG_NEWSTREAMRECEIVED: {
+      DataChannelNewStreamReceivedMessageData* data =
+          static_cast<DataChannelNewStreamReceivedMessageData*>(pmsg->pdata);
+      SignalNewStreamReceived(data->label, data->init);
       delete data;
       break;
     }
@@ -2755,6 +2788,14 @@ void DataChannel::OnDataChannelReadyToSend(bool writable) {
   // that the transport channel is ready.
   signaling_thread()->Post(this, MSG_READYTOSENDDATA,
                            new DataChannelReadyToSendMessageData(writable));
+}
+
+void DataChannel::OnDataChannelNewStreamReceived(
+    const std::string& label, const webrtc::DataChannelInit& init) {
+  signaling_thread()->Post(
+      this,
+      MSG_NEWSTREAMRECEIVED,
+      new DataChannelNewStreamReceivedMessageData(label, init));
 }
 
 void DataChannel::OnSrtpError(uint32 ssrc, SrtpFilter::Mode mode,

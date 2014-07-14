@@ -25,7 +25,6 @@
 
 #include "core/rendering/svg/RenderSVGResourceFilter.h"
 
-#include "core/page/Page.h"
 #include "core/page/Settings.h"
 #include "core/platform/graphics/filters/SourceAlpha.h"
 #include "core/platform/graphics/filters/SourceGraphic.h"
@@ -37,7 +36,7 @@ using namespace std;
 
 namespace WebCore {
 
-RenderSVGResourceType RenderSVGResourceFilter::s_resourceType = FilterResourceType;
+const RenderSVGResourceType RenderSVGResourceFilter::s_resourceType = FilterResourceType;
 
 RenderSVGResourceFilter::RenderSVGResourceFilter(SVGFilterElement* node)
     : RenderSVGResourceContainer(node)
@@ -46,20 +45,12 @@ RenderSVGResourceFilter::RenderSVGResourceFilter(SVGFilterElement* node)
 
 RenderSVGResourceFilter::~RenderSVGResourceFilter()
 {
-    if (m_filter.isEmpty())
-        return;
-
-    deleteAllValues(m_filter);
     m_filter.clear();
 }
 
 void RenderSVGResourceFilter::removeAllClientsFromCache(bool markForInvalidation)
 {
-    if (!m_filter.isEmpty()) {
-        deleteAllValues(m_filter);
-        m_filter.clear();
-    }
-
+    m_filter.clear();
     markAllClientsForInvalidation(markForInvalidation ? LayoutAndBoundariesInvalidation : ParentOnlyInvalidation);
 }
 
@@ -71,7 +62,7 @@ void RenderSVGResourceFilter::removeClientFromCache(RenderObject* client, bool m
         if (filterData->savedContext)
             filterData->state = FilterData::MarkedForRemoval;
         else
-            delete m_filter.take(client);
+            m_filter.remove(client);
     }
 
     markClientForInvalidation(client, markForInvalidation ? BoundariesInvalidation : ParentOnlyInvalidation);
@@ -227,7 +218,7 @@ bool RenderSVGResourceFilter::applyResource(RenderObject* object, RenderStyle*, 
     if (filterData->drawingRegion.isEmpty()) {
         ASSERT(!m_filter.contains(object));
         filterData->savedContext = context;
-        m_filter.set(object, filterData.leakPtr());
+        m_filter.set(object, filterData.release());
         return false;
     }
 
@@ -237,11 +228,11 @@ bool RenderSVGResourceFilter::applyResource(RenderObject* object, RenderStyle*, 
     effectiveTransform.multiply(filterData->shearFreeAbsoluteTransform);
 
     OwnPtr<ImageBuffer> sourceGraphic;
-    RenderingMode renderingMode = object->document().page()->settings().acceleratedFiltersEnabled() ? Accelerated : Unaccelerated;
+    RenderingMode renderingMode = object->document().settings()->acceleratedFiltersEnabled() ? Accelerated : Unaccelerated;
     if (!createImageBuffer(filterData->drawingRegion, effectiveTransform, sourceGraphic, renderingMode)) {
         ASSERT(!m_filter.contains(object));
         filterData->savedContext = context;
-        m_filter.set(object, filterData.leakPtr());
+        m_filter.set(object, filterData.release());
         return false;
     }
 
@@ -257,7 +248,7 @@ bool RenderSVGResourceFilter::applyResource(RenderObject* object, RenderStyle*, 
     context = sourceGraphicContext;
 
     ASSERT(!m_filter.contains(object));
-    m_filter.set(object, filterData.leakPtr());
+    m_filter.set(object, filterData.release());
 
     return true;
 }
@@ -274,7 +265,7 @@ void RenderSVGResourceFilter::postApplyResource(RenderObject* object, GraphicsCo
 
     switch (filterData->state) {
     case FilterData::MarkedForRemoval:
-        delete m_filter.take(object);
+        m_filter.remove(object);
         return;
 
     case FilterData::CycleDetected:
@@ -341,12 +332,12 @@ FloatRect RenderSVGResourceFilter::resourceBoundingBox(RenderObject* object)
 
 void RenderSVGResourceFilter::primitiveAttributeChanged(RenderObject* object, const QualifiedName& attribute)
 {
-    HashMap<RenderObject*, FilterData*>::iterator it = m_filter.begin();
-    HashMap<RenderObject*, FilterData*>::iterator end = m_filter.end();
+    FilterMap::iterator it = m_filter.begin();
+    FilterMap::iterator end = m_filter.end();
     SVGFilterPrimitiveStandardAttributes* primitve = static_cast<SVGFilterPrimitiveStandardAttributes*>(object->node());
 
     for (; it != end; ++it) {
-        FilterData* filterData = it->value;
+        FilterData* filterData = it->value.get();
         if (filterData->state != FilterData::Built)
             continue;
 

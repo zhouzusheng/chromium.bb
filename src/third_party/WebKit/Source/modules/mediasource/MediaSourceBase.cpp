@@ -33,17 +33,18 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "core/dom/Event.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/GenericEventQueue.h"
-#include "core/platform/Logging.h"
+#include "core/events/Event.h"
+#include "core/events/GenericEventQueue.h"
 #include "core/platform/graphics/SourceBufferPrivate.h"
 #include "modules/mediasource/MediaSourceRegistry.h"
+#include "platform/Logging.h"
+#include "platform/TraceEvent.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-MediaSourceBase::MediaSourceBase(ScriptExecutionContext* context)
+MediaSourceBase::MediaSourceBase(ExecutionContext* context)
     : ActiveDOMObject(context)
     , m_readyState(closedKeyword())
     , m_asyncEventQueue(GenericEventQueue::create(this))
@@ -75,6 +76,7 @@ const AtomicString& MediaSourceBase::endedKeyword()
 
 void MediaSourceBase::setPrivateAndOpen(PassOwnPtr<MediaSourcePrivate> mediaSourcePrivate)
 {
+    TRACE_EVENT_ASYNC_END0("media", "MediaSourceBase::attachToElement", this);
     ASSERT(mediaSourcePrivate);
     ASSERT(!m_private);
     ASSERT(m_attachedElement);
@@ -144,11 +146,11 @@ PassRefPtr<TimeRanges> MediaSourceBase::buffered() const
 void MediaSourceBase::setDuration(double duration, ExceptionState& es)
 {
     if (duration < 0.0 || std::isnan(duration)) {
-        es.throwDOMException(InvalidAccessError);
+        es.throwUninformativeAndGenericDOMException(InvalidAccessError);
         return;
     }
     if (!isOpen()) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
 
@@ -188,7 +190,7 @@ void MediaSourceBase::endOfStream(const AtomicString& error, ExceptionState& es)
     // 1. If the readyState attribute is not in the "open" state then throw an
     // InvalidStateError exception and abort these steps.
     if (!isOpen()) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
 
@@ -201,7 +203,7 @@ void MediaSourceBase::endOfStream(const AtomicString& error, ExceptionState& es)
     } else if (error == decode) {
         eosStatus = MediaSourcePrivate::EosDecodeError;
     } else {
-        es.throwDOMException(InvalidAccessError);
+        es.throwUninformativeAndGenericDOMException(InvalidAccessError);
         return;
     }
 
@@ -232,6 +234,7 @@ bool MediaSourceBase::attachToElement(HTMLMediaElement* element)
 
     ASSERT(isClosed());
 
+    TRACE_EVENT_ASYNC_BEGIN0("media", "MediaSourceBase::attachToElement", this);
     m_attachedElement = element;
     return true;
 }
@@ -247,7 +250,8 @@ void MediaSourceBase::openIfInEndedState()
 
 bool MediaSourceBase::hasPendingActivity() const
 {
-    return m_private || m_asyncEventQueue->hasPendingEvents()
+    return m_attachedElement || m_private
+        || m_asyncEventQueue->hasPendingEvents()
         || ActiveDOMObject::hasPendingActivity();
 }
 
@@ -271,13 +275,13 @@ PassOwnPtr<SourceBufferPrivate> MediaSourceBase::createSourceBufferPrivate(const
         // Step 2: If type contains a MIME type ... that is not supported with the types
         // specified for the other SourceBuffer objects in sourceBuffers, then throw
         // a NotSupportedError exception and abort these steps.
-        es.throwDOMException(NotSupportedError);
+        es.throwUninformativeAndGenericDOMException(NotSupportedError);
         return nullptr;
     case MediaSourcePrivate::ReachedIdLimit:
         // 2.2 https://dvcs.w3.org/hg/html-media/raw-file/default/media-source/media-source.html#widl-MediaSource-addSourceBuffer-SourceBuffer-DOMString-type
         // Step 3: If the user agent can't handle any more SourceBuffer objects then throw
         // a QuotaExceededError exception and abort these steps.
-        es.throwDOMException(QuotaExceededError);
+        es.throwUninformativeAndGenericDOMException(QuotaExceededError);
         return nullptr;
     }
 
@@ -295,19 +299,9 @@ void MediaSourceBase::scheduleEvent(const AtomicString& eventName)
     m_asyncEventQueue->enqueueEvent(event.release());
 }
 
-ScriptExecutionContext* MediaSourceBase::scriptExecutionContext() const
+ExecutionContext* MediaSourceBase::executionContext() const
 {
-    return ActiveDOMObject::scriptExecutionContext();
-}
-
-EventTargetData* MediaSourceBase::eventTargetData()
-{
-    return &m_eventTargetData;
-}
-
-EventTargetData* MediaSourceBase::ensureEventTargetData()
-{
-    return &m_eventTargetData;
+    return ActiveDOMObject::executionContext();
 }
 
 URLRegistry& MediaSourceBase::registry() const

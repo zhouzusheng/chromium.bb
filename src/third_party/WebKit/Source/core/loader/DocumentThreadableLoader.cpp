@@ -38,16 +38,16 @@
 #include "core/fetch/RawResource.h"
 #include "core/fetch/Resource.h"
 #include "core/fetch/ResourceFetcher.h"
+#include "core/frame/ContentSecurityPolicy.h"
+#include "core/frame/Frame.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/CrossOriginPreflightResultCache.h"
 #include "core/loader/DocumentThreadableLoaderClient.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/ThreadableLoaderClient.h"
-#include "core/page/ContentSecurityPolicy.h"
-#include "core/page/Frame.h"
-#include "core/platform/SharedBuffer.h"
-#include "core/platform/network/ResourceError.h"
-#include "core/platform/network/ResourceRequest.h"
+#include "platform/SharedBuffer.h"
+#include "platform/network/ResourceError.h"
+#include "platform/network/ResourceRequest.h"
 #include "weborigin/SchemeRegistry.h"
 #include "weborigin/SecurityOrigin.h"
 #include "wtf/Assertions.h"
@@ -209,7 +209,7 @@ void DocumentThreadableLoader::redirectReceived(Resource* resource, ResourceRequ
     // original request was not same-origin.
     if (m_options.crossOriginRequestPolicy == UseAccessControl) {
 
-        InspectorInstrumentation::didReceiveCORSRedirectResponse(m_document->frame(), resource->identifier(), m_document->frame()->loader()->documentLoader(), redirectResponse, 0);
+        InspectorInstrumentation::didReceiveCORSRedirectResponse(m_document->frame(), resource->identifier(), m_document->frame()->loader().documentLoader(), redirectResponse, 0);
 
         bool allowRedirect = false;
         String accessControlErrorDescription;
@@ -286,7 +286,7 @@ void DocumentThreadableLoader::didReceiveResponse(unsigned long identifier, cons
 
     String accessControlErrorDescription;
     if (m_actualRequest) {
-        DocumentLoader* loader = m_document->frame()->loader()->documentLoader();
+        DocumentLoader* loader = m_document->frame()->loader().documentLoader();
         InspectorInstrumentationCookie cookie = InspectorInstrumentation::willReceiveResourceResponse(m_document->frame(), identifier, response);
         InspectorInstrumentation::didReceiveResourceResponse(cookie, identifier, loader, response, m_resource ? m_resource->loader() : 0);
 
@@ -356,7 +356,7 @@ void DocumentThreadableLoader::notifyFinished(Resource* resource)
 void DocumentThreadableLoader::didFinishLoading(unsigned long identifier, double finishTime)
 {
     if (m_actualRequest) {
-        InspectorInstrumentation::didFinishLoading(m_document->frame(), identifier, m_document->frame()->loader()->documentLoader(), finishTime);
+        InspectorInstrumentation::didFinishLoading(m_document->frame(), identifier, m_document->frame()->loader().documentLoader(), finishTime);
         ASSERT(!m_sameOriginRequest);
         ASSERT(m_options.crossOriginRequestPolicy == UseAccessControl);
         preflightSuccess();
@@ -367,7 +367,7 @@ void DocumentThreadableLoader::didFinishLoading(unsigned long identifier, double
 void DocumentThreadableLoader::didFail(unsigned long identifier, const ResourceError& error)
 {
     if (m_actualRequest)
-        InspectorInstrumentation::didFailLoading(m_document->frame(), identifier, m_document->frame()->loader()->documentLoader(), error);
+        InspectorInstrumentation::didFailLoading(m_document->frame(), identifier, m_document->frame()->loader().documentLoader(), error);
 
     m_client->didFail(error);
 }
@@ -401,7 +401,7 @@ void DocumentThreadableLoader::preflightFailure(unsigned long identifier, const 
 {
     ResourceError error(errorDomainWebKitInternal, 0, url, errorDescription);
     if (m_actualRequest)
-        InspectorInstrumentation::didFailLoading(m_document->frame(), identifier, m_document->frame()->loader()->documentLoader(), error);
+        InspectorInstrumentation::didFailLoading(m_document->frame(), identifier, m_document->frame()->loader().documentLoader(), error);
     m_actualRequest = nullptr; // Prevent didFinishLoading() from bypassing access check.
     m_client->didFailAccessControlCheck(error);
 }

@@ -36,9 +36,9 @@
 #include "core/css/MediaQuery.h"
 #include "core/css/StylePropertySet.h"
 #include "core/page/UseCounter.h"
-#include "core/platform/graphics/Color.h"
+#include "platform/graphics/Color.h"
 #include "wtf/HashSet.h"
-#include "wtf/OwnArrayPtr.h"
+#include "wtf/OwnPtr.h"
 #include "wtf/Vector.h"
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/TextPosition.h"
@@ -279,14 +279,12 @@ public:
 
     void addTextDecorationProperty(CSSPropertyID, PassRefPtr<CSSValue>, bool important);
     bool parseTextDecoration(CSSPropertyID propId, bool important);
-#if ENABLE(CSS3_TEXT)
     bool parseTextUnderlinePosition(bool important);
-#endif // CSS3_TEXT
 
     PassRefPtr<CSSValue> parseTextIndent();
 
     bool parseLineBoxContain(bool important);
-    bool parseCalculation(CSSParserValue*, CalculationPermittedValueRange);
+    bool parseCalculation(CSSParserValue*, ValueRange);
 
     bool parseFontFeatureTag(CSSValueList*);
     bool parseFontFeatureSettings(bool important);
@@ -469,7 +467,7 @@ private:
             : m_parser(parser)
             , m_mode(declaration->cssParserMode())
         {
-            if (m_mode == ViewportMode) {
+            if (isCSSViewportParsingEnabledForMode(m_mode)) {
                 ASSERT(!m_parser->inViewport());
                 m_parser->markViewportRuleBodyStart();
             }
@@ -477,7 +475,7 @@ private:
 
         ~StyleDeclarationScope()
         {
-            if (m_mode == ViewportMode)
+            if (isCSSViewportParsingEnabledForMode(m_mode))
                 m_parser->markViewportRuleBodyEnd();
         }
 
@@ -563,8 +561,8 @@ private:
 
     void setStyleSheet(StyleSheetContents* styleSheet) { m_styleSheet = styleSheet; }
 
-    inline bool inStrictMode() const { return isStrictParserMode(m_context.mode); }
-    inline bool inQuirksMode() const { return m_context.mode == CSSQuirksMode || m_context.mode == CSSAttributeMode; }
+    bool inQuirksMode() const { return isQuirksModeBehavior(m_context.mode); }
+    bool inViewport() const { return m_inViewport; }
 
     KURL completeURL(const String& url) const;
 
@@ -614,8 +612,8 @@ private:
 
     ParsingMode m_parsingMode;
     bool m_is8BitSource;
-    OwnArrayPtr<LChar> m_dataStart8;
-    OwnArrayPtr<UChar> m_dataStart16;
+    OwnPtr<LChar[]> m_dataStart8;
+    OwnPtr<UChar[]> m_dataStart16;
     LChar* m_currentCharacter8;
     UChar* m_currentCharacter16;
     const String* m_source;
@@ -639,7 +637,6 @@ private:
     bool parseViewportProperty(CSSPropertyID propId, bool important);
     bool parseViewportShorthand(CSSPropertyID propId, CSSPropertyID first, CSSPropertyID second, bool important);
 
-    bool inViewport() const { return m_inViewport; }
     bool m_inViewport;
 
     CSSParserLocation m_locationLabel;

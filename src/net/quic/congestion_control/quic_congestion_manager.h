@@ -32,6 +32,8 @@ class NET_EXPORT_PRIVATE QuicCongestionManager {
                         CongestionFeedbackType congestion_type);
   virtual ~QuicCongestionManager();
 
+  virtual void SetFromConfig(const QuicConfig& config, bool is_server);
+
   // Called when we have received an ack frame from peer.
   virtual void OnIncomingAckFrame(const QuicAckFrame& frame,
                                   QuicTime ack_receive_time);
@@ -43,14 +45,14 @@ class NET_EXPORT_PRIVATE QuicCongestionManager {
 
   // Called when we have sent bytes to the peer.  This informs the manager both
   // the number of bytes sent and if they were retransmitted.
-  virtual void SentPacket(QuicPacketSequenceNumber sequence_number,
-                          QuicTime sent_time,
-                          QuicByteCount bytes,
-                          Retransmission retransmission,
-                          HasRetransmittableData has_retransmittable_data);
+  virtual void OnPacketSent(QuicPacketSequenceNumber sequence_number,
+                            QuicTime sent_time,
+                            QuicByteCount bytes,
+                            TransmissionType transmission_type,
+                            HasRetransmittableData has_retransmittable_data);
 
   // Called when a packet is timed out.
-  virtual void AbandoningPacket(QuicPacketSequenceNumber sequence_number);
+  virtual void OnPacketAbandoned(QuicPacketSequenceNumber sequence_number);
 
   // Calculate the time until we can send the next packet to the wire.
   // Note 1: When kUnknownWaitTime is returned, there is no need to poll
@@ -58,7 +60,7 @@ class NET_EXPORT_PRIVATE QuicCongestionManager {
   // Note 2: Send algorithms may or may not use |retransmit| in their
   // calculations.
   virtual QuicTime::Delta TimeUntilSend(QuicTime now,
-                                        Retransmission retransmission,
+                                        TransmissionType transmission_type,
                                         HasRetransmittableData retransmittable,
                                         IsHandshake handshake);
 
@@ -94,6 +96,14 @@ class NET_EXPORT_PRIVATE QuicCongestionManager {
 
   // Returns the estimated bandwidth calculated by the congestion algorithm.
   QuicBandwidth BandwidthEstimate();
+
+  // Returns the size of the current congestion window.  Note, this
+  // is not the *available* window.  Some send algorithms may not use a
+  // congestion window and will return 0.
+  QuicByteCount GetCongestionWindow();
+
+  // Sets the value of the current congestion window to |window|.
+  void SetCongestionWindow(QuicByteCount window);
 
  private:
   friend class test::QuicConnectionPeer;

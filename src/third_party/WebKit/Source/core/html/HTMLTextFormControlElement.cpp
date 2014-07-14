@@ -30,16 +30,16 @@
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/dom/Document.h"
-#include "core/dom/Event.h"
-#include "core/dom/EventNames.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/TextIterator.h"
+#include "core/events/Event.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/html/HTMLBRElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/UseCounter.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/RenderTheme.h"
@@ -91,7 +91,7 @@ void HTMLTextFormControlElement::dispatchBlurEvent(Element* newFocusedElement)
 
 void HTMLTextFormControlElement::defaultEventHandler(Event* event)
 {
-    if (event->type() == eventNames().webkitEditableContentChangedEvent && renderer() && renderer()->isTextControl()) {
+    if (event->type() == EventTypeNames::webkitEditableContentChanged && renderer() && renderer()->isTextControl()) {
         m_lastChangeWasUserEdit = true;
         subtreeHasChanged();
         return;
@@ -102,7 +102,7 @@ void HTMLTextFormControlElement::defaultEventHandler(Event* event)
 
 void HTMLTextFormControlElement::forwardEvent(Event* event)
 {
-    if (event->type() == eventNames().blurEvent || event->type() == eventNames().focusEvent)
+    if (event->type() == EventTypeNames::blur || event->type() == EventTypeNames::focus)
         return;
     innerTextElement()->defaultEventHandler(event);
 }
@@ -213,7 +213,7 @@ void HTMLTextFormControlElement::setRangeText(const String& replacement, Excepti
 void HTMLTextFormControlElement::setRangeText(const String& replacement, unsigned start, unsigned end, const String& selectionMode, ExceptionState& es)
 {
     if (start > end) {
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
         return;
     }
 
@@ -482,7 +482,7 @@ void HTMLTextFormControlElement::selectionChanged(bool userTriggered)
 
     if (Frame* frame = document().frame()) {
         if (frame->selection().isRange() && userTriggered)
-            dispatchEvent(Event::createBubble(eventNames().selectEvent));
+            dispatchEvent(Event::createBubble(EventTypeNames::select));
     }
 }
 
@@ -490,7 +490,7 @@ void HTMLTextFormControlElement::parseAttribute(const QualifiedName& name, const
 {
     if (name == placeholderAttr) {
         updatePlaceholderVisibility(true);
-        UseCounter::count(&document(), UseCounter::PlaceholderAttribute);
+        UseCounter::count(document(), UseCounter::PlaceholderAttribute);
     } else
         HTMLFormControlElementWithState::parseAttribute(name, value);
 }
@@ -649,6 +649,11 @@ String HTMLTextFormControlElement::directionForFormData() const
     }
 
     return "ltr";
+}
+
+HTMLElement* HTMLTextFormControlElement::innerTextElement() const
+{
+    return toHTMLElement(userAgentShadowRoot()->getElementById(ShadowElementNames::innerEditor()));
 }
 
 } // namespace Webcore

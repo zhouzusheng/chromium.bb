@@ -20,11 +20,10 @@
 #ifndef RenderSVGResourceMarker_h
 #define RenderSVGResourceMarker_h
 
-#include "core/platform/graphics/FloatRect.h"
 #include "core/rendering/svg/RenderSVGResourceContainer.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGMarkerElement.h"
-
+#include "platform/geometry/FloatRect.h"
 #include "wtf/HashSet.h"
 
 namespace WebCore {
@@ -55,14 +54,13 @@ public:
     AffineTransform markerTransformation(const FloatPoint& origin, float angle, float strokeWidth) const;
 
     virtual bool applyResource(RenderObject*, RenderStyle*, GraphicsContext*&, unsigned short) { return false; }
-    virtual FloatRect resourceBoundingBox(RenderObject*) { return FloatRect(); }
 
     FloatPoint referencePoint() const;
     float angle() const;
     SVGMarkerUnitsType markerUnits() const { return toSVGMarkerElement(element())->markerUnitsCurrentValue(); }
 
     virtual RenderSVGResourceType resourceType() const { return s_resourceType; }
-    static RenderSVGResourceType s_resourceType;
+    static const RenderSVGResourceType s_resourceType;
 
 private:
     // Generates a transformation matrix usable to render marker content. Handles scaling the marker content

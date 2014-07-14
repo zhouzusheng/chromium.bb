@@ -35,16 +35,14 @@
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InspectorState.h"
-#include "core/platform/Timer.h"
+#include "platform/Timer.h"
 #include "wtf/CurrentTime.h"
 
 namespace WebCore {
 
 namespace HeapProfilerAgentState {
-static const char profileHeadersRequested[] = "profileHeadersRequested";
+static const char heapProfilerEnabled[] = "heapProfilerEnabled";
 }
-
-static const char* const userInitiatedProfileNameHeap = "org.webkit.profiles.user-initiated";
 
 class InspectorHeapProfilerAgent::HeapStatsUpdateTask {
 public:
@@ -88,7 +86,7 @@ void InspectorHeapProfilerAgent::resetFrontendProfiles()
     stopTrackingHeapObjects(0);
     if (!m_frontend)
         return;
-    if (!m_state->getBoolean(HeapProfilerAgentState::profileHeadersRequested))
+    if (!m_state->getBoolean(HeapProfilerAgentState::heapProfilerEnabled))
         return;
     if (m_snapshots.isEmpty())
         m_frontend->resetProfiles();
@@ -101,9 +99,10 @@ void InspectorHeapProfilerAgent::setFrontend(InspectorFrontend* frontend)
 
 void InspectorHeapProfilerAgent::clearFrontend()
 {
-    stopTrackingHeapObjects(0);
-    m_state->setBoolean(HeapProfilerAgentState::profileHeadersRequested, false);
     m_frontend = 0;
+    ErrorString error;
+    clearProfiles(&error);
+    disable(&error);
 }
 
 void InspectorHeapProfilerAgent::restore()
@@ -198,14 +197,17 @@ void InspectorHeapProfilerAgent::stopTrackingHeapObjects(ErrorString*)
     m_heapStatsUpdateTask.clear();
 }
 
-void InspectorHeapProfilerAgent::getProfileHeaders(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::HeapProfiler::ProfileHeader> >& headers)
+void InspectorHeapProfilerAgent::enable(ErrorString*)
 {
-    m_state->setBoolean(HeapProfilerAgentState::profileHeadersRequested, true);
-    headers = TypeBuilder::Array<TypeBuilder::HeapProfiler::ProfileHeader>::create();
+    m_state->setBoolean(HeapProfilerAgentState::heapProfilerEnabled, true);
+}
 
-    IdToHeapSnapshotMap::iterator snapshotsEnd = m_snapshots.end();
-    for (IdToHeapSnapshotMap::iterator it = m_snapshots.begin(); it != snapshotsEnd; ++it)
-        headers->addItem(createSnapshotHeader(*it->value));
+void InspectorHeapProfilerAgent::disable(ErrorString* error)
+{
+    stopTrackingHeapObjects(error);
+    if (!error->isEmpty())
+        return;
+    m_state->setBoolean(HeapProfilerAgentState::heapProfilerEnabled, false);
 }
 
 void InspectorHeapProfilerAgent::getHeapSnapshot(ErrorString* errorString, int rawUid)
@@ -215,7 +217,7 @@ void InspectorHeapProfilerAgent::getHeapSnapshot(ErrorString* errorString, int r
         OutputStream(InspectorFrontend::HeapProfiler* frontend, unsigned uid)
             : m_frontend(frontend), m_uid(uid) { }
         void Write(const String& chunk) { m_frontend->addHeapSnapshotChunk(m_uid, chunk); }
-        void Close() { m_frontend->finishHeapSnapshot(m_uid); }
+        void Close() { }
     private:
         InspectorFrontend::HeapProfiler* m_frontend;
         int m_uid;
@@ -263,9 +265,7 @@ void InspectorHeapProfilerAgent::takeHeapSnapshot(ErrorString*, const bool* repo
         int m_totalWork;
     };
 
-    String title = String(userInitiatedProfileNameHeap) + "." + String::number(m_nextUserInitiatedHeapSnapshotNumber);
-    ++m_nextUserInitiatedHeapSnapshotNumber;
-
+    String title = "Snapshot " + String::number(m_nextUserInitiatedHeapSnapshotNumber++);
     HeapSnapshotProgress progress(reportProgress && *reportProgress ? m_frontend : 0);
     RefPtr<ScriptHeapSnapshot> snapshot = ScriptProfiler::takeHeapSnapshot(title, &progress);
     if (snapshot) {

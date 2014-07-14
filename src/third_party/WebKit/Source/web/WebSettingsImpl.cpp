@@ -157,6 +157,11 @@ void WebSettingsImpl::setTextAutosizingFontScaleFactor(float fontScaleFactor)
     m_settings->setTextAutosizingFontScaleFactor(fontScaleFactor);
 }
 
+void WebSettingsImpl::setDeviceScaleAdjustment(float deviceScaleAdjustment)
+{
+    m_settings->setDeviceScaleAdjustment(deviceScaleAdjustment);
+}
+
 void WebSettingsImpl::setDefaultTextEncodingName(const WebString& encoding)
 {
     m_settings->setDefaultTextEncodingName((String)encoding);
@@ -187,6 +192,11 @@ void WebSettingsImpl::setViewportMetaLayoutSizeQuirk(bool viewportMetaLayoutSize
     m_viewportMetaLayoutSizeQuirk = viewportMetaLayoutSizeQuirk;
 }
 
+void WebSettingsImpl::setViewportMetaMergeContentQuirk(bool viewportMetaMergeContentQuirk)
+{
+    m_settings->setViewportMetaMergeContentQuirk(viewportMetaMergeContentQuirk);
+}
+
 void WebSettingsImpl::setViewportMetaZeroValuesQuirk(bool viewportMetaZeroValuesQuirk)
 {
     m_settings->setViewportMetaZeroValuesQuirk(viewportMetaZeroValuesQuirk);
@@ -195,6 +205,11 @@ void WebSettingsImpl::setViewportMetaZeroValuesQuirk(bool viewportMetaZeroValues
 void WebSettingsImpl::setIgnoreMainFrameOverflowHiddenQuirk(bool ignoreMainFrameOverflowHiddenQuirk)
 {
     m_settings->setIgnoreMainFrameOverflowHiddenQuirk(ignoreMainFrameOverflowHiddenQuirk);
+}
+
+void WebSettingsImpl::setReportScreenSizeInPhysicalPixelsQuirk(bool reportScreenSizeInPhysicalPixelsQuirk)
+{
+    m_settings->setReportScreenSizeInPhysicalPixelsQuirk(reportScreenSizeInPhysicalPixelsQuirk);
 }
 
 void WebSettingsImpl::setSupportsMultipleWindows(bool supportsMultipleWindows)
@@ -322,6 +337,16 @@ void WebSettingsImpl::setLocalStorageEnabled(bool enabled)
     m_settings->setLocalStorageEnabled(enabled);
 }
 
+void WebSettingsImpl::setMainFrameClipsContent(bool enabled)
+{
+    m_settings->setMainFrameClipsContent(enabled);
+}
+
+void WebSettingsImpl::setMaxTouchPoints(int maxTouchPoints)
+{
+    m_settings->setMaxTouchPoints(maxTouchPoints);
+}
+
 void WebSettingsImpl::setEditableLinkBehaviorNeverLive()
 {
     // FIXME: If you ever need more behaviors than this, then we should probably
@@ -375,19 +400,9 @@ void WebSettingsImpl::setExperimentalWebSocketEnabled(bool enabled)
     m_settings->setExperimentalWebSocketEnabled(enabled);
 }
 
-void WebSettingsImpl::setCSSStickyPositionEnabled(bool enabled)
-{
-    m_settings->setCSSStickyPositionEnabled(enabled);
-}
-
 void WebSettingsImpl::setRegionBasedColumnsEnabled(bool enabled)
 {
     m_settings->setRegionBasedColumnsEnabled(enabled);
-}
-
-void WebSettingsImpl::setExperimentalCSSCustomFilterEnabled(bool enabled)
-{
-    m_settings->setCSSCustomFilterEnabled(enabled);
 }
 
 void WebSettingsImpl::setOpenGLMultisamplingEnabled(bool enabled)
@@ -499,6 +514,11 @@ void WebSettingsImpl::setAcceleratedFiltersEnabled(bool enabled)
 void WebSettingsImpl::setAccelerated2dCanvasEnabled(bool enabled)
 {
     m_settings->setAccelerated2dCanvasEnabled(enabled);
+}
+
+void WebSettingsImpl::setAccelerated2dCanvasMSAASampleCount(int count)
+{
+    m_settings->setAccelerated2dCanvasMSAASampleCount(count);
 }
 
 void WebSettingsImpl::setAntialiased2dCanvasEnabled(bool enabled)
@@ -626,11 +646,6 @@ bool WebSettingsImpl::viewportEnabled() const
     return m_settings->viewportEnabled();
 }
 
-void WebSettingsImpl::setVisualWordMovementEnabled(bool enabled)
-{
-    m_settings->setVisualWordMovementEnabled(enabled);
-}
-
 void WebSettingsImpl::setShouldDisplaySubtitles(bool enabled)
 {
     m_settings->setShouldDisplaySubtitles(enabled);
@@ -694,6 +709,11 @@ void WebSettingsImpl::setAllowCustomScrollbarInMainFrame(bool enabled)
 void WebSettingsImpl::setCompositedScrollingForFramesEnabled(bool enabled)
 {
     m_settings->setCompositedScrollingForFramesEnabled(enabled);
+}
+
+void WebSettingsImpl::setCompositorTouchHitTesting(bool enabled)
+{
+    m_settings->setCompositorTouchHitTesting(enabled);
 }
 
 void WebSettingsImpl::setSelectTrailingWhitespaceEnabled(bool enabled)

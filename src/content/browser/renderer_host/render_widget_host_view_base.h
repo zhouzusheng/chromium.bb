@@ -61,6 +61,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
       const WebKit::WebMouseWheelEvent& event) OVERRIDE;
   virtual InputEventAckState FilterInputEvent(
       const WebKit::WebInputEvent& input_event) OVERRIDE;
+  virtual void OnSetNeedsFlushInput() OVERRIDE;
+  virtual void OnDidFlushInput() OVERRIDE;
   virtual void GestureEventAck(int gesture_event_type,
                                InputEventAckState ack_result) OVERRIDE;
   virtual void SetPopupType(WebKit::WebPopupType popup_type) OVERRIDE;
@@ -82,6 +84,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   virtual void OnSwapCompositorFrame(
       uint32 output_surface_id,
       scoped_ptr<cc::CompositorFrame> frame) OVERRIDE {}
+  virtual void ResizeCompositingSurface(const gfx::Size&) OVERRIDE {}
   virtual void OnOverscrolled(gfx::Vector2dF accumulated_overscroll,
                               gfx::Vector2dF current_fling_velocity) OVERRIDE;
   virtual uint32 RendererFrameNumber() OVERRIDE;

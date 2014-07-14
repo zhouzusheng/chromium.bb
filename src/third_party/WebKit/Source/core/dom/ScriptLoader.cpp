@@ -29,7 +29,7 @@
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptSourceCode.h"
 #include "core/dom/Document.h"
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "core/dom/IgnoreDestructiveWriteCountIncrementer.h"
 #include "core/dom/ScriptLoaderClient.h"
 #include "core/dom/ScriptRunner.h"
@@ -41,8 +41,8 @@
 #include "core/html/HTMLImport.h"
 #include "core/html/HTMLScriptElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/page/ContentSecurityPolicy.h"
-#include "core/page/Frame.h"
+#include "core/frame/ContentSecurityPolicy.h"
+#include "core/frame/Frame.h"
 #include "core/platform/MIMETypeRegistry.h"
 #include "core/svg/SVGScriptElement.h"
 #include "weborigin/SecurityOrigin.h"
@@ -135,7 +135,7 @@ static bool isLegacySupportedJavaScriptLanguage(const String& language)
 
 void ScriptLoader::dispatchErrorEvent()
 {
-    m_element->dispatchEvent(Event::create(eventNames().errorEvent));
+    m_element->dispatchEvent(Event::create(EventTypeNames::error));
 }
 
 void ScriptLoader::dispatchLoadEvent()
@@ -251,10 +251,10 @@ bool ScriptLoader::fetchScript(const String& sourceUrl)
 {
     ASSERT(m_element);
 
-    RefPtr<Document> elementDocument = &m_element->document();
+    RefPtr<Document> elementDocument(m_element->document());
     if (!m_element->dispatchBeforeLoadEvent(sourceUrl))
         return false;
-    if (!m_element->inDocument() || &m_element->document() != elementDocument)
+    if (!m_element->inDocument() || m_element->document() != elementDocument)
         return false;
 
     ASSERT(!m_resource);
@@ -301,14 +301,14 @@ void ScriptLoader::executeScript(const ScriptSourceCode& sourceCode)
     if (sourceCode.isEmpty())
         return;
 
-    RefPtr<Document> elementDocument = &m_element->document();
+    RefPtr<Document> elementDocument(m_element->document());
     RefPtr<Document> contextDocument = elementDocument->contextDocument().get();
     if (!contextDocument)
         return;
 
     Frame* frame = contextDocument->frame();
 
-    bool shouldBypassMainWorldContentSecurityPolicy = (frame && frame->script()->shouldBypassMainWorldContentSecurityPolicy()) || elementDocument->contentSecurityPolicy()->allowScriptNonce(m_element->fastGetAttribute(HTMLNames::nonceAttr));
+    bool shouldBypassMainWorldContentSecurityPolicy = (frame && frame->script().shouldBypassMainWorldContentSecurityPolicy()) || elementDocument->contentSecurityPolicy()->allowScriptNonce(m_element->fastGetAttribute(HTMLNames::nonceAttr)) || elementDocument->contentSecurityPolicy()->allowScriptHash(sourceCode.source());
 
     if (!m_isExternalScript && (!shouldBypassMainWorldContentSecurityPolicy && !elementDocument->contentSecurityPolicy()->allowInlineScript(elementDocument->url(), m_startLineNumber)))
         return;
@@ -331,7 +331,7 @@ void ScriptLoader::executeScript(const ScriptSourceCode& sourceCode)
         // Create a script from the script element node, using the script
         // block's source and the script block's type.
         // Note: This is where the script is compiled and actually executed.
-        frame->script()->executeScriptInMainWorld(sourceCode, corsCheck);
+        frame->script().executeScriptInMainWorld(sourceCode, corsCheck);
 
         if (isHTMLScriptLoader(m_element)) {
             ASSERT(contextDocument->currentScript() == m_element);
@@ -366,7 +366,7 @@ void ScriptLoader::notifyFinished(Resource* resource)
 {
     ASSERT(!m_willBeParserExecuted);
 
-    RefPtr<Document> elementDocument = &m_element->document();
+    RefPtr<Document> elementDocument(m_element->document());
     RefPtr<Document> contextDocument = elementDocument->contextDocument().get();
     if (!contextDocument)
         return;

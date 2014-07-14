@@ -9,12 +9,12 @@
 #include "base/bind.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/supports_user_data.h"
+#include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/loader/resource_request_info_impl.h"
 #include "content/browser/ssl/ssl_cert_error_handler.h"
 #include "content/browser/ssl/ssl_policy.h"
 #include "content/browser/ssl/ssl_request_info.h"
-#include "content/browser/web_contents/navigation_entry_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/ssl_status_serialization.h"
 #include "content/public/browser/browser_context.h"
@@ -87,7 +87,7 @@ void SSLManager::NotifySSLInternalStateChanged(BrowserContext* context) {
   for (std::set<SSLManager*>::iterator i = managers->get().begin();
        i != managers->get().end(); ++i) {
     (*i)->UpdateEntry(NavigationEntryImpl::FromNavigationEntry(
-                          (*i)->controller()->GetActiveEntry()));
+                          (*i)->controller()->GetLastCommittedEntry()));
   }
 }
 
@@ -114,7 +114,8 @@ SSLManager::~SSLManager() {
 
 void SSLManager::DidCommitProvisionalLoad(const LoadCommittedDetails& details) {
   NavigationEntryImpl* entry =
-      NavigationEntryImpl::FromNavigationEntry(controller_->GetActiveEntry());
+      NavigationEntryImpl::FromNavigationEntry(
+          controller_->GetLastCommittedEntry());
 
   if (details.is_main_frame) {
     if (entry) {
@@ -144,12 +145,14 @@ void SSLManager::DidCommitProvisionalLoad(const LoadCommittedDetails& details) {
 
 void SSLManager::DidDisplayInsecureContent() {
   UpdateEntry(
-      NavigationEntryImpl::FromNavigationEntry(controller_->GetActiveEntry()));
+      NavigationEntryImpl::FromNavigationEntry(
+          controller_->GetLastCommittedEntry()));
 }
 
 void SSLManager::DidRunInsecureContent(const std::string& security_origin) {
   NavigationEntryImpl* navigation_entry =
-      NavigationEntryImpl::FromNavigationEntry(controller_->GetActiveEntry());
+      NavigationEntryImpl::FromNavigationEntry(
+          controller_->GetLastCommittedEntry());
   policy()->DidRunInsecureContent(navigation_entry, security_origin);
   UpdateEntry(navigation_entry);
 }
@@ -204,10 +207,12 @@ void SSLManager::UpdateEntry(NavigationEntryImpl* entry) {
 
   SSLStatus original_ssl_status = entry->GetSSL();  // Copy!
 
-  policy()->UpdateEntry(entry, controller_->web_contents());
+  WebContentsImpl* contents =
+      static_cast<WebContentsImpl*>(controller_->delegate()->GetWebContents());
+  policy()->UpdateEntry(entry, contents);
 
   if (!entry->GetSSL().Equals(original_ssl_status))
-    controller_->web_contents()->DidChangeVisibleSSLState();
+    contents->DidChangeVisibleSSLState();
 }
 
 }  // namespace content

@@ -30,7 +30,7 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 
 namespace WebCore {
 
@@ -67,7 +67,7 @@ void HTMLHtmlElement::insertedByParser()
     if (!document().frame())
         return;
 
-    DocumentLoader* documentLoader = document().frame()->loader()->documentLoader();
+    DocumentLoader* documentLoader = document().frame()->loader().documentLoader();
     if (!documentLoader)
         return;
 

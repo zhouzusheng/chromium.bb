@@ -32,7 +32,7 @@
 #define WebWorkerBase_h
 
 #include "WebCommonWorkerClient.h"
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
 #include "core/workers/WorkerLoaderProxy.h"
 #include "core/workers/WorkerObjectProxy.h"
 #include "wtf/PassOwnPtr.h"
@@ -53,7 +53,7 @@ public:
     virtual WebView* view() const = 0;
 
     // Executes the given task on the main thread.
-    static void dispatchTaskToMainThread(PassOwnPtr<WebCore::ScriptExecutionContext::Task>);
+    static void dispatchTaskToMainThread(PassOwnPtr<WebCore::ExecutionContextTask>);
 };
 
 } // namespace WebKit

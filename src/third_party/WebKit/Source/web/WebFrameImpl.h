@@ -34,9 +34,9 @@
 #include "WebFrame.h"
 
 #include "FrameLoaderClientImpl.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameDestructionObserver.h"
-#include "core/platform/graphics/FloatRect.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameDestructionObserver.h"
+#include "platform/geometry/FloatRect.h"
 #include "public/platform/WebFileSystemType.h"
 #include "wtf/Compiler.h"
 #include "wtf/OwnPtr.h"
@@ -76,10 +76,11 @@ class WebFrameImpl
     , public WebCore::FrameDestructionObserver {
 public:
     // WebFrame methods:
+    virtual void close();
     virtual WebString uniqueName() const;
     virtual WebString assignedName() const;
     virtual void setName(const WebString&);
-    virtual long long identifier() const;
+    virtual long long embedderIdentifier() const;
     virtual WebVector<WebIconURL> iconURLs(int iconTypesMask) const;
     virtual WebSize scrollOffset() const;
     virtual void setScrollOffset(const WebSize&);
@@ -237,7 +238,10 @@ public:
     // WebCore::FrameDestructionObserver methods.
     virtual void willDetachPage();
 
-    static PassRefPtr<WebFrameImpl> create(WebFrameClient* client);
+    static WebFrameImpl* create(WebFrameClient*);
+    // FIXME: Move the embedderIdentifier concept fully to the embedder and
+    // remove this factory method.
+    static WebFrameImpl* create(WebFrameClient*, long long embedderIdentifier);
     virtual ~WebFrameImpl();
 
     // Called by the WebViewImpl to initialize the main frame for the page.
@@ -298,6 +302,8 @@ public:
     WebFrameClient* client() const { return m_client; }
     void setClient(WebFrameClient* client) { m_client = client; }
 
+    void setInputEventsTransformForEmulation(const WebCore::IntSize&, float);
+
     static void selectWordAroundPosition(WebCore::Frame*, WebCore::VisiblePosition);
 
 private:
@@ -326,7 +332,7 @@ private:
       InvalidateAll          // Both content area and the scrollbar.
     };
 
-    explicit WebFrameImpl(WebFrameClient*);
+    WebFrameImpl(WebFrameClient*, long long frame_identifier);
 
     // Sets the local WebCore frame and registers destruction observers.
     void setWebCoreFrame(WebCore::Frame*);
@@ -408,7 +414,24 @@ private:
     // Returns a hit-tested VisiblePosition for the given point
     WebCore::VisiblePosition visiblePositionForWindowPoint(const WebPoint&);
 
-    FrameLoaderClientImpl m_frameLoaderClient;
+    class WebFrameInit : public WebCore::FrameInit {
+    public:
+        static PassRefPtr<WebFrameInit> create(WebFrameImpl* webFrameImpl, int64_t frameID)
+        {
+            return adoptRef(new WebFrameInit(webFrameImpl, frameID));
+        }
+
+    private:
+        WebFrameInit(WebFrameImpl* webFrameImpl, int64_t frameID)
+            : WebCore::FrameInit(frameID)
+            , m_frameLoaderClientImpl(webFrameImpl)
+        {
+            setFrameLoaderClient(&m_frameLoaderClientImpl);
+        }
+
+        FrameLoaderClientImpl m_frameLoaderClientImpl;
+    };
+    RefPtr<WebFrameInit> m_frameInit;
 
     WebFrameClient* m_client;
 
@@ -489,12 +512,13 @@ private:
     // information. Is used by PrintPage().
     OwnPtr<ChromePrintContext> m_printContext;
 
-    // The identifier of this frame.
-    long long m_identifier;
-
     // Ensure we don't overwrite valid history data during same document loads
     // from HistoryItems
     bool m_inSameDocumentHistoryLoad;
+
+    // Stores the additional input events offset and scale when device metrics emulation is enabled.
+    WebCore::IntSize m_inputEventsOffsetForEmulation;
+    float m_inputEventsScaleFactorForEmulation;
 };
 
 inline WebFrameImpl* toWebFrameImpl(WebFrame* webFrame)

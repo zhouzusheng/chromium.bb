@@ -29,9 +29,9 @@
 #include "SkSize.h"
 #include "SkTypes.h"
 #include "core/platform/graphics/chromium/DiscardablePixelRef.h"
-#include "core/platform/graphics/chromium/ScaledImageFragment.h"
 #include "core/platform/graphics/chromium/SkSizeHash.h"
 #include "core/platform/image-decoders/ImageDecoder.h"
+#include "platform/graphics/ScaledImageFragment.h"
 
 #include "wtf/DoublyLinkedList.h"
 #include "wtf/HashSet.h"
@@ -116,9 +116,9 @@ public:
     void clear();
     void setCacheLimitInBytes(size_t);
     size_t memoryUsageInBytes();
-    unsigned cacheEntries();
-    unsigned imageCacheEntries();
-    unsigned decoderCacheEntries();
+    int cacheEntries();
+    int imageCacheEntries();
+    int decoderCacheEntries();
 
 private:
     // Image cache entry is identified by:

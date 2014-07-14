@@ -35,6 +35,12 @@ class WEBRTC_DLLEXPORT ViEEncoderObserver {
   virtual void OutgoingRate(const int video_channel,
                             const unsigned int framerate,
                             const unsigned int bitrate) = 0;
+
+  // This method is called whenever the state of the AutoMuter changes, i.e.,
+  // when |is_muted| toggles.
+  // TODO(hlundin): Remove the default implementation when possible.
+  virtual void VideoAutoMuted(int video_channel, bool is_muted) {}
+
  protected:
   virtual ~ViEEncoderObserver() {}
 };
@@ -55,6 +61,16 @@ class WEBRTC_DLLEXPORT ViEDecoderObserver {
   virtual void IncomingRate(const int video_channel,
                             const unsigned int framerate,
                             const unsigned int bitrate) = 0;
+
+  // Called periodically with decoder timing information.  All values are
+  // "current" snapshots unless decorated with a min_/max_ prefix.
+  virtual void DecoderTiming(int decode_ms,
+                             int max_decode_ms,
+                             int current_delay_ms,
+                             int target_delay_ms,
+                             int jitter_buffer_ms,
+                             int min_playout_delay_ms,
+                             int render_delay_ms) = 0;
 
   // This method is called when the decoder needs a new key frame from encoder
   // on the sender.
@@ -176,6 +192,13 @@ class WEBRTC_DLLEXPORT ViECodec {
                                   const char* file_name_utf8) = 0;
   // Disables recording of debugging information.
   virtual int StopDebugRecording(int video_channel) = 0;
+
+  // Enables AutoMuter to turn off video when the rate drops below
+  // |threshold_bps|, and turns back on when the rate goes back up above
+  // |threshold_bps| + |window_bps|.
+  // This is under development; not tested.
+  // TODO(hlundin): Remove the default implementation when possible.
+  virtual void EnableAutoMuting(int video_channel) {}
 
  protected:
   ViECodec() {}

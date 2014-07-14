@@ -34,8 +34,6 @@
 
 namespace WebCore {
 
-static unsigned const MaxErrorCode = 2;
-
 SQLResultSet::SQLResultSet()
     : m_rows(SQLResultSetRowList::create())
     , m_insertId(0)
@@ -52,7 +50,7 @@ int64_t SQLResultSet::insertId(ExceptionState& es) const
     if (m_insertIdSet)
         return m_insertId;
 
-    es.throwDOMException(InvalidAccessError);
+    es.throwUninformativeAndGenericDOMException(InvalidAccessError);
     return -1;
 }
 

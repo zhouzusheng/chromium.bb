@@ -124,20 +124,6 @@
         }]
       ],
     },
-    {
-      'target_name': 'test_support_ipc',
-      'type': 'static_library',
-      'dependencies': [
-        'ipc',
-        '../base/base.gyp:base',
-      ],
-      'sources': [
-        'ipc_multiprocess_test.cc',
-        'ipc_multiprocess_test.h',
-        'ipc_test_sink.cc',
-        'ipc_test_sink.h',
-      ],
-    },
   ],
   'conditions': [
     ['OS=="win" and target_arch=="ia32"', {

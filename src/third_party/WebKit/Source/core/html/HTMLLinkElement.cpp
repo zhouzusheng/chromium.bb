@@ -34,8 +34,8 @@
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
-#include "core/dom/Event.h"
-#include "core/dom/EventSender.h"
+#include "core/events/Event.h"
+#include "core/events/EventSender.h"
 #include "core/dom/StyleEngine.h"
 #include "core/fetch/CSSStyleSheetResource.h"
 #include "core/fetch/FetchRequest.h"
@@ -43,9 +43,9 @@
 #include "core/html/LinkImport.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/page/ContentSecurityPolicy.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/ContentSecurityPolicy.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "wtf/StdLibExtras.h"
 
 namespace WebCore {
@@ -54,7 +54,7 @@ using namespace HTMLNames;
 
 static LinkEventSender& linkLoadEventSender()
 {
-    DEFINE_STATIC_LOCAL(LinkEventSender, sharedLoadEventSender, (eventNames().loadEvent));
+    DEFINE_STATIC_LOCAL(LinkEventSender, sharedLoadEventSender, (EventTypeNames::load));
     return sharedLoadEventSender;
 }
 
@@ -96,7 +96,7 @@ void HTMLLinkElement::parseAttribute(const QualifiedName& name, const AtomicStri
         m_type = value;
         process();
     } else if (name == sizesAttr) {
-        setSizes(value);
+        m_sizes->setValue(value);
         process();
     } else if (name == mediaAttr) {
         m_media = value.string().lower();
@@ -105,7 +105,7 @@ void HTMLLinkElement::parseAttribute(const QualifiedName& name, const AtomicStri
         if (LinkStyle* link = linkStyle())
             link->setDisabledState(!value.isNull());
     } else if (name == onbeforeloadAttr)
-        setAttributeEventListener(eventNames().beforeloadEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::beforeload, createAttributeEventListener(this, name, value));
     else {
         if (name == titleAttr) {
             if (LinkStyle* link = linkStyle())
@@ -119,13 +119,13 @@ void HTMLLinkElement::parseAttribute(const QualifiedName& name, const AtomicStri
 bool HTMLLinkElement::shouldLoadLink()
 {
     bool continueLoad = true;
-    RefPtr<Document> originalDocument = &document();
+    RefPtr<Document> originalDocument(document());
     int recursionRank = ++m_beforeLoadRecurseCount;
     if (!dispatchBeforeLoadEvent(getNonEmptyURLAttribute(hrefAttr)))
         continueLoad = false;
 
     // A beforeload handler might have removed us from the document or changed the document.
-    if (continueLoad && (!inDocument() || &document() != originalDocument))
+    if (continueLoad && (!inDocument() || document() != originalDocument))
         continueLoad = false;
 
     // If the beforeload handler recurses into the link element by mutating it, we should only
@@ -178,7 +178,7 @@ LinkImport* HTMLLinkElement::linkImport() const
 Document* HTMLLinkElement::import() const
 {
     if (LinkImport* link = linkImport())
-        return linkImport()->importedDocument();
+        return link->importedDocument();
     return 0;
 }
 
@@ -223,7 +223,7 @@ void HTMLLinkElement::removedFrom(ContainerNode* insertionPoint)
     if (m_link)
         m_link->ownerRemoved();
 
-    if (document().renderer())
+    if (document().isActive())
         document().removedStyleSheet(removedSheet.get());
 }
 
@@ -240,32 +240,32 @@ bool HTMLLinkElement::styleSheetIsLoading() const
 
 void HTMLLinkElement::linkLoaded()
 {
-    dispatchEvent(Event::create(eventNames().loadEvent));
+    dispatchEvent(Event::create(EventTypeNames::load));
 }
 
 void HTMLLinkElement::linkLoadingErrored()
 {
-    dispatchEvent(Event::create(eventNames().errorEvent));
+    dispatchEvent(Event::create(EventTypeNames::error));
 }
 
 void HTMLLinkElement::didStartLinkPrerender()
 {
-    dispatchEvent(Event::create(eventNames().webkitprerenderstartEvent));
+    dispatchEvent(Event::create(EventTypeNames::webkitprerenderstart));
 }
 
 void HTMLLinkElement::didStopLinkPrerender()
 {
-    dispatchEvent(Event::create(eventNames().webkitprerenderstopEvent));
+    dispatchEvent(Event::create(EventTypeNames::webkitprerenderstop));
 }
 
 void HTMLLinkElement::didSendLoadForLinkPrerender()
 {
-    dispatchEvent(Event::create(eventNames().webkitprerenderloadEvent));
+    dispatchEvent(Event::create(EventTypeNames::webkitprerenderload));
 }
 
 void HTMLLinkElement::didSendDOMContentLoadedForLinkPrerender()
 {
-    dispatchEvent(Event::create(eventNames().webkitprerenderdomcontentloadedEvent));
+    dispatchEvent(Event::create(EventTypeNames::webkitprerenderdomcontentloaded));
 }
 
 bool HTMLLinkElement::sheetLoaded()
@@ -364,12 +364,6 @@ DOMSettableTokenList* HTMLLinkElement::sizes() const
 {
     return m_sizes.get();
 }
-
-void HTMLLinkElement::setSizes(const String& value)
-{
-    m_sizes->setValue(value);
-}
-
 
 PassRefPtr<LinkStyle> LinkStyle::create(HTMLLinkElement* owner)
 {
@@ -578,7 +572,7 @@ void LinkStyle::process()
         if (!document().contentSecurityPolicy()->allowImageFromSource(builder.url()))
             return;
         if (document().frame())
-            document().frame()->loader()->client()->dispatchDidChangeIcons(m_owner->relAttribute().iconType());
+            document().frame()->loader().client()->dispatchDidChangeIcons(m_owner->relAttribute().iconType());
     }
 
     if (!m_owner->loadLink(type, builder.url()))

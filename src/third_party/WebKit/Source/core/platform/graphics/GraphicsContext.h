@@ -28,16 +28,17 @@
 #ifndef GraphicsContext_h
 #define GraphicsContext_h
 
-#include "core/platform/chromium/TraceEvent.h"
-#include "core/platform/graphics/DashArray.h"
-#include "core/platform/graphics/DrawLooper.h"
-#include "core/platform/graphics/FloatRect.h"
 #include "core/platform/graphics/Font.h"
 #include "core/platform/graphics/GraphicsContextAnnotation.h"
 #include "core/platform/graphics/GraphicsContextState.h"
 #include "core/platform/graphics/ImageBuffer.h"
-#include "core/platform/graphics/ImageOrientation.h"
 #include "core/platform/graphics/skia/OpaqueRegionSkia.h"
+#include "core/platform/graphics/skia/SkiaUtils.h"
+#include "platform/TraceEvent.h"
+#include "platform/geometry/FloatRect.h"
+#include "platform/graphics/DashArray.h"
+#include "platform/graphics/DrawLooper.h"
+#include "platform/graphics/ImageOrientation.h"
 // TODO(robertphillips): replace this include with "class SkBaseDevice;"
 #include "third_party/skia/include/core/SkDevice.h"
 #include "wtf/FastAllocBase.h"
@@ -53,6 +54,7 @@ struct SkRect;
 
 namespace WebCore {
 
+class DisplayList;
 class ImageBuffer;
 class KURL;
 
@@ -164,9 +166,6 @@ public:
     CompositeOperator compositeOperation() const { return m_state->m_compositeOperator; }
     BlendMode blendModeOperation() const { return m_state->m_blendMode; }
 
-    void setDrawLuminanceMask(bool drawLuminanceMask) { m_state->m_drawLuminanceMask = drawLuminanceMask; }
-    bool drawLuminanceMask() const { return m_state->m_drawLuminanceMask; }
-
     // Change the way document markers are rendered.
     // Any deviceScaleFactor higher than 1.5 is enough to justify setting this flag.
     void setUseHighResMarkers(bool isHighRes) { m_useHighResMarker = isHighRes; }
@@ -203,7 +202,8 @@ public:
     AnnotationModeFlags annotationMode() const { return m_annotationMode; }
     void setAnnotationMode(const AnnotationModeFlags mode) { m_annotationMode = mode; }
 
-    void setColorSpaceConversion(ColorSpace srcColorSpace, ColorSpace dstColorSpace);
+    SkColorFilter* colorFilter();
+    void setColorFilter(ColorFilter);
     // ---------- End state management methods -----------------
 
     // Get the contents of the image buffer
@@ -243,6 +243,8 @@ public:
 
     void strokeRect(const FloatRect&, float lineWidth);
 
+    void drawDisplayList(DisplayList*);
+
     void drawImage(Image*, const IntPoint&, CompositeOperator = CompositeSourceOver, RespectImageOrientationEnum = DoNotRespectImageOrientation);
     void drawImage(Image*, const IntRect&, CompositeOperator = CompositeSourceOver, RespectImageOrientationEnum = DoNotRespectImageOrientation, bool useLowQualityScale = false);
     void drawImage(Image*, const IntPoint& destPoint, const IntRect& srcRect, CompositeOperator = CompositeSourceOver, RespectImageOrientationEnum = DoNotRespectImageOrientation);
@@ -251,7 +253,7 @@ public:
     void drawImage(Image*, const FloatRect& destRect, const FloatRect& srcRect, CompositeOperator, BlendMode, RespectImageOrientationEnum = DoNotRespectImageOrientation, bool useLowQualityScale = false);
 
     void drawTiledImage(Image*, const IntRect& destRect, const IntPoint& srcPoint, const IntSize& tileSize,
-        CompositeOperator = CompositeSourceOver, bool useLowQualityScale = false, BlendMode = BlendModeNormal);
+        CompositeOperator = CompositeSourceOver, bool useLowQualityScale = false, BlendMode = BlendModeNormal, const IntSize& repeatSpacing = IntSize());
     void drawTiledImage(Image*, const IntRect& destRect, const IntRect& srcRect,
         const FloatSize& tileScaleFactor, Image::TileRule hRule = Image::StretchTile, Image::TileRule vRule = Image::StretchTile,
         CompositeOperator = CompositeSourceOver, bool useLowQualityScale = false);
@@ -302,9 +304,13 @@ public:
     void drawLineForDocumentMarker(const FloatPoint&, float width, DocumentMarkerLineStyle);
 
     void beginTransparencyLayer(float opacity, const FloatRect* = 0);
-    void beginTransparencyLayer(float opacity, CompositeOperator, const FloatRect* = 0);
-    void beginMaskedLayer(const FloatRect&, MaskType = AlphaMaskType);
+    void beginLayer(float opacity, CompositeOperator, const FloatRect* = 0, ColorFilter = ColorFilterNone);
     void endLayer();
+
+    // Instead of being dispatched to the active canvas, draw commands following beginRecording()
+    // are stored in a display list that can be replayed at a later time.
+    void beginRecording(const FloatRect& bounds);
+    PassRefPtr<DisplayList> endRecording();
 
     bool hasShadow() const;
     void setShadow(const FloatSize& offset, float blur, const Color&,
@@ -339,8 +345,8 @@ public:
     // ---------- Transformation methods -----------------
     enum IncludeDeviceScale { DefinitelyIncludeDeviceScale, PossiblyIncludeDeviceScale };
     AffineTransform getCTM(IncludeDeviceScale includeScale = PossiblyIncludeDeviceScale) const;
-    void concatCTM(const AffineTransform& affine) { concat(affine); }
-    void setCTM(const AffineTransform& affine) { setMatrix(affine); }
+    void concatCTM(const AffineTransform& affine) { concat(affineTransformToSkMatrix(affine)); }
+    void setCTM(const AffineTransform& affine) { setMatrix(affineTransformToSkMatrix(affine)); }
     void setMatrix(const SkMatrix&);
 
     void scale(const FloatSize&);
@@ -373,6 +379,8 @@ private:
     static void addCornerArc(SkPath*, const SkRect&, const IntSize&, int);
     static void setPathFromConvexPoints(SkPath*, size_t, const FloatPoint*);
     static void setRadii(SkVector*, IntSize, IntSize, IntSize, IntSize);
+
+    static PassRefPtr<SkColorFilter> WebCoreColorFilterToSkiaColorFilter(ColorFilter);
 
 #if OS(MACOSX)
     static inline int getFocusRingOutset(int offset) { return offset + 2; }
@@ -452,6 +460,9 @@ private:
     Vector<DeferredSaveState> m_saveStateStack;
 
     AnnotationModeFlags m_annotationMode;
+
+    struct RecordingState;
+    Vector<RecordingState> m_recordingStateStack;
 
 #if !ASSERT_DISABLED
     unsigned m_annotationCount;

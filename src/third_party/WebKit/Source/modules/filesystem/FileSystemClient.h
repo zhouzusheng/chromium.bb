@@ -31,7 +31,7 @@
 #ifndef FileSystemClient_h
 #define FileSystemClient_h
 
-#include "modules/filesystem/FileSystemType.h"
+#include "platform/FileSystemType.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 
@@ -39,7 +39,7 @@ namespace WebCore {
 
 class AsyncFileSystemCallbacks;
 class Page;
-class ScriptExecutionContext;
+class ExecutionContext;
 class WorkerClients;
 
 enum OpenFileSystemMode {
@@ -53,7 +53,7 @@ public:
     FileSystemClient() { }
     virtual ~FileSystemClient() { }
 
-    virtual bool allowFileSystem(ScriptExecutionContext*) = 0;
+    virtual bool allowFileSystem(ExecutionContext*) = 0;
 };
 
 void provideLocalFileSystemTo(Page*, PassOwnPtr<FileSystemClient>);

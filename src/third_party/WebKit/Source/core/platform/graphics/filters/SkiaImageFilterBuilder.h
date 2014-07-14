@@ -26,8 +26,9 @@
 #ifndef SkiaImageFilterBuilder_h
 #define SkiaImageFilterBuilder_h
 
-#include "core/platform/graphics/ColorSpace.h"
-#include "core/platform/graphics/FloatSize.h"
+#include "platform/geometry/FloatSize.h"
+#include "platform/graphics/ColorSpace.h"
+#include "public/platform/WebFilterOperations.h"
 #include "wtf/HashMap.h"
 
 class SkImageFilter;
@@ -42,7 +43,7 @@ public:
     ~SkiaImageFilterBuilder();
 
     PassRefPtr<SkImageFilter> build(FilterEffect*, ColorSpace);
-    PassRefPtr<SkImageFilter> build(const FilterOperations&);
+    bool buildFilterOperations(const FilterOperations&, WebKit::WebFilterOperations*);
 
     PassRefPtr<SkImageFilter> transformColorSpace(
         SkImageFilter* input, ColorSpace srcColorSpace, ColorSpace dstColorSpace);

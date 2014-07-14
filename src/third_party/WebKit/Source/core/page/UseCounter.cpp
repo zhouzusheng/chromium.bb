@@ -30,11 +30,11 @@
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Document.h"
-#include "core/dom/ScriptExecutionContext.h"
-#include "core/page/DOMWindow.h"
+#include "core/dom/ExecutionContext.h"
+#include "core/frame/DOMWindow.h"
 #include "core/page/Page.h"
 #include "core/page/PageConsole.h"
-#include "core/platform/HistogramSupport.h"
+#include "public/platform/Platform.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -324,11 +324,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyWebkitMarginEnd: return 272;
     case CSSPropertyWebkitMarginStart: return 273;
     // CSSPropertyWebkitMarquee was 274.
-    case CSSPropertyInternalMarqueeDirection: return 275;
-    case CSSPropertyInternalMarqueeIncrement: return 276;
-    case CSSPropertyInternalMarqueeRepetition: return 277;
-    case CSSPropertyInternalMarqueeSpeed: return 278;
-    case CSSPropertyInternalMarqueeStyle: return 279;
+    // CSSPropertyInternalMarquee* were 275-279.
     case CSSPropertyWebkitMask: return 280;
     case CSSPropertyWebkitMaskBoxImage: return 281;
     case CSSPropertyWebkitMaskBoxImageOutset: return 282;
@@ -395,10 +391,10 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyWebkitRegionBreakAfter: return 343;
     case CSSPropertyWebkitRegionBreakBefore: return 344;
     case CSSPropertyWebkitRegionBreakInside: return 345;
-    case CSSPropertyWebkitShapeInside: return 346;
-    case CSSPropertyWebkitShapeOutside: return 347;
-    case CSSPropertyWebkitShapeMargin: return 348;
-    case CSSPropertyWebkitShapePadding: return 349;
+    case CSSPropertyShapeInside: return 346;
+    case CSSPropertyShapeOutside: return 347;
+    case CSSPropertyShapeMargin: return 348;
+    case CSSPropertyShapePadding: return 349;
     case CSSPropertyWebkitWrapFlow: return 350;
     case CSSPropertyWebkitWrapThrough: return 351;
     // CSSPropertyWebkitWrap was 352.
@@ -462,9 +458,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyTextDecorationStyle: return 402;
     case CSSPropertyTextDecorationColor: return 403;
     case CSSPropertyTextAlignLast: return 404;
-#if defined(ENABLE_CSS3_TEXT) && ENABLE_CSS3_TEXT
-    case CSSPropertyWebkitTextUnderlinePosition: return 405;
-#endif
+    case CSSPropertyTextUnderlinePosition: return 405;
     case CSSPropertyMaxZoom: return 406;
     case CSSPropertyMinZoom: return 407;
     case CSSPropertyOrientation: return 408;
@@ -497,10 +491,21 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyMaskSourceType: return 435;
     case CSSPropertyIsolation: return 436;
     case CSSPropertyObjectPosition: return 437;
+    case CSSPropertyInternalCallback: return 438;
+    case CSSPropertyShapeImageThreshold: return 439;
+    case CSSPropertyColumnFill: return 440;
+    case CSSPropertyTextJustify: return 441;
+    case CSSPropertyTouchActionDelay: return 442;
 
     // Add new features above this line (don't change the assigned numbers of the existing
     // items) and update maximumCSSSampleId() with the new maximum value.
 
+    // Internal properties should not be counted.
+    case CSSPropertyInternalMarqueeDirection:
+    case CSSPropertyInternalMarqueeIncrement:
+    case CSSPropertyInternalMarqueeRepetition:
+    case CSSPropertyInternalMarqueeSpeed:
+    case CSSPropertyInternalMarqueeStyle:
     case CSSPropertyInvalid:
     case CSSPropertyVariable:
         ASSERT_NOT_REACHED();
@@ -511,7 +516,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     return 0;
 }
 
-static int maximumCSSSampleId() { return 437; }
+static int maximumCSSSampleId() { return 442; }
 
 UseCounter::UseCounter()
 {
@@ -522,19 +527,19 @@ UseCounter::UseCounter()
 UseCounter::~UseCounter()
 {
     // We always log PageDestruction so that we have a scale for the rest of the features.
-    HistogramSupport::histogramEnumeration("WebCore.FeatureObserver", PageDestruction, NumberOfFeatures);
+    WebKit::Platform::current()->histogramEnumeration("WebCore.FeatureObserver", PageDestruction, NumberOfFeatures);
 
     updateMeasurements();
 }
 
 void UseCounter::updateMeasurements()
 {
-    HistogramSupport::histogramEnumeration("WebCore.FeatureObserver", PageVisits, NumberOfFeatures);
+    WebKit::Platform::current()->histogramEnumeration("WebCore.FeatureObserver", PageVisits, NumberOfFeatures);
 
     if (m_countBits) {
         for (unsigned i = 0; i < NumberOfFeatures; ++i) {
             if (m_countBits->quickGet(i))
-                HistogramSupport::histogramEnumeration("WebCore.FeatureObserver", i, NumberOfFeatures);
+                WebKit::Platform::current()->histogramEnumeration("WebCore.FeatureObserver", i, NumberOfFeatures);
         }
         // Clearing count bits is timing sensitive.
         m_countBits->clearAll();
@@ -547,13 +552,13 @@ void UseCounter::updateMeasurements()
     for (int i = firstCSSProperty; i <= lastCSSProperty; ++i) {
         if (m_CSSFeatureBits.quickGet(i)) {
             int cssSampleId = mapCSSPropertyIdToCSSSampleIdForHistogram(i);
-            HistogramSupport::histogramEnumeration("WebCore.FeatureObserver.CSSProperties", cssSampleId, maximumCSSSampleId());
+            WebKit::Platform::current()->histogramEnumeration("WebCore.FeatureObserver.CSSProperties", cssSampleId, maximumCSSSampleId());
             needsPagesMeasuredUpdate = true;
         }
     }
 
     if (needsPagesMeasuredUpdate)
-        HistogramSupport::histogramEnumeration("WebCore.FeatureObserver.CSSProperties", totalPagesMeasuredCSSSampleId(), maximumCSSSampleId());
+        WebKit::Platform::current()->histogramEnumeration("WebCore.FeatureObserver.CSSProperties", totalPagesMeasuredCSSSampleId(), maximumCSSSampleId());
 
     m_CSSFeatureBits.clearAll();
 }
@@ -563,12 +568,9 @@ void UseCounter::didCommitLoad()
     updateMeasurements();
 }
 
-void UseCounter::count(Document* document, Feature feature)
+void UseCounter::count(const Document& document, Feature feature)
 {
-    if (!document)
-        return;
-
-    Page* page = document->page();
+    Page* page = document.page();
     if (!page)
         return;
 
@@ -576,32 +578,31 @@ void UseCounter::count(Document* document, Feature feature)
     page->useCounter().recordMeasurement(feature);
 }
 
-void UseCounter::count(DOMWindow* domWindow, Feature feature)
+void UseCounter::count(const DOMWindow* domWindow, Feature feature)
 {
     ASSERT(domWindow);
-    count(domWindow->document(), feature);
+    if (!domWindow->document())
+        return;
+    count(*domWindow->document(), feature);
 }
 
-void UseCounter::countDeprecation(ScriptExecutionContext* context, Feature feature)
+void UseCounter::countDeprecation(ExecutionContext* context, Feature feature)
 {
     if (!context || !context->isDocument())
         return;
-    UseCounter::countDeprecation(toDocument(context), feature);
+    UseCounter::countDeprecation(*toDocument(context), feature);
 }
 
-void UseCounter::countDeprecation(DOMWindow* window, Feature feature)
+void UseCounter::countDeprecation(const DOMWindow* window, Feature feature)
 {
-    if (!window)
+    if (!window || !window->document())
         return;
-    UseCounter::countDeprecation(window->document(), feature);
+    UseCounter::countDeprecation(*window->document(), feature);
 }
 
-void UseCounter::countDeprecation(Document* document, Feature feature)
+void UseCounter::countDeprecation(const Document& document, Feature feature)
 {
-    if (!document)
-        return;
-
-    Page* page = document->page();
+    Page* page = document.page();
     if (!page)
         return;
 
@@ -617,7 +618,7 @@ String UseCounter::deprecationMessage(Feature feature)
     // Content Security Policy
     case PrefixedContentSecurityPolicy:
     case PrefixedContentSecurityPolicyReportOnly:
-        return "The 'X-WebKit-CSP' headers are deprecated; please consider using the canonical 'Content-Security-Policy' header instead.";
+        return "The 'X-WebKit-CSP' headers are no longer supported. Please consider using the canonical 'Content-Security-Policy' header instead.";
 
     // HTMLMediaElement
     case PrefixedMediaGenerateKeyRequest:
@@ -672,16 +673,33 @@ String UseCounter::deprecationMessage(Feature feature)
     case EventReturnValue:
         return "event.returnValue is deprecated. Please use the standard event.preventDefault() instead.";
 
+    case ScrollTopBodyNotQuirksMode:
+        return "body.scrollTop is deprecated in strict mode. Please use 'documentElement.scrollTop' if in strict mode and 'body.scrollTop' only if in quirks mode.";
+
+    case ScrollLeftBodyNotQuirksMode:
+        return "body.scrollLeft is deprecated in strict mode. Please use 'documentElement.scrollLeft' if in strict mode and 'body.scrollLeft' only if in quirks mode.";
+
+    case ShowModalDialog:
+        return "Chromium is considering deprecating showModalDialog. Please use window.open and postMessage instead.";
+
+    case CSSStyleSheetInsertRuleOptionalArg:
+        return "Calling CSSStyleSheet.insertRule() with one argument is deprecated. Please pass the index argument as well: insertRule(x, 0).";
+
     // Features that aren't deprecated don't have a deprecation message.
     default:
         return String();
     }
 }
 
-void UseCounter::count(CSSPropertyID feature)
+void UseCounter::count(CSSParserContext context, CSSPropertyID feature)
 {
     ASSERT(feature >= firstCSSProperty);
     ASSERT(feature <= lastCSSProperty);
+    ASSERT(!isInternalProperty(feature));
+
+    if (!isUseCounterEnabledForMode(context.mode))
+        return;
+
     m_CSSFeatureBits.quickSet(feature);
 }
 

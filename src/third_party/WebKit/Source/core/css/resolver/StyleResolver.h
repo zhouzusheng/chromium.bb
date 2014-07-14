@@ -34,6 +34,7 @@
 #include "core/css/resolver/MatchedPropertiesCache.h"
 #include "core/css/resolver/ScopedStyleResolver.h"
 #include "core/css/resolver/StyleBuilder.h"
+#include "core/css/resolver/StyleResolverIncludes.h"
 #include "core/css/resolver/StyleResolverState.h"
 #include "core/css/resolver/StyleResourceLoader.h"
 #include "wtf/Deque.h"
@@ -58,7 +59,6 @@ class ElementRuleCollector;
 class KeyframeList;
 class KeyframeValue;
 class MediaQueryEvaluator;
-class MediaQueryExp;
 class MediaQueryResult;
 class RenderRegion;
 class RuleData;
@@ -173,7 +173,7 @@ struct CSSPropertyValue {
 };
 
 // This class selects a RenderStyle for a given element based on a collection of stylesheets.
-class StyleResolver {
+class StyleResolver : public FontSelectorClient {
     WTF_MAKE_NONCOPYABLE(StyleResolver); WTF_MAKE_FAST_ALLOCATED;
 public:
     StyleResolver(Document&, bool matchAuthorAndUserStyles);
@@ -192,10 +192,7 @@ public:
         RuleMatchingBehavior = MatchAllRules, RenderRegion* regionForStyling = 0);
 
     // FIXME: The following logic related to animations and keyframes should be factored out of StyleResolver
-    // The body of calculateCSSAnimationUpdate can move to CSSAnimations.cpp and take just const element, const style,
-    // and const ScopedStyleTree
-    void calculateCSSAnimationUpdate(StyleResolverState&);
-    void resolveKeyframes(const Element*, const RenderStyle*, const AtomicString& animationName, TimingFunction* defaultTimingFunction, KeyframeAnimationEffect::KeyframeVector&, RefPtr<TimingFunction>&);
+    void resolveKeyframes(Element*, const RenderStyle*, const AtomicString& animationName, TimingFunction* defaultTimingFunction, Vector<std::pair<KeyframeAnimationEffect::KeyframeVector, RefPtr<TimingFunction> > >&);
     void keyframeStylesForAnimation(Element*, const RenderStyle*, KeyframeList&);
     const StyleRuleKeyframes* matchScopedKeyframesRule(const Element*, const StringImpl* animationName);
     PassRefPtr<RenderStyle> styleForKeyframe(Element*, const RenderStyle*, const StyleKeyframe*);
@@ -216,7 +213,7 @@ public:
     // https://bugs.webkit.org/show_bug.cgi?id=108890
     void appendAuthorStyleSheets(unsigned firstNew, const Vector<RefPtr<CSSStyleSheet> >&);
     void resetAuthorStyle(const ContainerNode*);
-    void resetAtHostRules(const ContainerNode*);
+    void resetAtHostRules(const ShadowRoot*);
     void finishAppendAuthorStyleSheets();
 
     DocumentRuleSets& ruleSets() { return m_ruleSets; }
@@ -231,9 +228,6 @@ public:
         return m_styleTree.ensureScopedStyleResolver(scope ? *scope : document());
     }
 
-    // FIXME: Used by SharingStyleFinder, but should be removed.
-    bool styleSharingCandidateMatchesRuleSet(const ElementResolveContext&, RenderStyle*, RuleSet*);
-
     // These methods will give back the set of rules that matched for a given element (or a pseudo-element).
     enum CSSRuleFilter {
         UAAndUserCSSRules   = 1 << 1,
@@ -243,8 +237,9 @@ public:
         AllButEmptyCSSRules = UAAndUserCSSRules | AuthorCSSRules | CrossOriginCSSRules,
         AllCSSRules         = AllButEmptyCSSRules | EmptyCSSRules,
     };
-    PassRefPtr<CSSRuleList> styleRulesForElement(Element*, unsigned rulesToInclude = AllButEmptyCSSRules);
-    PassRefPtr<CSSRuleList> pseudoStyleRulesForElement(Element*, PseudoId, unsigned rulesToInclude = AllButEmptyCSSRules);
+    PassRefPtr<CSSRuleList> cssRulesForElement(Element*, unsigned rulesToInclude = AllButEmptyCSSRules, ShouldIncludeStyleSheetInCSSOMWrapper = IncludeStyleSheetInCSSOMWrapper);
+    PassRefPtr<CSSRuleList> pseudoCSSRulesForElement(Element*, PseudoId, unsigned rulesToInclude = AllButEmptyCSSRules, ShouldIncludeStyleSheetInCSSOMWrapper = IncludeStyleSheetInCSSOMWrapper);
+    PassRefPtr<StyleRuleList> styleRulesForElement(Element*, unsigned rulesToInclude);
 
     // |properties| is an array with |count| elements.
     void applyPropertiesToStyle(const CSSPropertyValue* properties, size_t count, RenderStyle*);
@@ -252,8 +247,8 @@ public:
     CSSFontSelector* fontSelector() const { return m_fontSelector.get(); }
     ViewportStyleResolver* viewportStyleResolver() { return m_viewportStyleResolver.get(); }
 
-    // FIXME: This logic belongs in MediaQueryEvaluator.
-    void addViewportDependentMediaQueryResult(const MediaQueryExp*, bool result);
+    typedef Vector<OwnPtr<MediaQueryResult> > MediaQueryResultList;
+    MediaQueryResultList* viewportDependentMediaQueryResults() { return &m_viewportDependentMediaQueryResults; }
     bool hasViewportDependentMediaQueries() const { return !m_viewportDependentMediaQueryResults.isEmpty(); }
     bool affectedByViewportChange() const;
 
@@ -269,17 +264,11 @@ public:
     // FIXME: StyleResolver should not have this member or method.
     InspectorCSSOMWrappers& inspectorCSSOMWrappers() { return m_inspectorCSSOMWrappers; }
 
-    enum ViewportOrigin { UserAgentOrigin, AuthorOrigin };
-
-    // Exposed for ScopedStyleResolver.
-    // FIXME: Likely belongs on viewportStyleResolver.
-    void collectViewportRules(RuleSet*, ViewportOrigin);
-
     const RuleFeatureSet& ruleFeatureSet() const { return m_features; }
 
     StyleSharingList& styleSharingList() { return m_styleSharingList; }
 
-    bool supportsStyleSharing(Element*);
+    bool hasRulesForId(const AtomicString&) const;
 
     void addToStyleSharingList(Element*);
     void clearStyleSharingList();
@@ -287,20 +276,25 @@ public:
 #ifdef STYLE_STATS
     ALWAYS_INLINE static StyleSharingStats& styleSharingStats() { return m_styleSharingStats; }
 #endif
+
+private:
+    // FontSelectorClient implementation.
+    virtual void fontsNeedUpdate(FontSelector*);
+
 private:
     // FIXME: This should probably go away, folded into FontBuilder.
     void updateFont(StyleResolverState&);
 
+    void collectPseudoRulesForElement(Element*, ElementRuleCollector&, PseudoId, unsigned rulesToInclude);
     void matchUARules(ElementRuleCollector&, RuleSet*);
     void matchAuthorRules(Element*, ElementRuleCollector&, bool includeEmptyRules);
-    void matchShadowDistributedRules(ElementRuleCollector&, bool includeEmptyRules);
-    void matchScopedAuthorRulesForShadowHost(Element*, ElementRuleCollector&, bool includeEmptyRules, Vector<ScopedStyleResolver*, 8>& resolvers, Vector<ScopedStyleResolver*, 8>& resolversInShadowTree);
+    void matchAuthorRulesForShadowHost(Element*, ElementRuleCollector&, bool includeEmptyRules, Vector<ScopedStyleResolver*, 8>& resolvers, Vector<ScopedStyleResolver*, 8>& resolversInShadowTree);
     void matchHostRules(Element*, ScopedStyleResolver*, ElementRuleCollector&, bool includeEmptyRules);
-    void matchScopedAuthorRules(Element*, ElementRuleCollector&, bool includeEmptyRules);
     void matchAllRules(StyleResolverState&, ElementRuleCollector&, bool matchAuthorAndUserStyles, bool includeSMILProperties);
     void matchUARules(ElementRuleCollector&);
     void matchUserRules(ElementRuleCollector&, bool includeEmptyRules);
     void collectFeatures();
+    void collectTreeBoundaryCrossingRules(ElementRuleCollector&, bool includeEmptyRules);
 
     bool fastRejectSelector(const RuleData&) const;
 
@@ -319,7 +313,7 @@ private:
     template <StyleApplicationPass pass>
     void applyProperties(StyleResolverState&, const StylePropertySet* properties, StyleRule*, bool isImportant, bool inheritedOnly, PropertyWhitelistType = PropertyWhitelistNone);
     template <StyleApplicationPass pass>
-    bool applyAnimatedProperties(StyleResolverState&, const DocumentTimeline*);
+    bool applyAnimatedProperties(StyleResolverState&, const AnimationEffect::CompositableValueMap&);
     void matchPageRules(MatchResult&, RuleSet*, bool isLeftPage, bool isFirstPage, const String& pageName);
     void matchPageRulesForList(Vector<StyleRulePage*>& matchedRules, const Vector<StyleRulePage*>&, bool isLeftPage, bool isFirstPage, const String& pageName);
     void collectViewportRules();
@@ -343,6 +337,8 @@ private:
     MatchedPropertiesCache m_matchedPropertiesCache;
 
     OwnPtr<MediaQueryEvaluator> m_medium;
+    MediaQueryResultList m_viewportDependentMediaQueryResults;
+
     RefPtr<RenderStyle> m_rootDefaultStyle;
 
     Document& m_document;
@@ -351,7 +347,6 @@ private:
     bool m_matchAuthorAndUserStyles;
 
     RefPtr<CSSFontSelector> m_fontSelector;
-    Vector<OwnPtr<MediaQueryResult> > m_viewportDependentMediaQueryResults;
 
     RefPtr<ViewportStyleResolver> m_viewportStyleResolver;
 

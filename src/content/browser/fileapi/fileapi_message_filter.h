@@ -89,11 +89,9 @@ class CONTENT_EXPORT FileAPIMessageFilter : public BrowserMessageFilter {
  private:
   typedef fileapi::FileSystemOperationRunner::OperationID OperationID;
 
-  void OnOpen(int request_id,
-              const GURL& origin_url,
-              fileapi::FileSystemType type,
-              int64 requested_size,
-              bool create);
+  void OnOpenFileSystem(int request_id,
+                        const GURL& origin_url,
+                        fileapi::FileSystemType type);
   void OnResolveURL(int request_id,
                     const GURL& filesystem_url);
   void OnDeleteFileSystem(int request_id,
@@ -117,11 +115,6 @@ class CONTENT_EXPORT FileAPIMessageFilter : public BrowserMessageFilter {
   void OnWrite(int request_id,
                const GURL& path,
                const std::string& blob_uuid,
-               int64 offset);
-  void OnWriteDeprecated(
-               int request_id,
-               const GURL& path,
-               const GURL& blob_url,
                int64 offset);
   void OnTruncate(int request_id, const GURL& path, int64 length);
   void OnTouchFile(int request_id,
@@ -156,13 +149,6 @@ class CONTENT_EXPORT FileAPIMessageFilter : public BrowserMessageFilter {
   void OnDecrementBlobRefCount(const std::string& uuid);
   void OnRegisterPublicBlobURL(const GURL& public_url, const std::string& uuid);
   void OnRevokePublicBlobURL(const GURL& public_url);
-
-  // Extra methods to establish a mapping from old-style blobURLs to uuids,
-  // and to clone them. These won't be here for long, just during a
-  // transition period. See crbug/174200
-  void OnDeprecatedRegisterBlobURL(const GURL& url, const std::string& uuid);
-  void OnDeprecatedCloneBlobURL(const GURL& url, const GURL& existing_url);
-  void OnDeprecatedRevokeBlobURL(const GURL& url);
 
   // Handlers for StreamHostMsg_ family messages.
   //
@@ -203,9 +189,9 @@ class CONTENT_EXPORT FileAPIMessageFilter : public BrowserMessageFilter {
                 int64 bytes,
                 bool complete);
   void DidOpenFileSystem(int request_id,
-                         base::PlatformFileError result,
+                         const GURL& root,
                          const std::string& filesystem_name,
-                         const GURL& root);
+                         base::PlatformFileError result);
   void DidResolveURL(int request_id,
                      base::PlatformFileError result,
                      const fileapi::FileSystemInfo& info,

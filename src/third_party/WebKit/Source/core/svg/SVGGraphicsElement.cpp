@@ -23,11 +23,11 @@
 #include "core/svg/SVGGraphicsElement.h"
 
 #include "SVGNames.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
 #include "core/rendering/svg/RenderSVGPath.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/SVGPathData.h"
 #include "core/svg/SVGElementInstance.h"
+#include "platform/transforms/AffineTransform.h"
 
 namespace WebCore {
 
@@ -74,6 +74,14 @@ AffineTransform SVGGraphicsElement::animatedLocalTransform() const
 
         // Flatten any 3D transform.
         matrix = transform.toAffineTransform();
+
+        // CSS bakes the zoom factor into lengths, including translation components.
+        // In order to align CSS & SVG transforms, we need to invert this operation.
+        float zoom = style->effectiveZoom();
+        if (zoom != 1) {
+            matrix.setE(matrix.e() / zoom);
+            matrix.setF(matrix.f() / zoom);
+        }
     } else {
         transformCurrentValue().concatenate(matrix);
     }
@@ -129,8 +137,11 @@ void SVGGraphicsElement::svgAttributeChanged(const QualifiedName& attrName)
 
     SVGElementInstance::InvalidationGuard invalidationGuard(this);
 
-    if (SVGTests::handleAttributeChange(this, attrName))
+    // Reattach so the isValid() check will be run again during renderer creation.
+    if (SVGTests::isKnownAttribute(attrName)) {
+        lazyReattachIfAttached();
         return;
+    }
 
     RenderObject* object = renderer();
     if (!object)
@@ -155,9 +166,26 @@ SVGElement* SVGGraphicsElement::farthestViewportElement() const
     return SVGTransformable::farthestViewportElement(this);
 }
 
-SVGRect SVGGraphicsElement::getBBox(StyleUpdateStrategy styleUpdateStrategy)
+SVGRect SVGGraphicsElement::getBBox()
 {
-    return SVGTransformable::getBBox(this, styleUpdateStrategy);
+    document().updateLayoutIgnorePendingStylesheets();
+
+    // FIXME: Eventually we should support getBBox for detached elements.
+    if (!renderer())
+        return SVGRect();
+
+    return renderer()->objectBoundingBox();
+}
+
+SVGRect SVGGraphicsElement::getStrokeBBox()
+{
+    document().updateLayoutIgnorePendingStylesheets();
+
+    // FIXME: Eventually we should support getStrokeBBox for detached elements.
+    if (!renderer())
+        return SVGRect();
+
+    return renderer()->strokeBoundingBox();
 }
 
 RenderObject* SVGGraphicsElement::createRenderer(RenderStyle*)

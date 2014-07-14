@@ -27,9 +27,10 @@
     {
       'target_name': 'skia_opts',
       'type': 'static_library',
+      'includes': [
+        'skia_common.gypi',
+      ],
       'include_dirs': [
-        'config',
-        '../third_party/skia/include/config',
         '../third_party/skia/include/core',
         '../third_party/skia/src/core',
         '../third_party/skia/src/opts',
@@ -47,7 +48,9 @@
             '../third_party/skia/src/opts/SkBlitRect_opts_SSE2.cpp',
             '../third_party/skia/src/opts/SkBlitRow_opts_SSE2.cpp',
             '../third_party/skia/src/opts/SkUtils_opts_SSE2.cpp',
+            '../third_party/skia/src/opts/SkXfermode_opts_none.cpp',
             '../third_party/skia/src/opts/SkBitmapFilter_opts_SSE2.cpp',
+            '../third_party/skia/src/opts/SkMorphology_opts_SSE2.cpp',
           ],
           'dependencies': [
             'skia_opts_ssse3',
@@ -104,6 +107,8 @@
             '../third_party/skia/src/opts/SkBlitMask_opts_none.cpp',
             '../third_party/skia/src/opts/SkBlitRow_opts_none.cpp',
             '../third_party/skia/src/opts/SkUtils_opts_none.cpp',
+            '../third_party/skia/src/opts/SkXfermode_opts_none.cpp',
+            '../third_party/skia/src/opts/SkMorphology_opts_none.cpp',
           ],
         }],
         [ 'target_arch == "arm" and arm_version >= 6', {
@@ -112,6 +117,8 @@
             '../third_party/skia/src/opts/SkBlitRow_opts_arm.cpp',
             '../third_party/skia/src/opts/SkBlitRow_opts_arm.h',
             '../third_party/skia/src/opts/opts_check_arm.cpp',
+            '../third_party/skia/src/opts/SkXfermode_opts_none.cpp',
+            '../third_party/skia/src/opts/SkMorphology_opts_none.cpp',
           ],
         }],
         [ 'target_arch == "mipsel"',{
@@ -123,6 +130,8 @@
             '../third_party/skia/src/opts/SkBlitMask_opts_none.cpp',
             '../third_party/skia/src/opts/SkBlitRow_opts_none.cpp',
             '../third_party/skia/src/opts/SkUtils_opts_none.cpp',
+            '../third_party/skia/src/opts/SkXfermode_opts_none.cpp',
+            '../third_party/skia/src/opts/SkMorphology_opts_none.cpp',
           ],
         }],
       ],
@@ -134,10 +143,10 @@
     {
       'target_name': 'skia_opts_ssse3',
       'type': 'static_library',
+      'includes': [
+        'skia_common.gypi',
+      ],
       'include_dirs': [
-        '..',
-        'config',
-        '../third_party/skia/include/config',
         '../third_party/skia/include/core',
         '../third_party/skia/src/core',
       ],
@@ -172,10 +181,10 @@
     {
       'target_name': 'skia_opts_none',
       'type': 'static_library',
+      'includes': [
+        'skia_common.gypi',
+      ],
       'include_dirs': [
-        '..',
-        'config',
-        '../third_party/skia/include/config',
         '../third_party/skia/include/core',
         '../third_party/skia/src/core',
       ],
@@ -184,6 +193,8 @@
         '../third_party/skia/src/opts/SkBlitMask_opts_none.cpp',
         '../third_party/skia/src/opts/SkBlitRow_opts_none.cpp',
         '../third_party/skia/src/opts/SkUtils_opts_none.cpp',
+        '../third_party/skia/src/opts/SkXfermode_opts_none.cpp',
+        '../third_party/skia/src/opts/SkMorphology_opts_none.cpp',
       ],
     },
   ],
@@ -197,9 +208,10 @@
         {
           'target_name': 'skia_opts_neon',
           'type': 'static_library',
+          'includes': [
+            'skia_common.gypi',
+          ],
           'include_dirs': [
-            '..',
-            'config',
             '../third_party/skia/include/core',
             '../third_party/skia/src/core',
             '../third_party/skia/src/opts',
@@ -226,6 +238,7 @@
             '../third_party/skia/src/opts/SkBitmapProcState_matrix_clamp_neon.h',
             '../third_party/skia/src/opts/SkBitmapProcState_matrix_repeat_neon.h',
             '../third_party/skia/src/opts/SkBlitRow_opts_arm_neon.cpp',
+            '../third_party/skia/src/opts/SkXfermode_opts_arm_neon.cpp',
           ],
           'conditions': [
             ['arm_neon == 1', {

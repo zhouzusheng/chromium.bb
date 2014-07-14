@@ -93,6 +93,9 @@ static const int kStartVideoBitrate = 300;
 static const int kMaxVideoBitrate = 2000;
 static const int kDefaultConferenceModeMaxVideoBitrate = 500;
 
+// Controlled by exp, try a super low minimum bitrate for poor connections.
+static const int kLowerMinBitrate = 30;
+
 static const int kVideoMtu = 1200;
 
 static const int kVideoRtpBufferSize = 65536;
@@ -153,6 +156,11 @@ static const int kRtpTimeOffsetExtensionId = 2;
 static const char kRtpAbsoluteSendTimeHeaderExtension[] =
     "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time";
 static const int kRtpAbsoluteSendTimeExtensionId = 3;
+// Default video dscp value.
+// See http://tools.ietf.org/html/rfc2474 for details
+// See also http://tools.ietf.org/html/draft-jennings-rtcweb-qos-00
+static const talk_base::DiffServCodePoint kVideoDscpValue =
+    talk_base::DSCP_AF41;
 
 static bool IsNackEnabled(const VideoCodec& codec) {
   return codec.HasFeedbackParam(FeedbackParam(kRtcpFbParamNack,
@@ -309,6 +317,13 @@ class WebRtcDecoderObserver : public webrtc::ViEDecoderObserver {
        : video_channel_(video_channel),
          framerate_(0),
          bitrate_(0),
+         decode_ms_(0),
+         max_decode_ms_(0),
+         current_delay_ms_(0),
+         target_delay_ms_(0),
+         jitter_buffer_ms_(0),
+         min_playout_delay_ms_(0),
+         render_delay_ms_(0),
          firs_requested_(0) {
   }
 
@@ -318,23 +333,61 @@ class WebRtcDecoderObserver : public webrtc::ViEDecoderObserver {
   virtual void IncomingRate(const int videoChannel,
                             const unsigned int framerate,
                             const unsigned int bitrate) {
+    talk_base::CritScope cs(&crit_);
     ASSERT(video_channel_ == videoChannel);
     framerate_ = framerate;
     bitrate_ = bitrate;
   }
+
+  virtual void DecoderTiming(int decode_ms,
+                             int max_decode_ms,
+                             int current_delay_ms,
+                             int target_delay_ms,
+                             int jitter_buffer_ms,
+                             int min_playout_delay_ms,
+                             int render_delay_ms) {
+    talk_base::CritScope cs(&crit_);
+    decode_ms_ = decode_ms;
+    max_decode_ms_ = max_decode_ms;
+    current_delay_ms_ = current_delay_ms;
+    target_delay_ms_ = target_delay_ms;
+    jitter_buffer_ms_ = jitter_buffer_ms;
+    min_playout_delay_ms_ = min_playout_delay_ms;
+    render_delay_ms_ = render_delay_ms;
+  }
+
   virtual void RequestNewKeyFrame(const int videoChannel) {
+    talk_base::CritScope cs(&crit_);
     ASSERT(video_channel_ == videoChannel);
     ++firs_requested_;
   }
 
-  int framerate() const { return framerate_; }
-  int bitrate() const { return bitrate_; }
-  int firs_requested() const { return firs_requested_; }
+  // Populate |rinfo| based on previously-set data in |*this|.
+  void ExportTo(VideoReceiverInfo* rinfo) {
+    talk_base::CritScope cs(&crit_);
+    rinfo->firs_sent = firs_requested_;
+    rinfo->framerate_rcvd = framerate_;
+    rinfo->decode_ms = decode_ms_;
+    rinfo->max_decode_ms = max_decode_ms_;
+    rinfo->current_delay_ms = current_delay_ms_;
+    rinfo->target_delay_ms = target_delay_ms_;
+    rinfo->jitter_buffer_ms = jitter_buffer_ms_;
+    rinfo->min_playout_delay_ms = min_playout_delay_ms_;
+    rinfo->render_delay_ms = render_delay_ms_;
+  }
 
  private:
+  mutable talk_base::CriticalSection crit_;
   int video_channel_;
   int framerate_;
   int bitrate_;
+  int decode_ms_;
+  int max_decode_ms_;
+  int current_delay_ms_;
+  int target_delay_ms_;
+  int jitter_buffer_ms_;
+  int min_playout_delay_ms_;
+  int render_delay_ms_;
   int firs_requested_;
 };
 
@@ -350,15 +403,23 @@ class WebRtcEncoderObserver : public webrtc::ViEEncoderObserver {
   virtual void OutgoingRate(const int videoChannel,
                             const unsigned int framerate,
                             const unsigned int bitrate) {
+    talk_base::CritScope cs(&crit_);
     ASSERT(video_channel_ == videoChannel);
     framerate_ = framerate;
     bitrate_ = bitrate;
   }
 
-  int framerate() const { return framerate_; }
-  int bitrate() const { return bitrate_; }
+  int framerate() const {
+    talk_base::CritScope cs(&crit_);
+    return framerate_;
+  }
+  int bitrate() const {
+    talk_base::CritScope cs(&crit_);
+    return bitrate_;
+  }
 
  private:
+  mutable talk_base::CriticalSection crit_;
   int video_channel_;
   int framerate_;
   int bitrate_;
@@ -514,7 +575,8 @@ class WebRtcVideoChannelSendInfo : public sigslot::has_slots<> {
         external_capture_(external_capture),
         capturer_updated_(false),
         interval_(0),
-        video_adapter_(new CoordinatedVideoAdapter) {
+        video_adapter_(new CoordinatedVideoAdapter),
+        cpu_monitor_(cpu_monitor) {
     overuse_observer_.reset(new WebRtcOveruseObserver(video_adapter_.get()));
     SignalCpuAdaptationUnable.repeat(video_adapter_->SignalCpuAdaptationUnable);
     if (cpu_monitor) {
@@ -633,6 +695,9 @@ class WebRtcVideoChannelSendInfo : public sigslot::has_slots<> {
   }
 
   void SetCpuOveruseDetection(bool enable) {
+    if (cpu_monitor_ && enable) {
+      cpu_monitor_->SignalUpdate.disconnect(video_adapter_.get());
+    }
     overuse_observer_->Enable(enable);
     video_adapter_->set_cpu_adaptation(enable);
   }
@@ -689,6 +754,7 @@ class WebRtcVideoChannelSendInfo : public sigslot::has_slots<> {
   int64 interval_;
 
   talk_base::scoped_ptr<CoordinatedVideoAdapter> video_adapter_;
+  talk_base::CpuMonitor* cpu_monitor_;
   talk_base::scoped_ptr<WebRtcOveruseObserver> overuse_observer_;
 };
 
@@ -900,13 +966,24 @@ int WebRtcVideoEngine::GetCapabilities() {
   return VIDEO_RECV | VIDEO_SEND;
 }
 
-bool WebRtcVideoEngine::SetOptions(int options) {
+bool WebRtcVideoEngine::SetOptions(const VideoOptions &options) {
   return true;
 }
 
 bool WebRtcVideoEngine::SetDefaultEncoderConfig(
     const VideoEncoderConfig& config) {
   return SetDefaultCodec(config.max_codec);
+}
+
+VideoEncoderConfig WebRtcVideoEngine::GetDefaultEncoderConfig() const {
+  ASSERT(!video_codecs_.empty());
+  VideoCodec max_codec(kVideoCodecPrefs[0].payload_type,
+                       kVideoCodecPrefs[0].name,
+                       video_codecs_[0].width,
+                       video_codecs_[0].height,
+                       video_codecs_[0].framerate,
+                       0);
+  return VideoEncoderConfig(max_codec);
 }
 
 // SetDefaultCodec may be called while the capturer is running. For example, a
@@ -919,6 +996,7 @@ bool WebRtcVideoEngine::SetDefaultCodec(const VideoCodec& codec) {
     return false;
   }
 
+  ASSERT(!video_codecs_.empty());
   default_codec_format_ = VideoFormat(
       video_codecs_[0].width,
       video_codecs_[0].height,
@@ -1223,7 +1301,8 @@ static void AddDefaultFeedbackParams(VideoCodec* codec) {
 }
 
 // Rebuilds the codec list to be only those that are less intensive
-// than the specified codec. Prefers internal codec over external.
+// than the specified codec. Prefers internal codec over external with
+// higher preference field.
 bool WebRtcVideoEngine::RebuildCodecList(const VideoCodec& in_codec) {
   if (!FindCodec(in_codec))
     return false;
@@ -1262,7 +1341,9 @@ bool WebRtcVideoEngine::RebuildCodecList(const VideoCodec& in_codec) {
             codecs[i].max_width,
             codecs[i].max_height,
             codecs[i].max_fps,
-            static_cast<int>(codecs.size() + ARRAY_SIZE(kVideoCodecPrefs) - i));
+            // Use negative preference on external codec to ensure the internal
+            // codec is preferred.
+            static_cast<int>(0 - i));
         AddDefaultFeedbackParams(&codec);
         video_codecs_.push_back(codec);
       }
@@ -2263,14 +2344,13 @@ bool WebRtcVideoMediaChannel::GetStats(VideoMediaInfo* info) {
     rinfo.packets_lost = -1;
     rinfo.packets_concealed = -1;
     rinfo.fraction_lost = -1;  // from SentRTCP
-    rinfo.firs_sent = channel->decoder_observer()->firs_requested();
     rinfo.nacks_sent = -1;
     rinfo.frame_width = channel->render_adapter()->width();
     rinfo.frame_height = channel->render_adapter()->height();
-    rinfo.framerate_rcvd = channel->decoder_observer()->framerate();
     int fps = channel->render_adapter()->framerate();
     rinfo.framerate_decoded = fps;
     rinfo.framerate_output = fps;
+    channel->decoder_observer()->ExportTo(&rinfo);
 
     // Get sent RTCP statistics.
     uint16 s_fraction_lost;
@@ -2496,7 +2576,7 @@ bool WebRtcVideoMediaChannel::SetSendBandwidth(bool autobw, int bps) {
   int max_bitrate;
   if (autobw) {
     // Use the default values for min bitrate.
-    min_bitrate = kMinVideoBitrate;
+    min_bitrate = send_min_bitrate_;
     // Use the default value or the bps for the max
     max_bitrate = (bps <= 0) ? send_max_bitrate_ : (bps / 1000);
     // Maximum start bitrate can be kStartVideoBitrate.
@@ -2537,6 +2617,8 @@ bool WebRtcVideoMediaChannel::SetOptions(const VideoOptions &options) {
   bool cpu_overuse_detection_changed = options.cpu_overuse_detection.IsSet() &&
       (options_.cpu_overuse_detection != options.cpu_overuse_detection);
 
+  bool dscp_option_changed = (options_.dscp != options.dscp);
+
   bool conference_mode_turned_off = false;
   if (options_.conference_mode.IsSet() && options.conference_mode.IsSet() &&
       options_.conference_mode.GetWithDefaultIfUnset(false) &&
@@ -2559,6 +2641,17 @@ bool WebRtcVideoMediaChannel::SetOptions(const VideoOptions &options) {
   // Adjust send codec bitrate if needed.
   int conf_max_bitrate = kDefaultConferenceModeMaxVideoBitrate;
 
+  // Save altered min_bitrate level and apply if necessary.
+  bool adjusted_min_bitrate = false;
+  if (options.lower_min_bitrate.IsSet()) {
+    bool lower;
+    options.lower_min_bitrate.Get(&lower);
+
+    int new_send_min_bitrate = lower ? kLowerMinBitrate : kMinVideoBitrate;
+    adjusted_min_bitrate = (new_send_min_bitrate != send_min_bitrate_);
+    send_min_bitrate_ = new_send_min_bitrate;
+  }
+
   int expected_bitrate = send_max_bitrate_;
   if (InConferenceMode()) {
     expected_bitrate = conf_max_bitrate;
@@ -2570,7 +2663,8 @@ bool WebRtcVideoMediaChannel::SetOptions(const VideoOptions &options) {
   }
 
   if (send_codec_ &&
-      (send_max_bitrate_ != expected_bitrate || denoiser_changed)) {
+      (send_max_bitrate_ != expected_bitrate || denoiser_changed ||
+       adjusted_min_bitrate)) {
     // On success, SetSendCodec() will reset send_max_bitrate_ to
     // expected_bitrate.
     if (!SetSendCodec(*send_codec_,
@@ -2621,6 +2715,14 @@ bool WebRtcVideoMediaChannel::SetOptions(const VideoOptions &options) {
          iter != send_channels_.end(); ++iter) {
       WebRtcVideoChannelSendInfo* send_channel = iter->second;
       send_channel->SetCpuOveruseDetection(cpu_overuse_detection);
+    }
+  }
+  if (dscp_option_changed) {
+    talk_base::DiffServCodePoint dscp = talk_base::DSCP_DEFAULT;
+    if (options.dscp.GetWithDefaultIfUnset(false))
+      dscp = kVideoDscpValue;
+    if (MediaChannel::SetDscp(dscp) != 0) {
+      LOG(LS_WARNING) << "Failed to set DSCP settings for video channel";
     }
   }
   return true;

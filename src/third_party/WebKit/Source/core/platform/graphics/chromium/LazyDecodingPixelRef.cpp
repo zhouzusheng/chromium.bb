@@ -27,9 +27,9 @@
 #include "core/platform/graphics/chromium/LazyDecodingPixelRef.h"
 
 #include "SkData.h"
-#include "core/platform/chromium/TraceEvent.h"
 #include "core/platform/graphics/chromium/ImageDecodingStore.h"
 #include "core/platform/graphics/chromium/ImageFrameGenerator.h"
+#include "platform/TraceEvent.h"
 
 namespace WebCore {
 
@@ -39,6 +39,7 @@ LazyDecodingPixelRef::LazyDecodingPixelRef(PassRefPtr<ImageFrameGenerator> frame
     , m_scaledSize(scaledSize)
     , m_scaledSubset(scaledSubset)
     , m_lockedImageResource(0)
+    , m_objectTracker(this)
 {
 }
 

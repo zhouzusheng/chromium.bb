@@ -39,7 +39,6 @@
 #include "core/platform/graphics/Extensions3D.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/GraphicsContext3D.h"
-#include "core/platform/graphics/IntRect.h"
 #include "core/platform/graphics/chromium/Canvas2DLayerBridge.h"
 #include "core/platform/graphics/gpu/SharedGraphicsContext3D.h"
 #include "core/platform/graphics/skia/NativeImageSkia.h"
@@ -47,6 +46,7 @@
 #include "core/platform/image-encoders/skia/JPEGImageEncoder.h"
 #include "core/platform/image-encoders/skia/PNGImageEncoder.h"
 #include "core/platform/image-encoders/skia/WEBPImageEncoder.h"
+#include "platform/geometry/IntRect.h"
 #include "public/platform/Platform.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/skia/include/core/SkBitmapDevice.h"
@@ -64,13 +64,13 @@ using namespace std;
 
 namespace WebCore {
 
-static PassRefPtr<SkCanvas> createAcceleratedCanvas(const IntSize& size, Canvas2DLayerBridgePtr* outLayerBridge, OpacityMode opacityMode)
+static PassRefPtr<SkCanvas> createAcceleratedCanvas(const IntSize& size, Canvas2DLayerBridgePtr* outLayerBridge, OpacityMode opacityMode, int msaaSampleCount)
 {
     RefPtr<GraphicsContext3D> context3D = SharedGraphicsContext3D::get();
     if (!context3D)
         return 0;
     Canvas2DLayerBridge::OpacityMode bridgeOpacityMode = opacityMode == Opaque ? Canvas2DLayerBridge::Opaque : Canvas2DLayerBridge::NonOpaque;
-    *outLayerBridge = Canvas2DLayerBridge::create(context3D.release(), size, bridgeOpacityMode);
+    *outLayerBridge = Canvas2DLayerBridge::create(context3D.release(), size, bridgeOpacityMode, msaaSampleCount);
     // If canvas buffer allocation failed, debug build will have asserted
     // For release builds, we must verify whether the device has a render target
     return (*outLayerBridge) ? (*outLayerBridge)->getCanvas() : 0;
@@ -122,13 +122,13 @@ ImageBuffer::ImageBuffer(const IntSize& size, float resolutionScale, const Graph
     success = true;
 }
 
-ImageBuffer::ImageBuffer(const IntSize& size, float resolutionScale, RenderingMode renderingMode, OpacityMode opacityMode, bool& success)
+ImageBuffer::ImageBuffer(const IntSize& size, float resolutionScale, RenderingMode renderingMode, OpacityMode opacityMode, int acceleratedSampleCount, bool& success)
     : m_size(size)
     , m_logicalSize(size)
     , m_resolutionScale(resolutionScale)
 {
     if (renderingMode == Accelerated) {
-        m_canvas = createAcceleratedCanvas(size, &m_layerBridge, opacityMode);
+        m_canvas = createAcceleratedCanvas(size, &m_layerBridge, opacityMode, acceleratedSampleCount);
         if (!m_canvas)
             renderingMode = UnacceleratedNonPlatformBuffer;
     }
@@ -257,14 +257,14 @@ void ImageBuffer::draw(GraphicsContext* context, const FloatRect& destRect, cons
 }
 
 void ImageBuffer::drawPattern(GraphicsContext* context, const FloatRect& srcRect, const FloatSize& scale,
-    const FloatPoint& phase, CompositeOperator op, const FloatRect& destRect, BlendMode blendMode)
+    const FloatPoint& phase, CompositeOperator op, const FloatRect& destRect, BlendMode blendMode, const IntSize& repeatSpacing)
 {
     if (!isValid())
         return;
 
     const SkBitmap& bitmap = *m_context->bitmap();
     RefPtr<Image> image = BitmapImage::create(NativeImageSkia::create(drawNeedsCopy(m_context.get(), context) ? deepSkBitmapCopy(bitmap) : bitmap));
-    image->drawPattern(context, srcRect, scale, phase, op, destRect, blendMode);
+    image->drawPattern(context, srcRect, scale, phase, op, destRect, blendMode, repeatSpacing);
 }
 
 static const Vector<uint8_t>& getLinearRgbLUT()

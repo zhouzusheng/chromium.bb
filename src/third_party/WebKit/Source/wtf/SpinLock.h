@@ -42,13 +42,14 @@ namespace WTF {
 
 ALWAYS_INLINE void spinLockLock(int volatile* lock)
 {
-    while (atomicIncrement(lock) != 1)
-        atomicDecrement(lock);
+    while (atomicTestAndSetToOne(lock)) {
+        while (*lock) { } // Spin without spamming locked instructions.
+    }
 }
 
 ALWAYS_INLINE void spinLockUnlock(int volatile* lock)
 {
-    atomicDecrement(lock);
+    atomicSetOneToZero(lock);
 }
 
 } // namespace WTF

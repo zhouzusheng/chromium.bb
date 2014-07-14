@@ -280,7 +280,6 @@ static HashMap<StringImpl*, CSSSelector::PseudoType>* nameToPseudoTypeMap()
     DEFINE_STATIC_LOCAL(AtomicString, valid, ("valid", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, invalid, ("invalid", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, drag, ("-webkit-drag", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(AtomicString, dragAlias, ("-khtml-drag", AtomicString::ConstructFromLiteral)); // was documented with this name in Apple documentation, so keep an alia
     DEFINE_STATIC_LOCAL(AtomicString, empty, ("empty", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, enabled, ("enabled", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, firstChild, ("first-child", AtomicString::ConstructFromLiteral));
@@ -366,7 +365,6 @@ static HashMap<StringImpl*, CSSSelector::PseudoType>* nameToPseudoTypeMap()
         nameToPseudoType->set(valid.impl(), CSSSelector::PseudoValid);
         nameToPseudoType->set(invalid.impl(), CSSSelector::PseudoInvalid);
         nameToPseudoType->set(drag.impl(), CSSSelector::PseudoDrag);
-        nameToPseudoType->set(dragAlias.impl(), CSSSelector::PseudoDrag);
         nameToPseudoType->set(enabled.impl(), CSSSelector::PseudoEnabled);
         nameToPseudoType->set(empty.impl(), CSSSelector::PseudoEmpty);
         nameToPseudoType->set(firstChild.impl(), CSSSelector::PseudoFirstChild);
@@ -736,6 +734,10 @@ String CSSSelector::selectorText(const String& rightSide) const
             if (cs->relationIsAffectedByPseudoContent() && tagHistory->pseudoType() != CSSSelector::PseudoContent)
                 return tagHistory->selectorText("::-webkit-distributed(> " + str.toString() + rightSide + ")");
             return tagHistory->selectorText(" > " + str.toString() + rightSide);
+        case CSSSelector::ChildTree:
+            return tagHistory->selectorText(" ^ " + str.toString() + rightSide);
+        case CSSSelector::DescendantTree:
+            return tagHistory->selectorText(" ^^ " + str.toString() + rightSide);
         case CSSSelector::DirectAdjacent:
             return tagHistory->selectorText(" + " + str.toString() + rightSide);
         case CSSSelector::IndirectAdjacent:
@@ -812,6 +814,7 @@ static bool validateSubSelector(const CSSSelector* selector)
     case CSSSelector::PseudoFirstOfType:
     case CSSSelector::PseudoLastOfType:
     case CSSSelector::PseudoOnlyOfType:
+    case CSSSelector::PseudoHost:
         return true;
     default:
         return false;

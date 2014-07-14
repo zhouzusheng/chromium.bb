@@ -38,32 +38,30 @@
 
 namespace WebCore {
 
-void ShadowDistributedRules::addRule(StyleRule* rule, size_t selectorIndex, ContainerNode* scopingNode, AddRuleFlags addRuleFlags)
+void TreeBoundaryCrossingRules::addRule(StyleRule* rule, size_t selectorIndex, ContainerNode* scopingNode, AddRuleFlags addRuleFlags)
 {
-    if (m_shadowDistributedRuleSetMap.contains(scopingNode))
-        m_shadowDistributedRuleSetMap.get(scopingNode)->addRule(rule, selectorIndex, addRuleFlags);
+    if (m_treeBoundaryCrossingRuleSetMap.contains(scopingNode))
+        m_treeBoundaryCrossingRuleSetMap.get(scopingNode)->addRule(rule, selectorIndex, addRuleFlags);
     else {
         OwnPtr<RuleSet> ruleSetForScope = RuleSet::create();
         ruleSetForScope->addRule(rule, selectorIndex, addRuleFlags);
-        m_shadowDistributedRuleSetMap.add(scopingNode, ruleSetForScope.release());
+        m_treeBoundaryCrossingRuleSetMap.add(scopingNode, ruleSetForScope.release());
+        m_scopingNodes.add(scopingNode);
     }
 }
 
-void ShadowDistributedRules::collectMatchRequests(bool includeEmptyRules, Vector<MatchRequest>& matchRequests)
+void TreeBoundaryCrossingRules::reset(const ContainerNode* scopingNode)
 {
-    for (ShadowDistributedRuleSetMap::iterator it = m_shadowDistributedRuleSetMap.begin(); it != m_shadowDistributedRuleSetMap.end(); ++it)
-        matchRequests.append(MatchRequest(it->value.get(), includeEmptyRules, it->key));
+    m_treeBoundaryCrossingRuleSetMap.remove(scopingNode);
+    m_scopingNodes.remove(scopingNode);
 }
 
-void ShadowDistributedRules::reset(const ContainerNode* scopingNode)
+void TreeBoundaryCrossingRules::collectFeaturesTo(RuleFeatureSet& features)
 {
-    m_shadowDistributedRuleSetMap.remove(scopingNode);
-}
-
-void ShadowDistributedRules::collectFeaturesTo(RuleFeatureSet& features)
-{
-    for (ShadowDistributedRuleSetMap::iterator it = m_shadowDistributedRuleSetMap.begin(); it != m_shadowDistributedRuleSetMap.end(); ++it)
-        features.add(it->value->features());
+    for (TreeBoundaryCrossingRuleSetMap::iterator::Values it = m_treeBoundaryCrossingRuleSetMap.values().begin(); it != m_treeBoundaryCrossingRuleSetMap.values().end(); ++it) {
+        RuleSet* ruleSet = it->get();
+        features.add(ruleSet->features());
+    }
 }
 
 DocumentRuleSets::DocumentRuleSets()
@@ -74,13 +72,13 @@ DocumentRuleSets::~DocumentRuleSets()
 {
 }
 
-void DocumentRuleSets::initUserStyle(StyleEngine* styleSheetCollection, const MediaQueryEvaluator& medium, StyleResolver& resolver)
+void DocumentRuleSets::initUserStyle(StyleEngine* styleSheetCollection, const Vector<RefPtr<StyleRule> >& watchedSelectors, const MediaQueryEvaluator& medium, StyleResolver& resolver)
 {
     OwnPtr<RuleSet> tempUserStyle = RuleSet::create();
     if (CSSStyleSheet* pageUserSheet = styleSheetCollection->pageUserSheet())
         tempUserStyle->addRulesFromSheet(pageUserSheet->contents(), medium, &resolver);
-    collectRulesFromUserStyleSheets(styleSheetCollection->injectedUserStyleSheets(), *tempUserStyle, medium, resolver);
     collectRulesFromUserStyleSheets(styleSheetCollection->documentUserStyleSheets(), *tempUserStyle, medium, resolver);
+    collectRulesFromWatchedSelectors(watchedSelectors, *tempUserStyle);
     if (tempUserStyle->ruleCount() > 0 || tempUserStyle->pageRules().size() > 0)
         m_userStyle = tempUserStyle.release();
 }
@@ -93,9 +91,15 @@ void DocumentRuleSets::collectRulesFromUserStyleSheets(const Vector<RefPtr<CSSSt
     }
 }
 
+void DocumentRuleSets::collectRulesFromWatchedSelectors(const Vector<RefPtr<StyleRule> >& watchedSelectors, RuleSet& userStyle)
+{
+    for (unsigned i = 0; i < watchedSelectors.size(); ++i)
+        userStyle.addStyleRule(watchedSelectors[i].get(), RuleHasNoSpecialState);
+}
+
 void DocumentRuleSets::resetAuthorStyle()
 {
-    m_shadowDistributedRules.clear();
+    m_treeBoundaryCrossingRules.clear();
 }
 
 void DocumentRuleSets::collectFeaturesTo(RuleFeatureSet& features, bool isViewSource)
@@ -112,7 +116,7 @@ void DocumentRuleSets::collectFeaturesTo(RuleFeatureSet& features, bool isViewSo
     if (m_userStyle)
         features.add(m_userStyle->features());
 
-    m_shadowDistributedRules.collectFeaturesTo(features);
+    m_treeBoundaryCrossingRules.collectFeaturesTo(features);
 }
 
 } // namespace WebCore

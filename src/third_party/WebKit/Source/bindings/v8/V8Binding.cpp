@@ -31,7 +31,6 @@
 #include "config.h"
 #include "bindings/v8/V8Binding.h"
 
-#include "V8DOMStringList.h"
 #include "V8Element.h"
 #include "V8NodeFilter.h"
 #include "V8Window.h"
@@ -43,14 +42,13 @@
 #include "bindings/v8/V8WindowShell.h"
 #include "bindings/v8/WorkerScriptController.h"
 #include "bindings/v8/custom/V8CustomXPathNSResolver.h"
-#include "core/dom/DOMStringList.h"
 #include "core/dom/Element.h"
 #include "core/dom/NodeFilter.h"
 #include "core/dom/QualifiedName.h"
 #include "core/inspector/BindingVisitors.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Settings.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/xml/XPathNSResolver.h"
@@ -87,7 +85,7 @@ v8::Handle<v8::Value> throwError(v8::Handle<v8::Value> exception, v8::Isolate* i
     return V8ThrowException::throwError(exception, isolate);
 }
 
-v8::Handle<v8::Value> throwTypeError(v8::Isolate* isolate)
+v8::Handle<v8::Value> throwUninformativeAndGenericTypeError(v8::Isolate* isolate)
 {
     return V8ThrowException::throwTypeError(String(), isolate);
 }
@@ -95,11 +93,6 @@ v8::Handle<v8::Value> throwTypeError(v8::Isolate* isolate)
 v8::Handle<v8::Value> throwTypeError(const String& message, v8::Isolate* isolate)
 {
     return V8ThrowException::throwTypeError(message, isolate);
-}
-
-v8::Handle<v8::Value> throwNotEnoughArgumentsError(v8::Isolate* isolate)
-{
-    return V8ThrowException::throwNotEnoughArgumentsError(isolate);
 }
 
 class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
@@ -117,11 +110,6 @@ class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
         return data;
     }
 
-    virtual void Free(void*)
-    {
-        IMMEDIATE_CRASH();
-    }
-
     virtual void Free(void* data, size_t size) OVERRIDE
     {
         WTF::ArrayBufferContents::freeMemory(data, size);
@@ -134,23 +122,12 @@ v8::ArrayBuffer::Allocator* v8ArrayBufferAllocator()
     return &arrayBufferAllocator;
 }
 
-
-v8::Handle<v8::Value> v8Array(PassRefPtr<DOMStringList> stringList, v8::Isolate* isolate)
-{
-    if (!stringList)
-        return v8::Array::New();
-    v8::Local<v8::Array> result = v8::Array::New(stringList->length());
-    for (unsigned i = 0; i < stringList->length(); ++i)
-        result->Set(v8::Integer::New(i, isolate), v8String(stringList->item(i), isolate));
-    return result;
-}
-
-Vector<v8::Handle<v8::Value> > toVectorOfArguments(const v8::FunctionCallbackInfo<v8::Value>& args)
+Vector<v8::Handle<v8::Value> > toVectorOfArguments(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     Vector<v8::Handle<v8::Value> > result;
-    size_t length = args.Length();
+    size_t length = info.Length();
     for (size_t i = 0; i < length; ++i)
-        result.append(args[i]);
+        result.append(info[i]);
     return result;
 }
 
@@ -167,9 +144,6 @@ PassRefPtr<NodeFilter> toNodeFilter(v8::Handle<v8::Value> callback, v8::Isolate*
     return filter.release();
 }
 
-static const int8_t kMaxInt8 = 127;
-static const int8_t kMinInt8 = -128;
-static const uint8_t kMaxUInt8 = 255;
 const int32_t kMaxInt32 = 0x7fffffff;
 const int32_t kMinInt32 = -kMaxInt32 - 1;
 const uint32_t kMaxUInt32 = 0xffffffff;
@@ -189,21 +163,53 @@ static double enforceRange(double x, double minimum, double maximum, bool& ok)
     return x;
 }
 
-int8_t toInt8(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+template <typename T>
+struct IntTypeLimits {
+};
+
+template <>
+struct IntTypeLimits<int8_t> {
+    static const int8_t minValue = -128;
+    static const int8_t maxValue = 127;
+    static const unsigned numberOfValues = 256; // 2^8
+};
+
+template <>
+struct IntTypeLimits<uint8_t> {
+    static const uint8_t maxValue = 255;
+    static const unsigned numberOfValues = 256; // 2^8
+};
+
+template <>
+struct IntTypeLimits<int16_t> {
+    static const short minValue = -32768;
+    static const short maxValue = 32767;
+    static const unsigned numberOfValues = 65536; // 2^16
+};
+
+template <>
+struct IntTypeLimits<uint16_t> {
+    static const unsigned short maxValue = 65535;
+    static const unsigned numberOfValues = 65536; // 2^16
+};
+
+template <typename T>
+static inline T toSmallerInt(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
 {
+    typedef IntTypeLimits<T> LimitsTrait;
     ok = true;
 
     // Fast case. The value is already a 32-bit integer in the right range.
     if (value->IsInt32()) {
         int32_t result = value->Int32Value();
-        if (result >= kMinInt8 && result <= kMaxInt8)
-            return static_cast<int8_t>(result);
+        if (result >= LimitsTrait::minValue && result <= LimitsTrait::maxValue)
+            return static_cast<T>(result);
         if (configuration == EnforceRange) {
             ok = false;
             return 0;
         }
-        result %= 256; // 2^8.
-        return static_cast<int8_t>(result > kMaxInt8 ? result - 256 : result);
+        result %= LimitsTrait::numberOfValues;
+        return static_cast<T>(result > LimitsTrait::maxValue ? result - LimitsTrait::numberOfValues : result);
     }
 
     // Can the value be converted to a number?
@@ -214,33 +220,34 @@ int8_t toInt8(v8::Handle<v8::Value> value, IntegerConversionConfiguration config
     }
 
     if (configuration == EnforceRange)
-        return enforceRange(numberObject->Value(), kMinInt8, kMaxInt8, ok);
+        return enforceRange(numberObject->Value(), LimitsTrait::minValue, LimitsTrait::maxValue, ok);
 
     double numberValue = numberObject->Value();
     if (std::isnan(numberValue) || std::isinf(numberValue) || !numberValue)
         return 0;
 
-    numberValue = numberValue < 0 ? -floor(abs(numberValue)) : floor(abs(numberValue));
-    numberValue = fmod(numberValue, 256); // 2^8.
+    numberValue = numberValue < 0 ? -floor(fabs(numberValue)) : floor(fabs(numberValue));
+    numberValue = fmod(numberValue, LimitsTrait::numberOfValues);
 
-    return static_cast<int8_t>(numberValue > kMaxInt8 ? numberValue - 256 : numberValue);
+    return static_cast<T>(numberValue > LimitsTrait::maxValue ? numberValue - LimitsTrait::numberOfValues : numberValue);
 }
 
-uint8_t toUInt8(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+template <typename T>
+static inline T toSmallerUInt(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
 {
+    typedef IntTypeLimits<T> LimitsTrait;
     ok = true;
 
     // Fast case. The value is a 32-bit signed integer - possibly positive?
     if (value->IsInt32()) {
         int32_t result = value->Int32Value();
-        if (result >= 0 && result <= kMaxUInt8)
-            return static_cast<uint8_t>(result);
+        if (result >= 0 && result <= LimitsTrait::maxValue)
+            return static_cast<T>(result);
         if (configuration == EnforceRange) {
             ok = false;
             return 0;
         }
-        // Converting to uint8_t will cause the resulting value to be the value modulo 2^8.
-        return static_cast<uint8_t>(result);
+        return static_cast<T>(result);
     }
 
     // Can the value be converted to a number?
@@ -251,15 +258,35 @@ uint8_t toUInt8(v8::Handle<v8::Value> value, IntegerConversionConfiguration conf
     }
 
     if (configuration == EnforceRange)
-        return enforceRange(numberObject->Value(), 0, kMaxUInt8, ok);
+        return enforceRange(numberObject->Value(), 0, LimitsTrait::maxValue, ok);
 
     // Does the value convert to nan or to an infinity?
     double numberValue = numberObject->Value();
     if (std::isnan(numberValue) || std::isinf(numberValue) || !numberValue)
         return 0;
 
-    numberValue = numberValue < 0 ? -floor(abs(numberValue)) : floor(abs(numberValue));
-    return static_cast<uint8_t>(fmod(numberValue, 256)); // 2^8.
+    numberValue = numberValue < 0 ? -floor(fabs(numberValue)) : floor(fabs(numberValue));
+    return static_cast<T>(fmod(numberValue, LimitsTrait::numberOfValues));
+}
+
+int8_t toInt8(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+{
+    return toSmallerInt<int8_t>(value, configuration, ok);
+}
+
+uint8_t toUInt8(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+{
+    return toSmallerUInt<uint8_t>(value, configuration, ok);
+}
+
+int16_t toInt16(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+{
+    return toSmallerInt<int16_t>(value, configuration, ok);
+}
+
+uint16_t toUInt16(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
+{
+    return toSmallerUInt<uint16_t>(value, configuration, ok);
 }
 
 int32_t toInt32(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
@@ -395,28 +422,6 @@ v8::Handle<v8::FunctionTemplate> createRawTemplate(v8::Isolate* isolate)
     return scope.Close(result);
 }
 
-PassRefPtr<DOMStringList> toDOMStringList(v8::Handle<v8::Value> value, v8::Isolate* isolate)
-{
-    v8::Local<v8::Value> v8Value(v8::Local<v8::Value>::New(isolate, value));
-
-    if (V8DOMStringList::HasInstance(v8Value, isolate, worldType(isolate))) {
-        RefPtr<DOMStringList> ret = V8DOMStringList::toNative(v8::Handle<v8::Object>::Cast(v8Value));
-        return ret.release();
-    }
-
-    if (!v8Value->IsArray())
-        return 0;
-
-    RefPtr<DOMStringList> ret = DOMStringList::create();
-    v8::Local<v8::Array> v8Array = v8::Local<v8::Array>::Cast(v8Value);
-    for (size_t i = 0; i < v8Array->Length(); ++i) {
-        v8::Local<v8::Value> indexedValue = v8Array->Get(v8::Integer::New(i, isolate));
-        V8TRYCATCH_FOR_V8STRINGRESOURCE_RETURN(V8StringResource<>, stringValue, indexedValue, 0);
-        ret->append(stringValue);
-    }
-    return ret.release();
-}
-
 PassRefPtr<XPathNSResolver> toXPathNSResolver(v8::Handle<v8::Value> value, v8::Isolate* isolate)
 {
     RefPtr<XPathNSResolver> resolver;
@@ -444,18 +449,18 @@ DOMWindow* toDOMWindow(v8::Handle<v8::Context> context)
     return V8Window::toNative(window);
 }
 
-ScriptExecutionContext* toScriptExecutionContext(v8::Handle<v8::Context> context)
+ExecutionContext* toExecutionContext(v8::Handle<v8::Context> context)
 {
     v8::Handle<v8::Object> global = context->Global();
     v8::Handle<v8::Object> windowWrapper = global->FindInstanceInPrototypeChain(V8Window::GetTemplate(context->GetIsolate(), MainWorld));
     if (!windowWrapper.IsEmpty())
-        return V8Window::toNative(windowWrapper)->scriptExecutionContext();
+        return V8Window::toNative(windowWrapper)->executionContext();
     windowWrapper = global->FindInstanceInPrototypeChain(V8Window::GetTemplate(context->GetIsolate(), IsolatedWorld));
     if (!windowWrapper.IsEmpty())
-        return V8Window::toNative(windowWrapper)->scriptExecutionContext();
+        return V8Window::toNative(windowWrapper)->executionContext();
     v8::Handle<v8::Object> workerWrapper = global->FindInstanceInPrototypeChain(V8WorkerGlobalScope::GetTemplate(context->GetIsolate(), WorkerWorld));
     if (!workerWrapper.IsEmpty())
-        return V8WorkerGlobalScope::toNative(workerWrapper)->scriptExecutionContext();
+        return V8WorkerGlobalScope::toNative(workerWrapper)->executionContext();
     // FIXME: Is this line of code reachable?
     return 0;
 }
@@ -472,7 +477,7 @@ DOMWindow* activeDOMWindow()
     return toDOMWindow(context);
 }
 
-ScriptExecutionContext* activeScriptExecutionContext()
+ExecutionContext* activeExecutionContext()
 {
     v8::Handle<v8::Context> context = v8::Context::GetCalling();
     if (context.IsEmpty()) {
@@ -481,7 +486,7 @@ ScriptExecutionContext* activeScriptExecutionContext()
         // entered context.
         context = v8::Context::GetEntered();
     }
-    return toScriptExecutionContext(context);
+    return toExecutionContext(context);
 }
 
 DOMWindow* firstDOMWindow()
@@ -505,12 +510,12 @@ Frame* toFrameIfNotDetached(v8::Handle<v8::Context> context)
     return 0;
 }
 
-v8::Local<v8::Context> toV8Context(ScriptExecutionContext* context, DOMWrapperWorld* world)
+v8::Local<v8::Context> toV8Context(ExecutionContext* context, DOMWrapperWorld* world)
 {
     if (context->isDocument()) {
         ASSERT(world);
         if (Frame* frame = toDocument(context)->frame())
-            return frame->script()->windowShell(world)->context();
+            return frame->script().windowShell(world)->context();
     } else if (context->isWorkerGlobalScope()) {
         ASSERT(!world);
         if (WorkerScriptController* script = toWorkerGlobalScope(context)->script())
@@ -531,8 +536,8 @@ bool handleOutOfMemory()
     if (!frame)
         return true;
 
-    frame->script()->clearForOutOfMemory();
-    frame->loader()->client()->didExhaustMemoryAvailableForScript();
+    frame->script().clearForOutOfMemory();
+    frame->loader().client()->didExhaustMemoryAvailableForScript();
 
     if (Settings* settings = frame->settings())
         settings->setScriptEnabled(false);
@@ -591,20 +596,32 @@ v8::Local<v8::Value> getHiddenValueFromMainWorldWrapper(v8::Isolate* isolate, Sc
     return wrapper.IsEmpty() ? v8::Local<v8::Value>() : wrapper->GetHiddenValue(key);
 }
 
-v8::Isolate* toIsolate(ScriptExecutionContext* context)
+static v8::Isolate* mainIsolate = 0;
+
+v8::Isolate* mainThreadIsolate()
 {
-    if (context && context->isDocument()) {
-        static v8::Isolate* mainWorldIsolate = 0;
-        if (!mainWorldIsolate)
-            mainWorldIsolate = v8::Isolate::GetCurrent();
-        return mainWorldIsolate;
-    }
+    ASSERT(mainIsolate);
+    ASSERT(isMainThread());
+    return mainIsolate;
+}
+
+void setMainThreadIsolate(v8::Isolate* isolate)
+{
+    ASSERT(!mainIsolate);
+    ASSERT(isMainThread());
+    mainIsolate = isolate;
+}
+
+v8::Isolate* toIsolate(ExecutionContext* context)
+{
+    if (context && context->isDocument())
+        return mainThreadIsolate();
     return v8::Isolate::GetCurrent();
 }
 
 v8::Isolate* toIsolate(Frame* frame)
 {
-    return frame->script()->isolate();
+    return frame->script().isolate();
 }
 
 } // namespace WebCore

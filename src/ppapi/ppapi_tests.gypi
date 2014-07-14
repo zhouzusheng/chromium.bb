@@ -82,25 +82,6 @@
 #        },
 #      ],
     },
-    {
-      'target_name': 'ppapi_unittest_shared',
-      'type': 'static_library',
-      'dependencies': [
-        'ppapi_proxy',
-        'ppapi_shared',
-        '../ipc/ipc.gyp:ipc',
-      ],
-      'sources': [
-        'proxy/ppapi_proxy_test.cc',
-        'proxy/ppapi_proxy_test.h',
-        'proxy/resource_message_test_sink.cc',
-        'proxy/resource_message_test_sink.h',
-        'shared_impl/test_globals.cc',
-        'shared_impl/test_globals.h',
-        'shared_impl/unittest_utils.cc',
-        'shared_impl/unittest_utils.h',
-      ],
-    },
 
     {
       'target_name': 'ppapi_perftests',

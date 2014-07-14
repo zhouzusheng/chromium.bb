@@ -119,7 +119,7 @@ IndexedDBFactory* IndexedDBContextImpl::GetIDBFactory() {
     // Prime our cache of origins with existing databases so we can
     // detect when dbs are newly created.
     GetOriginSet();
-    factory_ = new IndexedDBFactory();
+    factory_ = new IndexedDBFactory(this);
   }
   return factory_;
 }
@@ -186,8 +186,7 @@ ListValue* IndexedDBContextImpl::GetAllOriginsDetails() {
 
     if (factory_) {
       std::vector<IndexedDBDatabase*> databases =
-          factory_->GetOpenDatabasesForOrigin(
-              webkit_database::GetIdentifierFromOrigin(origin_url));
+          factory_->GetOpenDatabasesForOrigin(origin_url);
       // TODO(jsbell): Sort by name?
       scoped_ptr<ListValue> database_list(new ListValue());
 
@@ -309,8 +308,17 @@ void IndexedDBContextImpl::DeleteForOrigin(const GURL& origin_url) {
 
   base::FilePath idb_directory = GetFilePath(origin_url);
   EnsureDiskUsageCacheInitialized(origin_url);
-  const bool recursive = true;
-  bool deleted = base::DeleteFile(idb_directory, recursive);
+  bool deleted = LevelDBDatabase::Destroy(idb_directory);
+  if (!deleted) {
+    LOG(WARNING) << "Failed to delete LevelDB database: "
+                 << idb_directory.AsUTF8Unsafe();
+  } else {
+    // LevelDB does not delete empty directories; work around this.
+    // TODO(jsbell): Remove when upstream bug is fixed.
+    // https://code.google.com/p/leveldb/issues/detail?id=209
+    const bool kNonRecursive = false;
+    base::DeleteFile(idb_directory, kNonRecursive);
+  }
 
   QueryDiskAndUpdateQuotaUsage(origin_url);
   if (deleted) {
@@ -320,7 +328,7 @@ void IndexedDBContextImpl::DeleteForOrigin(const GURL& origin_url) {
   }
 }
 
-void IndexedDBContextImpl::ForceClose(const GURL& origin_url) {
+void IndexedDBContextImpl::ForceClose(const GURL origin_url) {
   DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
   if (data_path_.empty() || !IsInOriginSet(origin_url))
     return;
@@ -331,6 +339,7 @@ void IndexedDBContextImpl::ForceClose(const GURL& origin_url) {
     while (it != connections.end()) {
       // Remove before closing so callbacks don't double-erase
       IndexedDBConnection* connection = *it;
+      DCHECK(connection->IsConnected());
       connections.erase(it++);
       connection->ForceClose();
     }
@@ -350,7 +359,7 @@ size_t IndexedDBContextImpl::GetConnectionCount(const GURL& origin_url) {
   return connections_[origin_url].size();
 }
 
-base::FilePath IndexedDBContextImpl::GetFilePath(const GURL& origin_url) {
+base::FilePath IndexedDBContextImpl::GetFilePath(const GURL& origin_url) const {
   std::string origin_id = webkit_database::GetIdentifierFromOrigin(origin_url);
   return GetIndexedDBFilePath(origin_id);
 }
@@ -434,12 +443,9 @@ quota::QuotaManagerProxy* IndexedDBContextImpl::quota_manager_proxy() {
 
 IndexedDBContextImpl::~IndexedDBContextImpl() {
   if (factory_) {
-    IndexedDBFactory* factory = factory_;
-    factory->AddRef();
+    TaskRunner()->PostTask(
+        FROM_HERE, base::Bind(&IndexedDBFactory::ContextDestroyed, factory_));
     factory_ = NULL;
-    if (!task_runner_->ReleaseSoon(FROM_HERE, factory)) {
-      factory->Release();
-    }
   }
 
   if (data_path_.empty())
@@ -472,8 +478,7 @@ base::FilePath IndexedDBContextImpl::GetIndexedDBFilePath(
 int64 IndexedDBContextImpl::ReadUsageFromDisk(const GURL& origin_url) const {
   if (data_path_.empty())
     return 0;
-  std::string origin_id = webkit_database::GetIdentifierFromOrigin(origin_url);
-  base::FilePath file_path = GetIndexedDBFilePath(origin_id);
+  base::FilePath file_path = GetFilePath(origin_url);
   return base::ComputeDirectorySize(file_path);
 }
 

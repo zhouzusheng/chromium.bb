@@ -26,21 +26,23 @@
 #ifndef Scrollbar_h
 #define Scrollbar_h
 
-#include "core/platform/ScrollTypes.h"
-#include "core/platform/ScrollbarThemeClient.h"
-#include "core/platform/Timer.h"
-#include "core/platform/Widget.h"
+#include "platform/Timer.h"
+#include "platform/Widget.h"
+#include "platform/scroll/ScrollTypes.h"
+#include "platform/scroll/ScrollbarThemeClient.h"
 #include "wtf/MathExtras.h"
 #include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
+class AXObjectCache;
 class GraphicsContext;
 class IntRect;
 class PlatformGestureEvent;
 class PlatformMouseEvent;
 class ScrollableArea;
 class ScrollbarTheme;
+class ScrollView;
 
 class Scrollbar : public Widget,
                   public ScrollbarThemeClient {
@@ -58,8 +60,12 @@ public:
     virtual IntSize size() const { return Widget::size(); }
     virtual IntPoint location() const { return Widget::location(); }
 
-    virtual ScrollView* parent() const { return Widget::parent(); }
-    virtual ScrollView* root() const { return Widget::root(); }
+    virtual Widget* parent() const { return Widget::parent(); }
+    virtual Widget* root() const { return Widget::root(); }
+
+    void removeFromParent();
+    ScrollView* parentScrollView() const;
+    ScrollView* rootScrollView() const;
 
     virtual void setFrameRect(const IntRect&);
     virtual IntRect frameRect() const { return Widget::frameRect(); }
@@ -129,7 +135,7 @@ public:
 
     ScrollbarTheme* theme() const { return m_theme; }
 
-    virtual void setParent(ScrollView*);
+    virtual void setParent(Widget*) OVERRIDE;
 
     bool suppressInvalidation() const { return m_suppressInvalidation; }
     void setSuppressInvalidation(bool s) { m_suppressInvalidation = s; }
@@ -191,6 +197,21 @@ private:
 
     float scrollableAreaCurrentPos() const;
 };
+
+inline Scrollbar* toScrollbar(Widget* widget)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!widget || widget->isScrollbar());
+    return static_cast<Scrollbar*>(widget);
+}
+
+inline const Scrollbar* toScrollbar(const Widget* widget)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!widget || widget->isScrollbar());
+    return static_cast<const Scrollbar*>(widget);
+}
+
+// This will catch anyone doing an unnecessary cast.
+void toScrollbar(const Scrollbar*);
 
 } // namespace WebCore
 

@@ -29,7 +29,7 @@
 #include "WebNonCopyable.h"
 #include "WebPrivateOwnPtr.h"
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
 #include "wtf/Forward.h"
 #endif
 
@@ -46,7 +46,8 @@ class WebAnimation {
 public:
     enum TargetProperty {
         TargetPropertyTransform = 0,
-        TargetPropertyOpacity
+        TargetPropertyOpacity,
+        TargetPropertyFilter
     };
 
     virtual ~WebAnimation() { }

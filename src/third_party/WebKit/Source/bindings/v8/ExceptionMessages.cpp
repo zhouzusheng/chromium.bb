@@ -53,9 +53,49 @@ String ExceptionMessages::failedToSet(const String& property, const String& type
     return "Failed to set the '" + property + "' property on '" + type + "': " + detail;
 }
 
+String ExceptionMessages::failedToDelete(const String& property, const String& type, const String& detail)
+{
+    return "Failed to delete the '" + property + "' property from '" + type + "': " + detail;
+}
+
+String ExceptionMessages::notAnArrayTypeArgumentOrValue(int argumentIndex)
+{
+    String kind;
+    if (argumentIndex) // method argument
+        kind = ordinalNumber(argumentIndex) + " argument";
+    else // value, e.g. attribute setter
+        kind = "value provided";
+    return "The " + kind + " is neither an array, nor does it have indexed properties.";
+}
+
+String ExceptionMessages::notASequenceTypeProperty(const String& propertyName)
+{
+    return "'" + propertyName + "' property is neither an array, nor does it have indexed properties.";
+}
+
 String ExceptionMessages::notEnoughArguments(unsigned expected, unsigned provided)
 {
     return String::number(expected) + " argument" + (expected > 1 ? "s" : "") + " required, but only " + String::number(provided) + " present.";
+}
+
+String ExceptionMessages::ordinalNumber(int number)
+{
+    String suffix("th");
+    switch (number % 10) {
+    case 1:
+        if (number % 100 != 11)
+            suffix = "st";
+        break;
+    case 2:
+        if (number % 100 != 12)
+            suffix = "nd";
+        break;
+    case 3:
+        if (number % 100 != 13)
+            suffix = "rd";
+        break;
+    }
+    return String::number(number) + suffix;
 }
 
 } // namespace WebCore

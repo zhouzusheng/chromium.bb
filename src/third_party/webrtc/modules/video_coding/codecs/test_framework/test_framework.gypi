@@ -18,19 +18,6 @@
         '<(webrtc_root)/test/metrics.gyp:metrics',
         '<(webrtc_root)/test/test.gyp:test_support',
       ],
-
-      'include_dirs': [
-        '../interface',
-        '<(DEPTH)/testing/gtest/include',
-        '../../../../common_video/interface',
-      ],
-
-      'direct_dependent_settings': {
-        'include_dirs': [
-          '../interface',
-        ],
-      },
-
       'sources': [
         # header files
         'benchmark.h',

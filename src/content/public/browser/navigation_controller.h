@@ -119,6 +119,10 @@ class NavigationController {
     // Referrer for this load. Empty if none.
     Referrer referrer;
 
+    // Any redirect URLs that occurred for this navigation before |url|.
+    // Defaults to an empty vector.
+    std::vector<GURL> redirect_chain;
+
     // Extra headers for this load, separated by \n.
     std::string extra_headers;
 
@@ -212,6 +216,8 @@ class NavigationController {
 
   // Active entry --------------------------------------------------------------
 
+  // THIS IS DEPRECATED. DO NOT USE. Use GetVisibleEntry instead.
+  //
   // Returns the active entry, which is the transient entry if any, the pending
   // entry if a navigation is in progress or the last committed entry otherwise.
   // NOTE: This can be NULL!!

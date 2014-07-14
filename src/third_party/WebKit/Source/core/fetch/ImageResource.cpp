@@ -24,16 +24,17 @@
 #include "config.h"
 #include "core/fetch/ImageResource.h"
 
+#include "RuntimeEnabledFeatures.h"
 #include "core/fetch/ImageResourceClient.h"
 #include "core/fetch/MemoryCache.h"
 #include "core/fetch/ResourceClient.h"
 #include "core/fetch/ResourceClientWalker.h"
 #include "core/fetch/ResourceFetcher.h"
-#include "core/page/FrameView.h"
-#include "core/platform/SharedBuffer.h"
+#include "core/frame/FrameView.h"
 #include "core/platform/graphics/BitmapImage.h"
 #include "core/rendering/RenderObject.h"
 #include "core/svg/graphics/SVGImage.h"
+#include "platform/SharedBuffer.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/Vector.h"
@@ -44,8 +45,10 @@ namespace WebCore {
 
 ImageResource::ImageResource(const ResourceRequest& resourceRequest)
     : Resource(resourceRequest, Image)
+    , m_devicePixelRatioHeaderValue(1.0)
     , m_image(0)
     , m_loadingMultipartContent(false)
+    , m_hasDevicePixelRatioHeaderValue(false)
 {
     setStatus(Unknown);
     setCustomAcceptHeader();
@@ -323,6 +326,8 @@ void ImageResource::appendData(const char* data, int length)
 
 void ImageResource::updateImage(bool allDataReceived)
 {
+    TRACE_EVENT0("webkit", "ImageResource::updateImage");
+
     if (m_data)
         createImage();
 
@@ -375,6 +380,13 @@ void ImageResource::responseReceived(const ResourceResponse& response)
         finishOnePart();
     else if (response.isMultipart())
         m_loadingMultipartContent = true;
+    if (RuntimeEnabledFeatures::clientHintsDprEnabled()) {
+        m_devicePixelRatioHeaderValue = response.httpHeaderField("DPR").toFloat(&m_hasDevicePixelRatioHeaderValue);
+        if (!m_hasDevicePixelRatioHeaderValue || m_devicePixelRatioHeaderValue <= 0.0) {
+            m_devicePixelRatioHeaderValue = 1.0;
+            m_hasDevicePixelRatioHeaderValue = false;
+        }
+    }
     Resource::responseReceived(response);
 }
 
@@ -446,6 +458,15 @@ bool ImageResource::currentFrameKnownToBeOpaque(const RenderObject* renderer)
     if (image->isBitmapImage())
         image->nativeImageForCurrentFrame(); // force decode
     return image->currentFrameKnownToBeOpaque();
+}
+
+bool ImageResource::isAccessAllowed(SecurityOrigin* securityOrigin)
+{
+    if (!image()->currentFrameHasSingleSecurityOrigin())
+        return false;
+    if (passesAccessControlCheck(securityOrigin))
+        return true;
+    return !securityOrigin->taintsCanvas(response().url());
 }
 
 } // namespace WebCore

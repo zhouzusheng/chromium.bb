@@ -59,6 +59,10 @@ enum DrawMode {
 
 class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
  public:
+  typedef LayerImplList RenderSurfaceListType;
+  typedef LayerImplList LayerListType;
+  typedef RenderSurfaceImpl RenderSurfaceType;
+
   static scoped_ptr<LayerImpl> Create(LayerTreeImpl* tree_impl, int id) {
     return make_scoped_ptr(new LayerImpl(tree_impl, id));
   }
@@ -68,6 +72,7 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   int id() const { return layer_id_; }
 
   // LayerAnimationValueObserver implementation.
+  virtual void OnFilterAnimated(const FilterOperations& filters) OVERRIDE;
   virtual void OnOpacityAnimated(float opacity) OVERRIDE;
   virtual void OnTransformAnimated(const gfx::Transform& transform) OVERRIDE;
   virtual bool IsActive() const OVERRIDE;
@@ -187,14 +192,13 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
 
   void SetFilters(const FilterOperations& filters);
   const FilterOperations& filters() const { return filters_; }
+  bool FilterIsAnimating() const;
+  bool FilterIsAnimatingOnImplOnly() const;
 
   void SetBackgroundFilters(const FilterOperations& filters);
   const FilterOperations& background_filters() const {
     return background_filters_;
   }
-
-  void SetFilter(const skia::RefPtr<SkImageFilter>& filter);
-  skia::RefPtr<SkImageFilter> filter() const { return filter_; }
 
   void SetMasksToBounds(bool masks_to_bounds);
   bool masks_to_bounds() const { return masks_to_bounds_; }
@@ -267,10 +271,10 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   void CreateRenderSurface();
   void ClearRenderSurface();
 
-  DrawProperties<LayerImpl, RenderSurfaceImpl>& draw_properties() {
+  DrawProperties<LayerImpl>& draw_properties() {
     return draw_properties_;
   }
-  const DrawProperties<LayerImpl, RenderSurfaceImpl>& draw_properties() const {
+  const DrawProperties<LayerImpl>& draw_properties() const {
     return draw_properties_;
   }
 
@@ -345,6 +349,8 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
 
   void SetScrollOffsetDelegate(
       LayerScrollOffsetDelegate* scroll_offset_delegate);
+  bool IsExternalFlingActive() const;
+
   void SetScrollOffset(gfx::Vector2d scroll_offset);
   void SetScrollOffsetAndDelta(gfx::Vector2d scroll_offset,
                                gfx::Vector2dF scroll_delta);
@@ -368,8 +374,15 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   void SetScrollable(bool scrollable) { scrollable_ = scrollable; }
   bool scrollable() const { return scrollable_; }
 
+  void set_user_scrollable_horizontal(bool scrollable) {
+    user_scrollable_horizontal_ = scrollable;
+  }
+  void set_user_scrollable_vertical(bool scrollable) {
+    user_scrollable_vertical_ = scrollable;
+  }
+
   void ApplySentScrollDeltasFromAbortedCommit();
-  void ApplyScrollDeltasSinceBeginFrame();
+  void ApplyScrollDeltasSinceBeginMainFrame();
 
   void SetShouldScrollOnMainThread(bool should_scroll_on_main_thread) {
     should_scroll_on_main_thread_ = should_scroll_on_main_thread;
@@ -427,7 +440,6 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   bool LayerPropertyChanged() const {
     return layer_property_changed_ || LayerIsAlwaysDamaged();
   }
-  bool LayerSurfacePropertyChanged() const;
 
   void ResetAllChangeTrackingForSubtree();
 
@@ -466,8 +478,6 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
 
   virtual skia::RefPtr<SkPicture> GetPicture();
 
-  virtual bool CanClipSelf() const;
-
   virtual bool AreVisibleResourcesReady() const;
 
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl);
@@ -497,7 +507,6 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
 
   virtual void AsValueInto(base::DictionaryValue* dict) const;
 
-  void NoteLayerSurfacePropertyChanged();
   void NoteLayerPropertyChanged();
   void NoteLayerPropertyChangedForSubtree();
 
@@ -542,6 +551,8 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   bool scrollable_;
   bool should_scroll_on_main_thread_;
   bool have_wheel_event_handlers_;
+  bool user_scrollable_horizontal_;
+  bool user_scrollable_vertical_;
   Region non_fast_scrollable_region_;
   Region touch_event_handler_region_;
   SkColor background_color_;
@@ -552,13 +563,6 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
 
   // Tracks if drawing-related properties have changed since last redraw.
   bool layer_property_changed_;
-
-  // Indicates that a property has changed on this layer that would not
-  // affect the pixels on its target surface, but would require redrawing
-  // the target_surface onto its ancestor target_surface.
-  // For layers that do not own a surface this flag acts as
-  // layer_property_changed_.
-  bool layer_surface_property_changed_;
 
   bool masks_to_bounds_;
   bool contents_opaque_;
@@ -597,7 +601,6 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
 
   FilterOperations filters_;
   FilterOperations background_filters_;
-  skia::RefPtr<SkImageFilter> filter_;
 
  protected:
   DrawMode current_draw_mode_;
@@ -623,7 +626,7 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
 
   // Group of properties that need to be computed based on the layer tree
   // hierarchy before layers can be drawn.
-  DrawProperties<LayerImpl, RenderSurfaceImpl> draw_properties_;
+  DrawProperties<LayerImpl> draw_properties_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerImpl);
 };

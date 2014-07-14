@@ -76,6 +76,14 @@
             '../build/linux/system.gyp:x11',
           ],
         }],
+        ['use_aura==1 and use_x11==1', {
+          'dependencies': [
+            '../build/linux/system.gyp:xrandr',
+          ],
+          'export_dependent_settings': [
+            '../build/linux/system.gyp:xrandr',
+          ],
+        }],
         ['OS == "android" and _toolset == "host"', {
           # Always build base as a static_library for host toolset, even if
           # we're doing a component build. Specifically, we only care about the
@@ -383,6 +391,8 @@
         'prefs/pref_value_map.h',
         'prefs/pref_value_store.cc',
         'prefs/pref_value_store.h',
+        'prefs/scoped_user_pref_update.cc',
+        'prefs/scoped_user_pref_update.h',
         'prefs/value_map_pref_store.cc',
         'prefs/value_map_pref_store.h',
       ],
@@ -457,7 +467,8 @@
         'bits_unittest.cc',
         'build_time_unittest.cc',
         'callback_helpers_unittest.cc',
-        'callback_registry_unittest.cc',
+        'callback_list_unittest.cc',
+        'callback_list_unittest.nc',
         'callback_unittest.cc',
         'callback_unittest.nc',
         'cancelable_callback_unittest.cc',
@@ -518,6 +529,7 @@
         'md5_unittest.cc',
         'memory/aligned_memory_unittest.cc',
         'memory/discardable_memory_unittest.cc',
+        'memory/discardable_memory_provider_unittest.cc',
         'memory/linked_ptr_unittest.cc',
         'memory/ref_counted_memory_unittest.cc',
         'memory/ref_counted_unittest.cc',
@@ -539,6 +551,7 @@
         'metrics/bucket_ranges_unittest.cc',
         'metrics/field_trial_unittest.cc',
         'metrics/histogram_base_unittest.cc',
+        'metrics/histogram_delta_serialization_unittest.cc',
         'metrics/histogram_unittest.cc',
         'metrics/sparse_histogram_unittest.cc',
         'metrics/stats_table_unittest.cc',
@@ -561,6 +574,7 @@
         'prefs/pref_service_unittest.cc',
         'prefs/pref_value_map_unittest.cc',
         'prefs/pref_value_store_unittest.cc',
+        'prefs/scoped_user_pref_update_unittest.cc',
         'process/memory_unittest.cc',
         'process/memory_unittest_mac.h',
         'process/memory_unittest_mac.mm',
@@ -592,6 +606,7 @@
         'strings/sys_string_conversions_unittest.cc',
         'strings/utf_offset_string_conversions_unittest.cc',
         'strings/utf_string_conversions_unittest.cc',
+        'sync_socket_unittest.cc',
         'synchronization/cancellation_flag_unittest.cc',
         'synchronization/condition_variable_unittest.cc',
         'synchronization/lock_unittest.cc',
@@ -803,9 +818,19 @@
             'win/win_util_unittest.cc',
           ],
         }],
+        ['use_aura==1 and use_x11==1',  {
+          'sources': [
+            'x11/edid_parser_x11_unittest.cc',
+          ],
+        }],
         ['use_system_nspr==1', {
           'dependencies': [
             'third_party/nspr/nspr.gyp:nspr',
+          ],
+        }],
+        ['<(native_discardable_memory)==1', {
+          'sources!': [
+            'memory/discardable_memory_provider_unittest.cc',
           ],
         }],
       ],  # conditions
@@ -823,128 +848,6 @@
         ['OS == "android"', {
           'sources/': [
             ['include', '^debug/proc_maps_linux_unittest\\.cc$'],
-          ],
-        }],
-      ],  # target_conditions
-    },
-    {
-      'target_name': 'test_support_base',
-      'type': 'static_library',
-      'dependencies': [
-        'base',
-        'base_static',
-        'base_i18n',
-        '../third_party/libxml/libxml.gyp:libxml',
-        'third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-      ],
-      'export_dependent_settings': [
-        'base',
-      ],
-      'conditions': [
-        ['toolkit_uses_gtk==1', {
-          'dependencies': [
-            # test_suite initializes GTK.
-            '../build/linux/system.gyp:gtk',
-          ],
-        }],
-        ['os_posix==0', {
-          'sources!': [
-            'test/scoped_locale.cc',
-            'test/scoped_locale.h',
-          ],
-        }],
-        ['os_bsd==1', {
-          'sources!': [
-            'test/test_file_util_linux.cc',
-          ],
-        }],
-      ],
-      'sources': [
-        'test/expectations/expectation.cc',
-        'test/expectations/expectation.h',
-        'test/expectations/parser.cc',
-        'test/expectations/parser.h',
-        'test/multiprocess_test.cc',
-        'test/multiprocess_test.h',
-        'test/multiprocess_test_android.cc',
-        'test/null_task_runner.cc',
-        'test/null_task_runner.h',
-        'test/parallel_test_launcher.cc',
-        'test/parallel_test_launcher.h',
-        'test/perf_log.cc',
-        'test/perf_log.h',
-        'test/perf_test_suite.cc',
-        'test/perf_test_suite.h',
-        'test/perf_time_logger.cc',
-        'test/perf_time_logger.h',
-        'test/perftimer.cc',
-        'test/perftimer.h',
-        'test/power_monitor_test_base.cc',
-        'test/power_monitor_test_base.h',
-        'test/scoped_locale.cc',
-        'test/scoped_locale.h',
-        'test/scoped_path_override.cc',
-        'test/scoped_path_override.h',
-        'test/sequenced_task_runner_test_template.cc',
-        'test/sequenced_task_runner_test_template.h',
-        'test/sequenced_worker_pool_owner.cc',
-        'test/sequenced_worker_pool_owner.h',
-        'test/simple_test_clock.cc',
-        'test/simple_test_clock.h',
-        'test/simple_test_tick_clock.cc',
-        'test/simple_test_tick_clock.h',
-        'test/task_runner_test_template.cc',
-        'test/task_runner_test_template.h',
-        'test/test_file_util.cc',
-        'test/test_file_util.h',
-        'test/test_file_util_linux.cc',
-        'test/test_file_util_mac.cc',
-        'test/test_file_util_posix.cc',
-        'test/test_file_util_win.cc',
-        'test/test_launcher.cc',
-        'test/test_launcher.h',
-        'test/test_listener_ios.h',
-        'test/test_listener_ios.mm',
-        'test/test_pending_task.cc',
-        'test/test_pending_task.h',
-        'test/test_process_killer_win.cc',
-        'test/test_process_killer_win.h',
-        'test/test_reg_util_win.cc',
-        'test/test_reg_util_win.h',
-        'test/test_shortcut_win.cc',
-        'test/test_shortcut_win.h',
-        'test/test_simple_task_runner.cc',
-        'test/test_simple_task_runner.h',
-        'test/test_suite.cc',
-        'test/test_suite.h',
-        'test/test_support_android.cc',
-        'test/test_support_android.h',
-        'test/test_support_ios.h',
-        'test/test_support_ios.mm',
-        'test/test_switches.cc',
-        'test/test_switches.h',
-        'test/test_timeouts.cc',
-        'test/test_timeouts.h',
-        'test/thread_test_helper.cc',
-        'test/thread_test_helper.h',
-        'test/trace_event_analyzer.cc',
-        'test/trace_event_analyzer.h',
-        'test/unit_test_launcher.cc',
-        'test/unit_test_launcher.h',
-        'test/unit_test_launcher_ios.cc',
-        'test/values_test_util.cc',
-        'test/values_test_util.h',
-      ],
-      'target_conditions': [
-        ['OS == "ios"', {
-          'sources/': [
-            # Pull in specific Mac files for iOS (which have been filtered out
-            # by file name rules).
-            ['include', '^test/test_file_util_mac\\.cc$'],
-          ],
-          'sources!': [
-            # iOS uses its own unit test launcher.
-            'test/unit_test_launcher.cc',
           ],
         }],
       ],  # target_conditions

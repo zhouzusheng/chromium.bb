@@ -54,9 +54,9 @@
 #include "WebViewImpl.h"
 #include "bindings/v8/ScriptController.h"
 #include "core/dom/Document.h"
-#include "core/dom/MessageEvent.h"
-#include "core/dom/MouseEvent.h"
-#include "core/dom/UserGestureIndicator.h"
+#include "core/dom/DocumentFullscreen.h"
+#include "core/events/MessageEvent.h"
+#include "core/events/MouseEvent.h"
 #include "core/dom/WheelController.h"
 #include "core/history/HistoryItem.h"
 #include "core/html/HTMLAppletElement.h"
@@ -68,21 +68,25 @@
 #include "core/loader/ProgressTracker.h"
 #include "core/page/Chrome.h"
 #include "core/page/EventHandler.h"
-#include "core/page/FrameView.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
 #include "core/page/WindowFeatures.h"
 #include "core/platform/MIMETypeRegistry.h"
-#include "core/platform/chromium/support/WrappedResourceRequest.h"
-#include "core/platform/chromium/support/WrappedResourceResponse.h"
 #include "core/platform/mediastream/RTCPeerConnectionHandler.h"
-#include "core/platform/network/HTTPParsers.h"
-#include "core/platform/network/SocketStreamHandleInternal.h"
 #include "core/plugins/PluginData.h"
 #include "core/rendering/HitTestResult.h"
 #include "modules/device_orientation/DeviceMotionController.h"
+#include "modules/device_orientation/NewDeviceOrientationController.h"
+#include "platform/UserGestureIndicator.h"
+#include "platform/exported/WrappedResourceRequest.h"
+#include "platform/exported/WrappedResourceResponse.h"
+#include "platform/network/HTTPParsers.h"
+#include "platform/network/SocketStreamHandleInternal.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebMimeRegistry.h"
+#include "public/platform/WebServiceWorkerProvider.h"
+#include "public/platform/WebServiceWorkerProviderClient.h"
 #include "public/platform/WebSocketStreamHandle.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLError.h"
@@ -125,6 +129,8 @@ void FrameLoaderClientImpl::dispatchDidClearWindowObjectInWorld(DOMWrapperWorld*
             WheelController::from(document);
             if (RuntimeEnabledFeatures::deviceMotionEnabled())
                 DeviceMotionController::from(document);
+            if (RuntimeEnabledFeatures::deviceOrientationEnabled())
+                NewDeviceOrientationController::from(document);
         }
     }
 }
@@ -263,7 +269,7 @@ void FrameLoaderClientImpl::detachedFromParent()
     // will cause a crash.  If you remove/modify this, just ensure that you can
     // go to a page and then navigate to a new page without getting any asserts
     // or crashes.
-    m_webFrame->frame()->script()->clearForClose();
+    m_webFrame->frame()->script().clearForClose();
 
     // Alert the client that the frame is being detached. This is the last
     // chance we have to communicate with the client.
@@ -344,12 +350,11 @@ void FrameLoaderClientImpl::dispatchDidReceiveServerRedirectForProvisionalLoad()
         m_webFrame->client()->didReceiveServerRedirectForProvisionalLoad(m_webFrame);
 }
 
-void FrameLoaderClientImpl::dispatchDidNavigateWithinPage()
+void FrameLoaderClientImpl::dispatchDidNavigateWithinPage(NavigationHistoryPolicy navigationHistoryPolicy)
 {
-    bool isNewNavigation;
-    m_webFrame->viewImpl()->didCommitLoad(&isNewNavigation, true);
+    m_webFrame->viewImpl()->didCommitLoad(navigationHistoryPolicy == NavigationCreatedHistoryEntry, true);
     if (m_webFrame->client())
-        m_webFrame->client()->didNavigateWithinPage(m_webFrame, isNewNavigation);
+        m_webFrame->client()->didNavigateWithinPage(m_webFrame, navigationHistoryPolicy == NavigationCreatedHistoryEntry);
 }
 
 void FrameLoaderClientImpl::dispatchWillClose()
@@ -376,14 +381,11 @@ void FrameLoaderClientImpl::dispatchDidChangeIcons(WebCore::IconType type)
         m_webFrame->client()->didChangeIcon(m_webFrame, static_cast<WebIconURL::Type>(type));
 }
 
-void FrameLoaderClientImpl::dispatchDidCommitLoad()
+void FrameLoaderClientImpl::dispatchDidCommitLoad(NavigationHistoryPolicy navigationHistoryPolicy)
 {
-    WebViewImpl* webview = m_webFrame->viewImpl();
-    bool isNewNavigation;
-    webview->didCommitLoad(&isNewNavigation, false);
-
+    m_webFrame->viewImpl()->didCommitLoad(navigationHistoryPolicy == NavigationCreatedHistoryEntry, false);
     if (m_webFrame->client())
-        m_webFrame->client()->didCommitProvisionalLoad(m_webFrame, isNewNavigation);
+        m_webFrame->client()->didCommitProvisionalLoad(m_webFrame, navigationHistoryPolicy == NavigationCreatedHistoryEntry);
 }
 
 void FrameLoaderClientImpl::dispatchDidFailProvisionalLoad(
@@ -422,14 +424,9 @@ void FrameLoaderClientImpl::dispatchDidFinishLoad()
     // provisional load succeeds or fails, not the "real" one.
 }
 
-void FrameLoaderClientImpl::dispatchDidLayout(LayoutMilestones milestones)
+void FrameLoaderClientImpl::dispatchDidFirstVisuallyNonEmptyLayout()
 {
-    if (!m_webFrame->client())
-        return;
-
-    if (milestones & DidFirstLayout)
-        m_webFrame->client()->didFirstLayout(m_webFrame);
-    if (milestones & DidFirstVisuallyNonEmptyLayout)
+    if (m_webFrame->client())
         m_webFrame->client()->didFirstVisuallyNonEmptyLayout(m_webFrame);
 }
 
@@ -490,17 +487,26 @@ void FrameLoaderClientImpl::postProgressFinishedNotification()
 void FrameLoaderClientImpl::loadURLExternally(const ResourceRequest& request, NavigationPolicy policy, const String& suggestedName)
 {
     if (m_webFrame->client()) {
+        DocumentFullscreen::webkitCancelFullScreen(m_webFrame->frame()->document());
         WrappedResourceRequest webreq(request);
         m_webFrame->client()->loadURLExternally(
             m_webFrame, webreq, static_cast<WebNavigationPolicy>(policy), suggestedName);
     }
 }
 
-void FrameLoaderClientImpl::navigateBackForward(int offset) const
+bool FrameLoaderClientImpl::navigateBackForward(int offset) const
 {
     WebViewImpl* webview = m_webFrame->viewImpl();
-    if (webview->client())
-        webview->client()->navigateBackForwardSoon(offset);
+    if (!webview->client())
+        return false;
+
+    ASSERT(offset);
+    offset = std::min(offset, webview->client()->historyForwardListCount());
+    offset = std::max(offset, -webview->client()->historyBackListCount());
+    if (!offset)
+        return false;
+    webview->client()->navigateBackForwardSoon(offset);
+    return true;
 }
 
 void FrameLoaderClientImpl::didAccessInitialDocument()
@@ -537,6 +543,12 @@ void FrameLoaderClientImpl::didDispatchPingLoader(const KURL& url)
 {
     if (m_webFrame->client())
         m_webFrame->client()->didDispatchPingLoader(m_webFrame, url);
+}
+
+void FrameLoaderClientImpl::selectorMatchChanged(const Vector<String>& addedSelectors, const Vector<String>& removedSelectors)
+{
+    if (WebFrameClient* client = m_webFrame->client())
+        client->didMatchCSS(m_webFrame, WebVector<WebString>(addedSelectors), WebVector<WebString>(removedSelectors));
 }
 
 PassRefPtr<DocumentLoader> FrameLoaderClientImpl::createDocumentLoader(
@@ -678,7 +690,7 @@ ObjectContentType FrameLoaderClientImpl::objectContentType(
 PassOwnPtr<WebPluginLoadObserver> FrameLoaderClientImpl::pluginLoadObserver()
 {
     WebDataSourceImpl* ds = WebDataSourceImpl::fromDocumentLoader(
-        m_webFrame->frame()->loader()->activeDocumentLoader());
+        m_webFrame->frame()->loader().activeDocumentLoader());
     if (!ds) {
         // We can arrive here if a popstate event handler detaches this frame.
         // FIXME: Remove this code once http://webkit.org/b/36202 is fixed.
@@ -759,11 +771,17 @@ void FrameLoaderClientImpl::dispatchWillInsertBody()
         m_webFrame->client()->willInsertBody(m_webFrame);
 }
 
-WebServiceWorkerRegistry* FrameLoaderClientImpl::serviceWorkerRegistry()
+PassOwnPtr<WebServiceWorkerProvider> FrameLoaderClientImpl::createServiceWorkerProvider(PassOwnPtr<WebServiceWorkerProviderClient> client)
 {
     if (!m_webFrame->client())
-        return 0;
-    return m_webFrame->client()->serviceWorkerRegistry(m_webFrame);
+        return nullptr;
+    return adoptPtr(m_webFrame->client()->createServiceWorkerProvider(m_webFrame, client.leakPtr()));
+}
+
+void FrameLoaderClientImpl::didStopAllLoaders()
+{
+    if (m_webFrame->client())
+        m_webFrame->client()->didAbortLoading(m_webFrame);
 }
 
 } // namespace WebKit

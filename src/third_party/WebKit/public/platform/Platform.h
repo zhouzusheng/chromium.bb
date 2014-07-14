@@ -106,9 +106,9 @@ public:
     typedef int FileHandle;
 #endif
 
-    WEBKIT_EXPORT static void initialize(Platform*);
-    WEBKIT_EXPORT static void shutdown();
-    WEBKIT_EXPORT static Platform* current();
+    BLINK_PLATFORM_EXPORT static void initialize(Platform*);
+    BLINK_PLATFORM_EXPORT static void shutdown();
+    BLINK_PLATFORM_EXPORT static Platform* current();
 
     // May return null.
     virtual WebCookieJar* cookieJar() { return 0; }
@@ -246,6 +246,9 @@ public:
 
     // Same as above, but always returns actual value, without any caches.
     virtual size_t actualMemoryUsageMB() { return 0; }
+
+    // Return the physical memory of the current machine, in MB.
+    virtual size_t physicalMemoryMB() { return 0; }
 
     // Returns private and shared usage, in bytes. Private bytes is the amount of
     // memory currently allocated to this process that cannot be shared. Returns
@@ -440,11 +443,17 @@ public:
     // and reflects the sampling profiled results into about:tracing.
     virtual TraceEventAPIAtomicWord* getTraceSamplingState(const unsigned bucketName) { return 0; }
 
+    typedef uint64_t TraceEventHandle;
+
     // Add a trace event to the platform tracing system. Depending on the actual
     // enabled state, this event may be recorded or dropped.
     // - phase specifies the type of event:
     //   - BEGIN ('B'): Marks the beginning of a scoped event.
     //   - END ('E'): Marks the end of a scoped event.
+    //   - COMPLETE ('X'): Marks the beginning of a scoped event, but doesn't
+    //     need a matching END event. Instead, at the end of the scope,
+    //     updateTraceEventDuration() must be called with the TraceEventHandle
+    //     returned from addTraceEvent().
     //   - INSTANT ('I'): Standalone, instantaneous event.
     //   - START ('S'): Marks the beginning of an asynchronous event (the end
     //     event can occur in a different scope or thread). The id parameter is
@@ -487,7 +496,7 @@ public:
     //     matching with other events of the same name.
     //   - MANGLE_ID (0x4): specify this flag if the id parameter is the value
     //     of a pointer.
-    virtual void addTraceEvent(
+    virtual TraceEventHandle addTraceEvent(
         char phase,
         const unsigned char* categoryEnabledFlag,
         const char* name,
@@ -496,7 +505,13 @@ public:
         const char** argNames,
         const unsigned char* argTypes,
         const unsigned long long* argValues,
-        unsigned char flags) { }
+        unsigned char flags)
+    {
+        return 0;
+    }
+
+    // Set the duration field of a COMPLETE trace event.
+    virtual void updateTraceEventDuration(TraceEventHandle) { }
 
     // Callbacks for reporting histogram data.
     // CustomCounts histogram has exponential bucket sizes, so that min=1, max=1000000, bucketCount=50 would do.

@@ -26,6 +26,7 @@
 #include <blpwtk2_config.h>
 
 #include <blpwtk2_findonpage.h>
+#include <blpwtk2_nativeviewwidgetdelegate.h>
 #include <blpwtk2_webview.h>
 
 #include <content/public/browser/web_contents_delegate.h>
@@ -40,11 +41,16 @@ namespace content {
     class WebContents;
 }  // close namespace content
 
+namespace views {
+    class Widget;
+}  // close namespace views
+
 namespace blpwtk2 {
 
 class BrowserContextImpl;
 class ContextMenuParams;
 class DevToolsFrontendHostDelegateImpl;
+class NativeViewWidget;
 class WebViewDelegate;
 class WebViewImplClient;
 
@@ -63,11 +69,12 @@ class WebViewImplClient;
 // thread and the application thread.  See blpwtk2_toolkit.h for an explanation
 // about threads.
 class WebViewImpl : public WebView,
-                    public content::WebContentsDelegate,
-                    public content::WebContentsObserver {
+                    private NativeViewWidgetDelegate,
+                    private content::WebContentsDelegate,
+                    private content::WebContentsObserver {
   public:
     WebViewImpl(WebViewDelegate* delegate,
-                gfx::NativeView parent,
+                blpwtk2::NativeView parent,
                 BrowserContextImpl* browserContext,
                 int hostAffinity,
                 bool initiallyVisible,
@@ -123,6 +130,13 @@ class WebViewImpl : public WebView,
     virtual void rootWindowPositionChanged() OVERRIDE;
     virtual void rootWindowSettingsChanged() OVERRIDE;
     virtual void print() OVERRIDE;
+
+  private:
+    void createWidget(blpwtk2::NativeView parent);
+
+    /////// NativeViewWidgetDelegate overrides
+
+    virtual void onDestroyed(NativeViewWidget* source) OVERRIDE;
 
     /////// WebContentsDelegate overrides
 
@@ -257,7 +271,7 @@ class WebViewImpl : public WebView,
     WebViewDelegate* d_delegate;
     WebViewImplClient* d_implClient;
     BrowserContextImpl* d_browserContext;
-    gfx::NativeView d_originalParent;
+    NativeViewWidget* d_widget;  // owned by the views system
     bool d_focusBeforeEnabled;
     bool d_focusAfterEnabled;
     bool d_isReadyForDelete;  // when the underlying WebContents can be deleted

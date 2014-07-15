@@ -83,7 +83,7 @@ BLINK_EXPORT void resetPluginCache(bool reloadPages);
 
 // Webkit exported API for allowing non-window contexts.  This is an unsafe
 // function, and should only be used if absolutely necessary.
-WEBKIT_EXPORT void allowNonWindowContexts_Unsafe();
+BLINK_EXPORT void allowNonWindowContexts_Unsafe();
 
 } // namespace WebKit
 

@@ -54,7 +54,6 @@
 #include <content/public/app/startup_helper_win.h>  // for InitializeSandboxInfo
 #include <content/public/browser/render_process_host.h>
 #include <content/public/common/content_switches.h>
-#include <content/browser/web_contents/web_contents_view_win.h>
 #include <ipc/ipc_channel.h>
 #include <sandbox/win/src/win_utils.h>
 
@@ -219,7 +218,6 @@ ToolkitImpl::ToolkitImpl(const StringRef& dictionaryPath,
 
     d_mainDelegate.setRendererInfoMap(&d_rendererInfoMap);
     base::MessageLoop::InitMessagePumpForUIFactory(&messagePumpForUIFactory);
-    content::WebContentsViewWin::disableHookOnRoot();
 }
 
 ToolkitImpl::~ToolkitImpl()

@@ -348,6 +348,26 @@ void RenderProcessHost::SetMaxRendererProcessCount(size_t count) {
 }
 
 // static
+RenderProcessHost* RenderProcessHost::CreateProcessHost(
+    base::ProcessHandle processHandle,
+    content::BrowserContext* browserContext)
+{
+    DCHECK(browserContext);
+
+    content::StoragePartition* partition
+        = content::BrowserContext::GetDefaultStoragePartition(browserContext);
+    content::StoragePartitionImpl* partitionImpl
+        = static_cast<content::StoragePartitionImpl*>(partition);
+
+    int id = content::RenderProcessHostImpl::GenerateUniqueId();
+    bool supportsBrowserPlugin = true;
+    bool isGuest = false;
+    return new content::RenderProcessHostImpl(id, processHandle,
+                                              browserContext, partitionImpl,
+                                              supportsBrowserPlugin, isGuest);
+}
+
+// static
 void RenderProcessHost::ClearWebCacheOnAllRenderers() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   for (iterator i(AllHostsIterator()); !i.IsAtEnd(); i.Advance()) {

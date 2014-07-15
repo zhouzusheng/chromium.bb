@@ -24,14 +24,15 @@
 
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_devtoolsfrontendhostdelegateimpl.h>
-#include <blpwtk2_newviewparams.h>
-#include <blpwtk2_webframeimpl.h>
-#include <blpwtk2_stringref.h>
-#include <blpwtk2_webviewdelegate.h>
-#include <blpwtk2_webviewimplclient.h>
 #include <blpwtk2_mediaobserverimpl.h>
+#include <blpwtk2_nativeviewwidget.h>
+#include <blpwtk2_newviewparams.h>
 #include <blpwtk2_products.h>
 #include <blpwtk2_statics.h>
+#include <blpwtk2_stringref.h>
+#include <blpwtk2_webframeimpl.h>
+#include <blpwtk2_webviewdelegate.h>
+#include <blpwtk2_webviewimplclient.h>
 
 #include <base/message_loop/message_loop.h>
 #include <base/strings/utf_string_conversions.h>
@@ -46,12 +47,13 @@
 #include <content/public/browser/site_instance.h>
 #include <third_party/WebKit/public/web/WebFindOptions.h>
 #include <third_party/WebKit/public/web/WebView.h>
+#include <ui/base/win/hidden_window.h>
 #include <webkit/common/webpreferences.h>
 
 namespace blpwtk2 {
 
 WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
-                         gfx::NativeView parent,
+                         blpwtk2::NativeView parent,
                          BrowserContextImpl* browserContext,
                          int hostAffinity,
                          bool initiallyVisible,
@@ -61,6 +63,7 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
 : d_delegate(delegate)
 , d_implClient(0)
 , d_browserContext(browserContext)
+, d_widget(0)
 , d_focusBeforeEnabled(false)
 , d_focusAfterEnabled(false)
 , d_isReadyForDelete(false)
@@ -89,11 +92,11 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
 
     printing::PrintViewManager::CreateForWebContents(d_webContents.get());
 
-    if (!initiallyVisible)
-        ShowWindow(getNativeView(), SW_HIDE);
+    if (parent)
+        createWidget(parent);
 
-    d_originalParent = GetParent(getNativeView());
-    SetParent(getNativeView(), parent);
+    if (initiallyVisible)
+        show();
 }
 
 WebViewImpl::WebViewImpl(content::WebContents* contents,
@@ -104,6 +107,7 @@ WebViewImpl::WebViewImpl(content::WebContents* contents,
 : d_delegate(0)
 , d_implClient(0)
 , d_browserContext(browserContext)
+, d_widget(0)
 , d_focusBeforeEnabled(false)
 , d_focusAfterEnabled(false)
 , d_isReadyForDelete(false)
@@ -126,8 +130,6 @@ WebViewImpl::WebViewImpl(content::WebContents* contents,
     d_webContents.reset(contents);
     d_webContents->SetDelegate(this);
     Observe(d_webContents.get());
-
-    d_originalParent = GetParent(getNativeView());
 }
 
 WebViewImpl::~WebViewImpl()
@@ -136,7 +138,10 @@ WebViewImpl::~WebViewImpl()
     DCHECK(d_wasDestroyed);
     DCHECK(d_isReadyForDelete);
     DCHECK(d_isDeletingSoon);
-    SetParent(getNativeView(), d_originalParent);
+    if (d_widget) {
+        d_widget->setDelegate(0);
+        d_widget->destroy();
+    }
 }
 
 void WebViewImpl::setImplClient(WebViewImplClient* client)
@@ -284,7 +289,7 @@ void WebViewImpl::loadInspector(WebView* inspectedView)
     d_devToolsFrontEndHost.reset(
         new DevToolsFrontendHostDelegateImpl(d_webContents.get(), agentHost));
 
-    GURL url = Statics::devToolsHttpHandler->GetFrontendURL(NULL);
+    GURL url = Statics::devToolsHttpHandler->GetFrontendURL();
     loadUrl(url.spec());
 }
 
@@ -343,28 +348,41 @@ void WebViewImpl::show()
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    ::ShowWindow(getNativeView(), SW_SHOW);
+    if (!d_widget)
+        createWidget(ui::GetHiddenWindow());
+    d_widget->show();
 }
 
 void WebViewImpl::hide()
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    ::ShowWindow(getNativeView(), SW_HIDE);
+    if (!d_widget)
+        createWidget(ui::GetHiddenWindow());
+    d_widget->hide();
 }
 
 void WebViewImpl::setParent(NativeView parent)
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    ::SetParent(getNativeView(), parent);
+
+    if (!parent)
+        parent = ui::GetHiddenWindow();
+
+    if (!d_widget)
+        createWidget(parent);
+    else
+        d_widget->setParent(parent);
 }
 
 void WebViewImpl::move(int left, int top, int width, int height)
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    ::MoveWindow(getNativeView(), left, top, width, height, FALSE);
+    if (!d_widget)
+        createWidget(ui::GetHiddenWindow());
+    d_widget->move(left, top, width, height);
 }
 
 void WebViewImpl::cutSelection()
@@ -501,6 +519,25 @@ void WebViewImpl::rootWindowSettingsChanged()
             d_webContents->GetRenderWidgetHostView());
     if (rwhv)
         rwhv->UpdateScreenInfo(rwhv->GetNativeView());
+}
+
+void WebViewImpl::createWidget(blpwtk2::NativeView parent)
+{
+    DCHECK(!d_widget);
+    DCHECK(!d_wasDestroyed);
+
+    // This creates the HWND that will host the WebContents.  The widget
+    // will be deleted when the HWND is destroyed.
+    d_widget = new blpwtk2::NativeViewWidget(
+        d_webContents->GetView()->GetNativeView(),
+        parent,
+        this);
+}
+
+void WebViewImpl::onDestroyed(NativeViewWidget* source)
+{
+    DCHECK(source == d_widget);
+    d_widget = 0;
 }
 
 void WebViewImpl::UpdateTargetURL(content::WebContents* source,

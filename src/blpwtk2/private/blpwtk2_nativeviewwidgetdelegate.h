@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Bloomberg Finance L.P.
+ * Copyright (C) 2014 Bloomberg Finance L.P.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,41 +20,27 @@
  * IN THE SOFTWARE.
  */
 
-#include <blpwtk2_managedrenderprocesshost.h>
+#ifndef INCLUDED_BLPWTK2_NATIVEVIEWWIDGETDELEGATE_H
+#define INCLUDED_BLPWTK2_NATIVEVIEWWIDGETDELEGATE_H
 
-#include <content/public/browser/browser_context.h>
-#include <content/public/browser/render_process_host.h>
+#include <blpwtk2_config.h>
 
 namespace blpwtk2 {
 
-ManagedRenderProcessHost::ManagedRenderProcessHost(
-    base::ProcessHandle processHandle,
-    content::BrowserContext* browserContext,
-    bool usesInProcessPlugins)
-: d_impl(content::RenderProcessHost::CreateProcessHost(processHandle, browserContext))
-{
-    if (usesInProcessPlugins) {
-        d_impl->SetUsesInProcessPlugins();
-    }
-    d_impl->Init();
-}
+class NativeViewWidget;
 
-ManagedRenderProcessHost::~ManagedRenderProcessHost()
-{
-    DCHECK(0 == d_impl->NumListeners());
-    d_impl->Cleanup();
-    // don't delete d_impl.  Calling Cleanup() does a DeleteSoon.
-}
+// This interface is implemented by WebViewImpl to receive notifications from
+// blpwtk2::NativeViewWidget.
+class NativeViewWidgetDelegate {
+  public:
+    // Invoked when the NativeViewWidget is destroyed.  The NativeView has
+    // already been detached from the widget.
+    virtual void onDestroyed(NativeViewWidget* source) = 0;
 
-int ManagedRenderProcessHost::id() const
-{
-    return d_impl->GetID();
-}
-
-const std::string& ManagedRenderProcessHost::channelId() const
-{
-    return d_impl->GetChannel()->ChannelId();
-}
+  protected:
+    virtual ~NativeViewWidgetDelegate();
+};
 
 }  // close namespace blpwtk2
 
+#endif  // INCLUDED_BLPWTK2_NATIVEVIEWWIDGETDELEGATE_H

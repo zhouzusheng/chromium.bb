@@ -32,7 +32,6 @@
 #include <base/memory/weak_ptr.h>
 #include <ipc/ipc_listener.h>
 #include <ipc/ipc_sender.h>
-#include <ui/gfx/native_widget_types.h>
 #include <ui/gfx/rect.h>
 
 #include <string>
@@ -70,7 +69,7 @@ class WebViewProxy : public WebView,
                  int routingId,
                  ProfileProxy* profileProxy,
                  WebViewDelegate* delegate,
-                 gfx::NativeView parent,
+                 blpwtk2::NativeView parent,
                  int rendererAffinity,
                  bool initiallyVisible,
                  bool takeFocusOnMouseDown,

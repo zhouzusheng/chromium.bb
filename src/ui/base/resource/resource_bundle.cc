@@ -178,8 +178,8 @@ void ResourceBundle::InitSharedInstanceWithPakPath(const base::FilePath& path) {
 
 // static
 void ResourceBundle::InitSharedInstance() {
-  DCHECK(g_shared_instance_ == NULL) << "ResourceBundle initialized twice";
-  g_shared_instance_ = new ResourceBundle(NULL);
+  InitSharedInstance(NULL);
+  InitDefaultFont();
 }
 
 // static

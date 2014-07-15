@@ -746,11 +746,6 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
       base::Bind(base::IgnoreResult(&base::ThreadRestrictions::SetIOAllowed),
                  true));
 
-  if (RenderProcessHost::run_renderer_in_process() &&
-      !RenderProcessHost::AllHostsIterator().IsAtEnd()) {
-    delete RenderProcessHost::AllHostsIterator().GetCurrentValue();
-  }
-
   if (parts_) {
     TRACE_EVENT0("shutdown",
                  "BrowserMainLoop::Subsystem:PostMainMessageLoopRun");

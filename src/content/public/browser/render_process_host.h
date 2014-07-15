@@ -244,6 +244,11 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   static RenderProcessHost* GetExistingProcessHost(
       content::BrowserContext* browser_context, const GURL& site_url);
 
+  // Create a new RenderProcessHost using the specified 'processHandle' and the
+  // specified 'browserContext'.
+  static RenderProcessHost* CreateProcessHost(base::ProcessHandle processHandle,
+                                              content::BrowserContext* browserContext);
+
   // Clear the web cache on all renderers.
   static void ClearWebCacheOnAllRenderers();
 

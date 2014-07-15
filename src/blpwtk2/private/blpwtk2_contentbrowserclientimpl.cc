@@ -133,9 +133,8 @@ void ContentBrowserClientImpl::RenderProcessHostCreated(
             host->SetUsesInProcessPlugins();
         }
     }
-    IPC::ChannelProxy* channel = host->GetChannel();
-    channel->AddFilter(new SpellCheckMessageFilter(id));
-    channel->AddFilter(new PrintingMessageFilter(id));
+    host->AddFilter(new SpellCheckMessageFilter(id));
+    host->AddFilter(new PrintingMessageFilter(id));
 }
 
 void ContentBrowserClientImpl::OverrideWebkitPrefs(

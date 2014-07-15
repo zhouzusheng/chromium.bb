@@ -42,15 +42,15 @@
 #include "core/dom/Range.h"
 #include "core/dom/custom/CustomElementCallbackDispatcher.h"
 #include "core/dom/shadow/ShadowRoot.h"
-#include "core/editing/Editor.h"
+#include "core/editing/SpellChecker.h"
 #include "core/editing/SpellCheckRequester.h"
+#include "core/frame/Frame.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/HTMLTextFormControlElement.h"
-#include "core/page/Frame.h"
 #include "core/rendering/RenderBoxModelObject.h"
 #include "core/rendering/RenderObject.h"
-#include "core/platform/text/TextChecking.h"
+#include "platform/text/TextChecking.h"
 #include "public/platform/WebRect.h"
 #include "wtf/PassRefPtr.h"
 #include <bindings/V8Element.h>
@@ -232,11 +232,11 @@ void WebElement::requestSpellCheck()
     Element* element = unwrap<Element>();
     if (!element ||
         !element->document().frame() ||
-        !element->document().frame()->editor().isContinuousSpellCheckingEnabled()) {
+        !element->document().frame()->spellChecker().isContinuousSpellCheckingEnabled()) {
         return;
     }
 
-    SpellCheckRequester& spellCheckRequester = element->document().frame()->editor().spellCheckRequester();
+    SpellCheckRequester& spellCheckRequester = element->document().frame()->spellChecker().spellCheckRequester();
     Node* stayWithin = element;
     while (element) {
         if (element->isFrameOwnerElement()) {

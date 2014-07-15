@@ -898,8 +898,8 @@ const char kEnableContinuousSpellcheck[] = "browser.enable_spellchecking";
 // List of names of the enabled labs experiments (see chrome/browser/labs.cc).
 const char kEnabledLabsExperiments[] = "browser.enabled_labs_experiments";
 
-// Boolean pref to define the default values for using auto spell correct.
-const char kEnableAutoSpellCorrect[] = "browser.enable_autospellcorrect";
+// Flags pref to define the autocorrect behavior.
+const char kAutoSpellCorrectBehavior[] = "browser.autospellcorrect_behavior";
 
 // Boolean pref to define the default setting for "block offensive words".
 // The old key value is kept to avoid unnecessary migration code.

@@ -647,6 +647,9 @@ namespace WebCore {
         return std::isfinite(value) ? v8::Date::New(value) : v8NullWithCheck(isolate);
     }
 
+    bool isNonWindowContextsAllowed();
+    void setNonWindowContextsAllowed(bool allowed);
+
     v8::Handle<v8::FunctionTemplate> createRawTemplate(v8::Isolate*);
 
     PassRefPtr<XPathNSResolver> toXPathNSResolver(v8::Handle<v8::Value>, v8::Isolate*);

@@ -404,6 +404,8 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   // Can only be called from the thread that owns the MessageLoop.
   bool is_running() const;
 
+  void PrepareRunInternal();
+
   // Returns true if the message loop has high resolution timers enabled.
   // Provided for testing.
   bool IsHighResolutionTimerEnabledForTesting();
@@ -417,7 +419,6 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
                                 WaitableEvent* caller_signal);
 
   //----------------------------------------------------------------------------
- protected:
 
 #if defined(OS_WIN)
   MessagePumpWin* pump_win() {
@@ -436,6 +437,7 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
 #endif
 #endif
 
+ protected:
   scoped_ptr<MessagePump> pump_;
 
  private:

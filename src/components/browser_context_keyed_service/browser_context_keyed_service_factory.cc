@@ -76,8 +76,7 @@ BrowserContextKeyedServiceFactory::GetServiceForBrowserContext(
       factories_.find(context);
   if (jt != factories_.end()) {
     if (jt->second) {
-      if (!context->IsOffTheRecord())
-        RegisterUserPrefsOnBrowserContext(context);
+      RegisterUserPrefsOnBrowserContext(context);
       service = jt->second(context);
     }
   } else {

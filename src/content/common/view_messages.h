@@ -363,6 +363,27 @@ IPC_STRUCT_BEGIN(ViewHostMsg_CreateWindow_Params)
 
   // The window features to use for the new view.
   IPC_STRUCT_MEMBER(WebKit::WebWindowFeatures, features)
+
+  // The x-coordinate of the window, only valid if x_set.
+  IPC_STRUCT_MEMBER(float, x)
+  IPC_STRUCT_MEMBER(bool, x_set)
+
+  // The y-coordinate of the window, only valid if y_set.
+  IPC_STRUCT_MEMBER(float, y)
+  IPC_STRUCT_MEMBER(bool, y_set)
+
+  // The width of the window, only valid if width_set.
+  IPC_STRUCT_MEMBER(float, width)
+  IPC_STRUCT_MEMBER(bool, width_set)
+
+  // The height of the window, only valid if height_set.
+  IPC_STRUCT_MEMBER(float, height)
+  IPC_STRUCT_MEMBER(bool, height_set)
+
+  // Additional features.  Adding a separate vector here because the
+  // WebVector<WebString> in WebWindowFeatures is not serialized.
+  // TODO: serialize 'additionalFeatures' in WebWindowFeatures.
+  IPC_STRUCT_MEMBER(std::vector<std::string>, additional_features)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewHostMsg_CreateWorker_Params)
@@ -1288,6 +1309,9 @@ IPC_MESSAGE_ROUTED3(ViewMsg_WindowSnapshotCompleted,
 // Tells the renderer to suspend/resume the webkit timers.
 IPC_MESSAGE_CONTROL1(ViewMsg_SetWebKitSharedTimersSuspended,
                      bool /* suspend */)
+
+// Tells the renderer to clear unused resources from its global web cache
+IPC_MESSAGE_CONTROL0(ViewMsg_ClearWebCache)
 
 #if defined(OS_ANDROID)
 // Sent when the browser wants the bounding boxes of the current find matches.

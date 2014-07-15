@@ -55,13 +55,17 @@
             'v8_nosnapshot.<(v8_target_arch)',
           ],
         }],
-        ['component=="shared_library"', {
-          'type': '<(component)',
+        ['v8_as_shared_library==1', {
+          'type': 'shared_library',
           'sources': [
             '../../src/defaults.cc',
+            '../../src/blpv8.rc',
             # Note: on non-Windows we still build this file so that gyp
             # has some sources to link into the component.
             '../../src/v8dll-main.cc',
+          ],
+          'dependencies': [
+            '../../../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
           ],
           'defines': [
             'V8_SHARED',
@@ -84,6 +88,15 @@
             }],
           ],
           'conditions': [
+            ['bb_version!=""', {
+              'product_name': 'blpv8.<(bb_version)',
+            }],
+            ['OS=="win" and win_use_allocator_shim==1', {
+              'dependencies': [
+                '<(DEPTH)/base/allocator/allocator.gyp:allocator',
+                '<(DEPTH)/base/base.gyp:base',
+              ],
+            }],
             ['OS=="mac"', {
               'xcode_settings': {
                 'OTHER_LDFLAGS': ['-dynamiclib', '-all_load']
@@ -118,7 +131,7 @@
           'toolsets': ['target'],
           'dependencies': ['mksnapshot.<(v8_target_arch)', 'js2c'],
         }],
-        ['component=="shared_library"', {
+        ['v8_as_shared_library==1', {
           'defines': [
             'V8_SHARED',
             'BUILDING_V8_SHARED',
@@ -187,7 +200,7 @@
           'toolsets': ['target'],
           'dependencies': ['js2c'],
         }],
-        ['component=="shared_library"', {
+        ['v8_as_shared_library==1', {
           'defines': [
             'BUILDING_V8_SHARED',
             'V8_SHARED',
@@ -854,7 +867,7 @@
             }],
           ],
         }],
-        ['component=="shared_library"', {
+        ['v8_as_shared_library', {
           'defines': [
             'BUILDING_V8_SHARED',
             'V8_SHARED',

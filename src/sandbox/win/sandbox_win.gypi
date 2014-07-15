@@ -182,6 +182,10 @@
       'include_dirs': [
         '../..',
       ],
+      'defines': [
+        'SANDBOX_DLL',
+        'SANDBOX_EXPORTS',
+      ],
       'direct_dependent_settings': {
         'include_dirs': [
           'src',

@@ -72,6 +72,7 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // listeners own it any more, it will delete itself.
   virtual void AddRoute(int32 routing_id, IPC::Listener* listener) = 0;
   virtual void RemoveRoute(int32 routing_id) = 0;
+  virtual size_t NumListeners() = 0;
 
   // Called to wait for the next UpdateRect message for the specified render
   // widget.  Returns true if successful, and the msg out-param will contain a
@@ -201,20 +202,19 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // were initially blocked.
   virtual void ResumeRequestsForView(int route_id) = 0;
 
+  // Return true if this is a host for an externally managed process.
+  virtual bool IsProcessManagedExternally() const = 0;
+
+  // Return true if this renderer uses in-process plugins.
+  virtual bool UsesInProcessPlugins() const = 0;
+
+  // Make this RenderProcessHost use in-process plugins.  This should be called
+  // in ContentBrowserClient::RenderProcessHostCreated if the embedder wants
+  // this renderer to use in-process plugins.
+  virtual void SetUsesInProcessPlugins() = 0;
+
+
   // Static management functions -----------------------------------------------
-
-  // Flag to run the renderer in process.  This is primarily
-  // for debugging purposes.  When running "in process", the
-  // browser maintains a single RenderProcessHost which communicates
-  // to a RenderProcess which is instantiated in the same process
-  // with the Browser.  All IPC between the Browser and the
-  // Renderer is the same, it's just not crossing a process boundary.
-
-  static bool run_renderer_in_process();
-
-  // This also calls out to ContentBrowserClient::GetApplicationLocale and
-  // modifies the current process' command line.
-  static void SetRunRendererInProcess(bool value);
 
   // Allows iteration over all the RenderProcessHosts in the browser. Note
   // that each host may not be active, and therefore may have NULL channels.
@@ -244,6 +244,9 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   static RenderProcessHost* GetExistingProcessHost(
       content::BrowserContext* browser_context, const GURL& site_url);
 
+  // Clear the web cache on all renderers.
+  static void ClearWebCacheOnAllRenderers();
+
   // Overrides the default heuristic for limiting the max renderer process
   // count.  This is useful for unit testing process limit behaviors.  It is
   // also used to allow a command line parameter to configure the max number of
@@ -254,9 +257,6 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // Returns the current max number of renderer processes used by the content
   // module.
   static size_t GetMaxRendererProcessCount();
-
-  static void RegisterRendererMainThreadFactory(
-      RendererMainThreadFactoryFunction create);
 };
 
 }  // namespace content.

@@ -760,37 +760,6 @@ void WebViewImpl::OnNCDragEnd()
     }
 }
 
-bool WebViewImpl::OnSetCursor(int hitTestCode)
-{
-    static HCURSOR s_arrow = ::LoadCursor(NULL, IDC_ARROW);
-    static HCURSOR s_sizeNS = ::LoadCursor(NULL, IDC_SIZENS);
-    static HCURSOR s_sizeWE = ::LoadCursor(NULL, IDC_SIZEWE);
-    static HCURSOR s_sizeNWSE = ::LoadCursor(NULL, IDC_SIZENWSE);
-    static HCURSOR s_sizeNESW = ::LoadCursor(NULL, IDC_SIZENESW);
-    switch (hitTestCode) {
-    case HTCAPTION:
-        SetCursor(s_arrow);
-        return true;
-    case HTBOTTOM:
-    case HTTOP:
-        SetCursor(s_sizeNS);
-        return true;
-    case HTLEFT:
-    case HTRIGHT:
-        SetCursor(s_sizeWE);
-        return true;
-    case HTTOPLEFT:
-    case HTBOTTOMRIGHT:
-        SetCursor(s_sizeNWSE);
-        return true;
-    case HTTOPRIGHT:
-    case HTBOTTOMLEFT:
-        SetCursor(s_sizeNESW);
-        return true;
-    }
-    return false;
-}
-
 void WebViewImpl::DidUpdateBackingStore()
 {
     DCHECK(Statics::isInBrowserMainThread());

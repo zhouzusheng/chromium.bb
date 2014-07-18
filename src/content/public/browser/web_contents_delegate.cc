@@ -174,10 +174,6 @@ bool WebContentsDelegate::OnNCDragBegin(
   return false;
 }
 
-bool WebContentsDelegate::OnSetCursor(int hitTestCode) {
-  return false;
-}
-
 bool WebContentsDelegate::ShouldSetFocusOnMouseDown() {
   return true;
 }

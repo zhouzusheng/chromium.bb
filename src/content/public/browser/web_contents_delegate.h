@@ -472,10 +472,6 @@ class CONTENT_EXPORT WebContentsDelegate {
   // call to OnNCDragBegin returned true.
   virtual void OnNCDragEnd() {}
 
-  // Return true if the cursor was set.  Returning false means the default
-  // cursor will be set.
-  virtual bool OnSetCursor(int hitTestCode);
-
   // Invoked when the RenderWidgetHost's backing store has been updated.
   virtual void DidUpdateBackingStore() {}
 

@@ -141,6 +141,7 @@ MessageLoop::MessageLoop(Type type)
       nestable_tasks_allowed_(true),
 #if defined(OS_WIN)
       os_modal_loop_(false),
+      ipc_sync_messages_should_peek_(false),
 #endif  // OS_WIN
       message_histogram_(NULL),
       run_loop_(NULL) {

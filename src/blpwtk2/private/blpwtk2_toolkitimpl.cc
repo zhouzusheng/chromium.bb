@@ -268,6 +268,8 @@ void ToolkitImpl::startupThreads()
     MainMessagePump::current()->init();
 
     if (Statics::isRendererMainThreadMode()) {
+        base::MessageLoop::current()->set_ipc_sync_messages_should_peek(true);
+
         std::string channelId;
 
         // If the specified hostChannel is empty, we will create an in-process

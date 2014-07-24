@@ -103,7 +103,11 @@ void NativeViewWidget::move(int x, int y, int width, int height)
 
 void NativeViewWidget::WindowClosing()
 {
-    DCHECK(d_impl);
+    // WindowClosing() sometimes gets called twice.  This happens when
+    // WM_DESTROY is sent to the same HWND twice (!!).
+    if (!d_impl)
+        return;
+
     d_impl = 0;
     if (d_delegate)
         d_delegate->onDestroyed(this);

@@ -8,6 +8,7 @@
 #include <stack>
 #include <string>
 
+#include "base/atomic_sequence_num.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
@@ -41,7 +42,7 @@
 #include "ui/gfx/size_conversions.h"
 
 namespace {
-static int s_num_layer_tree_instances;
+static base::StaticAtomicSequenceNumber s_layer_tree_host_sequence_number;
 }
 
 namespace cc {
@@ -89,10 +90,6 @@ UIResourceRequest& UIResourceRequest::operator=(
 
 UIResourceRequest::~UIResourceRequest() {}
 
-bool LayerTreeHost::AnyLayerTreeHostInstanceExists() {
-  return s_num_layer_tree_instances > 0;
-}
-
 scoped_ptr<LayerTreeHost> LayerTreeHost::Create(
     LayerTreeHostClient* client,
     SharedBitmapManager* manager,
@@ -104,8 +101,6 @@ scoped_ptr<LayerTreeHost> LayerTreeHost::Create(
     return scoped_ptr<LayerTreeHost>();
   return layer_tree_host.Pass();
 }
-
-static int s_next_tree_id = 1;
 
 LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
                              SharedBitmapManager* manager,
@@ -135,12 +130,11 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
       partial_texture_update_requests_(0),
       in_paint_layer_contents_(false),
       total_frames_used_for_lcd_text_metrics_(0),
-      tree_id_(s_next_tree_id++),
+      id_(s_layer_tree_host_sequence_number.GetNext() + 1),
       next_commit_forces_redraw_(false),
       shared_bitmap_manager_(manager) {
   if (settings_.accelerated_animation_enabled)
     animation_registrar_ = AnimationRegistrar::Create();
-  s_num_layer_tree_instances++;
   rendering_stats_instrumentation_->set_record_rendering_stats(
       debug_state_.RecordRenderingStats());
 }
@@ -182,7 +176,6 @@ LayerTreeHost::~LayerTreeHost() {
     proxy_->Stop();
   }
 
-  s_num_layer_tree_instances--;
   RateLimiterMap::iterator it = rate_limiters_.begin();
   if (it != rate_limiters_.end())
     it->second->Stop();

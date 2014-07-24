@@ -134,9 +134,6 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
 
   void SetLayerTreeHostClientReady();
 
-  // Returns true if any LayerTreeHost is alive.
-  static bool AnyLayerTreeHostInstanceExists();
-
   void set_needs_filter_context() { needs_filter_context_ = true; }
   bool needs_offscreen_context() const {
     return needs_filter_context_;
@@ -322,7 +319,7 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   virtual gfx::Size GetUIResourceSize(UIResourceId id) const;
 
   bool UsingSharedMemoryResources();
-  int id() const { return tree_id_; }
+  int id() const { return id_; }
 
   bool ScheduleMicroBenchmark(const std::string& benchmark_name,
                               scoped_ptr<base::Value> value,
@@ -465,7 +462,7 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
     int64 total_num_cc_layers_will_use_lcd_text;
   };
   LCDTextMetrics lcd_text_metrics_;
-  int tree_id_;
+  int id_;
   bool next_commit_forces_redraw_;
 
   scoped_refptr<Layer> page_scale_layer_;

@@ -808,9 +808,7 @@ void WebViewImpl::FindReply(content::WebContents* source_contents,
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(source_contents == d_webContents);
-
-    DCHECK(d_find.get() || Statics::isRendererMainThreadMode())
-        << "d_find must be set unless in RENDERER_MAIN thread mode";
+    DCHECK(d_implClient || d_find.get());
 
     if (d_wasDestroyed) return;
 

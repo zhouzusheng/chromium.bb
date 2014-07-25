@@ -852,6 +852,22 @@ StoragePartition* RenderProcessHostImpl::GetStoragePartition() const {
   return storage_partition_impl_;
 }
 
+static void AppendGpuCommandLineFlags(CommandLine* command_line) {
+  if (content::IsThreadedCompositingEnabled())
+    command_line->AppendSwitch(switches::kEnableThreadedCompositing);
+
+  if (content::IsDelegatedRendererEnabled())
+    command_line->AppendSwitch(switches::kEnableDelegatedRenderer);
+
+  if (content::IsDeadlineSchedulingEnabled())
+    command_line->AppendSwitch(switches::kEnableDeadlineScheduling);
+
+  // Appending disable-gpu-feature switches due to software rendering list.
+  GpuDataManagerImpl* gpu_data_manager = GpuDataManagerImpl::GetInstance();
+  DCHECK(gpu_data_manager);
+  gpu_data_manager->AppendRendererCommandLine(command_line);
+}
+
 void RenderProcessHostImpl::AppendRendererCommandLine(
     CommandLine* command_line) const {
   // Pass the process type first, so it shows first in process listings.
@@ -882,22 +898,10 @@ void RenderProcessHostImpl::AppendRendererCommandLine(
                                     field_trial_states);
   }
 
-  if (content::IsThreadedCompositingEnabled())
-    command_line->AppendSwitch(switches::kEnableThreadedCompositing);
-
-  if (content::IsDelegatedRendererEnabled())
-    command_line->AppendSwitch(switches::kEnableDelegatedRenderer);
-
-  if (content::IsDeadlineSchedulingEnabled())
-    command_line->AppendSwitch(switches::kEnableDeadlineScheduling);
-
   GetContentClient()->browser()->AppendExtraCommandLineSwitches(
       command_line, GetID());
 
-  // Appending disable-gpu-feature switches due to software rendering list.
-  GpuDataManagerImpl* gpu_data_manager = GpuDataManagerImpl::GetInstance();
-  DCHECK(gpu_data_manager);
-  gpu_data_manager->AppendRendererCommandLine(command_line);
+  AppendGpuCommandLineFlags(command_line);
 }
 
 void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
@@ -934,7 +938,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableFileSystem,
     switches::kDisableFullScreen,
     switches::kDisableGeolocation,
-    switches::kDisableGLMultisampling,
     switches::kDisableGpu,
     switches::kDisableGpuCompositing,
     switches::kDisableGpuVsync,
@@ -1538,6 +1541,24 @@ bool RenderProcessHostImpl::IsSuitableHost(
   }
 
   return GetContentClient()->browser()->IsSuitableHost(host, site_url);
+}
+
+// static
+void RenderProcessHost::AdjustCommandLineForInProcessRenderer(
+    CommandLine* command_line) {
+  {
+    if (!command_line->HasSwitch(switches::kLang)) {
+      // Modify the current process' command line to include the browser locale,
+      // as the renderer expects this flag to be set.
+      const std::string locale =
+          GetContentClient()->browser()->GetApplicationLocale();
+      command_line->AppendSwitchASCII(switches::kLang, locale);
+    }
+    // TODO(piman): we should really send configuration through bools rather
+    // than by parsing strings, i.e. sending an IPC rather than command line
+    // args. crbug.com/314909
+    AppendGpuCommandLineFlags(command_line);
+  }
 }
 
 RenderProcessHost::iterator RenderProcessHost::AllHostsIterator() {

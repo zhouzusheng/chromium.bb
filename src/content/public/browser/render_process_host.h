@@ -16,6 +16,7 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/surface/transport_dib.h"
 
+class CommandLine;
 class GURL;
 struct ViewMsg_SwapOut_Params;
 
@@ -215,6 +216,11 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
 
 
   // Static management functions -----------------------------------------------
+
+  // Adjust the specified command line for in-process renderers.  This is used
+  // to adjust the command-line for *this* process, and also the command-line
+  // for in-process renderers in blpwtk2 client processes.
+  static void AdjustCommandLineForInProcessRenderer(CommandLine* command_line);
 
   // Allows iteration over all the RenderProcessHosts in the browser. Note
   // that each host may not be active, and therefore may have NULL channels.

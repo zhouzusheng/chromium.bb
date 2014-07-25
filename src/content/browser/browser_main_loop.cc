@@ -551,14 +551,9 @@ int BrowserMainLoop::PreCreateThreads() {
     UtilityProcessHost::SetRunUtilityInProcess(true);
   }
 
-  if (GetContentClient()->browser()->SupportsInProcessRenderer() &&
-      !parsed_command_line_.HasSwitch(switches::kLang)) {
-    // Modify the current process' command line to include the browser locale,
-    // as the renderer expects this flag to be set.
-    const std::string locale =
-        GetContentClient()->browser()->GetApplicationLocale();
-    CommandLine::ForCurrentProcess()->AppendSwitchASCII(switches::kLang,
-                                                        locale);
+  if (GetContentClient()->browser()->SupportsInProcessRenderer()) {
+    RenderProcessHost::AdjustCommandLineForInProcessRenderer(
+        CommandLine::ForCurrentProcess());
   }
 
   return result_code_;

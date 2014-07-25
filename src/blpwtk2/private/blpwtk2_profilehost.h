@@ -25,8 +25,9 @@
 
 #include <blpwtk2_config.h>
 
+#include <blpwtk2_processhostlistener.h>
+
 #include <base/compiler_specific.h>
-#include <ipc/ipc_listener.h>
 
 #include <string>
 #include <vector>
@@ -43,7 +44,7 @@ class SpellCheckConfig;
 // destroyed in response to a 'BlpProfileHostMsg_Destroy' message.  It creates
 // and hosts the BrowserContextImpl object for the ProfileProxy, and handles
 // all the browser-side IPC between ProfileProxy and BrowserContextImpl.
-class ProfileHost : public IPC::Listener {
+class ProfileHost : public ProcessHostListener {
   public:
     ProfileHost(ProcessHost* processHost,
                 int routingId,

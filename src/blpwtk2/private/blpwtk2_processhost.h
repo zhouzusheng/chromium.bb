@@ -28,11 +28,9 @@
 #include <base/process/process_handle.h>
 #include <ipc/ipc_sender.h>
 
-namespace IPC {
-class Listener;
-}  // close namespace IPC
-
 namespace blpwtk2 {
+
+class ProcessHostListener;
 
 // This interface is used in the browser-main thread to send messages to a
 // ProcessClient.  It uses IPC::Sender, so the ProcessClient can potentially be
@@ -46,14 +44,14 @@ class ProcessHost : public IPC::Sender {
 
     // Add the specified 'listener' to be routed using the specified
     // 'routingId'.
-    virtual void addRoute(int routingId, IPC::Listener* listener) = 0;
+    virtual void addRoute(int routingId, ProcessHostListener* listener) = 0;
 
     // Remove the listener having the specified 'routingId'.
     virtual void removeRoute(int routingId) = 0;
 
     // Return the listener having the specified 'routingId', or 0 if there is
     // no such listener.
-    virtual IPC::Listener* findListener(int routingId) = 0;
+    virtual ProcessHostListener* findListener(int routingId) = 0;
 
     // Get a new host-allocated routingId.  These routing ids start at 0x10000,
     // to make them different from routing ids allocated from the client (which

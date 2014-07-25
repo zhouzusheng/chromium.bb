@@ -637,6 +637,11 @@ void WebViewImpl::WebContentsCreated(content::WebContents* source_contents,
                                  newView,
                                  delegateParams,
                                  &newView->d_delegate);
+
+    // The new WebViewImpl doesn't receive these WebContentsObserver callbacks
+    // in the WebContentsCreated() path, so let's invoke them manually.
+    newView->RenderViewCreated(new_contents->GetRenderViewHost());
+    newView->AboutToNavigateRenderView(new_contents->GetRenderViewHost());
 }
 
 void WebViewImpl::CloseContents(content::WebContents* source)

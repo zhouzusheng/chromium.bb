@@ -130,6 +130,7 @@ WebViewImpl::WebViewImpl(content::WebContents* contents,
     d_webContents.reset(contents);
     d_webContents->SetDelegate(this);
     Observe(d_webContents.get());
+    show();
 }
 
 WebViewImpl::~WebViewImpl()

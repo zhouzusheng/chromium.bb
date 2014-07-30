@@ -29,13 +29,12 @@
 
 namespace blpwtk2 {
 
-String::Impl String::make(const char* str, int length)
+String::Impl String::make(const char* str, size_t length)
 {
-    DCHECK(0 <= length);
     if (0 == length) return 0;
     DCHECK(str);
 
-    int* lenPtr = (int*)malloc(sizeof(int) + length + 1);
+    size_t* lenPtr = (size_t*)malloc(sizeof(size_t) + length + 1);
     *lenPtr = length;
 
     char* ret = {reinterpret_cast<char*>(lenPtr + 1)};
@@ -44,7 +43,7 @@ String::Impl String::make(const char* str, int length)
     return ret;
 }
 
-String::Impl String::make(const wchar_t* str, int length)
+String::Impl String::make(const wchar_t* str, size_t length)
 {
     // TODO: There is an extra copy going from:
     // TODO:     wchar_t* -> std::string -> blpwtk2::String
@@ -79,10 +78,10 @@ void String::unmake(Impl impl)
     free(realPtr);
 }
 
-int String::length(Impl impl)
+size_t String::length(Impl impl)
 {
     DCHECK(impl);
-    return *(reinterpret_cast<int*>(impl) - 1);
+    return *(reinterpret_cast<size_t*>(impl) - 1);
 }
 
 String fromWebString(const WebKit::WebString& other)

@@ -43,21 +43,21 @@ class StringRef {
 
     StringRef() : d_data(0), d_length(0) {}
     StringRef(const char* str) : d_data(str), d_length(strlen(str)) {}
-    StringRef(const char* str, int len) : d_data(str), d_length(len) {}
+    StringRef(const char* str, size_t len) : d_data(str), d_length(len) {}
     StringRef(const std::string& str) : d_data(str.data()), d_length(str.length()) {}
 
     void clear() { d_data = 0; d_length = 0; }
     void assign(const char* str) { d_data = str; d_length = strlen(str); }
-    void assign(const char* str, int len) { d_data = str; d_length = len; }
+    void assign(const char* str, size_t len) { d_data = str; d_length = len; }
 
     const char* data() const { return d_data; }
-    int length() const { return d_length; }
+    size_t length() const { return d_length; }
     bool isEmpty() const { return 0 == d_length; }
     bool equals(const StringRef& other) const { return 0 == compare(*this, other); }
 
   private:
     const char* d_data;
-    int d_length;
+    size_t d_length;
 };
 
 }  // close namespace blpwtk2

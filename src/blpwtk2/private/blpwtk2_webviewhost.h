@@ -25,11 +25,11 @@
 
 #include <blpwtk2_config.h>
 
+#include <blpwtk2_processhostlistener.h>
 #include <blpwtk2_webviewdelegate.h>
 #include <blpwtk2_webviewimplclient.h>
 
 #include <base/compiler_specific.h>
-#include <ipc/ipc_listener.h>
 #include <ipc/ipc_sender.h>
 #include <ui/gfx/rect.h>
 
@@ -51,7 +51,7 @@ class WebViewImpl;
 // destroyed in response to a 'BlpWebViewHostMsg_Destroy' message.  It creates
 // and hosts the WebViewImpl object for the WebViewProxy, and handles all the
 // browser-side IPC between WebViewProxy and WebViewImpl.
-class WebViewHost : public IPC::Listener,
+class WebViewHost : public ProcessHostListener,
                     private IPC::Sender,
                     private WebViewImplClient,
                     private WebViewDelegate {

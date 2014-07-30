@@ -63,8 +63,29 @@ ProcessHostImpl::ProcessHostImpl(const std::string& channelId,
 
 ProcessHostImpl::~ProcessHostImpl()
 {
+    // Load the listeners into a vector first, because their destructors will
+    // remove themselves from the d_routes map.
+    std::vector<ProcessHostListener*> listeners;
+    listeners.reserve(d_routes.size());
+    for (IDMap<ProcessHostListener>::Iterator<ProcessHostListener> it(&d_routes); !it.IsAtEnd(); it.Advance()) {
+        listeners.push_back(it.GetCurrentValue());
+    }
+    for (size_t i = 0; i < listeners.size(); ++i) {
+        delete listeners[i];
+    }
+    DCHECK(0 == d_routes.size());
+
     d_channel.reset();
-    d_renderProcessHost.reset();
+
+    // This needs to use DeleteSoon because WebViewImpl::destroy uses
+    // DeleteSoon, and we need to ensure that the render process host outlives
+    // the WebViewImpl.
+    // TODO(SHEZ): See if we can just delete the WebViewImpl directly
+    //             instead of using DeleteSoon.
+    base::MessageLoop::current()->DeleteSoon(
+        FROM_HERE,
+        d_renderProcessHost.release());
+
     if (d_processHandle != base::kNullProcessHandle) {
         base::CloseProcessHandle(d_processHandle);
     }
@@ -72,7 +93,7 @@ ProcessHostImpl::~ProcessHostImpl()
 
 // ProcessHost overrides
 
-void ProcessHostImpl::addRoute(int routingId, IPC::Listener* listener)
+void ProcessHostImpl::addRoute(int routingId, ProcessHostListener* listener)
 {
     DLOG(INFO) << "Added route: routingId(" << routingId << ")";
     d_routes.AddWithID(listener, routingId);
@@ -84,7 +105,7 @@ void ProcessHostImpl::removeRoute(int routingId)
     DLOG(INFO) << "Removed route: routingId(" << routingId << ")";
 }
 
-IPC::Listener* ProcessHostImpl::findListener(int routingId)
+ProcessHostListener* ProcessHostImpl::findListener(int routingId)
 {
     return d_routes.Lookup(routingId);
 }

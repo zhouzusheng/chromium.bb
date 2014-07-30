@@ -56,9 +56,9 @@ class ProcessHostImpl : public ProcessHost,
     ~ProcessHostImpl();
 
     // ProcessHost overrides
-    virtual void addRoute(int routingId, IPC::Listener* listener) OVERRIDE;
+    virtual void addRoute(int routingId, ProcessHostListener* listener) OVERRIDE;
     virtual void removeRoute(int routingId) OVERRIDE;
-    virtual IPC::Listener* findListener(int routingId) OVERRIDE;
+    virtual ProcessHostListener* findListener(int routingId) OVERRIDE;
     virtual int getUniqueRoutingId() OVERRIDE;
     virtual base::ProcessHandle processHandle() OVERRIDE;
 
@@ -90,7 +90,7 @@ class ProcessHostImpl : public ProcessHost,
     scoped_ptr<IPC::ChannelProxy> d_channel;
     RendererInfoMap* d_rendererInfoMap;
     RendererInfo d_inProcessRendererInfo;
-    IDMap<IPC::Listener> d_routes;
+    IDMap<ProcessHostListener> d_routes;
     int d_lastRoutingId;
 
     DISALLOW_COPY_AND_ASSIGN(ProcessHostImpl);

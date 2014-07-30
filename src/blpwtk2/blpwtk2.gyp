@@ -153,6 +153,8 @@
         'private/blpwtk2_browsermainrunner.h',
         'private/blpwtk2_browserthread.cc',
         'private/blpwtk2_browserthread.h',
+        'private/blpwtk2_channelinfo.cc',
+        'private/blpwtk2_channelinfo.h',
         'private/blpwtk2_contentbrowserclientimpl.cc',
         'private/blpwtk2_contentbrowserclientimpl.h',
         'private/blpwtk2_contentmaindelegateimpl.cc',

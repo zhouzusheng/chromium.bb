@@ -42,7 +42,7 @@ IPC_MESSAGE_CONTROL1(BlpControlHostMsg_SetInProcessRendererInfo,
 // Create a new ProcessHost and return the channelId.
 IPC_SYNC_MESSAGE_CONTROL1_1(BlpControlHostMsg_CreateNewHostChannel,
                             int /* timeoutInMilliseconds */,
-                            std::string /* channelId */)
+                            std::string /* channelInfo */)
 
 // Clear the web cache on all renderer processes managed by the ProcessHost.
 IPC_MESSAGE_CONTROL0(BlpControlHostMsg_ClearWebCache)

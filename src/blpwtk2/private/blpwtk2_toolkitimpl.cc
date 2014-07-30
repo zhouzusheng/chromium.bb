@@ -22,14 +22,14 @@
 
 #include <blpwtk2_toolkitimpl.h>
 
-#include <blpwtk2_statics.h>
-#include <blpwtk2_constants.h>
-#include <blpwtk2_browserthread.h>
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_browsercontextimplmanager.h>
+#include <blpwtk2_browsermainrunner.h>
+#include <blpwtk2_browserthread.h>
+#include <blpwtk2_channelinfo.h>
+#include <blpwtk2_constants.h>
 #include <blpwtk2_control_messages.h>
 #include <blpwtk2_inprocessrenderer.h>
-#include <blpwtk2_browsermainrunner.h>
 #include <blpwtk2_mainmessagepump.h>
 #include <blpwtk2_managedrenderprocesshost.h>
 #include <blpwtk2_processclientimpl.h>
@@ -38,6 +38,7 @@
 #include <blpwtk2_products.h>
 #include <blpwtk2_profilecreateparams.h>
 #include <blpwtk2_profileproxy.h>
+#include <blpwtk2_statics.h>
 #include <blpwtk2_webviewcreateparams.h>
 #include <blpwtk2_webviewimpl.h>
 #include <blpwtk2_webviewproxy.h>
@@ -54,7 +55,6 @@
 #include <content/public/app/startup_helper_win.h>  // for InitializeSandboxInfo
 #include <content/public/browser/render_process_host.h>
 #include <content/public/common/content_switches.h>
-#include <ipc/ipc_channel.h>
 #include <sandbox/win/src/win_utils.h>
 
 #include <TlHelp32.h>  // for CreateToolhelp32Snapshot
@@ -231,12 +231,27 @@ void ToolkitImpl::startupThreads()
 {
     DCHECK(!d_threadsStarted);
 
+    ChannelInfo hostChannelInfo;
     if (d_hostChannel.empty()) {
         content::InitializeSandboxInfo(&d_sandboxInfo);
     }
     else {
         d_sandboxInfo.broker_services = 0;
         d_sandboxInfo.target_services = 0;
+        bool check = hostChannelInfo.deserialize(d_hostChannel);
+        DCHECK(check);
+        for (size_t i = 0; i < hostChannelInfo.d_switches.size(); ++i) {
+            const ChannelInfo::Switch& s = hostChannelInfo.d_switches[i];
+            if (s.d_value.empty()) {
+                appendCommandLineSwitch(s.d_key.c_str());
+            }
+            else {
+                std::string str = s.d_key;
+                str.append("=");
+                str.append(s.d_value);
+                appendCommandLineSwitch(str.c_str());
+            }
+        }
     }
 
     d_mainRunner.reset(content::ContentMainRunner::Create());
@@ -276,16 +291,16 @@ void ToolkitImpl::startupThreads()
         // host on the browser-main thread, otherwise, our ProcessClient will
         // connect to the hostChannel provided by the app.
         if (d_hostChannel.empty()) {
-            channelId = IPC::Channel::GenerateVerifiedChannelID(BLPWTK2_VERSION);
             d_browserThread->messageLoop()->PostTask(
                 FROM_HERE,
                 base::Bind(&ToolkitImpl::createInProcessHost,
-                           base::Unretained(this),
-                           channelId));
-            d_browserThread->sync();  // TODO: remove this sync
+                           base::Unretained(this)));
+            d_browserThread->sync();
+            DCHECK(d_inProcessHost.get());
+            channelId = d_inProcessHost->channelId();
         }
         else {
-            channelId = d_hostChannel;
+            channelId = hostChannelInfo.d_channelId;
         }
 
         d_processClient.reset(
@@ -522,24 +537,25 @@ String ToolkitImpl::createHostChannel(int timeoutInMilliseconds)
         startupThreads();
     }
 
-    std::string channelId;
+    std::string channelInfo;
 
     if (Statics::isRendererMainThreadMode()) {
         DCHECK(d_processClient.get());
         d_processClient->Send(
             new BlpControlHostMsg_CreateNewHostChannel(timeoutInMilliseconds,
-                                                       &channelId));
+                                                       &channelInfo));
     }
     else {
         DCHECK(Statics::processHostManager);
-        channelId = IPC::Channel::GenerateVerifiedChannelID(BLPWTK2_VERSION);
 
+        ProcessHostImpl* processHost = new ProcessHostImpl(&d_rendererInfoMap);
+        channelInfo = processHost->channelInfo();
         Statics::processHostManager->addProcessHost(
-            new ProcessHostImpl(channelId, &d_rendererInfoMap),
+            processHost,
             base::TimeDelta::FromMilliseconds(timeoutInMilliseconds));
     }
 
-    return String(channelId.data(), channelId.length());
+    return String(channelInfo.data(), channelInfo.length());
 }
 
 bool ToolkitImpl::preHandleMessage(const NativeMsg* msg)
@@ -561,10 +577,10 @@ void ToolkitImpl::postHandleMessage(const NativeMsg* msg)
     }
 }
 
-void ToolkitImpl::createInProcessHost(const std::string& channelId)
+void ToolkitImpl::createInProcessHost()
 {
     DCHECK(Statics::isInBrowserMainThread());
-    d_inProcessHost.reset(new ProcessHostImpl(channelId, &d_rendererInfoMap));
+    d_inProcessHost.reset(new ProcessHostImpl(&d_rendererInfoMap));
 }
 
 void ToolkitImpl::destroyInProcessHost()

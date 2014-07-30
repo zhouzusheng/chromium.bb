@@ -22,6 +22,7 @@
 
 #include <blpwtk2_toolkitcreateparams.h>
 
+#include <blpwtk2_channelinfo.h>
 #include <blpwtk2_constants.h>
 #include <blpwtk2_products.h>
 #include <blpwtk2_stringref.h>
@@ -134,17 +135,23 @@ void ToolkitCreateParams::setDictionaryPath(const StringRef& path)
     d_impl->d_dictionaryPath.assign(path.data(), path.length());
 }
 
-void ToolkitCreateParams::setHostChannel(const StringRef& channelId)
+void ToolkitCreateParams::setHostChannel(const StringRef& channelInfoString)
 {
-    DCHECK(isValidHostChannelVersion(channelId));
-    d_impl->d_hostChannel.assign(channelId.data(), channelId.length());
+    DCHECK(isValidHostChannelVersion(channelInfoString));
+    d_impl->d_hostChannel.assign(
+        channelInfoString.data(),
+        channelInfoString.length());
 }
 
 // static
-bool ToolkitCreateParams::isValidHostChannelVersion(const StringRef& channelId)
+bool ToolkitCreateParams::isValidHostChannelVersion(const StringRef& channelInfoString)
 {
+    ChannelInfo channelInfo;
+    if (!channelInfo.deserialize(channelInfoString))
+        return false;
+    const std::string& channelId = channelInfo.d_channelId;
     static StringRef expected(BLPWTK2_VERSION ".");
-    return channelId.isEmpty() ||
+    return channelId.empty() ||
         (channelId.length() > expected.length() &&
          expected.equals(StringRef(channelId.data(), expected.length())));
 }

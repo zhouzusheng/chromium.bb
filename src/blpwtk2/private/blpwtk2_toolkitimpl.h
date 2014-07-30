@@ -92,7 +92,7 @@ class ToolkitImpl : public Toolkit {
     virtual void clearWebCache() OVERRIDE;
 
   private:
-    void createInProcessHost(const std::string& channelId);
+    void createInProcessHost();
     void destroyInProcessHost();
 
     bool d_threadsStarted;

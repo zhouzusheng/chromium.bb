@@ -133,8 +133,8 @@ class Toolkit {
         WebViewDelegate* delegate = 0,
         const WebViewCreateParams& params = WebViewCreateParams()) = 0;
 
-    // Create a new host channel.  The returned channel-id string can be passed
-    // to 'ToolkitCreateParams::setHostChannel' in another process.  This will
+    // Create a new host channel.  The returned string can be passed to
+    // 'ToolkitCreateParams::setHostChannel' in another process.  This will
     // allow this process and the other process to share the same browser
     // process resources.  The 'timeoutInMilliseconds' parameter specifies the
     // amount of time that blpwtk2 will wait for a connection to be

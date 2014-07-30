@@ -32,18 +32,18 @@ namespace blpwtk2 {
 class BLPWTK2_EXPORT String {
     typedef char* Impl;
 
-    static Impl make(const char* str, int length);
-    static Impl make(const wchar_t* str, int length);
+    static Impl make(const char* str, size_t length);
+    static Impl make(const wchar_t* str, size_t length);
     static Impl make(Impl);
     static void unmake(Impl);
-    static int length(Impl);
+    static size_t length(Impl);
 
   public:
     String() : d_impl(0) { }
     String(const String& orig) : d_impl(orig.d_impl ? make(orig.d_impl) : 0) {}
     explicit String(const char* str) : d_impl(make(str, strlen(str))) {}
-    String(const char* str, int length) : d_impl(make(str, length)) {}
-    String(const wchar_t* str, int length) : d_impl(make(str, length)) {}
+    String(const char* str, size_t length) : d_impl(make(str, length)) {}
+    String(const wchar_t* str, size_t length) : d_impl(make(str, length)) {}
     explicit String(const StringRef& str) : d_impl(make(str.data(), str.length())) {}
     explicit String(const std::string& str) : d_impl(make(str.data(), str.length())) {}
     explicit String(const std::wstring& str) : d_impl(make(str.data(), str.length())) {}
@@ -66,7 +66,7 @@ class BLPWTK2_EXPORT String {
         if (d_impl) unmake(d_impl);
         d_impl = impl;
     }
-    void assign(const char* str, int length)
+    void assign(const char* str, size_t length)
     {
         char* impl = make(str, length);
         if (d_impl) unmake(d_impl);
@@ -81,7 +81,7 @@ class BLPWTK2_EXPORT String {
 
     const char* data() const { return d_impl; }
     const char* c_str() const { return d_impl ? d_impl : ""; }
-    int length() const { return d_impl ? length(d_impl) : 0; }
+    size_t length() const { return d_impl ? length(d_impl) : 0; }
     int isEmpty() const { return !d_impl; }
     bool equals(const StringRef& other) const
     {

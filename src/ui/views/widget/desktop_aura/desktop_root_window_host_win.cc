@@ -808,6 +808,11 @@ void DesktopRootWindowHostWin::HandleFrameChanged() {
 
 void DesktopRootWindowHostWin::HandleNativeFocus(HWND last_focused_window) {
   // TODO(beng): inform the native_widget_delegate_.
+
+  // If our HWND has WS_CHILD, treat WM_SETFOCUS like an activation change.
+  if (GetWindowLong(GetHWND(), GWL_STYLE) & WS_CHILD)
+    HandleActivationChanged(true);
+
   InputMethod* input_method = GetInputMethod();
   if (input_method)
     input_method->OnFocus();
@@ -815,6 +820,11 @@ void DesktopRootWindowHostWin::HandleNativeFocus(HWND last_focused_window) {
 
 void DesktopRootWindowHostWin::HandleNativeBlur(HWND focused_window) {
   // TODO(beng): inform the native_widget_delegate_.
+
+  // If our HWND has WS_CHILD, treat WM_KILLFOCUS like an activation change.
+  if (GetWindowLong(GetHWND(), GWL_STYLE) & WS_CHILD)
+    HandleActivationChanged(false);
+
   InputMethod* input_method = GetInputMethod();
   if (input_method)
     input_method->OnBlur();

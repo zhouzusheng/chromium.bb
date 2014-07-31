@@ -2717,7 +2717,7 @@ void RenderWidgetHostViewAura::OnMouseEvent(ui::MouseEvent* event) {
         host_->ForwardMouseEvent(mouse_event);
         // Ensure that we get keyboard focus on mouse down as a plugin window
         // may have grabbed keyboard focus.
-        if (event->type() == ui::ET_MOUSE_PRESSED)
+        if (event->type() == ui::ET_MOUSE_PRESSED && host_->ShouldSetFocusOnMouseDown())
           SetKeyboardFocus();
       }
     }
@@ -2765,7 +2765,7 @@ void RenderWidgetHostViewAura::OnMouseEvent(ui::MouseEvent* event) {
     host_->ForwardMouseEvent(mouse_event);
     // Ensure that we get keyboard focus on mouse down as a plugin window may
     // have grabbed keyboard focus.
-    if (event->type() == ui::ET_MOUSE_PRESSED)
+    if (event->type() == ui::ET_MOUSE_PRESSED && host_->ShouldSetFocusOnMouseDown())
       SetKeyboardFocus();
   }
 
@@ -2972,7 +2972,7 @@ void RenderWidgetHostViewAura::OnWindowFocused(aura::Window* gained_focus,
     }
   } else if (window_ == lost_focus) {
     host_->SetActive(false);
-    host_->Blur();
+    host_->LostFocus();
 
     DetachFromInputMethod();
     host_->SetInputMethodActive(false);

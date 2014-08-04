@@ -393,6 +393,7 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
       use_system_default_icon_(false),
       restore_focus_when_enabled_(false),
       restored_enabled_(false),
+      is_cursor_overridden_(false),
       current_cursor_(NULL),
       previous_cursor_(NULL),
       active_mouse_tracking_flags_(0),
@@ -797,6 +798,11 @@ void HWNDMessageHandler::SetTitle(const string16& title) {
 }
 
 void HWNDMessageHandler::SetCursor(HCURSOR cursor) {
+  if (is_cursor_overridden_) {
+    current_cursor_ = cursor;
+    return;
+  }
+
   if (cursor) {
     previous_cursor_ = ::SetCursor(cursor);
     current_cursor_ = cursor;
@@ -2034,6 +2040,7 @@ LRESULT HWNDMessageHandler::OnSetCursor(UINT message,
       cursor = IDC_SIZENESW;
       break;
     case HTCLIENT:
+      is_cursor_overridden_ = false;
       SetCursor(current_cursor_);
       return 1;
     case LOWORD(HTERROR):  // Use HTERROR's LOWORD value for valid comparison.
@@ -2043,6 +2050,7 @@ LRESULT HWNDMessageHandler::OnSetCursor(UINT message,
       // Use the default value, IDC_ARROW.
       break;
   }
+  is_cursor_overridden_ = true;
   ::SetCursor(LoadCursor(NULL, cursor));
   return 1;
 }

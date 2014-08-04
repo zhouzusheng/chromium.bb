@@ -445,6 +445,10 @@ class VIEWS_EXPORT HWNDMessageHandler :
   // true.
   bool restored_enabled_;
 
+  // Whether or not the cursor has been overridden by WM_SETCURSOR.  When this
+  // is true, |SetCursor| will be a no-op.
+  bool is_cursor_overridden_;
+
   // The current cursor.
   HCURSOR current_cursor_;
 

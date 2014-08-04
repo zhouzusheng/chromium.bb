@@ -452,26 +452,6 @@ class CONTENT_EXPORT WebContentsDelegate {
       const base::FilePath& plugin_path,
       const base::Callback<void(bool)>& callback);
 
-  // Return true if an NC hit test result was set.  Returning false means the
-  // default NC hit test behavior should be performed.  The hit test should be
-  // performed using the most recent mouse coordinates.
-  virtual bool OnNCHitTest(int* result);
-
-  // Return true if a non-client drag operation should be initiated, in which
-  // case, the mouse will be captured and OnNCDragMove will be called
-  // continuously until OnNCDragEnd gets called.  Returning false means the
-  // default Windows dragging will be performed.  The specified 'point' is in
-  // screen coordinates.
-  virtual bool OnNCDragBegin(int hitTestCode);
-
-  // Invoked while the move moves during an NC drag event.  This only gets
-  // called if the previous call to OnNCDragBegin returned true.
-  virtual void OnNCDragMove() {}
-
-  // Invoked when an NC drag event ends.  This only gets called if the previous
-  // call to OnNCDragBegin returned true.
-  virtual void OnNCDragEnd() {}
-
   // Invoked when the RenderWidgetHost's backing store has been updated.
   virtual void DidUpdateBackingStore() {}
 

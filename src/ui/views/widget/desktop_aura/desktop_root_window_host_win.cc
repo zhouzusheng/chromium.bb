@@ -800,6 +800,25 @@ void DesktopRootWindowHostWin::HandleClientSizeChanged(
     root_window_host_delegate_->OnHostResized(new_size);
 }
 
+bool DesktopRootWindowHostWin::HandleNCHitTest(LRESULT* result, const gfx::Point& point) {
+  int intResult;
+  bool handled = native_widget_delegate_->OnNCHitTest(&intResult, point);
+  *result = intResult;
+  return handled;
+}
+
+bool DesktopRootWindowHostWin::HandleNCDragBegin(int hit_test_code) {
+  return native_widget_delegate_->OnNCDragBegin(hit_test_code);
+}
+
+void DesktopRootWindowHostWin::HandleNCDragMove() {
+  return native_widget_delegate_->OnNCDragMove();
+}
+
+void DesktopRootWindowHostWin::HandleNCDragEnd() {
+  return native_widget_delegate_->OnNCDragEnd();
+}
+
 void DesktopRootWindowHostWin::HandleFrameChanged() {
   SetWindowTransparency();
   // Replace the frame and layout the contents.

@@ -56,6 +56,10 @@ class NativeViewWidget : private views::WidgetDelegateView {
     // views::WidgetDelegate overrides
     virtual void WindowClosing() OVERRIDE;
     virtual views::View* GetContentsView() OVERRIDE;
+    virtual bool OnNCHitTest(int* result, const gfx::Point& point) OVERRIDE;
+    virtual bool OnNCDragBegin(int hit_test_code) OVERRIDE;
+    virtual void OnNCDragMove() OVERRIDE;
+    virtual void OnNCDragEnd() OVERRIDE;
 
   private:
     NativeViewWidgetDelegate* d_delegate;  // held, not owned

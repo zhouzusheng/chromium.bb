@@ -137,6 +137,10 @@ class WebViewImpl : public WebView,
     /////// NativeViewWidgetDelegate overrides
 
     virtual void onDestroyed(NativeViewWidget* source) OVERRIDE;
+    virtual bool OnNCHitTest(int* result) OVERRIDE;
+    virtual bool OnNCDragBegin(int hitTestCode) OVERRIDE;
+    virtual void OnNCDragMove() OVERRIDE;
+    virtual void OnNCDragEnd() OVERRIDE;
 
     /////// WebContentsDelegate overrides
 
@@ -184,26 +188,6 @@ class WebViewImpl : public WebView,
     // Called to determine if the WebContents is contained in a popup window
     // or a panel window.
     virtual bool IsPopupOrPanel(const content::WebContents* source) const OVERRIDE;
-
-    // Return true if an NC hit test result was set.  Returning false means the
-    // default NC hit test behavior should be performed.  The hit test should be
-    // performed using the most recent mouse coordinates.
-    virtual bool OnNCHitTest(int* result) OVERRIDE;
-
-    // Return true if a non-client drag operation should be initiated, in which
-    // case, the mouse will be captured and OnNCDragMove will be called
-    // continuously until OnNCDragEnd gets called.  Returning false means the
-    // default Windows dragging will be performed.  The specified 'point' is in
-    // screen coordinates.
-    virtual bool OnNCDragBegin(int hitTestCode) OVERRIDE;
-
-    // Invoked while the move moves during an NC drag event.  This only gets
-    // called if the previous call to OnNCDragBegin returned true.
-    virtual void OnNCDragMove() OVERRIDE;
-
-    // Invoked when an NC drag event ends.  This only gets called if the previous
-    // call to OnNCDragBegin returned true.
-    virtual void OnNCDragEnd() OVERRIDE;
 
     // Invoked when the RenderWidgetHost's backing store has been updated.
     virtual void DidUpdateBackingStore() OVERRIDE;

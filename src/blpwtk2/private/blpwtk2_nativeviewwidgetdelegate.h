@@ -37,6 +37,24 @@ class NativeViewWidgetDelegate {
     // already been detached from the widget.
     virtual void onDestroyed(NativeViewWidget* source) = 0;
 
+    // Return true if an NC hit test result was set.  Returning false means the
+    // default NC hit test behavior should be performed.  The hit test should be
+    // performed using the most recent mouse coordinates.
+    virtual bool OnNCHitTest(int* result) = 0;
+
+    // Called when the user starts dragging in a non-client region.  Return true
+    // if the delegate will handle the non-client drag, in which case,
+    // OnNCDragMove will be called continuously until OnNCDragEnd is called.
+    virtual bool OnNCDragBegin(int hit_test_code) = 0;
+
+    // Called when the user is dragging in a non-client region.  This is only
+    // called if the previous OnNCDragBegin returned true.
+    virtual void OnNCDragMove() = 0;
+
+    // Called when the user is finishes dragging in a non-client region.  This is
+    // only called if the previous OnNCDragBegin returned true.
+    virtual void OnNCDragEnd() = 0;
+
   protected:
     virtual ~NativeViewWidgetDelegate();
 };

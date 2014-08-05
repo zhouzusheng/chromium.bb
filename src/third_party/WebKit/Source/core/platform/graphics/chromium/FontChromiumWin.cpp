@@ -77,6 +77,24 @@ void Font::drawGlyphs(GraphicsContext* graphicsContext,
     Vector<int, kMaxBufferLength> advances;
     int glyphIndex = 0;  // The starting glyph of the current chunk.
 
+    bool lcdExplicitlyRequested = false;
+    int textFlags;
+    switch (m_fontDescription.fontSmoothing()) {
+    case NoSmoothing:
+        textFlags = 0;
+        break;
+    case Antialiased:
+        textFlags = SkPaint::kAntiAlias_Flag;
+        break;
+    case SubpixelAntialiased:
+        textFlags = (SkPaint::kAntiAlias_Flag | SkPaint::kLCDRenderText_Flag);
+        lcdExplicitlyRequested = true;
+        break;
+    default:
+        textFlags = font->platformData().paintTextFlags();
+        break;
+    }
+
     float horizontalOffset = point.x(); // The floating point offset of the left side of the current glyph.
 
 #if ENABLE(OPENTYPE_VERTICAL)
@@ -112,7 +130,7 @@ void Font::drawGlyphs(GraphicsContext* graphicsContext,
             SkPoint origin;
             origin.set(verticalOriginX, SkFloatToScalar(point.y() + horizontalOffset - point.x()));
             horizontalOffset += currentWidth;
-            paintSkiaText(graphicsContext, font->platformData(), curLen, &glyphs[0], &advances[0], &offsets[0], origin, SkRect(textRect));
+            paintSkiaText(graphicsContext, font->platformData(), textFlags, lcdExplicitlyRequested, curLen, &glyphs[0], &advances[0], &offsets[0], origin, SkRect(textRect));
         }
 
         graphicsContext->setCTM(savedMatrix);
@@ -153,7 +171,7 @@ void Font::drawGlyphs(GraphicsContext* graphicsContext,
 
         SkPoint origin = point;
         origin.fX += SkFloatToScalar(horizontalOffset - point.x() - currentWidth);
-        paintSkiaText(graphicsContext, font->platformData(), curLen, &glyphs[0], &advances[0], 0, origin, SkRect(textRect));
+        paintSkiaText(graphicsContext, font->platformData(), textFlags, lcdExplicitlyRequested, curLen, &glyphs[0], &advances[0], 0, origin, SkRect(textRect));
     }
 }
 

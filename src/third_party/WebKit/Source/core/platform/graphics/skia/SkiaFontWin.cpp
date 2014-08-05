@@ -88,6 +88,7 @@ static void skiaDrawText(GraphicsContext* context,
 static void paintSkiaText(GraphicsContext* context,
     const FontPlatformData& data,
     SkTypeface* face, float size, uint32_t textFlags,
+    bool lcdExplicitlyRequested,
     int numGlyphs,
     const WORD* glyphs,
     const int* advances,
@@ -101,7 +102,7 @@ static void paintSkiaText(GraphicsContext* context,
     SkPaint paint;
     context->setupPaintForFilling(&paint);
     paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
-    data.setupPaint(&paint, context);
+    data.setupPaint(&paint, context, lcdExplicitlyRequested);
 
     // FIXME: Only needed to support the HFONT based paintSkiaText
     // version where a new typeface is created from the HFONT.
@@ -147,6 +148,8 @@ static void paintSkiaText(GraphicsContext* context,
 
 void paintSkiaText(GraphicsContext* context,
                    const FontPlatformData& data,
+                   int textFlags,
+                   bool lcdExplicitlyRequested,
                    int numGlyphs,
                    const WORD* glyphs,
                    const int* advances,
@@ -154,7 +157,7 @@ void paintSkiaText(GraphicsContext* context,
                    const SkPoint& origin,
                    const SkRect& textRect)
 {
-    paintSkiaText(context, data, data.typeface(), data.size(), data.paintTextFlags(),
+    paintSkiaText(context, data, data.typeface(), data.size(), textFlags, lcdExplicitlyRequested,
                   numGlyphs, glyphs, advances, offsets, origin, textRect);
 }
 
@@ -176,7 +179,7 @@ void paintSkiaText(GraphicsContext* context,
         FontPlatformData::ensureFontLoaded(hfont);
 
     RefPtr<SkTypeface> face = CreateTypefaceFromHFont(hfont, &size, &paintTextFlags);
-    paintSkiaText(context, data, face.get(), size, paintTextFlags, numGlyphs, glyphs, advances, offsets, origin, textRect);
+    paintSkiaText(context, data, face.get(), size, paintTextFlags, false, numGlyphs, glyphs, advances, offsets, origin, textRect);
 }
 
 }  // namespace WebCore

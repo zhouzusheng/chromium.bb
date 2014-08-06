@@ -638,6 +638,8 @@ private:
     RenderBlock* containingColumnsBlock(bool allowAnonymousColumnBlock = true);
     RenderBlock* columnsBlockForSpanningElement(RenderObject* newChild);
 
+    virtual LayoutUnit additionalMarginStart() const OVERRIDE;
+
     // End helper functions and structs used by layoutBlockChildren.
 
 protected:

@@ -2401,7 +2401,7 @@ LayoutUnit RenderBox::fillAvailableMeasure(LayoutUnit availableLogicalWidth) con
 LayoutUnit RenderBox::fillAvailableMeasure(LayoutUnit availableLogicalWidth, LayoutUnit& marginStart, LayoutUnit& marginEnd) const
 {
     RenderView* renderView = view();
-    marginStart = minimumValueForLength(style()->marginStart(), availableLogicalWidth, renderView);
+    marginStart = minimumValueForLength(style()->marginStart(), availableLogicalWidth, renderView) + additionalMarginStart();
     marginEnd = minimumValueForLength(style()->marginEnd(), availableLogicalWidth, renderView);
     return availableLogicalWidth - marginStart - marginEnd;
 }
@@ -2550,7 +2550,7 @@ void RenderBox::computeInlineDirectionMargins(RenderBlock* containingBlock, Layo
 
     if (isFloating() || isInline()) {
         // Inline blocks/tables and floats don't have their margins increased.
-        marginStart = minimumValueForLength(marginStartLength, containerWidth, renderView);
+        marginStart = minimumValueForLength(marginStartLength, containerWidth, renderView) + additionalMarginStart();
         marginEnd = minimumValueForLength(marginEndLength, containerWidth, renderView);
         return;
     }
@@ -2569,7 +2569,7 @@ void RenderBox::computeInlineDirectionMargins(RenderBlock* containingBlock, Layo
     if ((marginStartLength.isAuto() && marginEndLength.isAuto() && childWidth < containerWidth)
         || (!marginStartLength.isAuto() && !marginEndLength.isAuto() && containingBlock->style()->textAlign() == WEBKIT_CENTER)) {
         // Other browsers center the margin box for align=center elements so we match them here.
-        LayoutUnit marginStartWidth = minimumValueForLength(marginStartLength, containerWidth, renderView);
+        LayoutUnit marginStartWidth = minimumValueForLength(marginStartLength, containerWidth, renderView) + additionalMarginStart();
         LayoutUnit marginEndWidth = minimumValueForLength(marginEndLength, containerWidth, renderView);
         LayoutUnit centeredMarginBoxStart = max<LayoutUnit>(0, (containerWidth - childWidth - marginStartWidth - marginEndWidth) / 2);
         marginStart = centeredMarginBoxStart + marginStartWidth;
@@ -2579,7 +2579,7 @@ void RenderBox::computeInlineDirectionMargins(RenderBlock* containingBlock, Layo
 
     // Case Two: The object is being pushed to the start of the containing block's available logical width.
     if (marginEndLength.isAuto() && childWidth < containerWidth) {
-        marginStart = valueForLength(marginStartLength, containerWidth, renderView);
+        marginStart = valueForLength(marginStartLength, containerWidth, renderView) + additionalMarginStart();
         marginEnd = containerWidth - childWidth - marginStart;
         return;
     }
@@ -2589,13 +2589,13 @@ void RenderBox::computeInlineDirectionMargins(RenderBlock* containingBlock, Layo
         || (containingBlockStyle->isLeftToRightDirection() && containingBlockStyle->textAlign() == WEBKIT_RIGHT));
     if ((marginStartLength.isAuto() && childWidth < containerWidth) || pushToEndFromTextAlign) {
         marginEnd = valueForLength(marginEndLength, containerWidth, renderView);
-        marginStart = containerWidth - childWidth - marginEnd;
+        marginStart = containerWidth - childWidth - marginEnd + additionalMarginStart();
         return;
     }
 
     // Case Four: Either no auto margins, or our width is >= the container width (css2.1, 10.3.3).  In that case
     // auto margins will just turn into 0.
-    marginStart = minimumValueForLength(marginStartLength, containerWidth, renderView);
+    marginStart = minimumValueForLength(marginStartLength, containerWidth, renderView) + additionalMarginStart();
     marginEnd = minimumValueForLength(marginEndLength, containerWidth, renderView);
 }
 

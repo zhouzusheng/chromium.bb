@@ -25,7 +25,7 @@
 
 #include "core/platform/win/BBClipboardUtil.h"
 #include "core/platform/win/BbUtfUtil.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 
 namespace WebCore {
 

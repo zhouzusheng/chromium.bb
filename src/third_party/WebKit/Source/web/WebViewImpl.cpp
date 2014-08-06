@@ -78,7 +78,6 @@
 #include "WebViewClient.h"
 #include "WebWindowFeatures.h"
 #include "core/accessibility/AXObjectCache.h"
-#include "core/dom/CustomEvent.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/Text.h"
@@ -87,6 +86,7 @@
 #include "core/editing/FrameSelection.h"
 #include "core/editing/InputMethodController.h"
 #include "core/editing/TextIterator.h"
+#include "core/events/CustomEvent.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/WheelEvent.h"
 #include "core/html/HTMLInputElement.h"
@@ -2546,7 +2546,7 @@ void WebViewImpl::didChangeWindowRect()
     eventInit.bubbles = false;
     eventInit.cancelable = false;
     RefPtr<CustomEvent> event = CustomEvent::create("bbWindowRectChanged", eventInit);
-    mainFrameImpl()->frame()->document()->dispatchWindowEvent(event);
+    mainFrameImpl()->frame()->domWindow()->dispatchEvent(event);
 }
 
 void WebViewImpl::didChangeWindowResizerRect()

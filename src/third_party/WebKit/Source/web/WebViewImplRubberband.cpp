@@ -25,9 +25,9 @@
 
 #include <vector>
 
-#include "core/dom/Event.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/events/Event.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/platform/Pasteboard.h"
 #include "core/rendering/InlineTextBox.h"
 #include "core/rendering/ColumnInfo.h"
@@ -345,8 +345,8 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, W
             }
         }
 
-        layerContext.m_layerScrollOffset.setWidth(layer->scrollXOffset() * layerContext.m_scaleX);
-        layerContext.m_layerScrollOffset.setHeight(layer->scrollYOffset() * layerContext.m_scaleY);
+        layerContext.m_layerScrollOffset.setWidth(layer->scrollableArea()->scrollXOffset() * layerContext.m_scaleX);
+        layerContext.m_layerScrollOffset.setHeight(layer->scrollableArea()->scrollYOffset() * layerContext.m_scaleY);
     }
     else if (localContext.m_containingBlock != context.m_containingBlock) {
         ASSERT(localContext.m_containingBlock);
@@ -440,7 +440,7 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, W
                 {
                     const Font& font = renderer->style()->font();
                     UChar space = ' ';
-                    candidate.m_spaceWidth = font.width(RenderBlock::constructTextRun(renderer, font, &space, 1, renderer->style()));
+                    candidate.m_spaceWidth = font.width(RenderBlockFlow::constructTextRun(renderer, font, &space, 1, renderer->style()));
                     candidate.m_spaceWidth *= localContext.m_layerContext->m_scaleX;
                 }
             }

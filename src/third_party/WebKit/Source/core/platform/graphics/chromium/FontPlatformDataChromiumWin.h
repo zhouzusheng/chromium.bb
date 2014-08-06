@@ -80,7 +80,11 @@ public:
     FontPlatformData(const FontPlatformData&, float textSize);
     FontPlatformData(PassRefPtr<SkTypeface>, const char* name, float textSize, bool fakeBold, bool fakeItalic, FontOrientation = Horizontal);
 
-    void setupPaint(SkPaint*, GraphicsContext* = 0) const;
+    struct FontSmoothingOverride {
+        bool lcdExplicitlyRequested;
+        uint32_t textFlags;
+    };
+    void setupPaint(SkPaint*, GraphicsContext* = 0, const FontSmoothingOverride* = 0) const;
 
     FontPlatformData& operator=(const FontPlatformData&);
 

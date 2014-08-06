@@ -98,11 +98,15 @@ static void paintSkiaText(GraphicsContext* context,
 {
     TextDrawingModeFlags textMode = context->textDrawingMode();
 
+    FontPlatformData::FontSmoothingOverride fontSmoothingOverride;
+    fontSmoothingOverride.textFlags = textFlags;
+    fontSmoothingOverride.lcdExplicitlyRequested = lcdExplicitlyRequested;
+
     // Filling (if necessary). This is the common case.
     SkPaint paint;
     context->setupPaintForFilling(&paint);
     paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
-    data.setupPaint(&paint, context, lcdExplicitlyRequested);
+    data.setupPaint(&paint, context, &fontSmoothingOverride);
 
     // FIXME: Only needed to support the HFONT based paintSkiaText
     // version where a new typeface is created from the HFONT.

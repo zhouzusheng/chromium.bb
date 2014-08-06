@@ -45,7 +45,10 @@
 #include "WebViewClient.h"
 #include "WebViewImpl.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/v8/ScriptController.h"
+#include "bindings/v8/V8Binding.h"
 #include "core/css/CSSStyleDeclaration.h"
+#include "core/dom/CustomEvent.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/editing/Editor.h"
@@ -174,6 +177,9 @@ static String selectMisspellingAsync(Frame* selectedFrame, DocumentMarker& marke
 
     return markerRange->text();
 }
+
+// Forward declare this, it is implemented at the end of this file.
+static bool fireBbContextMenuEvent(Frame*, WebContextMenuData&);
 
 void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultMenu)
 {
@@ -368,9 +374,10 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
 
     data.node = r.innerNonSharedNode();
 
-    WebFrame* selected_web_frame = WebFrameImpl::fromFrame(selectedFrame);
-    if (m_webView->client())
+    if (!fireBbContextMenuEvent(selectedFrame, data) && m_webView->client()) {
+        WebFrame* selected_web_frame = WebFrameImpl::fromFrame(selectedFrame);
         m_webView->client()->showContextMenu(selected_web_frame, data);
+    }
 }
 
 void ContextMenuClientImpl::clearContextMenu()
@@ -419,6 +426,76 @@ static void populateSubMenuItems(const Vector<ContextMenuItem>& inputMenu, WebVe
 void ContextMenuClientImpl::populateCustomMenuItems(const WebCore::ContextMenu* defaultMenu, WebContextMenuData* data)
 {
     populateSubMenuItems(defaultMenu->items(), data->customItems);
+}
+
+static void exposeInt(v8::Isolate* isolate, const v8::Handle<v8::Object>& obj, const char* name, int value)
+{
+    obj->Set(v8::String::NewFromUtf8(isolate, name), v8::Integer::New(value));
+}
+
+static void exposeBool(v8::Isolate* isolate, const v8::Handle<v8::Object>& obj, const char* name, bool value)
+{
+    obj->Set(v8::String::NewFromUtf8(isolate, name), v8::Boolean::New(value));
+}
+
+static void exposeString(v8::Isolate* isolate, const v8::Handle<v8::Object>& obj, const char* name, const std::string& value)
+{
+    obj->Set(v8::String::NewFromUtf8(isolate, name), v8::String::NewFromUtf8(isolate, value.data(), v8::String::kNormalString, value.length()));
+}
+
+static void exposeStringVector(v8::Isolate* isolate, const v8::Handle<v8::Object>& obj, const char* name, const WebKit::WebVector<WebKit::WebString>& value)
+{
+    v8::Handle<v8::Array> array = v8::Array::New();
+    for (unsigned i = 0; i < value.size(); ++i) {
+        std::string item = value[i].utf8();
+        array->Set(i, v8::String::NewFromUtf8(isolate, item.data(), v8::String::kNormalString, item.length()));
+    }
+    obj->Set(v8::String::NewFromUtf8(isolate, name), array);
+}
+
+static bool fireBbContextMenuEvent(Frame* frame, WebContextMenuData& data)
+{
+    v8::Isolate* isolate = toIsolate(frame);
+    v8::HandleScope handleScope(isolate);
+
+    v8::Handle<v8::Context> context = ScriptController::mainWorldContext(frame);
+    v8::Context::Scope contextScope(context);
+
+    v8::Handle<v8::ObjectTemplate> templ = v8::ObjectTemplate::New();
+    v8::Handle<v8::Object> detailObj = templ->NewInstance();
+
+    exposeBool(isolate, detailObj, "canUndo", data.editFlags & WebContextMenuData::CanUndo);
+    exposeBool(isolate, detailObj, "canRedo", data.editFlags & WebContextMenuData::CanRedo);
+    exposeBool(isolate, detailObj, "canCut", data.editFlags & WebContextMenuData::CanCut);
+    exposeBool(isolate, detailObj, "canCut", data.editFlags & WebContextMenuData::CanCopy);
+    exposeBool(isolate, detailObj, "canCopy", data.editFlags & WebContextMenuData::CanCopy);
+    exposeBool(isolate, detailObj, "canPaste", data.editFlags & WebContextMenuData::CanPaste);
+    exposeBool(isolate, detailObj, "canDelete", data.editFlags & WebContextMenuData::CanDelete);
+    exposeBool(isolate, detailObj, "canSelectAll", data.editFlags & WebContextMenuData::CanSelectAll);
+    exposeBool(isolate, detailObj, "canTranslate", data.editFlags & WebContextMenuData::CanTranslate);
+
+    exposeInt(isolate, detailObj, "mediaType", data.mediaType);
+    exposeString(isolate, detailObj, "misspelledWord", data.misspelledWord.utf8());
+    exposeBool(isolate, detailObj, "isSpellCheckingEnabled", data.isSpellCheckingEnabled);
+    exposeStringVector(isolate, detailObj, "dictionarySuggestions", data.dictionarySuggestions);
+    exposeString(isolate, detailObj, "selectedText", data.selectedText.utf8());
+    exposeInt(isolate, detailObj, "mousePositionX", data.mousePosition.x);
+    exposeInt(isolate, detailObj, "mousePositionY", data.mousePosition.y);
+    exposeString(isolate, detailObj, "linkURL", data.linkURL.string().utf8());
+    exposeBool(isolate, detailObj, "isEditable", data.isEditable);
+    exposeString(isolate, detailObj, "frameEncoding", data.frameEncoding.utf8());
+    exposeString(isolate, detailObj, "frameURL", data.frameURL.string().utf8());
+    exposeBool(isolate, detailObj, "hasImageContents", data.hasImageContents);
+    exposeString(isolate, detailObj, "srcURL", data.srcURL.string().utf8());
+
+    CustomEventInit eventInit;
+    eventInit.bubbles = true;
+    eventInit.cancelable = true;
+    RefPtr<CustomEvent> event = CustomEvent::create("bbContextMenu", eventInit);
+    event->setSerializedDetail(SerializedScriptValue::create(detailObj, isolate));
+
+    data.node.unwrap<Node>()->dispatchEvent(event);
+    return event->defaultPrevented();
 }
 
 } // namespace WebKit

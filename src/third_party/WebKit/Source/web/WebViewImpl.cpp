@@ -57,6 +57,8 @@
 #include "WebAutofillClient.h"
 #include "WebDevToolsAgentImpl.h"
 #include "WebDevToolsAgentPrivate.h"
+#include "WebDocument.h"
+#include "WebDOMCustomEvent.h"
 #include "WebFrameImpl.h"
 #include "WebHelperPluginImpl.h"
 #include "WebHitTestResult.h"
@@ -76,6 +78,7 @@
 #include "WebViewClient.h"
 #include "WebWindowFeatures.h"
 #include "core/accessibility/AXObjectCache.h"
+#include "core/dom/CustomEvent.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/Text.h"
@@ -2531,6 +2534,21 @@ void WebViewImpl::didLosePointerLock()
         page()->pointerLockController().didLosePointerLock();
 }
 
+void WebViewImpl::didChangeWindowRect()
+{
+    if (!mainFrameImpl()
+        || !mainFrameImpl()->frame()
+        || !mainFrameImpl()->frame()->document()) {
+        return;
+    }
+
+    CustomEventInit eventInit;
+    eventInit.bubbles = false;
+    eventInit.cancelable = false;
+    RefPtr<CustomEvent> event = CustomEvent::create("bbWindowRectChanged", eventInit);
+    mainFrameImpl()->frame()->document()->dispatchWindowEvent(event);
+}
+
 void WebViewImpl::didChangeWindowResizerRect()
 {
     if (mainFrameImpl()->frameView())
@@ -3686,6 +3704,19 @@ void WebViewImpl::deviceOrPageScaleFactorChanged()
 bool WebViewImpl::useExternalPopupMenus()
 {
     return shouldUseExternalPopupMenus;
+}
+
+void WebViewImpl::willDrag()
+{
+    WebDocument document = mainFrame()->document();
+    WebDOMEvent dom_event = document.createEvent("CustomEvent");
+    WebDOMCustomEvent ev = dom_event.to<WebDOMCustomEvent>();
+
+    ev.initCustomEvent(
+        WebString::fromUTF8("BBWillDrag"),
+        false, false,
+        WebSerializedScriptValue());
+    document.dispatchEvent(ev);
 }
 
 void WebViewImpl::startDragging(Frame* frame,

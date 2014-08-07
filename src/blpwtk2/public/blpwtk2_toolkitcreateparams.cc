@@ -137,7 +137,7 @@ void ToolkitCreateParams::setDictionaryPath(const StringRef& path)
 
 void ToolkitCreateParams::setHostChannel(const StringRef& channelInfoString)
 {
-    DCHECK(isValidHostChannelVersion(channelInfoString));
+    CHECK(channelInfoString.isEmpty() || isValidHostChannelVersion(channelInfoString));
     d_impl->d_hostChannel.assign(
         channelInfoString.data(),
         channelInfoString.length());

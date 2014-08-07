@@ -342,6 +342,7 @@ void WebViewImpl::focus()
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
+    d_widget->focus();
     d_webContents->GetView()->Focus();
 }
 

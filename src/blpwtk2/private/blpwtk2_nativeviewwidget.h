@@ -51,6 +51,7 @@ class NativeViewWidget : private views::WidgetDelegateView {
     void show();
     void hide();
     void move(int x, int y, int width, int height);
+    void focus();
 
   private:
     // views::WidgetDelegate overrides

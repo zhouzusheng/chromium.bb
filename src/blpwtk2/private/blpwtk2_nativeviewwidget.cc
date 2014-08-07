@@ -46,6 +46,7 @@ NativeViewWidget::NativeViewWidget(gfx::NativeView contents,
     params.delegate = this;
     params.type = views::Widget::InitParams::TYPE_WINDOW_FRAMELESS;
     params.opacity = views::Widget::InitParams::OPAQUE_WINDOW;
+    d_impl->set_focus_on_creation(false);
     d_impl->Init(params);
     d_nativeViewHost->Attach(contents);
 
@@ -97,6 +98,13 @@ void NativeViewWidget::move(int x, int y, int width, int height)
 {
     DCHECK(d_impl);
     d_impl->SetBounds(gfx::Rect(x, y, width, height));
+}
+
+void NativeViewWidget::focus()
+{
+    DCHECK(d_impl);
+    HWND hwnd = views::HWNDForWidget(d_impl);
+    ::SetFocus(hwnd);
 }
 
 // views::WidgetDelegate overrides

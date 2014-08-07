@@ -39,8 +39,8 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Text.h"
-#include "core/editing/Editor.h"
 #include "core/editing/markup.h"
+#include "core/editing/SpellChecker.h"
 #include "core/events/EventListener.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/ThreadLocalEventNames.h"
@@ -327,7 +327,7 @@ void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& 
                 TrackExceptionState es;
                 range->selectNode(this, es);
                 if (!es.hadException())
-                    document().frame()->editor().clearMisspellingsAndBadGrammar(VisibleSelection(range.get()));
+                    document().frame()->spellChecker().clearMisspellingsAndBadGrammar(VisibleSelection(range.get()));
             }
         }
 

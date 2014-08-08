@@ -41,7 +41,6 @@ struct ToolkitCreateParamsImpl {
     int d_maxSocketsPerProxy;
     std::vector<std::string> d_commandLineSwitches;
     std::vector<std::string> d_plugins;
-    std::vector<int> d_renderersUsingInProcessPlugins;
     ResourceLoader* d_inProcessResourceLoader;
     std::string d_dictionaryPath;
     std::string d_hostChannel;
@@ -112,15 +111,6 @@ void ToolkitCreateParams::registerPlugin(const StringRef& pluginPath)
 void ToolkitCreateParams::disablePluginDiscovery()
 {
     appendCommandLineSwitch(switches::kDisablePluginsDiscovery);
-}
-
-void ToolkitCreateParams::setRendererUsesInProcessPlugins(int renderer)
-{
-    DCHECK(renderer == Constants::ANY_OUT_OF_PROCESS_RENDERER
-        || renderer == Constants::IN_PROCESS_RENDERER
-        || renderer >= 0);
-
-    d_impl->d_renderersUsingInProcessPlugins.push_back(renderer);
 }
 
 void ToolkitCreateParams::setInProcessResourceLoader(
@@ -197,17 +187,6 @@ StringRef ToolkitCreateParams::registeredPluginAt(size_t index) const
 {
     DCHECK(index < d_impl->d_plugins.size());
     return d_impl->d_plugins[index];
-}
-
-size_t ToolkitCreateParams::numRenderersUsingInProcessPlugins() const
-{
-    return d_impl->d_renderersUsingInProcessPlugins.size();
-}
-
-int ToolkitCreateParams::rendererUsingInProcessPluginsAt(size_t index) const
-{
-    DCHECK(index < d_impl->d_renderersUsingInProcessPlugins.size());
-    return d_impl->d_renderersUsingInProcessPlugins[index];
 }
 
 ResourceLoader* ToolkitCreateParams::inProcessResourceLoader() const

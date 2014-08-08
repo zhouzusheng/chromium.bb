@@ -279,7 +279,7 @@ void ToolkitImpl::startupThreads()
         d_mainDelegate.addPluginsToPluginService();
     }
 
-    InProcessRenderer::init(d_inProcessRendererInfo.d_usesInProcessPlugins);
+    InProcessRenderer::init();
     MainMessagePump::current()->init();
 
     if (Statics::isRendererMainThreadMode()) {
@@ -306,9 +306,6 @@ void ToolkitImpl::startupThreads()
         d_processClient.reset(
             new ProcessClientImpl(channelId,
                                   InProcessRenderer::ipcTaskRunner()));
-        d_processClient->Send(
-            new BlpControlHostMsg_SetInProcessRendererInfo(
-                d_inProcessRendererInfo.d_usesInProcessPlugins));
     }
 
     d_threadsStarted = true;
@@ -376,15 +373,6 @@ void ToolkitImpl::shutdownThreads()
     sandbox::CallOnExitHandlers();
 
     d_threadsStopped = true;
-}
-
-void ToolkitImpl::setRendererUsesInProcessPlugins(int renderer)
-{
-    if (renderer == Constants::IN_PROCESS_RENDERER) {
-        d_inProcessRendererInfo.d_usesInProcessPlugins = true;
-        return;
-    }
-    d_rendererInfoMap.setRendererUsesInProcessPlugins(renderer);
 }
 
 void ToolkitImpl::appendCommandLineSwitch(const char* switchString)
@@ -497,8 +485,7 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
                 d_inProcessRendererHost.reset(
                     new ManagedRenderProcessHost(
                         base::Process::Current().handle(),
-                        browserContext,
-                        d_inProcessRendererInfo.d_usesInProcessPlugins));
+                        browserContext));
                 d_inProcessRendererInfo.d_hostId =
                     d_inProcessRendererHost->id();
                 InProcessRenderer::setChannelName(

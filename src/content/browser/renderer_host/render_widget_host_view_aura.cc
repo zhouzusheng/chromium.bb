@@ -823,8 +823,7 @@ void RenderWidgetHostViewAura::MovePluginWindows(
     }
   }
 
-  bool ipp = GetRenderWidgetHost()->GetProcess()->UsesInProcessPlugins();
-  MovePluginWindowsHelper(parent, moves, ipp);
+  MovePluginWindowsHelper(parent, moves);
 
   // Make sure each plugin window (or its wrapper if it exists) has a pointer to
   // |this|.

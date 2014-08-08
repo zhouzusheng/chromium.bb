@@ -29,13 +29,9 @@ namespace blpwtk2 {
 
 ManagedRenderProcessHost::ManagedRenderProcessHost(
     base::ProcessHandle processHandle,
-    content::BrowserContext* browserContext,
-    bool usesInProcessPlugins)
+    content::BrowserContext* browserContext)
 : d_impl(content::RenderProcessHost::CreateProcessHost(processHandle, browserContext))
 {
-    if (usesInProcessPlugins) {
-        d_impl->SetUsesInProcessPlugins();
-    }
     d_impl->Init();
 }
 

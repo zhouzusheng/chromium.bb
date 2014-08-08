@@ -75,7 +75,6 @@ class ProcessHostImpl : public ProcessHost,
 
     // Control message handlers
     void onSync();
-    void onSetInProcessRendererInfo(bool usesInProcessPlugins);
     void onCreateNewHostChannel(int timeoutInMilliseconds,
                                 std::string* channelInfo);
     void onClearWebCache();

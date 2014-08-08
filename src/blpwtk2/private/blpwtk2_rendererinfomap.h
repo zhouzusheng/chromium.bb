@@ -36,13 +36,10 @@ class Profile;
 
 struct RendererInfo {
     int d_hostId;
-    bool d_usesInProcessPlugins;
-
     Profile* d_profileForDCheck;  // only set when DCHECKs are enabled
 
     RendererInfo()
     : d_hostId(-1)
-    , d_usesInProcessPlugins(false)
     , d_profileForDCheck(0)
     {
     }
@@ -77,12 +74,6 @@ class RendererInfoMap {
     RendererInfoMap();
     ~RendererInfoMap();
 
-    // Marks the specified 'renderer' as using in-process plugins.
-    void setRendererUsesInProcessPlugins(int renderer);
-
-    // Return true if the specified 'hostId' should use in-process plugins.
-    bool hostIdUsesInProcessPlugins(int hostId);
-
     // Return the host affinity for the specified 'renderer'.  If the hostId
     // for this renderer has not been created yet, a new ID will be generated.
     // Note that 'ANY_OUT_OF_PROCESS_RENDERER' will return
@@ -101,7 +92,6 @@ class RendererInfoMap {
 
     base::Lock d_lock;
     InfoMap d_map;
-    bool d_anyOutOfProcessRenderersUseInProcessPlugins;
 
     DISALLOW_COPY_AND_ASSIGN(RendererInfoMap);
 };

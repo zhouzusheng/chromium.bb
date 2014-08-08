@@ -74,12 +74,6 @@ class ToolkitCreateParams {
     // via 'registerPlugin' will be loaded.
     BLPWTK2_EXPORT void disablePluginDiscovery();
 
-    // By default, renderers will run plugins in a separate process.  Use this
-    // method to make any WebView created with affinity to the specified
-    // 'renderer' use in-process plugins.  Note that using in-process plugins
-    // will disable the sandbox for that renderer.
-    BLPWTK2_EXPORT void setRendererUsesInProcessPlugins(int renderer);
-
     // Install a custom ResourceLoader.  Note that this is only valid when
     // using the 'RENDERER_MAIN' thread-mode, and will only be used for
     // in-process renderers.
@@ -117,8 +111,6 @@ class ToolkitCreateParams {
     StringRef commandLineSwitchAt(size_t index) const;
     size_t numRegisteredPlugins() const;
     StringRef registeredPluginAt(size_t index) const;
-    size_t numRenderersUsingInProcessPlugins() const;
-    int rendererUsingInProcessPluginsAt(size_t index) const;
     ResourceLoader* inProcessResourceLoader() const;
     StringRef dictionaryPath() const;
     StringRef hostChannel() const;

@@ -106,11 +106,6 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
         toolkit->registerPlugin(path.c_str());
     }
 
-    for (size_t i = 0; i < params.numRenderersUsingInProcessPlugins(); ++i) {
-        toolkit->setRendererUsesInProcessPlugins(
-            params.rendererUsingInProcessPluginsAt(i));
-    }
-
     g_created = true;
     return toolkit;
 }

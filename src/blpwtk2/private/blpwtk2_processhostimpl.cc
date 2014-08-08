@@ -155,7 +155,6 @@ bool ProcessHostImpl::OnMessageReceived(const IPC::Message& message)
         bool msgIsOk = true;
         IPC_BEGIN_MESSAGE_MAP_EX(ProcessHostImpl, message, msgIsOk)
             IPC_MESSAGE_HANDLER(BlpControlHostMsg_Sync, onSync)
-            IPC_MESSAGE_HANDLER(BlpControlHostMsg_SetInProcessRendererInfo, onSetInProcessRendererInfo)
             IPC_MESSAGE_HANDLER(BlpControlHostMsg_CreateNewHostChannel, onCreateNewHostChannel)
             IPC_MESSAGE_HANDLER(BlpControlHostMsg_ClearWebCache, onClearWebCache)
             IPC_MESSAGE_HANDLER(BlpProfileHostMsg_New, onProfileNew)
@@ -222,14 +221,6 @@ void ProcessHostImpl::onSync()
     DLOG(INFO) << "sync";
 }
 
-void ProcessHostImpl::onSetInProcessRendererInfo(bool usesInProcessPlugins)
-{
-    // We cannot set the 'usesInProcessPlugins' flag if the hostId has already
-    // been set.
-    DCHECK(-1 == d_inProcessRendererInfo.d_hostId);
-    d_inProcessRendererInfo.d_usesInProcessPlugins = usesInProcessPlugins;
-}
-
 void ProcessHostImpl::onCreateNewHostChannel(int timeoutInMilliseconds,
                                              std::string* channelInfo)
 {
@@ -284,8 +275,7 @@ void ProcessHostImpl::onWebViewNew(const BlpWebViewHostMsg_NewParams& params)
             d_renderProcessHost.reset(
                 new ManagedRenderProcessHost(
                     d_processHandle,
-                    profileHost->browserContext(),
-                    d_inProcessRendererInfo.d_usesInProcessPlugins));
+                    profileHost->browserContext()));
             d_inProcessRendererInfo.d_hostId = d_renderProcessHost->id();
             Send(new BlpControlMsg_SetInProcessRendererChannelName(
                 d_renderProcessHost->channelId()));

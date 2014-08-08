@@ -269,19 +269,14 @@ SiteProcessMap* GetSiteProcessMapForBrowserContext(BrowserContext* context) {
 // NOTE: changes to this class need to be reviewed by the security team.
 class RendererSandboxedProcessLauncherDelegate
     : public content::SandboxedProcessLauncherDelegate {
-  bool in_process_plugins_;
  public:
-  explicit RendererSandboxedProcessLauncherDelegate(
-      bool in_process_plugins)
-      : in_process_plugins_(in_process_plugins)
-  {
-  }
+  RendererSandboxedProcessLauncherDelegate() {}
   virtual ~RendererSandboxedProcessLauncherDelegate() {}
 
   virtual void ShouldSandbox(bool* in_sandbox) OVERRIDE {
 #if !defined (GOOGLE_CHROME_BUILD)
     if (CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kInProcessPlugins) || in_process_plugins_) {
+        switches::kInProcessPlugins)) {
       *in_sandbox = false;
     }
 #endif
@@ -399,7 +394,6 @@ RenderProcessHostImpl::RenderProcessHostImpl(
           ignore_input_events_(false),
           supports_browser_plugin_(supports_browser_plugin),
           is_guest_(is_guest),
-          uses_in_process_plugins_(false),
           gpu_observer_registered_(false),
           power_monitor_broadcaster_(this) {
   widget_helper_ = new RenderWidgetHelper();
@@ -532,7 +526,7 @@ bool RenderProcessHostImpl::Init() {
     // at this stage.
     child_process_launcher_.reset(new ChildProcessLauncher(
 #if defined(OS_WIN)
-        new RendererSandboxedProcessLauncherDelegate(uses_in_process_plugins_),
+        new RendererSandboxedProcessLauncherDelegate,
 #elif defined(OS_POSIX)
         renderer_prefix.empty(),
         base::EnvironmentMap(),
@@ -877,11 +871,6 @@ void RenderProcessHostImpl::AppendRendererCommandLine(
   // Now send any options from our own command line we want to propagate.
   const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
   PropagateBrowserCommandLineToRenderer(browser_command_line, command_line);
-
-  if (uses_in_process_plugins_ &&
-      !command_line->HasSwitch(switches::kInProcessPlugins)) {
-    command_line->AppendSwitch(switches::kInProcessPlugins);
-  }
 
   // Pass on the browser locale.
   const std::string locale =
@@ -1449,14 +1438,6 @@ void RenderProcessHostImpl::ResumeRequestsForView(int route_id) {
 
 bool RenderProcessHostImpl::IsProcessManagedExternally() const {
   return externally_managed_handle_ != base::kNullProcessHandle;
-}
-
-bool RenderProcessHostImpl::UsesInProcessPlugins() const {
-  return uses_in_process_plugins_;
-}
-
-void RenderProcessHostImpl::SetUsesInProcessPlugins() {
-  uses_in_process_plugins_ = true;
 }
 
 IPC::ChannelProxy* RenderProcessHostImpl::GetChannel() {

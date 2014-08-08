@@ -189,6 +189,16 @@ class WebViewImpl : public WebView,
     // or a panel window.
     virtual bool IsPopupOrPanel(const content::WebContents* source) const OVERRIDE;
 
+    // Asks permission to use the camera and/or microphone. If permission is
+    // granted, a call should be made to |callback| with the devices. If the
+    // request is denied, a call should be made to |callback| with an empty list
+    // of devices. |request| has the details of the request (e.g. which of audio
+    // and/or video devices are requested, and lists of available devices).
+    virtual void RequestMediaAccessPermission(
+        content::WebContents* web_contents,
+        const content::MediaStreamRequest& request,
+        const content::MediaResponseCallback& callback) OVERRIDE;
+
     // Invoked when the RenderWidgetHost's backing store has been updated.
     virtual void DidUpdateBackingStore() OVERRIDE;
 

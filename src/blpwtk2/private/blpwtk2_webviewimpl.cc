@@ -52,6 +52,28 @@
 
 namespace blpwtk2 {
 
+class DummyMediaStreamUI : public content::MediaStreamUI {
+public:
+    DummyMediaStreamUI() {}
+    virtual ~DummyMediaStreamUI() {}
+
+    virtual void OnStarted(const base::Closure& stop) OVERRIDE
+    {
+    }
+};
+
+static const content::MediaStreamDevice* findDeviceById(
+    const std::string& id,
+    const content::MediaStreamDevices& devices)
+{
+    for (std::size_t i = 0; i < devices.size(); ++i) {
+        if (id == devices[i].id) {
+            return &devices[i];
+        }
+    }
+    return 0;
+}
+
 WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
                          blpwtk2::NativeView parent,
                          BrowserContextImpl* browserContext,
@@ -709,6 +731,38 @@ void WebViewImpl::MoveContents(content::WebContents* source_contents, const gfx:
 bool WebViewImpl::IsPopupOrPanel(const content::WebContents* source) const
 {
     return d_isPopup;
+}
+
+void WebViewImpl::RequestMediaAccessPermission(
+    content::WebContents* web_contents,
+    const content::MediaStreamRequest& request,
+    const content::MediaResponseCallback& callback)
+{
+    scoped_ptr<content::MediaStreamUI> ui(new DummyMediaStreamUI());
+    content::MediaStreamDevices devices;
+    if (request.requested_video_device_id.empty()) {
+        if (request.video_type != content::MEDIA_NO_SERVICE && !Statics::mediaObserver->getVideoDevices().empty()) {
+            devices.push_back(Statics::mediaObserver->getVideoDevices()[0]);
+        }
+    }
+    else {
+        const content::MediaStreamDevice* device = findDeviceById(request.requested_video_device_id, Statics::mediaObserver->getVideoDevices());
+        if (device) {
+            devices.push_back(*device);
+        }
+    }
+    if (request.requested_audio_device_id.empty()) {
+        if (request.audio_type != content::MEDIA_NO_SERVICE && !Statics::mediaObserver->getAudioDevices().empty()) {
+            devices.push_back(Statics::mediaObserver->getAudioDevices()[0]);
+        }
+    }
+    else {
+        const content::MediaStreamDevice* device = findDeviceById(request.requested_audio_device_id, Statics::mediaObserver->getAudioDevices());
+        if (device) {
+            devices.push_back(*device);
+        }
+    }
+    callback.Run(devices, ui.Pass());
 }
 
 bool WebViewImpl::OnNCHitTest(int* result)

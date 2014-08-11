@@ -32,8 +32,9 @@
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/editing/SpellChecker.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/rendering/PaintPhase.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/editing/htmlediting.h"
@@ -142,8 +143,8 @@ bool BBWindowHooks::checkSpellingForRange(Range* range)
 
     WebCore::Frame *frame = range->ownerDocument().frame();
     WebCore::VisibleSelection s(range);
-    frame->editor().clearMisspellingsAndBadGrammar(s);
-    frame->editor().markMisspellingsAndBadGrammar(s, false, s);
+    frame->spellChecker().clearMisspellingsAndBadGrammar(s);
+    frame->spellChecker().markMisspellingsAndBadGrammar(s, false, s);
     return true;
 }
 
@@ -181,9 +182,9 @@ bool BBWindowHooks::checkSpellingForNode(Node* node)
             WebCore::VisibleSelection s(WebCore::firstPositionInOrBeforeNode(e.get()),
                 WebCore::lastPositionInOrAfterNode(e.get()));
             if (frame->settings() && !frame->settings()->asynchronousSpellCheckingEnabled()) {
-                frame->editor().clearMisspellingsAndBadGrammar(s);
+                frame->spellChecker().clearMisspellingsAndBadGrammar(s);
             }
-            frame->editor().markMisspellingsAndBadGrammar(s, false, s);
+            frame->spellChecker().markMisspellingsAndBadGrammar(s, false, s);
         }
         return true;
     }

@@ -29,6 +29,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
 #include "cc/layers/video_frame_provider.h"
+#include "content/public/renderer/render_view_observer.h"
 #include "content/renderer/media/crypto/proxy_decryptor.h"
 #include "media/base/audio_renderer_sink.h"
 #include "media/base/decryptor.h"
@@ -37,8 +38,8 @@
 #include "media/base/text_track.h"
 #include "media/filters/skcanvas_video_renderer.h"
 #include "skia/ext/platform_canvas.h"
+#include "third_party/WebKit/public/platform/WebAudioSourceProvider.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
-#include "third_party/WebKit/public/web/WebAudioSourceProvider.h"
 #include "third_party/WebKit/public/web/WebMediaPlayer.h"
 #include "third_party/WebKit/public/web/WebMediaPlayerClient.h"
 #include "url/gurl.h"
@@ -74,13 +75,15 @@ class WebTextTrackImpl;
 class WebMediaPlayerImpl
     : public WebKit::WebMediaPlayer,
       public cc::VideoFrameProvider,
-      public base::MessageLoop::DestructionObserver,
+      public content::RenderViewObserver,
       public base::SupportsWeakPtr<WebMediaPlayerImpl> {
  public:
   // Constructs a WebMediaPlayer implementation using Chromium's media stack.
-  //
+  // |render_view| is passed only for the purpose of registering |this| as an
+  // observer of it.
   // |delegate| may be null.
   WebMediaPlayerImpl(
+      content::RenderView* render_view,
       WebKit::WebFrame* frame,
       WebKit::WebMediaPlayerClient* client,
       base::WeakPtr<WebMediaPlayerDelegate> delegate,
@@ -173,11 +176,8 @@ class WebMediaPlayerImpl
       const WebKit::WebString& key_system,
       const WebKit::WebString& session_id);
 
-  // As we are closing the tab or even the browser, |main_loop_| is destroyed
-  // even before this object gets destructed, so we need to know when
-  // |main_loop_| is being destroyed and we can stop posting repaint task
-  // to it.
-  virtual void WillDestroyCurrentMessageLoop() OVERRIDE;
+  // content::RenderViewObserver implementation.
+  virtual void OnDestruct() OVERRIDE;
 
   void Repaint();
 
@@ -195,7 +195,6 @@ class WebMediaPlayerImpl
                     const std::vector<uint8>& message,
                     const std::string& default_url);
   void OnNeedKey(const std::string& type,
-                 const std::string& session_id,
                  const std::vector<uint8>& init_data);
   scoped_ptr<media::TextTrack> OnTextTrack(media::TextKind kind,
                                            const std::string& label,
@@ -257,6 +256,12 @@ class WebMediaPlayerImpl
   // Called by VideoRendererBase on its internal thread with the new frame to be
   // painted.
   void FrameReady(const scoped_refptr<media::VideoFrame>& frame);
+
+  // Called when a paint or a new frame arrives to indicate that we are
+  // no longer waiting for |current_frame_| to be painted.
+  // |painting_frame| is set to true if |current_frame_| is being painted.
+  // False indicates |current_frame_| is being replaced with a new frame.
+  void DoneWaitingForPaint(bool painting_frame);
 
   WebKit::WebFrame* frame_;
 
@@ -347,12 +352,15 @@ class WebMediaPlayerImpl
 
   // Video frame rendering members.
   //
-  // |lock_| protects |current_frame_| since new frames arrive on the video
+  // |lock_| protects |current_frame_|, |current_frame_painted_|, and
+  // |frames_dropped_before_paint_| since new frames arrive on the video
   // rendering thread, yet are accessed for rendering on either the main thread
   // or compositing thread depending on whether accelerated compositing is used.
-  base::Lock lock_;
+  mutable base::Lock lock_;
   media::SkCanvasVideoRenderer skcanvas_video_renderer_;
   scoped_refptr<media::VideoFrame> current_frame_;
+  bool current_frame_painted_;
+  uint32 frames_dropped_before_paint_;
   bool pending_repaint_;
   bool pending_size_change_;
 

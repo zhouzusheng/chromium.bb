@@ -181,18 +181,6 @@ ContentMainDelegateImpl::CreateContentBrowserClient()
     if (!d_contentBrowserClient.get()) {
         d_contentBrowserClient.reset(
             new ContentBrowserClientImpl(d_rendererInfoMap));
-
-        // We always want to be able to have an in-process renderer.  Modify
-        // the browser process' command line to include the browser locale, as
-        // the renderer expects this flag to be set.  This is to replicate the
-        // logic in RenderProcessHost::SetRunRendererInProcess, but we do it
-        // regardless of whether --single-process is specified or not.
-        CommandLine& commandLine = *CommandLine::ForCurrentProcess();
-        if (!commandLine.HasSwitch(switches::kLang)) {
-            commandLine.AppendSwitchASCII(
-                switches::kLang,
-                d_contentBrowserClient->GetApplicationLocale());
-        }
     }
     return d_contentBrowserClient.get();
 }

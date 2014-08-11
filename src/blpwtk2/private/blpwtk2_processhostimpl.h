@@ -51,9 +51,11 @@ class ManagedRenderProcessHost;
 class ProcessHostImpl : public ProcessHost,
                         private IPC::Listener {
   public:
-    ProcessHostImpl(const std::string& channelId,
-                    RendererInfoMap* rendererInfoMap);
+    ProcessHostImpl(RendererInfoMap* rendererInfoMap);
     ~ProcessHostImpl();
+
+    const std::string& channelId() const;
+    std::string channelInfo() const;
 
     // ProcessHost overrides
     virtual void addRoute(int routingId, ProcessHostListener* listener) OVERRIDE;
@@ -73,9 +75,8 @@ class ProcessHostImpl : public ProcessHost,
 
     // Control message handlers
     void onSync();
-    void onSetInProcessRendererInfo(bool usesInProcessPlugins);
     void onCreateNewHostChannel(int timeoutInMilliseconds,
-                             std::string* channelId);
+                                std::string* channelInfo);
     void onClearWebCache();
     void onProfileNew(int routingId,
                       const std::string& dataDir,

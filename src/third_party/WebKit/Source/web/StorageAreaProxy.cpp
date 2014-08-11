@@ -31,23 +31,23 @@
 #include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
-#include "core/dom/EventNames.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/page/DOMWindow.h"
-#include "core/page/Frame.h"
+#include "core/frame/DOMWindow.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/PageGroup.h"
 #include "core/storage/Storage.h"
 #include "core/storage/StorageEvent.h"
 #include "weborigin/SecurityOrigin.h"
 
-#include "public/platform/WebStorageArea.h"
-#include "public/platform/WebString.h"
-#include "public/platform/WebURL.h"
 #include "WebFrameImpl.h"
 #include "WebPermissionClient.h"
 #include "WebViewImpl.h"
+#include "public/platform/WebStorageArea.h"
+#include "public/platform/WebString.h"
+#include "public/platform/WebURL.h"
 
 namespace WebCore {
 
@@ -99,7 +99,7 @@ void StorageAreaProxy::setItem(const String& key, const String& value, Exception
     WebKit::WebStorageArea::Result result = WebKit::WebStorageArea::ResultOK;
     m_storageArea->setItem(key, value, frame->document()->url(), result);
     if (result != WebKit::WebStorageArea::ResultOK)
-        es.throwDOMException(QuotaExceededError);
+        es.throwDOMException(QuotaExceededError, ExceptionMessages::failedToExecute("setItem", "Storage", "Setting the value of '" + key + "' exceeded the quota."));
 }
 
 void StorageAreaProxy::removeItem(const String& key, ExceptionState& es, Frame* frame)
@@ -154,10 +154,10 @@ void StorageAreaProxy::dispatchLocalStorageEvent(const String& key, const String
     // FIXME: This looks suspicious. Why doesn't this use allPages instead?
     const HashSet<Page*>& pages = PageGroup::sharedGroup()->pages();
     for (HashSet<Page*>::const_iterator it = pages.begin(); it != pages.end(); ++it) {
-        for (Frame* frame = (*it)->mainFrame(); frame; frame = frame->tree()->traverseNext()) {
+        for (Frame* frame = (*it)->mainFrame(); frame; frame = frame->tree().traverseNext()) {
             Storage* storage = frame->domWindow()->optionalLocalStorage();
             if (storage && frame->document()->securityOrigin()->equal(securityOrigin) && !isEventSource(storage, sourceAreaInstance))
-                frame->document()->enqueueWindowEvent(StorageEvent::create(eventNames().storageEvent, key, oldValue, newValue, pageURL, storage));
+                frame->domWindow()->enqueueWindowEvent(StorageEvent::create(EventTypeNames::storage, key, oldValue, newValue, pageURL, storage));
         }
         InspectorInstrumentation::didDispatchDOMStorageEvent(*it, key, oldValue, newValue, LocalStorage, securityOrigin);
     }
@@ -184,10 +184,10 @@ void StorageAreaProxy::dispatchSessionStorageEvent(const String& key, const Stri
     if (!page)
         return;
 
-    for (Frame* frame = page->mainFrame(); frame; frame = frame->tree()->traverseNext()) {
+    for (Frame* frame = page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
         Storage* storage = frame->domWindow()->optionalSessionStorage();
         if (storage && frame->document()->securityOrigin()->equal(securityOrigin) && !isEventSource(storage, sourceAreaInstance))
-            frame->document()->enqueueWindowEvent(StorageEvent::create(eventNames().storageEvent, key, oldValue, newValue, pageURL, storage));
+            frame->domWindow()->enqueueWindowEvent(StorageEvent::create(EventTypeNames::storage, key, oldValue, newValue, pageURL, storage));
     }
     InspectorInstrumentation::didDispatchDOMStorageEvent(page, key, oldValue, newValue, SessionStorage, securityOrigin);
 }

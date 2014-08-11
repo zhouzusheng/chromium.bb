@@ -40,7 +40,7 @@
 #include "bindings/v8/V8WindowShell.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/ScriptDebugListener.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -90,8 +90,8 @@ PageScriptDebugServer::PageScriptDebugServer()
 
 void PageScriptDebugServer::addListener(ScriptDebugListener* listener, Page* page)
 {
-    ScriptController* scriptController = page->mainFrame()->script();
-    if (!scriptController->canExecuteScripts(NotAboutToExecuteScript))
+    ScriptController& scriptController = page->mainFrame()->script();
+    if (!scriptController.canExecuteScripts(NotAboutToExecuteScript))
         return;
 
     v8::HandleScope scope(m_isolate);
@@ -106,7 +106,7 @@ void PageScriptDebugServer::addListener(ScriptDebugListener* listener, Page* pag
     }
     m_listenersMap.set(page, listener);
 
-    V8WindowShell* shell = scriptController->existingWindowShell(mainThreadNormalWorld());
+    V8WindowShell* shell = scriptController.existingWindowShell(mainThreadNormalWorld());
     if (!shell || !shell->isContextInitialized())
         return;
     v8::Local<v8::Context> context = shell->context();
@@ -143,8 +143,8 @@ void PageScriptDebugServer::setClientMessageLoop(PassOwnPtr<ClientMessageLoop> c
 
 void PageScriptDebugServer::compileScript(ScriptState* state, const String& expression, const String& sourceURL, String* scriptId, String* exceptionMessage)
 {
-    ScriptExecutionContext* scriptExecutionContext = state->scriptExecutionContext();
-    RefPtr<Frame> protect = toDocument(scriptExecutionContext)->frame();
+    ExecutionContext* executionContext = state->executionContext();
+    RefPtr<Frame> protect = toDocument(executionContext)->frame();
     ScriptDebugServer::compileScript(state, expression, sourceURL, scriptId, exceptionMessage);
     if (!scriptId->isNull())
         m_compiledScriptURLs.set(*scriptId, sourceURL);
@@ -160,8 +160,8 @@ void PageScriptDebugServer::runScript(ScriptState* state, const String& scriptId
 {
     String sourceURL = m_compiledScriptURLs.take(scriptId);
 
-    ScriptExecutionContext* scriptExecutionContext = state->scriptExecutionContext();
-    Frame* frame = toDocument(scriptExecutionContext)->frame();
+    ExecutionContext* executionContext = state->executionContext();
+    Frame* frame = toDocument(executionContext)->frame();
     InspectorInstrumentationCookie cookie;
     if (frame)
         cookie = InspectorInstrumentation::willEvaluateScript(frame, sourceURL, TextPosition::minimumPosition().m_line.oneBasedInt());

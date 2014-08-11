@@ -58,8 +58,7 @@ private:
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
 
     // ActiveDOMObject
-    virtual bool canSuspend() const;
-    virtual void suspend(ReasonForSuspension);
+    virtual void suspend();
     virtual void resume();
 
     virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE FINAL;
@@ -67,11 +66,7 @@ private:
     RenderMarquee* renderMarquee() const;
 };
 
-inline HTMLMarqueeElement* toHTMLMarqueeElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::marqueeTag));
-    return static_cast<HTMLMarqueeElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLMarqueeElement, hasTagName(HTMLNames::marqueeTag));
 
 } // namespace WebCore
 

@@ -38,13 +38,15 @@
 
 namespace WebCore {
 
-PassRefPtr<MIDIOutput> MIDIOutput::create(MIDIAccess* access, unsigned portIndex, ScriptExecutionContext* context, const String& id, const String& manufacturer, const String& name, const String& version)
+PassRefPtr<MIDIOutput> MIDIOutput::create(MIDIAccess* access, unsigned portIndex, ExecutionContext* context, const String& id, const String& manufacturer, const String& name, const String& version)
 {
     ASSERT(access);
-    return adoptRef(new MIDIOutput(access, portIndex, context, id, manufacturer, name, version));
+    RefPtr<MIDIOutput> output = adoptRef(new MIDIOutput(access, portIndex, context, id, manufacturer, name, version));
+    output->suspendIfNeeded();
+    return output.release();
 }
 
-MIDIOutput::MIDIOutput(MIDIAccess* access, unsigned portIndex, ScriptExecutionContext* context, const String& id, const String& manufacturer, const String& name, const String& version)
+MIDIOutput::MIDIOutput(MIDIAccess* access, unsigned portIndex, ExecutionContext* context, const String& id, const String& manufacturer, const String& name, const String& version)
     : MIDIPort(context, id, manufacturer, name, MIDIPortTypeOutput, version)
     , m_access(access)
     , m_portIndex(portIndex)
@@ -80,7 +82,7 @@ void MIDIOutput::send(Vector<unsigned> unsignedData, double timestamp, Exception
 
     for (size_t i = 0; i < unsignedData.size(); ++i) {
         if (unsignedData[i] > 0xff) {
-            es.throwDOMException(InvalidStateError);
+            es.throwUninformativeAndGenericDOMException(InvalidStateError);
             return;
         }
         unsigned char value = unsignedData[i] & 0xff;

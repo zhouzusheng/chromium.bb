@@ -128,11 +128,11 @@ RenderDeprecatedFlexibleBox::RenderDeprecatedFlexibleBox(Element* element)
     if (!isAnonymous()) {
         const KURL& url = document().url();
         if (url.protocolIs("chrome"))
-            UseCounter::count(&document(), UseCounter::DeprecatedFlexboxChrome);
+            UseCounter::count(document(), UseCounter::DeprecatedFlexboxChrome);
         else if (url.protocolIs("chrome-extension"))
-            UseCounter::count(&document(), UseCounter::DeprecatedFlexboxChromeExtension);
+            UseCounter::count(document(), UseCounter::DeprecatedFlexboxChromeExtension);
         else
-            UseCounter::count(&document(), UseCounter::DeprecatedFlexboxWebContent);
+            UseCounter::count(document(), UseCounter::DeprecatedFlexboxWebContent);
     }
 }
 
@@ -308,7 +308,7 @@ void RenderDeprecatedFlexibleBox::layoutBlock(bool relayoutChildren, LayoutUnit)
     // Update our scrollbars if we're overflow:auto/scroll/hidden now that we know if
     // we overflow or not.
     if (hasOverflowClip())
-        layer()->updateScrollInfoAfterLayout();
+        layer()->scrollableArea()->updateAfterLayout();
 
     // Repaint with our new bounds if they are different from our old bounds.
     repainter.repaintAfterLayout();
@@ -880,7 +880,7 @@ void RenderDeprecatedFlexibleBox::layoutVerticalBox(bool relayoutChildren)
 
 void RenderDeprecatedFlexibleBox::applyLineClamp(FlexBoxIterator& iterator, bool relayoutChildren)
 {
-    UseCounter::count(&document(), UseCounter::LineClamp);
+    UseCounter::count(document(), UseCounter::LineClamp);
 
     int maxLineCount = 0;
     for (RenderBox* child = iterator.first(); child; child = iterator.next()) {
@@ -948,10 +948,10 @@ void RenderDeprecatedFlexibleBox::applyLineClamp(FlexBoxIterator& iterator, bool
         LayoutUnit totalWidth;
         InlineBox* anchorBox = lastLine->lastChild();
         if (anchorBox && anchorBox->renderer()->style()->isLink())
-            totalWidth = anchorBox->logicalWidth() + font.width(constructTextRun(this, font, ellipsisAndSpace, 2, style()));
+            totalWidth = anchorBox->logicalWidth() + font.width(RenderBlockFlow::constructTextRun(this, font, ellipsisAndSpace, 2, style()));
         else {
             anchorBox = 0;
-            totalWidth = font.width(constructTextRun(this, font, &horizontalEllipsis, 1, style()));
+            totalWidth = font.width(RenderBlockFlow::constructTextRun(this, font, &horizontalEllipsis, 1, style()));
         }
 
         // See if this width can be accommodated on the last visible line

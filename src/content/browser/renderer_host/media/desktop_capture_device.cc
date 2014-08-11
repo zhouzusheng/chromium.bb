@@ -15,16 +15,17 @@
 #include "content/public/common/desktop_media_id.h"
 #include "media/base/video_util.h"
 #include "third_party/libyuv/include/libyuv/scale_argb.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_and_cursor_composer.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_capture_options.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_capturer.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_frame.h"
+#include "third_party/webrtc/modules/desktop_capture/mouse_cursor_monitor.h"
 #include "third_party/webrtc/modules/desktop_capture/screen_capturer.h"
 #include "third_party/webrtc/modules/desktop_capture/window_capturer.h"
 
 namespace content {
 
 namespace {
-
-const int kBytesPerPixel = 4;
 
 webrtc::DesktopRect ComputeLetterboxRect(
     const webrtc::DesktopSize& max_size,
@@ -46,11 +47,9 @@ class DesktopCaptureDevice::Core
        scoped_ptr<webrtc::DesktopCapturer> capturer);
 
   // Implementation of VideoCaptureDevice methods.
-  void Allocate(const media::VideoCaptureCapability& capture_format,
-                EventHandler* event_handler);
-  void Start();
-  void Stop();
-  void DeAllocate();
+  void AllocateAndStart(const media::VideoCaptureCapability& capture_format,
+                        scoped_ptr<Client> client);
+  void StopAndDeAllocate();
 
  private:
   friend class base::RefCountedThreadSafe<Core>;
@@ -62,10 +61,9 @@ class DesktopCaptureDevice::Core
 
   // Helper methods that run on the |task_runner_|. Posted from the
   // corresponding public methods.
-  void DoAllocate(const media::VideoCaptureCapability& capture_format);
-  void DoStart();
-  void DoStop();
-  void DoDeAllocate();
+  void DoAllocateAndStart(const media::VideoCaptureCapability& capture_format,
+                          scoped_ptr<Client> client);
+  void DoStopAndDeAllocate();
 
   // Chooses new output properties based on the supplied source size and the
   // properties requested to Allocate(), and dispatches OnFrameInfo[Changed]
@@ -88,11 +86,9 @@ class DesktopCaptureDevice::Core
   // The underlying DesktopCapturer instance used to capture frames.
   scoped_ptr<webrtc::DesktopCapturer> desktop_capturer_;
 
-  // |event_handler_lock_| must be locked whenever |event_handler_| is used.
-  // It's necessary because DeAllocate() needs to reset it on the calling thread
-  // to ensure that the event handler is not called once DeAllocate() returns.
-  base::Lock event_handler_lock_;
-  EventHandler* event_handler_;
+  // The device client which proxies device events to the controller. Accessed
+  // on the task_runner_ thread.
+  scoped_ptr<Client> client_;
 
   // Requested video capture format (width, height, frame rate, etc).
   media::VideoCaptureCapability requested_format_;
@@ -112,10 +108,6 @@ class DesktopCaptureDevice::Core
   // and/or letterboxed.
   webrtc::DesktopRect output_rect_;
 
-  // True between DoStart() and DoStop(). Can't just check |event_handler_|
-  // because |event_handler_| is used on the caller thread.
-  bool started_;
-
   // True when we have delayed OnCaptureTimer() task posted on
   // |task_runner_|.
   bool capture_task_posted_;
@@ -131,48 +123,30 @@ DesktopCaptureDevice::Core::Core(
     scoped_ptr<webrtc::DesktopCapturer> capturer)
     : task_runner_(task_runner),
       desktop_capturer_(capturer.Pass()),
-      event_handler_(NULL),
-      started_(false),
       capture_task_posted_(false),
-      capture_in_progress_(false) {
-}
+      capture_in_progress_(false) {}
 
 DesktopCaptureDevice::Core::~Core() {
 }
 
-void DesktopCaptureDevice::Core::Allocate(
+void DesktopCaptureDevice::Core::AllocateAndStart(
     const media::VideoCaptureCapability& capture_format,
-    EventHandler* event_handler) {
+    scoped_ptr<Client> client) {
   DCHECK_GT(capture_format.width, 0);
   DCHECK_GT(capture_format.height, 0);
   DCHECK_GT(capture_format.frame_rate, 0);
 
-  {
-    base::AutoLock auto_lock(event_handler_lock_);
-    event_handler_ = event_handler;
-  }
-
   task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&Core::DoAllocate, this, capture_format));
+      base::Bind(&Core::DoAllocateAndStart,
+                 this,
+                 capture_format,
+                 base::Passed(&client)));
 }
 
-void DesktopCaptureDevice::Core::Start() {
-  task_runner_->PostTask(
-      FROM_HERE, base::Bind(&Core::DoStart, this));
-}
-
-void DesktopCaptureDevice::Core::Stop() {
-  task_runner_->PostTask(
-      FROM_HERE, base::Bind(&Core::DoStop, this));
-}
-
-void DesktopCaptureDevice::Core::DeAllocate() {
-  {
-    base::AutoLock auto_lock(event_handler_lock_);
-    event_handler_ = NULL;
-  }
-  task_runner_->PostTask(FROM_HERE, base::Bind(&Core::DoDeAllocate, this));
+void DesktopCaptureDevice::Core::StopAndDeAllocate() {
+  task_runner_->PostTask(FROM_HERE,
+                         base::Bind(&Core::DoStopAndDeAllocate, this));
 }
 
 webrtc::SharedMemory*
@@ -189,28 +163,36 @@ void DesktopCaptureDevice::Core::OnCaptureCompleted(
 
   if (!frame) {
     LOG(ERROR) << "Failed to capture a frame.";
-    event_handler_->OnError();
+    client_->OnError();
     return;
   }
+
+  if (!client_)
+    return;
 
   scoped_ptr<webrtc::DesktopFrame> owned_frame(frame);
 
   // Handle initial frame size and size changes.
   RefreshCaptureFormat(frame->size());
 
-  if (!started_)
-    return;
-
   webrtc::DesktopSize output_size(capture_format_.width,
                                   capture_format_.height);
   size_t output_bytes = output_size.width() * output_size.height() *
       webrtc::DesktopFrame::kBytesPerPixel;
   const uint8_t* output_data = NULL;
+  bool flip_vertically = false;
 
   if (frame->size().equals(output_size)) {
     // If the captured frame matches the output size, we can return the pixel
     // data directly, without scaling.
     output_data = frame->data();
+
+    // If the |frame| generated by the screen capturer is inverted then we need
+    // to adjust |output_data| to point at the beginning of the buffer instead
+    // of the first row.
+    flip_vertically = frame->stride() < 0;
+    if (flip_vertically)
+      output_data += frame->stride() * (frame->size().height() - 1);
   } else {
     // Otherwise we need to down-scale and/or letterbox to the target format.
 
@@ -236,24 +218,24 @@ void DesktopCaptureDevice::Core::OnCaptureCompleted(
     output_data = output_frame_->data();
   }
 
-  base::AutoLock auto_lock(event_handler_lock_);
-  if (event_handler_) {
-    event_handler_->OnIncomingCapturedFrame(output_data, output_bytes,
-                                            base::Time::Now(), 0, false, false);
+  if (client_) {
+    client_->OnIncomingCapturedFrame(output_data, output_bytes,
+                                     base::Time::Now(), 0, flip_vertically, false);
   }
 }
 
-void DesktopCaptureDevice::Core::DoAllocate(
-    const media::VideoCaptureCapability& capture_format) {
+void DesktopCaptureDevice::Core::DoAllocateAndStart(
+    const media::VideoCaptureCapability& capture_format,
+    scoped_ptr<Client> client) {
   DCHECK(task_runner_->RunsTasksOnCurrentThread());
   DCHECK(desktop_capturer_);
+  DCHECK(client.get());
+  DCHECK(!client_.get());
 
+  client_ = client.Pass();
   requested_format_ = capture_format;
 
-  // Store requested frame rate and calculate expected delay.
   capture_format_.frame_rate = requested_format_.frame_rate;
-  capture_format_.expected_capture_delay =
-      base::Time::kMillisecondsPerSecond / requested_format_.frame_rate;
 
   // Support dynamic changes in resolution only if requester also does.
   if (requested_format_.frame_size_type ==
@@ -264,33 +246,19 @@ void DesktopCaptureDevice::Core::DoAllocate(
 
   // This capturer always outputs ARGB, non-interlaced.
   capture_format_.color = media::PIXEL_FORMAT_ARGB;
-  capture_format_.interlaced = false;
 
   desktop_capturer_->Start(this);
 
-  // Capture first frame, so that we can call OnFrameInfo() callback.
   DoCapture();
-}
-
-void DesktopCaptureDevice::Core::DoStart() {
-  DCHECK(task_runner_->RunsTasksOnCurrentThread());
-  started_ = true;
-  if (!capture_task_posted_) {
+  if (!capture_task_posted_)
     ScheduleCaptureTimer();
-    DoCapture();
-  }
 }
 
-void DesktopCaptureDevice::Core::DoStop() {
+void DesktopCaptureDevice::Core::DoStopAndDeAllocate() {
   DCHECK(task_runner_->RunsTasksOnCurrentThread());
-  started_ = false;
+  client_.reset();
   output_frame_.reset();
   previous_frame_size_.set(0, 0);
-}
-
-void DesktopCaptureDevice::Core::DoDeAllocate() {
-  DCHECK(task_runner_->RunsTasksOnCurrentThread());
-  DoStop();
   desktop_capturer_.reset();
 }
 
@@ -322,15 +290,10 @@ void DesktopCaptureDevice::Core::RefreshCaptureFormat(
     capture_format_.width = output_rect_.width();
     capture_format_.height = output_rect_.height();
 
-    {
-      base::AutoLock auto_lock(event_handler_lock_);
-      if (event_handler_) {
-        if (previous_frame_size_.is_empty()) {
-          event_handler_->OnFrameInfo(capture_format_);
-        } else {
-          event_handler_->OnFrameInfoChanged(capture_format_);
-        }
-      }
+    if (previous_frame_size_.is_empty()) {
+      client_->OnFrameInfo(capture_format_);
+    } else {
+      client_->OnFrameInfoChanged(capture_format_);
     }
   } else {
     // Otherwise the output frame size cannot change, so just scale and
@@ -355,7 +318,7 @@ void DesktopCaptureDevice::Core::OnCaptureTimer() {
   DCHECK(capture_task_posted_);
   capture_task_posted_ = false;
 
-  if (!started_)
+  if (!client_)
     return;
 
   // Schedule a task for the next frame.
@@ -384,78 +347,72 @@ scoped_ptr<media::VideoCaptureDevice> DesktopCaptureDevice::Create(
       blocking_pool->GetSequencedTaskRunner(
           blocking_pool->GetSequenceToken());
 
-  switch (source.type) {
-    case DesktopMediaID::TYPE_SCREEN: {
-      scoped_ptr<webrtc::DesktopCapturer> capturer;
+  webrtc::DesktopCaptureOptions options =
+      webrtc::DesktopCaptureOptions::CreateDefault();
 
-#if defined(OS_CHROMEOS) && defined(USE_X11)
-      // ScreenCapturerX11 polls by default, due to poor driver support for
-      // DAMAGE. ChromeOS' drivers [can be patched to] support DAMAGE properly,
-      // so use it.
-      capturer.reset(webrtc::ScreenCapturer::CreateWithXDamage(true));
-#elif defined(OS_WIN)
-      // ScreenCapturerWin disables Aero by default. We don't want it disabled
-      // for WebRTC screen capture, though.
-      capturer.reset(
-          webrtc::ScreenCapturer::CreateWithDisableAero(false));
-#else
-      capturer.reset(webrtc::ScreenCapturer::Create());
+#if defined(OS_CHROMEOS)
+  // Xdamage is not enabled by default because it's often broken. ChromeOS'
+  // drivers [can be patched to] support DAMAGE properly, so use it.
+  options.set_use_update_notifications(true);
 #endif
 
-      return scoped_ptr<media::VideoCaptureDevice>(new DesktopCaptureDevice(
-          task_runner, capturer.Pass()));
+  // Leave desktop effects enabled during WebRTC captures.
+  options.set_disable_effects(false);
+
+  scoped_ptr<webrtc::DesktopCapturer> capturer;
+
+  switch (source.type) {
+    case DesktopMediaID::TYPE_SCREEN: {
+      scoped_ptr<webrtc::DesktopCapturer> screen_capturer;
+      screen_capturer.reset(webrtc::ScreenCapturer::Create(options));
+      if (screen_capturer) {
+        capturer.reset(new webrtc::DesktopAndCursorComposer(
+            screen_capturer.release(),
+            webrtc::MouseCursorMonitor::CreateForScreen(options)));
+      }
+      break;
     }
 
     case DesktopMediaID::TYPE_WINDOW: {
-      scoped_ptr<webrtc::WindowCapturer> capturer(
-          webrtc::WindowCapturer::Create());
-
-      if (!capturer || !capturer->SelectWindow(source.id)) {
-        return scoped_ptr<media::VideoCaptureDevice>();
+      scoped_ptr<webrtc::WindowCapturer> window_capturer(
+          webrtc::WindowCapturer::Create(options));
+      if (window_capturer && window_capturer->SelectWindow(source.id)) {
+        capturer.reset(new webrtc::DesktopAndCursorComposer(
+            window_capturer.release(),
+            webrtc::MouseCursorMonitor::CreateForWindow(options, source.id)));
       }
-
-      return scoped_ptr<media::VideoCaptureDevice>(new DesktopCaptureDevice(
-          task_runner, capturer.PassAs<webrtc::DesktopCapturer>()));
+      break;
     }
 
     default: {
       NOTREACHED();
-      return scoped_ptr<media::VideoCaptureDevice>();
     }
   }
+
+  scoped_ptr<media::VideoCaptureDevice> result;
+  if (capturer)
+    result.reset(new DesktopCaptureDevice(task_runner, capturer.Pass()));
+
+  return result.Pass();
 }
 
 DesktopCaptureDevice::DesktopCaptureDevice(
     scoped_refptr<base::SequencedTaskRunner> task_runner,
     scoped_ptr<webrtc::DesktopCapturer> capturer)
-    : core_(new Core(task_runner, capturer.Pass())),
-      name_("", "") {
-}
+    : core_(new Core(task_runner, capturer.Pass())) {}
 
 DesktopCaptureDevice::~DesktopCaptureDevice() {
-  DeAllocate();
+  StopAndDeAllocate();
 }
 
-void DesktopCaptureDevice::Allocate(
+void DesktopCaptureDevice::AllocateAndStart(
     const media::VideoCaptureCapability& capture_format,
-    EventHandler* event_handler) {
-  core_->Allocate(capture_format, event_handler);
+    scoped_ptr<Client> client) {
+  core_->AllocateAndStart(capture_format, client.Pass());
 }
 
-void DesktopCaptureDevice::Start() {
-  core_->Start();
-}
-
-void DesktopCaptureDevice::Stop() {
-  core_->Stop();
-}
-
-void DesktopCaptureDevice::DeAllocate() {
-  core_->DeAllocate();
-}
-
-const media::VideoCaptureDevice::Name& DesktopCaptureDevice::device_name() {
-  return name_;
+void DesktopCaptureDevice::StopAndDeAllocate() {
+  core_->StopAndDeAllocate();
 }
 
 }  // namespace content

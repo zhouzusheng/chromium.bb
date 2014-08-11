@@ -25,11 +25,11 @@
 #ifndef Font_h
 #define Font_h
 
-#include "core/platform/graphics/FontDescription.h"
 #include "core/platform/graphics/FontFallbackList.h"
 #include "core/platform/graphics/SimpleFontData.h"
-#include "core/platform/graphics/TypesettingFeatures.h"
-#include "core/platform/text/TextDirection.h"
+#include "platform/fonts/FontDescription.h"
+#include "platform/fonts/TypesettingFeatures.h"
+#include "platform/text/TextDirection.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
 #include "wtf/MathExtras.h"
@@ -232,7 +232,6 @@ public:
     static String normalizeSpaces(const LChar*, unsigned length);
     static String normalizeSpaces(const UChar*, unsigned length);
 
-    bool needsTranscoding() const { return m_needsTranscoding; }
     FontFallbackList* fontList() const { return m_fontFallbackList.get(); }
 
     void willUseFontData() const;
@@ -292,7 +291,6 @@ private:
     float m_letterSpacing;
     float m_wordSpacing;
     bool m_isPlatformFont;
-    bool m_needsTranscoding;
     mutable unsigned m_typesettingFeatures : 2; // (TypesettingFeatures) Caches values computed from m_fontDescription.
 };
 
@@ -335,7 +333,9 @@ inline float Font::tabWidth(const SimpleFontData& fontData, unsigned tabSize, fl
 
 namespace WTF {
 
-template <> void deleteOwnedPtr<WebCore::TextLayout>(WebCore::TextLayout*);
+template <> struct OwnedPtrDeleter<WebCore::TextLayout> {
+    static void deletePtr(WebCore::TextLayout*);
+};
 
 }
 

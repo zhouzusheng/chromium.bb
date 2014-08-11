@@ -26,10 +26,10 @@
 #include "config.h"
 #include "modules/mediastream/MediaStreamTrack.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "core/dom/Event.h"
+#include "bindings/v8/ExceptionMessages.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
+#include "core/events/Event.h"
 #include "core/platform/mediastream/MediaStreamCenter.h"
 #include "core/platform/mediastream/MediaStreamComponent.h"
 #include "modules/mediastream/MediaStreamTrackSourcesCallback.h"
@@ -38,14 +38,14 @@
 
 namespace WebCore {
 
-PassRefPtr<MediaStreamTrack> MediaStreamTrack::create(ScriptExecutionContext* context, MediaStreamComponent* component)
+PassRefPtr<MediaStreamTrack> MediaStreamTrack::create(ExecutionContext* context, MediaStreamComponent* component)
 {
     RefPtr<MediaStreamTrack> track = adoptRef(new MediaStreamTrack(context, component));
     track->suspendIfNeeded();
     return track.release();
 }
 
-MediaStreamTrack::MediaStreamTrack(ScriptExecutionContext* context, MediaStreamComponent* component)
+MediaStreamTrack::MediaStreamTrack(ExecutionContext* context, MediaStreamComponent* component)
     : ActiveDOMObject(context)
     , m_stopped(false)
     , m_component(component)
@@ -121,12 +121,20 @@ String MediaStreamTrack::readyState() const
     return String();
 }
 
-void MediaStreamTrack::getSources(ScriptExecutionContext* context, PassRefPtr<MediaStreamTrackSourcesCallback> callback, ExceptionState& es)
+void MediaStreamTrack::getSources(ExecutionContext* context, PassRefPtr<MediaStreamTrackSourcesCallback> callback, ExceptionState& es)
 {
     RefPtr<MediaStreamTrackSourcesRequest> request = MediaStreamTrackSourcesRequest::create(context, callback);
-    bool ok = MediaStreamCenter::instance().getMediaStreamTrackSources(request.release());
-    if (!ok)
-        es.throwDOMException(NotSupportedError);
+    if (!MediaStreamCenter::instance().getMediaStreamTrackSources(request.release()))
+        es.throwDOMException(NotSupportedError, ExceptionMessages::failedToExecute("getSources", "MediaStreamTrack", "Functionality not implemented yet"));
+}
+
+void MediaStreamTrack::stopTrack(ExceptionState& es)
+{
+    if (ended())
+        return;
+
+    if (!MediaStreamCenter::instance().didStopMediaStreamTrack(component()))
+        es.throwDOMException(NotSupportedError, ExceptionMessages::failedToExecute("stop", "MediaStreamTrack", "Functionality not implemented yet"));
 }
 
 bool MediaStreamTrack::ended() const
@@ -141,13 +149,13 @@ void MediaStreamTrack::sourceChangedState()
 
     switch (m_component->source()->readyState()) {
     case MediaStreamSource::ReadyStateLive:
-        dispatchEvent(Event::create(eventNames().unmuteEvent));
+        dispatchEvent(Event::create(EventTypeNames::unmute));
         break;
     case MediaStreamSource::ReadyStateMuted:
-        dispatchEvent(Event::create(eventNames().muteEvent));
+        dispatchEvent(Event::create(EventTypeNames::mute));
         break;
     case MediaStreamSource::ReadyStateEnded:
-        dispatchEvent(Event::create(eventNames().endedEvent));
+        dispatchEvent(Event::create(EventTypeNames::ended));
         didEndTrack();
         break;
     }
@@ -155,7 +163,11 @@ void MediaStreamTrack::sourceChangedState()
 
 void MediaStreamTrack::didEndTrack()
 {
-    MediaStreamDescriptorClient* client = m_component->stream()->client();
+    MediaStreamDescriptor* stream = m_component->stream();
+    if (!stream)
+        return;
+
+    MediaStreamDescriptorClient* client = stream->client();
     if (!client)
         return;
 
@@ -174,22 +186,12 @@ void MediaStreamTrack::stop()
 
 const AtomicString& MediaStreamTrack::interfaceName() const
 {
-    return eventNames().interfaceForMediaStreamTrack;
+    return EventTargetNames::MediaStreamTrack;
 }
 
-ScriptExecutionContext* MediaStreamTrack::scriptExecutionContext() const
+ExecutionContext* MediaStreamTrack::executionContext() const
 {
-    return ActiveDOMObject::scriptExecutionContext();
-}
-
-EventTargetData* MediaStreamTrack::eventTargetData()
-{
-    return &m_eventTargetData;
-}
-
-EventTargetData* MediaStreamTrack::ensureEventTargetData()
-{
-    return &m_eventTargetData;
+    return ActiveDOMObject::executionContext();
 }
 
 } // namespace WebCore

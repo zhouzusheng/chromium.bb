@@ -33,7 +33,7 @@
 
 #include "WebAudioSourceProviderClient.h"
 #include "WebMediaPlayerClient.h"
-#include "core/platform/audio/AudioSourceProvider.h"
+#include "platform/audio/AudioSourceProvider.h"
 #include "core/platform/graphics/InbandTextTrackPrivate.h"
 #include "core/platform/graphics/MediaPlayer.h"
 #if OS(ANDROID)
@@ -84,13 +84,13 @@ public:
     virtual void keyMessage(const WebString& keySystem, const WebString& sessionId, const unsigned char* message, unsigned messageLength, const WebURL& defaultURL);
     virtual void keyNeeded(const WebString& keySystem, const WebString& sessionId, const unsigned char* initData, unsigned initDataLength);
     virtual WebPlugin* createHelperPlugin(const WebString& pluginType, WebFrame*);
-    virtual void closeHelperPlugin();
     virtual void closeHelperPluginSoon(WebFrame*);
     virtual bool needsWebLayerForVideo() const;
     virtual void setWebLayer(WebLayer*);
     virtual void addTextTrack(WebInbandTextTrack*);
     virtual void removeTextTrack(WebInbandTextTrack*);
     virtual void mediaSourceOpened(WebMediaSource*);
+    virtual void requestFullscreen();
     virtual void requestSeek(double);
 
     // MediaPlayer methods:
@@ -129,6 +129,7 @@ public:
     virtual double mediaTimeForTimeValue(double timeValue) const OVERRIDE;
     virtual unsigned decodedFrameCount() const OVERRIDE;
     virtual unsigned droppedFrameCount() const OVERRIDE;
+    virtual unsigned corruptedFrameCount() const OVERRIDE;
     virtual unsigned audioDecodedByteCount() const OVERRIDE;
     virtual unsigned videoDecodedByteCount() const OVERRIDE;
     virtual void showFullscreenOverlay() OVERRIDE;

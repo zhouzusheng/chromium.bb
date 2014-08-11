@@ -31,39 +31,37 @@
 #include "config.h"
 #include "modules/filesystem/DataTransferItemFileSystem.h"
 
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/Clipboard.h"
+#include "core/dom/DataTransferItem.h"
+#include "core/dom/ExecutionContext.h"
 #include "core/fileapi/File.h"
-#include "core/platform/AsyncFileSystemCallbacks.h"
-#include "core/platform/FileMetadata.h"
-#include "core/platform/FileSystem.h"
 #include "core/platform/chromium/ChromiumDataObject.h"
-#include "core/platform/chromium/ClipboardChromium.h"
 #include "modules/filesystem/DOMFilePath.h"
 #include "modules/filesystem/DOMFileSystem.h"
 #include "modules/filesystem/DirectoryEntry.h"
 #include "modules/filesystem/DraggedIsolatedFileSystem.h"
 #include "modules/filesystem/Entry.h"
 #include "modules/filesystem/FileEntry.h"
+#include "platform/AsyncFileSystemCallbacks.h"
+#include "platform/FileMetadata.h"
 
 namespace WebCore {
 
 // static
-PassRefPtr<Entry> DataTransferItemFileSystem::webkitGetAsEntry(ScriptExecutionContext* scriptExecutionContext, DataTransferItem* item)
+PassRefPtr<Entry> DataTransferItemFileSystem::webkitGetAsEntry(ExecutionContext* executionContext, DataTransferItem* item)
 {
-    DataTransferItemPolicyWrapper* itemPolicyWrapper = static_cast<DataTransferItemPolicyWrapper*>(item);
-
-    if (!itemPolicyWrapper->dataObjectItem()->isFilename())
+    if (!item->dataObjectItem()->isFilename())
         return adoptRef(static_cast<Entry*>(0));
 
     // For dragged files getAsFile must be pretty lightweight.
-    Blob* file = itemPolicyWrapper->getAsFile().get();
+    Blob* file = item->getAsFile().get();
     // The clipboard may not be in a readable state.
     if (!file)
         return adoptRef(static_cast<Entry*>(0));
     ASSERT(file->isFile());
 
-    DraggedIsolatedFileSystem* filesystem = DraggedIsolatedFileSystem::from(itemPolicyWrapper->clipboard()->dataObject().get());
-    DOMFileSystem* domFileSystem = filesystem ? filesystem->getDOMFileSystem(scriptExecutionContext) : 0;
+    DraggedIsolatedFileSystem* filesystem = DraggedIsolatedFileSystem::from(item->clipboard()->dataObject().get());
+    DOMFileSystem* domFileSystem = filesystem ? filesystem->getDOMFileSystem(executionContext) : 0;
     if (!filesystem) {
         // IsolatedFileSystem may not be enabled.
         return adoptRef(static_cast<Entry*>(0));

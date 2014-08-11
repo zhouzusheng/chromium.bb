@@ -8,6 +8,7 @@
 #include "SkMatrix.h"
 #include "Sk64.h"
 #include "SkFloatBits.h"
+#include "SkOnce.h"
 #include "SkScalarCompare.h"
 #include "SkString.h"
 
@@ -47,7 +48,6 @@ enum {
 
 #ifdef SK_SCALAR_IS_FLOAT
     static const int32_t kScalar1Int = 0x3f800000;
-    static const int32_t kPersp1Int  = 0x3f800000;
 #else
     #define scalarAsInt(x)  (x)
     static const int32_t kScalar1Int = (1 << 16);
@@ -1220,7 +1220,7 @@ const SkMatrix::MapPtsProc SkMatrix::gMapPtsProcs[] = {
 void SkMatrix::mapPoints(SkPoint dst[], const SkPoint src[], int count) const {
     SkASSERT((dst && src && count > 0) || 0 == count);
     // no partial overlap
-    SkASSERT(src == dst || SkAbs32((int32_t)(src - dst)) >= count);
+    SkASSERT(src == dst || &dst[count] <= &src[0] || &src[count] <= &dst[0]);
 
     this->getMapPtsProc()(*this, dst, src, count);
 }
@@ -1894,13 +1894,15 @@ SkScalar SkMatrix::getMaxStretch() const {
     return SkScalarSqrt(largerRoot);
 }
 
+static void reset_identity_matrix(SkMatrix* identity) {
+    identity->reset();
+}
+
 const SkMatrix& SkMatrix::I() {
+    // If you can use C++11 now, you might consider replacing this with a constexpr constructor.
     static SkMatrix gIdentity;
-    static bool gOnce;
-    if (!gOnce) {
-        gIdentity.reset();
-        gOnce = true;
-    }
+    SK_DECLARE_STATIC_ONCE(once);
+    SkOnce(&once, reset_identity_matrix, &gIdentity);
     return gIdentity;
 }
 

@@ -25,9 +25,9 @@
 #ifndef StyleMultiColData_h
 #define StyleMultiColData_h
 
-#include "core/platform/Length.h"
 #include "core/rendering/style/BorderValue.h"
 #include "core/rendering/style/RenderStyleConstants.h"
+#include "platform/Length.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
@@ -63,7 +63,8 @@ public:
     bool m_autoWidth : 1;
     bool m_autoCount : 1;
     bool m_normalGap : 1;
-    bool m_spanAllColumns : 1;
+    unsigned m_fill : 1; // ColumnFill
+    unsigned m_spanAllColumns : 1;
     unsigned m_breakBefore : 2; // EPageBreak
     unsigned m_breakAfter : 2; // EPageBreak
     unsigned m_breakInside : 2; // EPageBreak

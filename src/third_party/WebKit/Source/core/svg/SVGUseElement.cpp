@@ -31,7 +31,7 @@
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/fetch/DocumentResource.h"
@@ -657,7 +657,7 @@ bool SVGUseElement::hasCycleUseReferencing(SVGUseElement* use, SVGElementInstanc
     while (instance) {
         SVGElement* element = instance->correspondingElement();
 
-        if (element->hasID() && element->getIdAttribute() == targetId && &element->document() == &newTarget->document())
+        if (element->hasID() && element->getIdAttribute() == targetId && element->document() == newTarget->document())
             return true;
 
         instance = instance->parentNode();
@@ -891,7 +891,7 @@ SVGElementInstance* SVGUseElement::instanceForShadowTreeElement(Node* element, S
 
 void SVGUseElement::invalidateShadowTree()
 {
-    if (!attached() || m_needsShadowTreeRecreation)
+    if (!inActiveDocument() || m_needsShadowTreeRecreation)
         return;
     m_needsShadowTreeRecreation = true;
     setNeedsStyleRecalc();
@@ -940,7 +940,7 @@ bool SVGUseElement::selfHasRelativeLengths() const
     if (!element)
         return false;
 
-    return toSVGElement(element)->hasRelativeLengths();
+    return element->hasRelativeLengths();
 }
 
 void SVGUseElement::notifyFinished(Resource* resource)
@@ -950,7 +950,7 @@ void SVGUseElement::notifyFinished(Resource* resource)
 
     invalidateShadowTree();
     if (resource->errorOccurred())
-        dispatchEvent(Event::create(eventNames().errorEvent));
+        dispatchEvent(Event::create(EventTypeNames::error));
     else if (!resource->wasCanceled())
         SVGExternalResourcesRequired::dispatchLoadEvent(this);
 }

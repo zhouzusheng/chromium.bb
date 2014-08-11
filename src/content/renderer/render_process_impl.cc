@@ -36,6 +36,10 @@
 #include "base/mac/mac_util.h"
 #endif
 
+#if defined(OS_ANDROID)
+#include "base/android/sys_utils.h"
+#endif
+
 namespace content {
 
 RenderProcessImpl::RenderProcessImpl()
@@ -68,6 +72,11 @@ RenderProcessImpl::RenderProcessImpl()
   // Out of process dev tools rely upon auto break behavior.
   webkit_glue::SetJavaScriptFlags("--debugger-auto-break");
 
+#if defined(OS_ANDROID)
+  if (base::android::SysUtils::IsLowEndDevice())
+    webkit_glue::SetJavaScriptFlags("--optimize-for-size");
+#endif
+
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kJavaScriptFlags)) {
     webkit_glue::SetJavaScriptFlags(
@@ -90,11 +99,6 @@ RenderProcessImpl::~RenderProcessImpl() {
   ClearTransportDIBCache();
 }
 
-static bool g_forceInProcessPlugins = false;
-void RenderProcessImpl::ForceInProcessPlugins() {
-  g_forceInProcessPlugins = true;
-}
-
 bool RenderProcessImpl::InProcessPlugins() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 #if defined(OS_LINUX) || defined(OS_OPENBSD)
@@ -105,7 +109,6 @@ bool RenderProcessImpl::InProcessPlugins() {
   return command_line.HasSwitch(switches::kInProcessPlugins);
 #else
   return command_line.HasSwitch(switches::kInProcessPlugins) ||
-         g_forceInProcessPlugins ||
          command_line.HasSwitch(switches::kSingleProcess);
 #endif
 }
@@ -194,7 +197,7 @@ void RenderProcessImpl::ReleaseTransportDIB(TransportDIB* mem) {
 }
 
 bool RenderProcessImpl::UseInProcessPlugins() const {
-  return in_process_plugins_ || g_forceInProcessPlugins;
+  return in_process_plugins_;
 }
 
 bool RenderProcessImpl::GetTransportDIBFromCache(TransportDIB** mem,

@@ -28,6 +28,7 @@
 
 #include "modules/webaudio/AudioNode.h"
 
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "modules/webaudio/AudioContext.h"
@@ -85,6 +86,51 @@ void AudioNode::uninitialize()
     m_isInitialized = false;
 }
 
+String AudioNode::nodeTypeName() const
+{
+    switch (m_nodeType) {
+    case NodeTypeDestination:
+        return "AudioDestinationNode";
+    case NodeTypeOscillator:
+        return "OscillatorNode";
+    case NodeTypeAudioBufferSource:
+        return "AudioBufferSourceNode";
+    case NodeTypeMediaElementAudioSource:
+        return "MediaElementAudioSourceNode";
+    case NodeTypeMediaStreamAudioDestination:
+        return "MediaStreamAudioDestinationNode";
+    case NodeTypeMediaStreamAudioSource:
+        return "MediaStreamAudioSourceNode";
+    case NodeTypeJavaScript:
+        return "ScriptProcessorNode";
+    case NodeTypeBiquadFilter:
+        return "BiquadFilterNode";
+    case NodeTypePanner:
+        return "PannerNode";
+    case NodeTypeConvolver:
+        return "ConvolverNode";
+    case NodeTypeDelay:
+        return "DelayNode";
+    case NodeTypeGain:
+        return "GainNode";
+    case NodeTypeChannelSplitter:
+        return "ChannelSplitterNode";
+    case NodeTypeChannelMerger:
+        return "ChannelMergerNode";
+    case NodeTypeAnalyser:
+        return "AnalyserNode";
+    case NodeTypeDynamicsCompressor:
+        return "DynamicsCompressorNode";
+    case NodeTypeWaveShaper:
+        return "WaveShaperNode";
+    case NodeTypeUnknown:
+    case NodeTypeEnd:
+    default:
+        ASSERT_NOT_REACHED();
+        return "UnknownNode";
+    }
+}
+
 void AudioNode::setNodeType(NodeType type)
 {
     m_nodeType = type;
@@ -130,23 +176,43 @@ void AudioNode::connect(AudioNode* destination, unsigned outputIndex, unsigned i
     AudioContext::AutoLocker locker(context());
 
     if (!destination) {
-        es.throwDOMException(SyntaxError);
+        es.throwDOMException(
+            SyntaxError,
+            ExceptionMessages::failedToExecute(
+                "connect",
+                "AudioNode",
+                "invalid destination node."));
         return;
     }
 
     // Sanity check input and output indices.
     if (outputIndex >= numberOfOutputs()) {
-        es.throwDOMException(IndexSizeError);
+        es.throwDOMException(
+            IndexSizeError,
+            ExceptionMessages::failedToExecute(
+                "connect",
+                "AudioNode",
+                "output index (" + String::number(outputIndex) + ") exceeds number of outputs (" + String::number(numberOfOutputs()) + ")."));
         return;
     }
 
     if (destination && inputIndex >= destination->numberOfInputs()) {
-        es.throwDOMException(IndexSizeError);
+        es.throwDOMException(
+            IndexSizeError,
+            ExceptionMessages::failedToExecute(
+                "connect",
+                "AudioNode",
+                "input index (" + String::number(inputIndex) + ") exceeds number of inputs (" + String::number(destination->numberOfInputs()) + ")."));
         return;
     }
 
     if (context() != destination->context()) {
-        es.throwDOMException(SyntaxError);
+        es.throwDOMException(
+            SyntaxError,
+            ExceptionMessages::failedToExecute(
+                "connect",
+                "AudioNode",
+                "cannot connect to a destination belonging to a different audio context."));
         return;
     }
 
@@ -164,17 +230,32 @@ void AudioNode::connect(AudioParam* param, unsigned outputIndex, ExceptionState&
     AudioContext::AutoLocker locker(context());
 
     if (!param) {
-        es.throwDOMException(SyntaxError);
+        es.throwDOMException(
+            SyntaxError,
+            ExceptionMessages::failedToExecute(
+                "connect",
+                "AudioNode",
+                "invalid AudioParam."));
         return;
     }
 
     if (outputIndex >= numberOfOutputs()) {
-        es.throwDOMException(IndexSizeError);
+        es.throwDOMException(
+            IndexSizeError,
+            ExceptionMessages::failedToExecute(
+                "connect",
+                "AudioNode",
+                "output index (" + String::number(outputIndex) + ") exceeds number of outputs (" + String::number(numberOfOutputs()) + ")."));
         return;
     }
 
     if (context() != param->context()) {
-        es.throwDOMException(SyntaxError);
+        es.throwDOMException(
+            SyntaxError,
+            ExceptionMessages::failedToExecute(
+                "connect",
+                "AudioNode",
+                "cannot connect to an AudioParam belonging to a different audio context."));
         return;
     }
 
@@ -189,7 +270,12 @@ void AudioNode::disconnect(unsigned outputIndex, ExceptionState& es)
 
     // Sanity check input and output indices.
     if (outputIndex >= numberOfOutputs()) {
-        es.throwDOMException(IndexSizeError);
+        es.throwDOMException(
+            IndexSizeError,
+            ExceptionMessages::failedToExecute(
+                "disconnect",
+                "AudioNode",
+                "output index (" + String::number(outputIndex) + ") exceeds number of outputs (" + String::number(numberOfOutputs()) + ")."));
         return;
     }
 
@@ -214,7 +300,14 @@ void AudioNode::setChannelCount(unsigned long channelCount, ExceptionState& es)
                 updateChannelsForInputs();
         }
     } else {
-        es.throwDOMException(InvalidStateError);
+        es.throwDOMException(
+            NotSupportedError,
+            ExceptionMessages::failedToSet(
+                "channelCount",
+                "AudioNode",
+                "channel count (" + String::number(channelCount)
+                + ") must be between 1 and "
+                + String::number(AudioContext::maxNumberOfChannels()) + "."));
     }
 }
 
@@ -239,14 +332,20 @@ void AudioNode::setChannelCountMode(const String& mode, ExceptionState& es)
 
     ChannelCountMode oldMode = m_channelCountMode;
 
-    if (mode == "max")
+    if (mode == "max") {
         m_channelCountMode = Max;
-    else if (mode == "clamped-max")
+    } else if (mode == "clamped-max") {
         m_channelCountMode = ClampedMax;
-    else if (mode == "explicit")
+    } else if (mode == "explicit") {
         m_channelCountMode = Explicit;
-    else
-        es.throwDOMException(InvalidStateError);
+    } else {
+        es.throwDOMException(
+            InvalidStateError,
+            ExceptionMessages::failedToSet(
+                "channelCountMode",
+                "AudioNode",
+                "invalid mode '" + mode + "'; must be 'max', 'clamped-max', or 'explicit'."));
+    }
 
     if (m_channelCountMode != oldMode)
         updateChannelsForInputs();
@@ -269,12 +368,18 @@ void AudioNode::setChannelInterpretation(const String& interpretation, Exception
     ASSERT(isMainThread());
     AudioContext::AutoLocker locker(context());
 
-    if (interpretation == "speakers")
+    if (interpretation == "speakers") {
         m_channelInterpretation = AudioBus::Speakers;
-    else if (interpretation == "discrete")
+    } else if (interpretation == "discrete") {
         m_channelInterpretation = AudioBus::Discrete;
-    else
-        es.throwDOMException(InvalidStateError);
+    } else {
+        es.throwDOMException(
+            InvalidStateError,
+            ExceptionMessages::failedToSet(
+                "channelInterpretation",
+                "AudioNode",
+                "invalid interpretation '" + interpretation + "'; must be 'speakers' or 'discrete'."));
+    }
 }
 
 void AudioNode::updateChannelsForInputs()
@@ -285,12 +390,12 @@ void AudioNode::updateChannelsForInputs()
 
 const AtomicString& AudioNode::interfaceName() const
 {
-    return eventNames().interfaceForAudioNode;
+    return EventTargetNames::AudioNode;
 }
 
-ScriptExecutionContext* AudioNode::scriptExecutionContext() const
+ExecutionContext* AudioNode::executionContext() const
 {
-    return const_cast<AudioNode*>(this)->context()->scriptExecutionContext();
+    return const_cast<AudioNode*>(this)->context()->executionContext();
 }
 
 void AudioNode::processIfNecessary(size_t framesToProcess)

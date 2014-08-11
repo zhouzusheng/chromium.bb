@@ -34,12 +34,12 @@
 
 #include "InspectorFrontend.h"
 #include "bindings/v8/ScriptGCEvent.h"
-#include "core/dom/EventContext.h"
+#include "core/events/EventPath.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "core/inspector/ScriptGCEventListener.h"
-#include "core/platform/JSONValues.h"
 #include "core/platform/PlatformInstrumentation.h"
-#include "core/platform/graphics/LayoutRect.h"
+#include "platform/JSONValues.h"
+#include "platform/geometry/LayoutRect.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 #include "wtf/WeakPtr.h"
@@ -70,7 +70,7 @@ class ResourceRequest;
 class ResourceResponse;
 class ScriptArguments;
 class ScriptCallStack;
-class ScriptExecutionContext;
+class ExecutionContext;
 class ScriptState;
 class TimelineTraceEventProcessor;
 class WebSocketHandshakeRequest;
@@ -120,7 +120,7 @@ public:
 
     virtual void enable(ErrorString*);
     virtual void disable(ErrorString*);
-    virtual void start(ErrorString*, const int* maxCallStackDepth, const bool* bufferEvents, const bool* includeDomCounters, const bool* includeNativeMemoryStatistics);
+    virtual void start(ErrorString*, const int* maxCallStackDepth, const bool* bufferEvents, const bool* includeDomCounters);
     virtual void stop(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::Timeline::TimelineEvent> >& events);
 
     void setLayerTreeId(int layerTreeId) { m_layerTreeId = layerTreeId; }
@@ -130,7 +130,7 @@ public:
     void didCommitLoad();
 
     // Methods called from WebCore.
-    bool willCallFunction(ScriptExecutionContext* context, const String& scriptName, int scriptLine);
+    bool willCallFunction(ExecutionContext*, const String& scriptName, int scriptLine);
     void didCallFunction();
 
     bool willDispatchEvent(Document* document, const Event& event, DOMWindow* window, Node* node, const EventPath& eventPath);
@@ -138,12 +138,15 @@ public:
     void didDispatchEvent();
     void didDispatchEventOnWindow();
 
-    void didBeginFrame();
+    void didBeginFrame(int frameId);
     void didCancelFrame();
 
     void didInvalidateLayout(Frame*);
     bool willLayout(Frame*);
     void didLayout(RenderObject*);
+
+    void willAutosizeText(RenderObject*);
+    void didAutosizeText(RenderObject*);
 
     void didScheduleStyleRecalculation(Document*);
     bool willRecalculateStyle(Document*);
@@ -165,27 +168,27 @@ public:
     bool willWriteHTML(Document*, unsigned startLine);
     void didWriteHTML(unsigned endLine);
 
-    void didInstallTimer(ScriptExecutionContext* context, int timerId, int timeout, bool singleShot);
-    void didRemoveTimer(ScriptExecutionContext* context, int timerId);
-    bool willFireTimer(ScriptExecutionContext* context, int timerId);
+    void didInstallTimer(ExecutionContext*, int timerId, int timeout, bool singleShot);
+    void didRemoveTimer(ExecutionContext*, int timerId);
+    bool willFireTimer(ExecutionContext*, int timerId);
     void didFireTimer();
 
-    bool willDispatchXHRReadyStateChangeEvent(ScriptExecutionContext* context, XMLHttpRequest* request);
+    bool willDispatchXHRReadyStateChangeEvent(ExecutionContext*, XMLHttpRequest*);
     void didDispatchXHRReadyStateChangeEvent();
-    bool willDispatchXHRLoadEvent(ScriptExecutionContext* context, XMLHttpRequest* request);
+    bool willDispatchXHRLoadEvent(ExecutionContext*, XMLHttpRequest*);
     void didDispatchXHRLoadEvent();
 
     bool willEvaluateScript(Frame*, const String&, int);
     void didEvaluateScript();
 
-    void consoleTimeStamp(ScriptExecutionContext*, const String& title);
+    void consoleTimeStamp(ExecutionContext*, const String& title);
     void domContentLoadedEventFired(Frame*);
     void loadEventFired(Frame*);
 
-    void consoleTime(ScriptExecutionContext*, const String&);
-    void consoleTimeEnd(ScriptExecutionContext*, const String&, ScriptState*);
-    void consoleTimeline(ScriptExecutionContext*, const String& title, ScriptState*);
-    void consoleTimelineEnd(ScriptExecutionContext*, const String& title, ScriptState*);
+    void consoleTime(ExecutionContext*, const String&);
+    void consoleTimeEnd(ExecutionContext*, const String&, ScriptState*);
+    void consoleTimeline(ExecutionContext*, const String& title, ScriptState*);
+    void consoleTimelineEnd(ExecutionContext*, const String& title, ScriptState*);
 
     void didScheduleResourceRequest(Document*, const String& url);
     void willSendRequest(unsigned long, DocumentLoader*, const ResourceRequest&, const ResourceResponse&, const FetchInitiatorInfo&);
@@ -258,7 +261,9 @@ private:
 
     void localToPageQuad(const RenderObject& renderer, const LayoutRect&, FloatQuad*);
     const TimelineTimeConverter& timeConverter() const { return m_timeConverter; }
-    long long idForNode(Node*);
+    const RenderImage* imageBeingPainted() const { return m_imageBeingPainted; }
+    long long nodeId(Node*);
+    long long nodeId(RenderObject*);
     void releaseNodeIds();
 
     double timestamp();

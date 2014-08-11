@@ -29,8 +29,9 @@
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Element.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ScopedEventQueue.h"
 #include "core/dom/Text.h"
+#include "core/events/ScopedEventQueue.h"
+#include "core/page/UseCounter.h"
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -43,7 +44,6 @@ Attr::Attr(Element& element, const QualifiedName& name)
     , m_element(&element)
     , m_name(name)
     , m_ignoreChildrenChanged(0)
-    , m_specified(true)
 {
     ScriptWrappable::init(this);
 }
@@ -54,7 +54,6 @@ Attr::Attr(Document& document, const QualifiedName& name, const AtomicString& st
     , m_name(name)
     , m_standaloneValue(standaloneValue)
     , m_ignoreChildrenChanged(0)
-    , m_specified(true)
 {
     ScriptWrappable::init(this);
 }
@@ -86,7 +85,7 @@ void Attr::createTextChild()
         // This does everything appendChild() would do in this situation (assuming m_ignoreChildrenChanged was set),
         // but much more efficiently.
         textNode->setParentOrShadowHostNode(this);
-        treeScope().adoptIfNeeded(textNode.get());
+        treeScope().adoptIfNeeded(*textNode);
         setFirstChild(textNode.get());
         setLastChild(textNode.get());
     }
@@ -94,6 +93,8 @@ void Attr::createTextChild()
 
 void Attr::setPrefix(const AtomicString& prefix, ExceptionState& es)
 {
+    UseCounter::count(document(), UseCounter::AttributeSetPrefix);
+
     checkSetPrefix(prefix, es);
     if (es.hadException())
         return;

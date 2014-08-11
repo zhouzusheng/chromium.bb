@@ -33,7 +33,7 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ProgressEvent.h"
+#include "core/events/ProgressEvent.h"
 #include "core/fileapi/Blob.h"
 #include "core/fileapi/FileError.h"
 #include "public/platform/WebFileWriter.h"
@@ -45,14 +45,14 @@ namespace WebCore {
 static const int kMaxRecursionDepth = 3;
 static const double progressNotificationIntervalMS = 50;
 
-PassRefPtr<FileWriter> FileWriter::create(ScriptExecutionContext* context)
+PassRefPtr<FileWriter> FileWriter::create(ExecutionContext* context)
 {
     RefPtr<FileWriter> fileWriter(adoptRef(new FileWriter(context)));
     fileWriter->suspendIfNeeded();
     return fileWriter.release();
 }
 
-FileWriter::FileWriter(ScriptExecutionContext* context)
+FileWriter::FileWriter(ExecutionContext* context)
     : ActiveDOMObject(context)
     , m_readyState(INIT)
     , m_operationInProgress(OperationNone)
@@ -76,13 +76,7 @@ FileWriter::~FileWriter()
 
 const AtomicString& FileWriter::interfaceName() const
 {
-    return eventNames().interfaceForFileWriter;
-}
-
-bool FileWriter::canSuspend() const
-{
-    // FIXME: It is not currently possible to suspend a FileWriter, so pages with FileWriter can not go into page cache.
-    return false;
+    return EventTargetNames::FileWriter;
 }
 
 void FileWriter::stop()
@@ -124,7 +118,7 @@ void FileWriter::write(Blob* data, ExceptionState& es)
     } else
         doOperation(OperationWrite);
 
-    fireEvent(eventNames().writestartEvent);
+    fireEvent(EventTypeNames::writestart);
 }
 
 void FileWriter::seek(long long position, ExceptionState& es)
@@ -164,7 +158,7 @@ void FileWriter::truncate(long long position, ExceptionState& es)
         m_queuedOperation = OperationTruncate;
     } else
         doOperation(OperationTruncate);
-    fireEvent(eventNames().writestartEvent);
+    fireEvent(EventTypeNames::writestart);
 }
 
 void FileWriter::abort(ExceptionState& es)
@@ -205,7 +199,7 @@ void FileWriter::didWrite(long long bytes, bool complete)
     double now = currentTimeMS();
     if (complete || !m_lastProgressNotificationTimeMS || (now - m_lastProgressNotificationTimeMS > progressNotificationIntervalMS)) {
         m_lastProgressNotificationTimeMS = now;
-        fireEvent(eventNames().progressEvent);
+        fireEvent(EventTypeNames::progress);
     }
 
     if (complete) {
@@ -267,7 +261,7 @@ void FileWriter::doOperation(Operation operation)
         ASSERT(m_blobBeingWritten.get());
         ASSERT(m_readyState == WRITING);
         setPendingActivity(this);
-        writer()->write(position(), WebKit::WebURL(m_blobBeingWritten->url()));
+        writer()->write(position(), m_blobBeingWritten->uuid());
         break;
     case OperationTruncate:
         ASSERT(m_operationInProgress == OperationNone);
@@ -303,12 +297,12 @@ void FileWriter::signalCompletion(FileError::ErrorCode code)
     if (FileError::OK != code) {
         m_error = FileError::create(code);
         if (FileError::ABORT_ERR == code)
-            fireEvent(eventNames().abortEvent);
+            fireEvent(EventTypeNames::abort);
         else
-            fireEvent(eventNames().errorEvent);
+            fireEvent(EventTypeNames::error);
     } else
-        fireEvent(eventNames().writeEvent);
-    fireEvent(eventNames().writeendEvent);
+        fireEvent(EventTypeNames::write);
+    fireEvent(EventTypeNames::writeend);
 }
 
 void FileWriter::fireEvent(const AtomicString& type)

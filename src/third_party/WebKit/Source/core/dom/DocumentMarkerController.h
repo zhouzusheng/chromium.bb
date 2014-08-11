@@ -28,7 +28,7 @@
 #define DocumentMarkerController_h
 
 #include "core/dom/DocumentMarker.h"
-#include "core/platform/graphics/IntRect.h"
+#include "platform/geometry/IntRect.h"
 #include "wtf/HashMap.h"
 #include "wtf/Vector.h"
 
@@ -87,7 +87,9 @@ private:
     void addMarker(Node*, const DocumentMarker&);
 
     typedef Vector<RenderedDocumentMarker> MarkerList;
-    typedef HashMap<RefPtr<Node>, OwnPtr<MarkerList> > MarkerMap;
+    typedef Vector<OwnPtr<MarkerList>, DocumentMarker::MarkerTypeIndexesCount> MarkerLists;
+    typedef HashMap<RefPtr<Node>, OwnPtr<MarkerLists> > MarkerMap;
+    void mergeOverlapping(MarkerList*, DocumentMarker&);
     bool possiblyHasMarkers(DocumentMarker::MarkerTypes);
     void removeMarkersFromList(MarkerMap::iterator, DocumentMarker::MarkerTypes);
 

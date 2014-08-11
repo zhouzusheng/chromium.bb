@@ -29,12 +29,12 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
-#include "core/platform/Timer.h"
 #include "modules/geolocation/Geoposition.h"
 #include "modules/geolocation/PositionCallback.h"
 #include "modules/geolocation/PositionError.h"
 #include "modules/geolocation/PositionErrorCallback.h"
 #include "modules/geolocation/PositionOptions.h"
+#include "platform/Timer.h"
 
 namespace WebCore {
 
@@ -44,12 +44,12 @@ class GeolocationController;
 class GeolocationError;
 class GeolocationPosition;
 class Page;
-class ScriptExecutionContext;
+class ExecutionContext;
 
 class Geolocation : public ScriptWrappable, public RefCounted<Geolocation>, public ActiveDOMObject
 {
 public:
-    static PassRefPtr<Geolocation> create(ScriptExecutionContext*);
+    static PassRefPtr<Geolocation> create(ExecutionContext*);
     ~Geolocation();
 
     virtual void stop() OVERRIDE;
@@ -71,7 +71,7 @@ private:
 
     bool isDenied() const { return m_allowGeolocation == No; }
 
-    explicit Geolocation(ScriptExecutionContext*);
+    explicit Geolocation(ExecutionContext*);
 
     Page* page() const;
 

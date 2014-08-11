@@ -869,11 +869,12 @@ WebInspector.HeapSnapshotDominatorsDataGrid.prototype = {
 WebInspector.AllocationDataGrid = function()
 {
     var columns = [
-        {id: "name", title: WebInspector.UIString("Function"), width: "200px", disclosure: true, sortable: true},
-        {id: "count", title: WebInspector.UIString("Count"), sortable: true, sort: WebInspector.DataGrid.Order.Descending},
-        {id: "size", title: WebInspector.UIString("Size"), sortable: true, sort: WebInspector.DataGrid.Order.Descending},
+        {id: "count", title: WebInspector.UIString("Count"), width: "72px", sortable: true, sort: WebInspector.DataGrid.Order.Descending},
+        {id: "size", title: WebInspector.UIString("Size"), width: "72px", sortable: true, sort: WebInspector.DataGrid.Order.Descending},
+        {id: "name", title: WebInspector.UIString("Function"), disclosure: true, sortable: true},
     ];
     WebInspector.DataGrid.call(this, columns);
+    this._linkifier = new WebInspector.Linkifier();
 }
 
 WebInspector.AllocationDataGrid.prototype = {
@@ -902,17 +903,65 @@ WebInspector.AllocationGridNode = function(dataGrid, data)
 {
     WebInspector.DataGridNode.call(this, data, data.hasChildren);
     this._dataGrid = dataGrid;
+    this._populated = false;
 }
 
 WebInspector.AllocationGridNode.prototype = {
     populate: function()
     {
+        if (this._populated)
+            return;
+        this._populated = true;
         this._dataGrid._snapshot.allocationNodeCallers(this.data.id, didReceiveCallers.bind(this));
         function didReceiveCallers(callers)
         {
-            for (var i = 0; i < callers.length; i++)
-                this.appendChild(new WebInspector.AllocationGridNode(this._dataGrid, callers[i]));
+            var callersChain = callers.nodesWithSingleCaller;
+            var parentNode = this;
+            for (var i = 0; i < callersChain.length; i++) {
+                var child = new WebInspector.AllocationGridNode(this._dataGrid, callersChain[i]);
+                parentNode.appendChild(child);
+                parentNode = child;
+                parentNode._populated = true;
+                if (this.expanded)
+                    parentNode.expand();
+            }
+
+            var callersBranch = callers.branchingCallers;
+            for (var i = 0; i < callersBranch.length; i++)
+                parentNode.appendChild(new WebInspector.AllocationGridNode(this._dataGrid, callersBranch[i]));
         }
+    },
+
+    /**
+     * @override
+     */
+    expand: function()
+    {
+        WebInspector.DataGridNode.prototype.expand.call(this);
+        if (this.children.length === 1)
+            this.children[0].expand();
+    },
+
+    /**
+     * @override
+     * @param {string} columnIdentifier
+     * @return {!Element}
+     */
+    createCell: function(columnIdentifier)
+    {
+        var cell = WebInspector.DataGridNode.prototype.createCell.call(this, columnIdentifier);
+
+        if (columnIdentifier !== "name")
+            return cell;
+
+        var functionInfo = this.data;
+        if (functionInfo.scriptName) {
+            var urlElement = this._dataGrid._linkifier.linkifyLocation(functionInfo.scriptName, functionInfo.line - 1, functionInfo.column - 1, "profile-node-file");
+            urlElement.style.maxWidth = "75%";
+            cell.insertBefore(urlElement, cell.firstChild);
+        }
+
+        return cell;
     },
 
     __proto__: WebInspector.DataGridNode.prototype

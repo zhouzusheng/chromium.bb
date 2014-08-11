@@ -33,7 +33,7 @@
 namespace WebCore {
 
 ElementStyleResources::ElementStyleResources()
-    : m_hasPendingShaders(false)
+    : m_hasNewCustomFilterProgram(false)
     , m_deviceScaleFactor(1)
 {
 }
@@ -45,15 +45,15 @@ PassRefPtr<StyleImage> ElementStyleResources::styleImage(const TextLinkColors& t
 
     if (value->isImageGeneratorValue()) {
         if (value->isGradientValue())
-            return generatedOrPendingFromValue(property, static_cast<CSSGradientValue*>(value)->gradientWithStylesResolved(textLinkColors, currentColor).get());
-        return generatedOrPendingFromValue(property, static_cast<CSSImageGeneratorValue*>(value));
+            return generatedOrPendingFromValue(property, toCSSGradientValue(value)->gradientWithStylesResolved(textLinkColors, currentColor).get());
+        return generatedOrPendingFromValue(property, toCSSImageGeneratorValue(value));
     }
 
     if (value->isImageSetValue())
-        return setOrPendingFromValue(property, static_cast<CSSImageSetValue*>(value));
+        return setOrPendingFromValue(property, toCSSImageSetValue(value));
 
     if (value->isCursorImageValue())
-        return cursorOrPendingFromValue(property, static_cast<CSSCursorImageValue*>(value));
+        return cursorOrPendingFromValue(property, toCSSCursorImageValue(value));
 
     return 0;
 }
@@ -94,14 +94,6 @@ PassRefPtr<StyleImage> ElementStyleResources::cursorOrPendingFromValue(CSSProper
 void ElementStyleResources::addPendingSVGDocument(FilterOperation* filterOperation, CSSSVGDocumentValue* cssSVGDocumentValue)
 {
     m_pendingSVGDocuments.set(filterOperation, cssSVGDocumentValue);
-}
-
-void ElementStyleResources::clear()
-{
-    m_pendingImageProperties.clear();
-    m_pendingSVGDocuments.clear();
-    m_hasPendingShaders = false;
-    m_deviceScaleFactor = 1;
 }
 
 }

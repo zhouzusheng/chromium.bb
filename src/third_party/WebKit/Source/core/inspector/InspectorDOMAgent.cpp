@@ -43,8 +43,8 @@
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/EventTarget.h"
+#include "core/events/EventListener.h"
+#include "core/events/EventTarget.h"
 #include "core/dom/Node.h"
 #include "core/dom/NodeList.h"
 #include "core/dom/NodeTraversal.h"
@@ -68,16 +68,16 @@
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/FrameTree.h"
 #include "core/page/Page.h"
-#include "core/platform/PlatformGestureEvent.h"
-#include "core/platform/PlatformMouseEvent.h"
-#include "core/platform/PlatformTouchEvent.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderView.h"
 #include "core/xml/DocumentXPathEvaluator.h"
 #include "core/xml/XPathResult.h"
+#include "platform/PlatformGestureEvent.h"
+#include "platform/PlatformMouseEvent.h"
+#include "platform/PlatformTouchEvent.h"
 #include "wtf/HashSet.h"
 #include "wtf/ListHashSet.h"
 #include "wtf/OwnPtr.h"
@@ -158,7 +158,7 @@ static Node* hoveredNodeForPoint(Frame* frame, const IntPoint& point, bool ignor
     HitTestRequest request(hitType);
     HitTestResult result(frame->view()->windowToContents(point));
     frame->contentRenderer()->hitTest(request, result);
-    Node* node = result.innerNode();
+    Node* node = result.innerPossiblyPseudoNode();
     while (node && node->nodeType() == Node::TEXT_NODE)
         node = node->parentNode();
     return node;
@@ -286,7 +286,7 @@ void InspectorDOMAgent::restore()
 Vector<Document*> InspectorDOMAgent::documents()
 {
     Vector<Document*> result;
-    for (Frame* frame = m_document->frame(); frame; frame = frame->tree()->traverseNext()) {
+    for (Frame* frame = m_document->frame(); frame; frame = frame->tree().traverseNext()) {
         Document* document = frame->document();
         if (!document)
             continue;
@@ -523,7 +523,7 @@ int InspectorDOMAgent::pushNodeToFrontend(ErrorString* errorString, int document
     Document* document = assertDocument(errorString, documentNodeId);
     if (!document)
         return 0;
-    if (&nodeToPush->document() != document) {
+    if (nodeToPush->document() != document) {
         *errorString = "Node is not part of the document with given id";
         return 0;
     }
@@ -1143,6 +1143,7 @@ void InspectorDOMAgent::setSearchingForNode(ErrorString* errorString, SearchMode
 {
     if (m_searchingForNode == searchMode)
         return;
+
     m_searchingForNode = searchMode;
     m_overlay->setInspectModeEnabled(searchMode != NotSearching);
     if (searchMode != NotSearching) {
@@ -1178,6 +1179,8 @@ PassOwnPtr<HighlightConfig> InspectorDOMAgent::highlightConfigFromInspectorObjec
 
 void InspectorDOMAgent::setInspectModeEnabled(ErrorString* errorString, bool enabled, const bool* inspectShadowDOM, const RefPtr<JSONObject>* highlightConfig)
 {
+    if (enabled && !pushDocumentUponHandlelessOperation(errorString))
+        return;
     SearchMode searchMode = enabled ? (inspectShadowDOM && *inspectShadowDOM ? SearchingForShadow : SearchingForNormal) : NotSearching;
     setSearchingForNode(errorString, searchMode, highlightConfig ? highlightConfig->get() : 0);
 }
@@ -1375,13 +1378,8 @@ void InspectorDOMAgent::getBoxModel(ErrorString* errorString, int nodeId, RefPtr
 
 void InspectorDOMAgent::getNodeForLocation(ErrorString* errorString, int x, int y, int* nodeId)
 {
-    // This call operates no handles, it could emerge before getDocument.
-    if (!m_documentNodeToIdMap.contains(m_document)) {
-        RefPtr<TypeBuilder::DOM::Node> root;
-        getDocument(errorString, root);
-        if (!errorString->isEmpty())
-            return;
-    }
+    if (!pushDocumentUponHandlelessOperation(errorString))
+        return;
 
     Node* node = hoveredNodeForPoint(m_document->frame(), IntPoint(x, y), false);
     if (!node) {
@@ -1700,7 +1698,7 @@ void InspectorDOMAgent::domContentLoadedEventFired(Frame* frame)
         m_frontend->documentUpdated();
 }
 
-void InspectorDOMAgent::loadEventFired(Frame* frame)
+void InspectorDOMAgent::invalidateFrameOwnerElement(Frame* frame)
 {
     Element* frameOwner = frame->document()->ownerElement();
     if (!frameOwner)
@@ -1724,8 +1722,10 @@ void InspectorDOMAgent::loadEventFired(Frame* frame)
 void InspectorDOMAgent::didCommitLoad(Frame* frame, DocumentLoader* loader)
 {
     Frame* mainFrame = frame->page()->mainFrame();
-    if (loader->frame() != mainFrame)
+    if (loader->frame() != mainFrame) {
+        invalidateFrameOwnerElement(loader->frame());
         return;
+    }
 
     setDocument(mainFrame->document());
 }
@@ -1893,7 +1893,7 @@ void InspectorDOMAgent::frameDocumentUpdated(Frame* frame)
         return;
 
     // Only update the main frame document, nested frame document updates are not required
-    // (will be handled by loadEventFired()).
+    // (will be handled by invalidateFrameOwnerElement()).
     setDocument(document);
 }
 
@@ -1982,6 +1982,22 @@ void InspectorDOMAgent::pushNodeByBackendIdToFrontend(ErrorString* errorString, 
     }
 }
 
+void InspectorDOMAgent::getRelayoutBoundary(ErrorString* errorString, int nodeId, int* relayoutBoundaryNodeId)
+{
+    Node* node = assertNode(errorString, nodeId);
+    if (!node)
+        return;
+    RenderObject* renderer = node->renderer();
+    if (!renderer) {
+        *errorString = "No renderer for node, perhaps orphan or hidden node";
+        return;
+    }
+    while (renderer && !renderer->isRoot() && !renderer->isRelayoutBoundaryForInspector())
+        renderer = renderer->container();
+    Node* resultNode = renderer ? renderer->generatingNode() : node->ownerDocument();
+    *relayoutBoundaryNodeId = pushNodePathToFrontend(resultNode);
+}
+
 PassRefPtr<TypeBuilder::Runtime::RemoteObject> InspectorDOMAgent::resolveNode(Node* node, const String& objectGroup)
 {
     Document* document = node->isDocumentNode() ? &node->document() : node->ownerDocument();
@@ -1994,6 +2010,16 @@ PassRefPtr<TypeBuilder::Runtime::RemoteObject> InspectorDOMAgent::resolveNode(No
         return 0;
 
     return injectedScript.wrapNode(node, objectGroup);
+}
+
+bool InspectorDOMAgent::pushDocumentUponHandlelessOperation(ErrorString* errorString)
+{
+    if (!m_documentNodeToIdMap.contains(m_document)) {
+        RefPtr<TypeBuilder::DOM::Node> root;
+        getDocument(errorString, root);
+        return errorString->isEmpty();
+    }
+    return true;
 }
 
 } // namespace WebCore

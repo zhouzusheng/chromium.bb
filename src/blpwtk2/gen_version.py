@@ -82,6 +82,7 @@ def writeProductsFile(f, version):
   f.write('#define BLPWTK2_DEVTOOLS_PAK_NAME "blpwtk2_devtools' + productAppend + '.pak"\n')
   f.write('#define BLPANGLE_DLL_NAME "blpangle' + productAppend + '.dll"\n')
   f.write('#define BLPV8_DLL_NAME "blpv8' + productAppend + '.dll"\n')
+  f.write('#define FFMPEGSUMO_DLL_NAME "ffmpegsumo' + productAppend + '.dll"\n')
   f.write('\n')
   f.write('#endif  // INCLUDED_GENERATED_BLPWTK2_PRODUCTS\n')
 

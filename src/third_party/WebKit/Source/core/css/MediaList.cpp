@@ -28,7 +28,7 @@
 #include "core/css/MediaQueryExp.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/page/DOMWindow.h"
+#include "core/frame/DOMWindow.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
@@ -74,7 +74,7 @@ PassRefPtr<MediaQuerySet> MediaQuerySet::create(const String& mediaString)
     if (mediaString.isEmpty())
         return MediaQuerySet::create();
 
-    CSSParser parser(CSSStrictMode);
+    CSSParser parser(HTMLStandardMode);
     return parser.parseMediaQueryList(mediaString);
 }
 
@@ -202,7 +202,7 @@ void MediaList::deleteMedium(const String& medium, ExceptionState& es)
 
     bool success = m_mediaQueries->remove(medium);
     if (!success) {
-        es.throwDOMException(NotFoundError);
+        es.throwUninformativeAndGenericDOMException(NotFoundError);
         return;
     }
     if (m_parentStyleSheet)
@@ -215,7 +215,7 @@ void MediaList::appendMedium(const String& medium, ExceptionState& es)
 
     bool success = m_mediaQueries->add(medium);
     if (!success) {
-        es.throwDOMException(InvalidCharacterError);
+        es.throwUninformativeAndGenericDOMException(InvalidCharacterError);
         return;
     }
 

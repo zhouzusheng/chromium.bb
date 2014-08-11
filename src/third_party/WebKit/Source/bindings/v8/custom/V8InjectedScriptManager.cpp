@@ -40,7 +40,7 @@
 #include "bindings/v8/V8ObjectConstructor.h"
 #include "bindings/v8/V8ScriptRunner.h"
 #include "core/inspector/InjectedScriptHost.h"
-#include "core/page/DOMWindow.h"
+#include "core/frame/DOMWindow.h"
 #include "wtf/RefPtr.h"
 
 namespace WebCore {
@@ -57,7 +57,7 @@ static v8::Local<v8::Object> createInjectedScriptHostV8Wrapper(InjectedScriptHos
         // Avoid setting the wrapper if allocation failed.
         return v8::Local<v8::Object>();
     }
-    V8DOMWrapper::setNativeInfo(instance, &V8InjectedScriptHost::info, host);
+    V8DOMWrapper::setNativeInfo(instance, &V8InjectedScriptHost::wrapperTypeInfo, host);
     // Create a weak reference to the v8 wrapper of InspectorBackend to deref
     // InspectorBackend when the wrapper is garbage collected.
     host->ref();
@@ -92,8 +92,8 @@ ScriptObject InjectedScriptManager::createInjectedScript(const String& scriptSou
     ASSERT(value->IsFunction());
 
     v8::Local<v8::Object> windowGlobal = inspectedContext->Global();
-    v8::Handle<v8::Value> args[] = { scriptHostWrapper, windowGlobal, v8::Number::New(inspectedContext->GetIsolate(), id) };
-    v8::Local<v8::Value> injectedScriptValue = V8ScriptRunner::callInternalFunction(v8::Local<v8::Function>::Cast(value), windowGlobal, WTF_ARRAY_LENGTH(args), args, inspectedContext->GetIsolate());
+    v8::Handle<v8::Value> info[] = { scriptHostWrapper, windowGlobal, v8::Number::New(inspectedContext->GetIsolate(), id) };
+    v8::Local<v8::Value> injectedScriptValue = V8ScriptRunner::callInternalFunction(v8::Local<v8::Function>::Cast(value), windowGlobal, WTF_ARRAY_LENGTH(info), info, inspectedContext->GetIsolate());
     return ScriptObject(inspectedScriptState, v8::Handle<v8::Object>::Cast(injectedScriptValue));
 }
 

@@ -46,6 +46,9 @@ class CONTENT_EXPORT BrowserPluginGuestDelegate {
 
   virtual bool IsDragAndDropEnabled();
 
+  // Returns whether the user agent for the guest is being overridden.
+  virtual bool IsOverridingUserAgent() const;
+
   // Notification that a load in the guest resulted in abort. Note that |url|
   // may be invalid.
   virtual void LoadAbort(bool is_top_level,
@@ -73,7 +76,11 @@ class CONTENT_EXPORT BrowserPluginGuestDelegate {
   virtual bool RequestPermission(
       BrowserPluginPermissionType permission_type,
       const base::DictionaryValue& request_info,
-      const PermissionResponseCallback& callback);
+      const PermissionResponseCallback& callback,
+      bool allowed_by_default);
+
+  // Requests resolution of a potentially relative URL.
+  virtual GURL ResolveURL(const std::string& src);
 
   // Notifies that the content size of the guest has changed in autosize mode.
   virtual void SizeChanged(const gfx::Size& old_size,

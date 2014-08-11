@@ -14,7 +14,6 @@
 #include "base/memory/shared_memory.h"
 #endif
 #include "base/values.h"
-#include "content/public/common/browser_plugin_permission_type.h"
 #include "content/renderer/browser_plugin/browser_plugin_backing_store.h"
 #include "content/renderer/browser_plugin/browser_plugin_bindings.h"
 #include "content/renderer/mouse_lock_dispatcher.h"
@@ -353,6 +352,9 @@ class CONTENT_EXPORT BrowserPlugin :
 
   // Used to identify the plugin to WebBindings.
   scoped_ptr<struct _NPP> npp_;
+
+  // URL for the embedder frame.
+  GURL embedder_frame_url_;
 
   // Weak factory used in v8 |MakeWeak| callback, since the v8 callback might
   // get called after BrowserPlugin has been destroyed.

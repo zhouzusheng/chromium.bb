@@ -26,8 +26,8 @@
 #ifndef FilterOperations_h
 #define FilterOperations_h
 
-#include "core/platform/graphics/IntRectExtent.h"
 #include "core/platform/graphics/filters/FilterOperation.h"
+#include "platform/geometry/IntRectExtent.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
@@ -61,7 +61,7 @@ public:
     size_t size() const { return m_operations.size(); }
     const FilterOperation* at(size_t index) const { return index < m_operations.size() ? m_operations.at(index).get() : 0; }
 
-    bool operationsMatch(const FilterOperations&) const;
+    bool canInterpolateWith(const FilterOperations&) const;
 
     bool hasOutsets() const;
     FilterOutsets outsets() const;

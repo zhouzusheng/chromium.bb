@@ -53,8 +53,8 @@
 #include "core/inspector/InspectorResourceAgent.h"
 #include "core/page/Page.h"
 #include "core/page/PageConsole.h"
-#include "core/platform/JSONValues.h"
 #include "core/platform/text/RegularExpression.h"
+#include "platform/JSONValues.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
@@ -216,6 +216,8 @@ inline void StyleSheetHandler::setRuleHeaderEnd(const CharacterType* dataStart, 
     }
 
     m_currentRuleDataStack.last()->ruleHeaderRange.end = listEndOffset;
+    if (!m_currentRuleDataStack.last()->selectorRanges.isEmpty())
+        m_currentRuleDataStack.last()->selectorRanges.last().end = listEndOffset;
 }
 
 void StyleSheetHandler::endRuleHeader(unsigned offset)
@@ -506,10 +508,6 @@ InspectorStyle::InspectorStyle(const InspectorCSSId& styleId, PassRefPtr<CSSStyl
     ASSERT(m_style);
 }
 
-InspectorStyle::~InspectorStyle()
-{
-}
-
 PassRefPtr<TypeBuilder::CSS::CSSStyle> InspectorStyle::buildObjectForStyle() const
 {
     RefPtr<TypeBuilder::CSS::CSSStyle> result = styleWithProperties();
@@ -555,7 +553,7 @@ bool InspectorStyle::setPropertyText(unsigned index, const String& propertyText,
     DEFINE_STATIC_LOCAL(String, bogusPropertyName, ("-webkit-boguz-propertee"));
 
     if (!m_parentStyleSheet->ensureParsedDataReady()) {
-        es.throwDOMException(NotFoundError);
+        es.throwUninformativeAndGenericDOMException(NotFoundError);
         return false;
     }
 
@@ -570,27 +568,27 @@ bool InspectorStyle::setPropertyText(unsigned index, const String& propertyText,
 
         // At least one property + the bogus property added just above should be present.
         if (propertyCount < 2) {
-            es.throwDOMException(SyntaxError);
+            es.throwUninformativeAndGenericDOMException(SyntaxError);
             return false;
         }
 
         // Check for the proper propertyText termination (the parser could at least restore to the PROPERTY_NAME state).
         if (propertyData.at(propertyCount - 1).name != bogusPropertyName) {
-            es.throwDOMException(SyntaxError);
+            es.throwUninformativeAndGenericDOMException(SyntaxError);
             return false;
         }
     }
 
     RefPtr<CSSRuleSourceData> sourceData = extractSourceData();
     if (!sourceData) {
-        es.throwDOMException(NotFoundError);
+        es.throwUninformativeAndGenericDOMException(NotFoundError);
         return false;
     }
 
     String text;
     bool success = styleText(&text);
     if (!success) {
-        es.throwDOMException(NotFoundError);
+        es.throwUninformativeAndGenericDOMException(NotFoundError);
         return false;
     }
 
@@ -600,7 +598,7 @@ bool InspectorStyle::setPropertyText(unsigned index, const String& propertyText,
     InspectorStyleTextEditor editor(&allProperties, text, newLineAndWhitespaceDelimiters());
     if (overwrite) {
         if (index >= allProperties.size()) {
-            es.throwDOMException(IndexSizeError);
+            es.throwUninformativeAndGenericDOMException(IndexSizeError);
             return false;
         }
         *oldText = allProperties.at(index).rawText;
@@ -615,27 +613,27 @@ bool InspectorStyle::toggleProperty(unsigned index, bool disable, ExceptionState
 {
     ASSERT(m_parentStyleSheet);
     if (!m_parentStyleSheet->ensureParsedDataReady()) {
-        es.throwDOMException(NoModificationAllowedError);
+        es.throwUninformativeAndGenericDOMException(NoModificationAllowedError);
         return false;
     }
 
     RefPtr<CSSRuleSourceData> sourceData = extractSourceData();
     if (!sourceData) {
-        es.throwDOMException(NotFoundError);
+        es.throwUninformativeAndGenericDOMException(NotFoundError);
         return false;
     }
 
     String text;
     bool success = styleText(&text);
     if (!success) {
-        es.throwDOMException(NotFoundError);
+        es.throwUninformativeAndGenericDOMException(NotFoundError);
         return false;
     }
 
     Vector<InspectorStyleProperty> allProperties;
     populateAllProperties(allProperties);
     if (index >= allProperties.size()) {
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
         return false;
     }
 
@@ -1050,7 +1048,7 @@ String InspectorStyleSheet::ruleSelector(const InspectorCSSId& id, ExceptionStat
 {
     CSSStyleRule* rule = ruleForId(id);
     if (!rule) {
-        es.throwDOMException(NotFoundError);
+        es.throwUninformativeAndGenericDOMException(NotFoundError);
         return "";
     }
     return rule->selectorText();
@@ -1062,19 +1060,19 @@ bool InspectorStyleSheet::setRuleSelector(const InspectorCSSId& id, const String
         return false;
     CSSStyleRule* rule = ruleForId(id);
     if (!rule) {
-        es.throwDOMException(NotFoundError);
+        es.throwUninformativeAndGenericDOMException(NotFoundError);
         return false;
     }
     CSSStyleSheet* styleSheet = rule->parentStyleSheet();
     if (!styleSheet || !ensureParsedDataReady()) {
-        es.throwDOMException(NotFoundError);
+        es.throwUninformativeAndGenericDOMException(NotFoundError);
         return false;
     }
 
     rule->setSelectorText(selector);
     RefPtr<CSSRuleSourceData> sourceData = ruleSourceDataFor(rule->style());
     if (!sourceData) {
-        es.throwDOMException(NotFoundError);
+        es.throwUninformativeAndGenericDOMException(NotFoundError);
         return false;
     }
 
@@ -1097,14 +1095,14 @@ CSSStyleRule* InspectorStyleSheet::addRule(const String& selector, ExceptionStat
     if (!checkPageStyleSheet(es))
         return 0;
     if (!checkStyleRuleSelector(m_pageStyleSheet->ownerDocument(), selector)) {
-        es.throwDOMException(SyntaxError);
+        es.throwUninformativeAndGenericDOMException(SyntaxError);
         return 0;
     }
 
     String text;
     bool success = getText(&text);
     if (!success) {
-        es.throwDOMException(NotFoundError);
+        es.throwUninformativeAndGenericDOMException(NotFoundError);
         return 0;
     }
     StringBuilder styleSheetText;
@@ -1123,7 +1121,7 @@ CSSStyleRule* InspectorStyleSheet::addRule(const String& selector, ExceptionStat
         // What we just added has to be a CSSStyleRule - we cannot handle other types of rules yet.
         // If it is not a style rule, pretend we never touched the stylesheet.
         m_pageStyleSheet->deleteRule(lastRuleIndex, ASSERT_NO_EXCEPTION);
-        es.throwDOMException(SyntaxError);
+        es.throwUninformativeAndGenericDOMException(SyntaxError);
         return 0;
     }
 
@@ -1146,18 +1144,18 @@ bool InspectorStyleSheet::deleteRule(const InspectorCSSId& id, ExceptionState& e
         return false;
     RefPtr<CSSStyleRule> rule = ruleForId(id);
     if (!rule) {
-        es.throwDOMException(NotFoundError);
+        es.throwUninformativeAndGenericDOMException(NotFoundError);
         return false;
     }
     CSSStyleSheet* styleSheet = rule->parentStyleSheet();
     if (!styleSheet || !ensureParsedDataReady()) {
-        es.throwDOMException(NotFoundError);
+        es.throwUninformativeAndGenericDOMException(NotFoundError);
         return false;
     }
 
     RefPtr<CSSRuleSourceData> sourceData = ruleSourceDataFor(rule->style());
     if (!sourceData) {
-        es.throwDOMException(NotFoundError);
+        es.throwUninformativeAndGenericDOMException(NotFoundError);
         return false;
     }
 
@@ -1228,10 +1226,10 @@ PassRefPtr<TypeBuilder::CSS::CSSStyleSheetHeader> InspectorStyleSheet::buildObje
     return result.release();
 }
 
-static PassRefPtr<TypeBuilder::Array<String> > selectorsFromSource(const CSSRuleSourceData* sourceData, const String& sheetText)
+PassRefPtr<TypeBuilder::Array<TypeBuilder::CSS::Selector> > InspectorStyleSheet::selectorsFromSource(const CSSRuleSourceData* sourceData, const String& sheetText) const
 {
     RegularExpression comment("/\\*[^]*?\\*/", TextCaseSensitive, MultilineEnabled);
-    RefPtr<TypeBuilder::Array<String> > result = TypeBuilder::Array<String>::create();
+    RefPtr<TypeBuilder::Array<TypeBuilder::CSS::Selector> > result = TypeBuilder::Array<TypeBuilder::CSS::Selector>::create();
     const SelectorRangeList& ranges = sourceData->selectorRanges;
     for (size_t i = 0, size = ranges.size(); i < size; ++i) {
         const SourceRange& range = ranges.at(i);
@@ -1243,7 +1241,10 @@ static PassRefPtr<TypeBuilder::Array<String> > selectorsFromSource(const CSSRule
         while ((offset = comment.match(selector, offset, &matchLength)) >= 0)
             selector.replace(offset, matchLength, "");
 
-        result->addItem(selector.stripWhiteSpace());
+        RefPtr<TypeBuilder::CSS::Selector> simpleSelector = TypeBuilder::CSS::Selector::create()
+            .setValue(selector.stripWhiteSpace());
+        simpleSelector->setRange(buildSourceRangeObject(range, lineEndings().get()));
+        result->addItem(simpleSelector.release());
     }
     return result.release();
 }
@@ -1253,7 +1254,7 @@ PassRefPtr<TypeBuilder::CSS::SelectorList> InspectorStyleSheet::buildObjectForSe
     RefPtr<CSSRuleSourceData> sourceData;
     if (ensureParsedDataReady())
         sourceData = ruleSourceDataFor(rule->style());
-    RefPtr<TypeBuilder::Array<String> > selectors;
+    RefPtr<TypeBuilder::Array<TypeBuilder::CSS::Selector> > selectors;
 
     // This intentionally does not rely on the source data to avoid catching the trailing comments (before the declaration starting '{').
     String selectorText = rule->selectorText();
@@ -1261,17 +1262,15 @@ PassRefPtr<TypeBuilder::CSS::SelectorList> InspectorStyleSheet::buildObjectForSe
     if (sourceData)
         selectors = selectorsFromSource(sourceData.get(), m_parsedStyleSheet->text());
     else {
-        selectors = TypeBuilder::Array<String>::create();
+        selectors = TypeBuilder::Array<TypeBuilder::CSS::Selector>::create();
         const CSSSelectorList& selectorList = rule->styleRule()->selectorList();
         for (const CSSSelector* selector = selectorList.first(); selector; selector = CSSSelectorList::next(selector))
-            selectors->addItem(selector->selectorText());
+            selectors->addItem(TypeBuilder::CSS::Selector::create().setValue(selector->selectorText()).release());
     }
     RefPtr<TypeBuilder::CSS::SelectorList> result = TypeBuilder::CSS::SelectorList::create()
         .setSelectors(selectors)
         .setText(selectorText)
         .release();
-    if (sourceData)
-        result->setRange(buildSourceRangeObject(sourceData->ruleHeaderRange, lineEndings().get()));
     return result.release();
 }
 
@@ -1337,13 +1336,13 @@ bool InspectorStyleSheet::setStyleText(const InspectorCSSId& id, const String& t
 {
     RefPtr<InspectorStyle> inspectorStyle = inspectorStyleForId(id);
     if (!inspectorStyle || !inspectorStyle->cssStyle()) {
-        es.throwDOMException(NotFoundError);
+        es.throwUninformativeAndGenericDOMException(NotFoundError);
         return false;
     }
 
     bool success = inspectorStyle->styleText(oldText);
     if (!success) {
-        es.throwDOMException(NotFoundError);
+        es.throwUninformativeAndGenericDOMException(NotFoundError);
         return false;
     }
 
@@ -1351,7 +1350,7 @@ bool InspectorStyleSheet::setStyleText(const InspectorCSSId& id, const String& t
     if (success)
         fireStyleSheetChanged();
     else
-        es.throwDOMException(SyntaxError);
+        es.throwUninformativeAndGenericDOMException(SyntaxError);
     return success;
 }
 
@@ -1359,7 +1358,7 @@ bool InspectorStyleSheet::setPropertyText(const InspectorCSSId& id, unsigned pro
 {
     RefPtr<InspectorStyle> inspectorStyle = inspectorStyleForId(id);
     if (!inspectorStyle) {
-        es.throwDOMException(NotFoundError);
+        es.throwUninformativeAndGenericDOMException(NotFoundError);
         return false;
     }
 
@@ -1373,7 +1372,7 @@ bool InspectorStyleSheet::toggleProperty(const InspectorCSSId& id, unsigned prop
 {
     RefPtr<InspectorStyle> inspectorStyle = inspectorStyleForId(id);
     if (!inspectorStyle) {
-        es.throwDOMException(NotFoundError);
+        es.throwUninformativeAndGenericDOMException(NotFoundError);
         return false;
     }
 
@@ -1547,7 +1546,7 @@ unsigned InspectorStyleSheet::ruleIndexByRule(const CSSRule* rule) const
 bool InspectorStyleSheet::checkPageStyleSheet(ExceptionState& es) const
 {
     if (!m_pageStyleSheet) {
-        es.throwDOMException(NotSupportedError);
+        es.throwUninformativeAndGenericDOMException(NotSupportedError);
         return false;
     }
     return true;
@@ -1614,7 +1613,7 @@ bool InspectorStyleSheet::setStyleText(CSSStyleDeclaration* style, const String&
         return false;
 
     TrackExceptionState es;
-    style->setCssText(text, es);
+    style->setCSSText(text, es);
     if (!es.hadException())
         m_parsedStyleSheet->setText(patchedStyleSheetText);
 

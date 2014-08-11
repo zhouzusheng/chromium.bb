@@ -60,22 +60,27 @@ namespace WebCore {
     typedef void (*DerefObjectFunction)(void*);
     typedef ActiveDOMObject* (*ToActiveDOMObjectFunction)(v8::Handle<v8::Object>);
     typedef EventTarget* (*ToEventTargetFunction)(v8::Handle<v8::Object>);
-    typedef void* (*OpaqueRootForGC)(void*, v8::Isolate*);
-    typedef void (*InstallPerContextPrototypePropertiesFunction)(v8::Handle<v8::Object>, v8::Isolate*);
+    typedef void (*ResolveWrapperReachabilityFunction)(void*, const v8::Persistent<v8::Object>&, v8::Isolate*);
+    typedef void (*InstallPerContextEnabledPrototypePropertiesFunction)(v8::Handle<v8::Object>, v8::Isolate*);
 
     enum WrapperTypePrototype {
         WrapperTypeObjectPrototype,
         WrapperTypeErrorPrototype
     };
 
+    inline void setObjectGroup(void* object, const v8::Persistent<v8::Object>& wrapper, v8::Isolate* isolate)
+    {
+        isolate->SetObjectGroupId(wrapper, v8::UniqueId(reinterpret_cast<intptr_t>(object)));
+    }
+
     // This struct provides a way to store a bunch of information that is helpful when unwrapping
     // v8 objects. Each v8 bindings class has exactly one static WrapperTypeInfo member, so
     // comparing pointers is a safe way to determine if types match.
     struct WrapperTypeInfo {
 
-        static WrapperTypeInfo* unwrap(v8::Handle<v8::Value> typeInfoWrapper)
+        static const WrapperTypeInfo* unwrap(v8::Handle<v8::Value> typeInfoWrapper)
         {
-            return reinterpret_cast<WrapperTypeInfo*>(v8::External::Cast(*typeInfoWrapper)->Value());
+            return reinterpret_cast<const WrapperTypeInfo*>(v8::External::Cast(*typeInfoWrapper)->Value());
         }
 
 
@@ -94,47 +99,48 @@ namespace WebCore {
             return false;
         }
 
-        v8::Handle<v8::FunctionTemplate> getTemplate(v8::Isolate* isolate, WrapperWorldType worldType) { return getTemplateFunction(isolate, worldType); }
+        v8::Handle<v8::FunctionTemplate> getTemplate(v8::Isolate* isolate, WrapperWorldType worldType) const { return getTemplateFunction(isolate, worldType); }
 
-        void derefObject(void* object)
+        void derefObject(void* object) const
         {
             if (derefObjectFunction)
                 derefObjectFunction(object);
         }
 
-        void installPerContextPrototypeProperties(v8::Handle<v8::Object> proto, v8::Isolate* isolate)
+        void installPerContextEnabledPrototypeProperties(v8::Handle<v8::Object> proto, v8::Isolate* isolate) const
         {
-            if (installPerContextPrototypePropertiesFunction)
-                installPerContextPrototypePropertiesFunction(proto, isolate);
+            if (installPerContextEnabledPrototypePropertiesFunction)
+                installPerContextEnabledPrototypePropertiesFunction(proto, isolate);
         }
 
-        ActiveDOMObject* toActiveDOMObject(v8::Handle<v8::Object> object)
+        ActiveDOMObject* toActiveDOMObject(v8::Handle<v8::Object> object) const
         {
             if (!toActiveDOMObjectFunction)
                 return 0;
             return toActiveDOMObjectFunction(object);
         }
 
-        EventTarget* toEventTarget(v8::Handle<v8::Object> object)
+        EventTarget* toEventTarget(v8::Handle<v8::Object> object) const
         {
             if (!toEventTargetFunction)
                 return 0;
             return toEventTargetFunction(object);
         }
 
-        void* opaqueRootForGC(void* object, v8::Isolate* isolate)
+        void resolveWrapperReachability(void* object, const v8::Persistent<v8::Object>& wrapper, v8::Isolate* isolate) const
         {
-            if (!opaqueRootForGCFunction)
-                return object;
-            return opaqueRootForGCFunction(object, isolate);
+            if (!resolveWrapperReachabilityFunction)
+                setObjectGroup(object, wrapper, isolate);
+            else
+                resolveWrapperReachabilityFunction(object, wrapper, isolate);
         }
 
         const GetTemplateFunction getTemplateFunction;
         const DerefObjectFunction derefObjectFunction;
         const ToActiveDOMObjectFunction toActiveDOMObjectFunction;
         const ToEventTargetFunction toEventTargetFunction;
-        const OpaqueRootForGC opaqueRootForGCFunction;
-        const InstallPerContextPrototypePropertiesFunction installPerContextPrototypePropertiesFunction;
+        const ResolveWrapperReachabilityFunction resolveWrapperReachabilityFunction;
+        const InstallPerContextEnabledPrototypePropertiesFunction installPerContextEnabledPrototypePropertiesFunction;
         const WrapperTypeInfo* parentClass;
         const WrapperTypePrototype wrapperTypePrototype;
     };
@@ -165,12 +171,12 @@ namespace WebCore {
         return getInternalField<void, v8DOMWrapperObjectIndex>(object);
     }
 
-    inline WrapperTypeInfo* toWrapperTypeInfo(const v8::Persistent<v8::Object>& object)
+    inline const WrapperTypeInfo* toWrapperTypeInfo(const v8::Persistent<v8::Object>& object)
     {
         return getInternalField<WrapperTypeInfo, v8DOMWrapperTypeIndex>(object);
     }
 
-    inline WrapperTypeInfo* toWrapperTypeInfo(v8::Handle<v8::Object> object)
+    inline const WrapperTypeInfo* toWrapperTypeInfo(v8::Handle<v8::Object> object)
     {
         return getInternalField<WrapperTypeInfo, v8DOMWrapperTypeIndex>(object);
     }

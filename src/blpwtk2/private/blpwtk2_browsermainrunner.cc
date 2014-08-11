@@ -26,11 +26,14 @@
 #include <blpwtk2_devtoolshttphandlerdelegateimpl.h>
 #include <blpwtk2_processhostmanager.h>
 #include <blpwtk2_statics.h>
+#include <blpwtk2_viewsdelegateimpl.h>
 
 #include <base/logging.h>  // for DCHECK
 #include <base/message_loop/message_loop.h>
 #include <chrome/browser/printing/print_job_manager.h>
 #include <content/public/browser/browser_main_runner.h>
+#include <ui/gfx/screen.h>
+#include <ui/views/widget/desktop_aura/desktop_screen.h>
 
 namespace printing {
     extern PrintJobManager* g_print_job_manager;
@@ -57,6 +60,12 @@ BrowserMainRunner::BrowserMainRunner(
 
     d_devToolsHttpHandlerDelegate.reset(
         new DevToolsHttpHandlerDelegateImpl());
+
+    gfx::Screen::SetScreenInstance(
+        gfx::SCREEN_TYPE_NATIVE, views::CreateDesktopScreen());
+
+    d_viewsDelegate.reset(
+        new ViewsDelegateImpl());
 
     printing::g_print_job_manager = new printing::PrintJobManager();
 

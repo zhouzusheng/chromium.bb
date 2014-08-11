@@ -4,7 +4,6 @@
 
 #include "cc/layers/picture_layer.h"
 
-#include "cc/debug/benchmark_instrumentation.h"
 #include "cc/debug/devtools_instrumentation.h"
 #include "cc/layers/content_layer_client.h"
 #include "cc/layers/picture_layer_impl.h"
@@ -21,7 +20,8 @@ PictureLayer::PictureLayer(ContentLayerClient* client)
   : client_(client),
     pile_(make_scoped_refptr(new PicturePile())),
     instrumentation_object_tracker_(id()),
-    is_mask_(false) {
+    is_mask_(false),
+    update_source_frame_number_(-1) {
 }
 
 PictureLayer::~PictureLayer() {
@@ -43,12 +43,12 @@ void PictureLayer::PushPropertiesTo(LayerImpl* base_layer) {
     // Update may not get called for an empty layer, so resize here instead.
     // Using layer_impl because either bounds() or paint_properties().bounds
     // may disagree and either one could have been pushed to layer_impl.
-    pile_->Resize(layer_impl->bounds());
+    pile_->Resize(gfx::Size());
     pile_->UpdateRecordedRegion();
-  }
-
-  if (DrawsContent()) {
-    DCHECK(paint_properties().bounds == pile_->size());
+  } else if (update_source_frame_number_ ==
+             layer_tree_host()->source_frame_number()) {
+    // If update called, then pile size must match bounds pushed to impl layer.
+    DCHECK_EQ(layer_impl->bounds().ToString(), pile_->size().ToString());
   }
 
   layer_impl->SetIsMask(is_mask_);
@@ -87,11 +87,11 @@ bool PictureLayer::Update(ResourceUpdateQueue* queue,
   // Do not early-out of this function so that PicturePile::Update has a chance
   // to record pictures due to changing visibility of this layer.
 
-  TRACE_EVENT1(benchmark_instrumentation::kCategory,
-               benchmark_instrumentation::kPictureLayerUpdate,
-               benchmark_instrumentation::kSourceFrameNumber,
+  TRACE_EVENT1("cc", "PictureLayer::Update",
+               "source_frame_number",
                layer_tree_host()->source_frame_number());
 
+  update_source_frame_number_ = layer_tree_host()->source_frame_number();
   bool updated = Layer::Update(queue, occlusion);
 
   pile_->Resize(paint_properties().bounds);
@@ -151,6 +151,10 @@ skia::RefPtr<SkPicture> PictureLayer::GetPicture() const {
   client_->PaintContents(canvas, gfx::Rect(width, height), &opaque);
   picture->endRecording();
   return picture;
+}
+
+void PictureLayer::RunMicroBenchmark(MicroBenchmark* benchmark) {
+  benchmark->RunOnLayer(this);
 }
 
 }  // namespace cc

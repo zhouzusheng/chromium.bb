@@ -16,8 +16,10 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
+#include "base/values.h"
 #include "cc/base/switches.h"
 #include "cc/debug/layer_tree_debug_state.h"
+#include "cc/debug/micro_benchmark.h"
 #include "cc/layers/layer.h"
 #include "cc/trees/layer_tree_host.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
@@ -28,6 +30,10 @@
 #include "third_party/WebKit/public/web/WebWidget.h"
 #include "ui/gl/gl_switches.h"
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
+
+namespace base {
+class Value;
+}
 
 namespace cc {
 class Layer;
@@ -98,7 +104,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
 
   settings.throttle_frame_production =
       !cmd->HasSwitch(switches::kDisableGpuVsync);
-  settings.begin_frame_scheduling_enabled =
+  settings.begin_impl_frame_scheduling_enabled =
       cmd->HasSwitch(switches::kEnableBeginFrameScheduling);
   settings.deadline_scheduling_enabled =
       cmd->HasSwitch(switches::kEnableDeadlineScheduling) &&
@@ -111,6 +117,8 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       !cmd->HasSwitch(cc::switches::kDisableThreadedAnimation);
   settings.force_direct_layer_drawing =
       cmd->HasSwitch(cc::switches::kForceDirectLayerDrawing);
+  settings.touch_hit_testing =
+      !cmd->HasSwitch(cc::switches::kDisableCompositorTouchHitTesting);
 
   int default_tile_width = settings.default_tile_size.width();
   if (cmd->HasSwitch(switches::kDefaultTileWidth)) {
@@ -274,7 +282,6 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   // TODO(danakj): Move these to the android code.
   settings.max_partial_texture_updates = 0;
   settings.scrollbar_animator = cc::LayerTreeSettings::LinearFade;
-  settings.solid_color_scrollbars = true;
   settings.solid_color_scrollbar_color =
       cmd->HasSwitch(switches::kHideScrollbars)
           ? SK_ColorTRANSPARENT
@@ -283,6 +290,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   // Android WebView handles root layer flings itself.
   settings.ignore_root_layer_flings =
       widget->UsingSynchronousRendererCompositor();
+  settings.always_overscroll = widget->UsingSynchronousRendererCompositor();
   // RGBA_4444 textures are only enabled for low end devices
   // and are disabled for Android WebView as it doesn't support the format.
   settings.use_rgba_4444_textures =
@@ -292,7 +300,6 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
 #elif !defined(OS_MACOSX)
   if (cmd->HasSwitch(switches::kEnableOverlayScrollbars)) {
     settings.scrollbar_animator = cc::LayerTreeSettings::Thinning;
-    settings.solid_color_scrollbars = true;
   }
   if (cmd->HasSwitch(cc::switches::kEnablePinchVirtualViewport) ||
       cmd->HasSwitch(switches::kEnableOverlayScrollbars)) {
@@ -331,6 +338,10 @@ void RenderWidgetCompositor::SetSuppressScheduleComposite(bool suppress) {
     TRACE_EVENT_ASYNC_END0("gpu",
         "RenderWidgetCompositor::SetSuppressScheduleComposite", this);
   suppress_schedule_composite_ = suppress;
+}
+
+bool RenderWidgetCompositor::BeginMainFrameRequested() const {
+  return layer_tree_host_->BeginMainFrameRequested();
 }
 
 void RenderWidgetCompositor::Animate(base::TimeTicks time) {
@@ -373,6 +384,11 @@ void RenderWidgetCompositor::SetNeedsRedrawRect(gfx::Rect damage_rect) {
   layer_tree_host_->SetNeedsRedrawRect(damage_rect);
 }
 
+void RenderWidgetCompositor::SetNeedsForcedRedraw() {
+  layer_tree_host_->SetNextCommitForcesRedraw();
+  setNeedsRedraw();
+}
+
 void RenderWidgetCompositor::SetLatencyInfo(
     const ui::LatencyInfo& latency_info) {
   layer_tree_host_->SetLatencyInfo(latency_info);
@@ -390,12 +406,18 @@ const cc::Layer* RenderWidgetCompositor::GetRootLayer() const {
   return layer_tree_host_->root_layer();
 }
 
+bool RenderWidgetCompositor::ScheduleMicroBenchmark(
+    const std::string& name,
+    scoped_ptr<base::Value> value,
+    const base::Callback<void(scoped_ptr<base::Value>)>& callback) {
+  return layer_tree_host_->ScheduleMicroBenchmark(name, value.Pass(), callback);
+}
+
 bool RenderWidgetCompositor::initialize(cc::LayerTreeSettings settings) {
   scoped_refptr<base::MessageLoopProxy> compositor_message_loop_proxy =
       RenderThreadImpl::current()->compositor_message_loop_proxy();
-  layer_tree_host_ = cc::LayerTreeHost::Create(this,
-                                               settings,
-                                               compositor_message_loop_proxy);
+  layer_tree_host_ = cc::LayerTreeHost::Create(
+      this, NULL, settings, compositor_message_loop_proxy);
   return layer_tree_host_;
 }
 
@@ -567,12 +589,12 @@ void RenderWidgetCompositor::setShowScrollBottleneckRects(bool show) {
   layer_tree_host_->SetDebugState(debug_state);
 }
 
-void RenderWidgetCompositor::WillBeginFrame() {
+void RenderWidgetCompositor::WillBeginMainFrame() {
   widget_->InstrumentWillBeginFrame();
   widget_->willBeginCompositorFrame();
 }
 
-void RenderWidgetCompositor::DidBeginFrame() {
+void RenderWidgetCompositor::DidBeginMainFrame() {
   widget_->InstrumentDidBeginFrame();
 }
 
@@ -622,14 +644,8 @@ void RenderWidgetCompositor::ScheduleComposite() {
 }
 
 scoped_refptr<cc::ContextProvider>
-RenderWidgetCompositor::OffscreenContextProviderForMainThread() {
-  return RenderThreadImpl::current()->OffscreenContextProviderForMainThread();
-}
-
-scoped_refptr<cc::ContextProvider>
-RenderWidgetCompositor::OffscreenContextProviderForCompositorThread() {
-  return RenderThreadImpl::current()->
-      OffscreenContextProviderForCompositorThread();
+RenderWidgetCompositor::OffscreenContextProvider() {
+  return RenderThreadImpl::current()->OffscreenCompositorContextProvider();
 }
 
 }  // namespace content

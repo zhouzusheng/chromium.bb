@@ -25,13 +25,14 @@
 #include "bindings/v8/ScriptString.h"
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/EventNames.h"
+#include "core/events/EventListener.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/loader/ThreadableLoaderClient.h"
-#include "core/platform/network/FormData.h"
-#include "core/platform/network/ResourceResponse.h"
 #include "core/xml/XMLHttpRequestEventTarget.h"
 #include "core/xml/XMLHttpRequestProgressEventThrottle.h"
+#include "platform/AsyncMethodRunner.h"
+#include "platform/network/FormData.h"
+#include "platform/network/ResourceResponse.h"
 #include "weborigin/SecurityOrigin.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/text/AtomicStringHash.h"
@@ -54,8 +55,9 @@ typedef int ExceptionCode;
 
 class XMLHttpRequest : public ScriptWrappable, public RefCounted<XMLHttpRequest>, public XMLHttpRequestEventTarget, private ThreadableLoaderClient, public ActiveDOMObject {
     WTF_MAKE_FAST_ALLOCATED;
+    REFCOUNTED_EVENT_TARGET(XMLHttpRequest);
 public:
-    static PassRefPtr<XMLHttpRequest> create(ScriptExecutionContext*, PassRefPtr<SecurityOrigin> = 0);
+    static PassRefPtr<XMLHttpRequest> create(ExecutionContext*, PassRefPtr<SecurityOrigin> = 0);
     ~XMLHttpRequest();
 
     // These exact numeric values are important because JS expects them.
@@ -83,13 +85,12 @@ public:
     };
 
     virtual void contextDestroyed();
-    virtual bool canSuspend() const;
-    virtual void suspend(ReasonForSuspension);
+    virtual void suspend();
     virtual void resume();
     virtual void stop();
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ScriptExecutionContext* scriptExecutionContext() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE;
 
     const KURL& url() const { return m_url; }
     String statusText(ExceptionState&) const;
@@ -142,14 +143,8 @@ public:
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(readystatechange);
 
-    using RefCounted<XMLHttpRequest>::ref;
-    using RefCounted<XMLHttpRequest>::deref;
-
 private:
-    XMLHttpRequest(ScriptExecutionContext*, PassRefPtr<SecurityOrigin>);
-
-    virtual void refEventTarget() OVERRIDE { ref(); }
-    virtual void derefEventTarget() OVERRIDE { deref(); }
+    XMLHttpRequest(ExecutionContext*, PassRefPtr<SecurityOrigin>);
 
     Document* document() const;
     SecurityOrigin* securityOrigin() const;
@@ -175,13 +170,16 @@ private:
     // Changes m_state and dispatches a readyStateChange event if new m_state
     // value is different from last one.
     void changeState(State newState);
-    void callReadyStateChangeListener();
+    void dispatchReadyStateChangeEvent();
+
     void dropProtectionSoon();
-    void dropProtection(Timer<XMLHttpRequest>* = 0);
+    void dropProtection();
+    // Clears variables used only while the resource is being loaded.
+    void clearVariablesForLoading();
     // Returns false iff reentry happened and a new load is started.
     bool internalAbort(DropProtection = DropProtectionSync);
+    // Clears variables holding response header and body data.
     void clearResponse();
-    void clearResponseBuffers();
     void clearRequest();
 
     void createRequest(ExceptionState&);
@@ -220,11 +218,13 @@ private:
     RefPtr<TextResourceDecoder> m_decoder;
 
     ScriptString m_responseText;
-    mutable bool m_createdDocument;
-    mutable RefPtr<Document> m_responseDocument;
+    // Used to skip m_responseDocument creation if it's done previously. We need
+    // this separate flag since m_responseDocument can be 0 for some cases.
+    bool m_createdDocument;
+    RefPtr<Document> m_responseDocument;
 
     RefPtr<SharedBuffer> m_binaryResponseBuilder;
-    mutable RefPtr<ArrayBuffer> m_responseArrayBuffer;
+    RefPtr<ArrayBuffer> m_responseArrayBuffer;
 
     bool m_error;
 
@@ -247,7 +247,7 @@ private:
 
     // An enum corresponding to the allowed string values for the responseType attribute.
     ResponseTypeCode m_responseTypeCode;
-    Timer<XMLHttpRequest> m_protectionTimer;
+    AsyncMethodRunner<XMLHttpRequest> m_dropProtectionRunner;
     RefPtr<SecurityOrigin> m_securityOrigin;
 };
 

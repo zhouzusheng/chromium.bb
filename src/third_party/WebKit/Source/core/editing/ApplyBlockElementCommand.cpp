@@ -98,7 +98,6 @@ void ApplyBlockElementCommand::formatSelection(const VisiblePosition& startOfSel
         rangeForParagraphSplittingTextNodesIfNeeded(endOfCurrentParagraph, start, end);
         endOfCurrentParagraph = end;
 
-        Position afterEnd = end.next();
         Node* enclosingCell = enclosingNodeOfType(start, &isTableCell);
         VisiblePosition endOfNextParagraph = endOfNextParagrahSplittingTextNodesIfNeeded(endOfCurrentParagraph, start, end);
 
@@ -115,11 +114,9 @@ void ApplyBlockElementCommand::formatSelection(const VisiblePosition& startOfSel
         if (endAfterSelection.isNotNull() && !endAfterSelection.deepEquivalent().inDocument())
             break;
         // Sanity check: Make sure our moveParagraph calls didn't remove endOfNextParagraph.deepEquivalent().deprecatedNode()
-        // If somehow we did, return to prevent crashes.
-        if (endOfNextParagraph.isNotNull() && !endOfNextParagraph.deepEquivalent().inDocument()) {
-            ASSERT_NOT_REACHED();
+        // If somehow, e.g. mutation event handler, we did, return to prevent crashes.
+        if (endOfNextParagraph.isNotNull() && !endOfNextParagraph.deepEquivalent().inDocument())
             return;
-        }
         endOfCurrentParagraph = endOfNextParagraph;
     }
 }

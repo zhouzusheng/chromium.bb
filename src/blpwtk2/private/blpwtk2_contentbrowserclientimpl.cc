@@ -125,17 +125,8 @@ void ContentBrowserClientImpl::RenderProcessHostCreated(
 {
     DCHECK(Statics::isInBrowserMainThread());
     int id = host->GetID();
-    if (!host->IsProcessManagedExternally()) {
-        // Externally-managed processes (e.g. in-process renderers) get the
-        // "uses-in-process-plugins" flag set during the creation of the
-        // ManagedRenderProcessHost.
-        if (d_rendererInfoMap->hostIdUsesInProcessPlugins(id)) {
-            host->SetUsesInProcessPlugins();
-        }
-    }
-    IPC::ChannelProxy* channel = host->GetChannel();
-    channel->AddFilter(new SpellCheckMessageFilter(id));
-    channel->AddFilter(new PrintingMessageFilter(id));
+    host->AddFilter(new SpellCheckMessageFilter(id));
+    host->AddFilter(new PrintingMessageFilter(id));
 }
 
 void ContentBrowserClientImpl::OverrideWebkitPrefs(

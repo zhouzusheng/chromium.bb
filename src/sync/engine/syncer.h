@@ -70,8 +70,17 @@ class SYNC_EXPORT_PRIVATE Syncer {
  private:
   void ApplyUpdates(sessions::SyncSession* session);
   bool DownloadAndApplyUpdates(
+      ModelTypeSet request_types,
       sessions::SyncSession* session,
       base::Callback<void(sync_pb::ClientToServerMessage*)> build_fn);
+
+  // This function will commit batches of unsynced items to the server until the
+  // number of unsynced and ready to commit items reaches zero or an error is
+  // encountered.  A request to exit early will be treated as an error and will
+  // abort any blocking operations.
+  SyncerError BuildAndPostCommits(
+      ModelTypeSet request_types,
+      sessions::SyncSession* session);
 
   void HandleCycleBegin(sessions::SyncSession* session);
   bool HandleCycleEnd(

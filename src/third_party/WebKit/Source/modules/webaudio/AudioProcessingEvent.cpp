@@ -28,7 +28,7 @@
 
 #include "modules/webaudio/AudioProcessingEvent.h"
 
-#include "core/dom/EventNames.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "modules/webaudio/AudioBuffer.h"
 
 namespace WebCore {
@@ -49,7 +49,7 @@ AudioProcessingEvent::AudioProcessingEvent()
 }
 
 AudioProcessingEvent::AudioProcessingEvent(PassRefPtr<AudioBuffer> inputBuffer, PassRefPtr<AudioBuffer> outputBuffer)
-    : Event(eventNames().audioprocessEvent, true, false)
+    : Event(EventTypeNames::audioprocess, true, false)
     , m_inputBuffer(inputBuffer)
     , m_outputBuffer(outputBuffer)
 {
@@ -62,7 +62,7 @@ AudioProcessingEvent::~AudioProcessingEvent()
 
 const AtomicString& AudioProcessingEvent::interfaceName() const
 {
-    return eventNames().interfaceForAudioProcessingEvent;
+    return EventNames::AudioProcessingEvent;
 }
 
 } // namespace WebCore

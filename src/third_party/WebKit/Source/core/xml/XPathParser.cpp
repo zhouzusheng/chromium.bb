@@ -479,18 +479,14 @@ Expression* Parser::parseStatement(const String& statement, PassRefPtr<XPathNSRe
         deleteAllValues(m_parseNodes);
         m_parseNodes.clear();
 
-        HashSet<Vector<Predicate*>*>::iterator pend = m_predicateVectors.end();
-        for (HashSet<Vector<Predicate*>*>::iterator it = m_predicateVectors.begin(); it != pend; ++it) {
-            deleteAllValues(**it);
+        HashSet<Vector<OwnPtr<Predicate> >*>::iterator pend = m_predicateVectors.end();
+        for (HashSet<Vector<OwnPtr<Predicate> >*>::iterator it = m_predicateVectors.begin(); it != pend; ++it)
             delete *it;
-        }
         m_predicateVectors.clear();
 
-        HashSet<Vector<Expression*>*>::iterator eend = m_expressionVectors.end();
-        for (HashSet<Vector<Expression*>*>::iterator it = m_expressionVectors.begin(); it != eend; ++it) {
-            deleteAllValues(**it);
+        HashSet<Vector<OwnPtr<Expression> >*>::iterator eend = m_expressionVectors.end();
+        for (HashSet<Vector<OwnPtr<Expression> >*>::iterator it = m_expressionVectors.begin(); it != eend; ++it)
             delete *it;
-        }
         m_expressionVectors.clear();
 
         deleteAllValues(m_strings);
@@ -502,9 +498,9 @@ Expression* Parser::parseStatement(const String& statement, PassRefPtr<XPathNSRe
         m_topExpr = 0;
 
         if (m_gotNamespaceError)
-            es.throwDOMException(NamespaceError);
+            es.throwUninformativeAndGenericDOMException(NamespaceError);
         else
-            es.throwDOMException(SyntaxError);
+            es.throwUninformativeAndGenericDOMException(SyntaxError);
         return 0;
     }
 
@@ -542,7 +538,7 @@ void Parser::unregisterParseNode(ParseNode* node)
     m_parseNodes.remove(node);
 }
 
-void Parser::registerPredicateVector(Vector<Predicate*>* vector)
+void Parser::registerPredicateVector(Vector<OwnPtr<Predicate> >* vector)
 {
     if (vector == 0)
         return;
@@ -552,7 +548,7 @@ void Parser::registerPredicateVector(Vector<Predicate*>* vector)
     m_predicateVectors.add(vector);
 }
 
-void Parser::deletePredicateVector(Vector<Predicate*>* vector)
+void Parser::deletePredicateVector(Vector<OwnPtr<Predicate> >* vector)
 {
     if (vector == 0)
         return;
@@ -564,7 +560,7 @@ void Parser::deletePredicateVector(Vector<Predicate*>* vector)
 }
 
 
-void Parser::registerExpressionVector(Vector<Expression*>* vector)
+void Parser::registerExpressionVector(Vector<OwnPtr<Expression> >* vector)
 {
     if (vector == 0)
         return;
@@ -574,7 +570,7 @@ void Parser::registerExpressionVector(Vector<Expression*>* vector)
     m_expressionVectors.add(vector);
 }
 
-void Parser::deleteExpressionVector(Vector<Expression*>* vector)
+void Parser::deleteExpressionVector(Vector<OwnPtr<Expression> >* vector)
 {
     if (vector == 0)
         return;

@@ -178,10 +178,6 @@ void WebLayerImpl::setBackgroundFilters(const WebFilterOperations& filters) {
   layer_->SetBackgroundFilters(filters_impl.AsFilterOperations());
 }
 
-void WebLayerImpl::setFilter(SkImageFilter* filter) {
-  layer_->SetFilter(skia::SharePtr(filter));
-}
-
 void WebLayerImpl::setCompositingReasons(
     WebKit::WebCompositingReasons reasons) {
   layer_->SetCompositingReasons(reasons);
@@ -195,8 +191,10 @@ void WebLayerImpl::setAnimationDelegate(
 }
 
 bool WebLayerImpl::addAnimation(WebKit::WebAnimation* animation) {
-  return layer_->AddAnimation(
-      static_cast<WebAnimationImpl*>(animation)->CloneToAnimation());
+  bool result = layer_->AddAnimation(
+      static_cast<WebAnimationImpl*>(animation)->PassAnimation());
+  delete animation;
+  return result;
 }
 
 void WebLayerImpl::removeAnimation(int animation_id) {
@@ -213,14 +211,6 @@ void WebLayerImpl::removeAnimation(
 
 void WebLayerImpl::pauseAnimation(int animation_id, double time_offset) {
   layer_->PauseAnimation(animation_id, time_offset);
-}
-
-void WebLayerImpl::suspendAnimations(double monotonic_time) {
-  layer_->SuspendAnimations(monotonic_time);
-}
-
-void WebLayerImpl::resumeAnimations(double monotonic_time) {
-  layer_->ResumeAnimations(monotonic_time);
 }
 
 bool WebLayerImpl::hasActiveAnimation() { return layer_->HasActiveAnimation(); }
@@ -250,6 +240,18 @@ void WebLayerImpl::setScrollable(bool scrollable) {
 }
 
 bool WebLayerImpl::scrollable() const { return layer_->scrollable(); }
+
+void WebLayerImpl::setUserScrollable(bool horizontal, bool vertical) {
+  layer_->SetUserScrollable(horizontal, vertical);
+}
+
+bool WebLayerImpl::userScrollableHorizontal() const {
+  return layer_->user_scrollable_horizontal();
+}
+
+bool WebLayerImpl::userScrollableVertical() const {
+  return layer_->user_scrollable_vertical();
+}
 
 void WebLayerImpl::setHaveWheelEventHandlers(bool have_wheel_event_handlers) {
   layer_->SetHaveWheelEventHandlers(have_wheel_event_handlers);

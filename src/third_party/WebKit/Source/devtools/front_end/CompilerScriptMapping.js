@@ -93,14 +93,6 @@ WebInspector.CompilerScriptMapping.prototype = {
     },
 
     /**
-     * @return {boolean}
-     */
-    isIdentity: function()
-    {
-        return false;
-    },
-
-    /**
      * @param {WebInspector.Script} script
      */
     addScript: function(script)
@@ -139,6 +131,8 @@ WebInspector.CompilerScriptMapping.prototype = {
                 if (uiSourceCode) {
                     this._bindUISourceCode(uiSourceCode);
                     uiSourceCode.isContentScript = script.isContentScript;
+                } else {
+                    WebInspector.showErrorMessage(WebInspector.UIString("Failed to locate workspace file mapped to URL %s from source map %s", sourceURL, sourceMap.url()));
                 }
             }
             script.updateLocations();

@@ -22,7 +22,7 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
+#include "platform/transforms/AffineTransform.h"
 
 namespace WebCore {
 
@@ -110,7 +110,7 @@ public:
             // FIXME: This used to have a more specific error message:
             // "An attempt was made to invert a matrix that is not invertible."
             // When switching to SVG2 style exceptions we lost this information.
-            es.throwDOMException(InvalidStateError);
+            es.throwUninformativeAndGenericDOMException(InvalidStateError);
         }
 
         return transform;
@@ -119,7 +119,7 @@ public:
     SVGMatrix rotateFromVector(double x, double y, ExceptionState& es)
     {
         if (!x || !y)
-            es.throwDOMException(InvalidAccessError);
+            es.throwUninformativeAndGenericDOMException(InvalidAccessError);
 
         AffineTransform copy = *this;
         copy.rotateFromVector(x, y);

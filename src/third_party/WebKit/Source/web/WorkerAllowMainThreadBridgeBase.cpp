@@ -44,6 +44,8 @@ public:
         return adoptPtr(new WorkerGlobalScopeObserver(context, bridge));
     }
 
+    virtual ~WorkerGlobalScopeObserver() { }
+
     // WorkerGlobalScope::Observer method.
     virtual void notifyStop()
     {
@@ -68,7 +70,7 @@ namespace WebKit {
 
 WorkerAllowMainThreadBridgeBase::WorkerAllowMainThreadBridgeBase(WebCore::WorkerGlobalScope* workerGlobalScope, WebWorkerBase* webWorkerBase)
     : m_webWorkerBase(webWorkerBase)
-    , m_workerGlobalScopeObserver(WorkerGlobalScopeObserver::create(workerGlobalScope, this).leakPtr())
+    , m_workerGlobalScopeObserver(WorkerGlobalScopeObserver::create(workerGlobalScope, this))
 {
 }
 
@@ -79,7 +81,7 @@ void WorkerAllowMainThreadBridgeBase::postTaskToMainThread(PassOwnPtr<AllowParam
 }
 
 // static
-void WorkerAllowMainThreadBridgeBase::allowTask(WebCore::ScriptExecutionContext*, PassOwnPtr<AllowParams> params, PassRefPtr<WorkerAllowMainThreadBridgeBase> bridge)
+void WorkerAllowMainThreadBridgeBase::allowTask(WebCore::ExecutionContext*, PassOwnPtr<AllowParams> params, PassRefPtr<WorkerAllowMainThreadBridgeBase> bridge)
 {
     ASSERT(isMainThread());
     if (!bridge)
@@ -96,7 +98,7 @@ void WorkerAllowMainThreadBridgeBase::allowTask(WebCore::ScriptExecutionContext*
 }
 
 // static
-void WorkerAllowMainThreadBridgeBase::didComplete(WebCore::ScriptExecutionContext* context, PassRefPtr<WorkerAllowMainThreadBridgeBase> bridge, bool result)
+void WorkerAllowMainThreadBridgeBase::didComplete(WebCore::ExecutionContext* context, PassRefPtr<WorkerAllowMainThreadBridgeBase> bridge, bool result)
 {
     bridge->m_result = result;
 }

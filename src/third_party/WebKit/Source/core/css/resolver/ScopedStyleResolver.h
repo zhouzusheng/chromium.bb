@@ -60,7 +60,7 @@ public:
     void setParent(ScopedStyleResolver* newParent) { m_parent = newParent; }
     ScopedStyleResolver* parent() { return m_parent; }
 
-    bool hasOnlyEmptyRuleSets() const { return !m_authorStyle->ruleCount() && m_atHostRules.isEmpty(); }
+    bool hasOnlyEmptyRuleSets() const { return (!m_authorStyle || !m_authorStyle->ruleCount()) && m_atHostRules.isEmpty(); }
 
 public:
     bool checkRegionStyle(Element*);
@@ -100,6 +100,12 @@ public:
     ScopedStyleTree() : m_scopedResolverForDocument(0), m_buildInDocumentOrder(true) { }
 
     ScopedStyleResolver* ensureScopedStyleResolver(const ContainerNode& scopingNode);
+    ScopedStyleResolver* lookupScopedStyleResolverFor(const ContainerNode* scopingNode)
+    {
+        HashMap<const ContainerNode*, OwnPtr<ScopedStyleResolver> >::iterator it = m_authorStyles.find(scopingNode);
+        return it != m_authorStyles.end() ? it->value.get() : 0;
+    }
+
     ScopedStyleResolver* scopedStyleResolverFor(const ContainerNode& scopingNode);
     ScopedStyleResolver* addScopedStyleResolver(const ContainerNode& scopingNode, bool& isNewEntry);
     void clear();

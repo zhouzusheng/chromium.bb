@@ -49,8 +49,7 @@ WebInspector.SettingsScreen = function(onHide)
     this._tabbedPane.element.insertBefore(settingsLabelElement, this._tabbedPane.element.firstChild);
     this._tabbedPane.element.appendChild(this._createCloseButton());
     this._tabbedPane.appendTab(WebInspector.SettingsScreen.Tabs.General, WebInspector.UIString("General"), new WebInspector.GenericSettingsTab());
-    if (!WebInspector.experimentsSettings.showOverridesInDrawer.isEnabled())
-        this._tabbedPane.appendTab(WebInspector.SettingsScreen.Tabs.Overrides, WebInspector.UIString("Overrides"), new WebInspector.OverridesSettingsTab());
+    this._tabbedPane.appendTab(WebInspector.SettingsScreen.Tabs.Overrides,WebInspector.UIString("Overrides"),new WebInspector.OverridesSettingsTab());
     this._tabbedPane.appendTab(WebInspector.SettingsScreen.Tabs.Workspace, WebInspector.UIString("Workspace"), new WebInspector.WorkspaceSettingsTab());
     if (WebInspector.experimentsSettings.experimentsEnabled)
         this._tabbedPane.appendTab(WebInspector.SettingsScreen.Tabs.Experiments, WebInspector.UIString("Experiments"), new WebInspector.ExperimentsSettingsTab());
@@ -400,6 +399,8 @@ WebInspector.GenericSettingsTab = function()
         ], WebInspector.settings.textEditorIndent);
     p.appendChild(indentationElement);
     p.appendChild(WebInspector.SettingsTab.createSettingCheckbox(WebInspector.UIString("Detect indentation"), WebInspector.settings.textEditorAutoDetectIndent));
+    p.appendChild(WebInspector.SettingsTab.createSettingCheckbox(WebInspector.UIString("Autocompletion"), WebInspector.settings.textEditorAutocompletion));
+    p.appendChild(WebInspector.SettingsTab.createSettingCheckbox(WebInspector.UIString("Bracket matching"), WebInspector.settings.textEditorBracketMatching));
     p.appendChild(WebInspector.SettingsTab.createSettingCheckbox(WebInspector.UIString("Show whitespace characters"), WebInspector.settings.showWhitespacesInEditor));
     if (WebInspector.experimentsSettings.frameworksDebuggingSupport.isEnabled()) {
         checkbox = WebInspector.SettingsTab.createSettingCheckbox(WebInspector.UIString("Skip stepping through sources with particular names"), WebInspector.settings.skipStackFramesSwitch);
@@ -503,23 +504,6 @@ WebInspector.GenericSettingsTab.prototype = {
  * @constructor
  * @extends {WebInspector.SettingsTab}
  */
-WebInspector.OverridesSettingsTab = function()
-{
-    WebInspector.SettingsTab.call(this, WebInspector.UIString("Overrides"), "overrides-tab-content");
-    this._view = new WebInspector.OverridesView();
-    this.containerElement.parentElement.appendChild(this._view.containerElement);
-    this.containerElement.remove();
-    this.containerElement = this._view.containerElement;
-}
-
-WebInspector.OverridesSettingsTab.prototype = {
-    __proto__: WebInspector.SettingsTab.prototype
-}
-
-/**
- * @constructor
- * @extends {WebInspector.SettingsTab}
- */
 WebInspector.WorkspaceSettingsTab = function()
 {
     WebInspector.SettingsTab.call(this, WebInspector.UIString("Workspace"), "workspace-tab-content");
@@ -534,18 +518,32 @@ WebInspector.WorkspaceSettingsTab = function()
     this._fileSystemsListContainer = this._fileSystemsSection.createChild("p", "settings-list-container");
 
     this._addFileSystemRowElement = this._fileSystemsSection.createChild("div");
-    var addFileSystemButton = this._addFileSystemRowElement.createChild("input", "text-button");
+    var addFileSystemButton = this._addFileSystemRowElement.createChild("input", "settings-tab-text-button");
     addFileSystemButton.type = "button";
     addFileSystemButton.value = WebInspector.UIString("Add folder\u2026");
     addFileSystemButton.addEventListener("click", this._addFileSystemClicked.bind(this));
 
-    this._editFileSystemButton = this._addFileSystemRowElement.createChild("input", "text-button");
+    this._editFileSystemButton = this._addFileSystemRowElement.createChild("input", "settings-tab-text-button");
     this._editFileSystemButton.type = "button";
     this._editFileSystemButton.value = WebInspector.UIString("Edit\u2026");
     this._editFileSystemButton.addEventListener("click", this._editFileSystemClicked.bind(this));
     this._updateEditFileSystemButtonState();
 
     this._reset();
+}
+
+/**
+ * @constructor
+ * @extends {WebInspector.SettingsTab}
+ */
+WebInspector.OverridesSettingsTab = function()
+{
+    WebInspector.SettingsTab.call(this, WebInspector.UIString("Overrides"), "overrides-tab-content");
+    this.containerElement.appendChild(WebInspector.SettingsTab.createSettingCheckbox(WebInspector.UIString("Show 'Emulation' view in console drawer"), WebInspector.settings.showEmulationViewInDrawer));
+}
+
+WebInspector.OverridesSettingsTab.prototype = {
+    __proto__: WebInspector.SettingsTab.prototype
 }
 
 WebInspector.WorkspaceSettingsTab.prototype = {
@@ -774,10 +772,7 @@ WebInspector.ExperimentsSettingsTab.prototype = {
 WebInspector.SettingsController = function()
 {
     this._statusBarButton = new WebInspector.StatusBarButton(WebInspector.UIString("Settings"), "settings-status-bar-item");
-    if (WebInspector.experimentsSettings.showOverridesInDrawer.isEnabled())
-        this._statusBarButton.element.addEventListener("mousedown", this._mouseDown.bind(this), false);
-    else
-        this._statusBarButton.element.addEventListener("mouseup", this._mouseUp.bind(this), false);
+    this._statusBarButton.element.addEventListener("mouseup", this._mouseUp.bind(this), false);
 
     /** @type {?WebInspector.SettingsScreen} */
     this._settingsScreen;
@@ -788,31 +783,6 @@ WebInspector.SettingsController.prototype =
     get statusBarItem()
     {
         return this._statusBarButton.element;
-    },
-
-    /**
-     * @param {Event} event
-     */
-    _mouseDown: function(event)
-    {
-        var contextMenu = new WebInspector.ContextMenu(event);
-        contextMenu.appendItem(WebInspector.UIString("Overrides"), showOverrides.bind(this));
-        contextMenu.appendItem(WebInspector.UIString("Settings"), showSettings.bind(this));
-
-        function showOverrides()
-        {
-            if (this._settingsScreenVisible)
-                this._hideSettingsScreen();
-            WebInspector.OverridesView.showInDrawer();
-        }
-
-        function showSettings()
-        {
-            if (!this._settingsScreenVisible)
-                this.showSettingsScreen();
-        }
-
-        contextMenu.showSoftMenu();
     },
 
     /**

@@ -96,7 +96,9 @@ enum RTCPPacketType
     kRtcpSli            = 0x4000,
     kRtcpRpsi           = 0x8000,
     kRtcpRemb           = 0x10000,
-    kRtcpTransmissionTimeOffset = 0x20000
+    kRtcpTransmissionTimeOffset = 0x20000,
+    kRtcpXrReceiverReferenceTime = 0x40000,
+    kRtcpXrDlrrReportBlock = 0x80000
 };
 
 enum KeyFrameRequestMethod
@@ -177,11 +179,20 @@ struct RTCPReportBlock {
   uint32_t delaySinceLastSR;
 };
 
+struct RtcpReceiveTimeInfo {
+  // Fields as described by RFC 3611 4.5.
+  uint32_t sourceSSRC;
+  uint32_t lastRR;
+  uint32_t delaySinceLastRR;
+};
+
 typedef std::list<RTCPReportBlock> ReportBlockList;
 
 class RtpData
 {
 public:
+    virtual ~RtpData() {}
+
     virtual int32_t OnReceivedPayloadData(
         const uint8_t* payloadData,
         const uint16_t payloadSize,
@@ -189,8 +200,6 @@ public:
 
     virtual bool OnRecoveredPacket(const uint8_t* packet,
                                    int packet_length) = 0;
-protected:
-    virtual ~RtpData() {}
 };
 
 class RtcpFeedback
@@ -216,6 +225,8 @@ protected:
 class RtpFeedback
 {
 public:
+    virtual ~RtpFeedback() {}
+
     // Receiving payload change or SSRC change. (return success!)
     /*
     *   channels    - number of channels in codec (1 = mono, 2 = stereo)
@@ -236,9 +247,6 @@ public:
                                         const bool added) = 0;
 
     virtual void ResetStatistics(uint32_t ssrc) = 0;
-
-protected:
-    virtual ~RtpFeedback() {}
 };
 
 class RtpAudioFeedback {

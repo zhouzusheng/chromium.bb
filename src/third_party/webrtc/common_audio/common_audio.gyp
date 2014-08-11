@@ -234,10 +234,10 @@
               'target_name': 'common_audio_unittests_run',
               'type': 'none',
               'dependencies': [
-                '<(import_isolate_path):import_isolate_gypi',
                 'common_audio_unittests',
               ],
               'includes': [
+                '../build/isolate.gypi',
                 'common_audio_unittests.isolate',
               ],
               'sources': [

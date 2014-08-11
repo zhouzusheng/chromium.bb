@@ -29,8 +29,8 @@
 
 #include "SettingsMacros.h"
 #include "core/editing/EditingBehaviorTypes.h"
-#include "core/platform/Timer.h"
-#include "core/platform/graphics/IntSize.h"
+#include "platform/Timer.h"
+#include "platform/geometry/IntSize.h"
 #include "weborigin/KURL.h"
 #include "wtf/HashMap.h"
 #include "wtf/text/AtomicString.h"
@@ -86,10 +86,16 @@ public:
     const AtomicString& pictographFontFamily(UScriptCode = USCRIPT_COMMON) const;
 
     void setTextAutosizingEnabled(bool);
-    bool textAutosizingEnabled() const { return m_textAutosizingEnabled; }
+    bool textAutosizingEnabled() const;
 
     void setTextAutosizingFontScaleFactor(float);
-    float textAutosizingFontScaleFactor() const { return m_textAutosizingFontScaleFactor; }
+    float textAutosizingFontScaleFactor() const;
+
+    // Compensates for poor text legibility on mobile devices. This value is
+    // multiplied by the font scale factor when performing text autosizing of
+    // websites that do not set an explicit viewport description.
+    void setDeviceScaleAdjustment(float);
+    float deviceScaleAdjustment() const { return m_deviceScaleAdjustment; }
 
     // Only set by Layout Tests, and only used if textAutosizingEnabled() returns true.
     void setTextAutosizingWindowSizeOverride(const IntSize&);
@@ -104,6 +110,9 @@ public:
     // Only set by Layout Tests.
     void setMediaTypeOverride(const String&);
     const String& mediaTypeOverride() const { return m_mediaTypeOverride; }
+
+    // Only called by InternalSettings to clear font family maps.
+    void resetFontFamilies();
 
     // Unlike areImagesEnabled, this only suppresses the network load of
     // the image URL.  A cached image will still be rendered if requested.
@@ -132,12 +141,6 @@ public:
 
     void setUserStyleSheetLocation(const KURL&);
     const KURL& userStyleSheetLocation() const { return m_userStyleSheetLocation; }
-
-    void setCSSCustomFilterEnabled(bool enabled) { m_isCSSCustomFilterEnabled = enabled; }
-    bool isCSSCustomFilterEnabled() const { return m_isCSSCustomFilterEnabled; }
-
-    void setCSSStickyPositionEnabled(bool enabled) { m_cssStickyPositionEnabled = enabled; }
-    bool cssStickyPositionEnabled() const { return m_cssStickyPositionEnabled; }
 
     static void setMockScrollbarsEnabled(bool flag);
     static bool mockScrollbarsEnabled();
@@ -171,6 +174,7 @@ private:
     ScriptFontFamilyMap m_fantasyFontFamilyMap;
     ScriptFontFamilyMap m_pictographFontFamilyMap;
     float m_textAutosizingFontScaleFactor;
+    float m_deviceScaleAdjustment;
     IntSize m_textAutosizingWindowSizeOverride;
     bool m_textAutosizingEnabled : 1;
     bool m_useWideViewport : 1;
@@ -183,8 +187,6 @@ private:
     bool m_areImagesEnabled : 1;
     bool m_arePluginsEnabled : 1;
     bool m_isScriptEnabled : 1;
-    bool m_isCSSCustomFilterEnabled : 1;
-    bool m_cssStickyPositionEnabled : 1;
     bool m_dnsPrefetchingEnabled : 1;
 
     bool m_touchEventEmulationEnabled : 1;
@@ -197,8 +199,7 @@ private:
 
     Timer<Settings> m_setImageLoadingSettingsTimer;
     void imageLoadingSettingsTimerFired(Timer<Settings>*);
-
-    static bool gMockScrollbarsEnabled;
+    void recalculateTextAutosizingMultipliers();
 };
 
 } // namespace WebCore

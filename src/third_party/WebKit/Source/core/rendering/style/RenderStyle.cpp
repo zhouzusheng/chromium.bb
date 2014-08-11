@@ -28,15 +28,15 @@
 #include "RuntimeEnabledFeatures.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/platform/graphics/Font.h"
-#include "core/platform/graphics/FontSelector.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/TextAutosizer.h"
 #include "core/rendering/style/ContentData.h"
 #include "core/rendering/style/CursorList.h"
 #include "core/rendering/style/QuotesData.h"
-#include "core/rendering/style/ShadowData.h"
+#include "core/rendering/style/ShadowList.h"
 #include "core/rendering/style/StyleImage.h"
 #include "core/rendering/style/StyleInheritedData.h"
+#include "platform/fonts/FontSelector.h"
 #include "wtf/MathExtras.h"
 #include "wtf/StdLibExtras.h"
 
@@ -480,6 +480,7 @@ StyleDifference RenderStyle::diff(const RenderStyle* other, unsigned& changedCon
     if (rareInheritedData.get() != other->rareInheritedData.get()) {
         if (rareInheritedData->highlight != other->rareInheritedData->highlight
             || rareInheritedData->indent != other->rareInheritedData->indent
+            || rareInheritedData->m_textAlignLast != other->rareInheritedData->m_textAlignLast
             || rareInheritedData->m_textIndentLine != other->rareInheritedData->m_textIndentLine
             || rareInheritedData->m_effectiveZoom != other->rareInheritedData->m_effectiveZoom
             || rareInheritedData->wordBreak != other->rareInheritedData->wordBreak
@@ -496,6 +497,7 @@ StyleDifference RenderStyle::diff(const RenderStyle* other, unsigned& changedCon
             || rareInheritedData->textEmphasisPosition != other->rareInheritedData->textEmphasisPosition
             || rareInheritedData->textEmphasisCustomMark != other->rareInheritedData->textEmphasisCustomMark
             || rareInheritedData->m_textAlignLast != other->rareInheritedData->m_textAlignLast
+            || rareInheritedData->m_textJustify != other->rareInheritedData->m_textJustify
             || rareInheritedData->m_textOrientation != other->rareInheritedData->m_textOrientation
             || rareInheritedData->m_tabSize != other->rareInheritedData->m_tabSize
             || rareInheritedData->m_lineBoxContain != other->rareInheritedData->m_lineBoxContain
@@ -697,7 +699,7 @@ StyleDifference RenderStyle::diff(const RenderStyle* other, unsigned& changedCon
         || rareInheritedData->textStrokeColor != other->rareInheritedData->textStrokeColor
         || rareInheritedData->textEmphasisColor != other->rareInheritedData->textEmphasisColor
         || rareInheritedData->textEmphasisFill != other->rareInheritedData->textEmphasisFill)
-        return StyleDifferenceRepaintIfText;
+        return StyleDifferenceRepaintIfTextOrColorChange;
 
     // Cursors are not checked, since they will be set appropriately in response to mouse events,
     // so they don't need to cause any repaint or layout.
@@ -739,6 +741,12 @@ void RenderStyle::clearCursorList()
 {
     if (rareInheritedData->cursorData)
         rareInheritedData.access()->cursorData = 0;
+}
+
+void RenderStyle::addCallbackSelector(const String& selector)
+{
+    if (!rareNonInheritedData->m_callbackSelectors.contains(selector))
+        rareNonInheritedData.access()->m_callbackSelectors.append(selector);
 }
 
 void RenderStyle::clearContent()
@@ -888,9 +896,9 @@ void RenderStyle::applyTransform(TransformationMatrix& transform, const FloatRec
     float offsetY = transformOriginY().type() == Percent ? boundingBox.y() : 0;
 
     if (applyTransformOrigin) {
-        transform.translate3d(floatValueForLength(transformOriginX(), boundingBox.width()) + offsetX,
-                              floatValueForLength(transformOriginY(), boundingBox.height()) + offsetY,
-                              transformOriginZ());
+        transform.translate3d(floatValueForLength(transformOriginX(), boundingBox.width(), 0) + offsetX,
+            floatValueForLength(transformOriginY(), boundingBox.height(), 0) + offsetY,
+            transformOriginZ());
     }
 
     unsigned size = transformOperations.size();
@@ -898,36 +906,20 @@ void RenderStyle::applyTransform(TransformationMatrix& transform, const FloatRec
         transformOperations[i]->apply(transform, boundingBox.size());
 
     if (applyTransformOrigin) {
-        transform.translate3d(-floatValueForLength(transformOriginX(), boundingBox.width()) - offsetX,
-                              -floatValueForLength(transformOriginY(), boundingBox.height()) - offsetY,
-                              -transformOriginZ());
+        transform.translate3d(-floatValueForLength(transformOriginX(), boundingBox.width(), 0) - offsetX,
+            -floatValueForLength(transformOriginY(), boundingBox.height(), 0) - offsetY,
+            -transformOriginZ());
     }
 }
 
-void RenderStyle::setTextShadow(PassOwnPtr<ShadowData> shadowData, bool add)
+void RenderStyle::setTextShadow(PassRefPtr<ShadowList> s)
 {
-    ASSERT(!shadowData || (!shadowData->spread() && shadowData->style() == Normal));
-
-    StyleRareInheritedData* rareData = rareInheritedData.access();
-    if (!add) {
-        rareData->textShadow = shadowData;
-        return;
-    }
-
-    shadowData->setNext(rareData->textShadow.release());
-    rareData->textShadow = shadowData;
+    rareInheritedData.access()->textShadow = s;
 }
 
-void RenderStyle::setBoxShadow(PassOwnPtr<ShadowData> shadowData, bool add)
+void RenderStyle::setBoxShadow(PassRefPtr<ShadowList> s)
 {
-    StyleRareNonInheritedData* rareData = rareNonInheritedData.access();
-    if (!add) {
-        rareData->m_boxShadow = shadowData;
-        return;
-    }
-
-    shadowData->setNext(rareData->m_boxShadow.release());
-    rareData->m_boxShadow = shadowData;
+    rareNonInheritedData.access()->m_boxShadow = s;
 }
 
 static RoundedRect::Radii calcRadiiFor(const BorderData& border, IntSize size, RenderView* renderView)
@@ -1288,72 +1280,80 @@ void RenderStyle::setFontSize(float size)
     font().update(currentFontSelector);
 }
 
-void RenderStyle::getShadowExtent(const ShadowData* shadow, LayoutUnit &top, LayoutUnit &right, LayoutUnit &bottom, LayoutUnit &left) const
+void RenderStyle::getShadowExtent(const ShadowList* shadowList, LayoutUnit &top, LayoutUnit &right, LayoutUnit &bottom, LayoutUnit &left) const
 {
     top = 0;
     right = 0;
     bottom = 0;
     left = 0;
 
-    for ( ; shadow; shadow = shadow->next()) {
-        if (shadow->style() == Inset)
+    size_t shadowCount = shadowList ? shadowList->shadows().size() : 0;
+    for (size_t i = 0; i < shadowCount; ++i) {
+        const ShadowData& shadow = shadowList->shadows()[i];
+        if (shadow.style() == Inset)
             continue;
-        int blurAndSpread = shadow->blur() + shadow->spread();
+        int blurAndSpread = shadow.blur() + shadow.spread();
 
-        top = min<LayoutUnit>(top, shadow->y() - blurAndSpread);
-        right = max<LayoutUnit>(right, shadow->x() + blurAndSpread);
-        bottom = max<LayoutUnit>(bottom, shadow->y() + blurAndSpread);
-        left = min<LayoutUnit>(left, shadow->x() - blurAndSpread);
+        top = min<LayoutUnit>(top, shadow.y() - blurAndSpread);
+        right = max<LayoutUnit>(right, shadow.x() + blurAndSpread);
+        bottom = max<LayoutUnit>(bottom, shadow.y() + blurAndSpread);
+        left = min<LayoutUnit>(left, shadow.x() - blurAndSpread);
     }
 }
 
-LayoutBoxExtent RenderStyle::getShadowInsetExtent(const ShadowData* shadow) const
+LayoutBoxExtent RenderStyle::getShadowInsetExtent(const ShadowList* shadowList) const
 {
     LayoutUnit top = 0;
     LayoutUnit right = 0;
     LayoutUnit bottom = 0;
     LayoutUnit left = 0;
 
-    for ( ; shadow; shadow = shadow->next()) {
-        if (shadow->style() == Normal)
+    size_t shadowCount = shadowList ? shadowList->shadows().size() : 0;
+    for (size_t i = 0; i < shadowCount; ++i) {
+        const ShadowData& shadow = shadowList->shadows()[i];
+        if (shadow.style() == Normal)
             continue;
-        int blurAndSpread = shadow->blur() + shadow->spread();
-        top = max<LayoutUnit>(top, shadow->y() + blurAndSpread);
-        right = min<LayoutUnit>(right, shadow->x() - blurAndSpread);
-        bottom = min<LayoutUnit>(bottom, shadow->y() - blurAndSpread);
-        left = max<LayoutUnit>(left, shadow->x() + blurAndSpread);
+        int blurAndSpread = shadow.blur() + shadow.spread();
+        top = max<LayoutUnit>(top, shadow.y() + blurAndSpread);
+        right = min<LayoutUnit>(right, shadow.x() - blurAndSpread);
+        bottom = min<LayoutUnit>(bottom, shadow.y() - blurAndSpread);
+        left = max<LayoutUnit>(left, shadow.x() + blurAndSpread);
     }
 
     return LayoutBoxExtent(top, right, bottom, left);
 }
 
-void RenderStyle::getShadowHorizontalExtent(const ShadowData* shadow, LayoutUnit &left, LayoutUnit &right) const
+void RenderStyle::getShadowHorizontalExtent(const ShadowList* shadowList, LayoutUnit &left, LayoutUnit &right) const
 {
     left = 0;
     right = 0;
 
-    for ( ; shadow; shadow = shadow->next()) {
-        if (shadow->style() == Inset)
+    size_t shadowCount = shadowList ? shadowList->shadows().size() : 0;
+    for (size_t i = 0; i < shadowCount; ++i) {
+        const ShadowData& shadow = shadowList->shadows()[i];
+        if (shadow.style() == Inset)
             continue;
-        int blurAndSpread = shadow->blur() + shadow->spread();
+        int blurAndSpread = shadow.blur() + shadow.spread();
 
-        left = min<LayoutUnit>(left, shadow->x() - blurAndSpread);
-        right = max<LayoutUnit>(right, shadow->x() + blurAndSpread);
+        left = min<LayoutUnit>(left, shadow.x() - blurAndSpread);
+        right = max<LayoutUnit>(right, shadow.x() + blurAndSpread);
     }
 }
 
-void RenderStyle::getShadowVerticalExtent(const ShadowData* shadow, LayoutUnit &top, LayoutUnit &bottom) const
+void RenderStyle::getShadowVerticalExtent(const ShadowList* shadowList, LayoutUnit &top, LayoutUnit &bottom) const
 {
     top = 0;
     bottom = 0;
 
-    for ( ; shadow; shadow = shadow->next()) {
-        if (shadow->style() == Inset)
+    size_t shadowCount = shadowList ? shadowList->shadows().size() : 0;
+    for (size_t i = 0; i < shadowCount; ++i) {
+        const ShadowData& shadow = shadowList->shadows()[i];
+        if (shadow.style() == Inset)
             continue;
-        int blurAndSpread = shadow->blur() + shadow->spread();
+        int blurAndSpread = shadow.blur() + shadow.spread();
 
-        top = min<LayoutUnit>(top, shadow->y() - blurAndSpread);
-        bottom = max<LayoutUnit>(bottom, shadow->y() + blurAndSpread);
+        top = min<LayoutUnit>(top, shadow.y() - blurAndSpread);
+        bottom = max<LayoutUnit>(bottom, shadow.y() + blurAndSpread);
     }
 }
 

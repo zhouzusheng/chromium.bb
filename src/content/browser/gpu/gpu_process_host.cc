@@ -200,22 +200,8 @@ class GpuSandboxedProcessLauncherDelegate
         SetJobLevel(*cmd_line_, sandbox::JOB_UNPROTECTED, 0, policy);
         policy->SetDelayedIntegrityLevel(sandbox::INTEGRITY_LEVEL_LOW);
       } else {
-        if (cmd_line_->GetSwitchValueASCII(switches::kUseGL) ==
-                gfx::kGLImplementationSwiftShaderName ||
-            cmd_line_->HasSwitch(switches::kReduceGpuSandbox) ||
-            cmd_line_->HasSwitch(switches::kDisableImageTransportSurface)) {
-          // Swiftshader path.
-          policy->SetTokenLevel(sandbox::USER_RESTRICTED_SAME_ACCESS,
-                                sandbox::USER_LIMITED);
-        } else {
-          // Angle + DirectX path.
-          policy->SetTokenLevel(sandbox::USER_RESTRICTED_SAME_ACCESS,
-                                sandbox::USER_RESTRICTED);
-          // This is a trick to keep the GPU out of low-integrity processes. It
-          // starts at low-integrity for UIPI to work, then drops below
-          // low-integrity after warm-up.
-          policy->SetDelayedIntegrityLevel(sandbox::INTEGRITY_LEVEL_UNTRUSTED);
-        }
+        policy->SetTokenLevel(sandbox::USER_RESTRICTED_SAME_ACCESS,
+                              sandbox::USER_LIMITED);
 
         // UI restrictions break when we access Windows from outside our job.
         // However, we don't want a proxy window in this process because it can
@@ -578,8 +564,12 @@ bool GpuProcessHost::Init() {
     return false;
 
   if (in_process_ && g_gpu_main_thread_factory) {
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kDisableGpuWatchdog);
+    CommandLine* command_line = CommandLine::ForCurrentProcess();
+    command_line->AppendSwitch(switches::kDisableGpuWatchdog);
+
+    GpuDataManagerImpl* gpu_data_manager = GpuDataManagerImpl::GetInstance();
+    DCHECK(gpu_data_manager);
+    gpu_data_manager->AppendGpuCommandLine(command_line);
 
     in_process_gpu_thread_.reset(g_gpu_main_thread_factory(channel_id));
     in_process_gpu_thread_->Start();

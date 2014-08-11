@@ -50,7 +50,7 @@ public:
 
     ~CSSCrossfadeValue();
 
-    String customCssText() const;
+    String customCSSText() const;
 
     PassRefPtr<Image> image(RenderObject*, const IntSize&);
     bool isFixedSize() const { return true; }
@@ -103,6 +103,8 @@ private:
 
     CrossfadeSubimageObserverProxy m_crossfadeSubimageObserver;
 };
+
+DEFINE_CSS_VALUE_TYPE_CASTS(CSSCrossfadeValue, isCrossfadeValue());
 
 } // namespace WebCore
 

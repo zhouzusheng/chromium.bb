@@ -26,6 +26,7 @@
 #include <blpwtk2_config.h>
 
 #include <blpwtk2_findonpage.h>
+#include <blpwtk2_nativeviewwidgetdelegate.h>
 #include <blpwtk2_webview.h>
 
 #include <content/public/browser/web_contents_delegate.h>
@@ -40,11 +41,16 @@ namespace content {
     class WebContents;
 }  // close namespace content
 
+namespace views {
+    class Widget;
+}  // close namespace views
+
 namespace blpwtk2 {
 
 class BrowserContextImpl;
 class ContextMenuParams;
 class DevToolsFrontendHostDelegateImpl;
+class NativeViewWidget;
 class WebViewDelegate;
 class WebViewImplClient;
 
@@ -63,11 +69,12 @@ class WebViewImplClient;
 // thread and the application thread.  See blpwtk2_toolkit.h for an explanation
 // about threads.
 class WebViewImpl : public WebView,
-                    public content::WebContentsDelegate,
-                    public content::WebContentsObserver {
+                    private NativeViewWidgetDelegate,
+                    private content::WebContentsDelegate,
+                    private content::WebContentsObserver {
   public:
     WebViewImpl(WebViewDelegate* delegate,
-                gfx::NativeView parent,
+                blpwtk2::NativeView parent,
                 BrowserContextImpl* browserContext,
                 int hostAffinity,
                 bool initiallyVisible,
@@ -124,6 +131,17 @@ class WebViewImpl : public WebView,
     virtual void rootWindowSettingsChanged() OVERRIDE;
     virtual void print() OVERRIDE;
 
+  private:
+    void createWidget(blpwtk2::NativeView parent);
+
+    /////// NativeViewWidgetDelegate overrides
+
+    virtual void onDestroyed(NativeViewWidget* source) OVERRIDE;
+    virtual bool OnNCHitTest(int* result) OVERRIDE;
+    virtual bool OnNCDragBegin(int hitTestCode) OVERRIDE;
+    virtual void OnNCDragMove() OVERRIDE;
+    virtual void OnNCDragEnd() OVERRIDE;
+
     /////// WebContentsDelegate overrides
 
     // Notification that the target URL has changed.
@@ -171,29 +189,15 @@ class WebViewImpl : public WebView,
     // or a panel window.
     virtual bool IsPopupOrPanel(const content::WebContents* source) const OVERRIDE;
 
-    // Return true if an NC hit test result was set.  Returning false means the
-    // default NC hit test behavior should be performed.  The hit test should be
-    // performed using the most recent mouse coordinates.
-    virtual bool OnNCHitTest(int* result) OVERRIDE;
-
-    // Return true if a non-client drag operation should be initiated, in which
-    // case, the mouse will be captured and OnNCDragMove will be called
-    // continuously until OnNCDragEnd gets called.  Returning false means the
-    // default Windows dragging will be performed.  The specified 'point' is in
-    // screen coordinates.
-    virtual bool OnNCDragBegin(int hitTestCode) OVERRIDE;
-
-    // Invoked while the move moves during an NC drag event.  This only gets
-    // called if the previous call to OnNCDragBegin returned true.
-    virtual void OnNCDragMove() OVERRIDE;
-
-    // Invoked when an NC drag event ends.  This only gets called if the previous
-    // call to OnNCDragBegin returned true.
-    virtual void OnNCDragEnd() OVERRIDE;
-
-    // Return true if the cursor was set.  Returning false means the default
-    // cursor will be set.
-    virtual bool OnSetCursor(int hitTestCode) OVERRIDE;
+    // Asks permission to use the camera and/or microphone. If permission is
+    // granted, a call should be made to |callback| with the devices. If the
+    // request is denied, a call should be made to |callback| with an empty list
+    // of devices. |request| has the details of the request (e.g. which of audio
+    // and/or video devices are requested, and lists of available devices).
+    virtual void RequestMediaAccessPermission(
+        content::WebContents* web_contents,
+        const content::MediaStreamRequest& request,
+        const content::MediaResponseCallback& callback) OVERRIDE;
 
     // Invoked when the RenderWidgetHost's backing store has been updated.
     virtual void DidUpdateBackingStore() OVERRIDE;
@@ -257,7 +261,7 @@ class WebViewImpl : public WebView,
     WebViewDelegate* d_delegate;
     WebViewImplClient* d_implClient;
     BrowserContextImpl* d_browserContext;
-    gfx::NativeView d_originalParent;
+    NativeViewWidget* d_widget;  // owned by the views system
     bool d_focusBeforeEnabled;
     bool d_focusAfterEnabled;
     bool d_isReadyForDelete;  // when the underlying WebContents can be deleted

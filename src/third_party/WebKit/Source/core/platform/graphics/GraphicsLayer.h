@@ -27,19 +27,15 @@
 #ifndef GraphicsLayer_h
 #define GraphicsLayer_h
 
-#include "core/platform/animation/CSSAnimationData.h"
-#include "core/platform/animation/KeyframeValueList.h"
-#include "core/platform/graphics/Color.h"
-#include "core/platform/graphics/FloatPoint.h"
-#include "core/platform/graphics/FloatPoint3D.h"
-#include "core/platform/graphics/FloatSize.h"
 #include "core/platform/graphics/GraphicsLayerClient.h"
-#include "core/platform/graphics/IntRect.h"
 #include "core/platform/graphics/chromium/OpaqueRectTrackingContentLayerDelegate.h"
 #include "core/platform/graphics/filters/FilterOperations.h"
-#include "core/platform/graphics/transforms/TransformationMatrix.h"
-
-#include "wtf/HashMap.h"
+#include "platform/geometry/FloatPoint.h"
+#include "platform/geometry/FloatPoint3D.h"
+#include "platform/geometry/FloatSize.h"
+#include "platform/geometry/IntRect.h"
+#include "platform/graphics/Color.h"
+#include "platform/transforms/TransformationMatrix.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
@@ -55,6 +51,7 @@
 
 namespace WebKit {
 class GraphicsLayerFactoryChromium;
+class WebAnimation;
 class WebLayer;
 }
 
@@ -127,6 +124,9 @@ public:
     GraphicsLayer* maskLayer() const { return m_maskLayer; }
     void setMaskLayer(GraphicsLayer*);
 
+    GraphicsLayer* contentsClippingMaskLayer() const { return m_contentsClippingMaskLayer; }
+    void setContentsClippingMaskLayer(GraphicsLayer*);
+
     // The given layer will replicate this layer and its children; the replica renders behind this layer.
     void setReplicatedByLayer(GraphicsLayer*);
     // Whether this layer is being replicated by another layer.
@@ -183,6 +183,9 @@ public:
     bool contentsAreVisible() const { return m_contentsVisible; }
     void setContentsVisible(bool);
 
+    void setScrollParent(WebKit::WebLayer*);
+    void setClipParent(WebKit::WebLayer*);
+
     // For special cases, e.g. drawing missing tiles on Android.
     // The compositor should never paint this color in normal cases because the RenderLayer
     // will paint background by itself.
@@ -219,18 +222,12 @@ public:
     IntRect contentsRect() const { return m_contentsRect; }
     void setContentsRect(const IntRect&);
 
-    // Transitions are identified by a special animation name that cannot clash with a keyframe identifier.
-    static String animationNameForTransition(AnimatedPropertyID);
-
     // Return true if the animation is handled by the compositing system. If this returns
     // false, the animation will be run by AnimationController.
     // These methods handle both transitions and keyframe animations.
-    bool addAnimation(const KeyframeValueList&, const IntSize& /*boxSize*/, const CSSAnimationData*, const String& /*animationName*/, double /*timeOffset*/);
-    void pauseAnimation(const String& /*animationName*/, double /*timeOffset*/);
-    void removeAnimation(const String& /*animationName*/);
-
-    void suspendAnimations(double time);
-    void resumeAnimations();
+    bool addAnimation(PassOwnPtr<WebKit::WebAnimation>);
+    void pauseAnimation(int animationId, double /*timeOffset*/);
+    void removeAnimation(int animationId);
 
     // Layer contents
     void setContentsToImage(Image*);
@@ -335,8 +332,6 @@ private:
 
     int incrementPaintCount() { return ++m_paintCount; }
 
-    static void writeIndent(TextStream&, int indent);
-
     void dumpProperties(TextStream&, int indent, LayerTreeFlags) const;
     void dumpAdditionalProperties(TextStream&, int /*indent*/, LayerTreeFlags) const { }
 
@@ -377,6 +372,9 @@ private:
     bool m_drawsContent : 1;
     bool m_contentsVisible : 1;
 
+    bool m_hasScrollParent : 1;
+    bool m_hasClipParent : 1;
+
     GraphicsLayerPaintingPhase m_paintingPhase;
     CompositingCoordinatesOrientation m_contentsOrientation; // affects orientation of layer contents
 
@@ -384,6 +382,7 @@ private:
     GraphicsLayer* m_parent;
 
     GraphicsLayer* m_maskLayer; // Reference to mask layer. We don't own this.
+    GraphicsLayer* m_contentsClippingMaskLayer; // Reference to clipping mask layer. We don't own this.
 
     GraphicsLayer* m_replicaLayer; // A layer that replicates this layer. We only allow one, for now.
                                    // The replica is not parented; this is the primary reference to it.
@@ -409,9 +408,6 @@ private:
     OwnPtr<OpaqueRectTrackingContentLayerDelegate> m_opaqueRectTrackingContentLayerDelegate;
 
     ContentsLayerPurpose m_contentsLayerPurpose;
-
-    typedef HashMap<String, int> AnimationIdMap;
-    AnimationIdMap m_animationIdMap;
 
     ScrollableArea* m_scrollableArea;
     WebKit::WebCompositingReasons m_compositingReasons;

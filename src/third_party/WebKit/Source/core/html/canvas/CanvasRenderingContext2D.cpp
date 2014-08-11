@@ -55,15 +55,16 @@
 #include "core/html/canvas/CanvasPattern.h"
 #include "core/html/canvas/CanvasStyle.h"
 #include "core/html/canvas/DOMPath.h"
-#include "core/page/ImageBitmap.h"
-#include "core/platform/graphics/DrawLooper.h"
-#include "core/platform/graphics/FloatQuad.h"
+#include "core/frame/ImageBitmap.h"
 #include "core/platform/graphics/FontCache.h"
 #include "core/platform/graphics/GraphicsContextStateSaver.h"
-#include "core/platform/graphics/TextRun.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
+#include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderTheme.h"
+#include "platform/geometry/FloatQuad.h"
+#include "platform/graphics/DrawLooper.h"
+#include "platform/graphics/TextRun.h"
+#include "platform/transforms/AffineTransform.h"
 #include "weborigin/SecurityOrigin.h"
 #include "wtf/CheckedArithmetic.h"
 #include "wtf/MathExtras.h"
@@ -76,17 +77,8 @@ using namespace std;
 namespace WebCore {
 
 static const int defaultFontSize = 10;
-static const char* const defaultFontFamily = "sans-serif";
-static const char* const defaultFont = "10px sans-serif";
-
-static bool isOriginClean(ImageResource* cachedImage, SecurityOrigin* securityOrigin)
-{
-    if (!cachedImage->image()->currentFrameHasSingleSecurityOrigin())
-        return false;
-    if (cachedImage->passesAccessControlCheck(securityOrigin))
-        return true;
-    return !securityOrigin->taintsCanvas(cachedImage->response().url());
-}
+static const char defaultFontFamily[] = "sans-serif";
+static const char defaultFont[] = "10px sans-serif";
 
 CanvasRenderingContext2D::CanvasRenderingContext2D(HTMLCanvasElement* canvas, const Canvas2DContextAttributes* attrs, bool usesCSSCompatibilityParseMode)
     : CanvasRenderingContext(canvas)
@@ -596,6 +588,11 @@ void CanvasRenderingContext2D::setGlobalCompositeOperation(const String& operati
     c->setCompositeOperation(op, blendMode);
 }
 
+void CanvasRenderingContext2D::setCurrentTransform(const SVGMatrix& matrix)
+{
+    setTransform(matrix.a(), matrix.b(), matrix.c(), matrix.d(), matrix.e(), matrix.f());
+}
+
 void CanvasRenderingContext2D::scale(float sx, float sy)
 {
     GraphicsContext* c = drawingContext();
@@ -698,12 +695,12 @@ void CanvasRenderingContext2D::transform(float m11, float m12, float m21, float 
 
     realizeSaves();
 
+    modifiableState().m_transform = newTransform;
     if (!newTransform.isInvertible()) {
         modifiableState().m_invertibleCTM = false;
         return;
     }
 
-    modifiableState().m_transform = newTransform;
     c->concatCTM(transform);
     m_path.transform(transform.inverse());
 }
@@ -728,7 +725,7 @@ void CanvasRenderingContext2D::resetTransform()
     c->setCTM(canvas()->baseTransform());
 
     if (invertibleCTM)
-        m_path.transform(ctm.inverse());
+        m_path.transform(ctm);
     // When else, do nothing because all transform methods didn't update m_path when CTM became non-invertible.
     // It means that resetTransform() restores m_path just before CTM became non-invertible.
 }
@@ -1207,11 +1204,22 @@ bool CanvasRenderingContext2D::shouldDrawShadows() const
     return alphaChannel(state().m_shadowColor) && (state().m_shadowBlur || !state().m_shadowOffset.isZero());
 }
 
-static LayoutSize sizeFor(HTMLImageElement* image)
+enum ImageSizeType {
+    ImageSizeAfterDevicePixelRatio,
+    ImageSizeBeforeDevicePixelRatio
+};
+
+static LayoutSize sizeFor(HTMLImageElement* image, ImageSizeType sizeType)
 {
-    if (ImageResource* cachedImage = image->cachedImage())
-        return cachedImage->imageSizeForRenderer(image->renderer(), 1.0f); // FIXME: Not sure about this.
-    return IntSize();
+    LayoutSize size;
+    ImageResource* cachedImage = image->cachedImage();
+    if (cachedImage) {
+        size = cachedImage->imageSizeForRenderer(image->renderer(), 1.0f); // FIXME: Not sure about this.
+
+        if (sizeType == ImageSizeAfterDevicePixelRatio && image->renderer() && image->renderer()->isRenderImage() && cachedImage->image() && !cachedImage->image()->hasRelativeWidth())
+            size.scale(toRenderImage(image->renderer())->imageDevicePixelRatio());
+    }
+    return size;
 }
 
 static IntSize sizeFor(HTMLVideoElement* video)
@@ -1284,7 +1292,7 @@ void CanvasRenderingContext2D::drawImageInternal(Image* image, const FloatRect& 
 void CanvasRenderingContext2D::drawImage(ImageBitmap* bitmap, float x, float y, ExceptionState& es)
 {
     if (!bitmap) {
-        es.throwDOMException(TypeMismatchError);
+        es.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return;
     }
     drawImage(bitmap, x, y, bitmap->width(), bitmap->height(), es);
@@ -1294,7 +1302,7 @@ void CanvasRenderingContext2D::drawImage(ImageBitmap* bitmap,
     float x, float y, float width, float height, ExceptionState& es)
 {
     if (!bitmap) {
-        es.throwDOMException(TypeMismatchError);
+        es.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return;
     }
     if (!bitmap->bitmapRect().width() || !bitmap->bitmapRect().height())
@@ -1308,7 +1316,7 @@ void CanvasRenderingContext2D::drawImage(ImageBitmap* bitmap,
     float dx, float dy, float dw, float dh, ExceptionState& es)
 {
     if (!bitmap) {
-        es.throwDOMException(TypeMismatchError);
+        es.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return;
     }
 
@@ -1323,7 +1331,7 @@ void CanvasRenderingContext2D::drawImage(ImageBitmap* bitmap,
     if (!dstRect.width() || !dstRect.height())
         return;
     if (!srcRect.width() || !srcRect.height()) {
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
         return;
     }
 
@@ -1359,22 +1367,22 @@ void CanvasRenderingContext2D::drawImage(ImageBitmap* bitmap,
 void CanvasRenderingContext2D::drawImage(HTMLImageElement* image, float x, float y, ExceptionState& es)
 {
     if (!image) {
-        es.throwDOMException(TypeMismatchError);
+        es.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return;
     }
-    LayoutSize size = sizeFor(image);
-    drawImage(image, x, y, size.width(), size.height(), es);
+    LayoutSize destRectSize = sizeFor(image, ImageSizeAfterDevicePixelRatio);
+    drawImage(image, x, y, destRectSize.width(), destRectSize.height(), es);
 }
 
 void CanvasRenderingContext2D::drawImage(HTMLImageElement* image,
     float x, float y, float width, float height, ExceptionState& es)
 {
     if (!image) {
-        es.throwDOMException(TypeMismatchError);
+        es.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return;
     }
-    LayoutSize size = sizeFor(image);
-    drawImage(image, FloatRect(0, 0, size.width(), size.height()), FloatRect(x, y, width, height), es);
+    LayoutSize sourceRectSize = sizeFor(image, ImageSizeBeforeDevicePixelRatio);
+    drawImage(image, FloatRect(0, 0, sourceRectSize.width(), sourceRectSize.height()), FloatRect(x, y, width, height), es);
 }
 
 void CanvasRenderingContext2D::drawImage(HTMLImageElement* image,
@@ -1392,7 +1400,7 @@ void CanvasRenderingContext2D::drawImage(HTMLImageElement* image, const FloatRec
 void CanvasRenderingContext2D::drawImage(HTMLImageElement* image, const FloatRect& srcRect, const FloatRect& dstRect, const CompositeOperator& op, const BlendMode& blendMode, ExceptionState& es)
 {
     if (!image) {
-        es.throwDOMException(TypeMismatchError);
+        es.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return;
     }
 
@@ -1404,9 +1412,9 @@ void CanvasRenderingContext2D::drawImage(HTMLImageElement* image, const FloatRec
     if (!cachedImage || !image->complete())
         return;
 
-    LayoutSize size = sizeFor(image);
+    LayoutSize size = sizeFor(image, ImageSizeBeforeDevicePixelRatio);
     if (!size.width() || !size.height()) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
 
@@ -1418,7 +1426,7 @@ void CanvasRenderingContext2D::drawImage(HTMLImageElement* image, const FloatRec
 
     FloatRect imageRect = FloatRect(FloatPoint(), size);
     if (!srcRect.width() || !srcRect.height()) {
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
         return;
     }
     if (!imageRect.intersects(normalizedSrcRect))
@@ -1461,19 +1469,19 @@ void CanvasRenderingContext2D::drawImage(HTMLCanvasElement* sourceCanvas, const 
     const FloatRect& dstRect, ExceptionState& es)
 {
     if (!sourceCanvas) {
-        es.throwDOMException(TypeMismatchError);
+        es.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return;
     }
 
     FloatRect srcCanvasRect = FloatRect(FloatPoint(), sourceCanvas->size());
 
     if (!srcCanvasRect.width() || !srcCanvasRect.height()) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
 
     if (!srcRect.width() || !srcRect.height()) {
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
         return;
     }
 
@@ -1531,7 +1539,7 @@ void CanvasRenderingContext2D::drawImage(HTMLCanvasElement* sourceCanvas, const 
 void CanvasRenderingContext2D::drawImage(HTMLVideoElement* video, float x, float y, ExceptionState& es)
 {
     if (!video) {
-        es.throwDOMException(TypeMismatchError);
+        es.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return;
     }
     IntSize size = sizeFor(video);
@@ -1542,7 +1550,7 @@ void CanvasRenderingContext2D::drawImage(HTMLVideoElement* video,
     float x, float y, float width, float height, ExceptionState& es)
 {
     if (!video) {
-        es.throwDOMException(TypeMismatchError);
+        es.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return;
     }
     IntSize size = sizeFor(video);
@@ -1559,7 +1567,7 @@ void CanvasRenderingContext2D::drawImage(HTMLVideoElement* video,
 void CanvasRenderingContext2D::drawImage(HTMLVideoElement* video, const FloatRect& srcRect, const FloatRect& dstRect, ExceptionState& es)
 {
     if (!video) {
-        es.throwDOMException(TypeMismatchError);
+        es.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return;
     }
 
@@ -1568,7 +1576,7 @@ void CanvasRenderingContext2D::drawImage(HTMLVideoElement* video, const FloatRec
 
     FloatRect videoRect = FloatRect(FloatPoint(), sizeFor(video));
     if (!srcRect.width() || !srcRect.height()) {
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
         return;
     }
 
@@ -1660,7 +1668,7 @@ template<class T> void  CanvasRenderingContext2D::fullCanvasCompositedDrawImage(
 {
     ASSERT(isFullCanvasCompositeMode(op));
 
-    drawingContext()->beginTransparencyLayer(1, op);
+    drawingContext()->beginLayer(1, op);
     drawImageToContext(image, drawingContext(), dest, src, CompositeSourceOver);
     drawingContext()->endLayer();
 }
@@ -1681,7 +1689,7 @@ template<class T> void CanvasRenderingContext2D::fullCanvasCompositedFill(const 
 
     GraphicsContext* c = drawingContext();
     ASSERT(c);
-    c->beginTransparencyLayer(1, state().m_globalComposite);
+    c->beginLayer(1, state().m_globalComposite);
     CompositeOperator previousOperator = c->compositeOperation();
     c->setCompositeOperation(CompositeSourceOver);
     fillPrimitive(area, c);
@@ -1692,7 +1700,7 @@ template<class T> void CanvasRenderingContext2D::fullCanvasCompositedFill(const 
 PassRefPtr<CanvasGradient> CanvasRenderingContext2D::createLinearGradient(float x0, float y0, float x1, float y1, ExceptionState& es)
 {
     if (!std::isfinite(x0) || !std::isfinite(y0) || !std::isfinite(x1) || !std::isfinite(y1)) {
-        es.throwDOMException(NotSupportedError);
+        es.throwUninformativeAndGenericDOMException(NotSupportedError);
         return 0;
     }
 
@@ -1703,12 +1711,12 @@ PassRefPtr<CanvasGradient> CanvasRenderingContext2D::createLinearGradient(float 
 PassRefPtr<CanvasGradient> CanvasRenderingContext2D::createRadialGradient(float x0, float y0, float r0, float x1, float y1, float r1, ExceptionState& es)
 {
     if (!std::isfinite(x0) || !std::isfinite(y0) || !std::isfinite(r0) || !std::isfinite(x1) || !std::isfinite(y1) || !std::isfinite(r1)) {
-        es.throwDOMException(NotSupportedError);
+        es.throwUninformativeAndGenericDOMException(NotSupportedError);
         return 0;
     }
 
     if (r0 < 0 || r1 < 0) {
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
         return 0;
     }
 
@@ -1720,7 +1728,7 @@ PassRefPtr<CanvasPattern> CanvasRenderingContext2D::createPattern(HTMLImageEleme
     const String& repetitionType, ExceptionState& es)
 {
     if (!image) {
-        es.throwDOMException(TypeMismatchError);
+        es.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return 0;
     }
     bool repeatX, repeatY;
@@ -1740,7 +1748,7 @@ PassRefPtr<CanvasPattern> CanvasRenderingContext2D::createPattern(HTMLImageEleme
     if (!image->renderer() && imageForRendering->usesContainerSize())
         imageForRendering->setContainerSize(imageForRendering->size());
 
-    bool originClean = isOriginClean(cachedImage, canvas()->securityOrigin());
+    bool originClean = cachedImage->isAccessAllowed(canvas()->securityOrigin());
     return CanvasPattern::create(imageForRendering, repeatX, repeatY, originClean);
 }
 
@@ -1748,11 +1756,11 @@ PassRefPtr<CanvasPattern> CanvasRenderingContext2D::createPattern(HTMLCanvasElem
     const String& repetitionType, ExceptionState& es)
 {
     if (!canvas) {
-        es.throwDOMException(TypeMismatchError);
+        es.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return 0;
     }
     if (!canvas->width() || !canvas->height()) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return 0;
     }
 
@@ -1832,7 +1840,7 @@ static PassRefPtr<ImageData> createEmptyImageData(const IntSize& size)
 PassRefPtr<ImageData> CanvasRenderingContext2D::createImageData(PassRefPtr<ImageData> imageData, ExceptionState& es) const
 {
     if (!imageData) {
-        es.throwDOMException(NotSupportedError);
+        es.throwUninformativeAndGenericDOMException(NotSupportedError);
         return 0;
     }
 
@@ -1842,11 +1850,11 @@ PassRefPtr<ImageData> CanvasRenderingContext2D::createImageData(PassRefPtr<Image
 PassRefPtr<ImageData> CanvasRenderingContext2D::createImageData(float sw, float sh, ExceptionState& es) const
 {
     if (!sw || !sh) {
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
         return 0;
     }
     if (!std::isfinite(sw) || !std::isfinite(sh)) {
-        es.throwDOMException(NotSupportedError);
+        es.throwUninformativeAndGenericDOMException(NotSupportedError);
         return 0;
     }
 
@@ -1881,11 +1889,11 @@ PassRefPtr<ImageData> CanvasRenderingContext2D::getImageData(ImageBuffer::Coordi
     }
 
     if (!sw || !sh) {
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
         return 0;
     }
     if (!std::isfinite(sx) || !std::isfinite(sy) || !std::isfinite(sw) || !std::isfinite(sh)) {
-        es.throwDOMException(NotSupportedError);
+        es.throwUninformativeAndGenericDOMException(NotSupportedError);
         return 0;
     }
 
@@ -1921,7 +1929,7 @@ PassRefPtr<ImageData> CanvasRenderingContext2D::getImageData(ImageBuffer::Coordi
 void CanvasRenderingContext2D::putImageData(ImageData* data, float dx, float dy, ExceptionState& es)
 {
     if (!data) {
-        es.throwDOMException(TypeMismatchError);
+        es.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return;
     }
     putImageData(data, dx, dy, 0, 0, data->width(), data->height(), es);
@@ -1930,7 +1938,7 @@ void CanvasRenderingContext2D::putImageData(ImageData* data, float dx, float dy,
 void CanvasRenderingContext2D::webkitPutImageDataHD(ImageData* data, float dx, float dy, ExceptionState& es)
 {
     if (!data) {
-        es.throwDOMException(TypeMismatchError);
+        es.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return;
     }
     webkitPutImageDataHD(data, dx, dy, 0, 0, data->width(), data->height(), es);
@@ -1951,11 +1959,11 @@ void CanvasRenderingContext2D::putImageData(ImageData* data, ImageBuffer::Coordi
     float dirtyWidth, float dirtyHeight, ExceptionState& es)
 {
     if (!data) {
-        es.throwDOMException(TypeMismatchError);
+        es.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return;
     }
     if (!std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dirtyX) || !std::isfinite(dirtyY) || !std::isfinite(dirtyWidth) || !std::isfinite(dirtyHeight)) {
-        es.throwDOMException(NotSupportedError);
+        es.throwUninformativeAndGenericDOMException(NotSupportedError);
         return;
     }
 
@@ -2038,7 +2046,8 @@ void CanvasRenderingContext2D::setFont(const String& newFont)
 
     if (!parsedStyle) {
         parsedStyle = MutableStylePropertySet::create();
-        CSSParser::parseValue(parsedStyle.get(), CSSPropertyFont, newFont, true, strictToCSSParserMode(!m_usesCSSCompatibilityParseMode), 0);
+        CSSParserMode mode = m_usesCSSCompatibilityParseMode ? HTMLQuirksMode : HTMLStandardMode;
+        CSSParser::parseValue(parsedStyle.get(), CSSPropertyFont, newFont, true, mode, 0);
         m_fetchedFonts.add(newFont, parsedStyle);
     }
     if (parsedStyle->isEmpty())
@@ -2377,7 +2386,7 @@ void CanvasRenderingContext2D::updateFocusRingAccessibility(const Path& path, El
     // isn't focused because assistive technology might try to explore the object's
     // location before it gets focus.
     if (AXObjectCache* axObjectCache = element->document().existingAXObjectCache()) {
-        if (AccessibilityObject* obj = axObjectCache->getOrCreate(element)) {
+        if (AXObject* obj = axObjectCache->getOrCreate(element)) {
             // Get the bounding rect and apply transformations.
             FloatRect bounds = m_path.boundingRect();
             AffineTransform ctm = state().m_transform;

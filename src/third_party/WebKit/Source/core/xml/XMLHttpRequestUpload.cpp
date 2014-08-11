@@ -26,8 +26,8 @@
 #include "config.h"
 #include "core/xml/XMLHttpRequestUpload.h"
 
-#include "core/dom/Event.h"
-#include "core/dom/EventNames.h"
+#include "core/events/Event.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/xml/XMLHttpRequest.h"
 #include "core/xml/XMLHttpRequestProgressEvent.h"
 #include "wtf/Assertions.h"
@@ -43,20 +43,20 @@ XMLHttpRequestUpload::XMLHttpRequestUpload(XMLHttpRequest* xmlHttpRequest)
 
 const AtomicString& XMLHttpRequestUpload::interfaceName() const
 {
-    return eventNames().interfaceForXMLHttpRequestUpload;
+    return EventTargetNames::XMLHttpRequestUpload;
 }
 
-ScriptExecutionContext* XMLHttpRequestUpload::scriptExecutionContext() const
+ExecutionContext* XMLHttpRequestUpload::executionContext() const
 {
-    return m_xmlHttpRequest->scriptExecutionContext();
+    return m_xmlHttpRequest->executionContext();
 }
 
 void XMLHttpRequestUpload::dispatchEventAndLoadEnd(PassRefPtr<Event> event)
 {
-    ASSERT(event->type() == eventNames().loadEvent || event->type() == eventNames().abortEvent || event->type() == eventNames().errorEvent || event->type() == eventNames().timeoutEvent);
+    ASSERT(event->type() == EventTypeNames::load || event->type() == EventTypeNames::abort || event->type() == EventTypeNames::error || event->type() == EventTypeNames::timeout);
 
     dispatchEvent(event);
-    dispatchEvent(XMLHttpRequestProgressEvent::create(eventNames().loadendEvent));
+    dispatchEvent(XMLHttpRequestProgressEvent::create(EventTypeNames::loadend));
 }
 
 

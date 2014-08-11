@@ -131,7 +131,7 @@ int HTMLMarqueeElement::scrollAmount() const
 void HTMLMarqueeElement::setScrollAmount(int scrollAmount, ExceptionState& es)
 {
     if (scrollAmount < 0)
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
     else
         setIntegralAttribute(scrollamountAttr, scrollAmount);
 }
@@ -146,7 +146,7 @@ int HTMLMarqueeElement::scrollDelay() const
 void HTMLMarqueeElement::setScrollDelay(int scrollDelay, ExceptionState& es)
 {
     if (scrollDelay < 0)
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
     else
         setIntegralAttribute(scrolldelayAttr, scrollDelay);
 }
@@ -161,17 +161,12 @@ int HTMLMarqueeElement::loop() const
 void HTMLMarqueeElement::setLoop(int loop, ExceptionState& es)
 {
     if (loop <= 0 && loop != -1)
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
     else
         setIntegralAttribute(loopAttr, loop);
 }
 
-bool HTMLMarqueeElement::canSuspend() const
-{
-    return true;
-}
-
-void HTMLMarqueeElement::suspend(ReasonForSuspension)
+void HTMLMarqueeElement::suspend()
 {
     if (RenderMarquee* marqueeRenderer = renderMarquee())
         marqueeRenderer->suspend();

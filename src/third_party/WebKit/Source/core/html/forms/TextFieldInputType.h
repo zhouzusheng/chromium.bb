@@ -42,14 +42,11 @@ class FormDataList;
 // It supports not only the types for BaseTextInputType but also type=number.
 class TextFieldInputType : public InputType, protected SpinButtonElement::SpinButtonOwner {
 protected:
-    TextFieldInputType(HTMLInputElement*);
+    TextFieldInputType(HTMLInputElement&);
     virtual ~TextFieldInputType();
     virtual bool canSetSuggestedValue() OVERRIDE;
     virtual void handleKeydownEvent(KeyboardEvent*) OVERRIDE;
     void handleKeydownEventForSpinButton(KeyboardEvent*);
-
-    virtual HTMLElement* containerElement() const OVERRIDE;
-    virtual HTMLElement* innerTextElement() const OVERRIDE;
 
 protected:
     virtual bool needsContainer() const;
@@ -71,6 +68,8 @@ protected:
         ValueChangeStateChanged
     };
     virtual void didSetValueByUserEdit(ValueChangeState);
+
+    Element* containerElement() const;
 
 private:
     virtual bool shouldShowFocusRingOnMouseFocus() const OVERRIDE;
@@ -95,9 +94,6 @@ private:
     virtual void spinButtonStepUp() OVERRIDE;
 
     SpinButtonElement* spinButtonElement() const;
-
-    RefPtr<HTMLElement> m_container;
-    RefPtr<HTMLElement> m_innerText;
 };
 
 } // namespace WebCore

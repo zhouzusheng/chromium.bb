@@ -32,65 +32,71 @@
 #define MessagePortChannel_h
 
 #include "bindings/v8/SerializedScriptValue.h"
+#include "public/platform/WebMessagePortChannelClient.h"
 #include "wtf/Forward.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
+#include "wtf/ThreadSafeRefCounted.h"
+#include "wtf/ThreadingPrimitives.h"
+
+namespace WebKit {
+class WebMessagePortChannel;
+}
 
 namespace WebCore {
 
-    class MessagePort;
-    class MessagePortChannel;
-    class PlatformMessagePortChannel;
-    class ScriptExecutionContext;
-    class SerializedScriptValue;
+class MessagePort;
+class MessagePortChannel;
+class ExecutionContext;
+class SerializedScriptValue;
 
-    // The overwhelmingly common case is sending a single port, so handle that efficiently with an inline buffer of size 1.
-    typedef Vector<OwnPtr<MessagePortChannel>, 1> MessagePortChannelArray;
+// The overwhelmingly common case is sending a single port, so handle that efficiently with an inline buffer of size 1.
+typedef Vector<OwnPtr<MessagePortChannel>, 1> MessagePortChannelArray;
 
-    // MessagePortChannel is a platform-independent interface to the remote side of a message channel.
-    // It acts as a wrapper around the platform-dependent PlatformMessagePortChannel implementation which ensures that the platform-dependent close() method is invoked before destruction.
-    class MessagePortChannel {
-        WTF_MAKE_NONCOPYABLE(MessagePortChannel); WTF_MAKE_FAST_ALLOCATED;
-    public:
-        static void createChannel(PassRefPtr<MessagePort>, PassRefPtr<MessagePort>);
+// MessagePortChannel is a platform-independent interface to the remote side of a message channel.
+class MessagePortChannel : public WebKit::WebMessagePortChannelClient {
+    WTF_MAKE_NONCOPYABLE(MessagePortChannel);
+public:
+    static void createChannel(MessagePort*, MessagePort*);
+    static PassOwnPtr<MessagePortChannel> create(WebKit::WebMessagePortChannel*);
 
-        // Entangles the channel with a port (called when a port has been cloned, after the clone has been marshaled to its new owning thread and is ready to receive messages).
-        // Returns false if the entanglement failed because the port was closed.
-        bool entangleIfOpen(MessagePort*);
+    virtual ~MessagePortChannel();
 
-        // Disentangles the channel from a given port so it no longer forwards messages to the port. Called when the port is being cloned and no new owning thread has yet been established.
-        void disentangle();
+    // Entangles the channel with a port (called when a port has been cloned, after the clone has been marshaled to its new owning thread and is ready to receive messages).
+    void entangle(MessagePort*);
 
-        // Closes the port (ensures that no further messages can be added to either queue).
-        void close();
+    // Disentangles the channel from a given port so it no longer forwards messages to the port. Called when the port is being cloned and no new owning thread has yet been established.
+    void disentangle();
 
-        // Used by MessagePort.postMessage() to prevent callers from passing a port's own entangled port.
-        bool isConnectedTo(MessagePort*);
+    // Closes the port (ensures that no further messages can be added to either queue).
+    void close();
 
-        // Returns true if the proxy currently contains messages for this port.
-        bool hasPendingActivity();
+    // Returns true if the proxy currently contains messages for this port.
+    bool hasPendingActivity();
 
-        // Sends a message and optional cloned port to the remote port.
-        void postMessageToRemote(PassRefPtr<SerializedScriptValue>, PassOwnPtr<MessagePortChannelArray>);
+    // Sends a message and optional cloned port to the remote port.
+    void postMessageToRemote(PassRefPtr<SerializedScriptValue>, PassOwnPtr<MessagePortChannelArray>);
 
-        // Extracts a message from the message queue for this port.
-        bool tryGetMessageFromRemote(RefPtr<SerializedScriptValue>&, OwnPtr<MessagePortChannelArray>&);
+    // Extracts a message from the message queue for this port.
+    bool tryGetMessageFromRemote(RefPtr<SerializedScriptValue>&, OwnPtr<MessagePortChannelArray>&);
 
-        // Returns the entangled port if run by the same thread (see MessagePort::locallyEntangledPort() for more details).
-        MessagePort* locallyEntangledPort(const ScriptExecutionContext*);
+    // Releases ownership of the contained web channel.
+    WebKit::WebMessagePortChannel* webChannelRelease();
 
-        ~MessagePortChannel();
+private:
+    explicit MessagePortChannel(WebKit::WebMessagePortChannel*);
 
-        // Creates a new wrapper for the passed channel.
-        static PassOwnPtr<MessagePortChannel> create(PassRefPtr<PlatformMessagePortChannel>);
+    // WebKit::WebMessagePortChannelClient implementation
+    virtual void messageAvailable() OVERRIDE;
 
-        // FIXME: PlatformMessagePortChannel is an implementation detail, and should not be exposed via a public function.
-        PlatformMessagePortChannel* channel() const { return m_channel.get(); }
+    // Mutex used to ensure exclusive access to the object internals.
+    Mutex m_mutex;
 
-    private:
-        explicit MessagePortChannel(PassRefPtr<PlatformMessagePortChannel>);
-        RefPtr<PlatformMessagePortChannel> m_channel;
-    };
+    // The port we are connected to - this is the port that is notified when new messages arrive.
+    MessagePort* m_localPort;
+
+    WebKit::WebMessagePortChannel* m_webChannel;
+};
 
 } // namespace WebCore
 

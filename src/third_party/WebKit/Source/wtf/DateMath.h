@@ -49,8 +49,8 @@
 #include <time.h>
 #include "wtf/CurrentTime.h"
 #include "wtf/Noncopyable.h"
-#include "wtf/OwnArrayPtr.h"
-#include "wtf/PassOwnArrayPtr.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 #include "wtf/UnusedParam.h"
 #include "wtf/WTFExport.h"
@@ -74,8 +74,8 @@ inline double jsCurrentTime()
     return floor(WTF::currentTimeMS());
 }
 
-const char* const weekdayName[7] = { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
-const char* const monthName[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+const char weekdayName[7][4] = { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
+const char monthName[12][4] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
 const char* const monthFullName[12] = { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
 
 const double hoursPerDay = 24.0;

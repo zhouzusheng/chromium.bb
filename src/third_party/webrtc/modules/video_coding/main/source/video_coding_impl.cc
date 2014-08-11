@@ -197,6 +197,18 @@ class VideoCodingModuleImpl : public VideoCodingModule {
     return sender_->StopDebugRecording();
   }
 
+  virtual void EnableAutoMuting() {
+    return sender_->EnableAutoMuting();
+  }
+
+  virtual void DisableAutoMuting() {
+    return sender_->DisableAutoMuting();
+  }
+
+  virtual bool VideoMuted() const {
+    return sender_->VideoMuted();
+  }
+
   virtual int32_t InitializeReceiver() OVERRIDE {
     return receiver_->InitializeReceiver();
   }
@@ -223,6 +235,11 @@ class VideoCodingModuleImpl : public VideoCodingModule {
   virtual int32_t RegisterReceiveStatisticsCallback(
       VCMReceiveStatisticsCallback* receiveStats) OVERRIDE {
     return receiver_->RegisterReceiveStatisticsCallback(receiveStats);
+  }
+
+  virtual int32_t RegisterDecoderTimingCallback(
+      VCMDecoderTimingCallback* decoderTiming) OVERRIDE {
+    return receiver_->RegisterDecoderTimingCallback(decoderTiming);
   }
 
   virtual int32_t RegisterFrameTypeCallback(

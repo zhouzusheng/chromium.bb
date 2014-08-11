@@ -44,8 +44,8 @@
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/inspector/ScriptArguments.h"
 #include "core/inspector/ScriptCallStack.h"
-#include "core/platform/JSONValues.h"
 #include "core/platform/text/RegularExpression.h"
+#include "platform/JSONValues.h"
 #include "wtf/text/WTFString.h"
 
 using WebCore::TypeBuilder::Array;
@@ -75,7 +75,7 @@ static const char skipAllPausesExpiresOnReload[] = "skipAllPausesExpiresOnReload
 
 static const int numberOfStepsBeforeStepOut = 10;
 
-const char* InspectorDebuggerAgent::backtraceObjectGroup = "backtrace";
+const char InspectorDebuggerAgent::backtraceObjectGroup[] = "backtrace";
 
 static String breakpointIdSuffix(InspectorDebuggerAgent::BreakpointSource source)
 {
@@ -675,12 +675,31 @@ void InspectorDebuggerAgent::resume(ErrorString* errorString)
     scriptDebugServer().continueProgram();
 }
 
-void InspectorDebuggerAgent::stepOver(ErrorString* errorString)
+ScriptValue InspectorDebuggerAgent::resolveCallFrame(ErrorString* errorString, const String* callFrameId)
+{
+    if (!callFrameId)
+        return ScriptValue();
+    if (!isPaused() || m_currentCallStack.isNull()) {
+        *errorString = "Attempt to access callframe when debugger is not on pause";
+        return ScriptValue();
+    }
+    InjectedScript injectedScript = m_injectedScriptManager->injectedScriptForObjectId(*callFrameId);
+    if (injectedScript.hasNoValue()) {
+        *errorString = "Inspected frame has gone";
+        return ScriptValue();
+    }
+    return injectedScript.findCallFrameById(errorString, m_currentCallStack, *callFrameId);
+}
+
+void InspectorDebuggerAgent::stepOver(ErrorString* errorString, const String* callFrameId)
 {
     if (!assertPaused(errorString))
         return;
+    ScriptValue frame = resolveCallFrame(errorString, callFrameId);
+    if (!errorString->isEmpty())
+        return;
     m_injectedScriptManager->releaseObjectGroup(InspectorDebuggerAgent::backtraceObjectGroup);
-    scriptDebugServer().stepOverStatement();
+    scriptDebugServer().stepOverStatement(frame);
 }
 
 void InspectorDebuggerAgent::stepInto(ErrorString* errorString)
@@ -693,12 +712,15 @@ void InspectorDebuggerAgent::stepInto(ErrorString* errorString)
         m_listener->stepInto();
 }
 
-void InspectorDebuggerAgent::stepOut(ErrorString* errorString)
+void InspectorDebuggerAgent::stepOut(ErrorString* errorString, const String* callFrameId)
 {
     if (!assertPaused(errorString))
         return;
+    ScriptValue frame = resolveCallFrame(errorString, callFrameId);
+    if (!errorString->isEmpty())
+        return;
     m_injectedScriptManager->releaseObjectGroup(InspectorDebuggerAgent::backtraceObjectGroup);
-    scriptDebugServer().stepOutOfFunction();
+    scriptDebugServer().stepOutOfFunction(frame);
 }
 
 void InspectorDebuggerAgent::setPauseOnExceptions(ErrorString* errorString, const String& stringPauseState)

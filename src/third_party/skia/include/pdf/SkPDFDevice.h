@@ -11,9 +11,11 @@
 #define SkPDFDevice_DEFINED
 
 #include "SkBitmapDevice.h"
+#include "SkBitmap.h"
 #include "SkCanvas.h"
 #include "SkPaint.h"
 #include "SkPath.h"
+#include "SkPicture.h"
 #include "SkRect.h"
 #include "SkRefCnt.h"
 #include "SkStream.h"
@@ -37,8 +39,6 @@ template <typename T> class SkTSet;
 struct ContentEntry;
 struct GraphicStateEntry;
 struct NamedDestination;
-
-typedef bool (*EncodeToDCTStream)(SkWStream* stream, const SkBitmap& bitmap, const SkIRect& rect);
 
 /** \class SkPDFDevice
 
@@ -64,7 +64,7 @@ public:
      *         inverse scale+translate to accommodate the one that SkPDFDevice
      *         always does.
      */
-    // TODO(vandebo): The sizes should be SkSize and not SkISize.
+    // Deprecated, please use SkDocument::CreatePdf() instead.
     SK_API SkPDFDevice(const SkISize& pageSize, const SkISize& contentSize,
                        const SkMatrix& initialTransform);
     SK_API virtual ~SkPDFDevice();
@@ -140,7 +140,7 @@ public:
      *         encoding and decoding might not be worth the space savings,
      *         if any at all.
      */
-    void setDCTEncoder(EncodeToDCTStream encoder) {
+    void setDCTEncoder(SkPicture::EncodeBitmap encoder) {
         fEncoder = encoder;
     }
 
@@ -197,6 +197,20 @@ protected:
 
     virtual bool allowImageFilter(SkImageFilter*) SK_OVERRIDE;
 
+    /**
+     *  rasterDpi - the DPI at which features without native PDF support
+     *              will be rasterized (e.g. draw image with perspective,
+     *              draw text with perspective, ...)
+     *              A larger DPI would create a PDF that reflects the original
+     *              intent with better fidelity, but it can make for larger
+     *              PDF files too, which would use more memory while rendering,
+     *              and it would be slower to be processed or sent online or
+     *              to printer.
+     */
+    void setRasterDpi(SkScalar rasterDpi) {
+        fRasterDpi = rasterDpi;
+    }
+
 private:
     // TODO(vandebo): push most of SkPDFDevice's state into a core object in
     // order to get the right access levels without using friend.
@@ -232,7 +246,8 @@ private:
     // Glyph ids used for each font on this device.
     SkAutoTDelete<SkPDFGlyphSetMap> fFontGlyphUsage;
 
-    EncodeToDCTStream fEncoder;
+    SkPicture::EncodeBitmap fEncoder;
+    SkScalar fRasterDpi;
 
     SkPDFDevice(const SkISize& layerSize, const SkClipStack& existingClipStack,
                 const SkRegion& existingClipRegion);
@@ -296,7 +311,8 @@ private:
 
 #ifdef SK_PDF_USE_PATHOPS
     bool handleInversePath(const SkDraw& d, const SkPath& origPath,
-                           const SkPaint& paint, bool pathIsMutable);
+                           const SkPaint& paint, bool pathIsMutable,
+                           const SkMatrix* prePathMatrix = NULL);
 #endif
     bool handleRectAnnotation(const SkRect& r, const SkMatrix& matrix,
                               const SkPaint& paint);
@@ -311,6 +327,11 @@ private:
                                 const SkMatrix& matrix);
 
     typedef SkBitmapDevice INHERITED;
+
+    // TODO(edisonn): Only SkDocument_PDF and SkPDFImageShader should be able to create
+    // an SkPDFDevice
+    //friend class SkDocument_PDF;
+    //friend class SkPDFImageShader;
 };
 
 #endif

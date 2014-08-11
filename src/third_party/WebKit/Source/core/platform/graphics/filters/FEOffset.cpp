@@ -32,15 +32,14 @@
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/filters/Filter.h"
 #include "core/platform/graphics/filters/SkiaImageFilterBuilder.h"
-#include "core/platform/text/TextStream.h"
-#include "core/rendering/RenderTreeAsText.h"
+#include "platform/text/TextStream.h"
 #include "third_party/skia/include/core/SkDevice.h"
 
 namespace WebCore {
 
 class OffsetImageFilter : public SkImageFilter {
 public:
-    OffsetImageFilter(SkScalar dx, SkScalar dy, SkImageFilter* input, const SkIRect* cropRect = 0) : SkImageFilter(input, cropRect), m_dx(dx), m_dy(dy)
+    OffsetImageFilter(SkScalar dx, SkScalar dy, SkImageFilter* input, const CropRect* cropRect = 0) : SkImageFilter(input, cropRect), m_dx(dx), m_dy(dy)
     {
     }
 
@@ -165,7 +164,7 @@ PassRefPtr<SkImageFilter> FEOffset::createImageFilter(SkiaImageFilterBuilder* bu
 {
     RefPtr<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
     Filter* filter = this->filter();
-    SkIRect cropRect = getCropRect(builder->cropOffset());
+    SkImageFilter::CropRect cropRect = getCropRect(builder->cropOffset());
     return adoptRef(new OffsetImageFilter(SkFloatToScalar(filter->applyHorizontalScale(m_dx)), SkFloatToScalar(filter->applyVerticalScale(m_dy)), input.get(), &cropRect));
 }
 

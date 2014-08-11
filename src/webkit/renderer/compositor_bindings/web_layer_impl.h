@@ -84,7 +84,6 @@ class WebLayerImpl : public WebKit::WebLayer, public cc::LayerClient {
   virtual void setUseParentBackfaceVisibility(bool visible);
   virtual void setBackgroundColor(WebKit::WebColor color);
   virtual WebKit::WebColor backgroundColor() const;
-  virtual void setFilter(SkImageFilter* filter);
   virtual void setFilters(const WebKit::WebFilterOperations& filters);
   virtual void setBackgroundFilters(const WebKit::WebFilterOperations& filters);
   virtual void setCompositingReasons(WebKit::WebCompositingReasons);
@@ -94,8 +93,6 @@ class WebLayerImpl : public WebKit::WebLayer, public cc::LayerClient {
   virtual void removeAnimation(int animation_id,
                                WebKit::WebAnimation::TargetProperty);
   virtual void pauseAnimation(int animation_id, double time_offset);
-  virtual void suspendAnimations(double monotonic_time);
-  virtual void resumeAnimations(double monotonic_time);
   virtual bool hasActiveAnimation();
   virtual void setForceRenderSurface(bool force);
   virtual void setScrollPosition(WebKit::WebPoint position);
@@ -104,6 +101,9 @@ class WebLayerImpl : public WebKit::WebLayer, public cc::LayerClient {
   virtual WebKit::WebSize maxScrollPosition() const;
   virtual void setScrollable(bool scrollable);
   virtual bool scrollable() const;
+  virtual void setUserScrollable(bool horizontal, bool vertical);
+  virtual bool userScrollableHorizontal() const;
+  virtual bool userScrollableVertical() const;
   virtual void setHaveWheelEventHandlers(bool have_wheel_event_handlers);
   virtual bool haveWheelEventHandlers() const;
   virtual void setShouldScrollOnMainThread(bool scroll_on_main);

@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2012 Google Inc.
  *
@@ -12,8 +11,6 @@
 static inline uint32_t get_area(const SkIRect& rect);
 static inline uint32_t get_overlap(const SkIRect& rect1, const SkIRect& rect2);
 static inline uint32_t get_margin(const SkIRect& rect);
-static inline uint32_t get_overlap_increase(const SkIRect& rect1, const SkIRect& rect2,
-                                            SkIRect expandBy);
 static inline uint32_t get_area_increase(const SkIRect& rect1, SkIRect rect2);
 static inline void join_no_empty_check(const SkIRect& joinWith, SkIRect* out);
 
@@ -409,7 +406,7 @@ void SkRTree::validate() {
     if (this->isEmpty()) {
         return;
     }
-    SkASSERT(fCount == (size_t)this->validateSubtree(fRoot.fChild.subtree, fRoot.fBounds, true));
+    SkASSERT(fCount == this->validateSubtree(fRoot.fChild.subtree, fRoot.fBounds, true));
 #endif
 }
 
@@ -469,12 +466,6 @@ static inline uint32_t get_overlap(const SkIRect& rect1, const SkIRect& rect2) {
 // Get the margin (aka perimeter)
 static inline uint32_t get_margin(const SkIRect& rect) {
     return 2 * (rect.width() + rect.height());
-}
-
-static inline uint32_t get_overlap_increase(const SkIRect& rect1, const SkIRect& rect2,
-                                          SkIRect expandBy) {
-    join_no_empty_check(rect1, &expandBy);
-    return get_overlap(expandBy, rect2) - get_overlap(rect1, rect2);
 }
 
 static inline uint32_t get_area_increase(const SkIRect& rect1, SkIRect rect2) {

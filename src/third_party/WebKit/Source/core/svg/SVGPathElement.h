@@ -91,7 +91,7 @@ public:
 
     void pathSegListChanged(SVGPathSegRole, ListModification = ListModificationUnknown);
 
-    virtual FloatRect getBBox(StyleUpdateStrategy = AllowStyleUpdate);
+    virtual SVGRect getBBox() OVERRIDE FINAL;
 
     static const SVGPropertyInfo* dPropertyInfo();
 
@@ -130,11 +130,7 @@ private:
     bool m_isAnimValObserved;
 };
 
-inline SVGPathElement* toSVGPathElement(Element* element)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!element || element->hasTagName(SVGNames::pathTag));
-    return static_cast<SVGPathElement*>(element);
-}
+DEFINE_NODE_TYPE_CASTS(SVGPathElement, hasTagName(SVGNames::pathTag));
 
 } // namespace WebCore
 

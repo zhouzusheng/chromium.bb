@@ -53,6 +53,7 @@ std::string g_dataDir;
 bool g_no_disk_cache = false;
 bool g_no_disk_cookies = false;
 bool g_in_process_renderer = false;
+bool g_custom_hit_test = false;
 bool g_custom_tooltip = false;
 bool g_no_plugin_discovery = false;
 HANDLE g_hJob;
@@ -290,6 +291,7 @@ public:
         d_webView->enableAltDragRubberbanding(true);
         d_webView->enableFocusBefore(true);
         d_webView->enableFocusAfter(true);
+        d_webView->enableNCHitTest(g_custom_hit_test);
         d_webView->enableCustomTooltip(g_custom_tooltip);
 
         SetWindowLongPtr(d_mainWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
@@ -514,9 +516,88 @@ public:
         ShellExecuteA(NULL, NULL, target.c_str(), NULL, NULL, SW_SHOWNORMAL);        
     }
 
+    virtual void requestNCHitTest(blpwtk2::WebView* source)
+    {
+        assert(source == d_webView);
+        POINT pt;
+        ::GetCursorPos(&pt);
+        POINT ptClient = pt;
+        ::ScreenToClient(d_mainWnd, &ptClient);
+        RECT rcClient;
+        ::GetClientRect(d_mainWnd, &rcClient);
+
+        bool nearLeftBorder = false, nearTopBorder = false, nearRightBorder = false, nearBottomBorder = false;
+        if (ptClient.x >= 0 && ptClient.x <= 50)
+            nearLeftBorder = true;
+        else if (ptClient.x >= rcClient.right - 50 && ptClient.x <= rcClient.right)
+            nearRightBorder = true;
+        if (ptClient.y >= URLBAR_HEIGHT && ptClient.y <= URLBAR_HEIGHT + 50)
+            nearTopBorder = true;
+        else if (ptClient.y >= rcClient.bottom - 50 && ptClient.y <= rcClient.bottom)
+            nearBottomBorder = true;
+
+        int result = HTCLIENT;
+        if (nearLeftBorder) {
+            if (nearTopBorder)
+                result = HTTOPLEFT;
+            else if (nearBottomBorder)
+                result = HTBOTTOMLEFT;
+            else
+                result = HTLEFT;
+        }
+        else if (nearRightBorder) {
+            if (nearTopBorder)
+                result = HTTOPRIGHT;
+            else if (nearBottomBorder)
+                result = HTBOTTOMRIGHT;
+            else
+                result = HTRIGHT;
+        }
+        else if (nearTopBorder)
+            result = HTTOP;
+        else if (nearBottomBorder)
+            result = HTBOTTOM;
+
+        char buf[1024];
+        sprintf_s(buf, sizeof(buf), "DELEGATE: requestNCHitTest(x=%d, y=%d, result=%d)\n",
+                  ptClient.x, ptClient.y, result);
+        OutputDebugStringA(buf);
+        d_webView->onNCHitTestResult(pt.x, pt.y, result);
+    }
+
+    virtual void ncDragBegin(blpwtk2::WebView* source,
+                             int hitTestCode,
+                             const POINT& startPoint)
+    {
+        assert(source == d_webView);
+        char buf[1024];
+        sprintf_s(buf, sizeof(buf), "DELEGATE: ncDragBegin(%d, x=%d, y=%d)\n",
+                  hitTestCode, startPoint.x, startPoint.y);
+        OutputDebugStringA(buf);
+    }
+
+    virtual void ncDragMove(blpwtk2::WebView* source, const POINT& movePoint)
+    {
+        assert(source == d_webView);
+        char buf[1024];
+        sprintf_s(buf, sizeof(buf), "DELEGATE: ncDragMove(x=%d, y=%d)\n",
+                  movePoint.x, movePoint.y);
+        OutputDebugStringA(buf);
+    }
+
+    virtual void ncDragEnd(blpwtk2::WebView* source, const POINT& endPoint)
+    {
+        assert(source == d_webView);
+        char buf[1024];
+        sprintf_s(buf, sizeof(buf), "DELEGATE: ncDragEnd(x=%d, y=%d)\n",
+                  endPoint.x, endPoint.y);
+        OutputDebugStringA(buf);
+    }
+
     virtual void showTooltip(blpwtk2::WebView* source,
                              const blpwtk2::StringRef& tooltipText,
-                             blpwtk2::TextDirection::Value direction) {
+                             blpwtk2::TextDirection::Value direction)
+    {
         assert(source == d_webView);
         if (!tooltipText.isEmpty()) {
             std::string stext(tooltipText.data(), tooltipText.length());
@@ -663,6 +744,9 @@ HANDLE spawnProcess()
     if (g_no_disk_cookies) {
         cmdline.append(" --no-disk-cookies");
     }
+    if (g_custom_hit_test) {
+        cmdline.append(" --custom-hit-test");
+    }
     if (g_custom_tooltip) {
         cmdline.append(" --custom-tooltip");
     }
@@ -793,6 +877,9 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
             else if (0 == wcscmp(L"--no-disk-cookies", argv[i])) {
                 g_no_disk_cookies = true;
             }
+            else if (0 == wcscmp(L"--custom-hit-test", argv[i])) {
+                g_custom_hit_test = true;
+            }
             else if (0 == wcscmp(L"--custom-tooltip", argv[i])) {
                 g_custom_tooltip = true;
             }
@@ -825,9 +912,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
     else {
         toolkitParams.setThreadMode(blpwtk2::ThreadMode::RENDERER_MAIN);
         toolkitParams.setInProcessResourceLoader(createInProcessResourceLoader());
-        if (!hostChannel.empty()) {
-            toolkitParams.setHostChannel(hostChannel);
-        }
+        toolkitParams.setHostChannel(hostChannel);
     }
 #if AUTO_PUMP
     toolkitParams.setPumpMode(blpwtk2::PumpMode::AUTOMATIC);

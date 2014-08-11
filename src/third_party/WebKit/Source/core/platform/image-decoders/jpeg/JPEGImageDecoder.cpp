@@ -41,7 +41,6 @@
 #include "core/platform/image-decoders/jpeg/JPEGImageDecoder.h"
 
 #include "core/platform/PlatformInstrumentation.h"
-#include "wtf/CPU.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/dtoa/utils.h"
 
@@ -58,16 +57,14 @@ extern "C" {
 }
 
 #if CPU(BIG_ENDIAN) || CPU(MIDDLE_ENDIAN)
-#define ASSUME_LITTLE_ENDIAN 0
-#else
-#define ASSUME_LITTLE_ENDIAN 1
+#error Blink assumes a little-endian target.
 #endif
 
-#if defined(JCS_ALPHA_EXTENSIONS) && ASSUME_LITTLE_ENDIAN
+#if defined(JCS_ALPHA_EXTENSIONS)
 #define TURBO_JPEG_RGB_SWIZZLE
-#if !SK_R32_SHIFT && SK_G32_SHIFT == 8 && SK_B32_SHIFT == 16
+#if SK_B32_SHIFT // Output little-endian RGBA pixels (Android).
 inline J_COLOR_SPACE rgbOutputColorSpace() { return JCS_EXT_RGBA; }
-#else
+#else // Output little-endian BGRA pixels.
 inline J_COLOR_SPACE rgbOutputColorSpace() { return JCS_EXT_BGRA; }
 #endif
 inline bool turboSwizzled(J_COLOR_SPACE colorSpace) { return colorSpace == JCS_EXT_RGBA || colorSpace == JCS_EXT_BGRA; }
@@ -217,6 +214,7 @@ static ImageOrientation readImageOrientation(jpeg_decompress_struct* info)
     return ImageOrientation();
 }
 
+#if USE(QCMSLIB)
 static void readColorProfile(jpeg_decompress_struct* info, ColorProfile& colorProfile)
 {
 #if USE(ICCJPEG)
@@ -245,6 +243,7 @@ static void readColorProfile(jpeg_decompress_struct* info, ColorProfile& colorPr
     UNUSED_PARAM(colorProfile);
 #endif
 }
+#endif
 
 class JPEGImageReader {
     WTF_MAKE_FAST_ALLOCATED;
@@ -726,8 +725,8 @@ bool JPEGImageDecoder::outputScanlines()
     // Initialize the framebuffer if needed.
     ImageFrame& buffer = m_frameBufferCache[0];
     if (buffer.status() == ImageFrame::FrameEmpty) {
-        ASSERT(info->output_width == m_decodedSize.width());
-        ASSERT(info->output_height == m_decodedSize.height());
+        ASSERT(info->output_width == static_cast<JDIMENSION>(m_decodedSize.width()));
+        ASSERT(info->output_height == static_cast<JDIMENSION>(m_decodedSize.height()));
 
         if (!buffer.setSize(info->output_width, info->output_height))
             return setFailed();

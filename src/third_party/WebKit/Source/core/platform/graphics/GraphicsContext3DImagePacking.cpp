@@ -28,7 +28,6 @@
 #include "core/platform/graphics/GraphicsContext3D.h"
 
 #include "core/html/ImageData.h"
-#include "core/html/canvas/CheckedInt.h"
 #include "core/platform/graphics/ImageObserver.h"
 #include "core/platform/graphics/cpu/arm/GraphicsContext3DNEON.h"
 #include "core/platform/image-decoders/ImageDecoder.h"
@@ -1309,7 +1308,7 @@ private:
     void* const m_dstStart;
     const int m_srcStride, m_dstStride;
     bool m_success;
-    OwnArrayPtr<uint8_t> m_unpackedIntermediateSrcData;
+    OwnPtr<uint8_t[]> m_unpackedIntermediateSrcData;
 };
 
 void FormatConverter::convert(GraphicsContext3D::DataFormat srcFormat, GraphicsContext3D::DataFormat dstFormat, GraphicsContext3D::AlphaOp alphaOp)

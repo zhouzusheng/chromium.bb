@@ -44,6 +44,7 @@ class DevToolsHttpHandlerDelegateImpl;
 class ManagedRenderProcessHost;
 class ProcessHostManager;
 class RendererInfoMap;
+class ViewsDelegateImpl;
 
 // This class represents the browser-main-thread's "main".  See
 // blpwtk2_toolkit.h for an explanation about the threads.
@@ -65,6 +66,7 @@ class BrowserMainRunner {
     scoped_ptr<content::BrowserMainRunner> d_impl;
     scoped_ptr<BrowserContextImplManager> d_browserContextImplManager;
     scoped_ptr<DevToolsHttpHandlerDelegateImpl> d_devToolsHttpHandlerDelegate;
+    scoped_ptr<ViewsDelegateImpl> d_viewsDelegate;
 
     DISALLOW_COPY_AND_ASSIGN(BrowserMainRunner);
 };

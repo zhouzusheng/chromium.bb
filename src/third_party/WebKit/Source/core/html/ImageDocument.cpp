@@ -27,10 +27,10 @@
 
 #include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/EventNames.h"
-#include "core/dom/MouseEvent.h"
 #include "core/dom/RawDataDocumentParser.h"
+#include "core/events/EventListener.h"
+#include "core/events/MouseEvent.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/fetch/ImageResource.h"
 #include "core/html/HTMLBodyElement.h"
 #include "core/html/HTMLHeadElement.h"
@@ -40,11 +40,11 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
-#include "core/platform/LocalizedStrings.h"
+#include "wtf/text/StringBuilder.h"
 
 using std::min;
 
@@ -71,7 +71,7 @@ private:
     {
     }
 
-    virtual void handleEvent(ScriptExecutionContext*, Event*);
+    virtual void handleEvent(ExecutionContext*, Event*);
 
     ImageDocument* m_doc;
 };
@@ -106,6 +106,20 @@ static float pageZoomFactor(const Document* document)
     return frame ? frame->pageZoomFactor() : 1;
 }
 
+static String imageTitle(const String& filename, const IntSize& size)
+{
+    StringBuilder result;
+    result.append(filename);
+    result.append(" (");
+    // FIXME: Localize numbers. Safari/OSX shows localized numbers with group
+    // separaters. For example, "1,920x1,080".
+    result.append(String::number(size.width()));
+    result.append(static_cast<UChar>(0xD7)); // U+00D7 (multiplication sign)
+    result.append(String::number(size.height()));
+    result.append(')');
+    return result.toString();
+}
+
 size_t ImageDocumentParser::appendBytes(const char* data, size_t length)
 {
     if (!length)
@@ -113,7 +127,7 @@ size_t ImageDocumentParser::appendBytes(const char* data, size_t length)
 
     Frame* frame = document()->frame();
     Settings* settings = frame->settings();
-    if (!frame->loader()->client()->allowImage(!settings || settings->areImagesEnabled(), document()->url()))
+    if (!frame->loader().client()->allowImage(!settings || settings->areImagesEnabled(), document()->url()))
         return 0;
 
     document()->cachedImage()->appendData(data, length);
@@ -126,7 +140,7 @@ void ImageDocumentParser::finish()
     if (!isStopped() && document()->imageElement()) {
         ImageResource* cachedImage = document()->cachedImage();
         cachedImage->finish();
-        cachedImage->setResponse(document()->frame()->loader()->documentLoader()->response());
+        cachedImage->setResponse(document()->frame()->loader().documentLoader()->response());
 
         // Report the natural image size in the page title, regardless of zoom level.
         // At a zoom level of 1 the image is guaranteed to have an integer size.
@@ -170,8 +184,8 @@ void ImageDocument::createDocumentStructure()
     appendChild(rootElement);
     rootElement->insertedByParser();
 
-    if (frame() && frame()->loader())
-        frame()->loader()->dispatchDocumentElementAvailable();
+    if (frame())
+        frame()->loader().dispatchDocumentElementAvailable();
 
     RefPtr<HTMLHeadElement> head = HTMLHeadElement::create(*this);
     RefPtr<HTMLMetaElement> meta = HTMLMetaElement::create(*this);
@@ -202,7 +216,7 @@ void ImageDocument::createDocumentStructure()
 
 float ImageDocument::scale() const
 {
-    if (!m_imageElement || &m_imageElement->document() != this)
+    if (!m_imageElement || m_imageElement->document() != this)
         return 1.0f;
 
     FrameView* view = frame()->view();
@@ -220,7 +234,7 @@ float ImageDocument::scale() const
 
 void ImageDocument::resizeImageToFit()
 {
-    if (!m_imageElement || &m_imageElement->document() != this || pageZoomFactor(this) > 1)
+    if (!m_imageElement || m_imageElement->document() != this || pageZoomFactor(this) > 1)
         return;
 
     LayoutSize imageSize = m_imageElement->cachedImage()->imageSizeForRenderer(m_imageElement->renderer(), pageZoomFactor(this));
@@ -275,7 +289,7 @@ void ImageDocument::imageUpdated()
 
 void ImageDocument::restoreImageSize()
 {
-    if (!m_imageElement || !m_imageSizeIsKnown || &m_imageElement->document() != this || pageZoomFactor(this) < 1)
+    if (!m_imageElement || !m_imageSizeIsKnown || m_imageElement->document() != this || pageZoomFactor(this) < 1)
         return;
 
     LayoutSize imageSize = m_imageElement->cachedImage()->imageSizeForRenderer(m_imageElement->renderer(), 1.0f);
@@ -292,7 +306,7 @@ void ImageDocument::restoreImageSize()
 
 bool ImageDocument::imageFitsInWindow() const
 {
-    if (!m_imageElement || &m_imageElement->document() != this)
+    if (!m_imageElement || m_imageElement->document() != this)
         return true;
 
     FrameView* view = frame()->view();
@@ -307,7 +321,7 @@ bool ImageDocument::imageFitsInWindow() const
 
 void ImageDocument::windowSizeChanged()
 {
-    if (!m_imageElement || !m_imageSizeIsKnown || &m_imageElement->document() != this)
+    if (!m_imageElement || !m_imageSizeIsKnown || m_imageElement->document() != this)
         return;
 
     bool fitsInWindow = imageFitsInWindow();
@@ -348,7 +362,7 @@ ImageResource* ImageDocument::cachedImage()
 
 bool ImageDocument::shouldShrinkToFit() const
 {
-    return frame()->page()->settings().shrinksStandaloneImagesToFit() && frame()->page()->mainFrame() == frame();
+    return frame()->settings()->shrinksStandaloneImagesToFit() && frame()->page()->mainFrame() == frame();
 }
 
 void ImageDocument::dispose()
@@ -359,11 +373,11 @@ void ImageDocument::dispose()
 
 // --------
 
-void ImageEventListener::handleEvent(ScriptExecutionContext*, Event* event)
+void ImageEventListener::handleEvent(ExecutionContext*, Event* event)
 {
-    if (event->type() == eventNames().resizeEvent)
+    if (event->type() == EventTypeNames::resize)
         m_doc->windowSizeChanged();
-    else if (event->type() == eventNames().clickEvent && event->isMouseEvent()) {
+    else if (event->type() == EventTypeNames::click && event->isMouseEvent()) {
         MouseEvent* mouseEvent = toMouseEvent(event);
         m_doc->imageClicked(mouseEvent->x(), mouseEvent->y());
     }

@@ -22,13 +22,13 @@
 #ifndef RenderView_h
 #define RenderView_h
 
-#include "core/page/FrameView.h"
-#include "core/platform/PODFreeListArena.h"
+#include "core/frame/FrameView.h"
 #include "core/platform/ScrollableArea.h"
 #include "core/rendering/LayoutIndicator.h"
 #include "core/rendering/LayoutState.h"
 #include "core/rendering/RenderBlockFlow.h"
 #include "core/rendering/RenderingConfiguration.h"
+#include "platform/PODFreeListArena.h"
 #include "wtf/OwnPtr.h"
 
 namespace WebCore {
@@ -68,13 +68,13 @@ public:
     virtual LayoutUnit availableLogicalHeight(AvailableLogicalHeightType) const OVERRIDE;
 
     // The same as the FrameView's layoutHeight/layoutWidth but with null check guards.
-    int viewHeight(ScrollableArea::VisibleContentRectIncludesScrollbars scrollbarInclusion = ScrollableArea::ExcludeScrollbars) const;
-    int viewWidth(ScrollableArea::VisibleContentRectIncludesScrollbars scrollbarInclusion = ScrollableArea::ExcludeScrollbars) const;
-    int viewLogicalWidth(ScrollableArea::VisibleContentRectIncludesScrollbars scrollbarInclusion = ScrollableArea::ExcludeScrollbars) const
+    int viewHeight(ScrollableArea::IncludeScrollbarsInRect scrollbarInclusion = ScrollableArea::ExcludeScrollbars) const;
+    int viewWidth(ScrollableArea::IncludeScrollbarsInRect scrollbarInclusion = ScrollableArea::ExcludeScrollbars) const;
+    int viewLogicalWidth(ScrollableArea::IncludeScrollbarsInRect scrollbarInclusion = ScrollableArea::ExcludeScrollbars) const
     {
         return style()->isHorizontalWritingMode() ? viewWidth(scrollbarInclusion) : viewHeight(scrollbarInclusion);
     }
-    int viewLogicalHeight(ScrollableArea::VisibleContentRectIncludesScrollbars scrollbarInclusion = ScrollableArea::ExcludeScrollbars) const;
+    int viewLogicalHeight(ScrollableArea::IncludeScrollbarsInRect scrollbarInclusion = ScrollableArea::ExcludeScrollbars) const;
 
     float zoomFactor() const;
 
@@ -266,6 +266,9 @@ private:
     void checkLayoutState(const LayoutState&);
 #endif
 
+    void positionDialog(RenderBox*);
+    void positionDialogs();
+
     size_t getRetainedWidgets(Vector<RenderWidget*>&);
     void releaseWidgets(Vector<RenderWidget*>&);
 
@@ -306,25 +309,7 @@ private:
     unsigned m_renderCounterCount;
 };
 
-inline RenderView* toRenderView(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isRenderView());
-    return static_cast<RenderView*>(object);
-}
-
-inline const RenderView* toRenderView(const RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isRenderView());
-    return static_cast<const RenderView*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderView(const RenderView*);
-
-ALWAYS_INLINE RenderView* Document::renderView() const
-{
-    return toRenderView(renderer());
-}
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderView, isRenderView());
 
 // Stack-based class to assist with LayoutState push/pop
 class LayoutStateMaintainer {

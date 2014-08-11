@@ -18,6 +18,7 @@
 #include "cc/quads/picture_draw_quad.h"
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
+#include "cc/resources/tile_manager.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "ui/gfx/quad_f.h"
 #include "ui/gfx/rect_conversions.h"
@@ -64,10 +65,18 @@ void PictureLayerImpl::PushPropertiesTo(LayerImpl* base_layer) {
   // It's possible this layer was never drawn or updated (e.g. because it was
   // a descendant of an opacity 0 layer).
   DoPostCommitInitializationIfNeeded();
+  PictureLayerImpl* layer_impl = static_cast<PictureLayerImpl*>(base_layer);
+
+  // We have already synced the important bits from the the active layer, and
+  // we will soon swap out its tilings and use them for recycling. However,
+  // there are now tiles in this layer's tilings that were unref'd and replaced
+  // with new tiles (due to invalidation). This resets all active priorities on
+  // the to-be-recycled tiling to ensure replaced tiles don't linger and take
+  // memory (due to a stale 'active' priority).
+  if (layer_impl->tilings_)
+    layer_impl->tilings_->DidBecomeRecycled();
 
   LayerImpl::PushPropertiesTo(base_layer);
-
-  PictureLayerImpl* layer_impl = static_cast<PictureLayerImpl*>(base_layer);
 
   // When the pending tree pushes to the active tree, the pending twin
   // disappears.
@@ -227,7 +236,7 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
       case ManagedTileState::TileVersion::RESOURCE_MODE: {
         gfx::RectF texture_rect = iter.texture_rect();
         gfx::Rect opaque_rect = iter->opaque_rect();
-        opaque_rect.Intersect(content_rect);
+        opaque_rect.Intersect(geometry_rect);
 
         if (iter->contents_scale() != ideal_contents_scale_)
           append_quads_data->had_incomplete_tile = true;
@@ -246,7 +255,7 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
       case ManagedTileState::TileVersion::PICTURE_PILE_MODE: {
         gfx::RectF texture_rect = iter.texture_rect();
         gfx::Rect opaque_rect = iter->opaque_rect();
-        opaque_rect.Intersect(content_rect);
+        opaque_rect.Intersect(geometry_rect);
 
         ResourceProvider* resource_provider =
             layer_tree_impl()->resource_provider();
@@ -453,8 +462,7 @@ scoped_refptr<Tile> PictureLayerImpl::CreateTile(PictureLayerTiling* tiling,
   if (!pile_->CanRaster(tiling->contents_scale(), content_rect))
     return scoped_refptr<Tile>();
 
-  return make_scoped_refptr(new Tile(
-      layer_tree_impl()->tile_manager(),
+  return layer_tree_impl()->tile_manager()->CreateTile(
       pile_.get(),
       content_rect.size(),
       content_rect,
@@ -462,7 +470,7 @@ scoped_refptr<Tile> PictureLayerImpl::CreateTile(PictureLayerTiling* tiling,
       tiling->contents_scale(),
       id(),
       layer_tree_impl()->source_frame_number(),
-      is_using_lcd_text_));
+      is_using_lcd_text_);
 }
 
 void PictureLayerImpl::UpdatePile(Tile* tile) {
@@ -545,6 +553,7 @@ void PictureLayerImpl::SyncFromActiveLayer(const PictureLayerImpl* other) {
 
   if (!DrawsContent()) {
     ResetRasterScale();
+    tilings_->RemoveAllTilings();
     return;
   }
 
@@ -970,7 +979,10 @@ void PictureLayerImpl::CleanUpTilingsOnActiveLayer(
   }
 
   for (size_t i = 0; i < to_remove.size(); ++i) {
-    if (twin)
+    const PictureLayerTiling* twin_tiling = GetTwinTiling(to_remove[i]);
+    // Only remove tilings from the twin layer if they have
+    // NON_IDEAL_RESOLUTION.
+    if (twin_tiling && twin_tiling->resolution() == NON_IDEAL_RESOLUTION)
       twin->RemoveTiling(to_remove[i]->contents_scale());
     tilings_->Remove(to_remove[i]);
   }
@@ -1059,6 +1071,7 @@ void PictureLayerImpl::GetDebugBorderProperties(
 }
 
 void PictureLayerImpl::AsValueInto(base::DictionaryValue* state) const {
+  const_cast<PictureLayerImpl*>(this)->DoPostCommitInitializationIfNeeded();
   LayerImpl::AsValueInto(state);
   state->SetDouble("ideal_contents_scale", ideal_contents_scale_);
   state->SetDouble("geometry_contents_scale", contents_scale_x());
@@ -1082,9 +1095,11 @@ void PictureLayerImpl::AsValueInto(base::DictionaryValue* state) const {
     coverage_tiles->Append(tile_data.release());
   }
   state->Set("coverage_tiles", coverage_tiles.release());
+  state->SetBoolean("is_using_lcd_text", is_using_lcd_text_);
 }
 
 size_t PictureLayerImpl::GPUMemoryUsageInBytes() const {
+  const_cast<PictureLayerImpl*>(this)->DoPostCommitInitializationIfNeeded();
   return tilings_->GPUMemoryUsageInBytes();
 }
 

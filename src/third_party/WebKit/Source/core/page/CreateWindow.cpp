@@ -28,14 +28,14 @@
 #include "core/page/CreateWindow.h"
 
 #include "core/dom/Document.h"
+#include "core/frame/Frame.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
-#include "core/page/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
 #include "core/page/WindowFeatures.h"
-#include "core/platform/network/ResourceRequest.h"
+#include "platform/network/ResourceRequest.h"
 #include "weborigin/KURL.h"
 #include "weborigin/SecurityOrigin.h"
 #include "weborigin/SecurityPolicy.h"
@@ -47,7 +47,7 @@ static Frame* createWindow(Frame* openerFrame, Frame* lookupFrame, const FrameLo
     ASSERT(!features.dialog || request.frameName().isEmpty());
 
     if (!request.frameName().isEmpty() && request.frameName() != "_blank") {
-        if (Frame* frame = lookupFrame->loader()->findFrameForNavigation(request.frameName(), openerFrame->document())) {
+        if (Frame* frame = lookupFrame->loader().findFrameForNavigation(request.frameName(), openerFrame->document())) {
             if (request.frameName() != "_self") {
                 if (Page* page = frame->page())
                     page->chrome().focus();
@@ -66,7 +66,7 @@ static Frame* createWindow(Frame* openerFrame, Frame* lookupFrame, const FrameLo
 
     if (openerFrame->settings() && !openerFrame->settings()->supportsMultipleWindows()) {
         created = false;
-        return openerFrame->tree()->top();
+        return openerFrame->tree().top();
     }
 
     Page* oldPage = openerFrame->page();
@@ -79,10 +79,10 @@ static Frame* createWindow(Frame* openerFrame, Frame* lookupFrame, const FrameLo
 
     Frame* frame = page->mainFrame();
 
-    frame->loader()->forceSandboxFlags(openerFrame->document()->sandboxFlags());
+    frame->loader().forceSandboxFlags(openerFrame->document()->sandboxFlags());
 
     if (request.frameName() != "_blank")
-        frame->tree()->setName(request.frameName());
+        frame->tree().setName(request.frameName());
 
     page->chrome().setWindowFeatures(features);
 
@@ -125,10 +125,10 @@ Frame* createWindow(const String& urlString, const AtomicString& frameName, cons
     }
 
     // For whatever reason, Firefox uses the first frame to determine the outgoingReferrer. We replicate that behavior here.
-    String referrer = SecurityPolicy::generateReferrerHeader(firstFrame->document()->referrerPolicy(), completedURL, firstFrame->loader()->outgoingReferrer());
+    String referrer = SecurityPolicy::generateReferrerHeader(firstFrame->document()->referrerPolicy(), completedURL, firstFrame->loader().outgoingReferrer());
 
     ResourceRequest request(completedURL, referrer);
-    FrameLoader::addHTTPOriginIfNeeded(request, firstFrame->loader()->outgoingOrigin());
+    FrameLoader::addHTTPOriginIfNeeded(request, firstFrame->loader().outgoingOrigin());
     FrameLoadRequest frameRequest(activeWindow->document()->securityOrigin(), request, frameName);
 
     // We pass the opener frame for the lookupFrame in case the active frame is different from
@@ -138,7 +138,7 @@ Frame* createWindow(const String& urlString, const AtomicString& frameName, cons
     if (!newFrame)
         return 0;
 
-    newFrame->loader()->setOpener(openerFrame);
+    newFrame->loader().setOpener(openerFrame);
     newFrame->page()->setOpenedByDOM();
 
     if (newFrame->domWindow()->isInsecureScriptAccess(activeWindow, completedURL))
@@ -149,9 +149,9 @@ Frame* createWindow(const String& urlString, const AtomicString& frameName, cons
 
     if (created) {
         FrameLoadRequest request(activeWindow->document()->securityOrigin(), ResourceRequest(completedURL, referrer));
-        newFrame->loader()->load(request);
+        newFrame->loader().load(request);
     } else if (!urlString.isEmpty()) {
-        newFrame->navigationScheduler()->scheduleLocationChange(activeWindow->document()->securityOrigin(), completedURL.string(), referrer, false);
+        newFrame->navigationScheduler().scheduleLocationChange(activeWindow->document()->securityOrigin(), completedURL.string(), referrer, false);
     }
     return newFrame;
 }

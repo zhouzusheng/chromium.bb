@@ -21,7 +21,6 @@
 #include "core/rendering/RootInlineBox.h"
 
 #include "core/dom/Document.h"
-#include "core/platform/text/BidiResolver.h"
 #include "core/rendering/EllipsisBox.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/InlineTextBox.h"
@@ -31,6 +30,7 @@
 #include "core/rendering/RenderInline.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/VerticalPositionCache.h"
+#include "platform/text/BidiResolver.h"
 #include "wtf/unicode/Unicode.h"
 
 using namespace std;
@@ -291,14 +291,12 @@ LayoutUnit RootInlineBox::alignBoxesInBlockDirection(LayoutUnit heightOfBlock, G
     return heightOfBlock + maxHeight;
 }
 
-#if ENABLE(CSS3_TEXT)
 float RootInlineBox::maxLogicalTop() const
 {
     float maxLogicalTop = 0;
     computeMaxLogicalTop(maxLogicalTop);
     return maxLogicalTop;
 }
-#endif // CSS3_TEXT
 
 LayoutUnit RootInlineBox::beforeAnnotationsAdjustment() const
 {

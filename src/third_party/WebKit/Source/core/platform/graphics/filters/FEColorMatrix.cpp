@@ -29,9 +29,7 @@
 #include "core/platform/graphics/filters/Filter.h"
 #include "core/platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "core/platform/graphics/skia/NativeImageSkia.h"
-#include "core/platform/text/TextStream.h"
-#include "core/rendering/RenderTreeAsText.h"
-
+#include "platform/text/TextStream.h"
 #include "wtf/MathExtras.h"
 #include "wtf/Uint8ClampedArray.h"
 
@@ -285,7 +283,7 @@ PassRefPtr<SkImageFilter> FEColorMatrix::createImageFilter(SkiaImageFilterBuilde
 {
     RefPtr<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
     SkAutoTUnref<SkColorFilter> filter(createColorFilter(m_type, m_values.data()));
-    SkIRect rect = getCropRect(builder->cropOffset());
+    SkImageFilter::CropRect rect = getCropRect(builder->cropOffset());
     return adoptRef(SkColorFilterImageFilter::Create(filter, input.get(), &rect));
 }
 

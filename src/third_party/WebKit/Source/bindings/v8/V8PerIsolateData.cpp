@@ -117,7 +117,7 @@ void V8PerIsolateData::setPrivateTemplate(WrapperWorldType currentWorldType, voi
     templateMap(currentWorldType).add(privatePointer, UnsafePersistent<v8::FunctionTemplate>(m_isolate, templ));
 }
 
-v8::Handle<v8::FunctionTemplate> V8PerIsolateData::rawTemplate(WrapperTypeInfo* info, WrapperWorldType currentWorldType)
+v8::Handle<v8::FunctionTemplate> V8PerIsolateData::rawTemplate(const WrapperTypeInfo* info, WrapperWorldType currentWorldType)
 {
     TemplateMap& templates = rawTemplateMap(currentWorldType);
     TemplateMap::iterator result = templates.find(info);
@@ -139,7 +139,7 @@ v8::Local<v8::Context> V8PerIsolateData::ensureRegexContext()
     return m_regexContext.newLocal(m_isolate);
 }
 
-bool V8PerIsolateData::hasInstance(WrapperTypeInfo* info, v8::Handle<v8::Value> value, WrapperWorldType currentWorldType)
+bool V8PerIsolateData::hasInstance(const WrapperTypeInfo* info, v8::Handle<v8::Value> value, WrapperWorldType currentWorldType)
 {
     TemplateMap& templates = rawTemplateMap(currentWorldType);
     TemplateMap::iterator result = templates.find(info);
@@ -149,7 +149,7 @@ bool V8PerIsolateData::hasInstance(WrapperTypeInfo* info, v8::Handle<v8::Value> 
     return result->value.newLocal(m_isolate)->HasInstance(value);
 }
 
-void V8PerIsolateData::constructorOfToString(const v8::FunctionCallbackInfo<v8::Value>& args)
+void V8PerIsolateData::constructorOfToString(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     // The DOM constructors' toString functions grab the current toString
     // for Functions by taking the toString function of itself and then
@@ -159,12 +159,12 @@ void V8PerIsolateData::constructorOfToString(const v8::FunctionCallbackInfo<v8::
     // changes to a DOM constructor's toString's toString will cause the
     // toString of the DOM constructor itself to change. This is extremely
     // obscure and unlikely to be a problem.
-    v8::Handle<v8::Value> value = args.Callee()->Get(v8::String::NewSymbol("toString"));
+    v8::Handle<v8::Value> value = info.Callee()->Get(v8::String::NewSymbol("toString"));
     if (!value->IsFunction()) {
-        v8SetReturnValue(args, v8::String::Empty(args.GetIsolate()));
+        v8SetReturnValue(info, v8::String::Empty(info.GetIsolate()));
         return;
     }
-    v8SetReturnValue(args, V8ScriptRunner::callInternalFunction(v8::Handle<v8::Function>::Cast(value), args.This(), 0, 0, v8::Isolate::GetCurrent()));
+    v8SetReturnValue(info, V8ScriptRunner::callInternalFunction(v8::Handle<v8::Function>::Cast(value), info.This(), 0, 0, v8::Isolate::GetCurrent()));
 }
 
 } // namespace WebCore

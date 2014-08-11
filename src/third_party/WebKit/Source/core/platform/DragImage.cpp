@@ -27,22 +27,22 @@
 #include "core/platform/DragImage.h"
 
 #include "core/platform/graphics/BitmapImage.h"
-#include "core/platform/graphics/Color.h"
-#include "core/platform/graphics/FloatPoint.h"
-#include "core/platform/graphics/FloatRect.h"
 #include "core/platform/graphics/Font.h"
 #include "core/platform/graphics/FontCache.h"
-#include "core/platform/graphics/FontDescription.h"
-#include "core/platform/graphics/FontMetrics.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/Image.h"
 #include "core/platform/graphics/ImageBuffer.h"
-#include "core/platform/graphics/IntPoint.h"
-#include "core/platform/graphics/IntSize.h"
 #include "core/platform/graphics/StringTruncator.h"
-#include "core/platform/graphics/TextRun.h"
 #include "core/platform/graphics/skia/NativeImageSkia.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
+#include "platform/fonts/FontDescription.h"
+#include "platform/fonts/FontMetrics.h"
+#include "platform/geometry/FloatPoint.h"
+#include "platform/geometry/FloatRect.h"
+#include "platform/geometry/IntPoint.h"
+#include "platform/geometry/IntSize.h"
+#include "platform/graphics/Color.h"
+#include "platform/graphics/TextRun.h"
+#include "platform/transforms/AffineTransform.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkMatrix.h"
@@ -58,10 +58,8 @@ namespace WebCore {
 const float kDragLabelBorderX = 4;
 // Keep border_y in synch with DragController::LinkDragBorderInset.
 const float kDragLabelBorderY = 2;
-const float kDragLabelRadius = 5;
 const float kLabelBorderYOffset = 2;
 
-const float kMinDragLabelWidthBeforeClip = 120;
 const float kMaxDragLabelWidth = 300;
 const float kMaxDragLabelStringWidth = (kMaxDragLabelWidth - 2 * kDragLabelBorderX);
 
@@ -97,7 +95,7 @@ PassOwnPtr<DragImage> DragImage::create(Image* image, RespectImageOrientationEnu
                 return nullptr;
 
             SkCanvas canvas(skBitmap);
-            canvas.concat(orientation.transformFromDefault(sizeRespectingOrientation));
+            canvas.concat(affineTransformToSkMatrix(orientation.transformFromDefault(sizeRespectingOrientation)));
             canvas.drawBitmapRect(bitmap->bitmap(), 0, destRect);
 
             return adoptPtr(new DragImage(skBitmap, bitmap->resolutionScale()));
@@ -251,7 +249,7 @@ void DragImage::scale(float scaleX, float scaleY)
 
 void DragImage::dissolveToFraction(float fraction)
 {
-    m_bitmap.setIsOpaque(false);
+    m_bitmap.setAlphaType(kPremul_SkAlphaType);
     SkAutoLockPixels lock(m_bitmap);
 
     for (int row = 0; row < m_bitmap.height(); ++row) {

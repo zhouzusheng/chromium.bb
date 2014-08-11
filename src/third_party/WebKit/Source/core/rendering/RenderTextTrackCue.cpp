@@ -24,11 +24,9 @@
  */
 
 #include "config.h"
-
 #include "core/rendering/RenderTextTrackCue.h"
 
 #include "core/html/track/TextTrackCue.h"
-#include "core/html/track/TextTrackCueGeneric.h"
 #include "core/rendering/RenderView.h"
 
 namespace WebCore {
@@ -43,24 +41,19 @@ void RenderTextTrackCue::layout()
 {
     RenderBlockFlow::layout();
 
-#if ENABLE(WEBVTT_REGIONS)
     // If WebVTT Regions are used, the regular WebVTT layout algorithm is no
     // longer necessary, since cues having the region parameter set do not have
     // any positioning parameters. Also, in this case, the regions themselves
     // have positioning information.
     if (!m_cue->regionId().isEmpty())
         return;
-#endif
 
     LayoutStateMaintainer statePusher(view(), this, locationOffset(), hasTransform() || hasReflection() || style()->isFlippedBlocksWritingMode());
 
-    if (m_cue->cueType()== TextTrackCue::WebVTT) {
-        if (m_cue->snapToLines())
-            repositionCueSnapToLinesSet();
-        else
-            repositionCueSnapToLinesNotSet();
-    } else
-        repositionGenericCue();
+    if (m_cue->snapToLines())
+        repositionCueSnapToLinesSet();
+    else
+        repositionCueSnapToLinesNotSet();
 
     statePusher.pop();
 }
@@ -264,24 +257,6 @@ void RenderTextTrackCue::repositionCueSnapToLinesSet()
         if (adjustment)
             setY(y() + adjustment);
     }
-}
-
-void RenderTextTrackCue::repositionGenericCue()
-{
-    TextTrackCueGeneric* cue = static_cast<TextTrackCueGeneric*>(m_cue);
-    if (!cue->useDefaultPosition())
-        return;
-
-    ASSERT(firstChild());
-
-    InlineFlowBox* firstLineBox;
-    if (!findFirstLineBox(firstLineBox))
-        return;
-
-    LayoutUnit parentWidth = containingBlock()->logicalWidth();
-    LayoutUnit width = firstLineBox->width();
-    LayoutUnit right = (parentWidth / 2) - (width / 2);
-    setX(right);
 }
 
 void RenderTextTrackCue::repositionCueSnapToLinesNotSet()

@@ -33,9 +33,7 @@
 #include "core/loader/NavigationScheduler.h"
 
 #include "bindings/v8/ScriptController.h"
-#include "core/dom/Event.h"
-#include "core/dom/UserGestureIndicator.h"
-#include "core/history/BackForwardController.h"
+#include "core/events/Event.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/DocumentLoader.h"
@@ -43,9 +41,12 @@
 #include "core/loader/FormSubmission.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
+#include "core/loader/FrameLoaderClient.h"
 #include "core/loader/FrameLoaderStateMachine.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
+#include "core/page/BackForwardClient.h"
 #include "core/page/Page.h"
+#include "platform/UserGestureIndicator.h"
 #include "wtf/CurrentTime.h"
 
 namespace WebCore {
@@ -59,7 +60,7 @@ public:
         : m_delay(delay)
         , m_lockBackForwardList(lockBackForwardList)
         , m_isLocationChange(isLocationChange)
-        , m_wasUserGesture(ScriptController::processingUserGesture())
+        , m_wasUserGesture(UserGestureIndicator::processingUserGesture())
     {
         if (m_wasUserGesture)
             m_userGestureToken = UserGestureIndicator::currentToken();
@@ -111,8 +112,8 @@ protected:
         OwnPtr<UserGestureIndicator> gestureIndicator = createUserGestureIndicator();
         FrameLoadRequest request(m_securityOrigin.get(), ResourceRequest(KURL(ParsedURLString, m_url), m_referrer), "_self");
         request.setLockBackForwardList(lockBackForwardList());
-        request.setClientRedirect(true);
-        frame->loader()->load(request);
+        request.setClientRedirect(ClientRedirect);
+        frame->loader().load(request);
     }
 
     virtual void didStartTimer(Frame* frame, Timer<NavigationScheduler>* timer)
@@ -122,7 +123,7 @@ protected:
         m_haveToldClient = true;
 
         OwnPtr<UserGestureIndicator> gestureIndicator = createUserGestureIndicator();
-        if (frame->loader()->history()->currentItemShouldBeReplaced())
+        if (frame->loader().history()->currentItemShouldBeReplaced())
             setLockBackForwardList(true);
     }
 
@@ -145,7 +146,7 @@ public:
         clearUserGesture();
     }
 
-    virtual bool shouldStartTimer(Frame* frame) { return frame->loader()->allAncestorsAreComplete(); }
+    virtual bool shouldStartTimer(Frame* frame) { return frame->loader().allAncestorsAreComplete(); }
 
     virtual void fire(Frame* frame)
     {
@@ -154,8 +155,8 @@ public:
         request.setLockBackForwardList(lockBackForwardList());
         if (equalIgnoringFragmentIdentifier(frame->document()->url(), request.resourceRequest().url()))
             request.resourceRequest().setCachePolicy(ReloadIgnoringCacheData);
-        request.setClientRedirect(true);
-        frame->loader()->load(request);
+        request.setClientRedirect(ClientRedirect);
+        frame->loader().load(request);
     }
 };
 
@@ -177,8 +178,8 @@ public:
         OwnPtr<UserGestureIndicator> gestureIndicator = createUserGestureIndicator();
         FrameLoadRequest request(securityOrigin(), ResourceRequest(KURL(ParsedURLString, url()), referrer(), ReloadIgnoringCacheData), "_self");
         request.setLockBackForwardList(lockBackForwardList());
-        request.setClientRedirect(true);
-        frame->loader()->load(request);
+        request.setClientRedirect(ClientRedirect);
+        frame->loader().load(request);
     }
 };
 
@@ -199,12 +200,12 @@ public:
             frameRequest.setLockBackForwardList(lockBackForwardList());
             // Special case for go(0) from a frame -> reload only the frame
             // To follow Firefox and IE's behavior, history reload can only navigate the self frame.
-            frame->loader()->load(frameRequest);
+            frame->loader().load(frameRequest);
             return;
         }
         // go(i!=0) from a frame navigates into the history of the frame only,
         // in both IE and NS (but not in Mozilla). We can't easily do that.
-        frame->page()->backForward().goBackOrForward(m_historySteps);
+        frame->page()->mainFrame()->loader().client()->navigateBackForward(m_historySteps);
     }
 
 private:
@@ -214,7 +215,7 @@ private:
 class ScheduledFormSubmission : public ScheduledNavigation {
 public:
     ScheduledFormSubmission(PassRefPtr<FormSubmission> submission, bool lockBackForwardList)
-        : ScheduledNavigation(0, lockBackForwardList, submission->target().isNull())
+        : ScheduledNavigation(0, lockBackForwardList, true)
         , m_submission(submission)
         , m_haveToldClient(false)
     {
@@ -229,7 +230,7 @@ public:
         frameRequest.setLockBackForwardList(lockBackForwardList());
         frameRequest.setTriggeringEvent(m_submission->event());
         frameRequest.setFormState(m_submission->state());
-        frame->loader()->load(frameRequest);
+        frame->loader().load(frameRequest);
     }
 
     virtual void didStartTimer(Frame* frame, Timer<NavigationScheduler>* timer)
@@ -239,7 +240,7 @@ public:
         m_haveToldClient = true;
 
         OwnPtr<UserGestureIndicator> gestureIndicator = createUserGestureIndicator();
-        if (frame->loader()->history()->currentItemShouldBeReplaced())
+        if (frame->loader().history()->currentItemShouldBeReplaced())
             setLockBackForwardList(true);
     }
 
@@ -303,13 +304,13 @@ bool NavigationScheduler::mustLockBackForwardList(Frame* targetFrame)
 {
     // Non-user navigation before the page has finished firing onload should not create a new back/forward item.
     // See https://webkit.org/b/42861 for the original motivation for this.
-    if (!ScriptController::processingUserGesture() && !targetFrame->document()->loadEventFinished())
+    if (!UserGestureIndicator::processingUserGesture() && !targetFrame->document()->loadEventFinished())
         return true;
 
     // Navigation of a subframe during loading of an ancestor frame does not create a new back/forward item.
     // The definition of "during load" is any time before all handlers for the load event have been run.
     // See https://bugs.webkit.org/show_bug.cgi?id=14957 for the original motivation for this.
-    return targetFrame->tree()->parent() && !targetFrame->tree()->parent()->loader()->allAncestorsAreComplete();
+    return targetFrame->tree().parent() && !targetFrame->tree().parent()->loader().allAncestorsAreComplete();
 }
 
 void NavigationScheduler::scheduleLocationChange(SecurityOrigin* securityOrigin, const String& url, const String& referrer, bool lockBackForwardList)
@@ -321,8 +322,6 @@ void NavigationScheduler::scheduleLocationChange(SecurityOrigin* securityOrigin,
 
     lockBackForwardList = lockBackForwardList || mustLockBackForwardList(m_frame);
 
-    FrameLoader* loader = m_frame->loader();
-
     // If the URL we're going to navigate to is the same as the current one, except for the
     // fragment part, we don't need to schedule the location change. We'll skip this
     // optimization for cross-origin navigations to minimize the navigator's ability to
@@ -332,8 +331,8 @@ void NavigationScheduler::scheduleLocationChange(SecurityOrigin* securityOrigin,
         if (parsedURL.hasFragmentIdentifier() && equalIgnoringFragmentIdentifier(m_frame->document()->url(), parsedURL)) {
             FrameLoadRequest request(securityOrigin, ResourceRequest(m_frame->document()->completeURL(url), referrer), "_self");
             request.setLockBackForwardList(lockBackForwardList);
-            request.setClientRedirect(true);
-            loader->load(request);
+            request.setClientRedirect(ClientRedirect);
+            m_frame->loader().load(request);
             return;
         }
     }
@@ -362,7 +361,7 @@ void NavigationScheduler::scheduleRefresh()
     if (url.isEmpty())
         return;
 
-    schedule(adoptPtr(new ScheduledRefresh(m_frame->document()->securityOrigin(), url.string(), m_frame->loader()->outgoingReferrer())));
+    schedule(adoptPtr(new ScheduledRefresh(m_frame->document()->securityOrigin(), url.string(), m_frame->loader().outgoingReferrer())));
 }
 
 void NavigationScheduler::scheduleHistoryNavigation(int steps)
@@ -372,8 +371,8 @@ void NavigationScheduler::scheduleHistoryNavigation(int steps)
 
     // Invalid history navigations (such as history.forward() during a new load) have the side effect of cancelling any scheduled
     // redirects. We also avoid the possibility of cancelling the current load by avoiding the scheduled redirection altogether.
-    BackForwardController& backForward = m_frame->page()->backForward();
-    if (steps > backForward.forwardCount() || -steps > backForward.backCount()) {
+    BackForwardClient& backForward = m_frame->page()->backForward();
+    if (steps > backForward.forwardListCount() || -steps > backForward.backListCount()) {
         cancel();
         return;
     }

@@ -34,6 +34,7 @@
 #include <content/public/common/context_menu_params.h>
 #include <content/public/common/menu_item.h>
 #include <third_party/WebKit/public/web/WebContextMenuData.h>
+#include <ui/aura/root_window.h>
 
 namespace {
 
@@ -104,14 +105,15 @@ void WebContentsViewDelegateImpl::ShowContextMenu(
     WebViewImpl* webViewImpl = static_cast<WebViewImpl*>(d_webContents->GetDelegate());
     webViewImpl->saveCustomContextMenuContext(params.custom_context);
 
-    POINT point = { params.x, params.y };
-    ClientToScreen(webViewImpl->getNativeView(), &point);
+    gfx::Point point(params.x, params.y);
+    aura::RootWindow* rootWindow = webViewImpl->getNativeView()->GetDispatcher();
+    rootWindow->ConvertPointToNativeScreen(&point);
 
     bool hasSelection = !params.selection_text.empty();
 
     ContextMenuParams params2;
     ContextMenuParamsImpl* params2Impl = getContextMenuParamsImpl(params2);
-    params2Impl->d_pointOnScreen = point;
+    params2Impl->d_pointOnScreen = point.ToPOINT();
     params2Impl->d_canCut = params.is_editable && (params.edit_flags & WebKit::WebContextMenuData::CanCut);
     params2Impl->d_canCopy = hasSelection || (params.is_editable && (params.edit_flags & WebKit::WebContextMenuData::CanCopy));
     params2Impl->d_canPaste = params.is_editable && (params.edit_flags & WebKit::WebContextMenuData::CanPaste);

@@ -141,6 +141,7 @@ private:
 
     virtual void copyNonAttributePropertiesFromElement(const Element&) OVERRIDE;
 
+    void submitDialog(PassRefPtr<FormSubmission>);
     void submit(Event*, bool activateSubmitButton, bool processingUserGesture, FormSubmissionTrigger);
 
     void scheduleFormSubmission(PassRefPtr<FormSubmission>);
@@ -160,7 +161,7 @@ private:
     void addToPastNamesMap(Node*, const AtomicString& pastName);
     void removeFromPastNamesMap(HTMLElement&);
 
-    typedef HashMap<AtomicString, RefPtr<Node> > PastNamesMap;
+    typedef HashMap<AtomicString, Node*> PastNamesMap;
 
     FormSubmission::Attributes m_attributes;
     OwnPtr<PastNamesMap> m_pastNamesMap;
@@ -186,11 +187,7 @@ private:
     Timer<HTMLFormElement> m_requestAutocompleteTimer;
 };
 
-inline HTMLFormElement* toHTMLFormElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::formTag));
-    return static_cast<HTMLFormElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLFormElement, hasTagName(HTMLNames::formTag));
 
 } // namespace WebCore
 

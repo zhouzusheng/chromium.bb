@@ -23,9 +23,9 @@
             '<(DEPTH)/gpu/gpu.gyp:gles2_implementation',
             '<(DEPTH)/skia/skia.gyp:skia',
             '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink_minimal',
-            '<(DEPTH)/third_party/angle_dx11/src/build_angle.gyp:translator_glsl',
+            '<(DEPTH)/third_party/angle_dx11/src/build_angle.gyp:translator',
             '<(DEPTH)/ui/gl/gl.gyp:gl',
-            '<(DEPTH)/ui/ui.gyp:ui',
+            '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
           ],
           'sources': [
             # This list contains all .h and .cc in gpu except for test code.
@@ -35,8 +35,6 @@
             'gl_bindings_skia_cmd_buffer.h',
             'grcontext_for_webgraphicscontext3d.cc',
             'grcontext_for_webgraphicscontext3d.h',
-            'managed_memory_policy_convert.cc',
-            'managed_memory_policy_convert.h',
             'test_context_provider_factory.cc',
             'test_context_provider_factory.h',
             'webgraphicscontext3d_in_process_command_buffer_impl.cc',

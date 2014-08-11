@@ -37,13 +37,12 @@ class DevToolsHttpHandlerDelegateImpl
     virtual ~DevToolsHttpHandlerDelegateImpl();
 
     // ====== DevToolsHttpHandlerDelegate overrides =======
-    virtual std::string GetDiscoveryPageHTML() OVERRIDE { return ""; }
+    virtual std::string GetDiscoveryPageHTML() OVERRIDE { return std::string(); }
     virtual bool BundlesFrontendResources() OVERRIDE { return true; }
     virtual base::FilePath GetDebugFrontendDir() OVERRIDE { return base::FilePath(); }
-    virtual std::string GetPageThumbnailData(const GURL& url) OVERRIDE { return ""; }
-    virtual content::RenderViewHost* CreateNewTarget() OVERRIDE { return 0; }
-    virtual TargetType GetTargetType(content::RenderViewHost*) OVERRIDE { return kTargetTypeTab; }
-    virtual std::string GetViewDescription(content::RenderViewHost*) OVERRIDE { return ""; }
+    virtual std::string GetPageThumbnailData(const GURL& url) OVERRIDE { return std::string(); }
+    virtual scoped_ptr<content::DevToolsTarget> CreateNewTarget(const GURL& url) OVERRIDE;
+    virtual void EnumerateTargets(TargetCallback callback) OVERRIDE;
     virtual scoped_ptr<net::StreamListenSocket> CreateSocketForTethering(
         net::StreamListenSocket::Delegate* delegate,
         std::string* name) OVERRIDE { return scoped_ptr<net::StreamListenSocket>(); }

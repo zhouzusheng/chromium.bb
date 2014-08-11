@@ -27,8 +27,6 @@
 #include "core/platform/Scrollbar.h"
 
 #include <algorithm>
-#include "core/platform/PlatformGestureEvent.h"
-#include "core/platform/PlatformMouseEvent.h"
 #include "core/platform/ScrollAnimator.h"
 #include "core/platform/ScrollableArea.h"
 #include "core/platform/ScrollbarTheme.h"
@@ -37,8 +35,11 @@
 // FIXME: The following #includes are a layering violation and should be removed.
 #include "core/accessibility/AXObjectCache.h"
 #include "core/page/EventHandler.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
+
+#include "platform/PlatformGestureEvent.h"
+#include "platform/PlatformMouseEvent.h"
 
 using namespace std;
 
@@ -98,6 +99,22 @@ Scrollbar::~Scrollbar()
     stopTimerIfNeeded();
 
     m_theme->unregisterScrollbar(this);
+}
+
+void Scrollbar::removeFromParent()
+{
+    if (parent())
+        toScrollView(parent())->removeChild(this);
+}
+
+ScrollView* Scrollbar::parentScrollView() const
+{
+    return toScrollView(parent());
+}
+
+ScrollView* Scrollbar::rootScrollView() const
+{
+    return toScrollView(root());
 }
 
 ScrollbarOverlayStyle Scrollbar::scrollbarOverlayStyle() const
@@ -340,7 +357,7 @@ bool Scrollbar::gestureEvent(const PlatformGestureEvent& evt)
 {
     bool handled = false;
     switch (evt.type()) {
-    case PlatformEvent::GestureTapDown:
+    case PlatformEvent::GestureShowPress:
         setPressedPart(theme()->hitTest(this, evt.position()));
         m_pressedPos = (orientation() == HorizontalScrollbar ? convertFromContainingWindow(evt.position()).x() : convertFromContainingWindow(evt.position()).y());
         return true;
@@ -442,7 +459,7 @@ void Scrollbar::mouseUp(const PlatformMouseEvent& mouseEvent)
     }
 
     if (parent() && parent()->isFrameView())
-        toFrameView(parent())->frame().eventHandler()->setMousePressed(false);
+        toFrameView(parent())->frame().eventHandler().setMousePressed(false);
 }
 
 void Scrollbar::mouseDown(const PlatformMouseEvent& evt)
@@ -479,7 +496,7 @@ void Scrollbar::setFrameRect(const IntRect& rect)
     // if necessary.
     IntRect adjustedRect(rect);
     bool overlapsResizer = false;
-    ScrollView* view = parent();
+    ScrollView* view = parentScrollView();
     if (view && !rect.isEmpty() && !view->windowResizerRect().isEmpty()) {
         IntRect resizerRect = view->convertFromContainingWindow(view->windowResizerRect());
         if (rect.intersects(resizerRect)) {
@@ -507,10 +524,10 @@ void Scrollbar::setFrameRect(const IntRect& rect)
     Widget::setFrameRect(adjustedRect);
 }
 
-void Scrollbar::setParent(ScrollView* parentView)
+void Scrollbar::setParent(Widget* parentView)
 {
-    if (!parentView && m_overlapsResizer && parent())
-        parent()->adjustScrollbarsAvoidingResizerCount(-1);
+    if (!parentView && m_overlapsResizer && parentScrollView())
+        parentScrollView()->adjustScrollbarsAvoidingResizerCount(-1);
     Widget::setParent(parentView);
 }
 
@@ -543,10 +560,10 @@ bool Scrollbar::isWindowActive() const
 
 AXObjectCache* Scrollbar::existingAXObjectCache() const
 {
-    if (!parent())
+    if (!parentScrollView())
         return 0;
 
-    return parent()->axObjectCache();
+    return parentScrollView()->axObjectCache();
 }
 
 void Scrollbar::invalidateRect(const IntRect& rect)

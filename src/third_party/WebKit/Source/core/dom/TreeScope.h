@@ -42,6 +42,7 @@ class HTMLMapElement;
 class LayoutPoint;
 class IdTargetObserverRegistry;
 class Node;
+class RenderObject;
 
 // A class which inherits both Node and TreeScope must call clearRareData() in its destructor
 // so that the Node destructor no longer does problematic NodeList cache manipulation in
@@ -89,7 +90,7 @@ public:
     bool applyAuthorStyles() const;
 
     // Used by the basic DOM mutation methods (e.g., appendChild()).
-    void adoptIfNeeded(Node*);
+    void adoptIfNeeded(Node&);
 
     Node* rootNode() const { return m_rootNode; }
 
@@ -151,7 +152,7 @@ private:
     virtual void dispose() { }
 
     int refCount() const;
-#ifndef NDEBUG
+#if SECURITY_ASSERT_ENABLED
     bool deletionHasBegun();
     void beginDeletion();
 #else
@@ -186,7 +187,14 @@ inline bool TreeScope::containsMultipleElementsWithId(const AtomicString& id) co
     return m_elementsById && m_elementsById->containsMultiple(id.impl());
 }
 
-Node* nodeFromPoint(Document*, int x, int y, LayoutPoint* localPoint = 0);
+inline bool operator==(const TreeScope& a, const TreeScope& b) { return &a == &b; }
+inline bool operator==(const TreeScope& a, const TreeScope* b) { return &a == b; }
+inline bool operator==(const TreeScope* a, const TreeScope& b) { return a == &b; }
+inline bool operator!=(const TreeScope& a, const TreeScope& b) { return !(a == b); }
+inline bool operator!=(const TreeScope& a, const TreeScope* b) { return !(a == b); }
+inline bool operator!=(const TreeScope* a, const TreeScope& b) { return !(a == b); }
+
+RenderObject* rendererFromPoint(Document*, int x, int y, LayoutPoint* localPoint = 0);
 TreeScope* commonTreeScope(Node*, Node*);
 
 } // namespace WebCore

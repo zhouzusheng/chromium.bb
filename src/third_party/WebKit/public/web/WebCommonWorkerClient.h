@@ -48,6 +48,7 @@ class WebString;
 class WebWorker;
 class WebWorkerClient;
 
+// FIXME: Deprecate this.
 class WebCommonWorkerClient {
 public:
     // Called on the main webkit thread before opening a web database.

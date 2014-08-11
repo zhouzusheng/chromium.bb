@@ -29,18 +29,18 @@
 #define CSSVariablesMap_h
 
 #include "RuntimeEnabledFeatures.h"
+#include "core/css/CSSVariablesMapForEachCallback.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 class CSSStyleDeclaration;
+class CSSVariablesIterator;
 class ExceptionState;
 
-class CSSVariablesMap : public RefCounted<CSSVariablesMap> {
+class CSSVariablesMap FINAL : public RefCounted<CSSVariablesMap> {
 public:
-    virtual ~CSSVariablesMap() { }
-
     static PassRefPtr<CSSVariablesMap> create(CSSStyleDeclaration* styleDeclaration)
     {
         return adoptRef(new CSSVariablesMap(styleDeclaration));
@@ -49,9 +49,11 @@ public:
     unsigned size() const;
     String get(const AtomicString& name) const;
     bool has(const AtomicString& name) const;
-    void set(const AtomicString& name, const String& value, ExceptionState&) const;
-    bool remove(const AtomicString& name) const;
-    void clear(ExceptionState&) const;
+    void set(const AtomicString& name, const String& value, ExceptionState&);
+    bool remove(const AtomicString& name);
+    void clear(ExceptionState&);
+    void forEach(PassRefPtr<CSSVariablesMapForEachCallback>, ScriptValue& thisArg) const;
+    void forEach(PassRefPtr<CSSVariablesMapForEachCallback>) const;
 
     void clearStyleDeclaration() { m_styleDeclaration = 0; }
 
@@ -62,7 +64,11 @@ private:
         ASSERT(RuntimeEnabledFeatures::cssVariablesEnabled());
     }
 
+    void forEach(PassRefPtr<CSSVariablesMapForEachCallback>, ScriptValue* thisArg) const;
+
     CSSStyleDeclaration* m_styleDeclaration;
+    typedef Vector<CSSVariablesIterator*> Iterators;
+    mutable Iterators m_activeIterators;
 };
 
 } // namespace WebCore

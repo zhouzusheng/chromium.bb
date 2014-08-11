@@ -28,8 +28,8 @@
 #define MessagePort_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/EventTarget.h"
+#include "core/events/EventListener.h"
+#include "core/events/EventTarget.h"
 #include "core/dom/MessagePortChannel.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
@@ -44,14 +44,15 @@ class Event;
 class ExceptionState;
 class Frame;
 class MessagePort;
-class ScriptExecutionContext;
+class ExecutionContext;
 
 // The overwhelmingly common case is sending a single port, so handle that efficiently with an inline buffer of size 1.
 typedef Vector<RefPtr<MessagePort>, 1> MessagePortArray;
 
-class MessagePort : public RefCounted<MessagePort>, public ScriptWrappable, public EventTarget {
+class MessagePort : public RefCounted<MessagePort>, public ScriptWrappable, public EventTargetWithInlineData {
+    REFCOUNTED_EVENT_TARGET(MessagePort);
 public:
-    static PassRefPtr<MessagePort> create(ScriptExecutionContext& scriptExecutionContext) { return adoptRef(new MessagePort(scriptExecutionContext)); }
+    static PassRefPtr<MessagePort> create(ExecutionContext& executionContext) { return adoptRef(new MessagePort(executionContext)); }
     virtual ~MessagePort();
 
     void postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray*, ExceptionState&);
@@ -66,7 +67,7 @@ public:
     static PassOwnPtr<MessagePortChannelArray> disentanglePorts(const MessagePortArray*, ExceptionState&);
 
     // Returns 0 if the passed array is 0/empty.
-    static PassOwnPtr<MessagePortArray> entanglePorts(ScriptExecutionContext&, PassOwnPtr<MessagePortChannelArray>);
+    static PassOwnPtr<MessagePortArray> entanglePorts(ExecutionContext&, PassOwnPtr<MessagePortChannelArray>);
 
     void messageAvailable();
     bool started() const { return m_started; }
@@ -74,27 +75,19 @@ public:
     void contextDestroyed();
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ScriptExecutionContext* scriptExecutionContext() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE;
     MessagePort* toMessagePort() OVERRIDE { return this; }
 
     void dispatchMessages();
-
-    using RefCounted<MessagePort>::ref;
-    using RefCounted<MessagePort>::deref;
 
     bool hasPendingActivity();
 
     void setOnmessage(PassRefPtr<EventListener> listener, DOMWrapperWorld* world)
     {
-        setAttributeEventListener(eventNames().messageEvent, listener, world);
+        setAttributeEventListener(EventTypeNames::message, listener, world);
         start();
     }
-    EventListener* onmessage(DOMWrapperWorld* world) { return getAttributeEventListener(eventNames().messageEvent, world); }
-
-    // Returns null if there is no entangled port, or if the entangled port is run by a different thread.
-    // This is used solely to enable a GC optimization. Some platforms may not be able to determine ownership
-    // of the remote port (since it may live cross-process) - those platforms may always return null.
-    MessagePort* locallyEntangledPort();
+    EventListener* onmessage(DOMWrapperWorld* world) { return getAttributeEventListener(EventTypeNames::message, world); }
 
     // A port starts out its life entangled, and remains entangled until it is closed or is cloned.
     bool isEntangled() { return !m_closed && !isNeutered(); }
@@ -103,20 +96,14 @@ public:
     bool isNeutered() { return !m_entangledChannel; }
 
 private:
-    explicit MessagePort(ScriptExecutionContext&);
-
-    virtual void refEventTarget() OVERRIDE { ref(); }
-    virtual void derefEventTarget() OVERRIDE { deref(); }
-    virtual EventTargetData* eventTargetData() OVERRIDE;
-    virtual EventTargetData* ensureEventTargetData() OVERRIDE;
+    explicit MessagePort(ExecutionContext&);
 
     OwnPtr<MessagePortChannel> m_entangledChannel;
 
     bool m_started;
     bool m_closed;
 
-    ScriptExecutionContext* m_scriptExecutionContext;
-    EventTargetData m_eventTargetData;
+    ExecutionContext* m_executionContext;
 };
 
 } // namespace WebCore

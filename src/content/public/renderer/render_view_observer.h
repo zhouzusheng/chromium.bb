@@ -10,6 +10,7 @@
 #include "content/common/content_export.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebIconURL.h"
 
 class GURL;
@@ -67,6 +68,10 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
                             WebKit::WebFrame* frame) {}
   virtual void FrameDetached(WebKit::WebFrame* frame) {}
   virtual void FrameWillClose(WebKit::WebFrame* frame) {}
+  virtual void DidMatchCSS(
+      WebKit::WebFrame* frame,
+      const WebKit::WebVector<WebKit::WebString>& newly_matching_selectors,
+      const WebKit::WebVector<WebKit::WebString>& stopped_matching_selectors) {}
   virtual void WillSendSubmitEvent(WebKit::WebFrame* frame,
                                    const WebKit::WebFormElement& form) {}
   virtual void WillSubmitForm(WebKit::WebFrame* frame,
@@ -89,7 +94,6 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
   // These match the RenderView methods.
   virtual void DidHandleMouseEvent(const WebKit::WebMouseEvent& event) {}
   virtual void DidHandleTouchEvent(const WebKit::WebTouchEvent& event) {}
-  virtual void DidHandleGestureEvent(const WebKit::WebGestureEvent& event) {}
   virtual void DidCreatePepperPlugin(RendererPpapiHost* host) {}
 
   // Called when we receive a console message from WebKit for which we requested

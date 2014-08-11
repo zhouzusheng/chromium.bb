@@ -27,18 +27,17 @@
 #define GraphicsContext3D_h
 
 #include "core/platform/graphics/Extensions3D.h"
-#include "core/platform/graphics/GraphicsTypes3D.h"
 #include "core/platform/graphics/Image.h"
-#include "core/platform/graphics/IntRect.h"
+#include "platform/geometry/IntRect.h"
+#include "platform/graphics/GraphicsTypes3D.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "weborigin/KURL.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
 #include "wtf/ListHashSet.h"
 #include "wtf/Noncopyable.h"
-#include "wtf/OwnArrayPtr.h"
 #include "wtf/OwnPtr.h"
-#include "wtf/PassOwnArrayPtr.h"
+#include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
@@ -59,7 +58,6 @@ class DrawingBuffer;
 class Extensions3D;
 class GraphicsContext3DContextLostCallbackAdapter;
 class GraphicsContext3DErrorMessageCallbackAdapter;
-class GrMemoryAllocationChangedCallbackAdapter;
 class Image;
 class ImageBuffer;
 class ImageData;
@@ -665,8 +663,6 @@ public:
 
     void viewport(GC3Dint x, GC3Dint y, GC3Dsizei width, GC3Dsizei height);
 
-    void reshape(int width, int height);
-
     void markContextChanged();
     void markLayerComposited();
     bool layerComposited() const;
@@ -833,7 +829,6 @@ private:
     OwnPtr<GraphicsContext3DErrorMessageCallbackAdapter> m_errorMessageCallbackAdapter;
     OwnPtr<WebKit::WebGraphicsContext3D> m_ownedWebContext;
     OwnPtr<Extensions3D> m_extensions;
-    OwnPtr<GrMemoryAllocationChangedCallbackAdapter> m_grContextMemoryAllocationCallbackAdapter;
     bool m_initializedAvailableExtensions;
     HashSet<String> m_enabledExtensions;
     HashSet<String> m_requestableExtensions;
@@ -856,7 +851,6 @@ private:
     SkBitmap m_resizingBitmap;
 
     GrContext* m_grContext;
-    SkAutoTUnref<GrContext> m_ownedGrContext;
 
     // Used to flip a bitmap vertically.
     Vector<uint8_t> m_scanline;

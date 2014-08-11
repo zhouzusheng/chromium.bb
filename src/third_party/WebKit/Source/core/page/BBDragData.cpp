@@ -37,7 +37,7 @@ void BBDragData::setClipboard(Clipboard* clipboard)
     d_clipboard = clipboard;
 }
 
-void BBDragData::setHtml(const String& html)
+void BBDragData::setHTML(const String& html)
 {
     if (d_clipboard) {
         d_clipboard->setAccessPolicy(ClipboardWritable);

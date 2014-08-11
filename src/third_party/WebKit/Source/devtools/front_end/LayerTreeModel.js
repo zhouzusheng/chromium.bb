@@ -36,19 +36,43 @@ WebInspector.LayerTreeModel = function()
 {
     WebInspector.Object.call(this);
     this._layersById = {};
+    // We fetch layer tree lazily and get paint events asynchronously, so keep the last painted
+    // rect separate from layer so we can get it after refreshing the tree.
+    this._lastPaintRectByLayerId = {};
     InspectorBackend.registerLayerTreeDispatcher(new WebInspector.LayerTreeDispatcher(this));
-    LayerTreeAgent.enable();
-    this._needsRefresh = true;
+    WebInspector.domAgent.addEventListener(WebInspector.DOMAgent.Events.DocumentUpdated, this._onDocumentUpdated, this);
 }
 
 WebInspector.LayerTreeModel.Events = {
     LayerTreeChanged: "LayerTreeChanged",
+    LayerPainted: "LayerPainted",
 }
 
 WebInspector.LayerTreeModel.prototype = {
-    dispose: function()
+    disable: function()
     {
+        if (!this._enabled)
+            return;
+        this._enabled = false;
         LayerTreeAgent.disable();
+    },
+
+    /**
+     * @param {function()=} callback
+     */
+    enable: function(callback)
+    {
+        if (this._enabled)
+            return;
+        this._enabled = true;
+        WebInspector.domAgent.requestDocument(onDocumentAvailable.bind(this));
+        function onDocumentAvailable()
+        {
+            // The agent might have been disabled while we were waiting for the document.
+            if (!this._enabled)
+                return;
+            LayerTreeAgent.enable();
+        }
     },
 
     /**
@@ -83,44 +107,6 @@ WebInspector.LayerTreeModel.prototype = {
     },
 
     /**
-     * @param {function()=} callback
-     */
-    requestLayers: function(callback)
-    {
-        delete this._delayedRequestLayersTimer;
-        if (!callback)
-            callback = function() {}
-        if (!this._needsRefresh) {
-            callback();
-            return;
-        }
-        if (this._pendingRequestLayersCallbacks) {
-            this._pendingRequestLayersCallbacks.push(callback);
-            return;
-        }
-        this._pendingRequestLayersCallbacks = [];
-        this._pendingRequestLayersCallbacks.push(callback);
-        function onGetLayers(error, layers)
-        {
-            this._root = null;
-            this._contentRoot = null;
-            if (error) {
-                console.error("LayerTreeAgent.getLayers(): " + error);
-                layers = [];
-            }
-            this._repopulate(layers);
-            for (var i = 0; i < this._pendingRequestLayersCallbacks.length; ++i)
-                this._pendingRequestLayersCallbacks[i]();
-            delete this._pendingRequestLayersCallbacks;
-        }
-        function onDocumentAvailable()
-        {
-            LayerTreeAgent.getLayers(undefined, onGetLayers.bind(this))
-        }
-        WebInspector.domAgent.requestDocument(onDocumentAvailable.bind(this));
-    },
-
-    /**
      * @param {string} id
      * @return {WebInspector.Layer?}
      */
@@ -137,19 +123,23 @@ WebInspector.LayerTreeModel.prototype = {
         var oldLayersById = this._layersById;
         this._layersById = {};
         for (var i = 0; i < payload.length; ++i) {
-            var layer = oldLayersById[payload[i].layerId];
+            var layerId = payload[i].layerId;
+            var layer = oldLayersById[layerId];
             if (layer)
                 layer._reset(payload[i]);
             else
                 layer = new WebInspector.Layer(payload[i]);
-            this._layersById[layer.id()] = layer;
+            this._layersById[layerId] = layer;
             var parentId = layer.parentId();
             if (!this._contentRoot && layer.nodeId())
                 this._contentRoot = layer;
+            var lastPaintRect = this._lastPaintRectByLayerId[layerId];
+            if (lastPaintRect)
+                layer._lastPaintRect = lastPaintRect;
             if (parentId) {
                 var parent = this._layersById[parentId];
                 if (!parent)
-                    console.assert(parent, "missing parent " + parentId + " for layer " + layer.id());
+                    console.assert(parent, "missing parent " + parentId + " for layer " + layerId);
                 parent.addChild(layer);
             } else {
                 if (this._root)
@@ -157,15 +147,41 @@ WebInspector.LayerTreeModel.prototype = {
                 this._root = layer;
             }
         }
+        this._lastPaintRectByLayerId = {};
+    },
+
+    /**
+     * @param {Array.<LayerTreeAgent.Layer>=} payload
+     */
+    _layerTreeChanged: function(payload)
+    {
+        this._root = null;
+        this._contentRoot = null;
+        // Payload will be null when not in the composited mode.
+        if (payload)
+            this._repopulate(payload);
         this.dispatchEventToListeners(WebInspector.LayerTreeModel.Events.LayerTreeChanged);
     },
 
-    _layerTreeChanged: function()
+    /**
+     * @param {LayerTreeAgent.LayerId} layerId
+     * @param {DOMAgent.Rect} clipRect
+     */
+    _layerPainted: function(layerId, clipRect)
     {
-        if (this._delayedRequestLayersTimer)
+        var layer = this._layersById[layerId];
+        if (!layer) {
+            this._lastPaintRectByLayerId[layerId] = clipRect;
             return;
-        this._needsRefresh = true;
-        this._delayedRequestLayersTimer = setTimeout(this.requestLayers.bind(this), 100);
+        }
+        layer._didPaint(clipRect);
+        this.dispatchEventToListeners(WebInspector.LayerTreeModel.Events.LayerPainted, layer);
+    },
+
+    _onDocumentUpdated: function()
+    {
+        this.disable();
+        this.enable();
     },
 
     __proto__: WebInspector.Object.prototype
@@ -318,7 +334,15 @@ WebInspector.Layer.prototype = {
      */
     paintCount: function()
     {
-        return this._layerPayload.paintCount;
+        return this._paintCount || this._layerPayload.paintCount;
+    },
+
+    /**
+     * @return {?DOMAgent.Rect}
+     */
+    lastPaintRect: function()
+    {
+        return this._lastPaintRect;
     },
 
     /**
@@ -343,12 +367,22 @@ WebInspector.Layer.prototype = {
     },
 
     /**
+     * @param {DOMAgent.Rect} rect
+     */
+    _didPaint: function(rect)
+    {
+        this._lastPaintRect = rect;
+        this._paintCount = this.paintCount() + 1;
+    },
+
+    /**
      * @param {LayerTreeAgent.Layer} layerPayload
      */
     _reset: function(layerPayload)
     {
         this._children = [];
         this._parent = null;
+        this._paintCount = 0;
         this._layerPayload = layerPayload;
     }
 }
@@ -364,8 +398,20 @@ WebInspector.LayerTreeDispatcher = function(layerTreeModel)
 }
 
 WebInspector.LayerTreeDispatcher.prototype = {
-    layerTreeDidChange: function()
+    /**
+     * @param {Array.<LayerTreeAgent.Layer>=} payload
+     */
+    layerTreeDidChange: function(payload)
     {
-        this._layerTreeModel._layerTreeChanged();
+        this._layerTreeModel._layerTreeChanged(payload);
+    },
+
+    /**
+     * @param {LayerTreeAgent.LayerId} layerId
+     * @param {DOMAgent.Rect} clipRect
+     */
+    layerPainted: function(layerId, clipRect)
+    {
+        this._layerTreeModel._layerPainted(layerId, clipRect);
     }
 }

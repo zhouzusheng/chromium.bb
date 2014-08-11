@@ -32,7 +32,7 @@
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/VoidCallback.h"
-#include "core/platform/Logging.h"
+#include "platform/Logging.h"
 #include "modules/webdatabase/AbstractSQLTransactionBackend.h"
 #include "modules/webdatabase/Database.h"
 #include "modules/webdatabase/DatabaseAuthorizer.h"
@@ -59,9 +59,9 @@ SQLTransaction::SQLTransaction(Database* db, PassRefPtr<SQLTransactionCallback> 
     PassRefPtr<VoidCallback> successCallback, PassRefPtr<SQLTransactionErrorCallback> errorCallback,
     bool readOnly)
     : m_database(db)
-    , m_callbackWrapper(callback, db->scriptExecutionContext())
-    , m_successCallbackWrapper(successCallback, db->scriptExecutionContext())
-    , m_errorCallbackWrapper(errorCallback, db->scriptExecutionContext())
+    , m_callbackWrapper(callback, db->executionContext())
+    , m_successCallbackWrapper(successCallback, db->executionContext())
+    , m_errorCallbackWrapper(errorCallback, db->executionContext())
     , m_executeSqlAllowed(false)
     , m_readOnly(readOnly)
 {
@@ -254,7 +254,7 @@ void SQLTransaction::performPendingCallback()
 void SQLTransaction::executeSQL(const String& sqlStatement, const Vector<SQLValue>& arguments, PassRefPtr<SQLStatementCallback> callback, PassRefPtr<SQLStatementErrorCallback> callbackError, ExceptionState& es)
 {
     if (!m_executeSqlAllowed || !m_database->opened()) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
 

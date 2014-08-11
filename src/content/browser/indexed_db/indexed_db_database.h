@@ -13,16 +13,17 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "content/browser/indexed_db/indexed_db.h"
+#include "content/browser/indexed_db/indexed_db_backing_store.h"
 #include "content/browser/indexed_db/indexed_db_callbacks.h"
 #include "content/browser/indexed_db/indexed_db_metadata.h"
 #include "content/browser/indexed_db/indexed_db_transaction_coordinator.h"
 #include "content/browser/indexed_db/list_set.h"
+#include "url/gurl.h"
 
 namespace content {
 
 class IndexedDBConnection;
 class IndexedDBDatabaseCallbacks;
-class IndexedDBBackingStore;
 class IndexedDBFactory;
 class IndexedDBKey;
 class IndexedDBKeyPath;
@@ -44,8 +45,8 @@ class CONTENT_EXPORT IndexedDBDatabase
   };
 
   typedef std::vector<IndexedDBKey> IndexKeys;
-  // Identifier is pair of (origin identifier, database name).
-  typedef std::pair<std::string, base::string16> Identifier;
+  // Identifier is pair of (origin url, database name).
+  typedef std::pair<GURL, base::string16> Identifier;
 
   static const int64 kInvalidId = 0;
   static const int64 kMinimumIndexId = 30;
@@ -55,7 +56,9 @@ class CONTENT_EXPORT IndexedDBDatabase
       IndexedDBBackingStore* backing_store,
       IndexedDBFactory* factory,
       const Identifier& unique_identifier);
-  scoped_refptr<IndexedDBBackingStore> BackingStore() const;
+
+  const Identifier& identifier() const { return identifier_; }
+  IndexedDBBackingStore* backing_store() { return backing_store_.get(); }
 
   int64 id() const { return metadata_.id; }
   const base::string16& name() const { return metadata_.name; }
@@ -78,7 +81,8 @@ class CONTENT_EXPORT IndexedDBDatabase
       scoped_refptr<IndexedDBDatabaseCallbacks> database_callbacks,
       int64 transaction_id,
       int64 version,
-      WebKit::WebIDBCallbacks::DataLoss data_loss);
+      WebKit::WebIDBCallbacks::DataLoss data_loss,
+      std::string data_loss_message);
   void DeleteDatabase(scoped_refptr<IndexedDBCallbacks> callbacks);
   const IndexedDBDatabaseMetadata& metadata() const { return metadata_; }
 
@@ -92,7 +96,7 @@ class CONTENT_EXPORT IndexedDBDatabase
                          IndexedDBConnection* connection,
                          const std::vector<int64>& object_store_ids,
                          uint16 mode);
-  void Close(IndexedDBConnection* connection);
+  void Close(IndexedDBConnection* connection, bool forced);
 
   void Commit(int64 transaction_id);
   void Abort(int64 transaction_id);
@@ -118,6 +122,9 @@ class CONTENT_EXPORT IndexedDBDatabase
   void TransactionFinished(IndexedDBTransaction* transaction);
   void TransactionFinishedAndCompleteFired(IndexedDBTransaction* transaction);
   void TransactionFinishedAndAbortFired(IndexedDBTransaction* transaction);
+
+  // Called by transactions to report failure committing to the backing store.
+  void TransactionCommitFailed();
 
   void Get(int64 transaction_id,
            int64 object_store_id,
@@ -189,6 +196,7 @@ class CONTENT_EXPORT IndexedDBDatabase
                               scoped_refptr<IndexedDBCallbacks> callbacks,
                               scoped_ptr<IndexedDBConnection> connection,
                               WebKit::WebIDBCallbacks::DataLoss data_loss,
+                              std::string data_loss_message,
                               IndexedDBTransaction* transaction);
   void VersionChangeAbortOperation(const string16& previous_version,
                                    int64 previous_int_version,
@@ -247,7 +255,8 @@ class CONTENT_EXPORT IndexedDBDatabase
                                    scoped_ptr<IndexedDBConnection> connection,
                                    int64 transaction_id,
                                    int64 requested_version,
-                                   WebKit::WebIDBCallbacks::DataLoss data_loss);
+                                   WebKit::WebIDBCallbacks::DataLoss data_loss,
+                                   std::string data_loss_message);
   void RunVersionChangeTransactionFinal(
       scoped_refptr<IndexedDBCallbacks> callbacks,
       scoped_ptr<IndexedDBConnection> connection,
@@ -258,7 +267,8 @@ class CONTENT_EXPORT IndexedDBDatabase
       scoped_ptr<IndexedDBConnection> connection,
       int64 transaction_id,
       int64 requested_version,
-      WebKit::WebIDBCallbacks::DataLoss data_loss);
+      WebKit::WebIDBCallbacks::DataLoss data_loss,
+      std::string data_loss_message);
   void ProcessPendingCalls();
 
   bool IsDeleteDatabaseBlocked() const;
@@ -303,8 +313,6 @@ class CONTENT_EXPORT IndexedDBDatabase
 
   typedef list_set<IndexedDBConnection*> ConnectionSet;
   ConnectionSet connections_;
-
-  bool closing_connection_;
 };
 
 }  // namespace content

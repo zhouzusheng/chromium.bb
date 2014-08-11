@@ -10,6 +10,7 @@
 #include "GrEffect.h"
 #include "gl/GrGLEffect.h"
 #include "gl/GrGLSL.h"
+#include "gl/GrGLVertexEffect.h"
 #include "GrTBackendEffectFactory.h"
 
 #include "GrDrawState.h"
@@ -18,6 +19,8 @@
 
 #include "SkRRect.h"
 #include "SkStrokeRec.h"
+
+#include "effects/GrVertexEffect.h"
 
 SK_DEFINE_INST_COUNT(GrOvalRenderer)
 
@@ -56,7 +59,7 @@ inline bool circle_stays_circle(const SkMatrix& m) {
  * specified as offset_x, offset_y (both from center point), outer radius and inner radius.
  */
 
-class CircleEdgeEffect : public GrEffect {
+class CircleEdgeEffect : public GrVertexEffect {
 public:
     static GrEffectRef* Create(bool stroke) {
         GR_CREATE_STATIC_EFFECT(gCircleStrokeEdge, CircleEdgeEffect, (true));
@@ -86,29 +89,25 @@ public:
 
     inline bool isStroked() const { return fStroke; }
 
-    class GLEffect : public GrGLEffect {
+    class GLEffect : public GrGLVertexEffect {
     public:
         GLEffect(const GrBackendEffectFactory& factory, const GrDrawEffect&)
         : INHERITED (factory) {}
 
-        virtual bool requiresVertexShader(const GrDrawEffect&) const SK_OVERRIDE { return true; }
-
-        virtual void emitCode(GrGLShaderBuilder* builder,
+        virtual void emitCode(GrGLFullShaderBuilder* builder,
                               const GrDrawEffect& drawEffect,
                               EffectKey key,
                               const char* outputColor,
                               const char* inputColor,
+                              const TransformedCoordsArray&,
                               const TextureSamplerArray& samplers) SK_OVERRIDE {
-            GrGLShaderBuilder::VertexBuilder* vertexBuilder = builder->getVertexBuilder();
-            SkASSERT(NULL != vertexBuilder);
-
             const CircleEdgeEffect& circleEffect = drawEffect.castEffect<CircleEdgeEffect>();
             const char *vsName, *fsName;
-            vertexBuilder->addVarying(kVec4f_GrSLType, "CircleEdge", &vsName, &fsName);
+            builder->addVarying(kVec4f_GrSLType, "CircleEdge", &vsName, &fsName);
 
             const SkString* attrName =
-                vertexBuilder->getEffectAttributeName(drawEffect.getVertexAttribIndices()[0]);
-            vertexBuilder->vsCodeAppendf("\t%s = %s;\n", vsName, attrName->c_str());
+                builder->getEffectAttributeName(drawEffect.getVertexAttribIndices()[0]);
+            builder->vsCodeAppendf("\t%s = %s;\n", vsName, attrName->c_str());
 
             builder->fsCodeAppendf("\tfloat d = length(%s.xy);\n", fsName);
             builder->fsCodeAppendf("\tfloat edgeAlpha = clamp(%s.z - d, 0.0, 1.0);\n", fsName);
@@ -117,9 +116,8 @@ public:
                 builder->fsCodeAppend("\tedgeAlpha *= innerAlpha;\n");
             }
 
-            SkString modulate;
-            GrGLSLModulatef<4>(&modulate, inputColor, "edgeAlpha");
-            builder->fsCodeAppendf("\t%s = %s;\n", outputColor, modulate.c_str());
+            builder->fsCodeAppendf("\t%s = %s;\n", outputColor,
+                                   (GrGLSLExpr4(inputColor) * GrGLSLExpr1("edgeAlpha")).c_str());
         }
 
         static inline EffectKey GenKey(const GrDrawEffect& drawEffect, const GrGLCaps&) {
@@ -131,12 +129,12 @@ public:
         virtual void setData(const GrGLUniformManager&, const GrDrawEffect&) SK_OVERRIDE {}
 
     private:
-        typedef GrGLEffect INHERITED;
+        typedef GrGLVertexEffect INHERITED;
     };
 
 
 private:
-    CircleEdgeEffect(bool stroke) : GrEffect() {
+    CircleEdgeEffect(bool stroke) : GrVertexEffect() {
         this->addVertexAttrib(kVec4f_GrSLType);
         fStroke = stroke;
     }
@@ -150,7 +148,7 @@ private:
 
     GR_DECLARE_EFFECT_TEST;
 
-    typedef GrEffect INHERITED;
+    typedef GrVertexEffect INHERITED;
 };
 
 GR_DEFINE_EFFECT_TEST(CircleEdgeEffect);
@@ -172,7 +170,7 @@ GrEffectRef* CircleEdgeEffect::TestCreate(SkRandom* random,
  * We are using an implicit function of x^2/a^2 + y^2/b^2 - 1 = 0.
  */
 
-class EllipseEdgeEffect : public GrEffect {
+class EllipseEdgeEffect : public GrVertexEffect {
 public:
     static GrEffectRef* Create(bool stroke) {
         GR_CREATE_STATIC_EFFECT(gEllipseStrokeEdge, EllipseEdgeEffect, (true));
@@ -202,36 +200,32 @@ public:
 
     inline bool isStroked() const { return fStroke; }
 
-    class GLEffect : public GrGLEffect {
+    class GLEffect : public GrGLVertexEffect {
     public:
         GLEffect(const GrBackendEffectFactory& factory, const GrDrawEffect&)
         : INHERITED (factory) {}
 
-        virtual bool requiresVertexShader(const GrDrawEffect&) const SK_OVERRIDE { return true; }
-
-        virtual void emitCode(GrGLShaderBuilder* builder,
+        virtual void emitCode(GrGLFullShaderBuilder* builder,
                               const GrDrawEffect& drawEffect,
                               EffectKey key,
                               const char* outputColor,
                               const char* inputColor,
+                              const TransformedCoordsArray&,
                               const TextureSamplerArray& samplers) SK_OVERRIDE {
-            GrGLShaderBuilder::VertexBuilder* vertexBuilder = builder->getVertexBuilder();
-            SkASSERT(NULL != vertexBuilder);
-
             const EllipseEdgeEffect& ellipseEffect = drawEffect.castEffect<EllipseEdgeEffect>();
 
             const char *vsOffsetName, *fsOffsetName;
             const char *vsRadiiName, *fsRadiiName;
 
-            vertexBuilder->addVarying(kVec2f_GrSLType, "EllipseOffsets", &vsOffsetName, &fsOffsetName);
+            builder->addVarying(kVec2f_GrSLType, "EllipseOffsets", &vsOffsetName, &fsOffsetName);
             const SkString* attr0Name =
-                vertexBuilder->getEffectAttributeName(drawEffect.getVertexAttribIndices()[0]);
-            vertexBuilder->vsCodeAppendf("\t%s = %s;\n", vsOffsetName, attr0Name->c_str());
+                builder->getEffectAttributeName(drawEffect.getVertexAttribIndices()[0]);
+            builder->vsCodeAppendf("\t%s = %s;\n", vsOffsetName, attr0Name->c_str());
 
-            vertexBuilder->addVarying(kVec4f_GrSLType, "EllipseRadii", &vsRadiiName, &fsRadiiName);
+            builder->addVarying(kVec4f_GrSLType, "EllipseRadii", &vsRadiiName, &fsRadiiName);
             const SkString* attr1Name =
-                vertexBuilder->getEffectAttributeName(drawEffect.getVertexAttribIndices()[1]);
-            vertexBuilder->vsCodeAppendf("\t%s = %s;\n", vsRadiiName, attr1Name->c_str());
+                builder->getEffectAttributeName(drawEffect.getVertexAttribIndices()[1]);
+            builder->vsCodeAppendf("\t%s = %s;\n", vsRadiiName, attr1Name->c_str());
 
             // for outer curve
             builder->fsCodeAppendf("\tvec2 scaledOffset = %s*%s.xy;\n", fsOffsetName, fsRadiiName);
@@ -254,9 +248,8 @@ public:
                 builder->fsCodeAppend("\tedgeAlpha *= clamp(0.5+test*invlen, 0.0, 1.0);\n");
             }
 
-            SkString modulate;
-            GrGLSLModulatef<4>(&modulate, inputColor, "edgeAlpha");
-            builder->fsCodeAppendf("\t%s = %s;\n", outputColor, modulate.c_str());
+            builder->fsCodeAppendf("\t%s = %s;\n", outputColor,
+                                   (GrGLSLExpr4(inputColor) * GrGLSLExpr1("edgeAlpha")).c_str());
         }
 
         static inline EffectKey GenKey(const GrDrawEffect& drawEffect, const GrGLCaps&) {
@@ -269,11 +262,11 @@ public:
         }
 
     private:
-        typedef GrGLEffect INHERITED;
+        typedef GrGLVertexEffect INHERITED;
     };
 
 private:
-    EllipseEdgeEffect(bool stroke) : GrEffect() {
+    EllipseEdgeEffect(bool stroke) : GrVertexEffect() {
         this->addVertexAttrib(kVec2f_GrSLType);
         this->addVertexAttrib(kVec4f_GrSLType);
         fStroke = stroke;
@@ -288,7 +281,7 @@ private:
 
     GR_DECLARE_EFFECT_TEST;
 
-    typedef GrEffect INHERITED;
+    typedef GrVertexEffect INHERITED;
 };
 
 GR_DEFINE_EFFECT_TEST(EllipseEdgeEffect);
@@ -311,7 +304,7 @@ GrEffectRef* EllipseEdgeEffect::TestCreate(SkRandom* random,
  * The result is device-independent and can be used with any affine matrix.
  */
 
-class DIEllipseEdgeEffect : public GrEffect {
+class DIEllipseEdgeEffect : public GrVertexEffect {
 public:
     enum Mode { kStroke = 0, kHairline, kFill };
 
@@ -347,37 +340,35 @@ public:
 
     inline Mode getMode() const { return fMode; }
 
-    class GLEffect : public GrGLEffect {
+    class GLEffect : public GrGLVertexEffect {
     public:
         GLEffect(const GrBackendEffectFactory& factory, const GrDrawEffect&)
         : INHERITED (factory) {}
 
-        virtual void emitCode(GrGLShaderBuilder* builder,
+        virtual void emitCode(GrGLFullShaderBuilder* builder,
                               const GrDrawEffect& drawEffect,
                               EffectKey key,
                               const char* outputColor,
                               const char* inputColor,
+                              const TransformedCoordsArray&,
                               const TextureSamplerArray& samplers) SK_OVERRIDE {
-            GrGLShaderBuilder::VertexBuilder* vertexBuilder = builder->getVertexBuilder();
-            SkASSERT(NULL != vertexBuilder);
-
             const DIEllipseEdgeEffect& ellipseEffect = drawEffect.castEffect<DIEllipseEdgeEffect>();
 
             SkAssertResult(builder->enableFeature(
                                               GrGLShaderBuilder::kStandardDerivatives_GLSLFeature));
 
             const char *vsOffsetName0, *fsOffsetName0;
-            vertexBuilder->addVarying(kVec2f_GrSLType, "EllipseOffsets0",
+            builder->addVarying(kVec2f_GrSLType, "EllipseOffsets0",
                                       &vsOffsetName0, &fsOffsetName0);
             const SkString* attr0Name =
-                vertexBuilder->getEffectAttributeName(drawEffect.getVertexAttribIndices()[0]);
-            vertexBuilder->vsCodeAppendf("\t%s = %s;\n", vsOffsetName0, attr0Name->c_str());
+                builder->getEffectAttributeName(drawEffect.getVertexAttribIndices()[0]);
+            builder->vsCodeAppendf("\t%s = %s;\n", vsOffsetName0, attr0Name->c_str());
             const char *vsOffsetName1, *fsOffsetName1;
-            vertexBuilder->addVarying(kVec2f_GrSLType, "EllipseOffsets1",
+            builder->addVarying(kVec2f_GrSLType, "EllipseOffsets1",
                                       &vsOffsetName1, &fsOffsetName1);
             const SkString* attr1Name =
-                vertexBuilder->getEffectAttributeName(drawEffect.getVertexAttribIndices()[1]);
-            vertexBuilder->vsCodeAppendf("\t%s = %s;\n", vsOffsetName1, attr1Name->c_str());
+                builder->getEffectAttributeName(drawEffect.getVertexAttribIndices()[1]);
+            builder->vsCodeAppendf("\t%s = %s;\n", vsOffsetName1, attr1Name->c_str());
 
             // for outer curve
             builder->fsCodeAppendf("\tvec2 scaledOffset = %s.xy;\n", fsOffsetName0);
@@ -415,9 +406,8 @@ public:
                 builder->fsCodeAppend("\tedgeAlpha *= clamp(0.5+test*invlen, 0.0, 1.0);\n");
             }
 
-            SkString modulate;
-            GrGLSLModulatef<4>(&modulate, inputColor, "edgeAlpha");
-            builder->fsCodeAppendf("\t%s = %s;\n", outputColor, modulate.c_str());
+            builder->fsCodeAppendf("\t%s = %s;\n", outputColor,
+                                   (GrGLSLExpr4(inputColor) * GrGLSLExpr1("edgeAlpha")).c_str());
         }
 
         static inline EffectKey GenKey(const GrDrawEffect& drawEffect, const GrGLCaps&) {
@@ -430,11 +420,11 @@ public:
         }
 
     private:
-        typedef GrGLEffect INHERITED;
+        typedef GrGLVertexEffect INHERITED;
     };
 
 private:
-    DIEllipseEdgeEffect(Mode mode) : GrEffect() {
+    DIEllipseEdgeEffect(Mode mode) : GrVertexEffect() {
         this->addVertexAttrib(kVec2f_GrSLType);
         this->addVertexAttrib(kVec2f_GrSLType);
         fMode = mode;
@@ -449,7 +439,7 @@ private:
 
     GR_DECLARE_EFFECT_TEST;
 
-    typedef GrEffect INHERITED;
+    typedef GrVertexEffect INHERITED;
 };
 
 GR_DEFINE_EFFECT_TEST(DIEllipseEdgeEffect);

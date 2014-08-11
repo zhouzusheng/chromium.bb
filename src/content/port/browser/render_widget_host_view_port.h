@@ -5,6 +5,7 @@
 #ifndef CONTENT_PORT_BROWSER_RENDER_WIDGET_HOST_VIEW_PORT_H_
 #define CONTENT_PORT_BROWSER_RENDER_WIDGET_HOST_VIEW_PORT_H_
 
+#include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/process/kill.h"
 #include "base/strings/string16.h"
@@ -255,6 +256,9 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
 
   virtual gfx::GLSurfaceHandle GetCompositingSurface() = 0;
 
+  // Resize compositing surface.
+  virtual void ResizeCompositingSurface(const gfx::Size&) = 0;
+
   // Because the associated remote WebKit instance can asynchronously
   // prevent-default on a dispatched touch event, the touch events are queued in
   // the GestureRecognizer until invocation of ProcessAckedTouchEvent releases
@@ -287,6 +291,13 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
   // being forwarded.
   virtual InputEventAckState FilterInputEvent(
       const WebKit::WebInputEvent& input_event) = 0;
+
+  // Called by the host when it requires an input flush; the flush call should
+  // by synchronized with BeginFrame.
+  virtual void OnSetNeedsFlushInput() = 0;
+
+  // Called by the host when the input flush has completed.
+  virtual void OnDidFlushInput() = 0;
 
   virtual void GestureEventAck(int gesture_event_type,
                                InputEventAckState ack_result) = 0;
@@ -338,6 +349,10 @@ class CONTENT_EXPORT RenderWidgetHostViewPort : public RenderWidgetHostView,
 #if defined(OS_WIN) && defined(USE_AURA)
   virtual void SetParentNativeViewAccessible(
       gfx::NativeViewAccessible accessible_parent) = 0;
+
+  // Returns an HWND that's given as the parent window for windowless Flash to
+  // workaround crbug.com/301548.
+  virtual gfx::NativeViewId GetParentForWindowlessPlugin() const = 0;
 #endif
 };
 

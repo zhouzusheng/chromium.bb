@@ -69,6 +69,8 @@ public:
                 uint32_t *RTCPArrivalTimeFrac,
                 uint32_t *rtcp_timestamp) const;
 
+   bool LastReceivedXrReferenceTimeInfo(RtcpReceiveTimeInfo* info) const;
+
     // get rtt
     int32_t RTT(uint32_t remoteSSRC,
                 uint16_t* RTT,
@@ -76,13 +78,11 @@ public:
                 uint16_t* minRTT,
                 uint16_t* maxRTT) const;
 
-    uint16_t RTT() const;
-
-    int SetRTT(uint16_t rtt);
-
     int32_t ResetRTT(const uint32_t remoteSSRC);
 
     int32_t SenderInfoReceived(RTCPSenderInfo* senderInfo) const;
+
+    bool GetAndResetXrRrRtt(uint16_t* rtt_ms);
 
     // get statistics
     int32_t StatisticsReceived(
@@ -132,6 +132,21 @@ protected:
     void HandleSDES(RTCPUtility::RTCPParserV2& rtcpParser);
 
     void HandleSDESChunk(RTCPUtility::RTCPParserV2& rtcpParser);
+
+    void HandleXrHeader(RTCPUtility::RTCPParserV2& parser,
+                        RTCPHelp::RTCPPacketInformation& rtcpPacketInformation);
+
+    void HandleXrReceiveReferenceTime(
+        RTCPUtility::RTCPParserV2& parser,
+        RTCPHelp::RTCPPacketInformation& rtcpPacketInformation);
+
+    void HandleXrDlrrReportBlock(
+        RTCPUtility::RTCPParserV2& parser,
+        RTCPHelp::RTCPPacketInformation& rtcpPacketInformation);
+
+    void HandleXrDlrrReportBlockItem(
+        const RTCPUtility::RTCPPacket& packet,
+        RTCPHelp::RTCPPacketInformation& rtcpPacketInformation);
 
     void HandleXRVOIPMetric(RTCPUtility::RTCPParserV2& rtcpParser,
                             RTCPHelp::RTCPPacketInformation& rtcpPacketInformation);
@@ -223,6 +238,14 @@ protected:
   uint32_t _lastReceivedSRNTPsecs;
   uint32_t _lastReceivedSRNTPfrac;
 
+  // Received XR receive time report.
+  RtcpReceiveTimeInfo _remoteXRReceiveTimeInfo;
+  // Time when the report was received.
+  uint32_t _lastReceivedXRNTPsecs;
+  uint32_t _lastReceivedXRNTPfrac;
+  // Estimated rtt, zero when there is no valid estimate.
+  uint16_t xr_rr_rtt_ms_;
+
   // Received report blocks.
   std::map<uint32_t, RTCPHelp::RTCPReportBlockInformation*>
       _receivedReportBlockMap;
@@ -238,10 +261,6 @@ protected:
   // The time we last received an RTCP RR telling we have ssuccessfully
   // delivered RTP packet to the remote side.
   int64_t _lastIncreasedSequenceNumberMs;
-
-  // Externally set RTT. This value can only be used if there are no valid
-  // RTT estimates.
-  uint16_t _rtt;
 
 };
 }  // namespace webrtc

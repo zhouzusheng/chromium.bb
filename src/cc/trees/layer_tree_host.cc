@@ -6,7 +6,9 @@
 
 #include <algorithm>
 #include <stack>
+#include <string>
 
+#include "base/atomic_sequence_num.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
@@ -17,7 +19,6 @@
 #include "cc/animation/animation_registrar.h"
 #include "cc/animation/layer_animation_controller.h"
 #include "cc/base/math_util.h"
-#include "cc/debug/benchmark_instrumentation.h"
 #include "cc/debug/devtools_instrumentation.h"
 #include "cc/debug/overdraw_metrics.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
@@ -41,7 +42,7 @@
 #include "ui/gfx/size_conversions.h"
 
 namespace {
-static int s_num_layer_tree_instances;
+static base::StaticAtomicSequenceNumber s_layer_tree_host_sequence_number;
 }
 
 namespace cc {
@@ -89,24 +90,20 @@ UIResourceRequest& UIResourceRequest::operator=(
 
 UIResourceRequest::~UIResourceRequest() {}
 
-bool LayerTreeHost::AnyLayerTreeHostInstanceExists() {
-  return s_num_layer_tree_instances > 0;
-}
-
 scoped_ptr<LayerTreeHost> LayerTreeHost::Create(
     LayerTreeHostClient* client,
+    SharedBitmapManager* manager,
     const LayerTreeSettings& settings,
     scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
-  scoped_ptr<LayerTreeHost> layer_tree_host(new LayerTreeHost(client,
-                                                              settings));
+  scoped_ptr<LayerTreeHost> layer_tree_host(
+      new LayerTreeHost(client, manager, settings));
   if (!layer_tree_host->Initialize(impl_task_runner))
     return scoped_ptr<LayerTreeHost>();
   return layer_tree_host.Pass();
 }
 
-static int s_next_tree_id = 1;
-
 LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
+                             SharedBitmapManager* manager,
                              const LayerTreeSettings& settings)
     : next_ui_resource_id_(1),
       animating_(false),
@@ -115,6 +112,7 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
       client_(client),
       source_frame_number_(0),
       rendering_stats_instrumentation_(RenderingStatsInstrumentation::Create()),
+      micro_benchmark_controller_(this),
       output_surface_can_be_initialized_(true),
       output_surface_lost_(true),
       num_failed_recreate_attempts_(0),
@@ -132,10 +130,11 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
       partial_texture_update_requests_(0),
       in_paint_layer_contents_(false),
       total_frames_used_for_lcd_text_metrics_(0),
-      tree_id_(s_next_tree_id++) {
+      id_(s_layer_tree_host_sequence_number.GetNext() + 1),
+      next_commit_forces_redraw_(false),
+      shared_bitmap_manager_(manager) {
   if (settings_.accelerated_animation_enabled)
     animation_registrar_ = AnimationRegistrar::Create();
-  s_num_layer_tree_instances++;
   rendering_stats_instrumentation_->set_record_rendering_stats(
       debug_state_.RecordRenderingStats());
 }
@@ -177,7 +176,6 @@ LayerTreeHost::~LayerTreeHost() {
     proxy_->Stop();
   }
 
-  s_num_layer_tree_instances--;
   RateLimiterMap::iterator it = rate_limiters_.begin();
   if (it != rate_limiters_.end())
     it->second->Stop();
@@ -194,6 +192,10 @@ void LayerTreeHost::SetLayerTreeHostClientReady() {
   proxy_->SetLayerTreeHostClientReady();
 }
 
+static void LayerTreeHostOnOutputSurfaceCreatedCallback(Layer* layer) {
+  layer->OnOutputSurfaceCreated();
+}
+
 LayerTreeHost::CreateResult
 LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted(bool success) {
   TRACE_EVENT1("cc",
@@ -205,22 +207,17 @@ LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted(bool success) {
   if (success) {
     output_surface_lost_ = false;
 
-    // Update settings_ based on partial update capability.
-    size_t max_partial_texture_updates = 0;
-    if (proxy_->GetRendererCapabilities().allow_partial_texture_updates &&
-        !settings_.impl_side_painting) {
-      max_partial_texture_updates = std::min(
-          settings_.max_partial_texture_updates,
-          proxy_->MaxPartialTextureUpdates());
-    }
-    settings_.max_partial_texture_updates = max_partial_texture_updates;
-
-    if (!contents_texture_manager_ &&
-        (!settings_.impl_side_painting || !settings_.solid_color_scrollbars)) {
+    if (!contents_texture_manager_ && !settings_.impl_side_painting) {
       contents_texture_manager_ =
           PrioritizedResourceManager::Create(proxy_.get());
       surface_memory_placeholder_ =
           contents_texture_manager_->CreateTexture(gfx::Size(), RGBA_8888);
+    }
+
+    if (root_layer()) {
+      LayerTreeHostCommon::CallFunctionForSubtree(
+          root_layer(),
+          base::Bind(&LayerTreeHostOnOutputSurfaceCreatedCallback));
     }
 
     client_->DidInitializeOutputSurface(true);
@@ -257,8 +254,8 @@ void LayerTreeHost::AcquireLayerTextures() {
   proxy_->AcquireLayerTextures();
 }
 
-void LayerTreeHost::DidBeginFrame() {
-  client_->DidBeginFrame();
+void LayerTreeHost::DidBeginMainFrame() {
+  client_->DidBeginMainFrame();
 }
 
 void LayerTreeHost::UpdateClientAnimations(base::TimeTicks frame_begin_time) {
@@ -309,7 +306,8 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
     host_impl->set_max_memory_needed_bytes(
         contents_texture_manager_->MaxMemoryNeededBytes());
 
-    contents_texture_manager_->UpdateBackingsInDrawingImplTree();
+    contents_texture_manager_->UpdateBackingsState(
+        host_impl->resource_provider());
   }
 
   // In impl-side painting, synchronize to the pending tree so that it has
@@ -322,10 +320,16 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
     DCHECK(!host_impl->pending_tree());
     host_impl->CreatePendingTree();
     sync_tree = host_impl->pending_tree();
+    if (next_commit_forces_redraw_)
+      sync_tree->ForceRedrawNextActivation();
   } else {
+    if (next_commit_forces_redraw_)
+      host_impl->SetFullRootLayerDamage();
     contents_texture_manager_->ReduceMemory(host_impl->resource_provider());
     sync_tree = host_impl->active_tree();
   }
+
+  next_commit_forces_redraw_ = false;
 
   sync_tree->set_source_frame_number(source_frame_number());
 
@@ -462,7 +466,9 @@ scoped_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
       LayerTreeHostImpl::Create(settings_,
                                 client,
                                 proxy_.get(),
-                                rendering_stats_instrumentation_.get());
+                                rendering_stats_instrumentation_.get(),
+                                shared_bitmap_manager_);
+  shared_bitmap_manager_ = NULL;
   if (settings_.calculate_top_controls_position &&
       host_impl->top_controls_manager()) {
     top_controls_manager_weak_ptr_ =
@@ -560,8 +566,17 @@ bool LayerTreeHost::CommitRequested() const {
   return proxy_->CommitRequested();
 }
 
+bool LayerTreeHost::BeginMainFrameRequested() const {
+  return proxy_->BeginMainFrameRequested();
+}
+
+
 void LayerTreeHost::SetNextCommitWaitsForActivation() {
   proxy_->SetNextCommitWaitsForActivation();
+}
+
+void LayerTreeHost::SetNextCommitForcesRedraw() {
+  next_commit_forces_redraw_ = true;
 }
 
 void LayerTreeHost::SetAnimationEvents(scoped_ptr<AnimationEventsVector> events,
@@ -677,8 +692,9 @@ void LayerTreeHost::SetOverhangBitmap(const SkBitmap& bitmap) {
     bitmap_copy.setImmutable();
   }
 
-  overhang_ui_resource_ = ScopedUIResource::Create(
-      this, UIResourceBitmap(bitmap_copy, UIResourceBitmap::REPEAT));
+  UIResourceBitmap overhang_bitmap(bitmap_copy);
+  overhang_bitmap.SetWrapMode(UIResourceBitmap::REPEAT);
+  overhang_ui_resource_ = ScopedUIResource::Create(this, overhang_bitmap);
 }
 
 void LayerTreeHost::SetVisible(bool visible) {
@@ -740,7 +756,11 @@ bool LayerTreeHost::UpdateLayers(ResourceUpdateQueue* queue) {
 
   DCHECK(!root_layer()->parent());
 
-  return UpdateLayers(root_layer(), queue);
+  bool result = UpdateLayers(root_layer(), queue);
+
+  micro_benchmark_controller_.DidUpdateLayers();
+
+  return result;
 }
 
 static Layer* FindFirstScrollableLayer(Layer* layer) {
@@ -777,10 +797,8 @@ bool LayerTreeHost::UsingSharedMemoryResources() {
 
 bool LayerTreeHost::UpdateLayers(Layer* root_layer,
                                  ResourceUpdateQueue* queue) {
-  TRACE_EVENT1(benchmark_instrumentation::kCategory,
-               benchmark_instrumentation::kLayerTreeHostUpdateLayers,
-               benchmark_instrumentation::kSourceFrameNumber,
-               source_frame_number());
+  TRACE_EVENT1("cc", "LayerTreeHost::UpdateLayers",
+               "source_frame_number", source_frame_number());
 
   RenderSurfaceLayerList update_list;
   {
@@ -797,6 +815,7 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
     }
 
     TRACE_EVENT0("cc", "LayerTreeHost::UpdateLayers::CalcDrawProps");
+    bool can_render_to_separate_surface = true;
     LayerTreeHostCommon::CalcDrawPropsMainInputs inputs(
         root_layer,
         device_viewport_size(),
@@ -806,6 +825,7 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
         page_scale_layer,
         GetRendererCapabilities().max_texture_size,
         settings_.can_use_lcd_text,
+        can_render_to_separate_surface,
         settings_.layer_transforms_should_scale_layer_contents,
         &update_list);
     LayerTreeHostCommon::CalculateDrawProperties(&inputs);
@@ -888,11 +908,10 @@ void LayerTreeHost::SetPrioritiesForSurfaces(size_t surface_memory_bytes) {
 
 void LayerTreeHost::SetPrioritiesForLayers(
     const RenderSurfaceLayerList& update_list) {
-  // Use BackToFront since it's cheap and this isn't order-dependent.
   typedef LayerIterator<Layer,
                         RenderSurfaceLayerList,
                         RenderSurface,
-                        LayerIteratorActions::BackToFront> LayerIteratorType;
+                        LayerIteratorActions::FrontToBack> LayerIteratorType;
 
   PriorityCalculator calculator;
   LayerIteratorType end = LayerIteratorType::End(&update_list);
@@ -1031,7 +1050,7 @@ void LayerTreeHost::PaintLayerContents(
     if (it.represents_target_render_surface()) {
       PaintMasksForRenderSurface(
           *it, queue, did_paint_content, need_more_updates);
-    } else if (it.represents_itself()) {
+    } else if (it.represents_itself() && it->DrawsContent()) {
       devtools_instrumentation::ScopedLayerTreeTask
           update_layer(devtools_instrumentation::kUpdateLayer, it->id(), id());
       DCHECK(!it->paint_properties().bounds.IsEmpty());
@@ -1116,8 +1135,25 @@ void LayerTreeHost::RateLimit() {
   proxy_->ForceSerializeOnSwapBuffers();
 }
 
+bool LayerTreeHost::AlwaysUsePartialTextureUpdates() {
+  if (!proxy_->GetRendererCapabilities().allow_partial_texture_updates)
+    return false;
+  return !proxy_->HasImplThread();
+}
+
+size_t LayerTreeHost::MaxPartialTextureUpdates() const {
+  size_t max_partial_texture_updates = 0;
+  if (proxy_->GetRendererCapabilities().allow_partial_texture_updates &&
+      !settings_.impl_side_painting) {
+    max_partial_texture_updates =
+        std::min(settings_.max_partial_texture_updates,
+                 proxy_->MaxPartialTextureUpdates());
+  }
+  return max_partial_texture_updates;
+}
+
 bool LayerTreeHost::RequestPartialTextureUpdate() {
-  if (partial_texture_update_requests_ >= settings_.max_partial_texture_updates)
+  if (partial_texture_update_requests_ >= MaxPartialTextureUpdates())
     return false;
 
   partial_texture_update_requests_++;
@@ -1155,7 +1191,6 @@ scoped_ptr<base::Value> LayerTreeHost::AsValue() const {
 }
 
 void LayerTreeHost::AnimateLayers(base::TimeTicks time) {
-  rendering_stats_instrumentation_->IncrementAnimationFrameCount();
   if (!settings_.accelerated_animation_enabled ||
       animation_registrar_->active_animation_controllers().empty())
     return;
@@ -1238,6 +1273,14 @@ void LayerTreeHost::RegisterViewportLayers(
   page_scale_layer_ = page_scale_layer;
   inner_viewport_scroll_layer_ = inner_viewport_scroll_layer;
   outer_viewport_scroll_layer_ = outer_viewport_scroll_layer;
+}
+
+bool LayerTreeHost::ScheduleMicroBenchmark(
+    const std::string& benchmark_name,
+    scoped_ptr<base::Value> value,
+    const MicroBenchmark::DoneCallback& callback) {
+  return micro_benchmark_controller_.ScheduleRun(
+      benchmark_name, value.Pass(), callback);
 }
 
 }  // namespace cc

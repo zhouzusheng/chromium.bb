@@ -81,17 +81,17 @@ public:
     virtual void dispatchDidLoadResourceFromMemoryCache(const WebCore::ResourceRequest&, const WebCore::ResourceResponse&);
     virtual void dispatchDidHandleOnloadEvents();
     virtual void dispatchDidReceiveServerRedirectForProvisionalLoad();
-    virtual void dispatchDidNavigateWithinPage();
+    virtual void dispatchDidNavigateWithinPage(WebCore::NavigationHistoryPolicy);
     virtual void dispatchWillClose();
     virtual void dispatchDidStartProvisionalLoad();
     virtual void dispatchDidReceiveTitle(const String&);
     virtual void dispatchDidChangeIcons(WebCore::IconType);
-    virtual void dispatchDidCommitLoad();
+    virtual void dispatchDidCommitLoad(WebCore::NavigationHistoryPolicy);
     virtual void dispatchDidFailProvisionalLoad(const WebCore::ResourceError&);
     virtual void dispatchDidFailLoad(const WebCore::ResourceError&);
     virtual void dispatchDidFinishDocumentLoad();
     virtual void dispatchDidFinishLoad();
-    virtual void dispatchDidLayout(WebCore::LayoutMilestones);
+    virtual void dispatchDidFirstVisuallyNonEmptyLayout() OVERRIDE;
     virtual WebCore::NavigationPolicy decidePolicyForNavigation(const WebCore::ResourceRequest&, WebCore::DocumentLoader*, WebCore::NavigationPolicy);
     virtual void dispatchWillRequestResource(WebCore::FetchRequest*);
     virtual void dispatchWillSendSubmitEvent(PassRefPtr<WebCore::FormState>);
@@ -100,13 +100,14 @@ public:
     virtual void postProgressEstimateChangedNotification();
     virtual void postProgressFinishedNotification();
     virtual void loadURLExternally(const WebCore::ResourceRequest&, WebCore::NavigationPolicy, const String& suggestedName = String());
-    virtual void navigateBackForward(int offset) const;
+    virtual bool navigateBackForward(int offset) const;
     virtual void didAccessInitialDocument();
     virtual void didDisownOpener();
     virtual void didDisplayInsecureContent();
     virtual void didRunInsecureContent(WebCore::SecurityOrigin*, const WebCore::KURL& insecureURL);
     virtual void didDetectXSS(const WebCore::KURL&, bool didBlockEntirePage);
     virtual void didDispatchPingLoader(const WebCore::KURL&);
+    virtual void selectorMatchChanged(const Vector<String>& addedSelectors, const Vector<String>& removedSelectors);
     virtual PassRefPtr<WebCore::DocumentLoader> createDocumentLoader(
         const WebCore::ResourceRequest&, const WebCore::SubstituteData&);
     virtual WTF::String userAgent(const WebCore::KURL&);
@@ -151,15 +152,25 @@ public:
 
     virtual void dispatchWillInsertBody() OVERRIDE;
 
-    virtual WebServiceWorkerRegistry* serviceWorkerRegistry() OVERRIDE;
+    virtual PassOwnPtr<WebServiceWorkerProvider> createServiceWorkerProvider(PassOwnPtr<WebServiceWorkerProviderClient>) OVERRIDE;
+
+    virtual void didStopAllLoaders() OVERRIDE;
 
 private:
+    virtual bool isFrameLoaderClientImpl() const OVERRIDE { return true; }
+
     PassOwnPtr<WebPluginLoadObserver> pluginLoadObserver();
 
     // The WebFrame that owns this object and manages its lifetime. Therefore,
     // the web frame object is guaranteed to exist.
     WebFrameImpl* m_webFrame;
 };
+
+inline FrameLoaderClientImpl* toFrameLoaderClientImpl(WebCore::FrameLoaderClient* client)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(!client || client->isFrameLoaderClientImpl());
+    return static_cast<FrameLoaderClientImpl*>(client);
+}
 
 } // namespace WebKit
 

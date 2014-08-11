@@ -186,7 +186,7 @@ def addGenFiles():
 
 
 def main(args):
-  version = "bb4"   # SET BB VERSION NUMBER HERE
+  version = "bb1"   # SET BB VERSION NUMBER HERE
 
   outDir = None
   doClean = True
@@ -234,6 +234,7 @@ def main(args):
   applyVariableToEnvironment('GYP_DEFINES', 'bb_version', version)
   applyVariableToEnvironment('GYP_DEFINES', 'bb_ppapi_examples', '0')
   applyVariableToEnvironment('GYP_DEFINES', 'build_ffmpegsumo', '0')
+  applyVariableToEnvironment('GYP_DEFINES', 'buildtype', 'Official')
 
   print("Running gclient hooks...")
   sys.stdout.flush()

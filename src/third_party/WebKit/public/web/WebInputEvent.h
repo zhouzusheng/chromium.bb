@@ -118,6 +118,7 @@ public:
         GestureScrollUpdateWithoutPropagation,
         GestureFlingStart,
         GestureFlingCancel,
+        GestureShowPress,
         GestureTap,
         GestureTapUnconfirmed,
         GestureTapDown,
@@ -234,6 +235,7 @@ public:
             || type == GestureTapUnconfirmed
             || type == GestureTapDown
             || type == GestureTapCancel
+            || type == GestureShowPress
             || type == GestureDoubleTap
             || type == GestureTwoFingerTap
             || type == GestureLongPress
@@ -302,7 +304,7 @@ public:
 
     // Sets keyIdentifier based on the value of windowsKeyCode.  This is
     // handy for generating synthetic keyboard events.
-    WEBKIT_EXPORT void setKeyIdentifierFromWindowsKeyCode();
+    BLINK_EXPORT void setKeyIdentifierFromWindowsKeyCode();
 
     static int windowsKeyCodeWithoutLocation(int keycode);
     static int locationModifiersFromWindowsKeyCode(int keycode);
@@ -419,6 +421,11 @@ public:
             float width;
             float height;
         } tapDown;
+
+        struct {
+            float width;
+            float height;
+        } showPress;
 
         struct {
             float width;

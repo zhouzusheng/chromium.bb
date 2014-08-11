@@ -43,11 +43,11 @@
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/inspector/ScriptCallStack.h"
-#include "core/page/ConsoleTypes.h"
-#include "core/page/ContentSecurityPolicy.h"
-#include "core/page/DOMWindow.h"
-#include "core/page/Frame.h"
-#include "core/platform/MemoryUsageSupport.h"
+#include "core/frame/ConsoleTypes.h"
+#include "core/frame/ContentSecurityPolicy.h"
+#include "core/frame/DOMWindow.h"
+#include "core/frame/Frame.h"
+#include "public/platform/Platform.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 #include <v8-debug.h>
@@ -56,19 +56,19 @@ namespace WebCore {
 
 static Frame* findFrame(v8::Local<v8::Object> host, v8::Local<v8::Value> data, v8::Isolate* isolate)
 {
-    WrapperTypeInfo* type = WrapperTypeInfo::unwrap(data);
+    const WrapperTypeInfo* type = WrapperTypeInfo::unwrap(data);
 
-    if (V8Window::info.equals(type)) {
+    if (V8Window::wrapperTypeInfo.equals(type)) {
         v8::Handle<v8::Object> windowWrapper = host->FindInstanceInPrototypeChain(V8Window::GetTemplate(isolate, worldTypeInMainThread(isolate)));
         if (windowWrapper.IsEmpty())
             return 0;
         return V8Window::toNative(windowWrapper)->frame();
     }
 
-    if (V8History::info.equals(type))
+    if (V8History::wrapperTypeInfo.equals(type))
         return V8History::toNative(host)->frame();
 
-    if (V8Location::info.equals(type))
+    if (V8Location::wrapperTypeInfo.equals(type))
         return V8Location::toNative(host)->frame();
 
     // This function can handle only those types listed above.
@@ -78,14 +78,19 @@ static Frame* findFrame(v8::Local<v8::Object> host, v8::Local<v8::Value> data, v
 
 static void reportFatalErrorInMainThread(const char* location, const char* message)
 {
-    int memoryUsageMB = MemoryUsageSupport::actualMemoryUsageMB();
+    int memoryUsageMB = WebKit::Platform::current()->actualMemoryUsageMB();
     printf("V8 error: %s (%s).  Current memory usage: %d MB\n", message, location, memoryUsageMB);
     CRASH();
 }
 
 static void messageHandlerInMainThread(v8::Handle<v8::Message> message, v8::Handle<v8::Value> data)
 {
-    DOMWindow* firstWindow = firstDOMWindow();
+    // If called during context initialization, there will be no entered context.
+    v8::Handle<v8::Context> enteredContext = v8::Context::GetEntered();
+    if (enteredContext.IsEmpty())
+        return;
+
+    DOMWindow* firstWindow = toDOMWindow(enteredContext);
     if (!firstWindow->isCurrentlyDisplayedInFrame())
         return;
 
@@ -102,11 +107,11 @@ static void messageHandlerInMainThread(v8::Handle<v8::Message> message, v8::Hand
     String resource = shouldUseDocumentURL ? firstWindow->document()->url() : toWebCoreString(resourceName.As<v8::String>());
     AccessControlStatus corsStatus = message->IsSharedCrossOrigin() ? SharableCrossOrigin : NotSharableCrossOrigin;
 
-    RefPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, resource, message->GetLineNumber(), message->GetStartColumn(), DOMWrapperWorld::current());
+    RefPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, resource, message->GetLineNumber(), message->GetStartColumn() + 1, DOMWrapperWorld::current());
     if (V8DOMWrapper::isDOMWrapper(data)) {
         v8::Handle<v8::Object> obj = v8::Handle<v8::Object>::Cast(data);
-        WrapperTypeInfo* type = toWrapperTypeInfo(obj);
-        if (V8DOMException::info.isSubclass(type)) {
+        const WrapperTypeInfo* type = toWrapperTypeInfo(obj);
+        if (V8DOMException::wrapperTypeInfo.isSubclass(type)) {
             DOMException* exception = V8DOMException::toNative(obj);
             if (exception && !exception->messageForConsole().isEmpty())
                 event->setUnsanitizedMessage("Uncaught " + exception->toStringForConsole());
@@ -115,9 +120,10 @@ static void messageHandlerInMainThread(v8::Handle<v8::Message> message, v8::Hand
 
     // This method might be called while we're creating a new context. In this case, we
     // avoid storing the exception object, as we can't create a wrapper during context creation.
+    // FIXME: Can we even get here during initialization now that we bail out when GetEntered returns an empty handle?
     DOMWrapperWorld* world = DOMWrapperWorld::current();
     Frame* frame = firstWindow->document()->frame();
-    if (world && frame && frame->script()->existingWindowShell(world))
+    if (world && frame && frame->script().existingWindowShell(world))
         V8ErrorHandler::storeExceptionOnErrorEventWrapper(event.get(), data, v8::Isolate::GetCurrent());
     firstWindow->document()->reportException(event.release(), callStack, corsStatus);
 }
@@ -136,8 +142,8 @@ static void failedAccessCheckCallbackInMainThread(v8::Local<v8::Object> host, v8
 
 static bool codeGenerationCheckCallbackInMainThread(v8::Local<v8::Context> context)
 {
-    if (ScriptExecutionContext* scriptExecutionContext = toScriptExecutionContext(context)) {
-        if (ContentSecurityPolicy* policy = toDocument(scriptExecutionContext)->contentSecurityPolicy())
+    if (ExecutionContext* executionContext = toExecutionContext(context)) {
+        if (ContentSecurityPolicy* policy = toDocument(executionContext)->contentSecurityPolicy())
             return policy->allowEval(ScriptState::forContext(context));
     }
     return false;
@@ -187,10 +193,10 @@ static void messageHandlerInWorker(v8::Handle<v8::Message> message, v8::Handle<v
     isReportingException = true;
 
     // During the frame teardown, there may not be a valid context.
-    if (ScriptExecutionContext* context = getScriptExecutionContext()) {
+    if (ExecutionContext* context = getExecutionContext()) {
         String errorMessage = toWebCoreString(message->Get());
         String sourceURL = toWebCoreString(message->GetScriptResourceName());
-        RefPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, sourceURL, message->GetLineNumber(), message->GetStartColumn(), DOMWrapperWorld::current());
+        RefPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, sourceURL, message->GetLineNumber(), message->GetStartColumn() + 1, DOMWrapperWorld::current());
         AccessControlStatus corsStatus = message->IsSharedCrossOrigin() ? SharableCrossOrigin : NotSharableCrossOrigin;
 
         V8ErrorHandler::storeExceptionOnErrorEventWrapper(event.get(), data, v8::Isolate::GetCurrent());

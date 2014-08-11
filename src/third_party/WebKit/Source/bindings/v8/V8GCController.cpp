@@ -31,6 +31,7 @@
 #include "config.h"
 #include "bindings/v8/V8GCController.h"
 
+#include <algorithm>
 #include "V8MessagePort.h"
 #include "V8MutationObserver.h"
 #include "V8Node.h"
@@ -44,8 +45,8 @@
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLImageElement.h"
-#include "core/platform/chromium/TraceEvent.h"
-#include <algorithm>
+#include "core/svg/SVGElement.h"
+#include "platform/TraceEvent.h"
 
 namespace WebCore {
 
@@ -128,7 +129,7 @@ public:
         // Note that node->wrapper().IsEmpty() returns true for nodes that
         // do not have wrappers in the main world.
         if (node->containsWrapper()) {
-            WrapperTypeInfo* type = toWrapperTypeInfo(*wrapper);
+            const WrapperTypeInfo* type = toWrapperTypeInfo(*wrapper);
             ActiveDOMObject* activeDOMObject = type->toActiveDOMObject(*wrapper);
             if (activeDOMObject && activeDOMObject->hasPendingActivity())
                 return;
@@ -158,10 +159,11 @@ private:
         for (Node* node = rootNode; node; node = NodeTraversal::next(node)) {
             if (node->containsWrapper()) {
                 // FIXME: Remove the special handling for image elements.
+                // FIXME: Remove the special handling for SVG context elements.
                 // The same special handling is in V8GCController::opaqueRootForGC().
                 // Maybe should image elements be active DOM nodes?
                 // See https://code.google.com/p/chromium/issues/detail?id=164882
-                if (!node->isV8CollectableDuringMinorGC() || (node->hasTagName(HTMLNames::imgTag) && toHTMLImageElement(node)->hasPendingActivity())) {
+                if (!node->isV8CollectableDuringMinorGC() || (node->hasTagName(HTMLNames::imgTag) && toHTMLImageElement(node)->hasPendingActivity()) || (node->isSVGElement() && toSVGElement(node)->isContextElement())) {
                     // This node is not in the new space of V8. This indicates that
                     // the minor GC cannot anyway judge reachability of this DOM tree.
                     // Thus we give up traversing the DOM tree.
@@ -245,17 +247,17 @@ public:
         if (value->IsIndependent())
             return;
 
-        WrapperTypeInfo* type = toWrapperTypeInfo(*wrapper);
+        const WrapperTypeInfo* type = toWrapperTypeInfo(*wrapper);
         void* object = toNative(*wrapper);
 
-        if (V8MessagePort::info.equals(type)) {
+        if (V8MessagePort::wrapperTypeInfo.equals(type)) {
             // Mark each port as in-use if it's entangled. For simplicity's sake,
             // we assume all ports are remotely entangled, since the Chromium port
             // implementation can't tell the difference.
             MessagePort* port = static_cast<MessagePort*>(object);
             if (port->isEntangled() || port->hasPendingActivity())
                 m_isolate->SetObjectGroupId(*value, liveRootId());
-        } else if (V8MutationObserver::info.equals(type)) {
+        } else if (V8MutationObserver::wrapperTypeInfo.equals(type)) {
             // FIXME: Allow opaqueRootForGC to operate on multiple roots and move this logic into V8MutationObserverCustom.
             MutationObserver* observer = static_cast<MutationObserver*>(object);
             HashSet<Node*> observedNodes = observer->getObservedNodes();
@@ -284,8 +286,8 @@ public:
                 m_groupsWhichNeedRetainerInfo.append(root);
         } else if (classId == v8DOMObjectClassId) {
             ASSERT(!value->IsIndependent());
-            void* root = type->opaqueRootForGC(object, m_isolate);
-            m_isolate->SetObjectGroupId(*value, v8::UniqueId(reinterpret_cast<intptr_t>(root)));
+            v8::Persistent<v8::Object>* wrapperPersistent = reinterpret_cast<v8::Persistent<v8::Object>*>(value);
+            type->resolveWrapperReachability(object, *wrapperPersistent, m_isolate);
         } else {
             ASSERT_NOT_REACHED();
         }

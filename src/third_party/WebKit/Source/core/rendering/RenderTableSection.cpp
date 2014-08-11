@@ -29,6 +29,7 @@
 // FIXME: Remove 'RuntimeEnabledFeatures.h' when http://crbug.com/78724 is closed.
 #include "RuntimeEnabledFeatures.h"
 #include <limits>
+#include "core/rendering/GraphicsContextAnnotator.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderTableCell.h"
@@ -478,7 +479,7 @@ void RenderTableSection::updateRowsHeightHavingOnlySpanningCells(RenderTableCell
     const unsigned rowSpan = cell->rowSpan();
     const unsigned rowIndex = cell->rowIndex();
 
-    ASSERT(rowSpan == spanningRowsHeight.rowHeight.size());
+    ASSERT_UNUSED(rowSpan, rowSpan == spanningRowsHeight.rowHeight.size());
 
     for (unsigned row = 0; row < spanningRowsHeight.rowHeight.size(); row++) {
         unsigned actualRow = row + rowIndex;
@@ -1328,8 +1329,7 @@ void RenderTableSection::paint(PaintInfo& paintInfo, const LayoutPoint& paintOff
 {
     ANNOTATE_GRAPHICS_CONTEXT(paintInfo, this);
 
-    // put this back in when all layout tests can handle it
-    // ASSERT(!needsLayout());
+    ASSERT_WITH_SECURITY_IMPLICATION(!needsLayout());
     // avoid crashing on bugs that cause us to paint with dirty layout
     if (needsLayout())
         return;

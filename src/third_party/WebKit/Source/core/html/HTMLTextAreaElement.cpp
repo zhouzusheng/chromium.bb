@@ -30,24 +30,23 @@
 #include "HTMLNames.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "core/dom/BeforeTextInsertedEvent.h"
 #include "core/dom/Document.h"
-#include "core/dom/Event.h"
-#include "core/dom/EventNames.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/TextIterator.h"
+#include "core/events/BeforeTextInsertedEvent.h"
+#include "core/events/Event.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/html/FormDataList.h"
 #include "core/html/forms/FormController.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/TextControlInnerElements.h"
-#include "core/page/Frame.h"
-#include "core/platform/LocalizedStrings.h"
-#include "core/platform/text/PlatformLocale.h"
+#include "core/frame/Frame.h"
 #include "core/rendering/RenderTextControlMultiLine.h"
+#include "platform/text/PlatformLocale.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -223,7 +222,7 @@ bool HTMLTextAreaElement::appendFormData(FormDataList& encoding, bool)
     return true;
 }
 
-void HTMLTextAreaElement::reset()
+void HTMLTextAreaElement::resetImpl()
 {
     setNonDirtyValue(defaultValue());
 }
@@ -260,7 +259,7 @@ void HTMLTextAreaElement::updateFocusAppearance(bool restorePreviousSelection)
 
 void HTMLTextAreaElement::defaultEventHandler(Event* event)
 {
-    if (renderer() && (event->isMouseEvent() || event->isDragEvent() || event->hasInterface(eventNames().interfaceForWheelEvent) || event->type() == eventNames().blurEvent))
+    if (renderer() && (event->isMouseEvent() || event->isDragEvent() || event->hasInterface(EventNames::WheelEvent) || event->type() == EventTypeNames::blur))
         forwardEvent(event);
     else if (renderer() && event->isBeforeTextInsertedEvent())
         handleBeforeTextInsertedEvent(static_cast<BeforeTextInsertedEvent*>(event));
@@ -318,13 +317,6 @@ String HTMLTextAreaElement::sanitizeUserInputValue(const String& proposedValue, 
     if (maxLength > 0 && U16_IS_LEAD(proposedValue[maxLength - 1]))
         --maxLength;
     return proposedValue.left(maxLength);
-}
-
-HTMLElement* HTMLTextAreaElement::innerTextElement() const
-{
-    Node* node = userAgentShadowRoot()->firstChild();
-    ASSERT(!node || node->hasTagName(divTag));
-    return toHTMLElement(node);
 }
 
 void HTMLTextAreaElement::rendererWillBeDestroyed()
@@ -445,7 +437,7 @@ int HTMLTextAreaElement::maxLength() const
 void HTMLTextAreaElement::setMaxLength(int newValue, ExceptionState& es)
 {
     if (newValue < 0)
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
     else
         setAttribute(maxlengthAttr, String::number(newValue));
 }
@@ -459,7 +451,7 @@ String HTMLTextAreaElement::validationMessage() const
         return customValidationMessage();
 
     if (valueMissing())
-        return validationMessageValueMissingText();
+        return locale().queryString(WebKit::WebLocalizedString::ValidationValueMissing);
 
     if (tooLong())
         return locale().validationMessageTooLongText(computeLengthForSubmission(value()), maxLength());

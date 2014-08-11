@@ -54,30 +54,30 @@ public:
         return *this;
     }
 
-    WEBKIT_EXPORT void setText(const WebString& text);
-    WEBKIT_EXPORT void setFontSize(float fontSize);
-    WEBKIT_EXPORT void setFontFamily(const WebString& fontFamily);
-    WEBKIT_EXPORT void setColor(WebColor color);
-    WEBKIT_EXPORT void setVerticalMargin(float verticalMargin);
-    WEBKIT_EXPORT void setLeftMargin(float leftMargin);
-    WEBKIT_EXPORT void setRightMargin(float rightMargin);
-    WEBKIT_EXPORT void setAlign(unsigned short align);
+    BLINK_EXPORT void setText(const WebString& text);
+    BLINK_EXPORT void setFontSize(float fontSize);
+    BLINK_EXPORT void setFontFamily(const WebString& fontFamily);
+    BLINK_EXPORT void setColor(WebColor color);
+    BLINK_EXPORT void setVerticalMargin(float verticalMargin);
+    BLINK_EXPORT void setLeftMargin(float leftMargin);
+    BLINK_EXPORT void setRightMargin(float rightMargin);
+    BLINK_EXPORT void setAlign(unsigned short align);
 
-    WEBKIT_EXPORT WebString text() const;
-    WEBKIT_EXPORT float fontSize() const;
-    WEBKIT_EXPORT WebString fontFamily() const;
-    WEBKIT_EXPORT WebColor color() const;
-    WEBKIT_EXPORT float verticalMargin() const;
-    WEBKIT_EXPORT float leftMargin() const;
-    WEBKIT_EXPORT float rightMargin() const;
-    WEBKIT_EXPORT unsigned short align() const;
+    BLINK_EXPORT WebString text() const;
+    BLINK_EXPORT float fontSize() const;
+    BLINK_EXPORT WebString fontFamily() const;
+    BLINK_EXPORT WebColor color() const;
+    BLINK_EXPORT float verticalMargin() const;
+    BLINK_EXPORT float leftMargin() const;
+    BLINK_EXPORT float rightMargin() const;
+    BLINK_EXPORT unsigned short align() const;
 
-    WEBKIT_EXPORT void reset();
-    WEBKIT_EXPORT void assign(const WebBBPrintHeader&);
+    BLINK_EXPORT void reset();
+    BLINK_EXPORT void assign(const WebBBPrintHeader&);
 
     bool isNull() const { return m_private.isNull(); }
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
     WebBBPrintHeader(const WTF::PassRefPtr<WebCore::BBPrintHeader>&);
 #endif
 
@@ -98,19 +98,19 @@ public:
         return *this;
     }
 
-    WEBKIT_EXPORT WebBBPrintHeader headerLeft() const;
-    WEBKIT_EXPORT WebBBPrintHeader headerCenter() const;
-    WEBKIT_EXPORT WebBBPrintHeader headerRight() const;
-    WEBKIT_EXPORT WebBBPrintHeader footerLeft() const;
-    WEBKIT_EXPORT WebBBPrintHeader footerCenter() const;
-    WEBKIT_EXPORT WebBBPrintHeader footerRight() const;
+    BLINK_EXPORT WebBBPrintHeader headerLeft() const;
+    BLINK_EXPORT WebBBPrintHeader headerCenter() const;
+    BLINK_EXPORT WebBBPrintHeader headerRight() const;
+    BLINK_EXPORT WebBBPrintHeader footerLeft() const;
+    BLINK_EXPORT WebBBPrintHeader footerCenter() const;
+    BLINK_EXPORT WebBBPrintHeader footerRight() const;
 
-    WEBKIT_EXPORT void reset();
-    WEBKIT_EXPORT void assign(const WebBBPrintInfo&);
+    BLINK_EXPORT void reset();
+    BLINK_EXPORT void assign(const WebBBPrintInfo&);
 
     bool isNull() const { return m_private.isNull(); }
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
     WebBBPrintInfo(const WTF::PassRefPtr<WebCore::BBPrintInfo>&);
 #endif
 

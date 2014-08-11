@@ -28,16 +28,14 @@
 
 #include "core/rendering/svg/RenderSVGText.h"
 
-#include "core/platform/FloatConversion.h"
-#include "core/platform/graphics/FloatQuad.h"
 #include "core/platform/graphics/FontCache.h"
 #include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/platform/graphics/SimpleFontData.h"
-#include "core/platform/graphics/transforms/TransformState.h"
 #include "core/rendering/HitTestRequest.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/PointerEventsHitRules.h"
+#include "core/rendering/style/ShadowList.h"
 #include "core/rendering/svg/RenderSVGInlineText.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/RenderSVGRoot.h"
@@ -50,6 +48,9 @@
 #include "core/svg/SVGTextElement.h"
 #include "core/svg/SVGTransformList.h"
 #include "core/svg/SVGURIReference.h"
+#include "platform/FloatConversion.h"
+#include "platform/geometry/FloatQuad.h"
+#include "platform/geometry/TransformState.h"
 
 namespace WebCore {
 
@@ -518,7 +519,7 @@ FloatRect RenderSVGText::repaintRectInLocalCoordinates() const
     FloatRect repaintRect = strokeBoundingBox();
     SVGRenderSupport::intersectRepaintRectWithResources(this, repaintRect);
 
-    if (const ShadowData* textShadow = style()->textShadow())
+    if (const ShadowList* textShadow = style()->textShadow())
         textShadow->adjustRectForShadow(repaintRect);
 
     return repaintRect;

@@ -46,6 +46,7 @@
 #include "core/css/BasicShapeFunctions.h"
 #include "core/css/CSSAspectRatioValue.h"
 #include "core/css/CSSCursorImageValue.h"
+#include "core/css/CSSFontValue.h"
 #include "core/css/CSSFunctionValue.h"
 #include "core/css/CSSGradientValue.h"
 #include "core/css/CSSGridTemplateValue.h"
@@ -55,22 +56,21 @@
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/css/CSSProperty.h"
 #include "core/css/CSSReflectValue.h"
+#include "core/css/CSSShadowValue.h"
 #include "core/css/CSSVariableValue.h"
 #include "core/css/Counter.h"
-#include "core/css/FontValue.h"
 #include "core/css/Pair.h"
 #include "core/css/Rect.h"
-#include "core/css/ShadowValue.h"
 #include "core/css/StylePropertySet.h"
+#include "core/css/StyleRule.h"
 #include "core/css/resolver/ElementStyleResources.h"
 #include "core/css/resolver/FilterOperationResolver.h"
 #include "core/css/resolver/FontBuilder.h"
 #include "core/css/resolver/StyleBuilder.h"
 #include "core/css/resolver/StyleResolverState.h"
 #include "core/css/resolver/TransformBuilder.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Settings.h"
-#include "core/platform/graphics/FontDescription.h"
 #include "core/rendering/style/CounterContent.h"
 #include "core/rendering/style/CursorList.h"
 #include "core/rendering/style/QuotesData.h"
@@ -78,11 +78,11 @@
 #include "core/rendering/style/RenderStyleConstants.h"
 #include "core/rendering/style/SVGRenderStyle.h"
 #include "core/rendering/style/SVGRenderStyleDefs.h"
-#include "core/rendering/style/ShadowData.h"
 #include "core/rendering/style/StyleGeneratedImage.h"
 #include "core/svg/SVGColor.h"
 #include "core/svg/SVGPaint.h"
 #include "core/svg/SVGURIReference.h"
+#include "platform/fonts/FontDescription.h"
 #include "wtf/MathExtras.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/Vector.h"
@@ -151,7 +151,7 @@ void StyleBuilderFunctions::applyValueCSSPropertyCursor(StyleResolverState& stat
         for (int i = 0; i < len; i++) {
             CSSValue* item = list->itemWithoutBoundsCheck(i);
             if (item->isCursorImageValue()) {
-                CSSCursorImageValue* image = static_cast<CSSCursorImageValue*>(item);
+                CSSCursorImageValue* image = toCSSCursorImageValue(item);
                 if (image->updateIfSVGCursorIsUsed(state.element())) // Elements with SVG cursors are not allowed to share style.
                     state.style()->setUnique();
                 state.style()->addCursor(state.styleImage(CSSPropertyCursor, image), image->hotSpot());
@@ -280,13 +280,17 @@ void StyleBuilderFunctions::applyValueCSSPropertyLineHeight(StyleResolverState& 
             multiplier *= frame->textZoomFactor();
         lineHeight = primitiveValue->computeLength<Length>(state.style(), state.rootElementStyle(), multiplier);
     } else if (primitiveValue->isPercentage()) {
-        // FIXME: percentage should not be restricted to an integer here.
-        lineHeight = Length((state.style()->fontSize() * primitiveValue->getIntValue()) / 100, Fixed);
+        lineHeight = Length((state.style()->computedFontSize() * primitiveValue->getIntValue()) / 100.0, Fixed);
     } else if (primitiveValue->isNumber()) {
-        // FIXME: number and percentage values should produce the same type of Length (ie. Fixed or Percent).
         lineHeight = Length(primitiveValue->getDoubleValue() * 100.0, Percent);
     } else if (primitiveValue->isViewportPercentageLength()) {
         lineHeight = primitiveValue->viewportPercentageLength();
+    } else if (primitiveValue->isCalculated()) {
+        double multiplier = state.style()->effectiveZoom();
+        if (Frame* frame = state.document().frame())
+            multiplier *= frame->textZoomFactor();
+        Length zoomedLength = Length(primitiveValue->cssCalcValue()->toCalcValue(state.style(), state.rootElementStyle(), multiplier));
+        lineHeight = Length(valueForLength(zoomedLength, state.style()->fontSize()), Fixed);
     } else {
         return;
     }
@@ -629,7 +633,7 @@ void StyleBuilderFunctions::applyValueCSSPropertyWebkitAspectRatio(StyleResolver
         state.style()->setHasAspectRatio(false);
         return;
     }
-    CSSAspectRatioValue* aspectRatioValue = static_cast<CSSAspectRatioValue*>(value);
+    CSSAspectRatioValue* aspectRatioValue = toCSSAspectRatioValue(value);
     state.style()->setHasAspectRatio(true);
     state.style()->setAspectRatioDenominator(aspectRatioValue->denominatorValue());
     state.style()->setAspectRatioNumerator(aspectRatioValue->numeratorValue());
@@ -798,8 +802,7 @@ void StyleBuilderFunctions::applyValueCSSPropertyWebkitTextEmphasisStyle(StyleRe
     }
 }
 
-#if ENABLE(CSS3_TEXT)
-void StyleBuilderFunctions::applyValueCSSPropetyWebkitTextUnderlinePosition(StyleResolverState& state, CSSValue* value)
+void StyleBuilderFunctions::applyValueCSSPropertyTextUnderlinePosition(StyleResolverState& state, CSSValue* value)
 {
     // This is true if value is 'auto' or 'alphabetic'.
     if (value->isPrimitiveValue()) {
@@ -816,7 +819,6 @@ void StyleBuilderFunctions::applyValueCSSPropetyWebkitTextUnderlinePosition(Styl
     }
     state.style()->setTextUnderlinePosition(static_cast<TextUnderlinePosition>(t));
 }
-#endif // CSS3_TEXT
 
 Length StyleBuilderConverter::convertLength(StyleResolverState& state, CSSValue* value)
 {
@@ -891,6 +893,37 @@ LengthSize StyleBuilderConverter::convertRadius(StyleResolverState& state, CSSVa
     if (width <= 0 || height <= 0)
         return LengthSize(Length(0, Fixed), Length(0, Fixed));
     return LengthSize(radiusWidth, radiusHeight);
+}
+
+PassRefPtr<ShadowList> StyleBuilderConverter::convertShadow(StyleResolverState& state, CSSValue* value)
+{
+    if (value->isPrimitiveValue()) {
+        ASSERT(toCSSPrimitiveValue(value)->getValueID() == CSSValueNone);
+        return PassRefPtr<ShadowList>();
+    }
+
+    const CSSValueList* valueList = toCSSValueList(value);
+    size_t shadowCount = valueList->length();
+    float zoom = state.style()->effectiveZoom();
+    ShadowDataVector shadows;
+    for (size_t i = 0; i < shadowCount; ++i) {
+        const CSSShadowValue* item = toCSSShadowValue(valueList->item(i));
+        int x = item->x->computeLength<int>(state.style(), state.rootElementStyle(), zoom);
+        int y = item->y->computeLength<int>(state.style(), state.rootElementStyle(), zoom);
+        int blur = item->blur ? item->blur->computeLength<int>(state.style(), state.rootElementStyle(), zoom) : 0;
+        int spread = item->spread ? item->spread->computeLength<int>(state.style(), state.rootElementStyle(), zoom) : 0;
+        ShadowStyle shadowStyle = item->style && item->style->getValueID() == CSSValueInset ? Inset : Normal;
+        Color color;
+        if (item->color)
+            color = state.document().textLinkColors().colorFromPrimitiveValue(item->color.get(), state.style()->visitedDependentColor(CSSPropertyColor));
+        else
+            color = state.style()->color();
+
+        if (!color.isValid())
+            color = Color::transparent;
+        shadows.append(ShadowData(IntPoint(x, y), blur, spread, shadowStyle, color));
+    }
+    return ShadowList::adopt(shadows);
 }
 
 float StyleBuilderConverter::convertSpacing(StyleResolverState& state, CSSValue* value)
@@ -1207,11 +1240,11 @@ static bool hasVariableReference(CSSValue* value)
         return primitiveValue->hasVariableReference();
     }
 
-    if (value->isCalculationValue())
-        return static_cast<CSSCalcValue*>(value)->hasVariableReference();
+    if (value->isCalcValue())
+        return toCSSCalcValue(value)->hasVariableReference();
 
     if (value->isReflectValue()) {
-        CSSReflectValue* reflectValue = static_cast<CSSReflectValue*>(value);
+        CSSReflectValue* reflectValue = toCSSReflectValue(value);
         CSSPrimitiveValue* direction = reflectValue->direction();
         CSSPrimitiveValue* offset = reflectValue->offset();
         CSSValue* mask = reflectValue->mask();
@@ -1327,12 +1360,12 @@ void StyleBuilder::oldApplyProperty(CSSPropertyID id, StyleResolverState& state,
                 CSSValue* item = i.value();
                 if (item->isImageGeneratorValue()) {
                     if (item->isGradientValue())
-                        state.style()->setContent(StyleGeneratedImage::create(static_cast<CSSGradientValue*>(item)->gradientWithStylesResolved(state.document().textLinkColors(), state.style()->color()).get()), didSet);
+                        state.style()->setContent(StyleGeneratedImage::create(toCSSGradientValue(item)->gradientWithStylesResolved(state.document().textLinkColors(), state.style()->color()).get()), didSet);
                     else
-                        state.style()->setContent(StyleGeneratedImage::create(static_cast<CSSImageGeneratorValue*>(item)), didSet);
+                        state.style()->setContent(StyleGeneratedImage::create(toCSSImageGeneratorValue(item)), didSet);
                     didSet = true;
                 } else if (item->isImageSetValue()) {
-                    state.style()->setContent(state.elementStyleResources().setOrPendingFromValue(CSSPropertyContent, static_cast<CSSImageSetValue*>(item)), didSet);
+                    state.style()->setContent(state.elementStyleResources().setOrPendingFromValue(CSSPropertyContent, toCSSImageSetValue(item)), didSet);
                     didSet = true;
                 }
 
@@ -1484,46 +1517,6 @@ void StyleBuilder::oldApplyProperty(CSSPropertyID id, StyleResolverState& state,
         break;
 
     // CSS3 Properties
-    case CSSPropertyTextShadow:
-    case CSSPropertyBoxShadow:
-    case CSSPropertyWebkitBoxShadow: {
-        if (isInherit) {
-            if (id == CSSPropertyTextShadow)
-                return state.style()->setTextShadow(cloneShadow(state.parentStyle()->textShadow()));
-            return state.style()->setBoxShadow(cloneShadow(state.parentStyle()->boxShadow()));
-        }
-        if (isInitial || primitiveValue) // initial | none
-            return id == CSSPropertyTextShadow ? state.style()->setTextShadow(nullptr) : state.style()->setBoxShadow(nullptr);
-
-        if (!value->isValueList())
-            return;
-
-        for (CSSValueListIterator i = value; i.hasMore(); i.advance()) {
-            CSSValue* currValue = i.value();
-            if (!currValue->isShadowValue())
-                continue;
-            ShadowValue* item = static_cast<ShadowValue*>(currValue);
-            int x = item->x->computeLength<int>(state.style(), state.rootElementStyle(), zoomFactor);
-            int y = item->y->computeLength<int>(state.style(), state.rootElementStyle(), zoomFactor);
-            int blur = item->blur ? item->blur->computeLength<int>(state.style(), state.rootElementStyle(), zoomFactor) : 0;
-            int spread = item->spread ? item->spread->computeLength<int>(state.style(), state.rootElementStyle(), zoomFactor) : 0;
-            ShadowStyle shadowStyle = item->style && item->style->getValueID() == CSSValueInset ? Inset : Normal;
-            Color color;
-            if (item->color)
-                color = state.document().textLinkColors().colorFromPrimitiveValue(item->color.get(), state.style()->visitedDependentColor(CSSPropertyColor));
-            else if (state.style())
-                color = state.style()->color();
-
-            if (!color.isValid())
-                color = Color::transparent;
-            OwnPtr<ShadowData> shadow = ShadowData::create(IntPoint(x, y), blur, spread, shadowStyle, color);
-            if (id == CSSPropertyTextShadow)
-                state.style()->setTextShadow(shadow.release(), i.index()); // add to the list if this is not the first entry
-            else
-                state.style()->setBoxShadow(shadow.release(), i.index()); // add to the list if this is not the first entry
-        }
-        return;
-    }
     case CSSPropertyWebkitBoxReflect: {
         HANDLE_INHERIT_AND_INITIAL(boxReflect, BoxReflect)
         if (primitiveValue) {
@@ -1534,7 +1527,7 @@ void StyleBuilder::oldApplyProperty(CSSPropertyID id, StyleResolverState& state,
         if (!value->isReflectValue())
             return;
 
-        CSSReflectValue* reflectValue = static_cast<CSSReflectValue*>(value);
+        CSSReflectValue* reflectValue = toCSSReflectValue(value);
         RefPtr<StyleReflection> reflection = StyleReflection::create();
         reflection->setDirection(*reflectValue->direction());
         if (reflectValue->offset())
@@ -1641,6 +1634,15 @@ void StyleBuilder::oldApplyProperty(CSSPropertyID id, StyleResolverState& state,
         state.style()->setTapHighlightColor(col);
         return;
     }
+    case CSSPropertyInternalCallback: {
+        if (isInherit || isInitial)
+            return;
+        if (primitiveValue && primitiveValue->getValueID() == CSSValueInternalPresence) {
+            state.style()->addCallbackSelector(state.currentRule()->selectorList().selectorsText());
+            return;
+        }
+        break;
+    }
     case CSSPropertyInvalid:
         return;
     // Directional properties are resolved by resolveDirectionAwareProperty() before the switch.
@@ -1726,11 +1728,10 @@ void StyleBuilder::oldApplyProperty(CSSPropertyID id, StyleResolverState& state,
             return;
         }
 
-        if (!value->isCSSLineBoxContainValue())
+        if (!value->isLineBoxContainValue())
             return;
 
-        CSSLineBoxContainValue* lineBoxContainValue = static_cast<CSSLineBoxContainValue*>(value);
-        state.style()->setLineBoxContain(lineBoxContainValue->value());
+        state.style()->setLineBoxContain(toCSSLineBoxContainValue(value)->value());
         return;
     }
 
@@ -1929,6 +1930,7 @@ void StyleBuilder::oldApplyProperty(CSSPropertyID id, StyleResolverState& state,
     case CSSPropertyBorderTopStyle:
     case CSSPropertyBorderTopWidth:
     case CSSPropertyBottom:
+    case CSSPropertyBoxShadow:
     case CSSPropertyBoxSizing:
     case CSSPropertyCaptionSide:
     case CSSPropertyClear:
@@ -1995,11 +1997,14 @@ void StyleBuilder::oldApplyProperty(CSSPropertyID id, StyleResolverState& state,
     case CSSPropertyTextDecorationStyle:
     case CSSPropertyTextDecorationColor:
     case CSSPropertyTextIndent:
+    case CSSPropertyTextJustify:
     case CSSPropertyTextOverflow:
     case CSSPropertyTextRendering:
+    case CSSPropertyTextShadow:
     case CSSPropertyTextTransform:
     case CSSPropertyTop:
     case CSSPropertyTouchAction:
+    case CSSPropertyTouchActionDelay:
     case CSSPropertyUnicodeBidi:
     case CSSPropertyVariable:
     case CSSPropertyVerticalAlign:
@@ -2032,11 +2037,13 @@ void StyleBuilder::oldApplyProperty(CSSPropertyID id, StyleResolverState& state,
     case CSSPropertyWebkitBoxOrdinalGroup:
     case CSSPropertyWebkitBoxOrient:
     case CSSPropertyWebkitBoxPack:
+    case CSSPropertyWebkitBoxShadow:
     case CSSPropertyWebkitColumnAxis:
     case CSSPropertyWebkitColumnBreakAfter:
     case CSSPropertyWebkitColumnBreakBefore:
     case CSSPropertyWebkitColumnBreakInside:
     case CSSPropertyWebkitColumnCount:
+    case CSSPropertyColumnFill:
     case CSSPropertyWebkitColumnGap:
     case CSSPropertyWebkitColumnProgression:
     case CSSPropertyWebkitColumnRuleColor:
@@ -2097,9 +2104,7 @@ void StyleBuilder::oldApplyProperty(CSSPropertyID id, StyleResolverState& state,
     case CSSPropertyWebkitRtlOrdering:
     case CSSPropertyWebkitRubyPosition:
     case CSSPropertyWebkitTextCombine:
-#if ENABLE(CSS3_TEXT)
-    case CSSPropertyWebkitTextUnderlinePosition:
-#endif // CSS3_TEXT
+    case CSSPropertyTextUnderlinePosition:
     case CSSPropertyWebkitTextEmphasisColor:
     case CSSPropertyWebkitTextEmphasisPosition:
     case CSSPropertyWebkitTextEmphasisStyle:
@@ -2119,11 +2124,12 @@ void StyleBuilder::oldApplyProperty(CSSPropertyID id, StyleResolverState& state,
     case CSSPropertyWebkitUserSelect:
     case CSSPropertyWebkitClipPath:
     case CSSPropertyWebkitWrapFlow:
-    case CSSPropertyWebkitShapeMargin:
-    case CSSPropertyWebkitShapePadding:
+    case CSSPropertyShapeMargin:
+    case CSSPropertyShapePadding:
+    case CSSPropertyShapeImageThreshold:
     case CSSPropertyWebkitWrapThrough:
-    case CSSPropertyWebkitShapeInside:
-    case CSSPropertyWebkitShapeOutside:
+    case CSSPropertyShapeInside:
+    case CSSPropertyShapeOutside:
     case CSSPropertyWhiteSpace:
     case CSSPropertyWidows:
     case CSSPropertyWidth:
@@ -2214,7 +2220,7 @@ void StyleBuilder::oldApplyProperty(CSSPropertyID id, StyleResolverState& state,
             return;
         }
         if (value->isSVGPaint()) {
-            SVGPaint* svgPaint = static_cast<SVGPaint*>(value);
+            SVGPaint* svgPaint = toSVGPaint(value);
             svgStyle->setFillPaint(svgPaint->paintType(), colorFromSVGColorCSSValue(svgPaint, state.style()->color()), svgPaint->uri(), state.applyPropertyToRegularStyle(), state.applyPropertyToVisitedLinkStyle());
         }
         break;
@@ -2232,7 +2238,7 @@ void StyleBuilder::oldApplyProperty(CSSPropertyID id, StyleResolverState& state,
             return;
         }
         if (value->isSVGPaint()) {
-            SVGPaint* svgPaint = static_cast<SVGPaint*>(value);
+            SVGPaint* svgPaint = toSVGPaint(value);
             svgStyle->setStrokePaint(svgPaint->paintType(), colorFromSVGColorCSSValue(svgPaint, state.style()->color()), svgPaint->uri(), state.applyPropertyToRegularStyle(), state.applyPropertyToVisitedLinkStyle());
         }
         break;
@@ -2353,14 +2359,14 @@ void StyleBuilder::oldApplyProperty(CSSPropertyID id, StyleResolverState& state,
     {
         HANDLE_SVG_INHERIT_AND_INITIAL(stopColor, StopColor);
         if (value->isSVGColor())
-            state.style()->accessSVGStyle()->setStopColor(colorFromSVGColorCSSValue(static_cast<SVGColor*>(value), state.style()->color()));
+            state.style()->accessSVGStyle()->setStopColor(colorFromSVGColorCSSValue(toSVGColor(value), state.style()->color()));
         break;
     }
     case CSSPropertyLightingColor:
     {
         HANDLE_SVG_INHERIT_AND_INITIAL(lightingColor, LightingColor);
         if (value->isSVGColor())
-            state.style()->accessSVGStyle()->setLightingColor(colorFromSVGColorCSSValue(static_cast<SVGColor*>(value), state.style()->color()));
+            state.style()->accessSVGStyle()->setLightingColor(colorFromSVGColorCSSValue(toSVGColor(value), state.style()->color()));
         break;
     }
     case CSSPropertyFloodOpacity:
@@ -2375,7 +2381,7 @@ void StyleBuilder::oldApplyProperty(CSSPropertyID id, StyleResolverState& state,
     {
         HANDLE_SVG_INHERIT_AND_INITIAL(floodColor, FloodColor);
         if (value->isSVGColor())
-            state.style()->accessSVGStyle()->setFloodColor(colorFromSVGColorCSSValue(static_cast<SVGColor*>(value), state.style()->color()));
+            state.style()->accessSVGStyle()->setFloodColor(colorFromSVGColorCSSValue(toSVGColor(value), state.style()->color()));
         break;
     }
     case CSSPropertyGlyphOrientationHorizontal:

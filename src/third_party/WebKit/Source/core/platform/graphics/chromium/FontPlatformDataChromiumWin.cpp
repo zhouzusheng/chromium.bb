@@ -32,32 +32,73 @@
 #include "config.h"
 #include "core/platform/graphics/FontPlatformData.h"
 
-#include <windows.h>
-#include <mlang.h>
-#include <objidl.h>
-#include "core/platform/LayoutTestSupport.h"
-#include "core/platform/SharedBuffer.h"
+#include "RuntimeEnabledFeatures.h"
+#include "SkPaint.h"
+#include "SkTypeface.h"
+#include "SkTypeface_win.h"
 #include "core/platform/graphics/FontCache.h"
+#include "core/platform/graphics/GraphicsContext.h"
+#if USE(HARFBUZZ)
+#include "core/platform/graphics/harfbuzz/HarfBuzzFace.h"
+#endif
 #include "core/platform/graphics/skia/SkiaFontWin.h"
-#include "core/platform/win/HWndDC.h"
+#include "platform/LayoutTestSupport.h"
+#include "platform/SharedBuffer.h"
+#include "platform/win/HWndDC.h"
 #include "public/platform/Platform.h"
 #include "public/platform/win/WebSandboxSupport.h"
-#include "third_party/skia/include/core/SkPaint.h"
-#include "third_party/skia/include/core/SkTypeface.h"
-#include "third_party/skia/include/ports/SkTypeface_win.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/StdLibExtras.h"
+#include <mlang.h>
+#include <objidl.h>
+#include <windows.h>
 
 namespace WebCore {
 
-#if !ENABLE(GDI_FONTS_ON_WINDOWS)
-void FontPlatformData::setupPaint(SkPaint* paint) const
+void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext* context, const FontSmoothingOverride* fontSmoothingOverride) const
 {
-    const float ts = m_size >= 0 ? m_size : 12;
-    paint->setTextSize(SkFloatToScalar(m_size));
+    const float ts = m_textSize >= 0 ? m_textSize : 12;
+    paint->setTextSize(SkFloatToScalar(m_textSize));
     paint->setTypeface(typeface());
+    paint->setFakeBoldText(m_fakeBold);
+    paint->setTextSkewX(m_fakeItalic ? -SK_Scalar1 / 4 : 0);
+    if (RuntimeEnabledFeatures::subpixelFontScalingEnabled())
+        paint->setSubpixelText(true);
+
+    // Only set painting flags when we're actually painting.
+    if (context) {
+        int textFlags;
+        bool lcdExplicitlyRequested;
+        if (fontSmoothingOverride) {
+            textFlags = fontSmoothingOverride->textFlags;
+            lcdExplicitlyRequested = fontSmoothingOverride->lcdExplicitlyRequested;
+        }
+        else {
+            textFlags = paintTextFlags();
+            lcdExplicitlyRequested = false;
+        }
+        // SHEZ: don't remove cleartype if it was explicitly requested
+        if (!lcdExplicitlyRequested && !context->couldUseLCDRenderedText()) {
+            textFlags &= ~SkPaint::kLCDRenderText_Flag;
+            // If we *just* clear our request for LCD, then GDI seems to
+            // sometimes give us AA text, and sometimes give us BW text. Since the
+            // original intent was LCD, we want to force AA (rather than BW), so we
+            // add a special bit to tell Skia to do its best to avoid the BW: by
+            // drawing LCD offscreen and downsampling that to AA.
+            textFlags |= SkPaint::kGenA8FromLCD_Flag;
+        }
+
+        static const uint32_t textFlagsMask = SkPaint::kAntiAlias_Flag |
+            SkPaint::kLCDRenderText_Flag |
+            SkPaint::kGenA8FromLCD_Flag;
+
+        SkASSERT(!(textFlags & ~textFlagsMask));
+        uint32_t flags = paint->getFlags();
+        flags &= ~textFlagsMask;
+        flags |= textFlags;
+        paint->setFlags(flags);
+    }
 }
-#endif
 
 // Lookup the current system settings for font smoothing.
 // We cache these values for performance, but if the browser has a way to be
@@ -144,10 +185,12 @@ PassRefPtr<SkTypeface> CreateTypefaceFromHFont(HFONT hfont, int* size, int* pain
 
 FontPlatformData::FontPlatformData(WTF::HashTableDeletedValueType)
     : m_font(0)
-    , m_size(-1)
+    , m_textSize(-1)
+    , m_fakeBold(false)
+    , m_fakeItalic(false)
     , m_orientation(Horizontal)
     , m_scriptCache(0)
-    , m_typeface(SkTypeface::RefDefault())
+    , m_typeface(adoptRef(SkTypeface::RefDefault()))
     , m_paintTextFlags(0)
     , m_isHashTableDeletedValue(true)
 {
@@ -155,32 +198,40 @@ FontPlatformData::FontPlatformData(WTF::HashTableDeletedValueType)
 
 FontPlatformData::FontPlatformData()
     : m_font(0)
-    , m_size(0)
+    , m_textSize(0)
+    , m_fakeBold(false)
+    , m_fakeItalic(false)
     , m_orientation(Horizontal)
     , m_scriptCache(0)
-    , m_typeface(SkTypeface::RefDefault())
+    , m_typeface(adoptRef(SkTypeface::RefDefault()))
     , m_paintTextFlags(0)
     , m_isHashTableDeletedValue(false)
 {
 }
 
+#if ENABLE(GDI_FONTS_ON_WINDOWS)
 FontPlatformData::FontPlatformData(HFONT font, float size, FontOrientation orientation)
     : m_font(RefCountedHFONT::create(font))
-    , m_size(size)
+    , m_textSize(size)
+    , m_fakeBold(false)
+    , m_fakeItalic(false)
     , m_orientation(orientation)
     , m_scriptCache(0)
     , m_typeface(CreateTypefaceFromHFont(font, 0, &m_paintTextFlags))
     , m_isHashTableDeletedValue(false)
 {
 }
+#endif
 
 // FIXME: this constructor is needed for SVG fonts but doesn't seem to do much
 FontPlatformData::FontPlatformData(float size, bool bold, bool oblique)
     : m_font(0)
-    , m_size(size)
+    , m_textSize(size)
+    , m_fakeBold(false)
+    , m_fakeItalic(false)
     , m_orientation(Horizontal)
     , m_scriptCache(0)
-    , m_typeface(SkTypeface::RefDefault())
+    , m_typeface(adoptRef(SkTypeface::RefDefault()))
     , m_paintTextFlags(0)
     , m_isHashTableDeletedValue(false)
 {
@@ -188,7 +239,9 @@ FontPlatformData::FontPlatformData(float size, bool bold, bool oblique)
 
 FontPlatformData::FontPlatformData(const FontPlatformData& data)
     : m_font(data.m_font)
-    , m_size(data.m_size)
+    , m_textSize(data.m_textSize)
+    , m_fakeBold(data.m_fakeBold)
+    , m_fakeItalic(data.m_fakeItalic)
     , m_orientation(data.m_orientation)
     , m_scriptCache(0)
     , m_typeface(data.m_typeface)
@@ -199,7 +252,9 @@ FontPlatformData::FontPlatformData(const FontPlatformData& data)
 
 FontPlatformData::FontPlatformData(const FontPlatformData& data, float textSize)
     : m_font(data.m_font)
-    , m_size(textSize)
+    , m_textSize(textSize)
+    , m_fakeBold(data.m_fakeBold)
+    , m_fakeItalic(data.m_fakeItalic)
     , m_orientation(data.m_orientation)
     , m_scriptCache(0)
     , m_typeface(data.m_typeface)
@@ -208,9 +263,11 @@ FontPlatformData::FontPlatformData(const FontPlatformData& data, float textSize)
 {
 }
 
-FontPlatformData::FontPlatformData(SkTypeface* tf, const char* family, float textSize, bool fakeBold, bool fakeItalic, FontOrientation orientation)
+FontPlatformData::FontPlatformData(PassRefPtr<SkTypeface> tf, const char* family, float textSize, bool fakeBold, bool fakeItalic, FontOrientation orientation)
     : m_font(0)
-    , m_size(textSize)
+    , m_textSize(textSize)
+    , m_fakeBold(fakeBold)
+    , m_fakeItalic(fakeItalic)
     , m_orientation(orientation)
     , m_scriptCache(0)
     , m_typeface(tf)
@@ -219,7 +276,7 @@ FontPlatformData::FontPlatformData(SkTypeface* tf, const char* family, float tex
     // FIXME: This can be removed together with m_font once the last few
     // uses of hfont() has been eliminated.
     LOGFONT logFont;
-    SkLOGFONTFromTypeface(tf, &logFont);
+    SkLOGFONTFromTypeface(m_typeface.get(), &logFont);
     logFont.lfHeight = -textSize;
     HFONT hFont = CreateFontIndirect(&logFont);
     if (hFont)
@@ -231,7 +288,9 @@ FontPlatformData& FontPlatformData::operator=(const FontPlatformData& data)
 {
     if (this != &data) {
         m_font = data.m_font;
-        m_size = data.m_size;
+        m_textSize = data.m_textSize;
+        m_fakeBold = data.m_fakeBold;
+        m_fakeItalic = data.m_fakeItalic;
         m_orientation = data.m_orientation;
         m_typeface = data.m_typeface;
         m_paintTextFlags = data.m_paintTextFlags;
@@ -252,6 +311,7 @@ FontPlatformData::~FontPlatformData()
 
 String FontPlatformData::fontFamilyName() const
 {
+#if ENABLE(GDI_FONTS_ON_WINDOWS)
     HWndDC dc(0);
     HGDIOBJ oldFont = static_cast<HFONT>(SelectObject(dc, hfont()));
     WCHAR name[LF_FACESIZE];
@@ -260,6 +320,14 @@ String FontPlatformData::fontFamilyName() const
         resultLength--; // ignore the null terminator
     SelectObject(dc, oldFont);
     return String(name, resultLength);
+#else
+    // FIXME: This returns the requested name, perhaps a better solution would be to
+    // return the list of names provided by SkTypeface::createFamilyNameIterator.
+    ASSERT(typeface());
+    SkString familyName;
+    typeface()->getFamilyName(&familyName);
+    return String::fromUTF8(familyName.c_str());
+#endif
 }
 
 bool FontPlatformData::isFixedPitch() const
@@ -338,5 +406,15 @@ bool FontPlatformData::ensureFontLoaded(HFONT font)
     // was able to be loaded successfully already
     return sandboxSupport ? sandboxSupport->ensureFontLoaded(font) : true;
 }
+
+#if USE(HARFBUZZ)
+HarfBuzzFace* FontPlatformData::harfBuzzFace() const
+{
+    if (!m_harfBuzzFace)
+        m_harfBuzzFace = HarfBuzzFace::create(const_cast<FontPlatformData*>(this), uniqueID());
+
+    return m_harfBuzzFace.get();
+}
+#endif
 
 }

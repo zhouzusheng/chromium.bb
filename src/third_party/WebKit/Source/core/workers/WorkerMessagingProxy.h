@@ -27,7 +27,7 @@
 #ifndef WorkerMessagingProxy_h
 #define WorkerMessagingProxy_h
 
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
 #include "core/workers/WorkerGlobalScopeProxy.h"
 #include "core/workers/WorkerLoaderProxy.h"
 #include "core/workers/WorkerObjectProxy.h"
@@ -41,7 +41,7 @@
 namespace WebCore {
 
     class DedicatedWorkerThread;
-    class ScriptExecutionContext;
+    class ExecutionContext;
     class Worker;
     class WorkerClients;
 
@@ -76,8 +76,8 @@ namespace WebCore {
         // Implementation of WorkerLoaderProxy.
         // These methods are called on different threads to schedule loading
         // requests and to send callbacks back to WorkerGlobalScope.
-        virtual void postTaskToLoader(PassOwnPtr<ScriptExecutionContext::Task>) OVERRIDE;
-        virtual bool postTaskForModeToWorkerGlobalScope(PassOwnPtr<ScriptExecutionContext::Task>, const String& mode) OVERRIDE;
+        virtual void postTaskToLoader(PassOwnPtr<ExecutionContextTask>) OVERRIDE;
+        virtual bool postTaskForModeToWorkerGlobalScope(PassOwnPtr<ExecutionContextTask>, const String& mode) OVERRIDE;
 
         void workerThreadCreated(PassRefPtr<DedicatedWorkerThread>);
 
@@ -95,11 +95,11 @@ namespace WebCore {
         friend class WorkerThreadActivityReportTask;
 
         void workerGlobalScopeDestroyedInternal();
-        static void workerObjectDestroyedInternal(ScriptExecutionContext*, WorkerMessagingProxy*);
+        static void workerObjectDestroyedInternal(ExecutionContext*, WorkerMessagingProxy*);
         void reportPendingActivityInternal(bool confirmingMessage, bool hasPendingActivity);
         Worker* workerObject() const { return m_workerObject; }
 
-        RefPtr<ScriptExecutionContext> m_scriptExecutionContext;
+        RefPtr<ExecutionContext> m_executionContext;
         Worker* m_workerObject;
         bool m_mayBeDestroyed;
         RefPtr<DedicatedWorkerThread> m_workerThread;
@@ -109,7 +109,7 @@ namespace WebCore {
 
         bool m_askedToTerminate;
 
-        Vector<OwnPtr<ScriptExecutionContext::Task> > m_queuedEarlyTasks; // Tasks are queued here until there's a thread object created.
+        Vector<OwnPtr<ExecutionContextTask> > m_queuedEarlyTasks; // Tasks are queued here until there's a thread object created.
         WorkerGlobalScopeProxy::PageInspector* m_pageInspector;
 
         OwnPtr<WorkerClients> m_workerClients;

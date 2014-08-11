@@ -416,7 +416,7 @@ WebInspector.CPUProfileView.prototype = {
         var uiLocation = script.rawLocationToUILocation(node.lineNumber);
         if (!uiLocation)
             return;
-        WebInspector.showPanel("sources").showUILocation(uiLocation);
+        WebInspector.panel("sources").showUILocation(uiLocation);
     },
 
     _changeView: function()
@@ -749,17 +749,8 @@ WebInspector.CPUProfileType.prototype = {
     removeProfile: function(profile)
     {
         WebInspector.ProfileType.prototype.removeProfile.call(this, profile);
-        if (!profile.isTemporary)
+        if (!profile.isTemporary && !profile.fromFile())
             ProfilerAgent.removeProfile(this.id, profile.uid);
-    },
-
-    /**
-     * @override
-     * @param {function(this:WebInspector.ProfileType, ?string, Array.<ProfilerAgent.ProfileHeader>)} populateCallback
-     */
-    _requestProfilesFromBackend: function(populateCallback)
-    {
-        ProfilerAgent.getProfileHeaders(populateCallback);
     },
 
     /**
@@ -772,12 +763,6 @@ WebInspector.CPUProfileType.prototype = {
 
     /** @deprecated To be removed from the protocol */
     addHeapSnapshotChunk: function(uid, chunk)
-    {
-        throw new Error("Never called");
-    },
-
-    /** @deprecated To be removed from the protocol */
-    finishHeapSnapshot: function(uid)
     {
         throw new Error("Never called");
     },
@@ -919,11 +904,10 @@ WebInspector.CPUProfileHeader.prototype = {
     },
 
     /**
-     * @param {File} file
+     * @param {!File} file
      */
     loadFromFile: function(file)
     {
-        this.title = file.name;
         this.sidebarElement.subtitle = WebInspector.UIString("Loading\u2026");
         this.sidebarElement.wait = true;
 

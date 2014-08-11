@@ -33,13 +33,12 @@
 #include "core/dom/shadow/ComposedTreeWalker.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/page/Chrome.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Settings.h"
 #include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/platform/graphics/ImageBuffer.h"
 #include "core/platform/graphics/ImageObserver.h"
-#include "core/platform/graphics/IntRect.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/svg/RenderSVGRoot.h"
 #include "core/svg/SVGDocument.h"
@@ -47,6 +46,8 @@
 #include "core/svg/SVGImageElement.h"
 #include "core/svg/SVGSVGElement.h"
 #include "core/svg/graphics/SVGImageChromeClient.h"
+#include "platform/LengthFunctions.h"
+#include "platform/geometry/IntRect.h"
 #include "wtf/PassRefPtr.h"
 
 namespace WebCore {
@@ -61,7 +62,7 @@ SVGImage::~SVGImage()
     if (m_page) {
         // Store m_page in a local variable, clearing m_page, so that SVGImageChromeClient knows we're destructed.
         OwnPtr<Page> currentPage = m_page.release();
-        currentPage->mainFrame()->loader()->frameDetached(); // Break both the loader and view references to the frame
+        currentPage->mainFrame()->loader().frameDetached(); // Break both the loader and view references to the frame
     }
 
     // Verify that page teardown destroyed the Chrome
@@ -202,7 +203,7 @@ PassRefPtr<NativeImageSkia> SVGImage::nativeImageForCurrentFrame()
 }
 
 void SVGImage::drawPatternForContainer(GraphicsContext* context, const FloatSize containerSize, float zoom, const FloatRect& srcRect,
-    const FloatSize& scale, const FloatPoint& phase, CompositeOperator compositeOp, const FloatRect& dstRect, BlendMode blendMode)
+    const FloatSize& scale, const FloatPoint& phase, CompositeOperator compositeOp, const FloatRect& dstRect, BlendMode blendMode, const IntSize& repeatSpacing)
 {
     FloatRect zoomedContainerRect = FloatRect(FloatPoint(), containerSize);
     zoomedContainerRect.scale(zoom);
@@ -229,7 +230,7 @@ void SVGImage::drawPatternForContainer(GraphicsContext* context, const FloatSize
     FloatRect scaledSrcRect = srcRect;
     scaledSrcRect.scale(imageBufferScale.width(), imageBufferScale.height());
 
-    image->drawPattern(context, scaledSrcRect, scaleWithoutCTM, phase, compositeOp, dstRect, blendMode);
+    image->drawPattern(context, scaledSrcRect, scaleWithoutCTM, phase, compositeOp, dstRect, blendMode, repeatSpacing);
 }
 
 void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator compositeOp, BlendMode blendMode)
@@ -361,6 +362,8 @@ void SVGImage::resetAnimation()
 
 bool SVGImage::dataChanged(bool allDataReceived)
 {
+    TRACE_EVENT0("webkit", "SVGImage::dataChanged");
+
     // Don't do anything if is an empty image.
     if (!data()->size())
         return true;
@@ -385,20 +388,20 @@ bool SVGImage::dataChanged(bool allDataReceived)
         m_page->settings().setPluginsEnabled(false);
         m_page->settings().setAcceleratedCompositingEnabled(false);
 
-        RefPtr<Frame> frame = Frame::create(m_page.get(), 0, dummyFrameLoaderClient);
+        RefPtr<Frame> frame = Frame::create(FrameInit::create(0, m_page.get(), dummyFrameLoaderClient));
         frame->setView(FrameView::create(frame.get()));
         frame->init();
-        FrameLoader* loader = frame->loader();
-        loader->forceSandboxFlags(SandboxAll);
+        FrameLoader& loader = frame->loader();
+        loader.forceSandboxFlags(SandboxAll);
 
         frame->view()->setScrollbarsSuppressed(true);
         frame->view()->setCanHaveScrollbars(false); // SVG Images will always synthesize a viewBox, if it's not available, and thus never see scrollbars.
         frame->view()->setTransparent(true); // SVG Images are transparent.
 
-        ASSERT(loader->activeDocumentLoader()); // DocumentLoader should have been created by frame->init().
-        DocumentWriter* writer = loader->activeDocumentLoader()->beginWriting("image/svg+xml", "UTF-8");
+        ASSERT(loader.activeDocumentLoader()); // DocumentLoader should have been created by frame->init().
+        DocumentWriter* writer = loader.activeDocumentLoader()->beginWriting("image/svg+xml", "UTF-8");
         writer->addData(data()->data(), data()->size());
-        loader->activeDocumentLoader()->endWriting(writer);
+        loader.activeDocumentLoader()->endWriting(writer);
         // Set the intrinsic size before a container size is available.
         m_intrinsicSize = containerSize();
     }

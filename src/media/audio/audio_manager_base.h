@@ -119,9 +119,10 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   virtual std::string GetAssociatedOutputDeviceID(
       const std::string& input_device_id) OVERRIDE;
 
+  virtual void FixWedgedAudio() OVERRIDE;
+
  protected:
   AudioManagerBase();
-
 
   // Shuts down the audio thread and releases all the audio output dispatchers
   // on the audio thread.  All audio streams should be freed before Shutdown()
@@ -135,6 +136,10 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   // listeners that a state change has occurred.  Must be called from the audio
   // thread.
   void NotifyAllOutputDeviceChangeListeners();
+
+  // Returns user buffer size as specified on the command line or 0 if no buffer
+  // size has been specified.
+  int GetUserBufferSize();
 
   // Returns the preferred hardware audio output parameters for opening output
   // streams. If the users inject a valid |input_params|, each AudioManager

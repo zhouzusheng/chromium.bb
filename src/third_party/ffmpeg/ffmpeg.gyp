@@ -10,7 +10,7 @@
 #   build_ffmpegsumo
 #     When set to zero will build Chromium against Chrome's FFmpeg headers, but
 #     not build ffmpegsumo itself.  Users are expected to build and provide
-#     their own version of ffmpegsumo.  Default value is 1.
+#     their own version of ffmpegsumo.  Default value is 0.
 #
 
 {
@@ -46,21 +46,32 @@
         'asm_sources': [
         ],
       }],
-      ['OS == "mac" or OS == "win" or OS == "openbsd"', {
-        'os_config%': '<(OS)',
-      }, {  # all other Unix OS's use the linux config
-        'os_config%': 'linux',
+      ['OS == "win" and (MSVS_VERSION == "2013" or MSVS_VERSION == "2013e")', {
+        'os_config%': 'win-vs2013',
+      }, {
+        'conditions': [
+          ['OS == "mac" or OS == "win" or OS == "openbsd"', {
+            'os_config%': '<(OS)',
+          }, {  # all other Unix OS's use the linux config
+            'os_config%': 'linux',
+          }],
+        ],
       }],
       ['chromeos == 1', {
         'ffmpeg_branding%': '<(branding)OS',
       }, {  # otherwise, assume Chrome/Chromium.
         'ffmpeg_branding%': '<(branding)',
       }],
+      ['bb_version!=""', {
+        'ffmpeg_product_name%': 'ffmpegsumo.<(bb_version)',
+      }, {
+        'ffmpeg_product_name%': 'ffmpegsumo',
+      }],
     ],
 
     'ffmpeg_variant%': '<(target_arch)',
 
-    'build_ffmpegsumo%': 1,
+    'build_ffmpegsumo%': 0,
 
     # Locations for generated artifacts.
     'shared_generated_dir': '<(SHARED_INTERMEDIATE_DIR)/third_party/ffmpeg',
@@ -71,10 +82,69 @@
     'extra_header': 'chromium/ffmpeg_stub_headers.fragment',
   },
   'conditions': [
-    ['OS == "win" and clang == 0', {
+    ['target_arch != "arm"', {
+      'targets': [
+        {
+          'target_name': 'ffmpeg_yasm',
+          'type': 'static_library',
+          # VS2010 does not correctly incrementally link obj files generated
+          # from asm files. This flag disables UseLibraryDependencyInputs to
+          # avoid this problem.
+          'msvs_2010_disable_uldi_when_referenced': 1,
+          'includes': [
+            'ffmpeg_generated.gypi',
+            '../yasm/yasm_compile.gypi',
+          ],
+          'sources': [
+            '<@(asm_sources)',
+            # XCode doesn't want to link a pure assembly target and will fail
+            # to link when it creates an empty file list.  So add a dummy file
+            # keep the linker happy.  See http://crbug.com/157073
+            'xcode_hack.c',
+          ],
+          'variables': {
+            # Path to platform configuration files.
+            'platform_config_root': 'chromium/config/<(ffmpeg_branding)/<(os_config)/<(ffmpeg_config)',
+
+            'conditions': [
+              ['target_arch == "ia32"', {
+                'more_yasm_flags': [
+                  '-DARCH_X86_32',
+                 ],
+              }, {
+                'more_yasm_flags': [
+                  '-DARCH_X86_64',
+                ],
+              }],
+              ['OS == "mac"', {
+                'more_yasm_flags': [
+                  # Necessary to ensure symbols end up with a _ prefix; added by
+                  # yasm_compile.gypi for Windows, but not Mac.
+                  '-DPREFIX',
+                ]
+              }],
+            ],
+            'yasm_flags': [
+              '-DPIC',
+              '>@(more_yasm_flags)',
+              '-I', '<(platform_config_root)',
+              '-I', 'libavcodec/x86/',
+              '-I', 'libavutil/x86/',
+              '-I', '.',
+              # Disable warnings, prevents log spam for things we won't fix.
+              '-w',
+              '-P', 'config.asm',
+            ],
+            'yasm_output_path': '<(shared_generated_dir)/yasm'
+          },
+        },
+      ] # targets
+    }], # arch != arm
+    ['OS == "win" and clang == 0 and MSVS_VERSION != "2013" and MSVS_VERSION != "2013e"', {
       # Convert the source code from c99 to c89 if we're on Windows and not
       # using clang, which can compile c99 directly.  Clang support is
-      # experimental and unsupported.
+      # experimental and unsupported. VS2013 also supports enough of C99 to
+      # be able to avoid this conversion.
       'variables': {
         'converter_script': 'chromium/scripts/c99conv.py',
         'converter_executable': 'chromium/binaries/c99conv.exe',
@@ -134,6 +204,7 @@
       'targets': [
         {
           'target_name': 'ffmpegsumo',
+          'product_name': '<(ffmpeg_product_name)',
           'type': 'loadable_module',
           'sources': [
             '<(platform_config_root)/config.h',
@@ -154,7 +225,7 @@
             '-fomit-frame-pointer',
           ],
           'conditions': [
-            ['OS != "win" or clang == 1', {
+            ['OS != "win" or clang == 1 or MSVS_VERSION == "2013" or MSVS_VERSION == "2013e"', {
               # If we're not doing C99 conversion, add the normal source code.
               'sources': ['<@(c_sources)'],
             }, {
@@ -362,7 +433,7 @@
             }],  # OS == "mac"
             ['OS == "win"', {
               'sources': [
-                '<(shared_generated_dir)/ffmpegsumo.def',
+                '<(shared_generated_dir)/<(ffmpeg_product_name).def',
               ],
               'include_dirs': [
                 'chromium/include/win',
@@ -370,10 +441,10 @@
               # TODO(dalecurtis): We should fix these.  http://crbug.com/154421
               'msvs_disabled_warnings': [
                 4996, 4018, 4090, 4305, 4133, 4146, 4554, 4028, 4334, 4101, 4102,
-                4116, 4307, 4273
+                4116, 4307, 4273, 4005, 4056, 4756,
               ],
               'conditions': [
-                ['clang == 1', {
+                ['clang == 1 or (OS == "win" and (MSVS_VERSION == "2013" or MSVS_VERSION == "2013e"))', {
                   'defines': [
                     'inline=__inline',
                     'strtoll=_strtoi64',
@@ -413,14 +484,14 @@
                     '<@(sig_files)',
                   ],
                   'outputs': [
-                    '<(shared_generated_dir)/ffmpegsumo.def',
+                    '<(shared_generated_dir)/<(ffmpeg_product_name).def',
                   ],
                   'action': ['python',
                              '<(generate_stubs_script)',
                              '-i', '<(INTERMEDIATE_DIR)',
                              '-o', '<(shared_generated_dir)',
                              '-t', 'windows_def',
-                             '-m', 'ffmpegsumo.dll',
+                             '-m', '<(ffmpeg_product_name).dll',
                              '<@(_inputs)',
                   ],
                   'message': 'Generating FFmpeg export definitions.',
@@ -435,11 +506,11 @@
   ],  # conditions
   'targets': [
     {
+      'variables': {
+        # Path to platform configuration files.
+        'platform_config_root': 'chromium/config/<(ffmpeg_branding)/<(os_config)/<(ffmpeg_config)',
+      },
       'target_name': 'ffmpeg',
-      'sources': [
-        # Files needed for stub generation rules.
-        '<@(sig_files)',
-      ],
       'defines': [
         '__STDC_CONSTANT_MACROS',  # FFmpeg uses INT64_C.
       ],
@@ -484,33 +555,33 @@
             ],
             'link_settings': {
               'libraries': [
-                '<(output_dir)/ffmpegsumo.lib',
+                '<(output_dir)/<(ffmpeg_product_name).lib',
               ],
               'msvs_settings': {
                 'VCLinkerTool': {
                   'DelayLoadDLLs': [
-                    'ffmpegsumo.dll',
+                    '<(ffmpeg_product_name).dll',
                   ],
                 },
               },
             },
           },
-          'rules': [
+          'actions': [
             {
-              'rule_name': 'generate_libs',
-              'extension': 'sigs',
+              'action_name': 'generate_libs',
               'inputs': [
                 '<(generate_stubs_script)',
                 '<@(sig_files)',
               ],
               'outputs': [
-                '<(output_dir)/<(RULE_INPUT_ROOT).lib',
+                '<(output_dir)/<(ffmpeg_product_name).lib',
               ],
               'action': ['python', '<(generate_stubs_script)',
                          '-i', '<(intermediate_dir)',
                          '-o', '<(output_dir)',
                          '-t', '<(outfile_type)',
-                         '<@(RULE_INPUT_PATH)',
+                         '-m', '<(ffmpeg_product_name).dll',
+                         '<@(sig_files)',
               ],
               'message': 'Generating FFmpeg import libraries.',
             },
@@ -598,59 +669,6 @@
           ],  # conditions
         }],
       ],  # conditions
-    },
-    {
-      'target_name': 'ffmpeg_yasm',
-      'type': 'static_library',
-      # VS2010 does not correctly incrementally link obj files generated
-      # from asm files. This flag disables UseLibraryDependencyInputs to
-      # avoid this problem.
-      'msvs_2010_disable_uldi_when_referenced': 1,
-      'includes': [
-        'ffmpeg_generated.gypi',
-        '../yasm/yasm_compile.gypi',
-      ],
-      'sources': [
-        '<@(asm_sources)',
-        # XCode doesn't want to link a pure assembly target and will fail
-        # to link when it creates an empty file list.  So add a dummy file
-        # keep the linker happy.  See http://crbug.com/157073
-        'xcode_hack.c',
-      ],
-      'variables': {
-        # Path to platform configuration files.
-        'platform_config_root': 'chromium/config/<(ffmpeg_branding)/<(os_config)/<(ffmpeg_config)',
-        'conditions': [
-          ['target_arch == "ia32"', {
-            'more_yasm_flags': [
-              '-DARCH_X86_32',
-             ],
-          }, {
-            'more_yasm_flags': [
-              '-DARCH_X86_64',
-            ],
-          }],
-          ['OS == "mac"', {
-            'more_yasm_flags': [
-              # Necessary to ensure symbols end up with a _ prefix; added by
-              # yasm_compile.gypi for Windows, but not Mac.
-              '-DPREFIX',
-            ]
-          }],
-        ],
-        'yasm_flags': [
-          '-DPIC',
-          '>@(more_yasm_flags)',
-          '-I', '<(platform_config_root)',
-          '-I', 'libavcodec/x86/',
-          '-I', 'libavutil/x86/',
-          '-I', '.',
-          # Disable warnings, prevents log spam for things we won't fix.
-          '-w',
-          '-P', 'config.asm',
-        ],
-        'yasm_output_path': '<(shared_generated_dir)/yasm'
-      },
     },
   ],  # targets
 }

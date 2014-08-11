@@ -28,10 +28,7 @@
 
 #include "core/platform/graphics/filters/Filter.h"
 #include "core/platform/graphics/filters/SkiaImageFilterBuilder.h"
-
-#include "core/platform/text/TextStream.h"
-#include "core/rendering/RenderTreeAsText.h"
-
+#include "platform/text/TextStream.h"
 #include "wtf/ParallelJobs.h"
 #include "wtf/Uint8ClampedArray.h"
 #include "wtf/Vector.h"
@@ -272,9 +269,10 @@ PassRefPtr<SkImageFilter> FEMorphology::createImageFilter(SkiaImageFilterBuilder
     RefPtr<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
     SkScalar radiusX = SkFloatToScalar(filter()->applyHorizontalScale(m_radiusX));
     SkScalar radiusY = SkFloatToScalar(filter()->applyVerticalScale(m_radiusY));
+    SkImageFilter::CropRect rect = getCropRect(builder->cropOffset());
     if (m_type == FEMORPHOLOGY_OPERATOR_DILATE)
-        return adoptRef(new SkDilateImageFilter(radiusX, radiusY, input.get()));
-    return adoptRef(new SkErodeImageFilter(radiusX, radiusY, input.get()));
+        return adoptRef(new SkDilateImageFilter(radiusX, radiusY, input.get(), &rect));
+    return adoptRef(new SkErodeImageFilter(radiusX, radiusY, input.get(), &rect));
 }
 
 static TextStream& operator<<(TextStream& ts, const MorphologyOperatorType& type)

@@ -53,6 +53,8 @@
       ],
       'include_dirs': [ '..' ],
       'sources': [
+        'browser/printing/printing_ui_web_contents_observer.cc',
+        'browser/printing/printing_ui_web_contents_observer.h',
         'browser/printing/print_job.cc',
         'browser/printing/print_job.h',
         'browser/printing/print_job_manager.cc',

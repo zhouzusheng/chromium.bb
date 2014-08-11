@@ -33,11 +33,11 @@
 #include "core/fetch/Resource.h"
 #include "core/fetch/ResourceLoaderHost.h"
 #include "core/fetch/ResourcePtr.h"
-#include "core/platform/Logging.h"
-#include "core/platform/SharedBuffer.h"
-#include "core/platform/chromium/support/WrappedResourceRequest.h"
-#include "core/platform/chromium/support/WrappedResourceResponse.h"
-#include "core/platform/network/ResourceError.h"
+#include "platform/Logging.h"
+#include "platform/SharedBuffer.h"
+#include "platform/exported/WrappedResourceRequest.h"
+#include "platform/exported/WrappedResourceResponse.h"
+#include "platform/network/ResourceError.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebData.h"
 #include "public/platform/WebURLError.h"
@@ -153,6 +153,16 @@ void ResourceLoader::start()
     WebKit::WrappedResourceRequest wrappedRequest(m_request);
     wrappedRequest.setAllowStoredCredentials(m_options.allowCredentials == AllowStoredCredentials);
     m_loader->loadAsynchronously(wrappedRequest, this);
+}
+
+void ResourceLoader::changeToSynchronous()
+{
+    ASSERT(m_options.synchronousPolicy == RequestAsynchronously);
+    ASSERT(m_loader);
+    m_loader->cancel();
+    m_loader.clear();
+    m_connectionState = ConnectionStateNew;
+    requestSynchronously();
 }
 
 void ResourceLoader::setDefersLoading(bool defers)
@@ -398,6 +408,10 @@ void ResourceLoader::requestSynchronously()
     OwnPtr<WebKit::WebURLLoader> loader = adoptPtr(WebKit::Platform::current()->createURLLoader());
     ASSERT(loader);
 
+    RefPtr<ResourceLoader> protect(this);
+    RefPtr<ResourceLoaderHost> protectHost(m_host);
+    ResourcePtr<Resource> protectResource(m_resource);
+
     RELEASE_ASSERT(m_connectionState == ConnectionStateNew);
     m_connectionState = ConnectionStateStarted;
 
@@ -413,6 +427,8 @@ void ResourceLoader::requestSynchronously()
         return;
     }
     didReceiveResponse(0, responseOut);
+    if (m_state == Terminated)
+        return;
     RefPtr<ResourceLoadInfo> resourceLoadInfo = responseOut.toResourceResponse().resourceLoadInfo();
     m_host->didReceiveData(m_resource, dataOut.data(), dataOut.size(), resourceLoadInfo ? resourceLoadInfo->encodedDataLength : -1, m_options);
     m_resource->setResourceBuffer(dataOut);

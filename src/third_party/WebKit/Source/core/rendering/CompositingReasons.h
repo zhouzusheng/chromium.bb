@@ -24,7 +24,6 @@ const uint64_t CompositingReasonFilters                                = UINT64_
 const uint64_t CompositingReasonPositionFixed                          = UINT64_C(1) << 8;
 const uint64_t CompositingReasonPositionSticky                         = UINT64_C(1) << 9;
 const uint64_t CompositingReasonOverflowScrollingTouch                 = UINT64_C(1) << 10;
-const uint64_t CompositingReasonBlending                               = UINT64_C(1) << 11;
 
 // Overlap reasons that require knowing what's behind you in paint-order before knowing the answer
 const uint64_t CompositingReasonAssumedOverlap                         = UINT64_C(1) << 12;
@@ -47,7 +46,7 @@ const uint64_t CompositingReasonReflectionOfCompositedParent           = UINT64_
 // a layer if anything else in the subtree is composited.
 const uint64_t CompositingReasonRoot                                   = UINT64_C(1) << 25;
 
-// RenderLayerBacking internal hierarchy reasons
+// CompositedLayerMapping internal hierarchy reasons
 const uint64_t CompositingReasonLayerForClip                           = UINT64_C(1) << 26;
 const uint64_t CompositingReasonLayerForScrollbar                      = UINT64_C(1) << 27;
 const uint64_t CompositingReasonLayerForScrollingContainer             = UINT64_C(1) << 28;

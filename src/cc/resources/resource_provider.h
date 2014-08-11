@@ -26,6 +26,7 @@
 #include "cc/resources/texture_mailbox.h"
 #include "cc/resources/transferable_resource.h"
 #include "third_party/khronos/GLES2/gl2.h"
+#include "third_party/khronos/GLES2/gl2ext.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/gfx/size.h"
@@ -38,6 +39,8 @@ class Vector2d;
 }
 
 namespace cc {
+class SharedBitmap;
+class SharedBitmapManager;
 class TextureUploader;
 
 // This class is not thread-safe and can only be called from the thread it was
@@ -58,9 +61,12 @@ class CC_EXPORT ResourceProvider {
     Bitmap,
   };
 
-  static scoped_ptr<ResourceProvider> Create(OutputSurface* output_surface,
-                                             int highp_threshold_min,
-                                             bool use_rgba_4444_texture_format);
+  static scoped_ptr<ResourceProvider> Create(
+      OutputSurface* output_surface,
+      SharedBitmapManager* shared_bitmap_manager,
+      int highp_threshold_min,
+      bool use_rgba_4444_texture_format,
+      size_t texture_id_allocation_chunk_size);
   virtual ~ResourceProvider();
 
   void InitializeSoftware();
@@ -319,6 +325,8 @@ class CC_EXPORT ResourceProvider {
   // Returns the stride for the image.
   int GetImageStride(ResourceId id);
 
+  base::SharedMemory* GetSharedMemory(ResourceId id);
+
   // For tests only! This prevents detecting uninitialized reads.
   // Use SetPixels or LockForWrite to allocate implicitly.
   void AllocateForTesting(ResourceId id);
@@ -327,6 +335,7 @@ class CC_EXPORT ResourceProvider {
   void CreateForTesting(ResourceId id);
 
   GLint WrapModeForTesting(ResourceId id);
+  GLenum TargetForTesting(ResourceId id);
 
   // Sets the current read fence. If a resource is locked for read
   // and has read fences enabled, the resource will not allow writes
@@ -343,10 +352,6 @@ class CC_EXPORT ResourceProvider {
   bool CanLockForWrite(ResourceId id);
 
   static GLint GetActiveTextureUnit(WebKit::WebGraphicsContext3D* context);
-  static size_t BytesPerPixel(ResourceFormat format);
-  static GLenum GetGLDataType(ResourceFormat format);
-  static GLenum GetGLDataFormat(ResourceFormat format);
-  static GLenum GetGLInternalFormat(ResourceFormat format);
 
  private:
   struct Resource {
@@ -354,12 +359,14 @@ class CC_EXPORT ResourceProvider {
     ~Resource();
     Resource(unsigned texture_id,
              gfx::Size size,
+             GLenum target,
              GLenum filter,
              GLenum texture_pool,
              GLint wrap_mode,
              TextureUsageHint hint,
              ResourceFormat format);
     Resource(uint8_t* pixels,
+             SharedBitmap* bitmap,
              gfx::Size size,
              GLenum filter,
              GLint wrap_mode);
@@ -386,17 +393,20 @@ class CC_EXPORT ResourceProvider {
     bool enable_read_lock_fences;
     scoped_refptr<Fence> read_lock_fence;
     gfx::Size size;
+    GLenum target;
     // TODO(skyostil): Use a separate sampler object for filter state.
     GLenum original_filter;
     GLenum filter;
-    GLenum target;
     unsigned image_id;
+    unsigned bound_image_id;
+    bool dirty_image;
     GLenum texture_pool;
     GLint wrap_mode;
     bool lost;
     TextureUsageHint hint;
     ResourceType type;
     ResourceFormat format;
+    SharedBitmap* shared_bitmap;
   };
   typedef base::hash_map<ResourceId, Resource> ResourceMap;
 
@@ -412,6 +422,7 @@ class CC_EXPORT ResourceProvider {
     ResourceIdMap parent_to_child_map;
     ReturnCallback return_callback;
     ResourceIdSet in_use_resources;
+    bool marked_for_deletion;
   };
   typedef base::hash_map<int, Child> ChildMap;
 
@@ -421,8 +432,10 @@ class CC_EXPORT ResourceProvider {
   }
 
   ResourceProvider(OutputSurface* output_surface,
+                   SharedBitmapManager* shared_bitmap_manager,
                    int highp_threshold_min,
-                   bool use_rgba_4444_texture_format);
+                   bool use_rgba_4444_texture_format,
+                   size_t texture_id_allocation_chunk_size);
 
   void CleanUpGLIfNeeded();
 
@@ -442,9 +455,10 @@ class CC_EXPORT ResourceProvider {
     ForShutdown,
   };
   void DeleteResourceInternal(ResourceMap::iterator it, DeleteStyle style);
-  void DeleteAndReturnUnusedResourcesToChild(Child* child_info,
+  void DeleteAndReturnUnusedResourcesToChild(ChildMap::iterator child_it,
                                              DeleteStyle style,
                                              const ResourceIdArray& unused);
+  void DestroyChildInternal(ChildMap::iterator it, DeleteStyle style);
   void LazyCreate(Resource* resource);
   void LazyAllocate(Resource* resource);
 
@@ -455,14 +469,14 @@ class CC_EXPORT ResourceProvider {
                        GLenum target,
                        GLenum unit,
                        GLenum filter);
-  void UnbindForSampling(ResourceProvider::ResourceId resource_id,
-                         GLenum target,
-                         GLenum unit);
 
   // Returns NULL if the output_surface_ does not have a ContextProvider.
   WebKit::WebGraphicsContext3D* Context3d() const;
 
+  unsigned NextTextureId();
+
   OutputSurface* output_surface_;
+  SharedBitmapManager* shared_bitmap_manager_;
   bool lost_output_surface_;
   int highp_threshold_min_;
   ResourceId next_id_;
@@ -474,6 +488,7 @@ class CC_EXPORT ResourceProvider {
   bool use_texture_storage_ext_;
   bool use_texture_usage_hint_;
   bool use_shallow_flush_;
+  bool use_compressed_texture_etc1_;
   scoped_ptr<TextureUploader> texture_uploader_;
   int max_texture_size_;
   ResourceFormat best_texture_format_;
@@ -483,8 +498,57 @@ class CC_EXPORT ResourceProvider {
   scoped_refptr<Fence> current_read_lock_fence_;
   bool use_rgba_4444_texture_format_;
 
+  size_t texture_id_allocation_chunk_size_;
+  std::deque<unsigned> unused_texture_ids_;
+
   DISALLOW_COPY_AND_ASSIGN(ResourceProvider);
 };
+
+
+// TODO(epenner): Move these format conversions to resource_format.h
+// once that builds on mac (npapi.h currently #includes OpenGL.h).
+inline unsigned BitsPerPixel(ResourceFormat format) {
+  DCHECK_LE(format, RESOURCE_FORMAT_MAX);
+  static const unsigned format_bits_per_pixel[RESOURCE_FORMAT_MAX + 1] = {
+    32,  // RGBA_8888
+    16,  // RGBA_4444
+    32,  // BGRA_8888
+    8,   // LUMINANCE_8
+    16,  // RGB_565,
+    4    // ETC1
+  };
+  return format_bits_per_pixel[format];
+}
+
+inline GLenum GLDataType(ResourceFormat format) {
+  DCHECK_LE(format, RESOURCE_FORMAT_MAX);
+  static const unsigned format_gl_data_type[RESOURCE_FORMAT_MAX + 1] = {
+    GL_UNSIGNED_BYTE,           // RGBA_8888
+    GL_UNSIGNED_SHORT_4_4_4_4,  // RGBA_4444
+    GL_UNSIGNED_BYTE,           // BGRA_8888
+    GL_UNSIGNED_BYTE,           // LUMINANCE_8
+    GL_UNSIGNED_SHORT_5_6_5,    // RGB_565,
+    GL_UNSIGNED_BYTE            // ETC1
+  };
+  return format_gl_data_type[format];
+}
+
+inline GLenum GLDataFormat(ResourceFormat format) {
+  DCHECK_LE(format, RESOURCE_FORMAT_MAX);
+  static const unsigned format_gl_data_format[RESOURCE_FORMAT_MAX + 1] = {
+    GL_RGBA,           // RGBA_8888
+    GL_RGBA,           // RGBA_4444
+    GL_BGRA_EXT,       // BGRA_8888
+    GL_LUMINANCE,      // LUMINANCE_8
+    GL_RGB,            // RGB_565
+    GL_ETC1_RGB8_OES   // ETC1
+  };
+  return format_gl_data_format[format];
+}
+
+inline GLenum GLInternalFormat(ResourceFormat format) {
+  return GLDataFormat(format);
+}
 
 }  // namespace cc
 

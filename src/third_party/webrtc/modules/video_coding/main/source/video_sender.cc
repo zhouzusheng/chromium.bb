@@ -10,6 +10,8 @@
 
 #include "webrtc/common_types.h"
 
+#include <algorithm>  // std::max
+
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/video_coding/codecs/interface/video_codec_interface.h"
 #include "webrtc/modules/video_coding/main/source/encoded_frame.h"
@@ -418,6 +420,35 @@ int VideoSender::StopDebugRecording() {
     _encoderInputFile = NULL;
   }
   return VCM_OK;
+}
+
+void VideoSender::EnableAutoMuting() {
+  CriticalSectionScoped cs(_sendCritSect);
+  VideoCodec current_send_codec;
+  if (SendCodec(&current_send_codec) != 0) {
+    assert(false);  // Must set a send codec before enabling auto-mute.
+    return;
+  }
+  int threshold_bps;
+  if (current_send_codec.numberOfSimulcastStreams == 0) {
+    threshold_bps = current_send_codec.minBitrate * 1000;
+  } else {
+    threshold_bps = current_send_codec.simulcastStream[0].minBitrate * 1000;
+  }
+  // Set the hysteresis window to be at 10% of the threshold, but at least
+  // 10 kbps.
+  int window_bps = std::max(threshold_bps / 10, 10000);
+  _mediaOpt.EnableAutoMuting(threshold_bps, window_bps);
+}
+
+void VideoSender::DisableAutoMuting() {
+  CriticalSectionScoped cs(_sendCritSect);
+  _mediaOpt.DisableAutoMuting();
+}
+
+bool VideoSender::VideoMuted() const {
+  CriticalSectionScoped cs(_sendCritSect);
+  return _mediaOpt.video_muted();
 }
 
 }  // namespace vcm

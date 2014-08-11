@@ -59,7 +59,7 @@ public:
 
         bool shouldReadOldValue = false;
 
-        m_mutationRecipients = MutationObserverInterestGroup::createForAttributesMutation(s_currentDecl->parentElement(), HTMLNames::styleAttr);
+        m_mutationRecipients = MutationObserverInterestGroup::createForAttributesMutation(*s_currentDecl->parentElement(), HTMLNames::styleAttr);
         if (m_mutationRecipients && m_mutationRecipients->isOldValueRequested())
             shouldReadOldValue = true;
 
@@ -92,7 +92,7 @@ public:
         s_currentDecl = 0;
         s_shouldNotifyInspector = false;
         if (localCopyStyleDecl->parentElement())
-            InspectorInstrumentation::didInvalidateStyleAttr(&localCopyStyleDecl->parentElement()->document(), localCopyStyleDecl->parentElement());
+            InspectorInstrumentation::didInvalidateStyleAttr(localCopyStyleDecl->parentElement());
     }
 
     void enqueueMutationRecord()
@@ -149,7 +149,7 @@ String PropertySetCSSStyleDeclaration::cssText() const
     return m_propertySet->asText();
 }
 
-void PropertySetCSSStyleDeclaration::setCssText(const String& text, ExceptionState& es)
+void PropertySetCSSStyleDeclaration::setCSSText(const String& text, ExceptionState& es)
 {
     StyleAttributeMutationScope mutationScope(this);
     willMutate();
@@ -281,7 +281,7 @@ String PropertySetCSSStyleDeclaration::variableValue(const AtomicString& name) c
     return m_propertySet->variableValue(name);
 }
 
-void PropertySetCSSStyleDeclaration::setVariableValue(const AtomicString& name, const String& value, ExceptionState&)
+bool PropertySetCSSStyleDeclaration::setVariableValue(const AtomicString& name, const String& value, ExceptionState&)
 {
     ASSERT(RuntimeEnabledFeatures::cssVariablesEnabled());
     StyleAttributeMutationScope mutationScope(this);
@@ -290,6 +290,7 @@ void PropertySetCSSStyleDeclaration::setVariableValue(const AtomicString& name, 
     didMutate(changed ? PropertyChanged : NoChanges);
     if (changed)
         mutationScope.enqueueMutationRecord();
+    return changed;
 }
 
 bool PropertySetCSSStyleDeclaration::removeVariable(const AtomicString& name)
@@ -304,7 +305,7 @@ bool PropertySetCSSStyleDeclaration::removeVariable(const AtomicString& name)
     return changed;
 }
 
-void PropertySetCSSStyleDeclaration::clearVariables(ExceptionState&)
+bool PropertySetCSSStyleDeclaration::clearVariables(ExceptionState&)
 {
     ASSERT(RuntimeEnabledFeatures::cssVariablesEnabled());
     StyleAttributeMutationScope mutationScope(this);
@@ -313,6 +314,12 @@ void PropertySetCSSStyleDeclaration::clearVariables(ExceptionState&)
     didMutate(changed ? PropertyChanged : NoChanges);
     if (changed)
         mutationScope.enqueueMutationRecord();
+    return changed;
+}
+
+PassRefPtr<CSSVariablesIterator> PropertySetCSSStyleDeclaration::variablesIterator() const
+{
+    return m_propertySet->variablesIterator();
 }
 
 CSSValue* PropertySetCSSStyleDeclaration::cloneAndCacheForCSSOM(CSSValue* internalValue)

@@ -33,23 +33,23 @@
 
 #include "PopupListBox.h"
 #include "core/dom/Document.h"
-#include "core/dom/UserGestureIndicator.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/platform/PlatformGestureEvent.h"
-#include "core/platform/PlatformKeyboardEvent.h"
-#include "core/platform/PlatformMouseEvent.h"
-#include "core/platform/PlatformScreen.h"
-#include "core/platform/PlatformTouchEvent.h"
-#include "core/platform/PlatformWheelEvent.h"
 #include "core/platform/PopupMenuClient.h"
 #include "core/platform/chromium/FramelessScrollView.h"
 #include "core/platform/chromium/FramelessScrollViewClient.h"
 #include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/IntRect.h"
+#include "platform/PlatformGestureEvent.h"
+#include "platform/PlatformKeyboardEvent.h"
+#include "platform/PlatformMouseEvent.h"
+#include "platform/PlatformScreen.h"
+#include "platform/PlatformTouchEvent.h"
+#include "platform/PlatformWheelEvent.h"
+#include "platform/UserGestureIndicator.h"
+#include "platform/geometry/IntRect.h"
 #include <limits>
 
 namespace WebCore {
@@ -306,6 +306,7 @@ bool PopupContainer::handleGestureEvent(const PlatformGestureEvent& gestureEvent
     case PlatformEvent::GestureScrollBegin:
     case PlatformEvent::GestureScrollEnd:
     case PlatformEvent::GestureTapDown:
+    case PlatformEvent::GestureShowPress:
         break;
     default:
         ASSERT_NOT_REACHED();

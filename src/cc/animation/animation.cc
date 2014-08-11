@@ -32,7 +32,9 @@ COMPILE_ASSERT(static_cast<int>(cc::Animation::RunStateEnumSize) ==
 // This should match the TargetProperty enum.
 static const char* const s_targetPropertyNames[] = {
   "Transform",
-  "Opacity"
+  "Opacity",
+  "Filter",
+  "BackgroundColor"
 };
 
 COMPILE_ASSERT(static_cast<int>(cc::Animation::TargetPropertyEnumSize) ==
@@ -210,12 +212,11 @@ double Animation::TrimTimeToCurrentIteration(double monotonic_time) const {
   return trimmed;
 }
 
-scoped_ptr<Animation> Animation::Clone(InstanceType instance_type) const {
-  return CloneAndInitialize(instance_type, run_state_, start_time_);
+scoped_ptr<Animation> Animation::Clone() const {
+  return CloneAndInitialize(run_state_, start_time_);
 }
 
-scoped_ptr<Animation> Animation::CloneAndInitialize(InstanceType instance_type,
-                                                    RunState initial_run_state,
+scoped_ptr<Animation> Animation::CloneAndInitialize(RunState initial_run_state,
                                                     double start_time) const {
   scoped_ptr<Animation> to_return(
       new Animation(curve_->Clone(), id_, group_, target_property_));
@@ -226,7 +227,8 @@ scoped_ptr<Animation> Animation::CloneAndInitialize(InstanceType instance_type,
   to_return->total_paused_time_ = total_paused_time_;
   to_return->time_offset_ = time_offset_;
   to_return->alternates_direction_ = alternates_direction_;
-  to_return->is_controlling_instance_ = instance_type == ControllingInstance;
+  DCHECK(!to_return->is_controlling_instance_);
+  to_return->is_controlling_instance_ = true;
   return to_return.Pass();
 }
 

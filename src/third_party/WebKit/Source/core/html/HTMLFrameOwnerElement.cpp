@@ -25,8 +25,8 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/rendering/RenderPart.h"
 #include "core/svg/SVGDocument.h"
 #include "weborigin/SecurityOrigin.h"
@@ -50,14 +50,13 @@ RenderPart* HTMLFrameOwnerElement::renderPart() const
     return toRenderPart(renderer());
 }
 
-void HTMLFrameOwnerElement::setContentFrame(Frame* frame)
+void HTMLFrameOwnerElement::setContentFrame(Frame& frame)
 {
     // Make sure we will not end up with two frames referencing the same owner element.
     ASSERT(!m_contentFrame || m_contentFrame->ownerElement() != this);
-    ASSERT(frame);
     // Disconnected frames should not be allowed to load.
     ASSERT(inDocument());
-    m_contentFrame = frame;
+    m_contentFrame = &frame;
 
     for (ContainerNode* node = this; node; node = node->parentOrShadowHostNode())
         node->incrementConnectedSubframeCount();
@@ -82,7 +81,7 @@ void HTMLFrameOwnerElement::disconnectContentFrame()
     // see if this behavior is really needed as Gecko does not allow this.
     if (Frame* frame = contentFrame()) {
         RefPtr<Frame> protect(frame);
-        frame->loader()->frameDetached();
+        frame->loader().frameDetached();
         frame->disconnectOwnerElement();
     }
 }
@@ -119,7 +118,7 @@ SVGDocument* HTMLFrameOwnerElement::getSVGDocument(ExceptionState& es) const
     if (doc && doc->isSVGDocument())
         return toSVGDocument(doc);
     // Spec: http://www.w3.org/TR/SVG/struct.html#InterfaceGetSVGDocument
-    es.throwDOMException(NotSupportedError);
+    es.throwUninformativeAndGenericDOMException(NotSupportedError);
     return 0;
 }
 
@@ -127,7 +126,7 @@ bool HTMLFrameOwnerElement::loadOrRedirectSubframe(const KURL& url, const Atomic
 {
     RefPtr<Frame> parentFrame = document().frame();
     if (contentFrame()) {
-        contentFrame()->navigationScheduler()->scheduleLocationChange(document().securityOrigin(), url.string(), parentFrame->loader()->outgoingReferrer(), lockBackForwardList);
+        contentFrame()->navigationScheduler().scheduleLocationChange(document().securityOrigin(), url.string(), parentFrame->loader().outgoingReferrer(), lockBackForwardList);
         return true;
     }
 
@@ -136,14 +135,14 @@ bool HTMLFrameOwnerElement::loadOrRedirectSubframe(const KURL& url, const Atomic
         return false;
     }
 
-    if (!SubframeLoadingDisabler::canLoadFrame(this))
+    if (!SubframeLoadingDisabler::canLoadFrame(*this))
         return false;
 
-    String referrer = SecurityPolicy::generateReferrerHeader(document().referrerPolicy(), url, parentFrame->loader()->outgoingReferrer());
-    RefPtr<Frame> childFrame = parentFrame->loader()->client()->createFrame(url, frameName, referrer, this);
+    String referrer = SecurityPolicy::generateReferrerHeader(document().referrerPolicy(), url, parentFrame->loader().outgoingReferrer());
+    RefPtr<Frame> childFrame = parentFrame->loader().client()->createFrame(url, frameName, referrer, this);
 
     if (!childFrame)  {
-        parentFrame->loader()->checkCompleted();
+        parentFrame->loader().checkCompleted();
         return false;
     }
 
@@ -153,7 +152,7 @@ bool HTMLFrameOwnerElement::loadOrRedirectSubframe(const KURL& url, const Atomic
     // actually completed below. (Note that we set m_isComplete to false even for synchronous
     // loads, so that checkCompleted() below won't bail early.)
     // FIXME: Can we remove this entirely? m_isComplete normally gets set to false when a load is committed.
-    childFrame->loader()->started();
+    childFrame->loader().started();
 
     RenderObject* renderObject = renderer();
     FrameView* view = childFrame->view();
@@ -169,8 +168,8 @@ bool HTMLFrameOwnerElement::loadOrRedirectSubframe(const KURL& url, const Atomic
     // FIXME: In this case the Frame will have finished loading before
     // it's being added to the child list. It would be a good idea to
     // create the child first, then invoke the loader separately.
-    if (childFrame->loader()->state() == FrameStateComplete && !childFrame->loader()->policyDocumentLoader())
-        childFrame->loader()->checkCompleted();
+    if (childFrame->loader().state() == FrameStateComplete && !childFrame->loader().policyDocumentLoader())
+        childFrame->loader().checkCompleted();
     return true;
 }
 

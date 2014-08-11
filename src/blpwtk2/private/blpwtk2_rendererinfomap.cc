@@ -31,42 +31,11 @@
 namespace blpwtk2 {
 
 RendererInfoMap::RendererInfoMap()
-: d_anyOutOfProcessRenderersUseInProcessPlugins(false)
 {
 }
 
 RendererInfoMap::~RendererInfoMap()
 {
-}
-
-void RendererInfoMap::setRendererUsesInProcessPlugins(int renderer)
-{
-    DCHECK(renderer == Constants::ANY_OUT_OF_PROCESS_RENDERER
-        || renderer >= 0);
-
-    base::AutoLock guard(d_lock);
-
-    if (renderer == Constants::ANY_OUT_OF_PROCESS_RENDERER) {
-        d_anyOutOfProcessRenderersUseInProcessPlugins = true;
-        return;
-    }
-
-    RendererInfo& info = d_map[renderer];
-    DCHECK(-1 == info.d_hostId);  // We cannot set the flag to use in-process
-                                  // plugins if the RenderProcessHost has
-                                  // already been created.
-    info.d_usesInProcessPlugins = true;
-}
-
-bool RendererInfoMap::hostIdUsesInProcessPlugins(int hostId)
-{
-    base::AutoLock guard(d_lock);
-    for (InfoMap::const_iterator it = d_map.begin(); it != d_map.end(); ++it) {
-        if (it->second.d_hostId == hostId) {
-            return it->second.d_usesInProcessPlugins;
-        }
-    }
-    return d_anyOutOfProcessRenderersUseInProcessPlugins;
 }
 
 int RendererInfoMap::obtainHostAffinity(int renderer)

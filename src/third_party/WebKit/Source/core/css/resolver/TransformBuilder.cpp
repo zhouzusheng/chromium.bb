@@ -31,15 +31,15 @@
 
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/css/CSSTransformValue.h"
-#include "core/platform/graphics/transforms/Matrix3DTransformOperation.h"
-#include "core/platform/graphics/transforms/MatrixTransformOperation.h"
-#include "core/platform/graphics/transforms/PerspectiveTransformOperation.h"
-#include "core/platform/graphics/transforms/RotateTransformOperation.h"
-#include "core/platform/graphics/transforms/ScaleTransformOperation.h"
-#include "core/platform/graphics/transforms/SkewTransformOperation.h"
-#include "core/platform/graphics/transforms/TransformationMatrix.h"
-#include "core/platform/graphics/transforms/TranslateTransformOperation.h"
 #include "core/rendering/style/RenderStyle.h"
+#include "platform/transforms/Matrix3DTransformOperation.h"
+#include "platform/transforms/MatrixTransformOperation.h"
+#include "platform/transforms/PerspectiveTransformOperation.h"
+#include "platform/transforms/RotateTransformOperation.h"
+#include "platform/transforms/ScaleTransformOperation.h"
+#include "platform/transforms/SkewTransformOperation.h"
+#include "platform/transforms/TransformationMatrix.h"
+#include "platform/transforms/TranslateTransformOperation.h"
 
 namespace WebCore {
 
@@ -97,10 +97,10 @@ bool TransformBuilder::createTransformOperations(CSSValue* inValue, const Render
     for (CSSValueListIterator i = inValue; i.hasMore(); i.advance()) {
         CSSValue* currValue = i.value();
 
-        if (!currValue->isCSSTransformValue())
+        if (!currValue->isTransformValue())
             continue;
 
-        CSSTransformValue* transformValue = static_cast<CSSTransformValue*>(i.value());
+        CSSTransformValue* transformValue = toCSSTransformValue(i.value());
         if (!transformValue->length())
             continue;
 

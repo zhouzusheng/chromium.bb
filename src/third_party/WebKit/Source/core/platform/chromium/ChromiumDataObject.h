@@ -31,8 +31,9 @@
 #ifndef ChromiumDataObject_h
 #define ChromiumDataObject_h
 
-#include "core/platform/Supplementable.h"
 #include "core/platform/chromium/ChromiumDataObjectItem.h"
+#include "platform/PasteMode.h"
+#include "platform/Supplementable.h"
 #include "wtf/ListHashSet.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
@@ -51,7 +52,7 @@ class SharedBuffer;
 // of and is not specific to a platform.
 class ChromiumDataObject : public RefCounted<ChromiumDataObject>, public Supplementable<ChromiumDataObject> {
 public:
-    static PassRefPtr<ChromiumDataObject> createFromPasteboard();
+    static PassRefPtr<ChromiumDataObject> createFromPasteboard(PasteMode);
     static PassRefPtr<ChromiumDataObject> create();
 
     PassRefPtr<ChromiumDataObject> copy() const;
@@ -63,7 +64,7 @@ public:
     void deleteItem(unsigned long index);
     void clearAll();
     PassRefPtr<ChromiumDataObjectItem> add(const String& data, const String& type, ExceptionState&);
-    PassRefPtr<ChromiumDataObjectItem> add(PassRefPtr<File>, ScriptExecutionContext*);
+    PassRefPtr<ChromiumDataObjectItem> add(PassRefPtr<File>);
 
     // WebCore helpers.
     void clearData(const String& type);

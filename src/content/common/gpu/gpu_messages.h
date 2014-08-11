@@ -10,15 +10,14 @@
 
 #include "base/memory/shared_memory.h"
 #include "content/common/content_export.h"
-#include "content/common/gpu/gpu_memory_allocation.h"
 #include "content/common/gpu/gpu_memory_uma_stats.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/common/gpu/gpu_rendering_stats.h"
-#include "content/common/gpu/surface_capturer.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/gpu_memory_stats.h"
 #include "gpu/command_buffer/common/command_buffer.h"
 #include "gpu/command_buffer/common/constants.h"
+#include "gpu/command_buffer/common/gpu_memory_allocation.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/config/gpu_info.h"
 #include "gpu/ipc/gpu_command_buffer_traits.h"
@@ -28,6 +27,7 @@
 #include "media/video/video_decode_accelerator.h"
 #include "media/video/video_encode_accelerator.h"
 #include "ui/events/latency_info.h"
+#include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 #include "ui/gl/gpu_preference.h"
@@ -75,7 +75,6 @@ IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(GpuHostMsg_AcceleratedSurfaceRelease_Params)
   IPC_STRUCT_MEMBER(int32, surface_id)
-  IPC_STRUCT_MEMBER(int32, route_id)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(AcceleratedSurfaceMsg_BufferPresented_Params)
@@ -184,16 +183,13 @@ IPC_STRUCT_TRAITS_BEGIN(content::GPUMemoryUmaStats)
   IPC_STRUCT_TRAITS_MEMBER(bytes_limit)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(content::GpuMemoryAllocationForRenderer)
+IPC_STRUCT_TRAITS_BEGIN(gpu::MemoryAllocation)
   IPC_STRUCT_TRAITS_MEMBER(bytes_limit_when_visible)
   IPC_STRUCT_TRAITS_MEMBER(priority_cutoff_when_visible)
-  IPC_STRUCT_TRAITS_MEMBER(bytes_limit_when_not_visible)
-  IPC_STRUCT_TRAITS_MEMBER(priority_cutoff_when_not_visible)
-  IPC_STRUCT_TRAITS_MEMBER(have_backbuffer_when_not_visible)
 IPC_STRUCT_TRAITS_END()
-IPC_ENUM_TRAITS(content::GpuMemoryAllocationForRenderer::PriorityCutoff)
+IPC_ENUM_TRAITS(gpu::MemoryAllocation::PriorityCutoff)
 
-IPC_STRUCT_TRAITS_BEGIN(content::GpuManagedMemoryStats)
+IPC_STRUCT_TRAITS_BEGIN(gpu::ManagedMemoryStats)
   IPC_STRUCT_TRAITS_MEMBER(bytes_required)
   IPC_STRUCT_TRAITS_MEMBER(bytes_nice_to_have)
   IPC_STRUCT_TRAITS_MEMBER(bytes_allocated)
@@ -221,13 +217,12 @@ IPC_STRUCT_TRAITS_BEGIN(content::GpuRenderingStats)
   IPC_STRUCT_TRAITS_MEMBER(total_texture_upload_time)
   IPC_STRUCT_TRAITS_MEMBER(global_total_processing_commands_time)
   IPC_STRUCT_TRAITS_MEMBER(total_processing_commands_time)
+  IPC_STRUCT_TRAITS_MEMBER(global_video_memory_bytes_allocated)
 IPC_STRUCT_TRAITS_END()
 
 IPC_ENUM_TRAITS(media::VideoFrame::Format)
 
 IPC_ENUM_TRAITS(media::VideoEncodeAccelerator::Error)
-
-IPC_ENUM_TRAITS(content::SurfaceCapturer::Error)
 
 //------------------------------------------------------------------------------
 // GPU Messages
@@ -552,7 +547,7 @@ IPC_MESSAGE_ROUTED0(GpuCommandBufferMsg_Rescheduled)
 IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_ConsoleMsg,
                     GPUCommandBufferConsoleMessage /* msg */)
 
-// Register an existing shared memory transfer buffer. Returns an id that can be
+// Register an existing shared memory transfer buffer. The id that can be
 // used to identify the transfer buffer from a command buffer.
 IPC_MESSAGE_ROUTED3(GpuCommandBufferMsg_RegisterTransferBuffer,
                     int32 /* id */,
@@ -577,12 +572,6 @@ IPC_SYNC_MESSAGE_ROUTED1_1(GpuCommandBufferMsg_CreateVideoDecoder,
                            media::VideoCodecProfile /* profile */,
                            int /* route_id */)
 
-// Create and initialize a surface capturer, returning its new route_id.
-// Created capturers should be freed with SurfaceCapturerMsg_Destroy when no
-// longer needed.
-IPC_SYNC_MESSAGE_ROUTED0_1(GpuCommandBufferMsg_CreateSurfaceCapturer,
-                           int /* route_id */)
-
 // Tells the proxy that there was an error and the command buffer had to be
 // destroyed for some reason.
 IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_Destroyed,
@@ -604,13 +593,12 @@ IPC_MESSAGE_ROUTED0(GpuCommandBufferMsg_EnsureBackbuffer)
 
 // Sent to proxy when the gpu memory manager changes its memory allocation.
 IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_SetMemoryAllocation,
-                    content::GpuMemoryAllocationForRenderer /* allocation */)
+                    gpu::MemoryAllocation /* allocation */)
 
 // Sent to stub from the proxy with statistics on managed memory usage and
 // requirements.
-IPC_MESSAGE_ROUTED1(
-    GpuCommandBufferMsg_SendClientManagedMemoryStats,
-    content::GpuManagedMemoryStats /* stats */)
+IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_SendClientManagedMemoryStats,
+                    gpu::ManagedMemoryStats /* stats */)
 
 // Sent to stub when proxy is assigned a memory allocation changed callback.
 IPC_MESSAGE_ROUTED1(
@@ -647,6 +635,19 @@ IPC_MESSAGE_ROUTED2(GpuCommandBufferMsg_SignalQuery,
                     uint32 /* query */,
                     uint32 /* signal_id */)
 
+// Register an existing gpu memory buffer. The id that can be
+// used to identify the gpu memory buffer from a command buffer.
+IPC_MESSAGE_ROUTED5(GpuCommandBufferMsg_RegisterGpuMemoryBuffer,
+                    int32 /* id */,
+                    gfx::GpuMemoryBufferHandle /* gpu_memory_buffer */,
+                    uint32 /* width */,
+                    uint32 /* height */,
+                    uint32 /* internalformat */)
+
+// Destroy a previously created gpu memory buffer.
+IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_DestroyGpuMemoryBuffer,
+                    int32 /* id */)
+
 //------------------------------------------------------------------------------
 // Accelerated Video Decoder Messages
 // These messages are sent from Renderer process to GPU process.
@@ -659,10 +660,9 @@ IPC_MESSAGE_ROUTED3(AcceleratedVideoDecoderMsg_Decode,
 
 // Sent from Renderer process to the GPU process to give the texture IDs for
 // the textures the decoder will use for output.
-IPC_MESSAGE_ROUTED3(AcceleratedVideoDecoderMsg_AssignPictureBuffers,
-                    std::vector<int32>, /* Picture buffer ID */
-                    std::vector<uint32>, /* Texture ID */
-                    std::vector<gfx::Size>) /* Size */
+IPC_MESSAGE_ROUTED2(AcceleratedVideoDecoderMsg_AssignPictureBuffers,
+                    std::vector<int32>,  /* Picture buffer ID */
+                    std::vector<uint32>) /* Texture ID */
 
 // Send from Renderer process to the GPU process to recycle the given picture
 // buffer for further decoding.
@@ -775,40 +775,3 @@ IPC_MESSAGE_ROUTED3(AcceleratedVideoEncoderHostMsg_BitstreamBufferReady,
 // Report error condition.
 IPC_MESSAGE_ROUTED1(AcceleratedVideoEncoderHostMsg_NotifyError,
                     media::VideoEncodeAccelerator::Error /* error */)
-
-//------------------------------------------------------------------------------
-// Gpu Surface Capturer Messages
-// These messages are sent from the Browser process to the GPU process.
-
-// Initialize the capturer.
-IPC_MESSAGE_ROUTED1(SurfaceCapturerMsg_Initialize,
-                    media::VideoFrame::Format /* format */)
-
-// Attempt to start a capture.
-IPC_MESSAGE_ROUTED0(SurfaceCapturerMsg_TryCapture)
-
-// Copy captured contents to a video frame.
-IPC_MESSAGE_ROUTED3(SurfaceCapturerMsg_CopyCaptureToVideoFrame,
-                    int32 /* buffer_id */,
-                    base::SharedMemoryHandle /* buffer_shm */,
-                    uint32 /* buffer_size */)
-
-// Destroy the capturer.
-IPC_MESSAGE_ROUTED0(SurfaceCapturerMsg_Destroy)
-
-//------------------------------------------------------------------------------
-// Gpu Surface Capturer Host Messages
-// These messages are sent from GPU process to Browser process.
-
-// Report the capture output parameters to the Browser process.
-IPC_MESSAGE_ROUTED2(SurfaceCapturerHostMsg_NotifyCaptureParameters,
-                    gfx::Size /* buffer_size */,
-                    gfx::Rect /* visible_rect */)
-
-// Report successful copy of a capture of a surface.
-IPC_MESSAGE_ROUTED1(SurfaceCapturerHostMsg_NotifyCopyCaptureDone,
-                    int32 /* frame_id */)
-
-// Report error.
-IPC_MESSAGE_ROUTED1(SurfaceCapturerHostMsg_NotifyError,
-                    content::SurfaceCapturer::Error /* error */)

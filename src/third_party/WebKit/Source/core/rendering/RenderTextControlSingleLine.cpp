@@ -28,12 +28,12 @@
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
 #include "core/html/shadow/ShadowElementNames.h"
-#include "core/page/Frame.h"
-#include "core/platform/PlatformKeyboardEvent.h"
+#include "core/frame/Frame.h"
 #include "core/platform/graphics/SimpleFontData.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderTheme.h"
+#include "platform/PlatformKeyboardEvent.h"
 
 using namespace std;
 
@@ -53,6 +53,11 @@ RenderTextControlSingleLine::~RenderTextControlSingleLine()
 {
 }
 
+inline Element* RenderTextControlSingleLine::containerElement() const
+{
+    return inputElement()->userAgentShadowRoot()->getElementById(ShadowElementNames::textFieldContainer());
+}
+
 inline Element* RenderTextControlSingleLine::editingViewPortElement() const
 {
     return inputElement()->userAgentShadowRoot()->getElementById(ShadowElementNames::editingViewPort());
@@ -61,12 +66,6 @@ inline Element* RenderTextControlSingleLine::editingViewPortElement() const
 inline HTMLElement* RenderTextControlSingleLine::innerSpinButtonElement() const
 {
     return toHTMLElement(inputElement()->userAgentShadowRoot()->getElementById(ShadowElementNames::spinButton()));
-}
-
-RenderStyle* RenderTextControlSingleLine::textBaseStyle() const
-{
-    Element* viewPort = editingViewPortElement();
-    return viewPort ? viewPort->renderer()->style() : style();
 }
 
 void RenderTextControlSingleLine::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
@@ -123,7 +122,7 @@ void RenderTextControlSingleLine::layout()
 
     RenderBlockFlow::layoutBlock(false);
 
-    HTMLElement* container = containerElement();
+    Element* container = containerElement();
     RenderBox* containerRenderer = container ? container->renderBox() : 0;
 
     // Set the text block height
@@ -217,7 +216,7 @@ bool RenderTextControlSingleLine::nodeAtPoint(const HitTestRequest& request, Hit
     //  - we hit a node inside the inner text element,
     //  - we hit the <input> element (e.g. we're over the border or padding), or
     //  - we hit regions not in any decoration buttons.
-    HTMLElement* container = containerElement();
+    Element* container = containerElement();
     if (result.innerNode()->isDescendantOf(innerTextElement()) || result.innerNode() == node() || (container && container == result.innerNode())) {
         LayoutPoint pointInParent = locationInContainer.point();
         if (container && editingViewPortElement()) {
@@ -243,7 +242,7 @@ void RenderTextControlSingleLine::styleDidChange(StyleDifference diff, const Ren
         viewPortRenderer->style()->setHeight(Length());
         viewPortRenderer->style()->setWidth(Length());
     }
-    HTMLElement* container = containerElement();
+    Element* container = containerElement();
     if (RenderObject* containerRenderer = container ? container->renderer() : 0) {
         containerRenderer->style()->setHeight(Length());
         containerRenderer->style()->setWidth(Length());
@@ -371,6 +370,7 @@ PassRefPtr<RenderStyle> RenderTextControlSingleLine::createInnerTextStyle(const 
         textBlockStyle->setLineHeight(RenderStyle::initialLineHeight());
 
     textBlockStyle->setDisplay(BLOCK);
+    textBlockStyle->setUnique();
 
     return textBlockStyle.release();
 }
@@ -385,9 +385,8 @@ void RenderTextControlSingleLine::autoscroll(const IntPoint& position)
     RenderBox* renderer = innerTextElement()->renderBox();
     if (!renderer)
         return;
-    RenderLayer* layer = renderer->layer();
-    if (layer)
-        layer->autoscroll(position);
+
+    renderer->autoscroll(position);
 }
 
 int RenderTextControlSingleLine::scrollWidth() const

@@ -24,14 +24,15 @@
 
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_devtoolsfrontendhostdelegateimpl.h>
-#include <blpwtk2_newviewparams.h>
-#include <blpwtk2_webframeimpl.h>
-#include <blpwtk2_stringref.h>
-#include <blpwtk2_webviewdelegate.h>
-#include <blpwtk2_webviewimplclient.h>
 #include <blpwtk2_mediaobserverimpl.h>
+#include <blpwtk2_nativeviewwidget.h>
+#include <blpwtk2_newviewparams.h>
 #include <blpwtk2_products.h>
 #include <blpwtk2_statics.h>
+#include <blpwtk2_stringref.h>
+#include <blpwtk2_webframeimpl.h>
+#include <blpwtk2_webviewdelegate.h>
+#include <blpwtk2_webviewimplclient.h>
 
 #include <base/message_loop/message_loop.h>
 #include <base/strings/utf_string_conversions.h>
@@ -46,12 +47,35 @@
 #include <content/public/browser/site_instance.h>
 #include <third_party/WebKit/public/web/WebFindOptions.h>
 #include <third_party/WebKit/public/web/WebView.h>
+#include <ui/base/win/hidden_window.h>
 #include <webkit/common/webpreferences.h>
 
 namespace blpwtk2 {
 
+class DummyMediaStreamUI : public content::MediaStreamUI {
+public:
+    DummyMediaStreamUI() {}
+    virtual ~DummyMediaStreamUI() {}
+
+    virtual void OnStarted(const base::Closure& stop) OVERRIDE
+    {
+    }
+};
+
+static const content::MediaStreamDevice* findDeviceById(
+    const std::string& id,
+    const content::MediaStreamDevices& devices)
+{
+    for (std::size_t i = 0; i < devices.size(); ++i) {
+        if (id == devices[i].id) {
+            return &devices[i];
+        }
+    }
+    return 0;
+}
+
 WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
-                         gfx::NativeView parent,
+                         blpwtk2::NativeView parent,
                          BrowserContextImpl* browserContext,
                          int hostAffinity,
                          bool initiallyVisible,
@@ -61,6 +85,7 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
 : d_delegate(delegate)
 , d_implClient(0)
 , d_browserContext(browserContext)
+, d_widget(0)
 , d_focusBeforeEnabled(false)
 , d_focusAfterEnabled(false)
 , d_isReadyForDelete(false)
@@ -89,11 +114,11 @@ WebViewImpl::WebViewImpl(WebViewDelegate* delegate,
 
     printing::PrintViewManager::CreateForWebContents(d_webContents.get());
 
-    if (!initiallyVisible)
-        ShowWindow(getNativeView(), SW_HIDE);
+    if (parent)
+        createWidget(parent);
 
-    d_originalParent = GetParent(getNativeView());
-    SetParent(getNativeView(), parent);
+    if (initiallyVisible)
+        show();
 }
 
 WebViewImpl::WebViewImpl(content::WebContents* contents,
@@ -104,6 +129,7 @@ WebViewImpl::WebViewImpl(content::WebContents* contents,
 : d_delegate(0)
 , d_implClient(0)
 , d_browserContext(browserContext)
+, d_widget(0)
 , d_focusBeforeEnabled(false)
 , d_focusAfterEnabled(false)
 , d_isReadyForDelete(false)
@@ -126,8 +152,7 @@ WebViewImpl::WebViewImpl(content::WebContents* contents,
     d_webContents.reset(contents);
     d_webContents->SetDelegate(this);
     Observe(d_webContents.get());
-
-    d_originalParent = GetParent(getNativeView());
+    show();
 }
 
 WebViewImpl::~WebViewImpl()
@@ -136,7 +161,10 @@ WebViewImpl::~WebViewImpl()
     DCHECK(d_wasDestroyed);
     DCHECK(d_isReadyForDelete);
     DCHECK(d_isDeletingSoon);
-    SetParent(getNativeView(), d_originalParent);
+    if (d_widget) {
+        d_widget->setDelegate(0);
+        d_widget->destroy();
+    }
 }
 
 void WebViewImpl::setImplClient(WebViewImplClient* client)
@@ -284,7 +312,7 @@ void WebViewImpl::loadInspector(WebView* inspectedView)
     d_devToolsFrontEndHost.reset(
         new DevToolsFrontendHostDelegateImpl(d_webContents.get(), agentHost));
 
-    GURL url = Statics::devToolsHttpHandler->GetFrontendURL(NULL);
+    GURL url = Statics::devToolsHttpHandler->GetFrontendURL();
     loadUrl(url.spec());
 }
 
@@ -336,6 +364,7 @@ void WebViewImpl::focus()
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
+    d_widget->focus();
     d_webContents->GetView()->Focus();
 }
 
@@ -343,28 +372,41 @@ void WebViewImpl::show()
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    ::ShowWindow(getNativeView(), SW_SHOW);
+    if (!d_widget)
+        createWidget(ui::GetHiddenWindow());
+    d_widget->show();
 }
 
 void WebViewImpl::hide()
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    ::ShowWindow(getNativeView(), SW_HIDE);
+    if (!d_widget)
+        createWidget(ui::GetHiddenWindow());
+    d_widget->hide();
 }
 
 void WebViewImpl::setParent(NativeView parent)
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    ::SetParent(getNativeView(), parent);
+
+    if (!parent)
+        parent = ui::GetHiddenWindow();
+
+    if (!d_widget)
+        createWidget(parent);
+    else
+        d_widget->setParent(parent);
 }
 
 void WebViewImpl::move(int left, int top, int width, int height)
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    ::MoveWindow(getNativeView(), left, top, width, height, FALSE);
+    if (!d_widget)
+        createWidget(ui::GetHiddenWindow());
+    d_widget->move(left, top, width, height);
 }
 
 void WebViewImpl::cutSelection()
@@ -501,6 +543,25 @@ void WebViewImpl::rootWindowSettingsChanged()
             d_webContents->GetRenderWidgetHostView());
     if (rwhv)
         rwhv->UpdateScreenInfo(rwhv->GetNativeView());
+}
+
+void WebViewImpl::createWidget(blpwtk2::NativeView parent)
+{
+    DCHECK(!d_widget);
+    DCHECK(!d_wasDestroyed);
+
+    // This creates the HWND that will host the WebContents.  The widget
+    // will be deleted when the HWND is destroyed.
+    d_widget = new blpwtk2::NativeViewWidget(
+        d_webContents->GetView()->GetNativeView(),
+        parent,
+        this);
+}
+
+void WebViewImpl::onDestroyed(NativeViewWidget* source)
+{
+    DCHECK(source == d_widget);
+    d_widget = 0;
 }
 
 void WebViewImpl::UpdateTargetURL(content::WebContents* source,
@@ -672,6 +733,38 @@ bool WebViewImpl::IsPopupOrPanel(const content::WebContents* source) const
     return d_isPopup;
 }
 
+void WebViewImpl::RequestMediaAccessPermission(
+    content::WebContents* web_contents,
+    const content::MediaStreamRequest& request,
+    const content::MediaResponseCallback& callback)
+{
+    scoped_ptr<content::MediaStreamUI> ui(new DummyMediaStreamUI());
+    content::MediaStreamDevices devices;
+    if (request.requested_video_device_id.empty()) {
+        if (request.video_type != content::MEDIA_NO_SERVICE && !Statics::mediaObserver->getVideoDevices().empty()) {
+            devices.push_back(Statics::mediaObserver->getVideoDevices()[0]);
+        }
+    }
+    else {
+        const content::MediaStreamDevice* device = findDeviceById(request.requested_video_device_id, Statics::mediaObserver->getVideoDevices());
+        if (device) {
+            devices.push_back(*device);
+        }
+    }
+    if (request.requested_audio_device_id.empty()) {
+        if (request.audio_type != content::MEDIA_NO_SERVICE && !Statics::mediaObserver->getAudioDevices().empty()) {
+            devices.push_back(Statics::mediaObserver->getAudioDevices()[0]);
+        }
+    }
+    else {
+        const content::MediaStreamDevice* device = findDeviceById(request.requested_audio_device_id, Statics::mediaObserver->getAudioDevices());
+        if (device) {
+            devices.push_back(*device);
+        }
+    }
+    callback.Run(devices, ui.Pass());
+}
+
 bool WebViewImpl::OnNCHitTest(int* result)
 {
     if (d_ncHitTestEnabled && d_delegate) {
@@ -728,37 +821,6 @@ void WebViewImpl::OnNCDragEnd()
     }
 }
 
-bool WebViewImpl::OnSetCursor(int hitTestCode)
-{
-    static HCURSOR s_arrow = ::LoadCursor(NULL, IDC_ARROW);
-    static HCURSOR s_sizeNS = ::LoadCursor(NULL, IDC_SIZENS);
-    static HCURSOR s_sizeWE = ::LoadCursor(NULL, IDC_SIZEWE);
-    static HCURSOR s_sizeNWSE = ::LoadCursor(NULL, IDC_SIZENWSE);
-    static HCURSOR s_sizeNESW = ::LoadCursor(NULL, IDC_SIZENESW);
-    switch (hitTestCode) {
-    case HTCAPTION:
-        SetCursor(s_arrow);
-        return true;
-    case HTBOTTOM:
-    case HTTOP:
-        SetCursor(s_sizeNS);
-        return true;
-    case HTLEFT:
-    case HTRIGHT:
-        SetCursor(s_sizeWE);
-        return true;
-    case HTTOPLEFT:
-    case HTBOTTOMRIGHT:
-        SetCursor(s_sizeNWSE);
-        return true;
-    case HTTOPRIGHT:
-    case HTBOTTOMLEFT:
-        SetCursor(s_sizeNESW);
-        return true;
-    }
-    return false;
-}
-
 void WebViewImpl::DidUpdateBackingStore()
 {
     DCHECK(Statics::isInBrowserMainThread());
@@ -807,9 +869,7 @@ void WebViewImpl::FindReply(content::WebContents* source_contents,
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(source_contents == d_webContents);
-
-    DCHECK(d_find.get() || Statics::isRendererMainThreadMode())
-        << "d_find must be set unless in RENDERER_MAIN thread mode";
+    DCHECK(d_implClient || d_find.get());
 
     if (d_wasDestroyed) return;
 

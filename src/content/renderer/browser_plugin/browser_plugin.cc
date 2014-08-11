@@ -90,6 +90,7 @@ BrowserPlugin::BrowserPlugin(
       mouse_locked_(false),
       browser_plugin_manager_(render_view->GetBrowserPluginManager()),
       compositing_enabled_(false),
+      embedder_frame_url_(frame->document().url()),
       weak_ptr_factory_(this) {
 }
 
@@ -374,6 +375,7 @@ void BrowserPlugin::Attach(scoped_ptr<base::DictionaryValue> extra_params) {
   attach_params.storage_partition_id = storage_partition_id_;
   attach_params.persist_storage = persist_storage_;
   attach_params.src = GetSrcAttribute();
+  attach_params.embedder_frame_url = embedder_frame_url_;
   GetDamageBufferWithSizeParams(&attach_params.auto_size_params,
                                 &attach_params.resize_guest_params,
                                 false);
@@ -444,6 +446,14 @@ void BrowserPlugin::OnGuestContentWindowReady(int guest_instance_id,
 
 void BrowserPlugin::OnGuestGone(int guest_instance_id) {
   guest_crashed_ = true;
+
+  // Turn off compositing so we can display the sad graphic. Changes to
+  // compositing state will show up at a later time after a layout and commit.
+  EnableCompositing(false);
+  if (compositing_helper_) {
+    compositing_helper_->OnContainerDestroy();
+    compositing_helper_ = NULL;
+  }
 
   // Queue up showing the sad graphic to give content embedders an opportunity
   // to fire their listeners and potentially overlay the webview with custom
@@ -743,8 +753,6 @@ void BrowserPlugin::ShowSadGraphic() {
   // NULL so we shouldn't attempt to access it.
   if (container_)
     container_->invalidate();
-  // Turn off compositing so we can display the sad graphic.
-  EnableCompositing(false);
 }
 
 void BrowserPlugin::ParseAttributes() {

@@ -19,9 +19,8 @@ public:
                           EffectKey,
                           const char* outputColor,
                           const char* inputColor,
+                          const TransformedCoordsArray&,
                           const TextureSamplerArray&) SK_OVERRIDE;
-
-    static inline EffectKey GenKey(const GrDrawEffect&, const GrGLCaps&);
 
     virtual void setData(const GrGLUniformManager&, const GrDrawEffect&) SK_OVERRIDE;
 
@@ -31,15 +30,11 @@ private:
     UniformHandle       fCoefficientsUni;
     UniformHandle       fImageIncrementUni;
 
-    GrGLEffectMatrix    fEffectMatrix;
-
     typedef GrGLEffect INHERITED;
 };
 
-GrGLBicubicEffect::GrGLBicubicEffect(const GrBackendEffectFactory& factory,
-                                     const GrDrawEffect& drawEffect)
-    : INHERITED(factory)
-    , fEffectMatrix(drawEffect.castEffect<GrBicubicEffect>().coordsType()) {
+GrGLBicubicEffect::GrGLBicubicEffect(const GrBackendEffectFactory& factory, const GrDrawEffect&)
+    : INHERITED(factory) {
 }
 
 void GrGLBicubicEffect::emitCode(GrGLShaderBuilder* builder,
@@ -47,9 +42,11 @@ void GrGLBicubicEffect::emitCode(GrGLShaderBuilder* builder,
                                  EffectKey key,
                                  const char* outputColor,
                                  const char* inputColor,
+                                 const TransformedCoordsArray& coords,
                                  const TextureSamplerArray& samplers) {
-    SkString coords;
-    fEffectMatrix.emitCodeMakeFSCoords2D(builder, key, &coords);
+    sk_ignore_unused_variable(inputColor);
+
+    SkString coords2D = builder->ensureFSCoords2D(coords, 0);
     fCoefficientsUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
                                            kMat44f_GrSLType, "Coefficients");
     fImageIncrementUni = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
@@ -76,7 +73,7 @@ void GrGLBicubicEffect::emitCode(GrGLShaderBuilder* builder,
                             "\tvec4 c = coefficients * ts;\n"
                             "\treturn c.x * c0 + c.y * c1 + c.z * c2 + c.w * c3;\n",
                             &cubicBlendName);
-    builder->fsCodeAppendf("\tvec2 coord = %s - %s * vec2(0.5, 0.5);\n", coords.c_str(), imgInc);
+    builder->fsCodeAppendf("\tvec2 coord = %s - %s * vec2(0.5, 0.5);\n", coords2D.c_str(), imgInc);
     builder->fsCodeAppendf("\tvec2 f = fract(coord / %s);\n", imgInc);
     for (int y = 0; y < 4; ++y) {
         for (int x = 0; x < 4; ++x) {
@@ -91,15 +88,6 @@ void GrGLBicubicEffect::emitCode(GrGLShaderBuilder* builder,
     builder->fsCodeAppendf("\t%s = %s(%s, f.y, s0, s1, s2, s3);\n", outputColor, cubicBlendName.c_str(), coeff);
 }
 
-GrGLEffect::EffectKey GrGLBicubicEffect::GenKey(const GrDrawEffect& drawEffect, const GrGLCaps&) {
-    const GrBicubicEffect& bicubic = drawEffect.castEffect<GrBicubicEffect>();
-    EffectKey matrixKey = GrGLEffectMatrix::GenKey(bicubic.getMatrix(),
-                                                   drawEffect,
-                                                   bicubic.coordsType(),
-                                                   bicubic.texture(0));
-    return matrixKey;
-}
-
 void GrGLBicubicEffect::setData(const GrGLUniformManager& uman,
                                 const GrDrawEffect& drawEffect) {
     const GrBicubicEffect& effect = drawEffect.castEffect<GrBicubicEffect>();
@@ -109,10 +97,6 @@ void GrGLBicubicEffect::setData(const GrGLUniformManager& uman,
     imageIncrement[1] = 1.0f / texture.height();
     uman.set2fv(fImageIncrementUni, 0, 1, imageIncrement);
     uman.setMatrix4f(fCoefficientsUni, effect.coefficients());
-    fEffectMatrix.setData(uman,
-                          effect.getMatrix(),
-                          drawEffect,
-                          effect.texture(0));
 }
 
 GrBicubicEffect::GrBicubicEffect(GrTexture* texture,
@@ -124,20 +108,22 @@ GrBicubicEffect::GrBicubicEffect(GrTexture* texture,
             fCoefficients[x * 4 + y] = SkScalarToFloat(coefficients[y * 4 + x]);
         }
     }
+    this->setWillNotUseInputColor();
 }
 
 GrBicubicEffect::GrBicubicEffect(GrTexture* texture,
                                  const SkScalar coefficients[16],
                                  const SkMatrix &matrix,
                                  const GrTextureParams &params,
-                                 CoordsType coordsType)
-  : INHERITED(texture, MakeDivByTextureWHMatrix(texture), params, coordsType) {
+                                 GrCoordSet coordSet)
+  : INHERITED(texture, matrix, params, coordSet) {
     for (int y = 0; y < 4; y++) {
         for (int x = 0; x < 4; x++) {
             // Convert from row-major scalars to column-major floats.
             fCoefficients[x * 4 + y] = SkScalarToFloat(coefficients[y * 4 + x]);
         }
     }
+    this->setWillNotUseInputColor();
 }
 
 GrBicubicEffect::~GrBicubicEffect() {

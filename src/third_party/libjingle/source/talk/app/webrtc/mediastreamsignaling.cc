@@ -37,6 +37,7 @@
 #include "talk/app/webrtc/videosource.h"
 #include "talk/app/webrtc/videotrack.h"
 #include "talk/base/bytebuffer.h"
+#include "talk/base/stringutils.h"
 #include "talk/media/sctp/sctpdataengine.h"
 
 static const char kDefaultStreamLabel[] = "default";
@@ -189,7 +190,8 @@ MediaStreamSignaling::MediaStreamSignaling(
       remote_streams_(StreamCollection::Create()),
       remote_stream_factory_(new RemoteMediaStreamFactory(signaling_thread,
                                                           channel_manager)),
-      last_allocated_sctp_id_(0) {
+      last_allocated_sctp_even_sid_(-2),
+      last_allocated_sctp_odd_sid_(-1) {
   options_.has_video = false;
   options_.has_audio = false;
 }
@@ -203,36 +205,37 @@ void MediaStreamSignaling::TearDown() {
   OnDataChannelClose();
 }
 
-bool MediaStreamSignaling::IsSctpIdAvailable(int id) const {
-  if (id < 0 || id > static_cast<int>(cricket::kMaxSctpSid))
+bool MediaStreamSignaling::IsSctpSidAvailable(int sid) const {
+  if (sid < 0 || sid > static_cast<int>(cricket::kMaxSctpSid))
     return false;
   for (DataChannels::const_iterator iter = data_channels_.begin();
        iter != data_channels_.end();
        ++iter) {
-    if (iter->second->id() == id) {
+    if (iter->second->id() == sid) {
       return false;
     }
   }
   return true;
 }
 
-// Gets the first id that has not been taken by existing data
-// channels. Starting from 1.
-// Returns false if no id can be allocated.
-// TODO(jiayl): Update to some kind of even/odd random number selection when the
-// rules are fully standardized.
-bool MediaStreamSignaling::AllocateSctpId(int* id) {
-  do {
-    last_allocated_sctp_id_++;
-  } while (last_allocated_sctp_id_ <= static_cast<int>(cricket::kMaxSctpSid) &&
-           !IsSctpIdAvailable(last_allocated_sctp_id_));
+// Gets the first unused odd/even id based on the DTLS role. If |role| is
+// SSL_CLIENT, the allocated id starts from 0 and takes even numbers; otherwise,
+// the id starts from 1 and takes odd numbers. Returns false if no id can be
+// allocated.
+bool MediaStreamSignaling::AllocateSctpSid(talk_base::SSLRole role, int* sid) {
+  int& last_id = (role == talk_base::SSL_CLIENT) ?
+      last_allocated_sctp_even_sid_ : last_allocated_sctp_odd_sid_;
 
-  if (last_allocated_sctp_id_ > static_cast<int>(cricket::kMaxSctpSid)) {
-    last_allocated_sctp_id_ = cricket::kMaxSctpSid;
+  do {
+    last_id += 2;
+  } while (last_id <= static_cast<int>(cricket::kMaxSctpSid) &&
+           !IsSctpSidAvailable(last_id));
+
+  if (last_id > static_cast<int>(cricket::kMaxSctpSid)) {
     return false;
   }
 
-  *id = last_allocated_sctp_id_;
+  *sid = last_id;
   return true;
 }
 
@@ -267,10 +270,12 @@ bool MediaStreamSignaling::AddDataChannelFromOpenMessage(
   }
   scoped_refptr<DataChannel> channel(
       data_channel_factory_->CreateDataChannel(label, &config));
+  if (!channel.get()) {
+    LOG(LS_ERROR) << "Failed to create DataChannel from the OPEN message.";
+    return false;
+  }
   data_channels_[label] = channel;
   stream_observer_->OnAddDataChannel(channel);
-  // It's immediately ready to use.
-  channel->OnChannelReady(true);
   return true;
 }
 
@@ -388,9 +393,8 @@ void MediaStreamSignaling::OnRemoteDescriptionChanged(
     const cricket::DataContentDescription* data_desc =
         static_cast<const cricket::DataContentDescription*>(
             data_content->description);
-    if (data_desc->protocol() == cricket::kMediaProtocolDtlsSctp) {
-      UpdateRemoteSctpDataChannels();
-    } else {
+    if (talk_base::starts_with(
+            data_desc->protocol().data(), cricket::kMediaProtocolRtpPrefix)) {
       UpdateRemoteRtpDataChannels(data_desc->streams());
     }
   }
@@ -444,9 +448,8 @@ void MediaStreamSignaling::OnLocalDescriptionChanged(
     const cricket::DataContentDescription* data_desc =
         static_cast<const cricket::DataContentDescription*>(
             data_content->description);
-    if (data_desc->protocol() == cricket::kMediaProtocolDtlsSctp) {
-      UpdateLocalSctpDataChannels();
-    } else {
+    if (talk_base::starts_with(
+            data_desc->protocol().data(), cricket::kMediaProtocolRtpPrefix)) {
       UpdateLocalRtpDataChannels(data_desc->streams());
     }
   }
@@ -915,158 +918,26 @@ void MediaStreamSignaling::CreateRemoteDataChannel(const std::string& label,
   stream_observer_->OnAddDataChannel(channel);
 }
 
-
-// Format defined at
-// http://tools.ietf.org/html/draft-jesup-rtcweb-data-protocol-04
-const uint8 DATA_CHANNEL_OPEN_MESSAGE_TYPE = 0x03;
-
-enum DataChannelOpenMessageChannelType {
-  DCOMCT_ORDERED_RELIABLE = 0x00,
-  DCOMCT_ORDERED_PARTIAL_RTXS = 0x01,
-  DCOMCT_ORDERED_PARTIAL_TIME = 0x02,
-  DCOMCT_UNORDERED_RELIABLE = 0x80,
-  DCOMCT_UNORDERED_PARTIAL_RTXS = 0x81,
-  DCOMCT_UNORDERED_PARTIAL_TIME = 0x82,
-};
-
-bool MediaStreamSignaling::ParseDataChannelOpenMessage(
-    const talk_base::Buffer& payload,
-    std::string* label,
-    DataChannelInit* config) {
-  // Format defined at
-  // http://tools.ietf.org/html/draft-jesup-rtcweb-data-protocol-04
-
-  talk_base::ByteBuffer buffer(payload.data(), payload.length());
-
-  uint8 message_type;
-  if (!buffer.ReadUInt8(&message_type)) {
-    LOG(LS_WARNING) << "Could not read OPEN message type.";
-    return false;
-  }
-  if (message_type != DATA_CHANNEL_OPEN_MESSAGE_TYPE) {
-    LOG(LS_WARNING) << "Data Channel OPEN message of unexpected type: "
-                    << message_type;
-    return false;
-  }
-
-  uint8 channel_type;
-  if (!buffer.ReadUInt8(&channel_type)) {
-    LOG(LS_WARNING) << "Could not read OPEN message channel type.";
-    return false;
-  }
-  uint16 priority;
-  if (!buffer.ReadUInt16(&priority)) {
-    LOG(LS_WARNING) << "Could not read OPEN message reliabilility prioirty.";
-    return false;
-  }
-  uint32 reliability_param;
-  if (!buffer.ReadUInt32(&reliability_param)) {
-    LOG(LS_WARNING) << "Could not read OPEN message reliabilility param.";
-    return false;
-  }
-  uint16 label_length;
-  if (!buffer.ReadUInt16(&label_length)) {
-    LOG(LS_WARNING) << "Could not read OPEN message label length.";
-    return false;
-  }
-  uint16 protocol_length;
-  if (!buffer.ReadUInt16(&protocol_length)) {
-    LOG(LS_WARNING) << "Could not read OPEN message protocol length.";
-    return false;
-  }
-  if (!buffer.ReadString(label, (size_t) label_length)) {
-    LOG(LS_WARNING) << "Could not read OPEN message label";
-    return false;
-  }
-  if (!buffer.ReadString(&config->protocol, protocol_length)) {
-    LOG(LS_WARNING) << "Could not read OPEN message protocol.";
-    return false;
-  }
-
-  config->ordered = true;
-  switch (channel_type) {
-    case DCOMCT_UNORDERED_RELIABLE:
-    case DCOMCT_UNORDERED_PARTIAL_RTXS:
-    case DCOMCT_UNORDERED_PARTIAL_TIME:
-      config->ordered = false;
-  }
-
-  config->maxRetransmits = -1;
-  config->maxRetransmitTime = -1;
-  switch (channel_type) {
-    case DCOMCT_ORDERED_PARTIAL_RTXS:
-    case DCOMCT_UNORDERED_PARTIAL_RTXS:
-      config->maxRetransmits = reliability_param;
-
-    case DCOMCT_ORDERED_PARTIAL_TIME:
-    case DCOMCT_UNORDERED_PARTIAL_TIME:
-      config->maxRetransmitTime = reliability_param;
-  }
-
-  return true;
-}
-
-bool MediaStreamSignaling::WriteDataChannelOpenMessage(
-    const std::string& label,
-    const DataChannelInit& config,
-    talk_base::Buffer* payload) {
-  // Format defined at
-  // http://tools.ietf.org/html/draft-jesup-rtcweb-data-protocol-04
-  // TODO(pthatcher)
-
-  uint8 channel_type = 0;
-  uint32 reliability_param = 0;
-  uint16 priority = 0;
-  if (config.ordered) {
-    if (config.maxRetransmits > -1) {
-      channel_type = DCOMCT_ORDERED_PARTIAL_RTXS;
-      reliability_param = config.maxRetransmits;
-    } else if (config.maxRetransmitTime > -1) {
-      channel_type = DCOMCT_ORDERED_PARTIAL_TIME;
-      reliability_param = config.maxRetransmitTime;
-    } else {
-      channel_type = DCOMCT_ORDERED_RELIABLE;
-    }
-  } else {
-    if (config.maxRetransmits > -1) {
-      channel_type = DCOMCT_UNORDERED_PARTIAL_RTXS;
-      reliability_param = config.maxRetransmits;
-    } else if (config.maxRetransmitTime > -1) {
-      channel_type = DCOMCT_UNORDERED_PARTIAL_TIME;
-      reliability_param = config.maxRetransmitTime;
-    } else {
-      channel_type = DCOMCT_UNORDERED_RELIABLE;
-    }
-  }
-
-  talk_base::ByteBuffer buffer(
-      NULL, 20 + label.length() + config.protocol.length(),
-      talk_base::ByteBuffer::ORDER_NETWORK);
-  buffer.WriteUInt8(DATA_CHANNEL_OPEN_MESSAGE_TYPE);
-  buffer.WriteUInt8(channel_type);
-  buffer.WriteUInt16(priority);
-  buffer.WriteUInt32(reliability_param);
-  buffer.WriteUInt16(static_cast<uint16>(label.length()));
-  buffer.WriteUInt16(static_cast<uint16>(config.protocol.length()));
-  buffer.WriteString(label);
-  buffer.WriteString(config.protocol);
-  payload->SetData(buffer.Data(), buffer.Length());
-  return true;
-}
-
-void MediaStreamSignaling::UpdateLocalSctpDataChannels() {
+void MediaStreamSignaling::OnDataTransportCreatedForSctp() {
   DataChannels::iterator it = data_channels_.begin();
   for (; it != data_channels_.end(); ++it) {
     DataChannel* data_channel = it->second;
-    data_channel->SetSendSsrc(data_channel->id());
+    data_channel->OnTransportChannelCreated();
   }
 }
 
-void MediaStreamSignaling::UpdateRemoteSctpDataChannels() {
+void MediaStreamSignaling::OnDtlsRoleReadyForSctp(talk_base::SSLRole role) {
   DataChannels::iterator it = data_channels_.begin();
   for (; it != data_channels_.end(); ++it) {
     DataChannel* data_channel = it->second;
-    data_channel->SetReceiveSsrc(data_channel->id());
+    if (data_channel->id() < 0) {
+      int sid;
+      if (!AllocateSctpSid(role, &sid)) {
+        LOG(LS_ERROR) << "Failed to allocate SCTP sid.";
+        continue;
+      }
+      data_channel->SetSctpSid(sid);
+    }
   }
 }
 

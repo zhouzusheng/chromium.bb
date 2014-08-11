@@ -28,14 +28,14 @@
 #include "HTMLNames.h"
 #include "core/css/StylePropertySet.h"
 #include "core/html/HTMLTableCellElement.h"
-#include "core/platform/graphics/FloatQuad.h"
 #include "core/platform/graphics/GraphicsContextStateSaver.h"
-#include "core/platform/graphics/transforms/TransformState.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderTableCol.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/SubtreeLayoutScope.h"
 #include "core/rendering/style/CollapsedBorderValue.h"
+#include "platform/geometry/FloatQuad.h"
+#include "platform/geometry/TransformState.h"
 
 using namespace std;
 
@@ -161,6 +161,16 @@ void RenderTableCell::computePreferredLogicalWidths()
             // of hiptop.com.
             m_minPreferredLogicalWidth = max<LayoutUnit>(w.value(), m_minPreferredLogicalWidth);
     }
+}
+
+void RenderTableCell::addLayerHitTestRects(LayerHitTestRects& layerRects, const RenderLayer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const
+{
+    LayoutPoint adjustedLayerOffset = layerOffset;
+    // RenderTableCell's location includes the offset of it's containing RenderTableRow, so
+    // we need to subtract that again here (as for RenderTableCell::offsetFromContainer.
+    if (parent())
+        adjustedLayerOffset -= parentBox()->locationOffset();
+    RenderBox::addLayerHitTestRects(layerRects, currentLayer, adjustedLayerOffset, containerRect);
 }
 
 void RenderTableCell::computeIntrinsicPadding(int rowHeight, SubtreeLayoutScope& layouter)

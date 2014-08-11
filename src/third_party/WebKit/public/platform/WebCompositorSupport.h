@@ -40,6 +40,7 @@ class WebContentLayer;
 class WebContentLayerClient;
 class WebExternalTextureLayer;
 class WebExternalTextureLayerClient;
+class WebFilterAnimationCurve;
 class WebFilterOperations;
 class WebFloatAnimationCurve;
 class WebGraphicsContext3D;
@@ -75,6 +76,7 @@ public:
 
     virtual WebSolidColorLayer* createSolidColorLayer() { return 0; }
 
+    // The ownership of the WebScrollbarThemeGeometry pointer is passed to Chromium.
     virtual WebScrollbarLayer* createScrollbarLayer(WebScrollbar*, WebScrollbarThemePainter, WebScrollbarThemeGeometry*) { return 0; }
 
     virtual WebScrollbarLayer* createSolidColorScrollbarLayer(WebScrollbar::Orientation, int thumbThickness, bool isLeftSideVerticalScrollbar) { return 0; }
@@ -82,6 +84,8 @@ public:
     // Animation ----------------------------------------------------
 
     virtual WebAnimation* createAnimation(const WebAnimationCurve&, WebAnimation::TargetProperty, int animationId = 0) { return 0; }
+
+    virtual WebFilterAnimationCurve* createFilterAnimationCurve() { return 0; }
 
     virtual WebFloatAnimationCurve* createFloatAnimationCurve() { return 0; }
 

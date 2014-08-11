@@ -46,7 +46,7 @@ class InProcessRenderer {
   public:
     // Initialize the renderer.  This will initialize Blink on the main thread,
     // or on a secondary thread, depending on the thread mode.
-    static void init(bool usesInProcessPlugins);
+    static void init();
 
     // Perform any cleanup, such as shutting down the secondary thread if we
     // are in the original chromium thread mode.

@@ -34,9 +34,9 @@
 
 #include "core/loader/archive/MHTMLParser.h"
 #include "core/platform/MIMETypeRegistry.h"
-#include "core/platform/SerializedResource.h"
-#include "core/platform/SharedBuffer.h"
-#include "core/platform/text/QuotedPrintable.h"
+#include "platform/SerializedResource.h"
+#include "platform/SharedBuffer.h"
+#include "platform/text/QuotedPrintable.h"
 #include "weborigin/SchemeRegistry.h"
 #include "wtf/CryptographicallyRandomNumber.h"
 #include "wtf/DateMath.h"

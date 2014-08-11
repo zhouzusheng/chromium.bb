@@ -34,9 +34,9 @@
 #include "WebDOMEvent.h"
 #include "WebSerializedScriptValue.h"
 
-#if WEBKIT_IMPLEMENTATION
-#include "core/dom/Event.h"
-#include "core/dom/MessageEvent.h"
+#if BLINK_IMPLEMENTATION
+#include "core/events/Event.h"
+#include "core/events/MessageEvent.h"
 #endif
 
 namespace WebKit {
@@ -47,12 +47,14 @@ class WebString;
 class WebDOMMessageEvent : public WebDOMEvent {
 public:
     WebDOMMessageEvent() { }
-    WEBKIT_EXPORT void initMessageEvent(const WebString& type, bool canBubble, bool cancelable, const WebSerializedScriptValue& messageData, const WebString& origin, const WebFrame* sourceFrame, const WebString& lastEventId);
+    BLINK_EXPORT void initMessageEvent(const WebString& type, bool canBubble, bool cancelable, const WebSerializedScriptValue& messageData, const WebString& origin, const WebFrame* sourceFrame, const WebString& lastEventId, const WebMessagePortChannelArray& channels = WebMessagePortChannelArray());
 
-    WEBKIT_EXPORT WebSerializedScriptValue data() const;
-    WEBKIT_EXPORT WebString origin() const;
+    BLINK_EXPORT WebSerializedScriptValue data() const;
+    BLINK_EXPORT WebString origin() const;
 
-#if WEBKIT_IMPLEMENTATION
+    BLINK_EXPORT WebMessagePortChannelArray releaseChannels();
+
+#if BLINK_IMPLEMENTATION
     explicit WebDOMMessageEvent(const WTF::PassRefPtr<WebCore::MessageEvent>& e) : WebDOMEvent(e) { }
 #endif
 };

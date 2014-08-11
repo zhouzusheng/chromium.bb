@@ -61,19 +61,6 @@ SVGElement* SVGLocatable::farthestViewportElement(const SVGElement* element)
     return farthest;
 }
 
-SVGRect SVGLocatable::getBBox(SVGElement* element, StyleUpdateStrategy styleUpdateStrategy)
-{
-    ASSERT(element);
-    if (styleUpdateStrategy == AllowStyleUpdate)
-        element->document().updateLayoutIgnorePendingStylesheets();
-
-    // FIXME: Eventually we should support getBBox for detached elements.
-    if (!element->renderer())
-        return SVGRect();
-
-    return element->renderer()->objectBoundingBox();
-}
-
 AffineTransform SVGLocatable::computeCTM(SVGElement* element, CTMScope mode, StyleUpdateStrategy styleUpdateStrategy)
 {
     ASSERT(element);
@@ -104,7 +91,7 @@ AffineTransform SVGLocatable::getTransformToElement(SVGElement* target, Exceptio
     if (target && target->isSVGGraphicsElement()) {
         AffineTransform targetCTM = toSVGGraphicsElement(target)->getCTM(styleUpdateStrategy);
         if (!targetCTM.isInvertible()) {
-            es.throwDOMException(InvalidStateError);
+            es.throwUninformativeAndGenericDOMException(InvalidStateError);
             return ctm;
         }
         ctm = targetCTM.inverse() * ctm;

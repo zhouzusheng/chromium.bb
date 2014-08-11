@@ -31,13 +31,14 @@
 #include "config.h"
 #include "core/workers/WorkerRunLoop.h"
 
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/platform/SharedTimer.h"
 #include "core/platform/ThreadGlobalData.h"
-#include "core/platform/ThreadTimers.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerThread.h"
+#include "platform/PlatformThreadData.h"
+#include "platform/SharedTimer.h"
+#include "platform/ThreadTimers.h"
 #include "wtf/CurrentTime.h"
 
 namespace WebCore {
@@ -112,7 +113,7 @@ public:
         , m_context(context)
     {
         if (!m_runLoop.m_nestedCount)
-            threadGlobalData().threadTimers().setSharedTimer(m_runLoop.m_sharedTimer.get());
+            PlatformThreadData::current().threadTimers().setSharedTimer(m_runLoop.m_sharedTimer.get());
         m_runLoop.m_nestedCount++;
         InspectorInstrumentation::willEnterNestedRunLoop(m_context);
     }
@@ -121,7 +122,7 @@ public:
     {
         m_runLoop.m_nestedCount--;
         if (!m_runLoop.m_nestedCount)
-            threadGlobalData().threadTimers().setSharedTimer(0);
+            PlatformThreadData::current().threadTimers().setSharedTimer(0);
         InspectorInstrumentation::didLeaveNestedRunLoop(m_context);
     }
 private:
@@ -224,34 +225,34 @@ void WorkerRunLoop::terminate()
     m_messageQueue.kill();
 }
 
-bool WorkerRunLoop::postTask(PassOwnPtr<ScriptExecutionContext::Task> task)
+bool WorkerRunLoop::postTask(PassOwnPtr<ExecutionContextTask> task)
 {
     return postTaskForMode(task, defaultMode());
 }
 
-void WorkerRunLoop::postTaskAndTerminate(PassOwnPtr<ScriptExecutionContext::Task> task)
+void WorkerRunLoop::postTaskAndTerminate(PassOwnPtr<ExecutionContextTask> task)
 {
     m_messageQueue.appendAndKill(Task::create(task, defaultMode().isolatedCopy()));
 }
 
-bool WorkerRunLoop::postTaskForMode(PassOwnPtr<ScriptExecutionContext::Task> task, const String& mode)
+bool WorkerRunLoop::postTaskForMode(PassOwnPtr<ExecutionContextTask> task, const String& mode)
 {
     return m_messageQueue.append(Task::create(task, mode.isolatedCopy()));
 }
 
-PassOwnPtr<WorkerRunLoop::Task> WorkerRunLoop::Task::create(PassOwnPtr<ScriptExecutionContext::Task> task, const String& mode)
+PassOwnPtr<WorkerRunLoop::Task> WorkerRunLoop::Task::create(PassOwnPtr<ExecutionContextTask> task, const String& mode)
 {
     return adoptPtr(new Task(task, mode));
 }
 
-void WorkerRunLoop::Task::performTask(const WorkerRunLoop& runLoop, ScriptExecutionContext* context)
+void WorkerRunLoop::Task::performTask(const WorkerRunLoop& runLoop, ExecutionContext* context)
 {
     WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
     if ((!workerGlobalScope->isClosing() && !runLoop.terminated()) || m_task->isCleanupTask())
         m_task->performTask(context);
 }
 
-WorkerRunLoop::Task::Task(PassOwnPtr<ScriptExecutionContext::Task> task, const String& mode)
+WorkerRunLoop::Task::Task(PassOwnPtr<ExecutionContextTask> task, const String& mode)
     : m_task(task)
     , m_mode(mode.isolatedCopy())
 {

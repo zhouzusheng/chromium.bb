@@ -35,6 +35,7 @@
 #include "InspectorTypeBuilder.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "core/rendering/RenderLayer.h"
+#include "platform/Timer.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
@@ -60,12 +61,13 @@ public:
     virtual void clearFrontend();
     virtual void restore();
 
+    // Called from InspectorInstrumentation
     void layerTreeDidChange();
+    void didPaint(RenderObject*, GraphicsContext*, const LayoutRect&);
 
     // Called from the front-end.
     virtual void enable(ErrorString*);
     virtual void disable(ErrorString*);
-    virtual void getLayers(ErrorString*, const int* nodeId, RefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> >&);
     virtual void compositingReasons(ErrorString*, const String& layerId, RefPtr<TypeBuilder::Array<String> >&);
 
 private:
@@ -75,9 +77,9 @@ private:
 
     RenderLayerCompositor* renderLayerCompositor();
     GraphicsLayer* layerById(ErrorString*, const String& layerId);
-    int idForNode(ErrorString*, Node*);
-
-    void buildLayerIdToNodeIdMap(ErrorString*, RenderLayer*, LayerIdToNodeIdMap&);
+    PassRefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> > buildLayerTree();
+    void buildLayerIdToNodeIdMap(RenderLayer*, LayerIdToNodeIdMap&);
+    int idForNode(Node*);
 
     InspectorFrontend::LayerTree* m_frontend;
     Page* m_page;

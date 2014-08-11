@@ -26,9 +26,9 @@
 #ifndef WebScrollbarThemeClientImpl_h
 #define WebScrollbarThemeClientImpl_h
 
-#include "core/platform/ScrollbarThemeClient.h"
-#include "wtf/Noncopyable.h"
+#include "platform/scroll/ScrollbarThemeClient.h"
 #include "public/platform/WebScrollbar.h"
+#include "wtf/Noncopyable.h"
 
 namespace WebCore {
 class ScrollView;
@@ -49,8 +49,8 @@ public:
     virtual int height() const OVERRIDE;
     virtual IntSize size() const OVERRIDE;
     virtual IntPoint location() const OVERRIDE;
-    virtual ScrollView* parent() const OVERRIDE;
-    virtual ScrollView* root() const OVERRIDE;
+    virtual Widget* parent() const OVERRIDE;
+    virtual Widget* root() const OVERRIDE;
     virtual void setFrameRect(const IntRect&) OVERRIDE;
     virtual IntRect frameRect() const OVERRIDE;
     virtual void invalidate() OVERRIDE;

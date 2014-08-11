@@ -32,8 +32,8 @@
 #define WebPluginContainerImpl_h
 
 #include "WebPluginContainer.h"
-#include "core/platform/Widget.h"
 #include "core/plugins/PluginView.h"
+#include "platform/Widget.h"
 
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
@@ -90,7 +90,7 @@ public:
     virtual void handleEvent(WebCore::Event*);
     virtual void frameRectsChanged();
     virtual void setParentVisible(bool);
-    virtual void setParent(WebCore::ScrollView*);
+    virtual void setParent(WebCore::Widget*);
     virtual void widgetPositionsUpdated();
     virtual void clipRectChanged() OVERRIDE;
     virtual bool isPluginContainer() const { return true; }

@@ -29,19 +29,20 @@
 #include "config.h"
 #include "core/platform/image-decoders/webp/WEBPImageDecoder.h"
 
+#include "RuntimeEnabledFeatures.h"
 #include "core/platform/PlatformInstrumentation.h"
 
 #if USE(QCMSLIB)
 #include "qcms.h"
 #endif
 
-#include "RuntimeEnabledFeatures.h"
-
 #if CPU(BIG_ENDIAN) || CPU(MIDDLE_ENDIAN)
+#error Blink assumes a little-endian target.
+#endif
+
+#if SK_B32_SHIFT // Output little-endian RGBA pixels (Android).
 inline WEBP_CSP_MODE outputMode(bool hasAlpha) { return hasAlpha ? MODE_rgbA : MODE_RGBA; }
-#elif SK_B32_SHIFT
-inline WEBP_CSP_MODE outputMode(bool hasAlpha) { return hasAlpha ? MODE_rgbA : MODE_RGBA; }
-#else // LITTLE_ENDIAN, output BGRA pixels.
+#else // Output little-endian BGRA pixels.
 inline WEBP_CSP_MODE outputMode(bool hasAlpha) { return hasAlpha ? MODE_bgrA : MODE_BGRA; }
 #endif
 
@@ -138,6 +139,9 @@ ImageFrame* WEBPImageDecoder::frameBufferAtIndex(size_t index)
             PlatformInstrumentation::didDecodeImage();
             WebPDemuxReleaseIterator(&webpFrame);
 
+            if (failed())
+                return 0;
+
             // We need more data to continue decoding.
             if (m_frameBufferCache[frameIndex].status() != ImageFrame::FrameComplete)
                 break;
@@ -155,7 +159,7 @@ ImageFrame* WEBPImageDecoder::frameBufferAtIndex(size_t index)
     PlatformInstrumentation::willDecodeImage("WEBP");
     decode(reinterpret_cast<const uint8_t*>(m_data->data()), m_data->size(), false, index);
     PlatformInstrumentation::didDecodeImage();
-    return &frame;
+    return failed() ? 0 : &frame;
 }
 
 void WEBPImageDecoder::setData(SharedBuffer* data, bool allDataReceived)
@@ -190,6 +194,9 @@ float WEBPImageDecoder::frameDurationAtIndex(size_t index) const
 
 bool WEBPImageDecoder::updateDemuxer()
 {
+    if (failed())
+        return false;
+
     if (m_haveAlreadyParsedThisData)
         return true;
 
@@ -524,8 +531,11 @@ bool WEBPImageDecoder::decode(const uint8_t* dataBytes, size_t dataSize, bool on
         clearDecoder();
         return true;
     case VP8_STATUS_SUSPENDED:
-        applyPostProcessing(frameIndex);
-        return false;
+        if (!isAllDataReceived() && !frameIsCompleteAtIndex(frameIndex)) {
+            applyPostProcessing(frameIndex);
+            return false;
+        }
+        // FALLTHROUGH
     default:
         clear();
         return setFailed();

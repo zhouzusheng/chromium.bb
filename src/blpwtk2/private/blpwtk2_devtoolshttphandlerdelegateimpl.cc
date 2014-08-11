@@ -28,11 +28,89 @@
 #include <base/files/file_path.h>
 #include <base/path_service.h>
 #include <base/strings/string_number_conversions.h>
+#include <base/strings/utf_string_conversions.h>
+#include <content/public/browser/devtools_agent_host.h>
 #include <content/public/browser/devtools_http_handler.h>
+#include <content/public/browser/devtools_target.h>
+#include <content/public/browser/favicon_status.h>
+#include <content/public/browser/navigation_entry.h>
+#include <content/public/browser/render_view_host.h>
+#include <content/public/browser/web_contents.h>
+#include <content/public/browser/web_contents_delegate.h>
 #include <content/public/common/content_switches.h>
 #include <net/socket/tcp_listen_socket.h>
 
 namespace blpwtk2 {
+
+namespace {
+
+// This class is copied from the content_shell implementation of
+// DevToolsHttpHandlerDelegate.  We might customize stuff in here in
+// the future.
+class Target : public content::DevToolsTarget {
+  public:
+    explicit Target(content::WebContents* webContents);
+
+    virtual std::string GetId() const OVERRIDE{ return d_id; }
+    virtual std::string GetType() const OVERRIDE{ return "page"; }
+    virtual std::string GetTitle() const OVERRIDE{ return d_title; }
+    virtual std::string GetDescription() const OVERRIDE{ return std::string(); }
+    virtual GURL GetUrl() const OVERRIDE{ return d_url; }
+    virtual GURL GetFaviconUrl() const OVERRIDE{ return d_faviconUrl; }
+    virtual base::TimeTicks GetLastActivityTime() const OVERRIDE{
+        return d_lastActivityTime;
+    }
+    virtual bool IsAttached() const OVERRIDE{
+        return d_agentHost->IsAttached();
+    }
+    virtual scoped_refptr<content::DevToolsAgentHost> GetAgentHost() const OVERRIDE{
+        return d_agentHost;
+    }
+    virtual bool Activate() const OVERRIDE;
+    virtual bool Close() const OVERRIDE;
+
+private:
+    scoped_refptr<content::DevToolsAgentHost> d_agentHost;
+    std::string d_id;
+    std::string d_title;
+    GURL d_url;
+    GURL d_faviconUrl;
+    base::TimeTicks d_lastActivityTime;
+};
+
+Target::Target(content::WebContents* webContents) {
+    d_agentHost =
+        content::DevToolsAgentHost::GetOrCreateFor(webContents->GetRenderViewHost());
+    d_id = d_agentHost->GetId();
+    d_title = UTF16ToUTF8(webContents->GetTitle());
+    d_url = webContents->GetURL();
+    content::NavigationController& controller = webContents->GetController();
+    content::NavigationEntry* entry = controller.GetActiveEntry();
+    if (entry != NULL && entry->GetURL().is_valid())
+        d_faviconUrl = entry->GetFavicon().url;
+    d_lastActivityTime = webContents->GetLastSelectedTime();
+}
+
+bool Target::Activate() const {
+    content::RenderViewHost* rvh = d_agentHost->GetRenderViewHost();
+    if (!rvh)
+        return false;
+    content::WebContents* webContents = content::WebContents::FromRenderViewHost(rvh);
+    if (!webContents)
+        return false;
+    webContents->GetDelegate()->ActivateContents(webContents);
+    return true;
+}
+
+bool Target::Close() const {
+    content::RenderViewHost* rvh = d_agentHost->GetRenderViewHost();
+    if (!rvh)
+        return false;
+    rvh->ClosePage();
+    return true;
+}
+
+}  // close anonymous namespace
 
 DevToolsHttpHandlerDelegateImpl::DevToolsHttpHandlerDelegateImpl()
 {
@@ -61,5 +139,28 @@ DevToolsHttpHandlerDelegateImpl::~DevToolsHttpHandlerDelegateImpl()
     Statics::devToolsHttpHandler = 0;
 }
 
-}  // close namespace blpwtk2
+scoped_ptr<content::DevToolsTarget>
+DevToolsHttpHandlerDelegateImpl::CreateNewTarget(const GURL& url)
+{
+    // TODO(SHEZ): implement this
+    NOTIMPLEMENTED();
+    return scoped_ptr<content::DevToolsTarget>();
+}
 
+void DevToolsHttpHandlerDelegateImpl::EnumerateTargets(TargetCallback callback)
+{
+    // This is copied from the implementation in content_shell.
+
+    TargetList targets;
+    std::vector<content::RenderViewHost*> rvhList =
+        content::DevToolsAgentHost::GetValidRenderViewHosts();
+    for (std::vector<content::RenderViewHost*>::iterator it = rvhList.begin();
+                                                         it != rvhList.end(); ++it) {
+        content::WebContents* webContents = content::WebContents::FromRenderViewHost(*it);
+        if (webContents)
+            targets.push_back(new Target(webContents));
+    }
+    callback.Run(targets);
+}
+
+}  // close namespace blpwtk2

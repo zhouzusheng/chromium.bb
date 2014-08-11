@@ -28,6 +28,7 @@
 
 /**
  * @constructor
+ * @implements {WebInspector.ViewFactory}
  */
 WebInspector.AdvancedSearchController = function()
 {
@@ -37,6 +38,7 @@ WebInspector.AdvancedSearchController = function()
     WebInspector.settings.advancedSearchConfig = WebInspector.settings.createSetting("advancedSearchConfig", new WebInspector.SearchConfig("", true, false));
     
     WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameNavigated, this._frameNavigated, this);
+    WebInspector.inspectorView.registerViewInDrawer("search", WebInspector.UIString("Search"), this);
 }
 
 /**
@@ -52,6 +54,17 @@ WebInspector.AdvancedSearchController.createShortcut = function()
 
 WebInspector.AdvancedSearchController.prototype = {
     /**
+     * @param {string=} id
+     * @return {WebInspector.View}
+     */
+    createView: function(id)
+    {
+        if (!this._searchView)
+            this._searchView = new WebInspector.SearchView(this);
+        return this._searchView;
+    },
+
+    /**
      * @param {KeyboardEvent} event
      * @return {boolean}
      */
@@ -62,7 +75,7 @@ WebInspector.AdvancedSearchController.prototype = {
                 WebInspector.showPanel("sources");
                 this.show();
             } else
-                this.close();
+                WebInspector.inspectorView.closeDrawer();
             event.consume(true);
             return true;
         }
@@ -85,22 +98,18 @@ WebInspector.AdvancedSearchController.prototype = {
 
     show: function()
     {
-        if (!this._searchView)
-            this._searchView = new WebInspector.SearchView(this);
-        
-        this._searchView.syncToSelection();
+        var selection = window.getSelection();
+        var queryCandidate;
+        if (selection.rangeCount)
+            queryCandidate = selection.toString().replace(/\r?\n.*/, "");
 
-        if (this._searchView.isShowing())
-            this._searchView.focus();
-        else
-            WebInspector.showViewInDrawer(this._searchView._searchPanelElement, this._searchView, this.stopSearch.bind(this));
+        if (!this._searchView || !this._searchView.isShowing())
+            WebInspector.inspectorView.showViewInDrawer("search");
+        if (queryCandidate)
+            this._searchView._search.value = queryCandidate;
+        this._searchView.focus();
+
         this.startIndexing();
-    },
-
-    close: function()
-    {
-        this.stopSearch();
-        WebInspector.closeViewInDrawer();
     },
 
     /**
@@ -221,19 +230,17 @@ WebInspector.SearchView = function(controller)
 
     this._controller = controller;
 
-    this.element.className = "search-view";
+    this.element.className = "search-view vbox";
 
-    this._searchPanelElement = document.createElement("span");
-    this._searchPanelElement.className = "search-drawer-header";
+    this._searchPanelElement = this.element.createChild("div", "search-drawer-header");
     this._searchPanelElement.addEventListener("keydown", this._onKeyDown.bind(this), false);
     
     this._searchResultsElement = this.element.createChild("div");
     this._searchResultsElement.className = "search-results";
     
-    this._searchLabel = this._searchPanelElement.createChild("span");
-    this._searchLabel.textContent = WebInspector.UIString("Search sources");
     this._search = this._searchPanelElement.createChild("input");
-    this._search.setAttribute("type", "search");
+    this._search.placeholder = WebInspector.UIString("Search sources");
+    this._search.setAttribute("type", "text");
     this._search.addStyleClass("search-config-search");
     this._search.setAttribute("results", "0");
     this._search.setAttribute("size", 30);
@@ -252,13 +259,9 @@ WebInspector.SearchView = function(controller)
     this._regexCheckbox.addStyleClass("search-config-checkbox");
     this._regexLabel.appendChild(document.createTextNode(WebInspector.UIString("Regular expression")));
     
-    this._searchStatusBarElement = document.createElement("div");
-    this._searchStatusBarElement.className = "search-status-bar-item";
-    this._searchMessageElement = this._searchStatusBarElement.createChild("div");
-    this._searchMessageElement.className = "search-status-bar-message";
-
+    this._searchStatusBarElement = this.element.createChild("div", "search-status-bar-summary");
+    this._searchMessageElement = this._searchStatusBarElement.createChild("span");
     this._searchResultsMessageElement = document.createElement("span");
-    this._searchResultsMessageElement.className = "search-results-status-bar-message";
 
     this._load();
 }
@@ -268,29 +271,11 @@ WebInspector.SearchView.maxQueriesCount = 20;
 
 WebInspector.SearchView.prototype = {
     /**
-     * @return {Array.<Element>}
-     */
-    get statusBarItems()
-    {
-        return [this._searchStatusBarElement, this._searchResultsMessageElement];
-    },
-
-    /**
      * @return {WebInspector.SearchConfig}
      */
     get searchConfig()
     {
         return new WebInspector.SearchConfig(this._search.value, this._ignoreCaseCheckbox.checked, this._regexCheckbox.checked);
-    },
-
-    syncToSelection: function()
-    {
-        var selection = window.getSelection();
-        if (selection.rangeCount) {
-            var queryCandidate = selection.toString().replace(/\r?\n.*/, "");
-            if (queryCandidate)
-                this._search.value = queryCandidate;
-        }
     },
     
     /**
@@ -396,7 +381,7 @@ WebInspector.SearchView.prototype = {
         this._search.select();
     },
 
-    wasShown: function()
+    afterShow: function()
     {
         this.focus();
     },
@@ -414,10 +399,6 @@ WebInspector.SearchView.prototype = {
         switch (event.keyCode) {
         case WebInspector.KeyboardShortcut.Keys.Enter.code:
             this._onAction();
-            break;
-        case WebInspector.KeyboardShortcut.Keys.Esc.code:
-            this._controller.close();
-            event.consume(true);
             break;
         }        
     },

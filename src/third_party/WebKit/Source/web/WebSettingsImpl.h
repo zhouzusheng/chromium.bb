@@ -49,6 +49,7 @@ public:
     virtual bool touchEditingEnabled() const;
     virtual bool viewportEnabled() const;
     virtual void setAccelerated2dCanvasEnabled(bool);
+    virtual void setAccelerated2dCanvasMSAASampleCount(int);
     virtual void setAcceleratedCompositingEnabled(bool);
     virtual void setAcceleratedCompositingFor3DTransformsEnabled(bool);
     virtual void setAcceleratedCompositingForAnimationEnabled(bool);
@@ -75,6 +76,7 @@ public:
     virtual void setAutoZoomFocusedNodeToLegibleScale(bool);
     virtual void setCaretBrowsingEnabled(bool);
     virtual void setCompositedScrollingForFramesEnabled(bool);
+    virtual void setCompositorTouchHitTesting(bool);
     virtual void setCookieEnabled(bool);
     virtual void setCursiveFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON);
     virtual void setDNSPrefetchingEnabled(bool);
@@ -85,6 +87,7 @@ public:
     virtual void setDefaultVideoPosterURL(const WebString&);
     virtual void setDeferred2dCanvasEnabled(bool);
     virtual void setDeferredImageDecodingEnabled(bool);
+    virtual void setDeviceScaleAdjustment(float);
     virtual void setDeviceSupportsMouse(bool);
     virtual void setDeviceSupportsTouch(bool);
     virtual void setDoubleTapToZoomEnabled(bool);
@@ -93,9 +96,7 @@ public:
     virtual void setEditingBehavior(EditingBehavior);
     virtual void setEnableScrollAnimator(bool);
     virtual void setEnableTouchAdjustment(bool);
-    virtual void setExperimentalCSSCustomFilterEnabled(bool);
     virtual void setRegionBasedColumnsEnabled(bool);
-    virtual void setCSSStickyPositionEnabled(bool);
     virtual void setExperimentalWebGLEnabled(bool);
     virtual void setExperimentalWebSocketEnabled(bool);
     virtual void setFantasyFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON);
@@ -115,6 +116,8 @@ public:
     virtual void setLoadsImagesAutomatically(bool);
     virtual void setLoadWithOverviewMode(bool);
     virtual void setLocalStorageEnabled(bool);
+    virtual void setMainFrameClipsContent(bool);
+    virtual void setMaxTouchPoints(int);
     virtual void setMediaPlaybackRequiresUserGesture(bool);
     virtual void setMediaFullscreenRequiresUserGesture(bool);
     virtual void setMemoryInfoEnabled(bool);
@@ -134,6 +137,7 @@ public:
     virtual void setPluginsEnabled(bool);
     virtual void setPrivilegedWebGLExtensionsEnabled(bool);
     virtual void setRenderVSyncNotificationEnabled(bool);
+    virtual void setReportScreenSizeInPhysicalPixelsQuirk(bool);
     virtual void setSansSerifFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON);
     virtual void setSelectTrailingWhitespaceEnabled(bool);
     virtual void setSelectionIncludesAltImageText(bool);
@@ -168,13 +172,16 @@ public:
     virtual void setValidationMessageTimerMagnification(int);
     virtual void setViewportEnabled(bool);
     virtual void setViewportMetaLayoutSizeQuirk(bool);
+    virtual void setViewportMetaMergeContentQuirk(bool);
     virtual void setViewportMetaZeroValuesQuirk(bool);
-    virtual void setVisualWordMovementEnabled(bool);
     virtual void setWebAudioEnabled(bool);
     virtual void setWebGLErrorsToConsoleEnabled(bool);
     virtual void setWebSecurityEnabled(bool);
     virtual void setWideViewportQuirkEnabled(bool);
     virtual void setXSSAuditorEnabled(bool);
+
+    // FIXME: Make chromium stop calling this and delete the method.
+    virtual void setVisualWordMovementEnabled(bool) { }
 
     bool showFPSCounter() const { return m_showFPSCounter; }
     bool showPaintRects() const { return m_showPaintRects; }

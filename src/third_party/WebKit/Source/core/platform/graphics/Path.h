@@ -29,8 +29,8 @@
 #ifndef Path_h
 #define Path_h
 
-#include "core/platform/graphics/RoundedRect.h"
-#include "core/platform/graphics/WindRule.h"
+#include "platform/geometry/RoundedRect.h"
+#include "platform/graphics/WindRule.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/Forward.h"
@@ -124,6 +124,8 @@ public:
     bool unionPath(const Path& other);
 
 private:
+    void addEllipse(const FloatPoint&, float radiusX, float radiusY, float startAngle, float endAngle, bool anticlockwise);
+
     SkPath m_path;
 };
 

@@ -30,23 +30,18 @@
 #include "SkImageFilter.h"
 #include "SkMatrix44.h"
 #include "core/platform/ScrollableArea.h"
-#include "core/platform/graphics/FloatPoint.h"
-#include "core/platform/graphics/FloatRect.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/GraphicsLayerFactory.h"
-#include "core/platform/graphics/LayoutRect.h"
-#include "core/platform/graphics/chromium/AnimationTranslationUtil.h"
-#include "core/platform/graphics/chromium/TransformSkMatrix44Conversions.h"
 #include "core/platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "core/platform/graphics/skia/NativeImageSkia.h"
-#include "core/platform/text/TextStream.h"
-
+#include "platform/geometry/FloatPoint.h"
+#include "platform/geometry/FloatRect.h"
+#include "platform/geometry/LayoutRect.h"
+#include "platform/text/TextStream.h"
+#include "platform/transforms/TransformationMatrix.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
-#include "wtf/text/CString.h"
-#include "wtf/text/StringBuilder.h"
-#include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
 
 #include "public/platform/Platform.h"
@@ -94,10 +89,13 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     , m_masksToBounds(false)
     , m_drawsContent(false)
     , m_contentsVisible(true)
+    , m_hasScrollParent(false)
+    , m_hasClipParent(false)
     , m_paintingPhase(GraphicsLayerPaintAllWithOverflowClip)
     , m_contentsOrientation(CompositingCoordinatesTopDown)
     , m_parent(0)
     , m_maskLayer(0)
+    , m_contentsClippingMaskLayer(0)
     , m_replicaLayer(0)
     , m_replicatedLayer(0)
     , m_paintCount(0)
@@ -341,16 +339,6 @@ void GraphicsLayer::paintGraphicsLayerContents(GraphicsContext& context, const I
     m_client->paintContents(this, context, m_paintingPhase, clip);
 }
 
-String GraphicsLayer::animationNameForTransition(AnimatedPropertyID property)
-{
-    // | is not a valid identifier character in CSS, so this can never conflict with a keyframe identifier.
-    StringBuilder id;
-    id.appendLiteral("-|transition");
-    id.appendNumber(static_cast<int>(property));
-    id.append('-');
-    return id.toString();
-}
-
 void GraphicsLayer::setZPosition(float position)
 {
     m_zPosition = position;
@@ -431,6 +419,15 @@ void GraphicsLayer::updateContentsRect()
 
     contentsLayer->setPosition(FloatPoint(m_contentsRect.x(), m_contentsRect.y()));
     contentsLayer->setBounds(IntSize(m_contentsRect.width(), m_contentsRect.height()));
+
+    if (m_contentsClippingMaskLayer) {
+        if (m_contentsClippingMaskLayer->size() != m_contentsRect.size()) {
+            m_contentsClippingMaskLayer->setSize(m_contentsRect.size());
+            m_contentsClippingMaskLayer->setNeedsDisplay();
+        }
+        m_contentsClippingMaskLayer->setPosition(FloatPoint());
+        m_contentsClippingMaskLayer->setOffsetFromRenderer(offsetFromRenderer() + IntSize(m_contentsRect.location().x(), m_contentsRect.location().y()));
+    }
 }
 
 static HashSet<int>* s_registeredLayerSet;
@@ -496,6 +493,8 @@ void GraphicsLayer::setupContentsLayer(WebLayer* contentsLayer)
         // Insert the content layer first. Video elements require this, because they have
         // shadow content that must display in front of the video.
         m_layer->layer()->insertChild(m_contentsLayer, 0);
+        WebLayer* borderWebLayer = m_contentsClippingMaskLayer ? m_contentsClippingMaskLayer->platformLayer() : 0;
+        m_contentsLayer->setMaskLayer(borderWebLayer);
     }
 }
 
@@ -543,12 +542,6 @@ void GraphicsLayer::addRepaintRect(const FloatRect& repaintRect)
             repaintRects.append(largestRepaintRect);
         }
     }
-}
-
-void GraphicsLayer::writeIndent(TextStream& ts, int indent)
-{
-    for (int i = 0; i != indent; ++i)
-        ts << "  ";
 }
 
 void GraphicsLayer::dumpLayer(TextStream& ts, int indent, LayerTreeFlags flags) const
@@ -704,6 +697,10 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags fl
             writeIndent(ts, indent + 2);
             ts << "GraphicsLayerPaintMask\n";
         }
+        if (paintingPhase() & GraphicsLayerPaintChildClippingMask) {
+            writeIndent(ts, indent + 2);
+            ts << "GraphicsLayerPaintChildClippingMask\n";
+        }
         if (paintingPhase() & GraphicsLayerPaintOverflowContents) {
             writeIndent(ts, indent + 2);
             ts << "GraphicsLayerPaintOverflowContents\n";
@@ -714,6 +711,17 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags fl
         }
         writeIndent(ts, indent + 1);
         ts << ")\n";
+    }
+
+    if (flags & LayerTreeIncludesClipAndScrollParents) {
+        if (m_hasScrollParent) {
+            writeIndent(ts, indent + 1);
+            ts << "(hasScrollParent 1)\n";
+        }
+        if (m_hasClipParent) {
+            writeIndent(ts, indent + 1);
+            ts << "(hasClipParent 1)\n";
+        }
     }
 
     dumpAdditionalProperties(ts, indent, flags);
@@ -804,13 +812,13 @@ void GraphicsLayer::setSize(const FloatSize& size)
 void GraphicsLayer::setTransform(const TransformationMatrix& transform)
 {
     m_transform = transform;
-    platformLayer()->setTransform(TransformSkMatrix44Conversions::convert(m_transform));
+    platformLayer()->setTransform(TransformationMatrix::toSkMatrix44(m_transform));
 }
 
 void GraphicsLayer::setChildrenTransform(const TransformationMatrix& transform)
 {
     m_childrenTransform = transform;
-    platformLayer()->setSublayerTransform(TransformSkMatrix44Conversions::convert(m_childrenTransform));
+    platformLayer()->setSublayerTransform(TransformationMatrix::toSkMatrix44(m_childrenTransform));
 }
 
 void GraphicsLayer::setPreserves3D(bool preserves3D)
@@ -850,6 +858,18 @@ void GraphicsLayer::setContentsVisible(bool contentsVisible)
     updateLayerIsDrawable();
 }
 
+void GraphicsLayer::setClipParent(WebKit::WebLayer* parent)
+{
+    m_hasClipParent = !!parent;
+    m_layer->layer()->setClipParent(parent);
+}
+
+void GraphicsLayer::setScrollParent(WebKit::WebLayer* parent)
+{
+    m_hasScrollParent = !!parent;
+    m_layer->layer()->setScrollParent(parent);
+}
+
 void GraphicsLayer::setBackgroundColor(const Color& color)
 {
     if (color == m_backgroundColor)
@@ -874,6 +894,20 @@ void GraphicsLayer::setMaskLayer(GraphicsLayer* maskLayer)
     m_maskLayer = maskLayer;
     WebLayer* maskWebLayer = m_maskLayer ? m_maskLayer->platformLayer() : 0;
     m_layer->layer()->setMaskLayer(maskWebLayer);
+}
+
+void GraphicsLayer::setContentsClippingMaskLayer(GraphicsLayer* contentsClippingMaskLayer)
+{
+    if (contentsClippingMaskLayer == m_contentsClippingMaskLayer)
+        return;
+
+    m_contentsClippingMaskLayer = contentsClippingMaskLayer;
+    WebLayer* contentsLayer = contentsLayerIfRegistered();
+    if (!contentsLayer)
+        return;
+    WebLayer* contentsClippingMaskWebLayer = m_contentsClippingMaskLayer ? m_contentsClippingMaskLayer->platformLayer() : 0;
+    contentsLayer->setMaskLayer(contentsClippingMaskWebLayer);
+    updateContentsRect();
 }
 
 void GraphicsLayer::setBackfaceVisibility(bool visible)
@@ -983,52 +1017,25 @@ void GraphicsLayer::setContentsToMedia(WebLayer* layer)
     setContentsTo(ContentsLayerForVideo, layer);
 }
 
-bool GraphicsLayer::addAnimation(const KeyframeValueList& values, const IntSize& boxSize, const CSSAnimationData* animation, const String& animationName, double timeOffset)
+bool GraphicsLayer::addAnimation(PassOwnPtr<WebAnimation> popAnimation)
 {
+    OwnPtr<WebAnimation> animation(popAnimation);
+    ASSERT(animation);
     platformLayer()->setAnimationDelegate(this);
 
-    int animationId = 0;
-
-    if (m_animationIdMap.contains(animationName))
-        animationId = m_animationIdMap.get(animationName);
-
-    OwnPtr<WebAnimation> toAdd(createWebAnimation(values, animation, animationId, timeOffset, boxSize));
-
-    if (toAdd) {
-        animationId = toAdd->id();
-        m_animationIdMap.set(animationName, animationId);
-
-        // Remove any existing animations with the same animation id and target property.
-        platformLayer()->removeAnimation(animationId, toAdd->targetProperty());
-        return platformLayer()->addAnimation(toAdd.get());
-    }
-
-    return false;
+    // Remove any existing animations with the same animation id and target property.
+    platformLayer()->removeAnimation(animation->id(), animation->targetProperty());
+    return platformLayer()->addAnimation(animation.leakPtr());
 }
 
-void GraphicsLayer::pauseAnimation(const String& animationName, double timeOffset)
+void GraphicsLayer::pauseAnimation(int animationId, double timeOffset)
 {
-    if (m_animationIdMap.contains(animationName))
-        platformLayer()->pauseAnimation(m_animationIdMap.get(animationName), timeOffset);
+    platformLayer()->pauseAnimation(animationId, timeOffset);
 }
 
-void GraphicsLayer::removeAnimation(const String& animationName)
+void GraphicsLayer::removeAnimation(int animationId)
 {
-    if (m_animationIdMap.contains(animationName))
-        platformLayer()->removeAnimation(m_animationIdMap.get(animationName));
-}
-
-void GraphicsLayer::suspendAnimations(double wallClockTime)
-{
-    // |wallClockTime| is in the wrong time base. Need to convert here.
-    // FIXME: find a more reliable way to do this.
-    double monotonicTime = wallClockTime + monotonicallyIncreasingTime() - currentTime();
-    platformLayer()->suspendAnimations(monotonicTime);
-}
-
-void GraphicsLayer::resumeAnimations()
-{
-    platformLayer()->resumeAnimations(monotonicallyIncreasingTime());
+    platformLayer()->removeAnimation(animationId);
 }
 
 WebLayer* GraphicsLayer::platformLayer() const
@@ -1102,7 +1109,6 @@ static bool copyWebCoreFilterOperationsToWebFilterOperations(const FilterOperati
         case FilterOperation::CUSTOM:
         case FilterOperation::VALIDATED_CUSTOM:
             return false; // Not supported.
-        case FilterOperation::PASSTHROUGH:
         case FilterOperation::NONE:
             break;
         }
@@ -1112,36 +1118,20 @@ static bool copyWebCoreFilterOperationsToWebFilterOperations(const FilterOperati
 
 bool GraphicsLayer::setFilters(const FilterOperations& filters)
 {
-    // FIXME: For now, we only use SkImageFilters if there is a reference
-    // filter in the chain. Once all issues have been ironed out, we should
-    // switch all filtering over to this path, and remove setFilters() and
-    // WebFilterOperations altogether.
-    if (filters.hasReferenceFilter()) {
-        if (filters.hasCustomFilter()) {
-            // Make sure the filters are removed from the platform layer, as they are
-            // going to fallback to software mode.
-            m_layer->layer()->setFilter(0);
-            m_filters = FilterOperations();
-            return false;
-        }
-        SkiaImageFilterBuilder builder;
-        FilterOutsets outsets = filters.outsets();
-        builder.setCropOffset(FloatSize(outsets.left(), outsets.top()));
-        RefPtr<SkImageFilter> imageFilter = builder.build(filters);
-        m_layer->layer()->setFilter(imageFilter.get());
-    } else {
-        OwnPtr<WebFilterOperations> webFilters = adoptPtr(Platform::current()->compositorSupport()->createFilterOperations());
-        if (!copyWebCoreFilterOperationsToWebFilterOperations(filters, *webFilters)) {
-            // Make sure the filters are removed from the platform layer, as they are
-            // going to fallback to software mode.
-            webFilters->clear();
-            m_layer->layer()->setFilters(*webFilters);
-            m_filters = FilterOperations();
-            return false;
-        }
+    SkiaImageFilterBuilder builder;
+    OwnPtr<WebFilterOperations> webFilters = adoptPtr(Platform::current()->compositorSupport()->createFilterOperations());
+    FilterOutsets outsets = filters.outsets();
+    builder.setCropOffset(FloatSize(outsets.left(), outsets.top()));
+    if (!builder.buildFilterOperations(filters, webFilters.get())) {
+        // Make sure the filters are removed from the platform layer, as they are
+        // going to fallback to software mode.
+        webFilters->clear();
         m_layer->layer()->setFilters(*webFilters);
+        m_filters = FilterOperations();
+        return false;
     }
 
+    m_layer->layer()->setFilters(*webFilters);
     m_filters = filters;
     return true;
 }

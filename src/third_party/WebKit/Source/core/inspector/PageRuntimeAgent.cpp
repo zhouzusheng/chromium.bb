@@ -38,7 +38,7 @@
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/PageConsole.h"
 #include "weborigin/SecurityOrigin.h"
@@ -161,14 +161,14 @@ void PageRuntimeAgent::unmuteConsole()
 void PageRuntimeAgent::reportExecutionContextCreation()
 {
     Vector<std::pair<ScriptState*, SecurityOrigin*> > isolatedContexts;
-    for (Frame* frame = m_inspectedPage->mainFrame(); frame; frame = frame->tree()->traverseNext()) {
-        if (!frame->script()->canExecuteScripts(NotAboutToExecuteScript))
+    for (Frame* frame = m_inspectedPage->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+        if (!frame->script().canExecuteScripts(NotAboutToExecuteScript))
             continue;
         String frameId = m_pageAgent->frameId(frame);
 
         ScriptState* scriptState = mainWorldScriptState(frame);
         notifyContextCreated(frameId, scriptState, 0, true);
-        frame->script()->collectIsolatedContexts(isolatedContexts);
+        frame->script().collectIsolatedContexts(isolatedContexts);
         if (isolatedContexts.isEmpty())
             continue;
         for (size_t i = 0; i< isolatedContexts.size(); i++)

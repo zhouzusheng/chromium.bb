@@ -47,7 +47,6 @@ class SYNC_EXPORT_PRIVATE DebugInfoEventListener
   virtual void OnConnectionStatusChange(
       ConnectionStatus connection_status) OVERRIDE;
   virtual void OnStopSyncingPermanently() OVERRIDE;
-  virtual void OnUpdatedToken(const std::string& token) OVERRIDE;
   virtual void OnActionableError(
       const SyncProtocolError& sync_error) OVERRIDE;
 
@@ -103,9 +102,9 @@ class SYNC_EXPORT_PRIVATE DebugInfoEventListener
   // Cryptographer is initialized and does not have pending keys.
   bool cryptographer_ready_;
 
-  base::WeakPtrFactory<DebugInfoEventListener> weak_ptr_factory_;
-
   base::ThreadChecker thread_checker_;
+
+  base::WeakPtrFactory<DebugInfoEventListener> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DebugInfoEventListener);
 };

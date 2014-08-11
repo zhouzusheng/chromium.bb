@@ -33,8 +33,8 @@
 
 #include "WebCommon.h"
 
-#if WEBKIT_IMPLEMENTATION
-#include "core/platform/graphics/IntSize.h"
+#if BLINK_IMPLEMENTATION
+#include "platform/geometry/IntSize.h"
 #else
 #include <algorithm>
 #include <cmath>
@@ -62,7 +62,7 @@ struct WebSize {
     {
     }
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
     WebSize(const WebCore::IntSize& s)
         : width(s.width())
         , height(s.height())

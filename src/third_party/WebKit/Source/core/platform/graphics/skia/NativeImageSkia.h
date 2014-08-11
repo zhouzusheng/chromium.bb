@@ -35,7 +35,8 @@
 #include "SkRect.h"
 #include "SkSize.h"
 #include "SkXfermode.h"
-#include "core/platform/graphics/GraphicsTypes.h"
+#include "platform/geometry/IntSize.h"
+#include "platform/graphics/GraphicsTypes.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -134,7 +135,8 @@ public:
         const FloatPoint& phase,
         CompositeOperator,
         const FloatRect& destRect,
-        BlendMode) const;
+        BlendMode,
+        const IntSize& repeatSpacing) const;
 
 private:
     NativeImageSkia();

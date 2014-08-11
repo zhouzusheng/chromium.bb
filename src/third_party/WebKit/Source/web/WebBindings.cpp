@@ -45,8 +45,8 @@
 #include "bindings/v8/npruntime_impl.h"
 #include "bindings/v8/npruntime_priv.h"
 #include "core/dom/Range.h"
-#include "core/page/DOMWindow.h"
-#include "core/page/Frame.h"
+#include "core/frame/DOMWindow.h"
+#include "core/frame/Frame.h"
 #include "public/platform/WebArrayBuffer.h"
 #include "wtf/ArrayBufferView.h"
 
@@ -216,7 +216,7 @@ static bool getRangeImpl(NPObject* object, WebRange* webRange, v8::Isolate* isol
     v8::Handle<v8::Object> v8Object = v8::Local<v8::Object>::New(isolate, v8NPObject->v8Object);
     if (v8Object.IsEmpty())
         return false;
-    if (!V8Range::info.equals(toWrapperTypeInfo(v8Object)))
+    if (!V8Range::wrapperTypeInfo.equals(toWrapperTypeInfo(v8Object)))
         return false;
 
     Range* native = V8Range::HasInstanceInAnyWorld(v8Object, isolate) ? V8Range::toNative(v8Object) : 0;
@@ -391,7 +391,7 @@ v8::Handle<v8::Value> WebBindings::toV8Value(const NPVariant* variant)
         V8NPObject* v8Object = npObjectToV8NPObject(object);
         if (!v8Object)
             return v8::Undefined(isolate);
-        return convertNPVariantToV8Object(variant, v8Object->rootObject->frame()->script()->windowScriptNPObject(), isolate);
+        return convertNPVariantToV8Object(variant, v8Object->rootObject->frame()->script().windowScriptNPObject(), isolate);
     }
     // Safe to pass 0 since we have checked the script object class to make sure the
     // argument is a primitive v8 type.

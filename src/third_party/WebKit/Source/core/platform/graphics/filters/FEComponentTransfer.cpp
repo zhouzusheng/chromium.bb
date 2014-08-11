@@ -28,9 +28,7 @@
 
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/filters/Filter.h"
-#include "core/platform/text/TextStream.h"
-#include "core/rendering/RenderTreeAsText.h"
-
+#include "platform/text/TextStream.h"
 #include "wtf/MathExtras.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/Uint8ClampedArray.h"
@@ -211,7 +209,7 @@ PassRefPtr<SkImageFilter> FEComponentTransfer::createImageFilter(SkiaImageFilter
 
     SkAutoTUnref<SkColorFilter> colorFilter(SkTableColorFilter::CreateARGB(aValues, rValues, gValues, bValues));
 
-    SkIRect cropRect = getCropRect(builder->cropOffset());
+    SkImageFilter::CropRect cropRect = getCropRect(builder->cropOffset());
     return adoptRef(SkColorFilterImageFilter::Create(colorFilter, input.get(), &cropRect));
 }
 

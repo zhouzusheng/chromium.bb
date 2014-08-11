@@ -20,7 +20,7 @@
 #include "core/plugins/DOMMimeType.h"
 
 #include "core/loader/FrameLoader.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "core/plugins/DOMPlugin.h"
 #include "core/plugins/PluginData.h"
@@ -65,7 +65,7 @@ const String &DOMMimeType::description() const
 
 PassRefPtr<DOMPlugin> DOMMimeType::enabledPlugin() const
 {
-    if (!m_frame || !m_frame->page() || !m_frame->page()->mainFrame()->loader()->allowPlugins(NotAboutToInstantiatePlugin))
+    if (!m_frame || !m_frame->page() || !m_frame->page()->mainFrame()->loader().allowPlugins(NotAboutToInstantiatePlugin))
         return 0;
 
     return DOMPlugin::create(m_pluginData.get(), m_frame, m_pluginData->mimePluginIndices()[m_index]);

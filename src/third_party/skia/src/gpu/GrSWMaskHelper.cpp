@@ -138,6 +138,9 @@ void GrSWMaskHelper::toTexture(GrTexture *texture) {
     // writing since no one else will be using 'texture'
     bool reuseScratch = fContext->getGpu()->caps()->reuseScratchTextures();
 
+    // Since we're uploading to it, 'texture' shouldn't have a render target.
+    SkASSERT(NULL == texture->asRenderTarget());
+
     texture->writePixels(0, 0, fBM.width(), fBM.height(),
                          kAlpha_8_GrPixelConfig,
                          fBM.getPixels(), fBM.rowBytes(),
@@ -204,7 +207,7 @@ void GrSWMaskHelper::DrawToTargetWithPathMask(GrTexture* texture,
                          GrSimpleTextureEffect::Create(texture,
                                                        maskMatrix,
                                                        GrTextureParams::kNone_FilterMode,
-                                                       GrEffect::kPosition_CoordsType))->unref();
+                                                       kPosition_GrCoordSet))->unref();
 
     target->drawSimpleRect(dstRect);
 }

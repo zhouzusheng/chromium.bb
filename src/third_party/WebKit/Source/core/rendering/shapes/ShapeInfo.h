@@ -30,11 +30,11 @@
 #ifndef ShapeInfo_h
 #define ShapeInfo_h
 
-#include "core/platform/LayoutUnit.h"
-#include "core/platform/graphics/FloatRect.h"
 #include "core/rendering/shapes/Shape.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/ShapeValue.h"
+#include "platform/LayoutUnit.h"
+#include "platform/geometry/FloatRect.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/Vector.h"
 
@@ -81,8 +81,7 @@ public:
         m_shapeLogicalSize = newLogicalSize;
     }
 
-    virtual bool computeSegmentsForLine(LayoutUnit lineTop, LayoutUnit lineHeight);
-    void clearSegments() { m_segments.clear(); }
+    SegmentList computeSegmentsForLine(LayoutUnit lineTop, LayoutUnit lineHeight) const;
 
     LayoutUnit shapeLogicalTop() const { return computedShapeLogicalBoundingBox().y() + logicalTopOffset(); }
     LayoutUnit shapeLogicalBottom() const { return computedShapeLogicalBoundingBox().maxY() + logicalTopOffset(); }
@@ -106,6 +105,7 @@ protected:
     ShapeInfo(const RenderType* renderer): m_renderer(renderer) { }
 
     const Shape* computedShape() const;
+
     virtual LayoutRect computedShapeLogicalBoundingBox() const = 0;
     virtual ShapeValue* shapeValue() const = 0;
     virtual void getIntervals(LayoutUnit, LayoutUnit, SegmentList&) const = 0;
@@ -115,7 +115,6 @@ protected:
 
     LayoutUnit m_shapeLineTop;
     LayoutUnit m_lineHeight;
-    SegmentList m_segments;
 
     const RenderType* m_renderer;
 
@@ -123,5 +122,8 @@ private:
     mutable OwnPtr<Shape> m_shape;
     LayoutSize m_shapeLogicalSize;
 };
+
+bool checkShapeImageOrigin(Document&, ImageResource&);
+
 }
 #endif

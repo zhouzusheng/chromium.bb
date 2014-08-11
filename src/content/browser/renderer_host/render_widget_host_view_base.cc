@@ -202,13 +202,11 @@ void RenderWidgetHostViewBase::DetachPluginWindowsCallback(HWND window) {
 // static
 void RenderWidgetHostViewBase::MovePluginWindowsHelper(
     HWND parent,
-    const std::vector<WebPluginGeometry>& moves,
-    bool uses_in_process_plugins) {
+    const std::vector<WebPluginGeometry>& moves) {
   if (moves.empty())
     return;
 
   bool oop_plugins =
-    !uses_in_process_plugins &&
     !CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess) &&
     !CommandLine::ForCurrentProcess()->HasSwitch(switches::kInProcessPlugins);
 
@@ -483,6 +481,14 @@ InputEventAckState RenderWidgetHostViewBase::FilterInputEvent(
     const WebKit::WebInputEvent& input_event) {
   // By default, input events are simply forwarded to the renderer.
   return INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
+}
+
+void RenderWidgetHostViewBase::OnDidFlushInput() {
+  // The notification can safely be ignored by most implementations.
+}
+
+void RenderWidgetHostViewBase::OnSetNeedsFlushInput() {
+  NOTIMPLEMENTED();
 }
 
 void RenderWidgetHostViewBase::GestureEventAck(int gesture_event_type,

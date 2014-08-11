@@ -31,7 +31,7 @@
 #ifndef OpaqueRegionSkia_h
 #define OpaqueRegionSkia_h
 
-#include "core/platform/graphics/IntRect.h"
+#include "platform/geometry/IntRect.h"
 
 #include "SkBitmap.h"
 #include "SkCanvas.h"
@@ -44,10 +44,9 @@ class GraphicsContext;
 
 // This class is an encapsulation of functionality for GraphicsContext, and its methods are mirrored
 // there for the outside world. It tracks paints and computes what area will be opaque.
-class OpaqueRegionSkia {
+class OpaqueRegionSkia FINAL {
 public:
     OpaqueRegionSkia();
-    virtual ~OpaqueRegionSkia();
 
     // The resulting opaque region as a single rect.
     IntRect asRect() const;

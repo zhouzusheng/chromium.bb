@@ -25,8 +25,7 @@
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/filters/FEGaussianBlur.h"
 #include "core/platform/graphics/filters/Filter.h"
-#include "core/platform/text/TextStream.h"
-#include "core/rendering/RenderTreeAsText.h"
+#include "platform/text/TextStream.h"
 #include "third_party/skia/include/core/SkColorFilter.h"
 #include "third_party/skia/include/effects/SkBlurImageFilter.h"
 
@@ -53,7 +52,7 @@ PassRefPtr<FEDropShadow> FEDropShadow::create(Filter* filter, float stdX, float 
 void FEDropShadow::determineAbsolutePaintRect()
 {
     Filter* filter = this->filter();
-    ASSERT(filter);
+    ASSERT_UNUSED(filter, filter);
 
     FloatRect absolutePaintRect = mapRect(inputEffect(0)->absolutePaintRect());
 

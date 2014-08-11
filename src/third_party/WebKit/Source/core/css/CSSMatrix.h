@@ -27,7 +27,7 @@
 #define CSSMatrix_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/platform/graphics/transforms/TransformationMatrix.h"
+#include "platform/transforms/TransformationMatrix.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
@@ -35,7 +35,7 @@ namespace WebCore {
 
 class ExceptionState;
 
-class CSSMatrix : public ScriptWrappable, public RefCounted<CSSMatrix> {
+class CSSMatrix FINAL : public ScriptWrappable, public RefCounted<CSSMatrix> {
 public:
     static PassRefPtr<CSSMatrix> create(const TransformationMatrix& m)
     {
@@ -45,8 +45,6 @@ public:
     {
         return adoptRef(new CSSMatrix(s, es));
     }
-
-    virtual ~CSSMatrix();
 
     double a() const { return m_matrix.a(); }
     double b() const { return m_matrix.b(); }

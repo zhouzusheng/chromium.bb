@@ -32,8 +32,8 @@
 #include "core/dom/DOMImplementation.h"
 #include "core/fetch/Resource.h"
 #include "core/fetch/TextResourceDecoder.h"
-#include "core/platform/SharedBuffer.h"
-#include "core/platform/network/ResourceResponse.h"
+#include "platform/SharedBuffer.h"
+#include "platform/network/ResourceResponse.h"
 
 namespace {
 // 100MB

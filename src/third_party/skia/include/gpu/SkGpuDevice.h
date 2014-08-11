@@ -43,16 +43,16 @@ public:
     SkGpuDevice(GrContext*, SkBitmap::Config, int width, int height, int sampleCount = 0);
 
     /**
+     *  DEPRECATED -- need to make this private, call Create(surface)
      *  New device that will render to the specified renderTarget.
-     *  DEPRECATED: Use Create(surface)
      */
     SkGpuDevice(GrContext*, GrRenderTarget*);
 
     /**
+     *  DEPRECATED -- need to make this private, call Create(surface)
      *  New device that will render to the texture (as a rendertarget).
      *  The GrTexture's asRenderTarget() must be non-NULL or device will not
      *  function.
-     *  DEPRECATED: Use Create(surface)
      */
     SkGpuDevice(GrContext*, GrTexture*);
 
@@ -184,23 +184,28 @@ private:
 
     /**
      * Helper functions called by drawBitmapCommon. By the time these are called the SkDraw's
-     * matrix has already been set on GrContext
+     * matrix, clip, and the device's render target has already been set on GrContext.
      */
+
+    // The tileSize and clippedSrcRect will be valid only if true is returned.
     bool shouldTileBitmap(const SkBitmap& bitmap,
                           const GrTextureParams& sampler,
-                          const SkRect* srcRectPtr) const;
+                          const SkRect* srcRectPtr,
+                          int maxTileSize,
+                          int* tileSize,
+                          SkIRect* clippedSrcRect) const;
     void internalDrawBitmap(const SkBitmap&,
                             const SkRect&,
-                            const SkMatrix&,
                             const GrTextureParams& params,
                             const SkPaint& paint,
                             SkCanvas::DrawBitmapRectFlags flags);
     void drawTiledBitmap(const SkBitmap& bitmap,
                          const SkRect& srcRect,
-                         const SkMatrix& m,
+                         const SkIRect& clippedSrcRect,
                          const GrTextureParams& params,
                          const SkPaint& paint,
-                         SkCanvas::DrawBitmapRectFlags flags);
+                         SkCanvas::DrawBitmapRectFlags flags,
+                         int tileSize);
 
     /**
      * Returns non-initialized instance.

@@ -27,18 +27,18 @@
 #include "config.h"
 #include "core/platform/graphics/Image.h"
 
-#include "core/platform/Length.h"
 #include "core/platform/MIMETypeRegistry.h"
-#include "core/platform/SharedBuffer.h"
-#include "core/platform/chromium/TraceEvent.h"
 #include "core/platform/graphics/BitmapImage.h"
-#include "core/platform/graphics/FloatPoint.h"
-#include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/FloatSize.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/GraphicsContextStateSaver.h"
-#include "core/platform/graphics/GraphicsTypes.h"
-#include "core/platform/graphics/IntRect.h"
+#include "platform/Length.h"
+#include "platform/SharedBuffer.h"
+#include "platform/TraceEvent.h"
+#include "platform/geometry/FloatPoint.h"
+#include "platform/geometry/FloatRect.h"
+#include "platform/geometry/FloatSize.h"
+#include "platform/geometry/IntRect.h"
+#include "platform/graphics/GraphicsTypes.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebData.h"
 #include "wtf/MainThread.h"
@@ -123,7 +123,7 @@ void Image::draw(GraphicsContext* ctx, const FloatRect& dstRect, const FloatRect
     draw(ctx, dstRect, srcRect, op, blendMode);
 }
 
-void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const FloatPoint& srcPoint, const FloatSize& scaledTileSize, CompositeOperator op, BlendMode blendMode)
+void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const FloatPoint& srcPoint, const FloatSize& scaledTileSize, CompositeOperator op, BlendMode blendMode, const IntSize& repeatSpacing)
 {
     if (mayFillWithSolidColor()) {
         fillWithSolidColor(ctxt, destRect, solidColor(), op);
@@ -142,9 +142,10 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const Fl
     FloatSize scale(scaledTileSize.width() / intrinsicTileSize.width(),
                     scaledTileSize.height() / intrinsicTileSize.height());
 
+    FloatSize actualTileSize(scaledTileSize.width() + repeatSpacing.width(), scaledTileSize.height() + repeatSpacing.height());
     FloatRect oneTileRect;
-    oneTileRect.setX(destRect.x() + fmodf(fmodf(-srcPoint.x(), scaledTileSize.width()) - scaledTileSize.width(), scaledTileSize.width()));
-    oneTileRect.setY(destRect.y() + fmodf(fmodf(-srcPoint.y(), scaledTileSize.height()) - scaledTileSize.height(), scaledTileSize.height()));
+    oneTileRect.setX(destRect.x() + fmodf(fmodf(-srcPoint.x(), actualTileSize.width()) - actualTileSize.width(), actualTileSize.width()));
+    oneTileRect.setY(destRect.y() + fmodf(fmodf(-srcPoint.y(), actualTileSize.height()) - actualTileSize.height(), actualTileSize.height()));
     oneTileRect.setSize(scaledTileSize);
 
     // Check and see if a single draw of the image can cover the entire area we are supposed to tile.
@@ -159,7 +160,7 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const Fl
     }
 
     FloatRect tileRect(FloatPoint(), intrinsicTileSize);
-    drawPattern(ctxt, tileRect, scale, oneTileRect.location(), op, destRect, blendMode);
+    drawPattern(ctxt, tileRect, scale, oneTileRect.location(), op, destRect, blendMode, repeatSpacing);
 
     startAnimation();
 }
@@ -224,11 +225,11 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& dstRect, const Flo
 }
 
 void Image::drawPattern(GraphicsContext* context, const FloatRect& floatSrcRect, const FloatSize& scale,
-    const FloatPoint& phase, CompositeOperator compositeOp, const FloatRect& destRect, BlendMode blendMode)
+    const FloatPoint& phase, CompositeOperator compositeOp, const FloatRect& destRect, BlendMode blendMode, const IntSize& repeatSpacing)
 {
     TRACE_EVENT0("skia", "Image::drawPattern");
     if (RefPtr<NativeImageSkia> bitmap = nativeImageForCurrentFrame())
-        bitmap->drawPattern(context, adjustForNegativeSize(floatSrcRect), scale, phase, compositeOp, destRect, blendMode);
+        bitmap->drawPattern(context, adjustForNegativeSize(floatSrcRect), scale, phase, compositeOp, destRect, blendMode, repeatSpacing);
 }
 
 void Image::computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio)

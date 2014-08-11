@@ -68,32 +68,33 @@
 #include "WebViewImpl.h"
 #include "WebWindowFeatures.h"
 #include "bindings/v8/ScriptController.h"
+#include "core/accessibility/AXObject.h"
 #include "core/accessibility/AXObjectCache.h"
-#include "core/accessibility/AccessibilityObject.h"
 #include "core/dom/Document.h"
+#include "core/dom/DocumentFullscreen.h"
 #include "core/dom/Node.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoadRequest.h"
-#include "core/page/Console.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Console.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/PagePopupDriver.h"
 #include "core/page/Settings.h"
 #include "core/page/WindowFeatures.h"
-#include "core/platform/ColorChooser.h"
-#include "core/platform/ColorChooserClient.h"
 #include "core/platform/Cursor.h"
-#include "core/platform/DateTimeChooser.h"
-#include "core/platform/FileChooser.h"
-#include "core/platform/PlatformScreen.h"
-#include "core/platform/chromium/support/WrappedResourceRequest.h"
-#include "core/platform/graphics/FloatRect.h"
 #include "core/platform/graphics/GraphicsLayer.h"
-#include "core/platform/graphics/IntRect.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderWidget.h"
 #include "modules/geolocation/Geolocation.h"
+#include "platform/ColorChooser.h"
+#include "platform/ColorChooserClient.h"
+#include "platform/DateTimeChooser.h"
+#include "platform/FileChooser.h"
+#include "platform/PlatformScreen.h"
+#include "platform/exported/WrappedResourceRequest.h"
+#include "platform/geometry/FloatRect.h"
+#include "platform/geometry/IntRect.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebURLRequest.h"
@@ -239,6 +240,8 @@ Page* ChromeClientImpl::createWindow(
     WebNavigationPolicy policy = static_cast<WebNavigationPolicy>(navigationPolicy);
     if (policy == WebNavigationPolicyIgnore)
         policy = getNavigationPolicy(features.additionalFeatures.contains("popup=1"));
+
+    DocumentFullscreen::webkitCancelFullScreen(frame->document());
 
     WebViewImpl* newView = toWebViewImpl(
         m_webView->client()->createView(WebFrameImpl::fromFrame(frame), WrappedResourceRequest(r.resourceRequest()), features, r.frameName(), policy));
@@ -553,13 +556,6 @@ void ChromeClientImpl::deviceOrPageScaleFactorChanged() const
     m_webView->deviceOrPageScaleFactorChanged();
 }
 
-void ChromeClientImpl::didProgrammaticallyScroll(Frame* frame, const IntPoint& scrollPoint) const
-{
-    ASSERT(frame->view()->inProgrammaticScroll());
-    if (frame->page()->mainFrame() == frame)
-        m_webView->didProgrammaticallyScroll(scrollPoint);
-}
-
 void ChromeClientImpl::layoutUpdated(Frame* frame) const
 {
     m_webView->layoutUpdated(WebFrameImpl::fromFrame(frame));
@@ -613,9 +609,9 @@ void ChromeClientImpl::setToolTip(const String& tooltipText, TextDirection dir)
     m_lastTooltipHadText = !tooltipText.isEmpty();
 }
 
-void ChromeClientImpl::dispatchViewportPropertiesDidChange(const ViewportArguments& arguments) const
+void ChromeClientImpl::dispatchViewportPropertiesDidChange(const ViewportDescription& description) const
 {
-    m_webView->updatePageDefinedPageScaleConstraints(arguments);
+    m_webView->updatePageDefinedViewportConstraints(description);
 }
 
 void ChromeClientImpl::print(Frame* frame)
@@ -729,7 +725,7 @@ void ChromeClientImpl::popupOpened(PopupContainer* popupContainer,
         // transparent to the WebView.
         m_webView->popupOpened(popupContainer);
     }
-    static_cast<WebPopupMenuImpl*>(webwidget)->initialize(popupContainer, bounds);
+    toWebPopupMenuImpl(webwidget)->initialize(popupContainer, bounds);
 }
 
 void ChromeClientImpl::popupClosed(WebCore::PopupContainer* popupContainer)
@@ -761,9 +757,6 @@ void ChromeClientImpl::setCursorForPlugin(const WebCursorInfo& cursor)
 
 void ChromeClientImpl::formStateDidChange(const Node* node)
 {
-    if (m_webView->client())
-        m_webView->client()->didChangeFormState(WebNode(const_cast<Node*>(node)));
-
     // The current history item is not updated yet.  That happens lazily when
     // WebFrame::currentHistoryItem is requested.
     WebFrameImpl* webframe = WebFrameImpl::fromFrame(node->document().frame());
@@ -812,7 +805,7 @@ void ChromeClientImpl::getPopupMenuInfo(PopupContainer* popupContainer,
     info->rightAligned = popupContainer->menuStyle().textDirection() == RTL;
 }
 
-void ChromeClientImpl::postAccessibilityNotification(AccessibilityObject* obj, AXObjectCache::AXNotification notification)
+void ChromeClientImpl::postAccessibilityNotification(AXObject* obj, AXObjectCache::AXNotification notification)
 {
     // Alert assistive technology about the accessibility object notification.
     if (!obj)

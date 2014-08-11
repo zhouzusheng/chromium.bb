@@ -42,11 +42,12 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl, int id)
       scrollable_(false),
       should_scroll_on_main_thread_(false),
       have_wheel_event_handlers_(false),
+      user_scrollable_horizontal_(true),
+      user_scrollable_vertical_(true),
       background_color_(0),
       stacking_order_changed_(false),
       double_sided_(true),
       layer_property_changed_(false),
-      layer_surface_property_changed_(false),
       masks_to_bounds_(false),
       contents_opaque_(false),
       opacity_(1.0),
@@ -74,6 +75,8 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl, int id)
 LayerImpl::~LayerImpl() {
   DCHECK_EQ(DRAW_MODE_NONE, current_draw_mode_);
 
+  if (!copy_requests_.empty() && layer_tree_impl_->IsActiveTree())
+    layer_tree_impl_->RemoveLayerWithCopyOutputRequest(this);
   layer_tree_impl_->UnregisterLayer(this);
   layer_animation_controller_->RemoveValueObserver(this);
 
@@ -342,14 +345,14 @@ void LayerImpl::SetSentScrollDelta(gfx::Vector2d sent_scroll_delta) {
 
 gfx::Vector2dF LayerImpl::ScrollBy(gfx::Vector2dF scroll) {
   DCHECK(scrollable());
-
   gfx::Vector2dF min_delta = -scroll_offset_;
   gfx::Vector2dF max_delta = max_scroll_offset_ - scroll_offset_;
   // Clamp new_delta so that position + delta stays within scroll bounds.
   gfx::Vector2dF new_delta = (ScrollDelta() + scroll);
   new_delta.SetToMax(min_delta);
   new_delta.SetToMin(max_delta);
-  gfx::Vector2dF unscrolled = ScrollDelta() + scroll - new_delta;
+  gfx::Vector2dF unscrolled =
+      ScrollDelta() + scroll - new_delta;
   SetScrollDelta(new_delta);
   return unscrolled;
 }
@@ -374,7 +377,7 @@ void LayerImpl::ApplySentScrollDeltasFromAbortedCommit() {
   sent_scroll_delta_ = gfx::Vector2d();
 }
 
-void LayerImpl::ApplyScrollDeltasSinceBeginFrame() {
+void LayerImpl::ApplyScrollDeltasSinceBeginMainFrame() {
   // Only the pending tree can have missing scrolls.
   DCHECK(layer_tree_impl()->IsPendingTree());
   if (!scrollable())
@@ -472,10 +475,6 @@ skia::RefPtr<SkPicture> LayerImpl::GetPicture() {
   return skia::RefPtr<SkPicture>();
 }
 
-bool LayerImpl::CanClipSelf() const {
-  return false;
-}
-
 bool LayerImpl::AreVisibleResourcesReady() const {
   return true;
 }
@@ -500,7 +499,6 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
   layer->SetDrawsContent(DrawsContent());
   layer->SetHideLayerAndSubtree(hide_layer_and_subtree_);
   layer->SetFilters(filters());
-  layer->SetFilter(filter());
   layer->SetBackgroundFilters(background_filters());
   layer->SetMasksToBounds(masks_to_bounds_);
   layer->SetShouldScrollOnMainThread(should_scroll_on_main_thread_);
@@ -520,6 +518,8 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
   layer->SetTransform(transform_);
 
   layer->SetScrollable(scrollable_);
+  layer->set_user_scrollable_horizontal(user_scrollable_horizontal_);
+  layer->set_user_scrollable_vertical(user_scrollable_vertical_);
   layer->SetScrollOffsetAndDelta(
       scroll_offset_, layer->ScrollDelta() - layer->sent_scroll_delta());
   layer->SetSentScrollDelta(gfx::Vector2d());
@@ -599,6 +599,13 @@ base::DictionaryValue* LayerImpl::LayerTreeAsJson() const {
   if (scrollable_)
     result->SetBoolean("Scrollable", scrollable_);
 
+  if (have_wheel_event_handlers_)
+    result->SetBoolean("WheelHandler", have_wheel_event_handlers_);
+  if (!touch_event_handler_region_.IsEmpty()) {
+    scoped_ptr<base::Value> region = touch_event_handler_region_.AsValue();
+    result->Set("TouchRegion", region.release());
+  }
+
   list = new base::ListValue;
   for (size_t i = 0; i < children_.size(); ++i)
     list->Append(children_[i]->LayerTreeAsJson());
@@ -612,30 +619,6 @@ void LayerImpl::SetStackingOrderChanged(bool stacking_order_changed) {
     stacking_order_changed_ = true;
     NoteLayerPropertyChangedForSubtree();
   }
-}
-
-bool LayerImpl::LayerSurfacePropertyChanged() const {
-  if (layer_surface_property_changed_)
-    return true;
-
-  // If this layer's surface property hasn't changed, we want to see if
-  // some layer above us has changed this property. This is done for the
-  // case when such parent layer does not draw content, and therefore will
-  // not be traversed by the damage tracker. We need to make sure that
-  // property change on such layer will be caught by its descendants.
-  LayerImpl* current = this->parent_;
-  while (current && !current->draw_properties_.render_surface) {
-    if (current->layer_surface_property_changed_)
-      return true;
-    current = current->parent_;
-  }
-
-  return false;
-}
-
-void LayerImpl::NoteLayerSurfacePropertyChanged() {
-  layer_surface_property_changed_ = true;
-  layer_tree_impl()->set_needs_update_draw_properties();
 }
 
 void LayerImpl::NoteLayerPropertyChanged() {
@@ -660,7 +643,6 @@ const char* LayerImpl::LayerTypeAsString() const {
 
 void LayerImpl::ResetAllChangeTrackingForSubtree() {
   layer_property_changed_ = false;
-  layer_surface_property_changed_ = false;
 
   update_rect_ = gfx::RectF();
 
@@ -681,6 +663,10 @@ void LayerImpl::ResetAllChangeTrackingForSubtree() {
 
 bool LayerImpl::LayerIsAlwaysDamaged() const {
   return false;
+}
+
+void LayerImpl::OnFilterAnimated(const FilterOperations& filters) {
+  SetFilters(filters);
 }
 
 void LayerImpl::OnOpacityAnimated(float opacity) {
@@ -818,9 +804,18 @@ void LayerImpl::SetFilters(const FilterOperations& filters) {
   if (filters_ == filters)
     return;
 
-  DCHECK(!filter_);
   filters_ = filters;
   NoteLayerPropertyChangedForSubtree();
+}
+
+bool LayerImpl::FilterIsAnimating() const {
+  return layer_animation_controller_->IsAnimatingProperty(Animation::Filter);
+}
+
+bool LayerImpl::FilterIsAnimatingOnImplOnly() const {
+  Animation* filter_animation =
+      layer_animation_controller_->GetAnimation(Animation::Filter);
+  return filter_animation && filter_animation->is_impl_only();
 }
 
 void LayerImpl::SetBackgroundFilters(
@@ -830,15 +825,6 @@ void LayerImpl::SetBackgroundFilters(
 
   background_filters_ = filters;
   NoteLayerPropertyChanged();
-}
-
-void LayerImpl::SetFilter(const skia::RefPtr<SkImageFilter>& filter) {
-  if (filter_.get() == filter.get())
-    return;
-
-  DCHECK(filters_.IsEmpty());
-  filter_ = filter;
-  NoteLayerPropertyChangedForSubtree();
 }
 
 void LayerImpl::SetMasksToBounds(bool masks_to_bounds) {
@@ -862,7 +848,7 @@ void LayerImpl::SetOpacity(float opacity) {
     return;
 
   opacity_ = opacity;
-  NoteLayerSurfacePropertyChanged();
+  NoteLayerPropertyChangedForSubtree();
 }
 
 bool LayerImpl::OpacityIsAnimating() const {
@@ -906,7 +892,7 @@ void LayerImpl::SetTransform(const gfx::Transform& transform) {
     return;
 
   transform_ = transform;
-  NoteLayerSurfacePropertyChanged();
+  NoteLayerPropertyChangedForSubtree();
 }
 
 bool LayerImpl::TransformIsAnimating() const {
@@ -1001,8 +987,15 @@ void LayerImpl::SetScrollOffsetDelegate(
   }
   gfx::Vector2dF total_offset = TotalScrollOffset();
   scroll_offset_delegate_ = scroll_offset_delegate;
-  if (scroll_offset_delegate_)
+  if (scroll_offset_delegate_) {
+    scroll_offset_delegate_->SetMaxScrollOffset(max_scroll_offset_);
     scroll_offset_delegate_->SetTotalScrollOffset(total_offset);
+  }
+}
+
+bool LayerImpl::IsExternalFlingActive() const {
+  return scroll_offset_delegate_ &&
+         scroll_offset_delegate_->IsExternalFlingActive();
 }
 
 void LayerImpl::SetScrollOffset(gfx::Vector2d scroll_offset) {
@@ -1087,6 +1080,9 @@ void LayerImpl::SetMaxScrollOffset(gfx::Vector2d max_scroll_offset) {
   if (max_scroll_offset_ == max_scroll_offset)
     return;
   max_scroll_offset_ = max_scroll_offset;
+
+  if (scroll_offset_delegate_)
+    scroll_offset_delegate_->SetMaxScrollOffset(max_scroll_offset_);
 
   layer_tree_impl()->set_needs_update_draw_properties();
   UpdateScrollbarPositions();
@@ -1315,6 +1311,9 @@ void LayerImpl::AsValueInto(base::DictionaryValue* state) const {
 
   if (clip_parent_)
     state->SetInteger("clip_parent", clip_parent_->id());
+
+  state->SetBoolean("can_use_lcd_text", can_use_lcd_text());
+  state->SetBoolean("contents_opaque", contents_opaque());
 }
 
 size_t LayerImpl::GPUMemoryUsageInBytes() const { return 0; }

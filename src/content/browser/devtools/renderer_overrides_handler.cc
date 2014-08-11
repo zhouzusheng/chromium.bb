@@ -4,8 +4,10 @@
 
 #include "content/browser/devtools/renderer_overrides_handler.h"
 
+#include <map>
 #include <string>
 
+#include "base/barrier_closure.h"
 #include "base/base64.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
@@ -28,17 +30,20 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/referrer.h"
 #include "ipc/ipc_sender.h"
+#include "net/base/net_util.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/gfx/codec/jpeg_codec.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/snapshot/snapshot.h"
 #include "url/gurl.h"
+#include "webkit/browser/quota/quota_manager.h"
 
 using WebKit::WebGestureEvent;
 using WebKit::WebInputEvent;
@@ -52,6 +57,7 @@ static const char kPng[] = "png";
 static const char kJpeg[] = "jpeg";
 static int kDefaultScreenshotQuality = 80;
 static int kFrameRateThresholdMs = 100;
+static int kCaptureRetryLimit = 2;
 
 void ParseGenericInputParams(base::DictionaryValue* params,
                              WebInputEvent* event) {
@@ -76,6 +82,7 @@ void ParseGenericInputParams(base::DictionaryValue* params,
 
 RendererOverridesHandler::RendererOverridesHandler(DevToolsAgentHost* agent)
     : agent_(agent),
+      capture_retry_count_(0),
       weak_factory_(this) {
   RegisterCommandHandler(
       devtools::DOM::setFileInputFiles::kName,
@@ -117,6 +124,11 @@ RendererOverridesHandler::RendererOverridesHandler(DevToolsAgentHost* agent)
           &RendererOverridesHandler::PageCaptureScreenshot,
           base::Unretained(this)));
   RegisterCommandHandler(
+      devtools::Page::canScreencast::kName,
+      base::Bind(
+          &RendererOverridesHandler::PageCanScreencast,
+          base::Unretained(this)));
+  RegisterCommandHandler(
       devtools::Page::startScreencast::kName,
       base::Bind(
           &RendererOverridesHandler::PageStartScreencast,
@@ -125,6 +137,11 @@ RendererOverridesHandler::RendererOverridesHandler(DevToolsAgentHost* agent)
       devtools::Page::stopScreencast::kName,
       base::Bind(
           &RendererOverridesHandler::PageStopScreencast,
+          base::Unretained(this)));
+  RegisterCommandHandler(
+      devtools::Page::queryUsageAndQuota::kName,
+      base::Bind(
+          &RendererOverridesHandler::PageQueryUsageAndQuota,
           base::Unretained(this)));
   RegisterCommandHandler(
       devtools::Input::dispatchMouseEvent::kName,
@@ -167,13 +184,16 @@ void RendererOverridesHandler::InnerSwapCompositorFrame() {
     return;
   }
 
+  RenderViewHost* host = agent_->GetRenderViewHost();
+  if (!host->GetView())
+    return;
+
   last_frame_time_ = base::TimeTicks::Now();
   std::string format;
   int quality = kDefaultScreenshotQuality;
   double scale = 1;
   ParseCaptureParameters(screencast_command_.get(), &format, &quality, &scale);
 
-  RenderViewHost* host = agent_->GetRenderViewHost();
   RenderWidgetHostViewPort* view_port =
       RenderWidgetHostViewPort::FromRWHV(host->GetView());
 
@@ -194,9 +214,6 @@ void RendererOverridesHandler::ParseCaptureParameters(
     std::string* format,
     int* quality,
     double* scale) {
-  RenderViewHost* host = agent_->GetRenderViewHost();
-  gfx::Rect view_bounds = host->GetView()->GetViewBounds();
-
   *quality = kDefaultScreenshotQuality;
   *scale = 1;
   double max_width = -1;
@@ -213,8 +230,10 @@ void RendererOverridesHandler::ParseCaptureParameters(
                       &max_height);
   }
 
+  RenderViewHost* host = agent_->GetRenderViewHost();
+  CHECK(host->GetView());
+  gfx::Rect view_bounds = host->GetView()->GetViewBounds();
   float device_sf = last_compositor_frame_metadata_.device_scale_factor;
-
   if (max_width > 0)
     *scale = std::min(*scale, max_width / view_bounds.width() / device_sf);
   if (max_height > 0)
@@ -406,20 +425,26 @@ RendererOverridesHandler::PageNavigateToHistoryEntry(
 scoped_refptr<DevToolsProtocol::Response>
 RendererOverridesHandler::PageCaptureScreenshot(
     scoped_refptr<DevToolsProtocol::Command> command) {
+  RenderViewHost* host = agent_->GetRenderViewHost();
+  if (!host->GetView())
+    return command->InternalErrorResponse("Unable to access the view");
+
   std::string format;
   int quality = kDefaultScreenshotQuality;
   double scale = 1;
   ParseCaptureParameters(command.get(), &format, &quality, &scale);
 
-  RenderViewHost* host = agent_->GetRenderViewHost();
   gfx::Rect view_bounds = host->GetView()->GetViewBounds();
+  gfx::Size snapshot_size = gfx::ToFlooredSize(
+      gfx::ScaleSize(view_bounds.size(), scale));
 
   // Grab screen pixels if available for current platform.
   // TODO(pfeldman): support format, scale and quality in ui::GrabViewSnapshot.
   std::vector<unsigned char> png;
   bool is_unscaled_png = scale == 1 && format == kPng;
   if (is_unscaled_png && ui::GrabViewSnapshot(host->GetView()->GetNativeView(),
-                                              &png, view_bounds)) {
+                                              &png,
+                                              gfx::Rect(snapshot_size))) {
     std::string base64_data;
     bool success = base::Base64Encode(
         base::StringPiece(reinterpret_cast<char*>(&*png.begin()), png.size()),
@@ -437,14 +462,24 @@ RendererOverridesHandler::PageCaptureScreenshot(
   RenderWidgetHostViewPort* view_port =
       RenderWidgetHostViewPort::FromRWHV(host->GetView());
 
-  gfx::Size snapshot_size = gfx::ToFlooredSize(
-      gfx::ScaleSize(view_bounds.size(), scale));
   view_port->CopyFromCompositingSurface(
       view_bounds, snapshot_size,
       base::Bind(&RendererOverridesHandler::ScreenshotCaptured,
                  weak_factory_.GetWeakPtr(), command, format, quality,
                  last_compositor_frame_metadata_));
   return command->AsyncResponsePromise();
+}
+
+scoped_refptr<DevToolsProtocol::Response>
+RendererOverridesHandler::PageCanScreencast(
+    scoped_refptr<DevToolsProtocol::Command> command) {
+  base::DictionaryValue* result = new base::DictionaryValue();
+#if defined(OS_ANDROID)
+  result->SetBoolean(devtools::kResult, true);
+#else
+  result->SetBoolean(devtools::kResult, false);
+#endif  // defined(OS_ANDROID)
+  return command->SuccessResponse(result);
 }
 
 scoped_refptr<DevToolsProtocol::Response>
@@ -479,6 +514,13 @@ void RendererOverridesHandler::ScreenshotCaptured(
     if (command) {
       SendAsyncResponse(
           command->InternalErrorResponse("Unable to capture screenshot"));
+    } else if (capture_retry_count_) {
+      --capture_retry_count_;
+      base::MessageLoop::current()->PostDelayedTask(
+          FROM_HERE,
+          base::Bind(&RendererOverridesHandler::InnerSwapCompositorFrame,
+                     weak_factory_.GetWeakPtr()),
+          base::TimeDelta::FromMilliseconds(kFrameRateThresholdMs));
     }
     return;
   }
@@ -559,7 +601,206 @@ void RendererOverridesHandler::ScreenshotCaptured(
   }
 }
 
+// Quota and Usage ------------------------------------------
+
+namespace {
+
+typedef base::Callback<void(scoped_ptr<base::DictionaryValue>)>
+    ResponseCallback;
+
+void QueryUsageAndQuotaCompletedOnIOThread(
+    scoped_ptr<base::DictionaryValue> quota,
+    scoped_ptr<base::DictionaryValue> usage,
+    ResponseCallback callback) {
+
+  scoped_ptr<base::DictionaryValue> response_data(new base::DictionaryValue);
+  response_data->Set(devtools::Page::queryUsageAndQuota::kResponseQuota,
+                     quota.release());
+  response_data->Set(devtools::Page::queryUsageAndQuota::kResponseUsage,
+                     usage.release());
+
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(callback, base::Passed(&response_data)));
+}
+
+void DidGetHostUsage(
+    base::ListValue* list,
+    const std::string& client_id,
+    const base::Closure& barrier,
+    int64 value) {
+  base::DictionaryValue* usage_item = new base::DictionaryValue;
+  usage_item->SetString(devtools::Page::UsageItem::kItemID, client_id);
+  usage_item->SetDouble(devtools::Page::UsageItem::kItemValue, value);
+  list->Append(usage_item);
+  barrier.Run();
+}
+
+void DidGetQuotaValue(
+    base::DictionaryValue* dictionary,
+    const std::string& item_name,
+    const base::Closure& barrier,
+    quota::QuotaStatusCode status,
+    int64 value) {
+  if (status == quota::kQuotaStatusOk)
+    dictionary->SetDouble(item_name, value);
+  barrier.Run();
+}
+
+void DidGetUsageAndQuotaForWebApps(
+    base::DictionaryValue* quota,
+    const std::string& item_name,
+    const base::Closure& barrier,
+    quota::QuotaStatusCode status,
+    int64 used_bytes,
+    int64 quota_in_bytes) {
+  if (status == quota::kQuotaStatusOk)
+    quota->SetDouble(item_name, quota_in_bytes);
+  barrier.Run();
+}
+
+std::string GetStorageTypeName(quota::StorageType type) {
+  switch (type) {
+    case quota::kStorageTypeTemporary:
+      return devtools::Page::Usage::kItemTemporary;
+    case quota::kStorageTypePersistent:
+      return devtools::Page::Usage::kItemPersistent;
+    case quota::kStorageTypeSyncable:
+      return devtools::Page::Usage::kItemSyncable;
+    case quota::kStorageTypeQuotaNotManaged:
+    case quota::kStorageTypeUnknown:
+      NOTREACHED();
+  }
+  return "";
+}
+
+std::string GetQuotaClientName(quota::QuotaClient::ID id) {
+  switch (id) {
+    case quota::QuotaClient::kFileSystem:
+      return devtools::Page::UsageItem::ID::kFilesystem;
+    case quota::QuotaClient::kDatabase:
+      return devtools::Page::UsageItem::ID::kDatabase;
+    case quota::QuotaClient::kAppcache:
+      return devtools::Page::UsageItem::ID::kAppcache;
+    case quota::QuotaClient::kIndexedDatabase:
+      return devtools::Page::UsageItem::ID::kIndexedDatabase;
+    default:
+      NOTREACHED();
+      return "";
+  }
+}
+
+void QueryUsageAndQuotaOnIOThread(
+    scoped_refptr<quota::QuotaManager> quota_manager,
+    const GURL& security_origin,
+    const ResponseCallback& callback) {
+  scoped_ptr<base::DictionaryValue> quota(new base::DictionaryValue);
+  scoped_ptr<base::DictionaryValue> usage(new base::DictionaryValue);
+
+  static quota::QuotaClient::ID kQuotaClients[] = {
+      quota::QuotaClient::kFileSystem,
+      quota::QuotaClient::kDatabase,
+      quota::QuotaClient::kAppcache,
+      quota::QuotaClient::kIndexedDatabase
+  };
+
+  static const size_t kStorageTypeCount = quota::kStorageTypeUnknown;
+  std::map<quota::StorageType, base::ListValue*> storage_type_lists;
+
+  for (size_t i = 0; i != kStorageTypeCount; i++) {
+    const quota::StorageType type = static_cast<quota::StorageType>(i);
+    if (type == quota::kStorageTypeQuotaNotManaged)
+      continue;
+    storage_type_lists[type] = new base::ListValue;
+    usage->Set(GetStorageTypeName(type), storage_type_lists[type]);
+  }
+
+  const int kExpectedResults =
+      2 + arraysize(kQuotaClients) * storage_type_lists.size();
+  base::DictionaryValue* quota_raw_ptr = quota.get();
+
+  // Takes ownership on usage and quota.
+  base::Closure barrier = BarrierClosure(
+      kExpectedResults,
+      base::Bind(&QueryUsageAndQuotaCompletedOnIOThread,
+                 base::Passed(&quota),
+                 base::Passed(&usage),
+                 callback));
+  std::string host = net::GetHostOrSpecFromURL(security_origin);
+
+  quota_manager->GetUsageAndQuotaForWebApps(
+      security_origin,
+      quota::kStorageTypeTemporary,
+      base::Bind(&DidGetUsageAndQuotaForWebApps, quota_raw_ptr,
+                 std::string(devtools::Page::Quota::kItemTemporary), barrier));
+
+  quota_manager->GetPersistentHostQuota(
+      host,
+      base::Bind(&DidGetQuotaValue, quota_raw_ptr,
+                 std::string(devtools::Page::Quota::kItemPersistent),
+                 barrier));
+
+  for (size_t i = 0; i != arraysize(kQuotaClients); i++) {
+    std::map<quota::StorageType, base::ListValue*>::const_iterator iter;
+    for (iter = storage_type_lists.begin();
+         iter != storage_type_lists.end(); ++iter) {
+      const quota::StorageType type = (*iter).first;
+      if (!quota_manager->IsTrackingHostUsage(type, kQuotaClients[i])) {
+        barrier.Run();
+        continue;
+      }
+      quota_manager->GetHostUsage(
+          host, type, kQuotaClients[i],
+          base::Bind(&DidGetHostUsage, (*iter).second,
+                     GetQuotaClientName(kQuotaClients[i]),
+                     barrier));
+    }
+  }
+}
+
+} // namespace
+
+scoped_refptr<DevToolsProtocol::Response>
+RendererOverridesHandler::PageQueryUsageAndQuota(
+    scoped_refptr<DevToolsProtocol::Command> command) {
+  base::DictionaryValue* params = command->params();
+  std::string security_origin;
+  if (!params || !params->GetString(
+      devtools::Page::queryUsageAndQuota::kParamSecurityOrigin,
+      &security_origin)) {
+    return command->InvalidParamResponse(
+        devtools::Page::queryUsageAndQuota::kParamSecurityOrigin);
+  }
+
+  ResponseCallback callback = base::Bind(
+      &RendererOverridesHandler::PageQueryUsageAndQuotaCompleted,
+      weak_factory_.GetWeakPtr(),
+      command);
+
+  scoped_refptr<quota::QuotaManager> quota_manager =
+      agent_->GetRenderViewHost()->GetProcess()->
+          GetStoragePartition()->GetQuotaManager();
+
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(
+          &QueryUsageAndQuotaOnIOThread,
+          quota_manager,
+          GURL(security_origin),
+          callback));
+
+  return command->AsyncResponsePromise();
+}
+
+void RendererOverridesHandler::PageQueryUsageAndQuotaCompleted(
+    scoped_refptr<DevToolsProtocol::Command> command,
+    scoped_ptr<base::DictionaryValue> response_data) {
+  SendAsyncResponse(command->SuccessResponse(response_data.release()));
+}
+
 void RendererOverridesHandler::NotifyScreencastVisibility(bool visible) {
+  if (visible)
+    capture_retry_count_ = kCaptureRetryLimit;
   base::DictionaryValue* params = new base::DictionaryValue();
   params->SetBoolean(
       devtools::Page::screencastVisibilityChanged::kParamVisible, visible);

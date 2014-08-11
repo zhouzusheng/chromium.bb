@@ -23,40 +23,15 @@
 #include <blpwtk2_managedrenderprocesshost.h>
 
 #include <content/public/browser/browser_context.h>
-// TODO: remove dependency on these impl classes
-#include <content/browser/renderer_host/render_process_host_impl.h>
-#include <content/browser/storage_partition_impl.h>
+#include <content/public/browser/render_process_host.h>
 
 namespace blpwtk2 {
 
-static content::RenderProcessHostImpl*
-createRenderProcessHost(base::ProcessHandle processHandle,
-                        content::BrowserContext* browserContext)
-{
-    DCHECK(browserContext);
-
-    content::StoragePartition* partition
-        = content::BrowserContext::GetDefaultStoragePartition(browserContext);
-    content::StoragePartitionImpl* partitionImpl
-        = static_cast<content::StoragePartitionImpl*>(partition);
-
-    int id = content::RenderProcessHostImpl::GenerateUniqueId();
-    bool supportsBrowserPlugin = true;
-    bool isGuest = false;
-    return new content::RenderProcessHostImpl(id, processHandle,
-                                              browserContext, partitionImpl,
-                                              supportsBrowserPlugin, isGuest);
-}
-
 ManagedRenderProcessHost::ManagedRenderProcessHost(
     base::ProcessHandle processHandle,
-    content::BrowserContext* browserContext,
-    bool usesInProcessPlugins)
-: d_impl(createRenderProcessHost(processHandle, browserContext))
+    content::BrowserContext* browserContext)
+: d_impl(content::RenderProcessHost::CreateProcessHost(processHandle, browserContext))
 {
-    if (usesInProcessPlugins) {
-        d_impl->SetUsesInProcessPlugins();
-    }
     d_impl->Init();
 }
 

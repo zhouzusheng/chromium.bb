@@ -38,6 +38,8 @@
 
 namespace WebCore {
 
+class ExecutionContext;
+
 // ScriptPromise is the class for representing Promise values in C++ world.
 // ScriptPromise holds a Promise.
 // So holding a ScriptPromise as a member variable in DOM object causes
@@ -45,6 +47,7 @@ namespace WebCore {
 //
 class ScriptPromise {
 public:
+    // Constructs an empty promise.
     ScriptPromise()
         : m_promise()
     {
@@ -91,6 +94,9 @@ public:
     {
         m_promise.clear();
     }
+
+    static ScriptPromise createPending();
+    static ScriptPromise createPending(ExecutionContext*);
 
 private:
     ScriptValue m_promise;

@@ -28,6 +28,7 @@
 
 #include "modules/webaudio/AnalyserNode.h"
 
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "modules/webaudio/AudioNodeInput.h"
@@ -75,8 +76,64 @@ void AnalyserNode::reset()
 
 void AnalyserNode::setFftSize(unsigned size, ExceptionState& es)
 {
-    if (!m_analyser.setFftSize(size))
-        es.throwDOMException(NotSupportedError);
+    if (!m_analyser.setFftSize(size)) {
+        es.throwDOMException(
+            IndexSizeError,
+            ExceptionMessages::failedToSet(
+                "fftSize",
+                "AnalyserNode",
+                "FFT size (" + String::number(size)
+                + ") must be a power of two between "
+                + String::number(RealtimeAnalyser::MinFFTSize) + " and "
+                + String::number(RealtimeAnalyser::MaxFFTSize) + ", inclusive"));
+    }
+}
+
+void AnalyserNode::setMinDecibels(float k, ExceptionState& es)
+{
+    if (k <= maxDecibels()) {
+        m_analyser.setMinDecibels(k);
+    } else {
+        es.throwDOMException(
+            IndexSizeError,
+            ExceptionMessages::failedToSet(
+                "minDecibels",
+                "AnalyserNode",
+                "minDecibels (" + String::number(k)
+                + ") must be less than or equal maxDecibels (" + String::number(maxDecibels())
+                + ")."));
+    }
+}
+
+void AnalyserNode::setMaxDecibels(float k, ExceptionState& es)
+{
+    if (k >= minDecibels()) {
+        m_analyser.setMaxDecibels(k);
+    } else {
+        es.throwDOMException(
+            IndexSizeError,
+            ExceptionMessages::failedToSet(
+                "maxDecibels",
+                "AnalyserNode",
+                "maxDecibels (" + String::number(k)
+                + ") must be greater than or equal minDecibels (" + String::number(minDecibels())
+                + ")."));
+    }
+}
+
+void AnalyserNode::setSmoothingTimeConstant(float k, ExceptionState& es)
+{
+    if (k >= 0 && k <= 1) {
+        m_analyser.setSmoothingTimeConstant(k);
+    } else {
+        es.throwDOMException(
+            IndexSizeError,
+            ExceptionMessages::failedToSet(
+                "smoothingTimeConstant",
+                "AnalyserNode",
+                "smoothing value (" + String::number(k)
+                + ") must be between 0 and 1, inclusive."));
+    }
 }
 
 } // namespace WebCore

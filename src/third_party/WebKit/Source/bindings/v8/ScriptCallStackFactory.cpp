@@ -39,14 +39,14 @@
 #include "core/inspector/ScriptArguments.h"
 #include "core/inspector/ScriptCallFrame.h"
 #include "core/inspector/ScriptCallStack.h"
-#include "core/platform/JSONValues.h"
+#include "platform/JSONValues.h"
 #include "wtf/text/StringBuilder.h"
 
 #include <v8-debug.h>
 
 namespace WebCore {
 
-class ScriptExecutionContext;
+class ExecutionContext;
 
 static ScriptCallFrame toScriptCallFrame(v8::Handle<v8::StackFrame> frame)
 {
@@ -114,21 +114,11 @@ PassRefPtr<ScriptCallStack> createScriptCallStackForConsole(size_t maxStackSize)
 {
     size_t stackSize = 1;
     if (InspectorInstrumentation::hasFrontends()) {
-        ScriptExecutionContext* scriptExecutionContext = getScriptExecutionContext();
-        if (InspectorInstrumentation::consoleAgentEnabled(scriptExecutionContext))
+        ExecutionContext* executionContext = getExecutionContext();
+        if (InspectorInstrumentation::consoleAgentEnabled(executionContext))
             stackSize = maxStackSize;
     }
     return createScriptCallStack(stackSize);
-}
-
-PassRefPtr<ScriptCallStack> createScriptCallStackForConsole(ScriptState*)
-{
-    return createScriptCallStackForConsole();
-}
-
-PassRefPtr<ScriptCallStack> createScriptCallStack(ScriptState*, size_t maxStackSize)
-{
-    return createScriptCallStackForConsole(maxStackSize);
 }
 
 PassRefPtr<ScriptArguments> createScriptArguments(const v8::FunctionCallbackInfo<v8::Value>& v8arguments, unsigned skipArgumentCount)

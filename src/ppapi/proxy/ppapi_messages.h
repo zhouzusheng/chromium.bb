@@ -490,12 +490,6 @@ IPC_MESSAGE_ROUTED4(PpapiMsg_PPBAudio_NotifyAudioStreamCreated,
                     ppapi::proxy::SerializedHandle /* socket_handle */,
                     ppapi::proxy::SerializedHandle /* handle */)
 
-// PPB_FileSystem.
-IPC_MESSAGE_ROUTED2(
-    PpapiMsg_PPBFileSystem_OpenComplete,
-    ppapi::HostResource /* filesystem */,
-    int32_t /* result */)
-
 // PPB_Graphics3D.
 IPC_MESSAGE_ROUTED2(PpapiMsg_PPBGraphics3D_SwapBuffersACK,
                     ppapi::HostResource /* graphics_3d */,
@@ -1226,14 +1220,6 @@ IPC_MESSAGE_CONTROL2(PpapiHostMsg_FileIO_Write,
 IPC_MESSAGE_CONTROL1(PpapiHostMsg_FileIO_SetLength,
                      int64_t /* length */)
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_FileIO_Flush)
-IPC_MESSAGE_CONTROL2(PpapiHostMsg_FileIO_WillWrite,
-                     int64_t /* offset */,
-                     int32_t /* bytes_to_write */)
-IPC_MESSAGE_CONTROL1(PpapiHostMsg_FileIO_WillSetLength,
-                     int64_t /* length */)
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_FileIO_GetOSFileDescriptor)
-IPC_MESSAGE_CONTROL1(PpapiPluginMsg_FileIO_GetOSFileDescriptorReply,
-                     int32_t /* file descriptor */)
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_FileIO_RequestOSFileHandle)
 IPC_MESSAGE_CONTROL0(PpapiPluginMsg_FileIO_RequestOSFileHandleReply)
 IPC_MESSAGE_CONTROL0(PpapiPluginMsg_FileIO_GeneralReply)
@@ -1305,6 +1291,16 @@ IPC_MESSAGE_CONTROL0(PpapiPluginMsg_FileSystem_OpenReply)
 IPC_MESSAGE_CONTROL1(PpapiHostMsg_FileSystem_InitIsolatedFileSystem,
                      std::string /* fsid */)
 IPC_MESSAGE_CONTROL0(PpapiPluginMsg_FileSystem_InitIsolatedFileSystemReply)
+// Passed from renderer to browser. Creates an already-open file system with a
+// given |root_url| and |file_system_type|.
+IPC_MESSAGE_CONTROL2(PpapiHostMsg_FileSystem_CreateFromRenderer,
+                     std::string /* root_url */,
+                     PP_FileSystemType /* file_system_type */)
+// Nested within a ResourceVar for file systems being passed from the renderer
+// to the plugin. Creates an already-open file system resource on the plugin,
+// linked to the existing resource host given in the ResourceVar.
+IPC_MESSAGE_CONTROL1(PpapiPluginMsg_FileSystem_CreateFromPendingHost,
+                     PP_FileSystemType /* file_system_type */)
 
 // Flash DRM ------------------------------------------------------------------
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_FlashDRM_Create)
@@ -1433,10 +1429,6 @@ IPC_MESSAGE_CONTROL2(PpapiPluginMsg_HostResolver_ResolveReply,
 
 // Platform Verification -------------------------------------------------------
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_PlatformVerification_Create)
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_PlatformVerification_CanChallengePlatform)
-IPC_MESSAGE_CONTROL1(
-    PpapiHostMsg_PlatformVerification_CanChallengePlatformReply,
-    bool /* can_challenge_platform */)
 IPC_MESSAGE_CONTROL2(PpapiHostMsg_PlatformVerification_ChallengePlatform,
                      std::string /* service_id  */,
                      std::vector<uint8_t> /* challenge */)
@@ -1712,6 +1704,17 @@ IPC_MESSAGE_CONTROL4(PpapiPluginMsg_WebSocket_ClosedReply,
                      bool /* was_clean */,
                      uint16_t /* code */,
                      std::string /* reason */)
+
+// OutputProtection -----------------------------------------------------------
+
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_OutputProtection_Create)
+IPC_MESSAGE_CONTROL1(PpapiHostMsg_OutputProtection_EnableProtection,
+                     uint32_t /* desired_method_mask */)
+IPC_MESSAGE_CONTROL0(PpapiPluginMsg_OutputProtection_EnableProtectionReply)
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_OutputProtection_QueryStatus)
+IPC_MESSAGE_CONTROL2(PpapiPluginMsg_OutputProtection_QueryStatusReply,
+                     uint32_t /* link_mask */,
+                     uint32_t /* protection_mask */)
 
 #if !defined(OS_NACL) && !defined(NACL_WIN64)
 

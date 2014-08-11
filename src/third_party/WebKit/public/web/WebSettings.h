@@ -56,6 +56,7 @@ public:
     virtual bool touchEditingEnabled() const = 0;
     virtual bool viewportEnabled() const = 0;
     virtual void setAccelerated2dCanvasEnabled(bool) = 0;
+    virtual void setAccelerated2dCanvasMSAASampleCount(int) = 0;
     virtual void setAcceleratedCompositingEnabled(bool) = 0;
     virtual void setAcceleratedCompositingFor3DTransformsEnabled(bool) = 0;
     virtual void setAcceleratedCompositingForAnimationEnabled(bool) = 0;
@@ -82,6 +83,7 @@ public:
     virtual void setAuthorAndUserStylesEnabled(bool) = 0;
     virtual void setCaretBrowsingEnabled(bool) = 0;
     virtual void setCompositedScrollingForFramesEnabled(bool) = 0;
+    virtual void setCompositorTouchHitTesting(bool) = 0;
     virtual void setCookieEnabled(bool) = 0;
     virtual void setCursiveFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setDNSPrefetchingEnabled(bool) = 0;
@@ -92,6 +94,7 @@ public:
     virtual void setDefaultVideoPosterURL(const WebString&) = 0;
     void setDeferred2dCanvasEnabled(bool) { } // temporary stub
     virtual void setDeferredImageDecodingEnabled(bool) = 0;
+    virtual void setDeviceScaleAdjustment(float) = 0;
     virtual void setDeviceSupportsMouse(bool) = 0;
     virtual void setDeviceSupportsTouch(bool) = 0;
     virtual void setDoubleTapToZoomEnabled(bool) = 0;
@@ -100,9 +103,7 @@ public:
     virtual void setEditingBehavior(EditingBehavior) = 0;
     virtual void setEnableScrollAnimator(bool) = 0;
     virtual void setEnableTouchAdjustment(bool) = 0;
-    virtual void setExperimentalCSSCustomFilterEnabled(bool) = 0;
     virtual void setRegionBasedColumnsEnabled(bool) = 0;
-    virtual void setCSSStickyPositionEnabled(bool) = 0;
     virtual void setExperimentalWebGLEnabled(bool) = 0;
     virtual void setExperimentalWebSocketEnabled(bool) = 0;
     virtual void setFantasyFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
@@ -122,6 +123,8 @@ public:
     virtual void setLoadsImagesAutomatically(bool) = 0;
     virtual void setLoadWithOverviewMode(bool) = 0;
     virtual void setLocalStorageEnabled(bool) = 0;
+    virtual void setMainFrameClipsContent(bool) = 0;
+    virtual void setMaxTouchPoints(int) = 0;
     virtual void setMediaPlaybackRequiresUserGesture(bool) = 0;
     virtual void setMediaFullscreenRequiresUserGesture(bool) = 0;
     virtual void setMemoryInfoEnabled(bool) = 0;
@@ -141,6 +144,7 @@ public:
     virtual void setPluginsEnabled(bool) = 0;
     virtual void setPrivilegedWebGLExtensionsEnabled(bool) = 0;
     virtual void setRenderVSyncNotificationEnabled(bool) = 0;
+    virtual void setReportScreenSizeInPhysicalPixelsQuirk(bool) = 0;
     virtual void setSansSerifFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setSelectTrailingWhitespaceEnabled(bool) = 0;
     virtual void setSelectionIncludesAltImageText(bool) = 0;
@@ -179,6 +183,7 @@ public:
     virtual void setValidationMessageTimerMagnification(int) = 0;
     virtual void setViewportEnabled(bool) = 0;
     virtual void setViewportMetaLayoutSizeQuirk(bool) = 0;
+    virtual void setViewportMetaMergeContentQuirk(bool) = 0;
     virtual void setViewportMetaZeroValuesQuirk(bool) = 0;
     virtual void setVisualWordMovementEnabled(bool) = 0;
     virtual void setWebAudioEnabled(bool) = 0;
@@ -188,9 +193,6 @@ public:
     virtual void setXSSAuditorEnabled(bool) = 0;
 
     // DEPRECATED: Delete after Chromium-side calls deleted.
-    void setApplyPageScaleFactorInCompositor(bool enabled) { }
-    void setApplyDefaultDeviceScaleFactorInCompositor(bool enabled) { }
-    void setFixedElementsLayoutRelativeToFrame(bool) { }
     void setInitializeAtMinimumPageScale(bool enabled) { setLoadWithOverviewMode(enabled); }
 
 protected:

@@ -22,13 +22,6 @@
 extern MatlabEngine eng;  // Global variable defined elsewhere.
 #endif
 
-// Local for this file.
-namespace {
-
-const float kFracMs = 4.294967296E6f;
-
-}  // namespace
-
 #ifdef _WIN32
 // Disable warning C4355: 'this' : used in base member initializer list.
 #pragma warning(disable : 4355)
@@ -203,13 +196,12 @@ int32_t ModuleRtpRtcpImpl::Process() {
       default_instance = true;
   }
   if (!default_instance) {
+    bool process_rtt = now >= last_rtt_process_time_ + kRtpRtcpRttProcessTimeMs;
     if (rtcp_sender_.Sending()) {
       // Process RTT if we have received a receiver report and we haven't
       // processed RTT for at least |kRtpRtcpRttProcessTimeMs| milliseconds.
       if (rtcp_receiver_.LastReceivedReceiverReport() >
-          last_rtt_process_time_ && now >= last_rtt_process_time_ +
-          kRtpRtcpRttProcessTimeMs) {
-        last_rtt_process_time_ = now;
+          last_rtt_process_time_ && process_rtt) {
         std::vector<RTCPReportBlock> receive_blocks;
         rtcp_receiver_.StatisticsReceived(&receive_blocks);
         uint16_t max_rtt = 0;
@@ -244,7 +236,20 @@ int32_t ModuleRtpRtcpImpl::Process() {
           rtcp_sender_.SetTargetBitrate(target_bitrate);
         }
       }
+    } else {
+      // Report rtt from receiver.
+      if (process_rtt) {
+         uint16_t rtt_ms;
+         if (rtt_observer_ && rtcp_receiver_.GetAndResetXrRrRtt(&rtt_ms)) {
+           rtt_observer_->OnRttUpdate(rtt_ms);
+         }
+      }
     }
+
+    if (process_rtt) {
+      last_rtt_process_time_ = now;
+    }
+
     if (rtcp_sender_.TimeToSendRTCPReport()) {
       RTCPSender::FeedbackState feedback_state(this);
       rtcp_sender_.SendRTCP(feedback_state, kRtcpReport);
@@ -905,11 +910,6 @@ int32_t ModuleRtpRtcpImpl::ResetRTT(const uint32_t remote_ssrc) {
   return rtcp_receiver_.ResetRTT(remote_ssrc);
 }
 
-void ModuleRtpRtcpImpl:: SetRtt(uint32_t rtt) {
-  WEBRTC_TRACE(kTraceModuleCall, kTraceRtpRtcp, id_, "SetRtt(rtt: %u)", rtt);
-  rtcp_receiver_.SetRTT(static_cast<uint16_t>(rtt));
-}
-
 // Reset RTP data counters for the sending side.
 int32_t ModuleRtpRtcpImpl::ResetSendDataCountersRTP() {
   WEBRTC_TRACE(kTraceModuleCall, kTraceRtpRtcp, id_,
@@ -946,6 +946,12 @@ int32_t ModuleRtpRtcpImpl::SetRTCPVoIPMetrics(
   WEBRTC_TRACE(kTraceModuleCall, kTraceRtpRtcp, id_, "SetRTCPVoIPMetrics()");
 
   return  rtcp_sender_.SetRTCPVoIPMetrics(voip_metric);
+}
+
+void ModuleRtpRtcpImpl::SetRtcpXrRrtrStatus(bool enable) {
+  WEBRTC_TRACE(kTraceModuleCall, kTraceRtpRtcp, id_,
+               "SetRtcpXrRrtrStatus(%s)", enable ? "true" : "false");
+  return rtcp_sender_.SendRtcpXrReceiverReferenceTime(enable);
 }
 
 int32_t ModuleRtpRtcpImpl::DataCountersRTP(
@@ -1543,6 +1549,11 @@ uint32_t ModuleRtpRtcpImpl::SendTimeOfSendReport(
   return rtcp_sender_.SendTimeOfSendReport(send_report);
 }
 
+bool ModuleRtpRtcpImpl::SendTimeOfXrRrReport(
+    uint32_t mid_ntp, int64_t* time_ms) const {
+  return rtcp_sender_.SendTimeOfXrRrReport(mid_ntp, time_ms);
+}
+
 void ModuleRtpRtcpImpl::OnReceivedNACK(
     const std::list<uint16_t>& nack_sequence_numbers) {
   if (!rtp_sender_.StorePackets() ||
@@ -1571,6 +1582,11 @@ int32_t ModuleRtpRtcpImpl::LastReceivedNTP(
   }
   remote_sr = ((ntp_secs & 0x0000ffff) << 16) + ((ntp_frac & 0xffff0000) >> 16);
   return 0;
+}
+
+bool ModuleRtpRtcpImpl::LastReceivedXrReferenceTimeInfo(
+    RtcpReceiveTimeInfo* info) const {
+  return rtcp_receiver_.LastReceivedXrReferenceTimeInfo(info);
 }
 
 bool ModuleRtpRtcpImpl::UpdateRTCPReceiveInformationTimers() {

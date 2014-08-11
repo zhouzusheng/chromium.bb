@@ -74,14 +74,6 @@ WebInspector.ResourceScriptMapping.prototype = {
     },
 
     /**
-     * @return {boolean}
-     */
-    isIdentity: function()
-    {
-        return true;
-    },
-
-    /**
      * @param {WebInspector.Script} script
      */
     addScript: function(script)
@@ -89,7 +81,7 @@ WebInspector.ResourceScriptMapping.prototype = {
         if (script.isAnonymousScript())
             return;
         script.pushSourceMapping(this);
-        
+
         var scriptsForSourceURL = script.isInlineScript() ? this._inlineScriptsForSourceURL : this._nonInlineScriptsForSourceURL;
         scriptsForSourceURL.put(script.sourceURL, scriptsForSourceURL.get(script.sourceURL) || []);
         scriptsForSourceURL.get(script.sourceURL).push(script);
@@ -302,6 +294,7 @@ WebInspector.ResourceScriptFile.prototype = {
 
             this._scriptSource = source;
             this._update();
+            WebInspector.LiveEditSupport.logSuccess();
         }
         if (!this._script)
             return;
@@ -417,10 +410,8 @@ WebInspector.ResourceScriptFile.prototype = {
 
         /**
          * @param {?string} source
-         * @param {boolean} encoded
-         * @param {string} contentType
          */
-        function callback(source, encoded, contentType)
+        function callback(source)
         {
             this._scriptSource = source;
             this._update();

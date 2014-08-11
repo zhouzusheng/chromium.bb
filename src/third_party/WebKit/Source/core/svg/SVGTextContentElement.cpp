@@ -28,7 +28,7 @@
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/editing/FrameSelection.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/SVGTextQuery.h"
@@ -119,7 +119,7 @@ float SVGTextContentElement::getSubStringLength(unsigned charnum, unsigned nchar
 
     unsigned numberOfChars = getNumberOfChars();
     if (charnum >= numberOfChars) {
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
         return 0.0f;
     }
 
@@ -134,7 +134,7 @@ SVGPoint SVGTextContentElement::getStartPositionOfChar(unsigned charnum, Excepti
     document().updateLayoutIgnorePendingStylesheets();
 
     if (charnum > getNumberOfChars()) {
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
         return FloatPoint();
     }
 
@@ -146,7 +146,7 @@ SVGPoint SVGTextContentElement::getEndPositionOfChar(unsigned charnum, Exception
     document().updateLayoutIgnorePendingStylesheets();
 
     if (charnum > getNumberOfChars()) {
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
         return FloatPoint();
     }
 
@@ -158,7 +158,7 @@ SVGRect SVGTextContentElement::getExtentOfChar(unsigned charnum, ExceptionState&
     document().updateLayoutIgnorePendingStylesheets();
 
     if (charnum > getNumberOfChars()) {
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
         return SVGRect();
     }
 
@@ -170,7 +170,7 @@ float SVGTextContentElement::getRotationOfChar(unsigned charnum, ExceptionState&
     document().updateLayoutIgnorePendingStylesheets();
 
     if (charnum > getNumberOfChars()) {
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
         return 0.0f;
     }
 
@@ -187,7 +187,7 @@ void SVGTextContentElement::selectSubString(unsigned charnum, unsigned nchars, E
 {
     unsigned numberOfChars = getNumberOfChars();
     if (charnum >= numberOfChars) {
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
         return;
     }
 

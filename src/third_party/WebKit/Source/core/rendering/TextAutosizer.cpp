@@ -29,14 +29,14 @@
 #include "core/html/HTMLMetaElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/page/Settings.h"
-#include "core/platform/chromium/TraceEvent.h"
-#include "core/platform/graphics/IntSize.h"
 #include "core/rendering/RenderListItem.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderText.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/StyleInheritedData.h"
+#include "platform/TraceEvent.h"
+#include "platform/geometry/IntSize.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/Vector.h"
 
@@ -137,10 +137,6 @@ TextAutosizer::TextAutosizer(Document* document)
 {
 }
 
-TextAutosizer::~TextAutosizer()
-{
-}
-
 void TextAutosizer::recalculateMultipliers()
 {
     RenderObject* renderer = m_document->renderer();
@@ -166,11 +162,10 @@ bool TextAutosizer::processSubtree(RenderObject* layoutRoot)
 {
     TRACE_EVENT0("webkit", "TextAutosizer::processSubtree");
 
-    // FIXME: Text Autosizing should only be enabled when m_document->page()->mainFrame()->view()->useFixedLayout()
-    // is true, but for now it's useful to ignore this so that it can be tested on desktop.
     if (!m_document->settings() || !m_document->settings()->textAutosizingEnabled() || layoutRoot->view()->document().printing() || !m_document->page())
         return false;
 
+    InspectorInstrumentation::willAutosizeText(layoutRoot);
     if (m_contentType == Unknown && m_document->body())
         m_contentType = detectContentType();
 
@@ -180,15 +175,13 @@ bool TextAutosizer::processSubtree(RenderObject* layoutRoot)
 
     // Window area, in logical (density-independent) pixels.
     windowInfo.windowSize = m_document->settings()->textAutosizingWindowSizeOverride();
-    if (windowInfo.windowSize.isEmpty()) {
-        bool includeScrollbars = !InspectorInstrumentation::shouldApplyScreenWidthOverride(mainFrame);
-        windowInfo.windowSize = mainFrame->view()->unscaledVisibleContentSize(includeScrollbars ? ScrollableArea::IncludeScrollbars : ScrollableArea::ExcludeScrollbars);
-    }
+    if (windowInfo.windowSize.isEmpty())
+        windowInfo.windowSize = mainFrame->view()->unscaledVisibleContentSize(ScrollableArea::IncludeScrollbars);
 
     // Largest area of block that can be visible at once (assuming the main
     // frame doesn't get scaled to less than overview scale), in CSS pixels.
     windowInfo.minLayoutSize = mainFrame->view()->layoutSize();
-    for (Frame* frame = m_document->frame(); frame; frame = frame->tree()->parent())
+    for (Frame* frame = m_document->frame(); frame; frame = frame->tree().parent())
         windowInfo.minLayoutSize = windowInfo.minLayoutSize.shrunkTo(frame->view()->layoutSize());
 
     // The layoutRoot could be neither a container nor a cluster, so walk up the tree till we find each of these.
@@ -202,6 +195,7 @@ bool TextAutosizer::processSubtree(RenderObject* layoutRoot)
 
     TextAutosizingClusterInfo clusterInfo(cluster);
     processCluster(clusterInfo, container, layoutRoot, windowInfo);
+    InspectorInstrumentation::didAutosizeText(layoutRoot);
     return true;
 }
 
@@ -214,6 +208,12 @@ float TextAutosizer::clusterMultiplier(WritingMode writingMode, const TextAutosi
 
     float multiplier = logicalClusterWidth / logicalWindowWidth;
     multiplier *= m_document->settings()->textAutosizingFontScaleFactor();
+
+    // If the page has a meta viewport or @viewport, don't apply the device scale adjustment.
+    const ViewportDescription& viewportDescription = m_document->page()->mainFrame()->document()->viewportDescription();
+    if (!viewportDescription.isSpecifiedByAuthor()) {
+        multiplier *= m_document->settings()->deviceScaleAdjustment();
+    }
     return std::max(1.0f, multiplier);
 }
 

@@ -31,7 +31,8 @@ class CC_EXPORT DelegatingRenderer : public Renderer {
   virtual void DrawFrame(RenderPassList* render_passes_in_draw_order,
                          ContextProvider* offscreen_context_provider,
                          float device_scale_factor,
-                         bool allow_partial_swap) OVERRIDE;
+                         bool allow_partial_swap,
+                         bool disable_picture_quad_image_filtering) OVERRIDE;
 
   virtual void Finish() OVERRIDE {}
 
@@ -47,8 +48,6 @@ class CC_EXPORT DelegatingRenderer : public Renderer {
   virtual void SendManagedMemoryStats(size_t bytes_visible,
                                       size_t bytes_visible_and_nearby,
                                       size_t bytes_allocated) OVERRIDE;
-
-  virtual void SetDiscardBackBufferWhenNotVisible(bool discard) OVERRIDE;
 
  private:
   DelegatingRenderer(RendererClient* client,

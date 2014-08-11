@@ -248,7 +248,8 @@ public:
     int addSelfT(SkOpSegment* other, const SkPoint& pt, double newT);
     int addT(SkOpSegment* other, const SkPoint& pt, double newT, bool isNear);
     void addTCancel(const SkPoint& startPt, const SkPoint& endPt, SkOpSegment* other);
-    void addTCoincident(const SkPoint& startPt, const SkPoint& endPt, SkOpSegment* other);
+    void addTCoincident(const SkPoint& startPt, const SkPoint& endPt, double endT,
+            SkOpSegment* other);
     void addTPair(double t, SkOpSegment* other, double otherT, bool borrowWind, const SkPoint& pt);
     bool betweenTs(int lesser, double testT, int greater) const;
     void checkEnds();
@@ -258,19 +259,23 @@ public:
                     SkTArray<SkOpAngle, true>* angles, SkTArray<SkOpAngle*, true>* sorted);
     int crossedSpanY(const SkPoint& basePt, SkScalar* bestY, double* hitT, bool* hitSomething,
                      double mid, bool opp, bool current) const;
+    bool findCoincidentMatch(const SkOpSpan* span, const SkOpSegment* other, int oStart, int oEnd,
+                             int step, SkPoint* startPt, SkPoint* endPt, double* endT) const;
     SkOpSegment* findNextOp(SkTDArray<SkOpSpan*>* chase, int* nextStart, int* nextEnd,
                             bool* unsortable, SkPathOp op, const int xorMiMask,
                             const int xorSuMask);
     SkOpSegment* findNextWinding(SkTDArray<SkOpSpan*>* chase, int* nextStart, int* nextEnd,
                                  bool* unsortable);
     SkOpSegment* findNextXor(int* nextStart, int* nextEnd, bool* unsortable);
+    int findT(double t, const SkOpSegment* ) const;
     SkOpSegment* findTop(int* tIndex, int* endIndex, bool* unsortable, bool onlySortable);
     void fixOtherTIndex();
     void initWinding(int start, int end);
     void initWinding(int start, int end, double tHit, int winding, SkScalar hitDx, int oppWind,
                      SkScalar hitOppDx);
-    bool isMissing(double startT) const;
+    bool isMissing(double startT, const SkPoint& pt) const;
     bool isTiny(const SkOpAngle* angle) const;
+    bool joinCoincidence(bool end, SkOpSegment* other, double otherT, int step, bool cancel);
     SkOpSpan* markAndChaseDoneBinary(int index, int endIndex);
     SkOpSpan* markAndChaseDoneUnary(int index, int endIndex);
     SkOpSpan* markAndChaseWinding(const SkOpAngle* angle, int winding, int oppWinding);
@@ -316,7 +321,7 @@ public:
             bool sortable);
 #endif
 #if DEBUG_CONCIDENT
-    void debugShowTs() const;
+    void debugShowTs(const char* prefix) const;
 #endif
 #if DEBUG_SHOW_WINDING
     int debugShowWindingValues(int slotCount, int ofInterest) const;

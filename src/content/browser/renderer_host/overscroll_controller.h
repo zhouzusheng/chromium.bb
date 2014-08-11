@@ -17,7 +17,6 @@ namespace content {
 
 class MockRenderWidgetHost;
 class OverscrollControllerDelegate;
-class RenderWidgetHostImpl;
 
 // Indicates the direction that the scroll is heading in relative to the screen,
 // with the top being NORTH.
@@ -36,17 +35,21 @@ enum OverscrollMode {
 // status accordingly.
 class OverscrollController {
  public:
-  // Creates an overscroll controller for the specified RenderWidgetHost.
-  // The RenderWidgetHost owns this overscroll controller.
-  explicit OverscrollController(RenderWidgetHostImpl* widget_host);
+  OverscrollController();
   virtual ~OverscrollController();
 
+  // The result of |DispatchEvent()|, indicating either how the event was
+  // handled, or how it should be handled by the caller.
+  enum Disposition {
+    CONSUMED,
+    SHOULD_FORWARD_TO_RENDERER,
+    SHOULD_FORWARD_TO_GESTURE_FILTER
+  };
   // This must be called when dispatching any event from the
   // RenderWidgetHostView so that the state of the overscroll gesture can be
   // updated properly.
-  // Returns true if the event should be dispatched, false otherwise.
-  bool WillDispatchEvent(const WebKit::WebInputEvent& event,
-                         const ui::LatencyInfo& latency_info);
+  Disposition DispatchEvent(const WebKit::WebInputEvent& event,
+                            const ui::LatencyInfo& latency_info);
 
   // This must be called when the ACK for any event comes in. This updates the
   // overscroll gesture status as appropriate.
@@ -106,9 +109,6 @@ class OverscrollController {
   // Sets the overscroll mode (and triggers callback in the delegate when
   // appropriate).
   void SetOverscrollMode(OverscrollMode new_mode);
-
-  // The RenderWidgetHost that owns this overscroll controller.
-  RenderWidgetHostImpl* render_widget_host_;
 
   // The current state of overscroll gesture.
   OverscrollMode overscroll_mode_;

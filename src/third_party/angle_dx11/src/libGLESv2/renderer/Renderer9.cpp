@@ -121,8 +121,6 @@ Renderer9::Renderer9(egl::Display *display, HDC hDc, bool softwareDevice) : Rend
 
 Renderer9::~Renderer9()
 {
-    releaseDeviceResources();
-
     if (mDevice)
     {
         // If the device is lost, reset it first to prevent leaving the driver in an unstable state
@@ -130,33 +128,24 @@ Renderer9::~Renderer9()
         {
             resetDevice();
         }
-
-        mDevice->Release();
-        mDevice = NULL;
     }
 
-    if (mDeviceEx)
-    {
-        mDeviceEx->Release();
-        mDeviceEx = NULL;
-    }
+    deinitialize();
+}
 
-    if (mD3d9)
-    {
-        mD3d9->Release();
-        mD3d9 = NULL;
-    }
+void Renderer9::deinitialize()
+{
+    releaseDeviceResources();
+
+    SafeRelease(mDevice);
+    SafeRelease(mDeviceEx);
+    SafeRelease(mD3d9);
+    SafeRelease(mD3d9Ex);
 
     if (mDeviceWindow)
     {
         DestroyWindow(mDeviceWindow);
         mDeviceWindow = NULL;
-    }
-
-    if (mD3d9Ex)
-    {
-        mD3d9Ex->Release();
-        mD3d9Ex = NULL;
     }
 
     if (mD3d9Module)
@@ -2045,31 +2034,19 @@ void Renderer9::releaseDeviceResources()
         mEventQueryPool.pop_back();
     }
 
-    if (mMaskedClearSavedState)
-    {
-        mMaskedClearSavedState->Release();
-        mMaskedClearSavedState = NULL;
-    }
+    SafeRelease(mMaskedClearSavedState);
 
     mVertexShaderCache.clear();
     mPixelShaderCache.clear();
 
-    delete mBlit;
-    mBlit = NULL;
-
-    delete mVertexDataManager;
-    mVertexDataManager = NULL;
-
-    delete mIndexDataManager;
-    mIndexDataManager = NULL;
-
-    delete mLineLoopIB;
-    mLineLoopIB = NULL;
+    SafeDelete(mBlit);
+    SafeDelete(mVertexDataManager);
+    SafeDelete(mIndexDataManager);
+    SafeDelete(mLineLoopIB);
 
     for (int i = 0; i < NUM_NULL_COLORBUFFER_CACHE_ENTRIES; i++)
     {
-        delete mNullColorbufferCache[i].buffer;
-        mNullColorbufferCache[i].buffer = NULL;
+        SafeDelete(mNullColorbufferCache[i].buffer);
     }
 
 }
@@ -2089,22 +2066,8 @@ bool Renderer9::isDeviceLost()
 // set notify to true to broadcast a message to all contexts of the device loss
 bool Renderer9::testDeviceLost(bool notify)
 {
-    HRESULT status = S_OK;
-
-    if (mDeviceEx)
-    {
-        status = mDeviceEx->CheckDeviceState(NULL);
-    }
-    else if (mDevice)
-    {
-        status = mDevice->TestCooperativeLevel();
-    }
-    else
-    {
-        // No device yet, so no reset required
-    }
-
-    bool isLost = FAILED(status) || d3d9::isDeviceLostError(status);
+    HRESULT status = getDeviceStatusCode();
+    bool isLost = (FAILED(status) || d3d9::isDeviceLostError(status));
 
     if (isLost)
     {
@@ -2123,7 +2086,7 @@ bool Renderer9::testDeviceLost(bool notify)
     return isLost;
 }
 
-bool Renderer9::testDeviceResettable()
+HRESULT Renderer9::getDeviceStatusCode()
 {
     HRESULT status = D3D_OK;
 
@@ -2136,9 +2099,14 @@ bool Renderer9::testDeviceResettable()
         status = mDevice->TestCooperativeLevel();
     }
 
+    return status;
+}
+
+bool Renderer9::testDeviceResettable()
+{
     // On D3D9Ex, DEVICELOST represents a hung device that needs to be restarted
     // DEVICEREMOVED indicates the device has been stopped and must be recreated
-    switch (status)
+    switch (getDeviceStatusCode())
     {
       case D3DERR_DEVICENOTRESET:
       case D3DERR_DEVICEHUNG:
@@ -2146,8 +2114,8 @@ bool Renderer9::testDeviceResettable()
       case D3DERR_DEVICELOST:
         return (mDeviceEx != NULL);
       case D3DERR_DEVICEREMOVED:
-        UNIMPLEMENTED();
-        return false;
+        ASSERT(mDeviceEx != NULL);
+        return isRemovedDeviceResettable();
       default:
         return false;
     }
@@ -2161,14 +2129,26 @@ bool Renderer9::resetDevice()
 
     HRESULT result = D3D_OK;
     bool lost = testDeviceLost(false);
-    int attempts = 3;
+    bool removedDevice = (getDeviceStatusCode() == D3DERR_DEVICEREMOVED);
 
-    while (lost && attempts > 0)
+    // Device Removed is a feature which is only present with D3D9Ex
+    ASSERT(mDeviceEx != NULL || !removedDevice);
+
+    for (int attempts = 3; lost && attempts > 0; attempts--)
     {
-        if (mDeviceEx)
+        if (removedDevice)
+        {
+            // Device removed, which may trigger on driver reinstallation,
+            // may cause a longer wait other reset attempts before the
+            // system is ready to handle creating a new device.
+            Sleep(800);
+            lost = !resetRemovedDevice();
+        }
+        else if (mDeviceEx)
         {
             Sleep(500);   // Give the graphics driver some CPU time
             result = mDeviceEx->ResetEx(&presentParameters, NULL);
+            lost = testDeviceLost(false);
         }
         else
         {
@@ -2183,10 +2163,8 @@ bool Renderer9::resetDevice()
             {
                 result = mDevice->Reset(&presentParameters);
             }
+            lost = testDeviceLost(false);
         }
-
-        lost = testDeviceLost(false);
-        attempts --;
     }
 
     if (FAILED(result))
@@ -2195,11 +2173,56 @@ bool Renderer9::resetDevice()
         return false;
     }
 
-    // reset device defaults
-    initializeDevice();
+    if (removedDevice && lost)
+    {
+        ERR("Device lost reset failed multiple times");
+        return false;
+    }
+
+    // If the device was removed, we already finished re-initialization in resetRemovedDevice
+    if (!removedDevice)
+    {
+        // reset device defaults
+        initializeDevice();
+    }
+
     mDeviceLost = false;
 
     return true;
+}
+
+bool Renderer9::isRemovedDeviceResettable() const
+{
+    bool success = false;
+
+#ifdef ANGLE_ENABLE_D3D9EX
+    IDirect3D9Ex *d3d9Ex = NULL;
+    typedef HRESULT (WINAPI *Direct3DCreate9ExFunc)(UINT, IDirect3D9Ex**);
+    Direct3DCreate9ExFunc Direct3DCreate9ExPtr = reinterpret_cast<Direct3DCreate9ExFunc>(GetProcAddress(mD3d9Module, "Direct3DCreate9Ex"));
+
+    if (Direct3DCreate9ExPtr && SUCCEEDED(Direct3DCreate9ExPtr(D3D_SDK_VERSION, &d3d9Ex)))
+    {
+        D3DCAPS9 deviceCaps;
+        HRESULT result = d3d9Ex->GetDeviceCaps(mAdapter, mDeviceType, &deviceCaps);
+        success = SUCCEEDED(result);
+    }
+
+    SafeRelease(d3d9Ex);
+#else
+    ASSERT(UNREACHABLE());
+#endif
+
+    return success;
+}
+
+bool Renderer9::resetRemovedDevice()
+{
+    // From http://msdn.microsoft.com/en-us/library/windows/desktop/bb172554(v=vs.85).aspx:
+    // The hardware adapter has been removed. Application must destroy the device, do enumeration of
+    // adapters and create another Direct3D device. If application continues rendering without
+    // calling Reset, the rendering calls will succeed. Applies to Direct3D 9Ex only.
+    deinitialize();
+    return (initialize() == EGL_SUCCESS);
 }
 
 DWORD Renderer9::getAdapterVendor() const

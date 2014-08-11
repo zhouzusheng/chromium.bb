@@ -38,9 +38,6 @@ public:
     static PassRefPtr<HTMLVideoElement> create(Document& document) { return create(HTMLNames::videoTag, document, false); }
     static PassRefPtr<HTMLVideoElement> create(const QualifiedName&, Document&, bool);
 
-    unsigned width() const;
-    unsigned height() const;
-
     unsigned videoWidth() const;
     unsigned videoHeight() const;
 
@@ -49,11 +46,6 @@ public:
     void webkitExitFullscreen();
     bool webkitSupportsFullscreen();
     bool webkitDisplayingFullscreen();
-
-    // FIXME: Maintain "FullScreen" capitalization scheme for backwards compatibility.
-    // https://bugs.webkit.org/show_bug.cgi?id=36081
-    void webkitEnterFullScreen(ExceptionState& es) { webkitEnterFullscreen(es); }
-    void webkitExitFullScreen() { webkitExitFullscreen(); }
 
     // Statistics
     unsigned webkitDecodedFrameCount() const;
@@ -73,22 +65,22 @@ public:
 private:
     HTMLVideoElement(const QualifiedName&, Document&, bool);
 
-    virtual bool rendererIsNeeded(const RenderStyle&);
-    virtual RenderObject* createRenderer(RenderStyle*);
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
-    virtual bool isVideo() const { return true; }
-    virtual bool hasVideo() const { return player() && player()->hasVideo(); }
-    virtual bool supportsFullscreen() const;
+    virtual bool isVideo() const OVERRIDE { return true; }
+    virtual bool hasVideo() const OVERRIDE { return player() && player()->hasVideo(); }
+    virtual bool supportsFullscreen() const OVERRIDE;
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
     virtual const AtomicString imageSourceURL() const OVERRIDE;
 
-    virtual bool hasAvailableVideoFrame() const;
-    virtual void updateDisplayState();
-    virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
-    virtual void setDisplayMode(DisplayMode);
+    bool hasAvailableVideoFrame() const;
+    virtual void updateDisplayState() OVERRIDE;
+    virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
+    virtual void setDisplayMode(DisplayMode) OVERRIDE;
 
     OwnPtr<HTMLImageLoader> m_imageLoader;
 
@@ -105,11 +97,7 @@ inline bool isHTMLVideoElement(const Element* element)
     return element->hasTagName(HTMLNames::videoTag);
 }
 
-inline HTMLVideoElement* toHTMLVideoElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLVideoElement(node));
-    return static_cast<HTMLVideoElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLVideoElement, hasTagName(HTMLNames::videoTag));
 
 } //namespace
 

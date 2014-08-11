@@ -9,6 +9,7 @@
 #include "base/single_thread_task_runner.h"
 #include "cc/resources/prioritized_resource.h"
 #include "cc/resources/resource_provider.h"
+#include "ui/gfx/frame_time.h"
 
 namespace {
 
@@ -49,8 +50,8 @@ ResourceUpdateController::ResourceUpdateController(
       texture_updates_per_tick_(MaxFullUpdatesPerTick(resource_provider)),
       first_update_attempt_(true),
       task_runner_(task_runner),
-      weak_factory_(this),
-      task_posted_(false) {}
+      task_posted_(false),
+      weak_factory_(this) {}
 
 ResourceUpdateController::~ResourceUpdateController() {}
 
@@ -113,7 +114,7 @@ void ResourceUpdateController::OnTimerFired() {
 }
 
 base::TimeTicks ResourceUpdateController::Now() const {
-  return base::TimeTicks::Now();
+  return gfx::FrameTime::Now();
 }
 
 base::TimeDelta ResourceUpdateController::UpdateMoreTexturesTime() const {

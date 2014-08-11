@@ -16,16 +16,20 @@
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "cc/base/switches.h"
+#include "cc/debug/benchmark_instrumentation.h"
 #include "cc/output/output_surface.h"
 #include "cc/trees/layer_tree_host.h"
 #include "content/child/npapi/webplugin.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
+#include "content/common/gpu/gpu_process_launch_causes.h"
+#include "content/common/input/web_input_event_traits.h"
 #include "content/common/input_messages.h"
 #include "content/common/swapped_out_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
 #include "content/renderer/cursor_utils.h"
+#include "content/renderer/external_popup_menu.h"
 #include "content/renderer/gpu/compositor_output_surface.h"
 #include "content/renderer/gpu/compositor_software_output_device.h"
 #include "content/renderer/gpu/delegated_compositor_output_surface.h"
@@ -37,10 +41,10 @@
 #include "content/renderer/render_process.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
+#include "content/renderer/resizing_mode_selector.h"
 #include "ipc/ipc_sync_message.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
-#include "third_party/WebKit/public/platform/WebPoint.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/WebKit/public/platform/WebString.h"
@@ -53,7 +57,7 @@
 #include "third_party/WebKit/public/web/WebScreenInfo.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "ui/base/ui_base_switches.h"
-#include "ui/gfx/point.h"
+#include "ui/gfx/frame_time.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/skia_util.h"
@@ -80,9 +84,9 @@ using WebKit::WebGestureEvent;
 using WebKit::WebInputEvent;
 using WebKit::WebKeyboardEvent;
 using WebKit::WebMouseEvent;
+using WebKit::WebMouseWheelEvent;
 using WebKit::WebNavigationPolicy;
 using WebKit::WebPagePopup;
-using WebKit::WebPoint;
 using WebKit::WebPopupMenu;
 using WebKit::WebPopupMenuInfo;
 using WebKit::WebPopupType;
@@ -96,50 +100,6 @@ using WebKit::WebVector;
 using WebKit::WebWidget;
 
 namespace {
-const char* GetEventName(WebInputEvent::Type type) {
-#define CASE_TYPE(t) case WebInputEvent::t:  return #t
-  switch(type) {
-    CASE_TYPE(Undefined);
-    CASE_TYPE(MouseDown);
-    CASE_TYPE(MouseUp);
-    CASE_TYPE(MouseMove);
-    CASE_TYPE(MouseEnter);
-    CASE_TYPE(MouseLeave);
-    CASE_TYPE(ContextMenu);
-    CASE_TYPE(MouseWheel);
-    CASE_TYPE(RawKeyDown);
-    CASE_TYPE(KeyDown);
-    CASE_TYPE(KeyUp);
-    CASE_TYPE(Char);
-    CASE_TYPE(GestureScrollBegin);
-    CASE_TYPE(GestureScrollEnd);
-    CASE_TYPE(GestureScrollUpdate);
-    CASE_TYPE(GestureFlingStart);
-    CASE_TYPE(GestureFlingCancel);
-    CASE_TYPE(GestureTap);
-    CASE_TYPE(GestureTapUnconfirmed);
-    CASE_TYPE(GestureTapDown);
-    CASE_TYPE(GestureTapCancel);
-    CASE_TYPE(GestureDoubleTap);
-    CASE_TYPE(GestureTwoFingerTap);
-    CASE_TYPE(GestureLongPress);
-    CASE_TYPE(GestureLongTap);
-    CASE_TYPE(GesturePinchBegin);
-    CASE_TYPE(GesturePinchEnd);
-    CASE_TYPE(GesturePinchUpdate);
-    CASE_TYPE(TouchStart);
-    CASE_TYPE(TouchMove);
-    CASE_TYPE(TouchEnd);
-    CASE_TYPE(TouchCancel);
-    default:
-      // Must include default to let WebKit::WebInputEvent add new event types
-      // before they're added here.
-      DLOG(WARNING) << "Unhandled WebInputEvent type in GetEventName.\n";
-      break;
-  }
-#undef CASE_TYPE
-  return "";
-}
 
 typedef std::map<std::string, ui::TextInputMode> TextInputModeMap;
 
@@ -183,9 +143,192 @@ ui::TextInputMode ConvertInputMode(
   return it->second;
 }
 
+// TODO(brianderson): Replace the hard-coded threshold with a fraction of
+// the BeginMainFrame interval.
+// 4166us will allow 1/4 of a 60Hz interval or 1/2 of a 120Hz interval to
+// be spent in input hanlders before input starts getting throttled.
+const int kInputHandlingTimeThrottlingThresholdMicroseconds = 4166;
+
 }  // namespace
 
 namespace content {
+
+// RenderWidget::ScreenMetricsEmulator ----------------------------------------
+
+class RenderWidget::ScreenMetricsEmulator {
+ public:
+  ScreenMetricsEmulator(
+      RenderWidget* widget,
+      const gfx::Size& device_size,
+      const gfx::Rect& widget_rect,
+      float device_scale_factor,
+      bool fit_to_view);
+  virtual ~ScreenMetricsEmulator();
+
+  float scale() { return scale_; }
+  gfx::Rect widget_rect() const { return widget_rect_; }
+  gfx::Rect original_screen_rect() const { return original_view_screen_rect_; }
+
+  void ChangeEmulationParams(
+      const gfx::Size& device_size,
+      const gfx::Rect& widget_rect,
+      float device_scale_factor,
+      bool fit_to_view);
+
+  // The following methods alter handlers' behavior for messages related to
+  // widget size and position.
+  void OnResizeMessage(const ViewMsg_Resize_Params& params);
+  void OnUpdateScreenRectsMessage(const gfx::Rect& view_screen_rect,
+                                  const gfx::Rect& window_screen_rect);
+  void OnShowContextMenu(ContextMenuParams* params);
+
+ private:
+  void Apply(float overdraw_bottom_height,
+      gfx::Rect resizer_rect, bool is_fullscreen);
+
+  RenderWidget* widget_;
+
+  // Parameters as passed by RenderWidget::EmulateScreenMetrics.
+  gfx::Size device_size_;
+  gfx::Rect widget_rect_;
+  float device_scale_factor_;
+  bool fit_to_view_;
+
+  // The computed scaled used to fit widget into browser window.
+  float scale_;
+
+  // Original values to restore back after emulation ends.
+  gfx::Size original_size_;
+  gfx::Size original_physical_backing_size_;
+  WebKit::WebScreenInfo original_screen_info_;
+  gfx::Rect original_view_screen_rect_;
+  gfx::Rect original_window_screen_rect_;
+};
+
+RenderWidget::ScreenMetricsEmulator::ScreenMetricsEmulator(
+    RenderWidget* widget,
+    const gfx::Size& device_size,
+    const gfx::Rect& widget_rect,
+    float device_scale_factor,
+    bool fit_to_view)
+    : widget_(widget),
+      device_size_(device_size),
+      widget_rect_(widget_rect),
+      device_scale_factor_(device_scale_factor),
+      fit_to_view_(fit_to_view),
+      scale_(1.f) {
+  original_size_ = widget_->size_;
+  original_physical_backing_size_ = widget_->physical_backing_size_;
+  original_screen_info_ = widget_->screen_info_;
+  original_view_screen_rect_ = widget_->view_screen_rect_;
+  original_window_screen_rect_ = widget_->window_screen_rect_;
+  Apply(widget_->overdraw_bottom_height_,
+        widget_->resizer_rect_, widget_->is_fullscreen_);
+}
+
+RenderWidget::ScreenMetricsEmulator::~ScreenMetricsEmulator() {
+  widget_->screen_info_ = original_screen_info_;
+
+  widget_->SetDeviceScaleFactor(original_screen_info_.deviceScaleFactor);
+  widget_->SetScreenMetricsEmulationParameters(0.f, 1.f);
+  widget_->view_screen_rect_ = original_view_screen_rect_;
+  widget_->window_screen_rect_ = original_window_screen_rect_;
+  widget_->Resize(original_size_, original_physical_backing_size_,
+      widget_->overdraw_bottom_height_, widget_->resizer_rect_,
+      widget_->is_fullscreen_, NO_RESIZE_ACK);
+}
+
+void RenderWidget::ScreenMetricsEmulator::ChangeEmulationParams(
+    const gfx::Size& device_size,
+    const gfx::Rect& widget_rect,
+    float device_scale_factor,
+    bool fit_to_view) {
+  device_size_ = device_size;
+  widget_rect_ = widget_rect;
+  device_scale_factor_ = device_scale_factor;
+  fit_to_view_ = fit_to_view;
+  Apply(widget_->overdraw_bottom_height_,
+        widget_->resizer_rect_, widget_->is_fullscreen_);
+}
+
+void RenderWidget::ScreenMetricsEmulator::Apply(
+    float overdraw_bottom_height, gfx::Rect resizer_rect, bool is_fullscreen) {
+  if (fit_to_view_) {
+    DCHECK(!original_size_.IsEmpty());
+
+    // TODO(pfeldman): pass gutter_width along with the fit_to_view flag.
+    int gutter_width = 10;
+    int width_with_gutter =
+        std::max(original_size_.width() - 2 * gutter_width, 1);
+    int height_with_gutter =
+        std::max(original_size_.height() - 2 * gutter_width, 1);
+    float width_ratio =
+        static_cast<float>(widget_rect_.width()) / width_with_gutter;
+    float height_ratio =
+        static_cast<float>(widget_rect_.height()) / height_with_gutter;
+    float ratio = std::max(1.0f, std::max(width_ratio, height_ratio));
+    scale_ = 1.f / ratio;
+  } else {
+    scale_ = 1.f;
+  }
+
+  widget_->screen_info_.rect = gfx::Rect(device_size_);
+  widget_->screen_info_.availableRect = gfx::Rect(device_size_);
+  widget_->screen_info_.deviceScaleFactor = device_scale_factor_;
+
+  // Pass two emulation parameters to the blink side:
+  // - we keep the real device scale factor in compositor to produce sharp image
+  //   even when emulating different scale factor;
+  // - in order to fit into view, WebView applies scaling transform to the
+  //   root layer.
+  widget_->SetScreenMetricsEmulationParameters(
+      original_screen_info_.deviceScaleFactor, scale_);
+
+  widget_->SetDeviceScaleFactor(device_scale_factor_);
+  widget_->view_screen_rect_ = widget_rect_;
+  widget_->window_screen_rect_ = widget_->screen_info_.availableRect;
+
+  gfx::Size physical_backing_size = gfx::ToCeiledSize(gfx::ScaleSize(
+      original_size_, original_screen_info_.deviceScaleFactor));
+  widget_->Resize(widget_rect_.size(), physical_backing_size,
+      overdraw_bottom_height, resizer_rect, is_fullscreen, NO_RESIZE_ACK);
+}
+
+void RenderWidget::ScreenMetricsEmulator::OnResizeMessage(
+    const ViewMsg_Resize_Params& params) {
+  bool need_ack = params.new_size != original_size_ &&
+      !params.new_size.IsEmpty() && !params.physical_backing_size.IsEmpty();
+  original_size_ = params.new_size;
+  original_physical_backing_size_ = params.physical_backing_size;
+  original_screen_info_ = params.screen_info;
+  Apply(params.overdraw_bottom_height, params.resizer_rect,
+        params.is_fullscreen);
+
+  if (need_ack) {
+    widget_->set_next_paint_is_resize_ack();
+    if (widget_->compositor_)
+      widget_->compositor_->SetNeedsRedrawRect(gfx::Rect(widget_->size_));
+  }
+}
+
+void RenderWidget::ScreenMetricsEmulator::OnUpdateScreenRectsMessage(
+    const gfx::Rect& view_screen_rect,
+    const gfx::Rect& window_screen_rect) {
+  original_view_screen_rect_ = view_screen_rect;
+  original_window_screen_rect_ = window_screen_rect;
+}
+
+void RenderWidget::ScreenMetricsEmulator::OnShowContextMenu(
+    ContextMenuParams* params) {
+  // TODO(pfeldman): pass gutter_width along with the fit_to_view flag.
+  int gutter_width = 10;
+  params->x *= scale_;
+  params->x += gutter_width;
+  params->y *= scale_;
+  params->y += gutter_width;
+}
+
+// RenderWidget ---------------------------------------------------------------
 
 RenderWidget::RenderWidget(WebKit::WebPopupType popup_type,
                            const WebKit::WebScreenInfo& screen_info,
@@ -232,6 +375,8 @@ RenderWidget::RenderWidget(WebKit::WebPopupType popup_type,
 #if defined(OS_ANDROID)
       outstanding_ime_acks_(0),
 #endif
+      popup_origin_scale_for_emulation_(0.f),
+      resizing_mode_selector_(new ResizingModeSelector()),
       weak_ptr_factory_(this) {
   if (!swapped_out)
     RenderProcess::current()->AddRefProcess();
@@ -370,6 +515,76 @@ bool RenderWidget::UsingSynchronousRendererCompositor() const {
 #endif
 }
 
+void RenderWidget::EnableScreenMetricsEmulation(
+    const gfx::Size& device_size,
+    const gfx::Rect& widget_rect,
+    float device_scale_factor,
+    bool fit_to_view) {
+  if (!screen_metrics_emulator_) {
+    screen_metrics_emulator_.reset(new ScreenMetricsEmulator(this,
+        device_size, widget_rect, device_scale_factor, fit_to_view));
+  } else {
+    screen_metrics_emulator_->ChangeEmulationParams(device_size,
+        widget_rect, device_scale_factor, fit_to_view);
+  }
+}
+
+void RenderWidget::DisableScreenMetricsEmulation() {
+  screen_metrics_emulator_.reset();
+}
+
+void RenderWidget::SetPopupOriginAdjustmentsForEmulation(
+    ScreenMetricsEmulator* emulator) {
+  popup_origin_scale_for_emulation_ = emulator->scale();
+  popup_view_origin_for_emulation_ = emulator->widget_rect().origin();
+  popup_screen_origin_for_emulation_ =
+      emulator->original_screen_rect().origin();
+}
+
+void RenderWidget::SetScreenMetricsEmulationParameters(
+    float device_scale_factor, float root_layer_scale) {
+  // This is only supported in RenderView.
+  NOTREACHED();
+}
+
+void RenderWidget::SetExternalPopupOriginAdjustmentsForEmulation(
+    ExternalPopupMenu* popup, ScreenMetricsEmulator* emulator) {
+  popup->SetOriginScaleForEmulation(emulator->scale());
+}
+
+void RenderWidget::OnShowHostContextMenu(ContextMenuParams* params) {
+  if (screen_metrics_emulator_)
+    screen_metrics_emulator_->OnShowContextMenu(params);
+}
+
+void RenderWidget::ScheduleCompositeWithForcedRedraw() {
+  if (compositor_) {
+    // Regardless of whether threaded compositing is enabled, always
+    // use this mechanism to force the compositor to redraw. However,
+    // the invalidation code path below is still needed for the
+    // non-threaded case.
+    compositor_->SetNeedsForcedRedraw();
+  }
+  ScheduleCompositeImpl(true);
+}
+
+void RenderWidget::ScheduleCompositeImpl(bool force_redraw) {
+  if (RenderThreadImpl::current()->compositor_message_loop_proxy().get() &&
+      compositor_) {
+    if (!force_redraw) {
+      compositor_->setNeedsRedraw();
+    }
+  } else {
+    // TODO(nduca): replace with something a little less hacky.  The reason this
+    // hack is still used is because the Invalidate-DoDeferredUpdate loop
+    // contains a lot of host-renderer synchronization logic that is still
+    // important for the accelerated compositing case. The option of simply
+    // duplicating all that code is less desirable than "faking out" the
+    // invalidation path using a magical damage rect.
+    didInvalidateRect(WebRect(0, 0, 1, 1));
+  }
+}
+
 bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(RenderWidget, message)
@@ -399,7 +614,6 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_Move_ACK, OnRequestMoveAck)
     IPC_MESSAGE_HANDLER(ViewMsg_UpdateScreenRects, OnUpdateScreenRects)
 #if defined(OS_ANDROID)
-    IPC_MESSAGE_HANDLER(ViewMsg_ImeBatchStateChanged, OnImeBatchStateChanged)
     IPC_MESSAGE_HANDLER(ViewMsg_ShowImeIfNeeded, OnShowImeIfNeeded)
     IPC_MESSAGE_HANDLER(ViewMsg_ImeEventAck, OnImeEventAck)
 #endif
@@ -434,8 +648,7 @@ void RenderWidget::Resize(const gfx::Size& new_size,
                           const gfx::Rect& resizer_rect,
                           bool is_fullscreen,
                           ResizeAck resize_ack) {
-  if (!RenderThreadImpl::current() ||  // Will be NULL during unit tests.
-      !RenderThreadImpl::current()->layout_test_mode()) {
+  if (!resizing_mode_selector_->is_synchronous_mode()) {
     // A resize ack shouldn't be requested if we have not ACK'd the previous
     // one.
     DCHECK(resize_ack != SEND_RESIZE_ACK || !next_paint_is_resize_ack());
@@ -474,14 +687,12 @@ void RenderWidget::Resize(const gfx::Size& new_size,
     // send an ACK if we are resized to a non-empty rect.
     webwidget_->resize(new_size);
 
-    if (!RenderThreadImpl::current() ||  // Will be NULL during unit tests.
-        !RenderThreadImpl::current()->layout_test_mode()) {
+    if (!resizing_mode_selector_->is_synchronous_mode()) {
       // Resize should have caused an invalidation of the entire view.
       DCHECK(new_size.IsEmpty() || is_accelerated_compositing_active_ ||
              paint_aggregator_.HasPendingUpdate());
     }
-  } else if (!RenderThreadImpl::current() ||  // Will be NULL during unit tests.
-             !RenderThreadImpl::current()->layout_test_mode()) {
+  } else if (!resizing_mode_selector_->is_synchronous_mode()) {
     resize_ack = NO_RESIZE_ACK;
   }
 
@@ -501,6 +712,15 @@ void RenderWidget::Resize(const gfx::Size& new_size,
   // If a resize ack is requested and it isn't set-up, then no more resizes will
   // come in and in general things will go wrong.
   DCHECK(resize_ack != SEND_RESIZE_ACK || next_paint_is_resize_ack());
+}
+
+void RenderWidget::ResizeSynchronously(const gfx::Rect& new_position) {
+  Resize(new_position.size(), new_position.size(), overdraw_bottom_height_,
+         gfx::Rect(), is_fullscreen_, NO_RESIZE_ACK);
+  view_screen_rect_ = new_position;
+  window_screen_rect_ = new_position;
+  if (!did_show_)
+    initial_pos_ = new_position;
 }
 
 void RenderWidget::OnClose() {
@@ -533,6 +753,14 @@ void RenderWidget::OnCreatingNewAck() {
 }
 
 void RenderWidget::OnResize(const ViewMsg_Resize_Params& params) {
+  if (resizing_mode_selector_->ShouldAbortOnResize(this, params))
+    return;
+
+  if (screen_metrics_emulator_) {
+    screen_metrics_emulator_->OnResizeMessage(params);
+    return;
+  }
+
   screen_info_ = params.screen_info;
   SetDeviceScaleFactor(screen_info_.deviceScaleFactor);
   Resize(params.new_size, params.physical_backing_size,
@@ -586,6 +814,8 @@ void RenderWidget::OnWasShown(bool needs_repainting) {
   if (!is_accelerated_compositing_active_) {
     didInvalidateRect(gfx::Rect(size_.width(), size_.height()));
   } else {
+    if (compositor_)
+      compositor_->SetNeedsForcedRedraw();
     scheduleComposite();
   }
 }
@@ -828,7 +1058,12 @@ void RenderWidget::OnHandleInputEvent(const WebKit::WebInputEvent* input_event,
     return;
   }
 
-  const char* const event_name = GetEventName(input_event->type);
+  base::TimeTicks start_time;
+  if (base::TimeTicks::IsHighResNowFastAndReliable())
+    start_time = base::TimeTicks::HighResNow();
+
+  const char* const event_name =
+      WebInputEventTraits::GetName(input_event->type);
   TRACE_EVENT1("renderer", "RenderWidget::OnHandleInputEvent",
                "event", event_name);
 
@@ -906,20 +1141,35 @@ void RenderWidget::OnHandleInputEvent(const WebKit::WebInputEvent* input_event,
                                             input_event->type,
                                             ack_result,
                                             latency_info);
-  bool event_type_gets_rate_limited =
+  bool event_type_can_be_rate_limited =
       input_event->type == WebInputEvent::MouseMove ||
       input_event->type == WebInputEvent::MouseWheel ||
-      WebInputEvent::isTouchEventType(input_event->type);
+      input_event->type == WebInputEvent::TouchMove;
 
   bool frame_pending = paint_aggregator_.HasPendingUpdate();
   if (is_accelerated_compositing_active_) {
     frame_pending = compositor_ &&
-                    compositor_->commitRequested();
+                    compositor_->BeginMainFrameRequested();
   }
 
-  if (event_type_gets_rate_limited && frame_pending && !is_hidden_) {
+  // If we don't have a fast and accurate HighResNow, we assume the input
+  // handlers are heavy and rate limit them.
+  bool rate_limiting_wanted = true;
+  if (base::TimeTicks::IsHighResNowFastAndReliable()) {
+      base::TimeTicks end_time = base::TimeTicks::HighResNow();
+      total_input_handling_time_this_frame_ += (end_time - start_time);
+      rate_limiting_wanted =
+          total_input_handling_time_this_frame_.InMicroseconds() >
+          kInputHandlingTimeThrottlingThresholdMicroseconds;
+  }
+
+  if (rate_limiting_wanted && event_type_can_be_rate_limited &&
+      frame_pending && !is_hidden_) {
     // We want to rate limit the input events in this case, so we'll wait for
     // painting to finish before ACKing this message.
+    TRACE_EVENT_INSTANT0("renderer",
+      "RenderWidget::OnHandleInputEvent ack throttled",
+      TRACE_EVENT_SCOPE_THREAD);
     if (pending_input_event_ack_) {
       // As two different kinds of events could cause us to postpone an ack
       // we send it now, if we have one pending. The Browser should never
@@ -1175,11 +1425,15 @@ void RenderWidget::InvalidationCallback() {
   DoDeferredUpdateAndSendInputAck();
 }
 
-void RenderWidget::DoDeferredUpdateAndSendInputAck() {
-  DoDeferredUpdate();
-
+void RenderWidget::FlushPendingInputEventAck() {
   if (pending_input_event_ack_)
     Send(pending_input_event_ack_.release());
+  total_input_handling_time_this_frame_ = base::TimeDelta();
+}
+
+void RenderWidget::DoDeferredUpdateAndSendInputAck() {
+  DoDeferredUpdate();
+  FlushPendingInputEventAck();
 }
 
 void RenderWidget::DoDeferredUpdate() {
@@ -1212,7 +1466,7 @@ void RenderWidget::DoDeferredUpdate() {
   }
 
   // Tracking of frame rate jitter
-  base::TimeTicks frame_begin_ticks = base::TimeTicks::Now();
+  base::TimeTicks frame_begin_ticks = gfx::FrameTime::Now();
   InstrumentWillBeginFrame();
   AnimateIfNeeded();
 
@@ -1271,9 +1525,9 @@ void RenderWidget::DoDeferredUpdate() {
   last_do_deferred_update_time_ = frame_begin_ticks;
 
   if (!is_accelerated_compositing_active_) {
-    legacy_software_mode_stats_->IncrementAnimationFrameCount();
-    legacy_software_mode_stats_->IncrementScreenFrameCount(1, true);
-    legacy_software_mode_stats_->IssueTraceEventForMainThreadStats();
+    legacy_software_mode_stats_->IncrementFrameCount(1, true);
+    cc::BenchmarkInstrumentation::IssueMainThreadRenderingStatsEvent(
+        legacy_software_mode_stats_->main_thread_rendering_stats());
     legacy_software_mode_stats_->AccumulateAndClearMainThreadStats();
   }
 
@@ -1284,9 +1538,6 @@ void RenderWidget::DoDeferredUpdate() {
 
   gfx::Rect scroll_damage = update.GetScrollDamage();
   gfx::Rect bounds = gfx::UnionRects(update.GetPaintBounds(), scroll_damage);
-
-  // Notify derived classes that we're about to initiate a paint.
-  WillInitiatePaint();
 
   // A plugin may be able to do an optimized paint. First check this, in which
   // case we can skip all of the bitmap generation and regular paint code.
@@ -1404,8 +1655,7 @@ void RenderWidget::DoDeferredUpdate() {
   // UpdateReply message so we can receive another input event before the
   // UpdateRect_ACK on platforms where the UpdateRect_ACK is sent from within
   // the UpdateRect IPC message handler.
-  if (pending_input_event_ack_)
-    Send(pending_input_event_ack_.release());
+  FlushPendingInputEventAck();
 
   // If Composite() called SwapBuffers, pending_update_params_ will be reset (in
   // OnSwapBuffersPosted), meaning a message has been added to the
@@ -1518,7 +1768,7 @@ void RenderWidget::didAutoResize(const WebSize& new_size) {
     // with invalid damage rects.
     paint_aggregator_.ClearPendingUpdate();
 
-    if (RenderThreadImpl::current()->layout_test_mode()) {
+    if (resizing_mode_selector_->is_synchronous_mode()) {
       WebRect new_pos(rootWindowRect().x,
                       rootWindowRect().y,
                       new_size.width,
@@ -1529,7 +1779,7 @@ void RenderWidget::didAutoResize(const WebSize& new_size) {
 
     AutoResizeCompositor();
 
-    if (!RenderThreadImpl::current()->layout_test_mode())
+    if (!resizing_mode_selector_->is_synchronous_mode())
       need_update_rect_for_auto_resize_ = true;
   }
 }
@@ -1620,14 +1870,11 @@ void RenderWidget::willBeginCompositorFrame() {
   UpdateTextInputState(false, true);
 #endif
   UpdateSelectionBounds();
-
-  WillInitiatePaint();
 }
 
 void RenderWidget::didBecomeReadyForAdditionalInput() {
   TRACE_EVENT0("renderer", "RenderWidget::didBecomeReadyForAdditionalInput");
-  if (pending_input_event_ack_)
-    Send(pending_input_event_ack_.release());
+  FlushPendingInputEventAck();
 }
 
 void RenderWidget::DidCommitCompositorFrame() {
@@ -1672,18 +1919,7 @@ void RenderWidget::didCompleteSwapBuffers() {
 }
 
 void RenderWidget::scheduleComposite() {
-  if (RenderThreadImpl::current()->compositor_message_loop_proxy().get() &&
-      compositor_) {
-    compositor_->setNeedsRedraw();
-  } else {
-    // TODO(nduca): replace with something a little less hacky.  The reason this
-    // hack is still used is because the Invalidate-DoDeferredUpdate loop
-    // contains a lot of host-renderer synchronization logic that is still
-    // important for the accelerated compositing case. The option of simply
-    // duplicating all that code is less desirable than "faking out" the
-    // invalidation path using a magical damage rect.
-    didInvalidateRect(WebRect(0, 0, 1, 1));
-  }
+  ScheduleCompositeImpl(false);
 }
 
 void RenderWidget::scheduleAnimation() {
@@ -1730,14 +1966,6 @@ void RenderWidget::show(WebNavigationPolicy) {
   // process will impose a default position otherwise.
   Send(new ViewHostMsg_ShowWidget(opener_id_, routing_id_, initial_pos_));
   SetPendingWindowRect(initial_pos_);
-}
-
-void RenderWidget::didProgrammaticallyScroll(
-    const WebKit::WebPoint& scroll_point) {
-  if (!compositor_)
-    return;
-  Send(new ViewHostMsg_DidProgrammaticallyScroll(
-    routing_id_, gfx::Vector2d(scroll_point.x, scroll_point.y)));
 }
 
 void RenderWidget::didFocus() {
@@ -1792,20 +2020,25 @@ void RenderWidget::setToolTipText(const WebKit::WebString& text,
   Send(new ViewHostMsg_SetTooltipText(routing_id_, text, hint));
 }
 
-void RenderWidget::setWindowRect(const WebRect& pos) {
-  if (did_show_) {
-    if (!RenderThreadImpl::current()->layout_test_mode()) {
+void RenderWidget::setWindowRect(const WebRect& rect) {
+  WebRect pos = rect;
+  if (popup_origin_scale_for_emulation_) {
+    float scale = popup_origin_scale_for_emulation_;
+    pos.x = popup_screen_origin_for_emulation_.x() +
+        (pos.x - popup_view_origin_for_emulation_.x()) * scale;
+    pos.y = popup_screen_origin_for_emulation_.y() +
+        (pos.y - popup_view_origin_for_emulation_.y()) * scale;
+  }
+
+  if (!resizing_mode_selector_->is_synchronous_mode()) {
+    if (did_show_) {
       Send(new ViewHostMsg_RequestMove(routing_id_, pos));
       SetPendingWindowRect(pos);
     } else {
-      WebSize new_size(pos.width, pos.height);
-      Resize(new_size, new_size, overdraw_bottom_height_,
-             WebRect(), is_fullscreen_, NO_RESIZE_ACK);
-      view_screen_rect_ = pos;
-      window_screen_rect_ = pos;
+      initial_pos_ = pos;
     }
   } else {
-    initial_pos_ = pos;
+    ResizeSynchronously(pos);
   }
 }
 
@@ -2033,18 +2266,21 @@ void RenderWidget::OnSetTextDirection(WebTextDirection direction) {
 
 void RenderWidget::OnUpdateScreenRects(const gfx::Rect& view_screen_rect,
                                        const gfx::Rect& window_screen_rect) {
-  view_screen_rect_ = view_screen_rect;
-  window_screen_rect_ = window_screen_rect;
+  if (screen_metrics_emulator_) {
+    screen_metrics_emulator_->OnUpdateScreenRectsMessage(
+        view_screen_rect, window_screen_rect);
+  } else {
+    view_screen_rect_ = view_screen_rect;
+    window_screen_rect_ = window_screen_rect;
+  }
+
   if (webwidget_)
     webwidget_->didChangeWindowRect();
+
   Send(new ViewHostMsg_UpdateScreenRects_ACK(routing_id()));
 }
 
 #if defined(OS_ANDROID)
-void RenderWidget::OnImeBatchStateChanged(bool is_begin) {
-  Send(new ViewHostMsg_ImeBatchStateChanged_ACK(routing_id(), is_begin));
-}
-
 void RenderWidget::OnShowImeIfNeeded() {
   UpdateTextInputState(true, true);
 }
@@ -2184,8 +2420,16 @@ void RenderWidget::FinishHandlingImeEvent() {
 }
 
 void RenderWidget::UpdateTextInputType() {
+  // On Windows, not only an IME but also an on-screen keyboard relies on the
+  // latest TextInputType to optimize its layout and functionality. Thus
+  // |input_method_is_active_| is no longer an appropriate condition to suppress
+  // TextInputTypeChanged IPC on Windows.
+  // TODO(yukawa, yoichio): Consider to stop checking |input_method_is_active_|
+  // on other platforms as well as Windows if the overhead is acceptable.
+#if !defined(OS_WIN)
   if (!input_method_is_active_)
     return;
+#endif
 
   ui::TextInputType new_type = GetTextInputType();
   if (IsDateTimeInput(new_type))
@@ -2552,13 +2796,15 @@ RenderWidget::CreateGraphicsContext3D(
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableGpuCompositing))
     return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
-  scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context(
-      new WebGraphicsContext3DCommandBufferImpl(
-          surface_id(),
-          GetURLForGraphicsContext3D(),
-          RenderThreadImpl::current(),
-          weak_ptr_factory_.GetWeakPtr()));
+  if (!RenderThreadImpl::current())
+    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
+  scoped_refptr<GpuChannelHost> gpu_channel_host(
+      RenderThreadImpl::current()->EstablishGpuChannelSync(
+          CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE));
+  if (!gpu_channel_host)
+    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
 
+  WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits limits;
 #if defined(OS_ANDROID)
   // If we raster too fast we become upload bound, and pending
   // uploads consume memory. For maximum upload throughput, we would
@@ -2578,22 +2824,24 @@ RenderWidget::CreateGraphicsContext3D(
   static const size_t kBytesPerMegabyte = 1024 * 1024;
   // We keep the MappedMemoryReclaimLimit the same as the upload limit
   // to avoid unnecessarily stalling the compositor thread.
-  const size_t mapped_memory_reclaim_limit =
+  limits.mapped_memory_reclaim_limit =
       max_transfer_buffer_usage_mb * kBytesPerMegabyte;
-#else
-  const size_t mapped_memory_reclaim_limit =
-      WebGraphicsContext3DCommandBufferImpl::kNoLimit;
 #endif
-  if (!context->Initialize(
+
+  base::WeakPtr<WebGraphicsContext3DSwapBuffersClient> swap_client;
+
+  if (!is_threaded_compositing_enabled_)
+    swap_client = weak_ptr_factory_.GetWeakPtr();
+
+  scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context(
+      new WebGraphicsContext3DCommandBufferImpl(
+          surface_id(),
+          GetURLForGraphicsContext3D(),
+          gpu_channel_host.get(),
+          swap_client,
           attributes,
           false /* bind generates resources */,
-          CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE,
-          kDefaultCommandBufferSize,
-          kDefaultStartTransferBufferSize,
-          kDefaultMinTransferBufferSize,
-          kDefaultMaxTransferBufferSize,
-          mapped_memory_reclaim_limit))
-    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
+          limits));
   return context.Pass();
 }
 

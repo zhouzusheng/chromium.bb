@@ -158,7 +158,7 @@ void RenderTextControl::hitInnerTextElement(HitTestResult& result, const LayoutP
     result.setLocalPoint(localPoint);
 }
 
-static const char* fontFamiliesWithInvalidCharWidth[] = {
+static const char* const fontFamiliesWithInvalidCharWidth[] = {
     "American Typewriter",
     "Arial Hebrew",
     "Chalkboard",
@@ -293,11 +293,6 @@ RenderObject* RenderTextControl::layoutSpecialExcludedChild(bool relayoutChildre
     if (relayoutChildren)
         layoutScope.setChildNeedsLayout(placeholderRenderer);
     return placeholderRenderer;
-}
-
-bool RenderTextControl::canBeReplacedWithInlineRunIn() const
-{
-    return false;
 }
 
 } // namespace WebCore

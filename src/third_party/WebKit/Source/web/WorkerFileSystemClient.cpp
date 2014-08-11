@@ -33,10 +33,11 @@
 
 #include "WebWorkerBase.h"
 #include "WorkerAllowMainThreadBridgeBase.h"
-#include "core/dom/ScriptExecutionContext.h"
-#include "core/platform/AsyncFileSystemCallbacks.h"
+#include "WorkerPermissionClient.h"
+#include "core/dom/ExecutionContext.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerThread.h"
+#include "platform/AsyncFileSystemCallbacks.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebFileError.h"
 #include "public/platform/WebFileSystem.h"
@@ -85,9 +86,15 @@ WorkerFileSystemClient::~WorkerFileSystemClient()
 {
 }
 
-bool WorkerFileSystemClient::allowFileSystem(ScriptExecutionContext* context)
+bool WorkerFileSystemClient::allowFileSystem(ExecutionContext* context)
 {
     WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
+    WorkerPermissionClient* permissionClient = WorkerPermissionClient::from(workerGlobalScope);
+    if (permissionClient->proxy())
+        return permissionClient->allowFileSystem();
+
+    // FIXME: Deprecate this bridge code when PermissionClientProxy is
+    // implemented by the embedder.
     WebCore::WorkerThread* workerThread = workerGlobalScope->thread();
     WorkerRunLoop& runLoop = workerThread->runLoop();
     WebCore::WorkerLoaderProxy* workerLoaderProxy = &workerThread->workerLoaderProxy();

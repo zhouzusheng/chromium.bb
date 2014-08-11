@@ -28,6 +28,7 @@
 #include "config.h"
 #include "weborigin/KURL.h"
 
+#include "weborigin/KnownPorts.h"
 #include "wtf/HashMap.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/CString.h"
@@ -42,8 +43,8 @@
 
 namespace WebCore {
 
-static const unsigned maximumValidPortNumber = 0xFFFE;
-static const unsigned invalidPortNumber = 0xFFFF;
+static const int maximumValidPortNumber = 0xFFFE;
+static const int invalidPortNumber = 0xFFFF;
 
 static void assertProtocolIsGood(const char* protocol)
 {
@@ -443,28 +444,47 @@ void KURL::setHost(const String& host)
     replaceComponents(replacements);
 }
 
+static String parsePortFromStringPosition(const String& value, unsigned portStart)
+{
+    // "008080junk" needs to be treated as port "8080" and "000" as "0".
+    size_t length = value.length();
+    unsigned portEnd = portStart;
+    while (isASCIIDigit(value[portEnd]) && portEnd < length)
+        ++portEnd;
+    while (value[portStart] == '0' && portStart < portEnd - 1)
+        ++portStart;
+
+    // Required for backwards compat.
+    // https://www.w3.org/Bugs/Public/show_bug.cgi?id=23463
+    if (portStart == portEnd)
+        return "0";
+
+    return value.substring(portStart, portEnd - portStart);
+}
+
 void KURL::setHostAndPort(const String& hostAndPort)
 {
-    String host = hostAndPort;
-    String port;
-    int hostEnd = hostAndPort.find(":");
-    if (hostEnd != -1) {
-        host = hostAndPort.left(hostEnd);
-        port = hostAndPort.substring(hostEnd + 1);
+    size_t separator = hostAndPort.find(':');
+    if (!separator)
+        return;
+
+    if (separator == kNotFound) {
+        url_canon::Replacements<char> replacements;
+        StringUTF8Adaptor hostUTF8(hostAndPort);
+        replacements.SetHost(charactersOrEmpty(hostUTF8), url_parse::Component(0, hostUTF8.length()));
+        replaceComponents(replacements);
+        return;
     }
+
+    String host = hostAndPort.substring(0, separator);
+    String port = parsePortFromStringPosition(hostAndPort, separator + 1);
 
     StringUTF8Adaptor hostUTF8(host);
     StringUTF8Adaptor portUTF8(port);
 
     url_canon::Replacements<char> replacements;
-    // Host can't be removed, so we always set.
     replacements.SetHost(charactersOrEmpty(hostUTF8), url_parse::Component(0, hostUTF8.length()));
-
-    if (!portUTF8.length()) // Port may be removed, so we support clearing.
-        replacements.ClearPort();
-    else
-        replacements.SetPort(charactersOrEmpty(portUTF8), url_parse::Component(0, portUTF8.length()));
-
+    replacements.SetPort(charactersOrEmpty(portUTF8), url_parse::Component(0, portUTF8.length()));
     replaceComponents(replacements);
 }
 
@@ -477,9 +497,20 @@ void KURL::removePort()
     replaceComponents(replacements);
 }
 
-void KURL::setPort(unsigned short i)
+void KURL::setPort(const String& port)
 {
-    String portString = String::number(i);
+    String parsedPort = parsePortFromStringPosition(port, 0);
+    setPort(parsedPort.toUInt());
+}
+
+void KURL::setPort(unsigned short port)
+{
+    if (isDefaultPortForProtocol(port, protocol())) {
+        removePort();
+        return;
+    }
+
+    String portString = String::number(port);
     ASSERT(portString.is8Bit());
 
     url_canon::Replacements<char> replacements;

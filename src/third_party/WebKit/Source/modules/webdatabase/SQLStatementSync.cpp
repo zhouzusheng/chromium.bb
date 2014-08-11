@@ -32,9 +32,9 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/platform/sql/SQLValue.h"
-#include "core/platform/sql/SQLiteDatabase.h"
-#include "core/platform/sql/SQLiteStatement.h"
+#include "modules/webdatabase/sqlite/SQLValue.h"
+#include "modules/webdatabase/sqlite/SQLiteDatabase.h"
+#include "modules/webdatabase/sqlite/SQLiteStatement.h"
 #include "modules/webdatabase/DatabaseSync.h"
 #include "modules/webdatabase/SQLError.h"
 #include "modules/webdatabase/SQLResultSet.h"
@@ -61,7 +61,7 @@ PassRefPtr<SQLResultSet> SQLStatementSync::execute(DatabaseSync* db, ExceptionSt
     int result = statement.prepare();
     if (result != SQLResultOk) {
         if (result == SQLResultInterrupt)
-            es.throwDOMException(SQLDatabaseError);
+            es.throwUninformativeAndGenericDOMException(SQLDatabaseError);
         else
             es.throwDOMException(SyntaxError, SQLError::syntaxErrorMessage);
         db->setLastErrorMessage("could not prepare statement", result, database->lastErrorMsg());
@@ -70,7 +70,7 @@ PassRefPtr<SQLResultSet> SQLStatementSync::execute(DatabaseSync* db, ExceptionSt
 
     if (statement.bindParameterCount() != m_arguments.size()) {
         if (db->isInterrupted())
-            es.throwDOMException(SQLDatabaseError);
+            es.throwUninformativeAndGenericDOMException(SQLDatabaseError);
         else
             es.throwDOMException(SyntaxError, SQLError::syntaxErrorMessage);
         db->setLastErrorMessage("number of '?'s in statement string does not match argument count");
@@ -86,7 +86,7 @@ PassRefPtr<SQLResultSet> SQLStatementSync::execute(DatabaseSync* db, ExceptionSt
         }
 
         if (result != SQLResultOk) {
-            es.throwDOMException(SQLDatabaseError);
+            es.throwUninformativeAndGenericDOMException(SQLDatabaseError);
             db->setLastErrorMessage("could not bind value", result, database->lastErrorMsg());
             return 0;
         }
@@ -111,7 +111,7 @@ PassRefPtr<SQLResultSet> SQLStatementSync::execute(DatabaseSync* db, ExceptionSt
         } while (result == SQLResultRow);
 
         if (result != SQLResultDone) {
-            es.throwDOMException(SQLDatabaseError);
+            es.throwUninformativeAndGenericDOMException(SQLDatabaseError);
             db->setLastErrorMessage("could not iterate results", result, database->lastErrorMsg());
             return 0;
         }
@@ -129,7 +129,7 @@ PassRefPtr<SQLResultSet> SQLStatementSync::execute(DatabaseSync* db, ExceptionSt
         db->setLastErrorMessage("statement failed due to a constraint failure");
         return 0;
     } else {
-        es.throwDOMException(SQLDatabaseError);
+        es.throwUninformativeAndGenericDOMException(SQLDatabaseError);
         db->setLastErrorMessage("could not execute statement", result, database->lastErrorMsg());
         return 0;
     }

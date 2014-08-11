@@ -47,8 +47,7 @@ namespace blpwtk2 {
 class ManagedRenderProcessHost {
   public:
     ManagedRenderProcessHost(base::ProcessHandle processHandle,
-                             content::BrowserContext* browserContext,
-                             bool usesInProcessPlugins);
+                             content::BrowserContext* browserContext);
     ~ManagedRenderProcessHost();
 
     int id() const;

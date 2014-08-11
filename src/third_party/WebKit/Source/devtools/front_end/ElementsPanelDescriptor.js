@@ -30,6 +30,7 @@
  * @constructor
  * @extends {WebInspector.PanelDescriptor}
  * @implements {WebInspector.ContextMenu.Provider}
+ * @implements {WebInspector.ViewFactory}
  */
 WebInspector.ElementsPanelDescriptor = function()
 {
@@ -83,6 +84,25 @@ WebInspector.ElementsPanelDescriptor.prototype = {
 
         stylesPaneSection.addAlternateKeys(WebInspector.ElementsPanelDescriptor.ShortcutKeys.IncrementBy01, WebInspector.UIString("Increment by %f", 0.1));
         stylesPaneSection.addAlternateKeys(WebInspector.ElementsPanelDescriptor.ShortcutKeys.DecrementBy01, WebInspector.UIString("Decrement by %f", 0.1));
+
+        function toggleEmulationView()
+        {
+            if (WebInspector.settings.showEmulationViewInDrawer.get())
+                WebInspector.inspectorView.registerViewInDrawer("emulation", WebInspector.UIString("Emulation"), this);
+            else
+                WebInspector.inspectorView.unregisterViewInDrawer("emulation");
+        }
+        WebInspector.settings.showEmulationViewInDrawer.addChangeListener(toggleEmulationView, this);
+        toggleEmulationView.call(this);
+    },
+
+    /**
+     * @param {string=} id
+     * @return {WebInspector.View}
+     */
+    createView: function(id)
+    {
+        return this.panel().createView(id);
     },
 
     __proto__: WebInspector.PanelDescriptor.prototype

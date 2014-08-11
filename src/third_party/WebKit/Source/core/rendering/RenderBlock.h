@@ -507,6 +507,10 @@ private:
     LayoutUnit adjustLogicalRightOffsetForLine(LayoutUnit offsetFromFloats, bool applyTextIndent) const;
     LayoutUnit adjustLogicalLeftOffsetForLine(LayoutUnit offsetFromFloats, bool applyTextIndent) const;
 
+    LayoutUnit adjustLogicalTopForSpanningHeader(RenderBox* child,
+                                                 ColumnInfo* colInfo,
+                                                 LayoutUnit logicalTop);
+
     void computeShapeSize();
     void updateRegionsAndShapesAfterChildLayout(RenderFlowThread*, bool);
     void updateShapeInsideInfoAfterStyleChange(const ShapeValue*, const ShapeValue* oldShape);

@@ -55,6 +55,7 @@ public:
 
     float m_width;
     unsigned short m_count;
+    unsigned short m_columnSpanCount;
     float m_gap;
     BorderValue m_rule;
     Color m_visitedLinkColumnRuleColor;
@@ -63,7 +64,7 @@ public:
     bool m_autoCount : 1;
     bool m_normalGap : 1;
     unsigned m_fill : 1; // ColumnFill
-    unsigned m_columnSpan : 1;
+    unsigned m_spanAllColumns : 1;
     unsigned m_breakBefore : 2; // EPageBreak
     unsigned m_breakAfter : 2; // EPageBreak
     unsigned m_breakInside : 2; // EPageBreak

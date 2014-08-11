@@ -101,8 +101,13 @@ const std::string& ProcessHostImpl::channelId() const
 std::string ProcessHostImpl::channelInfo() const
 {
     CommandLine commandLine(CommandLine::NO_PROGRAM);
-    content::RenderProcessHost::AdjustCommandLineForInProcessRenderer(
-        &commandLine);
+
+    // TODO(SHEZ): We are missing kDisableDatabases for incognito profiles
+    //             because we don't know yet which profile will be used for the
+    //             in-process renderer.  We need to either have the profile
+    //             specified upfront, or we need to handle kDisableDatabases
+    //             once the profile is known.
+    content::RenderProcessHost::AdjustCommandLineForRenderer(&commandLine);
 
     ChannelInfo channelInfo;
     channelInfo.d_channelId = channelId();

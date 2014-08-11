@@ -864,6 +864,28 @@ static void AppendGpuCommandLineFlags(CommandLine* command_line) {
 
 void RenderProcessHostImpl::AppendRendererCommandLine(
     CommandLine* command_line) const {
+  RenderProcessHost::AdjustCommandLineForRenderer(command_line);
+
+  // Disable databases in incognito mode.
+  if (GetBrowserContext()->IsOffTheRecord() &&
+      command_line->HasSwitch(switches::kDisableDatabases)) {
+    command_line->AppendSwitch(switches::kDisableDatabases);
+#if defined(OS_ANDROID)
+    command_line->AppendSwitch(switches::kDisableMediaHistoryLogging);
+#endif
+  }
+
+  GetContentClient()->browser()->AppendExtraCommandLineSwitches(
+      command_line, GetID());
+}
+
+static void PropagateBrowserCommandLineToRenderer(
+    const CommandLine& browser_cmd,
+    CommandLine* renderer_cmd);
+
+// static
+void RenderProcessHost::AdjustCommandLineForRenderer(
+    CommandLine* command_line) {
   // Pass the process type first, so it shows first in process listings.
   command_line->AppendSwitchASCII(switches::kProcessType,
                                   switches::kRendererProcess);
@@ -887,15 +909,12 @@ void RenderProcessHostImpl::AppendRendererCommandLine(
                                     field_trial_states);
   }
 
-  GetContentClient()->browser()->AppendExtraCommandLineSwitches(
-      command_line, GetID());
-
   AppendGpuCommandLineFlags(command_line);
 }
 
-void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+static void PropagateBrowserCommandLineToRenderer(
     const CommandLine& browser_cmd,
-    CommandLine* renderer_cmd) const {
+    CommandLine* renderer_cmd) {
   // Propagate the following switches to the renderer command line (along
   // with any associated values) if present in the browser command line.
   static const char* const kSwitchNames[] = {
@@ -1116,15 +1135,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     renderer_cmd->AppendSwitchASCII(
         switches::kTraceStartup,
         browser_cmd.GetSwitchValueASCII(switches::kTraceStartup));
-  }
-
-  // Disable databases in incognito mode.
-  if (GetBrowserContext()->IsOffTheRecord() &&
-      !browser_cmd.HasSwitch(switches::kDisableDatabases)) {
-    renderer_cmd->AppendSwitch(switches::kDisableDatabases);
-#if defined(OS_ANDROID)
-    renderer_cmd->AppendSwitch(switches::kDisableMediaHistoryLogging);
-#endif
   }
 
   // Enforce the extra command line flags for impl-side painting.

@@ -1561,6 +1561,16 @@ bool RenderBlock::expandsToEncloseOverhangingFloats() const
            || hasColumns() || isTableCell() || isTableCaption() || isFieldset() || isWritingModeRoot() || isRoot();
 }
 
+LayoutUnit RenderBlock::additionalMarginStart() const
+{
+    if (isInline() || !parent() || parent()->childrenInline() || !parent()->node() || (!parent()->node()->hasTagName(ulTag) && !parent()->node()->hasTagName(olTag))) {
+        return 0;
+    }
+
+    RenderBox *previousBox = previousSiblingBox();
+    return previousBox ? previousBox->additionalMarginStart() : 40;
+}
+
 LayoutUnit RenderBlock::computeStartPositionDeltaForChildAvoidingFloats(const RenderBox* child, LayoutUnit childMarginStart, RenderRegion* region)
 {
     LayoutUnit startPosition = startOffsetForContent(region);
@@ -2637,11 +2647,17 @@ LayoutUnit RenderBlock::logicalLeftSelectionOffset(RenderBlock* rootBlock, Layou
     if (logicalLeft == logicalLeftOffsetForContent()) {
         if (rootBlock != this)
             // The border can potentially be further extended by our containingBlock().
-            return containingBlock()->logicalLeftSelectionOffset(rootBlock, position + logicalTop());
+            logicalLeft = containingBlock()->logicalLeftSelectionOffset(rootBlock, position + logicalTop());
+        if (isListItem() && style()->isLeftToRightDirection()) {
+            logicalLeft += additionalMarginStart();
+        }
         return logicalLeft;
     } else {
         RenderBlock* cb = this;
         while (cb != rootBlock) {
+            if (cb->isListItem() && cb->style()->isLeftToRightDirection()) {
+                logicalLeft += cb->additionalMarginStart();
+            }
             logicalLeft += cb->logicalLeft();
             cb = cb->containingBlock();
         }
@@ -2655,11 +2671,17 @@ LayoutUnit RenderBlock::logicalRightSelectionOffset(RenderBlock* rootBlock, Layo
     if (logicalRight == logicalRightOffsetForContent()) {
         if (rootBlock != this)
             // The border can potentially be further extended by our containingBlock().
-            return containingBlock()->logicalRightSelectionOffset(rootBlock, position + logicalTop());
+            logicalRight = containingBlock()->logicalRightSelectionOffset(rootBlock, position + logicalTop());
+        if (isListItem() && !style()->isLeftToRightDirection()) {
+            logicalRight -= additionalMarginStart();
+        }
         return logicalRight;
     } else {
         RenderBlock* cb = this;
         while (cb != rootBlock) {
+            if (cb->isListItem() && !cb->style()->isLeftToRightDirection()) {
+                logicalRight -= cb->additionalMarginStart();
+            }
             logicalRight += cb->logicalLeft();
             cb = cb->containingBlock();
         }
@@ -4457,6 +4479,9 @@ void RenderBlock::computeBlockPreferredLogicalWidths(LayoutUnit& minLogicalWidth
             marginStart += startMarginLength.value();
         if (endMarginLength.isFixed())
             marginEnd += endMarginLength.value();
+        // SHEZ: additionalMarginStart is treated as fixed margin
+        if (child->isBox())
+            marginStart += toRenderBox(child)->additionalMarginStart();
         margin = marginStart + marginEnd;
 
         LayoutUnit childMinPreferredLogicalWidth, childMaxPreferredLogicalWidth;

@@ -268,6 +268,14 @@ static RenderObject* firstNonMarkerChild(RenderObject* parent)
     return result;
 }
 
+RenderObject* firstRenderText(RenderObject* curr, RenderObject* stayWithin)
+{
+    while (curr && !curr->isText()) {
+        curr = curr->nextInPreOrder(stayWithin);
+    }
+    return curr;
+}
+
 void RenderListItem::updateMarkerLocation()
 {
     // Sanity check the location of our marker.
@@ -285,17 +293,26 @@ void RenderListItem::updateMarkerLocation()
                 lineBoxParent = this;
         }
 
-        if (markerParent != lineBoxParent || m_marker->preferredLogicalWidthsDirty()) {
+        bool fontsAreDifferent = false;
+        RenderObject* firstNonMarker = firstNonMarkerChild(lineBoxParent);
+        RenderObject* firstText = firstRenderText(firstNonMarker, lineBoxParent);
+        if (firstText && m_marker->style()->fontDescription() != firstText->style()->fontDescription()) {
+            fontsAreDifferent = true;
+        }
+
+        if (markerParent != lineBoxParent || m_marker->preferredLogicalWidthsDirty() || fontsAreDifferent) {
             // Removing and adding the marker can trigger repainting in
             // containers other than ourselves, so we need to disable LayoutState.
             LayoutStateDisabler layoutStateDisabler(view());
             updateFirstLetter();
             m_marker->remove();
+            if (fontsAreDifferent) {
+                m_marker->style()->setFontDescription(firstText->style()->fontDescription());
+                m_marker->style()->font().update(m_marker->style()->font().fontSelector());
+            }
             if (markerParent)
                 markerParent->dirtyLinesFromChangedChild(m_marker);
-            if (!lineBoxParent)
-                lineBoxParent = this;
-            lineBoxParent->addChild(m_marker, firstNonMarkerChild(lineBoxParent));
+            lineBoxParent->addChild(m_marker, firstNonMarker);
             m_marker->updateMarginsAndContent();
             // If markerParent is an anonymous block that has lost all its children, destroy it.
             if (markerParent && markerParent->isAnonymousBlock() && !markerParent->firstChild() && !toRenderBlock(markerParent)->continuation())
@@ -307,6 +324,12 @@ void RenderListItem::updateMarkerLocation()
                 containingBlock()->updateLogicalWidth();
         }
     }
+}
+
+LayoutUnit RenderListItem::additionalMarginStart() const
+{
+    const_cast<RenderListItem*>(this)->updateMarkerLocation();
+    return m_marker && !m_marker->isInside() ? m_marker->minPreferredLogicalWidth() : LayoutUnit();
 }
 
 void RenderListItem::layout()
@@ -335,7 +358,7 @@ void RenderListItem::positionListMarker()
         }
 
         bool adjustOverflow = false;
-        LayoutUnit markerLogicalLeft;
+        LayoutUnit markerLogicalLeft = markerOldLogicalLeft;
         RootInlineBox* root = m_marker->inlineBoxWrapper()->root();
         bool hitSelfPaintingLayer = false;
 
@@ -345,9 +368,6 @@ void RenderListItem::positionListMarker()
 
         // FIXME: Need to account for relative positioning in the layout overflow.
         if (style()->isLeftToRightDirection()) {
-            LayoutUnit leftLineOffset = logicalLeftOffsetForLine(blockOffset, logicalLeftOffsetForLine(blockOffset, false), false);
-            markerLogicalLeft = leftLineOffset - lineOffset - paddingStart() - borderStart() + m_marker->marginStart();
-            m_marker->inlineBoxWrapper()->adjustLineDirectionPosition(markerLogicalLeft - markerOldLogicalLeft);
             for (InlineFlowBox* box = m_marker->inlineBoxWrapper()->parent(); box; box = box->parent()) {
                 LayoutRect newLogicalVisualOverflowRect = box->logicalVisualOverflowRect(lineTop, lineBottom);
                 LayoutRect newLogicalLayoutOverflowRect = box->logicalLayoutOverflowRect(lineTop, lineBottom);
@@ -368,9 +388,6 @@ void RenderListItem::positionListMarker()
                     hitSelfPaintingLayer = true;
             }
         } else {
-            LayoutUnit rightLineOffset = logicalRightOffsetForLine(blockOffset, logicalRightOffsetForLine(blockOffset, false), false);
-            markerLogicalLeft = rightLineOffset - lineOffset + paddingStart() + borderStart() + m_marker->marginEnd();
-            m_marker->inlineBoxWrapper()->adjustLineDirectionPosition(markerLogicalLeft - markerOldLogicalLeft);
             for (InlineFlowBox* box = m_marker->inlineBoxWrapper()->parent(); box; box = box->parent()) {
                 LayoutRect newLogicalVisualOverflowRect = box->logicalVisualOverflowRect(lineTop, lineBottom);
                 LayoutRect newLogicalLayoutOverflowRect = box->logicalLayoutOverflowRect(lineTop, lineBottom);

@@ -55,7 +55,7 @@
 
 namespace WebCore {
 
-void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext* context) const
+void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext* context, const FontSmoothingOverride* fontSmoothingOverride) const
 {
     const float ts = m_textSize >= 0 ? m_textSize : 12;
     paint->setTextSize(SkFloatToScalar(m_textSize));
@@ -67,8 +67,18 @@ void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext* context) cons
 
     // Only set painting flags when we're actually painting.
     if (context) {
-        int textFlags = paintTextFlags();
-        if (!context->couldUseLCDRenderedText()) {
+        int textFlags;
+        bool lcdExplicitlyRequested;
+        if (fontSmoothingOverride) {
+            textFlags = fontSmoothingOverride->textFlags;
+            lcdExplicitlyRequested = fontSmoothingOverride->lcdExplicitlyRequested;
+        }
+        else {
+            textFlags = paintTextFlags();
+            lcdExplicitlyRequested = false;
+        }
+        // SHEZ: don't remove cleartype if it was explicitly requested
+        if (!lcdExplicitlyRequested && !context->couldUseLCDRenderedText()) {
             textFlags &= ~SkPaint::kLCDRenderText_Flag;
             // If we *just* clear our request for LCD, then GDI seems to
             // sometimes give us AA text, and sometimes give us BW text. Since the

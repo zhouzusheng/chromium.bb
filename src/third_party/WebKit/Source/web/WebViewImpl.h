@@ -172,6 +172,7 @@ public:
     virtual void didAcquirePointerLock();
     virtual void didNotAcquirePointerLock();
     virtual void didLosePointerLock();
+    virtual void didChangeWindowRect();
     virtual void didChangeWindowResizerRect();
     virtual void didExitCompositingMode();
 
@@ -437,6 +438,8 @@ public:
 
     void updateMainFrameLayoutSize();
     void updatePageDefinedViewportConstraints(const WebCore::ViewportDescription&);
+
+    void willDrag();
 
     // Start a system drag and drop operation.
     void startDragging(

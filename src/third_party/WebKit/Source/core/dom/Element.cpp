@@ -782,6 +782,52 @@ int Element::scrollHeight()
     return 0;
 }
 
+int Element::bbScrollLeftNoZoomAdjust()
+{
+    document().updateLayoutIgnorePendingStylesheets();
+    if (RenderBox* rend = renderBox())
+        return rend->scrollLeft();
+    return 0;
+}
+
+int Element::bbScrollTopNoZoomAdjust()
+{
+    document().updateLayoutIgnorePendingStylesheets();
+    if (RenderBox* rend = renderBox())
+        return rend->scrollTop();
+    return 0;
+}
+
+void Element::setBbScrollLeftNoZoomAdjust(int newLeft)
+{
+    document().updateLayoutIgnorePendingStylesheets();
+    if (RenderBox* rend = renderBox())
+        rend->setScrollLeft(newLeft);
+}
+
+void Element::setBbScrollTopNoZoomAdjust(int newTop)
+{
+    document().updateLayoutIgnorePendingStylesheets();
+    if (RenderBox* rend = renderBox())
+        rend->setScrollTop(newTop);
+}
+
+int Element::bbScrollWidthNoZoomAdjust()
+{
+    document().updateLayoutIgnorePendingStylesheets();
+    if (RenderBox* rend = renderBox())
+        return rend->scrollWidth();
+    return 0;
+}
+
+int Element::bbScrollHeightNoZoomAdjust()
+{
+    document().updateLayoutIgnorePendingStylesheets();
+    if (RenderBox* rend = renderBox())
+        return rend->scrollHeight();
+    return 0;
+}
+
 IntRect Element::boundsInRootViewSpace()
 {
     document().updateLayoutIgnorePendingStylesheets();

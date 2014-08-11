@@ -237,7 +237,7 @@ Page* ChromeClientImpl::createWindow(
 
     WebNavigationPolicy policy = static_cast<WebNavigationPolicy>(navigationPolicy);
     if (policy == WebNavigationPolicyIgnore)
-        policy = getNavigationPolicy();
+        policy = getNavigationPolicy(features.additionalFeatures.contains("popup=1"));
 
     DocumentFullscreen::webkitCancelFullScreen(frame->document());
 
@@ -282,12 +282,13 @@ static inline void updatePolicyForEvent(const WebInputEvent* inputEvent, Navigat
     *policy = userPolicy;
 }
 
-WebNavigationPolicy ChromeClientImpl::getNavigationPolicy()
+WebNavigationPolicy ChromeClientImpl::getNavigationPolicy(bool isPopupRequested)
 {
     // If our default configuration was modified by a script or wasn't
     // created by a user gesture, then show as a popup. Else, let this
     // new window be opened as a toplevel window.
     bool asPopup = !m_toolbarsVisible
+        || isPopupRequested
         || !m_statusbarVisible
         || !m_scrollbarsVisible
         || !m_menubarVisible
@@ -308,7 +309,7 @@ void ChromeClientImpl::show(NavigationPolicy navigationPolicy)
 
     WebNavigationPolicy policy = static_cast<WebNavigationPolicy>(navigationPolicy);
     if (policy == WebNavigationPolicyIgnore)
-        policy = getNavigationPolicy();
+        policy = getNavigationPolicy(false);
     m_webView->client()->show(policy);
 }
 

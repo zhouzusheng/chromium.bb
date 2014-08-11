@@ -636,20 +636,12 @@ void GpuDataManagerImplPrivate::AppendRendererCommandLine(
   DCHECK(command_line);
 
   if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_WEBGL)) {
-    if (!command_line->HasSwitch(switches::kDisableExperimentalWebGL))
-      command_line->AppendSwitch(switches::kDisableExperimentalWebGL);
     if (!command_line->HasSwitch(switches::kDisablePepper3d))
       command_line->AppendSwitch(switches::kDisablePepper3d);
   }
-  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_MULTISAMPLING) &&
-      !command_line->HasSwitch(switches::kDisableGLMultisampling))
-    command_line->AppendSwitch(switches::kDisableGLMultisampling);
   if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING) &&
       !command_line->HasSwitch(switches::kDisableAcceleratedCompositing))
     command_line->AppendSwitch(switches::kDisableAcceleratedCompositing);
-  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS) &&
-      !command_line->HasSwitch(switches::kDisableAccelerated2dCanvas))
-    command_line->AppendSwitch(switches::kDisableAccelerated2dCanvas);
   if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE) &&
       !command_line->HasSwitch(switches::kDisableAcceleratedVideoDecode))
     command_line->AppendSwitch(switches::kDisableAcceleratedVideoDecode);
@@ -1078,19 +1070,8 @@ void GpuDataManagerImplPrivate::InitializeImpl(
   UpdateGpuSwitchingManager(gpu_info);
   UpdatePreliminaryBlacklistedFeatures();
 
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  // We pass down the list to GPU command buffer through commandline
-  // switches at GPU process launch. However, in situations where we don't
-  // have a GPU process, we append the browser process commandline.
-  if (command_line->HasSwitch(switches::kSingleProcess) ||
-      command_line->HasSwitch(switches::kInProcessGPU)) {
-    if (!gpu_driver_bugs_.empty()) {
-      command_line->AppendSwitchASCII(switches::kGpuDriverBugWorkarounds,
-                                      IntSetToString(gpu_driver_bugs_));
-    }
-  }
 #if defined(OS_ANDROID)
-  ApplyAndroidWorkarounds(gpu_info, command_line);
+  ApplyAndroidWorkarounds(gpu_info, CommandLine::ForCurrentProcess());
 #endif  // OS_ANDROID
 }
 

@@ -189,7 +189,7 @@ public:
 private:
     virtual bool isChromeClientImpl() const OVERRIDE { return true; }
 
-    WebNavigationPolicy getNavigationPolicy();
+    WebNavigationPolicy getNavigationPolicy(bool isPopupRequested);
     void getPopupMenuInfo(WebCore::PopupContainer*, WebPopupMenuInfo*);
     void setCursor(const WebCursorInfo&);
 

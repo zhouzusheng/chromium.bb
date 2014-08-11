@@ -29,6 +29,17 @@ bool AssociateCompletionPort(HANDLE job, HANDLE port, void* key) {
                                    &job_acp, sizeof(job_acp))? true : false;
 }
 
+#if SANDBOX_DLL
+// Returns true only if the module_path is a DLL.
+bool CanInjectSandboxModule(const wchar_t* module_path)
+{
+    size_t len = wcslen(module_path);
+    return len > 4
+        && (0 == wcscmp(module_path + len - 4, L".dll")
+            || 0 == wcscmp(module_path + len - 4, L".DLL"));
+}
+#endif
+
 // Utility function to do the cleanup necessary when something goes wrong
 // while in SpawnTarget and we must terminate the target process.
 sandbox::ResultCode SpawnCleanup(sandbox::TargetProcess* target, DWORD error) {
@@ -107,6 +118,23 @@ ResultCode BrokerServicesBase::Init() {
                                TargetEventsThread, this, NULL, NULL);
   if (NULL == job_thread_)
     return SBOX_ERROR_GENERIC;
+
+#if SANDBOX_DLL
+  // When the sandbox is implemented as a DLL, this section of code gets the
+  // DLL name at runtime.
+  MEMORY_BASIC_INFORMATION mbi;
+  static int dummy;
+  wchar_t file_name[MAX_PATH];
+  if (!::VirtualQuery( &dummy, &mbi, sizeof(mbi))) {
+    return SBOX_ERROR_GENERIC;
+  }
+
+  HMODULE module_handle = (HMODULE) mbi.AllocationBase;
+  if (!::GetModuleFileName(module_handle, file_name, sizeof(file_name))) {
+    return SBOX_ERROR_GENERIC;
+  }
+  module_path_.reset(_wcsdup(file_name));
+#endif
 
   return SBOX_ALL_OK;
 }
@@ -400,6 +428,20 @@ ResultCode BrokerServicesBase::SpawnTarget(const wchar_t* exe_path,
                                     startup_info, &process_info);
   if (ERROR_SUCCESS != win_result)
     return SpawnCleanup(target, win_result);
+
+#if SANDBOX_DLL
+  // If the target exe does not have sandbox.lib linked into it, then we need
+  // to inject the sandbox dll into the target process. The target process is
+  // created in suspended mode, and so dlls will not be loaded.
+  // DLL loading is required to intercept the APIs.
+  if (!target->ExeHasSandbox()) {
+    DCHECK(CanInjectSandboxModule(module_path_.get()));
+    win_result = target->InjectSandboxDll(module_path_.get());
+    if (ERROR_SUCCESS != win_result) {
+      return SpawnCleanup(target, win_result);
+    }
+  }
+#endif
 
   // Now the policy is the owner of the target.
   if (!policy_base->AddTarget(target)) {

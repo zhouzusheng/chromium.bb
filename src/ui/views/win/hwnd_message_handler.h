@@ -445,6 +445,13 @@ class VIEWS_EXPORT HWNDMessageHandler :
   // true.
   bool restored_enabled_;
 
+  // Whether or not the cursor has been overridden by WM_SETCURSOR.  When this
+  // is true, |SetCursor| will be a no-op.
+  bool is_cursor_overridden_;
+
+  // The current cursor.
+  HCURSOR current_cursor_;
+
   // The last cursor that was active before the current one was selected. Saved
   // so that we can restore it.
   HCURSOR previous_cursor_;
@@ -459,6 +466,12 @@ class VIEWS_EXPORT HWNDMessageHandler :
   // Set to true when the user presses the right mouse button on the caption
   // area. We need this so we can correctly show the context menu on mouse-up.
   bool is_right_mouse_pressed_on_caption_;
+
+  // Set to true when the delegate is performing NC drag operations.
+  bool is_delegate_nc_dragging_;
+
+  // The NC hit-test code that is in effect while NC dragging.
+  int nc_dragging_hittest_code_;
 
   // The set of touch devices currently down.
   TouchIDs touch_ids_;

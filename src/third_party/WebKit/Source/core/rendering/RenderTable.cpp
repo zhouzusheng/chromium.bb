@@ -29,9 +29,11 @@
 #include "HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/html/HTMLTableElement.h"
-#include "core/page/FrameView.h"
+#include "core/frame/FrameView.h"
+#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/rendering/AutoTableLayout.h"
 #include "core/rendering/FixedTableLayout.h"
+#include "core/rendering/GraphicsContextAnnotator.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/RenderLayer.h"
@@ -88,6 +90,9 @@ void RenderTable::styleDidChange(StyleDifference diff, const RenderStyle* oldSty
     m_columnPos[0] = m_hSpacing;
 
     if (!m_tableLayout || style()->tableLayout() != oldTableLayout) {
+        if (m_tableLayout)
+            m_tableLayout->willChangeTableLayout();
+
         // According to the CSS2 spec, you only use fixed table layout if an
         // explicit width is specified on the table.  Auto width implies auto table layout.
         if (style()->tableLayout() == TFIXED && !style()->logicalWidth().isAuto())
@@ -453,6 +458,11 @@ void RenderTable::layout()
         } else if (child->isRenderTableCol()) {
             child->layoutIfNeeded();
             ASSERT(!child->needsLayout());
+        } else {
+            // FIXME: We should never have other type of children (they should be wrapped in an
+            // anonymous table section) but our code is too crazy and this can happen in practice.
+            // Until this is fixed, let's make sure we don't leave non laid out children in the tree.
+            child->layoutIfNeeded();
         }
     }
 
@@ -718,15 +728,7 @@ void RenderTable::paintBoxDecorations(PaintInfo& paintInfo, const LayoutPoint& p
 
     LayoutRect rect(paintOffset, size());
     subtractCaptionRect(rect);
-
-    BackgroundBleedAvoidance bleedAvoidance = determineBackgroundBleedAvoidance(paintInfo.context);
-    if (!boxShadowShouldBeAppliedToBackground(bleedAvoidance))
-        paintBoxShadow(paintInfo, rect, style(), Normal);
-    paintBackground(paintInfo, rect, bleedAvoidance);
-    paintBoxShadow(paintInfo, rect, style(), Inset);
-
-    if (style()->hasBorder() && !collapseBorders())
-        paintBorder(paintInfo, rect, style());
+    paintBoxDecorationsWithRect(paintInfo, paintOffset, rect);
 }
 
 void RenderTable::paintMask(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
@@ -844,10 +846,6 @@ RenderTableCol* RenderTable::firstColumn() const
     for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
         if (child->isRenderTableCol())
             return toRenderTableCol(child);
-
-        // We allow only table-captions before columns or column-groups.
-        if (!child->isTableCaption())
-            return 0;
     }
 
     return 0;

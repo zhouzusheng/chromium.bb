@@ -33,6 +33,22 @@
 #include "SkTypefacePriv.h"
 #include "SkTSet.h"
 
+#ifdef SK_BUILD_FOR_ANDROID
+#include "SkTypeface_android.h"
+
+struct TypefaceFallbackData {
+    SkTypeface* typeface;
+    int lowerBounds;
+    int upperBounds;
+
+    bool operator==(const TypefaceFallbackData& b) const {
+        return typeface == b.typeface &&
+               lowerBounds == b.lowerBounds &&
+               upperBounds == b.upperBounds;
+    }
+};
+#endif
+
 // Utility functions
 
 static void emit_pdf_color(SkColor color, SkWStream* result) {
@@ -632,16 +648,11 @@ private:
     void init(const SkClipStack* clipStack, const SkRegion& clipRegion,
               const SkMatrix& matrix, const SkPaint& paint, bool hasText) {
         fDstFormXObject = NULL;
-        if (matrix.hasPerspective() ||
-                (paint.getShader() &&
-                 paint.getShader()->getLocalMatrix().hasPerspective())) {
-            // Just report that PDF does not supports perspective
-            // TODO(edisonn): update the shape when possible
-            // or dump in an image otherwise
-            NOT_IMPLEMENTED(true, false);
+        // Shape has to be flatten before we get here.
+        if (matrix.hasPerspective()) {
+            NOT_IMPLEMENTED(!matrix.hasPerspective(), false);
             return;
         }
-
         if (paint.getXfermode()) {
             paint.getXfermode()->asMode(&fXfermode);
         }
@@ -688,10 +699,10 @@ SkPDFDevice::SkPDFDevice(const SkISize& pageSize, const SkISize& contentSize,
       fLastContentEntry(NULL),
       fLastMarginContentEntry(NULL),
       fClipStack(NULL),
-      fEncoder(NULL) {
-    // just report that PDF does not supports perspective
-    // TODO(edisonn): update the shape when possible
-    // or dump in an image otherwise
+      fEncoder(NULL),
+      fRasterDpi(SkFloatToScalar(72.0f)) {
+    // Just report that PDF does not supports perspective in the
+    // initial transform.
     NOT_IMPLEMENTED(initialTransform.hasPerspective(), true);
 
     // Skia generally uses the top left as the origin but PDF natively has the
@@ -718,7 +729,9 @@ SkPDFDevice::SkPDFDevice(const SkISize& layerSize,
       fExistingClipRegion(existingClipRegion),
       fLastContentEntry(NULL),
       fLastMarginContentEntry(NULL),
-      fClipStack(NULL) {
+      fClipStack(NULL),
+      fEncoder(NULL),
+      fRasterDpi(SkFloatToScalar(72.0f)) {
     fInitialTransform.reset();
     this->init();
 }
@@ -957,16 +970,16 @@ void SkPDFDevice::drawPath(const SkDraw& d, const SkPath& origPath,
     }
 
 #ifdef SK_PDF_USE_PATHOPS
-    if (handleInversePath(d, origPath, paint, pathIsMutable)) {
+    if (handleInversePath(d, origPath, paint, pathIsMutable, prePathMatrix)) {
         return;
     }
 #endif
 
-    if (handleRectAnnotation(pathPtr->getBounds(), *d.fMatrix, paint)) {
+    if (handleRectAnnotation(pathPtr->getBounds(), matrix, paint)) {
         return;
     }
 
-    ScopedContentEntry content(this, d, paint);
+    ScopedContentEntry content(this, d.fClipStack, *d.fClip, matrix, paint);
     if (!content.entry()) {
         return;
     }
@@ -1114,6 +1127,112 @@ void SkPDFDevice::drawPosText(const SkDraw& d, const void* text, size_t len,
     if (!content.entry()) {
         return;
     }
+
+#ifdef SK_BUILD_FOR_ANDROID
+    /*
+     * In the case that we have enabled fallback fonts on Android we need to
+     * take the following steps to ensure that the PDF draws all characters,
+     * regardless of their underlying font file, correctly.
+     *
+     * 1. Convert input into GlyphID encoding if it currently is not
+     * 2. Iterate over the glyphIDs and identify the actual typeface that each
+     *    glyph resolves to
+     * 3. Iterate over those typefaces and recursively call this function with
+     *    only the glyphs (and their positions) that the typeface is capable of
+     *    resolving.
+     */
+    if (paint.getPaintOptionsAndroid().isUsingFontFallbacks()) {
+        uint16_t* glyphIDs = NULL;
+        SkGlyphStorage tmpStorage(0);
+        size_t numGlyphs = 0;
+
+        // convert to glyphIDs
+        if (paint.getTextEncoding() == SkPaint::kGlyphID_TextEncoding) {
+            numGlyphs = len / 2;
+            glyphIDs = reinterpret_cast<uint16_t*>(const_cast<void*>(text));
+        } else {
+            numGlyphs = paint.textToGlyphs(text, len, NULL);
+            tmpStorage.reset(numGlyphs);
+            paint.textToGlyphs(text, len, tmpStorage.get());
+            glyphIDs = tmpStorage.get();
+        }
+
+        // if no typeface is provided in the paint get the default
+        SkAutoTUnref<SkTypeface> origFace(SkSafeRef(paint.getTypeface()));
+        if (NULL == origFace.get()) {
+            origFace.reset(SkTypeface::RefDefault());
+        }
+        const uint16_t origGlyphCount = origFace->countGlyphs();
+
+        // keep a list of the already visited typefaces and some data about them
+        SkTDArray<TypefaceFallbackData> visitedTypefaces;
+
+        // find all the typefaces needed to resolve this run of text
+        bool usesOriginalTypeface = false;
+        for (uint16_t x = 0; x < numGlyphs; ++x) {
+            // optimization that checks to see if original typeface can resolve the glyph
+            if (glyphIDs[x] < origGlyphCount) {
+                usesOriginalTypeface = true;
+                continue;
+            }
+
+            // find the fallback typeface that supports this glyph
+            TypefaceFallbackData data;
+            data.typeface = SkGetTypefaceForGlyphID(glyphIDs[x], origFace.get(),
+                                                    paint.getPaintOptionsAndroid(),
+                                                    &data.lowerBounds, &data.upperBounds);
+            // add the typeface and its data if we don't have it
+            if (data.typeface && !visitedTypefaces.contains(data)) {
+                visitedTypefaces.push(data);
+            }
+        }
+
+        // if the original font was used then add it to the list as well
+        if (usesOriginalTypeface) {
+            TypefaceFallbackData* data = visitedTypefaces.push();
+            data->typeface = origFace.get();
+            data->lowerBounds = 0;
+            data->upperBounds = origGlyphCount;
+        }
+
+        // keep a scratch glyph and pos storage
+        SkAutoTMalloc<SkScalar> posStorage(len * scalarsPerPos);
+        SkScalar* tmpPos = posStorage.get();
+        SkGlyphStorage glyphStorage(numGlyphs);
+        uint16_t* tmpGlyphIDs = glyphStorage.get();
+
+        // loop through all the valid typefaces, trim the glyphs to only those
+        // resolved by the typeface, and then draw that run of glyphs
+        for (int x = 0; x < visitedTypefaces.count(); ++x) {
+            const TypefaceFallbackData& data = visitedTypefaces[x];
+
+            int tmpGlyphCount = 0;
+            for (uint16_t y = 0; y < numGlyphs; ++y) {
+                if (glyphIDs[y] >= data.lowerBounds && glyphIDs[y] < data.upperBounds) {
+                    tmpGlyphIDs[tmpGlyphCount] = glyphIDs[y] - data.lowerBounds;
+                    memcpy(&(tmpPos[tmpGlyphCount * scalarsPerPos]),
+                           &(pos[y * scalarsPerPos]),
+                           scalarsPerPos * sizeof(SkScalar));
+                    tmpGlyphCount++;
+                }
+            }
+
+            // recursively call this function with the right typeface
+            SkPaint tmpPaint = paint;
+            tmpPaint.setTypeface(data.typeface);
+            tmpPaint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
+
+            // turn off fallback chaining
+            SkPaintOptionsAndroid paintOpts = tmpPaint.getPaintOptionsAndroid();
+            paintOpts.setUseFontFallbacks(false);
+            tmpPaint.setPaintOptionsAndroid(paintOpts);
+
+            this->drawPosText(d, tmpGlyphIDs, tmpGlyphCount * 2, tmpPos, constY,
+                              scalarsPerPos, tmpPaint);
+        }
+        return;
+    }
+#endif
 
     SkGlyphStorage storage(0);
     uint16_t* glyphIDs = NULL;
@@ -1363,7 +1482,8 @@ SkData* SkPDFDevice::copyContentToData() const {
  * in the first place.
  */
 bool SkPDFDevice::handleInversePath(const SkDraw& d, const SkPath& origPath,
-                                    const SkPaint& paint, bool pathIsMutable) {
+                                    const SkPaint& paint, bool pathIsMutable,
+                                    const SkMatrix* prePathMatrix) {
     if (!origPath.isInverseFillType()) {
         return false;
     }
@@ -1397,7 +1517,11 @@ bool SkPDFDevice::handleInversePath(const SkDraw& d, const SkPath& origPath,
     // (clip bounds are given in device space).
     SkRect bounds;
     SkMatrix transformInverse;
-    if (!d.fMatrix->invert(&transformInverse)) {
+    SkMatrix totalMatrix = *d.fMatrix;
+    if (prePathMatrix) {
+        totalMatrix.preConcat(*prePathMatrix);
+    }
+    if (!totalMatrix.invert(&transformInverse)) {
         return false;
     }
     bounds.set(d.fClip->getBounds());
@@ -1412,7 +1536,7 @@ bool SkPDFDevice::handleInversePath(const SkDraw& d, const SkPath& origPath,
         return false;
     }
 
-    drawPath(d, modifiedPath, noInversePaint, NULL, true);
+    drawPath(d, modifiedPath, noInversePaint, prePathMatrix, true);
     return true;
 }
 #endif
@@ -1426,12 +1550,12 @@ bool SkPDFDevice::handleRectAnnotation(const SkRect& r, const SkMatrix& matrix,
     SkData* urlData = annotationInfo->find(SkAnnotationKeys::URL_Key());
     if (urlData) {
         handleLinkToURL(urlData, r, matrix);
-        return p.isNoDrawAnnotation();
+        return p.getAnnotation() != NULL;
     }
     SkData* linkToName = annotationInfo->find(SkAnnotationKeys::Link_Named_Dest_Key());
     if (linkToName) {
         handleLinkToNamedDest(linkToName, r, matrix);
-        return p.isNoDrawAnnotation();
+        return p.getAnnotation() != NULL;
     }
     return false;
 }
@@ -1448,7 +1572,7 @@ bool SkPDFDevice::handlePointAnnotation(const SkPoint* points, size_t count,
         for (size_t i = 0; i < count; i++) {
             defineNamedDestination(nameData, points[i], matrix);
         }
-        return paint.isNoDrawAnnotation();
+        return paint.getAnnotation() != NULL;
     }
     return false;
 }
@@ -1901,22 +2025,100 @@ int SkPDFDevice::getFontResourceIndex(SkTypeface* typeface, uint16_t glyphID) {
     return resourceIndex;
 }
 
-void SkPDFDevice::internalDrawBitmap(const SkMatrix& matrix,
+void SkPDFDevice::internalDrawBitmap(const SkMatrix& origMatrix,
                                      const SkClipStack* clipStack,
-                                     const SkRegion& clipRegion,
-                                     const SkBitmap& bitmap,
+                                     const SkRegion& origClipRegion,
+                                     const SkBitmap& origBitmap,
                                      const SkIRect* srcRect,
                                      const SkPaint& paint) {
+    SkMatrix matrix = origMatrix;
+    SkRegion perspectiveBounds;
+    const SkRegion* clipRegion = &origClipRegion;
+    SkBitmap perspectiveBitmap;
+    const SkBitmap* bitmap = &origBitmap;
+    SkBitmap tmpSubsetBitmap;
+
+    // Rasterize the bitmap using perspective in a new bitmap.
+    if (origMatrix.hasPerspective()) {
+        SkBitmap* subsetBitmap;
+        if (srcRect) {
+            if (!origBitmap.extractSubset(&tmpSubsetBitmap, *srcRect)) {
+               return;
+            }
+            subsetBitmap = &tmpSubsetBitmap;
+        } else {
+            subsetBitmap = &tmpSubsetBitmap;
+            *subsetBitmap = origBitmap;
+        }
+        srcRect = NULL;
+
+        // Transform the bitmap in the new space.
+        SkPath perspectiveOutline;
+        perspectiveOutline.addRect(
+                SkRect::MakeWH(SkIntToScalar(subsetBitmap->width()),
+                               SkIntToScalar(subsetBitmap->height())));
+        perspectiveOutline.transform(origMatrix);
+
+        // TODO(edisonn): perf - use current clip too.
+        // Retrieve the bounds of the new shape.
+        SkRect bounds = perspectiveOutline.getBounds();
+
+        // TODO(edisonn): add DPI settings. Currently 1 pixel/point, which does
+        // not look great, but it is not producing large PDFs.
+
+        // TODO(edisonn): A better approach would be to use a bitmap shader
+        // (in clamp mode) and draw a rect over the entire bounding box. Then
+        // intersect perspectiveOutline to the clip. That will avoid introducing
+        // alpha to the image while still giving good behavior at the edge of
+        // the image.  Avoiding alpha will reduce the pdf size and generation
+        // CPU time some.
+
+        perspectiveBitmap.setConfig(SkBitmap::kARGB_8888_Config,
+                                    SkScalarCeilToInt(bounds.width()),
+                                    SkScalarCeilToInt(bounds.height()));
+        perspectiveBitmap.allocPixels();
+        perspectiveBitmap.eraseColor(SK_ColorTRANSPARENT);
+
+        SkBitmapDevice device(perspectiveBitmap);
+        SkCanvas canvas(&device);
+
+        SkScalar deltaX = bounds.left();
+        SkScalar deltaY = bounds.top();
+
+        SkMatrix offsetMatrix = origMatrix;
+        offsetMatrix.postTranslate(-deltaX, -deltaY);
+
+        // Translate the draw in the new canvas, so we perfectly fit the
+        // shape in the bitmap.
+        canvas.setMatrix(offsetMatrix);
+
+        canvas.drawBitmap(*subsetBitmap, SkIntToScalar(0), SkIntToScalar(0));
+
+        // Make sure the final bits are in the bitmap.
+        canvas.flush();
+
+        // In the new space, we use the identity matrix translated.
+        matrix.setTranslate(deltaX, deltaY);
+        perspectiveBounds.setRect(
+                SkIRect::MakeXYWH(SkScalarFloorToInt(bounds.x()),
+                                  SkScalarFloorToInt(bounds.y()),
+                                  SkScalarCeilToInt(bounds.width()),
+                                  SkScalarCeilToInt(bounds.height())));
+        clipRegion = &perspectiveBounds;
+        srcRect = NULL;
+        bitmap = &perspectiveBitmap;
+    }
+
     SkMatrix scaled;
     // Adjust for origin flip.
     scaled.setScale(SK_Scalar1, -SK_Scalar1);
     scaled.postTranslate(0, SK_Scalar1);
     // Scale the image up from 1x1 to WxH.
-    SkIRect subset = SkIRect::MakeWH(bitmap.width(), bitmap.height());
+    SkIRect subset = SkIRect::MakeWH(bitmap->width(), bitmap->height());
     scaled.postScale(SkIntToScalar(subset.width()),
                      SkIntToScalar(subset.height()));
     scaled.postConcat(matrix);
-    ScopedContentEntry content(this, clipStack, clipRegion, scaled, paint);
+    ScopedContentEntry content(this, clipStack, *clipRegion, scaled, paint);
     if (!content.entry()) {
         return;
     }
@@ -1925,7 +2127,7 @@ void SkPDFDevice::internalDrawBitmap(const SkMatrix& matrix,
         return;
     }
 
-    SkPDFImage* image = SkPDFImage::CreateImage(bitmap, subset, fEncoder);
+    SkPDFImage* image = SkPDFImage::CreateImage(*bitmap, subset, fEncoder);
     if (!image) {
         return;
     }

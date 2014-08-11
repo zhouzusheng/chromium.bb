@@ -47,8 +47,8 @@
 namespace WebCore {
 
 StyleResourceLoader::StyleResourceLoader(ResourceFetcher* fetcher)
-    : m_fetcher(fetcher)
-    , m_customFilterProgramCache(StyleCustomFilterProgramCache::create())
+    : m_customFilterProgramCache(StyleCustomFilterProgramCache::create())
+    , m_fetcher(fetcher)
 {
 }
 
@@ -115,7 +115,8 @@ void StyleResourceLoader::loadPendingShapeImage(RenderStyle* renderStyle, ShapeV
     CSSImageValue* cssImageValue =  pendingImage->cssImageValue();
 
     ResourceLoaderOptions options = ResourceFetcher::defaultResourceOptions();
-    options.requestOriginPolicy = RestrictToSameOrigin;
+    options.requestOriginPolicy = PotentiallyCrossOriginEnabled;
+    options.allowCredentials = DoNotAllowStoredCredentials;
 
     shapeValue->setImage(cssImageValue->cachedImage(m_fetcher, options));
 }
@@ -194,10 +195,10 @@ void StyleResourceLoader::loadPendingImages(RenderStyle* style, const ElementSty
             }
             break;
         }
-        case CSSPropertyWebkitShapeInside:
+        case CSSPropertyShapeInside:
             loadPendingShapeImage(style, style->shapeInside());
             break;
-        case CSSPropertyWebkitShapeOutside:
+        case CSSPropertyShapeOutside:
             loadPendingShapeImage(style, style->shapeOutside());
             break;
         default:
@@ -208,7 +209,7 @@ void StyleResourceLoader::loadPendingImages(RenderStyle* style, const ElementSty
 
 void StyleResourceLoader::loadPendingShaders(RenderStyle* style, const ElementStyleResources& elementStyleResources)
 {
-    if (!style->hasFilter() || !elementStyleResources.hasPendingShaders())
+    if (!style->hasFilter() || !elementStyleResources.hasNewCustomFilterProgram())
         return;
 
     Vector<RefPtr<FilterOperation> >& filterOperations = style->mutableFilter().operations();
@@ -251,9 +252,6 @@ void StyleResourceLoader::loadPendingResources(RenderStyle* renderStyle, Element
 
     // Start loading the SVG Documents referenced by this style.
     loadPendingSVGDocuments(renderStyle, elementStyleResources);
-
-    // FIXME: Investigate if this clearing is necessary.
-    elementStyleResources.clear();
 }
 
 }

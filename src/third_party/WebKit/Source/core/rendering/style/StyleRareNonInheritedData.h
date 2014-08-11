@@ -25,7 +25,6 @@
 #ifndef StyleRareNonInheritedData_h
 #define StyleRareNonInheritedData_h
 
-#include "core/platform/LengthPoint.h"
 #include "core/rendering/ClipPathOperation.h"
 #include "core/rendering/style/BasicShapes.h"
 #include "core/rendering/style/CounterDirectives.h"
@@ -35,14 +34,16 @@
 #include "core/rendering/style/LineClampValue.h"
 #include "core/rendering/style/NinePieceImage.h"
 #include "core/rendering/style/ShapeValue.h"
+#include "platform/LengthPoint.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
+class ContentData;
 class CSSAnimationDataList;
-class ShadowData;
+class ShadowList;
 class StyleDeprecatedFlexibleBoxData;
 class StyleFilterData;
 class StyleFlexibleBoxData;
@@ -54,7 +55,6 @@ class StyleReflection;
 class StyleResolver;
 class StyleTransformData;
 
-class ContentData;
 struct LengthSize;
 
 // Page size type.
@@ -114,7 +114,7 @@ public:
     OwnPtr<ContentData> m_content;
     OwnPtr<CounterDirectiveMap> m_counterDirectives;
 
-    OwnPtr<ShadowData> m_boxShadow;  // For box-shadow decorations.
+    RefPtr<ShadowList> m_boxShadow;
 
     RefPtr<StyleReflection> m_boxReflect;
 
@@ -130,6 +130,7 @@ public:
     RefPtr<ShapeValue> m_shapeOutside;
     Length m_shapeMargin;
     Length m_shapePadding;
+    float m_shapeImageThreshold;
 
     RefPtr<ClipPathOperation> m_clipPath;
 
@@ -145,6 +146,8 @@ public:
     int m_order;
 
     LengthPoint m_objectPosition;
+
+    Vector<String> m_callbackSelectors;
 
     AtomicString m_flowThread;
     AtomicString m_regionThread;

@@ -26,19 +26,15 @@
 #ifndef ScrollbarTheme_h
 #define ScrollbarTheme_h
 
-#include "core/platform/ScrollTypes.h"
 #include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/IntRect.h"
+#include "platform/geometry/IntRect.h"
+#include "platform/scroll/ScrollTypes.h"
 
 namespace WebCore {
 
 class PlatformMouseEvent;
 class ScrollbarThemeClient;
 class ScrollView;
-
-#if USE(RUBBER_BANDING)
-class GraphicsLayer;
-#endif
 
 class ScrollbarTheme {
     WTF_MAKE_NONCOPYABLE(ScrollbarTheme); WTF_MAKE_FAST_ALLOCATED;
@@ -81,16 +77,11 @@ public:
 
     virtual void invalidatePart(ScrollbarThemeClient*, ScrollbarPart);
 
-    virtual void paintScrollCorner(ScrollView*, GraphicsContext*, const IntRect& cornerRect);
+    virtual void paintScrollCorner(GraphicsContext*, const IntRect& cornerRect);
 
     virtual void paintTickmarks(GraphicsContext*, ScrollbarThemeClient*, const IntRect&) { }
-    virtual void paintOverhangBackground(ScrollView*, GraphicsContext*, const IntRect&, const IntRect&, const IntRect&);
-    virtual void paintOverhangShadows(ScrollView*, GraphicsContext*, const IntRect&, const IntRect&, const IntRect&) { }
-
-#if USE(RUBBER_BANDING)
-    virtual void setUpOverhangShadowLayer(GraphicsLayer*) { }
-    virtual void updateOverhangShadowLayer(GraphicsLayer* shadowLayer, GraphicsLayer* rootContentLayer) { }
-#endif
+    virtual void paintOverhangBackground(GraphicsContext*, const IntRect&, const IntRect&, const IntRect&);
+    virtual void paintOverhangShadows(GraphicsContext*, const IntSize&, const IntRect&, const IntRect&, const IntRect&) { }
 
     virtual bool shouldCenterOnThumb(ScrollbarThemeClient*, const PlatformMouseEvent&) { return false; }
     virtual bool shouldSnapBackToDragOrigin(ScrollbarThemeClient*, const PlatformMouseEvent&) { return false; }
@@ -138,8 +129,12 @@ public:
 
     static ScrollbarTheme* theme();
 
+    static void setMockScrollbarsEnabled(bool flag);
+    static bool mockScrollbarsEnabled();
+
 private:
     static ScrollbarTheme* nativeTheme(); // Must be implemented to return the correct theme subclass.
+    static bool gMockScrollbarsEnabled;
 };
 
 }

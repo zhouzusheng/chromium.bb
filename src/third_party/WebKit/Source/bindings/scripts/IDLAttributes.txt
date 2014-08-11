@@ -29,24 +29,25 @@
 #       [Attr=DeleteFunction], [Attr=X|Y].
 #     - "Attr=|*" means that Attr takes an optional value, which can be
 #       arbitrary, e.g. [Attr], [Attr=X].
+#     - "Attr=X|*" means that Attr takes an required value, which can be
+#       arbitrary, but that "X" is standard, e.g. [Attr=X], [Attr=Foo].
 #
 
 ActiveDOMObject
-ActivityLog=Access|Setter|Getter|AccessForIsolatedWorlds|SetterForIsolatedWorlds|GetterForIsolatedWorlds
+ActivityLogging=AccessForAllWorlds|GetterForAllWorlds|SetterForAllWorlds|AccessForIsolatedWorlds|GetterForIsolatedWorlds|SetterForIsolatedWorlds
 CachedAttribute=*
-KeepAttributeAliveForGC
-CallWith=ScriptExecutionContext|ScriptState|ScriptArguments|ActiveWindow|FirstWindow|ThisValue
+CallWith=ExecutionContext|ScriptState|ScriptArguments|ActiveWindow|FirstWindow|ThisValue
 CheckSecurity
 CheckSecurityForNode
 Clamp
 Conditional=*
 Constructor
-ConstructorCallWith=ScriptExecutionContext|Document
+ConstructorCallWith=ExecutionContext|Document
 ConstructorRaisesException
 ConstructorTemplate=Event|TypedArray
 Custom
 CustomConstructor
-CustomElementCallbacks=Enable|Disable
+CustomElementCallbacks
 CustomEnumerateProperty
 CustomGetter
 CustomIsReachable
@@ -63,10 +64,6 @@ DoNotCheckSecurityOnSetter
 DoNotCheckSignature
 DoNotGenerateToV8
 DoNotGenerateWrap
-# Valid values for EnabledAtRuntime and EnabledPerContext are Runtime Enabled
-# Features, listed in Source/core/page/RuntimeEnabledFeatures.in
-EnabledAtRuntime=*
-EnabledPerContext=*
 EnforceRange
 GenerateIsReachable=*
 GetterRaisesException
@@ -74,6 +71,7 @@ GlobalContext=Window|WorkerGlobalScope|SharedWorkerGlobalScope|DedicatedWorkerGl
 Immutable
 ImplementedAs=*
 InitializedByEventConstructor
+KeepAttributeAliveForGC
 # FIXME: We should remove this extended attribute once the needed refactoring is complete.
 LegacyImplementedInBaseClass
 MasqueradesAsUndefined
@@ -82,17 +80,26 @@ NamedConstructor=*
 NoInterfaceObject
 NotEnumerable
 OverrideBuiltins
+# Valid values for [PerContextEnabled] are Context Features, in
+# ContextFeatures::FeatureType in Source/core/dom/ContextFeatures.h
+PerContextEnabled=*
 PerWorldBindings
+PutForwards=*
 RaisesException
 ReadOnly
 Reflect=|*
 Replaceable
-SetterCallWith=ScriptExecutionContext|ScriptState|ScriptArguments|ActiveWindow|FirstWindow
+# Valid values for [RuntimeEnabled] are the Runtime Enabled Features, listed in
+# Source/core/page/RuntimeEnabledFeatures.in
+RuntimeEnabled=*
+SetReference=*
+SetterCallWith=ExecutionContext|ScriptState|ScriptArguments|ActiveWindow|FirstWindow
 SetterRaisesException
+SpecialWrapFor=*
 StrictTypeChecking
-TreatNullAs=*
+TreatNullAs=NullString|*
 TreatReturnedNullStringAs=Null|Undefined
-TreatUndefinedAs=*
+TreatUndefinedAs=NullString|*
 URL
 Unforgeable
 Unserializable

@@ -32,7 +32,7 @@
 #ifndef MediaStreamComponent_h
 #define MediaStreamComponent_h
 
-#include "core/platform/audio/AudioSourceProvider.h"
+#include "platform/audio/AudioSourceProvider.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/ThreadingPrimitives.h"
@@ -49,12 +49,17 @@ class MediaStreamSource;
 
 class MediaStreamComponent : public RefCounted<MediaStreamComponent> {
 public:
+    class ExtraData : public RefCounted<ExtraData> {
+    public:
+        virtual ~ExtraData() { }
+    };
+
     static PassRefPtr<MediaStreamComponent> create(PassRefPtr<MediaStreamSource>);
     static PassRefPtr<MediaStreamComponent> create(const String& id, PassRefPtr<MediaStreamSource>);
     static PassRefPtr<MediaStreamComponent> create(MediaStreamDescriptor*, PassRefPtr<MediaStreamSource>);
 
     MediaStreamDescriptor* stream() const { return m_stream; }
-    void setStream(MediaStreamDescriptor* stream) { ASSERT(!m_stream && stream); m_stream = stream; }
+    void setStream(MediaStreamDescriptor* stream) { m_stream = stream; }
 
     MediaStreamSource* source() const { return m_source.get(); }
 
@@ -66,6 +71,9 @@ public:
     AudioSourceProvider* audioSourceProvider() { return &m_sourceProvider; }
     void setSourceProvider(WebKit::WebAudioSourceProvider* provider) { m_sourceProvider.wrap(provider); }
 #endif // ENABLE(WEB_AUDIO)
+
+    ExtraData* extraData() const { return m_extraData.get(); }
+    void setExtraData(PassRefPtr<ExtraData> extraData) { m_extraData = extraData; }
 
 private:
     MediaStreamComponent(const String& id, MediaStreamDescriptor*, PassRefPtr<MediaStreamSource>);
@@ -101,6 +109,7 @@ private:
     RefPtr<MediaStreamSource> m_source;
     String m_id;
     bool m_enabled;
+    RefPtr<ExtraData> m_extraData;
 };
 
 typedef Vector<RefPtr<MediaStreamComponent> > MediaStreamComponentVector;

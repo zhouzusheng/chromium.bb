@@ -36,10 +36,8 @@
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/platform/JSONValues.h"
-#include "core/platform/sql/SQLValue.h"
 #include "modules/webdatabase/Database.h"
 #include "modules/webdatabase/SQLError.h"
 #include "modules/webdatabase/SQLResultSet.h"
@@ -49,6 +47,8 @@
 #include "modules/webdatabase/SQLTransaction.h"
 #include "modules/webdatabase/SQLTransactionCallback.h"
 #include "modules/webdatabase/SQLTransactionErrorCallback.h"
+#include "modules/webdatabase/sqlite/SQLValue.h"
+#include "platform/JSONValues.h"
 #include "wtf/Vector.h"
 
 typedef WebCore::InspectorBackendDispatcher::DatabaseCommandHandler::ExecuteSQLCallback ExecuteSQLCallback;

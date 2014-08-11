@@ -28,7 +28,9 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/page/FrameView.h"
+#include "core/dom/NodeTraversal.h"
+#include "core/html/HTMLFormControlElement.h"
+#include "core/frame/FrameView.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/style/RenderStyle.h"
 
@@ -36,19 +38,32 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-static bool needsCenteredPositioning(const RenderStyle* style)
+static void runAutofocus(HTMLDialogElement* dialog)
 {
-    return style->position() == AbsolutePosition && style->hasAutoTopAndBottom();
+    Node* next = 0;
+    for (Node* node = dialog->firstChild(); node; node = next) {
+        if (node->isElementNode() && toElement(node)->isFormControlElement()) {
+            HTMLFormControlElement* control = toHTMLFormControlElement(node);
+            if (control->isAutofocusable()) {
+                control->focus();
+                control->setAutofocused();
+                return;
+            }
+        }
+        if (node->hasTagName(dialogTag))
+            next = NodeTraversal::nextSkippingChildren(node, dialog);
+        else
+            next = NodeTraversal::next(node, dialog);
+    }
 }
 
 HTMLDialogElement::HTMLDialogElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
-    , m_topIsValid(false)
-    , m_top(0)
+    , m_centeringMode(Uninitialized)
+    , m_centeredPosition(0)
     , m_returnValue("")
 {
     ASSERT(hasTagName(dialogTag));
-    setHasCustomStyleCallbacks();
     ScriptWrappable::init(this);
 }
 
@@ -60,7 +75,7 @@ PassRefPtr<HTMLDialogElement> HTMLDialogElement::create(const QualifiedName& tag
 void HTMLDialogElement::close(const String& returnValue, ExceptionState& es)
 {
     if (!fastHasAttribute(openAttr)) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
     closeDialog(returnValue);
@@ -68,48 +83,23 @@ void HTMLDialogElement::close(const String& returnValue, ExceptionState& es)
 
 void HTMLDialogElement::closeDialog(const String& returnValue)
 {
+    if (!fastHasAttribute(openAttr))
+        return;
     setBooleanAttribute(openAttr, false);
     document().removeFromTopLayer(this);
-    m_topIsValid = false;
 
     if (!returnValue.isNull())
         m_returnValue = returnValue;
 
-    dispatchEvent(Event::create(eventNames().closeEvent));
+    dispatchScopedEvent(Event::create(EventTypeNames::close));
 }
 
-PassRefPtr<RenderStyle> HTMLDialogElement::customStyleForRenderer()
+void HTMLDialogElement::forceLayoutForCentering()
 {
-    RefPtr<RenderStyle> originalStyle = originalStyleForRenderer();
-    RefPtr<RenderStyle> style = RenderStyle::clone(originalStyle.get());
-
-    // Override top to remain centered after style recalcs.
-    if (needsCenteredPositioning(style.get()) && m_topIsValid)
-        style->setTop(Length(m_top.toInt(), WebCore::Fixed));
-
-    return style.release();
-}
-
-void HTMLDialogElement::reposition()
-{
-    // Layout because we need to know our ancestors' positions and our own height.
+    m_centeringMode = Uninitialized;
     document().updateLayoutIgnorePendingStylesheets();
-
-    RenderBox* box = renderBox();
-    if (!box || !needsCenteredPositioning(box->style()))
-        return;
-
-    // Set up dialog's position to be safe-centered in the viewport.
-    // FIXME: Figure out what to do in vertical writing mode.
-    FrameView* frameView = document().view();
-    int scrollTop = frameView->scrollOffset().height();
-    int visibleHeight = frameView->visibleContentRect(ScrollableArea::IncludeScrollbars).height();
-    m_top = scrollTop;
-    if (box->height() < visibleHeight)
-        m_top += (visibleHeight - box->height()) / 2;
-    m_topIsValid = true;
-
-    setNeedsStyleRecalc(LocalStyleChange);
+    if (m_centeringMode == Uninitialized)
+        m_centeringMode = NotCentered;
 }
 
 void HTMLDialogElement::show()
@@ -117,18 +107,33 @@ void HTMLDialogElement::show()
     if (fastHasAttribute(openAttr))
         return;
     setBooleanAttribute(openAttr, true);
-    reposition();
+    forceLayoutForCentering();
 }
 
 void HTMLDialogElement::showModal(ExceptionState& es)
 {
     if (fastHasAttribute(openAttr) || !inDocument()) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
     document().addToTopLayer(this);
     setBooleanAttribute(openAttr, true);
-    reposition();
+
+    runAutofocus(this);
+    forceLayoutForCentering();
+}
+
+void HTMLDialogElement::setCentered(LayoutUnit centeredPosition)
+{
+    ASSERT(m_centeringMode == Uninitialized);
+    m_centeredPosition = centeredPosition;
+    m_centeringMode = Centered;
+}
+
+void HTMLDialogElement::setNotCentered()
+{
+    ASSERT(m_centeringMode == Uninitialized);
+    m_centeringMode = NotCentered;
 }
 
 bool HTMLDialogElement::isPresentationAttribute(const QualifiedName& name) const
@@ -143,7 +148,7 @@ bool HTMLDialogElement::isPresentationAttribute(const QualifiedName& name) const
 
 void HTMLDialogElement::defaultEventHandler(Event* event)
 {
-    if (event->type() == eventNames().cancelEvent) {
+    if (event->type() == EventTypeNames::cancel) {
         closeDialog();
         event->setDefaultHandled();
         return;

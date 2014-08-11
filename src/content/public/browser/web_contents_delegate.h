@@ -22,7 +22,6 @@
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect_f.h"
-#include "ui/gfx/vector2d.h"
 
 class GURL;
 
@@ -372,10 +371,6 @@ class CONTENT_EXPORT WebContentsDelegate {
   virtual bool IsFullscreenForTabOrPending(
       const WebContents* web_contents) const;
 
-  // Called when the renderer has scrolled programmatically.
-  virtual void DidProgrammaticallyScroll(WebContents* web_contents,
-                                         const gfx::Vector2d& scroll_point) {}
-
   // Called when a Javascript out of memory notification is received.
   virtual void JSOutOfMemory(WebContents* web_contents) {}
 
@@ -456,30 +451,6 @@ class CONTENT_EXPORT WebContentsDelegate {
       const GURL& url,
       const base::FilePath& plugin_path,
       const base::Callback<void(bool)>& callback);
-
-  // Return true if an NC hit test result was set.  Returning false means the
-  // default NC hit test behavior should be performed.  The hit test should be
-  // performed using the most recent mouse coordinates.
-  virtual bool OnNCHitTest(int* result);
-
-  // Return true if a non-client drag operation should be initiated, in which
-  // case, the mouse will be captured and OnNCDragMove will be called
-  // continuously until OnNCDragEnd gets called.  Returning false means the
-  // default Windows dragging will be performed.  The specified 'point' is in
-  // screen coordinates.
-  virtual bool OnNCDragBegin(int hitTestCode);
-
-  // Invoked while the move moves during an NC drag event.  This only gets
-  // called if the previous call to OnNCDragBegin returned true.
-  virtual void OnNCDragMove() {}
-
-  // Invoked when an NC drag event ends.  This only gets called if the previous
-  // call to OnNCDragBegin returned true.
-  virtual void OnNCDragEnd() {}
-
-  // Return true if the cursor was set.  Returning false means the default
-  // cursor will be set.
-  virtual bool OnSetCursor(int hitTestCode);
 
   // Invoked when the RenderWidgetHost's backing store has been updated.
   virtual void DidUpdateBackingStore() {}

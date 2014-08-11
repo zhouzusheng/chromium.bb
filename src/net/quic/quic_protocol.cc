@@ -113,20 +113,22 @@ uint32 MakeQuicTag(char a, char b, char c, char d) {
          static_cast<uint32>(d) << 24;
 }
 
-QuicVersion QuicVersionMax() { return kSupportedQuicVersions[0]; }
-
-QuicVersion QuicVersionMin() {
-  return kSupportedQuicVersions[arraysize(kSupportedQuicVersions) - 1];
+QuicVersionVector QuicSupportedVersions() {
+  QuicVersionVector supported_versions;
+  for (size_t i = 0; i < arraysize(kSupportedQuicVersions); ++i) {
+    supported_versions.push_back(kSupportedQuicVersions[i]);
+  }
+  return supported_versions;
 }
 
 QuicTag QuicVersionToQuicTag(const QuicVersion version) {
   switch (version) {
-    case QUIC_VERSION_8:
-      return MakeQuicTag('Q', '0', '0', '8');
-    case QUIC_VERSION_9:
-      return MakeQuicTag('Q', '0', '0', '9');
     case QUIC_VERSION_10:
       return MakeQuicTag('Q', '0', '1', '0');
+    case QUIC_VERSION_11:
+      return MakeQuicTag('Q', '0', '1', '1');
+    case QUIC_VERSION_12:
+      return MakeQuicTag('Q', '0', '1', '2');
     default:
       // This shold be an ERROR because we should never attempt to convert an
       // invalid QuicVersion to be written to the wire.
@@ -136,22 +138,15 @@ QuicTag QuicVersionToQuicTag(const QuicVersion version) {
 }
 
 QuicVersion QuicTagToQuicVersion(const QuicTag version_tag) {
-  const QuicTag quic_tag_v8 = MakeQuicTag('Q', '0', '0', '8');
-  const QuicTag quic_tag_v9 = MakeQuicTag('Q', '0', '0', '9');
-  const QuicTag quic_tag_v10 = MakeQuicTag('Q', '0', '1', '0');
-
-  if (version_tag == quic_tag_v8) {
-    return QUIC_VERSION_8;
-  }  else if (version_tag == quic_tag_v9) {
-    return QUIC_VERSION_9;
-  } else if (version_tag == quic_tag_v10) {
-    return QUIC_VERSION_10;
-  } else {
-    // Reading from the client so this should not be considered an ERROR.
-    DLOG(INFO) << "Unsupported QuicTag version: "
-               << QuicUtils::TagToString(version_tag);
-    return QUIC_VERSION_UNSUPPORTED;
+  for (size_t i = 0; i < arraysize(kSupportedQuicVersions); ++i) {
+    if (version_tag == QuicVersionToQuicTag(kSupportedQuicVersions[i])) {
+      return kSupportedQuicVersions[i];
+    }
   }
+  // Reading from the client so this should not be considered an ERROR.
+  DLOG(INFO) << "Unsupported QuicTag version: "
+             << QuicUtils::TagToString(version_tag);
+  return QUIC_VERSION_UNSUPPORTED;
 }
 
 #define RETURN_STRING_LITERAL(x) \
@@ -160,21 +155,21 @@ return #x
 
 string QuicVersionToString(const QuicVersion version) {
   switch (version) {
-    RETURN_STRING_LITERAL(QUIC_VERSION_8);
-    RETURN_STRING_LITERAL(QUIC_VERSION_9);
     RETURN_STRING_LITERAL(QUIC_VERSION_10);
+    RETURN_STRING_LITERAL(QUIC_VERSION_11);
+    RETURN_STRING_LITERAL(QUIC_VERSION_12);
     default:
       return "QUIC_VERSION_UNSUPPORTED";
   }
 }
 
-string QuicVersionArrayToString(const QuicVersion versions[],
-                                int num_versions) {
+string QuicVersionVectorToString(const QuicVersionVector& versions) {
   string result = "";
-  for (int i = 0; i < num_versions; ++i) {
-    const QuicVersion& version = versions[i];
-    result.append(QuicVersionToString(version));
-    result.append(",");
+  for (size_t i = 0; i < versions.size(); ++i) {
+    if (i != 0) {
+      result.append(",");
+    }
+    result.append(QuicVersionToString(versions[i]));
   }
   return result;
 }
@@ -204,7 +199,8 @@ ostream& operator<<(ostream& os, const QuicPacketHeader& header) {
 // TODO(ianswett): Initializing largest_observed to 0 should not be necessary.
 ReceivedPacketInfo::ReceivedPacketInfo()
     : largest_observed(0),
-      delta_time_largest_observed(QuicTime::Delta::Infinite()) {
+      delta_time_largest_observed(QuicTime::Delta::Infinite()),
+      is_truncated(false) {
 }
 
 ReceivedPacketInfo::~ReceivedPacketInfo() {}
@@ -293,13 +289,13 @@ ostream& operator<<(ostream& os,
       break;
     }
   }
- return os;
+  return os;
 }
 
 ostream& operator<<(ostream& os, const QuicAckFrame& ack_frame) {
   os << "sent info { " << ack_frame.sent_info << " } "
      << "received info { " << ack_frame.received_info << " }\n";
- return os;
+  return os;
 }
 
 CongestionFeedbackMessageFixRate::CongestionFeedbackMessageFixRate()

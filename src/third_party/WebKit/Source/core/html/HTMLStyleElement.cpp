@@ -29,8 +29,8 @@
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/ContextFeatures.h"
 #include "core/dom/Document.h"
-#include "core/dom/Event.h"
-#include "core/dom/EventSender.h"
+#include "core/events/Event.h"
+#include "core/events/EventSender.h"
 #include "core/dom/StyleEngine.h"
 #include "core/dom/shadow/ShadowRoot.h"
 
@@ -40,7 +40,7 @@ using namespace HTMLNames;
 
 static StyleEventSender& styleLoadEventSender()
 {
-    DEFINE_STATIC_LOCAL(StyleEventSender, sharedLoadEventSender, (eventNames().loadEvent));
+    DEFINE_STATIC_LOCAL(StyleEventSender, sharedLoadEventSender, (EventTypeNames::load));
     return sharedLoadEventSender;
 }
 
@@ -75,7 +75,7 @@ void HTMLStyleElement::parseAttribute(const QualifiedName& name, const AtomicStr
         m_sheet->setTitle(value);
     } else if (name == scopedAttr && ContextFeatures::styleScopedEnabled(&document())) {
         scopedAttributeChanged(!value.isNull());
-    } else if (name == mediaAttr && inDocument() && document().renderer() && m_sheet) {
+    } else if (name == mediaAttr && inDocument() && document().isActive() && m_sheet) {
         m_sheet->setMediaQueries(MediaQuerySet::create(value));
         // FIXME: This shold be RecalcStyleDeferred.
         document().modifiedStyleSheet(m_sheet.get(), RecalcStyleImmediately);
@@ -124,6 +124,9 @@ void HTMLStyleElement::scopedAttributeChanged(bool scoped)
         registerWithScopingNode(false);
 
     document().styleEngine()->addStyleSheetCandidateNode(this, false);
+    // FIXME: currently need to use FullStyleUpdate here.
+    // Because ShadowTreeStyleSheetCollection doesn't know old scoping node.
+    // So setNeedsStyleRecalc for old scoping node is not invoked.
     document().modifiedStyleSheet(sheet());
 }
 
@@ -256,7 +259,7 @@ void HTMLStyleElement::dispatchPendingLoadEvents()
 void HTMLStyleElement::dispatchPendingEvent(StyleEventSender* eventSender)
 {
     ASSERT_UNUSED(eventSender, eventSender == &styleLoadEventSender());
-    dispatchEvent(Event::create(m_loadedSheet ? eventNames().loadEvent : eventNames().errorEvent));
+    dispatchEvent(Event::create(m_loadedSheet ? EventTypeNames::load : EventTypeNames::error));
 }
 
 void HTMLStyleElement::notifyLoadedSheetAndAllCriticalSubresources(bool errorOccurred)

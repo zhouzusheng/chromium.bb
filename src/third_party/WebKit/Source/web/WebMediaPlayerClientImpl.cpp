@@ -7,7 +7,6 @@
 
 #include "InbandTextTrackPrivateImpl.h"
 #include "MediaSourcePrivateImpl.h"
-#include "WebAudioSourceProvider.h"
 #include "WebDocument.h"
 #include "WebFrameClient.h"
 #include "WebFrameImpl.h"
@@ -18,18 +17,18 @@
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/HTMLMediaSource.h"
 #include "core/html/TimeRanges.h"
-#include "core/page/Frame.h"
-#include "core/platform/NotImplemented.h"
-#include "core/platform/audio/AudioBus.h"
-#include "core/platform/audio/AudioSourceProvider.h"
-#include "core/platform/audio/AudioSourceProviderClient.h"
+#include "core/frame/Frame.h"
+#include "platform/audio/AudioBus.h"
+#include "platform/audio/AudioSourceProvider.h"
+#include "platform/audio/AudioSourceProviderClient.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/GraphicsLayer.h"
-#include "core/platform/graphics/IntSize.h"
 #include "core/platform/graphics/MediaPlayer.h"
 #include "core/rendering/RenderLayerCompositor.h"
 #include "core/rendering/RenderView.h"
 #include "modules/mediastream/MediaStreamRegistry.h"
+#include "platform/geometry/IntSize.h"
+#include "public/platform/WebAudioSourceProvider.h"
 #include "public/platform/WebCanvas.h"
 #include "public/platform/WebCompositorSupport.h"
 #include "public/platform/WebCString.h"
@@ -165,21 +164,13 @@ WebPlugin* WebMediaPlayerClientImpl::createHelperPlugin(const WebString& pluginT
     if (!plugin) {
         // There is no need to keep the helper plugin around and the caller
         // should not be expected to call close after a failure (null pointer).
-        closeHelperPlugin();
+        closeHelperPluginSoon(frame);
         return 0;
     }
 
     return plugin;
 }
 
-
-// FIXME: Remove this override and cast when Chromium is updated to use closeHelperPluginSoon().
-void WebMediaPlayerClientImpl::closeHelperPlugin()
-{
-    Frame* frame = static_cast<HTMLMediaElement*>(m_client)->document().frame();
-    WebFrameImpl* webFrame = WebFrameImpl::fromFrame(frame);
-    closeHelperPluginSoon(webFrame);
-}
 
 void WebMediaPlayerClientImpl::closeHelperPluginSoon(WebFrame* frame)
 {
@@ -222,6 +213,12 @@ void WebMediaPlayerClientImpl::mediaSourceOpened(WebMediaSource* webMediaSource)
 {
     ASSERT(webMediaSource);
     m_mediaSource->setPrivateAndOpen(adoptPtr(new MediaSourcePrivateImpl(adoptPtr(webMediaSource))));
+    m_mediaSource = 0;
+}
+
+void WebMediaPlayerClientImpl::requestFullscreen()
+{
+    m_client->mediaPlayerRequestFullscreen();
 }
 
 void WebMediaPlayerClientImpl::requestSeek(double time)
@@ -579,6 +576,13 @@ unsigned WebMediaPlayerClientImpl::droppedFrameCount() const
 {
     if (m_webMediaPlayer)
         return m_webMediaPlayer->droppedFrameCount();
+    return 0;
+}
+
+unsigned WebMediaPlayerClientImpl::corruptedFrameCount() const
+{
+    if (m_webMediaPlayer)
+        return m_webMediaPlayer->corruptedFrameCount();
     return 0;
 }
 

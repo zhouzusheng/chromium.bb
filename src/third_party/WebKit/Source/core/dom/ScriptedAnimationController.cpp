@@ -28,11 +28,18 @@
 
 #include "core/dom/Document.h"
 #include "core/dom/RequestAnimationFrameCallback.h"
+#include "core/events/Event.h"
+#include "core/frame/DOMWindow.h"
+#include "core/frame/FrameView.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/page/FrameView.h"
 
 namespace WebCore {
+
+std::pair<EventTarget*, StringImpl*> scheduledEventTargetKey(const Event* event)
+{
+    return std::make_pair(event->target(), event->type().impl());
+}
 
 ScriptedAnimationController::ScriptedAnimationController(Document* document)
     : m_document(document)
@@ -56,9 +63,7 @@ void ScriptedAnimationController::resume()
     // even when suspend hasn't (if a tab was created in the background).
     if (m_suspendCount > 0)
         --m_suspendCount;
-
-    if (!m_suspendCount && m_callbacks.size())
-        scheduleAnimation();
+    scheduleAnimationIfNeeded();
 }
 
 ScriptedAnimationController::CallbackId ScriptedAnimationController::registerCallback(PassRefPtr<RequestAnimationFrameCallback> callback)
@@ -67,11 +72,10 @@ ScriptedAnimationController::CallbackId ScriptedAnimationController::registerCal
     callback->m_firedOrCancelled = false;
     callback->m_id = id;
     m_callbacks.append(callback);
+    scheduleAnimationIfNeeded();
 
     InspectorInstrumentation::didRequestAnimationFrame(m_document, id);
 
-    if (!m_suspendCount)
-        scheduleAnimation();
     return id;
 }
 
@@ -87,9 +91,26 @@ void ScriptedAnimationController::cancelCallback(CallbackId id)
     }
 }
 
-void ScriptedAnimationController::serviceScriptedAnimations(double monotonicTimeNow)
+void ScriptedAnimationController::dispatchEvents()
 {
-    if (!m_callbacks.size() || m_suspendCount)
+    Vector<RefPtr<Event> > events;
+    events.swap(m_eventQueue);
+    m_scheduledEventTargets.clear();
+
+    for (size_t i = 0; i < events.size(); ++i) {
+        EventTarget* eventTarget = events[i]->target();
+        // FIXME: we should figure out how to make dispatchEvent properly virtual to avoid this.
+        if (DOMWindow* window = eventTarget->toDOMWindow())
+            window->dispatchEvent(events[i], 0);
+        else
+            eventTarget->dispatchEvent(events[i]);
+    }
+}
+
+void ScriptedAnimationController::executeCallbacks(double monotonicTimeNow)
+{
+    // dispatchEvents() runs script which can cause the document to be destroyed.
+    if (!m_document)
         return;
 
     double highResNowMs = 1000.0 * m_document->loader()->timing()->monotonicTimeToZeroBasedDocumentTime(monotonicTimeNow);
@@ -98,10 +119,6 @@ void ScriptedAnimationController::serviceScriptedAnimations(double monotonicTime
     // First, generate a list of callbacks to consider.  Callbacks registered from this point
     // on are considered only for the "next" frame, not this one.
     CallbackList callbacks(m_callbacks);
-
-    // Invoking callbacks may detach elements from our document, which clears the document's
-    // reference to us, so take a defensive reference.
-    RefPtr<ScriptedAnimationController> protector(this);
 
     for (size_t i = 0; i < callbacks.size(); ++i) {
         RequestAnimationFrameCallback* callback = callbacks[i].get();
@@ -123,14 +140,41 @@ void ScriptedAnimationController::serviceScriptedAnimations(double monotonicTime
         else
             ++i;
     }
-
-    if (m_callbacks.size())
-        scheduleAnimation();
 }
 
-void ScriptedAnimationController::scheduleAnimation()
+void ScriptedAnimationController::serviceScriptedAnimations(double monotonicTimeNow)
+{
+    if (!m_callbacks.size() && !m_eventQueue.size())
+        return;
+
+    if (m_suspendCount)
+        return;
+
+    RefPtr<ScriptedAnimationController> protect(this);
+
+    dispatchEvents();
+    executeCallbacks(monotonicTimeNow);
+
+    scheduleAnimationIfNeeded();
+}
+
+void ScriptedAnimationController::scheduleEvent(PassRefPtr<Event> event)
+{
+    if (!m_scheduledEventTargets.add(scheduledEventTargetKey(event.get())).isNewEntry)
+        return;
+    m_eventQueue.append(event);
+    scheduleAnimationIfNeeded();
+}
+
+void ScriptedAnimationController::scheduleAnimationIfNeeded()
 {
     if (!m_document)
+        return;
+
+    if (m_suspendCount)
+        return;
+
+    if (!m_callbacks.size() && !m_eventQueue.size())
         return;
 
     if (FrameView* frameView = m_document->view())

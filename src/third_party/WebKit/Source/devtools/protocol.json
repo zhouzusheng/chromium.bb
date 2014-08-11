@@ -152,17 +152,6 @@
                 "hidden": true
             },
             {
-                "id": "SearchResult",
-                "type": "object",
-                "description": "Search result for resource.",
-                "properties": [
-                    { "name": "url", "type": "string", "description": "Resource URL." },
-                    { "name": "frameId", "$ref": "FrameId", "description": "Resource frame id." },
-                    { "name": "matchesCount", "type": "number", "description": "Number of matches in the resource content." }
-                ],
-                "hidden": true
-            },
-            {
                 "id": "Cookie",
                 "type": "object",
                 "description": "Cookie object",
@@ -312,19 +301,6 @@
                 "hidden": true
             },
             {
-                "name": "searchInResources",
-                "description": "Searches for given string in frame / resource tree structure.",
-                "parameters": [
-                    { "name": "text", "type": "string", "description": "String to search for."  },
-                    { "name": "caseSensitive", "type": "boolean", "optional": true, "description": "If true, search is case sensitive." },
-                    { "name": "isRegex", "type": "boolean", "optional": true, "description": "If true, treats string parameter as regex." }
-                ],
-                "returns": [
-                    { "name": "result", "type": "array", "items": { "$ref": "SearchResult" }, "description": "List of search results." }
-                ],
-                "hidden": true
-            },
-            {
                 "name": "setDocumentContent",
                 "description": "Sets given markup as the document's HTML.",
                 "parameters": [
@@ -339,8 +315,11 @@
                 "parameters": [
                     { "name": "width", "type": "integer", "description": "Overriding width value in pixels (minimum 0, maximum 10000000). 0 disables the override." },
                     { "name": "height", "type": "integer", "description": "Overriding height value in pixels (minimum 0, maximum 10000000). 0 disables the override." },
-                    { "name": "fontScaleFactor", "type": "number", "description": "Overriding font scale factor value (must be positive). 1 disables the override." },
-                    { "name": "fitWindow", "type": "boolean", "description": "Whether a view that exceeds the available browser window area should be scaled down to fit." }
+                    { "name": "deviceScaleFactor", "type": "number", "description": "Overriding device scale factor value (must be positive)." },
+                    { "name": "emulateViewport", "type": "boolean", "description": "Whether viewport meta tag should be respected." },
+                    { "name": "fitWindow", "type": "boolean", "description": "Whether a view that exceeds the available browser window area should be scaled down to fit." },
+                    { "name": "textAutosizing", "type": "boolean", "optional": true, "description": "Whether to override the text autosizing feature." },
+                    { "name": "fontScaleFactor", "type": "number", "optional": true, "description": "Overriding system font scale factor (must be positive)." }
                 ],
                 "hidden": true
             },
@@ -449,16 +428,25 @@
                 "description": "Capture page screenshot.",
                 "parameters": [
                     { "name": "format", "type": "string", "optional": true, "enum": ["jpeg", "png"], "description": "Image compression format." },
-                    { "name": "quality", "type": "integer", "optional": true, "description": "Compression quality from range [0..100]." },
-                    { "name": "maxWidth", "type": "integer", "optional": true, "description": "Maximum screenshot width." },
-                    { "name": "maxHeight", "type": "integer", "optional": true, "description": "Maximum screenshot height." }
+                    { "name": "quality", "type": "integer", "hidden": true, "optional": true, "description": "Compression quality from range [0..100]." },
+                    { "name": "maxWidth", "type": "integer", "hidden": true, "optional": true, "description": "Maximum screenshot width." },
+                    { "name": "maxHeight", "type": "integer", "hidden": true, "optional": true, "description": "Maximum screenshot height." }
                 ],
                 "returns": [
                     { "name": "data", "type": "string", "description": "Base64-encoded image data (PNG)." },
                     { "name": "deviceScaleFactor", "type": "number", "hidden": true, "description": "Device scale factor." },
                     { "name": "pageScaleFactor", "type": "number", "hidden": true, "description": "Page scale factor." },
                     { "name": "viewport", "$ref": "DOM.Rect", "hidden": true, "description": "Viewport in CSS pixels." }
-                ]
+                ],
+                "hidden": true
+            },
+            {
+                "name": "canScreencast",
+                "description": "Tells whether screencast is supported.",
+                "returns": [
+                  { "name": "result", "type": "boolean", "description": "True if screencast is supported." }
+                ],
+                "hidden": true
             },
             {
                 "name": "startScreencast",
@@ -654,7 +642,7 @@
                 "hidden": true,
                 "properties": [
                     { "name": "name", "type": "string", "description": "Property name." },
-	                { "name": "type", "type": "string", "enum": ["object", "function", "undefined", "string", "number", "boolean"], "description": "Object type." },
+	                { "name": "type", "type": "string", "enum": ["object", "function", "undefined", "string", "number", "boolean", "accessor"], "description": "Object type. Accessor means that the property itself is an accessor property." },
 	                { "name": "value", "type": "string", "optional": true, "description": "User-friendly property value string." },
 	                { "name": "valuePreview", "$ref": "ObjectPreview", "optional": true, "description": "Nested value preview." },
 	                { "name": "subtype", "type": "string", "optional": true, "enum": ["array", "null", "node", "regexp", "date"], "description": "Object subtype hint. Specified for <code>object</code> type values only." }
@@ -816,7 +804,7 @@
                 "description": "Console message.",
                 "properties": [
                     { "name": "source", "type": "string", "enum": ["xml", "javascript", "network", "console-api", "storage", "appcache", "rendering", "css", "security", "other", "deprecation"], "description": "Message source." },
-                    { "name": "level", "type": "string", "enum": ["log", "warning", "error", "debug"], "description": "Message severity." },
+                    { "name": "level", "type": "string", "enum": ["log", "warning", "error", "debug", "info"], "description": "Message severity." },
                     { "name": "text", "type": "string", "description": "Message text." },
                     { "name": "type", "type": "string", "optional": true, "enum": ["log", "dir", "dirxml", "table", "trace", "clear", "startGroup", "startGroupCollapsed", "endGroup", "assert", "profile", "profileEnd"], "description": "Console message type." },
                     { "name": "url", "type": "string", "optional": true, "description": "URL of the message origin." },
@@ -1104,7 +1092,7 @@
                     { "name": "cacheDisabled", "type": "boolean", "description": "Cache disabled state." }
                 ],
                 "description": "Toggles ignoring cache for each request. If <code>true</code>, cache will not be used."
-            },  
+            },
             {
                 "name": "loadResourceForFrontend",
                 "async": true,
@@ -2213,6 +2201,17 @@
                 ],
                 "description": "Returns node id at given location.",
                 "hidden": true
+            },
+            {
+                "name": "getRelayoutBoundary",
+                "parameters": [
+                    { "name": "nodeId", "$ref": "NodeId", "description": "Id of the node." }
+                ],
+                "returns": [
+                    { "name": "nodeId", "$ref": "NodeId", "description": "Relayout boundary node id for the given node." }
+                ],
+                "description": "Returns the id of the nearest ancestor that is a relayout boundary.",
+                "hidden": true
             }
         ],
         "events": [
@@ -2393,12 +2392,20 @@
                 "description": "Match data for a CSS rule."
             },
             {
+                "id": "Selector",
+                "type": "object",
+                "properties": [
+                    { "name": "value", "type": "string", "description": "Selector text." },
+                    { "name": "range", "$ref": "SourceRange", "optional": true, "description": "Selector range in the underlying resource (if available)." }
+                ],
+                "description": "Data for a simple selector (these are delimited by commas in a selector list)."
+            },
+            {
                 "id": "SelectorList",
                 "type": "object",
                 "properties": [
-                    { "name": "selectors", "type": "array", "items": { "type": "string" }, "description": "Selectors in the list." },
-                    { "name": "text", "type": "string", "description": "Rule selector text." },
-                    { "name": "range", "$ref": "SourceRange", "optional": true, "description": "Rule selector range in the underlying resource (if available)." }
+                    { "name": "selectors", "type": "array", "items": { "$ref": "Selector" }, "description": "Selectors in the list." },
+                    { "name": "text", "type": "string", "description": "Rule selector text." }
                 ],
                 "description": "Selector list data."
             },
@@ -2844,8 +2851,7 @@
                     { "name": "data", "type": "object", "description": "Event data." },
                     { "name": "children", "type": "array", "optional": true, "items": { "$ref": "TimelineEvent" }, "description": "Nested records." },
                     { "name": "counters", "$ref": "DOMCounters", "optional": true, "hidden": true, "description": "Current values of DOM counters." },
-                    { "name": "usedHeapSize", "type": "integer", "optional": true, "hidden": true, "description": "Current size of JS heap." },
-                    { "name": "nativeHeapStatistics", "type": "object", "optional": true, "hidden": true, "description": "Native heap statistics." }
+                    { "name": "usedHeapSize", "type": "integer", "optional": true, "hidden": true, "description": "Current size of JS heap." }
                 ],
                 "description": "Timeline record contains information about the recorded activity."
             }
@@ -2864,8 +2870,7 @@
                 "parameters": [
                     { "name": "maxCallStackDepth", "optional": true, "type": "integer", "description": "Samples JavaScript stack traces up to <code>maxCallStackDepth</code>, defaults to 5." },
                     { "name": "bufferEvents", "optional": true, "type": "boolean", "hidden": true, "description": "Whether instrumentation events should be buffered and returned upon <code>stop</code> call." },
-                    { "name": "includeDomCounters", "optional": true, "type": "boolean", "hidden": true, "description": "Whether DOM counters data should be included into timeline events." },
-                    { "name": "includeNativeMemoryStatistics", "optional": true, "type": "boolean", "hidden": true, "description": "Whether native memory usage statistics should be reported as part of timeline events." }
+                    { "name": "includeDomCounters", "optional": true, "type": "boolean", "hidden": true, "description": "Whether DOM counters data should be included into timeline events." }
                 ],
                 "description": "Starts capturing instrumentation events."
             },
@@ -2939,7 +2944,7 @@
                 "properties": [
                     { "name": "location", "$ref": "Location", "description": "Location of the function." },
                     { "name": "name", "type": "string", "optional": true, "description": "Name of the function. Not present for anonymous functions." },
-                    { "name": "displayName", "type": "string", "optional": true, "description": "Display name of the function(specified in 'displayName' property on the function object)." },
+                    { "name": "displayName", "type": "string", "optional": true, "description": "Display name of the function (specified in 'displayName' property on the function object)." },
                     { "name": "inferredName", "type": "string", "optional": true, "description": "Name of the function inferred from its initial assignment." },
                     { "name": "scopeChain", "type": "array", "optional": true, "items": { "$ref": "Scope" }, "description": "Scope chain for this closure." }
                 ],
@@ -3052,7 +3057,10 @@
             },
             {
                 "name": "stepOver",
-                "description": "Steps over the statement."
+                "parameters": [
+                    { "name": "callFrameId", "optional": true, "$ref": "CallFrameId", "description": "A frame where the step must be performed." }
+                ],
+                "description": "Steps over the statement. Moves execution to the next statement in the top call frame or in the specified one."
             },
             {
                 "name": "stepInto",
@@ -3060,7 +3068,10 @@
             },
             {
                 "name": "stepOut",
-                "description": "Steps out of the function call."
+                "parameters": [
+                    { "name": "callFrameId", "optional": true, "$ref": "CallFrameId", "description": "A frame where the step must be performed." }
+                ],
+                "description": "Steps out of the top call frame or the specified one."
             },
             {
                 "name": "pause",
@@ -3389,7 +3400,8 @@
                     { "name": "functionName", "type": "string", "description": "Function name." },
                     { "name": "scriptId", "$ref": "Debugger.ScriptId", "description": "Script identifier." },
                     { "name": "url", "type": "string", "description": "URL." },
-                    { "name": "lineNumber", "type": "integer", "description": "Line number." },
+                    { "name": "lineNumber", "type": "integer", "description": "1-based line number of the function start position." },
+                    { "name": "columnNumber", "type": "integer", "description": "1-based column number of the function start position." },
                     { "name": "hitCount", "type": "integer", "description": "Number of samples where this node was on top of the call stack." },
                     { "name": "callUID", "type": "number", "description": "Call UID." },
                     { "name": "children", "type": "array", "items": { "$ref": "CPUProfileNode" }, "description": "Child nodes." },
@@ -3435,12 +3447,6 @@
                 "name": "stop",
                 "returns": [
                     { "name": "header", "$ref": "ProfileHeader", "description": "The header of the recorded profile."}
-                ]
-            },
-            {
-                "name": "getProfileHeaders",
-                "returns": [
-                    { "name": "headers", "type": "array", "items": { "$ref": "ProfileHeader"} }
                 ]
             },
             {
@@ -3503,10 +3509,10 @@
         ],
         "commands": [
             {
-                "name": "getProfileHeaders",
-                "returns": [
-                    { "name": "headers", "type": "array", "items": { "$ref": "ProfileHeader"} }
-                ]
+                "name": "enable"
+            },
+            {
+                "name": "disable"
             },
             {
                 "name": "startTrackingHeapObjects"
@@ -3570,12 +3576,6 @@
                 "parameters": [
                     { "name": "uid", "type": "integer" },
                     { "name": "chunk", "type": "string" }
-                ]
-            },
-            {
-                "name": "finishHeapSnapshot",
-                "parameters": [
-                    { "name": "uid", "type": "integer" }
                 ]
             },
             {
@@ -3988,16 +3988,6 @@
                 "description": "Disables compositing tree inspection."
             },
             {
-                "name": "getLayers",
-                "parameters": [
-                    { "name": "nodeId", "optional": true, "$ref": "DOM.NodeId", "description": "Root of the subtree for which we want to gather layers (return entire tree if not specified)" }
-                ],
-                "description": "Returns the layer tree structure of the current page.",
-                "returns": [
-                    { "name": "layers", "type": "array", "items": { "$ref": "Layer" }, "description": "Child layers." }
-                ]
-            },
-            {
                 "name": "compositingReasons",
                 "parameters": [
                     { "name": "layerId", "$ref": "LayerId", "description": "The id of the layer for which we want to get the reasons it was composited." }
@@ -4010,7 +4000,17 @@
         ],
         "events": [
             {
-                "name": "layerTreeDidChange"
+                "name": "layerTreeDidChange",
+                "parameters": [
+                    { "name": "layers", "type": "array", "items": { "$ref": "Layer" }, "optional": true, "description": "Layer tree, absent if not in the comspositing mode." }
+                ]
+            },
+            {
+                "name": "layerPainted",
+                "parameters": [
+                    { "name": "layerId", "$ref": "LayerId", "description": "The id of the painted layer." },
+                    { "name": "clip", "$ref": "DOM.Rect", "description": "Clip rectangle." }
+                ]
             }
         ]
     },

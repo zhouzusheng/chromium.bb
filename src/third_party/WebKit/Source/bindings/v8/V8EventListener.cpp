@@ -33,7 +33,7 @@
 
 #include "bindings/v8/ScriptController.h"
 #include "core/dom/Document.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 
 namespace WebCore {
 
@@ -43,7 +43,7 @@ V8EventListener::V8EventListener(v8::Local<v8::Object> listener, bool isAttribut
     setListenerObject(listener);
 }
 
-v8::Local<v8::Function> V8EventListener::getListenerFunction(ScriptExecutionContext* context)
+v8::Local<v8::Function> V8EventListener::getListenerFunction(ExecutionContext* context)
 {
     v8::Local<v8::Object> listener = getListenerObject(context);
 
@@ -66,7 +66,7 @@ v8::Local<v8::Function> V8EventListener::getListenerFunction(ScriptExecutionCont
     return v8::Local<v8::Function>();
 }
 
-v8::Local<v8::Value> V8EventListener::callListenerFunction(ScriptExecutionContext* context, v8::Handle<v8::Value> jsEvent, Event* event)
+v8::Local<v8::Value> V8EventListener::callListenerFunction(ExecutionContext* context, v8::Handle<v8::Value> jsEvent, Event* event)
 {
 
     v8::Local<v8::Function> handlerFunction = getListenerFunction(context);
@@ -85,11 +85,11 @@ v8::Local<v8::Value> V8EventListener::callListenerFunction(ScriptExecutionContex
     if (!frame)
         return v8::Local<v8::Value>();
 
-    if (!frame->script()->canExecuteScripts(AboutToExecuteScript))
+    if (!frame->script().canExecuteScripts(AboutToExecuteScript))
         return v8::Local<v8::Value>();
 
     v8::Handle<v8::Value> parameters[1] = { jsEvent };
-    return frame->script()->callFunction(handlerFunction, receiver, WTF_ARRAY_LENGTH(parameters), parameters);
+    return frame->script().callFunction(handlerFunction, receiver, WTF_ARRAY_LENGTH(parameters), parameters);
 }
 
 } // namespace WebCore

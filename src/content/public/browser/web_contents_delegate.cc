@@ -165,19 +165,6 @@ bool WebContentsDelegate::RequestPpapiBrokerPermission(
   return false;
 }
 
-bool WebContentsDelegate::OnNCHitTest(int* result) {
-  return false;
-}
-
-bool WebContentsDelegate::OnNCDragBegin(
-    int hitTestCode) {
-  return false;
-}
-
-bool WebContentsDelegate::OnSetCursor(int hitTestCode) {
-  return false;
-}
-
 bool WebContentsDelegate::ShouldSetFocusOnMouseDown() {
   return true;
 }

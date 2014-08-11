@@ -30,9 +30,9 @@
 #ifndef RasterShape_h
 #define RasterShape_h
 
-#include "core/platform/graphics/FloatRect.h"
 #include "core/rendering/shapes/Shape.h"
 #include "core/rendering/shapes/ShapeInterval.h"
+#include "platform/geometry/FloatRect.h"
 #include "wtf/Assertions.h"
 #include "wtf/Vector.h"
 
@@ -52,27 +52,37 @@ public:
     void getIncludedIntervals(int y1, int y2, IntShapeIntervals& result) const;
     void getExcludedIntervals(int y1, int y2, IntShapeIntervals& result) const;
     bool firstIncludedIntervalY(int minY, const IntSize& minSize, LayoutUnit& result) const;
+    PassOwnPtr<RasterShapeIntervals> computeShapeMarginIntervals(unsigned margin) const;
 
 private:
     int size() const { return m_intervalLists.size(); }
-    const IntShapeIntervals& getIntervals(int y) const
+
+    const IntShapeIntervals& intervalsAt(int y) const
     {
         ASSERT(y >= 0 && y < size());
         return m_intervalLists[y];
     }
+
+    IntShapeInterval limitIntervalAt(int y) const
+    {
+        const IntShapeIntervals& intervals = intervalsAt(y);
+        return intervals.size() ? IntShapeInterval(intervals[0].x1(), intervals.last().x2()) : IntShapeInterval();
+    }
+
     bool contains(const IntRect&) const;
     bool getIntervalX1Values(int minY, int maxY, int minIntervalWidth, Vector<int>& result) const;
-
+    void uniteMarginInterval(int y, const IntShapeInterval&);
     IntRect m_bounds;
-    Vector<IntShapeIntervals > m_intervalLists;
+    Vector<IntShapeIntervals> m_intervalLists;
 };
 
 class RasterShape : public Shape {
     WTF_MAKE_NONCOPYABLE(RasterShape);
 public:
-    RasterShape(PassOwnPtr<RasterShapeIntervals> intervals)
+    RasterShape(PassOwnPtr<RasterShapeIntervals> intervals, const IntSize& imageSize)
         : Shape()
         , m_intervals(intervals)
+        , m_imageSize(imageSize)
     {
     }
 
@@ -88,6 +98,8 @@ private:
     const RasterShapeIntervals& paddingIntervals() const;
 
     OwnPtr<RasterShapeIntervals> m_intervals;
+    mutable OwnPtr<RasterShapeIntervals> m_marginIntervals;
+    IntSize m_imageSize;
 };
 
 } // namespace WebCore

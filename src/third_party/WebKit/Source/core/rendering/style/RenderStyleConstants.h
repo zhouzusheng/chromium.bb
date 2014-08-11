@@ -46,7 +46,7 @@ enum PrintColorAdjust {
 // (1) StyleDifferenceEqual - The two styles are identical.
 // (2) StyleDifferenceRecompositeLayer - The layer needs its position and transform updated, but no repaint.
 // (3) StyleDifferenceRepaint - The object just needs to be repainted.
-// (4) StyleDifferenceRepaintIfText - The object needs to be repainted if it contains text.
+// (4) StyleDifferenceRepaintIfTextOrColorChange - The object needs to be repainted if it contains text or properties dependent on color (e.g., border or outline).
 // (5) StyleDifferenceRepaintLayer - The layer and its descendant layers needs to be repainted.
 // (6) StyleDifferenceLayoutPositionedMovementOnly - Only the position of this positioned object has been updated.
 // (7) StyleDifferenceSimplifiedLayout - Only overflow needs to be recomputed.
@@ -56,7 +56,7 @@ enum StyleDifference {
     StyleDifferenceEqual,
     StyleDifferenceRecompositeLayer,
     StyleDifferenceRepaint,
-    StyleDifferenceRepaintIfText,
+    StyleDifferenceRepaintIfTextOrColorChange,
     StyleDifferenceRepaintLayer,
     StyleDifferenceLayoutPositionedMovementOnly,
     StyleDifferenceSimplifiedLayout,
@@ -89,6 +89,8 @@ enum PseudoId {
     FIRST_INTERNAL_PSEUDOID = SCROLLBAR_THUMB,
     PUBLIC_PSEUDOID_MASK = ((1 << FIRST_INTERNAL_PSEUDOID) - 1) & ~((1 << FIRST_PUBLIC_PSEUDOID) - 1)
 };
+
+enum ColumnFill { ColumnFillBalance, ColumnFillAuto };
 
 enum EBorderCollapse { BSEPARATE = 0, BCOLLAPSE = 1 };
 
@@ -373,12 +375,14 @@ enum TextAlignLast {
     TextAlignLastAuto, TextAlignLastStart, TextAlignLastEnd, TextAlignLastLeft, TextAlignLastRight, TextAlignLastCenter, TextAlignLastJustify
 };
 
-#if ENABLE(CSS3_TEXT)
+enum TextJustify {
+    TextJustifyAuto, TextJustifyNone, TextJustifyInterWord, TextJustifyDistribute
+};
+
 enum TextUnderlinePosition {
     // FIXME: Implement support for 'under left' and 'under right' values.
     TextUnderlinePositionAuto = 0x1, TextUnderlinePositionAlphabetic = 0x2, TextUnderlinePositionUnder = 0x4
 };
-#endif // CSS3_TEXT
 
 enum EPageBreak {
     PBAUTO, PBALWAYS, PBAVOID
@@ -440,7 +444,7 @@ enum ECursor {
 
 // The order of this enum must match the order of the display values in CSSValueKeywords.in.
 enum EDisplay {
-    INLINE, BLOCK, LIST_ITEM, RUN_IN, COMPACT, INLINE_BLOCK,
+    INLINE, BLOCK, LIST_ITEM, INLINE_BLOCK,
     TABLE, INLINE_TABLE, TABLE_ROW_GROUP,
     TABLE_HEADER_GROUP, TABLE_FOOTER_GROUP, TABLE_ROW,
     TABLE_COLUMN_GROUP, TABLE_COLUMN, TABLE_CELL,
@@ -514,6 +518,8 @@ enum DraggableRegionMode { DraggableRegionNone, DraggableRegionDrag, DraggableRe
 enum TouchAction { TouchActionAuto, TouchActionNone };
 
 enum EIsolation { IsolationAuto, IsolationIsolate };
+
+enum TouchActionDelay { TouchActionDelayNone, TouchActionDelayScript };
 
 // Reasonable maximum to prevent insane font sizes from causing crashes on some platforms (such as Windows).
 static const float maximumAllowedFontSize = 1000000.0f;

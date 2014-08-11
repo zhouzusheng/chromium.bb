@@ -41,10 +41,14 @@ SkBicubicImageFilter* SkBicubicImageFilter::CreateMitchell(const SkSize& scale,
 }
 
 SkBicubicImageFilter::SkBicubicImageFilter(SkFlattenableReadBuffer& buffer) : INHERITED(buffer) {
-    SkDEBUGCODE(uint32_t readSize =) buffer.readScalarArray(fCoefficients);
-    SkASSERT(readSize == 16);
+    SkDEBUGCODE(bool success =) buffer.readScalarArray(fCoefficients, 16);
+    SkASSERT(success);
     fScale.fWidth = buffer.readScalar();
     fScale.fHeight = buffer.readScalar();
+    buffer.validate(SkScalarIsFinite(fScale.fWidth) &&
+                    SkScalarIsFinite(fScale.fHeight) &&
+                    (fScale.fWidth >= 0) &&
+                    (fScale.fHeight >= 0));
 }
 
 void SkBicubicImageFilter::flatten(SkFlattenableWriteBuffer& buffer) const {

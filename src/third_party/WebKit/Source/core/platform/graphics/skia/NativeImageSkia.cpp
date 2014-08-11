@@ -32,23 +32,22 @@
 #include "core/platform/graphics/skia/NativeImageSkia.h"
 
 #include "core/platform/PlatformInstrumentation.h"
-#include "core/platform/chromium/TraceEvent.h"
-#include "core/platform/graphics/FloatPoint.h"
-#include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/FloatSize.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/Image.h"
 #include "core/platform/graphics/chromium/DeferredImageDecoder.h"
 #include "core/platform/graphics/skia/SkiaUtils.h"
+#include "platform/TraceEvent.h"
+#include "platform/geometry/FloatPoint.h"
+#include "platform/geometry/FloatRect.h"
+#include "platform/geometry/FloatSize.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkMatrix.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkScalar.h"
 #include "third_party/skia/include/core/SkShader.h"
-#include "third_party/skia/include/effects/SkLumaXfermode.h"
 
-#include <limits>
 #include <math.h>
+#include <limits>
 
 namespace WebCore {
 
@@ -325,11 +324,8 @@ void NativeImageSkia::draw(GraphicsContext* context, const SkRect& srcRect, cons
 {
     TRACE_EVENT0("skia", "NativeImageSkia::draw");
     SkPaint paint;
-    if (context->drawLuminanceMask()) {
-        paint.setXfermode(SkLumaMaskXfermode::Create(SkXfermode::kSrcOver_Mode));
-    } else {
-        paint.setXfermode(compOp.get());
-    }
+    paint.setXfermode(compOp.get());
+    paint.setColorFilter(context->colorFilter());
     paint.setAlpha(context->getNormalizedAlpha());
     paint.setLooper(context->drawLooper());
     // only antialias if we're rotated or skewed
@@ -360,11 +356,12 @@ void NativeImageSkia::draw(GraphicsContext* context, const SkRect& srcRect, cons
     resampling = limitResamplingMode(context, resampling);
     paint.setFilterBitmap(resampling == LinearResampling);
 
+    bool isLazyDecoded = DeferredImageDecoder::isLazyDecoded(bitmap());
     // FIXME: Bicubic filtering in Skia is only applied to defer-decoded images
     // as an experiment. Once this filtering code path becomes stable we should
     // turn this on for all cases, including non-defer-decoded images.
-    bool useBicubicFilter = resampling == AwesomeResampling
-        && DeferredImageDecoder::isLazyDecoded(bitmap());
+    bool useBicubicFilter = resampling == AwesomeResampling && isLazyDecoded;
+
     if (useBicubicFilter)
         paint.setFilterLevel(SkPaint::kHigh_FilterLevel);
 
@@ -379,7 +376,23 @@ void NativeImageSkia::draw(GraphicsContext* context, const SkRect& srcRect, cons
         // don't send extra pixels.
         context->drawBitmapRect(bitmap(), &srcRect, destRect, &paint);
     }
+    if (isLazyDecoded)
+        PlatformInstrumentation::didDrawLazyPixelRef(reinterpret_cast<unsigned long long>(bitmap().pixelRef()));
     context->didDrawRect(destRect, paint, &bitmap());
+}
+
+static SkBitmap createBitmapWithSpace(const SkBitmap& bitmap, int spaceWidth, int spaceHeight)
+{
+    SkBitmap result;
+    result.setConfig(bitmap.getConfig(),
+        bitmap.width() + spaceWidth,
+        bitmap.height() + spaceHeight);
+    result.allocPixels();
+
+    result.eraseColor(SK_ColorTRANSPARENT);
+    bitmap.copyPixelsTo(reinterpret_cast<uint8_t*>(result.getPixels()), result.rowBytes() * result.height(), result.rowBytes());
+
+    return result;
 }
 
 void NativeImageSkia::drawPattern(
@@ -389,7 +402,8 @@ void NativeImageSkia::drawPattern(
     const FloatPoint& phase,
     CompositeOperator compositeOp,
     const FloatRect& destRect,
-    BlendMode blendMode) const
+    BlendMode blendMode,
+    const IntSize& repeatSpacing) const
 {
     FloatRect normSrcRect = floatSrcRect;
     normSrcRect.intersect(FloatRect(0, 0, bitmap().width(), bitmap().height()));
@@ -421,9 +435,10 @@ void NativeImageSkia::drawPattern(
     SkMatrix shaderTransform;
     RefPtr<SkShader> shader;
 
+    bool isLazyDecoded = DeferredImageDecoder::isLazyDecoded(bitmap());
     // Bicubic filter is only applied to defer-decoded images, see
     // NativeImageSkia::draw for details.
-    bool useBicubicFilter = resampling == AwesomeResampling && DeferredImageDecoder::isLazyDecoded(bitmap());
+    bool useBicubicFilter = resampling == AwesomeResampling && isLazyDecoded;
 
     if (resampling == AwesomeResampling && !useBicubicFilter) {
         // Do nice resampling.
@@ -436,7 +451,13 @@ void NativeImageSkia::drawPattern(
         // fragment is slightly larger to align to integer
         // boundaries.
         SkBitmap resampled = extractScaledImageFragment(normSrcRect, scaleX, scaleY, &scaledSrcRect);
-        shader = adoptRef(SkShader::CreateBitmapShader(resampled, SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode));
+        if (repeatSpacing.isZero()) {
+            shader = adoptRef(SkShader::CreateBitmapShader(resampled, SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode));
+        } else {
+            shader = adoptRef(SkShader::CreateBitmapShader(
+                createBitmapWithSpace(resampled, repeatSpacing.width() * ctmScaleX, repeatSpacing.height() * ctmScaleY),
+                SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode));
+        }
 
         // Since we just resized the bitmap, we need to remove the scale
         // applied to the pixels in the bitmap shader. This means we need
@@ -449,7 +470,14 @@ void NativeImageSkia::drawPattern(
         // No need to resample before drawing.
         SkBitmap srcSubset;
         bitmap().extractSubset(&srcSubset, enclosingIntRect(normSrcRect));
-        shader = adoptRef(SkShader::CreateBitmapShader(srcSubset, SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode));
+        if (repeatSpacing.isZero()) {
+            shader = adoptRef(SkShader::CreateBitmapShader(srcSubset, SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode));
+        } else {
+            shader = adoptRef(SkShader::CreateBitmapShader(
+                createBitmapWithSpace(srcSubset, repeatSpacing.width() * ctmScaleX, repeatSpacing.height() * ctmScaleY),
+                SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode));
+        }
+
         // Because no resizing occurred, the shader transform should be
         // set to the pattern's transform, which just includes scale.
         shaderTransform.setScale(scale.width(), scale.height());
@@ -466,15 +494,14 @@ void NativeImageSkia::drawPattern(
 
     SkPaint paint;
     paint.setShader(shader.get());
-    if (context->drawLuminanceMask()) {
-        paint.setXfermode(SkLumaMaskXfermode::Create(SkXfermode::kSrcOver_Mode));
-    } else {
-        paint.setXfermode(WebCoreCompositeToSkiaComposite(compositeOp, blendMode).get());
-    }
+    paint.setXfermode(WebCoreCompositeToSkiaComposite(compositeOp, blendMode).get());
+    paint.setColorFilter(context->colorFilter());
 
     paint.setFilterBitmap(resampling == LinearResampling);
     if (useBicubicFilter)
         paint.setFilterLevel(SkPaint::kHigh_FilterLevel);
+    if (isLazyDecoded)
+        PlatformInstrumentation::didDrawLazyPixelRef(reinterpret_cast<unsigned long long>(bitmap().pixelRef()));
 
     context->drawRect(destRect, paint);
 }

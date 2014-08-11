@@ -33,7 +33,7 @@
 #include "core/fetch/ResourceLoaderHost.h"
 #include "core/fetch/ResourceLoaderOptions.h"
 #include "core/fetch/ResourcePtr.h"
-#include "core/platform/Timer.h"
+#include "platform/Timer.h"
 #include "wtf/Deque.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
@@ -50,7 +50,6 @@ class ImageResource;
 class RawResource;
 class ScriptResource;
 class ShaderResource;
-class TextTrackResource;
 class XSLStyleSheetResource;
 class Document;
 class DocumentLoader;
@@ -92,7 +91,6 @@ public:
     ResourcePtr<DocumentResource> fetchSVGDocument(FetchRequest&);
     ResourcePtr<XSLStyleSheetResource> fetchXSLStyleSheet(FetchRequest&);
     ResourcePtr<Resource> fetchLinkResource(Resource::Type, FetchRequest&);
-    ResourcePtr<TextTrackResource> fetchTextTrack(FetchRequest&);
     ResourcePtr<ShaderResource> fetchShader(FetchRequest&);
     ResourcePtr<RawResource> fetchImport(FetchRequest&);
 
@@ -180,6 +178,8 @@ private:
 
     bool canRequest(Resource::Type, const KURL&, const ResourceLoaderOptions&, bool forPreload = false);
     bool checkInsecureContent(Resource::Type, const KURL&, MixedContentBlockingTreatment) const;
+
+    static bool resourceNeedsLoad(Resource*, const FetchRequest&, RevalidationPolicy);
 
     void notifyLoadedFromMemoryCache(Resource*);
 

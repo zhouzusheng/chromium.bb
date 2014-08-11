@@ -37,11 +37,6 @@ class CONTENT_EXPORT VideoCaptureManager : public MediaStreamProvider {
   typedef base::Callback<
       void(const base::WeakPtr<VideoCaptureController>&)> DoneCB;
 
-  // Calling |Start| of this id will open the first device, even though open has
-  // not been called. This is used to be able to use video capture devices
-  // before MediaStream is implemented in Chrome and WebKit.
-  enum { kStartOpenSessionId = 1 };
-
   VideoCaptureManager();
 
   // Implements MediaStreamProvider.
@@ -91,23 +86,6 @@ class CONTENT_EXPORT VideoCaptureManager : public MediaStreamProvider {
   virtual ~VideoCaptureManager();
   struct DeviceEntry;
 
-  // Helper for the kStartOpenSessionId case.
-  void OpenAndStartDefaultSession(
-      const media::VideoCaptureParams& capture_params,
-      base::ProcessHandle client_render_process,
-      VideoCaptureControllerID client_id,
-      VideoCaptureControllerEventHandler* client_handler,
-      const DoneCB& done_cb,
-      const media::VideoCaptureDevice::Names& device_names);
-
-  // Helper routine implementing StartCaptureForClient().
-  void DoStartCaptureForClient(
-      const media::VideoCaptureParams& capture_params,
-      base::ProcessHandle client_render_process,
-      VideoCaptureControllerID client_id,
-      VideoCaptureControllerEventHandler* client_handler,
-      const DoneCB& done_cb);
-
   // Check to see if |entry| has no clients left on its controller. If so,
   // remove it from the list of devices, and delete it asynchronously. |entry|
   // may be freed by this function.
@@ -138,12 +116,12 @@ class CONTENT_EXPORT VideoCaptureManager : public MediaStreamProvider {
       MediaStreamType stream_type);
 
   // Create and Start a new VideoCaptureDevice, storing the result in
-  // |entry->video_capture_device|. Ownership of |handler| passes to
+  // |entry->video_capture_device|. Ownership of |client| passes to
   // the device.
   void DoStartDeviceOnDeviceThread(
       DeviceEntry* entry,
       const media::VideoCaptureCapability& capture_params,
-      scoped_ptr<media::VideoCaptureDevice::EventHandler> handler);
+      scoped_ptr<media::VideoCaptureDevice::Client> client);
 
   // Stop and destroy the VideoCaptureDevice held in
   // |entry->video_capture_device|.

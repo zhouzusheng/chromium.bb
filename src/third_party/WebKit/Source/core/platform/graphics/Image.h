@@ -27,11 +27,11 @@
 #ifndef Image_h
 #define Image_h
 
-#include "core/platform/graphics/Color.h"
-#include "core/platform/graphics/GraphicsTypes.h"
-#include "core/platform/graphics/ImageOrientation.h"
-#include "core/platform/graphics/IntRect.h"
 #include "core/platform/graphics/skia/NativeImageSkia.h"
+#include "platform/geometry/IntRect.h"
+#include "platform/graphics/Color.h"
+#include "platform/graphics/GraphicsTypes.h"
+#include "platform/graphics/ImageOrientation.h"
 #include "third_party/skia/include/core/SkXfermode.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -45,8 +45,8 @@ class FloatPoint;
 class FloatRect;
 class FloatSize;
 class GraphicsContext;
+class Length;
 class SharedBuffer;
-struct Length;
 
 // This class gets notified when an image creates or destroys decoded frames and when it advances animation frames.
 class ImageObserver;
@@ -54,7 +54,7 @@ class ImageObserver;
 class Image : public RefCounted<Image> {
     friend class GeneratedImage;
     friend class CrossfadeGeneratedImage;
-    friend class GeneratorGeneratedImage;
+    friend class GradientGeneratedImage;
     friend class GraphicsContext;
 
 public:
@@ -92,7 +92,6 @@ public:
     virtual String filenameExtension() const { return String(); } // null string if unknown
 
     virtual void destroyDecodedData(bool destroyAll) = 0;
-    virtual unsigned decodedSize() const = 0;
 
     SharedBuffer* data() { return m_encodedImageData.get(); }
 
@@ -112,7 +111,7 @@ public:
 
     virtual void drawPattern(GraphicsContext*, const FloatRect&,
         const FloatSize&, const FloatPoint& phase, CompositeOperator,
-        const FloatRect&, BlendMode = BlendModeNormal);
+        const FloatRect&, BlendMode = BlendModeNormal, const IntSize& repeatSpacing = IntSize());
 
 #if !ASSERT_DISABLED
     virtual bool notSolidColor() { return true; }
@@ -127,7 +126,7 @@ protected:
     virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator, BlendMode) = 0;
     virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator, BlendMode, RespectImageOrientationEnum);
     void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatPoint& srcPoint, const FloatSize& tileSize,
-        CompositeOperator, BlendMode);
+        CompositeOperator, BlendMode, const IntSize& repeatSpacing);
     void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, const FloatSize& tileScaleFactor, TileRule hRule, TileRule vRule, CompositeOperator);
 
     // Supporting tiled drawing

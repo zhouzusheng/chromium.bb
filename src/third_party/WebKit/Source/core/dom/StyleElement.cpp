@@ -29,7 +29,7 @@
 #include "core/dom/ScriptableDocumentParser.h"
 #include "core/dom/StyleEngine.h"
 #include "core/html/HTMLStyleElement.h"
-#include "core/page/ContentSecurityPolicy.h"
+#include "core/frame/ContentSecurityPolicy.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/TextPosition.h"
 
@@ -76,8 +76,8 @@ void StyleElement::removedFromDocument(Document& document, Element* element, Con
         clearSheet();
 
     // If we're in document teardown, then we don't need to do any notification of our sheet's removal.
-    if (document.renderer())
-        document.removedStyleSheet(removedSheet.get());
+    if (document.isActive())
+        document.removedStyleSheet(removedSheet.get(), RecalcStyleDeferred, AnalyzedStyleUpdate);
 }
 
 void StyleElement::clearDocumentData(Document& document, Element* element)
@@ -131,7 +131,8 @@ void StyleElement::createSheet(Element* e, const String& text)
 
     // If type is empty or CSS, this is a CSS style sheet.
     const AtomicString& type = this->type();
-    if (document.contentSecurityPolicy()->allowInlineStyle(e->document().url(), m_startPosition.m_line) && isCSS(e, type)) {
+    bool passesContentSecurityPolicyChecks = document.contentSecurityPolicy()->allowStyleNonce(e->fastGetAttribute(HTMLNames::nonceAttr)) || document.contentSecurityPolicy()->allowInlineStyle(e->document().url(), m_startPosition.m_line);
+    if (isCSS(e, type) && passesContentSecurityPolicyChecks) {
         RefPtr<MediaQuerySet> mediaQueries = MediaQuerySet::create(media());
 
         MediaQueryEvaluator screenEval("screen", true);

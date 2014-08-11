@@ -37,18 +37,18 @@
 #include "core/css/MediaFeatureNames.h"
 #include "core/css/MediaList.h"
 #include "core/css/MediaQuery.h"
-#include "core/css/MediaQueryExp.h"
-#include "core/css/resolver/StyleResolver.h"
+#include "core/css/resolver/MediaQueryResult.h"
 #include "core/dom/NodeRenderStyle.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/inspector/InspectorInstrumentation.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
-#include "core/platform/PlatformScreen.h"
-#include "core/platform/graphics/FloatRect.h"
 #include "core/rendering/RenderLayerCompositor.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/style/RenderStyle.h"
+#include "platform/PlatformScreen.h"
+#include "platform/geometry/FloatRect.h"
 #include "wtf/HashMap.h"
 
 namespace WebCore {
@@ -117,7 +117,7 @@ static bool applyRestrictor(MediaQuery::Restrictor r, bool value)
     return r == MediaQuery::Not ? !value : value;
 }
 
-bool MediaQueryEvaluator::eval(const MediaQuerySet* querySet, StyleResolver* styleResolver) const
+bool MediaQueryEvaluator::eval(const MediaQuerySet* querySet, MediaQueryResultList* viewportDependentMediaQueryResults) const
 {
     if (!querySet)
         return true;
@@ -137,11 +137,8 @@ bool MediaQueryEvaluator::eval(const MediaQuerySet* querySet, StyleResolver* sty
             size_t j = 0;
             for (; j < expressions.size(); ++j) {
                 bool exprResult = eval(expressions.at(j).get());
-                // FIXME: Instead of storing these on StyleResolver, we should store them locally
-                // and then any client of this method can grab at them afterwords.
-                // Alternatively we could use an explicit out-parameter of this method.
-                if (styleResolver && expressions.at(j)->isViewportDependent())
-                    styleResolver->addViewportDependentMediaQueryResult(expressions.at(j).get(), exprResult);
+                if (viewportDependentMediaQueryResults && expressions.at(j)->isViewportDependent())
+                    viewportDependentMediaQueryResults->append(adoptPtr(new MediaQueryResult(*expressions.at(j), exprResult)));
                 if (!exprResult)
                     break;
             }
@@ -172,7 +169,7 @@ bool compareValue(T a, T b, MediaFeaturePrefix op)
 static bool compareAspectRatioValue(CSSValue* value, int width, int height, MediaFeaturePrefix op)
 {
     if (value->isAspectRatioValue()) {
-        CSSAspectRatioValue* aspectRatio = static_cast<CSSAspectRatioValue*>(value);
+        CSSAspectRatioValue* aspectRatio = toCSSAspectRatioValue(value);
         return compareValue(width * static_cast<int>(aspectRatio->denominatorValue()), height * static_cast<int>(aspectRatio->numeratorValue()), op);
     }
 
@@ -360,11 +357,13 @@ static bool computeLength(CSSValue* value, bool strict, RenderStyle* initialStyl
 static bool deviceHeightMediaFeatureEval(CSSValue* value, RenderStyle* style, Frame* frame, MediaFeaturePrefix op)
 {
     if (value) {
-        FloatRect sg = screenRect(frame->page()->mainFrame()->view());
         int length;
-        long height = sg.height();
-        InspectorInstrumentation::applyScreenHeightOverride(frame, &height);
-        return computeLength(value, !frame->document()->inQuirksMode(), style, length) && compareValue(static_cast<int>(height), length, op);
+        if (!computeLength(value, !frame->document()->inQuirksMode(), style, length))
+            return false;
+        int height = static_cast<int>(screenRect(frame->page()->mainFrame()->view()).height());
+        if (frame->settings()->reportScreenSizeInPhysicalPixelsQuirk())
+            height = lroundf(height * frame->page()->deviceScaleFactor());
+        return compareValue(height, length, op);
     }
     // ({,min-,max-}device-height)
     // assume if we have a device, assume non-zero
@@ -374,11 +373,13 @@ static bool deviceHeightMediaFeatureEval(CSSValue* value, RenderStyle* style, Fr
 static bool deviceWidthMediaFeatureEval(CSSValue* value, RenderStyle* style, Frame* frame, MediaFeaturePrefix op)
 {
     if (value) {
-        FloatRect sg = screenRect(frame->page()->mainFrame()->view());
         int length;
-        long width = sg.width();
-        InspectorInstrumentation::applyScreenWidthOverride(frame, &width);
-        return computeLength(value, !frame->document()->inQuirksMode(), style, length) && compareValue(static_cast<int>(width), length, op);
+        if (!computeLength(value, !frame->document()->inQuirksMode(), style, length))
+            return false;
+        int width = static_cast<int>(screenRect(frame->page()->mainFrame()->view()).width());
+        if (frame->settings()->reportScreenSizeInPhysicalPixelsQuirk())
+            width = lroundf(width * frame->page()->deviceScaleFactor());
+        return compareValue(width, length, op);
     }
     // ({,min-,max-}device-width)
     // assume if we have a device, assume non-zero

@@ -20,6 +20,10 @@
 #endif  // OS_MACOSX
 
 namespace l10n_util {
+// This method translates a generic locale name to one of the locally defined
+// ones. This method returns true if it succeeds.
+UI_EXPORT bool CheckAndResolveLocale(const std::string& locale,
+                                     std::string* resolved_locale);
 
 // This method is responsible for determining the locale as defined below. In
 // nearly all cases you shouldn't call this, rather use GetApplicationLocale
@@ -86,8 +90,15 @@ UI_EXPORT bool IsValidLocaleSyntax(const std::string& locale);
 UI_EXPORT std::string GetStringUTF8(int message_id);
 UI_EXPORT string16 GetStringUTF16(int message_id);
 
-// Get a resource string and replace $1-$2-$3 with |a| and |b|
-// respectively.  Additionally, $$ is replaced by $.
+// Get a resource string and replace $i with replacements[i] for all
+// i < replacements.size(). Additionally, $$ is replaced by $.
+// If non-NULL |offsets| will be replaced with the start points of the replaced
+// strings.
+UI_EXPORT string16 GetStringFUTF16(int message_id,
+                                   const std::vector<string16>& replacements,
+                                   std::vector<size_t>* offsets);
+
+// Convenience wrappers for the above.
 UI_EXPORT string16 GetStringFUTF16(int message_id,
                                    const string16& a);
 UI_EXPORT string16 GetStringFUTF16(int message_id,

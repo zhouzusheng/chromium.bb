@@ -39,10 +39,10 @@
 #include "core/editing/TextIterator.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/htmlediting.h"
-#include "core/platform/text/TextBoundaries.h"
 #include "core/rendering/InlineTextBox.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/RenderObject.h"
+#include "platform/text/TextBoundaries.h"
 
 namespace WebCore {
 
@@ -326,18 +326,18 @@ static TextBreakIterator* wordBreakIteratorForMaxOffsetBoundary(const VisiblePos
 
 static bool isLogicalStartOfWord(TextBreakIterator* iter, int position, bool hardLineBreak)
 {
-    bool boundary = hardLineBreak ? true : isTextBreak(iter, position);
+    bool boundary = hardLineBreak ? true : iter->isBoundary(position);
     if (!boundary)
         return false;
 
-    textBreakFollowing(iter, position);
+    iter->following(position);
     // isWordTextBreak returns true after moving across a word and false after moving across a punctuation/space.
     return isWordTextBreak(iter);
 }
 
 static bool islogicalEndOfWord(TextBreakIterator* iter, int position, bool hardLineBreak)
 {
-    bool boundary = isTextBreak(iter, position);
+    bool boundary = iter->isBoundary(position);
     return (hardLineBreak || boundary) && isWordTextBreak(iter);
 }
 
@@ -391,7 +391,7 @@ static VisiblePosition visualWordPosition(const VisiblePosition& visiblePosition
         if (!iter)
             break;
 
-        textBreakFirst(iter);
+        iter->first();
         int offsetInIterator = offsetInBox - textBox->start() + previousBoxLength;
 
         bool isWordBreak;
@@ -487,9 +487,9 @@ static VisiblePosition previousBoundary(const VisiblePosition& c, BoundarySearch
 
     SimplifiedBackwardsTextIterator it(searchRange.get());
     unsigned next = 0;
-    bool inTextSecurityMode = start.deprecatedNode() && start.deprecatedNode()->renderer() && start.deprecatedNode()->renderer()->style()->textSecurity() != TSNONE;
     bool needMoreContext = false;
     while (!it.atEnd()) {
+        bool inTextSecurityMode = it.node() && it.node()->renderer() && it.node()->renderer()->style()->textSecurity() != TSNONE;
         // iterate to get chunks until the searchFunction returns a non-zero value.
         if (!inTextSecurityMode)
             it.prependTextTo(string);
@@ -562,11 +562,11 @@ static VisiblePosition nextBoundary(const VisiblePosition& c, BoundarySearchFunc
     TextIterator it(searchRange.get(), TextIteratorEmitsCharactersBetweenAllVisiblePositions);
     const unsigned invalidOffset = static_cast<unsigned>(-1);
     unsigned next = invalidOffset;
-    bool inTextSecurityMode = start.deprecatedNode() && start.deprecatedNode()->renderer() && start.deprecatedNode()->renderer()->style()->textSecurity() != TSNONE;
     bool needMoreContext = false;
     while (!it.atEnd()) {
         // Keep asking the iterator for chunks until the search function
         // returns an end value not equal to the length of the string passed to it.
+        bool inTextSecurityMode = it.node() && it.node()->renderer() && it.node()->renderer()->style()->textSecurity() != TSNONE;
         if (!inTextSecurityMode)
             it.appendTextTo(string);
         else {
@@ -1008,7 +1008,7 @@ VisiblePosition nextLinePosition(const VisiblePosition &visiblePosition, int lin
     if (!root) {
         // FIXME: We need do the same in previousLinePosition.
         Node* child = node->childNode(p.deprecatedEditingOffset());
-        node = child ? child : node->lastDescendant();
+        node = child ? child : &node->lastDescendant();
         Position position = nextRootInlineBoxCandidatePosition(node, visiblePosition, editableType);
         if (position.isNotNull()) {
             RenderedPosition renderedPosition(position);
@@ -1043,7 +1043,7 @@ static unsigned startSentenceBoundary(const UChar* characters, unsigned length, 
 {
     TextBreakIterator* iterator = sentenceBreakIterator(characters, length);
     // FIXME: The following function can return -1; we don't handle that.
-    return textBreakPreceding(iterator, length);
+    return iterator->preceding(length);
 }
 
 VisiblePosition startOfSentence(const VisiblePosition &c)
@@ -1054,7 +1054,7 @@ VisiblePosition startOfSentence(const VisiblePosition &c)
 static unsigned endSentenceBoundary(const UChar* characters, unsigned length, unsigned, BoundarySearchContextAvailability, bool&)
 {
     TextBreakIterator* iterator = sentenceBreakIterator(characters, length);
-    return textBreakNext(iterator);
+    return iterator->next();
 }
 
 // FIXME: This includes the space after the punctuation that marks the end of the sentence.
@@ -1068,7 +1068,7 @@ static unsigned previousSentencePositionBoundary(const UChar* characters, unsign
     // FIXME: This is identical to startSentenceBoundary. I'm pretty sure that's not right.
     TextBreakIterator* iterator = sentenceBreakIterator(characters, length);
     // FIXME: The following function can return -1; we don't handle that.
-    return textBreakPreceding(iterator, length);
+    return iterator->preceding(length);
 }
 
 VisiblePosition previousSentencePosition(const VisiblePosition &c)
@@ -1082,7 +1082,7 @@ static unsigned nextSentencePositionBoundary(const UChar* characters, unsigned l
     // FIXME: This is identical to endSentenceBoundary. This isn't right, it needs to
     // move to the equivlant position in the following sentence.
     TextBreakIterator* iterator = sentenceBreakIterator(characters, length);
-    return textBreakFollowing(iterator, 0);
+    return iterator->following(0);
 }
 
 VisiblePosition nextSentencePosition(const VisiblePosition &c)
@@ -1366,7 +1366,7 @@ bool inSameDocument(const VisiblePosition &a, const VisiblePosition &b)
     if (an == bn)
         return true;
 
-    return &an->document() == &bn->document();
+    return an->document() == bn->document();
 }
 
 bool isStartOfDocument(const VisiblePosition &p)

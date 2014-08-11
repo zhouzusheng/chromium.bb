@@ -44,7 +44,7 @@ namespace WebCore {
 
 class DOMDataStore;
 class ScriptController;
-class ScriptExecutionContext;
+class ExecutionContext;
 
 enum WorldIdConstants {
     MainWorldId = 0,
@@ -109,7 +109,7 @@ public:
         ASSERT(isIsolatedWorld());
         return m_domDataStore.get();
     }
-    v8::Handle<v8::Context> context(ScriptController*);
+    v8::Handle<v8::Context> context(ScriptController&);
 
     static void setInitializingWindow(bool);
 

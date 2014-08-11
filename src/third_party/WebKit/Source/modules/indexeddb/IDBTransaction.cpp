@@ -29,8 +29,8 @@
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/DOMError.h"
-#include "core/dom/EventQueue.h"
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
+#include "core/events/EventQueue.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "modules/indexeddb/IDBDatabase.h"
 #include "modules/indexeddb/IDBEventDispatcher.h"
@@ -42,7 +42,7 @@
 
 namespace WebCore {
 
-PassRefPtr<IDBTransaction> IDBTransaction::create(ScriptExecutionContext* context, int64_t id, const Vector<String>& objectStoreNames, IndexedDB::TransactionMode mode, IDBDatabase* db)
+PassRefPtr<IDBTransaction> IDBTransaction::create(ExecutionContext* context, int64_t id, const Vector<String>& objectStoreNames, IndexedDB::TransactionMode mode, IDBDatabase* db)
 {
     IDBOpenDBRequest* openDBRequest = 0;
     RefPtr<IDBTransaction> transaction(adoptRef(new IDBTransaction(context, id, objectStoreNames, mode, db, openDBRequest, IDBDatabaseMetadata())));
@@ -50,7 +50,7 @@ PassRefPtr<IDBTransaction> IDBTransaction::create(ScriptExecutionContext* contex
     return transaction.release();
 }
 
-PassRefPtr<IDBTransaction> IDBTransaction::create(ScriptExecutionContext* context, int64_t id, IDBDatabase* db, IDBOpenDBRequest* openDBRequest, const IDBDatabaseMetadata& previousMetadata)
+PassRefPtr<IDBTransaction> IDBTransaction::create(ExecutionContext* context, int64_t id, IDBDatabase* db, IDBOpenDBRequest* openDBRequest, const IDBDatabaseMetadata& previousMetadata)
 {
     RefPtr<IDBTransaction> transaction(adoptRef(new IDBTransaction(context, id, Vector<String>(), IndexedDB::TransactionVersionChange, db, openDBRequest, previousMetadata)));
     transaction->suspendIfNeeded();
@@ -88,7 +88,7 @@ const AtomicString& IDBTransaction::modeReadWriteLegacy()
 }
 
 
-IDBTransaction::IDBTransaction(ScriptExecutionContext* context, int64_t id, const Vector<String>& objectStoreNames, IndexedDB::TransactionMode mode, IDBDatabase* db, IDBOpenDBRequest* openDBRequest, const IDBDatabaseMetadata& previousMetadata)
+IDBTransaction::IDBTransaction(ExecutionContext* context, int64_t id, const Vector<String>& objectStoreNames, IndexedDB::TransactionMode mode, IDBDatabase* db, IDBOpenDBRequest* openDBRequest, const IDBDatabaseMetadata& previousMetadata)
     : ActiveDOMObject(context)
     , m_id(id)
     , m_database(db)
@@ -265,7 +265,7 @@ void IDBTransaction::onAbort(PassRefPtr<DOMError> prpError)
     m_objectStoreCleanupMap.clear();
 
     // Enqueue events before notifying database, as database may close which enqueues more events and order matters.
-    enqueueEvent(Event::createBubble(eventNames().abortEvent));
+    enqueueEvent(Event::createBubble(EventTypeNames::abort));
 
     // If script has stopped and GC has completed, database may have last reference to this object.
     RefPtr<IDBTransaction> protect(this);
@@ -280,7 +280,7 @@ void IDBTransaction::onComplete()
     m_objectStoreCleanupMap.clear();
 
     // Enqueue events before notifying database, as database may close which enqueues more events and order matters.
-    enqueueEvent(Event::create(eventNames().completeEvent));
+    enqueueEvent(Event::create(EventTypeNames::complete));
 
     // If script has stopped and GC has completed, database may have last reference to this object.
     RefPtr<IDBTransaction> protect(this);
@@ -303,7 +303,7 @@ IndexedDB::TransactionMode IDBTransaction::stringToMode(const String& modeString
     if (modeString == IDBTransaction::modeReadWrite())
         return IndexedDB::TransactionReadWrite;
 
-    es.throwTypeError();
+    es.throwUninformativeAndGenericTypeError();
     return IndexedDB::TransactionReadOnly;
 }
 
@@ -329,12 +329,12 @@ const AtomicString& IDBTransaction::modeToString(IndexedDB::TransactionMode mode
 
 const AtomicString& IDBTransaction::interfaceName() const
 {
-    return eventNames().interfaceForIDBTransaction;
+    return EventTargetNames::IDBTransaction;
 }
 
-ScriptExecutionContext* IDBTransaction::scriptExecutionContext() const
+ExecutionContext* IDBTransaction::executionContext() const
 {
-    return ActiveDOMObject::scriptExecutionContext();
+    return ActiveDOMObject::executionContext();
 }
 
 bool IDBTransaction::dispatchEvent(PassRefPtr<Event> event)
@@ -342,7 +342,7 @@ bool IDBTransaction::dispatchEvent(PassRefPtr<Event> event)
     IDB_TRACE("IDBTransaction::dispatchEvent");
     ASSERT(m_state != Finished);
     ASSERT(m_hasPendingActivity);
-    ASSERT(scriptExecutionContext());
+    ASSERT(executionContext());
     ASSERT(event->target() == this);
     m_state = Finished;
 
@@ -359,7 +359,7 @@ bool IDBTransaction::dispatchEvent(PassRefPtr<Event> event)
     targets.append(db());
 
     // FIXME: When we allow custom event dispatching, this will probably need to change.
-    ASSERT(event->type() == eventNames().completeEvent || event->type() == eventNames().abortEvent);
+    ASSERT(event->type() == EventTypeNames::complete || event->type() == EventTypeNames::abort);
     bool returnValue = IDBEventDispatcher::dispatch(event.get(), targets);
     // FIXME: Try to construct a test where |this| outlives openDBRequest and we
     // get a crash.
@@ -369,13 +369,6 @@ bool IDBTransaction::dispatchEvent(PassRefPtr<Event> event)
     }
     m_hasPendingActivity = false;
     return returnValue;
-}
-
-bool IDBTransaction::canSuspend() const
-{
-    // FIXME: Technically we can suspend before the first request is schedule
-    //        and after the complete/abort event is enqueued.
-    return m_state == Finished;
 }
 
 void IDBTransaction::stop()
@@ -391,22 +384,12 @@ void IDBTransaction::stop()
 void IDBTransaction::enqueueEvent(PassRefPtr<Event> event)
 {
     ASSERT_WITH_MESSAGE(m_state != Finished, "A finished transaction tried to enqueue an event of type %s.", event->type().string().utf8().data());
-    if (m_contextStopped || !scriptExecutionContext())
+    if (m_contextStopped || !executionContext())
         return;
 
-    EventQueue* eventQueue = scriptExecutionContext()->eventQueue();
+    EventQueue* eventQueue = executionContext()->eventQueue();
     event->setTarget(this);
     eventQueue->enqueueEvent(event);
-}
-
-EventTargetData* IDBTransaction::eventTargetData()
-{
-    return &m_eventTargetData;
-}
-
-EventTargetData* IDBTransaction::ensureEventTargetData()
-{
-    return &m_eventTargetData;
 }
 
 IDBDatabaseBackendInterface* IDBTransaction::backendDB() const

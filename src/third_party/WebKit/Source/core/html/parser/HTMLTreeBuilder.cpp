@@ -46,8 +46,8 @@
 #include "core/html/parser/HTMLStackItem.h"
 #include "core/html/parser/HTMLToken.h"
 #include "core/html/parser/HTMLTokenizer.h"
-#include "core/platform/LocalizedStrings.h"
-#include "core/platform/NotImplemented.h"
+#include "platform/NotImplemented.h"
+#include "platform/text/PlatformLocale.h"
 #include "wtf/MainThread.h"
 #include "wtf/unicode/CharacterNames.h"
 
@@ -375,10 +375,13 @@ void HTMLTreeBuilder::constructTree(AtomicHTMLToken* token)
         processToken(token);
 
     if (m_parser->tokenizer()) {
-        bool inForeignContent = !m_tree.isEmpty()
-            && !m_tree.currentStackItem()->isInHTMLNamespace()
-            && !HTMLElementStack::isHTMLIntegrationPoint(m_tree.currentStackItem())
-            && !HTMLElementStack::isMathMLTextIntegrationPoint(m_tree.currentStackItem());
+        bool inForeignContent = false;
+        if (!m_tree.isEmpty()) {
+            RefPtr<HTMLStackItem> adjustedCurrentNode = adjustedCurrentStackItem();
+            inForeignContent = !adjustedCurrentNode->isInHTMLNamespace()
+                && !HTMLElementStack::isHTMLIntegrationPoint(adjustedCurrentNode.get())
+                && !HTMLElementStack::isMathMLTextIntegrationPoint(adjustedCurrentNode.get());
+        }
 
         m_parser->tokenizer()->setForceNullCharacterReplacement(m_insertionMode == TextMode || inForeignContent);
         m_parser->tokenizer()->setShouldAllowCDATA(inForeignContent);
@@ -390,31 +393,31 @@ void HTMLTreeBuilder::constructTree(AtomicHTMLToken* token)
 
 void HTMLTreeBuilder::processToken(AtomicHTMLToken* token)
 {
+    if (token->type() == HTMLToken::Character) {
+        processCharacter(token);
+        return;
+    }
+
+    m_shouldSkipLeadingNewline = false;
+
     switch (token->type()) {
     case HTMLToken::Uninitialized:
+    case HTMLToken::Character:
         ASSERT_NOT_REACHED();
         break;
     case HTMLToken::DOCTYPE:
-        m_shouldSkipLeadingNewline = false;
         processDoctypeToken(token);
         break;
     case HTMLToken::StartTag:
-        m_shouldSkipLeadingNewline = false;
         processStartTag(token);
         break;
     case HTMLToken::EndTag:
-        m_shouldSkipLeadingNewline = false;
         processEndTag(token);
         break;
     case HTMLToken::Comment:
-        m_shouldSkipLeadingNewline = false;
         processComment(token);
-        return;
-    case HTMLToken::Character:
-        processCharacter(token);
         break;
     case HTMLToken::EndOfFile:
-        m_shouldSkipLeadingNewline = false;
         processEndOfFile(token);
         break;
     }
@@ -501,7 +504,7 @@ void HTMLTreeBuilder::processIsindexStartTagForInBody(AtomicHTMLToken* token)
     if (promptAttribute)
         processFakeCharacters(promptAttribute->value());
     else
-        processFakeCharacters(searchableIndexIntroduction());
+        processFakeCharacters(Locale::defaultLocale().queryString(WebKit::WebLocalizedString::SearchableIndexIntroduction));
     processFakeStartTag(inputTag, attributesForIsindexInput(token));
     notImplemented(); // This second set of characters may be needed by non-english locales.
     processFakeEndTag(labelTag);
@@ -546,7 +549,7 @@ void HTMLTreeBuilder::processCloseWhenNestedTag(AtomicHTMLToken* token)
 
 typedef HashMap<AtomicString, QualifiedName> PrefixedNameToQualifiedNameMap;
 
-static void mapLoweredLocalNameToName(PrefixedNameToQualifiedNameMap* map, QualifiedName** names, size_t length)
+static void mapLoweredLocalNameToName(PrefixedNameToQualifiedNameMap* map, const QualifiedName* const* names, size_t length)
 {
     for (size_t i = 0; i < length; ++i) {
         const QualifiedName& name = *names[i];
@@ -562,7 +565,7 @@ static void adjustSVGTagNameCase(AtomicHTMLToken* token)
     static PrefixedNameToQualifiedNameMap* caseMap = 0;
     if (!caseMap) {
         caseMap = new PrefixedNameToQualifiedNameMap;
-        QualifiedName** svgTags = SVGNames::getSVGTags();
+        const QualifiedName* const* svgTags = SVGNames::getSVGTags();
         mapLoweredLocalNameToName(caseMap, svgTags, SVGNames::SVGTagsCount);
     }
 
@@ -572,13 +575,13 @@ static void adjustSVGTagNameCase(AtomicHTMLToken* token)
     token->setName(casedName.localName());
 }
 
-template<QualifiedName** getAttrs(), unsigned length>
+template<const QualifiedName* const* getAttrs(), unsigned length>
 static void adjustAttributes(AtomicHTMLToken* token)
 {
     static PrefixedNameToQualifiedNameMap* caseMap = 0;
     if (!caseMap) {
         caseMap = new PrefixedNameToQualifiedNameMap;
-        QualifiedName** attrs = getAttrs();
+        const QualifiedName* const* attrs = getAttrs();
         mapLoweredLocalNameToName(caseMap, attrs, length);
     }
 
@@ -600,10 +603,10 @@ static void adjustMathMLAttributes(AtomicHTMLToken* token)
     adjustAttributes<MathMLNames::getMathMLAttrs, MathMLNames::MathMLAttrsCount>(token);
 }
 
-static void addNamesWithPrefix(PrefixedNameToQualifiedNameMap* map, const AtomicString& prefix, QualifiedName** names, size_t length)
+static void addNamesWithPrefix(PrefixedNameToQualifiedNameMap* map, const AtomicString& prefix, const QualifiedName* const* names, size_t length)
 {
     for (size_t i = 0; i < length; ++i) {
-        QualifiedName* name = names[i];
+        const QualifiedName* name = names[i];
         const AtomicString& localName = name->localName();
         AtomicString prefixColonLocalName = prefix + ':' + localName;
         QualifiedName nameWithPrefix(prefix, localName, name->namespaceURI());
@@ -617,7 +620,7 @@ static void adjustForeignAttributes(AtomicHTMLToken* token)
     if (!map) {
         map = new PrefixedNameToQualifiedNameMap;
 
-        QualifiedName** attrs = XLinkNames::getXLinkAttrs();
+        const QualifiedName* const* attrs = XLinkNames::getXLinkAttrs();
         addNamesWithPrefix(map, xlinkAtom, attrs, XLinkNames::XLinkAttrsCount);
 
         attrs = XMLNames::getXMLAttrs();
@@ -995,6 +998,16 @@ bool HTMLTreeBuilder::processColgroupEndTagForInColumnGroup()
     return true;
 }
 
+// http://www.whatwg.org/specs/web-apps/current-work/#adjusted-current-node
+PassRefPtr<HTMLStackItem> HTMLTreeBuilder::adjustedCurrentStackItem() const
+{
+    ASSERT(!m_tree.isEmpty());
+    if (isParsingFragment() && m_tree.openElements()->hasOnlyOneElement())
+        return HTMLStackItem::create(m_fragmentContext.contextElement(), HTMLStackItem::ItemForContextElement);
+
+    return m_tree.currentStackItem();
+}
+
 // http://www.whatwg.org/specs/web-apps/current-work/multipage/tokenization.html#close-the-cell
 void HTMLTreeBuilder::closeTheCell()
 {
@@ -1144,6 +1157,7 @@ void HTMLTreeBuilder::processStartTag(AtomicHTMLToken* token)
             || token->name() == noframesTag
             || token->name() == scriptTag
             || token->name() == styleTag
+            || token->name() == templateTag
             || token->name() == titleTag) {
             parseError(token);
             ASSERT(m_tree.head());
@@ -1604,13 +1618,21 @@ void HTMLTreeBuilder::resetInsertionModeAppropriately()
     while (1) {
         RefPtr<HTMLStackItem> item = nodeRecord->stackItem();
         if (item->node() == m_tree.openElements()->rootNode()) {
-            ASSERT(isParsingFragment());
             last = true;
-            item = HTMLStackItem::create(m_fragmentContext.contextElement(), HTMLStackItem::ItemForContextElement);
+            if (isParsingFragment())
+                item = HTMLStackItem::create(m_fragmentContext.contextElement(), HTMLStackItem::ItemForContextElement);
         }
         if (item->hasTagName(templateTag))
             return setInsertionMode(m_templateInsertionModes.last());
         if (item->hasTagName(selectTag)) {
+            if (!last) {
+                while (item->node() != m_tree.openElements()->rootNode() && !item->hasTagName(templateTag)) {
+                    nodeRecord = nodeRecord->next();
+                    item = nodeRecord->stackItem();
+                    if (isHTMLTableElement(item->node()))
+                        return setInsertionMode(InSelectInTableMode);
+                }
+            }
             return setInsertionMode(InSelectMode);
         }
         if (item->hasTagName(tdTag) || item->hasTagName(thTag))
@@ -1637,6 +1659,9 @@ void HTMLTreeBuilder::resetInsertionModeAppropriately()
             return setInsertionMode(InFramesetMode);
         }
         if (isHTMLHtmlElement(item->node())) {
+            if (m_tree.headStackItem())
+                return setInsertionMode(AfterHeadMode);
+
             ASSERT(isParsingFragment());
             return setInsertionMode(BeforeHeadMode);
         }
@@ -2514,8 +2539,7 @@ void HTMLTreeBuilder::processEndOfFile(AtomicHTMLToken* token)
             return;
         break;
     }
-    ASSERT(m_tree.currentNode());
-    m_tree.openElements()->popAll();
+    m_tree.processEndOfFile();
 }
 
 void HTMLTreeBuilder::defaultForInitial()
@@ -2664,10 +2688,11 @@ bool HTMLTreeBuilder::shouldProcessTokenInForeignContent(AtomicHTMLToken* token)
 {
     if (m_tree.isEmpty())
         return false;
-    HTMLStackItem* item = m_tree.currentStackItem();
-    if (item->isInHTMLNamespace())
+    RefPtr<HTMLStackItem> adjustedCurrentNode = adjustedCurrentStackItem();
+
+    if (adjustedCurrentNode->isInHTMLNamespace())
         return false;
-    if (HTMLElementStack::isMathMLTextIntegrationPoint(item)) {
+    if (HTMLElementStack::isMathMLTextIntegrationPoint(adjustedCurrentNode.get())) {
         if (token->type() == HTMLToken::StartTag
             && token->name() != MathMLNames::mglyphTag
             && token->name() != MathMLNames::malignmarkTag)
@@ -2675,11 +2700,11 @@ bool HTMLTreeBuilder::shouldProcessTokenInForeignContent(AtomicHTMLToken* token)
         if (token->type() == HTMLToken::Character)
             return false;
     }
-    if (item->hasTagName(MathMLNames::annotation_xmlTag)
+    if (adjustedCurrentNode->hasTagName(MathMLNames::annotation_xmlTag)
         && token->type() == HTMLToken::StartTag
         && token->name() == SVGNames::svgTag)
         return false;
-    if (HTMLElementStack::isHTMLIntegrationPoint(item)) {
+    if (HTMLElementStack::isHTMLIntegrationPoint(adjustedCurrentNode.get())) {
         if (token->type() == HTMLToken::StartTag)
             return false;
         if (token->type() == HTMLToken::Character)
@@ -2692,6 +2717,8 @@ bool HTMLTreeBuilder::shouldProcessTokenInForeignContent(AtomicHTMLToken* token)
 
 void HTMLTreeBuilder::processTokenInForeignContent(AtomicHTMLToken* token)
 {
+    RefPtr<HTMLStackItem> adjustedCurrentNode = adjustedCurrentStackItem();
+
     switch (token->type()) {
     case HTMLToken::Uninitialized:
         ASSERT_NOT_REACHED();
@@ -2745,7 +2772,7 @@ void HTMLTreeBuilder::processTokenInForeignContent(AtomicHTMLToken* token)
             processStartTag(token);
             return;
         }
-        const AtomicString& currentNamespace = m_tree.currentStackItem()->namespaceURI();
+        const AtomicString& currentNamespace = adjustedCurrentNode->namespaceURI();
         if (currentNamespace == MathMLNames::mathmlNamespaceURI)
             adjustMathMLAttributes(token);
         if (currentNamespace == SVGNames::svgNamespaceURI) {
@@ -2757,7 +2784,7 @@ void HTMLTreeBuilder::processTokenInForeignContent(AtomicHTMLToken* token)
         break;
     }
     case HTMLToken::EndTag: {
-        if (m_tree.currentStackItem()->namespaceURI() == SVGNames::svgNamespaceURI)
+        if (adjustedCurrentNode->namespaceURI() == SVGNames::svgNamespaceURI)
             adjustSVGTagNameCase(token);
 
         if (token->name() == SVGNames::scriptTag && m_tree.currentStackItem()->hasTagName(SVGNames::scriptTag)) {
@@ -2817,4 +2844,4 @@ void HTMLTreeBuilder::parseError(AtomicHTMLToken*)
 {
 }
 
-}
+} // namespace WebCore

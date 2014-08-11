@@ -29,6 +29,7 @@
 #include "webrtc/video_engine/include/vie_errors.h"
 #include "webrtc/video_engine/include/vie_image_process.h"
 #include "webrtc/video_engine/include/vie_rtp_rtcp.h"
+#include "webrtc/frame_callback.h"
 #include "webrtc/video_engine/vie_defines.h"
 
 namespace webrtc {
@@ -73,7 +74,6 @@ ViEChannel::ViEChannel(int32_t channel_id,
       callback_cs_(CriticalSectionWrapper::CreateCriticalSection()),
       rtp_rtcp_cs_(CriticalSectionWrapper::CreateCriticalSection()),
       default_rtp_rtcp_(default_rtp_rtcp),
-      rtp_rtcp_(NULL),
       vcm_(*VideoCodingModule::Create(ViEModuleId(engine_id, channel_id))),
       vie_receiver_(channel_id, &vcm_, remote_bitrate_estimator, this),
       vie_sender_(channel_id),
@@ -101,7 +101,8 @@ ViEChannel::ViEChannel(int32_t channel_id,
       mtu_(0),
       sender_(sender),
       nack_history_size_sender_(kSendSidePacketHistorySize),
-      max_nack_reordering_threshold_(kMaxPacketAgeToNack) {
+      max_nack_reordering_threshold_(kMaxPacketAgeToNack),
+      pre_render_callback_(NULL) {
   WEBRTC_TRACE(kTraceMemory, kTraceVideo, ViEId(engine_id, channel_id),
                "ViEChannel::ViEChannel(channel_id: %d, engine_id: %d)",
                channel_id, engine_id);
@@ -186,6 +187,11 @@ int32_t ViEChannel::Init() {
   if (vcm_.RegisterReceiveStatisticsCallback(this) != 0) {
     WEBRTC_TRACE(kTraceWarning, kTraceVideo, ViEId(engine_id_, channel_id_),
                  "%s: VCM::RegisterReceiveStatisticsCallback failure",
+                 __FUNCTION__);
+  }
+  if (vcm_.RegisterDecoderTimingCallback(this) != 0) {
+    WEBRTC_TRACE(kTraceWarning, kTraceVideo, ViEId(engine_id_, channel_id_),
+                 "%s: VCM::RegisterDecoderTimingCallback failure",
                  __FUNCTION__);
   }
   if (vcm_.SetRenderDelay(kViEDefaultRenderDelayMs) != 0) {
@@ -1326,6 +1332,7 @@ void ViEChannel::GetBandwidthUsage(uint32_t* total_bitrate_sent,
     RtpRtcp* rtp_rtcp = *it;
     rtp_rtcp->BitrateSent(&stream_rate, &video_rate, &fec_rate, &nackRate);
     *total_bitrate_sent += stream_rate;
+    *video_bitrate_sent += video_rate;
     *fec_bitrate_sent += fec_rate;
     *nackBitrateSent += nackRate;
   }
@@ -1599,6 +1606,8 @@ int32_t ViEChannel::FrameToRender(
   }
   // Post processing is not supported if the frame is backed by a texture.
   if (video_frame.native_handle() == NULL) {
+    if (pre_render_callback_ != NULL)
+      pre_render_callback_->FrameCallback(&video_frame);
     if (effect_filter_) {
       unsigned int length = CalcBufferSize(kI420,
                                            video_frame.width(),
@@ -1648,6 +1657,25 @@ int32_t ViEChannel::OnReceiveStatisticsUpdate(const uint32_t bit_rate,
   return 0;
 }
 
+void ViEChannel::OnDecoderTiming(int decode_ms,
+                                 int max_decode_ms,
+                                 int current_delay_ms,
+                                 int target_delay_ms,
+                                 int jitter_buffer_ms,
+                                 int min_playout_delay_ms,
+                                 int render_delay_ms) {
+  CriticalSectionScoped cs(callback_cs_.get());
+  if (!codec_observer_)
+    return;
+  codec_observer_->DecoderTiming(decode_ms,
+                                 max_decode_ms,
+                                 current_delay_ms,
+                                 target_delay_ms,
+                                 jitter_buffer_ms,
+                                 min_playout_delay_ms,
+                                 render_delay_ms);
+}
+
 int32_t ViEChannel::RequestKeyFrame() {
   WEBRTC_TRACE(kTraceStream, kTraceVideo, ViEId(engine_id_, channel_id_),
                "%s", __FUNCTION__);
@@ -1683,8 +1711,6 @@ bool ViEChannel::ChannelDecodeProcess() {
 
 void ViEChannel::OnRttUpdate(uint32_t rtt) {
   vcm_.SetReceiveChannelParameters(rtt);
-  if (!sender_)
-    rtp_rtcp_->SetRtt(rtt);
 }
 
 int32_t ViEChannel::StartDecodeThread() {
@@ -1825,6 +1851,12 @@ int32_t ViEChannel::RegisterEffectFilter(ViEEffectFilter* effect_filter) {
   }
   effect_filter_ = effect_filter;
   return 0;
+}
+
+void ViEChannel::RegisterPreRenderCallback(
+    I420FrameCallback* pre_render_callback) {
+  CriticalSectionScoped cs(callback_cs_.get());
+  pre_render_callback_ = pre_render_callback;
 }
 
 void ViEChannel::OnApplicationDataReceived(const int32_t id,

@@ -16,6 +16,7 @@
 #include "cc/base/cc_export.h"
 #include "cc/base/region.h"
 #include "cc/base/scoped_ptr_vector.h"
+#include "cc/debug/micro_benchmark.h"
 #include "cc/layers/compositing_reasons.h"
 #include "cc/layers/draw_properties.h"
 #include "cc/layers/layer_lists.h"
@@ -59,6 +60,10 @@ struct AnimationEvent;
 class CC_EXPORT Layer : public base::RefCounted<Layer>,
                         public LayerAnimationValueObserver {
  public:
+  typedef RenderSurfaceLayerList RenderSurfaceListType;
+  typedef LayerList LayerListType;
+  typedef RenderSurface RenderSurfaceType;
+
   enum LayerIdLabels {
     INVALID_ID = -1,
   };
@@ -123,9 +128,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   void SetFilters(const FilterOperations& filters);
   const FilterOperations& filters() const { return filters_; }
-
-  void SetFilter(const skia::RefPtr<SkImageFilter>& filter);
-  skia::RefPtr<SkImageFilter> filter() const { return filter_; }
+  bool FilterIsAnimating() const;
 
   // Background filters are filters applied to what is behind this layer, when
   // they are viewed through non-opaque regions in this layer. They are used
@@ -186,10 +189,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
     return clip_children_.get();
   }
 
-  DrawProperties<Layer, RenderSurface>& draw_properties() {
-    return draw_properties_;
-  }
-  const DrawProperties<Layer, RenderSurface>& draw_properties() const {
+  DrawProperties<Layer>& draw_properties() { return draw_properties_; }
+  const DrawProperties<Layer>& draw_properties() const {
     return draw_properties_;
   }
 
@@ -249,6 +250,12 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   void SetScrollable(bool scrollable);
   bool scrollable() const { return scrollable_; }
+
+  void SetUserScrollable(bool horizontal, bool vertical);
+  bool user_scrollable_horizontal() const {
+    return user_scrollable_horizontal_;
+  }
+  bool user_scrollable_vertical() const { return user_scrollable_vertical_; }
 
   void SetShouldScrollOnMainThread(bool should_scroll_on_main_thread);
   bool should_scroll_on_main_thread() const {
@@ -329,6 +336,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   virtual bool NeedMoreUpdates();
   virtual void SetIsMask(bool is_mask) {}
   virtual void ReduceMemoryUsage() {}
+  virtual void OnOutputSurfaceCreated() {}
 
   virtual std::string DebugName();
 
@@ -367,9 +375,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void PauseAnimation(int animation_id, double time_offset);
   void RemoveAnimation(int animation_id);
 
-  void SuspendAnimations(double monotonic_time);
-  void ResumeAnimations(double monotonic_time);
-
   bool AnimatedBoundsForBox(const gfx::BoxF& box, gfx::BoxF* bounds) {
     return layer_animation_controller_->AnimatedBoundsForBox(box, bounds);
   }
@@ -399,8 +404,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   virtual skia::RefPtr<SkPicture> GetPicture() const;
 
-  virtual bool CanClipSelf() const;
-
   // Constructs a LayerImpl of the correct runtime type for this Layer type.
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl);
 
@@ -427,6 +430,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool descendant_needs_push_properties() const {
     return num_dependents_need_push_properties_ > 0;
   }
+
+  virtual void RunMicroBenchmark(MicroBenchmark* benchmark);
 
  protected:
   friend class LayerImpl;
@@ -514,6 +519,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void RemoveChildOrDependent(Layer* child);
 
   // LayerAnimationValueObserver implementation.
+  virtual void OnFilterAnimated(const FilterOperations& filters) OVERRIDE;
   virtual void OnOpacityAnimated(float opacity) OVERRIDE;
   virtual void OnTransformAnimated(const gfx::Transform& transform) OVERRIDE;
   virtual bool IsActive() const OVERRIDE;
@@ -536,6 +542,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool scrollable_;
   bool should_scroll_on_main_thread_;
   bool have_wheel_event_handlers_;
+  bool user_scrollable_horizontal_;
+  bool user_scrollable_vertical_;
   Region non_fast_scrollable_region_;
   Region touch_event_handler_region_;
   gfx::PointF position_;
@@ -543,7 +551,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   SkColor background_color_;
   CompositingReasons compositing_reasons_;
   float opacity_;
-  skia::RefPtr<SkImageFilter> filter_;
   FilterOperations filters_;
   FilterOperations background_filters_;
   float anchor_point_z_;
@@ -579,7 +586,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   base::Closure did_scroll_callback_;
 
-  DrawProperties<Layer, RenderSurface> draw_properties_;
+  DrawProperties<Layer> draw_properties_;
 
   PaintProperties paint_properties_;
 

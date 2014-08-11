@@ -33,14 +33,14 @@
 
 #include "core/fileapi/FileError.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
-#include "core/page/ConsoleTypes.h"
-#include "core/platform/Timer.h"
-#include "core/platform/network/SocketStreamHandleClient.h"
+#include "core/frame/ConsoleTypes.h"
 #include "modules/websockets/WebSocketChannel.h"
 #include "modules/websockets/WebSocketDeflateFramer.h"
 #include "modules/websockets/WebSocketFrame.h"
 #include "modules/websockets/WebSocketHandshake.h"
 #include "modules/websockets/WebSocketPerMessageDeflate.h"
+#include "platform/Timer.h"
+#include "platform/network/SocketStreamHandleClient.h"
 #include "wtf/Deque.h"
 #include "wtf/Forward.h"
 #include "wtf/PassOwnPtr.h"
@@ -50,7 +50,7 @@
 
 namespace WebCore {
 
-class Blob;
+class BlobDataHandle;
 class Document;
 class FileReaderLoader;
 class SocketStreamHandle;
@@ -75,7 +75,7 @@ public:
     virtual String extensions() OVERRIDE;
     virtual WebSocketChannel::SendResult send(const String& message) OVERRIDE;
     virtual WebSocketChannel::SendResult send(const ArrayBuffer&, unsigned byteOffset, unsigned byteLength) OVERRIDE;
-    virtual WebSocketChannel::SendResult send(const Blob&) OVERRIDE;
+    virtual WebSocketChannel::SendResult send(PassRefPtr<BlobDataHandle>) OVERRIDE;
     virtual unsigned long bufferedAmount() const OVERRIDE;
     // Start closing handshake. Use the CloseEventCodeNotSpecified for the code
     // argument to omit payload.
@@ -114,11 +114,15 @@ private:
 
     bool appendToBuffer(const char* data, size_t len);
     void skipBuffer(size_t len);
-    bool processBuffer();
+    // Repeats parsing data from m_buffer until instructed to stop.
+    void processBuffer();
+    // Parses a handshake response or one frame from m_buffer and processes it.
+    bool processOneItemFromBuffer();
     void resumeTimerFired(Timer<MainThreadWebSocketChannel>*);
     void startClosingHandshake(int code, const String& reason);
     void closingTimerFired(Timer<MainThreadWebSocketChannel>*);
 
+    // Parses one frame from m_buffer and processes it.
     bool processFrame();
 
     // It is allowed to send a Blob as a binary frame if hybi-10 protocol is in use. Sending a Blob
@@ -140,11 +144,11 @@ private:
         // Only one of the following items is used, according to the value of frameType.
         CString stringData;
         Vector<char> vectorData;
-        RefPtr<Blob> blobData;
+        RefPtr<BlobDataHandle> blobData;
     };
     void enqueueTextFrame(const CString&);
     void enqueueRawFrame(WebSocketFrame::OpCode, const char* data, size_t dataLength);
-    void enqueueBlobFrame(WebSocketFrame::OpCode, const Blob&);
+    void enqueueBlobFrame(WebSocketFrame::OpCode, PassRefPtr<BlobDataHandle>);
 
     void failAsError(const String& reason) { fail(reason, ErrorMessageLevel, m_sourceURLAtConnection, m_lineNumberAtConnection); }
     void processOutgoingFrameQueue();

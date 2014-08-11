@@ -34,8 +34,8 @@
 #include "bindings/v8/V8Binding.h"
 #include "core/dom/Document.h"
 #include "core/html/HTMLFrameElementBase.h"
-#include "core/page/DOMWindow.h"
-#include "core/page/Frame.h"
+#include "core/frame/DOMWindow.h"
+#include "core/frame/Frame.h"
 #include "core/page/Settings.h"
 #include "weborigin/SecurityOrigin.h"
 
@@ -89,9 +89,9 @@ bool BindingSecurity::shouldAllowAccessToFrame(Frame* target, ExceptionState& es
     return target && canAccessDocument(target->document(), es);
 }
 
-bool BindingSecurity::shouldAllowAccessToNode(Node* target)
+bool BindingSecurity::shouldAllowAccessToNode(Node* target, ExceptionState& es)
 {
-    return target && canAccessDocument(&target->document());
+    return target && canAccessDocument(&target->document(), es);
 }
 
 }

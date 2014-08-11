@@ -4,19 +4,27 @@
 
 #include "content/browser/renderer_host/overscroll_controller.h"
 
+#include "base/command_line.h"
+#include "base/logging.h"
 #include "content/browser/renderer_host/overscroll_controller_delegate.h"
-#include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/public/browser/overscroll_configuration.h"
-#include "content/public/browser/render_widget_host_view.h"
+#include "content/public/common/content_switches.h"
 
 using WebKit::WebInputEvent;
 
+namespace {
+
+bool IsScrollEndEffectEnabled() {
+  return CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+      switches::kScrollEndEffect) == "1";
+}
+
+}  // namespace
+
 namespace content {
 
-OverscrollController::OverscrollController(
-    RenderWidgetHostImpl* render_widget_host)
-    : render_widget_host_(render_widget_host),
-      overscroll_mode_(OVERSCROLL_NONE),
+OverscrollController::OverscrollController()
+    : overscroll_mode_(OVERSCROLL_NONE),
       scroll_state_(STATE_UNKNOWN),
       overscroll_delta_x_(0.f),
       overscroll_delta_y_(0.f),
@@ -26,7 +34,7 @@ OverscrollController::OverscrollController(
 OverscrollController::~OverscrollController() {
 }
 
-bool OverscrollController::WillDispatchEvent(
+OverscrollController::Disposition OverscrollController::DispatchEvent(
     const WebKit::WebInputEvent& event,
     const ui::LatencyInfo& latency_info) {
   if (scroll_state_ != STATE_UNKNOWN) {
@@ -68,13 +76,10 @@ bool OverscrollController::WillDispatchEvent(
       // A gesture-event isn't sent to the GestureEventFilter when overscroll is
       // in progress. So dispatch the event through the RenderWidgetHost so that
       // it can reach the GestureEventFilter.
-      const WebKit::WebGestureEvent& gevent =
-          static_cast<const WebKit::WebGestureEvent&>(event);
-      return render_widget_host_->ShouldForwardGestureEvent(
-          GestureEventWithLatencyInfo(gevent, latency_info));
+      return SHOULD_FORWARD_TO_GESTURE_FILTER;
     }
 
-    return true;
+    return SHOULD_FORWARD_TO_RENDERER;
   }
 
   if (overscroll_mode_ != OVERSCROLL_NONE && DispatchEventResetsState(event)) {
@@ -83,23 +88,20 @@ bool OverscrollController::WillDispatchEvent(
       // A gesture-event isn't sent to the GestureEventFilter when overscroll is
       // in progress. So dispatch the event through the RenderWidgetHost so that
       // it can reach the GestureEventFilter.
-      const WebKit::WebGestureEvent& gevent =
-          static_cast<const WebKit::WebGestureEvent&>(event);
-      return render_widget_host_->ShouldForwardGestureEvent(
-          GestureEventWithLatencyInfo(gevent, latency_info));
+      return SHOULD_FORWARD_TO_GESTURE_FILTER;
     }
 
     // Let the event be dispatched to the renderer.
-    return true;
+    return SHOULD_FORWARD_TO_RENDERER;
   }
 
   if (overscroll_mode_ != OVERSCROLL_NONE) {
     // Consume the event only if it updates the overscroll state.
     if (ProcessEventForOverscroll(event))
-      return false;
+      return CONSUMED;
   }
 
-  return true;
+  return SHOULD_FORWARD_TO_RENDERER;
 }
 
 void OverscrollController::ReceivedEventACK(const WebKit::WebInputEvent& event,
@@ -151,11 +153,10 @@ bool OverscrollController::DispatchEventCompletesAction (
       event.type != WebKit::WebInputEvent::GestureFlingStart)
     return false;
 
-  RenderWidgetHostView* view = render_widget_host_->GetView();
-  if (!view->IsShowing())
+  if (!delegate_)
     return false;
 
-  const gfx::Rect& bounds = view->GetViewBounds();
+  gfx::Rect bounds = delegate_->GetVisibleBounds();
   if (bounds.IsEmpty())
     return false;
 
@@ -311,6 +312,12 @@ void OverscrollController::ProcessOverscroll(float delta_x,
   else if (fabs(overscroll_delta_y_) > vert_threshold &&
            fabs(overscroll_delta_y_) > fabs(overscroll_delta_x_) * kMinRatio)
     new_mode = overscroll_delta_y_ > 0.f ? OVERSCROLL_SOUTH : OVERSCROLL_NORTH;
+
+  // The vertical oversrcoll currently does not have any UX effects other then
+  // for the scroll end effect, so testing if it is enabled.
+  if ((new_mode == OVERSCROLL_SOUTH || new_mode == OVERSCROLL_NORTH) &&
+      !IsScrollEndEffectEnabled())
+    new_mode = OVERSCROLL_NONE;
 
   if (overscroll_mode_ == OVERSCROLL_NONE)
     SetOverscrollMode(new_mode);

@@ -32,8 +32,6 @@
 #include "core/rendering/RenderFlowThread.h"
 
 #include "core/dom/Node.h"
-#include "core/platform/PODIntervalTree.h"
-#include "core/platform/graphics/transforms/TransformState.h"
 #include "core/rendering/FlowThreadController.h"
 #include "core/rendering/HitTestRequest.h"
 #include "core/rendering/HitTestResult.h"
@@ -43,6 +41,8 @@
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderRegion.h"
 #include "core/rendering/RenderView.h"
+#include "platform/PODIntervalTree.h"
+#include "platform/geometry/TransformState.h"
 
 namespace WebCore {
 
@@ -173,9 +173,9 @@ void RenderFlowThread::validateRegions()
                 LayoutUnit regionLogicalWidth = region->pageLogicalWidth();
                 LayoutUnit regionLogicalHeight = region->pageLogicalHeight();
 
-                if (!firstRegionVisited)
+                if (!firstRegionVisited) {
                     firstRegionVisited = true;
-                else {
+                } else {
                     if (m_regionsHaveUniformLogicalWidth && previousRegionLogicalWidth != regionLogicalWidth)
                         m_regionsHaveUniformLogicalWidth = false;
                     if (m_regionsHaveUniformLogicalHeight && previousRegionLogicalHeight != regionLogicalHeight)
@@ -282,8 +282,9 @@ void RenderFlowThread::paintFlowThreadPortionInRegion(PaintInfo& paintInfo, Rend
         LayoutRect flippedFlowThreadPortionRect(flowThreadPortionRect);
         flipForWritingMode(flippedFlowThreadPortionRect);
         portionLocation = flippedFlowThreadPortionRect.location();
-    } else
+    } else {
         portionLocation = flowThreadPortionRect.location();
+    }
     adjustedPaintOffset = roundedIntPoint(paintOffset - portionLocation);
 
     // The clipping rect for the region is set up by assuming the flowThreadPortionRect is going to paint offset from adjustedPaintOffset.
@@ -303,7 +304,10 @@ void RenderFlowThread::paintFlowThreadPortionInRegion(PaintInfo& paintInfo, Rend
         context->translate(adjustedPaintOffset.x(), adjustedPaintOffset.y());
         info.rect.moveBy(-adjustedPaintOffset);
 
-        layer()->paint(context, info.rect, 0, 0, region, RenderLayer::PaintLayerTemporaryClipRects);
+        if (info.phase == PaintPhaseTextClip)
+            info.paintBehavior = PaintBehaviorForceBlackText;
+
+        layer()->paint(context, info.rect, info.paintBehavior, 0, region, PaintLayerTemporaryClipRects);
 
         context->restore();
     }
@@ -327,11 +331,12 @@ bool RenderFlowThread::hitTestFlowThreadPortionInRegion(RenderRegion* region, co
         LayoutRect flippedFlowThreadPortionRect(flowThreadPortionRect);
         flipForWritingMode(flippedFlowThreadPortionRect);
         renderFlowThreadOffset = accumulatedOffset - flippedFlowThreadPortionRect.location();
-    } else
+    } else {
         renderFlowThreadOffset = accumulatedOffset - flowThreadPortionRect.location();
+    }
 
     // Always ignore clipping, since the RenderFlowThread has nothing to do with the bounds of the FrameView.
-    HitTestRequest newRequest(request.type() | HitTestRequest::IgnoreClipping | HitTestRequest::DisallowShadowContent);
+    HitTestRequest newRequest(request.type() | HitTestRequest::IgnoreClipping | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent);
 
     // Make a new temporary HitTestLocation in the new region.
     HitTestLocation newHitTestLocation(locationInContainer, -renderFlowThreadOffset, region);
@@ -440,9 +445,9 @@ LayoutPoint RenderFlowThread::adjustedPositionRelativeToOffsetParent(const Rende
 
             // Get the logical top coordinate of the current object.
             LayoutUnit top = 0;
-            if (boxModelObject.isRenderBlock())
+            if (boxModelObject.isRenderBlock()) {
                 top = toRenderBlock(&boxModelObject)->offsetFromLogicalTopOfFirstPage();
-            else {
+            } else {
                 if (boxModelObject.containingBlock())
                     top = boxModelObject.containingBlock()->offsetFromLogicalTopOfFirstPage();
 
@@ -944,8 +949,9 @@ bool RenderFlowThread::addForcedRegionBreak(LayoutUnit offsetBreakInFlowThread, 
         region->setComputedAutoHeight(regionComputedAutoHeight);
 
         currentRegionOffsetInFlowThread += regionComputedAutoHeight;
-    } else
+    } else {
         currentRegionOffsetInFlowThread += isHorizontalWritingMode() ? region->flowThreadPortionRect().height() : region->flowThreadPortionRect().width();
+    }
 
     // If the break was found inside an auto-height region its size changed so we need to recompute the flow thread portion rectangles.
     // Also, if this is the last break after the content we need to clear the computedAutoHeight value on the last empty regions.

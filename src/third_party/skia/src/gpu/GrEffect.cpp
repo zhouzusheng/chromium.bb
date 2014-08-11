@@ -8,6 +8,7 @@
 #include "GrEffect.h"
 #include "GrBackendEffectFactory.h"
 #include "GrContext.h"
+#include "GrCoordTransform.h"
 #include "GrMemoryPool.h"
 #include "SkTLS.h"
 
@@ -86,13 +87,13 @@ const char* GrEffect::name() const {
     return this->getFactory().name();
 }
 
-void GrEffect::addTextureAccess(const GrTextureAccess* access) {
-    fTextureAccesses.push_back(access);
+void GrEffect::addCoordTransform(const GrCoordTransform* transform) {
+    fCoordTransforms.push_back(transform);
+    SkDEBUGCODE(transform->setInEffect();)
 }
 
-void GrEffect::addVertexAttrib(GrSLType type) {
-    SkASSERT(fVertexAttribTypes.count() < kMaxVertexAttribs);
-    fVertexAttribTypes.push_back(type);
+void GrEffect::addTextureAccess(const GrTextureAccess* access) {
+    fTextureAccesses.push_back(access);
 }
 
 void* GrEffect::operator new(size_t size) {
@@ -102,3 +103,16 @@ void* GrEffect::operator new(size_t size) {
 void GrEffect::operator delete(void* target) {
     GrEffect_Globals::GetTLS()->release(target);
 }
+
+#ifdef SK_DEBUG
+void GrEffect::assertEquality(const GrEffect& other) const {
+    SkASSERT(this->numTransforms() == other.numTransforms());
+    for (int i = 0; i < this->numTransforms(); ++i) {
+        SkASSERT(this->coordTransform(i) == other.coordTransform(i));
+    }
+    SkASSERT(this->numTextures() == other.numTextures());
+    for (int i = 0; i < this->numTextures(); ++i) {
+        SkASSERT(this->textureAccess(i) == other.textureAccess(i));
+    }
+}
+#endif

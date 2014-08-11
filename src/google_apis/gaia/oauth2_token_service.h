@@ -111,11 +111,9 @@ class OAuth2TokenService : public base::NonThreadSafe {
   // |scopes| is the set of scopes to get an access token for, |consumer| is
   // the object that will be called back with results if the returned request
   // is not deleted.
-  // TODO(atwilson): Make this non-virtual when we change
-  // ProfileOAuth2TokenServiceRequestTest to use FakeProfileOAuth2TokenService.
-  virtual scoped_ptr<Request> StartRequest(const std::string& account_id,
-                                           const ScopeSet& scopes,
-                                           Consumer* consumer);
+  scoped_ptr<Request> StartRequest(const std::string& account_id,
+                                   const ScopeSet& scopes,
+                                   Consumer* consumer);
 
   // This method does the same as |StartRequest| except it uses |client_id| and
   // |client_secret| to identify OAuth client app instead of using
@@ -225,9 +223,14 @@ class OAuth2TokenService : public base::NonThreadSafe {
   void CancelRequestsForAccount(const std::string& account_id);
 
   // Called by subclasses to notify observers.
-  void FireRefreshTokenAvailable(const std::string& account_id);
-  void FireRefreshTokenRevoked(const std::string& account_id);
-  void FireRefreshTokensLoaded();
+  virtual void FireRefreshTokenAvailable(const std::string& account_id);
+  virtual void FireRefreshTokenRevoked(const std::string& account_id);
+  virtual void FireRefreshTokensLoaded();
+
+  // Creates a request implementation. Can be overriden by derived classes to
+  // provide additional control of token consumption. |consumer| will outlive
+  // the created request.
+  virtual scoped_ptr<RequestImpl> CreateRequest(Consumer* consumer);
 
   // Fetches an OAuth token for the specified client/scopes. Virtual so it can
   // be overridden for tests and for platform-specific behavior on Android.

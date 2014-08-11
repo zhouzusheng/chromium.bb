@@ -6,6 +6,7 @@
 #define CONTENT_BROWSER_RENDERER_HOST_PEPPER_PEPPER_FILE_SYSTEM_BROWSER_HOST_H_
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/memory/weak_ptr.h"
 #include "ppapi/c/pp_file_info.h"
 #include "ppapi/host/host_message_context.h"
@@ -22,11 +23,19 @@ class PepperFileSystemBrowserHost :
     public ppapi::host::ResourceHost,
     public base::SupportsWeakPtr<PepperFileSystemBrowserHost> {
  public:
+  // Creates a new PepperFileSystemBrowserHost for a file system of a given
+  // |type|. The host must be opened before use.
   PepperFileSystemBrowserHost(BrowserPpapiHost* host,
                               PP_Instance instance,
                               PP_Resource resource,
                               PP_FileSystemType type);
   virtual ~PepperFileSystemBrowserHost();
+
+  // Opens the PepperFileSystemBrowserHost to use an existing file system at the
+  // given |root_url|. The file system at |root_url| must already be opened and
+  // have the type given by GetType().
+  // Calls |callback| when complete.
+  void OpenExisting(const GURL& root_url, const base::Closure& callback);
 
   // ppapi::host::ResourceHost override.
   virtual int32_t OnResourceMessageReceived(
@@ -43,6 +52,9 @@ class PepperFileSystemBrowserHost :
   }
 
  private:
+  void OpenExistingWithContext(
+      const base::Closure& callback,
+      scoped_refptr<fileapi::FileSystemContext> fs_context);
   void GotFileSystemContext(
       ppapi::host::ReplyMessageContext reply_context,
       fileapi::FileSystemType file_system_type,
@@ -52,9 +64,9 @@ class PepperFileSystemBrowserHost :
       scoped_refptr<fileapi::FileSystemContext> fs_context);
   void OpenFileSystemComplete(
       ppapi::host::ReplyMessageContext reply_context,
-      base::PlatformFileError error,
+      const GURL& root,
       const std::string& name,
-      const GURL& root);
+      base::PlatformFileError error);
 
   int32_t OnHostMsgOpen(ppapi::host::HostMessageContext* context,
                         int64_t expected_size);

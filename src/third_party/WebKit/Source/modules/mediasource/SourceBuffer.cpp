@@ -32,16 +32,17 @@
 #include "modules/mediasource/SourceBuffer.h"
 
 #include "bindings/v8/ExceptionState.h"
-#include "core/dom/Event.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/GenericEventQueue.h"
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
+#include "core/events/Event.h"
+#include "core/events/GenericEventQueue.h"
 #include "core/fileapi/FileReaderLoader.h"
 #include "core/fileapi/Stream.h"
 #include "core/html/TimeRanges.h"
-#include "core/platform/Logging.h"
 #include "core/platform/graphics/SourceBufferPrivate.h"
 #include "modules/mediasource/MediaSource.h"
+#include "platform/Logging.h"
+#include "platform/TraceEvent.h"
 #include "wtf/ArrayBuffer.h"
 #include "wtf/ArrayBufferView.h"
 #include "wtf/MathExtras.h"
@@ -58,7 +59,7 @@ PassRefPtr<SourceBuffer> SourceBuffer::create(PassOwnPtr<SourceBufferPrivate> so
 }
 
 SourceBuffer::SourceBuffer(PassOwnPtr<SourceBufferPrivate> sourceBufferPrivate, MediaSource* source, GenericEventQueue* asyncEventQueue)
-    : ActiveDOMObject(source->scriptExecutionContext())
+    : ActiveDOMObject(source->executionContext())
     , m_private(sourceBufferPrivate)
     , m_source(source)
     , m_asyncEventQueue(asyncEventQueue)
@@ -66,13 +67,13 @@ SourceBuffer::SourceBuffer(PassOwnPtr<SourceBufferPrivate> sourceBufferPrivate, 
     , m_timestampOffset(0)
     , m_appendWindowStart(0)
     , m_appendWindowEnd(std::numeric_limits<double>::infinity())
-    , m_appendBufferTimer(this, &SourceBuffer::appendBufferTimerFired)
-    , m_removeTimer(this, &SourceBuffer::removeTimerFired)
+    , m_appendBufferAsyncPartRunner(this, &SourceBuffer::appendBufferAsyncPart)
     , m_pendingRemoveStart(-1)
     , m_pendingRemoveEnd(-1)
+    , m_removeAsyncPartRunner(this, &SourceBuffer::removeAsyncPart)
     , m_streamMaxSizeValid(false)
     , m_streamMaxSize(0)
-    , m_appendStreamTimer(this, &SourceBuffer::appendStreamTimerFired)
+    , m_appendStreamAsyncPartRunner(this, &SourceBuffer::appendStreamAsyncPart)
 {
     ASSERT(m_private);
     ASSERT(m_source);
@@ -92,7 +93,7 @@ PassRefPtr<TimeRanges> SourceBuffer::buffered(ExceptionState& es) const
     // 1. If this object has been removed from the sourceBuffers attribute of the parent media source then throw an
     //    InvalidStateError exception and abort these steps.
     if (isRemoved()) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return 0;
     }
 
@@ -113,7 +114,7 @@ void SourceBuffer::setTimestampOffset(double offset, ExceptionState& es)
     //    InvalidStateError exception and abort these steps.
     // 3. If the updating attribute equals true, then throw an InvalidStateError exception and abort these steps.
     if (isRemoved() || m_updating) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
 
@@ -127,7 +128,7 @@ void SourceBuffer::setTimestampOffset(double offset, ExceptionState& es)
     //
     // FIXME: Add step 6 text when mode attribute is implemented.
     if (!m_private->setTimestampOffset(offset)) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
 
@@ -146,7 +147,7 @@ void SourceBuffer::setAppendWindowStart(double start, ExceptionState& es)
     if (std::isnan(start)
         || start == std::numeric_limits<double>::infinity()
         || start == -std::numeric_limits<double>::infinity()) {
-        es.throwDOMException(TypeMismatchError);
+        es.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return;
     }
 
@@ -155,14 +156,14 @@ void SourceBuffer::setAppendWindowStart(double start, ExceptionState& es)
     //    InvalidStateError exception and abort these steps.
     // 2. If the updating attribute equals true, then throw an InvalidStateError exception and abort these steps.
     if (isRemoved() || m_updating) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
 
     // 3. If the new value is less than 0 or greater than or equal to appendWindowEnd then throw an InvalidAccessError
     //    exception and abort these steps.
     if (start < 0 || start >= m_appendWindowEnd) {
-        es.throwDOMException(InvalidAccessError);
+        es.throwUninformativeAndGenericDOMException(InvalidAccessError);
         return;
     }
 
@@ -184,7 +185,7 @@ void SourceBuffer::setAppendWindowEnd(double end, ExceptionState& es)
     //    InvalidStateError exception and abort these steps.
     // 2. If the updating attribute equals true, then throw an InvalidStateError exception and abort these steps.
     if (isRemoved() || m_updating) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
 
@@ -192,7 +193,7 @@ void SourceBuffer::setAppendWindowEnd(double end, ExceptionState& es)
     // 4. If the new value is less than or equal to appendWindowStart then throw an InvalidAccessError
     //    exception and abort these steps.
     if (std::isnan(end) || end <= m_appendWindowStart) {
-        es.throwDOMException(InvalidAccessError);
+        es.throwUninformativeAndGenericDOMException(InvalidAccessError);
         return;
     }
 
@@ -208,7 +209,7 @@ void SourceBuffer::appendBuffer(PassRefPtr<ArrayBuffer> data, ExceptionState& es
     // https://dvcs.w3.org/hg/html-media/raw-file/default/media-source/media-source.html#widl-SourceBuffer-appendBuffer-void-ArrayBufferView-data
     // 1. If data is null then throw an InvalidAccessError exception and abort these steps.
     if (!data) {
-        es.throwDOMException(InvalidAccessError);
+        es.throwUninformativeAndGenericDOMException(InvalidAccessError);
         return;
     }
 
@@ -221,7 +222,7 @@ void SourceBuffer::appendBuffer(PassRefPtr<ArrayBufferView> data, ExceptionState
     // https://dvcs.w3.org/hg/html-media/raw-file/default/media-source/media-source.html#widl-SourceBuffer-appendBuffer-void-ArrayBufferView-data
     // 1. If data is null then throw an InvalidAccessError exception and abort these steps.
     if (!data) {
-        es.throwDOMException(InvalidAccessError);
+        es.throwUninformativeAndGenericDOMException(InvalidAccessError);
         return;
     }
 
@@ -251,7 +252,7 @@ void SourceBuffer::abort(ExceptionState& es)
     // 2. If the readyState attribute of the parent media source is not in the "open" state
     //    then throw an InvalidStateError exception and abort these steps.
     if (isRemoved() || !m_source->isOpen()) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
 
@@ -274,7 +275,7 @@ void SourceBuffer::remove(double start, double end, ExceptionState& es)
     // 1. If start is negative or greater than duration, then throw an InvalidAccessError exception and abort these steps.
     // 2. If end is less than or equal to start, then throw an InvalidAccessError exception and abort these steps.
     if (start < 0 || (m_source && (std::isnan(m_source->duration()) || start > m_source->duration())) || end <= start) {
-        es.throwDOMException(InvalidAccessError);
+        es.throwUninformativeAndGenericDOMException(InvalidAccessError);
         return;
     }
 
@@ -282,9 +283,11 @@ void SourceBuffer::remove(double start, double end, ExceptionState& es)
     //    InvalidStateError exception and abort these steps.
     // 4. If the updating attribute equals true, then throw an InvalidStateError exception and abort these steps.
     if (isRemoved() || m_updating) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
+
+    TRACE_EVENT_ASYNC_BEGIN0("media", "SourceBuffer::remove", this);
 
     // 5. If the readyState attribute of the parent media source is in the "ended" state then run the following steps:
     // 5.1. Set the readyState attribute of the parent media source to "open"
@@ -295,12 +298,12 @@ void SourceBuffer::remove(double start, double end, ExceptionState& es)
     m_updating = true;
 
     // 7. Queue a task to fire a simple event named updatestart at this SourceBuffer object.
-    scheduleEvent(eventNames().updatestartEvent);
+    scheduleEvent(EventTypeNames::updatestart);
 
     // 8. Return control to the caller and run the rest of the steps asynchronously.
     m_pendingRemoveStart = start;
     m_pendingRemoveEnd = end;
-    m_removeTimer.startOneShot(0);
+    m_removeAsyncPartRunner.runAsync();
 }
 
 void SourceBuffer::abortIfUpdating()
@@ -311,25 +314,38 @@ void SourceBuffer::abortIfUpdating()
     if (!m_updating)
         return;
 
+    const char* traceEventName = 0;
+    if (!m_pendingAppendData.isEmpty()) {
+        traceEventName = "SourceBuffer::appendBuffer";
+    } else if (m_stream) {
+        traceEventName = "SourceBuffer::appendStream";
+    } else if (m_pendingRemoveStart != -1) {
+        traceEventName = "SourceBuffer::remove";
+    } else {
+        ASSERT_NOT_REACHED();
+    }
+
     // 3.1. Abort the buffer append and stream append loop algorithms if they are running.
-    m_appendBufferTimer.stop();
+    m_appendBufferAsyncPartRunner.stop();
     m_pendingAppendData.clear();
 
-    m_removeTimer.stop();
+    m_removeAsyncPartRunner.stop();
     m_pendingRemoveStart = -1;
     m_pendingRemoveEnd = -1;
 
-    m_appendStreamTimer.stop();
+    m_appendStreamAsyncPartRunner.stop();
     clearAppendStreamState();
 
     // 3.2. Set the updating attribute to false.
     m_updating = false;
 
     // 3.3. Queue a task to fire a simple event named abort at this SourceBuffer object.
-    scheduleEvent(eventNames().abortEvent);
+    scheduleEvent(EventTypeNames::abort);
 
     // 3.4. Queue a task to fire a simple event named updateend at this SourceBuffer object.
-    scheduleEvent(eventNames().updateendEvent);
+    scheduleEvent(EventTypeNames::updateend);
+
+    TRACE_EVENT_ASYNC_END0("media", traceEventName, this);
 }
 
 void SourceBuffer::removedFromMediaSource()
@@ -349,31 +365,35 @@ bool SourceBuffer::hasPendingActivity() const
     return m_source;
 }
 
-void SourceBuffer::stop()
+void SourceBuffer::suspend()
 {
-    m_appendBufferTimer.stop();
-    m_removeTimer.stop();
-    m_appendStreamTimer.stop();
+    m_appendBufferAsyncPartRunner.suspend();
+    m_removeAsyncPartRunner.suspend();
+    m_appendStreamAsyncPartRunner.suspend();
 }
 
-ScriptExecutionContext* SourceBuffer::scriptExecutionContext() const
+void SourceBuffer::resume()
 {
-    return ActiveDOMObject::scriptExecutionContext();
+    m_appendBufferAsyncPartRunner.resume();
+    m_removeAsyncPartRunner.resume();
+    m_appendStreamAsyncPartRunner.resume();
+}
+
+void SourceBuffer::stop()
+{
+    m_appendBufferAsyncPartRunner.stop();
+    m_removeAsyncPartRunner.stop();
+    m_appendStreamAsyncPartRunner.stop();
+}
+
+ExecutionContext* SourceBuffer::executionContext() const
+{
+    return ActiveDOMObject::executionContext();
 }
 
 const AtomicString& SourceBuffer::interfaceName() const
 {
-    return eventNames().interfaceForSourceBuffer;
-}
-
-EventTargetData* SourceBuffer::eventTargetData()
-{
-    return &m_eventTargetData;
-}
-
-EventTargetData* SourceBuffer::ensureEventTargetData()
-{
-    return &m_eventTargetData;
+    return EventTargetNames::SourceBuffer;
 }
 
 bool SourceBuffer::isRemoved() const
@@ -400,9 +420,11 @@ void SourceBuffer::appendBufferInternal(const unsigned char* data, unsigned size
     // 2. If this object has been removed from the sourceBuffers attribute of the parent media source then throw an InvalidStateError exception and abort these steps.
     // 3. If the updating attribute equals true, then throw an InvalidStateError exception and abort these steps.
     if (isRemoved() || m_updating) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
+
+    TRACE_EVENT_ASYNC_BEGIN0("media", "SourceBuffer::appendBuffer", this);
 
     // 4. If the readyState attribute of the parent media source is in the "ended" state then run the following steps: ...
     m_source->openIfInEndedState();
@@ -416,15 +438,19 @@ void SourceBuffer::appendBufferInternal(const unsigned char* data, unsigned size
     m_updating = true;
 
     // 9. Queue a task to fire a simple event named updatestart at this SourceBuffer object.
-    scheduleEvent(eventNames().updatestartEvent);
+    scheduleEvent(EventTypeNames::updatestart);
 
     // 10. Asynchronously run the buffer append algorithm.
-    m_appendBufferTimer.startOneShot(0);
+    m_appendBufferAsyncPartRunner.runAsync();
+
+    TRACE_EVENT_ASYNC_STEP0("media", "SourceBuffer::appendBuffer", this, "waiting");
 }
 
-void SourceBuffer::appendBufferTimerFired(Timer<SourceBuffer>*)
+void SourceBuffer::appendBufferAsyncPart()
 {
     ASSERT(m_updating);
+
+    TRACE_EVENT_ASYNC_STEP0("media", "SourceBuffer::appendBuffer", this, "appending");
 
     // Section 3.5.4 Buffer Append Algorithm
     // https://dvcs.w3.org/hg/html-media/raw-file/default/media-source/media-source.html#sourcebuffer-buffer-append
@@ -445,13 +471,14 @@ void SourceBuffer::appendBufferTimerFired(Timer<SourceBuffer>*)
     m_pendingAppendData.clear();
 
     // 4. Queue a task to fire a simple event named update at this SourceBuffer object.
-    scheduleEvent(eventNames().updateEvent);
+    scheduleEvent(EventTypeNames::update);
 
     // 5. Queue a task to fire a simple event named updateend at this SourceBuffer object.
-    scheduleEvent(eventNames().updateendEvent);
+    scheduleEvent(EventTypeNames::updateend);
+    TRACE_EVENT_ASYNC_END0("media", "SourceBuffer::appendBuffer", this);
 }
 
-void SourceBuffer::removeTimerFired(Timer<SourceBuffer>*)
+void SourceBuffer::removeAsyncPart()
 {
     ASSERT(m_updating);
     ASSERT(m_pendingRemoveStart >= 0);
@@ -469,10 +496,10 @@ void SourceBuffer::removeTimerFired(Timer<SourceBuffer>*)
     m_pendingRemoveEnd = -1;
 
     // 11. Queue a task to fire a simple event named update at this SourceBuffer object.
-    scheduleEvent(eventNames().updateEvent);
+    scheduleEvent(EventTypeNames::update);
 
     // 12. Queue a task to fire a simple event named updateend at this SourceBuffer object.
-    scheduleEvent(eventNames().updateendEvent);
+    scheduleEvent(EventTypeNames::updateend);
 }
 
 void SourceBuffer::appendStreamInternal(PassRefPtr<Stream> stream, ExceptionState& es)
@@ -481,7 +508,7 @@ void SourceBuffer::appendStreamInternal(PassRefPtr<Stream> stream, ExceptionStat
     // https://dvcs.w3.org/hg/html-media/raw-file/default/media-source/media-source.html#widl-SourceBuffer-appendStream-void-Stream-stream-unsigned-long-long-maxSize
     // 1. If stream is null then throw an InvalidAccessError exception and abort these steps.
     if (!stream || stream->isNeutered()) {
-        es.throwDOMException(InvalidAccessError);
+        es.throwUninformativeAndGenericDOMException(InvalidAccessError);
         return;
     }
 
@@ -491,9 +518,11 @@ void SourceBuffer::appendStreamInternal(PassRefPtr<Stream> stream, ExceptionStat
     //  1. If this object has been removed from the sourceBuffers attribute of the parent media source then throw an InvalidStateError exception and abort these steps.
     //  2. If the updating attribute equals true, then throw an InvalidStateError exception and abort these steps.
     if (isRemoved() || m_updating) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
+
+    TRACE_EVENT_ASYNC_BEGIN0("media", "SourceBuffer::appendStream", this);
 
     //  3. If the readyState attribute of the parent media source is in the "ended" state then run the following steps: ...
     m_source->openIfInEndedState();
@@ -504,17 +533,17 @@ void SourceBuffer::appendStreamInternal(PassRefPtr<Stream> stream, ExceptionStat
     m_updating = true;
 
     // 4. Queue a task to fire a simple event named updatestart at this SourceBuffer object.
-    scheduleEvent(eventNames().updatestartEvent);
+    scheduleEvent(EventTypeNames::updatestart);
 
     // 5. Asynchronously run the stream append loop algorithm with stream and maxSize.
 
     stream->neuter();
     m_loader = adoptPtr(new FileReaderLoader(FileReaderLoader::ReadByClient, this));
     m_stream = stream;
-    m_appendStreamTimer.startOneShot(0);
+    m_appendStreamAsyncPartRunner.runAsync();
 }
 
-void SourceBuffer::appendStreamTimerFired(Timer<SourceBuffer>*)
+void SourceBuffer::appendStreamAsyncPart()
 {
     ASSERT(m_updating);
     ASSERT(m_loader);
@@ -532,7 +561,7 @@ void SourceBuffer::appendStreamTimerFired(Timer<SourceBuffer>*)
 
     // Steps 3-11 are handled by m_loader.
     // Note: Passing 0 here signals that maxSize was not set. (i.e. Read all the data in the stream).
-    m_loader->start(scriptExecutionContext(), *m_stream, m_streamMaxSizeValid ? m_streamMaxSize : 0);
+    m_loader->start(executionContext(), *m_stream, m_streamMaxSizeValid ? m_streamMaxSize : 0);
 }
 
 void SourceBuffer::appendStreamDone(bool success)
@@ -552,23 +581,25 @@ void SourceBuffer::appendStreamDone(bool success)
         m_updating = false;
 
         // 3. Queue a task to fire a simple event named error at this SourceBuffer object.
-        scheduleEvent(eventNames().errorEvent);
+        scheduleEvent(EventTypeNames::error);
 
         // 4. Queue a task to fire a simple event named updateend at this SourceBuffer object.
-        scheduleEvent(eventNames().updateendEvent);
+        scheduleEvent(EventTypeNames::updateend);
+        TRACE_EVENT_ASYNC_END0("media", "SourceBuffer::appendStream", this);
         return;
     }
 
     // Section 3.5.6 Stream Append Loop
-    // Steps 1-11 are handled by appendStreamTimerFired(), |m_loader|, and |m_private|.
+    // Steps 1-11 are handled by appendStreamAsyncPart(), |m_loader|, and |m_private|.
     // 12. Loop Done: Set the updating attribute to false.
     m_updating = false;
 
     // 13. Queue a task to fire a simple event named update at this SourceBuffer object.
-    scheduleEvent(eventNames().updateEvent);
+    scheduleEvent(EventTypeNames::update);
 
     // 14. Queue a task to fire a simple event named updateend at this SourceBuffer object.
-    scheduleEvent(eventNames().updateendEvent);
+    scheduleEvent(EventTypeNames::updateend);
+    TRACE_EVENT_ASYNC_END0("media", "SourceBuffer::appendStream", this);
 }
 
 void SourceBuffer::clearAppendStreamState()

@@ -356,12 +356,21 @@ BrowserContextImpl::GetMediaRequestContextForStoragePartition(
 void BrowserContextImpl::RequestMIDISysExPermission(
     int render_process_id,
     int render_view_id,
+    int bridge_id,
     const GURL& requesting_frame,
     const MIDISysExPermissionCallback& callback)
 {
     // Always reject for now.
     // TODO: implement.  See http://crbug.com/257618 for upstream impl.
     callback.Run(false);
+}
+
+void BrowserContextImpl::CancelMIDISysExPermissionRequest(
+    int render_process_id,
+    int render_view_id,
+    int bridge_id,
+    const GURL& requesting_frame)
+{
 }
 
 content::ResourceContext* BrowserContextImpl::GetResourceContext()

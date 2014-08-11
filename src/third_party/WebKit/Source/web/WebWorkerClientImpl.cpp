@@ -32,7 +32,7 @@
 #include "WebWorkerClientImpl.h"
 
 #include "core/dom/Document.h"
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/workers/Worker.h"
 #include "core/workers/WorkerClients.h"
@@ -44,8 +44,11 @@
 #include "WebPermissionClient.h"
 #include "WebViewImpl.h"
 #include "WorkerFileSystemClient.h"
+#include "WorkerPermissionClient.h"
 #include "public/platform/WebString.h"
+#include "public/web/WebFrameClient.h"
 #include "public/web/WebSecurityOrigin.h"
+#include "public/web/WebWorkerPermissionClientProxy.h"
 
 using namespace WebCore;
 
@@ -56,11 +59,12 @@ namespace WebKit {
 // static
 WorkerGlobalScopeProxy* WebWorkerClientImpl::createWorkerGlobalScopeProxy(Worker* worker)
 {
-    if (worker->scriptExecutionContext()->isDocument()) {
-        Document* document = toDocument(worker->scriptExecutionContext());
+    if (worker->executionContext()->isDocument()) {
+        Document* document = toDocument(worker->executionContext());
         WebFrameImpl* webFrame = WebFrameImpl::fromFrame(document->frame());
         OwnPtr<WorkerClients> workerClients = WorkerClients::create();
         provideLocalFileSystemToWorker(workerClients.get(), WorkerFileSystemClient::create());
+        providePermissionClientToWorker(workerClients.get(), adoptPtr(webFrame->client()->createWorkerPermissionClientProxy(webFrame)));
         WebWorkerClientImpl* proxy = new WebWorkerClientImpl(worker, webFrame, workerClients.release());
         return proxy;
     }

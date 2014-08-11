@@ -53,6 +53,8 @@ template<typename> class RetainPtr;
 
 enum TextCaseSensitivity { TextCaseSensitive, TextCaseInsensitive };
 
+enum StripBehavior { StripExtraWhiteSpace, DoNotStripWhiteSpace };
+
 typedef bool (*CharacterMatchFunctionPtr)(UChar);
 typedef bool (*IsWhiteSpaceFunctionPtr)(UChar);
 
@@ -104,7 +106,6 @@ void removeStringForStats(StringImpl*);
 // https://docs.google.com/document/d/1kOCUlJdh2WJMJGDf-WoEQhmnjKLaOYRbiHz5TiGJl14/edit?usp=sharing
 class WTF_EXPORT StringImpl {
     WTF_MAKE_NONCOPYABLE(StringImpl);
-    WTF_MAKE_FAST_ALLOCATED;
     friend struct WTF::CStringTranslator;
     template<typename CharacterType> friend struct WTF::HashAndCharactersTranslator;
     friend struct WTF::HashAndUTF8CharactersTranslator;
@@ -114,6 +115,11 @@ class WTF_EXPORT StringImpl {
     friend struct WTF::UCharBufferTranslator;
 
 private:
+    // StringImpls are allocated out of the WTF buffer partition.
+    void* operator new(size_t);
+    void* operator new(size_t, void* ptr) { return ptr; };
+    void operator delete(void*);
+
     // Used to construct static strings, which have an special refCount that can never hit zero.
     // This means that the static string will never be destroyed, which is important because
     // static strings will be shared across threads & ref-counted in a non-threadsafe manner.
@@ -174,6 +180,8 @@ public:
     ~StringImpl();
 
     static StringImpl* createStatic(const char* string, unsigned length, unsigned hash);
+    static void freezeStaticStrings();
+    static const Vector<StringImpl*>& allStaticStrings();
 
     static PassRefPtr<StringImpl> create(const UChar*, unsigned length);
     static PassRefPtr<StringImpl> create(const LChar*, unsigned length);
@@ -355,6 +363,8 @@ public:
 
     PassRefPtr<StringImpl> lower();
     PassRefPtr<StringImpl> upper();
+    PassRefPtr<StringImpl> lower(const AtomicString& localeIdentifier);
+    PassRefPtr<StringImpl> upper(const AtomicString& localeIdentifier);
 
     PassRefPtr<StringImpl> fill(UChar);
     // FIXME: Do we need fill(char) or can we just do the right thing if UChar is ASCII?
@@ -362,8 +372,8 @@ public:
 
     PassRefPtr<StringImpl> stripWhiteSpace();
     PassRefPtr<StringImpl> stripWhiteSpace(IsWhiteSpaceFunctionPtr);
-    PassRefPtr<StringImpl> simplifyWhiteSpace();
-    PassRefPtr<StringImpl> simplifyWhiteSpace(IsWhiteSpaceFunctionPtr);
+    PassRefPtr<StringImpl> simplifyWhiteSpace(StripBehavior stripBehavior = StripExtraWhiteSpace);
+    PassRefPtr<StringImpl> simplifyWhiteSpace(IsWhiteSpaceFunctionPtr, StripBehavior stripBehavior = StripExtraWhiteSpace);
 
     PassRefPtr<StringImpl> removeCharacters(CharacterMatchFunctionPtr);
     template <typename CharType>
@@ -408,8 +418,7 @@ public:
     PassRefPtr<StringImpl> replace(UChar, const UChar*, unsigned replacementLength);
     PassRefPtr<StringImpl> replace(StringImpl*, StringImpl*);
     PassRefPtr<StringImpl> replace(unsigned index, unsigned len, StringImpl*);
-
-    WTF::Unicode::Direction defaultWritingDirection(bool* hasStrongDirectionality = 0);
+    PassRefPtr<StringImpl> upconvertedString();
 
 #if USE(CF)
     RetainPtr<CFStringRef> createCFString();
@@ -427,7 +436,7 @@ private:
     static const unsigned s_copyCharsInlineCutOff = 20;
 
     template <class UCharPredicate> PassRefPtr<StringImpl> stripMatchedCharacters(UCharPredicate);
-    template <typename CharType, class UCharPredicate> PassRefPtr<StringImpl> simplifyMatchedCharactersToSpace(UCharPredicate);
+    template <typename CharType, class UCharPredicate> PassRefPtr<StringImpl> simplifyMatchedCharactersToSpace(UCharPredicate, StripBehavior);
     NEVER_INLINE unsigned hashSlowCase() const;
 
 #ifdef STRING_STATS

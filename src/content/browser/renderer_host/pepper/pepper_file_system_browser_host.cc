@@ -23,19 +23,6 @@ namespace content {
 
 namespace {
 
-// TODO(teravest): Move this function to be shared and public in fileapi.
-bool LooksLikeAGuid(const std::string& fsid) {
-  const size_t kExpectedFsIdSize = 32;
-  if (fsid.size() != kExpectedFsIdSize)
-    return false;
-  for (std::string::const_iterator it = fsid.begin(); it != fsid.end(); ++it) {
-    if (('A' <= *it && *it <= 'F') || ('0' <= *it && *it <= '9'))
-      continue;
-    return false;
-  }
-  return true;
-}
-
 scoped_refptr<fileapi::FileSystemContext>
 GetFileSystemContextFromRenderId(int render_process_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -63,6 +50,26 @@ PepperFileSystemBrowserHost::PepperFileSystemBrowserHost(BrowserPpapiHost* host,
       fs_context_(NULL),
       called_open_(false),
       weak_factory_(this) {
+}
+
+void PepperFileSystemBrowserHost::OpenExisting(const GURL& root_url,
+                                               const base::Closure& callback) {
+  root_url_ = root_url;
+  int render_process_id = 0;
+  int unused;
+  if (!browser_ppapi_host_->GetRenderViewIDsForInstance(
+           pp_instance(), &render_process_id, &unused)) {
+    NOTREACHED();
+  }
+  called_open_ = true;
+  // Get the file system context asynchronously, and then complete the Open
+  // operation by calling |callback|.
+  BrowserThread::PostTaskAndReplyWithResult(
+      BrowserThread::UI,
+      FROM_HERE,
+      base::Bind(&GetFileSystemContextFromRenderId, render_process_id),
+      base::Bind(&PepperFileSystemBrowserHost::OpenExistingWithContext,
+                 weak_factory_.GetWeakPtr(), callback));
 }
 
 PepperFileSystemBrowserHost::~PepperFileSystemBrowserHost() {
@@ -133,13 +140,28 @@ int32_t PepperFileSystemBrowserHost::OnHostMsgOpen(
   return PP_OK_COMPLETIONPENDING;
 }
 
+void PepperFileSystemBrowserHost::OpenExistingWithContext(
+    const base::Closure& callback,
+    scoped_refptr<fileapi::FileSystemContext> fs_context) {
+  if (fs_context.get()) {
+    opened_ = true;
+  } else {
+    // If there is no file system context, we log a warning and continue with an
+    // invalid resource (which will produce errors when used), since we have no
+    // way to communicate the error to the caller.
+    LOG(WARNING) << "Could not retrieve file system context.";
+  }
+  fs_context_ = fs_context;
+  callback.Run();
+}
+
 void PepperFileSystemBrowserHost::GotFileSystemContext(
     ppapi::host::ReplyMessageContext reply_context,
     fileapi::FileSystemType file_system_type,
     scoped_refptr<fileapi::FileSystemContext> fs_context) {
   if (!fs_context.get()) {
     OpenFileSystemComplete(
-        reply_context, base::PLATFORM_FILE_ERROR_FAILED, std::string(), GURL());
+        reply_context, GURL(), std::string(), base::PLATFORM_FILE_ERROR_FAILED);
     return;
   }
   GURL origin = browser_ppapi_host_->GetDocumentURLForInstance(
@@ -166,9 +188,9 @@ void PepperFileSystemBrowserHost::GotIsolatedFileSystemContext(
 
 void PepperFileSystemBrowserHost::OpenFileSystemComplete(
     ppapi::host::ReplyMessageContext reply_context,
-    base::PlatformFileError error,
+    const GURL& root,
     const std::string& /* unused */,
-    const GURL& root) {
+    base::PlatformFileError error) {
   int32 pp_error = ppapi::PlatformFileErrorToPepperError(error);
   if (pp_error == PP_OK) {
     opened_ = true;
@@ -181,9 +203,12 @@ void PepperFileSystemBrowserHost::OpenFileSystemComplete(
 int32_t PepperFileSystemBrowserHost::OnHostMsgInitIsolatedFileSystem(
     ppapi::host::HostMessageContext* context,
     const std::string& fsid) {
+  // Do not allow multiple opens.
+  if (called_open_)
+    return PP_ERROR_INPROGRESS;
   called_open_ = true;
   // Do a sanity check.
-  if (!LooksLikeAGuid(fsid))
+  if (!fileapi::ValidateIsolatedFileSystemId(fsid))
     return PP_ERROR_BADARGUMENT;
   const GURL& url =
       browser_ppapi_host_->GetDocumentURLForInstance(pp_instance());

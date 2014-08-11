@@ -56,6 +56,8 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../ipc/ipc.gyp:ipc',
+        '../ui/aura/aura.gyp:aura',
+        '../ui/metro_viewer/metro_viewer.gyp:metro_viewer_messages',
       ],
       'sources': [
         'viewer/metro_viewer_constants.cc',

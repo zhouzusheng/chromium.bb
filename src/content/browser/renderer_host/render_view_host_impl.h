@@ -12,9 +12,8 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/observer_list.h"
 #include "base/process/kill.h"
-#include "content/browser/renderer_host/render_frame_host_impl.h"
+#include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/common/accessibility_node_data.h"
@@ -62,7 +61,6 @@ class BrowserMediaPlayerManager;
 class ChildProcessSecurityPolicyImpl;
 class PageState;
 class RenderFrameHostImpl;
-class RenderViewHostObserver;
 class RenderWidgetHostDelegate;
 class SessionStorageNamespace;
 class SessionStorageNamespaceImpl;
@@ -213,12 +211,15 @@ class CONTENT_EXPORT RenderViewHostImpl
       const WebPreferences& prefs) OVERRIDE;
   virtual void NotifyTimezoneChange() OVERRIDE;
   virtual void EnableAltDragRubberbanding(bool enable) OVERRIDE;
+  virtual void GetAudioOutputControllers(
+      const GetAudioOutputControllersCallback& callback) const OVERRIDE;
 
 #if defined(OS_ANDROID)
   virtual void ActivateNearestFindResult(int request_id,
                                          float x,
                                          float y) OVERRIDE;
   virtual void RequestFindMatchRects(int current_version) OVERRIDE;
+  virtual void DisableFullscreenEncryptedMediaPlayback() OVERRIDE;
 #endif
 
   void set_delegate(RenderViewHostDelegate* d) {
@@ -239,6 +240,9 @@ class CONTENT_EXPORT RenderViewHostImpl
   base::TerminationStatus render_view_termination_status() const {
     return render_view_termination_status_;
   }
+
+  // Returns the content specific prefs for this RenderViewHost.
+  WebPreferences GetWebkitPrefs(const GURL& url);
 
   // Sends the given navigation message. Use this rather than sending it
   // yourself since this does the internal bookkeeping described below. This
@@ -391,7 +395,7 @@ class CONTENT_EXPORT RenderViewHostImpl
 
 #if defined(OS_ANDROID)
   BrowserMediaPlayerManager* media_player_manager() {
-    return media_player_manager_;
+    return media_player_manager_.get();
   }
 
   void DidSelectPopupMenuItems(const std::vector<int>& selected_indices);
@@ -458,19 +462,29 @@ class CONTENT_EXPORT RenderViewHostImpl
                         bool empty_allowed,
                         GURL* url);
 
+  // Update the FrameTree to use this RenderViewHost's main frame
+  // RenderFrameHost. Called when the RenderViewHost is committed.
+  //
+  // TODO(ajwong): Remove once RenderViewHost no longer owns the main frame
+  // RenderFrameHost.
+  void AttachToFrameTree();
+
+  // The following IPC handlers are public so RenderFrameHost can call them,
+  // while we transition the code to not use RenderViewHost.
+  //
+  // TODO(nasko): Remove those methods once we are done moving navigation
+  // into RenderFrameHost.
+  void OnDidStartProvisionalLoadForFrame(int64 frame_id,
+                                         int64 parent_frame_id,
+                                         bool main_frame,
+                                         const GURL& url);
+
   // NOTE: Do not add functions that just send an IPC message that are called in
   // one or two places. Have the caller send the IPC message directly (unless
   // the caller places are in different platforms, in which case it's better
   // to keep them consistent).
 
  protected:
-  friend class RenderViewHostObserver;
-
-  // Add and remove observers for filtering IPC messages.  Clients must be sure
-  // to remove the observer before they go away.
-  void AddObserver(RenderViewHostObserver* observer);
-  void RemoveObserver(RenderViewHostObserver* observer);
-
   // RenderWidgetHost protected overrides.
   virtual void OnUserGesture() OVERRIDE;
   virtual void NotifyRendererUnresponsive() OVERRIDE;
@@ -492,10 +506,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnRunModal(int opener_id, IPC::Message* reply_msg);
   void OnRenderViewReady();
   void OnRenderProcessGone(int status, int error_code);
-  void OnDidStartProvisionalLoadForFrame(int64 frame_id,
-                                         int64 parent_frame_id,
-                                         bool main_frame,
-                                         const GURL& url);
   void OnDidRedirectProvisionalLoad(int32 page_id,
                                     const GURL& source_url,
                                     const GURL& target_url);
@@ -577,20 +587,22 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnDidAccessInitialDocument();
   void OnDomOperationResponse(const std::string& json_string,
                               int automation_id);
-  void OnGetWindowSnapshot(const int snapshot_id);
+  void OnFocusedNodeTouched(bool editable);
 
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
   void OnShowPopup(const ViewHostMsg_ShowPopup_Params& params);
 #endif
 
+  // TODO(nasko): Remove this accessor once RenderFrameHost moves into the frame
+  // tree.
+  RenderFrameHostImpl* main_render_frame_host() const {
+    return main_render_frame_host_.get();
+  }
+
  private:
   friend class TestRenderViewHost;
   FRIEND_TEST_ALL_PREFIXES(RenderViewHostTest, BasicRenderFrameHost);
   FRIEND_TEST_ALL_PREFIXES(RenderViewHostTest, RoutingIdSane);
-
-  // TODO(nasko): Remove this accessor once RenderFrameHost moves into the frame
-  // tree.
-  RenderFrameHostImpl* main_render_frame_host() const;
 
   // Sets whether this RenderViewHost is swapped out in favor of another,
   // and clears any waiting state that is no longer relevant.
@@ -598,10 +610,14 @@ class CONTENT_EXPORT RenderViewHostImpl
 
   bool CanAccessFilesOfPageState(const PageState& state) const;
 
-  // This is an RenderFrameHost object associated with the top-level frame in
-  // the page rendered by this RenderViewHost.
-  // TODO(nasko): Remove this pointer once we have enough infrastructure to
-  // move this to the top-level FrameTreeNode.
+  // All RenderViewHosts must have a RenderFrameHost for its main frame.
+  // Currently the RenderFrameHost is created in lock step on construction
+  // and a pointer to the main frame is given to the FrameTreeNode
+  // when the RenderViewHost commits (see AttachToFrameTree()).
+  //
+  // TODO(ajwong): Make this reference non-owning. The root FrameTreeNode of
+  // the FrameTree should be responsible for owning the main frame's
+  // RenderFrameHost.
   scoped_ptr<RenderFrameHostImpl> main_render_frame_host_;
 
   // Our delegate, which wants to know about changes in the RenderView.
@@ -696,16 +712,12 @@ class CONTENT_EXPORT RenderViewHostImpl
   // The termination status of the last render view that terminated.
   base::TerminationStatus render_view_termination_status_;
 
-  // A list of observers that filter messages.  Weak references.
-  ObserverList<RenderViewHostObserver> observers_;
-
   // When the last ShouldClose message was sent.
   base::TimeTicks send_should_close_start_time_;
 
 #if defined(OS_ANDROID)
   // Manages all the android mediaplayer objects and handling IPCs for video.
-  // This class inherits from RenderViewHostObserver.
-  BrowserMediaPlayerManager* media_player_manager_;
+  scoped_ptr<BrowserMediaPlayerManager> media_player_manager_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(RenderViewHostImpl);

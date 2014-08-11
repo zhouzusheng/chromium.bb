@@ -35,12 +35,12 @@
 #include "WebMenuItemInfo.h"
 #include "WebPopupMenuInfo.h"
 #include "WebViewClient.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/platform/PopupMenuClient.h"
-#include "core/platform/graphics/FloatQuad.h"
-#include "core/platform/graphics/IntPoint.h"
-#include "core/platform/text/TextDirection.h"
+#include "platform/geometry/FloatQuad.h"
+#include "platform/geometry/IntPoint.h"
+#include "platform/text/TextDirection.h"
 #include "public/platform/WebVector.h"
 
 using namespace WebCore;

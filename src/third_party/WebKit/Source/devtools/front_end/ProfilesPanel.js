@@ -23,8 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-const UserInitiatedProfileName = "org.webkit.profiles.user-initiated";
-
 /**
  * @constructor
  * @extends {WebInspector.Object}
@@ -231,30 +229,6 @@ WebInspector.ProfileType.prototype = {
         this._profilesIdMap = {};
     },
 
-    /**
-     * @param {function(this:WebInspector.ProfileType, ?string, !Array.<!ProfilerAgent.ProfileHeader>)} populateCallback
-     */
-    _requestProfilesFromBackend: function(populateCallback)
-    {
-    },
-
-    _populateProfiles: function()
-    {
-        /**
-         * @param {?string} error
-         * @param {!Array.<!ProfilerAgent.ProfileHeader>} profileHeaders
-         */
-        function populateCallback(error, profileHeaders) {
-            if (error)
-                return;
-            profileHeaders.sort(function(a, b) { return a.uid - b.uid; });
-            var count = profileHeaders.length;
-            for (var i = 0; i < count; ++i)
-                this.addProfile(this.createProfile(profileHeaders[i]));
-        }
-        this._requestProfilesFromBackend(populateCallback.bind(this));
-    },
-
     __proto__: WebInspector.Object.prototype
 }
 
@@ -272,6 +246,8 @@ WebInspector.ProfileHeader = function(profileType, title, uid)
     this.uid = this.isTemporary ? -1 : uid;
     this._fromFile = false;
 }
+
+WebInspector.ProfileHeader._nextProfileFromFileUid = 1;
 
 WebInspector.ProfileHeader.prototype = {
     /**
@@ -362,7 +338,7 @@ WebInspector.ProfileHeader.prototype = {
     setFromFile: function()
     {
         this._fromFile = true;
-        this.uid = -2;
+        this.uid = "From file #" + WebInspector.ProfileHeader._nextProfileFromFileUid++;
     }
 }
 
@@ -385,6 +361,9 @@ WebInspector.ProfilesPanel = function(name, type)
 
     this.createSidebarViewWithTree();
 
+    this.splitView.mainElement.addStyleClass("vbox");
+    this.splitView.sidebarElement.addStyleClass("vbox");
+
     this.profilesItemTreeElement = new WebInspector.ProfilesSidebarTreeElement(this);
     this.sidebarTree.appendChild(this.profilesItemTreeElement);
 
@@ -393,23 +372,27 @@ WebInspector.ProfilesPanel = function(name, type)
 
     this.profileViews = document.createElement("div");
     this.profileViews.id = "profile-views";
+    this.profileViews.addStyleClass("vbox");
     this.splitView.mainElement.appendChild(this.profileViews);
 
-    this._statusBarButtons = [];
+    var statusBarContainer = this.splitView.mainElement.createChild("div", "profiles-status-bar");
+    this._statusBarElement = statusBarContainer.createChild("div", "status-bar");
+
+    var sidebarTreeBox = this.sidebarElement.createChild("div", "profiles-sidebar-tree-box");
+    sidebarTreeBox.appendChild(this.sidebarTreeElement);
+    var statusBarContainerLeft = this.sidebarElement.createChild("div", "profiles-status-bar");
+    this._statusBarButtons = statusBarContainerLeft.createChild("div", "status-bar");
 
     this.recordButton = new WebInspector.StatusBarButton("", "record-profile-status-bar-item");
     this.recordButton.addEventListener("click", this.toggleRecordButton, this);
-    this._statusBarButtons.push(this.recordButton);
+    this._statusBarButtons.appendChild(this.recordButton.element);
 
     this.clearResultsButton = new WebInspector.StatusBarButton(WebInspector.UIString("Clear all profiles."), "clear-status-bar-item");
     this.clearResultsButton.addEventListener("click", this._clearProfiles, this);
-    this._statusBarButtons.push(this.clearResultsButton);
+    this._statusBarButtons.appendChild(this.clearResultsButton.element);
 
-    this._profileTypeStatusBarItemsContainer = document.createElement("div");
-    this._profileTypeStatusBarItemsContainer.className = "status-bar-items";
-
-    this._profileViewStatusBarItemsContainer = document.createElement("div");
-    this._profileViewStatusBarItemsContainer.className = "status-bar-items";
+    this._profileTypeStatusBarItemsContainer = this._statusBarElement.createChild("div");
+    this._profileViewStatusBarItemsContainer = this._statusBarElement.createChild("div");
 
     if (singleProfileMode) {
         this._launcherView = this._createLauncherView();
@@ -427,7 +410,6 @@ WebInspector.ProfilesPanel = function(name, type)
             this._registerProfileType(new WebInspector.CanvasProfileType());
     }
 
-    this._profilesWereRequested = false;
     this._reset();
 
     this._createFileSelectorElement();
@@ -511,15 +493,13 @@ WebInspector.ProfilesPanel.prototype = {
             return;
         }
 
-        var temporaryProfile = profileType.createTemporaryProfile(WebInspector.ProfilesPanelDescriptor.UserInitiatedProfileName + "." + file.name);
+        var name = file.name;
+        if (name.endsWith(profileType.fileExtension()))
+            name = name.substr(0, name.length - profileType.fileExtension().length);
+        var temporaryProfile = profileType.createTemporaryProfile(name);
         temporaryProfile.setFromFile();
         profileType.addProfile(temporaryProfile);
         temporaryProfile.loadFromFile(file);
-    },
-
-    get statusBarItems()
-    {
-        return this._statusBarButtons.select("element").concat(this._profileTypeStatusBarItemsContainer, this._profileViewStatusBarItemsContainer);
     },
 
     /**
@@ -531,21 +511,6 @@ WebInspector.ProfilesPanel.prototype = {
         var isProfiling = this._selectedProfileType.buttonClicked();
         this.setRecordingProfile(this._selectedProfileType.id, isProfiling);
         return true;
-    },
-
-    _populateAllProfiles: function()
-    {
-        if (this._profilesWereRequested)
-            return;
-        this._profilesWereRequested = true;
-        for (var typeId in this._profileTypesByIdMap)
-            this._profileTypesByIdMap[typeId]._populateProfiles();
-    },
-
-    wasShown: function()
-    {
-        WebInspector.Panel.prototype.wasShown.call(this);
-        this._populateAllProfiles();
     },
 
     /**
@@ -560,7 +525,6 @@ WebInspector.ProfilesPanel.prototype = {
     _updateProfileTypeSpecificUI: function()
     {
         this.recordButton.title = this._selectedProfileType.buttonTooltip;
-
         this._launcherView.updateProfileType(this._selectedProfileType);
         this._profileTypeStatusBarItemsContainer.removeChildren();
         var statusBarItems = this._selectedProfileType.statusBarItems;
@@ -568,7 +532,6 @@ WebInspector.ProfilesPanel.prototype = {
             for (var i = 0; i < statusBarItems.length; ++i)
                 this._profileTypeStatusBarItemsContainer.appendChild(statusBarItems[i]);
         }
-        this._resize(this.splitView.sidebarWidth());
     },
 
     _reset: function()
@@ -590,6 +553,7 @@ WebInspector.ProfilesPanel.prototype = {
 
         this.sidebarTreeElement.removeStyleClass("some-expandable");
 
+        this._launcherView.detach();
         this.profileViews.removeChildren();
         this._profileViewStatusBarItemsContainer.removeChildren();
 
@@ -606,7 +570,7 @@ WebInspector.ProfilesPanel.prototype = {
     {
         this.closeVisibleView();
         this._profileViewStatusBarItemsContainer.removeChildren();
-        this._launcherView.show(this.splitView.mainElement);
+        this._launcherView.show(this.profileViews);
         this.visibleView = this._launcherView;
     },
 
@@ -699,7 +663,7 @@ WebInspector.ProfilesPanel.prototype = {
         var small = false;
         var alternateTitle;
 
-        if (!WebInspector.ProfilesPanelDescriptor.isUserInitiatedProfile(profile.title) && !profile.isTemporary) {
+        if (!profile.fromFile() && !profile.isTemporary) {
             var profileTitleKey = this._makeTitleKey(profile.title, typeId);
             if (!(profileTitleKey in this._profileGroups))
                 this._profileGroups[profileTitleKey] = [];
@@ -1125,32 +1089,6 @@ WebInspector.ProfilesPanel.prototype = {
     },
 
     /**
-     * @param {!WebInspector.Event} event
-     */
-    sidebarResized: function(event)
-    {
-        var sidebarWidth = /** @type {number} */ (event.data);
-        this._resize(sidebarWidth);
-    },
-
-    onResize: function()
-    {
-        this._resize(this.splitView.sidebarWidth());
-    },
-
-    /**
-     * @param {number} sidebarWidth
-     */
-    _resize: function(sidebarWidth)
-    {
-        var lastItemElement = this._statusBarButtons[this._statusBarButtons.length - 1].element;
-        var left = lastItemElement.totalOffsetLeft() + lastItemElement.offsetWidth;
-        this._profileTypeStatusBarItemsContainer.style.left = left + "px";
-        left += this._profileTypeStatusBarItemsContainer.offsetWidth - 1;
-        this._profileViewStatusBarItemsContainer.style.left = Math.max(left, sidebarWidth) + "px";
-    },
-
-    /**
      * @param {string} profileType
      * @param {boolean} isProfiling
      */
@@ -1228,12 +1166,7 @@ WebInspector.ProfileSidebarTreeElement = function(profile, titleFormat, classNam
 {
     this.profile = profile;
     this._titleFormat = titleFormat;
-
-    if (WebInspector.ProfilesPanelDescriptor.isUserInitiatedProfile(this.profile.title))
-        this._profileNumber = WebInspector.ProfilesPanelDescriptor.userInitiatedProfileIndex(this.profile.title);
-
     WebInspector.SidebarTreeElement.call(this, className, "", "", profile, false);
-
     this.refreshTitles();
 }
 
@@ -1254,8 +1187,6 @@ WebInspector.ProfileSidebarTreeElement.prototype = {
     {
         if (this._mainTitle)
             return this._mainTitle;
-        if (WebInspector.ProfilesPanelDescriptor.isUserInitiatedProfile(this.profile.title))
-            return WebInspector.UIString(this._titleFormat, this._profileNumber);
         return this.profile.title;
     },
 

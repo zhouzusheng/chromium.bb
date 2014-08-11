@@ -35,8 +35,8 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/DateTimeFieldsState.h"
 #include "core/html/forms/InputTypeNames.h"
-#include "core/platform/DateComponents.h"
-#include "core/platform/LocalizedStrings.h"
+#include "platform/DateComponents.h"
+#include "platform/text/PlatformLocale.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
@@ -48,14 +48,14 @@ static const int weekDefaultStepBase = -259200000; // The first day of 1970-W01.
 static const int weekDefaultStep = 1;
 static const int weekStepScaleFactor = 604800000;
 
-PassRefPtr<InputType> WeekInputType::create(HTMLInputElement* element)
+PassRefPtr<InputType> WeekInputType::create(HTMLInputElement& element)
 {
     return adoptRef(new WeekInputType(element));
 }
 
 void WeekInputType::countUsage()
 {
-    observeFeatureIfVisible(UseCounter::InputTypeWeek);
+    countUsageIfVisible(UseCounter::InputTypeWeek);
 }
 
 const AtomicString& WeekInputType::formControlType() const
@@ -72,10 +72,10 @@ StepRange WeekInputType::createStepRange(AnyStepHandling anyStepHandling) const
 {
     DEFINE_STATIC_LOCAL(const StepRange::StepDescription, stepDescription, (weekDefaultStep, weekDefaultStepBase, weekStepScaleFactor, StepRange::ParsedStepValueShouldBeInteger));
 
-    const Decimal stepBase = parseToNumber(element()->fastGetAttribute(minAttr), weekDefaultStepBase);
-    const Decimal minimum = parseToNumber(element()->fastGetAttribute(minAttr), Decimal::fromDouble(DateComponents::minimumWeek()));
-    const Decimal maximum = parseToNumber(element()->fastGetAttribute(maxAttr), Decimal::fromDouble(DateComponents::maximumWeek()));
-    const Decimal step = StepRange::parseStep(anyStepHandling, stepDescription, element()->fastGetAttribute(stepAttr));
+    const Decimal stepBase = parseToNumber(element().fastGetAttribute(minAttr), weekDefaultStepBase);
+    const Decimal minimum = parseToNumber(element().fastGetAttribute(minAttr), Decimal::fromDouble(DateComponents::minimumWeek()));
+    const Decimal maximum = parseToNumber(element().fastGetAttribute(maxAttr), Decimal::fromDouble(DateComponents::maximumWeek()));
+    const Decimal step = StepRange::parseStep(anyStepHandling, stepDescription, element().fastGetAttribute(stepAttr));
     return StepRange(stepBase, minimum, maximum, step, stepDescription);
 }
 
@@ -108,11 +108,11 @@ String WeekInputType::formatDateTimeFieldsState(const DateTimeFieldsState& dateT
 
 void WeekInputType::setupLayoutParameters(DateTimeEditElement::LayoutParameters& layoutParameters, const DateComponents&) const
 {
-    layoutParameters.dateTimeFormat = weekFormatInLDML();
+    layoutParameters.dateTimeFormat = locale().weekFormatInLDML();
     layoutParameters.fallbackDateTimeFormat = "yyyy-'W'ww";
-    if (!parseToDateComponents(element()->fastGetAttribute(minAttr), &layoutParameters.minimum))
+    if (!parseToDateComponents(element().fastGetAttribute(minAttr), &layoutParameters.minimum))
         layoutParameters.minimum = DateComponents();
-    if (!parseToDateComponents(element()->fastGetAttribute(maxAttr), &layoutParameters.maximum))
+    if (!parseToDateComponents(element().fastGetAttribute(maxAttr), &layoutParameters.maximum))
         layoutParameters.maximum = DateComponents();
     layoutParameters.placeholderForYear = "----";
 }

@@ -27,7 +27,7 @@
 
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/rendering/HitTestResult.h"
@@ -81,9 +81,9 @@ void RenderSVGRoot::computeIntrinsicRatioInformation(FloatSize& intrinsicSize, d
     //   resolving both values to user units.
     if (intrinsicWidthAttribute.isFixed() || intrinsicHeightAttribute.isFixed()) {
         if (intrinsicWidthAttribute.isFixed())
-            intrinsicSize.setWidth(floatValueForLength(intrinsicWidthAttribute, 0));
+            intrinsicSize.setWidth(floatValueForLength(intrinsicWidthAttribute, 0, 0));
         if (intrinsicHeightAttribute.isFixed())
-            intrinsicSize.setHeight(floatValueForLength(intrinsicHeightAttribute, 0));
+            intrinsicSize.setHeight(floatValueForLength(intrinsicHeightAttribute, 0, 0));
         if (!intrinsicSize.isEmpty())
             intrinsicRatio = intrinsicSize.width() / static_cast<double>(intrinsicSize.height());
         return;
@@ -246,22 +246,12 @@ void RenderSVGRoot::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paint
     if (svg->hasEmptyViewBox())
         return;
 
-    Page* page = 0;
-    if (Frame* frame = this->frame())
-        page = frame->page();
-
     // Don't paint if we don't have kids, except if we have filters we should paint those.
     if (!firstChild()) {
         SVGResources* resources = SVGResourcesCache::cachedResourcesForRenderObject(this);
-        if (!resources || !resources->filter()) {
-            if (page && paintInfo.phase == PaintPhaseForeground)
-                page->addRelevantUnpaintedObject(this, visualOverflowRect());
+        if (!resources || !resources->filter())
             return;
-        }
     }
-
-    if (page && paintInfo.phase == PaintPhaseForeground)
-        page->addRelevantRepaintedObject(this, visualOverflowRect());
 
     // Make a copy of the PaintInfo because applyTransform will modify the damage rect.
     PaintInfo childPaintInfo(paintInfo);
@@ -300,15 +290,11 @@ void RenderSVGRoot::willBeDestroyed()
     RenderReplaced::willBeDestroyed();
 }
 
-void RenderSVGRoot::styleWillChange(StyleDifference diff, const RenderStyle* newStyle)
+void RenderSVGRoot::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
 {
     if (diff == StyleDifferenceLayout)
         setNeedsBoundariesUpdate();
-    RenderReplaced::styleWillChange(diff, newStyle);
-}
 
-void RenderSVGRoot::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
-{
     RenderReplaced::styleDidChange(diff, oldStyle);
     SVGResourcesCache::clientStyleChanged(this, diff, style());
 }

@@ -30,11 +30,13 @@
 
 #include "WebWorkerBase.h"
 #include "core/dom/CrossThreadTask.h"
-#include "core/platform/CrossThreadCopier.h"
 #include "core/workers/WorkerGlobalScope.h"
+#include "platform/CrossThreadCopier.h"
 
 namespace WebKit {
 
+// FIXME: Deprecate this bridge code when PermissionClientProxy is implemented
+// by the embedder.
 // Base class for worker thread bridges. This class adds an observer to
 // WorkerGlobalScope so that it doesn't try to use deleted pointers when
 // WorkerGlobalScope is destroyed.
@@ -81,14 +83,13 @@ protected:
     void postTaskToMainThread(PassOwnPtr<AllowParams>);
 
 private:
-    static void allowTask(WebCore::ScriptExecutionContext*, PassOwnPtr<AllowParams>, PassRefPtr<WorkerAllowMainThreadBridgeBase>);
-    static void didComplete(WebCore::ScriptExecutionContext*, PassRefPtr<WorkerAllowMainThreadBridgeBase>, bool);
+    static void allowTask(WebCore::ExecutionContext*, PassOwnPtr<AllowParams>, PassRefPtr<WorkerAllowMainThreadBridgeBase>);
+    static void didComplete(WebCore::ExecutionContext*, PassRefPtr<WorkerAllowMainThreadBridgeBase>, bool);
 
     Mutex m_mutex;
     WebWorkerBase* m_webWorkerBase;
-    WebCore::WorkerGlobalScope::Observer* m_workerGlobalScopeObserver;
+    OwnPtr<WebCore::WorkerGlobalScope::Observer> m_workerGlobalScopeObserver;
     bool m_result;
 };
 
 } // namespace WebKit
-

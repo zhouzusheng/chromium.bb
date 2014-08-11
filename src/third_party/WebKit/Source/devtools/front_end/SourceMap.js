@@ -99,6 +99,14 @@ WebInspector.SourceMap.load = function(sourceMapURL, compiledURL, callback)
 
 WebInspector.SourceMap.prototype = {
     /**
+     * @return {string}
+     */
+    url: function()
+    {
+        return this._sourceMappingURL;
+    },
+
+   /**
      * @return {Array.<string>}
      */
     sources: function()
@@ -122,13 +130,10 @@ WebInspector.SourceMap.prototype = {
      */
     sourceContentProvider: function(sourceURL, contentType)
     {
-        var lastIndexOfDot = sourceURL.lastIndexOf(".");
-        var extension = lastIndexOfDot !== -1 ? sourceURL.substr(lastIndexOfDot + 1) : "";
-        var mimeType = WebInspector.ResourceType.mimeTypesForExtensions[extension.toLowerCase()];
         var sourceContent = this.sourceContent(sourceURL);
         if (sourceContent)
-            return new WebInspector.StaticContentProvider(contentType, sourceContent, mimeType);
-        return new WebInspector.CompilerSourceMappingContentProvider(sourceURL, contentType, mimeType);
+            return new WebInspector.StaticContentProvider(contentType, sourceContent);
+        return new WebInspector.CompilerSourceMappingContentProvider(sourceURL, contentType);
     },
 
     /**

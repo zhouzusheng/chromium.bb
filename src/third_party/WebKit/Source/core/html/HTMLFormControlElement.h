@@ -53,7 +53,7 @@ public:
 
     void ancestorDisabledStateWasChanged();
 
-    virtual void reset() { }
+    void reset();
 
     virtual bool formControlValueMatchesRenderer() const { return m_valueMatchesRenderer; }
     virtual void setFormControlValueMatchesRenderer(bool b) { m_valueMatchesRenderer = b; }
@@ -79,6 +79,7 @@ public:
     // Override in derived classes to get the encoded name=value pair for submitting.
     // Return true for a successful control (see HTML4-17.13.2).
     virtual bool appendFormData(FormDataList&, bool) { return false; }
+    virtual String resultForDialogSubmit();
 
     virtual bool isSuccessfulSubmitButton() const { return false; }
     virtual bool isActivatedSubmit() const { return false; }
@@ -97,8 +98,12 @@ public:
     bool isReadOnly() const { return m_isReadOnly; }
     bool isDisabledOrReadOnly() const { return isDisabledFormControl() || m_isReadOnly; }
 
-    bool hasAutofocused() { return m_hasAutofocused; }
+    bool hasAutofocused() const { return m_hasAutofocused; }
     void setAutofocused() { m_hasAutofocused = true; }
+    bool isAutofocusable() const;
+
+    bool isAutofilled() const { return m_isAutofilled; }
+    void setAutofilled(bool = true);
 
     static HTMLFormControlElement* enclosingFormControlElement(Node*);
 
@@ -114,7 +119,7 @@ protected:
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
-    virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
+    virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
 
     virtual bool supportsFocus() const OVERRIDE;
     virtual bool isKeyboardFocusable() const OVERRIDE;
@@ -129,6 +134,8 @@ protected:
     // This must be called any time the result of willValidate() has changed.
     void setNeedsWillValidateCheck();
     virtual bool recalcWillValidate() const;
+
+    virtual void resetImpl() { }
 
 private:
     virtual void refFormAssociatedElement() { ref(); }
@@ -146,6 +153,7 @@ private:
 
     OwnPtr<ValidationMessage> m_validationMessage;
     bool m_disabled : 1;
+    bool m_isAutofilled : 1;
     bool m_isReadOnly : 1;
     bool m_isRequired : 1;
     bool m_valueMatchesRenderer : 1;
@@ -161,7 +169,7 @@ private:
     mutable bool m_willValidateInitialized: 1;
     mutable bool m_willValidate : 1;
 
-    // Cache of validity()->valid().
+    // Cache of valid().
     // But "candidate for constraint validation" doesn't affect m_isValid.
     bool m_isValid : 1;
 
@@ -170,16 +178,23 @@ private:
     bool m_hasAutofocused : 1;
 };
 
-inline HTMLFormControlElement* toHTMLFormControlElement(Node* node)
+inline bool isHTMLFormControlElement(const Node& node)
 {
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || (node->isElementNode() && toElement(node)->isFormControlElement()));
-    return static_cast<HTMLFormControlElement*>(node);
+    return node.isElementNode() && toElement(node).isFormControlElement();
 }
+
+DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(HTMLFormControlElement);
 
 inline HTMLFormControlElement* toHTMLFormControlElement(FormAssociatedElement* control)
 {
     ASSERT_WITH_SECURITY_IMPLICATION(!control || control->isFormControlElement());
     return static_cast<HTMLFormControlElement*>(control);
+}
+
+inline HTMLFormControlElement& toHTMLFormControlElement(FormAssociatedElement& control)
+{
+    ASSERT_WITH_SECURITY_IMPLICATION(control.isFormControlElement());
+    return static_cast<HTMLFormControlElement&>(control);
 }
 
 inline const HTMLFormControlElement* toHTMLFormControlElement(const FormAssociatedElement* control)

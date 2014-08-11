@@ -37,7 +37,7 @@
 #include "core/editing/htmlediting.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTableElement.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/rendering/RenderTableCell.h"
 
 namespace WebCore {
@@ -292,7 +292,7 @@ void DeleteSelectionCommand::saveTypingStyleState()
         return;
 
     // Figure out the typing style in effect before the delete is done.
-    m_typingStyle = EditingStyle::create(m_selectionToDelete.start());
+    m_typingStyle = EditingStyle::create(m_selectionToDelete.start(), EditingStyle::EditingPropertiesInEffect);
     m_typingStyle->removeStyleAddedByNode(enclosingAnchorElement(m_selectionToDelete.start()));
 
     // If we're deleting into a Mail blockquote, save the style at end() instead of start()
@@ -430,7 +430,7 @@ void DeleteSelectionCommand::makeStylingElementsDirectChildrenOfEditableRootToPr
     RefPtr<Node> node = range->firstNode();
     while (node && node != range->pastLastNode()) {
         RefPtr<Node> nextNode = NodeTraversal::next(node.get());
-        if ((node->hasTagName(styleTag) && !(toElement(node.get())->hasAttribute(scopedAttr))) || node->hasTagName(linkTag)) {
+        if ((node->hasTagName(styleTag) && !(toElement(node)->hasAttribute(scopedAttr))) || node->hasTagName(linkTag)) {
             nextNode = NodeTraversal::nextSkippingChildren(node.get());
             RefPtr<ContainerNode> rootEditableElement = node->rootEditableElement();
             if (rootEditableElement.get()) {
@@ -499,7 +499,7 @@ void DeleteSelectionCommand::handleGeneralDelete()
         if (startOffset > 0) {
             if (startNode->isTextNode()) {
                 // in a text node that needs to be trimmed
-                Text* text = toText(node.get());
+                Text* text = toText(node);
                 deleteTextFromNode(text, startOffset, text->length() - startOffset);
                 node = NodeTraversal::next(node.get());
             } else {
@@ -523,8 +523,8 @@ void DeleteSelectionCommand::handleGeneralDelete()
                 removeNode(node.get());
                 node = nextNode.get();
             } else {
-                Node* n = node->lastDescendant();
-                if (m_downstreamEnd.deprecatedNode() == n && m_downstreamEnd.deprecatedEditingOffset() >= caretMaxOffset(n)) {
+                Node& n = node->lastDescendant();
+                if (m_downstreamEnd.deprecatedNode() == n && m_downstreamEnd.deprecatedEditingOffset() >= caretMaxOffset(&n)) {
                     removeNode(node.get());
                     node = 0;
                 } else

@@ -4,12 +4,18 @@
 
 #include "content/renderer/render_frame_impl.h"
 
+#include <map>
+#include <string>
+
 #include "base/command_line.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "content/child/appcache/appcache_dispatcher.h"
+#include "content/child/plugin_messages.h"
 #include "content/child/quota_dispatcher.h"
 #include "content/child/request_extra_data.h"
+#include "content/child/service_worker/web_service_worker_provider_impl.h"
+#include "content/common/frame_messages.h"
 #include "content/common/socket_stream_handle_data.h"
 #include "content/common/swapped_out_messages.h"
 #include "content/common/view_messages.h"
@@ -22,6 +28,7 @@
 #include "content/renderer/browser_plugin/browser_plugin.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
 #include "content/renderer/internal_document_state_data.h"
+#include "content/renderer/npapi/plugin_channel_host.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/renderer_webapplicationcachehost_impl.h"
@@ -57,6 +64,7 @@ using WebKit::WebPluginParams;
 using WebKit::WebReferrerPolicy;
 using WebKit::WebSearchableFormData;
 using WebKit::WebSecurityOrigin;
+using WebKit::WebServiceWorkerProvider;
 using WebKit::WebStorageQuotaCallbacks;
 using WebKit::WebString;
 using WebKit::WebURL;
@@ -72,6 +80,13 @@ using webkit_glue::WebURLResponseExtraDataImpl;
 
 namespace content {
 
+namespace {
+
+typedef std::map<WebKit::WebFrame*, RenderFrameImpl*> FrameMap;
+base::LazyInstance<FrameMap> g_child_frame_map = LAZY_INSTANCE_INITIALIZER;
+
+}  // namespace
+
 static RenderFrameImpl* (*g_create_render_frame_impl)(RenderViewImpl*, int32) =
     NULL;
 
@@ -80,13 +95,10 @@ RenderFrameImpl* RenderFrameImpl::Create(RenderViewImpl* render_view,
                                          int32 routing_id) {
   DCHECK(routing_id != MSG_ROUTING_NONE);
 
-  RenderFrameImpl* render_frame = NULL;
   if (g_create_render_frame_impl)
-    render_frame = g_create_render_frame_impl(render_view, routing_id);
+    return g_create_render_frame_impl(render_view, routing_id);
   else
-    render_frame = new RenderFrameImpl(render_view, routing_id);
-
-  return render_frame;
+    return new RenderFrameImpl(render_view, routing_id);
 }
 
 // static
@@ -113,7 +125,7 @@ int RenderFrameImpl::GetRoutingID() const {
 
 bool RenderFrameImpl::Send(IPC::Message* message) {
   if (is_detaching_ ||
-      (is_swapped_out_ &&
+      ((is_swapped_out_ || render_view_->is_swapped_out()) &&
        !SwappedOutMessages::CanSendWhileSwappedOut(message))) {
     delete message;
     return false;
@@ -161,34 +173,6 @@ WebKit::WebPlugin* RenderFrameImpl::createPlugin(
 #endif  // defined(ENABLE_PLUGINS)
 }
 
-WebKit::WebSharedWorker* RenderFrameImpl::createSharedWorker(
-    WebKit::WebFrame* frame,
-    const WebKit::WebURL& url,
-    const WebKit::WebString& name,
-    unsigned long long document_id) {
-  int route_id = MSG_ROUTING_NONE;
-  bool exists = false;
-  bool url_mismatch = false;
-  ViewHostMsg_CreateWorker_Params params;
-  params.url = url;
-  params.name = name;
-  params.document_id = document_id;
-  params.render_view_route_id = render_view_->GetRoutingID();
-  params.route_id = MSG_ROUTING_NONE;
-  params.script_resource_appcache_id = 0;
-  render_view_->Send(new ViewHostMsg_LookupSharedWorker(
-      params, &exists, &route_id, &url_mismatch));
-  if (url_mismatch) {
-    return NULL;
-  } else {
-    return new WebSharedWorkerProxy(RenderThreadImpl::current(),
-                                    document_id,
-                                    exists,
-                                    route_id,
-                                    render_view_->GetRoutingID());
-  }
-}
-
 WebKit::WebMediaPlayer* RenderFrameImpl::createMediaPlayer(
     WebKit::WebFrame* frame,
     const WebKit::WebURL& url,
@@ -209,19 +193,58 @@ WebKit::WebApplicationCacheHost* RenderFrameImpl::createApplicationCacheHost(
       RenderThreadImpl::current()->appcache_dispatcher()->backend_proxy());
 }
 
+WebKit::WebWorkerPermissionClientProxy*
+RenderFrameImpl::createWorkerPermissionClientProxy(WebFrame* frame) {
+  if (!frame || !frame->view())
+    return NULL;
+  return GetContentClient()->renderer()->CreateWorkerPermissionClientProxy(
+      RenderViewImpl::FromWebView(frame->view()), frame);
+}
+
 WebKit::WebCookieJar* RenderFrameImpl::cookieJar(WebKit::WebFrame* frame) {
   return render_view_->cookieJar(frame);
+}
+
+WebKit::WebServiceWorkerProvider* RenderFrameImpl::createServiceWorkerProvider(
+    WebKit::WebFrame* frame,
+    WebKit::WebServiceWorkerProviderClient* client) {
+  return new WebServiceWorkerProviderImpl(
+      ChildThread::current()->thread_safe_sender(),
+      ChildThread::current()->service_worker_message_filter(),
+      GURL(frame->document().securityOrigin().toString()),
+      make_scoped_ptr(client));
 }
 
 void RenderFrameImpl::didAccessInitialDocument(WebKit::WebFrame* frame) {
   render_view_->didAccessInitialDocument(frame);
 }
 
-void RenderFrameImpl::didCreateFrame(WebKit::WebFrame* parent,
-                                     WebKit::WebFrame* child) {
-  render_view_->Send(new ViewHostMsg_FrameAttached(
-      render_view_->GetRoutingID(), parent->identifier(), child->identifier(),
-      UTF16ToUTF8(child->assignedName())));
+WebKit::WebFrame* RenderFrameImpl::createChildFrame(
+    WebKit::WebFrame* parent,
+    const WebKit::WebString& name) {
+  RenderFrameImpl* child_render_frame = this;
+  long long child_frame_identifier = WebFrame::generateEmbedderIdentifier();
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess)) {
+    // Synchronously notify the browser of a child frame creation to get the
+    // routing_id for the RenderFrame.
+    int routing_id;
+    Send(new FrameHostMsg_CreateChildFrame(GetRoutingID(),
+                                           parent->identifier(),
+                                           child_frame_identifier,
+                                           UTF16ToUTF8(name),
+                                           &routing_id));
+    child_render_frame = RenderFrameImpl::Create(render_view_, routing_id);
+  }
+
+  WebKit::WebFrame* web_frame = WebFrame::create(child_render_frame,
+                                                 child_frame_identifier);
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess)) {
+    g_child_frame_map.Get().insert(
+        std::make_pair(web_frame, child_render_frame));
+  }
+
+  return web_frame;
 }
 
 void RenderFrameImpl::didDisownOpener(WebKit::WebFrame* frame) {
@@ -245,13 +268,22 @@ void RenderFrameImpl::frameDetached(WebKit::WebFrame* frame) {
   if (frame->parent())
     parent_frame_id = frame->parent()->identifier();
 
-  render_view_->Send(new ViewHostMsg_FrameDetached(render_view_->GetRoutingID(),
-                                                   parent_frame_id,
-                                                   frame->identifier()));
+  render_view_->Send(new FrameHostMsg_Detach(GetRoutingID(), parent_frame_id,
+                                             frame->identifier()));
 
   // Call back to RenderViewImpl for observers to be notified.
   // TODO(nasko): Remove once we have RenderFrameObserver.
   render_view_->frameDetached(frame);
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess)) {
+    FrameMap::iterator it = g_child_frame_map.Get().find(frame);
+    DCHECK(it != g_child_frame_map.Get().end());
+    DCHECK_EQ(it->second, this);
+    delete it->second;
+    g_child_frame_map.Get().erase(it);
+  }
+
+  frame->close();
 }
 
 void RenderFrameImpl::willClose(WebKit::WebFrame* frame) {
@@ -270,6 +302,14 @@ void RenderFrameImpl::didChangeName(WebKit::WebFrame* frame,
                                       frame->identifier(),
                                       !frame->parent(),
                                       UTF16ToUTF8(name)));
+}
+
+void RenderFrameImpl::didMatchCSS(
+    WebKit::WebFrame* frame,
+    const WebKit::WebVector<WebKit::WebString>& newly_matching_selectors,
+    const WebKit::WebVector<WebKit::WebString>& stopped_matching_selectors) {
+  render_view_->didMatchCSS(
+      frame, newly_matching_selectors, stopped_matching_selectors);
 }
 
 void RenderFrameImpl::loadURLExternally(WebKit::WebFrame* frame,
@@ -357,11 +397,51 @@ void RenderFrameImpl::didCreateDataSource(WebKit::WebFrame* frame,
 }
 
 void RenderFrameImpl::didStartProvisionalLoad(WebKit::WebFrame* frame) {
-  // TODO(nasko): Move implementation here. Needed state:
-  // * is_swapped_out_
-  // * navigation_gesture_
-  // * completed_client_redirect_src_
-  render_view_->didStartProvisionalLoad(frame);
+  WebDataSource* ds = frame->provisionalDataSource();
+
+  // In fast/loader/stop-provisional-loads.html, we abort the load before this
+  // callback is invoked.
+  if (!ds)
+    return;
+
+  DocumentState* document_state = DocumentState::FromDataSource(ds);
+
+  // We should only navigate to swappedout:// when is_swapped_out_ is true.
+  CHECK((ds->request().url() != GURL(kSwappedOutURL)) ||
+        render_view_->is_swapped_out()) <<
+        "Heard swappedout:// when not swapped out.";
+
+  // Update the request time if WebKit has better knowledge of it.
+  if (document_state->request_time().is_null()) {
+    double event_time = ds->triggeringEventTime();
+    if (event_time != 0.0)
+      document_state->set_request_time(Time::FromDoubleT(event_time));
+  }
+
+  // Start time is only set after request time.
+  document_state->set_start_load_time(Time::Now());
+
+  bool is_top_most = !frame->parent();
+  if (is_top_most) {
+    render_view_->set_navigation_gesture(
+        WebUserGestureIndicator::isProcessingUserGesture() ?
+            NavigationGestureUser : NavigationGestureAuto);
+  } else if (ds->replacesCurrentHistoryItem()) {
+    // Subframe navigations that don't add session history items must be
+    // marked with AUTO_SUBFRAME. See also didFailProvisionalLoad for how we
+    // handle loading of error pages.
+    document_state->navigation_state()->set_transition_type(
+        PAGE_TRANSITION_AUTO_SUBFRAME);
+  }
+
+  FOR_EACH_OBSERVER(
+      RenderViewObserver, render_view_->observers(),
+      DidStartProvisionalLoad(frame));
+
+  Send(new FrameHostMsg_DidStartProvisionalLoadForFrame(
+       routing_id_, frame->identifier(),
+       frame->parent() ? frame->parent()->identifier() : -1,
+       is_top_most, ds->request().url()));
 }
 
 void RenderFrameImpl::didReceiveServerRedirectForProvisionalLoad(
@@ -703,6 +783,15 @@ void RenderFrameImpl::didRunInsecureContent(
       render_view_->GetRoutingID(),
       origin.toString().utf8(),
       target));
+}
+
+void RenderFrameImpl::didAbortLoading(WebKit::WebFrame* frame) {
+#if defined(ENABLE_PLUGINS)
+  if (frame != render_view_->webview()->mainFrame())
+    return;
+  PluginChannelHost::Broadcast(
+      new PluginHostMsg_DidAbortLoading(render_view_->GetRoutingID()));
+#endif
 }
 
 void RenderFrameImpl::didExhaustMemoryAvailableForScript(

@@ -105,12 +105,8 @@ class WebRtcVoiceEngine
 
   SoundclipMedia* CreateSoundclip();
 
-  // TODO(pthatcher): Rename to SetOptions and replace the old
-  // flags-based SetOptions.
-  bool SetAudioOptions(const AudioOptions& options);
-  // Eventually, we will replace them with AudioOptions.
-  // In the meantime, we leave this here for backwards compat.
-  bool SetOptions(int flags);
+  AudioOptions GetOptions() const { return options_; }
+  bool SetOptions(const AudioOptions& options);
   // Overrides, when set, take precedence over the options on a
   // per-option basis.  For example, if AGC is set in options and AEC
   // is set in overrides, AGC and AEC will be both be set.  Overrides
@@ -188,6 +184,7 @@ class WebRtcVoiceEngine
   void Construct();
   void ConstructCodecs();
   bool InitInternal();
+  bool EnsureSoundclipEngineInit();
   void SetTraceFilter(int filter);
   void SetTraceOptions(const std::string& options);
   // Applies either options or overrides.  Every option that is "set"
@@ -231,6 +228,7 @@ class WebRtcVoiceEngine
   talk_base::scoped_ptr<VoEWrapper> voe_wrapper_;
   // A secondary instance, for playing out soundclips (on the 'ring' device).
   talk_base::scoped_ptr<VoEWrapper> voe_wrapper_sc_;
+  bool voe_wrapper_sc_initialized_;
   talk_base::scoped_ptr<VoETraceWrapper> tracing_;
   // The external audio device manager
   webrtc::AudioDeviceModule* adm_;
@@ -385,6 +383,7 @@ class WebRtcVoiceMediaChannel
   bool ChangeSend(SendFlags send);
   bool ChangeSend(int channel, SendFlags send);
   void ConfigureSendChannel(int channel);
+  bool ConfigureRecvChannel(int channel);
   bool DeleteChannel(int channel);
   bool InConferenceMode() const {
     return options_.conference_mode.GetWithDefaultIfUnset(false);
@@ -393,12 +392,16 @@ class WebRtcVoiceMediaChannel
     return channel_id == voe_channel();
   }
   bool SetSendCodecs(int channel, const std::vector<AudioCodec>& codecs);
+  bool SetSendBandwidthInternal(bool autobw, int bps);
 
   talk_base::scoped_ptr<WebRtcSoundclipStream> ringback_tone_;
   std::set<int> ringback_channels_;  // channels playing ringback
   std::vector<AudioCodec> recv_codecs_;
   std::vector<AudioCodec> send_codecs_;
   talk_base::scoped_ptr<webrtc::CodecInst> send_codec_;
+  bool send_bw_setting_;
+  bool send_autobw_;
+  int send_bw_bps_;
   AudioOptions options_;
   bool dtmf_allowed_;
   bool desired_playout_;

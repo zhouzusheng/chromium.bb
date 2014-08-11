@@ -32,8 +32,8 @@
 #define EditorClientImpl_h
 
 #include "core/page/EditorClient.h"
-#include "core/platform/Timer.h"
-#include "core/platform/text/TextCheckerClient.h"
+#include "platform/Timer.h"
+#include "platform/text/TextCheckerClient.h"
 #include "wtf/Deque.h"
 #include "wtf/HashSet.h"
 
@@ -57,18 +57,8 @@ public:
     virtual bool isContinuousSpellCheckingEnabled() OVERRIDE;
     virtual void toggleContinuousSpellChecking() OVERRIDE;
     virtual bool isGrammarCheckingEnabled() OVERRIDE;
-    virtual bool shouldBeginEditing(WebCore::Range*) OVERRIDE;
-    virtual bool shouldEndEditing(WebCore::Range*) OVERRIDE;
-    virtual bool shouldInsertNode(WebCore::Node*, WebCore::Range*, WebCore::EditorInsertAction) OVERRIDE;
-    virtual bool shouldInsertText(const WTF::String&, WebCore::Range*, WebCore::EditorInsertAction) OVERRIDE;
-    virtual bool shouldDeleteRange(WebCore::Range*) OVERRIDE;
-    virtual bool shouldChangeSelectedRange(WebCore::Range* fromRange, WebCore::Range* toRange,
-        WebCore::EAffinity, bool stillSelecting) OVERRIDE;
-    virtual bool shouldApplyStyle(WebCore::StylePropertySet*, WebCore::Range*) OVERRIDE;
-    virtual void didBeginEditing() OVERRIDE;
     virtual void respondToChangedContents() OVERRIDE;
     virtual void respondToChangedSelection(WebCore::Frame*) OVERRIDE;
-    virtual void didEndEditing() OVERRIDE;
     virtual void didCancelCompositionOnSelectionChange() OVERRIDE;
     virtual void registerUndoStep(PassRefPtr<WebCore::UndoStep>) OVERRIDE;
     virtual void registerRedoStep(PassRefPtr<WebCore::UndoStep>) OVERRIDE;

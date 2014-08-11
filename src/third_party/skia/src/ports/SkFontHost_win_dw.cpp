@@ -113,6 +113,18 @@ protected:
                                                unsigned styleBits) SK_OVERRIDE;
 
 private:
+    SkMutex fTFCacheMutex;
+    void Add(SkTypeface* face, SkTypeface::Style requestedStyle, bool strong) {
+        SkAutoMutexAcquire ama(fTFCacheMutex);
+        fTFCache.add(face, requestedStyle, strong);
+    }
+
+    SkTypeface* FindByProcAndRef(SkTypefaceCache::FindProc proc, void* ctx) {
+        SkAutoMutexAcquire ama(fTFCacheMutex);
+        SkTypeface* typeface = fTFCache.findByProcAndRef(proc, ctx);
+        return typeface;
+    }
+
     friend class SkFontStyleSet_DirectWrite;
     SkTScopedComPtr<IDWriteFontCollection> fFontCollection;
     SkSMallocWCHAR fLocaleName;
@@ -554,6 +566,8 @@ protected:
                                 SkAdvancedTypefaceMetrics::PerGlyphInfo,
                                 const uint32_t*, uint32_t) const SK_OVERRIDE;
     virtual void onGetFontDescriptor(SkFontDescriptor*, bool*) const SK_OVERRIDE;
+    virtual int onCharsToGlyphs(const void* chars, Encoding encoding,
+                                uint16_t glyphs[], int glyphCount) const SK_OVERRIDE;
     virtual int onCountGlyphs() const SK_OVERRIDE;
     virtual int onGetUPEM() const SK_OVERRIDE;
     virtual SkTypeface::LocalizedStrings* onCreateFamilyNameIterator() const SK_OVERRIDE;
@@ -1119,6 +1133,80 @@ void DWriteFontTypeface::onGetFontDescriptor(SkFontDescriptor* desc,
     *isLocalStream = SkToBool(fDWriteFontFileLoader.get());
 }
 
+static SkUnichar next_utf8(const void** chars) {
+    return SkUTF8_NextUnichar((const char**)chars);
+}
+
+static SkUnichar next_utf16(const void** chars) {
+    return SkUTF16_NextUnichar((const uint16_t**)chars);
+}
+
+static SkUnichar next_utf32(const void** chars) {
+    const SkUnichar** uniChars = (const SkUnichar**)chars;
+    SkUnichar uni = **uniChars;
+    *uniChars += 1;
+    return uni;
+}
+
+typedef SkUnichar (*EncodingProc)(const void**);
+
+static EncodingProc find_encoding_proc(SkTypeface::Encoding enc) {
+    static const EncodingProc gProcs[] = {
+        next_utf8, next_utf16, next_utf32
+    };
+    SkASSERT((size_t)enc < SK_ARRAY_COUNT(gProcs));
+    return gProcs[enc];
+}
+
+int DWriteFontTypeface::onCharsToGlyphs(const void* chars, Encoding encoding,
+                                        uint16_t glyphs[], int glyphCount) const
+{
+    if (NULL == glyphs) {
+        EncodingProc next_ucs4_proc = find_encoding_proc(encoding);
+        for (int i = 0; i < glyphCount; ++i) {
+            const SkUnichar c = next_ucs4_proc(&chars);
+            BOOL exists;
+            fDWriteFont->HasCharacter(c, &exists);
+            if (!exists) {
+                return i;
+            }
+        }
+        return glyphCount;
+    }
+
+    switch (encoding) {
+    case SkTypeface::kUTF8_Encoding:
+    case SkTypeface::kUTF16_Encoding: {
+        static const int scratchCount = 256;
+        UINT32 scratch[scratchCount];
+        EncodingProc next_ucs4_proc = find_encoding_proc(encoding);
+        for (int baseGlyph = 0; baseGlyph < glyphCount; baseGlyph += scratchCount) {
+            int glyphsLeft = glyphCount - baseGlyph;
+            int limit = SkTMin(glyphsLeft, scratchCount);
+            for (int i = 0; i < limit; ++i) {
+                scratch[i] = next_ucs4_proc(&chars);
+            }
+            fDWriteFontFace->GetGlyphIndices(scratch, limit, &glyphs[baseGlyph]);
+        }
+        break;
+    }
+    case SkTypeface::kUTF32_Encoding: {
+        const UINT32* utf32 = reinterpret_cast<const UINT32*>(chars);
+        fDWriteFontFace->GetGlyphIndices(utf32, glyphCount, glyphs);
+        break;
+    }
+    default:
+        SK_CRASH();
+    }
+
+    for (int i = 0; i < glyphCount; ++i) {
+        if (0 == glyphs[i]) {
+            return i;
+        }
+    }
+    return glyphCount;
+}
+
 int DWriteFontTypeface::onCountGlyphs() const {
     return fDWriteFontFace->GetGlyphCount();
 }
@@ -1448,7 +1536,7 @@ static void populate_glyph_to_unicode(IDWriteFontFace* fontFace,
     }
 
     glyphToUnicode->setCount(maxGlyph+1);
-    for (size_t j = 0; j < maxGlyph+1u; ++j) {
+    for (USHORT j = 0; j < maxGlyph+1u; ++j) {
         (*glyphToUnicode)[j] = 0;
     }
 
@@ -1710,12 +1798,12 @@ SkTypeface* SkFontMgr_DirectWrite::createTypefaceFromDWriteFont(
                                            IDWriteFontFamily* fontFamily,
                                            StreamFontFileLoader* fontFileLoader,
                                            IDWriteFontCollectionLoader* fontCollectionLoader) {
-    SkTypeface* face = fTFCache.findByProcAndRef(FindByDWriteFont, font);
+    SkTypeface* face = FindByProcAndRef(FindByDWriteFont, font);
     if (NULL == face) {
         face = DWriteFontTypeface::Create(fontFace, font, fontFamily,
                                           fontFileLoader, fontCollectionLoader);
         if (face) {
-            fTFCache.add(face, get_style(font), fontCollectionLoader != NULL);
+            Add(face, get_style(font), fontCollectionLoader != NULL);
         }
     }
     return face;

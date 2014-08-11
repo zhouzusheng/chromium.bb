@@ -40,7 +40,7 @@
 #include "core/platform/image-decoders/png/PNGImageDecoder.h"
 
 #include "core/platform/PlatformInstrumentation.h"
-#include "wtf/OwnArrayPtr.h"
+#include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
 #include "png.h"
@@ -211,7 +211,7 @@ private:
     png_bytep m_interlaceBuffer;
 #if USE(QCMSLIB)
     qcms_transform* m_transform;
-    OwnArrayPtr<png_byte> m_rowBuffer;
+    OwnPtr<png_byte[]> m_rowBuffer;
 #endif
 };
 
@@ -262,6 +262,7 @@ bool PNGImageDecoder::setFailed()
     return ImageDecoder::setFailed();
 }
 
+#if USE(QCMSLIB)
 static void readColorProfile(png_structp png, png_infop info, ColorProfile& colorProfile)
 {
 #ifdef PNG_iCCP_SUPPORTED
@@ -295,6 +296,7 @@ static void readColorProfile(png_structp png, png_infop info, ColorProfile& colo
     UNUSED_PARAM(colorProfile);
 #endif
 }
+#endif
 
 void PNGImageDecoder::headerAvailable()
 {

@@ -30,20 +30,22 @@
 #include "core/platform/graphics/BitmapImage.h"
 #include "core/platform/graphics/Gradient.h"
 #include "core/platform/graphics/ImageBuffer.h"
-#include "core/platform/graphics/IntRect.h"
-#include "core/platform/graphics/RoundedRect.h"
-#include "core/platform/graphics/TextRunIterator.h"
 #include "core/platform/graphics/skia/SkiaUtils.h"
-#include "core/platform/text/BidiResolver.h"
+#include "platform/geometry/IntRect.h"
+#include "platform/geometry/RoundedRect.h"
+#include "platform/graphics/DisplayList.h"
+#include "platform/graphics/TextRunIterator.h"
+#include "platform/text/BidiResolver.h"
 #include "third_party/skia/include/core/SkAnnotation.h"
 #include "third_party/skia/include/core/SkColorFilter.h"
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkDevice.h"
+#include "third_party/skia/include/core/SkPicture.h"
 #include "third_party/skia/include/core/SkRRect.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
 #include "third_party/skia/include/effects/SkBlurMaskFilter.h"
 #include "third_party/skia/include/effects/SkCornerPathEffect.h"
-#include "third_party/skia/include/effects/SkLumaXfermode.h"
+#include "third_party/skia/include/effects/SkLumaColorFilter.h"
 #include "weborigin/KURL.h"
 #include "wtf/Assertions.h"
 #include "wtf/MathExtras.h"
@@ -63,6 +65,17 @@ struct GraphicsContext::DeferredSaveState {
 
     unsigned m_flags;
     int m_restoreCount;
+};
+
+struct GraphicsContext::RecordingState {
+    RecordingState(SkCanvas* oldCanvas, PassRefPtr<DisplayList> displayList)
+        : m_savedCanvas(oldCanvas)
+        , m_displayList(displayList)
+    {
+    }
+
+    SkCanvas* m_savedCanvas;
+    RefPtr<DisplayList> m_displayList;
 };
 
 GraphicsContext::GraphicsContext(SkCanvas* canvas)
@@ -90,6 +103,7 @@ GraphicsContext::~GraphicsContext()
     ASSERT(m_stateStack.size() == 1);
     ASSERT(!m_annotationCount);
     ASSERT(!m_layerCount);
+    ASSERT(m_recordingStateStack.isEmpty());
 }
 
 const SkBitmap* GraphicsContext::bitmap() const
@@ -380,9 +394,17 @@ void GraphicsContext::setCompositeOperation(CompositeOperator compositeOperation
     m_state->m_xferMode = WebCoreCompositeToSkiaComposite(compositeOperation, blendMode);
 }
 
-void GraphicsContext::setColorSpaceConversion(ColorSpace srcColorSpace, ColorSpace dstColorSpace)
+SkColorFilter* GraphicsContext::colorFilter()
 {
-    m_state->m_colorFilter = ImageBuffer::createColorSpaceFilter(srcColorSpace, dstColorSpace);
+    return m_state->m_colorFilter.get();
+}
+
+void GraphicsContext::setColorFilter(ColorFilter colorFilter)
+{
+    // We only support one active color filter at the moment. If (when) this becomes a problem,
+    // we should switch to using color filter chains (Skia work in progress).
+    ASSERT(!m_state->m_colorFilter);
+    m_state->m_colorFilter = WebCoreColorFilterToSkiaColorFilter(colorFilter);
 }
 
 bool GraphicsContext::readPixels(SkBitmap* bitmap, int x, int y, SkCanvas::Config8888 config8888)
@@ -415,10 +437,10 @@ bool GraphicsContext::concat(const SkMatrix& matrix)
 
 void GraphicsContext::beginTransparencyLayer(float opacity, const FloatRect* bounds)
 {
-    beginTransparencyLayer(opacity, m_state->m_compositeOperator, bounds);
+    beginLayer(opacity, m_state->m_compositeOperator, bounds);
 }
 
-void GraphicsContext::beginTransparencyLayer(float opacity, CompositeOperator op, const FloatRect* bounds)
+void GraphicsContext::beginLayer(float opacity, CompositeOperator op, const FloatRect* bounds, ColorFilter colorFilter)
 {
     if (paintingDisabled())
         return;
@@ -431,8 +453,8 @@ void GraphicsContext::beginTransparencyLayer(float opacity, CompositeOperator op
 
     SkPaint layerPaint;
     layerPaint.setAlpha(static_cast<unsigned char>(opacity * 255));
-    RefPtr<SkXfermode> xferMode = WebCoreCompositeToSkiaComposite(op, m_state->m_blendMode);
-    layerPaint.setXfermode(xferMode.get());
+    layerPaint.setXfermode(WebCoreCompositeToSkiaComposite(op, m_state->m_blendMode).get());
+    layerPaint.setColorFilter(WebCoreColorFilterToSkiaColorFilter(colorFilter).get());
 
     if (bounds) {
         SkRect skBounds = WebCoreFloatRectToSKRect(*bounds);
@@ -440,26 +462,6 @@ void GraphicsContext::beginTransparencyLayer(float opacity, CompositeOperator op
     } else {
         saveLayer(0, &layerPaint, saveFlags);
     }
-
-
-#if !ASSERT_DISABLED
-    ++m_layerCount;
-#endif
-}
-
-void GraphicsContext::beginMaskedLayer(const FloatRect& bounds, MaskType maskType)
-{
-    if (paintingDisabled())
-        return;
-
-    SkPaint layerPaint;
-    RefPtr<SkXfermode> xferMode = adoptRef(maskType == AlphaMaskType
-        ? SkXfermode::Create(SkXfermode::kSrcIn_Mode)
-        : SkLumaMaskXfermode::Create(SkXfermode::kSrcIn_Mode));
-    layerPaint.setXfermode(xferMode.get());
-
-    SkRect skBounds = WebCoreFloatRectToSKRect(bounds);
-    saveLayer(&skBounds, &layerPaint);
 
 #if !ASSERT_DISABLED
     ++m_layerCount;
@@ -477,6 +479,53 @@ void GraphicsContext::endLayer()
 #if !ASSERT_DISABLED
     --m_layerCount;
 #endif
+}
+
+void GraphicsContext::beginRecording(const FloatRect& bounds)
+{
+    RefPtr<DisplayList> displayList = adoptRef(new DisplayList(bounds));
+    m_recordingStateStack.append(RecordingState(m_canvas, displayList));
+
+    IntRect recordingRect = enclosingIntRect(displayList->bounds());
+    m_canvas = displayList->picture()->beginRecording(recordingRect.width(), recordingRect.height());
+
+    // We want the bounds offset mapped to (0, 0), such that the display list content
+    // is fully contained within the SkPictureRecord's bounds.
+    if (bounds.x() || bounds.y())
+        m_canvas->translate(-bounds.x(), -bounds.y());
+}
+
+PassRefPtr<DisplayList> GraphicsContext::endRecording()
+{
+    ASSERT(!m_recordingStateStack.isEmpty());
+
+    RecordingState recording = m_recordingStateStack.last();
+    ASSERT(recording.m_displayList->picture()->getRecordingCanvas());
+    recording.m_displayList->picture()->endRecording();
+
+    m_recordingStateStack.removeLast();
+    m_canvas = recording.m_savedCanvas;
+
+    return recording.m_displayList.release();
+}
+
+void GraphicsContext::drawDisplayList(DisplayList* displayList)
+{
+    ASSERT(!displayList->picture()->getRecordingCanvas());
+
+    if (paintingDisabled() || !displayList)
+        return;
+
+    realizeSave(SkCanvas::kMatrixClip_SaveFlag);
+
+    const FloatRect& bounds = displayList->bounds();
+    if (bounds.x() || bounds.y())
+        m_canvas->translate(bounds.x(), bounds.y());
+
+    m_canvas->drawPicture(*displayList->picture());
+
+    if (bounds.x() || bounds.y())
+        m_canvas->translate(-bounds.x(), -bounds.y());
 }
 
 void GraphicsContext::setupPaintForFilling(SkPaint* paint) const
@@ -1041,7 +1090,7 @@ void GraphicsContext::drawImage(Image* image, const FloatRect& dest, const Float
         setImageInterpolationQuality(previousInterpolationQuality);
 }
 
-void GraphicsContext::drawTiledImage(Image* image, const IntRect& destRect, const IntPoint& srcPoint, const IntSize& tileSize, CompositeOperator op, bool useLowQualityScale, BlendMode blendMode)
+void GraphicsContext::drawTiledImage(Image* image, const IntRect& destRect, const IntPoint& srcPoint, const IntSize& tileSize, CompositeOperator op, bool useLowQualityScale, BlendMode blendMode, const IntSize& repeatSpacing)
 {
     if (paintingDisabled() || !image)
         return;
@@ -1049,10 +1098,10 @@ void GraphicsContext::drawTiledImage(Image* image, const IntRect& destRect, cons
     if (useLowQualityScale) {
         InterpolationQuality previousInterpolationQuality = imageInterpolationQuality();
         setImageInterpolationQuality(InterpolationLow);
-        image->drawTiled(this, destRect, srcPoint, tileSize, op, blendMode);
+        image->drawTiled(this, destRect, srcPoint, tileSize, op, blendMode, repeatSpacing);
         setImageInterpolationQuality(previousInterpolationQuality);
     } else {
-        image->drawTiled(this, destRect, srcPoint, tileSize, op, blendMode);
+        image->drawTiled(this, destRect, srcPoint, tileSize, op, blendMode, repeatSpacing);
     }
 }
 
@@ -1752,8 +1801,6 @@ void GraphicsContext::setupPaintCommon(SkPaint* paint) const
 
     if (!SkXfermode::IsMode(m_state->m_xferMode.get(), SkXfermode::kSrcOver_Mode))
         paint->setXfermode(m_state->m_xferMode.get());
-    if (this->drawLuminanceMask())
-        paint->setXfermode(SkLumaMaskXfermode::Create(SkXfermode::kSrcOver_Mode));
 
     if (m_state->m_looper)
         paint->setLooper(m_state->m_looper.get());
@@ -1794,6 +1841,26 @@ void GraphicsContext::setRadii(SkVector* radii, IntSize topLeft, IntSize topRigh
     radii[SkRRect::kLowerLeft_Corner].set(SkIntToScalar(bottomLeft.width()),
         SkIntToScalar(bottomLeft.height()));
 }
+
+PassRefPtr<SkColorFilter> GraphicsContext::WebCoreColorFilterToSkiaColorFilter(ColorFilter colorFilter)
+{
+    switch (colorFilter) {
+    case ColorFilterLuminanceToAlpha:
+        return adoptRef(SkLumaColorFilter::Create());
+    case ColorFilterLinearRGBToSRGB:
+        return ImageBuffer::createColorSpaceFilter(ColorSpaceLinearRGB, ColorSpaceDeviceRGB);
+    case ColorFilterSRGBToLinearRGB:
+        return ImageBuffer::createColorSpaceFilter(ColorSpaceDeviceRGB, ColorSpaceLinearRGB);
+    case ColorFilterNone:
+        break;
+    default:
+        ASSERT_NOT_REACHED();
+        break;
+    }
+
+    return 0;
+}
+
 
 #if OS(MACOSX)
 CGColorSpaceRef deviceRGBColorSpaceRef()

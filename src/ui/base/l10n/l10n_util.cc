@@ -246,9 +246,78 @@ bool IsLocaleAvailable(const std::string& locale) {
   // See crbug.com/230432: CHECK failure in GetUserDataDir().
   return ResourceBundle::GetSharedInstance().LocaleDataPakExists(locale);
 }
+#endif
+
+// On Linux, the text layout engine Pango determines paragraph directionality
+// by looking at the first strongly-directional character in the text. This
+// means text such as "Google Chrome foo bar..." will be layed out LTR even
+// if "foo bar" is RTL. So this function prepends the necessary RLM in such
+// cases.
+void AdjustParagraphDirectionality(string16* paragraph) {
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
+  if (base::i18n::IsRTL() &&
+      base::i18n::StringContainsStrongRTLChars(*paragraph)) {
+    paragraph->insert(0, 1, static_cast<char16>(base::i18n::kRightToLeftMark));
+  }
+#endif
+}
+
+#if defined(OS_WIN)
+std::string GetCanonicalLocale(const std::string& locale) {
+  return base::i18n::GetCanonicalLocale(locale.c_str());
+}
+#endif
+
+struct AvailableLocalesTraits
+    : base::DefaultLazyInstanceTraits<std::vector<std::string> > {
+  static std::vector<std::string>* New(void* instance) {
+    std::vector<std::string>* locales =
+        base::DefaultLazyInstanceTraits<std::vector<std::string> >::New(
+            instance);
+    int num_locales = uloc_countAvailable();
+    for (int i = 0; i < num_locales; ++i) {
+      std::string locale_name = uloc_getAvailable(i);
+      // Filter out the names that have aliases.
+      if (IsDuplicateName(locale_name))
+        continue;
+      // Filter out locales for which we have only partially populated data
+      // and to which Chrome is not localized.
+      if (IsLocalePartiallyPopulated(locale_name))
+        continue;
+      if (!l10n_util::IsLocaleSupportedByOS(locale_name))
+        continue;
+      // Normalize underscores to hyphens because that's what our locale files
+      // use.
+      std::replace(locale_name.begin(), locale_name.end(), '_', '-');
+
+      // Map the Chinese locale names over to zh-CN and zh-TW.
+      if (LowerCaseEqualsASCII(locale_name, "zh-hans")) {
+        locale_name = "zh-CN";
+      } else if (LowerCaseEqualsASCII(locale_name, "zh-hant")) {
+        locale_name = "zh-TW";
+      }
+      locales->push_back(locale_name);
+    }
+
+    // Manually add 'es-419' to the list. See the comment in IsDuplicateName().
+    locales->push_back("es-419");
+    return locales;
+  }
+};
+
+base::LazyInstance<std::vector<std::string>, AvailableLocalesTraits>
+    g_available_locales = LAZY_INSTANCE_INITIALIZER;
+
+}  // namespace
+
+namespace l10n_util {
 
 bool CheckAndResolveLocale(const std::string& locale,
                            std::string* resolved_locale) {
+#if defined(OS_MACOSX)
+  NOTIMPLEMENTED();
+  return false;
+#else
   if (IsLocaleAvailable(locale)) {
     *resolved_locale = locale;
     return true;
@@ -326,72 +395,8 @@ bool CheckAndResolveLocale(const std::string& locale,
   }
 
   return false;
-}
-#endif
-
-// On Linux, the text layout engine Pango determines paragraph directionality
-// by looking at the first strongly-directional character in the text. This
-// means text such as "Google Chrome foo bar..." will be layed out LTR even
-// if "foo bar" is RTL. So this function prepends the necessary RLM in such
-// cases.
-void AdjustParagraphDirectionality(string16* paragraph) {
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
-  if (base::i18n::IsRTL() &&
-      base::i18n::StringContainsStrongRTLChars(*paragraph)) {
-    paragraph->insert(0, 1, static_cast<char16>(base::i18n::kRightToLeftMark));
-  }
 #endif
 }
-
-#if defined(OS_WIN)
-std::string GetCanonicalLocale(const std::string& locale) {
-  return base::i18n::GetCanonicalLocale(locale.c_str());
-}
-#endif
-
-struct AvailableLocalesTraits :
-    base::DefaultLazyInstanceTraits<std::vector<std::string> > {
-  static std::vector<std::string>* New(void* instance) {
-    std::vector<std::string>* locales =
-        base::DefaultLazyInstanceTraits<std::vector<std::string> >::New(
-            instance);
-    int num_locales = uloc_countAvailable();
-    for (int i = 0; i < num_locales; ++i) {
-      std::string locale_name = uloc_getAvailable(i);
-      // Filter out the names that have aliases.
-      if (IsDuplicateName(locale_name))
-        continue;
-      // Filter out locales for which we have only partially populated data
-      // and to which Chrome is not localized.
-      if (IsLocalePartiallyPopulated(locale_name))
-        continue;
-      if (!l10n_util::IsLocaleSupportedByOS(locale_name))
-        continue;
-      // Normalize underscores to hyphens because that's what our locale files
-      // use.
-      std::replace(locale_name.begin(), locale_name.end(), '_', '-');
-
-      // Map the Chinese locale names over to zh-CN and zh-TW.
-      if (LowerCaseEqualsASCII(locale_name, "zh-hans")) {
-        locale_name = "zh-CN";
-      } else if (LowerCaseEqualsASCII(locale_name, "zh-hant")) {
-        locale_name = "zh-TW";
-      }
-      locales->push_back(locale_name);
-    }
-
-    // Manually add 'es-419' to the list. See the comment in IsDuplicateName().
-    locales->push_back("es-419");
-    return locales;
-  }
-};
-
-base::LazyInstance<std::vector<std::string>, AvailableLocalesTraits >
-    g_available_locales = LAZY_INSTANCE_INITIALIZER;
-
-}  // namespace
-
-namespace l10n_util {
 
 std::string GetApplicationLocale(const std::string& pref_locale) {
 #if defined(OS_MACOSX)
@@ -668,9 +673,9 @@ string16 GetStringUTF16(int message_id) {
   return str;
 }
 
-static string16 GetStringF(int message_id,
-                           const std::vector<string16>& replacements,
-                           std::vector<size_t>* offsets) {
+string16 GetStringFUTF16(int message_id,
+                         const std::vector<string16>& replacements,
+                         std::vector<size_t>* offsets) {
   // TODO(tc): We could save a string copy if we got the raw string as
   // a StringPiece and were able to call ReplaceStringPlaceholders with
   // a StringPiece format string and string16 substitution strings.  In
@@ -743,7 +748,7 @@ string16 GetStringFUTF16(int message_id,
                          const string16& a) {
   std::vector<string16> replacements;
   replacements.push_back(a);
-  return GetStringF(message_id, replacements, NULL);
+  return GetStringFUTF16(message_id, replacements, NULL);
 }
 
 string16 GetStringFUTF16(int message_id,
@@ -760,7 +765,7 @@ string16 GetStringFUTF16(int message_id,
   replacements.push_back(a);
   replacements.push_back(b);
   replacements.push_back(c);
-  return GetStringF(message_id, replacements, NULL);
+  return GetStringFUTF16(message_id, replacements, NULL);
 }
 
 string16 GetStringFUTF16(int message_id,
@@ -773,7 +778,7 @@ string16 GetStringFUTF16(int message_id,
   replacements.push_back(b);
   replacements.push_back(c);
   replacements.push_back(d);
-  return GetStringF(message_id, replacements, NULL);
+  return GetStringFUTF16(message_id, replacements, NULL);
 }
 
 string16 GetStringFUTF16(int message_id,
@@ -788,7 +793,7 @@ string16 GetStringFUTF16(int message_id,
   replacements.push_back(c);
   replacements.push_back(d);
   replacements.push_back(e);
-  return GetStringF(message_id, replacements, NULL);
+  return GetStringFUTF16(message_id, replacements, NULL);
 }
 
 string16 GetStringFUTF16(int message_id, const string16& a, size_t* offset) {
@@ -796,7 +801,7 @@ string16 GetStringFUTF16(int message_id, const string16& a, size_t* offset) {
   std::vector<size_t> offsets;
   std::vector<string16> replacements;
   replacements.push_back(a);
-  string16 result = GetStringF(message_id, replacements, &offsets);
+  string16 result = GetStringFUTF16(message_id, replacements, &offsets);
   DCHECK(offsets.size() == 1);
   *offset = offsets[0];
   return result;
@@ -809,7 +814,7 @@ string16 GetStringFUTF16(int message_id,
   std::vector<string16> replacements;
   replacements.push_back(a);
   replacements.push_back(b);
-  return GetStringF(message_id, replacements, offsets);
+  return GetStringFUTF16(message_id, replacements, offsets);
 }
 
 string16 GetStringFUTF16Int(int message_id, int a) {

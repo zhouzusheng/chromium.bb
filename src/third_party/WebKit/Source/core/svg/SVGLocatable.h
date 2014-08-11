@@ -22,8 +22,8 @@
 #ifndef SVGLocatable_h
 #define SVGLocatable_h
 
-#include "core/platform/graphics/transforms/AffineTransform.h"
 #include "core/svg/SVGRect.h"
+#include "platform/transforms/AffineTransform.h"
 
 namespace WebCore {
 
@@ -40,7 +40,6 @@ public:
 
     enum StyleUpdateStrategy { AllowStyleUpdate, DisallowStyleUpdate };
 
-    virtual SVGRect getBBox(StyleUpdateStrategy) = 0;
     virtual AffineTransform getCTM(StyleUpdateStrategy) = 0;
     virtual AffineTransform getScreenCTM(StyleUpdateStrategy) = 0;
     AffineTransform getTransformToElement(SVGElement*, ExceptionState&, StyleUpdateStrategy = AllowStyleUpdate);
@@ -56,7 +55,6 @@ public:
 protected:
     virtual AffineTransform localCoordinateSpaceTransform(SVGLocatable::CTMScope) const { return AffineTransform(); }
 
-    static SVGRect getBBox(SVGElement*, StyleUpdateStrategy);
     static AffineTransform computeCTM(SVGElement*, CTMScope, StyleUpdateStrategy);
 };
 

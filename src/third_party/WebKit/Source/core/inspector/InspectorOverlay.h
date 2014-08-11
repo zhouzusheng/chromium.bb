@@ -29,10 +29,10 @@
 #ifndef InspectorOverlay_h
 #define InspectorOverlay_h
 
-#include "core/platform/graphics/Color.h"
-#include "core/platform/graphics/FloatQuad.h"
-#include "core/platform/graphics/LayoutRect.h"
-#include "core/platform/Timer.h"
+#include "platform/Timer.h"
+#include "platform/geometry/FloatQuad.h"
+#include "platform/geometry/LayoutRect.h"
+#include "platform/graphics/Color.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
@@ -106,15 +106,6 @@ struct Highlight {
 class InspectorOverlay {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    // This must be kept in sync with the overrideEntries array in InspectorOverlayPage.html.
-    enum OverrideType {
-        UserAgentOverride = 1,
-        DeviceMetricsOverride = 1 << 1,
-        GeolocationOverride = 1 << 2,
-        DeviceOrientationOverride = 1 << 3,
-        TouchOverride = 1 << 4,
-        CSSMediaOverride = 1 << 5
-    };
     static PassOwnPtr<InspectorOverlay> create(Page* page, InspectorClient* client)
     {
         return adoptPtr(new InspectorOverlay(page, client));
@@ -134,8 +125,6 @@ public:
 
     void setPausedInDebuggerMessage(const String*);
     void setInspectModeEnabled(bool);
-    void setOverride(OverrideType, bool);
-    void setOverridesTopOffset(int);
 
     void hideHighlight();
     void highlightNode(Node*, Node* eventTarget, const HighlightConfig&);
@@ -156,12 +145,10 @@ private:
 
     bool isEmpty();
 
-    void drawGutter();
     void drawNodeHighlight();
     void drawQuadHighlight();
     void drawPausedInDebuggerMessage();
     void drawViewSize();
-    void drawOverridesMessage();
 
     Page* overlayPage();
     void reset(const IntSize& viewportSize, const IntSize& frameViewFullSize, int scrollX, int scrollY);
@@ -185,8 +172,6 @@ private:
     bool m_drawViewSize;
     bool m_drawViewSizeWithGrid;
     Timer<InspectorOverlay> m_timer;
-    unsigned m_overrides;
-    int m_overridesTopOffset;
 };
 
 } // namespace WebCore

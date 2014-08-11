@@ -48,16 +48,30 @@ QuicCongestionManager::~QuicCongestionManager() {
   STLDeleteValues(&packet_history_map_);
 }
 
-void QuicCongestionManager::SentPacket(
+void QuicCongestionManager::SetFromConfig(const QuicConfig& config,
+                                          bool is_server) {
+  if (config.initial_round_trip_time_us() > 0 &&
+      current_rtt_.IsInfinite()) {
+    // The initial rtt should already be set on the client side.
+    DLOG_IF(INFO, !is_server)
+        << "Client did not set an initial RTT, but did negotiate one.";
+    current_rtt_ =
+        QuicTime::Delta::FromMicroseconds(config.initial_round_trip_time_us());
+  }
+  send_algorithm_->SetFromConfig(config, is_server);
+}
+
+void QuicCongestionManager::OnPacketSent(
     QuicPacketSequenceNumber sequence_number,
     QuicTime sent_time,
     QuicByteCount bytes,
-    Retransmission retransmission,
+    TransmissionType transmission_type,
     HasRetransmittableData has_retransmittable_data) {
   DCHECK(!ContainsKey(pending_packets_, sequence_number));
 
-  if (send_algorithm_->SentPacket(sent_time, sequence_number, bytes,
-                                  retransmission, has_retransmittable_data)) {
+  if (send_algorithm_->OnPacketSent(sent_time, sequence_number, bytes,
+                                    transmission_type,
+                                    has_retransmittable_data)) {
     packet_history_map_[sequence_number] =
         new class SendAlgorithmInterface::SentPacket(bytes, sent_time);
     pending_packets_[sequence_number] = bytes;
@@ -66,12 +80,12 @@ void QuicCongestionManager::SentPacket(
 }
 
 // Called when a packet is timed out.
-void QuicCongestionManager::AbandoningPacket(
+void QuicCongestionManager::OnPacketAbandoned(
     QuicPacketSequenceNumber sequence_number) {
   PendingPacketsMap::iterator it = pending_packets_.find(sequence_number);
   if (it != pending_packets_.end()) {
     // Shouldn't this report loss as well? (decrease cgst window).
-    send_algorithm_->AbandoningPacket(sequence_number, it->second);
+    send_algorithm_->OnPacketAbandoned(sequence_number, it->second);
     pending_packets_.erase(it);
   }
 }
@@ -130,10 +144,10 @@ void QuicCongestionManager::OnIncomingAckFrame(const QuicAckFrame& frame,
 
 QuicTime::Delta QuicCongestionManager::TimeUntilSend(
     QuicTime now,
-    Retransmission retransmission,
+    TransmissionType transmission_type,
     HasRetransmittableData retransmittable,
     IsHandshake handshake) {
-  return send_algorithm_->TimeUntilSend(now, retransmission, retransmittable,
+  return send_algorithm_->TimeUntilSend(now, transmission_type, retransmittable,
                                         handshake);
 }
 
@@ -191,7 +205,7 @@ const QuicTime::Delta QuicCongestionManager::GetRetransmissionDelay(
     retransmission_delay =
         QuicTime::Delta::FromMilliseconds(kDefaultRetransmissionTimeMs);
   }
-  // Calcluate exponential back off.
+  // Calculate exponential back off.
   retransmission_delay = QuicTime::Delta::FromMilliseconds(
       retransmission_delay.ToMilliseconds() * static_cast<size_t>(
           (1 << min<size_t>(number_retransmissions, kMaxRetransmissions))));
@@ -212,6 +226,14 @@ const QuicTime::Delta QuicCongestionManager::SmoothedRtt() {
 
 QuicBandwidth QuicCongestionManager::BandwidthEstimate() {
   return send_algorithm_->BandwidthEstimate();
+}
+
+QuicByteCount QuicCongestionManager::GetCongestionWindow() {
+  return send_algorithm_->GetCongestionWindow();
+}
+
+void QuicCongestionManager::SetCongestionWindow(QuicByteCount window) {
+  send_algorithm_->SetCongestionWindow(window);
 }
 
 void QuicCongestionManager::CleanupPacketHistory() {

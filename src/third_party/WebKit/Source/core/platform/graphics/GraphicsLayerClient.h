@@ -43,6 +43,7 @@ enum GraphicsLayerPaintingPhaseFlags {
     GraphicsLayerPaintMask = (1 << 2),
     GraphicsLayerPaintOverflowContents = (1 << 3),
     GraphicsLayerPaintCompositedScroll = (1 << 4),
+    GraphicsLayerPaintChildClippingMask = (1 << 5),
     GraphicsLayerPaintAllWithOverflowClip = (GraphicsLayerPaintBackground | GraphicsLayerPaintForeground | GraphicsLayerPaintMask)
 };
 typedef unsigned GraphicsLayerPaintingPhase;
@@ -52,7 +53,8 @@ enum {
     LayerTreeIncludesDebugInfo = 1 << 0, // Dump extra debugging info like layer addresses.
     LayerTreeIncludesRepaintRects = 1 << 1,
     LayerTreeIncludesPaintingPhases = 1 << 2,
-    LayerTreeIncludesRootLayer = 1 << 3
+    LayerTreeIncludesRootLayer = 1 << 3,
+    LayerTreeIncludesClipAndScrollParents = 1 << 4
 };
 typedef unsigned LayerTreeFlags;
 
@@ -75,7 +77,7 @@ public:
     virtual String debugName(const GraphicsLayer*) = 0;
 
 #ifndef NDEBUG
-    // RenderLayerBacking overrides this to verify that it is not
+    // CompositedLayerMapping overrides this to verify that it is not
     // currently painting contents. An ASSERT fails, if it is.
     // This is executed in GraphicsLayer construction and destruction
     // to verify that we don't create or destroy GraphicsLayers

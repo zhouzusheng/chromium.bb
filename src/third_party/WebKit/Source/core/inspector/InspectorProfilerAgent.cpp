@@ -40,7 +40,7 @@
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/inspector/ScriptProfile.h"
-#include "core/page/ConsoleTypes.h"
+#include "core/frame/ConsoleTypes.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/text/StringConcatenate.h"
 
@@ -50,11 +50,9 @@ namespace ProfilerAgentState {
 static const char samplingInterval[] = "samplingInterval";
 static const char userInitiatedProfiling[] = "userInitiatedProfiling";
 static const char profilerEnabled[] = "profilerEnabled";
-static const char profileHeadersRequested[] = "profileHeadersRequested";
 }
 
-static const char* const userInitiatedProfileName = "org.webkit.profiles.user-initiated";
-static const char* const CPUProfileType = "CPU";
+static const char CPUProfileType[] = "CPU";
 
 PassOwnPtr<InspectorProfilerAgent> InspectorProfilerAgent::create(InstrumentingAgents* instrumentingAgents, InspectorConsoleAgent* consoleAgent, InspectorCompositeState* inspectorState, InjectedScriptManager* injectedScriptManager)
 {
@@ -82,7 +80,7 @@ void InspectorProfilerAgent::addProfile(PassRefPtr<ScriptProfile> prpProfile, un
 {
     RefPtr<ScriptProfile> profile = prpProfile;
     m_profiles.add(profile->uid(), profile);
-    if (m_frontend && m_state->getBoolean(ProfilerAgentState::profileHeadersRequested))
+    if (m_frontend && m_state->getBoolean(ProfilerAgentState::profilerEnabled))
         m_frontend->addProfileHeader(createProfileHeader(*profile));
     addProfileFinishedMessageToConsole(profile, lineNumber, sourceURL);
 }
@@ -113,6 +111,11 @@ PassRefPtr<TypeBuilder::Profiler::ProfileHeader> InspectorProfilerAgent::createP
 void InspectorProfilerAgent::enable(ErrorString*)
 {
     m_state->setBoolean(ProfilerAgentState::profilerEnabled, true);
+    doEnable();
+}
+
+void InspectorProfilerAgent::doEnable()
+{
     m_instrumentingAgents->setInspectorProfilerAgent(this);
 }
 
@@ -120,7 +123,6 @@ void InspectorProfilerAgent::disable(ErrorString*)
 {
     m_instrumentingAgents->setInspectorProfilerAgent(0);
     m_state->setBoolean(ProfilerAgentState::profilerEnabled, false);
-    m_state->setBoolean(ProfilerAgentState::profileHeadersRequested, false);
 }
 
 bool InspectorProfilerAgent::enabled()
@@ -143,17 +145,7 @@ String InspectorProfilerAgent::getCurrentUserInitiatedProfileName(bool increment
     if (incrementProfileNumber)
         m_currentUserInitiatedProfileNumber = m_nextUserInitiatedProfileNumber++;
 
-    return String(userInitiatedProfileName) + "." + String::number(m_currentUserInitiatedProfileNumber);
-}
-
-void InspectorProfilerAgent::getProfileHeaders(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::Profiler::ProfileHeader> >& headers)
-{
-    m_state->setBoolean(ProfilerAgentState::profileHeadersRequested, true);
-    headers = TypeBuilder::Array<TypeBuilder::Profiler::ProfileHeader>::create();
-
-    ProfilesMap::iterator profilesEnd = m_profiles.end();
-    for (ProfilesMap::iterator it = m_profiles.begin(); it != profilesEnd; ++it)
-        headers->addItem(createProfileHeader(*it->value));
+    return "Profile " + String::number(m_currentUserInitiatedProfileNumber);
 }
 
 void InspectorProfilerAgent::getCPUProfile(ErrorString* errorString, int rawUid, RefPtr<TypeBuilder::Profiler::CPUProfile>& profileObject)
@@ -194,7 +186,7 @@ void InspectorProfilerAgent::resetFrontendProfiles()
 {
     if (!m_frontend)
         return;
-    if (!m_state->getBoolean(ProfilerAgentState::profileHeadersRequested))
+    if (!m_state->getBoolean(ProfilerAgentState::profilerEnabled))
         return;
     if (m_profiles.isEmpty())
         m_frontend->resetProfiles();
@@ -208,13 +200,15 @@ void InspectorProfilerAgent::setFrontend(InspectorFrontend* frontend)
 void InspectorProfilerAgent::clearFrontend()
 {
     m_frontend = 0;
-    stop();
     ErrorString error;
+    clearProfiles(&error);
     disable(&error);
 }
 
 void InspectorProfilerAgent::restore()
 {
+    if (m_state->getBoolean(ProfilerAgentState::profilerEnabled))
+        doEnable();
     resetFrontendProfiles();
     if (long interval = m_state->getLong(ProfilerAgentState::samplingInterval, 0))
         ScriptProfiler::setSamplingInterval(interval);

@@ -54,13 +54,13 @@
 #include "core/html/HTMLLinkElement.h"
 #include "core/html/HTMLStyleElement.h"
 #include "core/html/parser/HTMLMetaCharsetParser.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/platform/SerializedResource.h"
 #include "core/platform/graphics/Image.h"
 #include "core/rendering/RenderImage.h"
 #include "core/rendering/style/StyleFetchedImage.h"
 #include "core/rendering/style/StyleImage.h"
+#include "platform/SerializedResource.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/TextEncoding.h"
@@ -248,7 +248,7 @@ void PageSerializer::serializeFrame(Frame* frame)
         }
     }
 
-    for (Frame* childFrame = frame->tree()->firstChild(); childFrame; childFrame = childFrame->tree()->nextSibling())
+    for (Frame* childFrame = frame->tree().firstChild(); childFrame; childFrame = childFrame->tree().nextSibling())
         serializeFrame(childFrame);
 }
 

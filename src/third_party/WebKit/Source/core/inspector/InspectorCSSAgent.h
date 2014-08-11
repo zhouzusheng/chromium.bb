@@ -30,8 +30,8 @@
 #include "core/inspector/InspectorBaseAgent.h"
 #include "core/inspector/InspectorDOMAgent.h"
 #include "core/inspector/InspectorStyleSheet.h"
-#include "core/page/ContentSecurityPolicy.h"
-#include "core/platform/JSONValues.h"
+#include "core/frame/ContentSecurityPolicy.h"
+#include "platform/JSONValues.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
 #include "wtf/PassRefPtr.h"
@@ -94,7 +94,6 @@ public:
     };
 
     static CSSStyleRule* asCSSStyleRule(CSSRule*);
-    static bool cssErrorFilter(const CSSParserString& content, int propertyId, int errorType);
 
     static PassOwnPtr<InspectorCSSAgent> create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InspectorDOMAgent* domAgent, InspectorPageAgent* pageAgent, InspectorResourceAgent* resourceAgent)
     {

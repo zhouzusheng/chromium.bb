@@ -26,7 +26,7 @@
 #ifndef MediaPlayer_h
 #define MediaPlayer_h
 
-#include "core/platform/graphics/GraphicsTypes3D.h"
+#include "platform/graphics/GraphicsTypes3D.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 
@@ -65,6 +65,8 @@ public:
 
     // the play/pause status changed
     virtual void mediaPlayerPlaybackStateChanged() = 0;
+
+    virtual void mediaPlayerRequestFullscreen() = 0;
 
     virtual void mediaPlayerRequestSeek(double) = 0;
 
@@ -176,6 +178,7 @@ public:
 
     virtual unsigned decodedFrameCount() const = 0;
     virtual unsigned droppedFrameCount() const = 0;
+    virtual unsigned corruptedFrameCount() const = 0;
     virtual unsigned audioDecodedByteCount() const = 0;
     virtual unsigned videoDecodedByteCount() const = 0;
 

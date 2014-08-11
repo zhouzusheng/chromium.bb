@@ -30,9 +30,10 @@
 
 namespace webrtc {
 
+namespace acm2 {
+
 namespace {
 
-const int kRtpHeaderSize = 12;
 const int kNeteqInitSampleRateHz = 16000;
 const int kNackThresholdPackets = 2;
 
@@ -545,6 +546,8 @@ int AcmReceiver::RemoveAllCodecs() {
       }
     }
   }
+  // No codec is registered, invalidate last audio decoder.
+  last_audio_decoder_ = -1;
   return ret_val;
 }
 
@@ -561,6 +564,8 @@ int AcmReceiver::RemoveCodec(uint8_t payload_type) {
   }
   CriticalSectionScoped lock(neteq_crit_sect_);
   decoders_[codec_index].registered = false;
+  if (last_audio_decoder_ == codec_index)
+    last_audio_decoder_ = -1;  // Codec is removed, invalidate last decoder.
   return 0;
 }
 
@@ -825,5 +830,7 @@ void AcmReceiver::InsertStreamOfSyncPackets(
     sync_stream->receive_timestamp += sync_stream->timestamp_step;
   }
 }
+
+}  // namespace acm2
 
 }  // namespace webrtc

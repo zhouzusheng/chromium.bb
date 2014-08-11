@@ -33,8 +33,8 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
-#include "core/page/Frame.h"
-#include "core/platform/network/NetworkStateNotifier.h"
+#include "core/frame/Frame.h"
+#include "core/page/NetworkStateNotifier.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
@@ -75,12 +75,12 @@ void InspectorApplicationCacheAgent::enable(ErrorString*)
     m_instrumentingAgents->setInspectorApplicationCacheAgent(this);
 
     // We need to pass initial navigator.onOnline.
-    networkStateChanged();
+    networkStateChanged(networkStateNotifier().onLine());
 }
 
 void InspectorApplicationCacheAgent::updateApplicationCacheStatus(Frame* frame)
 {
-    DocumentLoader* documentLoader = frame->loader()->documentLoader();
+    DocumentLoader* documentLoader = frame->loader().documentLoader();
     if (!documentLoader)
         return;
 
@@ -92,10 +92,9 @@ void InspectorApplicationCacheAgent::updateApplicationCacheStatus(Frame* frame)
     m_frontend->applicationCacheStatusUpdated(m_pageAgent->frameId(frame), manifestURL, static_cast<int>(status));
 }
 
-void InspectorApplicationCacheAgent::networkStateChanged()
+void InspectorApplicationCacheAgent::networkStateChanged(bool online)
 {
-    bool isNowOnline = networkStateNotifier().onLine();
-    m_frontend->networkStateUpdated(isNowOnline);
+    m_frontend->networkStateUpdated(online);
 }
 
 void InspectorApplicationCacheAgent::getFramesWithManifests(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::ApplicationCache::FrameWithManifest> >& result)
@@ -103,8 +102,8 @@ void InspectorApplicationCacheAgent::getFramesWithManifests(ErrorString*, RefPtr
     result = TypeBuilder::Array<TypeBuilder::ApplicationCache::FrameWithManifest>::create();
 
     Frame* mainFrame = m_pageAgent->mainFrame();
-    for (Frame* frame = mainFrame; frame; frame = frame->tree()->traverseNext(mainFrame)) {
-        DocumentLoader* documentLoader = frame->loader()->documentLoader();
+    for (Frame* frame = mainFrame; frame; frame = frame->tree().traverseNext(mainFrame)) {
+        DocumentLoader* documentLoader = frame->loader().documentLoader();
         if (!documentLoader)
             continue;
 

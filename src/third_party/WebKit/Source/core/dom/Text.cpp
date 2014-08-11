@@ -31,7 +31,7 @@
 #include "core/dom/NodeRenderStyle.h"
 #include "core/dom/NodeRenderingContext.h"
 #include "core/dom/NodeTraversal.h"
-#include "core/dom/ScopedEventQueue.h"
+#include "core/events/ScopedEventQueue.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/rendering/RenderCombineText.h"
 #include "core/rendering/RenderText.h"
@@ -305,7 +305,7 @@ void Text::attach(const AttachContext& context)
     CharacterData::attach(context);
 }
 
-bool Text::recalcTextStyle(StyleRecalcChange change)
+void Text::recalcTextStyle(StyleRecalcChange change, Text* nextTextSibling)
 {
     if (RenderText* renderer = toRenderText(this->renderer())) {
         if (change != NoChange || needsStyleRecalc())
@@ -315,9 +315,8 @@ bool Text::recalcTextStyle(StyleRecalcChange change)
         clearNeedsStyleRecalc();
     } else if (needsStyleRecalc() || needsWhitespaceRenderer()) {
         reattach();
-        return true;
+        reattachWhitespaceSiblings(nextTextSibling);
     }
-    return false;
 }
 
 // If a whitespace node had no renderer and goes through a recalcStyle it may
@@ -332,11 +331,11 @@ bool Text::needsWhitespaceRenderer()
 
 void Text::updateTextRenderer(unsigned offsetOfReplacedData, unsigned lengthOfReplacedData, RecalcStyleBehavior recalcStyleBehavior)
 {
-    if (!attached())
+    if (!inActiveDocument())
         return;
     RenderText* textRenderer = toRenderText(renderer());
     if (!textRenderer || !textRendererIsNeeded(NodeRenderingContext(this, textRenderer->style()))) {
-        lazyReattach();
+        lazyReattachIfAttached();
         // FIXME: Editing should be updated so this is not neccesary.
         if (recalcStyleBehavior == DeprecatedRecalcStyleImmediatlelyForEditing)
             document().updateStyleIfNeeded();
@@ -353,19 +352,6 @@ bool Text::childTypeAllowed(NodeType) const
 PassRefPtr<Text> Text::cloneWithData(const String& data)
 {
     return create(document(), data);
-}
-
-PassRefPtr<Text> Text::createWithLengthLimit(Document& document, const String& data, unsigned start, unsigned lengthLimit)
-{
-    unsigned dataLength = data.length();
-
-    if (!start && dataLength <= lengthLimit)
-        return create(document, data);
-
-    RefPtr<Text> result = Text::create(document, String());
-    result->parserAppendData(data, start, lengthLimit);
-
-    return result;
 }
 
 #ifndef NDEBUG

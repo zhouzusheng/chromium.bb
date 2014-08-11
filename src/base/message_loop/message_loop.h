@@ -399,6 +399,14 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   bool os_modal_loop() const {
     return os_modal_loop_;
   }
+
+  void set_ipc_sync_messages_should_peek(bool ipc_sync_messages_should_peek) {
+    ipc_sync_messages_should_peek_ = ipc_sync_messages_should_peek;
+  }
+
+  bool ipc_sync_messages_should_peek() const {
+    return ipc_sync_messages_should_peek_;
+  }
 #endif  // OS_WIN
 
   // Can only be called from the thread that owns the MessageLoop.
@@ -535,6 +543,9 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   // Should be set to true before calling Windows APIs like TrackPopupMenu, etc
   // which enter a modal message loop.
   bool os_modal_loop_;
+
+  // Should be set to true if IPC sync messages should PeekMessage periodically.
+  bool ipc_sync_messages_should_peek_;
 #endif
 
   std::string thread_name_;
@@ -587,10 +598,6 @@ class BASE_EXPORT MessageLoopForUI : public MessageLoop {
     DCHECK_EQ(MessageLoop::TYPE_UI, loop->type());
     return static_cast<MessageLoopForUI*>(loop);
   }
-
-#if defined(OS_WIN)
-  void DidProcessMessage(const MSG& message);
-#endif  // defined(OS_WIN)
 
 #if defined(OS_IOS)
   // On iOS, the main message loop cannot be Run().  Instead call Attach(),

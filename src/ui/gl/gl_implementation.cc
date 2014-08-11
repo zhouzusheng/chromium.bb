@@ -38,10 +38,9 @@ const char* g_blpangle_dll_name;
 
 void CleanupNativeLibraries(void* unused) {
   if (g_libraries) {
-    for (LibraryArray::iterator it = g_libraries->begin();
-         it != g_libraries->end(); ++it) {
-      base::UnloadNativeLibrary(*it);
-    }
+    // We do not call base::UnloadNativeLibrary() for these libraries as
+    // unloading libGL without closing X display is not allowed. See
+    // crbug.com/250813 for details.
     delete g_libraries;
     g_libraries = NULL;
   }

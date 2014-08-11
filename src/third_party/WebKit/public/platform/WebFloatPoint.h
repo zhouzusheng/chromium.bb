@@ -33,8 +33,8 @@
 
 #include "WebCommon.h"
 
-#if WEBKIT_IMPLEMENTATION
-#include "core/platform/graphics/FloatPoint.h"
+#if INSIDE_BLINK
+#include "platform/geometry/FloatPoint.h"
 #else
 #include <ui/gfx/point_f.h>
 #endif
@@ -57,7 +57,7 @@ struct WebFloatPoint {
     {
     }
 
-#if WEBKIT_IMPLEMENTATION
+#if INSIDE_BLINK
     WebFloatPoint(const WebCore::FloatPoint& p)
         : x(p.x())
         , y(p.y())

@@ -11,6 +11,7 @@
 #include "base/cancelable_callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "cc/base/cc_export.h"
 #include "cc/output/begin_frame_args.h"
 #include "cc/scheduler/scheduler_settings.h"
@@ -33,8 +34,8 @@ struct DrawSwapReadbackResult {
 
 class SchedulerClient {
  public:
-  virtual void SetNeedsBeginFrameOnImplThread(bool enable) = 0;
-  virtual void ScheduledActionSendBeginFrameToMainThread() = 0;
+  virtual void SetNeedsBeginImplFrame(bool enable) = 0;
+  virtual void ScheduledActionSendBeginMainFrame() = 0;
   virtual DrawSwapReadbackResult ScheduledActionDrawAndSwapIfPossible() = 0;
   virtual DrawSwapReadbackResult ScheduledActionDrawAndSwapForced() = 0;
   virtual DrawSwapReadbackResult ScheduledActionDrawAndReadback() = 0;
@@ -46,11 +47,11 @@ class SchedulerClient {
   virtual void ScheduledActionManageTiles() = 0;
   virtual void DidAnticipatedDrawTimeChange(base::TimeTicks time) = 0;
   virtual base::TimeDelta DrawDurationEstimate() = 0;
-  virtual base::TimeDelta BeginFrameToCommitDurationEstimate() = 0;
+  virtual base::TimeDelta BeginMainFrameToCommitDurationEstimate() = 0;
   virtual base::TimeDelta CommitToActivateDurationEstimate() = 0;
-  virtual void PostBeginFrameDeadline(const base::Closure& closure,
-                                      base::TimeTicks deadline) = 0;
-  virtual void DidBeginFrameDeadlineOnImplThread() = 0;
+  virtual void PostBeginImplFrameDeadline(const base::Closure& closure,
+                                          base::TimeTicks deadline) = 0;
+  virtual void DidBeginImplFrameDeadline() = 0;
 
  protected:
   virtual ~SchedulerClient() {}
@@ -89,7 +90,7 @@ class CC_EXPORT Scheduler {
   void SetSmoothnessTakesPriority(bool smoothness_takes_priority);
 
   void FinishCommit();
-  void BeginFrameAbortedByMainThread(bool did_handle);
+  void BeginMainFrameAborted(bool did_handle);
 
   void DidLoseOutputSurface();
   void DidCreateAndInitializeOutputSurface();
@@ -107,10 +108,10 @@ class CC_EXPORT Scheduler {
 
   base::TimeTicks AnticipatedDrawTime();
 
-  base::TimeTicks LastBeginFrameOnImplThreadTime();
+  base::TimeTicks LastBeginImplFrameTime();
 
-  void BeginFrame(const BeginFrameArgs& args);
-  void OnBeginFrameDeadline();
+  void BeginImplFrame(const BeginFrameArgs& args);
+  void OnBeginImplFrameDeadline();
   void PollForAnticipatedDrawTriggers();
 
   scoped_ptr<base::Value> StateAsValue() {
@@ -125,26 +126,30 @@ class CC_EXPORT Scheduler {
   Scheduler(SchedulerClient* client,
             const SchedulerSettings& scheduler_settings);
 
-  void PostBeginFrameDeadline(base::TimeTicks deadline);
-  void SetupNextBeginFrameIfNeeded();
+  void PostBeginImplFrameDeadline(base::TimeTicks deadline);
+  void SetupNextBeginImplFrameIfNeeded();
   void ActivatePendingTree();
   void DrawAndSwapIfPossible();
   void DrawAndSwapForced();
   void DrawAndReadback();
   void ProcessScheduledActions();
 
+  void AdvanceCommitStateIfPossible();
+
   const SchedulerSettings settings_;
   SchedulerClient* client_;
 
-  base::WeakPtrFactory<Scheduler> weak_factory_;
-  bool last_set_needs_begin_frame_;
-  BeginFrameArgs last_begin_frame_args_;
-  base::CancelableClosure begin_frame_deadline_closure_;
+  bool last_set_needs_begin_impl_frame_;
+  BeginFrameArgs last_begin_impl_frame_args_;
+  base::CancelableClosure begin_impl_frame_deadline_closure_;
   base::CancelableClosure poll_for_draw_triggers_closure_;
+  base::RepeatingTimer<Scheduler> advance_commit_state_timer_;
 
   SchedulerStateMachine state_machine_;
   bool inside_process_scheduled_actions_;
   SchedulerStateMachine::Action inside_action_;
+
+  base::WeakPtrFactory<Scheduler> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(Scheduler);
 };

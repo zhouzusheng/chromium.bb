@@ -24,10 +24,9 @@
 #include "config.h"
 #include "core/platform/graphics/Font.h"
 
-#include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/TextRun.h"
 #include "core/platform/graphics/WidthIterator.h"
-#include "core/platform/text/transcoder/FontTranscoder.h"
+#include "platform/geometry/FloatRect.h"
+#include "platform/graphics/TextRun.h"
 #include "wtf/MainThread.h"
 #include "wtf/MathExtras.h"
 #include "wtf/StdLibExtras.h"
@@ -40,7 +39,7 @@ using namespace Unicode;
 namespace WTF {
 
 // allow compilation of OwnPtr<TextLayout> in source files that don't have access to the TextLayout class definition
-template <> void deleteOwnedPtr<WebCore::TextLayout>(WebCore::TextLayout* ptr)
+void OwnedPtrDeleter<WebCore::TextLayout>::deletePtr(WebCore::TextLayout* ptr)
 {
     WebCore::Font::deleteLayout(ptr);
 }
@@ -93,7 +92,6 @@ Font::Font()
     : m_letterSpacing(0)
     , m_wordSpacing(0)
     , m_isPlatformFont(false)
-    , m_needsTranscoding(false)
     , m_typesettingFeatures(0)
 {
 }
@@ -103,7 +101,6 @@ Font::Font(const FontDescription& fd, float letterSpacing, float wordSpacing)
     , m_letterSpacing(letterSpacing)
     , m_wordSpacing(wordSpacing)
     , m_isPlatformFont(false)
-    , m_needsTranscoding(fontTranscoder().needsTranscoding(fd))
     , m_typesettingFeatures(computeTypesettingFeatures())
 {
 }
@@ -117,7 +114,6 @@ Font::Font(const FontPlatformData& fontData, bool isPrinterFont, FontSmoothingMo
 {
     m_fontDescription.setUsePrinterFont(isPrinterFont);
     m_fontDescription.setFontSmoothing(fontSmoothingMode);
-    m_needsTranscoding = fontTranscoder().needsTranscoding(fontDescription());
     m_fontFallbackList->setPlatformFont(fontData);
 }
 
@@ -127,7 +123,6 @@ Font::Font(const Font& other)
     , m_letterSpacing(other.m_letterSpacing)
     , m_wordSpacing(other.m_wordSpacing)
     , m_isPlatformFont(other.m_isPlatformFont)
-    , m_needsTranscoding(other.m_needsTranscoding)
     , m_typesettingFeatures(computeTypesettingFeatures())
 {
 }
@@ -139,7 +134,6 @@ Font& Font::operator=(const Font& other)
     m_letterSpacing = other.m_letterSpacing;
     m_wordSpacing = other.m_wordSpacing;
     m_isPlatformFont = other.m_isPlatformFont;
-    m_needsTranscoding = other.m_needsTranscoding;
     m_typesettingFeatures = other.m_typesettingFeatures;
     return *this;
 }
@@ -387,7 +381,7 @@ static inline UChar32 keyExtractorUChar32(const UChar32* value)
 
 Font::CodePath Font::characterRangeCodePath(const UChar* characters, unsigned len)
 {
-    static UChar complexCodePathRanges[] = {
+    static const UChar complexCodePathRanges[] = {
         // U+02E5 through U+02E9 (Modifier Letters : Tone letters)
         0x2E5, 0x2E9,
         // U+0300 through U+036F Combining diacritical marks
@@ -502,7 +496,7 @@ Font::CodePath Font::characterRangeCodePath(const UChar* characters, unsigned le
 
 bool Font::isCJKIdeograph(UChar32 c)
 {
-    static UChar32 cjkIdeographRanges[] = {
+    static const UChar32 cjkIdeographRanges[] = {
         // CJK Radicals Supplement and Kangxi Radicals.
         0x2E80, 0x2FDF,
         // CJK Strokes.
@@ -557,7 +551,7 @@ bool Font::isCJKIdeographOrSymbol(UChar32 c)
     if (isCJKIdeograph(c))
         return true;
 
-    static UChar32 cjkSymbolRanges[] = {
+    static const UChar32 cjkSymbolRanges[] = {
         0x2156, 0x215A,
         0x2160, 0x216B,
         0x2170, 0x217B,

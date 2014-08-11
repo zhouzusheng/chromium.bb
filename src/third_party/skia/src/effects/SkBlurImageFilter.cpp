@@ -19,12 +19,16 @@ SkBlurImageFilter::SkBlurImageFilter(SkFlattenableReadBuffer& buffer)
   : INHERITED(buffer) {
     fSigma.fWidth = buffer.readScalar();
     fSigma.fHeight = buffer.readScalar();
+    buffer.validate(SkScalarIsFinite(fSigma.fWidth) &&
+                    SkScalarIsFinite(fSigma.fHeight) &&
+                    (fSigma.fWidth >= 0) &&
+                    (fSigma.fHeight >= 0));
 }
 
 SkBlurImageFilter::SkBlurImageFilter(SkScalar sigmaX,
                                      SkScalar sigmaY,
                                      SkImageFilter* input,
-                                     const SkIRect* cropRect)
+                                     const CropRect* cropRect)
     : INHERITED(input, cropRect), fSigma(SkSize::Make(sigmaX, sigmaY)) {
     SkASSERT(sigmaX >= 0 && sigmaY >= 0);
 }

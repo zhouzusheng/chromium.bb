@@ -48,29 +48,30 @@
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8Binding.h"
 #include "core/css/CSSStyleDeclaration.h"
-#include "core/dom/CustomEvent.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/editing/Editor.h"
+#include "core/editing/SpellChecker.h"
+#include "core/events/CustomEvent.h"
 #include "core/history/HistoryItem.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLMediaElement.h"
-#include "core/html/HTMLPlugInImageElement.h"
+#include "core/html/HTMLPlugInElement.h"
 #include "core/html/HTMLVideoElement.h"
 #include "core/html/MediaError.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/page/ContextMenuController.h"
 #include "core/page/EventHandler.h"
-#include "core/page/FrameView.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
 #include "core/platform/ContextMenu.h"
-#include "core/platform/Widget.h"
-#include "core/platform/text/TextBreakIterator.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderWidget.h"
+#include "platform/Widget.h"
+#include "platform/text/TextBreakIterator.h"
 #include "public/platform/WebPoint.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
@@ -89,7 +90,7 @@ namespace WebKit {
 static WebURL urlFromFrame(Frame* frame)
 {
     if (frame) {
-        DocumentLoader* dl = frame->loader()->documentLoader();
+        DocumentLoader* dl = frame->loader().documentLoader();
         if (dl) {
             WebDataSource* ds = WebDataSourceImpl::fromDocumentLoader(dl);
             if (ds)
@@ -103,7 +104,7 @@ static WebURL urlFromFrame(Frame* frame)
 static bool isASingleWord(const String& text)
 {
     TextBreakIterator* it = wordBreakIterator(text, 0, text.length());
-    return it && textBreakNext(it) == static_cast<int>(text.length());
+    return it && it->next() == static_cast<int>(text.length());
 }
 
 // Helper function to get misspelled word on which context menu
@@ -124,7 +125,7 @@ static String selectMisspelledWord(Frame* selectedFrame)
     }
 
     // Selection is empty, so change the selection to the word under the cursor.
-    HitTestResult hitTestResult = selectedFrame->eventHandler()->
+    HitTestResult hitTestResult = selectedFrame->eventHandler().
         hitTestResultAtPoint(selectedFrame->page()->contextMenuController().hitTestResult().pointInInnerNodeFrame());
     Node* innerNode = hitTestResult.innerNode();
     VisiblePosition pos(innerNode->renderer()->positionForPoint(
@@ -194,7 +195,9 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
     Frame* selectedFrame = r.innerNodeFrame();
 
     WebContextMenuData data;
-    data.mousePosition = selectedFrame->view()->contentsToWindow(r.roundedPointInInnerNodeFrame());
+    IntPoint mousePoint = selectedFrame->view()->contentsToWindow(r.roundedPointInInnerNodeFrame());
+    mousePoint.scale(m_webView->pageScaleFactor(), m_webView->pageScaleFactor());
+    data.mousePosition = mousePoint;
 
     // Compute edit flags.
     data.editFlags = WebContextMenuData::CanDoNone;
@@ -267,7 +270,7 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
                 if (plugin->plugin()->supportsPaginatedPrint())
                     data.mediaFlags |= WebContextMenuData::MediaCanPrint;
 
-                HTMLPlugInImageElement* pluginElement = toHTMLPlugInImageElement(r.innerNonSharedNode());
+                HTMLPlugInElement* pluginElement = toHTMLPlugInElement(r.innerNonSharedNode());
                 data.srcURL = pluginElement->document().completeURL(pluginElement->url());
                 data.mediaFlags |= WebContextMenuData::MediaCanSave;
 
@@ -293,7 +296,7 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
     data.pageURL = urlFromFrame(m_webView->mainFrameImpl()->frame());
     if (selectedFrame != m_webView->mainFrameImpl()->frame()) {
         data.frameURL = urlFromFrame(selectedFrame);
-        RefPtr<HistoryItem> historyItem = selectedFrame->loader()->history()->currentItem();
+        RefPtr<HistoryItem> historyItem = selectedFrame->loader().history()->currentItem();
         if (historyItem)
             data.frameHistoryItem = WebHistoryItem(historyItem);
     }
@@ -326,9 +329,9 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
             }
         } else {
             data.isSpellCheckingEnabled =
-                m_webView->focusedWebCoreFrame()->editor().isContinuousSpellCheckingEnabled();
+                m_webView->focusedWebCoreFrame()->spellChecker().isContinuousSpellCheckingEnabled();
             // Spellchecking might be enabled for the field, but could be disabled on the node.
-            if (m_webView->focusedWebCoreFrame()->editor().isSpellCheckingEnabledInFocusedNode()) {
+            if (m_webView->focusedWebCoreFrame()->spellChecker().isSpellCheckingEnabledInFocusedNode()) {
                 data.misspelledWord = selectMisspelledWord(selectedFrame);
                 if (m_webView->spellCheckClient()) {
                     int misspelledOffset, misspelledLength;
@@ -359,7 +362,7 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
 #endif // OS(MACOSX)
 
     // Now retrieve the security info.
-    DocumentLoader* dl = selectedFrame->loader()->documentLoader();
+    DocumentLoader* dl = selectedFrame->loader().documentLoader();
     WebDataSource* ds = WebDataSourceImpl::fromDocumentLoader(dl);
     if (ds)
         data.securityInfo = ds->response().securityInfo();

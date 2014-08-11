@@ -3,6 +3,9 @@
 # found in the LICENSE file.
 
 {
+  'variables': {
+    'chromium_code': 1,
+  },
   'targets': [
     {
       'target_name': 'webkit_storage_browser',
@@ -99,7 +102,6 @@
         'browser/fileapi/external_mount_points.cc',
         'browser/fileapi/external_mount_points.h',
         'browser/fileapi/file_observers.h',
-        'browser/fileapi/file_permission_policy.cc',
         'browser/fileapi/file_permission_policy.h',
         'browser/fileapi/file_stream_writer.h',
         'browser/fileapi/file_system_backend.h',
@@ -148,6 +150,8 @@
         'browser/fileapi/obfuscated_file_util.cc',
         'browser/fileapi/obfuscated_file_util.h',
         'browser/fileapi/open_file_system_mode.h',
+        'browser/fileapi/plugin_private_file_system_backend.cc',
+        'browser/fileapi/plugin_private_file_system_backend.h',
         'browser/fileapi/recursive_operation_delegate.cc',
         'browser/fileapi/recursive_operation_delegate.h',
         'browser/fileapi/remove_operation_delegate.cc',
@@ -166,11 +170,11 @@
         'browser/fileapi/sandbox_origin_database.h',
         'browser/fileapi/sandbox_origin_database_interface.cc',
         'browser/fileapi/sandbox_origin_database_interface.h',
+        'browser/fileapi/sandbox_prioritized_origin_database.cc',
+        'browser/fileapi/sandbox_prioritized_origin_database.h',
         'browser/fileapi/sandbox_quota_observer.cc',
         'browser/fileapi/sandbox_quota_observer.h',
         'browser/fileapi/task_runner_bound_observer_list.h',
-        'browser/fileapi/test_file_system_backend.cc',
-        'browser/fileapi/test_file_system_backend.h',
         'browser/fileapi/timed_task_helper.cc',
         'browser/fileapi/timed_task_helper.h',
         'browser/fileapi/transient_file_util.cc',

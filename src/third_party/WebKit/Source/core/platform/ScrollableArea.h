@@ -52,11 +52,6 @@ public:
     // is updated on the scrolling thread and we need to notify the main thread.
     void notifyScrollPositionChanged(const IntPoint&);
 
-    // Allows subclasses to handle scroll position updates themselves. If this member function
-    // returns true, the scrollable area won't actually update the scroll position and instead
-    // expect it to happen sometime in the future.
-    virtual bool requestScrollPositionUpdate(const IntPoint&) { return false; }
-
     bool handleWheelEvent(const PlatformWheelEvent&);
 
     // Functions for controlling if you can scroll past the end of the document.
@@ -141,8 +136,8 @@ public:
     virtual IntPoint minimumScrollPosition() const = 0;
     virtual IntPoint maximumScrollPosition() const = 0;
 
-    enum VisibleContentRectIncludesScrollbars { ExcludeScrollbars, IncludeScrollbars };
-    virtual IntRect visibleContentRect(VisibleContentRectIncludesScrollbars = ExcludeScrollbars) const;
+    enum IncludeScrollbarsInRect { ExcludeScrollbars, IncludeScrollbars };
+    virtual IntRect visibleContentRect(IncludeScrollbarsInRect = ExcludeScrollbars) const;
     virtual int visibleHeight() const = 0;
     virtual int visibleWidth() const = 0;
     virtual IntSize contentsSize() const = 0;
@@ -202,9 +197,6 @@ protected:
     virtual GraphicsLayer* layerForHorizontalScrollbar() const { return 0; }
     virtual GraphicsLayer* layerForVerticalScrollbar() const { return 0; }
     virtual GraphicsLayer* layerForScrollCorner() const { return 0; }
-#if USE(RUBBER_BANDING)
-    virtual GraphicsLayer* layerForOverhangAreas() const { return 0; }
-#endif
     bool hasLayerForHorizontalScrollbar() const;
     bool hasLayerForVerticalScrollbar() const;
     bool hasLayerForScrollCorner() const;

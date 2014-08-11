@@ -28,14 +28,14 @@ static gfx::Transform OrthoProjectionMatrix(float left,
   gfx::Transform proj;
   if (!delta_x || !delta_y)
     return proj;
-  proj.matrix().setDouble(0, 0, 2.0f / delta_x);
-  proj.matrix().setDouble(0, 3, -(right + left) / delta_x);
-  proj.matrix().setDouble(1, 1, 2.0f / delta_y);
-  proj.matrix().setDouble(1, 3, -(top + bottom) / delta_y);
+  proj.matrix().set(0, 0, 2.0f / delta_x);
+  proj.matrix().set(0, 3, -(right + left) / delta_x);
+  proj.matrix().set(1, 1, 2.0f / delta_y);
+  proj.matrix().set(1, 3, -(top + bottom) / delta_y);
 
   // Z component of vertices is always set to zero as we don't use the depth
   // buffer while drawing.
-  proj.matrix().setDouble(2, 2, 0);
+  proj.matrix().set(2, 2, 0);
 
   return proj;
 }
@@ -148,35 +148,32 @@ void DirectRenderer::DecideRenderPassAllocationsForFrame(
   if (!resource_provider_)
     return;
 
-  base::hash_map<RenderPass::Id, const RenderPass*> render_passes_in_frame;
+  base::hash_map<RenderPass::Id, gfx::Size> render_passes_in_frame;
   for (size_t i = 0; i < render_passes_in_draw_order.size(); ++i)
-    render_passes_in_frame.insert(std::pair<RenderPass::Id, const RenderPass*>(
-        render_passes_in_draw_order[i]->id, render_passes_in_draw_order[i]));
+    render_passes_in_frame.insert(std::pair<RenderPass::Id, gfx::Size>(
+        render_passes_in_draw_order[i]->id,
+        RenderPassTextureSize(render_passes_in_draw_order[i])));
 
   std::vector<RenderPass::Id> passes_to_delete;
-  base::ScopedPtrHashMap<RenderPass::Id, CachedResource>::const_iterator
+  base::ScopedPtrHashMap<RenderPass::Id, ScopedResource>::const_iterator
       pass_iter;
   for (pass_iter = render_pass_textures_.begin();
        pass_iter != render_pass_textures_.end();
        ++pass_iter) {
-    base::hash_map<RenderPass::Id, const RenderPass*>::const_iterator it =
+    base::hash_map<RenderPass::Id, gfx::Size>::const_iterator it =
         render_passes_in_frame.find(pass_iter->first);
     if (it == render_passes_in_frame.end()) {
       passes_to_delete.push_back(pass_iter->first);
       continue;
     }
 
-    const RenderPass* render_pass_in_frame = it->second;
-    gfx::Size required_size = RenderPassTextureSize(render_pass_in_frame);
-    ResourceFormat required_format =
-        RenderPassTextureFormat(render_pass_in_frame);
-    CachedResource* texture = pass_iter->second;
+    gfx::Size required_size = it->second;
+    ScopedResource* texture = pass_iter->second;
     DCHECK(texture);
 
     bool size_appropriate = texture->size().width() >= required_size.width() &&
                             texture->size().height() >= required_size.height();
-    if (texture->id() &&
-        (!size_appropriate || texture->format() != required_format))
+    if (texture->id() && !size_appropriate)
       texture->Free();
   }
 
@@ -187,8 +184,8 @@ void DirectRenderer::DecideRenderPassAllocationsForFrame(
 
   for (size_t i = 0; i < render_passes_in_draw_order.size(); ++i) {
     if (!render_pass_textures_.contains(render_passes_in_draw_order[i]->id)) {
-      scoped_ptr<CachedResource> texture =
-          CachedResource::Create(resource_provider_);
+      scoped_ptr<ScopedResource> texture =
+          ScopedResource::create(resource_provider_);
       render_pass_textures_.set(render_passes_in_draw_order[i]->id,
                               texture.Pass());
     }
@@ -198,7 +195,8 @@ void DirectRenderer::DecideRenderPassAllocationsForFrame(
 void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
                                ContextProvider* offscreen_context_provider,
                                float device_scale_factor,
-                               bool allow_partial_swap) {
+                               bool allow_partial_swap,
+                               bool disable_picture_quad_image_filtering) {
   TRACE_EVENT0("cc", "DirectRenderer::DrawFrame");
   UMA_HISTOGRAM_COUNTS("Renderer4.renderPassCount",
                        render_passes_in_draw_order->size());
@@ -214,6 +212,8 @@ void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
           : root_render_pass->output_rect;
   frame.root_damage_rect.Intersect(gfx::Rect(client_->DeviceViewport().size()));
   frame.offscreen_context_provider = offscreen_context_provider;
+  frame.disable_picture_quad_image_filtering =
+      disable_picture_quad_image_filtering;
 
   EnsureBackbuffer();
 
@@ -381,12 +381,6 @@ void DirectRenderer::DrawRenderPass(DrawingFrame* frame,
       DoDrawQuad(frame, *it);
   }
   FinishDrawingQuadList();
-
-  CachedResource* texture = render_pass_textures_.get(render_pass->id);
-  if (texture) {
-    texture->set_is_complete(
-        !render_pass->has_occlusion_from_outside_target_surface);
-  }
 }
 
 bool DirectRenderer::UseRenderPass(DrawingFrame* frame,
@@ -406,39 +400,29 @@ bool DirectRenderer::UseRenderPass(DrawingFrame* frame,
   if (!resource_provider_)
     return false;
 
-  CachedResource* texture = render_pass_textures_.get(render_pass->id);
+  ScopedResource* texture = render_pass_textures_.get(render_pass->id);
   DCHECK(texture);
 
   gfx::Size size = RenderPassTextureSize(render_pass);
   size.Enlarge(enlarge_pass_texture_amount_.x(),
                enlarge_pass_texture_amount_.y());
   if (!texture->id() &&
-      !texture->Allocate(size,
-                         ResourceProvider::TextureUsageFramebuffer,
-                         RenderPassTextureFormat(render_pass)))
+      !texture->Allocate(
+           size, ResourceProvider::TextureUsageFramebuffer, RGBA_8888))
     return false;
 
   return BindFramebufferToTexture(frame, texture, render_pass->output_rect);
 }
 
-bool DirectRenderer::HaveCachedResourcesForRenderPassId(RenderPass::Id id)
+bool DirectRenderer::HasAllocatedResourcesForTesting(RenderPass::Id id)
     const {
-  if (!settings_->cache_render_pass_contents)
-    return false;
-
-  CachedResource* texture = render_pass_textures_.get(id);
-  return texture && texture->id() && texture->is_complete();
+  ScopedResource* texture = render_pass_textures_.get(id);
+  return texture && texture->id();
 }
 
 // static
 gfx::Size DirectRenderer::RenderPassTextureSize(const RenderPass* render_pass) {
   return render_pass->output_rect.size();
-}
-
-// static
-ResourceFormat DirectRenderer::RenderPassTextureFormat(
-    const RenderPass* render_pass) {
-  return RGBA_8888;
 }
 
 }  // namespace cc

@@ -28,10 +28,10 @@
 #include "bindings/v8/ScriptEventListener.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
-#include "core/dom/Event.h"
-#include "core/dom/EventNames.h"
 #include "core/dom/ScriptLoader.h"
 #include "core/dom/Text.h"
+#include "core/events/Event.h"
+#include "core/events/ThreadLocalEventNames.h"
 
 namespace WebCore {
 
@@ -68,7 +68,7 @@ void HTMLScriptElement::parseAttribute(const QualifiedName& name, const AtomicSt
     else if (name == asyncAttr)
         m_loader->handleAsyncAttribute();
     else if (name == onbeforeloadAttr)
-        setAttributeEventListener(eventNames().beforeloadEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::beforeload, createAttributeEventListener(this, name, value));
     else
         HTMLElement::parseAttribute(name, value);
 }
@@ -168,7 +168,7 @@ bool HTMLScriptElement::hasSourceAttribute() const
 void HTMLScriptElement::dispatchLoadEvent()
 {
     ASSERT(!m_loader->haveFiredLoadEvent());
-    dispatchEvent(Event::create(eventNames().loadEvent));
+    dispatchEvent(Event::create(EventTypeNames::load));
 }
 
 PassRefPtr<Element> HTMLScriptElement::cloneElementWithoutAttributesAndChildren()

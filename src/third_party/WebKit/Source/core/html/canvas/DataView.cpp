@@ -28,7 +28,7 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/html/canvas/CheckedInt.h"
+#include "platform/CheckedInt.h"
 #include "wtf/CPU.h"
 
 namespace {
@@ -133,7 +133,7 @@ template<typename T>
 T DataView::getData(unsigned byteOffset, bool littleEndian, ExceptionState& es) const
 {
     if (beyondRange<T>(byteOffset)) {
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
         return 0;
     }
 
@@ -148,7 +148,7 @@ template<typename T>
 void DataView::setData(unsigned byteOffset, T value, bool littleEndian, ExceptionState& es)
 {
     if (beyondRange<T>(byteOffset)) {
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
         return;
     }
 

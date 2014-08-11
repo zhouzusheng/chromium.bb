@@ -29,14 +29,14 @@
 #include "config.h"
 #include "modules/webdatabase/SQLTransactionBackend.h"
 
-#include "core/platform/Logging.h"
-#include "core/platform/sql/SQLValue.h"
-#include "core/platform/sql/SQLiteTransaction.h"
+#include "platform/Logging.h"
+#include "modules/webdatabase/sqlite/SQLValue.h"
+#include "modules/webdatabase/sqlite/SQLiteTransaction.h"
 #include "modules/webdatabase/AbstractSQLTransaction.h"
 #include "modules/webdatabase/Database.h" // FIXME: Should only be used in the frontend.
 #include "modules/webdatabase/DatabaseAuthorizer.h"
 #include "modules/webdatabase/DatabaseBackend.h"
-#include "modules/webdatabase/DatabaseBackendContext.h"
+#include "modules/webdatabase/DatabaseContext.h"
 #include "modules/webdatabase/DatabaseThread.h"
 #include "modules/webdatabase/DatabaseTracker.h"
 #include "modules/webdatabase/SQLError.h"
@@ -338,11 +338,6 @@
 //     - This is how a transaction ends normally.
 //     - state CleanupAndTerminate calls doCleanup().
 
-
-// There's no way of knowing exactly how much more space will be required when a statement hits the quota limit.
-// For now, we'll arbitrarily choose currentQuota + 1mb.
-// In the future we decide to track if a size increase wasn't enough, and ask for larger-and-larger increases until its enough.
-static const int DefaultQuotaSizeIncrease = 1048576;
 
 namespace WebCore {
 

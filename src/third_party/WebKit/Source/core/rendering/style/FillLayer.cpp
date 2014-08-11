@@ -52,9 +52,11 @@ FillLayer::FillLayer(EFillLayerType type)
     , m_repeatX(FillLayer::initialFillRepeatX(type))
     , m_repeatY(FillLayer::initialFillRepeatY(type))
     , m_composite(FillLayer::initialFillComposite(type))
-    , m_sizeType(FillLayer::initialFillSizeType(type))
+    , m_sizeType(SizeNone) // SizeNone indicates size is unset.
     , m_blendMode(FillLayer::initialFillBlendMode(type))
     , m_maskSourceType(FillLayer::initialFillMaskSourceType(type))
+    , m_backgroundXOrigin(LeftEdge)
+    , m_backgroundYOrigin(TopEdge)
     , m_imageSet(false)
     , m_attachmentSet(false)
     , m_clipSet(false)
@@ -63,9 +65,8 @@ FillLayer::FillLayer(EFillLayerType type)
     , m_repeatYSet(false)
     , m_xPosSet(false)
     , m_yPosSet(false)
-    , m_backgroundOriginSet(false)
-    , m_backgroundXOrigin(LeftEdge)
-    , m_backgroundYOrigin(TopEdge)
+    , m_backgroundXOriginSet(false)
+    , m_backgroundYOriginSet(false)
     , m_compositeSet(type == MaskFillLayer)
     , m_blendModeSet(false)
     , m_maskSourceTypeSet(false)
@@ -88,6 +89,8 @@ FillLayer::FillLayer(const FillLayer& o)
     , m_sizeType(o.m_sizeType)
     , m_blendMode(o.m_blendMode)
     , m_maskSourceType(o.m_maskSourceType)
+    , m_backgroundXOrigin(o.m_backgroundXOrigin)
+    , m_backgroundYOrigin(o.m_backgroundYOrigin)
     , m_imageSet(o.m_imageSet)
     , m_attachmentSet(o.m_attachmentSet)
     , m_clipSet(o.m_clipSet)
@@ -96,9 +99,8 @@ FillLayer::FillLayer(const FillLayer& o)
     , m_repeatYSet(o.m_repeatYSet)
     , m_xPosSet(o.m_xPosSet)
     , m_yPosSet(o.m_yPosSet)
-    , m_backgroundOriginSet(o.m_backgroundOriginSet)
-    , m_backgroundXOrigin(o.m_backgroundXOrigin)
-    , m_backgroundYOrigin(o.m_backgroundYOrigin)
+    , m_backgroundXOriginSet(o.m_backgroundXOriginSet)
+    , m_backgroundYOriginSet(o.m_backgroundYOriginSet)
     , m_compositeSet(o.m_compositeSet)
     , m_blendModeSet(o.m_blendModeSet)
     , m_maskSourceTypeSet(o.m_maskSourceTypeSet)
@@ -123,7 +125,8 @@ FillLayer& FillLayer::operator=(const FillLayer& o)
     m_yPosition = o.m_yPosition;
     m_backgroundXOrigin = o.m_backgroundXOrigin;
     m_backgroundYOrigin = o.m_backgroundYOrigin;
-    m_backgroundOriginSet = o.m_backgroundOriginSet;
+    m_backgroundXOriginSet = o.m_backgroundXOriginSet;
+    m_backgroundYOriginSet = o.m_backgroundYOriginSet;
     m_sizeLength = o.m_sizeLength;
     m_attachment = o.m_attachment;
     m_clip = o.m_clip;
@@ -173,10 +176,10 @@ void FillLayer::fillUnsetProperties()
         // We need to fill in the remaining values with the pattern specified.
         for (FillLayer* pattern = this; curr; curr = curr->next()) {
             curr->m_xPosition = pattern->m_xPosition;
-            if (pattern->isBackgroundOriginSet()) {
+            if (pattern->isBackgroundXOriginSet())
                 curr->m_backgroundXOrigin = pattern->m_backgroundXOrigin;
+            if (pattern->isBackgroundYOriginSet())
                 curr->m_backgroundYOrigin = pattern->m_backgroundYOrigin;
-            }
             pattern = pattern->next();
             if (pattern == curr || !pattern)
                 pattern = this;
@@ -188,10 +191,10 @@ void FillLayer::fillUnsetProperties()
         // We need to fill in the remaining values with the pattern specified.
         for (FillLayer* pattern = this; curr; curr = curr->next()) {
             curr->m_yPosition = pattern->m_yPosition;
-            if (pattern->isBackgroundOriginSet()) {
+            if (pattern->isBackgroundXOriginSet())
                 curr->m_backgroundXOrigin = pattern->m_backgroundXOrigin;
+            if (pattern->isBackgroundYOriginSet())
                 curr->m_backgroundYOrigin = pattern->m_backgroundYOrigin;
-            }
             pattern = pattern->next();
             if (pattern == curr || !pattern)
                 pattern = this;

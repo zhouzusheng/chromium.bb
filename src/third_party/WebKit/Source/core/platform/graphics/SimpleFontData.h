@@ -24,18 +24,18 @@
 #ifndef SimpleFontData_h
 #define SimpleFontData_h
 
-#include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/FontBaseline.h"
-#include "core/platform/graphics/FontData.h"
-#include "core/platform/graphics/FontMetrics.h"
 #include "core/platform/graphics/FontPlatformData.h"
-#include "core/platform/graphics/GlyphBuffer.h"
-#include "core/platform/graphics/GlyphMetricsMap.h"
 #include "core/platform/graphics/GlyphPageTreeNode.h"
+#include "platform/fonts/FontBaseline.h"
+#include "platform/fonts/FontData.h"
+#include "platform/fonts/FontMetrics.h"
+#include "platform/fonts/GlyphBuffer.h"
+#include "platform/fonts/GlyphMetricsMap.h"
 #if ENABLE(OPENTYPE_VERTICAL)
 #include "core/platform/graphics/opentype/OpenTypeVerticalData.h"
 #endif
-#include "core/platform/graphics/TypesettingFeatures.h"
+#include "platform/fonts/TypesettingFeatures.h"
+#include "platform/geometry/FloatRect.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/StringHash.h"
@@ -147,8 +147,8 @@ public:
     Glyph zeroGlyph() const { return m_zeroGlyph; }
     void setZeroGlyph(Glyph zeroGlyph) { m_zeroGlyph = zeroGlyph; }
 
-    virtual const SimpleFontData* fontDataForCharacter(UChar32) const;
-    virtual bool containsCharacters(const UChar*, int length) const;
+    virtual const SimpleFontData* fontDataForCharacter(UChar32) const OVERRIDE;
+    virtual bool containsCharacters(const UChar*, int length) const OVERRIDE;
 
     Glyph glyphForCharacter(UChar32) const;
 
@@ -157,11 +157,11 @@ public:
 
     AdditionalFontData* fontData() const { return m_fontData.get(); }
     bool isSVGFont() const { return m_fontData; }
-    bool isLoadingFallback() const { return m_customFontData.isLoadingFallback; }
 
-    virtual bool isCustomFont() const { return m_customFontData.isCustomFont; }
-    virtual bool isLoading() const { return m_customFontData.isLoadingFallback && m_customFontData.isUsed; }
-    virtual bool isSegmented() const;
+    virtual bool isCustomFont() const OVERRIDE { return m_customFontData.isCustomFont; }
+    virtual bool isLoading() const OVERRIDE { return m_customFontData.isLoadingFallback && m_customFontData.isUsed; }
+    virtual bool isLoadingFallback() const OVERRIDE { return m_customFontData.isLoadingFallback; }
+    virtual bool isSegmented() const OVERRIDE;
 
     const GlyphData& missingGlyphData() const { return m_missingGlyphData; }
     void setMissingGlyphData(const GlyphData& glyphData) { m_missingGlyphData = glyphData; }

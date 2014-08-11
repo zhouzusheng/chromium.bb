@@ -473,13 +473,14 @@ def CreateWindowsLib(module_name, signatures, intermediate_dir, outdir_path,
     SubprocessError: If invoking the windows "lib" tool fails, this is raised
                      with the error code.
   """
+  module_name = os.path.splitext(os.path.basename(module_name))[0]
   def_file_path = os.path.join(intermediate_dir,
                                module_name + '.def')
   lib_file_path = os.path.join(outdir_path,
                                module_name + '.lib')
   outfile = open(def_file_path, 'w')
   try:
-    WriteWindowsDefFile(module_name, signatures, outfile)
+    WriteWindowsDefFile(module_name + '.dll', signatures, outfile)
   finally:
     outfile.close()
 
@@ -953,9 +954,9 @@ def ParseOptions():
     if options.path_from_source is None:
       parser.error('Path from source needed for %s' % FILE_TYPE_POSIX_STUB)
 
-  if options.type == FILE_TYPE_WIN_DEF:
+  if options.type in [FILE_TYPE_WIN_DEF, FILE_TYPE_WIN_X86, FILE_TYPE_WIN_X64]:
     if options.module_name is None:
-      parser.error('Module name needed for %s' % FILE_TYPE_WIN_DEF)
+      parser.error('Module name needed for %s' % options.type)
 
   return options, args
 
@@ -996,7 +997,7 @@ def CreateOutputDirectories(options):
   return out_dir, intermediate_dir
 
 
-def CreateWindowsLibForSigFiles(sig_files, out_dir, intermediate_dir, machine):
+def CreateWindowsLibForSigFiles(sig_files, out_dir, intermediate_dir, machine, module_name):
   """For each signature file, create a windows lib.
 
   Args:
@@ -1010,7 +1011,6 @@ def CreateWindowsLibForSigFiles(sig_files, out_dir, intermediate_dir, machine):
     infile = open(input_path, 'r')
     try:
       signatures = ParseSignatures(infile)
-      module_name = ExtractModuleName(os.path.basename(input_path))
       CreateWindowsLib(module_name, signatures, intermediate_dir, out_dir,
                        machine)
     finally:
@@ -1116,9 +1116,9 @@ def main():
   out_dir, intermediate_dir = CreateOutputDirectories(options)
 
   if options.type == FILE_TYPE_WIN_X86:
-    CreateWindowsLibForSigFiles(args, out_dir, intermediate_dir, 'X86')
+    CreateWindowsLibForSigFiles(args, out_dir, intermediate_dir, 'X86', options.module_name)
   elif options.type == FILE_TYPE_WIN_X64:
-    CreateWindowsLibForSigFiles(args, out_dir, intermediate_dir, 'X64')
+    CreateWindowsLibForSigFiles(args, out_dir, intermediate_dir, 'X64', options.module_name)
   elif options.type == FILE_TYPE_POSIX_STUB:
     CreatePosixStubsForSigFiles(args, options.stubfile_name, out_dir,
                                 intermediate_dir, options.path_from_source,

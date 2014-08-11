@@ -20,8 +20,8 @@
 #include "base/process/launch.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/win/windows_version.h"
 #include "media/audio/audio_parameters.h"
-#include "media/audio/audio_util.h"
 #include "media/audio/win/audio_device_listener_win.h"
 #include "media/audio/win/audio_low_latency_input_win.h"
 #include "media/audio/win/audio_low_latency_output_win.h"
@@ -107,6 +107,24 @@ static string16 GetDeviceAndDriverInfo(HDEVINFO device_info,
                                 &old_device_install_params);
 
   return device_and_driver_info;
+}
+
+static int NumberOfWaveOutBuffers() {
+  // Use the user provided buffer count if provided.
+  int buffers = 0;
+  std::string buffers_str(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+      switches::kWaveOutBuffers));
+  if (base::StringToInt(buffers_str, &buffers) && buffers > 0) {
+    return buffers;
+  }
+
+  // Use 4 buffers for Vista, 3 for everyone else:
+  //  - The entire Windows audio stack was rewritten for Windows Vista and wave
+  //    out performance was degraded compared to XP.
+  //  - The regression was fixed in Windows 7 and most configurations will work
+  //    with 2, but some (e.g., some Sound Blasters) still need 3.
+  //  - Some XP configurations (even multi-processor ones) also need 3.
+  return (base::win::GetVersion() == base::win::VERSION_VISTA) ? 4 : 3;
 }
 
 AudioManagerWin::AudioManagerWin() {
@@ -337,7 +355,8 @@ AudioOutputStream* AudioManagerWin::MakeLowLatencyOutputStream(
 
   if (!CoreAudioUtil::IsSupported()) {
     // Fall back to Windows Wave implementation on Windows XP or lower.
-    DLOG_IF(ERROR, !device_id.empty())
+    DLOG_IF(ERROR, !device_id.empty() &&
+        device_id != AudioManagerBase::kDefaultDeviceId)
         << "Opening by device id not supported by PCMWaveOutAudioOutputStream";
     DVLOG(1) << "Using WaveOut since WASAPI requires at least Vista.";
     return new PCMWaveOutAudioOutputStream(
@@ -347,12 +366,19 @@ AudioOutputStream* AudioManagerWin::MakeLowLatencyOutputStream(
   // TODO(rtoy): support more than stereo input.
   if (params.input_channels() > 0) {
     DVLOG(1) << "WASAPIUnifiedStream is created.";
-    DLOG_IF(ERROR, !device_id.empty())
+    DLOG_IF(ERROR, !device_id.empty() &&
+        device_id != AudioManagerBase::kDefaultDeviceId)
         << "Opening by device id not supported by WASAPIUnifiedStream";
     return new WASAPIUnifiedStream(this, params, input_device_id);
   }
 
-  return new WASAPIAudioOutputStream(this, device_id, params, eConsole);
+  // Pass an empty string to indicate that we want the default device
+  // since we consistently only check for an empty string in
+  // WASAPIAudioOutputStream.
+  return new WASAPIAudioOutputStream(this,
+      device_id == AudioManagerBase::kDefaultDeviceId ?
+          std::string() : device_id,
+      params, eConsole);
 }
 
 // Factory for the implementations of AudioInputStream for AUDIO_PCM_LINEAR
@@ -429,21 +455,25 @@ AudioParameters AudioManagerWin::GetPreferredOutputStreamParameters(
   }
 
   if (input_params.IsValid()) {
+    // If the user has enabled checking supported channel layouts or we don't
+    // have a valid channel layout yet, try to use the input layout.  See bugs
+    // http://crbug.com/259165 and http://crbug.com/311906 for more details.
     if (core_audio_supported &&
-        cmd_line->HasSwitch(switches::kTrySupportedChannelLayouts)) {
+        (cmd_line->HasSwitch(switches::kTrySupportedChannelLayouts) ||
+         channel_layout == CHANNEL_LAYOUT_UNSUPPORTED)) {
       // Check if it is possible to open up at the specified input channel
       // layout but avoid checking if the specified layout is the same as the
       // hardware (preferred) layout. We do this extra check to avoid the
       // CoreAudioUtil::IsChannelLayoutSupported() overhead in most cases.
       if (input_params.channel_layout() != channel_layout) {
-        // TODO(henrika): Use |output_device_id| here.
-        // Internally, IsChannelLayoutSupported does many of the operations
-        // that have already been done such as opening up a client and fetching
-        // the WAVEFORMATPCMEX format.  Ideally we should only do that once and
-        // do it for the requested device.  Then here, we can check the layout
-        // from the data we already hold.
+        // TODO(henrika): Internally, IsChannelLayoutSupported does many of the
+        // operations that have already been done such as opening up a client
+        // and fetching the WAVEFORMATPCMEX format.  Ideally we should only do
+        // that once.  Then here, we can check the layout from the data we
+        // already hold.
         if (CoreAudioUtil::IsChannelLayoutSupported(
-                eRender, eConsole, input_params.channel_layout())) {
+                output_device_id, eRender, eConsole,
+                input_params.channel_layout())) {
           // Open up using the same channel layout as the source if it is
           // supported by the hardware.
           channel_layout = input_params.channel_layout();

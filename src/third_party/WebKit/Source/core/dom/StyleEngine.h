@@ -55,15 +55,15 @@ public:
 
     ~StyleEngine();
 
-    const Vector<RefPtr<StyleSheet> >& styleSheetsForStyleSheetList();
+    const Vector<RefPtr<StyleSheet> >& styleSheetsForStyleSheetList(TreeScope&);
     const Vector<RefPtr<CSSStyleSheet> >& activeAuthorStyleSheets() const;
 
     CSSStyleSheet* pageUserSheet();
     const Vector<RefPtr<CSSStyleSheet> >& documentUserStyleSheets() const { return m_userStyleSheets; }
     const Vector<RefPtr<CSSStyleSheet> >& documentAuthorStyleSheets() const { return m_authorStyleSheets; }
-    const Vector<RefPtr<CSSStyleSheet> >& injectedUserStyleSheets() const;
     const Vector<RefPtr<CSSStyleSheet> >& injectedAuthorStyleSheets() const;
 
+    void modifiedStyleSheet(StyleSheet*);
     void addStyleSheetCandidateNode(Node*, bool createdByParser);
     void removeStyleSheetCandidateNode(Node*, ContainerNode* scopingNode = 0);
     void modifiedStyleSheetCandidateNode(Node*);
@@ -94,6 +94,7 @@ public:
 
     bool hasPendingSheets() const { return m_pendingStylesheets > 0; }
 
+    unsigned maxDirectAdjacentSelectors() const { return m_maxDirectAdjacentSelectors; }
     bool usesSiblingRules() const { return m_usesSiblingRules || m_usesSiblingRulesOverride; }
     void setUsesSiblingRulesOverride(bool b) { m_usesSiblingRulesOverride = b; }
     bool usesFirstLineRules() const { return m_usesFirstLineRules; }
@@ -132,7 +133,6 @@ private:
 
     RefPtr<CSSStyleSheet> m_pageUserSheet;
 
-    mutable Vector<RefPtr<CSSStyleSheet> > m_injectedUserStyleSheets;
     mutable Vector<RefPtr<CSSStyleSheet> > m_injectedAuthorStyleSheets;
     mutable bool m_injectedStyleSheetCacheValid;
 
@@ -156,6 +156,7 @@ private:
     bool m_usesFirstLineRules;
     bool m_usesFirstLetterRules;
     bool m_usesRemUnits;
+    unsigned m_maxDirectAdjacentSelectors;
 };
 
 }

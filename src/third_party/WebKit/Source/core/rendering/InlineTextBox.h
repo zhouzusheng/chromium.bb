@@ -23,9 +23,9 @@
 #ifndef InlineTextBox_h
 #define InlineTextBox_h
 
-#include "core/platform/graphics/TextRun.h"
 #include "core/rendering/InlineBox.h"
 #include "core/rendering/RenderText.h" // so textRenderer() can be inline
+#include "platform/graphics/TextRun.h"
 #include "wtf/Forward.h"
 
 namespace WebCore {
@@ -159,6 +159,9 @@ public:
 
     bool containsCaretOffset(int offset) const; // false for offset after line break
 
+    // Fills a vector with the pixel width of each character.
+    void characterWidths(Vector<float>&) const;
+
 private:
     InlineTextBox* m_prevTextBox; // The previous box that also uses our RenderObject
     InlineTextBox* m_nextTextBox; // The next box that also uses our RenderObject
@@ -175,7 +178,7 @@ protected:
     void paintCompositionUnderline(GraphicsContext*, const FloatPoint& boxOrigin, const CompositionUnderline&, const Color& color);
 
 private:
-    void paintDecoration(GraphicsContext*, const FloatPoint& boxOrigin, TextDecoration, TextDecorationStyle, const ShadowData*);
+    void paintDecoration(GraphicsContext*, const FloatPoint& boxOrigin, TextDecoration, TextDecorationStyle, const ShadowList*);
     void paintSelection(GraphicsContext*, const FloatPoint& boxOrigin, RenderStyle*, const Font&, Color textColor);
     void paintDocumentMarker(GraphicsContext*, const FloatPoint& boxOrigin, DocumentMarker*, RenderStyle*, const Font&, bool grammar);
     void paintTextMatchMarker(GraphicsContext*, const FloatPoint& boxOrigin, DocumentMarker*, RenderStyle*, const Font&);

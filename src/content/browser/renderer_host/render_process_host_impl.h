@@ -33,8 +33,10 @@ class Size;
 }
 
 namespace content {
+class AudioRendererHost;
 class BrowserDemuxerAndroid;
 class GpuMessageFilter;
+class MessagePortMessageFilter;
 class PeerConnectionTrackerHost;
 class RenderWidgetHelper;
 class RenderWidgetHost;
@@ -109,14 +111,13 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual void SetSuddenTerminationAllowed(bool enabled) OVERRIDE;
   virtual bool SuddenTerminationAllowed() const OVERRIDE;
   virtual IPC::ChannelProxy* GetChannel() OVERRIDE;
+  virtual void AddFilter(BrowserMessageFilter* filter) OVERRIDE;
   virtual bool FastShutdownForPageCount(size_t count) OVERRIDE;
   virtual bool FastShutdownStarted() const OVERRIDE;
   virtual base::TimeDelta GetChildProcessIdleTime() const OVERRIDE;
   virtual void SurfaceUpdated(int32 surface_id) OVERRIDE;
   virtual void ResumeRequestsForView(int route_id) OVERRIDE;
   virtual bool IsProcessManagedExternally() const OVERRIDE;
-  virtual bool UsesInProcessPlugins() const OVERRIDE;
-  virtual void SetUsesInProcessPlugins() OVERRIDE;
 
   // IPC::Sender via RenderProcessHost.
   virtual bool Send(IPC::Message* msg) OVERRIDE;
@@ -128,6 +129,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // ChildProcessLauncher::Client implementation.
   virtual void OnProcessLaunched() OVERRIDE;
+
+  scoped_refptr<AudioRendererHost> audio_renderer_host() const;
 
   // Tells the ResourceDispatcherHost to resume a deferred navigation without
   // transferring it to a new renderer process.
@@ -193,6 +196,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
   }
 #endif
 
+  MessagePortMessageFilter* message_port_message_filter() const {
+    return message_port_message_filter_;
+  }
+
  protected:
   // A proxy for our IPC::Channel that lives on the IO thread (see
   // browser_process.h)
@@ -230,12 +237,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // results to |*command_line|.
   void AppendRendererCommandLine(CommandLine* command_line) const;
 
-  // Copies applicable command line switches from the given |browser_cmd| line
-  // flags to the output |renderer_cmd| line flags. Not all switches will be
-  // copied over.
-  void PropagateBrowserCommandLineToRenderer(const CommandLine& browser_cmd,
-                                             CommandLine* renderer_cmd) const;
-
   // Callers can reduce the RenderProcess' priority.
   void SetBackgrounded(bool backgrounded);
 
@@ -267,6 +268,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // away, it posts a task to the IO thread to destroy it there, so we know that
   // it's valid if non-NULL.
   GpuMessageFilter* gpu_message_filter_;
+
+  // The filter for MessagePort messages coming from the renderer.
+  scoped_refptr<MessagePortMessageFilter> message_port_message_filter_;
 
   // A map of transport DIB ids to cached TransportDIBs
   std::map<TransportDIB::Id, TransportDIB*> cached_dibs_;
@@ -329,9 +333,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // renderer.
   bool is_guest_;
 
-  // Indicates whether this RenderProcessHost uses in-process plugins.
-  bool uses_in_process_plugins_;
-
   // Forwards messages between WebRTCInternals in the browser process
   // and PeerConnectionTracker in the renderer process.
   scoped_refptr<PeerConnectionTrackerHost> peer_connection_tracker_host_;
@@ -342,6 +343,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // Forwards power state messages to the renderer process.
   PowerMonitorMessageBroadcaster power_monitor_broadcaster_;
+
+  scoped_refptr<AudioRendererHost> audio_renderer_host_;
 
 #if defined(OS_ANDROID)
   scoped_refptr<BrowserDemuxerAndroid> browser_demuxer_android_;

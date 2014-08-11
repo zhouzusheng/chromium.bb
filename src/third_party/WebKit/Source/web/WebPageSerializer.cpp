@@ -46,9 +46,9 @@
 #include "core/html/HTMLTableElement.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/archive/MHTMLArchive.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/PageSerializer.h"
-#include "core/platform/SerializedResource.h"
+#include "platform/SerializedResource.h"
 #include "public/platform/WebCString.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
@@ -140,7 +140,7 @@ void retrieveResourcesForFrame(Frame* frame,
                                Vector<KURL>* frameURLs,
                                Vector<KURL>* resourceURLs)
 {
-    KURL frameURL = frame->loader()->documentLoader()->request().url();
+    KURL frameURL = frame->loader().documentLoader()->request().url();
 
     // If the frame's URL is invalid, ignore it, it is not retrievable.
     if (!frameURL.isValid())

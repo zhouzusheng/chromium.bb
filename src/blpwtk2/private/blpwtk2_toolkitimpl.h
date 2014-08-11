@@ -71,7 +71,6 @@ class ToolkitImpl : public Toolkit {
     void startupThreads();
     void shutdownThreads();
 
-    void setRendererUsesInProcessPlugins(int renderer);
     void appendCommandLineSwitch(const char* switchString);
     void registerPlugin(const char* pluginPath);
 
@@ -92,7 +91,7 @@ class ToolkitImpl : public Toolkit {
     virtual void clearWebCache() OVERRIDE;
 
   private:
-    void createInProcessHost(const std::string& channelId);
+    void createInProcessHost();
     void destroyInProcessHost();
 
     bool d_threadsStarted;

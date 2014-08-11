@@ -26,11 +26,12 @@
 #ifndef CSSSegmentedFontFace_h
 #define CSSSegmentedFontFace_h
 
-#include "core/platform/graphics/FontTraitsMask.h"
+#include "platform/fonts/FontTraitsMask.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -56,10 +57,6 @@ public:
 
     PassRefPtr<FontData> getFontData(const FontDescription&);
 
-#if ENABLE(SVG_FONTS)
-    bool hasSVGFontFaceSource() const;
-#endif
-
     class LoadFontCallback : public RefCounted<LoadFontCallback> {
     public:
         virtual ~LoadFontCallback() { }
@@ -67,9 +64,9 @@ public:
         virtual void notifyError(CSSSegmentedFontFace*) = 0;
     };
 
-    bool checkFont() const;
-    void loadFont(const FontDescription&, PassRefPtr<LoadFontCallback> loadCallback);
-    Vector<RefPtr<FontFace> > fontFaces() const;
+    bool checkFont(const String&) const;
+    void loadFont(const FontDescription&, const String&, PassRefPtr<LoadFontCallback>);
+    Vector<RefPtr<FontFace> > fontFaces(const String& text) const;
     void willUseFontData(const FontDescription&);
 
 private:
@@ -78,6 +75,7 @@ private:
     void pruneTable();
     bool isValid() const;
     bool isLoading() const;
+    bool isLoaded() const;
 
     CSSFontSelector* m_fontSelector;
     FontTraitsMask m_traitsMask;

@@ -44,7 +44,7 @@ PassRefPtr<RTCIceCandidate> RTCIceCandidate::create(const Dictionary& dictionary
     String candidate;
     bool ok = dictionary.get("candidate", candidate);
     if (!ok || !candidate.length()) {
-        es.throwDOMException(TypeMismatchError);
+        es.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return 0;
     }
 
@@ -66,10 +66,6 @@ RTCIceCandidate::RTCIceCandidate(WebKit::WebRTCICECandidate webCandidate)
     : m_webCandidate(webCandidate)
 {
     ScriptWrappable::init(this);
-}
-
-RTCIceCandidate::~RTCIceCandidate()
-{
 }
 
 String RTCIceCandidate::candidate() const

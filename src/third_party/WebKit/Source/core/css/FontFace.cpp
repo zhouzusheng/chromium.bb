@@ -45,10 +45,10 @@
 #include "core/css/StylePropertySet.h"
 #include "core/css/StyleRule.h"
 #include "core/dom/Document.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Settings.h"
-#include "core/platform/graphics/FontTraitsMask.h"
 #include "core/svg/SVGFontFaceElement.h"
+#include "platform/fonts/FontTraitsMask.h"
 
 namespace WebCore {
 
@@ -57,7 +57,7 @@ static PassRefPtr<CSSValue> parseCSSValue(const String& s, CSSPropertyID propert
     if (s.isEmpty())
         return 0;
     RefPtr<MutableStylePropertySet> parsedStyle = MutableStylePropertySet::create();
-    CSSParser::parseValue(parsedStyle.get(), propertyID, s, true, CSSStrictMode, 0);
+    CSSParser::parseValue(parsedStyle.get(), propertyID, s, true, HTMLStandardMode, 0);
     return parsedStyle->getPropertyCSSValue(propertyID);
 }
 
@@ -65,7 +65,7 @@ PassRefPtr<FontFace> FontFace::create(const String& family, const String& source
 {
     RefPtr<CSSValue> src = parseCSSValue(source, CSSPropertySrc);
     if (!src || !src->isValueList()) {
-        es.throwDOMException(SyntaxError);
+        es.throwUninformativeAndGenericDOMException(SyntaxError);
         return 0;
     }
 
@@ -208,7 +208,7 @@ void FontFace::setPropertyFromString(const String& s, CSSPropertyID propertyID, 
 {
     RefPtr<CSSValue> value = parseCSSValue(s, propertyID);
     if (!value || !setPropertyValue(value, propertyID))
-        es.throwDOMException(SyntaxError);
+        es.throwUninformativeAndGenericDOMException(SyntaxError);
 }
 
 bool FontFace::setPropertyFromStyle(const StylePropertySet* properties, CSSPropertyID propertyID)
@@ -261,22 +261,22 @@ bool FontFace::setFamilyValue(CSSValueList* familyList)
         // defining what font to use for those types.
         switch (familyValue->getValueID()) {
         case CSSValueSerif:
-            family =  FontFamilyNames::serifFamily;
+            family =  FontFamilyNames::webkit_serif;
             break;
         case CSSValueSansSerif:
-            family =  FontFamilyNames::sansSerifFamily;
+            family =  FontFamilyNames::webkit_sans_serif;
             break;
         case CSSValueCursive:
-            family =  FontFamilyNames::cursiveFamily;
+            family =  FontFamilyNames::webkit_cursive;
             break;
         case CSSValueFantasy:
-            family =  FontFamilyNames::fantasyFamily;
+            family =  FontFamilyNames::webkit_fantasy;
             break;
         case CSSValueMonospace:
-            family =  FontFamilyNames::monospaceFamily;
+            family =  FontFamilyNames::webkit_monospace;
             break;
         case CSSValueWebkitPictograph:
-            family =  FontFamilyNames::pictographFamily;
+            family =  FontFamilyNames::webkit_pictograph;
             break;
         default:
             return false;
@@ -412,7 +412,7 @@ PassRefPtr<CSSFontFace> FontFace::createCSSFontFace(Document* document)
 
     for (int i = 0; i < srcLength; i++) {
         // An item in the list either specifies a string (local font name) or a URL (remote font to download).
-        CSSFontFaceSrcValue* item = static_cast<CSSFontFaceSrcValue*>(srcList->itemWithoutBoundsCheck(i));
+        CSSFontFaceSrcValue* item = toCSSFontFaceSrcValue(srcList->itemWithoutBoundsCheck(i));
         OwnPtr<CSSFontFaceSource> source;
 
 #if ENABLE(SVG_FONTS)
@@ -446,8 +446,8 @@ PassRefPtr<CSSFontFace> FontFace::createCSSFontFace(Document* document)
     if (CSSValueList* rangeList = toCSSValueList(m_unicodeRange.get())) {
         unsigned numRanges = rangeList->length();
         for (unsigned i = 0; i < numRanges; i++) {
-            CSSUnicodeRangeValue* range = static_cast<CSSUnicodeRangeValue*>(rangeList->itemWithoutBoundsCheck(i));
-            cssFontFace->addRange(range->from(), range->to());
+            CSSUnicodeRangeValue* range = toCSSUnicodeRangeValue(rangeList->itemWithoutBoundsCheck(i));
+            cssFontFace->ranges().add(range->from(), range->to());
         }
     }
     return cssFontFace;

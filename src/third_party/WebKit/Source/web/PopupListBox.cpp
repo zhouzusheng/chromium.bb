@@ -35,24 +35,24 @@
 #include "PopupContainer.h"
 #include "PopupMenuChromium.h"
 #include "RuntimeEnabledFeatures.h"
-#include "core/platform/PlatformGestureEvent.h"
-#include "core/platform/PlatformKeyboardEvent.h"
-#include "core/platform/PlatformMouseEvent.h"
-#include "core/platform/PlatformScreen.h"
-#include "core/platform/PlatformTouchEvent.h"
-#include "core/platform/PlatformWheelEvent.h"
 #include "core/platform/PopupMenuClient.h"
 #include "core/platform/ScrollbarTheme.h"
 #include "core/platform/chromium/FramelessScrollViewClient.h"
 #include "core/platform/chromium/KeyboardCodes.h"
 #include "core/platform/graphics/Font.h"
 #include "core/platform/graphics/FontCache.h"
-#include "core/platform/graphics/FontSelector.h"
 #include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/IntRect.h"
 #include "core/platform/graphics/StringTruncator.h"
-#include "core/platform/graphics/TextRun.h"
 #include "core/rendering/RenderTheme.h"
+#include "platform/PlatformGestureEvent.h"
+#include "platform/PlatformKeyboardEvent.h"
+#include "platform/PlatformMouseEvent.h"
+#include "platform/PlatformScreen.h"
+#include "platform/PlatformTouchEvent.h"
+#include "platform/PlatformWheelEvent.h"
+#include "platform/fonts/FontSelector.h"
+#include "platform/geometry/IntRect.h"
+#include "platform/graphics/TextRun.h"
 #include "wtf/ASCIICType.h"
 #include "wtf/CurrentTime.h"
 #include <limits>
@@ -143,8 +143,8 @@ bool PopupListBox::handleMouseReleaseEvent(const PlatformMouseEvent& event)
     // be removed in acceptIndex() calling because of event handler.
     bool isSelectPopup = m_popupClient->menuStyle().menuType() == PopupMenuStyle::SelectPopup;
     if (acceptIndex(pointToRowIndex(event.position())) && m_focusedElement && isSelectPopup) {
-        m_focusedElement->dispatchMouseEvent(event, eventNames().mouseupEvent);
-        m_focusedElement->dispatchMouseEvent(event, eventNames().clickEvent);
+        m_focusedElement->dispatchMouseEvent(event, EventTypeNames::mouseup);
+        m_focusedElement->dispatchMouseEvent(event, EventTypeNames::click);
 
         // Clear m_focusedElement here, because we cannot clear in hidePopup()
         // which is called before dispatchMouseEvent() is called.
@@ -406,7 +406,7 @@ void PopupListBox::paintRow(GraphicsContext* gc, const IntRect& rect, int rowInd
         backColor = style.backgroundColor();
         textColor = style.foregroundColor();
 
-#if OS(LINUX)
+#if OS(LINUX) || OS(ANDROID)
         // On other platforms, the <option> background color is the same as the
         // <select> background color. On Linux, that makes the <option>
         // background color very dark, so by default, try to use a lighter

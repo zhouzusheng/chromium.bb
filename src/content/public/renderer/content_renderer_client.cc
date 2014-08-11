@@ -37,6 +37,10 @@ bool ContentRendererClient::HasErrorPage(int http_status_code,
   return false;
 }
 
+bool ContentRendererClient::ShouldSuppressErrorPage(const GURL& url) {
+  return false;
+}
+
 void ContentRendererClient::DeferMediaLoad(RenderView* render_view,
                                            const base::Closure& closure) {
   closure.Run();
@@ -82,10 +86,6 @@ WebKit::WebSpeechSynthesizer* ContentRendererClient::OverrideSpeechSynthesizer(
 webkit_glue::ResourceLoaderBridge*
 ContentRendererClient::OverrideResourceLoaderBridge(
     const webkit_glue::ResourceLoaderBridge::RequestInfo& request_info) {
-  return NULL;
-}
-
-WebKit::WebCrypto* ContentRendererClient::OverrideWebCrypto() {
   return NULL;
 }
 
@@ -199,6 +199,12 @@ bool ContentRendererClient::ShouldReportDetailedMessageForSource(
 
 bool ContentRendererClient::ShouldEnableSiteIsolationPolicy() const {
   return true;
+}
+
+WebKit::WebWorkerPermissionClientProxy*
+ContentRendererClient::CreateWorkerPermissionClientProxy(
+    RenderView* render_view, WebKit::WebFrame* frame) {
+  return NULL;
 }
 
 }  // namespace content

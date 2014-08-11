@@ -39,12 +39,12 @@ namespace WebCore {
 
 class FontDescription;
 class RenderRegion;
+class StyleRule;
 
 class StyleResolverState {
 WTF_MAKE_NONCOPYABLE(StyleResolverState);
 public:
     StyleResolverState(Document&, Element*, RenderStyle* parentStyle = 0, RenderRegion* regionForStyling = 0);
-    ~StyleResolverState();
 
     // In FontFaceSet and CanvasRenderingContext2D, we don't have an element to grab the document from.
     // This is why we have to store the document separately.
@@ -72,6 +72,9 @@ public:
     RenderStyle* parentStyle() { return m_parentStyle.get(); }
 
     const RenderRegion* regionForStyling() const { return m_regionForStyling; }
+
+    void setCurrentRule(StyleRule* currentRule) { m_currentRule = currentRule; }
+    const StyleRule* currentRule() const { return m_currentRule; }
 
     // FIXME: These are effectively side-channel "out parameters" for the various
     // map functions. When we map from CSS to style objects we use this state object
@@ -129,8 +132,6 @@ public:
 private:
     friend class StyleResolveScope;
 
-    void initElement(Element*);
-
     ElementResolveContext m_elementContext;
     Document& m_document;
 
@@ -162,6 +163,8 @@ private:
     // a back-pointer to this object.
     CSSToStyleMap m_styleMap;
     Vector<AtomicString> m_contentAttrValues;
+
+    StyleRule* m_currentRule;
 };
 
 } // namespace WebCore

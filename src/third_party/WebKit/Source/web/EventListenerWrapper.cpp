@@ -31,8 +31,8 @@
 #include "config.h"
 #include "EventListenerWrapper.h"
 
-#include "core/dom/Event.h"
-#include "core/dom/EventListener.h"
+#include "core/events/Event.h"
+#include "core/events/EventListener.h"
 
 #include "WebDOMEvent.h"
 #include "WebDOMEventListener.h"
@@ -58,7 +58,7 @@ bool EventListenerWrapper::operator==(const EventListener& listener)
     return this == &listener;
 }
 
-void EventListenerWrapper::handleEvent(ScriptExecutionContext* context, Event* event)
+void EventListenerWrapper::handleEvent(ExecutionContext* context, Event* event)
 {
     if (!m_webDOMEventListener)
         return;

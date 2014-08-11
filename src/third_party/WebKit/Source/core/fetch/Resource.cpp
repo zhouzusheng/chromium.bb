@@ -33,9 +33,9 @@
 #include "core/fetch/ResourceLoader.h"
 #include "core/fetch/ResourcePtr.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/platform/Logging.h"
-#include "core/platform/PurgeableBuffer.h"
-#include "core/platform/SharedBuffer.h"
+#include "platform/Logging.h"
+#include "platform/PurgeableBuffer.h"
+#include "platform/SharedBuffer.h"
 #include "public/platform/Platform.h"
 #include "weborigin/KURL.h"
 #include "wtf/CurrentTime.h"
@@ -182,6 +182,11 @@ void Resource::load(ResourceFetcher* fetcher, const ResourceLoaderOptions& optio
         m_fragmentIdentifierForRequest = String();
     }
     m_status = Pending;
+    if (m_loader) {
+        RELEASE_ASSERT(m_options.synchronousPolicy == RequestSynchronously);
+        m_loader->changeToSynchronous();
+        return;
+    }
     m_loader = ResourceLoader::create(fetcher, this, request, options);
     m_loader->start();
 }
@@ -198,6 +203,7 @@ void Resource::checkNotify()
 
 void Resource::appendData(const char* data, int length)
 {
+    TRACE_EVENT0("webkit", "Resource::appendData");
     ASSERT(!m_resourceToRevalidate);
     ASSERT(!errorOccurred());
     if (m_options.dataBufferingPolicy == DoNotBufferData)
@@ -885,5 +891,40 @@ void Resource::ResourceCallback::timerFired(Timer<ResourceCallback>*)
         resources[i]->finishPendingClients();
 }
 
+#if !LOG_DISABLED
+const char* ResourceTypeName(Resource::Type type)
+{
+    switch (type) {
+    case Resource::MainResource:
+        return "MainResource";
+    case Resource::Image:
+        return "Image";
+    case Resource::CSSStyleSheet:
+        return "CSSStyleSheet";
+    case Resource::Script:
+        return "Script";
+    case Resource::Font:
+        return "Font";
+    case Resource::Raw:
+        return "Raw";
+    case Resource::SVGDocument:
+        return "SVGDocument";
+    case Resource::XSLStyleSheet:
+        return "XSLStyleSheet";
+    case Resource::LinkPrefetch:
+        return "LinkPrefetch";
+    case Resource::LinkSubresource:
+        return "LinkSubresource";
+    case Resource::TextTrack:
+        return "TextTrack";
+    case Resource::Shader:
+        return "Shader";
+    case Resource::ImportResource:
+        return "ImportResource";
+    }
+    ASSERT_NOT_REACHED();
+    return "Unknown";
 }
+#endif // !LOG_DISABLED
 
+}

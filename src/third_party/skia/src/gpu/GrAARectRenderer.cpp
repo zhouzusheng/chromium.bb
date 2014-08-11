@@ -8,8 +8,10 @@
 #include "GrAARectRenderer.h"
 #include "GrGpu.h"
 #include "gl/GrGLEffect.h"
+#include "gl/GrGLVertexEffect.h"
 #include "GrTBackendEffectFactory.h"
 #include "SkColorPriv.h"
+#include "effects/GrVertexEffect.h"
 
 SK_DEFINE_INST_COUNT(GrAARectRenderer)
 
@@ -17,7 +19,7 @@ SK_DEFINE_INST_COUNT(GrAARectRenderer)
 class GrGLAlignedRectEffect;
 
 // Axis Aligned special case
-class GrAlignedRectEffect : public GrEffect {
+class GrAlignedRectEffect : public GrVertexEffect {
 public:
     static GrEffectRef* Create() {
         GR_CREATE_STATIC_EFFECT(gAlignedRectEffect, GrAlignedRectEffect, ());
@@ -38,30 +40,26 @@ public:
         return GrTBackendEffectFactory<GrAlignedRectEffect>::getInstance();
     }
 
-    class GLEffect : public GrGLEffect {
+    class GLEffect : public GrGLVertexEffect {
     public:
         GLEffect(const GrBackendEffectFactory& factory, const GrDrawEffect&)
         : INHERITED (factory) {}
 
-        virtual bool requiresVertexShader(const GrDrawEffect&) const SK_OVERRIDE { return true; }
-
-        virtual void emitCode(GrGLShaderBuilder* builder,
+        virtual void emitCode(GrGLFullShaderBuilder* builder,
                               const GrDrawEffect& drawEffect,
                               EffectKey key,
                               const char* outputColor,
                               const char* inputColor,
+                              const TransformedCoordsArray&,
                               const TextureSamplerArray& samplers) SK_OVERRIDE {
-            GrGLShaderBuilder::VertexBuilder* vertexBuilder = builder->getVertexBuilder();
-            SkASSERT(NULL != vertexBuilder);
-
             // setup the varying for the Axis aligned rect effect
             //      xy -> interpolated offset
             //      zw -> w/2+0.5, h/2+0.5
             const char *vsRectName, *fsRectName;
-            vertexBuilder->addVarying(kVec4f_GrSLType, "Rect", &vsRectName, &fsRectName);
+            builder->addVarying(kVec4f_GrSLType, "Rect", &vsRectName, &fsRectName);
             const SkString* attr0Name =
-                vertexBuilder->getEffectAttributeName(drawEffect.getVertexAttribIndices()[0]);
-            vertexBuilder->vsCodeAppendf("\t%s = %s;\n", vsRectName, attr0Name->c_str());
+                builder->getEffectAttributeName(drawEffect.getVertexAttribIndices()[0]);
+            builder->vsCodeAppendf("\t%s = %s;\n", vsRectName, attr0Name->c_str());
 
             // TODO: compute all these offsets, spans, and scales in the VS
             builder->fsCodeAppendf("\tfloat insetW = min(1.0, %s.z) - 0.5;\n", fsRectName);
@@ -86,9 +84,9 @@ public:
                 "\tcoverage = coverage*scaleH*clamp((%s.w-abs(%s.y))/spanH, 0.0, 1.0);\n",
                 fsRectName, fsRectName);
 
-            SkString modulate;
-            GrGLSLModulatef<4>(&modulate, inputColor, "coverage");
-            builder->fsCodeAppendf("\t%s = %s;\n", outputColor, modulate.c_str());
+
+            builder->fsCodeAppendf("\t%s = %s;\n", outputColor,
+                                   (GrGLSLExpr4(inputColor) * GrGLSLExpr1("coverage")).c_str());
         }
 
         static inline EffectKey GenKey(const GrDrawEffect& drawEffect, const GrGLCaps&) {
@@ -98,12 +96,12 @@ public:
         virtual void setData(const GrGLUniformManager& uman, const GrDrawEffect&) SK_OVERRIDE {}
 
     private:
-        typedef GrGLEffect INHERITED;
+        typedef GrGLVertexEffect INHERITED;
     };
 
 
 private:
-    GrAlignedRectEffect() : GrEffect() {
+    GrAlignedRectEffect() : GrVertexEffect() {
         this->addVertexAttrib(kVec4f_GrSLType);
     }
 
@@ -111,7 +109,7 @@ private:
 
     GR_DECLARE_EFFECT_TEST;
 
-    typedef GrEffect INHERITED;
+    typedef GrVertexEffect INHERITED;
 };
 
 
@@ -139,7 +137,7 @@ class GrGLRectEffect;
  * The munged width and height are stored in a vec2 varying ("WidthHeight")
  * with the width in x and the height in y.
  */
-class GrRectEffect : public GrEffect {
+class GrRectEffect : public GrVertexEffect {
 public:
     static GrEffectRef* Create() {
         GR_CREATE_STATIC_EFFECT(gRectEffect, GrRectEffect, ());
@@ -160,38 +158,34 @@ public:
         return GrTBackendEffectFactory<GrRectEffect>::getInstance();
     }
 
-    class GLEffect : public GrGLEffect {
+    class GLEffect : public GrGLVertexEffect {
     public:
         GLEffect(const GrBackendEffectFactory& factory, const GrDrawEffect&)
         : INHERITED (factory) {}
 
-        virtual bool requiresVertexShader(const GrDrawEffect&) const SK_OVERRIDE { return true; }
-
-        virtual void emitCode(GrGLShaderBuilder* builder,
+        virtual void emitCode(GrGLFullShaderBuilder* builder,
                               const GrDrawEffect& drawEffect,
                               EffectKey key,
                               const char* outputColor,
                               const char* inputColor,
+                              const TransformedCoordsArray&,
                               const TextureSamplerArray& samplers) SK_OVERRIDE {
-            GrGLShaderBuilder::VertexBuilder* vertexBuilder = builder->getVertexBuilder();
-            SkASSERT(NULL != vertexBuilder);
-
             // setup the varying for the center point and the unit vector
             // that points down the height of the rect
             const char *vsRectEdgeName, *fsRectEdgeName;
-            vertexBuilder->addVarying(kVec4f_GrSLType, "RectEdge",
-                                      &vsRectEdgeName, &fsRectEdgeName);
+            builder->addVarying(kVec4f_GrSLType, "RectEdge",
+                                &vsRectEdgeName, &fsRectEdgeName);
             const SkString* attr0Name =
-                vertexBuilder->getEffectAttributeName(drawEffect.getVertexAttribIndices()[0]);
-            vertexBuilder->vsCodeAppendf("\t%s = %s;\n", vsRectEdgeName, attr0Name->c_str());
+                builder->getEffectAttributeName(drawEffect.getVertexAttribIndices()[0]);
+            builder->vsCodeAppendf("\t%s = %s;\n", vsRectEdgeName, attr0Name->c_str());
 
             // setup the varying for width/2+.5 and height/2+.5
             const char *vsWidthHeightName, *fsWidthHeightName;
-            vertexBuilder->addVarying(kVec2f_GrSLType, "WidthHeight",
-                                      &vsWidthHeightName, &fsWidthHeightName);
+            builder->addVarying(kVec2f_GrSLType, "WidthHeight",
+                                &vsWidthHeightName, &fsWidthHeightName);
             const SkString* attr1Name =
-                vertexBuilder->getEffectAttributeName(drawEffect.getVertexAttribIndices()[1]);
-            vertexBuilder->vsCodeAppendf("\t%s = %s;\n", vsWidthHeightName, attr1Name->c_str());
+                builder->getEffectAttributeName(drawEffect.getVertexAttribIndices()[1]);
+            builder->vsCodeAppendf("\t%s = %s;\n", vsWidthHeightName, attr1Name->c_str());
 
             // TODO: compute all these offsets, spans, and scales in the VS
             builder->fsCodeAppendf("\tfloat insetW = min(1.0, %s.x) - 0.5;\n", fsWidthHeightName);
@@ -223,9 +217,9 @@ public:
                     "\tcoverage = coverage*scaleH*clamp((%s.y-perpDot)/spanH, 0.0, 1.0);\n",
                     fsWidthHeightName);
 
-            SkString modulate;
-            GrGLSLModulatef<4>(&modulate, inputColor, "coverage");
-            builder->fsCodeAppendf("\t%s = %s;\n", outputColor, modulate.c_str());
+
+            builder->fsCodeAppendf("\t%s = %s;\n", outputColor,
+                                   (GrGLSLExpr4(inputColor) * GrGLSLExpr1("coverage")).c_str());
         }
 
         static inline EffectKey GenKey(const GrDrawEffect& drawEffect, const GrGLCaps&) {
@@ -235,12 +229,12 @@ public:
         virtual void setData(const GrGLUniformManager& uman, const GrDrawEffect&) SK_OVERRIDE {}
 
     private:
-        typedef GrGLEffect INHERITED;
+        typedef GrGLVertexEffect INHERITED;
     };
 
 
 private:
-    GrRectEffect() : GrEffect() {
+    GrRectEffect() : GrVertexEffect() {
         this->addVertexAttrib(kVec4f_GrSLType);
         this->addVertexAttrib(kVec2f_GrSLType);
         this->setWillReadFragmentPosition();
@@ -250,7 +244,7 @@ private:
 
     GR_DECLARE_EFFECT_TEST;
 
-    typedef GrEffect INHERITED;
+    typedef GrVertexEffect INHERITED;
 };
 
 

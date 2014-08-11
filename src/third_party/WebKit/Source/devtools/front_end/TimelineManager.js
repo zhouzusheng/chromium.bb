@@ -48,16 +48,23 @@ WebInspector.TimelineManager.EventTypes = {
 
 WebInspector.TimelineManager.prototype = {
     /**
+     * @return {boolean}
+     */
+    isStarted: function()
+    {
+        return this._dispatcher.isStarted();
+    },
+
+    /**
      * @param {number=} maxCallStackDepth
      * @param {boolean=} includeDomCounters
-     * @param {boolean=} includeNativeMemoryStatistics
      * @param {function(?Protocol.Error)=} callback
      */
-    start: function(maxCallStackDepth, includeDomCounters, includeNativeMemoryStatistics, callback)
+    start: function(maxCallStackDepth, includeDomCounters, callback)
     {
         this._enablementCount++;
         if (this._enablementCount === 1)
-            TimelineAgent.start(maxCallStackDepth, /* bufferEvents */false, includeDomCounters, includeNativeMemoryStatistics, callback);
+            TimelineAgent.start(maxCallStackDepth, /* bufferEvents */false, includeDomCounters, callback);
         else if (callback)
             callback(null);
     },
@@ -101,6 +108,14 @@ WebInspector.TimelineDispatcher.prototype = {
     },
 
     /**
+     * @return {boolean}
+     */
+    isStarted: function()
+    {
+        return !!this._started;
+    },
+
+    /**
      * @param {boolean=} consoleTimeline
      */
     started: function(consoleTimeline)
@@ -109,6 +124,7 @@ WebInspector.TimelineDispatcher.prototype = {
             // Wake up timeline panel module.
             WebInspector.panel("timeline");
         }
+        this._started = true;
         this._manager.dispatchEventToListeners(WebInspector.TimelineManager.EventTypes.TimelineStarted, consoleTimeline);
     },
 
@@ -117,6 +133,7 @@ WebInspector.TimelineDispatcher.prototype = {
      */
     stopped: function(consoleTimeline)
     {
+        this._started = false;
         this._manager.dispatchEventToListeners(WebInspector.TimelineManager.EventTypes.TimelineStopped, consoleTimeline);
     }
 }

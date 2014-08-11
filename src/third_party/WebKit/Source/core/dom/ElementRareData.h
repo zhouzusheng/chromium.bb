@@ -30,7 +30,6 @@
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/html/ClassList.h"
 #include "core/html/ime/InputMethodContext.h"
-#include "core/inspector/InspectorInstrumentation.h"
 #include "core/rendering/style/StyleInheritedData.h"
 #include "wtf/OwnPtr.h"
 
@@ -98,11 +97,11 @@ public:
 
     void clearShadow() { m_shadow = nullptr; }
     ElementShadow* shadow() const { return m_shadow.get(); }
-    ElementShadow* ensureShadow()
+    ElementShadow& ensureShadow()
     {
         if (!m_shadow)
             m_shadow = ElementShadow::create();
-        return m_shadow.get();
+        return *m_shadow;
     }
 
     NamedNodeMap* attributeMap() const { return m_attributeMap.get(); }
@@ -139,12 +138,15 @@ public:
     bool hasPendingResources() const { return m_hasPendingResources; }
     void setHasPendingResources(bool has) { m_hasPendingResources = has; }
 
+    bool hasInputMethodContext() const { return m_inputMethodContext; }
     InputMethodContext* ensureInputMethodContext(HTMLElement* element)
     {
         if (!m_inputMethodContext)
             m_inputMethodContext = InputMethodContext::create(element);
         return m_inputMethodContext.get();
     }
+
+    bool hasPseudoElements() const;
 
 private:
     short m_tabIndex;
@@ -187,7 +189,6 @@ private:
     RefPtr<PseudoElement> m_backdrop;
 
     ElementRareData(RenderObject*);
-    void releasePseudoElement(PseudoElement*);
 };
 
 inline IntSize defaultMinimumSizeForResizing()
@@ -228,26 +229,32 @@ inline ElementRareData::~ElementRareData()
     ASSERT(!m_backdrop);
 }
 
-inline void ElementRareData::setPseudoElement(PseudoId pseudoId, PassRefPtr<PseudoElement> prpElement)
+inline bool ElementRareData::hasPseudoElements() const
 {
-    RefPtr<PseudoElement> element = prpElement;
+    return m_generatedBefore || m_generatedAfter || m_backdrop;
+}
+
+inline void ElementRareData::setPseudoElement(PseudoId pseudoId, PassRefPtr<PseudoElement> element)
+{
     switch (pseudoId) {
     case BEFORE:
-        releasePseudoElement(m_generatedBefore.get());
+        if (m_generatedBefore)
+            m_generatedBefore->dispose();
         m_generatedBefore = element;
         break;
     case AFTER:
-        releasePseudoElement(m_generatedAfter.get());
+        if (m_generatedAfter)
+            m_generatedAfter->dispose();
         m_generatedAfter = element;
         break;
     case BACKDROP:
-        releasePseudoElement(m_backdrop.get());
+        if (m_backdrop)
+            m_backdrop->dispose();
         m_backdrop = element;
         break;
     default:
         ASSERT_NOT_REACHED();
     }
-    InspectorInstrumentation::pseudoElementCreated(element.get());
 }
 
 inline PseudoElement* ElementRareData::pseudoElement(PseudoId pseudoId) const
@@ -262,23 +269,6 @@ inline PseudoElement* ElementRareData::pseudoElement(PseudoId pseudoId) const
     default:
         return 0;
     }
-}
-
-inline void ElementRareData::releasePseudoElement(PseudoElement* element)
-{
-    if (!element)
-        return;
-
-    InspectorInstrumentation::pseudoElementDestroyed(element);
-
-    if (element->attached())
-        element->detach();
-
-    ASSERT(!element->nextSibling());
-    ASSERT(!element->previousSibling());
-
-    element->document().removeFromTopLayer(element);
-    element->setParentOrShadowHostNode(0);
 }
 
 inline void ElementRareData::resetStyleState()

@@ -35,11 +35,11 @@
 #include "core/editing/InsertLineBreakCommand.h"
 #include "core/editing/InsertParagraphSeparatorCommand.h"
 #include "core/editing/InsertTextCommand.h"
-#include "core/editing/SpellCheckRequester.h"
+#include "core/editing/SpellChecker.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/rendering/RenderObject.h"
 
 namespace WebCore {
@@ -154,7 +154,7 @@ void TypingCommand::insertText(Document& document, const String& text, Options o
     ASSERT(frame);
 
     if (!text.isEmpty())
-        document.frame()->editor().updateMarkersForWordsAffectedByEditing(isSpaceOrNewline(text[0]));
+        document.frame()->spellChecker().updateMarkersForWordsAffectedByEditing(isSpaceOrNewline(text[0]));
 
     insertText(document, text, frame->selection().selection(), options, composition);
 }
@@ -285,10 +285,10 @@ void TypingCommand::markMisspellingsAfterTyping(ETypingCommand commandType)
     if (!frame)
         return;
 
-    if (!frame->editor().isContinuousSpellCheckingEnabled())
+    if (!frame->spellChecker().isContinuousSpellCheckingEnabled())
         return;
 
-    frame->editor().spellCheckRequester().cancelCheck();
+    frame->spellChecker().cancelCheck();
 
     if (commandType != InsertText)
         return;
@@ -303,7 +303,7 @@ void TypingCommand::markMisspellingsAfterTyping(ETypingCommand commandType)
         VisiblePosition p1 = startOfWord(previous, LeftWordIfOnBoundary);
         VisiblePosition p2 = startOfWord(start, LeftWordIfOnBoundary);
         if (p1 != p2 && previous.characterAfter() != '\'' && 0 > comparePositions(p1.deepEquivalent(), p2.deepEquivalent()))
-            frame->editor().markMisspellingsAfterTypingToWord(p1, endingSelection());
+            frame->spellChecker().markMisspellingsAfterTypingToWord(p1, endingSelection());
     }
 }
 
@@ -400,7 +400,7 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
     if (!frame)
         return;
 
-    frame->editor().updateMarkersForWordsAffectedByEditing(false);
+    frame->spellChecker().updateMarkersForWordsAffectedByEditing(false);
 
     VisibleSelection selectionToDelete;
     VisibleSelection selectionAfterUndo;
@@ -481,15 +481,15 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
     if (selectionToDelete.isNone())
         return;
 
-    if (selectionToDelete.isCaret() || !frame->selection().shouldDeleteSelection(selectionToDelete))
+    if (selectionToDelete.isCaret())
         return;
 
     if (killRing)
         frame->editor().addToKillRing(selectionToDelete.toNormalizedRange().get(), false);
-    // Make undo select everything that has been deleted, unless an undo will undo more than just this deletion.
+    // On Mac, make undo select everything that has been deleted, unless an undo will undo more than just this deletion.
     // FIXME: This behaves like TextEdit except for the case where you open with text insertion and then delete
     // more text than you insert.  In that case all of the text that was around originally should be selected.
-    if (m_openedByBackwardDelete)
+    if (frame->editor().behavior().shouldUndoOfDeleteSelectText() && m_openedByBackwardDelete)
         setStartingSelection(selectionAfterUndo);
     CompositeEditCommand::deleteSelection(selectionToDelete, m_smartDelete);
     setSmartDelete(false);
@@ -502,7 +502,7 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
     if (!frame)
         return;
 
-    frame->editor().updateMarkersForWordsAffectedByEditing(false);
+    frame->spellChecker().updateMarkersForWordsAffectedByEditing(false);
 
     VisibleSelection selectionToDelete;
     VisibleSelection selectionAfterUndo;
@@ -574,13 +574,14 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
     if (selectionToDelete.isNone())
         return;
 
-    if (selectionToDelete.isCaret() || !frame->selection().shouldDeleteSelection(selectionToDelete))
+    if (selectionToDelete.isCaret())
         return;
 
     if (killRing)
         frame->editor().addToKillRing(selectionToDelete.toNormalizedRange().get(), false);
-    // make undo select what was deleted
-    setStartingSelection(selectionAfterUndo);
+    // Make undo select what was deleted on Mac alone
+    if (frame->editor().behavior().shouldUndoOfDeleteSelectText())
+        setStartingSelection(selectionAfterUndo);
     CompositeEditCommand::deleteSelection(selectionToDelete, m_smartDelete);
     setSmartDelete(false);
     typingAddedToOpenCommand(ForwardDeleteKey);

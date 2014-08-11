@@ -68,18 +68,19 @@
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
-#include "core/platform/NotImplemented.h"
 #include "core/platform/graphics/Extensions3D.h"
 #include "core/platform/graphics/ImageBuffer.h"
-#include "core/platform/graphics/IntSize.h"
 #include "core/platform/graphics/gpu/DrawingBuffer.h"
 #include "core/rendering/RenderBox.h"
+#include "platform/CheckedInt.h"
+#include "platform/NotImplemented.h"
+#include "platform/geometry/IntSize.h"
 
-#include "wtf/OwnArrayPtr.h"
-#include "wtf/PassOwnArrayPtr.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
 #include "wtf/Uint32Array.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -87,7 +88,7 @@ namespace WebCore {
 
 const double secondsBetweenRestoreAttempts = 1.0;
 const int maxGLErrorsAllowedToConsole = 256;
-const int maxGLActiveContexts = 16;
+const unsigned maxGLActiveContexts = 16;
 
 Vector<WebGLRenderingContext*>& WebGLRenderingContext::activeContexts()
 {
@@ -524,8 +525,8 @@ PassOwnPtr<WebGLRenderingContext> WebGLRenderingContext::create(HTMLCanvasElemen
 
     // The FrameLoaderClient might block creation of a new WebGL context despite the page settings; in
     // particular, if WebGL contexts were lost one or more times via the GL_ARB_robustness extension.
-    if (!frame->loader()->client()->allowWebGL(settings && settings->webGLEnabled())) {
-        canvas->dispatchEvent(WebGLContextEvent::create(eventNames().webglcontextcreationerrorEvent, false, true, "Web page was not allowed to create a WebGL context."));
+    if (!frame->loader().client()->allowWebGL(settings && settings->webGLEnabled())) {
+        canvas->dispatchEvent(WebGLContextEvent::create(EventTypeNames::webglcontextcreationerror, false, true, "Web page was not allowed to create a WebGL context."));
         return nullptr;
     }
 
@@ -540,7 +541,7 @@ PassOwnPtr<WebGLRenderingContext> WebGLRenderingContext::create(HTMLCanvasElemen
     RefPtr<GraphicsContext3D> context(GraphicsContext3D::create(attributes));
 
     if (!context || !context->makeContextCurrent()) {
-        canvas->dispatchEvent(WebGLContextEvent::create(eventNames().webglcontextcreationerrorEvent, false, true, "Could not create a WebGL context."));
+        canvas->dispatchEvent(WebGLContextEvent::create(EventTypeNames::webglcontextcreationerror, false, true, "Could not create a WebGL context."));
         return nullptr;
     }
 
@@ -552,7 +553,7 @@ PassOwnPtr<WebGLRenderingContext> WebGLRenderingContext::create(HTMLCanvasElemen
     renderingContext->suspendIfNeeded();
 
     if (renderingContext->m_drawingBuffer->isZeroSized()) {
-        canvas->dispatchEvent(WebGLContextEvent::create(eventNames().webglcontextcreationerrorEvent, false, true, "Could not create a WebGL context."));
+        canvas->dispatchEvent(WebGLContextEvent::create(EventTypeNames::webglcontextcreationerror, false, true, "Could not create a WebGL context."));
         return nullptr;
     }
 
@@ -567,7 +568,7 @@ WebGLRenderingContext::WebGLRenderingContext(HTMLCanvasElement* passedCanvas, Pa
     , m_dispatchContextLostEventTimer(this, &WebGLRenderingContext::dispatchContextLostEvent)
     , m_restoreAllowed(false)
     , m_restoreTimer(this, &WebGLRenderingContext::maybeRestoreContext)
-    , m_videoCache(4)
+    , m_generatedImageCache(4)
     , m_contextLost(false)
     , m_contextLostMode(SyntheticLostContext)
     , m_attributes(attributes)
@@ -601,8 +602,8 @@ WebGLRenderingContext::WebGLRenderingContext(HTMLCanvasElement* passedCanvas, Pa
     }
 
     // Register extensions.
-    static const char* webkitPrefix[] = { "WEBKIT_", 0, };
-    static const char* bothPrefixes[] = { "", "WEBKIT_", 0, };
+    static const char* const webkitPrefix[] = { "WEBKIT_", 0, };
+    static const char* const bothPrefixes[] = { "", "WEBKIT_", 0, };
 
     registerExtension<ANGLEInstancedArrays>(m_angleInstancedArrays);
     registerExtension<EXTTextureFilterAnisotropic>(m_extTextureFilterAnisotropic, PrefixedExtension, webkitPrefix);
@@ -617,11 +618,11 @@ WebGLRenderingContext::WebGLRenderingContext(HTMLCanvasElement* passedCanvas, Pa
     registerExtension<WebGLCompressedTexturePVRTC>(m_webglCompressedTexturePVRTC, PrefixedExtension, webkitPrefix);
     registerExtension<WebGLCompressedTextureS3TC>(m_webglCompressedTextureS3TC, PrefixedExtension, bothPrefixes);
     registerExtension<WebGLDepthTexture>(m_webglDepthTexture, PrefixedExtension, bothPrefixes);
+    registerExtension<WebGLDrawBuffers>(m_webglDrawBuffers);
     registerExtension<WebGLLoseContext>(m_webglLoseContext, ApprovedExtension, bothPrefixes);
 
     // Register draft extensions.
     registerExtension<EXTFragDepth>(m_extFragDepth, DraftExtension);
-    registerExtension<WebGLDrawBuffers>(m_webglDrawBuffers, DraftExtension);
 
     // Register privileged extensions.
     registerExtension<WebGLDebugRendererInfo>(m_webglDebugRendererInfo, WebGLDebugRendererInfoExtension);
@@ -733,7 +734,7 @@ bool WebGLRenderingContext::allowWebGLDebugRendererInfo() const
     if (allowPrivilegedExtensions())
         return true;
     Frame* frame = canvas()->document().frame();
-    return frame && frame->loader()->client()->allowWebGLDebugRendererInfo();
+    return frame && frame->loader().client()->allowWebGLDebugRendererInfo();
 }
 
 void WebGLRenderingContext::addCompressedTextureFormat(GC3Denum format)
@@ -1518,11 +1519,16 @@ void WebGLRenderingContext::copyTexSubImage2D(GC3Denum target, GC3Dint level, GC
     if (!validateSize("copyTexSubImage2D", xoffset, yoffset) || !validateSize("copyTexSubImage2D", width, height))
         return;
     // Before checking if it is in the range, check if overflow happens first.
-    if (xoffset + width < 0 || yoffset + height < 0) {
+    Checked<GC3Dint, RecordOverflow> maxX = xoffset;
+    maxX += width;
+    Checked<GC3Dint, RecordOverflow> maxY = yoffset;
+    maxY += height;
+
+    if (maxX.hasOverflowed() || maxY.hasOverflowed()) {
         synthesizeGLError(GraphicsContext3D::INVALID_VALUE, "copyTexSubImage2D", "bad dimensions");
         return;
     }
-    if (xoffset + width > tex->getWidth(target, level) || yoffset + height > tex->getHeight(target, level)) {
+    if (maxX.unsafeGet() > tex->getWidth(target, level) || maxY.unsafeGet() > tex->getHeight(target, level)) {
         synthesizeGLError(GraphicsContext3D::INVALID_VALUE, "copyTexSubImage2D", "rectangle out of range");
         return;
     }
@@ -1711,7 +1717,7 @@ void WebGLRenderingContext::deleteTexture(WebGLTexture* texture)
         m_framebufferBinding->removeAttachmentFromBoundFramebuffer(texture);
 
     // If the deleted was bound to the the current maximum index, trace backwards to find the new max texture index
-    if (m_onePlusMaxNonDefaultTextureUnit == maxBoundTextureIndex + 1) {
+    if (m_onePlusMaxNonDefaultTextureUnit == static_cast<unsigned long>(maxBoundTextureIndex + 1)) {
         findNewMaxNonDefaultTextureUnit();
     }
 }
@@ -2165,9 +2171,9 @@ GC3Denum WebGLRenderingContext::getError()
 
 bool WebGLRenderingContext::ExtensionTracker::matchesNameWithPrefixes(const String& name) const
 {
-    static const char* unprefixed[] = { "", 0, };
+    static const char* const unprefixed[] = { "", 0, };
 
-    const char** prefixes = m_prefixes ? m_prefixes : unprefixed;
+    const char* const* prefixes = m_prefixes ? m_prefixes : unprefixed;
     for (; *prefixes; ++prefixes) {
         String prefixedName = String(*prefixes) + extensionName();
         if (equalIgnoringCase(prefixedName, name)) {
@@ -3380,6 +3386,22 @@ bool WebGLRenderingContext::validateTexFunc(const char* functionName, TexFuncVal
     return true;
 }
 
+PassRefPtr<Image> WebGLRenderingContext::drawImageIntoBuffer(Image* image, int width, int height, int deviceScaleFactor)
+{
+    IntSize size(width, height);
+    size.scale(deviceScaleFactor);
+    ImageBuffer* buf = m_generatedImageCache.imageBuffer(size);
+    if (!buf) {
+        synthesizeGLError(GraphicsContext3D::OUT_OF_MEMORY, "texImage2D", "out of memory");
+        return 0;
+    }
+
+    IntRect srcRect(IntPoint(), image->size());
+    IntRect destRect(0, 0, size.width(), size.height());
+    buf->context()->drawImage(image, destRect, srcRect);
+    return buf->copyImage(ImageBuffer::fastCopyImageMode());
+}
+
 void WebGLRenderingContext::texImage2D(GC3Denum target, GC3Dint level, GC3Denum internalformat,
     GC3Dsizei width, GC3Dsizei height, GC3Dint border,
     GC3Denum format, GC3Denum type, ArrayBufferView* pixels, ExceptionState& es)
@@ -3436,11 +3458,15 @@ void WebGLRenderingContext::texImage2D(GC3Denum target, GC3Dint level, GC3Denum 
 {
     if (isContextLost() || !validateHTMLImageElement("texImage2D", image, es))
         return;
-    Image* imageForRender = image->cachedImage()->imageForRenderer(image->renderer());
+
+    RefPtr<Image> imageForRender = image->cachedImage()->imageForRenderer(image->renderer());
+    if (imageForRender->isSVGImage())
+        imageForRender = drawImageIntoBuffer(imageForRender.get(), image->width(), image->height(), canvas()->deviceScaleFactor());
+
     if (!imageForRender || !validateTexFunc("texImage2D", NotTexSubImage2D, SourceHTMLImageElement, target, level, internalformat, imageForRender->width(), imageForRender->height(), 0, format, type, 0, 0))
         return;
 
-    texImage2DImpl(target, level, internalformat, format, type, imageForRender, GraphicsContext3D::HtmlDomImage, m_unpackFlipY, m_unpackPremultiplyAlpha, es);
+    texImage2DImpl(target, level, internalformat, format, type, imageForRender.get(), GraphicsContext3D::HtmlDomImage, m_unpackFlipY, m_unpackPremultiplyAlpha, es);
 }
 
 void WebGLRenderingContext::texImage2D(GC3Denum target, GC3Dint level, GC3Denum internalformat,
@@ -3453,10 +3479,20 @@ void WebGLRenderingContext::texImage2D(GC3Denum target, GC3Dint level, GC3Denum 
     // If possible, copy from the canvas element directly to the texture
     // via the GPU, without a read-back to system memory.
     if (GraphicsContext3D::TEXTURE_2D == target && texture) {
-        ImageBuffer* buffer = canvas->buffer();
-        if (buffer && buffer->copyToPlatformTexture(*m_context.get(), texture->object(), internalformat, type, level, m_unpackPremultiplyAlpha, m_unpackFlipY)) {
-            texture->setLevelInfo(target, level, internalformat, canvas->width(), canvas->height(), type);
-            return;
+        if (!canvas->is3D()) {
+            ImageBuffer* buffer = canvas->buffer();
+            if (buffer && buffer->copyToPlatformTexture(*m_context.get(), texture->object(), internalformat, type,
+                level, m_unpackPremultiplyAlpha, m_unpackFlipY)) {
+                texture->setLevelInfo(target, level, internalformat, canvas->width(), canvas->height(), type);
+                return;
+            }
+        } else {
+            WebGLRenderingContext* gl = static_cast<WebGLRenderingContext*>(canvas->renderingContext());
+            if (gl && gl->m_drawingBuffer->copyToPlatformTexture(*m_context.get(), texture->object(), internalformat, type,
+                level, m_unpackPremultiplyAlpha, m_unpackFlipY)) {
+                texture->setLevelInfo(target, level, internalformat, canvas->width(), canvas->height(), type);
+                return;
+            }
         }
     }
 
@@ -3470,7 +3506,7 @@ void WebGLRenderingContext::texImage2D(GC3Denum target, GC3Dint level, GC3Denum 
 PassRefPtr<Image> WebGLRenderingContext::videoFrameToImage(HTMLVideoElement* video, BackingStoreCopy backingStoreCopy)
 {
     IntSize size(video->videoWidth(), video->videoHeight());
-    ImageBuffer* buf = m_videoCache.imageBuffer(size);
+    ImageBuffer* buf = m_generatedImageCache.imageBuffer(size);
     if (!buf) {
         synthesizeGLError(GraphicsContext3D::OUT_OF_MEMORY, "texImage2D", "out of memory");
         return 0;
@@ -3661,11 +3697,15 @@ void WebGLRenderingContext::texSubImage2D(GC3Denum target, GC3Dint level, GC3Din
 {
     if (isContextLost() || !validateHTMLImageElement("texSubImage2D", image, es))
         return;
-    Image* imageForRender = image->cachedImage()->imageForRenderer(image->renderer());
+
+    RefPtr<Image> imageForRender = image->cachedImage()->imageForRenderer(image->renderer());
+    if (imageForRender->isSVGImage())
+        imageForRender = drawImageIntoBuffer(imageForRender.get(), image->width(), image->height(), canvas()->deviceScaleFactor());
+
     if (!imageForRender || !validateTexFunc("texSubImage2D", TexSubImage2D, SourceHTMLImageElement, target, level, format, imageForRender->width(), imageForRender->height(), 0, format, type, xoffset, yoffset))
         return;
 
-    texSubImage2DImpl(target, level, xoffset, yoffset, format, type, imageForRender, GraphicsContext3D::HtmlDomImage, m_unpackFlipY, m_unpackPremultiplyAlpha, es);
+    texSubImage2DImpl(target, level, xoffset, yoffset, format, type, imageForRender.get(), GraphicsContext3D::HtmlDomImage, m_unpackFlipY, m_unpackPremultiplyAlpha, es);
 }
 
 void WebGLRenderingContext::texSubImage2D(GC3Denum target, GC3Dint level, GC3Dint xoffset, GC3Dint yoffset,
@@ -4145,7 +4185,7 @@ void WebGLRenderingContext::loseContextImpl(WebGLRenderingContext::LostContextMo
         // Inform the embedder that a lost context was received. In response, the embedder might
         // decide to take action such as asking the user for permission to use WebGL again.
         if (Frame* frame = canvas()->document().frame())
-            frame->loader()->client()->didLoseWebGLContext(m_context->extensions()->getGraphicsResetStatusARB());
+            frame->loader().client()->didLoseWebGLContext(m_context->extensions()->getGraphicsResetStatusARB());
     }
 
     // Make absolutely sure we do not refer to an already-deleted texture or framebuffer.
@@ -5350,7 +5390,7 @@ void WebGLRenderingContext::vertexAttribfvImpl(const char* functionName, GC3Duin
 
 void WebGLRenderingContext::dispatchContextLostEvent(Timer<WebGLRenderingContext>*)
 {
-    RefPtr<WebGLContextEvent> event = WebGLContextEvent::create(eventNames().webglcontextlostEvent, false, true, "");
+    RefPtr<WebGLContextEvent> event = WebGLContextEvent::create(EventTypeNames::webglcontextlost, false, true, "");
     canvas()->dispatchEvent(event);
     m_restoreAllowed = event->defaultPrevented();
     deactivateContext(this, m_contextLostMode != RealLostContext && m_restoreAllowed);
@@ -5377,7 +5417,7 @@ void WebGLRenderingContext::maybeRestoreContext(Timer<WebGLRenderingContext>*)
 
     Settings* settings = frame->settings();
 
-    if (!frame->loader()->client()->allowWebGL(settings && settings->webGLEnabled()))
+    if (!frame->loader().client()->allowWebGL(settings && settings->webGLEnabled()))
         return;
 
     // Reset the context attributes back to the requested attributes and re-apply restrictions
@@ -5413,7 +5453,7 @@ void WebGLRenderingContext::maybeRestoreContext(Timer<WebGLRenderingContext>*)
 
     setupFlags();
     initializeNewContext();
-    canvas()->dispatchEvent(WebGLContextEvent::create(eventNames().webglcontextrestoredEvent, false, true, ""));
+    canvas()->dispatchEvent(WebGLContextEvent::create(EventTypeNames::webglcontextrestored, false, true, ""));
 }
 
 String WebGLRenderingContext::ensureNotNull(const String& text) const

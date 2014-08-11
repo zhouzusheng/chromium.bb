@@ -31,7 +31,7 @@
 #ifndef TimelineRecordFactory_h
 #define TimelineRecordFactory_h
 
-#include "core/platform/JSONValues.h"
+#include "platform/JSONValues.h"
 #include "weborigin/KURL.h"
 #include "wtf/Forward.h"
 #include "wtf/text/WTFString.h"
@@ -90,9 +90,13 @@ namespace WebCore {
 
         static PassRefPtr<JSONObject> createAnimationFrameData(int callbackId);
 
+        static PassRefPtr<JSONObject> createNodeData(long long nodeId);
+
         static PassRefPtr<JSONObject> createLayerData(long long layerRootNodeId);
 
         static PassRefPtr<JSONObject> createPaintData(const FloatQuad&, long long layerRootNodeId);
+
+        static PassRefPtr<JSONObject> createFrameData(int frameId);
 
         static void appendLayoutRoot(JSONObject* data, const FloatQuad&, long long rootNodeId);
 

@@ -26,10 +26,10 @@
 #ifndef LinkHighlight_h
 #define LinkHighlight_h
 
-#include "core/platform/graphics/FloatPoint.h"
 #include "core/platform/graphics/GraphicsLayer.h"
-#include "core/platform/graphics/IntPoint.h"
 #include "core/platform/graphics/Path.h"
+#include "platform/geometry/FloatPoint.h"
+#include "platform/geometry/IntPoint.h"
 #include "public/platform/WebAnimationDelegate.h"
 #include "public/platform/WebContentLayer.h"
 #include "public/platform/WebContentLayerClient.h"
@@ -87,7 +87,6 @@ private:
     WebCore::Path m_path;
 
     RefPtr<WebCore::Node> m_node;
-    OwnPtr<WebAnimation> m_animation;
     WebViewImpl* m_owningWebViewImpl;
     WebCore::GraphicsLayer* m_currentGraphicsLayer;
 

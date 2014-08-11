@@ -40,8 +40,8 @@
 #include "core/dom/NodeTraversal.h"
 #include "core/html/HTMLHtmlElement.h"
 #include "core/page/EventHandler.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderBlock.h"
 
@@ -97,7 +97,7 @@ void findGoodTouchTargets(const IntRect& touchBox, Frame* mainFrame, Vector<IntR
     IntPoint touchPoint = touchBox.center();
     IntPoint contentsPoint = mainFrame->view()->windowToContents(touchPoint);
 
-    HitTestResult result = mainFrame->eventHandler()->hitTestResultAtPoint(contentsPoint, HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::DisallowShadowContent, IntSize(touchPointPadding, touchPointPadding));
+    HitTestResult result = mainFrame->eventHandler().hitTestResultAtPoint(contentsPoint, HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent, IntSize(touchPointPadding, touchPointPadding));
     const ListHashSet<RefPtr<Node> >& hitResults = result.rectBasedTestResult();
 
     // Blacklist nodes that are container of disambiguated nodes.

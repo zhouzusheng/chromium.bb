@@ -23,10 +23,10 @@
 #include "core/platform/graphics/WidthIterator.h"
 
 #include "core/platform/graphics/Font.h"
-#include "core/platform/graphics/GlyphBuffer.h"
-#include "core/platform/graphics/Latin1TextIterator.h"
 #include "core/platform/graphics/SimpleFontData.h"
-#include "core/platform/graphics/SurrogatePairAwareTextIterator.h"
+#include "platform/fonts/GlyphBuffer.h"
+#include "platform/fonts/Latin1TextIterator.h"
+#include "platform/text/SurrogatePairAwareTextIterator.h"
 #include "wtf/MathExtras.h"
 
 using namespace WTF;

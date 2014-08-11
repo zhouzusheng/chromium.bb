@@ -38,9 +38,6 @@ class HTMLTrackElement FINAL : public HTMLElement, public TextTrackClient {
 public:
     static PassRefPtr<HTMLTrackElement> create(const QualifiedName&, Document&);
 
-    KURL src() const;
-    void setSrc(const String&);
-
     String kind();
     void setKind(const String&);
 
@@ -62,7 +59,7 @@ public:
     void scheduleLoad();
 
     enum LoadStatus { Failure, Success };
-    virtual void didCompleteLoad(LoadableTextTrack*, LoadStatus);
+    void didCompleteLoad(LoadStatus);
 
     const AtomicString& mediaElementCrossOriginAttribute() const;
 
@@ -82,25 +79,21 @@ private:
     HTMLMediaElement* mediaElement() const;
 
     // TextTrackClient
-    virtual void textTrackModeChanged(TextTrack*);
-    virtual void textTrackKindChanged(TextTrack*);
-    virtual void textTrackAddCues(TextTrack*, const TextTrackCueList*);
-    virtual void textTrackRemoveCues(TextTrack*, const TextTrackCueList*);
-    virtual void textTrackAddCue(TextTrack*, PassRefPtr<TextTrackCue>);
-    virtual void textTrackRemoveCue(TextTrack*, PassRefPtr<TextTrackCue>);
+    virtual void textTrackModeChanged(TextTrack*) OVERRIDE;
+    virtual void textTrackKindChanged(TextTrack*) OVERRIDE;
+    virtual void textTrackAddCues(TextTrack*, const TextTrackCueList*) OVERRIDE;
+    virtual void textTrackRemoveCues(TextTrack*, const TextTrackCueList*) OVERRIDE;
+    virtual void textTrackAddCue(TextTrack*, PassRefPtr<TextTrackCue>) OVERRIDE;
+    virtual void textTrackRemoveCue(TextTrack*, PassRefPtr<TextTrackCue>) OVERRIDE;
 
     LoadableTextTrack* ensureTrack();
-    virtual bool canLoadUrl(const KURL&);
+    bool canLoadUrl(const KURL&);
 
     RefPtr<LoadableTextTrack> m_track;
     Timer<HTMLTrackElement> m_loadTimer;
 };
 
-inline HTMLTrackElement* toHTMLTrackElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::trackTag));
-    return static_cast<HTMLTrackElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLTrackElement, hasTagName(HTMLNames::trackTag));
 
 }
 

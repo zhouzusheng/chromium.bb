@@ -32,11 +32,11 @@
 #include "core/css/MediaList.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/ContextFeatures.h"
-#include "core/dom/CustomElementRegistrationContext.h"
 #include "core/dom/DocumentInit.h"
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/custom/CustomElementRegistrationContext.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/HTMLViewSourceDocument.h"
@@ -45,14 +45,14 @@
 #include "core/html/PluginDocument.h"
 #include "core/html/TextDocument.h"
 #include "core/loader/FrameLoader.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/platform/ContentType.h"
 #include "core/platform/MIMETypeRegistry.h"
 #include "core/platform/graphics/Image.h"
 #include "core/platform/graphics/MediaPlayer.h"
 #include "core/plugins/PluginData.h"
 #include "core/svg/SVGDocument.h"
+#include "platform/ContentType.h"
 #include "weborigin/SecurityOrigin.h"
 #include "wtf/StdLibExtras.h"
 
@@ -206,7 +206,7 @@ PassRefPtr<Document> DOMImplementation::createDocument(const String& namespaceUR
         doc = Document::create(init);
     }
 
-    doc->setSecurityOrigin(m_document->securityOrigin());
+    doc->setSecurityOrigin(m_document->securityOrigin()->isolatedCopy());
     doc->setContextFeatures(m_document->contextFeatures());
 
     RefPtr<Node> documentElement;
@@ -314,50 +314,55 @@ PassRefPtr<HTMLDocument> DOMImplementation::createHTMLDocument(const String& tit
     d->write("<!doctype html><html><body></body></html>");
     if (!title.isNull())
         d->setTitle(title);
-    d->setSecurityOrigin(m_document->securityOrigin());
+    d->setSecurityOrigin(m_document->securityOrigin()->isolatedCopy());
     d->setContextFeatures(m_document->contextFeatures());
     return d.release();
 }
 
 PassRefPtr<Document> DOMImplementation::createDocument(const String& type, Frame* frame, const KURL& url, bool inViewSourceMode)
 {
+    return createDocument(type, DocumentInit(url, frame), inViewSourceMode);
+}
+
+PassRefPtr<Document> DOMImplementation::createDocument(const String& type, const DocumentInit& init, bool inViewSourceMode)
+{
     if (inViewSourceMode)
-        return HTMLViewSourceDocument::create(DocumentInit(url, frame), type);
+        return HTMLViewSourceDocument::create(init, type);
 
     // Plugins cannot take HTML and XHTML from us, and we don't even need to initialize the plugin database for those.
     if (type == "text/html")
-        return HTMLDocument::create(DocumentInit(url, frame));
+        return HTMLDocument::create(init);
     if (type == "application/xhtml+xml")
-        return Document::createXHTML(DocumentInit(url, frame));
+        return Document::createXHTML(init);
 
     PluginData* pluginData = 0;
-    if (frame && frame->page() && frame->loader()->allowPlugins(NotAboutToInstantiatePlugin))
-        pluginData = frame->page()->pluginData();
+    if (init.frame() && init.frame()->page() && init.frame()->loader().allowPlugins(NotAboutToInstantiatePlugin))
+        pluginData = init.frame()->page()->pluginData();
 
     // PDF is one image type for which a plugin can override built-in support.
     // We do not want QuickTime to take over all image types, obviously.
     if ((type == "application/pdf" || type == "text/pdf") && pluginData && pluginData->supportsMimeType(type))
-        return PluginDocument::create(DocumentInit(url, frame));
+        return PluginDocument::create(init);
     if (Image::supportsType(type))
-        return ImageDocument::create(DocumentInit(url, frame));
+        return ImageDocument::create(init);
 
     // Check to see if the type can be played by our MediaPlayer, if so create a MediaDocument
     if (HTMLMediaElement::supportsType(ContentType(type)))
-        return MediaDocument::create(DocumentInit(url, frame));
+        return MediaDocument::create(init);
 
     // Everything else except text/plain can be overridden by plugins. In particular, Adobe SVG Viewer should be used for SVG, if installed.
     // Disallowing plug-ins to use text/plain prevents plug-ins from hijacking a fundamental type that the browser is expected to handle,
     // and also serves as an optimization to prevent loading the plug-in database in the common case.
     if (type != "text/plain" && pluginData && pluginData->supportsMimeType(type))
-        return PluginDocument::create(DocumentInit(url, frame));
+        return PluginDocument::create(init);
     if (isTextMIMEType(type))
-        return TextDocument::create(DocumentInit(url, frame));
+        return TextDocument::create(init);
     if (type == "image/svg+xml")
-        return SVGDocument::create(DocumentInit(url, frame));
+        return SVGDocument::create(init);
     if (isXMLMIMEType(type))
-        return Document::create(DocumentInit(url, frame));
+        return Document::create(init);
 
-    return HTMLDocument::create(DocumentInit(url, frame));
+    return HTMLDocument::create(init);
 }
 
 }

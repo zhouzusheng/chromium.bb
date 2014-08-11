@@ -52,8 +52,27 @@
           ],
         }],
         ['OS=="win"', {
-          'defines': [
-            '__PRETTY_FUNCTION__=__FUNCTION__',
+          'sources/': [
+            ['exclude', 'Posix\\.cpp$'],
+          ],
+        },{ # OS!="win"
+          'sources/': [
+            ['exclude', 'Win\\.cpp$'],
+          ],
+        }],
+        ['OS!="mac"', {
+          'sources/': [
+            ['exclude', 'Mac\\.mm$'],
+          ],
+        }],
+        ['<(toolkit_uses_gtk) != 1', {
+            'sources/': [
+              ['exclude', 'Gtk\\.cpp$']
+            ]
+        }],
+        ['OS!="android"', {
+          'sources/': [
+            ['exclude', 'Android\\.cpp$'],
           ],
         }],
         ['OS!="win" and remove_webcore_debug_symbols==1', {
@@ -69,6 +88,12 @@
           # Due to a bug in gcc arm, we get warnings about uninitialized
           # timesNewRoman.unstatic.3258 and colorTransparent.unstatic.4879.
           'cflags': ['-Wno-uninitialized'],
+        }],
+        ['OS!="win"', {
+          # TODO: Turn this on on all platforms, http://crbug.com/312287
+          'variables': {
+            'chromium_code': 1,
+          },
         }],
         ['clang==1', {
           'cflags': ['-Wglobal-constructors'],

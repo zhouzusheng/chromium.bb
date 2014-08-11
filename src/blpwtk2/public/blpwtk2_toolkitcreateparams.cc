@@ -22,6 +22,7 @@
 
 #include <blpwtk2_toolkitcreateparams.h>
 
+#include <blpwtk2_channelinfo.h>
 #include <blpwtk2_constants.h>
 #include <blpwtk2_products.h>
 #include <blpwtk2_stringref.h>
@@ -40,7 +41,6 @@ struct ToolkitCreateParamsImpl {
     int d_maxSocketsPerProxy;
     std::vector<std::string> d_commandLineSwitches;
     std::vector<std::string> d_plugins;
-    std::vector<int> d_renderersUsingInProcessPlugins;
     ResourceLoader* d_inProcessResourceLoader;
     std::string d_dictionaryPath;
     std::string d_hostChannel;
@@ -113,15 +113,6 @@ void ToolkitCreateParams::disablePluginDiscovery()
     appendCommandLineSwitch(switches::kDisablePluginsDiscovery);
 }
 
-void ToolkitCreateParams::setRendererUsesInProcessPlugins(int renderer)
-{
-    DCHECK(renderer == Constants::ANY_OUT_OF_PROCESS_RENDERER
-        || renderer == Constants::IN_PROCESS_RENDERER
-        || renderer >= 0);
-
-    d_impl->d_renderersUsingInProcessPlugins.push_back(renderer);
-}
-
 void ToolkitCreateParams::setInProcessResourceLoader(
     ResourceLoader* loader)
 {
@@ -134,17 +125,23 @@ void ToolkitCreateParams::setDictionaryPath(const StringRef& path)
     d_impl->d_dictionaryPath.assign(path.data(), path.length());
 }
 
-void ToolkitCreateParams::setHostChannel(const StringRef& channelId)
+void ToolkitCreateParams::setHostChannel(const StringRef& channelInfoString)
 {
-    DCHECK(isValidHostChannelVersion(channelId));
-    d_impl->d_hostChannel.assign(channelId.data(), channelId.length());
+    CHECK(channelInfoString.isEmpty() || isValidHostChannelVersion(channelInfoString));
+    d_impl->d_hostChannel.assign(
+        channelInfoString.data(),
+        channelInfoString.length());
 }
 
 // static
-bool ToolkitCreateParams::isValidHostChannelVersion(const StringRef& channelId)
+bool ToolkitCreateParams::isValidHostChannelVersion(const StringRef& channelInfoString)
 {
+    ChannelInfo channelInfo;
+    if (!channelInfo.deserialize(channelInfoString))
+        return false;
+    const std::string& channelId = channelInfo.d_channelId;
     static StringRef expected(BLPWTK2_VERSION ".");
-    return channelId.isEmpty() ||
+    return channelId.empty() ||
         (channelId.length() > expected.length() &&
          expected.equals(StringRef(channelId.data(), expected.length())));
 }
@@ -190,17 +187,6 @@ StringRef ToolkitCreateParams::registeredPluginAt(size_t index) const
 {
     DCHECK(index < d_impl->d_plugins.size());
     return d_impl->d_plugins[index];
-}
-
-size_t ToolkitCreateParams::numRenderersUsingInProcessPlugins() const
-{
-    return d_impl->d_renderersUsingInProcessPlugins.size();
-}
-
-int ToolkitCreateParams::rendererUsingInProcessPluginsAt(size_t index) const
-{
-    DCHECK(index < d_impl->d_renderersUsingInProcessPlugins.size());
-    return d_impl->d_renderersUsingInProcessPlugins[index];
 }
 
 ResourceLoader* ToolkitCreateParams::inProcessResourceLoader() const

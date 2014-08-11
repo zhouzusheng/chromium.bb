@@ -13,7 +13,6 @@
 #include "cc/output/managed_memory_policy.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "webkit/common/gpu/grcontext_for_webgraphicscontext3d.h"
-#include "webkit/common/gpu/managed_memory_policy_convert.h"
 
 namespace content {
 
@@ -59,28 +58,6 @@ class ContextProviderCommandBuffer::SwapBuffersCompleteCallbackProxy
   ContextProviderCommandBuffer* provider_;
 };
 
-class ContextProviderCommandBuffer::MemoryAllocationCallbackProxy
-    : public WebKit::WebGraphicsContext3D::
-          WebGraphicsMemoryAllocationChangedCallbackCHROMIUM {
- public:
-  explicit MemoryAllocationCallbackProxy(ContextProviderCommandBuffer* provider)
-      : provider_(provider) {
-    provider_->context3d_->setMemoryAllocationChangedCallbackCHROMIUM(this);
-  }
-
-  virtual ~MemoryAllocationCallbackProxy() {
-    provider_->context3d_->setMemoryAllocationChangedCallbackCHROMIUM(NULL);
-  }
-
-  virtual void onMemoryAllocationChanged(
-      WebKit::WebGraphicsMemoryAllocation allocation) {
-    provider_->OnMemoryAllocationChanged(allocation);
-  }
-
- private:
-  ContextProviderCommandBuffer* provider_;
-};
-
 scoped_refptr<ContextProviderCommandBuffer>
 ContextProviderCommandBuffer::Create(
     scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context3d,
@@ -110,7 +87,10 @@ ContextProviderCommandBuffer::~ContextProviderCommandBuffer() {
   base::AutoLock lock(main_thread_lock_);
 
   // Destroy references to the context3d_ before leaking it.
-  memory_allocation_callback_proxy_.reset();
+  if (context3d_->GetCommandBufferProxy()) {
+    context3d_->GetCommandBufferProxy()->SetMemoryAllocationChangedCallback(
+        CommandBufferProxyImpl::MemoryAllocationChangedCallback());
+  }
   swap_buffers_complete_callback_proxy_.reset();
   lost_context_callback_proxy_.reset();
 
@@ -134,7 +114,8 @@ bool ContextProviderCommandBuffer::BindToCurrentThread() {
   if (!context3d_->makeContextCurrent())
     return false;
 
-  InitializeCapabilities();
+  if (!InitializeCapabilities())
+    return false;
 
   std::string unique_context_name =
       base::StringPrintf("%s-%p", debug_name_.c_str(), context3d_.get());
@@ -143,8 +124,9 @@ bool ContextProviderCommandBuffer::BindToCurrentThread() {
   lost_context_callback_proxy_.reset(new LostContextCallbackProxy(this));
   swap_buffers_complete_callback_proxy_.reset(
       new SwapBuffersCompleteCallbackProxy(this));
-  memory_allocation_callback_proxy_.reset(
-      new MemoryAllocationCallbackProxy(this));
+  context3d_->GetCommandBufferProxy()->SetMemoryAllocationChangedCallback(
+      base::Bind(&ContextProviderCommandBuffer::OnMemoryAllocationChanged,
+                 base::Unretained(this)));
   return true;
 }
 
@@ -155,6 +137,10 @@ ContextProviderCommandBuffer::Context3d() {
   DCHECK(context_thread_checker_.CalledOnValidThread());
 
   return context3d_.get();
+}
+
+gpu::ContextSupport* ContextProviderCommandBuffer::ContextSupport() {
+  return context3d_->GetContextSupport();
 }
 
 class GrContext* ContextProviderCommandBuffer::GrContext() {
@@ -207,28 +193,21 @@ void ContextProviderCommandBuffer::OnSwapBuffersComplete() {
 }
 
 void ContextProviderCommandBuffer::OnMemoryAllocationChanged(
-    const WebKit::WebGraphicsMemoryAllocation& allocation) {
+    const gpu::MemoryAllocation& allocation) {
   DCHECK(context_thread_checker_.CalledOnValidThread());
 
   if (gr_context_) {
-    bool nonzero_allocation = !!allocation.gpuResourceSizeInBytes;
+    bool nonzero_allocation = !!allocation.bytes_limit_when_visible;
     gr_context_->SetMemoryLimit(nonzero_allocation);
   }
 
   if (memory_policy_changed_callback_.is_null())
     return;
 
-  bool discard_backbuffer_when_not_visible;
-  cc::ManagedMemoryPolicy policy =
-      webkit::gpu::ManagedMemoryPolicyConvert::Convert(
-          allocation,
-          &discard_backbuffer_when_not_visible);
-
-  memory_policy_changed_callback_.Run(
-      policy, discard_backbuffer_when_not_visible);
+  memory_policy_changed_callback_.Run(cc::ManagedMemoryPolicy(allocation));
 }
 
-void ContextProviderCommandBuffer::InitializeCapabilities() {
+bool ContextProviderCommandBuffer::InitializeCapabilities() {
   // The command buffer provides the following capabilities always.
   // TODO(jamesr): This information is duplicated with
   // gpu::gles2::FeatureInfo::AddFeatures().
@@ -246,8 +225,11 @@ void ContextProviderCommandBuffer::InitializeCapabilities() {
   // command buffer implementations.
   caps.swapbuffers_complete_callback = true;
 
-  std::string extensions = reinterpret_cast<const char*>(
-      context3d_->GetImplementation()->GetString(0x1F03 /* GL_EXTENSIONS */));
+  const GLubyte* extensions_cstr =
+      context3d_->GetImplementation()->GetString(0x1F03 /* GL_EXTENSIONS */);
+  if (!extensions_cstr)
+    return false;
+  std::string extensions = reinterpret_cast<const char*>(extensions_cstr);
   std::vector<std::string> extension_list;
   base::SplitString(extensions, ' ', &extension_list);
   std::set<std::string> extension_set(extension_list.begin(),
@@ -269,6 +251,10 @@ void ContextProviderCommandBuffer::InitializeCapabilities() {
 
   caps.texture_format_bgra8888 =
       extension_set.count("GL_EXT_texture_format_BGRA8888") > 0;
+
+  caps.texture_format_etc1 =
+      extension_set.count("GL_OES_compressed_ETC1_RGB8_texture") > 0;
+
   caps.texture_rectangle = extension_set.count("GL_ARB_texture_rectangle") > 0;
 
   caps.post_sub_buffer = extension_set.count("GL_CHROMIUM_post_sub_buffer") > 0;
@@ -288,6 +274,7 @@ void ContextProviderCommandBuffer::InitializeCapabilities() {
       ? std::numeric_limits<size_t>::max() : mapped_memory_limit;
 
   capabilities_ = caps;
+  return true;
 }
 
 

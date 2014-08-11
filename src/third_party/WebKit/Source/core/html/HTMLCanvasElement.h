@@ -29,8 +29,8 @@
 #define HTMLCanvasElement_h
 
 #include "core/html/HTMLElement.h"
-#include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/IntSize.h"
+#include "platform/geometry/FloatRect.h"
+#include "platform/geometry/IntSize.h"
 #include "wtf/Forward.h"
 
 #define DefaultInterpolationQuality InterpolationMedium
@@ -111,11 +111,6 @@ public:
     void makePresentationCopy();
     void clearPresentationCopy();
 
-    FloatRect convertLogicalToDevice(const FloatRect&) const;
-    FloatSize convertLogicalToDevice(const FloatSize&) const;
-
-    FloatSize convertDeviceToLogical(const FloatSize&) const;
-
     SecurityOrigin* securityOrigin() const;
     void setOriginTainted() { m_originClean = false; }
     bool originClean() const { return m_originClean; }
@@ -147,6 +142,7 @@ private:
     void clearImageBuffer();
 
     void setSurfaceSize(const IntSize&);
+    IntSize convertLogicalToDevice(const IntSize&) const;
 
     bool paintsIntoCanvasBuffer() const;
 
@@ -179,11 +175,7 @@ private:
     mutable RefPtr<Image> m_copiedImage; // FIXME: This is temporary for platforms that have to copy the image buffer to render (and for CSSCanvasValue).
 };
 
-inline HTMLCanvasElement* toHTMLCanvasElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::canvasTag));
-    return static_cast<HTMLCanvasElement*>(node);
-}
+DEFINE_NODE_TYPE_CASTS(HTMLCanvasElement, hasTagName(HTMLNames::canvasTag));
 
 } //namespace
 

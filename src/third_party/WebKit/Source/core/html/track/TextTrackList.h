@@ -27,9 +27,9 @@
 #define TextTrackList_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/EventTarget.h"
-#include "core/platform/Timer.h"
+#include "core/events/EventListener.h"
+#include "core/events/EventTarget.h"
+#include "platform/Timer.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
@@ -40,11 +40,12 @@ class HTMLMediaElement;
 class TextTrack;
 class TextTrackList;
 
-class TextTrackList : public RefCounted<TextTrackList>, public ScriptWrappable, public EventTarget {
+class TextTrackList : public RefCounted<TextTrackList>, public ScriptWrappable, public EventTargetWithInlineData {
+    REFCOUNTED_EVENT_TARGET(TextTrackList);
 public:
-    static PassRefPtr<TextTrackList> create(HTMLMediaElement* owner, ScriptExecutionContext* context)
+    static PassRefPtr<TextTrackList> create(HTMLMediaElement* owner)
     {
-        return adoptRef(new TextTrackList(owner, context));
+        return adoptRef(new TextTrackList(owner));
     }
     ~TextTrackList();
 
@@ -58,10 +59,8 @@ public:
     void remove(TextTrack*);
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const;
-    using RefCounted<TextTrackList>::ref;
-    using RefCounted<TextTrackList>::deref;
-    virtual ScriptExecutionContext* scriptExecutionContext() const { return m_context; }
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(addtrack);
 
@@ -71,26 +70,18 @@ public:
     bool isFiringEventListeners() { return m_dispatchingEvents; }
 
 private:
-    TextTrackList(HTMLMediaElement*, ScriptExecutionContext*);
-
-    // EventTarget
-    virtual void refEventTarget() { ref(); }
-    virtual void derefEventTarget() { deref(); }
-    virtual EventTargetData* eventTargetData() { return &m_eventTargetData; }
-    virtual EventTargetData* ensureEventTargetData() { return &m_eventTargetData; }
+    explicit TextTrackList(HTMLMediaElement*);
 
     void scheduleAddTrackEvent(PassRefPtr<TextTrack>);
     void asyncEventTimerFired(Timer<TextTrackList>*);
 
     void invalidateTrackIndexesAfterTrack(TextTrack*);
 
-    ScriptExecutionContext* m_context;
     HTMLMediaElement* m_owner;
 
     Vector<RefPtr<Event> > m_pendingEvents;
     Timer<TextTrackList> m_pendingEventTimer;
 
-    EventTargetData m_eventTargetData;
     Vector<RefPtr<TextTrack> > m_addTrackTracks;
     Vector<RefPtr<TextTrack> > m_elementTracks;
     Vector<RefPtr<TextTrack> > m_inbandTracks;

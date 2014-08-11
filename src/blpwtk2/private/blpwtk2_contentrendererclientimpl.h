@@ -56,6 +56,7 @@ class ContentRendererClientImpl : public content::ContentRendererClient {
         WebKit::WebFrame* frame,
         const WebKit::WebURLRequest& failed_request,
         const WebKit::WebURLError& error,
+        const std::string& accept_languages,
         std::string* error_html,
         string16* error_description) OVERRIDE;
 

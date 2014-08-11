@@ -36,14 +36,14 @@
 #include "core/css/CSSValuePool.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/DocumentFragment.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/EventNames.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/KeyboardEvent.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Text.h"
-#include "core/editing/Editor.h"
 #include "core/editing/markup.h"
+#include "core/editing/SpellChecker.h"
+#include "core/events/EventListener.h"
+#include "core/events/KeyboardEvent.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
@@ -51,9 +51,11 @@
 #include "core/html/HTMLTextFormControlElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/loader/FrameLoader.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Settings.h"
 #include "core/rendering/RenderWordBreak.h"
+#include "platform/graphics/TextRunIterator.h"
+#include "platform/text/BidiResolver.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/CString.h"
 
@@ -151,6 +153,11 @@ bool HTMLElement::isPresentationAttribute(const QualifiedName& name) const
     return Element::isPresentationAttribute(name);
 }
 
+static inline bool isValidDirAttribute(const AtomicString& value)
+{
+    return equalIgnoringCase(value, "auto") || equalIgnoringCase(value, "ltr") || equalIgnoringCase(value, "rtl");
+}
+
 void HTMLElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
 {
     if (name == alignAttr) {
@@ -181,7 +188,10 @@ void HTMLElement::collectStyleForPresentationAttribute(const QualifiedName& name
         if (equalIgnoringCase(value, "auto"))
             addPropertyToPresentationAttributeStyle(style, CSSPropertyUnicodeBidi, unicodeBidiAttributeForDirAuto(this));
         else {
-            addPropertyToPresentationAttributeStyle(style, CSSPropertyDirection, value);
+            if (isValidDirAttribute(value))
+                addPropertyToPresentationAttributeStyle(style, CSSPropertyDirection, value);
+            else
+                addPropertyToPresentationAttributeStyle(style, CSSPropertyDirection, "ltr");
             if (!hasTagName(bdiTag) && !hasTagName(bdoTag) && !hasTagName(outputTag))
                 addPropertyToPresentationAttributeStyle(style, CSSPropertyUnicodeBidi, CSSValueEmbed);
         }
@@ -203,83 +213,87 @@ AtomicString HTMLElement::eventNameForAttributeName(const QualifiedName& attrNam
     typedef HashMap<AtomicString, AtomicString> StringToStringMap;
     DEFINE_STATIC_LOCAL(StringToStringMap, attributeNameToEventNameMap, ());
     if (!attributeNameToEventNameMap.size()) {
-        attributeNameToEventNameMap.set(onanimationstartAttr.localName(), eventNames().animationstartEvent);
-        attributeNameToEventNameMap.set(onanimationiterationAttr.localName(), eventNames().animationiterationEvent);
-        attributeNameToEventNameMap.set(onanimationendAttr.localName(), eventNames().animationendEvent);
-        attributeNameToEventNameMap.set(onclickAttr.localName(), eventNames().clickEvent);
-        attributeNameToEventNameMap.set(oncontextmenuAttr.localName(), eventNames().contextmenuEvent);
-        attributeNameToEventNameMap.set(ondblclickAttr.localName(), eventNames().dblclickEvent);
-        attributeNameToEventNameMap.set(onmousedownAttr.localName(), eventNames().mousedownEvent);
-        attributeNameToEventNameMap.set(onmouseenterAttr.localName(), eventNames().mouseenterEvent);
-        attributeNameToEventNameMap.set(onmouseleaveAttr.localName(), eventNames().mouseleaveEvent);
-        attributeNameToEventNameMap.set(onmousemoveAttr.localName(), eventNames().mousemoveEvent);
-        attributeNameToEventNameMap.set(onmouseoutAttr.localName(), eventNames().mouseoutEvent);
-        attributeNameToEventNameMap.set(onmouseoverAttr.localName(), eventNames().mouseoverEvent);
-        attributeNameToEventNameMap.set(onmouseupAttr.localName(), eventNames().mouseupEvent);
-        attributeNameToEventNameMap.set(onmousewheelAttr.localName(), eventNames().mousewheelEvent);
-        attributeNameToEventNameMap.set(onwheelAttr.localName(), eventNames().wheelEvent);
-        attributeNameToEventNameMap.set(onfocusAttr.localName(), eventNames().focusEvent);
-        attributeNameToEventNameMap.set(onfocusinAttr.localName(), eventNames().focusinEvent);
-        attributeNameToEventNameMap.set(onfocusoutAttr.localName(), eventNames().focusoutEvent);
-        attributeNameToEventNameMap.set(onblurAttr.localName(), eventNames().blurEvent);
-        attributeNameToEventNameMap.set(onkeydownAttr.localName(), eventNames().keydownEvent);
-        attributeNameToEventNameMap.set(onkeypressAttr.localName(), eventNames().keypressEvent);
-        attributeNameToEventNameMap.set(onkeyupAttr.localName(), eventNames().keyupEvent);
-        attributeNameToEventNameMap.set(onscrollAttr.localName(), eventNames().scrollEvent);
-        attributeNameToEventNameMap.set(onbeforecutAttr.localName(), eventNames().beforecutEvent);
-        attributeNameToEventNameMap.set(oncutAttr.localName(), eventNames().cutEvent);
-        attributeNameToEventNameMap.set(onbeforecopyAttr.localName(), eventNames().beforecopyEvent);
-        attributeNameToEventNameMap.set(oncopyAttr.localName(), eventNames().copyEvent);
-        attributeNameToEventNameMap.set(onbeforepasteAttr.localName(), eventNames().beforepasteEvent);
-        attributeNameToEventNameMap.set(onpasteAttr.localName(), eventNames().pasteEvent);
-        attributeNameToEventNameMap.set(ondragenterAttr.localName(), eventNames().dragenterEvent);
-        attributeNameToEventNameMap.set(ondragoverAttr.localName(), eventNames().dragoverEvent);
-        attributeNameToEventNameMap.set(ondragleaveAttr.localName(), eventNames().dragleaveEvent);
-        attributeNameToEventNameMap.set(ondropAttr.localName(), eventNames().dropEvent);
-        attributeNameToEventNameMap.set(ondragstartAttr.localName(), eventNames().dragstartEvent);
-        attributeNameToEventNameMap.set(ondragAttr.localName(), eventNames().dragEvent);
-        attributeNameToEventNameMap.set(ondragendAttr.localName(), eventNames().dragendEvent);
-        attributeNameToEventNameMap.set(onselectstartAttr.localName(), eventNames().selectstartEvent);
-        attributeNameToEventNameMap.set(onsubmitAttr.localName(), eventNames().submitEvent);
-        attributeNameToEventNameMap.set(onerrorAttr.localName(), eventNames().errorEvent);
-        attributeNameToEventNameMap.set(onwebkitanimationstartAttr.localName(), eventNames().webkitAnimationStartEvent);
-        attributeNameToEventNameMap.set(onwebkitanimationiterationAttr.localName(), eventNames().webkitAnimationIterationEvent);
-        attributeNameToEventNameMap.set(onwebkitanimationendAttr.localName(), eventNames().webkitAnimationEndEvent);
-        attributeNameToEventNameMap.set(onwebkittransitionendAttr.localName(), eventNames().webkitTransitionEndEvent);
-        attributeNameToEventNameMap.set(ontransitionendAttr.localName(), eventNames().webkitTransitionEndEvent);
-        attributeNameToEventNameMap.set(oninputAttr.localName(), eventNames().inputEvent);
-        attributeNameToEventNameMap.set(oninvalidAttr.localName(), eventNames().invalidEvent);
-        attributeNameToEventNameMap.set(ontouchstartAttr.localName(), eventNames().touchstartEvent);
-        attributeNameToEventNameMap.set(ontouchmoveAttr.localName(), eventNames().touchmoveEvent);
-        attributeNameToEventNameMap.set(ontouchendAttr.localName(), eventNames().touchendEvent);
-        attributeNameToEventNameMap.set(ontouchcancelAttr.localName(), eventNames().touchcancelEvent);
-        attributeNameToEventNameMap.set(onwebkitfullscreenchangeAttr.localName(), eventNames().webkitfullscreenchangeEvent);
-        attributeNameToEventNameMap.set(onwebkitfullscreenerrorAttr.localName(), eventNames().webkitfullscreenerrorEvent);
-        attributeNameToEventNameMap.set(onabortAttr.localName(), eventNames().abortEvent);
-        attributeNameToEventNameMap.set(oncanplayAttr.localName(), eventNames().canplayEvent);
-        attributeNameToEventNameMap.set(oncanplaythroughAttr.localName(), eventNames().canplaythroughEvent);
-        attributeNameToEventNameMap.set(onchangeAttr.localName(), eventNames().changeEvent);
-        attributeNameToEventNameMap.set(ondurationchangeAttr.localName(), eventNames().durationchangeEvent);
-        attributeNameToEventNameMap.set(onemptiedAttr.localName(), eventNames().emptiedEvent);
-        attributeNameToEventNameMap.set(onendedAttr.localName(), eventNames().endedEvent);
-        attributeNameToEventNameMap.set(onloadeddataAttr.localName(), eventNames().loadeddataEvent);
-        attributeNameToEventNameMap.set(onloadedmetadataAttr.localName(), eventNames().loadedmetadataEvent);
-        attributeNameToEventNameMap.set(onloadstartAttr.localName(), eventNames().loadstartEvent);
-        attributeNameToEventNameMap.set(onpauseAttr.localName(), eventNames().pauseEvent);
-        attributeNameToEventNameMap.set(onplayAttr.localName(), eventNames().playEvent);
-        attributeNameToEventNameMap.set(onplayingAttr.localName(), eventNames().playingEvent);
-        attributeNameToEventNameMap.set(onprogressAttr.localName(), eventNames().progressEvent);
-        attributeNameToEventNameMap.set(onratechangeAttr.localName(), eventNames().ratechangeEvent);
-        attributeNameToEventNameMap.set(onresetAttr.localName(), eventNames().resetEvent);
-        attributeNameToEventNameMap.set(onseekedAttr.localName(), eventNames().seekedEvent);
-        attributeNameToEventNameMap.set(onseekingAttr.localName(), eventNames().seekingEvent);
-        attributeNameToEventNameMap.set(onselectAttr.localName(), eventNames().selectEvent);
-        attributeNameToEventNameMap.set(onstalledAttr.localName(), eventNames().stalledEvent);
-        attributeNameToEventNameMap.set(onsuspendAttr.localName(), eventNames().suspendEvent);
-        attributeNameToEventNameMap.set(ontimeupdateAttr.localName(), eventNames().timeupdateEvent);
-        attributeNameToEventNameMap.set(onvolumechangeAttr.localName(), eventNames().volumechangeEvent);
-        attributeNameToEventNameMap.set(onwaitingAttr.localName(), eventNames().waitingEvent);
-        attributeNameToEventNameMap.set(onloadAttr.localName(), eventNames().loadEvent);
+        attributeNameToEventNameMap.set(onanimationstartAttr.localName(), EventTypeNames::animationstart);
+        attributeNameToEventNameMap.set(onanimationiterationAttr.localName(), EventTypeNames::animationiteration);
+        attributeNameToEventNameMap.set(onanimationendAttr.localName(), EventTypeNames::animationend);
+        attributeNameToEventNameMap.set(oncancelAttr.localName(), EventTypeNames::cancel);
+        attributeNameToEventNameMap.set(onclickAttr.localName(), EventTypeNames::click);
+        attributeNameToEventNameMap.set(oncloseAttr.localName(), EventTypeNames::close);
+        attributeNameToEventNameMap.set(oncontextmenuAttr.localName(), EventTypeNames::contextmenu);
+        attributeNameToEventNameMap.set(ondblclickAttr.localName(), EventTypeNames::dblclick);
+        attributeNameToEventNameMap.set(onmousedownAttr.localName(), EventTypeNames::mousedown);
+        attributeNameToEventNameMap.set(onmouseenterAttr.localName(), EventTypeNames::mouseenter);
+        attributeNameToEventNameMap.set(onmouseleaveAttr.localName(), EventTypeNames::mouseleave);
+        attributeNameToEventNameMap.set(onmousemoveAttr.localName(), EventTypeNames::mousemove);
+        attributeNameToEventNameMap.set(onmouseoutAttr.localName(), EventTypeNames::mouseout);
+        attributeNameToEventNameMap.set(onmouseoverAttr.localName(), EventTypeNames::mouseover);
+        attributeNameToEventNameMap.set(onmouseupAttr.localName(), EventTypeNames::mouseup);
+        attributeNameToEventNameMap.set(onmousewheelAttr.localName(), EventTypeNames::mousewheel);
+        attributeNameToEventNameMap.set(onwheelAttr.localName(), EventTypeNames::wheel);
+        attributeNameToEventNameMap.set(onfocusAttr.localName(), EventTypeNames::focus);
+        attributeNameToEventNameMap.set(onfocusinAttr.localName(), EventTypeNames::focusin);
+        attributeNameToEventNameMap.set(onfocusoutAttr.localName(), EventTypeNames::focusout);
+        attributeNameToEventNameMap.set(onblurAttr.localName(), EventTypeNames::blur);
+        attributeNameToEventNameMap.set(onkeydownAttr.localName(), EventTypeNames::keydown);
+        attributeNameToEventNameMap.set(onkeypressAttr.localName(), EventTypeNames::keypress);
+        attributeNameToEventNameMap.set(onkeyupAttr.localName(), EventTypeNames::keyup);
+        attributeNameToEventNameMap.set(onscrollAttr.localName(), EventTypeNames::scroll);
+        attributeNameToEventNameMap.set(onbeforecutAttr.localName(), EventTypeNames::beforecut);
+        attributeNameToEventNameMap.set(oncutAttr.localName(), EventTypeNames::cut);
+        attributeNameToEventNameMap.set(onbeforecopyAttr.localName(), EventTypeNames::beforecopy);
+        attributeNameToEventNameMap.set(oncopyAttr.localName(), EventTypeNames::copy);
+        attributeNameToEventNameMap.set(onbeforepasteAttr.localName(), EventTypeNames::beforepaste);
+        attributeNameToEventNameMap.set(onpasteAttr.localName(), EventTypeNames::paste);
+        attributeNameToEventNameMap.set(ondragenterAttr.localName(), EventTypeNames::dragenter);
+        attributeNameToEventNameMap.set(ondragoverAttr.localName(), EventTypeNames::dragover);
+        attributeNameToEventNameMap.set(ondragleaveAttr.localName(), EventTypeNames::dragleave);
+        attributeNameToEventNameMap.set(ondropAttr.localName(), EventTypeNames::drop);
+        attributeNameToEventNameMap.set(ondragstartAttr.localName(), EventTypeNames::dragstart);
+        attributeNameToEventNameMap.set(ondragAttr.localName(), EventTypeNames::drag);
+        attributeNameToEventNameMap.set(ondragendAttr.localName(), EventTypeNames::dragend);
+        attributeNameToEventNameMap.set(onselectstartAttr.localName(), EventTypeNames::selectstart);
+        attributeNameToEventNameMap.set(onsubmitAttr.localName(), EventTypeNames::submit);
+        attributeNameToEventNameMap.set(onerrorAttr.localName(), EventTypeNames::error);
+        attributeNameToEventNameMap.set(onwebkitanimationstartAttr.localName(), EventTypeNames::webkitAnimationStart);
+        attributeNameToEventNameMap.set(onwebkitanimationiterationAttr.localName(), EventTypeNames::webkitAnimationIteration);
+        attributeNameToEventNameMap.set(onwebkitanimationendAttr.localName(), EventTypeNames::webkitAnimationEnd);
+        attributeNameToEventNameMap.set(onwebkittransitionendAttr.localName(), EventTypeNames::webkitTransitionEnd);
+        attributeNameToEventNameMap.set(ontransitionendAttr.localName(), EventTypeNames::webkitTransitionEnd);
+        attributeNameToEventNameMap.set(oninputAttr.localName(), EventTypeNames::input);
+        attributeNameToEventNameMap.set(oninvalidAttr.localName(), EventTypeNames::invalid);
+        attributeNameToEventNameMap.set(ontouchstartAttr.localName(), EventTypeNames::touchstart);
+        attributeNameToEventNameMap.set(ontouchmoveAttr.localName(), EventTypeNames::touchmove);
+        attributeNameToEventNameMap.set(ontouchendAttr.localName(), EventTypeNames::touchend);
+        attributeNameToEventNameMap.set(ontouchcancelAttr.localName(), EventTypeNames::touchcancel);
+        attributeNameToEventNameMap.set(onwebkitfullscreenchangeAttr.localName(), EventTypeNames::webkitfullscreenchange);
+        attributeNameToEventNameMap.set(onwebkitfullscreenerrorAttr.localName(), EventTypeNames::webkitfullscreenerror);
+        attributeNameToEventNameMap.set(onabortAttr.localName(), EventTypeNames::abort);
+        attributeNameToEventNameMap.set(oncanplayAttr.localName(), EventTypeNames::canplay);
+        attributeNameToEventNameMap.set(oncanplaythroughAttr.localName(), EventTypeNames::canplaythrough);
+        attributeNameToEventNameMap.set(onchangeAttr.localName(), EventTypeNames::change);
+        attributeNameToEventNameMap.set(oncuechangeAttr.localName(), EventTypeNames::cuechange);
+        attributeNameToEventNameMap.set(ondurationchangeAttr.localName(), EventTypeNames::durationchange);
+        attributeNameToEventNameMap.set(onemptiedAttr.localName(), EventTypeNames::emptied);
+        attributeNameToEventNameMap.set(onendedAttr.localName(), EventTypeNames::ended);
+        attributeNameToEventNameMap.set(onloadeddataAttr.localName(), EventTypeNames::loadeddata);
+        attributeNameToEventNameMap.set(onloadedmetadataAttr.localName(), EventTypeNames::loadedmetadata);
+        attributeNameToEventNameMap.set(onloadstartAttr.localName(), EventTypeNames::loadstart);
+        attributeNameToEventNameMap.set(onpauseAttr.localName(), EventTypeNames::pause);
+        attributeNameToEventNameMap.set(onplayAttr.localName(), EventTypeNames::play);
+        attributeNameToEventNameMap.set(onplayingAttr.localName(), EventTypeNames::playing);
+        attributeNameToEventNameMap.set(onprogressAttr.localName(), EventTypeNames::progress);
+        attributeNameToEventNameMap.set(onratechangeAttr.localName(), EventTypeNames::ratechange);
+        attributeNameToEventNameMap.set(onresetAttr.localName(), EventTypeNames::reset);
+        attributeNameToEventNameMap.set(onseekedAttr.localName(), EventTypeNames::seeked);
+        attributeNameToEventNameMap.set(onseekingAttr.localName(), EventTypeNames::seeking);
+        attributeNameToEventNameMap.set(onselectAttr.localName(), EventTypeNames::select);
+        attributeNameToEventNameMap.set(onshowAttr.localName(), EventTypeNames::show);
+        attributeNameToEventNameMap.set(onstalledAttr.localName(), EventTypeNames::stalled);
+        attributeNameToEventNameMap.set(onsuspendAttr.localName(), EventTypeNames::suspend);
+        attributeNameToEventNameMap.set(ontimeupdateAttr.localName(), EventTypeNames::timeupdate);
+        attributeNameToEventNameMap.set(onvolumechangeAttr.localName(), EventTypeNames::volumechange);
+        attributeNameToEventNameMap.set(onwaitingAttr.localName(), EventTypeNames::waiting);
+        attributeNameToEventNameMap.set(onloadAttr.localName(), EventTypeNames::load);
     }
 
     return attributeNameToEventNameMap.get(attrName.localName());
@@ -313,7 +327,7 @@ void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& 
                 TrackExceptionState es;
                 range->selectNode(this, es);
                 if (!es.hadException())
-                    document().frame()->editor().clearMisspellingsAndBadGrammar(VisibleSelection(range.get()));
+                    document().frame()->spellChecker().clearMisspellingsAndBadGrammar(VisibleSelection(range.get()));
             }
         }
 
@@ -321,64 +335,6 @@ void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& 
         if (!eventName.isNull())
             setAttributeEventListener(eventName, createAttributeEventListener(this, name, value));
     }
-}
-
-String HTMLElement::innerHTML() const
-{
-    return createMarkup(this, ChildrenOnly);
-}
-
-String HTMLElement::outerHTML() const
-{
-    return createMarkup(this);
-}
-
-void HTMLElement::setInnerHTML(const String& html, ExceptionState& es)
-{
-    if (RefPtr<DocumentFragment> fragment = createFragmentForInnerOuterHTML(html, this, AllowScriptingContent, es)) {
-        ContainerNode* container = this;
-        if (hasLocalName(templateTag))
-            container = toHTMLTemplateElement(this)->content();
-        replaceChildrenWithFragment(container, fragment.release(), es);
-    }
-}
-
-static void mergeWithNextTextNode(PassRefPtr<Node> node, ExceptionState& es)
-{
-    ASSERT(node && node->isTextNode());
-    Node* next = node->nextSibling();
-    if (!next || !next->isTextNode())
-        return;
-
-    RefPtr<Text> textNode = toText(node.get());
-    RefPtr<Text> textNext = toText(next);
-    textNode->appendData(textNext->data());
-    if (textNext->parentNode()) // Might have been removed by mutation event.
-        textNext->remove(es);
-}
-
-void HTMLElement::setOuterHTML(const String& html, ExceptionState& es)
-{
-    Node* p = parentNode();
-    if (!p || !p->isHTMLElement()) {
-        es.throwDOMException(NoModificationAllowedError);
-        return;
-    }
-    RefPtr<HTMLElement> parent = toHTMLElement(p);
-    RefPtr<Node> prev = previousSibling();
-    RefPtr<Node> next = nextSibling();
-
-    RefPtr<DocumentFragment> fragment = createFragmentForInnerOuterHTML(html, parent.get(), AllowScriptingContent, es);
-    if (es.hadException())
-        return;
-
-    parent->replaceChild(fragment.release(), this, es);
-    RefPtr<Node> node = next ? next->previousSibling() : 0;
-    if (!es.hadException() && node && node->isTextNode())
-        mergeWithNextTextNode(node.release(), es);
-
-    if (!es.hadException() && prev && prev->isTextNode())
-        mergeWithNextTextNode(prev.release(), es);
 }
 
 PassRefPtr<DocumentFragment> HTMLElement::textToFragment(const String& text, ExceptionState& es)
@@ -417,14 +373,14 @@ PassRefPtr<DocumentFragment> HTMLElement::textToFragment(const String& text, Exc
 void HTMLElement::setInnerText(const String& text, ExceptionState& es)
 {
     if (ieForbidsInsertHTML()) {
-        es.throwDOMException(NoModificationAllowedError);
+        es.throwUninformativeAndGenericDOMException(NoModificationAllowedError);
         return;
     }
     if (hasLocalName(colTag) || hasLocalName(colgroupTag) || hasLocalName(framesetTag) ||
         hasLocalName(headTag) || hasLocalName(htmlTag) || hasLocalName(tableTag) ||
         hasLocalName(tbodyTag) || hasLocalName(tfootTag) || hasLocalName(theadTag) ||
         hasLocalName(trTag)) {
-        es.throwDOMException(NoModificationAllowedError);
+        es.throwUninformativeAndGenericDOMException(NoModificationAllowedError);
         return;
     }
 
@@ -464,20 +420,20 @@ void HTMLElement::setInnerText(const String& text, ExceptionState& es)
 void HTMLElement::setOuterText(const String &text, ExceptionState& es)
 {
     if (ieForbidsInsertHTML()) {
-        es.throwDOMException(NoModificationAllowedError);
+        es.throwUninformativeAndGenericDOMException(NoModificationAllowedError);
         return;
     }
     if (hasLocalName(colTag) || hasLocalName(colgroupTag) || hasLocalName(framesetTag) ||
         hasLocalName(headTag) || hasLocalName(htmlTag) || hasLocalName(tableTag) ||
         hasLocalName(tbodyTag) || hasLocalName(tfootTag) || hasLocalName(theadTag) ||
         hasLocalName(trTag)) {
-        es.throwDOMException(NoModificationAllowedError);
+        es.throwUninformativeAndGenericDOMException(NoModificationAllowedError);
         return;
     }
 
     ContainerNode* parent = parentNode();
     if (!parent) {
-        es.throwDOMException(NoModificationAllowedError);
+        es.throwUninformativeAndGenericDOMException(NoModificationAllowedError);
         return;
     }
 
@@ -492,7 +448,7 @@ void HTMLElement::setOuterText(const String &text, ExceptionState& es)
         newChild = Text::create(document(), text);
 
     if (!this || !parentNode())
-        es.throwDOMException(HierarchyRequestError);
+        es.throwUninformativeAndGenericDOMException(HierarchyRequestError);
     if (es.hadException())
         return;
     parent->replaceChild(newChild.release(), this, es);
@@ -543,7 +499,7 @@ Node* HTMLElement::insertAdjacent(const String& where, Node* newChild, Exception
     }
 
     // IE throws COM Exception E_INVALIDARG; this is the best DOM exception alternative.
-    es.throwDOMException(NotSupportedError);
+    es.throwUninformativeAndGenericDOMException(NotSupportedError);
     return 0;
 }
 
@@ -551,7 +507,7 @@ Element* HTMLElement::insertAdjacentElement(const String& where, Element* newChi
 {
     if (!newChild) {
         // IE throws COM Exception E_INVALIDARG; this is the best DOM exception alternative.
-        es.throwDOMException(TypeMismatchError);
+        es.throwUninformativeAndGenericDOMException(TypeMismatchError);
         return 0;
     }
 
@@ -565,23 +521,24 @@ static Element* contextElementForInsertion(const String& where, Element* element
     if (equalIgnoringCase(where, "beforeBegin") || equalIgnoringCase(where, "afterEnd")) {
         ContainerNode* parent = element->parentNode();
         if (parent && !parent->isElementNode()) {
-            es.throwDOMException(NoModificationAllowedError);
+            es.throwUninformativeAndGenericDOMException(NoModificationAllowedError);
             return 0;
         }
         return toElement(parent);
     }
     if (equalIgnoringCase(where, "afterBegin") || equalIgnoringCase(where, "beforeEnd"))
         return element;
-    es.throwDOMException(SyntaxError);
+    es.throwUninformativeAndGenericDOMException(SyntaxError);
     return 0;
 }
 
 void HTMLElement::insertAdjacentHTML(const String& where, const String& markup, ExceptionState& es)
 {
-    Element* contextElement = contextElementForInsertion(where, this, es);
+    RefPtr<Element> contextElement = contextElementForInsertion(where, this, es);
     if (!contextElement)
         return;
-    RefPtr<DocumentFragment> fragment = createFragmentForInnerOuterHTML(markup, contextElement, AllowScriptingContent, es);
+
+    RefPtr<DocumentFragment> fragment = createFragmentForInnerOuterHTML(markup, contextElement.get(), AllowScriptingContent, "insertAdjacentHTML", es);
     if (!fragment)
         return;
     insertAdjacent(where, fragment.get(), es);
@@ -643,11 +600,10 @@ bool HTMLElement::supportsSpatialNavigationFocus() const
 
     if (!document().settings() || !document().settings()->spatialNavigationEnabled())
         return false;
-    EventTarget* target = const_cast<HTMLElement*>(this);
-    return target->hasEventListeners(eventNames().clickEvent)
-        || target->hasEventListeners(eventNames().keydownEvent)
-        || target->hasEventListeners(eventNames().keypressEvent)
-        || target->hasEventListeners(eventNames().keyupEvent);
+    return hasEventListeners(EventTypeNames::click)
+        || hasEventListeners(EventTypeNames::keydown)
+        || hasEventListeners(EventTypeNames::keypress)
+        || hasEventListeners(EventTypeNames::keyup);
 }
 
 bool HTMLElement::supportsFocus() const
@@ -688,7 +644,7 @@ void HTMLElement::setContentEditable(const String& enabled, ExceptionState& es)
     else if (equalIgnoringCase(enabled, "inherit"))
         removeAttribute(contenteditableAttr);
     else
-        es.throwDOMException(SyntaxError);
+        es.throwUninformativeAndGenericDOMException(SyntaxError);
 }
 
 bool HTMLElement::draggable() const
@@ -778,11 +734,11 @@ bool HTMLElement::rendererIsNeeded(const RenderStyle& style)
 {
     if (hasLocalName(noscriptTag)) {
         Frame* frame = document().frame();
-        if (frame && frame->script()->canExecuteScripts(NotAboutToExecuteScript))
+        if (frame && frame->script().canExecuteScripts(NotAboutToExecuteScript))
             return false;
     } else if (hasLocalName(noembedTag)) {
         Frame* frame = document().frame();
-        if (frame && frame->loader()->allowPlugins(NotAboutToInstantiatePlugin))
+        if (frame && frame->loader().allowPlugins(NotAboutToInstantiatePlugin))
             return false;
     }
     return Element::rendererIsNeeded(style);
@@ -860,15 +816,24 @@ TextDirection HTMLElement::directionalityIfhasDirAutoAttribute(bool& isAuto) con
     return directionality();
 }
 
+static TextDirection determineDirectionality(const String& value, bool& hasStrongDirectionality)
+{
+    TextRun run(value);
+    BidiResolver<TextRunIterator, BidiCharacterRun> bidiResolver;
+    bidiResolver.setStatus(BidiStatus(run.direction(), run.directionalOverride()));
+    bidiResolver.setPositionIgnoringNestedIsolates(TextRunIterator(&run, 0));
+    return bidiResolver.determineParagraphDirectionality(&hasStrongDirectionality);
+}
+
 TextDirection HTMLElement::directionality(Node** strongDirectionalityTextNode) const
 {
     if (hasTagName(inputTag)) {
         HTMLInputElement* inputElement = toHTMLInputElement(const_cast<HTMLElement*>(this));
         bool hasStrongDirectionality;
-        Unicode::Direction textDirection = inputElement->value().defaultWritingDirection(&hasStrongDirectionality);
+        TextDirection textDirection = determineDirectionality(inputElement->value(), hasStrongDirectionality);
         if (strongDirectionalityTextNode)
             *strongDirectionalityTextNode = hasStrongDirectionality ? inputElement : 0;
-        return (textDirection == Unicode::LeftToRight) ? LTR : RTL;
+        return textDirection;
     }
 
     Node* node = firstChild();
@@ -883,7 +848,7 @@ TextDirection HTMLElement::directionality(Node** strongDirectionalityTextNode) c
         // Skip elements with valid dir attribute
         if (node->isElementNode()) {
             AtomicString dirAttributeValue = toElement(node)->fastGetAttribute(dirAttr);
-            if (equalIgnoringCase(dirAttributeValue, "rtl") || equalIgnoringCase(dirAttributeValue, "ltr") || equalIgnoringCase(dirAttributeValue, "auto")) {
+            if (isValidDirAttribute(dirAttributeValue)) {
                 node = NodeTraversal::nextSkippingChildren(node, this);
                 continue;
             }
@@ -891,11 +856,11 @@ TextDirection HTMLElement::directionality(Node** strongDirectionalityTextNode) c
 
         if (node->isTextNode()) {
             bool hasStrongDirectionality;
-            WTF::Unicode::Direction textDirection = node->textContent(true).defaultWritingDirection(&hasStrongDirectionality);
+            TextDirection textDirection = determineDirectionality(node->textContent(true), hasStrongDirectionality);
             if (hasStrongDirectionality) {
                 if (strongDirectionalityTextNode)
                     *strongDirectionalityTextNode = node;
-                return (textDirection == WTF::Unicode::LeftToRight) ? LTR : RTL;
+                return textDirection;
             }
         }
         node = NodeTraversal::next(node, this);
@@ -1089,7 +1054,7 @@ bool HTMLElement::isInteractiveContent() const
 
 void HTMLElement::defaultEventHandler(Event* event)
 {
-    if (event->type() == eventNames().keypressEvent && event->isKeyboardEvent()) {
+    if (event->type() == EventTypeNames::keypress && event->isKeyboardEvent()) {
         handleKeypressEvent(toKeyboardEvent(event));
         if (event->defaultHandled())
             return;

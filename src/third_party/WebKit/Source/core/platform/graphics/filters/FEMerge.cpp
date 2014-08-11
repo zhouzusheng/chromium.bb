@@ -28,9 +28,8 @@
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/filters/Filter.h"
 #include "core/platform/graphics/filters/SkiaImageFilterBuilder.h"
-#include "core/platform/text/TextStream.h"
-#include "core/rendering/RenderTreeAsText.h"
-#include "wtf/OwnArrayPtr.h"
+#include "platform/text/TextStream.h"
+#include "wtf/OwnPtr.h"
 
 namespace WebCore {
 
@@ -64,13 +63,14 @@ PassRefPtr<SkImageFilter> FEMerge::createImageFilter(SkiaImageFilterBuilder* bui
 {
     unsigned size = numberOfEffectInputs();
 
-    OwnArrayPtr<RefPtr<SkImageFilter> > inputRefs = adoptArrayPtr(new RefPtr<SkImageFilter>[size]);
-    OwnArrayPtr<SkImageFilter*> inputs = adoptArrayPtr(new SkImageFilter*[size]);
+    OwnPtr<RefPtr<SkImageFilter>[]> inputRefs = adoptArrayPtr(new RefPtr<SkImageFilter>[size]);
+    OwnPtr<SkImageFilter*[]> inputs = adoptArrayPtr(new SkImageFilter*[size]);
     for (unsigned i = 0; i < size; ++i) {
         inputRefs[i] = builder->build(inputEffect(i), operatingColorSpace());
         inputs[i] = inputRefs[i].get();
     }
-    return adoptRef(new SkMergeImageFilter(inputs.get(), size));
+    SkImageFilter::CropRect rect = getCropRect(builder->cropOffset());
+    return adoptRef(new SkMergeImageFilter(inputs.get(), size, 0, &rect));
 }
 
 TextStream& FEMerge::externalRepresentation(TextStream& ts, int indent) const

@@ -32,11 +32,9 @@
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/css/CSSStyleDeclaration.h"
 #include "core/css/StylePropertySet.h"
-#include "core/dom/BeforeTextInsertedEvent.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/Element.h"
-#include "core/dom/EventNames.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Text.h"
 #include "core/editing/ApplyStyleCommand.h"
@@ -49,10 +47,12 @@
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
 #include "core/editing/markup.h"
+#include "core/events/BeforeTextInsertedEvent.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTitleElement.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderText.h"
 #include "wtf/StdLibExtras.h"
@@ -154,7 +154,7 @@ ReplacementFragment::ReplacementFragment(Document* document, DocumentFragment* f
 
     Node* shadowAncestorNode = editableRoot->deprecatedShadowAncestorNode();
 
-    if (!editableRoot->getAttributeEventListener(eventNames().webkitBeforeTextInsertedEvent) &&
+    if (!editableRoot->getAttributeEventListener(EventTypeNames::webkitBeforeTextInserted) &&
         // FIXME: Remove these checks once textareas and textfields actually register an event handler.
         !(shadowAncestorNode && shadowAncestorNode->renderer() && shadowAncestorNode->renderer()->isTextControl()) &&
         editableRoot->rendererIsRichlyEditable()) {
@@ -476,7 +476,7 @@ void ReplaceSelectionCommand::removeRedundantStylesAndKeepStyleSpanInline(Insert
         if (!node->isStyledElement())
             continue;
 
-        Element* element = toElement(node.get());
+        Element* element = toElement(node);
 
         const StylePropertySet* inlineStyle = element->inlineStyle();
         RefPtr<EditingStyle> newInlineStyle = EditingStyle::create(inlineStyle);
@@ -488,7 +488,7 @@ void ReplaceSelectionCommand::removeRedundantStylesAndKeepStyleSpanInline(Insert
                 if (newInlineStyle->conflictsWithImplicitStyleOfElement(htmlElement)) {
                     // e.g. <b style="font-weight: normal;"> is converted to <span style="font-weight: normal;">
                     node = replaceElementWithSpanPreservingChildrenAndAttributes(htmlElement);
-                    element = toElement(node.get());
+                    element = toElement(node);
                     insertedNodes.didReplaceNode(htmlElement, node.get());
                 } else if (newInlineStyle->extractConflictingImplicitStyleOfAttributes(htmlElement, EditingStyle::PreserveWritingDirection, 0, attributes,
                     EditingStyle::DoNotExtractMatchingStyle)) {
@@ -622,7 +622,7 @@ void ReplaceSelectionCommand::makeInsertedContentRoundTrippableWithHTMLTreeBuild
         if (!node->isHTMLElement())
             continue;
 
-        if (isProhibitedParagraphChild(toHTMLElement(node.get())->localName())) {
+        if (isProhibitedParagraphChild(toHTMLElement(node)->localName())) {
             if (HTMLElement* paragraphElement = toHTMLElement(enclosingNodeWithTag(positionInParentBeforeNode(node.get()), pTag)))
                 moveNodeOutOfAncestor(node, paragraphElement);
         }
@@ -659,27 +659,27 @@ void ReplaceSelectionCommand::moveNodeOutOfAncestor(PassRefPtr<Node> prpNode, Pa
         removeNode(ancestor.release());
 }
 
-static inline bool nodeHasVisibleRenderText(Text* text)
+static inline bool nodeHasVisibleRenderText(Text& text)
 {
-    return text->renderer() && toRenderText(text->renderer())->renderedTextLength() > 0;
+    return text.renderer() && toRenderText(text.renderer())->renderedTextLength() > 0;
 }
 
 void ReplaceSelectionCommand::removeUnrenderedTextNodesAtEnds(InsertedNodes& insertedNodes)
 {
     document().updateLayoutIgnorePendingStylesheets();
 
-    Node* lastLeafInserted = insertedNodes.lastLeafInserted();
-    if (lastLeafInserted && lastLeafInserted->isTextNode() && !nodeHasVisibleRenderText(toText(lastLeafInserted))
-        && !enclosingNodeWithTag(firstPositionInOrBeforeNode(lastLeafInserted), selectTag)
-        && !enclosingNodeWithTag(firstPositionInOrBeforeNode(lastLeafInserted), scriptTag)) {
-        insertedNodes.willRemoveNode(lastLeafInserted);
-        removeNode(lastLeafInserted);
+    Node& lastLeafInserted = insertedNodes.lastLeafInserted();
+    if (lastLeafInserted.isTextNode() && !nodeHasVisibleRenderText(toText(lastLeafInserted))
+        && !enclosingNodeWithTag(firstPositionInOrBeforeNode(&lastLeafInserted), selectTag)
+        && !enclosingNodeWithTag(firstPositionInOrBeforeNode(&lastLeafInserted), scriptTag)) {
+        insertedNodes.willRemoveNode(&lastLeafInserted);
+        removeNode(&lastLeafInserted);
     }
 
     // We don't have to make sure that firstNodeInserted isn't inside a select or script element, because
     // it is a top level node in the fragment and the user can't insert into those elements.
     Node* firstNodeInserted = insertedNodes.firstNodeInserted();
-    if (firstNodeInserted && firstNodeInserted->isTextNode() && !nodeHasVisibleRenderText(toText(firstNodeInserted))) {
+    if (firstNodeInserted && firstNodeInserted->isTextNode() && !nodeHasVisibleRenderText(toText(*firstNodeInserted))) {
         insertedNodes.willRemoveNode(firstNodeInserted);
         removeNode(firstNodeInserted);
     }
@@ -1076,7 +1076,7 @@ void ReplaceSelectionCommand::doApply()
     Node* blockStart = enclosingBlock(insertionPos.deprecatedNode());
     if ((isListElement(refNode.get()) || (isLegacyAppleStyleSpan(refNode.get()) && isListElement(refNode->firstChild())))
         && blockStart && blockStart->renderer()->isListItem())
-        refNode = insertAsListItems(toHTMLElement(refNode.get()), blockStart, insertionPos, insertedNodes);
+        refNode = insertAsListItems(toHTMLElement(refNode), blockStart, insertionPos, insertedNodes);
     else {
         insertNodeAt(refNode, insertionPos);
         insertedNodes.respondToNodeInsertion(refNode.get());
@@ -1144,7 +1144,7 @@ void ReplaceSelectionCommand::doApply()
 
     // Setup m_startOfInsertedContent and m_endOfInsertedContent. This should be the last two lines of code that access insertedNodes.
     m_startOfInsertedContent = firstPositionInOrBeforeNode(insertedNodes.firstNodeInserted());
-    m_endOfInsertedContent = lastPositionInOrAfterNode(insertedNodes.lastLeafInserted());
+    m_endOfInsertedContent = lastPositionInOrAfterNode(&insertedNodes.lastLeafInserted());
 
     // Determine whether or not we should merge the end of inserted content with what's after it before we do
     // the start merge so that the start merge doesn't effect our decision.
@@ -1460,7 +1460,7 @@ void ReplaceSelectionCommand::updateNodesInserted(Node *node)
     if (m_startOfInsertedContent.isNull())
         m_startOfInsertedContent = firstPositionInOrBeforeNode(node);
 
-    m_endOfInsertedContent = lastPositionInOrAfterNode(node->lastDescendant());
+    m_endOfInsertedContent = lastPositionInOrAfterNode(&node->lastDescendant());
 }
 
 // During simple pastes, where we're just pasting a text node into a run of text, we insert the text node

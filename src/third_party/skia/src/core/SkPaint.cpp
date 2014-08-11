@@ -21,6 +21,7 @@
 #include "SkOrderedReadBuffer.h"
 #include "SkOrderedWriteBuffer.h"
 #include "SkPaintDefaults.h"
+#include "SkPaintOptionsAndroid.h"
 #include "SkPathEffect.h"
 #include "SkRasterizer.h"
 #include "SkScalar.h"
@@ -79,7 +80,6 @@ SkPaint::SkPaint() {
     fStyle      = kFill_Style;
     fTextEncoding = kUTF8_TextEncoding;
     fHinting    = SkPaintDefaults_Hinting;
-    fPrivFlags  = 0;
 #ifdef SK_BUILD_FOR_ANDROID
     new (&fPaintOptionsAndroid) SkPaintOptionsAndroid;
     fGenerationID = 0;
@@ -426,10 +426,6 @@ SkImageFilter* SkPaint::setImageFilter(SkImageFilter* imageFilter) {
 SkAnnotation* SkPaint::setAnnotation(SkAnnotation* annotation) {
     SkRefCnt_SafeAssign(fAnnotation, annotation);
     GEN_ID_INC;
-
-    bool isNoDraw = annotation && annotation->isNoDraw();
-    fPrivFlags = SkSetClearMask(fPrivFlags, isNoDraw, kNoDrawAnnotation_PrivFlag);
-
     return annotation;
 }
 
@@ -2003,8 +1999,9 @@ static uint32_t pack_4(unsigned a, unsigned b, unsigned c, unsigned d) {
 }
 
 enum FlatFlags {
-    kHasTypeface_FlatFlag   = 0x01,
-    kHasEffects_FlatFlag    = 0x02,
+    kHasTypeface_FlatFlag                      = 0x01,
+    kHasEffects_FlatFlag                       = 0x02,
+    kHasNonDefaultPaintOptionsAndroid_FlatFlag = 0x04,
 };
 
 // The size of a flat paint's POD fields
@@ -2036,7 +2033,11 @@ void SkPaint::flatten(SkFlattenableWriteBuffer& buffer) const {
         asint(this->getImageFilter())) {
         flatFlags |= kHasEffects_FlatFlag;
     }
-
+#ifdef SK_BUILD_FOR_ANDROID
+    if (this->getPaintOptionsAndroid() != SkPaintOptionsAndroid()) {
+        flatFlags |= kHasNonDefaultPaintOptionsAndroid_FlatFlag;
+    }
+#endif
 
     if (buffer.isOrderedBinaryBuffer()) {
         SkASSERT(SkAlign4(kPODPaintSize) == kPODPaintSize);
@@ -2093,13 +2094,22 @@ void SkPaint::flatten(SkFlattenableWriteBuffer& buffer) const {
         buffer.writeFlattenable(this->getRasterizer());
         buffer.writeFlattenable(this->getLooper());
         buffer.writeFlattenable(this->getImageFilter());
-        buffer.writeFlattenable(this->getAnnotation());
+
+        if (fAnnotation) {
+            buffer.writeBool(true);
+            fAnnotation->writeToBuffer(buffer);
+        } else {
+            buffer.writeBool(false);
+        }
     }
+#ifdef SK_BUILD_FOR_ANDROID
+    if (flatFlags & kHasNonDefaultPaintOptionsAndroid_FlatFlag) {
+        this->getPaintOptionsAndroid().flatten(buffer);
+    }
+#endif
 }
 
 void SkPaint::unflatten(SkFlattenableReadBuffer& buffer) {
-    fPrivFlags = 0;
-
     uint8_t flatFlags = 0;
     if (buffer.isOrderedBinaryBuffer()) {
         SkASSERT(SkAlign4(kPODPaintSize) == kPODPaintSize);
@@ -2161,15 +2171,18 @@ void SkPaint::unflatten(SkFlattenableReadBuffer& buffer) {
     }
 
     if (flatFlags & kHasEffects_FlatFlag) {
-        SkSafeUnref(this->setPathEffect(buffer.readFlattenableT<SkPathEffect>()));
-        SkSafeUnref(this->setShader(buffer.readFlattenableT<SkShader>()));
-        SkSafeUnref(this->setXfermode(buffer.readFlattenableT<SkXfermode>()));
-        SkSafeUnref(this->setMaskFilter(buffer.readFlattenableT<SkMaskFilter>()));
-        SkSafeUnref(this->setColorFilter(buffer.readFlattenableT<SkColorFilter>()));
-        SkSafeUnref(this->setRasterizer(buffer.readFlattenableT<SkRasterizer>()));
-        SkSafeUnref(this->setLooper(buffer.readFlattenableT<SkDrawLooper>()));
-        SkSafeUnref(this->setImageFilter(buffer.readFlattenableT<SkImageFilter>()));
-        SkSafeUnref(this->setAnnotation(buffer.readFlattenableT<SkAnnotation>()));
+        SkSafeUnref(this->setPathEffect(buffer.readPathEffect()));
+        SkSafeUnref(this->setShader(buffer.readShader()));
+        SkSafeUnref(this->setXfermode(buffer.readXfermode()));
+        SkSafeUnref(this->setMaskFilter(buffer.readMaskFilter()));
+        SkSafeUnref(this->setColorFilter(buffer.readColorFilter()));
+        SkSafeUnref(this->setRasterizer(buffer.readRasterizer()));
+        SkSafeUnref(this->setLooper(buffer.readDrawLooper()));
+        SkSafeUnref(this->setImageFilter(buffer.readImageFilter()));
+
+        if (buffer.readBool()) {
+            this->setAnnotation(SkNEW_ARGS(SkAnnotation, (buffer)))->unref();
+        }
     } else {
         this->setPathEffect(NULL);
         this->setShader(NULL);
@@ -2179,6 +2192,17 @@ void SkPaint::unflatten(SkFlattenableReadBuffer& buffer) {
         this->setRasterizer(NULL);
         this->setLooper(NULL);
         this->setImageFilter(NULL);
+    }
+
+#ifdef SK_BUILD_FOR_ANDROID
+    this->setPaintOptionsAndroid(SkPaintOptionsAndroid());
+#endif
+    if (flatFlags & kHasNonDefaultPaintOptionsAndroid_FlatFlag) {
+        SkPaintOptionsAndroid options;
+        options.unflatten(buffer);
+#ifdef SK_BUILD_FOR_ANDROID
+        this->setPaintOptionsAndroid(options);
+#endif
     }
 }
 
@@ -2403,7 +2427,6 @@ void SkPaint::toString(SkString* str) const {
     if (this->getFlags()) {
         bool needSeparator = false;
         SkAddFlagToString(str, this->isAntiAlias(), "AntiAlias", &needSeparator);
-        SkAddFlagToString(str, this->isFilterBitmap(), "FilterBitmap", &needSeparator);
         SkAddFlagToString(str, this->isDither(), "Dither", &needSeparator);
         SkAddFlagToString(str, this->isUnderlineText(), "UnderlineText", &needSeparator);
         SkAddFlagToString(str, this->isStrikeThruText(), "StrikeThruText", &needSeparator);
@@ -2422,6 +2445,11 @@ void SkPaint::toString(SkString* str) const {
         str->append("None");
     }
     str->append(")</dd>");
+
+    str->append("<dt>FilterLevel:</dt><dd>");
+    static const char* gFilterLevelStrings[] = { "None", "Low", "Medium", "High" };
+    str->append(gFilterLevelStrings[this->getFilterLevel()]);
+    str->append("</dd>");
 
     str->append("<dt>TextAlign:</dt><dd>");
     static const char* gTextAlignStrings[SkPaint::kAlignCount] = { "Left", "Center", "Right" };

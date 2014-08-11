@@ -30,7 +30,6 @@
 #include "core/platform/graphics/GraphicsContext3D.h"
 
 #include "core/html/ImageData.h"
-#include "core/html/canvas/CheckedInt.h"
 #include "core/platform/graphics/Extensions3D.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/Image.h"
@@ -38,11 +37,12 @@
 #include "core/platform/graphics/ImageObserver.h"
 #include "core/platform/graphics/gpu/DrawingBuffer.h"
 #include "core/platform/image-decoders/ImageDecoder.h"
+#include "platform/CheckedInt.h"
 #include "third_party/skia/include/gpu/GrContext.h"
 #include "third_party/skia/include/gpu/gl/GrGLInterface.h"
 #include "wtf/CPU.h"
-#include "wtf/OwnArrayPtr.h"
-#include "wtf/PassOwnArrayPtr.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
@@ -50,16 +50,6 @@
 #include "public/platform/Platform.h"
 #include "public/platform/WebGraphicsContext3D.h"
 #include "public/platform/WebGraphicsContext3DProvider.h"
-#include "public/platform/WebGraphicsMemoryAllocation.h"
-
-namespace {
-
-// The limit of the number of textures we hold in the GrContext's bitmap->texture cache.
-const int maxGaneshTextureCacheCount = 2048;
-// The limit of the bytes allocated toward textures in the GrContext's bitmap->texture cache.
-const size_t maxGaneshTextureCacheBytes = 96 * 1024 * 1024;
-
-}
 
 namespace WebCore {
 
@@ -68,15 +58,10 @@ namespace {
 void getDrawingParameters(DrawingBuffer* drawingBuffer, WebKit::WebGraphicsContext3D* graphicsContext3D,
                           Platform3DObject* frameBufferId, int* width, int* height)
 {
-    if (drawingBuffer) {
-        *frameBufferId = drawingBuffer->framebuffer();
-        *width = drawingBuffer->size().width();
-        *height = drawingBuffer->size().height();
-    } else {
-        *frameBufferId = 0;
-        *width = graphicsContext3D->width();
-        *height = graphicsContext3D->height();
-    }
+    ASSERT(drawingBuffer);
+    *frameBufferId = drawingBuffer->framebuffer();
+    *width = drawingBuffer->size().width();
+    *height = drawingBuffer->size().height();
 }
 
 } // anonymous namespace
@@ -109,11 +94,6 @@ GraphicsContext3D::~GraphicsContext3D()
 {
     setContextLostCallback(nullptr);
     setErrorMessageCallback(nullptr);
-
-    if (m_ownedGrContext) {
-        m_ownedWebContext->setMemoryAllocationChangedCallbackCHROMIUM(0);
-        m_ownedGrContext->contextDestroyed();
-    }
 }
 
 // Macros to assist in delegating from GraphicsContext3D to
@@ -305,59 +285,8 @@ PassRefPtr<GraphicsContext3D> GraphicsContext3D::createGraphicsContextFromWebCon
     return context.release();
 }
 
-class GrMemoryAllocationChangedCallbackAdapter : public WebKit::WebGraphicsContext3D::WebGraphicsMemoryAllocationChangedCallbackCHROMIUM {
-public:
-    GrMemoryAllocationChangedCallbackAdapter(GrContext* context)
-        : m_context(context)
-    {
-    }
-
-    virtual void onMemoryAllocationChanged(WebKit::WebGraphicsMemoryAllocation allocation) OVERRIDE
-    {
-        if (!m_context)
-            return;
-
-        if (!allocation.gpuResourceSizeInBytes) {
-            m_context->freeGpuResources();
-            m_context->setTextureCacheLimits(0, 0);
-        } else
-            m_context->setTextureCacheLimits(maxGaneshTextureCacheCount, maxGaneshTextureCacheBytes);
-    }
-
-private:
-    GrContext* m_context;
-};
-
-namespace {
-void bindWebGraphicsContext3DGLContextCallback(const GrGLInterface* interface)
-{
-    reinterpret_cast<WebKit::WebGraphicsContext3D*>(interface->fCallbackData)->makeContextCurrent();
-}
-}
-
 GrContext* GraphicsContext3D::grContext()
 {
-    if (m_grContext)
-        return m_grContext;
-    if (!m_ownedWebContext)
-        return 0;
-
-    SkAutoTUnref<GrGLInterface> interface(m_ownedWebContext->createGrGLInterface());
-    if (!interface)
-        return 0;
-
-    interface->fCallback = bindWebGraphicsContext3DGLContextCallback;
-    interface->fCallbackData = reinterpret_cast<GrGLInterfaceCallbackData>(m_ownedWebContext.get());
-
-    m_ownedGrContext.reset(GrContext::Create(kOpenGL_GrBackend, reinterpret_cast<GrBackendContext>(interface.get())));
-    m_grContext = m_ownedGrContext;
-    if (!m_grContext)
-        return 0;
-
-    m_grContext->setTextureCacheLimits(maxGaneshTextureCacheCount, maxGaneshTextureCacheBytes);
-    m_grContextMemoryAllocationCallbackAdapter = adoptPtr(new GrMemoryAllocationChangedCallbackAdapter(m_grContext));
-    m_ownedWebContext->setMemoryAllocationChangedCallbackCHROMIUM(m_grContextMemoryAllocationCallbackAdapter.get());
-
     return m_grContext;
 }
 
@@ -571,14 +500,6 @@ DELEGATE_TO_WEBCONTEXT_2(vertexAttrib4fv, GC3Duint, GC3Dfloat*)
 DELEGATE_TO_WEBCONTEXT_6(vertexAttribPointer, GC3Duint, GC3Dint, GC3Denum, GC3Dboolean, GC3Dsizei, GC3Dintptr)
 
 DELEGATE_TO_WEBCONTEXT_4(viewport, GC3Dint, GC3Dint, GC3Dsizei, GC3Dsizei)
-
-void GraphicsContext3D::reshape(int width, int height)
-{
-    if (width == m_impl->width() && height == m_impl->height())
-        return;
-
-    m_impl->reshape(width, height);
-}
 
 void GraphicsContext3D::markContextChanged()
 {

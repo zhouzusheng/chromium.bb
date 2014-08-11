@@ -64,15 +64,11 @@ private:
 static InProcessRendererThread* g_inProcessRendererThread = 0;
 
 // static
-void InProcessRenderer::init(bool usesInProcessPlugins)
+void InProcessRenderer::init()
 {
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(!g_inProcessRendererThread);
     DCHECK(!Statics::rendererMessageLoop);
-
-    if (usesInProcessPlugins) {
-        content::RenderProcessImpl::ForceInProcessPlugins();
-    }
 
     if (Statics::isRendererMainThreadMode()) {
         Statics::rendererMessageLoop = base::MessageLoop::current();

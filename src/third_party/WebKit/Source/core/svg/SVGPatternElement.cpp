@@ -25,11 +25,11 @@
 
 #include "SVGNames.h"
 #include "XLinkNames.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
 #include "core/rendering/svg/RenderSVGResourcePattern.h"
 #include "core/svg/PatternAttributes.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGFitToViewBox.h"
+#include "platform/transforms/AffineTransform.h"
 
 namespace WebCore {
 
@@ -155,8 +155,9 @@ void SVGPatternElement::svgAttributeChanged(const QualifiedName& attrName)
         || attrName == SVGNames::heightAttr)
         updateRelativeLengthsInformation();
 
-    if (RenderObject* object = renderer())
-        object->setNeedsLayout();
+    RenderSVGResourceContainer* renderer = toRenderSVGResourceContainer(this->renderer());
+    if (renderer)
+        renderer->invalidateCacheAndMarkForLayout();
 }
 
 void SVGPatternElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
@@ -193,7 +194,7 @@ void SVGPatternElement::collectPatternAttributes(PatternAttributes& attributes) 
         if (!attributes.hasHeight() && current->hasAttribute(SVGNames::heightAttr))
             attributes.setHeight(current->heightCurrentValue());
 
-        if (!attributes.hasViewBox() && current->hasAttribute(SVGNames::viewBoxAttr) && current->viewBoxIsValid())
+        if (!attributes.hasViewBox() && current->hasAttribute(SVGNames::viewBoxAttr) && current->viewBoxCurrentValue().isValid())
             attributes.setViewBox(current->viewBoxCurrentValue());
 
         if (!attributes.hasPreserveAspectRatio() && current->hasAttribute(SVGNames::preserveAspectRatioAttr))

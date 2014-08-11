@@ -16,6 +16,7 @@ using WebKit::WebFloatPoint;
 using WebKit::WebFloatSize;
 using WebKit::WebGestureEvent;
 using WebKit::WebInputEvent;
+using WebKit::WebMouseEvent;
 using WebKit::WebMouseWheelEvent;
 using WebKit::WebPoint;
 using WebKit::WebTouchEvent;

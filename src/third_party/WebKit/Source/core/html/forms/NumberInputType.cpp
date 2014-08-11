@@ -32,22 +32,22 @@
 #include "config.h"
 #include "core/html/forms/NumberInputType.h"
 
+#include <limits>
 #include "HTMLNames.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/KeyboardEvent.h"
+#include "core/events/KeyboardEvent.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/InputTypeNames.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/platform/LocalizedStrings.h"
-#include "core/platform/text/PlatformLocale.h"
 #include "core/rendering/RenderTextControl.h"
+#include "platform/text/PlatformLocale.h"
 #include "wtf/MathExtras.h"
 #include "wtf/PassOwnPtr.h"
-#include <limits>
 
 namespace WebCore {
 
+using WebKit::WebLocalizedString;
 using namespace HTMLNames;
 using namespace std;
 
@@ -94,14 +94,14 @@ static RealNumberRenderSize calculateRenderSize(const Decimal& value)
     return RealNumberRenderSize(sizeOfSign + sizeOfZero , numberOfZeroAfterDecimalPoint + sizeOfDigits);
 }
 
-PassRefPtr<InputType> NumberInputType::create(HTMLInputElement* element)
+PassRefPtr<InputType> NumberInputType::create(HTMLInputElement& element)
 {
     return adoptRef(new NumberInputType(element));
 }
 
 void NumberInputType::countUsage()
 {
-    observeFeatureIfVisible(UseCounter::InputTypeNumber);
+    countUsageIfVisible(UseCounter::InputTypeNumber);
 }
 
 const AtomicString& NumberInputType::formControlType() const
@@ -111,14 +111,14 @@ const AtomicString& NumberInputType::formControlType() const
 
 void NumberInputType::setValue(const String& sanitizedValue, bool valueChanged, TextFieldEventBehavior eventBehavior)
 {
-    if (!valueChanged && sanitizedValue.isEmpty() && !element()->innerTextValue().isEmpty())
+    if (!valueChanged && sanitizedValue.isEmpty() && !element().innerTextValue().isEmpty())
         updateInnerTextValue();
     TextFieldInputType::setValue(sanitizedValue, valueChanged, eventBehavior);
 }
 
 double NumberInputType::valueAsDouble() const
 {
-    return parseToDoubleForNumberType(element()->value());
+    return parseToDoubleForNumberType(element().value());
 }
 
 void NumberInputType::setValueAsDouble(double newValue, TextFieldEventBehavior eventBehavior, ExceptionState& es) const
@@ -126,14 +126,14 @@ void NumberInputType::setValueAsDouble(double newValue, TextFieldEventBehavior e
     // FIXME: We should use numeric_limits<double>::max for number input type.
     const double floatMax = numeric_limits<float>::max();
     if (newValue < -floatMax) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
     if (newValue > floatMax) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
-    element()->setValue(serializeForNumberType(newValue), eventBehavior);
+    element().setValue(serializeForNumberType(newValue), eventBehavior);
 }
 
 void NumberInputType::setValueAsDecimal(const Decimal& newValue, TextFieldEventBehavior eventBehavior, ExceptionState& es) const
@@ -141,14 +141,14 @@ void NumberInputType::setValueAsDecimal(const Decimal& newValue, TextFieldEventB
     // FIXME: We should use numeric_limits<double>::max for number input type.
     const Decimal floatMax = Decimal::fromDouble(numeric_limits<float>::max());
     if (newValue < -floatMax) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
     if (newValue > floatMax) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
-    element()->setValue(serializeForNumberType(newValue), eventBehavior);
+    element().setValue(serializeForNumberType(newValue), eventBehavior);
 }
 
 bool NumberInputType::typeMismatchFor(const String& value) const
@@ -158,19 +158,19 @@ bool NumberInputType::typeMismatchFor(const String& value) const
 
 bool NumberInputType::typeMismatch() const
 {
-    ASSERT(!typeMismatchFor(element()->value()));
+    ASSERT(!typeMismatchFor(element().value()));
     return false;
 }
 
 StepRange NumberInputType::createStepRange(AnyStepHandling anyStepHandling) const
 {
     DEFINE_STATIC_LOCAL(const StepRange::StepDescription, stepDescription, (numberDefaultStep, numberDefaultStepBase, numberStepScaleFactor));
-    const Decimal stepBase = parseToDecimalForNumberType(element()->fastGetAttribute(minAttr), numberDefaultStepBase);
+    const Decimal stepBase = parseToDecimalForNumberType(element().fastGetAttribute(minAttr), numberDefaultStepBase);
     // FIXME: We should use numeric_limits<double>::max for number input type.
     const Decimal floatMax = Decimal::fromDouble(numeric_limits<float>::max());
-    const Decimal minimum = parseToNumber(element()->fastGetAttribute(minAttr), -floatMax);
-    const Decimal maximum = parseToNumber(element()->fastGetAttribute(maxAttr), floatMax);
-    const Decimal step = StepRange::parseStep(anyStepHandling, stepDescription, element()->fastGetAttribute(stepAttr));
+    const Decimal minimum = parseToNumber(element().fastGetAttribute(minAttr), -floatMax);
+    const Decimal maximum = parseToNumber(element().fastGetAttribute(maxAttr), floatMax);
+    const Decimal step = StepRange::parseStep(anyStepHandling, stepDescription, element().fastGetAttribute(stepAttr));
     return StepRange(stepBase, minimum, maximum, step, stepDescription);
 }
 
@@ -178,15 +178,15 @@ bool NumberInputType::sizeShouldIncludeDecoration(int defaultSize, int& preferre
 {
     preferredSize = defaultSize;
 
-    const String stepString = element()->fastGetAttribute(stepAttr);
+    const String stepString = element().fastGetAttribute(stepAttr);
     if (equalIgnoringCase(stepString, "any"))
         return false;
 
-    const Decimal minimum = parseToDecimalForNumberType(element()->fastGetAttribute(minAttr));
+    const Decimal minimum = parseToDecimalForNumberType(element().fastGetAttribute(minAttr));
     if (!minimum.isFinite())
         return false;
 
-    const Decimal maximum = parseToDecimalForNumberType(element()->fastGetAttribute(maxAttr));
+    const Decimal maximum = parseToDecimalForNumberType(element().fastGetAttribute(maxAttr));
     if (!maximum.isFinite())
         return false;
 
@@ -236,12 +236,12 @@ String NumberInputType::localizeValue(const String& proposedValue) const
     // We don't localize scientific notations.
     if (proposedValue.find(isE) != kNotFound)
         return proposedValue;
-    return element()->locale().convertToLocalizedNumber(proposedValue);
+    return element().locale().convertToLocalizedNumber(proposedValue);
 }
 
 String NumberInputType::visibleValue() const
 {
-    return localizeValue(element()->value());
+    return localizeValue(element().value());
 }
 
 String NumberInputType::convertFromVisibleValue(const String& visibleValue) const
@@ -251,7 +251,7 @@ String NumberInputType::convertFromVisibleValue(const String& visibleValue) cons
     // We don't localize scientific notations.
     if (visibleValue.find(isE) != kNotFound)
         return visibleValue;
-    return element()->locale().convertFromLocalizedNumber(visibleValue);
+    return element().locale().convertFromLocalizedNumber(visibleValue);
 }
 
 String NumberInputType::sanitizeValue(const String& proposedValue) const
@@ -263,13 +263,23 @@ String NumberInputType::sanitizeValue(const String& proposedValue) const
 
 bool NumberInputType::hasBadInput() const
 {
-    String standardValue = convertFromVisibleValue(element()->innerTextValue());
+    String standardValue = convertFromVisibleValue(element().innerTextValue());
     return !standardValue.isEmpty() && !std::isfinite(parseToDoubleForNumberType(standardValue));
 }
 
 String NumberInputType::badInputText() const
 {
-    return validationMessageBadInputForNumberText();
+    return locale().queryString(WebLocalizedString::ValidationBadInputForNumber);
+}
+
+String NumberInputType::rangeOverflowText(const Decimal& maximum) const
+{
+    return locale().queryString(WebLocalizedString::ValidationRangeOverflow, localizeValue(serialize(maximum)));
+}
+
+String NumberInputType::rangeUnderflowText(const Decimal& minimum) const
+{
+    return locale().queryString(WebLocalizedString::ValidationRangeUnderflow, localizeValue(serialize(minimum)));
 }
 
 bool NumberInputType::shouldRespectSpeechAttribute()
@@ -291,16 +301,16 @@ void NumberInputType::minOrMaxAttributeChanged()
 {
     InputType::minOrMaxAttributeChanged();
 
-    if (element()->renderer())
-        element()->renderer()->setNeedsLayoutAndPrefWidthsRecalc();
+    if (element().renderer())
+        element().renderer()->setNeedsLayoutAndPrefWidthsRecalc();
 }
 
 void NumberInputType::stepAttributeChanged()
 {
     InputType::stepAttributeChanged();
 
-    if (element()->renderer())
-        element()->renderer()->setNeedsLayoutAndPrefWidthsRecalc();
+    if (element().renderer())
+        element().renderer()->setNeedsLayoutAndPrefWidthsRecalc();
 }
 
 } // namespace WebCore

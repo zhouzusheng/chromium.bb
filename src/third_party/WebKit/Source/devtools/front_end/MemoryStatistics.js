@@ -191,11 +191,19 @@ WebInspector.MemoryStatistics.prototype = {
     },
 
     /**
-     * @param {number} top
+     * @return {number}
      */
-     setTopPosition: function(top)
+    height: function()
     {
-        this._memorySidebarView.element.style.top = top + "px";
+        return this._memorySidebarView.element.offsetHeight;
+    },
+
+    /**
+     * @param {number} height
+     */
+    setHeight: function(height)
+    {
+        this._memorySidebarView.element.style.flexBasis = height + "px";
         this._updateSize();
     },
 

@@ -33,10 +33,10 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
-#include "core/dom/EventTarget.h"
+#include "core/events/EventTarget.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
-#include "core/platform/Timer.h"
 #include "core/platform/graphics/SourceBufferPrivate.h"
+#include "platform/AsyncMethodRunner.h"
 #include "weborigin/KURL.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -54,7 +54,8 @@ class MediaSource;
 class Stream;
 class TimeRanges;
 
-class SourceBuffer : public RefCounted<SourceBuffer>, public ActiveDOMObject, public EventTarget, public ScriptWrappable, public FileReaderLoaderClient {
+class SourceBuffer : public RefCounted<SourceBuffer>, public ActiveDOMObject, public EventTargetWithInlineData, public ScriptWrappable, public FileReaderLoaderClient {
+    REFCOUNTED_EVENT_TARGET(SourceBuffer);
 public:
     static PassRefPtr<SourceBuffer> create(PassOwnPtr<SourceBufferPrivate>, MediaSource*, GenericEventQueue*);
 
@@ -81,21 +82,13 @@ public:
 
     // ActiveDOMObject interface
     virtual bool hasPendingActivity() const OVERRIDE;
+    virtual void suspend() OVERRIDE;
+    virtual void resume() OVERRIDE;
     virtual void stop() OVERRIDE;
 
     // EventTarget interface
-    virtual ScriptExecutionContext* scriptExecutionContext() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE;
     virtual const AtomicString& interfaceName() const OVERRIDE;
-
-    using RefCounted<SourceBuffer>::ref;
-    using RefCounted<SourceBuffer>::deref;
-
-protected:
-    // EventTarget interface
-    virtual EventTargetData* eventTargetData() OVERRIDE;
-    virtual EventTargetData* ensureEventTargetData() OVERRIDE;
-    virtual void refEventTarget() OVERRIDE { ref(); }
-    virtual void derefEventTarget() OVERRIDE { deref(); }
 
 private:
     SourceBuffer(PassOwnPtr<SourceBufferPrivate>, MediaSource*, GenericEventQueue*);
@@ -104,12 +97,12 @@ private:
     void scheduleEvent(const AtomicString& eventName);
 
     void appendBufferInternal(const unsigned char*, unsigned, ExceptionState&);
-    void appendBufferTimerFired(Timer<SourceBuffer>*);
+    void appendBufferAsyncPart();
 
-    void removeTimerFired(Timer<SourceBuffer>*);
+    void removeAsyncPart();
 
     void appendStreamInternal(PassRefPtr<Stream>, ExceptionState&);
-    void appendStreamTimerFired(Timer<SourceBuffer>*);
+    void appendStreamAsyncPart();
     void appendStreamDone(bool success);
     void clearAppendStreamState();
 
@@ -122,7 +115,6 @@ private:
     OwnPtr<SourceBufferPrivate> m_private;
     MediaSource* m_source;
     GenericEventQueue* m_asyncEventQueue;
-    EventTargetData m_eventTargetData;
 
     bool m_updating;
     double m_timestampOffset;
@@ -130,15 +122,15 @@ private:
     double m_appendWindowEnd;
 
     Vector<unsigned char> m_pendingAppendData;
-    Timer<SourceBuffer> m_appendBufferTimer;
+    AsyncMethodRunner<SourceBuffer> m_appendBufferAsyncPartRunner;
 
     double m_pendingRemoveStart;
     double m_pendingRemoveEnd;
-    Timer<SourceBuffer> m_removeTimer;
+    AsyncMethodRunner<SourceBuffer> m_removeAsyncPartRunner;
 
     bool m_streamMaxSizeValid;
     unsigned long long m_streamMaxSize;
-    Timer<SourceBuffer> m_appendStreamTimer;
+    AsyncMethodRunner<SourceBuffer> m_appendStreamAsyncPartRunner;
     RefPtr<Stream> m_stream;
     OwnPtr<FileReaderLoader> m_loader;
 };

@@ -42,6 +42,7 @@
 #include "core/fetch/Resource.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ResourceLoader.h"
+#include "core/frame/Frame.h"
 #include "core/inspector/IdentifiersFactory.h"
 #include "core/inspector/InspectorClient.h"
 #include "core/inspector/InspectorOverlay.h"
@@ -55,17 +56,16 @@
 #include "core/loader/FrameLoader.h"
 #include "core/loader/ThreadableLoader.h"
 #include "core/loader/ThreadableLoaderClient.h"
-#include "core/page/Frame.h"
 #include "core/page/Page.h"
-#include "core/platform/JSONValues.h"
-#include "core/platform/network/HTTPHeaderMap.h"
-#include "core/platform/network/ResourceError.h"
-#include "core/platform/network/ResourceRequest.h"
-#include "core/platform/network/ResourceResponse.h"
 #include "core/xml/XMLHttpRequest.h"
 #include "modules/websockets/WebSocketFrame.h"
 #include "modules/websockets/WebSocketHandshakeRequest.h"
 #include "modules/websockets/WebSocketHandshakeResponse.h"
+#include "platform/JSONValues.h"
+#include "platform/network/HTTPHeaderMap.h"
+#include "platform/network/ResourceError.h"
+#include "platform/network/ResourceRequest.h"
+#include "platform/network/ResourceResponse.h"
 #include "weborigin/KURL.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/RefPtr.h"
@@ -287,7 +287,8 @@ InspectorResourceAgent::~InspectorResourceAgent()
 
 void InspectorResourceAgent::willSendRequest(unsigned long identifier, DocumentLoader* loader, ResourceRequest& request, const ResourceResponse& redirectResponse, const FetchInitiatorInfo& initiatorInfo)
 {
-    if (initiatorInfo.name == FetchInitiatorTypeNames::inspector)
+    // Ignore the request initiated internally.
+    if (initiatorInfo.name == FetchInitiatorTypeNames::internal)
         return;
     String requestId = IdentifiersFactory::requestId(identifier);
     m_resourcesData->resourceCreated(requestId, m_pageAgent->loaderId(loader));
@@ -610,7 +611,6 @@ void InspectorResourceAgent::disable(ErrorString*)
 void InspectorResourceAgent::setUserAgentOverride(ErrorString*, const String& userAgent)
 {
     m_state->setString(ResourceAgentState::userAgentOverride, userAgent);
-    m_overlay->setOverride(InspectorOverlay::UserAgentOverride, !userAgent.isEmpty());
 }
 
 void InspectorResourceAgent::setExtraHTTPHeaders(ErrorString*, const RefPtr<JSONObject>& headers)
@@ -786,11 +786,10 @@ bool InspectorResourceAgent::fetchResourceContent(Frame* frame, const KURL& url,
     return false;
 }
 
-InspectorResourceAgent::InspectorResourceAgent(InstrumentingAgents* instrumentingAgents, InspectorPageAgent* pageAgent, InspectorClient* client, InspectorCompositeState* state, InspectorOverlay* overlay)
+InspectorResourceAgent::InspectorResourceAgent(InstrumentingAgents* instrumentingAgents, InspectorPageAgent* pageAgent, InspectorClient* client, InspectorCompositeState* state)
     : InspectorBaseAgent<InspectorResourceAgent>("Network", instrumentingAgents, state)
     , m_pageAgent(pageAgent)
     , m_client(client)
-    , m_overlay(overlay)
     , m_frontend(0)
     , m_resourcesData(adoptPtr(new NetworkResourcesData()))
     , m_isRecalculatingStyle(false)

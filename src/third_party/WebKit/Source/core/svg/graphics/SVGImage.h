@@ -65,7 +65,7 @@ public:
     virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() OVERRIDE;
 
 private:
-    friend class AccessibilityRenderObject;
+    friend class AXRenderObject;
     friend class SVGImageChromeClient;
     friend class SVGImageForContainer;
 
@@ -86,7 +86,6 @@ private:
     // FIXME: SVGImages are underreporting decoded sizes and will be unable
     // to prune because these functions are not implemented yet.
     virtual void destroyDecodedData(bool) OVERRIDE { }
-    virtual unsigned decodedSize() const OVERRIDE { return 0; }
 
     // FIXME: Implement this to be less conservative.
     virtual bool currentFrameKnownToBeOpaque() OVERRIDE { return false; }
@@ -95,7 +94,7 @@ private:
     virtual void draw(GraphicsContext*, const FloatRect& fromRect, const FloatRect& toRect, CompositeOperator, BlendMode) OVERRIDE;
     void drawForContainer(GraphicsContext*, const FloatSize, float, const FloatRect&, const FloatRect&, CompositeOperator, BlendMode);
     void drawPatternForContainer(GraphicsContext*, const FloatSize, float, const FloatRect&, const FloatSize&, const FloatPoint&,
-        CompositeOperator, const FloatRect&, BlendMode);
+        CompositeOperator, const FloatRect&, BlendMode, const IntSize& repeatSpacing);
 
     OwnPtr<SVGImageChromeClient> m_chromeClient;
     OwnPtr<Page> m_page;

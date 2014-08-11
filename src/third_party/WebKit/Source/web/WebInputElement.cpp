@@ -132,26 +132,6 @@ WebString WebInputElement::suggestedValue() const
     return constUnwrap<HTMLInputElement>()->suggestedValue();
 }
 
-void WebInputElement::setPlaceholder(const WebString& value)
-{
-    unwrap<HTMLInputElement>()->setAttribute(HTMLNames::placeholderAttr, value);
-}
-
-WebString WebInputElement::placeholder() const
-{
-    return constUnwrap<HTMLInputElement>()->fastGetAttribute(HTMLNames::placeholderAttr);
-}
-
-bool WebInputElement::isAutofilled() const
-{
-    return constUnwrap<HTMLInputElement>()->isAutofilled();
-}
-
-void WebInputElement::setAutofilled(bool autofilled)
-{
-    unwrap<HTMLInputElement>()->setAutofilled(autofilled);
-}
-
 void WebInputElement::setSelectionRange(int start, int end)
 {
     unwrap<HTMLInputElement>()->setSelectionRange(start, end);

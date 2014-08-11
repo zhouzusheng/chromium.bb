@@ -39,27 +39,28 @@
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/platform/graphics/IntRect.h"
-#include "core/platform/graphics/transforms/TransformationMatrix.h"
+#include "core/rendering/CompositedLayerMapping.h"
 #include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderLayerBacking.h"
 #include "core/rendering/RenderLayerCompositor.h"
 #include "core/rendering/RenderView.h"
+#include "platform/geometry/IntRect.h"
+#include "platform/transforms/TransformationMatrix.h"
 #include "public/platform/WebCompositingReasons.h"
 #include "public/platform/WebLayer.h"
 
 namespace WebCore {
 
-namespace LayerTreeAgentState {
-static const char layerTreeAgentEnabled[] = "layerTreeAgentEnabled";
-};
+inline String idForLayer(GraphicsLayer* graphicsLayer)
+{
+    return String::number(graphicsLayer->platformLayer()->id());
+}
 
 static PassRefPtr<TypeBuilder::LayerTree::Layer> buildObjectForLayer(GraphicsLayer* graphicsLayer, int nodeId)
 {
     RefPtr<TypeBuilder::LayerTree::Layer> layerObject = TypeBuilder::LayerTree::Layer::create()
-        .setLayerId(String::number(graphicsLayer->platformLayer()->id()))
+        .setLayerId(idForLayer(graphicsLayer))
         .setOffsetX(graphicsLayer->position().x())
         .setOffsetY(graphicsLayer->position().y())
         .setWidth(graphicsLayer->size().width())
@@ -73,7 +74,7 @@ static PassRefPtr<TypeBuilder::LayerTree::Layer> buildObjectForLayer(GraphicsLay
     if (!parent)
         parent = graphicsLayer->replicatedLayer();
     if (parent)
-        layerObject->setParentLayerId(String::number(parent->platformLayer()->id()));
+        layerObject->setParentLayerId(idForLayer(parent));
     if (!graphicsLayer->contentsAreVisible())
         layerObject->setInvisible(true);
     const TransformationMatrix& transform = graphicsLayer->transform();
@@ -127,87 +128,81 @@ void InspectorLayerTreeAgent::clearFrontend()
 
 void InspectorLayerTreeAgent::restore()
 {
-    if (m_state->getBoolean(LayerTreeAgentState::layerTreeAgentEnabled))
-        enable(0);
+    // We do not re-enable layer agent automatically after navigation. This is because
+    // it depends on DOMAgent and node ids in particular, so we let front-end request document
+    // and re-enable the agent manually after this.
 }
 
 void InspectorLayerTreeAgent::enable(ErrorString*)
 {
-    m_state->setBoolean(LayerTreeAgentState::layerTreeAgentEnabled, true);
     m_instrumentingAgents->setInspectorLayerTreeAgent(this);
+    layerTreeDidChange();
 }
 
 void InspectorLayerTreeAgent::disable(ErrorString*)
 {
-    if (!m_state->getBoolean(LayerTreeAgentState::layerTreeAgentEnabled))
-        return;
-    m_state->setBoolean(LayerTreeAgentState::layerTreeAgentEnabled, false);
     m_instrumentingAgents->setInspectorLayerTreeAgent(0);
 }
 
 void InspectorLayerTreeAgent::layerTreeDidChange()
 {
-    m_frontend->layerTreeDidChange();
+    m_frontend->layerTreeDidChange(buildLayerTree());
 }
 
-void InspectorLayerTreeAgent::getLayers(ErrorString* errorString, const int* nodeId, RefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> >& layers)
+void InspectorLayerTreeAgent::didPaint(RenderObject* renderer, GraphicsContext*, const LayoutRect& rect)
 {
-    LayerIdToNodeIdMap layerIdToNodeIdMap;
-    layers = TypeBuilder::Array<TypeBuilder::LayerTree::Layer>::create();
+    RenderLayer* renderLayer = toRenderLayerModelObject(renderer)->layer();
+    CompositedLayerMapping* compositedLayerMapping = renderLayer->compositedLayerMapping();
+    // Should only happen for FrameView paints when compositing is off. Consider different instrumentation method for that.
+    if (!compositedLayerMapping)
+        return;
+    GraphicsLayer* graphicsLayer = compositedLayerMapping->mainGraphicsLayer();
+    RefPtr<TypeBuilder::DOM::Rect> domRect = TypeBuilder::DOM::Rect::create()
+        .setX(rect.x())
+        .setY(rect.y())
+        .setWidth(rect.width())
+        .setHeight(rect.height());
+    m_frontend->layerPainted(idForLayer(graphicsLayer), domRect.release());
+}
 
+PassRefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> > InspectorLayerTreeAgent::buildLayerTree()
+{
     RenderLayerCompositor* compositor = renderLayerCompositor();
-    if (!compositor || !compositor->inCompositingMode()) {
-        *errorString = "Not in the compositing mode";
-        return;
-    }
-    if (!nodeId) {
-        buildLayerIdToNodeIdMap(errorString, compositor->rootRenderLayer(), layerIdToNodeIdMap);
-        gatherGraphicsLayers(compositor->rootGraphicsLayer(), layerIdToNodeIdMap, layers);
-        return;
-    }
-    Node* node = m_instrumentingAgents->inspectorDOMAgent()->nodeForId(*nodeId);
-    if (!node) {
-        *errorString = "Provided node id doesn't match any known node";
-        return;
-    }
-    RenderObject* renderer = node->renderer();
-    if (!renderer) {
-        *errorString = "Node for provided node id doesn't have a renderer";
-        return;
-    }
-    RenderLayer* enclosingLayer = renderer->enclosingLayer();
-    GraphicsLayer* enclosingGraphicsLayer = enclosingLayer->enclosingCompositingLayer()->backing()->childForSuperlayers();
-    buildLayerIdToNodeIdMap(errorString, enclosingLayer, layerIdToNodeIdMap);
-    gatherGraphicsLayers(enclosingGraphicsLayer, layerIdToNodeIdMap, layers);
+    if (!compositor || !compositor->inCompositingMode())
+        return 0;
+    LayerIdToNodeIdMap layerIdToNodeIdMap;
+    RefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> > layers = TypeBuilder::Array<TypeBuilder::LayerTree::Layer>::create();
+    buildLayerIdToNodeIdMap(compositor->rootRenderLayer(), layerIdToNodeIdMap);
+    gatherGraphicsLayers(compositor->rootGraphicsLayer(), layerIdToNodeIdMap, layers);
+    return layers.release();
 }
 
-void InspectorLayerTreeAgent::buildLayerIdToNodeIdMap(ErrorString* errorString, RenderLayer* root, LayerIdToNodeIdMap& layerIdToNodeIdMap)
+void InspectorLayerTreeAgent::buildLayerIdToNodeIdMap(RenderLayer* root, LayerIdToNodeIdMap& layerIdToNodeIdMap)
 {
-    if (root->isComposited()) {
+    if (root->compositedLayerMapping()) {
         if (Node* node = root->renderer()->generatingNode()) {
-            GraphicsLayer* graphicsLayer = root->backing()->childForSuperlayers();
-            layerIdToNodeIdMap.set(graphicsLayer->platformLayer()->id(), idForNode(errorString, node));
+            GraphicsLayer* graphicsLayer = root->compositedLayerMapping()->childForSuperlayers();
+            layerIdToNodeIdMap.set(graphicsLayer->platformLayer()->id(), idForNode(node));
         }
     }
     for (RenderLayer* child = root->firstChild(); child; child = child->nextSibling())
-        buildLayerIdToNodeIdMap(errorString, child, layerIdToNodeIdMap);
+        buildLayerIdToNodeIdMap(child, layerIdToNodeIdMap);
     if (!root->renderer()->isRenderIFrame())
         return;
     FrameView* childFrameView = toFrameView(toRenderWidget(root->renderer())->widget());
     if (RenderView* childRenderView = childFrameView->renderView()) {
         if (RenderLayerCompositor* childCompositor = childRenderView->compositor())
-            buildLayerIdToNodeIdMap(errorString, childCompositor->rootRenderLayer(), layerIdToNodeIdMap);
+            buildLayerIdToNodeIdMap(childCompositor->rootRenderLayer(), layerIdToNodeIdMap);
     }
 }
 
-int InspectorLayerTreeAgent::idForNode(ErrorString* errorString, Node* node)
+int InspectorLayerTreeAgent::idForNode(Node* node)
 {
-    InspectorDOMAgent* domAgent = m_instrumentingAgents->inspectorDOMAgent();
-
-    int nodeId = domAgent->boundNodeId(node);
-    if (!nodeId)
-        nodeId = domAgent->pushNodeToFrontend(errorString, domAgent->boundNodeId(&node->document()), node);
-
+    int nodeId = m_domAgent->boundNodeId(node);
+    if (!nodeId) {
+        ErrorString ignoredError;
+        nodeId = m_domAgent->pushNodeToFrontend(&ignoredError, m_domAgent->boundNodeId(&node->document()), node);
+    }
     return nodeId;
 }
 

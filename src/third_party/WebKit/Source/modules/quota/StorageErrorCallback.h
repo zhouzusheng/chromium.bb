@@ -31,7 +31,8 @@
 #ifndef StorageErrorCallback_h
 #define StorageErrorCallback_h
 
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
+#include "core/dom/ExecutionContextTask.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
 
@@ -46,14 +47,14 @@ public:
     virtual ~StorageErrorCallback() { }
     virtual bool handleEvent(DOMError*) = 0;
 
-    class CallbackTask : public ScriptExecutionContext::Task {
+    class CallbackTask : public ExecutionContextTask {
     public:
         static PassOwnPtr<CallbackTask> create(PassRefPtr<StorageErrorCallback> callback, ExceptionCode ec)
         {
             return adoptPtr(new CallbackTask(callback, ec));
         }
 
-        virtual void performTask(ScriptExecutionContext*);
+        virtual void performTask(ExecutionContext*);
 
     private:
         CallbackTask(PassRefPtr<StorageErrorCallback>, ExceptionCode);

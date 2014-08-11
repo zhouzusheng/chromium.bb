@@ -41,6 +41,9 @@ public:
         return adoptRef(new SVGPathSegListPropertyTearOff(animatedProperty, role, pathSegRole, values, wrappers));
     }
 
+    SVGPathElement* contextElement() const;
+    SVGAnimatedProperty* animatedProperty() const { return m_animatedProperty.get(); }
+
     int findItem(const ListItemType& item) const
     {
         ASSERT(m_values);
@@ -72,7 +75,7 @@ public:
     {
         // Not specified, but FF/Opera do it this way, and it's just sane.
         if (!passNewItem) {
-            es.throwTypeError();
+            es.throwUninformativeAndGenericTypeError();
             return 0;
         }
 
@@ -87,7 +90,7 @@ public:
     {
         // Not specified, but FF/Opera do it this way, and it's just sane.
         if (!passNewItem) {
-            es.throwTypeError();
+            es.throwUninformativeAndGenericTypeError();
             return 0;
         }
 
@@ -103,7 +106,7 @@ public:
     {
         // Not specified, but FF/Opera do it this way, and it's just sane.
         if (!passNewItem) {
-            es.throwTypeError();
+            es.throwUninformativeAndGenericTypeError();
             return 0;
         }
 
@@ -118,8 +121,6 @@ private:
         , m_pathSegRole(pathSegRole)
     {
     }
-
-    SVGPathElement* contextElement() const;
 
     void clearContextAndRoles();
 

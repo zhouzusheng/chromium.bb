@@ -33,7 +33,7 @@
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/HTMLSelectElement.h"
-#include "core/platform/SSLKeyGenerator.h"
+#include "platform/SSLKeyGenerator.h"
 #include "wtf/StdLibExtras.h"
 
 using namespace WebCore;
@@ -55,7 +55,7 @@ void HTMLKeygenElement::didAddUserAgentShadowRoot(ShadowRoot* root)
     DEFINE_STATIC_LOCAL(AtomicString, keygenSelectPseudoId, ("-webkit-keygen-select", AtomicString::ConstructFromLiteral));
 
     Vector<String> keys;
-    getSupportedKeySizes(keys);
+    getSupportedKeySizes(locale(), keys);
 
     // Create a select element with one option element for each key size.
     RefPtr<HTMLSelectElement> select = HTMLSelectElement::create(document());
@@ -97,7 +97,7 @@ const AtomicString& HTMLKeygenElement::formControlType() const
     return keygen;
 }
 
-void HTMLKeygenElement::reset()
+void HTMLKeygenElement::resetImpl()
 {
     shadowSelect()->reset();
 }

@@ -34,8 +34,8 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/plugins/PluginView.h"
 #include "core/rendering/RenderEmbeddedObject.h"
 
@@ -81,13 +81,13 @@ void PluginDocumentParser::createDocumentStructure()
         return;
 
     // FIXME: Why does this check settings?
-    if (!frame->settings() || !frame->loader()->allowPlugins(NotAboutToInstantiatePlugin))
+    if (!frame->settings() || !frame->loader().allowPlugins(NotAboutToInstantiatePlugin))
         return;
 
     RefPtr<HTMLHtmlElement> rootElement = HTMLHtmlElement::create(*document());
     rootElement->insertedByParser();
     document()->appendChild(rootElement);
-    frame->loader()->dispatchDocumentElementAvailable();
+    frame->loader().dispatchDocumentElementAvailable();
 
     RefPtr<HTMLBodyElement> body = HTMLBodyElement::create(*document());
     body->setAttribute(marginwidthAttr, "0");
@@ -191,7 +191,7 @@ void PluginDocument::cancelManualPluginLoad()
     if (!shouldLoadPluginManually())
         return;
 
-    DocumentLoader* documentLoader = frame()->loader()->activeDocumentLoader();
+    DocumentLoader* documentLoader = frame()->loader().activeDocumentLoader();
     documentLoader->cancelMainResourceLoad(ResourceError::cancelledError(documentLoader->request().url()));
     setShouldLoadPluginManually(false);
 }

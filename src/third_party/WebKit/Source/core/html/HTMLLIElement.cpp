@@ -86,8 +86,6 @@ void HTMLLIElement::parseAttribute(const QualifiedName& name, const AtomicString
 
 void HTMLLIElement::attach(const AttachContext& context)
 {
-    ASSERT(!attached());
-
     HTMLElement::attach(context);
 
     if (renderer() && renderer()->isListItem()) {
@@ -106,8 +104,10 @@ void HTMLLIElement::attach(const AttachContext& context)
 
         // If we are not in a list, tell the renderer so it can position us inside.
         // We don't want to change our style to say "inside" since that would affect nested nodes.
-        if (!listNode)
+        if (!listNode) {
             listItemRenderer->setNotInList(true);
+            listItemRenderer->updateMarkerLocation();
+        }
 
         parseValue(fastGetAttribute(valueAttr));
     }

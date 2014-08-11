@@ -33,6 +33,7 @@
 #define V8Binding_h
 
 #include "bindings/v8/DOMWrapperWorld.h"
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/V8BindingMacros.h"
 #include "bindings/v8/V8PerIsolateData.h"
 #include "bindings/v8/V8StringResource.h"
@@ -44,12 +45,11 @@
 
 namespace WebCore {
 
-    class DOMStringList;
     class DOMWindow;
     class Document;
     class Frame;
     class NodeFilter;
-    class ScriptExecutionContext;
+    class ExecutionContext;
     class ScriptWrappable;
     class XPathNSResolver;
 
@@ -67,19 +67,18 @@ namespace WebCore {
     v8::Handle<v8::Value> throwError(v8::Handle<v8::Value>, v8::Isolate*);
 
     // A helper for throwing JavaScript TypeError.
-    v8::Handle<v8::Value> throwTypeError(v8::Isolate*);
     v8::Handle<v8::Value> throwTypeError(const String&, v8::Isolate*);
 
-    // A helper for throwing JavaScript TypeError for not enough arguments.
-    v8::Handle<v8::Value> throwNotEnoughArgumentsError(v8::Isolate*);
+    // FIXME: Remove this once we kill its callers.
+    v8::Handle<v8::Value> throwUninformativeAndGenericTypeError(v8::Isolate*);
 
     v8::ArrayBuffer::Allocator* v8ArrayBufferAllocator();
 
-    v8::Handle<v8::Value> toV8Sequence(v8::Handle<v8::Value>, uint32_t& length, v8::Isolate*);
+    v8::Handle<v8::Value> toV8Sequence(v8::Handle<v8::Value>, uint32_t& length, bool& notASequence, v8::Isolate*);
 
-    inline v8::Handle<v8::Value> argumentOrNull(const v8::FunctionCallbackInfo<v8::Value>& args, int index)
+    inline v8::Handle<v8::Value> argumentOrNull(const v8::FunctionCallbackInfo<v8::Value>& info, int index)
     {
-        return index >= args.Length() ? v8::Local<v8::Value>() : args[index];
+        return index >= info.Length() ? v8::Local<v8::Value>() : info[index];
     }
 
     // Since v8::Null(isolate) crashes if we pass a null isolate,
@@ -92,45 +91,45 @@ namespace WebCore {
     }
 
     template<typename CallbackInfo, typename V>
-    inline void v8SetReturnValue(const CallbackInfo& args, V v)
+    inline void v8SetReturnValue(const CallbackInfo& info, V v)
     {
-        args.GetReturnValue().Set(v);
+        info.GetReturnValue().Set(v);
     }
 
     template<typename CallbackInfo>
-    inline void v8SetReturnValueBool(const CallbackInfo& args, bool v)
+    inline void v8SetReturnValueBool(const CallbackInfo& info, bool v)
     {
-        args.GetReturnValue().Set(v);
+        info.GetReturnValue().Set(v);
     }
 
     template<typename CallbackInfo>
-    inline void v8SetReturnValueInt(const CallbackInfo& args, int v)
+    inline void v8SetReturnValueInt(const CallbackInfo& info, int v)
     {
-        args.GetReturnValue().Set(v);
+        info.GetReturnValue().Set(v);
     }
 
     template<typename CallbackInfo>
-    inline void v8SetReturnValueUnsigned(const CallbackInfo& args, unsigned v)
+    inline void v8SetReturnValueUnsigned(const CallbackInfo& info, unsigned v)
     {
-        args.GetReturnValue().Set(v);
+        info.GetReturnValue().Set(v);
     }
 
     template<typename CallbackInfo>
-    inline void v8SetReturnValueNull(const CallbackInfo& args)
+    inline void v8SetReturnValueNull(const CallbackInfo& info)
     {
-        args.GetReturnValue().SetNull();
+        info.GetReturnValue().SetNull();
     }
 
     template<typename CallbackInfo>
-    inline void v8SetReturnValueUndefined(const CallbackInfo& args)
+    inline void v8SetReturnValueUndefined(const CallbackInfo& info)
     {
-        args.GetReturnValue().SetUndefined();
+        info.GetReturnValue().SetUndefined();
     }
 
     template<typename CallbackInfo>
-    inline void v8SetReturnValueEmptyString(const CallbackInfo& args)
+    inline void v8SetReturnValueEmptyString(const CallbackInfo& info)
     {
-        args.GetReturnValue().SetEmptyString();
+        info.GetReturnValue().SetEmptyString();
     }
 
     template <class CallbackInfo>
@@ -308,8 +307,6 @@ namespace WebCore {
         return result;
     }
 
-    v8::Handle<v8::Value> v8Array(PassRefPtr<DOMStringList>, v8::Isolate*);
-
     // Conversion flags, used in toIntXX/toUIntXX.
     enum IntegerConversionConfiguration {
         NormalConversion,
@@ -341,6 +338,32 @@ namespace WebCore {
     {
         bool ok;
         return toUInt8(value, NormalConversion, ok);
+    }
+
+    // Convert a value to a 16-bit signed integer. The conversion fails if the
+    // value cannot be converted to a number or the range violated per WebIDL:
+    // http://www.w3.org/TR/WebIDL/#es-short
+    int16_t toInt16(v8::Handle<v8::Value>, IntegerConversionConfiguration, bool& ok);
+    inline int16_t toInt16(v8::Handle<v8::Value> value, bool& ok) { return toInt16(value, NormalConversion, ok); }
+
+    // Convert a value to a 16-bit integer assuming the conversion cannot fail.
+    inline int16_t toInt16(v8::Handle<v8::Value> value)
+    {
+        bool ok;
+        return toInt16(value, NormalConversion, ok);
+    }
+
+    // Convert a value to a 16-bit unsigned integer. The conversion fails if the
+    // value cannot be converted to a number or the range violated per WebIDL:
+    // http://www.w3.org/TR/WebIDL/#es-unsigned-short
+    uint16_t toUInt16(v8::Handle<v8::Value>, IntegerConversionConfiguration, bool& ok);
+    inline uint16_t toUInt16(v8::Handle<v8::Value> value, bool& ok) { return toUInt16(value, NormalConversion, ok); }
+
+    // Convert a value to a 16-bit unsigned integer assuming the conversion cannot fail.
+    inline uint16_t toUInt16(v8::Handle<v8::Value> value)
+    {
+        bool ok;
+        return toUInt16(value, NormalConversion, ok);
     }
 
     // Convert a value to a 32-bit signed integer. The conversion fails if the
@@ -441,18 +464,8 @@ namespace WebCore {
     // Converts a JavaScript value to an array as per the Web IDL specification:
     // http://www.w3.org/TR/2012/CR-WebIDL-20120419/#es-array
     template <class T, class V8T>
-    Vector<RefPtr<T> > toRefPtrNativeArray(v8::Handle<v8::Value> value, v8::Isolate* isolate, bool* success = 0)
+    Vector<RefPtr<T> > toRefPtrNativeArrayUnchecked(v8::Local<v8::Value> v8Value, uint32_t length, v8::Isolate* isolate, bool* success = 0)
     {
-        if (success)
-            *success = true;
-
-        v8::Local<v8::Value> v8Value(v8::Local<v8::Value>::New(isolate, value));
-        uint32_t length = 0;
-        if (value->IsArray())
-            length = v8::Local<v8::Array>::Cast(v8Value)->Length();
-        else if (toV8Sequence(value, length, isolate).IsEmpty())
-            return Vector<RefPtr<T> >();
-
         Vector<RefPtr<T> > result;
         result.reserveInitialCapacity(length);
         v8::Local<v8::Object> object = v8::Local<v8::Object>::Cast(v8Value);
@@ -472,17 +485,61 @@ namespace WebCore {
         return result;
     }
 
+    template <class T, class V8T>
+    Vector<RefPtr<T> > toRefPtrNativeArray(v8::Handle<v8::Value> value, int argumentIndex, v8::Isolate* isolate, bool* success = 0)
+    {
+        if (success)
+            *success = true;
+
+        v8::Local<v8::Value> v8Value(v8::Local<v8::Value>::New(isolate, value));
+        uint32_t length = 0;
+        bool notASequence = false;
+        if (value->IsArray()) {
+            length = v8::Local<v8::Array>::Cast(v8Value)->Length();
+        } else if (toV8Sequence(value, length, notASequence, isolate).IsEmpty()) {
+            if (notASequence)
+                throwTypeError(ExceptionMessages::notAnArrayTypeArgumentOrValue(argumentIndex), isolate);
+            return Vector<RefPtr<T> >();
+        }
+
+        return toRefPtrNativeArrayUnchecked<T, V8T>(v8Value, length, isolate, success);
+    }
+
+    template <class T, class V8T>
+    Vector<RefPtr<T> > toRefPtrNativeArray(v8::Handle<v8::Value> value, const String& propertyName, v8::Isolate* isolate, bool* success = 0)
+    {
+        if (success)
+            *success = true;
+
+        v8::Local<v8::Value> v8Value(v8::Local<v8::Value>::New(isolate, value));
+        uint32_t length = 0;
+        bool notASequence = false;
+        if (value->IsArray()) {
+            length = v8::Local<v8::Array>::Cast(v8Value)->Length();
+        } else if (toV8Sequence(value, length, notASequence, isolate).IsEmpty()) {
+            if (notASequence)
+                throwTypeError(ExceptionMessages::notASequenceTypeProperty(propertyName), isolate);
+            return Vector<RefPtr<T> >();
+        }
+
+        return toRefPtrNativeArrayUnchecked<T, V8T>(v8Value, length, isolate, success);
+    }
+
     // Converts a JavaScript value to an array as per the Web IDL specification:
     // http://www.w3.org/TR/2012/CR-WebIDL-20120419/#es-array
     template <class T>
-    Vector<T> toNativeArray(v8::Handle<v8::Value> value, v8::Isolate* isolate)
+    Vector<T> toNativeArray(v8::Handle<v8::Value> value, int argumentIndex, v8::Isolate* isolate)
     {
         v8::Local<v8::Value> v8Value(v8::Local<v8::Value>::New(isolate, value));
         uint32_t length = 0;
-        if (value->IsArray())
+        bool notASequence = false;
+        if (value->IsArray()) {
             length = v8::Local<v8::Array>::Cast(v8Value)->Length();
-        else if (toV8Sequence(value, length, isolate).IsEmpty())
+        } else if (toV8Sequence(value, length, notASequence, isolate).IsEmpty()) {
+            if (notASequence)
+                throwTypeError(ExceptionMessages::notAnArrayTypeArgumentOrValue(argumentIndex), isolate);
             return Vector<T>();
+        }
 
         Vector<T> result;
         result.reserveInitialCapacity(length);
@@ -494,23 +551,23 @@ namespace WebCore {
     }
 
     template <class T>
-    Vector<T> toNativeArguments(const v8::FunctionCallbackInfo<v8::Value>& args, int startIndex)
+    Vector<T> toNativeArguments(const v8::FunctionCallbackInfo<v8::Value>& info, int startIndex)
     {
-        ASSERT(startIndex <= args.Length());
+        ASSERT(startIndex <= info.Length());
         Vector<T> result;
         typedef NativeValueTraits<T> TraitsType;
-        int length = args.Length();
+        int length = info.Length();
         result.reserveInitialCapacity(length);
         for (int i = startIndex; i < length; ++i)
-            result.uncheckedAppend(TraitsType::nativeValue(args[i]));
+            result.uncheckedAppend(TraitsType::nativeValue(info[i]));
         return result;
     }
 
-    Vector<v8::Handle<v8::Value> > toVectorOfArguments(const v8::FunctionCallbackInfo<v8::Value>& args);
+    Vector<v8::Handle<v8::Value> > toVectorOfArguments(const v8::FunctionCallbackInfo<v8::Value>&);
 
     // Validates that the passed object is a sequence type per WebIDL spec
     // http://www.w3.org/TR/2012/CR-WebIDL-20120419/#es-sequence
-    inline v8::Handle<v8::Value> toV8Sequence(v8::Handle<v8::Value> value, uint32_t& length, v8::Isolate* isolate)
+    inline v8::Handle<v8::Value> toV8Sequence(v8::Handle<v8::Value> value, uint32_t& length, bool& notASequence, v8::Isolate* isolate)
     {
         // Attempt converting to a sequence if the value is not already an array but is
         // any kind of object except for a native Date object or a native RegExp object.
@@ -518,7 +575,8 @@ namespace WebCore {
         // FIXME: Do we really need to special case Date and RegExp object?
         // https://www.w3.org/Bugs/Public/show_bug.cgi?id=22806
         if (!value->IsObject() || value->IsDate() || value->IsRegExp()) {
-            throwTypeError(isolate);
+            // Signal that the caller must handle the type error.
+            notASequence = true;
             return v8Undefined();
         }
 
@@ -531,7 +589,7 @@ namespace WebCore {
         V8TRYCATCH(v8::Local<v8::Value>, lengthValue, object->Get(v8::String::NewSymbol("length")));
 
         if (lengthValue->IsUndefined() || lengthValue->IsNull()) {
-            throwTypeError(isolate);
+            notASequence = true;
             return v8Undefined();
         }
 
@@ -594,20 +652,19 @@ namespace WebCore {
 
     v8::Handle<v8::FunctionTemplate> createRawTemplate(v8::Isolate*);
 
-    PassRefPtr<DOMStringList> toDOMStringList(v8::Handle<v8::Value>, v8::Isolate*);
     PassRefPtr<XPathNSResolver> toXPathNSResolver(v8::Handle<v8::Value>, v8::Isolate*);
 
     v8::Handle<v8::Object> toInnerGlobalObject(v8::Handle<v8::Context>);
     DOMWindow* toDOMWindow(v8::Handle<v8::Context>);
-    ScriptExecutionContext* toScriptExecutionContext(v8::Handle<v8::Context>);
+    ExecutionContext* toExecutionContext(v8::Handle<v8::Context>);
 
     DOMWindow* activeDOMWindow();
-    ScriptExecutionContext* activeScriptExecutionContext();
+    ExecutionContext* activeExecutionContext();
     DOMWindow* firstDOMWindow();
     Document* currentDocument();
 
-    // Returns the context associated with a ScriptExecutionContext.
-    v8::Local<v8::Context> toV8Context(ScriptExecutionContext*, DOMWrapperWorld*);
+    // Returns the context associated with a ExecutionContext.
+    v8::Local<v8::Context> toV8Context(ExecutionContext*, DOMWrapperWorld*);
 
     // Returns the frame object of the window object associated with
     // a context, if the window is currently being displayed in the Frame.
@@ -652,16 +709,19 @@ namespace WebCore {
     }
 
     // Attaches |environment| to |function| and returns it.
-    inline v8::Local<v8::Function> createClosure(v8::FunctionCallback function, v8::Handle<v8::Value> environment)
+    inline v8::Local<v8::Function> createClosure(v8::FunctionCallback function, v8::Handle<v8::Value> environment, v8::Isolate* isolate)
     {
-        return v8::FunctionTemplate::New(function, environment)->GetFunction();
+        return v8::Function::New(isolate, function, environment);
     }
 
     v8::Local<v8::Value> getHiddenValueFromMainWorldWrapper(v8::Isolate*, ScriptWrappable*, v8::Handle<v8::String> key);
 
-    v8::Isolate* toIsolate(ScriptExecutionContext*);
+    v8::Isolate* mainThreadIsolate();
+    v8::Isolate* toIsolate(ExecutionContext*);
     v8::Isolate* toIsolate(Frame*);
 
+    // Can only be called by WebKit::initialize
+    void setMainThreadIsolate(v8::Isolate*);
 } // namespace WebCore
 
 #endif // V8Binding_h

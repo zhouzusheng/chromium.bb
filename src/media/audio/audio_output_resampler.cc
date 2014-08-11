@@ -14,7 +14,6 @@
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_output_dispatcher_impl.h"
 #include "media/audio/audio_output_proxy.h"
-#include "media/audio/audio_util.h"
 #include "media/audio/sample_rates.h"
 #include "media/base/audio_converter.h"
 #include "media/base/limits.h"
@@ -43,6 +42,8 @@ class OnMoreDataConverter
 
   // Clears |source_callback_| and flushes the resampler.
   void Stop();
+
+  bool started() { return source_callback_ != NULL; }
 
  private:
   // AudioConverter::InputCallback implementation.
@@ -132,10 +133,8 @@ static AudioParameters SetupFallbackParams(
   // mode.  |kMinLowLatencyFrameSize| is arbitrarily based on Pepper Flash's
   // MAXIMUM frame size for low latency.
   static const int kMinLowLatencyFrameSize = 2048;
-  int frames_per_buffer = std::min(
-      std::max(input_params.frames_per_buffer(), kMinLowLatencyFrameSize),
-      static_cast<int>(
-          GetHighLatencyOutputBufferSize(input_params.sample_rate())));
+  const int frames_per_buffer =
+      std::max(input_params.frames_per_buffer(), kMinLowLatencyFrameSize);
 
   return AudioParameters(
       AudioParameters::AUDIO_PCM_LINEAR, input_params.channel_layout(),
@@ -178,7 +177,7 @@ void AudioOutputResampler::Initialize() {
 }
 
 bool AudioOutputResampler::OpenStream() {
-  DCHECK_EQ(base::MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
 
   if (dispatcher_->OpenStream()) {
     // Only record the UMA statistic if we didn't fallback during construction
@@ -238,7 +237,7 @@ bool AudioOutputResampler::OpenStream() {
 bool AudioOutputResampler::StartStream(
     AudioOutputStream::AudioSourceCallback* callback,
     AudioOutputProxy* stream_proxy) {
-  DCHECK_EQ(base::MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
 
   OnMoreDataConverter* resampler_callback = NULL;
   CallbackMap::iterator it = callbacks_.find(stream_proxy);
@@ -258,12 +257,12 @@ bool AudioOutputResampler::StartStream(
 
 void AudioOutputResampler::StreamVolumeSet(AudioOutputProxy* stream_proxy,
                                            double volume) {
-  DCHECK_EQ(base::MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   dispatcher_->StreamVolumeSet(stream_proxy, volume);
 }
 
 void AudioOutputResampler::StopStream(AudioOutputProxy* stream_proxy) {
-  DCHECK_EQ(base::MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   dispatcher_->StopStream(stream_proxy);
 
   // Now that StopStream() has completed the underlying physical stream should
@@ -275,7 +274,7 @@ void AudioOutputResampler::StopStream(AudioOutputProxy* stream_proxy) {
 }
 
 void AudioOutputResampler::CloseStream(AudioOutputProxy* stream_proxy) {
-  DCHECK_EQ(base::MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
   dispatcher_->CloseStream(stream_proxy);
 
   // We assume that StopStream() is always called prior to CloseStream(), so
@@ -288,7 +287,7 @@ void AudioOutputResampler::CloseStream(AudioOutputProxy* stream_proxy) {
 }
 
 void AudioOutputResampler::Shutdown() {
-  DCHECK_EQ(base::MessageLoop::current(), message_loop_);
+  DCHECK(message_loop_->BelongsToCurrentThread());
 
   // No AudioOutputProxy objects should hold a reference to us when we get
   // to this stage.
@@ -296,6 +295,37 @@ void AudioOutputResampler::Shutdown() {
 
   dispatcher_->Shutdown();
   DCHECK(callbacks_.empty());
+}
+
+void AudioOutputResampler::CloseStreamsForWedgeFix() {
+  DCHECK(message_loop_->BelongsToCurrentThread());
+
+  // Stop and close all active streams.  Once all streams across all dispatchers
+  // have been closed the AudioManager will call RestartStreamsForWedgeFix().
+  for (CallbackMap::iterator it = callbacks_.begin(); it != callbacks_.end();
+       ++it) {
+    if (it->second->started())
+      dispatcher_->StopStream(it->first);
+    dispatcher_->CloseStream(it->first);
+  }
+
+  // Close all idle streams as well.
+  dispatcher_->CloseStreamsForWedgeFix();
+}
+
+void AudioOutputResampler::RestartStreamsForWedgeFix() {
+  DCHECK(message_loop_->BelongsToCurrentThread());
+  // By opening all streams first and then starting them one by one we ensure
+  // the dispatcher only opens streams for those which will actually be used.
+  for (CallbackMap::iterator it = callbacks_.begin(); it != callbacks_.end();
+       ++it) {
+    dispatcher_->OpenStream();
+  }
+  for (CallbackMap::iterator it = callbacks_.begin(); it != callbacks_.end();
+       ++it) {
+    if (it->second->started())
+      dispatcher_->StartStream(it->second, it->first);
+  }
 }
 
 OnMoreDataConverter::OnMoreDataConverter(const AudioParameters& input_params,

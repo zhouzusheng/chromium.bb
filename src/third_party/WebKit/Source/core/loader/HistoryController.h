@@ -47,13 +47,11 @@ public:
     explicit HistoryController(Frame*);
     ~HistoryController();
 
-    void saveScrollPositionAndViewStateToItem(HistoryItem*);
     void clearScrollPositionAndViewState();
     void restoreScrollPositionAndViewState();
 
     void updateBackForwardListForFragmentScroll();
 
-    void saveDocumentState();
     void saveDocumentAndScrollState();
     void restoreDocumentState();
 
@@ -62,7 +60,6 @@ public:
 
     HistoryItem* currentItem() const { return m_currentItem.get(); }
     void setCurrentItem(HistoryItem*);
-    void setCurrentItemTitle(const String&);
     bool currentItemShouldBeReplaced() const;
 
     HistoryItem* previousItem() const { return m_previousItem.get(); }
@@ -70,8 +67,8 @@ public:
     HistoryItem* provisionalItem() const { return m_provisionalItem.get(); }
     void setProvisionalItem(HistoryItem*);
 
-    void pushState(PassRefPtr<SerializedScriptValue>, const String& title, const String& url);
-    void replaceState(PassRefPtr<SerializedScriptValue>, const String& title, const String& url);
+    void pushState(PassRefPtr<SerializedScriptValue>, const String& url);
+    void replaceState(PassRefPtr<SerializedScriptValue>, const String& url);
 
     void setDefersLoading(bool);
 
@@ -84,21 +81,20 @@ private:
     PassRefPtr<HistoryItem> createItem();
     PassRefPtr<HistoryItem> createItemTree(Frame* targetFrame, bool clipAtTarget);
 
-    void updateForBackForwardNavigation();
-    void updateForReload();
     void updateForStandardLoad();
-    void updateForRedirectWithLockedBackForwardList();
     void updateForInitialLoadInChildFrame();
 
     void recursiveSetProvisionalItem(HistoryItem*, HistoryItem*);
     void recursiveGoToItem(HistoryItem*, HistoryItem*);
-    bool isReloadTypeWithProvisionalItem(FrameLoadType);
     void recursiveUpdateForCommit();
     void recursiveUpdateForSameDocumentNavigation();
     bool itemsAreClones(HistoryItem*, HistoryItem*) const;
     bool currentFramesMatchItem(HistoryItem*) const;
-    void updateBackForwardListClippedAtTarget(bool doClip);
-    void updateCurrentItem();
+
+    void createNewBackForwardItem(bool doClip);
+    void updateWithoutCreatingNewBackForwardItem();
+
+    void clearProvisionalItemsInAllFrames();
 
     Frame* m_frame;
 

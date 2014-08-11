@@ -24,7 +24,7 @@
 #ifndef BBCLipboard_h
 #define BBCLipboard_h
 
-#include "DOMWindowProperty.h"
+#include "core/frame/DOMWindowProperty.h"
 #include <wtf/Forward.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>

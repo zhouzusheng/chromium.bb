@@ -13,6 +13,7 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/debug/crash_logging.h"
+#include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
@@ -128,11 +129,13 @@ static void LogMediaSourceError(const scoped_refptr<media::MediaLog>& media_log,
 }
 
 WebMediaPlayerImpl::WebMediaPlayerImpl(
+    content::RenderView* render_view,
     WebKit::WebFrame* frame,
     WebKit::WebMediaPlayerClient* client,
     base::WeakPtr<WebMediaPlayerDelegate> delegate,
     const WebMediaPlayerParams& params)
-    : frame_(frame),
+    : content::RenderViewObserver(render_view),
+      frame_(frame),
       network_state_(WebMediaPlayer::NetworkStateEmpty),
       ready_state_(WebMediaPlayer::ReadyStateHaveNothing),
       main_loop_(base::MessageLoopProxy::current()),
@@ -153,6 +156,8 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       supports_save_(true),
       starting_(false),
       chunk_demuxer_(NULL),
+      current_frame_painted_(false),
+      frames_dropped_before_paint_(0),
       pending_repaint_(false),
       pending_size_change_(false),
       video_frame_provider_client_(NULL),
@@ -161,6 +166,11 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       media_log_->CreateEvent(media::MediaLogEvent::WEBMEDIAPLAYER_CREATED));
 
   pipeline_.reset(new media::Pipeline(media_loop_, media_log_.get()));
+
+  // |gpu_factories_| requires that its entry points be called on its
+  // |GetMessageLoop()|.  Since |pipeline_| will own decoders created from the
+  // factories, require that their message loops are identical.
+  DCHECK(!gpu_factories_ || (gpu_factories_->GetMessageLoop() == media_loop_));
 
   // Let V8 know we started new thread if we did not do it yet.
   // Made separate task to avoid deletion of player currently being created.
@@ -173,10 +183,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       base::Bind(&WebMediaPlayerImpl::IncrementExternallyAllocatedMemory,
                  AsWeakPtr()));
 
-  // Also we want to be notified of |main_loop_| destruction.
-  base::MessageLoop::current()->AddDestructionObserver(this);
-
-  if (WebKit::WebRuntimeFeatures::isLegacyEncryptedMediaEnabled()) {
+  if (WebKit::WebRuntimeFeatures::isPrefixedEncryptedMediaEnabled()) {
     decryptor_.reset(new ProxyDecryptor(
 #if defined(ENABLE_PEPPER_CDMS)
         client,
@@ -206,11 +213,6 @@ WebMediaPlayerImpl::~WebMediaPlayerImpl() {
     delegate_->PlayerGone(this);
 
   Destroy();
-
-  // Remove destruction observer if we're being destroyed but the main thread is
-  // still running.
-  if (base::MessageLoop::current())
-    base::MessageLoop::current()->RemoveDestructionObserver(this);
 }
 
 namespace {
@@ -305,6 +307,8 @@ void WebMediaPlayerImpl::play() {
 
   paused_ = false;
   pipeline_->SetPlaybackRate(playback_rate_);
+  if (data_source_)
+    data_source_->MediaIsPlaying();
 
   media_log_->AddEvent(media_log_->CreateEvent(media::MediaLogEvent::PLAY));
 
@@ -317,6 +321,8 @@ void WebMediaPlayerImpl::pause() {
 
   paused_ = true;
   pipeline_->SetPlaybackRate(0.0f);
+  if (data_source_)
+    data_source_->MediaIsPaused();
   paused_time_ = pipeline_->GetMediaTime();
 
   media_log_->AddEvent(media_log_->CreateEvent(media::MediaLogEvent::PAUSE));
@@ -384,6 +390,8 @@ void WebMediaPlayerImpl::setRate(double rate) {
   playback_rate_ = rate;
   if (!paused_) {
     pipeline_->SetPlaybackRate(rate);
+    if (data_source_)
+      data_source_->MediaPlaybackRateChanged(rate);
   }
 }
 
@@ -515,8 +523,10 @@ void WebMediaPlayerImpl::paint(WebCanvas* canvas,
   scoped_refptr<media::VideoFrame> video_frame;
   {
     base::AutoLock auto_lock(lock_);
+    DoneWaitingForPaint(true);
     video_frame = current_frame_;
   }
+  TRACE_EVENT0("media", "WebMediaPlayerImpl:paint");
   gfx::Rect gfx_rect(rect);
   skcanvas_video_renderer_.Paint(video_frame.get(), canvas, gfx_rect, alpha);
 }
@@ -548,7 +558,12 @@ unsigned WebMediaPlayerImpl::droppedFrameCount() const {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   media::PipelineStatistics stats = pipeline_->GetStatistics();
-  return stats.video_frames_dropped;
+
+  base::AutoLock auto_lock(lock_);
+  unsigned frames_dropped =
+      stats.video_frames_dropped + frames_dropped_before_paint_;
+  DCHECK_LE(frames_dropped, stats.video_frames_decoded);
+  return frames_dropped;
 }
 
 unsigned WebMediaPlayerImpl::audioDecodedByteCount() const {
@@ -576,6 +591,9 @@ void WebMediaPlayerImpl::SetVideoFrameProviderClient(
 
 scoped_refptr<media::VideoFrame> WebMediaPlayerImpl::GetCurrentFrame() {
   base::AutoLock auto_lock(lock_);
+  DoneWaitingForPaint(true);
+  TRACE_EVENT_ASYNC_BEGIN0(
+      "media", "WebMediaPlayerImpl:compositing", this);
   return current_frame_;
 }
 
@@ -586,6 +604,7 @@ void WebMediaPlayerImpl::PutCurrentFrame(
     DCHECK(frame_->view()->isAcceleratedCompositingActive());
     UMA_HISTOGRAM_BOOLEAN("Media.AcceleratedCompositingActive", true);
   }
+  TRACE_EVENT_ASYNC_END0("media", "WebMediaPlayerImpl:compositing", this);
 }
 
 bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
@@ -602,7 +621,9 @@ bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
     video_frame = current_frame_;
   }
 
-  if (!video_frame.get())
+  TRACE_EVENT0("media", "WebMediaPlayerImpl:copyVideoTextureToPlatformTexture");
+
+  if (!video_frame)
     return false;
   if (video_frame->format() != media::VideoFrame::NATIVE_TEXTURE)
     return false;
@@ -828,23 +849,31 @@ WebMediaPlayerImpl::CancelKeyRequestInternal(
   return WebMediaPlayer::MediaKeyExceptionNoError;
 }
 
-void WebMediaPlayerImpl::WillDestroyCurrentMessageLoop() {
+void WebMediaPlayerImpl::OnDestruct() {
   Destroy();
 }
 
 void WebMediaPlayerImpl::Repaint() {
   DCHECK(main_loop_->BelongsToCurrentThread());
+  TRACE_EVENT0("media", "WebMediaPlayerImpl:repaint");
 
   bool size_changed = false;
   {
     base::AutoLock auto_lock(lock_);
     std::swap(pending_size_change_, size_changed);
-    pending_repaint_ = false;
+    if (pending_repaint_) {
+      TRACE_EVENT_ASYNC_END0(
+          "media", "WebMediaPlayerImpl:repaintPending", this);
+      pending_repaint_ = false;
+    }
   }
 
-  if (size_changed)
+  if (size_changed) {
+    TRACE_EVENT0("media", "WebMediaPlayerImpl:clientSizeChanged");
     GetClient()->sizeChanged();
+  }
 
+  TRACE_EVENT0("media", "WebMediaPlayerImpl:clientRepaint");
   GetClient()->repaint();
 }
 
@@ -937,8 +966,7 @@ void WebMediaPlayerImpl::OnKeyAdded(const std::string& session_id) {
                         WebString::fromUTF8(session_id));
 }
 
-void WebMediaPlayerImpl::OnNeedKey(const std::string& session_id,
-                                   const std::string& type,
+void WebMediaPlayerImpl::OnNeedKey(const std::string& type,
                                    const std::vector<uint8>& init_data) {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
@@ -954,7 +982,7 @@ void WebMediaPlayerImpl::OnNeedKey(const std::string& session_id,
 
   const uint8* init_data_ptr = init_data.empty() ? NULL : &init_data[0];
   GetClient()->keyNeeded(WebString(),
-                         WebString::fromUTF8(session_id),
+                         WebString(),
                          init_data_ptr,
                          init_data.size());
 }
@@ -1051,7 +1079,7 @@ void WebMediaPlayerImpl::StartPipeline() {
 
     demuxer_.reset(new media::FFmpegDemuxer(
         media_loop_, data_source_.get(),
-        BIND_TO_RENDER_LOOP_1(&WebMediaPlayerImpl::OnNeedKey, ""),
+        BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnNeedKey),
         media_log_));
   } else {
     DCHECK(!chunk_demuxer_);
@@ -1066,7 +1094,7 @@ void WebMediaPlayerImpl::StartPipeline() {
 
     chunk_demuxer_ = new media::ChunkDemuxer(
         BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnDemuxerOpened),
-        BIND_TO_RENDER_LOOP_1(&WebMediaPlayerImpl::OnNeedKey, ""),
+        BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnNeedKey),
         add_text_track_cb,
         base::Bind(&LogMediaSourceError, media_log_));
     demuxer_.reset(chunk_demuxer_);
@@ -1243,20 +1271,51 @@ void WebMediaPlayerImpl::FrameReady(
     const scoped_refptr<media::VideoFrame>& frame) {
   base::AutoLock auto_lock(lock_);
 
-  if (current_frame_.get() &&
+  if (current_frame_ &&
       current_frame_->natural_size() != frame->natural_size() &&
       !pending_size_change_) {
     pending_size_change_ = true;
   }
 
+  DoneWaitingForPaint(false);
+
   current_frame_ = frame;
+  current_frame_painted_ = false;
+  TRACE_EVENT_FLOW_BEGIN0("media", "WebMediaPlayerImpl:waitingForPaint", this);
 
   if (pending_repaint_)
     return;
 
+  TRACE_EVENT_ASYNC_BEGIN0("media", "WebMediaPlayerImpl:repaintPending", this);
   pending_repaint_ = true;
   main_loop_->PostTask(FROM_HERE, base::Bind(
       &WebMediaPlayerImpl::Repaint, AsWeakPtr()));
+}
+
+void WebMediaPlayerImpl::DoneWaitingForPaint(bool painting_frame) {
+  lock_.AssertAcquired();
+  if (!current_frame_ || current_frame_painted_)
+    return;
+
+  TRACE_EVENT_FLOW_END0("media", "WebMediaPlayerImpl:waitingForPaint", this);
+
+  if (painting_frame) {
+    current_frame_painted_ = true;
+    return;
+  }
+
+  // The frame wasn't painted, but we aren't waiting for a Repaint() call so
+  // assume that the frame wasn't painted because the video wasn't visible.
+  if (!pending_repaint_)
+    return;
+
+  // The |current_frame_| wasn't painted, it is being replaced, and we haven't
+  // even gotten the chance to request a repaint for it yet. Mark it as dropped.
+  TRACE_EVENT0("media", "WebMediaPlayerImpl:frameDropped");
+  DVLOG(1) << "Frame dropped before being painted: "
+           << current_frame_->GetTimestamp().InSecondsF();
+  if (frames_dropped_before_paint_ < kuint32max)
+    frames_dropped_before_paint_++;
 }
 
 }  // namespace content

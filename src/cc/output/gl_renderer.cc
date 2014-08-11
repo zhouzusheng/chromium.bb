@@ -32,12 +32,13 @@
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/resources/layer_quad.h"
 #include "cc/resources/scoped_resource.h"
-#include "cc/resources/sync_point_helper.h"
 #include "cc/resources/texture_mailbox_deleter.h"
 #include "cc/trees/damage_tracker.h"
 #include "cc/trees/proxy.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "gpu/GLES2/gl2extchromium.h"
+#include "gpu/command_buffer/client/context_support.h"
+#include "gpu/command_buffer/common/gpu_memory_allocation.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
@@ -162,9 +163,9 @@ GLRenderer::GLRenderer(RendererClient* client,
       offscreen_framebuffer_id_(0),
       shared_geometry_quad_(gfx::RectF(-0.5f, -0.5f, 1.0f, 1.0f)),
       context_(output_surface->context_provider()->Context3d()),
+      context_support_(output_surface->context_provider()->ContextSupport()),
       texture_mailbox_deleter_(texture_mailbox_deleter),
       is_backbuffer_discarded_(false),
-      discard_backbuffer_when_not_visible_(false),
       is_using_bind_uniform_(false),
       visible_(true),
       is_scissor_enabled_(false),
@@ -174,6 +175,7 @@ GLRenderer::GLRenderer(RendererClient* client,
       highp_threshold_cache_(0),
       on_demand_tile_raster_resource_id_(0) {
   DCHECK(context_);
+  DCHECK(context_support_);
 }
 
 bool GLRenderer::Initialize() {
@@ -276,12 +278,12 @@ void GLRenderer::SetVisible(bool visible) {
 void GLRenderer::SendManagedMemoryStats(size_t bytes_visible,
                                         size_t bytes_visible_and_nearby,
                                         size_t bytes_allocated) {
-  WebKit::WebGraphicsManagedMemoryStats stats;
-  stats.bytesVisible = bytes_visible;
-  stats.bytesVisibleAndNearby = bytes_visible_and_nearby;
-  stats.bytesAllocated = bytes_allocated;
-  stats.backbufferRequested = !is_backbuffer_discarded_;
-  context_->sendManagedMemoryStatsCHROMIUM(&stats);
+  gpu::ManagedMemoryStats stats;
+  stats.bytes_required = bytes_visible;
+  stats.bytes_nice_to_have = bytes_visible_and_nearby;
+  stats.bytes_allocated = bytes_allocated;
+  stats.backbuffer_requested = !is_backbuffer_discarded_;
+  context_support_->SendManagedMemoryStats(stats);
 }
 
 void GLRenderer::ReleaseRenderPassTextures() { render_pass_textures_.clear(); }
@@ -478,46 +480,6 @@ void GLRenderer::DrawDebugBorderQuad(const DrawingFrame* frame,
       Context()->drawElements(GL_LINE_LOOP, 4, GL_UNSIGNED_SHORT, 0));
 }
 
-static inline SkBitmap ApplyFilters(GLRenderer* renderer,
-                                    ContextProvider* offscreen_contexts,
-                                    const FilterOperations& filters,
-                                    ScopedResource* source_texture_resource) {
-  if (filters.IsEmpty())
-    return SkBitmap();
-
-  if (!offscreen_contexts || !offscreen_contexts->GrContext())
-    return SkBitmap();
-
-  ResourceProvider::ScopedWriteLockGL lock(renderer->resource_provider(),
-                                           source_texture_resource->id());
-
-  // Flush the compositor context to ensure that textures there are available
-  // in the shared context.  Do this after locking/creating the compositor
-  // texture.
-  renderer->resource_provider()->Flush();
-
-  // Make sure skia uses the correct GL context.
-  offscreen_contexts->Context3d()->makeContextCurrent();
-
-  SkBitmap source =
-      RenderSurfaceFilters::Apply(filters,
-                                  lock.texture_id(),
-                                  source_texture_resource->size(),
-                                  offscreen_contexts->GrContext());
-
-  // Flush skia context so that all the rendered stuff appears on the
-  // texture.
-  offscreen_contexts->GrContext()->flush();
-
-  // Flush the GL context so rendering results from this context are
-  // visible in the compositor's context.
-  offscreen_contexts->Context3d()->flush();
-
-  // Use the compositor's GL context again.
-  renderer->Context()->makeContextCurrent();
-  return source;
-}
-
 static SkBitmap ApplyImageFilter(GLRenderer* renderer,
                                  ContextProvider* offscreen_contexts,
                                  gfx::Point origin,
@@ -631,10 +593,6 @@ scoped_ptr<ScopedResource> GLRenderer::DrawBackgroundFilters(
   // TODO(danakj): When this algorithm changes, update
   // LayerTreeHost::PrioritizeTextures() accordingly.
 
-  FilterOperations filters =
-      RenderSurfaceFilters::Optimize(quad->background_filters);
-  DCHECK(!filters.IsEmpty());
-
   // TODO(danakj): We only allow background filters on an opaque render surface
   // because other surfaces may contain translucent pixels, and the contents
   // behind those translucent pixels wouldn't have the filter applied.
@@ -642,13 +600,18 @@ scoped_ptr<ScopedResource> GLRenderer::DrawBackgroundFilters(
     return scoped_ptr<ScopedResource>();
   DCHECK(!frame->current_texture);
 
+  // TODO(ajuma): Add support for reference filters once
+  // FilterOperations::GetOutsets supports reference filters.
+  if (quad->background_filters.HasReferenceFilter())
+    return scoped_ptr<ScopedResource>();
+
   // TODO(danakj): Do a single readback for both the surface and replica and
   // cache the filtered results (once filter textures are not reused).
   gfx::Rect window_rect = gfx::ToEnclosingRect(MathUtil::MapClippedRect(
       contents_device_transform, SharedGeometryQuad().BoundingBox()));
 
   int top, right, bottom, left;
-  filters.GetOutsets(&top, &right, &bottom, &left);
+  quad->background_filters.GetOutsets(&top, &right, &bottom, &left);
   window_rect.Inset(-left, -top, -right, -bottom);
 
   window_rect.Intersect(
@@ -668,11 +631,15 @@ scoped_ptr<ScopedResource> GLRenderer::DrawBackgroundFilters(
                           window_rect);
   }
 
+  skia::RefPtr<SkImageFilter> filter = RenderSurfaceFilters::BuildImageFilter(
+      quad->background_filters, device_background_texture->size());
+
   SkBitmap filtered_device_background =
-      ApplyFilters(this,
-                   frame->offscreen_context_provider,
-                   filters,
-                   device_background_texture.get());
+      ApplyImageFilter(this,
+                       frame->offscreen_context_provider,
+                       quad->rect.origin(),
+                       filter.get(),
+                       device_background_texture.get());
   if (!filtered_device_background.getTexture())
     return scoped_ptr<ScopedResource>();
 
@@ -732,7 +699,7 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
                                     const RenderPassDrawQuad* quad) {
   SetBlendEnabled(quad->ShouldDrawWithBlending());
 
-  CachedResource* contents_texture =
+  ScopedResource* contents_texture =
       render_pass_textures_.get(quad->render_pass_id);
   if (!contents_texture || !contents_texture->id())
     return;
@@ -772,40 +739,31 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
   SkBitmap filter_bitmap;
   SkScalar color_matrix[20];
   bool use_color_matrix = false;
-  if (quad->filter) {
-    skia::RefPtr<SkColorFilter> cf;
+  // TODO(ajuma): Always use RenderSurfaceFilters::BuildImageFilter, not just
+  // when we have a reference filter.
+  if (!quad->filters.IsEmpty()) {
+    skia::RefPtr<SkImageFilter> filter = RenderSurfaceFilters::BuildImageFilter(
+        quad->filters, contents_texture->size());
+    if (filter) {
+      skia::RefPtr<SkColorFilter> cf;
 
-    {
-      SkColorFilter* colorfilter_rawptr = NULL;
-      quad->filter->asColorFilter(&colorfilter_rawptr);
-      cf = skia::AdoptRef(colorfilter_rawptr);
-    }
+      {
+        SkColorFilter* colorfilter_rawptr = NULL;
+        filter->asColorFilter(&colorfilter_rawptr);
+        cf = skia::AdoptRef(colorfilter_rawptr);
+      }
 
-    if (cf && cf->asColorMatrix(color_matrix) && !quad->filter->getInput(0)) {
-      // We have a single color matrix as a filter; apply it locally
-      // in the compositor.
-      use_color_matrix = true;
-    } else {
-      filter_bitmap = ApplyImageFilter(this,
-                                       frame->offscreen_context_provider,
-                                       quad->rect.origin(),
-                                       quad->filter.get(),
-                                       contents_texture);
-    }
-  } else if (!quad->filters.IsEmpty()) {
-    FilterOperations optimized_filters =
-        RenderSurfaceFilters::Optimize(quad->filters);
-
-    if ((optimized_filters.size() == 1) &&
-        (optimized_filters.at(0).type() == FilterOperation::COLOR_MATRIX)) {
-      memcpy(
-          color_matrix, optimized_filters.at(0).matrix(), sizeof(color_matrix));
-      use_color_matrix = true;
-    } else {
-      filter_bitmap = ApplyFilters(this,
-                                   frame->offscreen_context_provider,
-                                   optimized_filters,
-                                   contents_texture);
+      if (cf && cf->asColorMatrix(color_matrix) && !filter->getInput(0)) {
+        // We have a single color matrix as a filter; apply it locally
+        // in the compositor.
+        use_color_matrix = true;
+      } else {
+        filter_bitmap = ApplyImageFilter(this,
+                                         frame->offscreen_context_provider,
+                                         quad->rect.origin(),
+                                         filter.get(),
+                                         contents_texture);
+      }
     }
   }
 
@@ -1055,9 +1013,10 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
     // and the RenderPass contents texture, so we flip the tex coords from the
     // RenderPass texture to find the mask texture coords.
     GLC(Context(),
-        Context()->uniform2f(shader_mask_tex_coord_offset_location,
-                             quad->mask_uv_rect.x(),
-                             quad->mask_uv_rect.y() + mask_tex_scale_y));
+        Context()->uniform2f(
+            shader_mask_tex_coord_offset_location,
+            quad->mask_uv_rect.x(),
+            quad->mask_uv_rect.y() + quad->mask_uv_rect.height()));
     GLC(Context(),
         Context()->uniform2f(shader_mask_tex_coord_scale_location,
                              mask_tex_scale_x,
@@ -1122,7 +1081,7 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
   // Flush the compositor context before the filter bitmap goes out of
   // scope, so the draw gets processed before the filter texture gets deleted.
   if (filter_bitmap.getTexture())
-    context_->flush();
+    GLC(context_, context_->flush());
 }
 
 struct SolidColorProgramUniforms {
@@ -1720,7 +1679,7 @@ void GLRenderer::DrawPictureQuad(const DrawingFrame* frame,
 
   uint8_t* bitmap_pixels = NULL;
   SkBitmap on_demand_tile_raster_bitmap_dest;
-  SkBitmap::Config config = SkBitmapConfigFromFormat(quad->texture_format);
+  SkBitmap::Config config = SkBitmapConfig(quad->texture_format);
   if (on_demand_tile_raster_bitmap_.getConfig() != config) {
     on_demand_tile_raster_bitmap_.copyTo(&on_demand_tile_raster_bitmap_dest,
                                          config);
@@ -2099,8 +2058,8 @@ void GLRenderer::CopyTextureToFramebuffer(const DrawingFrame* frame,
 }
 
 void GLRenderer::Finish() {
-  TRACE_EVENT0("cc", "GLRenderer::finish");
-  context_->finish();
+  TRACE_EVENT0("cc", "GLRenderer::Finish");
+  GLC(context_, context_->finish());
 }
 
 void GLRenderer::SwapBuffers() {
@@ -2143,17 +2102,11 @@ void GLRenderer::SwapBuffers() {
   resource_provider_->SetReadLockFence(new SimpleSwapFence());
 }
 
-void GLRenderer::SetDiscardBackBufferWhenNotVisible(bool discard) {
-  discard_backbuffer_when_not_visible_ = discard;
-  EnforceMemoryPolicy();
-}
-
 void GLRenderer::EnforceMemoryPolicy() {
   if (!visible_) {
     TRACE_EVENT0("cc", "GLRenderer::EnforceMemoryPolicy dropping resources");
     ReleaseRenderPassTextures();
-    if (discard_backbuffer_when_not_visible_)
-      DiscardBackbuffer();
+    DiscardBackbuffer();
     resource_provider_->ReleaseCachedData();
     GLC(context_, context_->flush());
   }
@@ -2379,10 +2332,7 @@ void GLRenderer::DoGetFramebufferPixels(
   if (is_async) {
     GLC(context_, context_->endQueryEXT(
         GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM));
-    SyncPointHelper::SignalQuery(
-        context_,
-        query,
-        finished_callback);
+    context_support_->SignalQuery(query, finished_callback);
   } else {
     resource_provider_->Finish();
     finished_callback.Run();
@@ -2473,7 +2423,7 @@ void GLRenderer::GetFramebufferTexture(
       context_->copyTexImage2D(
           GL_TEXTURE_2D,
           0,
-          ResourceProvider::GetGLDataFormat(texture_format),
+          GLDataFormat(texture_format),
           window_rect.x(),
           window_rect.y(),
           window_rect.width(),

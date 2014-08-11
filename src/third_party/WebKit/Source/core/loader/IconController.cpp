@@ -37,7 +37,7 @@
 
 #include "core/dom/Document.h"
 #include "core/dom/IconURL.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 
 namespace WebCore {
 
@@ -72,7 +72,7 @@ IconURL IconController::iconURL(IconType iconType) const
 IconURLs IconController::urlsForTypes(int iconTypesMask)
 {
     IconURLs iconURLs;
-    if (m_frame->tree() && m_frame->tree()->parent())
+    if (m_frame->tree().parent())
         return iconURLs;
 
     if (iconTypesMask & Favicon && !appendToIconURLs(Favicon, &iconURLs))

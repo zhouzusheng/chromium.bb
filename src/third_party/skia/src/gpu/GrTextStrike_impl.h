@@ -13,11 +13,11 @@
 
 class GrFontCache::Key {
 public:
-    Key(GrFontScaler* scaler) {
-        fFontScalerKey = scaler->getKey();
+    explicit Key(const GrKey* fontScalarKey) {
+        fFontScalerKey = fontScalarKey;
     }
 
-    uint32_t getHash() const { return fFontScalerKey->getHash(); }
+    intptr_t getHash() const { return fFontScalerKey->getHash(); }
 
     static bool LT(const GrTextStrike& strike, const Key& key) {
         return *strike.getFontScalerKey() < *key.fFontScalerKey;
@@ -51,7 +51,7 @@ void GrFontCache::detachStrikeFromList(GrTextStrike* strike) {
 GrTextStrike* GrFontCache::getStrike(GrFontScaler* scaler) {
     this->validate();
 
-    Key key(scaler);
+    const Key key(scaler->getKey());
     GrTextStrike* strike = fCache.find(key);
     if (NULL == strike) {
         strike = this->generateStrike(scaler, key);

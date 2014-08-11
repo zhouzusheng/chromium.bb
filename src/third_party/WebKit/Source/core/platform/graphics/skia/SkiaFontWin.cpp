@@ -36,7 +36,7 @@
 #include "core/platform/graphics/Pattern.h"
 #include "core/platform/graphics/SimpleFontData.h"
 #include "core/platform/graphics/chromium/FontPlatformDataChromiumWin.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
+#include "platform/transforms/AffineTransform.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkDevice.h"
 #include "third_party/skia/include/core/SkPaint.h"
@@ -85,56 +85,33 @@ static void skiaDrawText(GraphicsContext* context,
     }
 }
 
-static void setupPaintForFont(SkPaint* paint, GraphicsContext* context,
-                              SkTypeface* face, float size, uint32_t textFlags,
-                              bool lcdExplicitlyRequested)
-{
-    paint->setTextSize(SkFloatToScalar(size));
-    paint->setTypeface(face);
-
-    // SHEZ: don't remove cleartype if it was explicitly requested
-    if (!lcdExplicitlyRequested && !context->couldUseLCDRenderedText()) {
-        textFlags &= ~SkPaint::kLCDRenderText_Flag;
-        // If we *just* clear our request for LCD, then GDI seems to
-        // sometimes give us AA text, and sometimes give us BW text. Since the
-        // original intent was LCD, we want to force AA (rather than BW), so we
-        // add a special bit to tell Skia to do its best to avoid the BW: by
-        // drawing LCD offscreen and downsampling that to AA.
-        textFlags |= SkPaint::kGenA8FromLCD_Flag;
-    }
-
-    static const uint32_t textFlagsMask = SkPaint::kAntiAlias_Flag |
-                                          SkPaint::kLCDRenderText_Flag |
-                                          SkPaint::kGenA8FromLCD_Flag;
-
-    // now copy in just the text flags
-    SkASSERT(!(textFlags & ~textFlagsMask));
-    uint32_t flags = paint->getFlags();
-    flags &= ~textFlagsMask;
-    flags |= textFlags;
-    paint->setFlags(flags);
-}
-
-static void paintSkiaText(GraphicsContext* context, HFONT hfont,
-                          SkTypeface* face, float size, uint32_t textFlags,
-                          bool lcdExplicitlyRequested,
-                          int numGlyphs,
-                          const WORD* glyphs,
-                          const int* advances,
-                          const GOFFSET* offsets,
-                          const SkPoint& origin,
-                          const SkRect& textRect)
+static void paintSkiaText(GraphicsContext* context,
+    const FontPlatformData& data,
+    SkTypeface* face, float size, uint32_t textFlags,
+    bool lcdExplicitlyRequested,
+    int numGlyphs,
+    const WORD* glyphs,
+    const int* advances,
+    const GOFFSET* offsets,
+    const SkPoint& origin,
+    const SkRect& textRect)
 {
     TextDrawingModeFlags textMode = context->textDrawingMode();
-    // Ensure font load for printing, because PDF device needs it.
-    if (context->isPrintingDevice())
-        FontPlatformData::ensureFontLoaded(hfont);
+
+    FontPlatformData::FontSmoothingOverride fontSmoothingOverride;
+    fontSmoothingOverride.textFlags = textFlags;
+    fontSmoothingOverride.lcdExplicitlyRequested = lcdExplicitlyRequested;
 
     // Filling (if necessary). This is the common case.
     SkPaint paint;
     context->setupPaintForFilling(&paint);
     paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
-    setupPaintForFont(&paint, context, face, size, textFlags, lcdExplicitlyRequested);
+    data.setupPaint(&paint, context, &fontSmoothingOverride);
+
+    // FIXME: Only needed to support the HFONT based paintSkiaText
+    // version where a new typeface is created from the HFONT.
+    // As such it can go away once the HFONT code path is removed.
+    paint.setTypeface(face);
 
     bool didFill = false;
 
@@ -151,7 +128,8 @@ static void paintSkiaText(GraphicsContext* context, HFONT hfont,
         paint.reset();
         context->setupPaintForStroking(&paint);
         paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
-        setupPaintForFont(&paint, context, face, size, textFlags, lcdExplicitlyRequested);
+        data.setupPaint(&paint, context);
+        paint.setTypeface(face);
 
         if (didFill) {
             // If there is a shadow and we filled above, there will already be
@@ -183,23 +161,29 @@ void paintSkiaText(GraphicsContext* context,
                    const SkPoint& origin,
                    const SkRect& textRect)
 {
-    paintSkiaText(context, data.hfont(), data.typeface(), data.size(), textFlags, lcdExplicitlyRequested,
+    paintSkiaText(context, data, data.typeface(), data.size(), textFlags, lcdExplicitlyRequested,
                   numGlyphs, glyphs, advances, offsets, origin, textRect);
 }
 
 void paintSkiaText(GraphicsContext* context,
-                   HFONT hfont,
-                   int numGlyphs,
-                   const WORD* glyphs,
-                   const int* advances,
-                   const GOFFSET* offsets,
-                   const SkPoint& origin,
-                   const SkRect& textRect)
+    const FontPlatformData& data,
+    HFONT hfont,
+    int numGlyphs,
+    const WORD* glyphs,
+    const int* advances,
+    const GOFFSET* offsets,
+    const SkPoint& origin,
+    const SkRect& textRect)
 {
     int size;
     int paintTextFlags;
+
+    // Ensure font load for printing, because PDF device needs it.
+    if (context->isPrintingDevice())
+        FontPlatformData::ensureFontLoaded(hfont);
+
     RefPtr<SkTypeface> face = CreateTypefaceFromHFont(hfont, &size, &paintTextFlags);
-    paintSkiaText(context, hfont, face.get(), size, paintTextFlags, false, numGlyphs, glyphs, advances, offsets, origin, textRect);
+    paintSkiaText(context, data, face.get(), size, paintTextFlags, false, numGlyphs, glyphs, advances, offsets, origin, textRect);
 }
 
 }  // namespace WebCore

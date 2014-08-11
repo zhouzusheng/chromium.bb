@@ -30,15 +30,14 @@
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/graphics/filters/Filter.h"
 #include "core/platform/graphics/filters/SkiaImageFilterBuilder.h"
-#include "core/platform/text/TextStream.h"
-#include "core/rendering/RenderTreeAsText.h"
+#include "platform/text/TextStream.h"
 #include "third_party/skia/include/core/SkDevice.h"
 
 namespace {
 
 class FloodImageFilter : public SkImageFilter {
 public:
-    FloodImageFilter(const SkColor& color, const SkIRect* cropRect)
+    FloodImageFilter(const SkColor& color, const CropRect* cropRect)
         : SkImageFilter(0, 0, cropRect)
         , m_color(color)
     {
@@ -139,7 +138,7 @@ PassRefPtr<SkImageFilter> FEFlood::createImageFilter(SkiaImageFilterBuilder* bui
 {
     Color color = colorWithOverrideAlpha(floodColor().rgb(), floodOpacity());
 
-    SkIRect rect = getCropRect(builder->cropOffset());
+    SkImageFilter::CropRect rect = getCropRect(builder->cropOffset());
     return adoptRef(new FloodImageFilter(color.rgb(), &rect));
 }
 

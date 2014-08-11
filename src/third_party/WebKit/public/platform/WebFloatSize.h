@@ -33,8 +33,10 @@
 
 #include "WebCommon.h"
 
-#if WEBKIT_IMPLEMENTATION
-#include "core/platform/graphics/FloatSize.h"
+#include <algorithm>
+
+#if BLINK_IMPLEMENTATION
+#include "platform/geometry/FloatSize.h"
 #else
 #include <cmath>
 #include <ui/gfx/size_f.h>
@@ -61,7 +63,7 @@ struct WebFloatSize {
     {
     }
 
-#if WEBKIT_IMPLEMENTATION
+#if BLINK_IMPLEMENTATION
     WebFloatSize(const WebCore::FloatSize& s)
         : width(s.width())
         , height(s.height())

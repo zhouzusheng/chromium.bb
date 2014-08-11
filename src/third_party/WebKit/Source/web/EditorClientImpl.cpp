@@ -29,7 +29,6 @@
 
 #include "HTMLNames.h"
 #include "WebAutofillClient.h"
-#include "WebEditingAction.h"
 #include "WebElement.h"
 #include "WebFrameClient.h"
 #include "WebFrameImpl.h"
@@ -47,21 +46,20 @@
 #include "WebViewImpl.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentMarkerController.h"
-#include "core/dom/EventNames.h"
-#include "core/dom/KeyboardEvent.h"
 #include "core/editing/Editor.h"
-#include "core/editing/SpellCheckRequester.h"
+#include "core/editing/SpellChecker.h"
 #include "core/editing/TextCheckingHelper.h"
 #include "core/editing/UndoStep.h"
+#include "core/events/KeyboardEvent.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/page/EventHandler.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
-#include "core/platform/NotImplemented.h"
-#include "core/platform/PlatformKeyboardEvent.h"
 #include "core/platform/chromium/KeyboardCodes.h"
 #include "core/rendering/RenderObject.h"
+#include "platform/PlatformKeyboardEvent.h"
 #include "wtf/text/WTFString.h"
 
 using namespace WebCore;
@@ -106,8 +104,7 @@ bool EditorClientImpl::shouldSpellcheckByDefault()
     const Frame* frame = m_webView->focusedWebCoreFrame();
     if (!frame)
         return false;
-    const Editor& editor = frame->editor();
-    if (editor.isSpellCheckingEnabledInFocusedNode())
+    if (frame->spellChecker().isSpellCheckingEnabledInFocusedNode())
         return true;
     const Document* document = frame->document();
     if (!document)
@@ -142,7 +139,7 @@ void EditorClientImpl::toggleContinuousSpellChecking()
     if (isContinuousSpellCheckingEnabled()) {
         m_spellCheckThisFieldStatus = SpellCheckForcedOff;
         if (Page* page = m_webView->page()) {
-            for (Frame* frame = page->mainFrame(); frame && frame->document(); frame = frame->tree()->traverseNext()) {
+            for (Frame* frame = page->mainFrame(); frame && frame->document(); frame = frame->tree().traverseNext()) {
                 frame->document()->markers()->removeMarkers(DocumentMarker::MisspellingMarkers());
             }
         }
@@ -152,7 +149,7 @@ void EditorClientImpl::toggleContinuousSpellChecking()
             VisibleSelection frameSelection = frame->selection().selection();
             // If a selection is in an editable element spell check its content.
             if (Element* rootEditableElement = frameSelection.rootEditableElement()) {
-                frame->editor().elementDidBeginEditing(rootEditableElement);
+                frame->editor().didBeginEditing(rootEditableElement);
             }
         }
     }
@@ -162,81 +159,6 @@ bool EditorClientImpl::isGrammarCheckingEnabled()
 {
     const Frame* frame = m_webView->focusedWebCoreFrame();
     return frame && frame->settings() && (frame->settings()->asynchronousSpellCheckingEnabled() || frame->settings()->unifiedTextCheckerEnabled());
-}
-
-bool EditorClientImpl::shouldBeginEditing(Range* range)
-{
-    if (m_webView->client())
-        return m_webView->client()->shouldBeginEditing(WebRange(range));
-    return true;
-}
-
-bool EditorClientImpl::shouldEndEditing(Range* range)
-{
-    if (m_webView->client())
-        return m_webView->client()->shouldEndEditing(WebRange(range));
-    return true;
-}
-
-bool EditorClientImpl::shouldInsertNode(Node* node,
-                                        Range* range,
-                                        EditorInsertAction action)
-{
-    if (m_webView->client()) {
-        return m_webView->client()->shouldInsertNode(WebNode(node),
-                                                     WebRange(range),
-                                                     static_cast<WebEditingAction>(action));
-    }
-    return true;
-}
-
-bool EditorClientImpl::shouldInsertText(const String& text,
-                                        Range* range,
-                                        EditorInsertAction action)
-{
-    if (m_webView->client()) {
-        return m_webView->client()->shouldInsertText(WebString(text),
-                                                     WebRange(range),
-                                                     static_cast<WebEditingAction>(action));
-    }
-    return true;
-}
-
-
-bool EditorClientImpl::shouldDeleteRange(Range* range)
-{
-    if (m_webView->client())
-        return m_webView->client()->shouldDeleteRange(WebRange(range));
-    return true;
-}
-
-bool EditorClientImpl::shouldChangeSelectedRange(Range* fromRange,
-                                                 Range* toRange,
-                                                 EAffinity affinity,
-                                                 bool stillSelecting)
-{
-    if (m_webView->client()) {
-        return m_webView->client()->shouldChangeSelectedRange(WebRange(fromRange),
-                                                              WebRange(toRange),
-                                                              static_cast<WebTextAffinity>(affinity),
-                                                              stillSelecting);
-    }
-    return true;
-}
-
-bool EditorClientImpl::shouldApplyStyle(StylePropertySet* style, Range* range)
-{
-    if (m_webView->client()) {
-        // FIXME: Pass a reference to the CSSStyleDeclaration somehow.
-        return m_webView->client()->shouldApplyStyle(WebString(), WebRange(range));
-    }
-    return true;
-}
-
-void EditorClientImpl::didBeginEditing()
-{
-    if (m_webView->client())
-        m_webView->client()->didBeginEditing();
 }
 
 void EditorClientImpl::respondToChangedSelection(Frame* frame)
@@ -249,12 +171,6 @@ void EditorClientImpl::respondToChangedContents()
 {
     if (m_webView->client())
         m_webView->client()->didChangeContents();
-}
-
-void EditorClientImpl::didEndEditing()
-{
-    if (m_webView->client())
-        m_webView->client()->didEndEditing();
 }
 
 void EditorClientImpl::didCancelCompositionOnSelectionChange()
@@ -733,7 +649,7 @@ void EditorClientImpl::checkGrammarOfString(const String& text, WTF::Vector<Gram
     // badGrammarLocation and badGrammarLength to tell WebKit that the input
     // text has grammar errors.
     for (size_t i = 0; i < webResults.size(); ++i) {
-        if (webResults[i].type == WebTextCheckingTypeGrammar) {
+        if (webResults[i].decoration == WebTextDecorationTypeGrammar) {
             GrammarDetail detail;
             detail.location = webResults[i].location;
             detail.length = webResults[i].length;

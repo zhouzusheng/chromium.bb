@@ -31,7 +31,6 @@
 #include "core/rendering/svg/SVGRenderTreeAsText.h"
 
 #include "SVGNames.h"
-#include "core/platform/graphics/GraphicsTypes.h"
 #include "core/rendering/InlineTextBox.h"
 #include "core/rendering/RenderTreeAsText.h"
 #include "core/rendering/svg/RenderSVGGradientStop.h"
@@ -65,8 +64,10 @@
 #include "core/svg/SVGRadialGradientElement.h"
 #include "core/svg/SVGRectElement.h"
 #include "core/svg/SVGStopElement.h"
+#include "platform/graphics/GraphicsTypes.h"
 
 #include <math.h>
+#include <memory>
 
 namespace WebCore {
 
@@ -121,15 +122,6 @@ static void writeIfNotDefault(TextStream& ts, const char* name, ValueType value,
 {
     if (value != defaultValue)
         writeNameValuePair(ts, name, value);
-}
-
-TextStream& operator<<(TextStream& ts, const FloatRect& r)
-{
-    ts << "at (" << TextStream::FormatNumberRespectingIntegers(r.x());
-    ts << "," << TextStream::FormatNumberRespectingIntegers(r.y());
-    ts << ") size " << TextStream::FormatNumberRespectingIntegers(r.width());
-    ts << "x" << TextStream::FormatNumberRespectingIntegers(r.height());
-    return ts;
 }
 
 TextStream& operator<<(TextStream& ts, const AffineTransform& transform)
@@ -274,7 +266,7 @@ static void writeStyle(TextStream& ts, const RenderObject& object)
             ts << " [stroke={" << s;
             writeSVGPaintingResource(ts, strokePaintingResource);
 
-            SVGLengthContext lengthContext(toSVGElement(shape.element()));
+            SVGLengthContext lengthContext(shape.element());
             double dashOffset = svgStyle->strokeDashOffset().value(lengthContext);
             double strokeWidth = svgStyle->strokeWidth().value(lengthContext);
             const Vector<SVGLength>& dashes = svgStyle->strokeDashArray();
@@ -483,7 +475,7 @@ void writeSVGResourceContainer(TextStream& ts, const RenderObject& object, int i
     const AtomicString& id = element->getIdAttribute();
     writeNameAndQuotedValue(ts, "id", id);
 
-    RenderSVGResourceContainer* resource = const_cast<RenderObject&>(object).toRenderSVGResourceContainer();
+    RenderSVGResourceContainer* resource = toRenderSVGResourceContainer(const_cast<RenderObject*>(&object));
     ASSERT(resource);
 
     if (resource->resourceType() == MaskerResourceType) {

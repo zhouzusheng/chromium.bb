@@ -33,7 +33,8 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
+#include "core/dom/ExecutionContextTask.h"
 #include "modules/filesystem/DOMFileSystemBase.h"
 #include "modules/filesystem/EntriesCallback.h"
 
@@ -47,10 +48,10 @@ class FileWriterCallback;
 
 class DOMFileSystem : public DOMFileSystemBase, public ScriptWrappable, public ActiveDOMObject {
 public:
-    static PassRefPtr<DOMFileSystem> create(ScriptExecutionContext*, const String& name, FileSystemType, const KURL& rootURL);
+    static PassRefPtr<DOMFileSystem> create(ExecutionContext*, const String& name, FileSystemType, const KURL& rootURL);
 
     // Creates a new isolated file system for the given filesystemId.
-    static PassRefPtr<DOMFileSystem> createIsolatedFileSystem(ScriptExecutionContext*, const String& filesystemId);
+    static PassRefPtr<DOMFileSystem> createIsolatedFileSystem(ExecutionContext*, const String& filesystemId);
 
     PassRefPtr<DirectoryEntry> root();
 
@@ -64,29 +65,29 @@ public:
     // Schedule a callback. This should not cross threads (should be called on the same context thread).
     // FIXME: move this to a more generic place.
     template <typename CB, typename CBArg>
-    static void scheduleCallback(ScriptExecutionContext*, PassRefPtr<CB>, PassRefPtr<CBArg>);
+    static void scheduleCallback(ExecutionContext*, PassRefPtr<CB>, PassRefPtr<CBArg>);
 
     template <typename CB, typename CBArg>
-    static void scheduleCallback(ScriptExecutionContext*, PassRefPtr<CB>, const CBArg&);
+    static void scheduleCallback(ExecutionContext*, PassRefPtr<CB>, const CBArg&);
 
     template <typename CB, typename CBArg>
     void scheduleCallback(PassRefPtr<CB> callback, PassRefPtr<CBArg> callbackArg)
     {
-        scheduleCallback(scriptExecutionContext(), callback, callbackArg);
+        scheduleCallback(executionContext(), callback, callbackArg);
     }
 
     template <typename CB, typename CBArg>
     void scheduleCallback(PassRefPtr<CB> callback,  const CBArg& callbackArg)
     {
-        scheduleCallback(scriptExecutionContext(), callback, callbackArg);
+        scheduleCallback(executionContext(), callback, callbackArg);
     }
 
 private:
-    DOMFileSystem(ScriptExecutionContext*, const String& name, FileSystemType, const KURL& rootURL);
+    DOMFileSystem(ExecutionContext*, const String& name, FileSystemType, const KURL& rootURL);
 
     // A helper template to schedule a callback task.
     template <typename CB, typename CBArg>
-    class DispatchCallbacRefPtrArgTask : public ScriptExecutionContext::Task {
+    class DispatchCallbacRefPtrArgTask : public ExecutionContextTask {
     public:
         DispatchCallbacRefPtrArgTask(PassRefPtr<CB> callback, PassRefPtr<CBArg> arg)
             : m_callback(callback)
@@ -94,7 +95,7 @@ private:
         {
         }
 
-        virtual void performTask(ScriptExecutionContext*)
+        virtual void performTask(ExecutionContext*)
         {
             m_callback->handleEvent(m_callbackArg.get());
         }
@@ -105,7 +106,7 @@ private:
     };
 
     template <typename CB, typename CBArg>
-    class DispatchCallbackNonPtrArgTask : public ScriptExecutionContext::Task {
+    class DispatchCallbackNonPtrArgTask : public ExecutionContextTask {
     public:
         DispatchCallbackNonPtrArgTask(PassRefPtr<CB> callback, const CBArg& arg)
             : m_callback(callback)
@@ -113,7 +114,7 @@ private:
         {
         }
 
-        virtual void performTask(ScriptExecutionContext*)
+        virtual void performTask(ExecutionContext*)
         {
             m_callback->handleEvent(m_callbackArg);
         }
@@ -125,19 +126,19 @@ private:
 };
 
 template <typename CB, typename CBArg>
-void DOMFileSystem::scheduleCallback(ScriptExecutionContext* scriptExecutionContext, PassRefPtr<CB> callback, PassRefPtr<CBArg> arg)
+void DOMFileSystem::scheduleCallback(ExecutionContext* executionContext, PassRefPtr<CB> callback, PassRefPtr<CBArg> arg)
 {
-    ASSERT(scriptExecutionContext->isContextThread());
+    ASSERT(executionContext->isContextThread());
     if (callback)
-        scriptExecutionContext->postTask(adoptPtr(new DispatchCallbacRefPtrArgTask<CB, CBArg>(callback, arg)));
+        executionContext->postTask(adoptPtr(new DispatchCallbacRefPtrArgTask<CB, CBArg>(callback, arg)));
 }
 
 template <typename CB, typename CBArg>
-void DOMFileSystem::scheduleCallback(ScriptExecutionContext* scriptExecutionContext, PassRefPtr<CB> callback, const CBArg& arg)
+void DOMFileSystem::scheduleCallback(ExecutionContext* executionContext, PassRefPtr<CB> callback, const CBArg& arg)
 {
-    ASSERT(scriptExecutionContext->isContextThread());
+    ASSERT(executionContext->isContextThread());
     if (callback)
-        scriptExecutionContext->postTask(adoptPtr(new DispatchCallbackNonPtrArgTask<CB, CBArg>(callback, arg)));
+        executionContext->postTask(adoptPtr(new DispatchCallbackNonPtrArgTask<CB, CBArg>(callback, arg)));
 }
 
 } // namespace

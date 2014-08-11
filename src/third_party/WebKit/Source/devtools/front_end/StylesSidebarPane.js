@@ -103,6 +103,8 @@ WebInspector.StylesSidebarPane = function(computedStylePane, setPseudoClassCallb
     WebInspector.domAgent.addEventListener(WebInspector.DOMAgent.Events.AttrModified, this._attributeChanged, this);
     WebInspector.domAgent.addEventListener(WebInspector.DOMAgent.Events.AttrRemoved, this._attributeChanged, this);
     WebInspector.settings.showUserAgentStyles.addChangeListener(this._showUserAgentStylesSettingChanged.bind(this));
+    this.element.addStyleClass("styles-pane");
+    this.element.enableStyleClass("show-user-styles", WebInspector.settings.showUserAgentStyles.get());
     this.element.addEventListener("mousemove", this._mouseMovedOverElement.bind(this), false);
     document.body.addEventListener("keydown", this._keyDown.bind(this), false);
     document.body.addEventListener("keyup", this._keyUp.bind(this), false);
@@ -518,8 +520,6 @@ WebInspector.StylesSidebarPane.prototype = {
         var addedAttributesStyle;
         for (var i = styles.matchedCSSRules.length - 1; i >= 0; --i) {
             var rule = styles.matchedCSSRules[i];
-            if (!WebInspector.settings.showUserAgentStyles.get() && (rule.isUser || rule.isUserAgent))
-                continue;
             if ((rule.isUser || rule.isUserAgent) && !addedAttributesStyle) {
                 // Show element's Style Attributes after all author rules.
                 addedAttributesStyle = true;
@@ -560,8 +560,6 @@ WebInspector.StylesSidebarPane.prototype = {
                 if (!this._containsInherited(rulePayload.style))
                     continue;
                 var rule = rulePayload;
-                if (!WebInspector.settings.showUserAgentStyles.get() && (rule.isUser || rule.isUserAgent))
-                    continue;
 
                 if (!separatorInserted) {
                     insertInheritedNodeSeparator(parentNode);
@@ -652,7 +650,6 @@ WebInspector.StylesSidebarPane.prototype = {
     {
         // Make a property section for each style rule.
         var sections = [];
-        var lastWasSeparator = true;
         for (var i = 0; i < styleRules.length; ++i) {
             var styleRule = styleRules[i];
             if (styleRule.isStyleSeparator) {
@@ -678,7 +675,6 @@ WebInspector.StylesSidebarPane.prototype = {
                 } else
                     separatorElement.textContent = styleRule.text;
                 this._sectionsContainer.insertBefore(separatorElement, anchorElement);
-                lastWasSeparator = true;
                 continue;
             }
             var computedStyle = styleRule.computedStyle;
@@ -691,18 +687,15 @@ WebInspector.StylesSidebarPane.prototype = {
             if (computedStyle)
                 var section = new WebInspector.ComputedStylePropertiesSection(this, styleRule, usedProperties);
             else {
-                var section = new WebInspector.StylePropertiesSection(this, styleRule, editable, styleRule.isInherited, lastWasSeparator);
+                var section = new WebInspector.StylePropertiesSection(this, styleRule, editable, styleRule.isInherited);
                 section._markSelectorMatches();
             }
             section.expanded = true;
 
-            if (computedStyle) {
+            if (computedStyle)
                 this._computedStylePane.bodyElement.appendChild(section.element);
-                lastWasSeparator = true;
-            } else {
+            else
                 this._sectionsContainer.insertBefore(section.element, anchorElement);
-                lastWasSeparator = false;
-            }
             sections.push(section);
         }
         return sections;
@@ -839,9 +832,13 @@ WebInspector.StylesSidebarPane.prototype = {
         this._elementStatePane.appendChild(table);
     },
 
-    _showUserAgentStylesSettingChanged: function()
+    /**
+     * @param {WebInspector.Event} event
+     */
+    _showUserAgentStylesSettingChanged: function(event)
     {
-        this._rebuildUpdate();
+        var showStyles = /** @type {boolean} */ (event.data);
+        this.element.enableStyleClass("show-user-styles", showStyles);
     },
 
     willHide: function()
@@ -942,18 +939,20 @@ WebInspector.ComputedStyleSidebarPane.prototype = {
  * @constructor
  * @extends {WebInspector.PropertiesSection}
  */
-WebInspector.StylePropertiesSection = function(parentPane, styleRule, editable, isInherited, isFirstSection)
+WebInspector.StylePropertiesSection = function(parentPane, styleRule, editable, isInherited)
 {
     WebInspector.PropertiesSection.call(this, "");
-    this.element.className = "styles-section matched-styles monospace" + (isFirstSection ? " first-styles-section" : "");
-    // We don't really use properties' disclosure.
-    this.propertiesElement.removeStyleClass("properties-tree");
 
     this._parentPane = parentPane;
     this.styleRule = styleRule;
     this.rule = this.styleRule.rule;
     this.editable = editable;
     this.isInherited = isInherited;
+
+    var extraClasses = (this.rule && (this.rule.isUser || this.rule.isUserAgent) ? " user-rule" : "");
+    this.element.className = "styles-section matched-styles monospace" + extraClasses;
+    // We don't really use properties' disclosure.
+    this.propertiesElement.removeStyleClass("properties-tree");
 
     if (styleRule.media) {
         for (var i = styleRule.media.length - 1; i >= 0; --i) {
@@ -1040,7 +1039,7 @@ WebInspector.StylePropertiesSection = function(parentPane, styleRule, editable, 
 
     this._selectorRefElement = document.createElement("div");
     this._selectorRefElement.className = "subtitle";
-    this._selectorRefElement.appendChild(this._createRuleOriginNode());
+    this._updateRuleOrigin();
     selectorContainer.insertBefore(this._selectorRefElement, selectorContainer.firstChild);
     this.titleElement.appendChild(selectorContainer);
     this._selectorContainer = selectorContainer;
@@ -1247,20 +1246,21 @@ WebInspector.StylePropertiesSection.prototype = {
         var selectors = rule.selectors;
         var fragment = document.createDocumentFragment();
         var currentMatch = 0;
-        for (var i = 0, lastSelectorIndex = selectors.length - 1; i <= lastSelectorIndex ; ++i) {
-            var selectorNode;
-            var textNode = document.createTextNode(selectors[i]);
-            if (matchingSelectors[currentMatch] === i) {
-                ++currentMatch;
-                selectorNode = document.createElement("span");
-                selectorNode.className = "selector-matches";
-                selectorNode.appendChild(textNode);
-            } else
-                selectorNode = textNode;
-
-            fragment.appendChild(selectorNode);
-            if (i !== lastSelectorIndex)
+        for (var i = 0; i < selectors.length ; ++i) {
+            if (i)
                 fragment.appendChild(document.createTextNode(", "));
+            var isSelectorMatching = matchingSelectors[currentMatch] === i;
+            if (isSelectorMatching)
+                ++currentMatch;
+            var rawLocation = new WebInspector.CSSLocation(rule.sourceURL, rule.lineNumberInSource(i), rule.columnNumberInSource(i));
+            var matchingSelectorClass = isSelectorMatching ? " selector-matches" : "";
+            var selectorElement = document.createElement("span");
+            selectorElement.className = "simple-selector" + matchingSelectorClass;
+            if (rule.id)
+                selectorElement._selectorIndex = i;
+            selectorElement.textContent = selectors[i].value;
+
+            fragment.appendChild(selectorElement);
         }
 
         this._selectorElement.removeChildren();
@@ -1314,8 +1314,11 @@ WebInspector.StylePropertiesSection.prototype = {
             return link;
         }
 
-        if (this.styleRule.sourceURL)
-            return this._parentPane._linkifier.linkifyCSSLocation(this.rule.id.styleSheetId, this.rule.rawLocation) || linkifyUncopyable(this.styleRule.sourceURL, this.rule.lineNumberInSource());
+        if (this.styleRule.sourceURL) {
+            var firstMatchingIndex = this.styleRule.rule.matchingSelectors && this.rule.matchingSelectors.length ? this.rule.matchingSelectors[0] : 0;
+            var matchingSelectorLocation = new WebInspector.CSSLocation(this.styleRule.sourceURL, this.rule.lineNumberInSource(firstMatchingIndex), this.rule.columnNumberInSource(firstMatchingIndex));
+            return this._parentPane._linkifier.linkifyCSSLocation(this.rule.id.styleSheetId, matchingSelectorLocation) || linkifyUncopyable(this.styleRule.sourceURL, this.rule.lineNumberInSource());
+        }
 
         if (!this.rule)
             return document.createTextNode("");
@@ -1355,6 +1358,15 @@ WebInspector.StylePropertiesSection.prototype = {
 
     _handleSelectorClick: function(event)
     {
+        if (WebInspector.KeyboardShortcut.eventHasCtrlOrMeta(event) && this.navigable && event.target.hasStyleClass("simple-selector")) {
+            var index = event.target._selectorIndex;
+            var range = this.rule.selectors[index].range;
+            var styleSheetHeader = WebInspector.cssModel.styleSheetHeaderForId(this.rule.id.styleSheetId);
+            var uiLocation = styleSheetHeader.rawLocationToUILocation(this.rule.lineNumberInSource(index), this.rule.columnNumberInSource(index));
+            if (uiLocation)
+                WebInspector.panel("sources").showUILocation(uiLocation);
+            return;
+        }
         this._startEditingOnMouseEvent();
         event.consume(true);
     },
@@ -1429,8 +1441,9 @@ WebInspector.StylePropertiesSection.prototype = {
 
         var selectedNode = this._parentPane.node;
 
-        function successCallback(newRule, doesAffectSelectedNode)
+        function successCallback(newRule)
         {
+            var doesAffectSelectedNode = newRule.matchingSelectors.length > 0;
             if (!doesAffectSelectedNode) {
                 this.noAffect = true;
                 this.element.addStyleClass("no-affect");
@@ -1443,6 +1456,7 @@ WebInspector.StylePropertiesSection.prototype = {
             this.styleRule = { section: this, style: newRule.style, selectorText: newRule.selectorText, media: newRule.media, sourceURL: newRule.resourceURL(), rule: newRule };
 
             this._parentPane.update(selectedNode);
+            this._updateRuleOrigin();
 
             finishOperationAndMoveEditor.call(this, moveDirection);
         }
@@ -1456,6 +1470,12 @@ WebInspector.StylePropertiesSection.prototype = {
         // This gets deleted in finishOperationAndMoveEditor(), which is called both on success and failure.
         this._parentPane._userOperation = true;
         WebInspector.cssModel.setRuleSelector(this.rule.id, selectedNode ? selectedNode.id : 0, newContent, successCallback.bind(this), finishOperationAndMoveEditor.bind(this, moveDirection));
+    },
+
+    _updateRuleOrigin: function()
+    {
+        this._selectorRefElement.removeChildren();
+        this._selectorRefElement.appendChild(this._createRuleOriginNode());
     },
 
     editingSelectorCancelled: function()
@@ -1479,7 +1499,7 @@ WebInspector.ComputedStylePropertiesSection = function(stylesPane, styleRule, us
 {
     WebInspector.PropertiesSection.call(this, "");
     this.headerElement.addStyleClass("hidden");
-    this.element.className = "styles-section monospace first-styles-section read-only computed-style";
+    this.element.className = "styles-section monospace read-only computed-style";
     this._stylesPane = stylesPane;
     this.styleRule = styleRule;
     this._usedProperties = usedProperties;
@@ -1596,7 +1616,7 @@ WebInspector.ComputedStylePropertiesSection.prototype = {
  */
 WebInspector.BlankStylePropertiesSection = function(stylesPane, defaultSelectorText)
 {
-    WebInspector.StylePropertiesSection.call(this, stylesPane, {selectorText: defaultSelectorText, rule: {isViaInspector: true}}, true, false, false);
+    WebInspector.StylePropertiesSection.call(this, stylesPane, {selectorText: defaultSelectorText, rule: {isViaInspector: true}}, true, false);
     this.element.addStyleClass("blank-section");
 }
 
@@ -1619,8 +1639,9 @@ WebInspector.BlankStylePropertiesSection.prototype = {
             return;
         }
 
-        function successCallback(newRule, doesSelectorAffectSelectedNode)
+        function successCallback(newRule)
         {
+            var doesSelectorAffectSelectedNode = newRule.matchingSelectors.length > 0;
             var styleRule = { section: this, style: newRule.style, selectorText: newRule.selectorText, sourceURL: newRule.resourceURL(), rule: newRule };
             this.makeNormal(styleRule);
 
@@ -1629,8 +1650,7 @@ WebInspector.BlankStylePropertiesSection.prototype = {
                 this.element.addStyleClass("no-affect");
             }
 
-            this._selectorRefElement.removeChildren();
-            this._selectorRefElement.appendChild(this._createRuleOriginNode());
+            this._updateRuleOrigin();
             this.expand();
             if (this.element.parentElement) // Might have been detached already.
                 this._moveEditorFromSelector(moveDirection);
@@ -2276,7 +2296,8 @@ WebInspector.StylePropertyTreeElement.prototype = {
         var uiLocation = this.property.uiLocation(propertyNameClicked);
         if (!uiLocation)
             return;
-        WebInspector.showPanel("sources").showUILocation(uiLocation);
+
+        WebInspector.panel("sources").showUILocation(uiLocation);
     },
 
     /**

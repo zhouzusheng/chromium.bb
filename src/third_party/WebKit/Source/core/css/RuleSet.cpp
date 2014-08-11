@@ -224,18 +224,27 @@ RuleData::RuleData(StyleRule* rule, unsigned selectorIndex, unsigned position, A
 static void collectFeaturesFromRuleData(RuleFeatureSet& features, const RuleData& ruleData)
 {
     bool foundSiblingSelector = false;
+    unsigned maxDirectAdjacentSelectors = 0;
     for (const CSSSelector* selector = ruleData.selector(); selector; selector = selector->tagHistory()) {
         features.collectFeaturesFromSelector(selector);
 
         if (const CSSSelectorList* selectorList = selector->selectorList()) {
             for (const CSSSelector* subSelector = selectorList->first(); subSelector; subSelector = CSSSelectorList::next(subSelector)) {
+                // FIXME: Shouldn't this be checking subSelector->isSiblingSelector()?
                 if (!foundSiblingSelector && selector->isSiblingSelector())
                     foundSiblingSelector = true;
+                if (subSelector->isDirectAdjacentSelector())
+                    maxDirectAdjacentSelectors++;
                 features.collectFeaturesFromSelector(subSelector);
             }
-        } else if (!foundSiblingSelector && selector->isSiblingSelector())
-            foundSiblingSelector = true;
+        } else {
+            if (!foundSiblingSelector && selector->isSiblingSelector())
+                foundSiblingSelector = true;
+            if (selector->isDirectAdjacentSelector())
+                maxDirectAdjacentSelectors++;
+        }
     }
+    features.setMaxDirectAdjacentSelectors(maxDirectAdjacentSelectors);
     if (foundSiblingSelector)
         features.siblingRules.append(RuleFeature(ruleData.rule(), ruleData.selectorIndex(), ruleData.hasDocumentSecurityOrigin()));
     if (ruleData.containsUncommonAttributeSelector())
@@ -325,7 +334,7 @@ void RuleSet::addViewportRule(StyleRuleViewport* rule)
     m_viewportRules.append(rule);
 }
 
-void RuleSet::addRegionRule(StyleRuleRegion* regionRule, bool hasDocumentSecurityOrigin)
+void RuleSet::addRegionRule(StyleRuleRegion* regionRule, bool hasDocumentSecurityOrigin, const ContainerNode* scope)
 {
     ensurePendingRules(); // So that m_regionSelectorsAndRuleSets.shrinkToFit() gets called.
     OwnPtr<RuleSet> regionRuleSet = RuleSet::create();
@@ -338,7 +347,7 @@ void RuleSet::addRegionRule(StyleRuleRegion* regionRule, bool hasDocumentSecurit
     // FIXME: Should this add other types of rules? (i.e. use addChildRules() directly?)
     const Vector<RefPtr<StyleRuleBase> >& childRules = regionRule->childRules();
     AddRuleFlags addRuleFlags = hasDocumentSecurityOrigin ? RuleHasDocumentSecurityOrigin : RuleHasNoSpecialState;
-    addRuleFlags = static_cast<AddRuleFlags>(addRuleFlags | RuleCanUseFastCheckSelector | RuleIsInRegionRule);
+    addRuleFlags = static_cast<AddRuleFlags>(addRuleFlags | RuleIsInRegionRule | (!scope ? RuleCanUseFastCheckSelector : 0));
     for (unsigned i = 0; i < childRules.size(); ++i) {
         StyleRuleBase* regionStylingRule = childRules[i].get();
         if (regionStylingRule->isStyleRule())
@@ -360,10 +369,12 @@ void RuleSet::addChildRules(const Vector<RefPtr<StyleRuleBase> >& rules, const M
 
             const CSSSelectorList& selectorList = styleRule->selectorList();
             for (size_t selectorIndex = 0; selectorIndex != kNotFound; selectorIndex = selectorList.indexOfNextSelectorAfter(selectorIndex)) {
-                if (selectorList.hasShadowDistributedAt(selectorIndex)) {
+                if (selectorList.hasCombinatorCrossingTreeBoundaryAt(selectorIndex)) {
+                    resolver->ruleSets().treeBoundaryCrossingRules().addRule(styleRule, selectorIndex, const_cast<ContainerNode*>(scope), addRuleFlags);
+                } else if (selectorList.hasShadowDistributedAt(selectorIndex)) {
                     if (isDocumentScope(scope))
                         continue;
-                    resolver->ruleSets().shadowDistributedRules().addRule(styleRule, selectorIndex, const_cast<ContainerNode*>(scope), addRuleFlags);
+                    resolver->ruleSets().treeBoundaryCrossingRules().addRule(styleRule, selectorIndex, const_cast<ContainerNode*>(scope), addRuleFlags);
                 } else
                     addRule(styleRule, selectorIndex, addRuleFlags);
             }
@@ -371,7 +382,7 @@ void RuleSet::addChildRules(const Vector<RefPtr<StyleRuleBase> >& rules, const M
             addPageRule(static_cast<StyleRulePage*>(rule));
         else if (rule->isMediaRule()) {
             StyleRuleMedia* mediaRule = static_cast<StyleRuleMedia*>(rule);
-            if ((!mediaRule->mediaQueries() || medium.eval(mediaRule->mediaQueries(), resolver)))
+            if ((!mediaRule->mediaQueries() || medium.eval(mediaRule->mediaQueries(), resolver->viewportDependentMediaQueryResults())))
                 addChildRules(mediaRule->childRules(), medium, resolver, scope, hasDocumentSecurityOrigin, addRuleFlags);
         } else if (rule->isFontFaceRule() && resolver) {
             // Add this font face to our set.
@@ -385,7 +396,7 @@ void RuleSet::addChildRules(const Vector<RefPtr<StyleRuleBase> >& rules, const M
             resolver->ensureScopedStyleResolver(scope)->addKeyframeStyle(static_cast<StyleRuleKeyframes*>(rule));
         } else if (rule->isRegionRule() && resolver) {
             // FIXME (BUG 72472): We don't add @-webkit-region rules of scoped style sheets for the moment.
-            addRegionRule(static_cast<StyleRuleRegion*>(rule), hasDocumentSecurityOrigin);
+            addRegionRule(static_cast<StyleRuleRegion*>(rule), hasDocumentSecurityOrigin, scope);
         } else if (rule->isHostRule() && resolver) {
             if (!isScopingNodeInShadowTree(scope))
                 continue;
@@ -411,7 +422,7 @@ void RuleSet::addRulesFromSheet(StyleSheetContents* sheet, const MediaQueryEvalu
     const Vector<RefPtr<StyleRuleImport> >& importRules = sheet->importRules();
     for (unsigned i = 0; i < importRules.size(); ++i) {
         StyleRuleImport* importRule = importRules[i].get();
-        if (importRule->styleSheet() && (!importRule->mediaQueries() || medium.eval(importRule->mediaQueries(), resolver)))
+        if (importRule->styleSheet() && (!importRule->mediaQueries() || medium.eval(importRule->mediaQueries(), resolver->viewportDependentMediaQueryResults())))
             addRulesFromSheet(importRule->styleSheet(), medium, resolver, scope);
     }
 

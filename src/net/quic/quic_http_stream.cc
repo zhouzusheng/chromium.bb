@@ -24,9 +24,11 @@ namespace net {
 
 static const size_t kHeaderBufInitialSize = 4096;
 
-QuicHttpStream::QuicHttpStream(const base::WeakPtr<QuicClientSession> session)
+QuicHttpStream::QuicHttpStream(const base::WeakPtr<QuicClientSession>& session)
     : next_state_(STATE_NONE),
       session_(session),
+      session_error_(OK),
+      was_handshake_confirmed_(session->IsCryptoHandshakeConfirmed()),
       stream_(NULL),
       request_info_(NULL),
       request_body_stream_(NULL),
@@ -38,10 +40,13 @@ QuicHttpStream::QuicHttpStream(const base::WeakPtr<QuicClientSession> session)
       user_buffer_len_(0),
       weak_factory_(this) {
   DCHECK(session_);
+  session_->AddObserver(this);
 }
 
 QuicHttpStream::~QuicHttpStream() {
   Close(false);
+  if (session_)
+    session_->RemoveObserver(this);
 }
 
 int QuicHttpStream::InitializeStream(const HttpRequestInfo* request_info,
@@ -50,7 +55,8 @@ int QuicHttpStream::InitializeStream(const HttpRequestInfo* request_info,
                                      const CompletionCallback& callback) {
   DCHECK(!stream_);
   if (!session_)
-    return ERR_CONNECTION_CLOSED;
+    return was_handshake_confirmed_ ? ERR_CONNECTION_CLOSED :
+        ERR_QUIC_HANDSHAKE_FAILED;
 
   stream_net_log_ = stream_net_log;
   request_info_ = request_info;
@@ -59,19 +65,24 @@ int QuicHttpStream::InitializeStream(const HttpRequestInfo* request_info,
   int rv = stream_request_.StartRequest(
       session_, &stream_, base::Bind(&QuicHttpStream::OnStreamReady,
                                      weak_factory_.GetWeakPtr()));
-  if (rv == ERR_IO_PENDING)
+  if (rv == ERR_IO_PENDING) {
     callback_ = callback;
-
-  if (rv == OK)
+  } else if (rv == OK) {
     stream_->SetDelegate(this);
+  } else if (!was_handshake_confirmed_) {
+    rv = ERR_QUIC_HANDSHAKE_FAILED;
+  }
 
   return rv;
 }
 
 void QuicHttpStream::OnStreamReady(int rv) {
   DCHECK(rv == OK || !stream_);
-  if (rv == OK)
+  if (rv == OK) {
     stream_->SetDelegate(this);
+  } else if (!was_handshake_confirmed_) {
+    rv = ERR_QUIC_HANDSHAKE_FAILED;
+  }
 
   ResetAndReturn(&callback_).Run(rv);
 }
@@ -91,12 +102,8 @@ int QuicHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
   SpdyHeaderBlock headers;
   CreateSpdyHeadersFromHttpRequest(*request_info_, request_headers,
                                    &headers, 3, /*direct=*/true);
-  if (session_->connection()->version() < QUIC_VERSION_9) {
-    request_ = stream_->compressor()->CompressHeaders(headers);
-  } else {
-    request_ = stream_->compressor()->CompressHeadersWithPriority(priority,
-                                                                  headers);
-  }
+  request_ = stream_->compressor()->CompressHeadersWithPriority(priority,
+                                                                headers);
   // Log the actual request with the URL Request's net log.
   stream_net_log_.AddEvent(
       NetLog::TYPE_HTTP_TRANSACTION_SPDY_SEND_REQUEST_HEADERS,
@@ -211,9 +218,7 @@ void QuicHttpStream::Close(bool not_reusable) {
   // Note: the not_reusable flag has no meaning for SPDY streams.
   if (stream_) {
     stream_->SetDelegate(NULL);
-    // TODO(rch): use new CANCELLED error code here once quic 11
-    // is everywhere.
-    stream_->Close(QUIC_ERROR_PROCESSING_STREAM);
+    stream_->Close(QUIC_STREAM_CANCELLED);
     stream_ = NULL;
   }
 }
@@ -316,7 +321,9 @@ int QuicHttpStream::OnDataReceived(const char* data, int length) {
     memcpy(user_buffer_->data(), data, user_buffer_len_);
     int delta = length - user_buffer_len_;
     BufferResponseBody(data + user_buffer_len_, delta);
+    length = user_buffer_len_;
   }
+
   user_buffer_ = NULL;
   user_buffer_len_ = 0;
   DoCallback(length);
@@ -325,7 +332,8 @@ int QuicHttpStream::OnDataReceived(const char* data, int length) {
 
 void QuicHttpStream::OnClose(QuicErrorCode error) {
   if (error != QUIC_NO_ERROR) {
-    response_status_ = ERR_QUIC_PROTOCOL_ERROR;
+    response_status_ = was_handshake_confirmed_ ?
+        ERR_QUIC_PROTOCOL_ERROR : ERR_QUIC_HANDSHAKE_FAILED;
   } else if (!response_headers_received_) {
     response_status_ = ERR_ABORTED;
   }
@@ -337,13 +345,23 @@ void QuicHttpStream::OnClose(QuicErrorCode error) {
 
 void QuicHttpStream::OnError(int error) {
   stream_ = NULL;
-  response_status_ = error;
+  response_status_ = was_handshake_confirmed_ ?
+      error : ERR_QUIC_HANDSHAKE_FAILED;
   if (!callback_.is_null())
     DoCallback(response_status_);
 }
 
 bool QuicHttpStream::HasSendHeadersComplete() {
   return next_state_ > STATE_SEND_HEADERS_COMPLETE;
+}
+
+void QuicHttpStream::OnCryptoHandshakeConfirmed() {
+  was_handshake_confirmed_ = true;
+}
+
+void QuicHttpStream::OnSessionClosed(int error) {
+  session_error_ = error;
+  session_.reset();
 }
 
 void QuicHttpStream::OnIOComplete(int rv) {

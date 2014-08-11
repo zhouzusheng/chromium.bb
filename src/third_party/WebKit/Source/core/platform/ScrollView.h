@@ -27,11 +27,11 @@
 #ifndef ScrollView_h
 #define ScrollView_h
 
-#include "core/platform/ScrollTypes.h"
 #include "core/platform/ScrollableArea.h"
 #include "core/platform/Scrollbar.h"
-#include "core/platform/Widget.h"
-#include "core/platform/graphics/IntRect.h"
+#include "platform/Widget.h"
+#include "platform/geometry/IntRect.h"
+#include "platform/scroll/ScrollTypes.h"
 
 #include "wtf/HashSet.h"
 
@@ -120,25 +120,21 @@ public:
     // The visible content rect has a location that is the scrolled offset of the document. The width and height are the viewport width
     // and height. By default the scrollbars themselves are excluded from this rectangle, but an optional boolean argument allows them to be
     // included.
-    virtual IntRect visibleContentRect(VisibleContentRectIncludesScrollbars = ExcludeScrollbars) const OVERRIDE;
+    virtual IntRect visibleContentRect(IncludeScrollbarsInRect = ExcludeScrollbars) const OVERRIDE;
     IntSize visibleSize() const { return visibleContentRect().size(); }
     virtual int visibleWidth() const OVERRIDE { return visibleContentRect().width(); }
     virtual int visibleHeight() const OVERRIDE { return visibleContentRect().height(); }
 
     // visibleContentRect().size() is computed from unscaledVisibleContentSize() divided by the value of visibleContentScaleFactor.
     // For the main frame, visibleContentScaleFactor is equal to the page's pageScaleFactor; it's 1 otherwise.
-    IntSize unscaledVisibleContentSize(VisibleContentRectIncludesScrollbars = ExcludeScrollbars) const;
+    IntSize unscaledVisibleContentSize(IncludeScrollbarsInRect = ExcludeScrollbars) const;
     virtual float visibleContentScaleFactor() const { return 1; }
 
-    // Functions for getting/setting the size webkit should use to layout the contents. By default this is the same as the visible
-    // content size. Explicitly setting a layout size value will cause webkit to layout the contents using this size instead.
-    IntSize layoutSize(VisibleContentRectIncludesScrollbars = ExcludeScrollbars) const;
-    int layoutWidth(VisibleContentRectIncludesScrollbars scrollbarInclusion = ExcludeScrollbars) const { return layoutSize(scrollbarInclusion).width(); }
-    int layoutHeight(VisibleContentRectIncludesScrollbars scrollbarInclusion = ExcludeScrollbars) const { return layoutSize(scrollbarInclusion).height(); }
-    IntSize fixedLayoutSize() const;
-    void setFixedLayoutSize(const IntSize&);
-    bool useFixedLayout() const;
-    void setUseFixedLayout(bool enable);
+    // Offset used to convert incoming input events while emulating device metics.
+    virtual IntSize inputEventsOffsetForEmulation() const { return IntSize(); }
+
+    // Scale used to convert incoming input events. Usually the same as visibleContentScaleFactor(), unless specifically changed.
+    virtual float inputEventsScaleFactor() const { return visibleContentScaleFactor(); }
 
     // Functions for getting/setting the size of the document contained inside the ScrollView (as an IntSize or as individual width and height
     // values).
@@ -204,7 +200,7 @@ public:
     void adjustScrollbarsAvoidingResizerCount(int overlapDelta);
     void windowResizerRectChanged();
 
-    virtual void setParent(ScrollView*); // Overridden to update the overlapping scrollbar count.
+    virtual void setParent(Widget*) OVERRIDE; // Overridden to update the overlapping scrollbar count.
 
     // Called when our frame rect changes (or the rect/scroll position of an ancestor changes).
     virtual void frameRectsChanged();
@@ -218,7 +214,7 @@ public:
     // For platforms that need to hit test scrollbars from within the engine's event handlers (like Win32).
     Scrollbar* scrollbarAtPoint(const IntPoint& windowPoint);
 
-    IntPoint convertChildToSelf(const Widget* child, const IntPoint& point) const
+    virtual IntPoint convertChildToSelf(const Widget* child, const IntPoint& point) const
     {
         IntPoint newPoint = point;
         if (!isScrollViewScrollbar(child))
@@ -227,7 +223,7 @@ public:
         return newPoint;
     }
 
-    IntPoint convertSelfToChild(const Widget* child, const IntPoint& point) const
+    virtual IntPoint convertSelfToChild(const Widget* child, const IntPoint& point) const
     {
         IntPoint newPoint = point;
         if (!isScrollViewScrollbar(child))
@@ -235,6 +231,9 @@ public:
         newPoint.moveBy(-child->location());
         return newPoint;
     }
+
+    // A means to access the AX cache when this object can get a pointer to it.
+    virtual AXObjectCache* axObjectCache() const { return 0; }
 
     // Widget override. Handles painting of the contents of the view as well as the scrollbars.
     virtual void paint(GraphicsContext*, const IntRect&);
@@ -275,7 +274,7 @@ protected:
 
     virtual void paintOverhangAreas(GraphicsContext*, const IntRect& horizontalOverhangArea, const IntRect& verticalOverhangArea, const IntRect& dirtyRect);
 
-    virtual void visibleContentsResized() = 0;
+    virtual void scrollbarExistenceDidChange() = 0;
     // These functions are used to create/destroy scrollbars.
     void setHasHorizontalScrollbar(bool);
     void setHasVerticalScrollbar(bool);
@@ -297,6 +296,8 @@ protected:
     // Called to update the scrollbars to accurately reflect the state of the view.
     void updateScrollbars(const IntSize& desiredOffset);
 
+    IntSize excludeScrollbars(const IntSize&) const;
+
 private:
     RefPtr<Scrollbar> m_horizontalScrollbar;
     RefPtr<Scrollbar> m_verticalScrollbar;
@@ -314,7 +315,6 @@ private:
 
     IntSize m_scrollOffset; // FIXME: Would rather store this as a position, but we will wait to make this change until more code is shared.
     IntPoint m_cachedScrollPosition;
-    IntSize m_fixedLayoutSize;
     IntSize m_contentsSize;
 
     int m_scrollbarsAvoidingResizer;
@@ -325,7 +325,6 @@ private:
 
     IntPoint m_panScrollIconPoint;
     bool m_drawPanScrollIcon;
-    bool m_useFixedLayout;
 
     bool m_paintsEntireContents;
     bool m_clipsRepaints;

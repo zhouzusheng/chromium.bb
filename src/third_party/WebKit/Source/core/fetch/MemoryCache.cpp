@@ -27,12 +27,12 @@
 #include "core/dom/Document.h"
 #include "core/fetch/Resource.h"
 #include "core/fetch/ResourcePtr.h"
-#include "core/page/FrameView.h"
-#include "core/platform/Logging.h"
-#include "core/platform/chromium/TraceEvent.h"
+#include "core/frame/FrameView.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerLoaderProxy.h"
 #include "core/workers/WorkerThread.h"
+#include "platform/Logging.h"
+#include "platform/TraceEvent.h"
 #include "public/platform/Platform.h"
 #include "weborigin/SecurityOrigin.h"
 #include "weborigin/SecurityOriginHash.h"
@@ -75,9 +75,9 @@ MemoryCache::MemoryCache()
     , m_minDeadCapacity(0)
     , m_maxDeadCapacity(cDefaultCacheCapacity)
     , m_maxDeferredPruneDeadCapacity(cDeferredPruneDeadCapacityFactor * cDefaultCacheCapacity)
+    , m_delayBeforeLiveDecodedPrune(cMinDelayBeforeLiveDecodedPrune)
     , m_liveSize(0)
     , m_deadSize(0)
-    , m_delayBeforeLiveDecodedPrune(cMinDelayBeforeLiveDecodedPrune)
 #ifdef MEMORY_CACHE_STATS
     , m_statsTimer(this, &MemoryCache::dumpStats)
 #endif
@@ -498,7 +498,7 @@ void MemoryCache::adjustSize(bool live, int delta)
     }
 }
 
-void MemoryCache::removeURLFromCache(ScriptExecutionContext* context, const KURL& url)
+void MemoryCache::removeURLFromCache(ExecutionContext* context, const KURL& url)
 {
     if (context->isWorkerGlobalScope()) {
         WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
@@ -508,7 +508,7 @@ void MemoryCache::removeURLFromCache(ScriptExecutionContext* context, const KURL
     removeURLFromCacheInternal(context, url);
 }
 
-void MemoryCache::removeURLFromCacheInternal(ScriptExecutionContext*, const KURL& url)
+void MemoryCache::removeURLFromCacheInternal(ExecutionContext*, const KURL& url)
 {
     if (Resource* resource = memoryCache()->resourceForURL(url))
         memoryCache()->remove(resource);

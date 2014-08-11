@@ -28,14 +28,14 @@
 #ifndef ImageBuffer_h
 #define ImageBuffer_h
 
-#include "core/platform/graphics/ColorSpace.h"
-#include "core/platform/graphics/FloatRect.h"
 #include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/GraphicsTypes.h"
-#include "core/platform/graphics/GraphicsTypes3D.h"
-#include "core/platform/graphics/IntSize.h"
 #include "core/platform/graphics/chromium/Canvas2DLayerBridge.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
+#include "platform/geometry/FloatRect.h"
+#include "platform/geometry/IntSize.h"
+#include "platform/graphics/ColorSpace.h"
+#include "platform/graphics/GraphicsTypes.h"
+#include "platform/graphics/GraphicsTypes3D.h"
+#include "platform/transforms/AffineTransform.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -85,10 +85,10 @@ class ImageBuffer {
     WTF_MAKE_NONCOPYABLE(ImageBuffer); WTF_MAKE_FAST_ALLOCATED;
 public:
     // Will return a null pointer on allocation failure.
-    static PassOwnPtr<ImageBuffer> create(const IntSize& size, float resolutionScale = 1, RenderingMode renderingMode = Unaccelerated, OpacityMode opacityMode = NonOpaque)
+    static PassOwnPtr<ImageBuffer> create(const IntSize& size, float resolutionScale = 1, RenderingMode renderingMode = Unaccelerated, OpacityMode opacityMode = NonOpaque, int acceleratedMSAASampleCount = 0)
     {
         bool success = false;
-        OwnPtr<ImageBuffer> buf = adoptPtr(new ImageBuffer(size, resolutionScale, renderingMode, opacityMode, success));
+        OwnPtr<ImageBuffer> buf = adoptPtr(new ImageBuffer(size, resolutionScale, renderingMode, opacityMode, acceleratedMSAASampleCount, success));
         if (!success)
             return nullptr;
         return buf.release();
@@ -130,13 +130,13 @@ private:
     bool isValid() const;
 
     void draw(GraphicsContext*, const FloatRect&, const FloatRect& = FloatRect(0, 0, -1, -1), CompositeOperator = CompositeSourceOver, BlendMode = BlendModeNormal, bool useLowQualityScale = false);
-    void drawPattern(GraphicsContext*, const FloatRect&, const FloatSize&, const FloatPoint&, CompositeOperator, const FloatRect&, BlendMode);
+    void drawPattern(GraphicsContext*, const FloatRect&, const FloatSize&, const FloatPoint&, CompositeOperator, const FloatRect&, BlendMode, const IntSize& repeatSpacing = IntSize());
     static PassRefPtr<SkColorFilter> createColorSpaceFilter(ColorSpace srcColorSpace, ColorSpace dstColorSpace);
 
     friend class GraphicsContext;
     friend class GeneratedImage;
     friend class CrossfadeGeneratedImage;
-    friend class GeneratorGeneratedImage;
+    friend class GradientGeneratedImage;
     friend class SkiaImageFilterBuilder;
 
     IntSize m_size;
@@ -148,7 +148,7 @@ private:
 
     // This constructor will place its success into the given out-variable
     // so that create() knows when it should return failure.
-    ImageBuffer(const IntSize&, float resolutionScale, RenderingMode, OpacityMode, bool& success);
+    ImageBuffer(const IntSize&, float resolutionScale, RenderingMode, OpacityMode, int acceleratedSampleCount, bool& success);
     ImageBuffer(const IntSize&, float resolutionScale, const GraphicsContext*, bool hasAlpha, bool& success);
 };
 

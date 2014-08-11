@@ -36,6 +36,18 @@ const char kOpenFileSystemDetailNonThrottledLabel[] =
     "FileSystem.OpenFileSystemDetailNonthrottled";
 int64 kMinimumStatsCollectionIntervalHours = 1;
 
+// For type directory names in ObfuscatedFileUtil.
+// TODO(kinuko,nhiroki): Each type string registration should be done
+// via its own backend.
+const char kTemporaryDirectoryName[] = "t";
+const char kPersistentDirectoryName[] = "p";
+const char kSyncableDirectoryName[] = "s";
+
+const char* kPrepopulateTypes[] = {
+  kPersistentDirectoryName,
+  kTemporaryDirectoryName
+};
+
 enum FileSystemError {
   kOK = 0,
   kIncognito,
@@ -57,6 +69,18 @@ const base::FilePath::CharType kRestrictedChars[] = {
   FILE_PATH_LITERAL('/'), FILE_PATH_LITERAL('\\'),
 };
 
+std::string GetTypeStringForURL(const FileSystemURL& url) {
+  return SandboxFileSystemBackendDelegate::GetTypeString(url.type());
+}
+
+std::set<std::string> GetKnownTypeStrings() {
+  std::set<std::string> known_type_strings;
+  known_type_strings.insert(kTemporaryDirectoryName);
+  known_type_strings.insert(kPersistentDirectoryName);
+  known_type_strings.insert(kSyncableDirectoryName);
+  return known_type_strings;
+}
+
 class ObfuscatedOriginEnumerator
     : public SandboxFileSystemBackendDelegate::OriginEnumerator {
  public:
@@ -70,7 +94,8 @@ class ObfuscatedOriginEnumerator
   }
 
   virtual bool HasFileSystemType(FileSystemType type) const OVERRIDE {
-    return enum_->HasFileSystemType(type);
+    return enum_->HasTypeDirectory(
+        SandboxFileSystemBackendDelegate::GetTypeString(type));
   }
 
  private:
@@ -85,7 +110,9 @@ void OpenFileSystemOnFileThread(
     base::PlatformFileError* error_ptr) {
   DCHECK(error_ptr);
   const bool create = (mode == OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT);
-  file_util->GetDirectoryForOriginAndType(origin_url, type, create, error_ptr);
+  file_util->GetDirectoryForOriginAndType(
+      origin_url, SandboxFileSystemBackendDelegate::GetTypeString(type),
+      create, error_ptr);
   if (*error_ptr != base::PLATFORM_FILE_OK) {
     UMA_HISTOGRAM_ENUMERATION(kOpenFileSystemLabel,
                               kCreateDirectoryError,
@@ -107,11 +134,35 @@ void DidOpenFileSystem(
   callback.Run(*error);
 }
 
+template <typename T>
+void DeleteSoon(base::SequencedTaskRunner* runner, T* ptr) {
+  if (!runner->DeleteSoon(FROM_HERE, ptr))
+    delete ptr;
+}
+
 }  // namespace
 
 const base::FilePath::CharType
 SandboxFileSystemBackendDelegate::kFileSystemDirectory[] =
     FILE_PATH_LITERAL("File System");
+
+// static
+std::string SandboxFileSystemBackendDelegate::GetTypeString(
+    FileSystemType type) {
+  switch (type) {
+    case kFileSystemTypeTemporary:
+      return kTemporaryDirectoryName;
+    case kFileSystemTypePersistent:
+      return kPersistentDirectoryName;
+    case kFileSystemTypeSyncable:
+    case kFileSystemTypeSyncableForInternalSync:
+      return kSyncableDirectoryName;
+    case kFileSystemTypeUnknown:
+    default:
+      NOTREACHED() << "Unknown filesystem type requested:" << type;
+      return std::string();
+  }
+}
 
 SandboxFileSystemBackendDelegate::SandboxFileSystemBackendDelegate(
     quota::QuotaManagerProxy* quota_manager_proxy,
@@ -124,7 +175,10 @@ SandboxFileSystemBackendDelegate::SandboxFileSystemBackendDelegate(
           new ObfuscatedFileUtil(
               special_storage_policy,
               profile_path.Append(kFileSystemDirectory),
-              file_task_runner))),
+              file_task_runner,
+              base::Bind(&GetTypeStringForURL),
+              GetKnownTypeStrings(),
+              this))),
       file_system_usage_cache_(new FileSystemUsageCache(file_task_runner)),
       quota_observer_(new SandboxQuotaObserver(
           quota_manager_proxy,
@@ -135,72 +189,29 @@ SandboxFileSystemBackendDelegate::SandboxFileSystemBackendDelegate(
       file_system_options_(file_system_options),
       is_filesystem_opened_(false),
       weak_factory_(this) {
+  // Prepopulate database only if it can run asynchronously (i.e. the current
+  // thread is not file_task_runner). Usually this is the case but may not
+  // in test code.
+  if (!file_task_runner_->RunsTasksOnCurrentThread()) {
+    std::vector<std::string> types_to_prepopulate(
+        &kPrepopulateTypes[0],
+        &kPrepopulateTypes[arraysize(kPrepopulateTypes)]);
+    file_task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(&ObfuscatedFileUtil::MaybePrepopulateDatabase,
+                  base::Unretained(obfuscated_file_util()),
+                  types_to_prepopulate));
+  }
 }
 
 SandboxFileSystemBackendDelegate::~SandboxFileSystemBackendDelegate() {
   io_thread_checker_.DetachFromThread();
+
   if (!file_task_runner_->RunsTasksOnCurrentThread()) {
-    AsyncFileUtil* sandbox_file_util = sandbox_file_util_.release();
-    SandboxQuotaObserver* quota_observer = quota_observer_.release();
-    FileSystemUsageCache* file_system_usage_cache =
-        file_system_usage_cache_.release();
-    if (!file_task_runner_->DeleteSoon(FROM_HERE, sandbox_file_util))
-      delete sandbox_file_util;
-    if (!file_task_runner_->DeleteSoon(FROM_HERE, quota_observer))
-      delete quota_observer;
-    if (!file_task_runner_->DeleteSoon(FROM_HERE, file_system_usage_cache))
-      delete file_system_usage_cache;
+    DeleteSoon(file_task_runner_.get(), sandbox_file_util_.release());
+    DeleteSoon(file_task_runner_.get(), quota_observer_.release());
+    DeleteSoon(file_task_runner_.get(), file_system_usage_cache_.release());
   }
-}
-
-bool SandboxFileSystemBackendDelegate::IsAccessValid(
-    const FileSystemURL& url) const {
-  if (!IsAllowedScheme(url.origin()))
-    return false;
-
-  if (url.path().ReferencesParent())
-    return false;
-
-  // Return earlier if the path is '/', because VirtualPath::BaseName()
-  // returns '/' for '/' and we fail the "basename != '/'" check below.
-  // (We exclude '.' because it's disallowed by spec.)
-  if (VirtualPath::IsRootPath(url.path()) &&
-      url.path() != base::FilePath(base::FilePath::kCurrentDirectory))
-    return true;
-
-  // Restricted names specified in
-  // http://dev.w3.org/2009/dap/file-system/file-dir-sys.html#naming-restrictions
-  base::FilePath filename = VirtualPath::BaseName(url.path());
-  // See if the name is allowed to create.
-  for (size_t i = 0; i < arraysize(kRestrictedNames); ++i) {
-    if (filename.value() == kRestrictedNames[i])
-      return false;
-  }
-  for (size_t i = 0; i < arraysize(kRestrictedChars); ++i) {
-    if (filename.value().find(kRestrictedChars[i]) !=
-        base::FilePath::StringType::npos)
-      return false;
-  }
-
-  return true;
-}
-
-bool SandboxFileSystemBackendDelegate::IsAllowedScheme(const GURL& url) const {
-  // Basically we only accept http or https. We allow file:// URLs
-  // only if --allow-file-access-from-files flag is given.
-  if (url.SchemeIsHTTPOrHTTPS())
-    return true;
-  if (url.SchemeIsFileSystem())
-    return url.inner_url() && IsAllowedScheme(*url.inner_url());
-
-  for (size_t i = 0;
-       i < file_system_options_.additional_allowed_schemes().size();
-       ++i) {
-    if (url.SchemeIs(
-            file_system_options_.additional_allowed_schemes()[i].c_str()))
-      return true;
-  }
-  return false;
 }
 
 SandboxFileSystemBackendDelegate::OriginEnumerator*
@@ -215,7 +226,7 @@ SandboxFileSystemBackendDelegate::GetBaseDirectoryForOriginAndType(
     bool create) {
   base::PlatformFileError error = base::PLATFORM_FILE_OK;
   base::FilePath path = obfuscated_file_util()->GetDirectoryForOriginAndType(
-      origin_url, type, create, &error);
+      origin_url, GetTypeString(type), create, &error);
   if (error != base::PLATFORM_FILE_OK)
     return base::FilePath();
   return path;
@@ -309,7 +320,7 @@ SandboxFileSystemBackendDelegate::DeleteOriginDataOnFileThread(
       file_system_context, origin_url, type);
   usage_cache()->CloseCacheFiles();
   bool result = obfuscated_file_util()->DeleteDirectoryForOriginAndType(
-      origin_url, type);
+      origin_url, GetTypeString(type));
   if (result && proxy) {
     proxy->NotifyStorageModified(
         quota::QuotaClient::kFileSystem,
@@ -449,6 +460,11 @@ const AccessObserverList* SandboxFileSystemBackendDelegate::GetAccessObservers(
   return &iter->second;
 }
 
+void SandboxFileSystemBackendDelegate::RegisterQuotaUpdateObserver(
+    FileSystemType type) {
+  AddFileUpdateObserver(type, quota_observer_.get(), file_task_runner_.get());
+}
+
 void SandboxFileSystemBackendDelegate::InvalidateUsageCache(
     const GURL& origin,
     FileSystemType type) {
@@ -470,6 +486,56 @@ void SandboxFileSystemBackendDelegate::StickyInvalidateUsageCache(
 
 FileSystemFileUtil* SandboxFileSystemBackendDelegate::sync_file_util() {
   return static_cast<AsyncFileUtilAdapter*>(file_util())->sync_file_util();
+}
+
+bool SandboxFileSystemBackendDelegate::IsAccessValid(
+    const FileSystemURL& url) const {
+  if (!IsAllowedScheme(url.origin()))
+    return false;
+
+  if (url.path().ReferencesParent())
+    return false;
+
+  // Return earlier if the path is '/', because VirtualPath::BaseName()
+  // returns '/' for '/' and we fail the "basename != '/'" check below.
+  // (We exclude '.' because it's disallowed by spec.)
+  if (VirtualPath::IsRootPath(url.path()) &&
+      url.path() != base::FilePath(base::FilePath::kCurrentDirectory))
+    return true;
+
+  // Restricted names specified in
+  // http://dev.w3.org/2009/dap/file-system/file-dir-sys.html#naming-restrictions
+  base::FilePath filename = VirtualPath::BaseName(url.path());
+  // See if the name is allowed to create.
+  for (size_t i = 0; i < arraysize(kRestrictedNames); ++i) {
+    if (filename.value() == kRestrictedNames[i])
+      return false;
+  }
+  for (size_t i = 0; i < arraysize(kRestrictedChars); ++i) {
+    if (filename.value().find(kRestrictedChars[i]) !=
+        base::FilePath::StringType::npos)
+      return false;
+  }
+
+  return true;
+}
+
+bool SandboxFileSystemBackendDelegate::IsAllowedScheme(const GURL& url) const {
+  // Basically we only accept http or https. We allow file:// URLs
+  // only if --allow-file-access-from-files flag is given.
+  if (url.SchemeIsHTTPOrHTTPS())
+    return true;
+  if (url.SchemeIsFileSystem())
+    return url.inner_url() && IsAllowedScheme(*url.inner_url());
+
+  for (size_t i = 0;
+       i < file_system_options_.additional_allowed_schemes().size();
+       ++i) {
+    if (url.SchemeIs(
+            file_system_options_.additional_allowed_schemes()[i].c_str()))
+      return true;
+  }
+  return false;
 }
 
 base::FilePath
@@ -494,7 +560,7 @@ SandboxFileSystemBackendDelegate::GetUsageCachePathForOriginAndType(
   DCHECK(error_out);
   *error_out = base::PLATFORM_FILE_OK;
   base::FilePath base_path = sandbox_file_util->GetDirectoryForOriginAndType(
-      origin_url, type, false /* create */, error_out);
+      origin_url, GetTypeString(type), false /* create */, error_out);
   if (*error_out != base::PLATFORM_FILE_OK)
     return base::FilePath();
   return base_path.Append(FileSystemUsageCache::kUsageFileName);
@@ -561,6 +627,20 @@ void SandboxFileSystemBackendDelegate::CollectOpenFileSystemMetrics(
 
 ObfuscatedFileUtil* SandboxFileSystemBackendDelegate::obfuscated_file_util() {
   return static_cast<ObfuscatedFileUtil*>(sync_file_util());
+}
+
+// Declared in obfuscated_file_util.h.
+// static
+ObfuscatedFileUtil* ObfuscatedFileUtil::CreateForTesting(
+    quota::SpecialStoragePolicy* special_storage_policy,
+    const base::FilePath& file_system_directory,
+    base::SequencedTaskRunner* file_task_runner) {
+  return new ObfuscatedFileUtil(special_storage_policy,
+                                file_system_directory,
+                                file_task_runner,
+                                base::Bind(&GetTypeStringForURL),
+                                GetKnownTypeStrings(),
+                                NULL);
 }
 
 }  // namespace fileapi

@@ -33,6 +33,7 @@
 #define FrameLoader_h
 
 #include "core/dom/IconURL.h"
+#include "core/dom/SandboxFlags.h"
 #include "core/dom/SecurityContext.h"
 #include "core/fetch/CachePolicy.h"
 #include "core/fetch/ResourceLoaderOptions.h"
@@ -40,8 +41,7 @@
 #include "core/loader/FrameLoaderTypes.h"
 #include "core/loader/HistoryController.h"
 #include "core/loader/MixedContentChecker.h"
-#include "core/page/LayoutMilestones.h"
-#include "core/platform/Timer.h"
+#include "platform/Timer.h"
 #include "wtf/Forward.h"
 #include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
@@ -94,14 +94,12 @@ public:
     void reload(ReloadPolicy = NormalReload, const KURL& overrideURL = KURL(), const String& overrideEncoding = String());
     void loadHistoryItem(HistoryItem*); // The entry point for all back/forward loads
 
-    HistoryItem* requestedHistoryItem() const { return m_requestedHistoryItem.get(); }
-
     static void reportLocalLoadFailed(Frame*, const String& url);
 
     // FIXME: These are all functions which stop loads. We have too many.
     // Warning: stopAllLoaders can and will detach the Frame out from under you. All callers need to either protect the Frame
     // or guarantee they won't in any way access the Frame after stopAllLoaders returns.
-    void stopAllLoaders(ClearProvisionalItemPolicy = ShouldClearProvisionalItem);
+    void stopAllLoaders();
     void stopLoading();
     bool closeURL();
     // FIXME: clear() is trying to do too many things. We should break it down into smaller functions.
@@ -144,7 +142,6 @@ public:
 
     CachePolicy subresourceCachePolicy() const;
 
-    void didLayout(LayoutMilestones);
     void didFirstLayout();
 
     void checkLoadComplete(DocumentLoader*);
@@ -206,15 +203,13 @@ public:
 
     void started();
 
-    void setContainsPlugins() { m_containsPlugins = true; }
-    bool containsPlugins() const { return m_containsPlugins; }
     bool allowPlugins(ReasonForCallingAllowPlugins);
 
     enum UpdateBackForwardListPolicy {
         UpdateBackForwardList,
         DoNotUpdateBackForwardList
     };
-    void updateForSameDocumentNavigation(const KURL&, SameDocumentNavigationSource, PassRefPtr<SerializedScriptValue>, const String& title, UpdateBackForwardListPolicy);
+    void updateForSameDocumentNavigation(const KURL&, SameDocumentNavigationSource, PassRefPtr<SerializedScriptValue>, UpdateBackForwardListPolicy);
 
 private:
     bool allChildrenAreComplete() const; // immediate children, not all descendants
@@ -233,7 +228,7 @@ private:
 
     SubstituteData defaultSubstituteDataForURL(const KURL&);
 
-    void checkNavigationPolicyAndContinueFragmentScroll(const NavigationAction&, bool isNewNavigation);
+    void checkNavigationPolicyAndContinueFragmentScroll(const NavigationAction&, bool isNewNavigation, ClientRedirectPolicy);
     void checkNewWindowPolicyAndContinue(PassRefPtr<FormState>, const String& frameName, const NavigationAction&);
 
     bool shouldPerformFragmentNavigation(bool isFormSubmission, const String& httpMethod, FrameLoadType, const KURL&);
@@ -245,12 +240,12 @@ private:
 
     // Calls continueLoadAfterNavigationPolicy
     void loadWithNavigationAction(const ResourceRequest&, const NavigationAction&,
-        FrameLoadType, PassRefPtr<FormState>, const SubstituteData&, const String& overrideEncoding = String());
+        FrameLoadType, PassRefPtr<FormState>, const SubstituteData&, ClientRedirectPolicy = NotClientRedirect, const String& overrideEncoding = String());
 
     void detachChildren();
     void closeAndRemoveChild(Frame*);
 
-    void loadInSameDocument(const KURL&, PassRefPtr<SerializedScriptValue> stateObject, bool isNewNavigation);
+    void loadInSameDocument(const KURL&, PassRefPtr<SerializedScriptValue> stateObject, bool isNewNavigation, ClientRedirectPolicy);
 
     void scheduleCheckCompleted();
     void startCheckCompleteTimer();
@@ -290,8 +285,6 @@ private:
     // FIXME: This is only used in checkCompleted(). Figure out a way to disentangle it.
     bool m_isComplete;
 
-    bool m_containsPlugins;
-
     Timer<FrameLoader> m_checkTimer;
     bool m_shouldCallCheckCompleted;
 
@@ -301,11 +294,8 @@ private:
     bool m_didAccessInitialDocument;
     Timer<FrameLoader> m_didAccessInitialDocumentTimer;
     bool m_suppressOpenerInNewFrame;
-    bool m_startingClientRedirect;
 
     SandboxFlags m_forcedSandboxFlags;
-
-    RefPtr<HistoryItem> m_requestedHistoryItem;
 };
 
 } // namespace WebCore

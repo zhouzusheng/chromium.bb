@@ -40,16 +40,16 @@
 #include "modules/filesystem/FileEntrySync.h"
 #include "modules/filesystem/FileSystemCallback.h"
 #include "modules/filesystem/FileSystemCallbacks.h"
-#include "modules/filesystem/FileSystemType.h"
 #include "modules/filesystem/SyncCallbackHelper.h"
 #include "modules/filesystem/WorkerLocalFileSystem.h"
+#include "platform/FileSystemType.h"
 #include "weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
 void WorkerGlobalScopeFileSystem::webkitRequestFileSystem(WorkerGlobalScope* worker, int type, long long size, PassRefPtr<FileSystemCallback> successCallback, PassRefPtr<ErrorCallback> errorCallback)
 {
-    ScriptExecutionContext* secureContext = worker->scriptExecutionContext();
+    ExecutionContext* secureContext = worker->executionContext();
     if (!secureContext->securityOrigin()->canAccessFileSystem()) {
         DOMFileSystem::scheduleCallback(worker, errorCallback, FileError::create(FileError::SECURITY_ERR));
         return;
@@ -66,7 +66,7 @@ void WorkerGlobalScopeFileSystem::webkitRequestFileSystem(WorkerGlobalScope* wor
 
 PassRefPtr<DOMFileSystemSync> WorkerGlobalScopeFileSystem::webkitRequestFileSystemSync(WorkerGlobalScope* worker, int type, long long size, ExceptionState& es)
 {
-    ScriptExecutionContext* secureContext = worker->scriptExecutionContext();
+    ExecutionContext* secureContext = worker->executionContext();
     if (!secureContext->securityOrigin()->canAccessFileSystem()) {
         es.throwSecurityError(ExceptionMessages::failedToExecute("webkitRequestFileSystemSync", "WorkerGlobalScopeFileSystem", FileError::securityErrorMessage));
         return 0;
@@ -89,53 +89,43 @@ PassRefPtr<DOMFileSystemSync> WorkerGlobalScopeFileSystem::webkitRequestFileSyst
 void WorkerGlobalScopeFileSystem::webkitResolveLocalFileSystemURL(WorkerGlobalScope* worker, const String& url, PassRefPtr<EntryCallback> successCallback, PassRefPtr<ErrorCallback> errorCallback)
 {
     KURL completedURL = worker->completeURL(url);
-    ScriptExecutionContext* secureContext = worker->scriptExecutionContext();
+    ExecutionContext* secureContext = worker->executionContext();
     if (!secureContext->securityOrigin()->canAccessFileSystem() || !secureContext->securityOrigin()->canRequest(completedURL)) {
         DOMFileSystem::scheduleCallback(worker, errorCallback, FileError::create(FileError::SECURITY_ERR));
         return;
     }
 
-    FileSystemType type;
-    String filePath;
-    if (!completedURL.isValid() || !DOMFileSystemBase::crackFileSystemURL(completedURL, type, filePath)) {
+    if (!completedURL.isValid()) {
         DOMFileSystem::scheduleCallback(worker, errorCallback, FileError::create(FileError::ENCODING_ERR));
         return;
     }
 
-    WorkerLocalFileSystem::from(worker)->readFileSystem(worker, type, ResolveURICallbacks::create(successCallback, errorCallback, worker, type, filePath));
+    WorkerLocalFileSystem::from(worker)->resolveURL(worker, completedURL, ResolveURICallbacks::create(successCallback, errorCallback, worker));
 }
 
 PassRefPtr<EntrySync> WorkerGlobalScopeFileSystem::webkitResolveLocalFileSystemSyncURL(WorkerGlobalScope* worker, const String& url, ExceptionState& es)
 {
     KURL completedURL = worker->completeURL(url);
-    ScriptExecutionContext* secureContext = worker->scriptExecutionContext();
+    ExecutionContext* secureContext = worker->executionContext();
     if (!secureContext->securityOrigin()->canAccessFileSystem() || !secureContext->securityOrigin()->canRequest(completedURL)) {
         es.throwSecurityError(ExceptionMessages::failedToExecute("webkitResolveLocalFileSystemSyncURL", "WorkerGlobalScopeFileSystem", FileError::securityErrorMessage));
         return 0;
     }
 
-    FileSystemType type;
-    String filePath;
-    if (!completedURL.isValid() || !DOMFileSystemBase::crackFileSystemURL(completedURL, type, filePath)) {
+    if (!completedURL.isValid()) {
         es.throwDOMException(EncodingError, ExceptionMessages::failedToExecute("webkitResolveLocalFileSystemSyncURL", "WorkerGlobalScopeFileSystem", "the URL '" + url + "' is invalid."));
         return 0;
     }
 
-    FileSystemSyncCallbackHelper readFileSystemHelper;
-    OwnPtr<AsyncFileSystemCallbacks> callbacks = FileSystemCallbacks::create(readFileSystemHelper.successCallback(), readFileSystemHelper.errorCallback(), worker, type);
+    EntrySyncCallbackHelper resolveURLHelper;
+    OwnPtr<AsyncFileSystemCallbacks> callbacks = ResolveURICallbacks::create(resolveURLHelper.successCallback(), resolveURLHelper.errorCallback(), worker);
     callbacks->setShouldBlockUntilCompletion(true);
 
-    WorkerLocalFileSystem::from(worker)->readFileSystem(worker, type, callbacks.release());
-    RefPtr<DOMFileSystemSync> fileSystem = readFileSystemHelper.getResult(es);
-    if (!fileSystem)
+    WorkerLocalFileSystem::from(worker)->resolveURL(worker, completedURL, callbacks.release());
+
+    RefPtr<EntrySync> entry = resolveURLHelper.getResult(es);
+    if (!entry)
         return 0;
-
-    RefPtr<EntrySync> entry = fileSystem->root()->getDirectory(filePath, Dictionary(), es);
-    if (es.code() == TypeMismatchError) {
-        es.clearException();
-        return fileSystem->root()->getFile(filePath, Dictionary(), es);
-    }
-
     return entry.release();
 }
 

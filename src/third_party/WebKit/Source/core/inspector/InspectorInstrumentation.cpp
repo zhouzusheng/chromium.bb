@@ -160,22 +160,22 @@ String preprocessEventListenerImpl(InstrumentingAgents* instrumentingAgents, Fra
     return source;
 }
 
-bool canvasAgentEnabled(ScriptExecutionContext* scriptExecutionContext)
+bool canvasAgentEnabled(ExecutionContext* executionContext)
 {
-    InstrumentingAgents* instrumentingAgents = instrumentingAgentsFor(scriptExecutionContext);
+    InstrumentingAgents* instrumentingAgents = instrumentingAgentsFor(executionContext);
     return instrumentingAgents && instrumentingAgents->inspectorCanvasAgent();
 }
 
-bool consoleAgentEnabled(ScriptExecutionContext* scriptExecutionContext)
+bool consoleAgentEnabled(ExecutionContext* executionContext)
 {
-    InstrumentingAgents* instrumentingAgents = instrumentingAgentsFor(scriptExecutionContext);
+    InstrumentingAgents* instrumentingAgents = instrumentingAgentsFor(executionContext);
     InspectorConsoleAgent* consoleAgent = instrumentingAgents ? instrumentingAgents->inspectorConsoleAgent() : 0;
     return consoleAgent && consoleAgent->enabled();
 }
 
-bool timelineAgentEnabled(ScriptExecutionContext* scriptExecutionContext)
+bool timelineAgentEnabled(ExecutionContext* executionContext)
 {
-    InstrumentingAgents* instrumentingAgents = instrumentingAgentsFor(scriptExecutionContext);
+    InstrumentingAgents* instrumentingAgents = instrumentingAgentsFor(executionContext);
     return instrumentingAgents && instrumentingAgents->inspectorTimelineAgent();
 }
 
@@ -226,16 +226,11 @@ InstrumentingAgents* instrumentingAgentsFor(WorkerGlobalScope* workerGlobalScope
     return instrumentationForWorkerGlobalScope(workerGlobalScope);
 }
 
-InstrumentingAgents* instrumentingAgentsForNonDocumentContext(ScriptExecutionContext* context)
+InstrumentingAgents* instrumentingAgentsForNonDocumentContext(ExecutionContext* context)
 {
     if (context->isWorkerGlobalScope())
         return instrumentationForWorkerGlobalScope(toWorkerGlobalScope(context));
     return 0;
-}
-
-bool cssErrorFilter(const CSSParserString& content, int propertyId, int errorType)
-{
-    return InspectorCSSAgent::cssErrorFilter(content, propertyId, errorType);
 }
 
 } // namespace InspectorInstrumentation
@@ -256,6 +251,7 @@ const char LayerId[] = "layerId";
 const char LayerTreeId[] = "layerTreeId";
 const char NodeId[] = "nodeId";
 const char PageId[] = "pageId";
+const char PixelRefId[] = "pixelRefId";
 };
 
 InstrumentingAgents* instrumentationForPage(Page* page)

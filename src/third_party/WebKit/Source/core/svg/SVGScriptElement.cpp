@@ -27,8 +27,8 @@
 #include "bindings/v8/ScriptEventListener.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
-#include "core/dom/EventNames.h"
 #include "core/dom/ScriptLoader.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/svg/SVGElementInstance.h"
 #include "core/svg/properties/SVGAnimatedStaticPropertyTearOff.h"
 
@@ -83,7 +83,7 @@ void SVGScriptElement::parseAttribute(const QualifiedName& name, const AtomicStr
     }
 
     if (name == HTMLNames::onerrorAttr) {
-        setAttributeEventListener(eventNames().errorEvent, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::error, createAttributeEventListener(this, name, value));
         return;
     }
 

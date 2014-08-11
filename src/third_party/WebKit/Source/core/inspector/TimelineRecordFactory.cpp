@@ -32,13 +32,13 @@
 #include "core/inspector/TimelineRecordFactory.h"
 
 #include "bindings/v8/ScriptCallStackFactory.h"
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "core/inspector/ScriptCallStack.h"
-#include "core/platform/JSONValues.h"
-#include "core/platform/graphics/FloatQuad.h"
-#include "core/platform/graphics/LayoutRect.h"
-#include "core/platform/network/ResourceRequest.h"
-#include "core/platform/network/ResourceResponse.h"
+#include "platform/JSONValues.h"
+#include "platform/geometry/FloatQuad.h"
+#include "platform/geometry/LayoutRect.h"
+#include "platform/network/ResourceRequest.h"
+#include "platform/network/ResourceResponse.h"
 #include "wtf/CurrentTime.h"
 
 namespace WebCore {
@@ -234,18 +234,30 @@ static PassRefPtr<JSONArray> createQuad(const FloatQuad& quad)
     return array.release();
 }
 
-PassRefPtr<JSONObject> TimelineRecordFactory::createLayerData(long long layerRootNodeId)
+PassRefPtr<JSONObject> TimelineRecordFactory::createNodeData(long long nodeId)
 {
     RefPtr<JSONObject> data = JSONObject::create();
-    if (layerRootNodeId)
-        data->setNumber("layerRootNode", layerRootNodeId);
+    if (nodeId)
+        data->setNumber("rootNode", nodeId);
     return data.release();
+}
+
+PassRefPtr<JSONObject> TimelineRecordFactory::createLayerData(long long rootNodeId)
+{
+    return createNodeData(rootNodeId);
 }
 
 PassRefPtr<JSONObject> TimelineRecordFactory::createPaintData(const FloatQuad& quad, long long layerRootNodeId)
 {
     RefPtr<JSONObject> data = TimelineRecordFactory::createLayerData(layerRootNodeId);
     data->setArray("clip", createQuad(quad));
+    return data.release();
+}
+
+PassRefPtr<JSONObject> TimelineRecordFactory::createFrameData(int frameId)
+{
+    RefPtr<JSONObject> data = JSONObject::create();
+    data->setNumber("id", frameId);
     return data.release();
 }
 

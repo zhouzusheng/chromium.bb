@@ -34,11 +34,11 @@
 
 #include "core/platform/ScrollAnimator.h"
 #include "core/platform/ScrollbarTheme.h"
-#include "core/platform/graphics/FloatPoint.h"
 #include "core/platform/graphics/GraphicsLayer.h"
+#include "platform/geometry/FloatPoint.h"
 #include "wtf/PassOwnPtr.h"
 
-#include "core/platform/chromium/TraceEvent.h"
+#include "platform/TraceEvent.h"
 
 static const int kPixelsPerLineStep = 40;
 static const float kMinFractionToStepWhenPaging = 0.875f;
@@ -202,9 +202,6 @@ void ScrollableArea::setScrollOffsetFromInternals(const IntPoint& offset)
 
 void ScrollableArea::setScrollOffsetFromAnimation(const IntPoint& offset)
 {
-    if (requestScrollPositionUpdate(offset))
-        return;
-
     scrollPositionChanged(offset);
 }
 
@@ -379,7 +376,7 @@ void ScrollableArea::serviceScrollAnimations()
         scrollAnimator->serviceScrollAnimations();
 }
 
-IntRect ScrollableArea::visibleContentRect(VisibleContentRectIncludesScrollbars scrollbarInclusion) const
+IntRect ScrollableArea::visibleContentRect(IncludeScrollbarsInRect scrollbarInclusion) const
 {
     int verticalScrollbarWidth = 0;
     int horizontalScrollbarHeight = 0;

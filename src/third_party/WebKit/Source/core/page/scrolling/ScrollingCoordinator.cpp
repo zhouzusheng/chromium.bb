@@ -32,28 +32,27 @@
 #include "core/dom/Node.h"
 #include "core/dom/WheelController.h"
 #include "core/html/HTMLElement.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
-#include "core/platform/PlatformWheelEvent.h"
 #include "core/platform/ScrollAnimator.h"
 #include "core/platform/ScrollbarTheme.h"
-#include "core/platform/chromium/TraceEvent.h"
 #include "core/platform/chromium/support/WebScrollbarImpl.h"
 #include "core/platform/chromium/support/WebScrollbarThemeGeometryNative.h"
 #include "core/platform/graphics/GraphicsLayer.h"
-#include "core/platform/graphics/IntRect.h"
-#include "core/platform/graphics/Region.h"
-#include "core/platform/graphics/transforms/TransformState.h"
+#include "platform/TraceEvent.h"
+#include "platform/geometry/Region.h"
+#include "platform/geometry/TransformState.h"
 #if OS(MACOSX)
 #include "core/platform/mac/ScrollAnimatorMac.h"
 #endif
 #include "core/plugins/PluginView.h"
+#include "core/rendering/CompositedLayerMapping.h"
 #include "core/rendering/RenderGeometryMap.h"
-#include "core/rendering/RenderLayerBacking.h"
 #include "core/rendering/RenderLayerCompositor.h"
 #include "core/rendering/RenderView.h"
+#include "platform/geometry/IntRect.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositorSupport.h"
 #include "public/platform/WebLayerPositionConstraint.h"
@@ -89,6 +88,8 @@ PassRefPtr<ScrollingCoordinator> ScrollingCoordinator::create(Page* page)
 
 ScrollingCoordinator::ScrollingCoordinator(Page* page)
     : m_page(page)
+    , m_scrollGestureRegionIsDirty(false)
+    , m_touchEventTargetRectsAreDirty(false)
 {
 }
 
@@ -105,7 +106,8 @@ ScrollingCoordinator::~ScrollingCoordinator()
 bool ScrollingCoordinator::touchHitTestingEnabled() const
 {
     RenderView* contentRenderer = m_page->mainFrame()->contentRenderer();
-    return RuntimeEnabledFeatures::touchEnabled() && contentRenderer && contentRenderer->usesCompositing();
+    Settings* settings = m_page->mainFrame()->document()->settings();
+    return RuntimeEnabledFeatures::touchEnabled() && settings->compositorTouchHitTesting() && contentRenderer && contentRenderer->usesCompositing();
 }
 
 void ScrollingCoordinator::setShouldHandleScrollGestureOnMainThreadRegion(const Region& region)
@@ -119,29 +121,41 @@ void ScrollingCoordinator::setShouldHandleScrollGestureOnMainThreadRegion(const 
     }
 }
 
-void ScrollingCoordinator::frameViewLayoutUpdated(FrameView* frameView)
+void ScrollingCoordinator::notifyLayoutUpdated()
 {
-    TRACE_EVENT0("input", "ScrollingCoordinator::frameViewLayoutUpdated");
+    // These computations need to happen after compositing is updated.
+    m_scrollGestureRegionIsDirty = true;
+    m_touchEventTargetRectsAreDirty = true;
+}
 
-    // Compute the region of the page where we can't handle scroll gestures and mousewheel events
-    // on the impl thread. This currently includes:
-    // 1. All scrollable areas, such as subframes, overflow divs and list boxes, whose composited
-    // scrolling are not enabled. We need to do this even if the frame view whose layout was updated
-    // is not the main frame.
-    // 2. Resize control areas, e.g. the small rect at the right bottom of div/textarea/iframe when
-    // CSS property "resize" is enabled.
-    // 3. Plugin areas.
-    Region shouldHandleScrollGestureOnMainThreadRegion = computeShouldHandleScrollGestureOnMainThreadRegion(m_page->mainFrame(), IntPoint());
-    setShouldHandleScrollGestureOnMainThreadRegion(shouldHandleScrollGestureOnMainThreadRegion);
+void ScrollingCoordinator::updateAfterCompositingChange()
+{
+    TRACE_EVENT0("input", "ScrollingCoordinator::updateAfterCompositingChange");
 
-    if (touchHitTestingEnabled()) {
-        LayerHitTestRects touchEventTargetRects;
-        computeTouchEventTargetRects(touchEventTargetRects);
-        setTouchEventTargetRects(touchEventTargetRects);
+    if (m_scrollGestureRegionIsDirty) {
+        // Compute the region of the page where we can't handle scroll gestures and mousewheel events
+        // on the impl thread. This currently includes:
+        // 1. All scrollable areas, such as subframes, overflow divs and list boxes, whose composited
+        // scrolling are not enabled. We need to do this even if the frame view whose layout was updated
+        // is not the main frame.
+        // 2. Resize control areas, e.g. the small rect at the right bottom of div/textarea/iframe when
+        // CSS property "resize" is enabled.
+        // 3. Plugin areas.
+        Region shouldHandleScrollGestureOnMainThreadRegion = computeShouldHandleScrollGestureOnMainThreadRegion(m_page->mainFrame(), IntPoint());
+        setShouldHandleScrollGestureOnMainThreadRegion(shouldHandleScrollGestureOnMainThreadRegion);
+        m_scrollGestureRegionIsDirty = false;
     }
 
-    if (WebLayer* scrollLayer = scrollingWebLayerForScrollableArea(frameView))
-        scrollLayer->setBounds(frameView->contentsSize());
+    if (m_touchEventTargetRectsAreDirty) {
+        updateTouchEventTargetRectsIfNeeded();
+        m_touchEventTargetRectsAreDirty = false;
+    }
+
+    const FrameTree& tree = m_page->mainFrame()->tree();
+    for (const Frame* child = tree.firstChild(); child; child = child->tree().nextSibling()) {
+        if (WebLayer* scrollLayer = scrollingWebLayerForScrollableArea(child->view()))
+            scrollLayer->setBounds(child->view()->contentsSize());
+    }
 }
 
 void ScrollingCoordinator::setLayerIsContainerForFixedPositionLayers(GraphicsLayer* layer, bool enable)
@@ -158,7 +172,7 @@ static void clearPositionConstraintExceptForLayer(GraphicsLayer* layer, Graphics
 
 static WebLayerPositionConstraint computePositionConstraint(const RenderLayer* layer)
 {
-    ASSERT(layer->isComposited());
+    ASSERT(layer->compositedLayerMapping());
     do {
         if (layer->renderer()->style()->position() == FixedPosition) {
             const RenderObject* fixedPositionObject = layer->renderer();
@@ -168,19 +182,22 @@ static WebLayerPositionConstraint computePositionConstraint(const RenderLayer* l
         }
 
         layer = layer->parent();
-    } while (layer && !layer->isComposited());
+
+        // Composited layers that inherit a fixed position state will be positioned with respect to the nearest compositedLayerMapping's GraphicsLayer.
+        // So, once we find a layer that has its own compositedLayerMapping, we can stop searching for a fixed position RenderObject.
+    } while (layer && !layer->compositedLayerMapping());
     return WebLayerPositionConstraint();
 }
 
 void ScrollingCoordinator::updateLayerPositionConstraint(RenderLayer* layer)
 {
-    ASSERT(layer->backing());
-    RenderLayerBacking* backing = layer->backing();
-    GraphicsLayer* mainLayer = backing->childForSuperlayers();
+    ASSERT(layer->compositedLayerMapping());
+    CompositedLayerMapping* compositedLayerMapping = layer->compositedLayerMapping();
+    GraphicsLayer* mainLayer = compositedLayerMapping->childForSuperlayers();
 
     // Avoid unnecessary commits
-    clearPositionConstraintExceptForLayer(backing->ancestorClippingLayer(), mainLayer);
-    clearPositionConstraintExceptForLayer(backing->graphicsLayer(), mainLayer);
+    clearPositionConstraintExceptForLayer(compositedLayerMapping->ancestorClippingLayer(), mainLayer);
+    clearPositionConstraintExceptForLayer(compositedLayerMapping->mainGraphicsLayer(), mainLayer);
 
     if (WebLayer* scrollableLayer = scrollingWebLayerForGraphicsLayer(mainLayer))
         scrollableLayer->setPositionConstraint(computePositionConstraint(layer));
@@ -319,6 +336,9 @@ bool ScrollingCoordinator::scrollableAreaScrollLayerDidChange(ScrollableArea* sc
         webLayer->setScrollable(true);
         webLayer->setScrollPosition(IntPoint(scrollableArea->scrollPosition() - scrollableArea->minimumScrollPosition()));
         webLayer->setMaxScrollPosition(IntSize(scrollableArea->scrollSize(HorizontalScrollbar), scrollableArea->scrollSize(VerticalScrollbar)));
+        bool canScrollX = scrollableArea->userInputScrollable(HorizontalScrollbar);
+        bool canScrollY = scrollableArea->userInputScrollable(VerticalScrollbar);
+        webLayer->setUserScrollable(canScrollX, canScrollY);
     }
     if (WebScrollbarLayer* scrollbarLayer = getWebScrollbarLayer(scrollableArea, HorizontalScrollbar)) {
         GraphicsLayer* horizontalScrollbarLayer = horizontalScrollbarLayerForScrollableArea(scrollableArea);
@@ -342,8 +362,8 @@ typedef HashMap<const RenderLayer*, Vector<const Frame*> > LayerFrameMap;
 static void makeLayerChildFrameMap(const Frame* currentFrame, LayerFrameMap* map)
 {
     map->clear();
-    const FrameTree* tree = currentFrame->tree();
-    for (const Frame* child = tree->firstChild(); child; child = child->tree()->nextSibling()) {
+    const FrameTree& tree = currentFrame->tree();
+    for (const Frame* child = tree.firstChild(); child; child = child->tree().nextSibling()) {
         const RenderLayer* containingLayer = child->ownerRenderer()->enclosingLayer();
         LayerFrameMap::iterator iter = map->find(containingLayer);
         if (iter == map->end())
@@ -393,7 +413,8 @@ static void convertLayerRectsToEnclosingCompositedLayerRecursive(
                 // If the enclosing composited layer itself is scrolled, we have to undo the subtraction
                 // of its scroll offset since we want the offset relative to the scrolling content, not
                 // the element itself.
-                rect.move(compositedLayer->scrolledContentOffset());
+                if (compositedLayer->renderer()->hasOverflowClip())
+                    rect.move(compositedLayer->renderBox()->scrolledContentOffset());
             }
             compIter->value.append(rect);
         }
@@ -460,6 +481,18 @@ static void convertLayerRectsToEnclosingCompositedLayer(Frame* mainFrame, const 
     convertLayerRectsToEnclosingCompositedLayerRecursive(mainFrame->contentRenderer()->layer(), layerRects, compositorRects, geometryMap, layersWithRects, layerChildFrameMap);
 }
 
+void ScrollingCoordinator::updateTouchEventTargetRectsIfNeeded()
+{
+    TRACE_EVENT0("input", "ScrollingCoordinator::updateTouchEventTargetRectsIfNeeded");
+
+    if (!touchHitTestingEnabled())
+        return;
+
+    LayerHitTestRects touchEventTargetRects;
+    computeTouchEventTargetRects(touchEventTargetRects);
+    setTouchEventTargetRects(touchEventTargetRects);
+}
+
 // Note that in principle this could be called more often than computeTouchEventTargetRects, for
 // example during a non-composited scroll (although that's not yet implemented - crbug.com/261307).
 void ScrollingCoordinator::setTouchEventTargetRects(const LayerHitTestRects& layerRects)
@@ -477,12 +510,12 @@ void ScrollingCoordinator::setTouchEventTargetRects(const LayerHitTestRects& lay
         WebVector<WebRect> webRects(iter->value.size());
         for (size_t i = 0; i < iter->value.size(); ++i)
             webRects[i] = enclosingIntRect(iter->value[i]);
-        RenderLayerBacking* backing = layer->backing();
+        CompositedLayerMapping* compositedLayerMapping = layer->compositedLayerMapping();
         // If the layer is using composited scrolling, then it's the contents that these
         // rects apply to.
-        GraphicsLayer* graphicsLayer = backing->scrollingContentsLayer();
+        GraphicsLayer* graphicsLayer = compositedLayerMapping->scrollingContentsLayer();
         if (!graphicsLayer)
-            graphicsLayer = backing->graphicsLayer();
+            graphicsLayer = compositedLayerMapping->mainGraphicsLayer();
         graphicsLayer->platformLayer()->setTouchEventHandlerRegion(webRects);
         oldLayersWithTouchRects.remove(layer);
         m_layersWithTouchRects.add(layer);
@@ -490,10 +523,10 @@ void ScrollingCoordinator::setTouchEventTargetRects(const LayerHitTestRects& lay
 
     // If there are any layers left that we haven't updated, clear them out.
     for (HashSet<const RenderLayer*>::iterator it = oldLayersWithTouchRects.begin(); it != oldLayersWithTouchRects.end(); ++it) {
-        if (RenderLayerBacking* backing = (*it)->backing()) {
-            GraphicsLayer* graphicsLayer = backing->scrollingContentsLayer();
+        if (CompositedLayerMapping* compositedLayerMapping = (*it)->compositedLayerMapping()) {
+            GraphicsLayer* graphicsLayer = compositedLayerMapping->scrollingContentsLayer();
             if (!graphicsLayer)
-                graphicsLayer = backing->graphicsLayer();
+                graphicsLayer = compositedLayerMapping->mainGraphicsLayer();
             graphicsLayer->platformLayer()->setTouchEventHandlerRegion(WebVector<WebRect>());
         }
     }
@@ -508,37 +541,31 @@ void ScrollingCoordinator::touchEventTargetRectsDidChange(const Document*)
     if (m_page->mainFrame()->view()->needsLayout())
         return;
 
-    TRACE_EVENT0("input", "ScrollingCoordinator::touchEventTargetRectsDidChange");
+    // FIXME: scheduleAnimation() is just a method of forcing the compositor to realize that it
+    // needs to commit here. We should expose a cleaner API for this.
+    RenderView* renderView = m_page->mainFrame()->contentRenderer();
+    if (renderView && renderView->compositor() && renderView->compositor()->inCompositingMode())
+        m_page->mainFrame()->view()->scheduleAnimation();
 
-    LayerHitTestRects touchEventTargetRects;
-    computeTouchEventTargetRects(touchEventTargetRects);
-    setTouchEventTargetRects(touchEventTargetRects);
+    m_touchEventTargetRectsAreDirty = true;
 }
 
-void ScrollingCoordinator::updateScrollParentForLayer(RenderLayer* child, RenderLayer* parent)
+void ScrollingCoordinator::updateScrollParentForGraphicsLayer(GraphicsLayer* child, RenderLayer* parent)
 {
-    WebLayer* childWebLayer = scrollingWebLayerForGraphicsLayer(child->layerForScrollChild());
-    if (!childWebLayer)
-        return;
-
     WebLayer* scrollParentWebLayer = 0;
-    if (parent && parent->backing())
-        scrollParentWebLayer = scrollingWebLayerForGraphicsLayer(parent->backing()->parentForSublayers());
+    if (parent && parent->compositedLayerMapping())
+        scrollParentWebLayer = scrollingWebLayerForGraphicsLayer(parent->compositedLayerMapping()->parentForSublayers());
 
-    childWebLayer->setScrollParent(scrollParentWebLayer);
+    child->setScrollParent(scrollParentWebLayer);
 }
 
-void ScrollingCoordinator::updateClipParentForLayer(RenderLayer* child, RenderLayer* parent)
+void ScrollingCoordinator::updateClipParentForGraphicsLayer(GraphicsLayer* child, RenderLayer* parent)
 {
-    WebLayer* childWebLayer = scrollingWebLayerForGraphicsLayer(child->backing()->graphicsLayer());
-    if (!childWebLayer)
-        return;
-
     WebLayer* clipParentWebLayer = 0;
-    if (parent && parent->backing())
-        clipParentWebLayer = scrollingWebLayerForGraphicsLayer(parent->backing()->parentForSublayers());
+    if (parent && parent->compositedLayerMapping())
+        clipParentWebLayer = scrollingWebLayerForGraphicsLayer(parent->compositedLayerMapping()->parentForSublayers());
 
-    childWebLayer->setClipParent(clipParentWebLayer);
+    child->setClipParent(clipParentWebLayer);
 }
 
 void ScrollingCoordinator::willDestroyRenderLayer(RenderLayer* layer)
@@ -614,9 +641,9 @@ Region ScrollingCoordinator::computeShouldHandleScrollGestureOnMainThreadRegion(
     // on main thread).
     if (const FrameView::ResizerAreaSet* resizerAreas = frameView->resizerAreas()) {
         for (FrameView::ResizerAreaSet::const_iterator it = resizerAreas->begin(), end = resizerAreas->end(); it != end; ++it) {
-            RenderLayer* layer = *it;
-            IntRect bounds = layer->renderer()->absoluteBoundingBoxRect();
-            IntRect corner = layer->resizerCornerRect(bounds, ResizerForTouch);
+            RenderBox* box = *it;
+            IntRect bounds = box->absoluteBoundingBoxRect();
+            IntRect corner = box->layer()->scrollableArea()->touchResizerCornerRect(bounds);
             corner.moveBy(offset);
             shouldHandleScrollGestureOnMainThreadRegion.unite(corner);
         }
@@ -633,8 +660,8 @@ Region ScrollingCoordinator::computeShouldHandleScrollGestureOnMainThreadRegion(
         }
     }
 
-    FrameTree* tree = frame->tree();
-    for (Frame* subFrame = tree->firstChild(); subFrame; subFrame = subFrame->tree()->nextSibling())
+    const FrameTree& tree = frame->tree();
+    for (Frame* subFrame = tree.firstChild(); subFrame; subFrame = subFrame->tree().nextSibling())
         shouldHandleScrollGestureOnMainThreadRegion.unite(computeShouldHandleScrollGestureOnMainThreadRegion(subFrame, offset));
 
     return shouldHandleScrollGestureOnMainThreadRegion;
@@ -701,7 +728,7 @@ unsigned ScrollingCoordinator::computeCurrentWheelEventHandlerCount()
 {
     unsigned wheelEventHandlerCount = 0;
 
-    for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree()->traverseNext()) {
+    for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
         if (frame->document())
             wheelEventHandlerCount += WheelController::from(frame->document())->wheelEventHandlerCount();
     }
@@ -780,7 +807,7 @@ void ScrollingCoordinator::frameViewRootLayerDidChange(FrameView* frameView)
     if (!coordinatesScrollingForFrameView(frameView))
         return;
 
-    frameViewLayoutUpdated(frameView);
+    notifyLayoutUpdated();
     recomputeWheelEventHandlerCountForFrameView(frameView);
     updateShouldUpdateScrollLayerPositionOnMainThread();
 }
@@ -813,12 +840,12 @@ bool ScrollingCoordinator::hasVisibleSlowRepaintViewportConstrainedObjects(Frame
             return true;
         RenderLayer* layer = toRenderBoxModelObject(viewportConstrainedObject)->layer();
         // Any explicit reason that a fixed position element is not composited shouldn't cause slow scrolling.
-        if (!layer->isComposited() && layer->viewportConstrainedNotCompositedReason() == RenderLayer::NoNotCompositedReason)
+        if (layer->compositingState() != PaintsIntoOwnBacking && layer->viewportConstrainedNotCompositedReason() == RenderLayer::NoNotCompositedReason)
             return true;
 
         // Composited layers that actually paint into their enclosing ancestor
         // must also force main thread scrolling.
-        if (layer->isComposited() && layer->backing()->paintsIntoCompositedAncestor())
+        if (layer->compositingState() == HasOwnBackingButPaintsIntoAncestor)
             return true;
     }
     return false;

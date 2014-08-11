@@ -38,7 +38,7 @@ namespace WebCore {
 
         void setClipboard(Clipboard* dropData);
 
-        void setHtml(const String& html);
+        void setHTML(const String& html);
 
         String html() const;
 

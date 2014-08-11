@@ -28,6 +28,7 @@
 #include "webrtc/system_wrappers/interface/trace_event.h"
 #include "webrtc/video_engine/include/vie_codec.h"
 #include "webrtc/video_engine/include/vie_image_process.h"
+#include "webrtc/frame_callback.h"
 #include "webrtc/video_engine/vie_defines.h"
 
 namespace webrtc {
@@ -54,6 +55,8 @@ static const int kMinPacingDelayMs = 200;
 // TODO(holmer): Expose transmission start, min and max bitrates in the
 // VideoEngine API and remove the kTransmissionMaxBitrateMultiplier.
 static const int kTransmissionMaxBitrateMultiplier = 2;
+
+static const float kStopPaddingThresholdMs = 2000;
 
 std::vector<uint32_t> AllocateStreamBitrates(
     uint32_t total_bitrate,
@@ -138,10 +141,10 @@ ViEEncoder::ViEEncoder(int32_t engine_id,
                                                         channel_id))),
     vpm_(*webrtc::VideoProcessingModule::Create(ViEModuleId(engine_id,
                                                             channel_id))),
-    default_rtp_rtcp_(NULL),
     callback_cs_(CriticalSectionWrapper::CreateCriticalSection()),
     data_cs_(CriticalSectionWrapper::CreateCriticalSection()),
     bitrate_controller_(bitrate_controller),
+    time_of_last_incoming_frame_ms_(0),
     send_padding_(false),
     target_delay_ms_(0),
     network_is_transmitting_(true),
@@ -158,7 +161,9 @@ ViEEncoder::ViEEncoder(int32_t engine_id,
     picture_id_sli_(0),
     has_received_rpsi_(false),
     picture_id_rpsi_(0),
-    qm_callback_(NULL) {
+    qm_callback_(NULL),
+    video_auto_muted_(false),
+    pre_encode_callback_(NULL) {
   WEBRTC_TRACE(webrtc::kTraceMemory, webrtc::kTraceVideo,
                ViEId(engine_id, channel_id),
                "%s(engine_id: %d) 0x%p - Constructor", __FUNCTION__, engine_id,
@@ -558,6 +563,7 @@ void ViEEncoder::DeliverFrame(int id,
                video_frame->timestamp());
   {
     CriticalSectionScoped cs(data_cs_.get());
+    time_of_last_incoming_frame_ms_ = TickTime::MillisecondTimestamp();
     if (default_rtp_rtcp_->SendingMedia() == false) {
       // We've paused or we have no channels attached, don't encode.
       return;
@@ -645,6 +651,13 @@ void ViEEncoder::DeliverFrame(int id,
   if (decimated_frame == NULL)  {
     decimated_frame = video_frame;
   }
+
+  {
+    CriticalSectionScoped cs(callback_cs_.get());
+    if (pre_encode_callback_)
+      pre_encode_callback_->FrameCallback(decimated_frame);
+  }
+
 #ifdef VIDEOCODEC_VP8
   if (vcm_.SendCodec() == webrtc::kVideoCodecVP8) {
     webrtc::CodecSpecificInfo codec_specific_info;
@@ -1034,6 +1047,7 @@ void ViEEncoder::OnNetworkChanged(const uint32_t bitrate_bps,
                __FUNCTION__, bitrate_bps, fraction_lost, round_trip_time_ms);
 
   vcm_.SetChannelParameters(bitrate_bps, fraction_lost, round_trip_time_ms);
+  bool video_is_muted = vcm_.VideoMuted();
   int bitrate_kbps = bitrate_bps / 1000;
   VideoCodec send_codec;
   if (vcm_.SendCodec(&send_codec) != 0) {
@@ -1049,26 +1063,58 @@ void ViEEncoder::OnNetworkChanged(const uint32_t bitrate_bps,
   // point, based on which streams are currently active and what our current
   // available bandwidth is.
   int max_padding_bitrate_kbps = 0;
-  int i = send_codec.numberOfSimulcastStreams - 1;
-  for (std::vector<uint32_t>::reverse_iterator it = stream_bitrates.rbegin();
-       it != stream_bitrates.rend(); ++it) {
-    if (*it > 0) {
-      max_padding_bitrate_kbps = std::min((*it + 500) / 1000,
-                                          stream_configs[i].minBitrate);
-      break;
+  int pad_up_to_bitrate_kbps = 0;
+  if (send_codec.numberOfSimulcastStreams == 0) {
+    max_padding_bitrate_kbps = send_codec.minBitrate;
+    pad_up_to_bitrate_kbps = send_codec.minBitrate;
+  } else {
+    int i = send_codec.numberOfSimulcastStreams - 1;
+    for (std::vector<uint32_t>::reverse_iterator it = stream_bitrates.rbegin();
+        it != stream_bitrates.rend(); ++it) {
+      if (*it > 0) {
+        max_padding_bitrate_kbps = std::min((*it + 500) / 1000,
+                                            stream_configs[i].minBitrate);
+        break;
+      }
+      --i;
     }
-    --i;
+    pad_up_to_bitrate_kbps =
+        stream_configs[send_codec.numberOfSimulcastStreams - 1].minBitrate;
+    for (int i = 0; i < send_codec.numberOfSimulcastStreams - 1; ++i) {
+      pad_up_to_bitrate_kbps += stream_configs[i].targetBitrate;
+    }
   }
-  int pad_up_to_bitrate_kbps =
-      stream_configs[send_codec.numberOfSimulcastStreams - 1].minBitrate;
-  for (int i = 0; i < send_codec.numberOfSimulcastStreams - 1; ++i) {
-    pad_up_to_bitrate_kbps += stream_configs[i].targetBitrate;
+  if (video_is_muted || send_codec.numberOfSimulcastStreams > 1) {
+    pad_up_to_bitrate_kbps = std::min(bitrate_kbps, pad_up_to_bitrate_kbps);
+  } else {
+    // Disable padding if only sending one stream and video isn't muted.
+    pad_up_to_bitrate_kbps = 0;
   }
-  pad_up_to_bitrate_kbps = std::min(bitrate_kbps, pad_up_to_bitrate_kbps);
+
+  {
+    // The amount of padding should decay to zero if no frames are being
+    // captured.
+    CriticalSectionScoped cs(data_cs_.get());
+    int64_t now_ms = TickTime::MillisecondTimestamp();
+    if (now_ms - time_of_last_incoming_frame_ms_ > kStopPaddingThresholdMs)
+      max_padding_bitrate_kbps = 0;
+  }
+
   paced_sender_->UpdateBitrate(bitrate_kbps,
                                max_padding_bitrate_kbps,
                                pad_up_to_bitrate_kbps);
   default_rtp_rtcp_->SetTargetSendBitrate(stream_bitrates);
+  if (video_is_muted != video_auto_muted_) {
+    // State changed now. Send callback to inform about that.
+    video_auto_muted_ = video_is_muted;
+    if (codec_observer_) {
+      WEBRTC_TRACE(webrtc::kTraceInfo, webrtc::kTraceVideo,
+                   ViEId(engine_id_, channel_id_),
+                   "%s: video_auto_muted_ changed to %i",
+                   __FUNCTION__, video_auto_muted_);
+      codec_observer_->VideoAutoMuted(channel_id_, video_auto_muted_);
+    }
+  }
 }
 
 PacedSender* ViEEncoder::GetPacedSender() {
@@ -1108,6 +1154,22 @@ int ViEEncoder::StartDebugRecording(const char* fileNameUTF8) {
 
 int ViEEncoder::StopDebugRecording() {
   return vcm_.StopDebugRecording();
+}
+
+void ViEEncoder::EnableAutoMuting() {
+  vcm_.EnableAutoMuting();
+  bitrate_controller_->EnforceMinBitrate(false);
+}
+
+void ViEEncoder::RegisterPreEncodeCallback(
+    I420FrameCallback* pre_encode_callback) {
+  CriticalSectionScoped cs(callback_cs_.get());
+  pre_encode_callback_ = pre_encode_callback;
+}
+
+void ViEEncoder::DeRegisterPreEncodeCallback() {
+  CriticalSectionScoped cs(callback_cs_.get());
+  pre_encode_callback_ = NULL;
 }
 
 QMVideoSettingsCallback::QMVideoSettingsCallback(VideoProcessingModule* vpm)

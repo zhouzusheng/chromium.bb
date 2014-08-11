@@ -275,8 +275,12 @@ enum NotificationType {
   NOTIFICATION_HISTORY_URLS_DELETED,
 
   // Sent when a keyword search term is updated. The source is the Profile and
-  // the details are history::KeywordSearchTermDetails
+  // the details is history::KeywordSearchUpdatedDetails.
   NOTIFICATION_HISTORY_KEYWORD_SEARCH_TERM_UPDATED,
+
+  // Sent when a keyword search term is deleted. The source is the Profile and
+  // the details is history::KeywordSearchDeletedDetails.
+  NOTIFICATION_HISTORY_KEYWORD_SEARCH_TERM_DELETED,
 
   // Sent by history when the favicon of a URL changes.  The source is the
   // profile, and the details is FaviconChangedDetails (see
@@ -342,11 +346,6 @@ enum NotificationType {
   NOTIFICATION_RENDERER_FPS_COMPUTED,
 
   // Non-history storage services --------------------------------------------
-
-  // Notification that the TemplateURLService has finished loading from the
-  // database. The source is the TemplateURLService, and the details are
-  // NoDetails.
-  NOTIFICATION_TEMPLATE_URL_SERVICE_LOADED,
 
   // Sent when a TemplateURL is removed from the model. The source is the
   // Profile, and the details the id of the TemplateURL being removed.
@@ -928,10 +927,6 @@ enum NotificationType {
   // Sent when the Instant Controller determines whether the NTP supports the
   // Instant API or not.
   NOTIFICATION_INSTANT_NTP_SUPPORT_DETERMINED,
-
-  // Sent when the Instant Controller has sent the Most Visited Items to the
-  // renderer.
-  NOTIFICATION_INSTANT_SENT_MOST_VISITED_ITEMS,
 
   // Sent when the CaptivePortalService checks if we're behind a captive portal.
   // The Source is the Profile the CaptivePortalService belongs to, and the

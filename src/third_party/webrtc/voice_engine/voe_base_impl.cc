@@ -468,22 +468,8 @@ int VoEBaseImpl::Init(AudioDeviceModule* external_adm,
       LOG_FERR1(LS_ERROR, set_device_sample_rate_hz, 48000);
       return -1;
     }
-    // Assume 16 kHz mono until the audio frames are received from the capture
-    // device, at which point this can be updated.
-    if (audioproc->set_sample_rate_hz(16000)) {
-      LOG_FERR1(LS_ERROR, set_sample_rate_hz, 16000);
-      return -1;
-    }
-    if (audioproc->set_num_channels(1, 1) != 0) {
-      LOG_FERR2(LS_ERROR, set_num_channels, 1, 1);
-      return -1;
-    }
-    if (audioproc->set_num_reverse_channels(1) != 0) {
-      LOG_FERR1(LS_ERROR, set_num_reverse_channels, 1);
-      return -1;
-    }
 
-    // Configure AudioProcessing components. All are disabled by default.
+    // Configure AudioProcessing components.
     if (audioproc->high_pass_filter()->Enable(true) != 0) {
       LOG_FERR1(LS_ERROR, high_pass_filter()->Enable, true);
       return -1;
@@ -1013,7 +999,7 @@ int32_t VoEBaseImpl::StopPlayout() {
                VoEId(_shared->instance_id(), -1),
                "VoEBaseImpl::StopPlayout()");
   // Stop audio-device playing if no channel is playing out
-  if (_shared->NumOfSendingChannels() == 0) {
+  if (_shared->NumOfPlayingChannels() == 0) {
     if (_shared->audio_device()->StopPlayout() != 0) {
       _shared->SetLastError(VE_CANNOT_STOP_PLAYOUT,
                             kTraceError,

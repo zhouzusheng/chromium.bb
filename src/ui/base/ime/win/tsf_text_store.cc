@@ -10,8 +10,6 @@
 
 #include <algorithm>
 
-#include <algorithm>
-
 #include "base/win/scoped_variant.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/base/ime/win/tsf_input_scope.h"
@@ -444,7 +442,7 @@ STDMETHODIMP TSFTextStore::QueryInsert(
     return E_INVALIDARG;
   }
   *acp_result_start = acp_test_start;
-  *acp_result_end = acp_test_start + text_size;
+  *acp_result_end = acp_test_end;
   return S_OK;
 }
 

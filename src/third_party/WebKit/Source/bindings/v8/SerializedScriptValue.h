@@ -33,6 +33,7 @@
 
 #include "bindings/v8/ScriptValue.h"
 
+#include "wtf/HashMap.h"
 #include "wtf/ThreadSafeRefCounted.h"
 #include <v8.h>
 
@@ -45,14 +46,21 @@ class ArrayBufferContents;
 
 namespace WebCore {
 
+class BlobDataHandle;
 class MessagePort;
 
 typedef Vector<RefPtr<MessagePort>, 1> MessagePortArray;
 typedef Vector<RefPtr<WTF::ArrayBuffer>, 1> ArrayBufferArray;
+typedef HashMap<String, RefPtr<BlobDataHandle> > BlobDataHandleMap;
 
-class SerializedScriptValue : public ThreadSafeRefCounted<SerializedScriptValue> {
+class SerializedScriptValue FINAL : public ThreadSafeRefCounted<SerializedScriptValue> {
 public:
-    virtual ~SerializedScriptValue();
+    // Increment this for each incompatible change to the wire format.
+    // Version 2: Added StringUCharTag for UChar v8 strings.
+    // Version 3: Switched to using uuids as blob data identifiers.
+    static const uint32_t wireFormatVersion = 3;
+
+    ~SerializedScriptValue();
 
     // If a serialization error occurs (e.g., cyclic input value) this
     // function returns an empty representation, schedules a V8 exception to
@@ -79,8 +87,6 @@ public:
     static PassRefPtr<SerializedScriptValue> numberValue(double);
     static PassRefPtr<SerializedScriptValue> numberValue(double, v8::Isolate*);
 
-    static uint32_t wireFormatVersion();
-
     PassRefPtr<SerializedScriptValue> release();
 
     String toWireString() const { return m_data; }
@@ -93,7 +99,9 @@ public:
 
     ScriptValue deserializeForInspector(ScriptState*);
 
-    const Vector<String>& blobURLs() const { return m_blobURLs; }
+    // Only reflects the truth if the SSV was created by walking a v8 value, not reliable
+    // if the SSV was created createdFromWire(data).
+    bool containsBlobs() const { return !m_blobDataHandles.isEmpty(); }
 
     // Informs the V8 about external memory allocated and owned by this object. Large values should contribute
     // to GC counters to eventually trigger a GC, otherwise flood of postMessage() can cause OOM.
@@ -120,7 +128,7 @@ private:
 
     String m_data;
     OwnPtr<ArrayBufferContentsArray> m_arrayBufferContentsArray;
-    Vector<String> m_blobURLs;
+    BlobDataHandleMap m_blobDataHandles;
     intptr_t m_externallyAllocatedMemory;
 };
 

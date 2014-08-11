@@ -27,17 +27,16 @@
 #include "core/platform/ScrollbarTheme.h"
 
 #include "RuntimeEnabledFeatures.h"
-#include "core/page/Settings.h"
-#include "core/platform/ScrollbarThemeClient.h"
 #include "core/platform/graphics/GraphicsContext.h"
 #include "core/platform/mock/ScrollbarThemeMock.h"
 #include "core/platform/mock/ScrollbarThemeOverlayMock.h"
+#include "platform/scroll/ScrollbarThemeClient.h"
 
 namespace WebCore {
 
 ScrollbarTheme* ScrollbarTheme::theme()
 {
-    if (Settings::mockScrollbarsEnabled()) {
+    if (ScrollbarTheme::mockScrollbarsEnabled()) {
         if (RuntimeEnabledFeatures::overlayScrollbarsEnabled()) {
             DEFINE_STATIC_LOCAL(ScrollbarThemeOverlayMock, overlayMockTheme, ());
             return &overlayMockTheme;
@@ -47,6 +46,18 @@ ScrollbarTheme* ScrollbarTheme::theme()
         return &mockTheme;
     }
     return nativeTheme();
+}
+
+bool ScrollbarTheme::gMockScrollbarsEnabled = false;
+
+void ScrollbarTheme::setMockScrollbarsEnabled(bool flag)
+{
+    gMockScrollbarsEnabled = flag;
+}
+
+bool ScrollbarTheme::mockScrollbarsEnabled()
+{
+    return gMockScrollbarsEnabled;
 }
 
 bool ScrollbarTheme::paint(ScrollbarThemeClient* scrollbar, GraphicsContext* graphicsContext, const IntRect& damageRect)
@@ -280,7 +291,7 @@ int ScrollbarTheme::trackLength(ScrollbarThemeClient* scrollbar)
     return (scrollbar->orientation() == HorizontalScrollbar) ? constrainedTrackRect.width() : constrainedTrackRect.height();
 }
 
-void ScrollbarTheme::paintScrollCorner(ScrollView*, GraphicsContext* context, const IntRect& cornerRect)
+void ScrollbarTheme::paintScrollCorner(GraphicsContext* context, const IntRect& cornerRect)
 {
     context->fillRect(cornerRect, Color::white);
 }
@@ -305,7 +316,7 @@ int ScrollbarTheme::thumbThickness(ScrollbarThemeClient* scrollbar)
     return scrollbar->orientation() == HorizontalScrollbar ? track.height() : track.width();
 }
 
-void ScrollbarTheme::paintOverhangBackground(ScrollView*, GraphicsContext* context, const IntRect& horizontalOverhangRect, const IntRect& verticalOverhangRect, const IntRect& dirtyRect)
+void ScrollbarTheme::paintOverhangBackground(GraphicsContext* context, const IntRect& horizontalOverhangRect, const IntRect& verticalOverhangRect, const IntRect& dirtyRect)
 {
     context->setFillColor(Color::white);
     if (!horizontalOverhangRect.isEmpty())

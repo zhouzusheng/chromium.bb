@@ -44,13 +44,13 @@
 #include "bindings/v8/V8DOMWrapper.h"
 #include "bindings/v8/V8Utilities.h"
 #include "core/dom/Document.h"
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "core/dom/Node.h"
 #include "core/inspector/InspectorController.h"
 #include "core/inspector/InspectorFrontendHost.h"
 #include "core/page/ContextMenuController.h"
-#include "core/page/DOMWindow.h"
-#include "core/page/Frame.h"
+#include "core/frame/DOMWindow.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
 #include "core/platform/ContextMenuItem.h"
@@ -75,11 +75,6 @@ public:
     }
 
 private:
-    virtual bool canSuspend() const OVERRIDE
-    {
-        return true;
-    }
-
     virtual void resume() OVERRIDE
     {
         m_webDevToolsFrontendImpl->resume();
@@ -125,7 +120,7 @@ void WebDevToolsFrontendImpl::dispatchOnInspectorFrontend(const WebString& messa
 void WebDevToolsFrontendImpl::resume()
 {
     // We should call maybeDispatch asynchronously here because we are not allowed to update activeDOMObjects list in
-    // resume (See ScriptExecutionContext::resumeActiveDOMObjects).
+    // resume (See ExecutionContext::resumeActiveDOMObjects).
     if (!m_inspectorFrontendDispatchTimer.isActive())
         m_inspectorFrontendDispatchTimer.startOneShot(0);
 }
@@ -150,7 +145,7 @@ void WebDevToolsFrontendImpl::doDispatchOnInspectorFrontend(const WebString& mes
         return;
     v8::Isolate* isolate = toIsolate(frame->frame());
     v8::HandleScope scope(isolate);
-    v8::Handle<v8::Context> frameContext = frame->frame()->script()->currentWorldContext();
+    v8::Handle<v8::Context> frameContext = frame->frame()->script().currentWorldContext();
     v8::Context::Scope contextScope(frameContext);
     v8::Handle<v8::Value> inspectorFrontendApiValue = frameContext->Global()->Get(v8::String::New("InspectorFrontendAPI"));
     if (!inspectorFrontendApiValue->IsObject())
@@ -174,7 +169,7 @@ void WebDevToolsFrontendImpl::doDispatchOnInspectorFrontend(const WebString& mes
     args.append(v8String(message, isolate));
     v8::TryCatch tryCatch;
     tryCatch.SetVerbose(true);
-    ScriptController::callFunctionWithInstrumentation(frame->frame() ? frame->frame()->document() : 0, function, dispatcherObject, args.size(), args.data(), isolate);
+    ScriptController::callFunction(frame->frame()->document(), function, dispatcherObject, args.size(), args.data(), isolate);
 }
 
 } // namespace WebKit

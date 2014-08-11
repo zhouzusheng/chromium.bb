@@ -34,12 +34,12 @@
 
 #include <algorithm>
 #include "core/platform/ScrollableArea.h"
-#include "core/platform/graphics/FloatPoint.h"
+#include "platform/geometry/FloatPoint.h"
 #include "wtf/CurrentTime.h"
-#include "wtf/OwnArrayPtr.h"
+#include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
-#include "core/platform/chromium/TraceEvent.h"
+#include "platform/TraceEvent.h"
 
 using namespace std;
 
@@ -48,7 +48,6 @@ namespace WebCore {
 const double kFrameRate = 60;
 const double kTickTime = 1 / kFrameRate;
 const double kMinimumTimerInterval = .001;
-const double kZoomTicks = 11;
 
 PassOwnPtr<ScrollAnimator> ScrollAnimator::create(ScrollableArea* scrollableArea)
 {

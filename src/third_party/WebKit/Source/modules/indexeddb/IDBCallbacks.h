@@ -29,7 +29,7 @@
 #ifndef IDBCallbacks_h
 #define IDBCallbacks_h
 
-#include "core/platform/SharedBuffer.h"
+#include "platform/SharedBuffer.h"
 #include "modules/indexeddb/IDBDatabaseBackendInterface.h"
 #include "modules/indexeddb/IDBKey.h"
 #include "modules/indexeddb/IDBKeyPath.h"
@@ -69,7 +69,7 @@ public:
     // From IDBFactory.open()/deleteDatabase()
     virtual void onBlocked(int64_t /* existingVersion */) { ASSERT_NOT_REACHED(); }
     // From IDBFactory.open()
-    virtual void onUpgradeNeeded(int64_t /* oldVersion */, PassRefPtr<IDBDatabaseBackendInterface>, const IDBDatabaseMetadata&, WebKit::WebIDBCallbacks::DataLoss dataLoss) { ASSERT_NOT_REACHED(); }
+    virtual void onUpgradeNeeded(int64_t /* oldVersion */, PassRefPtr<IDBDatabaseBackendInterface>, const IDBDatabaseMetadata&, WebKit::WebIDBCallbacks::DataLoss dataLoss, String dataLossMessage) { ASSERT_NOT_REACHED(); }
     virtual void onSuccess(PassRefPtr<IDBDatabaseBackendInterface>, const IDBDatabaseMetadata&) { ASSERT_NOT_REACHED(); }
 };
 

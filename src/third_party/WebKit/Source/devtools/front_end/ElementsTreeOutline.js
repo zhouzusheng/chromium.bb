@@ -684,7 +684,7 @@ WebInspector.ElementsTreeOutline.prototype = {
      * ancestors.
      *
      * @param {WebInspector.DOMNode} node
-     * @param {function(?WebInspector.RemoteObject)=} userCallback
+     * @param {function(?WebInspector.RemoteObject, boolean=)=} userCallback
      */
     _toggleHideShortcut: function(node, userCallback)
     {
@@ -1205,9 +1205,9 @@ WebInspector.ElementsTreeElement.prototype = {
         if (this.listItemElement) {
             var tagSpans = this.listItemElement.getElementsByClassName("webkit-html-tag-name");
             if (tagSpans.length)
-                tagSpans[0].scrollIntoViewIfNeeded(false);
+                tagSpans[0].scrollIntoViewIfNeeded(true);
             else
-                this.listItemElement.scrollIntoViewIfNeeded(false);
+                this.listItemElement.scrollIntoViewIfNeeded(true);
         }
     },
 
@@ -1928,7 +1928,7 @@ WebInspector.ElementsTreeElement.prototype = {
     _buildPseudoElementDOM: function(parentElement, pseudoElementName)
     {
         var pseudoElement = parentElement.createChild("span", "webkit-html-pseudo-element");
-        pseudoElement.textContent = ":" + pseudoElementName;
+        pseudoElement.textContent = "::" + pseudoElementName;
         parentElement.appendChild(document.createTextNode("\u200B"));
     },
 

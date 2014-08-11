@@ -22,10 +22,10 @@ namespace WebTestRunner {
 class WebTestProxyBase;
 }
 
+namespace content {
+
 // SHEZ: Remove test code.
 // class MockWebClipboardImpl;
-
-namespace content {
 
 class ShellRenderProcessObserver;
 
@@ -54,7 +54,6 @@ class ShellContentRendererClient : public ContentRendererClient {
   virtual WebKit::WebAudioDevice* OverrideCreateAudioDevice(
       double sample_rate) OVERRIDE;
   virtual WebKit::WebClipboard* OverrideWebClipboard() OVERRIDE;
-  virtual WebKit::WebCrypto* OverrideWebCrypto() OVERRIDE;
   virtual WebKit::WebThemeEngine* OverrideThemeEngine() OVERRIDE;
   virtual bool AllowBrowserPlugin(
       WebKit::WebPluginContainer* container) OVERRIDE;

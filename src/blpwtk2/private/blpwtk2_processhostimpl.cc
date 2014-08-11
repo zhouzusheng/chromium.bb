@@ -23,6 +23,7 @@
 #include <blpwtk2_processhostimpl.h>
 
 #include <blpwtk2_browsercontextimpl.h>
+#include <blpwtk2_channelinfo.h>
 #include <blpwtk2_constants.h>
 #include <blpwtk2_control_messages.h>
 #include <blpwtk2_managedrenderprocesshost.h>
@@ -35,6 +36,7 @@
 #include <blpwtk2_webview_messages.h>
 #include <blpwtk2_webviewhost.h>
 
+#include <base/command_line.h>
 #include <base/process/process_iterator.h>  // for kProcessAccess* constants
 #include <base/process/process_handle.h>
 #include <content/public/browser/browser_thread.h>
@@ -43,8 +45,7 @@
 
 namespace blpwtk2 {
 
-ProcessHostImpl::ProcessHostImpl(const std::string& channelId,
-                                 RendererInfoMap* rendererInfoMap)
+ProcessHostImpl::ProcessHostImpl(RendererInfoMap* rendererInfoMap)
 : d_processHandle(base::kNullProcessHandle)
 , d_rendererInfoMap(rendererInfoMap)
 , d_lastRoutingId(0x10000)
@@ -55,6 +56,7 @@ ProcessHostImpl::ProcessHostImpl(const std::string& channelId,
         content::BrowserThread::GetMessageLoopProxyForThread(
             content::BrowserThread::IO);
 
+    std::string channelId = IPC::Channel::GenerateVerifiedChannelID(BLPWTK2_VERSION);
     d_channel.reset(new IPC::ChannelProxy(channelId,
                                           IPC::Channel::MODE_SERVER,
                                           this,
@@ -89,6 +91,28 @@ ProcessHostImpl::~ProcessHostImpl()
     if (d_processHandle != base::kNullProcessHandle) {
         base::CloseProcessHandle(d_processHandle);
     }
+}
+
+const std::string& ProcessHostImpl::channelId() const
+{
+    return d_channel->ChannelId();
+}
+
+std::string ProcessHostImpl::channelInfo() const
+{
+    CommandLine commandLine(CommandLine::NO_PROGRAM);
+
+    // TODO(SHEZ): We are missing kDisableDatabases for incognito profiles
+    //             because we don't know yet which profile will be used for the
+    //             in-process renderer.  We need to either have the profile
+    //             specified upfront, or we need to handle kDisableDatabases
+    //             once the profile is known.
+    content::RenderProcessHost::AdjustCommandLineForRenderer(&commandLine);
+
+    ChannelInfo channelInfo;
+    channelInfo.d_channelId = channelId();
+    channelInfo.loadSwitchesFromCommandLine(commandLine);
+    return channelInfo.serialize();
 }
 
 // ProcessHost overrides
@@ -136,7 +160,6 @@ bool ProcessHostImpl::OnMessageReceived(const IPC::Message& message)
         bool msgIsOk = true;
         IPC_BEGIN_MESSAGE_MAP_EX(ProcessHostImpl, message, msgIsOk)
             IPC_MESSAGE_HANDLER(BlpControlHostMsg_Sync, onSync)
-            IPC_MESSAGE_HANDLER(BlpControlHostMsg_SetInProcessRendererInfo, onSetInProcessRendererInfo)
             IPC_MESSAGE_HANDLER(BlpControlHostMsg_CreateNewHostChannel, onCreateNewHostChannel)
             IPC_MESSAGE_HANDLER(BlpControlHostMsg_ClearWebCache, onClearWebCache)
             IPC_MESSAGE_HANDLER(BlpProfileHostMsg_New, onProfileNew)
@@ -203,22 +226,15 @@ void ProcessHostImpl::onSync()
     DLOG(INFO) << "sync";
 }
 
-void ProcessHostImpl::onSetInProcessRendererInfo(bool usesInProcessPlugins)
-{
-    // We cannot set the 'usesInProcessPlugins' flag if the hostId has already
-    // been set.
-    DCHECK(-1 == d_inProcessRendererInfo.d_hostId);
-    d_inProcessRendererInfo.d_usesInProcessPlugins = usesInProcessPlugins;
-}
-
 void ProcessHostImpl::onCreateNewHostChannel(int timeoutInMilliseconds,
-                                             std::string* channelId)
+                                             std::string* channelInfo)
 {
     DCHECK(Statics::processHostManager);
-    *channelId = IPC::Channel::GenerateVerifiedChannelID(BLPWTK2_VERSION);
 
+    ProcessHostImpl* newProcessHost = new ProcessHostImpl(d_rendererInfoMap);
+    *channelInfo = newProcessHost->channelInfo();
     Statics::processHostManager->addProcessHost(
-        new ProcessHostImpl(*channelId, d_rendererInfoMap),
+        newProcessHost,
         base::TimeDelta::FromMilliseconds(timeoutInMilliseconds));
 }
 
@@ -264,8 +280,7 @@ void ProcessHostImpl::onWebViewNew(const BlpWebViewHostMsg_NewParams& params)
             d_renderProcessHost.reset(
                 new ManagedRenderProcessHost(
                     d_processHandle,
-                    profileHost->browserContext(),
-                    d_inProcessRendererInfo.d_usesInProcessPlugins));
+                    profileHost->browserContext()));
             d_inProcessRendererInfo.d_hostId = d_renderProcessHost->id();
             Send(new BlpControlMsg_SetInProcessRendererChannelName(
                 d_renderProcessHost->channelId()));

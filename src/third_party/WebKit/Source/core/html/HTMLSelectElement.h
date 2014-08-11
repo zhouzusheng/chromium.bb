@@ -26,7 +26,7 @@
 #ifndef HTMLSelectElement_h
 #define HTMLSelectElement_h
 
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "core/html/HTMLFormControlElementWithState.h"
 #include "core/html/HTMLOptionsCollection.h"
 #include "core/html/forms/TypeAhead.h"
@@ -51,7 +51,7 @@ public:
     virtual String validationMessage() const OVERRIDE;
     virtual bool valueMissing() const OVERRIDE;
 
-    virtual void reset() OVERRIDE;
+    virtual void resetImpl() OVERRIDE;
 
     unsigned length() const;
 
@@ -211,13 +211,7 @@ private:
     bool m_isParsingInProgress;
 };
 
-inline HTMLSelectElement* toHTMLSelectElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::selectTag));
-    return static_cast<HTMLSelectElement*>(node);
-}
-
-void toHTMLSelectElement(const HTMLSelectElement*); // This overload will catch anyone doing an unnecessary cast.
+DEFINE_NODE_TYPE_CASTS(HTMLSelectElement, hasTagName(HTMLNames::selectTag));
 
 } // namespace
 

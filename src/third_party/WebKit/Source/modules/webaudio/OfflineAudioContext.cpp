@@ -28,25 +28,50 @@
 
 #include "modules/webaudio/OfflineAudioContext.h"
 
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
 
 namespace WebCore {
 
-PassRefPtr<OfflineAudioContext> OfflineAudioContext::create(ScriptExecutionContext* context, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionState& es)
+PassRefPtr<OfflineAudioContext> OfflineAudioContext::create(ExecutionContext* context, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionState& es)
 {
     // FIXME: add support for workers.
     if (!context || !context->isDocument()) {
-        es.throwDOMException(NotSupportedError);
+        es.throwDOMException(
+            NotSupportedError,
+            ExceptionMessages::failedToConstruct("OfflineAudioContext"));
         return 0;
     }
 
     Document* document = toDocument(context);
 
-    if (numberOfChannels > 10 || !isSampleRateRangeGood(sampleRate)) {
-        es.throwDOMException(SyntaxError);
+    if (!numberOfFrames) {
+        es.throwDOMException(
+            SyntaxError,
+            ExceptionMessages::failedToConstruct(
+                "OfflineAudioContext",
+                "number of frames cannot be zero."));
+        return 0;
+    }
+
+    if (numberOfChannels > 10) {
+        es.throwDOMException(
+            SyntaxError,
+            ExceptionMessages::failedToConstruct(
+                "OfflineAudioContext",
+                "number of channels (" + String::number(numberOfChannels) + ") exceeds maximum (10)."));
+        return 0;
+    }
+
+    if (!isSampleRateRangeGood(sampleRate)) {
+        es.throwDOMException(
+            SyntaxError,
+            ExceptionMessages::failedToConstruct(
+                "OfflineAudioContext",
+                "sample rate (" + String::number(sampleRate) + ") must be in the range 44100-96000 Hz."));
         return 0;
     }
 

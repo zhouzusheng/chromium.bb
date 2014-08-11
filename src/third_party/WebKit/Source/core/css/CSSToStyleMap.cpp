@@ -227,11 +227,6 @@ void CSSToStyleMap::mapFillSize(CSSPropertyID, FillLayer* layer, CSSValue* value
 
 void CSSToStyleMap::mapFillXPosition(CSSPropertyID propertyID, FillLayer* layer, CSSValue* value) const
 {
-    if (value->isInitialValue()) {
-        layer->setXPosition(FillLayer::initialFillXPosition(layer->type()));
-        return;
-    }
-
     if (!value->isPrimitiveValue())
         return;
 
@@ -263,11 +258,6 @@ void CSSToStyleMap::mapFillXPosition(CSSPropertyID propertyID, FillLayer* layer,
 
 void CSSToStyleMap::mapFillYPosition(CSSPropertyID propertyID, FillLayer* layer, CSSValue* value) const
 {
-    if (value->isInitialValue()) {
-        layer->setYPosition(FillLayer::initialFillYPosition(layer->type()));
-        return;
-    }
-
     if (!value->isPrimitiveValue())
         return;
 
@@ -308,8 +298,7 @@ void CSSToStyleMap::mapFillMaskSourceType(CSSPropertyID, FillLayer* layer, CSSVa
     if (!value->isPrimitiveValue())
         return;
 
-    CSSPrimitiveValue* primitiveValue = static_cast<CSSPrimitiveValue*>(value);
-    switch (primitiveValue->getValueID()) {
+    switch (toCSSPrimitiveValue(value)->getValueID()) {
     case CSSValueAlpha:
         type = MaskAlpha;
         break;
@@ -335,8 +324,7 @@ void CSSToStyleMap::mapAnimationDelay(CSSAnimationData* animation, CSSValue* val
     if (!value->isPrimitiveValue())
         return;
 
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    animation->setDelay(primitiveValue->computeTime<double, CSSPrimitiveValue::Seconds>());
+    animation->setDelay(toCSSPrimitiveValue(value)->computeTime<double, CSSPrimitiveValue::Seconds>());
 }
 
 void CSSToStyleMap::mapAnimationDirection(CSSAnimationData* layer, CSSValue* value) const
@@ -349,8 +337,7 @@ void CSSToStyleMap::mapAnimationDirection(CSSAnimationData* layer, CSSValue* val
     if (!value->isPrimitiveValue())
         return;
 
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    switch (primitiveValue->getValueID()) {
+    switch (toCSSPrimitiveValue(value)->getValueID()) {
     case CSSValueNormal:
         layer->setDirection(CSSAnimationData::AnimationDirectionNormal);
         break;
@@ -522,10 +509,10 @@ void CSSToStyleMap::mapAnimationTimingFunction(CSSAnimationData* animation, CSSV
     }
 
     if (value->isCubicBezierTimingFunctionValue()) {
-        CSSCubicBezierTimingFunctionValue* cubicTimingFunction = static_cast<CSSCubicBezierTimingFunctionValue*>(value);
+        CSSCubicBezierTimingFunctionValue* cubicTimingFunction = toCSSCubicBezierTimingFunctionValue(value);
         animation->setTimingFunction(CubicBezierTimingFunction::create(cubicTimingFunction->x1(), cubicTimingFunction->y1(), cubicTimingFunction->x2(), cubicTimingFunction->y2()));
     } else if (value->isStepsTimingFunctionValue()) {
-        CSSStepsTimingFunctionValue* stepsTimingFunction = static_cast<CSSStepsTimingFunctionValue*>(value);
+        CSSStepsTimingFunctionValue* stepsTimingFunction = toCSSStepsTimingFunctionValue(value);
         animation->setTimingFunction(StepsTimingFunction::create(stepsTimingFunction->numberOfSteps(), stepsTimingFunction->stepAtStart()));
     }
 }
@@ -595,7 +582,7 @@ void CSSToStyleMap::mapNinePieceImageSlice(CSSValue* value, NinePieceImage& imag
         return;
 
     // Retrieve the border image value.
-    CSSBorderImageSliceValue* borderImageSlice = static_cast<CSSBorderImageSliceValue*>(value);
+    CSSBorderImageSliceValue* borderImageSlice = toCSSBorderImageSliceValue(value);
 
     // Set up a length box to represent our image slices.
     LengthBox box;

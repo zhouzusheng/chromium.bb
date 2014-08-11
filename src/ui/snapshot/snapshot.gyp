@@ -13,6 +13,8 @@
       'dependencies': [
         '../../skia/skia.gyp:skia',
         '../../base/base.gyp:base',
+        '../events/events.gyp:events',
+        '../gfx/gfx.gyp:gfx',
         '../ui.gyp:ui',
       ],
       'defines': [
@@ -35,6 +37,8 @@
       'conditions': [
         ['use_aura==1', {
           'dependencies': [
+            '../aura/aura.gyp:aura',
+            '../compositor/compositor.gyp:compositor',
           ],
         }],
       ],
@@ -45,6 +49,8 @@
       'dependencies': [
         '../../skia/skia.gyp:skia',
         '../../base/base.gyp:base',
+        '../events/events.gyp:events',
+        '../gfx/gfx.gyp:gfx',
         '../ui.gyp:ui',
         'snapshot'
       ],
@@ -56,6 +62,8 @@
       'conditions': [
         ['use_aura==1', {
           'dependencies': [
+            '../compositor/compositor.gyp:compositor',
+            '../compositor/compositor.gyp:compositor_test_support',
           ],
         }],
         # See http://crbug.com/162998#c4 for why this is needed.

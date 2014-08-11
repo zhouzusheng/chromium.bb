@@ -27,21 +27,21 @@
 #include "core/html/track/InbandTextTrack.h"
 
 #include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "core/html/track/TextTrackCueGeneric.h"
-#include "core/platform/Logging.h"
+#include "core/html/track/TextTrackCue.h"
 #include "core/platform/graphics/InbandTextTrackPrivate.h"
+#include "platform/Logging.h"
 #include "wtf/UnusedParam.h"
 #include <math.h>
 
 namespace WebCore {
 
-PassRefPtr<InbandTextTrack> InbandTextTrack::create(ScriptExecutionContext* context, TextTrackClient* client, PassRefPtr<InbandTextTrackPrivate> playerPrivate)
+PassRefPtr<InbandTextTrack> InbandTextTrack::create(Document& document, TextTrackClient* client, PassRefPtr<InbandTextTrackPrivate> playerPrivate)
 {
-    return adoptRef(new InbandTextTrack(context, client, playerPrivate));
+    return adoptRef(new InbandTextTrack(document, client, playerPrivate));
 }
 
-InbandTextTrack::InbandTextTrack(ScriptExecutionContext* context, TextTrackClient* client, PassRefPtr<InbandTextTrackPrivate> tracksPrivate)
-    : TextTrack(context, client, emptyString(), tracksPrivate->label(), tracksPrivate->language(), InBand)
+InbandTextTrack::InbandTextTrack(Document& document, TextTrackClient* client, PassRefPtr<InbandTextTrackPrivate> tracksPrivate)
+    : TextTrack(document, client, emptyString(), tracksPrivate->label(), tracksPrivate->language(), InBand)
     , m_private(tracksPrivate)
 {
     m_private->setClient(this);
@@ -138,52 +138,11 @@ void InbandTextTrack::trackRemoved()
     clearClient();
 }
 
-void InbandTextTrack::addGenericCue(InbandTextTrackPrivate* trackPrivate, GenericCueData* cueData)
-{
-    UNUSED_PARAM(trackPrivate);
-    ASSERT(trackPrivate == m_private);
-
-    RefPtr<TextTrackCueGeneric> cue = TextTrackCueGeneric::create(scriptExecutionContext(), cueData->startTime(), cueData->endTime(), cueData->content());
-
-    cue->setId(cueData->id());
-    cue->setBaseFontSizeRelativeToVideoHeight(cueData->baseFontSize());
-    cue->setFontSizeMultiplier(cueData->relativeFontSize());
-    cue->setFontName(cueData->fontName());
-
-    if (cueData->position() > 0)
-        cue->setPosition(lround(cueData->position()), IGNORE_EXCEPTION);
-    if (cueData->line() > 0)
-        cue->setLine(lround(cueData->line()), IGNORE_EXCEPTION);
-    if (cueData->size() > 0)
-        cue->setSize(lround(cueData->size()), IGNORE_EXCEPTION);
-    if (cueData->backgroundColor().isValid())
-        cue->setBackgroundColor(cueData->backgroundColor().rgb());
-    if (cueData->foregroundColor().isValid())
-        cue->setForegroundColor(cueData->foregroundColor().rgb());
-
-    if (cueData->align() == GenericCueData::Start)
-        cue->setAlign("start", IGNORE_EXCEPTION);
-    else if (cueData->align() == GenericCueData::Middle)
-        cue->setAlign("middle", IGNORE_EXCEPTION);
-    else if (cueData->align() == GenericCueData::End)
-        cue->setAlign("end", IGNORE_EXCEPTION);
-    cue->setSnapToLines(false);
-
-    if (hasCue(cue.get())) {
-        LOG(Media, "InbandTextTrack::addGenericCue ignoring already added cue: start=%.2f, end=%.2f, content=\"%s\"\n",
-            cueData->startTime(), cueData->endTime(), cueData->content().utf8().data());
-        return;
-    }
-
-    addCue(cue);
-}
-
 void InbandTextTrack::addWebVTTCue(InbandTextTrackPrivate* trackPrivate, double start, double end, const String& id, const String& content, const String& settings)
 {
-    UNUSED_PARAM(trackPrivate);
-    ASSERT(trackPrivate == m_private);
+    ASSERT_UNUSED(trackPrivate, trackPrivate == m_private);
 
-    RefPtr<TextTrackCue> cue = TextTrackCue::create(scriptExecutionContext(), start, end, content);
+    RefPtr<TextTrackCue> cue = TextTrackCue::create(document(), start, end, content);
     cue->setId(id);
     cue->setCueSettings(settings);
 

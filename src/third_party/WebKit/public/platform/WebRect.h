@@ -33,8 +33,8 @@
 
 #include "WebCommon.h"
 
-#if WEBKIT_IMPLEMENTATION
-#include "core/platform/graphics/IntRect.h"
+#if INSIDE_BLINK
+#include "platform/geometry/IntRect.h"
 #else
 #include <algorithm>
 #include <cmath>
@@ -67,7 +67,7 @@ struct WebRect {
     {
     }
 
-#if WEBKIT_IMPLEMENTATION
+#if INSIDE_BLINK
     WebRect(const WebCore::IntRect& r)
         : x(r.x())
         , y(r.y())

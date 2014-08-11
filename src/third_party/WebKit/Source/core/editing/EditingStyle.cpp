@@ -50,7 +50,7 @@
 #include "core/editing/HTMLInterchange.h"
 #include "core/editing/htmlediting.h"
 #include "core/html/HTMLFontElement.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/RuntimeCSSEnabled.h"
 #include "core/rendering/style/RenderStyle.h"
 
@@ -1134,14 +1134,11 @@ void EditingStyle::mergeStyle(const StylePropertySet* style, CSSPropertyOverride
 static PassRefPtr<MutableStylePropertySet> styleFromMatchedRulesForElement(Element* element, unsigned rulesToInclude)
 {
     RefPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
-    RefPtr<CSSRuleList> matchedRules = element->document().styleResolver()->styleRulesForElement(element, rulesToInclude);
+    RefPtr<StyleRuleList> matchedRules = element->document().styleResolver()->styleRulesForElement(element, rulesToInclude);
     if (matchedRules) {
-        for (unsigned i = 0; i < matchedRules->length(); i++) {
-            if (matchedRules->item(i)->type() == CSSRule::STYLE_RULE)
-                style->mergeAndOverrideOnConflict(static_cast<CSSStyleRule*>(matchedRules->item(i))->styleRule()->properties());
-        }
+        for (unsigned i = 0; i < matchedRules->m_list.size(); ++i)
+            style->mergeAndOverrideOnConflict(matchedRules->m_list[i]->properties());
     }
-
     return style.release();
 }
 

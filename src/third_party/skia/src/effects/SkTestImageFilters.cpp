@@ -48,7 +48,7 @@ bool SkDownSampleImageFilter::onFilterImage(Proxy* proxy, const SkBitmap& src,
         OwnDeviceCanvas canvas(dev);
         SkPaint paint;
 
-        paint.setFilterBitmap(true);
+        paint.setFilterLevel(SkPaint::kLow_FilterLevel);
         canvas.scale(scale, scale);
         canvas.drawBitmap(src, 0, 0, &paint);
         tmp = dev->accessBitmap(false);
@@ -78,4 +78,5 @@ void SkDownSampleImageFilter::flatten(SkFlattenableWriteBuffer& buffer) const {
 
 SkDownSampleImageFilter::SkDownSampleImageFilter(SkFlattenableReadBuffer& buffer) : INHERITED(buffer) {
     fScale = buffer.readScalar();
+    buffer.validate(SkScalarIsFinite(fScale));
 }

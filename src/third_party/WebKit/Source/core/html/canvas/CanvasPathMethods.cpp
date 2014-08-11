@@ -37,8 +37,8 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/platform/graphics/FloatRect.h"
-#include "core/platform/graphics/transforms/AffineTransform.h"
+#include "platform/geometry/FloatRect.h"
+#include "platform/transforms/AffineTransform.h"
 #include "wtf/MathExtras.h"
 
 namespace WebCore {
@@ -113,7 +113,7 @@ void CanvasPathMethods::arcTo(float x1, float y1, float x2, float y2, float r, E
         return;
 
     if (r < 0) {
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
         return;
     }
 
@@ -259,7 +259,7 @@ void CanvasPathMethods::arc(float x, float y, float radius, float startAngle, fl
         return;
 
     if (radius < 0) {
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
         return;
     }
 
@@ -283,7 +283,7 @@ void CanvasPathMethods::ellipse(float x, float y, float radiusX, float radiusY, 
         return;
 
     if (radiusX < 0 || radiusY < 0) {
-        es.throwDOMException(IndexSizeError);
+        es.throwUninformativeAndGenericDOMException(IndexSizeError);
         return;
     }
 

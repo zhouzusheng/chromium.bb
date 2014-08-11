@@ -22,7 +22,7 @@
 #define SVGDocument_h
 
 #include "core/dom/Document.h"
-#include "core/platform/graphics/FloatPoint.h"
+#include "platform/geometry/FloatPoint.h"
 
 namespace WebCore {
 
@@ -44,6 +44,8 @@ public:
 
     void startPan(const FloatPoint& start);
     void updatePan(const FloatPoint& pos) const;
+
+    virtual PassRefPtr<Document> cloneDocumentWithoutChildren() OVERRIDE FINAL;
 
 private:
     explicit SVGDocument(const DocumentInit&);

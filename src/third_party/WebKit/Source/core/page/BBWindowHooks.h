@@ -24,7 +24,7 @@
 #ifndef BBWindowHooks_h
 #define BBWindowHooks_h
 
-#include "DOMWindowProperty.h"
+#include "core/frame/DOMWindowProperty.h"
 #include <wtf/Forward.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>

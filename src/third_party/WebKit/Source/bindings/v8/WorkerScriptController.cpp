@@ -44,10 +44,11 @@
 #include "bindings/v8/V8ScriptRunner.h"
 #include "bindings/v8/WrapperTypeInfo.h"
 #include "core/inspector/ScriptCallStack.h"
-#include "core/page/DOMTimer.h"
+#include "core/frame/DOMTimer.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerObjectProxy.h"
 #include "core/workers/WorkerThread.h"
+#include <v8-defaults.h>
 #include <v8.h>
 
 #include "public/platform/Platform.h"
@@ -55,13 +56,14 @@
 
 namespace WebCore {
 
-WorkerScriptController::WorkerScriptController(WorkerGlobalScope* workerGlobalScope)
+WorkerScriptController::WorkerScriptController(WorkerGlobalScope& workerGlobalScope)
     : m_workerGlobalScope(workerGlobalScope)
     , m_isolate(v8::Isolate::New())
     , m_executionForbidden(false)
     , m_executionScheduledToTerminate(false)
 {
     m_isolate->Enter();
+    v8::SetDefaultResourceConstraintsForCurrentPlatform();
     v8::V8::Initialize();
     V8PerIsolateData* data = V8PerIsolateData::create(m_isolate);
     m_domDataStore = adoptPtr(new DOMDataStore(WorkerWorld));
@@ -77,7 +79,7 @@ WorkerScriptController::~WorkerScriptController()
     // The corresponding call to didStartWorkerRunLoop is in
     // WorkerThread::workerThread().
     // See http://webkit.org/b/83104#c14 for why this is here.
-    WebKit::Platform::current()->didStopWorkerRunLoop(WebKit::WebWorkerRunLoop(&m_workerGlobalScope->thread()->runLoop()));
+    WebKit::Platform::current()->didStopWorkerRunLoop(WebKit::WebWorkerRunLoop(&m_workerGlobalScope.thread()->runLoop()));
 
     disposeContext();
     V8PerIsolateData::dispose(m_isolate);
@@ -115,9 +117,9 @@ bool WorkerScriptController::initializeContextIfNeeded()
     context->SetEmbedderData(0, v8::String::NewSymbol("worker"));
 
     // Create a new JS object and use it as the prototype for the shadow global object.
-    WrapperTypeInfo* contextType = &V8DedicatedWorkerGlobalScope::info;
-    if (!m_workerGlobalScope->isDedicatedWorkerGlobalScope())
-        contextType = &V8SharedWorkerGlobalScope::info;
+    const WrapperTypeInfo* contextType = &V8DedicatedWorkerGlobalScope::wrapperTypeInfo;
+    if (!m_workerGlobalScope.isDedicatedWorkerGlobalScope())
+        contextType = &V8SharedWorkerGlobalScope::wrapperTypeInfo;
     v8::Handle<v8::Function> workerGlobalScopeConstructor = m_perContextData->constructorForType(contextType);
     v8::Local<v8::Object> jsWorkerGlobalScope = V8ObjectConstructor::newInstance(workerGlobalScopeConstructor);
     if (jsWorkerGlobalScope.IsEmpty()) {
@@ -154,10 +156,10 @@ ScriptValue WorkerScriptController::evaluate(const String& script, const String&
 
     v8::Handle<v8::String> scriptString = v8String(script, m_isolate);
     v8::Handle<v8::Script> compiledScript = V8ScriptRunner::compileScript(scriptString, fileName, scriptStartPosition, 0, m_isolate);
-    v8::Local<v8::Value> result = V8ScriptRunner::runCompiledScript(compiledScript, m_workerGlobalScope, m_isolate);
+    v8::Local<v8::Value> result = V8ScriptRunner::runCompiledScript(compiledScript, &m_workerGlobalScope, m_isolate);
 
     if (!block.CanContinue()) {
-        m_workerGlobalScope->script()->forbidExecution();
+        m_workerGlobalScope.script()->forbidExecution();
         return ScriptValue();
     }
 
@@ -166,7 +168,7 @@ ScriptValue WorkerScriptController::evaluate(const String& script, const String&
         state->hadException = true;
         state->errorMessage = toWebCoreString(message->Get());
         state->lineNumber = message->GetLineNumber();
-        state->columnNumber = message->GetStartColumn();
+        state->columnNumber = message->GetStartColumn() + 1;
         state->sourceURL = toWebCoreString(message->GetScriptResourceName());
         state->exception = ScriptValue(block.Exception(), m_isolate);
         block.Reset();
@@ -188,13 +190,13 @@ void WorkerScriptController::evaluate(const ScriptSourceCode& sourceCode, RefPtr
     evaluate(sourceCode.source(), sourceCode.url().string(), sourceCode.startPosition(), &state);
     if (state.hadException) {
         if (errorEvent) {
-            *errorEvent = m_workerGlobalScope->shouldSanitizeScriptError(state.sourceURL, NotSharableCrossOrigin) ?
+            *errorEvent = m_workerGlobalScope.shouldSanitizeScriptError(state.sourceURL, NotSharableCrossOrigin) ?
                 ErrorEvent::createSanitizedError(0) : ErrorEvent::create(state.errorMessage, state.sourceURL, state.lineNumber, state.columnNumber, 0);
             V8ErrorHandler::storeExceptionOnErrorEventWrapper(errorEvent->get(), state.exception.v8Value(), m_isolate);
         } else {
-            ASSERT(!m_workerGlobalScope->shouldSanitizeScriptError(state.sourceURL, NotSharableCrossOrigin));
+            ASSERT(!m_workerGlobalScope.shouldSanitizeScriptError(state.sourceURL, NotSharableCrossOrigin));
             RefPtr<ErrorEvent> event = m_errorEventFromImportedScript ? m_errorEventFromImportedScript.release() : ErrorEvent::create(state.errorMessage, state.sourceURL, state.lineNumber, state.columnNumber, 0);
-            m_workerGlobalScope->reportException(event, 0, NotSharableCrossOrigin);
+            m_workerGlobalScope.reportException(event, 0, NotSharableCrossOrigin);
         }
     }
 }
@@ -220,13 +222,13 @@ bool WorkerScriptController::isExecutionTerminating() const
 
 void WorkerScriptController::forbidExecution()
 {
-    ASSERT(m_workerGlobalScope->isContextThread());
+    ASSERT(m_workerGlobalScope.isContextThread());
     m_executionForbidden = true;
 }
 
 bool WorkerScriptController::isExecutionForbidden() const
 {
-    ASSERT(m_workerGlobalScope->isContextThread());
+    ASSERT(m_workerGlobalScope.isContextThread());
     return m_executionForbidden;
 }
 

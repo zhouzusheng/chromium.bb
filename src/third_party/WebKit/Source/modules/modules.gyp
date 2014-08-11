@@ -37,12 +37,13 @@
     'type': 'static_library',
     'dependencies': [
       '<(DEPTH)/third_party/zlib/zlib.gyp:zlib',
+      '<(DEPTH)/third_party/sqlite/sqlite.gyp:sqlite',
       '../config.gyp:config',
       '../core/core.gyp:webcore',
     ],
     'defines': [
-      'WEBKIT_IMPLEMENTATION=1',
-      'INSIDE_WEBKIT',
+      'BLINK_IMPLEMENTATION=1',
+      'INSIDE_BLINK',
     ],
     'sources': [
       '<@(modules_files)',

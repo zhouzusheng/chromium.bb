@@ -39,10 +39,10 @@ static inline SVGDocumentExtensions* svgExtensionsFromElement(SVGElement* elemen
 
 RenderSVGResourceContainer::RenderSVGResourceContainer(SVGElement* node)
     : RenderSVGHiddenContainer(node)
+    , m_isInLayout(false)
     , m_id(node->getIdAttribute())
     , m_registered(false)
     , m_isInvalidating(false)
-    , m_isInLayout(false)
 {
 }
 
@@ -54,15 +54,13 @@ RenderSVGResourceContainer::~RenderSVGResourceContainer()
 
 void RenderSVGResourceContainer::layout()
 {
+    // FIXME: Investigate a way to detect and break resource layout dependency cycles early.
+    // Then we can remove this method altogether, and fall back onto RenderSVGHiddenContainer::layout().
     ASSERT(needsLayout());
     if (m_isInLayout)
         return;
 
     TemporaryChange<bool> inLayoutChange(m_isInLayout, true);
-
-    // Invalidate all resources if our layout changed.
-    if (everHadLayout() && selfNeedsLayout())
-        removeAllClientsFromCache();
 
     RenderSVGHiddenContainer::layout();
 }
@@ -109,7 +107,7 @@ void RenderSVGResourceContainer::markAllClientsForInvalidation(InvalidationMode 
     for (HashSet<RenderObject*>::iterator it = m_clients.begin(); it != end; ++it) {
         RenderObject* client = *it;
         if (client->isSVGResourceContainer()) {
-            client->toRenderSVGResourceContainer()->removeAllClientsFromCache(markForInvalidation);
+            toRenderSVGResourceContainer(client)->removeAllClientsFromCache(markForInvalidation);
             continue;
         }
 
@@ -181,6 +179,17 @@ void RenderSVGResourceContainer::removeClientRenderLayer(RenderLayer* client)
 {
     ASSERT(client);
     m_clientLayers.remove(client);
+}
+
+void RenderSVGResourceContainer::invalidateCacheAndMarkForLayout(SubtreeLayoutScope* layoutScope)
+{
+    if (selfNeedsLayout())
+        return;
+
+    setNeedsLayout(MarkContainingBlockChain, layoutScope);
+
+    if (everHadLayout())
+        removeAllClientsFromCache();
 }
 
 void RenderSVGResourceContainer::registerResource()

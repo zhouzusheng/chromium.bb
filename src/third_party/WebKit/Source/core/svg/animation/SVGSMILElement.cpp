@@ -30,13 +30,13 @@
 #include "XLinkNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Document.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/EventSender.h"
-#include "core/platform/FloatConversion.h"
+#include "core/events/EventListener.h"
+#include "core/events/EventSender.h"
 #include "core/svg/SVGDocumentExtensions.h"
 #include "core/svg/SVGSVGElement.h"
 #include "core/svg/SVGURIReference.h"
 #include "core/svg/animation/SMILTimeContainer.h"
+#include "platform/FloatConversion.h"
 #include "wtf/MathExtras.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/Vector.h"
@@ -127,7 +127,7 @@ private:
     {
     }
 
-    virtual void handleEvent(ScriptExecutionContext*, Event*);
+    virtual void handleEvent(ExecutionContext*, Event*);
 
     SVGSMILElement* m_animation;
     SVGSMILElement::Condition* m_condition;
@@ -140,7 +140,7 @@ bool ConditionEventListener::operator==(const EventListener& listener)
     return false;
 }
 
-void ConditionEventListener::handleEvent(ScriptExecutionContext*, Event* event)
+void ConditionEventListener::handleEvent(ExecutionContext*, Event* event)
 {
     if (!m_animation)
         return;
@@ -551,6 +551,8 @@ void SVGSMILElement::svgAttributeChanged(const QualifiedName& attrName)
     else if (attrName.matches(XLinkNames::hrefAttr)) {
         SVGElementInstance::InvalidationGuard invalidationGuard(this);
         buildPendingResource();
+        if (m_targetElement)
+            clearAnimatedType(m_targetElement);
     } else if (inDocument()) {
         if (attrName == SVGNames::beginAttr)
             beginListChanged(elapsed());

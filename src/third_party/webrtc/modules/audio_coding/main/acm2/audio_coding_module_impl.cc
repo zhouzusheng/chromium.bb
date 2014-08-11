@@ -27,6 +27,8 @@
 
 namespace webrtc {
 
+namespace acm2 {
+
 enum {
   kACMToneEnd = 999
 };
@@ -138,7 +140,6 @@ AudioCodingModuleImpl::AudioCodingModuleImpl(int id)
       receiver_initialized_(false),
       callback_crit_sect_(CriticalSectionWrapper::CreateCriticalSection()),
       secondary_send_codec_inst_(),
-      secondary_encoder_(NULL),
       codec_timestamp_(expected_codec_ts_),
       first_10ms_data_(false) {
 
@@ -1469,7 +1470,7 @@ int AudioCodingModuleImpl::SetVADSafe(bool enable_dtx,
 
   // If a send codec is registered, set VAD/DTX for the codec.
   if (HaveValidEncoder("SetVAD") && codecs_[current_send_codec_idx_]->SetVAD(
-      &enable_dtx, &enable_vad,  &mode) < 0) {
+      &dtx_enabled_, &vad_enabled_,  &vad_mode_) < 0) {
       // SetVAD failed.
       WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceAudioCoding, id_,
                    "SetVAD failed");
@@ -1536,8 +1537,7 @@ int AudioCodingModuleImpl::InitializeReceiverSafe() {
 // removing and registering a decoder we can achieve the effect of resetting.
 // Reset the decoder state.
 int AudioCodingModuleImpl::ResetDecoder() {
-  CriticalSectionScoped lock(acm_crit_sect_);
-  return -1;
+  return 0;
 }
 
 // Get current receive frequency.
@@ -1974,5 +1974,7 @@ std::vector<uint16_t> AudioCodingModuleImpl::GetNackList(
 int AudioCodingModuleImpl::LeastRequiredDelayMs() const {
   return receiver_.LeastRequiredDelayMs();
 }
+
+}  // namespace acm2
 
 }  // namespace webrtc

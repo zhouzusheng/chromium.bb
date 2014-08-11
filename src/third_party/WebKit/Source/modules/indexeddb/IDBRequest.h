@@ -34,10 +34,10 @@
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/DOMError.h"
 #include "core/dom/DOMStringList.h"
-#include "core/dom/Event.h"
-#include "core/dom/EventListener.h"
-#include "core/dom/EventNames.h"
-#include "core/dom/EventTarget.h"
+#include "core/events/Event.h"
+#include "core/events/EventListener.h"
+#include "core/events/EventTarget.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "modules/indexeddb/IDBAny.h"
 #include "modules/indexeddb/IDBCallbacks.h"
 #include "modules/indexeddb/IDBCursor.h"
@@ -48,10 +48,11 @@ class ExceptionState;
 class IDBTransaction;
 class SharedBuffer;
 
-class IDBRequest : public ScriptWrappable, public IDBCallbacks, public EventTarget, public ActiveDOMObject {
+class IDBRequest : public ScriptWrappable, public IDBCallbacks, public EventTargetWithInlineData, public ActiveDOMObject {
+    DEFINE_EVENT_TARGET_REFCOUNTING(IDBCallbacks);
 public:
-    static PassRefPtr<IDBRequest> create(ScriptExecutionContext*, PassRefPtr<IDBAny> source, IDBTransaction*);
-    static PassRefPtr<IDBRequest> create(ScriptExecutionContext*, PassRefPtr<IDBAny> source, IDBDatabaseBackendInterface::TaskType, IDBTransaction*);
+    static PassRefPtr<IDBRequest> create(ExecutionContext*, PassRefPtr<IDBAny> source, IDBTransaction*);
+    static PassRefPtr<IDBRequest> create(ExecutionContext*, PassRefPtr<IDBAny> source, IDBDatabaseBackendInterface::TaskType, IDBTransaction*);
     virtual ~IDBRequest();
 
     PassRefPtr<IDBAny> result(ExceptionState&) const;
@@ -93,17 +94,14 @@ public:
     virtual void stop() OVERRIDE;
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const;
-    virtual ScriptExecutionContext* scriptExecutionContext() const;
-    virtual void uncaughtExceptionInEventHandler();
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE;
+    virtual void uncaughtExceptionInEventHandler() OVERRIDE;
 
     using EventTarget::dispatchEvent;
     virtual bool dispatchEvent(PassRefPtr<Event>) OVERRIDE;
 
     void transactionDidFinishAndDispatch();
-
-    using IDBCallbacks::ref;
-    using IDBCallbacks::deref;
 
     virtual void deref() OVERRIDE
     {
@@ -119,7 +117,7 @@ public:
     IDBCursor* getResultCursor();
 
 protected:
-    IDBRequest(ScriptExecutionContext*, PassRefPtr<IDBAny> source, IDBDatabaseBackendInterface::TaskType, IDBTransaction*);
+    IDBRequest(ExecutionContext*, PassRefPtr<IDBAny> source, IDBDatabaseBackendInterface::TaskType, IDBTransaction*);
     void enqueueEvent(PassRefPtr<Event>);
     virtual bool shouldEnqueueEvent() const;
     void onSuccessInternal(PassRefPtr<SerializedScriptValue>);
@@ -133,15 +131,8 @@ protected:
     bool m_requestAborted; // May be aborted by transaction then receive async onsuccess; ignore vs. assert.
 
 private:
-    // EventTarget
-    virtual void refEventTarget() { ref(); }
-    virtual void derefEventTarget() { deref(); }
-    virtual EventTargetData* eventTargetData();
-    virtual EventTargetData* ensureEventTargetData();
-
     void setResultCursor(PassRefPtr<IDBCursor>, PassRefPtr<IDBKey>, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SharedBuffer> value);
     void checkForReferenceCycle();
-
 
     RefPtr<IDBAny> m_source;
     const IDBDatabaseBackendInterface::TaskType m_taskType;
@@ -159,7 +150,6 @@ private:
     bool m_didFireUpgradeNeededEvent;
     bool m_preventPropagation;
 
-    EventTargetData m_eventTargetData;
     DOMRequestState m_requestState;
 };
 

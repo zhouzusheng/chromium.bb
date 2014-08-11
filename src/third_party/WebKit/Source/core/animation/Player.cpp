@@ -37,19 +37,25 @@
 
 namespace WebCore {
 
-PassRefPtr<Player> Player::create(DocumentTimeline* timeline, TimedItem* content)
+namespace {
+
+double effectiveTime(double time) { return isNull(time) ? 0 : time; }
+
+} // namespace
+
+PassRefPtr<Player> Player::create(DocumentTimeline& timeline, TimedItem* content)
 {
-    ASSERT(timeline);
     return adoptRef(new Player(timeline, content));
 }
 
-Player::Player(DocumentTimeline* timeline, TimedItem* content)
+Player::Player(DocumentTimeline& timeline, TimedItem* content)
     : m_pauseStartTime(nullValue())
     , m_playbackRate(1)
     , m_timeDrift(0)
-    , m_startTime(effectiveTime(timeline->currentTime()))
+    , m_startTime(effectiveTime(timeline.currentTime()))
     , m_content(content)
     , m_timeline(timeline)
+    , m_isPausedForTesting(false)
 {
     ASSERT(m_startTime >= 0);
     if (m_content)
@@ -65,18 +71,18 @@ Player::~Player()
 
 double Player::currentTimeBeforeDrift() const
 {
-    return (effectiveTime(m_timeline->currentTime()) - m_startTime) * m_playbackRate;
+    return (effectiveTime(m_timeline.currentTime()) - m_startTime) * m_playbackRate;
 }
 
 double Player::pausedTimeDrift() const
 {
-    ASSERT(paused());
+    ASSERT(pausedInternal());
     return currentTimeBeforeDrift() - m_pauseStartTime;
 }
 
 double Player::timeDrift() const
 {
-    return paused() ? pausedTimeDrift() : m_timeDrift;
+    return pausedInternal() ? pausedTimeDrift() : m_timeDrift;
 }
 
 double Player::currentTime() const
@@ -84,13 +90,22 @@ double Player::currentTime() const
     return currentTimeBeforeDrift() - timeDrift();
 }
 
-bool Player::update()
+bool Player::update(double* timeToEffectChange, bool* didTriggerStyleRecalc)
 {
-    if (!m_content)
+    if (!m_content) {
+        if (timeToEffectChange)
+            *timeToEffectChange = std::numeric_limits<double>::infinity();
+        if (didTriggerStyleRecalc)
+            *didTriggerStyleRecalc = false;
         return false;
+    }
 
-    double newTime = isNull(m_timeline->currentTime()) ? nullValue() : currentTime();
-    m_content->updateInheritedTime(newTime);
+    double newTime = isNull(m_timeline.currentTime()) ? nullValue() : currentTime();
+    bool didTriggerStyleRecalcLocal = m_content->updateInheritedTime(newTime);
+    if (timeToEffectChange)
+        *timeToEffectChange = m_content->timeToEffectChange();
+    if (didTriggerStyleRecalc)
+        *didTriggerStyleRecalc = didTriggerStyleRecalcLocal;
     return m_content->isCurrent() || m_content->isInEffect();
 }
 
@@ -106,7 +121,7 @@ void Player::cancel()
 
 void Player::setCurrentTime(double seekTime)
 {
-    if (paused())
+    if (pausedInternal())
         m_pauseStartTime = seekTime;
     else
         m_timeDrift = currentTimeBeforeDrift() - seekTime;
@@ -114,9 +129,22 @@ void Player::setCurrentTime(double seekTime)
     update();
 }
 
+void Player::pauseForTesting()
+{
+    ASSERT(!paused());
+    m_isPausedForTesting = true;
+    setPausedImpl(true);
+}
+
 void Player::setPaused(bool newValue)
 {
-    if (paused() == newValue)
+    ASSERT(!m_isPausedForTesting);
+    setPausedImpl(newValue);
+}
+
+void Player::setPausedImpl(bool newValue)
+{
+    if (pausedInternal() == newValue)
         return;
 
     if (newValue)

@@ -33,7 +33,7 @@
 
 namespace WebCore {
 
-RenderSVGResourceType RenderSVGResourceMarker::s_resourceType = MarkerResourceType;
+const RenderSVGResourceType RenderSVGResourceMarker::s_resourceType = MarkerResourceType;
 
 RenderSVGResourceMarker::RenderSVGResourceMarker(SVGMarkerElement* node)
     : RenderSVGResourceContainer(node)
@@ -138,7 +138,7 @@ void RenderSVGResourceMarker::draw(PaintInfo& paintInfo, const AffineTransform& 
     // An empty viewBox disables rendering.
     SVGMarkerElement* marker = toSVGMarkerElement(element());
     ASSERT(marker);
-    if (marker->hasAttribute(SVGNames::viewBoxAttr) && marker->viewBoxIsValid() && marker->viewBoxCurrentValue().isEmpty())
+    if (marker->hasAttribute(SVGNames::viewBoxAttr) && marker->viewBoxCurrentValue().isValid() && marker->viewBoxCurrentValue().isEmpty())
         return;
 
     PaintInfo info(paintInfo);

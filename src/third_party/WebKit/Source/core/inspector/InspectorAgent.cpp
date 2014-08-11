@@ -41,9 +41,9 @@
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/platform/JSONValues.h"
+#include "platform/JSONValues.h"
 #include "weborigin/SecurityOrigin.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -86,7 +86,7 @@ void InspectorAgent::didClearWindowObjectInWorld(Frame* frame, DOMWrapperWorld* 
     scriptSource.append("(");
     scriptSource.appendNumber(injectedScriptId);
     scriptSource.append(")");
-    frame->script()->executeScript(scriptSource.toString());
+    frame->script().executeScriptInMainWorld(scriptSource.toString());
 }
 
 void InspectorAgent::setFrontend(InspectorFrontend* inspectorFrontend)

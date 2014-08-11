@@ -28,12 +28,11 @@
  */
 
 #include "config.h"
-
 #include "core/platform/graphics/filters/custom/CustomFilterOperation.h"
 
 #include "core/platform/graphics/filters/FilterOperation.h"
-#include "core/platform/graphics/filters/custom/CustomFilterParameter.h"
 #include "core/platform/graphics/filters/custom/CustomFilterProgram.h"
+#include "platform/graphics/filters/custom/CustomFilterParameter.h"
 
 namespace WebCore {
 
@@ -45,28 +44,28 @@ CustomFilterOperation::CustomFilterOperation(PassRefPtr<CustomFilterProgram> pro
     , m_meshColumns(meshColumns)
     , m_meshType(meshType)
 {
-    // Make sure that the parameters are alwyas sorted by name. We use that to merge two CustomFilterOperations in animations.
-    ASSERT(m_parameters.checkAlphabeticalOrder());
 }
 
 CustomFilterOperation::~CustomFilterOperation()
 {
 }
 
-PassRefPtr<FilterOperation> CustomFilterOperation::blend(const FilterOperation* from, double progress, bool blendToPassthrough)
+PassRefPtr<FilterOperation> CustomFilterOperation::blend(const FilterOperation* from, double progress) const
 {
-    // FIXME: There's no way to decide what is the "passthrough filter" for shaders using the current CSS Syntax.
-    // https://bugs.webkit.org/show_bug.cgi?id=84903
-    // https://www.w3.org/Bugs/Public/show_bug.cgi?id=16861
-    if (blendToPassthrough || !from || !from->isSameType(*this))
-        return this;
+    if (!from) {
+        // FIXME: There's no way to decide what is the "passthrough filter" for shaders using the current CSS Syntax.
+        // https://bugs.webkit.org/show_bug.cgi?id=84903
+        // https://www.w3.org/Bugs/Public/show_bug.cgi?id=16861
+        return const_cast<CustomFilterOperation*>(this);
+    }
 
+    ASSERT_WITH_SECURITY_IMPLICATION(from->isSameType(*this));
     const CustomFilterOperation* fromOp = static_cast<const CustomFilterOperation*>(from);
     if (m_program.get() != fromOp->m_program.get()
         || m_meshRows != fromOp->m_meshRows
         || m_meshColumns != fromOp->m_meshColumns
         || m_meshType != fromOp->m_meshType)
-        return this;
+        return const_cast<CustomFilterOperation*>(this);
 
     CustomFilterParameterList animatedParameters;
     m_parameters.blend(fromOp->m_parameters, progress, animatedParameters);

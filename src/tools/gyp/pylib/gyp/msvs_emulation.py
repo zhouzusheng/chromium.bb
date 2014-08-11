@@ -202,7 +202,8 @@ class MsvsSettings(object):
 
   def AdjustLibraries(self, libraries):
     """Strip -l from library if it's specified with that."""
-    return [lib[2:] if lib.startswith('-l') else lib for lib in libraries]
+    libs = [lib[2:] if lib.startswith('-l') else lib for lib in libraries]
+    return [lib + '.lib' if not lib.endswith('.lib') else lib for lib in libs]
 
   def _GetAndMunge(self, field, path, default, prefix, append, map):
     """Retrieve a value from |field| at |path| or return |default|. If
@@ -336,6 +337,7 @@ class MsvsSettings(object):
     cl('Optimization',
        map={'0': 'd', '1': '1', '2': '2', '3': 'x'}, prefix='/O', default='2')
     cl('InlineFunctionExpansion', prefix='/Ob')
+    cl('DisableSpecificWarnings', prefix='/wd')
     cl('StringPooling', map={'true': '/GF'})
     cl('EnableFiberSafeOptimizations', map={'true': '/GT'})
     cl('OmitFramePointers', map={'false': '-', 'true': ''}, prefix='/Oy')
@@ -847,3 +849,22 @@ def VerifyMissingSources(sources, build_dir, generator_flags, gyp_to_ninja):
       # path for a slightly less crazy looking output.
       cleaned_up = [os.path.normpath(x) for x in missing]
       raise Exception('Missing input files:\n%s' % '\n'.join(cleaned_up))
+
+# Sets some values in default_variables, which are required for many
+# generators, run on Windows.
+def CalculateCommonVariables(default_variables, params):
+  generator_flags = params.get('generator_flags', {})
+
+  # Set a variable so conditions can be based on msvs_version.
+  msvs_version = gyp.msvs_emulation.GetVSVersion(generator_flags)
+  default_variables['MSVS_VERSION'] = msvs_version.ShortName()
+
+  # To determine processor word size on Windows, in addition to checking
+  # PROCESSOR_ARCHITECTURE (which reflects the word size of the current
+  # process), it is also necessary to check PROCESSOR_ARCHITEW6432 (which
+  # contains the actual word size of the system when running thru WOW64).
+  if ('64' in os.environ.get('PROCESSOR_ARCHITECTURE', '') or
+      '64' in os.environ.get('PROCESSOR_ARCHITEW6432', '')):
+    default_variables['MSVS_OS_BITS'] = 64
+  else:
+    default_variables['MSVS_OS_BITS'] = 32

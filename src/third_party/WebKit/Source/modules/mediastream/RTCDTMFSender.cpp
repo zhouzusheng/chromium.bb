@@ -28,7 +28,7 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/ScriptExecutionContext.h"
+#include "core/dom/ExecutionContext.h"
 #include "core/platform/mediastream/RTCDTMFSenderHandler.h"
 #include "core/platform/mediastream/RTCPeerConnectionHandler.h"
 #include "modules/mediastream/MediaStreamTrack.h"
@@ -42,12 +42,12 @@ static const long maxToneDurationMs = 6000;
 static const long minInterToneGapMs = 50;
 static const long defaultInterToneGapMs = 50;
 
-PassRefPtr<RTCDTMFSender> RTCDTMFSender::create(ScriptExecutionContext* context, RTCPeerConnectionHandler* peerConnectionHandler, PassRefPtr<MediaStreamTrack> prpTrack, ExceptionState& es)
+PassRefPtr<RTCDTMFSender> RTCDTMFSender::create(ExecutionContext* context, RTCPeerConnectionHandler* peerConnectionHandler, PassRefPtr<MediaStreamTrack> prpTrack, ExceptionState& es)
 {
     RefPtr<MediaStreamTrack> track = prpTrack;
     OwnPtr<RTCDTMFSenderHandler> handler = peerConnectionHandler->createDTMFSender(track->component());
     if (!handler) {
-        es.throwDOMException(NotSupportedError);
+        es.throwUninformativeAndGenericDOMException(NotSupportedError);
         return 0;
     }
 
@@ -56,7 +56,7 @@ PassRefPtr<RTCDTMFSender> RTCDTMFSender::create(ScriptExecutionContext* context,
     return dtmfSender.release();
 }
 
-RTCDTMFSender::RTCDTMFSender(ScriptExecutionContext* context, PassRefPtr<MediaStreamTrack> track, PassOwnPtr<RTCDTMFSenderHandler> handler)
+RTCDTMFSender::RTCDTMFSender(ExecutionContext* context, PassRefPtr<MediaStreamTrack> track, PassOwnPtr<RTCDTMFSenderHandler> handler)
     : ActiveDOMObject(context)
     , m_track(track)
     , m_duration(defaultToneDurationMs)
@@ -101,17 +101,17 @@ void RTCDTMFSender::insertDTMF(const String& tones, long duration, ExceptionStat
 void RTCDTMFSender::insertDTMF(const String& tones, long duration, long interToneGap, ExceptionState& es)
 {
     if (!canInsertDTMF()) {
-        es.throwDOMException(NotSupportedError);
+        es.throwUninformativeAndGenericDOMException(NotSupportedError);
         return;
     }
 
     if (duration > maxToneDurationMs || duration < minToneDurationMs) {
-        es.throwDOMException(SyntaxError);
+        es.throwUninformativeAndGenericDOMException(SyntaxError);
         return;
     }
 
     if (interToneGap < minInterToneGapMs) {
-        es.throwDOMException(SyntaxError);
+        es.throwUninformativeAndGenericDOMException(SyntaxError);
         return;
     }
 
@@ -119,7 +119,7 @@ void RTCDTMFSender::insertDTMF(const String& tones, long duration, long interTon
     m_interToneGap = interToneGap;
 
     if (!m_handler->insertDTMF(tones, m_duration, m_interToneGap))
-        es.throwDOMException(SyntaxError);
+        es.throwUninformativeAndGenericDOMException(SyntaxError);
 }
 
 void RTCDTMFSender::didPlayTone(const String& tone)
@@ -129,28 +129,18 @@ void RTCDTMFSender::didPlayTone(const String& tone)
 
 const AtomicString& RTCDTMFSender::interfaceName() const
 {
-    return eventNames().interfaceForRTCDTMFSender;
+    return EventTargetNames::RTCDTMFSender;
 }
 
-ScriptExecutionContext* RTCDTMFSender::scriptExecutionContext() const
+ExecutionContext* RTCDTMFSender::executionContext() const
 {
-    return ActiveDOMObject::scriptExecutionContext();
+    return ActiveDOMObject::executionContext();
 }
 
 void RTCDTMFSender::stop()
 {
     m_stopped = true;
     m_handler->setClient(0);
-}
-
-EventTargetData* RTCDTMFSender::eventTargetData()
-{
-    return &m_eventTargetData;
-}
-
-EventTargetData* RTCDTMFSender::ensureEventTargetData()
-{
-    return &m_eventTargetData;
 }
 
 void RTCDTMFSender::scheduleDispatchEvent(PassRefPtr<Event> event)

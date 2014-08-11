@@ -34,13 +34,13 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
-#include "core/dom/EventNames.h"
-#include "core/dom/EventTarget.h"
+#include "core/events/EventTarget.h"
+#include "core/events/ThreadLocalEventNames.h"
 #include "core/loader/ThreadableLoaderClient.h"
-#include "core/platform/SharedBuffer.h"
-#include "core/platform/Timer.h"
-#include "core/platform/text/TextDirection.h"
 #include "modules/notifications/NotificationClient.h"
+#include "platform/AsyncMethodRunner.h"
+#include "platform/SharedBuffer.h"
+#include "platform/text/TextDirection.h"
 #include "weborigin/KURL.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
@@ -56,17 +56,18 @@ class NotificationCenter;
 class NotificationPermissionCallback;
 class ResourceError;
 class ResourceResponse;
-class ScriptExecutionContext;
+class ExecutionContext;
 class ThreadableLoader;
 
-class Notification : public RefCounted<Notification>, public ScriptWrappable, public ActiveDOMObject, public EventTarget {
+class Notification : public RefCounted<Notification>, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData {
     WTF_MAKE_FAST_ALLOCATED;
+    REFCOUNTED_EVENT_TARGET(Notification);
 public:
     Notification();
 #if ENABLE(LEGACY_NOTIFICATIONS)
-    static PassRefPtr<Notification> create(const String& title, const String& body, const String& iconURI, ScriptExecutionContext*, ExceptionState&, PassRefPtr<NotificationCenter> provider);
+    static PassRefPtr<Notification> create(const String& title, const String& body, const String& iconURI, ExecutionContext*, ExceptionState&, PassRefPtr<NotificationCenter> provider);
 #endif
-    static PassRefPtr<Notification> create(ScriptExecutionContext*, const String& title, const Dictionary& options);
+    static PassRefPtr<Notification> create(ExecutionContext*, const String& title, const Dictionary& options);
 
     virtual ~Notification();
 
@@ -111,13 +112,10 @@ public:
     void dispatchErrorEvent();
     void dispatchShowEvent();
 
-    using RefCounted<Notification>::ref;
-    using RefCounted<Notification>::deref;
-
     // EventTarget interface
-    virtual const AtomicString& interfaceName() const;
-    virtual ScriptExecutionContext* scriptExecutionContext() const { return ActiveDOMObject::scriptExecutionContext(); }
-    virtual bool dispatchEvent(PassRefPtr<Event>);
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE { return ActiveDOMObject::executionContext(); }
+    virtual bool dispatchEvent(PassRefPtr<Event>) OVERRIDE;
 
     // ActiveDOMObject interface
     virtual void contextDestroyed();
@@ -129,28 +127,22 @@ public:
 
     void finalize();
 
-    static const String& permission(ScriptExecutionContext*);
+    static const String& permission(ExecutionContext*);
     static const String& permissionString(NotificationClient::Permission);
-    static void requestPermission(ScriptExecutionContext*, PassRefPtr<NotificationPermissionCallback> = 0);
+    static void requestPermission(ExecutionContext*, PassRefPtr<NotificationPermissionCallback> = 0);
 
 private:
 #if ENABLE(LEGACY_NOTIFICATIONS)
-    Notification(const String& title, const String& body, const String& iconURI, ScriptExecutionContext*, ExceptionState&, PassRefPtr<NotificationCenter>);
+    Notification(const String& title, const String& body, const String& iconURI, ExecutionContext*, ExceptionState&, PassRefPtr<NotificationCenter>);
 #endif
-    Notification(ScriptExecutionContext*, const String& title);
+    Notification(ExecutionContext*, const String& title);
 
     void setBody(const String& body) { m_body = body; }
-
-    // EventTarget interface
-    virtual void refEventTarget() { ref(); }
-    virtual void derefEventTarget() { deref(); }
-    virtual EventTargetData* eventTargetData();
-    virtual EventTargetData* ensureEventTargetData();
 
     void startLoadingIcon();
     void finishLoadingIcon();
 
-    void taskTimerFired(Timer<Notification>*);
+    void showSoon();
 
     // Text notifications.
     KURL m_icon;
@@ -171,9 +163,7 @@ private:
 
     NotificationClient* m_notificationClient;
 
-    EventTargetData m_eventTargetData;
-
-    OwnPtr<Timer<Notification> > m_taskTimer;
+    OwnPtr<AsyncMethodRunner<Notification> > m_asyncRunner;
 };
 
 } // namespace WebCore

@@ -28,11 +28,11 @@
 
 #include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "core/dom/Event.h"
+#include "core/events/Event.h"
 #include "core/html/HTMLMediaElement.h"
-#include "core/page/ContentSecurityPolicy.h"
+#include "core/frame/ContentSecurityPolicy.h"
 #include "RuntimeEnabledFeatures.h"
-#include "core/platform/Logging.h"
+#include "platform/Logging.h"
 
 using namespace std;
 
@@ -114,16 +114,6 @@ void HTMLTrackElement::parseAttribute(const QualifiedName& name, const AtomicStr
     }
 
     HTMLElement::parseAttribute(name, value);
-}
-
-KURL HTMLTrackElement::src() const
-{
-    return document().completeURL(getAttribute(srcAttr));
-}
-
-void HTMLTrackElement::setSrc(const String& url)
-{
-    setAttribute(srcAttr, url);
 }
 
 String HTMLTrackElement::kind()
@@ -228,7 +218,7 @@ void HTMLTrackElement::loadTimerFired(Timer<HTMLTrackElement>*)
     // 8. If the track element's parent is a media element then let CORS mode be the state of the parent media
     // element's crossorigin content attribute. Otherwise, let CORS mode be No CORS.
     if (!canLoadUrl(url)) {
-        didCompleteLoad(ensureTrack(), HTMLTrackElement::Failure);
+        didCompleteLoad(HTMLTrackElement::Failure);
         return;
     }
 
@@ -260,7 +250,7 @@ bool HTMLTrackElement::canLoadUrl(const KURL& url)
     return dispatchBeforeLoadEvent(url.string());
 }
 
-void HTMLTrackElement::didCompleteLoad(LoadableTextTrack*, LoadStatus status)
+void HTMLTrackElement::didCompleteLoad(LoadStatus status)
 {
     // 4.8.10.12.3 Sourcing out-of-band text tracks (continued)
 
@@ -274,7 +264,7 @@ void HTMLTrackElement::didCompleteLoad(LoadableTextTrack*, LoadStatus status)
 
     if (status == Failure) {
         setReadyState(HTMLTrackElement::TRACK_ERROR);
-        dispatchEvent(Event::create(eventNames().errorEvent), IGNORE_EXCEPTION);
+        dispatchEvent(Event::create(EventTypeNames::error), IGNORE_EXCEPTION);
         return;
     }
 
@@ -285,7 +275,7 @@ void HTMLTrackElement::didCompleteLoad(LoadableTextTrack*, LoadStatus status)
 
     //     2. If the file was successfully processed, fire a simple event named load at the
     //        track element.
-    dispatchEvent(Event::create(eventNames().loadEvent), IGNORE_EXCEPTION);
+    dispatchEvent(Event::create(EventTypeNames::load), IGNORE_EXCEPTION);
 }
 
 // NOTE: The values in the TextTrack::ReadinessState enum must stay in sync with those in HTMLTrackElement::ReadyState.

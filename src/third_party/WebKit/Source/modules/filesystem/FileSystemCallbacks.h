@@ -31,9 +31,9 @@
 #ifndef FileSystemCallbacks_h
 #define FileSystemCallbacks_h
 
-#include "core/platform/AsyncFileSystemCallbacks.h"
 #include "modules/filesystem/EntriesCallback.h"
-#include "modules/filesystem/FileSystemType.h"
+#include "platform/AsyncFileSystemCallbacks.h"
+#include "platform/FileSystemType.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
@@ -50,7 +50,7 @@ class FileSystemCallback;
 class FileWriterBase;
 class FileWriterBaseCallback;
 class MetadataCallback;
-class ScriptExecutionContext;
+class ExecutionContext;
 class VoidCallback;
 
 class FileSystemCallbacksBase : public AsyncFileSystemCallbacks {
@@ -98,28 +98,25 @@ private:
 
 class FileSystemCallbacks : public FileSystemCallbacksBase {
 public:
-    static PassOwnPtr<AsyncFileSystemCallbacks> create(PassRefPtr<FileSystemCallback>, PassRefPtr<ErrorCallback>, ScriptExecutionContext*, FileSystemType);
+    static PassOwnPtr<AsyncFileSystemCallbacks> create(PassRefPtr<FileSystemCallback>, PassRefPtr<ErrorCallback>, ExecutionContext*, FileSystemType);
     virtual void didOpenFileSystem(const String& name, const KURL& rootURL);
 
 private:
-    FileSystemCallbacks(PassRefPtr<FileSystemCallback>, PassRefPtr<ErrorCallback>, ScriptExecutionContext*, FileSystemType);
+    FileSystemCallbacks(PassRefPtr<FileSystemCallback>, PassRefPtr<ErrorCallback>, ExecutionContext*, FileSystemType);
     RefPtr<FileSystemCallback> m_successCallback;
-    RefPtr<ScriptExecutionContext> m_scriptExecutionContext;
+    RefPtr<ExecutionContext> m_executionContext;
     FileSystemType m_type;
 };
 
 class ResolveURICallbacks : public FileSystemCallbacksBase {
 public:
-    static PassOwnPtr<AsyncFileSystemCallbacks> create(PassRefPtr<EntryCallback>, PassRefPtr<ErrorCallback>, ScriptExecutionContext*, FileSystemType, const String& filePath);
-    virtual void didOpenFileSystem(const String& name, const KURL& rootURL);
-    virtual void didResolveURL(const String& name, const KURL& rootURL, FileSystemType, const String& filePath, bool isDirectory);
+    static PassOwnPtr<AsyncFileSystemCallbacks> create(PassRefPtr<EntryCallback>, PassRefPtr<ErrorCallback>, ExecutionContext*);
+    virtual void didResolveURL(const String& name, const KURL& rootURL, FileSystemType, const String& filePath, bool isDirectry);
 
 private:
-    ResolveURICallbacks(PassRefPtr<EntryCallback>, PassRefPtr<ErrorCallback>, ScriptExecutionContext*, FileSystemType, const String& filePath);
+    ResolveURICallbacks(PassRefPtr<EntryCallback>, PassRefPtr<ErrorCallback>, ExecutionContext*);
     RefPtr<EntryCallback> m_successCallback;
-    RefPtr<ScriptExecutionContext> m_scriptExecutionContext;
-    FileSystemType m_type;
-    String m_filePath;
+    RefPtr<ExecutionContext> m_executionContext;
 };
 
 class MetadataCallbacks : public FileSystemCallbacksBase {

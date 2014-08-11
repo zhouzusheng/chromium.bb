@@ -27,7 +27,7 @@
 
 #include "core/html/HTMLTextFormControlElement.h"
 #include "core/html/forms/StepRange.h"
-#include "core/platform/FileChooser.h"
+#include "platform/FileChooser.h"
 
 namespace WebCore {
 
@@ -119,8 +119,6 @@ public:
     bool isSpeechEnabled() const;
 #endif
 
-    HTMLElement* containerElement() const;
-    virtual HTMLElement* innerTextElement() const;
     HTMLElement* passwordGeneratorButtonElement() const;
 
     bool checked() const { return m_isChecked; }
@@ -210,9 +208,6 @@ public:
 
     bool multiple() const;
 
-    bool isAutofilled() const { return m_isAutofilled; }
-    void setAutofilled(bool = true);
-
     FileList* files();
     void setFiles(PassRefPtr<FileList>);
 
@@ -255,7 +250,7 @@ public:
     bool capture() const;
 #endif
 
-    static const unsigned maximumLength;
+    static const int maximumLength;
 
     unsigned height() const;
     unsigned width() const;
@@ -299,7 +294,7 @@ private:
     virtual void didChangeForm() OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
-    virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
+    virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
 
     virtual bool hasCustomFocusLogic() const OVERRIDE;
     virtual bool isKeyboardFocusable() const OVERRIDE;
@@ -333,11 +328,12 @@ private:
 
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
 
-    virtual bool appendFormData(FormDataList&, bool);
+    virtual bool appendFormData(FormDataList&, bool) OVERRIDE;
+    virtual String resultForDialogSubmit() OVERRIDE;
 
     virtual bool isSuccessfulSubmitButton() const;
 
-    virtual void reset();
+    virtual void resetImpl() OVERRIDE;
 
     virtual void* preDispatchEventHandler(Event*);
     virtual void postDispatchEventHandler(Event*, void* dataFromPreDispatch);
@@ -394,7 +390,6 @@ private:
     bool m_hasType : 1;
     bool m_isActivatedSubmit : 1;
     unsigned m_autocomplete : 2; // AutoCompleteSetting
-    bool m_isAutofilled : 1;
     bool m_hasNonEmptyList : 1;
     bool m_stateRestored : 1;
     bool m_parsingInProgress : 1;
@@ -411,21 +406,7 @@ private:
     OwnPtr<ListAttributeTargetObserver> m_listAttributeTargetObserver;
 };
 
-inline HTMLInputElement* toHTMLInputElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::inputTag));
-    return static_cast<HTMLInputElement*>(node);
-}
-
-inline const HTMLInputElement* toHTMLInputElement(const Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::inputTag));
-    return static_cast<const HTMLInputElement*>(node);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toHTMLElement(const HTMLElement*);
-
+DEFINE_NODE_TYPE_CASTS(HTMLInputElement, hasTagName(HTMLNames::inputTag));
 
 } //namespace
 #endif

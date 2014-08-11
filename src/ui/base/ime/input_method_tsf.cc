@@ -108,6 +108,7 @@ void InputMethodTSF::OnTextInputTypeChanged(const TextInputClient* client) {
 void InputMethodTSF::OnCaretBoundsChanged(const TextInputClient* client) {
   if (IsTextInputClientFocused(client) && IsWindowFocused(client))
     ui::TSFBridge::GetInstance()->OnTextLayoutChanged();
+  InputMethodWin::OnCaretBoundsChanged(client);
 }
 
 void InputMethodTSF::CancelComposition(const TextInputClient* client) {
@@ -147,6 +148,7 @@ void InputMethodTSF::OnDidChangeFocusedClient(TextInputClient* focused_before,
     // bounds has not changed.
     OnCaretBoundsChanged(focused);
   }
+  InputMethodWin::OnDidChangeFocusedClient(focused_before, focused);
 }
 
 void InputMethodTSF::ConfirmCompositionText() {

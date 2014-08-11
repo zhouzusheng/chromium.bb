@@ -21,12 +21,11 @@ class CC_EXPORT LayerTreeSettings {
   bool impl_side_painting;
   bool allow_antialiasing;
   bool throttle_frame_production;
-  bool begin_frame_scheduling_enabled;
+  bool begin_impl_frame_scheduling_enabled;
   bool deadline_scheduling_enabled;
   bool using_synchronous_renderer_compositor;
   bool per_tile_painting_enabled;
   bool partial_swap_enabled;
-  bool cache_render_pass_contents;
   bool accelerated_animation_enabled;
   bool background_color_instead_of_checkerboard;
   bool show_overdraw_in_tracing;
@@ -41,7 +40,6 @@ class CC_EXPORT LayerTreeSettings {
   ScrollbarAnimator scrollbar_animator;
   int scrollbar_linear_fade_delay_ms;
   int scrollbar_linear_fade_length_ms;
-  bool solid_color_scrollbars;
   SkColor solid_color_scrollbar_color;
   bool calculate_top_controls_position;
   bool use_memory_management;
@@ -69,6 +67,9 @@ class CC_EXPORT LayerTreeSettings {
   bool use_map_image;
   bool ignore_root_layer_flings;
   bool use_rgba_4444_textures;
+  bool always_overscroll;
+  bool touch_hit_testing;
+  size_t texture_id_allocation_chunk_size;
 
   LayerTreeDebugState initial_debug_state;
 };

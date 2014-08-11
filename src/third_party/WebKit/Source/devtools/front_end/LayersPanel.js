@@ -50,6 +50,7 @@ WebInspector.LayersPanel = function()
 
     this._model = new WebInspector.LayerTreeModel();
     this._model.addEventListener(WebInspector.LayerTreeModel.Events.LayerTreeChanged, this._onLayerTreeUpdated, this);
+    this._model.addEventListener(WebInspector.LayerTreeModel.Events.LayerPainted, this._onLayerPainted, this);
     this._currentlySelectedLayer = null;
     this._currentlyHoveredLayer = null;
 
@@ -67,21 +68,19 @@ WebInspector.LayersPanel = function()
 
     this._layerDetailsView = new WebInspector.LayerDetailsView();
     this._layerDetailsView.show(this._layerDetailsSplitView.secondElement());
-
-    this._model.requestLayers();
 }
 
 WebInspector.LayersPanel.prototype = {
     wasShown: function()
     {
         WebInspector.Panel.prototype.wasShown.call(this);
-        this._layerTree.setVisible(true);
         this.sidebarTreeElement.focus();
+        this._model.enable();
     },
 
     willHide: function()
     {
-        this._layerTree.setVisible(false);
+        this._model.disable();
         WebInspector.Panel.prototype.willHide.call(this);
     },
 
@@ -93,6 +92,16 @@ WebInspector.LayersPanel.prototype = {
             this._hoverLayer(null);
         if (this._currentlySelectedLayer)
             this._layerDetailsView.showLayer(this._currentlySelectedLayer);
+    },
+
+    /**
+     * @param {WebInspector.Event} event
+     */
+    _onLayerPainted: function(event)
+    {
+        var layer = /** @type {WebInspector.Layer} */ (event.data);
+        if (this._currentlySelectedLayer === layer)
+            this._layerDetailsView.updatePaintCount(this._currentlySelectedLayer.paintCount());
     },
 
     /**

@@ -29,10 +29,11 @@
 #include "modules/webdatabase/DOMWindowWebDatabase.h"
 
 #include "RuntimeEnabledFeatures.h"
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/page/DOMWindow.h"
+#include "core/frame/DOMWindow.h"
 #include "modules/webdatabase/Database.h"
 #include "modules/webdatabase/DatabaseCallback.h"
 #include "modules/webdatabase/DatabaseManager.h"
@@ -49,12 +50,13 @@ PassRefPtr<Database> DOMWindowWebDatabase::openDatabase(DOMWindow* window, const
     DatabaseManager& dbManager = DatabaseManager::manager();
     DatabaseError error = DatabaseError::None;
     if (RuntimeEnabledFeatures::databaseEnabled() && window->document()->securityOrigin()->canAccessDatabase()) {
-        database = dbManager.openDatabase(window->document(), name, version, displayName, estimatedSize, creationCallback, error);
+        String errorMessage;
+        database = dbManager.openDatabase(window->document(), name, version, displayName, estimatedSize, creationCallback, error, errorMessage);
         ASSERT(database || error != DatabaseError::None);
         if (error != DatabaseError::None)
-            es.throwDOMException(DatabaseManager::exceptionCodeForDatabaseError(error));
+            DatabaseManager::throwExceptionForDatabaseError("openDatabase", "Window", error, errorMessage, es);
     } else {
-        es.throwDOMException(SecurityError);
+        es.throwSecurityError(ExceptionMessages::failedToExecute("openDatabase", "Window", "Access to the WebDatabase API is denied in this context."));
     }
 
     return database;

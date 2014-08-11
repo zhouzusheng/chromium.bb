@@ -35,27 +35,27 @@
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/TimeRanges.h"
-#include "core/platform/ContentType.h"
 #include "core/platform/MIMETypeRegistry.h"
 #include "core/platform/graphics/SourceBufferPrivate.h"
 #include "modules/mediasource/MediaSourceRegistry.h"
+#include "platform/ContentType.h"
 #include "wtf/Uint8Array.h"
 
 namespace WebCore {
 
-PassRefPtr<WebKitMediaSource> WebKitMediaSource::create(ScriptExecutionContext* context)
+PassRefPtr<WebKitMediaSource> WebKitMediaSource::create(ExecutionContext* context)
 {
     RefPtr<WebKitMediaSource> mediaSource(adoptRef(new WebKitMediaSource(context)));
     mediaSource->suspendIfNeeded();
     return mediaSource.release();
 }
 
-WebKitMediaSource::WebKitMediaSource(ScriptExecutionContext* context)
+WebKitMediaSource::WebKitMediaSource(ExecutionContext* context)
     : MediaSourceBase(context)
 {
     ScriptWrappable::init(this);
-    m_sourceBuffers = WebKitSourceBufferList::create(scriptExecutionContext(), asyncEventQueue());
-    m_activeSourceBuffers = WebKitSourceBufferList::create(scriptExecutionContext(), asyncEventQueue());
+    m_sourceBuffers = WebKitSourceBufferList::create(executionContext(), asyncEventQueue());
+    m_activeSourceBuffers = WebKitSourceBufferList::create(executionContext(), asyncEventQueue());
 }
 
 WebKitSourceBufferList* WebKitMediaSource::sourceBuffers()
@@ -75,21 +75,21 @@ WebKitSourceBuffer* WebKitMediaSource::addSourceBuffer(const String& type, Excep
     // 1. If type is null or an empty then throw an InvalidAccessError exception and
     // abort these steps.
     if (type.isNull() || type.isEmpty()) {
-        es.throwDOMException(InvalidAccessError);
+        es.throwUninformativeAndGenericDOMException(InvalidAccessError);
         return 0;
     }
 
     // 2. If type contains a MIME type that is not supported ..., then throw a
     // NotSupportedError exception and abort these steps.
     if (!isTypeSupported(type)) {
-        es.throwDOMException(NotSupportedError);
+        es.throwUninformativeAndGenericDOMException(NotSupportedError);
         return 0;
     }
 
     // 4. If the readyState attribute is not in the "open" state then throw an
     // InvalidStateError exception and abort these steps.
     if (!isOpen()) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return 0;
     }
 
@@ -114,14 +114,14 @@ void WebKitMediaSource::removeSourceBuffer(WebKitSourceBuffer* buffer, Exception
     // 1. If sourceBuffer is null then throw an InvalidAccessError exception and
     // abort these steps.
     if (!buffer) {
-        es.throwDOMException(InvalidAccessError);
+        es.throwUninformativeAndGenericDOMException(InvalidAccessError);
         return;
     }
 
     // 2. If sourceBuffers is empty then throw an InvalidStateError exception and
     // abort these steps.
     if (isClosed() || !m_sourceBuffers->length()) {
-        es.throwDOMException(InvalidStateError);
+        es.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
 
@@ -130,7 +130,7 @@ void WebKitMediaSource::removeSourceBuffer(WebKitSourceBuffer* buffer, Exception
     // 6. Remove sourceBuffer from sourceBuffers and fire a removesourcebuffer event
     // on that object.
     if (!m_sourceBuffers->remove(buffer)) {
-        es.throwDOMException(NotFoundError);
+        es.throwUninformativeAndGenericDOMException(NotFoundError);
         return;
     }
 
@@ -151,17 +151,17 @@ void WebKitMediaSource::onReadyStateChange(const AtomicString& oldState, const A
     if (isClosed()) {
         m_sourceBuffers->clear();
         m_activeSourceBuffers->clear();
-        scheduleEvent(eventNames().webkitsourcecloseEvent);
+        scheduleEvent(EventTypeNames::webkitsourceclose);
         return;
     }
 
     if (oldState == openKeyword() && newState == endedKeyword()) {
-        scheduleEvent(eventNames().webkitsourceendedEvent);
+        scheduleEvent(EventTypeNames::webkitsourceended);
         return;
     }
 
     if (isOpen()) {
-        scheduleEvent(eventNames().webkitsourceopenEvent);
+        scheduleEvent(EventTypeNames::webkitsourceopen);
         return;
     }
 }
@@ -199,7 +199,7 @@ bool WebKitMediaSource::isTypeSupported(const String& type)
 
 const AtomicString& WebKitMediaSource::interfaceName() const
 {
-    return eventNames().interfaceForWebKitMediaSource;
+    return EventTargetNames::WebKitMediaSource;
 }
 
 } // namespace WebCore

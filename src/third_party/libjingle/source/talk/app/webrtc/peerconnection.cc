@@ -172,8 +172,10 @@ bool ParseIceServers(const PeerConnectionInterface::IceServers& configuration,
     }
     std::string address = tokens[1];
     int port = kDefaultStunPort;
-    if (service_type == TURNS)
+    if (service_type == TURNS) {
       port = kDefaultStunTlsPort;
+      turn_transport_type = kTcpTransportType;
+    }
 
     if (tokens.size() > kMinIceUriTokens) {
       if (!talk_base::FromString(tokens[2], &port)) {
@@ -315,7 +317,8 @@ bool PeerConnection::DoInitialize(
   stats_.set_session(session_.get());
 
   // Initialize the WebRtcSession. It creates transport channels etc.
-  if (!session_->Initialize(constraints, dtls_identity_service))
+  if (!session_->Initialize(factory_->options(), constraints,
+                            dtls_identity_service))
     return false;
 
   // Register PeerConnection as receiver of local ice candidates.
@@ -423,14 +426,6 @@ PeerConnection::CreateDataChannel(
       session_->CreateDataChannel(label, config));
   if (!channel.get())
     return NULL;
-
-  // If we've already passed the underlying channel's setup phase, have the
-  // MediaStreamSignaling update data channels manually.
-  if (session_->data_channel() != NULL &&
-      session_->data_channel_type() == cricket::DCT_SCTP) {
-    mediastream_signaling_->UpdateLocalSctpDataChannels();
-    mediastream_signaling_->UpdateRemoteSctpDataChannels();
-  }
 
   observer_->OnRenegotiationNeeded();
 
@@ -543,6 +538,7 @@ void PeerConnection::OnSessionStateChange(cricket::BaseSession* /*session*/,
   switch (state) {
     case cricket::BaseSession::STATE_INIT:
       ChangeSignalingState(PeerConnectionInterface::kStable);
+      break;
     case cricket::BaseSession::STATE_SENTINITIATE:
       ChangeSignalingState(PeerConnectionInterface::kHaveLocalOffer);
       break;

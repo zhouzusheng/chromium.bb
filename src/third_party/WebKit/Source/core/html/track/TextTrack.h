@@ -33,15 +33,14 @@
 
 namespace WebCore {
 
+class Document;
 class ExceptionState;
 class HTMLMediaElement;
 class TextTrack;
 class TextTrackCue;
 class TextTrackCueList;
-#if ENABLE(WEBVTT_REGIONS)
-class TextTrackRegion;
-class TextTrackRegionList;
-#endif
+class VTTRegion;
+class VTTRegionList;
 
 class TextTrackClient {
 public:
@@ -56,9 +55,9 @@ public:
 
 class TextTrack : public TrackBase, public ScriptWrappable {
 public:
-    static PassRefPtr<TextTrack> create(ScriptExecutionContext* context, TextTrackClient* client, const AtomicString& kind, const AtomicString& label, const AtomicString& language)
+    static PassRefPtr<TextTrack> create(Document& document, TextTrackClient* client, const AtomicString& kind, const AtomicString& label, const AtomicString& language)
     {
-        return adoptRef(new TextTrack(context, client, kind, label, language, AddTrack));
+        return adoptRef(new TextTrack(document, client, kind, label, language, AddTrack));
     }
     virtual ~TextTrack();
 
@@ -102,11 +101,9 @@ public:
     void removeCue(TextTrackCue*, ExceptionState&);
     bool hasCue(TextTrackCue*);
 
-#if ENABLE(WEBVTT_REGIONS)
-    TextTrackRegionList* regions();
-    void addRegion(PassRefPtr<TextTrackRegion>);
-    void removeRegion(TextTrackRegion*, ExceptionState&);
-#endif
+    VTTRegionList* regions();
+    void addRegion(PassRefPtr<VTTRegion>);
+    void removeRegion(VTTRegion*, ExceptionState&);
 
     void cueWillChange(TextTrackCue*);
     void cueDidChange(TextTrackCue*);
@@ -136,22 +133,25 @@ public:
 
     void removeAllCues();
 
+    Document& document() const { return *m_document; }
+
+    // EventTarget methods
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE;
+
 protected:
-    TextTrack(ScriptExecutionContext*, TextTrackClient*, const AtomicString& kind, const AtomicString& label, const AtomicString& language, TextTrackType);
-#if ENABLE(WEBVTT_REGIONS)
-    TextTrackRegionList* regionList();
-#endif
+    TextTrack(Document&, TextTrackClient*, const AtomicString& kind, const AtomicString& label, const AtomicString& language, TextTrackType);
 
     RefPtr<TextTrackCueList> m_cues;
 
 private:
-
-#if ENABLE(WEBVTT_REGIONS)
-    TextTrackRegionList* ensureTextTrackRegionList();
-    RefPtr<TextTrackRegionList> m_regions;
-#endif
+    VTTRegionList* ensureVTTRegionList();
+    RefPtr<VTTRegionList> m_regions;
 
     TextTrackCueList* ensureTextTrackCueList();
+
+    // FIXME: Remove this pointer and get the Document from m_client
+    Document* m_document;
 
     HTMLMediaElement* m_mediaElement;
     AtomicString m_kind;

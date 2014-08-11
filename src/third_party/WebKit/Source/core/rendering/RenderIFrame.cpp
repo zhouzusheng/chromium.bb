@@ -28,8 +28,8 @@
 
 #include "HTMLNames.h"
 #include "core/html/HTMLIFrameElement.h"
-#include "core/page/Frame.h"
-#include "core/page/FrameView.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/rendering/RenderView.h"
 
 namespace WebCore {

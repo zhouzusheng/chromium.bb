@@ -38,17 +38,17 @@
 #include "ApplicationCacheHostInternal.h"
 #include "WebFrameImpl.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "core/dom/ProgressEvent.h"
+#include "core/events/ProgressEvent.h"
 #include "core/inspector/InspectorApplicationCacheAgent.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/appcache/ApplicationCache.h"
-#include "core/page/Frame.h"
+#include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "core/page/Settings.h"
-#include "core/platform/chromium/support/WrappedResourceRequest.h"
-#include "core/platform/chromium/support/WrappedResourceResponse.h"
+#include "platform/exported/WrappedResourceRequest.h"
+#include "platform/exported/WrappedResourceResponse.h"
 #include "weborigin/SecurityOrigin.h"
 
 using namespace WebKit;
@@ -109,7 +109,7 @@ void ApplicationCacheHost::selectCacheWithManifest(const KURL& manifestURL)
             // during navigation.
             // see WebCore::ApplicationCacheGroup::selectCache()
             Frame* frame = m_documentLoader->frame();
-            frame->navigationScheduler()->scheduleLocationChange(frame->document()->securityOrigin(),
+            frame->navigationScheduler().scheduleLocationChange(frame->document()->securityOrigin(),
                 frame->document()->url(), frame->document()->referrer());
         }
     }

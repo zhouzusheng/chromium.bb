@@ -53,7 +53,9 @@ class CONTENT_EXPORT WebRtcAudioCapturer
                   int sample_rate,
                   int buffer_size,
                   int session_id,
-                  const std::string& device_id);
+                  const std::string& device_id,
+                  int paired_output_sample_rate,
+                  int paired_output_frames_per_buffer);
 
   // Add a audio track to the sinks of the capturer.
   // WebRtcAudioDeviceImpl calls this method on the main render thread but
@@ -86,10 +88,6 @@ class CONTENT_EXPORT WebRtcAudioCapturer
   int Volume() const;
   int MaxVolume() const;
 
-  // Enables or disables the WebRtc AGC control.
-  // Called from a Libjingle working thread.
-  void SetAutomaticGainControl(bool enable);
-
   bool is_recording() const { return running_; }
 
   // Audio parameters utilized by the audio capturer. Can be utilized by
@@ -100,11 +98,21 @@ class CONTENT_EXPORT WebRtcAudioCapturer
   // of this accessor and if we can remove it.
   media::AudioParameters audio_parameters() const;
 
+  // Gets information about the paired output device. Returns true if such a
+  // device exists.
+  bool GetPairedOutputParameters(int* session_id,
+                                 int* output_sample_rate,
+                                 int* output_frames_per_buffer) const;
+
   const std::string& device_id() const { return device_id_; }
+  int session_id() const { return session_id_; }
 
   WebKit::WebAudioSourceProvider* audio_source_provider() const {
     return source_provider_.get();
   }
+
+  // Stops recording audio.
+  void Stop();
 
  protected:
   friend class base::RefCountedThreadSafe<WebRtcAudioCapturer>;
@@ -132,10 +140,7 @@ class CONTENT_EXPORT WebRtcAudioCapturer
   // thread. It should NOT be called under |lock_|.
   void Start();
 
-  // Stops recording audio.
-  // Triggered by RemoveSink() on the main render thread or a Libjingle working
-  // thread. It should NOT be called under |lock_|.
-  void Stop();
+
 
   // Helper function to get the buffer size based on |peer_connection_mode_|
   // and sample rate;
@@ -145,7 +150,7 @@ class CONTENT_EXPORT WebRtcAudioCapturer
   base::ThreadChecker thread_checker_;
 
   // Protects |source_|, |audio_tracks_|, |running_|, |loopback_fifo_|,
-  // |params_|, |buffering_| and |agc_is_enabled_|.
+  // |params_| and |buffering_|.
   mutable base::Lock lock_;
 
   // A list of audio tracks that the audio data is fed to.
@@ -158,9 +163,6 @@ class CONTENT_EXPORT WebRtcAudioCapturer
   media::AudioParameters params_;
 
   bool running_;
-
-  // True when automatic gain control is enabled, false otherwise.
-  bool agc_is_enabled_;
 
   int render_view_id_;
 
@@ -187,6 +189,9 @@ class CONTENT_EXPORT WebRtcAudioCapturer
 
   // Flag which affects the buffer size used by the capturer.
   bool peer_connection_mode_;
+
+  int output_sample_rate_;
+  int output_frames_per_buffer_;
 
   DISALLOW_COPY_AND_ASSIGN(WebRtcAudioCapturer);
 };

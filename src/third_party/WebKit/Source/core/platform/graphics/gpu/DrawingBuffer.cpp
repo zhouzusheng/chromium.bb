@@ -33,10 +33,10 @@
 #include "core/platform/graphics/gpu/DrawingBuffer.h"
 
 #include <algorithm>
-#include "core/platform/chromium/TraceEvent.h"
 #include "core/platform/graphics/Extensions3D.h"
 #include "core/platform/graphics/GraphicsContext3D.h"
 #include "core/platform/graphics/GraphicsLayer.h"
+#include "platform/TraceEvent.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositorSupport.h"
 #include "public/platform/WebExternalBitmap.h"
@@ -121,6 +121,7 @@ DrawingBuffer::DrawingBuffer(GraphicsContext3D* context,
     , m_multisampleFBO(0)
     , m_multisampleColorBuffer(0)
     , m_contentsChanged(true)
+    , m_contentsChangeCommitted(false)
     , m_internalColorFormat(0)
     , m_colorFormat(0)
     , m_internalRenderbufferFormat(0)
@@ -135,6 +136,12 @@ DrawingBuffer::DrawingBuffer(GraphicsContext3D* context,
 DrawingBuffer::~DrawingBuffer()
 {
     releaseResources();
+}
+
+void DrawingBuffer::markContentsChanged()
+{
+    m_contentsChanged = true;
+    m_contentsChangeCommitted = false;
 }
 
 WebKit::WebGraphicsContext3D* DrawingBuffer::context()
@@ -289,7 +296,48 @@ void DrawingBuffer::initialize(const IntSize& size)
 
 unsigned DrawingBuffer::frontColorBuffer() const
 {
-    return m_colorBuffer;
+    return m_frontColorBuffer;
+}
+
+bool DrawingBuffer::copyToPlatformTexture(GraphicsContext3D& context, Platform3DObject texture, GC3Denum internalFormat, GC3Denum destType, GC3Dint level, bool premultiplyAlpha, bool flipY)
+{
+    if (!m_context || !m_context->makeContextCurrent())
+        return false;
+    if (m_contentsChanged) {
+        if (multisample()) {
+            commit();
+            if (!m_framebufferBinding)
+                bind();
+            else
+                restoreFramebufferBinding();
+        }
+        m_context->flush();
+    }
+    Platform3DObject sourceTexture = frontColorBuffer() ? frontColorBuffer() : colorBuffer();
+
+    if (!context.makeContextCurrent())
+        return false;
+    Extensions3D* extensions = context.extensions();
+    if (!extensions->supports("GL_CHROMIUM_copy_texture") || !extensions->supports("GL_CHROMIUM_flipy")
+        || !extensions->canUseCopyTextureCHROMIUM(internalFormat, destType, level))
+        return false;
+
+    bool unpackPremultiplyAlphaNeeded = false;
+    bool unpackUnpremultiplyAlphaNeeded = false;
+    if (m_attributes.alpha && m_attributes.premultipliedAlpha && !premultiplyAlpha)
+        unpackUnpremultiplyAlphaNeeded = true;
+    else if (m_attributes.alpha && !m_attributes.premultipliedAlpha && premultiplyAlpha)
+        unpackPremultiplyAlphaNeeded = true;
+
+    context.pixelStorei(Extensions3D::UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM, unpackUnpremultiplyAlphaNeeded);
+    context.pixelStorei(Extensions3D::UNPACK_PREMULTIPLY_ALPHA_CHROMIUM, unpackPremultiplyAlphaNeeded);
+    context.pixelStorei(Extensions3D::UNPACK_FLIP_Y_CHROMIUM, flipY);
+    extensions->copyTextureCHROMIUM(GraphicsContext3D::TEXTURE_2D, sourceTexture, texture, level, internalFormat, destType);
+    context.pixelStorei(Extensions3D::UNPACK_FLIP_Y_CHROMIUM, false);
+    context.pixelStorei(Extensions3D::UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM, false);
+    context.pixelStorei(Extensions3D::UNPACK_PREMULTIPLY_ALPHA_CHROMIUM, false);
+
+    return true;
 }
 
 Platform3DObject DrawingBuffer::framebuffer() const
@@ -444,7 +492,7 @@ bool DrawingBuffer::resizeFramebuffer(const IntSize& size)
     m_context->bindTexture(GraphicsContext3D::TEXTURE_2D, m_colorBuffer);
     m_context->texImage2DResourceSafe(GraphicsContext3D::TEXTURE_2D, 0, m_internalColorFormat, size.width(), size.height(), 0, m_colorFormat, GraphicsContext3D::UNSIGNED_BYTE);
     if (m_lastColorBuffer)
-        m_lastColorBuffer->size = m_size;
+        m_lastColorBuffer->size = size;
 
     m_context->framebufferTexture2D(GraphicsContext3D::FRAMEBUFFER, GraphicsContext3D::COLOR_ATTACHMENT0, GraphicsContext3D::TEXTURE_2D, m_colorBuffer, 0);
 
@@ -662,7 +710,7 @@ void DrawingBuffer::commit(long x, long y, long width, long height)
 
     m_context->makeContextCurrent();
 
-    if (m_multisampleFBO) {
+    if (m_multisampleFBO && !m_contentsChangeCommitted) {
         m_context->bindFramebuffer(Extensions3D::READ_FRAMEBUFFER, m_multisampleFBO);
         m_context->bindFramebuffer(Extensions3D::DRAW_FRAMEBUFFER, m_fbo);
 
@@ -677,6 +725,7 @@ void DrawingBuffer::commit(long x, long y, long width, long height)
     }
 
     m_context->bindFramebuffer(GraphicsContext3D::FRAMEBUFFER, m_fbo);
+    m_contentsChangeCommitted = true;
 }
 
 void DrawingBuffer::restoreFramebufferBinding()

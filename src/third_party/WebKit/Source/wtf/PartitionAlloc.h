@@ -53,8 +53,7 @@
 // Allocation sizes must be aligned to the system pointer size.
 // The separate APIs partitionAllocGeneric and partitionFreeGeneric are
 // provided, and they do not have the above three restrictions. In return, you
-// take a small performance hit and are also obliged to keep track of
-// allocation sizes, and pass them to partitionFreeGeneric.
+// take a small performance hit.
 //
 // This allocator is designed to be extremely fast, thanks to the following
 // properties and design:
@@ -75,27 +74,42 @@
 // - Linear overflows cannot corrupt out of the partition.
 // - Freed pages will only be re-used within the partition.
 // - Freed pages will only hold same-sized objects when re-used.
-// - Dereference of freelist pointer will fault.
+// - Dereference of freelist pointer should fault.
+// - Linear overflow into page header should be trapped, as long as ASLR has
+// not been bypassed.
+// - Partial pointer overwrite of freelist pointer should fault.
+// - Rudimentary double-free detection.
 //
 // The following security properties could be investigated in the future:
-// - No double-free detection (tcmalloc has some but it may be only a detection
-// and not a defense).
-// - No randomness in freelist pointers.
 // - Per-object bucketing (instead of per-size) is mostly available at the API,
 // but not used yet.
 // - No randomness of freelist entries or bucket position.
-// - No specific protection against corruption of page header metadata.
+// - Check alignment of pointers in free in Release builds.
+// - Better freelist masking function to guarantee fault on 32-bit.
 
 #include "wtf/Assertions.h"
+#include "wtf/ByteSwap.h"
+#include "wtf/CPU.h"
 #include "wtf/FastMalloc.h"
+#include "wtf/PageAllocator.h"
+#include "wtf/QuantizedAllocation.h"
 #include "wtf/SpinLock.h"
 
 #if defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
 #include <stdlib.h>
 #endif
 
+#ifndef NDEBUG
+#include <string.h>
+#endif
+
 namespace WTF {
 
+// Maximum size of a partition's mappings. 1GB. Note that the total amount of
+// bytes allocatable at the API will be smaller. This is because things like
+// guard pages, metadata, page headers and wasted space come out of the total.
+// The 1GB is not necessarily contiguous in virtual address space.
+static const size_t kMaxPartitionSize = 1024 * 1024 * 1024;
 // Allocation granularity of sizeof(void*) bytes.
 static const size_t kAllocationGranularity = sizeof(void*);
 static const size_t kAllocationGranularityMask = kAllocationGranularity - 1;
@@ -110,6 +124,10 @@ static const size_t kBucketShift = (kAllocationGranularity == 8) ? 3 : 2;
 static const size_t kPartitionPageSize = 1 << 14; // 16KB
 static const size_t kPartitionPageOffsetMask = kPartitionPageSize - 1;
 static const size_t kPartitionPageBaseMask = ~kPartitionPageOffsetMask;
+// This is set to a typical modern cacheline size, to minimize effects of
+// partitionAlloc() cacheline bouncing, or more accurately, to behave similarly
+// to other bucketing allocators such as tcmalloc.
+static const size_t kPartitionPageHeaderSize = 64;
 // To avoid fragmentation via never-used freelist entries, we hand out partition
 // freelist sections gradually, in units that resemble the dominant system page
 // size.
@@ -119,8 +137,20 @@ static const size_t kPartitionPageBaseMask = ~kPartitionPageOffsetMask;
 // never actually store objects there.
 static const size_t kSubPartitionPageSize = 1 << 12; // 4KB
 static const size_t kSubPartitionPageMask = kSubPartitionPageSize - 1;
-// Special bucket id for free page metadata.
-static const size_t kFreePageBucket = 0;
+static const size_t kNumSubPagesPerPartitionPage = kPartitionPageSize / kSubPartitionPageSize;
+// Special bucket id for internal metadata.
+static const size_t kInternalMetadataBucket = 0;
+
+#ifndef NDEBUG
+// These two byte values match tcmalloc.
+static const unsigned char kUninitializedByte = 0xAB;
+static const unsigned char kFreedByte = 0xCD;
+#if CPU(64BIT)
+static const uintptr_t kCookieValue = 0xDEADBEEFDEADBEEFul;
+#else
+static const uintptr_t kCookieValue = 0xDEADBEEFu;
+#endif
+#endif
 
 struct PartitionRoot;
 struct PartitionBucket;
@@ -130,10 +160,11 @@ struct PartitionFreelistEntry {
 };
 
 struct PartitionPageHeader {
+    uintptr_t* guard; // Points to self, used as a fast type of canary.
+    PartitionFreelistEntry* freelistHead;
     int numAllocatedSlots; // Deliberately signed.
     unsigned numUnprovisionedSlots;
     PartitionBucket* bucket;
-    PartitionFreelistEntry* freelistHead;
     PartitionPageHeader* next;
     PartitionPageHeader* prev;
 };
@@ -147,18 +178,28 @@ struct PartitionBucket {
     PartitionRoot* root;
     PartitionPageHeader* currPage;
     PartitionFreepagelistEntry* freePages;
-    size_t numFullPages;
+    unsigned numFullPages;
+    unsigned pageSize;
+};
+
+struct PartitionSuperPageExtentEntry {
+    char* superPageBase;
+    char* superPagesEnd;
+    PartitionSuperPageExtentEntry* next;
 };
 
 // Never instantiate a PartitionRoot directly, instead use PartitionAlloc.
 struct PartitionRoot {
     int lock;
+    size_t totalSizeOfSuperPages;
     unsigned numBuckets;
     unsigned maxAllocation;
     bool initialized;
     char* nextSuperPage;
     char* nextPartitionPage;
     char* nextPartitionPageEnd;
+    PartitionSuperPageExtentEntry* currentExtent;
+    PartitionSuperPageExtentEntry firstExtent;
     PartitionPageHeader seedPage;
     PartitionBucket seedBucket;
 
@@ -172,18 +213,51 @@ WTF_EXPORT NEVER_INLINE bool partitionAllocShutdown(PartitionRoot*);
 
 WTF_EXPORT NEVER_INLINE void* partitionAllocSlowPath(PartitionBucket*);
 WTF_EXPORT NEVER_INLINE void partitionFreeSlowPath(PartitionPageHeader*);
-WTF_EXPORT NEVER_INLINE void* partitionReallocGeneric(PartitionRoot*, void*, size_t oldSize, size_t newSize);
+WTF_EXPORT NEVER_INLINE void* partitionReallocGeneric(PartitionRoot*, void*, size_t);
 
 ALWAYS_INLINE PartitionFreelistEntry* partitionFreelistMask(PartitionFreelistEntry* ptr)
 {
-    // For now, use a simple / fast mask that guarantees an invalid pointer in
-    // case it gets used as a vtable pointer.
-    // The one attack we're fully mitigating is where an object is freed and its
-    // vtable used where the attacker doesn't get the chance to run allocations
-    // between the free and use.
-    // We're deliberately not trying to defend against OOB reads or writes.
+    // We use bswap on little endian as a fast mask for two reasons:
+    // 1) If an object is freed and its vtable used where the attacker doesn't
+    // get the chance to run allocations between the free and use, the vtable
+    // dereference is likely to fault.
+    // 2) If the attacker has a linear buffer overflow and elects to try and
+    // corrupt a freelist pointer, partial pointer overwrite attacks are
+    // thwarted.
+    // For big endian, similar guarantees are arrived at with a negation.
+#if CPU(BIG_ENDIAN)
     uintptr_t masked = ~reinterpret_cast<uintptr_t>(ptr);
+#else
+    uintptr_t masked = bswapuintptrt(reinterpret_cast<uintptr_t>(ptr));
+#endif
     return reinterpret_cast<PartitionFreelistEntry*>(masked);
+}
+
+ALWAYS_INLINE size_t partitionCookieSizeAdjustAdd(size_t size)
+{
+#ifndef NDEBUG
+    // Add space for cookies.
+    size += 2 * sizeof(uintptr_t);
+#endif
+    return size;
+}
+
+ALWAYS_INLINE size_t partitionCookieSizeAdjustSubtract(size_t size)
+{
+#ifndef NDEBUG
+    // Remove space for cookies.
+    size -= 2 * sizeof(uintptr_t);
+#endif
+    return size;
+}
+
+ALWAYS_INLINE void* partitionCookieFreePointerAdjust(void* ptr)
+{
+#ifndef NDEBUG
+    // The value given to the application is actually just after the cookie.
+    ptr = static_cast<uintptr_t*>(ptr) - 1;
+#endif
+    return ptr;
 }
 
 ALWAYS_INLINE size_t partitionBucketSize(const PartitionBucket* bucket)
@@ -191,23 +265,86 @@ ALWAYS_INLINE size_t partitionBucketSize(const PartitionBucket* bucket)
     PartitionRoot* root = bucket->root;
     size_t index = bucket - &root->buckets()[0];
     size_t size;
-    if (UNLIKELY(index == kFreePageBucket))
-        size = sizeof(PartitionFreepagelistEntry);
+    if (UNLIKELY(index == kInternalMetadataBucket))
+        size = partitionCookieSizeAdjustAdd(sizeof(PartitionFreepagelistEntry));
     else
         size = index << kBucketShift;
     return size;
 }
 
+ALWAYS_INLINE PartitionPageHeader* partitionPointerToPage(void* ptr)
+{
+    uintptr_t pointerAsUint = reinterpret_cast<uintptr_t>(ptr);
+    // Checks that the pointer is after the page header. You can't free the
+    // page header!
+    ASSERT((pointerAsUint & kPartitionPageOffsetMask) >= kPartitionPageHeaderSize);
+    PartitionPageHeader* page = reinterpret_cast<PartitionPageHeader*>(pointerAsUint & kPartitionPageBaseMask);
+    // Checks that the pointer is a multiple of bucket size.
+    ASSERT(!(((pointerAsUint & kPartitionPageOffsetMask) - kPartitionPageHeaderSize) % partitionBucketSize(page->bucket)));
+    return page;
+}
+
+ALWAYS_INLINE bool partitionPointerIsValid(PartitionRoot* root, void* ptr)
+{
+    // On 32-bit systems, we have an optimization where we have a bitmap that
+    // can instantly tell us if a pointer is in a super page or not.
+    // It is a global bitmap instead of a per-partition bitmap but this is a
+    // reasonable space vs. accuracy trade off.
+    if (SuperPageBitmap::isAvailable())
+        return SuperPageBitmap::isPointerInSuperPage(ptr);
+
+    // On 64-bit systems, we check the list of super page extents. Due to the
+    // massive address space, we typically have a single extent.
+    // Dominant case: the pointer is in the first extent, which grew without any collision.
+    if (LIKELY(ptr >= root->firstExtent.superPageBase) && LIKELY(ptr < root->firstExtent.superPagesEnd))
+        return true;
+
+    // Otherwise, scan through the extent list.
+    PartitionSuperPageExtentEntry* entry = root->firstExtent.next;
+    while (UNLIKELY(entry != 0)) {
+        if (ptr >= entry->superPageBase && ptr < entry->superPagesEnd)
+            return true;
+        entry = entry->next;
+    }
+
+    return false;
+}
+
+ALWAYS_INLINE void partitionValidatePage(PartitionPageHeader* page)
+{
+    // Force the read by referencing a volatile version of the guard.
+    volatile uintptr_t* guard = page->guard;
+    *guard;
+    ASSERT(*guard == reinterpret_cast<uintptr_t>(&page->guard));
+}
+
 ALWAYS_INLINE void* partitionBucketAlloc(PartitionBucket* bucket)
 {
     PartitionPageHeader* page = bucket->currPage;
-    PartitionFreelistEntry* ret = page->freelistHead;
+    partitionValidatePage(page);
+    void* ret = page->freelistHead;
     if (LIKELY(ret != 0)) {
-        page->freelistHead = partitionFreelistMask(ret->next);
+        // If these asserts fire, you probably corrupted memory.
+        ASSERT(partitionPointerIsValid(bucket->root, ret));
+        ASSERT(partitionPointerToPage(ret));
+        page->freelistHead = partitionFreelistMask(static_cast<PartitionFreelistEntry*>(ret)->next);
+        ASSERT(!page->freelistHead || partitionPointerIsValid(bucket->root, page->freelistHead));
+        ASSERT(!page->freelistHead || partitionPointerToPage(page->freelistHead));
         page->numAllocatedSlots++;
-        return ret;
+    } else {
+        ret = partitionAllocSlowPath(bucket);
     }
-    return partitionAllocSlowPath(bucket);
+#ifndef NDEBUG
+    // Fill the uninitialized pattern. and write the cookies.
+    size_t bucketSize = partitionBucketSize(bucket);
+    memset(ret, kUninitializedByte, bucketSize);
+    *(static_cast<uintptr_t*>(ret)) = kCookieValue;
+    void* retEnd = static_cast<char*>(ret) + bucketSize;
+    *(static_cast<uintptr_t*>(retEnd) - 1) = kCookieValue;
+    // The value given to the application is actually just after the cookie.
+    ret = static_cast<uintptr_t*>(ret) + 1;
+#endif
+    return ret;
 }
 
 ALWAYS_INLINE void* partitionAlloc(PartitionRoot* root, size_t size)
@@ -217,29 +354,31 @@ ALWAYS_INLINE void* partitionAlloc(PartitionRoot* root, size_t size)
     RELEASE_ASSERT(result);
     return result;
 #else
+    size = partitionCookieSizeAdjustAdd(size);
     ASSERT(root->initialized);
     size_t index = size >> kBucketShift;
     ASSERT(index < root->numBuckets);
     ASSERT(size == index << kBucketShift);
     PartitionBucket* bucket = &root->buckets()[index];
     return partitionBucketAlloc(bucket);
-#endif
-}
-
-ALWAYS_INLINE PartitionPageHeader* partitionPointerToPage(void* ptr)
-{
-    uintptr_t pointerAsUint = reinterpret_cast<uintptr_t>(ptr);
-    // Checks that the pointer is after the page header. You can't free the
-    // page header!
-    ASSERT((pointerAsUint & kPartitionPageOffsetMask) >= sizeof(PartitionPageHeader));
-    PartitionPageHeader* page = reinterpret_cast<PartitionPageHeader*>(pointerAsUint & kPartitionPageBaseMask);
-    // Checks that the pointer is a multiple of bucket size.
-    ASSERT(!(((pointerAsUint & kPartitionPageOffsetMask) - sizeof(PartitionPageHeader)) % partitionBucketSize(page->bucket)));
-    return page;
+#endif // defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
 }
 
 ALWAYS_INLINE void partitionFreeWithPage(void* ptr, PartitionPageHeader* page)
 {
+    // If these asserts fire, you probably corrupted memory.
+    partitionValidatePage(page);
+#ifndef NDEBUG
+    size_t bucketSize = partitionBucketSize(page->bucket);
+    void* ptrEnd = static_cast<char*>(ptr) + bucketSize;
+    ASSERT(*(static_cast<uintptr_t*>(ptr)) == kCookieValue);
+    ASSERT(*(static_cast<uintptr_t*>(ptrEnd) - 1) == kCookieValue);
+    memset(ptr, kFreedByte, bucketSize);
+#endif
+    ASSERT(!page->freelistHead || partitionPointerIsValid(page->bucket->root, page->freelistHead));
+    ASSERT(!page->freelistHead || partitionPointerToPage(page->freelistHead));
+    RELEASE_ASSERT(ptr != page->freelistHead); // Catches an immediate double free.
+    ASSERT(!page->freelistHead || ptr != partitionFreelistMask(page->freelistHead->next)); // Look for double free one level deeper in debug.
     PartitionFreelistEntry* entry = static_cast<PartitionFreelistEntry*>(ptr);
     entry->next = partitionFreelistMask(page->freelistHead);
     page->freelistHead = entry;
@@ -253,26 +392,25 @@ ALWAYS_INLINE void partitionFree(void* ptr)
 #if defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
     free(ptr);
 #else
+    ptr = partitionCookieFreePointerAdjust(ptr);
     PartitionPageHeader* page = partitionPointerToPage(ptr);
+    ASSERT(partitionPointerIsValid(page->bucket->root, ptr));
     partitionFreeWithPage(ptr, page);
 #endif
 }
 
-ALWAYS_INLINE size_t partitionAllocRoundup(size_t size)
-{
-    return (size + kAllocationGranularityMask) & ~kAllocationGranularityMask;
-}
-
 ALWAYS_INLINE void* partitionAllocGeneric(PartitionRoot* root, size_t size)
 {
+    RELEASE_ASSERT(size <= QuantizedAllocation::kMaxUnquantizedAllocation);
 #if defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
     void* result = malloc(size);
     RELEASE_ASSERT(result);
     return result;
 #else
     ASSERT(root->initialized);
-    if (LIKELY(size <= root->maxAllocation)) {
-        size = partitionAllocRoundup(size);
+    size = QuantizedAllocation::quantizedSize(size);
+    size_t realSize = partitionCookieSizeAdjustAdd(size);
+    if (LIKELY(realSize <= root->maxAllocation)) {
         spinLockLock(&root->lock);
         void* ret = partitionAlloc(root, size);
         spinLockUnlock(&root->lock);
@@ -282,12 +420,14 @@ ALWAYS_INLINE void* partitionAllocGeneric(PartitionRoot* root, size_t size)
 #endif
 }
 
-ALWAYS_INLINE void partitionFreeGeneric(PartitionRoot* root, void* ptr, size_t size)
+ALWAYS_INLINE void partitionFreeGeneric(PartitionRoot* root, void* ptr)
 {
 #if defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
     free(ptr);
 #else
-    if (LIKELY(size <= root->maxAllocation)) {
+    ASSERT(root->initialized);
+    if (LIKELY(partitionPointerIsValid(root, ptr))) {
+        ptr = partitionCookieFreePointerAdjust(ptr);
         PartitionPageHeader* page = partitionPointerToPage(ptr);
         spinLockLock(&root->lock);
         partitionFreeWithPage(ptr, page);

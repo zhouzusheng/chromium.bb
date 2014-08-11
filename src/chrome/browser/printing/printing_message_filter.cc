@@ -10,11 +10,11 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/printing/printer_query.h"
 #include "chrome/browser/printing/print_job_manager.h"
+#include "chrome/browser/printing/printing_ui_web_contents_observer.h"
 #include "chrome/common/print_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 
 #if defined(OS_CHROMEOS)
 #include <fcntl.h>
@@ -24,6 +24,7 @@
 #include "base/file_util.h"
 #include "base/lazy_instance.h"
 #include "chrome/browser/printing/print_dialog_cloud.h"
+#include "content/public/browser/web_contents_view.h"
 #endif
 
 #if defined(OS_ANDROID)
@@ -64,20 +65,19 @@ void RenderParamsFromPrintSettings(const printing::PrintSettings& settings,
   params->margin_left = settings.page_setup_device_units().content_area().x();
   params->dpi = settings.dpi();
   // Currently hardcoded at 1.25. See PrintSettings' constructor.
-  params->min_shrink = settings.min_shrink;
+  params->min_shrink = settings.min_shrink();
   // Currently hardcoded at 2.0. See PrintSettings' constructor.
-  params->max_shrink = settings.max_shrink;
+  params->max_shrink = settings.max_shrink();
   // Currently hardcoded at 72dpi. See PrintSettings' constructor.
-  params->desired_dpi = settings.desired_dpi;
+  params->desired_dpi = settings.desired_dpi();
   // Always use an invalid cookie.
   params->document_cookie = 0;
-  params->selection_only = settings.selection_only;
+  params->selection_only = settings.selection_only();
   params->supports_alpha_blend = settings.supports_alpha_blend();
-  params->should_print_backgrounds = settings.should_print_backgrounds;
-  params->display_header_footer = settings.display_header_footer;
-  params->date = settings.date;
-  params->title = settings.title;
-  params->url = settings.url;
+  params->should_print_backgrounds = settings.should_print_backgrounds();
+  params->display_header_footer = settings.display_header_footer();
+  params->title = settings.title();
+  params->url = settings.url();
 }
 
 }  // namespace
@@ -268,10 +268,12 @@ void PrintingMessageFilter::GetPrintSettingsForRenderView(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   content::WebContents* wc = GetWebContentsForRenderView(render_view_id);
   if (wc) {
+    scoped_ptr<PrintingUIWebContentsObserver> wc_observer(
+        new PrintingUIWebContentsObserver(wc));
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::Bind(&printing::PrinterQuery::GetSettings, printer_query,
-                   params.ask_user_for_settings, wc->GetView()->GetNativeView(),
+                   params.ask_user_for_settings, base::Passed(&wc_observer),
                    params.expected_page_count, params.has_selection,
                    params.margin_type, callback));
   } else {
@@ -381,7 +383,7 @@ void PrintingMessageFilter::OnScriptedPrintReply(
     RenderParamsFromPrintSettings(printer_query->settings(), &params.params);
     params.params.document_cookie = printer_query->cookie();
     params.pages =
-        printing::PageRange::GetPages(printer_query->settings().ranges);
+        printing::PageRange::GetPages(printer_query->settings().ranges());
   }
   PrintHostMsg_ScriptedPrint::WriteReplyParams(reply_msg, params);
   Send(reply_msg);
@@ -438,7 +440,7 @@ void PrintingMessageFilter::OnUpdatePrintSettingsReply(
     RenderParamsFromPrintSettings(printer_query->settings(), &params.params);
     params.params.document_cookie = printer_query->cookie();
     params.pages =
-        printing::PageRange::GetPages(printer_query->settings().ranges);
+        printing::PageRange::GetPages(printer_query->settings().ranges());
   }
   PrintHostMsg_UpdatePrintSettings::WriteReplyParams(reply_msg, params);
   Send(reply_msg);

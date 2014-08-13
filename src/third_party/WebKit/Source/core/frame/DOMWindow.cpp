@@ -74,7 +74,6 @@
 #include "core/loader/SinkDocument.h"
 #include "core/loader/appcache/ApplicationCache.h"
 #include "core/frame/BarProp.h"
-#include "core/page/BBClipboard.h"
 #include "core/page/BBWindowHooks.h"
 #include "core/page/BBDragData.h"
 #include "core/page/BackForwardClient.h"
@@ -497,7 +496,6 @@ DOMWindow::~DOMWindow()
     ASSERT(!m_sessionStorage);
     ASSERT(!m_localStorage);
     ASSERT(!m_applicationCache);
-    ASSERT(!m_bbClipboard);
     ASSERT(!m_bbWindowHooks);
     ASSERT(!m_bbDragData);
 
@@ -605,7 +603,6 @@ void DOMWindow::resetDOMWindowProperties()
     m_sessionStorage = 0;
     m_localStorage = 0;
     m_applicationCache = 0;
-    m_bbClipboard = 0;
     m_bbWindowHooks = 0;
     m_bbDragData = 0;
 }
@@ -1861,15 +1858,6 @@ void DOMWindow::showModalDialog(const String& urlString, const String& dialogFea
         return;
     UserGestureIndicatorDisabler disabler;
     dialogFrame->page()->chrome().runModal();
-}
-
-BBClipboard* DOMWindow::bbClipboard() const
-{
-    if (!isCurrentlyDisplayedInFrame())
-        return 0;
-    if (!m_bbClipboard)
-        m_bbClipboard = BBClipboard::create(m_frame);
-    return m_bbClipboard.get();
 }
 
 BBWindowHooks* DOMWindow::bbWindowHooks() const

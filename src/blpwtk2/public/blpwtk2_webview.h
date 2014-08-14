@@ -38,6 +38,13 @@ class Profile;
 // thread.
 class WebView {
 public:
+    struct InputEvent {
+        HWND hwnd;
+        UINT message;
+        WPARAM wparam;
+        LPARAM lparam;
+    };
+
     // Destroy the WebView and release any resources.  Do not use this WebView
     // after calling this method.
     virtual void destroy() = 0;
@@ -182,6 +189,9 @@ public:
     // Display a print dialog and print the contents of this WebView if the
     // user clicks 'OK'.
     virtual void print() = 0;
+
+    // Inform the web widget of a sequence of input events
+    virtual void handleInputEvents(const InputEvent *events, size_t eventsCount) = 0;
 
 protected:
     // Destroy this WebView.  Note that clients of blpwtk2 should use the

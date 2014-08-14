@@ -38,6 +38,8 @@
 #include <base/message_loop/message_loop.h>
 #include <content/public/renderer/render_view.h>
 #include <third_party/WebKit/public/web/WebView.h>
+#include <third_party/WebKit/public/web/WebInputEvent.h>
+#include <third_party/WebKit/public/web/win/WebInputEventFactory.h>
 #include <ui/gfx/size.h>
 
 namespace blpwtk2 {
@@ -154,6 +156,57 @@ void WebViewProxy::print()
 {
     DCHECK(Statics::isInApplicationMainThread());
     Send(new BlpWebViewHostMsg_Print(d_routingId));
+}
+
+void WebViewProxy::handleInputEvents(const InputEvent *events, size_t eventsCount)
+{
+    DCHECK(Statics::isRendererMainThreadMode());
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(d_isMainFrameAccessible)
+        << "You should wait for didFinishLoad";
+    DCHECK(d_gotRendererInfo);
+
+    content::RenderView* rv = content::RenderView::FromRoutingID(d_rendererRoutingId);
+    DCHECK(rv);
+
+    for (size_t i=0; i < eventsCount; ++i) {
+        const InputEvent *event = events + i;
+
+        switch (event->message) {
+        case WM_SYSKEYDOWN:
+        case WM_KEYDOWN:
+        case WM_SYSKEYUP:
+        case WM_KEYUP:
+        case WM_IME_CHAR:
+        case WM_SYSCHAR:
+        case WM_CHAR:
+            rv->GetWebView()->handleInputEvent(WebKit::WebInputEventFactory::keyboardEvent(
+                    event->hwnd,
+                    event->message,
+                    event->wparam,
+                    event->lparam));
+            break;
+
+        case WM_MOUSEMOVE:
+        case WM_MOUSELEAVE:
+        case WM_LBUTTONDOWN:
+        case WM_LBUTTONDBLCLK:
+        case WM_MBUTTONDOWN:
+        case WM_MBUTTONDBLCLK:
+        case WM_RBUTTONDOWN:
+        case WM_RBUTTONDBLCLK:
+        case WM_LBUTTONUP:
+        case WM_MBUTTONUP:
+        case WM_RBUTTONUP:
+            rv->GetWebView()->handleInputEvent(WebKit::WebInputEventFactory::mouseEvent(
+                    event->hwnd,
+                    event->message,
+                    event->wparam,
+                    event->lparam));
+
+            break;
+        }
+    }
 }
 
 void WebViewProxy::loadInspector(WebView* inspectedView)

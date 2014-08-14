@@ -294,6 +294,11 @@ void WebViewImpl::print()
     printViewManager->PrintNow();
 }
 
+void WebViewImpl::handleInputEvents(const InputEvent *events, size_t eventsCount)
+{
+    NOTREACHED() << "handleInputEvents() not supported in WebViewImpl";
+}
+
 void WebViewImpl::loadInspector(WebView* inspectedView)
 {
     DCHECK(Statics::isInBrowserMainThread());

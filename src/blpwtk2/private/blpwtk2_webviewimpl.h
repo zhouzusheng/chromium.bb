@@ -130,6 +130,7 @@ class WebViewImpl : public WebView,
     virtual void rootWindowPositionChanged() OVERRIDE;
     virtual void rootWindowSettingsChanged() OVERRIDE;
     virtual void print() OVERRIDE;
+    virtual void handleInputEvents(const InputEvent *events, size_t eventsCount) OVERRIDE;
 
   private:
     void createWidget(blpwtk2::NativeView parent);

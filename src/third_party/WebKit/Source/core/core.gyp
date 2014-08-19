@@ -743,9 +743,6 @@
 
             # SystemInfo.cpp is useful and we don't want to copy it.
             ['include', 'platform/win/SystemInfo\\.cpp$'],
-
-            ['include', 'platform/win/BbClipboardUtil\\.cpp$'],
-            ['include', 'platform/win/BbUtfUtil\\.cpp$'],
           ],
           'conditions': [
             ['"ENABLE_GDI_FONTS_ON_WINDOWS=1" in feature_defines', {

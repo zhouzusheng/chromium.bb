@@ -38,7 +38,6 @@
 namespace WebCore {
     class ApplicationCache;
     class BarProp;
-    class BBDragData;
     class CSSRuleList;
     class CSSStyleDeclaration;
     class Console;
@@ -78,7 +77,6 @@ namespace WebCore {
     class Storage;
     class StyleMedia;
     class DOMWindowCSS;
-    class BBClipboard;
     class BBWindowHooks;
 
     struct WindowFeatures;
@@ -331,9 +329,7 @@ enum PageshowEventPersistence {
         void statePopped(PassRefPtr<SerializedScriptValue>);
 
         // Bloomberg specific objects/methods
-        BBClipboard* bbClipboard() const;
         BBWindowHooks* bbWindowHooks() const;
-        PassRefPtr<BBDragData> bbDragData();
 
     protected:
         DOMWindowLifecycleNotifier& lifecycleNotifier();
@@ -368,9 +364,7 @@ enum PageshowEventPersistence {
         mutable RefPtr<Navigator> m_navigator;
         mutable RefPtr<Location> m_location;
         mutable RefPtr<StyleMedia> m_media;
-        mutable RefPtr<BBClipboard> m_bbClipboard;
         mutable RefPtr<BBWindowHooks> m_bbWindowHooks;
-        mutable RefPtr<BBDragData> m_bbDragData;
 
         String m_status;
         String m_defaultStatus;

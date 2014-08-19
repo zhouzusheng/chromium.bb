@@ -40,7 +40,6 @@ class IntPoint;
 class DragClient {
 public:
     virtual DragDestinationAction actionMaskForDrag(DragData*) = 0;
-    virtual void willDrag() = 0;
     virtual void startDrag(DragImage*, const IntPoint& dragImageOrigin, const IntPoint& eventPos, Clipboard*, Frame*, bool linkDrag = false) = 0;
     virtual ~DragClient() { }
 };

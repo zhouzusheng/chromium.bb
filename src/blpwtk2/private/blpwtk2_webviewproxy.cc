@@ -57,6 +57,8 @@ WebViewProxy::WebViewProxy(ProcessClient* processClient,
 : d_profileProxy(profileProxy)
 , d_processClient(processClient)
 , d_delegate(delegate)
+, d_nativeWebView(0)
+, d_nativeHiddenView(0)
 , d_routingId(routingId)
 , d_rendererRoutingId(0)
 , d_moveAckPending(false)
@@ -89,6 +91,8 @@ WebViewProxy::WebViewProxy(ProcessClient* processClient,
 : d_profileProxy(profileProxy)
 , d_processClient(processClient)
 , d_delegate(0)
+, d_nativeWebView(0)
+, d_nativeHiddenView(0)
 , d_routingId(routingId)
 , d_rendererRoutingId(0)
 , d_moveAckPending(false)
@@ -107,6 +111,10 @@ WebViewProxy::~WebViewProxy()
 void WebViewProxy::destroy()
 {
     DCHECK(Statics::isInApplicationMainThread());
+
+    if (d_nativeWebView) {
+        ::SetParent(d_nativeWebView, d_nativeHiddenView);
+    }
 
     d_processClient->removeRoute(d_routingId);
     d_profileProxy->decrementWebViewCount();
@@ -455,6 +463,7 @@ bool WebViewProxy::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_ShowTooltip, onShowTooltip)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_FindState, onFindState)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_MoveAck, onMoveAck)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_UpdateNativeViews, onUpdateNativeViews)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_AboutToNavigateRenderView, onAboutToNavigateRenderView)
         IPC_MESSAGE_UNHANDLED(handled = false)
     IPC_END_MESSAGE_MAP_EX()
@@ -652,6 +661,14 @@ void WebViewProxy::onMoveAck()
 {
     DCHECK(d_moveAckPending);
     d_moveAckPending = false;
+}
+
+void WebViewProxy::onUpdateNativeViews(blpwtk2::NativeViewForTransit webview, blpwtk2::NativeViewForTransit hiddenView)
+{
+    DCHECK(webview);
+    DCHECK(hiddenView);
+    d_nativeWebView = (blpwtk2::NativeView)webview;
+    d_nativeHiddenView = (blpwtk2::NativeView)hiddenView;
 }
 
 void WebViewProxy::onAboutToNavigateRenderView(int rendererRoutingId)

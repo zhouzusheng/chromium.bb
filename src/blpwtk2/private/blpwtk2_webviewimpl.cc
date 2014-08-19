@@ -169,7 +169,13 @@ WebViewImpl::~WebViewImpl()
 
 void WebViewImpl::setImplClient(WebViewImplClient* client)
 {
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(client);
+    DCHECK(!d_implClient);
     d_implClient = client;
+    if (d_widget) {
+        d_implClient->updateNativeViews(d_widget->getNativeWidgetView(), ui::GetHiddenWindow());
+    }
 }
 
 bool WebViewImpl::rendererMatchesSize(const gfx::Size& newSize) const
@@ -561,6 +567,10 @@ void WebViewImpl::createWidget(blpwtk2::NativeView parent)
         d_webContents->GetView()->GetNativeView(),
         parent,
         this);
+
+    if (d_implClient) {
+        d_implClient->updateNativeViews(d_widget->getNativeWidgetView(), ui::GetHiddenWindow());
+    }
 }
 
 void WebViewImpl::onDestroyed(NativeViewWidget* source)

@@ -341,6 +341,12 @@ bool WebViewHost::Send(IPC::Message* message)
 
 // WebViewImplClient overrides
 
+void WebViewHost::updateNativeViews(blpwtk2::NativeView webview,
+                                    blpwtk2::NativeView hiddenView)
+{
+    Send(new BlpWebViewMsg_UpdateNativeViews(d_routingId, webview, hiddenView));
+}
+
 bool WebViewHost::shouldDisableBrowserSideResize()
 {
     return d_isInProcess;

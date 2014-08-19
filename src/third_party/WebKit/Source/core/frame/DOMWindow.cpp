@@ -74,9 +74,7 @@
 #include "core/loader/SinkDocument.h"
 #include "core/loader/appcache/ApplicationCache.h"
 #include "core/frame/BarProp.h"
-#include "core/page/BBClipboard.h"
 #include "core/page/BBWindowHooks.h"
-#include "core/page/BBDragData.h"
 #include "core/page/BackForwardClient.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
@@ -338,7 +336,6 @@ bool DOMWindow::canShowModalDialogNow(const Frame* frame)
 DOMWindow::DOMWindow(Frame* frame)
     : FrameDestructionObserver(frame)
     , m_shouldPrintWhenFinishedLoading(false)
-    , m_bbDragData(0)
 {
     ASSERT(frame);
     ScriptWrappable::init(this);
@@ -497,9 +494,7 @@ DOMWindow::~DOMWindow()
     ASSERT(!m_sessionStorage);
     ASSERT(!m_localStorage);
     ASSERT(!m_applicationCache);
-    ASSERT(!m_bbClipboard);
     ASSERT(!m_bbWindowHooks);
-    ASSERT(!m_bbDragData);
 
     reset();
 
@@ -605,9 +600,7 @@ void DOMWindow::resetDOMWindowProperties()
     m_sessionStorage = 0;
     m_localStorage = 0;
     m_applicationCache = 0;
-    m_bbClipboard = 0;
     m_bbWindowHooks = 0;
-    m_bbDragData = 0;
 }
 
 bool DOMWindow::isCurrentlyDisplayedInFrame() const
@@ -1863,15 +1856,6 @@ void DOMWindow::showModalDialog(const String& urlString, const String& dialogFea
     dialogFrame->page()->chrome().runModal();
 }
 
-BBClipboard* DOMWindow::bbClipboard() const
-{
-    if (!isCurrentlyDisplayedInFrame())
-        return 0;
-    if (!m_bbClipboard)
-        m_bbClipboard = BBClipboard::create(m_frame);
-    return m_bbClipboard.get();
-}
-
 BBWindowHooks* DOMWindow::bbWindowHooks() const
 {
     if (!isCurrentlyDisplayedInFrame())
@@ -1879,15 +1863,6 @@ BBWindowHooks* DOMWindow::bbWindowHooks() const
     if (!m_bbWindowHooks)
         m_bbWindowHooks = BBWindowHooks::create(m_frame);
     return m_bbWindowHooks.get();
-}
-
-PassRefPtr<BBDragData> DOMWindow::bbDragData()
-{
-    if (!isCurrentlyDisplayedInFrame())
-        return 0;
-    if (!m_bbDragData)
-        m_bbDragData = BBDragData::create();
-    return m_bbDragData;
 }
 
 DOMWindow* DOMWindow::anonymousIndexedGetter(uint32_t index)

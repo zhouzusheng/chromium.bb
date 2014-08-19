@@ -471,8 +471,6 @@ public:
     void updateMainFrameLayoutSize();
     void updatePageDefinedViewportConstraints(const WebCore::ViewportDescription&);
 
-    void willDrag();
-
     // Start a system drag and drop operation.
     void startDragging(
         WebCore::Frame*,

@@ -47,6 +47,11 @@ included in the next release.
 
 ## Build Instructions
 
+* Bloomberg Employees: http://bburl/Bs67K
+
+If you are not a Bloomberg employee, the following instructions should still
+work:
+
 * Setup your build environment, as per [these
   instructions](http://www.chromium.org/developers/how-tos/build-instructions-windows).
 * Run the following command from inside the top-level 'chromium/' directory:

@@ -54,7 +54,6 @@
 #include "core/html/HTMLPlugInElement.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
-#include "core/page/BBDragData.h"
 #include "core/page/DragActions.h"
 #include "core/page/DragClient.h"
 #include "core/page/DragSession.h"
@@ -898,13 +897,6 @@ void DragController::doSystemDrag(DragImage* image, const IntPoint& dragLocation
 {
     m_didInitiateDrag = true;
     m_dragInitiator = frame->document();
-
-    RefPtr<BBDragData> bbDragData = m_dragInitiator->domWindow()->bbDragData();
-    bbDragData->setClipboard(clipboard);
-
-    m_client->willDrag();
-
-    bbDragData->setClipboard(0);
 
     // Protect this frame and view, as a load may occur mid drag and attempt to unload this frame
     RefPtr<Frame> frameProtector = m_page->mainFrame();

@@ -234,7 +234,6 @@
 
     // Bloomberg specific objects/methods
     readonly attribute BBWindowHooks bbWindowHooks;
-    readonly attribute BBDragData bbDragData;
 
     [ImplementedAs=anonymousIndexedGetter, NotEnumerable] getter Window(unsigned long index);
     [Custom, NotEnumerable] getter Window (DOMString name);

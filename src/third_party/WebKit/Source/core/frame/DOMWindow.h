@@ -38,7 +38,6 @@
 namespace WebCore {
     class ApplicationCache;
     class BarProp;
-    class BBDragData;
     class CSSRuleList;
     class CSSStyleDeclaration;
     class Console;
@@ -331,7 +330,6 @@ enum PageshowEventPersistence {
 
         // Bloomberg specific objects/methods
         BBWindowHooks* bbWindowHooks() const;
-        PassRefPtr<BBDragData> bbDragData();
 
     protected:
         DOMWindowLifecycleNotifier& lifecycleNotifier();
@@ -367,7 +365,6 @@ enum PageshowEventPersistence {
         mutable RefPtr<Location> m_location;
         mutable RefPtr<StyleMedia> m_media;
         mutable RefPtr<BBWindowHooks> m_bbWindowHooks;
-        mutable RefPtr<BBDragData> m_bbDragData;
 
         String m_status;
         String m_defaultStatus;

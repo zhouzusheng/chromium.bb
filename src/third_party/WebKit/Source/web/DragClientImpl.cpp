@@ -59,11 +59,6 @@ DragDestinationAction DragClientImpl::actionMaskForDrag(DragData*)
         DragDestinationActionDHTML | DragDestinationActionEdit);
 }
 
-void DragClientImpl::willDrag()
-{
-    m_webView->willDrag();
-}
-
 void DragClientImpl::startDrag(DragImage* dragImage,
                                const IntPoint& dragImageOrigin,
                                const IntPoint& eventPos,

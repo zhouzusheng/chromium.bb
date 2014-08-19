@@ -321,7 +321,6 @@ public:
     EmptyDragClient() { }
     virtual ~EmptyDragClient() {}
     virtual DragDestinationAction actionMaskForDrag(DragData*) OVERRIDE { return DragDestinationActionNone; }
-    virtual void willDrag() { };
     virtual void startDrag(DragImage*, const IntPoint&, const IntPoint&, Clipboard*, Frame*, bool) OVERRIDE { }
 };
 

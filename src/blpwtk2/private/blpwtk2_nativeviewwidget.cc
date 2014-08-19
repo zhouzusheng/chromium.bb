@@ -107,6 +107,12 @@ void NativeViewWidget::focus()
     ::SetFocus(hwnd);
 }
 
+blpwtk2::NativeView NativeViewWidget::getNativeWidgetView() const
+{
+    DCHECK(d_impl);
+    return views::HWNDForWidget(d_impl);
+}
+
 // views::WidgetDelegate overrides
 
 void NativeViewWidget::WindowClosing()

@@ -39,6 +39,8 @@ class WebViewImplClient {
 public:
     virtual ~WebViewImplClient();
 
+    virtual void updateNativeViews(blpwtk2::NativeView webview,
+                                   blpwtk2::NativeView hiddenView) = 0;
     virtual bool shouldDisableBrowserSideResize() = 0;
     virtual void aboutToNativateRenderView(int rendererRoutingId) = 0;
     virtual void didUpdatedBackingStore(const gfx::Size& size) = 0;

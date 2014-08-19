@@ -115,6 +115,7 @@ class WebViewProxy : public WebView,
     virtual void rootWindowPositionChanged() OVERRIDE;
     virtual void rootWindowSettingsChanged() OVERRIDE;
     virtual void print() OVERRIDE;
+    virtual void handleInputEvents(const InputEvent *events, size_t eventsCount) OVERRIDE;
 
   private:
     // Destructor is private.  Calling destroy() will delete the object.
@@ -155,6 +156,7 @@ class WebViewProxy : public WebView,
                      int activeMatchOrdinal,
                      bool finalUpdate);
     void onMoveAck();
+    void onUpdateNativeViews(blpwtk2::NativeViewForTransit webview, blpwtk2::NativeViewForTransit hiddenView);
     void onAboutToNavigateRenderView(int rendererRoutingId);
 
 
@@ -163,6 +165,8 @@ class WebViewProxy : public WebView,
     WebViewDelegate* d_delegate;
     scoped_ptr<FindOnPage> d_find;
     scoped_ptr<WebFrameImpl> d_mainFrame;
+    blpwtk2::NativeView d_nativeWebView;
+    blpwtk2::NativeView d_nativeHiddenView;
     int d_routingId;
     int d_rendererRoutingId;
     gfx::Rect d_rect;

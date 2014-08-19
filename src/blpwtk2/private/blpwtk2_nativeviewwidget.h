@@ -52,6 +52,7 @@ class NativeViewWidget : private views::WidgetDelegateView {
     void hide();
     void move(int x, int y, int width, int height);
     void focus();
+    blpwtk2::NativeView getNativeWidgetView() const;
 
   private:
     // views::WidgetDelegate overrides

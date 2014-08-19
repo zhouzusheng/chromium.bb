@@ -38,6 +38,8 @@
 #include <base/message_loop/message_loop.h>
 #include <content/public/renderer/render_view.h>
 #include <third_party/WebKit/public/web/WebView.h>
+#include <third_party/WebKit/public/web/WebInputEvent.h>
+#include <third_party/WebKit/public/web/win/WebInputEventFactory.h>
 #include <ui/gfx/size.h>
 
 namespace blpwtk2 {
@@ -55,6 +57,8 @@ WebViewProxy::WebViewProxy(ProcessClient* processClient,
 : d_profileProxy(profileProxy)
 , d_processClient(processClient)
 , d_delegate(delegate)
+, d_nativeWebView(0)
+, d_nativeHiddenView(0)
 , d_routingId(routingId)
 , d_rendererRoutingId(0)
 , d_moveAckPending(false)
@@ -87,6 +91,8 @@ WebViewProxy::WebViewProxy(ProcessClient* processClient,
 : d_profileProxy(profileProxy)
 , d_processClient(processClient)
 , d_delegate(0)
+, d_nativeWebView(0)
+, d_nativeHiddenView(0)
 , d_routingId(routingId)
 , d_rendererRoutingId(0)
 , d_moveAckPending(false)
@@ -105,6 +111,10 @@ WebViewProxy::~WebViewProxy()
 void WebViewProxy::destroy()
 {
     DCHECK(Statics::isInApplicationMainThread());
+
+    if (d_nativeWebView) {
+        ::SetParent(d_nativeWebView, d_nativeHiddenView);
+    }
 
     d_processClient->removeRoute(d_routingId);
     d_profileProxy->decrementWebViewCount();
@@ -154,6 +164,57 @@ void WebViewProxy::print()
 {
     DCHECK(Statics::isInApplicationMainThread());
     Send(new BlpWebViewHostMsg_Print(d_routingId));
+}
+
+void WebViewProxy::handleInputEvents(const InputEvent *events, size_t eventsCount)
+{
+    DCHECK(Statics::isRendererMainThreadMode());
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(d_isMainFrameAccessible)
+        << "You should wait for didFinishLoad";
+    DCHECK(d_gotRendererInfo);
+
+    content::RenderView* rv = content::RenderView::FromRoutingID(d_rendererRoutingId);
+    DCHECK(rv);
+
+    for (size_t i=0; i < eventsCount; ++i) {
+        const InputEvent *event = events + i;
+
+        switch (event->message) {
+        case WM_SYSKEYDOWN:
+        case WM_KEYDOWN:
+        case WM_SYSKEYUP:
+        case WM_KEYUP:
+        case WM_IME_CHAR:
+        case WM_SYSCHAR:
+        case WM_CHAR:
+            rv->GetWebView()->handleInputEvent(WebKit::WebInputEventFactory::keyboardEvent(
+                    event->hwnd,
+                    event->message,
+                    event->wparam,
+                    event->lparam));
+            break;
+
+        case WM_MOUSEMOVE:
+        case WM_MOUSELEAVE:
+        case WM_LBUTTONDOWN:
+        case WM_LBUTTONDBLCLK:
+        case WM_MBUTTONDOWN:
+        case WM_MBUTTONDBLCLK:
+        case WM_RBUTTONDOWN:
+        case WM_RBUTTONDBLCLK:
+        case WM_LBUTTONUP:
+        case WM_MBUTTONUP:
+        case WM_RBUTTONUP:
+            rv->GetWebView()->handleInputEvent(WebKit::WebInputEventFactory::mouseEvent(
+                    event->hwnd,
+                    event->message,
+                    event->wparam,
+                    event->lparam));
+
+            break;
+        }
+    }
 }
 
 void WebViewProxy::loadInspector(WebView* inspectedView)
@@ -402,6 +463,7 @@ bool WebViewProxy::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_ShowTooltip, onShowTooltip)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_FindState, onFindState)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_MoveAck, onMoveAck)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_UpdateNativeViews, onUpdateNativeViews)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_AboutToNavigateRenderView, onAboutToNavigateRenderView)
         IPC_MESSAGE_UNHANDLED(handled = false)
     IPC_END_MESSAGE_MAP_EX()
@@ -599,6 +661,14 @@ void WebViewProxy::onMoveAck()
 {
     DCHECK(d_moveAckPending);
     d_moveAckPending = false;
+}
+
+void WebViewProxy::onUpdateNativeViews(blpwtk2::NativeViewForTransit webview, blpwtk2::NativeViewForTransit hiddenView)
+{
+    DCHECK(webview);
+    DCHECK(hiddenView);
+    d_nativeWebView = (blpwtk2::NativeView)webview;
+    d_nativeHiddenView = (blpwtk2::NativeView)hiddenView;
 }
 
 void WebViewProxy::onAboutToNavigateRenderView(int rendererRoutingId)

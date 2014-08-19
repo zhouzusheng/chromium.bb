@@ -114,6 +114,8 @@ class WebViewHost : public ProcessHostListener,
     virtual bool Send(IPC::Message* message) OVERRIDE;
 
     // WebViewImplClient overrides
+    virtual void updateNativeViews(blpwtk2::NativeView webview,
+                                   blpwtk2::NativeView hiddenView) OVERRIDE;
     virtual bool shouldDisableBrowserSideResize() OVERRIDE;
     virtual void aboutToNativateRenderView(int routingId) OVERRIDE;
     virtual void didUpdatedBackingStore(const gfx::Size& size) OVERRIDE;

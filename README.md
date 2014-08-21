@@ -47,9 +47,9 @@ included in the next release.
 
 ## Build Instructions
 
-* Bloomberg Employees: http://bburl/Bs67K
+**Bloomberg Employees:** [http://bburl/Bs67K](http://bburl/Bs67K)
 
-If you are not a Bloomberg employee, the following instructions should still
+If you are **not** a Bloomberg employee, the following instructions should still
 work:
 
 * Setup your build environment, as per [these

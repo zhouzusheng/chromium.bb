@@ -44,6 +44,7 @@ typedef pthread_mutex_t* MutexHandle;
 #include <iomanip>
 #include <ostream>
 
+#include "base/at_exit.h"
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/debug/alias.h"
@@ -561,7 +562,7 @@ LogMessage::LogMessage(const char* file, int line, LogSeverity severity,
 
 LogMessage::~LogMessage() {
 #if !defined(NDEBUG) && !defined(OS_NACL)
-  if (severity_ == LOG_FATAL) {
+  if (severity_ == LOG_FATAL && base::AtExitManager::IsInitialized()) {
     // Include a stack trace on a fatal.
     base::debug::StackTrace trace;
     stream_ << std::endl;  // Newline to separate from log message.

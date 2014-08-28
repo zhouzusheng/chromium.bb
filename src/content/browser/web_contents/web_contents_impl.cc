@@ -1177,11 +1177,6 @@ bool WebContentsImpl::PreHandleWheelEvent(
   return false;
 }
 
-void WebContentsImpl::DidUpdateBackingStore() {
-  if (delegate_)
-    delegate_->DidUpdateBackingStore();
-}
-
 bool WebContentsImpl::ShouldSetFocusOnMouseDown() {
   if (delegate_) {
     return delegate_->ShouldSetFocusOnMouseDown();

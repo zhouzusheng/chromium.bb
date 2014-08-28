@@ -24,7 +24,6 @@
 
 #include <blpwtk2_constants.h>
 #include <blpwtk2_contextmenuparams.h>
-#include <blpwtk2_mainmessagepump.h>
 #include <blpwtk2_newviewparams.h>
 #include <blpwtk2_processclient.h>
 #include <blpwtk2_profileproxy.h>
@@ -61,7 +60,6 @@ WebViewProxy::WebViewProxy(ProcessClient* processClient,
 , d_nativeHiddenView(0)
 , d_routingId(routingId)
 , d_rendererRoutingId(0)
-, d_moveAckPending(false)
 , d_isMainFrameAccessible(false)
 , d_gotRendererInfo(false)
 , d_ncDragNeedsAck(false)
@@ -95,7 +93,6 @@ WebViewProxy::WebViewProxy(ProcessClient* processClient,
 , d_nativeHiddenView(0)
 , d_routingId(routingId)
 , d_rendererRoutingId(0)
-, d_moveAckPending(false)
 , d_isMainFrameAccessible(false)
 , d_gotRendererInfo(false)
 , d_ncDragNeedsAck(false)
@@ -291,48 +288,17 @@ void WebViewProxy::move(int left, int top, int width, int height)
 
     gfx::Rect rc(left, top, width, height);
 
-    if (d_rect == rc) {
-        return;
+    if (d_gotRendererInfo && !rc.IsEmpty()) {
+        // If we have renderer info (only happens if we are in-process), we can
+        // start resizing the RenderView while we are in the main thread.  This
+        // is to avoid a round-trip delay waiting for the resize to get to the
+        // browser thread, and it sending a ViewMsg_Resize back to this thread.
+        content::RenderView* rv = content::RenderView::FromRoutingID(d_rendererRoutingId);
+        DCHECK(rv);
+        rv->SetSize(rc.size());
     }
 
-    DCHECK(!d_moveAckPending);
-
-    d_rect = rc;
-
-    // The logic here is as follows:
-    // * If we haven't got any renderer info (e.g. if the renderer hasn't been
-    //   navigated to yet, or if it is out-of-process), then we will just do an
-    //   asynchronous move.
-    // * If we got the renderer info, that means it is in-process, and we can
-    //   resize the RenderView in our thread, and wait for an ack from the
-    //   browser thread before returning.  This ensures the move() method is
-    //   synchronous.  This prevents the noticeable lag when resizing a window,
-    //   and the contents update out-of-sync with the main window.
-    // * We get the ack in one of two ways:
-    //   * the browser thread sees that it already has a backing store with the
-    //     same size.
-    //   * the browser thread gets the backing store updated with the new size.
-
-    if (!d_gotRendererInfo) {
-        Send(new BlpWebViewHostMsg_Move(d_routingId, d_rect));
-        return;
-    }
-
-    content::RenderView* rv = content::RenderView::FromRoutingID(d_rendererRoutingId);
-    DCHECK(rv);
-
-    d_moveAckPending = true;
-    Send(new BlpWebViewHostMsg_SyncMove(d_routingId, d_rect));
-
-    if (!d_rect.IsEmpty()) {
-        rv->SetSize(d_rect.size());
-    }
-
-    // Wait for the move ack.
-    MainMessagePump::current()->pumpUntilConditionIsTrue(
-        base::Bind(&WebViewProxy::isMoveAckNotPending, base::Unretained(this)));
-
-    DCHECK(rv->GetSize() == d_rect.size() || d_rect.IsEmpty());
+    Send(new BlpWebViewHostMsg_Move(d_routingId, rc));
 }
 
 void WebViewProxy::cutSelection()
@@ -462,7 +428,6 @@ bool WebViewProxy::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_NCDragEnd, onNCDragEnd)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_ShowTooltip, onShowTooltip)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_FindState, onFindState)
-        IPC_MESSAGE_HANDLER(BlpWebViewMsg_MoveAck, onMoveAck)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_UpdateNativeViews, onUpdateNativeViews)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_AboutToNavigateRenderView, onAboutToNavigateRenderView)
         IPC_MESSAGE_UNHANDLED(handled = false)
@@ -657,12 +622,6 @@ void WebViewProxy::onFindState(int reqId,
     }
 }
 
-void WebViewProxy::onMoveAck()
-{
-    DCHECK(d_moveAckPending);
-    d_moveAckPending = false;
-}
-
 void WebViewProxy::onUpdateNativeViews(blpwtk2::NativeViewForTransit webview, blpwtk2::NativeViewForTransit hiddenView)
 {
     DCHECK(webview);
@@ -688,10 +647,6 @@ void WebViewProxy::onAboutToNavigateRenderView(int rendererRoutingId)
 
     d_gotRendererInfo = true;
     d_rendererRoutingId = rendererRoutingId;
-
-    if (!d_rect.IsEmpty()) {
-        rv->SetSize(d_rect.size());
-    }
 }
 
 }  // close namespace blpwtk2

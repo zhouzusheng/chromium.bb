@@ -89,7 +89,6 @@ class WebViewHost : public ProcessHostListener,
     void onHide();
     void onSetParent(NativeViewForTransit parent);
     void onMove(const gfx::Rect& rect);
-    void onSyncMove(const gfx::Rect& rect);
     void onCutSelection();
     void onCopySelection();
     void onPaste();
@@ -116,9 +115,7 @@ class WebViewHost : public ProcessHostListener,
     // WebViewImplClient overrides
     virtual void updateNativeViews(blpwtk2::NativeView webview,
                                    blpwtk2::NativeView hiddenView) OVERRIDE;
-    virtual bool shouldDisableBrowserSideResize() OVERRIDE;
     virtual void aboutToNativateRenderView(int routingId) OVERRIDE;
-    virtual void didUpdatedBackingStore(const gfx::Size& size) OVERRIDE;
     virtual void findStateWithReqId(int reqId,
                                     int numberOfMatches,
                                     int activeMatchOrdinal,
@@ -160,9 +157,7 @@ class WebViewHost : public ProcessHostListener,
     ProcessHost* d_processHost;
     WebViewImpl* d_webView;
     int d_routingId;
-    gfx::Rect d_implRect;
     gfx::Point d_ncDragEndPoint;
-    bool d_implMoveAckPending;
     bool d_ncDragAckPending;
     bool d_ncDragNeedsAck;
     bool d_ncDragging;

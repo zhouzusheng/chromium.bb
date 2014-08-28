@@ -89,7 +89,6 @@ class WebViewImpl : public WebView,
     virtual ~WebViewImpl();
 
     void setImplClient(WebViewImplClient* client);
-    bool rendererMatchesSize(const gfx::Size& newSize) const;
     gfx::NativeView getNativeView() const;
     void showContextMenu(const ContextMenuParams& params);
     void saveCustomContextMenuContext(const content::CustomContextMenuContext& context);
@@ -200,9 +199,6 @@ class WebViewImpl : public WebView,
         const content::MediaStreamRequest& request,
         const content::MediaResponseCallback& callback) OVERRIDE;
 
-    // Invoked when the RenderWidgetHost's backing store has been updated.
-    virtual void DidUpdateBackingStore() OVERRIDE;
-
     // Return true if the RWHV should take focus on mouse-down.
     virtual bool ShouldSetFocusOnMouseDown() OVERRIDE;
 
@@ -223,10 +219,6 @@ class WebViewImpl : public WebView,
                            bool final_update) OVERRIDE;
 
     /////// WebContentsObserver overrides
-
-    // Will be called when a non-intersitial RVH is created for a WebContents.
-    virtual void RenderViewCreated(
-        content::RenderViewHost* render_view_host) OVERRIDE;
 
     // This method is invoked after the WebContents decided which RenderViewHost
     // to use for the next navigation, but before the navigation starts.

@@ -171,8 +171,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   virtual void SetIgnoreInputEvents(bool ignore_input_events) OVERRIDE;
   virtual void Stop() OVERRIDE;
   virtual void WasResized() OVERRIDE;
-  virtual void DisableBrowserSideResize() OVERRIDE;
-  virtual const gfx::Size& LastKnownRendererSize() const OVERRIDE;
   virtual void AddKeyPressEventCallback(
       const KeyPressEventCallback& callback) OVERRIDE;
   virtual void RemoveKeyPressEventCallback(
@@ -817,9 +815,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // True if the render widget host should track the render widget's size as
   // opposed to visa versa.
   bool should_auto_resize_;
-
-  // True for in-process WebViews running on the main thread.
-  bool is_browser_side_resize_disabled_;
 
   bool waiting_for_screen_rects_ack_;
   gfx::Rect last_view_screen_rect_;

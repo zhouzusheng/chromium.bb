@@ -32,13 +32,17 @@
 #include <base/memory/weak_ptr.h>
 #include <ipc/ipc_listener.h>
 #include <ipc/ipc_sender.h>
-#include <ui/gfx/rect.h>
 
 #include <string>
 
 namespace base {
 class MessageLoop;
 }  // close namespace base
+
+namespace gfx {
+class Point;
+class Rect;
+}  // close namespace gfx
 
 namespace blpwtk2 {
 
@@ -80,7 +84,6 @@ class WebViewProxy : public WebView,
                  ProfileProxy* profileProxy);
 
     int routingId() const { return d_routingId; }
-    bool isMoveAckNotPending() const { return !d_moveAckPending; }
 
     // ========== WebView overrides ================
 
@@ -155,7 +158,6 @@ class WebViewProxy : public WebView,
                      int numberOfMatches,
                      int activeMatchOrdinal,
                      bool finalUpdate);
-    void onMoveAck();
     void onUpdateNativeViews(blpwtk2::NativeViewForTransit webview, blpwtk2::NativeViewForTransit hiddenView);
     void onAboutToNavigateRenderView(int rendererRoutingId);
 
@@ -169,8 +171,6 @@ class WebViewProxy : public WebView,
     blpwtk2::NativeView d_nativeHiddenView;
     int d_routingId;
     int d_rendererRoutingId;
-    gfx::Rect d_rect;
-    bool d_moveAckPending;
     bool d_isMainFrameAccessible;
     bool d_gotRendererInfo;
     bool d_ncDragNeedsAck;

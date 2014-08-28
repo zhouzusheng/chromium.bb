@@ -48,9 +48,6 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // Returns true if the |event| was handled.
   virtual bool PreHandleWheelEvent(const WebKit::WebMouseWheelEvent& event);
 
-  // Callback to notify the browser that the backing store has been updated.
-  virtual void DidUpdateBackingStore() {}
-
   // Returns true if RWHV should take focus on mouse-down.
   virtual bool ShouldSetFocusOnMouseDown();
 

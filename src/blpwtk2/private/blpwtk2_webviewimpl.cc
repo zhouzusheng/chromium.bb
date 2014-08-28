@@ -178,14 +178,6 @@ void WebViewImpl::setImplClient(WebViewImplClient* client)
     }
 }
 
-bool WebViewImpl::rendererMatchesSize(const gfx::Size& newSize) const
-{
-    DCHECK(Statics::isInBrowserMainThread());
-    DCHECK(!d_wasDestroyed);
-    DCHECK(d_webContents->GetRenderViewHost());
-    return newSize == d_webContents->GetRenderViewHost()->LastKnownRendererSize();
-}
-
 gfx::NativeView WebViewImpl::getNativeView() const
 {
     DCHECK(Statics::isInBrowserMainThread());
@@ -854,14 +846,6 @@ void WebViewImpl::OnNCDragEnd()
     }
 }
 
-void WebViewImpl::DidUpdateBackingStore()
-{
-    DCHECK(Statics::isInBrowserMainThread());
-    if (d_wasDestroyed || !d_implClient) return;
-    d_implClient->didUpdatedBackingStore(
-        d_webContents->GetRenderViewHost()->LastKnownRendererSize());
-}
-
 bool WebViewImpl::ShouldSetFocusOnMouseDown()
 {
     DCHECK(Statics::isInBrowserMainThread());
@@ -920,15 +904,6 @@ void WebViewImpl::FindReply(content::WebContents* source_contents,
 }
 
 /////// WebContentsObserver overrides
-
-void WebViewImpl::RenderViewCreated(content::RenderViewHost* render_view_host)
-{
-    DCHECK(Statics::isInBrowserMainThread());
-    if (d_wasDestroyed || !d_implClient) return;
-    if (d_implClient->shouldDisableBrowserSideResize()) {
-        render_view_host->DisableBrowserSideResize();
-    }
-}
 
 void WebViewImpl::AboutToNavigateRenderView(content::RenderViewHost* render_view_host)
 {

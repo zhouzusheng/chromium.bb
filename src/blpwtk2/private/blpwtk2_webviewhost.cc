@@ -43,7 +43,6 @@ WebViewHost::WebViewHost(ProcessHost* processHost,
                          bool javascriptCanAccessClipboard)
 : d_processHost(processHost)
 , d_routingId(routingId)
-, d_implMoveAckPending(false)
 , d_ncDragAckPending(false)
 , d_ncDragNeedsAck(false)
 , d_ncDragging(false)
@@ -69,7 +68,6 @@ WebViewHost::WebViewHost(ProcessHost* processHost,
 : d_processHost(processHost)
 , d_webView(webView)
 , d_routingId(routingId)
-, d_implMoveAckPending(false)
 , d_ncDragAckPending(false)
 , d_ncDragNeedsAck(false)
 , d_ncDragging(false)
@@ -104,7 +102,6 @@ bool WebViewHost::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Hide, onHide)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_SetParent, onSetParent)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Move, onMove)
-        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_SyncMove, onSyncMove)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_CutSelection, onCutSelection)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_CopySelection, onCopySelection)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Paste, onPaste)
@@ -198,28 +195,7 @@ void WebViewHost::onSetParent(NativeViewForTransit parent)
 void WebViewHost::onMove(const gfx::Rect& rect)
 {
     d_webView->move(rect.x(), rect.y(), rect.width(), rect.height());
-}
-
-void WebViewHost::onSyncMove(const gfx::Rect& rect)
-{
-    DCHECK(d_isInProcess);
-    DCHECK(!d_implMoveAckPending);
-
-    // We don't get backing store updates for empty rectangles, so just move
-    // the WebView and send an ack back.  Also, if the browser-side renderer
-    // already matches the size before we get here, then we already have a
-    // backing store, so move the WebView and send an ack.  This can happen
-    // if the size didn't actually change, or if the browser thread pulled
-    // out the backing store update msg before we reach this point.
-    if (rect.IsEmpty() || d_webView->rendererMatchesSize(rect.size())) {
-        d_webView->move(rect.x(), rect.y(), rect.width(), rect.height());
-        Send(new BlpWebViewMsg_MoveAck(d_routingId));
-    }
-    else {
-        // We need to wait for didUpdatedBackingStore in order to ack the move.
-        d_implMoveAckPending = true;
-        d_implRect = rect;
-    }
+    Send(new BlpWebViewMsg_MoveAck(d_routingId, rect));
 }
 
 void WebViewHost::onCutSelection()
@@ -347,27 +323,11 @@ void WebViewHost::updateNativeViews(blpwtk2::NativeView webview,
     Send(new BlpWebViewMsg_UpdateNativeViews(d_routingId, webview, hiddenView));
 }
 
-bool WebViewHost::shouldDisableBrowserSideResize()
-{
-    return d_isInProcess;
-}
-
 void WebViewHost::aboutToNativateRenderView(int rendererRoutingId)
 {
     if (d_isInProcess) {
         Send(new BlpWebViewMsg_AboutToNavigateRenderView(d_routingId,
                                                          rendererRoutingId));
-    }
-}
-
-void WebViewHost::didUpdatedBackingStore(const gfx::Size& size)
-{
-    if (d_implMoveAckPending && d_implRect.size() == size) {
-        DCHECK(d_isInProcess);
-        d_implMoveAckPending = false;
-        d_webView->move(d_implRect.x(), d_implRect.y(),
-                        d_implRect.width(), d_implRect.height());
-        Send(new BlpWebViewMsg_MoveAck(d_routingId));
     }
 }
 

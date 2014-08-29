@@ -178,14 +178,6 @@ void WebViewImpl::setImplClient(WebViewImplClient* client)
     }
 }
 
-bool WebViewImpl::rendererMatchesSize(const gfx::Size& newSize) const
-{
-    DCHECK(Statics::isInBrowserMainThread());
-    DCHECK(!d_wasDestroyed);
-    DCHECK(d_webContents->GetRenderViewHost());
-    return newSize == d_webContents->GetRenderViewHost()->LastKnownRendererSize();
-}
-
 gfx::NativeView WebViewImpl::getNativeView() const
 {
     DCHECK(Statics::isInBrowserMainThread());
@@ -787,7 +779,21 @@ bool WebViewImpl::OnNCHitTest(int* result)
             d_ncHitTestPendingAck = true;
             d_delegate->requestNCHitTest(this);
         }
-        *result = d_lastNCHitTestResult;
+
+        // Windows treats HTBOTTOMRIGHT in a 'special' way when a child window
+        // (i.e. this WebView's hwnd) overlaps with the bottom-right 3x3 corner
+        // of the parent window.  In this case, subsequent messages like
+        // WM_SETCURSOR and other WM_NC* messages get routed to the parent
+        // window instead of the child window.
+        // To work around this, we will lie to Windows when the app returns
+        // HTBOTTOMRIGHT.  We'll return HTOBJECT instead.  AFAICT, HTOBJECT is
+        // a completely unused hit-test code.  We'll forward HTOBJECT events to
+        // the app as HTBOTTOMRIGHT (see further below).
+        if (HTBOTTOMRIGHT == d_lastNCHitTestResult)
+            *result = HTOBJECT;
+        else
+            *result = d_lastNCHitTestResult;
+
         return true;
     }
     return false;
@@ -798,6 +804,10 @@ bool WebViewImpl::OnNCDragBegin(int hitTestCode)
     if (!d_ncHitTestEnabled || !d_delegate) {
         return false;
     }
+
+    // See explanation in 'OnNCHitTest' above.
+    if (HTOBJECT == hitTestCode)
+        hitTestCode = HTBOTTOMRIGHT;
 
     POINT screenPoint;
     switch (hitTestCode) {
@@ -834,14 +844,6 @@ void WebViewImpl::OnNCDragEnd()
         ::GetCursorPos(&screenPoint);
         d_delegate->ncDragEnd(this, screenPoint);
     }
-}
-
-void WebViewImpl::DidUpdateBackingStore()
-{
-    DCHECK(Statics::isInBrowserMainThread());
-    if (d_wasDestroyed || !d_implClient) return;
-    d_implClient->didUpdatedBackingStore(
-        d_webContents->GetRenderViewHost()->LastKnownRendererSize());
 }
 
 bool WebViewImpl::ShouldSetFocusOnMouseDown()
@@ -902,15 +904,6 @@ void WebViewImpl::FindReply(content::WebContents* source_contents,
 }
 
 /////// WebContentsObserver overrides
-
-void WebViewImpl::RenderViewCreated(content::RenderViewHost* render_view_host)
-{
-    DCHECK(Statics::isInBrowserMainThread());
-    if (d_wasDestroyed || !d_implClient) return;
-    if (d_implClient->shouldDisableBrowserSideResize()) {
-        render_view_host->DisableBrowserSideResize();
-    }
-}
 
 void WebViewImpl::AboutToNavigateRenderView(content::RenderViewHost* render_view_host)
 {

@@ -435,7 +435,6 @@ class CONTENT_EXPORT WebContentsImpl
       const NativeWebKeyboardEvent& event) OVERRIDE;
   virtual bool PreHandleWheelEvent(
       const WebKit::WebMouseWheelEvent& event) OVERRIDE;
-  virtual void DidUpdateBackingStore() OVERRIDE;
   virtual bool ShouldSetFocusOnMouseDown() OVERRIDE;
   virtual bool ShowTooltip(
       const string16& tooltip_text, 

@@ -286,12 +286,6 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   // Called to notify the RenderWidget that it has been resized.
   virtual void WasResized() = 0;
 
-  // Called to make WasResized a no-op.
-  virtual void DisableBrowserSideResize() = 0;
-
-  // Return the last known renderer size.
-  virtual const gfx::Size& LastKnownRendererSize() const = 0;
-
   // Access to the implementation's IPC::Listener::OnMessageReceived. Intended
   // only for test code.
 

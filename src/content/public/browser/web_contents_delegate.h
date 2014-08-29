@@ -452,9 +452,6 @@ class CONTENT_EXPORT WebContentsDelegate {
       const base::FilePath& plugin_path,
       const base::Callback<void(bool)>& callback);
 
-  // Invoked when the RenderWidgetHost's backing store has been updated.
-  virtual void DidUpdateBackingStore() {}
-
   // Return true if the RWHV should take focus on mouse-down.
   virtual bool ShouldSetFocusOnMouseDown();
 

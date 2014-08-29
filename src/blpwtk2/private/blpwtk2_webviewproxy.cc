@@ -24,7 +24,6 @@
 
 #include <blpwtk2_constants.h>
 #include <blpwtk2_contextmenuparams.h>
-#include <blpwtk2_mainmessagepump.h>
 #include <blpwtk2_newviewparams.h>
 #include <blpwtk2_processclient.h>
 #include <blpwtk2_profileproxy.h>
@@ -187,13 +186,58 @@ void WebViewProxy::handleInputEvents(const InputEvent *events, size_t eventsCoun
         case WM_KEYUP:
         case WM_IME_CHAR:
         case WM_SYSCHAR:
-        case WM_CHAR:
-            rv->GetWebView()->handleInputEvent(WebKit::WebInputEventFactory::keyboardEvent(
-                    event->hwnd,
-                    event->message,
-                    event->wparam,
-                    event->lparam));
-            break;
+        case WM_CHAR: {
+            WebKit::WebKeyboardEvent keyboardEvent = WebKit::WebInputEventFactory::keyboardEvent(
+                event->hwnd,
+                event->message,
+                event->wparam,
+                event->lparam);
+
+            keyboardEvent.modifiers &= ~(
+                    WebKit::WebInputEvent::ShiftKey |
+                    WebKit::WebInputEvent::ControlKey |
+                    WebKit::WebInputEvent::AltKey |
+                    WebKit::WebInputEvent::MetaKey |
+                    WebKit::WebInputEvent::IsAutoRepeat |
+                    WebKit::WebInputEvent::IsKeyPad |
+                    WebKit::WebInputEvent::IsLeft |
+                    WebKit::WebInputEvent::IsRight |
+                    WebKit::WebInputEvent::NumLockOn |
+                    WebKit::WebInputEvent::CapsLockOn
+                );
+
+            if (event->shiftKey)
+                keyboardEvent.modifiers |= WebKit::WebInputEvent::ShiftKey;
+
+            if (event->controlKey)
+                keyboardEvent.modifiers |= WebKit::WebInputEvent::ControlKey;
+
+            if (event->altKey)
+                keyboardEvent.modifiers |= WebKit::WebInputEvent::AltKey;
+
+            if (event->metaKey)
+                keyboardEvent.modifiers |= WebKit::WebInputEvent::MetaKey;
+
+            if (event->isAutoRepeat)
+                keyboardEvent.modifiers |= WebKit::WebInputEvent::IsAutoRepeat;
+
+            if (event->isKeyPad)
+                keyboardEvent.modifiers |= WebKit::WebInputEvent::IsKeyPad;
+
+            if (event->isLeft)
+                keyboardEvent.modifiers |= WebKit::WebInputEvent::IsLeft;
+
+            if (event->isRight)
+                keyboardEvent.modifiers |= WebKit::WebInputEvent::IsRight;
+
+            if (event->numLockOn)
+                keyboardEvent.modifiers |= WebKit::WebInputEvent::NumLockOn;
+
+            if (event->capsLockOn)
+                keyboardEvent.modifiers |= WebKit::WebInputEvent::CapsLockOn;
+
+            rv->GetWebView()->handleInputEvent(keyboardEvent);
+        } break;
 
         case WM_MOUSEMOVE:
         case WM_MOUSELEAVE:
@@ -290,49 +334,33 @@ void WebViewProxy::move(int left, int top, int width, int height)
     DCHECK(0 <= height);
 
     gfx::Rect rc(left, top, width, height);
-
-    if (d_rect == rc) {
+    if (rc == d_lastMoveRect)
         return;
-    }
 
+    d_lastMoveRect = rc;
+    if (d_moveAckPending)
+        return;
+
+    moveImpl(rc);
+}
+
+void WebViewProxy::moveImpl(const gfx::Rect& rc)
+{
+    DCHECK(Statics::isInApplicationMainThread());
     DCHECK(!d_moveAckPending);
 
-    d_rect = rc;
-
-    // The logic here is as follows:
-    // * If we haven't got any renderer info (e.g. if the renderer hasn't been
-    //   navigated to yet, or if it is out-of-process), then we will just do an
-    //   asynchronous move.
-    // * If we got the renderer info, that means it is in-process, and we can
-    //   resize the RenderView in our thread, and wait for an ack from the
-    //   browser thread before returning.  This ensures the move() method is
-    //   synchronous.  This prevents the noticeable lag when resizing a window,
-    //   and the contents update out-of-sync with the main window.
-    // * We get the ack in one of two ways:
-    //   * the browser thread sees that it already has a backing store with the
-    //     same size.
-    //   * the browser thread gets the backing store updated with the new size.
-
-    if (!d_gotRendererInfo) {
-        Send(new BlpWebViewHostMsg_Move(d_routingId, d_rect));
-        return;
+    if (d_gotRendererInfo && !rc.IsEmpty()) {
+        // If we have renderer info (only happens if we are in-process), we can
+        // start resizing the RenderView while we are in the main thread.  This
+        // is to avoid a round-trip delay waiting for the resize to get to the
+        // browser thread, and it sending a ViewMsg_Resize back to this thread.
+        content::RenderView* rv = content::RenderView::FromRoutingID(d_rendererRoutingId);
+        DCHECK(rv);
+        rv->SetSize(rc.size());
     }
-
-    content::RenderView* rv = content::RenderView::FromRoutingID(d_rendererRoutingId);
-    DCHECK(rv);
 
     d_moveAckPending = true;
-    Send(new BlpWebViewHostMsg_SyncMove(d_routingId, d_rect));
-
-    if (!d_rect.IsEmpty()) {
-        rv->SetSize(d_rect.size());
-    }
-
-    // Wait for the move ack.
-    MainMessagePump::current()->pumpUntilConditionIsTrue(
-        base::Bind(&WebViewProxy::isMoveAckNotPending, base::Unretained(this)));
-
-    DCHECK(rv->GetSize() == d_rect.size() || d_rect.IsEmpty());
+    Send(new BlpWebViewHostMsg_Move(d_routingId, rc));
 }
 
 void WebViewProxy::cutSelection()
@@ -657,10 +685,13 @@ void WebViewProxy::onFindState(int reqId,
     }
 }
 
-void WebViewProxy::onMoveAck()
+void WebViewProxy::onMoveAck(const gfx::Rect& lastRect)
 {
     DCHECK(d_moveAckPending);
     d_moveAckPending = false;
+    if (lastRect != d_lastMoveRect) {
+        moveImpl(d_lastMoveRect);
+    }
 }
 
 void WebViewProxy::onUpdateNativeViews(blpwtk2::NativeViewForTransit webview, blpwtk2::NativeViewForTransit hiddenView)
@@ -688,10 +719,6 @@ void WebViewProxy::onAboutToNavigateRenderView(int rendererRoutingId)
 
     d_gotRendererInfo = true;
     d_rendererRoutingId = rendererRoutingId;
-
-    if (!d_rect.IsEmpty()) {
-        rv->SetSize(d_rect.size());
-    }
 }
 
 }  // close namespace blpwtk2

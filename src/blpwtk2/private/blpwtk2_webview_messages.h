@@ -75,8 +75,6 @@ IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_SetParent,
                     blpwtk2::NativeViewForTransit /* parent */)
 IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_Move,
                     gfx::Rect /* rect */)
-IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_SyncMove,
-                    gfx::Rect /* rect */)
 IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_CutSelection)
 IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_CopySelection)
 IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_Paste)
@@ -158,7 +156,8 @@ IPC_MESSAGE_ROUTED4(BlpWebViewMsg_FindState,
                     int /* numberOfMatches */,
                     int /* activeMatchOrdinal */,
                     bool /* finalUpdate */)
-IPC_MESSAGE_ROUTED0(BlpWebViewMsg_MoveAck)
+IPC_MESSAGE_ROUTED1(BlpWebViewMsg_MoveAck,
+                    gfx::Rect /* lastRect */)
 IPC_MESSAGE_ROUTED2(BlpWebViewMsg_UpdateNativeViews,
                     blpwtk2::NativeViewForTransit /* webview */,
                     blpwtk2::NativeViewForTransit /* hiddenView */)

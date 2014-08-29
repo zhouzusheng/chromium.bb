@@ -43,6 +43,16 @@ public:
         UINT message;
         WPARAM wparam;
         LPARAM lparam;
+        bool shiftKey;
+        bool controlKey;
+        bool altKey;
+        bool metaKey;
+        bool isKeyPad;
+        bool isAutoRepeat;
+        bool capsLockOn;
+        bool numLockOn;
+        bool isLeft;
+        bool isRight;
     };
 
     // Destroy the WebView and release any resources.  Do not use this WebView

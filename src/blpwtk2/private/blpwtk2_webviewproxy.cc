@@ -184,13 +184,58 @@ void WebViewProxy::handleInputEvents(const InputEvent *events, size_t eventsCoun
         case WM_KEYUP:
         case WM_IME_CHAR:
         case WM_SYSCHAR:
-        case WM_CHAR:
-            rv->GetWebView()->handleInputEvent(WebKit::WebInputEventFactory::keyboardEvent(
-                    event->hwnd,
-                    event->message,
-                    event->wparam,
-                    event->lparam));
-            break;
+        case WM_CHAR: {
+            WebKit::WebKeyboardEvent keyboardEvent = WebKit::WebInputEventFactory::keyboardEvent(
+                event->hwnd,
+                event->message,
+                event->wparam,
+                event->lparam);
+
+            keyboardEvent.modifiers &= ~(
+                    WebKit::WebInputEvent::ShiftKey |
+                    WebKit::WebInputEvent::ControlKey |
+                    WebKit::WebInputEvent::AltKey |
+                    WebKit::WebInputEvent::MetaKey |
+                    WebKit::WebInputEvent::IsAutoRepeat |
+                    WebKit::WebInputEvent::IsKeyPad |
+                    WebKit::WebInputEvent::IsLeft |
+                    WebKit::WebInputEvent::IsRight |
+                    WebKit::WebInputEvent::NumLockOn |
+                    WebKit::WebInputEvent::CapsLockOn
+                );
+
+            if (event->shiftKey)
+                keyboardEvent.modifiers |= WebKit::WebInputEvent::ShiftKey;
+
+            if (event->controlKey)
+                keyboardEvent.modifiers |= WebKit::WebInputEvent::ControlKey;
+
+            if (event->altKey)
+                keyboardEvent.modifiers |= WebKit::WebInputEvent::AltKey;
+
+            if (event->metaKey)
+                keyboardEvent.modifiers |= WebKit::WebInputEvent::MetaKey;
+
+            if (event->isAutoRepeat)
+                keyboardEvent.modifiers |= WebKit::WebInputEvent::IsAutoRepeat;
+
+            if (event->isKeyPad)
+                keyboardEvent.modifiers |= WebKit::WebInputEvent::IsKeyPad;
+
+            if (event->isLeft)
+                keyboardEvent.modifiers |= WebKit::WebInputEvent::IsLeft;
+
+            if (event->isRight)
+                keyboardEvent.modifiers |= WebKit::WebInputEvent::IsRight;
+
+            if (event->numLockOn)
+                keyboardEvent.modifiers |= WebKit::WebInputEvent::NumLockOn;
+
+            if (event->capsLockOn)
+                keyboardEvent.modifiers |= WebKit::WebInputEvent::CapsLockOn;
+
+            rv->GetWebView()->handleInputEvent(keyboardEvent);
+        } break;
 
         case WM_MOUSEMOVE:
         case WM_MOUSELEAVE:

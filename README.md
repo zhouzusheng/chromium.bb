@@ -54,6 +54,7 @@ work:
 
 * Setup your build environment, as per [these
   instructions](http://www.chromium.org/developers/how-tos/build-instructions-windows).
+  You'll need to follow the instructions for VS2010.
 * Run the following command from inside the top-level 'chromium/' directory:
 
             gclient runhooks

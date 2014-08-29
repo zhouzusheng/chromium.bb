@@ -156,6 +156,8 @@ IPC_MESSAGE_ROUTED4(BlpWebViewMsg_FindState,
                     int /* numberOfMatches */,
                     int /* activeMatchOrdinal */,
                     bool /* finalUpdate */)
+IPC_MESSAGE_ROUTED1(BlpWebViewMsg_MoveAck,
+                    gfx::Rect /* lastRect */)
 IPC_MESSAGE_ROUTED2(BlpWebViewMsg_UpdateNativeViews,
                     blpwtk2::NativeViewForTransit /* webview */,
                     blpwtk2::NativeViewForTransit /* hiddenView */)

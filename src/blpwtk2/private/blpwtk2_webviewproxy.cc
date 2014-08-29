@@ -60,6 +60,7 @@ WebViewProxy::WebViewProxy(ProcessClient* processClient,
 , d_nativeHiddenView(0)
 , d_routingId(routingId)
 , d_rendererRoutingId(0)
+, d_moveAckPending(false)
 , d_isMainFrameAccessible(false)
 , d_gotRendererInfo(false)
 , d_ncDragNeedsAck(false)
@@ -93,6 +94,7 @@ WebViewProxy::WebViewProxy(ProcessClient* processClient,
 , d_nativeHiddenView(0)
 , d_routingId(routingId)
 , d_rendererRoutingId(0)
+, d_moveAckPending(false)
 , d_isMainFrameAccessible(false)
 , d_gotRendererInfo(false)
 , d_ncDragNeedsAck(false)
@@ -332,6 +334,20 @@ void WebViewProxy::move(int left, int top, int width, int height)
     DCHECK(0 <= height);
 
     gfx::Rect rc(left, top, width, height);
+    if (rc == d_lastMoveRect)
+        return;
+
+    d_lastMoveRect = rc;
+    if (d_moveAckPending)
+        return;
+
+    moveImpl(rc);
+}
+
+void WebViewProxy::moveImpl(const gfx::Rect& rc)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(!d_moveAckPending);
 
     if (d_gotRendererInfo && !rc.IsEmpty()) {
         // If we have renderer info (only happens if we are in-process), we can
@@ -343,6 +359,7 @@ void WebViewProxy::move(int left, int top, int width, int height)
         rv->SetSize(rc.size());
     }
 
+    d_moveAckPending = true;
     Send(new BlpWebViewHostMsg_Move(d_routingId, rc));
 }
 
@@ -473,6 +490,7 @@ bool WebViewProxy::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_NCDragEnd, onNCDragEnd)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_ShowTooltip, onShowTooltip)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_FindState, onFindState)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_MoveAck, onMoveAck)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_UpdateNativeViews, onUpdateNativeViews)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_AboutToNavigateRenderView, onAboutToNavigateRenderView)
         IPC_MESSAGE_UNHANDLED(handled = false)
@@ -664,6 +682,15 @@ void WebViewProxy::onFindState(int reqId,
                               d_find->numberOfMatches(),
                               d_find->activeMatchIndex(),
                               finalUpdate);
+    }
+}
+
+void WebViewProxy::onMoveAck(const gfx::Rect& lastRect)
+{
+    DCHECK(d_moveAckPending);
+    d_moveAckPending = false;
+    if (lastRect != d_lastMoveRect) {
+        moveImpl(d_lastMoveRect);
     }
 }
 

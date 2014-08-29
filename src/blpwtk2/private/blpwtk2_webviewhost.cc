@@ -195,6 +195,7 @@ void WebViewHost::onSetParent(NativeViewForTransit parent)
 void WebViewHost::onMove(const gfx::Rect& rect)
 {
     d_webView->move(rect.x(), rect.y(), rect.width(), rect.height());
+    Send(new BlpWebViewMsg_MoveAck(d_routingId, rect));
 }
 
 void WebViewHost::onCutSelection()

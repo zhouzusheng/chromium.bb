@@ -116,6 +116,7 @@ class WebViewProxy : public WebView,
     virtual void rootWindowSettingsChanged() OVERRIDE;
     virtual void print() OVERRIDE;
     virtual void handleInputEvents(const InputEvent *events, size_t eventsCount) OVERRIDE;
+    virtual void setDelegate(WebViewDelegate* delegate) OVERRIDE;
 
   private:
     // Destructor is private.  Calling destroy() will delete the object.

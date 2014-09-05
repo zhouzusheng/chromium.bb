@@ -548,6 +548,12 @@ void WebViewImpl::rootWindowSettingsChanged()
         rwhv->UpdateScreenInfo(rwhv->GetNativeView());
 }
 
+void WebViewImpl::setDelegate(blpwtk2::WebViewDelegate *delegate)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    d_delegate = delegate;
+}
+
 void WebViewImpl::createWidget(blpwtk2::NativeView parent)
 {
     DCHECK(!d_widget);

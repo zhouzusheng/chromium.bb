@@ -455,6 +455,12 @@ void WebViewProxy::rootWindowSettingsChanged()
     Send(new BlpWebViewHostMsg_RootWindowSettingsChanged(d_routingId));
 }
 
+void WebViewProxy::setDelegate(WebViewDelegate *delegate)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    d_delegate = delegate;
+}
+
 // IPC::Sender override
 
 bool WebViewProxy::Send(IPC::Message* message)

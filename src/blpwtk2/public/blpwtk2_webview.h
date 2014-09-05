@@ -30,6 +30,7 @@ namespace blpwtk2 {
 class StringRef;
 class WebFrame;
 class Profile;
+class WebViewDelegate;
 
 // This class represents a single WebView.  Instances of this class can be
 // created using blpwtk2::Toolkit::createWebView().
@@ -202,6 +203,10 @@ public:
 
     // Inform the web widget of a sequence of input events
     virtual void handleInputEvents(const InputEvent *events, size_t eventsCount) = 0;
+
+    // Set a new web view delegate. From this point on, all callbacks will
+    // be sent to the new delegate.
+    virtual void setDelegate(WebViewDelegate* delegate) = 0;
 
 protected:
     // Destroy this WebView.  Note that clients of blpwtk2 should use the

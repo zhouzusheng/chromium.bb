@@ -24,6 +24,8 @@
 
 #include <blpwtk2_browsercontextimpl.h>
 #include <blpwtk2_devtoolsfrontendhostdelegateimpl.h>
+#include <blpwtk2_filechooserparams.h>
+#include <blpwtk2_filechooserparamsimpl.h>
 #include <blpwtk2_mediaobserverimpl.h>
 #include <blpwtk2_nativeviewwidget.h>
 #include <blpwtk2_newviewparams.h>
@@ -48,6 +50,7 @@
 #include <third_party/WebKit/public/web/WebFindOptions.h>
 #include <third_party/WebKit/public/web/WebView.h>
 #include <ui/base/win/hidden_window.h>
+#include <ui/shell_dialogs/selected_file_info.h>
 #include <webkit/common/webpreferences.h>
 
 namespace blpwtk2 {
@@ -482,6 +485,22 @@ void WebViewImpl::onNCHitTestResult(int x, int y, int result)
     }
 }
 
+void WebViewImpl::fileChooserCompleted(const StringRef* paths,
+                                       size_t numPaths)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+
+    std::vector<ui::SelectedFileInfo> files(numPaths);
+    for (size_t i = 0; i < numPaths; ++i) {
+        files[i].file_path = base::FilePath::FromUTF8Unsafe(paths[i].toStdString());
+        files[i].local_path = files[i].file_path;
+        files[i].display_name = files[i].file_path.BaseName().value();
+    }
+
+    d_webContents->GetRenderViewHost()->FilesSelectedInChooser(files, d_lastFileChooserMode);
+}
+
 void WebViewImpl::performCustomContextMenuAction(int actionId)
 {
     DCHECK(Statics::isInBrowserMainThread());
@@ -616,6 +635,47 @@ void WebViewImpl::DidNavigateMainFramePostCommit(content::WebContents* source)
     }
     if (d_delegate)
         d_delegate->didNavigateMainFramePostCommit(this, source->GetURL().spec());
+}
+
+void WebViewImpl::RunFileChooser(content::WebContents* source,
+                                 const content::FileChooserParams& params)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(source == d_webContents);
+
+    if (!d_delegate) {
+        return;
+    }
+
+    FileChooserParams wtk2Params;
+    FileChooserParamsImpl* impl = *reinterpret_cast<FileChooserParamsImpl**>(&wtk2Params);
+
+    switch (params.mode) {
+    case content::FileChooserParams::Open:
+        impl->d_mode = FileChooserParams::OPEN;
+        break;
+    case content::FileChooserParams::OpenMultiple:
+        impl->d_mode = FileChooserParams::OPEN_MULTIPLE;
+        break;
+    case content::FileChooserParams::UploadFolder:
+        impl->d_mode = FileChooserParams::UPLOAD_FOLDER;
+        break;
+    case content::FileChooserParams::Save:
+        impl->d_mode = FileChooserParams::SAVE;
+        break;
+    default:
+        NOTREACHED() << "Unsupported file chooser mode: " << params.mode;
+        break;
+    }
+    impl->d_title = base::UTF16ToUTF8(params.title);
+    impl->d_defaultFileName = params.default_file_name.AsUTF8Unsafe();
+    impl->d_acceptTypes.resize(params.accept_types.size());
+    for (size_t i = 0; i < params.accept_types.size(); ++i) {
+        impl->d_acceptTypes[i] = base::UTF16ToUTF8(params.accept_types[i]);
+    }
+
+    d_lastFileChooserMode = params.mode;
+    d_delegate->runFileChooser(this, wtk2Params);
 }
 
 bool WebViewImpl::TakeFocus(content::WebContents* source, bool reverse)

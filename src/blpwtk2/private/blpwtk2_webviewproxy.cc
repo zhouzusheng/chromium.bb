@@ -411,6 +411,17 @@ void WebViewProxy::onNCHitTestResult(int x, int y, int result)
     Send(new BlpWebViewHostMsg_OnNCHitTestResult(d_routingId, x, y, result));
 }
 
+void WebViewProxy::fileChooserCompleted(const StringRef* paths,
+                                        size_t numPaths)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    std::vector<std::string> pathsVector(numPaths);
+    for (size_t i = 0; i < numPaths; ++i) {
+        pathsVector[i].assign(paths[i].data(), paths[i].length());
+    }
+    Send(new BlpWebViewHostMsg_FileChooserCompleted(d_routingId, pathsVector));
+}
+
 void WebViewProxy::performCustomContextMenuAction(int actionId)
 {
     DCHECK(Statics::isInApplicationMainThread());
@@ -487,6 +498,7 @@ bool WebViewProxy::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_FocusAfter, onFocusAfter)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_Focused, onFocused)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_Blurred, onBlurred)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_RunFileChooser, onRunFileChooser)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_ShowContextMenu, onShowContextMenu)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_HandleExternalProtocol, onHandleExternalProtocol)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_MoveView, onMoveView)
@@ -601,6 +613,12 @@ void WebViewProxy::onBlurred()
 {
     if (d_delegate)
         d_delegate->blurred(this);
+}
+
+void WebViewProxy::onRunFileChooser(const FileChooserParams& params)
+{
+    if (d_delegate)
+        d_delegate->runFileChooser(this, params);
 }
 
 void WebViewProxy::onShowContextMenu(const ContextMenuParams& params)

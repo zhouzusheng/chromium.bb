@@ -27,6 +27,8 @@
 #include <blpwtk2_contextmenuparams.h>
 #include <blpwtk2_contextmenuparamsimpl.h>
 #include <blpwtk2_enumtraits.h>
+#include <blpwtk2_filechooserparams.h>
+#include <blpwtk2_filechooserparamsimpl.h>
 #include <blpwtk2_findonpage.h>
 #include <blpwtk2_newviewparams.h>
 #include <blpwtk2_proxyconfig.h>
@@ -43,6 +45,8 @@ using blpwtk2::ContextMenuItemImpl;
 using blpwtk2::getContextMenuParamsImpl;
 using blpwtk2::ContextMenuParams;
 using blpwtk2::ContextMenuParamsImpl;
+using blpwtk2::FileChooserParams;
+using blpwtk2::FileChooserParamsImpl;
 using blpwtk2::FindOnPageRequest;
 using blpwtk2::NewViewParams;
 using blpwtk2::getProxyConfigImpl;
@@ -186,6 +190,45 @@ void ParamTraits<ContextMenuParams>::Log(const param_type& p, std::string* l)
     LogParam(impl.d_customItems, l);
     l->append(", ");
     LogParam(impl.d_suggestions, l);
+    l->append(")");
+}
+
+// ============== blpwtk2::FileChooserParams =============== //
+
+void ParamTraits<FileChooserParams>::Write(Message* m, const param_type& p)
+{
+    const FileChooserParamsImpl* impl = *reinterpret_cast<FileChooserParamsImpl*const *>(&p);
+    WriteParam(m, impl->d_mode);
+    WriteParam(m, impl->d_title);
+    WriteParam(m, impl->d_defaultFileName);
+    WriteParam(m, impl->d_acceptTypes);
+}
+
+bool ParamTraits<FileChooserParams>::Read(const Message* m, PickleIterator* iter, param_type* r)
+{
+    FileChooserParamsImpl* impl = *reinterpret_cast<FileChooserParamsImpl**>(r);
+    if (!ReadParam(m, iter, &impl->d_mode))
+        return false;
+    if (!ReadParam(m, iter, &impl->d_title))
+        return false;
+    if (!ReadParam(m, iter, &impl->d_defaultFileName))
+        return false;
+    if (!ReadParam(m, iter, &impl->d_acceptTypes))
+        return false;
+    return true;
+}
+
+void ParamTraits<FileChooserParams>::Log(const param_type& p, std::string* l)
+{
+    const FileChooserParamsImpl* impl = *reinterpret_cast<FileChooserParamsImpl*const *>(&p);
+    l->append("FileChooserParams(");
+    LogParam(impl->d_mode, l);
+    l->append(", ");
+    LogParam(impl->d_title, l);
+    l->append(", ");
+    LogParam(impl->d_defaultFileName, l);
+    l->append(", ");
+    LogParam(impl->d_acceptTypes, l);
     l->append(")");
 }
 

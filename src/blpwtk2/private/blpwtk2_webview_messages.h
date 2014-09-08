@@ -26,6 +26,7 @@
 #include <blpwtk2_config.h>  // for NativeViewForTransit
 
 #include <blpwtk2_contextmenuparams.h>
+#include <blpwtk2_filechooserparams.h>
 #include <blpwtk2_findonpage.h>
 #include <blpwtk2_ipcparamtraits.h>
 #include <blpwtk2_newviewparams.h>
@@ -92,6 +93,8 @@ IPC_MESSAGE_ROUTED3(BlpWebViewHostMsg_OnNCHitTestResult,
 IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_NCDragMoveAck,
                     gfx::Point /* movePoint */)
 IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_NCDragEndAck)
+IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_FileChooserCompleted,
+                    std::vector<std::string> /* paths */)
 IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_PerformContextMenuAction,
                     int /* actionId */)
 IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_EnableAltDragRubberbanding,
@@ -135,6 +138,8 @@ IPC_MESSAGE_ROUTED0(BlpWebViewMsg_FocusBefore)
 IPC_MESSAGE_ROUTED0(BlpWebViewMsg_FocusAfter)
 IPC_MESSAGE_ROUTED0(BlpWebViewMsg_Focused)
 IPC_MESSAGE_ROUTED0(BlpWebViewMsg_Blurred)
+IPC_MESSAGE_ROUTED1(BlpWebViewMsg_RunFileChooser,
+                    blpwtk2::FileChooserParams /* params */)
 IPC_MESSAGE_ROUTED1(BlpWebViewMsg_ShowContextMenu,
                     blpwtk2::ContextMenuParams /* params */)
 IPC_MESSAGE_ROUTED1(BlpWebViewMsg_HandleExternalProtocol,

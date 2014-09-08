@@ -54,6 +54,7 @@ class StringRef {
     size_t length() const { return d_length; }
     bool isEmpty() const { return 0 == d_length; }
     bool equals(const StringRef& other) const { return 0 == compare(*this, other); }
+    std::string toStdString() const { return std::string(d_data, d_length); }
 
   private:
     const char* d_data;

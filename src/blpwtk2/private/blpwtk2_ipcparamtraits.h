@@ -30,6 +30,7 @@
 
 namespace blpwtk2 {
 class ContextMenuParams;
+class FileChooserParams;
 struct FindOnPageRequest;
 class NewViewParams;
 class ProxyConfig;
@@ -41,6 +42,14 @@ namespace IPC {
 template <>
 struct ParamTraits<blpwtk2::ContextMenuParams> {
     typedef blpwtk2::ContextMenuParams param_type;
+    static void Write(Message* m, const param_type& p);
+    static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+    static void Log(const param_type& p, std::string* l);
+};
+
+template <>
+struct ParamTraits<blpwtk2::FileChooserParams> {
+    typedef blpwtk2::FileChooserParams param_type;
     static void Write(Message* m, const param_type& p);
     static bool Read(const Message* m, PickleIterator* iter, param_type* r);
     static void Log(const param_type& p, std::string* l);

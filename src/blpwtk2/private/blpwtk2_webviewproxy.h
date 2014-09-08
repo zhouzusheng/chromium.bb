@@ -43,6 +43,7 @@ class MessageLoop;
 namespace blpwtk2 {
 
 class ContextMenuParams;
+class FileChooserParams;
 class FindOnPage;
 class NewViewParams;
 class ProcessClient;
@@ -106,6 +107,8 @@ class WebViewProxy : public WebView,
     virtual void enableFocusAfter(bool enabled) OVERRIDE;
     virtual void enableNCHitTest(bool enabled) OVERRIDE;
     virtual void onNCHitTestResult(int x, int y, int result) OVERRIDE;
+    virtual void fileChooserCompleted(const StringRef* paths,
+                                      size_t numPaths) OVERRIDE;
     virtual void performCustomContextMenuAction(int actionId) OVERRIDE;
     virtual void enableAltDragRubberbanding(bool enabled) OVERRIDE;
     virtual void enableCustomTooltip(bool enabled) OVERRIDE;
@@ -144,6 +147,7 @@ class WebViewProxy : public WebView,
     void onFocusAfter();
     void onFocused();
     void onBlurred();
+    void onRunFileChooser(const FileChooserParams& params);
     void onShowContextMenu(const ContextMenuParams& params);
     void onHandleExternalProtocol(const std::string& url);
     void onMoveView(const gfx::Rect& rect);

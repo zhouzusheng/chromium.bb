@@ -112,6 +112,7 @@ bool WebViewHost::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_OnNCHitTestResult, onOnNCHitTestResult)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_NCDragMoveAck, onNCDragMoveAck)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_NCDragEndAck, onNCDragEndAck)
+        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_FileChooserCompleted, onFileChooserCompleted)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_PerformContextMenuAction, onPerformCustomContextMenuAction)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_EnableAltDragRubberbanding, onEnableAltDragRubberbanding)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_EnableCustomTooltip, onEnableCustomTooltip)
@@ -261,6 +262,15 @@ void WebViewHost::onNCDragEndAck()
     DCHECK(!d_ncDragging);
     DCHECK(d_ncDragAckPending);
     d_ncDragAckPending = false;
+}
+
+void WebViewHost::onFileChooserCompleted(const std::vector<std::string>& paths)
+{
+    std::vector<StringRef> pathsRefs(paths.size());
+    for (size_t i = 0; i < paths.size(); ++i) {
+        pathsRefs[i].assign(paths[i].data(), paths[i].length());
+    }
+    d_webView->fileChooserCompleted(pathsRefs.data(), pathsRefs.size());
 }
 
 void WebViewHost::onPerformCustomContextMenuAction(int actionId)
@@ -430,6 +440,13 @@ void WebViewHost::blurred(WebView* source)
 {
     DCHECK(source == d_webView);
     Send(new BlpWebViewMsg_Blurred(d_routingId));
+}
+
+void WebViewHost::runFileChooser(WebView* source,
+                                 const FileChooserParams& params)
+{
+    DCHECK(source == d_webView);
+    Send(new BlpWebViewMsg_RunFileChooser(d_routingId, params));
 }
 
 void WebViewHost::showContextMenu(WebView* source,

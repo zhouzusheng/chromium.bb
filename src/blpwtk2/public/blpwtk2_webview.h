@@ -157,6 +157,13 @@ public:
     // only be called in response to 'requestNCHitTest' on the delegate.
     virtual void onNCHitTestResult(int x, int y, int result) = 0;
 
+    // When the WebViewDelegate's runFileChooser method is called, this method
+    // must be invoked to provide the list of selected files.  This method must
+    // be called even if the user cancels the file chooser (numPaths should be
+    // zero in this case).
+    virtual void fileChooserCompleted(const StringRef* paths,
+                                      size_t numPaths) = 0;
+
     // Perform a custom context menu action. This should be called when a custom 
     // item in the context menu has been selected.
     virtual void performCustomContextMenuAction(int actionId) = 0;

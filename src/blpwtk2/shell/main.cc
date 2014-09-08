@@ -22,6 +22,7 @@
 
 #include <windows.h>  // NOLINT
 #include <shellapi.h>
+#include <commdlg.h>
 
 // This pragma makes us use the version 6.0 of ComCtl32.dll, which is necessary
 // to make tooltips appear correctly.  See:
@@ -486,6 +487,135 @@ public:
     {
         assert(source == d_webView);
         OutputDebugStringA("DELEGATE: blurred\n");
+    }
+
+    std::string extentionForMimeType(const blpwtk2::StringRef& mimeType)
+    {
+        const char* end = mimeType.data() + mimeType.length();
+        const char* p = end - 1;
+        while (p > mimeType.data()) {
+            if ('/' == *p) {
+                return std::string(p + 1, end);
+            }
+            --p;
+        }
+        return "*";
+    }
+
+    void appendStringToVector(std::vector<char> *result, const blpwtk2::StringRef& str)
+    {
+        result->reserve(result->size() + str.length());
+        const char* p = str.data();
+        const char* end = p + str.length();
+        while (p < end) {
+            result->push_back(*p);
+            ++p;
+        }
+    }
+
+    virtual void runFileChooser(blpwtk2::WebView* source, const blpwtk2::FileChooserParams& params) OVERRIDE
+    {
+        assert(source == d_webView);
+
+        std::vector<char> filter;
+        if (0 != params.numAcceptTypes()) {
+            if (1 == params.numAcceptTypes()) {
+                blpwtk2::StringRef mimeType = params.acceptTypeAt(0);
+                appendStringToVector(&filter, mimeType);
+                filter.push_back('\0');
+                appendStringToVector(&filter, "*.");
+                appendStringToVector(&filter, extentionForMimeType(mimeType));
+            }
+            else {
+                appendStringToVector(&filter, "Custom Types");
+                filter.push_back('\0');
+                for (size_t i = 0; i < params.numAcceptTypes(); ++i) {
+                    if (0 != i)
+                        filter.push_back(';');
+                    appendStringToVector(&filter, "*.");
+                    blpwtk2::StringRef mimeType = params.acceptTypeAt(i);
+                    appendStringToVector(&filter, extentionForMimeType(mimeType));
+                }
+                for (size_t i = 0; i < params.numAcceptTypes(); ++i) {
+                    filter.push_back('\0');
+                    blpwtk2::StringRef mimeType = params.acceptTypeAt(i);
+                    appendStringToVector(&filter, mimeType);
+                    filter.push_back('\0');
+                    appendStringToVector(&filter, "*.");
+                    appendStringToVector(&filter, extentionForMimeType(mimeType));
+                }
+            }
+            filter.push_back('\0');
+        }
+
+        appendStringToVector(&filter, "All Files");
+        filter.push_back('\0');
+        appendStringToVector(&filter, "*.*");
+        filter.push_back('\0');
+        filter.push_back('\0');
+
+        std::string title = params.title().toStdString();
+        if (title.empty())
+            title = "Select File";
+        char fileNameBuf[8192] = { 0 };
+        strcpy_s(fileNameBuf, sizeof(fileNameBuf) - 1, params.defaultFileName().toStdString().c_str());
+
+        OPENFILENAMEA ofn = { 0 };
+        ofn.lStructSize = sizeof(OPENFILENAMEA);
+        ofn.hwndOwner = d_mainWnd;
+        ofn.hInstance = g_instance;
+        ofn.lpstrFilter = filter.data();
+        ofn.lpstrFile = fileNameBuf;
+        ofn.nMaxFile = sizeof(fileNameBuf) - 2;
+        ofn.lpstrTitle = title.c_str();
+        ofn.Flags = OFN_EXPLORER | OFN_LONGNAMES | OFN_NOCHANGEDIR;
+
+        BOOL retVal;
+        switch (params.mode()) {
+        case blpwtk2::FileChooserParams::OPEN:
+            ofn.Flags |= OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+            retVal = ::GetOpenFileNameA(&ofn);
+            break;
+        case blpwtk2::FileChooserParams::OPEN_MULTIPLE:
+            ofn.Flags |= OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_ALLOWMULTISELECT;
+            retVal = ::GetOpenFileNameA(&ofn);
+            break;
+        case blpwtk2::FileChooserParams::SAVE:
+            ofn.Flags = OFN_OVERWRITEPROMPT;
+            retVal = ::GetSaveFileNameA(&ofn);
+            break;
+        case blpwtk2::FileChooserParams::UPLOAD_FOLDER:
+            // TODO: what should we do here?
+            retVal = FALSE;
+            break;
+        }
+
+        std::vector<std::string> selectedFiles;
+        std::vector<blpwtk2::StringRef> selectedFilesRef;
+
+        if (retVal) {
+            // Figure out if the user selected multiple files.  If fileNameBuf is
+            // a directory, then multiple files were selected!
+            if ((ofn.Flags & OFN_ALLOWMULTISELECT) && (::GetFileAttributesA(fileNameBuf) & FILE_ATTRIBUTE_DIRECTORY)) {
+                std::string dirName = fileNameBuf;
+                const char* p = fileNameBuf + strlen(fileNameBuf) + 1;
+                while (*p) {
+                    selectedFiles.push_back(dirName);
+                    selectedFiles.back().append("\\");
+                    selectedFiles.back().append(p);
+                    p += strlen(p) + 1;
+                }
+                selectedFilesRef.resize(selectedFiles.size());
+                for (size_t i = 0; i < selectedFiles.size(); ++i) {
+                    selectedFilesRef[i] = selectedFiles[i];
+                }
+            }
+            else {
+                selectedFilesRef.push_back(fileNameBuf);
+            }
+        }
+
+        d_webView->fileChooserCompleted(selectedFilesRef.data(), selectedFilesRef.size());
     }
 
     virtual void showContextMenu(blpwtk2::WebView* source, const blpwtk2::ContextMenuParams& params) OVERRIDE

@@ -243,6 +243,8 @@
         'private/blpwtk2_webviewimpl.h',
         'private/blpwtk2_webviewimplclient.cc',
         'private/blpwtk2_webviewimplclient.h',
+        'private/blpwtk2_webviewproperties.cc',
+        'private/blpwtk2_webviewproperties.h',
         'private/blpwtk2_webviewproxy.cc',
         'private/blpwtk2_webviewproxy.h',
         'public/blpwtk2.h',

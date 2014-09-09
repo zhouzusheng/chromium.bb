@@ -35,6 +35,7 @@
 #include <blpwtk2_proxyconfigimpl.h>
 #include <blpwtk2_spellcheckconfig.h>
 #include <blpwtk2_stringref.h>
+#include <blpwtk2_webviewproperties.h>
 
 #include <ipc/ipc_message_utils.h>
 #include <net/proxy/proxy_config.h>
@@ -54,8 +55,45 @@ using blpwtk2::ProxyConfig;
 using blpwtk2::ProxyConfigImpl;
 using blpwtk2::SpellCheckConfig;
 using blpwtk2::StringRef;
+using blpwtk2::WebViewProperties;
 
 namespace IPC {
+
+// ============== blpwtk2::WebViewProperties =============== //
+
+void ParamTraits<WebViewProperties>::Write(Message* m, const param_type& p)
+{
+    WriteParam(m, p.takeKeyboardFocusOnMouseDown);
+    WriteParam(m, p.takeLogicalFocusOnMouseDown);
+    WriteParam(m, p.domPasteEnabled);
+    WriteParam(m, p.javascriptCanAccessClipboard);
+}
+
+bool ParamTraits<WebViewProperties>::Read(const Message* m, PickleIterator* iter, param_type* r)
+{
+    if (!ReadParam(m, iter, &r->takeKeyboardFocusOnMouseDown))
+        return false;
+    if (!ReadParam(m, iter, &r->takeLogicalFocusOnMouseDown))
+        return false;
+    if (!ReadParam(m, iter, &r->domPasteEnabled))
+        return false;
+    if (!ReadParam(m, iter, &r->javascriptCanAccessClipboard))
+        return false;
+    return true;
+}
+
+void ParamTraits<WebViewProperties>::Log(const param_type& p, std::string* l)
+{
+    l->append("WebViewProperties(");
+    LogParam(p.takeKeyboardFocusOnMouseDown, l);
+    l->append(", ");
+    LogParam(p.takeLogicalFocusOnMouseDown, l);
+    l->append(", ");
+    LogParam(p.domPasteEnabled, l);
+    l->append(", ");
+    LogParam(p.javascriptCanAccessClipboard, l);
+    l->append(")");
+}
 
 // ============== blpwtk2::ContextMenuItem =============== //
 

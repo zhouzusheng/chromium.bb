@@ -301,9 +301,7 @@ void ProcessHostImpl::onWebViewNew(const BlpWebViewHostMsg_NewParams& params)
                     (NativeView)params.parent,
                     hostAffinity,
                     params.initiallyVisible,
-                    params.takeFocusOnMouseDown,
-                    params.domPasteEnabled,
-                    params.javascriptCanAccessClipboard);
+                    params.properties);
 }
 
 void ProcessHostImpl::onWebViewDestroy(int routingId)

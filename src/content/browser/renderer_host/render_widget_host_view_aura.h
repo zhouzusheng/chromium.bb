@@ -294,6 +294,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                                const gfx::Rect& new_bounds) OVERRIDE;
   virtual gfx::NativeCursor GetCursor(const gfx::Point& point) OVERRIDE;
   virtual int GetNonClientComponent(const gfx::Point& point) const OVERRIDE;
+  virtual bool ShouldTryFocusOnMouseDown() const OVERRIDE;
   virtual bool ShouldDescendIntoChildForEventHandling(
       aura::Window* child,
       const gfx::Point& location) OVERRIDE;

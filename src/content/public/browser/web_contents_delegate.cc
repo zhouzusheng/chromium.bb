@@ -165,7 +165,11 @@ bool WebContentsDelegate::RequestPpapiBrokerPermission(
   return false;
 }
 
-bool WebContentsDelegate::ShouldSetFocusOnMouseDown() {
+bool WebContentsDelegate::ShouldSetKeyboardFocusOnMouseDown() {
+  return true;
+}
+
+bool WebContentsDelegate::ShouldSetLogicalFocusOnMouseDown() {
   return true;
 }
 

@@ -50,6 +50,7 @@ class ProcessClient;
 class ProfileProxy;
 class WebFrameImpl;
 class WebViewDelegate;
+struct WebViewProperties;
 
 // This is an alternate implementation of the blpwtk2::WebView interface, and
 // is only used when we are using 'ThreadMode::RENDERER_MAIN'.  This class is
@@ -73,9 +74,7 @@ class WebViewProxy : public WebView,
                  blpwtk2::NativeView parent,
                  int rendererAffinity,
                  bool initiallyVisible,
-                 bool takeFocusOnMouseDown,
-                 bool domPasteEnabled,
-                 bool javascriptCanAccessClipboard);
+                 const WebViewProperties& properties);
     WebViewProxy(ProcessClient* processClient,
                  int routingId,
                  ProfileProxy* profileProxy);

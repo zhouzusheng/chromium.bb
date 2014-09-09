@@ -30,7 +30,8 @@ namespace blpwtk2 {
 
 WebViewCreateParams::WebViewCreateParams()
 : d_initiallyVisible(true)
-, d_takeFocusOnMouseDown(true)
+, d_takeKeyboardFocusOnMouseDown(true)
+, d_takeLogicalFocusOnMouseDown(true)
 , d_domPasteEnabled(false)
 , d_javascriptCanAccessClipboard(false)
 , d_rendererAffinity(Constants::ANY_OUT_OF_PROCESS_RENDERER)
@@ -43,9 +44,14 @@ void WebViewCreateParams::setInitiallyVisible(bool visible)
     d_initiallyVisible = visible;
 }
 
-void WebViewCreateParams::setTakeFocusOnMouseDown(bool enable)
+void WebViewCreateParams::setTakeKeyboardFocusOnMouseDown(bool enable)
 {
-    d_takeFocusOnMouseDown = enable;
+    d_takeKeyboardFocusOnMouseDown = enable;
+}
+
+void WebViewCreateParams::setTakeLogicalFocusOnMouseDown(bool enable)
+{
+    d_takeLogicalFocusOnMouseDown = enable;
 }
 
 void WebViewCreateParams::setDOMPasteEnabled(bool enable)

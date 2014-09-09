@@ -35,9 +35,18 @@ struct FindOnPageRequest;
 class NewViewParams;
 class ProxyConfig;
 class SpellCheckConfig;
+struct WebViewProperties;
 }  // close namespace blpwtk2
 
 namespace IPC {
+
+template <>
+struct ParamTraits<blpwtk2::WebViewProperties> {
+    typedef blpwtk2::WebViewProperties param_type;
+    static void Write(Message* m, const param_type& p);
+    static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+    static void Log(const param_type& p, std::string* l);
+};
 
 template <>
 struct ParamTraits<blpwtk2::ContextMenuParams> {

@@ -31,6 +31,7 @@
 #include <blpwtk2_ipcparamtraits.h>
 #include <blpwtk2_newviewparams.h>
 #include <blpwtk2_textdirection.h>
+#include <blpwtk2_webviewproperties.h>
 
 #include <content/public/common/common_param_traits.h>
 #include <ipc/ipc_message_macros.h>
@@ -44,9 +45,7 @@ IPC_STRUCT_BEGIN(BlpWebViewHostMsg_NewParams)
     IPC_STRUCT_MEMBER(int, routingId)
     IPC_STRUCT_MEMBER(int, profileId)
     IPC_STRUCT_MEMBER(bool, initiallyVisible)
-    IPC_STRUCT_MEMBER(bool, takeFocusOnMouseDown)
-    IPC_STRUCT_MEMBER(bool, domPasteEnabled)
-    IPC_STRUCT_MEMBER(bool, javascriptCanAccessClipboard)
+    IPC_STRUCT_MEMBER(blpwtk2::WebViewProperties, properties)
     IPC_STRUCT_MEMBER(int, rendererAffinity)
     IPC_STRUCT_MEMBER(blpwtk2::NativeViewForTransit, parent)
 IPC_STRUCT_END()

@@ -46,6 +46,7 @@ class BrowserContextImpl;
 struct FindOnPageRequest;
 class ProcessHost;
 class WebViewImpl;
+struct WebViewProperties;
 
 // This is the peer of the WebViewProxy.  This object lives in the browser-main
 // thread.  It is created in response to a 'BlpWebViewHostMsg_New' message, and
@@ -64,9 +65,7 @@ class WebViewHost : public ProcessHostListener,
                 NativeView parent,
                 int hostAffinity,
                 bool initiallyVisible,
-                bool takeFocusOnMouseDown,
-                bool domPasteEnabled,
-                bool javascriptCanAccessClipboard);
+                const WebViewProperties& properties);
     WebViewHost(ProcessHost* processHost,
                 WebViewImpl* webView,
                 int routingId,

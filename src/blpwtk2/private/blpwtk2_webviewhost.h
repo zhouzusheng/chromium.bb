@@ -84,7 +84,8 @@ class WebViewHost : public ProcessHostListener,
     void onGoBack();
     void onGoForward();
     void onStop();
-    void onFocus();
+    void onTakeKeyboardFocus();
+    void onSetLogicalFocus(bool focused);
     void onShow();
     void onHide();
     void onSetParent(NativeViewForTransit parent);

@@ -358,12 +358,26 @@ void WebViewImpl::stop()
     d_webContents->Stop();
 }
 
-void WebViewImpl::focus()
+void WebViewImpl::takeKeyboardFocus()
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
     d_widget->focus();
-    d_webContents->GetView()->Focus();
+}
+
+void WebViewImpl::setLogicalFocus(bool focused)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+    if (focused) {
+        d_webContents->GetView()->Focus();
+    }
+    else {
+        content::RenderWidgetHostViewPort* viewPort
+            = static_cast<content::RenderWidgetHostViewPort*>(
+                d_webContents->GetRenderWidgetHostView());
+        viewPort->Blur();
+    }
 }
 
 void WebViewImpl::show()

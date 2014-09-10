@@ -68,7 +68,9 @@ IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_Reload,
 IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_GoBack)
 IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_GoForward)
 IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_Stop)
-IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_Focus)
+IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_TakeKeyboardFocus)
+IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_SetLogicalFocus,
+                    bool /* focused */)
 IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_Show)
 IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_Hide)
 IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_SetParent,

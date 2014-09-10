@@ -105,7 +105,8 @@ class WebViewImpl : public WebView,
     virtual void goBack() OVERRIDE;
     virtual void goForward() OVERRIDE;
     virtual void stop() OVERRIDE;
-    virtual void focus() OVERRIDE;
+    virtual void takeKeyboardFocus() OVERRIDE;
+    virtual void setLogicalFocus(bool focused) OVERRIDE;
     virtual void show() OVERRIDE;
     virtual void hide() OVERRIDE;
     virtual void setParent(NativeView parent) OVERRIDE;

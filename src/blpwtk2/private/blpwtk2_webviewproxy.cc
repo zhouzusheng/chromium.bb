@@ -298,10 +298,31 @@ void WebViewProxy::stop()
     Send(new BlpWebViewHostMsg_Stop(d_routingId));
 }
 
-void WebViewProxy::focus()
+void WebViewProxy::takeKeyboardFocus()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    Send(new BlpWebViewHostMsg_Focus(d_routingId));
+    if (d_nativeWebView) {
+        ::SetFocus(d_nativeWebView);
+    }
+    else {
+        Send(new BlpWebViewHostMsg_TakeKeyboardFocus(d_routingId));
+    }
+}
+
+void WebViewProxy::setLogicalFocus(bool focused)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    if (d_gotRendererInfo) {
+        // If we have the renderer in-process, then set the logical focus
+        // immediately so that handleInputEvents will work as expected.
+        content::RenderView* rv = content::RenderView::FromRoutingID(d_rendererRoutingId);
+        DCHECK(rv);
+        rv->SetFocus(focused);
+    }
+
+    // Send the message, which will update the browser-side aura::Window focus
+    // state.
+    Send(new BlpWebViewHostMsg_SetLogicalFocus(d_routingId, focused));
 }
 
 void WebViewProxy::show()

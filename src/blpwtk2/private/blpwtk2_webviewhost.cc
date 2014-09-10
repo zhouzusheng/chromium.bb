@@ -93,7 +93,8 @@ bool WebViewHost::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_GoBack, onGoBack)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_GoForward, onGoForward)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Stop, onStop)
-        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Focus, onFocus)
+        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_TakeKeyboardFocus, onTakeKeyboardFocus)
+        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_SetLogicalFocus, onSetLogicalFocus)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Show, onShow)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Hide, onHide)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_SetParent, onSetParent)
@@ -169,9 +170,14 @@ void WebViewHost::onStop()
     d_webView->stop();
 }
 
-void WebViewHost::onFocus()
+void WebViewHost::onTakeKeyboardFocus()
 {
-    d_webView->focus();
+    d_webView->takeKeyboardFocus();
+}
+
+void WebViewHost::onSetLogicalFocus(bool focused)
+{
+    d_webView->setLogicalFocus(focused);
 }
 
 void WebViewHost::onShow()

@@ -1279,20 +1279,16 @@ void InlineTextBox::paintDocumentMarker(GraphicsContext* pt, const FloatPoint& b
     if (textRenderer()->node()) {
         const Element *element = textRenderer()->node()->rootEditableElement();
         if (element && element->hasAttributes()) {
-            static const String fallback = "data-marker-color-default";
-            static const String spelling = "data-marker-color-spelling";
-            static const String grammar = "data-marker-color-grammar";
-
             AtomicString colorAttr = nullAtom;
 
             if (colorAttr == nullAtom && marker->type() & DocumentMarker::Spelling) {
-                colorAttr = element->getAttribute(spelling);
+                colorAttr = element->getAttribute(HTMLNames::data_marker_color_spellingAttr);
             }
             if (colorAttr == nullAtom && marker->type() & DocumentMarker::Grammar) {
-                colorAttr = element->getAttribute(grammar);
+                colorAttr = element->getAttribute(HTMLNames::data_marker_color_grammarAttr);
             }
             if (colorAttr == nullAtom) {
-                colorAttr = element->getAttribute(fallback);
+                colorAttr = element->getAttribute(HTMLNames::data_marker_color_defaultAttr);
             }
 
             if (colorAttr != nullAtom) {

@@ -17,7 +17,11 @@ bool RenderWidgetHostDelegate::PreHandleWheelEvent(
   return false;
 }
 
-bool RenderWidgetHostDelegate::ShouldSetFocusOnMouseDown() {
+bool RenderWidgetHostDelegate::ShouldSetKeyboardFocusOnMouseDown() {
+  return true;
+}
+
+bool RenderWidgetHostDelegate::ShouldSetLogicalFocusOnMouseDown() {
   return true;
 }
 

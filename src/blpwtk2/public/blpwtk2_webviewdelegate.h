@@ -29,6 +29,7 @@
 namespace blpwtk2 {
 
 class ContextMenuParams;
+class FileChooserParams;
 class NewViewParams;
 class StringRef;
 class WebView;
@@ -113,6 +114,16 @@ class BLPWTK2_EXPORT WebViewDelegate {
     // (for example, Copy/Paste etc).
     virtual void showContextMenu(WebView* source,
                                  const ContextMenuParams& params) {}
+
+    // Invoked when the user needs to select files.  A modal file chooser
+    // dialog should be displayed, allowing users to select the files.  Once
+    // the files are selected, the 'fileChooserCompleted' method must be
+    // invoked on the specified 'source' webview.  Note that this completion
+    // method must be invoked even if the user cancels the action (just pass
+    // an empty file list, in this case).  There will only ever be one
+    // outstanding file chooser requests at any time.
+    virtual void runFileChooser(WebView* source,
+                                const FileChooserParams& params) {}
 
     // Invoked when an attempt is made to navigate using a protocol
     // that cannot be used withing the browser, such as 'mailto:'.

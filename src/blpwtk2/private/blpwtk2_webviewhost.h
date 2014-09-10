@@ -34,6 +34,7 @@
 #include <ui/gfx/rect.h>
 
 #include <string>
+#include <vector>
 
 namespace gfx {
 class Point;
@@ -45,6 +46,7 @@ class BrowserContextImpl;
 struct FindOnPageRequest;
 class ProcessHost;
 class WebViewImpl;
+struct WebViewProperties;
 
 // This is the peer of the WebViewProxy.  This object lives in the browser-main
 // thread.  It is created in response to a 'BlpWebViewHostMsg_New' message, and
@@ -63,9 +65,7 @@ class WebViewHost : public ProcessHostListener,
                 NativeView parent,
                 int hostAffinity,
                 bool initiallyVisible,
-                bool takeFocusOnMouseDown,
-                bool domPasteEnabled,
-                bool javascriptCanAccessClipboard);
+                const WebViewProperties& properties);
     WebViewHost(ProcessHost* processHost,
                 WebViewImpl* webView,
                 int routingId,
@@ -84,7 +84,8 @@ class WebViewHost : public ProcessHostListener,
     void onGoBack();
     void onGoForward();
     void onStop();
-    void onFocus();
+    void onTakeKeyboardFocus();
+    void onSetLogicalFocus(bool focused);
     void onShow();
     void onHide();
     void onSetParent(NativeViewForTransit parent);
@@ -99,6 +100,7 @@ class WebViewHost : public ProcessHostListener,
     void onOnNCHitTestResult(int x, int y, int result);
     void onNCDragMoveAck(const gfx::Point& movePoint);
     void onNCDragEndAck();
+    void onFileChooserCompleted(const std::vector<std::string>& paths);
     void onPerformCustomContextMenuAction(int actionId);
     void onEnableAltDragRubberbanding(bool enabled);
     void onEnableCustomTooltip(bool enabled);
@@ -137,6 +139,8 @@ class WebViewHost : public ProcessHostListener,
     virtual void focusAfter(WebView* source) OVERRIDE;
     virtual void focused(WebView* source) OVERRIDE;
     virtual void blurred(WebView* source) OVERRIDE;
+    virtual void runFileChooser(WebView* source,
+                                const FileChooserParams& params) OVERRIDE;
     virtual void showContextMenu(WebView* source, const ContextMenuParams& params) OVERRIDE;
     virtual void handleExternalProtocol(WebView* source, const StringRef& url) OVERRIDE;
     virtual void moveView(WebView* source, int x, int y, int width, int height) OVERRIDE;

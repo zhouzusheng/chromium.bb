@@ -27,12 +27,15 @@
 #include <blpwtk2_contextmenuparams.h>
 #include <blpwtk2_contextmenuparamsimpl.h>
 #include <blpwtk2_enumtraits.h>
+#include <blpwtk2_filechooserparams.h>
+#include <blpwtk2_filechooserparamsimpl.h>
 #include <blpwtk2_findonpage.h>
 #include <blpwtk2_newviewparams.h>
 #include <blpwtk2_proxyconfig.h>
 #include <blpwtk2_proxyconfigimpl.h>
 #include <blpwtk2_spellcheckconfig.h>
 #include <blpwtk2_stringref.h>
+#include <blpwtk2_webviewproperties.h>
 
 #include <ipc/ipc_message_utils.h>
 #include <net/proxy/proxy_config.h>
@@ -43,6 +46,8 @@ using blpwtk2::ContextMenuItemImpl;
 using blpwtk2::getContextMenuParamsImpl;
 using blpwtk2::ContextMenuParams;
 using blpwtk2::ContextMenuParamsImpl;
+using blpwtk2::FileChooserParams;
+using blpwtk2::FileChooserParamsImpl;
 using blpwtk2::FindOnPageRequest;
 using blpwtk2::NewViewParams;
 using blpwtk2::getProxyConfigImpl;
@@ -50,8 +55,45 @@ using blpwtk2::ProxyConfig;
 using blpwtk2::ProxyConfigImpl;
 using blpwtk2::SpellCheckConfig;
 using blpwtk2::StringRef;
+using blpwtk2::WebViewProperties;
 
 namespace IPC {
+
+// ============== blpwtk2::WebViewProperties =============== //
+
+void ParamTraits<WebViewProperties>::Write(Message* m, const param_type& p)
+{
+    WriteParam(m, p.takeKeyboardFocusOnMouseDown);
+    WriteParam(m, p.takeLogicalFocusOnMouseDown);
+    WriteParam(m, p.domPasteEnabled);
+    WriteParam(m, p.javascriptCanAccessClipboard);
+}
+
+bool ParamTraits<WebViewProperties>::Read(const Message* m, PickleIterator* iter, param_type* r)
+{
+    if (!ReadParam(m, iter, &r->takeKeyboardFocusOnMouseDown))
+        return false;
+    if (!ReadParam(m, iter, &r->takeLogicalFocusOnMouseDown))
+        return false;
+    if (!ReadParam(m, iter, &r->domPasteEnabled))
+        return false;
+    if (!ReadParam(m, iter, &r->javascriptCanAccessClipboard))
+        return false;
+    return true;
+}
+
+void ParamTraits<WebViewProperties>::Log(const param_type& p, std::string* l)
+{
+    l->append("WebViewProperties(");
+    LogParam(p.takeKeyboardFocusOnMouseDown, l);
+    l->append(", ");
+    LogParam(p.takeLogicalFocusOnMouseDown, l);
+    l->append(", ");
+    LogParam(p.domPasteEnabled, l);
+    l->append(", ");
+    LogParam(p.javascriptCanAccessClipboard, l);
+    l->append(")");
+}
 
 // ============== blpwtk2::ContextMenuItem =============== //
 
@@ -186,6 +228,45 @@ void ParamTraits<ContextMenuParams>::Log(const param_type& p, std::string* l)
     LogParam(impl.d_customItems, l);
     l->append(", ");
     LogParam(impl.d_suggestions, l);
+    l->append(")");
+}
+
+// ============== blpwtk2::FileChooserParams =============== //
+
+void ParamTraits<FileChooserParams>::Write(Message* m, const param_type& p)
+{
+    const FileChooserParamsImpl* impl = *reinterpret_cast<FileChooserParamsImpl*const *>(&p);
+    WriteParam(m, impl->d_mode);
+    WriteParam(m, impl->d_title);
+    WriteParam(m, impl->d_defaultFileName);
+    WriteParam(m, impl->d_acceptTypes);
+}
+
+bool ParamTraits<FileChooserParams>::Read(const Message* m, PickleIterator* iter, param_type* r)
+{
+    FileChooserParamsImpl* impl = *reinterpret_cast<FileChooserParamsImpl**>(r);
+    if (!ReadParam(m, iter, &impl->d_mode))
+        return false;
+    if (!ReadParam(m, iter, &impl->d_title))
+        return false;
+    if (!ReadParam(m, iter, &impl->d_defaultFileName))
+        return false;
+    if (!ReadParam(m, iter, &impl->d_acceptTypes))
+        return false;
+    return true;
+}
+
+void ParamTraits<FileChooserParams>::Log(const param_type& p, std::string* l)
+{
+    const FileChooserParamsImpl* impl = *reinterpret_cast<FileChooserParamsImpl*const *>(&p);
+    l->append("FileChooserParams(");
+    LogParam(impl->d_mode, l);
+    l->append(", ");
+    LogParam(impl->d_title, l);
+    l->append(", ");
+    LogParam(impl->d_defaultFileName, l);
+    l->append(", ");
+    LogParam(impl->d_acceptTypes, l);
     l->append(")");
 }
 

@@ -453,7 +453,8 @@ class CONTENT_EXPORT WebContentsDelegate {
       const base::Callback<void(bool)>& callback);
 
   // Return true if the RWHV should take focus on mouse-down.
-  virtual bool ShouldSetFocusOnMouseDown();
+  virtual bool ShouldSetKeyboardFocusOnMouseDown();
+  virtual bool ShouldSetLogicalFocusOnMouseDown();
 
   // Allows delegate to show a custom tooltip. If the delegate doesn't want a
   // custom tooltip, it should just return 'false'. Otherwise, it should show

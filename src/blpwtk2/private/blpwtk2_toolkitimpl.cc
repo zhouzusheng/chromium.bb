@@ -460,6 +460,12 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
             d_inProcessRendererInfo.dcheckProfile(profile)) ||
            d_rendererInfoMap.dcheckProfileForRenderer(rendererAffinity, profile));
 
+    WebViewProperties properties;
+    properties.takeKeyboardFocusOnMouseDown = params.takeKeyboardFocusOnMouseDown();
+    properties.takeLogicalFocusOnMouseDown = params.takeLogicalFocusOnMouseDown();
+    properties.domPasteEnabled = params.domPasteEnabled();
+    properties.javascriptCanAccessClipboard = params.javascriptCanAccessClipboard();
+
     if (Statics::isRendererMainThreadMode()) {
         ProfileProxy* profileProxy = static_cast<ProfileProxy*>(profile);
         return new WebViewProxy(d_processClient.get(),
@@ -469,9 +475,7 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
                                 parent,
                                 rendererAffinity,
                                 params.initiallyVisible(),
-                                params.takeFocusOnMouseDown(),
-                                params.domPasteEnabled(),
-                                params.javascriptCanAccessClipboard());
+                                properties);
     }
     else if (Statics::isOriginalThreadMode()) {
         BrowserContextImpl* browserContext =
@@ -505,9 +509,7 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
                                browserContext,
                                hostAffinity,
                                params.initiallyVisible(),
-                               params.takeFocusOnMouseDown(),
-                               params.domPasteEnabled(),
-                               params.javascriptCanAccessClipboard());
+                               properties);
     }
 
     NOTREACHED();

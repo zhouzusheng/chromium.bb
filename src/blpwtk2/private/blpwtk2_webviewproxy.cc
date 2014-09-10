@@ -50,9 +50,7 @@ WebViewProxy::WebViewProxy(ProcessClient* processClient,
                            blpwtk2::NativeView parent,
                            int rendererAffinity,
                            bool initiallyVisible,
-                           bool takeFocusOnMouseDown,
-                           bool domPasteEnabled,
-                           bool javascriptCanAccessClipboard)
+                           const WebViewProperties& properties)
 : d_profileProxy(profileProxy)
 , d_processClient(processClient)
 , d_delegate(delegate)
@@ -76,9 +74,7 @@ WebViewProxy::WebViewProxy(ProcessClient* processClient,
     params.routingId = routingId;
     params.profileId = profileProxy->routingId();
     params.initiallyVisible = initiallyVisible;
-    params.takeFocusOnMouseDown = takeFocusOnMouseDown;
-    params.domPasteEnabled = domPasteEnabled;
-    params.javascriptCanAccessClipboard = javascriptCanAccessClipboard;
+    params.properties = properties;
     params.rendererAffinity = rendererAffinity;
     params.parent = (NativeViewForTransit)parent;
     Send(new BlpWebViewHostMsg_New(params));
@@ -302,10 +298,31 @@ void WebViewProxy::stop()
     Send(new BlpWebViewHostMsg_Stop(d_routingId));
 }
 
-void WebViewProxy::focus()
+void WebViewProxy::takeKeyboardFocus()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    Send(new BlpWebViewHostMsg_Focus(d_routingId));
+    if (d_nativeWebView) {
+        ::SetFocus(d_nativeWebView);
+    }
+    else {
+        Send(new BlpWebViewHostMsg_TakeKeyboardFocus(d_routingId));
+    }
+}
+
+void WebViewProxy::setLogicalFocus(bool focused)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    if (d_gotRendererInfo) {
+        // If we have the renderer in-process, then set the logical focus
+        // immediately so that handleInputEvents will work as expected.
+        content::RenderView* rv = content::RenderView::FromRoutingID(d_rendererRoutingId);
+        DCHECK(rv);
+        rv->SetFocus(focused);
+    }
+
+    // Send the message, which will update the browser-side aura::Window focus
+    // state.
+    Send(new BlpWebViewHostMsg_SetLogicalFocus(d_routingId, focused));
 }
 
 void WebViewProxy::show()
@@ -411,6 +428,17 @@ void WebViewProxy::onNCHitTestResult(int x, int y, int result)
     Send(new BlpWebViewHostMsg_OnNCHitTestResult(d_routingId, x, y, result));
 }
 
+void WebViewProxy::fileChooserCompleted(const StringRef* paths,
+                                        size_t numPaths)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    std::vector<std::string> pathsVector(numPaths);
+    for (size_t i = 0; i < numPaths; ++i) {
+        pathsVector[i].assign(paths[i].data(), paths[i].length());
+    }
+    Send(new BlpWebViewHostMsg_FileChooserCompleted(d_routingId, pathsVector));
+}
+
 void WebViewProxy::performCustomContextMenuAction(int actionId)
 {
     DCHECK(Statics::isInApplicationMainThread());
@@ -455,6 +483,12 @@ void WebViewProxy::rootWindowSettingsChanged()
     Send(new BlpWebViewHostMsg_RootWindowSettingsChanged(d_routingId));
 }
 
+void WebViewProxy::setDelegate(WebViewDelegate *delegate)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    d_delegate = delegate;
+}
+
 // IPC::Sender override
 
 bool WebViewProxy::Send(IPC::Message* message)
@@ -481,6 +515,7 @@ bool WebViewProxy::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_FocusAfter, onFocusAfter)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_Focused, onFocused)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_Blurred, onBlurred)
+        IPC_MESSAGE_HANDLER(BlpWebViewMsg_RunFileChooser, onRunFileChooser)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_ShowContextMenu, onShowContextMenu)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_HandleExternalProtocol, onHandleExternalProtocol)
         IPC_MESSAGE_HANDLER(BlpWebViewMsg_MoveView, onMoveView)
@@ -595,6 +630,12 @@ void WebViewProxy::onBlurred()
 {
     if (d_delegate)
         d_delegate->blurred(this);
+}
+
+void WebViewProxy::onRunFileChooser(const FileChooserParams& params)
+{
+    if (d_delegate)
+        d_delegate->runFileChooser(this, params);
 }
 
 void WebViewProxy::onShowContextMenu(const ContextMenuParams& params)

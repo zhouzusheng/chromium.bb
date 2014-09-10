@@ -1177,11 +1177,12 @@ bool WebContentsImpl::PreHandleWheelEvent(
   return false;
 }
 
-bool WebContentsImpl::ShouldSetFocusOnMouseDown() {
-  if (delegate_) {
-    return delegate_->ShouldSetFocusOnMouseDown();
-  }
-  return true;
+bool WebContentsImpl::ShouldSetKeyboardFocusOnMouseDown() {
+  return !delegate_ || delegate_->ShouldSetKeyboardFocusOnMouseDown();
+}
+
+bool WebContentsImpl::ShouldSetLogicalFocusOnMouseDown() {
+  return !delegate_ || delegate_->ShouldSetLogicalFocusOnMouseDown();
 }
 
 bool WebContentsImpl::ShowTooltip(

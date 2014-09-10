@@ -367,7 +367,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // |ignore_input_events_| or |process_->IgnoreInputEvents()| is true.
   bool IgnoreInputEvents() const;
 
-  bool ShouldSetFocusOnMouseDown() const;
+  bool ShouldSetKeyboardFocusOnMouseDown() const;
+  bool ShouldSetLogicalFocusOnMouseDown() const;
 
   // Event queries delegated to the |input_router_|.
   bool ShouldForwardTouchEvent() const;

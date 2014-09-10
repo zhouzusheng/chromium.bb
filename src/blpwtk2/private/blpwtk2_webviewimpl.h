@@ -28,10 +28,12 @@
 #include <blpwtk2_findonpage.h>
 #include <blpwtk2_nativeviewwidgetdelegate.h>
 #include <blpwtk2_webview.h>
+#include <blpwtk2_webviewproperties.h>
 
 #include <content/public/browser/web_contents_delegate.h>
 #include <content/public/browser/web_contents_observer.h>
 #include <content/public/common/context_menu_params.h>
+#include <content/public/common/file_chooser_params.h>
 #include <ui/gfx/native_widget_types.h>
 #include <third_party/WebKit/public/web/WebTextDirection.h>
 
@@ -78,14 +80,10 @@ class WebViewImpl : public WebView,
                 BrowserContextImpl* browserContext,
                 int hostAffinity,
                 bool initiallyVisible,
-                bool takeFocusOnMouseDown,
-                bool domPasteEnabled,
-                bool javascriptCanAccessClipboard);
+                const WebViewProperties& properties);
     WebViewImpl(content::WebContents* contents,
                 BrowserContextImpl* browserContext,
-                bool takeFocusOnMouseDown,
-                bool domPasteEnabled,
-                bool javascriptCanAccessClipboard);
+                const WebViewProperties& properties);
     virtual ~WebViewImpl();
 
     void setImplClient(WebViewImplClient* client);
@@ -107,7 +105,8 @@ class WebViewImpl : public WebView,
     virtual void goBack() OVERRIDE;
     virtual void goForward() OVERRIDE;
     virtual void stop() OVERRIDE;
-    virtual void focus() OVERRIDE;
+    virtual void takeKeyboardFocus() OVERRIDE;
+    virtual void setLogicalFocus(bool focused) OVERRIDE;
     virtual void show() OVERRIDE;
     virtual void hide() OVERRIDE;
     virtual void setParent(NativeView parent) OVERRIDE;
@@ -120,6 +119,8 @@ class WebViewImpl : public WebView,
     virtual void enableFocusAfter(bool enabled) OVERRIDE;
     virtual void enableNCHitTest(bool enabled) OVERRIDE;
     virtual void onNCHitTestResult(int x, int y, int result) OVERRIDE;
+    virtual void fileChooserCompleted(const StringRef* paths,
+                                      size_t numPaths) OVERRIDE;
     virtual void performCustomContextMenuAction(int actionId) OVERRIDE;
     virtual void enableAltDragRubberbanding(bool enabled) OVERRIDE;
     virtual void enableCustomTooltip(bool enabled) OVERRIDE;
@@ -130,6 +131,7 @@ class WebViewImpl : public WebView,
     virtual void rootWindowSettingsChanged() OVERRIDE;
     virtual void print() OVERRIDE;
     virtual void handleInputEvents(const InputEvent *events, size_t eventsCount) OVERRIDE;
+    virtual void setDelegate(WebViewDelegate* delegate) OVERRIDE;
 
   private:
     void createWidget(blpwtk2::NativeView parent);
@@ -156,6 +158,10 @@ class WebViewImpl : public WebView,
 
     // Invoked when a main frame navigation occurs.
     virtual void DidNavigateMainFramePostCommit(content::WebContents* source) OVERRIDE;
+
+    // Called when a file selection is to be done.
+    virtual void RunFileChooser(content::WebContents* source,
+                                const content::FileChooserParams& params) OVERRIDE;
 
     // This is called when WebKit tells us that it is done tabbing through
     // controls on the page. Provides a way for WebContentsDelegates to handle
@@ -200,7 +206,8 @@ class WebViewImpl : public WebView,
         const content::MediaResponseCallback& callback) OVERRIDE;
 
     // Return true if the RWHV should take focus on mouse-down.
-    virtual bool ShouldSetFocusOnMouseDown() OVERRIDE;
+    virtual bool ShouldSetKeyboardFocusOnMouseDown() OVERRIDE;
+    virtual bool ShouldSetLogicalFocusOnMouseDown() OVERRIDE;
 
     // Allows delegate to show a custom tooltip. If the delegate doesn't want a
     // custom tooltip, it should just return 'false'. Otherwise, it should show
@@ -255,20 +262,19 @@ class WebViewImpl : public WebView,
     WebViewImplClient* d_implClient;
     BrowserContextImpl* d_browserContext;
     NativeViewWidget* d_widget;  // owned by the views system
+    WebViewProperties d_properties;  // TODO(SHEZ): move more properties into this struct
     bool d_focusBeforeEnabled;
     bool d_focusAfterEnabled;
     bool d_isReadyForDelete;  // when the underlying WebContents can be deleted
     bool d_wasDestroyed;      // if destroy() has been called
     bool d_isDeletingSoon;    // when DeleteSoon has been called
     bool d_isPopup;           // if this view is a popup view
-    bool d_takeFocusOnMouseDown;
-    bool d_domPasteEnabled;
-    bool d_javascriptCanAccessClipboard;
     bool d_altDragRubberbandingEnabled;
     bool d_customTooltipEnabled;
     bool d_ncHitTestEnabled;
     bool d_ncHitTestPendingAck;
     int d_lastNCHitTestResult;
+    content::FileChooserParams::Mode d_lastFileChooserMode;
     content::CustomContextMenuContext d_customContext; //for calling performCustomContextMenuAction()
 
 

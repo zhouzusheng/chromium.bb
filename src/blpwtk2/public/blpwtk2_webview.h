@@ -30,6 +30,7 @@ namespace blpwtk2 {
 class StringRef;
 class WebFrame;
 class Profile;
+class WebViewDelegate;
 
 // This class represents a single WebView.  Instances of this class can be
 // created using blpwtk2::Toolkit::createWebView().
@@ -100,9 +101,18 @@ public:
     // not loading any content.
     virtual void stop() = 0;
 
-    // Focus this WebView.  If any script has set focus to any editable
-    // elements in this WebView, that element will get the input caret.
-    virtual void focus() = 0;
+    // Make this WebView take keyboard focus.  This means all Windows keyboard
+    // messages will now be handled by the WebView.  Note that even though
+    // Windows keyboard messages are being processed by the WebView, they will
+    // not actually do anything unless the WebView also has logical focus.
+    virtual void takeKeyboardFocus() = 0;
+
+    // Enable/disable logical focus.  This controls whether or not the WebView
+    // will display a focused UI, including whether or not the caret will be
+    // visible.  Note that setting logical focus will not cause keyboard events
+    // to be automatically processed by the WebView, unless it has keyboard
+    // focus.
+    virtual void setLogicalFocus(bool focused) = 0;
 
     // Show this WebView.
     virtual void show() = 0;
@@ -156,6 +166,13 @@ public:
     // only be called in response to 'requestNCHitTest' on the delegate.
     virtual void onNCHitTestResult(int x, int y, int result) = 0;
 
+    // When the WebViewDelegate's runFileChooser method is called, this method
+    // must be invoked to provide the list of selected files.  This method must
+    // be called even if the user cancels the file chooser (numPaths should be
+    // zero in this case).
+    virtual void fileChooserCompleted(const StringRef* paths,
+                                      size_t numPaths) = 0;
+
     // Perform a custom context menu action. This should be called when a custom 
     // item in the context menu has been selected.
     virtual void performCustomContextMenuAction(int actionId) = 0;
@@ -202,6 +219,10 @@ public:
 
     // Inform the web widget of a sequence of input events
     virtual void handleInputEvents(const InputEvent *events, size_t eventsCount) = 0;
+
+    // Set a new web view delegate. From this point on, all callbacks will
+    // be sent to the new delegate.
+    virtual void setDelegate(WebViewDelegate* delegate) = 0;
 
 protected:
     // Destroy this WebView.  Note that clients of blpwtk2 should use the

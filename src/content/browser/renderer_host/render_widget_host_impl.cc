@@ -2132,11 +2132,12 @@ bool RenderWidgetHostImpl::IgnoreInputEvents() const {
   return ignore_input_events_ || process_->IgnoreInputEvents();
 }
 
-bool RenderWidgetHostImpl::ShouldSetFocusOnMouseDown() const {
-  if (delegate_) {
-    return delegate_->ShouldSetFocusOnMouseDown();
-  }
-  return true;
+bool RenderWidgetHostImpl::ShouldSetKeyboardFocusOnMouseDown() const {
+  return !delegate_ || delegate_->ShouldSetKeyboardFocusOnMouseDown();
+}
+
+bool RenderWidgetHostImpl::ShouldSetLogicalFocusOnMouseDown() const {
+  return !delegate_ || delegate_->ShouldSetLogicalFocusOnMouseDown();
 }
 
 bool RenderWidgetHostImpl::ShouldForwardTouchEvent() const {

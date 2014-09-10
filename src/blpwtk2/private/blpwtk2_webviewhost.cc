@@ -38,9 +38,7 @@ WebViewHost::WebViewHost(ProcessHost* processHost,
                          NativeView parent,
                          int hostAffinity,
                          bool initiallyVisible,
-                         bool takeFocusOnMouseDown,
-                         bool domPasteEnabled,
-                         bool javascriptCanAccessClipboard)
+                         const WebViewProperties& properties)
 : d_processHost(processHost)
 , d_routingId(routingId)
 , d_ncDragAckPending(false)
@@ -55,9 +53,7 @@ WebViewHost::WebViewHost(ProcessHost* processHost,
                                 browserContext,
                                 hostAffinity,
                                 initiallyVisible,
-                                takeFocusOnMouseDown,
-                                domPasteEnabled,
-                                javascriptCanAccessClipboard);
+                                properties);
     d_webView->setImplClient(this);
 }
 
@@ -97,7 +93,8 @@ bool WebViewHost::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_GoBack, onGoBack)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_GoForward, onGoForward)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Stop, onStop)
-        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Focus, onFocus)
+        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_TakeKeyboardFocus, onTakeKeyboardFocus)
+        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_SetLogicalFocus, onSetLogicalFocus)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Show, onShow)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Hide, onHide)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_SetParent, onSetParent)
@@ -112,6 +109,7 @@ bool WebViewHost::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_OnNCHitTestResult, onOnNCHitTestResult)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_NCDragMoveAck, onNCDragMoveAck)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_NCDragEndAck, onNCDragEndAck)
+        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_FileChooserCompleted, onFileChooserCompleted)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_PerformContextMenuAction, onPerformCustomContextMenuAction)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_EnableAltDragRubberbanding, onEnableAltDragRubberbanding)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_EnableCustomTooltip, onEnableCustomTooltip)
@@ -172,9 +170,14 @@ void WebViewHost::onStop()
     d_webView->stop();
 }
 
-void WebViewHost::onFocus()
+void WebViewHost::onTakeKeyboardFocus()
 {
-    d_webView->focus();
+    d_webView->takeKeyboardFocus();
+}
+
+void WebViewHost::onSetLogicalFocus(bool focused)
+{
+    d_webView->setLogicalFocus(focused);
 }
 
 void WebViewHost::onShow()
@@ -261,6 +264,15 @@ void WebViewHost::onNCDragEndAck()
     DCHECK(!d_ncDragging);
     DCHECK(d_ncDragAckPending);
     d_ncDragAckPending = false;
+}
+
+void WebViewHost::onFileChooserCompleted(const std::vector<std::string>& paths)
+{
+    std::vector<StringRef> pathsRefs(paths.size());
+    for (size_t i = 0; i < paths.size(); ++i) {
+        pathsRefs[i].assign(paths[i].data(), paths[i].length());
+    }
+    d_webView->fileChooserCompleted(pathsRefs.data(), pathsRefs.size());
 }
 
 void WebViewHost::onPerformCustomContextMenuAction(int actionId)
@@ -430,6 +442,13 @@ void WebViewHost::blurred(WebView* source)
 {
     DCHECK(source == d_webView);
     Send(new BlpWebViewMsg_Blurred(d_routingId));
+}
+
+void WebViewHost::runFileChooser(WebView* source,
+                                 const FileChooserParams& params)
+{
+    DCHECK(source == d_webView);
+    Send(new BlpWebViewMsg_RunFileChooser(d_routingId, params));
 }
 
 void WebViewHost::showContextMenu(WebView* source,

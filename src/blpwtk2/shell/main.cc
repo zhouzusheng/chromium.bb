@@ -22,6 +22,7 @@
 
 #include <windows.h>  // NOLINT
 #include <shellapi.h>
+#include <commdlg.h>
 
 // This pragma makes us use the version 6.0 of ComCtl32.dll, which is necessary
 // to make tooltips appear correctly.  See:
@@ -100,6 +101,10 @@ enum {
     IDM_TEST_V8_APPEND_ELEMENT,
     IDM_TEST_V8_CONVERSIONS,
     IDM_TEST_WEBELEMENT_CONVERSION,
+    IDM_TEST_KEYBOARD_FOCUS,
+    IDM_TEST_LOGICAL_FOCUS,
+    IDM_TEST_LOGICAL_BLUR,
+    IDM_TEST_PLAY_KEYBOARD_EVENTS,
     IDM_SPELLCHECK,
     IDM_SPELLCHECK_ENABLED,
     IDM_AUTOCORRECT,
@@ -241,6 +246,20 @@ void testWebElementConversion(blpwtk2::WebView* webView)
             elem.setCssProperty("color", "red", "");
         }
     }
+}
+
+void testPlayKeyboardEvents(HWND hwnd, blpwtk2::WebView* webView)
+{
+    blpwtk2::WebView::InputEvent ev = { 0 };
+    ev.hwnd = hwnd;
+    ev.message = WM_CHAR;
+    ev.lparam = 0;
+    ev.wparam = 'A';
+    webView->handleInputEvents(&ev, 1);
+    ev.wparam = 'B';
+    webView->handleInputEvents(&ev, 1);
+    ev.wparam = 'C';
+    webView->handleInputEvents(&ev, 1);
 }
 
 class Shell : public blpwtk2::WebViewDelegate {
@@ -486,6 +505,135 @@ public:
     {
         assert(source == d_webView);
         OutputDebugStringA("DELEGATE: blurred\n");
+    }
+
+    std::string extentionForMimeType(const blpwtk2::StringRef& mimeType)
+    {
+        const char* end = mimeType.data() + mimeType.length();
+        const char* p = end - 1;
+        while (p > mimeType.data()) {
+            if ('/' == *p) {
+                return std::string(p + 1, end);
+            }
+            --p;
+        }
+        return "*";
+    }
+
+    void appendStringToVector(std::vector<char> *result, const blpwtk2::StringRef& str)
+    {
+        result->reserve(result->size() + str.length());
+        const char* p = str.data();
+        const char* end = p + str.length();
+        while (p < end) {
+            result->push_back(*p);
+            ++p;
+        }
+    }
+
+    virtual void runFileChooser(blpwtk2::WebView* source, const blpwtk2::FileChooserParams& params) OVERRIDE
+    {
+        assert(source == d_webView);
+
+        std::vector<char> filter;
+        if (0 != params.numAcceptTypes()) {
+            if (1 == params.numAcceptTypes()) {
+                blpwtk2::StringRef mimeType = params.acceptTypeAt(0);
+                appendStringToVector(&filter, mimeType);
+                filter.push_back('\0');
+                appendStringToVector(&filter, "*.");
+                appendStringToVector(&filter, extentionForMimeType(mimeType));
+            }
+            else {
+                appendStringToVector(&filter, "Custom Types");
+                filter.push_back('\0');
+                for (size_t i = 0; i < params.numAcceptTypes(); ++i) {
+                    if (0 != i)
+                        filter.push_back(';');
+                    appendStringToVector(&filter, "*.");
+                    blpwtk2::StringRef mimeType = params.acceptTypeAt(i);
+                    appendStringToVector(&filter, extentionForMimeType(mimeType));
+                }
+                for (size_t i = 0; i < params.numAcceptTypes(); ++i) {
+                    filter.push_back('\0');
+                    blpwtk2::StringRef mimeType = params.acceptTypeAt(i);
+                    appendStringToVector(&filter, mimeType);
+                    filter.push_back('\0');
+                    appendStringToVector(&filter, "*.");
+                    appendStringToVector(&filter, extentionForMimeType(mimeType));
+                }
+            }
+            filter.push_back('\0');
+        }
+
+        appendStringToVector(&filter, "All Files");
+        filter.push_back('\0');
+        appendStringToVector(&filter, "*.*");
+        filter.push_back('\0');
+        filter.push_back('\0');
+
+        std::string title = params.title().toStdString();
+        if (title.empty())
+            title = "Select File";
+        char fileNameBuf[8192] = { 0 };
+        strcpy_s(fileNameBuf, sizeof(fileNameBuf) - 1, params.defaultFileName().toStdString().c_str());
+
+        OPENFILENAMEA ofn = { 0 };
+        ofn.lStructSize = sizeof(OPENFILENAMEA);
+        ofn.hwndOwner = d_mainWnd;
+        ofn.hInstance = g_instance;
+        ofn.lpstrFilter = filter.data();
+        ofn.lpstrFile = fileNameBuf;
+        ofn.nMaxFile = sizeof(fileNameBuf) - 2;
+        ofn.lpstrTitle = title.c_str();
+        ofn.Flags = OFN_EXPLORER | OFN_LONGNAMES | OFN_NOCHANGEDIR;
+
+        BOOL retVal;
+        switch (params.mode()) {
+        case blpwtk2::FileChooserParams::OPEN:
+            ofn.Flags |= OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+            retVal = ::GetOpenFileNameA(&ofn);
+            break;
+        case blpwtk2::FileChooserParams::OPEN_MULTIPLE:
+            ofn.Flags |= OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_ALLOWMULTISELECT;
+            retVal = ::GetOpenFileNameA(&ofn);
+            break;
+        case blpwtk2::FileChooserParams::SAVE:
+            ofn.Flags = OFN_OVERWRITEPROMPT;
+            retVal = ::GetSaveFileNameA(&ofn);
+            break;
+        case blpwtk2::FileChooserParams::UPLOAD_FOLDER:
+            // TODO: what should we do here?
+            retVal = FALSE;
+            break;
+        }
+
+        std::vector<std::string> selectedFiles;
+        std::vector<blpwtk2::StringRef> selectedFilesRef;
+
+        if (retVal) {
+            // Figure out if the user selected multiple files.  If fileNameBuf is
+            // a directory, then multiple files were selected!
+            if ((ofn.Flags & OFN_ALLOWMULTISELECT) && (::GetFileAttributesA(fileNameBuf) & FILE_ATTRIBUTE_DIRECTORY)) {
+                std::string dirName = fileNameBuf;
+                const char* p = fileNameBuf + strlen(fileNameBuf) + 1;
+                while (*p) {
+                    selectedFiles.push_back(dirName);
+                    selectedFiles.back().append("\\");
+                    selectedFiles.back().append(p);
+                    p += strlen(p) + 1;
+                }
+                selectedFilesRef.resize(selectedFiles.size());
+                for (size_t i = 0; i < selectedFiles.size(); ++i) {
+                    selectedFilesRef[i] = selectedFiles[i];
+                }
+            }
+            else {
+                selectedFilesRef.push_back(fileNameBuf);
+            }
+        }
+
+        d_webView->fileChooserCompleted(selectedFilesRef.data(), selectedFilesRef.size());
     }
 
     virtual void showContextMenu(blpwtk2::WebView* source, const blpwtk2::ContextMenuParams& params) OVERRIDE
@@ -970,7 +1118,8 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
     firstShell->d_webView->loadUrl(g_url);
     ShowWindow(firstShell->d_mainWnd, SW_SHOW);
     UpdateWindow(firstShell->d_mainWnd);
-    firstShell->d_webView->focus();
+    firstShell->d_webView->takeKeyboardFocus();
+    firstShell->d_webView->setLogicalFocus(true);
 
     runMessageLoop();
 
@@ -1020,15 +1169,18 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
         switch (wmId) {
         case IDC_BACK:
             shell->d_webView->goBack();
-            shell->d_webView->focus();
+            shell->d_webView->takeKeyboardFocus();
+            shell->d_webView->setLogicalFocus(true);
             return 0;
         case IDC_FORWARD:
             shell->d_webView->goForward();
-            shell->d_webView->focus();
+            shell->d_webView->takeKeyboardFocus();
+            shell->d_webView->setLogicalFocus(true);
             return 0;
         case IDC_RELOAD:
             shell->d_webView->reload();
-            shell->d_webView->focus();
+            shell->d_webView->takeKeyboardFocus();
+            shell->d_webView->setLogicalFocus(true);
             return 0;
         case IDM_ZOOM_025:
         case IDM_ZOOM_050:
@@ -1052,14 +1204,16 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
             return 0;
         case IDC_STOP:
             shell->d_webView->stop();
-            shell->d_webView->focus();
+            shell->d_webView->takeKeyboardFocus();
+            shell->d_webView->setLogicalFocus(true);
             return 0;
         case IDM_NEW_WINDOW:
             newShell = createShell(shell->d_profile);
             newShell->d_webView->loadUrl(g_url);
             ShowWindow(newShell->d_mainWnd, SW_SHOW);
             UpdateWindow(newShell->d_mainWnd);
-            newShell->d_webView->focus();
+            newShell->d_webView->takeKeyboardFocus();
+            newShell->d_webView->setLogicalFocus(true);
             return 0;
         case IDM_CLOSE_WINDOW:
             DestroyWindow(shell->d_mainWnd);
@@ -1084,6 +1238,18 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
             return 0;
         case IDM_TEST_WEBELEMENT_CONVERSION:
             testWebElementConversion(shell->d_webView);
+            return 0;
+        case IDM_TEST_KEYBOARD_FOCUS:
+            shell->d_webView->takeKeyboardFocus();
+            return 0;
+        case IDM_TEST_LOGICAL_FOCUS:
+            shell->d_webView->setLogicalFocus(true);
+            return 0;
+        case IDM_TEST_LOGICAL_BLUR:
+            shell->d_webView->setLogicalFocus(false);
+            return 0;
+        case IDM_TEST_PLAY_KEYBOARD_EVENTS:
+            testPlayKeyboardEvents(shell->d_mainWnd, shell->d_webView);
             return 0;
         case IDM_SPELLCHECK_ENABLED:
             g_spellCheckEnabled = !g_spellCheckEnabled;
@@ -1140,7 +1306,8 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
             if (shell->d_inspectorShell) {
                 BringWindowToTop(shell->d_inspectorShell->d_mainWnd);
                 shell->d_inspectorShell->d_webView->inspectElementAt(shell->d_contextMenuPoint);
-                shell->d_inspectorShell->d_webView->focus();
+                shell->d_inspectorShell->d_webView->takeKeyboardFocus();
+                shell->d_inspectorShell->d_webView->setLogicalFocus(true);
                 return 0;
             }
             {
@@ -1156,7 +1323,8 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
             UpdateWindow(shell->d_inspectorShell->d_mainWnd);
             shell->d_inspectorShell->d_webView->loadInspector(shell->d_webView);
             shell->d_inspectorShell->d_webView->inspectElementAt(shell->d_contextMenuPoint);
-            shell->d_inspectorShell->d_webView->focus();
+            shell->d_inspectorShell->d_webView->takeKeyboardFocus();
+            shell->d_inspectorShell->d_webView->setLogicalFocus(true);
             return 0;
         case IDM_ADD_TO_DICTIONARY:
             {
@@ -1232,7 +1400,8 @@ LRESULT CALLBACK urlEntryWndProc(HWND hwnd,        // handle to window
             if (str_len > 0) {
                 str[str_len] = 0;  // EM_GETLINE doesn't NULL terminate.
                 shell->d_webView->loadUrl(str);
-                shell->d_webView->focus();
+                shell->d_webView->takeKeyboardFocus();
+                shell->d_webView->setLogicalFocus(true);
             }
             return 0;
         }
@@ -1312,6 +1481,10 @@ Shell* createShell(blpwtk2::Profile* profile, blpwtk2::WebView* webView)
     AppendMenu(testMenu, MF_STRING, IDM_TEST_V8_APPEND_ELEMENT, L"Append Element Using &V8");
     AppendMenu(testMenu, MF_STRING, IDM_TEST_V8_CONVERSIONS, L"Test V8 Conversions");
     AppendMenu(testMenu, MF_STRING, IDM_TEST_WEBELEMENT_CONVERSION, L"Test WebElement Conversion");
+    AppendMenu(testMenu, MF_STRING, IDM_TEST_KEYBOARD_FOCUS, L"Test Keyboard Focus");
+    AppendMenu(testMenu, MF_STRING, IDM_TEST_LOGICAL_FOCUS, L"Test Logical Focus");
+    AppendMenu(testMenu, MF_STRING, IDM_TEST_LOGICAL_BLUR, L"Test Logical Blur");
+    AppendMenu(testMenu, MF_STRING, IDM_TEST_PLAY_KEYBOARD_EVENTS, L"Test Play Keyboard Events");
     AppendMenu(menu, MF_POPUP, (UINT_PTR)testMenu, L"&Test");
     HMENU spellCheckMenu = CreateMenu();
     AppendMenu(spellCheckMenu, MF_STRING, IDM_SPELLCHECK_ENABLED, L"Enable &Spellcheck");

@@ -40,10 +40,15 @@ class BLPWTK2_EXPORT WebViewCreateParams {
     // afterwards.
     void setInitiallyVisible(bool visible);
 
-    // By default, WebViews will take focus on mouse down (mimicking upstream
-    // chromium behavior).  However, setting this flag to false will disable
-    // that behavior.
-    void setTakeFocusOnMouseDown(bool enable);
+    // By default, WebViews will take keyboard focus on mouse down (mimicking
+    // upstream chromium behavior).  However, setting this flag to false will
+    // disable that behavior.
+    void setTakeKeyboardFocusOnMouseDown(bool enable);
+
+    // By default, WebViews will take logical focus on mouse down (mimicking
+    // upstream chromium behavior).  However, setting this flag to false will
+    // disable that behavior.
+    void setTakeLogicalFocusOnMouseDown(bool enable);
 
     // By default, Javascript will not be able to paste into the DOM.  However,
     // setting this flag will enable that behavior.  Note that this will only
@@ -99,7 +104,8 @@ class BLPWTK2_EXPORT WebViewCreateParams {
     void setProfile(Profile* profile);
 
     bool initiallyVisible() const { return d_initiallyVisible; }
-    bool takeFocusOnMouseDown() const { return d_takeFocusOnMouseDown; }
+    bool takeKeyboardFocusOnMouseDown() const { return d_takeKeyboardFocusOnMouseDown; }
+    bool takeLogicalFocusOnMouseDown() const { return d_takeLogicalFocusOnMouseDown; }
     bool domPasteEnabled() const { return d_domPasteEnabled; }
     bool javascriptCanAccessClipboard() const { return d_javascriptCanAccessClipboard; }
     int rendererAffinity() const { return d_rendererAffinity; }
@@ -107,7 +113,8 @@ class BLPWTK2_EXPORT WebViewCreateParams {
 
   private:
     bool d_initiallyVisible;
-    bool d_takeFocusOnMouseDown;
+    bool d_takeKeyboardFocusOnMouseDown;
+    bool d_takeLogicalFocusOnMouseDown;
     bool d_domPasteEnabled;
     bool d_javascriptCanAccessClipboard;
     int d_rendererAffinity;

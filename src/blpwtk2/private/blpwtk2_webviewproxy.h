@@ -43,12 +43,14 @@ class MessageLoop;
 namespace blpwtk2 {
 
 class ContextMenuParams;
+class FileChooserParams;
 class FindOnPage;
 class NewViewParams;
 class ProcessClient;
 class ProfileProxy;
 class WebFrameImpl;
 class WebViewDelegate;
+struct WebViewProperties;
 
 // This is an alternate implementation of the blpwtk2::WebView interface, and
 // is only used when we are using 'ThreadMode::RENDERER_MAIN'.  This class is
@@ -72,9 +74,7 @@ class WebViewProxy : public WebView,
                  blpwtk2::NativeView parent,
                  int rendererAffinity,
                  bool initiallyVisible,
-                 bool takeFocusOnMouseDown,
-                 bool domPasteEnabled,
-                 bool javascriptCanAccessClipboard);
+                 const WebViewProperties& properties);
     WebViewProxy(ProcessClient* processClient,
                  int routingId,
                  ProfileProxy* profileProxy);
@@ -93,7 +93,8 @@ class WebViewProxy : public WebView,
     virtual void goBack() OVERRIDE;
     virtual void goForward() OVERRIDE;
     virtual void stop() OVERRIDE;
-    virtual void focus() OVERRIDE;
+    virtual void takeKeyboardFocus() OVERRIDE;
+    virtual void setLogicalFocus(bool focused) OVERRIDE;
     virtual void show() OVERRIDE;
     virtual void hide() OVERRIDE;
     virtual void setParent(NativeView parent) OVERRIDE;
@@ -106,6 +107,8 @@ class WebViewProxy : public WebView,
     virtual void enableFocusAfter(bool enabled) OVERRIDE;
     virtual void enableNCHitTest(bool enabled) OVERRIDE;
     virtual void onNCHitTestResult(int x, int y, int result) OVERRIDE;
+    virtual void fileChooserCompleted(const StringRef* paths,
+                                      size_t numPaths) OVERRIDE;
     virtual void performCustomContextMenuAction(int actionId) OVERRIDE;
     virtual void enableAltDragRubberbanding(bool enabled) OVERRIDE;
     virtual void enableCustomTooltip(bool enabled) OVERRIDE;
@@ -116,6 +119,7 @@ class WebViewProxy : public WebView,
     virtual void rootWindowSettingsChanged() OVERRIDE;
     virtual void print() OVERRIDE;
     virtual void handleInputEvents(const InputEvent *events, size_t eventsCount) OVERRIDE;
+    virtual void setDelegate(WebViewDelegate* delegate) OVERRIDE;
 
   private:
     // Destructor is private.  Calling destroy() will delete the object.
@@ -143,6 +147,7 @@ class WebViewProxy : public WebView,
     void onFocusAfter();
     void onFocused();
     void onBlurred();
+    void onRunFileChooser(const FileChooserParams& params);
     void onShowContextMenu(const ContextMenuParams& params);
     void onHandleExternalProtocol(const std::string& url);
     void onMoveView(const gfx::Rect& rect);

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Bloomberg Finance L.P.
+ * Copyright (C) 2014 Bloomberg Finance L.P.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,33 +20,20 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef INCLUDED_BLPWTK2_H
-#define INCLUDED_BLPWTK2_H
+#ifndef INCLUDED_BLPWTK2_WEBVIEWPROPERTIES_H
+#define INCLUDED_BLPWTK2_WEBVIEWPROPERTIES_H
 
-#include <blpwtk2_constants.h>
-#include <blpwtk2_contextmenuitem.h>
-#include <blpwtk2_contextmenuparams.h>
-#include <blpwtk2_filechooserparams.h>
-#include <blpwtk2_newviewparams.h>
-#include <blpwtk2_profile.h>
-#include <blpwtk2_profilecreateparams.h>
-#include <blpwtk2_proxyconfig.h>
-#include <blpwtk2_resourcecontext.h>
-#include <blpwtk2_resourceloader.h>
-#include <blpwtk2_spellcheckconfig.h>
-#include <blpwtk2_string.h>
-#include <blpwtk2_stringref.h>
-#include <blpwtk2_textdirection.h>
-#include <blpwtk2_toolkit.h>
-#include <blpwtk2_toolkitcreateparams.h>
-#include <blpwtk2_toolkitfactory.h>
-#include <blpwtk2_webdocument.h>
-#include <blpwtk2_webelement.h>
-#include <blpwtk2_webframe.h>
-#include <blpwtk2_webnode.h>
-#include <blpwtk2_webview.h>
-#include <blpwtk2_webviewdelegate.h>
+#include <blpwtk2_config.h>
 
-#endif  // INCLUDED_BLPWTK2_H
+namespace blpwtk2 {
 
+struct WebViewProperties {
+    bool takeKeyboardFocusOnMouseDown;
+    bool takeLogicalFocusOnMouseDown;
+    bool domPasteEnabled;
+    bool javascriptCanAccessClipboard;
+};
 
+}  // close namespace blpwtk2
+
+#endif  // INCLUDED_BLPWTK2_WEBVIEWPROPERTIES_H

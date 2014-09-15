@@ -67,7 +67,6 @@
 #include "weborigin/SecurityOrigin.h"
 #include "wtf/PassRefPtr.h"
 #include <v8.h>
-#include <bindings/V8Document.h>
 
 using namespace WebCore;
 
@@ -267,18 +266,6 @@ WebElement WebDocument::createElement(const WebString& tagName)
     return element;
 }
 
-WebString WebDocument::innerHTML() const
-{
-    const WebCore::Element* webCoreElemPtr = constUnwrap<Document>()->documentElement();
-    if (webCoreElemPtr) {
-        const WebCore::HTMLElement* htmlElemPtr =(const WebCore::HTMLElement*) webCoreElemPtr;
-        if (htmlElemPtr) {
-            return htmlElemPtr->innerHTML();
-        }
-    }
-    return WebString();
-}
-
 WebAXObject WebDocument::accessibilityObject() const
 {
     const Document* document = constUnwrap<Document>();
@@ -313,25 +300,6 @@ WebBBPrintInfo WebDocument::bbPrintInfo()
     return WebBBPrintInfo(document->bbPrintInfo());
 }
 
-
-bool WebDocument::isWebDocument(v8::Handle<v8::Value> handle)
-{
-    if (!handle->IsObject()) {
-        return false;
-    }
-    v8::TryCatch tryCatch;
-    v8::Handle<v8::Object> obj = handle->ToObject();
-    if (!WebCore::V8Document::HasInstance(obj, obj->CreationContext()->GetIsolate(), WebCore::MainWorld)) {
-        return false;
-    }
-    WebCore::V8Document::toNative(obj);
-    return !tryCatch.HasCaught();
-}
-
-WebDocument WebDocument::fromV8Handle(v8::Handle<v8::Value> handle)
-{
-    return WebCore::V8Document::toNative(handle->ToObject());
-}
 
 v8::Handle<v8::Value> WebDocument::registerEmbedderCustomElement(const WebString& name, v8::Handle<v8::Value> options, WebExceptionCode& ec)
 {

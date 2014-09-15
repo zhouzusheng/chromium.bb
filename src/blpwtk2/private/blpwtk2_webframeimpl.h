@@ -39,7 +39,6 @@ namespace blpwtk2 {
 class WebFrameImpl : public WebFrame {
   public:
     WebFrameImpl(WebKit::WebFrame* impl);
-    virtual WebDocument document() const OVERRIDE;
     virtual v8::Local<v8::Context> mainWorldScriptContext() const OVERRIDE;
     virtual v8::Isolate* scriptIsolate() const OVERRIDE;
 

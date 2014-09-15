@@ -32,8 +32,6 @@
 #include "WebDocument.h"
 #include "WebElement.h"
 #include "bindings/v8/ExceptionState.h"
-#include "core/css/CSSStyleDeclaration.h"
-#include "core/dom/DOMTokenList.h"
 #include "core/dom/Element.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/NamedNodeMap.h"
@@ -53,7 +51,6 @@
 #include "platform/text/TextChecking.h"
 #include "public/platform/WebRect.h"
 #include "wtf/PassRefPtr.h"
-#include <bindings/V8Element.h>
 
 
 using namespace WebCore;
@@ -135,13 +132,6 @@ WebNode WebElement::shadowRoot() const
     return WebNode(shadowRoot->toNode());
 }
 
-WebString WebElement::attributeName(unsigned index) const
-{
-    if (index >= attributeCount())
-        return WebString();
-    return constUnwrap<Element>()->attributeItem(index)->name().toString();
-}
-
 WebString WebElement::attributeLocalName(unsigned index) const
 {
     if (index >= attributeCount())
@@ -174,57 +164,6 @@ void WebElement::requestFullScreen()
 WebRect WebElement::boundsInViewportSpace()
 {
     return unwrap<Element>()->boundsInRootViewSpace();
-}
-
-bool WebElement::setCssProperty(const WebString& name, const WebString& value, const WebString& priority)
-{
-    TrackExceptionState es;
-    unwrap<Element>()->style()->setProperty(name, value, priority, es);
-    return !es.hadException();
-}
-
-bool WebElement::removeCssProperty(const WebString& name)
-{
-    TrackExceptionState es;
-    unwrap<Element>()->style()->removeProperty(name, es);
-    return !es.hadException();
-}
-
-bool WebElement::addClass(const WebString& name)
-{
-    TrackExceptionState es;
-    unwrap<Element>()->classList()->add(name, es);
-    return !es.hadException();
-}
-
-bool WebElement::removeClass(const WebString& name)
-{
-    TrackExceptionState es;
-    unwrap<Element>()->classList()->remove(name, es);
-    return !es.hadException();
-}
-
-bool WebElement::containsClass(const WebString& name)
-{
-    TrackExceptionState es;
-    return unwrap<Element>()->classList()->contains(name, IGNORE_EXCEPTION);
-}
-
-bool WebElement::toggleClass(const WebString& name)
-{
-    TrackExceptionState es;
-    unwrap<Element>()->classList()->toggle(name, es);
-    return !es.hadException();
-}
-
-WebString WebElement::innerHTML() const
-{
-    const WebCore::Element* webCoreElemPtr = constUnwrap<Element>();
-    const WebCore::HTMLElement* htmlElemPtr =(const WebCore::HTMLElement*) webCoreElemPtr;
-    if (htmlElemPtr) {
-        return htmlElemPtr->innerHTML();
-    }
-    return WebString();
 }
 
 void WebElement::requestSpellCheck()
@@ -264,25 +203,6 @@ void WebElement::requestSpellCheck()
             element = ElementTraversal::next(element, stayWithin);
         }
     }
-}
-
-bool WebElement::isWebElement(v8::Handle<v8::Value> handle)
-{
-    if (!handle->IsObject()) {
-        return false;
-    }
-    v8::TryCatch tryCatch;
-    v8::Handle<v8::Object> obj = handle->ToObject();
-    if (!WebCore::V8Element::HasInstance(obj, obj->CreationContext()->GetIsolate(), WebCore::MainWorld)) {
-        return false;
-    }
-    WebCore::V8Element::toNative(obj);
-    return !tryCatch.HasCaught();
-}
-
-WebElement WebElement::fromV8Handle(v8::Handle<v8::Value> handle)
-{
-    return WebCore::V8Element::toNative(handle->ToObject());
 }
 
 WebImage WebElement::imageContents()

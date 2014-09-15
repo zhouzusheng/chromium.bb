@@ -40,10 +40,7 @@
 #include <blpwtk2_toolkit.h>
 #include <blpwtk2_toolkitcreateparams.h>
 #include <blpwtk2_toolkitfactory.h>
-#include <blpwtk2_webdocument.h>
-#include <blpwtk2_webelement.h>
 #include <blpwtk2_webframe.h>
-#include <blpwtk2_webnode.h>
 #include <blpwtk2_webview.h>
 #include <blpwtk2_webviewdelegate.h>
 

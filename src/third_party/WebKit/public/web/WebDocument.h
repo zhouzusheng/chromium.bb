@@ -120,7 +120,6 @@ public:
     BLINK_EXPORT WebDOMEvent createEvent(const WebString& eventType);
     BLINK_EXPORT WebReferrerPolicy referrerPolicy() const;
     BLINK_EXPORT WebElement createElement(const WebString& tagName);
-    BLINK_EXPORT WebString innerHTML() const;
 
     // Accessibility support. These methods should only be called on the
     // top-level document, because one accessibility cache spans all of
@@ -145,9 +144,6 @@ public:
     BLINK_EXPORT WebVector<WebDraggableRegion> draggableRegions() const;
 
     BLINK_EXPORT WebBBPrintInfo bbPrintInfo();
-
-    BLINK_EXPORT static bool isWebDocument(v8::Handle<v8::Value> handle);
-    BLINK_EXPORT static WebDocument fromV8Handle(v8::Handle<v8::Value> handle);
 
     BLINK_EXPORT v8::Handle<v8::Value> registerEmbedderCustomElement(const WebString& name, v8::Handle<v8::Value> options, WebExceptionCode&);
 

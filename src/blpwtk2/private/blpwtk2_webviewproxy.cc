@@ -340,8 +340,14 @@ void WebViewProxy::hide()
 void WebViewProxy::setParent(NativeView parent)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    Send(new BlpWebViewHostMsg_SetParent(d_routingId,
-                                         (NativeViewForTransit)parent));
+
+    if (d_nativeWebView) {
+        ::SetParent(d_nativeWebView, parent ? parent : d_nativeHiddenView);
+    }
+    else {
+        Send(new BlpWebViewHostMsg_SetParent(d_routingId,
+                                             (NativeViewForTransit)parent));
+    }
 }
 
 void WebViewProxy::move(int left, int top, int width, int height)

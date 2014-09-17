@@ -34,11 +34,11 @@
 #include "WebSecurityOrigin.h"
 #include "core/dom/Document.h"
 #include "modules/webmidi/MIDIAccess.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 WebMIDIPermissionRequest::WebMIDIPermissionRequest(const PassRefPtr<WebCore::MIDIAccess>& midi)
     : m_private(midi)
@@ -75,4 +75,4 @@ void WebMIDIPermissionRequest::setIsAllowed(bool allowed)
     m_private->setSysExEnabled(allowed);
 }
 
-} // namespace WebKit
+} // namespace blink

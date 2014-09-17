@@ -36,7 +36,6 @@
 #include "core/dom/QualifiedName.h"
 #include "core/dom/StaticNodeList.h"
 #include "core/dom/shadow/ElementShadow.h"
-#include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/shadow/HTMLContentElement.h"
 #include "core/html/shadow/HTMLShadowElement.h"
 
@@ -100,8 +99,10 @@ void InsertionPoint::setDistribution(ContentDistribution& distribution)
 
 void InsertionPoint::attach(const AttachContext& context)
 {
-    // FIXME: This loop shouldn't be needed since the distributed nodes should
-    // never be detached, we can probably remove it.
+    // We need to attach the distribution here so that they're inserted in the right order
+    // otherwise the n^2 protection inside NodeRenderingContext will cause them to be
+    // inserted in the wrong place later. This also lets distributed nodes benefit from
+    // the n^2 protection.
     for (size_t i = 0; i < m_distribution.size(); ++i) {
         if (m_distribution.at(i)->needsAttach())
             m_distribution.at(i)->attach(context);

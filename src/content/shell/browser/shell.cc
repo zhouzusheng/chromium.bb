@@ -123,6 +123,7 @@ void Shell::CloseAllWindows() {
   std::vector<Shell*> open_windows(windows_);
   for (size_t i = 0; i < open_windows.size(); ++i)
     open_windows[i]->Close();
+  PlatformExit();
   base::MessageLoop::current()->RunUntilIdle();
 }
 
@@ -248,6 +249,7 @@ WebContents* Shell::OpenURLFromTab(WebContents* source,
       return NULL;
   NavigationController::LoadURLParams load_url_params(params.url);
   load_url_params.referrer = params.referrer;
+  load_url_params.frame_tree_node_id = params.frame_tree_node_id;
   load_url_params.transition_type = params.transition;
   load_url_params.extra_headers = params.extra_headers;
   load_url_params.should_replace_current_entry =
@@ -321,9 +323,9 @@ JavaScriptDialogManager* Shell::GetJavaScriptDialogManager() {
 
 bool Shell::AddMessageToConsole(WebContents* source,
                                 int32 level,
-                                const string16& message,
+                                const base::string16& message,
                                 int32 line_no,
-                                const string16& source_id) {
+                                const base::string16& source_id) {
   return CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree);
 }
 

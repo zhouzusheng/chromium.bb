@@ -29,27 +29,29 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "modules/indexeddb/IDBDatabase.h"
-#include "modules/indexeddb/IDBDatabaseCallbacksImpl.h"
+#include "modules/indexeddb/IDBDatabaseCallbacks.h"
 #include "modules/indexeddb/IDBPendingTransactionMonitor.h"
 #include "modules/indexeddb/IDBTracing.h"
 #include "modules/indexeddb/IDBVersionChangeEvent.h"
 
+using blink::WebIDBDatabase;
+
 namespace WebCore {
 
-PassRefPtr<IDBOpenDBRequest> IDBOpenDBRequest::create(ExecutionContext* context, PassRefPtr<IDBDatabaseCallbacksImpl> callbacks, int64_t transactionId, int64_t version)
+PassRefPtr<IDBOpenDBRequest> IDBOpenDBRequest::create(ExecutionContext* context, PassRefPtr<IDBDatabaseCallbacks> callbacks, int64_t transactionId, int64_t version)
 {
     RefPtr<IDBOpenDBRequest> request(adoptRef(new IDBOpenDBRequest(context, callbacks, transactionId, version)));
     request->suspendIfNeeded();
     return request.release();
 }
 
-IDBOpenDBRequest::IDBOpenDBRequest(ExecutionContext* context, PassRefPtr<IDBDatabaseCallbacksImpl> callbacks, int64_t transactionId, int64_t version)
-    : IDBRequest(context, IDBAny::createNull(), IDBDatabaseBackendInterface::NormalTask, 0)
+IDBOpenDBRequest::IDBOpenDBRequest(ExecutionContext* context, PassRefPtr<IDBDatabaseCallbacks> callbacks, int64_t transactionId, int64_t version)
+    : IDBRequest(context, IDBAny::createNull(), 0)
     , m_databaseCallbacks(callbacks)
     , m_transactionId(transactionId)
     , m_version(version)
 {
-    ASSERT(!m_result);
+    ASSERT(!resultAsAny());
     ScriptWrappable::init(this);
 }
 
@@ -71,13 +73,13 @@ void IDBOpenDBRequest::onBlocked(int64_t oldVersion)
     enqueueEvent(IDBVersionChangeEvent::create(IDBAny::create(oldVersion), newVersionAny.release(), EventTypeNames::blocked));
 }
 
-void IDBOpenDBRequest::onUpgradeNeeded(int64_t oldVersion, PassRefPtr<IDBDatabaseBackendInterface> prpDatabaseBackend, const IDBDatabaseMetadata& metadata, WebKit::WebIDBCallbacks::DataLoss dataLoss, String dataLossMessage)
+void IDBOpenDBRequest::onUpgradeNeeded(int64_t oldVersion, PassOwnPtr<WebIDBDatabase> backend, const IDBDatabaseMetadata& metadata, blink::WebIDBDataLoss dataLoss, String dataLossMessage)
 {
     IDB_TRACE("IDBOpenDBRequest::onUpgradeNeeded()");
     if (m_contextStopped || !executionContext()) {
-        RefPtr<IDBDatabaseBackendInterface> db = prpDatabaseBackend;
+        OwnPtr<WebIDBDatabase> db = backend;
         db->abort(m_transactionId);
-        db->close(m_databaseCallbacks);
+        db->close();
         return;
     }
     if (!shouldEnqueueEvent())
@@ -85,12 +87,8 @@ void IDBOpenDBRequest::onUpgradeNeeded(int64_t oldVersion, PassRefPtr<IDBDatabas
 
     ASSERT(m_databaseCallbacks);
 
-    RefPtr<IDBDatabaseBackendInterface> databaseBackend = prpDatabaseBackend;
-
-    RefPtr<IDBDatabase> idbDatabase = IDBDatabase::create(executionContext(), databaseBackend, m_databaseCallbacks);
+    RefPtr<IDBDatabase> idbDatabase = IDBDatabase::create(executionContext(), backend, m_databaseCallbacks.release());
     idbDatabase->setMetadata(metadata);
-    m_databaseCallbacks->connect(idbDatabase.get());
-    m_databaseCallbacks = 0;
 
     if (oldVersion == IDBDatabaseMetadata::NoIntVersion) {
         // This database hasn't had an integer version before.
@@ -100,36 +98,37 @@ void IDBOpenDBRequest::onUpgradeNeeded(int64_t oldVersion, PassRefPtr<IDBDatabas
     oldMetadata.intVersion = oldVersion;
 
     m_transaction = IDBTransaction::create(executionContext(), m_transactionId, idbDatabase.get(), this, oldMetadata);
-    m_result = IDBAny::create(idbDatabase.release());
+    setResult(IDBAny::create(idbDatabase.release()));
 
     if (m_version == IDBDatabaseMetadata::NoIntVersion)
         m_version = 1;
     enqueueEvent(IDBVersionChangeEvent::create(IDBAny::create(oldVersion), IDBAny::create(m_version), EventTypeNames::upgradeneeded, dataLoss, dataLossMessage));
 }
 
-void IDBOpenDBRequest::onSuccess(PassRefPtr<IDBDatabaseBackendInterface> prpBackend, const IDBDatabaseMetadata& metadata)
+void IDBOpenDBRequest::onSuccess(PassOwnPtr<WebIDBDatabase> backend, const IDBDatabaseMetadata& metadata)
 {
     IDB_TRACE("IDBOpenDBRequest::onSuccess()");
     if (m_contextStopped || !executionContext()) {
-        RefPtr<IDBDatabaseBackendInterface> db = prpBackend;
-        db->close(m_databaseCallbacks);
+        OwnPtr<WebIDBDatabase> db = backend;
+        if (db)
+            db->close();
         return;
     }
     if (!shouldEnqueueEvent())
         return;
 
-    RefPtr<IDBDatabaseBackendInterface> backend = prpBackend;
     RefPtr<IDBDatabase> idbDatabase;
-    if (m_result) {
-        idbDatabase = m_result->idbDatabase();
+    if (resultAsAny()) {
+        // Previous onUpgradeNeeded call delivered the backend.
+        ASSERT(!backend.get());
+        idbDatabase = resultAsAny()->idbDatabase();
         ASSERT(idbDatabase);
         ASSERT(!m_databaseCallbacks);
     } else {
+        ASSERT(backend.get());
         ASSERT(m_databaseCallbacks);
-        idbDatabase = IDBDatabase::create(executionContext(), backend.release(), m_databaseCallbacks);
-        m_databaseCallbacks->connect(idbDatabase.get());
-        m_databaseCallbacks = 0;
-        m_result = IDBAny::create(idbDatabase.get());
+        idbDatabase = IDBDatabase::create(executionContext(), backend, m_databaseCallbacks.release());
+        setResult(IDBAny::create(idbDatabase.get()));
     }
     idbDatabase->setMetadata(metadata);
     enqueueEvent(Event::create(EventTypeNames::success));
@@ -149,8 +148,9 @@ bool IDBOpenDBRequest::dispatchEvent(PassRefPtr<Event> event)
 {
     // If the connection closed between onUpgradeNeeded and the delivery of the "success" event,
     // an "error" event should be fired instead.
-    if (event->type() == EventTypeNames::success && m_result->type() == IDBAny::IDBDatabaseType && m_result->idbDatabase()->isClosePending()) {
-        m_result.clear();
+    if (event->type() == EventTypeNames::success && resultAsAny()->type() == IDBAny::IDBDatabaseType && resultAsAny()->idbDatabase()->isClosePending()) {
+        dequeueEvent(event.get());
+        setResult(0);
         onError(DOMError::create(AbortError, "The connection was closed."));
         return false;
     }

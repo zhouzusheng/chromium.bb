@@ -39,7 +39,6 @@
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorAgent.h"
 #include "core/inspector/InspectorApplicationCacheAgent.h"
-#include "core/inspector/InspectorBaseAgent.h"
 #include "core/inspector/InspectorCSSAgent.h"
 #include "core/inspector/InspectorCanvasAgent.h"
 #include "core/inspector/InspectorClient.h"
@@ -109,7 +108,7 @@ InspectorController::InspectorController(Page* page, InspectorClient* inspectorC
     m_memoryAgent = memoryAgentPtr.get();
     m_agents.append(memoryAgentPtr.release());
 
-    OwnPtr<InspectorTimelineAgent> timelineAgentPtr(InspectorTimelineAgent::create(m_instrumentingAgents.get(), pageAgent, m_memoryAgent, domAgent, m_state.get(),
+    OwnPtr<InspectorTimelineAgent> timelineAgentPtr(InspectorTimelineAgent::create(m_instrumentingAgents.get(), pageAgent, m_memoryAgent, domAgent, m_overlay.get(), m_state.get(),
         InspectorTimelineAgent::PageInspector, inspectorClient));
     m_timelineAgent = timelineAgentPtr.get();
     m_agents.append(timelineAgentPtr.release());
@@ -120,9 +119,7 @@ InspectorController::InspectorController(Page* page, InspectorClient* inspectorC
 
     m_agents.append(PageRuntimeAgent::create(m_instrumentingAgents.get(), m_state.get(), m_injectedScriptManager.get(), pageScriptDebugServer, page, pageAgent));
 
-    OwnPtr<InspectorConsoleAgent> consoleAgentPtr(PageConsoleAgent::create(m_instrumentingAgents.get(), m_state.get(), m_injectedScriptManager.get(), domAgent, m_timelineAgent));
-    InspectorConsoleAgent* consoleAgent = consoleAgentPtr.get();
-    m_agents.append(consoleAgentPtr.release());
+    m_agents.append(PageConsoleAgent::create(m_instrumentingAgents.get(), m_state.get(), m_injectedScriptManager.get(), domAgent, m_timelineAgent));
 
     OwnPtr<InspectorDebuggerAgent> debuggerAgentPtr(PageDebuggerAgent::create(m_instrumentingAgents.get(), m_state.get(), pageScriptDebugServer, pageAgent, m_injectedScriptManager.get(), m_overlay.get()));
     InspectorDebuggerAgent* debuggerAgent = debuggerAgentPtr.get();
@@ -130,7 +127,7 @@ InspectorController::InspectorController(Page* page, InspectorClient* inspectorC
 
     m_agents.append(InspectorDOMDebuggerAgent::create(m_instrumentingAgents.get(), m_state.get(), domAgent, debuggerAgent));
 
-    m_agents.append(InspectorProfilerAgent::create(m_instrumentingAgents.get(), consoleAgent, m_state.get(), m_injectedScriptManager.get()));
+    m_agents.append(InspectorProfilerAgent::create(m_instrumentingAgents.get(), m_state.get(), m_injectedScriptManager.get(), m_overlay.get()));
 
     m_agents.append(InspectorHeapProfilerAgent::create(m_instrumentingAgents.get(), m_state.get(), m_injectedScriptManager.get()));
 
@@ -298,11 +295,6 @@ void InspectorController::inspect(Node* node)
     injectedScript.inspectNode(node);
 }
 
-Page* InspectorController::inspectedPage() const
-{
-    return m_page;
-}
-
 void InspectorController::setInjectedScriptForOrigin(const String& origin, const String& source)
 {
     if (InspectorAgent* inspectorAgent = m_instrumentingAgents->inspectorAgent())
@@ -357,6 +349,13 @@ bool InspectorController::handleTouchEvent(Frame* frame, const PlatformTouchEven
     m_overlay->handleTouchEvent(event);
     if (InspectorDOMAgent* domAgent = m_instrumentingAgents->inspectorDOMAgent())
         return domAgent->handleTouchEvent(frame, event);
+    return false;
+}
+
+bool InspectorController::handleKeyboardEvent(Frame* frame, const PlatformKeyboardEvent& event)
+{
+    // Overlay should not consume events.
+    m_overlay->handleKeyboardEvent(event);
     return false;
 }
 
@@ -428,6 +427,12 @@ void InspectorController::didComposite()
 {
     if (InspectorTimelineAgent* timelineAgent = m_instrumentingAgents->inspectorTimelineAgent())
         timelineAgent->didComposite();
+}
+
+void InspectorController::processGPUEvent(double timestamp, int phase, bool foreign, size_t usedGPUMemoryBytes)
+{
+    if (InspectorTimelineAgent* timelineAgent = m_instrumentingAgents->inspectorTimelineAgent())
+        timelineAgent->processGPUEvent(InspectorTimelineAgent::GPUEvent(timestamp, phase, foreign, usedGPUMemoryBytes));
 }
 
 } // namespace WebCore

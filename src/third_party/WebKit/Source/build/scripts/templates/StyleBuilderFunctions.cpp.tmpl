@@ -67,7 +67,9 @@ namespace WebCore {
         if (list->size() == i)
             list->append(CSSAnimationData::create());
         list->animation(i)->set{{attribute}}(parentList->animation(i)->{{lower_first(attribute)}}());
-        list->animation(i)->setAnimationMode(parentList->animation(i)->animationMode());
+        {%- if property_id == "CSSPropertyWebkitTransitionProperty" %}
+            list->animation(i)->setAnimationMode(parentList->animation(i)->animationMode());
+        {%- endif %}
     }
 
     // Reset any remaining animations to not have the property set.
@@ -141,7 +143,7 @@ namespace WebCore {
         state.style()->{{auto_setter}}();
     else
     {%- if compute_length %}
-        {{ set_value(property) }}(primitiveValue->computeLength<{{property.type_name}}>(state.style(), state.rootElementStyle(), state.style()->effectiveZoom()));
+        {{ set_value(property) }}(primitiveValue->computeLength<{{property.type_name}}>(state.cssToLengthConversionData()));
     {%- else %}
         {{ set_value(property) }}(*primitiveValue);
     {%- endif %}
@@ -155,22 +157,6 @@ namespace WebCore {
 {{ apply_auto("CSSPropertyWidows") }}
 {{ apply_auto("CSSPropertyZIndex") }}
 
-{%- macro apply_value_border_image(property_id) %}
-{{ declare_value_function(property_id) }}
-{
-    {%- set property = properties[property_id] %}
-    NinePieceImage image;
-    {%- if property_id == "CSSPropertyWebkitMaskBoxImage" %}
-    image.setMaskDefaults();
-    {%- endif %}
-    state.styleMap().mapNinePieceImage(state.style(), {{property_id}}, value, image);
-    {{ set_value(property) }}(image);
-}
-{%- endmacro %}
-
-{{ apply_value_border_image("CSSPropertyWebkitBorderImage") }}
-{{ apply_value_border_image("CSSPropertyWebkitMaskBoxImage") }}
-
 {%- macro apply_border_image_modifier(property_id, modifier_type) %}
 {%- set is_mask_box = "MaskBox" in property_id %}
 {%- set getter = "maskBoxImage" if is_mask_box else "borderImage" %}
@@ -179,17 +165,20 @@ namespace WebCore {
 {
     NinePieceImage image(state.style()->{{getter}}());
     {%- if modifier_type == "Outset" %}
-    image.setOutset(LengthBox(0));
+    image.setOutset(Length(0, Fixed));
     {%- elif modifier_type == "Repeat" %}
     image.setHorizontalRule(StretchImageRule);
     image.setVerticalRule(StretchImageRule);
-    {%- elif modifier_type == "Slice" %}
+    {%- elif modifier_type == "Slice" and is_mask_box %}
     // Masks have a different initial value for slices. Preserve the value of 0 for backwards compatibility.
-    image.setImageSlices(LengthBox({{ (["Length(100, Percent)"]*4) | join(", ") if not is_mask_box }}));
+    image.setImageSlices(LengthBox({{ (["Length(0, Fixed)"]*4) | join(", ") }}));
+    image.setFill(true);
+    {%- elif modifier_type == "Slice" and not is_mask_box %}
+    image.setImageSlices(LengthBox({{ (["Length(100, Percent)"]*4) | join(", ") }}));
     image.setFill(false);
     {%- elif modifier_type == "Width" %}
-    // Masks have a different initial value for widths. Preserve the value of 0 for backwards compatibility.
-    image.setBorderSlices(LengthBox({{ (["Length(1, Relative)"]*4) | join(", ") if not is_mask_box }}));
+    // Masks have a different initial value for widths. Preserve the value of 'auto' for backwards compatibility.
+    image.setBorderSlices({{ "Length(Auto)" if is_mask_box else "1.0" }});
     {%- endif %}
     state.style()->{{setter}}(image);
 }
@@ -284,9 +273,9 @@ namespace WebCore {
 {%- endif %}
 
     if (state.applyPropertyToRegularStyle())
-        {{ set_value(property) }}(state.document().textLinkColors().colorFromPrimitiveValue(primitiveValue, state.style()->visitedDependentColor(CSSPropertyColor)));
+        {{ set_value(property) }}(state.document().textLinkColors().colorFromPrimitiveValue(primitiveValue, state.style()->color()));
     if (state.applyPropertyToVisitedLinkStyle())
-        state.style()->{{visited_link_setter}}(state.document().textLinkColors().colorFromPrimitiveValue(primitiveValue, state.style()->visitedDependentColor(CSSPropertyColor), state.element()->isLink() /* forVisitedLink */));
+        state.style()->{{visited_link_setter}}(state.document().textLinkColors().colorFromPrimitiveValue(primitiveValue, state.style()->color(), state.element()->isLink() /* forVisitedLink */));
 }
 {%- endmacro %}
 
@@ -344,7 +333,7 @@ namespace WebCore {
         if (!pair || !pair->first() || !pair->second())
             continue;
 
-        AtomicString identifier = pair->first()->getStringValue();
+        AtomicString identifier(pair->first()->getStringValue());
         int value = pair->second()->getIntValue();
         CounterDirectives& directives = map.add(identifier, CounterDirectives()).iterator->value;
         {%- if action == "Reset" %}
@@ -474,7 +463,7 @@ namespace WebCore {
 {{ apply_font("CSSPropertyFontStyle", "Italic", "FontItalicOff", "FontItalic") }}
 {{ apply_font("CSSPropertyFontVariant", "SmallCaps", "FontSmallCapsOff", "FontSmallCaps") }}
 {{ apply_font("CSSPropertyTextRendering", "TextRenderingMode", "AutoTextRendering", "TextRenderingMode") }}
-{{ apply_font("CSSPropertyWebkitFontKerning", "Kerning", "FontDescription::AutoKerning", "FontDescription::Kerning") }}
+{{ apply_font("CSSPropertyFontKerning", "Kerning", "FontDescription::AutoKerning", "FontDescription::Kerning") }}
 {{ apply_font("CSSPropertyWebkitFontSmoothing", "FontSmoothing", "AutoSmoothing", "FontSmoothingMode") }}
 
 {%- macro apply_value_number(property_id, id_for_minus_one) %}
@@ -502,6 +491,11 @@ namespace WebCore {
         CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
         if (primitiveValue->getValueID() == CSSValueAuto)
             {{ set_value(property) }}(0);
+        else if (primitiveValue->getValueID() == CSSValueMarginBox
+            || primitiveValue->getValueID() == CSSValueBorderBox
+            || primitiveValue->getValueID() == CSSValuePaddingBox
+            || primitiveValue->getValueID() == CSSValueContentBox)
+            {{ set_value(property) }}(ShapeValue::createLayoutBoxValue(LayoutBox(*primitiveValue)));
         else if (primitiveValue->getValueID() == CSSValueOutsideShape)
             {{ set_value(property) }}(ShapeValue::createOutsideValue());
         else if (primitiveValue->isShape()) {

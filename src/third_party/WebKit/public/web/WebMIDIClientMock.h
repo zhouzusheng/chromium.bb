@@ -39,12 +39,11 @@ namespace WebCore {
 class MIDIClientMock;
 }
 
-namespace WebKit {
-class WebMIDIPermissionRequest;
+namespace blink {
 
 class WebMIDIClientMock : public WebMIDIClient {
 public:
-    BLINK_EXPORT static WebMIDIClientMock* create();
+    BLINK_EXPORT WebMIDIClientMock();
     virtual ~WebMIDIClientMock() { reset(); }
 
     BLINK_EXPORT void setSysExPermission(bool);
@@ -55,12 +54,11 @@ public:
     virtual void cancelSysExPermissionRequest(const WebMIDIPermissionRequest&) OVERRIDE;
 
 private:
-    WebMIDIClientMock();
     BLINK_EXPORT void reset();
 
     WebPrivateOwnPtr<WebCore::MIDIClientMock> m_clientMock;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebMIDIClientMock_h

@@ -49,9 +49,10 @@
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/frame/Frame.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/xml/XPathNSResolver.h"
+#include "gin/public/isolate_holder.h"
 #include "wtf/ArrayBufferContents.h"
 #include "wtf/MainThread.h"
 #include "wtf/MathExtras.h"
@@ -67,12 +68,13 @@ namespace WebCore {
 
 v8::Handle<v8::Value> setDOMException(int exceptionCode, v8::Isolate* isolate)
 {
-    return V8ThrowException::throwDOMException(exceptionCode, isolate);
+    // FIXME: pass in an ExceptionState instead for better creationContext.
+    return V8ThrowException::throwDOMException(exceptionCode, v8::Handle<v8::Object>(), isolate);
 }
 
 v8::Handle<v8::Value> setDOMException(int exceptionCode, const String& message, v8::Isolate* isolate)
 {
-    return V8ThrowException::throwDOMException(exceptionCode, message, isolate);
+    return V8ThrowException::throwDOMException(exceptionCode, message, v8::Handle<v8::Object>(), isolate);
 }
 
 v8::Handle<v8::Value> throwError(V8ErrorType errorType, const String& message, v8::Isolate* isolate)
@@ -120,15 +122,6 @@ v8::ArrayBuffer::Allocator* v8ArrayBufferAllocator()
 {
     DEFINE_STATIC_LOCAL(ArrayBufferAllocator, arrayBufferAllocator, ());
     return &arrayBufferAllocator;
-}
-
-Vector<v8::Handle<v8::Value> > toVectorOfArguments(const v8::FunctionCallbackInfo<v8::Value>& info)
-{
-    Vector<v8::Handle<v8::Value> > result;
-    size_t length = info.Length();
-    for (size_t i = 0; i < length; ++i)
-        result.append(info[i]);
-    return result;
 }
 
 PassRefPtr<NodeFilter> toNodeFilter(v8::Handle<v8::Value> callback, v8::Isolate* isolate)
@@ -265,6 +258,9 @@ static inline T toSmallerUInt(v8::Handle<v8::Value> value, IntegerConversionConf
     if (std::isnan(numberValue) || std::isinf(numberValue) || !numberValue)
         return 0;
 
+    if (configuration == Clamp)
+        return clampTo<T>(numberObject->Value());
+
     numberValue = numberValue < 0 ? -floor(fabs(numberValue)) : floor(fabs(numberValue));
     return static_cast<T>(fmod(numberValue, LimitsTrait::numberOfValues));
 }
@@ -298,11 +294,12 @@ int32_t toInt32(v8::Handle<v8::Value> value, IntegerConversionConfiguration conf
         return value->Int32Value();
 
     // Can the value be converted to a number?
-    v8::Local<v8::Number> numberObject = value->ToNumber();
+    ok = false;
+    V8TRYCATCH_RETURN(v8::Local<v8::Number>, numberObject, value->ToNumber(), 0);
     if (numberObject.IsEmpty()) {
-        ok = false;
         return 0;
     }
+    ok = true;
 
     if (configuration == EnforceRange)
         return enforceRange(numberObject->Value(), kMinInt32, kMaxInt32, ok);
@@ -311,7 +308,12 @@ int32_t toInt32(v8::Handle<v8::Value> value, IntegerConversionConfiguration conf
     double numberValue = numberObject->Value();
     if (std::isnan(numberValue) || std::isinf(numberValue))
         return 0;
-    return numberObject->Int32Value();
+
+    if (configuration == Clamp)
+        return clampTo<int32_t>(numberObject->Value());
+
+    V8TRYCATCH_RETURN(int32_t, result, numberObject->Int32Value(), 0);
+    return result;
 }
 
 uint32_t toUInt32(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
@@ -335,11 +337,12 @@ uint32_t toUInt32(v8::Handle<v8::Value> value, IntegerConversionConfiguration co
     }
 
     // Can the value be converted to a number?
-    v8::Local<v8::Number> numberObject = value->ToNumber();
+    ok = false;
+    V8TRYCATCH_RETURN(v8::Local<v8::Number>, numberObject, value->ToNumber(), 0);
     if (numberObject.IsEmpty()) {
-        ok = false;
         return 0;
     }
+    ok = true;
 
     if (configuration == EnforceRange)
         return enforceRange(numberObject->Value(), 0, kMaxUInt32, ok);
@@ -348,7 +351,12 @@ uint32_t toUInt32(v8::Handle<v8::Value> value, IntegerConversionConfiguration co
     double numberValue = numberObject->Value();
     if (std::isnan(numberValue) || std::isinf(numberValue))
         return 0;
-    return numberObject->Uint32Value();
+
+    if (configuration == Clamp)
+        return clampTo<uint32_t>(numberObject->Value());
+
+    V8TRYCATCH_RETURN(uint32_t, result, numberObject->Uint32Value(), 0);
+    return result;
 }
 
 int64_t toInt64(v8::Handle<v8::Value> value, IntegerConversionConfiguration configuration, bool& ok)
@@ -370,6 +378,10 @@ int64_t toInt64(v8::Handle<v8::Value> value, IntegerConversionConfiguration conf
 
     if (configuration == EnforceRange)
         return enforceRange(x, -kJSMaxInteger, kJSMaxInteger, ok);
+
+    // Does the value convert to nan or to an infinity?
+    if (std::isnan(x) || std::isinf(x))
+        return 0;
 
     // NaNs and +/-Infinity should be 0, otherwise modulo 2^64.
     unsigned long long integer;
@@ -409,6 +421,10 @@ uint64_t toUInt64(v8::Handle<v8::Value> value, IntegerConversionConfiguration co
     if (configuration == EnforceRange)
         return enforceRange(x, 0, kJSMaxInteger, ok);
 
+    // Does the value convert to nan or to an infinity?
+    if (std::isnan(x) || std::isinf(x))
+        return 0;
+
     // NaNs and +/-Infinity should be 0, otherwise modulo 2^64.
     unsigned long long integer;
     doubleToInteger(x, integer);
@@ -417,15 +433,15 @@ uint64_t toUInt64(v8::Handle<v8::Value> value, IntegerConversionConfiguration co
 
 v8::Handle<v8::FunctionTemplate> createRawTemplate(v8::Isolate* isolate)
 {
-    v8::HandleScope scope(isolate);
-    v8::Local<v8::FunctionTemplate> result = v8::FunctionTemplate::New(V8ObjectConstructor::isValidConstructorMode);
-    return scope.Close(result);
+    v8::EscapableHandleScope scope(isolate);
+    v8::Local<v8::FunctionTemplate> result = v8::FunctionTemplate::New(isolate, V8ObjectConstructor::isValidConstructorMode);
+    return scope.Escape(result);
 }
 
 PassRefPtr<XPathNSResolver> toXPathNSResolver(v8::Handle<v8::Value> value, v8::Isolate* isolate)
 {
     RefPtr<XPathNSResolver> resolver;
-    if (V8XPathNSResolver::HasInstance(value, isolate, worldType(isolate)))
+    if (V8XPathNSResolver::hasInstance(value, isolate, worldType(isolate)))
         resolver = V8XPathNSResolver::toNative(v8::Handle<v8::Object>::Cast(value));
     else if (value->IsObject())
         resolver = V8CustomXPathNSResolver::create(value->ToObject(), isolate);
@@ -441,10 +457,10 @@ DOMWindow* toDOMWindow(v8::Handle<v8::Context> context)
 {
     v8::Handle<v8::Object> global = context->Global();
     ASSERT(!global.IsEmpty());
-    v8::Handle<v8::Object> window = global->FindInstanceInPrototypeChain(V8Window::GetTemplate(context->GetIsolate(), MainWorld));
+    v8::Handle<v8::Object> window = global->FindInstanceInPrototypeChain(V8Window::domTemplate(context->GetIsolate(), MainWorld));
     if (!window.IsEmpty())
         return V8Window::toNative(window);
-    window = global->FindInstanceInPrototypeChain(V8Window::GetTemplate(context->GetIsolate(), IsolatedWorld));
+    window = global->FindInstanceInPrototypeChain(V8Window::domTemplate(context->GetIsolate(), IsolatedWorld));
     ASSERT(!window.IsEmpty());
     return V8Window::toNative(window);
 }
@@ -452,13 +468,13 @@ DOMWindow* toDOMWindow(v8::Handle<v8::Context> context)
 ExecutionContext* toExecutionContext(v8::Handle<v8::Context> context)
 {
     v8::Handle<v8::Object> global = context->Global();
-    v8::Handle<v8::Object> windowWrapper = global->FindInstanceInPrototypeChain(V8Window::GetTemplate(context->GetIsolate(), MainWorld));
+    v8::Handle<v8::Object> windowWrapper = global->FindInstanceInPrototypeChain(V8Window::domTemplate(context->GetIsolate(), MainWorld));
     if (!windowWrapper.IsEmpty())
         return V8Window::toNative(windowWrapper)->executionContext();
-    windowWrapper = global->FindInstanceInPrototypeChain(V8Window::GetTemplate(context->GetIsolate(), IsolatedWorld));
+    windowWrapper = global->FindInstanceInPrototypeChain(V8Window::domTemplate(context->GetIsolate(), IsolatedWorld));
     if (!windowWrapper.IsEmpty())
         return V8Window::toNative(windowWrapper)->executionContext();
-    v8::Handle<v8::Object> workerWrapper = global->FindInstanceInPrototypeChain(V8WorkerGlobalScope::GetTemplate(context->GetIsolate(), WorkerWorld));
+    v8::Handle<v8::Object> workerWrapper = global->FindInstanceInPrototypeChain(V8WorkerGlobalScope::domTemplate(context->GetIsolate(), WorkerWorld));
     if (!workerWrapper.IsEmpty())
         return V8WorkerGlobalScope::toNative(workerWrapper)->executionContext();
     // FIXME: Is this line of code reachable?
@@ -467,36 +483,36 @@ ExecutionContext* toExecutionContext(v8::Handle<v8::Context> context)
 
 DOMWindow* activeDOMWindow()
 {
-    v8::Handle<v8::Context> context = v8::Context::GetCalling();
+    v8::Handle<v8::Context> context = v8::Isolate::GetCurrent()->GetCallingContext();
     if (context.IsEmpty()) {
         // Unfortunately, when processing script from a plug-in, we might not
         // have a calling context. In those cases, we fall back to the
         // entered context.
-        context = v8::Context::GetEntered();
+        context = v8::Isolate::GetCurrent()->GetEnteredContext();
     }
     return toDOMWindow(context);
 }
 
 ExecutionContext* activeExecutionContext()
 {
-    v8::Handle<v8::Context> context = v8::Context::GetCalling();
+    v8::Handle<v8::Context> context = v8::Isolate::GetCurrent()->GetCallingContext();
     if (context.IsEmpty()) {
         // Unfortunately, when processing script from a plug-in, we might not
         // have a calling context. In those cases, we fall back to the
         // entered context.
-        context = v8::Context::GetEntered();
+        context = v8::Isolate::GetCurrent()->GetEnteredContext();
     }
     return toExecutionContext(context);
 }
 
 DOMWindow* firstDOMWindow()
 {
-    return toDOMWindow(v8::Context::GetEntered());
+    return toDOMWindow(v8::Isolate::GetCurrent()->GetEnteredContext());
 }
 
 Document* currentDocument()
 {
-    return toDOMWindow(v8::Context::GetCurrent())->document();
+    return toDOMWindow(v8::Isolate::GetCurrent()->GetCurrentContext())->document();
 }
 
 Frame* toFrameIfNotDetached(v8::Handle<v8::Context> context)
@@ -526,7 +542,7 @@ v8::Local<v8::Context> toV8Context(ExecutionContext* context, DOMWrapperWorld* w
 
 bool handleOutOfMemory()
 {
-    v8::Local<v8::Context> context = v8::Context::GetCurrent();
+    v8::Local<v8::Context> context = v8::Isolate::GetCurrent()->GetCurrentContext();
 
     if (!context->HasOutOfMemoryException())
         return false;
@@ -572,8 +588,8 @@ WrapperWorldType worldTypeInMainThread(v8::Isolate* isolate)
 {
     if (!DOMWrapperWorld::isolatedWorldsExist())
         return MainWorld;
-    ASSERT(!v8::Context::GetEntered().IsEmpty());
-    DOMWrapperWorld* isolatedWorld = DOMWrapperWorld::isolatedWorld(v8::Context::GetEntered());
+    ASSERT(!isolate->GetEnteredContext().IsEmpty());
+    DOMWrapperWorld* isolatedWorld = DOMWrapperWorld::isolatedWorld(isolate->GetEnteredContext());
     if (isolatedWorld)
         return IsolatedWorld;
     return MainWorld;
@@ -586,8 +602,8 @@ DOMWrapperWorld* isolatedWorldForIsolate(v8::Isolate* isolate)
         return 0;
     if (!DOMWrapperWorld::isolatedWorldsExist())
         return 0;
-    ASSERT(v8::Context::InContext());
-    return DOMWrapperWorld::isolatedWorld(v8::Context::GetCurrent());
+    ASSERT(isolate->InContext());
+    return DOMWrapperWorld::isolatedWorld(isolate->GetCurrentContext());
 }
 
 v8::Local<v8::Value> getHiddenValueFromMainWorldWrapper(v8::Isolate* isolate, ScriptWrappable* wrappable, v8::Handle<v8::String> key)
@@ -596,20 +612,25 @@ v8::Local<v8::Value> getHiddenValueFromMainWorldWrapper(v8::Isolate* isolate, Sc
     return wrapper.IsEmpty() ? v8::Local<v8::Value>() : wrapper->GetHiddenValue(key);
 }
 
-static v8::Isolate* mainIsolate = 0;
+static gin::IsolateHolder* mainIsolateHolder = 0;
 
 v8::Isolate* mainThreadIsolate()
 {
-    ASSERT(mainIsolate);
+    ASSERT(mainIsolateHolder);
     ASSERT(isMainThread());
-    return mainIsolate;
+    return mainIsolateHolder->isolate();
 }
 
 void setMainThreadIsolate(v8::Isolate* isolate)
 {
-    ASSERT(!mainIsolate);
+    ASSERT(!mainIsolateHolder || !isolate);
     ASSERT(isMainThread());
-    mainIsolate = isolate;
+    if (isolate) {
+        mainIsolateHolder = new gin::IsolateHolder(isolate);
+    } else {
+        delete mainIsolateHolder;
+        mainIsolateHolder = 0;
+    }
 }
 
 v8::Isolate* toIsolate(ExecutionContext* context)

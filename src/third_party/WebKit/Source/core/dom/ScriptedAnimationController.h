@@ -50,11 +50,12 @@ public:
 
     typedef int CallbackId;
 
-    int registerCallback(PassRefPtr<RequestAnimationFrameCallback>);
+    int registerCallback(PassOwnPtr<RequestAnimationFrameCallback>);
     void cancelCallback(CallbackId);
     void serviceScriptedAnimations(double monotonicTimeNow);
 
-    void scheduleEvent(PassRefPtr<Event>);
+    void enqueueEvent(PassRefPtr<Event>);
+    void enqueuePerFrameEvent(PassRefPtr<Event>);
 
     void suspend();
     void resume();
@@ -67,14 +68,15 @@ private:
     void dispatchEvents();
     void executeCallbacks(double monotonicTimeNow);
 
-    typedef Vector<RefPtr<RequestAnimationFrameCallback> > CallbackList;
+    typedef Vector<OwnPtr<RequestAnimationFrameCallback> > CallbackList;
     CallbackList m_callbacks;
+    CallbackList m_callbacksToInvoke; // only non-empty while inside executeCallbacks
 
     Document* m_document;
     CallbackId m_nextCallbackId;
     int m_suspendCount;
     Vector<RefPtr<Event> > m_eventQueue;
-    ListHashSet<std::pair<const EventTarget*, const StringImpl*> > m_scheduledEventTargets;
+    ListHashSet<std::pair<const EventTarget*, const StringImpl*> > m_perFrameEvents;
 };
 
 }

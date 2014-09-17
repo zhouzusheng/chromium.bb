@@ -27,12 +27,13 @@
 
 #include "core/dom/Document.h"
 #include "core/fetch/ImageResource.h"
-#include "core/platform/graphics/Font.h"
-#include "core/platform/graphics/GraphicsContextStateSaver.h"
 #include "core/rendering/GraphicsContextAnnotator.h"
+#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderListItem.h"
 #include "core/rendering/RenderView.h"
+#include "platform/fonts/Font.h"
+#include "platform/graphics/GraphicsContextStateSaver.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/unicode/CharacterNames.h"
 
@@ -1324,6 +1325,7 @@ void RenderListMarker::layout()
 {
     ASSERT(needsLayout());
 
+    LayoutRectRecorder recorder(*this);
     if (isImage()) {
         updateMarginsAndContent();
         setWidth(m_image->imageSize(this, style()->effectiveZoom()).width());

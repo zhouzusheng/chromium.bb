@@ -26,15 +26,14 @@
 
 #include "core/accessibility/AXObjectCache.h"
 #include "core/frame/Frame.h"
-#include "core/platform/graphics/GraphicsContext.h"
 #include "core/rendering/CompositedLayerMapping.h"
 #include "core/rendering/GraphicsContextAnnotator.h"
 #include "core/rendering/HitTestResult.h"
+#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
+#include "platform/graphics/GraphicsContext.h"
 #include "wtf/HashMap.h"
-
-using namespace std;
 
 namespace WebCore {
 
@@ -211,6 +210,7 @@ void RenderWidget::layout()
 {
     ASSERT(needsLayout());
 
+    LayoutRectRecorder recorder(*this);
     clearNeedsLayout();
 }
 
@@ -345,14 +345,6 @@ void RenderWidget::widgetPositionsUpdated()
     if (!m_widget)
         return;
     m_widget->widgetPositionsUpdated();
-}
-
-IntRect RenderWidget::windowClipRect() const
-{
-    if (!m_frameView)
-        return IntRect();
-
-    return intersection(m_frameView->contentsToWindow(m_clipRect), m_frameView->windowClipRect());
 }
 
 void RenderWidget::clearWidget()

@@ -33,9 +33,9 @@
 
 #include "modules/websockets/WebSocketExtensionDispatcher.h"
 #include "modules/websockets/WebSocketExtensionProcessor.h"
-#include "modules/websockets/WebSocketHandshakeRequest.h"
-#include "modules/websockets/WebSocketHandshakeResponse.h"
-#include "weborigin/KURL.h"
+#include "platform/network/WebSocketHandshakeRequest.h"
+#include "platform/network/WebSocketHandshakeResponse.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
@@ -80,12 +80,12 @@ public:
     // Returns a string indicating the reason of failure if mode() == Failed.
     String failureReason() const;
 
-    String serverWebSocketProtocol() const;
-    String serverSetCookie() const;
-    String serverSetCookie2() const;
-    String serverUpgrade() const;
-    String serverConnection() const;
-    String serverWebSocketAccept() const;
+    const AtomicString& serverWebSocketProtocol() const;
+    const AtomicString& serverSetCookie() const;
+    const AtomicString& serverSetCookie2() const;
+    const AtomicString& serverUpgrade() const;
+    const AtomicString& serverConnection() const;
+    const AtomicString& serverWebSocketAccept() const;
     String acceptedExtensions() const;
 
     const WebSocketHandshakeResponse& serverHandshakeResponse() const;

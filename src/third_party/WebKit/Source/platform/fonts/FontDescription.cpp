@@ -47,6 +47,8 @@ struct SameSizeAsFontDescription {
 
 COMPILE_ASSERT(sizeof(FontDescription) == sizeof(SameSizeAsFontDescription), FontDescription_should_stay_small);
 
+bool FontDescription::s_useSubpixelTextPositioning = false;
+
 FontWeight FontDescription::lighterWeight(void) const
 {
     switch (m_weight) {
@@ -99,6 +101,43 @@ FontTraitsMask FontDescription::traitsMask() const
 
 }
 
+void FontDescription::setTraitsMask(FontTraitsMask traitsMask)
+{
+    switch (traitsMask & FontWeightMask) {
+    case FontWeight100Mask:
+        setWeight(FontWeight100);
+        break;
+    case FontWeight200Mask:
+        setWeight(FontWeight200);
+        break;
+    case FontWeight300Mask:
+        setWeight(FontWeight300);
+        break;
+    case FontWeight400Mask:
+        setWeight(FontWeight400);
+        break;
+    case FontWeight500Mask:
+        setWeight(FontWeight500);
+        break;
+    case FontWeight600Mask:
+        setWeight(FontWeight600);
+        break;
+    case FontWeight700Mask:
+        setWeight(FontWeight700);
+        break;
+    case FontWeight800Mask:
+        setWeight(FontWeight800);
+        break;
+    case FontWeight900Mask:
+        setWeight(FontWeight900);
+        break;
+    default:
+        ASSERT_NOT_REACHED();
+    }
+    setItalic((traitsMask & FontStyleItalicMask) ? FontItalicOn : FontItalicOff);
+    setSmallCaps((traitsMask & FontVariantSmallCapsMask) ? FontSmallCapsOn : FontSmallCapsOff);
+}
+
 FontDescription FontDescription::makeNormalFeatureSettings() const
 {
     FontDescription normalDescription(*this);
@@ -108,9 +147,13 @@ FontDescription FontDescription::makeNormalFeatureSettings() const
 
 float FontDescription::effectiveFontSize() const
 {
-    return (RuntimeEnabledFeatures::subpixelFontScalingEnabled())
+    float size = (RuntimeEnabledFeatures::subpixelFontScalingEnabled())
         ? computedSize()
         : computedPixelSize();
+
+    // Ensure that the effective precision matches the font-cache precision.
+    // This guarantees that the same precision is used regardless of cache status.
+    return floorf(size * FontCacheKey::precisionMultiplier()) / FontCacheKey::precisionMultiplier();
 }
 
 FontCacheKey FontDescription::cacheKey(const AtomicString& familyName, FontTraitsMask desiredTraits) const
@@ -120,13 +163,15 @@ FontCacheKey FontDescription::cacheKey(const AtomicString& familyName, FontTrait
         : traitsMask();
 
     unsigned options =
-        // synthetic bold, italics - bits 7-8
-        static_cast<unsigned>(m_fontSmoothing) << 4 | // bits 5-6
-        static_cast<unsigned>(m_textRendering) << 2 | // bits 3-4
-        static_cast<unsigned>(m_orientation) << 1 | // bit 2
-        static_cast<unsigned>(m_usePrinterFont); // bit 1
+        static_cast<unsigned>(m_syntheticItalic) << 8 | // bit 9
+        static_cast<unsigned>(m_syntheticBold) << 7 | // bit 8
+        static_cast<unsigned>(m_fontSmoothing) << 5 | // bits 6-7
+        static_cast<unsigned>(m_textRendering) << 3 | // bits 4-5
+        static_cast<unsigned>(m_orientation) << 2 | // bit 3
+        static_cast<unsigned>(m_usePrinterFont) << 1 | // bit 2
+        static_cast<unsigned>(m_subpixelTextPosition); // bit 1
 
-    return FontCacheKey(familyName, effectiveFontSize(), options | traits << 8);
+    return FontCacheKey(familyName, effectiveFontSize(), options | traits << 9);
 }
 
 } // namespace WebCore

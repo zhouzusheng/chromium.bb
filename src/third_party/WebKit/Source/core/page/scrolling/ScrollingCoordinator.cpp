@@ -35,24 +35,23 @@
 #include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/platform/ScrollAnimator.h"
-#include "core/platform/ScrollbarTheme.h"
-#include "core/platform/chromium/support/WebScrollbarImpl.h"
-#include "core/platform/chromium/support/WebScrollbarThemeGeometryNative.h"
-#include "core/platform/graphics/GraphicsLayer.h"
+#include "core/frame/Settings.h"
 #include "platform/TraceEvent.h"
+#include "platform/exported/WebScrollbarImpl.h"
+#include "platform/exported/WebScrollbarThemeGeometryNative.h"
 #include "platform/geometry/Region.h"
 #include "platform/geometry/TransformState.h"
+#include "platform/graphics/GraphicsLayer.h"
 #if OS(MACOSX)
-#include "core/platform/mac/ScrollAnimatorMac.h"
+#include "platform/mac/ScrollAnimatorMac.h"
 #endif
+#include "platform/scroll/ScrollAnimator.h"
+#include "platform/scroll/ScrollbarTheme.h"
 #include "core/plugins/PluginView.h"
 #include "core/rendering/CompositedLayerMapping.h"
 #include "core/rendering/RenderGeometryMap.h"
 #include "core/rendering/RenderLayerCompositor.h"
 #include "core/rendering/RenderView.h"
-#include "platform/geometry/IntRect.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositorSupport.h"
 #include "public/platform/WebLayerPositionConstraint.h"
@@ -61,11 +60,11 @@
 #include "public/platform/WebScrollbarThemePainter.h"
 #include "wtf/text/StringBuilder.h"
 
-using WebKit::WebLayer;
-using WebKit::WebLayerPositionConstraint;
-using WebKit::WebRect;
-using WebKit::WebScrollbarLayer;
-using WebKit::WebVector;
+using blink::WebLayer;
+using blink::WebLayerPositionConstraint;
+using blink::WebRect;
+using blink::WebScrollbarLayer;
+using blink::WebVector;
 
 
 namespace WebCore {
@@ -90,6 +89,8 @@ ScrollingCoordinator::ScrollingCoordinator(Page* page)
     : m_page(page)
     , m_scrollGestureRegionIsDirty(false)
     , m_touchEventTargetRectsAreDirty(false)
+    , m_wasFrameScrollable(false)
+    , m_lastMainThreadScrollingReasons(0)
 {
 }
 
@@ -151,6 +152,12 @@ void ScrollingCoordinator::updateAfterCompositingChange()
         m_touchEventTargetRectsAreDirty = false;
     }
 
+    FrameView* frameView = m_page->mainFrame()->view();
+    bool frameIsScrollable = frameView && frameView->isScrollable();
+    if (m_wasFrameScrollable != frameIsScrollable)
+        updateShouldUpdateScrollLayerPositionOnMainThread();
+    m_wasFrameScrollable = frameIsScrollable;
+
     const FrameTree& tree = m_page->mainFrame()->tree();
     for (const Frame* child = tree.firstChild(); child; child = child->tree().nextSibling()) {
         if (WebLayer* scrollLayer = scrollingWebLayerForScrollableArea(child->view()))
@@ -172,7 +179,7 @@ static void clearPositionConstraintExceptForLayer(GraphicsLayer* layer, Graphics
 
 static WebLayerPositionConstraint computePositionConstraint(const RenderLayer* layer)
 {
-    ASSERT(layer->compositedLayerMapping());
+    ASSERT(layer->hasCompositedLayerMapping());
     do {
         if (layer->renderer()->style()->position() == FixedPosition) {
             const RenderObject* fixedPositionObject = layer->renderer();
@@ -185,14 +192,14 @@ static WebLayerPositionConstraint computePositionConstraint(const RenderLayer* l
 
         // Composited layers that inherit a fixed position state will be positioned with respect to the nearest compositedLayerMapping's GraphicsLayer.
         // So, once we find a layer that has its own compositedLayerMapping, we can stop searching for a fixed position RenderObject.
-    } while (layer && !layer->compositedLayerMapping());
+    } while (layer && !layer->hasCompositedLayerMapping());
     return WebLayerPositionConstraint();
 }
 
 void ScrollingCoordinator::updateLayerPositionConstraint(RenderLayer* layer)
 {
-    ASSERT(layer->compositedLayerMapping());
-    CompositedLayerMapping* compositedLayerMapping = layer->compositedLayerMapping();
+    ASSERT(layer->hasCompositedLayerMapping());
+    CompositedLayerMappingPtr compositedLayerMapping = layer->compositedLayerMapping();
     GraphicsLayer* mainLayer = compositedLayerMapping->childForSuperlayers();
 
     // Avoid unnecessary commits
@@ -219,18 +226,18 @@ void ScrollingCoordinator::removeWebScrollbarLayer(ScrollableArea* scrollableAre
 static PassOwnPtr<WebScrollbarLayer> createScrollbarLayer(Scrollbar* scrollbar)
 {
     ScrollbarTheme* theme = scrollbar->theme();
-    WebKit::WebScrollbarThemePainter painter(theme, scrollbar);
-    OwnPtr<WebKit::WebScrollbarThemeGeometry> geometry(WebKit::WebScrollbarThemeGeometryNative::create(theme));
+    blink::WebScrollbarThemePainter painter(theme, scrollbar);
+    OwnPtr<blink::WebScrollbarThemeGeometry> geometry(blink::WebScrollbarThemeGeometryNative::create(theme));
 
-    OwnPtr<WebScrollbarLayer> scrollbarLayer = adoptPtr(WebKit::Platform::current()->compositorSupport()->createScrollbarLayer(new WebKit::WebScrollbarImpl(scrollbar), painter, geometry.leakPtr()));
+    OwnPtr<WebScrollbarLayer> scrollbarLayer = adoptPtr(blink::Platform::current()->compositorSupport()->createScrollbarLayer(new blink::WebScrollbarImpl(scrollbar), painter, geometry.leakPtr()));
     GraphicsLayer::registerContentsLayer(scrollbarLayer->layer());
     return scrollbarLayer.release();
 }
 
 PassOwnPtr<WebScrollbarLayer> ScrollingCoordinator::createSolidColorScrollbarLayer(ScrollbarOrientation orientation, int thumbThickness, bool isLeftSideVerticalScrollbar)
 {
-    WebKit::WebScrollbar::Orientation webOrientation = (orientation == HorizontalScrollbar) ? WebKit::WebScrollbar::Horizontal : WebKit::WebScrollbar::Vertical;
-    OwnPtr<WebScrollbarLayer> scrollbarLayer = adoptPtr(WebKit::Platform::current()->compositorSupport()->createSolidColorScrollbarLayer(webOrientation, thumbThickness, isLeftSideVerticalScrollbar));
+    blink::WebScrollbar::Orientation webOrientation = (orientation == HorizontalScrollbar) ? blink::WebScrollbar::Horizontal : blink::WebScrollbar::Vertical;
+    OwnPtr<WebScrollbarLayer> scrollbarLayer = adoptPtr(blink::Platform::current()->compositorSupport()->createSolidColorScrollbarLayer(webOrientation, thumbThickness, isLeftSideVerticalScrollbar));
     GraphicsLayer::registerContentsLayer(scrollbarLayer->layer());
     return scrollbarLayer.release();
 }
@@ -257,7 +264,7 @@ static void setupScrollbarLayer(GraphicsLayer* scrollbarGraphicsLayer, WebScroll
     scrollbarGraphicsLayer->setDrawsContent(false);
 }
 
-WebScrollbarLayer* ScrollingCoordinator::addWebScrollbarLayer(ScrollableArea* scrollableArea, ScrollbarOrientation orientation, PassOwnPtr<WebKit::WebScrollbarLayer> scrollbarLayer)
+WebScrollbarLayer* ScrollingCoordinator::addWebScrollbarLayer(ScrollableArea* scrollableArea, ScrollbarOrientation orientation, PassOwnPtr<blink::WebScrollbarLayer> scrollbarLayer)
 {
     ScrollbarMap& scrollbars = orientation == HorizontalScrollbar ? m_horizontalScrollbars : m_verticalScrollbars;
     return scrollbars.add(scrollableArea, scrollbarLayer).iterator->value.get();
@@ -493,6 +500,18 @@ void ScrollingCoordinator::updateTouchEventTargetRectsIfNeeded()
     setTouchEventTargetRects(touchEventTargetRects);
 }
 
+void ScrollingCoordinator::reset()
+{
+    m_horizontalScrollbars.clear();
+    m_verticalScrollbars.clear();
+    m_layersWithTouchRects.clear();
+    m_wasFrameScrollable = false;
+
+    // This is retained for testing.
+    m_lastMainThreadScrollingReasons = 0;
+    setShouldUpdateScrollLayerPositionOnMainThread(m_lastMainThreadScrollingReasons);
+}
+
 // Note that in principle this could be called more often than computeTouchEventTargetRects, for
 // example during a non-composited scroll (although that's not yet implemented - crbug.com/261307).
 void ScrollingCoordinator::setTouchEventTargetRects(const LayerHitTestRects& layerRects)
@@ -510,7 +529,9 @@ void ScrollingCoordinator::setTouchEventTargetRects(const LayerHitTestRects& lay
         WebVector<WebRect> webRects(iter->value.size());
         for (size_t i = 0; i < iter->value.size(); ++i)
             webRects[i] = enclosingIntRect(iter->value[i]);
-        CompositedLayerMapping* compositedLayerMapping = layer->compositedLayerMapping();
+        // This should be ensured by convertLayerRectsToEnclosingCompositedLayer above.
+        ASSERT(layer->hasCompositedLayerMapping());
+        CompositedLayerMappingPtr compositedLayerMapping = layer->compositedLayerMapping();
         // If the layer is using composited scrolling, then it's the contents that these
         // rects apply to.
         GraphicsLayer* graphicsLayer = compositedLayerMapping->scrollingContentsLayer();
@@ -523,10 +544,14 @@ void ScrollingCoordinator::setTouchEventTargetRects(const LayerHitTestRects& lay
 
     // If there are any layers left that we haven't updated, clear them out.
     for (HashSet<const RenderLayer*>::iterator it = oldLayersWithTouchRects.begin(); it != oldLayersWithTouchRects.end(); ++it) {
-        if (CompositedLayerMapping* compositedLayerMapping = (*it)->compositedLayerMapping()) {
-            GraphicsLayer* graphicsLayer = compositedLayerMapping->scrollingContentsLayer();
+        // FIXME: This is a bug. What's happening here is that we're clearing touch regions for
+        // layers that we didn't visit above. That assumes a 1:1 mapping between RenderLayer and
+        // the graphics layer that owns the touch rects. This is false in the case of
+        // HasOwnBackingButPaintsIntoAncestor and will be extra-false in the world of squashing.
+        if ((*it)->hasCompositedLayerMapping()) {
+            GraphicsLayer* graphicsLayer = (*it)->compositedLayerMapping()->scrollingContentsLayer();
             if (!graphicsLayer)
-                graphicsLayer = compositedLayerMapping->mainGraphicsLayer();
+                graphicsLayer = (*it)->compositedLayerMapping()->mainGraphicsLayer();
             graphicsLayer->platformLayer()->setTouchEventHandlerRegion(WebVector<WebRect>());
         }
     }
@@ -553,7 +578,7 @@ void ScrollingCoordinator::touchEventTargetRectsDidChange(const Document*)
 void ScrollingCoordinator::updateScrollParentForGraphicsLayer(GraphicsLayer* child, RenderLayer* parent)
 {
     WebLayer* scrollParentWebLayer = 0;
-    if (parent && parent->compositedLayerMapping())
+    if (parent && parent->hasCompositedLayerMapping())
         scrollParentWebLayer = scrollingWebLayerForGraphicsLayer(parent->compositedLayerMapping()->parentForSublayers());
 
     child->setScrollParent(scrollParentWebLayer);
@@ -562,7 +587,7 @@ void ScrollingCoordinator::updateScrollParentForGraphicsLayer(GraphicsLayer* chi
 void ScrollingCoordinator::updateClipParentForGraphicsLayer(GraphicsLayer* child, RenderLayer* parent)
 {
     WebLayer* clipParentWebLayer = 0;
-    if (parent && parent->compositedLayerMapping())
+    if (parent && parent->hasCompositedLayerMapping())
         clipParentWebLayer = scrollingWebLayerForGraphicsLayer(parent->compositedLayerMapping()->parentForSublayers());
 
     child->setClipParent(clipParentWebLayer);
@@ -579,16 +604,17 @@ void ScrollingCoordinator::setWheelEventHandlerCount(unsigned count)
         scrollLayer->setHaveWheelEventHandlers(count > 0);
 }
 
-void ScrollingCoordinator::recomputeWheelEventHandlerCountForFrameView(FrameView* frameView)
+void ScrollingCoordinator::recomputeWheelEventHandlerCountForFrameView(FrameView*)
 {
-    UNUSED_PARAM(frameView);
     setWheelEventHandlerCount(computeCurrentWheelEventHandlerCount());
 }
 
 void ScrollingCoordinator::setShouldUpdateScrollLayerPositionOnMainThread(MainThreadScrollingReasons reasons)
 {
-    if (WebLayer* scrollLayer = scrollingWebLayerForScrollableArea(m_page->mainFrame()->view()))
+    if (WebLayer* scrollLayer = scrollingWebLayerForScrollableArea(m_page->mainFrame()->view())) {
+        m_lastMainThreadScrollingReasons = reasons;
         scrollLayer->setShouldScrollOnMainThread(reasons);
+    }
 }
 
 void ScrollingCoordinator::pageDestroyed()
@@ -853,6 +879,9 @@ bool ScrollingCoordinator::hasVisibleSlowRepaintViewportConstrainedObjects(Frame
 
 MainThreadScrollingReasons ScrollingCoordinator::mainThreadScrollingReasons() const
 {
+    // The main thread scrolling reasons are applicable to scrolls of the main
+    // frame. If it does not exist or if it is not scrollable, there is no
+    // reason to force main thread scrolling.
     FrameView* frameView = m_page->mainFrame()->view();
     if (!frameView)
         return static_cast<MainThreadScrollingReasons>(0);
@@ -890,7 +919,14 @@ String ScrollingCoordinator::mainThreadScrollingReasonsAsText(MainThreadScrollin
 
 String ScrollingCoordinator::mainThreadScrollingReasonsAsText() const
 {
-    return mainThreadScrollingReasonsAsText(mainThreadScrollingReasons());
+    return mainThreadScrollingReasonsAsText(m_lastMainThreadScrollingReasons);
+}
+
+bool ScrollingCoordinator::frameViewIsScrollableIsDirty() const
+{
+    FrameView* frameView = m_page->mainFrame()->view();
+    bool frameIsScrollable = frameView && frameView->isScrollable();
+    return frameIsScrollable != m_wasFrameScrollable;
 }
 
 } // namespace WebCore

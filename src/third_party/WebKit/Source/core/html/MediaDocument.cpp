@@ -42,7 +42,7 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/frame/Frame.h"
-#include "core/platform/chromium/KeyboardCodes.h"
+#include "platform/KeyboardCodes.h"
 
 namespace WebCore {
 
@@ -63,7 +63,7 @@ private:
     {
     }
 
-    virtual size_t appendBytes(const char*, size_t) OVERRIDE;
+    virtual void appendBytes(const char*, size_t) OVERRIDE;
 
     void createDocumentStructure();
 
@@ -108,14 +108,13 @@ void MediaDocumentParser::createDocumentStructure()
     m_didBuildDocumentStructure = true;
 }
 
-size_t MediaDocumentParser::appendBytes(const char*, size_t)
+void MediaDocumentParser::appendBytes(const char*, size_t)
 {
     if (m_didBuildDocumentStructure)
-        return 0;
+        return;
 
     createDocumentStructure();
     finish();
-    return 0;
 }
 
 MediaDocument::MediaDocument(const DocumentInit& initializer)
@@ -134,7 +133,7 @@ static inline HTMLVideoElement* descendentVideoElement(Node* root)
 {
     ASSERT(root);
 
-    for (Node* node = root; node; node = NodeTraversal::next(node, root)) {
+    for (Node* node = root; node; node = NodeTraversal::next(*node, root)) {
         if (isHTMLVideoElement(node))
             return toHTMLVideoElement(node);
     }

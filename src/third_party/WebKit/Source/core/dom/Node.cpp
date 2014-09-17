@@ -27,9 +27,8 @@
 
 #include "HTMLNames.h"
 #include "XMLNames.h"
-#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/v8/ScriptCallStackFactory.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/dom/Attr.h"
 #include "core/dom/Attribute.h"
@@ -39,6 +38,7 @@
 #include "core/dom/DOMImplementation.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentFragment.h"
+#include "core/dom/DocumentMarkerController.h"
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
 #include "core/dom/ElementRareData.h"
@@ -79,12 +79,11 @@
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/HTMLStyleElement.h"
 #include "core/html/RadioNodeList.h"
-#include "core/inspector/InspectorCounters.h"
 #include "core/page/ContextMenuController.h"
 #include "core/page/EventHandler.h"
 #include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
 #include "core/rendering/FlowThreadController.h"
 #include "core/rendering/RenderBox.h"
 #include "core/svg/graphics/SVGImage.h"
@@ -92,7 +91,6 @@
 #include "wtf/HashSet.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCountedLeakCounter.h"
-#include "wtf/UnusedParam.h"
 #include "wtf/Vector.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringBuilder.h"
@@ -301,24 +299,28 @@ Node::~Node()
     if (m_next)
         m_next->setPreviousSibling(0);
 
-    m_treeScope->guardDeref();
+    if (m_treeScope)
+        m_treeScope->guardDeref();
 
     InspectorCounters::decrementCounter(InspectorCounters::NodeCounter);
 }
 
 void Node::willBeDeletedFromDocument()
 {
-    Document* document = documentInternal();
-    if (!document)
+    if (!isTreeScopeInitialized())
         return;
 
+    Document& document = this->document();
+
     if (hasEventTargetData()) {
-        document->didRemoveEventTargetNode(this);
+        document.didRemoveEventTargetNode(this);
         clearEventTargetData();
     }
 
-    if (AXObjectCache* cache = document->existingAXObjectCache())
+    if (AXObjectCache* cache = document.existingAXObjectCache())
         cache->remove(this);
+
+    document.markers()->removeMarkers(this);
 }
 
 NodeRareData* Node::rareData() const
@@ -448,42 +450,42 @@ Node* Node::pseudoAwareLastChild() const
     return lastChild();
 }
 
-void Node::insertBefore(PassRefPtr<Node> newChild, Node* refChild, ExceptionState& es)
+void Node::insertBefore(PassRefPtr<Node> newChild, Node* refChild, ExceptionState& exceptionState)
 {
     if (isContainerNode())
-        toContainerNode(this)->insertBefore(newChild, refChild, es);
+        toContainerNode(this)->insertBefore(newChild, refChild, exceptionState);
     else
-        es.throwDOMException(HierarchyRequestError, ExceptionMessages::failedToExecute("insertBefore", "Node", "This node type does not support this method."));
+        exceptionState.throwDOMException(HierarchyRequestError, "This node type does not support this method.");
 }
 
-void Node::replaceChild(PassRefPtr<Node> newChild, Node* oldChild, ExceptionState& es)
+void Node::replaceChild(PassRefPtr<Node> newChild, Node* oldChild, ExceptionState& exceptionState)
 {
     if (isContainerNode())
-        toContainerNode(this)->replaceChild(newChild, oldChild, es);
+        toContainerNode(this)->replaceChild(newChild, oldChild, exceptionState);
     else
-        es.throwDOMException(HierarchyRequestError, ExceptionMessages::failedToExecute("replaceChild", "Node", "This node type does not support this method."));
+        exceptionState.throwDOMException(HierarchyRequestError,  "This node type does not support this method.");
 }
 
-void Node::removeChild(Node* oldChild, ExceptionState& es)
+void Node::removeChild(Node* oldChild, ExceptionState& exceptionState)
 {
     if (isContainerNode())
-        toContainerNode(this)->removeChild(oldChild, es);
+        toContainerNode(this)->removeChild(oldChild, exceptionState);
     else
-        es.throwDOMException(NotFoundError, ExceptionMessages::failedToExecute("removeChild", "Node", "This node type does not support this method."));
+        exceptionState.throwDOMException(NotFoundError, "This node type does not support this method.");
 }
 
-void Node::appendChild(PassRefPtr<Node> newChild, ExceptionState& es)
+void Node::appendChild(PassRefPtr<Node> newChild, ExceptionState& exceptionState)
 {
     if (isContainerNode())
-        toContainerNode(this)->appendChild(newChild, es);
+        toContainerNode(this)->appendChild(newChild, exceptionState);
     else
-        es.throwDOMException(HierarchyRequestError, ExceptionMessages::failedToExecute("appendChild", "Node", "This node type does not support this method."));
+        exceptionState.throwDOMException(HierarchyRequestError, "This node type does not support this method.");
 }
 
-void Node::remove(ExceptionState& es)
+void Node::remove(ExceptionState& exceptionState)
 {
     if (ContainerNode* parent = parentNode())
-        parent->removeChild(this, es);
+        parent->removeChild(this, exceptionState);
 }
 
 void Node::normalize()
@@ -505,7 +507,7 @@ void Node::normalize()
         if (type == TEXT_NODE)
             node = toText(node)->mergeNextSiblingNodesIfPossible();
         else
-            node = NodeTraversal::nextPostOrder(node.get());
+            node = NodeTraversal::nextPostOrder(*node);
     }
 }
 
@@ -515,12 +517,12 @@ const AtomicString& Node::prefix() const
     return nullAtom;
 }
 
-void Node::setPrefix(const AtomicString& /*prefix*/, ExceptionState& es)
+void Node::setPrefix(const AtomicString& /*prefix*/, ExceptionState& exceptionState)
 {
     // The spec says that for nodes other than elements and attributes, prefix is always null.
     // It does not say what to do when the user tries to set the prefix on another type of
     // node, however Mozilla throws a NamespaceError exception.
-    es.throwDOMException(NamespaceError, ExceptionMessages::failedToSet("prefix", "Node", "Prefixes are only supported on element and attribute nodes."));
+    exceptionState.throwDOMException(NamespaceError, "Prefixes are only supported on element and attribute nodes.");
 }
 
 const AtomicString& Node::localName() const
@@ -618,21 +620,6 @@ LayoutRect Node::boundingBox() const
     return LayoutRect();
 }
 
-LayoutRect Node::renderRect(bool* isReplaced)
-{
-    RenderObject* hitRenderer = this->renderer();
-    ASSERT(hitRenderer);
-    RenderObject* renderer = hitRenderer;
-    while (renderer && !renderer->isBody() && !renderer->isRoot()) {
-        if (renderer->isRenderBlock() || renderer->isInlineBlockOrInlineTable() || renderer->isReplaced()) {
-            *isReplaced = renderer->isReplaced();
-            return renderer->absoluteBoundingBoxRect();
-        }
-        renderer = renderer->parent();
-    }
-    return LayoutRect();
-}
-
 bool Node::hasNonEmptyBoundingBox() const
 {
     // Before calling absoluteRects, check for the common case where the renderer
@@ -654,6 +641,7 @@ bool Node::hasNonEmptyBoundingBox() const
     return false;
 }
 
+#ifndef NDEBUG
 inline static ShadowRoot* oldestShadowRootFor(const Node* node)
 {
     if (!node->isElementNode())
@@ -662,6 +650,7 @@ inline static ShadowRoot* oldestShadowRootFor(const Node* node)
         return shadow->oldestShadowRoot();
     return 0;
 }
+#endif
 
 void Node::recalcDistribution()
 {
@@ -696,12 +685,85 @@ void Node::markAncestorsWithChildNeedsDistributionRecalc()
         document().scheduleStyleRecalc();
 }
 
+namespace {
+
+unsigned styledSubtreeSize(const Node*);
+
+unsigned styledSubtreeSizeIgnoringSelfAndShadowRoots(const Node* rootNode)
+{
+    unsigned nodeCount = 0;
+    for (Node* child = rootNode->firstChild(); child; child = child->nextSibling())
+        nodeCount += styledSubtreeSize(child);
+    return nodeCount;
+}
+
+unsigned styledSubtreeSize(const Node* rootNode)
+{
+    if (rootNode->isTextNode())
+        return 1;
+    if (!rootNode->isElementNode())
+        return 0;
+
+    // FIXME: We should use a shadow-tree aware node-iterator when such exists.
+    unsigned nodeCount = 1 + styledSubtreeSizeIgnoringSelfAndShadowRoots(rootNode);
+
+    // ShadowRoots don't have style (so don't count them), but their children might.
+    for (ShadowRoot* shadowRoot = rootNode->youngestShadowRoot(); shadowRoot; shadowRoot = shadowRoot->olderShadowRoot())
+        nodeCount += styledSubtreeSizeIgnoringSelfAndShadowRoots(shadowRoot);
+
+    return nodeCount;
+}
+
+PassRefPtr<JSONArray> jsStackAsJSONArray()
+{
+    RefPtr<JSONArray> jsonArray = JSONArray::create();
+    RefPtr<ScriptCallStack> stack = createScriptCallStack(10);
+    if (!stack)
+        return jsonArray.release();
+    for (size_t i = 0; i < stack->size(); i++)
+        jsonArray->pushString(stack->at(i).functionName());
+    return jsonArray.release();
+}
+
+PassRefPtr<JSONObject> jsonObjectForStyleInvalidation(unsigned nodeCount, const Node* rootNode)
+{
+    RefPtr<JSONObject> jsonObject = JSONObject::create();
+    jsonObject->setNumber("node_count", nodeCount);
+    jsonObject->setString("root_node", rootNode->debugName());
+    jsonObject->setArray("js_stack", jsStackAsJSONArray());
+    return jsonObject.release();
+}
+
+} // anonymous namespace'd functions supporting traceStyleChange
+
+void Node::traceStyleChange(StyleChangeType changeType)
+{
+    static const unsigned kMinLoggedSize = 100;
+    unsigned nodeCount = styledSubtreeSize(this);
+    if (nodeCount < kMinLoggedSize)
+        return;
+
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("style.debug"),
+        "Node::setNeedsStyleRecalc",
+        "data", jsonObjectForStyleInvalidation(nodeCount, this)->toJSONString().ascii()
+    );
+}
+
+void Node::traceStyleChangeIfNeeded(StyleChangeType changeType)
+{
+    // TRACE_EVENT_CATEGORY_GROUP_ENABLED macro loads a global static bool into our local bool.
+    bool styleTracingEnabled;
+    TRACE_EVENT_CATEGORY_GROUP_ENABLED(TRACE_DISABLED_BY_DEFAULT("style.debug"), &styleTracingEnabled);
+    if (UNLIKELY(styleTracingEnabled))
+        traceStyleChange(changeType);
+}
+
 inline void Node::setStyleChange(StyleChangeType changeType)
 {
     m_nodeFlags = (m_nodeFlags & ~StyleChangeMask) | changeType;
 }
 
-inline void Node::markAncestorsWithChildNeedsStyleRecalc()
+void Node::markAncestorsWithChildNeedsStyleRecalc()
 {
     for (ContainerNode* p = parentOrShadowHostNode(); p && !p->childNeedsStyleRecalc(); p = p->parentOrShadowHostNode())
         p->setChildNeedsStyleRecalc();
@@ -720,29 +782,31 @@ void Node::setNeedsStyleRecalc(StyleChangeType changeType, StyleChangeSource sou
         setFlag(NotifyRendererWithIdenticalStyles);
 
     StyleChangeType existingChangeType = styleChangeType();
-    if (changeType > existingChangeType)
+    if (changeType > existingChangeType) {
         setStyleChange(changeType);
+        if (changeType >= SubtreeStyleChange)
+            traceStyleChangeIfNeeded(changeType);
+    }
 
     if (existingChangeType == NoStyleChange)
         markAncestorsWithChildNeedsStyleRecalc();
+
+    if (isElementNode() && hasRareData())
+        toElement(*this).setAnimationStyleChange(false);
+}
+
+void Node::clearNeedsStyleRecalc()
+{
+    m_nodeFlags &= ~StyleChangeMask;
+    clearFlag(NotifyRendererWithIdenticalStyles);
+
+    if (isElementNode() && hasRareData())
+        toElement(*this).setAnimationStyleChange(false);
 }
 
 bool Node::inActiveDocument() const
 {
     return inDocument() && document().isActive();
-}
-
-void Node::lazyAttach()
-{
-    markAncestorsWithChildNeedsStyleRecalc();
-    for (Node* node = this; node; node = NodeTraversal::next(node, this)) {
-        node->setAttached();
-        node->setStyleChange(NeedsReattachStyleChange);
-        if (node->isContainerNode())
-            node->setChildNeedsStyleRecalc();
-        for (ShadowRoot* root = node->youngestShadowRoot(); root; root = root->olderShadowRoot())
-            root->lazyAttach();
-    }
 }
 
 Node* Node::focusDelegate()
@@ -842,13 +906,13 @@ void Node::clearNodeLists()
     rareData()->clearNodeLists();
 }
 
-void Node::checkSetPrefix(const AtomicString& prefix, ExceptionState& es)
+void Node::checkSetPrefix(const AtomicString& prefix, ExceptionState& exceptionState)
 {
     // Perform error checking as required by spec for setting Node.prefix. Used by
     // Element::setPrefix() and Attr::setPrefix()
 
     if (!prefix.isEmpty() && !Document::isValidName(prefix)) {
-        es.throwDOMException(InvalidCharacterError, ExceptionMessages::failedToSet("prefix", "Node", "The prefix '" + prefix + "' is not a valid name."));
+        exceptionState.throwDOMException(InvalidCharacterError, "The prefix '" + prefix + "' is not a valid name.");
         return;
     }
 
@@ -856,12 +920,12 @@ void Node::checkSetPrefix(const AtomicString& prefix, ExceptionState& es)
 
     const AtomicString& nodeNamespaceURI = namespaceURI();
     if (nodeNamespaceURI.isEmpty() && !prefix.isEmpty()) {
-        es.throwDOMException(NamespaceError, ExceptionMessages::failedToSet("prefix", "Node", "No namespace is set, so a namespace prefix may not be set."));
+        exceptionState.throwDOMException(NamespaceError, "No namespace is set, so a namespace prefix may not be set.");
         return;
     }
 
     if (prefix == xmlAtom && nodeNamespaceURI != XMLNames::xmlNamespaceURI) {
-        es.throwDOMException(NamespaceError, ExceptionMessages::failedToSet("prefix", "Node", "The prefix '" + xmlAtom + "' may not be set on namespace '" + nodeNamespaceURI + "'."));
+        exceptionState.throwDOMException(NamespaceError, "The prefix '" + xmlAtom + "' may not be set on namespace '" + nodeNamespaceURI + "'.");
         return;
     }
     // Attribute-specific checks are in Attr::setPrefix().
@@ -931,6 +995,43 @@ bool Node::containsIncludingHostElements(const Node& node) const
     return false;
 }
 
+Node* Node::commonAncestor(const Node& other, Node* (*parent)(const Node&))
+{
+    if (this == other)
+        return this;
+    if (document() != other.document())
+        return 0;
+    int thisDepth = 0;
+    for (Node* node = this; node; node = parent(*node)) {
+        if (node == &other)
+            return node;
+        thisDepth++;
+    }
+    int otherDepth = 0;
+    for (const Node* node = &other; node; node = parent(*node)) {
+        if (node == this)
+            return this;
+        otherDepth++;
+    }
+    Node* thisIterator = this;
+    const Node* otherIterator = &other;
+    if (thisDepth > otherDepth) {
+        for (int i = thisDepth; i > otherDepth; --i)
+            thisIterator = parent(*thisIterator);
+    } else if (otherDepth > thisDepth) {
+        for (int i = otherDepth; i > thisDepth; --i)
+            otherIterator = parent(*otherIterator);
+    }
+    while (thisIterator) {
+        if (thisIterator == otherIterator)
+            return thisIterator;
+        thisIterator = parent(*thisIterator);
+        otherIterator = parent(*otherIterator);
+    }
+    ASSERT(!otherIterator);
+    return 0;
+}
+
 void Node::reattach(const AttachContext& context)
 {
     AttachContext reattachContext(context);
@@ -948,7 +1049,6 @@ void Node::attach(const AttachContext&)
     ASSERT(needsAttach());
     ASSERT(!renderer() || (renderer()->style() && (renderer()->parent() || renderer()->isRenderView())));
 
-    setAttached();
     clearNeedsStyleRecalc();
 
     if (Document* doc = documentInternal()) {
@@ -990,7 +1090,8 @@ void Node::detach(const AttachContext& context)
         }
     }
 
-    clearFlag(IsAttachedFlag);
+    setStyleChange(NeedsReattachStyleChange);
+    setChildNeedsStyleRecalc();
 
 #ifndef NDEBUG
     detachingNode = 0;
@@ -1128,7 +1229,7 @@ Node* Node::nonBoundaryShadowTreeRootNode()
     while (root) {
         if (root->isShadowRoot())
             return root;
-        Node* parent = root->parentNodeGuaranteedHostFree();
+        Node* parent = root->parentOrShadowHostNode();
         if (parent && parent->isShadowRoot())
             return root;
         root = parent;
@@ -1155,6 +1256,13 @@ Element* Node::parentOrShadowHostElement() const
         return 0;
 
     return toElement(parent);
+}
+
+ContainerNode* Node::parentOrShadowHostOrTemplateHostNode() const
+{
+    if (isDocumentFragment() && toDocumentFragment(this)->isTemplateContent())
+        return static_cast<const TemplateContentDocumentFragment*>(this)->host();
+    return parentOrShadowHostNode();
 }
 
 bool Node::isBlockFlowElement() const
@@ -1250,27 +1358,27 @@ PassRefPtr<RadioNodeList> Node::radioNodeList(const AtomicString& name)
     return ensureRareData().ensureNodeLists().addCacheWithAtomicName<RadioNodeList>(this, RadioNodeListType, name);
 }
 
-PassRefPtr<Element> Node::querySelector(const AtomicString& selectors, ExceptionState& es)
+PassRefPtr<Element> Node::querySelector(const AtomicString& selectors, ExceptionState& exceptionState)
 {
     if (selectors.isEmpty()) {
-        es.throwDOMException(SyntaxError, ExceptionMessages::failedToExecute("querySelector", "Node", "The provided selector is empty."));
+        exceptionState.throwDOMException(SyntaxError,  "The provided selector is empty.");
         return 0;
     }
 
-    SelectorQuery* selectorQuery = document().selectorQueryCache().add(selectors, document(), es);
+    SelectorQuery* selectorQuery = document().selectorQueryCache().add(selectors, document(), exceptionState);
     if (!selectorQuery)
         return 0;
     return selectorQuery->queryFirst(*this);
 }
 
-PassRefPtr<NodeList> Node::querySelectorAll(const AtomicString& selectors, ExceptionState& es)
+PassRefPtr<NodeList> Node::querySelectorAll(const AtomicString& selectors, ExceptionState& exceptionState)
 {
     if (selectors.isEmpty()) {
-        es.throwDOMException(SyntaxError, ExceptionMessages::failedToExecute("querySelectorAll", "Node", "The provided selector is empty."));
+        exceptionState.throwDOMException(SyntaxError, "The provided selector is empty.");
         return 0;
     }
 
-    SelectorQuery* selectorQuery = document().selectorQueryCache().add(selectors, document(), es);
+    SelectorQuery* selectorQuery = document().selectorQueryCache().add(selectors, document(), exceptionState);
     if (!selectorQuery)
         return 0;
     return selectorQuery->queryAll(*this);
@@ -1394,13 +1502,13 @@ bool Node::isDefaultNamespace(const AtomicString& namespaceURIMaybeEmpty) const
     }
 }
 
-String Node::lookupPrefix(const AtomicString &namespaceURI) const
+const AtomicString& Node::lookupPrefix(const AtomicString& namespaceURI) const
 {
     // Implemented according to
     // http://www.w3.org/TR/2004/REC-DOM-Level-3-Core-20040407/namespaces-algorithms.html#lookupNamespacePrefixAlgo
 
     if (namespaceURI.isEmpty())
-        return String();
+        return nullAtom;
 
     switch (nodeType()) {
         case ELEMENT_NODE:
@@ -1408,32 +1516,32 @@ String Node::lookupPrefix(const AtomicString &namespaceURI) const
         case DOCUMENT_NODE:
             if (Element* de = toDocument(this)->documentElement())
                 return de->lookupPrefix(namespaceURI);
-            return String();
+            return nullAtom;
         case ENTITY_NODE:
         case NOTATION_NODE:
         case DOCUMENT_FRAGMENT_NODE:
         case DOCUMENT_TYPE_NODE:
-            return String();
+            return nullAtom;
         case ATTRIBUTE_NODE: {
-            const Attr *attr = static_cast<const Attr *>(this);
+            const Attr *attr = toAttr(this);
             if (attr->ownerElement())
                 return attr->ownerElement()->lookupPrefix(namespaceURI);
-            return String();
+            return nullAtom;
         }
         default:
             if (Element* ancestor = ancestorElement())
                 return ancestor->lookupPrefix(namespaceURI);
-            return String();
+            return nullAtom;
     }
 }
 
-String Node::lookupNamespaceURI(const String &prefix) const
+const AtomicString& Node::lookupNamespaceURI(const String& prefix) const
 {
     // Implemented according to
     // http://www.w3.org/TR/2004/REC-DOM-Level-3-Core-20040407/namespaces-algorithms.html#lookupNamespaceURIAlgo
 
     if (!prefix.isNull() && prefix.isEmpty())
-        return String();
+        return nullAtom;
 
     switch (nodeType()) {
         case ELEMENT_NODE: {
@@ -1450,47 +1558,46 @@ String Node::lookupNamespaceURI(const String &prefix) const
                         if (!attr->value().isEmpty())
                             return attr->value();
 
-                        return String();
+                        return nullAtom;
                     } else if (attr->localName() == xmlnsAtom && prefix.isNull()) {
                         if (!attr->value().isEmpty())
                             return attr->value();
 
-                        return String();
+                        return nullAtom;
                     }
                 }
             }
             if (Element* ancestor = ancestorElement())
                 return ancestor->lookupNamespaceURI(prefix);
-            return String();
+            return nullAtom;
         }
         case DOCUMENT_NODE:
             if (Element* de = toDocument(this)->documentElement())
                 return de->lookupNamespaceURI(prefix);
-            return String();
+            return nullAtom;
         case ENTITY_NODE:
         case NOTATION_NODE:
         case DOCUMENT_TYPE_NODE:
         case DOCUMENT_FRAGMENT_NODE:
-            return String();
+            return nullAtom;
         case ATTRIBUTE_NODE: {
-            const Attr *attr = static_cast<const Attr *>(this);
-
+            const Attr *attr = toAttr(this);
             if (attr->ownerElement())
                 return attr->ownerElement()->lookupNamespaceURI(prefix);
             else
-                return String();
+                return nullAtom;
         }
         default:
             if (Element* ancestor = ancestorElement())
                 return ancestor->lookupNamespaceURI(prefix);
-            return String();
+            return nullAtom;
     }
 }
 
-String Node::lookupNamespacePrefix(const AtomicString &_namespaceURI, const Element *originalElement) const
+const AtomicString& Node::lookupNamespacePrefix(const AtomicString& _namespaceURI, const Element* originalElement) const
 {
     if (_namespaceURI.isNull())
-        return String();
+        return nullAtom;
 
     if (originalElement->lookupNamespaceURI(prefix()) == _namespaceURI)
         return prefix();
@@ -1509,7 +1616,7 @@ String Node::lookupNamespacePrefix(const AtomicString &_namespaceURI, const Elem
 
     if (Element* ancestor = ancestorElement())
         return ancestor->lookupNamespacePrefix(_namespaceURI, originalElement);
-    return String();
+    return nullAtom;
 }
 
 static void appendTextContent(const Node* node, bool convertBRsToNewlines, bool& isNullString, StringBuilder& content)
@@ -1561,7 +1668,7 @@ String Node::textContent(bool convertBRsToNewlines) const
     return isNullString ? String() : content.toString();
 }
 
-void Node::setTextContent(const String& text, ExceptionState& es)
+void Node::setTextContent(const String& text)
 {
     switch (nodeType()) {
         case TEXT_NODE:
@@ -1578,7 +1685,7 @@ void Node::setTextContent(const String& text, ExceptionState& es)
             ChildListMutationScope mutation(*this);
             container->removeChildren();
             if (!text.isEmpty())
-                container->appendChild(document().createTextNode(text), es);
+                container->appendChild(document().createTextNode(text), ASSERT_NO_EXCEPTION);
             return;
         }
         case DOCUMENT_NODE:
@@ -1878,7 +1985,7 @@ void Node::showNodePathForThis() const
 
 static void traverseTreeAndMark(const String& baseIndent, const Node* rootNode, const Node* markedNode1, const char* markedLabel1, const Node* markedNode2, const char* markedLabel2)
 {
-    for (const Node* node = rootNode; node; node = NodeTraversal::next(node)) {
+    for (const Node* node = rootNode; node; node = NodeTraversal::next(*node)) {
         if (node == markedNode1)
             fprintf(stderr, "%s", markedLabel1);
         if (node == markedNode2)
@@ -2322,9 +2429,9 @@ bool Node::dispatchTouchEvent(PassRefPtr<TouchEvent> event)
     return EventDispatcher::dispatchEvent(this, TouchEventDispatchMediator::create(event));
 }
 
-void Node::dispatchSimulatedClick(Event* underlyingEvent, SimulatedClickMouseEventOptions eventOptions, SimulatedClickVisualOptions visualOptions)
+void Node::dispatchSimulatedClick(Event* underlyingEvent, SimulatedClickMouseEventOptions eventOptions)
 {
-    EventDispatcher::dispatchSimulatedClick(this, underlyingEvent, eventOptions, visualOptions);
+    EventDispatcher::dispatchSimulatedClick(this, underlyingEvent, eventOptions);
 }
 
 bool Node::dispatchBeforeLoadEvent(const String& sourceURL)
@@ -2480,13 +2587,6 @@ void Node::removedLastRef()
     delete this;
 }
 
-void Node::textRects(Vector<IntRect>& rects) const
-{
-    RefPtr<Range> range = Range::create(document());
-    range->selectNodeContents(const_cast<Node*>(this), IGNORE_EXCEPTION);
-    range->textRects(rects);
-}
-
 unsigned Node::connectedSubframeCount() const
 {
     return hasRareData() ? rareData()->connectedSubframeCount() : 0;
@@ -2567,7 +2667,7 @@ void Node::setFocus(bool flag)
     document().userActionElements().setFocused(this, flag);
 }
 
-void Node::setActive(bool flag, bool)
+void Node::setActive(bool flag)
 {
     document().userActionElements().setActive(this, flag);
 }
@@ -2610,22 +2710,18 @@ void Node::setCustomElementState(CustomElementState newState)
         ASSERT_NOT_REACHED(); // Everything starts in this state
         return;
 
-    case WaitingForParser:
+    case WaitingForUpgrade:
         ASSERT(NotCustomElement == oldState);
         break;
 
-    case WaitingForUpgrade:
-        ASSERT(NotCustomElement == oldState || WaitingForParser == oldState);
-        break;
-
     case Upgraded:
-        ASSERT(WaitingForParser == oldState || WaitingForUpgrade == oldState);
+        ASSERT(WaitingForUpgrade == oldState);
         break;
     }
 
     ASSERT(isHTMLElement() || isSVGElement());
-    setFlag(newState & 1, CustomElementWaitingForParserOrIsUpgraded);
-    setFlag(newState & 2, CustomElementWaitingForUpgradeOrIsUpgraded);
+    setFlag(CustomElement);
+    setFlag(newState == Upgraded, CustomElementUpgraded);
 
     if (oldState == NotCustomElement || newState == Upgraded)
         setNeedsStyleRecalc(); // :unresolved has changed

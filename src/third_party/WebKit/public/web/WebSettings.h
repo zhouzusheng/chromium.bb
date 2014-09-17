@@ -35,7 +35,7 @@
 #include "../platform/WebSize.h"
 #include <unicode/uscript.h>
 
-namespace WebKit {
+namespace blink {
 
 class WebString;
 class WebURL;
@@ -52,9 +52,11 @@ public:
         EditingBehaviorAndroid
     };
 
+    virtual bool mainFrameResizesAreOrientationChanges() const = 0;
     virtual bool scrollAnimatorEnabled() const = 0;
     virtual bool touchEditingEnabled() const = 0;
     virtual bool viewportEnabled() const = 0;
+    virtual bool viewportMetaEnabled() const = 0;
     virtual void setAccelerated2dCanvasEnabled(bool) = 0;
     virtual void setAccelerated2dCanvasMSAASampleCount(int) = 0;
     virtual void setAcceleratedCompositingEnabled(bool) = 0;
@@ -80,8 +82,8 @@ public:
     virtual void setAntialiased2dCanvasEnabled(bool) = 0;
     virtual void setAsynchronousSpellCheckingEnabled(bool) = 0;
     virtual void setAutoZoomFocusedNodeToLegibleScale(bool) = 0;
-    virtual void setAuthorAndUserStylesEnabled(bool) = 0;
     virtual void setCaretBrowsingEnabled(bool) = 0;
+    virtual void setClobberUserAgentInitialScaleQuirk(bool) = 0;
     virtual void setCompositedScrollingForFramesEnabled(bool) = 0;
     virtual void setCompositorTouchHitTesting(bool) = 0;
     virtual void setCookieEnabled(bool) = 0;
@@ -119,11 +121,13 @@ public:
     virtual void setJavaScriptCanAccessClipboard(bool) = 0;
     virtual void setJavaScriptCanOpenWindowsAutomatically(bool) = 0;
     virtual void setJavaScriptEnabled(bool) = 0;
+    virtual void setLayerSquashingEnabled(bool) = 0;
     virtual void setLayoutFallbackWidth(int) = 0;
     virtual void setLoadsImagesAutomatically(bool) = 0;
     virtual void setLoadWithOverviewMode(bool) = 0;
     virtual void setLocalStorageEnabled(bool) = 0;
     virtual void setMainFrameClipsContent(bool) = 0;
+    virtual void setMainFrameResizesAreOrientationChanges(bool) = 0;
     virtual void setMaxTouchPoints(int) = 0;
     virtual void setMediaPlaybackRequiresUserGesture(bool) = 0;
     virtual void setMediaFullscreenRequiresUserGesture(bool) = 0;
@@ -150,6 +154,7 @@ public:
     virtual void setSelectionIncludesAltImageText(bool) = 0;
     virtual void setSerifFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setShouldPrintBackgrounds(bool) = 0;
+    virtual void setShouldClearDocumentBackground(bool) = 0;
     virtual void setShouldRespectImageOrientation(bool) = 0;
     virtual void setShowFPSCounter(bool) = 0;
     virtual void setShowPaintRects(bool) = 0;
@@ -169,21 +174,22 @@ public:
     virtual void setSyncXHRInDocumentsEnabled(bool) = 0;
     virtual void setTextAreasAreResizable(bool) = 0;
     virtual void setTextAutosizingEnabled(bool) = 0;
-    virtual void setTextAutosizingFontScaleFactor(float) = 0;
+    virtual void setAccessibilityFontScaleFactor(float) = 0;
     virtual void setThreadedHTMLParser(bool) = 0;
     virtual void setTouchDragDropEnabled(bool) = 0;
     virtual void setTouchEditingEnabled(bool) = 0;
     virtual void setUnifiedTextCheckerEnabled(bool) = 0;
     virtual void setUnsafePluginPastingEnabled(bool) = 0;
-    virtual void setUserStyleSheetLocation(const WebURL&) = 0;
     virtual void setUsesEncodingDetector(bool) = 0;
     virtual void setUseLegacyBackgroundSizeShorthandBehavior(bool) = 0;
     virtual void setUseSolidColorScrollbars(bool) = 0;
     virtual void setUseWideViewport(bool) = 0;
     virtual void setValidationMessageTimerMagnification(int) = 0;
     virtual void setViewportEnabled(bool) = 0;
+    virtual void setViewportMetaEnabled(bool) = 0;
     virtual void setViewportMetaLayoutSizeQuirk(bool) = 0;
     virtual void setViewportMetaMergeContentQuirk(bool) = 0;
+    virtual void setViewportMetaNonUserScalableQuirk(bool) = 0;
     virtual void setViewportMetaZeroValuesQuirk(bool) = 0;
     virtual void setVisualWordMovementEnabled(bool) = 0;
     virtual void setWebAudioEnabled(bool) = 0;
@@ -192,13 +198,10 @@ public:
     virtual void setWideViewportQuirkEnabled(bool) = 0;
     virtual void setXSSAuditorEnabled(bool) = 0;
 
-    // DEPRECATED: Delete after Chromium-side calls deleted.
-    void setInitializeAtMinimumPageScale(bool enabled) { setLoadWithOverviewMode(enabled); }
-
 protected:
     ~WebSettings() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

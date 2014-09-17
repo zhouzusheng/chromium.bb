@@ -44,13 +44,12 @@
 #include "core/html/HTMLObjectElement.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/html/forms/FormController.h"
-#include "core/loader/FormState.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/frame/ContentSecurityPolicy.h"
 #include "core/frame/DOMWindow.h"
 #include "core/frame/Frame.h"
-#include "core/page/UseCounter.h"
+#include "core/frame/UseCounter.h"
 #include "core/rendering/RenderTextControl.h"
 #include "platform/UserGestureIndicator.h"
 
@@ -60,8 +59,8 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLFormElement::HTMLFormElement(const QualifiedName& tagName, Document& document)
-    : HTMLElement(tagName, document)
+HTMLFormElement::HTMLFormElement(Document& document)
+    : HTMLElement(formTag, document)
     , m_associatedElementsBeforeIndex(0)
     , m_associatedElementsAfterIndex(0)
     , m_wasUserSubmitted(false)
@@ -71,20 +70,13 @@ HTMLFormElement::HTMLFormElement(const QualifiedName& tagName, Document& documen
     , m_wasDemoted(false)
     , m_requestAutocompleteTimer(this, &HTMLFormElement::requestAutocompleteTimerFired)
 {
-    ASSERT(hasTagName(formTag));
     ScriptWrappable::init(this);
 }
 
 PassRefPtr<HTMLFormElement> HTMLFormElement::create(Document& document)
 {
     UseCounter::count(document, UseCounter::FormElement);
-    return adoptRef(new HTMLFormElement(formTag, document));
-}
-
-PassRefPtr<HTMLFormElement> HTMLFormElement::create(const QualifiedName& tagName, Document& document)
-{
-    UseCounter::count(document, UseCounter::FormElement);
-    return adoptRef(new HTMLFormElement(tagName, document));
+    return adoptRef(new HTMLFormElement(document));
 }
 
 HTMLFormElement::~HTMLFormElement()
@@ -181,18 +173,27 @@ Node* HTMLFormElement::item(unsigned index)
 void HTMLFormElement::submitImplicitly(Event* event, bool fromImplicitSubmissionTrigger)
 {
     int submissionTriggerCount = 0;
+    bool seenDefaultButton = false;
     for (unsigned i = 0; i < m_associatedElements.size(); ++i) {
         FormAssociatedElement* formAssociatedElement = m_associatedElements[i];
         if (!formAssociatedElement->isFormControlElement())
             continue;
         HTMLFormControlElement* control = toHTMLFormControlElement(formAssociatedElement);
-        if (control->isSuccessfulSubmitButton()) {
-            if (control->renderer()) {
-                control->dispatchSimulatedClick(event);
+        if (!seenDefaultButton && control->canBeSuccessfulSubmitButton()) {
+            if (fromImplicitSubmissionTrigger)
+                seenDefaultButton = true;
+            if (control->isSuccessfulSubmitButton()) {
+                if (control->renderer()) {
+                    control->dispatchSimulatedClick(event);
+                    return;
+                }
+            } else if (fromImplicitSubmissionTrigger) {
+                // Default (submit) button is not activated; no implicit submission.
                 return;
             }
-        } else if (control->canTriggerImplicitSubmission())
+        } else if (control->canTriggerImplicitSubmission()) {
             ++submissionTriggerCount;
+        }
     }
     if (fromImplicitSubmissionTrigger && submissionTriggerCount == 1)
         prepareForSubmission(event);
@@ -411,8 +412,8 @@ void HTMLFormElement::scheduleFormSubmission(PassRefPtr<FormSubmission> submissi
     if (!targetFrame->page())
         return;
 
-    submission->setReferrer(document().frame()->loader().outgoingReferrer());
-    submission->setOrigin(document().frame()->loader().outgoingOrigin());
+    submission->setReferrer(document().outgoingReferrer());
+    submission->setOrigin(document().outgoingOrigin());
 
     targetFrame->navigationScheduler().scheduleFormSubmission(submission);
 }
@@ -546,20 +547,20 @@ unsigned HTMLFormElement::formElementIndexWithFormAttribute(Element* element, un
     return left + 1;
 }
 
-unsigned HTMLFormElement::formElementIndex(FormAssociatedElement* associatedElement)
+unsigned HTMLFormElement::formElementIndex(FormAssociatedElement& associatedElement)
 {
-    HTMLElement* associatedHTMLElement = toHTMLElement(associatedElement);
+    HTMLElement& associatedHTMLElement = toHTMLElement(associatedElement);
     // Treats separately the case where this element has the form attribute
     // for performance consideration.
-    if (associatedHTMLElement->fastHasAttribute(formAttr)) {
-        unsigned short position = compareDocumentPosition(associatedHTMLElement);
+    if (associatedHTMLElement.fastHasAttribute(formAttr)) {
+        unsigned short position = compareDocumentPosition(&associatedHTMLElement);
         if (position & DOCUMENT_POSITION_PRECEDING) {
             ++m_associatedElementsBeforeIndex;
             ++m_associatedElementsAfterIndex;
-            return HTMLFormElement::formElementIndexWithFormAttribute(associatedHTMLElement, 0, m_associatedElementsBeforeIndex - 1);
+            return HTMLFormElement::formElementIndexWithFormAttribute(&associatedHTMLElement, 0, m_associatedElementsBeforeIndex - 1);
         }
         if (position & DOCUMENT_POSITION_FOLLOWING && !(position & DOCUMENT_POSITION_CONTAINED_BY))
-            return HTMLFormElement::formElementIndexWithFormAttribute(associatedHTMLElement, m_associatedElementsAfterIndex, m_associatedElements.size());
+            return HTMLFormElement::formElementIndexWithFormAttribute(&associatedHTMLElement, m_associatedElementsAfterIndex, m_associatedElements.size());
     }
 
     // Check for the special case where this element is the very last thing in
@@ -568,14 +569,14 @@ unsigned HTMLFormElement::formElementIndex(FormAssociatedElement* associatedElem
     // that says "add this form element to the end of the array".
     if (ElementTraversal::next(associatedHTMLElement, this)) {
         unsigned i = m_associatedElementsBeforeIndex;
-        for (Element* element = this; element; element = ElementTraversal::next(element, this)) {
+        for (Element* element = this; element; element = ElementTraversal::next(*element, this)) {
             if (element == associatedHTMLElement) {
                 ++m_associatedElementsAfterIndex;
                 return i;
             }
             if (!element->isFormControlElement() && !element->hasTagName(objectTag))
                 continue;
-            if (!element->isHTMLElement() || toHTMLElement(element)->form() != this)
+            if (!element->isHTMLElement() || toHTMLElement(element)->formOwner() != this)
                 continue;
             ++i;
         }
@@ -583,9 +584,9 @@ unsigned HTMLFormElement::formElementIndex(FormAssociatedElement* associatedElem
     return m_associatedElementsAfterIndex++;
 }
 
-void HTMLFormElement::registerFormElement(FormAssociatedElement* e)
+void HTMLFormElement::registerFormElement(FormAssociatedElement& e)
 {
-    m_associatedElements.insert(formElementIndex(e), e);
+    m_associatedElements.insert(formElementIndex(e), &e);
 }
 
 void HTMLFormElement::removeFormElement(FormAssociatedElement* e)
@@ -640,17 +641,17 @@ bool HTMLFormElement::noValidate() const
 // FIXME: This function should be removed because it does not do the same thing as the
 // JavaScript binding for action, which treats action as a URL attribute. Last time I
 // (Darin Adler) removed this, someone added it back, so I am leaving it in for now.
-String HTMLFormElement::action() const
+const AtomicString& HTMLFormElement::action() const
 {
     return getAttribute(actionAttr);
 }
 
-void HTMLFormElement::setAction(const String &value)
+void HTMLFormElement::setAction(const AtomicString& value)
 {
     setAttribute(actionAttr, value);
 }
 
-void HTMLFormElement::setEnctype(const String &value)
+void HTMLFormElement::setEnctype(const AtomicString& value)
 {
     setAttribute(enctypeAttr, value);
 }
@@ -660,7 +661,7 @@ String HTMLFormElement::method() const
     return FormSubmission::Attributes::methodString(m_attributes.method());
 }
 
-void HTMLFormElement::setMethod(const String &value)
+void HTMLFormElement::setMethod(const AtomicString& value)
 {
     setAttribute(methodAttr, value);
 }
@@ -712,7 +713,7 @@ bool HTMLFormElement::checkInvalidControlsAndCollectUnhandled(Vector<RefPtr<Form
     for (unsigned i = 0; i < elements.size(); ++i) {
         if (elements[i]->form() == this && elements[i]->isFormControlElement()) {
             HTMLFormControlElement* control = toHTMLFormControlElement(elements[i].get());
-            if (!control->checkValidity(unhandledInvalidControls, dispatchEvents) && control->form() == this)
+            if (!control->checkValidity(unhandledInvalidControls, dispatchEvents) && control->formOwner() == this)
                 hasInvalidControls = true;
         }
     }
@@ -723,11 +724,11 @@ Node* HTMLFormElement::elementFromPastNamesMap(const AtomicString& pastName) con
 {
     if (pastName.isEmpty() || !m_pastNamesMap)
         return 0;
-    Node* node = m_pastNamesMap->get(pastName.impl());
+    Node* node = m_pastNamesMap->get(pastName);
 #if !ASSERT_DISABLED
     if (!node)
         return 0;
-    ASSERT_WITH_SECURITY_IMPLICATION(toHTMLElement(node)->form() == this);
+    ASSERT_WITH_SECURITY_IMPLICATION(toHTMLElement(node)->formOwner() == this);
     if (node->hasTagName(imgTag)) {
         ASSERT_WITH_SECURITY_IMPLICATION(m_imageElements.find(node) != kNotFound);
     } else if (node->hasTagName(objectTag)) {
@@ -745,7 +746,7 @@ void HTMLFormElement::addToPastNamesMap(Node* element, const AtomicString& pastN
         return;
     if (!m_pastNamesMap)
         m_pastNamesMap = adoptPtr(new PastNamesMap);
-    m_pastNamesMap->set(pastName.impl(), element);
+    m_pastNamesMap->set(pastName, element);
 }
 
 void HTMLFormElement::removeFromPastNamesMap(HTMLElement& element)

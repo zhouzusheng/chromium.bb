@@ -34,9 +34,8 @@
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/frame/ContentSecurityPolicy.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -49,33 +48,23 @@ AbstractWorker::~AbstractWorker()
 {
 }
 
-void AbstractWorker::contextDestroyed()
+KURL AbstractWorker::resolveURL(const String& url, ExceptionState& exceptionState)
 {
-    ActiveDOMObject::contextDestroyed();
-}
-
-KURL AbstractWorker::resolveURL(const String& url, ExceptionState& es)
-{
-    if (url.isEmpty()) {
-        es.throwDOMException(SyntaxError, "Failed to create a worker: an empty URL was provided.");
-        return KURL();
-    }
-
     // FIXME: This should use the dynamic global scope (bug #27887)
     KURL scriptURL = executionContext()->completeURL(url);
     if (!scriptURL.isValid()) {
-        es.throwDOMException(SyntaxError, "Failed to create a worker: '" + url + "' is not a valid URL.");
+        exceptionState.throwDOMException(SyntaxError, "'" + url + "' is not a valid URL.");
         return KURL();
     }
 
     // We can safely expose the URL in the following exceptions, as these checks happen synchronously before redirection. JavaScript receives no new information.
     if (!executionContext()->securityOrigin()->canRequest(scriptURL)) {
-        es.throwSecurityError("Failed to create a worker: script at '" + scriptURL.elidedString() + "' cannot be accessed from origin '" + executionContext()->securityOrigin()->toString() + "'.");
+        exceptionState.throwSecurityError("Script at '" + scriptURL.elidedString() + "' cannot be accessed from origin '" + executionContext()->securityOrigin()->toString() + "'.");
         return KURL();
     }
 
     if (executionContext()->contentSecurityPolicy() && !executionContext()->contentSecurityPolicy()->allowScriptFromSource(scriptURL)) {
-        es.throwSecurityError("Failed to create a worker: access to the script at '" + scriptURL.elidedString() + "' is denied by the document's Content Security Policy.");
+        exceptionState.throwSecurityError("Access to the script at '" + scriptURL.elidedString() + "' is denied by the document's Content Security Policy.");
         return KURL();
     }
 

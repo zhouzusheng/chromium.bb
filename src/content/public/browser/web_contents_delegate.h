@@ -39,6 +39,7 @@ class RenderViewHost;
 class SessionStorageNamespace;
 class WebContents;
 class WebContentsImpl;
+struct ColorSuggestion;
 struct ContextMenuParams;
 struct DropData;
 struct FileChooserParams;
@@ -53,7 +54,7 @@ class Rect;
 class Size;
 }
 
-namespace WebKit {
+namespace blink {
 class WebLayer;
 struct WebWindowFeatures;
 }
@@ -181,9 +182,9 @@ class CONTENT_EXPORT WebContentsDelegate {
   // will be used for the message.
   virtual bool AddMessageToConsole(WebContents* source,
                                    int32 level,
-                                   const string16& message,
+                                   const base::string16& message,
                                    int32 line_no,
-                                   const string16& source_id);
+                                   const base::string16& source_id);
 
   // Tells us that we've finished firing this tab's beforeunload event.
   // The proceed bool tells us whether the user chose to proceed closing the
@@ -278,7 +279,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   // cancel the operation. This method is used by Chromium Embedded Framework.
   virtual bool CanDragEnter(WebContents* source,
                             const DropData& data,
-                            WebKit::WebDragOperationsMask operations_allowed);
+                            blink::WebDragOperationsMask operations_allowed);
 
   // Render view drag n drop ended.
   virtual void DragEnded() {}
@@ -297,7 +298,7 @@ class CONTENT_EXPORT WebContentsDelegate {
       WebContents* web_contents,
       int route_id,
       WindowContainerType window_container_type,
-      const string16& frame_name,
+      const base::string16& frame_name,
       const GURL& target_url,
       const std::string& partition_id,
       SessionStorageNamespace* session_storage_namespace);
@@ -306,7 +307,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   // typically happens when popups are created.
   virtual void WebContentsCreated(WebContents* source_contents,
                                   int64 source_frame_id,
-                                  const string16& frame_name,
+                                  const base::string16& frame_name,
                                   const GURL& target_url,
                                   WebContents* new_contents) {}
 
@@ -332,9 +333,13 @@ class CONTENT_EXPORT WebContentsDelegate {
   virtual JavaScriptDialogManager* GetJavaScriptDialogManager();
 
   // Called when color chooser should open. Returns the opened color chooser.
-  // Ownership of the returned pointer is transferred to the caller.
-  virtual ColorChooser* OpenColorChooser(WebContents* web_contents,
-                                         SkColor color);
+  // Returns NULL if we failed to open the color chooser (e.g. when there is a
+  // ColorChooserDialog already open on Windows). Ownership of the returned
+  // pointer is transferred to the caller.
+  virtual ColorChooser* OpenColorChooser(
+      WebContents* web_contents,
+      SkColor color,
+      const std::vector<ColorSuggestion>& suggestions);
 
   // Called when a file selection is to be done.
   virtual void RunFileChooser(WebContents* web_contents,
@@ -368,7 +373,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   virtual void RegisterProtocolHandler(WebContents* web_contents,
                                        const std::string& protocol,
                                        const GURL& url,
-                                       const string16& title,
+                                       const base::string16& title,
                                        bool user_gesture) {}
 
   // Result of string search in the page. This includes the number of matches
@@ -447,6 +452,22 @@ class CONTENT_EXPORT WebContentsDelegate {
   // used.
   virtual gfx::Size GetSizeForNewRenderView(
       const WebContents* web_contents) const;
+
+  // Notification that validation of a form displayed by the |web_contents|
+  // has failed. There can only be one message per |web_contents| at a time.
+  virtual void ShowValidationMessage(WebContents* web_contents,
+                                     const gfx::Rect& anchor_in_root_view,
+                                     const string16& main_text,
+                                     const string16& sub_text) {}
+
+  // Notification that the delegate should hide any showing form validation
+  // message.
+  virtual void HideValidationMessage(WebContents* web_contents) {}
+
+  // Notification that the form element that triggered the validation failure
+  // has moved.
+  virtual void MoveValidationMessage(WebContents* web_contents,
+                                     const gfx::Rect& anchor_in_root_view) {}
 
  protected:
   virtual ~WebContentsDelegate();

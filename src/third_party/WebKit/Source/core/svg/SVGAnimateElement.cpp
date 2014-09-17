@@ -25,7 +25,6 @@
 #include "core/svg/SVGAnimateElement.h"
 
 #include "CSSPropertyNames.h"
-#include "SVGNames.h"
 #include "core/css/CSSParser.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/QualifiedName.h"
@@ -44,9 +43,9 @@ SVGAnimateElement::SVGAnimateElement(const QualifiedName& tagName, Document& doc
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGAnimateElement> SVGAnimateElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<SVGAnimateElement> SVGAnimateElement::create(Document& document)
 {
-    return adoptRef(new SVGAnimateElement(tagName, document));
+    return adoptRef(new SVGAnimateElement(SVGNames::animateTag, document));
 }
 
 SVGAnimateElement::~SVGAnimateElement()
@@ -100,7 +99,7 @@ void SVGAnimateElement::calculateAnimatedValue(float percentage, unsigned repeat
 {
     ASSERT(resultElement);
     SVGElement* targetElement = this->targetElement();
-    if (!targetElement)
+    if (!targetElement || !isSVGAnimateElement(*resultElement))
         return;
 
     ASSERT(m_animatedPropertyType == determineAnimatedPropertyType(targetElement));

@@ -32,14 +32,13 @@
 #include "EventListenerWrapper.h"
 
 #include "core/events/Event.h"
-#include "core/events/EventListener.h"
 
 #include "WebDOMEvent.h"
 #include "WebDOMEventListener.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 EventListenerWrapper::EventListenerWrapper(WebDOMEventListener* webDOMEventListener)
     : EventListener(EventListener::NativeEventListenerType)
@@ -71,4 +70,4 @@ void EventListenerWrapper::webDOMEventListenerDeleted()
     m_webDOMEventListener = 0;
 }
 
-} // namespace WebKit
+} // namespace blink

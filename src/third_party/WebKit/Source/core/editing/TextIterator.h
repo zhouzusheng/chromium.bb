@@ -41,11 +41,12 @@ enum TextIteratorBehavior {
     TextIteratorEmitsCharactersBetweenAllVisiblePositions = 1 << 0,
     TextIteratorEntersTextControls = 1 << 1,
     TextIteratorIgnoresStyleVisibility = 1 << 2,
-    TextIteratorEmitsObjectReplacementCharacters = 1 << 3,
-    TextIteratorEmitsOriginalText = 1 << 4,
-    TextIteratorStopsOnFormControls = 1 << 5,
-    TextIteratorEmitsImageAltText = 1 << 6,
+    TextIteratorEmitsOriginalText = 1 << 3,
+    TextIteratorStopsOnFormControls = 1 << 4,
+    TextIteratorEmitsImageAltText = 1 << 5,
+    TextIteratorEntersAuthorShadowRoots = 1 << 6
 };
+typedef unsigned TextIteratorBehaviorFlags;
 
 // FIXME: Can't really answer this question correctly without knowing the white-space mode.
 // FIXME: Move this somewhere else in the editing directory. It doesn't belong here.
@@ -60,7 +61,7 @@ inline bool isCollapsibleWhitespace(UChar c)
     }
 }
 
-String plainText(const Range*, TextIteratorBehavior defaultBehavior = TextIteratorDefaultBehavior);
+String plainText(const Range*, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
 PassRefPtr<Range> findPlainText(const Range*, const String&, FindOptions);
 
 class BitStack {
@@ -85,7 +86,7 @@ private:
 
 class TextIterator {
 public:
-    explicit TextIterator(const Range*, TextIteratorBehavior = TextIteratorDefaultBehavior);
+    explicit TextIterator(const Range*, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
     ~TextIterator();
 
     bool atEnd() const { return !m_positionNode || m_shouldStop; }
@@ -119,6 +120,14 @@ public:
     static PassRefPtr<Range> subrange(Range* entireRange, int characterOffset, int characterCount);
 
 private:
+    enum IterationProgress {
+        HandledNone,
+        HandledAuthorShadowRoots,
+        HandledUserAgentShadowRoot,
+        HandledNode,
+        HandledChildren
+    };
+
     int startOffset() const { return m_positionStartOffset; }
     const String& string() const { return m_text; }
     void exitNode();
@@ -139,9 +148,9 @@ private:
     // as we walk through the DOM tree.
     Node* m_node;
     int m_offset;
-    bool m_handledNode;
-    bool m_handledChildren;
+    IterationProgress m_iterationProgress;
     BitStack m_fullyClippedStack;
+    int m_shadowDepth;
 
     // The range.
     Node* m_startContainer;
@@ -197,14 +206,14 @@ private:
     bool m_handledFirstLetter;
     // Used when the visibility of the style should not affect text gathering.
     bool m_ignoresStyleVisibility;
-    // Used when emitting the special 0xFFFC character is required.
-    bool m_emitsObjectReplacementCharacters;
     // Used when the iteration should stop if form controls are reached.
     bool m_stopsOnFormControls;
     // Used when m_stopsOnFormControls is set to determine if the iterator should keep advancing.
     bool m_shouldStop;
 
     bool m_emitsImageAltText;
+
+    bool m_entersAuthorShadowRoots;
 };
 
 // Iterates through the DOM range, returning all the text, and 0-length boundaries
@@ -212,7 +221,7 @@ private:
 // chunks so as to optimize for performance of the iteration.
 class SimplifiedBackwardsTextIterator {
 public:
-    explicit SimplifiedBackwardsTextIterator(const Range*, TextIteratorBehavior = TextIteratorDefaultBehavior);
+    explicit SimplifiedBackwardsTextIterator(const Range*, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
 
     bool atEnd() const { return !m_positionNode || m_shouldStop; }
     void advance();
@@ -294,7 +303,7 @@ private:
 // character at a time, or faster, as needed. Useful for searching.
 class CharacterIterator {
 public:
-    explicit CharacterIterator(const Range*, TextIteratorBehavior = TextIteratorDefaultBehavior);
+    explicit CharacterIterator(const Range*, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
 
     void advance(int numCharacters);
 
@@ -322,7 +331,7 @@ private:
 
 class BackwardsCharacterIterator {
 public:
-    explicit BackwardsCharacterIterator(const Range*, TextIteratorBehavior = TextIteratorDefaultBehavior);
+    explicit BackwardsCharacterIterator(const Range*, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
 
     void advance(int);
 

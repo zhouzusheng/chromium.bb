@@ -29,6 +29,7 @@
 #include "core/html/HTMLSelectElement.h"
 
 #include "HTMLNames.h"
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/accessibility/AXObjectCache.h"
@@ -42,11 +43,9 @@
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLOptGroupElement.h"
 #include "core/html/HTMLOptionElement.h"
-#include "core/html/HTMLOptionsCollection.h"
 #include "core/html/forms/FormController.h"
 #include "core/page/EventHandler.h"
 #include "core/frame/Frame.h"
-#include "core/page/Page.h"
 #include "core/page/SpatialNavigation.h"
 #include "core/rendering/RenderListBox.h"
 #include "core/rendering/RenderMenuList.h"
@@ -64,8 +63,8 @@ using namespace HTMLNames;
 // Upper limit agreed upon with representatives of Opera and Mozilla.
 static const unsigned maxSelectItems = 10000;
 
-HTMLSelectElement::HTMLSelectElement(const QualifiedName& tagName, Document& document, HTMLFormElement* form, bool createdByParser)
-    : HTMLFormControlElementWithState(tagName, document, form)
+HTMLSelectElement::HTMLSelectElement(Document& document, HTMLFormElement* form, bool createdByParser)
+    : HTMLFormControlElementWithState(selectTag, document, form)
     , m_typeAhead(this)
     , m_size(0)
     , m_lastOnChangeIndex(-1)
@@ -77,19 +76,17 @@ HTMLSelectElement::HTMLSelectElement(const QualifiedName& tagName, Document& doc
     , m_shouldRecalcListItems(false)
     , m_isParsingInProgress(createdByParser)
 {
-    ASSERT(hasTagName(selectTag));
     ScriptWrappable::init(this);
 }
 
 PassRefPtr<HTMLSelectElement> HTMLSelectElement::create(Document& document)
 {
-    return adoptRef(new HTMLSelectElement(selectTag, document, 0, false));
+    return adoptRef(new HTMLSelectElement(document, 0, false));
 }
 
-PassRefPtr<HTMLSelectElement> HTMLSelectElement::create(const QualifiedName& tagName, Document& document, HTMLFormElement* form, bool createdByParser)
+PassRefPtr<HTMLSelectElement> HTMLSelectElement::create(Document& document, HTMLFormElement* form, bool createdByParser)
 {
-    ASSERT(tagName.matches(selectTag));
-    return adoptRef(new HTMLSelectElement(tagName, document, form, createdByParser));
+    return adoptRef(new HTMLSelectElement(document, form, createdByParser));
 }
 
 const AtomicString& HTMLSelectElement::formControlType() const
@@ -157,7 +154,7 @@ String HTMLSelectElement::validationMessage() const
     if (customError())
         return customValidationMessage();
     if (valueMissing())
-        return locale().queryString(WebKit::WebLocalizedString::ValidationValueMissingForSelect);
+        return locale().queryString(blink::WebLocalizedString::ValidationValueMissingForSelect);
     return String();
 }
 
@@ -209,7 +206,7 @@ int HTMLSelectElement::activeSelectionEndListIndex() const
     return lastSelectedListIndex();
 }
 
-void HTMLSelectElement::add(HTMLElement* element, HTMLElement* before, ExceptionState& es)
+void HTMLSelectElement::add(HTMLElement* element, HTMLElement* before, ExceptionState& exceptionState)
 {
     // Make sure the element is ref'd and deref'd so we don't leak it.
     RefPtr<HTMLElement> protectNewChild(element);
@@ -217,7 +214,7 @@ void HTMLSelectElement::add(HTMLElement* element, HTMLElement* before, Exception
     if (!element || !(element->hasLocalName(optionTag) || element->hasLocalName(hrTag)))
         return;
 
-    insertBefore(element, before, es);
+    insertBefore(element, before, exceptionState);
     setNeedsValidityCheck();
 }
 
@@ -290,7 +287,7 @@ void HTMLSelectElement::parseAttribute(const QualifiedName& name, const AtomicSt
         // Set the attribute value to a number.
         // This is important since the style rules for this attribute can determine the appearance property.
         int size = value.toInt();
-        String attrSize = String::number(size);
+        AtomicString attrSize = AtomicString::number(size);
         if (attrSize != value) {
             // FIXME: This is horribly factored.
             if (Attribute* sizeAttribute = ensureUniqueElementData()->getAttributeItem(sizeAttr))
@@ -392,7 +389,7 @@ void HTMLSelectElement::setMultiple(bool multiple)
 {
     bool oldMultiple = this->multiple();
     int oldSelectedIndex = selectedIndex();
-    setAttribute(multipleAttr, multiple ? "" : 0);
+    setAttribute(multipleAttr, multiple ? emptyAtom : nullAtom);
 
     // Restore selectedIndex after changing the multiple flag to preserve
     // selection as single-line and multi-line has different defaults.
@@ -402,7 +399,7 @@ void HTMLSelectElement::setMultiple(bool multiple)
 
 void HTMLSelectElement::setSize(int size)
 {
-    setAttribute(sizeAttr, String::number(size));
+    setIntegralAttribute(sizeAttr, size);
 }
 
 Node* HTMLSelectElement::namedItem(const AtomicString& name)
@@ -415,7 +412,7 @@ Node* HTMLSelectElement::item(unsigned index)
     return options()->item(index);
 }
 
-void HTMLSelectElement::setOption(unsigned index, HTMLOptionElement* option, ExceptionState& es)
+void HTMLSelectElement::setOption(unsigned index, HTMLOptionElement* option, ExceptionState& exceptionState)
 {
     if (index > maxSelectItems - 1)
         index = maxSelectItems - 1;
@@ -423,21 +420,21 @@ void HTMLSelectElement::setOption(unsigned index, HTMLOptionElement* option, Exc
     RefPtr<HTMLElement> before = 0;
     // Out of array bounds? First insert empty dummies.
     if (diff > 0) {
-        setLength(index, es);
+        setLength(index, exceptionState);
         // Replace an existing entry?
     } else if (diff < 0) {
         before = toHTMLElement(options()->item(index+1));
         remove(index);
     }
     // Finally add the new element.
-    if (!es.hadException()) {
-        add(option, before.get(), es);
+    if (!exceptionState.hadException()) {
+        add(option, before.get(), exceptionState);
         if (diff >= 0 && option->selected())
             optionSelectionStateChanged(option, true);
     }
 }
 
-void HTMLSelectElement::setLength(unsigned newLen, ExceptionState& es)
+void HTMLSelectElement::setLength(unsigned newLen, ExceptionState& exceptionState)
 {
     if (newLen > maxSelectItems)
         newLen = maxSelectItems;
@@ -447,8 +444,8 @@ void HTMLSelectElement::setLength(unsigned newLen, ExceptionState& es)
         do {
             RefPtr<Element> option = document().createElement(optionTag, false);
             ASSERT(option);
-            add(toHTMLElement(option), 0, es);
-            if (es.hadException())
+            add(toHTMLElement(option), 0, exceptionState);
+            if (exceptionState.hadException())
                 break;
         } while (++diff);
     } else {
@@ -469,7 +466,7 @@ void HTMLSelectElement::setLength(unsigned newLen, ExceptionState& es)
         for (size_t i = 0; i < itemsToRemove.size(); ++i) {
             Element* item = itemsToRemove[i].get();
             if (item->parentNode())
-                item->parentNode()->removeChild(item, es);
+                item->parentNode()->removeChild(item, exceptionState);
         }
     }
     setNeedsValidityCheck();
@@ -736,44 +733,44 @@ void HTMLSelectElement::recalcListItems(bool updateSelectedStates) const
 
     HTMLOptionElement* foundSelected = 0;
     HTMLOptionElement* firstOption = 0;
-    for (Element* currentElement = ElementTraversal::firstWithin(this); currentElement; ) {
+    for (Element* currentElement = ElementTraversal::firstWithin(*this); currentElement; ) {
         if (!currentElement->isHTMLElement()) {
-            currentElement = ElementTraversal::nextSkippingChildren(currentElement, this);
+            currentElement = ElementTraversal::nextSkippingChildren(*currentElement, this);
             continue;
         }
-        HTMLElement* current = toHTMLElement(currentElement);
+        HTMLElement& current = toHTMLElement(*currentElement);
 
         // optgroup tags may not nest. However, both FireFox and IE will
         // flatten the tree automatically, so we follow suit.
         // (http://www.w3.org/TR/html401/interact/forms.html#h-17.6)
         if (isHTMLOptGroupElement(current)) {
-            m_listItems.append(current);
+            m_listItems.append(&current);
             if (Element* nextElement = ElementTraversal::firstWithin(current)) {
                 currentElement = nextElement;
                 continue;
             }
         }
 
-        if (current->hasTagName(optionTag)) {
-            m_listItems.append(current);
+        if (current.hasTagName(optionTag)) {
+            m_listItems.append(&current);
 
             if (updateSelectedStates && !m_multiple) {
-                HTMLOptionElement* option = toHTMLOptionElement(current);
+                HTMLOptionElement& option = toHTMLOptionElement(current);
                 if (!firstOption)
-                    firstOption = option;
-                if (option->selected()) {
+                    firstOption = &option;
+                if (option.selected()) {
                     if (foundSelected)
                         foundSelected->setSelectedState(false);
-                    foundSelected = option;
-                } else if (m_size <= 1 && !foundSelected && !option->isDisabledFormControl()) {
-                    foundSelected = option;
+                    foundSelected = &option;
+                } else if (m_size <= 1 && !foundSelected && !option.isDisabledFormControl()) {
+                    foundSelected = &option;
                     foundSelected->setSelectedState(true);
                 }
             }
         }
 
-        if (current->hasTagName(hrTag))
-            m_listItems.append(current);
+        if (current.hasTagName(hrTag))
+            m_listItems.append(&current);
 
         // In conforming HTML code, only <optgroup> and <option> will be found
         // within a <select>. We call NodeTraversal::nextSkippingChildren so that we only step
@@ -781,7 +778,7 @@ void HTMLSelectElement::recalcListItems(bool updateSelectedStates) const
         // with the case where odd tags like a <div> have been added but we
         // handle this because such tags have already been removed from the
         // <select>'s subtree at this point.
-        currentElement = ElementTraversal::nextSkippingChildren(currentElement, this);
+        currentElement = ElementTraversal::nextSkippingChildren(*currentElement, this);
     }
 
     if (!foundSelected && m_size <= 1 && firstOption && !firstOption->selected())
@@ -816,7 +813,7 @@ void HTMLSelectElement::optionSelectionStateChanged(HTMLOptionElement* option, b
     ASSERT(option->ownerSelectElement() == this);
     if (optionIsSelected)
         selectOption(option->index());
-    else if (!usesMenuList())
+    else if (!usesMenuList() || multiple())
         selectOption(-1);
     else
         selectOption(nextSelectableListIndex(-1));
@@ -1565,17 +1562,17 @@ void HTMLSelectElement::finishParsingChildren()
     updateListItemSelectedStates();
 }
 
-bool HTMLSelectElement::anonymousIndexedSetter(unsigned index, PassRefPtr<HTMLOptionElement> value, ExceptionState& es)
+bool HTMLSelectElement::anonymousIndexedSetter(unsigned index, PassRefPtr<HTMLOptionElement> value, ExceptionState& exceptionState)
 {
     if (!value) {
-        es.throwUninformativeAndGenericDOMException(TypeMismatchError);
+        exceptionState.throwTypeError(ExceptionMessages::failedToSet(String::number(index), "HTMLSelectElement", "The value provided was not an HTMLOptionElement."));
         return false;
     }
-    setOption(index, value.get(), es);
+    setOption(index, value.get(), exceptionState);
     return true;
 }
 
-bool HTMLSelectElement::anonymousIndexedSetterRemove(unsigned index, ExceptionState& es)
+bool HTMLSelectElement::anonymousIndexedSetterRemove(unsigned index, ExceptionState& exceptionState)
 {
     remove(index);
     return true;

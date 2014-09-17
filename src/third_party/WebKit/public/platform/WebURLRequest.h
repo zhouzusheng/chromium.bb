@@ -38,7 +38,7 @@
 namespace WebCore { class ResourceRequest; }
 #endif
 
-namespace WebKit {
+namespace blink {
 
 class WebCString;
 class WebHTTPBody;
@@ -81,7 +81,9 @@ public:
         TargetIsFavicon = 12,
         TargetIsXHR = 13,
         TargetIsTextTrack = 14,
-        TargetIsUnspecified = 15,
+        TargetIsPing = 15,
+        TargetIsServiceWorker = 16,
+        TargetIsUnspecified = 17,
     };
 
     class ExtraData {
@@ -204,6 +206,6 @@ private:
     WebURLRequestPrivate* m_private;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

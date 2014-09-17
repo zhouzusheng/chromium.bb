@@ -40,7 +40,7 @@
 #include "core/html/HTMLTableElement.h"
 #include "core/html/HTMLTextAreaElement.h"
 #include "core/frame/FrameView.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
 #include "core/rendering/Pagination.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/style/GridPosition.h"
@@ -274,6 +274,7 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
         || style->boxReflect()
         || style->hasFilter()
         || style->hasBlendMode()
+        || style->hasIsolation()
         || style->position() == StickyPosition
         || (style->position() == FixedPosition && e && e->document().settings() && e->document().settings()->fixedPositionCreatesStackingContext())
         || isInTopLayer(e, style)
@@ -383,6 +384,10 @@ void StyleAdjuster::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
         // not be scaled again.
         if (e->hasTagName(SVGNames::foreignObjectTag))
             style->setEffectiveZoom(RenderStyle::initialZoom());
+
+        // SVG text layout code expects us to be a block-level style element.
+        if ((e->hasTagName(SVGNames::foreignObjectTag) || e->hasTagName(SVGNames::textTag)) && style->isDisplayInlineType())
+            style->setDisplay(BLOCK);
     }
 }
 

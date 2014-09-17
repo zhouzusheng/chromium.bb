@@ -33,7 +33,6 @@
 
 #include "core/inspector/ConsoleMessage.h"
 
-#include "InspectorFrontend.h"
 #include "bindings/v8/ScriptCallStackFactory.h"
 #include "bindings/v8/ScriptValue.h"
 #include "core/inspector/IdentifiersFactory.h"
@@ -171,8 +170,6 @@ static TypeBuilder::Console::ConsoleMessage::Type::Enum messageTypeValue(Message
     case StartGroupCollapsedMessageType: return TypeBuilder::Console::ConsoleMessage::Type::StartGroupCollapsed;
     case EndGroupMessageType: return TypeBuilder::Console::ConsoleMessage::Type::EndGroup;
     case AssertMessageType: return TypeBuilder::Console::ConsoleMessage::Type::Assert;
-    case ProfileMessageType: return TypeBuilder::Console::ConsoleMessage::Type::Profile;
-    case ProfileEndMessageType: return TypeBuilder::Console::ConsoleMessage::Type::ProfileEnd;
     }
     return TypeBuilder::Console::ConsoleMessage::Type::Log;
 }

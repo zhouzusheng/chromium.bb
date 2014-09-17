@@ -32,9 +32,9 @@
 #include "HTMLNames.h"
 #include "XMLNames.h"
 #include "core/css/resolver/StyleResolver.h"
+#include "core/css/resolver/StyleResolverStats.h"
 #include "core/dom/ContainerNode.h"
 #include "core/dom/Document.h"
-#include "core/dom/Element.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/FullscreenElementStack.h"
 #include "core/dom/Node.h"
@@ -98,8 +98,9 @@ bool SharedStyleFinder::canShareStyleWithControl(Element& candidate) const
 
 bool SharedStyleFinder::classNamesAffectedByRules(const SpaceSplitString& classNames) const
 {
-    for (unsigned i = 0; i < classNames.size(); ++i) {
-        if (m_features.classesInRules.contains(classNames[i].impl()))
+    unsigned count = classNames.size();
+    for (unsigned i = 0; i < count; ++i) {
+        if (m_features.classesInRules.contains(classNames[i]))
             return true;
     }
     return false;
@@ -194,7 +195,7 @@ bool SharedStyleFinder::canShareStyleWithElement(Element& candidate) const
         return false;
     if (candidate.additionalPresentationAttributeStyle() != element().additionalPresentationAttributeStyle())
         return false;
-    if (candidate.hasID() && m_features.idsInRules.contains(candidate.idForStyleResolution().impl()))
+    if (candidate.hasID() && m_features.idsInRules.contains(candidate.idForStyleResolution()))
         return false;
     if (candidate.hasScopedHTMLStyleChild())
         return false;
@@ -228,7 +229,7 @@ bool SharedStyleFinder::canShareStyleWithElement(Element& candidate) const
             return false;
         if (parent->isSVGElement() && toSVGElement(parent)->animatedSMILStyleProperties())
             return false;
-        if (parent->hasID() && m_features.idsInRules.contains(parent->idForStyleResolution().impl()))
+        if (parent->hasID() && m_features.idsInRules.contains(parent->idForStyleResolution()))
             return false;
         if (!parent->childrenSupportStyleSharing())
             return false;
@@ -239,8 +240,8 @@ bool SharedStyleFinder::canShareStyleWithElement(Element& candidate) const
 
 bool SharedStyleFinder::documentContainsValidCandidate() const
 {
-    for (Element* element = document().documentElement(); element; element = ElementTraversal::next(element)) {
-        if (canShareStyleWithElement(*element))
+    for (Element* element = document().documentElement(); element; element = ElementTraversal::next(*element)) {
+        if (element->supportsStyleSharing() && canShareStyleWithElement(*element))
             return true;
     }
     return false;
@@ -250,17 +251,17 @@ inline Element* SharedStyleFinder::findElementForStyleSharing() const
 {
     StyleSharingList& styleSharingList = m_styleResolver.styleSharingList();
     for (StyleSharingList::iterator it = styleSharingList.begin(); it != styleSharingList.end(); ++it) {
-        if (!canShareStyleWithElement(**it))
+        Element& candidate = **it;
+        if (!canShareStyleWithElement(candidate))
             continue;
-        Element* element = it->get();
         if (it != styleSharingList.begin()) {
             // Move the element to the front of the LRU
             styleSharingList.remove(it);
-            styleSharingList.prepend(element);
+            styleSharingList.prepend(&candidate);
         }
-        return element;
+        return &candidate;
     }
-    m_styleResolver.addToStyleSharingList(&element());
+    m_styleResolver.addToStyleSharingList(element());
     return 0;
 }
 
@@ -274,38 +275,40 @@ bool SharedStyleFinder::matchesRuleSet(RuleSet* ruleSet)
 
 RenderStyle* SharedStyleFinder::findSharedStyle()
 {
-    STYLE_STATS_ADD_SEARCH();
+    INCREMENT_STYLE_STATS_COUNTER(m_styleResolver, sharedStyleLookups);
 
     if (!element().supportsStyleSharing())
         return 0;
-
-    STYLE_STATS_ADD_ELEMENT_ELIGIBLE_FOR_SHARING();
 
     // Cache whether context.element() is affected by any known class selectors.
     m_elementAffectedByClassRules = element().hasClass() && classNamesAffectedByRules(element().classNames());
 
     Element* shareElement = findElementForStyleSharing();
 
-#ifdef STYLE_STATS
-    // FIXME: these stats don't to into account whether or not sibling/attribute
-    // rules prevent these nodes from actually sharing
-    if (shareElement)
-        STYLE_STATS_ADD_SEARCH_FOUND_SIBLING_FOR_SHARING();
-    else if (documentContainsValidCandidate())
-        STYLE_STATS_ADD_SEARCH_MISSED_SHARING();
-#endif
-
-    // If we have exhausted all our budget or our cousins.
-    if (!shareElement)
+    if (!shareElement) {
+        if (m_styleResolver.stats() && m_styleResolver.stats()->printMissedCandidateCount && documentContainsValidCandidate())
+            INCREMENT_STYLE_STATS_COUNTER(m_styleResolver, sharedStyleMissed);
         return 0;
+    }
 
-    // Can't share if sibling or attribute rules apply. This is checked at the end as it should rarely fail.
-    if (matchesRuleSet(m_siblingRuleSet) || matchesRuleSet(m_uncommonAttributeRuleSet))
+    INCREMENT_STYLE_STATS_COUNTER(m_styleResolver, sharedStyleFound);
+
+    if (matchesRuleSet(m_siblingRuleSet)) {
+        INCREMENT_STYLE_STATS_COUNTER(m_styleResolver, sharedStyleRejectedBySiblingRules);
         return 0;
+    }
+
+    if (matchesRuleSet(m_uncommonAttributeRuleSet)) {
+        INCREMENT_STYLE_STATS_COUNTER(m_styleResolver, sharedStyleRejectedByUncommonAttributeRules);
+        return 0;
+    }
+
     // Tracking child index requires unique style for each node. This may get set by the sibling rule match above.
-    if (!element().parentElement()->childrenSupportStyleSharing())
+    if (!element().parentElement()->childrenSupportStyleSharing()) {
+        INCREMENT_STYLE_STATS_COUNTER(m_styleResolver, sharedStyleRejectedByParent);
         return 0;
-    STYLE_STATS_ADD_STYLE_SHARED();
+    }
+
     return shareElement->renderStyle();
 }
 

@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
+#include "base/debug/trace_event.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
@@ -144,7 +145,7 @@ void VideoFrameStream::Stop(const base::Closure& closure) {
     message_loop_->PostTask(FROM_HERE, base::ResetAndReturn(&reset_cb_));
 
   if (decrypting_demuxer_stream_) {
-    decrypting_demuxer_stream_->Reset(base::Bind(
+    decrypting_demuxer_stream_->Stop(base::Bind(
         &VideoFrameStream::StopDecoder, weak_factory_.GetWeakPtr()));
     return;
   }
@@ -227,6 +228,8 @@ void VideoFrameStream::Decode(const scoped_refptr<DecoderBuffer>& buffer) {
   DCHECK(buffer);
 
   int buffer_size = buffer->end_of_stream() ? 0 : buffer->data_size();
+
+  TRACE_EVENT_ASYNC_BEGIN0("media", "VideoFrameStream::Decode", this);
   decoder_->Decode(buffer, base::Bind(&VideoFrameStream::OnFrameReady,
                                       weak_factory_.GetWeakPtr(), buffer_size));
 }
@@ -242,6 +245,8 @@ void VideoFrameStream::OnFrameReady(int buffer_size,
   DCHECK(state_ == STATE_NORMAL || state_ == STATE_FLUSHING_DECODER) << state_;
   DCHECK(!read_cb_.is_null());
   DCHECK(stop_cb_.is_null());
+
+  TRACE_EVENT_ASYNC_END0("media", "VideoFrameStream::Decode", this);
 
   if (status == VideoDecoder::kDecodeError) {
     DCHECK(!frame.get());
@@ -273,7 +278,7 @@ void VideoFrameStream::OnFrameReady(int buffer_size,
 
   // Decoder flushed. Reinitialize the video decoder.
   if (state_ == STATE_FLUSHING_DECODER &&
-      status == VideoDecoder::kOk && frame->IsEndOfStream()) {
+      status == VideoDecoder::kOk && frame->end_of_stream()) {
     ReinitializeDecoder();
     return;
   }

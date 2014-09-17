@@ -37,9 +37,8 @@
 #include "core/dom/Document.h"
 #include "platform/Prerender.h"
 #include "public/platform/WebPrerender.h"
-#include "wtf/PassRefPtr.h"
 
-namespace WebKit {
+namespace blink {
 
 PrerendererClientImpl::PrerendererClientImpl(WebPrerendererClient* client)
     : m_client(client)

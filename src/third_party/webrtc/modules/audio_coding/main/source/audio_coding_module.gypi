@@ -42,11 +42,13 @@
       'include_dirs': [
         '../interface',
         '../../../interface',
+        '<(webrtc_root)',
       ],
       'direct_dependent_settings': {
         'include_dirs': [
           '../interface',
           '../../../interface',
+          '<(webrtc_root)',
         ],
       },
       'sources': [
@@ -114,7 +116,7 @@
           'type': 'executable',
           'dependencies': [
             'audio_coding_module',
-            '<(webrtc_root)/test/test.gyp:test_support_main',
+            '<(webrtc_root)/test/test.gyp:test_support',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
           ],
@@ -122,6 +124,7 @@
              '../test/delay_test.cc',
              '../test/Channel.cc',
              '../test/PCMFile.cc',
+             '../test/utility.cc',
            ],
         }, # delay_test
         {
@@ -129,7 +132,7 @@
           'type': 'executable',
           'dependencies': [
             'audio_coding_module',
-            '<(webrtc_root)/test/test.gyp:test_support_main',
+            '<(webrtc_root)/test/test.gyp:test_support',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
           ],

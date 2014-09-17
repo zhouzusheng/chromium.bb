@@ -29,7 +29,6 @@
 #include "config.h"
 #include "core/css/CSSVariablesMap.h"
 
-#include "bindings/v8/ExceptionState.h"
 #include "core/css/CSSStyleDeclaration.h"
 
 namespace WebCore {
@@ -55,11 +54,11 @@ bool CSSVariablesMap::has(const AtomicString& name) const
     return false;
 }
 
-void CSSVariablesMap::set(const AtomicString& name, const String& value, ExceptionState& es)
+void CSSVariablesMap::set(const AtomicString& name, const String& value, ExceptionState& exceptionState)
 {
     if (!m_styleDeclaration)
         return;
-    if (m_styleDeclaration->setVariableValue(name, value, es)) {
+    if (m_styleDeclaration->setVariableValue(name, value, exceptionState)) {
         Iterators::iterator end = m_activeIterators.end();
         for (Iterators::iterator it = m_activeIterators.begin(); it != end; ++it)
             (*it)->addedVariable(name);
@@ -79,28 +78,28 @@ bool CSSVariablesMap::remove(const AtomicString& name)
     return false;
 }
 
-void CSSVariablesMap::clear(ExceptionState& es)
+void CSSVariablesMap::clear(ExceptionState& exceptionState)
 {
     if (!m_styleDeclaration)
         return;
-    if (m_styleDeclaration->clearVariables(es)) {
+    if (m_styleDeclaration->clearVariables(exceptionState)) {
         Iterators::iterator end = m_activeIterators.end();
         for (Iterators::iterator it = m_activeIterators.begin(); it != end; ++it)
             (*it)->clearedVariables();
     }
 }
 
-void CSSVariablesMap::forEach(PassRefPtr<CSSVariablesMapForEachCallback> callback, ScriptValue& thisArg) const
+void CSSVariablesMap::forEach(PassOwnPtr<CSSVariablesMapForEachCallback> callback, ScriptValue& thisArg) const
 {
     forEach(callback, &thisArg);
 }
 
-void CSSVariablesMap::forEach(PassRefPtr<CSSVariablesMapForEachCallback> callback) const
+void CSSVariablesMap::forEach(PassOwnPtr<CSSVariablesMapForEachCallback> callback) const
 {
     forEach(callback, 0);
 }
 
-void CSSVariablesMap::forEach(PassRefPtr<CSSVariablesMapForEachCallback> callback, ScriptValue* thisArg) const
+void CSSVariablesMap::forEach(PassOwnPtr<CSSVariablesMapForEachCallback> callback, ScriptValue* thisArg) const
 {
     if (!m_styleDeclaration)
         return;

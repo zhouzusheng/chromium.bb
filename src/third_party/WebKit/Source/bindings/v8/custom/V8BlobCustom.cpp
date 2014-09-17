@@ -31,88 +31,54 @@
 #include "config.h"
 #include "V8Blob.h"
 
-#include "bindings/v8/Dictionary.h"
-#include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8Utilities.h"
-#include "bindings/v8/custom/V8ArrayBufferCustom.h"
-#include "bindings/v8/custom/V8ArrayBufferViewCustom.h"
+#include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/custom/V8BlobCustomHelpers.h"
 #include "core/fileapi/BlobBuilder.h"
-#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
 void V8Blob::constructorCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
+    ExceptionState exceptionState(ExceptionState::ConstructionContext, "Blob", info.Holder(), info.GetIsolate());
     if (!info.Length()) {
         RefPtr<Blob> blob = Blob::create();
-        info.GetReturnValue().Set(toV8(blob.get(), info.Holder(), info.GetIsolate()));
+        v8SetReturnValue(info, blob.release());
         return;
     }
 
-    v8::Local<v8::Value> firstArg = info[0];
-    if (!firstArg->IsArray()) {
-        throwTypeError("First argument of the constructor is not of type Array", info.GetIsolate());
-        return;
+    uint32_t length = 0;
+    if (info[0]->IsArray()) {
+        length = v8::Local<v8::Array>::Cast(info[0])->Length();
+    } else {
+        const int sequenceArgumentIndex = 0;
+        if (toV8Sequence(info[sequenceArgumentIndex], length, info.GetIsolate()).IsEmpty()) {
+            exceptionState.throwTypeError(ExceptionMessages::notAnArrayTypeArgumentOrValue(sequenceArgumentIndex + 1));
+            exceptionState.throwIfNeeded();
+            return;
+        }
     }
 
-    String type;
-    String endings = "transparent";
-
+    V8BlobCustomHelpers::ParsedProperties properties(false);
     if (info.Length() > 1) {
         if (!info[1]->IsObject()) {
-            throwTypeError("Second argument of the constructor is not of type Object", info.GetIsolate());
+            exceptionState.throwTypeError("The 2nd argument is not of type Object.");
+            exceptionState.throwIfNeeded();
             return;
         }
 
-        V8TRYCATCH_VOID(Dictionary, dictionary, Dictionary(info[1], info.GetIsolate()));
-
-        V8TRYCATCH_VOID(bool, containsEndings, dictionary.get("endings", endings));
-        if (containsEndings) {
-            if (endings != "transparent" && endings != "native") {
-                throwTypeError("The endings property must be either \"transparent\" or \"native\"", info.GetIsolate());
-                return;
-            }
-        }
-
-        V8TRYCATCH_VOID(bool, containsType, dictionary.get("type", type));
-        UNUSED_PARAM(containsType);
-        if (!type.containsOnlyASCII()) {
-            throwError(v8SyntaxError, "type must consist of ASCII characters", info.GetIsolate());
+        if (!properties.parseBlobPropertyBag(info[1], "Blob", exceptionState, info.GetIsolate())) {
+            exceptionState.throwIfNeeded();
             return;
         }
-        type = type.lower();
     }
-
-    ASSERT(endings == "transparent" || endings == "native");
 
     BlobBuilder blobBuilder;
+    v8::Local<v8::Object> blobParts = v8::Local<v8::Object>::Cast(info[0]);
+    if (!V8BlobCustomHelpers::processBlobParts(blobParts, length, properties.endings(), blobBuilder, info.GetIsolate()))
+        return;
 
-    V8TRYCATCH_VOID(v8::Local<v8::Array>, blobParts, v8::Local<v8::Array>::Cast(firstArg));
-    uint32_t length = blobParts->Length();
-
-    for (uint32_t i = 0; i < length; ++i) {
-        v8::Local<v8::Value> item = blobParts->Get(v8::Uint32::New(i, info.GetIsolate()));
-        ASSERT(!item.IsEmpty());
-        if (V8ArrayBuffer::HasInstance(item, info.GetIsolate(), worldType(info.GetIsolate()))) {
-            ArrayBuffer* arrayBuffer = V8ArrayBuffer::toNative(v8::Handle<v8::Object>::Cast(item));
-            ASSERT(arrayBuffer);
-            blobBuilder.append(arrayBuffer);
-        } else if (V8ArrayBufferView::HasInstance(item, info.GetIsolate(), worldType(info.GetIsolate()))) {
-            ArrayBufferView* arrayBufferView = V8ArrayBufferView::toNative(v8::Handle<v8::Object>::Cast(item));
-            ASSERT(arrayBufferView);
-            blobBuilder.append(arrayBufferView);
-        } else if (V8Blob::HasInstance(item, info.GetIsolate(), worldType(info.GetIsolate()))) {
-            Blob* blob = V8Blob::toNative(v8::Handle<v8::Object>::Cast(item));
-            ASSERT(blob);
-            blobBuilder.append(blob);
-        } else {
-            V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, stringValue, item);
-            blobBuilder.append(stringValue, endings);
-        }
-    }
-
-    RefPtr<Blob> blob = blobBuilder.getBlob(type);
-    info.GetReturnValue().Set(toV8(blob.get(), info.Holder(), info.GetIsolate()));
+    RefPtr<Blob> blob = blobBuilder.createBlob(properties.contentType());
+    v8SetReturnValue(info, blob.release());
 }
 
 } // namespace WebCore

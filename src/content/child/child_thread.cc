@@ -9,6 +9,7 @@
 #include "base/allocator/allocator_extension.h"
 #include "base/base_switches.h"
 #include "base/command_line.h"
+#include "base/debug/leak_annotations.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop/message_loop.h"
 #include "base/process/kill.h"
@@ -38,7 +39,6 @@
 #include "ipc/ipc_switches.h"
 #include "ipc/ipc_sync_channel.h"
 #include "ipc/ipc_sync_message_filter.h"
-#include "webkit/glue/webkit_glue.h"
 
 #if defined(OS_WIN)
 #include "content/common/handle_enumerator_win.h"
@@ -90,6 +90,11 @@ class SuicideOnChannelErrorFilter : public IPC::ChannelProxy::MessageFilter {
       // that write profile data to disk (which happens under profile collection
       // mode).
       alarm(60);
+#if defined(LEAK_SANITIZER)
+      // Invoke LeakSanitizer early to avoid detecting shutdown-only leaks. If
+      // leaks are found, the process will exit here.
+      __lsan_do_leak_check();
+#endif
     } else {
       _exit(0);
     }
@@ -202,8 +207,8 @@ void ChildThread::Init() {
   channel_->AddFilter(new tracing::ChildTraceMessageFilter(
       ChildProcess::current()->io_message_loop_proxy()));
   channel_->AddFilter(resource_message_filter_.get());
-  channel_->AddFilter(quota_message_filter_.get());
-  channel_->AddFilter(service_worker_message_filter_.get());
+  channel_->AddFilter(quota_message_filter_->GetFilter());
+  channel_->AddFilter(service_worker_message_filter_->GetFilter());
 
   // In single process mode we may already have a power monitor
   if (!base::PowerMonitor::Get()) {
@@ -221,19 +226,6 @@ void ChildThread::Init() {
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kProcessType))
     channel_->AddFilter(new SuicideOnChannelErrorFilter());
 #endif
-
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kTraceToConsole)) {
-    std::string category_string =
-        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-            switches::kTraceToConsole);
-
-    if (!category_string.size())
-      category_string = "*";
-
-    base::debug::TraceLog::GetInstance()->SetEnabled(
-        base::debug::CategoryFilter(category_string),
-        base::debug::TraceLog::ECHO_TO_CONSOLE);
-  }
 
   base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
@@ -265,8 +257,6 @@ ChildThread::~ChildThread() {
   IPC::Logging::GetInstance()->SetIPCSender(NULL);
 #endif
 
-  channel_->RemoveFilter(service_worker_message_filter_.get());
-  channel_->RemoveFilter(quota_message_filter_.get());
   channel_->RemoveFilter(histogram_message_filter_.get());
   channel_->RemoveFilter(sync_message_filter_.get());
 
@@ -493,7 +483,7 @@ void ChildThread::OnProcessFinalRelease() {
 }
 
 void ChildThread::EnsureConnected() {
-  LOG(INFO) << "ChildThread::EnsureConnected()";
+  VLOG(0) << "ChildThread::EnsureConnected()";
   base::KillProcess(base::GetCurrentProcessHandle(), 0, false);
 }
 

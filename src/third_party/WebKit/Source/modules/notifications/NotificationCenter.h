@@ -39,7 +39,7 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/html/VoidCallback.h"
-#include "modules/notifications/Notification.h"
+#include "modules/notifications/WebKitNotification.h"
 #include "platform/Supplementable.h"
 #include "platform/Timer.h"
 #include "wtf/OwnPtr.h"
@@ -56,23 +56,19 @@ class NotificationCenter : public RefCounted<NotificationCenter>, public ScriptW
 public:
     static PassRefPtr<NotificationCenter> create(ExecutionContext*, NotificationClient*);
 
-#if ENABLE(LEGACY_NOTIFICATIONS)
-    PassRefPtr<Notification> createNotification(const String& iconURI, const String& title, const String& body, ExceptionState& es)
+    PassRefPtr<WebKitNotification> createNotification(const String& iconUrl, const String& title, const String& body, ExceptionState& exceptionState)
     {
         if (!client()) {
-            es.throwUninformativeAndGenericDOMException(InvalidStateError);
+            exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
             return 0;
         }
-        return Notification::create(title, body, iconURI, executionContext(), es, this);
+        return WebKitNotification::create(title, body, iconUrl, executionContext(), exceptionState, this);
     }
-#endif
 
     NotificationClient* client() const { return m_client; }
 
-#if ENABLE(LEGACY_NOTIFICATIONS)
     int checkPermission();
-    void requestPermission(PassRefPtr<VoidCallback> = 0);
-#endif
+    void requestPermission(PassOwnPtr<VoidCallback> = nullptr);
 
     virtual void stop() OVERRIDE;
 
@@ -81,15 +77,15 @@ private:
 
     class NotificationRequestCallback : public RefCounted<NotificationRequestCallback> {
     public:
-        static PassRefPtr<NotificationRequestCallback> createAndStartTimer(NotificationCenter*, PassRefPtr<VoidCallback>);
+        static PassRefPtr<NotificationRequestCallback> createAndStartTimer(NotificationCenter*, PassOwnPtr<VoidCallback>);
         void startTimer();
         void timerFired(Timer<NotificationRequestCallback>*);
     private:
-        NotificationRequestCallback(NotificationCenter*, PassRefPtr<VoidCallback>);
+        NotificationRequestCallback(NotificationCenter*, PassOwnPtr<VoidCallback>);
 
         RefPtr<NotificationCenter> m_notificationCenter;
         Timer<NotificationRequestCallback> m_timer;
-        RefPtr<VoidCallback> m_callback;
+        OwnPtr<VoidCallback> m_callback;
     };
 
     void requestTimedOut(NotificationRequestCallback*);

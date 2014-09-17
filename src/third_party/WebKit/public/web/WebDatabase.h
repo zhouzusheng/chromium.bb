@@ -36,9 +36,8 @@
 
 namespace WebCore { class DatabaseBackendBase; }
 
-namespace WebKit {
+namespace blink {
 
-class WebDatabaseObserver;
 class WebString;
 
 class WebDatabase {
@@ -48,9 +47,6 @@ public:
     BLINK_EXPORT unsigned long estimatedSize() const;
     BLINK_EXPORT WebSecurityOrigin securityOrigin() const;
     BLINK_EXPORT bool isSyncDatabase() const;
-
-    BLINK_EXPORT static void setObserver(WebDatabaseObserver*);
-    BLINK_EXPORT static WebDatabaseObserver* observer();
 
     BLINK_EXPORT static void updateDatabaseSize(
         const WebString& originIdentifier, const WebString& name, long long size);
@@ -71,6 +67,6 @@ private:
     const WebCore::DatabaseBackendBase* m_database;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

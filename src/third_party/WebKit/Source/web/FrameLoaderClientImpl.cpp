@@ -70,19 +70,19 @@
 #include "core/page/EventHandler.h"
 #include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
 #include "core/page/WindowFeatures.h"
-#include "core/platform/MIMETypeRegistry.h"
 #include "core/platform/mediastream/RTCPeerConnectionHandler.h"
-#include "core/plugins/PluginData.h"
 #include "core/rendering/HitTestResult.h"
 #include "modules/device_orientation/DeviceMotionController.h"
-#include "modules/device_orientation/NewDeviceOrientationController.h"
+#include "modules/device_orientation/DeviceOrientationController.h"
+#include "platform/MIMETypeRegistry.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/exported/WrappedResourceRequest.h"
 #include "platform/exported/WrappedResourceResponse.h"
 #include "platform/network/HTTPParsers.h"
 #include "platform/network/SocketStreamHandleInternal.h"
+#include "platform/plugins/PluginData.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebMimeRegistry.h"
 #include "public/platform/WebServiceWorkerProvider.h"
@@ -98,7 +98,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 FrameLoaderClientImpl::FrameLoaderClientImpl(WebFrameImpl* frame)
     : m_webFrame(frame)
@@ -130,7 +130,7 @@ void FrameLoaderClientImpl::dispatchDidClearWindowObjectInWorld(DOMWrapperWorld*
             if (RuntimeEnabledFeatures::deviceMotionEnabled())
                 DeviceMotionController::from(document);
             if (RuntimeEnabledFeatures::deviceOrientationEnabled())
-                NewDeviceOrientationController::from(document);
+                DeviceOrientationController::from(document);
         }
     }
 }
@@ -166,6 +166,9 @@ bool FrameLoaderClientImpl::allowScriptExtension(const String& extensionName,
                                                  int extensionGroup,
                                                  int worldId)
 {
+    if (m_webFrame->permissionClient())
+        return m_webFrame->permissionClient()->allowScriptExtension(m_webFrame, extensionName, extensionGroup, worldId);
+
     WebViewImpl* webview = m_webFrame->viewImpl();
     if (webview && webview->permissionClient())
         return webview->permissionClient()->allowScriptExtension(m_webFrame, extensionName, extensionGroup, worldId);
@@ -181,6 +184,9 @@ void FrameLoaderClientImpl::didChangeScrollOffset()
 
 bool FrameLoaderClientImpl::allowScript(bool enabledPerSettings)
 {
+    if (m_webFrame->permissionClient())
+        return m_webFrame->permissionClient()->allowScript(m_webFrame, enabledPerSettings);
+
     WebViewImpl* webview = m_webFrame->viewImpl();
     if (webview && webview->permissionClient())
         return webview->permissionClient()->allowScript(m_webFrame, enabledPerSettings);
@@ -190,6 +196,9 @@ bool FrameLoaderClientImpl::allowScript(bool enabledPerSettings)
 
 bool FrameLoaderClientImpl::allowScriptFromSource(bool enabledPerSettings, const KURL& scriptURL)
 {
+    if (m_webFrame->permissionClient())
+        return m_webFrame->permissionClient()->allowScriptFromSource(m_webFrame, enabledPerSettings, scriptURL);
+
     WebViewImpl* webview = m_webFrame->viewImpl();
     if (webview && webview->permissionClient())
         return webview->permissionClient()->allowScriptFromSource(m_webFrame, enabledPerSettings, scriptURL);
@@ -199,6 +208,9 @@ bool FrameLoaderClientImpl::allowScriptFromSource(bool enabledPerSettings, const
 
 bool FrameLoaderClientImpl::allowPlugins(bool enabledPerSettings)
 {
+    if (m_webFrame->permissionClient())
+        return m_webFrame->permissionClient()->allowPlugins(m_webFrame, enabledPerSettings);
+
     WebViewImpl* webview = m_webFrame->viewImpl();
     if (webview && webview->permissionClient())
         return webview->permissionClient()->allowPlugins(m_webFrame, enabledPerSettings);
@@ -208,6 +220,9 @@ bool FrameLoaderClientImpl::allowPlugins(bool enabledPerSettings)
 
 bool FrameLoaderClientImpl::allowImage(bool enabledPerSettings, const KURL& imageURL)
 {
+    if (m_webFrame->permissionClient())
+        return m_webFrame->permissionClient()->allowImage(m_webFrame, enabledPerSettings, imageURL);
+
     WebViewImpl* webview = m_webFrame->viewImpl();
     if (webview && webview->permissionClient())
         return webview->permissionClient()->allowImage(m_webFrame, enabledPerSettings, imageURL);
@@ -217,6 +232,9 @@ bool FrameLoaderClientImpl::allowImage(bool enabledPerSettings, const KURL& imag
 
 bool FrameLoaderClientImpl::allowDisplayingInsecureContent(bool enabledPerSettings, SecurityOrigin* context, const KURL& url)
 {
+    if (m_webFrame->permissionClient())
+        return m_webFrame->permissionClient()->allowDisplayingInsecureContent(m_webFrame, enabledPerSettings, WebSecurityOrigin(context), WebURL(url));
+
     WebViewImpl* webview = m_webFrame->viewImpl();
     if (webview && webview->permissionClient())
         return webview->permissionClient()->allowDisplayingInsecureContent(m_webFrame, enabledPerSettings, WebSecurityOrigin(context), WebURL(url));
@@ -226,6 +244,9 @@ bool FrameLoaderClientImpl::allowDisplayingInsecureContent(bool enabledPerSettin
 
 bool FrameLoaderClientImpl::allowRunningInsecureContent(bool enabledPerSettings, SecurityOrigin* context, const KURL& url)
 {
+    if (m_webFrame->permissionClient())
+        return m_webFrame->permissionClient()->allowRunningInsecureContent(m_webFrame, enabledPerSettings, WebSecurityOrigin(context), WebURL(url));
+
     WebViewImpl* webview = m_webFrame->viewImpl();
     if (webview && webview->permissionClient())
         return webview->permissionClient()->allowRunningInsecureContent(m_webFrame, enabledPerSettings, WebSecurityOrigin(context), WebURL(url));
@@ -235,6 +256,9 @@ bool FrameLoaderClientImpl::allowRunningInsecureContent(bool enabledPerSettings,
 
 void FrameLoaderClientImpl::didNotAllowScript()
 {
+    if (m_webFrame->permissionClient())
+        m_webFrame->permissionClient()->didNotAllowScript(m_webFrame);
+
     WebViewImpl* webview = m_webFrame->viewImpl();
     if (webview && webview->permissionClient())
         webview->permissionClient()->didNotAllowScript(m_webFrame);
@@ -242,6 +266,9 @@ void FrameLoaderClientImpl::didNotAllowScript()
 
 void FrameLoaderClientImpl::didNotAllowPlugins()
 {
+    if (m_webFrame->permissionClient())
+        m_webFrame->permissionClient()->didNotAllowPlugins(m_webFrame);
+
     WebViewImpl* webview = m_webFrame->viewImpl();
     if (webview && webview->permissionClient())
         webview->permissionClient()->didNotAllowPlugins(m_webFrame);
@@ -315,7 +342,7 @@ void FrameLoaderClientImpl::dispatchDidChangeResourcePriority(unsigned long iden
                                                               ResourceLoadPriority priority)
 {
     if (m_webFrame->client())
-        m_webFrame->client()->didChangeResourcePriority(m_webFrame, identifier, static_cast<WebKit::WebURLRequest::Priority>(priority));
+        m_webFrame->client()->didChangeResourcePriority(m_webFrame, identifier, static_cast<blink::WebURLRequest::Priority>(priority));
 }
 
 // Called when a particular resource load completes
@@ -348,13 +375,17 @@ void FrameLoaderClientImpl::dispatchDidReceiveServerRedirectForProvisionalLoad()
 {
     if (m_webFrame->client())
         m_webFrame->client()->didReceiveServerRedirectForProvisionalLoad(m_webFrame);
+    m_webFrame->frame()->page()->historyController().removeChildrenForRedirect(m_webFrame->frame());
 }
 
-void FrameLoaderClientImpl::dispatchDidNavigateWithinPage(NavigationHistoryPolicy navigationHistoryPolicy)
+void FrameLoaderClientImpl::dispatchDidNavigateWithinPage(NavigationHistoryPolicy navigationHistoryPolicy, HistoryItem* item)
 {
-    m_webFrame->viewImpl()->didCommitLoad(navigationHistoryPolicy == NavigationCreatedHistoryEntry, true);
+    bool shouldCreateHistoryEntry = navigationHistoryPolicy == NavigationCreatedHistoryEntry;
+    if (shouldCreateHistoryEntry)
+        m_webFrame->frame()->page()->historyController().updateBackForwardListForFragmentScroll(m_webFrame->frame(), item);
+    m_webFrame->viewImpl()->didCommitLoad(shouldCreateHistoryEntry, true);
     if (m_webFrame->client())
-        m_webFrame->client()->didNavigateWithinPage(m_webFrame, navigationHistoryPolicy == NavigationCreatedHistoryEntry);
+        m_webFrame->client()->didNavigateWithinPage(m_webFrame, shouldCreateHistoryEntry);
 }
 
 void FrameLoaderClientImpl::dispatchWillClose()
@@ -381,8 +412,9 @@ void FrameLoaderClientImpl::dispatchDidChangeIcons(WebCore::IconType type)
         m_webFrame->client()->didChangeIcon(m_webFrame, static_cast<WebIconURL::Type>(type));
 }
 
-void FrameLoaderClientImpl::dispatchDidCommitLoad(NavigationHistoryPolicy navigationHistoryPolicy)
+void FrameLoaderClientImpl::dispatchDidCommitLoad(Frame* frame, HistoryItem* item, NavigationHistoryPolicy navigationHistoryPolicy)
 {
+    m_webFrame->frame()->page()->historyController().updateForCommit(frame, item);
     m_webFrame->viewImpl()->didCommitLoad(navigationHistoryPolicy == NavigationCreatedHistoryEntry, false);
     if (m_webFrame->client())
         m_webFrame->client()->didCommitProvisionalLoad(m_webFrame, navigationHistoryPolicy == NavigationCreatedHistoryEntry);
@@ -567,7 +599,7 @@ String FrameLoaderClientImpl::userAgent(const KURL& url)
     if (!override.isEmpty())
         return override;
 
-    return WebKit::Platform::current()->userAgent(url);
+    return blink::Platform::current()->userAgent(url);
 }
 
 String FrameLoaderClientImpl::doNotTrackValue()
@@ -591,7 +623,7 @@ PassRefPtr<Frame> FrameLoaderClientImpl::createFrame(
     const String& referrer,
     HTMLFrameOwnerElement* ownerElement)
 {
-    FrameLoadRequest frameRequest(m_webFrame->frame()->document()->securityOrigin(),
+    FrameLoadRequest frameRequest(m_webFrame->frame()->document(),
         ResourceRequest(url, referrer), name);
     return m_webFrame->createChildFrame(frameRequest, ownerElement);
 }
@@ -759,6 +791,9 @@ void FrameLoaderClientImpl::didLoseWebGLContext(int arbRobustnessContextLostReas
 
 bool FrameLoaderClientImpl::allowWebGLDebugRendererInfo()
 {
+    if (m_webFrame->permissionClient())
+        return m_webFrame->permissionClient()->allowWebGLDebugRendererInfo(m_webFrame);
+
     WebViewImpl* webview = m_webFrame->viewImpl();
     if (webview && webview->permissionClient())
         return webview->permissionClient()->allowWebGLDebugRendererInfo(m_webFrame);
@@ -784,4 +819,4 @@ void FrameLoaderClientImpl::didStopAllLoaders()
         m_webFrame->client()->didAbortLoading(m_webFrame);
 }
 
-} // namespace WebKit
+} // namespace blink

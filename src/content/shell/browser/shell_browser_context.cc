@@ -21,7 +21,7 @@
 
 #include "base/prefs/json_pref_store.h"
 #include "base/prefs/pref_registry_simple.h"
-#include "base/prefs/pref_service_builder.h"
+#include "base/prefs/pref_service_factory.h"
 #include "base/prefs/pref_service.h"
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 #include "components/user_prefs/user_prefs.h"
@@ -115,16 +115,16 @@ void ShellBrowserContext::InitWhileIOAllowed() {
 #endif
 
   if (!base::PathExists(path_))
-    file_util::CreateDirectory(path_);
+    base::CreateDirectory(path_);
   base::FilePath pref_file = path_.AppendASCII("prefs.json");
   pref_registry_ = new PrefRegistrySimple();
   pref_registry_->RegisterStringPref("spellcheck.dictionary", "en-US");
   pref_registry_->RegisterBooleanPref("browser.enable_spellchecking", true);
   pref_registry_->RegisterBooleanPref("spellcheck.use_spelling_service", true);
   pref_registry_->RegisterBooleanPref("browser.enable_autospellcorrect", true);
-  PrefServiceBuilder builder;
-  builder.WithUserFilePrefs(pref_file, JsonPrefStore::GetTaskRunnerForFile(pref_file, BrowserThread::GetBlockingPool()));
-  pref_service_.reset(builder.Create(pref_registry_.get()));
+  base::PrefServiceFactory factory;
+  factory.SetUserPrefsFile(pref_file, JsonPrefStore::GetTaskRunnerForFile(pref_file, BrowserThread::GetBlockingPool()));
+  pref_service_ = factory.Create(pref_registry_.get());
   user_prefs::UserPrefs::Set(this, pref_service_.get());
 
   BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(this);

@@ -16,8 +16,6 @@
 // #include "chrome/common/service_messages.h"
 #include "chrome/common/spellcheck_messages.h"
 // #include "chrome/common/tts_messages.h"
-// #include "chrome/common/validation_message_messages.h"
-// #include "components/nacl/common/nacl_host_messages.h"
 
 #if defined(ENABLE_MDNS)
 // #include "chrome/common/local_discovery/local_discovery_messages.h"

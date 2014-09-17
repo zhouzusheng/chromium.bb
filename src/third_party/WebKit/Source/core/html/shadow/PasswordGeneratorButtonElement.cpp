@@ -39,15 +39,15 @@
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
-#include "core/platform/graphics/Image.h"
 #include "core/rendering/RenderImage.h"
+#include "platform/graphics/Image.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
 PasswordGeneratorButtonElement::PasswordGeneratorButtonElement(Document& document)
-    : HTMLDivElement(HTMLNames::divTag, document)
+    : HTMLDivElement(document)
     , m_isInHoverState(false)
 {
     setHasCustomStyleCallbacks();

@@ -45,6 +45,7 @@ class HTMLCanvasElement;
 class Image;
 class ImageData;
 class ImageBuffer;
+class ImageBufferSurface;
 class IntSize;
 
 class CanvasObserver {
@@ -59,7 +60,6 @@ public:
 class HTMLCanvasElement FINAL : public HTMLElement {
 public:
     static PassRefPtr<HTMLCanvasElement> create(Document&);
-    static PassRefPtr<HTMLCanvasElement> create(const QualifiedName&, Document&);
     virtual ~HTMLCanvasElement();
 
     void addObserver(CanvasObserver*);
@@ -78,7 +78,7 @@ public:
 
     void setSize(const IntSize& newSize)
     {
-        if (newSize == size() && m_deviceScaleFactor == 1)
+        if (newSize == size())
             return;
         m_ignoreReset = true;
         setWidth(newSize.width());
@@ -91,7 +91,7 @@ public:
 
     static String toEncodingMimeType(const String& mimeType);
     String toDataURL(const String& mimeType, const double* quality, ExceptionState&);
-    String toDataURL(const String& mimeType, ExceptionState& es) { return toDataURL(mimeType, 0, es); }
+    String toDataURL(const String& mimeType, ExceptionState& exceptionState) { return toDataURL(mimeType, 0, exceptionState); }
 
     // Used for rendering
     void didDraw(const FloatRect&);
@@ -104,6 +104,7 @@ public:
 
     CanvasRenderingContext* renderingContext() const { return m_context.get(); }
 
+    void ensureUnacceleratedImageBuffer();
     ImageBuffer* buffer() const;
     Image* copiedImage() const;
     void clearCopiedImage();
@@ -115,22 +116,18 @@ public:
     void setOriginTainted() { m_originClean = false; }
     bool originClean() const { return m_originClean; }
 
-    StyleResolver* styleResolver();
-
     AffineTransform baseTransform() const;
 
     bool is3D() const;
 
-    bool hasCreatedImageBuffer() const { return m_hasCreatedImageBuffer; }
+    bool hasImageBuffer() const { return m_imageBuffer.get(); }
 
     bool shouldAccelerate(const IntSize&) const;
-
-    float deviceScaleFactor() const { return m_deviceScaleFactor; }
 
     InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
 
 private:
-    HTMLCanvasElement(const QualifiedName&, Document&);
+    explicit HTMLCanvasElement(Document&);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual RenderObject* createRenderer(RenderStyle*);
@@ -138,11 +135,11 @@ private:
 
     void reset();
 
+    PassOwnPtr<ImageBufferSurface> createImageBufferSurface(const IntSize& deviceSize, int* msaaSampleCount);
     void createImageBuffer();
     void clearImageBuffer();
 
     void setSurfaceSize(const IntSize&);
-    IntSize convertLogicalToDevice(const IntSize&) const;
 
     bool paintsIntoCanvasBuffer() const;
 
@@ -162,11 +159,11 @@ private:
 
     intptr_t m_externallyAllocatedMemory;
 
-    float m_deviceScaleFactor; // FIXME: This is always 1 and should probable be deleted
     bool m_originClean;
 
-    // m_createdImageBuffer means we tried to malloc the buffer.  We didn't necessarily get it.
-    mutable bool m_hasCreatedImageBuffer;
+    // It prevents HTMLCanvasElement::buffer() from continuously re-attempting to allocate an imageBuffer
+    // after the first attempt failed.
+    mutable bool m_didFailToCreateImageBuffer;
     mutable bool m_didClearImageBuffer;
     OwnPtr<ImageBuffer> m_imageBuffer;
     mutable OwnPtr<GraphicsContextStateSaver> m_contextStateSaver;

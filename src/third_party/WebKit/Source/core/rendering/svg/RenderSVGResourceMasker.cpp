@@ -21,18 +21,12 @@
 
 #include "core/rendering/svg/RenderSVGResourceMasker.h"
 
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/GraphicsContextStateSaver.h"
-#include "core/platform/graphics/ImageBuffer.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/SVGRenderingContext.h"
 #include "core/svg/SVGElement.h"
-#include "core/svg/SVGMaskElement.h"
-#include "core/svg/SVGUnitTypes.h"
-#include "platform/geometry/FloatRect.h"
 #include "platform/graphics/DisplayList.h"
+#include "platform/graphics/GraphicsContextStateSaver.h"
 #include "platform/transforms/AffineTransform.h"
-#include "wtf/UnusedParam.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
@@ -69,6 +63,8 @@ bool RenderSVGResourceMasker::applyResource(RenderObject* object, RenderStyle*,
     ASSERT(style());
     ASSERT_UNUSED(resourceMode, resourceMode == ApplyToDefaultMode);
     ASSERT_WITH_SECURITY_IMPLICATION(!needsLayout());
+
+    clearInvalidationMask();
 
     FloatRect repaintRect = object->repaintRectInLocalCoordinates();
     if (repaintRect.isEmpty() || !element()->hasChildNodes())

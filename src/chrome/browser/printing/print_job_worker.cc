@@ -20,10 +20,10 @@
 // LEVI: Remove chrome resources.
 // #include "grit/generated_resources.h"
 
-#include "printing/backend/print_backend.h"
 #include "printing/print_job_constants.h"
 #include "printing/printed_document.h"
 #include "printing/printed_page.h"
+#include "printing/printing_utils.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using content::BrowserThread;
@@ -217,11 +217,11 @@ void PrintJobWorker::StartPrinting(PrintedDocument* new_document) {
     return;
   }
 
-  string16 document_name =
-      printing::PrintBackend::SimplifyDocumentTitle(document_->name());
+  base::string16 document_name =
+      printing::SimplifyDocumentTitle(document_->name());
   if (document_name.empty()) {
     // TODO(LEVI): Set this to what it should really be
-    document_name = printing::PrintBackend::SimplifyDocumentTitle(
+    document_name = printing::SimplifyDocumentTitle(
         L"Default Print Document Title");
   }
   PrintingContext::Result result =

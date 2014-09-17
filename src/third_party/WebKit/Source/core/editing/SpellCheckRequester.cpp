@@ -29,11 +29,9 @@
 #include "core/dom/Document.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/Node.h"
-#include "core/dom/Range.h"
 #include "core/editing/SpellChecker.h"
 #include "core/frame/Frame.h"
-#include "core/page/Page.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
 #include "platform/text/TextCheckerClient.h"
 
 namespace WebCore {

@@ -31,6 +31,7 @@ namespace views {
 namespace corewm {
 class CompoundEventFilter;
 class CursorManager;
+class FocusController;
 class InputMethodEventFilter;
 class ShadowController;
 class TooltipController;
@@ -40,6 +41,7 @@ class WindowModalityController;
 
 class DesktopCaptureClient;
 class DesktopDispatcherClient;
+class DesktopEventClient;
 class DesktopRootWindowHost;
 class DropHelper;
 class FocusManagerEventHandler;
@@ -112,7 +114,7 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   virtual void GetWindowPlacement(
       gfx::Rect* bounds,
       ui::WindowShowState* maximized) const OVERRIDE;
-  virtual void SetWindowTitle(const string16& title) OVERRIDE;
+  virtual bool SetWindowTitle(const string16& title) OVERRIDE;
   virtual void SetWindowIcons(const gfx::ImageSkia& window_icon,
                               const gfx::ImageSkia& app_icon) OVERRIDE;
   virtual void InitModalType(ui::ModalType modal_type) OVERRIDE;
@@ -262,12 +264,13 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
 
   internal::NativeWidgetDelegate* native_widget_delegate_;
 
-  scoped_ptr<aura::client::FocusClient> focus_client_;
+  scoped_ptr<corewm::FocusController> focus_client_;
   scoped_ptr<DesktopDispatcherClient> dispatcher_client_;
   scoped_ptr<views::corewm::CursorManager> cursor_client_;
   scoped_ptr<aura::client::ScreenPositionClient> position_client_;
   scoped_ptr<aura::client::DragDropClient> drag_drop_client_;
   scoped_ptr<aura::client::WindowTreeClient> window_tree_client_;
+  scoped_ptr<DesktopEventClient> event_client_;
   scoped_ptr<FocusManagerEventHandler> focus_manager_event_handler_;
 
   // Toplevel event filter which dispatches to other event filters.

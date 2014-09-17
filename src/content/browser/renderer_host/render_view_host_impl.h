@@ -21,6 +21,7 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/common/javascript_message_type.h"
+#include "content/public/common/page_transition_types.h"
 #include "content/public/common/window_container_type.h"
 #include "net/base/load_states.h"
 #include "third_party/WebKit/public/web/WebAXEnums.h"
@@ -60,6 +61,7 @@ namespace content {
 class BrowserMediaPlayerManager;
 class ChildProcessSecurityPolicyImpl;
 class PageState;
+class RenderFrameHostDelegate;
 class RenderFrameHostImpl;
 class RenderWidgetHostDelegate;
 class SessionStorageNamespace;
@@ -117,6 +119,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   RenderViewHostImpl(
       SiteInstance* instance,
       RenderViewHostDelegate* delegate,
+      RenderFrameHostDelegate* frame_delegate,
       RenderWidgetHostDelegate* widget_delegate,
       int routing_id,
       int main_frame_routing_id,
@@ -132,8 +135,9 @@ class CONTENT_EXPORT RenderViewHostImpl
   virtual void DesktopNotificationPermissionRequestDone(
       int callback_context) OVERRIDE;
   virtual void DesktopNotificationPostDisplay(int callback_context) OVERRIDE;
-  virtual void DesktopNotificationPostError(int notification_id,
-                                            const string16& message) OVERRIDE;
+  virtual void DesktopNotificationPostError(
+      int notification_id,
+      const base::string16& message) OVERRIDE;
   virtual void DesktopNotificationPostClose(int notification_id,
                                             bool by_user) OVERRIDE;
   virtual void DesktopNotificationPostClick(int notification_id) OVERRIDE;
@@ -143,7 +147,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   virtual void DisableScrollbarsForThreshold(const gfx::Size& size) OVERRIDE;
   virtual void DragSourceEndedAt(
       int client_x, int client_y, int screen_x, int screen_y,
-      WebKit::WebDragOperation operation) OVERRIDE;
+      blink::WebDragOperation operation) OVERRIDE;
   virtual void DragSourceMovedTo(
       int client_x, int client_y, int screen_x, int screen_y) OVERRIDE;
   virtual void DragSourceSystemDragEnded() OVERRIDE;
@@ -151,12 +155,12 @@ class CONTENT_EXPORT RenderViewHostImpl
       const DropData& drop_data,
       const gfx::Point& client_pt,
       const gfx::Point& screen_pt,
-      WebKit::WebDragOperationsMask operations_allowed,
+      blink::WebDragOperationsMask operations_allowed,
       int key_modifiers) OVERRIDE;
   virtual void DragTargetDragOver(
       const gfx::Point& client_pt,
       const gfx::Point& screen_pt,
-      WebKit::WebDragOperationsMask operations_allowed,
+      blink::WebDragOperationsMask operations_allowed,
       int key_modifiers) OVERRIDE;
   virtual void DragTargetDragLeave() OVERRIDE;
   virtual void DragTargetDrop(const gfx::Point& client_pt,
@@ -170,19 +174,20 @@ class CONTENT_EXPORT RenderViewHostImpl
       int action, const CustomContextMenuContext& context) OVERRIDE;
   virtual void ExecuteMediaPlayerActionAtLocation(
       const gfx::Point& location,
-      const WebKit::WebMediaPlayerAction& action) OVERRIDE;
-  virtual void ExecuteJavascriptInWebFrame(const string16& frame_xpath,
-                                           const string16& jscript) OVERRIDE;
+      const blink::WebMediaPlayerAction& action) OVERRIDE;
+  virtual void ExecuteJavascriptInWebFrame(
+      const base::string16& frame_xpath,
+      const base::string16& jscript) OVERRIDE;
   virtual void ExecuteJavascriptInWebFrameCallbackResult(
-      const string16& frame_xpath,
-      const string16& jscript,
+      const base::string16& frame_xpath,
+      const base::string16& jscript,
       const JavascriptResultCallback& callback) OVERRIDE;
   virtual void ExecutePluginActionAtLocation(
       const gfx::Point& location,
-      const WebKit::WebPluginAction& action) OVERRIDE;
+      const blink::WebPluginAction& action) OVERRIDE;
   virtual void ExitFullscreen() OVERRIDE;
-  virtual void Find(int request_id, const string16& search_text,
-                    const WebKit::WebFindOptions& options) OVERRIDE;
+  virtual void Find(int request_id, const base::string16& search_text,
+                    const blink::WebFindOptions& options) OVERRIDE;
   virtual void StopFinding(StopFindAction action) OVERRIDE;
   virtual void FirePageBeforeUnload(bool for_cross_site_transition) OVERRIDE;
   virtual void FilesSelectedInChooser(
@@ -191,7 +196,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   virtual RenderViewHostDelegate* GetDelegate() const OVERRIDE;
   virtual int GetEnabledBindings() const OVERRIDE;
   virtual SiteInstance* GetSiteInstance() const OVERRIDE;
-  virtual void InsertCSS(const string16& frame_xpath,
+  virtual void InsertCSS(const base::string16& frame_xpath,
                          const std::string& css) OVERRIDE;
   virtual bool IsRenderViewLive() const OVERRIDE;
   virtual bool IsSubframe() const OVERRIDE;
@@ -202,7 +207,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   virtual void SetAltErrorPageURL(const GURL& url) OVERRIDE;
   virtual void SetWebUIProperty(const std::string& name,
                                 const std::string& value) OVERRIDE;
-  virtual void SetZoomLevel(double level) OVERRIDE;
   virtual void Zoom(PageZoom zoom) OVERRIDE;
   virtual void SyncRendererPrefs() OVERRIDE;
   virtual void ToggleSpeechInput() OVERRIDE;
@@ -232,7 +236,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   // The |opener_route_id| parameter indicates which RenderView created this
   // (MSG_ROUTING_NONE if none). If |max_page_id| is larger than -1, the
   // RenderView is told to start issuing page IDs at |max_page_id| + 1.
-  virtual bool CreateRenderView(const string16& frame_name,
+  virtual bool CreateRenderView(const base::string16& frame_name,
                                 int opener_route_id,
                                 int32 max_page_id);
 
@@ -290,6 +294,25 @@ class CONTENT_EXPORT RenderViewHostImpl
   // different process.
   bool is_swapped_out() const { return is_swapped_out_; }
 
+  // Called on the pending RenderViewHost when the network response is ready to
+  // commit.  We should ensure that the old RenderViewHost runs its unload
+  // handler and determine whether a transfer to a different RenderViewHost is
+  // needed.
+  void OnCrossSiteResponse(
+      const GlobalRequestID& global_request_id,
+      bool is_transfer,
+      const std::vector<GURL>& transfer_url_chain,
+      const Referrer& referrer,
+      PageTransition page_transition,
+      int64 frame_id,
+      bool should_replace_current_entry);
+
+  // Tells the renderer that this RenderView will soon be swapped out, and thus
+  // not to create any new modal dialogs until it happens.  This must be done
+  // separately so that the PageGroupLoadDeferrers of any current dialogs are no
+  // longer on the stack when we attempt to swap it out.
+  void SuppressDialogsUntilSwapOut();
+
   // Tells the renderer that this RenderView is being swapped out for one in a
   // different renderer process.  It should run its unload handler and move to
   // a blank document.  The renderer should preserve the Frame object until it
@@ -328,7 +351,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   // closed by the user.
   void JavaScriptDialogClosed(IPC::Message* reply_msg,
                               bool success,
-                              const string16& user_input);
+                              const base::string16& user_input);
 
   // Tells the renderer view to focus the first (last if reverse is true) node.
   void SetInitialFocus(bool reverse);
@@ -365,7 +388,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   virtual void LostCapture() OVERRIDE;
   virtual void LostMouseLock() OVERRIDE;
   virtual void ForwardMouseEvent(
-      const WebKit::WebMouseEvent& mouse_event) OVERRIDE;
+      const blink::WebMouseEvent& mouse_event) OVERRIDE;
   virtual void OnPointerEventActivate() OVERRIDE;
   virtual void ForwardKeyboardEvent(
       const NativeWebKeyboardEvent& key_event) OVERRIDE;
@@ -380,7 +403,7 @@ class CONTENT_EXPORT RenderViewHostImpl
 
   // Creates a new RenderWidget with the given route id.  |popup_type| indicates
   // if this widget is a popup and what kind of popup it is (select, autofill).
-  void CreateNewWidget(int route_id, WebKit::WebPopupType popup_type);
+  void CreateNewWidget(int route_id, blink::WebPopupType popup_type);
 
   // Creates a full screen RenderWidget.
   void CreateNewFullscreenWidget(int route_id);
@@ -409,6 +432,8 @@ class CONTENT_EXPORT RenderViewHostImpl
     is_subframe_ = is_subframe;
   }
 
+  // TODO(creis): Remove this when we replace frame IDs with RenderFrameHost
+  // routing IDs.
   int64 main_frame_id() const {
     return main_frame_id_;
   }
@@ -421,7 +446,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   // renderer process, and the accessibility tree it sent can be
   // retrieved using accessibility_tree_for_testing().
   void SetAccessibilityCallbackForTesting(
-      const base::Callback<void(WebKit::WebAXEvent)>& callback);
+      const base::Callback<void(blink::WebAXEvent)>& callback);
 
   // Only valid if SetAccessibilityCallbackForTesting was called and
   // the callback was run at least once. Returns a snapshot of the
@@ -512,8 +537,8 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnNavigate(const IPC::Message& msg);
   void OnUpdateState(int32 page_id, const PageState& state);
   void OnUpdateTitle(int32 page_id,
-                     const string16& title,
-                     WebKit::WebTextDirection title_direction);
+                     const base::string16& title,
+                     blink::WebTextDirection title_direction);
   void OnUpdateEncoding(const std::string& encoding);
   void OnUpdateTargetURL(int32 page_id, const GURL& url);
   void OnClose();
@@ -534,7 +559,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnDidChangeScrollOffsetPinningForMainFrame(bool is_pinned_to_left,
                                                   bool is_pinned_to_right);
   void OnDidChangeNumWheelEvents(int count);
-  void OnSelectionChanged(const string16& text,
+  void OnSelectionChanged(const base::string16& text,
                           size_t offset,
                           const gfx::Range& range);
   void OnSelectionBoundsChanged(
@@ -542,28 +567,28 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnPasteFromSelectionClipboard();
   void OnRouteCloseEvent();
   void OnRouteMessageEvent(const ViewMsg_PostMessage_Params& params);
-  void OnRunJavaScriptMessage(const string16& message,
-                              const string16& default_prompt,
+  void OnRunJavaScriptMessage(const base::string16& message,
+                              const base::string16& default_prompt,
                               const GURL& frame_url,
                               JavaScriptMessageType type,
                               IPC::Message* reply_msg);
   void OnRunBeforeUnloadConfirm(const GURL& frame_url,
-                                const string16& message,
+                                const base::string16& message,
                                 bool is_reload,
                                 IPC::Message* reply_msg);
   void OnStartDragging(const DropData& drop_data,
-                       WebKit::WebDragOperationsMask operations_allowed,
+                       blink::WebDragOperationsMask operations_allowed,
                        const SkBitmap& bitmap,
                        const gfx::Vector2d& bitmap_offset_in_dip,
                        const DragEventSourceInfo& event_info);
-  void OnUpdateDragCursor(WebKit::WebDragOperation drag_operation);
+  void OnUpdateDragCursor(blink::WebDragOperation drag_operation);
   void OnTargetDropACK();
   void OnTakeFocus(bool reverse);
   void OnFocusedNodeChanged(bool is_editable_node);
   void OnAddMessageToConsole(int32 level,
-                             const string16& message,
+                             const base::string16& message,
                              int32 line_no,
-                             const string16& source_id);
+                             const base::string16& source_id);
   void OnUpdateInspectorSetting(const std::string& key,
                                 const std::string& value);
   void OnShouldCloseACK(
@@ -699,7 +724,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   std::map<int, JavascriptResultCallback> javascript_callbacks_;
 
   // Accessibility callback for testing.
-  base::Callback<void(WebKit::WebAXEvent)> accessibility_testing_callback_;
+  base::Callback<void(blink::WebAXEvent)> accessibility_testing_callback_;
 
   // The most recently received accessibility tree - for testing only.
   AccessibilityNodeDataTreeNode accessibility_tree_;
@@ -712,6 +737,9 @@ class CONTENT_EXPORT RenderViewHostImpl
 
   // When the last ShouldClose message was sent.
   base::TimeTicks send_should_close_start_time_;
+
+  // Set to true if we requested the on screen keyboard to be displayed.
+  bool virtual_keyboard_requested_;
 
 #if defined(OS_ANDROID)
   // Manages all the android mediaplayer objects and handling IPCs for video.

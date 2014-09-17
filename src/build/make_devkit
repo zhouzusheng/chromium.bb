@@ -30,7 +30,6 @@ import os, sys, bbutil, shutil
 scriptDir = os.path.dirname(os.path.realpath(__file__))
 srcDir = os.path.abspath(os.path.join(scriptDir, os.pardir))
 chromiumDir = os.path.abspath(os.path.join(srcDir, os.pardir))
-rootDir = os.path.abspath(os.path.join(chromiumDir, os.pardir))
 
 
 def applyVariableToEnvironment(env, var, val):
@@ -53,7 +52,7 @@ def applyVariableToEnvironment(env, var, val):
 def copyVersionFile(destDir):
   gitHash = bbutil.getHEADSha()
   destFile = os.path.join(destDir, 'version.txt')
-  srcFile = os.path.join(rootDir, 'version.txt')
+  srcFile = os.path.join(chromiumDir, 'version.txt')
   with open(destFile, 'w') as fDest:
     with open(srcFile, 'r') as fSrc:
       if 'GYP_GENERATORS' in os.environ:
@@ -110,15 +109,17 @@ def copyBin(destDir, version):
     'blpv8' + productAppend + '.dll',
     'blpwtk2' + productAppend + '.dll',
     'blpangle' + productAppend + '.dll',
-    'icudt.dll',
+    'ffmpegsumo' + productAppend + '.dll',
+    'icudt_cr33.dll',
     'libEGL.dll',
     'libGLESv2.dll',
     'blpwtk2_devtools' + productAppend + '.pak',
     'content_shell.pak',
-    'blpv8' + productAppend + '.dll.pdb',
-    'blpwtk2' + productAppend + '.dll.pdb',
-    'blpangle' + productAppend + '.dll.pdb',
-    'blpwtk2_subprocess' + productAppend + '.exe.pdb',
+    'blpv8' + productAppend + '.pdb',
+    'blpwtk2' + productAppend + '.pdb',
+    'blpangle' + productAppend + '.pdb',
+    'ffmpegsumo' + productAppend + '.pdb',
+    'blpwtk2_subprocess' + productAppend + '.pdb',
   ]
 
   configs = ['Debug', 'Release']
@@ -228,12 +229,15 @@ def main(args):
   applyVariableToEnvironment('GYP_DEFINES', 'component', 'static_library')
   applyVariableToEnvironment('GYP_DEFINES', 'bb_version', version)
   applyVariableToEnvironment('GYP_DEFINES', 'bb_ppapi_examples', '0')
-  applyVariableToEnvironment('GYP_DEFINES', 'build_ffmpegsumo', '0')
-  applyVariableToEnvironment('GYP_DEFINES', 'buildtype', 'Official')
+  applyVariableToEnvironment('GYP_DEFINES', 'build_ffmpegsumo', '1')
+  applyVariableToEnvironment('GYP_DEFINES', 'dont_include_type_in_pdb', '1')
 
-  print("Running gclient hooks...")
+  print("Running hooks...")
   sys.stdout.flush()
-  rc = bbutil.shellExecNoPipe('gclient runhooks')
+  rc = bbutil.shellExecNoPipe('python src/build/runhooks.py ninjaDebug')
+  if rc != 0:
+    return rc
+  rc = bbutil.shellExecNoPipe('python src/build/gyp_blpwtk2.py ninjaRelease -Dbuildtype=Official')
   if rc != 0:
     return rc
 

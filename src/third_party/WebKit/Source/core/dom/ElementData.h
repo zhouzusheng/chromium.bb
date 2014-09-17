@@ -97,6 +97,8 @@ private:
     friend class UniqueElementData;
     friend class SVGElement;
 
+    void destroy();
+
     const Attribute* attributeBase() const;
     const Attribute* getAttributeItem(const AtomicString& name, bool shouldIgnoreAttributeCase) const;
     size_t getAttributeItemIndexSlowCase(const AtomicString& name, bool shouldIgnoreAttributeCase) const;
@@ -144,6 +146,13 @@ public:
     Vector<Attribute, 4> m_attributeVector;
 };
 
+inline void ElementData::deref()
+{
+    if (!derefBase())
+        return;
+    destroy();
+}
+
 inline size_t ElementData::length() const
 {
     if (isUnique())
@@ -176,7 +185,9 @@ inline const Attribute* ElementData::attributeBase() const
 inline size_t ElementData::getAttributeItemIndex(const QualifiedName& name, bool shouldIgnoreCase) const
 {
     const Attribute* begin = attributeBase();
-    for (unsigned i = 0; i < length(); ++i) {
+    // Cache length for performance as ElementData::length() contains a conditional branch.
+    unsigned len = length();
+    for (unsigned i = 0; i < len; ++i) {
         const Attribute& attribute = begin[i];
         if (attribute.name().matchesPossiblyIgnoringCase(name, shouldIgnoreCase))
             return i;
@@ -188,6 +199,7 @@ inline size_t ElementData::getAttributeItemIndex(const QualifiedName& name, bool
 // can tune the behavior (hasAttribute is case sensitive whereas getAttribute is not).
 inline size_t ElementData::getAttributeItemIndex(const AtomicString& name, bool shouldIgnoreAttributeCase) const
 {
+    // Cache length for performance as ElementData::length() contains a conditional branch.
     unsigned len = length();
     bool doSlowCheck = shouldIgnoreAttributeCase;
 
@@ -195,6 +207,8 @@ inline size_t ElementData::getAttributeItemIndex(const AtomicString& name, bool 
     const Attribute* begin = attributeBase();
     for (unsigned i = 0; i < len; ++i) {
         const Attribute& attribute = begin[i];
+        // FIXME: Why check the prefix? Namespaces should be all that matter.
+        // Most attributes (all of HTML and CSS) have no namespace.
         if (!attribute.name().hasPrefix()) {
             if (name == attribute.localName())
                 return i;
@@ -223,6 +237,21 @@ inline const Attribute* ElementData::attributeItem(unsigned index) const
 {
     RELEASE_ASSERT(index < length());
     return attributeBase() + index;
+}
+
+inline void UniqueElementData::addAttribute(const QualifiedName& attributeName, const AtomicString& value)
+{
+    m_attributeVector.append(Attribute(attributeName, value));
+}
+
+inline void UniqueElementData::removeAttribute(size_t index)
+{
+    m_attributeVector.remove(index);
+}
+
+inline Attribute* UniqueElementData::attributeItem(unsigned index)
+{
+    return &m_attributeVector.at(index);
 }
 
 } // namespace WebCore

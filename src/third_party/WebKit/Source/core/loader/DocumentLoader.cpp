@@ -41,26 +41,25 @@
 #include "core/fetch/TextResourceDecoder.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/loader/DocumentWriter.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/UniqueIdentifier.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
-#include "core/loader/archive/ArchiveResourceCollection.h"
-#include "core/loader/archive/MHTMLArchive.h"
 #include "core/frame/ContentSecurityPolicy.h"
 #include "core/frame/DOMWindow.h"
 #include "core/frame/Frame.h"
 #include "core/page/FrameTree.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/plugins/PluginData.h"
+#include "core/frame/Settings.h"
 #include "platform/Logging.h"
 #include "platform/UserGestureIndicator.h"
+#include "platform/mhtml/ArchiveResourceCollection.h"
+#include "platform/mhtml/MHTMLArchive.h"
+#include "platform/plugins/PluginData.h"
+#include "platform/weborigin/SchemeRegistry.h"
+#include "platform/weborigin/SecurityPolicy.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebMimeRegistry.h"
-#include "weborigin/SchemeRegistry.h"
-#include "weborigin/SecurityPolicy.h"
 #include "wtf/Assertions.h"
 #include "wtf/text/WTFString.h"
 
@@ -156,10 +155,15 @@ const KURL& DocumentLoader::url() const
     return request().url();
 }
 
-void DocumentLoader::replaceRequestURLForSameDocumentNavigation(const KURL& url)
+void DocumentLoader::updateForSameDocumentNavigation(const KURL& newURL)
 {
-    m_originalRequestCopy.setURL(url);
-    m_request.setURL(url);
+    KURL oldURL = m_request.url();
+    m_originalRequestCopy.setURL(newURL);
+    m_request.setURL(newURL);
+    clearRedirectChain();
+    if (m_isClientRedirect)
+        appendRedirect(oldURL);
+    appendRedirect(newURL);
 }
 
 bool DocumentLoader::isURLValidForNewHistoryEntry() const
@@ -194,7 +198,7 @@ void DocumentLoader::setMainDocumentError(const ResourceError& error)
 void DocumentLoader::mainReceivedError(const ResourceError& error)
 {
     ASSERT(!error.isNull());
-    ASSERT(!mainResourceLoader() || !mainResourceLoader()->defersLoading());
+    ASSERT(!mainResourceLoader() || !mainResourceLoader()->defersLoading() || InspectorInstrumentation::isDebuggerPaused(m_frame));
     m_applicationCacheHost->failedLoadingMainResource();
     if (!frameLoader())
         return;
@@ -341,7 +345,7 @@ bool DocumentLoader::isRedirectAfterPost(const ResourceRequest& newRequest, cons
 void DocumentLoader::handleSubstituteDataLoadNow(DocumentLoaderTimer*)
 {
     RefPtr<DocumentLoader> protect(this);
-    ResourceResponse response(m_request.url(), m_substituteData.mimeType(), m_substituteData.content()->size(), m_substituteData.textEncoding(), "");
+    ResourceResponse response(m_request.url(), m_substituteData.mimeType(), m_substituteData.content()->size(), m_substituteData.textEncoding(), emptyString());
     responseReceived(0, response);
     if (m_substituteData.content()->size())
         dataReceived(0, m_substituteData.content()->data(), m_substituteData.content()->size());
@@ -377,8 +381,7 @@ bool DocumentLoader::shouldContinueForNavigationPolicy(const ResourceRequest& re
     if (m_frame->ownerElement() && !m_frame->ownerElement()->document().contentSecurityPolicy()->allowChildFrameFromSource(request.url()))
         return false;
 
-    NavigationPolicy policy = NavigationPolicyCurrentTab;
-    m_triggeringAction.specifiesNavigationPolicy(&policy);
+    NavigationPolicy policy = m_triggeringAction.policy();
     if (policyCheckLoadType != PolicyCheckFragment)
         policy = frameLoader()->client()->decidePolicyForNavigation(request, this, policy);
     if (policy == NavigationPolicyCurrentTab)
@@ -459,7 +462,7 @@ void DocumentLoader::willSendRequest(ResourceRequest& newRequest, const Resource
 
 static bool canShowMIMEType(const String& mimeType, Page* page)
 {
-    if (WebKit::Platform::current()->mimeRegistry()->supportsMIMEType(mimeType) == WebKit::WebMimeRegistry::IsSupported)
+    if (blink::Platform::current()->mimeRegistry()->supportsMIMEType(mimeType) == blink::WebMimeRegistry::IsSupported)
         return true;
     PluginData* pluginData = page->pluginData();
     return !mimeType.isEmpty() && pluginData && pluginData->supportsMimeType(mimeType);
@@ -560,12 +563,12 @@ void DocumentLoader::ensureWriter()
     ensureWriter(m_response.mimeType());
 }
 
-void DocumentLoader::ensureWriter(const String& mimeType, const KURL& overridingURL)
+void DocumentLoader::ensureWriter(const AtomicString& mimeType, const KURL& overridingURL)
 {
     if (m_writer)
         return;
 
-    String encoding = overrideEncoding().isNull() ? response().textEncodingName().impl() : overrideEncoding();
+    const AtomicString& encoding = overrideEncoding().isNull() ? response().textEncodingName() : overrideEncoding();
     m_writer = createWriterFor(m_frame, 0, requestURL(), mimeType, encoding, false, false);
     m_writer->setDocumentWasLoadedAsPartOfNavigation();
     // This should be set before receivedFirstData().
@@ -685,6 +688,8 @@ bool DocumentLoader::isLoadingInAPISense() const
             return true;
         if (m_fetcher->requestCount())
             return true;
+        if (doc->isDelayingLoadEvent() && !doc->loadEventFinished())
+            return true;
         if (doc->processingLoadEvent())
             return true;
         if (doc->hasActiveParser())
@@ -771,7 +776,7 @@ const KURL& DocumentLoader::requestURL() const
     return request().url();
 }
 
-const String& DocumentLoader::responseMIMEType() const
+const AtomicString& DocumentLoader::responseMIMEType() const
 {
     return m_response.mimeType();
 }
@@ -800,7 +805,7 @@ bool DocumentLoader::maybeLoadEmpty()
 
     if (m_request.url().isEmpty() && !frameLoader()->stateMachine()->creatingInitialEmptyDocument())
         m_request.setURL(blankURL());
-    m_response = ResourceResponse(m_request.url(), "text/html", 0, String(), String());
+    m_response = ResourceResponse(m_request.url(), "text/html", 0, nullAtom, String());
     finishedLoading(monotonicallyIncreasingTime());
     return true;
 }
@@ -838,7 +843,7 @@ void DocumentLoader::startLoadingMainResource()
 
     ResourceRequest request(m_request);
     DEFINE_STATIC_LOCAL(ResourceLoaderOptions, mainResourceLoadOptions,
-        (SendCallbacks, SniffContent, DoNotBufferData, AllowStoredCredentials, ClientRequestedCredentials, AskClientForCrossOriginCredentials, SkipSecurityCheck, CheckContentSecurityPolicy, UseDefaultOriginRestrictionsForType, DocumentContext));
+        (SendCallbacks, SniffContent, DoNotBufferData, AllowStoredCredentials, ClientRequestedCredentials, AskClientForCrossOriginCredentials, SkipSecurityCheck, CheckContentSecurityPolicy, DocumentContext));
     FetchRequest cachedResourceRequest(request, FetchInitiatorTypeNames::document, mainResourceLoadOptions);
     m_mainResource = m_fetcher->fetchMainResource(cachedResourceRequest);
     if (!m_mainResource) {
@@ -874,7 +879,7 @@ void DocumentLoader::cancelMainResourceLoad(const ResourceError& resourceError)
     mainReceivedError(error);
 }
 
-DocumentWriter* DocumentLoader::beginWriting(const String& mimeType, const String& encoding, const KURL& url)
+DocumentWriter* DocumentLoader::beginWriting(const AtomicString& mimeType, const AtomicString& encoding, const KURL& url)
 {
     m_writer = createWriterFor(m_frame, 0, url, mimeType, encoding, false, true);
     return m_writer.get();
@@ -887,7 +892,7 @@ void DocumentLoader::endWriting(DocumentWriter* writer)
     m_writer.clear();
 }
 
-PassRefPtr<DocumentWriter> DocumentLoader::createWriterFor(Frame* frame, const Document* ownerDocument, const KURL& url, const String& mimeType, const String& encoding, bool userChosen, bool dispatch)
+PassRefPtr<DocumentWriter> DocumentLoader::createWriterFor(Frame* frame, const Document* ownerDocument, const KURL& url, const AtomicString& mimeType, const AtomicString& encoding, bool userChosen, bool dispatch)
 {
     // Create a new document before clearing the frame, because it may need to
     // inherit an aliased security context.
@@ -913,7 +918,6 @@ PassRefPtr<DocumentWriter> DocumentLoader::createWriterFor(Frame* frame, const D
     if (!shouldReuseDefaultView)
         frame->setDOMWindow(DOMWindow::create(frame));
 
-    frame->loader().setOutgoingReferrer(url);
     RefPtr<Document> document = frame->domWindow()->installNewDocument(mimeType, init);
     if (ownerDocument) {
         document->setCookieURL(ownerDocument->cookieURL());
@@ -925,11 +929,17 @@ PassRefPtr<DocumentWriter> DocumentLoader::createWriterFor(Frame* frame, const D
     return DocumentWriter::create(document.get(), mimeType, encoding, userChosen);
 }
 
-String DocumentLoader::mimeType() const
+const AtomicString& DocumentLoader::mimeType() const
 {
     if (m_writer)
         return m_writer->mimeType();
     return m_response.mimeType();
+}
+
+void DocumentLoader::setUserChosenEncoding(const String& charset)
+{
+    if (m_writer)
+        m_writer->setUserChosenEncoding(charset);
 }
 
 // This is only called by ScriptController::executeScriptIfJavaScriptURL
@@ -938,7 +948,7 @@ String DocumentLoader::mimeType() const
 void DocumentLoader::replaceDocument(const String& source, Document* ownerDocument)
 {
     m_frame->loader().stopAllLoaders();
-    m_writer = createWriterFor(m_frame, ownerDocument, m_frame->document()->url(), mimeType(), m_writer ? m_writer->encoding() : "",  m_writer ? m_writer->encodingWasChosenByUser() : false, true);
+    m_writer = createWriterFor(m_frame, ownerDocument, m_frame->document()->url(), mimeType(), m_writer ? m_writer->encoding() : emptyAtom,  m_writer ? m_writer->encodingWasChosenByUser() : false, true);
     if (!source.isNull())
         m_writer->appendReplacingData(source);
     endWriting(m_writer.get());

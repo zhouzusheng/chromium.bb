@@ -59,8 +59,8 @@ SocketStreamHandleInternal::~SocketStreamHandleInternal()
 
 void SocketStreamHandleInternal::connect(const KURL& url)
 {
-    m_socket = adoptPtr(WebKit::Platform::current()->createSocketStreamHandle());
-    LOG(Network, "SocketStreamHandleInternal %p connect()", this);
+    m_socket = adoptPtr(blink::Platform::current()->createSocketStreamHandle());
+    WTF_LOG(Network, "SocketStreamHandleInternal %p connect()", this);
     ASSERT(m_socket);
     ASSERT(m_handle);
     if (m_handle->m_client)
@@ -70,12 +70,12 @@ void SocketStreamHandleInternal::connect(const KURL& url)
 
 int SocketStreamHandleInternal::send(const char* data, int len)
 {
-    LOG(Network, "SocketStreamHandleInternal %p send() len=%d", this, len);
+    WTF_LOG(Network, "SocketStreamHandleInternal %p send() len=%d", this, len);
     // FIXME: |m_socket| should not be null here, but it seems that there is the
     // case. We should figure out such a path and fix it rather than checking
     // null here.
     if (!m_socket) {
-        LOG(Network, "SocketStreamHandleInternal %p send() m_socket is NULL", this);
+        WTF_LOG(Network, "SocketStreamHandleInternal %p send() m_socket is NULL", this);
         return 0;
     }
     if (m_pendingAmountSent + len > m_maxPendingSendAllowed)
@@ -83,26 +83,26 @@ int SocketStreamHandleInternal::send(const char* data, int len)
 
     if (len <= 0)
         return len;
-    WebKit::WebData webdata(data, len);
+    blink::WebData webdata(data, len);
     if (m_socket->send(webdata)) {
         m_pendingAmountSent += len;
-        LOG(Network, "SocketStreamHandleInternal %p send() Sent %d bytes", this, len);
+        WTF_LOG(Network, "SocketStreamHandleInternal %p send() Sent %d bytes", this, len);
         return len;
     }
-    LOG(Network, "SocketStreamHandleInternal %p send() m_socket->send() failed", this);
+    WTF_LOG(Network, "SocketStreamHandleInternal %p send() m_socket->send() failed", this);
     return 0;
 }
 
 void SocketStreamHandleInternal::close()
 {
-    LOG(Network, "SocketStreamHandleInternal %p close()", this);
+    WTF_LOG(Network, "SocketStreamHandleInternal %p close()", this);
     if (m_socket)
         m_socket->close();
 }
 
-void SocketStreamHandleInternal::didOpenStream(WebKit::WebSocketStreamHandle* socketHandle, int maxPendingSendAllowed)
+void SocketStreamHandleInternal::didOpenStream(blink::WebSocketStreamHandle* socketHandle, int maxPendingSendAllowed)
 {
-    LOG(Network, "SocketStreamHandleInternal %p didOpenStream() maxPendingSendAllowed=%d", this, maxPendingSendAllowed);
+    WTF_LOG(Network, "SocketStreamHandleInternal %p didOpenStream() maxPendingSendAllowed=%d", this, maxPendingSendAllowed);
     ASSERT(maxPendingSendAllowed > 0);
     if (m_handle && m_socket) {
         ASSERT(socketHandle == m_socket.get());
@@ -113,12 +113,12 @@ void SocketStreamHandleInternal::didOpenStream(WebKit::WebSocketStreamHandle* so
             return;
         }
     }
-    LOG(Network, "SocketStreamHandleInternal %p didOpenStream() m_handle or m_socket is NULL", this);
+    WTF_LOG(Network, "SocketStreamHandleInternal %p didOpenStream() m_handle or m_socket is NULL", this);
 }
 
-void SocketStreamHandleInternal::didSendData(WebKit::WebSocketStreamHandle* socketHandle, int amountSent)
+void SocketStreamHandleInternal::didSendData(blink::WebSocketStreamHandle* socketHandle, int amountSent)
 {
-    LOG(Network, "SocketStreamHandleInternal %p didSendData() amountSent=%d", this, amountSent);
+    WTF_LOG(Network, "SocketStreamHandleInternal %p didSendData() amountSent=%d", this, amountSent);
     ASSERT(amountSent > 0);
     if (m_handle && m_socket) {
         ASSERT(socketHandle == m_socket.get());
@@ -128,9 +128,9 @@ void SocketStreamHandleInternal::didSendData(WebKit::WebSocketStreamHandle* sock
     }
 }
 
-void SocketStreamHandleInternal::didReceiveData(WebKit::WebSocketStreamHandle* socketHandle, const WebKit::WebData& data)
+void SocketStreamHandleInternal::didReceiveData(blink::WebSocketStreamHandle* socketHandle, const blink::WebData& data)
 {
-    LOG(Network, "SocketStreamHandleInternal %p didReceiveData() Received %lu bytes", this, static_cast<unsigned long>(data.size()));
+    WTF_LOG(Network, "SocketStreamHandleInternal %p didReceiveData() Received %lu bytes", this, static_cast<unsigned long>(data.size()));
     if (m_handle && m_socket) {
         ASSERT(socketHandle == m_socket.get());
         if (m_handle->m_client)
@@ -138,9 +138,9 @@ void SocketStreamHandleInternal::didReceiveData(WebKit::WebSocketStreamHandle* s
     }
 }
 
-void SocketStreamHandleInternal::didClose(WebKit::WebSocketStreamHandle* socketHandle)
+void SocketStreamHandleInternal::didClose(blink::WebSocketStreamHandle* socketHandle)
 {
-    LOG(Network, "SocketStreamHandleInternal %p didClose()", this);
+    WTF_LOG(Network, "SocketStreamHandleInternal %p didClose()", this);
     if (m_handle && m_socket) {
         ASSERT(socketHandle == m_socket.get());
         m_socket.clear();
@@ -151,9 +151,9 @@ void SocketStreamHandleInternal::didClose(WebKit::WebSocketStreamHandle* socketH
     }
 }
 
-void SocketStreamHandleInternal::didFail(WebKit::WebSocketStreamHandle* socketHandle, const WebKit::WebSocketStreamError& err)
+void SocketStreamHandleInternal::didFail(blink::WebSocketStreamHandle* socketHandle, const blink::WebSocketStreamError& err)
 {
-    LOG(Network, "SocketStreamHandleInternal %p didFail()", this);
+    WTF_LOG(Network, "SocketStreamHandleInternal %p didFail()", this);
     if (m_handle && m_socket) {
         ASSERT(socketHandle == m_socket.get());
         if (m_handle->m_client)
@@ -194,7 +194,7 @@ bool SocketStreamHandle::send(const char* data, int length)
         }
         m_buffer.append(data, length);
         if (m_client)
-            m_client->didUpdateBufferedAmount(static_cast<SocketStreamHandle*>(this), bufferedAmount());
+            m_client->didUpdateBufferedAmount(this, bufferedAmount());
         return true;
     }
     int bytesWritten = 0;
@@ -209,7 +209,7 @@ bool SocketStreamHandle::send(const char* data, int length)
     if (bytesWritten < length) {
         m_buffer.append(data + bytesWritten, length - bytesWritten);
         if (m_client)
-            m_client->didUpdateBufferedAmount(static_cast<SocketStreamHandle*>(this), bufferedAmount());
+            m_client->didUpdateBufferedAmount(this, bufferedAmount());
     }
     return true;
 }
@@ -226,7 +226,7 @@ void SocketStreamHandle::close()
 
 void SocketStreamHandle::disconnect()
 {
-    RefPtr<SocketStreamHandle> protect(static_cast<SocketStreamHandle*>(this)); // closeInternal calls the client, which may make the handle get deallocated immediately.
+    RefPtr<SocketStreamHandle> protect(this); // closeInternal calls the client, which may make the handle get deallocated immediately.
 
     closeInternal();
     m_state = Closed;
@@ -260,7 +260,7 @@ bool SocketStreamHandle::sendPendingData()
         m_buffer.consume(bytesWritten);
     } while (!pending && !m_buffer.isEmpty());
     if (m_client)
-        m_client->didUpdateBufferedAmount(static_cast<SocketStreamHandle*>(this), bufferedAmount());
+        m_client->didUpdateBufferedAmount(this, bufferedAmount());
     return true;
 }
 

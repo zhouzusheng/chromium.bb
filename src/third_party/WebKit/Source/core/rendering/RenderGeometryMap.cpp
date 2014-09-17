@@ -27,7 +27,6 @@
 #include "core/rendering/RenderGeometryMap.h"
 
 #include "core/frame/Frame.h"
-#include "core/page/Page.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
 #include "platform/geometry/TransformState.h"
@@ -119,8 +118,17 @@ FloatPoint RenderGeometryMap::mapToContainer(const FloatPoint& p, const RenderLa
 
 #if !ASSERT_DISABLED
     if (m_mapping.size() > 0) {
-        FloatPoint rendererMappedResult = m_mapping.last().m_renderer->localToAbsolute(p, m_mapCoordinatesFlags);
-        ASSERT(roundedIntPoint(rendererMappedResult) == roundedIntPoint(result));
+        const RenderObject* lastRenderer = m_mapping.last().m_renderer;
+        const RenderLayer* layer = lastRenderer->enclosingLayer();
+
+        // Bounds for invisible layers are intentionally not calculated, and are
+        // therefore not necessarily expected to be correct here. This is ok,
+        // because they will be recomputed if the layer becomes visible.
+        if (!layer || !layer->subtreeIsInvisible()) {
+            FloatPoint rendererMappedResult = lastRenderer->localToAbsolute(p, m_mapCoordinatesFlags);
+
+            ASSERT(roundedIntPoint(rendererMappedResult) == roundedIntPoint(result));
+        }
     }
 #endif
 
@@ -331,8 +339,7 @@ bool RenderGeometryMap::isTopmostRenderView(const RenderObject* renderer) const
     if (!(m_mapCoordinatesFlags & TraverseDocumentBoundaries))
         return true;
 
-    Frame* thisFrame = renderer->frame();
-    return thisFrame == thisFrame->page()->mainFrame();
+    return renderer->frame()->isMainFrame();
 }
 #endif
 

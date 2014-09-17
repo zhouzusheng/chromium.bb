@@ -32,53 +32,18 @@
 #ifndef TextTrackCue_h
 #define TextTrackCue_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/events/EventTarget.h"
 #include "core/html/HTMLDivElement.h"
-#include "core/page/UseCounter.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
 
-class Document;
-class DocumentFragment;
 class ExceptionState;
-class ExecutionContext;
-class TextTrack;
-class TextTrackCue;
 
-// ----------------------------
-
-class TextTrackCueBox FINAL : public HTMLDivElement {
-public:
-    static PassRefPtr<TextTrackCueBox> create(Document& document, TextTrackCue* cue)
-    {
-        return adoptRef(new TextTrackCueBox(document, cue));
-    }
-
-    TextTrackCue* getCue() const;
-    void applyCSSProperties(const IntSize& videoSize);
-
-    static const AtomicString& textTrackCueBoxShadowPseudoId();
-
-protected:
-    TextTrackCueBox(Document&, TextTrackCue*);
-
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
-
-    TextTrackCue* m_cue;
-};
-
-// ----------------------------
-
-class TextTrackCue : public RefCounted<TextTrackCue>, public ScriptWrappable, public EventTargetWithInlineData {
+class TextTrackCue : public RefCounted<TextTrackCue>, public EventTargetWithInlineData {
     REFCOUNTED_EVENT_TARGET(TextTrackCue);
 public:
-    static PassRefPtr<TextTrackCue> create(Document& document, double start, double end, const String& content)
-    {
-        UseCounter::count(document, UseCounter::TextTrackCueConstructor);
-        return adoptRef(new TextTrackCue(document, start, end, content));
-    }
+    static bool isInfiniteOrNonNumber(double value, ExceptionState&);
 
     static const AtomicString& cueShadowPseudoId()
     {
@@ -86,7 +51,7 @@ public:
         return cue;
     }
 
-    virtual ~TextTrackCue();
+    virtual ~TextTrackCue() { }
 
     TextTrack* track() const;
     void setTrack(TextTrack*);
@@ -103,157 +68,48 @@ public:
     bool pauseOnExit() const { return m_pauseOnExit; }
     void setPauseOnExit(bool);
 
-    const String& vertical() const;
-    void setVertical(const String&, ExceptionState&);
-
-    bool snapToLines() const { return m_snapToLines; }
-    void setSnapToLines(bool);
-
-    int line() const { return m_linePosition; }
-    void setLine(int, ExceptionState&);
-
-    int position() const { return m_textPosition; }
-    void setPosition(int, ExceptionState&);
-
-    int size() const { return m_cueSize; }
-    void setSize(int, ExceptionState&);
-
-    const String& align() const;
-    void setAlign(const String&, ExceptionState&);
-
-    const String& text() const { return m_content; }
-    void setText(const String&);
-
-    const String& cueSettings() const { return m_settings; }
-    void setCueSettings(const String&);
-
     int cueIndex();
     void invalidateCueIndex();
-
-    PassRefPtr<DocumentFragment> getCueAsHTML();
-    PassRefPtr<DocumentFragment> createCueRenderingTree();
 
     using EventTarget::dispatchEvent;
     virtual bool dispatchEvent(PassRefPtr<Event>) OVERRIDE;
 
-    const String& regionId() const { return m_regionId; }
-    void setRegionId(const String&);
-    void notifyRegionWhenRemovingDisplayTree(bool);
-
     bool isActive();
     void setIsActive(bool);
 
-    bool hasDisplayTree() const { return m_displayTree; }
-    PassRefPtr<TextTrackCueBox> getDisplayTree(const IntSize& videoSize);
-    PassRefPtr<HTMLDivElement> element() const { return m_cueBackgroundBox; }
+    virtual void updateDisplay(const IntSize& videoSize, HTMLDivElement& container) = 0;
 
-    void updateDisplayTree(double);
-    void removeDisplayTree();
-    void markFutureAndPastNodes(ContainerNode*, double, double);
-
-    int calculateComputedLinePosition();
+    // FIXME: Consider refactoring to eliminate or merge the following three members.
+    // https://code.google.com/p/chromium/issues/detail?id=322434
+    virtual void updateDisplayTree(double movieTime) = 0;
+    virtual void removeDisplayTree() = 0;
+    virtual void notifyRegionWhenRemovingDisplayTree(bool notifyRegion) = 0;
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE;
 
-    std::pair<double, double> getCSSPosition() const;
-
-    CSSValueID getCSSAlignment() const;
-    int getCSSSize() const;
-    CSSValueID getCSSWritingDirection() const;
-    CSSValueID getCSSWritingMode() const;
-
-    enum WritingDirection {
-        Horizontal = 0,
-        VerticalGrowingLeft,
-        VerticalGrowingRight,
-        NumberOfWritingDirections
-    };
-    WritingDirection getWritingDirection() const { return m_writingDirection; }
-
-    enum CueAlignment {
-        Start = 0,
-        Middle,
-        End,
-        Left,
-        Right,
-        NumberOfAlignments
-    };
-    CueAlignment getAlignment() const { return m_cueAlignment; }
-
-    bool operator==(const TextTrackCue&) const;
-    bool operator!=(const TextTrackCue& cue) const
-    {
-        return !(*this == cue);
-    }
+#ifndef NDEBUG
+    virtual String toString() const = 0;
+#endif
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(enter);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(exit);
 
-private:
-    TextTrackCue(Document&, double start, double end, const String& content);
-
-    Document& document() const;
-
-    PassRefPtr<TextTrackCueBox> displayTreeInternal();
-
-    void createWebVTTNodeTree();
-    void copyWebVTTNodeToDOMTree(ContainerNode* WebVTTNode, ContainerNode* root);
-
-    std::pair<double, double> getPositionCoordinates() const;
-    void parseSettings(const String&);
-
-    void determineTextDirection();
-    void calculateDisplayParameters();
+protected:
+    TextTrackCue(double start, double end);
 
     void cueWillChange();
-    void cueDidChange();
+    virtual void cueDidChange();
 
-    enum CueSetting {
-        None,
-        Vertical,
-        Line,
-        Position,
-        Size,
-        Align,
-        RegionId
-    };
-    CueSetting settingName(const String&);
-
+private:
     String m_id;
     double m_startTime;
     double m_endTime;
-    String m_content;
-    String m_settings;
-    int m_linePosition;
-    int m_computedLinePosition;
-    int m_textPosition;
-    int m_cueSize;
     int m_cueIndex;
 
-    WritingDirection m_writingDirection;
-
-    CueAlignment m_cueAlignment;
-
-    RefPtr<DocumentFragment> m_webVTTNodeTree;
     TextTrack* m_track;
 
-    bool m_isActive;
-    bool m_pauseOnExit;
-    bool m_snapToLines;
-
-    RefPtr<HTMLDivElement> m_cueBackgroundBox;
-
-    bool m_displayTreeShouldChange;
-    RefPtr<TextTrackCueBox> m_displayTree;
-
-    CSSValueID m_displayDirection;
-
-    int m_displaySize;
-
-    std::pair<float, float> m_displayPosition;
-    String m_regionId;
-    bool m_notifyRegion;
+    bool m_isActive : 1;
+    bool m_pauseOnExit : 1;
 };
 
 } // namespace WebCore

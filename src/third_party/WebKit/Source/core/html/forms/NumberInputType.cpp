@@ -32,22 +32,22 @@
 #include "config.h"
 #include "core/html/forms/NumberInputType.h"
 
-#include <limits>
 #include "HTMLNames.h"
+#include "InputTypeNames.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/html/forms/InputTypeNames.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/rendering/RenderTextControl.h"
 #include "platform/text/PlatformLocale.h"
 #include "wtf/MathExtras.h"
 #include "wtf/PassOwnPtr.h"
+#include <limits>
 
 namespace WebCore {
 
-using WebKit::WebLocalizedString;
+using blink::WebLocalizedString;
 using namespace HTMLNames;
 using namespace std;
 
@@ -106,13 +106,13 @@ void NumberInputType::countUsage()
 
 const AtomicString& NumberInputType::formControlType() const
 {
-    return InputTypeNames::number();
+    return InputTypeNames::number;
 }
 
 void NumberInputType::setValue(const String& sanitizedValue, bool valueChanged, TextFieldEventBehavior eventBehavior)
 {
     if (!valueChanged && sanitizedValue.isEmpty() && !element().innerTextValue().isEmpty())
-        updateInnerTextValue();
+        updateView();
     TextFieldInputType::setValue(sanitizedValue, valueChanged, eventBehavior);
 }
 
@@ -121,31 +121,23 @@ double NumberInputType::valueAsDouble() const
     return parseToDoubleForNumberType(element().value());
 }
 
-void NumberInputType::setValueAsDouble(double newValue, TextFieldEventBehavior eventBehavior, ExceptionState& es) const
+void NumberInputType::setValueAsDouble(double newValue, TextFieldEventBehavior eventBehavior, ExceptionState& exceptionState) const
 {
     // FIXME: We should use numeric_limits<double>::max for number input type.
     const double floatMax = numeric_limits<float>::max();
-    if (newValue < -floatMax) {
-        es.throwUninformativeAndGenericDOMException(InvalidStateError);
-        return;
-    }
-    if (newValue > floatMax) {
-        es.throwUninformativeAndGenericDOMException(InvalidStateError);
+    if (newValue < -floatMax || newValue > floatMax) {
+        exceptionState.throwDOMException(InvalidStateError, "The value provided (" + String::number(newValue) + ") is outside the range (" + String::number(-floatMax) + ", " + String::number(floatMax) + ").");
         return;
     }
     element().setValue(serializeForNumberType(newValue), eventBehavior);
 }
 
-void NumberInputType::setValueAsDecimal(const Decimal& newValue, TextFieldEventBehavior eventBehavior, ExceptionState& es) const
+void NumberInputType::setValueAsDecimal(const Decimal& newValue, TextFieldEventBehavior eventBehavior, ExceptionState& exceptionState) const
 {
     // FIXME: We should use numeric_limits<double>::max for number input type.
     const Decimal floatMax = Decimal::fromDouble(numeric_limits<float>::max());
-    if (newValue < -floatMax) {
-        es.throwUninformativeAndGenericDOMException(InvalidStateError);
-        return;
-    }
-    if (newValue > floatMax) {
-        es.throwUninformativeAndGenericDOMException(InvalidStateError);
+    if (newValue < -floatMax || newValue > floatMax) {
+        exceptionState.throwDOMException(InvalidStateError, "The value provided (" + newValue.toString() + ") is outside the range (-" + floatMax.toString() + ", " + floatMax.toString() + ").");
         return;
     }
     element().setValue(serializeForNumberType(newValue), eventBehavior);
@@ -165,13 +157,10 @@ bool NumberInputType::typeMismatch() const
 StepRange NumberInputType::createStepRange(AnyStepHandling anyStepHandling) const
 {
     DEFINE_STATIC_LOCAL(const StepRange::StepDescription, stepDescription, (numberDefaultStep, numberDefaultStepBase, numberStepScaleFactor));
-    const Decimal stepBase = parseToDecimalForNumberType(element().fastGetAttribute(minAttr), numberDefaultStepBase);
+
     // FIXME: We should use numeric_limits<double>::max for number input type.
     const Decimal floatMax = Decimal::fromDouble(numeric_limits<float>::max());
-    const Decimal minimum = parseToNumber(element().fastGetAttribute(minAttr), -floatMax);
-    const Decimal maximum = parseToNumber(element().fastGetAttribute(maxAttr), floatMax);
-    const Decimal step = StepRange::parseStep(anyStepHandling, stepDescription, element().fastGetAttribute(stepAttr));
-    return StepRange(stepBase, minimum, maximum, step, stepDescription);
+    return InputType::createStepRange(anyStepHandling, numberDefaultStepBase, -floatMax, floatMax, stepDescription);
 }
 
 bool NumberInputType::sizeShouldIncludeDecoration(int defaultSize, int& preferredSize) const
@@ -311,6 +300,11 @@ void NumberInputType::stepAttributeChanged()
 
     if (element().renderer())
         element().renderer()->setNeedsLayoutAndPrefWidthsRecalc();
+}
+
+bool NumberInputType::supportsSelectionAPI() const
+{
+    return false;
 }
 
 } // namespace WebCore

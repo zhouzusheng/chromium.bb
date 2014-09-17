@@ -107,8 +107,7 @@ private:
 
     static Node* traverseBackToYoungerShadowRoot(const Node*, TraversalDirection);
 
-    Node* traverseParentInCurrentTree(const Node*, ParentTraversalDetails* = 0) const;
-    Node* traverseParentBackToYoungerShadowRootOrHost(const ShadowRoot*, ParentTraversalDetails* = 0) const;
+    Node* traverseParentOrHost(const Node*, ParentTraversalDetails* = 0) const;
 
     const Node* m_node;
 };
@@ -116,7 +115,6 @@ private:
 inline ComposedTreeWalker::ComposedTreeWalker(const Node* node, StartPolicy startPolicy)
     : m_node(node)
 {
-    UNUSED_PARAM(startPolicy);
 #ifndef NDEBUG
     if (m_node && startPolicy == CannotStartFromShadowBoundary)
         assertPrecondition();

@@ -33,21 +33,23 @@
 
 #include "public/platform/WebCallbacks.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebString;
 class WebURL;
 class WebServiceWorker;
+struct WebServiceWorkerError;
 
 class WebServiceWorkerProvider {
 public:
-    typedef WebCallbacks<WebServiceWorker, WebServiceWorker> WebServiceWorkerCallbacks;
+    // The WebServiceWorker and WebServiceWorkerError ownership are passed to the WebServiceWorkerCallbacks implementation.
+    typedef WebCallbacks<WebServiceWorker, WebServiceWorkerError> WebServiceWorkerCallbacks;
     virtual void registerServiceWorker(const WebURL& pattern, const WebURL& scriptUrl, WebServiceWorkerCallbacks*) { }
 
     virtual void unregisterServiceWorker(const WebURL& pattern, WebServiceWorkerCallbacks*) { }
     virtual ~WebServiceWorkerProvider() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

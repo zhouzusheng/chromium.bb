@@ -46,7 +46,7 @@
 
 namespace WebCore {
 
-int DOMWrapperWorld::isolatedWorldCount = 0;
+unsigned DOMWrapperWorld::isolatedWorldCount = 0;
 static bool initializingWindow = false;
 
 void DOMWrapperWorld::setInitializingWindow(bool initializing)
@@ -69,8 +69,9 @@ DOMWrapperWorld::DOMWrapperWorld(int worldId, int extensionGroup)
 
 DOMWrapperWorld* DOMWrapperWorld::current()
 {
-    ASSERT(v8::Context::InContext());
-    v8::Handle<v8::Context> context = v8::Context::GetCurrent();
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    ASSERT(isolate->InContext());
+    v8::Handle<v8::Context> context = isolate->GetCurrentContext();
     if (!V8DOMWrapper::isWrapperOfType(toInnerGlobalObject(context), &V8Window::wrapperTypeInfo))
         return 0;
     ASSERT(isMainThread());
@@ -82,15 +83,15 @@ DOMWrapperWorld* DOMWrapperWorld::current()
 DOMWrapperWorld* mainThreadNormalWorld()
 {
     ASSERT(isMainThread());
-    DEFINE_STATIC_LOCAL(RefPtr<DOMWrapperWorld>, cachedNormalWorld, (DOMWrapperWorld::createMainWorld()));
-    return cachedNormalWorld.get();
+    DEFINE_STATIC_REF(DOMWrapperWorld, cachedNormalWorld, (DOMWrapperWorld::createMainWorld()));
+    return cachedNormalWorld;
 }
 
 // FIXME: Remove this function. There is currently an issue with the inspector related to the call to dispatchDidClearWindowObjectInWorld in ScriptController::windowShell.
 DOMWrapperWorld* existingWindowShellWorkaroundWorld()
 {
-    DEFINE_STATIC_LOCAL(RefPtr<DOMWrapperWorld>, world, (adoptRef(new DOMWrapperWorld(MainWorldId - 1, DOMWrapperWorld::mainWorldExtensionGroup - 1))));
-    return world.get();
+    DEFINE_STATIC_REF(DOMWrapperWorld, world, (adoptRef(new DOMWrapperWorld(MainWorldId - 1, DOMWrapperWorld::mainWorldExtensionGroup - 1))));
+    return world;
 }
 
 bool DOMWrapperWorld::contextHasCorrectPrototype(v8::Handle<v8::Context> context)
@@ -103,7 +104,7 @@ bool DOMWrapperWorld::contextHasCorrectPrototype(v8::Handle<v8::Context> context
 
 void DOMWrapperWorld::setIsolatedWorldField(v8::Handle<v8::Context> context)
 {
-    context->SetAlignedPointerInEmbedderData(v8ContextIsolatedWorld, isMainWorld() ? 0 : this);
+    V8PerContextDataHolder::from(context)->setIsolatedWorld(isMainWorld() ? 0 : this);
 }
 
 typedef HashMap<int, DOMWrapperWorld*> WorldMap;

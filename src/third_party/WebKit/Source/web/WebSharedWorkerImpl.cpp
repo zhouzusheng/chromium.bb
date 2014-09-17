@@ -31,24 +31,17 @@
 #include "config.h"
 #include "WebSharedWorkerImpl.h"
 
-#include "public/platform/WebFileError.h"
-#include "public/platform/WebMessagePortChannel.h"
-#include "public/platform/WebString.h"
-#include "public/platform/WebURL.h"
-#include "wtf/MainThread.h"
+#include "DatabaseClientImpl.h"
+#include "LocalFileSystemClient.h"
 #include "WebDataSourceImpl.h"
-#include "WebFrameClient.h"
+#include "WebFrame.h"
 #include "WebFrameImpl.h"
 #include "WebRuntimeFeatures.h"
 #include "WebSettings.h"
-#include "WebSharedWorkerClient.h"
 #include "WebView.h"
-#include "WorkerFileSystemClient.h"
 #include "WorkerPermissionClient.h"
 #include "core/dom/CrossThreadTask.h"
 #include "core/dom/Document.h"
-#include "core/dom/ExecutionContext.h"
-#include "core/dom/MessagePortChannel.h"
 #include "core/events/MessageEvent.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/inspector/WorkerDebuggerAgent.h"
@@ -61,18 +54,21 @@
 #include "core/workers/SharedWorkerThread.h"
 #include "core/workers/WorkerClients.h"
 #include "core/workers/WorkerGlobalScope.h"
-#include "core/workers/WorkerLoaderProxy.h"
-#include "core/workers/WorkerThread.h"
 #include "core/workers/WorkerThreadStartupData.h"
 #include "modules/webdatabase/DatabaseTask.h"
+#include "platform/weborigin/KURL.h"
+#include "platform/weborigin/SecurityOrigin.h"
+#include "public/platform/WebFileError.h"
+#include "public/platform/WebMessagePortChannel.h"
+#include "public/platform/WebString.h"
+#include "public/platform/WebURL.h"
 #include "public/web/WebWorkerPermissionClientProxy.h"
-#include "weborigin/KURL.h"
-#include "weborigin/SecurityOrigin.h"
 #include "wtf/Functional.h"
+#include "wtf/MainThread.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 // This function is called on the main thread to force to initialize some static
 // values used in WebKit before any worker thread is started. This is because in
@@ -164,19 +160,12 @@ WebApplicationCacheHost* WebSharedWorkerImpl::createApplicationCacheHost(WebFram
 
 // WorkerReportingProxy --------------------------------------------------------
 
-void WebSharedWorkerImpl::postExceptionToWorkerObject(const String& errorMessage,
-                                                      int lineNumber,
-                                                      int columnNumber,
-                                                      const String& sourceURL)
+void WebSharedWorkerImpl::reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL)
 {
     // Not suppported in SharedWorker.
 }
 
-void WebSharedWorkerImpl::postConsoleMessageToWorkerObject(MessageSource source,
-                                                           MessageLevel level,
-                                                           const String& message,
-                                                           int lineNumber,
-                                                           const String& sourceURL)
+void WebSharedWorkerImpl::reportConsoleMessage(MessageSource source, MessageLevel level, const String& message, int lineNumber, const String& sourceURL)
 {
     // Not supported in SharedWorker.
 }
@@ -202,6 +191,10 @@ void WebSharedWorkerImpl::workerGlobalScopeClosedOnMainThread()
         client()->workerContextClosed();
 
     stopWorkerThread();
+}
+
+void WebSharedWorkerImpl::workerGlobalScopeStarted()
+{
 }
 
 void WebSharedWorkerImpl::workerGlobalScopeDestroyed()
@@ -232,12 +225,6 @@ bool WebSharedWorkerImpl::postTaskForModeToWorkerGlobalScope(
     return true;
 }
 
-WebWorkerBase* WebSharedWorkerImpl::toWebWorkerBase()
-{
-    return this;
-}
-
-
 bool WebSharedWorkerImpl::isStarted()
 {
     // Should not ever be called from the worker thread (this API is only called on WebSharedWorkerProxy on the renderer thread).
@@ -247,14 +234,13 @@ bool WebSharedWorkerImpl::isStarted()
 
 void WebSharedWorkerImpl::connect(WebMessagePortChannel* webChannel, ConnectListener* listener)
 {
-    OwnPtr<MessagePortChannel> channel = MessagePortChannel::create(webChannel);
     workerThread()->runLoop().postTask(
-        createCallbackTask(&connectTask, channel.release()));
+        createCallbackTask(&connectTask, adoptPtr(webChannel)));
     if (listener)
         listener->connected();
 }
 
-void WebSharedWorkerImpl::connectTask(ExecutionContext* context, PassOwnPtr<MessagePortChannel> channel)
+void WebSharedWorkerImpl::connectTask(ExecutionContext* context, PassOwnPtr<WebMessagePortChannel> channel)
 {
     // Wrap the passed-in channel in a MessagePort, and send it off via a connect event.
     RefPtr<MessagePort> port = MessagePort::create(*context);
@@ -270,7 +256,8 @@ void WebSharedWorkerImpl::startWorkerContext(const WebURL& url, const WebString&
 
     WorkerThreadStartMode startMode = m_pauseWorkerContextOnStart ? PauseWorkerGlobalScopeOnStart : DontPauseWorkerGlobalScopeOnStart;
     OwnPtr<WorkerClients> workerClients = WorkerClients::create();
-    provideLocalFileSystemToWorker(workerClients.get(), WorkerFileSystemClient::create());
+    provideLocalFileSystemToWorker(workerClients.get(), LocalFileSystemClient::create());
+    provideDatabaseClientToWorker(workerClients.get(), DatabaseClientImpl::create());
     WebSecurityOrigin webSecurityOrigin(m_loadingDocument->securityOrigin());
     providePermissionClientToWorker(workerClients.get(), adoptPtr(client()->createWorkerPermissionClientProxy(webSecurityOrigin)));
     OwnPtr<WorkerThreadStartupData> startupData = WorkerThreadStartupData::create(url, userAgent, sourceCode, startMode, contentSecurityPolicy, static_cast<WebCore::ContentSecurityPolicy::HeaderType>(policyType), workerClients.release());
@@ -354,4 +341,4 @@ WebSharedWorker* WebSharedWorker::create(WebSharedWorkerClient* client)
     return new WebSharedWorkerImpl(client);
 }
 
-} // namespace WebKit
+} // namespace blink

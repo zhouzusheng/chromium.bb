@@ -173,7 +173,7 @@ void RenderViewDevToolsAgentHost::OnClientAttached() {
       render_view_host_->GetProcess()->GetID());
 
   // TODO(kaznacheev): Move this call back to DevToolsManagerImpl when
-  // ExtensionProcessManager no longer relies on this notification.
+  // extensions::ProcessManager no longer relies on this notification.
   DevToolsManagerImpl::GetInstance()->NotifyObservers(this, true);
 
 #if defined(OS_ANDROID)
@@ -219,7 +219,7 @@ void RenderViewDevToolsAgentHost::ClientDetachedFromRenderer() {
   }
 
   // TODO(kaznacheev): Move this call back to DevToolsManagerImpl when
-  // ExtensionProcessManager no longer relies on this notification.
+  // extensions::ProcessManager no longer relies on this notification.
   DevToolsManagerImpl::GetInstance()->NotifyObservers(this, false);
 }
 
@@ -242,6 +242,17 @@ void RenderViewDevToolsAgentHost::AboutToNavigateRenderView(
     return;
   DisconnectRenderViewHost();
   ConnectRenderViewHost(dest_rvh);
+}
+
+void RenderViewDevToolsAgentHost::RenderViewHostChanged(
+    RenderViewHost* old_host,
+    RenderViewHost* new_host) {
+  if (new_host != render_view_host_) {
+    // AboutToNavigateRenderView was not called for renderer-initiated
+    // navigation.
+    DisconnectRenderViewHost();
+    ConnectRenderViewHost(new_host);
+  }
 }
 
 void RenderViewDevToolsAgentHost::RenderViewDeleted(RenderViewHost* rvh) {
@@ -353,7 +364,17 @@ bool RenderViewDevToolsAgentHost::OnMessageReceived(
 
 void RenderViewDevToolsAgentHost::OnSwapCompositorFrame(
     const IPC::Message& message) {
-  overrides_handler_->OnSwapCompositorFrame(message);
+  ViewHostMsg_SwapCompositorFrame::Param param;
+  if (!ViewHostMsg_SwapCompositorFrame::Read(&message, &param))
+    return;
+  overrides_handler_->OnSwapCompositorFrame(param.b.metadata);
+}
+
+void RenderViewDevToolsAgentHost::SynchronousSwapCompositorFrame(
+    const cc::CompositorFrameMetadata& frame_metadata) {
+  if (!render_view_host_)
+    return;
+  overrides_handler_->OnSwapCompositorFrame(frame_metadata);
 }
 
 void RenderViewDevToolsAgentHost::OnSaveAgentRuntimeState(

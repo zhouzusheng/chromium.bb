@@ -186,6 +186,10 @@ void AudioProcessingImpl::SetExtraOptions(const Config& config) {
     (*it)->SetExtraOptions(config);
 }
 
+int AudioProcessingImpl::EnableExperimentalNs(bool enable) {
+  return kNoError;
+}
+
 int AudioProcessingImpl::set_sample_rate_hz(int rate) {
   CriticalSectionScoped crit_scoped(crit_);
   if (rate == sample_rate_hz_) {
@@ -523,6 +527,35 @@ int AudioProcessingImpl::StartDebugRecording(
 
   if (debug_file_->OpenFile(filename, false) == -1) {
     debug_file_->CloseFile();
+    return kFileError;
+  }
+
+  int err = WriteInitMessage();
+  if (err != kNoError) {
+    return err;
+  }
+  return kNoError;
+#else
+  return kUnsupportedFunctionError;
+#endif  // WEBRTC_AUDIOPROC_DEBUG_DUMP
+}
+
+int AudioProcessingImpl::StartDebugRecording(FILE* handle) {
+  CriticalSectionScoped crit_scoped(crit_);
+
+  if (handle == NULL) {
+    return kNullPointerError;
+  }
+
+#ifdef WEBRTC_AUDIOPROC_DEBUG_DUMP
+  // Stop any ongoing recording.
+  if (debug_file_->Open()) {
+    if (debug_file_->CloseFile() == -1) {
+      return kFileError;
+    }
+  }
+
+  if (debug_file_->OpenFromFileHandle(handle, true, false) == -1) {
     return kFileError;
   }
 

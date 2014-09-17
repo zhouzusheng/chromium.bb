@@ -35,7 +35,7 @@
 #include "WebTextDirection.h"
 
 #if BLINK_IMPLEMENTATION
-namespace WebCore { class Notification; }
+namespace WebCore { class NotificationBase; }
 namespace WTF { template <typename T> class PassRefPtr; }
 #endif
 
@@ -43,7 +43,7 @@ namespace WTF {
 class AtomicString;
 }
 
-namespace WebKit {
+namespace blink {
 
 class WebNotificationPrivate;
 class WebURL;
@@ -83,9 +83,6 @@ public:
 
     BLINK_EXPORT WebString replaceId() const;
 
-    // Called if the presenter goes out of scope before the notification does.
-    BLINK_EXPORT void detachPresenter();
-
     // Called to indicate the notification has been displayed.
     BLINK_EXPORT void dispatchDisplayEvent();
 
@@ -101,9 +98,9 @@ public:
     BLINK_EXPORT void dispatchClickEvent();
 
 #if BLINK_IMPLEMENTATION
-    WebNotification(const WTF::PassRefPtr<WebCore::Notification>&);
-    WebNotification& operator=(const WTF::PassRefPtr<WebCore::Notification>&);
-    operator WTF::PassRefPtr<WebCore::Notification>() const;
+    WebNotification(const WTF::PassRefPtr<WebCore::NotificationBase>&);
+    WebNotification& operator=(const WTF::PassRefPtr<WebCore::NotificationBase>&);
+    operator WTF::PassRefPtr<WebCore::NotificationBase>() const;
 #endif
 
 private:
@@ -126,6 +123,6 @@ inline bool operator<(const WebNotification& a, const WebNotification& b)
     return a.lessThan(b);
 }
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

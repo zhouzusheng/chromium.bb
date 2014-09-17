@@ -22,6 +22,7 @@
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animator.h"
+#include "ui/events/event_target_iterator.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/interpolated_transform.h"
 #include "ui/gfx/path.h"
@@ -35,6 +36,7 @@
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/accessibility/native_view_accessibility.h"
 #include "ui/views/background.h"
+#include "ui/views/border.h"
 #include "ui/views/context_menu_controller.h"
 #include "ui/views/drag_controller.h"
 #include "ui/views/layout/layout_manager.h"
@@ -68,6 +70,11 @@ const bool kContextMenuOnMousePress = false;
 #else
 const bool kContextMenuOnMousePress = true;
 #endif
+
+// The minimum percentage of a view's area that needs to be covered by a rect
+// representing a touch region in order for that view to be considered by the
+// rect-based targeting algorithm.
+static const float kRectTargetOverlap = 0.6f;
 
 // Returns the top view in |view|'s hierarchy.
 const views::View* GetHierarchyRoot(const views::View* view) {
@@ -155,7 +162,6 @@ View::View()
       registered_for_visible_bounds_notification_(false),
       clip_insets_(0, 0, 0, 0),
       needs_layout_(true),
-      focus_border_(FocusBorder::CreateDashedFocusBorder()),
       flip_canvas_on_paint_for_rtl_ui_(false),
       paint_to_layer_(false),
       accelerator_focus_manager_(NULL),
@@ -318,7 +324,6 @@ void View::SetBoundsRect(const gfx::Rect& bounds) {
     if (needs_layout_) {
       needs_layout_ = false;
       Layout();
-      SchedulePaint();
     }
     return;
   }
@@ -659,52 +664,38 @@ View* View::GetSelectedViewForGroup(int group) {
 void View::ConvertPointToTarget(const View* source,
                                 const View* target,
                                 gfx::Point* point) {
+  DCHECK(source);
+  DCHECK(target);
   if (source == target)
     return;
 
-  // |source| can be NULL.
   const View* root = GetHierarchyRoot(target);
-  if (source) {
-    CHECK_EQ(GetHierarchyRoot(source), root);
+  CHECK_EQ(GetHierarchyRoot(source), root);
 
-    if (source != root)
-      source->ConvertPointForAncestor(root, point);
-  }
+  if (source != root)
+    source->ConvertPointForAncestor(root, point);
 
   if (target != root)
     target->ConvertPointFromAncestor(root, point);
-
-  // API defines NULL |source| as returning the point in screen coordinates.
-  if (!source) {
-    *point -=
-        root->GetWidget()->GetClientAreaBoundsInScreen().OffsetFromOrigin();
-  }
 }
 
 // static
 void View::ConvertRectToTarget(const View* source,
                                const View* target,
                                gfx::RectF* rect) {
+  DCHECK(source);
+  DCHECK(target);
   if (source == target)
     return;
 
-  // |source| can be NULL.
   const View* root = GetHierarchyRoot(target);
-  if (source) {
-    CHECK_EQ(GetHierarchyRoot(source), root);
+  CHECK_EQ(GetHierarchyRoot(source), root);
 
-    if (source != root)
-      source->ConvertRectForAncestor(root, rect);
-  }
+  if (source != root)
+    source->ConvertRectForAncestor(root, rect);
 
   if (target != root)
     target->ConvertRectFromAncestor(root, rect);
-
-  // API defines NULL |source| as returning the point in screen coordinates.
-  if (!source) {
-    rect->set_origin(rect->origin() -
-        root->GetWidget()->GetClientAreaBoundsInScreen().OffsetFromOrigin());
-  }
 }
 
 // static
@@ -809,6 +800,14 @@ void View::Paint(gfx::Canvas* canvas) {
   PaintCommon(canvas);
 }
 
+void View::set_background(Background* b) {
+  background_.reset(b);
+}
+
+void View::set_border(Border* b) {
+  border_.reset(b);
+}
+
 ui::ThemeProvider* View::GetThemeProvider() const {
   const Widget* widget = GetWidget();
   return widget ? widget->GetThemeProvider() : NULL;
@@ -834,19 +833,78 @@ bool View::get_use_acceleration_when_possible() {
 // Input -----------------------------------------------------------------------
 
 View* View::GetEventHandlerForPoint(const gfx::Point& point) {
-  // Walk the child Views recursively looking for the View that most
-  // tightly encloses the specified point.
+  return GetEventHandlerForRect(gfx::Rect(point, gfx::Size(1, 1)));
+}
+
+View* View::GetEventHandlerForRect(const gfx::Rect& rect) {
+  // |rect_view| represents the current best candidate to return
+  // if rect-based targeting (i.e., fuzzing) is used.
+  // |rect_view_distance| is used to keep track of the distance
+  // between the center point of |rect_view| and the center
+  // point of |rect|.
+  View* rect_view = NULL;
+  int rect_view_distance = INT_MAX;
+
+  // |point_view| represents the view that would have been returned
+  // from this function call if point-based targeting were used.
+  View* point_view = NULL;
+
   for (int i = child_count() - 1; i >= 0; --i) {
     View* child = child_at(i);
+
+    // Ignore any children which are invisible or do not intersect |rect|.
     if (!child->visible())
       continue;
+    gfx::RectF rect_in_child_coords_f(rect);
+    ConvertRectToTarget(this, child, &rect_in_child_coords_f);
+    gfx::Rect rect_in_child_coords = gfx::ToEnclosingRect(
+        rect_in_child_coords_f);
+    if (!child->HitTestRect(rect_in_child_coords))
+      continue;
 
-    gfx::Point point_in_child_coords(point);
-    ConvertPointToTarget(this, child, &point_in_child_coords);
-    if (child->HitTestPoint(point_in_child_coords))
-      return child->GetEventHandlerForPoint(point_in_child_coords);
+    View* cur_view = child->GetEventHandlerForRect(rect_in_child_coords);
+
+    if (views::UsePointBasedTargeting(rect))
+      return cur_view;
+
+    gfx::RectF cur_view_bounds_f(cur_view->GetLocalBounds());
+    ConvertRectToTarget(cur_view, this, &cur_view_bounds_f);
+    gfx::Rect cur_view_bounds = gfx::ToEnclosingRect(
+        cur_view_bounds_f);
+    if (views::PercentCoveredBy(cur_view_bounds, rect) >= kRectTargetOverlap) {
+      // |cur_view| is a suitable candidate for rect-based targeting.
+      // Check to see if it is the closest suitable candidate so far.
+      gfx::Point touch_center(rect.CenterPoint());
+      int cur_dist = views::DistanceSquaredFromCenterToPoint(touch_center,
+                                                             cur_view_bounds);
+      if (!rect_view || cur_dist < rect_view_distance) {
+        rect_view = cur_view;
+        rect_view_distance = cur_dist;
+      }
+    } else if (!rect_view && !point_view) {
+      // Rect-based targeting has not yielded any candidates so far. Check
+      // if point-based targeting would have selected |cur_view|.
+      gfx::Point point_in_child_coords(rect_in_child_coords.CenterPoint());
+      if (child->HitTestPoint(point_in_child_coords))
+        point_view = child->GetEventHandlerForPoint(point_in_child_coords);
+    }
   }
-  return this;
+
+  if (views::UsePointBasedTargeting(rect) || (!rect_view && !point_view))
+    return this;
+
+  // If |this| is a suitable candidate for rect-based targeting, check to
+  // see if it is closer than the current best suitable candidate so far.
+  gfx::Rect local_bounds(GetLocalBounds());
+  if (views::PercentCoveredBy(local_bounds, rect) >= kRectTargetOverlap) {
+    gfx::Point touch_center(rect.CenterPoint());
+    int cur_dist = views::DistanceSquaredFromCenterToPoint(touch_center,
+                                                           local_bounds);
+    if (!rect_view || cur_dist < rect_view_distance)
+      rect_view = this;
+  }
+
+  return rect_view ? rect_view : point_view;
 }
 
 View* View::GetTooltipHandlerForPoint(const gfx::Point& point) {
@@ -930,7 +988,7 @@ bool View::IsMouseHovered() {
 
   gfx::Point cursor_pos(gfx::Screen::GetScreenFor(
       GetWidget()->GetNativeView())->GetCursorScreenPoint());
-  ConvertPointToTarget(NULL, this, &cursor_pos);
+  ConvertPointFromScreen(this, &cursor_pos);
   return HitTestPoint(cursor_pos);
 }
 
@@ -1048,11 +1106,20 @@ const InputMethod* View::GetInputMethod() const {
 }
 
 bool View::CanAcceptEvent(const ui::Event& event) {
-  return event.dispatch_to_hidden_targets() || IsDrawn();
+  return IsDrawn();
 }
 
 ui::EventTarget* View::GetParentTarget() {
   return parent_;
+}
+
+scoped_ptr<ui::EventTargetIterator> View::GetChildIterator() const {
+  return scoped_ptr<ui::EventTargetIterator>(
+      new ui::EventTargetIteratorImpl<View>(children_));
+}
+
+ui::EventTargeter* View::GetEventTargeter() {
+  return NULL;
 }
 
 // Accelerators ----------------------------------------------------------------
@@ -1133,12 +1200,26 @@ void View::SetNextFocusableView(View* view) {
   next_focusable_view_ = view;
 }
 
+void View::SetFocusable(bool focusable) {
+  if (focusable_ == focusable)
+    return;
+
+  focusable_ = focusable;
+}
+
 bool View::IsFocusable() const {
   return focusable_ && enabled_ && IsDrawn();
 }
 
 bool View::IsAccessibilityFocusable() const {
   return (focusable_ || accessibility_focusable_) && enabled_ && IsDrawn();
+}
+
+void View::SetAccessibilityFocusable(bool accessibility_focusable) {
+  if (accessibility_focusable_ == accessibility_focusable)
+    return;
+
+  accessibility_focusable_ = accessibility_focusable;
 }
 
 FocusManager* View::GetFocusManager() {
@@ -1331,7 +1412,6 @@ void View::PaintChildren(gfx::Canvas* canvas) {
 void View::OnPaint(gfx::Canvas* canvas) {
   TRACE_EVENT1("views", "View::OnPaint", "class", GetClassName());
   OnPaintBackground(canvas);
-  OnPaintFocusBorder(canvas);
   OnPaintBorder(canvas);
 }
 
@@ -1350,16 +1430,6 @@ void View::OnPaintBorder(gfx::Canvas* canvas) {
                  "width", canvas->sk_canvas()->getDevice()->width(),
                  "height", canvas->sk_canvas()->getDevice()->height());
     border_->Paint(*this, canvas);
-  }
-}
-
-void View::OnPaintFocusBorder(gfx::Canvas* canvas) {
-  if (focus_border_.get() &&
-      HasFocus() && (focusable() || IsAccessibilityFocusable())) {
-    TRACE_EVENT2("views", "views::OnPaintFocusBorder",
-                 "width", canvas->sk_canvas()->getDevice()->width(),
-                 "height", canvas->sk_canvas()->getDevice()->height());
-    focus_border_->Paint(*this, canvas);
   }
 }
 
@@ -1534,12 +1604,10 @@ void View::OnBlur() {
 }
 
 void View::Focus() {
-  SchedulePaint();
   OnFocus();
 }
 
 void View::Blur() {
-  SchedulePaint();
   OnBlur();
 }
 

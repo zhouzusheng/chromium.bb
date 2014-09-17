@@ -31,7 +31,6 @@
 #include "core/dom/Element.h"
 #include "core/dom/Range.h"
 #include "core/editing/TextIterator.h"
-#include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
 #include "core/rendering/RenderObject.h"
@@ -218,14 +217,14 @@ static PassRefPtr<Range> makeSearchRange(const Position& pos)
         return 0;
 
     RefPtr<Range> searchRange(Range::create(d));
-    TrackExceptionState es;
+    TrackExceptionState exceptionState;
 
     Position start(pos.parentAnchoredEquivalent());
-    searchRange->selectNodeContents(boundary, es);
-    searchRange->setStart(start.containerNode(), start.offsetInContainerNode(), es);
+    searchRange->selectNodeContents(boundary, exceptionState);
+    searchRange->setStart(start.containerNode(), start.offsetInContainerNode(), exceptionState);
 
-    ASSERT(!es.hadException());
-    if (es.hadException())
+    ASSERT(!exceptionState.hadException());
+    if (exceptionState.hadException())
         return 0;
 
     return searchRange.release();

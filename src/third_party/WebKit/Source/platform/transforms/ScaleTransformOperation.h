@@ -48,8 +48,7 @@ public:
 private:
     virtual bool isIdentity() const { return m_x == 1 &&  m_y == 1 &&  m_z == 1; }
 
-    virtual OperationType getOperationType() const { return m_type; }
-    virtual bool isSameType(const TransformOperation& o) const { return o.getOperationType() == m_type; }
+    virtual OperationType type() const OVERRIDE { return m_type; }
 
     virtual bool operator==(const TransformOperation& o) const
     {
@@ -59,10 +58,9 @@ private:
         return m_x == s->m_x && m_y == s->m_y && m_z == s->m_z;
     }
 
-    virtual bool apply(TransformationMatrix& transform, const FloatSize&) const
+    virtual void apply(TransformationMatrix& transform, const FloatSize&) const
     {
         transform.scale3d(m_x, m_y, m_z);
-        return false;
     }
 
     virtual PassRefPtr<TransformOperation> blend(const TransformOperation* from, double progress, bool blendToIdentity = false);

@@ -27,6 +27,7 @@
 #define WebLayer_h
 
 #include "WebAnimation.h"
+#include "WebBlendMode.h"
 #include "WebColor.h"
 #include "WebCommon.h"
 #include "WebCompositingReasons.h"
@@ -38,7 +39,7 @@
 class SkMatrix44;
 class SkImageFilter;
 
-namespace WebKit {
+namespace blink {
 class WebAnimationDelegate;
 class WebFilterOperations;
 class WebLayerClient;
@@ -85,6 +86,12 @@ public:
 
     virtual void setOpacity(float) = 0;
     virtual float opacity() const = 0;
+
+    virtual void setBlendMode(WebBlendMode) = 0;
+    virtual WebBlendMode blendMode() const = 0;
+
+    virtual void setIsRootForIsolatedGroup(bool) = 0;
+    virtual bool isRootForIsolatedGroup() = 0;
 
     virtual void setOpaque(bool) = 0;
     virtual bool opaque() const = 0;
@@ -214,6 +221,6 @@ public:
     virtual void setWebLayerClient(WebLayerClient*) = 0;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebLayer_h

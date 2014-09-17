@@ -59,11 +59,11 @@ public:
     KURL url() const;
     KURL originalURL() const;
 
-    const String& referrer() const;
+    const AtomicString& referrer() const;
     const String& target() const;
 
     FormData* formData();
-    String formContentType() const;
+    const AtomicString& formContentType() const;
 
     const IntPoint& scrollPoint() const;
     void setScrollPoint(const IntPoint&);
@@ -79,7 +79,7 @@ public:
     void setURL(const KURL&);
     void setURLString(const String&);
     void setOriginalURLString(const String&);
-    void setReferrer(const String&);
+    void setReferrer(const AtomicString&);
     void setTarget(const String&);
 
     void setStateObject(PassRefPtr<SerializedScriptValue> object);
@@ -96,34 +96,21 @@ public:
 
     void setFormInfoFromRequest(const ResourceRequest&);
     void setFormData(PassRefPtr<FormData>);
-    void setFormContentType(const String&);
+    void setFormContentType(const AtomicString&);
 
     void addChildItem(PassRefPtr<HistoryItem>);
-    void setChildItem(PassRefPtr<HistoryItem>);
-    HistoryItem* childItemWithTarget(const String&) const;
-    HistoryItem* childItemWithDocumentSequenceNumber(long long number) const;
     const HistoryItemVector& children() const;
     void clearChildren();
 
-    bool shouldDoSameDocumentNavigationTo(HistoryItem* otherItem) const;
-    bool hasSameFrames(HistoryItem* otherItem) const;
-
     bool isCurrentDocument(Document*) const;
-
-#ifndef NDEBUG
-    int showTree() const;
-    int showTreeWithIndent(unsigned indentLevel) const;
-#endif
 
 private:
     HistoryItem();
     explicit HistoryItem(const HistoryItem&);
 
-    bool hasSameDocumentTree(HistoryItem* otherItem) const;
-
     String m_urlString;
     String m_originalURLString;
-    String m_referrer;
+    AtomicString m_referrer;
     String m_target;
 
     IntPoint m_scrollPoint;
@@ -150,15 +137,10 @@ private:
 
     // info used to repost form data
     RefPtr<FormData> m_formData;
-    String m_formContentType;
+    AtomicString m_formContentType;
 
 }; //class HistoryItem
 
 } //namespace WebCore
-
-#ifndef NDEBUG
-// Outside the WebCore namespace for ease of invocation from gdb.
-extern "C" int showTree(const WebCore::HistoryItem*);
-#endif
 
 #endif // HISTORYITEM_H

@@ -36,7 +36,7 @@
 #include "core/html/HTMLTextFormControlElement.h"
 #include "core/html/forms/InputTypeView.h"
 #include "core/html/forms/StepRange.h"
-#include "core/page/UseCounter.h"
+#include "core/frame/UseCounter.h"
 
 namespace WebCore {
 
@@ -165,15 +165,9 @@ public:
     virtual void accessKeyAction(bool sendMouseEvents);
     virtual bool canBeSuccessfulSubmitButton();
 
-    // Shadow tree handling
-
-    virtual void createShadowSubtree();
-    virtual void destroyShadowSubtree();
-
     // Miscellaneous functions
 
     virtual bool rendererIsNeeded();
-    virtual void detach();
     virtual void countUsage();
     virtual void sanitizeValueInResponseToMinOrMaxAttributeChange();
     virtual bool shouldRespectAlignAttribute();
@@ -242,6 +236,11 @@ protected:
     Locale& locale() const;
     Decimal parseToNumberOrNaN(const String&) const;
     void countUsageIfVisible(UseCounter::Feature) const;
+
+    // Derive the step base, following the HTML algorithm steps.
+    Decimal findStepBase(const Decimal&) const;
+
+    StepRange createStepRange(AnyStepHandling, const Decimal& stepBaseDefault, const Decimal& minimumDefault, const Decimal& maximumDefault, const StepRange::StepDescription&) const;
 
 private:
     // Helper for stepUp()/stepDown(). Adds step value * count to the current value.

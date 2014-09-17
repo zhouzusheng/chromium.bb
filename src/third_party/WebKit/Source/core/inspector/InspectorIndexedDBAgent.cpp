@@ -58,7 +58,7 @@
 #include "modules/indexeddb/IDBRequest.h"
 #include "modules/indexeddb/IDBTransaction.h"
 #include "platform/JSONValues.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/Vector.h"
 
 using WebCore::TypeBuilder::Array;
@@ -109,12 +109,7 @@ public:
         }
 
         IDBRequest* idbRequest = static_cast<IDBRequest*>(event->target());
-        TrackExceptionState es;
-        RefPtr<IDBAny> requestResult = idbRequest->result(es);
-        if (es.hadException()) {
-            m_requestCallback->sendFailure("Could not get result in callback.");
-            return;
-        }
+        RefPtr<IDBAny> requestResult = idbRequest->resultAsAny();
         if (requestResult->type() != IDBAny::DOMStringListType) {
             m_requestCallback->sendFailure("Unexpected result type.");
             return;
@@ -171,12 +166,7 @@ public:
         }
 
         IDBOpenDBRequest* idbOpenDBRequest = static_cast<IDBOpenDBRequest*>(event->target());
-        TrackExceptionState es;
-        RefPtr<IDBAny> requestResult = idbOpenDBRequest->result(es);
-        if (es.hadException()) {
-            m_executableWithDatabase->requestCallback()->sendFailure("Could not get result in callback.");
-            return;
-        }
+        RefPtr<IDBAny> requestResult = idbOpenDBRequest->resultAsAny();
         if (requestResult->type() != IDBAny::IDBDatabaseType) {
             m_executableWithDatabase->requestCallback()->sendFailure("Unexpected result type.");
             return;
@@ -198,9 +188,9 @@ private:
 void ExecutableWithDatabase::start(IDBFactory* idbFactory, SecurityOrigin*, const String& databaseName)
 {
     RefPtr<OpenDatabaseCallback> callback = OpenDatabaseCallback::create(this);
-    TrackExceptionState es;
-    RefPtr<IDBOpenDBRequest> idbOpenDBRequest = idbFactory->open(context(), databaseName, es);
-    if (es.hadException()) {
+    TrackExceptionState exceptionState;
+    RefPtr<IDBOpenDBRequest> idbOpenDBRequest = idbFactory->open(context(), databaseName, exceptionState);
+    if (exceptionState.hadException()) {
         requestCallback()->sendFailure("Could not open database.");
         return;
     }
@@ -209,27 +199,27 @@ void ExecutableWithDatabase::start(IDBFactory* idbFactory, SecurityOrigin*, cons
 
 static PassRefPtr<IDBTransaction> transactionForDatabase(ExecutionContext* executionContext, IDBDatabase* idbDatabase, const String& objectStoreName, const String& mode = IDBTransaction::modeReadOnly())
 {
-    TrackExceptionState es;
-    RefPtr<IDBTransaction> idbTransaction = idbDatabase->transaction(executionContext, objectStoreName, mode, es);
-    if (es.hadException())
+    TrackExceptionState exceptionState;
+    RefPtr<IDBTransaction> idbTransaction = idbDatabase->transaction(executionContext, objectStoreName, mode, exceptionState);
+    if (exceptionState.hadException())
         return 0;
     return idbTransaction;
 }
 
 static PassRefPtr<IDBObjectStore> objectStoreForTransaction(IDBTransaction* idbTransaction, const String& objectStoreName)
 {
-    TrackExceptionState es;
-    RefPtr<IDBObjectStore> idbObjectStore = idbTransaction->objectStore(objectStoreName, es);
-    if (es.hadException())
+    TrackExceptionState exceptionState;
+    RefPtr<IDBObjectStore> idbObjectStore = idbTransaction->objectStore(objectStoreName, exceptionState);
+    if (exceptionState.hadException())
         return 0;
     return idbObjectStore;
 }
 
 static PassRefPtr<IDBIndex> indexForObjectStore(IDBObjectStore* idbObjectStore, const String& indexName)
 {
-    TrackExceptionState es;
-    RefPtr<IDBIndex> idbIndex = idbObjectStore->index(indexName, es);
-    if (es.hadException())
+    TrackExceptionState exceptionState;
+    RefPtr<IDBIndex> idbIndex = idbObjectStore->index(indexName, exceptionState);
+    if (exceptionState.hadException())
         return 0;
     return idbIndex;
 }
@@ -415,13 +405,8 @@ public:
         }
 
         IDBRequest* idbRequest = static_cast<IDBRequest*>(event->target());
-        TrackExceptionState es;
-        RefPtr<IDBAny> requestResult = idbRequest->result(es);
-        if (es.hadException()) {
-            m_requestCallback->sendFailure("Could not get result in callback.");
-            return;
-        }
-        if (requestResult->type() == IDBAny::ScriptValueType) {
+        RefPtr<IDBAny> requestResult = idbRequest->resultAsAny();
+        if (requestResult->type() == IDBAny::BufferType) {
             end(false);
             return;
         }
@@ -433,9 +418,9 @@ public:
         RefPtr<IDBCursorWithValue> idbCursor = requestResult->idbCursorWithValue();
 
         if (m_skipCount) {
-            TrackExceptionState es;
-            idbCursor->advance(m_skipCount, es);
-            if (es.hadException())
+            TrackExceptionState exceptionState;
+            idbCursor->advance(m_skipCount, exceptionState);
+            if (exceptionState.hadException())
                 m_requestCallback->sendFailure("Could not advance cursor.");
             m_skipCount = 0;
             return;
@@ -447,8 +432,9 @@ public:
         }
 
         // Continue cursor before making injected script calls, otherwise transaction might be finished.
-        idbCursor->continueFunction(0, es);
-        if (es.hadException()) {
+        TrackExceptionState exceptionState;
+        idbCursor->continueFunction(0, 0, exceptionState);
+        if (exceptionState.hadException()) {
             m_requestCallback->sendFailure("Could not continue cursor.");
             return;
         }
@@ -623,9 +609,9 @@ void InspectorIndexedDBAgent::requestDatabaseNames(ErrorString* errorString, con
     ASSERT(!context.IsEmpty());
     v8::Context::Scope contextScope(context);
 
-    TrackExceptionState es;
-    RefPtr<IDBRequest> idbRequest = idbFactory->getDatabaseNames(document, es);
-    if (es.hadException()) {
+    TrackExceptionState exceptionState;
+    RefPtr<IDBRequest> idbRequest = idbFactory->getDatabaseNames(document, exceptionState);
+    if (exceptionState.hadException()) {
         requestCallback->sendFailure("Could not obtain database names.");
         return;
     }
@@ -747,11 +733,11 @@ public:
             return;
         }
 
-        TrackExceptionState es;
-        RefPtr<IDBRequest> idbRequest = idbObjectStore->clear(context(), es);
-        ASSERT(!es.hadException());
-        if (es.hadException()) {
-            ExceptionCode ec = es.code();
+        TrackExceptionState exceptionState;
+        RefPtr<IDBRequest> idbRequest = idbObjectStore->clear(context(), exceptionState);
+        ASSERT(!exceptionState.hadException());
+        if (exceptionState.hadException()) {
+            ExceptionCode ec = exceptionState.code();
             m_requestCallback->sendFailure(String::format("Could not clear object store '%s': %d", m_objectStoreName.utf8().data(), ec));
             return;
         }

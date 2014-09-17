@@ -37,7 +37,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 // Keep in sync with Actions in colorSuggestionPicker.js.
 enum ColorPickerPopupAction {
@@ -82,10 +82,10 @@ IntSize ColorChooserPopupUIController::contentSize()
 
 void ColorChooserPopupUIController::writeDocument(DocumentWriter& writer)
 {
-    Vector<Color> suggestions = m_client->suggestions();
+    Vector<ColorSuggestion> suggestions = m_client->suggestions();
     Vector<String> suggestionValues;
     for (unsigned i = 0; i < suggestions.size(); i++)
-        suggestionValues.append(suggestions[i].serialized());
+        suggestionValues.append(suggestions[i].color.serialized());
     IntRect anchorRectInScreen = m_chromeClient->rootViewToScreen(m_client->elementRectRelativeToRootView());
 
     PagePopupClient::addString("<!DOCTYPE html><head><meta charset='UTF-8'><style>\n", writer);

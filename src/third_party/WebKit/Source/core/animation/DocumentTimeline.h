@@ -62,13 +62,20 @@ public:
     static PassRefPtr<DocumentTimeline> create(Document*, PassOwnPtr<PlatformTiming> = nullptr);
     // Returns whether style recalc was triggered.
     bool serviceAnimations();
-    PassRefPtr<Player> play(TimedItem*);
+
+    // Creates a player attached to this timeline, but without a start time.
+    Player* createPlayer(TimedItem*);
+    Player* play(TimedItem*);
+
     // Called from setReadyState() in Document.cpp to set m_zeroTime to
     // performance.timing.domInteractive
     void setZeroTime(double);
+    bool hasStarted() const { return !isNull(m_zeroTime); }
+    double zeroTime() const { return m_zeroTime; }
     double currentTime();
     void pauseAnimationsForTesting(double);
     size_t numberOfActiveAnimationsForTesting() const;
+    const Vector<RefPtr<Player> >& players() const { return m_players; }
 
     void addEventToDispatch(EventTarget* target, PassRefPtr<Event> event)
     {
@@ -76,6 +83,7 @@ public:
     }
 
     void dispatchEvents();
+    void dispatchEventsAsync();
 
 protected:
     DocumentTimeline(Document*, PassOwnPtr<PlatformTiming>);
@@ -83,8 +91,10 @@ protected:
 private:
     double m_zeroTime;
     Document* m_document;
+    Timer<DocumentTimeline> m_eventDistpachTimer;
     Vector<RefPtr<Player> > m_players;
 
+    void eventDispatchTimerFired(Timer<DocumentTimeline>*);
     void wake();
 
     struct EventToDispatch {
@@ -123,7 +133,7 @@ private:
 
     };
 
-    friend class CoreAnimationDocumentTimelineTest;
+    friend class AnimationDocumentTimelineTest;
 };
 
 } // namespace

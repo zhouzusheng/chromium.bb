@@ -41,24 +41,24 @@ namespace WebCore {
 //   * Must be threadsafe
 void V8Crypto::getRandomValuesMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "getRandomValues", "Crypto", info.Holder(), info.GetIsolate());
     if (info.Length() < 1) {
-        throwTypeError(ExceptionMessages::failedToExecute("getRandomValues", "Crypto", ExceptionMessages::notEnoughArguments(1, info.Length())), info.GetIsolate());
+        exceptionState.throwTypeError(ExceptionMessages::notEnoughArguments(1, info.Length()));
+        exceptionState.throwIfNeeded();
         return;
     }
 
     v8::Handle<v8::Value> buffer = info[0];
-    if (!V8ArrayBufferView::HasInstance(buffer, info.GetIsolate(), worldType(info.GetIsolate()))) {
-        throwTypeError("First argument is not an ArrayBufferView", info.GetIsolate());
-        return;
+    if (!V8ArrayBufferView::hasInstance(buffer, info.GetIsolate(), worldType(info.GetIsolate()))) {
+        exceptionState.throwTypeError("First argument is not an ArrayBufferView");
+    } else {
+        ArrayBufferView* arrayBufferView = V8ArrayBufferView::toNative(v8::Handle<v8::Object>::Cast(buffer));
+        ASSERT(arrayBufferView);
+
+        Crypto::getRandomValues(arrayBufferView, exceptionState);
     }
 
-    ArrayBufferView* arrayBufferView = V8ArrayBufferView::toNative(v8::Handle<v8::Object>::Cast(buffer));
-    ASSERT(arrayBufferView);
-
-    ExceptionState es(info.GetIsolate());
-    Crypto::getRandomValues(arrayBufferView, es);
-
-    if (es.throwIfNeeded())
+    if (exceptionState.throwIfNeeded())
         return;
 
     v8SetReturnValue(info, buffer);

@@ -31,10 +31,14 @@
 #ifndef AnimationTranslationUtil_h
 #define AnimationTranslationUtil_h
 
+#include "platform/graphics/filters/FilterOperations.h"
+#include "platform/transforms/TransformOperations.h"
+#include "public/platform/WebTransformOperations.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebKit {
+namespace blink {
 class WebAnimation;
+class WebFilterOperations;
 }
 
 namespace WebCore {
@@ -49,8 +53,11 @@ class FloatSize;
 //   - a steps timing function is used,
 //   - a property other than AnimatedPropertyWebkitTransform, or AnimatedPropertyOpacity is animated, or
 //   - a transform animation involves a non-invertable transform.
-PassOwnPtr<WebKit::WebAnimation> createWebAnimation(const KeyframeValueList&, const CSSAnimationData*, int animationId, double timeOffset, const FloatSize& boxSize);
+PassOwnPtr<blink::WebAnimation> createWebAnimation(const KeyframeValueList&, const CSSAnimationData*, int animationId, double timeOffset, const FloatSize& boxSize);
 
+void toWebTransformOperations(const TransformOperations& inOperations, const FloatSize& boxSize, blink::WebTransformOperations* outOperations);
+
+bool toWebFilterOperations(const FilterOperations& inOperations, blink::WebFilterOperations* outOperations);
 } // namespace WebCore
 
 #endif // AnimationTranslationUtil_h

@@ -34,32 +34,30 @@
 #include "IDBFactoryBackendProxy.h"
 #include "RuntimeEnabledFeatures.h"
 #include "WebMediaPlayerClientImpl.h"
-#include "WebWorkerClientImpl.h"
 #include "bindings/v8/V8Binding.h"
+#include "bindings/v8/V8Initializer.h"
 #include "bindings/v8/V8RecursionScope.h"
 #include "core/Init.h"
 #include "core/dom/Microtask.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
+#include "core/workers/WorkerGlobalScopeProxy.h"
 #include "platform/LayoutTestSupport.h"
 #include "platform/Logging.h"
-#include "core/platform/graphics/MediaPlayer.h"
-#include "core/platform/graphics/chromium/ImageDecodingStore.h"
-#include "core/workers/WorkerGlobalScopeProxy.h"
-#include "wtf/Assertions.h"
-#include "wtf/CryptographicallyRandomNumber.h"
-#include "wtf/MainThread.h"
-#include "wtf/UnusedParam.h"
-#include "wtf/WTF.h"
-#include "wtf/text/AtomicString.h"
-#include "wtf/text/TextEncoding.h"
+#include "platform/graphics/ImageDecodingStore.h"
+#include "platform/graphics/media/MediaPlayer.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebPrerenderingSupport.h"
 #include "public/platform/WebThread.h"
-#include <v8-defaults.h>
+#include "wtf/Assertions.h"
+#include "wtf/CryptographicallyRandomNumber.h"
+#include "wtf/MainThread.h"
+#include "wtf/WTF.h"
+#include "wtf/text/AtomicString.h"
+#include "wtf/text/TextEncoding.h"
 #include <v8.h>
 
-namespace WebKit {
+namespace blink {
 
 namespace {
 
@@ -100,11 +98,11 @@ void initialize(Platform* platform)
 {
     initializeWithoutV8(platform);
 
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    WebCore::V8Initializer::initializeMainThreadIfNeeded(isolate);
     v8::V8::SetEntropySource(&generateEntropy);
     v8::V8::SetArrayBufferAllocator(WebCore::v8ArrayBufferAllocator());
-    v8::SetDefaultResourceConstraintsForCurrentPlatform();
     v8::V8::Initialize();
-    v8::Isolate* isolate = v8::Isolate::GetCurrent();
     WebCore::setMainThreadIsolate(isolate);
     WebCore::V8PerIsolateData::ensureInitialized(isolate);
 
@@ -167,11 +165,9 @@ void initializeWithoutV8(Platform* platform)
     // this, initializing this lazily probably doesn't buy us much.
     WTF::UTF8Encoding();
 
-    WebCore::setIDBFactoryBackendInterfaceCreateFunction(WebKit::IDBFactoryBackendProxy::create);
+    WebCore::setIDBFactoryBackendInterfaceCreateFunction(blink::IDBFactoryBackendProxy::create);
 
-    WebCore::MediaPlayer::setMediaEngineCreateFunction(WebKit::WebMediaPlayerClientImpl::create);
-
-    WebCore::WorkerGlobalScopeProxy::setCreateDelegate(WebWorkerClientImpl::createWorkerGlobalScopeProxy);
+    WebCore::MediaPlayer::setMediaEngineCreateFunction(blink::WebMediaPlayerClientImpl::create);
 }
 
 void shutdown()
@@ -187,7 +183,8 @@ void shutdown()
         s_endOfTaskRunner = 0;
     }
 
-    WebCore::V8PerIsolateData::dispose(v8::Isolate::GetCurrent());
+    WebCore::V8PerIsolateData::dispose(WebCore::mainThreadIsolate());
+    WebCore::setMainThreadIsolate(0);
     v8::V8::Dispose();
 
     shutdownWithoutV8();
@@ -219,8 +216,6 @@ void enableLogChannel(const char* name)
     WTFLogChannel* channel = WebCore::getChannelFromName(name);
     if (channel)
         channel->state = WTFLogChannelOn;
-#else
-    UNUSED_PARAM(name);
 #endif // !LOG_DISABLED
 }
 
@@ -229,4 +224,4 @@ void resetPluginCache(bool reloadPages)
     WebCore::Page::refreshPlugins(reloadPages);
 }
 
-} // namespace WebKit
+} // namespace blink

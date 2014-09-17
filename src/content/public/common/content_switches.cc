@@ -14,9 +14,6 @@ const char kAcceleratedCanvas2dMSAASampleCount[] = "canvas-msaa-sample-count";
 // override for developers who need the old behavior for testing.
 const char kAllowFileAccessFromFiles[]      = "allow-file-access-from-files";
 
-// Allows filters (SkImageFilter objects) to be sent between processes over IPC
-const char kAllowFiltersOverIPC[]           = "allow-filters-over-ipc";
-
 // Enables the sandboxed processes to run without a job object assigned to them.
 // This flag is required to allow Chrome to run in RemoteApps or Citrix. This
 // flag can reduce the security of the sandboxed processes and allow them to do
@@ -94,6 +91,10 @@ const char kDisableAcceleratedLayers[]      = "disable-accelerated-layers";
 const char kDisableAcceleratedOverflowScroll[] =
     "disable-accelerated-overflow-scroll";
 
+// Disables layer squashing.
+const char kDisableLayerSquashing[] =
+    "disable-layer-squashing";
+
 // Disable accelerated compositing for scrollable frames.
 const char kDisableAcceleratedScrollableFrames[] =
      "disable-accelerated-scrollable-frames";
@@ -122,7 +123,7 @@ const char kDisableAudio[]                  = "disable-audio";
 // users with many windows/tabs and lots of memory.
 const char kDisableBackingStoreLimit[]      = "disable-backing-store-limit";
 
-// Enables browser plugin compositing experiment.
+// Disable browser plugin compositing experiment.
 const char kDisableBrowserPluginCompositing[] =
     "disable-browser-plugin-compositing";
 
@@ -150,6 +151,10 @@ const char kDisableDelegatedRenderer[]      = "disable-delegated-renderer";
 // Disables desktop notifications (default enabled on windows).
 const char kDisableDesktopNotifications[]   = "disable-desktop-notifications";
 
+// Disables experimental navigator content utils implementation.
+const char kDisableNavigatorContentUtils[]  =
+      "disable-navigator-content-utils";
+
 // Disable device motion events.
 const char kDisableDeviceMotion[]           = "disable-device-motion";
 
@@ -170,6 +175,9 @@ const char kDisableExperimentalWebGL[]      = "disable-webgl";
 // Disable FileSystem API.
 const char kDisableFileSystem[]             = "disable-file-system";
 
+// Disables sending filters (SkImageFilter objects) between processes over IPC
+const char kDisableFiltersOverIPC[]         = "disable-filters-over-ipc";
+
 const char kDisableFixedPositionCreatesStackingContext[]
     = "disable-fixed-position-creates-stacking-context";
 
@@ -189,6 +197,9 @@ const char kDisableFullScreen[]             = "disable-fullscreen";
 // Suppresses support for the Geolocation javascript API.
 const char kDisableGeolocation[]            = "disable-geolocation";
 
+// Disable deferral of scroll-ending gesture events when a scroll is active.
+const char kDisableGestureDebounce[]        = "disable-gesture-debounce";
+
 const char kDisableGestureTapHighlight[]    = "disable-gesture-tap-highlight";
 
 // Disable GL multisampling.
@@ -200,6 +211,11 @@ const char kDisableGpu[]                    = "disable-gpu";
 
 // Prevent the compositor from using its GPU implementation.
 const char kDisableGpuCompositing[]         = "disable-gpu-compositing";
+
+// Disable the limit on the number of times the GPU process may be restarted
+// This switch is intended only for tests.
+extern const char kDisableGpuProcessCrashLimit[] =
+    "disable-gpu-process-crash-limit";
 
 // Do not launch the GPU process shortly after browser process launch. Instead
 // launch it when it is first needed.
@@ -220,9 +236,6 @@ const char kDisableHangMonitor[]            = "disable-hang-monitor";
 // Disable the RenderThread's HistogramCustomizer.
 const char kDisableHistogramCustomizer[]    = "disable-histogram-customizer";
 
-// Disables HTML-based desktop notifications.
-const char kDisableHTMLNotifications[]      = "disable-html-notifications";
-
 // Disable the use of an ImageTransportSurface. This means the GPU process
 // will present the rendered page rather than the browser process.
 const char kDisableImageTransportSurface[]  = "disable-image-transport-surface";
@@ -232,6 +245,11 @@ const char kDisableJava[]                   = "disable-java";
 
 // Don't execute JavaScript (browser JS like the new tab page still runs).
 const char kDisableJavaScript[]             = "disable-javascript";
+
+// Don't kill a child process when it sends a bad IPC message.  Apart
+// from testing, it is a bad idea from a security perspective to enable
+// this switch.
+const char kDisableKillAfterBadIPC[]        = "disable-kill-after-bad-ipc";
 
 // Disables prefixed Encrypted Media API (e.g. webkitGenerateKeyRequest()).
 const char kDisablePrefixedEncryptedMedia[] =
@@ -243,6 +261,11 @@ const char kDisableLocalStorage[]           = "disable-local-storage";
 // Force logging to be disabled.  Logging is enabled by default in debug
 // builds.
 const char kDisableLogging[]                = "disable-logging";
+
+// Allows P2P sockets to talk UDP to other servers without using STUN first.
+// For development only, use with caution.
+// TODO(hubbe): Remove this flag.
+const char kDisableP2PSocketSTUNFilter[]    = "disable-p2psocket-stun-filter";
 
 // Disable Pepper3D.
 const char kDisablePepper3d[]               = "disable-pepper-3d";
@@ -303,14 +326,14 @@ const char kDisableThreadedHTMLParser[]     = "disable-threaded-html-parser";
 const char kDisableUniversalAcceleratedOverflowScroll[] =
     "disable-universal-accelerated-overflow-scroll";
 
-// Disable web audio API.
-const char kDisableWebAudio[]               = "disable-webaudio";
+// Disables unprefixed Media Source API (i.e., the MediaSource object).
+const char kDisableUnprefixedMediaSource[]  = "disable-unprefixed-media-source";
+
+// Disable CSS Transitions / Animations on the Web Animations model.
+const char kDisableWebAnimationsCSS[]        = "disable-web-animations-css";
 
 // Disables prefixed Media Source API (i.e., the WebKitMediaSource object).
 const char kDisableWebKitMediaSource[]      = "disable-webkit-media-source";
-
-// Disables unprefixed Media Source API (i.e., the MediaSource object).
-const char kDisableUnprefixedMediaSource[]  = "disable-unprefixed-media-source";
 
 // Don't enforce the same-origin policy. (Used by people testing their sites.)
 const char kDisableWebSecurity[]            = "disable-web-security";
@@ -339,6 +362,11 @@ const char kEnableAcceleratedFixedRootBackground[] =
 // overflow:scroll elements to layers to enable accelerated scrolling for them.
 const char kEnableAcceleratedOverflowScroll[] =
     "enable-accelerated-overflow-scroll";
+
+// Enables experimental feature that maps multiple RenderLayers to
+// one composited layer to avoid pathological layer counts.
+const char kEnableLayerSquashing[] =
+    "enable-layer-squashing";
 
 // Enables accelerated compositing for scrollable frames for accelerated
 // scrolling for them. Requires kForceCompositingMode.
@@ -433,6 +461,9 @@ const char kEnableHighDpiCompositingForFixedPosition[] =
      "enable-high-dpi-fixed-position-compositing";
 
 #if defined(OS_WIN)
+// Enables the DirectWrite font rendering system on windows.
+const char kEnableDirectWrite[]             = "enable-direct-write";
+
 // Use high resolution timers for TimeTicks.
 const char kEnableHighResolutionTime[]      = "enable-high-resolution-time";
 #endif
@@ -553,10 +584,19 @@ const char kEnableUniversalAcceleratedOverflowScroll[] =
 const char kEnableUserMediaScreenCapturing[] =
     "enable-usermedia-screen-capturing";
 
-// Enables the use of the viewport meta tag, which allows
+// Enables the use of the @viewport CSS rule, which allows
 // pages to control aspects of their own layout. This also turns on touch-screen
 // pinch gestures.
 const char kEnableViewport[]                = "enable-viewport";
+
+// Enables the use of the legacy viewport meta tag. Turning this on also
+// turns on the @viewport CSS rule
+const char kEnableViewportMeta[]            = "enable-viewport-meta";
+
+// Resizes of the main frame are the caused by changing between landscape
+// and portrait mode (i.e. Android) so the page should be rescaled to fit
+const char kMainFrameResizesAreOrientationChanges[] =
+    "main-frame-resizes-are-orientation-changes";
 
 // Enables moving cursor by word in visual order.
 const char kEnableVisualWordMovement[]      = "enable-visual-word-movement";
@@ -734,9 +774,12 @@ const char kProcessType[]                   = "type";
 // Reduces the GPU process sandbox to be less strict.
 const char kReduceGpuSandbox[]              = "reduce-gpu-sandbox";
 
+// Enables more web features over insecure connections. Designed to be used
+// for testing purposes only.
+const char kReduceSecurityForTesting[]      = "reduce-security-for-testing";
+
 // Register Pepper plugins (see pepper_plugin_list.cc for its format).
 const char kRegisterPepperPlugins[]         = "register-pepper-plugins";
-
 
 // Enables remote debug over HTTP on the specified port.
 const char kRemoteDebuggingPort[]           = "remote-debugging-port";
@@ -785,12 +828,9 @@ const char kSingleProcess[]                 = "single-process";
 // http://www.chromium.org/developers/design-documents/site-isolation
 //
 // Unlike --enable-strict-site-isolation (which allows cross-site iframes),
-// this flag blocks cross-site documents even in iframes, until out-of-process
-// iframe support is available.  Cross-site network requests do attach the
-// normal set of cookies, but a renderer process is only allowed to view or
-// modify cookies for its own site (via JavaScript).
-// TODO(irobert): Implement the cross-site document blocking in
-// http://crbug.com/159215.
+// this flag does not affect which cookies are attached to cross-site requests.
+// Support is being added to render cross-site iframes in a different process
+// than their parent pages.
 const char kSitePerProcess[]                = "site-per-process";
 
 // Skip gpu info collection, blacklist loading, and blacklist auto-update
@@ -824,6 +864,10 @@ const char kTestingFixedHttpsPort[]         = "testing-fixed-https-port";
 
 // Runs the security test for the renderer sandbox.
 const char kTestSandbox[]                   = "test-sandbox";
+
+// Enable timeout-based touch event cancellation if a touch ack is delayed.
+// If unspecified, touch timeout behavior will be disabled.
+const char kTouchAckTimeoutDelayMs[]        = "touch-ack-timeout-delay-ms";
 
 // Causes TRACE_EVENT flags to be recorded beginning with shutdown. Optionally,
 // can specify the specific trace categories to include (e.g.
@@ -907,6 +951,9 @@ const char kWaitForDebuggerChildren[]       = "wait-for-debugger-children";
 // Logging.cpp in WebKit's WebCore for a list of available channels.
 const char kWebCoreLogChannels[]            = "webcore-log-channels";
 
+// Overrides the amount of shared memory the webgl command buffer allocates
+const char kWebGLCommandBufferSizeKb[]      = "webgl-command-buffer-size-kb";
+
 // Causes the process to run as a worker subprocess.
 const char kWorkerProcess[]                 = "worker";
 
@@ -917,10 +964,14 @@ const char kZygoteCmdPrefix[]               = "zygote-cmd-prefix";
 const char kZygoteProcess[]                 = "zygote";
 
 #if defined(ENABLE_WEBRTC)
-// Disable WebRTC device enumeration.
+// Enables audio processing in a MediaStreamTrack. When this flag is on, AEC,
+// NS and AGC will be done per MediaStreamTrack instead of in PeerConnection.
+const char kEnableAudioTrackProcessing[]    = "enable-audio-track-processing";
+
+// Disables WebRTC device enumeration.
 const char kDisableDeviceEnumeration[]      = "disable-device-enumeration";
 
-// Disable WebRTC DataChannels SCTP wire protocol support.
+// Disables WebRTC DataChannels SCTP wire protocol support.
 const char kDisableSCTPDataChannels[]       = "disable-sctp-data-channels";
 
 // Disables HW decode acceleration for WebRTC.
@@ -936,7 +987,7 @@ const char kDisableWebRtcHWEncoding[]       = "disable-webrtc-hw-encoding";
 // Enables WebRTC AEC recordings.
 const char kEnableWebRtcAecRecordings[]     = "enable-webrtc-aec-recordings";
 
-// Enable WebRTC to open TCP server sockets.
+// Enables WebRTC to open TCP server sockets.
 const char kEnableWebRtcTcpServerSocket[]   = "enable-webrtc-tcp-server-socket";
 
 // Enables VP8 HW encode acceleration for WebRTC.
@@ -973,6 +1024,13 @@ const char kNetworkCountryIso[] = "network-country-iso";
 
 // Enables remote debug over HTTP on the specified socket name.
 const char kRemoteDebuggingSocketName[]     = "remote-debugging-socket-name";
+#endif
+
+#if defined(OS_ANDROID) && defined(ARCH_CPU_X86)
+const char kEnableWebAudio[]                = "enable-webaudio";
+#else
+// Disable web audio API.
+const char kDisableWebAudio[]               = "disable-webaudio";
 #endif
 
 #if defined(OS_CHROMEOS)

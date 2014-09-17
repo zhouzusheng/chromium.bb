@@ -33,7 +33,6 @@
 
 #include "core/animation/ActiveAnimations.h"
 #include "core/animation/AnimationClock.h"
-#include "core/animation/Player.h"
 #include "core/dom/Document.h"
 #include "core/frame/FrameView.h"
 
@@ -52,6 +51,7 @@ PassRefPtr<DocumentTimeline> DocumentTimeline::create(Document* document, PassOw
 DocumentTimeline::DocumentTimeline(Document* document, PassOwnPtr<PlatformTiming> timing)
     : m_zeroTime(nullValue())
     , m_document(document)
+    , m_eventDistpachTimer(this, &DocumentTimeline::eventDispatchTimerFired)
 {
     if (!timing)
         m_timing = adoptPtr(new DocumentTimelineTiming(this));
@@ -61,15 +61,21 @@ DocumentTimeline::DocumentTimeline(Document* document, PassOwnPtr<PlatformTiming
     ASSERT(document);
 }
 
-PassRefPtr<Player> DocumentTimeline::play(TimedItem* child)
+Player* DocumentTimeline::createPlayer(TimedItem* child)
 {
     RefPtr<Player> player = Player::create(*this, child);
-    m_players.append(player);
-
+    Player* result = player.get();
+    m_players.append(player.release());
     if (m_document->view())
         m_timing->serviceOnNextFrame();
+    return result;
+}
 
-    return player.release();
+Player* DocumentTimeline::play(TimedItem* child)
+{
+    Player* player = createPlayer(child);
+    player->setStartTime(currentTime());
+    return player;
 }
 
 void DocumentTimeline::wake()
@@ -101,9 +107,6 @@ bool DocumentTimeline::serviceAnimations()
         else if (timeToNextEffect != std::numeric_limits<double>::infinity())
             m_timing->wakeAfter(timeToNextEffect - s_minimumDelay);
     }
-
-    if (m_document->view() && !m_players.isEmpty())
-        m_document->view()->scheduleAnimation();
 
     return didTriggerStyleRecalc;
 }
@@ -152,11 +155,33 @@ void DocumentTimeline::dispatchEvents()
         events[i].target->dispatchEvent(events[i].event.release());
 }
 
+void DocumentTimeline::dispatchEventsAsync()
+{
+    if (m_events.isEmpty() || m_eventDistpachTimer.isActive())
+        return;
+    m_eventDistpachTimer.startOneShot(0);
+}
+
+void DocumentTimeline::eventDispatchTimerFired(Timer<DocumentTimeline>*)
+{
+    dispatchEvents();
+}
+
 size_t DocumentTimeline::numberOfActiveAnimationsForTesting() const
 {
+    if (isNull(m_zeroTime))
+        return 0;
     // Includes all players whose directly associated timed items
     // are current or in effect.
-    return isNull(m_zeroTime) ? 0 : m_players.size();
+    if (isNull(m_zeroTime))
+        return 0;
+    size_t count = 0;
+    for (size_t i = 0; i < m_players.size(); ++i) {
+        const TimedItem* timedItem = m_players[i]->source();
+        if (m_players[i]->hasStartTime())
+            count += (timedItem && (timedItem->isCurrent() || timedItem->isInEffect()));
+    }
+    return count;
 }
 
 } // namespace

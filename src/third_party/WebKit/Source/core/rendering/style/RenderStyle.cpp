@@ -24,10 +24,8 @@
 #include "core/rendering/style/RenderStyle.h"
 
 #include <algorithm>
-#include "CSSPropertyNames.h"
 #include "RuntimeEnabledFeatures.h"
 #include "core/css/resolver/StyleResolver.h"
-#include "core/platform/graphics/Font.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/TextAutosizer.h"
 #include "core/rendering/style/ContentData.h"
@@ -36,9 +34,9 @@
 #include "core/rendering/style/ShadowList.h"
 #include "core/rendering/style/StyleImage.h"
 #include "core/rendering/style/StyleInheritedData.h"
+#include "platform/fonts/Font.h"
 #include "platform/fonts/FontSelector.h"
 #include "wtf/MathExtras.h"
-#include "wtf/StdLibExtras.h"
 
 using namespace std;
 
@@ -69,7 +67,7 @@ COMPILE_ASSERT(sizeof(RenderStyle) == sizeof(SameSizeAsRenderStyle), RenderStyle
 
 inline RenderStyle* defaultStyle()
 {
-    static RenderStyle* s_defaultStyle = RenderStyle::createDefaultStyle().leakRef();
+    DEFINE_STATIC_REF(RenderStyle, s_defaultStyle, (RenderStyle::createDefaultStyle()));
     return s_defaultStyle;
 }
 
@@ -258,30 +256,6 @@ bool RenderStyle::operator==(const RenderStyle& o) const
 bool RenderStyle::isStyleAvailable() const
 {
     return this != StyleResolver::styleNotYetAvailable();
-}
-
-static inline int pseudoBit(PseudoId pseudo)
-{
-    return 1 << (pseudo - 1);
-}
-
-bool RenderStyle::hasAnyPublicPseudoStyles() const
-{
-    return PUBLIC_PSEUDOID_MASK & noninherited_flags._pseudoBits;
-}
-
-bool RenderStyle::hasPseudoStyle(PseudoId pseudo) const
-{
-    ASSERT(pseudo > NOPSEUDO);
-    ASSERT(pseudo < FIRST_INTERNAL_PSEUDOID);
-    return pseudoBit(pseudo) & noninherited_flags._pseudoBits;
-}
-
-void RenderStyle::setHasPseudoStyle(PseudoId pseudo)
-{
-    ASSERT(pseudo > NOPSEUDO);
-    ASSERT(pseudo < FIRST_INTERNAL_PSEUDOID);
-    noninherited_flags._pseudoBits |= pseudoBit(pseudo);
 }
 
 bool RenderStyle::hasUniquePseudoStyle() const
@@ -618,25 +592,27 @@ StyleDifference RenderStyle::diff(const RenderStyle* other, unsigned& changedCon
 
     // Make sure these left/top/right/bottom checks stay below all layout checks and above
     // all visible checks.
-    if (position() != StaticPosition) {
-        if (surround->offset != other->surround->offset) {
-             // Optimize for the case where a positioned layer is moving but not changing size.
-            if (position() == AbsolutePosition && positionedObjectMoved(surround->offset, other->surround->offset, m_box->width()))
+    if (position() != StaticPosition && surround->offset != other->surround->offset) {
+        // Optimize for the case where a positioned layer is moving but not changing size.
+        if (position() == AbsolutePosition && positionedObjectMoved(surround->offset, other->surround->offset, m_box->width()) && repaintOnlyDiff(other, changedContextSensitiveProperties) == StyleDifferenceEqual)
+            return StyleDifferenceLayoutPositionedMovementOnly;
 
-                return StyleDifferenceLayoutPositionedMovementOnly;
-
-            // FIXME: We would like to use SimplifiedLayout for relative positioning, but we can't quite do that yet.
-            // We need to make sure SimplifiedLayout can operate correctly on RenderInlines (we will need
-            // to add a selfNeedsSimplifiedLayout bit in order to not get confused and taint every line).
-            return StyleDifferenceLayout;
-        } else if (m_box->zIndex() != other->m_box->zIndex() || m_box->hasAutoZIndex() != other->m_box->hasAutoZIndex()
-                 || visual->clip != other->visual->clip || visual->hasClip != other->visual->hasClip)
-            return StyleDifferenceRepaintLayer;
+        // FIXME: We would like to use SimplifiedLayout for relative positioning, but we can't quite do that yet.
+        // We need to make sure SimplifiedLayout can operate correctly on RenderInlines (we will need
+        // to add a selfNeedsSimplifiedLayout bit in order to not get confused and taint every line).
+        return StyleDifferenceLayout;
     }
+    return repaintOnlyDiff(other, changedContextSensitiveProperties);
+}
 
-    if (RuntimeEnabledFeatures::cssCompositingEnabled())
-        if (rareNonInheritedData->m_effectiveBlendMode != other->rareNonInheritedData->m_effectiveBlendMode)
-            return StyleDifferenceRepaintLayer;
+StyleDifference RenderStyle::repaintOnlyDiff(const RenderStyle* other, unsigned& changedContextSensitiveProperties) const
+{
+    if (position() != StaticPosition && (m_box->zIndex() != other->m_box->zIndex() || m_box->hasAutoZIndex() != other->m_box->hasAutoZIndex()
+        || visual->clip != other->visual->clip || visual->hasClip != other->visual->hasClip))
+        return StyleDifferenceRepaintLayer;
+
+    if (RuntimeEnabledFeatures::cssCompositingEnabled() && rareNonInheritedData->m_effectiveBlendMode != other->rareNonInheritedData->m_effectiveBlendMode)
+        return StyleDifferenceRepaintLayer;
 
     if (rareNonInheritedData->opacity != other->rareNonInheritedData->opacity) {
         // Don't return early here; instead take note of the type of change,
@@ -826,14 +802,14 @@ void RenderStyle::setContent(QuoteType quote, bool add)
     rareNonInheritedData.access()->m_content = ContentData::create(quote);
 }
 
-BlendMode RenderStyle::blendMode() const
+blink::WebBlendMode RenderStyle::blendMode() const
 {
     if (RuntimeEnabledFeatures::cssCompositingEnabled())
-        return static_cast<BlendMode>(rareNonInheritedData->m_effectiveBlendMode);
-    return BlendModeNormal;
+        return static_cast<blink::WebBlendMode>(rareNonInheritedData->m_effectiveBlendMode);
+    return blink::WebBlendModeNormal;
 }
 
-void RenderStyle::setBlendMode(BlendMode v)
+void RenderStyle::setBlendMode(blink::WebBlendMode v)
 {
     if (RuntimeEnabledFeatures::cssCompositingEnabled())
         rareNonInheritedData.access()->m_effectiveBlendMode = v;
@@ -842,7 +818,7 @@ void RenderStyle::setBlendMode(BlendMode v)
 bool RenderStyle::hasBlendMode() const
 {
     if (RuntimeEnabledFeatures::cssCompositingEnabled())
-        return static_cast<BlendMode>(rareNonInheritedData->m_effectiveBlendMode) != BlendModeNormal;
+        return static_cast<blink::WebBlendMode>(rareNonInheritedData->m_effectiveBlendMode) != blink::WebBlendModeNormal;
     return false;
 }
 
@@ -859,6 +835,13 @@ void RenderStyle::setIsolation(EIsolation v)
         rareNonInheritedData.access()->m_isolation = v;
 }
 
+bool RenderStyle::hasIsolation() const
+{
+    if (RuntimeEnabledFeatures::cssCompositingEnabled())
+        return rareNonInheritedData->m_isolation != IsolationAuto;
+    return false;
+}
+
 inline bool requireTransformOrigin(const Vector<RefPtr<TransformOperation> >& transformOperations, RenderStyle::ApplyTransformOrigin applyOrigin)
 {
     // transform-origin brackets the transform with translate operations.
@@ -869,7 +852,7 @@ inline bool requireTransformOrigin(const Vector<RefPtr<TransformOperation> >& tr
 
     unsigned size = transformOperations.size();
     for (unsigned i = 0; i < size; ++i) {
-        TransformOperation::OperationType type = transformOperations[i]->getOperationType();
+        TransformOperation::OperationType type = transformOperations[i]->type();
         if (type != TransformOperation::TranslateX
             && type != TransformOperation::TranslateY
             && type != TransformOperation::Translate
@@ -1611,24 +1594,18 @@ void RenderStyle::setBorderImageSlices(LengthBox slices)
     surround.access()->border.m_image.setImageSlices(slices);
 }
 
-void RenderStyle::setBorderImageWidth(LengthBox slices)
+void RenderStyle::setBorderImageWidth(const BorderImageLengthBox& slices)
 {
     if (surround->border.m_image.borderSlices() == slices)
         return;
     surround.access()->border.m_image.setBorderSlices(slices);
 }
 
-void RenderStyle::setBorderImageOutset(LengthBox outset)
+void RenderStyle::setBorderImageOutset(const BorderImageLengthBox& outset)
 {
     if (surround->border.m_image.outset() == outset)
         return;
     surround.access()->border.m_image.setOutset(outset);
-}
-
-ShapeValue* RenderStyle::initialShapeInside()
-{
-    DEFINE_STATIC_LOCAL(RefPtr<ShapeValue>, sOutsideValue, (ShapeValue::createOutsideValue()));
-    return sOutsideValue.get();
 }
 
 } // namespace WebCore

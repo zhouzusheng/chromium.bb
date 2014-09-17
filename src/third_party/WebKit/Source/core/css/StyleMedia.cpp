@@ -40,13 +40,13 @@ StyleMedia::StyleMedia(Frame* frame)
 {
 }
 
-String StyleMedia::type() const
+AtomicString StyleMedia::type() const
 {
     FrameView* view = m_frame ? m_frame->view() : 0;
     if (view)
         return view->mediaType();
 
-    return String();
+    return nullAtom;
 }
 
 bool StyleMedia::matchMedium(const String& query) const
@@ -60,11 +60,8 @@ bool StyleMedia::matchMedium(const String& query) const
     if (!documentElement)
         return false;
 
-    StyleResolver* styleResolver = document->styleResolver();
-    if (!styleResolver)
-        return false;
-
-    RefPtr<RenderStyle> rootStyle = styleResolver->styleForElement(documentElement, 0 /*defaultParent*/, DisallowStyleSharing, MatchOnlyUserAgentRules);
+    StyleResolver& styleResolver = document->ensureStyleResolver();
+    RefPtr<RenderStyle> rootStyle = styleResolver.styleForElement(documentElement, 0 /*defaultParent*/, DisallowStyleSharing, MatchOnlyUserAgentRules);
 
     RefPtr<MediaQuerySet> media = MediaQuerySet::create();
     if (!media->set(query))

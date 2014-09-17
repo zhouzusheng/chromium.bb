@@ -58,7 +58,7 @@ class MakeSettingsWriter(in_generator.Writer):
     defaults = {
         'type': 'bool',
         'initial': None,
-        'setNeedsStyleRecalcInAllFrames': 0,
+        'invalidate': None,
     }
     default_parameters = {}
     filters = {
@@ -67,8 +67,8 @@ class MakeSettingsWriter(in_generator.Writer):
         'to_idl_type': to_idl_type,
     }
 
-    def __init__(self, in_file_path, enabled_conditions):
-        super(MakeSettingsWriter, self).__init__(in_file_path, enabled_conditions)
+    def __init__(self, in_file_path):
+        super(MakeSettingsWriter, self).__init__(in_file_path)
 
         self.in_file.name_dictionaries.sort(key=lambda entry: entry['name'])
 

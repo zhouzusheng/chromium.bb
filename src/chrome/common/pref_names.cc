@@ -1081,9 +1081,6 @@ const char kPerHostZoomLevels[] = "profile.per_host_zoom_levels";
 // the dialog.
 const char kAutofillDialogAutofillDefault[] = "autofill.data_model_default";
 
-// Whether a user has ever paid with Wallet via the autofill dialog.
-const char kAutofillDialogHasPaidWithWallet[] = "autofill.has_paid_with_wallet";
-
 // Whether a user opted out of making purchases with Google Wallet; changed via
 // the autofill dialog's account chooser and set explicitly on dialog submission
 // (but not cancel). If this isn't set, the dialog assumes it's the first run.
@@ -1094,18 +1091,20 @@ const char kAutofillDialogPayWithoutWallet[] = "autofill.pay_without_wallet";
 const char kAutofillDialogWalletLocationAcceptance[] =
     "autofill.wallet_location_disclosure";
 
-// The number of times the dialog has been shown (all time).
-const char kAutofillDialogShowCount[] = "autofill.show_count";
-
 // Whether a user wants to save data locally in Autofill.
 const char kAutofillDialogSaveData[] = "autofill.save_data";
+
+// Whether the user has selected "Same as billing" for the shipping address when
+// using Google Wallet.
+const char kAutofillDialogWalletShippingSameAsBilling[] =
+    "autofill.wallet_shipping_same_as_billing";
 
 // The number of times the generated credit card bubble has been shown.
 const char kAutofillGeneratedCardBubbleTimesShown[] =
     "autofill.generated_card_bubble_times_shown";
 
 // A dictionary that tracks the defaults to be set on the next invocation
-// of the requestAutocomplete/Autocheckout dialog.
+// of the requestAutocomplete dialog.
 const char kAutofillDialogDefaults[] = "autofill.rac_dialog_defaults";
 
 // Modifying bookmarks is completely disabled when this is set to false.
@@ -1134,6 +1133,9 @@ const char kDefaultAudioCaptureDevice[] = "media.default_audio_capture_device";
 
 // The default video capture device used by the Media content setting.
 const char kDefaultVideoCaptureDevice[] = "media.default_video_capture_Device";
+
+// The salt used for creating random MediaSource IDs.
+const char kMediaDeviceIdSalt[] = "media.device_id_salt";
 
 // Preference to disable 3D APIs (WebGL, Pepper 3D).
 const char kDisable3DAPIs[] = "disable_3d_apis";
@@ -1285,6 +1287,10 @@ const char kLocalDiscoveryNotificationsEnabled[] =
 // actually a dictionary that maps profile keys to before-mentioned strings.
 const char kProfileResetPromptMemento[] = "profile.reset_prompt_memento";
 
+// Stores the check-in info retrieved from the GCM server.
+const char kGCMUserAccountID[] = "gcm.user.account_id";
+const char kGCMUserToken[] = "gcm.user.token";
+
 // *************** LOCAL STATE ***************
 // These are attached to the machine/installation
 
@@ -1388,7 +1394,7 @@ const char kVariationsSeed[] = "variations_seed";
 // 64-bit integer serialization of the base::Time from the last seed received.
 const char kVariationsSeedDate[] = "variations_seed_date";
 
-// SHA-1 hash of the serialized variations seed data.
+// SHA-1 hash of the serialized variations seed data (hex encoded).
 const char kVariationsSeedHash[] = "variations_seed_hash";
 
 // An enum value to indicate the execution phase the browser was in.
@@ -1429,6 +1435,14 @@ const char kStabilityIncompleteSessionEndCount[] =
 // Number of times a page load event occurred since the last report.
 const char kStabilityPageLoadCount[] =
     "user_experience_metrics.stability.page_load_count";
+
+// Base64 encoded serialized UMA system profile proto from the previous session.
+const char kStabilitySavedSystemProfile[] =
+    "user_experience_metrics.stability.saved_system_profile";
+
+// SHA-1 hash of the serialized UMA system profile proto (hex encoded).
+const char kStabilitySavedSystemProfileHash[] =
+    "user_experience_metrics.stability.saved_system_profile_hash";
 
 // Number of times a renderer process crashed since the last report.
 const char kStabilityRendererCrashCount[] =
@@ -1719,20 +1733,34 @@ const char kExtensionInstallForceList[] = "extensions.install.forcelist";
 const char kExtensionStorageGarbageCollect[] =
     "extensions.storage.garbagecollect";
 
+// Customized app page names that appear on the New Tab Page.
+const char kNtpAppPageNames[] = "ntp.app_page_names";
+
 // Keeps track of which sessions are collapsed in the Other Devices menu.
 const char kNtpCollapsedForeignSessions[] = "ntp.collapsed_foreign_sessions";
+
+// Keeps track of recently closed tabs collapsed state in the Other Devices
+// menu.
+const char kNtpCollapsedRecentlyClosedTabs[] =
+    "ntp.collapsed_recently_closed_tabs";
+
+// Keeps track of snapshot documents collapsed state in the Other Devices menu.
+const char kNtpCollapsedSnapshotDocument[] = "ntp.collapsed_snapshot_document";
+
+// Keeps track of sync promo collapsed state in the Other Devices menu.
+const char kNtpCollapsedSyncPromo[] = "ntp.collapsed_sync_promo";
+
+// Serves dates to determine display of elements on the NTP.
+const char kNtpDateResourceServer[] = "ntp.date_resource_server";
 
 // New Tab Page URLs that should not be shown as most visited thumbnails.
 const char kNtpMostVisitedURLsBlacklist[] = "ntp.most_visited_blacklist";
 
+// True if a desktop sync session was found for this user.
+const char kNtpPromoDesktopSessionFound[] = "ntp.promo_desktop_session_found";
+
 // Last time of update of promo_resource_cache.
 const char kNtpPromoResourceCacheUpdate[] = "ntp.promo_resource_cache_update";
-
-// Serves tips for the NTP.
-const char kNtpTipsResourceServer[] = "ntp.tips_resource_server";
-
-// Serves dates to determine display of elements on the NTP.
-const char kNtpDateResourceServer[] = "ntp.date_resource_server";
 
 // Which bookmarks folder should be visible on the new tab page v4.
 const char kNtpShownBookmarksFolder[] = "ntp.shown_bookmarks_folder";
@@ -1740,14 +1768,11 @@ const char kNtpShownBookmarksFolder[] = "ntp.shown_bookmarks_folder";
 // Which page should be visible on the new tab page v4
 const char kNtpShownPage[] = "ntp.shown_page";
 
-// True if a desktop sync session was found for this user.
-const char kNtpPromoDesktopSessionFound[] = "ntp.promo_desktop_session_found";
+// Serves tips for the NTP.
+const char kNtpTipsResourceServer[] = "ntp.tips_resource_server";
 
 // Boolean indicating whether the web store is active for the current locale.
 const char kNtpWebStoreEnabled[] = "ntp.webstore_enabled";
-
-// Customized app page names that appear on the New Tab Page.
-const char kNtpAppPageNames[] = "ntp.app_page_names";
 
 // A private RSA key for ADB handshake.
 const char kDevToolsAdbKey[] = "devtools.adb_key";
@@ -1809,6 +1834,9 @@ const char kSyncLastSyncedTime[] = "sync.last_synced_time";
 // Boolean specifying whether the user finished setting up sync.
 const char kSyncHasSetupCompleted[] = "sync.has_setup_completed";
 
+// Boolean specifying whether sync has an auth error.
+const char kSyncHasAuthError[] = "sync.has_auth_error";
+
 // Boolean specifying whether to automatically sync all data types (including
 // future ones, as they're added).  If this is true, the following preferences
 // (kSyncBookmarks, kSyncPasswords, etc.) can all be ignored.
@@ -1816,6 +1844,7 @@ const char kSyncKeepEverythingSynced[] = "sync.keep_everything_synced";
 
 // Booleans specifying whether the user has selected to sync the following
 // datatypes.
+const char kSyncAppList[] = "sync.app_list";
 const char kSyncAppNotifications[] = "sync.app_notifications";
 const char kSyncAppSettings[] = "sync.app_settings";
 const char kSyncApps[] = "sync.apps";
@@ -1853,10 +1882,6 @@ const char kSyncSuppressStart[] = "sync.suppress_start";
 // if a new sync type has rolled out so we can notify the user.
 const char kSyncAcknowledgedSyncTypes[] = "sync.acknowledged_types";
 
-// Dictionary from sync model type (as an int) to max invalidation
-// version (int64 represented as a string).
-const char kSyncMaxInvalidationVersions[] = "sync.max_invalidation_versions";
-
 // The GUID session sync will use to identify this client, even across sync
 // disable/enable events.
 const char kSyncSessionsGUID[] = "sync.session_sync_guid";
@@ -1868,11 +1893,9 @@ const char kInvalidatorClientId[] = "invalidator.client_id";
 // The value is base 64 encoded.
 const char kInvalidatorInvalidationState[] = "invalidator.invalidation_state";
 
-// List of {source, name, max invalidation version} tuples. source is an int,
-// while max invalidation version is an int64; both are stored as string
-// representations though.
-const char kInvalidatorMaxInvalidationVersions[] =
-    "invalidator.max_invalidation_versions";
+// List of received invalidations that have not been acted on by any clients
+// yet.  Used to keep invalidation clients in sync in case of a restart.
+const char kInvalidatorSavedInvalidations[] = "invalidator.saved_invalidations";
 
 // A string that can be used to restore sync encryption infrastructure on
 // startup so that the user doesn't need to provide credentials on each start.
@@ -1893,6 +1916,10 @@ const char kSyncUsingSecondaryPassphrase[] = "sync.using_secondary_passphrase";
 // cleared on signout, but while the user is signed in the two values will
 // be the same.
 const char kGoogleServicesLastUsername[] = "google.services.last_username";
+
+// Obfuscated account ID that identifies the current user logged into sync and
+// other google services.
+const char kGoogleServicesUserAccountId[] = "google.services.user_account_id";
 
 // String that identifies the current user logged into sync and other google
 // services.
@@ -2060,6 +2087,19 @@ const char kDailyOriginalContentLengthWithDataReductionProxyEnabled[] =
 const char kDailyContentLengthWithDataReductionProxyEnabled[] =
     "data_reduction.daily_received_length_with_data_reduction_proxy_enabled";
 
+const char kDailyContentLengthHttpsWithDataReductionProxyEnabled[] =
+    "data_reduction.daily_received_length_https_with_"
+    "data_reduction_proxy_enabled";
+const char kDailyContentLengthShortBypassWithDataReductionProxyEnabled[] =
+    "data_reduction.daily_received_length_short_bypass_with_"
+    "data_reduction_proxy_enabled";
+const char kDailyContentLengthLongBypassWithDataReductionProxyEnabled[] =
+    "data_reduction.daily_received_length_long_bypass_with_"
+    "data_reduction_proxy_enabled";
+const char kDailyContentLengthUnknownWithDataReductionProxyEnabled[] =
+    "data_reduction.daily_received_length_unknown_with_"
+    "data_reduction_proxy_enabled";
+
 // A List pref that contains daily totals of the original size of all HTTP/HTTPS
 // that was received via the data reduction proxy.
 const char kDailyOriginalContentLengthViaDataReductionProxy[] =
@@ -2213,6 +2253,10 @@ const char kOobeComplete[] = "OobeComplete";
 
 // A boolean pref of the device registered flag (second part after first login).
 const char kDeviceRegistered[] = "DeviceRegistered";
+
+// List of usernames that used certificates pushed by policy before.
+// This is used to prevent these users from joining multiprofile sessions.
+const char kUsedPolicyCertificates[] = "policy.used_policy_certificates";
 
 #endif
 
@@ -2419,7 +2463,7 @@ const char kShelfAlignmentLocal[] = "shelf_alignment_local";
 const char kShelfAutoHideBehavior[] = "auto_hide_behavior";
 const char kShelfAutoHideBehaviorLocal[] = "auto_hide_behavior_local";
 // This value stores chrome icon's index in the launcher. This should be handled
-// separately with app shortcut's index because of LauncherModel's backward
+// separately with app shortcut's index because of ShelfModel's backward
 // compatability. If we add chrome icon index to |kPinnedLauncherApps|, its
 // index is also stored in the |kPinnedLauncherApp| pref. It may causes
 // creating two chrome icons.
@@ -2516,8 +2560,9 @@ const char kOverscrollHorizontalResistThreshold[] =
     "overscroll.horizontal_resist_threshold";
 const char kOverscrollVerticalResistThreshold[] =
     "overscroll.vertical_resist_threshold";
-// TODO(mohsen): Remove following pref in M32. By then, gesture prefs will have
-// been cleared for majority of the users: crbug.com/269292.
+// TODO(mohsen): Remove following pref in M33. By then, it will have been
+// cleared from preferences file for majority of users and it will be ready to
+// be removed: crbug.com/269292.
 // A temporary pref to do a one-time wipe of gesture preferences.
 const char kGestureConfigIsTrustworthy[] = "gesture.config_is_trustworthy";
 #endif
@@ -2596,10 +2641,13 @@ const char kDRMSalt[] = "settings.privacy.drm_salt";
 // enables the use of remote attestation for content protection.
 const char kEnableDRM[] = "settings.privacy.drm_enabled";
 
-// A boolean per-profile pref that signals if the watchdog extension is
+// An integer per-profile pref that signals if the watchdog extension is
 // installed and active. We need to know if the watchdog extension active for
 // ActivityLog initialization before the extension system is initialized.
 const char kWatchdogExtensionActive[] =
+    "profile.extensions.activity_log.num_consumers_active";
+// The old version was a bool.
+const char kWatchdogExtensionActiveOld[] =
     "profile.extensions.activity_log.watchdog_extension_active";
 
 // A dictionary pref which maps profile names to dictionary values which hold
@@ -2620,4 +2668,13 @@ const char kNetworkTimeMapping[] = "profile.network_time_mapping";
 const char kPartnerBookmarkMappings[] = "partnerbookmarks.mappings";
 #endif
 
+#if defined(OS_WIN)
+// Whether the password was blank, only valid if OS password was last changed
+// on or before the value contained in kOsPasswordLastChanged.
+const char kOsPasswordBlank[] = "password_manager.os_password_blank";
+
+// The number of seconds since epoch that the OS password was last changed.
+const char kOsPasswordLastChanged[] =
+    "password_manager.os_password_last_changed";
+#endif
 }  // namespace prefs

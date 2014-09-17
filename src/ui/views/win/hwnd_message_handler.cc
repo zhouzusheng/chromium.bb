@@ -6,12 +6,15 @@
 
 #include <dwmapi.h>
 #include <shellapi.h>
+#include <wtsapi32.h>
+#pragma comment(lib, "wtsapi32.lib")
 
 #include "base/bind.h"
 #include "base/debug/trace_event.h"
 #include "base/win/win_util.h"
 #include "base/win/windows_version.h"
 #include "ui/base/touch/touch_enabled.h"
+#include "ui/base/win/lock_state.h"
 #include "ui/base/win/mouse_wheel_util.h"
 #include "ui/base/win/shell.h"
 #include "ui/base/win/touch_input.h"
@@ -393,6 +396,7 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
       use_system_default_icon_(false),
       restore_focus_when_enabled_(false),
       restored_enabled_(false),
+      current_cursor_(NULL),
       previous_cursor_(NULL),
       active_mouse_tracking_flags_(0),
       is_right_mouse_pressed_on_caption_(false),
@@ -402,7 +406,6 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
       use_layered_buffer_(false),
       layered_alpha_(255),
       waiting_for_redraw_layered_window_contents_(false),
-      can_update_layered_window_(true),
       is_first_nccalc_(true),
       autohide_factory_(this),
       id_generator_(0),
@@ -518,6 +521,14 @@ gfx::Rect HWNDMessageHandler::GetRestoredBounds() const {
   return bounds;
 }
 
+gfx::Rect HWNDMessageHandler::GetClientAreaBounds() const {
+  if (IsMinimized())
+    return gfx::Rect();
+  if (delegate_->WidgetSizeIsClientSize())
+    return GetClientAreaBoundsInScreen();
+  return GetWindowBoundsInScreen();
+}
+
 void HWNDMessageHandler::GetWindowPlacement(
     gfx::Rect* bounds,
     ui::WindowShowState* show_state) const {
@@ -582,7 +593,9 @@ void HWNDMessageHandler::CenterWindow(const gfx::Size& size) {
 }
 
 void HWNDMessageHandler::SetRegion(HRGN region) {
-  SetWindowRgn(hwnd(), region, TRUE);
+  custom_window_region_.Set(region);
+  ResetWindowRegion(false, true);
+  UpdateDwmNcRenderingPolicy();
 }
 
 void HWNDMessageHandler::StackAbove(HWND other_hwnd) {
@@ -791,13 +804,24 @@ void HWNDMessageHandler::SetVisibilityChangedAnimationsEnabled(bool enabled) {
   }
 }
 
-void HWNDMessageHandler::SetTitle(const string16& title) {
+bool HWNDMessageHandler::SetTitle(const string16& title) {
+  string16 current_title;
+  size_t len_with_null = GetWindowTextLength(hwnd()) + 1;
+  if (len_with_null == 1 && title.length() == 0)
+    return false;
+  if (len_with_null - 1 == title.length() &&
+      GetWindowText(
+          hwnd(), WriteInto(&current_title, len_with_null), len_with_null) &&
+      current_title == title)
+    return false;
   SetWindowText(hwnd(), title.c_str());
+  return true;
 }
 
 void HWNDMessageHandler::SetCursor(HCURSOR cursor) {
   if (cursor) {
     previous_cursor_ = ::SetCursor(cursor);
+    current_cursor_ = cursor;
   } else if (previous_cursor_) {
     ::SetCursor(previous_cursor_);
     previous_cursor_ = NULL;
@@ -807,17 +831,6 @@ void HWNDMessageHandler::SetCursor(HCURSOR cursor) {
 void HWNDMessageHandler::FrameTypeChanged() {
   // Called when the frame type could possibly be changing (theme change or
   // DWM composition change).
-  if (base::win::GetVersion() >= base::win::VERSION_VISTA) {
-    // We need to toggle the rendering policy of the DWM/glass frame as we
-    // change from opaque to glass. "Non client rendering enabled" means that
-    // the DWM's glass non-client rendering is enabled, which is why
-    // DWMNCRP_ENABLED is used for the native frame case. _DISABLED means the
-    // DWM doesn't render glass, and so is used in the custom frame case.
-    DWMNCRENDERINGPOLICY policy = !delegate_->IsUsingCustomFrame() ?
-        DWMNCRP_ENABLED : DWMNCRP_DISABLED;
-    DwmSetWindowAttribute(hwnd(), DWMWA_NCRENDERING_POLICY,
-                          &policy, sizeof(DWMNCRENDERINGPOLICY));
-  }
 
   // Don't redraw the window here, because we need to hide and show the window
   // which will also trigger a redraw.
@@ -1088,17 +1101,7 @@ void HWNDMessageHandler::TrackMouseEvents(DWORD mouse_tracking_flags) {
 }
 
 void HWNDMessageHandler::ClientAreaSizeChanged() {
-  RECT r = {0, 0, 0, 0};
-  // In case of minimized window GetWindowRect can return normally unexpected
-  // coordinates.
-  if (!IsMinimized()) {
-    if (delegate_->WidgetSizeIsClientSize())
-      GetClientRect(hwnd(), &r);
-    else
-      GetWindowRect(hwnd(), &r);
-  }
-  gfx::Size s(std::max(0, static_cast<int>(r.right - r.left)),
-              std::max(0, static_cast<int>(r.bottom - r.top)));
+  gfx::Size s = GetClientAreaBounds().size();
   delegate_->HandleClientSizeChanged(s);
   if (use_layered_buffer_)
     layered_window_contents_.reset(new gfx::Canvas(s, 1.0f, false));
@@ -1138,7 +1141,7 @@ void HWNDMessageHandler::ResetWindowRegion(bool force, bool redraw) {
   // automatically makes clicks on transparent pixels fall through, that isn't
   // the case with WS_EX_COMPOSITED. So, we route WS_EX_COMPOSITED through to
   // the delegate to allow for a custom hit mask.
-  if ((window_ex_style() & WS_EX_COMPOSITED) == 0 &&
+  if ((window_ex_style() & WS_EX_COMPOSITED) == 0 && !custom_window_region_ &&
       (!delegate_->IsUsingCustomFrame() || !delegate_->IsWidgetWindow())) {
     if (force)
       SetWindowRgn(hwnd(), NULL, redraw);
@@ -1153,7 +1156,10 @@ void HWNDMessageHandler::ResetWindowRegion(bool force, bool redraw) {
   CRect window_rect;
   GetWindowRect(hwnd(), &window_rect);
   HRGN new_region;
-  if (IsMaximized()) {
+  if (custom_window_region_) {
+    new_region = ::CreateRectRgn(0, 0, 0, 0);
+    ::CombineRgn(new_region, custom_window_region_.Get(), NULL, RGN_COPY);
+  } else if (IsMaximized()) {
     HMONITOR monitor = MonitorFromWindow(hwnd(), MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi;
     mi.cbSize = sizeof mi;
@@ -1176,6 +1182,15 @@ void HWNDMessageHandler::ResetWindowRegion(bool force, bool redraw) {
   }
 
   DeleteObject(current_rgn);
+}
+
+void HWNDMessageHandler::UpdateDwmNcRenderingPolicy() {
+  if (base::win::GetVersion() < base::win::VERSION_VISTA)
+    return;
+  DWMNCRENDERINGPOLICY policy = custom_window_region_ ? DWMNCRP_DISABLED
+                                                      : DWMNCRP_USEWINDOWSTYLE;
+  DwmSetWindowAttribute(hwnd(), DWMWA_NCRENDERING_POLICY,
+                        &policy, sizeof(DWMNCRENDERINGPOLICY));
 }
 
 LRESULT HWNDMessageHandler::DefWindowProcWithRedrawLock(UINT message,
@@ -1263,6 +1278,23 @@ void HWNDMessageHandler::RedrawLayeredWindowContents() {
                       RGB(0xFF, 0xFF, 0xFF), &blend, ULW_ALPHA);
   invalid_rect_.SetRect(0, 0, 0, 0);
   skia::EndPlatformPaint(layered_window_contents_->sk_canvas());
+}
+
+void HWNDMessageHandler::ForceRedrawWindow(int attempts) {
+  if (ui::IsWorkstationLocked()) {
+    // Presents will continue to fail as long as the input desktop is
+    // unavailable.
+    if (--attempts <= 0)
+      return;
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&HWNDMessageHandler::ForceRedrawWindow,
+                   weak_factory_.GetWeakPtr(),
+                   attempts),
+        base::TimeDelta::FromMilliseconds(500));
+    return;
+  }
+  InvalidateRect(hwnd(), NULL, FALSE);
 }
 
 // Message handlers ------------------------------------------------------------
@@ -1363,11 +1395,14 @@ LRESULT HWNDMessageHandler::OnCreate(CREATESTRUCT* create_struct) {
 
   delegate_->HandleCreate();
 
+  WTSRegisterSessionNotification(hwnd(), NOTIFY_FOR_THIS_SESSION);
+
   // TODO(beng): move more of NWW::OnCreate here.
   return 0;
 }
 
 void HWNDMessageHandler::OnDestroy() {
+  WTSUnRegisterSessionNotification(hwnd());
   delegate_->HandleDestroying();
 }
 
@@ -1555,7 +1590,15 @@ LRESULT HWNDMessageHandler::OnMouseRange(UINT message,
   // synthesized mouse messages for all points in the client area and places
   // which return HTNOWHERE.
   if (ui::IsMouseEventFromTouch(message)) {
-    LRESULT hittest = SendMessage(hwnd(), WM_NCHITTEST, 0, l_param);
+    LPARAM l_param_ht = l_param;
+    // For mouse events (except wheel events), location is in window coordinates
+    // and should be converted to screen coordinates for WM_NCHITTEST.
+    if (message != WM_MOUSEWHEEL && message != WM_MOUSEHWHEEL) {
+      CPoint screen_point(l_param_ht);
+      MapWindowPoints(hwnd(), HWND_DESKTOP, &screen_point, 1);
+      l_param_ht = MAKELPARAM(screen_point.x, screen_point.y);
+    }
+    LRESULT hittest = SendMessage(hwnd(), WM_NCHITTEST, 0, l_param_ht);
     if (hittest == HTCLIENT || hittest == HTNOWHERE)
       return 0;
   }
@@ -1841,16 +1884,49 @@ LRESULT HWNDMessageHandler::OnNCHitTest(const CPoint& point) {
 #if defined(USE_AURA)
   LRESULT hit_test_code = DefWindowProc(hwnd(), WM_NCHITTEST, 0,
                                         MAKELPARAM(point.x, point.y));
-  // If we faked the WS_VSCROLL and WS_HSCROLL styles for this window, then
-  // Windows returns the HTVSCROLL or HTHSCROLL hit test codes if we hover or
-  // click on the non client portions of the window where the OS scrollbars
-  // would be drawn. These hittest codes are returned even when the scrollbars
-  // are hidden, which is the case in Aura. We fake the hittest code as
-  // HTCLIENT in this case to ensure that we receive client mouse messages as
-  // opposed to non client mouse messages.
-  if (needs_scroll_styles_ && (hit_test_code == HTVSCROLL ||
-      hit_test_code == HTHSCROLL))
-    hit_test_code = HTCLIENT;
+  if (needs_scroll_styles_) {
+    switch (hit_test_code) {
+      // If we faked the WS_VSCROLL and WS_HSCROLL styles for this window, then
+      // Windows returns the HTVSCROLL or HTHSCROLL hit test codes if we hover
+      // or click on the non client portions of the window where the OS
+      // scrollbars would be drawn. These hittest codes are returned even when
+      // the scrollbars are hidden, which is the case in Aura. We fake the
+      // hittest code as HTCLIENT in this case to ensure that we receive client
+      // mouse messages as opposed to non client mouse messages.
+      case HTVSCROLL:
+      case HTHSCROLL:
+        hit_test_code = HTCLIENT;
+        break;
+
+      case HTBOTTOMRIGHT: {
+        // Normally the HTBOTTOMRIGHT hittest code is received when we hover
+        // near the bottom right of the window. However due to our fake scroll
+        // styles, we get this code even when we hover around the area where
+        // the vertical scrollar down arrow would be drawn.
+        // We check if the hittest coordinates lie in this region and if yes
+        // we return HTCLIENT.
+        int border_width = ::GetSystemMetrics(SM_CXSIZEFRAME);
+        int border_height = ::GetSystemMetrics(SM_CYSIZEFRAME);
+        int scroll_width = ::GetSystemMetrics(SM_CXVSCROLL);
+        int scroll_height = ::GetSystemMetrics(SM_CYVSCROLL);
+        RECT window_rect;
+        ::GetWindowRect(hwnd(), &window_rect);
+        window_rect.bottom -= border_height;
+        window_rect.right -= border_width;
+        window_rect.left = window_rect.right - scroll_width;
+        window_rect.top = window_rect.bottom - scroll_height;
+        POINT pt;
+        pt.x = point.x;
+        pt.y = point.y;
+        if (::PtInRect(&window_rect, pt))
+          hit_test_code = HTCLIENT;
+        break;
+      }
+
+      default:
+        break;
+    }
+  }
   return hit_test_code;
 #else
   SetMsgHandled(FALSE);
@@ -2002,6 +2078,16 @@ LRESULT HWNDMessageHandler::OnScrollMessage(UINT message,
   return 0;
 }
 
+void HWNDMessageHandler::OnSessionChange(WPARAM status_code,
+                                         PWTSSESSION_NOTIFICATION session_id) {
+  // Direct3D presents are ignored while the screen is locked, so force the
+  // window to be redrawn on unlock.
+  if (status_code == WTS_SESSION_UNLOCK)
+    ForceRedrawWindow(10);
+
+  SetMsgHandled(FALSE);
+}
+
 LRESULT HWNDMessageHandler::OnSetCursor(UINT message,
                                         WPARAM w_param,
                                         LPARAM l_param) {
@@ -2032,14 +2118,14 @@ LRESULT HWNDMessageHandler::OnSetCursor(UINT message,
       cursor = IDC_SIZENESW;
       break;
     case HTCLIENT:
-      // Client-area mouse events set the proper cursor from View::GetCursor.
-      return 0;
+      SetCursor(current_cursor_);
+      return 1;
     default:
       // Use the default value, IDC_ARROW.
       break;
   }
-  SetCursor(LoadCursor(NULL, cursor));
-  return 0;
+  ::SetCursor(LoadCursor(NULL, cursor));
+  return 1;
 }
 
 void HWNDMessageHandler::OnSetFocus(HWND last_focused_window) {

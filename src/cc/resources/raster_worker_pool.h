@@ -22,10 +22,6 @@ class LazyPixelRef;
 }
 
 namespace cc {
-class PicturePileImpl;
-class PixelBufferRasterWorkerPool;
-class ResourceProvider;
-
 namespace internal {
 
 class CC_EXPORT RasterWorkerPoolTask
@@ -185,6 +181,9 @@ class CC_EXPORT RasterWorkerPool : public WorkerPool {
   // Once scheduled, reply callbacks are guaranteed to run for all tasks
   // even if they later get canceled by another call to ScheduleTasks().
   virtual void ScheduleTasks(RasterTask::Queue* queue) = 0;
+
+  // Returns the target that needs to be used for raster task resources.
+  virtual GLenum GetResourceTarget() const = 0;
 
   // Returns the format that needs to be used for raster task resources.
   virtual ResourceFormat GetResourceFormat() const = 0;

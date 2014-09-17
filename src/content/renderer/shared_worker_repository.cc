@@ -19,9 +19,10 @@ SharedWorkerRepository::SharedWorkerRepository(RenderViewImpl* render_view)
 
 SharedWorkerRepository::~SharedWorkerRepository() {}
 
-WebKit::WebSharedWorker* SharedWorkerRepository::createSharedWorker(
-    const WebKit::WebURL& url,
-    const WebKit::WebString& name,
+blink::WebSharedWorkerConnector*
+SharedWorkerRepository::createSharedWorkerConnector(
+    const blink::WebURL& url,
+    const blink::WebString& name,
     DocumentID document_id) {
   int route_id = MSG_ROUTING_NONE;
   bool exists = false;

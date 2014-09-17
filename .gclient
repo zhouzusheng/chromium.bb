@@ -1,6 +1,6 @@
 solutions = [
-      { "name"        : "32.0.1700.107",
-        "url"         : "https://src.chromium.org/chrome/releases/32.0.1700.107",
+      { "name"        : "33.0.1750.154",
+        "url"         : "http://src.chromium.org/chrome/releases/33.0.1750.154",
         "deps_file"   : "DEPS",
         "managed"     : True,
         "custom_deps" : {
@@ -18,6 +18,7 @@ solutions = [
             'build/third_party/xvfb': None,
             'build/xvfb': None,
 
+            "src/third_party/android_tools": None,
             "src/third_party/WebKit/LayoutTests": None,
             "src/content/test/data/layout_tests/LayoutTests": None,
             "src/chrome/tools/test/reference_build/chrome_win": None,

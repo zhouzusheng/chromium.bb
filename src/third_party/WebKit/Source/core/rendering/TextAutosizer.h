@@ -52,15 +52,11 @@ public:
     static float computeAutosizedFontSize(float specifiedSize, float multiplier);
 
 private:
+    friend class FastTextAutosizer;
+
     enum TraversalDirection {
         FirstToLast,
         LastToFirst
-    };
-
-    enum ContentType {
-        Unknown,
-        Default,
-        VBulletin
     };
 
     explicit TextAutosizer(Document*);
@@ -72,14 +68,8 @@ private:
     void processCompositeCluster(Vector<TextAutosizingClusterInfo>&, const TextAutosizingWindowInfo&);
     void processContainer(float multiplier, RenderBlock* container, TextAutosizingClusterInfo&, RenderObject* subtreeRoot, const TextAutosizingWindowInfo&);
 
-    bool clusterShouldBeAutosized(TextAutosizingClusterInfo&, float blockWidth);
-    bool compositeClusterShouldBeAutosized(Vector<TextAutosizingClusterInfo>&, float blockWidth);
-    bool clusterContainsForumComment(const RenderBlock* container, TextAutosizingClusterInfo&);
-
     void setMultiplier(RenderObject*, float);
     void setMultiplierForList(RenderObject* renderer, float multiplier);
-
-    ContentType detectContentType();
 
     static bool isAutosizingContainer(const RenderObject*);
     static bool isNarrowDescendant(const RenderBlock*, TextAutosizingClusterInfo& parentClusterInfo);
@@ -91,6 +81,8 @@ private:
     static bool containerContainsOneOfTags(const RenderBlock* cluster, const Vector<QualifiedName>& tags);
     static bool containerIsRowOfLinks(const RenderObject* container);
     static bool contentHeightIsConstrained(const RenderBlock* container);
+    static bool clusterShouldBeAutosized(TextAutosizingClusterInfo&, float blockWidth);
+    static bool compositeClusterShouldBeAutosized(Vector<TextAutosizingClusterInfo>&, float blockWidth);
     static void measureDescendantTextWidth(const RenderBlock* container, TextAutosizingClusterInfo&, float minTextWidth, float& textWidth);
 
     // Use to traverse the tree of descendants, excluding descendants of containers (but returning the containers themselves).
@@ -108,7 +100,6 @@ private:
     static void getNarrowDescendantsGroupedByWidth(const TextAutosizingClusterInfo& parentClusterInfo, Vector<Vector<TextAutosizingClusterInfo> >&);
 
     Document* m_document;
-    ContentType m_contentType;
 };
 
 } // namespace WebCore

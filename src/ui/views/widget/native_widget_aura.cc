@@ -28,6 +28,7 @@
 #include "ui/gfx/font.h"
 #include "ui/gfx/screen.h"
 #include "ui/native_theme/native_theme_aura.h"
+#include "ui/views/corewm/window_util.h"
 #include "ui/views/drag_utils.h"
 #include "ui/views/ime/input_method_bridge.h"
 #include "ui/views/views_delegate.h"
@@ -345,9 +346,13 @@ void NativeWidgetAura::GetWindowPlacement(
       ui::SHOW_STATE_DEFAULT;
 }
 
-void NativeWidgetAura::SetWindowTitle(const string16& title) {
-  if (window_)
-    window_->set_title(title);
+bool NativeWidgetAura::SetWindowTitle(const string16& title) {
+  if (!window_)
+    return false;
+  if (window_->title() == title)
+    return false;
+  window_->set_title(title);
+  return true;
 }
 
 void NativeWidgetAura::SetWindowIcons(const gfx::ImageSkia& window_icon,
@@ -518,14 +523,7 @@ void NativeWidgetAura::Deactivate() {
 }
 
 bool NativeWidgetAura::IsActive() const {
-  if (!window_)
-    return false;
-
-  // We may up here during destruction of the root, in which case
-  // GetRootWindow() returns NULL (~RootWindow() has run and we're in ~Window).
-  aura::Window* root = window_->GetRootWindow();
-  return root &&
-      aura::client::GetActivationClient(root)->GetActiveWindow() == window_;
+  return window_ && corewm::IsActiveWindow(window_);
 }
 
 void NativeWidgetAura::SetAlwaysOnTop(bool on_top) {
@@ -844,13 +842,13 @@ void NativeWidgetAura::OnScrollEvent(ui::ScrollEvent* event) {
 
 void NativeWidgetAura::OnTouchEvent(ui::TouchEvent* event) {
   DCHECK(window_);
-  DCHECK(window_->IsVisible());
+  DCHECK(window_->IsVisible() || event->IsEndingEvent());
   delegate_->OnTouchEvent(event);
 }
 
 void NativeWidgetAura::OnGestureEvent(ui::GestureEvent* event) {
   DCHECK(window_);
-  DCHECK(window_->IsVisible());
+  DCHECK(window_->IsVisible() || event->IsEndingEvent());
   delegate_->OnGestureEvent(event);
 }
 
@@ -973,6 +971,7 @@ void Widget::NotifyLocaleChanged() {
 }
 
 namespace {
+#if defined(OS_WIN) || (defined(USE_X11) && !defined(OS_CHROMEOS))
 void CloseWindow(aura::Window* window) {
   if (window) {
     Widget* widget = Widget::GetWidgetForNativeView(window);
@@ -984,6 +983,8 @@ void CloseWindow(aura::Window* window) {
       widget->CloseNow();
   }
 }
+#endif
+
 #if defined(OS_WIN)
 BOOL CALLBACK WindowCallbackProc(HWND hwnd, LPARAM lParam) {
   aura::Window* root_window =

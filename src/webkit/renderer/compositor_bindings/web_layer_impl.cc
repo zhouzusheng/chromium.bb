@@ -5,7 +5,9 @@
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
 #include "base/bind.h"
+#include "base/debug/trace_event_impl.h"
 #include "base/strings/string_util.h"
+#include "base/threading/thread_checker.h"
 #include "cc/animation/animation.h"
 #include "cc/base/region.h"
 #include "cc/layers/layer.h"
@@ -13,24 +15,26 @@
 #include "third_party/WebKit/public/platform/WebCompositingReasons.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebFloatRect.h"
+#include "third_party/WebKit/public/platform/WebGraphicsLayerDebugInfo.h"
 #include "third_party/WebKit/public/platform/WebLayerClient.h"
 #include "third_party/WebKit/public/platform/WebLayerPositionConstraint.h"
 #include "third_party/WebKit/public/platform/WebLayerScrollClient.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/skia/include/utils/SkMatrix44.h"
 #include "webkit/renderer/compositor_bindings/web_animation_impl.h"
+#include "webkit/renderer/compositor_bindings/web_blend_mode.h"
 #include "webkit/renderer/compositor_bindings/web_filter_operations_impl.h"
 #include "webkit/renderer/compositor_bindings/web_to_cc_animation_delegate_adapter.h"
 
 using cc::Animation;
 using cc::Layer;
-using WebKit::WebLayer;
-using WebKit::WebFloatPoint;
-using WebKit::WebVector;
-using WebKit::WebRect;
-using WebKit::WebSize;
-using WebKit::WebColor;
-using WebKit::WebFilterOperations;
+using blink::WebLayer;
+using blink::WebFloatPoint;
+using blink::WebVector;
+using blink::WebRect;
+using blink::WebSize;
+using blink::WebColor;
+using blink::WebFilterOperations;
 
 namespace webkit {
 
@@ -52,7 +56,7 @@ WebLayerImpl::~WebLayerImpl() {
 
 int WebLayerImpl::id() const { return layer_->id(); }
 
-void WebLayerImpl::invalidateRect(const WebKit::WebFloatRect& rect) {
+void WebLayerImpl::invalidateRect(const blink::WebFloatRect& rect) {
   layer_->SetNeedsDisplayRect(rect);
 }
 
@@ -112,6 +116,22 @@ void WebLayerImpl::setReplicaLayer(WebLayer* replica_layer) {
 void WebLayerImpl::setOpacity(float opacity) { layer_->SetOpacity(opacity); }
 
 float WebLayerImpl::opacity() const { return layer_->opacity(); }
+
+void WebLayerImpl::setBlendMode(blink::WebBlendMode blend_mode) {
+  layer_->SetBlendMode(BlendModeToSkia(blend_mode));
+}
+
+blink::WebBlendMode WebLayerImpl::blendMode() const {
+  return BlendModeFromSkia(layer_->blend_mode());
+}
+
+void WebLayerImpl::setIsRootForIsolatedGroup(bool isolate) {
+  layer_->SetIsRootForIsolatedGroup(isolate);
+}
+
+bool WebLayerImpl::isRootForIsolatedGroup() {
+  return layer_->is_root_for_isolated_group();
+}
 
 void WebLayerImpl::setOpaque(bool opaque) { layer_->SetContentsOpaque(opaque); }
 
@@ -179,18 +199,18 @@ void WebLayerImpl::setBackgroundFilters(const WebFilterOperations& filters) {
 }
 
 void WebLayerImpl::setCompositingReasons(
-    WebKit::WebCompositingReasons reasons) {
+    blink::WebCompositingReasons reasons) {
   layer_->SetCompositingReasons(reasons);
 }
 
 void WebLayerImpl::setAnimationDelegate(
-      WebKit::WebAnimationDelegate* delegate) {
+      blink::WebAnimationDelegate* delegate) {
   animation_delegate_adapter_.reset(
       new WebToCCAnimationDelegateAdapter(delegate));
   layer_->set_layer_animation_delegate(animation_delegate_adapter_.get());
 }
 
-bool WebLayerImpl::addAnimation(WebKit::WebAnimation* animation) {
+bool WebLayerImpl::addAnimation(blink::WebAnimation* animation) {
   bool result = layer_->AddAnimation(
       static_cast<WebAnimationImpl*>(animation)->PassAnimation());
   delete animation;
@@ -203,7 +223,7 @@ void WebLayerImpl::removeAnimation(int animation_id) {
 
 void WebLayerImpl::removeAnimation(
     int animation_id,
-    WebKit::WebAnimation::TargetProperty target_property) {
+    blink::WebAnimation::TargetProperty target_property) {
   layer_->layer_animation_controller()->RemoveAnimation(
       animation_id,
       static_cast<Animation::TargetProperty>(target_property));
@@ -219,11 +239,11 @@ void WebLayerImpl::setForceRenderSurface(bool force_render_surface) {
   layer_->SetForceRenderSurface(force_render_surface);
 }
 
-void WebLayerImpl::setScrollPosition(WebKit::WebPoint position) {
+void WebLayerImpl::setScrollPosition(blink::WebPoint position) {
   layer_->SetScrollOffset(gfx::Point(position).OffsetFromOrigin());
 }
 
-WebKit::WebPoint WebLayerImpl::scrollPosition() const {
+blink::WebPoint WebLayerImpl::scrollPosition() const {
   return gfx::PointAtOffsetFromOrigin(layer_->scroll_offset());
 }
 
@@ -328,9 +348,9 @@ bool WebLayerImpl::isContainerForFixedPositionLayers() const {
   return layer_->IsContainerForFixedPositionLayers();
 }
 
-static WebKit::WebLayerPositionConstraint ToWebLayerPositionConstraint(
+static blink::WebLayerPositionConstraint ToWebLayerPositionConstraint(
     const cc::LayerPositionConstraint& constraint) {
-  WebKit::WebLayerPositionConstraint web_constraint;
+  blink::WebLayerPositionConstraint web_constraint;
   web_constraint.isFixedPosition = constraint.is_fixed_position();
   web_constraint.isFixedToRightEdge = constraint.is_fixed_to_right_edge();
   web_constraint.isFixedToBottomEdge = constraint.is_fixed_to_bottom_edge();
@@ -338,7 +358,7 @@ static WebKit::WebLayerPositionConstraint ToWebLayerPositionConstraint(
 }
 
 static cc::LayerPositionConstraint ToLayerPositionConstraint(
-    const WebKit::WebLayerPositionConstraint& web_constraint) {
+    const blink::WebLayerPositionConstraint& web_constraint) {
   cc::LayerPositionConstraint constraint;
   constraint.set_is_fixed_position(web_constraint.isFixedPosition);
   constraint.set_is_fixed_to_right_edge(web_constraint.isFixedToRightEdge);
@@ -347,19 +367,19 @@ static cc::LayerPositionConstraint ToLayerPositionConstraint(
 }
 
 void WebLayerImpl::setPositionConstraint(
-    const WebKit::WebLayerPositionConstraint& constraint) {
+    const blink::WebLayerPositionConstraint& constraint) {
   layer_->SetPositionConstraint(ToLayerPositionConstraint(constraint));
 }
 
-WebKit::WebLayerPositionConstraint WebLayerImpl::positionConstraint() const {
+blink::WebLayerPositionConstraint WebLayerImpl::positionConstraint() const {
   return ToWebLayerPositionConstraint(layer_->position_constraint());
 }
 
 void WebLayerImpl::setScrollClient(
-    WebKit::WebLayerScrollClient* scroll_client) {
+    blink::WebLayerScrollClient* scroll_client) {
   if (scroll_client) {
     layer_->set_did_scroll_callback(
-        base::Bind(&WebKit::WebLayerScrollClient::didScroll,
+        base::Bind(&blink::WebLayerScrollClient::didScroll,
                    base::Unretained(scroll_client)));
   } else {
     layer_->set_did_scroll_callback(base::Closure());
@@ -368,8 +388,39 @@ void WebLayerImpl::setScrollClient(
 
 bool WebLayerImpl::isOrphan() const { return !layer_->layer_tree_host(); }
 
-void WebLayerImpl::setWebLayerClient(WebKit::WebLayerClient* client) {
+void WebLayerImpl::setWebLayerClient(blink::WebLayerClient* client) {
   web_layer_client_ = client;
+}
+
+// TODO(chrishtr): move DebugName into this class.
+class TracedDebugInfo : public base::debug::ConvertableToTraceFormat {
+ public:
+  // This object takes ownership of the debug_info object.
+  explicit TracedDebugInfo(blink::WebGraphicsLayerDebugInfo* debug_info) :
+    debug_info_(debug_info) {}
+  virtual void AppendAsTraceFormat(std::string* out) const OVERRIDE {
+    DCHECK(thread_checker_.CalledOnValidThread());
+    blink::WebString web_string;
+    debug_info_->appendAsTraceFormat(&web_string);
+    out->append(web_string.utf8());
+  }
+ private:
+  virtual ~TracedDebugInfo() {}
+  scoped_ptr<blink::WebGraphicsLayerDebugInfo> debug_info_;
+  base::ThreadChecker thread_checker_;
+};
+
+scoped_refptr<base::debug::ConvertableToTraceFormat>
+    WebLayerImpl::TakeDebugInfo() {
+  if (!web_layer_client_)
+    return NULL;
+  blink::WebGraphicsLayerDebugInfo* debug_info =
+      web_layer_client_->takeDebugInfo();
+
+  if (debug_info)
+    return new TracedDebugInfo(debug_info);
+  else
+    return NULL;
 }
 
 std::string WebLayerImpl::DebugName() {
@@ -381,14 +432,14 @@ std::string WebLayerImpl::DebugName() {
   return name;
 }
 
-void WebLayerImpl::setScrollParent(WebKit::WebLayer* parent) {
+void WebLayerImpl::setScrollParent(blink::WebLayer* parent) {
   cc::Layer* scroll_parent = NULL;
   if (parent)
     scroll_parent = static_cast<WebLayerImpl*>(parent)->layer();
   layer_->SetScrollParent(scroll_parent);
 }
 
-void WebLayerImpl::setClipParent(WebKit::WebLayer* parent) {
+void WebLayerImpl::setClipParent(blink::WebLayer* parent) {
   cc::Layer* clip_parent = NULL;
   if (parent)
     clip_parent = static_cast<WebLayerImpl*>(parent)->layer();

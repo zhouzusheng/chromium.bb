@@ -30,6 +30,7 @@
 #include "core/dom/StyleEngine.h"
 #include "core/frame/Frame.h"
 #include "core/page/Page.h"
+#include "wtf/StdLibExtras.h"
 
 namespace WebCore {
 
@@ -44,14 +45,8 @@ PageGroup::~PageGroup()
 
 PageGroup* PageGroup::sharedGroup()
 {
-    static PageGroup* staticSharedGroup = create().leakRef();
+    DEFINE_STATIC_REF(PageGroup, staticSharedGroup, (create()));
     return staticSharedGroup;
-}
-
-PageGroup* PageGroup::inspectorGroup()
-{
-    static PageGroup* staticInspectorGroup = create().leakRef();
-    return staticInspectorGroup;
 }
 
 void PageGroup::addPage(Page* page)

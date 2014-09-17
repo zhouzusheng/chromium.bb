@@ -33,9 +33,11 @@
 #include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/platform/graphics/MediaPlayer.h"
+#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderFullScreen.h"
+#include "platform/graphics/media/MediaPlayer.h"
+#include "public/platform/WebLayer.h"
 
 namespace WebCore {
 
@@ -169,17 +171,22 @@ void RenderVideo::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paintOf
 
     if (displayingPoster)
         paintIntoRect(context, rect);
-    else if (document().view() && document().view()->paintBehavior() & PaintBehaviorFlattenCompositingLayers)
-        mediaPlayer->paintCurrentFrameInContext(context, pixelSnappedIntRect(rect));
-    else
+    else if ((document().view() && document().view()->paintBehavior() & PaintBehaviorFlattenCompositingLayers) || !acceleratedRenderingInUse())
         mediaPlayer->paint(context, pixelSnappedIntRect(rect));
 
     if (clip)
         context->restore();
 }
 
+bool RenderVideo::acceleratedRenderingInUse()
+{
+    blink::WebLayer* webLayer = mediaElement()->platformLayer();
+    return webLayer && !webLayer->isOrphan();
+}
+
 void RenderVideo::layout()
 {
+    LayoutRectRecorder recorder(*this);
     updatePlayer();
     RenderMedia::layout();
 }
@@ -227,11 +234,7 @@ LayoutUnit RenderVideo::minimumReplacedHeight() const
 
 bool RenderVideo::supportsAcceleratedRendering() const
 {
-    MediaPlayer* p = mediaElement()->player();
-    if (p)
-        return p->supportsAcceleratedRendering();
-
-    return false;
+    return !!mediaElement()->platformLayer();
 }
 
 static const RenderBlock* rendererPlaceholder(const RenderObject* renderer)

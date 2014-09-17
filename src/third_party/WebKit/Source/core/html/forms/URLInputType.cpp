@@ -31,8 +31,8 @@
 #include "config.h"
 #include "core/html/forms/URLInputType.h"
 
+#include "InputTypeNames.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/html/forms/InputTypeNames.h"
 #include "platform/text/PlatformLocale.h"
 #include "wtf/PassOwnPtr.h"
 
@@ -50,7 +50,7 @@ void URLInputType::countUsage()
 
 const AtomicString& URLInputType::formControlType() const
 {
-    return InputTypeNames::url();
+    return InputTypeNames::url;
 }
 
 bool URLInputType::typeMismatchFor(const String& value) const
@@ -65,7 +65,7 @@ bool URLInputType::typeMismatch() const
 
 String URLInputType::typeMismatchText() const
 {
-    return locale().queryString(WebKit::WebLocalizedString::ValidationTypeMismatchForURL);
+    return locale().queryString(blink::WebLocalizedString::ValidationTypeMismatchForURL);
 }
 
 bool URLInputType::isURLField() const

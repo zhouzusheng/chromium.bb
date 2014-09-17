@@ -135,15 +135,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
     NEVER_CLEAR_REFERRER,
   };
 
-  // Used with SetDelegateInfo to indicate how the string should be used.
-  // DELEGATE_INFO_DEBUG_ONLY indicates it should only be used when logged to
-  // NetLog, while DELEGATE_INFO_DISPLAY_TO_USER indicates it should also be
-  // returned by calls to GetLoadState for display to the user.
-  enum DelegateInfoUsage {
-    DELEGATE_INFO_DEBUG_ONLY,
-    DELEGATE_INFO_DISPLAY_TO_USER,
-  };
-
   // This class handles network interception.  Use with
   // (Un)RegisterRequestInterceptor.
   class NET_EXPORT Interceptor {
@@ -447,23 +438,31 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // 2. The OnResponseStarted callback is currently running or has run.
   bool GetFullRequestHeaders(HttpRequestHeaders* headers) const;
 
-  // Returns the current load state for the request. |param| is an optional
-  // parameter describing details related to the load state. Not all load states
-  // have a parameter.
+  // Returns the current load state for the request. The returned value's
+  // |param| field is an optional parameter describing details related to the
+  // load state. Not all load states have a parameter.
   LoadStateWithParam GetLoadState() const;
 
   // Returns a partial representation of the request's state as a value, for
   // debugging.  Caller takes ownership of returned value.
   base::Value* GetStateAsValue() const;
 
-  // Logs information about the delegate currently blocking the request.
-  // The delegate info must be cleared by sending NULL before resuming a
-  // request.  |delegate_info| will be copied as needed.  |delegate_info_usage|
-  // is used to indicate whether the value should be returned in the param field
-  // of GetLoadState.  |delegate_info_usage_| is ignored when |delegate_info| is
-  // NULL.
-  void SetDelegateInfo(const char* delegate_info,
-                       DelegateInfoUsage delegate_info_usage);
+  // Logs information about the what external object currently blocking the
+  // request.  LogUnblocked must be called before resuming the request.  This
+  // can be called multiple times in a row either with or without calling
+  // LogUnblocked between calls.  |blocked_by| must not be NULL or have length
+  // 0.
+  void LogBlockedBy(const char* blocked_by);
+
+  // Just like LogBlockedBy, but also makes GetLoadState return source as the
+  // |param| in the value returned by GetLoadState.  Calling LogUnblocked or
+  // LogBlockedBy will clear the load param.  |blocked_by| must not be NULL or
+  // have length 0.
+  void LogAndReportBlockedBy(const char* blocked_by);
+
+  // Logs that the request is no longer blocked by the last caller to
+  // LogBlockedBy.
+  void LogUnblocked();
 
   // Returns the current upload progress in bytes. When the upload data is
   // chunked, size is set to zero, but position will not be.
@@ -550,7 +549,11 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
 
   // Access the LOAD_* flags modifying this request (see load_flags.h).
   int load_flags() const { return load_flags_; }
-  void set_load_flags(int flags) { load_flags_ = flags; }
+
+  // The new flags may change the IGNORE_LIMITS flag only when called
+  // before Start() is called, it must only set the flag, and if set,
+  // the priority of this request must already be MAXIMUM_PRIORITY.
+  void SetLoadFlags(int flags);
 
   // Returns true if the request is "pending" (i.e., if Start() has been called,
   // and the response has not yet been called).
@@ -651,7 +654,9 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // Returns the priority level for this request.
   RequestPriority priority() const { return priority_; }
 
-  // Sets the priority level for this request and any related jobs.
+  // Sets the priority level for this request and any related
+  // jobs. Must not change the priority to anything other than
+  // MAXIMUM_PRIORITY if the IGNORE_LIMITS load flag is set.
   void SetPriority(RequestPriority priority);
 
   // Returns true iff this request would be internally redirected to HTTPS
@@ -827,8 +832,9 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // first transaction in a request involving redirects.
   UploadProgress final_upload_progress_;
 
-  // The priority level for this request.  Objects like ClientSocketPool use
-  // this to determine which URLRequest to allocate sockets to first.
+  // The priority level for this request.  Objects like
+  // ClientSocketPool use this to determine which URLRequest to
+  // allocate sockets to first.
   RequestPriority priority_;
 
   // TODO(battre): The only consumer of the identifier_ is currently the
@@ -844,10 +850,10 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // for the URL request or network delegate to resume it.
   bool calling_delegate_;
 
-  // An optional parameter that provides additional information about the
-  // delegate |this| is currently blocked on.
-  std::string delegate_info_;
-  DelegateInfoUsage delegate_info_usage_;
+  // An optional parameter that provides additional information about what
+  // |this| is currently being blocked by.
+  std::string blocked_by_;
+  bool use_blocked_by_as_load_param_;
 
   base::debug::LeakTracker<URLRequest> leak_tracker_;
 

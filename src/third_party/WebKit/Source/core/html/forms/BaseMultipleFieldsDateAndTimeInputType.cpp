@@ -41,7 +41,6 @@
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/forms/DateTimeFieldsState.h"
 #include "core/html/forms/FormController.h"
-#include "core/html/shadow/PickerIndicatorElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
@@ -262,6 +261,15 @@ void BaseMultipleFieldsDateAndTimeInputType::pickerIndicatorChooseValue(const St
         edit->setOnlyYearMonthDay(date);
 }
 
+void BaseMultipleFieldsDateAndTimeInputType::pickerIndicatorChooseValue(double value)
+{
+    ASSERT(std::isfinite(value) || std::isnan(value));
+    if (std::isnan(value))
+        element().setValue(emptyString(), DispatchInputAndChangeEvent);
+    else
+        element().setValueAsNumber(value, ASSERT_NO_EXCEPTION, DispatchInputAndChangeEvent);
+}
+
 bool BaseMultipleFieldsDateAndTimeInputType::setupDateTimeChooserParameters(DateTimeChooserParameters& parameters)
 {
     return element().setupDateTimeChooserParameters(parameters);
@@ -289,7 +297,7 @@ BaseMultipleFieldsDateAndTimeInputType::~BaseMultipleFieldsDateAndTimeInputType(
 
 String BaseMultipleFieldsDateAndTimeInputType::badInputText() const
 {
-    return locale().queryString(WebKit::WebLocalizedString::ValidationBadInputForDateTime);
+    return locale().queryString(blink::WebLocalizedString::ValidationBadInputForDateTime);
 }
 
 void BaseMultipleFieldsDateAndTimeInputType::blur()
@@ -331,7 +339,7 @@ void BaseMultipleFieldsDateAndTimeInputType::createShadowSubtree()
     ContainerNode* container = element().userAgentShadowRoot();
 
     container->appendChild(DateTimeEditElement::create(document, *this));
-    updateInnerTextValue();
+    updateView();
     container->appendChild(ClearButtonElement::create(document, *this));
     container->appendChild(SpinButtonElement::create(document, *this));
 
@@ -437,7 +445,7 @@ AtomicString BaseMultipleFieldsDateAndTimeInputType::localeIdentifier() const
 
 void BaseMultipleFieldsDateAndTimeInputType::minOrMaxAttributeChanged()
 {
-    updateInnerTextValue();
+    updateView();
 }
 
 void BaseMultipleFieldsDateAndTimeInputType::readonlyAttributeChanged()
@@ -471,7 +479,7 @@ void BaseMultipleFieldsDateAndTimeInputType::setValue(const String& sanitizedVal
     InputType::setValue(sanitizedValue, valueChanged, eventBehavior);
     DateTimeEditElement* edit = dateTimeEditElement();
     if (valueChanged || (sanitizedValue.isEmpty() && edit && edit->anyEditableFieldsHaveValues())) {
-        updateInnerTextValue();
+        updateView();
         element().setNeedsValidityCheck();
     }
 }
@@ -483,10 +491,10 @@ bool BaseMultipleFieldsDateAndTimeInputType::shouldUseInputMethod() const
 
 void BaseMultipleFieldsDateAndTimeInputType::stepAttributeChanged()
 {
-    updateInnerTextValue();
+    updateView();
 }
 
-void BaseMultipleFieldsDateAndTimeInputType::updateInnerTextValue()
+void BaseMultipleFieldsDateAndTimeInputType::updateView()
 {
     DateTimeEditElement* edit = dateTimeEditElement();
     if (!edit)
@@ -518,7 +526,7 @@ void BaseMultipleFieldsDateAndTimeInputType::updateInnerTextValue()
 void BaseMultipleFieldsDateAndTimeInputType::valueAttributeChanged()
 {
     if (!element().hasDirtyValue())
-        updateInnerTextValue();
+        updateView();
 }
 
 void BaseMultipleFieldsDateAndTimeInputType::listAttributeTargetChanged()
@@ -533,16 +541,10 @@ void BaseMultipleFieldsDateAndTimeInputType::updatePickerIndicatorVisibility()
         return;
     }
     if (RuntimeEnabledFeatures::dataListElementEnabled()) {
-        if (HTMLDataListElement* dataList = element().dataList()) {
-            RefPtr<HTMLCollection> options = dataList->options();
-            for (unsigned i = 0; HTMLOptionElement* option = toHTMLOptionElement(options->item(i)); ++i) {
-                if (element().isValidValue(option->value())) {
-                    showPickerIndicator();
-                    return;
-                }
-            }
-        }
-        hidePickerIndicator();
+        if (element().hasValidDataListOptions())
+            showPickerIndicator();
+        else
+            hidePickerIndicator();
     }
 }
 
@@ -595,10 +597,13 @@ void BaseMultipleFieldsDateAndTimeInputType::updateClearButtonVisibility()
     if (!clearButton)
         return;
 
-    if (element().isRequired() || !dateTimeEditElement()->anyEditableFieldsHaveValues())
-        clearButton->setInlineStyleProperty(CSSPropertyVisibility, CSSValueHidden);
-    else
-        clearButton->removeInlineStyleProperty(CSSPropertyVisibility);
+    if (element().isRequired() || !dateTimeEditElement()->anyEditableFieldsHaveValues()) {
+        clearButton->setInlineStyleProperty(CSSPropertyOpacity, 0.0, CSSPrimitiveValue::CSS_NUMBER);
+        clearButton->setInlineStyleProperty(CSSPropertyPointerEvents, CSSValueNone);
+    } else {
+        clearButton->removeInlineStyleProperty(CSSPropertyOpacity);
+        clearButton->removeInlineStyleProperty(CSSPropertyPointerEvents);
+    }
 }
 
 } // namespace WebCore

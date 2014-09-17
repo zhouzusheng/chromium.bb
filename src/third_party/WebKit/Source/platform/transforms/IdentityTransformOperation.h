@@ -38,18 +38,14 @@ public:
 
 private:
     virtual bool isIdentity() const { return true; }
-    virtual OperationType getOperationType() const { return Identity; }
-    virtual bool isSameType(const TransformOperation& o) const { return o.getOperationType() == Identity; }
+    virtual OperationType type() const OVERRIDE { return Identity; }
 
     virtual bool operator==(const TransformOperation& o) const
     {
         return isSameType(o);
     }
 
-    virtual bool apply(TransformationMatrix&, const FloatSize&) const
-    {
-        return false;
-    }
+    virtual void apply(TransformationMatrix&, const FloatSize&) const { }
 
     virtual PassRefPtr<TransformOperation> blend(const TransformOperation*, double, bool = false)
     {

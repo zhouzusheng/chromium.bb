@@ -108,8 +108,8 @@ void PrintViewManagerBase::RenderProcessGone(base::TerminationStatus status) {
   }
 }
 
-string16 PrintViewManagerBase::RenderSourceName() {
-  string16 name(web_contents()->GetTitle());
+base::string16 PrintViewManagerBase::RenderSourceName() {
+  base::string16 name(web_contents()->GetTitle());
   if (name.empty())
     name = L"Default Print Document Title";  // TODO(LEVI): Set this to what it really should be
   return name;

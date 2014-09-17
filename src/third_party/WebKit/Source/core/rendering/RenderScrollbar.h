@@ -26,8 +26,8 @@
 #ifndef RenderScrollbar_h
 #define RenderScrollbar_h
 
-#include "core/platform/Scrollbar.h"
 #include "core/rendering/style/RenderStyleConstants.h"
+#include "platform/scroll/Scrollbar.h"
 #include "wtf/HashMap.h"
 
 namespace WebCore {
@@ -87,14 +87,7 @@ private:
     HashMap<unsigned, RenderScrollbarPart*> m_parts;
 };
 
-inline RenderScrollbar* toRenderScrollbar(ScrollbarThemeClient* scrollbar)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!scrollbar || scrollbar->isCustomScrollbar());
-    return static_cast<RenderScrollbar*>(scrollbar);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderScrollbar(const RenderScrollbar*);
+DEFINE_TYPE_CASTS(RenderScrollbar, ScrollbarThemeClient, scrollbar, scrollbar->isCustomScrollbar(), scrollbar.isCustomScrollbar());
 
 } // namespace WebCore
 

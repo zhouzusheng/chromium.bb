@@ -213,7 +213,7 @@ Connection::~Connection() {
 bool Connection::Open(const base::FilePath& path) {
   if (!histogram_tag_.empty()) {
     int64 size_64 = 0;
-    if (file_util::GetFileSize(path, &size_64)) {
+    if (base::GetFileSize(path, &size_64)) {
       size_t sample = static_cast<size_t>(size_64 / 1024);
       std::string full_histogram_name = "Sqlite.SizeKB." + histogram_tag_;
       base::HistogramBase* histogram =
@@ -881,9 +881,9 @@ bool Connection::OpenInternal(const std::string& file_name,
     int mode = 0;
     // TODO(shess): Arguably, failure to retrieve and change
     // permissions should be fatal if the file exists.
-    if (file_util::GetPosixFilePermissions(file_path, &mode)) {
-      mode &= file_util::FILE_PERMISSION_USER_MASK;
-      file_util::SetPosixFilePermissions(file_path, mode);
+    if (base::GetPosixFilePermissions(file_path, &mode)) {
+      mode &= base::FILE_PERMISSION_USER_MASK;
+      base::SetPosixFilePermissions(file_path, mode);
 
       // SQLite sets the permissions on these files from the main
       // database on create.  Set them here in case they already exist
@@ -891,8 +891,8 @@ bool Connection::OpenInternal(const std::string& file_name,
       // be fatal unless the file doesn't exist.
       base::FilePath journal_path(file_name + FILE_PATH_LITERAL("-journal"));
       base::FilePath wal_path(file_name + FILE_PATH_LITERAL("-wal"));
-      file_util::SetPosixFilePermissions(journal_path, mode);
-      file_util::SetPosixFilePermissions(wal_path, mode);
+      base::SetPosixFilePermissions(journal_path, mode);
+      base::SetPosixFilePermissions(wal_path, mode);
     }
   }
 #endif  // defined(OS_POSIX)
@@ -1050,9 +1050,21 @@ int Connection::OnSqliteError(int err, sql::Statement *stmt, const char* sql) {
   return err;
 }
 
-// TODO(shess): Allow specifying integrity_check versus quick_check.
+bool Connection::FullIntegrityCheck(std::vector<std::string>* messages) {
+  return IntegrityCheckHelper("PRAGMA integrity_check", messages);
+}
+
+bool Connection::QuickIntegrityCheck() {
+  std::vector<std::string> messages;
+  if (!IntegrityCheckHelper("PRAGMA quick_check", &messages))
+    return false;
+  return messages.size() == 1 && messages[0] == "ok";
+}
+
 // TODO(shess): Allow specifying maximum results (default 100 lines).
-bool Connection::IntegrityCheck(std::vector<std::string>* messages) {
+bool Connection::IntegrityCheckHelper(
+    const char* pragma_sql,
+    std::vector<std::string>* messages) {
   messages->clear();
 
   // This has the side effect of setting SQLITE_RecoveryMode, which
@@ -1065,8 +1077,7 @@ bool Connection::IntegrityCheck(std::vector<std::string>* messages) {
 
   bool ret = false;
   {
-    const char kSql[] = "PRAGMA integrity_check";
-    sql::Statement stmt(GetUniqueStatement(kSql));
+    sql::Statement stmt(GetUniqueStatement(pragma_sql));
 
     // The pragma appears to return all results (up to 100 by default)
     // as a single string.  This doesn't appear to be an API contract,

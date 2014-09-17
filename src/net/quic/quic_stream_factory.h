@@ -7,6 +7,7 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
 #include "base/memory/weak_ptr.h"
 #include "net/base/address_list.h"
@@ -14,6 +15,7 @@
 #include "net/base/host_port_pair.h"
 #include "net/base/net_log.h"
 #include "net/base/network_change_notifier.h"
+#include "net/cert/cert_database.h"
 #include "net/proxy/proxy_server.h"
 #include "net/quic/quic_config.h"
 #include "net/quic/quic_crypto_stream.h"
@@ -77,7 +79,8 @@ class NET_EXPORT_PRIVATE QuicStreamRequest {
 // A factory for creating new QuicHttpStreams on top of a pool of
 // QuicClientSessions.
 class NET_EXPORT_PRIVATE QuicStreamFactory
-    : public NetworkChangeNotifier::IPAddressObserver {
+    : public NetworkChangeNotifier::IPAddressObserver,
+      public CertDatabase::Observer {
  public:
   QuicStreamFactory(
       HostResolver* host_resolver,
@@ -85,7 +88,8 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
       base::WeakPtr<HttpServerProperties> http_server_properties,
       QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory,
       QuicRandom* random_generator,
-      QuicClock* clock);
+      QuicClock* clock,
+      size_t max_packet_length);
   virtual ~QuicStreamFactory();
 
   // Creates a new QuicHttpStream to |host_port_proxy_pair| which will be
@@ -131,6 +135,12 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   // IP address changes.
   virtual void OnIPAddressChanged() OVERRIDE;
 
+  // CertDatabase::Observer methods:
+
+  // We close all sessions when certificate database is changed.
+  virtual void OnCertAdded(const X509Certificate* cert) OVERRIDE;
+  virtual void OnCACertChanged(const X509Certificate* cert) OVERRIDE;
+
   bool require_confirmation() const { return require_confirmation_; }
 
   void set_require_confirmation(bool require_confirmation) {
@@ -157,12 +167,12 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   void OnJobComplete(Job* job, int rv);
   bool HasActiveSession(const HostPortProxyPair& host_port_proxy_pair);
   bool HasActiveJob(const HostPortProxyPair& host_port_proxy_pair);
-  QuicClientSession* CreateSession(
-      const HostPortProxyPair& host_port_proxy_pair,
-      bool is_https,
-      CertVerifier* cert_verifier,
-      const AddressList& address_list,
-      const BoundNetLog& net_log);
+  int CreateSession(const HostPortProxyPair& host_port_proxy_pair,
+                    bool is_https,
+                    CertVerifier* cert_verifier,
+                    const AddressList& address_list,
+                    const BoundNetLog& net_log,
+                    QuicClientSession** session);
   void ActivateSession(const HostPortProxyPair& host_port_proxy_pair,
                        QuicClientSession* session);
 
@@ -184,6 +194,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory_;
   QuicRandom* random_generator_;
   scoped_ptr<QuicClock> clock_;
+  const size_t max_packet_length_;
 
   // The helper used for all connections.
   scoped_ptr<QuicConnectionHelper> helper_;
@@ -207,6 +218,10 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   // least server public key).
   CanonicalHostMap canonical_hostname_to_origin_map_;
 
+  // Contains list of suffixes (for exmaple ".c.youtube.com",
+  // ".googlevideo.com") of cannoncial hostnames.
+  std::vector<std::string> cannoncial_suffixes_;
+
   QuicConfig config_;
 
   JobMap active_jobs_;
@@ -214,6 +229,14 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   RequestMap active_requests_;
 
   base::WeakPtrFactory<QuicStreamFactory> weak_factory_;
+
+  // Each profile will (probably) have a unique port_seed_ value.  This value is
+  // used to help seed a pseudo-random number generator (PortSuggester) so that
+  // we consistently (within this profile) suggest the same ephemeral port when
+  // we re-connect to any given server/port.  The differences between profiles
+  // (probablistically) prevent two profiles from colliding in their ephemeral
+  // port requests.
+  uint64 port_seed_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicStreamFactory);
 };

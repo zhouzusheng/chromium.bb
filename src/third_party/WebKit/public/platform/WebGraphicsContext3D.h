@@ -37,7 +37,7 @@
 
 struct GrGLInterface;
 
-namespace WebKit {
+namespace blink {
 
 // WGC3D types match the corresponding GL types as defined in OpenGL ES 2.0
 // header file gl2.h from khronos.org.
@@ -92,6 +92,7 @@ public:
             , shareResources(true)
             , preferDiscreteGPU(false)
             , noAutomaticFlushes(false)
+            , failIfMajorPerformanceCaveat(false)
         {
         }
 
@@ -105,6 +106,7 @@ public:
         bool shareResources;
         bool preferDiscreteGPU;
         bool noAutomaticFlushes;
+        bool failIfMajorPerformanceCaveat;
         // FIXME: ideally this would be a WebURL, but it is currently not
         // possible to pass a WebURL by value across the WebKit API boundary.
         // See https://bugs.webkit.org/show_bug.cgi?id=103793#c13 .
@@ -473,6 +475,6 @@ public:
     virtual void vertexAttribDivisorANGLE(WGC3Duint index, WGC3Duint divisor) { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

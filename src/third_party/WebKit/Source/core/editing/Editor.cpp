@@ -29,6 +29,8 @@
 
 #include "CSSPropertyNames.h"
 #include "HTMLNames.h"
+#include "SVGNames.h"
+#include "XLinkNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
@@ -51,8 +53,8 @@
 #include "core/editing/ReplaceSelectionCommand.h"
 #include "core/editing/SimplifyMarkupCommand.h"
 #include "core/editing/SpellChecker.h"
-#include "core/editing/TextIterator.h"
 #include "core/editing/TypingCommand.h"
+#include "core/editing/UndoStack.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
 #include "core/editing/markup.h"
@@ -61,10 +63,12 @@
 #include "core/events/ScopedEventQueue.h"
 #include "core/events/TextEvent.h"
 #include "core/events/ThreadLocalEventNames.h"
+#include "core/fetch/ImageResource.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTextAreaElement.h"
+#include "core/html/parser/HTMLParserIdioms.h"
 #include "core/loader/EmptyClients.h"
 #include "core/page/EditorClient.h"
 #include "core/page/EventHandler.h"
@@ -72,11 +76,13 @@
 #include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/platform/KillRing.h"
+#include "core/frame/Settings.h"
 #include "core/platform/Pasteboard.h"
 #include "core/platform/chromium/ChromiumDataObject.h"
 #include "core/rendering/HitTestResult.h"
+#include "core/rendering/RenderImage.h"
+#include "platform/KillRing.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/unicode/CharacterNames.h"
 
 namespace WebCore {
@@ -140,9 +146,11 @@ EditorClient& Editor::client() const
     return emptyEditorClient();
 }
 
-void Editor::handleKeyboardEvent(KeyboardEvent* event)
+UndoStack* Editor::undoStack() const
 {
-    client().handleKeyboardEvent(event);
+    if (Page* page = m_frame.page())
+        return &page->undoStack();
+    return 0;
 }
 
 bool Editor::handleTextEvent(TextEvent* event)
@@ -263,19 +271,23 @@ bool Editor::canDeleteRange(Range* range) const
     return true;
 }
 
-bool Editor::smartInsertDeleteEnabled()
+bool Editor::smartInsertDeleteEnabled() const
 {
-    return client().smartInsertDeleteEnabled();
+    if (Settings* settings = m_frame.settings())
+        return settings->smartInsertDeleteEnabled();
+    return false;
 }
 
-bool Editor::canSmartCopyOrDelete()
+bool Editor::canSmartCopyOrDelete() const
 {
-    return client().smartInsertDeleteEnabled() && m_frame.selection().granularity() == WordGranularity;
+    return smartInsertDeleteEnabled() && m_frame.selection().granularity() == WordGranularity;
 }
 
-bool Editor::isSelectTrailingWhitespaceEnabled()
+bool Editor::isSelectTrailingWhitespaceEnabled() const
 {
-    return client().isSelectTrailingWhitespaceEnabled();
+    if (Settings* settings = m_frame.settings())
+        return settings->selectTrailingWhitespaceEnabled();
+    return false;
 }
 
 bool Editor::deleteWithDirection(SelectionDirection direction, TextGranularity granularity, bool killRing, bool isTypingAction)
@@ -405,6 +417,41 @@ void Editor::pasteWithPasteboard(Pasteboard* pasteboard)
         pasteAsFragment(fragment, canSmartReplaceWithPasteboard(pasteboard), chosePlainText);
 }
 
+void Editor::writeSelectionToPasteboard(Pasteboard* pasteboard, Range* selectedRange, const String& plainText)
+{
+    String html = createMarkup(selectedRange, 0, AnnotateForInterchange, false, ResolveNonLocalURLs);
+    KURL url = selectedRange->startContainer()->document().url();
+    pasteboard->writeHTML(html, url, plainText, canSmartCopyOrDelete());
+}
+
+static void writeImageNodeToPasteboard(Pasteboard* pasteboard, Node* node, const String& title)
+{
+    ASSERT(pasteboard);
+    ASSERT(node);
+
+    if (!(node->renderer() && node->renderer()->isImage()))
+        return;
+
+    RenderImage* renderer = toRenderImage(node->renderer());
+    ImageResource* cachedImage = renderer->cachedImage();
+    if (!cachedImage || cachedImage->errorOccurred())
+        return;
+    Image* image = cachedImage->imageForRenderer(renderer);
+    ASSERT(image);
+
+    // FIXME: This should probably be reconciled with HitTestResult::absoluteImageURL.
+    AtomicString urlString;
+    if (node->hasTagName(imgTag) || node->hasTagName(inputTag))
+        urlString = toElement(node)->getAttribute(srcAttr);
+    else if (node->hasTagName(SVGNames::imageTag))
+        urlString = toElement(node)->getAttribute(XLinkNames::hrefAttr);
+    else if (node->hasTagName(embedTag) || node->hasTagName(objectTag))
+        urlString = toElement(node)->imageSourceURL();
+    KURL url = urlString.isEmpty() ? KURL() : node->document().completeURL(stripLeadingAndTrailingHTMLSpaces(urlString));
+
+    pasteboard->writeImage(image, url, title);
+}
+
 // Returns whether caller should continue with "the default processing", which is the same as
 // the event handler NOT setting the return value to false
 bool Editor::dispatchCPPEvent(const AtomicString &eventType, ClipboardAccessPolicy policy, PasteMode pasteMode)
@@ -436,7 +483,7 @@ bool Editor::dispatchCPPEvent(const AtomicString &eventType, ClipboardAccessPoli
 
 bool Editor::canSmartReplaceWithPasteboard(Pasteboard* pasteboard)
 {
-    return client().smartInsertDeleteEnabled() && pasteboard->canSmartReplace();
+    return smartInsertDeleteEnabled() && pasteboard->canSmartReplace();
 }
 
 void Editor::replaceSelectionWithFragment(PassRefPtr<DocumentFragment> fragment, bool selectReplacement, bool smartReplace, bool matchStyle)
@@ -455,7 +502,7 @@ void Editor::replaceSelectionWithFragment(PassRefPtr<DocumentFragment> fragment,
     ReplaceSelectionCommand::create(*m_frame.document(), fragment, options, EditActionPaste)->apply();
     revealSelectionAfterEditingOperation();
 
-    if (m_frame.selection().isInPasswordField() || !isContinuousSpellCheckingEnabled())
+    if (m_frame.selection().isInPasswordField() || !spellChecker().isContinuousSpellCheckingEnabled())
         return;
     spellChecker().chunkAndMarkAllMisspellingsAndBadGrammar(m_frame.selection().rootEditableElement());
 }
@@ -480,7 +527,7 @@ bool Editor::shouldDeleteRange(Range* range) const
 
 void Editor::notifyComponentsOnChangedSelection(const VisibleSelection& oldSelection, FrameSelection::SetSelectionOptions options)
 {
-    client().respondToChangedSelection(&m_frame);
+    client().respondToChangedSelection(m_frame.selection().selectionType());
     setStartNewKillRingSequence(true);
 }
 
@@ -619,8 +666,6 @@ Node* Editor::findEventTargetFrom(const VisibleSelection& selection) const
     Node* target = selection.start().element();
     if (!target)
         target = m_frame.document()->body();
-    if (!target)
-        return 0;
 
     return target;
 }
@@ -633,13 +678,13 @@ Node* Editor::findEventTargetFromSelection() const
 void Editor::applyStyle(StylePropertySet* style, EditAction editingAction)
 {
     switch (m_frame.selection().selectionType()) {
-    case VisibleSelection::NoSelection:
+    case NoSelection:
         // do nothing
         break;
-    case VisibleSelection::CaretSelection:
+    case CaretSelection:
         computeAndSetTypingStyle(style, editingAction);
         break;
-    case VisibleSelection::RangeSelection:
+    case RangeSelection:
         if (style) {
             ASSERT(m_frame.document());
             ApplyStyleCommand::create(*m_frame.document(), EditingStyle::create(style).get(), editingAction)->apply();
@@ -650,18 +695,10 @@ void Editor::applyStyle(StylePropertySet* style, EditAction editingAction)
 
 void Editor::applyParagraphStyle(StylePropertySet* style, EditAction editingAction)
 {
-    switch (m_frame.selection().selectionType()) {
-    case VisibleSelection::NoSelection:
-        // do nothing
-        break;
-    case VisibleSelection::CaretSelection:
-    case VisibleSelection::RangeSelection:
-        if (style) {
-            ASSERT(m_frame.document());
-            ApplyStyleCommand::create(*m_frame.document(), EditingStyle::create(style).get(), editingAction, ApplyStyleCommand::ForceBlockProperties)->apply();
-        }
-        break;
-    }
+    if (m_frame.selection().isNone() || !style)
+        return;
+    ASSERT(m_frame.document());
+    ApplyStyleCommand::create(*m_frame.document(), EditingStyle::create(style).get(), editingAction, ApplyStyleCommand::ForceBlockProperties)->apply();
 }
 
 void Editor::applyStyleToSelection(StylePropertySet* style, EditAction editingAction)
@@ -746,7 +783,8 @@ void Editor::appliedEditing(PassRefPtr<CompositeEditCommand> cmd)
         // Only register a new undo command if the command passed in is
         // different from the last command
         m_lastEditCommand = cmd;
-        client().registerUndoStep(m_lastEditCommand->ensureComposition());
+        if (UndoStack* undoStack = this->undoStack())
+            undoStack->registerUndoStep(m_lastEditCommand->ensureComposition());
     }
 
     respondToChangedContents(newSelection);
@@ -763,7 +801,8 @@ void Editor::unappliedEditing(PassRefPtr<EditCommandComposition> cmd)
     changeSelectionAfterCommand(newSelection, FrameSelection::CloseTyping | FrameSelection::ClearTypingStyle);
 
     m_lastEditCommand = 0;
-    client().registerRedoStep(cmd);
+    if (UndoStack* undoStack = this->undoStack())
+        undoStack->registerRedoStep(cmd);
     respondToChangedContents(newSelection);
 }
 
@@ -778,7 +817,8 @@ void Editor::reappliedEditing(PassRefPtr<EditCommandComposition> cmd)
     changeSelectionAfterCommand(newSelection, FrameSelection::CloseTyping | FrameSelection::ClearTypingStyle);
 
     m_lastEditCommand = 0;
-    client().registerUndoStep(cmd);
+    if (UndoStack* undoStack = this->undoStack())
+        undoStack->registerUndoStep(cmd);
     respondToChangedContents(newSelection);
 }
 
@@ -826,8 +866,7 @@ bool Editor::insertTextWithoutSendingTextEvent(const String& text, bool selectIn
         return false;
     RefPtr<Range> range = selection.toNormalizedRange();
 
-    if (!text.isEmpty())
-        spellChecker().updateMarkersForWordsAffectedByEditing(isSpaceOrNewline(text[0]));
+    spellChecker().updateMarkersForWordsAffectedByEditing(isSpaceOrNewline(text[0]));
 
     // Get the selection to use for the event that triggered this insertText.
     // If the event handler changed the selection, we may want to use a different selection
@@ -899,7 +938,7 @@ void Editor::cut()
             Pasteboard::generalPasteboard()->writePlainText(plainText,
                 canSmartCopyOrDelete() ? Pasteboard::CanSmartReplace : Pasteboard::CannotSmartReplace);
         } else {
-            Pasteboard::generalPasteboard()->writeSelection(selection.get(), canSmartCopyOrDelete(), plainText);
+            writeSelectionToPasteboard(Pasteboard::generalPasteboard(), selection.get(), plainText);
         }
         deleteSelectionWithSmartDelete(canSmartCopyOrDelete());
     }
@@ -917,9 +956,9 @@ void Editor::copy()
     } else {
         Document* document = m_frame.document();
         if (HTMLImageElement* imageElement = imageElementFromImageDocument(document))
-            Pasteboard::generalPasteboard()->writeImage(imageElement, document->url(), document->title());
+            writeImageNodeToPasteboard(Pasteboard::generalPasteboard(), imageElement, document->title());
         else
-            Pasteboard::generalPasteboard()->writeSelection(selectedRange().get(), canSmartCopyOrDelete(), m_frame.selectedTextForClipboard());
+            writeSelectionToPasteboard(Pasteboard::generalPasteboard(), selectedRange().get(), m_frame.selectedTextForClipboard());
     }
 }
 
@@ -961,62 +1000,35 @@ void Editor::performDelete()
     setStartNewKillRingSequence(false);
 }
 
-void Editor::simplifyMarkup(Node* startNode, Node* endNode)
-{
-    if (!startNode)
-        return;
-    if (endNode) {
-        if (startNode->document() != endNode->document())
-            return;
-        // check if start node is before endNode
-        Node* node = startNode;
-        while (node && node != endNode)
-            node = NodeTraversal::next(node);
-        if (!node)
-            return;
-    }
-
-    ASSERT(m_frame.document());
-    SimplifyMarkupCommand::create(*m_frame.document(), startNode, endNode ? NodeTraversal::next(endNode) : 0)->apply();
-}
-
 void Editor::copyImage(const HitTestResult& result)
 {
-    KURL url = result.absoluteLinkURL();
-    if (url.isEmpty())
-        url = result.absoluteImageURL();
-
-    Pasteboard::generalPasteboard()->writeImage(result.innerNonSharedNode(), url, result.altDisplayString());
-}
-
-void Editor::clearUndoRedoOperations()
-{
-    client().clearUndoRedoOperations();
+    writeImageNodeToPasteboard(Pasteboard::generalPasteboard(), result.innerNonSharedNode(), result.altDisplayString());
 }
 
 bool Editor::canUndo()
 {
-    return client().canUndo();
+    if (UndoStack* undoStack = this->undoStack())
+        return undoStack->canUndo();
+    return false;
 }
 
 void Editor::undo()
 {
-    client().undo();
+    if (UndoStack* undoStack = this->undoStack())
+        undoStack->undo();
 }
 
 bool Editor::canRedo()
 {
-    return client().canRedo();
+    if (UndoStack* undoStack = this->undoStack())
+        return undoStack->canRedo();
+    return false;
 }
 
 void Editor::redo()
 {
-    client().redo();
-}
-
-void Editor::didBeginEditing(Element* rootEditableElement)
-{
-    spellChecker().didBeginEditing(rootEditableElement);
+    if (UndoStack* undoStack = this->undoStack())
+        undoStack->redo();
 }
 
 void Editor::setBaseWritingDirection(WritingDirection direction)
@@ -1034,23 +1046,6 @@ void Editor::setBaseWritingDirection(WritingDirection direction)
     RefPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
     style->setProperty(CSSPropertyDirection, direction == LeftToRightWritingDirection ? "ltr" : direction == RightToLeftWritingDirection ? "rtl" : "inherit", false);
     applyParagraphStyleToSelection(style.get(), EditActionSetWritingDirection);
-}
-
-PassRefPtr<Range> Editor::rangeForPoint(const IntPoint& windowPoint)
-{
-    Document* document = m_frame.documentAtPoint(windowPoint);
-    if (!document)
-        return 0;
-
-    Frame* frame = document->frame();
-    ASSERT(frame);
-    FrameView* frameView = frame->view();
-    if (!frameView)
-        return 0;
-    IntPoint framePoint = frameView->windowToContents(windowPoint);
-    VisibleSelection selection(frame->visiblePositionForPoint(framePoint));
-
-    return selection.toNormalizedRange().get();
 }
 
 void Editor::revealSelectionAfterEditingOperation(const ScrollAlignment& alignment, RevealExtentOption revealExtentOption)
@@ -1101,13 +1096,13 @@ void Editor::transpose()
 void Editor::addToKillRing(Range* range, bool prepend)
 {
     if (m_shouldStartNewKillRingSequence)
-        killRing()->startNewSequence();
+        killRing().startNewSequence();
 
     String text = plainText(range);
     if (prepend)
-        killRing()->prepend(text);
+        killRing().prepend(text);
     else
-        killRing()->append(text);
+        killRing().append(text);
     m_shouldStartNewKillRingSequence = false;
 }
 
@@ -1129,7 +1124,7 @@ void Editor::changeSelectionAfterCommand(const VisibleSelection& newSelection,  
     // does not call EditorClient::respondToChangedSelection(), which, on the Mac, sends selection change notifications and
     // starts a new kill ring sequence, but we want to do these things (matches AppKit).
     if (selectionDidNotChangeDOMPosition)
-        client().respondToChangedSelection(&m_frame);
+        client().respondToChangedSelection(m_frame.selection().selectionType());
 }
 
 IntRect Editor::firstRectForRange(Range* range) const
@@ -1188,27 +1183,6 @@ void Editor::computeAndSetTypingStyle(StylePropertySet* style, EditAction editin
 
     // Set the remaining style as the typing style.
     m_frame.selection().setTypingStyle(typingStyle);
-}
-
-void Editor::textAreaOrTextFieldDidBeginEditing(Element* e)
-{
-    spellChecker().didBeginEditing(e);
-}
-
-void Editor::textFieldDidEndEditing(Element* e)
-{
-    spellChecker().didEndEditingOnTextField(e);
-    client().textFieldDidEndEditing(e);
-}
-
-void Editor::textDidChangeInTextField(Element* e)
-{
-    client().textDidChangeInTextField(e);
-}
-
-bool Editor::doTextFieldCommandFromEvent(Element* e, KeyboardEvent* ke)
-{
-    return client().doTextFieldCommandFromEvent(e, ke);
 }
 
 bool Editor::findString(const String& target, bool forward, bool caseFlag, bool wrapFlag, bool startInSelection)
@@ -1333,11 +1307,6 @@ void Editor::respondToChangedSelection(const VisibleSelection& oldSelection, Fra
 SpellChecker& Editor::spellChecker() const
 {
     return m_frame.spellChecker();
-}
-
-bool Editor::isContinuousSpellCheckingEnabled() const
-{
-    return spellChecker().isContinuousSpellCheckingEnabled();
 }
 
 void Editor::toggleOverwriteModeEnabled()

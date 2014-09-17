@@ -36,8 +36,8 @@
 #include "core/frame/Frame.h"
 #include "core/platform/DragImage.h"
 #include "core/platform/chromium/ChromiumDataObject.h"
-#include "core/platform/graphics/skia/NativeImageSkia.h"
 #include "platform/geometry/IntSize.h"
+#include "platform/graphics/skia/NativeImageSkia.h"
 #include "public/platform/WebCommon.h"
 #include "public/platform/WebDragData.h"
 #include "public/platform/WebImage.h"
@@ -48,7 +48,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 DragDestinationAction DragClientImpl::actionMaskForDrag(DragData*)
 {
@@ -88,4 +88,4 @@ void DragClientImpl::startDrag(DragImage* dragImage,
     m_webView->startDragging(frame, dragData, dragOperationMask, image, offsetPoint);
 }
 
-} // namespace WebKit
+} // namespace blink

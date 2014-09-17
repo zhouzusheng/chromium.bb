@@ -27,8 +27,8 @@
 #define TextTrackLoader_h
 
 #include "core/fetch/RawResource.h"
-#include "core/fetch/ResourcePtr.h"
-#include "core/html/track/WebVTTParser.h"
+#include "core/fetch/ResourceOwner.h"
+#include "core/html/track/vtt/VTTParser.h"
 #include "platform/Timer.h"
 #include "wtf/OwnPtr.h"
 
@@ -37,7 +37,7 @@ namespace WebCore {
 class Document;
 class TextTrackLoader;
 
-class TextTrackLoaderClient {
+class TextTrackLoaderClient : public ResourceOwner<RawResource> {
 public:
     virtual ~TextTrackLoaderClient() { }
 
@@ -46,7 +46,7 @@ public:
     virtual void newRegionsAvailable(TextTrackLoader*) = 0;
 };
 
-class TextTrackLoader : public RawResourceClient, private WebVTTParserClient {
+class TextTrackLoader : public ResourceOwner<RawResource>, private VTTParserClient {
     WTF_MAKE_NONCOPYABLE(TextTrackLoader);
     WTF_MAKE_FAST_ALLOCATED;
 public:
@@ -62,7 +62,7 @@ public:
     enum State { Idle, Loading, Finished, Failed };
     State loadState() { return m_state; }
 
-    void getNewCues(Vector<RefPtr<TextTrackCue> >& outputCues);
+    void getNewCues(Vector<RefPtr<VTTCue> >& outputCues);
     void getNewRegions(Vector<RefPtr<VTTRegion> >& outputRegions);
 private:
 
@@ -70,7 +70,7 @@ private:
     virtual void dataReceived(Resource*, const char* data, int length) OVERRIDE;
     virtual void notifyFinished(Resource*) OVERRIDE;
 
-    // WebVTTParserClient
+    // VTTParserClient
     virtual void newCuesParsed() OVERRIDE;
     virtual void newRegionsParsed() OVERRIDE;
     virtual void fileFailedToParse() OVERRIDE;
@@ -81,8 +81,7 @@ private:
     void corsPolicyPreventedLoad();
 
     TextTrackLoaderClient& m_client;
-    OwnPtr<WebVTTParser> m_cueParser;
-    ResourcePtr<RawResource> m_resource;
+    OwnPtr<VTTParser> m_cueParser;
     // FIXME: Remove this pointer and get the Document from m_client.
     Document& m_document;
     Timer<TextTrackLoader> m_cueLoadTimer;

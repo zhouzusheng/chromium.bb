@@ -60,14 +60,14 @@ private:
 
     class InsertedNodes {
     public:
-        void respondToNodeInsertion(Node*);
-        void willRemoveNodePreservingChildren(Node*);
-        void willRemoveNode(Node*);
-        void didReplaceNode(Node*, Node* newNode);
+        void respondToNodeInsertion(Node&);
+        void willRemoveNodePreservingChildren(Node&);
+        void willRemoveNode(Node&);
+        void didReplaceNode(Node&, Node& newNode);
 
         Node* firstNodeInserted() const { return m_firstNodeInserted.get(); }
         Node& lastLeafInserted() const { ASSERT(m_lastNodeInserted); return m_lastNodeInserted->lastDescendant(); }
-        Node* pastLastLeaf() const { return m_lastNodeInserted ? NodeTraversal::next(&lastLeafInserted()) : 0; }
+        Node* pastLastLeaf() const { return m_lastNodeInserted ? NodeTraversal::next(lastLeafInserted()) : 0; }
 
     private:
         RefPtr<Node> m_firstNodeInserted;

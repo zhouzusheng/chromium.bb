@@ -35,9 +35,9 @@
 #include "ui/gfx/win/hwnd_util.h"
 #include "webkit/common/cursors/webcursor.h"
 
-using WebKit::WebKeyboardEvent;
-using WebKit::WebInputEvent;
-using WebKit::WebMouseEvent;
+using blink::WebKeyboardEvent;
+using blink::WebInputEvent;
+using blink::WebMouseEvent;
 
 namespace content {
 
@@ -1337,6 +1337,12 @@ bool WebPluginDelegateImpl::PlatformHandleInputEvent(
   // the outermost NPP_HandleEvent call unwinds.
   if (handle_event_depth_ == 0) {
     ResetEvent(handle_event_pump_messages_event_);
+  }
+
+  // If we didn't enter a modal loop, need to unhook the filter.
+  if (handle_event_message_filter_hook_) {
+    UnhookWindowsHookEx(handle_event_message_filter_hook_);
+    handle_event_message_filter_hook_ = NULL;
   }
 
   if (::IsWindow(last_focus_window)) {

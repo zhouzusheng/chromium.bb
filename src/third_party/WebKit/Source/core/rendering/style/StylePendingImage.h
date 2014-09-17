@@ -30,8 +30,8 @@
 #include "core/css/CSSImageGeneratorValue.h"
 #include "core/css/CSSImageSetValue.h"
 #include "core/css/CSSImageValue.h"
-#include "core/platform/graphics/Image.h"
 #include "core/rendering/style/StyleImage.h"
+#include "platform/graphics/Image.h"
 
 namespace WebCore {
 
@@ -75,6 +75,8 @@ private:
 
     CSSValue* m_value; // Not retained; it owns us.
 };
+
+DEFINE_STYLE_IMAGE_TYPE_CASTS(StylePendingImage, isPendingImage());
 
 }
 #endif

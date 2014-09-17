@@ -73,7 +73,8 @@ class DefaultWidgetDelegate : public WidgetDelegate {
   DefaultWidgetDelegate(Widget* widget, const Widget::InitParams& params)
       : widget_(widget),
         can_activate_(!params.child &&
-                      params.type != Widget::InitParams::TYPE_POPUP) {
+                      params.type != Widget::InitParams::TYPE_POPUP &&
+                      params.type != Widget::InitParams::TYPE_DRAG) {
   }
   virtual ~DefaultWidgetDelegate() {}
 
@@ -141,8 +142,9 @@ Widget::InitParams::InitParams(Type type)
                ViewsDelegate::views_delegate->UseTransparentWindows()) ?
               TRANSLUCENT_WINDOW : INFER_OPACITY),
       accept_events(true),
-      can_activate(type != TYPE_POPUP && type != TYPE_MENU),
-      keep_on_top(type == TYPE_MENU),
+      can_activate(type != TYPE_POPUP && type != TYPE_MENU &&
+                   type != TYPE_DRAG),
+      keep_on_top(type == TYPE_MENU || type == TYPE_DRAG),
       ownership(NATIVE_WIDGET_OWNS_WIDGET),
       mirror_origin_in_rtl(false),
       has_dropshadow(false),
@@ -156,6 +158,9 @@ Widget::InitParams::InitParams(Type type)
       top_level(false),
       layer_type(ui::LAYER_TEXTURED),
       context(NULL) {
+}
+
+Widget::InitParams::~InitParams() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -252,25 +257,19 @@ Widget* Widget::CreateWindowWithContextAndBounds(WidgetDelegate* delegate,
 
 // static
 Widget* Widget::CreateWindowAsFramelessChild(WidgetDelegate* widget_delegate,
-                                             gfx::NativeView parent,
-                                             gfx::NativeView new_style_parent) {
+                                             gfx::NativeView parent) {
   views::Widget* widget = new views::Widget;
 
   views::Widget::InitParams params;
   params.delegate = widget_delegate;
   params.child = true;
-  if (views::DialogDelegate::UseNewStyle()) {
-    params.parent = new_style_parent;
-    params.remove_standard_frame = true;
+  params.parent = parent;
+  params.remove_standard_frame = true;
 #if defined(USE_AURA)
-    params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
+  params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
 #endif
-  } else {
-    params.parent = parent;
-  }
 
   widget->Init(params);
-
   return widget;
 }
 
@@ -683,7 +682,13 @@ bool Widget::IsMinimized() const {
 }
 
 void Widget::SetFullscreen(bool fullscreen) {
+  if (IsFullscreen() == fullscreen)
+    return;
+
   native_widget_->SetFullscreen(fullscreen);
+
+  if (non_client_view_)
+    non_client_view_->Layout();
 }
 
 bool Widget::IsFullscreen() const {
@@ -808,7 +813,8 @@ void Widget::UpdateWindowTitle() {
   // the native frame is being used, since this also updates the taskbar, etc.
   string16 window_title = widget_delegate_->GetWindowTitle();
   base::i18n::AdjustStringForLocaleDirection(&window_title);
-  native_widget_->SetWindowTitle(window_title);
+  if (!native_widget_->SetWindowTitle(window_title))
+    return;
   non_client_view_->UpdateWindowTitle();
 
   // If the non-client view is rendering its own title, it'll need to relayout

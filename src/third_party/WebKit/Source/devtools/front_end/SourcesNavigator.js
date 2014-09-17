@@ -36,7 +36,7 @@ WebInspector.SourcesNavigator = function()
 
     this._tabbedPane = new WebInspector.TabbedPane();
     this._tabbedPane.shrinkableTabs = true;
-    this._tabbedPane.element.addStyleClass("navigator-tabbed-pane");
+    this._tabbedPane.element.classList.add("navigator-tabbed-pane");
 
     this._sourcesView = new WebInspector.NavigatorView();
     this._sourcesView.addEventListener(WebInspector.NavigatorView.Events.ItemSelected, this._sourceSelected, this);
@@ -74,8 +74,8 @@ WebInspector.SourcesNavigator.ContentScriptsTab = "contentScripts";
 WebInspector.SourcesNavigator.SnippetsTab = "snippets";
 
 WebInspector.SourcesNavigator.prototype = {
-    /*
-     * @return {WebInspector.View}
+    /**
+     * @return {!WebInspector.View}
      */
     get view()
     {
@@ -83,7 +83,7 @@ WebInspector.SourcesNavigator.prototype = {
     },
 
     /**
-     * @param {WebInspector.UISourceCode} uiSourceCode
+     * @param {!WebInspector.UISourceCode} uiSourceCode
      */
     _navigatorViewForUISourceCode: function(uiSourceCode)
     {
@@ -96,7 +96,7 @@ WebInspector.SourcesNavigator.prototype = {
     },
 
     /**
-     * @param {WebInspector.UISourceCode} uiSourceCode
+     * @param {!WebInspector.UISourceCode} uiSourceCode
      */
     addUISourceCode: function(uiSourceCode)
     {
@@ -104,7 +104,7 @@ WebInspector.SourcesNavigator.prototype = {
     },
 
     /**
-     * @param {WebInspector.UISourceCode} uiSourceCode
+     * @param {!WebInspector.UISourceCode} uiSourceCode
      */
     removeUISourceCode: function(uiSourceCode)
     {
@@ -112,7 +112,7 @@ WebInspector.SourcesNavigator.prototype = {
     },
 
     /**
-     * @param {WebInspector.UISourceCode} uiSourceCode
+     * @param {!WebInspector.UISourceCode} uiSourceCode
      * @param {boolean=} select
      */
     revealUISourceCode: function(uiSourceCode, select)
@@ -125,7 +125,7 @@ WebInspector.SourcesNavigator.prototype = {
     },
 
     /**
-     * @param {WebInspector.UISourceCode} uiSourceCode
+     * @param {!WebInspector.UISourceCode} uiSourceCode
      */
     updateIcon: function(uiSourceCode)
     {
@@ -133,7 +133,7 @@ WebInspector.SourcesNavigator.prototype = {
     },
 
     /**
-     * @param {WebInspector.UISourceCode} uiSourceCode
+     * @param {!WebInspector.UISourceCode} uiSourceCode
      * @param {function(boolean)=} callback
      */
     rename: function(uiSourceCode, callback)
@@ -142,7 +142,7 @@ WebInspector.SourcesNavigator.prototype = {
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _sourceSelected: function(event)
     {
@@ -150,7 +150,7 @@ WebInspector.SourcesNavigator.prototype = {
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _itemSearchStarted: function(event)
     {
@@ -158,7 +158,7 @@ WebInspector.SourcesNavigator.prototype = {
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _itemRenamingRequested: function(event)
     {
@@ -166,7 +166,7 @@ WebInspector.SourcesNavigator.prototype = {
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _itemCreationRequested: function(event)
     {
@@ -187,7 +187,7 @@ WebInspector.SnippetsNavigatorView = function()
 
 WebInspector.SnippetsNavigatorView.prototype = {
     /**
-     * @param {Event} event
+     * @param {!Event} event
      */
     handleContextMenu: function(event)
     {
@@ -197,8 +197,8 @@ WebInspector.SnippetsNavigatorView.prototype = {
     },
 
     /**
-     * @param {Event} event
-     * @param {WebInspector.UISourceCode} uiSourceCode
+     * @param {!Event} event
+     * @param {!WebInspector.UISourceCode} uiSourceCode
      */
     handleFileContextMenu: function(event, uiSourceCode)
     {
@@ -212,7 +212,7 @@ WebInspector.SnippetsNavigatorView.prototype = {
     },
 
     /**
-     * @param {WebInspector.UISourceCode} uiSourceCode
+     * @param {!WebInspector.UISourceCode} uiSourceCode
      */
     _handleEvaluateSnippet: function(uiSourceCode)
     {
@@ -222,7 +222,7 @@ WebInspector.SnippetsNavigatorView.prototype = {
     },
 
     /**
-     * @param {WebInspector.UISourceCode} uiSourceCode
+     * @param {!WebInspector.UISourceCode} uiSourceCode
      */
     _handleRemoveSnippet: function(uiSourceCode)
     {

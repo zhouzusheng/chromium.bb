@@ -21,8 +21,8 @@
 #ifndef SVGAnimateMotionElement_h
 #define SVGAnimateMotionElement_h
 
-#include "core/platform/graphics/Path.h"
 #include "core/svg/SVGAnimationElement.h"
+#include "platform/graphics/Path.h"
 
 namespace WebCore {
 
@@ -32,11 +32,11 @@ class SVGAnimateMotionElement FINAL : public SVGAnimationElement {
 public:
     virtual ~SVGAnimateMotionElement();
 
-    static PassRefPtr<SVGAnimateMotionElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<SVGAnimateMotionElement> create(Document&);
     void updateAnimationPath();
 
 private:
-    SVGAnimateMotionElement(const QualifiedName&, Document&);
+    explicit SVGAnimateMotionElement(Document&);
 
     virtual bool hasValidAttributeType();
     virtual bool hasValidAttributeName();

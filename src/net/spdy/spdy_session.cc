@@ -110,15 +110,6 @@ base::Value* NetLogSpdySynReplyOrHeadersReceivedCallback(
   return dict;
 }
 
-base::Value* NetLogSpdyCredentialCallback(size_t slot,
-                                          const std::string* origin,
-                                          NetLog::LogLevel /* log_level */) {
-  base::DictionaryValue* dict = new base::DictionaryValue();
-  dict->SetInteger("slot", slot);
-  dict->SetString("origin", *origin);
-  return dict;
-}
-
 base::Value* NetLogSpdySessionCloseCallback(int net_error,
                                             const std::string* description,
                                             NetLog::LogLevel /* log_level */) {
@@ -418,6 +409,7 @@ SpdySession::SpdySession(
       pings_in_flight_(0),
       next_ping_id_(1),
       last_activity_time_(time_func()),
+      last_compressed_frame_len_(0),
       check_ping_status_pending_(false),
       send_connection_header_prefix_(false),
       flow_control_state_(FLOW_CONTROL_NONE),
@@ -769,7 +761,7 @@ void SpdySession::AddPooledAlias(const SpdySessionKey& alias_key) {
   pooled_aliases_.insert(alias_key);
 }
 
-int SpdySession::GetProtocolVersion() const {
+SpdyMajorVersion SpdySession::GetProtocolVersion() const {
   DCHECK(buffered_spdy_framer_.get());
   return buffered_spdy_framer_->protocol_version();
 }
@@ -822,7 +814,7 @@ scoped_ptr<SpdyFrame> SpdySession::CreateSynStream(
   scoped_ptr<SpdyFrame> syn_frame(
       buffered_spdy_framer_->CreateSynStream(
           stream_id, 0, spdy_priority,
-          credential_slot, flags, enable_compression_, &headers));
+          credential_slot, flags, &headers));
 
   base::StatsCounter spdy_requests("spdy.requests");
   spdy_requests.Increment();
@@ -1815,6 +1807,28 @@ void SpdySession::OnStreamError(SpdyStreamId stream_id,
   ResetStreamIterator(it, RST_STREAM_PROTOCOL_ERROR, description);
 }
 
+void SpdySession::OnDataFrameHeader(SpdyStreamId stream_id,
+                                    size_t length,
+                                    bool fin) {
+  CHECK(in_io_loop_);
+
+  if (availability_state_ == STATE_CLOSED)
+    return;
+
+  ActiveStreamMap::iterator it = active_streams_.find(stream_id);
+
+  // By the time data comes in, the stream may already be inactive.
+  if (it == active_streams_.end())
+    return;
+
+  SpdyStream* stream = it->second.stream;
+  CHECK_EQ(stream->stream_id(), stream_id);
+
+  DCHECK(buffered_spdy_framer_);
+  size_t header_len = buffered_spdy_framer_->GetDataFrameMinimumSize();
+  stream->IncrementRawReceivedBytes(header_len);
+}
+
 void SpdySession::OnStreamFrameData(SpdyStreamId stream_id,
                                     const char* data,
                                     size_t len,
@@ -1859,6 +1873,8 @@ void SpdySession::OnStreamFrameData(SpdyStreamId stream_id,
 
   SpdyStream* stream = it->second.stream;
   CHECK_EQ(stream->stream_id(), stream_id);
+
+  stream->IncrementRawReceivedBytes(len);
 
   if (it->second.waiting_for_syn_reply) {
     const std::string& error = "Data received before SYN_REPLY.";
@@ -1928,6 +1944,13 @@ void SpdySession::OnSendCompressedFrame(
     UMA_HISTOGRAM_PERCENTAGE("Net.SpdySynStreamCompressionPercentage",
                              compression_pct);
   }
+}
+
+void SpdySession::OnReceiveCompressedFrame(
+    SpdyStreamId stream_id,
+    SpdyFrameType type,
+    size_t frame_len) {
+  last_compressed_frame_len_ = frame_len;
 }
 
 int SpdySession::OnInitialResponseHeadersReceived(
@@ -2070,6 +2093,8 @@ void SpdySession::OnSynStream(SpdyStreamId stream_id,
                      stream_initial_recv_window_size_,
                      net_log_));
   stream->set_stream_id(stream_id);
+  stream->IncrementRawReceivedBytes(last_compressed_frame_len_);
+  last_compressed_frame_len_ = 0;
 
   DeleteExpiredPushedStreams();
   PushedStreamMap::iterator inserted_pushed_it =
@@ -2158,6 +2183,9 @@ void SpdySession::OnSynReply(SpdyStreamId stream_id,
   SpdyStream* stream = it->second.stream;
   CHECK_EQ(stream->stream_id(), stream_id);
 
+  stream->IncrementRawReceivedBytes(last_compressed_frame_len_);
+  last_compressed_frame_len_ = 0;
+
   if (!it->second.waiting_for_syn_reply) {
     const std::string& error =
         "Received duplicate SYN_REPLY for stream.";
@@ -2195,6 +2223,9 @@ void SpdySession::OnHeaders(SpdyStreamId stream_id,
 
   SpdyStream* stream = it->second.stream;
   CHECK_EQ(stream->stream_id(), stream_id);
+
+  stream->IncrementRawReceivedBytes(last_compressed_frame_len_);
+  last_compressed_frame_len_ = 0;
 
   int rv = stream->OnAdditionalResponseHeadersReceived(headers);
   if (rv < 0) {

@@ -26,15 +26,12 @@
 #include "config.h"
 #include "core/loader/appcache/ApplicationCache.h"
 
-#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/events/EventListener.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
-#include "core/loader/appcache/ApplicationCacheHost.h"
 #include "core/frame/Frame.h"
 
 namespace WebCore {
@@ -70,18 +67,18 @@ unsigned short ApplicationCache::status() const
     return cacheHost->status();
 }
 
-void ApplicationCache::update(ExceptionState& es)
+void ApplicationCache::update(ExceptionState& exceptionState)
 {
     ApplicationCacheHost* cacheHost = applicationCacheHost();
     if (!cacheHost || !cacheHost->update())
-        es.throwDOMException(InvalidStateError, ExceptionMessages::failedToExecute("update", "ApplicationCache", "there is no application cache to update."));
+        exceptionState.throwDOMException(InvalidStateError, "there is no application cache to update.");
 }
 
-void ApplicationCache::swapCache(ExceptionState& es)
+void ApplicationCache::swapCache(ExceptionState& exceptionState)
 {
     ApplicationCacheHost* cacheHost = applicationCacheHost();
     if (!cacheHost || !cacheHost->swapCache())
-        es.throwDOMException(InvalidStateError, ExceptionMessages::failedToExecute("swapCache", "ApplicationCache", "there is no newer application cache to swap to."));
+        exceptionState.throwDOMException(InvalidStateError, "there is no newer application cache to swap to.");
 }
 
 void ApplicationCache::abort()

@@ -60,16 +60,16 @@ public:
     virtual bool isIdentity() const = 0;
 
     // Return true if the borderBoxSize was used in the computation, false otherwise.
-    virtual bool apply(TransformationMatrix&, const FloatSize& borderBoxSize) const = 0;
+    virtual void apply(TransformationMatrix&, const FloatSize& borderBoxSize) const = 0;
 
     virtual PassRefPtr<TransformOperation> blend(const TransformOperation* from, double progress, bool blendToIdentity = false) = 0;
 
-    virtual OperationType getOperationType() const = 0;
-    virtual bool isSameType(const TransformOperation&) const { return false; }
+    virtual OperationType type() const = 0;
+    bool isSameType(const TransformOperation& other) const { return other.type() == type(); }
 
     bool is3DOperation() const
     {
-        OperationType opType = getOperationType();
+        OperationType opType = type();
         return opType == ScaleZ
             || opType == Scale3D
             || opType == TranslateZ
@@ -81,6 +81,8 @@ public:
             || opType == Perspective
             || opType == Interpolated;
     }
+
+    virtual bool dependsOnBoxSize() const { return false; }
 };
 
 } // namespace WebCore

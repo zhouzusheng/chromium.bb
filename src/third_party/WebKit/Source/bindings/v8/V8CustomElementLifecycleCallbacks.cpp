@@ -45,11 +45,11 @@ namespace WebCore {
 
 #define CALLBACK_LIST(V)                  \
     V(created, Created)                   \
-    V(enteredView, EnteredView)           \
-    V(leftView, LeftView)                 \
+    V(attached, Attached)           \
+    V(detached, Detached)                 \
     V(attributeChanged, AttributeChanged)
 
-PassRefPtr<V8CustomElementLifecycleCallbacks> V8CustomElementLifecycleCallbacks::create(ExecutionContext* executionContext, v8::Handle<v8::Object> prototype, v8::Handle<v8::Function> created, v8::Handle<v8::Function> enteredView, v8::Handle<v8::Function> leftView, v8::Handle<v8::Function> attributeChanged)
+PassRefPtr<V8CustomElementLifecycleCallbacks> V8CustomElementLifecycleCallbacks::create(ExecutionContext* executionContext, v8::Handle<v8::Object> prototype, v8::Handle<v8::Function> created, v8::Handle<v8::Function> attached, v8::Handle<v8::Function> detached, v8::Handle<v8::Function> attributeChanged)
 {
     v8::Isolate* isolate = toIsolate(executionContext);
     // A given object can only be used as a Custom Element prototype
@@ -62,19 +62,19 @@ PassRefPtr<V8CustomElementLifecycleCallbacks> V8CustomElementLifecycleCallbacks:
     CALLBACK_LIST(SET_HIDDEN_PROPERTY)
 #undef SET_HIDDEN_PROPERTY
 
-    return adoptRef(new V8CustomElementLifecycleCallbacks(executionContext, prototype, created, enteredView, leftView, attributeChanged));
+    return adoptRef(new V8CustomElementLifecycleCallbacks(executionContext, prototype, created, attached, detached, attributeChanged));
 }
 
-static CustomElementLifecycleCallbacks::CallbackType flagSet(v8::Handle<v8::Function> enteredView, v8::Handle<v8::Function> leftView, v8::Handle<v8::Function> attributeChanged)
+static CustomElementLifecycleCallbacks::CallbackType flagSet(v8::Handle<v8::Function> attached, v8::Handle<v8::Function> detached, v8::Handle<v8::Function> attributeChanged)
 {
     // V8 Custom Elements always run created to swizzle prototypes.
     int flags = CustomElementLifecycleCallbacks::Created;
 
-    if (!enteredView.IsEmpty())
-        flags |= CustomElementLifecycleCallbacks::EnteredView;
+    if (!attached.IsEmpty())
+        flags |= CustomElementLifecycleCallbacks::Attached;
 
-    if (!leftView.IsEmpty())
-        flags |= CustomElementLifecycleCallbacks::LeftView;
+    if (!detached.IsEmpty())
+        flags |= CustomElementLifecycleCallbacks::Detached;
 
     if (!attributeChanged.IsEmpty())
         flags |= CustomElementLifecycleCallbacks::AttributeChanged;
@@ -83,27 +83,27 @@ static CustomElementLifecycleCallbacks::CallbackType flagSet(v8::Handle<v8::Func
 }
 
 template <typename T>
-static void weakCallback(v8::Isolate*, v8::Persistent<T>*, ScopedPersistent<T>* handle)
+static void weakCallback(const v8::WeakCallbackData<T, ScopedPersistent<T> >& data)
 {
-    handle->clear();
+    data.GetParameter()->clear();
 }
 
-V8CustomElementLifecycleCallbacks::V8CustomElementLifecycleCallbacks(ExecutionContext* executionContext, v8::Handle<v8::Object> prototype, v8::Handle<v8::Function> created, v8::Handle<v8::Function> enteredView, v8::Handle<v8::Function> leftView, v8::Handle<v8::Function> attributeChanged)
-    : CustomElementLifecycleCallbacks(flagSet(enteredView, leftView, attributeChanged))
+V8CustomElementLifecycleCallbacks::V8CustomElementLifecycleCallbacks(ExecutionContext* executionContext, v8::Handle<v8::Object> prototype, v8::Handle<v8::Function> created, v8::Handle<v8::Function> attached, v8::Handle<v8::Function> detached, v8::Handle<v8::Function> attributeChanged)
+    : CustomElementLifecycleCallbacks(flagSet(attached, detached, attributeChanged))
     , ActiveDOMCallback(executionContext)
     , m_owner(0)
     , m_world(DOMWrapperWorld::current())
     , m_prototype(toIsolate(executionContext), prototype)
     , m_created(toIsolate(executionContext), created)
-    , m_enteredView(toIsolate(executionContext), enteredView)
-    , m_leftView(toIsolate(executionContext), leftView)
+    , m_attached(toIsolate(executionContext), attached)
+    , m_detached(toIsolate(executionContext), detached)
     , m_attributeChanged(toIsolate(executionContext), attributeChanged)
 {
-    m_prototype.makeWeak(&m_prototype, weakCallback<v8::Object>);
+    m_prototype.setWeak(&m_prototype, weakCallback<v8::Object>);
 
 #define MAKE_WEAK(Var, _) \
     if (!m_##Var.isEmpty()) \
-        m_##Var.makeWeak(&m_##Var, weakCallback<v8::Function>);
+        m_##Var.setWeak(&m_##Var, weakCallback<v8::Function>);
 
     CALLBACK_LIST(MAKE_WEAK)
 #undef MAKE_WEAK
@@ -162,7 +162,7 @@ void V8CustomElementLifecycleCallbacks::created(Element* element)
 
     v8::Context::Scope scope(context);
 
-    v8::Handle<v8::Object> receiver = DOMDataStore::current(isolate)->get<V8Element>(element, isolate);
+    v8::Handle<v8::Object> receiver = DOMDataStore::current(isolate).get<V8Element>(element, isolate);
     if (!receiver.IsEmpty()) {
         // Swizzle the prototype of the existing wrapper. We don't need to
         // worry about non-existent wrappers; they will get the right
@@ -187,14 +187,14 @@ void V8CustomElementLifecycleCallbacks::created(Element* element)
     ScriptController::callFunction(executionContext(), callback, receiver, 0, 0, isolate);
 }
 
-void V8CustomElementLifecycleCallbacks::enteredView(Element* element)
+void V8CustomElementLifecycleCallbacks::attached(Element* element)
 {
-    call(m_enteredView, element);
+    call(m_attached, element);
 }
 
-void V8CustomElementLifecycleCallbacks::leftView(Element* element)
+void V8CustomElementLifecycleCallbacks::detached(Element* element)
 {
-    call(m_leftView, element);
+    call(m_detached, element);
 }
 
 void V8CustomElementLifecycleCallbacks::attributeChanged(Element* element, const AtomicString& name, const AtomicString& oldValue, const AtomicString& newValue)
@@ -218,9 +218,9 @@ void V8CustomElementLifecycleCallbacks::attributeChanged(Element* element, const
         return;
 
     v8::Handle<v8::Value> argv[] = {
-        v8String(name, isolate),
-        oldValue.isNull() ? v8::Handle<v8::Value>(v8::Null(isolate)) : v8::Handle<v8::Value>(v8String(oldValue, isolate)),
-        newValue.isNull() ? v8::Handle<v8::Value>(v8::Null(isolate)) : v8::Handle<v8::Value>(v8String(newValue, isolate))
+        v8String(isolate, name),
+        oldValue.isNull() ? v8::Handle<v8::Value>(v8::Null(isolate)) : v8::Handle<v8::Value>(v8String(isolate, oldValue)),
+        newValue.isNull() ? v8::Handle<v8::Value>(v8::Null(isolate)) : v8::Handle<v8::Value>(v8String(isolate, newValue))
     };
 
     v8::TryCatch exceptionCatcher;

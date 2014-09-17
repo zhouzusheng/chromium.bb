@@ -77,14 +77,17 @@ void PicturePileImpl::RasterDirect(
                NULL,
                canvas_rect,
                contents_scale,
-               rendering_stats_instrumentation);
+               rendering_stats_instrumentation,
+               false);
 }
 
 void PicturePileImpl::RasterForAnalysis(
     skia::AnalysisCanvas* canvas,
     gfx::Rect canvas_rect,
-    float contents_scale) {
-  RasterCommon(canvas, canvas, canvas_rect, contents_scale, NULL);
+    float contents_scale,
+    RenderingStatsInstrumentation* stats_instrumentation) {
+  RasterCommon(
+      canvas, canvas, canvas_rect, contents_scale, stats_instrumentation, true);
 }
 
 void PicturePileImpl::RasterToBitmap(
@@ -138,7 +141,8 @@ void PicturePileImpl::RasterToBitmap(
                NULL,
                canvas_rect,
                contents_scale,
-               rendering_stats_instrumentation);
+               rendering_stats_instrumentation,
+               false);
 }
 
 void PicturePileImpl::CoalesceRasters(gfx::Rect canvas_rect,
@@ -170,7 +174,8 @@ void PicturePileImpl::CoalesceRasters(gfx::Rect canvas_rect,
     if (map_iter == picture_map_.end())
       continue;
     PictureInfo& info = map_iter->second;
-    if (!info.picture.get())
+    Picture* picture = info.GetPicture();
+    if (!picture)
       continue;
 
     // This is intentionally *enclosed* rect, so that the clip is aligned on
@@ -182,13 +187,13 @@ void PicturePileImpl::CoalesceRasters(gfx::Rect canvas_rect,
     gfx::Rect content_clip =
         gfx::ScaleToEnclosedRect(chunk_rect, contents_scale);
     DCHECK(!content_clip.IsEmpty()) << "Layer rect: "
-                                    << info.picture->LayerRect().ToString()
+                                    << picture->LayerRect().ToString()
                                     << "Contents scale: " << contents_scale;
     content_clip.Intersect(canvas_rect);
 
-    PictureRegionMap::iterator it = results->find(info.picture.get());
+    PictureRegionMap::iterator it = results->find(picture);
     if (it == results->end()) {
-      Region& region = (*results)[info.picture.get()];
+      Region& region = (*results)[picture];
       region = content_rect;
       region.Subtract(content_clip);
       continue;
@@ -204,7 +209,8 @@ void PicturePileImpl::RasterCommon(
     SkDrawPictureCallback* callback,
     gfx::Rect canvas_rect,
     float contents_scale,
-    RenderingStatsInstrumentation* rendering_stats_instrumentation) {
+    RenderingStatsInstrumentation* rendering_stats_instrumentation,
+    bool is_analysis) {
   DCHECK(contents_scale >= min_contents_scale_);
 
   canvas->translate(-canvas_rect.x(), -canvas_rect.y());
@@ -260,8 +266,13 @@ void PicturePileImpl::RasterCommon(
     }
 
     if (rendering_stats_instrumentation) {
-      rendering_stats_instrumentation->AddRaster(best_duration,
-                                                 rasterized_pixel_count);
+      if (is_analysis) {
+        rendering_stats_instrumentation->AddAnalysis(best_duration,
+                                                     rasterized_pixel_count);
+      } else {
+        rendering_stats_instrumentation->AddRaster(best_duration,
+                                                   rasterized_pixel_count);
+      }
     }
   }
 
@@ -297,9 +308,18 @@ skia::RefPtr<SkPicture> PicturePileImpl::GetFlattenedPicture() {
   return picture;
 }
 
-void PicturePileImpl::AnalyzeInRect(gfx::Rect content_rect,
-                                    float contents_scale,
-                                    PicturePileImpl::Analysis* analysis) {
+void PicturePileImpl::AnalyzeInRect(
+    gfx::Rect content_rect,
+    float contents_scale,
+    PicturePileImpl::Analysis* analysis) {
+  AnalyzeInRect(content_rect, contents_scale, analysis, NULL);
+}
+
+void PicturePileImpl::AnalyzeInRect(
+    gfx::Rect content_rect,
+    float contents_scale,
+    PicturePileImpl::Analysis* analysis,
+    RenderingStatsInstrumentation* stats_instrumentation) {
   DCHECK(analysis);
   TRACE_EVENT0("cc", "PicturePileImpl::AnalyzeInRect");
 
@@ -315,7 +335,7 @@ void PicturePileImpl::AnalyzeInRect(gfx::Rect content_rect,
   skia::AnalysisDevice device(empty_bitmap);
   skia::AnalysisCanvas canvas(&device);
 
-  RasterForAnalysis(&canvas, layer_rect, 1.0f);
+  RasterForAnalysis(&canvas, layer_rect, 1.0f, stats_instrumentation);
 
   analysis->is_solid_color = canvas.GetColorIfSolid(&analysis->solid_color);
   analysis->has_text = canvas.HasText();
@@ -365,8 +385,9 @@ void PicturePileImpl::PixelRefIterator::AdvanceToTilePictureWithPixelRefs() {
     if (it == picture_pile_->picture_map_.end())
       continue;
 
-    const Picture* picture = it->second.picture.get();
-    if (!picture || (processed_pictures_.count(picture) != 0))
+    const Picture* picture = it->second.GetPicture();
+    if (!picture || (processed_pictures_.count(picture) != 0) ||
+        !picture->WillPlayBackBitmaps())
       continue;
 
     processed_pictures_.insert(picture);
@@ -382,7 +403,7 @@ void PicturePileImpl::DidBeginTracing() {
   for (PictureMap::iterator it = picture_map_.begin();
        it != picture_map_.end();
        ++it) {
-    Picture* picture = it->second.picture.get();
+    Picture* picture = it->second.GetPicture();
     if (picture && (processed_pictures.count(picture) == 0)) {
       picture->EmitTraceSnapshot();
       processed_pictures.insert(picture);

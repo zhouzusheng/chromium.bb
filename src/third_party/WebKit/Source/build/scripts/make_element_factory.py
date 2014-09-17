@@ -28,6 +28,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import sys
+from collections import defaultdict
 
 import in_generator
 import template_expander
@@ -43,9 +44,8 @@ class MakeElementFactoryWriter(MakeQualifiedNamesWriter):
         'constructorNeedsFormElement': None,
         'contextConditional': None,
         'interfaceName': None,
-        'mapToTagName': None,
         'noConstructor': None,
-        'wrapperOnlyIfMediaIsAvailable': None,
+        'runtimeEnabled': None,
     })
     default_parameters = dict(MakeQualifiedNamesWriter.default_parameters, **{
         'fallbackInterfaceName': '',
@@ -53,8 +53,8 @@ class MakeElementFactoryWriter(MakeQualifiedNamesWriter):
     })
     filters = MakeQualifiedNamesWriter.filters
 
-    def __init__(self, in_file_paths, enabled_conditions):
-        super(MakeElementFactoryWriter, self).__init__(in_file_paths, enabled_conditions)
+    def __init__(self, in_file_paths):
+        super(MakeElementFactoryWriter, self).__init__(in_file_paths)
 
         # FIXME: When we start using these element factories, we'll want to
         # remove the "new" prefix and also have our base class generate
@@ -69,10 +69,16 @@ class MakeElementFactoryWriter(MakeQualifiedNamesWriter):
         fallback_interface = self.tags_in_file.parameters['fallbackInterfaceName'].strip('"')
         fallback_js_interface = self.tags_in_file.parameters['fallbackJSInterfaceName'].strip('"') or fallback_interface
 
-        for tag in self._template_context['tags']:
+        interface_counts = defaultdict(int)
+        tags = self._template_context['tags']
+        for tag in tags:
             tag['has_js_interface'] = self._has_js_interface(tag)
             tag['js_interface'] = self._js_interface(tag)
             tag['interface'] = self._interface(tag)
+            interface_counts[tag['interface']] += 1
+
+        for tag in tags:
+            tag['multipleTagNames'] = interface_counts[tag['interface']] > 1
 
         self._template_context.update({
             'fallback_interface': fallback_interface,
@@ -114,7 +120,7 @@ class MakeElementFactoryWriter(MakeQualifiedNamesWriter):
         return self._interface(tag)
 
     def _has_js_interface(self, tag):
-        return not tag['mapToTagName'] and not tag['noConstructor'] and self._js_interface(tag) != ('%sElement' % self.namespace)
+        return not tag['noConstructor'] and self._js_interface(tag) != ('%sElement' % self.namespace)
 
 
 if __name__ == "__main__":

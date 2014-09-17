@@ -31,7 +31,6 @@
 #include "config.h"
 #include "platform/text/LocaleWin.h"
 
-#include <windows.h>
 #include <limits>
 #include "platform/DateComponents.h"
 #include "platform/Language.h"
@@ -121,7 +120,7 @@ static LCID WINAPI convertLocaleNameToLCID(LPCWSTR name, DWORD)
     return LOCALE_USER_DEFAULT;
 }
 
-static LCID LCIDFromLocaleInternal(LCID userDefaultLCID, const String& userDefaultLanguageCode, LocaleNameToLCIDPtr localeNameToLCID, String& locale)
+static LCID LCIDFromLocaleInternal(LCID userDefaultLCID, const String& userDefaultLanguageCode, LocaleNameToLCIDPtr localeNameToLCID, const String& locale)
 {
     String localeLanguageCode = extractLanguageCode(locale);
     if (equalIgnoringCase(localeLanguageCode, userDefaultLanguageCode))
@@ -129,7 +128,7 @@ static LCID LCIDFromLocaleInternal(LCID userDefaultLCID, const String& userDefau
     return localeNameToLCID(locale.charactersWithNullTermination().data(), 0);
 }
 
-static LCID LCIDFromLocale(const AtomicString& locale, bool defaultsForLocale)
+static LCID LCIDFromLocale(const String& locale, bool defaultsForLocale)
 {
     // LocaleNameToLCID() is available since Windows Vista.
     LocaleNameToLCIDPtr localeNameToLCID = reinterpret_cast<LocaleNameToLCIDPtr>(::GetProcAddress(::GetModuleHandle(L"kernel32"), "LocaleNameToLCID"));
@@ -142,13 +141,13 @@ static LCID LCIDFromLocale(const AtomicString& locale, bool defaultsForLocale)
     ::GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SISO639LANGNAME | (defaultsForLocale ? LOCALE_NOUSEROVERRIDE : 0), lowercaseLanguageCode, languageCodeBufferSize);
     String userDefaultLanguageCode = String(lowercaseLanguageCode);
 
-    LCID lcid = LCIDFromLocaleInternal(LOCALE_USER_DEFAULT, userDefaultLanguageCode, localeNameToLCID, String(locale));
+    LCID lcid = LCIDFromLocaleInternal(LOCALE_USER_DEFAULT, userDefaultLanguageCode, localeNameToLCID, locale);
     if (!lcid)
         lcid = LCIDFromLocaleInternal(LOCALE_USER_DEFAULT, userDefaultLanguageCode, localeNameToLCID, defaultLanguage());
     return lcid;
 }
 
-PassOwnPtr<Locale> Locale::create(const AtomicString& locale)
+PassOwnPtr<Locale> Locale::create(const String& locale)
 {
     // Whether the default settings for the locale should be used, ignoring user overrides.
     bool defaultsForLocale = isRunningLayoutTest();
@@ -160,13 +159,11 @@ inline LocaleWin::LocaleWin(LCID lcid, bool defaultsForLocale)
     , m_didInitializeNumberData(false)
     , m_defaultsForLocale(defaultsForLocale)
 {
-#if ENABLE(CALENDAR_PICKER)
     DWORD value = 0;
     getLocaleInfo(LOCALE_IFIRSTDAYOFWEEK | (defaultsForLocale ? LOCALE_NOUSEROVERRIDE : 0), value);
     // 0:Monday, ..., 6:Sunday.
     // We need 1 for Monday, 0 for Sunday.
     m_firstDayOfWeek = (value + 1) % 7;
-#endif
 }
 
 PassOwnPtr<LocaleWin> LocaleWin::create(LCID lcid, bool defaultsForLocale)
@@ -395,7 +392,6 @@ const Vector<String>& LocaleWin::monthLabels()
     return m_monthLabels;
 }
 
-#if ENABLE(CALENDAR_PICKER)
 const Vector<String>& LocaleWin::weekDayShortLabels()
 {
     ensureWeekDayShortLabels();
@@ -412,7 +408,6 @@ bool LocaleWin::isRTL()
     WTF::Unicode::Direction dir = WTF::Unicode::direction(monthLabels()[0][0]);
     return dir == WTF::Unicode::RightToLeft || dir == WTF::Unicode::RightToLeftArabic;
 }
-#endif
 
 String LocaleWin::dateFormat()
 {

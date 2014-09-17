@@ -38,18 +38,15 @@ namespace WebCore {
 void RuleFeatureSet::collectFeaturesFromSelector(const CSSSelector* selector)
 {
     if (selector->m_match == CSSSelector::Id)
-        idsInRules.add(selector->value().impl());
+        idsInRules.add(selector->value());
     else if (selector->m_match == CSSSelector::Class)
-        classesInRules.add(selector->value().impl());
+        classesInRules.add(selector->value());
     else if (selector->isAttributeSelector())
-        attrsInRules.add(selector->attribute().localName().impl());
+        attrsInRules.add(selector->attribute().localName());
     switch (selector->pseudoType()) {
     case CSSSelector::PseudoFirstLine:
         m_usesFirstLineRules = true;
         break;
-        break;
-    case CSSSelector::PseudoPart:
-        attrsInRules.add(HTMLNames::partAttr.localName().impl());
         break;
     case CSSSelector::PseudoHost:
         collectFeaturesFromSelectorList(selector->selectorList());

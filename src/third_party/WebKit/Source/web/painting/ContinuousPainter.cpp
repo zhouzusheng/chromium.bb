@@ -30,12 +30,12 @@
 #include "ContinuousPainter.h"
 
 #include "PageOverlayList.h"
-#include "core/platform/graphics/GraphicsLayer.h"
 #include "platform/TraceEvent.h"
+#include "platform/graphics/GraphicsLayer.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 void ContinuousPainter::setNeedsDisplayRecursive(GraphicsLayer* layer, PageOverlayList* pageOverlays)
 {
@@ -58,4 +58,4 @@ void ContinuousPainter::setNeedsDisplayRecursive(GraphicsLayer* layer, PageOverl
         setNeedsDisplayRecursive(*it, pageOverlays);
 }
 
-} // namespace WebKit
+} // namespace blink

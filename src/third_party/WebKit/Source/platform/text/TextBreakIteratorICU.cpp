@@ -72,7 +72,7 @@ public:
             }
 
             if (U_FAILURE(openStatus)) {
-                LOG_ERROR("icu::BreakIterator construction failed with status %d", openStatus);
+                WTF_LOG_ERROR("icu::BreakIterator construction failed with status %d", openStatus);
                 return 0;
             }
         }
@@ -168,13 +168,8 @@ static UText* textClone(UText* destination, const UText* source, UBool deep, UEr
     return destination;
 }
 
-static int32_t textExtract(UText* text, int64_t start, int64_t limit, UChar* destination, int32_t destinationCapacity, UErrorCode* errorCode)
+static int32_t textExtract(UText*, int64_t, int64_t, UChar*, int32_t, UErrorCode* errorCode)
 {
-    UNUSED_PARAM(text);
-    UNUSED_PARAM(start);
-    UNUSED_PARAM(limit);
-    UNUSED_PARAM(destination);
-    UNUSED_PARAM(destinationCapacity);
     // In the present context, this text provider is used only with ICU functions
     // that do not perform an extract operation.
     ASSERT_NOT_REACHED();
@@ -494,14 +489,14 @@ static TextBreakIterator* wordBreakIterator(const LChar* string, int length)
     UErrorCode openStatus = U_ZERO_ERROR;
     UText* text = textOpenLatin1(&textLocal, string, length, 0, 0, &openStatus);
     if (U_FAILURE(openStatus)) {
-        LOG_ERROR("textOpenLatin1 failed with status %d", openStatus);
+        WTF_LOG_ERROR("textOpenLatin1 failed with status %d", openStatus);
         return 0;
     }
 
     UErrorCode setTextStatus = U_ZERO_ERROR;
     breakIter->setText(text, setTextStatus);
     if (U_FAILURE(setTextStatus))
-        LOG_ERROR("BreakIterator::seText failed with status %d", setTextStatus);
+        WTF_LOG_ERROR("BreakIterator::seText failed with status %d", setTextStatus);
 
     utext_close(text);
 
@@ -555,14 +550,14 @@ TextBreakIterator* acquireLineBreakIterator(const LChar* string, int length, con
     UErrorCode openStatus = U_ZERO_ERROR;
     UText* text = textOpenLatin1(&textLocal, string, length, priorContext, priorContextLength, &openStatus);
     if (U_FAILURE(openStatus)) {
-        LOG_ERROR("textOpenLatin1 failed with status %d", openStatus);
+        WTF_LOG_ERROR("textOpenLatin1 failed with status %d", openStatus);
         return 0;
     }
 
     UErrorCode setTextStatus = U_ZERO_ERROR;
     iterator->setText(text, setTextStatus);
     if (U_FAILURE(setTextStatus)) {
-        LOG_ERROR("ubrk_setUText failed with status %d", setTextStatus);
+        WTF_LOG_ERROR("ubrk_setUText failed with status %d", setTextStatus);
         return 0;
     }
 
@@ -582,14 +577,14 @@ TextBreakIterator* acquireLineBreakIterator(const UChar* string, int length, con
     UErrorCode openStatus = U_ZERO_ERROR;
     UText* text = textOpenUTF16(&textLocal, string, length, priorContext, priorContextLength, &openStatus);
     if (U_FAILURE(openStatus)) {
-        LOG_ERROR("textOpenUTF16 failed with status %d", openStatus);
+        WTF_LOG_ERROR("textOpenUTF16 failed with status %d", openStatus);
         return 0;
     }
 
     UErrorCode setTextStatus = U_ZERO_ERROR;
     iterator->setText(text, setTextStatus);
     if (U_FAILURE(setTextStatus)) {
-        LOG_ERROR("ubrk_setUText failed with status %d", setTextStatus);
+        WTF_LOG_ERROR("ubrk_setUText failed with status %d", setTextStatus);
         return 0;
     }
 

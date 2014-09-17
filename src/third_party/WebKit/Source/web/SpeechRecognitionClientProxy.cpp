@@ -26,7 +26,6 @@
 #include "config.h"
 #include "SpeechRecognitionClientProxy.h"
 
-#include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "WebSecurityOrigin.h"
 #include "WebSpeechGrammar.h"
@@ -40,11 +39,11 @@
 #include "modules/speech/SpeechRecognitionError.h"
 #include "modules/speech/SpeechRecognitionResult.h"
 #include "modules/speech/SpeechRecognitionResultList.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 SpeechRecognitionClientProxy::~SpeechRecognitionClientProxy()
 {
@@ -146,4 +145,4 @@ SpeechRecognitionClientProxy::SpeechRecognitionClientProxy(WebSpeechRecognizer* 
 {
 }
 
-} // namespace WebKit
+} // namespace blink

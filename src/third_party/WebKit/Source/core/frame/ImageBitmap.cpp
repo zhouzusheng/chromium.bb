@@ -6,13 +6,12 @@
 #include "core/frame/ImageBitmap.h"
 
 #include "core/html/HTMLCanvasElement.h"
-#include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLVideoElement.h"
 #include "core/html/ImageData.h"
 #include "core/html/canvas/CanvasRenderingContext.h"
-#include "core/platform/graphics/BitmapImage.h"
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/ImageBuffer.h"
+#include "platform/graphics/BitmapImage.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/ImageBuffer.h"
 #include "wtf/RefPtr.h"
 
 using namespace std;
@@ -64,7 +63,9 @@ ImageBitmap::ImageBitmap(HTMLVideoElement* video, const IntRect& cropRect)
     IntRect srcRect = intersection(cropRect, videoRect);
     IntRect dstRect(IntPoint(), srcRect.size());
 
-    OwnPtr<ImageBuffer> buf = ImageBuffer::create(videoRect.size(), 1, UnacceleratedNonPlatformBuffer);
+    OwnPtr<ImageBuffer> buf = ImageBuffer::create(videoRect.size());
+    if (!buf)
+        return;
     GraphicsContext* c = buf->context();
     c->clip(dstRect);
     c->translate(-srcRect.x(), -srcRect.y());
@@ -98,7 +99,9 @@ ImageBitmap::ImageBitmap(ImageData* data, const IntRect& cropRect)
 {
     IntRect srcRect = intersection(cropRect, IntRect(IntPoint(), data->size()));
 
-    OwnPtr<ImageBuffer> buf = ImageBuffer::create(data->size(), 1, UnacceleratedNonPlatformBuffer);
+    OwnPtr<ImageBuffer> buf = ImageBuffer::create(data->size());
+    if (!buf)
+        return;
     if (srcRect.width() > 0 && srcRect.height() > 0)
         buf->putByteArray(Premultiplied, data->data(), data->size(), srcRect, IntPoint(min(0, -cropRect.x()), min(0, -cropRect.y())));
 

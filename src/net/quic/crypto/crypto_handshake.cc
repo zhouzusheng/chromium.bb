@@ -249,11 +249,23 @@ string CryptoHandshakeMessage::DebugStringInternal(size_t indent) const {
 
     bool done = false;
     switch (it->first) {
+      case kICSL:
+      case kIRTT:
       case kKATO:
-      case kVERS:
+      case kMSPC:
+      case kSWND:
         // uint32 value
         if (it->second.size() == 4) {
           uint32 value;
+          memcpy(&value, it->second.data(), sizeof(value));
+          ret += base::UintToString(value);
+          done = true;
+        }
+        break;
+      case kVERS:
+        // uint16 value
+        if (it->second.size() == 2) {
+          uint16 value;
           memcpy(&value, it->second.data(), sizeof(value));
           ret += base::UintToString(value);
           done = true;
@@ -263,6 +275,7 @@ string CryptoHandshakeMessage::DebugStringInternal(size_t indent) const {
       case kAEAD:
       case kCGST:
       case kPDMD:
+      case kVER:
         // tag lists
         if (it->second.size() % sizeof(QuicTag) == 0) {
           for (size_t j = 0; j < it->second.size(); j += sizeof(QuicTag)) {
@@ -271,7 +284,7 @@ string CryptoHandshakeMessage::DebugStringInternal(size_t indent) const {
             if (j > 0) {
               ret += ",";
             }
-            ret += QuicUtils::TagToString(tag);
+            ret += "'" + QuicUtils::TagToString(tag) + "'";
           }
           done = true;
         }
@@ -299,7 +312,7 @@ string CryptoHandshakeMessage::DebugStringInternal(size_t indent) const {
     if (!done) {
       // If there's no specific format for this tag, or the value is invalid,
       // then just use hex.
-      ret += base::HexEncode(it->second.data(), it->second.size());
+      ret += "0x" + base::HexEncode(it->second.data(), it->second.size());
     }
     ret += "\n";
   }
@@ -330,8 +343,7 @@ const char QuicCryptoConfig::kForwardSecureLabel[] =
     "QUIC forward secure key expansion";
 
 QuicCryptoConfig::QuicCryptoConfig()
-    : version(0),
-      common_cert_sets(CommonCertSets::GetInstanceQUIC()) {
+    : common_cert_sets(CommonCertSets::GetInstanceQUIC()) {
 }
 
 QuicCryptoConfig::~QuicCryptoConfig() {}

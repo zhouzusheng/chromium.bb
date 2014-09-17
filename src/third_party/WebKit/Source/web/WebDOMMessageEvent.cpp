@@ -43,7 +43,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 void WebDOMMessageEvent::initMessageEvent(const WebString& type, bool canBubble, bool cancelable, const WebSerializedScriptValue& messageData, const WebString& origin, const WebFrame* sourceFrame, const WebString& lastEventId, const WebMessagePortChannelArray& webChannels)
 {
@@ -56,7 +56,7 @@ void WebDOMMessageEvent::initMessageEvent(const WebString& type, bool canBubble,
     if (!webChannels.isEmpty() && sourceFrame) {
         OwnPtr<MessagePortChannelArray> channels = adoptPtr(new MessagePortChannelArray(webChannels.size()));
         for (size_t i = 0; i < webChannels.size(); ++i)
-            (*channels)[i] = MessagePortChannel::create(webChannels[i]);
+            (*channels)[i] = adoptPtr(webChannels[i]);
         ports = MessagePort::entanglePorts(*window->document(), channels.release());
     }
     unwrap<MessageEvent>()->initMessageEvent(type, canBubble, cancelable, messageData, origin, lastEventId, window, ports.release());
@@ -78,9 +78,9 @@ WebMessagePortChannelArray WebDOMMessageEvent::releaseChannels()
     WebMessagePortChannelArray webChannels(channels ? channels->size() : 0);
     if (channels) {
         for (size_t i = 0; i < channels->size(); ++i)
-            webChannels[i] = (*channels)[i]->webChannelRelease();
+            webChannels[i] = (*channels)[i].leakPtr();
     }
     return webChannels;
 }
 
-} // namespace WebKit
+} // namespace blink

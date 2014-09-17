@@ -56,7 +56,7 @@ class WheelEvent;
 class Widget;
 }
 
-namespace WebKit {
+namespace blink {
 
 struct WebPrintParams;
 
@@ -77,6 +77,7 @@ public:
     virtual NPObject* scriptableObject() OVERRIDE;
     virtual bool getFormValue(String&) OVERRIDE;
     virtual bool supportsKeyboardFocus() const OVERRIDE;
+    virtual bool supportsInputMethod() const OVERRIDE;
     virtual bool canProcessDrag() const OVERRIDE;
     virtual bool wantsWheelEvents() OVERRIDE;
 
@@ -216,6 +217,6 @@ inline WebPluginContainerImpl* toPluginContainerImpl(WebPluginContainer* contain
 // This will catch anyone doing an unnecessary cast.
 void toPluginContainerImpl(const WebPluginContainerImpl*);
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

@@ -32,6 +32,7 @@
 #include "core/html/forms/ColorInputType.h"
 
 #include "CSSPropertyNames.h"
+#include "InputTypeNames.h"
 #include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "bindings/v8/ScriptController.h"
@@ -41,7 +42,6 @@
 #include "core/html/HTMLDivElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLOptionElement.h"
-#include "core/html/forms/InputTypeNames.h"
 #include "core/page/Chrome.h"
 #include "core/rendering/RenderView.h"
 #include "platform/UserGestureIndicator.h"
@@ -52,6 +52,11 @@
 namespace WebCore {
 
 using namespace HTMLNames;
+
+// Upper limit of number of datalist suggestions shown.
+static const unsigned maxSuggestions = 1000;
+// Upper limit for the length of the labels for datalist suggestions.
+static const unsigned maxSuggestionLabelLength = 1000;
 
 static bool isValidColorString(const String& value)
 {
@@ -89,7 +94,7 @@ bool ColorInputType::isColorControl() const
 
 const AtomicString& ColorInputType::formControlType() const
 {
-    return InputTypeNames::color();
+    return InputTypeNames::color;
 }
 
 bool ColorInputType::supportsRequired() const
@@ -121,9 +126,9 @@ void ColorInputType::createShadowSubtree()
 
     Document& document = element().document();
     RefPtr<HTMLDivElement> wrapperElement = HTMLDivElement::create(document);
-    wrapperElement->setPart(AtomicString("-webkit-color-swatch-wrapper", AtomicString::ConstructFromLiteral));
+    wrapperElement->setPseudo(AtomicString("-webkit-color-swatch-wrapper", AtomicString::ConstructFromLiteral));
     RefPtr<HTMLDivElement> colorSwatch = HTMLDivElement::create(document);
-    colorSwatch->setPart(AtomicString("-webkit-color-swatch", AtomicString::ConstructFromLiteral));
+    colorSwatch->setPseudo(AtomicString("-webkit-color-swatch", AtomicString::ConstructFromLiteral));
     wrapperElement->appendChild(colorSwatch.release());
     element().userAgentShadowRoot()->appendChild(wrapperElement.release());
 
@@ -157,7 +162,7 @@ void ColorInputType::handleDOMActivateEvent(Event* event)
     event->setDefaultHandled();
 }
 
-void ColorInputType::detach()
+void ColorInputType::closePopupView()
 {
     endColorChooser();
 }
@@ -225,9 +230,9 @@ bool ColorInputType::shouldShowSuggestions() const
     return false;
 }
 
-Vector<Color> ColorInputType::suggestions() const
+Vector<ColorSuggestion> ColorInputType::suggestions() const
 {
-    Vector<Color> suggestions;
+    Vector<ColorSuggestion> suggestions;
     if (RuntimeEnabledFeatures::dataListElementEnabled()) {
         HTMLDataListElement* dataList = element().dataList();
         if (dataList) {
@@ -238,7 +243,10 @@ Vector<Color> ColorInputType::suggestions() const
                 Color color(option->value());
                 if (!color.isValid())
                     continue;
-                suggestions.append(color);
+                ColorSuggestion suggestion(color, option->label().left(maxSuggestionLabelLength));
+                suggestions.append(suggestion);
+                if (suggestions.size() >= maxSuggestions)
+                    break;
             }
         }
     }

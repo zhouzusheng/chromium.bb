@@ -78,8 +78,6 @@ class MEDIA_EXPORT AudioOutputDispatcher
 
  protected:
   friend class base::RefCountedThreadSafe<AudioOutputDispatcher>;
-  friend class AudioOutputProxyTest;
-
   virtual ~AudioOutputDispatcher();
 
   // A no-reference-held pointer (we don't want circular references) back to the
@@ -87,7 +85,7 @@ class MEDIA_EXPORT AudioOutputDispatcher
   AudioManager* audio_manager_;
   const scoped_refptr<base::MessageLoopProxy> message_loop_;
   const AudioParameters params_;
-  const std::string output_device_id_;
+  std::string output_device_id_;
   const std::string input_device_id_;
 
  private:

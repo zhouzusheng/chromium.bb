@@ -21,7 +21,6 @@
 #include "content/common/indexed_db/indexed_db_key.h"
 #include "content/common/indexed_db/indexed_db_key_path.h"
 #include "content/common/indexed_db/indexed_db_key_range.h"
-#include "third_party/WebKit/public/platform/WebIDBCallbacks.h"
 #include "third_party/leveldatabase/src/include/leveldb/status.h"
 #include "url/gurl.h"
 
@@ -53,14 +52,14 @@ class CONTENT_EXPORT IndexedDBBackingStore
   static scoped_refptr<IndexedDBBackingStore> Open(
       const GURL& origin_url,
       const base::FilePath& path_base,
-      WebKit::WebIDBCallbacks::DataLoss* data_loss,
+      blink::WebIDBDataLoss* data_loss,
       std::string* data_loss_message,
       bool* disk_full);
 
   static scoped_refptr<IndexedDBBackingStore> Open(
       const GURL& origin_url,
       const base::FilePath& path_base,
-      WebKit::WebIDBCallbacks::DataLoss* data_loss,
+      blink::WebIDBDataLoss* data_loss,
       std::string* data_loss_message,
       bool* disk_full,
       LevelDBFactory* factory);
@@ -70,23 +69,19 @@ class CONTENT_EXPORT IndexedDBBackingStore
       const GURL& origin_url,
       LevelDBFactory* factory);
 
-  virtual std::vector<string16> GetDatabaseNames();
-  virtual bool GetIDBDatabaseMetaData(const string16& name,
+  virtual std::vector<base::string16> GetDatabaseNames();
+  virtual bool GetIDBDatabaseMetaData(const base::string16& name,
                                       IndexedDBDatabaseMetadata* metadata,
                                       bool* success) WARN_UNUSED_RESULT;
-  virtual bool CreateIDBDatabaseMetaData(const string16& name,
-                                         const string16& version,
+  virtual bool CreateIDBDatabaseMetaData(const base::string16& name,
+                                         const base::string16& version,
                                          int64 int_version,
                                          int64* row_id);
-  virtual bool UpdateIDBDatabaseMetaData(
-      IndexedDBBackingStore::Transaction* transaction,
-      int64 row_id,
-      const string16& version);
   virtual bool UpdateIDBDatabaseIntVersion(
       IndexedDBBackingStore::Transaction* transaction,
       int64 row_id,
       int64 int_version);
-  virtual bool DeleteDatabase(const string16& name);
+  virtual bool DeleteDatabase(const base::string16& name);
 
   bool GetObjectStores(int64 database_id,
                        IndexedDBDatabaseMetadata::ObjectStoreMap* map)
@@ -95,7 +90,7 @@ class CONTENT_EXPORT IndexedDBBackingStore
       IndexedDBBackingStore::Transaction* transaction,
       int64 database_id,
       int64 object_store_id,
-      const string16& name,
+      const base::string16& name,
       const IndexedDBKeyPath& key_path,
       bool auto_increment);
   virtual bool DeleteObjectStore(
@@ -165,7 +160,7 @@ class CONTENT_EXPORT IndexedDBBackingStore
                            int64 database_id,
                            int64 object_store_id,
                            int64 index_id,
-                           const string16& name,
+                           const base::string16& name,
                            const IndexedDBKeyPath& key_path,
                            bool is_unique,
                            bool is_multi_entry) WARN_UNUSED_RESULT;
@@ -219,14 +214,19 @@ class CONTENT_EXPORT IndexedDBBackingStore
     };
 
     const IndexedDBKey& key() const { return *current_key_; }
-    bool Continue() { return Continue(NULL, SEEK); }
-    bool Continue(const IndexedDBKey* key, IteratorState state);
+    bool Continue() { return Continue(NULL, NULL, SEEK); }
+    bool Continue(const IndexedDBKey* key, IteratorState state) {
+      return Continue(key, NULL, state);
+    }
+    bool Continue(const IndexedDBKey* key,
+                  const IndexedDBKey* primary_key,
+                  IteratorState state);
     bool Advance(uint32 count);
     bool FirstSeek();
 
     virtual Cursor* Clone() = 0;
     virtual const IndexedDBKey& primary_key() const;
-    virtual std::string* Value() = 0;
+    virtual std::string* value() = 0;
     virtual const RecordIdentifier& record_identifier() const;
     virtual bool LoadCurrentRow() = 0;
 
@@ -236,6 +236,8 @@ class CONTENT_EXPORT IndexedDBBackingStore
     explicit Cursor(const IndexedDBBackingStore::Cursor* other);
 
     virtual std::string EncodeKey(const IndexedDBKey& key) = 0;
+    virtual std::string EncodeKey(const IndexedDBKey& key,
+                                  const IndexedDBKey& primary_key) = 0;
 
     bool IsPastBounds() const;
     bool HaveEnteredRange() const;
@@ -277,10 +279,10 @@ class CONTENT_EXPORT IndexedDBBackingStore
   class Transaction {
    public:
     explicit Transaction(IndexedDBBackingStore* backing_store);
-    ~Transaction();
-    void Begin();
-    bool Commit();
-    void Rollback();
+    virtual ~Transaction();
+    virtual void Begin();
+    virtual bool Commit();
+    virtual void Rollback();
     void Reset() {
       backing_store_ = NULL;
       transaction_ = NULL;

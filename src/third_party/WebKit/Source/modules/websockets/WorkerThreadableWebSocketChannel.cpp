@@ -39,36 +39,24 @@
 #include "core/fileapi/Blob.h"
 #include "core/inspector/ScriptCallFrame.h"
 #include "core/inspector/ScriptCallStack.h"
-#include "core/page/Settings.h"
-#include "core/workers/WorkerGlobalScope.h"
+#include "core/frame/Settings.h"
 #include "core/workers/WorkerLoaderProxy.h"
 #include "core/workers/WorkerRunLoop.h"
 #include "core/workers/WorkerThread.h"
 #include "modules/websockets/MainThreadWebSocketChannel.h"
 #include "modules/websockets/ThreadableWebSocketChannelClientWrapper.h"
-#include "modules/websockets/WebSocketChannel.h"
-#include "modules/websockets/WebSocketChannelClient.h"
 #include "wtf/ArrayBuffer.h"
 #include "wtf/MainThread.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-WorkerThreadableWebSocketChannel::WorkerThreadableWebSocketChannel(WorkerGlobalScope* context, WebSocketChannelClient* client, const String& taskMode)
+WorkerThreadableWebSocketChannel::WorkerThreadableWebSocketChannel(WorkerGlobalScope* context, WebSocketChannelClient* client, const String& taskMode, const String& sourceURL, unsigned lineNumber)
     : m_workerGlobalScope(context)
     , m_workerClientWrapper(ThreadableWebSocketChannelClientWrapper::create(context, client))
     , m_bridge(Bridge::create(m_workerClientWrapper, m_workerGlobalScope, taskMode))
-    , m_lineNumberAtConnection(0)
+    , m_sourceURLAtConnection(sourceURL)
+    , m_lineNumberAtConnection(lineNumber)
 {
-    // We assume that we can take the JS callstack at WebSocket connection here.
-    RefPtr<ScriptCallStack> callStack = createScriptCallStack(1, true);
-    String sourceURL;
-    unsigned lineNumber = 0;
-    if (callStack && callStack->size()) {
-        sourceURL = callStack->at(0).sourceURL();
-        lineNumber = callStack->at(0).lineNumber();
-    }
     m_bridge->initialize(sourceURL, lineNumber);
 }
 
@@ -80,11 +68,6 @@ WorkerThreadableWebSocketChannel::~WorkerThreadableWebSocketChannel()
 
 void WorkerThreadableWebSocketChannel::connect(const KURL& url, const String& protocol)
 {
-    RefPtr<ScriptCallStack> callStack = createScriptCallStack(1, true);
-    if (callStack && callStack->size()) {
-        m_sourceURLAtConnection = callStack->at(0).sourceURL();
-        m_lineNumberAtConnection = callStack->at(0).lineNumber();
-    }
     if (m_bridge)
         m_bridge->connect(url, protocol);
 }

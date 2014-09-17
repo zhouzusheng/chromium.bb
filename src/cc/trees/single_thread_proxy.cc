@@ -14,19 +14,24 @@
 #include "cc/resources/resource_update_controller.h"
 #include "cc/trees/blocking_task_runner.h"
 #include "cc/trees/layer_tree_host.h"
+#include "cc/trees/layer_tree_host_single_thread_client.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "ui/gfx/frame_time.h"
 
 namespace cc {
 
-scoped_ptr<Proxy> SingleThreadProxy::Create(LayerTreeHost* layer_tree_host) {
+scoped_ptr<Proxy> SingleThreadProxy::Create(
+    LayerTreeHost* layer_tree_host,
+    LayerTreeHostSingleThreadClient* client) {
   return make_scoped_ptr(
-      new SingleThreadProxy(layer_tree_host)).PassAs<Proxy>();
+      new SingleThreadProxy(layer_tree_host, client)).PassAs<Proxy>();
 }
 
-SingleThreadProxy::SingleThreadProxy(LayerTreeHost* layer_tree_host)
+SingleThreadProxy::SingleThreadProxy(LayerTreeHost* layer_tree_host,
+                                     LayerTreeHostSingleThreadClient* client)
     : Proxy(NULL),
       layer_tree_host_(layer_tree_host),
+      client_(client),
       created_offscreen_context_provider_(false),
       next_frame_is_newly_committed_frame_(false),
       inside_draw_(false) {
@@ -116,7 +121,7 @@ void SingleThreadProxy::CreateAndInitializeOutputSurface() {
     return;
   }
 
-  scoped_refptr<cc::ContextProvider> offscreen_context_provider;
+  scoped_refptr<ContextProvider> offscreen_context_provider;
   if (created_offscreen_context_provider_) {
     offscreen_context_provider =
         layer_tree_host_->client()->OffscreenContextProvider();
@@ -172,13 +177,13 @@ const RendererCapabilities& SingleThreadProxy::GetRendererCapabilities() const {
 }
 
 void SingleThreadProxy::SetNeedsAnimate() {
-  // Thread-only feature.
-  NOTREACHED();
+  DCHECK(Proxy::IsMainThread());
+  client_->ScheduleAnimation();
 }
 
 void SingleThreadProxy::SetNeedsUpdateLayers() {
   DCHECK(Proxy::IsMainThread());
-  layer_tree_host_->ScheduleComposite();
+  client_->ScheduleComposite();
 }
 
 void SingleThreadProxy::DoCommit(scoped_ptr<ResourceUpdateQueue> queue) {
@@ -195,9 +200,9 @@ void SingleThreadProxy::DoCommit(scoped_ptr<ResourceUpdateQueue> queue) {
 
     layer_tree_host_impl_->BeginCommit();
 
-    if (layer_tree_host_->contents_texture_manager()) {
-      layer_tree_host_->contents_texture_manager()->
-          PushTexturePrioritiesToBackings();
+    if (PrioritizedResourceManager* contents_texture_manager =
+        layer_tree_host_->contents_texture_manager()) {
+      contents_texture_manager->PushTexturePrioritiesToBackings();
     }
     layer_tree_host_->BeginCommitOnImplThread(layer_tree_host_impl_.get());
 
@@ -237,11 +242,12 @@ void SingleThreadProxy::DoCommit(scoped_ptr<ResourceUpdateQueue> queue) {
 
 void SingleThreadProxy::SetNeedsCommit() {
   DCHECK(Proxy::IsMainThread());
-  layer_tree_host_->ScheduleComposite();
+  client_->ScheduleComposite();
 }
 
 void SingleThreadProxy::SetNeedsRedraw(gfx::Rect damage_rect) {
   SetNeedsRedrawRectOnImplThread(damage_rect);
+  client_->ScheduleComposite();
 }
 
 void SingleThreadProxy::SetNextCommitWaitsForActivation() {
@@ -286,7 +292,7 @@ void SingleThreadProxy::NotifyReadyToActivate() {
 }
 
 void SingleThreadProxy::SetNeedsRedrawOnImplThread() {
-  layer_tree_host_->ScheduleComposite();
+  client_->ScheduleComposite();
 }
 
 void SingleThreadProxy::SetNeedsManageTilesOnImplThread() {
@@ -308,7 +314,7 @@ void SingleThreadProxy::DidInitializeVisibleTileOnImplThread() {
 }
 
 void SingleThreadProxy::SetNeedsCommitOnImplThread() {
-  layer_tree_host_->ScheduleComposite();
+  client_->ScheduleComposite();
 }
 
 void SingleThreadProxy::PostAnimationEventsToMainThreadOnImplThread(
@@ -323,24 +329,28 @@ bool SingleThreadProxy::ReduceContentsTextureMemoryOnImplThread(
     size_t limit_bytes,
     int priority_cutoff) {
   DCHECK(IsImplThread());
-  if (!layer_tree_host_->contents_texture_manager())
-    return false;
-  if (!layer_tree_host_impl_->resource_provider())
+  PrioritizedResourceManager* contents_texture_manager =
+      layer_tree_host_->contents_texture_manager();
+
+  ResourceProvider* resource_provider =
+      layer_tree_host_impl_->resource_provider();
+
+  if (!contents_texture_manager || !resource_provider)
     return false;
 
-  return layer_tree_host_->contents_texture_manager()->ReduceMemoryOnImplThread(
-      limit_bytes, priority_cutoff, layer_tree_host_impl_->resource_provider());
+  return contents_texture_manager->ReduceMemoryOnImplThread(
+      limit_bytes, priority_cutoff, resource_provider);
 }
 
 void SingleThreadProxy::SendManagedMemoryStats() {
   DCHECK(Proxy::IsImplThread());
   if (!layer_tree_host_impl_)
     return;
-  if (!layer_tree_host_->contents_texture_manager())
-    return;
-
   PrioritizedResourceManager* contents_texture_manager =
       layer_tree_host_->contents_texture_manager();
+  if (!contents_texture_manager)
+    return;
+
   layer_tree_host_impl_->SendManagedMemoryStats(
       contents_texture_manager->MemoryVisibleBytes(),
       contents_texture_manager->MemoryVisibleAndNearbyBytes(),
@@ -352,6 +362,15 @@ bool SingleThreadProxy::IsInsideDraw() { return inside_draw_; }
 void SingleThreadProxy::DidLoseOutputSurfaceOnImplThread() {
   // Cause a commit so we can notice the lost context.
   SetNeedsCommitOnImplThread();
+  client_->DidAbortSwapBuffers();
+}
+
+void SingleThreadProxy::DidSwapBuffersOnImplThread() {
+  client_->DidPostSwapBuffers();
+}
+
+void SingleThreadProxy::OnSwapBuffersCompleteOnImplThread() {
+  client_->DidCompleteSwapBuffers();
 }
 
 // Called by the legacy scheduling path (e.g. where render_widget does the
@@ -419,12 +438,12 @@ bool SingleThreadProxy::CommitAndComposite(
 
   layer_tree_host_->AnimateLayers(frame_begin_time);
 
-  if (layer_tree_host_->contents_texture_manager()) {
-    layer_tree_host_->contents_texture_manager()
-        ->UnlinkAndClearEvictedBackings();
-    layer_tree_host_->contents_texture_manager()->SetMaxMemoryLimitBytes(
+  if (PrioritizedResourceManager* contents_texture_manager =
+      layer_tree_host_->contents_texture_manager()) {
+    contents_texture_manager->UnlinkAndClearEvictedBackings();
+    contents_texture_manager->SetMaxMemoryLimitBytes(
         layer_tree_host_impl_->memory_allocation_limit_bytes());
-    layer_tree_host_->contents_texture_manager()->SetExternalPriorityCutoff(
+    contents_texture_manager->SetExternalPriorityCutoff(
         layer_tree_host_impl_->memory_allocation_priority_cutoff());
   }
 
@@ -434,7 +453,7 @@ bool SingleThreadProxy::CommitAndComposite(
 
   layer_tree_host_->WillCommit();
 
-  scoped_refptr<cc::ContextProvider> offscreen_context_provider;
+  scoped_refptr<ContextProvider> offscreen_context_provider;
   if (renderer_capabilities_for_main_thread_.using_offscreen_context3d &&
       layer_tree_host_->needs_offscreen_context()) {
     offscreen_context_provider =
@@ -470,7 +489,7 @@ void SingleThreadProxy::UpdateBackgroundAnimateTicking() {
 }
 
 bool SingleThreadProxy::DoComposite(
-    scoped_refptr<cc::ContextProvider> offscreen_context_provider,
+    scoped_refptr<ContextProvider> offscreen_context_provider,
     base::TimeTicks frame_begin_time,
     gfx::Rect device_viewport_damage_rect,
     bool for_readback,
@@ -501,9 +520,11 @@ bool SingleThreadProxy::DoComposite(
         layer_tree_host_impl_->CurrentFrameTime());
     UpdateBackgroundAnimateTicking();
 
-    layer_tree_host_impl_->PrepareToDraw(frame, device_viewport_damage_rect);
-    layer_tree_host_impl_->DrawLayers(frame, frame_begin_time);
-    layer_tree_host_impl_->DidDrawAllLayers(*frame);
+    if (!layer_tree_host_impl_->IsContextLost()) {
+      layer_tree_host_impl_->PrepareToDraw(frame, device_viewport_damage_rect);
+      layer_tree_host_impl_->DrawLayers(frame, frame_begin_time);
+      layer_tree_host_impl_->DidDrawAllLayers(*frame);
+    }
     lost_output_surface = layer_tree_host_impl_->IsContextLost();
 
     bool start_ready_animations = true;
@@ -513,7 +534,7 @@ bool SingleThreadProxy::DoComposite(
   }
 
   if (lost_output_surface) {
-    cc::ContextProvider* offscreen_contexts =
+    ContextProvider* offscreen_contexts =
         layer_tree_host_impl_->offscreen_context_provider();
     if (offscreen_contexts)
       offscreen_contexts->VerifyContexts();

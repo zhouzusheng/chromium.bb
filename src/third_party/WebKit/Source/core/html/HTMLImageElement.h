@@ -36,7 +36,7 @@ class HTMLImageElement FINAL : public HTMLElement {
     friend class HTMLFormElement;
 public:
     static PassRefPtr<HTMLImageElement> create(Document&);
-    static PassRefPtr<HTMLImageElement> create(const QualifiedName&, Document&, HTMLFormElement*);
+    static PassRefPtr<HTMLImageElement> create(Document&, HTMLFormElement*);
     static PassRefPtr<HTMLImageElement> createForJSConstructor(Document&, int width, int height);
 
     virtual ~HTMLImageElement();
@@ -49,7 +49,7 @@ public:
 
     bool isServerMap() const;
 
-    String altText() const;
+    const AtomicString& altText() const;
 
     CompositeOperator compositeOperator() const { return m_compositeOperator; }
 
@@ -81,8 +81,10 @@ public:
 
     virtual const AtomicString imageSourceURL() const OVERRIDE;
 
+    virtual HTMLFormElement* formOwner() const OVERRIDE;
+
 protected:
-    HTMLImageElement(const QualifiedName&, Document&, HTMLFormElement* = 0);
+    explicit HTMLImageElement(Document&, HTMLFormElement* = 0);
 
     virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
 

@@ -17,12 +17,12 @@ namespace content {
 class CONTENT_EXPORT WebKitPlatformSupportImpl
     : NON_EXPORTED_BASE(public webkit_glue::WebKitPlatformSupportChildImpl) {
  public:
-  typedef WebKit::WebGraphicsContext3D* (OffscreenContextFactory)();
+  typedef blink::WebGraphicsContext3D* (OffscreenContextFactory)();
 
   WebKitPlatformSupportImpl();
   virtual ~WebKitPlatformSupportImpl();
 
-  virtual string16 GetLocalizedString(int message_id) OVERRIDE;
+  virtual base::string16 GetLocalizedString(int message_id) OVERRIDE;
   virtual base::StringPiece GetDataResource(
       int resource_id,
       ui::ScaleFactor scale_factor) OVERRIDE;
@@ -30,9 +30,9 @@ class CONTENT_EXPORT WebKitPlatformSupportImpl
       const webkit_glue::ResourceLoaderBridge::RequestInfo& request_info)
       OVERRIDE;
   virtual webkit_glue::WebSocketStreamHandleBridge* CreateWebSocketStreamBridge(
-      WebKit::WebSocketStreamHandle* handle,
+      blink::WebSocketStreamHandle* handle,
       webkit_glue::WebSocketStreamHandleDelegate* delegate) OVERRIDE;
-  virtual WebKit::WebSocketHandle* createWebSocketHandle() OVERRIDE;
+  virtual blink::WebSocketHandle* createWebSocketHandle() OVERRIDE;
 };
 
 }  // namespace content

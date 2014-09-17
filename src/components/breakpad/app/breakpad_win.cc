@@ -31,7 +31,6 @@
 #include "breakpad/src/client/windows/handler/exception_handler.h"
 #include "components/breakpad/app/breakpad_client.h"
 #include "components/breakpad/app/hard_error_handler_win.h"
-#include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
 #include "sandbox/win/src/nt_internals.h"
 #include "sandbox/win/src/sidestep/preamble_patcher.h"
@@ -44,9 +43,6 @@
 
 namespace breakpad {
 
-// TODO(raymes): Modify the way custom crash info is stored. g_custom_entries
-// is way too too fragile. See
-// https://code.google.com/p/chromium/issues/detail?id=137062.
 std::vector<google_breakpad::CustomInfoEntry>* g_custom_entries = NULL;
 bool g_deferred_crash_uploads = false;
 
@@ -134,7 +130,7 @@ DWORD WINAPI DumpProcessWithoutCrashThread(void*) {
 // of pepper/renderer processes is reduced.
 DWORD WINAPI DumpForHangDebuggingThread(void*) {
   DumpProcessWithoutCrash();
-  LOG(INFO) << "dumped for hang debugging";
+  VLOG(1) << "dumped for hang debugging";
   return 0;
 }
 
@@ -276,6 +272,8 @@ google_breakpad::CustomClientInfo* GetCustomInfo(const std::wstring& exe_path,
       google_breakpad::CustomInfoEntry(L"plat", L"Win32"));
   g_custom_entries->push_back(
       google_breakpad::CustomInfoEntry(L"ptype", type.c_str()));
+  g_custom_entries->push_back(google_breakpad::CustomInfoEntry(
+      L"pid", base::StringPrintf(L"%d", ::GetCurrentProcessId()).c_str()));
   g_custom_entries->push_back(google_breakpad::CustomInfoEntry(
       L"channel", base::UTF16ToWide(channel_name).c_str()));
   g_custom_entries->push_back(google_breakpad::CustomInfoEntry(
@@ -488,13 +486,6 @@ bool ShowRestartDialogIfCrashed(bool* exit_now) {
   if (base::win::IsMetroProcess())
     return false;
 
-  // Only show this for the browser process. See crbug.com/132119.
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  std::string process_type =
-      command_line.GetSwitchValueASCII(switches::kProcessType);
-  if (!process_type.empty())
-    return false;
-
   base::string16 message;
   base::string16 title;
   bool is_rtl_locale;
@@ -666,7 +657,7 @@ void InitDefaultCrashCallback(LPTOP_LEVEL_EXCEPTION_FILTER filter) {
   previous_filter = SetUnhandledExceptionFilter(filter);
 }
 
-void InitCrashReporter() {
+void InitCrashReporter(const std::string& process_type_switch) {
   const CommandLine& command = *CommandLine::ForCurrentProcess();
   if (command.HasSwitch(switches::kDisableBreakpad))
     return;
@@ -674,8 +665,7 @@ void InitCrashReporter() {
   // Disable the message box for assertions.
   _CrtSetReportMode(_CRT_ASSERT, 0);
 
-  std::wstring process_type =
-    command.GetSwitchValueNative(switches::kProcessType);
+  std::wstring process_type = ASCIIToWide(process_type_switch);
   if (process_type.empty())
     process_type = L"browser";
 

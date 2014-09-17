@@ -379,7 +379,8 @@ enum TextJustify {
 
 enum TextUnderlinePosition {
     // FIXME: Implement support for 'under left' and 'under right' values.
-    TextUnderlinePositionAuto = 0x1, TextUnderlinePositionAlphabetic = 0x2, TextUnderlinePositionUnder = 0x4
+    TextUnderlinePositionAuto = 0x1,
+    TextUnderlinePositionUnder = 0x2
 };
 
 enum EPageBreak {
@@ -458,7 +459,8 @@ enum EInsideLink {
 
 enum EPointerEvents {
     PE_NONE, PE_AUTO, PE_STROKE, PE_FILL, PE_PAINTED, PE_VISIBLE,
-    PE_VISIBLE_STROKE, PE_VISIBLE_FILL, PE_VISIBLE_PAINTED, PE_ALL
+    PE_VISIBLE_STROKE, PE_VISIBLE_FILL, PE_VISIBLE_PAINTED, PE_BOUNDINGBOX,
+    PE_ALL
 };
 
 enum ETransformStyle3D {
@@ -513,7 +515,17 @@ enum GridAutoFlow { AutoFlowNone, AutoFlowColumn, AutoFlowRow };
 
 enum DraggableRegionMode { DraggableRegionNone, DraggableRegionDrag, DraggableRegionNoDrag };
 
-enum TouchAction { TouchActionAuto, TouchActionNone };
+static const size_t TouchActionBits = 3;
+enum TouchAction {
+    TouchActionAuto = 0x0,
+    TouchActionNone = 0x1,
+    TouchActionPanX = 0x2,
+    TouchActionPanY = 0x4
+};
+inline TouchAction operator| (TouchAction a, TouchAction b) { return TouchAction(int(a) | int(b)); }
+inline TouchAction& operator|= (TouchAction& a, TouchAction b) { return a = a | b; }
+inline TouchAction operator& (TouchAction a, TouchAction b) { return TouchAction(int(a) & int(b)); }
+inline TouchAction& operator&= (TouchAction& a, TouchAction b) { return a = a & b; }
 
 enum EIsolation { IsolationAuto, IsolationIsolate };
 
@@ -523,6 +535,8 @@ enum TouchActionDelay { TouchActionDelayNone, TouchActionDelayScript };
 static const float maximumAllowedFontSize = 1000000.0f;
 
 enum TextIndentLine { TextIndentFirstLine, TextIndentEachLine };
+
+enum LayoutBox { MarginBox, BorderBox, PaddingBox, ContentBox };
 
 } // namespace WebCore
 

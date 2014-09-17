@@ -34,7 +34,7 @@ namespace WebCore {
 static const double timeWithoutMouseMovementBeforeHidingFullscreenControls = 3;
 
 MediaControls::MediaControls(Document& document)
-    : HTMLDivElement(HTMLNames::divTag, document)
+    : HTMLDivElement(document)
     , m_mediaController(0)
     , m_panel(0)
     , m_textDisplayContainer(0)
@@ -331,7 +331,7 @@ void MediaControls::stopHideFullscreenControlsTimer()
     m_hideFullscreenControlsTimer.stop();
 }
 
-const AtomicString& MediaControls::part() const
+const AtomicString& MediaControls::pseudo() const
 {
     DEFINE_STATIC_LOCAL(AtomicString, id, ("-webkit-media-controls"));
     return id;

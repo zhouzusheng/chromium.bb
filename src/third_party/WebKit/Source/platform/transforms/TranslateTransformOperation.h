@@ -54,8 +54,7 @@ public:
 private:
     virtual bool isIdentity() const { return !floatValueForLength(m_x, 1) && !floatValueForLength(m_y, 1) && !floatValueForLength(m_z, 1); }
 
-    virtual OperationType getOperationType() const { return m_type; }
-    virtual bool isSameType(const TransformOperation& o) const { return o.getOperationType() == m_type; }
+    virtual OperationType type() const OVERRIDE { return m_type; }
 
     virtual bool operator==(const TransformOperation& o) const
     {
@@ -65,13 +64,17 @@ private:
         return m_x == t->m_x && m_y == t->m_y && m_z == t->m_z;
     }
 
-    virtual bool apply(TransformationMatrix& transform, const FloatSize& borderBoxSize) const
+    virtual void apply(TransformationMatrix& transform, const FloatSize& borderBoxSize) const
     {
         transform.translate3d(x(borderBoxSize), y(borderBoxSize), z(borderBoxSize));
-        return m_x.type() == Percent || m_y.type() == Percent;
     }
 
     virtual PassRefPtr<TransformOperation> blend(const TransformOperation* from, double progress, bool blendToIdentity = false);
+
+    virtual bool dependsOnBoxSize() const OVERRIDE
+    {
+        return m_x.isPercent() || m_y.isPercent();
+    }
 
     TranslateTransformOperation(const Length& tx, const Length& ty, const Length& tz, OperationType type)
         : m_x(tx)

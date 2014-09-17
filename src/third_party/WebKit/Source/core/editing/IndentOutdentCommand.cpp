@@ -72,13 +72,18 @@ bool IndentOutdentCommand::tryIndentingAsListItem(const Position& start, const P
     // We should calculate visible range in list item because inserting new
     // list element will change visibility of list item, e.g. :first-child
     // CSS selector.
-    VisiblePosition startOfMove(start);
-    VisiblePosition endOfMove(end);
-
     RefPtr<Element> newList = document().createElement(listNode->tagQName(), false);
     insertNodeBefore(newList, selectedListItem.get());
 
-    moveParagraphWithClones(startOfMove, endOfMove, newList.get(), selectedListItem.get());
+    // We should clone all the children of the list item for indenting purposes. However, in case the current
+    // selection does not encompass all its children, we need to explicitally handle the same. The original
+    // list item too would require proper deletion in that case.
+    if (end.anchorNode() == selectedListItem.get() || end.anchorNode()->isDescendantOf(selectedListItem->lastChild())) {
+        moveParagraphWithClones(start, end, newList.get(), selectedListItem.get());
+    } else {
+        moveParagraphWithClones(start, positionAfterNode(selectedListItem->lastChild()), newList.get(), selectedListItem.get());
+        removeNode(selectedListItem.get());
+    }
 
     if (canMergeLists(previousList.get(), newList.get()))
         mergeIdenticalElements(previousList.get(), newList.get());
@@ -102,7 +107,6 @@ void IndentOutdentCommand::indentIntoBlockquote(const Position& start, const Pos
     if (!nodeToSplitTo)
         return;
 
-    RefPtr<Node> nodeAfterStart = start.computeNodeAfterPosition();
     RefPtr<Node> outerBlock = (start.containerNode() == nodeToSplitTo) ? start.containerNode() : splitTreeToNode(start.containerNode(), nodeToSplitTo);
 
     VisiblePosition startOfContents = start;
@@ -189,16 +193,16 @@ void IndentOutdentCommand::outdentParagraph()
 // FIXME: We should merge this function with ApplyBlockElementCommand::formatSelection
 void IndentOutdentCommand::outdentRegion(const VisiblePosition& startOfSelection, const VisiblePosition& endOfSelection)
 {
+    VisiblePosition endOfCurrentParagraph = endOfParagraph(startOfSelection);
     VisiblePosition endOfLastParagraph = endOfParagraph(endOfSelection);
 
-    if (endOfParagraph(startOfSelection) == endOfLastParagraph) {
+    if (endOfCurrentParagraph == endOfLastParagraph) {
         outdentParagraph();
         return;
     }
 
     Position originalSelectionEnd = endingSelection().end();
-    VisiblePosition endOfCurrentParagraph = endOfParagraph(startOfSelection);
-    VisiblePosition endAfterSelection = endOfParagraph(endOfParagraph(endOfSelection).next());
+    VisiblePosition endAfterSelection = endOfParagraph(endOfLastParagraph.next());
 
     while (endOfCurrentParagraph != endAfterSelection) {
         VisiblePosition endOfNextParagraph = endOfParagraph(endOfCurrentParagraph.next());

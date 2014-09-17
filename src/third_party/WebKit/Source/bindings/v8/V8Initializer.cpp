@@ -59,7 +59,7 @@ static Frame* findFrame(v8::Local<v8::Object> host, v8::Local<v8::Value> data, v
     const WrapperTypeInfo* type = WrapperTypeInfo::unwrap(data);
 
     if (V8Window::wrapperTypeInfo.equals(type)) {
-        v8::Handle<v8::Object> windowWrapper = host->FindInstanceInPrototypeChain(V8Window::GetTemplate(isolate, worldTypeInMainThread(isolate)));
+        v8::Handle<v8::Object> windowWrapper = host->FindInstanceInPrototypeChain(V8Window::domTemplate(isolate, worldTypeInMainThread(isolate)));
         if (windowWrapper.IsEmpty())
             return 0;
         return V8Window::toNative(windowWrapper)->frame();
@@ -78,15 +78,16 @@ static Frame* findFrame(v8::Local<v8::Object> host, v8::Local<v8::Value> data, v
 
 static void reportFatalErrorInMainThread(const char* location, const char* message)
 {
-    int memoryUsageMB = WebKit::Platform::current()->actualMemoryUsageMB();
+    int memoryUsageMB = blink::Platform::current()->actualMemoryUsageMB();
     printf("V8 error: %s (%s).  Current memory usage: %d MB\n", message, location, memoryUsageMB);
     CRASH();
 }
 
 static void messageHandlerInMainThread(v8::Handle<v8::Message> message, v8::Handle<v8::Value> data)
 {
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
     // If called during context initialization, there will be no entered context.
-    v8::Handle<v8::Context> enteredContext = v8::Context::GetEntered();
+    v8::Handle<v8::Context> enteredContext = isolate->GetEnteredContext();
     if (enteredContext.IsEmpty())
         return;
 
@@ -94,17 +95,17 @@ static void messageHandlerInMainThread(v8::Handle<v8::Message> message, v8::Hand
     if (!firstWindow->isCurrentlyDisplayedInFrame())
         return;
 
-    String errorMessage = toWebCoreString(message->Get());
+    String errorMessage = toCoreString(message->Get());
 
     v8::Handle<v8::StackTrace> stackTrace = message->GetStackTrace();
     RefPtr<ScriptCallStack> callStack;
     // Currently stack trace is only collected when inspector is open.
     if (!stackTrace.IsEmpty() && stackTrace->GetFrameCount() > 0)
-        callStack = createScriptCallStack(stackTrace, ScriptCallStack::maxCallStackSizeToCapture, v8::Isolate::GetCurrent());
+        callStack = createScriptCallStack(stackTrace, ScriptCallStack::maxCallStackSizeToCapture, isolate);
 
     v8::Handle<v8::Value> resourceName = message->GetScriptResourceName();
     bool shouldUseDocumentURL = resourceName.IsEmpty() || !resourceName->IsString();
-    String resource = shouldUseDocumentURL ? firstWindow->document()->url() : toWebCoreString(resourceName.As<v8::String>());
+    String resource = shouldUseDocumentURL ? firstWindow->document()->url() : toCoreString(resourceName.As<v8::String>());
     AccessControlStatus corsStatus = message->IsSharedCrossOrigin() ? SharableCrossOrigin : NotSharableCrossOrigin;
 
     RefPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, resource, message->GetLineNumber(), message->GetStartColumn() + 1, DOMWrapperWorld::current());
@@ -135,9 +136,9 @@ static void failedAccessCheckCallbackInMainThread(v8::Local<v8::Object> host, v8
         return;
     DOMWindow* targetWindow = target->domWindow();
 
-    ExceptionState es(v8::Isolate::GetCurrent());
-    es.throwSecurityError(targetWindow->sanitizedCrossDomainAccessErrorMessage(activeDOMWindow()), targetWindow->crossDomainAccessErrorMessage(activeDOMWindow()));
-    es.throwIfNeeded();
+    ExceptionState exceptionState(v8::Handle<v8::Object>(), v8::Isolate::GetCurrent());
+    exceptionState.throwSecurityError(targetWindow->sanitizedCrossDomainAccessErrorMessage(activeDOMWindow()), targetWindow->crossDomainAccessErrorMessage(activeDOMWindow()));
+    exceptionState.throwIfNeeded();
 }
 
 static bool codeGenerationCheckCallbackInMainThread(v8::Local<v8::Context> context)
@@ -149,8 +150,12 @@ static bool codeGenerationCheckCallbackInMainThread(v8::Local<v8::Context> conte
     return false;
 }
 
-static void initializeV8Common()
+static void initializeV8Common(v8::Isolate* isolate)
 {
+    v8::ResourceConstraints constraints;
+    constraints.ConfigureDefaults(static_cast<uint64_t>(blink::Platform::current()->physicalMemoryMB()) << 20, static_cast<uint32_t>(blink::Platform::current()->numberOfProcessors()));
+    v8::SetResourceConstraints(isolate, &constraints);
+
     v8::V8::AddGCPrologueCallback(V8GCController::gcPrologue);
     v8::V8::AddGCEpilogueCallback(V8GCController::gcEpilogue);
     v8::V8::IgnoreOutOfMemoryException();
@@ -167,7 +172,7 @@ void V8Initializer::initializeMainThreadIfNeeded(v8::Isolate* isolate)
         return;
     initialized = true;
 
-    initializeV8Common();
+    initializeV8Common(isolate);
 
     v8::V8::SetFatalErrorHandler(reportFatalErrorInMainThread);
     v8::V8::AddMessageListener(messageHandlerInMainThread);
@@ -194,8 +199,9 @@ static void messageHandlerInWorker(v8::Handle<v8::Message> message, v8::Handle<v
 
     // During the frame teardown, there may not be a valid context.
     if (ExecutionContext* context = getExecutionContext()) {
-        String errorMessage = toWebCoreString(message->Get());
-        String sourceURL = toWebCoreString(message->GetScriptResourceName());
+        String errorMessage = toCoreString(message->Get());
+        V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, sourceURL, message->GetScriptResourceName());
+
         RefPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, sourceURL, message->GetLineNumber(), message->GetStartColumn() + 1, DOMWrapperWorld::current());
         AccessControlStatus corsStatus = message->IsSharedCrossOrigin() ? SharableCrossOrigin : NotSharableCrossOrigin;
 
@@ -210,7 +216,7 @@ static const int kWorkerMaxStackSize = 500 * 1024;
 
 void V8Initializer::initializeWorker(v8::Isolate* isolate)
 {
-    initializeV8Common();
+    initializeV8Common(isolate);
 
     v8::V8::AddMessageListener(messageHandlerInWorker);
     v8::V8::SetFatalErrorHandler(reportFatalErrorInWorker);
@@ -218,9 +224,7 @@ void V8Initializer::initializeWorker(v8::Isolate* isolate)
     v8::ResourceConstraints resourceConstraints;
     uint32_t here;
     resourceConstraints.set_stack_limit(&here - kWorkerMaxStackSize / sizeof(uint32_t*));
-    v8::SetResourceConstraints(&resourceConstraints);
-
-    V8PerIsolateData::ensureInitialized(isolate);
+    v8::SetResourceConstraints(isolate, &resourceConstraints);
 }
 
 } // namespace WebCore

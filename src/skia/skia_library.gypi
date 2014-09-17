@@ -43,6 +43,8 @@
       'SK_ENABLE_LEGACY_API_ALIASING=1',
       'SK_ATTR_DEPRECATED=SK_NOTHING_ARG1',
       'SK_SUPPORT_LEGACY_COLORTYPE=1',
+      'GR_GL_IGNORE_ES3_MSAA=0',
+      'SK_SUPPORT_LEGACY_PIXELREF_CONSTRUCTOR=1'
     ],
 
     'default_font_cache_limit%': '(20*1024*1024)',
@@ -268,11 +270,10 @@
         '../third_party/skia/src/opts/opts_check_SSE2.cpp'
       ],
     }],
-    [ 'use_glib == 1', {
+    [ 'desktop_linux == 1 or chromeos == 1', {
       'dependencies': [
         '../build/linux/system.gyp:fontconfig',
         '../build/linux/system.gyp:freetype2',
-        '../build/linux/system.gyp:pangocairo',
         '../third_party/icu/icu.gyp:icuuc',
       ],
       'cflags': [
@@ -280,13 +281,18 @@
         '-Wno-unused-function',
       ],
     }],
-    [ 'use_glib == 0', {
+    [ 'use_cairo == 1', {
+      'dependencies': [
+        '../build/linux/system.gyp:pangocairo',
+      ],
+    }],
+    [ 'OS=="win" or OS=="mac" or OS=="ios" or OS=="android"', {
       'sources!': [
         '../third_party/skia/src/ports/SkFontConfigInterface_direct.cpp',
         '../third_party/skia/src/fonts/SkFontMgr_fontconfig.cpp',
       ],
     }],
-    [ 'use_glib == 0 and OS != "android"', {
+    [ 'OS=="win" or OS=="mac" or OS=="ios"', {
       'sources!': [
         '../third_party/skia/src/ports/SkFontHost_FreeType.cpp',
         '../third_party/skia/src/ports/SkFontHost_FreeType_common.cpp',
@@ -373,9 +379,6 @@
         '../third_party/skia/include/utils/win',
         '../third_party/skia/src/utils/win',
       ],
-      'defines': [
-        'SK_FONTHOST_USES_FONTMGR',
-      ],
     },{ # not 'OS == "win"'
       'sources!': [
         '../third_party/skia/src/ports/SkFontHost_win_dw.cpp',
@@ -441,9 +444,9 @@
 
     'IGNORE_ROT_AA_RECT_OPT',
 
-    'SK_IGNORE_QUAD_RR_CORNERS_OPT',
+    'SK_IGNORE_BLURRED_RRECT_OPT',
 
-    'SKIA_IGNORE_GPU_MIPMAPS',
+    'SK_IGNORE_QUAD_RR_CORNERS_OPT',
 
     # this flag forces Skia not to use typographic metrics with GDI.
     'SK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS',

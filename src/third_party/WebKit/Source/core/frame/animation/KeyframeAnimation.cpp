@@ -32,7 +32,7 @@
 #include "CSSPropertyNames.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/events/ThreadLocalEventNames.h"
-#include "core/page/UseCounter.h"
+#include "core/frame/UseCounter.h"
 #include "core/frame/animation/AnimationControllerPrivate.h"
 #include "core/frame/animation/CSSPropertyAnimation.h"
 #include "core/frame/animation/CompositeAnimation.h"
@@ -44,7 +44,7 @@ using namespace std;
 
 namespace WebCore {
 
-KeyframeAnimation::KeyframeAnimation(const CSSAnimationData* animation, RenderObject* renderer, int index, CompositeAnimation* compAnim, RenderStyle* unanimatedStyle)
+KeyframeAnimation::KeyframeAnimation(const CSSAnimationData* animation, RenderObject& renderer, int index, CompositeAnimation* compAnim, RenderStyle& unanimatedStyle)
     : AnimationBase(animation, renderer, compAnim)
     , m_keyframes(renderer, animation->name())
     , m_index(index)
@@ -53,14 +53,14 @@ KeyframeAnimation::KeyframeAnimation(const CSSAnimationData* animation, RenderOb
 {
     // Get the keyframe RenderStyles
     if (m_object && m_object->node() && m_object->node()->isElementNode())
-        m_object->document().styleResolver()->keyframeStylesForAnimation(toElement(m_object->node()), unanimatedStyle, m_keyframes);
+        m_object->document().ensureStyleResolver().keyframeStylesForAnimation(toElement(m_object->node()), unanimatedStyle, m_keyframes);
 
     // Update the m_transformFunctionListValid flag based on whether the function lists in the keyframes match.
     validateTransformFunctionList();
     checkForMatchingFilterFunctionLists();
     HashSet<CSSPropertyID>::const_iterator endProperties = m_keyframes.endProperties();
     for (HashSet<CSSPropertyID>::const_iterator it = m_keyframes.beginProperties(); it != endProperties; ++it)
-        WebKit::Platform::current()->histogramSparse("WebCore.Animation.CSSProperties", UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(*it));
+        blink::Platform::current()->histogramSparse("WebCore.Animation.CSSProperties", UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(*it));
 }
 
 KeyframeAnimation::~KeyframeAnimation()
@@ -147,9 +147,7 @@ void KeyframeAnimation::fetchIntervalEndpointsForProperty(CSSPropertyID property
     // A scale of infinity is handled in AnimationBase::fractionalTime().
     ASSERT(scale >= 0 && (!std::isinf(scale) || prevIndex == nextIndex));
 
-    // FIXME: This sometimes gets the wrong timing function. See crbug.com/288540.
-    const TimingFunction* timingFunction = KeyframeValue::timingFunction(prevKeyframe.style(), name());
-    prog = progress(scale, offset, timingFunction);
+    prog = progress(scale, offset, KeyframeValue::timingFunction(*prevKeyframe.style()));
 }
 
 void KeyframeAnimation::animate(CompositeAnimation*, RenderObject*, const RenderStyle*, RenderStyle* targetStyle, RefPtr<RenderStyle>& animatedStyle)

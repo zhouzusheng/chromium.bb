@@ -38,7 +38,7 @@ namespace WebCore {
 class ExecutionContext;
 }
 
-namespace WebKit {
+namespace blink {
 
 class WebFrame;
 class WebString;
@@ -54,9 +54,6 @@ public:
     bool allowFileSystem();
     bool allowIndexedDB(const WebString& name);
 
-    // FIXME: Remove this after embedder implement this.
-    WebWorkerPermissionClientProxy* proxy() { return m_proxy.get(); }
-
     static const char* supplementName();
     static WorkerPermissionClient* from(WebCore::ExecutionContext*);
 
@@ -68,6 +65,6 @@ private:
 
 void providePermissionClientToWorker(WebCore::WorkerClients*, PassOwnPtr<WebWorkerPermissionClientProxy>);
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WorkerPermissionClient_h

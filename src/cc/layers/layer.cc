@@ -12,6 +12,7 @@
 #include "base/single_thread_task_runner.h"
 #include "cc/animation/animation.h"
 #include "cc/animation/animation_events.h"
+#include "cc/animation/keyframed_animation_curve.h"
 #include "cc/animation/layer_animation_controller.h"
 #include "cc/layers/layer_client.h"
 #include "cc/layers/layer_impl.h"
@@ -43,11 +44,7 @@ Layer::Layer()
       have_wheel_event_handlers_(false),
       user_scrollable_horizontal_(true),
       user_scrollable_vertical_(true),
-      anchor_point_(0.5f, 0.5f),
-      background_color_(0),
-      compositing_reasons_(kCompositingReasonUnknown),
-      opacity_(1.f),
-      anchor_point_z_(0.f),
+      is_root_for_isolated_group_(false),
       is_container_for_fixed_position_layers_(false),
       is_drawable_(false),
       hide_layer_and_subtree_(false),
@@ -58,6 +55,12 @@ Layer::Layer()
       use_parent_backface_visibility_(false),
       draw_checkerboard_for_missing_tiles_(false),
       force_render_surface_(false),
+      anchor_point_(0.5f, 0.5f),
+      background_color_(0),
+      compositing_reasons_(kCompositingReasonUnknown),
+      opacity_(1.f),
+      blend_mode_(SkXfermode::kSrcOver_Mode),
+      anchor_point_z_(0.f),
       scroll_parent_(NULL),
       clip_parent_(NULL),
       replica_layer_(NULL),
@@ -70,6 +73,7 @@ Layer::Layer()
 
   layer_animation_controller_ = LayerAnimationController::Create(layer_id_);
   layer_animation_controller_->AddValueObserver(this);
+  layer_animation_controller_->set_value_provider(this);
 }
 
 Layer::~Layer() {
@@ -81,6 +85,7 @@ Layer::~Layer() {
   DCHECK(!layer_tree_host());
 
   layer_animation_controller_->RemoveValueObserver(this);
+  layer_animation_controller_->remove_value_provider(this);
 
   // Remove the parent reference from all children and dependents.
   RemoveAllChildren();
@@ -125,8 +130,7 @@ void Layer::SetLayerTreeHost(LayerTreeHost* host) {
 
   if (host && layer_animation_controller_->has_any_animation())
     host->SetNeedsCommit();
-  if (host && (!filters_.IsEmpty() || !background_filters_.IsEmpty()))
-    layer_tree_host_->set_needs_filter_context();
+  SetNeedsFilterContextIfNeeded();
 }
 
 void Layer::SetNeedsUpdate() {
@@ -158,6 +162,15 @@ void Layer::SetNextCommitWaitsForActivation() {
     return;
 
   layer_tree_host_->SetNextCommitWaitsForActivation();
+}
+
+void Layer::SetNeedsFilterContextIfNeeded() {
+  if (!layer_tree_host_)
+    return;
+
+  if (!filters_.IsEmpty() || !background_filters_.IsEmpty() ||
+      !uses_default_blend_mode())
+    layer_tree_host_->set_needs_filter_context();
 }
 
 void Layer::SetNeedsPushProperties() {
@@ -471,8 +484,7 @@ void Layer::SetFilters(const FilterOperations& filters) {
     return;
   filters_ = filters;
   SetNeedsCommit();
-  if (!filters.IsEmpty() && layer_tree_host_)
-    layer_tree_host_->set_needs_filter_context();
+  SetNeedsFilterContextIfNeeded();
 }
 
 bool Layer::FilterIsAnimating() const {
@@ -485,8 +497,7 @@ void Layer::SetBackgroundFilters(const FilterOperations& filters) {
     return;
   background_filters_ = filters;
   SetNeedsCommit();
-  if (!filters.IsEmpty() && layer_tree_host_)
-    layer_tree_host_->set_needs_filter_context();
+  SetNeedsFilterContextIfNeeded();
 }
 
 void Layer::SetOpacity(float opacity) {
@@ -503,6 +514,64 @@ bool Layer::OpacityIsAnimating() const {
 
 bool Layer::OpacityCanAnimateOnImplThread() const {
   return false;
+}
+
+void Layer::SetBlendMode(SkXfermode::Mode blend_mode) {
+  DCHECK(IsPropertyChangeAllowed());
+  if (blend_mode_ == blend_mode)
+    return;
+
+  // Allowing only blend modes that are defined in the CSS Compositing standard:
+  // http://dev.w3.org/fxtf/compositing-1/#blending
+  switch (blend_mode) {
+    case SkXfermode::kSrcOver_Mode:
+    case SkXfermode::kScreen_Mode:
+    case SkXfermode::kOverlay_Mode:
+    case SkXfermode::kDarken_Mode:
+    case SkXfermode::kLighten_Mode:
+    case SkXfermode::kColorDodge_Mode:
+    case SkXfermode::kColorBurn_Mode:
+    case SkXfermode::kHardLight_Mode:
+    case SkXfermode::kSoftLight_Mode:
+    case SkXfermode::kDifference_Mode:
+    case SkXfermode::kExclusion_Mode:
+    case SkXfermode::kMultiply_Mode:
+    case SkXfermode::kHue_Mode:
+    case SkXfermode::kSaturation_Mode:
+    case SkXfermode::kColor_Mode:
+    case SkXfermode::kLuminosity_Mode:
+      // supported blend modes
+      break;
+    case SkXfermode::kClear_Mode:
+    case SkXfermode::kSrc_Mode:
+    case SkXfermode::kDst_Mode:
+    case SkXfermode::kDstOver_Mode:
+    case SkXfermode::kSrcIn_Mode:
+    case SkXfermode::kDstIn_Mode:
+    case SkXfermode::kSrcOut_Mode:
+    case SkXfermode::kDstOut_Mode:
+    case SkXfermode::kSrcATop_Mode:
+    case SkXfermode::kDstATop_Mode:
+    case SkXfermode::kXor_Mode:
+    case SkXfermode::kPlus_Mode:
+    case SkXfermode::kModulate_Mode:
+      // Porter Duff Compositing Operators are not yet supported
+      // http://dev.w3.org/fxtf/compositing-1/#porterduffcompositingoperators
+      NOTREACHED();
+      return;
+  }
+
+  blend_mode_ = blend_mode;
+  SetNeedsCommit();
+  SetNeedsFilterContextIfNeeded();
+}
+
+void Layer::SetIsRootForIsolatedGroup(bool root) {
+  DCHECK(IsPropertyChangeAllowed());
+  if (is_root_for_isolated_group_ == root)
+    return;
+  is_root_for_isolated_group_ = root;
+  SetNeedsCommit();
 }
 
 void Layer::SetContentsOpaque(bool opaque) {
@@ -807,10 +876,12 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   bool is_tracing;
   TRACE_EVENT_CATEGORY_GROUP_ENABLED(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
                                      &is_tracing);
-  if (is_tracing)
-      layer->SetDebugName(DebugName());
-  else
-      layer->SetDebugName(std::string());
+  if (is_tracing) {
+    layer->SetDebugName(DebugName());
+    layer->SetDebugInfo(TakeDebugInfo());
+  } else {
+    layer->SetDebugName(std::string());
+  }
 
   layer->SetCompositingReasons(compositing_reasons_);
   layer->SetDoubleSided(double_sided_);
@@ -832,6 +903,8 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   if (!layer->OpacityIsAnimatingOnImplOnly() && !OpacityIsAnimating())
     layer->SetOpacity(opacity_);
   DCHECK(!(OpacityIsAnimating() && layer->OpacityIsAnimatingOnImplOnly()));
+  layer->SetBlendMode(blend_mode_);
+  layer->SetIsRootForIsolatedGroup(is_root_for_isolated_group_);
   layer->SetPosition(position_);
   layer->SetIsContainerForFixedPositionLayers(
       IsContainerForFixedPositionLayers());
@@ -927,9 +1000,7 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   stacking_order_changed_ = false;
   update_rect_ = gfx::RectF();
 
-  // Animating layers require further push properties to clean up the animation.
-  // crbug.com/259088
-  needs_push_properties_ = layer_animation_controller_->has_any_animation();
+  needs_push_properties_ = false;
   num_dependents_need_push_properties_ = 0;
 }
 
@@ -968,6 +1039,14 @@ std::string Layer::DebugName() {
   return client_ ? client_->DebugName() : std::string();
 }
 
+scoped_refptr<base::debug::ConvertableToTraceFormat> Layer::TakeDebugInfo() {
+  if (client_)
+    return client_->TakeDebugInfo();
+  else
+    return NULL;
+}
+
+
 void Layer::SetCompositingReasons(CompositingReasons reasons) {
   compositing_reasons_ = reasons;
 }
@@ -980,6 +1059,10 @@ void Layer::CreateRenderSurface() {
 
 void Layer::ClearRenderSurface() {
   draw_properties_.render_surface.reset();
+}
+
+gfx::Vector2dF Layer::ScrollOffsetForAnimation() const {
+  return TotalScrollOffset();
 }
 
 // On<Property>Animated is called due to an ongoing accelerated animation.
@@ -996,6 +1079,17 @@ void Layer::OnOpacityAnimated(float opacity) {
 
 void Layer::OnTransformAnimated(const gfx::Transform& transform) {
   transform_ = transform;
+}
+
+void Layer::OnScrollOffsetAnimated(gfx::Vector2dF scroll_offset) {
+  // Do nothing. Scroll deltas will be sent from the compositor thread back
+  // to the main thread in the same manner as during non-animated
+  // compositor-driven scrolling.
+}
+
+void Layer::OnAnimationWaitingForDeletion() {
+  // Animations are only deleted during PushProperties.
+  SetNeedsPushProperties();
 }
 
 bool Layer::IsActive() const {
@@ -1027,7 +1121,6 @@ void Layer::SetLayerAnimationControllerForTest(
     scoped_refptr<LayerAnimationController> controller) {
   layer_animation_controller_->RemoveValueObserver(this);
   layer_animation_controller_ = controller;
-  layer_animation_controller_->set_force_sync();
   layer_animation_controller_->AddValueObserver(this);
   SetNeedsCommit();
 }

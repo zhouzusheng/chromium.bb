@@ -906,6 +906,7 @@ Channel::Channel(int32_t channelId,
     _decryptionRTCPBufferPtr(NULL),
     _timeStamp(0), // This is just an offset, RTP module will add it's own random offset
     _sendTelephoneEventPayloadType(106),
+    jitter_buffer_playout_timestamp_(0),
     playout_timestamp_rtp_(0),
     playout_timestamp_rtcp_(0),
     _numberOfDiscardedPackets(0),
@@ -2107,11 +2108,11 @@ int32_t Channel::ReceivedRTPPacket(const int8_t* data, int32_t length) {
       rtp_payload_registry_->GetPayloadTypeFrequency(header.payloadType);
   if (header.payload_type_frequency < 0)
     return -1;
+  bool in_order = IsPacketInOrder(header);
   rtp_receive_statistics_->IncomingPacket(header, length,
-                                          IsPacketRetransmitted(header));
+      IsPacketRetransmitted(header, in_order));
   rtp_payload_registry_->SetIncomingPayloadType(header);
-  return ReceivePacket(received_packet, length, header,
-                       IsPacketInOrder(header)) ? 0 : -1;
+  return ReceivePacket(received_packet, length, header, in_order) ? 0 : -1;
 }
 
 bool Channel::ReceivePacket(const uint8_t* packet,
@@ -2171,7 +2172,8 @@ bool Channel::IsPacketInOrder(const RTPHeader& header) const {
   return statistician->IsPacketInOrder(header.sequenceNumber);
 }
 
-bool Channel::IsPacketRetransmitted(const RTPHeader& header) const {
+bool Channel::IsPacketRetransmitted(const RTPHeader& header,
+                                    bool in_order) const {
   // Retransmissions are handled separately if RTX is enabled.
   if (rtp_payload_registry_->RtxEnabled())
     return false;
@@ -2182,7 +2184,7 @@ bool Channel::IsPacketRetransmitted(const RTPHeader& header) const {
   // Check if this is a retransmission.
   uint16_t min_rtt = 0;
   _rtpRtcpModule->RTT(rtp_receiver_->SSRC(), NULL, NULL, &min_rtt, NULL);
-  return !IsPacketInOrder(header) &&
+  return !in_order &&
       statistician->IsRetransmitOfOldPacket(header, min_rtt);
 }
 
@@ -4618,6 +4620,10 @@ Channel::GetNetworkStatistics(NetworkStatistics& stats)
     return return_value;
 }
 
+void Channel::GetDecodingCallStatistics(AudioDecodingCallStats* stats) const {
+  audio_coding_->GetDecodingCallStatistics(stats);
+}
+
 bool Channel::GetDelayEstimate(int* jitter_buffer_delay_ms,
                                int* playout_buffer_delay_ms) const {
   if (_average_jitter_buffer_delay_us == 0) {
@@ -4712,6 +4718,8 @@ void Channel::UpdatePlayoutTimestamp(bool rtcp) {
       playout_frequency = 48000;
     }
   }
+
+  jitter_buffer_playout_timestamp_ = playout_timestamp;
 
   // Remove the playout delay.
   playout_timestamp -= (delay_ms * (playout_frequency / 1000));
@@ -5066,10 +5074,10 @@ void Channel::UpdatePacketDelay(uint32_t rtp_timestamp,
     rtp_receive_frequency = 48000;
   }
 
-  // playout_timestamp_rtp_ updated in UpdatePlayoutTimestamp for every incoming
-  // packet.
-  uint32_t timestamp_diff_ms = (rtp_timestamp - playout_timestamp_rtp_) /
-      (rtp_receive_frequency / 1000);
+  // |jitter_buffer_playout_timestamp_| updated in UpdatePlayoutTimestamp for
+  // every incoming packet.
+  uint32_t timestamp_diff_ms = (rtp_timestamp -
+      jitter_buffer_playout_timestamp_) / (rtp_receive_frequency / 1000);
 
   uint16_t packet_delay_ms = (rtp_timestamp - _previousTimestamp) /
       (rtp_receive_frequency / 1000);

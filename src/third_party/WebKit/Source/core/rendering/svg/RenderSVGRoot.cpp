@@ -25,12 +25,9 @@
 
 #include "core/rendering/svg/RenderSVGRoot.h"
 
-#include "core/page/Chrome.h"
-#include "core/page/ChromeClient.h"
 #include "core/frame/Frame.h"
-#include "core/page/Page.h"
-#include "core/platform/graphics/GraphicsContext.h"
 #include "core/rendering/HitTestResult.h"
+#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/RenderPart.h"
 #include "core/rendering/RenderView.h"
@@ -41,6 +38,7 @@
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGSVGElement.h"
 #include "core/svg/graphics/SVGImage.h"
+#include "platform/graphics/GraphicsContext.h"
 
 using namespace std;
 
@@ -196,6 +194,8 @@ LayoutUnit RenderSVGRoot::computeReplacedLogicalHeight() const
 void RenderSVGRoot::layout()
 {
     ASSERT(needsLayout());
+
+    LayoutRectRecorder recorder(*this);
 
     // Arbitrary affine transforms are incompatible with LayoutState.
     LayoutStateDisabler layoutStateDisabler(view());

@@ -198,21 +198,6 @@ void UpdateStats(const gpu::GPUInfo& gpu_info,
       gpu_info.gl_reset_notification_strategy);
 }
 
-// Strip out the non-digital info; if after that, we get an empty string,
-// return "0".
-std::string ProcessVersionString(const std::string& raw_string) {
-  const std::string valid_set = "0123456789.";
-  size_t start_pos = raw_string.find_first_of(valid_set);
-  if (start_pos == std::string::npos)
-    return "0";
-  size_t end_pos = raw_string.find_first_not_of(raw_string, start_pos);
-  std::string version_string = raw_string.substr(
-      start_pos, end_pos - start_pos);
-  if (version_string.empty())
-    return "0";
-  return version_string;
-}
-
 // Combine the integers into a string, seperated by ','.
 std::string IntSetToString(const std::set<int>& list) {
   std::string rt;
@@ -294,6 +279,21 @@ void ApplyAndroidWorkarounds(const gpu::GPUInfo& gpu_info,
 }
 #endif  // OS_ANDROID
 
+// Overwrite force gpu workaround if a commandline switch exists.
+void AdjustGpuSwitchingOption(std::set<int>* workarounds) {
+  DCHECK(workarounds);
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  std::string option = command_line.GetSwitchValueASCII(
+      switches::kGpuSwitching);
+  if (option == switches::kGpuSwitchingOptionNameForceDiscrete) {
+    workarounds->erase(gpu::FORCE_INTEGRATED_GPU);
+    workarounds->insert(gpu::FORCE_DISCRETE_GPU);
+  } else if (option == switches::kGpuSwitchingOptionNameForceIntegrated) {
+    workarounds->erase(gpu::FORCE_DISCRETE_GPU);
+    workarounds->insert(gpu::FORCE_INTEGRATED_GPU);
+  }
+}
+
 // Block all domains' use of 3D APIs for this many milliseconds if
 // approaching a threshold where system stability might be compromised.
 const int64 kBlockAllDomainsMs = 10000;
@@ -318,7 +318,7 @@ void GpuDataManagerImplPrivate::InitializeForTesting(
   // Prevent all further initialization.
   finalized_ = true;
 
-  InitializeImpl(gpu_blacklist_json, std::string(), std::string(), gpu_info);
+  InitializeImpl(gpu_blacklist_json, std::string(), gpu_info);
 }
 
 bool GpuDataManagerImplPrivate::IsFeatureBlacklisted(int feature) const {
@@ -535,7 +535,7 @@ void GpuDataManagerImplPrivate::GetGLStrings(std::string* gl_vendor,
 void GpuDataManagerImplPrivate::Initialize() {
   TRACE_EVENT0("startup", "GpuDataManagerImpl::Initialize");
   if (finalized_) {
-    DLOG(INFO) << "GpuDataManagerImpl marked as finalized; skipping Initialize";
+    DVLOG(0) << "GpuDataManagerImpl marked as finalized; skipping Initialize";
     return;
   }
 
@@ -568,18 +568,15 @@ void GpuDataManagerImplPrivate::Initialize() {
 #endif
 
   std::string gpu_blacklist_string;
-  std::string gpu_switching_list_string;
   std::string gpu_driver_bug_list_string;
   if (!command_line->HasSwitch(switches::kIgnoreGpuBlacklist) &&
       !command_line->HasSwitch(switches::kUseGpuInTests)) {
     gpu_blacklist_string = gpu::kSoftwareRenderingListJson;
-    gpu_switching_list_string = gpu::kGpuSwitchingListJson;
   }
   if (!command_line->HasSwitch(switches::kDisableGpuDriverBugWorkarounds)) {
     gpu_driver_bug_list_string = gpu::kGpuDriverBugListJson;
   }
   InitializeImpl(gpu_blacklist_string,
-                 gpu_switching_list_string,
                  gpu_driver_bug_list_string,
                  gpu_info);
 }
@@ -590,6 +587,7 @@ void GpuDataManagerImplPrivate::UpdateGpuInfo(const gpu::GPUInfo& gpu_info) {
     return;
 
   gpu::MergeGPUInfo(&gpu_info_, gpu_info);
+  gpu::DetermineActiveGPU(&gpu_info_);
   complete_gpu_info_already_requested_ =
       complete_gpu_info_already_requested_ || gpu_info_.finalized;
 
@@ -603,22 +601,11 @@ void GpuDataManagerImplPrivate::UpdateGpuInfo(const gpu::GPUInfo& gpu_info) {
 
     UpdateBlacklistedFeatures(features);
   }
-  if (gpu_switching_list_) {
-    std::set<int> option = gpu_switching_list_->MakeDecision(
-        gpu::GpuControlList::kOsAny, std::string(), gpu_info_);
-    if (option.size() == 1) {
-      // Blacklist decision should not overwrite commandline switch from users.
-      CommandLine* command_line = CommandLine::ForCurrentProcess();
-      if (!command_line->HasSwitch(switches::kGpuSwitching)) {
-        gpu_switching_ = static_cast<gpu::GpuSwitchingOption>(
-            *(option.begin()));
-      }
-    }
-  }
   if (gpu_driver_bug_list_) {
     gpu_driver_bugs_ = gpu_driver_bug_list_->MakeDecision(
         gpu::GpuControlList::kOsAny, std::string(), gpu_info_);
   }
+  AdjustGpuSwitchingOption(&gpu_driver_bugs_);
 
   // We have to update GpuFeatureType before notify all the observers.
   NotifyGpuInfoUpdate();
@@ -636,23 +623,20 @@ void GpuDataManagerImplPrivate::AppendRendererCommandLine(
   DCHECK(command_line);
 
   if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_WEBGL)) {
-    if (!command_line->HasSwitch(switches::kDisableExperimentalWebGL))
-      command_line->AppendSwitch(switches::kDisableExperimentalWebGL);
     if (!command_line->HasSwitch(switches::kDisablePepper3d))
       command_line->AppendSwitch(switches::kDisablePepper3d);
   }
-  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_MULTISAMPLING) &&
-      !command_line->HasSwitch(switches::kDisableGLMultisampling))
-    command_line->AppendSwitch(switches::kDisableGLMultisampling);
   if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING) &&
       !command_line->HasSwitch(switches::kDisableAcceleratedCompositing))
     command_line->AppendSwitch(switches::kDisableAcceleratedCompositing);
-  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS) &&
-      !command_line->HasSwitch(switches::kDisableAccelerated2dCanvas))
-    command_line->AppendSwitch(switches::kDisableAccelerated2dCanvas);
   if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE) &&
       !command_line->HasSwitch(switches::kDisableAcceleratedVideoDecode))
     command_line->AppendSwitch(switches::kDisableAcceleratedVideoDecode);
+#if defined(ENABLE_WEBRTC)
+  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_VIDEO_ENCODE) &&
+      !command_line->HasSwitch(switches::kDisableWebRtcHWEncoding))
+    command_line->AppendSwitch(switches::kDisableWebRtcHWEncoding);
+#endif
 
   if (use_software_compositor_ &&
       !command_line->HasSwitch(switches::kEnableSoftwareCompositing))
@@ -701,24 +685,10 @@ void GpuDataManagerImplPrivate::AppendGpuCommandLine(
   } else if (!use_gl.empty()) {
     command_line->AppendSwitchASCII(switches::kUseGL, use_gl);
   }
-  if (ui::GpuSwitchingManager::GetInstance()->SupportsDualGpus()) {
+  if (ui::GpuSwitchingManager::GetInstance()->SupportsDualGpus())
     command_line->AppendSwitchASCII(switches::kSupportsDualGpus, "true");
-    switch (gpu_switching_) {
-      case gpu::GPU_SWITCHING_OPTION_FORCE_DISCRETE:
-        command_line->AppendSwitchASCII(switches::kGpuSwitching,
-            switches::kGpuSwitchingOptionNameForceDiscrete);
-        break;
-      case gpu::GPU_SWITCHING_OPTION_FORCE_INTEGRATED:
-        command_line->AppendSwitchASCII(switches::kGpuSwitching,
-            switches::kGpuSwitchingOptionNameForceIntegrated);
-        break;
-      case gpu::GPU_SWITCHING_OPTION_AUTOMATIC:
-      case gpu::GPU_SWITCHING_OPTION_UNKNOWN:
-        break;
-    }
-  } else {
+  else
     command_line->AppendSwitchASCII(switches::kSupportsDualGpus, "false");
-  }
 
   if (!swiftshader_path.empty()) {
     command_line->AppendSwitchPath(switches::kSwiftShaderPath,
@@ -734,6 +704,12 @@ void GpuDataManagerImplPrivate::AppendGpuCommandLine(
       !command_line->HasSwitch(switches::kDisableAcceleratedVideoDecode)) {
     command_line->AppendSwitch(switches::kDisableAcceleratedVideoDecode);
   }
+#if defined(ENABLE_WEBRTC)
+  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_VIDEO_ENCODE) &&
+      !command_line->HasSwitch(switches::kDisableWebRtcHWEncoding)) {
+    command_line->AppendSwitch(switches::kDisableWebRtcHWEncoding);
+  }
+#endif
 
 #if defined(OS_WIN)
   // DisplayLink 7.1 and earlier can cause the GPU process to crash on startup.
@@ -838,13 +814,6 @@ void GpuDataManagerImplPrivate::UpdateRendererWebPrefs(
 #endif
 }
 
-gpu::GpuSwitchingOption
-GpuDataManagerImplPrivate::GetGpuSwitchingOption() const {
-  if (!ui::GpuSwitchingManager::GetInstance()->SupportsDualGpus())
-    return gpu::GPU_SWITCHING_OPTION_UNKNOWN;
-  return gpu_switching_;
-}
-
 void GpuDataManagerImplPrivate::DisableHardwareAcceleration() {
   card_blacklisted_ = true;
 
@@ -885,11 +854,7 @@ void GpuDataManagerImplPrivate::GetDriverBugWorkarounds(
 
 void GpuDataManagerImplPrivate::AddLogMessage(
     int level, const std::string& header, const std::string& message) {
-  base::DictionaryValue* dict = new base::DictionaryValue();
-  dict->SetInteger("level", level);
-  dict->SetString("header", header);
-  dict->SetString("message", message);
-  log_messages_.Append(dict);
+  log_messages_.push_back(LogMessage(level, header, message));
 }
 
 void GpuDataManagerImplPrivate::ProcessCrashed(
@@ -913,8 +878,14 @@ void GpuDataManagerImplPrivate::ProcessCrashed(
 }
 
 base::ListValue* GpuDataManagerImplPrivate::GetLogMessages() const {
-  base::ListValue* value;
-  value = log_messages_.DeepCopy();
+  base::ListValue* value = new base::ListValue;
+  for (size_t ii = 0; ii < log_messages_.size(); ++ii) {
+    base::DictionaryValue* dict = new base::DictionaryValue();
+    dict->SetInteger("level", log_messages_[ii].level);
+    dict->SetString("header", log_messages_[ii].header);
+    dict->SetString("message", log_messages_[ii].message);
+    value->Append(dict);
+  }
   return value;
 }
 
@@ -980,7 +951,6 @@ GpuDataManagerImplPrivate* GpuDataManagerImplPrivate::Create(
 GpuDataManagerImplPrivate::GpuDataManagerImplPrivate(
     GpuDataManagerImpl* owner)
     : complete_gpu_info_already_requested_(false),
-      gpu_switching_(gpu::GPU_SWITCHING_OPTION_AUTOMATIC),
       observer_list_(new GpuDataManagerObserverList),
       use_swiftshader_(false),
       card_blacklisted_(false),
@@ -1006,14 +976,6 @@ GpuDataManagerImplPrivate::GpuDataManagerImplPrivate(
 #if defined(USE_AURA) && !defined(OS_CHROMEOS)
   use_software_compositor_ = true;
 #endif
-  if (command_line->HasSwitch(switches::kGpuSwitching)) {
-    std::string option_string = command_line->GetSwitchValueASCII(
-        switches::kGpuSwitching);
-    gpu::GpuSwitchingOption option =
-        gpu::StringToGpuSwitchingOption(option_string);
-    if (option != gpu::GPU_SWITCHING_OPTION_UNKNOWN)
-      gpu_switching_ = option;
-  }
 
 #if defined(OS_MACOSX)
   CGGetActiveDisplayList (0, NULL, &display_count_);
@@ -1034,13 +996,8 @@ GpuDataManagerImplPrivate::~GpuDataManagerImplPrivate() {
 
 void GpuDataManagerImplPrivate::InitializeImpl(
     const std::string& gpu_blacklist_json,
-    const std::string& gpu_switching_list_json,
     const std::string& gpu_driver_bug_list_json,
     const gpu::GPUInfo& gpu_info) {
-  std::string browser_version_string = ProcessVersionString(
-      GetContentClient()->GetProduct());
-  CHECK(!browser_version_string.empty());
-
   const bool log_gpu_control_list_decisions =
       CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kLogGpuControlListDecisions);
@@ -1050,17 +1007,7 @@ void GpuDataManagerImplPrivate::InitializeImpl(
     if (log_gpu_control_list_decisions)
       gpu_blacklist_->enable_control_list_logging("gpu_blacklist");
     bool success = gpu_blacklist_->LoadList(
-        browser_version_string, gpu_blacklist_json,
-        gpu::GpuControlList::kCurrentOsOnly);
-    DCHECK(success);
-  }
-  if (!gpu_switching_list_json.empty()) {
-    gpu_switching_list_.reset(gpu::GpuSwitchingList::Create());
-    if (log_gpu_control_list_decisions)
-      gpu_switching_list_->enable_control_list_logging("gpu_switching_list");
-    bool success = gpu_switching_list_->LoadList(
-        browser_version_string, gpu_switching_list_json,
-        gpu::GpuControlList::kCurrentOsOnly);
+        gpu_blacklist_json, gpu::GpuControlList::kCurrentOsOnly);
     DCHECK(success);
   }
   if (!gpu_driver_bug_list_json.empty()) {
@@ -1068,8 +1015,7 @@ void GpuDataManagerImplPrivate::InitializeImpl(
     if (log_gpu_control_list_decisions)
       gpu_driver_bug_list_->enable_control_list_logging("gpu_driver_bug_list");
     bool success = gpu_driver_bug_list_->LoadList(
-        browser_version_string, gpu_driver_bug_list_json,
-        gpu::GpuControlList::kCurrentOsOnly);
+        gpu_driver_bug_list_json, gpu::GpuControlList::kCurrentOsOnly);
     DCHECK(success);
   }
 
@@ -1124,17 +1070,10 @@ void GpuDataManagerImplPrivate::UpdateGpuSwitchingManager(
       gpu_info.secondary_gpus.size() + 1);
 
   if (ui::GpuSwitchingManager::GetInstance()->SupportsDualGpus()) {
-    switch (gpu_switching_) {
-      case gpu::GPU_SWITCHING_OPTION_FORCE_DISCRETE:
-        ui::GpuSwitchingManager::GetInstance()->ForceUseOfDiscreteGpu();
-        break;
-      case gpu::GPU_SWITCHING_OPTION_FORCE_INTEGRATED:
-        ui::GpuSwitchingManager::GetInstance()->ForceUseOfIntegratedGpu();
-        break;
-      case gpu::GPU_SWITCHING_OPTION_AUTOMATIC:
-      case gpu::GPU_SWITCHING_OPTION_UNKNOWN:
-        break;
-    }
+    if (gpu_driver_bugs_.count(gpu::FORCE_DISCRETE_GPU) == 1)
+      ui::GpuSwitchingManager::GetInstance()->ForceUseOfDiscreteGpu();
+    else if (gpu_driver_bugs_.count(gpu::FORCE_INTEGRATED_GPU) == 1)
+      ui::GpuSwitchingManager::GetInstance()->ForceUseOfIntegratedGpu();
   }
 }
 

@@ -34,15 +34,17 @@ base.exportTo('cc', function() {
     initialize: function() {
       // Defaults.
       this.invalidation = new cc.Region();
+      this.unrecordedRegion = new cc.Region();
       this.pictures = [];
 
       // Import & validate this.args
       cc.moveRequiredFieldsFromArgsToToplevel(
           this, ['layerId', 'children',
-            'layerQuad']);
+                 'layerQuad']);
       cc.moveOptionalFieldsFromArgsToToplevel(
           this, ['maskLayer', 'replicaLayer',
-            'idealContentsScale', 'geometryContentsScale']);
+                 'idealContentsScale', 'geometryContentsScale',
+                 'layoutRects']);
 
       // Leave bounds in both places.
       this.bounds = base.Rect.fromXYWH(
@@ -108,6 +110,11 @@ base.exportTo('cc', function() {
       if (this.args.invalidation) {
         this.invalidation = cc.Region.fromArray(this.args.invalidation);
         delete this.args.invalidation;
+      }
+      if (this.args.unrecordedRegion) {
+        this.unrecordedRegion = cc.Region.fromArray(
+            this.args.unrecordedRegion);
+        delete this.args.unrecordedRegion;
       }
       if (this.args.pictures) {
         this.pictures = this.args.pictures;

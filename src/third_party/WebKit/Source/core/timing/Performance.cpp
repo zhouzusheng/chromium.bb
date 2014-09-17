@@ -35,13 +35,9 @@
 #include "core/dom/Document.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/timing/ResourceTimingInfo.h"
-#include "core/timing/MemoryInfo.h"
-#include "core/timing/PerformanceEntry.h"
-#include "core/timing/PerformanceNavigation.h"
 #include "core/timing/PerformanceResourceTiming.h"
-#include "core/timing/PerformanceTiming.h"
 #include "core/timing/PerformanceUserTiming.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/CurrentTime.h"
 
 #include "core/frame/Frame.h"
@@ -171,16 +167,16 @@ static bool passesTimingAllowCheck(const ResourceResponse& response, Document* r
     if (resourceOrigin->isSameSchemeHostPort(requestingDocument->securityOrigin()))
         return true;
 
-    const String& timingAllowOriginString = response.httpHeaderField(timingAllowOrigin);
+    const AtomicString& timingAllowOriginString = response.httpHeaderField(timingAllowOrigin);
     if (timingAllowOriginString.isEmpty() || equalIgnoringCase(timingAllowOriginString, "null"))
         return false;
 
-    if (timingAllowOriginString == "*")
+    if (timingAllowOriginString == starAtom)
         return true;
 
     const String& securityOrigin = requestingDocument->securityOrigin()->toString();
     Vector<String> timingAllowOrigins;
-    timingAllowOriginString.split(" ", timingAllowOrigins);
+    timingAllowOriginString.string().split(" ", timingAllowOrigins);
     for (size_t i = 0; i < timingAllowOrigins.size(); ++i) {
         if (timingAllowOrigins[i] == securityOrigin)
             return true;
@@ -248,11 +244,11 @@ bool Performance::isResourceTimingBufferFull()
     return m_resourceTimingBuffer.size() >= m_resourceTimingBufferSize;
 }
 
-void Performance::mark(const String& markName, ExceptionState& es)
+void Performance::mark(const String& markName, ExceptionState& exceptionState)
 {
     if (!m_userTiming)
         m_userTiming = UserTiming::create(this);
-    m_userTiming->mark(markName, es);
+    m_userTiming->mark(markName, exceptionState);
 }
 
 void Performance::clearMarks(const String& markName)
@@ -262,11 +258,11 @@ void Performance::clearMarks(const String& markName)
     m_userTiming->clearMarks(markName);
 }
 
-void Performance::measure(const String& measureName, const String& startMark, const String& endMark, ExceptionState& es)
+void Performance::measure(const String& measureName, const String& startMark, const String& endMark, ExceptionState& exceptionState)
 {
     if (!m_userTiming)
         m_userTiming = UserTiming::create(this);
-    m_userTiming->measure(measureName, startMark, endMark, es);
+    m_userTiming->measure(measureName, startMark, endMark, exceptionState);
 }
 
 void Performance::clearMeasures(const String& measureName)

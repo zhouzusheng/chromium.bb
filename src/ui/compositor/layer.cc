@@ -527,7 +527,7 @@ void Layer::SetShowDelegatedContent(cc::DelegatedFrameProvider* frame_provider,
   DCHECK_EQ(type_, LAYER_TEXTURED);
 
   scoped_refptr<cc::DelegatedRendererLayer> new_layer =
-      cc::DelegatedRendererLayer::Create(NULL, frame_provider);
+      cc::DelegatedRendererLayer::Create(frame_provider);
   SwitchToLayer(new_layer);
   delegated_renderer_layer_ = new_layer;
   layer_updated_externally_ = true;
@@ -647,13 +647,6 @@ unsigned Layer::PrepareTexture() {
   return texture_->PrepareTexture();
 }
 
-WebKit::WebGraphicsContext3D* Layer::Context3d() {
-  DCHECK(texture_layer_.get());
-  if (texture_.get())
-    return texture_->HostContext3D();
-  return NULL;
-}
-
 bool Layer::PrepareTextureMailbox(
     cc::TextureMailbox* mailbox,
     scoped_ptr<cc::SingleReleaseCallback>* release_callback,
@@ -671,6 +664,11 @@ void Layer::SetForceRenderSurface(bool force) {
 
 std::string Layer::DebugName() {
   return name_;
+}
+
+scoped_refptr<base::debug::ConvertableToTraceFormat> Layer::TakeDebugInfo() {
+  // TODO: return something useful here.
+  return NULL;
 }
 
 void Layer::OnAnimationStarted(const cc::AnimationEvent& event) {

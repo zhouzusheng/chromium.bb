@@ -45,14 +45,14 @@
 #include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/platform/graphics/GraphicsContextStateSaver.h"
+#include "core/frame/Settings.h"
 #include "core/rendering/RenderBoxModelObject.h"
 #include "core/rendering/RenderInline.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/style/RenderStyleConstants.h"
 #include "platform/JSONValues.h"
 #include "platform/PlatformMouseEvent.h"
+#include "platform/graphics/GraphicsContextStateSaver.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
@@ -252,6 +252,7 @@ InspectorOverlay::InspectorOverlay(Page* page, InspectorClient* client)
     , m_drawViewSize(false)
     , m_drawViewSizeWithGrid(false)
     , m_timer(this, &InspectorOverlay::onTimer)
+    , m_activeProfilerCount(0)
 {
 }
 
@@ -313,6 +314,14 @@ bool InspectorOverlay::handleTouchEvent(const PlatformTouchEvent& event)
         return false;
 
     return overlayPage()->mainFrame()->eventHandler().handleTouchEvent(event);
+}
+
+bool InspectorOverlay::handleKeyboardEvent(const PlatformKeyboardEvent& event)
+{
+    if (isEmpty())
+        return false;
+
+    return overlayPage()->mainFrame()->eventHandler().keyEvent(event);
 }
 
 void InspectorOverlay::drawOutline(GraphicsContext* context, const LayoutRect& rect, const Color& color)
@@ -389,6 +398,8 @@ Node* InspectorOverlay::highlightedNode() const
 
 bool InspectorOverlay::isEmpty()
 {
+    if (m_activeProfilerCount)
+        return true;
     bool hasAlwaysVisibleElements = m_highlightNode || m_eventTargetNode || m_highlightQuad || !m_size.isEmpty() || m_drawViewSize;
     bool hasInvisibleInInspectModeElements = !m_pausedInDebuggerMessage.isNull();
     return !(hasAlwaysVisibleElements || (hasInvisibleInInspectModeElements && !m_inspectModeEnabled));
@@ -582,17 +593,16 @@ Page* InspectorOverlay::overlayPage()
     m_overlayChromeClient = adoptPtr(new InspectorOverlayChromeClient(m_page->chrome().client(), this));
     pageClients.chromeClient = m_overlayChromeClient.get();
     m_overlayPage = adoptPtr(new Page(pageClients));
-    m_overlayPage->setGroupType(Page::InspectorPageGroup);
 
     Settings& settings = m_page->settings();
     Settings& overlaySettings = m_overlayPage->settings();
 
-    overlaySettings.setStandardFontFamily(settings.standardFontFamily());
-    overlaySettings.setSerifFontFamily(settings.serifFontFamily());
-    overlaySettings.setSansSerifFontFamily(settings.sansSerifFontFamily());
-    overlaySettings.setCursiveFontFamily(settings.cursiveFontFamily());
-    overlaySettings.setFantasyFontFamily(settings.fantasyFontFamily());
-    overlaySettings.setPictographFontFamily(settings.pictographFontFamily());
+    overlaySettings.genericFontFamilySettings().setStandard(settings.genericFontFamilySettings().standard());
+    overlaySettings.genericFontFamilySettings().setSerif(settings.genericFontFamilySettings().serif());
+    overlaySettings.genericFontFamilySettings().setSansSerif(settings.genericFontFamilySettings().sansSerif());
+    overlaySettings.genericFontFamilySettings().setCursive(settings.genericFontFamilySettings().cursive());
+    overlaySettings.genericFontFamilySettings().setFantasy(settings.genericFontFamilySettings().fantasy());
+    overlaySettings.genericFontFamilySettings().setPictograph(settings.genericFontFamilySettings().pictograph());
     overlaySettings.setMinimumFontSize(settings.minimumFontSize());
     overlaySettings.setMinimumLogicalFontSize(settings.minimumLogicalFontSize());
     overlaySettings.setMediaEnabled(false);
@@ -616,7 +626,7 @@ Page* InspectorOverlay::overlayPage()
     v8::Context::Scope contextScope(frameContext);
     v8::Handle<v8::Value> overlayHostObj = toV8(m_overlayHost.get(), v8::Handle<v8::Object>(), isolate);
     v8::Handle<v8::Object> global = frameContext->Global();
-    global->Set(v8::String::New("InspectorOverlayHost"), overlayHostObj);
+    global->Set(v8::String::NewFromUtf8(isolate, "InspectorOverlayHost"), overlayHostObj);
 
 #if OS(WIN)
     evaluateInOverlay("setPlatform", "windows");
@@ -674,6 +684,12 @@ void InspectorOverlay::freePage()
     m_overlayPage.clear();
     m_overlayChromeClient.clear();
     m_timer.stop();
+}
+
+void InspectorOverlay::startedRecordingProfile()
+{
+    if (!m_activeProfilerCount++)
+        freePage();
 }
 
 } // namespace WebCore

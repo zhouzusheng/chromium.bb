@@ -39,10 +39,10 @@
 #include "core/dom/MessagePort.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/page/Page.h"
-#include "core/page/UseCounter.h"
+#include "core/frame/UseCounter.h"
 #include "core/workers/SharedWorkerRepositoryClient.h"
-#include "weborigin/KURL.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/KURL.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -52,7 +52,7 @@ inline SharedWorker::SharedWorker(ExecutionContext* context)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SharedWorker> SharedWorker::create(ExecutionContext* context, const String& url, const String& name, ExceptionState& es)
+PassRefPtr<SharedWorker> SharedWorker::create(ExecutionContext* context, const String& url, const String& name, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
     ASSERT_WITH_SECURITY_IMPLICATION(context->isDocument());
@@ -63,7 +63,7 @@ PassRefPtr<SharedWorker> SharedWorker::create(ExecutionContext* context, const S
 
     RefPtr<MessageChannel> channel = MessageChannel::create(context);
     worker->m_port = channel->port1();
-    OwnPtr<MessagePortChannel> remotePort = channel->port2()->disentangle();
+    OwnPtr<blink::WebMessagePortChannel> remotePort = channel->port2()->disentangle();
     ASSERT(remotePort);
 
     worker->suspendIfNeeded();
@@ -71,16 +71,16 @@ PassRefPtr<SharedWorker> SharedWorker::create(ExecutionContext* context, const S
     // We don't currently support nested workers, so workers can only be created from documents.
     Document* document = toDocument(context);
     if (!document->securityOrigin()->canAccessSharedWorkers()) {
-        es.throwSecurityError("Failed to create 'SharedWorker': access to shared workers is denied to origin '" + document->securityOrigin()->toString() + "'.");
+        exceptionState.throwSecurityError("Access to shared workers is denied to origin '" + document->securityOrigin()->toString() + "'.");
         return 0;
     }
 
-    KURL scriptURL = worker->resolveURL(url, es);
+    KURL scriptURL = worker->resolveURL(url, exceptionState);
     if (scriptURL.isEmpty())
         return 0;
 
     if (document->page() && document->page()->sharedWorkerRepositoryClient())
-        document->page()->sharedWorkerRepositoryClient()->connect(worker.get(), remotePort.release(), scriptURL, name, es);
+        document->page()->sharedWorkerRepositoryClient()->connect(worker.get(), remotePort.release(), scriptURL, name, exceptionState);
 
     return worker.release();
 }
@@ -92,6 +92,16 @@ SharedWorker::~SharedWorker()
 const AtomicString& SharedWorker::interfaceName() const
 {
     return EventTargetNames::SharedWorker;
+}
+
+void SharedWorker::setPreventGC()
+{
+    setPendingActivity(this);
+}
+
+void SharedWorker::unsetPreventGC()
+{
+    unsetPendingActivity(this);
 }
 
 } // namespace WebCore

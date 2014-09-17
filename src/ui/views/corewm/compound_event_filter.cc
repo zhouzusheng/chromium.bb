@@ -11,6 +11,7 @@
 #include "ui/aura/client/drag_drop_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
 #include "ui/aura/window_tracker.h"
 #include "ui/base/hit_test.h"
@@ -86,7 +87,7 @@ bool ShouldHideCursorOnTouch() {
 ////////////////////////////////////////////////////////////////////////////////
 // CompoundEventFilter, public:
 
-CompoundEventFilter::CompoundEventFilter() : cursor_hidden_by_filter_(false) {
+CompoundEventFilter::CompoundEventFilter() {
 }
 
 CompoundEventFilter::~CompoundEventFilter() {
@@ -193,19 +194,10 @@ void CompoundEventFilter::SetCursorVisibilityOnEvent(aura::Window* target,
   if (!client)
     return;
 
-  if (show && cursor_hidden_by_filter_) {
-    cursor_hidden_by_filter_ = false;
+  if (show)
     client->ShowCursor();
-  } else if (!show && !cursor_hidden_by_filter_) {
-    cursor_hidden_by_filter_ = true;
+  else
     client->HideCursor();
-  } else if (show && !client->IsCursorVisible() && !client->IsCursorLocked()) {
-    // TODO(tdanderson): Remove this temporary logging once the issues related
-    // to a disappearing mouse cursor on the Pixel login screen / Pixel
-    // wakeup have been resolved. See crbug.com/275826.
-    LOG(ERROR) << "Event of type " << event->type() << " did not show cursor."
-               << " Mouse enabled state is " << client->IsMouseEventsEnabled();
-  }
 }
 
 void CompoundEventFilter::SetMouseEventsEnableStateOnEvent(aura::Window* target,

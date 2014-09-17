@@ -118,16 +118,27 @@ body.inactive .toolbar-background {
 
 body.dock-to-bottom .toolbar-background {
     padding-top: 0;
+}
+
+body.dock-to-bottom.platform-mac:not(.overlay-contents) .toolbar-background {
+    border-top-color: white;
+}
+
+body.dock-to-bottom:not(.overlay-contents) .toolbar-background {
     border-top: 1px solid rgb(100, 100, 100);
     cursor: default;
 }
 
-body.dock-to-bottom.platform-mac .toolbar-background {
-    border-top-color: white;
+body.dock-to-bottom.inactive:not(.overlay-contents) .toolbar-background {
+    border-top: 1px solid rgb(64%, 64%, 64%);
 }
 
-body.dock-to-bottom.inactive .toolbar-background {
-    border-top: 1px solid rgb(64%, 64%, 64%);
+body.dock-to-bottom.overlay-contents .toolbar-background .tabbed-pane-header {
+    cursor: ns-resize;
+}
+
+body.dock-to-bottom.overlay-contents .toolbar-background .tabbed-pane-header .tabbed-pane-header-tabs {
+    cursor: default;
 }
 
 body.platform-windows .toolbar-background,
@@ -137,26 +148,32 @@ body.platform-windows.inactive .toolbar-background {
 
 body.undocked.platform-mac-leopard .toolbar-background {
     background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(175, 175, 175)), to(rgb(151, 151, 151))) !important;
+    color: #333 !important;
 }
 
 body.undocked.platform-mac-leopard.inactive .toolbar-background {
     background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(221, 221, 221)), to(rgb(207, 207, 207))) !important;
+    color: #555 !important;
 }
 
 body.undocked.platform-mac-snowleopard .toolbar-background {
     background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(189, 189, 189)), to(rgb(167, 167, 167))) !important;
+    color: #333 !important;
 }
 
 body.undocked.platform-mac-snowleopard.inactive .toolbar-background {
     background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(228, 228, 228)), to(rgb(216, 216, 216))) !important;
+    color: #555 !important;
 }
 
 body.undocked.platform-mac-mountain-lion .toolbar-background {
     background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(208, 208, 208)), to(rgb(200, 200, 200))) !important;
+    color: #333 !important;
 }
 
 body.undocked.platform-mac-mountain-lion.inactive .toolbar-background {
     background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(238, 238, 238)), to(rgb(224, 224, 224))) !important;
+    color: #555 !important;
 }
 
 .toolbar > .tabbed-pane-header {
@@ -370,7 +387,6 @@ body.undocked.platform-mac-mountain-lion.inactive .toolbar-background {
     background-position: -160px -216px;
 }
 
-
 body.undocked .toolbar-item .close-button {
     display: none;
 }
@@ -382,10 +398,19 @@ body.remote .toolbar-item .close-button {
 .panel-status-bar {
     border-top: none;
     display: flex;
-    pointer-events: none;
     background-color: white;
     flex: 0 0 23px;
     position: relative;
+}
+
+.panel-status-bar label {
+    margin: 2px 20px 0 0;
+}
+
+.panel-status-bar label > input {
+    height: 13px;
+    width: 13px;
+    vertical-align: -2px;
 }
 
 .status-bar {
@@ -407,7 +432,6 @@ body.remote .toolbar-item .close-button {
 
 .status-bar-item {
     display: inline-block;
-    pointer-events: auto;
     cursor: default;
     height: 22px;
     padding: 0;
@@ -447,7 +471,7 @@ body.remote .toolbar-item .close-button {
 .glyph.shadow {
     top: 0;
     bottom: 0;
-    background-color: white !important;
+    background-color: white;
     z-index: 0;
 }
 
@@ -481,11 +505,11 @@ button.status-bar-item {
 }
 
 button.status-bar-item .glyph.shadow {
-    background-color: rgba(255, 255, 255, 0.33) !important;
+    background-color: rgba(255, 255, 255, 0.33);
 }
 
-button.status-bar-item.toggled-on .glyph {
-    background-color: rgb(66, 129, 235);
+button.status-bar-item.toggled-on .glyph:not(.shadow) {
+    background-color: rgb(66, 129, 235) !important;
 }
 
 button.status-bar-item:hover .glyph {
@@ -541,6 +565,10 @@ select.status-bar-item {
     line-height: 20px;
 }
 
+.status-bar-item.checkbox {
+    margin: 2px 0 0 0;
+}
+
 .status-bar-item > .glyph {
     -webkit-mask-image: url(Images/statusbarButtonGlyphs.png);
     -webkit-mask-size: 320px 120px;
@@ -563,12 +591,10 @@ button.status-bar-item.dock-status-bar-item.toggled-undock .glyph {
 
 button.status-bar-item.dock-status-bar-item.toggled-bottom .glyph {
     -webkit-mask-position: -32px -24px;
-    background-color: rgba(0, 0, 0, 0.75);
 }
 
 button.status-bar-item.dock-status-bar-item.toggled-right .glyph {
     -webkit-mask-position: -256px -48px;
-    background-color: rgba(0, 0, 0, 0.75);
 }
 
 body.undocked .alternate-status-bar-buttons-bar {
@@ -607,6 +633,7 @@ button.status-bar-item.right-sidebar-show-hide-button {
     width: 16px;
     margin: 4px 2px 2px 2px;
     border: none;
+    z-index: 10;
 }
 
 button.status-bar-item.left-sidebar-show-hide-button:active,
@@ -640,7 +667,6 @@ div.resizer-widget {
     right: 0;
     height: 24px;
     width: 16px;
-    cursor: ew-resize;
     background-image: url(Images/statusbarResizerHorizontal.png);
     background-repeat: no-repeat;
     background-position: center;
@@ -751,7 +777,6 @@ body.remote .dock-status-bar-item {
 
 #drawer-contents > .tabbed-pane > .tabbed-pane-header {
     background-color: rgb(236, 236, 236);
-    cursor: ns-resize;
     border-top: 1px solid rgb(124, 124, 124);
     border-bottom: 1px solid rgb(203, 203, 203);
 }
@@ -809,6 +834,14 @@ body.platform-linux .monospace,
 body.platform-linux .source-code {
     font-size: 11px !important;
     font-family: dejavu sans mono, monospace;
+}
+
+.console-view {
+    background-color: white;
+}
+
+.console-view-wrapper {
+    background-color: rgb(236, 236, 236);
 }
 
 .console-status-bar {
@@ -893,6 +926,10 @@ body.platform-linux .source-code {
 
 .console-message > .outline-disclosure li.parent::before {
     top: 0;
+}
+
+.console-message .outline-disclosure .stacktrace-entry:hover {
+    background-color: rgba(0, 0, 0, 0.05);
 }
 
 .console-message .bubble {
@@ -1222,7 +1259,7 @@ ol.watch-expressions > li.hovered {
 }
 
 .panel.visible {
-    display: block;
+    display: flex;
 }
 
 .panel.extension-panel.visible {
@@ -1232,7 +1269,6 @@ ol.watch-expressions > li.hovered {
 
 .extension-view {
     flex: auto;
-    position: relative;
 }
 
 iframe.extension {
@@ -1337,11 +1373,6 @@ iframe.panel.extension {
     margin-left: -12px;
 }
 
-.webkit-html-tag.shadow,
-.webkit-html-fragment.shadow {
-    opacity: 0.6;
-}
-
 .outline-disclosure li.parent::before {
     float: left;
     width: 8px;
@@ -1386,9 +1417,14 @@ iframe.panel.extension {
 
 .placard {
     position: relative;
+    border-top: 1px solid transparent;
     padding: 3px 8px 4px 18px;
     min-height: 18px;
     white-space: nowrap;
+}
+
+.placard.grouped {
+    padding-left: 36px;
 }
 
 .placard:nth-of-type(2n) {
@@ -1656,6 +1692,10 @@ li.editing-sub-part .delete-button {
     display: none !important;
 }
 
+.sidebar-tabbed-pane .watch-expressions {
+    margin-top: 17px;
+}
+
 .properties-tree.watch-expressions {
     padding-left: 0 !important;
 }
@@ -1705,11 +1745,6 @@ li.editing-sub-part .delete-button {
     position: absolute;
     right: 8px;
     display: none;
-}
-
-.tabbed-pane-content .watch-expressions li:first-child .delete-button {
-    right: 55px;
-    top: 3px;
 }
 
 .section .properties li.hovered .delete-button {
@@ -1902,7 +1937,6 @@ button.enable-toggle-status-bar-item.toggled-on .glyph {
     bottom: 0;
     width: 5px;
     z-index: 500;
-    cursor: ew-resize;
 }
 
 .sidebar-tree,
@@ -2157,25 +2191,6 @@ body.inactive .sidebar-tree-item.selected {
 .bubble.error,
 .console-error-level .bubble {
     background-color: rgb(216, 35, 35) !important;
-}
-
-.bubble.search-matches {
-    background-image: url(Images/searchSmallWhite.png);
-    background-repeat: no-repeat;
-    background-position: 3px 2px;
-    padding-left: 13px !important;
-}
-
-li.selected .bubble.search-matches {
-    background-image: url(Images/searchSmallBlue.png);
-}
-
-:focus li.selected .bubble.search-matches {
-    background-image: url(Images/searchSmallBrightBlue.png);
-}
-
-body.inactive li.selected .bubble.search-matches {
-    background-image: url(Images/searchSmallGray.png);
 }
 
 .storage-application-cache-status-icon,
@@ -2613,8 +2628,8 @@ body.platform-mac .search-drawer-header input[type="checkbox"].search-config-che
     -webkit-mask-position: -288px 0;
 }
 
-.record-cpu-profile-status-bar-item.toggled-on .glyph,
-.record-profile-status-bar-item.toggled-on .glyph {
+button.record-cpu-profile-status-bar-item.toggled-on .glyph:not(.shadow),
+button.record-profile-status-bar-item.toggled-on .glyph:not(.shadow) {
     -webkit-mask-position: -288px -24px;
     background-color: rgb(216, 0, 0) !important;
 }
@@ -2770,6 +2785,10 @@ body.platform-mac .search-drawer-header input[type="checkbox"].search-config-che
     max-width: 200px;
 }
 
+.inspector-view {
+    overflow: hidden;
+}
+
 .inspector-footer.status-bar {
     flex: 0 0 auto;
     background-color: rgb(236, 236, 236);
@@ -2804,6 +2823,12 @@ body.platform-mac .progress-bar-container progress {
     top: 0 !important;
 }
 
+.elements-tree-outline li.shadow-root + ol {
+    margin-left: 5px;
+    padding-left: 5px;
+    border-left: 1px solid gray;
+}
+
 #drawer-editor-view {
     flex: auto;
 }
@@ -2817,5 +2842,9 @@ body.platform-mac .progress-bar-container progress {
 }
 
 body.undocked .toolbar-close-button-item {
+    display: none;
+}
+
+body.dock-to-bottom.overlay-contents #inspector-split-view .split-view-resizer {
     display: none;
 }

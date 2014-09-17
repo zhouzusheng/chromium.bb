@@ -37,12 +37,12 @@ namespace WebCore {
 class PLATFORM_EXPORT Locale {
     WTF_MAKE_NONCOPYABLE(Locale);
 public:
-    static PassOwnPtr<Locale> create(const AtomicString& localeIdentifier);
+    static PassOwnPtr<Locale> create(const String& localeIdentifier);
     static Locale& defaultLocale();
 
-    String queryString(WebKit::WebLocalizedString::Name);
-    String queryString(WebKit::WebLocalizedString::Name, const String& parameter);
-    String queryString(WebKit::WebLocalizedString::Name, const String& parameter1, const String& parameter2);
+    String queryString(blink::WebLocalizedString::Name);
+    String queryString(blink::WebLocalizedString::Name, const String& parameter);
+    String queryString(blink::WebLocalizedString::Name, const String& parameter1, const String& parameter2);
     String validationMessageTooLongText(unsigned valueLength, int maxLength);
 
     // Converts the specified number string to another number string localized
@@ -118,7 +118,6 @@ public:
     // December. These strings should not be abbreviations.
     virtual const Vector<String>& monthLabels() = 0;
 
-#if ENABLE(CALENDAR_PICKER)
     // Returns a vector of string of which size is 7. The first item is a
     // localized short string of Monday, and the last item is a localized
     // short string of Saturday. These strings should be short.
@@ -130,7 +129,6 @@ public:
     // Returns true if people use right-to-left writing in the locale for this
     // object.
     virtual bool isRTL() = 0;
-#endif
 
     enum FormatType { FormatTypeUnspecified, FormatTypeShort, FormatTypeMedium };
 

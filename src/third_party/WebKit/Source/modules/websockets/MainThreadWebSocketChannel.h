@@ -112,6 +112,8 @@ protected:
 private:
     MainThreadWebSocketChannel(Document*, WebSocketChannelClient*, const String&, unsigned);
 
+    void disconnectHandle();
+
     bool appendToBuffer(const char* data, size_t len);
     void skipBuffer(size_t len);
     // Repeats parsing data from m_buffer until instructed to stop.
@@ -150,7 +152,7 @@ private:
     void enqueueRawFrame(WebSocketFrame::OpCode, const char* data, size_t dataLength);
     void enqueueBlobFrame(WebSocketFrame::OpCode, PassRefPtr<BlobDataHandle>);
 
-    void failAsError(const String& reason) { fail(reason, ErrorMessageLevel, m_sourceURLAtConnection, m_lineNumberAtConnection); }
+    void failAsError(const String& reason) { fail(reason, ErrorMessageLevel, m_sourceURLAtConstruction, m_lineNumberAtConstruction); }
     void processOutgoingFrameQueue();
     void abortOutgoingFrameQueue();
 
@@ -193,6 +195,8 @@ private:
     Timer<MainThreadWebSocketChannel> m_resumeTimer;
     bool m_suspended;
     bool m_didFailOfClientAlreadyRun;
+    // Set to true iff this instance called disconnect() on m_handle.
+    bool m_hasCalledDisconnectOnHandle;
     bool m_receivedClosingHandshake;
     Timer<MainThreadWebSocketChannel> m_closingTimer;
     ChannelState m_state;
@@ -215,9 +219,13 @@ private:
     OwnPtr<FileReaderLoader> m_blobLoader;
     BlobLoaderStatus m_blobLoaderStatus;
 
-    String m_sourceURLAtConnection;
-    unsigned m_lineNumberAtConnection;
+    // Source code position where construction happened. To be used to show a
+    // console message where no JS callstack info available.
+    String m_sourceURLAtConstruction;
+    unsigned m_lineNumberAtConstruction;
+
     WebSocketPerMessageDeflate m_perMessageDeflate;
+
     WebSocketDeflateFramer m_deflateFramer;
 };
 

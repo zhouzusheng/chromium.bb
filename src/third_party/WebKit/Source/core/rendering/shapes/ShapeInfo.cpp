@@ -31,8 +31,6 @@
 #include "core/rendering/shapes/ShapeInfo.h"
 
 #include "core/rendering/RenderRegion.h"
-#include "core/rendering/shapes/Shape.h"
-#include "core/rendering/style/RenderStyle.h"
 
 namespace WebCore {
 
@@ -70,7 +68,11 @@ const Shape* ShapeInfo<RenderType>::computedShape() const
         ASSERT(shapeValue->image());
         m_shape = Shape::createShape(shapeValue->image(), shapeImageThreshold, m_shapeLogicalSize, writingMode, margin, padding);
         break;
-    default:
+    case ShapeValue::Box:
+        m_shape = Shape::createLayoutBoxShape(m_shapeLogicalSize, writingMode, margin, padding);
+        break;
+    case ShapeValue::Outside:
+        // Outside should have already resolved to a different shape value.
         ASSERT_NOT_REACHED();
     }
 

@@ -39,7 +39,7 @@
 #include "WebTextDirection.h"
 #include "WebTextInputInfo.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebInputEvent;
 class WebLayerTreeView;
@@ -124,11 +124,6 @@ public:
     // Indicates that the compositing surface associated with this WebWidget is
     // ready to use.
     virtual void setCompositorSurfaceReady() { }
-
-    // Temporary method for the embedder to notify the WebWidget that the widget
-    // has taken damage, e.g. due to a window expose. This method will be
-    // removed when the WebWidget inversion patch lands --- http://crbug.com/112837
-    virtual void setNeedsRedraw() { }
 
     // Called to inform the WebWidget of a change in theme.
     // Implementors that cache rendered copies of widgets need to re-render
@@ -262,6 +257,6 @@ protected:
     ~WebWidget() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

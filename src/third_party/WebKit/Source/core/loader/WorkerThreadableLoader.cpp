@@ -35,7 +35,6 @@
 #include "core/dom/CrossThreadTask.h"
 #include "core/dom/Document.h"
 #include "core/loader/DocumentThreadableLoader.h"
-#include "core/loader/ThreadableLoader.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerLoaderProxy.h"
 #include "core/workers/WorkerThread.h"
@@ -110,11 +109,11 @@ void WorkerThreadableLoader::MainThreadBridge::mainThreadCreateLoader(ExecutionC
     OwnPtr<ResourceRequest> request(ResourceRequest::adopt(requestData));
     request->setHTTPReferrer(outgoingReferrer);
     options.requestInitiatorContext = WorkerContext;
-    // FIXME: If the a site requests a local resource, then this will return a non-zero value but the sync path
-    // will return a 0 value.  Either this should return 0 or the other code path should do a callback with
-    // a failure.
     thisPtr->m_mainThreadLoader = DocumentThreadableLoader::create(document, thisPtr, *request, options);
-    ASSERT(thisPtr->m_mainThreadLoader);
+    if (!thisPtr->m_mainThreadLoader) {
+        // DocumentThreadableLoader::create may return 0 when the document loader has been already changed.
+        thisPtr->didFail(ResourceError(errorDomainBlinkInternal, 0, request->url().string(), "Can't create DocumentThreadableLoader"));
+    }
 }
 
 void WorkerThreadableLoader::MainThreadBridge::mainThreadDestroy(ExecutionContext* context, MainThreadBridge* thisPtr)
@@ -199,6 +198,17 @@ void WorkerThreadableLoader::MainThreadBridge::didReceiveData(const char* data, 
     OwnPtr<Vector<char> > vector = adoptPtr(new Vector<char>(dataLength)); // needs to be an OwnPtr for usage with createCallbackTask.
     memcpy(vector->data(), data, dataLength);
     m_loaderProxy.postTaskForModeToWorkerGlobalScope(createCallbackTask(&workerGlobalScopeDidReceiveData, m_workerClientWrapper, vector.release()), m_taskMode);
+}
+
+static void workerGlobalScopeDidDownloadData(ExecutionContext* context, PassRefPtr<ThreadableLoaderClientWrapper> workerClientWrapper, int dataLength)
+{
+    ASSERT_UNUSED(context, context->isWorkerGlobalScope());
+    workerClientWrapper->didDownloadData(dataLength);
+}
+
+void WorkerThreadableLoader::MainThreadBridge::didDownloadData(int dataLength)
+{
+    m_loaderProxy.postTaskForModeToWorkerGlobalScope(createCallbackTask(&workerGlobalScopeDidDownloadData, m_workerClientWrapper, dataLength), m_taskMode);
 }
 
 static void workerGlobalScopeDidReceiveCachedMetadata(ExecutionContext* context, PassRefPtr<ThreadableLoaderClientWrapper> workerClientWrapper, PassOwnPtr<Vector<char> > vectorData)

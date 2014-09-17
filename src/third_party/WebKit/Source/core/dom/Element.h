@@ -82,11 +82,6 @@ public:
     static PassRefPtr<Element> create(const QualifiedName&, Document*);
     virtual ~Element();
 
-    String innerHTML() const;
-    String outerHTML() const;
-    void setInnerHTML(const String&, ExceptionState&);
-    void setOuterHTML(const String&, ExceptionState&);
-
     DEFINE_ATTRIBUTE_EVENT_LISTENER(beforecopy);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(beforecut);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(beforepaste);
@@ -114,6 +109,8 @@ public:
     void setIntegralAttribute(const QualifiedName& attributeName, int value);
     unsigned getUnsignedIntegralAttribute(const QualifiedName& attributeName) const;
     void setUnsignedIntegralAttribute(const QualifiedName& attributeName, unsigned value);
+    double getFloatingPointAttribute(const QualifiedName& attributeName, double fallbackValue = std::numeric_limits<double>::quiet_NaN()) const;
+    void setFloatingPointAttribute(const QualifiedName& attributeName, double value);
 
     // Call this to get the value of an attribute that is known not to be the style
     // attribute or one of the SVG animatable attributes.
@@ -222,6 +219,9 @@ public:
     String tagName() const { return nodeName(); }
     bool hasTagName(const QualifiedName& tagName) const { return m_tagName.matches(tagName); }
 
+    // Should be called only by Document::createElementNS to fix up m_tagName immediately after construction.
+    void setTagNameForCreateElementNS(const QualifiedName&);
+
     // A fast function for checking the local name against another atomic string.
     bool hasLocalName(const AtomicString& other) const { return m_tagName.localName() == other; }
     bool hasLocalName(const QualifiedName& other) const { return m_tagName.localName() == other.localName(); }
@@ -301,6 +301,8 @@ public:
     virtual bool rendererIsNeeded(const RenderStyle&);
     void recalcStyle(StyleRecalcChange, Text* nextTextSibling = 0);
     void didAffectSelector(AffectedSelectorMask);
+    void setAnimationStyleChange(bool);
+    void setNeedsAnimationStyleRecalc();
 
     bool supportsStyleSharing() const;
 
@@ -308,17 +310,20 @@ public:
     ElementShadow& ensureShadow();
     PassRefPtr<ShadowRoot> createShadowRoot(ExceptionState&);
     ShadowRoot* shadowRoot() const;
+    ShadowRoot* youngestShadowRoot() const;
 
     bool hasAuthorShadowRoot() const { return shadowRoot(); }
     virtual void didAddShadowRoot(ShadowRoot&);
     ShadowRoot* userAgentShadowRoot() const;
-    ShadowRoot* ensureUserAgentShadowRoot();
+    ShadowRoot& ensureUserAgentShadowRoot();
     const AtomicString& shadowPseudoId() const;
+    bool isInDescendantTreeOf(const Element* shadowHost) const;
 
     RenderStyle* computedStyle(PseudoId = NOPSEUDO);
 
     // Methods for indicating the style is affected by dynamic updates (e.g., children changing, our position changing in our sibling list, etc.)
     bool styleAffectedByEmpty() const { return hasRareData() && rareDataStyleAffectedByEmpty(); }
+    bool childrenAffectedByFocus() const { return hasRareData() && rareDataChildrenAffectedByFocus(); }
     bool childrenAffectedByHover() const { return hasRareData() && rareDataChildrenAffectedByHover(); }
     bool childrenAffectedByActive() const { return hasRareData() && rareDataChildrenAffectedByActive(); }
     bool childrenAffectedByDrag() const { return hasRareData() && rareDataChildrenAffectedByDrag(); }
@@ -333,9 +338,10 @@ public:
     bool childrenSupportStyleSharing() const;
 
     void setStyleAffectedByEmpty();
-    void setChildrenAffectedByHover(bool);
-    void setChildrenAffectedByActive(bool);
-    void setChildrenAffectedByDrag(bool);
+    void setChildrenAffectedByFocus();
+    void setChildrenAffectedByHover();
+    void setChildrenAffectedByActive();
+    void setChildrenAffectedByDrag();
     void setChildrenAffectedByFirstChildRules();
     void setChildrenAffectedByLastChildRules();
     void setChildrenAffectedByDirectAdjacentRules();
@@ -347,7 +353,7 @@ public:
     bool isInCanvasSubtree() const;
 
     bool isUpgradedCustomElement() { return customElementState() == Upgraded; }
-    bool isUnresolvedCustomElement() { return isCustomElement() && !isUpgradedCustomElement(); }
+    bool isUnresolvedCustomElement() { return customElementState() == WaitingForUpgrade; }
 
     void setIsInsideRegion(bool);
     bool isInsideRegion() const;
@@ -389,14 +395,18 @@ public:
 
     String innerText();
     String outerText();
+    String innerHTML() const;
+    String outerHTML() const;
+    void setInnerHTML(const String&, ExceptionState&);
+    void setOuterHTML(const String&, ExceptionState&);
+    void insertAdjacentHTML(const String& where, const String& html, ExceptionState&);
 
     String textFromChildren();
 
     virtual String title() const { return String(); }
 
-    const AtomicString& pseudo() const;
-    virtual const AtomicString& part() const;
-    void setPart(const AtomicString&);
+    virtual const AtomicString& pseudo() const;
+    void setPseudo(const AtomicString&);
 
     LayoutSize minimumSizeForResizing() const;
     void setMinimumSizeForResizing(const LayoutSize&);
@@ -486,8 +496,8 @@ public:
 
     bool isSpellCheckingEnabled() const;
 
+    // FIXME: public for NodeRenderingContext, we shouldn't expose this though.
     PassRefPtr<RenderStyle> styleForRenderer();
-    PassRefPtr<RenderStyle> originalStyleForRenderer();
 
     RenderRegion* renderRegion() const;
     virtual bool shouldMoveToFlowThread(RenderStyle*) const;
@@ -509,6 +519,10 @@ public:
     bool hasInputMethodContext() const;
 
     virtual void setPrefix(const AtomicString&, ExceptionState&) OVERRIDE FINAL;
+
+    void synchronizeAttribute(const AtomicString& localName) const;
+
+    bool needsPseudoElement(PseudoId, const RenderStyle&) const;
 
 protected:
     Element(const QualifiedName& tagName, Document* document, ConstructionType type)
@@ -553,6 +567,10 @@ protected:
     // svgAttributeChanged (called when element.className.baseValue is set)
     void classAttributeChanged(const AtomicString& newClassString);
 
+    PassRefPtr<RenderStyle> originalStyleForRenderer();
+
+    Node* insertAdjacent(const String& where, Node* newChild, ExceptionState&);
+
 private:
     void styleAttributeChanged(const AtomicString& newStyleString, AttributeModificationReason);
 
@@ -566,15 +584,19 @@ private:
     StyleRecalcChange recalcOwnStyle(StyleRecalcChange);
     void recalcChildStyle(StyleRecalcChange);
 
+    // FIXME: These methods should all be renamed to something better than "check",
+    // since it's not clear that they alter the style bits of siblings and children.
+    void checkForChildrenAdjacentRuleChanges();
+    void checkForSiblingStyleChanges(bool finishedParsingCallback, Node* beforeChange, Node* afterChange, int childCountDelta);
+    inline void checkForEmptyStyleChange(RenderStyle*);
+
     void updatePseudoElement(PseudoId, StyleRecalcChange);
 
     inline void createPseudoElementIfNeeded(PseudoId);
-    inline bool needsPseudoElement(PseudoId) const;
-    void createPseudoElement(PseudoId);
 
     // FIXME: Everyone should allow author shadows.
     virtual bool areAuthorShadowsAllowed() const { return true; }
-    virtual void didAddUserAgentShadowRoot(ShadowRoot*) { }
+    virtual void didAddUserAgentShadowRoot(ShadowRoot&) { }
     virtual bool alwaysCreateUserAgentShadowRoot() const { return false; }
 
     // FIXME: Remove the need for Attr to call willModifyAttribute/didModifyAttribute.
@@ -588,7 +610,6 @@ private:
     void didRemoveAttribute(const QualifiedName&);
 
     void synchronizeAttribute(const QualifiedName&) const;
-    void synchronizeAttribute(const AtomicString& localName) const;
 
     void updateId(const AtomicString& oldId, const AtomicString& newId);
     void updateId(TreeScope&, const AtomicString& oldId, const AtomicString& newId);
@@ -615,7 +636,9 @@ private:
 
     virtual RenderStyle* virtualComputedStyle(PseudoId pseudoElementSpecifier = NOPSEUDO) { return computedStyle(pseudoElementSpecifier); }
 
-    void updateCallbackSelectors(RenderStyle* oldStyle, RenderStyle* newStyle);
+    inline void updateCallbackSelectors(RenderStyle* oldStyle, RenderStyle* newStyle);
+    inline void removeCallbackSelectors();
+    inline void addCallbackSelectors();
 
     // cloneNode is private so that non-virtual cloneElementWithChildren and cloneElementWithoutChildren
     // are used instead.
@@ -624,6 +647,7 @@ private:
 
     QualifiedName m_tagName;
     bool rareDataStyleAffectedByEmpty() const;
+    bool rareDataChildrenAffectedByFocus() const;
     bool rareDataChildrenAffectedByHover() const;
     bool rareDataChildrenAffectedByActive() const;
     bool rareDataChildrenAffectedByDrag() const;
@@ -720,10 +744,6 @@ inline const AtomicString& Element::idForStyleResolution() const
 
 inline const AtomicString& Element::shadowPseudoId() const
 {
-    // FIXME: We should remove both part() and pseudo(), neither are in the new spec.
-    const AtomicString& part = this->part();
-    if (!part.isEmpty())
-        return part;
     return pseudo();
 }
 
@@ -854,6 +874,14 @@ inline const StylePropertySet* Element::presentationAttributeStyle()
     // Need to call elementData() again since updatePresentationAttributeStyle()
     // might swap it with a UniqueElementData.
     return elementData()->presentationAttributeStyle();
+}
+
+inline void Element::setTagNameForCreateElementNS(const QualifiedName& tagName)
+{
+    // We expect this method to be called only to reset the prefix.
+    ASSERT(tagName.localName() == m_tagName.localName());
+    ASSERT(tagName.namespaceURI() == m_tagName.namespaceURI());
+    m_tagName = tagName;
 }
 
 inline bool isShadowHost(const Node* node)

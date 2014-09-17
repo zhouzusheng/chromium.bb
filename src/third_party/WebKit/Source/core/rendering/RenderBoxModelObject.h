@@ -52,6 +52,7 @@ enum ContentChangeType {
 };
 
 class KeyframeList;
+class RenderTextFragment;
 class StickyPositionViewportConstraints;
 
 // This class is the base for all objects that adhere to the CSS box model as described
@@ -133,9 +134,13 @@ public:
 
     LayoutUnit borderLogicalLeft() const { return style()->isHorizontalWritingMode() ? borderLeft() : borderTop(); }
     LayoutUnit borderLogicalRight() const { return style()->isHorizontalWritingMode() ? borderRight() : borderBottom(); }
+    LayoutUnit borderLogicalWidth() const { return borderStart() + borderEnd(); }
+    LayoutUnit borderLogicalHeight() const { return borderBefore() + borderAfter(); }
 
     LayoutUnit paddingLogicalLeft() const { return style()->isHorizontalWritingMode() ? paddingLeft() : paddingTop(); }
     LayoutUnit paddingLogicalRight() const { return style()->isHorizontalWritingMode() ? paddingRight() : paddingBottom(); }
+    LayoutUnit paddingLogicalWidth() const { return paddingStart() + paddingEnd(); }
+    LayoutUnit paddingLogicalHeight() const { return paddingBefore() + paddingAfter(); }
 
     virtual LayoutUnit marginTop() const = 0;
     virtual LayoutUnit marginBottom() const = 0;
@@ -271,8 +276,8 @@ protected:
 
 public:
     // For RenderBlocks and RenderInlines with m_style->styleType() == FIRST_LETTER, this tracks their remaining text fragments
-    RenderObject* firstLetterRemainingText() const;
-    void setFirstLetterRemainingText(RenderObject*);
+    RenderTextFragment* firstLetterRemainingText() const;
+    void setFirstLetterRemainingText(RenderTextFragment*);
 
     // These functions are only used internally to manipulate the render tree structure via remove/insert/appendChildNode.
     // Since they are typically called only to move objects around within anonymous blocks (which only have layers in

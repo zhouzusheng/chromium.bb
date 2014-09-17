@@ -29,16 +29,11 @@
 #include "core/dom/Document.h"
 #include "core/editing/htmlediting.h"
 #include "core/frame/Frame.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/RenderView.h"
 
 namespace WebCore {
-
-static inline LayoutUnit NoXPosForVerticalArrowNavigation()
-{
-    return LayoutUnit::min();
-}
 
 CaretBase::CaretBase(CaretVisibility visibility)
     : m_caretRectNeedsUpdate(true)
@@ -93,23 +88,15 @@ static bool removingNodeRemovesPosition(Node& node, const Position& position)
     return element.containsIncludingShadowDOM(position.anchorNode());
 }
 
-static void clearRenderViewSelection(const Position& position)
-{
-    RefPtr<Document> document = position.document();
-    document->updateStyleIfNeeded();
-    if (RenderView* view = document->renderView())
-        view->clearSelection();
-}
-
 void DragCaretController::nodeWillBeRemoved(Node& node)
 {
-    if (!hasCaret() || !node.inDocument())
+    if (!hasCaret() || !node.inActiveDocument())
         return;
 
     if (!removingNodeRemovesPosition(node, m_position.deepEquivalent()))
         return;
 
-    clearRenderViewSelection(m_position.deepEquivalent());
+    m_position.deepEquivalent().document()->renderView()->clearSelection();
     clear();
 }
 
@@ -120,7 +107,7 @@ void CaretBase::clearCaretRect()
 
 static inline bool caretRendersInsideNode(Node* node)
 {
-    return node && !isTableElement(node) && !editingIgnoresContent(node);
+    return node && !isRenderedTable(node) && !editingIgnoresContent(node);
 }
 
 RenderObject* CaretBase::caretRenderer(Node* node)

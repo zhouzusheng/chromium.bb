@@ -58,8 +58,9 @@ public:
     Composition* composition();
     String locale() const;
     HTMLElement* target() const;
+    unsigned compositionStartOffset();
+    unsigned compositionEndOffset();
     void confirmComposition();
-    void setCaretRectangle(Node* anchor, int x, int y, int w, int h);
 
     String compositionText() const;
     int selectionStart() const;

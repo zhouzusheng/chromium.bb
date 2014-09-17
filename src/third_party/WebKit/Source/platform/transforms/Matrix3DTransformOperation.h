@@ -42,8 +42,7 @@ public:
 private:
     virtual bool isIdentity() const { return m_matrix.isIdentity(); }
 
-    virtual OperationType getOperationType() const { return Matrix3D; }
-    virtual bool isSameType(const TransformOperation& o) const { return o.getOperationType() == Matrix3D; }
+    virtual OperationType type() const OVERRIDE { return Matrix3D; }
 
     virtual bool operator==(const TransformOperation& o) const
     {
@@ -53,10 +52,9 @@ private:
         return m_matrix == m->m_matrix;
     }
 
-    virtual bool apply(TransformationMatrix& transform, const FloatSize&) const
+    virtual void apply(TransformationMatrix& transform, const FloatSize&) const
     {
         transform.multiply(TransformationMatrix(m_matrix));
-        return false;
     }
 
     virtual PassRefPtr<TransformOperation> blend(const TransformOperation* from, double progress, bool blendToIdentity = false);

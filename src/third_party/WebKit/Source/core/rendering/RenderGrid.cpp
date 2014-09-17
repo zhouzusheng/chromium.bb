@@ -400,7 +400,7 @@ LayoutUnit RenderGrid::computeUsedBreadthOfMinLength(GridTrackSizingDirection di
 
     const Length& trackLength = gridLength.length();
     ASSERT(!trackLength.isAuto());
-    if (trackLength.isFixed() || trackLength.isPercent() || trackLength.isViewportPercentage())
+    if (trackLength.isSpecified())
         return computeUsedBreadthOfSpecifiedLength(direction, trackLength);
 
     ASSERT(trackLength.isMinContent() || trackLength.isMaxContent());
@@ -414,7 +414,7 @@ LayoutUnit RenderGrid::computeUsedBreadthOfMaxLength(GridTrackSizingDirection di
 
     const Length& trackLength = gridLength.length();
     ASSERT(!trackLength.isAuto());
-    if (trackLength.isFixed() || trackLength.isPercent() || trackLength.isViewportPercentage()) {
+    if (trackLength.isSpecified()) {
         LayoutUnit computedBreadth = computeUsedBreadthOfSpecifiedLength(direction, trackLength);
         ASSERT(computedBreadth != infinity);
         return computedBreadth;
@@ -426,8 +426,7 @@ LayoutUnit RenderGrid::computeUsedBreadthOfMaxLength(GridTrackSizingDirection di
 
 LayoutUnit RenderGrid::computeUsedBreadthOfSpecifiedLength(GridTrackSizingDirection direction, const Length& trackLength) const
 {
-    // FIXME: We still need to support calc() here (https://webkit.org/b/103761).
-    ASSERT(trackLength.isFixed() || trackLength.isPercent() || trackLength.isViewportPercentage());
+    ASSERT(trackLength.isSpecified());
     // FIXME: The -1 here should be replaced by whatever the intrinsic height of the grid is.
     return valueForLength(trackLength, direction == ForColumns ? logicalWidth() : computeContentLogicalHeight(style()->logicalHeight(), -1), view());
 }
@@ -618,10 +617,13 @@ void RenderGrid::distributeSpaceToTracks(Vector<GridTrack*>& tracks, Vector<Grid
         GridTrack& track = *tracks[i];
         LayoutUnit availableLogicalSpaceShare = availableLogicalSpace / (tracksSize - i);
         LayoutUnit trackBreadth = (tracks[i]->*trackGetter)();
-        LayoutUnit growthShare = std::max(LayoutUnit(), std::min(availableLogicalSpaceShare, track.m_maxBreadth - trackBreadth));
+        LayoutUnit growthShare = std::min(availableLogicalSpaceShare, track.m_maxBreadth - trackBreadth);
+        sizingData.distributeTrackVector[i] = trackBreadth;
         // We should never shrink any grid track or else we can't guarantee we abide by our min-sizing function.
-        sizingData.distributeTrackVector[i] = trackBreadth + growthShare;
-        availableLogicalSpace -= growthShare;
+        if (growthShare > 0) {
+            sizingData.distributeTrackVector[i] += growthShare;
+            availableLogicalSpace -= growthShare;
+        }
     }
 
     if (availableLogicalSpace > 0 && tracksForGrowthAboveMaxBreadth) {
@@ -883,7 +885,7 @@ void RenderGrid::layoutGridItems()
     for (size_t i = 0; i < sizingData.rowTracks.size(); ++i)
         setLogicalHeight(logicalHeight() + sizingData.rowTracks[i].m_usedBreadth);
 
-    // FIXME: We should handle min / max logical height.
+    // Min / max logical height is handled by the call to updateLogicalHeight in layoutBlock.
 
     setLogicalHeight(logicalHeight() + borderAndPaddingLogicalHeight());
 }
@@ -988,7 +990,7 @@ size_t RenderGrid::resolveGridPositionFromStyle(const GridPosition& position, Gr
     {
         NamedGridAreaMap::const_iterator it = style()->namedGridArea().find(position.namedGridLine());
         // Unknown grid area should have been computed to 'auto' by now.
-        ASSERT(it != style()->namedGridArea().end());
+        ASSERT_WITH_SECURITY_IMPLICATION(it != style()->namedGridArea().end());
         const GridCoordinate& gridAreaCoordinate = it->value;
         switch (side) {
         case ColumnStartSide:

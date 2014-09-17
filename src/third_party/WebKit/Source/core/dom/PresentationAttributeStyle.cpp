@@ -92,7 +92,7 @@ public:
 
 private:
     static const unsigned presentationAttributeCacheCleanTimeInSeconds = 60;
-    static const int minimumPresentationAttributeCacheSizeForCleaning = 100;
+    static const unsigned minimumPresentationAttributeCacheSizeForCleaning = 100;
     static const unsigned minimumPresentationAttributeCacheHitCountPerMinute = (100 * presentationAttributeCacheCleanTimeInSeconds) / 60;
 
     void cleanCache(Timer<PresentationAttributeCacheCleaner>* timer)
@@ -181,7 +181,7 @@ PassRefPtr<StylePropertySet> computePresentationAttributeStyle(Element& element)
         unsigned size = element.attributeCount();
         for (unsigned i = 0; i < size; ++i) {
             const Attribute* attribute = element.attributeItem(i);
-            element.collectStyleForPresentationAttribute(attribute->name(), attribute->value(), static_cast<MutableStylePropertySet*>(style.get()));
+            element.collectStyleForPresentationAttribute(attribute->name(), attribute->value(), toMutableStylePropertySet(style));
         }
     }
 
@@ -192,7 +192,7 @@ PassRefPtr<StylePropertySet> computePresentationAttributeStyle(Element& element)
     newEntry->key = cacheKey;
     newEntry->value = style;
 
-    static const int presentationAttributeCacheMaximumSize = 4096;
+    static const unsigned presentationAttributeCacheMaximumSize = 4096;
     if (presentationAttributeCache().size() > presentationAttributeCacheMaximumSize) {
         // FIXME: Discarding the entire cache when it gets too big is probably bad
         // since it creates a perf "cliff". Perhaps we should use an LRU?

@@ -33,25 +33,22 @@
 
 #include "WebFrameClient.h"
 #include "WebFrameImpl.h"
-#include "WebStorageQuotaType.h"
-#include "WebWorkerBase.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/workers/WorkerGlobalScope.h"
-#include "core/workers/WorkerThread.h"
 #include "modules/quota/StorageErrorCallback.h"
 #include "modules/quota/StorageQuotaCallback.h"
 #include "modules/quota/StorageUsageCallback.h"
 #include "modules/quota/WebStorageQuotaCallbacksImpl.h"
+#include "public/platform/WebStorageQuotaType.h"
 #include "wtf/Threading.h"
 
-using namespace WebKit;
+using namespace blink;
 
 namespace WebCore {
 
 // FIXME: Implement this as StorageQuotaClient.
-void StorageQuota::requestQuota(ExecutionContext* executionContext, unsigned long long newQuotaInBytes, PassRefPtr<StorageQuotaCallback> successCallback, PassRefPtr<StorageErrorCallback> errorCallback)
+void StorageQuota::requestQuota(ExecutionContext* executionContext, unsigned long long newQuotaInBytes, PassOwnPtr<StorageQuotaCallback> successCallback, PassOwnPtr<StorageErrorCallback> errorCallback)
 {
     ASSERT(executionContext);
     WebStorageQuotaType storageType = static_cast<WebStorageQuotaType>(m_type);

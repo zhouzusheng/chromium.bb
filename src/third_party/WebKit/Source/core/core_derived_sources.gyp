@@ -50,7 +50,7 @@
             '../build/scripts/templates/InternalSettingsGenerated.cpp.tmpl',
             '../build/scripts/templates/InternalSettingsGenerated.h.tmpl',
             '../build/scripts/templates/SettingsMacros.h.tmpl',
-            'page/Settings.in',
+            'frame/Settings.in',
           ],
           'outputs': [
             '<(SHARED_INTERMEDIATE_DIR)/blink/SettingsMacros.h',
@@ -61,7 +61,7 @@
           'action': [
             'python',
             '../build/scripts/make_settings.py',
-            'page/Settings.in',
+            'frame/Settings.in',
             '--output_dir',
             '<(SHARED_INTERMEDIATE_DIR)/blink',
           ],
@@ -95,6 +95,7 @@
       'hard_dependency': 1,
       'dependencies': [
         'generate_test_support_idls',
+        '../config.gyp:config',
       ],
       'sources': [
         # bison rule
@@ -319,8 +320,7 @@
         {
           'action_name': 'EventFactory',
           'inputs': [
-            '<@(scripts_for_in_files)',
-            '../build/scripts/make_event_factory.py',
+            '<@(make_event_factory_files)',
             '<(SHARED_INTERMEDIATE_DIR)/blink/EventInterfaces.in',
             'events/EventAliases.in',
           ],
@@ -359,8 +359,7 @@
         {
           'action_name': 'EventTargetFactory',
           'inputs': [
-            '<@(scripts_for_in_files)',
-            '../build/scripts/make_event_factory.py',
+            '<@(make_event_factory_files)',
             'events/EventTargetFactory.in',
           ],
           'outputs': [
@@ -436,6 +435,7 @@
               'css/mediaControlsAndroid.css',
               'css/fullscreen.css',
               'css/xhtmlmp.css',
+              'css/viewportAndroid.css',
             ],
           },
           'inputs': [
@@ -490,6 +490,24 @@
             'python',
             '../build/scripts/make_names.py',
             'events/EventTypeNames.in',
+            '--output_dir',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
+          ],
+        },
+        {
+          'action_name': 'InputTypeNames',
+          'inputs': [
+            '<@(make_names_files)',
+            'html/forms/InputTypeNames.in',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/blink/InputTypeNames.cpp',
+            '<(SHARED_INTERMEDIATE_DIR)/blink/InputTypeNames.h',
+          ],
+          'action': [
+            'python',
+            '../build/scripts/make_names.py',
+            'html/forms/InputTypeNames.in',
             '--output_dir',
             '<(SHARED_INTERMEDIATE_DIR)/blink',
           ],
@@ -553,6 +571,23 @@
           'inputs': [
             '<@(scripts_for_in_files)',
             '../build/scripts/make_token_matcher.py',
+            '../core/css/CSSTokenizer-in.cpp',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/blink/CSSTokenizer.cpp',
+          ],
+          'action': [
+            'python',
+            '../build/scripts/make_token_matcher.py',
+            '../core/css/CSSTokenizer-in.cpp',
+            '<(SHARED_INTERMEDIATE_DIR)/blink/CSSTokenizer.cpp',
+          ],
+        },
+        {
+          'action_name': 'MakeParser',
+          'inputs': [
+            '<@(scripts_for_in_files)',
+            '../build/scripts/make_token_matcher.py',
             '../core/css/CSSParser-in.cpp',
           ],
           'outputs': [
@@ -580,6 +615,27 @@
             '../build/scripts/make_token_matcher.py',
             '../core/html/HTMLMetaElement-in.cpp',
             '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLMetaElement.cpp',
+          ],
+        },
+        {
+          'action_name': 'HTMLElementLookupTrie',
+          'inputs': [
+            '<@(scripts_for_in_files)',
+            '../build/scripts/make_element_lookup_trie.py',
+            '../build/scripts/templates/ElementLookupTrie.cpp.tmpl',
+            '../build/scripts/templates/ElementLookupTrie.h.tmpl',
+            'html/HTMLTagNames.in',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLElementLookupTrie.cpp',
+            '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLElementLookupTrie.h',
+          ],
+          'action': [
+            'python',
+            '../build/scripts/make_element_lookup_trie.py',
+            'html/HTMLTagNames.in',
+            '--output_dir',
+            '<(SHARED_INTERMEDIATE_DIR)/blink',
           ],
         },
       ],

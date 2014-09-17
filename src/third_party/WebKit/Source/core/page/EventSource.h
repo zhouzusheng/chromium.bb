@@ -37,7 +37,7 @@
 #include "core/events/EventTarget.h"
 #include "core/loader/ThreadableLoaderClient.h"
 #include "platform/Timer.h"
-#include "weborigin/KURL.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
@@ -96,10 +96,11 @@ private:
     virtual void didFailAccessControlCheck(const ResourceError&);
     virtual void didFailRedirectCheck();
 
+    void scheduleInitialConnect();
     void connect();
     void networkRequestEnded();
     void scheduleReconnect();
-    void reconnectTimerFired(Timer<EventSource>*);
+    void connectTimerFired(Timer<EventSource>*);
     void abortConnectionAttempt();
     void parseEventStream();
     void parseEventStreamLine(unsigned pos, int fieldLength, int lineLength);
@@ -109,9 +110,9 @@ private:
     bool m_withCredentials;
     State m_state;
 
-    RefPtr<TextResourceDecoder> m_decoder;
+    OwnPtr<TextResourceDecoder> m_decoder;
     RefPtr<ThreadableLoader> m_loader;
-    Timer<EventSource> m_reconnectTimer;
+    Timer<EventSource> m_connectTimer;
     Vector<UChar> m_receiveBuf;
     bool m_discardTrailingNewline;
     bool m_requestInFlight;

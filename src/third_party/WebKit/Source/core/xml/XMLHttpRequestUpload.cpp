@@ -27,8 +27,6 @@
 #include "core/xml/XMLHttpRequestUpload.h"
 
 #include "core/events/Event.h"
-#include "core/events/ThreadLocalEventNames.h"
-#include "core/xml/XMLHttpRequest.h"
 #include "core/xml/XMLHttpRequestProgressEvent.h"
 #include "wtf/Assertions.h"
 #include "wtf/text/AtomicString.h"
@@ -37,6 +35,8 @@ namespace WebCore {
 
 XMLHttpRequestUpload::XMLHttpRequestUpload(XMLHttpRequest* xmlHttpRequest)
     : m_xmlHttpRequest(xmlHttpRequest)
+    , m_lastBytesSent(0)
+    , m_lastTotalBytesToBeSent(0)
 {
     ScriptWrappable::init(this);
 }
@@ -51,14 +51,25 @@ ExecutionContext* XMLHttpRequestUpload::executionContext() const
     return m_xmlHttpRequest->executionContext();
 }
 
-void XMLHttpRequestUpload::dispatchEventAndLoadEnd(PassRefPtr<Event> event)
+void XMLHttpRequestUpload::dispatchProgressEvent(unsigned long long bytesSent, unsigned long long totalBytesToBeSent)
 {
-    ASSERT(event->type() == EventTypeNames::load || event->type() == EventTypeNames::abort || event->type() == EventTypeNames::error || event->type() == EventTypeNames::timeout);
-
-    dispatchEvent(event);
-    dispatchEvent(XMLHttpRequestProgressEvent::create(EventTypeNames::loadend));
+    m_lastBytesSent = bytesSent;
+    m_lastTotalBytesToBeSent = totalBytesToBeSent;
+    dispatchEvent(XMLHttpRequestProgressEvent::create(EventTypeNames::progress, true, bytesSent, totalBytesToBeSent));
 }
 
+void XMLHttpRequestUpload::dispatchEventAndLoadEnd(const AtomicString& type, bool lengthComputable, unsigned long long bytesSent, unsigned long long total)
+{
+    ASSERT(type == EventTypeNames::load || type == EventTypeNames::abort || type == EventTypeNames::error || type == EventTypeNames::timeout);
+    dispatchEvent(XMLHttpRequestProgressEvent::create(type, lengthComputable, bytesSent, total));
+    dispatchEvent(XMLHttpRequestProgressEvent::create(EventTypeNames::loadend, lengthComputable, bytesSent, total));
+}
 
+void XMLHttpRequestUpload::handleRequestError(const AtomicString& type)
+{
+    bool lengthComputable = m_lastTotalBytesToBeSent > 0 && m_lastBytesSent <= m_lastTotalBytesToBeSent;
+    dispatchEvent(XMLHttpRequestProgressEvent::create(EventTypeNames::progress, lengthComputable, m_lastBytesSent, m_lastTotalBytesToBeSent));
+    dispatchEventAndLoadEnd(type, lengthComputable, m_lastBytesSent, m_lastTotalBytesToBeSent);
+}
 
 } // namespace WebCore

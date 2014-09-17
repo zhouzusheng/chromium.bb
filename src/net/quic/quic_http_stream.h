@@ -52,6 +52,7 @@ class NET_EXPORT_PRIVATE QuicHttpStream :
   virtual bool IsConnectionReused() const OVERRIDE;
   virtual void SetConnectionReused() OVERRIDE;
   virtual bool IsConnectionReusable() const OVERRIDE;
+  virtual int64 GetTotalReceivedBytes() const OVERRIDE;
   virtual bool GetLoadTimingInfo(
       LoadTimingInfo* load_timing_info) const OVERRIDE;
   virtual void GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
@@ -62,8 +63,6 @@ class NET_EXPORT_PRIVATE QuicHttpStream :
   virtual void SetPriority(RequestPriority priority) OVERRIDE;
 
   // QuicReliableClientStream::Delegate implementation
-  virtual int OnSendData() OVERRIDE;
-  virtual int OnSendDataComplete(int status, bool* eof) OVERRIDE;
   virtual int OnDataReceived(const char* data, int length) OVERRIDE;
   virtual void OnClose(QuicErrorCode error) OVERRIDE;
   virtual void OnError(int error) OVERRIDE;
@@ -130,6 +129,9 @@ class NET_EXPORT_PRIVATE QuicHttpStream :
   // Once all buffered data has been returned, this will be used as the final
   // response.
   int response_status_;
+
+  // Serialized request headers.
+  SpdyHeaderBlock request_headers_;
 
   bool response_headers_received_;
 

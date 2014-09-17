@@ -77,8 +77,10 @@ void XMLHttpRequestProgressEventThrottle::dispatchProgressEvent(bool lengthCompu
 
 void XMLHttpRequestProgressEventThrottle::dispatchReadyStateChangeEvent(PassRefPtr<Event> event, ProgressEventAction progressEventAction)
 {
-    if (progressEventAction == FlushProgressEvent)
-        flushProgressEvent();
+    if (progressEventAction == FlushProgressEvent || progressEventAction == FlushDeferredProgressEvent) {
+        if (!flushDeferredProgressEvent() && progressEventAction == FlushProgressEvent)
+            deliverProgressEvent();
+    }
 
     dispatchEvent(event);
 }
@@ -96,23 +98,27 @@ void XMLHttpRequestProgressEventThrottle::dispatchEvent(PassRefPtr<Event> event)
         m_target->dispatchEvent(event);
 }
 
-void XMLHttpRequestProgressEventThrottle::dispatchEventAndLoadEnd(PassRefPtr<Event> event)
+void XMLHttpRequestProgressEventThrottle::dispatchEventAndLoadEnd(const AtomicString& type, bool lengthComputable, unsigned long long bytesSent, unsigned long long total)
 {
-    ASSERT(event->type() == EventTypeNames::load || event->type() == EventTypeNames::abort || event->type() == EventTypeNames::error || event->type() == EventTypeNames::timeout);
+    ASSERT(type == EventTypeNames::load || type == EventTypeNames::abort || type == EventTypeNames::error || type == EventTypeNames::timeout);
 
-    dispatchEvent(event);
-    dispatchEvent(XMLHttpRequestProgressEvent::create(EventTypeNames::loadend));
+    dispatchEvent(XMLHttpRequestProgressEvent::create(type, lengthComputable, bytesSent, total));
+    dispatchEvent(XMLHttpRequestProgressEvent::create(EventTypeNames::loadend, lengthComputable, bytesSent, total));
 }
 
-void XMLHttpRequestProgressEventThrottle::flushProgressEvent()
+bool XMLHttpRequestProgressEventThrottle::flushDeferredProgressEvent()
 {
     if (m_deferEvents && m_deferredProgressEvent) {
         // Move the progress event to the queue, to get it in the right order on resume.
         m_deferredEvents.append(m_deferredProgressEvent);
         m_deferredProgressEvent = 0;
-        return;
+        return true;
     }
+    return false;
+}
 
+void XMLHttpRequestProgressEventThrottle::deliverProgressEvent()
+{
     if (!hasEventToDispatch())
         return;
 

@@ -16,6 +16,10 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 
+namespace cc {
+class CompositorFrameMetadata;
+}
+
 namespace content {
 
 class DevToolsTracingHandler;
@@ -38,6 +42,9 @@ class CONTENT_EXPORT RenderViewDevToolsAgentHost
 
   RenderViewHost* render_view_host() { return render_view_host_; }
 
+  void SynchronousSwapCompositorFrame(
+      const cc::CompositorFrameMetadata& frame_metadata);
+
  private:
   friend class DevToolsAgentHost;
 
@@ -56,6 +63,8 @@ class CONTENT_EXPORT RenderViewDevToolsAgentHost
 
   // WebContentsObserver overrides.
   virtual void AboutToNavigateRenderView(RenderViewHost* dest_rvh) OVERRIDE;
+  virtual void RenderViewHostChanged(RenderViewHost* old_host,
+                                     RenderViewHost* new_host) OVERRIDE;
   virtual void RenderViewDeleted(RenderViewHost* rvh) OVERRIDE;
   virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
   virtual void DidAttachInterstitialPage() OVERRIDE;

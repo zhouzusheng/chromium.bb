@@ -31,18 +31,25 @@
 #include "core/rendering/shapes/Shape.h"
 
 #include "core/fetch/ImageResource.h"
-#include "core/platform/graphics/ImageBuffer.h"
+#include "core/rendering/shapes/BoxShape.h"
 #include "core/rendering/shapes/PolygonShape.h"
 #include "core/rendering/shapes/RasterShape.h"
 #include "core/rendering/shapes/RectangleShape.h"
 #include "platform/LengthFunctions.h"
+#include "platform/geometry/FloatRoundedRect.h"
 #include "platform/geometry/FloatSize.h"
+#include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/WindRule.h"
 #include "wtf/MathExtras.h"
 #include "wtf/OwnPtr.h"
-#include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
+
+static PassOwnPtr<Shape> createBoxShape(const FloatRoundedRect& bounds)
+{
+    ASSERT(bounds.rect().width() >= 0 && bounds.rect().height() >= 0);
+    return adoptPtr(new BoxShape(bounds));
+}
 
 static PassOwnPtr<Shape> createRectangleShape(const FloatRect& bounds, const FloatSize& radii)
 {
@@ -211,10 +218,8 @@ PassOwnPtr<Shape> Shape::createShape(const StyleImage* styleImage, float thresho
 
     Image* image = styleImage->cachedImage()->image();
     const IntSize& imageSize = image->size();
-    OwnPtr<ImageBuffer> imageBuffer = ImageBuffer::create(imageSize);
-
     OwnPtr<RasterShapeIntervals> intervals = adoptPtr(new RasterShapeIntervals(imageSize.height()));
-
+    OwnPtr<ImageBuffer> imageBuffer = ImageBuffer::create(imageSize);
     if (imageBuffer) {
         GraphicsContext* graphicsContext = imageBuffer->context();
         graphicsContext->drawImage(image, IntPoint());
@@ -245,6 +250,19 @@ PassOwnPtr<Shape> Shape::createShape(const StyleImage* styleImage, float thresho
     rasterShape->m_margin = floatValueForLength(margin, 0);
     rasterShape->m_padding = floatValueForLength(padding, 0);
     return rasterShape.release();
+}
+
+PassOwnPtr<Shape> Shape::createLayoutBoxShape(const LayoutSize& logicalSize, WritingMode writingMode, const Length& margin, const Length& padding)
+{
+    FloatRect rect(0, 0, logicalSize.width(), logicalSize.height());
+    FloatSize radii(0, 0);
+    FloatRoundedRect bounds(rect, radii, radii, radii, radii);
+    OwnPtr<Shape> shape = createBoxShape(bounds);
+    shape->m_writingMode = writingMode;
+    shape->m_margin = floatValueForLength(margin, 0);
+    shape->m_padding = floatValueForLength(padding, 0);
+
+    return shape.release();
 }
 
 } // namespace WebCore

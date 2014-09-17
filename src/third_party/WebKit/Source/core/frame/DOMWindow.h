@@ -178,17 +178,13 @@ enum PageshowEventPersistence {
 
         unsigned length() const;
 
-        String name() const;
-        void setName(const String&);
+        const AtomicString& name() const;
+        void setName(const AtomicString&);
 
         String status() const;
         void setStatus(const String&);
         String defaultStatus() const;
         void setDefaultStatus(const String&);
-
-        // This attribute is an alias of defaultStatus and is necessary for legacy uses.
-        String defaultstatus() const { return defaultStatus(); }
-        void setDefaultstatus(const String& status) { setDefaultStatus(status); }
 
         // Self-referential attributes
 
@@ -242,8 +238,8 @@ enum PageshowEventPersistence {
         void resizeTo(float width, float height) const;
 
         // WebKit animation extensions
-        int requestAnimationFrame(PassRefPtr<RequestAnimationFrameCallback>);
-        int webkitRequestAnimationFrame(PassRefPtr<RequestAnimationFrameCallback>);
+        int requestAnimationFrame(PassOwnPtr<RequestAnimationFrameCallback>);
+        int webkitRequestAnimationFrame(PassOwnPtr<RequestAnimationFrameCallback>);
         void cancelAnimationFrame(int id);
 
         DOMWindowCSS* css();
@@ -326,6 +322,10 @@ enum PageshowEventPersistence {
         void dispatchWindowLoadEvent();
         void documentWasClosed();
         void statePopped(PassRefPtr<SerializedScriptValue>);
+
+        // FIXME: This shouldn't be public once DOMWindow becomes ExecutionContext.
+        void clearEventQueue();
+
     protected:
         DOMWindowLifecycleNotifier& lifecycleNotifier();
 

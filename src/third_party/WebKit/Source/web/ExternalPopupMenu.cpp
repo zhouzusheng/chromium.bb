@@ -37,7 +37,7 @@
 #include "WebViewClient.h"
 #include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
-#include "core/platform/PopupMenuClient.h"
+#include "platform/PopupMenuClient.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/IntPoint.h"
 #include "platform/text/TextDirection.h"
@@ -45,7 +45,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 ExternalPopupMenu::ExternalPopupMenu(Frame& frame, PopupMenuClient* popupMenuClient, WebViewClient* webViewClient)
     : m_popupMenuClient(popupMenuClient)

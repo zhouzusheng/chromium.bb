@@ -28,17 +28,16 @@
 
 #include "RuntimeEnabledFeatures.h"
 #include "core/css/CSSFontFace.h"
-#include "core/platform/graphics/FontCache.h"
-#include "core/platform/graphics/SegmentedFontData.h"
-#include "core/platform/graphics/SimpleFontData.h"
+#include "platform/fonts/FontCache.h"
 #include "platform/fonts/FontDescription.h"
+#include "platform/fonts/SegmentedFontData.h"
+#include "platform/fonts/SimpleFontData.h"
 
 namespace WebCore {
 
-CSSSegmentedFontFace::CSSSegmentedFontFace(CSSFontSelector* fontSelector, FontTraitsMask traitsMask, bool isLocalFallback)
+CSSSegmentedFontFace::CSSSegmentedFontFace(CSSFontSelector* fontSelector, FontTraitsMask traitsMask)
     : m_fontSelector(fontSelector)
     , m_traitsMask(traitsMask)
-    , m_isLocalFallback(isLocalFallback)
 {
 }
 
@@ -93,6 +92,16 @@ void CSSSegmentedFontFace::appendFontFace(PassRefPtr<CSSFontFace> fontFace)
     m_fontFaces.append(fontFace);
 }
 
+void CSSSegmentedFontFace::removeFontFace(PassRefPtr<CSSFontFace> fontFace)
+{
+    size_t index = m_fontFaces.find(fontFace);
+    if (index != kNotFound) {
+        pruneTable();
+        m_fontFaces.remove(index);
+        fontFace->clearSegmentedFontFace();
+    }
+}
+
 static void appendFontData(SegmentedFontData* newFontData, PassRefPtr<SimpleFontData> prpFaceFontData, const CSSFontFace::UnicodeRangeSet& ranges)
 {
     RefPtr<SimpleFontData> faceFontData = prpFaceFontData;
@@ -122,13 +131,15 @@ PassRefPtr<FontData> CSSSegmentedFontFace::getFontData(const FontDescription& fo
     if (!fontData)
         fontData = SegmentedFontData::create();
 
-    bool syntheticBold = !(m_traitsMask & (FontWeight600Mask | FontWeight700Mask | FontWeight800Mask | FontWeight900Mask)) && (desiredTraitsMask & (FontWeight600Mask | FontWeight700Mask | FontWeight800Mask | FontWeight900Mask));
-    bool syntheticItalic = !(m_traitsMask & FontStyleItalicMask) && (desiredTraitsMask & FontStyleItalicMask);
+    FontDescription requestedFontDescription(fontDescription);
+    requestedFontDescription.setTraitsMask(m_traitsMask);
+    requestedFontDescription.setSyntheticBold(!(m_traitsMask & (FontWeight600Mask | FontWeight700Mask | FontWeight800Mask | FontWeight900Mask)) && (desiredTraitsMask & (FontWeight600Mask | FontWeight700Mask | FontWeight800Mask | FontWeight900Mask)));
+    requestedFontDescription.setSyntheticItalic(!(m_traitsMask & FontStyleItalicMask) && (desiredTraitsMask & FontStyleItalicMask));
 
     for (int i = m_fontFaces.size() - 1; i >= 0; --i) {
         if (!m_fontFaces[i]->isValid())
             continue;
-        if (RefPtr<SimpleFontData> faceFontData = m_fontFaces[i]->getFontData(fontDescription, syntheticBold, syntheticItalic)) {
+        if (RefPtr<SimpleFontData> faceFontData = m_fontFaces[i]->getFontData(requestedFontDescription)) {
             ASSERT(!faceFontData->isSegmented());
 #if ENABLE(SVG_FONTS)
             // For SVG Fonts that specify that they only support the "normal" variant, we will assume they are incapable
@@ -187,8 +198,9 @@ void CSSSegmentedFontFace::loadFont(const FontDescription& fontDescription, cons
     unsigned size = m_fontFaces.size();
     for (unsigned i = 0; i < size; i++) {
         if (m_fontFaces[i]->loadStatus() == FontFace::Unloaded && m_fontFaces[i]->ranges().intersectsWith(text)) {
-            RefPtr<SimpleFontData> fontData = m_fontFaces[i]->getFontData(fontDescription, false, false);
-            fontData->beginLoadIfNeeded();
+            RefPtr<SimpleFontData> fontData = m_fontFaces[i]->getFontData(fontDescription);
+            if (fontData->customFontData())
+                fontData->customFontData()->beginLoadIfNeeded();
         }
     }
 
@@ -207,9 +219,8 @@ Vector<RefPtr<FontFace> > CSSSegmentedFontFace::fontFaces(const String& text) co
     Vector<RefPtr<FontFace> > fontFaces;
     unsigned size = m_fontFaces.size();
     for (unsigned i = 0; i < size; i++) {
-        RefPtr<FontFace> face = m_fontFaces[i]->fontFace();
-        if (face && m_fontFaces[i]->ranges().intersectsWith(text))
-            fontFaces.append(face);
+        if (m_fontFaces[i]->ranges().intersectsWith(text))
+            fontFaces.append(m_fontFaces[i]->fontFace());
     }
     return fontFaces;
 }

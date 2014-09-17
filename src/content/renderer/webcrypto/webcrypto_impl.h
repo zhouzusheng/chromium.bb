@@ -13,57 +13,59 @@
 namespace content {
 
 class CONTENT_EXPORT WebCryptoImpl
-    : NON_EXPORTED_BASE(public WebKit::WebCrypto) {
+    : NON_EXPORTED_BASE(public blink::WebCrypto) {
  public:
   WebCryptoImpl();
 
   virtual void encrypt(
-      const WebKit::WebCryptoAlgorithm& algorithm,
-      const WebKit::WebCryptoKey& key,
+      const blink::WebCryptoAlgorithm& algorithm,
+      const blink::WebCryptoKey& key,
       const unsigned char* data,
       unsigned data_size,
-      WebKit::WebCryptoResult result);
+      blink::WebCryptoResult result);
   virtual void decrypt(
-      const WebKit::WebCryptoAlgorithm& algorithm,
-      const WebKit::WebCryptoKey& key,
+      const blink::WebCryptoAlgorithm& algorithm,
+      const blink::WebCryptoKey& key,
       const unsigned char* data,
       unsigned data_size,
-      WebKit::WebCryptoResult result);
+      blink::WebCryptoResult result);
   virtual void digest(
-      const WebKit::WebCryptoAlgorithm& algorithm,
+      const blink::WebCryptoAlgorithm& algorithm,
       const unsigned char* data,
       unsigned data_size,
-      WebKit::WebCryptoResult result);
+      blink::WebCryptoResult result);
   virtual void generateKey(
-      const WebKit::WebCryptoAlgorithm& algorithm,
+      const blink::WebCryptoAlgorithm& algorithm,
       bool extractable,
-      WebKit::WebCryptoKeyUsageMask usage_mask,
-      WebKit::WebCryptoResult result);
+      blink::WebCryptoKeyUsageMask usage_mask,
+      blink::WebCryptoResult result);
   virtual void importKey(
-      WebKit::WebCryptoKeyFormat format,
+      blink::WebCryptoKeyFormat format,
       const unsigned char* key_data,
       unsigned key_data_size,
-      const WebKit::WebCryptoAlgorithm& algorithm_or_null,
+      const blink::WebCryptoAlgorithm& algorithm_or_null,
       bool extractable,
-      WebKit::WebCryptoKeyUsageMask usage_mask,
-      WebKit::WebCryptoResult result);
+      blink::WebCryptoKeyUsageMask usage_mask,
+      blink::WebCryptoResult result);
+  virtual void exportKey(
+      blink::WebCryptoKeyFormat format,
+      const blink::WebCryptoKey& key,
+      blink::WebCryptoResult result);
   virtual void sign(
-      const WebKit::WebCryptoAlgorithm& algorithm,
-      const WebKit::WebCryptoKey& key,
+      const blink::WebCryptoAlgorithm& algorithm,
+      const blink::WebCryptoKey& key,
       const unsigned char* data,
       unsigned data_size,
-      WebKit::WebCryptoResult result);
+      blink::WebCryptoResult result);
   virtual void verifySignature(
-      const WebKit::WebCryptoAlgorithm& algorithm,
-      const WebKit::WebCryptoKey& key,
+      const blink::WebCryptoAlgorithm& algorithm,
+      const blink::WebCryptoKey& key,
       const unsigned char* signature,
       unsigned signature_size,
       const unsigned char* data,
       unsigned data_size,
-      WebKit::WebCryptoResult result);
+      blink::WebCryptoResult result);
 
-  static void ShrinkBuffer(WebKit::WebArrayBuffer* buffer, unsigned new_size);
-  static WebKit::WebCryptoKey NullKey();
 
  protected:
   friend class WebCryptoImplTest;
@@ -71,55 +73,76 @@ class CONTENT_EXPORT WebCryptoImpl
   void Init();
 
   bool EncryptInternal(
-      const WebKit::WebCryptoAlgorithm& algorithm,
-      const WebKit::WebCryptoKey& key,
+      const blink::WebCryptoAlgorithm& algorithm,
+      const blink::WebCryptoKey& key,
       const unsigned char* data,
       unsigned data_size,
-      WebKit::WebArrayBuffer* buffer);
+      blink::WebArrayBuffer* buffer);
   bool DecryptInternal(
-      const WebKit::WebCryptoAlgorithm& algorithm,
-      const WebKit::WebCryptoKey& key,
+      const blink::WebCryptoAlgorithm& algorithm,
+      const blink::WebCryptoKey& key,
       const unsigned char* data,
       unsigned data_size,
-      WebKit::WebArrayBuffer* buffer);
+      blink::WebArrayBuffer* buffer);
   bool DigestInternal(
-      const WebKit::WebCryptoAlgorithm& algorithm,
+      const blink::WebCryptoAlgorithm& algorithm,
       const unsigned char* data,
       unsigned data_size,
-      WebKit::WebArrayBuffer* buffer);
+      blink::WebArrayBuffer* buffer);
   bool GenerateKeyInternal(
-      const WebKit::WebCryptoAlgorithm& algorithm,
+      const blink::WebCryptoAlgorithm& algorithm,
       bool extractable,
-      WebKit::WebCryptoKeyUsageMask usage_mask,
-      WebKit::WebCryptoKey* key);
+      blink::WebCryptoKeyUsageMask usage_mask,
+      blink::WebCryptoKey* key);
   bool GenerateKeyPairInternal(
-      const WebKit::WebCryptoAlgorithm& algorithm,
+      const blink::WebCryptoAlgorithm& algorithm,
       bool extractable,
-      WebKit::WebCryptoKeyUsageMask usage_mask,
-      WebKit::WebCryptoKey* public_key,
-      WebKit::WebCryptoKey* private_key);
+      blink::WebCryptoKeyUsageMask usage_mask,
+      blink::WebCryptoKey* public_key,
+      blink::WebCryptoKey* private_key);
   bool ImportKeyInternal(
-      WebKit::WebCryptoKeyFormat format,
+      blink::WebCryptoKeyFormat format,
       const unsigned char* key_data,
       unsigned key_data_size,
-      const WebKit::WebCryptoAlgorithm& algorithm_or_null,
+      const blink::WebCryptoAlgorithm& algorithm_or_null,
       bool extractable,
-      WebKit::WebCryptoKeyUsageMask usage_mask,
-      WebKit::WebCryptoKey* key);
+      blink::WebCryptoKeyUsageMask usage_mask,
+      blink::WebCryptoKey* key);
+  bool ExportKeyInternal(
+      blink::WebCryptoKeyFormat format,
+      const blink::WebCryptoKey& key,
+      blink::WebArrayBuffer* buffer);
   bool SignInternal(
-      const WebKit::WebCryptoAlgorithm& algorithm,
-      const WebKit::WebCryptoKey& key,
+      const blink::WebCryptoAlgorithm& algorithm,
+      const blink::WebCryptoKey& key,
       const unsigned char* data,
       unsigned data_size,
-      WebKit::WebArrayBuffer* buffer);
+      blink::WebArrayBuffer* buffer);
   bool VerifySignatureInternal(
-      const WebKit::WebCryptoAlgorithm& algorithm,
-      const WebKit::WebCryptoKey& key,
+      const blink::WebCryptoAlgorithm& algorithm,
+      const blink::WebCryptoKey& key,
       const unsigned char* signature,
       unsigned signature_size,
       const unsigned char* data,
       unsigned data_size,
       bool* signature_match);
+
+  bool ImportKeyJwk(
+      const unsigned char* key_data,
+      unsigned key_data_size,
+      const blink::WebCryptoAlgorithm& algorithm_or_null,
+      bool extractable,
+      blink::WebCryptoKeyUsageMask usage_mask,
+      blink::WebCryptoKey* key);
+  bool ImportRsaPublicKeyInternal(
+      const unsigned char* modulus_data,
+      unsigned modulus_size,
+      const unsigned char* exponent_data,
+      unsigned exponent_size,
+      const blink::WebCryptoAlgorithm& algorithm,
+      bool extractable,
+      blink::WebCryptoKeyUsageMask usage_mask,
+      blink::WebCryptoKey* key);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(WebCryptoImpl);

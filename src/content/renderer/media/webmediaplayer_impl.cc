@@ -38,6 +38,7 @@
 #include "media/base/media_log.h"
 #include "media/base/media_switches.h"
 #include "media/base/pipeline.h"
+#include "media/base/text_renderer.h"
 #include "media/base/video_frame.h"
 #include "media/filters/audio_renderer_impl.h"
 #include "media/filters/chunk_demuxer.h"
@@ -47,7 +48,7 @@
 #include "media/filters/gpu_video_accelerator_factories.h"
 #include "media/filters/gpu_video_decoder.h"
 #include "media/filters/opus_audio_decoder.h"
-#include "media/filters/video_renderer_base.h"
+#include "media/filters/video_renderer_impl.h"
 #include "media/filters/vpx_video_decoder.h"
 #include "third_party/WebKit/public/platform/WebMediaSource.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
@@ -60,11 +61,11 @@
 #include "v8/include/v8.h"
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
-using WebKit::WebCanvas;
-using WebKit::WebMediaPlayer;
-using WebKit::WebRect;
-using WebKit::WebSize;
-using WebKit::WebString;
+using blink::WebCanvas;
+using blink::WebMediaPlayer;
+using blink::WebRect;
+using blink::WebSize;
+using blink::WebString;
 using media::PipelineStatus;
 
 namespace {
@@ -130,8 +131,8 @@ static void LogMediaSourceError(const scoped_refptr<media::MediaLog>& media_log,
 
 WebMediaPlayerImpl::WebMediaPlayerImpl(
     content::RenderView* render_view,
-    WebKit::WebFrame* frame,
-    WebKit::WebMediaPlayerClient* client,
+    blink::WebFrame* frame,
+    blink::WebMediaPlayerClient* client,
     base::WeakPtr<WebMediaPlayerDelegate> delegate,
     const WebMediaPlayerParams& params)
     : content::RenderViewObserver(render_view),
@@ -183,7 +184,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       base::Bind(&WebMediaPlayerImpl::IncrementExternallyAllocatedMemory,
                  AsWeakPtr()));
 
-  if (WebKit::WebRuntimeFeatures::isPrefixedEncryptedMediaEnabled()) {
+  if (blink::WebRuntimeFeatures::isPrefixedEncryptedMediaEnabled()) {
     decryptor_.reset(new ProxyDecryptor(
 #if defined(ENABLE_PEPPER_CDMS)
         client,
@@ -249,7 +250,7 @@ URLSchemeForHistogram URLScheme(const GURL& url) {
 
 }  // anonymous namespace
 
-void WebMediaPlayerImpl::load(LoadType load_type, const WebKit::WebURL& url,
+void WebMediaPlayerImpl::load(LoadType load_type, const blink::WebURL& url,
                               CORSMode cors_mode) {
   if (!defer_load_cb_.is_null()) {
     defer_load_cb_.Run(base::Bind(
@@ -260,7 +261,7 @@ void WebMediaPlayerImpl::load(LoadType load_type, const WebKit::WebURL& url,
 }
 
 void WebMediaPlayerImpl::DoLoad(LoadType load_type,
-                                const WebKit::WebURL& url,
+                                const blink::WebURL& url,
                                 CORSMode cors_mode) {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
@@ -343,6 +344,9 @@ bool WebMediaPlayerImpl::supportsSave() const {
 
 void WebMediaPlayerImpl::seek(double seconds) {
   DCHECK(main_loop_->BelongsToCurrentThread());
+
+  if (ready_state_ > WebMediaPlayer::ReadyStateHaveMetadata)
+    SetReadyState(WebMediaPlayer::ReadyStateHaveMetadata);
 
   base::TimeDelta seek_time = ConvertSecondsToTimestamp(seconds);
 
@@ -429,12 +433,12 @@ bool WebMediaPlayerImpl::hasAudio() const {
   return pipeline_->HasAudio();
 }
 
-WebKit::WebSize WebMediaPlayerImpl::naturalSize() const {
+blink::WebSize WebMediaPlayerImpl::naturalSize() const {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   gfx::Size size;
   pipeline_->GetNaturalVideoSize(&size);
-  return WebKit::WebSize(size);
+  return blink::WebSize(size);
 }
 
 bool WebMediaPlayerImpl::paused() const {
@@ -476,9 +480,9 @@ WebMediaPlayer::ReadyState WebMediaPlayerImpl::readyState() const {
   return ready_state_;
 }
 
-const WebKit::WebTimeRanges& WebMediaPlayerImpl::buffered() {
+const blink::WebTimeRanges& WebMediaPlayerImpl::buffered() {
   DCHECK(main_loop_->BelongsToCurrentThread());
-  WebKit::WebTimeRanges web_ranges(
+  blink::WebTimeRanges web_ranges(
       ConvertToWebTimeRanges(pipeline_->GetBufferedTimeRanges()));
   buffered_.swap(web_ranges);
   return buffered_;
@@ -608,7 +612,7 @@ void WebMediaPlayerImpl::PutCurrentFrame(
 }
 
 bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
-    WebKit::WebGraphicsContext3D* web_graphics_context,
+    blink::WebGraphicsContext3D* web_graphics_context,
     unsigned int texture,
     unsigned int level,
     unsigned int internal_format,
@@ -642,7 +646,7 @@ bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
     DCHECK_EQ(static_cast<GLuint>(bound_texture), texture);
   }
 
-  scoped_refptr<media::VideoFrame::MailboxHolder> mailbox_holder =
+  media::VideoFrame::MailboxHolder* mailbox_holder =
       video_frame->texture_mailbox();
 
   uint32 source_texture = web_graphics_context->createTexture();
@@ -687,7 +691,7 @@ bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
 // UMA_HISTOGRAM_COUNTS. The reason that we cannot use those macros directly is
 // that UMA_* macros require the names to be constant throughout the process'
 // lifetime.
-static void EmeUMAHistogramEnumeration(const WebKit::WebString& key_system,
+static void EmeUMAHistogramEnumeration(const blink::WebString& key_system,
                                        const std::string& method,
                                        int sample,
                                        int boundary_value) {
@@ -697,7 +701,7 @@ static void EmeUMAHistogramEnumeration(const WebKit::WebString& key_system,
       base::Histogram::kUmaTargetedHistogramFlag)->Add(sample);
 }
 
-static void EmeUMAHistogramCounts(const WebKit::WebString& key_system,
+static void EmeUMAHistogramCounts(const blink::WebString& key_system,
                                   const std::string& method,
                                   int sample) {
   // Use the same parameters as UMA_HISTOGRAM_COUNTS.
@@ -987,21 +991,28 @@ void WebMediaPlayerImpl::OnNeedKey(const std::string& type,
                          init_data.size());
 }
 
-scoped_ptr<media::TextTrack>
-WebMediaPlayerImpl::OnTextTrack(media::TextKind kind,
-                                const std::string& label,
-                                const std::string& language) {
-  typedef WebInbandTextTrackImpl::Kind webkind_t;
-  const webkind_t webkind = static_cast<webkind_t>(kind);
-  const WebKit::WebString weblabel = WebKit::WebString::fromUTF8(label);
-  const WebKit::WebString weblanguage = WebKit::WebString::fromUTF8(language);
+void WebMediaPlayerImpl::OnAddTextTrack(
+    const media::TextTrackConfig& config,
+    const media::AddTextTrackDoneCB& done_cb) {
+  DCHECK(main_loop_->BelongsToCurrentThread());
 
-  WebInbandTextTrackImpl* const text_track =
-    new WebInbandTextTrackImpl(webkind, weblabel, weblanguage,
-                               text_track_index_++);
+  const WebInbandTextTrackImpl::Kind web_kind =
+      static_cast<WebInbandTextTrackImpl::Kind>(config.kind());
+  const blink::WebString web_label =
+      blink::WebString::fromUTF8(config.label());
+  const blink::WebString web_language =
+      blink::WebString::fromUTF8(config.language());
+  const blink::WebString web_id =
+      blink::WebString::fromUTF8(config.id());
 
-  return scoped_ptr<media::TextTrack>(new TextTrackImpl(GetClient(),
-                                                        text_track));
+  scoped_ptr<WebInbandTextTrackImpl> web_inband_text_track(
+      new WebInbandTextTrackImpl(web_kind, web_label, web_language, web_id,
+                                 text_track_index_++));
+
+  scoped_ptr<media::TextTrack> text_track(
+      new TextTrackImpl(main_loop_, GetClient(), web_inband_text_track.Pass()));
+
+  done_cb.Run(text_track.Pass());
 }
 
 void WebMediaPlayerImpl::OnKeyError(const std::string& session_id,
@@ -1015,7 +1026,7 @@ void WebMediaPlayerImpl::OnKeyError(const std::string& session_id,
   GetClient()->keyError(
       current_key_system_,
       WebString::fromUTF8(session_id),
-      static_cast<WebKit::WebMediaPlayerClient::MediaKeyErrorCode>(error_code),
+      static_cast<blink::WebMediaPlayerClient::MediaKeyErrorCode>(error_code),
       system_code);
 }
 
@@ -1066,7 +1077,6 @@ void WebMediaPlayerImpl::NotifyDownloading(bool is_downloading) {
 
 void WebMediaPlayerImpl::StartPipeline() {
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-  bool increase_preroll_on_underflow = true;
 
   // Keep track if this is a MSE or non-MSE playback.
   UMA_HISTOGRAM_BOOLEAN("Media.MSE.Playback",
@@ -1085,32 +1095,11 @@ void WebMediaPlayerImpl::StartPipeline() {
     DCHECK(!chunk_demuxer_);
     DCHECK(!data_source_);
 
-    media::AddTextTrackCB add_text_track_cb;
-
-    if (cmd_line->HasSwitch(switches::kEnableInbandTextTracks)) {
-      add_text_track_cb =
-          base::Bind(&WebMediaPlayerImpl::OnTextTrack, base::Unretained(this));
-    }
-
     chunk_demuxer_ = new media::ChunkDemuxer(
         BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnDemuxerOpened),
         BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnNeedKey),
-        add_text_track_cb,
         base::Bind(&LogMediaSourceError, media_log_));
     demuxer_.reset(chunk_demuxer_);
-
-#if !defined(OS_CHROMEOS)
-    // Disable GpuVideoDecoder creation on platforms other than CrOS until
-    // they support codec config changes.
-    // TODO(acolwell): Remove this once http://crbug.com/151045 is fixed.
-    gpu_factories_ = NULL;
-#endif
-
-    // Disable preroll increases on underflow since the web application has no
-    // way to detect that this is happening and runs the risk of triggering
-    // unwanted garbage collection if it is to aggressive about appending data.
-    // TODO(acolwell): Remove this once http://crbug.com/144683 is fixed.
-    increase_preroll_on_underflow = false;
   }
 
   scoped_ptr<media::FilterCollection> filter_collection(
@@ -1127,7 +1116,7 @@ void WebMediaPlayerImpl::StartPipeline() {
   // Create our audio decoders and renderer.
   ScopedVector<media::AudioDecoder> audio_decoders;
   audio_decoders.push_back(new media::FFmpegAudioDecoder(media_loop_));
-  if (cmd_line->HasSwitch(switches::kEnableOpusPlayback)) {
+  if (!cmd_line->HasSwitch(switches::kDisableOpusPlayback)) {
     audio_decoders.push_back(new media::OpusAudioDecoder(media_loop_));
   }
 
@@ -1135,8 +1124,7 @@ void WebMediaPlayerImpl::StartPipeline() {
       new media::AudioRendererImpl(media_loop_,
                                    audio_source_provider_.get(),
                                    audio_decoders.Pass(),
-                                   set_decryptor_ready_cb,
-                                   increase_preroll_on_underflow));
+                                   set_decryptor_ready_cb));
   filter_collection->SetAudioRenderer(audio_renderer.Pass());
 
   // Create our video decoders and renderer.
@@ -1147,8 +1135,6 @@ void WebMediaPlayerImpl::StartPipeline() {
         new media::GpuVideoDecoder(gpu_factories_, media_log_));
   }
 
-  // TODO(phajdan.jr): Remove ifdefs when libvpx with vp9 support is released
-  // (http://crbug.com/174287) .
 #if !defined(MEDIA_DISABLE_LIBVPX)
   video_decoders.push_back(new media::VpxVideoDecoder(media_loop_));
 #endif  // !defined(MEDIA_DISABLE_LIBVPX)
@@ -1156,7 +1142,7 @@ void WebMediaPlayerImpl::StartPipeline() {
   video_decoders.push_back(new media::FFmpegVideoDecoder(media_loop_));
 
   scoped_ptr<media::VideoRenderer> video_renderer(
-      new media::VideoRendererBase(
+      new media::VideoRendererImpl(
           media_loop_,
           video_decoders.Pass(),
           set_decryptor_ready_cb,
@@ -1164,6 +1150,15 @@ void WebMediaPlayerImpl::StartPipeline() {
           BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::SetOpaque),
           true));
   filter_collection->SetVideoRenderer(video_renderer.Pass());
+
+  if (cmd_line->HasSwitch(switches::kEnableInbandTextTracks)) {
+    scoped_ptr<media::TextRenderer> text_renderer(
+        new media::TextRenderer(
+            media_loop_,
+            BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnAddTextTrack)));
+
+    filter_collection->SetTextRenderer(text_renderer.Pass());
+  }
 
   // ... and we're ready to go!
   starting_ = true;
@@ -1223,7 +1218,8 @@ void WebMediaPlayerImpl::Destroy() {
 
   // Let V8 know we are not using extra resources anymore.
   if (incremented_externally_allocated_memory_) {
-    v8::V8::AdjustAmountOfExternalAllocatedMemory(-kPlayerExtraMemory);
+    v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(
+        -kPlayerExtraMemory);
     incremented_externally_allocated_memory_ = false;
   }
 
@@ -1233,20 +1229,21 @@ void WebMediaPlayerImpl::Destroy() {
   data_source_.reset();
 }
 
-WebKit::WebMediaPlayerClient* WebMediaPlayerImpl::GetClient() {
+blink::WebMediaPlayerClient* WebMediaPlayerImpl::GetClient() {
   DCHECK(main_loop_->BelongsToCurrentThread());
   DCHECK(client_);
   return client_;
 }
 
-WebKit::WebAudioSourceProvider* WebMediaPlayerImpl::audioSourceProvider() {
+blink::WebAudioSourceProvider* WebMediaPlayerImpl::audioSourceProvider() {
   return audio_source_provider_.get();
 }
 
 void WebMediaPlayerImpl::IncrementExternallyAllocatedMemory() {
   DCHECK(main_loop_->BelongsToCurrentThread());
   incremented_externally_allocated_memory_ = true;
-  v8::V8::AdjustAmountOfExternalAllocatedMemory(kPlayerExtraMemory);
+  v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(
+      kPlayerExtraMemory);
 }
 
 double WebMediaPlayerImpl::GetPipelineDuration() const {

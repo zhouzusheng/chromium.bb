@@ -71,7 +71,7 @@ public:
     PassRefPtr<CSSRuleList> rules();
     int addRule(const String& selector, const String& style, int index, ExceptionState&);
     int addRule(const String& selector, const String& style, ExceptionState&);
-    void removeRule(unsigned index, ExceptionState& es) { deleteRule(index, es); }
+    void removeRule(unsigned index, ExceptionState& exceptionState) { deleteRule(index, exceptionState); }
 
     // For CSSRuleList.
     unsigned length() const;
@@ -162,6 +162,8 @@ inline CSSStyleSheet::RuleMutationScope::~RuleMutationScope()
     if (m_styleSheet)
         m_styleSheet->didMutateRules();
 }
+
+DEFINE_TYPE_CASTS(CSSStyleSheet, StyleSheet, sheet, sheet->isCSSStyleSheet(), sheet.isCSSStyleSheet());
 
 } // namespace
 

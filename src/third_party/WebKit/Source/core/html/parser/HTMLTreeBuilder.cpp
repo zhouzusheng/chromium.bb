@@ -340,15 +340,14 @@ void HTMLTreeBuilder::detach()
 
 HTMLTreeBuilder::FragmentParsingContext::FragmentParsingContext()
     : m_fragment(0)
-    , m_contextElement(0)
 {
 }
 
 HTMLTreeBuilder::FragmentParsingContext::FragmentParsingContext(DocumentFragment* fragment, Element* contextElement)
     : m_fragment(fragment)
-    , m_contextElement(contextElement)
 {
     ASSERT(!fragment->hasChildNodes());
+    m_contextElementStackItem = HTMLStackItem::create(contextElement, HTMLStackItem::ItemForContextElement);
 }
 
 HTMLTreeBuilder::FragmentParsingContext::~FragmentParsingContext()
@@ -358,6 +357,7 @@ HTMLTreeBuilder::FragmentParsingContext::~FragmentParsingContext()
 PassRefPtr<Element> HTMLTreeBuilder::takeScriptToProcess(TextPosition& scriptStartPosition)
 {
     ASSERT(m_scriptToProcess);
+    ASSERT(!m_tree.hasPendingTasks());
     // Unpause ourselves, callers may pause us again when processing the script.
     // The HTML5 spec is written as though scripts are executed inside the tree
     // builder.  We pause the parser to exit the tree builder, and then resume
@@ -377,10 +377,10 @@ void HTMLTreeBuilder::constructTree(AtomicHTMLToken* token)
     if (m_parser->tokenizer()) {
         bool inForeignContent = false;
         if (!m_tree.isEmpty()) {
-            RefPtr<HTMLStackItem> adjustedCurrentNode = adjustedCurrentStackItem();
+            HTMLStackItem* adjustedCurrentNode = adjustedCurrentStackItem();
             inForeignContent = !adjustedCurrentNode->isInHTMLNamespace()
-                && !HTMLElementStack::isHTMLIntegrationPoint(adjustedCurrentNode.get())
-                && !HTMLElementStack::isMathMLTextIntegrationPoint(adjustedCurrentNode.get());
+                && !HTMLElementStack::isHTMLIntegrationPoint(adjustedCurrentNode)
+                && !HTMLElementStack::isMathMLTextIntegrationPoint(adjustedCurrentNode);
         }
 
         m_parser->tokenizer()->setForceNullCharacterReplacement(m_insertionMode == TextMode || inForeignContent);
@@ -398,6 +398,9 @@ void HTMLTreeBuilder::processToken(AtomicHTMLToken* token)
         return;
     }
 
+    // Any non-character token needs to cause us to flush any pending text immediately.
+    // NOTE: flush() can cause any queued tasks to execute, possibly re-entering the parser.
+    m_tree.flush();
     m_shouldSkipLeadingNewline = false;
 
     switch (token->type()) {
@@ -490,6 +493,10 @@ void HTMLTreeBuilder::processIsindexStartTagForInBody(AtomicHTMLToken* token)
 {
     ASSERT(token->type() == HTMLToken::StartTag);
     ASSERT(token->name() == isindexTag);
+
+    if (m_parser->useCounter())
+        m_parser->useCounter()->count(UseCounter::IsIndexElement);
+
     parseError(token);
     if (m_tree.form())
         return;
@@ -504,7 +511,7 @@ void HTMLTreeBuilder::processIsindexStartTagForInBody(AtomicHTMLToken* token)
     if (promptAttribute)
         processFakeCharacters(promptAttribute->value());
     else
-        processFakeCharacters(Locale::defaultLocale().queryString(WebKit::WebLocalizedString::SearchableIndexIntroduction));
+        processFakeCharacters(Locale::defaultLocale().queryString(blink::WebLocalizedString::SearchableIndexIntroduction));
     processFakeStartTag(inputTag, attributesForIsindexInput(token));
     notImplemented(); // This second set of characters may be needed by non-english locales.
     processFakeEndTag(labelTag);
@@ -999,11 +1006,11 @@ bool HTMLTreeBuilder::processColgroupEndTagForInColumnGroup()
 }
 
 // http://www.whatwg.org/specs/web-apps/current-work/#adjusted-current-node
-PassRefPtr<HTMLStackItem> HTMLTreeBuilder::adjustedCurrentStackItem() const
+HTMLStackItem* HTMLTreeBuilder::adjustedCurrentStackItem() const
 {
     ASSERT(!m_tree.isEmpty());
     if (isParsingFragment() && m_tree.openElements()->hasOnlyOneElement())
-        return HTMLStackItem::create(m_fragmentContext.contextElement(), HTMLStackItem::ItemForContextElement);
+        return m_fragmentContext.contextElementStackItem();
 
     return m_tree.currentStackItem();
 }
@@ -1620,7 +1627,7 @@ void HTMLTreeBuilder::resetInsertionModeAppropriately()
         if (item->node() == m_tree.openElements()->rootNode()) {
             last = true;
             if (isParsingFragment())
-                item = HTMLStackItem::create(m_fragmentContext.contextElement(), HTMLStackItem::ItemForContextElement);
+                item = m_fragmentContext.contextElementStackItem();
         }
         if (item->hasTagName(templateTag))
             return setInsertionMode(m_templateInsertionModes.last());
@@ -2688,11 +2695,11 @@ bool HTMLTreeBuilder::shouldProcessTokenInForeignContent(AtomicHTMLToken* token)
 {
     if (m_tree.isEmpty())
         return false;
-    RefPtr<HTMLStackItem> adjustedCurrentNode = adjustedCurrentStackItem();
+    HTMLStackItem* adjustedCurrentNode = adjustedCurrentStackItem();
 
     if (adjustedCurrentNode->isInHTMLNamespace())
         return false;
-    if (HTMLElementStack::isMathMLTextIntegrationPoint(adjustedCurrentNode.get())) {
+    if (HTMLElementStack::isMathMLTextIntegrationPoint(adjustedCurrentNode)) {
         if (token->type() == HTMLToken::StartTag
             && token->name() != MathMLNames::mglyphTag
             && token->name() != MathMLNames::malignmarkTag)
@@ -2704,7 +2711,7 @@ bool HTMLTreeBuilder::shouldProcessTokenInForeignContent(AtomicHTMLToken* token)
         && token->type() == HTMLToken::StartTag
         && token->name() == SVGNames::svgTag)
         return false;
-    if (HTMLElementStack::isHTMLIntegrationPoint(adjustedCurrentNode.get())) {
+    if (HTMLElementStack::isHTMLIntegrationPoint(adjustedCurrentNode)) {
         if (token->type() == HTMLToken::StartTag)
             return false;
         if (token->type() == HTMLToken::Character)
@@ -2717,7 +2724,16 @@ bool HTMLTreeBuilder::shouldProcessTokenInForeignContent(AtomicHTMLToken* token)
 
 void HTMLTreeBuilder::processTokenInForeignContent(AtomicHTMLToken* token)
 {
-    RefPtr<HTMLStackItem> adjustedCurrentNode = adjustedCurrentStackItem();
+    if (token->type() == HTMLToken::Character) {
+        const String& characters = token->characters();
+        m_tree.insertTextNode(characters);
+        if (m_framesetOk && !isAllWhitespaceOrReplacementCharacters(characters))
+            m_framesetOk = false;
+        return;
+    }
+
+    m_tree.flush();
+    HTMLStackItem* adjustedCurrentNode = adjustedCurrentStackItem();
 
     switch (token->type()) {
     case HTMLToken::Uninitialized:
@@ -2815,14 +2831,8 @@ void HTMLTreeBuilder::processTokenInForeignContent(AtomicHTMLToken* token)
     }
     case HTMLToken::Comment:
         m_tree.insertComment(token);
-        return;
-    case HTMLToken::Character: {
-        const String& characters = token->characters();
-        m_tree.insertTextNode(characters);
-        if (m_framesetOk && !isAllWhitespaceOrReplacementCharacters(characters))
-            m_framesetOk = false;
         break;
-    }
+    case HTMLToken::Character:
     case HTMLToken::EndOfFile:
         ASSERT_NOT_REACHED();
         break;

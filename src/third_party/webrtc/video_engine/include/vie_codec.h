@@ -36,10 +36,9 @@ class WEBRTC_DLLEXPORT ViEEncoderObserver {
                             const unsigned int framerate,
                             const unsigned int bitrate) = 0;
 
-  // This method is called whenever the state of the AutoMuter changes, i.e.,
-  // when |is_muted| toggles.
-  // TODO(hlundin): Remove the default implementation when possible.
-  virtual void VideoAutoMuted(int video_channel, bool is_muted) {}
+  // This method is called whenever the state of the SuspendBelowMinBitrate
+  // changes, i.e., when |is_suspended| toggles.
+  virtual void SuspendChange(int video_channel, bool is_suspended) = 0;
 
  protected:
   virtual ~ViEEncoderObserver() {}
@@ -193,12 +192,15 @@ class WEBRTC_DLLEXPORT ViECodec {
   // Disables recording of debugging information.
   virtual int StopDebugRecording(int video_channel) = 0;
 
-  // Enables AutoMuter to turn off video when the rate drops below
+  // Lets the sender suspend video when the rate drops below
   // |threshold_bps|, and turns back on when the rate goes back up above
   // |threshold_bps| + |window_bps|.
   // This is under development; not tested.
-  // TODO(hlundin): Remove the default implementation when possible.
-  virtual void EnableAutoMuting(int video_channel) {}
+  virtual void SuspendBelowMinBitrate(int video_channel) = 0;
+
+  // TODO(holmer): Remove this default implementation when possible.
+  virtual bool GetSendSideDelay(int video_channel, int* avg_delay_ms,
+                                int* max_delay_ms) const { return false; }
 
  protected:
   ViECodec() {}

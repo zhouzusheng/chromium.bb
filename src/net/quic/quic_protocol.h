@@ -20,6 +20,7 @@
 #include "base/strings/string_piece.h"
 #include "net/base/int128.h"
 #include "net/base/net_export.h"
+#include "net/quic/iovector.h"
 #include "net/quic/quic_bandwidth.h"
 #include "net/quic/quic_time.h"
 
@@ -48,15 +49,23 @@ typedef uint32 QuicPriority;
 // Default and initial maximum size in bytes of a QUIC packet.
 const QuicByteCount kDefaultMaxPacketSize = 1200;
 // The maximum packet size of any QUIC packet, based on ethernet's max size,
-// minus the IP and UDP headers.
-const QuicByteCount kMaxPacketSize = 1472;
+// minus the IP and UDP headers. IPv6 has a 40 byte header, UPD adds an
+// additional 8 bytes.  This is a total overhead of 48 bytes.  Ethernet's
+// max packet size is 1500 bytes,  1500 - 48 = 1452.
+const QuicByteCount kMaxPacketSize = 1452;
 
 // Maximum size of the initial congestion window in packets.
 const size_t kDefaultInitialWindow = 10;
-const size_t kMaxInitialWindow = 100;
+// TODO(ianswett): Temporarily changed to 10 due to a large number of clients
+// mistakenly negotiating 100 initially and suffering the consequences.
+const size_t kMaxInitialWindow = 10;
+
+// Maximum size of the congestion window, in packets, for TCP congestion control
+// algorithms.
+const size_t kMaxTcpCongestionWindow = 200;
 
 // Don't allow a client to suggest an RTT longer than 15 seconds.
-const uint32 kMaxInitialRoundTripTimeUs = 15 * kNumMicrosPerSecond;
+const size_t kMaxInitialRoundTripTimeUs = 15 * kNumMicrosPerSecond;
 
 // Maximum number of open streams per connection.
 const size_t kDefaultMaxStreamsPerConnection = 100;
@@ -114,6 +123,11 @@ enum TransmissionType {
   NOT_RETRANSMISSION,
   NACK_RETRANSMISSION,
   RTO_RETRANSMISSION,
+};
+
+enum RetransmissionType {
+  INITIAL_ENCRYPTION_ONLY,
+  ALL_PACKETS
 };
 
 enum HasRetransmittableData {
@@ -225,8 +239,6 @@ enum QuicVersion {
   // Special case to indicate unknown/unsupported QUIC version.
   QUIC_VERSION_UNSUPPORTED = 0,
 
-  QUIC_VERSION_10 = 10,
-  QUIC_VERSION_11 = 11,
   QUIC_VERSION_12 = 12,  // Current version.
 };
 
@@ -234,8 +246,10 @@ enum QuicVersion {
 // This should be ordered such that the highest supported version is the first
 // element, with subsequent elements in descending order (versions can be
 // skipped as necessary).
-static const QuicVersion kSupportedQuicVersions[] =
-    {QUIC_VERSION_11};
+//
+// IMPORTANT: if you are addding to this list, follow the instructions at
+// http://sites/quic/adding-and-removing-versions
+static const QuicVersion kSupportedQuicVersions[] = {QUIC_VERSION_12};
 
 typedef std::vector<QuicVersion> QuicVersionVector;
 
@@ -436,9 +450,15 @@ enum QuicErrorCode {
   QUIC_CRYPTO_SERVER_CONFIG_EXPIRED = 45,
   // We failed to setup the symmetric keys for a connection.
   QUIC_CRYPTO_SYMMETRIC_KEY_SETUP_FAILED = 53,
+  // A handshake message arrived, but we are still validating the
+  // previous handshake message.
+  QUIC_CRYPTO_MESSAGE_WHILE_VALIDATING_CLIENT_HELLO = 54,
+  // This connection involved a version negotiation which appears to have been
+  // tampered with.
+  QUIC_VERSION_NEGOTIATION_MISMATCH = 55,
 
   // No error. Used as bound while iterating.
-  QUIC_LAST_ERROR = 54,
+  QUIC_LAST_ERROR = 56,
 };
 
 struct NET_EXPORT_PRIVATE QuicPacketPublicHeader {
@@ -503,15 +523,20 @@ struct NET_EXPORT_PRIVATE QuicPaddingFrame {
 
 struct NET_EXPORT_PRIVATE QuicStreamFrame {
   QuicStreamFrame();
+  QuicStreamFrame(const QuicStreamFrame& frame);
   QuicStreamFrame(QuicStreamId stream_id,
                   bool fin,
                   QuicStreamOffset offset,
-                  base::StringPiece data);
+                  IOVector data);
+
+  // Returns a copy of the IOVector |data| as a heap-allocated string.
+  // Caller must take ownership of the returned string.
+  std::string* GetDataAsString() const;
 
   QuicStreamId stream_id;
   bool fin;
   QuicStreamOffset offset;  // Location of this data in the stream.
-  base::StringPiece data;
+  IOVector data;
 
   // If this is set, then when this packet is ACKed the AckNotifier will be
   // informed.
@@ -656,8 +681,6 @@ struct NET_EXPORT_PRIVATE QuicRstStreamFrame {
 struct NET_EXPORT_PRIVATE QuicConnectionCloseFrame {
   QuicErrorCode error_code;
   std::string error_details;
-  // TODO(ianswett): Remove this once QUIC_VERSION_11 is removed.
-  QuicAckFrame ack_frame;
 };
 
 struct NET_EXPORT_PRIVATE QuicGoAwayFrame {
@@ -831,6 +854,9 @@ class NET_EXPORT_PRIVATE QuicEncryptedPacket : public QuicData {
 
   QuicEncryptedPacket(char* buffer, size_t length, bool owns_buffer)
       : QuicData(buffer, length, owns_buffer) {}
+
+  // Clones the packet into a new packet which owns the buffer.
+  QuicEncryptedPacket* Clone() const;
 
   // By default, gtest prints the raw bytes of an object. The bool data
   // member (in the base class QuicData) causes this object to have padding

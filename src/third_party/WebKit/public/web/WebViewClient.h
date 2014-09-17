@@ -45,7 +45,7 @@
 #include "WebTextDirection.h"
 #include "WebWidgetClient.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebAXObject;
 class WebColorChooser;
@@ -79,6 +79,7 @@ class WebURLRequest;
 class WebUserMediaClient;
 class WebView;
 class WebWidget;
+struct WebColorSuggestion;
 struct WebConsoleMessage;
 struct WebContextMenuData;
 struct WebDateTimeChooserParams;
@@ -106,7 +107,8 @@ public:
                                 const WebURLRequest& request,
                                 const WebWindowFeatures& features,
                                 const WebString& name,
-                                WebNavigationPolicy policy) {
+                                WebNavigationPolicy policy,
+                                bool suppressOpener) {
         return 0;
     }
 
@@ -183,9 +185,17 @@ public:
     // This method opens the color chooser and returns a new WebColorChooser
     // instance. If there is a WebColorChooser already from the last time this
     // was called, it ends the color chooser by calling endChooser, and replaces
-    // it with the new one.
+    // it with the new one. The given list of suggestions can be used to show a
+    // simple interface with a limited set of choices.
+
+    // FIXME: Should be removed when the chromium side change lands.
     virtual WebColorChooser* createColorChooser(WebColorChooserClient*,
                                                 const WebColor&) { return 0; }
+
+    virtual WebColorChooser* createColorChooser(
+        WebColorChooserClient*,
+        const WebColor&,
+        const WebVector<WebColorSuggestion>&) { return 0; }
 
     // This method returns immediately after showing the dialog. When the
     // dialog is closed, it should call the WebFileChooserCompletion to
@@ -386,6 +396,6 @@ protected:
     ~WebViewClient() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

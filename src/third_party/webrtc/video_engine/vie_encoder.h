@@ -29,6 +29,7 @@ namespace webrtc {
 
 class Config;
 class CriticalSectionWrapper;
+class EncodedImageCallback;
 class PacedSender;
 class ProcessThread;
 class QMVideoSettingsCallback;
@@ -67,8 +68,6 @@ class ViEEncoder
   // Drops incoming packets before they get to the encoder.
   void Pause();
   void Restart();
-
-  int32_t DropDeltaAfterKey(bool enable);
 
   // Codec settings.
   uint8_t NumberOfCodecs();
@@ -163,16 +162,20 @@ class ViEEncoder
   // Disables recording of debugging information.
   virtual int StopDebugRecording();
 
-  // Enables AutoMuter to turn off video when the rate drops below
+  // Lets the sender suspend video when the rate drops below
   // |threshold_bps|, and turns back on when the rate goes back up above
   // |threshold_bps| + |window_bps|.
-  virtual void EnableAutoMuting();
+  virtual void SuspendBelowMinBitrate();
 
-  // New-style callback, used by VideoSendStream.
+  // New-style callbacks, used by VideoSendStream.
   void RegisterPreEncodeCallback(I420FrameCallback* pre_encode_callback);
   void DeRegisterPreEncodeCallback();
+  void RegisterPostEncodeImageCallback(
+        EncodedImageCallback* post_encode_callback);
+  void DeRegisterPostEncodeImageCallback();
 
   int channel_id() const { return channel_id_; }
+
  protected:
   // Called by BitrateObserver.
   void OnNetworkChanged(const uint32_t bitrate_bps,
@@ -181,7 +184,7 @@ class ViEEncoder
 
   // Called by PacedSender.
   bool TimeToSendPacket(uint32_t ssrc, uint16_t sequence_number,
-                        int64_t capture_time_ms);
+                        int64_t capture_time_ms, bool retransmission);
   int TimeToSendPadding(int bytes);
  private:
   bool EncoderPaused() const;
@@ -208,8 +211,6 @@ class ViEEncoder
   bool encoder_paused_;
   bool encoder_paused_and_dropped_frame_;
   std::map<unsigned int, int64_t> time_last_intra_request_ms_;
-  int32_t channels_dropping_delta_frames_;
-  bool drop_next_frame_;
 
   bool fec_enabled_;
   bool nack_enabled_;
@@ -226,7 +227,7 @@ class ViEEncoder
 
   // Quality modes callback
   QMVideoSettingsCallback* qm_callback_;
-  bool video_auto_muted_;
+  bool video_suspended_;
   I420FrameCallback* pre_encode_callback_;
 };
 

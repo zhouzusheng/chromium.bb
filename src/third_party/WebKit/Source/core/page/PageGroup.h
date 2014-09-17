@@ -35,10 +35,17 @@
 
 namespace WebCore {
 
-    class KURL;
     class Page;
-    class SecurityOrigin;
 
+    // FIXME: This is really more of a "Settings Group" than a Page Group.
+    // It has nothing to do with Page. There is one shared PageGroup
+    // in the renderer process, which all normal Pages belong to. There are also
+    // additional private PageGroups for SVGImage, Inspector Overlay, etc.
+
+    // This really only exists to service InjectedStyleSheets at this point.
+    // InjectedStyleSheets could instead just use a global, and StyleEngine
+    // could be taught to look for InjectedStyleSheets when resolving style
+    // for normal frames.
     class PageGroup : public Supplementable<PageGroup>, public RefCounted<PageGroup> {
         WTF_MAKE_NONCOPYABLE(PageGroup); WTF_MAKE_FAST_ALLOCATED;
     public:
@@ -46,7 +53,6 @@ namespace WebCore {
 
         static PassRefPtr<PageGroup> create() { return adoptRef(new PageGroup()); }
         static PageGroup* sharedGroup();
-        static PageGroup* inspectorGroup();
 
         const HashSet<Page*>& pages() const { return m_pages; }
 

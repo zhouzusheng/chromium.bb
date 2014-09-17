@@ -34,8 +34,8 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ShadowRoot.h"
-#include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
+#include "core/editing/SpellChecker.h"
 #include "core/editing/TextIterator.h"
 #include "core/events/BeforeTextInsertedEvent.h"
 #include "core/events/Event.h"
@@ -59,11 +59,6 @@ static const int defaultCols = 20;
 
 // On submission, LF characters are converted into CRLF.
 // This function returns number of characters considering this.
-static inline unsigned computeLengthForSubmission(const String& text, unsigned numberOfLineBreaks)
-{
-    return text.length() + numberOfLineBreaks;
-}
-
 static unsigned numberOfLineBreaks(const String& text)
 {
     unsigned length = text.length();
@@ -80,29 +75,27 @@ static inline unsigned computeLengthForSubmission(const String& text)
     return text.length() + numberOfLineBreaks(text);
 }
 
-HTMLTextAreaElement::HTMLTextAreaElement(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
-    : HTMLTextFormControlElement(tagName, document, form)
+HTMLTextAreaElement::HTMLTextAreaElement(Document& document, HTMLFormElement* form)
+    : HTMLTextFormControlElement(textareaTag, document, form)
     , m_rows(defaultRows)
     , m_cols(defaultCols)
     , m_wrap(SoftWrap)
     , m_isDirty(false)
-    , m_wasModifiedByUser(false)
 {
-    ASSERT(hasTagName(textareaTag));
     setFormControlValueMatchesRenderer(true);
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLTextAreaElement> HTMLTextAreaElement::create(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
+PassRefPtr<HTMLTextAreaElement> HTMLTextAreaElement::create(Document& document, HTMLFormElement* form)
 {
-    RefPtr<HTMLTextAreaElement> textArea = adoptRef(new HTMLTextAreaElement(tagName, document, form));
+    RefPtr<HTMLTextAreaElement> textArea = adoptRef(new HTMLTextAreaElement(document, form));
     textArea->ensureUserAgentShadowRoot();
     return textArea.release();
 }
 
-void HTMLTextAreaElement::didAddUserAgentShadowRoot(ShadowRoot* root)
+void HTMLTextAreaElement::didAddUserAgentShadowRoot(ShadowRoot& root)
 {
-    root->appendChild(TextControlInnerTextElement::create(document()));
+    root.appendChild(TextControlInnerTextElement::create(document()));
 }
 
 const AtomicString& HTMLTextAreaElement::formControlType() const
@@ -270,7 +263,7 @@ void HTMLTextAreaElement::defaultEventHandler(Event* event)
 void HTMLTextAreaElement::handleFocusEvent(Element*, FocusDirection)
 {
     if (Frame* frame = document().frame())
-        frame->editor().textAreaOrTextFieldDidBeginEditing(this);
+        frame->spellChecker().didBeginEditing(this);
 }
 
 void HTMLTextAreaElement::subtreeHasChanged()
@@ -334,7 +327,6 @@ void HTMLTextAreaElement::updateValue() const
     const_cast<HTMLTextAreaElement*>(this)->setFormControlValueMatchesRenderer(true);
     const_cast<HTMLTextAreaElement*>(this)->notifyFormStateChanged();
     m_isDirty = true;
-    m_wasModifiedByUser = true;
     const_cast<HTMLTextAreaElement*>(this)->updatePlaceholderVisibility(false);
 }
 
@@ -360,7 +352,6 @@ void HTMLTextAreaElement::setNonDirtyValue(const String& value)
 
 void HTMLTextAreaElement::setValueCommon(const String& newValue)
 {
-    m_wasModifiedByUser = false;
     // Code elsewhere normalizes line endings added by the user via the keyboard or pasting.
     // We normalize line endings coming from JavaScript here.
     String normalizedValue = newValue.isNull() ? "" : newValue;
@@ -434,12 +425,12 @@ int HTMLTextAreaElement::maxLength() const
     return ok && value >= 0 ? value : -1;
 }
 
-void HTMLTextAreaElement::setMaxLength(int newValue, ExceptionState& es)
+void HTMLTextAreaElement::setMaxLength(int newValue, ExceptionState& exceptionState)
 {
     if (newValue < 0)
-        es.throwUninformativeAndGenericDOMException(IndexSizeError);
+        exceptionState.throwDOMException(IndexSizeError, "The value provided (" + String::number(newValue) + ") is not positive or 0.");
     else
-        setAttribute(maxlengthAttr, String::number(newValue));
+        setIntegralAttribute(maxlengthAttr, newValue);
 }
 
 String HTMLTextAreaElement::validationMessage() const
@@ -451,7 +442,7 @@ String HTMLTextAreaElement::validationMessage() const
         return customValidationMessage();
 
     if (valueMissing())
-        return locale().queryString(WebKit::WebLocalizedString::ValidationValueMissing);
+        return locale().queryString(blink::WebLocalizedString::ValidationValueMissing);
 
     if (tooLong())
         return locale().validationMessageTooLongText(computeLengthForSubmission(value()), maxLength());
@@ -473,7 +464,7 @@ bool HTMLTextAreaElement::tooLong(const String& value, NeedsToCheckDirtyFlag che
 {
     // Return false for the default value or value set by script even if it is
     // longer than maxLength.
-    if (check == CheckDirtyFlag && !m_wasModifiedByUser)
+    if (check == CheckDirtyFlag && !lastChangeWasUserEdit())
         return false;
 
     int max = maxLength();
@@ -494,12 +485,12 @@ void HTMLTextAreaElement::accessKeyAction(bool)
 
 void HTMLTextAreaElement::setCols(int cols)
 {
-    setAttribute(colsAttr, String::number(cols));
+    setIntegralAttribute(colsAttr, cols);
 }
 
 void HTMLTextAreaElement::setRows(int rows)
 {
-    setAttribute(rowsAttr, String::number(rows));
+    setIntegralAttribute(rowsAttr, rows);
 }
 
 bool HTMLTextAreaElement::shouldUseInputMethod()
@@ -529,11 +520,11 @@ void HTMLTextAreaElement::updatePlaceholderText()
     if (!placeholder) {
         RefPtr<HTMLDivElement> newElement = HTMLDivElement::create(document());
         placeholder = newElement.get();
-        placeholder->setPart(AtomicString("-webkit-input-placeholder", AtomicString::ConstructFromLiteral));
+        placeholder->setPseudo(AtomicString("-webkit-input-placeholder", AtomicString::ConstructFromLiteral));
         placeholder->setAttribute(idAttr, ShadowElementNames::placeholder());
         userAgentShadowRoot()->insertBefore(placeholder, innerTextElement()->nextSibling());
     }
-    placeholder->setTextContent(placeholderText, ASSERT_NO_EXCEPTION);
+    placeholder->setTextContent(placeholderText);
 }
 
 bool HTMLTextAreaElement::isInteractiveContent() const

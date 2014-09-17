@@ -117,8 +117,9 @@ void ApplyBlockElementCommand::formatSelection(const VisiblePosition& startOfSel
 
     RefPtr<Element> blockquoteForNextIndent;
     VisiblePosition endOfCurrentParagraph = endOfParagraph(startOfSelection);
-    VisiblePosition endAfterSelection = endOfParagraph(endOfParagraph(endOfSelection).next());
-    m_endOfLastParagraph = endOfParagraph(endOfSelection).deepEquivalent();
+    VisiblePosition endOfLastParagraph = endOfParagraph(endOfSelection);
+    VisiblePosition endAfterSelection = endOfParagraph(endOfLastParagraph.next());
+    m_endOfLastParagraph = endOfLastParagraph.deepEquivalent();
 
     bool atEnd = false;
     Position end;
@@ -159,9 +160,9 @@ static bool isNewLineAtPosition(const Position& position)
     if (!textNode || !textNode->isTextNode() || offset < 0 || offset >= textNode->maxCharacterOffset())
         return false;
 
-    TrackExceptionState es;
-    String textAtPosition = toText(textNode)->substringData(offset, 1, es);
-    if (es.hadException())
+    TrackExceptionState exceptionState;
+    String textAtPosition = toText(textNode)->substringData(offset, 1, exceptionState);
+    if (exceptionState.hadException())
         return false;
 
     return textAtPosition[0] == '\n';

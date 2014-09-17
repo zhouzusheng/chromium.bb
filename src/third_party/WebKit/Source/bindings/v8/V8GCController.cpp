@@ -32,7 +32,6 @@
 #include "bindings/v8/V8GCController.h"
 
 #include <algorithm>
-#include "V8MessagePort.h"
 #include "V8MutationObserver.h"
 #include "V8Node.h"
 #include "V8ScriptRunner.h"
@@ -42,9 +41,11 @@
 #include "bindings/v8/WrapperTypeInfo.h"
 #include "core/dom/Attr.h"
 #include "core/dom/NodeTraversal.h"
+#include "core/dom/TemplateContentDocumentFragment.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLImageElement.h"
+#include "core/html/HTMLTemplateElement.h"
 #include "core/svg/SVGElement.h"
 #include "platform/TraceEvent.h"
 
@@ -85,7 +86,7 @@ Node* V8GCController::opaqueRootForGC(Node* node, v8::Isolate*)
         node = ownerElement;
     }
 
-    while (Node* parent = node->parentOrShadowHostNode())
+    while (Node* parent = node->parentOrShadowHostOrTemplateHostNode())
         node = parent;
 
     return node;
@@ -97,9 +98,7 @@ class MinorGCWrapperVisitor : public v8::PersistentHandleVisitor {
 public:
     explicit MinorGCWrapperVisitor(v8::Isolate* isolate)
         : m_isolate(isolate)
-    {
-        UNUSED_PARAM(m_isolate);
-    }
+    { }
 
     virtual void VisitPersistentHandle(v8::Persistent<v8::Value>* value, uint16_t classId) OVERRIDE
     {
@@ -123,7 +122,7 @@ public:
         ASSERT((*reinterpret_cast<v8::Handle<v8::Value>*>(value))->IsObject());
         v8::Handle<v8::Object>* wrapper = reinterpret_cast<v8::Handle<v8::Object>*>(value);
         ASSERT(V8DOMWrapper::maybeDOMWrapper(*wrapper));
-        ASSERT(V8Node::HasInstanceInAnyWorld(*wrapper, m_isolate));
+        ASSERT(V8Node::hasInstanceInAnyWorld(*wrapper, m_isolate));
         Node* node = V8Node::toNative(*wrapper);
         // A minor DOM GC can handle only node wrappers in the main world.
         // Note that node->wrapper().IsEmpty() returns true for nodes that
@@ -156,7 +155,7 @@ private:
         // To make each minor GC time bounded, we might need to give up
         // traversing at some point for a large DOM tree. That being said,
         // I could not observe the need even in pathological test cases.
-        for (Node* node = rootNode; node; node = NodeTraversal::next(node)) {
+        for (Node* node = rootNode; node; node = NodeTraversal::next(*node)) {
             if (node->containsWrapper()) {
                 // FIXME: Remove the special handling for image elements.
                 // FIXME: Remove the special handling for SVG context elements.
@@ -181,6 +180,12 @@ private:
                         return false;
                 }
             }
+            // <template> has a |content| property holding a DOM fragment which we must traverse,
+            // just like we do for the shadow trees above.
+            if (node->hasTagName(HTMLNames::templateTag)) {
+                if (!traverseTree(toHTMLTemplateElement(node)->content(), newSpaceNodes))
+                    return false;
+            }
         }
         return true;
     }
@@ -190,8 +195,8 @@ private:
         Vector<Node*, initialNodeVectorSize> newSpaceNodes;
 
         Node* node = startNode;
-        while (node->parentOrShadowHostNode())
-            node = node->parentOrShadowHostNode();
+        while (Node* parent = node->parentOrShadowHostOrTemplateHostNode())
+            node = parent;
 
         if (!traverseTree(node, &newSpaceNodes))
             return;
@@ -250,14 +255,7 @@ public:
         const WrapperTypeInfo* type = toWrapperTypeInfo(*wrapper);
         void* object = toNative(*wrapper);
 
-        if (V8MessagePort::wrapperTypeInfo.equals(type)) {
-            // Mark each port as in-use if it's entangled. For simplicity's sake,
-            // we assume all ports are remotely entangled, since the Chromium port
-            // implementation can't tell the difference.
-            MessagePort* port = static_cast<MessagePort*>(object);
-            if (port->isEntangled() || port->hasPendingActivity())
-                m_isolate->SetObjectGroupId(*value, liveRootId());
-        } else if (V8MutationObserver::wrapperTypeInfo.equals(type)) {
+        if (V8MutationObserver::wrapperTypeInfo.equals(type)) {
             // FIXME: Allow opaqueRootForGC to operate on multiple roots and move this logic into V8MutationObserverCustom.
             MutationObserver* observer = static_cast<MutationObserver*>(object);
             HashSet<Node*> observedNodes = observer->getObservedNodes();
@@ -272,8 +270,7 @@ public:
         }
 
         if (classId == v8DOMNodeClassId) {
-            UNUSED_PARAM(m_isolate);
-            ASSERT(V8Node::HasInstanceInAnyWorld(*wrapper, m_isolate));
+            ASSERT(V8Node::hasInstanceInAnyWorld(*wrapper, m_isolate));
             ASSERT(!value->IsIndependent());
 
             Node* node = static_cast<Node*>(object);
@@ -287,7 +284,7 @@ public:
         } else if (classId == v8DOMObjectClassId) {
             ASSERT(!value->IsIndependent());
             v8::Persistent<v8::Object>* wrapperPersistent = reinterpret_cast<v8::Persistent<v8::Object>*>(value);
-            type->resolveWrapperReachability(object, *wrapperPersistent, m_isolate);
+            type->visitDOMWrapper(object, *wrapperPersistent, m_isolate);
         } else {
             ASSERT_NOT_REACHED();
         }
@@ -419,7 +416,7 @@ void V8GCController::collectGarbage(v8::Isolate* isolate)
     if (context.IsEmpty())
         return;
     v8::Context::Scope contextScope(context);
-    V8ScriptRunner::compileAndRunInternalScript(v8String("if (gc) gc();", isolate), isolate);
+    V8ScriptRunner::compileAndRunInternalScript(v8String(isolate, "if (gc) gc();"), isolate);
 }
 
 }  // namespace WebCore

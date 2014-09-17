@@ -33,14 +33,15 @@
 #include "core/html/track/TextTrack.h"
 
 #include "RuntimeEnabledFeatures.h"
+#include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/track/TextTrackCueList.h"
 #include "core/html/track/TextTrackList.h"
-#include "core/html/track/VTTRegion.h"
-#include "core/html/track/VTTRegionList.h"
+#include "core/html/track/vtt/VTTRegion.h"
+#include "core/html/track/vtt/VTTRegionList.h"
 
 namespace WebCore {
 
@@ -94,7 +95,7 @@ const AtomicString& TextTrack::showingKeyword()
     return ended;
 }
 
-TextTrack::TextTrack(Document& document, TextTrackClient* client, const AtomicString& kind, const AtomicString& label, const AtomicString& language, TextTrackType type)
+TextTrack::TextTrack(Document& document, TextTrackClient* client, const AtomicString& kind, const AtomicString& label, const AtomicString& language, const AtomicString& id, TextTrackType type)
     : TrackBase(TrackBase::TextTrack)
     , m_cues(0)
     , m_regions(0)
@@ -102,7 +103,8 @@ TextTrack::TextTrack(Document& document, TextTrackClient* client, const AtomicSt
     , m_mediaElement(0)
     , m_label(label)
     , m_language(language)
-    , m_mode(disabledKeyword().string())
+    , m_id(id)
+    , m_mode(disabledKeyword())
     , m_client(client)
     , m_trackType(type)
     , m_readinessState(NotLoaded)
@@ -252,7 +254,7 @@ void TextTrack::addCue(PassRefPtr<TextTrackCue> prpCue)
         m_client->textTrackAddCue(this, cue.get());
 }
 
-void TextTrack::removeCue(TextTrackCue* cue, ExceptionState& es)
+void TextTrack::removeCue(TextTrackCue* cue, ExceptionState& exceptionState)
 {
     if (!cue)
         return;
@@ -264,13 +266,13 @@ void TextTrack::removeCue(TextTrackCue* cue, ExceptionState& es)
     // 1. If the given cue is not currently listed in the method's TextTrack
     // object's text track's text track list of cues, then throw a NotFoundError exception.
     if (cue->track() != this) {
-        es.throwUninformativeAndGenericDOMException(NotFoundError);
+        exceptionState.throwDOMException(NotFoundError, "The specified cue is not listed in the TextTrack's list of cues.");
         return;
     }
 
     // 2. Remove cue from the method's TextTrack object's text track's text track list of cues.
     if (!m_cues || !m_cues->remove(cue)) {
-        es.throwUninformativeAndGenericDOMException(InvalidStateError);
+        exceptionState.throwDOMException(InvalidStateError, "Failed to remove the specified cue.");
         return;
     }
 
@@ -330,7 +332,7 @@ void TextTrack::addRegion(PassRefPtr<VTTRegion> prpRegion)
     regionList->add(region);
 }
 
-void TextTrack::removeRegion(VTTRegion* region, ExceptionState &es)
+void TextTrack::removeRegion(VTTRegion* region, ExceptionState &exceptionState)
 {
     if (!region)
         return;
@@ -338,12 +340,12 @@ void TextTrack::removeRegion(VTTRegion* region, ExceptionState &es)
     // 1. If the given region is not currently listed in the method's TextTrack
     // object's text track list of regions, then throw a NotFoundError exception.
     if (region->track() != this) {
-        es.throwUninformativeAndGenericDOMException(NotFoundError);
+        exceptionState.throwDOMException(NotFoundError, "The specified region is not listed in the TextTrack's list of regions.");
         return;
     }
 
     if (!m_regions || !m_regions->remove(region)) {
-        es.throwUninformativeAndGenericDOMException(InvalidStateError);
+        exceptionState.throwDOMException(InvalidStateError, "Failed to remove the specified region.");
         return;
     }
 
@@ -415,73 +417,6 @@ int TextTrack::trackIndexRelativeToRenderedTracks()
         m_renderedTrackIndex = m_mediaElement->textTracks()->getTrackIndexRelativeToRenderedTracks(this);
 
     return m_renderedTrackIndex;
-}
-
-bool TextTrack::hasCue(TextTrackCue* cue)
-{
-    if (cue->startTime() < 0 || cue->endTime() < 0)
-        return false;
-
-    if (!m_cues || !m_cues->length())
-        return false;
-
-    size_t searchStart = 0;
-    size_t searchEnd = m_cues->length();
-
-    while (1) {
-        ASSERT(searchStart <= m_cues->length());
-        ASSERT(searchEnd <= m_cues->length());
-
-        TextTrackCue* existingCue;
-
-        // Cues in the TextTrackCueList are maintained in start time order.
-        if (searchStart == searchEnd) {
-            if (!searchStart)
-                return false;
-
-            // If there is more than one cue with the same start time, back up to first one so we
-            // consider all of them.
-            while (searchStart >= 2 && cue->startTime() == m_cues->item(searchStart - 2)->startTime())
-                --searchStart;
-
-            bool firstCompare = true;
-            while (1) {
-                if (!firstCompare)
-                    ++searchStart;
-                firstCompare = false;
-                if (searchStart > m_cues->length())
-                    return false;
-
-                existingCue = m_cues->item(searchStart - 1);
-                if (!existingCue || cue->startTime() > existingCue->startTime())
-                    return false;
-
-                if (*existingCue != *cue)
-                    continue;
-
-                return true;
-            }
-        }
-
-        size_t index = (searchStart + searchEnd) / 2;
-        existingCue = m_cues->item(index);
-        if (cue->startTime() < existingCue->startTime() || (cue->startTime() == existingCue->startTime() && cue->endTime() > existingCue->endTime()))
-            searchEnd = index;
-        else
-            searchStart = index + 1;
-    }
-
-    ASSERT_NOT_REACHED();
-    return false;
-}
-
-bool TextTrack::isMainProgramContent() const
-{
-    // "Main program" content is intrinsic to the presentation of the media file, regardless of locale. Content such as
-    // directors commentary is not "main program" because it is not essential for the presentation. HTML5 doesn't have
-    // a way to express this in a machine-reable form, it is typically done with the track label, so we assume that caption
-    // tracks are main content and all other track types are not.
-    return m_kind == captionsKeyword();
 }
 
 const AtomicString& TextTrack::interfaceName() const

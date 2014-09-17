@@ -33,7 +33,6 @@
 
 #include "core/inspector/InspectorLayerTreeAgent.h"
 
-#include "InspectorFrontend.h"
 #include "core/inspector/IdentifiersFactory.h"
 #include "core/inspector/InspectorDOMAgent.h"
 #include "core/inspector/InspectorState.h"
@@ -42,17 +41,33 @@
 #include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "core/rendering/CompositedLayerMapping.h"
-#include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderLayerCompositor.h"
 #include "core/rendering/RenderView.h"
 #include "platform/geometry/IntRect.h"
+#include "platform/graphics/GraphicsContextRecorder.h"
 #include "platform/transforms/TransformationMatrix.h"
 #include "public/platform/WebCompositingReasons.h"
 #include "public/platform/WebLayer.h"
 
 namespace WebCore {
 
-inline String idForLayer(GraphicsLayer* graphicsLayer)
+unsigned InspectorLayerTreeAgent::s_lastSnapshotId;
+
+struct LayerSnapshot {
+    LayerSnapshot()
+        : layerId(0)
+    {
+    }
+    LayerSnapshot(int layerId, PassRefPtr<GraphicsContextSnapshot> graphicsSnapshot)
+        : layerId(layerId)
+        , graphicsSnapshot(graphicsSnapshot)
+    {
+    }
+    int layerId;
+    RefPtr<GraphicsContextSnapshot> graphicsSnapshot;
+};
+
+inline String idForLayer(const GraphicsLayer* graphicsLayer)
 {
     return String::number(graphicsLayer->platformLayer()->id());
 }
@@ -142,6 +157,7 @@ void InspectorLayerTreeAgent::enable(ErrorString*)
 void InspectorLayerTreeAgent::disable(ErrorString*)
 {
     m_instrumentingAgents->setInspectorLayerTreeAgent(0);
+    m_snapshotById.clear();
 }
 
 void InspectorLayerTreeAgent::layerTreeDidChange()
@@ -149,14 +165,12 @@ void InspectorLayerTreeAgent::layerTreeDidChange()
     m_frontend->layerTreeDidChange(buildLayerTree());
 }
 
-void InspectorLayerTreeAgent::didPaint(RenderObject* renderer, GraphicsContext*, const LayoutRect& rect)
+void InspectorLayerTreeAgent::didPaint(RenderObject*, const GraphicsLayer* graphicsLayer, GraphicsContext*, const LayoutRect& rect)
 {
-    RenderLayer* renderLayer = toRenderLayerModelObject(renderer)->layer();
-    CompositedLayerMapping* compositedLayerMapping = renderLayer->compositedLayerMapping();
     // Should only happen for FrameView paints when compositing is off. Consider different instrumentation method for that.
-    if (!compositedLayerMapping)
+    if (!graphicsLayer)
         return;
-    GraphicsLayer* graphicsLayer = compositedLayerMapping->mainGraphicsLayer();
+
     RefPtr<TypeBuilder::DOM::Rect> domRect = TypeBuilder::DOM::Rect::create()
         .setX(rect.x())
         .setY(rect.y())
@@ -179,7 +193,7 @@ PassRefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> > InspectorLayerTre
 
 void InspectorLayerTreeAgent::buildLayerIdToNodeIdMap(RenderLayer* root, LayerIdToNodeIdMap& layerIdToNodeIdMap)
 {
-    if (root->compositedLayerMapping()) {
+    if (root->hasCompositedLayerMapping()) {
         if (Node* node = root->renderer()->generatingNode()) {
             GraphicsLayer* graphicsLayer = root->compositedLayerMapping()->childForSuperlayers();
             layerIdToNodeIdMap.set(graphicsLayer->platformLayer()->id(), idForNode(node));
@@ -237,8 +251,10 @@ GraphicsLayer* InspectorLayerTreeAgent::layerById(ErrorString* errorString, cons
         return 0;
     }
     RenderLayerCompositor* compositor = renderLayerCompositor();
-    if (!compositor)
+    if (!compositor) {
+        *errorString = "Not in compositing mode";
         return 0;
+    }
 
     GraphicsLayer* result = findLayerById(compositor->rootGraphicsLayer(), id);
     if (!result)
@@ -285,13 +301,14 @@ void InspectorLayerTreeAgent::compositingReasons(ErrorString* errorString, const
         { CompositingReasonLayerForForeground, "layerForForeground" },
         { CompositingReasonLayerForBackground, "layerForBackground" },
         { CompositingReasonLayerForMask, "layerForMask" },
-        { CompositingReasonLayerForVideoOverlay, "layerForVideoOverlay" }
+        { CompositingReasonLayerForVideoOverlay, "layerForVideoOverlay" },
+        { CompositingReasonIsolateCompositedDescendants, "isolateCompositedDescendants" }
     };
 
     const GraphicsLayer* graphicsLayer = layerById(errorString, layerId);
     if (!graphicsLayer)
         return;
-    WebKit::WebCompositingReasons reasonsBitmask = graphicsLayer->compositingReasons();
+    blink::WebCompositingReasons reasonsBitmask = graphicsLayer->compositingReasons();
     reasonStrings = TypeBuilder::Array<String>::create();
     for (size_t i = 0; i < WTF_ARRAY_LENGTH(compositingReasonNames); ++i) {
         if (!(reasonsBitmask & compositingReasonNames[i].mask))
@@ -302,6 +319,67 @@ void InspectorLayerTreeAgent::compositingReasons(ErrorString* errorString, const
 #endif
     }
     ASSERT(!reasonsBitmask);
+}
+
+void InspectorLayerTreeAgent::makeSnapshot(ErrorString* errorString, const String& layerId, String* snapshotId)
+{
+    GraphicsLayer* layer = layerById(errorString, layerId);
+    if (!layer)
+        return;
+
+    GraphicsContextRecorder recorder;
+    IntSize size = expandedIntSize(layer->size());
+    GraphicsContext* context = recorder.record(size, layer->contentsOpaque());
+    layer->paint(*context, IntRect(IntPoint(0, 0), size));
+    RefPtr<GraphicsContextSnapshot> snapshot = recorder.stop();
+    *snapshotId = String::number(++s_lastSnapshotId);
+    bool newEntry = m_snapshotById.add(*snapshotId, LayerSnapshot(layer->platformLayer()->id(), snapshot)).isNewEntry;
+    ASSERT_UNUSED(newEntry, newEntry);
+}
+
+void InspectorLayerTreeAgent::releaseSnapshot(ErrorString* errorString, const String& snapshotId)
+{
+    SnapshotById::iterator it = m_snapshotById.find(snapshotId);
+    if (it == m_snapshotById.end()) {
+        *errorString = "Snapshot not found";
+        return;
+    }
+    m_snapshotById.remove(it);
+}
+
+const LayerSnapshot* InspectorLayerTreeAgent::snapshotById(ErrorString* errorString, const String& snapshotId)
+{
+    SnapshotById::iterator it = m_snapshotById.find(snapshotId);
+    if (it == m_snapshotById.end()) {
+        *errorString = "Snapshot not found";
+        return 0;
+    }
+    return &it->value;
+}
+
+void InspectorLayerTreeAgent::replaySnapshot(ErrorString* errorString, const String& snapshotId, const int* fromStep, const int* toStep, String* dataURL)
+{
+    const LayerSnapshot* snapshot = snapshotById(errorString, snapshotId);
+    if (!snapshot)
+        return;
+    OwnPtr<ImageBuffer> imageBuffer = snapshot->graphicsSnapshot->replay(fromStep ? *fromStep : 0, toStep ? *toStep : 0);
+    *dataURL = imageBuffer->toDataURL("image/png");
+}
+
+void InspectorLayerTreeAgent::profileSnapshot(ErrorString* errorString, const String& snapshotId, const int* minRepeatCount, const double* minDuration, RefPtr<TypeBuilder::Array<TypeBuilder::Array<double> > >& outTimings)
+{
+    const LayerSnapshot* snapshot = snapshotById(errorString, snapshotId);
+    if (!snapshot)
+        return;
+    OwnPtr<GraphicsContextSnapshot::Timings> timings = snapshot->graphicsSnapshot->profile(minRepeatCount ? *minRepeatCount : 1, minDuration ? *minDuration : 0);
+    outTimings = TypeBuilder::Array<TypeBuilder::Array<double> >::create();
+    for (size_t i = 0; i < timings->size(); ++i) {
+        const Vector<double>& row = (*timings)[i];
+        RefPtr<TypeBuilder::Array<double> > outRow = TypeBuilder::Array<double>::create();
+        for (size_t j = 1; j < row.size(); ++j)
+            outRow->addItem(row[j] - row[j - 1]);
+        outTimings->addItem(outRow.release());
+    }
 }
 
 } // namespace WebCore

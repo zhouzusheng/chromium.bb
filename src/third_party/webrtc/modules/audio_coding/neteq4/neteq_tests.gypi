@@ -56,6 +56,7 @@
       'include_dirs': [
         'interface',
         'test',
+        '<(webrtc_root)',
       ],
       'sources': [
         'test/RTPencode.cc',
@@ -166,6 +167,7 @@
         'include_dirs': [
           'interface',
           'test',
+          '<(webrtc_root)',
         ],
       },
       'defines': [
@@ -173,6 +175,7 @@
       'include_dirs': [
         'interface',
         'test',
+        '<(webrtc_root)',
       ],
       'sources': [
         'test/NETEQTEST_DummyRTPpacket.cc',

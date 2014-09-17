@@ -61,10 +61,6 @@
 #include "content/public/browser/browser_message_filter.h"
 #include "ipc/ipc_message.h"
 
-namespace media {
-class VideoCaptureCapability;
-}
-
 namespace content {
 class MediaStreamManager;
 
@@ -104,16 +100,17 @@ class CONTENT_EXPORT VideoCaptureHost
   virtual ~VideoCaptureHost();
 
   // IPC message: Start capture on the VideoCaptureDevice referenced by
-  // VideoCaptureParams::session_id. |device_id| is an id created by
-  // VideoCaptureMessageFilter to identify a session
-  // between a VideoCaptureMessageFilter and a VideoCaptureHost.
+  // |session_id|. |device_id| is an id created by VideoCaptureMessageFilter
+  // to identify a session between a VideoCaptureMessageFilter and a
+  // VideoCaptureHost.
   void OnStartCapture(int device_id,
+                      media::VideoCaptureSessionId session_id,
                       const media::VideoCaptureParams& params);
   void OnControllerAdded(
-      int device_id, const media::VideoCaptureParams& params,
+      int device_id,
       const base::WeakPtr<VideoCaptureController>& controller);
   void DoControllerAddedOnIOThread(
-      int device_id, const media::VideoCaptureParams& params,
+      int device_id,
       const base::WeakPtr<VideoCaptureController>& controller);
 
   // IPC message: Stop capture on device referenced by |device_id|.

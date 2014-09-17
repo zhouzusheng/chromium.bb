@@ -33,10 +33,10 @@
 #include "core/html/forms/HiddenInputType.h"
 
 #include "HTMLNames.h"
+#include "InputTypeNames.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/FormController.h"
-#include "core/html/forms/InputTypeNames.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
@@ -50,7 +50,7 @@ PassRefPtr<InputType> HiddenInputType::create(HTMLInputElement& element)
 
 const AtomicString& HiddenInputType::formControlType() const
 {
-    return InputTypeNames::hidden();
+    return InputTypeNames::hidden;
 }
 
 FormControlState HiddenInputType::saveFormControlState() const
@@ -64,7 +64,7 @@ FormControlState HiddenInputType::saveFormControlState() const
 
 void HiddenInputType::restoreFormControlState(const FormControlState& state)
 {
-    element().setAttribute(valueAttr, state[0]);
+    element().setAttribute(valueAttr, AtomicString(state[0]));
 }
 
 bool HiddenInputType::supportsValidation() const
@@ -94,7 +94,7 @@ bool HiddenInputType::storesValueSeparateFromAttribute()
 
 void HiddenInputType::setValue(const String& sanitizedValue, bool, TextFieldEventBehavior)
 {
-    element().setAttribute(valueAttr, sanitizedValue);
+    element().setAttribute(valueAttr, AtomicString(sanitizedValue));
 }
 
 bool HiddenInputType::isHiddenType() const

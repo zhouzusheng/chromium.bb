@@ -53,27 +53,25 @@
 #include "core/inspector/ScriptCallStack.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
-#include "core/page/Chrome.h"
 #include "core/frame/ContentSecurityPolicy.h"
 #include "core/frame/DOMTimer.h"
 #include "core/frame/DOMWindow.h"
 #include "core/frame/DOMWindowTimers.h"
 #include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
-#include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/page/WindowFeatures.h"
-#include "core/platform/graphics/MediaPlayer.h"
+#include "core/frame/Settings.h"
 #include "core/storage/Storage.h"
 #include "platform/PlatformScreen.h"
+#include "platform/graphics/media/MediaPlayer.h"
 #include "wtf/ArrayBuffer.h"
+#include "wtf/Assertions.h"
 #include "wtf/OwnPtr.h"
 
 namespace WebCore {
 
 // FIXME: There is a lot of duplication with SetTimeoutOrInterval() in V8WorkerGlobalScopeCustom.cpp.
 // We should refactor this.
-void WindowSetTimeoutImpl(const v8::FunctionCallbackInfo<v8::Value>& info, bool singleShot, ExceptionState& es)
+void WindowSetTimeoutImpl(const v8::FunctionCallbackInfo<v8::Value>& info, bool singleShot, ExceptionState& exceptionState)
 {
     int argumentCount = info.Length();
 
@@ -81,10 +79,8 @@ void WindowSetTimeoutImpl(const v8::FunctionCallbackInfo<v8::Value>& info, bool 
         return;
 
     DOMWindow* imp = V8Window::toNative(info.Holder());
-    ExecutionContext* scriptContext = static_cast<ExecutionContext*>(imp->document());
-
-    if (!scriptContext) {
-        es.throwUninformativeAndGenericDOMException(InvalidAccessError);
+    if (!imp->document()) {
+        exceptionState.throwDOMException(InvalidAccessError, "No script context is available in which to execute the script.");
         return;
     }
 
@@ -92,15 +88,15 @@ void WindowSetTimeoutImpl(const v8::FunctionCallbackInfo<v8::Value>& info, bool 
     String functionString;
     if (!function->IsFunction()) {
         if (function->IsString()) {
-            functionString = toWebCoreString(function.As<v8::String>());
+            functionString = toCoreString(function.As<v8::String>());
         } else {
-            v8::Handle<v8::Value> v8String = function->ToString();
+            v8::Handle<v8::String> v8String = function->ToString();
 
             // Bail out if string conversion failed.
             if (v8String.IsEmpty())
                 return;
 
-            functionString = toWebCoreString(v8String);
+            functionString = toCoreString(v8String);
         }
 
         // Don't allow setting timeouts to run empty functions!
@@ -109,7 +105,7 @@ void WindowSetTimeoutImpl(const v8::FunctionCallbackInfo<v8::Value>& info, bool 
             return;
     }
 
-    if (!BindingSecurity::shouldAllowAccessToFrame(imp->frame(), es))
+    if (!BindingSecurity::shouldAllowAccessToFrame(imp->frame(), exceptionState))
         return;
 
     OwnPtr<ScheduledAction> action;
@@ -147,7 +143,7 @@ void WindowSetTimeoutImpl(const v8::FunctionCallbackInfo<v8::Value>& info, bool 
     // use of any idle time. Aim for the middle of the interval for simplicity.
     if (timeout >= 0) {
         double maximumFireInterval = static_cast<double>(timeout) / 1000 / 2;
-        V8GCForContextDispose::instance().notifyIdleSooner(maximumFireInterval);
+        V8GCForContextDispose::instanceTemplate().notifyIdleSooner(maximumFireInterval);
     }
 
     v8SetReturnValue(info, timerId);
@@ -155,14 +151,14 @@ void WindowSetTimeoutImpl(const v8::FunctionCallbackInfo<v8::Value>& info, bool 
 
 void V8Window::eventAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>& info)
 {
-    v8::Handle<v8::Object> holder = info.This()->FindInstanceInPrototypeChain(V8Window::GetTemplate(info.GetIsolate(), worldTypeInMainThread(info.GetIsolate())));
+    v8::Handle<v8::Object> holder = info.This()->FindInstanceInPrototypeChain(V8Window::domTemplate(info.GetIsolate(), worldTypeInMainThread(info.GetIsolate())));
     if (holder.IsEmpty())
         return;
 
     Frame* frame = V8Window::toNative(holder)->frame();
-    ExceptionState es(info.GetIsolate());
-    if (!BindingSecurity::shouldAllowAccessToFrame(frame, es)) {
-        es.throwIfNeeded();
+    ExceptionState exceptionState(ExceptionState::GetterContext, "event", "Window", info.Holder(), info.GetIsolate());
+    if (!BindingSecurity::shouldAllowAccessToFrame(frame, exceptionState)) {
+        exceptionState.throwIfNeeded();
         return;
     }
 
@@ -180,14 +176,14 @@ void V8Window::eventAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Val
 
 void V8Window::eventAttributeSetterCustom(v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info)
 {
-    v8::Handle<v8::Object> holder = info.This()->FindInstanceInPrototypeChain(V8Window::GetTemplate(info.GetIsolate(), worldTypeInMainThread(info.GetIsolate())));
+    v8::Handle<v8::Object> holder = info.This()->FindInstanceInPrototypeChain(V8Window::domTemplate(info.GetIsolate(), worldTypeInMainThread(info.GetIsolate())));
     if (holder.IsEmpty())
         return;
 
     Frame* frame = V8Window::toNative(holder)->frame();
-    ExceptionState es(info.GetIsolate());
-    if (!BindingSecurity::shouldAllowAccessToFrame(frame, es)) {
-        es.throwIfNeeded();
+    ExceptionState exceptionState(ExceptionState::SetterContext, "event", "Window", info.Holder(), info.GetIsolate());
+    if (!BindingSecurity::shouldAllowAccessToFrame(frame, exceptionState)) {
+        exceptionState.throwIfNeeded();
         return;
     }
 
@@ -200,12 +196,30 @@ void V8Window::eventAttributeSetterCustom(v8::Local<v8::Value> value, const v8::
     context->Global()->SetHiddenValue(eventSymbol, value);
 }
 
+void V8Window::frameElementAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>& info)
+{
+    DOMWindow* imp = V8Window::toNative(info.Holder());
+    ExceptionState exceptionState(ExceptionState::GetterContext, "frame", "Window", info.Holder(), info.GetIsolate());
+    if (!BindingSecurity::shouldAllowAccessToNode(imp->frameElement(), exceptionState)) {
+        v8SetReturnValueNull(info);
+        exceptionState.throwIfNeeded();
+        return;
+    }
+
+    // The wrapper for an <iframe> should get its prototype from the context of the frame it's in, rather than its own frame.
+    // So, use its containing document as the creation context when wrapping.
+    v8::Handle<v8::Value> creationContext = toV8(&imp->frameElement()->document(), v8::Handle<v8::Object>(), info.GetIsolate());
+    RELEASE_ASSERT(!creationContext.IsEmpty());
+    v8::Handle<v8::Value> wrapper = toV8(imp->frameElement(), v8::Handle<v8::Object>::Cast(creationContext), info.GetIsolate());
+    v8SetReturnValue(info, wrapper);
+}
+
 void V8Window::openerAttributeSetterCustom(v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info)
 {
     DOMWindow* imp = V8Window::toNative(info.Holder());
-    ExceptionState es(info.GetIsolate());
-    if (!BindingSecurity::shouldAllowAccessToFrame(imp->frame(), es)) {
-        es.throwIfNeeded();
+    ExceptionState exceptionState(ExceptionState::SetterContext, "opener", "Window", info.Holder(), info.GetIsolate());
+    if (!BindingSecurity::shouldAllowAccessToFrame(imp->frame(), exceptionState)) {
+        exceptionState.throwIfNeeded();
         return;
     }
 
@@ -220,10 +234,10 @@ void V8Window::openerAttributeSetterCustom(v8::Local<v8::Value> value, const v8:
     }
 
     // Delete the accessor from this object.
-    info.Holder()->Delete(v8::String::NewSymbol("opener"));
+    info.Holder()->Delete(v8AtomicString(info.GetIsolate(), "opener"));
 
     // Put property on the front (this) object.
-    info.This()->Set(v8::String::NewSymbol("opener"), value);
+    info.This()->Set(v8AtomicString(info.GetIsolate(), "opener"), value);
 }
 
 static bool isLegacyTargetOriginDesignation(v8::Handle<v8::Value> value)
@@ -277,9 +291,9 @@ void V8Window::postMessageMethodCustom(const v8::FunctionCallbackInfo<v8::Value>
     if (didThrow)
         return;
 
-    ExceptionState es(info.GetIsolate());
-    window->postMessage(message.release(), &portArray, targetOrigin, source, es);
-    es.throwIfNeeded();
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "postMessage", "Window", info.Holder(), info.GetIsolate());
+    window->postMessage(message.release(), &portArray, targetOrigin, source, exceptionState);
+    exceptionState.throwIfNeeded();
 }
 
 // FIXME(fqian): returning string is cheating, and we should
@@ -288,7 +302,7 @@ void V8Window::postMessageMethodCustom(const v8::FunctionCallbackInfo<v8::Value>
 // switching context of receiver. I consider it is dangerous.
 void V8Window::toStringMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    v8::Handle<v8::Object> domWrapper = info.This()->FindInstanceInPrototypeChain(V8Window::GetTemplate(info.GetIsolate(), worldTypeInMainThread(info.GetIsolate())));
+    v8::Handle<v8::Object> domWrapper = info.This()->FindInstanceInPrototypeChain(V8Window::domTemplate(info.GetIsolate(), worldTypeInMainThread(info.GetIsolate())));
     if (domWrapper.IsEmpty()) {
         v8SetReturnValue(info, info.This()->ObjectProtoToString());
         return;
@@ -303,7 +317,7 @@ public:
     {
     }
 
-    void dialogCreated(DOMWindow*);
+    void dialogCreated(DOMWindow*, v8::Isolate*);
     v8::Handle<v8::Value> returnValue(v8::Isolate*) const;
 
 private:
@@ -311,7 +325,7 @@ private:
     v8::Handle<v8::Context> m_dialogContext;
 };
 
-inline void DialogHandler::dialogCreated(DOMWindow* dialogFrame)
+inline void DialogHandler::dialogCreated(DOMWindow* dialogFrame, v8::Isolate* isolate)
 {
     m_dialogContext = dialogFrame->frame() ? dialogFrame->frame()->script().currentWorldContext() : v8::Local<v8::Context>();
     if (m_dialogContext.IsEmpty())
@@ -319,7 +333,7 @@ inline void DialogHandler::dialogCreated(DOMWindow* dialogFrame)
     if (m_dialogArguments.IsEmpty())
         return;
     v8::Context::Scope scope(m_dialogContext);
-    m_dialogContext->Global()->Set(v8::String::NewSymbol("dialogArguments"), m_dialogArguments);
+    m_dialogContext->Global()->Set(v8AtomicString(isolate, "dialogArguments"), m_dialogArguments);
 }
 
 inline v8::Handle<v8::Value> DialogHandler::returnValue(v8::Isolate* isolate) const
@@ -327,7 +341,7 @@ inline v8::Handle<v8::Value> DialogHandler::returnValue(v8::Isolate* isolate) co
     if (m_dialogContext.IsEmpty())
         return v8::Undefined(isolate);
     v8::Context::Scope scope(m_dialogContext);
-    v8::Handle<v8::Value> returnValue = m_dialogContext->Global()->Get(v8::String::NewSymbol("returnValue"));
+    v8::Handle<v8::Value> returnValue = m_dialogContext->Global()->Get(v8AtomicString(isolate, "returnValue"));
     if (returnValue.IsEmpty())
         return v8::Undefined(isolate);
     return returnValue;
@@ -335,22 +349,21 @@ inline v8::Handle<v8::Value> DialogHandler::returnValue(v8::Isolate* isolate) co
 
 static void setUpDialog(DOMWindow* dialog, void* handler)
 {
-    static_cast<DialogHandler*>(handler)->dialogCreated(dialog);
+    static_cast<DialogHandler*>(handler)->dialogCreated(dialog, v8::Isolate::GetCurrent());
 }
 
 void V8Window::showModalDialogMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     DOMWindow* impl = V8Window::toNative(info.Holder());
-    ExceptionState es(info.GetIsolate());
-    if (!BindingSecurity::shouldAllowAccessToFrame(impl->frame(), es)) {
-        es.throwIfNeeded();
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "showModalDialog", "Window", info.Holder(), info.GetIsolate());
+    if (!BindingSecurity::shouldAllowAccessToFrame(impl->frame(), exceptionState)) {
+        exceptionState.throwIfNeeded();
         return;
     }
 
-    // FIXME: Handle exceptions properly.
-    String urlString = toWebCoreStringWithUndefinedOrNullCheck(info[0]);
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<WithUndefinedOrNullCheck>, urlString, info[0]);
     DialogHandler handler(info[1]);
-    String dialogFeaturesString = toWebCoreStringWithUndefinedOrNullCheck(info[2]);
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<WithUndefinedOrNullCheck>, dialogFeaturesString, info[2]);
 
     impl->showModalDialog(urlString, dialogFeaturesString, activeDOMWindow(), firstDOMWindow(), setUpDialog, &handler);
 
@@ -360,16 +373,21 @@ void V8Window::showModalDialogMethodCustom(const v8::FunctionCallbackInfo<v8::Va
 void V8Window::openMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     DOMWindow* impl = V8Window::toNative(info.Holder());
-    ExceptionState es(info.GetIsolate());
-    if (!BindingSecurity::shouldAllowAccessToFrame(impl->frame(), es)) {
-        es.throwIfNeeded();
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "open", "Window", info.Holder(), info.GetIsolate());
+    if (!BindingSecurity::shouldAllowAccessToFrame(impl->frame(), exceptionState)) {
+        exceptionState.throwIfNeeded();
         return;
     }
 
-    // FIXME: Handle exceptions properly.
-    String urlString = toWebCoreStringWithUndefinedOrNullCheck(info[0]);
-    AtomicString frameName = (info[1]->IsUndefined() || info[1]->IsNull()) ? "_blank" : toWebCoreAtomicString(info[1]);
-    String windowFeaturesString = toWebCoreStringWithUndefinedOrNullCheck(info[2]);
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<WithUndefinedOrNullCheck>, urlString, info[0]);
+    AtomicString frameName;
+    if (info[1]->IsUndefined() || info[1]->IsNull()) {
+        frameName = "_blank";
+    } else {
+        V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, frameNameResource, info[1]);
+        frameName = frameNameResource;
+    }
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<WithUndefinedOrNullCheck>, windowFeaturesString, info[2]);
 
     RefPtr<DOMWindow> openedWindow = impl->open(urlString, frameName, windowFeaturesString, activeDOMWindow(), firstDOMWindow());
     if (!openedWindow)
@@ -391,7 +409,7 @@ void V8Window::namedPropertyGetterCustom(v8::Local<v8::String> name, const v8::P
         return;
 
     // Search sub-frames.
-    AtomicString propName = toWebCoreAtomicString(name);
+    AtomicString propName = toCoreAtomicString(name);
     Frame* child = frame->tree().scopedChild(propName);
     if (child) {
         v8SetReturnValueFast(info, child->domWindow(), window);
@@ -423,23 +441,23 @@ void V8Window::namedPropertyGetterCustom(v8::Local<v8::String> name, const v8::P
 
 void V8Window::setTimeoutMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    ExceptionState es(info.GetIsolate());
-    WindowSetTimeoutImpl(info, true, es);
-    es.throwIfNeeded();
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "setTimeout", "Window", info.Holder(), info.GetIsolate());
+    WindowSetTimeoutImpl(info, true, exceptionState);
+    exceptionState.throwIfNeeded();
 }
 
 
 void V8Window::setIntervalMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    ExceptionState es(info.GetIsolate());
-    WindowSetTimeoutImpl(info, false, es);
-    es.throwIfNeeded();
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "setInterval", "Window", info.Holder(), info.GetIsolate());
+    WindowSetTimeoutImpl(info, false, exceptionState);
+    exceptionState.throwIfNeeded();
 }
 
 bool V8Window::namedSecurityCheckCustom(v8::Local<v8::Object> host, v8::Local<v8::Value> key, v8::AccessType type, v8::Local<v8::Value>)
 {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    v8::Handle<v8::Object> window = host->FindInstanceInPrototypeChain(V8Window::GetTemplate(isolate, worldTypeInMainThread(isolate)));
+    v8::Handle<v8::Object> window = host->FindInstanceInPrototypeChain(V8Window::domTemplate(isolate, worldTypeInMainThread(isolate)));
     if (window.IsEmpty())
         return false; // the frame is gone.
 
@@ -456,9 +474,9 @@ bool V8Window::namedSecurityCheckCustom(v8::Local<v8::Object> host, v8::Local<v8
         target->loader().didAccessInitialDocument();
 
     if (key->IsString()) {
-        DEFINE_STATIC_LOCAL(AtomicString, nameOfProtoProperty, ("__proto__", AtomicString::ConstructFromLiteral));
+        DEFINE_STATIC_LOCAL(const AtomicString, nameOfProtoProperty, ("__proto__", AtomicString::ConstructFromLiteral));
 
-        String name = toWebCoreString(key.As<v8::String>());
+        AtomicString name = toCoreAtomicString(key.As<v8::String>());
         Frame* childFrame = target->tree().scopedChild(name);
         // Notice that we can't call HasRealNamedProperty for ACCESS_HAS
         // because that would generate infinite recursion.
@@ -482,7 +500,7 @@ bool V8Window::namedSecurityCheckCustom(v8::Local<v8::Object> host, v8::Local<v8
 bool V8Window::indexedSecurityCheckCustom(v8::Local<v8::Object> host, uint32_t index, v8::AccessType type, v8::Local<v8::Value>)
 {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    v8::Handle<v8::Object> window = host->FindInstanceInPrototypeChain(V8Window::GetTemplate(isolate, worldTypeInMainThread(isolate)));
+    v8::Handle<v8::Object> window = host->FindInstanceInPrototypeChain(V8Window::domTemplate(isolate, worldTypeInMainThread(isolate)));
     if (window.IsEmpty())
         return false;
 
@@ -518,7 +536,7 @@ v8::Handle<v8::Value> toV8(DOMWindow* window, v8::Handle<v8::Object> creationCon
     // Notice that we explicitly ignore creationContext because the DOMWindow is its own creationContext.
 
     if (!window)
-        return v8NullWithCheck(isolate);
+        return v8::Null(isolate);
     // Initializes environment of a frame, and return the global object
     // of the frame.
     Frame* frame = window->frame();
@@ -530,9 +548,9 @@ v8::Handle<v8::Value> toV8(DOMWindow* window, v8::Handle<v8::Object> creationCon
     // code running in one of those contexts accesses the window object, we
     // want to return the global object associated with that context, not
     // necessarily the first global object associated with that DOMWindow.
-    v8::Handle<v8::Context> currentContext = v8::Context::GetCurrent();
+    v8::Handle<v8::Context> currentContext = isolate->GetCurrentContext();
     v8::Handle<v8::Object> currentGlobal = currentContext->Global();
-    v8::Handle<v8::Object> windowWrapper = currentGlobal->FindInstanceInPrototypeChain(V8Window::GetTemplate(isolate, worldTypeInMainThread(isolate)));
+    v8::Handle<v8::Object> windowWrapper = currentGlobal->FindInstanceInPrototypeChain(V8Window::domTemplate(isolate, worldTypeInMainThread(isolate)));
     if (!windowWrapper.IsEmpty()) {
         if (V8Window::toNative(windowWrapper) == window)
             return currentGlobal;

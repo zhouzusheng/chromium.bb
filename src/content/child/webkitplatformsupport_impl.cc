@@ -17,7 +17,7 @@ WebKitPlatformSupportImpl::WebKitPlatformSupportImpl() {
 WebKitPlatformSupportImpl::~WebKitPlatformSupportImpl() {
 }
 
-string16 WebKitPlatformSupportImpl::GetLocalizedString(int message_id) {
+base::string16 WebKitPlatformSupportImpl::GetLocalizedString(int message_id) {
   return GetContentClient()->GetLocalizedString(message_id);
 }
 
@@ -35,14 +35,14 @@ WebKitPlatformSupportImpl::CreateResourceLoader(
 
 webkit_glue::WebSocketStreamHandleBridge*
 WebKitPlatformSupportImpl::CreateWebSocketStreamBridge(
-    WebKit::WebSocketStreamHandle* handle,
+    blink::WebSocketStreamHandle* handle,
     webkit_glue::WebSocketStreamHandleDelegate* delegate) {
   SocketStreamDispatcher* dispatcher =
       ChildThread::current()->socket_stream_dispatcher();
   return dispatcher->CreateBridge(handle, delegate);
 }
 
-WebKit::WebSocketHandle* WebKitPlatformSupportImpl::createWebSocketHandle() {
+blink::WebSocketHandle* WebKitPlatformSupportImpl::createWebSocketHandle() {
   return new WebSocketBridge;
 }
 

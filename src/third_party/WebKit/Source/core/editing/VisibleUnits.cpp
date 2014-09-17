@@ -40,7 +40,7 @@
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/htmlediting.h"
 #include "core/rendering/InlineTextBox.h"
-#include "core/rendering/RenderBlock.h"
+#include "core/rendering/RenderBlockFlow.h"
 #include "core/rendering/RenderObject.h"
 #include "platform/text/TextBoundaries.h"
 
@@ -460,11 +460,11 @@ static VisiblePosition previousBoundary(const VisiblePosition& c, BoundarySearch
     Vector<UChar, 1024> string;
     unsigned suffixLength = 0;
 
-    TrackExceptionState es;
+    TrackExceptionState exceptionState;
     if (requiresContextForWordBoundary(c.characterBefore())) {
         RefPtr<Range> forwardsScanRange(d.createRange());
-        forwardsScanRange->setEndAfter(boundary, es);
-        forwardsScanRange->setStart(end.deprecatedNode(), end.deprecatedEditingOffset(), es);
+        forwardsScanRange->setEndAfter(boundary, exceptionState);
+        forwardsScanRange->setStart(end.deprecatedNode(), end.deprecatedEditingOffset(), exceptionState);
         TextIterator forwardsIterator(forwardsScanRange.get());
         while (!forwardsIterator.atEnd()) {
             Vector<UChar, 1024> characters;
@@ -478,11 +478,11 @@ static VisiblePosition previousBoundary(const VisiblePosition& c, BoundarySearch
         }
     }
 
-    searchRange->setStart(start.deprecatedNode(), start.deprecatedEditingOffset(), es);
-    searchRange->setEnd(end.deprecatedNode(), end.deprecatedEditingOffset(), es);
+    searchRange->setStart(start.deprecatedNode(), start.deprecatedEditingOffset(), exceptionState);
+    searchRange->setEnd(end.deprecatedNode(), end.deprecatedEditingOffset(), exceptionState);
 
-    ASSERT(!es.hadException());
-    if (es.hadException())
+    ASSERT(!exceptionState.hadException());
+    if (exceptionState.hadException())
         return VisiblePosition();
 
     SimplifiedBackwardsTextIterator it(searchRange.get());
@@ -913,7 +913,7 @@ bool isEndOfLine(const VisiblePosition &p)
 static inline IntPoint absoluteLineDirectionPointToLocalPointInBlock(RootInlineBox* root, int lineDirectionPoint)
 {
     ASSERT(root);
-    RenderBlock* containingBlock = root->block();
+    RenderBlockFlow* containingBlock = root->block();
     FloatPoint absoluteBlockPoint = containingBlock->localToAbsolute(FloatPoint());
     if (containingBlock->hasOverflowClip())
         absoluteBlockPoint -= containingBlock->scrolledContentOffset();
@@ -1110,23 +1110,24 @@ VisiblePosition startOfParagraph(const VisiblePosition& c, EditingBoundaryCrossi
     Position::AnchorType type = p.anchorType();
 
     Node* n = startNode;
+    bool startNodeIsEditable = startNode->rendererIsEditable();
     while (n) {
-        if (boundaryCrossingRule == CannotCrossEditingBoundary && !Position::nodeIsUserSelectAll(n) && n->rendererIsEditable() != startNode->rendererIsEditable())
+        if (boundaryCrossingRule == CannotCrossEditingBoundary && !Position::nodeIsUserSelectAll(n) && n->rendererIsEditable() != startNodeIsEditable)
             break;
         if (boundaryCrossingRule == CanSkipOverEditingBoundary) {
-            while (n && n->rendererIsEditable() != startNode->rendererIsEditable())
-                n = NodeTraversal::previousPostOrder(n, startBlock);
+            while (n && n->rendererIsEditable() != startNodeIsEditable)
+                n = NodeTraversal::previousPostOrder(*n, startBlock);
             if (!n || !n->isDescendantOf(highestRoot))
                 break;
         }
         RenderObject* r = n->renderer();
         if (!r) {
-            n = NodeTraversal::previousPostOrder(n, startBlock);
+            n = NodeTraversal::previousPostOrder(*n, startBlock);
             continue;
         }
         RenderStyle* style = r->style();
         if (style->visibility() != VISIBLE) {
-            n = NodeTraversal::previousPostOrder(n, startBlock);
+            n = NodeTraversal::previousPostOrder(*n, startBlock);
             continue;
         }
 
@@ -1149,13 +1150,14 @@ VisiblePosition startOfParagraph(const VisiblePosition& c, EditingBoundaryCrossi
             }
             node = n;
             offset = 0;
-            n = NodeTraversal::previousPostOrder(n, startBlock);
-        } else if (editingIgnoresContent(n) || isTableElement(n)) {
+            n = NodeTraversal::previousPostOrder(*n, startBlock);
+        } else if (editingIgnoresContent(n) || isRenderedTable(n)) {
             node = n;
             type = Position::PositionIsBeforeAnchor;
-            n = n->previousSibling() ? n->previousSibling() : NodeTraversal::previousPostOrder(n, startBlock);
-        } else
-            n = NodeTraversal::previousPostOrder(n, startBlock);
+            n = n->previousSibling() ? n->previousSibling() : NodeTraversal::previousPostOrder(*n, startBlock);
+        } else {
+            n = NodeTraversal::previousPostOrder(*n, startBlock);
+        }
     }
 
     if (type == Position::PositionIsOffsetInAnchor) {
@@ -1186,24 +1188,25 @@ VisiblePosition endOfParagraph(const VisiblePosition &c, EditingBoundaryCrossing
     Position::AnchorType type = p.anchorType();
 
     Node* n = startNode;
+    bool startNodeIsEditable = startNode->rendererIsEditable();
     while (n) {
-        if (boundaryCrossingRule == CannotCrossEditingBoundary && !Position::nodeIsUserSelectAll(n) && n->rendererIsEditable() != startNode->rendererIsEditable())
+        if (boundaryCrossingRule == CannotCrossEditingBoundary && !Position::nodeIsUserSelectAll(n) && n->rendererIsEditable() != startNodeIsEditable)
             break;
         if (boundaryCrossingRule == CanSkipOverEditingBoundary) {
-            while (n && n->rendererIsEditable() != startNode->rendererIsEditable())
-                n = NodeTraversal::next(n, stayInsideBlock);
+            while (n && n->rendererIsEditable() != startNodeIsEditable)
+                n = NodeTraversal::next(*n, stayInsideBlock);
             if (!n || !n->isDescendantOf(highestRoot))
                 break;
         }
 
         RenderObject* r = n->renderer();
         if (!r) {
-            n = NodeTraversal::next(n, stayInsideBlock);
+            n = NodeTraversal::next(*n, stayInsideBlock);
             continue;
         }
         RenderStyle* style = r->style();
         if (style->visibility() != VISIBLE) {
-            n = NodeTraversal::next(n, stayInsideBlock);
+            n = NodeTraversal::next(*n, stayInsideBlock);
             continue;
         }
 
@@ -1225,13 +1228,14 @@ VisiblePosition endOfParagraph(const VisiblePosition &c, EditingBoundaryCrossing
             }
             node = n;
             offset = r->caretMaxOffset();
-            n = NodeTraversal::next(n, stayInsideBlock);
-        } else if (editingIgnoresContent(n) || isTableElement(n)) {
+            n = NodeTraversal::next(*n, stayInsideBlock);
+        } else if (editingIgnoresContent(n) || isRenderedTable(n)) {
             node = n;
             type = Position::PositionIsAfterAnchor;
-            n = NodeTraversal::nextSkippingChildren(n, stayInsideBlock);
-        } else
-            n = NodeTraversal::next(n, stayInsideBlock);
+            n = NodeTraversal::nextSkippingChildren(*n, stayInsideBlock);
+        } else {
+            n = NodeTraversal::next(*n, stayInsideBlock);
+        }
     }
 
     if (type == Position::PositionIsOffsetInAnchor)

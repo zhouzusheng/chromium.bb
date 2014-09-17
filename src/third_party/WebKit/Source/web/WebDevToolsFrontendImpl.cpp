@@ -52,17 +52,15 @@
 #include "core/frame/DOMWindow.h"
 #include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/platform/ContextMenuItem.h"
+#include "core/frame/Settings.h"
 #include "core/platform/Pasteboard.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/ContextMenuItem.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/OwnPtr.h"
-#include "wtf/Vector.h"
-#include "wtf/text/WTFString.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 class WebDevToolsFrontendImpl::InspectorFrontendResumeObserver : public ActiveDOMObject {
     WTF_MAKE_NONCOPYABLE(InspectorFrontendResumeObserver);
@@ -101,10 +99,6 @@ WebDevToolsFrontendImpl::WebDevToolsFrontendImpl(
     , m_inspectorFrontendDispatchTimer(this, &WebDevToolsFrontendImpl::maybeDispatch)
 {
     m_webViewImpl->page()->inspectorController().setInspectorFrontendClient(adoptPtr(new InspectorFrontendClientImpl(m_webViewImpl->page(), m_client, this)));
-
-    // Put each DevTools frontend Page into a private group so that it's not
-    // deferred along with the inspected page.
-    m_webViewImpl->page()->setGroupType(Page::InspectorPageGroup);
 }
 
 WebDevToolsFrontendImpl::~WebDevToolsFrontendImpl()
@@ -147,29 +141,29 @@ void WebDevToolsFrontendImpl::doDispatchOnInspectorFrontend(const WebString& mes
     v8::HandleScope scope(isolate);
     v8::Handle<v8::Context> frameContext = frame->frame()->script().currentWorldContext();
     v8::Context::Scope contextScope(frameContext);
-    v8::Handle<v8::Value> inspectorFrontendApiValue = frameContext->Global()->Get(v8::String::New("InspectorFrontendAPI"));
+    v8::Handle<v8::Value> inspectorFrontendApiValue = frameContext->Global()->Get(v8::String::NewFromUtf8(isolate, "InspectorFrontendAPI"));
     if (!inspectorFrontendApiValue->IsObject())
         return;
     v8::Handle<v8::Object> dispatcherObject = v8::Handle<v8::Object>::Cast(inspectorFrontendApiValue);
-    v8::Handle<v8::Value> dispatchFunction = dispatcherObject->Get(v8::String::New("dispatchMessage"));
+    v8::Handle<v8::Value> dispatchFunction = dispatcherObject->Get(v8::String::NewFromUtf8(isolate, "dispatchMessage"));
     // The frame might have navigated away from the front-end page (which is still weird),
     // OR the older version of frontend might have a dispatch method in a different place.
     // FIXME(kaznacheev): Remove when Chrome for Android M18 is retired.
     if (!dispatchFunction->IsFunction()) {
-        v8::Handle<v8::Value> inspectorBackendApiValue = frameContext->Global()->Get(v8::String::New("InspectorBackend"));
+        v8::Handle<v8::Value> inspectorBackendApiValue = frameContext->Global()->Get(v8::String::NewFromUtf8(isolate, "InspectorBackend"));
         if (!inspectorBackendApiValue->IsObject())
             return;
         dispatcherObject = v8::Handle<v8::Object>::Cast(inspectorBackendApiValue);
-        dispatchFunction = dispatcherObject->Get(v8::String::New("dispatch"));
+        dispatchFunction = dispatcherObject->Get(v8::String::NewFromUtf8(isolate, "dispatch"));
         if (!dispatchFunction->IsFunction())
             return;
     }
     v8::Handle<v8::Function> function = v8::Handle<v8::Function>::Cast(dispatchFunction);
     Vector< v8::Handle<v8::Value> > args;
-    args.append(v8String(message, isolate));
+    args.append(v8String(isolate, message));
     v8::TryCatch tryCatch;
     tryCatch.SetVerbose(true);
     ScriptController::callFunction(frame->frame()->document(), function, dispatcherObject, args.size(), args.data(), isolate);
 }
 
-} // namespace WebKit
+} // namespace blink

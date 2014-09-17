@@ -32,8 +32,9 @@
     readonly attribute MediaError error;
 
     // network state
-    [Reflect, TreatNullAs=NullString, URL, PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute DOMString src;
+    [Reflect, URL, PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute DOMString src;
     [URL, PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] readonly attribute DOMString currentSrc;
+    [Reflect] attribute DOMString crossOrigin;
 
     const unsigned short NETWORK_EMPTY = 0;
     const unsigned short NETWORK_IDLE = 1;
@@ -56,7 +57,7 @@
     readonly attribute boolean seeking;
 
     // playback state
-    [SetterRaisesException] attribute double currentTime;
+    [RaisesException=Setter] attribute double currentTime;
     readonly attribute double duration;
     readonly attribute boolean paused;
     attribute double defaultPlaybackRate;
@@ -70,12 +71,12 @@
     void pause();
 
     // media controller
-    [Reflect, TreatNullAs=NullString] attribute DOMString mediaGroup;
-    [CustomSetter] attribute MediaController controller;
+    [Reflect] attribute DOMString mediaGroup;
+    [StrictTypeChecking] attribute MediaController controller;
 
     // controls
     attribute boolean controls;
-    [SetterRaisesException] attribute double volume;
+    [RaisesException=Setter] attribute double volume;
     attribute boolean muted;
     [Reflect=muted] attribute boolean defaultMuted;
 
@@ -99,5 +100,5 @@
     [RuntimeEnabled=PrefixedEncryptedMedia] attribute EventHandler onwebkitkeymessage;
     [RuntimeEnabled=PrefixedEncryptedMedia] attribute EventHandler onwebkitneedkey;
 
-    [RuntimeEnabled=EncryptedMedia, Conditional=ENCRYPTED_MEDIA_V2] attribute MediaKeys mediaKeys;
+    [RuntimeEnabled=EncryptedMedia] attribute MediaKeys mediaKeys;
 };

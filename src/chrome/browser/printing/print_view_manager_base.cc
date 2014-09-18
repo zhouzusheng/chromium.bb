@@ -11,14 +11,13 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/timer/timer.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/printing/print_job.h"
 #include "chrome/browser/printing/print_job_manager.h"
 #include "chrome/browser/printing/printer_query.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/print_messages.h"
+#include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -39,10 +38,6 @@
 #include "chrome/common/chrome_switches.h"
 #endif
 
-#if defined(ENABLE_FULL_PRINTING)
-#include "chrome/browser/printing/print_error_dialog.h"
-#endif
-
 using base::TimeDelta;
 using content::BrowserThread;
 
@@ -53,22 +48,22 @@ const int kMaxRasterSizeInPixels = 16*1024*1024;
 
 namespace printing {
 
+PrintJobManager* g_print_job_manager = NULL;
+
 PrintViewManagerBase::PrintViewManagerBase(content::WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
       number_pages_(0),
       printing_succeeded_(false),
       inside_inner_message_loop_(false),
       cookie_(0),
-      queue_(g_browser_process->print_job_manager()->queue()) {
+      queue_(g_print_job_manager->queue()) {
   DCHECK(queue_);
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   expecting_first_page_ = true;
 #endif
-  Profile* profile =
-      Profile::FromBrowserContext(web_contents->GetBrowserContext());
   printing_enabled_.Init(
       prefs::kPrintingEnabled,
-      profile->GetPrefs(),
+      user_prefs::UserPrefs::Get(web_contents->GetBrowserContext()),
       base::Bind(&PrintViewManagerBase::UpdateScriptedPrintingBlocked,
                  base::Unretained(this)));
 }
@@ -201,8 +196,7 @@ void PrintViewManagerBase::OnPrintingFailed(int cookie) {
   }
 
 #if defined(ENABLE_FULL_PRINTING)
-  chrome::ShowPrintErrorDialog(
-      web_contents()->GetView()->GetTopLevelNativeWindow());
+  // TODO(LEVI): Notify user in some way
 #endif
 
   ReleasePrinterQuery();
@@ -516,12 +510,6 @@ void PrintViewManagerBase::ReleasePrinterQuery() {
   cookie_ = 0;
   queue_->SetDestination(NULL);
 
-
-  printing::PrintJobManager* print_job_manager =
-      g_browser_process->print_job_manager();
-  // May be NULL in tests.
-  if (!print_job_manager)
-    return;
 
   scoped_refptr<printing::PrinterQuery> printer_query;
   printer_query = queue_->PopPrinterQuery(cookie);

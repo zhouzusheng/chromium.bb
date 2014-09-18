@@ -53,6 +53,7 @@ template <class T> class Handle;
 
 namespace blink {
 class WebAXObject;
+class WebBBPrintInfo;
 class WebDocumentType;
 class WebElement;
 class WebFormElement;
@@ -140,6 +141,8 @@ public:
     BLINK_EXPORT void watchCSSSelectors(const WebVector<WebString>& selectors);
 
     BLINK_EXPORT WebVector<WebDraggableRegion> draggableRegions() const;
+
+    BLINK_EXPORT WebBBPrintInfo bbPrintInfo();
 
     BLINK_EXPORT v8::Handle<v8::Value> registerEmbedderCustomElement(const WebString& name, v8::Handle<v8::Value> options, WebExceptionCode&);
 

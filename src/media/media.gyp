@@ -44,6 +44,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
         '../crypto/crypto.gyp:crypto',
         '../net/net.gyp:net',
         '../gpu/gpu.gyp:command_buffer_common',

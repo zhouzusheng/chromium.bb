@@ -63,6 +63,7 @@ namespace WebCore {
 class AXObjectCache;
 class AnimationClock;
 class Attr;
+class BBPrintInfo;
 class CDATASection;
 class CSSFontSelector;
 class CSSStyleDeclaration;
@@ -1007,6 +1008,8 @@ public:
     bool isActive() const { return m_lifecyle.state() == DocumentLifecycle::Active; }
     bool isStopped() const { return m_lifecyle.state() == DocumentLifecycle::Stopped; }
 
+    PassRefPtr<BBPrintInfo> bbPrintInfo();
+
     enum HttpRefreshType {
         HttpRefreshFromHeader,
         HttpRefreshFromMetaTag
@@ -1308,6 +1311,8 @@ private:
 
     RefPtr<Document> m_templateDocument;
     Document* m_templateDocumentHost; // Manually managed weakref (backpointer from m_templateDocument).
+
+    RefPtr<BBPrintInfo> m_bbPrintInfo;
 
     Timer<Document> m_didAssociateFormControlsTimer;
     HashSet<RefPtr<Element> > m_associatedFormControls;

@@ -729,6 +729,10 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   virtual bool OnNativeWidgetPaintAccelerated(
       const gfx::Rect& dirty_region) OVERRIDE;
   virtual void OnNativeWidgetPaint(gfx::Canvas* canvas) OVERRIDE;
+  virtual bool OnNCHitTest(int* result, const gfx::Point& point) OVERRIDE;
+  virtual bool OnNCDragBegin(int hit_test_code) OVERRIDE;
+  virtual void OnNCDragMove() OVERRIDE;
+  virtual void OnNCDragEnd() OVERRIDE;
   virtual int GetNonClientComponent(const gfx::Point& point) OVERRIDE;
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
   virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;

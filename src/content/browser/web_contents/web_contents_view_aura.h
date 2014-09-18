@@ -139,6 +139,7 @@ class CONTENT_EXPORT WebContentsViewAura
                              const DragEventSourceInfo& event_info) OVERRIDE;
   virtual void UpdateDragCursor(blink::WebDragOperation operation) OVERRIDE;
   virtual void GotFocus() OVERRIDE;
+  virtual void LostFocus() OVERRIDE;
   virtual void TakeFocus(bool reverse) OVERRIDE;
 
   // Overridden from OverscrollControllerDelegate:

@@ -19,7 +19,6 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/print_messages.h"
 #include "chrome/common/render_messages.h"
-#include "chrome/renderer/prerender/prerender_helper.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
@@ -762,13 +761,6 @@ void PrintWebViewHelper::PrintPage(blink::WebFrame* frame,
                                    bool user_initiated) {
   DCHECK(frame);
 
-  // Allow Prerendering to cancel this print request if necessary.
-  if (prerender::PrerenderHelper::IsPrerendering(
-          render_view()->GetMainRenderFrame())) {
-    Send(new ChromeViewHostMsg_CancelPrerenderForPrinting(routing_id()));
-    return;
-  }
-
   if (!IsScriptInitiatedPrintAllowed(frame, user_initiated))
     return;
   IncrementScriptedPrintCount();
@@ -1454,9 +1446,6 @@ bool PrintWebViewHelper::UpdatePrintSettings(
       if (print_frame) {
         render_view()->RunModalAlertDialog(
             print_frame,
-            // TODO(LEVI): Set this to what it really should be
-            //l10n_util::GetStringUTF16(
-            //    IDS_PRINT_PREVIEW_INVALID_PRINTER_SETTINGS));
             string16(L"Invalid printer settings"));
       }
     }

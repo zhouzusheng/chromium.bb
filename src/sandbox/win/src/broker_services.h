@@ -105,6 +105,11 @@ class BrokerServicesBase : public BrokerServices,
   // job. Consult |jobless_process_handles_| for handles of pocess without job.
   std::set<DWORD> child_process_ids_;
 
+#if SANDBOX_DLL
+  // Stores the module name where sandbox.lib is linked into.
+  scoped_ptr_malloc<wchar_t> module_path_;
+#endif
+
   DISALLOW_COPY_AND_ASSIGN(BrokerServicesBase);
 };
 

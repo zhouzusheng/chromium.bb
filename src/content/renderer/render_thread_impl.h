@@ -166,6 +166,9 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // time this routine returns.
   GpuChannelHost* EstablishGpuChannelSync(CauseForGpuLaunch);
 
+#if defined(OS_WIN)
+  void InitCOMIfUsingInProcessPlugins();
+#endif
 
   // These methods modify how the next message is sent.  Normally, when sending
   // a synchronous message that runs a nested message loop, we need to suspend
@@ -387,6 +390,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   void OnGetAccessibilityTree();
   void OnTempCrashWithData(const GURL& data);
   void OnSetRendererProcessID(base::ProcessId process_id);
+  void OnClearWebCache();
   void OnMemoryPressure(
       base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level);
 #if defined(OS_ANDROID)

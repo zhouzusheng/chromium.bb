@@ -20,7 +20,8 @@ class CONTENT_EXPORT SiteInstanceImpl : public SiteInstance,
   // SiteInstance interface overrides.
   virtual int32 GetId() OVERRIDE;
   virtual bool HasProcess() const OVERRIDE;
-  virtual RenderProcessHost* GetProcess() OVERRIDE;
+  virtual RenderProcessHost* GetProcess(
+      int affinity = SiteInstance::kNoProcessAffinity) OVERRIDE;
   virtual const GURL& GetSiteURL() const OVERRIDE;
   virtual SiteInstance* GetRelatedSiteInstance(const GURL& url) OVERRIDE;
   virtual bool IsRelatedSiteInstance(const SiteInstance* instance) OVERRIDE;

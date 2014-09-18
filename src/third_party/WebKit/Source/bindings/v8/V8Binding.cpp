@@ -431,6 +431,17 @@ uint64_t toUInt64(v8::Handle<v8::Value> value, IntegerConversionConfiguration co
     return integer;
 }
 
+static bool s_nonWindowContextsAllowed = false;
+bool isNonWindowContextsAllowed()
+{
+    return s_nonWindowContextsAllowed;
+}
+
+void setNonWindowContextsAllowed(bool allowed)
+{
+    s_nonWindowContextsAllowed = allowed;
+}
+
 v8::Handle<v8::FunctionTemplate> createRawTemplate(v8::Isolate* isolate)
 {
     v8::EscapableHandleScope scope(isolate);

@@ -42,9 +42,50 @@ bool IsPipe(const base::string16& path) {
   return (0 == path.compare(start, arraysize(kPipe) - 1, kPipe));
 }
 
+struct OnExitHandlerEntry {
+  _onexit_t func;
+  OnExitHandlerEntry* next;
+};
+OnExitHandlerEntry* on_exit_handlers = NULL;
+bool on_exit_registered = false;
+
+int __cdecl OnExit()
+{
+  on_exit_registered = false;
+  sandbox::CallOnExitHandlers();
+  return 0;
+}
+
 }  // namespace
 
 namespace sandbox {
+
+void AddOnExitHandler(_onexit_t func)
+{
+  if (!on_exit_registered) {
+    // Microsoft CRT extension. In an exe this this called after
+    // winmain returns, in a dll is called in DLL_PROCESS_DETACH
+    _onexit(OnExit);
+    on_exit_registered = true;
+  }
+  OnExitHandlerEntry* entry =
+      (OnExitHandlerEntry*)malloc(sizeof(OnExitHandlerEntry));
+  entry->func = func;
+  entry->next = on_exit_handlers;
+  on_exit_handlers = entry;
+}
+
+void CallOnExitHandlers()
+{
+  OnExitHandlerEntry* entry = on_exit_handlers;
+  on_exit_handlers = NULL;
+  while (entry) {
+    OnExitHandlerEntry* next = entry->next;
+    entry->func();
+    free(entry);
+    entry = next;
+  }
+}
 
 HKEY GetReservedKeyFromName(const base::string16& name) {
   for (size_t i = 0; i < arraysize(kKnownKey); ++i) {

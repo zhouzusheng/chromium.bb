@@ -2227,6 +2227,22 @@ WebView* RenderViewImpl::createView(
     params.user_gesture = true;
   params.window_container_type = WindowFeaturesToContainerType(features);
   params.session_storage_namespace_id = session_storage_namespace_id_;
+
+  params.x = features.x;
+  params.x_set = features.xSet;
+  params.y = features.y;
+  params.y_set = features.ySet;
+  params.width = features.width;
+  params.width_set = features.widthSet;
+  params.height = features.height;
+  params.height_set = features.heightSet;
+
+  const WebVector<WebString>& additionalFeatures = features.additionalFeatures;
+  size_t additionalFeatureCount = additionalFeatures.size();
+  for (size_t i = 0; i < additionalFeatureCount; ++i) {
+      params.additional_features.push_back(additionalFeatures[i].utf8());
+  }
+
   if (frame_name != "_blank")
     params.frame_name = frame_name;
   params.opener_frame_id = creator->identifier();
@@ -4287,6 +4303,19 @@ int RenderViewImpl::GetPageId() const {
 
 gfx::Size RenderViewImpl::GetSize() const {
   return size();
+}
+
+void RenderViewImpl::SetSize(const gfx::Size& new_size) {
+  if (new_size == size()) {
+    return;
+  }
+  need_update_rect_for_auto_resize_ = true;
+  Resize(new_size, new_size, overdraw_bottom_height_,
+         resizer_rect_, is_fullscreen_, NO_RESIZE_ACK);
+}
+
+void RenderViewImpl::SetFocus(bool focused) {
+  OnSetFocus(focused);
 }
 
 WebPreferences& RenderViewImpl::GetWebkitPreferences() {

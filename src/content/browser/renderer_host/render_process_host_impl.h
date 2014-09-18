@@ -41,7 +41,6 @@ class GeolocationDispatcherHost;
 class GpuMessageFilter;
 class MessagePortMessageFilter;
 class PeerConnectionTrackerHost;
-class RendererMainThread;
 class RenderWidgetHelper;
 class RenderWidgetHost;
 class RenderWidgetHostImpl;
@@ -73,7 +72,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
       public ChildProcessLauncher::Client,
       public GpuDataManagerObserver {
  public:
-  RenderProcessHostImpl(BrowserContext* browser_context,
+  RenderProcessHostImpl(int host_id,
+                        base::ProcessHandle externally_managed_handle,
+                        BrowserContext* browser_context,
                         StoragePartitionImpl* storage_partition_impl,
                         bool supports_browser_plugin,
                         bool is_guest);
@@ -87,6 +88,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual void RemoveRoute(int32 routing_id) OVERRIDE;
   virtual void AddObserver(RenderProcessHostObserver* observer) OVERRIDE;
   virtual void RemoveObserver(RenderProcessHostObserver* observer) OVERRIDE;
+  virtual size_t NumListeners() OVERRIDE;
   virtual bool WaitForBackingStoreMsg(int render_widget_id,
                                       const base::TimeDelta& max_delay,
                                       IPC::Message* msg) OVERRIDE;
@@ -120,6 +122,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual base::TimeDelta GetChildProcessIdleTime() const OVERRIDE;
   virtual void SurfaceUpdated(int32 surface_id) OVERRIDE;
   virtual void ResumeRequestsForView(int route_id) OVERRIDE;
+  virtual bool IsProcessManagedExternally() const OVERRIDE;
 
   // IPC::Sender via RenderProcessHost.
   virtual bool Send(IPC::Message* msg) OVERRIDE;
@@ -160,6 +163,12 @@ class CONTENT_EXPORT RenderProcessHostImpl
     return make_scoped_refptr(geolocation_dispatcher_host_);
   }
 
+  // This value is guaranteed to never be returned by GenerateUniqueId() below.
+  static int kInvalidId;
+
+  // Generate a new unique host id.
+  static int GenerateUniqueId();
+
   // Register/unregister the host identified by the host id in the global host
   // list.
   static void RegisterHost(int host_id, RenderProcessHost* host);
@@ -190,8 +199,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
       BrowserContext* browser_context,
       RenderProcessHost* process,
       const GURL& url);
-
-  static base::MessageLoop* GetInProcessRendererThreadForTesting();
 
   // This forces a renderer that is running "in process" to shut down.
   static void ShutDownInProcessRenderer();
@@ -252,12 +259,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // results to |*command_line|.
   void AppendRendererCommandLine(CommandLine* command_line) const;
 
-  // Copies applicable command line switches from the given |browser_cmd| line
-  // flags to the output |renderer_cmd| line flags. Not all switches will be
-  // copied over.
-  void PropagateBrowserCommandLineToRenderer(const CommandLine& browser_cmd,
-                                             CommandLine* renderer_cmd) const;
-
   // Callers can reduce the RenderProcess' priority.
   void SetBackgrounded(bool backgrounded);
 
@@ -305,9 +306,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // This is used to clear our cache five seconds after the last use.
   base::DelayTimer<RenderProcessHostImpl> cached_dibs_cleaner_;
 
-  // Used in single-process mode.
-  scoped_ptr<base::Thread> in_process_renderer_;
-
   // True after Init() has been called. We can't just check channel_ because we
   // also reset that in the case of process termination.
   bool is_initialized_;
@@ -320,6 +318,11 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // messages that are sent once the process handle is available.  This is
   // because the queued messages may have dependencies on the init messages.
   std::queue<IPC::Message*> queued_messages_;
+
+  // Handle for the renderer process if it is managed externally, otherwise
+  // this will be set to base::kNullProcessHandle (which means the
+  // RenderProcessHostImpl is the one that launches the process).
+  base::ProcessHandle externally_managed_handle_;
 
   // The globally-unique identifier for this RPH.
   int id_;

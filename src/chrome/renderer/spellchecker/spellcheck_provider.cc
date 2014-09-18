@@ -13,6 +13,8 @@
 #include "chrome/renderer/spellchecker/spellcheck.h"
 #include "content/public/renderer/render_view.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebTextCheckingCompletion.h"
 #include "third_party/WebKit/public/web/WebTextCheckingResult.h"
@@ -88,6 +90,12 @@ void SpellCheckProvider::RequestTextChecking(
 #endif  // !OS_MACOSX
 }
 
+void SpellCheckProvider::DidFinishLoad(WebKit::WebFrame* frame) {
+  if (spellcheck_->is_spellcheck_enabled()) {
+    frame->document().documentElement().requestSpellCheck();
+  }
+}
+
 bool SpellCheckProvider::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(SpellCheckProvider, message)
@@ -133,7 +141,7 @@ void SpellCheckProvider::spellCheck(
   std::vector<base::string16> suggestions;
   spellcheck_->SpellCheckWord(
       word.c_str(), word.size(), routing_id(),
-      &offset, &length, optional_suggestions ? & suggestions : NULL);
+      &offset, &length, true, optional_suggestions ? & suggestions : NULL);
   if (optional_suggestions) {
     *optional_suggestions = suggestions;
     UMA_HISTOGRAM_COUNTS("SpellCheck.api.check.suggestions", word.size());
@@ -303,8 +311,21 @@ void SpellCheckProvider::EnableSpellcheck(bool enable) {
 
   WebFrame* frame = render_view()->GetWebView()->focusedFrame();
   frame->enableContinuousSpellChecking(enable);
-  if (!enable)
+  if (!enable) {
     frame->removeSpellingMarkers();
+  }
+  else {
+    frame->document().documentElement().requestSpellCheck();
+  }
+}
+
+void SpellCheckProvider::RequestSpellcheck() {
+  if (!render_view()->GetWebView())
+    return;
+
+  WebFrame* frame = render_view()->GetWebView()->focusedFrame();
+  DCHECK(frame->isContinuousSpellCheckingEnabled());
+  frame->document().documentElement().requestSpellCheck();
 }
 
 bool SpellCheckProvider::SatisfyRequestFromCache(

@@ -61,7 +61,8 @@ RenderFrameHostManager::RenderFrameHostManager(
     RenderFrameHostDelegate* render_frame_delegate,
     RenderViewHostDelegate* render_view_delegate,
     RenderWidgetHostDelegate* render_widget_delegate,
-    Delegate* delegate)
+    Delegate* delegate,
+    int render_process_affinity)
     : delegate_(delegate),
       cross_navigation_pending_(false),
       render_frame_delegate_(render_frame_delegate),
@@ -69,7 +70,8 @@ RenderFrameHostManager::RenderFrameHostManager(
       render_widget_delegate_(render_widget_delegate),
       render_view_host_(NULL),
       pending_render_view_host_(NULL),
-      interstitial_page_(NULL) {
+      interstitial_page_(NULL),
+      render_process_affinity_(render_process_affinity) {
 }
 
 RenderFrameHostManager::~RenderFrameHostManager() {
@@ -99,6 +101,10 @@ void RenderFrameHostManager::Init(BrowserContext* browser_context,
   // ref counted.
   if (!site_instance)
     site_instance = SiteInstance::Create(browser_context);
+  // If we have affinity to a particular render process, then get the process
+  // now, or forever hold your peace.
+  if (render_process_affinity_ != SiteInstance::kNoProcessAffinity)
+    site_instance->GetProcess(render_process_affinity_);
   render_view_host_ = static_cast<RenderViewHostImpl*>(
       RenderViewHostFactory::Create(
           site_instance, render_view_delegate_, render_frame_delegate_,
@@ -970,8 +976,14 @@ RenderViewHostImpl* RenderFrameHostManager::UpdateRendererStateForNavigate(
       delegate_->GetLastCommittedNavigationEntryForRenderManager();
   bool force_swap = !is_guest_scheme &&
       ShouldSwapBrowsingInstancesForNavigation(current_entry, &entry);
-  if (!is_guest_scheme && (ShouldTransitionCrossSite() || force_swap))
+  if (!is_guest_scheme && (ShouldTransitionCrossSite() || force_swap)) {
     new_instance = GetSiteInstanceForEntry(entry, current_instance, force_swap);
+ 
+    // If we have affinity to a particular process, get it now or forever hold
+    // your peace.
+    if (render_process_affinity_ != SiteInstance::kNoProcessAffinity)
+      new_instance->GetProcess(render_process_affinity_);
+  }
 
   // If force_swap is true, we must use a different SiteInstance.  If we didn't,
   // we would have two RenderViewHosts in the same SiteInstance and the same

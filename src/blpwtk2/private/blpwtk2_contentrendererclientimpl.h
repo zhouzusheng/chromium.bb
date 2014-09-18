@@ -53,9 +53,9 @@ class ContentRendererClientImpl : public content::ContentRendererClient {
     // (lack of information on the error code) so the caller should take care to
     // initialize the string values with safe defaults before the call.
     virtual void GetNavigationErrorStrings(
-        WebKit::WebFrame* frame,
-        const WebKit::WebURLRequest& failed_request,
-        const WebKit::WebURLError& error,
+        blink::WebFrame* frame,
+        const blink::WebURLRequest& failed_request,
+        const blink::WebURLError& error,
         const std::string& accept_languages,
         std::string* error_html,
         string16* error_description) OVERRIDE;

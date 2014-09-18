@@ -50,7 +50,8 @@ class CONTENT_EXPORT FrameTree {
             RenderFrameHostDelegate* render_frame_delegate,
             RenderViewHostDelegate* render_view_delegate,
             RenderWidgetHostDelegate* render_widget_delegate,
-            RenderFrameHostManager::Delegate* manager_delegate);
+            RenderFrameHostManager::Delegate* manager_delegate,
+            int render_process_affinity);
   ~FrameTree();
 
   // Returns the FrameTreeNode with the given |frame_tree_node_id|.
@@ -106,6 +107,10 @@ class CONTENT_EXPORT FrameTree {
   void SetFrameRemoveListener(
       const base::Callback<void(RenderViewHostImpl*, int64)>& on_frame_removed);
 
+  // Returns the render process affinity, or SiteInstance::kNoProcessAffinity
+  // if there is no affinity.
+  int RenderProcessAffinity() const { return render_process_affinity_; }
+
   FrameTreeNode* root() const { return root_.get(); }
 
  private:
@@ -125,6 +130,10 @@ class CONTENT_EXPORT FrameTree {
   RenderViewHostDelegate* render_view_delegate_;
   RenderWidgetHostDelegate* render_widget_delegate_;
   RenderFrameHostManager::Delegate* manager_delegate_;
+
+  // Render process affinity, or SiteInstance::kNoProcessAffinity if there is
+  // no affinity.
+  int render_process_affinity_;
 
   scoped_ptr<FrameTreeNode> root_;
 

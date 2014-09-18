@@ -68,7 +68,7 @@ struct ContentCreatedParams {
     WindowOpenDisposition disposition;
     float x, y, width, height;
     bool x_set, y_set, width_set, height_set;
-    std::vector<std::string> additional_features;
+    std::vector<base::string16> additional_features;
 };
 
 // Objects implement this interface to get notified about changes in the
@@ -468,7 +468,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   virtual bool ShowTooltip(
       WebContents* web_contents,
       const string16& tooltip_text,
-      WebKit::WebTextDirection text_direction_hint);
+      blink::WebTextDirection text_direction_hint);
 
   // Returns the size for the new render view created for the pending entry in
   // |web_contents|; if there's no size, returns an empty size.

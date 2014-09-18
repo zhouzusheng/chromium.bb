@@ -465,7 +465,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual bool ShouldSetLogicalFocusOnMouseDown() OVERRIDE;
   virtual bool ShowTooltip(
       const string16& tooltip_text, 
-      WebKit::WebTextDirection text_direction_hint) OVERRIDE;
+      blink::WebTextDirection text_direction_hint) OVERRIDE;
   virtual void DidSendScreenRects(RenderWidgetHostImpl* rwh) OVERRIDE;
 #if defined(OS_WIN) && defined(USE_AURA)
   virtual gfx::NativeViewAccessible GetParentNativeViewAccessible() OVERRIDE;

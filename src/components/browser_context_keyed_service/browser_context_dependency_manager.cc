@@ -91,7 +91,8 @@ void BrowserContextDependencyManager::DoCreateBrowserContextServices(
     BrowserContextKeyedBaseFactory* factory =
         static_cast<BrowserContextKeyedBaseFactory*>(construction_order[i]);
 
-    factory->RegisterUserPrefsOnBrowserContext(context);
+    // TODO(SHEZ): Do we still need this?
+    factory->RegisterUserPrefsOnBrowserContextForTest(context);
 
     if (is_testing_context && factory->ServiceIsNULLWhileTesting()) {
       factory->SetEmptyTestingFactory(context);

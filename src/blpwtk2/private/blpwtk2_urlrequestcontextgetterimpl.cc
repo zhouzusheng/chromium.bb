@@ -32,6 +32,7 @@
 #include <base/threading/worker_pool.h>
 #include <content/browser/net/sqlite_persistent_cookie_store.h>
 #include <content/public/browser/browser_thread.h>
+#include <content/public/browser/cookie_crypto_delegate.h>
 #include <content/public/common/content_switches.h>
 #include <content/public/common/url_constants.h>
 #include <net/cert/cert_verifier.h>
@@ -186,7 +187,8 @@ void URLRequestContextGetterImpl::initialize()
                 content::BrowserThread::GetMessageLoopProxyForThread(
                     content::BrowserThread::FILE),
                 true,
-                0);
+                0,
+                scoped_ptr<content::CookieCryptoDelegate>());
     }
 
     const CommandLine& cmdline = *CommandLine::ForCurrentProcess();
@@ -203,7 +205,7 @@ void URLRequestContextGetterImpl::initialize()
         base::WorkerPool::GetTaskRunner(true)));
     d_storage->set_http_user_agent_settings(
         new net::StaticHttpUserAgentSettings(
-        "en-us,en", EmptyString()));
+        "en-us,en", base::EmptyString()));
 
     scoped_ptr<net::HostResolver> hostResolver
         = net::HostResolver::CreateDefaultResolver(0);

@@ -28,7 +28,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 void WebBBPrintHeader::setText(const WebString& text)
 {
@@ -172,4 +172,4 @@ WebBBPrintInfo::WebBBPrintInfo(const PassRefPtr<WebCore::BBPrintInfo>& info)
 {
 }
 
-} // namespace WebKit
+} // namespace blink

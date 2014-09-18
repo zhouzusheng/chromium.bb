@@ -58,8 +58,7 @@ std::string ChannelInfo::serialize() const
     }
     base::StringPiece sp((const char*)pickle.data(), pickle.size());
     std::string result;
-    bool check = Base64Encode(sp, &result);
-    DCHECK(check);
+    Base64Encode(sp, &result);
     return result;
 }
 

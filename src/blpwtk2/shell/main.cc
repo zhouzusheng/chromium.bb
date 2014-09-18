@@ -150,7 +150,8 @@ void toggleLanguage(blpwtk2::Profile* profile, const std::string& language);
 void testV8AppendElement(blpwtk2::WebView* webView)
 {
     blpwtk2::WebFrame* mainFrame = webView->mainFrame();
-    v8::HandleScope handleScope(mainFrame->scriptIsolate());
+    v8::Isolate* isolate = mainFrame->scriptIsolate();
+    v8::HandleScope handleScope(isolate);
     v8::Local<v8::Context> context = mainFrame->mainWorldScriptContext();
     static const char SCRIPT[] =
         "var div = document.createElement('div');\n"
@@ -158,13 +159,13 @@ void testV8AppendElement(blpwtk2::WebView* webView)
         "document.body.appendChild(div);\n";
 
     v8::Context::Scope contextScope(context);
-    v8::Local<v8::Script> script = v8::Script::New(v8::String::New(SCRIPT));
+    v8::Local<v8::Script> script = v8::Script::New(v8::String::NewFromUtf8(isolate, SCRIPT));
     assert(!script.IsEmpty());  // this should never fail to compile
 
     v8::TryCatch tryCatch;
     v8::Handle<v8::Value> result = script->Run();
     if (result.IsEmpty()) {
-        v8::String::AsciiValue msg(tryCatch.Exception());
+        v8::String::Utf8Value msg(tryCatch.Exception());
         char buf[1024];
         sprintf_s(buf, sizeof(buf), "EXCEPTION: %s\n", *msg);
         OutputDebugStringA(buf);

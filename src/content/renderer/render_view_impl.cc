@@ -2228,21 +2228,6 @@ WebView* RenderViewImpl::createView(
   params.window_container_type = WindowFeaturesToContainerType(features);
   params.session_storage_namespace_id = session_storage_namespace_id_;
 
-  params.x = features.x;
-  params.x_set = features.xSet;
-  params.y = features.y;
-  params.y_set = features.ySet;
-  params.width = features.width;
-  params.width_set = features.widthSet;
-  params.height = features.height;
-  params.height_set = features.heightSet;
-
-  const WebVector<WebString>& additionalFeatures = features.additionalFeatures;
-  size_t additionalFeatureCount = additionalFeatures.size();
-  for (size_t i = 0; i < additionalFeatureCount; ++i) {
-      params.additional_features.push_back(additionalFeatures[i].utf8());
-  }
-
   if (frame_name != "_blank")
     params.frame_name = frame_name;
   params.opener_frame_id = creator->identifier();

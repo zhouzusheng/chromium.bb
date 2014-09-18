@@ -162,7 +162,7 @@ InterstitialPageImpl::InterstitialPageImpl(
       // TODO(creis): We will also need to pass delegates for the RVHM as we
       // start to use it.
       frame_tree_(new InterstitialPageNavigatorImpl(this, controller_),
-                  NULL, NULL, NULL, NULL),
+                  NULL, NULL, NULL, NULL, SiteInstance::kNoProcessAffinity),
       original_child_id_(web_contents->GetRenderProcessHost()->GetID()),
       original_rvh_id_(web_contents->GetRenderViewHost()->GetRoutingID()),
       should_revert_web_contents_title_(false),

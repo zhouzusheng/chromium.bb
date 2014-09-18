@@ -1408,7 +1408,7 @@ void RenderThreadImpl::OnUpdateScrollbarTheme(float initial_button_delay,
 #endif
 
 void RenderThreadImpl::OnClearWebCache() {
-    WebKit::WebCache::clear();
+  blink::WebCache::clear();
 }
 
 void RenderThreadImpl::OnMemoryPressure(

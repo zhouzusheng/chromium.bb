@@ -215,7 +215,7 @@ class WebViewImpl : public WebView,
     // custom tooltip.
     virtual bool ShowTooltip(content::WebContents* source,
                              const string16& tooltip_text,
-                             WebKit::WebTextDirection text_direction_hint) OVERRIDE;
+                             blink::WebTextDirection text_direction_hint) OVERRIDE;
 
     // Information about current find request
     virtual void FindReply(content::WebContents* source_contents,

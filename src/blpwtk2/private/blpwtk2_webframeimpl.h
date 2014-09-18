@@ -29,21 +29,21 @@
 
 #include <base/compiler_specific.h>  // for OVERRIDE
 
-namespace WebKit {
+namespace blink {
     class WebFrame;
-}  // close namespace WebKit
+}  // close namespace blink
 
 namespace blpwtk2 {
 
 // This is the implementation of the blpwtk2::WebFrame interface.
 class WebFrameImpl : public WebFrame {
   public:
-    WebFrameImpl(WebKit::WebFrame* impl);
+    WebFrameImpl(blink::WebFrame* impl);
     virtual v8::Local<v8::Context> mainWorldScriptContext() const OVERRIDE;
     virtual v8::Isolate* scriptIsolate() const OVERRIDE;
 
   private:
-    WebKit::WebFrame* d_impl;
+    blink::WebFrame* d_impl;
 };
 
 }  // close namespace blpwtk2

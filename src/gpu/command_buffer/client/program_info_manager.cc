@@ -403,7 +403,7 @@ void CachedProgramInfoManager::CreateInfo(GLuint program) {
 }
 
 void CachedProgramInfoManager::DeleteInfo(GLuint program) {
-  AutoLock auto_lock(lock_);
+  base::AutoLock auto_lock(lock_);
   program_infos_.erase(program);
 }
 

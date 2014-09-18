@@ -59,7 +59,7 @@
 // (from the application's main thread, i.e. the render-thread), we post a
 // message to the secondary browser-main thread, which sets up the window for
 // the web content.  If it is an in-process WebView, then the browser thread
-// will post back to the render thread to setup the WebKit::WebView, otherwise
+// will post back to the render thread to setup the blink::WebView, otherwise
 // it will post to an external renderer process.
 //
 // Some caveats of this design:

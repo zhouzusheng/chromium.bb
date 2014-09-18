@@ -355,7 +355,7 @@ WebContentsImpl::WebContentsImpl(
       accessible_parent_(NULL),
 #endif
       frame_tree_(new NavigatorImpl(&controller_, this),
-                  this, this, this, this),
+                  this, this, this, this, render_process_affinity),
       is_loading_(false),
       crashed_status_(base::TERMINATION_STATUS_STILL_RUNNING),
       crashed_error_code_(0),
@@ -1231,7 +1231,7 @@ bool WebContentsImpl::ShouldSetLogicalFocusOnMouseDown() {
 
 bool WebContentsImpl::ShowTooltip(
     const string16& tooltip_text,
-    WebKit::WebTextDirection text_direction_hint) {
+    blink::WebTextDirection text_direction_hint) {
   if (delegate_) {
     return delegate_->ShowTooltip(this, tooltip_text, text_direction_hint);
   }
@@ -1369,7 +1369,7 @@ void WebContentsImpl::CreateNewWindow(
   WebContentsImpl* new_contents =
       new WebContentsImpl(GetBrowserContext(),
                           params.opener_suppressed ? NULL : this,
-                          render_manager_.RenderProcessAffinity());
+                          frame_tree_.RenderProcessAffinity());
 
   new_contents->GetController().SetSessionStorageNamespace(
       partition_id,
@@ -1415,14 +1415,14 @@ void WebContentsImpl::CreateNewWindow(
   if (delegate_) {
     ContentCreatedParams delegate_params;
     delegate_params.disposition = params.disposition;
-    delegate_params.x = params.x;
-    delegate_params.y = params.y;
-    delegate_params.width = params.width;
-    delegate_params.height = params.height;
-    delegate_params.x_set = params.x_set;
-    delegate_params.y_set = params.y_set;
-    delegate_params.width_set = params.width_set;
-    delegate_params.height_set = params.height_set;
+    delegate_params.x = params.features.x;
+    delegate_params.y = params.features.y;
+    delegate_params.width = params.features.width;
+    delegate_params.height = params.features.height;
+    delegate_params.x_set = params.features.xSet;
+    delegate_params.y_set = params.features.ySet;
+    delegate_params.width_set = params.features.widthSet;
+    delegate_params.height_set = params.features.heightSet;
     delegate_params.additional_features = params.additional_features;
     delegate_->WebContentsCreated(
         this, params.opener_frame_id, params.frame_name,

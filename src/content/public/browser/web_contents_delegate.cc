@@ -178,7 +178,7 @@ bool WebContentsDelegate::ShouldSetLogicalFocusOnMouseDown() {
 bool WebContentsDelegate::ShowTooltip(
     WebContents* web_contents,
     const string16& tooltip_text,
-    WebKit::WebTextDirection text_direction_hint) {
+    blink::WebTextDirection text_direction_hint) {
   return false;
 }
 

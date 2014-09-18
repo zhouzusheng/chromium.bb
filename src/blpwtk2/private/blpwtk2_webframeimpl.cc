@@ -26,7 +26,7 @@
 
 namespace blpwtk2 {
 
-WebFrameImpl::WebFrameImpl(WebKit::WebFrame* impl)
+WebFrameImpl::WebFrameImpl(blink::WebFrame* impl)
 : d_impl(impl)
 {
 }

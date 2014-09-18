@@ -90,7 +90,7 @@ void SpellCheckProvider::RequestTextChecking(
 #endif  // !OS_MACOSX
 }
 
-void SpellCheckProvider::DidFinishLoad(WebKit::WebFrame* frame) {
+void SpellCheckProvider::DidFinishLoad(blink::WebFrame* frame) {
   if (spellcheck_->is_spellcheck_enabled()) {
     frame->document().documentElement().requestSpellCheck();
   }

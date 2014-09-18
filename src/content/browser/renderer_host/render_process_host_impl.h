@@ -200,9 +200,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
       RenderProcessHost* process,
       const GURL& url);
 
-  // This forces a renderer that is running "in process" to shut down.
-  static void ShutDownInProcessRenderer();
-
 #if defined(OS_ANDROID)
   const scoped_refptr<BrowserDemuxerAndroid>& browser_demuxer_android() {
     return browser_demuxer_android_;

@@ -57,7 +57,7 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // the tooltip and return 'true'. By default, the delegate doesn't provide a
   // custom tooltip.
   virtual bool ShowTooltip(const string16& tooltip_text,
-                           WebKit::WebTextDirection text_direction_hint);
+                           blink::WebTextDirection text_direction_hint);
 
   // Notifies that screen rects were sent to renderer process.
   virtual void DidSendScreenRects(RenderWidgetHostImpl* rwh) {}

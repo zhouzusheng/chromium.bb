@@ -184,7 +184,7 @@ void WebElement::requestSpellCheck()
                 WebElement documentElement = contentDocument->documentElement();
                 documentElement.requestSpellCheck();
             }
-            element = ElementTraversal::nextSkippingChildren(element, stayWithin);
+            element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
         }
         else if (element->isTextFormControl()) {
             HTMLElement* innerElement = toHTMLTextFormControlElement(element)->innerTextElement();
@@ -192,15 +192,15 @@ void WebElement::requestSpellCheck()
                 RefPtr<Range> rangeToCheck = Range::create(innerElement->document(), firstPositionInNode(innerElement), lastPositionInNode(innerElement));
                 spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
             }
-            element = ElementTraversal::nextSkippingChildren(element, stayWithin);
+            element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
         }
         else if (element->rendererIsEditable()) {
             RefPtr<Range> rangeToCheck = Range::create(element->document(), firstPositionInNode(element), lastPositionInNode(element));
             spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
-            element = ElementTraversal::nextSkippingChildren(element, stayWithin);
+            element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
         }
         else {
-            element = ElementTraversal::next(element, stayWithin);
+            element = ElementTraversal::next(*element, stayWithin);
         }
     }
 }

@@ -401,14 +401,4 @@ void SpellcheckService::OnUseSpellingServiceChanged() {
       prefs::kSpellCheckUseSpellingService);
   if (metrics_)
     metrics_->RecordSpellingServiceStats(enabled);
-  UpdateFeedbackSenderState();
-}
-
-void SpellcheckService::UpdateFeedbackSenderState() {
-  if (SpellingServiceClient::IsAvailable(
-          context_, SpellingServiceClient::SPELLCHECK)) {
-    feedback_sender_->StartFeedbackCollection();
-  } else {
-    feedback_sender_->StopFeedbackCollection();
-  }
 }

@@ -253,10 +253,6 @@ class CONTENT_EXPORT RenderFrameHostManager
   // to a new process after this completes or times out.
   void SwapOutOldPage();
 
-  // Returns the render process affinity, or SiteInstance::kNoProcessAffinity
-  // if there is no affinity.
-  int RenderProcessAffinity() const { return render_process_affinity_; }
-
  private:
   friend class RenderFrameHostManagerTest;
   friend class TestWebContents;

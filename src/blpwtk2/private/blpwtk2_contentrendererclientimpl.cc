@@ -69,17 +69,16 @@ void ContentRendererClientImpl::RenderViewCreated(
 }
 
 void ContentRendererClientImpl::GetNavigationErrorStrings(
-    WebKit::WebFrame* frame,
-    const WebKit::WebURLRequest& failed_request,
-    const WebKit::WebURLError& error,
+    blink::WebFrame* frame,
+    const blink::WebURLRequest& failed_request,
+    const blink::WebURLError& error,
     const std::string& accept_languages,
     std::string* error_html,
     string16* error_description)
 {
     GURL gurl = failed_request.url();
 
-    WebKit::WebCString webcs_domain = error.domain.utf8();
-    std::string domain(webcs_domain.data(), webcs_domain.length());
+    std::string domain = error.domain.utf8();
 
     std::string description;
     if (0 == strcmp(domain.c_str(), net::kErrorDomain)) {
@@ -93,8 +92,7 @@ void ContentRendererClientImpl::GetNavigationErrorStrings(
         errorCode = tmp;
     }
 
-    WebKit::WebCString webcs_localdesc = error.localizedDescription.utf8();
-    std::string localdesc(webcs_localdesc.data(), webcs_localdesc.length());
+    std::string localdesc = error.localizedDescription.utf8();
 
     if (error_html) {
         *error_html = "<h2>Navigation Error</h2>";

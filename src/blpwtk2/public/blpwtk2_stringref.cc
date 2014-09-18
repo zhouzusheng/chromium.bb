@@ -26,9 +26,9 @@
 
 namespace blpwtk2 {
 
-WebKit::WebString toWebString(const StringRef& ref)
+blink::WebString toWebString(const StringRef& ref)
 {
-    return WebKit::WebString::fromUTF8(ref.data(), ref.length());
+    return blink::WebString::fromUTF8(ref.data(), ref.length());
 }
 
 }  // close namespace blpwtk2

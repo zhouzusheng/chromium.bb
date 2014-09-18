@@ -32,7 +32,7 @@ namespace WebCore {
     class BBPrintHeader;
 }
 
-namespace WebKit {
+namespace blink {
 
 class WebString;
 
@@ -118,6 +118,6 @@ private:
     WebPrivatePtr<WebCore::BBPrintInfo> m_private;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

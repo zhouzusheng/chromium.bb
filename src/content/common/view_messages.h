@@ -376,22 +376,6 @@ IPC_STRUCT_BEGIN(ViewHostMsg_CreateWindow_Params)
   // The window features to use for the new view.
   IPC_STRUCT_MEMBER(blink::WebWindowFeatures, features)
 
-  // The x-coordinate of the window, only valid if x_set.
-  IPC_STRUCT_MEMBER(float, x)
-  IPC_STRUCT_MEMBER(bool, x_set)
-
-  // The y-coordinate of the window, only valid if y_set.
-  IPC_STRUCT_MEMBER(float, y)
-  IPC_STRUCT_MEMBER(bool, y_set)
-
-  // The width of the window, only valid if width_set.
-  IPC_STRUCT_MEMBER(float, width)
-  IPC_STRUCT_MEMBER(bool, width_set)
-
-  // The height of the window, only valid if height_set.
-  IPC_STRUCT_MEMBER(float, height)
-  IPC_STRUCT_MEMBER(bool, height_set)
-
   // The additional window features to use for the new view. We pass these
   // separately from |features| above because we cannot serialize WebStrings
   // over IPC.
@@ -1328,13 +1312,13 @@ IPC_MESSAGE_CONTROL4(ViewMsg_UpdateScrollbarTheme,
                      bool /* redraw */)
 #endif
 
+// Tells the renderer to clear unused resources from its global web cache
+IPC_MESSAGE_CONTROL0(ViewMsg_ClearWebCache)
+
 #if defined(OS_ANDROID)
 // Tells the renderer to suspend/resume the webkit timers.
 IPC_MESSAGE_CONTROL1(ViewMsg_SetWebKitSharedTimersSuspended,
                      bool /* suspend */)
-
-// Tells the renderer to clear unused resources from its global web cache
-IPC_MESSAGE_CONTROL0(ViewMsg_ClearWebCache)
 
 // Sent when the browser wants the bounding boxes of the current find matches.
 //

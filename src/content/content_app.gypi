@@ -12,6 +12,10 @@
     '../crypto/crypto.gyp:crypto',
     '../ui/gfx/gfx.gyp:gfx',
     '../ui/ui.gyp:ui',
+
+    # SHEZ: Added this so that we can initialize V8's ICU in
+    #       content_main_runner.
+    '../v8/tools/gyp/v8.gyp:v8',
   ],
   'sources': [
     'app/android/app_jni_registrar.cc',

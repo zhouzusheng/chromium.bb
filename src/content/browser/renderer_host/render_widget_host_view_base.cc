@@ -221,7 +221,8 @@ void RenderWidgetHostViewBase::MovePluginWindowsHelper(
   std::vector<RECT> invalidate_rects;
 #endif
 
-  for (size_t i = 0; i < moves.size(); ++i) {
+  int failure_count = 0;
+  for (int i = 0; i < (int)moves.size(); ++i) {
     unsigned long flags = 0;
     const WebPluginGeometry& move = moves[i];
     HWND window = move.window;
@@ -322,7 +323,33 @@ void RenderWidgetHostViewBase::MovePluginWindowsHelper(
                                              flags);
 
     if (!defer_window_pos_info) {
-      DCHECK(false) << "DeferWindowPos failed, so all plugin moves ignored.";
+      DWORD lastError = GetLastError();
+      if (lastError == ERROR_INVALID_WINDOW_HANDLE) {
+        // The window might have become invalid since the last time we checked
+        // it (at the beginning of this loop).  In this case, let's start
+        // again.
+        DCHECK(!::IsWindow(window));
+
+        ++failure_count;
+        int remaining = moves.size() - failure_count;
+        if (0 == remaining) {
+          return;
+        }
+
+        defer_window_pos_info = ::BeginDeferWindowPos(remaining);
+
+        if (!defer_window_pos_info) {
+          NOTREACHED();
+          return;
+        }
+
+        // Note that we set i to -1 here so that it increments up to 0 by the
+        // for-loop.
+        i = -1;
+        continue;
+      }
+      DCHECK(false) << "DeferWindowPos failed, so all plugin moves ignored: "
+                    << lastError;
       return;
     }
   }

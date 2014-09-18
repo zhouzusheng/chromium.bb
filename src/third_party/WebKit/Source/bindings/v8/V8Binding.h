@@ -618,6 +618,8 @@ namespace WebCore {
         return v8::String::NewFromUtf8(isolate, str, v8::String::kInternalizedString, length);
     }
 
+    bool isNonWindowContextsAllowed();
+    void setNonWindowContextsAllowed(bool allowed);
 
     v8::Handle<v8::FunctionTemplate> createRawTemplate(v8::Isolate*);
 

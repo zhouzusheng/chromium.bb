@@ -2520,6 +2520,10 @@ int RenderWidgetHostViewAura::GetNonClientComponent(
   return HTCLIENT;
 }
 
+bool RenderWidgetHostViewAura::ShouldTryFocusOnMouseDown() const {
+  return !host_ || host_->ShouldSetLogicalFocusOnMouseDown();
+}
+
 bool RenderWidgetHostViewAura::ShouldDescendIntoChildForEventHandling(
     aura::Window* child,
     const gfx::Point& location) {
@@ -2786,7 +2790,7 @@ void RenderWidgetHostViewAura::OnMouseEvent(ui::MouseEvent* event) {
         host_->ForwardMouseEvent(mouse_event);
         // Ensure that we get keyboard focus on mouse down as a plugin window
         // may have grabbed keyboard focus.
-        if (event->type() == ui::ET_MOUSE_PRESSED)
+        if (event->type() == ui::ET_MOUSE_PRESSED && host_->ShouldSetKeyboardFocusOnMouseDown())
           SetKeyboardFocus();
       }
     }
@@ -2834,7 +2838,7 @@ void RenderWidgetHostViewAura::OnMouseEvent(ui::MouseEvent* event) {
     host_->ForwardMouseEvent(mouse_event);
     // Ensure that we get keyboard focus on mouse down as a plugin window may
     // have grabbed keyboard focus.
-    if (event->type() == ui::ET_MOUSE_PRESSED)
+    if (event->type() == ui::ET_MOUSE_PRESSED && host_->ShouldSetKeyboardFocusOnMouseDown())
       SetKeyboardFocus();
   }
 
@@ -3041,7 +3045,7 @@ void RenderWidgetHostViewAura::OnWindowFocused(aura::Window* gained_focus,
     }
   } else if (window_ == lost_focus) {
     host_->SetActive(false);
-    host_->Blur();
+    host_->LostFocus();
 
     DetachFromInputMethod();
     host_->SetInputMethodActive(false);

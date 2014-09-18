@@ -34,6 +34,7 @@ typedef std::vector<base::NativeLibrary> LibraryArray;
 GLImplementation g_gl_implementation = kGLImplementationNone;
 LibraryArray* g_libraries;
 GLGetProcAddressProc g_get_proc_address;
+const char* g_blpangle_dll_name;
 
 void CleanupNativeLibraries(void* unused) {
   if (g_libraries) {
@@ -53,7 +54,7 @@ bool ExportsCoreFunctionsFromGetProcAddress(GLImplementation implementation) {
     case kGLImplementationMockGL:
       return true;
     case kGLImplementationEGLGLES2:
-      return false;
+      return 0 != g_blpangle_dll_name;
     default:
       NOTREACHED();
       return true;
@@ -135,6 +136,14 @@ void UnloadGLNativeLibraries() {
 void SetGLGetProcAddressProc(GLGetProcAddressProc proc) {
   DCHECK(proc);
   g_get_proc_address = proc;
+}
+
+void SetBLPAngleDLLName(const char* dllName) {
+  g_blpangle_dll_name = dllName;
+}
+
+const char* GetBLPAngleDLLName() {
+  return g_blpangle_dll_name;
 }
 
 void* GetGLCoreProcAddress(const char* name) {

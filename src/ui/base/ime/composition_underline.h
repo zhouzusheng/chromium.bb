@@ -7,8 +7,6 @@
 
 #include <vector>
 
-#include "third_party/skia/include/core/SkColor.h"
-
 namespace ui {
 
 // Intentionally keep sync with blink::WebCompositionUnderline defined in:
@@ -17,19 +15,16 @@ struct CompositionUnderline {
   CompositionUnderline()
     : start_offset(0),
       end_offset(0),
-      color(0),
       thick(false) {}
 
-  CompositionUnderline(unsigned s, unsigned e, SkColor c, bool t)
+  CompositionUnderline(unsigned s, unsigned e, bool t)
     : start_offset(s),
       end_offset(e),
-      color(c),
       thick(t) {}
 
   bool operator==(const CompositionUnderline& rhs) const {
     return (this->start_offset == rhs.start_offset) &&
         (this->end_offset == rhs.end_offset) &&
-        (this->color == rhs.color) &&
         (this->thick == rhs.thick);
   }
 
@@ -41,7 +36,6 @@ struct CompositionUnderline {
   // identical to blink::WebCompositionUnderline.
   unsigned start_offset;
   unsigned end_offset;
-  SkColor color;
   bool thick;
 };
 

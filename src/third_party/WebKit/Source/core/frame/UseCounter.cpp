@@ -511,7 +511,6 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
         return 0;
     }
 
-    ASSERT_NOT_REACHED();
     return 0;
 }
 

@@ -1192,10 +1192,27 @@ void RenderText::setSelectionState(SelectionState state)
         containingBlock->setSelectionState(state);
 }
 
+extern bool g_bbNoRelayoutOnSetCharacterData;
+
+bool shouldSkipRelayoutOnSetText(const RenderText* rt)
+{
+    return g_bbNoRelayoutOnSetCharacterData
+        && rt->firstTextBox()
+        && rt->firstTextBox() == rt->lastTextBox();
+}
+
 void RenderText::setTextWithOffset(PassRefPtr<StringImpl> text, unsigned offset, unsigned len, bool force)
 {
     if (!force && equal(m_text.impl(), text.get()))
         return;
+
+    if (shouldSkipRelayoutOnSetText(this)) {
+        firstTextBox()->setStart(0);
+        firstTextBox()->setLen(text->length());
+        m_linesDirty = false;
+        setText(text, force);
+        return;
+    }
 
     unsigned oldLen = textLength();
     unsigned newLen = text->length();
@@ -1385,7 +1402,10 @@ void RenderText::setText(PassRefPtr<StringImpl> text, bool force)
         return;
 
     setTextInternal(text);
-    setNeedsLayoutAndPrefWidthsRecalc();
+    if (shouldSkipRelayoutOnSetText(this))
+        parent()->repaint();
+    else
+        setNeedsLayoutAndPrefWidthsRecalc();
     m_knownToHaveNoOverflowAndNoFallbackFonts = false;
 
     if (AXObjectCache* cache = document().existingAXObjectCache())

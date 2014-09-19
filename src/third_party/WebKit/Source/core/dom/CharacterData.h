@@ -35,6 +35,7 @@ public:
     void atomize();
     String data() const { return m_data; }
     void setData(const String&);
+    void bbSetDataNoRelayout(const String&);
     unsigned length() const { return m_data.length(); }
     String substringData(unsigned offset, unsigned count, ExceptionState&);
     void appendData(const String&);

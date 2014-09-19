@@ -813,7 +813,6 @@ bool TSFTextStore::GetCompositionStatus(
       CompositionUnderline underline;
       underline.start_offset = start_pos;
       underline.end_offset = start_pos + length;
-      underline.color = SK_ColorBLACK;
       if (has_display_attribute)
         underline.thick = !!display_attribute.fBoldLine;
       undelines->push_back(underline);

@@ -929,6 +929,7 @@ void DragController::doSystemDrag(DragImage* image, const IntPoint& dragLocation
 {
     m_didInitiateDrag = true;
     m_dragInitiator = frame->document();
+
     // Protect this frame and view, as a load may occur mid drag and attempt to unload this frame
     RefPtr<Frame> frameProtector = m_page->mainFrame();
     RefPtr<FrameView> viewProtector = frameProtector->view();

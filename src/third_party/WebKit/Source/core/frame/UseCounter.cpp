@@ -27,6 +27,7 @@
 #include "config.h"
 #include "core/frame/UseCounter.h"
 
+#include "bindings/v8/V8Binding.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Document.h"
@@ -579,6 +580,8 @@ void UseCounter::count(const Document& document, Feature feature)
 
 void UseCounter::count(const DOMWindow* domWindow, Feature feature)
 {
+    if (isNonWindowContextsAllowed() && !domWindow)
+        return;
     ASSERT(domWindow);
     if (!domWindow->document())
         return;

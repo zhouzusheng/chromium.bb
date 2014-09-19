@@ -65,6 +65,7 @@ public:
 
     void setIsolatedWorldField(v8::Handle<v8::Context>);
 
+    static bool contextHasCorrectPrototype(v8::Handle<v8::Context>);
     static DOMWrapperWorld* isolatedWorld(v8::Handle<v8::Context> context)
     {
         ASSERT(contextHasCorrectPrototype(context));
@@ -115,7 +116,6 @@ public:
 private:
     static unsigned isolatedWorldCount;
     static PassRefPtr<DOMWrapperWorld> createMainWorld();
-    static bool contextHasCorrectPrototype(v8::Handle<v8::Context>);
 
     DOMWrapperWorld(int worldId, int extensionGroup);
 

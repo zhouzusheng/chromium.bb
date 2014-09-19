@@ -237,7 +237,10 @@ void SpellcheckService::OnCustomDictionaryChanged(
   for (content::RenderProcessHost::iterator i(
           content::RenderProcessHost::AllHostsIterator());
        !i.IsAtEnd(); i.Advance()) {
-    i.GetCurrentValue()->Send(new SpellCheckMsg_CustomDictionaryChanged(
+    content::RenderProcessHost* process = i.GetCurrentValue();
+    if (!process || context_ != process->GetBrowserContext())
+      continue;
+    process->Send(new SpellCheckMsg_CustomDictionaryChanged(
         dictionary_change.to_add(),
         dictionary_change.to_remove()));
   }
@@ -287,6 +290,8 @@ void SpellcheckService::OnEnableAutoSpellCorrectChanged() {
            content::RenderProcessHost::AllHostsIterator());
        !i.IsAtEnd(); i.Advance()) {
     content::RenderProcessHost* process = i.GetCurrentValue();
+    if (!process || context_ != process->GetBrowserContext())
+      continue;
     process->Send(new SpellCheckMsg_EnableAutoSpellCorrect(enabled));
   }
 }

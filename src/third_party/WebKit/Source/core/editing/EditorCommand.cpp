@@ -39,8 +39,10 @@
 #include "core/events/Event.h"
 #include "core/editing/CreateLinkCommand.h"
 #include "core/editing/FormatBlockCommand.h"
+#include "core/editing/IndentBlockCommand.h"
 #include "core/editing/IndentOutdentCommand.h"
 #include "core/editing/InsertListCommand.h"
+#include "core/editing/OutdentBlockCommand.h"
 #include "core/editing/ReplaceSelectionCommand.h"
 #include "core/editing/SpellChecker.h"
 #include "core/editing/TypingCommand.h"
@@ -476,6 +478,13 @@ static bool executeIndent(Frame& frame, Event*, EditorCommandSource, const Strin
 {
     ASSERT(frame.document());
     IndentOutdentCommand::create(*frame.document(), IndentOutdentCommand::Indent)->apply();
+    return true;
+}
+
+static bool executeIndentBlock(Frame& frame, Event*, EditorCommandSource, const String&)
+{
+    ASSERT(frame.document());
+    IndentBlockCommand::create(*frame.document())->apply();
     return true;
 }
 
@@ -918,6 +927,13 @@ static bool executeOutdent(Frame& frame, Event*, EditorCommandSource, const Stri
 {
     ASSERT(frame.document());
     IndentOutdentCommand::create(*frame.document(), IndentOutdentCommand::Outdent)->apply();
+    return true;
+}
+
+static bool executeOutdentBlock(Frame& frame, Event*, EditorCommandSource, const String&)
+{
+    ASSERT(frame.document());
+    OutdentBlockCommand::create(*frame.document())->apply();
     return true;
 }
 
@@ -1467,6 +1483,7 @@ static const CommandMap& createCommandMap()
         { "HiliteColor", { executeBackColor, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "IgnoreSpelling", { executeIgnoreSpelling, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "Indent", { executeIndent, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "IndentBlock", { executeIndentBlock, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "InsertBacktab", { executeInsertBacktab, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, isTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "InsertHTML", { executeInsertHTML, supported, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "InsertHorizontalRule", { executeInsertHorizontalRule, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
@@ -1537,6 +1554,7 @@ static const CommandMap& createCommandMap()
         { "MoveWordRight", { executeMoveWordRight, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "MoveWordRightAndModifySelection", { executeMoveWordRightAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "Outdent", { executeOutdent, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "OutdentBlock", { executeOutdentBlock, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "OverWrite", { executeToggleOverwrite, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "Paste", { executePaste, supportedPaste, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
         { "PasteAndMatchStyle", { executePasteAndMatchStyle, supportedPaste, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },

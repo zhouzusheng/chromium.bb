@@ -37,6 +37,11 @@ cr.define('gpu', function() {
       // Client info
       if (browserBridge.clientInfo) {
         var clientInfo = browserBridge.clientInfo;
+
+        var commandLineParts = clientInfo.command_line.split(' ');
+        commandLineParts.shift(); // Pop off the exe path
+        var commandLineString = commandLineParts.join(' ')
+
         this.setTable_('client-info', [
           {
             description: 'Data exported',
@@ -65,6 +70,10 @@ cr.define('gpu', function() {
           {
             description: '2D graphics backend',
             value: clientInfo.graphics_backend
+          },
+          {
+            description: 'Command Line Args',
+            value: commandLineString
           }]);
       } else {
         this.setText_('client-info', '... loading...');
@@ -83,6 +92,7 @@ cr.define('gpu', function() {
         'flash_stage3d_baseline': 'Flash Stage3D Baseline profile',
         'texture_sharing': 'Texture Sharing',
         'video_decode': 'Video Decode',
+        'video_encode': 'Video Encode',
         'video': 'Video',
         // GPU Switching
         'gpu_switching': 'GPU Switching',

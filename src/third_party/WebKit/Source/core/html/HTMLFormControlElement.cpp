@@ -35,7 +35,7 @@
 #include "core/html/HTMLTextAreaElement.h"
 #include "core/html/ValidityState.h"
 #include "core/html/forms/ValidationMessage.h"
-#include "core/page/UseCounter.h"
+#include "core/frame/UseCounter.h"
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/RenderTheme.h"
 #include "wtf/Vector.h"
@@ -78,7 +78,7 @@ String HTMLFormControlElement::formEnctype() const
     return FormSubmission::Attributes::parseEncodingType(formEnctypeAttr);
 }
 
-void HTMLFormControlElement::setFormEnctype(const String& value)
+void HTMLFormControlElement::setFormEnctype(const AtomicString& value)
 {
     setAttribute(formenctypeAttr, value);
 }
@@ -91,7 +91,7 @@ String HTMLFormControlElement::formMethod() const
     return FormSubmission::Attributes::methodString(FormSubmission::Attributes::parseMethodType(formMethodAttr));
 }
 
-void HTMLFormControlElement::setFormMethod(const String& value)
+void HTMLFormControlElement::setFormMethod(const AtomicString& value)
 {
     setAttribute(formmethodAttr, value);
 }
@@ -297,6 +297,11 @@ void HTMLFormControlElement::dispatchFormControlInputEvent()
     HTMLElement::dispatchInputEvent();
 }
 
+HTMLFormElement* HTMLFormControlElement::formOwner() const
+{
+    return FormAssociatedElement::form();
+}
+
 bool HTMLFormControlElement::isDisabledFormControl() const
 {
     if (m_disabled)
@@ -498,9 +503,9 @@ void HTMLFormControlElement::dispatchBlurEvent(Element* newFocusedElement)
     hideVisibleValidationMessage();
 }
 
-HTMLFormElement* HTMLFormControlElement::virtualForm() const
+bool HTMLFormControlElement::isSuccessfulSubmitButton() const
 {
-    return FormAssociatedElement::form();
+    return canBeSuccessfulSubmitButton() && !isDisabledFormControl();
 }
 
 bool HTMLFormControlElement::isDefaultButtonForForm() const
@@ -515,6 +520,17 @@ HTMLFormControlElement* HTMLFormControlElement::enclosingFormControlElement(Node
             return toHTMLFormControlElement(node);
     }
     return 0;
+}
+
+String HTMLFormControlElement::nameForAutofill() const
+{
+    String fullName = name();
+    String trimmedName = fullName.stripWhiteSpace();
+    if (!trimmedName.isEmpty())
+        return trimmedName;
+    fullName = getIdAttribute();
+    trimmedName = fullName.stripWhiteSpace();
+    return trimmedName;
 }
 
 } // namespace Webcore

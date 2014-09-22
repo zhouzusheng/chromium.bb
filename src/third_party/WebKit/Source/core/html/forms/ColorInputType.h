@@ -47,7 +47,7 @@ public:
     virtual IntRect elementRectRelativeToRootView() const OVERRIDE;
     virtual Color currentColor() OVERRIDE;
     virtual bool shouldShowSuggestions() const OVERRIDE;
-    virtual Vector<Color> suggestions() const OVERRIDE;
+    virtual Vector<ColorSuggestion> suggestions() const OVERRIDE;
 
 private:
     ColorInputType(HTMLInputElement& element) : BaseClickableWithKeyInputType(element) { }
@@ -60,7 +60,7 @@ private:
     virtual void createShadowSubtree() OVERRIDE;
     virtual void setValue(const String&, bool valueChanged, TextFieldEventBehavior) OVERRIDE;
     virtual void handleDOMActivateEvent(Event*) OVERRIDE;
-    virtual void detach() OVERRIDE;
+    virtual void closePopupView() OVERRIDE;
     virtual bool shouldRespectListAttribute() OVERRIDE;
     virtual bool typeMismatchFor(const String&) const OVERRIDE;
 

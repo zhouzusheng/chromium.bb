@@ -34,7 +34,7 @@
 #include <base/files/file_path.h>
 #include <base/file_util.h>
 #include <base/logging.h>  // for CHECK
-#include <base/prefs/pref_service_builder.h>
+#include <base/prefs/pref_service_factory.h>
 #include <base/prefs/pref_service.h>
 #include <base/threading/thread_restrictions.h>
 #include <chrome/browser/spellchecker/spellcheck_factory.h>
@@ -74,7 +74,7 @@ BrowserContextImpl::BrowserContextImpl(const std::string& dataDir,
 
         path = base::FilePath::FromUTF8Unsafe(dataDir);
         if (!base::PathExists(path))
-            file_util::CreateDirectory(path);
+            base::CreateDirectory(path);
     }
     else {
         // It seems that even incognito browser contexts need to return a valid
@@ -85,7 +85,7 @@ BrowserContextImpl::BrowserContextImpl(const std::string& dataDir,
 
         // allow IO during creation of temporary directory
         base::ThreadRestrictions::ScopedAllowIO allowIO;
-        file_util::CreateNewTempDirectory(L"blpwtk2_", &path);
+        base::CreateNewTempDirectory(L"blpwtk2_", &path);
     }
 
     d_requestContextGetter =
@@ -98,9 +98,9 @@ BrowserContextImpl::BrowserContextImpl(const std::string& dataDir,
         d_prefRegistry = new user_prefs::PrefRegistrySyncable();
         d_userPrefs = new PrefStore();
 
-        PrefServiceBuilder builder;
-        builder.WithUserPrefs(d_userPrefs);
-        d_prefService.reset(builder.Create(d_prefRegistry.get()));
+        base::PrefServiceFactory factory;
+        factory.set_user_prefs(d_userPrefs);
+        d_prefService = factory.Create(d_prefRegistry.get());
         user_prefs::UserPrefs::Set(this, d_prefService.get());
         d_prefRegistry->RegisterBooleanPref(
             prefs::kPrintingEnabled,

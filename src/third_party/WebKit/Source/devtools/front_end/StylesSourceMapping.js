@@ -31,8 +31,8 @@
 /**
  * @constructor
  * @implements {WebInspector.SourceMapping}
- * @param {WebInspector.CSSStyleModel} cssModel
- * @param {WebInspector.Workspace} workspace
+ * @param {!WebInspector.CSSStyleModel} cssModel
+ * @param {!WebInspector.Workspace} workspace
  */
 WebInspector.StylesSourceMapping = function(cssModel, workspace)
 {
@@ -52,8 +52,8 @@ WebInspector.StylesSourceMapping.MinorChangeUpdateTimeoutMs = 1000;
 
 WebInspector.StylesSourceMapping.prototype = {
     /**
-     * @param {WebInspector.RawLocation} rawLocation
-     * @return {WebInspector.UILocation}
+     * @param {!WebInspector.RawLocation} rawLocation
+     * @return {?WebInspector.UILocation}
      */
     rawLocationToUILocation: function(rawLocation)
     {
@@ -65,10 +65,10 @@ WebInspector.StylesSourceMapping.prototype = {
     },
 
     /**
-     * @param {WebInspector.UISourceCode} uiSourceCode
+     * @param {!WebInspector.UISourceCode} uiSourceCode
      * @param {number} lineNumber
      * @param {number} columnNumber
-     * @return {WebInspector.RawLocation}
+     * @return {!WebInspector.RawLocation}
      */
     uiLocationToRawLocation: function(uiSourceCode, lineNumber, columnNumber)
     {
@@ -76,7 +76,7 @@ WebInspector.StylesSourceMapping.prototype = {
     },
 
     /**
-     * @param {WebInspector.CSSStyleSheetHeader} header
+     * @param {!WebInspector.CSSStyleSheetHeader} header
      */
     addHeader: function(header)
     {
@@ -102,7 +102,7 @@ WebInspector.StylesSourceMapping.prototype = {
     },
 
     /**
-     * @param {WebInspector.CSSStyleSheetHeader} header
+     * @param {!WebInspector.CSSStyleSheetHeader} header
      */
     removeHeader: function(header)
     {
@@ -128,7 +128,7 @@ WebInspector.StylesSourceMapping.prototype = {
     },
 
     /**
-     * @param {WebInspector.UISourceCode} uiSourceCode
+     * @param {!WebInspector.UISourceCode} uiSourceCode
      */
     _unbindUISourceCode: function(uiSourceCode)
     {
@@ -140,11 +140,11 @@ WebInspector.StylesSourceMapping.prototype = {
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _uiSourceCodeAddedToWorkspace: function(event)
     {
-        var uiSourceCode = /** @type {WebInspector.UISourceCode} */ (event.data);
+        var uiSourceCode = /** @type {!WebInspector.UISourceCode} */ (event.data);
         var url = uiSourceCode.url;
         if (!url || !this._urlToHeadersByFrameId[url])
             return;
@@ -152,8 +152,8 @@ WebInspector.StylesSourceMapping.prototype = {
     },
 
     /**
-     * @param {WebInspector.UISourceCode} uiSourceCode
-     * @param {WebInspector.CSSStyleSheetHeader} header
+     * @param {!WebInspector.UISourceCode} uiSourceCode
+     * @param {!WebInspector.CSSStyleSheetHeader} header
      */
     _bindUISourceCode: function(uiSourceCode, header)
     {
@@ -165,22 +165,22 @@ WebInspector.StylesSourceMapping.prototype = {
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _projectWillReset: function(event)
     {
-        var project = /** @type {WebInspector.Project} */ (event.data);
+        var project = /** @type {!WebInspector.Project} */ (event.data);
         var uiSourceCodes = project.uiSourceCodes();
-        for (var i = 0; i < uiSourceCodes; ++i)
+        for (var i = 0; i < uiSourceCodes.length; ++i)
             this._unbindUISourceCode(uiSourceCodes[i]);
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _uiSourceCodeRemoved: function(event)
     {
-        var uiSourceCode = /** @type {WebInspector.UISourceCode} */ (event.data);
+        var uiSourceCode = /** @type {!WebInspector.UISourceCode} */ (event.data);
         this._unbindUISourceCode(uiSourceCode);
     },
 
@@ -188,12 +188,12 @@ WebInspector.StylesSourceMapping.prototype = {
     {
         /** @type {!Object.<string, !StringMap.<!StringMap.<!WebInspector.CSSStyleSheetHeader>>>} */
         this._urlToHeadersByFrameId = {};
-        /** @type {!Map.<WebInspector.UISourceCode, WebInspector.StyleFile>} */
+        /** @type {!Map.<!WebInspector.UISourceCode, !WebInspector.StyleFile>} */
         this._styleFiles = new Map();
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _mainFrameCreatedOrNavigated: function(event)
     {
@@ -207,7 +207,7 @@ WebInspector.StylesSourceMapping.prototype = {
     },
 
     /**
-     * @param {WebInspector.UISourceCode} uiSourceCode
+     * @param {!WebInspector.UISourceCode} uiSourceCode
      * @param {string} content
      * @param {boolean} majorChange
      * @param {function(?string)} userCallback
@@ -221,6 +221,11 @@ WebInspector.StylesSourceMapping.prototype = {
         }
 
         this._isSettingContent = true;
+
+        /**
+         * @param {?Protocol.Error} error
+         * @this {WebInspector.StylesSourceMapping}
+         */
         function callback(error)
         {
             userCallback(error);
@@ -230,7 +235,7 @@ WebInspector.StylesSourceMapping.prototype = {
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     _styleSheetChanged: function(event)
     {
@@ -246,7 +251,7 @@ WebInspector.StylesSourceMapping.prototype = {
     },
 
     /**
-     * @param {CSSAgent.StyleSheetId} styleSheetId
+     * @param {!CSSAgent.StyleSheetId} styleSheetId
      */
     _updateStyleSheetTextSoon: function(styleSheetId)
     {
@@ -257,7 +262,7 @@ WebInspector.StylesSourceMapping.prototype = {
     },
 
     /**
-     * @param {CSSAgent.StyleSheetId} styleSheetId
+     * @param {!CSSAgent.StyleSheetId} styleSheetId
      */
     _updateStyleSheetText: function(styleSheetId)
     {
@@ -271,6 +276,7 @@ WebInspector.StylesSourceMapping.prototype = {
         /**
          * @param {?string} error
          * @param {string} content
+         * @this {WebInspector.StylesSourceMapping}
          */
         function callback(error, content)
         {
@@ -280,7 +286,7 @@ WebInspector.StylesSourceMapping.prototype = {
     },
 
     /**
-     * @param {CSSAgent.StyleSheetId} styleSheetId
+     * @param {!CSSAgent.StyleSheetId} styleSheetId
      * @param {string} content
      */
     _innerStyleSheetChanged: function(styleSheetId, content)
@@ -304,8 +310,8 @@ WebInspector.StylesSourceMapping.prototype = {
 
 /**
  * @constructor
- * @param {WebInspector.UISourceCode} uiSourceCode
- * @param {WebInspector.StylesSourceMapping} mapping
+ * @param {!WebInspector.UISourceCode} uiSourceCode
+ * @param {!WebInspector.StylesSourceMapping} mapping
  */
 WebInspector.StyleFile = function(uiSourceCode, mapping)
 {

@@ -37,15 +37,33 @@ namespace WebCore {
 
 namespace {
 
-void copyToCompositableValueMap(const AnimationEffect::CompositableValueMap* source, AnimationEffect::CompositableValueMap& target)
+void copyToCompositableValueMap(const AnimationEffect::CompositableValueList* source, AnimationEffect::CompositableValueMap& target)
 {
     if (!source)
         return;
-    for (AnimationEffect::CompositableValueMap::const_iterator iter = source->begin(); iter != source->end(); ++iter)
-        target.set(iter->key, iter->value);
+    for (AnimationEffect::CompositableValueList::const_iterator iter = source->begin(); iter != source->end(); ++iter)
+        target.set(iter->first, iter->second);
 }
 
 } // namespace
+
+bool AnimationStack::affects(CSSPropertyID property) const
+{
+    for (size_t i = 0; i < m_activeAnimations.size(); ++i) {
+        if (m_activeAnimations[i]->affects(property))
+            return true;
+    }
+    return false;
+}
+
+bool AnimationStack::hasActiveAnimationsOnCompositor(CSSPropertyID property) const
+{
+    for (size_t i = 0; i < m_activeAnimations.size(); ++i) {
+        if (m_activeAnimations[i]->hasActiveAnimationsOnCompositor(property))
+            return true;
+    }
+    return false;
+}
 
 AnimationEffect::CompositableValueMap AnimationStack::compositableValues(const AnimationStack* animationStack, const Vector<InertAnimation*>* newAnimations, const HashSet<const Player*>* cancelledPlayers, Animation::Priority priority)
 {

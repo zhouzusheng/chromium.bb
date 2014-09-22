@@ -37,8 +37,8 @@
 #include "core/frame/ConsoleTypes.h"
 #include "core/frame/DOMTimer.h"
 #include "platform/LifecycleContext.h"
-#include "weborigin/KURL.h"
-#include "wtf/HashSet.h"
+#include "platform/weborigin/KURL.h"
+#include "wtf/Functional.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
@@ -54,7 +54,6 @@ class EventListener;
 class EventQueue;
 class EventTarget;
 class ExecutionContextTask;
-class MessagePort;
 class PublicURLManager;
 class SecurityOrigin;
 class ScriptCallStack;
@@ -68,7 +67,7 @@ public:
     // Delegating to ExecutionContextClient
     void setClient(ExecutionContextClient* client) { m_client = client; }
     bool isDocument() const { return m_client && m_client->isDocument(); }
-    bool isWorkerGlobalScope() { return m_client && m_client->isWorkerGlobalScope(); }
+    bool isWorkerGlobalScope() const { return m_client && m_client->isWorkerGlobalScope(); }
     bool isJSExecutionForbidden() { return m_client && m_client->isJSExecutionForbidden(); }
     SecurityOrigin* securityOrigin() const;
     ContentSecurityPolicy* contentSecurityPolicy() const;
@@ -79,6 +78,7 @@ public:
     DOMWindow* executingWindow() const;
     String userAgent(const KURL&) const;
     void postTask(PassOwnPtr<ExecutionContextTask>);
+    void postTask(const Closure&);
     double timerAlignmentInterval() const;
 
     bool shouldSanitizeScriptError(const String& sourceURL, AccessControlStatus);
@@ -96,19 +96,16 @@ public:
     void resumeActiveDOMObjects();
     void stopActiveDOMObjects();
 
+    virtual void suspendScheduledTasks();
+    virtual void resumeScheduledTasks();
+    virtual bool tasksNeedSuspension() { return false; }
+
     bool activeDOMObjectsAreSuspended() const { return m_activeDOMObjectsAreSuspended; }
     bool activeDOMObjectsAreStopped() const { return m_activeDOMObjectsAreStopped; }
     bool isIteratingOverObservers() const;
 
     // Called after the construction of an ActiveDOMObject to synchronize suspend state.
     void suspendActiveDOMObjectIfNeeded(ActiveDOMObject*);
-
-    // MessagePort is conceptually a kind of ActiveDOMObject, but it needs to be tracked separately for message dispatch.
-    void processMessagePortMessagesSoon();
-    void dispatchMessagePortEvents();
-    void createdMessagePort(MessagePort*);
-    void destroyedMessagePort(MessagePort*);
-    const HashSet<MessagePort*>& messagePorts() const { return m_messagePorts; }
 
     void ref() { refExecutionContext(); }
     void deref() { derefExecutionContext(); }
@@ -135,8 +132,6 @@ private:
 
     bool dispatchErrorEvent(PassRefPtr<ErrorEvent>, AccessControlStatus);
 
-    void closeMessagePorts();
-
     virtual void refExecutionContext() = 0;
     virtual void derefExecutionContext() = 0;
     // LifecycleContext implementation.
@@ -147,7 +142,6 @@ private:
 
     ExecutionContextClient* m_client;
     SandboxFlags m_sandboxFlags;
-    HashSet<MessagePort*> m_messagePorts;
 
     int m_circularSequentialID;
     typedef HashMap<int, OwnPtr<DOMTimer> > TimeoutMap;

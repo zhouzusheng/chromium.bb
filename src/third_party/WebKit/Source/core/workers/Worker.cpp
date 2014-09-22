@@ -30,14 +30,13 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
-#include "core/events/EventListener.h"
 #include "core/events/MessageEvent.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/frame/DOMWindow.h"
-#include "core/page/UseCounter.h"
+#include "core/frame/UseCounter.h"
 #include "core/workers/WorkerGlobalScopeProxy.h"
+#include "core/workers/WorkerGlobalScopeProxyProvider.h"
 #include "core/workers/WorkerScriptLoader.h"
 #include "core/workers/WorkerThread.h"
 #include "wtf/MainThread.h"
@@ -46,21 +45,25 @@ namespace WebCore {
 
 inline Worker::Worker(ExecutionContext* context)
     : AbstractWorker(context)
-    , m_contextProxy(WorkerGlobalScopeProxy::create(this))
+    , m_contextProxy(0)
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<Worker> Worker::create(ExecutionContext* context, const String& url, ExceptionState& es)
+PassRefPtr<Worker> Worker::create(ExecutionContext* context, const String& url, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    UseCounter::count(toDocument(context)->domWindow(), UseCounter::WorkerStart);
+    Document* document = toDocument(context);
+    UseCounter::count(document->domWindow(), UseCounter::WorkerStart);
+    ASSERT(document->page());
+    WorkerGlobalScopeProxyProvider* proxyProvider = WorkerGlobalScopeProxyProvider::from(document->page());
+    ASSERT(proxyProvider);
 
     RefPtr<Worker> worker = adoptRef(new Worker(context));
 
     worker->suspendIfNeeded();
 
-    KURL scriptURL = worker->resolveURL(url, es);
+    KURL scriptURL = worker->resolveURL(url, exceptionState);
     if (scriptURL.isEmpty())
         return 0;
 
@@ -69,7 +72,7 @@ PassRefPtr<Worker> Worker::create(ExecutionContext* context, const String& url, 
 
     worker->m_scriptLoader = WorkerScriptLoader::create();
     worker->m_scriptLoader->loadAsynchronously(context, scriptURL, DenyCrossOriginRequests, worker.get());
-
+    worker->m_contextProxy = proxyProvider->createWorkerGlobalScopeProxy(worker.get());
     return worker.release();
 }
 
@@ -77,7 +80,8 @@ Worker::~Worker()
 {
     ASSERT(isMainThread());
     ASSERT(executionContext()); // The context is protected by worker context proxy, so it cannot be destroyed while a Worker exists.
-    m_contextProxy->workerObjectDestroyed();
+    if (m_contextProxy)
+        m_contextProxy->workerObjectDestroyed();
 }
 
 const AtomicString& Worker::interfaceName() const
@@ -85,11 +89,11 @@ const AtomicString& Worker::interfaceName() const
     return EventTargetNames::Worker;
 }
 
-void Worker::postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, ExceptionState& es)
+void Worker::postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, ExceptionState& exceptionState)
 {
     // Disentangle the port in preparation for sending it to the remote context.
-    OwnPtr<MessagePortChannelArray> channels = MessagePort::disentanglePorts(ports, es);
-    if (es.hadException())
+    OwnPtr<MessagePortChannelArray> channels = MessagePort::disentanglePorts(ports, exceptionState);
+    if (exceptionState.hadException())
         return;
     m_contextProxy->postMessageToWorkerGlobalScope(message, channels.release());
 }

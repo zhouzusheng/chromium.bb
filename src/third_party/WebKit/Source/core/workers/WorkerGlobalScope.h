@@ -69,6 +69,7 @@ namespace WebCore {
 
         virtual bool isSharedWorkerGlobalScope() const { return false; }
         virtual bool isDedicatedWorkerGlobalScope() const { return false; }
+        virtual bool isServiceWorkerGlobalScope() const { return false; }
 
         const KURL& url() const { return m_url; }
         KURL completeURL(const String&) const;
@@ -182,11 +183,7 @@ namespace WebCore {
         double m_timeOrigin;
     };
 
-inline WorkerGlobalScope* toWorkerGlobalScope(ExecutionContext* context)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!context || context->isWorkerGlobalScope());
-    return static_cast<WorkerGlobalScope*>(context);
-}
+DEFINE_TYPE_CASTS(WorkerGlobalScope, ExecutionContext, context, context->isWorkerGlobalScope(), context.isWorkerGlobalScope());
 
 } // namespace WebCore
 

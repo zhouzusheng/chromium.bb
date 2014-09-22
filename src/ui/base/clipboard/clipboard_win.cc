@@ -203,6 +203,10 @@ bool Clipboard::FormatType::operator<(const FormatType& other) const {
   return ToUINT() < other.ToUINT();
 }
 
+bool Clipboard::FormatType::Equals(const FormatType& other) const {
+  return ToUINT() == other.ToUINT();
+}
+
 Clipboard::Clipboard() {
   if (base::MessageLoop::current()->type() == base::MessageLoop::TYPE_UI)
     clipboard_owner_.reset(new base::win::MessageWindow());
@@ -681,7 +685,7 @@ void Clipboard::ParseBookmarkClipboardFormat(const string16& bookmark,
 }
 
 // static
-Clipboard::FormatType Clipboard::GetFormatType(
+Clipboard::FormatType Clipboard::GetFormatTypeInternal(
     const std::string& format_string) {
   return FormatType(
       ::RegisterClipboardFormat(ASCIIToWide(format_string).c_str()));
@@ -806,7 +810,7 @@ const Clipboard::FormatType& Clipboard::GetWebCustomDataFormatType() {
   CR_DEFINE_STATIC_LOCAL(
       FormatType,
       type,
-      (::RegisterClipboardFormat(L"Chromium Web Custom MIME Data Format")));
+      (GetFormatType("Chromium Web Custom MIME Data Format")));
   return type;
 }
 
@@ -815,7 +819,7 @@ const Clipboard::FormatType& Clipboard::GetPepperCustomDataFormatType() {
   CR_DEFINE_STATIC_LOCAL(
       FormatType,
       type,
-      (::RegisterClipboardFormat(L"Chromium Pepper MIME Data Format")));
+      (GetFormatType("Chromium Pepper MIME Data Format")));
   return type;
 }
 

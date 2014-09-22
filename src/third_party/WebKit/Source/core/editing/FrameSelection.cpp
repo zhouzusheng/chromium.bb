@@ -36,7 +36,6 @@
 #include "core/dom/Element.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/NodeTraversal.h"
-#include "core/dom/Range.h"
 #include "core/dom/Text.h"
 #include "core/editing/Editor.h"
 #include "core/editing/InputMethodController.h"
@@ -58,9 +57,8 @@
 #include "core/page/FrameTree.h"
 #include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
 #include "core/page/SpatialNavigation.h"
-#include "core/platform/graphics/GraphicsContext.h"
 #include "core/rendering/HitTestRequest.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/InlineTextBox.h"
@@ -70,6 +68,7 @@
 #include "core/rendering/RenderWidget.h"
 #include "platform/SecureTextInput.h"
 #include "platform/geometry/FloatQuad.h"
+#include "platform/graphics/GraphicsContext.h"
 #include "wtf/text/CString.h"
 
 #define EDIT_DEBUG 0
@@ -197,11 +196,12 @@ void FrameSelection::setNonDirectionalSelectionIfNeeded(const VisibleSelection& 
 
     VisiblePosition base = m_originalBase.isNotNull() ? m_originalBase : newSelection.visibleBase();
     VisiblePosition newBase = base;
-    VisiblePosition newExtent = newSelection.visibleExtent();
+    VisiblePosition extent = newSelection.visibleExtent();
+    VisiblePosition newExtent = extent;
     if (endpointsAdjustmentMode == AdjustEndpointsAtBidiBoundary)
         adjustEndpointsAtBidiBoundary(newBase, newExtent);
 
-    if (newBase != base || newExtent != newSelection.visibleExtent()) {
+    if (newBase != base || newExtent != extent) {
         m_originalBase = base;
         newSelection.setBase(newBase);
         newSelection.setExtent(newExtent);
@@ -313,19 +313,11 @@ static bool removingNodeRemovesPosition(Node& node, const Position& position)
     return element.containsIncludingShadowDOM(position.anchorNode());
 }
 
-static void clearRenderViewSelection(const Position& position)
-{
-    RefPtr<Document> document = position.document();
-    document->updateStyleIfNeeded();
-    if (RenderView* view = document->renderView())
-        view->clearSelection();
-}
-
 void FrameSelection::nodeWillBeRemoved(Node& node)
 {
     // There can't be a selection inside a fragment, so if a fragment's node is being removed,
     // the selection in the document that created the fragment needs no adjustment.
-    if (isNone() || !node.inDocument())
+    if (isNone() || !node.inActiveDocument())
         return;
 
     respondToNodeModification(node, removingNodeRemovesPosition(node, m_selection.base()), removingNodeRemovesPosition(node, m_selection.extent()),
@@ -334,6 +326,8 @@ void FrameSelection::nodeWillBeRemoved(Node& node)
 
 void FrameSelection::respondToNodeModification(Node& node, bool baseRemoved, bool extentRemoved, bool startRemoved, bool endRemoved)
 {
+    ASSERT(node.document().isActive());
+
     bool clearRenderTreeSelection = false;
     bool clearDOMTreeSelection = false;
 
@@ -364,9 +358,9 @@ void FrameSelection::respondToNodeModification(Node& node, bool baseRemoved, boo
         else
             m_selection.setWithoutValidation(m_selection.end(), m_selection.start());
     } else if (RefPtr<Range> range = m_selection.firstRange()) {
-        TrackExceptionState es;
-        Range::CompareResults compareResult = range->compareNode(&node, es);
-        if (!es.hadException() && (compareResult == Range::NODE_BEFORE_AND_AFTER || compareResult == Range::NODE_INSIDE)) {
+        TrackExceptionState exceptionState;
+        Range::CompareResults compareResult = range->compareNode(&node, exceptionState);
+        if (!exceptionState.hadException() && (compareResult == Range::NODE_BEFORE_AND_AFTER || compareResult == Range::NODE_INSIDE)) {
             // If we did nothing here, when this node's renderer was destroyed, the rect that it
             // occupied would be invalidated, but, selection gaps that change as a result of
             // the removal wouldn't be invalidated.
@@ -376,7 +370,7 @@ void FrameSelection::respondToNodeModification(Node& node, bool baseRemoved, boo
     }
 
     if (clearRenderTreeSelection)
-        clearRenderViewSelection(m_selection.start());
+        m_selection.start().document()->renderView()->clearSelection();
 
     if (clearDOMTreeSelection)
         setSelection(VisibleSelection(), DoNotSetFocus);
@@ -1432,9 +1426,9 @@ bool FrameSelection::setSelectedRange(Range* range, EAffinity affinity, bool clo
 
     // Non-collapsed ranges are not allowed to start at the end of a line that is wrapped,
     // they start at the beginning of the next line instead
-    TrackExceptionState es;
-    bool collapsed = range->collapsed(es);
-    if (es.hadException())
+    TrackExceptionState exceptionState;
+    bool collapsed = range->collapsed(exceptionState);
+    if (exceptionState.hadException())
         return false;
 
     // FIXME: Can we provide extentAffinity?
@@ -1481,16 +1475,10 @@ void FrameSelection::focusedOrActiveStateChanged()
     // Update for caps lock state
     m_frame->eventHandler().capsLockStateMayHaveChanged();
 
-    // Because StyleResolver::checkOneSelector() and
-    // RenderTheme::isFocused() check if the frame is active, we have to
-    // update style and theme state that depended on those.
-    if (Element* element = document->focusedElement()) {
-        element->setNeedsStyleRecalc();
-        if (RenderObject* renderer = element->renderer()) {
-            if (renderer && renderer->style()->hasAppearance())
-                RenderTheme::theme().stateChanged(renderer, FocusState);
-        }
-    }
+    // We may have lost active status even though the focusElement hasn't changed
+    // give the element a chance to recalc style if its affected by focus.
+    if (Element* element = document->focusedElement())
+        element->focusStateChanged();
 
     // Secure keyboard entry is set by the active frame.
     if (document->useSecureKeyboardEntryWhenActive())
@@ -1747,12 +1735,15 @@ static HTMLFormElement* scanForForm(Node* start)
 {
     if (!start)
         return 0;
-    Element* element = start->isElementNode() ? toElement(start) : ElementTraversal::next(start);
-    for (; element; element = ElementTraversal::next(element)) {
+    Element* element = start->isElementNode() ? toElement(start) : ElementTraversal::next(*start);
+    for (; element; element = ElementTraversal::next(*element)) {
         if (element->hasTagName(formTag))
             return toHTMLFormElement(element);
-        if (element->isHTMLElement() && toHTMLElement(element)->isFormControlElement())
-            return toHTMLFormControlElement(element)->form();
+        if (element->isHTMLElement()) {
+            HTMLFormElement* owner = toHTMLElement(element)->formOwner();
+            if (owner)
+                return owner;
+        }
         if (element->hasTagName(frameTag) || element->hasTagName(iframeTag)) {
             Node* childDocument = toHTMLFrameElementBase(element)->contentDocument();
             if (HTMLFormElement* frameResult = scanForForm(childDocument))
@@ -1775,8 +1766,11 @@ HTMLFormElement* FrameSelection::currentForm() const
     for (node = start; node; node = node->parentNode()) {
         if (node->hasTagName(formTag))
             return toHTMLFormElement(node);
-        if (node->isHTMLElement() && toHTMLElement(node)->isFormControlElement())
-            return toHTMLFormControlElement(node)->form();
+        if (node->isHTMLElement()) {
+            HTMLFormElement* owner = toHTMLElement(node)->formOwner();
+            if (owner)
+                return owner;
+        }
     }
 
     // Try walking forward in the node tree to find a form element.
@@ -1788,13 +1782,13 @@ void FrameSelection::revealSelection(const ScrollAlignment& alignment, RevealExt
     LayoutRect rect;
 
     switch (selectionType()) {
-    case VisibleSelection::NoSelection:
+    case NoSelection:
         return;
-    case VisibleSelection::CaretSelection:
+    case CaretSelection:
         rect = absoluteCaretBounds();
         rect.inflateY(rect.height()/2);
         break;
-    case VisibleSelection::RangeSelection:
+    case RangeSelection:
         rect = revealExtentOption == RevealExtent ? VisiblePosition(extent()).absoluteCaretBounds() : enclosingIntRect(bounds(false));
         if (revealExtentOption == RevealExtent)
             rect.inflateY(rect.height()/2);
@@ -1824,7 +1818,7 @@ void FrameSelection::setSelectionFromNone()
 
     Node* node = document->documentElement();
     while (node && !node->hasTagName(bodyTag))
-        node = NodeTraversal::next(node);
+        node = NodeTraversal::next(*node);
     if (node)
         setSelection(VisibleSelection(firstPositionInOrBeforeNode(node), DOWNSTREAM));
 }

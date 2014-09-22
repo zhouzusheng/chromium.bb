@@ -27,6 +27,7 @@
 #include "core/rendering/style/ShadowList.h"
 #include "core/rendering/style/StyleFilterData.h"
 #include "core/rendering/style/StyleTransformData.h"
+#include "core/rendering/svg/ReferenceFilterBuilder.h"
 
 namespace WebCore {
 
@@ -39,7 +40,7 @@ StyleRareNonInheritedData::StyleRareNonInheritedData()
     , m_perspectiveOriginY(RenderStyle::initialPerspectiveOriginY())
     , lineClamp(RenderStyle::initialLineClamp())
     , m_draggableRegionMode(DraggableRegionNone)
-    , m_mask(FillLayer(MaskFillLayer))
+    , m_mask(MaskFillLayer, true)
     , m_pageSize()
     , m_shapeInside(RenderStyle::initialShapeInside())
     , m_shapeOutside(RenderStyle::initialShapeOutside())
@@ -160,6 +161,9 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
 
 StyleRareNonInheritedData::~StyleRareNonInheritedData()
 {
+    const FilterOperations& filterOperations = m_filter->m_operations;
+    for (unsigned i = 0; i < filterOperations.size(); ++i)
+        ReferenceFilterBuilder::clearDocumentResourceReference(filterOperations.at(i));
 }
 
 bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) const

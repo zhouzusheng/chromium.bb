@@ -110,11 +110,16 @@ void TypingCommand::deleteSelection(Document& document, Options options)
 void TypingCommand::deleteKeyPressed(Document& document, Options options, TextGranularity granularity)
 {
     if (granularity == CharacterGranularity) {
-        if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(document.frame())) {
-            updateSelectionIfDifferentFromCurrentSelection(lastTypingCommand.get(), document.frame());
-            lastTypingCommand->setShouldPreventSpellChecking(options & PreventSpellChecking);
-            lastTypingCommand->deleteKeyPressed(granularity, options & KillRing);
-            return;
+        Frame* frame = document.frame();
+        if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(frame)) {
+            // If the last typing command is not Delete, open a new typing command.
+            // We need to group continuous delete commands alone in a single typing command.
+            if (lastTypingCommand->commandTypeOfOpenCommand() == DeleteKey) {
+                updateSelectionIfDifferentFromCurrentSelection(lastTypingCommand.get(), frame);
+                lastTypingCommand->setShouldPreventSpellChecking(options & PreventSpellChecking);
+                lastTypingCommand->deleteKeyPressed(granularity, options & KillRing);
+                return;
+            }
         }
     }
 
@@ -124,8 +129,8 @@ void TypingCommand::deleteKeyPressed(Document& document, Options options, TextGr
 void TypingCommand::forwardDeleteKeyPressed(Document& document, Options options, TextGranularity granularity)
 {
     // FIXME: Forward delete in TextEdit appears to open and close a new typing command.
-    Frame* frame = document.frame();
     if (granularity == CharacterGranularity) {
+        Frame* frame = document.frame();
         if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(frame)) {
             updateSelectionIfDifferentFromCurrentSelection(lastTypingCommand.get(), frame);
             lastTypingCommand->setShouldPreventSpellChecking(options & PreventSpellChecking);
@@ -314,6 +319,7 @@ void TypingCommand::typingAddedToOpenCommand(ETypingCommand commandTypeForAddedT
         return;
 
     updatePreservesTypingStyle(commandTypeForAddedTyping);
+    updateCommandTypeOfOpenCommand(commandTypeForAddedTyping);
 
     frame->editor().appliedEditing(this);
 
@@ -406,11 +412,11 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
     VisibleSelection selectionAfterUndo;
 
     switch (endingSelection().selectionType()) {
-    case VisibleSelection::RangeSelection:
+    case RangeSelection:
         selectionToDelete = endingSelection();
         selectionAfterUndo = selectionToDelete;
         break;
-    case VisibleSelection::CaretSelection: {
+    case CaretSelection: {
         // After breaking out of an empty mail blockquote, we still want continue with the deletion
         // so actual content will get deleted, and not just the quote style.
         if (breakOutOfEmptyMailBlockquotedParagraph())
@@ -472,7 +478,7 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
             selectionAfterUndo.setWithoutValidation(startingSelection().end(), selectionToDelete.extent());
         break;
     }
-    case VisibleSelection::NoSelection:
+    case NoSelection:
         ASSERT_NOT_REACHED();
         break;
     }
@@ -508,11 +514,11 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
     VisibleSelection selectionAfterUndo;
 
     switch (endingSelection().selectionType()) {
-    case VisibleSelection::RangeSelection:
+    case RangeSelection:
         selectionToDelete = endingSelection();
         selectionAfterUndo = selectionToDelete;
         break;
-    case VisibleSelection::CaretSelection: {
+    case CaretSelection: {
         m_smartDelete = false;
 
         // Handle delete at beginning-of-block case.
@@ -532,8 +538,7 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
         if (visibleEnd == endOfParagraph(visibleEnd))
             downstreamEnd = visibleEnd.next(CannotCrossEditingBoundary).deepEquivalent().downstream();
         // When deleting tables: Select the table first, then perform the deletion
-        if (downstreamEnd.containerNode() && downstreamEnd.containerNode()->renderer() && downstreamEnd.containerNode()->renderer()->isTable()
-            && downstreamEnd.computeOffsetInContainerNode() <= caretMinOffset(downstreamEnd.containerNode())) {
+        if (isRenderedTable(downstreamEnd.containerNode()) && downstreamEnd.computeOffsetInContainerNode() <= caretMinOffset(downstreamEnd.containerNode())) {
             setEndingSelection(VisibleSelection(endingSelection().end(), positionAfterNode(downstreamEnd.containerNode()), DOWNSTREAM, endingSelection().isDirectional()));
             typingAddedToOpenCommand(ForwardDeleteKey);
             return;
@@ -565,7 +570,7 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
         }
         break;
     }
-    case VisibleSelection::NoSelection:
+    case NoSelection:
         ASSERT_NOT_REACHED();
         break;
     }

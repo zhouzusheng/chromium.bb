@@ -29,11 +29,12 @@ namespace WebCore {
 
 class HTMLEmbedElement FINAL : public HTMLPlugInElement {
 public:
-    static PassRefPtr<HTMLEmbedElement> create(Document&);
-    static PassRefPtr<HTMLEmbedElement> create(const QualifiedName&, Document&, bool createdByParser);
+    static PassRefPtr<HTMLEmbedElement> create(Document&, bool createdByParser = false);
+
+    bool isExposed() const;
 
 private:
-    HTMLEmbedElement(const QualifiedName&, Document&, bool createdByParser);
+    HTMLEmbedElement(Document&, bool createdByParser);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
@@ -46,7 +47,7 @@ private:
 
     virtual RenderWidget* existingRenderWidget() const OVERRIDE;
 
-    virtual void updateWidget(PluginCreationOption);
+    virtual void updateWidgetInternal() OVERRIDE;
 
     virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
 
@@ -55,6 +56,8 @@ private:
     virtual bool shouldRegisterAsNamedItem() const OVERRIDE { return true; }
     virtual bool isInteractiveContent() const OVERRIDE;
 };
+
+DEFINE_NODE_TYPE_CASTS(HTMLEmbedElement, hasTagName(HTMLNames::embedTag));
 
 }
 

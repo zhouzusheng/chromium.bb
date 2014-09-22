@@ -39,18 +39,17 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLButtonElement::HTMLButtonElement(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
-    : HTMLFormControlElement(tagName, document, form)
+inline HTMLButtonElement::HTMLButtonElement(Document& document, HTMLFormElement* form)
+    : HTMLFormControlElement(buttonTag, document, form)
     , m_type(SUBMIT)
     , m_isActivatedSubmit(false)
 {
-    ASSERT(hasTagName(buttonTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLButtonElement> HTMLButtonElement::create(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
+PassRefPtr<HTMLButtonElement> HTMLButtonElement::create(Document& document, HTMLFormElement* form)
 {
-    return adoptRef(new HTMLButtonElement(tagName, document, form));
+    return adoptRef(new HTMLButtonElement(document, form));
 }
 
 void HTMLButtonElement::setType(const AtomicString& type)
@@ -126,7 +125,7 @@ void HTMLButtonElement::defaultEventHandler(Event* event)
 
     if (event->isKeyboardEvent()) {
         if (event->type() == EventTypeNames::keydown && toKeyboardEvent(event)->keyIdentifier() == "U+0020") {
-            setActive(true, true);
+            setActive(true);
             // No setDefaultHandled() - IE dispatches a keypress in this case.
             return;
         }
@@ -160,11 +159,9 @@ bool HTMLButtonElement::willRespondToMouseClickEvents()
     return HTMLFormControlElement::willRespondToMouseClickEvents();
 }
 
-bool HTMLButtonElement::isSuccessfulSubmitButton() const
+bool HTMLButtonElement::canBeSuccessfulSubmitButton() const
 {
-    // HTML spec says that buttons must have names to be considered successful.
-    // However, other browsers do not impose this constraint.
-    return m_type == SUBMIT && !isDisabledFormControl();
+    return m_type == SUBMIT;
 }
 
 bool HTMLButtonElement::isActivatedSubmit() const
@@ -197,7 +194,7 @@ bool HTMLButtonElement::isURLAttribute(const Attribute& attribute) const
     return attribute.name() == formactionAttr || HTMLFormControlElement::isURLAttribute(attribute);
 }
 
-String HTMLButtonElement::value() const
+const AtomicString& HTMLButtonElement::value() const
 {
     return getAttribute(valueAttr);
 }

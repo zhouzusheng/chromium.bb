@@ -10,9 +10,11 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
+#include "base/observer_list.h"
 #include "base/process/process.h"
 #include "base/timer/timer.h"
 #include "content/browser/child_process_launcher.h"
+#include "content/browser/geolocation/geolocation_dispatcher_host.h"
 #include "content/browser/power_monitor_message_broadcaster.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/global_request_id.h"
@@ -35,6 +37,7 @@ class Size;
 namespace content {
 class AudioRendererHost;
 class BrowserDemuxerAndroid;
+class GeolocationDispatcherHost;
 class GpuMessageFilter;
 class MessagePortMessageFilter;
 class PeerConnectionTrackerHost;
@@ -83,6 +86,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual int GetNextRoutingID() OVERRIDE;
   virtual void AddRoute(int32 routing_id, IPC::Listener* listener) OVERRIDE;
   virtual void RemoveRoute(int32 routing_id) OVERRIDE;
+  virtual void AddObserver(RenderProcessHostObserver* observer) OVERRIDE;
+  virtual void RemoveObserver(RenderProcessHostObserver* observer) OVERRIDE;
   virtual size_t NumListeners() OVERRIDE;
   virtual bool WaitForBackingStoreMsg(int render_widget_id,
                                       const base::TimeDelta& max_delay,
@@ -153,6 +158,11 @@ class CONTENT_EXPORT RenderProcessHostImpl
       scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber);
   void EndFrameSubscription(int route_id);
 
+  scoped_refptr<GeolocationDispatcherHost>
+      geolocation_dispatcher_host() const {
+    return make_scoped_refptr(geolocation_dispatcher_host_);
+  }
+
   // This value is guaranteed to never be returned by GenerateUniqueId() below.
   static int kInvalidId;
 
@@ -200,6 +210,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
     return message_port_message_filter_;
   }
 
+  void SetIsGuestForTesting(bool is_guest) {
+    is_guest_ = is_guest;
+  }
+
  protected:
   // A proxy for our IPC::Channel that lives on the IO thread (see
   // browser_process.h)
@@ -210,6 +224,11 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // True if we've posted a DeleteTask and will be deleted soon.
   bool deleting_soon_;
+
+#ifndef NDEBUG
+  // True if this object has deleted itself.
+  bool is_self_deleted_;
+#endif
 
   // The count of currently swapped out but pending RenderViews.  We have
   // started to swap these in, so the renderer process should not exit if
@@ -310,6 +329,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Owned by |browser_context_|.
   StoragePartitionImpl* storage_partition_impl_;
 
+  // The observers watching our lifetime.
+  ObserverList<RenderProcessHostObserver> observers_;
+
   // True if the process can be shut down suddenly.  If this is true, then we're
   // sure that all the RenderViews in the process can be shutdown suddenly.  If
   // it's false, then specific RenderViews might still be allowed to be shutdown
@@ -349,6 +371,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
 #if defined(OS_ANDROID)
   scoped_refptr<BrowserDemuxerAndroid> browser_demuxer_android_;
 #endif
+
+  // Message filter for geolocation messages.
+  GeolocationDispatcherHost* geolocation_dispatcher_host_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderProcessHostImpl);
 };

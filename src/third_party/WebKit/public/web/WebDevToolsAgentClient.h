@@ -34,7 +34,7 @@
 #include "../platform/WebCString.h"
 #include "../platform/WebCommon.h"
 
-namespace WebKit {
+namespace blink {
 class WebString;
 struct WebDevToolsMessageData;
 struct WebRect;
@@ -85,12 +85,17 @@ public:
 
     virtual void setTraceEventCallback(TraceEventCallback) { }
 
+    virtual void startGPUEventsRecording() { }
+    virtual void stopGPUEventsRecording() { }
+
     // Called to emulate device dimensions, scale factor and input. Window should
     // occupy the whole device screen, while the view should be located at |viewRect|.
+    // x-coordinate of |screenRect| defines the left and right gutters' width,
+    // y-coordinate defines the top and bottom gutters' height.
     // With |fitToView| set, contents should be scaled down to fit into embedder window.
     // All sizes are measured in device independent pixels.
     virtual void enableDeviceEmulation(
-        const WebSize& screenSize, const WebRect& viewRect,
+        const WebRect& screenRect, const WebRect& viewRect,
         float deviceScaleFactor, bool fitToView) { }
 
     // Cancel emulation started via |enableDeviceEmulation| call.
@@ -100,6 +105,6 @@ protected:
     ~WebDevToolsAgentClient() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

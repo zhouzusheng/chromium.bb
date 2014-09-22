@@ -29,7 +29,7 @@
 #include "core/css/CSSCanvasValue.h"
 #include "core/css/CSSCrossfadeValue.h"
 #include "core/css/CSSGradientValue.h"
-#include "core/platform/graphics/Image.h"
+#include "platform/graphics/Image.h"
 
 namespace WebCore {
 
@@ -63,7 +63,7 @@ void CSSImageGeneratorValue::removeClient(RenderObject* renderer)
 {
     ASSERT(renderer);
     RenderObjectSizeCountMap::iterator it = m_clients.find(renderer);
-    ASSERT(it != m_clients.end());
+    ASSERT_WITH_SECURITY_IMPLICATION(it != m_clients.end());
 
     IntSize removedImageSize;
     SizeAndCount& sizeCount = it->value;

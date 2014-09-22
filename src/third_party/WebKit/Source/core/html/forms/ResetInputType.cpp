@@ -32,10 +32,10 @@
 #include "config.h"
 #include "core/html/forms/ResetInputType.h"
 
+#include "InputTypeNames.h"
 #include "core/events/Event.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/html/forms/InputTypeNames.h"
 #include "platform/text/PlatformLocale.h"
 #include "wtf/PassOwnPtr.h"
 
@@ -48,7 +48,7 @@ PassRefPtr<InputType> ResetInputType::create(HTMLInputElement& element)
 
 const AtomicString& ResetInputType::formControlType() const
 {
-    return InputTypeNames::reset();
+    return InputTypeNames::reset;
 }
 
 bool ResetInputType::supportsValidation() const
@@ -66,7 +66,7 @@ void ResetInputType::handleDOMActivateEvent(Event* event)
 
 String ResetInputType::defaultValue() const
 {
-    return locale().queryString(WebKit::WebLocalizedString::ResetButtonDefaultLabel);
+    return locale().queryString(blink::WebLocalizedString::ResetButtonDefaultLabel);
 }
 
 bool ResetInputType::isTextButton() const

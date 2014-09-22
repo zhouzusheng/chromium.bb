@@ -32,11 +32,15 @@
 #include "core/html/MediaControllerInterface.h"
 #include "core/html/track/TextTrack.h"
 #include "core/html/track/TextTrackCue.h"
-#include "core/platform/graphics/MediaPlayer.h"
+#include "core/html/track/vtt/VTTCue.h"
 #include "platform/PODIntervalTree.h"
+#include "platform/graphics/media/MediaPlayer.h"
 #include "public/platform/WebMimeRegistry.h"
 
-namespace WebKit { class WebLayer; }
+namespace blink {
+class WebInbandTextTrack;
+class WebLayer;
+}
 
 namespace WebCore {
 
@@ -53,14 +57,10 @@ class KURL;
 class MediaController;
 class MediaControls;
 class MediaError;
+class MediaKeys;
 class HTMLMediaSource;
 class TextTrackList;
 class TimeRanges;
-#if ENABLE(ENCRYPTED_MEDIA_V2)
-class MediaKeys;
-#endif
-
-class InbandTextTrackPrivate;
 
 typedef PODIntervalTree<double, TextTrackCue*> CueIntervalTree;
 typedef CueIntervalTree::IntervalType CueInterval;
@@ -74,7 +74,7 @@ class HTMLMediaElement : public HTMLElement, public MediaPlayerClient, public Ac
     , private TextTrackClient
 {
 public:
-    static WebKit::WebMimeRegistry::SupportsType supportsType(const ContentType&, const String& keySystem = String());
+    static blink::WebMimeRegistry::SupportsType supportsType(const ContentType&, const String& keySystem = String());
 
     MediaPlayer* player() const { return m_player.get(); }
 
@@ -87,7 +87,7 @@ public:
 
     bool supportsSave() const;
 
-    WebKit::WebLayer* platformLayer() const;
+    blink::WebLayer* platformLayer() const;
 
     enum DelayedActionType {
         LoadMediaResource = 1 << 0,
@@ -102,7 +102,7 @@ public:
     PassRefPtr<MediaError> error() const;
 
     // network state
-    void setSrc(const String&);
+    void setSrc(const AtomicString&);
     const KURL& currentSrc() const { return m_currentSrc; }
 
     enum NetworkState { NETWORK_EMPTY, NETWORK_IDLE, NETWORK_LOADING, NETWORK_NO_SOURCE };
@@ -158,10 +158,8 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitkeymessage);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitneedkey);
 
-#if ENABLE(ENCRYPTED_MEDIA_V2)
     MediaKeys* mediaKeys() const { return m_mediaKeys.get(); }
     void setMediaKeys(MediaKeys*);
-#endif
 
     // controls
     bool controls() const;
@@ -180,8 +178,8 @@ public:
     double percentLoaded() const;
 
     PassRefPtr<TextTrack> addTextTrack(const String& kind, const String& label, const String& language, ExceptionState&);
-    PassRefPtr<TextTrack> addTextTrack(const String& kind, const String& label, ExceptionState& es) { return addTextTrack(kind, label, emptyString(), es); }
-    PassRefPtr<TextTrack> addTextTrack(const String& kind, ExceptionState& es) { return addTextTrack(kind, emptyString(), emptyString(), es); }
+    PassRefPtr<TextTrack> addTextTrack(const String& kind, const String& label, ExceptionState& exceptionState) { return addTextTrack(kind, label, emptyString(), exceptionState); }
+    PassRefPtr<TextTrack> addTextTrack(const String& kind, ExceptionState& exceptionState) { return addTextTrack(kind, emptyString(), emptyString(), exceptionState); }
 
     TextTrackList* textTracks();
     CueList currentlyActiveCues() const { return m_currentlyActiveCues; }
@@ -195,8 +193,8 @@ public:
     void didAddTrack(HTMLTrackElement*);
     void didRemoveTrack(HTMLTrackElement*);
 
-    virtual void mediaPlayerDidAddTrack(PassRefPtr<InbandTextTrackPrivate>) OVERRIDE;
-    virtual void mediaPlayerDidRemoveTrack(PassRefPtr<InbandTextTrackPrivate>) OVERRIDE;
+    virtual void mediaPlayerDidAddTrack(blink::WebInbandTextTrack*) OVERRIDE;
+    virtual void mediaPlayerDidRemoveTrack(blink::WebInbandTextTrack*) OVERRIDE;
 
     struct TrackGroup {
         enum GroupKind { CaptionsAndSubtitles, Description, Chapter, Metadata, Other };
@@ -275,11 +273,8 @@ public:
     enum InvalidURLAction { DoNothing, Complain };
     bool isSafeToLoadURL(const KURL&, InvalidURLAction);
 
-    const String& mediaGroup() const;
-    void setMediaGroup(const String&);
-
     MediaController* controller() const;
-    void setController(PassRefPtr<MediaController>);
+    void setController(PassRefPtr<MediaController>); // Resets the MediaGroup and sets the MediaController.
 
 protected:
     HTMLMediaElement(const QualifiedName&, Document&, bool);
@@ -297,6 +292,8 @@ protected:
     virtual void setDisplayMode(DisplayMode mode) { m_displayMode = mode; }
 
     virtual bool isMediaElement() const OVERRIDE { return true; }
+
+    void setControllerInternal(PassRefPtr<MediaController>);
 
     // Restrictions to change default behaviors.
     enum BehaviorRestrictionFlags {
@@ -357,20 +354,17 @@ private:
     virtual void mediaPlayerRequestSeek(double) OVERRIDE;
     virtual void mediaPlayerRepaint() OVERRIDE;
     virtual void mediaPlayerSizeChanged() OVERRIDE;
-    virtual void mediaPlayerEngineUpdated() OVERRIDE;
 
     virtual void mediaPlayerKeyAdded(const String& keySystem, const String& sessionId) OVERRIDE;
     virtual void mediaPlayerKeyError(const String& keySystem, const String& sessionId, MediaPlayerClient::MediaKeyErrorCode, unsigned short systemCode) OVERRIDE;
     virtual void mediaPlayerKeyMessage(const String& keySystem, const String& sessionId, const unsigned char* message, unsigned messageLength, const KURL& defaultURL) OVERRIDE;
     virtual bool mediaPlayerKeyNeeded(const String& keySystem, const String& sessionId, const unsigned char* initData, unsigned initDataLength) OVERRIDE;
-
-#if ENABLE(ENCRYPTED_MEDIA_V2)
     virtual bool mediaPlayerKeyNeeded(Uint8Array*) OVERRIDE;
-#endif
 
     virtual CORSMode mediaPlayerCORSMode() const OVERRIDE;
 
-    virtual void mediaPlayerScheduleLayerUpdate() OVERRIDE;
+    virtual void mediaPlayerSetWebLayer(blink::WebLayer*) OVERRIDE;
+    virtual void mediaPlayerSetOpaque(bool) OVERRIDE;
 
     void loadTimerFired(Timer<HTMLMediaElement>*);
     void progressEventTimerFired(Timer<HTMLMediaElement>*);
@@ -427,9 +421,6 @@ private:
     bool pausedForUserInteraction() const;
     bool couldPlayIfEnoughData() const;
 
-    double minTimeSeekable() const;
-    double maxTimeSeekable() const;
-
     // Pauses playback without changing any states or generating events
     void setPausedInternal(bool);
 
@@ -452,6 +443,8 @@ private:
 
     void removeBehaviorsRestrictionsAfterFirstUserGesture();
 
+    const AtomicString& mediaGroup() const;
+    void setMediaGroup(const AtomicString&);
     void updateMediaController();
     bool isBlocked() const;
     bool isBlockedOnMediaController() const;
@@ -495,6 +488,8 @@ private:
     RefPtr<Node> m_nextChildNodeToConsider;
 
     OwnPtr<MediaPlayer> m_player;
+    blink::WebLayer* m_webLayer;
+    bool m_opaque;
 
     BehaviorRestrictions m_restrictions;
 
@@ -559,15 +554,12 @@ private:
     MediaElementAudioSourceNode* m_audioSourceNode;
 #endif
 
-    String m_mediaGroup;
     friend class MediaController;
     RefPtr<MediaController> m_mediaController;
 
     friend class TrackDisplayUpdateScope;
 
-#if ENABLE(ENCRYPTED_MEDIA_V2)
     RefPtr<MediaKeys> m_mediaKeys;
-#endif
 };
 
 #ifndef NDEBUG
@@ -584,7 +576,7 @@ template <>
 struct ValueToString<TextTrackCue*> {
     static String string(TextTrackCue* const& cue)
     {
-        return String::format("%p id=%s interval=%f-->%f cue=%s)", cue, cue->id().utf8().data(), cue->startTime(), cue->endTime(), cue->text().utf8().data());
+        return cue->toString();
     }
 };
 #endif

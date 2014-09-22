@@ -31,7 +31,7 @@
 #ifndef WebCompositionUnderline_h
 #define WebCompositionUnderline_h
 
-namespace WebKit {
+namespace blink {
 
 // Class WebCompositionUnderline is intended to be used with WebWidget's
 // setComposition() method.
@@ -51,6 +51,6 @@ struct WebCompositionUnderline {
     bool thick;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

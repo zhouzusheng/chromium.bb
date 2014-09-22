@@ -41,7 +41,6 @@
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/dom/MessagePortChannel.h"
 #include "core/events/Event.h"
 #include "core/events/ThreadLocalEventNames.h"
 #include "core/frame/ContentSecurityPolicy.h"
@@ -56,16 +55,16 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 // Callback class that keeps the SharedWorker and WebSharedWorker objects alive while loads are potentially happening, and also translates load errors into error events on the worker.
-class SharedWorkerScriptLoader : private WorkerScriptLoaderClient, private WebSharedWorker::ConnectListener {
+class SharedWorkerScriptLoader : private WorkerScriptLoaderClient, private WebSharedWorkerConnector::ConnectListener {
 public:
-    SharedWorkerScriptLoader(PassRefPtr<SharedWorker> worker, const KURL& url, const String& name, PassOwnPtr<MessagePortChannel> channel, PassOwnPtr<WebSharedWorker> webWorker)
+    SharedWorkerScriptLoader(PassRefPtr<SharedWorker> worker, const KURL& url, const String& name, PassOwnPtr<WebMessagePortChannel> channel, PassOwnPtr<WebSharedWorkerConnector> webWorkerConnector)
         : m_worker(worker)
         , m_url(url)
         , m_name(name)
-        , m_webWorker(webWorker)
+        , m_webWorkerConnector(webWorkerConnector)
         , m_channel(channel)
         , m_scriptLoader(WorkerScriptLoader::create())
         , m_loading(false)
@@ -88,8 +87,8 @@ private:
     RefPtr<SharedWorker> m_worker;
     KURL m_url;
     String m_name;
-    OwnPtr<WebSharedWorker> m_webWorker;
-    OwnPtr<MessagePortChannel> m_channel;
+    OwnPtr<WebSharedWorkerConnector> m_webWorkerConnector;
+    OwnPtr<WebMessagePortChannel> m_channel;
     RefPtr<WorkerScriptLoader> m_scriptLoader;
     bool m_loading;
     long long m_responseAppCacheID;
@@ -98,18 +97,18 @@ private:
 SharedWorkerScriptLoader::~SharedWorkerScriptLoader()
 {
     if (m_loading)
-        m_worker->unsetPendingActivity(m_worker.get());
+        m_worker->unsetPreventGC();
 }
 
 void SharedWorkerScriptLoader::load()
 {
     ASSERT(!m_loading);
     // If the shared worker is not yet running, load the script resource for it, otherwise just send it a connect event.
-    if (m_webWorker->isStarted()) {
+    if (m_webWorkerConnector->isStarted()) {
         sendConnect();
     } else {
         // Keep the worker + JS wrapper alive until the resource load is complete in case we need to dispatch an error event.
-        m_worker->setPendingActivity(m_worker.get());
+        m_worker->setPreventGC();
         m_loading = true;
 
         m_scriptLoader->loadAsynchronously(m_worker->executionContext(), m_url, DenyCrossOriginRequests, this);
@@ -130,17 +129,15 @@ void SharedWorkerScriptLoader::notifyFinished()
     } else {
         InspectorInstrumentation::scriptImported(m_worker->executionContext(), m_scriptLoader->identifier(), m_scriptLoader->script());
         // Pass the script off to the worker, then send a connect event.
-        m_webWorker->startWorkerContext(m_url, m_name, m_worker->executionContext()->userAgent(m_url), m_scriptLoader->script(), m_worker->executionContext()->contentSecurityPolicy()->deprecatedHeader(), static_cast<WebKit::WebContentSecurityPolicyType>(m_worker->executionContext()->contentSecurityPolicy()->deprecatedHeaderType()), m_responseAppCacheID);
+        m_webWorkerConnector->startWorkerContext(m_url, m_name, m_worker->executionContext()->userAgent(m_url), m_scriptLoader->script(), m_worker->executionContext()->contentSecurityPolicy()->deprecatedHeader(), static_cast<blink::WebContentSecurityPolicyType>(m_worker->executionContext()->contentSecurityPolicy()->deprecatedHeaderType()), m_responseAppCacheID);
         sendConnect();
     }
 }
 
 void SharedWorkerScriptLoader::sendConnect()
 {
-    WebMessagePortChannel* webChannel = m_channel->webChannelRelease();
-    m_channel.clear();
     // Send the connect event off, and linger until it is done sending.
-    m_webWorker->connect(webChannel, this);
+    m_webWorkerConnector->connect(m_channel.leakPtr(), this);
 }
 
 void SharedWorkerScriptLoader::connected()
@@ -155,23 +152,23 @@ static WebSharedWorkerRepositoryClient::DocumentID getId(void* document)
     return reinterpret_cast<WebSharedWorkerRepositoryClient::DocumentID>(document);
 }
 
-void SharedWorkerRepositoryClientImpl::connect(PassRefPtr<SharedWorker> worker, PassOwnPtr<MessagePortChannel> port, const KURL& url, const String& name, ExceptionState& es)
+void SharedWorkerRepositoryClientImpl::connect(PassRefPtr<SharedWorker> worker, PassOwnPtr<WebMessagePortChannel> port, const KURL& url, const String& name, ExceptionState& exceptionState)
 {
     ASSERT(m_client);
 
     // No nested workers (for now) - connect() should only be called from document context.
     ASSERT(worker->executionContext()->isDocument());
     Document* document = toDocument(worker->executionContext());
-    OwnPtr<WebSharedWorker> webWorker = adoptPtr(m_client->createSharedWorker(url, name, getId(document)));
-    if (!webWorker) {
+    OwnPtr<WebSharedWorkerConnector> webWorkerConnector = adoptPtr(m_client->createSharedWorkerConnector(url, name, getId(document)));
+    if (!webWorkerConnector) {
         // Existing worker does not match this url, so return an error back to the caller.
-        es.throwDOMException(URLMismatchError, ExceptionMessages::failedToConstruct("SharedWorker", "The location of the SharedWorker named '" + name + "' does not exactly match the provided URL ('" + url.elidedString() + "')."));
+        exceptionState.throwDOMException(URLMismatchError, "The location of the SharedWorker named '" + name + "' does not exactly match the provided URL ('" + url.elidedString() + "').");
         return;
     }
 
     // The loader object manages its own lifecycle (and the lifecycles of the two worker objects).
     // It will free itself once loading is completed.
-    SharedWorkerScriptLoader* loader = new SharedWorkerScriptLoader(worker, url, name, port, webWorker.release());
+    SharedWorkerScriptLoader* loader = new SharedWorkerScriptLoader(worker, url, name, port, webWorkerConnector.release());
     loader->load();
 }
 
@@ -186,4 +183,4 @@ SharedWorkerRepositoryClientImpl::SharedWorkerRepositoryClientImpl(WebSharedWork
 {
 }
 
-} // namespace WebKit
+} // namespace blink

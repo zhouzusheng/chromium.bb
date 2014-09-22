@@ -196,7 +196,7 @@ void RenderSliderContainer::layout()
 // --------------------------------
 
 inline SliderThumbElement::SliderThumbElement(Document& document)
-    : HTMLDivElement(HTMLNames::divTag, document)
+    : HTMLDivElement(document)
     , m_inDragMode(false)
 {
 }
@@ -245,8 +245,8 @@ Node* SliderThumbElement::focusDelegate()
 void SliderThumbElement::dragFrom(const LayoutPoint& point)
 {
     RefPtr<SliderThumbElement> protector(this);
-    setPositionFromPoint(point);
     startDragging();
+    setPositionFromPoint(point);
 }
 
 void SliderThumbElement::setPositionFromPoint(const LayoutPoint& point)
@@ -412,7 +412,7 @@ static const AtomicString& mediaSliderThumbShadowPartId()
     return mediaSliderThumb;
 }
 
-const AtomicString& SliderThumbElement::part() const
+const AtomicString& SliderThumbElement::pseudo() const
 {
     HTMLInputElement* input = hostInput();
     if (!input)
@@ -435,7 +435,7 @@ const AtomicString& SliderThumbElement::part() const
 // --------------------------------
 
 inline SliderContainerElement::SliderContainerElement(Document& document)
-    : HTMLDivElement(HTMLNames::divTag, document)
+    : HTMLDivElement(document)
 {
 }
 
@@ -449,7 +449,7 @@ RenderObject* SliderContainerElement::createRenderer(RenderStyle*)
     return new RenderSliderContainer(this);
 }
 
-const AtomicString& SliderContainerElement::part() const
+const AtomicString& SliderContainerElement::pseudo() const
 {
     DEFINE_STATIC_LOCAL(const AtomicString, mediaSliderContainer, ("-webkit-media-slider-container", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(const AtomicString, sliderContainer, ("-webkit-slider-container", AtomicString::ConstructFromLiteral));

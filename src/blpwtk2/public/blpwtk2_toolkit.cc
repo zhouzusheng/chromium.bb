@@ -35,7 +35,7 @@ namespace blpwtk2 {
 
 void Toolkit::allowNonWindowContexts_Unsafe()
 {
-    WebKit::allowNonWindowContexts_Unsafe();
+    blink::allowNonWindowContexts_Unsafe();
 }
 
 Toolkit::~Toolkit()

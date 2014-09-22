@@ -31,15 +31,12 @@
 #include "config.h"
 #include "modules/crypto/CryptoResultImpl.h"
 
-#include "V8Key.h" // Must precede ScriptPromiseResolver.h
-#include "V8KeyPair.h" // Must precede ScriptPromiseResolver.h
-#include "bindings/v8/custom/V8ArrayBufferCustom.h" // Must precede ScriptPromiseResolver.h
 #include "bindings/v8/ScriptPromiseResolver.h"
 #include "modules/crypto/Key.h"
+#include "modules/crypto/KeyPair.h"
 #include "modules/crypto/NormalizeAlgorithm.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebArrayBuffer.h"
-#include "public/platform/WebCrypto.h"
 #include "public/platform/WebCryptoAlgorithm.h"
 #include "wtf/ArrayBufferView.h"
 
@@ -61,7 +58,7 @@ void CryptoResultImpl::completeWithError()
     finish();
 }
 
-void CryptoResultImpl::completeWithBuffer(const WebKit::WebArrayBuffer& buffer)
+void CryptoResultImpl::completeWithBuffer(const blink::WebArrayBuffer& buffer)
 {
     m_promiseResolver->resolve(PassRefPtr<ArrayBuffer>(buffer));
     finish();
@@ -73,13 +70,13 @@ void CryptoResultImpl::completeWithBoolean(bool b)
     finish();
 }
 
-void CryptoResultImpl::completeWithKey(const WebKit::WebCryptoKey& key)
+void CryptoResultImpl::completeWithKey(const blink::WebCryptoKey& key)
 {
     m_promiseResolver->resolve(Key::create(key));
     finish();
 }
 
-void CryptoResultImpl::completeWithKeyPair(const WebKit::WebCryptoKey& publicKey, const WebKit::WebCryptoKey& privateKey)
+void CryptoResultImpl::completeWithKeyPair(const blink::WebCryptoKey& publicKey, const blink::WebCryptoKey& privateKey)
 {
     m_promiseResolver->resolve(KeyPair::create(publicKey, privateKey));
     finish();

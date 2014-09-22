@@ -10,16 +10,19 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/strings/string16.h"
-#include "ui/aura/root_window_host.h"
+#include "ui/aura/window_tree_host.h"
+#include "ui/base/ime/remote_input_method_delegate_win.h"
 #include "ui/events/event.h"
 #include "ui/events/event_constants.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/metro_viewer/ime_types.h"
 
 namespace base {
 class FilePath;
 }
 
 namespace ui {
+class RemoteInputMethodPrivateWin;
 class ViewProp;
 }
 
@@ -43,8 +46,6 @@ typedef base::Callback<void(const base::FilePath&, int, void*)>
     SelectFolderCompletion;
 
 typedef base::Callback<void(void*)> FileSelectionCanceled;
-
-typedef base::Callback<void()> ActivateDesktopCompleted;
 
 // Handles the open file operation for Metro Chrome Ash. The on_success
 // callback passed in is invoked when we receive the opened file name from
@@ -83,19 +84,23 @@ AURA_EXPORT void HandleSelectFolder(const base::string16& title,
                                     const SelectFolderCompletion& on_success,
                                     const FileSelectionCanceled& on_failure);
 
-// Handles the activate desktop command for Metro Chrome Ash. The on_success
-// callback passed in is invoked when activation is completed.
-// The |ash_exit| parameter indicates whether the Ash process would be shutdown
-// after activating the desktop.
+// Handles the activate desktop command for Metro Chrome Ash.   The |ash_exit|
+// parameter indicates whether the Ash process would be shutdown after
+// activating the desktop.
 AURA_EXPORT void HandleActivateDesktop(
     const base::FilePath& shortcut,
-    bool ash_exit,
-    const ActivateDesktopCompleted& on_success);
+    bool ash_exit);
+
+// Handles the metro exit command.  Notifies the metro viewer to shutdown
+// gracefully.
+AURA_EXPORT void HandleMetroExit();
 
 // RootWindowHost implementaton that receives events from a different
 // process. In the case of Windows this is the Windows 8 (aka Metro)
 // frontend process, which forwards input events to this class.
-class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
+class AURA_EXPORT RemoteRootWindowHostWin
+    : public RootWindowHost,
+      public ui::internal::RemoteInputMethodDelegateWin {
  public:
   // Returns the only RemoteRootWindowHostWin, if this is the first time
   // this function is called, it will call Create() wiht empty bounds.
@@ -117,10 +122,10 @@ class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
 
   // The |ash_exit| parameter indicates whether the Ash process would be
   // shutdown after activating the desktop.
-  void HandleActivateDesktop(
-      const base::FilePath& shortcut,
-      bool ash_exit,
-      const ActivateDesktopCompleted& on_success);
+  void HandleActivateDesktop(const base::FilePath& shortcut, bool ash_exit);
+
+  // Notify the metro viewer that it should shut itself down.
+  void HandleMetroExit();
 
   void HandleOpenFile(const base::string16& title,
                       const base::FilePath& default_path,
@@ -146,8 +151,14 @@ class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
                           const SelectFolderCompletion& on_success,
                           const FileSelectionCanceled& on_failure);
 
+  void HandleWindowSizeChanged(uint32 width, uint32 height);
+
   // Returns the active ASH root window.
   Window* GetAshWindow();
+
+  // Returns true if the remote window is the foreground window according to the
+  // OS.
+  bool IsForegroundWindow();
 
  private:
   explicit RemoteRootWindowHostWin(const gfx::Rect& bounds);
@@ -184,11 +195,19 @@ class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
                            const std::vector<base::FilePath>& files);
   void OnSelectFolderDone(bool success, const base::FilePath& folder);
   void OnSetCursorPosAck();
-  void OnWindowSizeChanged(uint32 width, uint32 height);
-  void OnDesktopActivated();
+
+  // For Input Method support:
+  ui::RemoteInputMethodPrivateWin* GetRemoteInputMethodPrivate();
+  void OnImeCandidatePopupChanged(bool visible);
+  void OnImeCompositionChanged(
+      const string16& text,
+      int32 selection_start,
+      int32 selection_end,
+      const std::vector<metro_viewer::UnderlineInfo>& underlines);
+  void OnImeTextCommitted(const string16& text);
+  void OnImeInputSourceChanged(uint16 language_id, bool is_ime);
 
   // RootWindowHost overrides:
-  virtual void SetDelegate(RootWindowHostDelegate* delegate) OVERRIDE;
   virtual RootWindow* GetRootWindow() OVERRIDE;
   virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
   virtual void Show() OVERRIDE;
@@ -207,10 +226,15 @@ class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
   virtual void UnConfineCursor() OVERRIDE;
   virtual void OnCursorVisibilityChanged(bool show) OVERRIDE;
   virtual void MoveCursorTo(const gfx::Point& location) OVERRIDE;
-  virtual void SetFocusWhenShown(bool focus_when_shown) OVERRIDE;
   virtual void PostNativeEvent(const base::NativeEvent& native_event) OVERRIDE;
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
   virtual void PrepareForShutdown() OVERRIDE;
+
+  // ui::internal::RemoteInputMethodDelegateWin overrides:
+  virtual void CancelComposition() OVERRIDE;
+  virtual void OnTextInputClientUpdated(
+      const std::vector<int32>& input_scopes,
+      const std::vector<gfx::Rect>& composition_character_bounds) OVERRIDE;
 
   // Helper function to dispatch a keyboard message to the desired target.
   // The default target is the RootWindowHostDelegate. For nested message loop
@@ -241,7 +265,6 @@ class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
   }
 
   HWND remote_window_;
-  RootWindowHostDelegate* delegate_;
   IPC::Sender* host_;
   scoped_ptr<ui::ViewProp> prop_;
 
@@ -253,10 +276,6 @@ class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
   SelectFolderCompletion select_folder_completion_callback_;
   FileSelectionCanceled failure_callback_;
 
-  // Saved callback which informs caller about successful completion of desktop
-  // activation.
-  ActivateDesktopCompleted activate_completed_callback_;
-
   // Set to true if we need to ignore mouse messages until the SetCursorPos
   // operation is acked by the viewer.
   bool ignore_mouse_moves_until_set_cursor_ack_;
@@ -267,6 +286,9 @@ class AURA_EXPORT RemoteRootWindowHostWin : public RootWindowHost {
   // State of the keyboard/mouse at the time of the last input event. See
   // description of SetEventFlags().
   uint32 event_flags_;
+
+  // Current size of this root window.
+  gfx::Size window_size_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoteRootWindowHostWin);
 };

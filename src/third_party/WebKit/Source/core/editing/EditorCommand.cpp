@@ -57,11 +57,11 @@
 #include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/platform/KillRing.h"
+#include "core/frame/Settings.h"
 #include "core/platform/Pasteboard.h"
-#include "core/platform/Scrollbar.h"
 #include "core/rendering/RenderBox.h"
+#include "platform/KillRing.h"
+#include "platform/scroll/Scrollbar.h"
 #include "wtf/text/AtomicString.h"
 
 namespace WebCore {
@@ -202,9 +202,9 @@ static bool executeInsertNode(Frame& frame, PassRefPtr<Node> content)
 {
     ASSERT(frame.document());
     RefPtr<DocumentFragment> fragment = DocumentFragment::create(*frame.document());
-    TrackExceptionState es;
-    fragment->appendChild(content, es);
-    if (es.hadException())
+    TrackExceptionState exceptionState;
+    fragment->appendChild(content, exceptionState);
+    if (exceptionState.hadException())
         return false;
     return executeInsertFragment(frame, fragment.release());
 }
@@ -339,7 +339,7 @@ static bool executeDeleteBackward(Frame& frame, Event*, EditorCommandSource, con
 
 static bool executeDeleteBackwardByDecomposingPreviousCharacter(Frame& frame, Event*, EditorCommandSource, const String&)
 {
-    LOG_ERROR("DeleteBackwardByDecomposingPreviousCharacter is not implemented, doing DeleteBackward instead");
+    WTF_LOG_ERROR("DeleteBackwardByDecomposingPreviousCharacter is not implemented, doing DeleteBackward instead");
     frame.editor().deleteWithDirection(DirectionBackward, CharacterGranularity, false, true);
     return true;
 }
@@ -438,8 +438,8 @@ static bool executeFormatBlock(Frame& frame, Event*, EditorCommandSource, const 
     if (tagName[0] == '<' && tagName[tagName.length() - 1] == '>')
         tagName = tagName.substring(1, tagName.length() - 2);
 
-    String localName, prefix;
-    if (!Document::parseQualifiedName(tagName, prefix, localName, IGNORE_EXCEPTION))
+    AtomicString localName, prefix;
+    if (!Document::parseQualifiedName(AtomicString(tagName), prefix, localName, IGNORE_EXCEPTION))
         return false;
     QualifiedName qualifiedTagName(prefix, localName, xhtmlNamespaceURI);
 
@@ -498,7 +498,7 @@ static bool executeInsertHorizontalRule(Frame& frame, Event*, EditorCommandSourc
     ASSERT(frame.document());
     RefPtr<HTMLHRElement> rule = HTMLHRElement::create(*frame.document());
     if (!value.isEmpty())
-        rule->setIdAttribute(value);
+        rule->setIdAttribute(AtomicString(value));
     return executeInsertNode(frame, rule.release());
 }
 
@@ -958,7 +958,7 @@ static bool executePaste(Frame& frame, Event*, EditorCommandSource, const String
 
 static bool executePasteGlobalSelection(Frame& frame, Event*, EditorCommandSource source, const String&)
 {
-    if (!frame.editor().client().supportsGlobalSelection())
+    if (!frame.editor().behavior().supportsGlobalSelection())
         return false;
     ASSERT_UNUSED(source, source == CommandFromMenuOrKeyBinding);
 
@@ -998,12 +998,12 @@ static bool executeRemoveFormat(Frame& frame, Event*, EditorCommandSource, const
 
 static bool executeScrollPageBackward(Frame& frame, Event*, EditorCommandSource, const String&)
 {
-    return frame.eventHandler().logicalScrollRecursively(ScrollBlockDirectionBackward, ScrollByPage);
+    return frame.eventHandler().scrollRecursively(ScrollBlockDirectionBackward, ScrollByPage);
 }
 
 static bool executeScrollPageForward(Frame& frame, Event*, EditorCommandSource, const String&)
 {
-    return frame.eventHandler().logicalScrollRecursively(ScrollBlockDirectionForward, ScrollByPage);
+    return frame.eventHandler().scrollRecursively(ScrollBlockDirectionForward, ScrollByPage);
 }
 
 static bool executeScrollLineUp(Frame& frame, Event*, EditorCommandSource, const String&)
@@ -1018,12 +1018,12 @@ static bool executeScrollLineDown(Frame& frame, Event*, EditorCommandSource, con
 
 static bool executeScrollToBeginningOfDocument(Frame& frame, Event*, EditorCommandSource, const String&)
 {
-    return frame.eventHandler().logicalScrollRecursively(ScrollBlockDirectionBackward, ScrollByDocument);
+    return frame.eventHandler().scrollRecursively(ScrollBlockDirectionBackward, ScrollByDocument);
 }
 
 static bool executeScrollToEndOfDocument(Frame& frame, Event*, EditorCommandSource, const String&)
 {
-    return frame.eventHandler().logicalScrollRecursively(ScrollBlockDirectionForward, ScrollByDocument);
+    return frame.eventHandler().scrollRecursively(ScrollBlockDirectionForward, ScrollByDocument);
 }
 
 static bool executeSelectAll(Frame& frame, Event*, EditorCommandSource, const String&)
@@ -1155,15 +1155,15 @@ static bool executeUnselect(Frame& frame, Event*, EditorCommandSource, const Str
 
 static bool executeYank(Frame& frame, Event*, EditorCommandSource, const String&)
 {
-    frame.editor().insertTextWithoutSendingTextEvent(frame.editor().killRing()->yank(), false, 0);
-    frame.editor().killRing()->setToYankedState();
+    frame.editor().insertTextWithoutSendingTextEvent(frame.editor().killRing().yank(), false, 0);
+    frame.editor().killRing().setToYankedState();
     return true;
 }
 
 static bool executeYankAndSelect(Frame& frame, Event*, EditorCommandSource, const String&)
 {
-    frame.editor().insertTextWithoutSendingTextEvent(frame.editor().killRing()->yank(), true, 0);
-    frame.editor().killRing()->setToYankedState();
+    frame.editor().insertTextWithoutSendingTextEvent(frame.editor().killRing().yank(), true, 0);
+    frame.editor().killRing().setToYankedState();
     return true;
 }
 

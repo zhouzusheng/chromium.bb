@@ -39,13 +39,18 @@
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/parser/XSSAuditorDelegate.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
 #include "platform/JSONValues.h"
 #include "platform/network/FormData.h"
 #include "platform/text/DecodeEscapeSequences.h"
-#include "weborigin/KURL.h"
 #include "wtf/MainThread.h"
-#include "wtf/text/TextEncoding.h"
+
+namespace {
+
+// SecurityOrigin::urlWithUniqueSecurityOrigin() can't be used cross-thread, or we'd use it instead.
+const char kURLWithUniqueOrigin[] = "data:,";
+
+} // namespace
 
 namespace WebCore {
 
@@ -265,8 +270,8 @@ void XSSAuditor::init(Document* document, XSSAuditorDelegate* auditorDelegate)
 
     String httpBodyAsString;
     if (DocumentLoader* documentLoader = document->frame()->loader().documentLoader()) {
-        DEFINE_STATIC_LOCAL(String, XSSProtectionHeader, ("X-XSS-Protection"));
-        String headerValue = documentLoader->response().httpHeaderField(XSSProtectionHeader);
+        DEFINE_STATIC_LOCAL(const AtomicString, XSSProtectionHeader, ("X-XSS-Protection", AtomicString::ConstructFromLiteral));
+        const AtomicString& headerValue = documentLoader->response().httpHeaderField(XSSProtectionHeader);
         String errorDetails;
         unsigned errorPosition = 0;
         String reportURL;
@@ -293,7 +298,7 @@ void XSSAuditor::init(Document* document, XSSAuditorDelegate* auditorDelegate)
         // FIXME: Combine the two report URLs in some reasonable way.
         if (auditorDelegate)
             auditorDelegate->setReportURL(xssProtectionReportURL.copy());
-        FormData* httpBody = documentLoader->originalRequest().httpBody();
+        FormData* httpBody = documentLoader->request().httpBody();
         if (httpBody && !httpBody->isEmpty()) {
             httpBodyAsString = httpBody->flattenToString();
             if (!httpBodyAsString.isEmpty()) {
@@ -502,7 +507,7 @@ bool XSSAuditor::filterFormToken(const FilterTokenRequest& request)
     ASSERT(request.token.type() == HTMLToken::StartTag);
     ASSERT(hasName(request.token, formTag));
 
-    return eraseAttributeIfInjected(request, actionAttr, blankURL().string());
+    return eraseAttributeIfInjected(request, actionAttr, kURLWithUniqueOrigin);
 }
 
 bool XSSAuditor::filterInputToken(const FilterTokenRequest& request)
@@ -510,7 +515,7 @@ bool XSSAuditor::filterInputToken(const FilterTokenRequest& request)
     ASSERT(request.token.type() == HTMLToken::StartTag);
     ASSERT(hasName(request.token, inputTag));
 
-    return eraseAttributeIfInjected(request, formactionAttr, blankURL().string(), SrcLikeAttribute);
+    return eraseAttributeIfInjected(request, formactionAttr, kURLWithUniqueOrigin, SrcLikeAttribute);
 }
 
 bool XSSAuditor::filterButtonToken(const FilterTokenRequest& request)
@@ -518,7 +523,7 @@ bool XSSAuditor::filterButtonToken(const FilterTokenRequest& request)
     ASSERT(request.token.type() == HTMLToken::StartTag);
     ASSERT(hasName(request.token, buttonTag));
 
-    return eraseAttributeIfInjected(request, formactionAttr, blankURL().string(), SrcLikeAttribute);
+    return eraseAttributeIfInjected(request, formactionAttr, kURLWithUniqueOrigin, SrcLikeAttribute);
 }
 
 bool XSSAuditor::eraseDangerousAttributesIfInjected(const FilterTokenRequest& request)

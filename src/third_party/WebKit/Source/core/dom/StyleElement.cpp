@@ -31,7 +31,6 @@
 #include "core/html/HTMLStyleElement.h"
 #include "core/frame/ContentSecurityPolicy.h"
 #include "wtf/text/StringBuilder.h"
-#include "wtf/text/TextPosition.h"
 
 namespace WebCore {
 
@@ -75,9 +74,7 @@ void StyleElement::removedFromDocument(Document& document, Element* element, Con
     if (m_sheet)
         clearSheet();
 
-    // If we're in document teardown, then we don't need to do any notification of our sheet's removal.
-    if (document.isActive())
-        document.removedStyleSheet(removedSheet.get(), RecalcStyleDeferred, AnalyzedStyleUpdate);
+    document.removedStyleSheet(removedSheet.get(), RecalcStyleDeferred, AnalyzedStyleUpdate);
 }
 
 void StyleElement::clearDocumentData(Document& document, Element* element)

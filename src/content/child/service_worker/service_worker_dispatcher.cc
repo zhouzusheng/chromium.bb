@@ -11,7 +11,8 @@
 #include "content/common/service_worker_messages.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 
-using WebKit::WebServiceWorkerProvider;
+using blink::WebServiceWorkerError;
+using blink::WebServiceWorkerProvider;
 using base::ThreadLocalPointer;
 using webkit_glue::WorkerTaskRunner;
 
@@ -44,10 +45,11 @@ ServiceWorkerDispatcher::~ServiceWorkerDispatcher() {
 void ServiceWorkerDispatcher::OnMessageReceived(const IPC::Message& msg) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ServiceWorkerDispatcher, msg)
-    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_ServiceWorkerRegistered,
-                        OnServiceWorkerRegistered)
+    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_ServiceWorkerRegistered, OnRegistered)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_ServiceWorkerUnregistered,
-                        OnServiceWorkerUnregistered)
+                        OnUnregistered)
+    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_ServiceWorkerRegistrationError,
+                        OnRegistrationError)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   DCHECK(handled) << "Unhandled message:" << msg.type();
@@ -92,30 +94,30 @@ ServiceWorkerDispatcher* ServiceWorkerDispatcher::ThreadSpecificInstance(
   return dispatcher;
 }
 
-void ServiceWorkerDispatcher::OnServiceWorkerRegistered(
-    int32 thread_id,
-    int32 request_id,
-    int64 service_worker_id) {
+void ServiceWorkerDispatcher::OnRegistered(int32 thread_id,
+                                           int32 request_id,
+                                           int64 registration_id) {
   WebServiceWorkerProvider::WebServiceWorkerCallbacks* callbacks =
       pending_callbacks_.Lookup(request_id);
   DCHECK(callbacks);
   if (!callbacks)
     return;
 
-  // the browser has to generate the service_worker_id so the same
+  // the browser has to generate the registration_id so the same
   // worker can be called from different renderer contexts. However,
   // the impl object doesn't have to be the same instance across calls
   // unless we require the DOM objects to be identical when there's a
   // duplicate registration. So for now we mint a new object each
   // time.
   scoped_ptr<WebServiceWorkerImpl> worker(
-      new WebServiceWorkerImpl(service_worker_id));
+      new WebServiceWorkerImpl(registration_id));
   callbacks->onSuccess(worker.release());
   pending_callbacks_.Remove(request_id);
 }
 
-void ServiceWorkerDispatcher::OnServiceWorkerUnregistered(int32 thread_id,
-                                                          int32 request_id) {
+void ServiceWorkerDispatcher::OnUnregistered(
+    int32 thread_id,
+    int32 request_id) {
   WebServiceWorkerProvider::WebServiceWorkerCallbacks* callbacks =
       pending_callbacks_.Lookup(request_id);
   DCHECK(callbacks);
@@ -123,6 +125,23 @@ void ServiceWorkerDispatcher::OnServiceWorkerUnregistered(int32 thread_id,
     return;
 
   callbacks->onSuccess(NULL);
+  pending_callbacks_.Remove(request_id);
+}
+
+void ServiceWorkerDispatcher::OnRegistrationError(
+    int32 thread_id,
+    int32 request_id,
+    WebServiceWorkerError::ErrorType error_type,
+    const base::string16& message) {
+  WebServiceWorkerProvider::WebServiceWorkerCallbacks* callbacks =
+      pending_callbacks_.Lookup(request_id);
+  DCHECK(callbacks);
+  if (!callbacks)
+    return;
+
+  scoped_ptr<WebServiceWorkerError>  error(
+      new WebServiceWorkerError(error_type, message));
+  callbacks->onError(error.release());
   pending_callbacks_.Remove(request_id);
 }
 

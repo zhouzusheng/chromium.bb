@@ -41,8 +41,7 @@ public:
 
 private:
     virtual bool isIdentity() const { return m_angleX == 0 && m_angleY == 0; }
-    virtual OperationType getOperationType() const { return m_type; }
-    virtual bool isSameType(const TransformOperation& o) const { return o.getOperationType() == m_type; }
+    virtual OperationType type() const OVERRIDE { return m_type; }
 
     virtual bool operator==(const TransformOperation& o) const
     {
@@ -52,10 +51,9 @@ private:
         return m_angleX == s->m_angleX && m_angleY == s->m_angleY;
     }
 
-    virtual bool apply(TransformationMatrix& transform, const FloatSize&) const
+    virtual void apply(TransformationMatrix& transform, const FloatSize&) const
     {
         transform.skew(m_angleX, m_angleY);
-        return false;
     }
 
     virtual PassRefPtr<TransformOperation> blend(const TransformOperation* from, double progress, bool blendToIdentity = false);

@@ -94,12 +94,11 @@ bool FormatFromGuid(const GUID& guid, VideoPixelFormat* format) {
   return false;
 }
 
-bool GetFrameSize(IMFMediaType* type, int* width, int* height) {
+bool GetFrameSize(IMFMediaType* type, gfx::Size* frame_size) {
   UINT32 width32, height32;
   if (FAILED(MFGetAttributeSize(type, MF_MT_FRAME_SIZE, &width32, &height32)))
     return false;
-  *width = width32;
-  *height = height32;
+  frame_size->SetSize(width32, height32);
   return true;
 }
 
@@ -121,15 +120,15 @@ bool FillCapabilitiesFromType(IMFMediaType* type,
                               VideoCaptureCapabilityWin* capability) {
   GUID type_guid;
   if (FAILED(type->GetGUID(MF_MT_SUBTYPE, &type_guid)) ||
-      !FormatFromGuid(type_guid, &capability->color) ||
-      !GetFrameSize(type, &capability->width, &capability->height) ||
+      !GetFrameSize(type, &capability->supported_format.frame_size) ||
       !GetFrameRate(type,
                     &capability->frame_rate_numerator,
-                    &capability->frame_rate_denominator)) {
+                    &capability->frame_rate_denominator) ||
+      !FormatFromGuid(type_guid, &capability->supported_format.pixel_format)) {
     return false;
   }
   // Keep the integer version of the frame_rate for (potential) returns.
-  capability->frame_rate =
+  capability->supported_format.frame_rate =
       capability->frame_rate_numerator / capability->frame_rate_denominator;
 
   return true;
@@ -207,7 +206,7 @@ class MFReaderCallback
       DWORD stream_flags, LONGLONG time_stamp, IMFSample* sample) {
     base::Time stamp(base::Time::Now());
     if (!sample) {
-      observer_->OnIncomingCapturedFrame(NULL, 0, stamp, 0, false, false);
+      observer_->OnIncomingCapturedFrame(NULL, 0, stamp, 0);
       return S_OK;
     }
 
@@ -221,8 +220,7 @@ class MFReaderCallback
         DWORD length = 0, max_length = 0;
         BYTE* data = NULL;
         buffer->Lock(&data, &max_length, &length);
-        observer_->OnIncomingCapturedFrame(data, length, stamp,
-                                           0, false, false);
+        observer_->OnIncomingCapturedFrame(data, length, stamp, 0);
         buffer->Unlock();
       }
     }
@@ -337,7 +335,7 @@ bool VideoCaptureDeviceMFWin::Init() {
 }
 
 void VideoCaptureDeviceMFWin::AllocateAndStart(
-    const VideoCaptureCapability& capture_format,
+    const VideoCaptureParams& params,
     scoped_ptr<VideoCaptureDevice::Client> client) {
   DCHECK(CalledOnValidThread());
 
@@ -353,14 +351,11 @@ void VideoCaptureDeviceMFWin::AllocateAndStart(
     return;
   }
 
-  const VideoCaptureCapabilityWin& found_capability =
-      capabilities.GetBestMatchedCapability(capture_format.width,
-                                            capture_format.height,
-                                            capture_format.frame_rate);
-  DLOG(INFO) << "Chosen capture format= (" << found_capability.width << "x"
-             << found_capability.height << ")@("
-             << found_capability.frame_rate_numerator << "/"
-             << found_capability.frame_rate_denominator << ")fps";
+  VideoCaptureCapabilityWin found_capability =
+      capabilities.GetBestMatchedFormat(
+          params.requested_format.frame_size.width(),
+          params.requested_format.frame_size.height(),
+          params.requested_format.frame_rate);
 
   ScopedComPtr<IMFMediaType> type;
   if (FAILED(hr = reader_->GetNativeMediaType(
@@ -372,13 +367,12 @@ void VideoCaptureDeviceMFWin::AllocateAndStart(
     return;
   }
 
-  client_->OnFrameInfo(found_capability);
-
   if (FAILED(hr = reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0,
                                       NULL, NULL, NULL, NULL))) {
     OnError(hr);
     return;
   }
+  capture_format_ = found_capability.supported_format;
   capture_ = true;
 }
 
@@ -414,13 +408,14 @@ void VideoCaptureDeviceMFWin::OnIncomingCapturedFrame(
     const uint8* data,
     int length,
     const base::Time& time_stamp,
-    int rotation,
-    bool flip_vert,
-    bool flip_horiz) {
+    int rotation) {
   base::AutoLock lock(lock_);
   if (data && client_.get())
-    client_->OnIncomingCapturedFrame(data, length, time_stamp,
-                                     rotation, flip_vert, flip_horiz);
+    client_->OnIncomingCapturedFrame(data,
+                                     length,
+                                     time_stamp,
+                                     rotation,
+                                     capture_format_);
 
   if (capture_) {
     HRESULT hr = reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0,

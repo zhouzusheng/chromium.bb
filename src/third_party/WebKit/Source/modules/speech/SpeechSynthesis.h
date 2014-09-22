@@ -29,10 +29,10 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ContextLifecycleObserver.h"
 #include "core/events/EventTarget.h"
-#include "core/platform/PlatformSpeechSynthesisUtterance.h"
-#include "core/platform/PlatformSpeechSynthesizer.h"
 #include "modules/speech/SpeechSynthesisUtterance.h"
 #include "modules/speech/SpeechSynthesisVoice.h"
+#include "platform/speech/PlatformSpeechSynthesisUtterance.h"
+#include "platform/speech/PlatformSpeechSynthesizer.h"
 #include "wtf/Deque.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -79,13 +79,15 @@ private:
     virtual void speakingErrorOccurred(PassRefPtr<PlatformSpeechSynthesisUtterance>) OVERRIDE;
     virtual void boundaryEventOccurred(PassRefPtr<PlatformSpeechSynthesisUtterance>, SpeechBoundary, unsigned charIndex) OVERRIDE;
 
-    void startSpeakingImmediately(SpeechSynthesisUtterance*);
+    void startSpeakingImmediately();
     void handleSpeakingCompleted(SpeechSynthesisUtterance*, bool errorOccurred);
     void fireEvent(const AtomicString& type, SpeechSynthesisUtterance*, unsigned long charIndex, const String& name);
 
+    // Returns the utterance at the front of the queue.
+    SpeechSynthesisUtterance* currentSpeechUtterance() const;
+
     OwnPtr<PlatformSpeechSynthesizer> m_platformSpeechSynthesizer;
     Vector<RefPtr<SpeechSynthesisVoice> > m_voiceList;
-    SpeechSynthesisUtterance* m_currentSpeechUtterance;
     Deque<RefPtr<SpeechSynthesisUtterance> > m_utteranceQueue;
     bool m_isPaused;
 

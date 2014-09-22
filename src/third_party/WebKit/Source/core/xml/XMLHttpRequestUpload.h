@@ -58,7 +58,10 @@ public:
     virtual const AtomicString& interfaceName() const OVERRIDE;
     virtual ExecutionContext* executionContext() const OVERRIDE;
 
-    void dispatchEventAndLoadEnd(PassRefPtr<Event>);
+    void dispatchEventAndLoadEnd(const AtomicString&, bool, unsigned long long, unsigned long long);
+    void dispatchProgressEvent(unsigned long long, unsigned long long);
+
+    void handleRequestError(const AtomicString&);
 
 private:
     explicit XMLHttpRequestUpload(XMLHttpRequest*);
@@ -68,6 +71,11 @@ private:
 
     XMLHttpRequest* m_xmlHttpRequest;
     EventTargetData m_eventTargetData;
+
+    // Last progress event values; used when issuing the
+    // required 'progress' event on a request error or abort.
+    unsigned long long m_lastBytesSent;
+    unsigned long long m_lastTotalBytesToBeSent;
 };
 
 } // namespace WebCore

@@ -28,10 +28,10 @@
 #include "config.h"
 #include "core/html/forms/InputType.h"
 
+#include "InputTypeNames.h"
 #include "RuntimeEnabledFeatures.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/dom/NodeRenderStyle.h"
-#include "core/dom/shadow/ShadowRoot.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/ScopedEventQueue.h"
 #include "core/fileapi/FileList.h"
@@ -47,7 +47,6 @@
 #include "core/html/forms/FormController.h"
 #include "core/html/forms/HiddenInputType.h"
 #include "core/html/forms/ImageInputType.h"
-#include "core/html/forms/InputTypeNames.h"
 #include "core/html/forms/MonthInputType.h"
 #include "core/html/forms/NumberInputType.h"
 #include "core/html/forms/PasswordInputType.h"
@@ -70,7 +69,7 @@
 
 namespace WebCore {
 
-using WebKit::WebLocalizedString;
+using blink::WebLocalizedString;
 using namespace HTMLNames;
 using namespace std;
 
@@ -80,29 +79,29 @@ typedef HashMap<AtomicString, InputTypeFactoryFunction, CaseFoldingHash> InputTy
 static PassOwnPtr<InputTypeFactoryMap> createInputTypeFactoryMap()
 {
     OwnPtr<InputTypeFactoryMap> map = adoptPtr(new InputTypeFactoryMap);
-    map->add(InputTypeNames::button(), ButtonInputType::create);
-    map->add(InputTypeNames::checkbox(), CheckboxInputType::create);
+    map->add(InputTypeNames::button, ButtonInputType::create);
+    map->add(InputTypeNames::checkbox, CheckboxInputType::create);
     if (RuntimeEnabledFeatures::inputTypeColorEnabled())
-        map->add(InputTypeNames::color(), ColorInputType::create);
-    map->add(InputTypeNames::date(), DateInputType::create);
-    map->add(InputTypeNames::datetimelocal(), DateTimeLocalInputType::create);
-    map->add(InputTypeNames::email(), EmailInputType::create);
-    map->add(InputTypeNames::file(), FileInputType::create);
-    map->add(InputTypeNames::hidden(), HiddenInputType::create);
-    map->add(InputTypeNames::image(), ImageInputType::create);
-    map->add(InputTypeNames::month(), MonthInputType::create);
-    map->add(InputTypeNames::number(), NumberInputType::create);
-    map->add(InputTypeNames::password(), PasswordInputType::create);
-    map->add(InputTypeNames::radio(), RadioInputType::create);
-    map->add(InputTypeNames::range(), RangeInputType::create);
-    map->add(InputTypeNames::reset(), ResetInputType::create);
-    map->add(InputTypeNames::search(), SearchInputType::create);
-    map->add(InputTypeNames::submit(), SubmitInputType::create);
-    map->add(InputTypeNames::telephone(), TelephoneInputType::create);
-    map->add(InputTypeNames::time(), TimeInputType::create);
-    map->add(InputTypeNames::url(), URLInputType::create);
+        map->add(InputTypeNames::color, ColorInputType::create);
+    map->add(InputTypeNames::date, DateInputType::create);
+    map->add(InputTypeNames::datetime_local, DateTimeLocalInputType::create);
+    map->add(InputTypeNames::email, EmailInputType::create);
+    map->add(InputTypeNames::file, FileInputType::create);
+    map->add(InputTypeNames::hidden, HiddenInputType::create);
+    map->add(InputTypeNames::image, ImageInputType::create);
+    map->add(InputTypeNames::month, MonthInputType::create);
+    map->add(InputTypeNames::number, NumberInputType::create);
+    map->add(InputTypeNames::password, PasswordInputType::create);
+    map->add(InputTypeNames::radio, RadioInputType::create);
+    map->add(InputTypeNames::range, RangeInputType::create);
+    map->add(InputTypeNames::reset, ResetInputType::create);
+    map->add(InputTypeNames::search, SearchInputType::create);
+    map->add(InputTypeNames::submit, SubmitInputType::create);
+    map->add(InputTypeNames::tel, TelephoneInputType::create);
+    map->add(InputTypeNames::time, TimeInputType::create);
+    map->add(InputTypeNames::url, URLInputType::create);
     if (RuntimeEnabledFeatures::inputTypeWeekEnabled())
-        map->add(InputTypeNames::week(), WeekInputType::create);
+        map->add(InputTypeNames::week, WeekInputType::create);
     // No need to register "text" because it is the default type.
     return map.release();
 }
@@ -129,9 +128,9 @@ PassRefPtr<InputType> InputType::createText(HTMLInputElement& element)
 const AtomicString& InputType::normalizeTypeName(const AtomicString& typeName)
 {
     if (typeName.isEmpty())
-        return InputTypeNames::text();
+        return InputTypeNames::text;
     InputTypeFactoryMap::const_iterator it = factoryMap()->find(typeName);
-    return it == factoryMap()->end() ? InputTypeNames::text() : it->key;
+    return it == factoryMap()->end() ? InputTypeNames::text : it->key;
 }
 
 bool InputType::canChangeFromAnotherType(const AtomicString& normalizedTypeName)
@@ -141,7 +140,7 @@ bool InputType::canChangeFromAnotherType(const AtomicString& normalizedTypeName)
     // field's value to something like /etc/passwd and then change it to a file
     // input. I don't think this would actually occur in Blink, but this rule
     // still may be important for compatibility.
-    return normalizedTypeName != InputTypeNames::file();
+    return normalizedTypeName != InputTypeNames::file;
 }
 
 InputType::~InputType()
@@ -209,9 +208,9 @@ double InputType::valueAsDate() const
     return DateComponents::invalidMilliseconds();
 }
 
-void InputType::setValueAsDate(double, ExceptionState& es) const
+void InputType::setValueAsDate(double, ExceptionState& exceptionState) const
 {
-    es.throwUninformativeAndGenericDOMException(InvalidStateError);
+    exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
 }
 
 double InputType::valueAsDouble() const
@@ -219,14 +218,14 @@ double InputType::valueAsDouble() const
     return numeric_limits<double>::quiet_NaN();
 }
 
-void InputType::setValueAsDouble(double doubleValue, TextFieldEventBehavior eventBehavior, ExceptionState& es) const
+void InputType::setValueAsDouble(double doubleValue, TextFieldEventBehavior eventBehavior, ExceptionState& exceptionState) const
 {
-    setValueAsDecimal(Decimal::fromDouble(doubleValue), eventBehavior, es);
+    setValueAsDecimal(Decimal::fromDouble(doubleValue), eventBehavior, exceptionState);
 }
 
-void InputType::setValueAsDecimal(const Decimal&, TextFieldEventBehavior, ExceptionState& es) const
+void InputType::setValueAsDecimal(const Decimal&, TextFieldEventBehavior, ExceptionState& exceptionState) const
 {
-    es.throwUninformativeAndGenericDOMException(InvalidStateError);
+    exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
 }
 
 bool InputType::supportsValidation() const
@@ -427,16 +426,6 @@ bool InputType::shouldSubmitImplicitly(Event* event)
     return event->isKeyboardEvent() && event->type() == EventTypeNames::keypress && toKeyboardEvent(event)->charCode() == '\r';
 }
 
-void InputType::createShadowSubtree()
-{
-}
-
-void InputType::destroyShadowSubtree()
-{
-    if (ShadowRoot* root = element().userAgentShadowRoot())
-        root->removeChildren();
-}
-
 Decimal InputType::parseToNumber(const String&, const Decimal& defaultValue) const
 {
     ASSERT_NOT_REACHED();
@@ -515,10 +504,6 @@ void InputType::disableSecureTextInput()
 void InputType::accessKeyAction(bool)
 {
     element().focus(false);
-}
-
-void InputType::detach()
-{
 }
 
 void InputType::countUsage()
@@ -823,28 +808,28 @@ unsigned InputType::width() const
     return 0;
 }
 
-void InputType::applyStep(int count, AnyStepHandling anyStepHandling, TextFieldEventBehavior eventBehavior, ExceptionState& es)
+void InputType::applyStep(int count, AnyStepHandling anyStepHandling, TextFieldEventBehavior eventBehavior, ExceptionState& exceptionState)
 {
     StepRange stepRange(createStepRange(anyStepHandling));
     if (!stepRange.hasStep()) {
-        es.throwUninformativeAndGenericDOMException(InvalidStateError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
 
     const Decimal current = parseToNumberOrNaN(element().value());
     if (!current.isFinite()) {
-        es.throwUninformativeAndGenericDOMException(InvalidStateError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
     Decimal newValue = current + stepRange.step() * count;
     if (!newValue.isFinite()) {
-        es.throwUninformativeAndGenericDOMException(InvalidStateError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
 
     const Decimal acceptableErrorValue = stepRange.acceptableError();
     if (newValue - stepRange.minimum() < -acceptableErrorValue) {
-        es.throwUninformativeAndGenericDOMException(InvalidStateError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
     if (newValue < stepRange.minimum())
@@ -855,13 +840,13 @@ void InputType::applyStep(int count, AnyStepHandling anyStepHandling, TextFieldE
         newValue = stepRange.alignValueForStep(current, newValue);
 
     if (newValue - stepRange.maximum() > acceptableErrorValue) {
-        es.throwUninformativeAndGenericDOMException(InvalidStateError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
     if (newValue > stepRange.maximum())
         newValue = stepRange.maximum();
 
-    setValueAsDecimal(newValue, eventBehavior, es);
+    setValueAsDecimal(newValue, eventBehavior, exceptionState);
 
     if (AXObjectCache* cache = element().document().existingAXObjectCache())
         cache->postNotification(&element(), AXObjectCache::AXValueChanged, true);
@@ -880,13 +865,13 @@ StepRange InputType::createStepRange(AnyStepHandling) const
     return StepRange();
 }
 
-void InputType::stepUp(int n, ExceptionState& es)
+void InputType::stepUp(int n, ExceptionState& exceptionState)
 {
     if (!isSteppable()) {
-        es.throwUninformativeAndGenericDOMException(InvalidStateError);
+        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
         return;
     }
-    applyStep(n, RejectAny, DispatchNoEvent, es);
+    applyStep(n, RejectAny, DispatchNoEvent, exceptionState);
 }
 
 void InputType::stepUpFromRenderer(int n)
@@ -998,6 +983,23 @@ void InputType::countUsageIfVisible(UseCounter::Feature feature) const
         if (style->visibility() != HIDDEN)
             UseCounter::count(element().document(), feature);
     }
+}
+
+Decimal InputType::findStepBase(const Decimal& defaultValue) const
+{
+    Decimal stepBase = parseToNumber(element().fastGetAttribute(minAttr), Decimal::nan());
+    if (!stepBase.isFinite())
+        stepBase = parseToNumber(element().fastGetAttribute(valueAttr), defaultValue);
+    return stepBase;
+}
+
+StepRange InputType::createStepRange(AnyStepHandling anyStepHandling, const Decimal& stepBaseDefault, const Decimal& minimumDefault, const Decimal& maximumDefault, const StepRange::StepDescription& stepDescription) const
+{
+    const Decimal stepBase = findStepBase(stepBaseDefault);
+    const Decimal minimum = parseToNumber(element().fastGetAttribute(minAttr), minimumDefault);
+    const Decimal maximum = parseToNumber(element().fastGetAttribute(maxAttr), maximumDefault);
+    const Decimal step = StepRange::parseStep(anyStepHandling, stepDescription, element().fastGetAttribute(stepAttr));
+    return StepRange(stepBase, minimum, maximum, step, stepDescription);
 }
 
 } // namespace WebCore

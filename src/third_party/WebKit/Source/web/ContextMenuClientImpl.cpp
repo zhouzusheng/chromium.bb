@@ -66,23 +66,23 @@
 #include "core/page/EventHandler.h"
 #include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/platform/ContextMenu.h"
+#include "core/frame/Settings.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderWidget.h"
+#include "platform/ContextMenu.h"
 #include "platform/Widget.h"
 #include "platform/text/TextBreakIterator.h"
+#include "platform/weborigin/KURL.h"
 #include "public/platform/WebPoint.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLResponse.h"
 #include "public/platform/WebVector.h"
-#include "weborigin/KURL.h"
 #include "wtf/text/WTFString.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 // Figure out the URL of a page or subframe. Returns |page_type| as the type,
 // which indicates page or subframe, or ContextNodeType::NONE if the URL could not
@@ -296,7 +296,7 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
     data.pageURL = urlFromFrame(m_webView->mainFrameImpl()->frame());
     if (selectedFrame != m_webView->mainFrameImpl()->frame()) {
         data.frameURL = urlFromFrame(selectedFrame);
-        RefPtr<HistoryItem> historyItem = selectedFrame->loader().history()->currentItem();
+        RefPtr<HistoryItem> historyItem = selectedFrame->loader().currentItem();
         if (historyItem)
             data.frameHistoryItem = WebHistoryItem(historyItem);
     }
@@ -354,12 +354,10 @@ void ContextMenuClientImpl::showContextMenu(const WebCore::ContextMenu* defaultM
         }
     }
 
-#if OS(MACOSX)
     if (selectedFrame->editor().selectionHasStyle(CSSPropertyDirection, "ltr") != FalseTriState)
         data.writingDirectionLeftToRight |= WebContextMenuData::CheckableMenuItemChecked;
     if (selectedFrame->editor().selectionHasStyle(CSSPropertyDirection, "rtl") != FalseTriState)
         data.writingDirectionRightToLeft |= WebContextMenuData::CheckableMenuItemChecked;
-#endif // OS(MACOSX)
 
     // Now retrieve the security info.
     DocumentLoader* dl = selectedFrame->loader().documentLoader();
@@ -443,7 +441,7 @@ static void exposeString(v8::Isolate* isolate, const v8::Handle<v8::Object>& obj
     obj->Set(v8::String::NewFromUtf8(isolate, name), v8::String::NewFromUtf8(isolate, value.data(), v8::String::kNormalString, value.length()));
 }
 
-static void exposeStringVector(v8::Isolate* isolate, const v8::Handle<v8::Object>& obj, const char* name, const WebKit::WebVector<WebKit::WebString>& value)
+static void exposeStringVector(v8::Isolate* isolate, const v8::Handle<v8::Object>& obj, const char* name, const blink::WebVector<blink::WebString>& value)
 {
     v8::Handle<v8::Array> array = v8::Array::New();
     for (unsigned i = 0; i < value.size(); ++i) {
@@ -492,10 +490,10 @@ static bool fireBbContextMenuEvent(Frame* frame, WebContextMenuData& data)
     eventInit.bubbles = true;
     eventInit.cancelable = true;
     RefPtr<CustomEvent> event = CustomEvent::create("bbContextMenu", eventInit);
-    event->setSerializedDetail(SerializedScriptValue::create(detailObj, isolate));
+    event->setSerializedDetail(SerializedScriptValue::createAndSwallowExceptions(detailObj, isolate));
 
     data.node.unwrap<Node>()->dispatchEvent(event);
     return event->defaultPrevented();
 }
 
-} // namespace WebKit
+} // namespace blink

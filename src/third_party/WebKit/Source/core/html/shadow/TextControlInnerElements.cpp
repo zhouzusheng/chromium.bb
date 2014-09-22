@@ -49,7 +49,7 @@ namespace WebCore {
 using namespace HTMLNames;
 
 TextControlInnerContainer::TextControlInnerContainer(Document& document)
-    : HTMLDivElement(divTag, document)
+    : HTMLDivElement(document)
 {
 }
 
@@ -68,7 +68,7 @@ RenderObject* TextControlInnerContainer::createRenderer(RenderStyle*)
 // ---------------------------
 
 EditingViewPortElement::EditingViewPortElement(Document& document)
-    : HTMLDivElement(divTag, document)
+    : HTMLDivElement(document)
 {
     setHasCustomStyleCallbacks();
 }
@@ -105,7 +105,7 @@ PassRefPtr<RenderStyle> EditingViewPortElement::customStyleForRenderer()
 // ---------------------------
 
 inline TextControlInnerTextElement::TextControlInnerTextElement(Document& document)
-    : HTMLDivElement(divTag, document)
+    : HTMLDivElement(document)
 {
     setHasCustomStyleCallbacks();
 }
@@ -153,7 +153,7 @@ PassRefPtr<RenderStyle> TextControlInnerTextElement::customStyleForRenderer()
 // ----------------------------
 
 inline SearchFieldDecorationElement::SearchFieldDecorationElement(Document& document)
-    : HTMLDivElement(divTag, document)
+    : HTMLDivElement(document)
 {
 }
 
@@ -164,7 +164,7 @@ PassRefPtr<SearchFieldDecorationElement> SearchFieldDecorationElement::create(Do
     return element.release();
 }
 
-const AtomicString& SearchFieldDecorationElement::part() const
+const AtomicString& SearchFieldDecorationElement::pseudo() const
 {
     DEFINE_STATIC_LOCAL(AtomicString, resultsDecorationId, ("-webkit-search-results-decoration", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, decorationId, ("-webkit-search-decoration", AtomicString::ConstructFromLiteral));
@@ -201,7 +201,7 @@ bool SearchFieldDecorationElement::willRespondToMouseClickEvents()
 // ----------------------------
 
 inline SearchFieldCancelButtonElement::SearchFieldCancelButtonElement(Document& document)
-    : HTMLDivElement(divTag, document)
+    : HTMLDivElement(document)
     , m_capturing(false)
 {
 }
@@ -209,7 +209,7 @@ inline SearchFieldCancelButtonElement::SearchFieldCancelButtonElement(Document& 
 PassRefPtr<SearchFieldCancelButtonElement> SearchFieldCancelButtonElement::create(Document& document)
 {
     RefPtr<SearchFieldCancelButtonElement> element = adoptRef(new SearchFieldCancelButtonElement(document));
-    element->setPart(AtomicString("-webkit-search-cancel-button", AtomicString::ConstructFromLiteral));
+    element->setPseudo(AtomicString("-webkit-search-cancel-button", AtomicString::ConstructFromLiteral));
     element->setAttribute(idAttr, ShadowElementNames::clearButton());
     return element.release();
 }
@@ -278,7 +278,7 @@ bool SearchFieldCancelButtonElement::willRespondToMouseClickEvents()
 #if ENABLE(INPUT_SPEECH)
 
 inline InputFieldSpeechButtonElement::InputFieldSpeechButtonElement(Document& document)
-    : HTMLDivElement(divTag, document)
+    : HTMLDivElement(document)
     , m_capturing(false)
     , m_state(Idle)
     , m_listenerId(0)
@@ -298,7 +298,7 @@ InputFieldSpeechButtonElement::~InputFieldSpeechButtonElement()
 PassRefPtr<InputFieldSpeechButtonElement> InputFieldSpeechButtonElement::create(Document& document)
 {
     RefPtr<InputFieldSpeechButtonElement> element = adoptRef(new InputFieldSpeechButtonElement(document));
-    element->setPart(AtomicString("-webkit-input-speech-button", AtomicString::ConstructFromLiteral));
+    element->setPseudo(AtomicString("-webkit-input-speech-button", AtomicString::ConstructFromLiteral));
     element->setAttribute(idAttr, ShadowElementNames::speechButton());
     return element.release();
 }

@@ -43,12 +43,10 @@ class HTMLFormControlElement : public LabelableElement, public FormAssociatedEle
 public:
     virtual ~HTMLFormControlElement();
 
-    HTMLFormElement* form() const { return FormAssociatedElement::form(); }
-
     String formEnctype() const;
-    void setFormEnctype(const String&);
+    void setFormEnctype(const AtomicString&);
     String formMethod() const;
-    void setFormMethod(const String&);
+    void setFormMethod(const AtomicString&);
     bool formNoValidate() const;
 
     void ancestorDisabledStateWasChanged();
@@ -63,6 +61,8 @@ public:
 
     virtual void dispatchFormControlChangeEvent();
     virtual void dispatchFormControlInputEvent();
+
+    virtual HTMLFormElement* formOwner() const OVERRIDE;
 
     virtual bool isDisabledFormControl() const OVERRIDE;
 
@@ -81,7 +81,8 @@ public:
     virtual bool appendFormData(FormDataList&, bool) { return false; }
     virtual String resultForDialogSubmit();
 
-    virtual bool isSuccessfulSubmitButton() const { return false; }
+    virtual bool canBeSuccessfulSubmitButton() const { return false; }
+    bool isSuccessfulSubmitButton() const;
     virtual bool isActivatedSubmit() const { return false; }
     virtual void setActivatedSubmit(bool) { }
 
@@ -106,6 +107,8 @@ public:
     void setAutofilled(bool = true);
 
     static HTMLFormControlElement* enclosingFormControlElement(Node*);
+
+    String nameForAutofill() const;
 
     using Node::ref;
     using Node::deref;
@@ -146,7 +149,6 @@ private:
 
     virtual short tabIndex() const;
 
-    virtual HTMLFormElement* virtualForm() const;
     virtual bool isDefaultButtonForForm() const;
     virtual bool isValidFormControlElement();
     void updateAncestorDisabledState() const;
@@ -184,24 +186,7 @@ inline bool isHTMLFormControlElement(const Node& node)
 }
 
 DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(HTMLFormControlElement);
-
-inline HTMLFormControlElement* toHTMLFormControlElement(FormAssociatedElement* control)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!control || control->isFormControlElement());
-    return static_cast<HTMLFormControlElement*>(control);
-}
-
-inline HTMLFormControlElement& toHTMLFormControlElement(FormAssociatedElement& control)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(control.isFormControlElement());
-    return static_cast<HTMLFormControlElement&>(control);
-}
-
-inline const HTMLFormControlElement* toHTMLFormControlElement(const FormAssociatedElement* control)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!control || control->isFormControlElement());
-    return static_cast<const HTMLFormControlElement*>(control);
-}
+DEFINE_TYPE_CASTS(HTMLFormControlElement, FormAssociatedElement, control, control->isFormControlElement(), control.isFormControlElement());
 
 } // namespace
 

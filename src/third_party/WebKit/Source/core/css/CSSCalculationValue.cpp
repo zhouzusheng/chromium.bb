@@ -35,7 +35,6 @@
 #include "core/css/resolver/StyleResolver.h"
 #include "wtf/MathExtras.h"
 #include "wtf/OwnPtr.h"
-#include "wtf/PassOwnPtr.h"
 #include "wtf/text/StringBuilder.h"
 
 static const int maxExpressionDepth = 100;
@@ -179,9 +178,9 @@ double CSSCalcValue::doubleValue() const
     return clampToPermittedRange(m_expression->doubleValue());
 }
 
-double CSSCalcValue::computeLengthPx(const RenderStyle* currentStyle, const RenderStyle* rootStyle, double multiplier, bool computingFontSize) const
+double CSSCalcValue::computeLengthPx(const CSSToLengthConversionData& conversionData) const
 {
-    return clampToPermittedRange(m_expression->computeLengthPx(currentStyle, rootStyle, multiplier, computingFontSize));
+    return clampToPermittedRange(m_expression->computeLengthPx(conversionData));
 }
 
 CSSCalcExpressionNode::~CSSCalcExpressionNode()
@@ -224,18 +223,18 @@ public:
         return m_value->isVariableName();
     }
 
-    virtual PassOwnPtr<CalcExpressionNode> toCalcValue(const RenderStyle* style, const RenderStyle* rootStyle, double zoom) const
+    virtual PassOwnPtr<CalcExpressionNode> toCalcValue(const CSSToLengthConversionData& conversionData) const
     {
         switch (m_category) {
         case CalcNumber:
             return adoptPtr(new CalcExpressionNumber(m_value->getFloatValue()));
         case CalcLength:
-            return adoptPtr(new CalcExpressionLength(Length(m_value->computeLength<float>(style, rootStyle, zoom), WebCore::Fixed)));
+            return adoptPtr(new CalcExpressionLength(Length(m_value->computeLength<float>(conversionData), WebCore::Fixed)));
         case CalcPercent:
         case CalcPercentLength: {
             CSSPrimitiveValue* primitiveValue = m_value.get();
             return adoptPtr(new CalcExpressionLength(primitiveValue
-                ? primitiveValue->convertToLength<FixedFloatConversion | PercentConversion | FractionConversion>(style, rootStyle, zoom)
+                ? primitiveValue->convertToLength<FixedConversion | PercentConversion>(conversionData)
                 : Length(Undefined)));
         }
         // Only types that could be part of a Length expression can be converted
@@ -256,11 +255,11 @@ public:
         return 0;
     }
 
-    virtual double computeLengthPx(const RenderStyle* currentStyle, const RenderStyle* rootStyle, double multiplier, bool computingFontSize) const
+    virtual double computeLengthPx(const CSSToLengthConversionData& conversionData) const
     {
         switch (m_category) {
         case CalcLength:
-            return m_value->computeLength<double>(currentStyle, rootStyle, multiplier, computingFontSize);
+            return m_value->computeLength<double>(conversionData);
         case CalcPercent:
         case CalcNumber:
             return m_value->getDoubleValue();
@@ -421,12 +420,12 @@ public:
         return !doubleValue();
     }
 
-    virtual PassOwnPtr<CalcExpressionNode> toCalcValue(const RenderStyle* style, const RenderStyle* rootStyle, double zoom) const
+    virtual PassOwnPtr<CalcExpressionNode> toCalcValue(const CSSToLengthConversionData& conversionData) const
     {
-        OwnPtr<CalcExpressionNode> left(m_leftSide->toCalcValue(style, rootStyle, zoom));
+        OwnPtr<CalcExpressionNode> left(m_leftSide->toCalcValue(conversionData));
         if (!left)
             return nullptr;
-        OwnPtr<CalcExpressionNode> right(m_rightSide->toCalcValue(style, rootStyle, zoom));
+        OwnPtr<CalcExpressionNode> right(m_rightSide->toCalcValue(conversionData));
         if (!right)
             return nullptr;
         return adoptPtr(new CalcExpressionBinaryOperation(left.release(), right.release(), m_operator));
@@ -437,10 +436,10 @@ public:
         return evaluate(m_leftSide->doubleValue(), m_rightSide->doubleValue());
     }
 
-    virtual double computeLengthPx(const RenderStyle* currentStyle, const RenderStyle* rootStyle, double multiplier, bool computingFontSize) const
+    virtual double computeLengthPx(const CSSToLengthConversionData& conversionData) const
     {
-        const double leftValue = m_leftSide->computeLengthPx(currentStyle, rootStyle, multiplier, computingFontSize);
-        const double rightValue = m_rightSide->computeLengthPx(currentStyle, rootStyle, multiplier, computingFontSize);
+        const double leftValue = m_leftSide->computeLengthPx(conversionData);
+        const double rightValue = m_rightSide->computeLengthPx(conversionData);
         return evaluate(leftValue, rightValue);
     }
 
@@ -763,7 +762,6 @@ PassRefPtr<CSSCalcExpressionNode> CSSCalcValue::createExpressionNode(const Lengt
     case FillAvailable:
     case FitContent:
     case ExtendToZoom:
-    case Relative:
     case Undefined:
         ASSERT_NOT_REACHED();
         return 0;

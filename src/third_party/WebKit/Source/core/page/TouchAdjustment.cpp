@@ -35,7 +35,6 @@
 #include "core/rendering/style/RenderStyle.h"
 #include "platform/geometry/FloatPoint.h"
 #include "platform/geometry/FloatQuad.h"
-#include "platform/geometry/IntPoint.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/text/TextBreakIterator.h"
 
@@ -151,8 +150,8 @@ static inline void appendContextSubtargetsForNode(Node* node, SubtargetGeometryL
     if (!node->isTextNode())
         return appendBasicSubtargetsForNode(node, subtargets);
 
-    Text* textNode = static_cast<WebCore::Text*>(node);
-    RenderText* textRenderer = static_cast<RenderText*>(textNode->renderer());
+    Text* textNode = toText(node);
+    RenderText* textRenderer = toRenderText(textNode->renderer());
 
     if (textRenderer->frame()->editor().behavior().shouldSelectOnContextualMenuClick()) {
         // Make subtargets out of every word.

@@ -38,12 +38,7 @@
 
 namespace WebCore { class Node; }
 
-namespace v8 {
-    template <class T> class Handle;
-    class Value;
-}
-
-namespace WebKit {
+namespace blink {
 class WebDOMEvent;
 class WebDOMEventListener;
 class WebDOMEventListenerPrivate;
@@ -108,9 +103,6 @@ public:
     BLINK_EXPORT WebNode nextSibling() const;
     BLINK_EXPORT bool hasChildNodes() const;
     BLINK_EXPORT WebNodeList childNodes();
-    BLINK_EXPORT bool insertBefore(const WebNode& newChild, const WebNode& refChild);
-    BLINK_EXPORT bool replaceChild(const WebNode& newChild, const WebNode& oldChild);
-    BLINK_EXPORT bool appendChild(const WebNode& child);
     BLINK_EXPORT WebString createMarkup() const;
     BLINK_EXPORT bool isLink() const;
     BLINK_EXPORT bool isTextNode() const;
@@ -126,9 +118,6 @@ public:
     BLINK_EXPORT WebElement rootEditableElement() const;
     BLINK_EXPORT bool focused() const;
     BLINK_EXPORT bool remove();
-    BLINK_EXPORT bool setTextContent(const WebString&);
-    BLINK_EXPORT bool removeChild(const WebNode& oldChild);
-    BLINK_EXPORT WebString textContent() const;
 
     // Returns true if the node has a non-empty bounding box in layout.
     // This does not 100% guarantee the user can see it, but is pretty close.
@@ -136,11 +125,6 @@ public:
     BLINK_EXPORT bool hasNonEmptyBoundingBox() const;
     BLINK_EXPORT WebPluginContainer* pluginContainer() const;
     BLINK_EXPORT WebElement shadowHost() const;
-
-    BLINK_EXPORT v8::Handle<v8::Value> toV8Handle() const;
-
-    BLINK_EXPORT static bool isWebNode(v8::Handle<v8::Value> handle);
-    BLINK_EXPORT static WebNode fromV8Handle(v8::Handle<v8::Value> handle);
 
     template<typename T> T to()
     {
@@ -193,6 +177,6 @@ inline bool operator<(const WebNode& a, const WebNode& b)
     return a.lessThan(b);
 }
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

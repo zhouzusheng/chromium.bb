@@ -17,12 +17,12 @@ ShellRenderViewObserver::ShellRenderViewObserver(RenderView* render_view)
     : RenderViewObserver(render_view) {
 }
 
-void ShellRenderViewObserver::DidClearWindowObject(WebKit::WebFrame* frame) {
+void ShellRenderViewObserver::DidClearWindowObject(blink::WebFrame* frame) {
   // SHEZ: Remove test code.
 #if 0
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kExposeInternalsForTesting)) {
-    WebKit::WebTestingSupport::injectInternalsObject(frame);
+    blink::WebTestingSupport::injectInternalsObject(frame);
   }
 #endif
 }

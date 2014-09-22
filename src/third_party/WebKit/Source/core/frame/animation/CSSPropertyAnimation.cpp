@@ -31,7 +31,6 @@
 #include "core/frame/animation/CSSPropertyAnimation.h"
 
 #include <algorithm>
-#include "CSSPropertyNames.h"
 #include "StylePropertyShorthand.h"
 #include "core/animation/css/CSSAnimations.h"
 #include "core/css/CSSCrossfadeValue.h"
@@ -71,21 +70,39 @@ static inline Length blendFunc(const AnimationBase*, const Length& from, const L
     return to.blend(from, progress, ValueRangeAll);
 }
 
+static inline BorderImageLength blendFunc(const AnimationBase* anim, const BorderImageLength& from, const BorderImageLength& to, double progress)
+{
+    if (from.isNumber() && to.isNumber())
+        return BorderImageLength(blendFunc(anim, from.number(), to.number(), progress));
+
+    if (from.isLength() && to.isLength())
+        return BorderImageLength(blendFunc(anim, from.length(), to.length(), progress));
+
+    // FIXME: Converting numbers to lengths using the computed border
+    // width would make it possible to interpolate between numbers and
+    // lengths.
+    // https://code.google.com/p/chromium/issues/detail?id=316164
+    return to;
+}
+
+static inline BorderImageLengthBox blendFunc(const AnimationBase* anim, const BorderImageLengthBox& from,
+    const BorderImageLengthBox& to, double progress)
+{
+    return BorderImageLengthBox(blendFunc(anim, from.top(), to.top(), progress),
+        blendFunc(anim, from.right(), to.right(), progress),
+        blendFunc(anim, from.bottom(), to.bottom(), progress),
+        blendFunc(anim, from.left(), to.left(), progress));
+}
+
 static inline LengthSize blendFunc(const AnimationBase* anim, const LengthSize& from, const LengthSize& to, double progress)
 {
     return LengthSize(blendFunc(anim, from.width(), to.width(), progress),
-                      blendFunc(anim, from.height(), to.height(), progress));
+        blendFunc(anim, from.height(), to.height(), progress));
 }
 
 static inline LengthPoint blendFunc(const AnimationBase* anim, const LengthPoint& from, const LengthPoint& to, double progress)
 {
     return LengthPoint(blendFunc(anim, from.x(), to.x(), progress), blendFunc(anim, from.y(), to.y(), progress));
-}
-
-static inline IntSize blendFunc(const AnimationBase* anim, const IntSize& from, const IntSize& to, double progress)
-{
-    return IntSize(blendFunc(anim, from.width(), to.width(), progress),
-                   blendFunc(anim, from.height(), to.height(), progress));
 }
 
 static inline TransformOperations blendFunc(const AnimationBase* anim, const TransformOperations& from, const TransformOperations& to, double progress)
@@ -98,11 +115,11 @@ static inline TransformOperations blendFunc(const AnimationBase* anim, const Tra
 static inline PassRefPtr<ClipPathOperation> blendFunc(const AnimationBase*, ClipPathOperation* from, ClipPathOperation* to, double progress)
 {
     // Other clip-path operations than BasicShapes can not be animated.
-    if (!from || !to || from->getOperationType() != ClipPathOperation::SHAPE || to->getOperationType() != ClipPathOperation::SHAPE)
+    if (!from || !to || from->type() != ClipPathOperation::SHAPE || to->type() != ClipPathOperation::SHAPE)
         return to;
 
-    const BasicShape* fromShape = static_cast<ShapeClipPathOperation*>(from)->basicShape();
-    const BasicShape* toShape = static_cast<ShapeClipPathOperation*>(to)->basicShape();
+    const BasicShape* fromShape = toShapeClipPathOperation(from)->basicShape();
+    const BasicShape* toShape = toShapeClipPathOperation(to)->basicShape();
 
     if (!fromShape->canBlend(toShape))
         return to;
@@ -113,7 +130,7 @@ static inline PassRefPtr<ClipPathOperation> blendFunc(const AnimationBase*, Clip
 static inline PassRefPtr<ShapeValue> blendFunc(const AnimationBase*, ShapeValue* from, ShapeValue* to, double progress)
 {
     // FIXME Bug 102723: Shape-inside should be able to animate a value of 'outside-shape' when shape-outside is set to a BasicShape
-    if (from->type() != ShapeValue::Shape || to->type() != ShapeValue::Shape)
+    if (!from || !to || from->type() != ShapeValue::Shape || to->type() != ShapeValue::Shape)
         return to;
 
     const BasicShape* fromShape = from->shape();
@@ -236,29 +253,11 @@ static inline PassRefPtr<StyleImage> blendFunc(const AnimationBase* anim, StyleI
         return to;
 
     if (from->isImageResource() && to->isImageResource())
-        return crossfadeBlend(anim, static_cast<StyleFetchedImage*>(from), static_cast<StyleFetchedImage*>(to), progress);
+        return crossfadeBlend(anim, toStyleFetchedImage(from), toStyleFetchedImage(to), progress);
 
     // FIXME: Support transitioning generated images as well. (gradients, etc.)
 
     return to;
-}
-
-static inline NinePieceImage blendFunc(const AnimationBase* anim, const NinePieceImage& from, const NinePieceImage& to, double progress)
-{
-    if (!from.hasImage() || !to.hasImage())
-        return to;
-
-    // FIXME (74112): Support transitioning between NinePieceImages that differ by more than image content.
-
-    if (from.imageSlices() != to.imageSlices() || from.borderSlices() != to.borderSlices() || from.outset() != to.outset() || from.fill() != to.fill() || from.horizontalRule() != to.horizontalRule() || from.verticalRule() != to.verticalRule())
-        return to;
-
-    if (from.image()->imageSize(anim->renderer(), 1.0) != to.image()->imageSize(anim->renderer(), 1.0))
-        return to;
-
-    RefPtr<StyleImage> newContentImage = blendFunc(anim, from.image(), to.image(), progress);
-
-    return NinePieceImage(newContentImage, from.imageSlices(), from.fill(), from.borderSlices(), from.outset(), from.horizontalRule(), from.verticalRule());
 }
 
 class AnimationPropertyWrapperBase {
@@ -965,11 +964,13 @@ void CSSPropertyAnimation::ensurePropertyMap()
 
     gPropertyWrappers->append(new StyleImagePropertyWrapper(CSSPropertyBorderImageSource, &RenderStyle::borderImageSource, &RenderStyle::setBorderImageSource));
     gPropertyWrappers->append(new PropertyWrapper<LengthBox>(CSSPropertyBorderImageSlice, &RenderStyle::borderImageSlices, &RenderStyle::setBorderImageSlices));
-    gPropertyWrappers->append(new PropertyWrapper<LengthBox>(CSSPropertyBorderImageWidth, &RenderStyle::borderImageWidth, &RenderStyle::setBorderImageWidth));
-    gPropertyWrappers->append(new PropertyWrapper<LengthBox>(CSSPropertyBorderImageOutset, &RenderStyle::borderImageOutset, &RenderStyle::setBorderImageOutset));
+    gPropertyWrappers->append(new PropertyWrapper<const BorderImageLengthBox&>(CSSPropertyBorderImageWidth, &RenderStyle::borderImageWidth, &RenderStyle::setBorderImageWidth));
+    gPropertyWrappers->append(new PropertyWrapper<const BorderImageLengthBox&>(CSSPropertyBorderImageOutset, &RenderStyle::borderImageOutset, &RenderStyle::setBorderImageOutset));
 
     gPropertyWrappers->append(new StyleImagePropertyWrapper(CSSPropertyWebkitMaskBoxImageSource, &RenderStyle::maskBoxImageSource, &RenderStyle::setMaskBoxImageSource));
-    gPropertyWrappers->append(new PropertyWrapper<const NinePieceImage&>(CSSPropertyWebkitMaskBoxImage, &RenderStyle::maskBoxImage, &RenderStyle::setMaskBoxImage));
+    gPropertyWrappers->append(new PropertyWrapper<LengthBox>(CSSPropertyWebkitMaskBoxImageSlice, &RenderStyle::maskBoxImageSlices, &RenderStyle::setMaskBoxImageSlices));
+    gPropertyWrappers->append(new PropertyWrapper<const BorderImageLengthBox&>(CSSPropertyWebkitMaskBoxImageWidth, &RenderStyle::maskBoxImageWidth, &RenderStyle::setMaskBoxImageWidth));
+    gPropertyWrappers->append(new PropertyWrapper<const BorderImageLengthBox&>(CSSPropertyWebkitMaskBoxImageOutset, &RenderStyle::maskBoxImageOutset, &RenderStyle::setMaskBoxImageOutset));
 
     gPropertyWrappers->append(new FillLayersPropertyWrapper(CSSPropertyBackgroundPositionX, &RenderStyle::backgroundLayers, &RenderStyle::accessBackgroundLayers));
     gPropertyWrappers->append(new FillLayersPropertyWrapper(CSSPropertyBackgroundPositionY, &RenderStyle::backgroundLayers, &RenderStyle::accessBackgroundLayers));
@@ -1029,6 +1030,7 @@ void CSSPropertyAnimation::ensurePropertyMap()
     gPropertyWrappers->append(new PropertyWrapperShape(CSSPropertyShapeInside, &RenderStyle::shapeInside, &RenderStyle::setShapeInside));
     gPropertyWrappers->append(new PropertyWrapperShape(CSSPropertyShapeOutside, &RenderStyle::shapeOutside, &RenderStyle::setShapeOutside));
     gPropertyWrappers->append(new NonNegativeLengthWrapper(CSSPropertyShapeMargin, &RenderStyle::shapeMargin, &RenderStyle::setShapeMargin));
+    gPropertyWrappers->append(new PropertyWrapper<float>(CSSPropertyShapeImageThreshold, &RenderStyle::shapeImageThreshold, &RenderStyle::setShapeImageThreshold));
 
     gPropertyWrappers->append(new PropertyWrapperVisitedAffectedColor(CSSPropertyWebkitColumnRuleColor, MaybeInvalidColor, &RenderStyle::columnRuleColor, &RenderStyle::setColumnRuleColor, &RenderStyle::visitedLinkColumnRuleColor, &RenderStyle::setVisitedLinkColumnRuleColor));
     gPropertyWrappers->append(new PropertyWrapperVisitedAffectedColor(CSSPropertyWebkitTextStrokeColor, MaybeInvalidColor, &RenderStyle::textStrokeColor, &RenderStyle::setTextStrokeColor, &RenderStyle::visitedLinkTextStrokeColor, &RenderStyle::setVisitedLinkTextStrokeColor));

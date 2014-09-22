@@ -44,18 +44,15 @@
 #include "core/inspector/ScriptCallStack.h"
 #include "core/inspector/WorkerInspectorController.h"
 #include "core/loader/WorkerThreadableLoader.h"
-#include "core/frame/ContentSecurityPolicy.h"
 #include "core/frame/DOMWindow.h"
 #include "core/workers/WorkerNavigator.h"
 #include "core/workers/WorkerClients.h"
 #include "core/workers/WorkerLocation.h"
-#include "core/workers/WorkerObjectProxy.h"
+#include "core/workers/WorkerReportingProxy.h"
 #include "core/workers/WorkerScriptLoader.h"
 #include "core/workers/WorkerThread.h"
-#include "weborigin/KURL.h"
-#include "weborigin/SecurityOrigin.h"
-#include "wtf/RefPtr.h"
-#include "wtf/UnusedParam.h"
+#include "platform/weborigin/KURL.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -91,6 +88,9 @@ WorkerGlobalScope::WorkerGlobalScope(const KURL& url, const String& userAgent, W
     setClient(this);
     setSecurityOrigin(SecurityOrigin::create(url));
     m_workerClients->reattachThread();
+
+    // Notify proxy that a new WorkerGlobalScope has been created and started.
+    this->thread()->workerReportingProxy().workerGlobalScopeStarted();
 }
 
 WorkerGlobalScope::~WorkerGlobalScope()
@@ -195,7 +195,7 @@ void WorkerGlobalScope::clearInspector()
     m_workerInspectorController.clear();
 }
 
-void WorkerGlobalScope::importScripts(const Vector<String>& urls, ExceptionState& es)
+void WorkerGlobalScope::importScripts(const Vector<String>& urls, ExceptionState& exceptionState)
 {
     ASSERT(contentSecurityPolicy());
     Vector<String>::const_iterator urlsEnd = urls.end();
@@ -203,7 +203,7 @@ void WorkerGlobalScope::importScripts(const Vector<String>& urls, ExceptionState
     for (Vector<String>::const_iterator it = urls.begin(); it != urlsEnd; ++it) {
         const KURL& url = executionContext()->completeURL(*it);
         if (!url.isValid()) {
-            es.throwDOMException(SyntaxError, "Failed to execute 'importScripts': the URL '" + *it + "' is invalid.");
+            exceptionState.throwDOMException(SyntaxError, "The URL '" + *it + "' is invalid.");
             return;
         }
         completedURLs.append(url);
@@ -217,7 +217,7 @@ void WorkerGlobalScope::importScripts(const Vector<String>& urls, ExceptionState
 
         // If the fetching attempt failed, throw a NetworkError exception and abort all these steps.
         if (scriptLoader->failed()) {
-            es.throwDOMException(NetworkError, "Failed to execute 'importScripts': the script at '" + it->elidedString() + "' failed to load.");
+            exceptionState.throwDOMException(NetworkError, "The script at '" + it->elidedString() + "' failed to load.");
             return;
         }
 
@@ -239,7 +239,7 @@ EventTarget* WorkerGlobalScope::errorEventTarget()
 
 void WorkerGlobalScope::logExceptionToConsole(const String& errorMessage, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtr<ScriptCallStack>)
 {
-    thread()->workerReportingProxy().postExceptionToWorkerObject(errorMessage, lineNumber, columnNumber, sourceURL);
+    thread()->workerReportingProxy().reportException(errorMessage, lineNumber, columnNumber, sourceURL);
 }
 
 void WorkerGlobalScope::reportBlockedScriptExecutionToInspector(const String& directiveText)
@@ -253,7 +253,7 @@ void WorkerGlobalScope::addMessage(MessageSource source, MessageLevel level, con
         postTask(AddConsoleMessageTask::create(source, level, message));
         return;
     }
-    thread()->workerReportingProxy().postConsoleMessageToWorkerObject(source, level, message, lineNumber, sourceURL);
+    thread()->workerReportingProxy().reportConsoleMessage(source, level, message, lineNumber, sourceURL);
     addMessageToWorkerConsole(source, level, message, sourceURL, lineNumber, 0, state);
 }
 

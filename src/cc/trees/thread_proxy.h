@@ -69,10 +69,13 @@ class ThreadProxy : public Proxy,
 
   // LayerTreeHostImplClient implementation
   virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE;
+  virtual void DidSwapBuffersOnImplThread() OVERRIDE {}
   virtual void OnSwapBuffersCompleteOnImplThread() OVERRIDE;
   virtual void BeginImplFrame(const BeginFrameArgs& args) OVERRIDE;
   virtual void OnCanDrawStateChanged(bool can_draw) OVERRIDE;
   virtual void NotifyReadyToActivate() OVERRIDE;
+  // Please call these 2 functions through
+  // LayerTreeHostImpl's SetNeedsRedraw() and SetNeedsRedrawRect().
   virtual void SetNeedsRedrawOnImplThread() OVERRIDE;
   virtual void SetNeedsRedrawRectOnImplThread(gfx::Rect dirty_rect) OVERRIDE;
   virtual void SetNeedsManageTilesOnImplThread() OVERRIDE;
@@ -90,6 +93,7 @@ class ThreadProxy : public Proxy,
   virtual void RequestScrollbarAnimationOnImplThread(base::TimeDelta delay)
       OVERRIDE;
   virtual void DidActivatePendingTree() OVERRIDE;
+  virtual void DidManageTiles() OVERRIDE;
 
   // SchedulerClient implementation
   virtual void SetNeedsBeginImplFrame(bool enable) OVERRIDE;
@@ -155,7 +159,7 @@ class ThreadProxy : public Proxy,
   void StartCommitOnImplThread(
       CompletionEvent* completion,
       ResourceUpdateQueue* queue,
-      scoped_refptr<cc::ContextProvider> offscreen_context_provider);
+      scoped_refptr<ContextProvider> offscreen_context_provider);
   void BeginMainFrameAbortedOnImplThread(bool did_handle);
   void RequestReadbackOnImplThread(ReadbackRequest* request);
   void FinishAllRenderingOnImplThread(CompletionEvent* completion);
@@ -191,6 +195,10 @@ class ThreadProxy : public Proxy,
   void StartScrollbarAnimationOnImplThread();
   void MainThreadHasStoppedFlingingOnImplThread();
   void SetInputThrottledUntilCommitOnImplThread(bool is_throttled);
+  LayerTreeHost* layer_tree_host();
+  const LayerTreeHost* layer_tree_host() const;
+  PrioritizedResourceManager* contents_texture_manager_on_main_thread();
+  PrioritizedResourceManager* contents_texture_manager_on_impl_thread();
 
   // Accessed on main thread only.
 
@@ -203,7 +211,12 @@ class ThreadProxy : public Proxy,
   // Set by BeginMainFrame
   bool created_offscreen_context_provider_;
   base::CancelableClosure output_surface_creation_callback_;
-  LayerTreeHost* layer_tree_host_;
+  // Don't use this variable directly, go through layer_tree_host() to ensure it
+  // is only used on the main thread or if the main thread is blocked.
+  LayerTreeHost* layer_tree_host_unsafe_;
+  // Use one of the contents_texture_manager_on functions above instead of using
+  // this variable directly.
+  PrioritizedResourceManager* contents_texture_manager_unsafe_;
   RendererCapabilities renderer_capabilities_main_thread_copy_;
   bool started_;
   bool textures_acquired_;
@@ -275,6 +288,8 @@ class ThreadProxy : public Proxy,
   base::WeakPtr<ThreadProxy> main_thread_weak_ptr_;
   base::WeakPtrFactory<ThreadProxy> weak_factory_on_impl_thread_;
   base::WeakPtrFactory<ThreadProxy> weak_factory_;
+
+  const int layer_tree_host_id_;
 
   DISALLOW_COPY_AND_ASSIGN(ThreadProxy);
 };

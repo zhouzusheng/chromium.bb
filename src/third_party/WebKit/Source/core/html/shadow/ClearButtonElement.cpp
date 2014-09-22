@@ -37,7 +37,7 @@ namespace WebCore {
 using namespace HTMLNames;
 
 inline ClearButtonElement::ClearButtonElement(Document& document, ClearButtonOwner& clearButtonOwner)
-    : HTMLDivElement(divTag, document)
+    : HTMLDivElement(document)
     , m_clearButtonOwner(&clearButtonOwner)
     , m_capturing(false)
 {
@@ -46,7 +46,7 @@ inline ClearButtonElement::ClearButtonElement(Document& document, ClearButtonOwn
 PassRefPtr<ClearButtonElement> ClearButtonElement::create(Document& document, ClearButtonOwner& clearButtonOwner)
 {
     RefPtr<ClearButtonElement> element = adoptRef(new ClearButtonElement(document, clearButtonOwner));
-    element->setPart(AtomicString("-webkit-clear-button", AtomicString::ConstructFromLiteral));
+    element->setPseudo(AtomicString("-webkit-clear-button", AtomicString::ConstructFromLiteral));
     element->setAttribute(idAttr, ShadowElementNames::clearButton());
     return element.release();
 }

@@ -197,7 +197,7 @@ void HTMLViewSourceDocument::addLine(const AtomicString& className)
     // Create a cell that will hold the line number (it is generated in the stylesheet using counters).
     RefPtr<HTMLTableCellElement> td = HTMLTableCellElement::create(tdTag, *this);
     td->setAttribute(classAttr, "webkit-line-number");
-    td->setAttribute(valueAttr, String::number(++m_lineNumber));
+    td->setIntegralAttribute(valueAttr, ++m_lineNumber);
     trow->parserAppendChild(td);
 
     // Create a second cell for the line contents
@@ -270,7 +270,7 @@ int HTMLViewSourceDocument::addRange(const String& source, int start, int end, c
 
 PassRefPtr<Element> HTMLViewSourceDocument::addBase(const AtomicString& href)
 {
-    RefPtr<HTMLBaseElement> base = HTMLBaseElement::create(baseTag, *this);
+    RefPtr<HTMLBaseElement> base = HTMLBaseElement::create(*this);
     base->setAttribute(hrefAttr, href);
     m_current->parserAppendChild(base);
     return base.release();

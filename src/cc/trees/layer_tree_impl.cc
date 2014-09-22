@@ -14,6 +14,7 @@
 #include "cc/layers/layer.h"
 #include "cc/layers/render_surface_impl.h"
 #include "cc/layers/scrollbar_layer_impl_base.h"
+#include "cc/resources/ui_resource_request.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "ui/gfx/size_conversions.h"
@@ -119,8 +120,8 @@ void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
     next_activation_forces_redraw_ = false;
   }
 
-  target_tree->SetLatencyInfo(latency_info_);
-  latency_info_.Clear();
+  target_tree->PassSwapPromises(&swap_promise_list_);
+
   target_tree->SetPageScaleFactorAndLimits(
       page_scale_factor(), min_page_scale_factor(), max_page_scale_factor());
   target_tree->SetPageScaleDelta(
@@ -460,8 +461,6 @@ void LayerTreeImpl::PushPersistedState(LayerTreeImpl* pending_tree) {
   pending_tree->SetCurrentlyScrollingLayer(
       LayerTreeHostCommon::FindLayerInSubtree(pending_tree->root_layer(),
           currently_scrolling_layer_ ? currently_scrolling_layer_->id() : 0));
-  pending_tree->SetLatencyInfo(latency_info_);
-  latency_info_.Clear();
 }
 
 static void DidBecomeActiveRecursive(LayerImpl* layer) {
@@ -612,6 +611,10 @@ void LayerTreeImpl::StartScrollbarAnimation() {
   layer_tree_host_impl_->StartScrollbarAnimation();
 }
 
+void LayerTreeImpl::DidAnimateScrollOffset() {
+  layer_tree_host_impl_->DidAnimateScrollOffset();
+}
+
 void LayerTreeImpl::SetNeedsRedraw() {
   layer_tree_host_impl_->SetNeedsRedraw();
 }
@@ -695,16 +698,30 @@ void LayerTreeImpl::UpdateRootScrollLayerSizeDelta() {
       scrollable_viewport_size - original_viewport_size);
 }
 
-void LayerTreeImpl::SetLatencyInfo(const ui::LatencyInfo& latency_info) {
-  latency_info_.MergeWith(latency_info);
+void LayerTreeImpl::QueueSwapPromise(scoped_ptr<SwapPromise> swap_promise) {
+  DCHECK(swap_promise);
+  if (swap_promise_list_.size() > kMaxQueuedSwapPromiseNumber)
+    BreakSwapPromises(SwapPromise::SWAP_PROMISE_LIST_OVERFLOW);
+  swap_promise_list_.push_back(swap_promise.Pass());
 }
 
-const ui::LatencyInfo& LayerTreeImpl::GetLatencyInfo() {
-  return latency_info_;
+void LayerTreeImpl::PassSwapPromises(
+    ScopedPtrVector<SwapPromise>* new_swap_promise) {
+  swap_promise_list_.insert_and_take(swap_promise_list_.end(),
+                                     *new_swap_promise);
+  new_swap_promise->clear();
 }
 
-void LayerTreeImpl::ClearLatencyInfo() {
-  latency_info_.Clear();
+void LayerTreeImpl::FinishSwapPromises(CompositorFrameMetadata* metadata) {
+  for (size_t i = 0; i < swap_promise_list_.size(); i++)
+    swap_promise_list_[i]->DidSwap(metadata);
+  swap_promise_list_.clear();
+}
+
+void LayerTreeImpl::BreakSwapPromises(SwapPromise::DidNotSwapReason reason) {
+  for (size_t i = 0; i < swap_promise_list_.size(); i++)
+    swap_promise_list_[i]->DidNotSwap(reason);
+  swap_promise_list_.clear();
 }
 
 void LayerTreeImpl::DidModifyTilePriorities() {
@@ -773,7 +790,7 @@ void LayerTreeImpl::RemoveLayerWithCopyOutputRequest(LayerImpl* layer) {
   layers_with_copy_output_request_.erase(it);
 }
 
-const std::vector<LayerImpl*> LayerTreeImpl::LayersWithCopyOutputRequest()
+const std::vector<LayerImpl*>& LayerTreeImpl::LayersWithCopyOutputRequest()
     const {
   // Only the active tree needs to know about layers with copy requests, as
   // they are aborted if not serviced during draw.

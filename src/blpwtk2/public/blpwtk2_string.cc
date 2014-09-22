@@ -84,9 +84,9 @@ size_t String::length(Impl impl)
     return *(reinterpret_cast<size_t*>(impl) - 1);
 }
 
-String fromWebString(const WebKit::WebString& other)
+String fromWebString(const blink::WebString& other)
 {
-    WebKit::WebCString cstr = other.utf8();
+    blink::WebCString cstr = other.utf8();
     // TODO: see if we can "steal" this data from WebCString instead of
     // TODO: copying it
     return String(cstr.data(), cstr.length());

@@ -41,17 +41,19 @@ namespace WebCore {
 
 ScriptPromise ScriptPromise::createPending(ExecutionContext* context)
 {
-    ASSERT(v8::Context::InContext());
     ASSERT(context);
     v8::Isolate* isolate = toIsolate(context);
-    v8::Handle<v8::Object> promise = V8PromiseCustom::createPromise(toV8Context(context, DOMWrapperWorld::current())->Global(), isolate);
+    ASSERT(isolate->InContext());
+    v8::Handle<v8::Context> v8Context = toV8Context(context, DOMWrapperWorld::current());
+    v8::Handle<v8::Object> creationContext = v8Context.IsEmpty() ? v8::Object::New() : v8Context->Global();
+    v8::Handle<v8::Object> promise = V8PromiseCustom::createPromise(creationContext, isolate);
     return ScriptPromise(promise, isolate);
 }
 
 ScriptPromise ScriptPromise::createPending()
 {
-    ASSERT(v8::Context::InContext());
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    ASSERT(isolate->InContext());
     v8::Handle<v8::Object> promise = V8PromiseCustom::createPromise(v8::Object::New(), isolate);
     return ScriptPromise(promise, isolate);
 }

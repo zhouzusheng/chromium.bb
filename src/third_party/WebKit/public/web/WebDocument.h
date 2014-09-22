@@ -51,7 +51,7 @@ class Value;
 template <class T> class Handle;
 }
 
-namespace WebKit {
+namespace blink {
 class WebAXObject;
 class WebBBPrintInfo;
 class WebDocumentType;
@@ -66,8 +66,8 @@ class WebURL;
 // Provides readonly access to some properties of a DOM document.
 class WebDocument : public WebNode {
 public:
+    // FIXME: Stop using this from Chromium code and get rid of this enum.
     enum UserStyleLevel {
-        UserStyleUserLevel,
         UserStyleAuthorLevel
     };
 
@@ -120,7 +120,6 @@ public:
     BLINK_EXPORT WebDOMEvent createEvent(const WebString& eventType);
     BLINK_EXPORT WebReferrerPolicy referrerPolicy() const;
     BLINK_EXPORT WebElement createElement(const WebString& tagName);
-    BLINK_EXPORT WebString innerHTML() const;
 
     // Accessibility support. These methods should only be called on the
     // top-level document, because one accessibility cache spans all of
@@ -131,11 +130,10 @@ public:
 
     // Gets the accessibility object for an object on this page by ID.
     BLINK_EXPORT WebAXObject accessibilityObjectFromID(int axID) const;
-    // Inserts the given CSS source code as a user stylesheet in the document.
-    // Meant for programatic/one-off injection, as opposed to
-    // WebView::addUserStyleSheet which inserts styles for the lifetime of the
-    // WebView.
+    // Inserts the given CSS source code as a stylesheet in the document.
+    // FIXME: Delete insertUserStyleSheet once Chromium code stops calling it.
     BLINK_EXPORT void insertUserStyleSheet(const WebString& sourceCode, UserStyleLevel);
+    BLINK_EXPORT void insertStyleSheet(const WebString& sourceCode);
 
     // Arranges to call WebFrameClient::didMatchCSS(frame(), ...) when one of
     // the selectors matches or stops matching an element in this document.
@@ -146,9 +144,6 @@ public:
 
     BLINK_EXPORT WebBBPrintInfo bbPrintInfo();
 
-    BLINK_EXPORT static bool isWebDocument(v8::Handle<v8::Value> handle);
-    BLINK_EXPORT static WebDocument fromV8Handle(v8::Handle<v8::Value> handle);
-
     BLINK_EXPORT v8::Handle<v8::Value> registerEmbedderCustomElement(const WebString& name, v8::Handle<v8::Value> options, WebExceptionCode&);
 
 #if BLINK_IMPLEMENTATION
@@ -158,6 +153,6 @@ public:
 #endif
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

@@ -113,6 +113,14 @@ void CheckDoesNotHaveEmbededNulls(const std::string& str) {
   CHECK(str.find('\0') == std::string::npos);
 }
 
+bool ShouldShowHttpHeaderValue(const std::string& header_name) {
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+  if (header_name == "Proxy-Authenticate")
+    return false;
+#endif
+  return true;
+}
+
 }  // namespace
 
 struct HttpResponseHeaders::ParsedHeader {
@@ -1309,9 +1317,11 @@ base::Value* HttpResponseHeaders::NetLogCallback(
   std::string value;
   while (EnumerateHeaderLines(&iterator, &name, &value)) {
     headers->Append(
-      new base::StringValue(base::StringPrintf("%s: %s",
-                                               name.c_str(),
-                                               value.c_str())));
+      new base::StringValue(
+          base::StringPrintf("%s: %s",
+                             name.c_str(),
+                             (ShouldShowHttpHeaderValue(name) ?
+                                 value.c_str() : "[elided]"))));
   }
   dict->Set("headers", headers);
   return dict;
@@ -1355,43 +1365,58 @@ bool HttpResponseHeaders::IsChunkEncoded() const {
 }
 
 #if defined(SPDY_PROXY_AUTH_ORIGIN)
-bool HttpResponseHeaders::GetChromeProxyInfo(
-    base::TimeDelta* bypass_duration) const {
-  const char kProxyBypass[] = "proxy-bypass";
-  *bypass_duration = base::TimeDelta();
-
-  // Support header of the form Chrome-Proxy: bypass=<duration>, where
-  // <duration> is the number of seconds to wait before retrying
-  // the proxy. If the duration is 0, then the default proxy retry delay
-  // (specified in |ProxyList::UpdateRetryInfoOnFallback|) will be used.
-  std::string name = "chrome-proxy";
-  const char kBypassPrefix[] = "bypass=";
-  const size_t kBypassPrefixLen = arraysize(kBypassPrefix) - 1;
-
+bool HttpResponseHeaders::GetChromeProxyBypassDuration(
+    const std::string& action_prefix,
+    base::TimeDelta* duration) const {
   void* iter = NULL;
   std::string value;
+  std::string name = "chrome-proxy";
+
   while (EnumerateHeader(&iter, name, &value)) {
-    if (value.size() > kBypassPrefixLen) {
+    if (value.size() > action_prefix.size()) {
       if (LowerCaseEqualsASCII(value.begin(),
-                               value.begin() + kBypassPrefixLen,
-                               kBypassPrefix)) {
+                               value.begin() + action_prefix.size(),
+                               action_prefix.c_str())) {
         int64 seconds;
-        if (!base::StringToInt64(StringPiece(value.begin() + kBypassPrefixLen,
-                                             value.end()),
-                                 &seconds) || seconds < 0) {
-          continue;  // In case there is a well formed bypass instruction.
+        if (!base::StringToInt64(
+                StringPiece(value.begin() + action_prefix.size(), value.end()),
+                &seconds) || seconds < 0) {
+          continue;  // In case there is a well formed instruction.
         }
-        *bypass_duration = TimeDelta::FromSeconds(seconds);
+        *duration = TimeDelta::FromSeconds(seconds);
         return true;
       }
     }
   }
-  // TODO(bengr): Deprecate the use of Connection: Proxy-Bypass.
-  if (HasHeaderValue("Connection", kProxyBypass))
+  return false;
+}
+
+bool HttpResponseHeaders::GetChromeProxyInfo(
+    ChromeProxyInfo* proxy_info) const {
+  DCHECK(proxy_info);
+  proxy_info->bypass_all = false;
+  proxy_info->bypass_duration = base::TimeDelta();
+
+  // Support header of the form Chrome-Proxy: bypass|block=<duration>, where
+  // <duration> is the number of seconds to wait before retrying
+  // the proxy. If the duration is 0, then the default proxy retry delay
+  // (specified in |ProxyList::UpdateRetryInfoOnFallback|) will be used.
+  // 'bypass' instructs Chrome to bypass the currently connected Chrome proxy,
+  // whereas 'block' instructs Chrome to bypass all available Chrome proxies.
+
+  // 'block' takes precedence over 'bypass', so look for it first.
+  // TODO(bengr): Reduce checks for 'block' and 'bypass' to a single loop.
+  if (GetChromeProxyBypassDuration("block=", &proxy_info->bypass_duration)) {
+    proxy_info->bypass_all = true;
+    return true;
+  }
+
+  // Next, look for 'bypass'.
+  if (GetChromeProxyBypassDuration("bypass=", &proxy_info->bypass_duration))
     return true;
 
   return false;
 }
-#endif
+#endif  // defined(SPDY_PROXY_AUTH_ORIGIN)
 
 }  // namespace net

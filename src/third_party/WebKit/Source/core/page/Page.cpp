@@ -25,10 +25,14 @@
 #include "core/dom/StyleEngine.h"
 #include "core/dom/VisitedLinkState.h"
 #include "core/editing/Caret.h"
+#include "core/editing/UndoStack.h"
 #include "core/events/Event.h"
 #include "core/events/ThreadLocalEventNames.h"
+#include "core/fetch/ResourceFetcher.h"
 #include "core/frame/DOMTimer.h"
 #include "core/frame/DOMWindow.h"
+#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
 #include "core/history/HistoryItem.h"
 #include "core/inspector/InspectorController.h"
 #include "core/inspector/InspectorInstrumentation.h"
@@ -40,20 +44,19 @@
 #include "core/page/ContextMenuController.h"
 #include "core/page/DragController.h"
 #include "core/page/FocusController.h"
-#include "core/frame/Frame.h"
 #include "core/page/FrameTree.h"
-#include "core/frame/FrameView.h"
 #include "core/page/PageConsole.h"
 #include "core/page/PageGroup.h"
 #include "core/page/PageLifecycleNotifier.h"
 #include "core/page/PointerLockController.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
 #include "core/page/ValidationMessageClient.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
-#include "core/plugins/PluginData.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/TextAutosizer.h"
 #include "core/storage/StorageNamespace.h"
 #include "core/workers/SharedWorkerRepositoryClient.h"
+#include "platform/plugins/PluginData.h"
 #include "wtf/HashMap.h"
 #include "wtf/RefCountedLeakCounter.h"
 #include "wtf/StdLibExtras.h"
@@ -96,7 +99,8 @@ float deviceScaleFactor(Frame* frame)
 }
 
 Page::Page(PageClients& pageClients)
-    : m_autoscrollController(AutoscrollController::create(*this))
+    : SettingsDelegate(Settings::create())
+    , m_autoscrollController(AutoscrollController::create(*this))
     , m_chrome(Chrome::create(this, pageClients.chromeClient))
     , m_dragCaretController(DragCaretController::create())
     , m_dragController(DragController::create(this, pageClients.dragClient))
@@ -104,19 +108,20 @@ Page::Page(PageClients& pageClients)
     , m_contextMenuController(ContextMenuController::create(this, pageClients.contextMenuClient))
     , m_inspectorController(InspectorController::create(this, pageClients.inspectorClient))
     , m_pointerLockController(PointerLockController::create(this))
-    , m_settings(Settings::create(this))
+    , m_historyController(adoptPtr(new HistoryController(this)))
     , m_progress(ProgressTracker::create())
+    , m_undoStack(UndoStack::create())
     , m_backForwardClient(pageClients.backForwardClient)
     , m_editorClient(pageClients.editorClient)
     , m_validationMessageClient(0)
     , m_sharedWorkerRepositoryClient(0)
+    , m_spellCheckerClient(pageClients.spellCheckerClient)
     , m_subframeCount(0)
     , m_openedByDOM(false)
     , m_tabKeyCyclesThroughElements(true)
     , m_defersLoading(false)
     , m_pageScaleFactor(1)
     , m_deviceScaleFactor(1)
-    , m_didLoadUserStyleSheet(false)
     , m_group(0)
     , m_timerAlignmentInterval(DOMTimer::visiblePageAlignmentInterval())
     , m_visibilityState(PageVisibilityStateVisible)
@@ -222,18 +227,6 @@ void Page::setOpenedByDOM()
     m_openedByDOM = true;
 }
 
-void Page::goToItem(HistoryItem* item)
-{
-    // stopAllLoaders may end up running onload handlers, which could cause further history traversals that may lead to the passed in HistoryItem
-    // being deref()-ed. Make sure we can still use it with HistoryController::goToItem later.
-    RefPtr<HistoryItem> protector(item);
-
-    if (m_mainFrame->loader().history()->shouldStopLoadingForHistoryItem(item))
-        m_mainFrame->loader().stopAllLoaders();
-
-    m_mainFrame->loader().history()->goToItem(item);
-}
-
 void Page::clearPageGroup()
 {
     if (!m_group)
@@ -247,9 +240,6 @@ void Page::setGroupType(PageGroupType type)
     clearPageGroup();
 
     switch (type) {
-    case InspectorPageGroup:
-        m_group = PageGroup::inspectorGroup();
-        break;
     case PrivatePageGroup:
         m_group = PageGroup::create();
         break;
@@ -341,6 +331,7 @@ void Page::setDefersLoading(bool defers)
         return;
 
     m_defersLoading = defers;
+    m_historyController->setDefersLoading(defers);
     for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext())
         frame->loader().setDefersLoading(defers);
 }
@@ -388,36 +379,6 @@ void Page::setPagination(const Pagination& pagination)
     m_pagination = pagination;
 
     setNeedsRecalcStyleInAllFrames();
-}
-
-void Page::userStyleSheetLocationChanged()
-{
-    // FIXME: Eventually we will move to a model of just being handed the sheet
-    // text instead of loading the URL ourselves.
-    KURL url = m_settings->userStyleSheetLocation();
-
-    m_didLoadUserStyleSheet = false;
-    m_userStyleSheet = String();
-
-    // Data URLs with base64-encoded UTF-8 style sheets are common. We can process them
-    // synchronously and avoid using a loader.
-    if (url.protocolIsData() && url.string().startsWith("data:text/css;charset=utf-8;base64,")) {
-        m_didLoadUserStyleSheet = true;
-
-        Vector<char> styleSheetAsUTF8;
-        if (base64Decode(decodeURLEscapeSequences(url.string().substring(35)), styleSheetAsUTF8, Base64IgnoreWhitespace))
-            m_userStyleSheet = String::fromUTF8(styleSheetAsUTF8.data(), styleSheetAsUTF8.size());
-    }
-
-    for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext()) {
-        if (frame->document())
-            frame->document()->styleEngine()->updatePageUserSheet();
-    }
-}
-
-const String& Page::userStyleSheet() const
-{
-    return m_userStyleSheet;
 }
 
 void Page::allVisitedStateChanged(PageGroup* group)
@@ -476,12 +437,6 @@ double Page::timerAlignmentInterval() const
     return m_timerAlignmentInterval;
 }
 
-void Page::dnsPrefetchingStateChanged()
-{
-    for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext())
-        frame->document()->initDNSPrefetch();
-}
-
 #if !ASSERT_DISABLED
 void Page::checkSubframeCountConsistency() const
 {
@@ -528,11 +483,46 @@ void Page::removeMultisamplingChangedObserver(MultisamplingChangedObserver* obse
     m_multisamplingChangedObservers.remove(observer);
 }
 
-void Page::multisamplingChanged()
+void Page::settingsChanged(SettingsDelegate::ChangeType changeType)
 {
-    HashSet<MultisamplingChangedObserver*>::iterator stop = m_multisamplingChangedObservers.end();
-    for (HashSet<MultisamplingChangedObserver*>::iterator it = m_multisamplingChangedObservers.begin(); it != stop; ++it)
-        (*it)->multisamplingChanged(m_settings->openGLMultisamplingEnabled());
+    switch (changeType) {
+    case SettingsDelegate::StyleChange:
+        setNeedsRecalcStyleInAllFrames();
+        break;
+    case SettingsDelegate::ViewportDescriptionChange:
+        if (mainFrame())
+            mainFrame()->document()->updateViewportDescription();
+        break;
+    case SettingsDelegate::MediaTypeChange:
+        m_mainFrame->view()->setMediaType(settings().mediaTypeOverride());
+        setNeedsRecalcStyleInAllFrames();
+        break;
+    case SettingsDelegate::DNSPrefetchingChange:
+        for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext())
+            frame->document()->initDNSPrefetch();
+        break;
+    case SettingsDelegate::MultisamplingChange: {
+        HashSet<MultisamplingChangedObserver*>::iterator stop = m_multisamplingChangedObservers.end();
+        for (HashSet<MultisamplingChangedObserver*>::iterator it = m_multisamplingChangedObservers.begin(); it != stop; ++it)
+            (*it)->multisamplingChanged(m_settings->openGLMultisamplingEnabled());
+        break;
+    }
+    case SettingsDelegate::ImageLoadingChange:
+        for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext()) {
+            frame->document()->fetcher()->setImagesEnabled(settings().imagesEnabled());
+            frame->document()->fetcher()->setAutoLoadImages(settings().loadsImagesAutomatically());
+        }
+        break;
+    case SettingsDelegate::TextAutosizingChange:
+        // FIXME: I wonder if this needs to traverse frames like in WebViewImpl::resize, or whether there is only one document per Settings instance?
+        for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext()) {
+            TextAutosizer* textAutosizer = frame->document()->textAutosizer();
+            if (textAutosizer)
+                textAutosizer->recalculateMultipliers();
+        }
+        setNeedsRecalcStyleInAllFrames();
+        break;
+    }
 }
 
 void Page::didCommitLoad(Frame* frame)
@@ -544,7 +534,7 @@ void Page::didCommitLoad(Frame* frame)
 
 PageLifecycleNotifier& Page::lifecycleNotifier()
 {
-    return static_cast<PageLifecycleNotifier&>(LifecycleContext::lifecycleNotifier());
+    return static_cast<PageLifecycleNotifier&>(LifecycleContext<Page>::lifecycleNotifier());
 }
 
 PassOwnPtr<LifecycleNotifier<Page> > Page::createLifecycleNotifier()
@@ -559,6 +549,7 @@ Page::PageClients::PageClients()
     , dragClient(0)
     , inspectorClient(0)
     , backForwardClient(0)
+    , spellCheckerClient(0)
 {
 }
 

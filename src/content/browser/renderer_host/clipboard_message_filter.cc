@@ -6,6 +6,8 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/location.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/stl_util.h"
 #include "content/common/clipboard_messages.h"
 #include "content/public/browser/browser_context.h"
@@ -17,22 +19,47 @@
 
 namespace content {
 
-#if defined(OS_WIN)
 
 namespace {
 
-// The write must be performed on the UI thread because the clipboard object
-// from the IO thread cannot create windows so it cannot be the "owner" of the
-// clipboard's contents.  // See http://crbug.com/5823.
+// On Windows, the write must be performed on the UI thread because the
+// clipboard object from the IO thread cannot create windows so it cannot be
+// the "owner" of the clipboard's contents. See http://crbug.com/5823.
 void WriteObjectsOnUIThread(ui::Clipboard::ObjectMap* objects) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   static ui::Clipboard* clipboard = ui::Clipboard::GetForCurrentThread();
   clipboard->WriteObjects(ui::CLIPBOARD_TYPE_COPY_PASTE, *objects);
 }
 
+enum BitmapPolicy {
+  kFilterBitmap,
+  kAllowBitmap,
+};
+void SanitizeObjectMap(ui::Clipboard::ObjectMap* objects,
+                       BitmapPolicy bitmap_policy) {
+  if (bitmap_policy != kAllowBitmap)
+    objects->erase(ui::Clipboard::CBF_SMBITMAP);
+
+  ui::Clipboard::ObjectMap::iterator data_it =
+      objects->find(ui::Clipboard::CBF_DATA);
+  if (data_it != objects->end()) {
+    const ui::Clipboard::FormatType& web_custom_format =
+        ui::Clipboard::GetWebCustomDataFormatType();
+    if (data_it->second.size() != 2 ||
+        !web_custom_format.Equals(
+            ui::Clipboard::FormatType::Deserialize(std::string(
+                &data_it->second[0].front(),
+                data_it->second[0].size())))) {
+      // CBF_DATA should always have two parameters associated with it, and the
+      // associated FormatType should always be web custom data. If not, then
+      // data is malformed and we'll ignore it.
+      objects->erase(ui::Clipboard::CBF_DATA);
+    }
+  }
+}
+
 }  // namespace
 
-#endif
 
 ClipboardMessageFilter::ClipboardMessageFilter() {}
 
@@ -89,29 +116,33 @@ ClipboardMessageFilter::~ClipboardMessageFilter() {
 }
 
 void ClipboardMessageFilter::OnWriteObjectsSync(
-    ui::Clipboard::ObjectMap objects,
+    const ui::Clipboard::ObjectMap& objects,
     base::SharedMemoryHandle bitmap_handle) {
   DCHECK(base::SharedMemory::IsHandleValid(bitmap_handle))
       << "Bad bitmap handle";
-  // Splice the shared memory handle into the clipboard data.
+
+  // On Windows, we can't write directly from the IO thread, so we copy the data
+  // into a heap allocated map and post a task to the UI thread. On other
+  // platforms, to lower the amount of time the renderer has to wait for the
+  // sync IPC to complete, we also take a copy and post a task to flush the data
+  // to the clipboard later.
+  scoped_ptr<ui::Clipboard::ObjectMap> long_living_objects(
+      new ui::Clipboard::ObjectMap(objects));
+  SanitizeObjectMap(long_living_objects.get(), kAllowBitmap);
+  // Splice the shared memory handle into the data. |long_living_objects| now
+  // contains a heap-allocated SharedMemory object that references
+  // |bitmap_handle|. This reference will keep the shared memory section alive
+  // when this IPC returns, and the SharedMemory object will eventually be
+  // freed by ui::Clipboard::WriteObjects().
   if (!ui::Clipboard::ReplaceSharedMemHandle(
-           &objects, bitmap_handle, PeerHandle()))
+           long_living_objects.get(), bitmap_handle, PeerHandle()))
     return;
-#if defined(OS_WIN)
-  // We cannot write directly from the IO thread, and cannot service the IPC
-  // on the UI thread. We'll copy the relevant data and get a handle to any
-  // shared memory so it doesn't go away when we resume the renderer, and post
-  // a task to perform the write on the UI thread.
-  ui::Clipboard::ObjectMap* long_living_objects = new ui::Clipboard::ObjectMap;
-  long_living_objects->swap(objects);
 
   BrowserThread::PostTask(
       BrowserThread::UI,
       FROM_HERE,
-      base::Bind(&WriteObjectsOnUIThread, base::Owned(long_living_objects)));
-#else
-  GetClipboard()->WriteObjects(ui::CLIPBOARD_TYPE_COPY_PASTE, objects);
-#endif
+      base::Bind(&WriteObjectsOnUIThread,
+                 base::Owned(long_living_objects.release())));
 }
 
 void ClipboardMessageFilter::OnWriteObjectsAsync(
@@ -120,7 +151,7 @@ void ClipboardMessageFilter::OnWriteObjectsAsync(
   // be removed otherwise we might dereference a rubbish pointer.
   scoped_ptr<ui::Clipboard::ObjectMap> sanitized_objects(
       new ui::Clipboard::ObjectMap(objects));
-  sanitized_objects->erase(ui::Clipboard::CBF_SMBITMAP);
+  SanitizeObjectMap(sanitized_objects.get(), kFilterBitmap);
 
 #if defined(OS_WIN)
   // We cannot write directly from the IO thread, and cannot service the IPC
@@ -142,9 +173,10 @@ void ClipboardMessageFilter::OnGetSequenceNumber(ui::ClipboardType type,
   *sequence_number = GetClipboard()->GetSequenceNumber(type);
 }
 
-void ClipboardMessageFilter::OnReadAvailableTypes(ui::ClipboardType type,
-                                                  std::vector<string16>* types,
-                                                  bool* contains_filenames) {
+void ClipboardMessageFilter::OnReadAvailableTypes(
+    ui::ClipboardType type,
+    std::vector<base::string16>* types,
+    bool* contains_filenames) {
   GetClipboard()->ReadAvailableTypes(type, types, contains_filenames);
 }
 
@@ -160,7 +192,7 @@ void ClipboardMessageFilter::OnClear(ui::ClipboardType type) {
 }
 
 void ClipboardMessageFilter::OnReadText(ui::ClipboardType type,
-                                        string16* result) {
+                                        base::string16* result) {
   GetClipboard()->ReadText(type, result);
 }
 
@@ -170,7 +202,7 @@ void ClipboardMessageFilter::OnReadAsciiText(ui::ClipboardType type,
 }
 
 void ClipboardMessageFilter::OnReadHTML(ui::ClipboardType type,
-                                        string16* markup,
+                                        base::string16* markup,
                                         GURL* url,
                                         uint32* fragment_start,
                                         uint32* fragment_end) {
@@ -221,8 +253,8 @@ void ClipboardMessageFilter::OnReadImageReply(
 }
 
 void ClipboardMessageFilter::OnReadCustomData(ui::ClipboardType clipboard_type,
-                                              const string16& type,
-                                              string16* result) {
+                                              const base::string16& type,
+                                              base::string16* result) {
   GetClipboard()->ReadCustomData(clipboard_type, type, result);
 }
 

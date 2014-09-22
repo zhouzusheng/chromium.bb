@@ -7,10 +7,10 @@
 #include "base/command_line.h"
 #include "ui/aura/env_observer.h"
 #include "ui/aura/input_state_lookup.h"
-#include "ui/aura/root_window_host.h"
 #include "ui/aura/window.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/compositor_switches.h"
+#include "ui/events/event_target_iterator.h"
 
 #if defined(USE_X11)
 #include "base/message_loop/message_pump_x11.h"
@@ -126,6 +126,15 @@ bool Env::CanAcceptEvent(const ui::Event& event) {
 }
 
 ui::EventTarget* Env::GetParentTarget() {
+  return NULL;
+}
+
+scoped_ptr<ui::EventTargetIterator> Env::GetChildIterator() const {
+  return scoped_ptr<ui::EventTargetIterator>();
+}
+
+ui::EventTargeter* Env::GetEventTargeter() {
+  NOTREACHED();
   return NULL;
 }
 

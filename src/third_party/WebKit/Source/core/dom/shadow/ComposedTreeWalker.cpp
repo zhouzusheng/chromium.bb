@@ -30,7 +30,7 @@
 
 #include "core/dom/Element.h"
 #include "core/dom/shadow/ElementShadow.h"
-#include "core/dom/shadow/InsertionPoint.h"
+#include "core/html/shadow/HTMLContentElement.h"
 #include "core/html/shadow/HTMLShadowElement.h"
 
 namespace WebCore {
@@ -73,7 +73,8 @@ Node* ComposedTreeWalker::traverseNode(const Node* node, TraversalDirection dire
     const InsertionPoint* insertionPoint = toInsertionPoint(node);
     if (Node* found = traverseDistributedNodes(direction == TraversalDirectionForward ? insertionPoint->first() : insertionPoint->last(), insertionPoint, direction))
         return found;
-    return traverseLightChildren(node, direction);
+    ASSERT(isHTMLShadowElement(node) || (isHTMLContentElement(node) && !node->hasChildNodes()));
+    return 0;
 }
 
 Node* ComposedTreeWalker::traverseDistributedNodes(const Node* node, const InsertionPoint* insertionPoint, TraversalDirection direction)
@@ -139,32 +140,27 @@ Node* ComposedTreeWalker::traverseParent(const Node* node, ParentTraversalDetail
             // The node is distributed. But the distribution was stopped at this insertion point.
             if (shadowWhereNodeCanBeDistributed(*insertionPoint))
                 return 0;
-            return traverseParentInCurrentTree(insertionPoint, details);
+            return traverseParentOrHost(insertionPoint, details);
         }
         return 0;
     }
-    return traverseParentInCurrentTree(node, details);
+    return traverseParentOrHost(node, details);
 }
 
-inline Node* ComposedTreeWalker::traverseParentInCurrentTree(const Node* node, ParentTraversalDetails* details) const
+inline Node* ComposedTreeWalker::traverseParentOrHost(const Node* node, ParentTraversalDetails* details) const
 {
-    if (Node* parent = node->parentNode())
-        return parent->isShadowRoot() ? traverseParentBackToYoungerShadowRootOrHost(toShadowRoot(parent), details) : parent;
-    return 0;
-}
-
-Node* ComposedTreeWalker::traverseParentBackToYoungerShadowRootOrHost(const ShadowRoot* shadowRoot, ParentTraversalDetails* details) const
-{
-    ASSERT(shadowRoot);
+    Node* parent = node->parentNode();
+    if (!parent)
+        return 0;
+    if (!parent->isShadowRoot())
+        return parent;
+    ShadowRoot* shadowRoot = toShadowRoot(parent);
     ASSERT(!shadowRoot->shadowInsertionPointOfYoungerShadowRoot());
-
-    if (shadowRoot->isYoungest()) {
-        if (details)
-            details->didTraverseShadowRoot(shadowRoot);
-        return shadowRoot->host();
-    }
-
-    return 0;
+    if (!shadowRoot->isYoungest())
+        return 0;
+    if (details)
+        details->didTraverseShadowRoot(shadowRoot);
+    return shadowRoot->host();
 }
 
 } // namespace

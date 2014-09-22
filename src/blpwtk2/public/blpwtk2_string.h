@@ -100,11 +100,11 @@ private:
 }  // close namespace blpwtk2
 
 #ifdef BLPWTK2_IMPLEMENTATION
-namespace WebKit {
+namespace blink {
     class WebString;
-}  // close namespace WebKit
+}  // close namespace blink
 namespace blpwtk2 {
-String fromWebString(const WebKit::WebString&);
+String fromWebString(const blink::WebString&);
 }  // close namespace blpwtk2
 #endif  // BLPWTK2_IMPLEMENTATION
 

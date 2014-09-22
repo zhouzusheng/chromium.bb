@@ -13,6 +13,7 @@
 #include "base/observer_list.h"
 #include "cc/animation/layer_animation_controller.h"
 #include "cc/animation/layer_animation_value_observer.h"
+#include "cc/animation/layer_animation_value_provider.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/region.h"
 #include "cc/base/scoped_ptr_vector.h"
@@ -29,12 +30,19 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "third_party/skia/include/core/SkPicture.h"
+#include "third_party/skia/include/core/SkXfermode.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_f.h"
 #include "ui/gfx/transform.h"
 
 namespace gfx {
 class BoxF;
+}
+
+namespace base {
+namespace debug {
+class ConvertableToTraceFormat;
+}
 }
 
 namespace cc {
@@ -58,7 +66,8 @@ struct AnimationEvent;
 // Base class for composited layers. Special layer types are derived from
 // this class.
 class CC_EXPORT Layer : public base::RefCounted<Layer>,
-                        public LayerAnimationValueObserver {
+                        public LayerAnimationValueObserver,
+                        public LayerAnimationValueProvider {
  public:
   typedef RenderSurfaceLayerList RenderSurfaceListType;
   typedef LayerList LayerListType;
@@ -125,6 +134,22 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   float opacity() const { return opacity_; }
   bool OpacityIsAnimating() const;
   virtual bool OpacityCanAnimateOnImplThread() const;
+
+  void SetBlendMode(SkXfermode::Mode blend_mode);
+  SkXfermode::Mode blend_mode() const { return blend_mode_; }
+
+  bool uses_default_blend_mode() const {
+    return blend_mode_ == SkXfermode::kSrcOver_Mode;
+  }
+
+  // A layer is root for an isolated group when it and all its descendants are
+  // drawn over a black and fully transparent background, creating an isolated
+  // group. It should be used along with SetBlendMode(), in order to restrict
+  // layers within the group to blend with layers outside this group.
+  void SetIsRootForIsolatedGroup(bool root);
+  bool is_root_for_isolated_group() const {
+    return is_root_for_isolated_group_;
+  }
 
   void SetFilters(const FilterOperations& filters);
   const FilterOperations& filters() const { return filters_; }
@@ -339,6 +364,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   virtual void OnOutputSurfaceCreated() {}
 
   virtual std::string DebugName();
+  virtual scoped_refptr<base::debug::ConvertableToTraceFormat> TakeDebugInfo();
 
   void SetLayerClient(LayerClient* client) { client_ = client; }
 
@@ -459,6 +485,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   // unused resources on the impl thread are returned before commit completes.
   void SetNextCommitWaitsForActivation();
 
+  // Called when the blend mode or filters have been changed.
+  void SetNeedsFilterContextIfNeeded();
+
   void SetNeedsPushProperties();
   void AddDependentNeedsPushProperties();
   void RemoveDependentNeedsPushProperties();
@@ -518,10 +547,15 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   // This should only be called from RemoveFromParent().
   void RemoveChildOrDependent(Layer* child);
 
+  // LayerAnimationValueProvider implementation.
+  virtual gfx::Vector2dF ScrollOffsetForAnimation() const OVERRIDE;
+
   // LayerAnimationValueObserver implementation.
   virtual void OnFilterAnimated(const FilterOperations& filters) OVERRIDE;
   virtual void OnOpacityAnimated(float opacity) OVERRIDE;
   virtual void OnTransformAnimated(const gfx::Transform& transform) OVERRIDE;
+  virtual void OnScrollOffsetAnimated(gfx::Vector2dF scroll_offset) OVERRIDE;
+  virtual void OnAnimationWaitingForDeletion() OVERRIDE;
   virtual bool IsActive() const OVERRIDE;
 
   LayerList children_;
@@ -539,11 +573,22 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   gfx::Vector2d scroll_offset_;
   gfx::Vector2d max_scroll_offset_;
-  bool scrollable_;
-  bool should_scroll_on_main_thread_;
-  bool have_wheel_event_handlers_;
-  bool user_scrollable_horizontal_;
-  bool user_scrollable_vertical_;
+  bool scrollable_ : 1;
+  bool should_scroll_on_main_thread_ : 1;
+  bool have_wheel_event_handlers_ : 1;
+  bool user_scrollable_horizontal_ : 1;
+  bool user_scrollable_vertical_ : 1;
+  bool is_root_for_isolated_group_ : 1;
+  bool is_container_for_fixed_position_layers_ : 1;
+  bool is_drawable_ : 1;
+  bool hide_layer_and_subtree_ : 1;
+  bool masks_to_bounds_ : 1;
+  bool contents_opaque_ : 1;
+  bool double_sided_ : 1;
+  bool preserves_3d_ : 1;
+  bool use_parent_backface_visibility_ : 1;
+  bool draw_checkerboard_for_missing_tiles_ : 1;
+  bool force_render_surface_ : 1;
   Region non_fast_scrollable_region_;
   Region touch_event_handler_region_;
   gfx::PointF position_;
@@ -551,20 +596,11 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   SkColor background_color_;
   CompositingReasons compositing_reasons_;
   float opacity_;
+  SkXfermode::Mode blend_mode_;
   FilterOperations filters_;
   FilterOperations background_filters_;
   float anchor_point_z_;
-  bool is_container_for_fixed_position_layers_;
   LayerPositionConstraint position_constraint_;
-  bool is_drawable_;
-  bool hide_layer_and_subtree_;
-  bool masks_to_bounds_;
-  bool contents_opaque_;
-  bool double_sided_;
-  bool preserves_3d_;
-  bool use_parent_backface_visibility_;
-  bool draw_checkerboard_for_missing_tiles_;
-  bool force_render_surface_;
   Layer* scroll_parent_;
   scoped_ptr<std::set<Layer*> > scroll_children_;
 

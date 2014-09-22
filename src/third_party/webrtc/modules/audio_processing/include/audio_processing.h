@@ -12,6 +12,7 @@
 #define WEBRTC_MODULES_AUDIO_PROCESSING_INCLUDE_AUDIO_PROCESSING_H_
 
 #include <stddef.h>  // size_t
+#include <stdio.h>  // FILE
 
 #include "webrtc/common.h"
 #include "webrtc/modules/interface/module.h"
@@ -155,6 +156,9 @@ class AudioProcessing : public Module {
   // ensures the options are applied immediately.
   virtual void SetExtraOptions(const Config& config) = 0;
 
+  virtual int EnableExperimentalNs(bool enable) = 0;
+  virtual bool experimental_ns_enabled() const = 0;
+
   // Sets the sample |rate| in Hz for both the primary and reverse audio
   // streams. 8000, 16000 or 32000 Hz are permitted.
   virtual int set_sample_rate_hz(int rate) = 0;
@@ -230,6 +234,10 @@ class AudioProcessing : public Module {
   // An already existing file will be overwritten without warning.
   static const size_t kMaxFilenameSize = 1024;
   virtual int StartDebugRecording(const char filename[kMaxFilenameSize]) = 0;
+
+  // Same as above but uses an existing file handle. Takes ownership
+  // of |handle| and closes it at StopDebugRecording().
+  virtual int StartDebugRecording(FILE* handle) = 0;
 
   // Stops recording debugging information, and closes the file. Recording
   // cannot be resumed in the same file (without overwriting it).

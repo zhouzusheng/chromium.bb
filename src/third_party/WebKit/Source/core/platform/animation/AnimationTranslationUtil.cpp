@@ -28,10 +28,9 @@
 
 #include "core/platform/animation/CSSAnimationData.h"
 #include "core/platform/animation/KeyframeValueList.h"
-#include "core/platform/graphics/filters/FilterOperations.h"
-#include "core/platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "platform/LengthFunctions.h"
 #include "platform/geometry/FloatSize.h"
+#include "platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "platform/transforms/InterpolatedTransformOperation.h"
 #include "platform/transforms/Matrix3DTransformOperation.h"
 #include "platform/transforms/MatrixTransformOperation.h"
@@ -39,7 +38,6 @@
 #include "platform/transforms/RotateTransformOperation.h"
 #include "platform/transforms/ScaleTransformOperation.h"
 #include "platform/transforms/SkewTransformOperation.h"
-#include "platform/transforms/TransformOperations.h"
 #include "platform/transforms/TransformationMatrix.h"
 #include "platform/transforms/TranslateTransformOperation.h"
 
@@ -50,25 +48,20 @@
 #include "public/platform/WebFilterAnimationCurve.h"
 #include "public/platform/WebFloatAnimationCurve.h"
 #include "public/platform/WebTransformAnimationCurve.h"
-#include "public/platform/WebTransformOperations.h"
 
 #include "wtf/OwnPtr.h"
 #include "wtf/text/CString.h"
 
 using namespace std;
-using namespace WebKit;
+using namespace blink;
 
 namespace WebCore {
 
-PassOwnPtr<WebTransformOperations> toWebTransformOperations(const TransformOperations& transformOperations, const FloatSize& boxSize)
+void toWebTransformOperations(const TransformOperations& transformOperations, const FloatSize& boxSize, WebTransformOperations* webTransformOperations)
 {
     // We need to do a deep copy the transformOperations may contain ref pointers to TransformOperation objects.
-    OwnPtr<WebTransformOperations> webTransformOperations = adoptPtr(Platform::current()->compositorSupport()->createTransformOperations());
-    if (!webTransformOperations)
-        return nullptr;
     for (size_t j = 0; j < transformOperations.size(); ++j) {
-        TransformOperation::OperationType operationType = transformOperations.operations()[j]->getOperationType();
-        switch (operationType) {
+        switch (transformOperations.operations()[j]->type()) {
         case TransformOperation::ScaleX:
         case TransformOperation::ScaleY:
         case TransformOperation::ScaleZ:
@@ -133,12 +126,10 @@ PassOwnPtr<WebTransformOperations> toWebTransformOperations(const TransformOpera
             break;
         } // switch
     } // for each operation
-
-    return webTransformOperations.release();
 }
 
 template <class Value, class Keyframe, class Curve>
-bool appendKeyframeWithStandardTimingFunction(Curve* curve, double keyTime, const Value* value, const Value* lastValue, WebKit::WebAnimationCurve::TimingFunctionType timingFunctionType, const FloatSize&)
+bool appendKeyframeWithStandardTimingFunction(Curve* curve, double keyTime, const Value* value, const Value* lastValue, blink::WebAnimationCurve::TimingFunctionType timingFunctionType, const FloatSize&)
 {
     curve->add(Keyframe(keyTime, value->value()), timingFunctionType);
     return true;
@@ -152,16 +143,18 @@ bool appendKeyframeWithCustomBezierTimingFunction(Curve* curve, double keyTime, 
 }
 
 template <>
-bool appendKeyframeWithStandardTimingFunction<TransformAnimationValue, WebTransformKeyframe, WebTransformAnimationCurve>(WebTransformAnimationCurve* curve, double keyTime, const TransformAnimationValue* value, const TransformAnimationValue* lastValue, WebKit::WebAnimationCurve::TimingFunctionType timingFunctionType, const FloatSize& boxSize)
+bool appendKeyframeWithStandardTimingFunction<TransformAnimationValue, WebTransformKeyframe, WebTransformAnimationCurve>(WebTransformAnimationCurve* curve, double keyTime, const TransformAnimationValue* value, const TransformAnimationValue* lastValue, blink::WebAnimationCurve::TimingFunctionType timingFunctionType, const FloatSize& boxSize)
 {
     bool canBlend = !lastValue;
-    OwnPtr<WebTransformOperations> operations(toWebTransformOperations(*value->value(), boxSize));
+    OwnPtr<WebTransformOperations> operations = adoptPtr(Platform::current()->compositorSupport()->createTransformOperations());
     if (!operations)
         return false;
+    toWebTransformOperations(*value->value(), boxSize, operations.get());
     if (!canBlend) {
-        OwnPtr<WebTransformOperations> lastOperations(toWebTransformOperations(*lastValue->value(), boxSize));
+        OwnPtr<WebTransformOperations> lastOperations = adoptPtr(Platform::current()->compositorSupport()->createTransformOperations());
         if (!lastOperations)
             return false;
+        toWebTransformOperations(*lastValue->value(), boxSize, lastOperations.get());
         canBlend = lastOperations->canBlendWith(*operations);
     }
     if (canBlend) {
@@ -175,13 +168,15 @@ template <>
 bool appendKeyframeWithCustomBezierTimingFunction<TransformAnimationValue, WebTransformKeyframe, WebTransformAnimationCurve>(WebTransformAnimationCurve* curve, double keyTime, const TransformAnimationValue* value, const TransformAnimationValue* lastValue, double x1, double y1, double x2, double y2, const FloatSize& boxSize)
 {
     bool canBlend = !lastValue;
-    OwnPtr<WebTransformOperations> operations(toWebTransformOperations(*value->value(), boxSize));
+    OwnPtr<WebTransformOperations> operations = adoptPtr(Platform::current()->compositorSupport()->createTransformOperations());
     if (!operations)
         return false;
+    toWebTransformOperations(*value->value(), boxSize, operations.get());
     if (!canBlend) {
-        OwnPtr<WebTransformOperations> lastOperations(toWebTransformOperations(*lastValue->value(), boxSize));
+        OwnPtr<WebTransformOperations> lastOperations = adoptPtr(Platform::current()->compositorSupport()->createTransformOperations());
         if (!lastOperations)
             return false;
+        toWebTransformOperations(*lastValue->value(), boxSize, lastOperations.get());
         canBlend = lastOperations->canBlendWith(*operations);
     }
     if (canBlend) {
@@ -191,8 +186,16 @@ bool appendKeyframeWithCustomBezierTimingFunction<TransformAnimationValue, WebTr
     return false;
 }
 
+bool toWebFilterOperations(const FilterOperations& inOperations, WebFilterOperations* outOperations)
+{
+    SkiaImageFilterBuilder builder;
+    FilterOutsets outsets = inOperations.outsets();
+    builder.setCropOffset(FloatSize(outsets.left(), outsets.top()));
+    return builder.buildFilterOperations(inOperations, outOperations);
+}
+
 template <>
-bool appendKeyframeWithStandardTimingFunction<FilterAnimationValue, WebFilterKeyframe, WebFilterAnimationCurve>(WebFilterAnimationCurve* curve, double keyTime, const FilterAnimationValue* value, const FilterAnimationValue* lastValue, WebKit::WebAnimationCurve::TimingFunctionType timingFunctionType, const FloatSize& boxSize)
+bool appendKeyframeWithStandardTimingFunction<FilterAnimationValue, WebFilterKeyframe, WebFilterAnimationCurve>(WebFilterAnimationCurve* curve, double keyTime, const FilterAnimationValue* value, const FilterAnimationValue* lastValue, blink::WebAnimationCurve::TimingFunctionType timingFunctionType, const FloatSize& boxSize)
 {
     // FIXME(ajuma): In order to animate pixel-moving filters on the compositor thread, we need
     // to update overlap testing to take into account the bounds within which the animation
@@ -200,11 +203,8 @@ bool appendKeyframeWithStandardTimingFunction<FilterAnimationValue, WebFilterKey
     // progresses.
     if (value->value()->hasFilterThatMovesPixels())
         return false;
-    SkiaImageFilterBuilder builder;
     OwnPtr<WebFilterOperations> operations = adoptPtr(Platform::current()->compositorSupport()->createFilterOperations());
-    FilterOutsets outsets = value->value()->outsets();
-    builder.setCropOffset(FloatSize(outsets.left(), outsets.top()));
-    if (!builder.buildFilterOperations(*value->value(), operations.get()))
+    if (!toWebFilterOperations(*(value->value()), operations.get()))
         return false;
     curve->add(WebFilterKeyframe(keyTime, operations.release()), timingFunctionType);
     return true;
@@ -219,18 +219,16 @@ bool appendKeyframeWithCustomBezierTimingFunction<FilterAnimationValue, WebFilte
     // progresses.
     if (value->value()->hasFilterThatMovesPixels())
         return false;
-    SkiaImageFilterBuilder builder;
+
     OwnPtr<WebFilterOperations> operations = adoptPtr(Platform::current()->compositorSupport()->createFilterOperations());
-    FilterOutsets outsets = value->value()->outsets();
-    builder.setCropOffset(FloatSize(outsets.left(), outsets.top()));
-    if (!builder.buildFilterOperations(*value->value(), operations.get()))
+    if (!toWebFilterOperations(*(value->value()), operations.get()))
         return false;
     curve->add(WebFilterKeyframe(keyTime, operations.release()), x1, y1, x2, y2);
     return true;
 }
 
 template <class Value, class Keyframe, class Curve>
-PassOwnPtr<WebKit::WebAnimation> createWebAnimation(const KeyframeValueList& valueList, const CSSAnimationData* animation, int animationId, double timeOffset, Curve* curve, WebKit::WebAnimation::TargetProperty targetProperty, const FloatSize& boxSize)
+PassOwnPtr<blink::WebAnimation> createWebAnimation(const KeyframeValueList& valueList, const CSSAnimationData* animation, int animationId, double timeOffset, Curve* curve, blink::WebAnimation::TargetProperty targetProperty, const FloatSize& boxSize)
 {
     bool alternate = false;
     bool reverse = false;
@@ -257,7 +255,7 @@ PassOwnPtr<WebKit::WebAnimation> createWebAnimation(const KeyframeValueList& val
             originalTimingFunction = animation->timingFunction();
 
         // Ease is the default timing function.
-        WebKit::WebAnimationCurve::TimingFunctionType timingFunctionType = WebKit::WebAnimationCurve::TimingFunctionTypeEase;
+        blink::WebAnimationCurve::TimingFunctionType timingFunctionType = blink::WebAnimationCurve::TimingFunctionTypeEase;
 
         bool isUsingCustomBezierTimingFunction = false;
         double x1 = 0;
@@ -271,16 +269,28 @@ PassOwnPtr<WebKit::WebAnimation> createWebAnimation(const KeyframeValueList& val
                 // FIXME: add support for steps timing function.
                 return nullptr;
             case TimingFunction::LinearFunction:
-                timingFunctionType = WebKit::WebAnimationCurve::TimingFunctionTypeLinear;
+                // This doesn't need to be flipped when the animation is reversed.
+                timingFunctionType = blink::WebAnimationCurve::TimingFunctionTypeLinear;
                 break;
             case TimingFunction::CubicBezierFunction:
                 {
-                    const CubicBezierTimingFunction* originalBezierTimingFunction = static_cast<const CubicBezierTimingFunction*>(originalTimingFunction);
+                    const CubicBezierTimingFunction* originalBezierTimingFunction = toCubicBezierTimingFunction(originalTimingFunction);
                     isUsingCustomBezierTimingFunction = true;
                     x1 = originalBezierTimingFunction->x1();
                     y1 = originalBezierTimingFunction->y1();
                     x2 = originalBezierTimingFunction->x2();
                     y2 = originalBezierTimingFunction->y2();
+                    if (reverse) {
+                        // When the animation is reversed, we need to swap the
+                        // start and end keyframes, and flip the timing
+                        // function in both x and y.
+                        double x1Old = x1;
+                        double y1Old = y1;
+                        x1 = 1 - x2;
+                        y1 = 1 - y2;
+                        x2 = 1 - x1Old;
+                        y2 = 1 - y1Old;
+                    }
                     break;
                 }
             default:
@@ -299,11 +309,12 @@ PassOwnPtr<WebKit::WebAnimation> createWebAnimation(const KeyframeValueList& val
             addedKeyframe = appendKeyframeWithCustomBezierTimingFunction<Value, Keyframe, Curve>(curve, keyTime, originalValue, lastOriginalValue, x1, y1, x2, y2, boxSize);
         else
             addedKeyframe = appendKeyframeWithStandardTimingFunction<Value, Keyframe, Curve>(curve, keyTime, originalValue, lastOriginalValue, timingFunctionType, boxSize);
+
         if (!addedKeyframe)
             return nullptr;
     }
 
-    OwnPtr<WebKit::WebAnimation> webAnimation = adoptPtr(Platform::current()->compositorSupport()->createAnimation(*curve, targetProperty, animationId));
+    OwnPtr<blink::WebAnimation> webAnimation = adoptPtr(Platform::current()->compositorSupport()->createAnimation(*curve, targetProperty, animationId));
 
     int iterations = (animation && animation->isIterationCountSet()) ? animation->iterationCount() : 1;
     webAnimation->setIterations(iterations);
@@ -315,22 +326,22 @@ PassOwnPtr<WebKit::WebAnimation> createWebAnimation(const KeyframeValueList& val
     return webAnimation.release();
 }
 
-PassOwnPtr<WebKit::WebAnimation> createWebAnimation(const KeyframeValueList& values, const CSSAnimationData* animation, int animationId, double timeOffset, const FloatSize& boxSize)
+PassOwnPtr<blink::WebAnimation> createWebAnimation(const KeyframeValueList& values, const CSSAnimationData* animation, int animationId, double timeOffset, const FloatSize& boxSize)
 {
     switch (values.property()) {
     case AnimatedPropertyWebkitTransform: {
         OwnPtr<WebTransformAnimationCurve> curve = adoptPtr(Platform::current()->compositorSupport()->createTransformAnimationCurve());
-        return createWebAnimation<TransformAnimationValue, WebTransformKeyframe, WebTransformAnimationCurve>(values, animation, animationId, timeOffset, curve.get(), WebKit::WebAnimation::TargetPropertyTransform, FloatSize(boxSize));
+        return createWebAnimation<TransformAnimationValue, WebTransformKeyframe, WebTransformAnimationCurve>(values, animation, animationId, timeOffset, curve.get(), blink::WebAnimation::TargetPropertyTransform, FloatSize(boxSize));
     }
 
     case AnimatedPropertyOpacity: {
         OwnPtr<WebFloatAnimationCurve> curve = adoptPtr(Platform::current()->compositorSupport()->createFloatAnimationCurve());
-        return createWebAnimation<FloatAnimationValue, WebFloatKeyframe, WebFloatAnimationCurve>(values, animation, animationId, timeOffset, curve.get(), WebKit::WebAnimation::TargetPropertyOpacity, FloatSize());
+        return createWebAnimation<FloatAnimationValue, WebFloatKeyframe, WebFloatAnimationCurve>(values, animation, animationId, timeOffset, curve.get(), blink::WebAnimation::TargetPropertyOpacity, FloatSize());
     }
 
     case AnimatedPropertyWebkitFilter: {
         OwnPtr<WebFilterAnimationCurve> curve = adoptPtr(Platform::current()->compositorSupport()->createFilterAnimationCurve());
-        return createWebAnimation<FilterAnimationValue, WebFilterKeyframe, WebFilterAnimationCurve>(values, animation, animationId, timeOffset, curve.get(), WebKit::WebAnimation::TargetPropertyFilter, FloatSize(boxSize));
+        return createWebAnimation<FilterAnimationValue, WebFilterKeyframe, WebFilterAnimationCurve>(values, animation, animationId, timeOffset, curve.get(), blink::WebAnimation::TargetPropertyFilter, FloatSize(boxSize));
     }
 
     case AnimatedPropertyBackgroundColor:

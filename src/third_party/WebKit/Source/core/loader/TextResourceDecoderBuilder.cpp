@@ -33,8 +33,8 @@
 
 #include "core/dom/Document.h"
 #include "core/frame/Frame.h"
-#include "core/page/Settings.h"
-#include "weborigin/SecurityOrigin.h"
+#include "core/frame/Settings.h"
+#include "platform/weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -44,7 +44,7 @@ static inline bool canReferToParentFrameEncoding(const Frame* frame, const Frame
 }
 
 
-TextResourceDecoderBuilder::TextResourceDecoderBuilder(const String& mimeType, const String& encoding, bool encodingUserChoosen)
+TextResourceDecoderBuilder::TextResourceDecoderBuilder(const AtomicString& mimeType, const AtomicString& encoding, bool encodingUserChoosen)
     : m_mimeType(mimeType)
     , m_encoding(encoding)
     , m_encodingWasChosenByUser(encodingUserChoosen)
@@ -56,7 +56,7 @@ TextResourceDecoderBuilder::~TextResourceDecoderBuilder()
 }
 
 
-inline PassRefPtr<TextResourceDecoder> TextResourceDecoderBuilder::createDecoderInstance(Document* document)
+inline PassOwnPtr<TextResourceDecoder> TextResourceDecoderBuilder::createDecoderInstance(Document* document)
 {
     if (Frame* frame = document->frame()) {
         if (Settings* settings = frame->settings())
@@ -72,7 +72,7 @@ inline void TextResourceDecoderBuilder::setupEncoding(TextResourceDecoder* decod
     Frame* parentFrame = frame ? frame->tree().parent() : 0;
 
     if (!m_encoding.isEmpty())
-        decoder->setEncoding(m_encoding, m_encodingWasChosenByUser ? TextResourceDecoder::UserChosenEncoding : TextResourceDecoder::EncodingFromHTTPHeader);
+        decoder->setEncoding(m_encoding.string(), m_encodingWasChosenByUser ? TextResourceDecoder::UserChosenEncoding : TextResourceDecoder::EncodingFromHTTPHeader);
 
     // Set the hint encoding to the parent frame encoding only if
     // the parent and the current frames share the security origin.
@@ -84,24 +84,25 @@ inline void TextResourceDecoderBuilder::setupEncoding(TextResourceDecoder* decod
     // FIXME: This might be too cautious for non-7bit-encodings and
     // we may consider relaxing this later after testing.
     if (frame && canReferToParentFrameEncoding(frame, parentFrame)) {
-        decoder->setHintEncoding(parentFrame->document()->decoder());
+        if (parentFrame->document()->encodingWasDetectedHeuristically())
+            decoder->setHintEncoding(parentFrame->document()->encoding());
+
         if (m_encoding.isEmpty())
-            decoder->setEncoding(parentFrame->document()->inputEncoding(), TextResourceDecoder::EncodingFromParentFrame);
+            decoder->setEncoding(parentFrame->document()->inputEncoding().string(), TextResourceDecoder::EncodingFromParentFrame);
     }
 }
 
-PassRefPtr<TextResourceDecoder> TextResourceDecoderBuilder::buildFor(Document* document)
+PassOwnPtr<TextResourceDecoder> TextResourceDecoderBuilder::buildFor(Document* document)
 {
-    RefPtr<TextResourceDecoder> decoder = createDecoderInstance(document);
+    OwnPtr<TextResourceDecoder> decoder = createDecoderInstance(document);
     setupEncoding(decoder.get(), document);
-    document->setDecoder(decoder);
     return decoder.release();
 }
 
 void TextResourceDecoderBuilder::clear()
 {
     if (!m_encodingWasChosenByUser)
-        m_encoding = String();
+        m_encoding = nullAtom;
 }
 
 }

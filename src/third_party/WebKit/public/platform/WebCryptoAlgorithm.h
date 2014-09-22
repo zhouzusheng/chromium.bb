@@ -38,7 +38,7 @@
 #include "wtf/PassOwnPtr.h"
 #endif
 
-namespace WebKit {
+namespace blink {
 
 enum WebCryptoAlgorithmId {
     WebCryptoAlgorithmIdAesCbc,
@@ -52,6 +52,8 @@ enum WebCryptoAlgorithmId {
     WebCryptoAlgorithmIdSha512,
     WebCryptoAlgorithmIdAesGcm,
     WebCryptoAlgorithmIdRsaOaep,
+    WebCryptoAlgorithmIdAesCtr,
+    WebCryptoAlgorithmIdAesKw,
 #if INSIDE_BLINK
     NumberOfWebCryptoAlgorithmId,
 #endif
@@ -67,6 +69,7 @@ enum WebCryptoAlgorithmParamsType {
     WebCryptoAlgorithmParamsTypeRsaKeyGenParams,
     WebCryptoAlgorithmParamsTypeAesGcmParams,
     WebCryptoAlgorithmParamsTypeRsaOaepParams,
+    WebCryptoAlgorithmParamsTypeAesCtrParams,
 };
 
 class WebCryptoAesCbcParams;
@@ -77,6 +80,7 @@ class WebCryptoRsaSsaParams;
 class WebCryptoRsaKeyGenParams;
 class WebCryptoAesGcmParams;
 class WebCryptoRsaOaepParams;
+class WebCryptoAesCtrParams;
 
 class WebCryptoAlgorithmParams;
 class WebCryptoAlgorithmPrivate;
@@ -123,6 +127,7 @@ public:
     BLINK_PLATFORM_EXPORT const WebCryptoRsaKeyGenParams* rsaKeyGenParams() const;
     BLINK_PLATFORM_EXPORT const WebCryptoAesGcmParams* aesGcmParams() const;
     BLINK_PLATFORM_EXPORT const WebCryptoRsaOaepParams* rsaOaepParams() const;
+    BLINK_PLATFORM_EXPORT const WebCryptoAesCtrParams* aesCtrParams() const;
 
 private:
     BLINK_PLATFORM_EXPORT void assign(const WebCryptoAlgorithm& other);
@@ -131,6 +136,6 @@ private:
     WebPrivatePtr<WebCryptoAlgorithmPrivate> m_private;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

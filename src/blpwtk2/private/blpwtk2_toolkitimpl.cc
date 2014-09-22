@@ -146,7 +146,7 @@ static void deleteTemporaryScopedDirs()
     }
 
     base::FilePath tempPath;
-    if (!file_util::GetTempDir(&tempPath)) {
+    if (!base::GetTempDir(&tempPath)) {
         return;
     }
 

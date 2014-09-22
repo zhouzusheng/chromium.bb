@@ -17,10 +17,9 @@
 #include "content/child/npapi/plugin_stream_url.h"
 #include "content/child/npapi/plugin_url_fetcher.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "webkit/glue/webkit_glue.h"
 
-using WebKit::WebCursorInfo;
-using WebKit::WebInputEvent;
+using blink::WebCursorInfo;
+using blink::WebInputEvent;
 
 namespace content {
 
@@ -53,8 +52,10 @@ bool WebPluginDelegateImpl::Initialize(
     const std::vector<std::string>& arg_names,
     const std::vector<std::string>& arg_values,
     bool load_manually) {
-  if (instance_->mime_type() == "video/quicktime")
+  if (instance_->plugin_lib()->plugin_info().name.find(
+          base::ASCIIToUTF16("QuickTime Plug-in")) != std::wstring::npos) {
     quirks_ |= PLUGIN_QUIRK_COPY_STREAM_DATA;
+  }
 
   instance_->set_web_plugin(plugin_);
   if (quirks_ & PLUGIN_QUIRK_DONT_ALLOW_MULTIPLE_INSTANCES) {

@@ -32,7 +32,6 @@
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
 #include "HTMLNames.h"
-#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSValue.h"
@@ -58,7 +57,7 @@
 #include "core/html/HTMLTextFormControlElement.h"
 #include "core/frame/Frame.h"
 #include "core/rendering/RenderObject.h"
-#include "weborigin/KURL.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -84,7 +83,7 @@ public:
 
     void apply()
     {
-        m_element->setAttribute(m_name, m_value);
+        m_element->setAttribute(m_name, AtomicString(m_value));
     }
 
 private:
@@ -93,13 +92,13 @@ private:
     String m_value;
 };
 
-static void completeURLs(DocumentFragment* fragment, const String& baseURL)
+static void completeURLs(DocumentFragment& fragment, const String& baseURL)
 {
     Vector<AttributeChange> changes;
 
     KURL parsedBaseURL(ParsedURLString, baseURL);
 
-    for (Element* element = ElementTraversal::firstWithin(fragment); element; element = ElementTraversal::next(element, fragment)) {
+    for (Element* element = ElementTraversal::firstWithin(fragment); element; element = ElementTraversal::next(*element, &fragment)) {
         if (!element->hasAttributes())
             continue;
         unsigned length = element->attributeCount();
@@ -355,7 +354,7 @@ Node* StyledMarkupAccumulator::traverseNodesForSerialization(Node* startNode, No
         if (!n)
             break;
 
-        next = NodeTraversal::next(n);
+        next = NodeTraversal::next(*n);
         bool openedTag = false;
 
         if (isBlock(n) && canHaveChildrenForEditing(n) && next == pastEnd)
@@ -363,7 +362,7 @@ Node* StyledMarkupAccumulator::traverseNodesForSerialization(Node* startNode, No
             continue;
 
         if (!n->renderer() && !enclosingNodeWithTag(firstPositionInOrBeforeNode(n), selectTag)) {
-            next = NodeTraversal::nextSkippingChildren(n);
+            next = NodeTraversal::nextSkippingChildren(*n);
             // Don't skip over pastEnd.
             if (pastEnd && pastEnd->isDescendantOf(n))
                 next = pastEnd;
@@ -648,7 +647,7 @@ PassRefPtr<DocumentFragment> createFragmentFromMarkup(Document& document, const 
     fragment->parseHTML(markup, fakeBody.get(), parserContentPolicy);
 
     if (!baseURL.isEmpty() && baseURL != blankURL() && baseURL != document.baseURL())
-        completeURLs(fragment.get(), baseURL);
+        completeURLs(*fragment, baseURL);
 
     return fragment.release();
 }
@@ -657,7 +656,7 @@ static const char fragmentMarkerTag[] = "webkit-fragment-marker";
 
 static bool findNodesSurroundingContext(Document* document, RefPtr<Node>& nodeBeforeContext, RefPtr<Node>& nodeAfterContext)
 {
-    for (Node* node = document->firstChild(); node; node = NodeTraversal::next(node)) {
+    for (Node* node = document->firstChild(); node; node = NodeTraversal::next(*node)) {
         if (node->nodeType() == Node::COMMENT_NODE && toCharacterData(node)->data() == fragmentMarkerTag) {
             if (!nodeBeforeContext)
                 nodeBeforeContext = node;
@@ -675,10 +674,10 @@ static void trimFragment(DocumentFragment* fragment, Node* nodeBeforeContext, No
     RefPtr<Node> next;
     for (RefPtr<Node> node = fragment->firstChild(); node; node = next) {
         if (nodeBeforeContext->isDescendantOf(node.get())) {
-            next = NodeTraversal::next(node.get());
+            next = NodeTraversal::next(*node);
             continue;
         }
-        next = NodeTraversal::nextSkippingChildren(node.get());
+        next = NodeTraversal::nextSkippingChildren(*node);
         ASSERT(!node->contains(nodeAfterContext));
         node->parentNode()->removeChild(node.get(), ASSERT_NO_EXCEPTION);
         if (nodeBeforeContext == node)
@@ -687,7 +686,7 @@ static void trimFragment(DocumentFragment* fragment, Node* nodeBeforeContext, No
 
     ASSERT(nodeAfterContext->parentNode());
     for (RefPtr<Node> node = nodeAfterContext; node; node = next) {
-        next = NodeTraversal::nextSkippingChildren(node.get());
+        next = NodeTraversal::nextSkippingChildren(*node);
         node->parentNode()->removeChild(node.get(), ASSERT_NO_EXCEPTION);
     }
 }
@@ -943,7 +942,7 @@ String urlToMarkup(const KURL& url, const String& title)
     return markup.toString();
 }
 
-PassRefPtr<DocumentFragment> createFragmentForInnerOuterHTML(const String& markup, Element* contextElement, ParserContentPolicy parserContentPolicy, const char* method, ExceptionState& es)
+PassRefPtr<DocumentFragment> createFragmentForInnerOuterHTML(const String& markup, Element* contextElement, ParserContentPolicy parserContentPolicy, const char* method, ExceptionState& exceptionState)
 {
     Document& document = contextElement->hasTagName(templateTag) ? contextElement->document().ensureTemplateDocument() : contextElement->document();
     RefPtr<DocumentFragment> fragment = DocumentFragment::create(document);
@@ -955,7 +954,7 @@ PassRefPtr<DocumentFragment> createFragmentForInnerOuterHTML(const String& marku
 
     bool wasValid = fragment->parseXML(markup, contextElement, parserContentPolicy);
     if (!wasValid) {
-        es.throwDOMException(SyntaxError, ExceptionMessages::failedToExecute(method, "Node", "The provided markup is invalid XML, and therefore cannot be inserted into an XML document."));
+        exceptionState.throwDOMException(SyntaxError, "The provided markup is invalid XML, and therefore cannot be inserted into an XML document.");
         return 0;
     }
     return fragment.release();
@@ -996,16 +995,16 @@ static inline void removeElementPreservingChildren(PassRefPtr<DocumentFragment> 
     fragment->removeChild(element);
 }
 
-PassRefPtr<DocumentFragment> createContextualFragment(const String& markup, HTMLElement* element, ParserContentPolicy parserContentPolicy, ExceptionState& es)
+PassRefPtr<DocumentFragment> createContextualFragment(const String& markup, HTMLElement* element, ParserContentPolicy parserContentPolicy, ExceptionState& exceptionState)
 {
     ASSERT(element);
     if (element->ieForbidsInsertHTML() || element->hasLocalName(colTag) || element->hasLocalName(colgroupTag) || element->hasLocalName(framesetTag)
         || element->hasLocalName(headTag) || element->hasLocalName(styleTag) || element->hasLocalName(titleTag)) {
-        es.throwDOMException(NotSupportedError, ExceptionMessages::failedToExecute("createContextualFragment", "Range", "The range's container is '" + element->localName() + "', which is not supported."));
+        exceptionState.throwDOMException(NotSupportedError, "The range's container is '" + element->localName() + "', which is not supported.");
         return 0;
     }
 
-    RefPtr<DocumentFragment> fragment = createFragmentForInnerOuterHTML(markup, element, parserContentPolicy, "createContextualFragment", es);
+    RefPtr<DocumentFragment> fragment = createFragmentForInnerOuterHTML(markup, element, parserContentPolicy, "createContextualFragment", exceptionState);
     if (!fragment)
         return 0;
 
@@ -1026,7 +1025,7 @@ PassRefPtr<DocumentFragment> createContextualFragment(const String& markup, HTML
     return fragment.release();
 }
 
-void replaceChildrenWithFragment(ContainerNode* container, PassRefPtr<DocumentFragment> fragment, ExceptionState& es)
+void replaceChildrenWithFragment(ContainerNode* container, PassRefPtr<DocumentFragment> fragment, ExceptionState& exceptionState)
 {
     ASSERT(container);
     RefPtr<ContainerNode> containerNode(container);
@@ -1044,15 +1043,15 @@ void replaceChildrenWithFragment(ContainerNode* container, PassRefPtr<DocumentFr
     }
 
     if (containerNode->hasOneChild()) {
-        containerNode->replaceChild(fragment, containerNode->firstChild(), es);
+        containerNode->replaceChild(fragment, containerNode->firstChild(), exceptionState);
         return;
     }
 
     containerNode->removeChildren();
-    containerNode->appendChild(fragment, es);
+    containerNode->appendChild(fragment, exceptionState);
 }
 
-void replaceChildrenWithText(ContainerNode* container, const String& text, ExceptionState& es)
+void replaceChildrenWithText(ContainerNode* container, const String& text, ExceptionState& exceptionState)
 {
     ASSERT(container);
     RefPtr<ContainerNode> containerNode(container);
@@ -1067,15 +1066,15 @@ void replaceChildrenWithText(ContainerNode* container, const String& text, Excep
     RefPtr<Text> textNode = Text::create(containerNode->document(), text);
 
     if (containerNode->hasOneChild()) {
-        containerNode->replaceChild(textNode.release(), containerNode->firstChild(), es);
+        containerNode->replaceChild(textNode.release(), containerNode->firstChild(), exceptionState);
         return;
     }
 
     containerNode->removeChildren();
-    containerNode->appendChild(textNode.release(), es);
+    containerNode->appendChild(textNode.release(), exceptionState);
 }
 
-void mergeWithNextTextNode(PassRefPtr<Node> node, ExceptionState& es)
+void mergeWithNextTextNode(PassRefPtr<Node> node, ExceptionState& exceptionState)
 {
     ASSERT(node && node->isTextNode());
     Node* next = node->nextSibling();
@@ -1086,7 +1085,7 @@ void mergeWithNextTextNode(PassRefPtr<Node> node, ExceptionState& es)
     RefPtr<Text> textNext = toText(next);
     textNode->appendData(textNext->data());
     if (textNext->parentNode()) // Might have been removed by mutation event.
-        textNext->remove(es);
+        textNext->remove(exceptionState);
 }
 
 }

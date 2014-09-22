@@ -28,10 +28,8 @@
 
 #include "HTMLNames.h"
 #include "core/html/HTMLFrameOwnerElement.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
 #include "core/page/scrolling/ScrollingConstraints.h"
-#include "core/platform/graphics/GraphicsContextStateSaver.h"
-#include "core/platform/graphics/Path.h"
 #include "core/rendering/CompositedLayerMapping.h"
 #include "core/rendering/ImageQualityController.h"
 #include "core/rendering/RenderBlock.h"
@@ -45,6 +43,8 @@
 #include "core/rendering/style/ShadowList.h"
 #include "platform/geometry/TransformState.h"
 #include "platform/graphics/DrawLooper.h"
+#include "platform/graphics/GraphicsContextStateSaver.h"
+#include "platform/graphics/Path.h"
 #include "wtf/CurrentTime.h"
 
 using namespace std;
@@ -65,7 +65,7 @@ static ContinuationMap* continuationMap = 0;
 
 // This HashMap is similar to the continuation map, but connects first-letter
 // renderers to their remaining text fragments.
-typedef HashMap<const RenderBoxModelObject*, RenderObject*> FirstLetterRemainingTextMap;
+typedef HashMap<const RenderBoxModelObject*, RenderTextFragment*> FirstLetterRemainingTextMap;
 static FirstLetterRemainingTextMap* firstLetterRemainingTextMap = 0;
 
 void RenderBoxModelObject::setSelectionState(SelectionState state)
@@ -174,8 +174,6 @@ void RenderBoxModelObject::updateFromStyle()
 {
     RenderLayerModelObject::updateFromStyle();
 
-    // Set the appropriate bits for a box model object.  Since all bits are cleared in styleWillChange,
-    // we only check for bits that could possibly be set to true.
     RenderStyle* styleToUse = style();
     setHasBoxDecorations(hasBackground() || styleToUse->hasBorder() || styleToUse->hasAppearance() || styleToUse->boxShadow());
     setInline(styleToUse->isDisplayInlineType());
@@ -704,29 +702,28 @@ void RenderBoxModelObject::paintFillLayerExtended(const PaintInfo& paintInfo, co
             if (!boxShadowShouldBeAppliedToBackground)
                 backgroundRect.intersect(paintInfo.rect);
 
-            // If we have an alpha and we are painting the root element, go ahead and blend with the base background color.
-            Color baseColor;
-            bool shouldClearBackground = false;
-            if (isOpaqueRoot) {
-                baseColor = view()->frameView()->baseBackgroundColor();
-                if (!baseColor.alpha())
-                    shouldClearBackground = true;
-            }
-
             GraphicsContextStateSaver shadowStateSaver(*context, boxShadowShouldBeAppliedToBackground);
             if (boxShadowShouldBeAppliedToBackground)
                 applyBoxShadowForBackground(context, this);
 
-            if (baseColor.alpha()) {
-                if (bgColor.alpha())
-                    baseColor = baseColor.blend(bgColor);
+            if (isOpaqueRoot) {
+                // If we have an alpha and we are painting the root element, go ahead and blend with the base background color.
+                Color baseColor = view()->frameView()->baseBackgroundColor();
+                bool shouldClearDocumentBackground = document().settings() && document().settings()->shouldClearDocumentBackground();
+                CompositeOperator operation = shouldClearDocumentBackground ? CompositeCopy : context->compositeOperation();
 
-                context->fillRect(backgroundRect, baseColor, CompositeCopy);
+                if (baseColor.alpha()) {
+                    if (bgColor.alpha())
+                        baseColor = baseColor.blend(bgColor);
+                    context->fillRect(backgroundRect, baseColor, operation);
+                } else if (bgColor.alpha()) {
+                    context->fillRect(backgroundRect, bgColor, operation);
+                } else if (shouldClearDocumentBackground) {
+                    context->clearRect(backgroundRect);
+                }
             } else if (bgColor.alpha()) {
-                CompositeOperator operation = shouldClearBackground ? CompositeCopy : context->compositeOperation();
-                context->fillRect(backgroundRect, bgColor, operation);
-            } else if (shouldClearBackground)
-                context->clearRect(backgroundRect);
+                context->fillRect(backgroundRect, bgColor, context->compositeOperation());
+            }
         }
     }
 
@@ -1148,13 +1145,13 @@ void RenderBoxModelObject::calculateBackgroundImageGeometry(const FillLayer* fil
     geometry.setDestOrigin(geometry.destRect().location());
 }
 
-static LayoutUnit computeBorderImageSide(Length borderSlice, LayoutUnit borderSide, LayoutUnit imageSide, LayoutUnit boxExtent, RenderView* renderView)
+static LayoutUnit computeBorderImageSide(const BorderImageLength& borderSlice, LayoutUnit borderSide, LayoutUnit imageSide, LayoutUnit boxExtent, RenderView* renderView)
 {
-    if (borderSlice.isRelative())
-        return borderSlice.value() * borderSide;
-    if (borderSlice.isAuto())
+    if (borderSlice.isNumber())
+        return borderSlice.number() * borderSide;
+    if (borderSlice.length().isAuto())
         return imageSide;
-    return valueForLength(borderSlice, boxExtent, renderView);
+    return valueForLength(borderSlice.length(), boxExtent, renderView);
 }
 
 bool RenderBoxModelObject::paintNinePieceImage(GraphicsContext* graphicsContext, const LayoutRect& rect, const RenderStyle* style,
@@ -2471,20 +2468,6 @@ bool RenderBoxModelObject::boxShadowShouldBeAppliedToBackground(BackgroundBleedA
     return true;
 }
 
-static inline IntRect areaCastingShadowInHole(const IntRect& holeRect, int shadowBlur, int shadowSpread, const IntSize& shadowOffset)
-{
-    IntRect bounds(holeRect);
-
-    bounds.inflate(shadowBlur);
-
-    if (shadowSpread < 0)
-        bounds.inflate(-shadowSpread);
-
-    IntRect offsetBounds = bounds;
-    offsetBounds.move(-shadowOffset);
-    return unionRect(bounds, offsetBounds);
-}
-
 void RenderBoxModelObject::paintBoxShadow(const PaintInfo& info, const LayoutRect& paintRect, const RenderStyle* s, ShadowStyle shadowStyle, bool includeLogicalLeftEdge, bool includeLogicalRightEdge)
 {
     // FIXME: Deal with border-image.  Would be great to use border-image as a mask.
@@ -2638,14 +2621,14 @@ void RenderBoxModelObject::computeLayerHitTestRects(LayerHitTestRects& rects) co
         continuation()->computeLayerHitTestRects(rects);
 }
 
-RenderObject* RenderBoxModelObject::firstLetterRemainingText() const
+RenderTextFragment* RenderBoxModelObject::firstLetterRemainingText() const
 {
     if (!firstLetterRemainingTextMap)
         return 0;
     return firstLetterRemainingTextMap->get(this);
 }
 
-void RenderBoxModelObject::setFirstLetterRemainingText(RenderObject* remainingText)
+void RenderBoxModelObject::setFirstLetterRemainingText(RenderTextFragment* remainingText)
 {
     if (remainingText) {
         if (!firstLetterRemainingTextMap)
@@ -2664,7 +2647,7 @@ LayoutRect RenderBoxModelObject::localCaretRectForEmptyElement(LayoutUnit width,
     // constructed and this kludge is not called any more. So only the caret size
     // of an empty :first-line'd block is wrong. I think we can live with that.
     RenderStyle* currentStyle = firstLineStyle();
-    LayoutUnit height = lineHeight(true, currentStyle->isHorizontalWritingMode() ? HorizontalLine : VerticalLine);
+    LayoutUnit height = lineHeight(true, currentStyle->isHorizontalWritingMode() ? HorizontalLine : VerticalLine,  PositionOfInteriorLineBoxes);
 
     enum CaretAlignment { alignLeft, alignRight, alignCenter };
 

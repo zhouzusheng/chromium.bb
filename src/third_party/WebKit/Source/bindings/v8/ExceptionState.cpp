@@ -31,6 +31,7 @@
 #include "config.h"
 #include "bindings/v8/ExceptionState.h"
 
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/V8ThrowException.h"
 #include "core/dom/ExceptionCode.h"
 
@@ -51,14 +52,17 @@ void ExceptionState::throwDOMException(const ExceptionCode& ec, const String& me
     ASSERT(ec != SecurityError);
 
     m_code = ec;
-    setException(V8ThrowException::createDOMException(ec, message, m_isolate));
+    String processedMessage = addExceptionContext(message);
+    setException(V8ThrowException::createDOMException(ec, processedMessage, m_creationContext, m_isolate));
 }
 
 void ExceptionState::throwSecurityError(const String& sanitizedMessage, const String& unsanitizedMessage)
 {
     ASSERT(m_isolate);
     m_code = SecurityError;
-    setException(V8ThrowException::createDOMException(SecurityError, sanitizedMessage, unsanitizedMessage, m_isolate));
+    String finalSanitized = addExceptionContext(sanitizedMessage);
+    String finalUnsanitized = addExceptionContext(unsanitizedMessage);
+    setException(V8ThrowException::createDOMException(SecurityError, finalSanitized, finalUnsanitized, m_creationContext, m_isolate));
 }
 
 void ExceptionState::setException(v8::Handle<v8::Value> exception)
@@ -76,7 +80,7 @@ void ExceptionState::throwTypeError(const String& message)
 {
     ASSERT(m_isolate);
     m_code = TypeError;
-    setException(V8ThrowException::createTypeError(message, m_isolate));
+    setException(V8ThrowException::createTypeError(addExceptionContext(message), m_isolate));
 }
 
 void TrackExceptionState::throwDOMException(const ExceptionCode& ec, const String& message)
@@ -92,6 +96,27 @@ void TrackExceptionState::throwTypeError(const String&)
 void TrackExceptionState::throwSecurityError(const String&, const String&)
 {
     m_code = SecurityError;
+}
+
+String ExceptionState::addExceptionContext(const String& message) const
+{
+    if (message.isEmpty())
+        return message;
+
+    String processedMessage = message;
+    if (propertyName() && interfaceName() && m_context != UnknownContext) {
+        if (m_context == DeletionContext)
+            processedMessage = ExceptionMessages::failedToDelete(propertyName(), interfaceName(), message);
+        else if (m_context == ExecutionContext)
+            processedMessage = ExceptionMessages::failedToExecute(propertyName(), interfaceName(), message);
+        else if (m_context == GetterContext)
+            processedMessage = ExceptionMessages::failedToGet(propertyName(), interfaceName(), message);
+        else if (m_context == SetterContext)
+            processedMessage = ExceptionMessages::failedToSet(propertyName(), interfaceName(), message);
+    } else if (!propertyName() && interfaceName() && m_context == ConstructionContext) {
+        processedMessage = ExceptionMessages::failedToConstruct(interfaceName(), message);
+    }
+    return processedMessage;
 }
 
 } // namespace WebCore

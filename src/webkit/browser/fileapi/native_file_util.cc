@@ -7,7 +7,9 @@
 #include "base/file_util.h"
 #include "base/files/file_enumerator.h"
 #include "base/memory/scoped_ptr.h"
+#include "net/base/file_stream.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
+#include "webkit/browser/fileapi/file_system_url.h"
 
 namespace fileapi {
 
@@ -30,6 +32,42 @@ bool SetPlatformSpecificDirectoryPermissions(const base::FilePath& dir_path) {
 #endif
     // Keep the directory permissions unchanged on non-Chrome OS platforms.
     return true;
+}
+
+// Copies a file |from| to |to|, and ensure the written content is synced to
+// the disk. This is essentially base::CopyFile followed by fsync().
+bool CopyFileAndSync(const base::FilePath& from, const base::FilePath& to) {
+  net::FileStream infile(NULL);
+  if (infile.OpenSync(from,
+          base::PLATFORM_FILE_OPEN | base:: PLATFORM_FILE_READ) < 0) {
+    return false;
+  }
+
+  net::FileStream outfile(NULL);
+  if (outfile.OpenSync(to,
+          base::PLATFORM_FILE_CREATE_ALWAYS | base:: PLATFORM_FILE_WRITE) < 0) {
+    return false;
+  }
+
+  const int kBufferSize = 32768;
+  std::vector<char> buffer(kBufferSize);
+
+  for (;;) {
+    int bytes_read = infile.ReadSync(&buffer[0], kBufferSize);
+    if (bytes_read < 0)
+      return false;
+    if (bytes_read == 0)
+      break;
+    for (int bytes_written = 0; bytes_written < bytes_read; ) {
+      int bytes_written_partial = outfile.WriteSync(&buffer[bytes_written],
+                                                    bytes_read - bytes_written);
+      if (bytes_written_partial < 0)
+        return false;
+      bytes_written += bytes_written_partial;
+    }
+  }
+
+  return outfile.FlushSync() >= 0;
 }
 
 }  // namespace
@@ -74,6 +112,15 @@ base::Time NativeFileEnumerator::LastModifiedTime() {
 
 bool NativeFileEnumerator::IsDirectory() {
   return file_util_info_.IsDirectory();
+}
+
+NativeFileUtil::CopyOrMoveMode NativeFileUtil::CopyOrMoveModeForDestination(
+    const FileSystemURL& dest_url, bool copy) {
+  if (copy) {
+    return dest_url.mount_option().copy_sync_option() == COPY_SYNC_OPTION_SYNC ?
+        COPY_SYNC : COPY_NOSYNC;
+  }
+  return MOVE;
 }
 
 PlatformFileError NativeFileUtil::CreateOrOpen(
@@ -137,7 +184,7 @@ PlatformFileError NativeFileUtil::CreateDirectory(
   if (path_exists && !base::DirectoryExists(path))
     return base::PLATFORM_FILE_ERROR_EXISTS;
 
-  if (!file_util::CreateDirectory(path))
+  if (!base::CreateDirectory(path))
     return base::PLATFORM_FILE_ERROR_FAILED;
 
   if (!SetPlatformSpecificDirectoryPermissions(path)) {
@@ -155,7 +202,7 @@ PlatformFileError NativeFileUtil::GetFileInfo(
     base::PlatformFileInfo* file_info) {
   if (!base::PathExists(path))
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
-  if (!file_util::GetFileInfo(path, file_info))
+  if (!base::GetFileInfo(path, file_info))
     return base::PLATFORM_FILE_ERROR_FAILED;
   return base::PLATFORM_FILE_OK;
 }
@@ -173,8 +220,7 @@ PlatformFileError NativeFileUtil::Touch(
     const base::FilePath& path,
     const base::Time& last_access_time,
     const base::Time& last_modified_time) {
-  if (!file_util::TouchFile(
-          path, last_access_time, last_modified_time))
+  if (!base::TouchFile(path, last_access_time, last_modified_time))
     return base::PLATFORM_FILE_ERROR_FAILED;
   return base::PLATFORM_FILE_OK;
 }
@@ -210,7 +256,7 @@ PlatformFileError NativeFileUtil::CopyOrMoveFile(
     const base::FilePath& src_path,
     const base::FilePath& dest_path,
     FileSystemOperation::CopyOrMoveOption option,
-    bool copy) {
+    CopyOrMoveMode mode) {
   base::PlatformFileInfo info;
   base::PlatformFileError error = NativeFileUtil::GetFileInfo(src_path, &info);
   if (error != base::PLATFORM_FILE_OK)
@@ -233,18 +279,25 @@ PlatformFileError NativeFileUtil::CopyOrMoveFile(
       return base::PLATFORM_FILE_ERROR_NOT_FOUND;
   }
 
-  if (copy) {
-    if (!base::CopyFile(src_path, dest_path))
-      return base::PLATFORM_FILE_ERROR_FAILED;
-  } else {
-    if (!base::Move(src_path, dest_path))
-      return base::PLATFORM_FILE_ERROR_FAILED;
+  switch (mode) {
+    case COPY_NOSYNC:
+      if (!base::CopyFile(src_path, dest_path))
+        return base::PLATFORM_FILE_ERROR_FAILED;
+      break;
+    case COPY_SYNC:
+      if (!CopyFileAndSync(src_path, dest_path))
+        return base::PLATFORM_FILE_ERROR_FAILED;
+      break;
+    case MOVE:
+      if (!base::Move(src_path, dest_path))
+        return base::PLATFORM_FILE_ERROR_FAILED;
+      break;
   }
 
   // Preserve the last modified time. Do not return error here even if
   // the setting is failed, because the copy itself is successfully done.
   if (option == FileSystemOperation::OPTION_PRESERVE_LAST_MODIFIED)
-    file_util::SetLastModifiedTime(dest_path, last_modified);
+    base::TouchFile(dest_path, last_modified, last_modified);
 
   return base::PLATFORM_FILE_OK;
 }
@@ -264,7 +317,7 @@ PlatformFileError NativeFileUtil::DeleteDirectory(const base::FilePath& path) {
     return base::PLATFORM_FILE_ERROR_NOT_FOUND;
   if (!base::DirectoryExists(path))
     return base::PLATFORM_FILE_ERROR_NOT_A_DIRECTORY;
-  if (!file_util::IsDirectoryEmpty(path))
+  if (!base::IsDirectoryEmpty(path))
     return base::PLATFORM_FILE_ERROR_NOT_EMPTY;
   if (!base::DeleteFile(path, false))
     return base::PLATFORM_FILE_ERROR_FAILED;

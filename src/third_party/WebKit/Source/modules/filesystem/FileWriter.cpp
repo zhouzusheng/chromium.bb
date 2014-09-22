@@ -35,7 +35,6 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/events/ProgressEvent.h"
 #include "core/fileapi/Blob.h"
-#include "core/fileapi/FileError.h"
 #include "public/platform/WebFileWriter.h"
 #include "public/platform/WebURL.h"
 #include "wtf/CurrentTime.h"
@@ -88,21 +87,21 @@ void FileWriter::stop()
     m_readyState = DONE;
 }
 
-void FileWriter::write(Blob* data, ExceptionState& es)
+void FileWriter::write(Blob* data, ExceptionState& exceptionState)
 {
     ASSERT(writer());
     ASSERT(data);
     ASSERT(m_truncateLength == -1);
     if (m_readyState == WRITING) {
-        setError(FileError::INVALID_STATE_ERR, es);
+        setError(FileError::INVALID_STATE_ERR, exceptionState);
         return;
     }
     if (!data) {
-        setError(FileError::TYPE_MISMATCH_ERR, es);
+        setError(FileError::TYPE_MISMATCH_ERR, exceptionState);
         return;
     }
     if (m_recursionDepth > kMaxRecursionDepth) {
-        setError(FileError::SECURITY_ERR, es);
+        setError(FileError::SECURITY_ERR, exceptionState);
         return;
     }
 
@@ -121,11 +120,11 @@ void FileWriter::write(Blob* data, ExceptionState& es)
     fireEvent(EventTypeNames::writestart);
 }
 
-void FileWriter::seek(long long position, ExceptionState& es)
+void FileWriter::seek(long long position, ExceptionState& exceptionState)
 {
     ASSERT(writer());
     if (m_readyState == WRITING) {
-        setError(FileError::INVALID_STATE_ERR, es);
+        setError(FileError::INVALID_STATE_ERR, exceptionState);
         return;
     }
 
@@ -134,16 +133,16 @@ void FileWriter::seek(long long position, ExceptionState& es)
     seekInternal(position);
 }
 
-void FileWriter::truncate(long long position, ExceptionState& es)
+void FileWriter::truncate(long long position, ExceptionState& exceptionState)
 {
     ASSERT(writer());
     ASSERT(m_truncateLength == -1);
     if (m_readyState == WRITING || position < 0) {
-        setError(FileError::INVALID_STATE_ERR, es);
+        setError(FileError::INVALID_STATE_ERR, exceptionState);
         return;
     }
     if (m_recursionDepth > kMaxRecursionDepth) {
-        setError(FileError::SECURITY_ERR, es);
+        setError(FileError::SECURITY_ERR, exceptionState);
         return;
     }
 
@@ -161,7 +160,7 @@ void FileWriter::truncate(long long position, ExceptionState& es)
     fireEvent(EventTypeNames::writestart);
 }
 
-void FileWriter::abort(ExceptionState& es)
+void FileWriter::abort(ExceptionState& exceptionState)
 {
     ASSERT(writer());
     if (m_readyState != WRITING)
@@ -225,7 +224,7 @@ void FileWriter::didTruncate()
     unsetPendingActivity(this);
 }
 
-void FileWriter::didFail(WebKit::WebFileError code)
+void FileWriter::didFail(blink::WebFileError code)
 {
     ASSERT(m_operationInProgress != OperationNone);
     ASSERT(static_cast<FileError::ErrorCode>(code) != FileError::OK);
@@ -313,10 +312,10 @@ void FileWriter::fireEvent(const AtomicString& type)
     ASSERT(m_recursionDepth >= 0);
 }
 
-void FileWriter::setError(FileError::ErrorCode errorCode, ExceptionState& es)
+void FileWriter::setError(FileError::ErrorCode errorCode, ExceptionState& exceptionState)
 {
     ASSERT(errorCode);
-    FileError::throwDOMException(es, errorCode);
+    FileError::throwDOMException(exceptionState, errorCode);
     m_error = FileError::create(errorCode);
 }
 

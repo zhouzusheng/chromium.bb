@@ -27,7 +27,7 @@
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 
-using WebKit::WebGraphicsContext3D;
+using blink::WebGraphicsContext3D;
 
 namespace cc {
 
@@ -67,18 +67,11 @@ bool DelegatingRenderer::Initialize() {
     return true;
   }
 
-  WebGraphicsContext3D* context3d =
-      output_surface_->context_provider()->Context3d();
-
-  if (!context3d->makeContextCurrent())
-    return false;
-
   const ContextProvider::Capabilities& caps =
       output_surface_->context_provider()->ContextCapabilities();
 
   DCHECK(!caps.iosurface || caps.texture_rectangle);
 
-  capabilities_.using_set_visibility = caps.set_visibility;
   capabilities_.using_egl_image = caps.egl_image_external;
   capabilities_.using_map_image = settings_->use_map_image && caps.map_image;
 
@@ -103,17 +96,16 @@ static ResourceProvider::ResourceId AppendToArray(
 void DelegatingRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
                                    ContextProvider* offscreen_context_provider,
                                    float device_scale_factor,
+                                   gfx::Rect device_viewport_rect,
+                                   gfx::Rect device_clip_rect,
                                    bool allow_partial_swap,
                                    bool disable_picture_quad_image_filtering) {
   TRACE_EVENT0("cc", "DelegatingRenderer::DrawFrame");
 
-  DCHECK(!frame_for_swap_buffers_.delegated_frame_data);
+  DCHECK(!delegated_frame_data_);
 
-  frame_for_swap_buffers_.metadata = client_->MakeCompositorFrameMetadata();
-
-  frame_for_swap_buffers_.delegated_frame_data =
-      make_scoped_ptr(new DelegatedFrameData);
-  DelegatedFrameData& out_data = *frame_for_swap_buffers_.delegated_frame_data;
+  delegated_frame_data_ = make_scoped_ptr(new DelegatedFrameData);
+  DelegatedFrameData& out_data = *delegated_frame_data_;
   // Move the render passes and resources into the |out_frame|.
   out_data.render_pass_list.swap(*render_passes_in_draw_order);
 
@@ -129,11 +121,12 @@ void DelegatingRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
   resource_provider_->PrepareSendToParent(resources, &out_data.resource_list);
 }
 
-void DelegatingRenderer::SwapBuffers() {
+void DelegatingRenderer::SwapBuffers(const CompositorFrameMetadata& metadata) {
   TRACE_EVENT0("cc", "DelegatingRenderer::SwapBuffers");
-
-  output_surface_->SwapBuffers(&frame_for_swap_buffers_);
-  frame_for_swap_buffers_.delegated_frame_data.reset();
+  CompositorFrame compositor_frame;
+  compositor_frame.metadata = metadata;
+  compositor_frame.delegated_frame_data = delegated_frame_data_.Pass();
+  output_surface_->SwapBuffers(&compositor_frame);
 }
 
 void DelegatingRenderer::GetFramebufferPixels(void* pixels, gfx::Rect rect) {
@@ -149,8 +142,7 @@ bool DelegatingRenderer::IsContextLost() {
   ContextProvider* context_provider = output_surface_->context_provider();
   if (!context_provider)
     return false;
-  return context_provider->Context3d()->getGraphicsResetStatusARB() !=
-         GL_NO_ERROR;
+  return context_provider->IsContextLost();
 }
 
 void DelegatingRenderer::SetVisible(bool visible) {
@@ -165,13 +157,11 @@ void DelegatingRenderer::SetVisible(bool visible) {
     if (context_provider)
       context_provider->Context3d()->flush();
   }
-  if (capabilities_.using_set_visibility) {
-    // We loop visibility to the GPU process, since that's what manages memory.
-    // That will allow it to feed us with memory allocations that we can act
-    // upon.
-    DCHECK(context_provider);
-    context_provider->Context3d()->setVisibilityCHROMIUM(visible);
-  }
+  // We loop visibility to the GPU process, since that's what manages memory.
+  // That will allow it to feed us with memory allocations that we can act
+  // upon.
+  DCHECK(context_provider);
+  context_provider->ContextSupport()->SetSurfaceVisible(visible);
 }
 
 void DelegatingRenderer::SendManagedMemoryStats(size_t bytes_visible,

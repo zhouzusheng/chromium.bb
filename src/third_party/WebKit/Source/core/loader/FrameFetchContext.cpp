@@ -31,6 +31,7 @@
 #include "config.h"
 #include "core/loader/FrameFetchContext.h"
 
+#include "core/dom/Document.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
@@ -38,8 +39,8 @@
 #include "core/loader/ProgressTracker.h"
 #include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "weborigin/SecurityPolicy.h"
+#include "core/frame/Settings.h"
+#include "platform/weborigin/SecurityPolicy.h"
 
 namespace WebCore {
 
@@ -55,16 +56,12 @@ void FrameFetchContext::reportLocalLoadFailed(const KURL& url)
 
 void FrameFetchContext::addAdditionalRequestHeaders(Document& document, ResourceRequest& request, Resource::Type type)
 {
-    bool isMainResource = type == Resource::MainResource;
-
-    FrameLoader& frameLoader = m_frame->loader();
-
-    if (!isMainResource) {
+    if (type != Resource::MainResource) {
         String outgoingReferrer;
         String outgoingOrigin;
         if (request.httpReferrer().isNull()) {
-            outgoingReferrer = frameLoader.outgoingReferrer();
-            outgoingOrigin = frameLoader.outgoingOrigin();
+            outgoingReferrer = document.outgoingReferrer();
+            outgoingOrigin = document.outgoingOrigin();
         } else {
             outgoingReferrer = request.httpReferrer();
             outgoingOrigin = SecurityOrigin::createFromString(outgoingReferrer)->toString();
@@ -79,16 +76,30 @@ void FrameFetchContext::addAdditionalRequestHeaders(Document& document, Resource
         FrameLoader::addHTTPOriginIfNeeded(request, outgoingOrigin);
     }
 
-    frameLoader.addExtraFieldsToRequest(request);
+    m_frame->loader().addExtraFieldsToRequest(request);
 }
 
-CachePolicy FrameFetchContext::cachePolicy(Resource::Type type) const
+CachePolicy FrameFetchContext::cachePolicy(Document* document) const
 {
-    if (type != Resource::MainResource)
-        return m_frame->loader().subresourceCachePolicy();
+    if (document && document->loadEventFinished())
+        return CachePolicyVerify;
 
-    if (m_frame->loader().loadType() == FrameLoadTypeReloadFromOrigin || m_frame->loader().loadType() == FrameLoadTypeReload)
+    FrameLoadType loadType = m_frame->loader().loadType();
+    if (loadType == FrameLoadTypeReloadFromOrigin)
         return CachePolicyReload;
+
+    if (Frame* parentFrame = m_frame->tree().parent()) {
+        CachePolicy parentCachePolicy = parentFrame->loader().fetchContext().cachePolicy(parentFrame->document());
+        if (parentCachePolicy != CachePolicyVerify)
+            return parentCachePolicy;
+    }
+
+    if (loadType == FrameLoadTypeReload)
+        return CachePolicyRevalidate;
+
+    DocumentLoader* loader = document ? document->loader() : 0;
+    if (loader && loader->request().cachePolicy() == ReturnCacheDataElseLoad)
+        return CachePolicyHistoryBuffer;
     return CachePolicyVerify;
 
 }
@@ -123,9 +134,8 @@ void FrameFetchContext::dispatchDidReceiveResponse(DocumentLoader* loader, unsig
 {
     if (Page* page = m_frame->page())
         page->progress().incrementProgress(identifier, r);
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willReceiveResourceResponse(m_frame, identifier, r);
     m_frame->loader().client()->dispatchDidReceiveResponse(loader, identifier, r);
-    InspectorInstrumentation::didReceiveResourceResponse(cookie, identifier, ensureLoader(loader), r, resourceLoader);
+    InspectorInstrumentation::didReceiveResourceResponse(m_frame, identifier, ensureLoader(loader), r, resourceLoader);
 }
 
 void FrameFetchContext::dispatchDidReceiveData(DocumentLoader*, unsigned long identifier, const char* data, int dataLength, int encodedDataLength)
@@ -133,6 +143,13 @@ void FrameFetchContext::dispatchDidReceiveData(DocumentLoader*, unsigned long id
     if (Page* page = m_frame->page())
         page->progress().incrementProgress(identifier, data, dataLength);
     InspectorInstrumentation::didReceiveData(m_frame, identifier, data, dataLength, encodedDataLength);
+}
+
+void FrameFetchContext::dispatchDidDownloadData(DocumentLoader*, unsigned long identifier, int dataLength, int encodedDataLength)
+{
+    if (Page* page = m_frame->page())
+        page->progress().incrementProgress(identifier, 0, dataLength);
+    InspectorInstrumentation::didReceiveData(m_frame, identifier, 0, dataLength, encodedDataLength);
 }
 
 void FrameFetchContext::dispatchDidFinishLoading(DocumentLoader* loader, unsigned long identifier, double finishTime)
@@ -151,18 +168,15 @@ void FrameFetchContext::dispatchDidFail(DocumentLoader* loader, unsigned long id
     InspectorInstrumentation::didFailLoading(m_frame, identifier, ensureLoader(loader), error);
 }
 
-void FrameFetchContext::sendRemainingDelegateMessages(DocumentLoader* loader, unsigned long identifier, const ResourceResponse& response, const char* data, int dataLength, int encodedDataLength, const ResourceError& error)
+void FrameFetchContext::sendRemainingDelegateMessages(DocumentLoader* loader, unsigned long identifier, const ResourceResponse& response, int dataLength)
 {
     if (!response.isNull())
         dispatchDidReceiveResponse(ensureLoader(loader), identifier, response);
 
     if (dataLength > 0)
-        dispatchDidReceiveData(ensureLoader(loader), identifier, data, dataLength, encodedDataLength);
+        dispatchDidReceiveData(ensureLoader(loader), identifier, 0, dataLength, 0);
 
-    if (error.isNull())
-        dispatchDidFinishLoading(ensureLoader(loader), identifier, 0);
-    else
-        dispatchDidFail(ensureLoader(loader), identifier, error);
+    dispatchDidFinishLoading(ensureLoader(loader), identifier, 0);
 }
 
 } // namespace WebCore

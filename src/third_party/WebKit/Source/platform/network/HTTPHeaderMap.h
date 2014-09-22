@@ -51,13 +51,13 @@ public:
 
     void adopt(PassOwnPtr<CrossThreadHTTPHeaderMapData>);
 
-    AtomicString get(const AtomicString& name) const;
+    const AtomicString& get(const AtomicString& name) const;
 
     AddResult add(const AtomicString& name, const AtomicString& value);
 
     // Alternate accessors that are faster than converting the char* to AtomicString first.
     bool contains(const char*) const;
-    AtomicString get(const char*) const;
+    const AtomicString& get(const char*) const;
     AddResult add(const char* name, const AtomicString& value);
 
 };

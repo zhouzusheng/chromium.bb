@@ -62,14 +62,14 @@ void ScriptCallArgumentHandler::appendArgument(const String& argument)
 {
     v8::Isolate* isolate = m_scriptState->isolate();
     ScriptScope scope(m_scriptState);
-    m_arguments.append(ScriptValue(v8String(argument, isolate), isolate));
+    m_arguments.append(ScriptValue(v8String(isolate, argument), isolate));
 }
 
 void ScriptCallArgumentHandler::appendArgument(const char* argument)
 {
     v8::Isolate* isolate = m_scriptState->isolate();
     ScriptScope scope(m_scriptState);
-    m_arguments.append(ScriptValue(v8String(argument, isolate), isolate));
+    m_arguments.append(ScriptValue(v8String(isolate, argument), isolate));
 }
 
 void ScriptCallArgumentHandler::appendArgument(long argument)
@@ -125,7 +125,7 @@ ScriptValue ScriptFunctionCall::call(bool& hadException, bool reportExceptions)
     ScriptScope scope(m_scriptState, reportExceptions);
 
     v8::Handle<v8::Object> thisObject = m_thisObject.v8Object();
-    v8::Local<v8::Value> value = thisObject->Get(v8String(m_name, m_scriptState->isolate()));
+    v8::Local<v8::Value> value = thisObject->Get(v8String(m_scriptState->isolate(), m_name));
     if (!scope.success()) {
         hadException = true;
         return ScriptValue();
@@ -160,7 +160,7 @@ ScriptObject ScriptFunctionCall::construct(bool& hadException, bool reportExcept
     ScriptScope scope(m_scriptState, reportExceptions);
 
     v8::Handle<v8::Object> thisObject = m_thisObject.v8Object();
-    v8::Local<v8::Value> value = thisObject->Get(v8String(m_name, m_scriptState->isolate()));
+    v8::Local<v8::Value> value = thisObject->Get(v8String(m_scriptState->isolate(), m_name));
     if (!scope.success()) {
         hadException = true;
         return ScriptObject();
@@ -191,12 +191,13 @@ ScriptCallback::ScriptCallback(ScriptState* state, const ScriptValue& function)
 
 ScriptValue ScriptCallback::call()
 {
-    ASSERT(v8::Context::InContext());
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    ASSERT(isolate->InContext());
     ASSERT(m_function.v8Value()->IsFunction());
 
     v8::TryCatch exceptionCatcher;
     exceptionCatcher.SetVerbose(true);
-    v8::Handle<v8::Object> object = v8::Context::GetCurrent()->Global();
+    v8::Handle<v8::Object> object = isolate->GetCurrentContext()->Global();
     v8::Handle<v8::Function> function = v8::Handle<v8::Function>::Cast(m_function.v8Value());
 
     OwnPtr<v8::Handle<v8::Value>[]> info = adoptArrayPtr(new v8::Handle<v8::Value>[m_arguments.size()]);

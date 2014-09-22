@@ -17,6 +17,8 @@
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "cc/base/latency_info_swap_promise.h"
+#include "cc/base/latency_info_swap_promise_monitor.h"
 #include "cc/base/switches.h"
 #include "cc/debug/layer_tree_debug_state.h"
 #include "cc/debug/micro_benchmark.h"
@@ -24,7 +26,7 @@
 #include "cc/trees/layer_tree_host.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/public/common/content_switches.h"
-#include "content/renderer/gpu/input_handler_manager.h"
+#include "content/renderer/input/input_handler_manager.h"
 #include "content/renderer/render_thread_impl.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/WebKit/public/web/WebWidget.h"
@@ -39,9 +41,9 @@ namespace cc {
 class Layer;
 }
 
-using WebKit::WebFloatPoint;
-using WebKit::WebSize;
-using WebKit::WebRect;
+using blink::WebFloatPoint;
+using blink::WebSize;
+using blink::WebRect;
 
 namespace content {
 namespace {
@@ -64,26 +66,6 @@ bool GetSwitchValueAsInt(
     return false;
   }
 }
-
-bool GetSwitchValueAsFloat(
-    const CommandLine& command_line,
-    const std::string& switch_string,
-    float min_value,
-    float max_value,
-    float* result) {
-  std::string string_value = command_line.GetSwitchValueASCII(switch_string);
-  double double_value;
-  if (base::StringToDouble(string_value, &double_value) &&
-      double_value >= min_value && double_value <= max_value) {
-    *result = static_cast<float>(double_value);
-    return true;
-  } else {
-    LOG(WARNING) << "Failed to parse switch " << switch_string  << ": " <<
-        string_value;
-    return false;
-  }
-}
-
 
 }  // namespace
 
@@ -115,8 +97,6 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       cmd->HasSwitch(cc::switches::kEnablePerTilePainting);
   settings.accelerated_animation_enabled =
       !cmd->HasSwitch(cc::switches::kDisableThreadedAnimation);
-  settings.force_direct_layer_drawing =
-      cmd->HasSwitch(cc::switches::kForceDirectLayerDrawing);
   settings.touch_hit_testing =
       !cmd->HasSwitch(cc::switches::kDisableCompositorTouchHitTesting);
 
@@ -150,6 +130,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
                                            max_untiled_layer_height);
 
   settings.impl_side_painting = cc::switches::IsImplSidePaintingEnabled();
+  settings.gpu_rasterization = cc::switches::IsGPURasterizationEnabled();
 
   settings.calculate_top_controls_position =
       cmd->HasSwitch(cc::switches::kEnableTopControlsPositionCalculation);
@@ -204,6 +185,8 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       cmd->HasSwitch(cc::switches::kShowCompositedLayerBorders);
   settings.initial_debug_state.show_fps_counter =
       cmd->HasSwitch(cc::switches::kShowFPSCounter);
+  settings.initial_debug_state.show_layer_animation_bounds_rects =
+      cmd->HasSwitch(cc::switches::kShowLayerAnimationBounds);
   settings.initial_debug_state.show_paint_rects =
       cmd->HasSwitch(switches::kShowPaintRects);
   settings.initial_debug_state.show_property_changed_rects =
@@ -241,15 +224,6 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
                             kMinRasterThreads, kMaxRasterThreads,
                             &num_raster_threads))
       settings.num_raster_threads = num_raster_threads;
-  }
-
-  if (cmd->HasSwitch(cc::switches::kLowResolutionContentsScaleFactor)) {
-    const int kMinScaleFactor = settings.minimum_contents_scale;
-    const int kMaxScaleFactor = 1;
-    GetSwitchValueAsFloat(*cmd,
-                          cc::switches::kLowResolutionContentsScaleFactor,
-                          kMinScaleFactor, kMaxScaleFactor,
-                          &settings.low_res_contents_scale_factor);
   }
 
   if (cmd->HasSwitch(cc::switches::kMaxTilesForInterestArea)) {
@@ -307,7 +281,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   }
 #endif
 
-  if (!compositor->initialize(settings))
+  if (!compositor->Initialize(settings))
     return scoped_ptr<RenderWidgetCompositor>();
 
   return compositor.Pass();
@@ -386,12 +360,15 @@ void RenderWidgetCompositor::SetNeedsRedrawRect(gfx::Rect damage_rect) {
 
 void RenderWidgetCompositor::SetNeedsForcedRedraw() {
   layer_tree_host_->SetNextCommitForcesRedraw();
-  setNeedsRedraw();
+  setNeedsAnimate();
 }
 
-void RenderWidgetCompositor::SetLatencyInfo(
-    const ui::LatencyInfo& latency_info) {
-  layer_tree_host_->SetLatencyInfo(latency_info);
+scoped_ptr<cc::SwapPromiseMonitor>
+RenderWidgetCompositor::CreateLatencyInfoSwapPromiseMonitor(
+    ui::LatencyInfo* latency) {
+  return scoped_ptr<cc::SwapPromiseMonitor>(
+      new cc::LatencyInfoSwapPromiseMonitor(
+          latency, layer_tree_host_.get(), NULL));
 }
 
 int RenderWidgetCompositor::GetLayerTreeId() const {
@@ -413,11 +390,16 @@ bool RenderWidgetCompositor::ScheduleMicroBenchmark(
   return layer_tree_host_->ScheduleMicroBenchmark(name, value.Pass(), callback);
 }
 
-bool RenderWidgetCompositor::initialize(cc::LayerTreeSettings settings) {
+bool RenderWidgetCompositor::Initialize(cc::LayerTreeSettings settings) {
   scoped_refptr<base::MessageLoopProxy> compositor_message_loop_proxy =
       RenderThreadImpl::current()->compositor_message_loop_proxy();
-  layer_tree_host_ = cc::LayerTreeHost::Create(
-      this, NULL, settings, compositor_message_loop_proxy);
+  if (compositor_message_loop_proxy.get()) {
+    layer_tree_host_ = cc::LayerTreeHost::CreateThreaded(
+        this, NULL, settings, compositor_message_loop_proxy);
+  } else {
+    layer_tree_host_ = cc::LayerTreeHost::CreateSingleThreaded(
+        this, this, NULL, settings);
+  }
   return layer_tree_host_;
 }
 
@@ -425,7 +407,7 @@ void RenderWidgetCompositor::setSurfaceReady() {
   layer_tree_host_->SetLayerTreeHostClientReady();
 }
 
-void RenderWidgetCompositor::setRootLayer(const WebKit::WebLayer& layer) {
+void RenderWidgetCompositor::setRootLayer(const blink::WebLayer& layer) {
   layer_tree_host_->SetRootLayer(
       static_cast<const webkit::WebLayerImpl*>(&layer)->layer());
 }
@@ -461,7 +443,7 @@ float RenderWidgetCompositor::deviceScaleFactor() const {
   return layer_tree_host_->device_scale_factor();
 }
 
-void RenderWidgetCompositor::setBackgroundColor(WebKit::WebColor color) {
+void RenderWidgetCompositor::setBackgroundColor(blink::WebColor color) {
   layer_tree_host_->set_background_color(color);
 }
 
@@ -484,7 +466,7 @@ void RenderWidgetCompositor::setPageScaleFactorAndLimits(
 }
 
 void RenderWidgetCompositor::startPageScaleAnimation(
-    const WebKit::WebPoint& destination,
+    const blink::WebPoint& destination,
     bool use_anchor,
     float new_page_scale,
     double duration_sec) {
@@ -501,13 +483,6 @@ void RenderWidgetCompositor::setNeedsAnimate() {
   layer_tree_host_->SetNeedsAnimate();
 }
 
-void RenderWidgetCompositor::setNeedsRedraw() {
-  if (threaded_)
-    layer_tree_host_->SetNeedsAnimate();
-  else
-    widget_->scheduleAnimation();
-}
-
 bool RenderWidgetCompositor::commitRequested() const {
   return layer_tree_host_->CommitRequested();
 }
@@ -516,16 +491,16 @@ void RenderWidgetCompositor::didStopFlinging() {
   layer_tree_host_->DidStopFlinging();
 }
 
-void RenderWidgetCompositor::registerForAnimations(WebKit::WebLayer* layer) {
+void RenderWidgetCompositor::registerForAnimations(blink::WebLayer* layer) {
   cc::Layer* cc_layer = static_cast<webkit::WebLayerImpl*>(layer)->layer();
   cc_layer->layer_animation_controller()->SetAnimationRegistrar(
       layer_tree_host_->animation_registrar());
 }
 
 void RenderWidgetCompositor::registerViewportLayers(
-    const WebKit::WebLayer* pageScaleLayer,
-    const WebKit::WebLayer* innerViewportScrollLayer,
-    const WebKit::WebLayer* outerViewportScrollLayer) {
+    const blink::WebLayer* pageScaleLayer,
+    const blink::WebLayer* innerViewportScrollLayer,
+    const blink::WebLayer* outerViewportScrollLayer) {
   layer_tree_host_->RegisterViewportLayers(
       static_cast<const webkit::WebLayerImpl*>(pageScaleLayer)->layer(),
       static_cast<const webkit::WebLayerImpl*>(innerViewportScrollLayer)
@@ -589,8 +564,8 @@ void RenderWidgetCompositor::setShowScrollBottleneckRects(bool show) {
   layer_tree_host_->SetDebugState(debug_state);
 }
 
-void RenderWidgetCompositor::WillBeginMainFrame() {
-  widget_->InstrumentWillBeginFrame();
+void RenderWidgetCompositor::WillBeginMainFrame(int frame_id) {
+  widget_->InstrumentWillBeginFrame(frame_id);
   widget_->willBeginCompositorFrame();
 }
 
@@ -636,6 +611,13 @@ void RenderWidgetCompositor::DidCommitAndDrawFrame() {
 
 void RenderWidgetCompositor::DidCompleteSwapBuffers() {
   widget_->didCompleteSwapBuffers();
+  if (!threaded_)
+    widget_->OnSwapBuffersComplete();
+}
+
+scoped_refptr<cc::ContextProvider>
+RenderWidgetCompositor::OffscreenContextProvider() {
+  return RenderThreadImpl::current()->OffscreenCompositorContextProvider();
 }
 
 void RenderWidgetCompositor::ScheduleComposite() {
@@ -643,9 +625,22 @@ void RenderWidgetCompositor::ScheduleComposite() {
     widget_->scheduleComposite();
 }
 
-scoped_refptr<cc::ContextProvider>
-RenderWidgetCompositor::OffscreenContextProvider() {
-  return RenderThreadImpl::current()->OffscreenCompositorContextProvider();
+void RenderWidgetCompositor::ScheduleAnimation() {
+  widget_->scheduleAnimation();
+}
+
+void RenderWidgetCompositor::DidPostSwapBuffers() {
+  widget_->OnSwapBuffersPosted();
+}
+
+void RenderWidgetCompositor::DidAbortSwapBuffers() {
+  widget_->OnSwapBuffersAborted();
+}
+
+void RenderWidgetCompositor::RateLimitSharedMainThreadContext() {
+  cc::ContextProvider* provider =
+      RenderThreadImpl::current()->SharedMainThreadContextProvider().get();
+  provider->Context3d()->rateLimitOffscreenContextCHROMIUM();
 }
 
 }  // namespace content

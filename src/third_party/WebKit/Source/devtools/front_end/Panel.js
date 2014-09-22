@@ -28,7 +28,6 @@
 
 /**
  * @extends {WebInspector.View}
- * @implements {WebInspector.Searchable}
  * @constructor
  */
 WebInspector.Panel = function(name)
@@ -36,8 +35,8 @@ WebInspector.Panel = function(name)
     WebInspector.View.call(this);
     WebInspector.panels[name] = this;
 
-    this.element.addStyleClass("panel");
-    this.element.addStyleClass(name);
+    this.element.classList.add("panel");
+    this.element.classList.add(name);
     this._panelName = name;
 
     this._shortcuts = /** !Object.<number, function(Event=):boolean> */ ({});
@@ -48,8 +47,6 @@ WebInspector.Panel = function(name)
 // Should by in sync with style declarations.
 WebInspector.Panel.counterRightMargin = 25;
 
-WebInspector.Panel._minimalSearchQuerySize = 3;
-
 WebInspector.Panel.prototype = {
     get name()
     {
@@ -58,7 +55,6 @@ WebInspector.Panel.prototype = {
 
     reset: function()
     {
-        this.searchCanceled();
     },
 
     defaultFocusedElement: function()
@@ -66,51 +62,12 @@ WebInspector.Panel.prototype = {
         return this.sidebarTreeElement || this.element;
     },
 
-    searchCanceled: function()
-    {
-        WebInspector.searchController.updateSearchMatchesCount(0, this);
-    },
-
     /**
-     * @return {boolean}
+     * @return {?WebInspector.SearchableView}
      */
-    canSearch: function()
+    searchableView: function()
     {
-        return true;
-    },
-
-    /**
-     * @param {string} query
-     * @param {boolean} shouldJump
-     */
-    performSearch: function(query, shouldJump)
-    {
-        // Call searchCanceled since it will reset everything we need before doing a new search.
-        this.searchCanceled();
-    },
-
-    /**
-     * @return {number}
-     */
-    minimalSearchQuerySize: function()
-    {
-        return WebInspector.Panel._minimalSearchQuerySize;
-    },
-
-    jumpToNextSearchResult: function()
-    {
-    },
-
-    jumpToPreviousSearchResult: function()
-    {
-    },
-
-    /**
-     * @return {boolean}
-     */
-    canSearchAndReplace: function()
-    {
-        return false;
+        return null;
     },
 
     /**
@@ -129,22 +86,7 @@ WebInspector.Panel.prototype = {
     },
 
     /**
-     * @return {boolean}
-     */
-    canSetFooterElement: function()
-    {
-        return false;
-    },
-
-    /**
-     * @param {?Element} element
-     */
-    setFooterElement: function(element)
-    {
-    },
-
-    /**
-     * @param {Element=} parentElement
+     * @param {!Element=} parentElement
      * @param {string=} position
      * @param {number=} defaultWidth
      * @param {number=} defaultHeight
@@ -165,7 +107,7 @@ WebInspector.Panel.prototype = {
     },
 
     /**
-     * @param {Element=} parentElement
+     * @param {!Element=} parentElement
      * @param {string=} position
      * @param {number=} defaultWidth
      */
@@ -179,7 +121,7 @@ WebInspector.Panel.prototype = {
         this.sidebarTreeElement = document.createElement("ol");
         this.sidebarTreeElement.className = "sidebar-tree";
         this.splitView.sidebarElement.appendChild(this.sidebarTreeElement);
-        this.splitView.sidebarElement.addStyleClass("sidebar");
+        this.splitView.sidebarElement.classList.add("sidebar");
 
         this.sidebarTree = new TreeOutline(this.sidebarTreeElement);
         this.sidebarTree.panel = this;
@@ -197,7 +139,7 @@ WebInspector.Panel.prototype = {
     },
 
     /**
-     * @param {WebInspector.Event} event
+     * @param {!WebInspector.Event} event
      */
     sidebarResized: function(event)
     {
@@ -208,7 +150,7 @@ WebInspector.Panel.prototype = {
     },
 
     /**
-     * @param {Element} anchor
+     * @param {!Element} anchor
      * @return {boolean}
      */
     showAnchorLocation: function(anchor)
@@ -222,19 +164,40 @@ WebInspector.Panel.prototype = {
     },
 
     /**
-     * @param {KeyboardEvent} event
+     * @param {!KeyboardEvent} event
      */
     handleShortcut: function(event)
     {
         var shortcutKey = WebInspector.KeyboardShortcut.makeKeyFromEvent(event);
         var handler = this._shortcuts[shortcutKey];
-        if (handler && handler(event))
+        if (handler && handler(event)) {
+            event.handled = true;
+            return;
+        }
+
+        var searchableView = this.searchableView();
+        if (!searchableView)
+            return;
+
+        function handleSearchShortcuts(shortcuts, handler)
+        {
+            for (var i = 0; i < shortcuts.length; ++i) {
+                if (shortcuts[i].key !== shortcutKey)
+                    continue;
+                return handler.call(searchableView);
+            }
+            return false;
+        }
+
+        if (handleSearchShortcuts(WebInspector.SearchableView.findShortcuts(), searchableView.handleFindShortcut))
+            event.handled = true;
+        else if (handleSearchShortcuts(WebInspector.SearchableView.cancelSearchShortcuts(), searchableView.handleCancelSearchShortcut))
             event.handled = true;
     },
 
     /**
      * @param {!Array.<!WebInspector.KeyboardShortcut.Descriptor>} keys
-     * @param {function(Event=):boolean} handler
+     * @param {function(?Event=):boolean} handler
      */
     registerShortcuts: function(keys, handler)
     {
@@ -251,7 +214,7 @@ WebInspector.Panel.prototype = {
  * @param {string} title
  * @param {string=} className
  * @param {string=} scriptName
- * @param {WebInspector.Panel=} panel
+ * @param {!WebInspector.Panel=} panel
  */
 WebInspector.PanelDescriptor = function(name, title, className, scriptName, panel)
 {
@@ -280,7 +243,7 @@ WebInspector.PanelDescriptor.prototype = {
     },
 
     /**
-     * @return {WebInspector.Panel}
+     * @return {!WebInspector.Panel}
      */
     panel: function()
     {

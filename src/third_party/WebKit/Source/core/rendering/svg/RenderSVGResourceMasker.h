@@ -20,13 +20,13 @@
 #ifndef RenderSVGResourceMasker_h
 #define RenderSVGResourceMasker_h
 
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/ImageBuffer.h"
 #include "core/rendering/svg/RenderSVGResourceContainer.h"
 #include "core/svg/SVGMaskElement.h"
 #include "core/svg/SVGUnitTypes.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/IntSize.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/ImageBuffer.h"
 
 #include "wtf/HashMap.h"
 #include "wtf/OwnPtr.h"
@@ -63,11 +63,7 @@ private:
     FloatRect m_maskContentBoundaries;
 };
 
-inline RenderSVGResourceMasker* toRenderSVGResourceMasker(RenderSVGResource* resource)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!resource || resource->resourceType() == MaskerResourceType);
-    return static_cast<RenderSVGResourceMasker*>(resource);
-}
+DEFINE_RENDER_SVG_RESOURCE_TYPE_CASTS(RenderSVGResourceMasker, MaskerResourceType);
 
 }
 

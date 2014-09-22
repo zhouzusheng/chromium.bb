@@ -94,12 +94,15 @@ public:
     virtual void blur();
     virtual RenderObject* createRenderer(RenderStyle*) const;
     virtual PassRefPtr<RenderStyle> customStyleForRenderer(PassRefPtr<RenderStyle>);
-    virtual void attach();
+    virtual void startResourceLoading();
+    virtual void closePopupView();
+    virtual void createShadowSubtree();
+    virtual void destroyShadowSubtree();
     virtual void minOrMaxAttributeChanged();
     virtual void stepAttributeChanged();
     virtual void altAttributeChanged();
     virtual void srcAttributeChanged();
-    virtual void updateInnerTextValue();
+    virtual void updateView();
     virtual void attributeChanged();
     virtual void multipleAttributeChanged();
     virtual void disabledAttributeChanged();

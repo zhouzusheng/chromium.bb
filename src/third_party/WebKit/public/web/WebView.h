@@ -38,7 +38,7 @@
 #include "WebPageVisibilityState.h"
 #include "WebWidget.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebAXObject;
 class WebAutofillClient;
@@ -450,9 +450,9 @@ public:
     // device metrics emulation.
     virtual void setCompositorDeviceScaleFactorOverride(float) = 0;
 
-    // Set scaling transformation on the root composited layer. This is used
+    // Set offset and scale on the root composited layer. This is used
     // to implement device metrics emulation.
-    virtual void setRootLayerScaleTransform(float) = 0;
+    virtual void setRootLayerTransform(const WebSize& offset, float scale) = 0;
 
     // The embedder may optionally engage a WebDevToolsAgent.  This may only
     // be set once per WebView.
@@ -491,6 +491,11 @@ public:
 
     // Shows a context menu for the currently focused element.
     virtual void showContextMenu() = 0;
+
+
+    // SmartClip support ---------------------------------------------------
+
+    virtual WebString getSmartClipData(WebRect) = 0;
 
 
     // Popup menu ----------------------------------------------------------
@@ -535,6 +540,9 @@ public:
     // by the compositor) but must be completed by the WebView.
     virtual void transferActiveWheelFlingAnimation(const WebActiveWheelFlingParameters&) = 0;
 
+    // Cancels an active fling, returning true if a fling was active.
+    virtual bool endActiveFlingAnimation() = 0;
+
     virtual bool setEditableSelectionOffsets(int start, int end) = 0;
     virtual bool setCompositionFromExistingText(int compositionStart, int compositionEnd, const WebVector<WebCompositionUnderline>& underlines) = 0;
     virtual void extendSelectionAndDelete(int before, int after) = 0;
@@ -571,6 +579,6 @@ protected:
     ~WebView() {}
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

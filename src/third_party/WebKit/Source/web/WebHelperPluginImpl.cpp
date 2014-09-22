@@ -47,11 +47,11 @@
 #include "core/page/FocusController.h"
 #include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 #define addLiteral(literal, writer)    writer->addData(literal, sizeof(literal) - 1)
 
@@ -120,7 +120,7 @@ public:
     {
     }
 
-    virtual WebPlugin* createPlugin(WebKit::WebFrame* frame, const WebPluginParams& params)
+    virtual WebPlugin* createPlugin(blink::WebFrame* frame, const WebPluginParams& params)
     {
         return m_hostWebFrameClient->createPlugin(frame, params);
     }
@@ -274,4 +274,4 @@ WebHelperPlugin* WebHelperPlugin::create(WebWidgetClient* client)
     return adoptRef(new WebHelperPluginImpl(client)).leakRef();
 }
 
-} // namespace WebKit
+} // namespace blink

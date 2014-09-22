@@ -30,16 +30,16 @@
 #include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/html/canvas/WebGLGetInfo.h"
 #include "core/page/Page.h"
-#include "core/platform/graphics/GraphicsContext3D.h"
-#include "core/platform/graphics/ImageBuffer.h"
 #include "platform/Timer.h"
+#include "platform/graphics/GraphicsContext3D.h"
+#include "platform/graphics/ImageBuffer.h"
 
 #include "wtf/Float32Array.h"
 #include "wtf/Int32Array.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebKit { class WebLayer; }
+namespace blink { class WebLayer; }
 
 namespace WebCore {
 
@@ -315,7 +315,7 @@ public:
 
     GraphicsContext3D* graphicsContext3D() const { return m_context.get(); }
     WebGLContextGroup* contextGroup() const { return m_contextGroup.get(); }
-    virtual WebKit::WebLayer* platformLayer() const;
+    virtual blink::WebLayer* platformLayer() const;
 
     void reshape(int width, int height);
 
@@ -373,7 +373,7 @@ public:
     void addCompressedTextureFormat(GC3Denum);
     void removeAllCompressedTextureFormats();
 
-    PassRefPtr<Image> drawImageIntoBuffer(Image*, int width, int height, int deviceScaleFactor);
+    PassRefPtr<Image> drawImageIntoBuffer(Image*, int width, int height);
 
     PassRefPtr<Image> videoFrameToImage(HTMLVideoElement*, BackingStoreCopy);
 
@@ -925,6 +925,8 @@ public:
     static size_t oldestContextIndex();
     static IntSize oldestContextSize();
 };
+
+DEFINE_TYPE_CASTS(WebGLRenderingContext, CanvasRenderingContext, context, context->is3d(), context.is3d());
 
 } // namespace WebCore
 

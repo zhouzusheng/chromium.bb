@@ -50,11 +50,11 @@
 #include "core/html/HTMLTextAreaElement.h"
 #include "core/html/shadow/HTMLShadowElement.h"
 #include "core/page/Chrome.h"
-#include "core/page/EditorClient.h"
+#include "core/page/ChromeClient.h"
 #include "core/page/EventHandler.h"
 #include "core/page/FrameTree.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
 #include "core/page/SpatialNavigation.h"
 #include "core/rendering/HitTestResult.h"
 
@@ -165,6 +165,7 @@ static inline bool hasCustomFocusLogic(Element* element)
     return element->isHTMLElement() && toHTMLElement(element)->hasCustomFocusLogic();
 }
 
+#if !ASSERT_DISABLED
 static inline bool isNonFocusableShadowHost(Node* node)
 {
     ASSERT(node);
@@ -173,6 +174,7 @@ static inline bool isNonFocusableShadowHost(Node* node)
     Element* element = toElement(node);
     return !element->isFocusable() && isShadowHost(element) && !hasCustomFocusLogic(element);
 }
+#endif
 
 static inline bool isNonKeyboardFocusableShadowHost(Node* node)
 {
@@ -466,7 +468,7 @@ Node* FocusController::findFocusableNode(FocusDirection direction, FocusNavigati
 Node* FocusController::findNodeWithExactTabIndex(Node* start, int tabIndex, FocusDirection direction)
 {
     // Search is inclusive of start
-    for (Node* node = start; node; node = direction == FocusDirectionForward ? NodeTraversal::next(node) : NodeTraversal::previous(node)) {
+    for (Node* node = start; node; node = direction == FocusDirectionForward ? NodeTraversal::next(*node) : NodeTraversal::previous(*node)) {
         if (shouldVisit(node) && adjustedTabIndex(node) == tabIndex)
             return node;
     }
@@ -478,7 +480,7 @@ static Node* nextNodeWithGreaterTabIndex(Node* start, int tabIndex)
     // Search is inclusive of start
     int winningTabIndex = std::numeric_limits<short>::max() + 1;
     Node* winner = 0;
-    for (Node* node = start; node; node = NodeTraversal::next(node)) {
+    for (Node* node = start; node; node = NodeTraversal::next(*node)) {
         if (shouldVisit(node) && node->tabIndex() > tabIndex && node->tabIndex() < winningTabIndex) {
             winner = node;
             winningTabIndex = node->tabIndex();
@@ -493,7 +495,7 @@ static Node* previousNodeWithLowerTabIndex(Node* start, int tabIndex)
     // Search is inclusive of start
     int winningTabIndex = 0;
     Node* winner = 0;
-    for (Node* node = start; node; node = NodeTraversal::previous(node)) {
+    for (Node* node = start; node; node = NodeTraversal::previous(*node)) {
         int currentTabIndex = adjustedTabIndex(node);
         if ((shouldVisit(node) || isNonKeyboardFocusableShadowHost(node)) && currentTabIndex < tabIndex && currentTabIndex > winningTabIndex) {
             winner = node;
@@ -509,14 +511,14 @@ Node* FocusController::nextFocusableNode(FocusNavigationScope scope, Node* start
         int tabIndex = adjustedTabIndex(start);
         // If a node is excluded from the normal tabbing cycle, the next focusable node is determined by tree order
         if (tabIndex < 0) {
-            for (Node* node = NodeTraversal::next(start); node; node = NodeTraversal::next(node)) {
+            for (Node* node = NodeTraversal::next(*start); node; node = NodeTraversal::next(*node)) {
                 if (shouldVisit(node) && adjustedTabIndex(node) >= 0)
                     return node;
             }
         }
 
         // First try to find a node with the same tabindex as start that comes after start in the scope.
-        if (Node* winner = findNodeWithExactTabIndex(NodeTraversal::next(start), tabIndex, FocusDirectionForward))
+        if (Node* winner = findNodeWithExactTabIndex(NodeTraversal::next(*start), tabIndex, FocusDirectionForward))
             return winner;
 
         if (!tabIndex)
@@ -547,7 +549,7 @@ Node* FocusController::previousFocusableNode(FocusNavigationScope scope, Node* s
     Node* startingNode;
     int startingTabIndex;
     if (start) {
-        startingNode = NodeTraversal::previous(start);
+        startingNode = NodeTraversal::previous(*start);
         startingTabIndex = adjustedTabIndex(start);
     } else {
         startingNode = last;
@@ -556,7 +558,7 @@ Node* FocusController::previousFocusableNode(FocusNavigationScope scope, Node* s
 
     // However, if a node is excluded from the normal tabbing cycle, the previous focusable node is determined by tree order
     if (startingTabIndex < 0) {
-        for (Node* node = startingNode; node; node = NodeTraversal::previous(node)) {
+        for (Node* node = startingNode; node; node = NodeTraversal::previous(*node)) {
             if (shouldVisit(node) && adjustedTabIndex(node) >= 0)
                 return node;
         }
@@ -622,27 +624,25 @@ bool FocusController::setFocusedElement(Element* element, PassRefPtr<Frame> newF
     RefPtr<Document> oldDocument = oldFocusedFrame ? oldFocusedFrame->document() : 0;
 
     Element* oldFocusedElement = oldDocument ? oldDocument->focusedElement() : 0;
-    if (oldFocusedElement == element)
+    if (element && oldFocusedElement == element)
         return true;
 
     // FIXME: Might want to disable this check for caretBrowsing
     if (oldFocusedElement && oldFocusedElement->isRootEditableElement() && !relinquishesEditingFocus(oldFocusedElement))
         return false;
 
-    m_page->editorClient().willSetInputMethodState();
+    m_page->chrome().client().willSetInputMethodState();
+
+    RefPtr<Document> newDocument;
+    if (element)
+        newDocument = &element->document();
+    else if (newFocusedFrame)
+        newDocument = newFocusedFrame->document();
+
+    if (newDocument && oldDocument == newDocument && newDocument->focusedElement() == element)
+        return true;
 
     clearSelectionIfNeeded(oldFocusedFrame.get(), newFocusedFrame.get(), element);
-
-    if (!element) {
-        if (oldDocument)
-            oldDocument->setFocusedElement(0);
-        return true;
-    }
-
-    RefPtr<Document> newDocument(element->document());
-
-    if (newDocument && newDocument->focusedElement() == element)
-        return true;
 
     if (oldDocument && oldDocument != newDocument)
         oldDocument->setFocusedElement(0);
@@ -767,9 +767,8 @@ static void updateFocusCandidateIfNeeded(FocusDirection direction, const FocusCa
         closest = candidate;
 }
 
-void FocusController::findFocusCandidateInContainer(Node* container, const LayoutRect& startingRect, FocusDirection direction, FocusCandidate& closest)
+void FocusController::findFocusCandidateInContainer(Node& container, const LayoutRect& startingRect, FocusDirection direction, FocusCandidate& closest)
 {
-    ASSERT(container);
     Element* focusedElement = (focusedFrame() && focusedFrame()->document()) ? focusedFrame()->document()->focusedElement() : 0;
 
     Element* element = ElementTraversal::firstWithin(container);
@@ -779,8 +778,8 @@ void FocusController::findFocusCandidateInContainer(Node* container, const Layou
     current.visibleNode = focusedElement;
 
     for (; element; element = (element->isFrameOwnerElement() || canScrollInDirection(element, direction))
-        ? ElementTraversal::nextSkippingChildren(element, container)
-        : ElementTraversal::next(element, container)) {
+        ? ElementTraversal::nextSkippingChildren(*element, &container)
+        : ElementTraversal::next(*element, &container)) {
         if (element == focusedElement)
             continue;
 
@@ -791,7 +790,7 @@ void FocusController::findFocusCandidateInContainer(Node* container, const Layou
         if (candidate.isNull())
             continue;
 
-        candidate.enclosingScrollableBox = container;
+        candidate.enclosingScrollableBox = &container;
         updateFocusCandidateIfNeeded(direction, current, candidate, closest);
     }
 }
@@ -808,7 +807,7 @@ bool FocusController::advanceFocusDirectionallyInContainer(Node* container, cons
 
     // Find the closest node within current container in the direction of the navigation.
     FocusCandidate focusCandidate;
-    findFocusCandidateInContainer(container, newStartingRect, direction, focusCandidate);
+    findFocusCandidateInContainer(*container, newStartingRect, direction, focusCandidate);
 
     if (focusCandidate.isNull()) {
         // Nothing to focus, scroll if possible.

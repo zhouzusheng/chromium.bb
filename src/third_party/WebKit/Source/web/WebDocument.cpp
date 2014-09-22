@@ -63,15 +63,14 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/page/BBPrintInfo.h"
 #include "core/rendering/RenderObject.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/WebURL.h"
-#include "weborigin/SecurityOrigin.h"
 #include "wtf/PassRefPtr.h"
 #include <v8.h>
-#include <bindings/V8Document.h>
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 WebURL WebDocument::url() const
 {
@@ -209,17 +208,18 @@ WebDocumentType WebDocument::doctype() const
     return WebDocumentType(constUnwrap<Document>()->doctype());
 }
 
-void WebDocument::insertUserStyleSheet(const WebString& sourceCode, UserStyleLevel styleLevel)
+void WebDocument::insertUserStyleSheet(const WebString& sourceCode, UserStyleLevel)
+{
+    insertStyleSheet(sourceCode);
+}
+
+void WebDocument::insertStyleSheet(const WebString& sourceCode)
 {
     RefPtr<Document> document = unwrap<Document>();
     ASSERT(document);
     RefPtr<StyleSheetContents> parsedSheet = StyleSheetContents::create(*document.get());
-    parsedSheet->setIsUserStyleSheet(styleLevel == UserStyleUserLevel);
     parsedSheet->parseString(sourceCode);
-    if (parsedSheet->isUserStyleSheet())
-        document->styleEngine()->addUserSheet(parsedSheet);
-    else
-        document->styleEngine()->addAuthorSheet(parsedSheet);
+    document->styleEngine()->addAuthorSheet(parsedSheet);
 }
 
 void WebDocument::watchCSSSelectors(const WebVector<WebString>& webSelectors)
@@ -246,9 +246,9 @@ WebElement WebDocument::fullScreenElement() const
 
 WebDOMEvent WebDocument::createEvent(const WebString& eventType)
 {
-    TrackExceptionState es;
-    WebDOMEvent event(unwrap<Document>()->createEvent(eventType, es));
-    if (es.hadException())
+    TrackExceptionState exceptionState;
+    WebDOMEvent event(unwrap<Document>()->createEvent(eventType, exceptionState));
+    if (exceptionState.hadException())
         return WebDOMEvent();
     return event;
 }
@@ -260,23 +260,11 @@ WebReferrerPolicy WebDocument::referrerPolicy() const
 
 WebElement WebDocument::createElement(const WebString& tagName)
 {
-    TrackExceptionState es;
-    WebElement element(unwrap<Document>()->createElement(tagName, es));
-    if (es.hadException())
+    TrackExceptionState exceptionState;
+    WebElement element(unwrap<Document>()->createElement(tagName, exceptionState));
+    if (exceptionState.hadException())
         return WebElement();
     return element;
-}
-
-WebString WebDocument::innerHTML() const
-{
-    const WebCore::Element* webCoreElemPtr = constUnwrap<Document>()->documentElement();
-    if (webCoreElemPtr) {
-        const WebCore::HTMLElement* htmlElemPtr =(const WebCore::HTMLElement*) webCoreElemPtr;
-        if (htmlElemPtr) {
-            return htmlElemPtr->innerHTML();
-        }
-    }
-    return WebString();
 }
 
 WebAXObject WebDocument::accessibilityObject() const
@@ -314,33 +302,14 @@ WebBBPrintInfo WebDocument::bbPrintInfo()
 }
 
 
-bool WebDocument::isWebDocument(v8::Handle<v8::Value> handle)
-{
-    if (!handle->IsObject()) {
-        return false;
-    }
-    v8::TryCatch tryCatch;
-    v8::Handle<v8::Object> obj = handle->ToObject();
-    if (!WebCore::V8Document::HasInstance(obj, obj->CreationContext()->GetIsolate(), WebCore::MainWorld)) {
-        return false;
-    }
-    WebCore::V8Document::toNative(obj);
-    return !tryCatch.HasCaught();
-}
-
-WebDocument WebDocument::fromV8Handle(v8::Handle<v8::Value> handle)
-{
-    return WebCore::V8Document::toNative(handle->ToObject());
-}
-
 v8::Handle<v8::Value> WebDocument::registerEmbedderCustomElement(const WebString& name, v8::Handle<v8::Value> options, WebExceptionCode& ec)
 {
     Document* document = unwrap<Document>();
     Dictionary dictionary(options, v8::Isolate::GetCurrent());
-    TrackExceptionState es;
-    ScriptValue constructor = document->registerElement(ScriptState::current(), name, dictionary, es, CustomElement::EmbedderNames);
-    ec = es.code();
-    if (es.hadException())
+    TrackExceptionState exceptionState;
+    ScriptValue constructor = document->registerElement(ScriptState::current(), name, dictionary, exceptionState, CustomElement::EmbedderNames);
+    ec = exceptionState.code();
+    if (exceptionState.hadException())
         return v8::Handle<v8::Value>();
     return constructor.v8Value();
 }
@@ -361,4 +330,4 @@ WebDocument::operator PassRefPtr<Document>() const
     return toDocument(m_private.get());
 }
 
-} // namespace WebKit
+} // namespace blink

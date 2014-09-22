@@ -193,12 +193,12 @@ static bool compareRenderRegions(const RenderRegion* firstRegion, const RenderRe
     ASSERT(firstRegion);
     ASSERT(secondRegion);
 
-    ASSERT(firstRegion->generatingNode());
-    ASSERT(secondRegion->generatingNode());
+    ASSERT(firstRegion->generatingNodeForRegion());
+    ASSERT(secondRegion->generatingNodeForRegion());
 
     // If the regions belong to different nodes, compare their position in the DOM.
-    if (firstRegion->generatingNode() != secondRegion->generatingNode()) {
-        unsigned short position = firstRegion->generatingNode()->compareDocumentPosition(secondRegion->generatingNode());
+    if (firstRegion->generatingNodeForRegion() != secondRegion->generatingNodeForRegion()) {
+        unsigned short position = firstRegion->generatingNodeForRegion()->compareDocumentPosition(secondRegion->generatingNodeForRegion());
 
         // If the second region is contained in the first one, the first region is "less" if it's :before.
         if (position & Node::DOCUMENT_POSITION_CONTAINED_BY) {
@@ -568,12 +568,11 @@ static bool boxIntersectsRegion(LayoutUnit logicalTopForBox, LayoutUnit logicalB
 }
 
 // Retrieve the next node to be visited while computing the ranges inside a region.
-static Node* nextNodeInsideContentNode(const Node* currNode, const Node* contentNode)
+static Node* nextNodeInsideContentNode(const Node& currNode, const Node* contentNode)
 {
-    ASSERT(currNode);
     ASSERT(contentNode && contentNode->inNamedFlow());
 
-    if (currNode->renderer() && currNode->renderer()->isSVGRoot())
+    if (currNode.renderer() && currNode.renderer()->isSVGRoot())
         return NodeTraversal::nextSkippingChildren(currNode, contentNode);
     return NodeTraversal::next(currNode, contentNode);
 }
@@ -615,7 +614,7 @@ void RenderNamedFlowThread::getRanges(Vector<RefPtr<Range> >& rangeObjects, cons
         bool skipOverOutsideNodes = false;
         Node* lastEndNode = 0;
 
-        for (Node* node = contentNode; node; node = nextNodeInsideContentNode(node, contentNode)) {
+        for (Node* node = contentNode; node; node = nextNodeInsideContentNode(*node, contentNode)) {
             RenderObject* renderer = node->renderer();
             if (!renderer)
                 continue;

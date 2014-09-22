@@ -25,9 +25,10 @@
 
 #include "core/css/CSSCalculationValue.h"
 #include "core/css/CSSFontFeatureValue.h"
+#include "core/css/CSSToLengthConversionData.h"
 #include "core/css/FontSize.h"
 #include "core/frame/Frame.h"
-#include "core/page/Settings.h"
+#include "core/frame/Settings.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
 #include "platform/text/LocaleToScriptMapping.h"
@@ -88,7 +89,7 @@ void FontBuilder::setInitial(float effectiveZoom)
     scope.reset();
     scope.fontDescription().setGenericFamily(FontDescription::StandardFamily);
     scope.fontDescription().setUsePrinterFont(m_document->printing());
-    const AtomicString& standardFontFamily = m_document->settings()->standardFontFamily();
+    const AtomicString& standardFontFamily = m_document->settings()->genericFontFamilySettings().standard();
     if (!standardFontFamily.isEmpty()) {
         scope.fontDescription().firstFamily().setFamily(standardFontFamily);
         scope.fontDescription().firstFamily().appendFamily(0);
@@ -178,11 +179,11 @@ void FontBuilder::setFontFamilyValue(CSSValue* value, float effectiveZoom)
         AtomicString face;
         Settings* settings = m_document->settings();
         if (contentValue->isString()) {
-            face = contentValue->getStringValue();
+            face = AtomicString(contentValue->getStringValue());
         } else if (settings) {
             switch (contentValue->getValueID()) {
             case CSSValueWebkitBody:
-                face = settings->standardFontFamily();
+                face = settings->genericFontFamilySettings().standard();
                 break;
             case CSSValueSerif:
                 face = FontFamilyNames::webkit_serif;
@@ -324,11 +325,11 @@ void FontBuilder::setFontSizeValue(CSSValue* value, RenderStyle* parentStyle, co
     } else {
         scope.fontDescription().setIsAbsoluteSize(parentIsAbsoluteSize || !(primitiveValue->isPercentage() || primitiveValue->isFontRelativeLength()));
         if (primitiveValue->isLength())
-            size = primitiveValue->computeLength<float>(parentStyle, rootElementStyle, 1.0, true);
+            size = primitiveValue->computeLength<float>(CSSToLengthConversionData(parentStyle, rootElementStyle, 1.0, true));
         else if (primitiveValue->isPercentage())
             size = (primitiveValue->getFloatValue() * parentSize) / 100.0f;
         else if (primitiveValue->isCalculatedPercentageWithLength())
-            size = primitiveValue->cssCalcValue()->toCalcValue(parentStyle, rootElementStyle)->evaluate(parentSize);
+            size = primitiveValue->cssCalcValue()->toCalcValue(CSSToLengthConversionData(parentStyle, rootElementStyle, 1.0f))->evaluate(parentSize);
         else if (primitiveValue->isViewportPercentageLength())
             size = valueForLength(primitiveValue->viewportPercentageLength(), 0, m_document->renderView());
         else
@@ -642,7 +643,7 @@ void FontBuilder::createFontForDocument(PassRefPtr<FontSelector> fontSelector, R
     fontDescription.setScript(localeToScriptCodeForFontSelection(documentStyle->locale()));
     if (Settings* settings = m_document->settings()) {
         fontDescription.setUsePrinterFont(m_document->printing());
-        const AtomicString& standardFont = settings->standardFontFamily(fontDescription.script());
+        const AtomicString& standardFont = settings->genericFontFamilySettings().standard(fontDescription.script());
         if (!standardFont.isEmpty()) {
             fontDescription.setGenericFamily(FontDescription::StandardFamily);
             fontDescription.firstFamily().setFamily(standardFont);

@@ -40,10 +40,11 @@ class EVENTS_EXPORT GestureRecognizer {
   // Return the window which should handle this TouchEvent, in the case where
   // the touch is already associated with a target.
   // Otherwise, returns null.
-  virtual GestureConsumer* GetTouchLockedTarget(TouchEvent* event) = 0;
+  virtual GestureConsumer* GetTouchLockedTarget(const TouchEvent& event) = 0;
 
   // Return the window which should handle this GestureEvent.
-  virtual GestureConsumer* GetTargetForGestureEvent(GestureEvent* event) = 0;
+  virtual GestureConsumer* GetTargetForGestureEvent(
+      const GestureEvent& event) = 0;
 
   // If there is an active touch within
   // GestureConfiguration::max_separation_for_gesture_touches_in_pixels,
@@ -65,6 +66,9 @@ class EVENTS_EXPORT GestureRecognizer {
   // |consumer| false is returned and |point| is untouched.
   virtual bool GetLastTouchPointForTarget(GestureConsumer* consumer,
                                           gfx::Point* point) = 0;
+
+  // Sends a touch cancel event for every active touch.
+  virtual void CancelActiveTouches(GestureConsumer* consumer) = 0;
 
   // Subscribes |helper| for dispatching async gestures such as long press.
   // The Gesture Recognizer does NOT take ownership of |helper| and it is the

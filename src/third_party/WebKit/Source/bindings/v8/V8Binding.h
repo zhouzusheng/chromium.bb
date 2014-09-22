@@ -74,20 +74,11 @@ namespace WebCore {
 
     v8::ArrayBuffer::Allocator* v8ArrayBufferAllocator();
 
-    v8::Handle<v8::Value> toV8Sequence(v8::Handle<v8::Value>, uint32_t& length, bool& notASequence, v8::Isolate*);
+    v8::Handle<v8::Value> toV8Sequence(v8::Handle<v8::Value>, uint32_t& length, v8::Isolate*);
 
     inline v8::Handle<v8::Value> argumentOrNull(const v8::FunctionCallbackInfo<v8::Value>& info, int index)
     {
         return index >= info.Length() ? v8::Local<v8::Value>() : info[index];
-    }
-
-    // Since v8::Null(isolate) crashes if we pass a null isolate,
-    // we need to use v8NullWithCheck(isolate) if an isolate can be null.
-    //
-    // FIXME: Remove all null isolates from V8 bindings, and remove v8NullWithCheck(isolate).
-    inline v8::Handle<v8::Value> v8NullWithCheck(v8::Isolate* isolate)
-    {
-        return isolate ? v8::Null(isolate) : v8::Null();
     }
 
     template<typename CallbackInfo, typename V>
@@ -165,77 +156,46 @@ namespace WebCore {
     // Convert v8::String to a WTF::String. If the V8 string is not already
     // an external string then it is transformed into an external string at this
     // point to avoid repeated conversions.
-    inline String toWebCoreString(v8::Handle<v8::String> value)
+    inline String toCoreString(v8::Handle<v8::String> value)
     {
         return v8StringToWebCoreString<String>(value, Externalize);
     }
 
-    inline String toWebCoreStringWithNullCheck(v8::Handle<v8::String> value)
+    inline String toCoreStringWithNullCheck(v8::Handle<v8::String> value)
     {
         if (value.IsEmpty() || value->IsNull())
             return String();
-        return toWebCoreString(value);
+        return toCoreString(value);
     }
 
-    inline String toWebCoreStringWithUndefinedOrNullCheck(v8::Handle<v8::String> value)
+    inline String toCoreStringWithUndefinedOrNullCheck(v8::Handle<v8::String> value)
     {
         if (value.IsEmpty() || value->IsNull() || value->IsUndefined())
             return String();
-        return toWebCoreString(value);
+        return toCoreString(value);
     }
 
-    inline AtomicString toWebCoreAtomicString(v8::Handle<v8::String> value)
+    inline AtomicString toCoreAtomicString(v8::Handle<v8::String> value)
     {
         return v8StringToWebCoreString<AtomicString>(value, Externalize);
     }
 
-    // Convert v8 types to a WTF::String. If the V8 string is not already
-    // an external string then it is transformed into an external string at this
-    // point to avoid repeated conversions.
-    //
-    // FIXME: Replace all the call sites with V8TRYCATCH_FOR_V8STRINGRESOURCE().
-    // Using this method will lead to a wrong behavior, because you cannot stop the
-    // execution when an exception is thrown inside stringResource.prepare().
-    inline String toWebCoreString(v8::Handle<v8::Value> value)
+    // This method will return a null String if the v8::Value does not contain a v8::String.
+    // It will not call ToString() on the v8::Value. If you want ToString() to be called,
+    // please use the V8TRYCATCH_FOR_V8STRINGRESOURCE_*() macros instead.
+    inline String toCoreStringWithUndefinedOrNullCheck(v8::Handle<v8::Value> value)
     {
-        V8StringResource<> stringResource(value);
-        if (!stringResource.prepare())
+        if (value.IsEmpty() || !value->IsString())
             return String();
-        return stringResource;
-    }
 
-    // FIXME: See the above comment.
-    inline String toWebCoreStringWithNullCheck(v8::Handle<v8::Value> value)
-    {
-        V8StringResource<WithNullCheck> stringResource(value);
-        if (!stringResource.prepare())
-            return String();
-        return stringResource;
-    }
-
-    // FIXME: See the above comment.
-    inline String toWebCoreStringWithUndefinedOrNullCheck(v8::Handle<v8::Value> value)
-    {
-        V8StringResource<WithUndefinedOrNullCheck> stringResource(value);
-        if (!stringResource.prepare())
-            return String();
-        return stringResource;
-    }
-
-    // FIXME: See the above comment.
-    inline AtomicString toWebCoreAtomicString(v8::Handle<v8::Value> value)
-    {
-        V8StringResource<> stringResource(value);
-        if (!stringResource.prepare())
-            return AtomicString();
-        return stringResource;
+        return toCoreString(value.As<v8::String>());
     }
 
     // Convert a string to a V8 string.
     // Return a V8 external string that shares the underlying buffer with the given
     // WebCore string. The reference counting mechanism is used to keep the
     // underlying buffer alive while the string is still live in the V8 engine.
-    inline v8::Handle<v8::String> v8String(const String& string, v8::Isolate* isolate)
+    inline v8::Handle<v8::String> v8String(v8::Isolate* isolate, const String& string)
     {
         if (string.isNull())
             return v8::String::Empty(isolate);
@@ -259,7 +219,7 @@ namespace WebCore {
     struct V8ValueTraits<String> {
         static inline v8::Handle<v8::Value> arrayV8Value(const String& value, v8::Isolate* isolate)
         {
-            return v8String(value, isolate);
+            return v8String(isolate, value);
         }
     };
 
@@ -298,7 +258,7 @@ namespace WebCore {
     template<typename T, size_t inlineCapacity>
     v8::Handle<v8::Value> v8Array(const Vector<T, inlineCapacity>& iterator, v8::Isolate* isolate)
     {
-        v8::Local<v8::Array> result = v8::Array::New(iterator.size());
+        v8::Local<v8::Array> result = v8::Array::New(isolate, iterator.size());
         int index = 0;
         typename Vector<T, inlineCapacity>::const_iterator end = iterator.end();
         typedef V8ValueTraits<T> TraitsType;
@@ -311,7 +271,7 @@ namespace WebCore {
     enum IntegerConversionConfiguration {
         NormalConversion,
         EnforceRange,
-        // FIXME: Implement Clamp
+        Clamp
     };
 
     // Convert a value to a 8-bit signed integer. The conversion fails if the
@@ -430,7 +390,7 @@ namespace WebCore {
 
     template<>
     struct NativeValueTraits<String> {
-        static inline String nativeValue(const v8::Handle<v8::Value>& value)
+        static inline String nativeValue(const v8::Handle<v8::Value>& value, v8::Isolate* isolate)
         {
             V8TRYCATCH_FOR_V8STRINGRESOURCE_RETURN(V8StringResource<>, stringValue, value, String());
             return stringValue;
@@ -439,7 +399,7 @@ namespace WebCore {
 
     template<>
     struct NativeValueTraits<unsigned> {
-        static inline unsigned nativeValue(const v8::Handle<v8::Value>& value)
+        static inline unsigned nativeValue(const v8::Handle<v8::Value>& value, v8::Isolate* isolate)
         {
             return toUInt32(value);
         }
@@ -447,7 +407,7 @@ namespace WebCore {
 
     template<>
     struct NativeValueTraits<float> {
-        static inline float nativeValue(const v8::Handle<v8::Value>& value)
+        static inline float nativeValue(const v8::Handle<v8::Value>& value, v8::Isolate* isolate)
         {
             return static_cast<float>(value->NumberValue());
         }
@@ -455,9 +415,17 @@ namespace WebCore {
 
     template<>
     struct NativeValueTraits<double> {
-        static inline double nativeValue(const v8::Handle<v8::Value>& value)
+        static inline double nativeValue(const v8::Handle<v8::Value>& value, v8::Isolate* isolate)
         {
             return static_cast<double>(value->NumberValue());
+        }
+    };
+
+    template<>
+    struct NativeValueTraits<v8::Handle<v8::Value> > {
+        static inline v8::Handle<v8::Value> nativeValue(const v8::Handle<v8::Value>& value, v8::Isolate* isolate)
+        {
+            return value;
         }
     };
 
@@ -472,7 +440,7 @@ namespace WebCore {
         for (uint32_t i = 0; i < length; ++i) {
             v8::Handle<v8::Value> element = object->Get(i);
 
-            if (V8T::HasInstance(element, isolate, worldType(isolate))) {
+            if (V8T::hasInstance(element, isolate, worldType(isolate))) {
                 v8::Handle<v8::Object> elementObject = v8::Handle<v8::Object>::Cast(element);
                 result.uncheckedAppend(V8T::toNative(elementObject));
             } else {
@@ -493,12 +461,10 @@ namespace WebCore {
 
         v8::Local<v8::Value> v8Value(v8::Local<v8::Value>::New(isolate, value));
         uint32_t length = 0;
-        bool notASequence = false;
         if (value->IsArray()) {
             length = v8::Local<v8::Array>::Cast(v8Value)->Length();
-        } else if (toV8Sequence(value, length, notASequence, isolate).IsEmpty()) {
-            if (notASequence)
-                throwTypeError(ExceptionMessages::notAnArrayTypeArgumentOrValue(argumentIndex), isolate);
+        } else if (toV8Sequence(value, length, isolate).IsEmpty()) {
+            throwTypeError(ExceptionMessages::notAnArrayTypeArgumentOrValue(argumentIndex), isolate);
             return Vector<RefPtr<T> >();
         }
 
@@ -513,12 +479,10 @@ namespace WebCore {
 
         v8::Local<v8::Value> v8Value(v8::Local<v8::Value>::New(isolate, value));
         uint32_t length = 0;
-        bool notASequence = false;
         if (value->IsArray()) {
             length = v8::Local<v8::Array>::Cast(v8Value)->Length();
-        } else if (toV8Sequence(value, length, notASequence, isolate).IsEmpty()) {
-            if (notASequence)
-                throwTypeError(ExceptionMessages::notASequenceTypeProperty(propertyName), isolate);
+        } else if (toV8Sequence(value, length, isolate).IsEmpty()) {
+            throwTypeError(ExceptionMessages::notASequenceTypeProperty(propertyName), isolate);
             return Vector<RefPtr<T> >();
         }
 
@@ -532,12 +496,10 @@ namespace WebCore {
     {
         v8::Local<v8::Value> v8Value(v8::Local<v8::Value>::New(isolate, value));
         uint32_t length = 0;
-        bool notASequence = false;
         if (value->IsArray()) {
             length = v8::Local<v8::Array>::Cast(v8Value)->Length();
-        } else if (toV8Sequence(value, length, notASequence, isolate).IsEmpty()) {
-            if (notASequence)
-                throwTypeError(ExceptionMessages::notAnArrayTypeArgumentOrValue(argumentIndex), isolate);
+        } else if (toV8Sequence(value, length, isolate).IsEmpty()) {
+            throwTypeError(ExceptionMessages::notAnArrayTypeArgumentOrValue(argumentIndex), isolate);
             return Vector<T>();
         }
 
@@ -546,7 +508,7 @@ namespace WebCore {
         typedef NativeValueTraits<T> TraitsType;
         v8::Local<v8::Object> object = v8::Local<v8::Object>::Cast(v8Value);
         for (uint32_t i = 0; i < length; ++i)
-            result.uncheckedAppend(TraitsType::nativeValue(object->Get(i)));
+            result.uncheckedAppend(TraitsType::nativeValue(object->Get(i), isolate));
         return result;
     }
 
@@ -559,15 +521,13 @@ namespace WebCore {
         int length = info.Length();
         result.reserveInitialCapacity(length);
         for (int i = startIndex; i < length; ++i)
-            result.uncheckedAppend(TraitsType::nativeValue(info[i]));
+            result.uncheckedAppend(TraitsType::nativeValue(info[i], info.GetIsolate()));
         return result;
     }
 
-    Vector<v8::Handle<v8::Value> > toVectorOfArguments(const v8::FunctionCallbackInfo<v8::Value>&);
-
     // Validates that the passed object is a sequence type per WebIDL spec
     // http://www.w3.org/TR/2012/CR-WebIDL-20120419/#es-sequence
-    inline v8::Handle<v8::Value> toV8Sequence(v8::Handle<v8::Value> value, uint32_t& length, bool& notASequence, v8::Isolate* isolate)
+    inline v8::Handle<v8::Value> toV8Sequence(v8::Handle<v8::Value> value, uint32_t& length, v8::Isolate* isolate)
     {
         // Attempt converting to a sequence if the value is not already an array but is
         // any kind of object except for a native Date object or a native RegExp object.
@@ -575,21 +535,21 @@ namespace WebCore {
         // FIXME: Do we really need to special case Date and RegExp object?
         // https://www.w3.org/Bugs/Public/show_bug.cgi?id=22806
         if (!value->IsObject() || value->IsDate() || value->IsRegExp()) {
-            // Signal that the caller must handle the type error.
-            notASequence = true;
+            // The caller is responsible for reporting a TypeError.
             return v8Undefined();
         }
 
         v8::Local<v8::Value> v8Value(v8::Local<v8::Value>::New(isolate, value));
         v8::Local<v8::Object> object = v8::Local<v8::Object>::Cast(v8Value);
+        v8::Local<v8::String> lengthSymbol = v8::String::NewFromUtf8(isolate, "length", v8::String::kInternalizedString, 6);
 
         // FIXME: The specification states that the length property should be used as fallback, if value
         // is not a platform object that supports indexed properties. If it supports indexed properties,
         // length should actually be one greater than value’s maximum indexed property index.
-        V8TRYCATCH(v8::Local<v8::Value>, lengthValue, object->Get(v8::String::NewSymbol("length")));
+        V8TRYCATCH(v8::Local<v8::Value>, lengthValue, object->Get(lengthSymbol));
 
         if (lengthValue->IsUndefined() || lengthValue->IsNull()) {
-            notASequence = true;
+            // The caller is responsible for reporting a TypeError.
             return v8Undefined();
         }
 
@@ -617,11 +577,6 @@ namespace WebCore {
         return object->InternalFieldCount() || object->HasIndexedPropertiesInExternalArrayData();
     }
 
-    inline v8::Handle<v8::Boolean> v8Boolean(bool value)
-    {
-        return value ? v8::True() : v8::False();
-    }
-
     inline v8::Handle<v8::Boolean> v8Boolean(bool value, v8::Isolate* isolate)
     {
         return value ? v8::True(isolate) : v8::False(isolate);
@@ -633,19 +588,38 @@ namespace WebCore {
     // FIXME: Remove all null isolates from V8 bindings, and remove v8BooleanWithCheck(value, isolate).
     inline v8::Handle<v8::Boolean> v8BooleanWithCheck(bool value, v8::Isolate* isolate)
     {
-        return isolate ? v8Boolean(value, isolate) : v8Boolean(value);
+        return isolate ? v8Boolean(value, isolate) : v8Boolean(value, v8::Isolate::GetCurrent());
     }
 
     inline double toWebCoreDate(v8::Handle<v8::Value> object)
     {
-        return (object->IsDate() || object->IsNumber()) ? object->NumberValue() : std::numeric_limits<double>::quiet_NaN();
+        if (object->IsDate())
+            return v8::Handle<v8::Date>::Cast(object)->ValueOf();
+        if (object->IsNumber())
+            return object->NumberValue();
+        return std::numeric_limits<double>::quiet_NaN();
     }
 
     inline v8::Handle<v8::Value> v8DateOrNull(double value, v8::Isolate* isolate)
     {
         ASSERT(isolate);
-        return std::isfinite(value) ? v8::Date::New(value) : v8NullWithCheck(isolate);
+        return std::isfinite(value) ? v8::Date::New(isolate, value) : v8::Handle<v8::Value>::Cast(v8::Null(isolate));
     }
+
+    inline v8::Handle<v8::String> v8AtomicString(v8::Isolate* isolate, const char* str)
+    {
+        ASSERT(isolate);
+        return v8::String::NewFromUtf8(isolate, str, v8::String::kInternalizedString, strlen(str));
+    }
+
+    inline v8::Handle<v8::String> v8AtomicString(v8::Isolate* isolate, const char* str, size_t length)
+    {
+        ASSERT(isolate);
+        return v8::String::NewFromUtf8(isolate, str, v8::String::kInternalizedString, length);
+    }
+
+    bool isNonWindowContextsAllowed();
+    void setNonWindowContextsAllowed(bool allowed);
 
     bool isNonWindowContextsAllowed();
     void setNonWindowContextsAllowed(bool allowed);
@@ -670,9 +644,9 @@ namespace WebCore {
     // a context, if the window is currently being displayed in the Frame.
     Frame* toFrameIfNotDetached(v8::Handle<v8::Context>);
 
-    inline DOMWrapperWorld* isolatedWorldForEnteredContext()
+    inline DOMWrapperWorld* isolatedWorldForEnteredContext(v8::Isolate* isolate)
     {
-        v8::Handle<v8::Context> context = v8::Context::GetEntered();
+        v8::Handle<v8::Context> context = isolate->GetEnteredContext();
         if (context.IsEmpty())
             return 0;
         if (isNonWindowContextsAllowed() && !DOMWrapperWorld::contextHasCorrectPrototype(context))
@@ -685,7 +659,7 @@ namespace WebCore {
     {
         Collection* collection = reinterpret_cast<Collection*>(info.Holder()->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex));
         int length = collection->length();
-        v8::Handle<v8::Array> properties = v8::Array::New(length);
+        v8::Handle<v8::Array> properties = v8::Array::New(info.GetIsolate(), length);
         for (int i = 0; i < length; ++i) {
             // FIXME: Do we need to check that the item function returns a non-null value for this index?
             v8::Handle<v8::Integer> integer = v8::Integer::New(i, info.GetIsolate());
@@ -720,8 +694,15 @@ namespace WebCore {
     v8::Isolate* toIsolate(ExecutionContext*);
     v8::Isolate* toIsolate(Frame*);
 
-    // Can only be called by WebKit::initialize
+    // Can only be called by blink::initialize
     void setMainThreadIsolate(v8::Isolate*);
+
+    // Converts a DOM object to a v8 value.
+    // This is a no-inline version of toV8(). If you want to call toV8()
+    // without creating #include cycles, you can use this function instead.
+    // Each specialized implementation will be generated.
+    template<typename T>
+    v8::Handle<v8::Value> toV8NoInline(T* impl, v8::Handle<v8::Object> creationContext, v8::Isolate*);
 } // namespace WebCore
 
 #endif // V8Binding_h

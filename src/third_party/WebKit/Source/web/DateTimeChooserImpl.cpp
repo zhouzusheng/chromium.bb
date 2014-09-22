@@ -34,9 +34,9 @@
 
 #include "CalendarPicker.h"
 #include "ChromeClientImpl.h"
+#include "InputTypeNames.h"
 #include "PickerCommon.h"
 #include "WebViewImpl.h"
-#include "core/html/forms/InputTypeNames.h"
 #include "core/frame/FrameView.h"
 #include "core/rendering/RenderTheme.h"
 #include "platform/DateComponents.h"
@@ -44,13 +44,9 @@
 #include "platform/Language.h"
 #include "platform/text/PlatformLocale.h"
 
-#if !ENABLE(CALENDAR_PICKER)
-#error "ENABLE_INPUT_MULTIPLE_FIELDS_UI requires ENABLE_CALENDAR_PICKER in Chromium."
-#endif
-
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 DateTimeChooserImpl::DateTimeChooserImpl(ChromeClientImpl* chromeClient, WebCore::DateTimeChooserClient* client, const WebCore::DateTimeChooserParameters& parameters)
     : m_chromeClient(chromeClient)
@@ -85,29 +81,35 @@ WebCore::IntSize DateTimeChooserImpl::contentSize()
     return WebCore::IntSize(0, 0);
 }
 
+static String valueToDateTimeString(double value, AtomicString type)
+{
+    WebCore::DateComponents components;
+    if (type == WebCore::InputTypeNames::date)
+        components.setMillisecondsSinceEpochForDate(value);
+    else if (type == WebCore::InputTypeNames::datetime_local)
+        components.setMillisecondsSinceEpochForDateTimeLocal(value);
+    else if (type == WebCore::InputTypeNames::month)
+        components.setMonthsSinceEpoch(value);
+    else if (type == WebCore::InputTypeNames::time)
+        components.setMillisecondsSinceMidnight(value);
+    else if (type == WebCore::InputTypeNames::week)
+        components.setMillisecondsSinceEpochForWeek(value);
+    else
+        ASSERT_NOT_REACHED();
+    return components.type() == WebCore::DateComponents::Invalid ? String() : components.toString();
+}
+
 void DateTimeChooserImpl::writeDocument(WebCore::DocumentWriter& writer)
 {
-    WebCore::DateComponents minDate;
-    WebCore::DateComponents maxDate;
-    if (m_parameters.type == WebCore::InputTypeNames::month()) {
-        minDate.setMonthsSinceEpoch(m_parameters.minimum);
-        maxDate.setMonthsSinceEpoch(m_parameters.maximum);
-    } else if (m_parameters.type == WebCore::InputTypeNames::week()) {
-        minDate.setMillisecondsSinceEpochForWeek(m_parameters.minimum);
-        maxDate.setMillisecondsSinceEpochForWeek(m_parameters.maximum);
-    } else {
-        minDate.setMillisecondsSinceEpochForDate(m_parameters.minimum);
-        maxDate.setMillisecondsSinceEpochForDate(m_parameters.maximum);
-    }
     String stepString = String::number(m_parameters.step);
     String stepBaseString = String::number(m_parameters.stepBase, 11, WTF::TruncateTrailingZeros);
     IntRect anchorRectInScreen = m_chromeClient->rootViewToScreen(m_parameters.anchorRectInRootView);
     String todayLabelString;
     String otherDateLabelString;
-    if (m_parameters.type == WebCore::InputTypeNames::month()) {
+    if (m_parameters.type == WebCore::InputTypeNames::month) {
         todayLabelString = locale().queryString(WebLocalizedString::ThisMonthButtonLabel);
         otherDateLabelString = locale().queryString(WebLocalizedString::OtherMonthLabel);
-    } else if (m_parameters.type == WebCore::InputTypeNames::week()) {
+    } else if (m_parameters.type == WebCore::InputTypeNames::week) {
         todayLabelString = locale().queryString(WebLocalizedString::ThisWeekButtonLabel);
         otherDateLabelString = locale().queryString(WebLocalizedString::OtherWeekLabel);
     } else {
@@ -123,12 +125,12 @@ void DateTimeChooserImpl::writeDocument(WebCore::DocumentWriter& writer)
     addString("</style></head><body><div id=main>Loading...</div><script>\n"
                "window.dialogArguments = {\n", writer);
     addProperty("anchorRectInScreen", anchorRectInScreen, writer);
-    addProperty("min", minDate.toString(), writer);
-    addProperty("max", maxDate.toString(), writer);
+    addProperty("min", valueToDateTimeString(m_parameters.minimum, m_parameters.type), writer);
+    addProperty("max", valueToDateTimeString(m_parameters.maximum, m_parameters.type), writer);
     addProperty("step", stepString, writer);
     addProperty("stepBase", stepBaseString, writer);
     addProperty("required", m_parameters.required, writer);
-    addProperty("currentValue", m_parameters.currentValue, writer);
+    addProperty("currentValue", valueToDateTimeString(m_parameters.doubleValue, m_parameters.type), writer);
     addProperty("locale", m_parameters.locale.string(), writer);
     addProperty("todayLabel", todayLabelString, writer);
     addProperty("clearLabel", locale().queryString(WebLocalizedString::CalendarClear), writer);
@@ -139,11 +141,19 @@ void DateTimeChooserImpl::writeDocument(WebCore::DocumentWriter& writer)
     addProperty("isLocaleRTL", m_locale->isRTL(), writer);
     addProperty("isRTL", m_parameters.isAnchorElementRTL, writer);
     addProperty("mode", m_parameters.type.string(), writer);
-    if (m_parameters.suggestionValues.size()) {
+    if (m_parameters.suggestions.size()) {
+        Vector<String> suggestionValues;
+        Vector<String> localizedSuggestionValues;
+        Vector<String> suggestionLabels;
+        for (unsigned i = 0; i < m_parameters.suggestions.size(); i++) {
+            suggestionValues.append(valueToDateTimeString(m_parameters.suggestions[i].value, m_parameters.type));
+            localizedSuggestionValues.append(m_parameters.suggestions[i].localizedValue);
+            suggestionLabels.append(m_parameters.suggestions[i].label);
+        }
+        addProperty("suggestionValues", suggestionValues, writer);
+        addProperty("localizedSuggestionValues", localizedSuggestionValues, writer);
+        addProperty("suggestionLabels", suggestionLabels, writer);
         addProperty("inputWidth", static_cast<unsigned>(m_parameters.anchorRectInRootView.width()), writer);
-        addProperty("suggestionValues", m_parameters.suggestionValues, writer);
-        addProperty("localizedSuggestionValues", m_parameters.localizedSuggestionValues, writer);
-        addProperty("suggestionLabels", m_parameters.suggestionLabels, writer);
         addProperty("showOtherDateEntry", WebCore::RenderTheme::theme().supportsCalendarPicker(m_parameters.type), writer);
         addProperty("otherDateLabel", otherDateLabelString, writer);
         addProperty("suggestionHighlightColor", WebCore::RenderTheme::theme().activeListBoxSelectionBackgroundColor().serialized(), writer);
@@ -187,6 +197,6 @@ void DateTimeChooserImpl::didClosePopup()
     m_client->didEndChooser();
 }
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // ENABLE(INPUT_MULTIPLE_FIELDS_UI)

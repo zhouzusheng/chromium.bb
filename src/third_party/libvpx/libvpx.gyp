@@ -332,6 +332,7 @@
       # A library that contains assembly offsets needed.
       'target_name': 'libvpx_asm_offsets_vp8',
       'type': 'static_library',
+      'android_unmangled_name': 1,
       'hard_dependency': 1,
       'include_dirs': [
         'source/config/<(OS_CATEGORY)/<(target_arch_full)',
@@ -355,6 +356,7 @@
       # libvpx_asm_offsets.
       'target_name': 'libvpx_asm_offsets_vpx_scale',
       'type': 'static_library',
+      'android_unmangled_name': 1,
       'hard_dependency': 1,
       'include_dirs': [
         'source/config/<(OS_CATEGORY)/<(target_arch_full)',

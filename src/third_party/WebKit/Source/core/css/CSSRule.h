@@ -28,9 +28,9 @@
 
 namespace WebCore {
 
+class CSSParserContext;
 class CSSStyleSheet;
 class StyleRuleBase;
-struct CSSParserContext;
 
 class CSSRule : public RefCounted<CSSRule> {
 public:
@@ -54,8 +54,7 @@ public:
         SUPPORTS_RULE = 12,
         VIEWPORT_RULE = 15,
         WEBKIT_REGION_RULE = 16,
-        WEBKIT_FILTER_RULE = 17,
-        HOST_RULE = 1001,
+        WEBKIT_FILTER_RULE = 17
     };
 
     virtual Type type() const = 0;
@@ -108,6 +107,9 @@ private:
         CSSStyleSheet* m_parentStyleSheet;
     };
 };
+
+#define DEFINE_CSS_RULE_TYPE_CASTS(ToType, TYPE_NAME) \
+    DEFINE_TYPE_CASTS(ToType, CSSRule, rule, rule->type() == CSSRule::TYPE_NAME, rule.type() == CSSRule::TYPE_NAME)
 
 } // namespace WebCore
 

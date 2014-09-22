@@ -47,7 +47,7 @@ ScriptState::ScriptState(v8::Handle<v8::Context> context)
     : m_context(context->GetIsolate(), context)
     , m_isolate(context->GetIsolate())
 {
-    m_context.makeWeak(this, &makeWeakCallback);
+    m_context.setWeak(this, &setWeakCallback);
 }
 
 ScriptState::~ScriptState()
@@ -77,7 +77,7 @@ ScriptState* ScriptState::forContext(v8::Handle<v8::Context> context)
         return static_cast<ScriptState*>(v8::External::Cast(*scriptStateWrapper)->Value());
 
     ScriptState* scriptState = new ScriptState(context);
-    innerGlobal->SetHiddenValue(V8HiddenPropertyName::scriptState(context->GetIsolate()), v8::External::New(scriptState));
+    innerGlobal->SetHiddenValue(V8HiddenPropertyName::scriptState(context->GetIsolate()), v8::External::New(context->GetIsolate(), scriptState));
     return scriptState;
 }
 
@@ -90,9 +90,9 @@ ScriptState* ScriptState::current()
     return ScriptState::forContext(context);
 }
 
-void ScriptState::makeWeakCallback(v8::Isolate* isolate, v8::Persistent<v8::Context>* object, ScriptState* scriptState)
+void ScriptState::setWeakCallback(const v8::WeakCallbackData<v8::Context, ScriptState>& data)
 {
-    delete scriptState;
+    delete data.GetParameter();
 }
 
 bool ScriptState::evalEnabled() const

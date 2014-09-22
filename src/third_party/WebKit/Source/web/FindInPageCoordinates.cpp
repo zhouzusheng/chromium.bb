@@ -42,12 +42,11 @@
 #include "core/rendering/style/RenderStyle.h"
 #include "platform/geometry/FloatPoint.h"
 #include "platform/geometry/FloatQuad.h"
-#include "platform/geometry/FloatRect.h"
 #include "platform/geometry/IntPoint.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 static const RenderBlock* enclosingScrollableAncestor(const RenderObject* renderer)
 {
@@ -137,4 +136,4 @@ FloatRect findInPageRectFromRange(Range* range)
     return findInPageRectFromAbsoluteRect(RenderObject::absoluteBoundingBoxRectForRange(range), range->firstNode()->renderer());
 }
 
-} // namespace WebKit
+} // namespace blink

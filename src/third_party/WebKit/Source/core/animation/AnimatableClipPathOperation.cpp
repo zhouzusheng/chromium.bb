@@ -37,11 +37,11 @@ PassRefPtr<AnimatableValue> AnimatableClipPathOperation::interpolateTo(const Ani
 {
     const AnimatableClipPathOperation* toOperation = toAnimatableClipPathOperation(value);
 
-    if (m_operation->getOperationType() != ClipPathOperation::SHAPE || toOperation->m_operation->getOperationType() != ClipPathOperation::SHAPE)
+    if (m_operation->type() != ClipPathOperation::SHAPE || toOperation->m_operation->type() != ClipPathOperation::SHAPE)
         return defaultInterpolateTo(this, value, fraction);
 
-    const BasicShape* fromShape = static_cast<ShapeClipPathOperation*>(clipPathOperation())->basicShape();
-    const BasicShape* toShape = static_cast<ShapeClipPathOperation*>(toOperation->clipPathOperation())->basicShape();
+    const BasicShape* fromShape = toShapeClipPathOperation(clipPathOperation())->basicShape();
+    const BasicShape* toShape = toShapeClipPathOperation(toOperation->clipPathOperation())->basicShape();
 
     if (!fromShape->canBlend(toShape))
         return defaultInterpolateTo(this, value, fraction);

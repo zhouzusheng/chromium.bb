@@ -29,11 +29,9 @@
 #include "core/css/SelectorChecker.h"
 
 #include "HTMLNames.h"
-#include "core/css/CSSSelector.h"
 #include "core/css/CSSSelectorList.h"
 #include "core/css/SiblingTraversalStrategies.h"
 #include "core/dom/Document.h"
-#include "core/dom/Element.h"
 #include "core/dom/FullscreenElementStack.h"
 #include "core/dom/NodeRenderStyle.h"
 #include "core/dom/Text.h"
@@ -47,16 +45,15 @@
 #include "core/html/HTMLOptGroupElement.h"
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/html/track/vtt/VTTElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/page/FocusController.h"
 #include "core/frame/Frame.h"
-#include "core/platform/ScrollableArea.h"
-#include "core/platform/ScrollbarTheme.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderScrollbar.h"
 #include "core/rendering/style/RenderStyle.h"
-
-#include "core/html/track/WebVTTElement.h"
+#include "platform/scroll/ScrollableArea.h"
+#include "platform/scroll/ScrollbarTheme.h"
 
 namespace WebCore {
 
@@ -75,18 +72,10 @@ static bool matchesCustomPseudoElement(const Element* element, const CSSSelector
     if (!root)
         return false;
 
-    if (selector->pseudoType() != CSSSelector::PseudoPart) {
-        const AtomicString& pseudoId = selector->pseudoType() == CSSSelector::PseudoWebKitCustomElement ? element->shadowPseudoId() : element->pseudo();
-        if (pseudoId != selector->value())
-            return false;
-        if (selector->pseudoType() == CSSSelector::PseudoWebKitCustomElement && root->type() != ShadowRoot::UserAgentShadowRoot)
-            return false;
-        return true;
-    }
-
-    if (element->part() != selector->argument())
+    const AtomicString& pseudoId = selector->pseudoType() == CSSSelector::PseudoWebKitCustomElement ? element->shadowPseudoId() : element->pseudo();
+    if (pseudoId != selector->value())
         return false;
-    if (selector->isMatchUserAgentOnly() && root->type() != ShadowRoot::UserAgentShadowRoot)
+    if (selector->pseudoType() == CSSSelector::PseudoWebKitCustomElement && root->type() != ShadowRoot::UserAgentShadowRoot)
         return false;
     return true;
 }
@@ -127,6 +116,11 @@ bool SelectorChecker::scopeContainsLastMatchedElement(const SelectorCheckingCont
     return root->host() == context.scope;
 }
 
+static inline bool nextSelectorExceedsScope(const SelectorChecker::SelectorCheckingContext& context)
+{
+    return context.element == context.scope && (context.behaviorAtBoundary & SelectorChecker::BoundaryBehaviorMask) != SelectorChecker::StaysWithinTreeScope;
+}
+
 // Recursive check of selectors and combinators
 // It can return 4 different values:
 // * SelectorMatches          - the selector matches the element e
@@ -134,10 +128,11 @@ bool SelectorChecker::scopeContainsLastMatchedElement(const SelectorCheckingCont
 // * SelectorFailsAllSiblings - the selector fails for e and any sibling of e
 // * SelectorFailsCompletely  - the selector fails for e and any sibling or ancestor of e
 template<typename SiblingTraversalStrategy>
-SelectorChecker::Match SelectorChecker::match(const SelectorCheckingContext& context, PseudoId& dynamicPseudo, const SiblingTraversalStrategy& siblingTraversalStrategy) const
+SelectorChecker::Match SelectorChecker::match(const SelectorCheckingContext& context, const SiblingTraversalStrategy& siblingTraversalStrategy, MatchResult* result) const
 {
     // first selector has to match
-    if (!checkOne(context, siblingTraversalStrategy))
+    unsigned specificity = 0;
+    if (!checkOne(context, siblingTraversalStrategy, &specificity))
         return SelectorFailsLocally;
 
     if (context.selector->m_match == CSSSelector::PseudoElement) {
@@ -154,44 +149,94 @@ SelectorChecker::Match SelectorChecker::match(const SelectorCheckingContext& con
             PseudoId pseudoId = CSSSelector::pseudoId(context.selector->pseudoType());
             if (pseudoId == FIRST_LETTER)
                 context.element->document().styleEngine()->setUsesFirstLetterRules(true);
-            if (pseudoId != NOPSEUDO && m_mode != SharingRules)
-                dynamicPseudo = pseudoId;
+            if (pseudoId != NOPSEUDO && m_mode != SharingRules && result)
+                result->dynamicPseudo = pseudoId;
         }
     }
 
-    // The rest of the selectors has to match
-    CSSSelector::Relation relation = context.selector->relation();
-
     // Prepare next selector
     const CSSSelector* historySelector = context.selector->tagHistory();
-    if (!historySelector)
-        return scopeContainsLastMatchedElement(context) ? SelectorMatches : SelectorFailsLocally;
+    if (!historySelector) {
+        if (scopeContainsLastMatchedElement(context)) {
+            if (result)
+                result->specificity += specificity;
+            return SelectorMatches;
+        }
+        return SelectorFailsLocally;
+    }
 
-    SelectorCheckingContext nextContext(context);
-    nextContext.selector = historySelector;
-
-    PseudoId ignoreDynamicPseudo = NOPSEUDO;
-    if (relation != CSSSelector::SubSelector) {
+    Match match;
+    if (context.selector->relation() != CSSSelector::SubSelector) {
         // Abort if the next selector would exceed the scope.
-        if (context.element == context.scope && (context.behaviorAtBoundary & BoundaryBehaviorMask) != StaysWithinTreeScope)
+        if (nextSelectorExceedsScope(context))
             return SelectorFailsCompletely;
 
         // Bail-out if this selector is irrelevant for the pseudoId
-        if (context.pseudoId != NOPSEUDO && context.pseudoId != dynamicPseudo)
+        if (context.pseudoId != NOPSEUDO && (!result || context.pseudoId != result->dynamicPseudo))
             return SelectorFailsCompletely;
 
-        // Disable :visited matching when we see the first link or try to match anything else than an ancestors.
-        if (!context.isSubSelector && (context.element->isLink() || (relation != CSSSelector::Descendant && relation != CSSSelector::Child)))
-            nextContext.visitedMatchType = VisitedMatchDisabled;
-
-        nextContext.pseudoId = NOPSEUDO;
+        if (result) {
+            TemporaryChange<PseudoId> dynamicPseudoScope(result->dynamicPseudo, NOPSEUDO);
+            match = matchForRelation(context, siblingTraversalStrategy, result);
+        } else {
+            return matchForRelation(context, siblingTraversalStrategy, 0);
+        }
+    } else {
+        match = matchForSubSelector(context, siblingTraversalStrategy, result);
     }
+    if (match != SelectorMatches || !result)
+        return match;
+
+    result->specificity += specificity;
+    return SelectorMatches;
+}
+
+static inline SelectorChecker::SelectorCheckingContext prepareNextContextForRelation(const SelectorChecker::SelectorCheckingContext& context)
+{
+    SelectorChecker::SelectorCheckingContext nextContext(context);
+    ASSERT(context.selector->tagHistory());
+    nextContext.selector = context.selector->tagHistory();
+    return nextContext;
+}
+
+template<typename SiblingTraversalStrategy>
+SelectorChecker::Match SelectorChecker::matchForSubSelector(const SelectorCheckingContext& context, const SiblingTraversalStrategy& siblingTraversalStrategy, MatchResult* result) const
+{
+    SelectorCheckingContext nextContext = prepareNextContextForRelation(context);
+
+    PseudoId dynamicPseudo = result ? result->dynamicPseudo : NOPSEUDO;
+    // a selector is invalid if something follows a pseudo-element
+    // We make an exception for scrollbar pseudo elements and allow a set of pseudo classes (but nothing else)
+    // to follow the pseudo elements.
+    nextContext.hasScrollbarPseudo = dynamicPseudo != NOPSEUDO && (context.scrollbar || dynamicPseudo == SCROLLBAR_CORNER || dynamicPseudo == RESIZER);
+    nextContext.hasSelectionPseudo = dynamicPseudo == SELECTION;
+    if ((context.elementStyle || m_mode == CollectingCSSRules || m_mode == CollectingStyleRules || m_mode == QueryingRules) && dynamicPseudo != NOPSEUDO
+        && !nextContext.hasSelectionPseudo
+        && !(nextContext.hasScrollbarPseudo && nextContext.selector->m_match == CSSSelector::PseudoClass))
+        return SelectorFailsCompletely;
+
+    nextContext.isSubSelector = true;
+    return match(nextContext, siblingTraversalStrategy, result);
+}
+
+template<typename SiblingTraversalStrategy>
+SelectorChecker::Match SelectorChecker::matchForRelation(const SelectorCheckingContext& context, const SiblingTraversalStrategy& siblingTraversalStrategy, MatchResult* result) const
+{
+    SelectorCheckingContext nextContext = prepareNextContextForRelation(context);
+
+    CSSSelector::Relation relation = context.selector->relation();
+
+    // Disable :visited matching when we see the first link or try to match anything else than an ancestors.
+    if (!context.isSubSelector && (context.element->isLink() || (relation != CSSSelector::Descendant && relation != CSSSelector::Child)))
+        nextContext.visitedMatchType = VisitedMatchDisabled;
+
+    nextContext.pseudoId = NOPSEUDO;
 
     switch (relation) {
     case CSSSelector::Descendant:
         if (context.selector->relationIsAffectedByPseudoContent()) {
             for (Element* element = context.element; element; element = element->parentElement()) {
-                if (matchForShadowDistributed(element, siblingTraversalStrategy, ignoreDynamicPseudo, nextContext) == SelectorMatches)
+                if (matchForShadowDistributed(element, siblingTraversalStrategy, nextContext, result) == SelectorMatches)
                     return SelectorMatches;
             }
             return SelectorFailsCompletely;
@@ -199,17 +244,17 @@ SelectorChecker::Match SelectorChecker::match(const SelectorCheckingContext& con
         nextContext.isSubSelector = false;
         nextContext.elementStyle = 0;
         for (nextContext.element = parentElement(context); nextContext.element; nextContext.element = parentElement(nextContext)) {
-            Match match = this->match(nextContext, ignoreDynamicPseudo, siblingTraversalStrategy);
+            Match match = this->match(nextContext, siblingTraversalStrategy, result);
             if (match == SelectorMatches || match == SelectorFailsCompletely)
                 return match;
-            if (nextContext.element == nextContext.scope && (nextContext.behaviorAtBoundary & BoundaryBehaviorMask) != StaysWithinTreeScope)
+            if (nextSelectorExceedsScope(nextContext))
                 return SelectorFailsCompletely;
         }
         return SelectorFailsCompletely;
     case CSSSelector::Child:
         {
             if (context.selector->relationIsAffectedByPseudoContent())
-                return matchForShadowDistributed(context.element, siblingTraversalStrategy, ignoreDynamicPseudo, nextContext);
+                return matchForShadowDistributed(context.element, siblingTraversalStrategy, nextContext, result);
 
             nextContext.element = parentElement(context);
             if (!nextContext.element)
@@ -217,7 +262,7 @@ SelectorChecker::Match SelectorChecker::match(const SelectorCheckingContext& con
 
             nextContext.isSubSelector = false;
             nextContext.elementStyle = 0;
-            return match(nextContext, ignoreDynamicPseudo, siblingTraversalStrategy);
+            return match(nextContext, siblingTraversalStrategy, result);
         }
     case CSSSelector::DirectAdjacent:
         if (m_mode == ResolvingStyle) {
@@ -229,7 +274,7 @@ SelectorChecker::Match SelectorChecker::match(const SelectorCheckingContext& con
             return SelectorFailsAllSiblings;
         nextContext.isSubSelector = false;
         nextContext.elementStyle = 0;
-        return match(nextContext, ignoreDynamicPseudo, siblingTraversalStrategy);
+        return match(nextContext, siblingTraversalStrategy, result);
 
     case CSSSelector::IndirectAdjacent:
         if (m_mode == ResolvingStyle) {
@@ -240,24 +285,11 @@ SelectorChecker::Match SelectorChecker::match(const SelectorCheckingContext& con
         nextContext.isSubSelector = false;
         nextContext.elementStyle = 0;
         for (; nextContext.element; nextContext.element = nextContext.element->previousElementSibling()) {
-            Match match = this->match(nextContext, ignoreDynamicPseudo, siblingTraversalStrategy);
+            Match match = this->match(nextContext, siblingTraversalStrategy, result);
             if (match == SelectorMatches || match == SelectorFailsAllSiblings || match == SelectorFailsCompletely)
                 return match;
         };
         return SelectorFailsAllSiblings;
-
-    case CSSSelector::SubSelector:
-        // a selector is invalid if something follows a pseudo-element
-        // We make an exception for scrollbar pseudo elements and allow a set of pseudo classes (but nothing else)
-        // to follow the pseudo elements.
-        nextContext.hasScrollbarPseudo = dynamicPseudo != NOPSEUDO && (context.scrollbar || dynamicPseudo == SCROLLBAR_CORNER || dynamicPseudo == RESIZER);
-        nextContext.hasSelectionPseudo = dynamicPseudo == SELECTION;
-        if ((context.elementStyle || m_mode == CollectingCSSRules || m_mode == CollectingStyleRules || m_mode == QueryingRules) && dynamicPseudo != NOPSEUDO
-            && !nextContext.hasSelectionPseudo
-            && !(nextContext.hasScrollbarPseudo && nextContext.selector->m_match == CSSSelector::PseudoClass))
-            return SelectorFailsCompletely;
-        nextContext.isSubSelector = true;
-        return match(nextContext, dynamicPseudo, siblingTraversalStrategy);
 
     case CSSSelector::ShadowPseudo:
     case CSSSelector::ChildTree:
@@ -272,7 +304,7 @@ SelectorChecker::Match SelectorChecker::match(const SelectorCheckingContext& con
             nextContext.element = shadowHost;
             nextContext.isSubSelector = false;
             nextContext.elementStyle = 0;
-            return this->match(nextContext, ignoreDynamicPseudo, siblingTraversalStrategy);
+            return this->match(nextContext, siblingTraversalStrategy, result);
         }
 
     case CSSSelector::DescendantTree:
@@ -280,14 +312,17 @@ SelectorChecker::Match SelectorChecker::match(const SelectorCheckingContext& con
             nextContext.isSubSelector = false;
             nextContext.elementStyle = 0;
             for (nextContext.element = parentElement(context); nextContext.element; nextContext.element = parentElement(nextContext)) {
-                Match match = this->match(nextContext, ignoreDynamicPseudo, siblingTraversalStrategy);
+                Match match = this->match(nextContext, siblingTraversalStrategy, result);
                 if (match == SelectorMatches || match == SelectorFailsCompletely)
                     return match;
-                if (nextContext.element == nextContext.scope && (nextContext.behaviorAtBoundary & BoundaryBehaviorMask) != StaysWithinTreeScope)
+                if (nextSelectorExceedsScope(nextContext))
                     return SelectorFailsCompletely;
             }
             return SelectorFailsCompletely;
         }
+
+    case CSSSelector::SubSelector:
+        ASSERT_NOT_REACHED();
     }
 
     ASSERT_NOT_REACHED();
@@ -295,16 +330,28 @@ SelectorChecker::Match SelectorChecker::match(const SelectorCheckingContext& con
 }
 
 template<typename SiblingTraversalStrategy>
-SelectorChecker::Match SelectorChecker::matchForShadowDistributed(const Element* element, const SiblingTraversalStrategy& siblingTraversalStrategy, PseudoId& dynamicPseudo, SelectorCheckingContext& nextContext) const
+SelectorChecker::Match SelectorChecker::matchForShadowDistributed(const Element* element, const SiblingTraversalStrategy& siblingTraversalStrategy, SelectorCheckingContext& nextContext, MatchResult* result) const
 {
     ASSERT(element);
     Vector<InsertionPoint*, 8> insertionPoints;
+
+    const ContainerNode* scope = nextContext.scope;
+    BehaviorAtBoundary behaviorAtBoundary = nextContext.behaviorAtBoundary;
+
     collectDestinationInsertionPoints(*element, insertionPoints);
     for (size_t i = 0; i < insertionPoints.size(); ++i) {
         nextContext.element = insertionPoints[i];
+
+        // If a given scope is a shadow host of an insertion point but behaviorAtBoundary doesn't have ScopeIsShadowHost,
+        // we need to update behaviorAtBoundary to make selectors like ":host > ::content" work correctly.
+        if (scope == insertionPoints[i]->containingShadowRoot()->shadowHost() && !(behaviorAtBoundary & ScopeIsShadowHost))
+            nextContext.behaviorAtBoundary = static_cast<BehaviorAtBoundary>(behaviorAtBoundary | ScopeIsShadowHost);
+        else
+            nextContext.behaviorAtBoundary = behaviorAtBoundary;
+
         nextContext.isSubSelector = false;
         nextContext.elementStyle = 0;
-        if (match(nextContext, dynamicPseudo, siblingTraversalStrategy) == SelectorMatches)
+        if (match(nextContext, siblingTraversalStrategy, result) == SelectorMatches)
             return SelectorMatches;
     }
     return SelectorFailsCompletely;
@@ -381,9 +428,23 @@ static bool attributeValueMatches(const Attribute* attributeItem, CSSSelector::M
     return true;
 }
 
-static bool anyAttributeMatches(Element& element, CSSSelector::Match match, const QualifiedName& selectorAttr, const AtomicString& selectorValue, bool caseSensitive)
+static bool anyAttributeMatches(Element& element, CSSSelector::Match match, const CSSSelector& selector)
 {
-    ASSERT(element.hasAttributesWithoutUpdate());
+    const QualifiedName& selectorAttr = selector.attribute();
+    ASSERT(selectorAttr.localName() != starAtom); // Should not be possible from the CSS grammar.
+
+    // Synchronize the attribute in case it is lazy-computed.
+    // Currently all lazy properties have a null namespace, so only pass localName().
+    element.synchronizeAttribute(selectorAttr.localName());
+
+    if (!element.hasAttributesWithoutUpdate())
+        return false;
+
+    const AtomicString& selectorValue =  selector.value();
+    // Case sensitivity for attribute matching is looser than hasAttribute or
+    // Element::shouldIgnoreAttributeCase() for now. Unclear if that's correct.
+    bool caseSensitive = !element.document().isHTMLDocument() || HTMLDocument::isCaseSensitiveAttribute(selectorAttr);
+
     for (size_t i = 0; i < element.attributeCount(); ++i) {
         const Attribute* attributeItem = element.attributeItem(i);
 
@@ -398,7 +459,7 @@ static bool anyAttributeMatches(Element& element, CSSSelector::Match match, cons
 }
 
 template<typename SiblingTraversalStrategy>
-bool SelectorChecker::checkOne(const SelectorCheckingContext& context, const SiblingTraversalStrategy& siblingTraversalStrategy) const
+bool SelectorChecker::checkOne(const SelectorCheckingContext& context, const SiblingTraversalStrategy& siblingTraversalStrategy, unsigned* specificity) const
 {
     ASSERT(context.element);
     Element& element = *context.element;
@@ -416,14 +477,9 @@ bool SelectorChecker::checkOne(const SelectorCheckingContext& context, const Sib
         return element.hasID() && element.idForStyleResolution() == selector->value() && !elementIsHostInItsShadowTree;
 
     if (selector->isAttributeSelector()) {
-        const QualifiedName& attr = selector->attribute();
-
-        if (!element.hasAttributes() || elementIsHostInItsShadowTree)
+        if (elementIsHostInItsShadowTree)
             return false;
-
-        bool caseSensitive = !m_documentIsHTML || HTMLDocument::isCaseSensitiveAttribute(attr);
-
-        if (!anyAttributeMatches(element, static_cast<CSSSelector::Match>(selector->m_match), attr, selector->value(), caseSensitive))
+        if (!anyAttributeMatches(element, static_cast<CSSSelector::Match>(selector->m_match), *selector))
             return false;
     }
 
@@ -620,10 +676,9 @@ bool SelectorChecker::checkOne(const SelectorCheckingContext& context, const Sib
             {
                 SelectorCheckingContext subContext(context);
                 subContext.isSubSelector = true;
-                PseudoId ignoreDynamicPseudo = NOPSEUDO;
                 ASSERT(selector->selectorList());
                 for (subContext.selector = selector->selectorList()->first(); subContext.selector; subContext.selector = CSSSelectorList::next(subContext.selector)) {
-                    if (match(subContext, ignoreDynamicPseudo, siblingTraversalStrategy) == SelectorMatches)
+                    if (match(subContext, siblingTraversalStrategy) == SelectorMatches)
                         return true;
                 }
             }
@@ -644,12 +699,18 @@ bool SelectorChecker::checkOne(const SelectorCheckingContext& context, const Sib
                 if (context.elementStyle)
                     context.elementStyle->setAffectedByDrag();
                 else
-                    element.setChildrenAffectedByDrag(true);
+                    element.setChildrenAffectedByDrag();
             }
             if (element.renderer() && element.renderer()->isDragging())
                 return true;
             break;
         case CSSSelector::PseudoFocus:
+            if (m_mode == ResolvingStyle) {
+                if (context.elementStyle)
+                    context.elementStyle->setAffectedByFocus();
+                else
+                    element.setChildrenAffectedByFocus();
+            }
             return matchesFocusPseudoClass(element);
         case CSSSelector::PseudoHover:
             // If we're in quirks mode, then hover should never match anchors with no
@@ -659,7 +720,7 @@ bool SelectorChecker::checkOne(const SelectorCheckingContext& context, const Sib
                     if (context.elementStyle)
                         context.elementStyle->setAffectedByHover();
                     else
-                        element.setChildrenAffectedByHover(true);
+                        element.setChildrenAffectedByHover();
                 }
                 if (element.hovered() || InspectorInstrumentation::forcePseudoState(&element, CSSSelector::PseudoHover))
                     return true;
@@ -673,7 +734,7 @@ bool SelectorChecker::checkOne(const SelectorCheckingContext& context, const Sib
                     if (context.elementStyle)
                         context.elementStyle->setAffectedByActive();
                     else
-                        element.setChildrenAffectedByActive(true);
+                        element.setChildrenAffectedByActive();
                 }
                 if (element.active() || InspectorInstrumentation::forcePseudoState(&element, CSSSelector::PseudoActive))
                     return true;
@@ -730,8 +791,8 @@ bool SelectorChecker::checkOne(const SelectorCheckingContext& context, const Sib
         case CSSSelector::PseudoLang:
             {
                 AtomicString value;
-                if (element.isWebVTTElement())
-                    value = toWebVTTElement(element).language();
+                if (element.isVTTElement())
+                    value = toVTTElement(element).language();
                 else
                     value = element.computeInheritedLanguage();
                 const AtomicString& argument = selector->argument();
@@ -773,9 +834,9 @@ bool SelectorChecker::checkOne(const SelectorCheckingContext& context, const Sib
             element.document().setContainsValidityStyleRules();
             return element.isOutOfRange();
         case CSSSelector::PseudoFutureCue:
-            return (element.isWebVTTElement() && !toWebVTTElement(element).isPastNode());
+            return (element.isVTTElement() && !toVTTElement(element).isPastNode());
         case CSSSelector::PseudoPastCue:
-            return (element.isWebVTTElement() && toWebVTTElement(element).isPastNode());
+            return (element.isVTTElement() && toVTTElement(element).isPastNode());
 
         case CSSSelector::PseudoScope:
             {
@@ -798,22 +859,37 @@ bool SelectorChecker::checkOne(const SelectorCheckingContext& context, const Sib
                 ASSERT(element.shadow());
 
                 // For empty parameter case, i.e. just :host or :host().
-                if (!selector->selectorList())
+                if (!selector->selectorList()) // Use *'s specificity. So just 0.
                     return true;
 
                 SelectorCheckingContext subContext(context);
                 subContext.isSubSelector = true;
-                subContext.behaviorAtBoundary = CrossesBoundary;
-                subContext.scope = 0;
-                // Use NodeRenderingTraversal to traverse a composed ancestor list of a given element.
-                for (Element* nextElement = &element; nextElement; nextElement = NodeRenderingTraversal::parentElement(nextElement)) {
-                    // If one of simple selectors matches an element, returns SelectorMatches. Just "OR".
-                    for (subContext.selector = selector->selectorList()->first(); subContext.selector; subContext.selector = CSSSelectorList::next(subContext.selector)) {
-                        PseudoId ignoreDynamicPseudo = NOPSEUDO;
+
+                bool matched = false;
+                unsigned maxSpecificity = 0;
+
+                // If one of simple selectors matches an element, returns SelectorMatches. Just "OR".
+                for (subContext.selector = selector->selectorList()->first(); subContext.selector; subContext.selector = CSSSelectorList::next(subContext.selector)) {
+                    subContext.behaviorAtBoundary = ScopeIsShadowHostInPseudoHostParameter;
+                    subContext.scope = context.scope;
+                    // Use NodeRenderingTraversal to traverse a composed ancestor list of a given element.
+                    for (Element* nextElement = &element; nextElement; nextElement = NodeRenderingTraversal::parentElement(nextElement)) {
+                        MatchResult subResult;
                         subContext.element = nextElement;
-                        if (match(subContext, ignoreDynamicPseudo, siblingTraversalStrategy) == SelectorMatches)
-                            return true;
+                        if (match(subContext, siblingTraversalStrategy, &subResult) == SelectorMatches) {
+                            matched = true;
+                            // Consider div:host(div:host(div:host(div:host...))).
+                            maxSpecificity = std::max(maxSpecificity, subContext.selector->specificity() + subResult.specificity);
+                            break;
+                        }
+                        subContext.behaviorAtBoundary = CrossesBoundary;
+                        subContext.scope = 0;
                     }
+                }
+                if (matched) {
+                    if (specificity)
+                        *specificity = maxSpecificity;
+                    return true;
                 }
             }
             break;
@@ -843,10 +919,9 @@ bool SelectorChecker::checkOne(const SelectorCheckingContext& context, const Sib
         subContext.isSubSelector = true;
         subContext.behaviorAtBoundary = StaysWithinTreeScope;
 
-        PseudoId ignoreDynamicPseudo = NOPSEUDO;
         const CSSSelector* const & selector = context.selector;
         for (subContext.selector = selector->selectorList()->first(); subContext.selector; subContext.selector = CSSSelectorList::next(subContext.selector)) {
-            if (match(subContext, ignoreDynamicPseudo, siblingTraversalStrategy) == SelectorMatches)
+            if (match(subContext, siblingTraversalStrategy) == SelectorMatches)
                 return true;
         }
         return false;
@@ -991,9 +1066,9 @@ bool SelectorChecker::matchesFocusPseudoClass(const Element& element)
 }
 
 template
-SelectorChecker::Match SelectorChecker::match(const SelectorCheckingContext&, PseudoId&, const DOMSiblingTraversalStrategy&) const;
+SelectorChecker::Match SelectorChecker::match(const SelectorCheckingContext&, const DOMSiblingTraversalStrategy&, MatchResult*) const;
 
 template
-SelectorChecker::Match SelectorChecker::match(const SelectorCheckingContext&, PseudoId&, const ShadowDOMSiblingTraversalStrategy&) const;
+SelectorChecker::Match SelectorChecker::match(const SelectorCheckingContext&, const ShadowDOMSiblingTraversalStrategy&, MatchResult*) const;
 
 }

@@ -35,11 +35,10 @@
 #include "core/rendering/RenderTheme.h"
 #include "platform/graphics/Color.h"
 #include "public/platform/WebColor.h"
-#include "wtf/UnusedParam.h"
 
 using namespace::WebCore;
 
-namespace WebKit {
+namespace blink {
 
 static int toCSSValueKeyword(WebColorName name)
 {

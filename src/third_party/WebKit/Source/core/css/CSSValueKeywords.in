@@ -725,6 +725,9 @@ content-box
 padding
 padding-box
 
+// CSS_SHAPES
+margin-box
+
 //
 // background-size
 //
@@ -807,6 +810,7 @@ visibleStroke
 painted
 fill
 stroke
+bounding-box
 //all
 //none
 
@@ -1011,3 +1015,7 @@ isolate
 // touch-action-delay
 // none
 script
+
+// touch-action
+pan-x
+pan-y

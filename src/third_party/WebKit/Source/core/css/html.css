@@ -446,6 +446,13 @@ input::-webkit-clear-button {
     flex: none;
     -webkit-user-modify: read-only !important;
     -webkit-margin-start: 2px;
+    opacity: 0;
+    pionter-events: none;
+}
+
+input:enabled:read-write:-webkit-any(:focus,:hover)::-webkit-clear-button {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 input[type="search"]::-webkit-search-cancel-button {
@@ -454,6 +461,13 @@ input[type="search"]::-webkit-search-cancel-button {
     flex: none;
     -webkit-user-modify: read-only !important;
     -webkit-margin-start: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+input[type="search"]:enabled:read-write:-webkit-any(:focus,:hover)::-webkit-search-cancel-button {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 input[type="search"]::-webkit-search-decoration {
@@ -598,6 +612,13 @@ input::-webkit-inner-spin-button {
     flex: none;
     -webkit-user-select: none;
     -webkit-user-modify: read-only !important;
+    opacity: 0;
+    pointer-events: none;
+}
+
+input:enabled:read-write:-webkit-any(:focus,:hover)::-webkit-inner-spin-button {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 #if defined(ENABLE_INPUT_SPEECH) && ENABLE_INPUT_SPEECH
@@ -680,6 +701,7 @@ input[type="radio"], input[type="checkbox"] {
 
 input[type="button"], input[type="submit"], input[type="reset"] {
     -webkit-appearance: push-button;
+    -webkit-user-select: none;
     white-space: pre
 }
 
@@ -785,17 +807,23 @@ input[type="color"]::-webkit-color-swatch {
     -webkit-user-modify: read-only !important;
 }
 
-#if defined(ENABLE_CALENDAR_PICKER) && ENABLE_CALENDAR_PICKER
 input::-webkit-calendar-picker-indicator {
     display: inline-block;
     width: 0.66em;
     height: 0.66em;
     padding: 0.17em 0.34em;
     -webkit-user-modify: read-only !important;
+    opacity: 0;
+    pointer-events: none;
 }
 
 input::-webkit-calendar-picker-indicator:hover {
     background-color: #eee;
+}
+
+input:enabled:read-write:-webkit-any(:focus,:hover)::-webkit-calendar-picker-indicator {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 input[type="date"]:disabled::-webkit-clear-button,
@@ -818,7 +846,6 @@ input[type="week"][readonly]::-webkit-inner-spin-button,
 input[readonly]::-webkit-calendar-picker-indicator {
     visibility: hidden;
 }
-#endif // ENABLE_CALENDAR_PICKER
 
 select {
     -webkit-appearance: menulist;
@@ -1126,12 +1153,6 @@ textarea[dir=auto] {
     margin: auto;
     padding: 0px;
     border-width: 0px;
-}
-
-/* viewport */
-
-@viewport {
-    min-width: 980px;
 }
 
 /* noscript is handled internally, as it depends on settings. */

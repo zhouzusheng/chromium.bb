@@ -23,11 +23,11 @@
 #include "core/html/forms/RadioInputType.h"
 
 #include "HTMLNames.h"
+#include "InputTypeNames.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/html/forms/InputTypeNames.h"
 #include "core/page/SpatialNavigation.h"
 #include "platform/text/PlatformLocale.h"
 #include "wtf/PassOwnPtr.h"
@@ -43,7 +43,7 @@ PassRefPtr<InputType> RadioInputType::create(HTMLInputElement& element)
 
 const AtomicString& RadioInputType::formControlType() const
 {
-    return InputTypeNames::radio();
+    return InputTypeNames::radio;
 }
 
 bool RadioInputType::valueMissing(const String&) const
@@ -53,7 +53,7 @@ bool RadioInputType::valueMissing(const String&) const
 
 String RadioInputType::valueMissingText() const
 {
-    return locale().queryString(WebKit::WebLocalizedString::ValidationValueMissingForRadio);
+    return locale().queryString(blink::WebLocalizedString::ValidationValueMissingForRadio);
 }
 
 void RadioInputType::handleClickEvent(MouseEvent* event)
@@ -84,7 +84,7 @@ void RadioInputType::handleKeydownEvent(KeyboardEvent* event)
     // We can only stay within the form's children if the form hasn't been demoted to a leaf because
     // of malformed HTML.
     Node* node = &element();
-    while ((node = (forward ? NodeTraversal::next(node) : NodeTraversal::previous(node)))) {
+    while ((node = (forward ? NodeTraversal::next(*node) : NodeTraversal::previous(*node)))) {
         // Once we encounter a form element, we know we're through.
         if (node->hasTagName(formTag))
             break;
@@ -97,7 +97,7 @@ void RadioInputType::handleKeydownEvent(KeyboardEvent* event)
         if (inputElement->isRadioButton() && inputElement->name() == element().name() && inputElement->isFocusable()) {
             RefPtr<HTMLInputElement> protector(inputElement);
             document.setFocusedElement(inputElement);
-            inputElement->dispatchSimulatedClick(event, SendNoEvents, DoNotShowPressedLook);
+            inputElement->dispatchSimulatedClick(event, SendNoEvents);
             event->setDefaultHandled();
             return;
         }

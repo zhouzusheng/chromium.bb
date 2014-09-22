@@ -30,6 +30,7 @@
 #include "core/fetch/ResourcePtr.h"
 #include "platform/Timer.h"
 #include "platform/fonts/FontSelector.h"
+#include "platform/fonts/GenericFontFamilySettings.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
@@ -49,6 +50,7 @@ public:
     explicit FontLoader(ResourceFetcher*);
 
     void addFontToBeginLoading(FontResource*);
+    void loadPendingFonts();
 
     void clearResourceFetcher();
 
@@ -76,7 +78,8 @@ public:
 
     void clearDocument();
 
-    void addFontFaceRule(const StyleRuleFontFace*);
+    void addFontFaceRule(const StyleRuleFontFace*, PassRefPtr<CSSFontFace>);
+    void removeFontFaceRule(const StyleRuleFontFace*);
 
     void fontLoaded();
     virtual void fontCacheInvalidated();
@@ -86,7 +89,10 @@ public:
 
     Document* document() const { return m_document; }
 
+    const GenericFontFamilySettings& genericFontFamilySettings() const { return m_genericFontFamilySettings; }
+
     void beginLoadingFontSoon(FontResource*);
+    void loadPendingFonts();
 
 private:
     explicit CSSFontSelector(Document*);
@@ -99,6 +105,7 @@ private:
     HashSet<FontSelectorClient*> m_clients;
 
     FontLoader m_fontLoader;
+    GenericFontFamilySettings m_genericFontFamilySettings;
 };
 
 } // namespace WebCore

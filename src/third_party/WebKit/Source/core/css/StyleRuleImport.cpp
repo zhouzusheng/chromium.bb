@@ -63,9 +63,9 @@ void StyleRuleImport::setCSSStyleSheet(const String& href, const KURL& baseURL, 
         m_styleSheet->clearOwnerRule();
 
     CSSParserContext context = m_parentStyleSheet ? m_parentStyleSheet->parserContext() : HTMLStandardMode;
-    context.charset = charset;
+    context.setCharset(charset);
     if (!baseURL.isNull())
-        context.baseURL = baseURL;
+        context.setBaseURL(baseURL);
 
     m_styleSheet = StyleSheetContents::create(this, href, context);
 
@@ -115,10 +115,7 @@ void StyleRuleImport::requestStyleSheet()
     }
 
     FetchRequest request(ResourceRequest(absURL), FetchInitiatorTypeNames::css, m_parentStyleSheet->charset());
-    if (m_parentStyleSheet->isUserStyleSheet())
-        m_resource = fetcher->fetchUserCSSStyleSheet(request);
-    else
-        m_resource = fetcher->fetchCSSStyleSheet(request);
+    m_resource = fetcher->fetchCSSStyleSheet(request);
     if (m_resource) {
         // if the import rule is issued dynamically, the sheet may be
         // removed from the pending sheet count, so let the doc know

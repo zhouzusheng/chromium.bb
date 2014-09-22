@@ -36,15 +36,15 @@
 #include "core/page/EventHandler.h"
 #include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/platform/ScrollbarTheme.h"
 #include "core/rendering/RenderBox.h"
+#include "platform/scroll/ScrollbarTheme.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
 inline SpinButtonElement::SpinButtonElement(Document& document, SpinButtonOwner& spinButtonOwner)
-    : HTMLDivElement(divTag, document)
+    : HTMLDivElement(document)
     , m_spinButtonOwner(&spinButtonOwner)
     , m_capturing(false)
     , m_upDownState(Indeterminate)
@@ -56,7 +56,7 @@ inline SpinButtonElement::SpinButtonElement(Document& document, SpinButtonOwner&
 PassRefPtr<SpinButtonElement> SpinButtonElement::create(Document& document, SpinButtonOwner& spinButtonOwner)
 {
     RefPtr<SpinButtonElement> element = adoptRef(new SpinButtonElement(document, spinButtonOwner));
-    element->setPart(AtomicString("-webkit-inner-spin-button", AtomicString::ConstructFromLiteral));
+    element->setPseudo(AtomicString("-webkit-inner-spin-button", AtomicString::ConstructFromLiteral));
     element->setAttribute(idAttr, ShadowElementNames::spinButton());
     return element.release();
 }

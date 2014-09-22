@@ -63,6 +63,12 @@ class ResourceRequestInfo {
   // Unique identifier (within the scope of the child process) for this request.
   virtual int GetRequestID() const = 0;
 
+  // The IPC route identifier of the RenderFrame.
+  // TODO(jam): once all navigation and resource requests are sent between
+  // frames and RenderView/RenderViewHost aren't involved we can remove this and
+  // just use GetRouteID above.
+  virtual int GetRenderFrameID() const = 0;
+
   // True if GetFrameID() represents a main frame in the RenderView.
   virtual bool IsMainFrame() const = 0;
 
@@ -80,7 +86,7 @@ class ResourceRequestInfo {
   virtual ResourceType::Type GetResourceType() const = 0;
 
   // Returns the associated referrer policy.
-  virtual WebKit::WebReferrerPolicy GetReferrerPolicy() const = 0;
+  virtual blink::WebReferrerPolicy GetReferrerPolicy() const = 0;
 
   // Returns the associated page transition type.
   virtual PageTransition GetPageTransition() const = 0;
@@ -99,6 +105,9 @@ class ResourceRequestInfo {
 
   // Returns true if this is associated with an asynchronous request.
   virtual bool IsAsync() const = 0;
+
+  // Whether this is a download.
+  virtual bool IsDownload() const = 0;
 
  protected:
   virtual ~ResourceRequestInfo() {}

@@ -32,7 +32,7 @@
 #include "platform/scroll/ScrollTypes.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebKit {
+namespace blink {
 class WebLayer;
 class WebScrollbarLayer;
 }
@@ -66,7 +66,7 @@ public:
     // Should be called after compositing has been updated.
     void updateAfterCompositingChange();
 
-    bool needsToUpdateAfterCompositingChange() const { return m_scrollGestureRegionIsDirty || m_touchEventTargetRectsAreDirty; }
+    bool needsToUpdateAfterCompositingChange() const { return m_scrollGestureRegionIsDirty || m_touchEventTargetRectsAreDirty || frameViewIsScrollableIsDirty(); }
 
     // Should be called whenever a wheel event handler is added or removed in the
     // frame view's underlying document.
@@ -95,7 +95,7 @@ public:
     MainThreadScrollingReasons mainThreadScrollingReasons() const;
     bool shouldUpdateScrollLayerPositionOnMainThread() const { return mainThreadScrollingReasons() != 0; }
 
-    PassOwnPtr<WebKit::WebScrollbarLayer> createSolidColorScrollbarLayer(ScrollbarOrientation, int thumbThickness, bool isLeftSideVerticalScrollbar);
+    PassOwnPtr<blink::WebScrollbarLayer> createSolidColorScrollbarLayer(ScrollbarOrientation, int thumbThickness, bool isLeftSideVerticalScrollbar);
 
     void willDestroyScrollableArea(ScrollableArea*);
     // Returns true if the coordinator handled this change.
@@ -114,6 +114,10 @@ public:
     Region computeShouldHandleScrollGestureOnMainThreadRegion(const Frame*, const IntPoint& frameLocation) const;
 
     void updateTouchEventTargetRectsIfNeeded();
+
+    // For testing purposes only. This ScrollingCoordinator is reused between layout test, and must be reset
+    // for the results to be valid.
+    void reset();
 
 protected:
     explicit ScrollingCoordinator(Page*);
@@ -140,7 +144,7 @@ private:
     bool hasVisibleSlowRepaintViewportConstrainedObjects(FrameView*) const;
     void updateShouldUpdateScrollLayerPositionOnMainThread();
 
-    static WebKit::WebLayer* scrollingWebLayerForScrollableArea(ScrollableArea*);
+    static blink::WebLayer* scrollingWebLayerForScrollableArea(ScrollableArea*);
 
     bool touchHitTestingEnabled() const;
     void setShouldHandleScrollGestureOnMainThreadRegion(const Region&);
@@ -148,15 +152,20 @@ private:
     void computeTouchEventTargetRects(LayerHitTestRects&);
     void setWheelEventHandlerCount(unsigned);
 
-    WebKit::WebScrollbarLayer* addWebScrollbarLayer(ScrollableArea*, ScrollbarOrientation, PassOwnPtr<WebKit::WebScrollbarLayer>);
-    WebKit::WebScrollbarLayer* getWebScrollbarLayer(ScrollableArea*, ScrollbarOrientation);
+    blink::WebScrollbarLayer* addWebScrollbarLayer(ScrollableArea*, ScrollbarOrientation, PassOwnPtr<blink::WebScrollbarLayer>);
+    blink::WebScrollbarLayer* getWebScrollbarLayer(ScrollableArea*, ScrollbarOrientation);
     void removeWebScrollbarLayer(ScrollableArea*, ScrollbarOrientation);
 
+    bool frameViewIsScrollableIsDirty() const;
 
-    typedef HashMap<ScrollableArea*, OwnPtr<WebKit::WebScrollbarLayer> > ScrollbarMap;
+    typedef HashMap<ScrollableArea*, OwnPtr<blink::WebScrollbarLayer> > ScrollbarMap;
     ScrollbarMap m_horizontalScrollbars;
     ScrollbarMap m_verticalScrollbars;
     HashSet<const RenderLayer*> m_layersWithTouchRects;
+    bool m_wasFrameScrollable;
+
+    // This is retained for testing.
+    MainThreadScrollingReasons m_lastMainThreadScrollingReasons;
 };
 
 } // namespace WebCore

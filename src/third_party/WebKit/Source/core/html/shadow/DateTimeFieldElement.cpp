@@ -39,7 +39,7 @@ using namespace HTMLNames;
 
 static String emptyValueAXText()
 {
-    return Locale::defaultLocale().queryString(WebKit::WebLocalizedString::AXDateTimeFieldEmptyValueText);
+    return Locale::defaultLocale().queryString(blink::WebLocalizedString::AXDateTimeFieldEmptyValueText);
 }
 
 DateTimeFieldElement::FieldOwner::~FieldOwner()
@@ -47,7 +47,7 @@ DateTimeFieldElement::FieldOwner::~FieldOwner()
 }
 
 DateTimeFieldElement::DateTimeFieldElement(Document& document, FieldOwner& fieldOwner)
-    : HTMLSpanElement(spanTag, document)
+    : HTMLSpanElement(document)
     , m_fieldOwner(&fieldOwner)
 {
 }
@@ -157,7 +157,7 @@ void DateTimeFieldElement::initialize(const AtomicString& pseudo, const String& 
     setAttribute(aria_valuemaxAttr, String::number(axMaximum));
 
     setAttribute(aria_helpAttr, axHelpText);
-    setPart(pseudo);
+    setPseudo(pseudo);
     appendChild(Text::create(document(), visibleValue()));
 }
 

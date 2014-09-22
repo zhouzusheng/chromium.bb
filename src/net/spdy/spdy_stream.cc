@@ -106,6 +106,7 @@ SpdyStream::SpdyStream(SpdyStreamType type,
       io_state_((type_ == SPDY_PUSH_STREAM) ? STATE_IDLE : STATE_NONE),
       response_status_(OK),
       net_log_(net_log),
+      raw_received_bytes_(0),
       send_bytes_(0),
       recv_bytes_(0),
       just_completed_frame_type_(DATA),
@@ -520,7 +521,7 @@ void SpdyStream::OnFrameWriteComplete(SpdyFrameType frame_type,
   DoLoop(OK);
 }
 
-int SpdyStream::GetProtocolVersion() const {
+SpdyMajorVersion SpdyStream::GetProtocolVersion() const {
   return session_->GetProtocolVersion();
 }
 

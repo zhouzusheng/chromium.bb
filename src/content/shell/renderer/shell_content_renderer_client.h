@@ -12,7 +12,7 @@
 
 class SpellCheck;
 
-namespace WebKit {
+namespace blink {
 class WebFrame;
 class WebPlugin;
 struct WebPluginParams;
@@ -40,23 +40,23 @@ class ShellContentRendererClient : public ContentRendererClient {
   virtual void RenderThreadStarted() OVERRIDE;
   virtual void RenderViewCreated(RenderView* render_view) OVERRIDE;
   virtual bool OverrideCreatePlugin(
-      RenderView* render_view,
-      WebKit::WebFrame* frame,
-      const WebKit::WebPluginParams& params,
-      WebKit::WebPlugin** plugin) OVERRIDE;
-  virtual WebKit::WebMediaStreamCenter* OverrideCreateWebMediaStreamCenter(
-      WebKit::WebMediaStreamCenterClient* client) OVERRIDE;
-  virtual WebKit::WebRTCPeerConnectionHandler*
+      RenderFrame* render_frame,
+      blink::WebFrame* frame,
+      const blink::WebPluginParams& params,
+      blink::WebPlugin** plugin) OVERRIDE;
+  virtual blink::WebMediaStreamCenter* OverrideCreateWebMediaStreamCenter(
+      blink::WebMediaStreamCenterClient* client) OVERRIDE;
+  virtual blink::WebRTCPeerConnectionHandler*
   OverrideCreateWebRTCPeerConnectionHandler(
-      WebKit::WebRTCPeerConnectionHandlerClient* client) OVERRIDE;
-  virtual WebKit::WebMIDIAccessor* OverrideCreateMIDIAccessor(
-      WebKit::WebMIDIAccessorClient* client) OVERRIDE;
-  virtual WebKit::WebAudioDevice* OverrideCreateAudioDevice(
+      blink::WebRTCPeerConnectionHandlerClient* client) OVERRIDE;
+  virtual blink::WebMIDIAccessor* OverrideCreateMIDIAccessor(
+      blink::WebMIDIAccessorClient* client) OVERRIDE;
+  virtual blink::WebAudioDevice* OverrideCreateAudioDevice(
       double sample_rate) OVERRIDE;
-  virtual WebKit::WebClipboard* OverrideWebClipboard() OVERRIDE;
-  virtual WebKit::WebThemeEngine* OverrideThemeEngine() OVERRIDE;
+  virtual blink::WebClipboard* OverrideWebClipboard() OVERRIDE;
+  virtual blink::WebThemeEngine* OverrideThemeEngine() OVERRIDE;
   virtual bool AllowBrowserPlugin(
-      WebKit::WebPluginContainer* container) OVERRIDE;
+      blink::WebPluginContainer* container) OVERRIDE;
 
  private:
    void WebTestProxyCreated(RenderView* render_view,

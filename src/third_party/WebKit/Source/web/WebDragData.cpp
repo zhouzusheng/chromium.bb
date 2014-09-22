@@ -44,7 +44,7 @@
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 class WebDragDataPrivate : public ChromiumDataObject {
 };
@@ -73,11 +73,11 @@ WebVector<WebDragData::Item> WebDragData::items() const
     for (size_t i = 0; i < m_private->length(); ++i) {
         ChromiumDataObjectItem* originalItem = m_private->item(i).get();
         WebDragData::Item item;
-        if (originalItem->kind() == DataTransferItem::kindString) {
+        if (originalItem->kind() == ChromiumDataObjectItem::StringKind) {
             item.storageType = Item::StorageTypeString;
             item.stringType = originalItem->type();
             item.stringData = originalItem->internalGetAsString();
-        } else if (originalItem->kind() == DataTransferItem::kindFile) {
+        } else if (originalItem->kind() == ChromiumDataObjectItem::FileKind) {
             if (originalItem->sharedBuffer()) {
                 item.storageType = Item::StorageTypeBinaryData;
                 item.binaryData = originalItem->sharedBuffer();
@@ -175,4 +175,4 @@ void WebDragData::ensureMutable()
     ASSERT(m_private->hasOneRef());
 }
 
-} // namespace WebKit
+} // namespace blink

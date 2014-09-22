@@ -27,7 +27,6 @@
 #include "core/frame/History.h"
 
 #include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/SerializedScriptValue.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/history/HistoryItem.h"
@@ -37,8 +36,8 @@
 #include "core/frame/Frame.h"
 #include "core/page/BackForwardClient.h"
 #include "core/page/Page.h"
-#include "weborigin/KURL.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/KURL.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/MainThread.h"
 
 namespace WebCore {
@@ -70,7 +69,7 @@ SerializedScriptValue* History::stateInternal() const
     if (!m_frame)
         return 0;
 
-    if (HistoryItem* historyItem = m_frame->loader().history()->currentItem())
+    if (HistoryItem* historyItem = m_frame->loader().currentItem())
         return historyItem->stateObject();
 
     return 0;
@@ -86,32 +85,14 @@ bool History::isSameAsCurrentState(SerializedScriptValue* state) const
     return state == stateInternal();
 }
 
-void History::back()
-{
-    go(-1);
-}
-
 void History::back(ExecutionContext* context)
 {
     go(context, -1);
 }
 
-void History::forward()
-{
-    go(1);
-}
-
 void History::forward(ExecutionContext* context)
 {
     go(context, 1);
-}
-
-void History::go(int distance)
-{
-    if (!m_frame)
-        return;
-
-    m_frame->navigationScheduler().scheduleHistoryNavigation(distance);
 }
 
 void History::go(ExecutionContext* context, int distance)
@@ -142,7 +123,7 @@ KURL History::urlForState(const String& urlString)
     return KURL(document->baseURL(), urlString);
 }
 
-void History::stateObjectAdded(PassRefPtr<SerializedScriptValue> data, const String& /* title */, const String& urlString, SameDocumentNavigationSource sameDocumentNavigationSource, ExceptionState& es)
+void History::stateObjectAdded(PassRefPtr<SerializedScriptValue> data, const String& /* title */, const String& urlString, SameDocumentNavigationSource sameDocumentNavigationSource, ExceptionState& exceptionState)
 {
     if (!m_frame || !m_frame->page())
         return;
@@ -150,7 +131,7 @@ void History::stateObjectAdded(PassRefPtr<SerializedScriptValue> data, const Str
     KURL fullURL = urlForState(urlString);
     if (!fullURL.isValid() || !m_frame->document()->securityOrigin()->canRequest(fullURL)) {
         // We can safely expose the URL to JavaScript, as a) no redirection takes place: JavaScript already had this URL, b) JavaScript can only access a same-origin History object.
-        es.throwSecurityError("A history state object with URL '" + fullURL.elidedString() + "' cannot be created in a document with origin '" + m_frame->document()->securityOrigin()->toString() + "'.");
+        exceptionState.throwSecurityError("A history state object with URL '" + fullURL.elidedString() + "' cannot be created in a document with origin '" + m_frame->document()->securityOrigin()->toString() + "'.");
         return;
     }
     m_frame->loader().updateForSameDocumentNavigation(fullURL, sameDocumentNavigationSource, data, FrameLoader::DoNotUpdateBackForwardList);

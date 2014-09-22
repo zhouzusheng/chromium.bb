@@ -135,6 +135,22 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
     return (it->second & permissions) == permissions;
   }
 
+#if defined(OS_ANDROID)
+  // Determine if the certain permissions have been granted to a content URI.
+  bool HasPermissionsForContentUri(const base::FilePath& file,
+                                   int permissions) {
+    DCHECK(!file.empty());
+    DCHECK(file.IsContentUri());
+    if (!permissions)
+      return false;
+    base::FilePath file_path = file.StripTrailingSeparators();
+    FileMap::const_iterator it = file_permissions_.find(file_path);
+    if (it != file_permissions_.end())
+      return (it->second & permissions) == permissions;
+    return false;
+  }
+#endif
+
   void GrantBindings(int bindings) {
     enabled_bindings_ |= bindings;
   }
@@ -171,6 +187,10 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
 
   // Determine if the certain permissions have been granted to a file.
   bool HasPermissionsForFile(const base::FilePath& file, int permissions) {
+#if defined(OS_ANDROID)
+    if (file.IsContentUri())
+      return HasPermissionsForContentUri(file, permissions);
+#endif
     if (!permissions || file.empty() || !file.IsAbsolute())
       return false;
     base::FilePath current_path = file.StripTrailingSeparators();
@@ -290,7 +310,7 @@ ChildProcessSecurityPolicyImpl::ChildProcessSecurityPolicyImpl() {
   // We know about these schemes and believe them to be safe.
   RegisterWebSafeScheme(kHttpScheme);
   RegisterWebSafeScheme(kHttpsScheme);
-  RegisterWebSafeScheme(chrome::kFtpScheme);
+  RegisterWebSafeScheme(kFtpScheme);
   RegisterWebSafeScheme(chrome::kDataScheme);
   RegisterWebSafeScheme("feed");
   RegisterWebSafeScheme(chrome::kBlobScheme);
@@ -478,6 +498,12 @@ void ChildProcessSecurityPolicyImpl::GrantCreateFileForFileSystem(
   GrantPermissionsForFileSystem(child_id, filesystem_id, CREATE_NEW_FILE_GRANT);
 }
 
+void ChildProcessSecurityPolicyImpl::GrantCreateReadWriteFileSystem(
+    int child_id, const std::string& filesystem_id) {
+  GrantPermissionsForFileSystem(
+      child_id, filesystem_id, CREATE_READ_WRITE_FILE_GRANT);
+}
+
 void ChildProcessSecurityPolicyImpl::GrantCopyIntoFileSystem(
     int child_id, const std::string& filesystem_id) {
   GrantPermissionsForFileSystem(child_id, filesystem_id, COPY_INTO_FILE_GRANT);
@@ -641,12 +667,6 @@ bool ChildProcessSecurityPolicyImpl::CanDeleteFromFileSystem(
     int child_id, const std::string& filesystem_id) {
   return HasPermissionsForFileSystem(child_id, filesystem_id,
                                      DELETE_FILE_GRANT);
-}
-
-void ChildProcessSecurityPolicyImpl::GrantCreateReadWriteFileSystem(
-    int child_id, const std::string& filesystem_id) {
-  GrantPermissionsForFileSystem(
-      child_id, filesystem_id, CREATE_READ_WRITE_FILE_GRANT);
 }
 
 bool ChildProcessSecurityPolicyImpl::HasPermissionsForFile(

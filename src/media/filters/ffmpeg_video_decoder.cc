@@ -71,7 +71,8 @@ int FFmpegVideoDecoder::GetVideoBuffer(AVCodecContext* codec_context,
   VideoFrame::Format format = PixelFormatToVideoFormat(codec_context->pix_fmt);
   if (format == VideoFrame::UNKNOWN)
     return AVERROR(EINVAL);
-  DCHECK(format == VideoFrame::YV12 || format == VideoFrame::YV16);
+  DCHECK(format == VideoFrame::YV12 || format == VideoFrame::YV16 ||
+         format == VideoFrame::YV12J);
 
   gfx::Size size(codec_context->width, codec_context->height);
   int ret;
@@ -91,8 +92,8 @@ int FFmpegVideoDecoder::GetVideoBuffer(AVCodecContext* codec_context,
     return AVERROR(EINVAL);
 
   scoped_refptr<VideoFrame> video_frame =
-      VideoFrame::CreateFrame(format, size, gfx::Rect(size), natural_size,
-                              kNoTimestamp());
+      frame_pool_.CreateFrame(format, size, gfx::Rect(size),
+                              natural_size, kNoTimestamp());
 
   for (int i = 0; i < 3; i++) {
     frame->base[i] = video_frame->data(i);
@@ -103,8 +104,6 @@ int FFmpegVideoDecoder::GetVideoBuffer(AVCodecContext* codec_context,
   frame->opaque = NULL;
   video_frame.swap(reinterpret_cast<VideoFrame**>(&frame->opaque));
   frame->type = FF_BUFFER_TYPE_USER;
-  frame->pkt_pts = codec_context->pkt ? codec_context->pkt->pts :
-                                        AV_NOPTS_VALUE;
   frame->width = codec_context->width;
   frame->height = codec_context->height;
   frame->format = codec_context->pix_fmt;
@@ -165,7 +164,7 @@ void FFmpegVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
 
   // Return empty frames if decoding has finished.
   if (state_ == kDecodeFinished) {
-    base::ResetAndReturn(&decode_cb_).Run(kOk, VideoFrame::CreateEmptyFrame());
+    base::ResetAndReturn(&decode_cb_).Run(kOk, VideoFrame::CreateEOSFrame());
     return;
   }
 
@@ -271,7 +270,7 @@ void FFmpegVideoDecoder::DecodeBuffer(
       DCHECK(buffer->end_of_stream());
       state_ = kDecodeFinished;
       base::ResetAndReturn(&decode_cb_)
-          .Run(kOk, VideoFrame::CreateEmptyFrame());
+          .Run(kOk, VideoFrame::CreateEOSFrame());
       return;
     }
 
@@ -381,7 +380,7 @@ bool FFmpegVideoDecoder::ConfigureDecoder() {
     return false;
   }
 
-  av_frame_.reset(avcodec_alloc_frame());
+  av_frame_.reset(av_frame_alloc());
   return true;
 }
 

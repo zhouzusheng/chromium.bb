@@ -41,15 +41,16 @@
 #include "PageOverlayList.h"
 #include "PageScaleConstraintsSet.h"
 #include "PageWidgetDelegate.h"
+#include "SpellCheckerClientImpl.h"
 #include "UserMediaClientImpl.h"
 #include "WebInputEvent.h"
 #include "WebNavigationPolicy.h"
 #include "WebView.h"
 #include "core/page/PagePopupDriver.h"
-#include "core/platform/graphics/GraphicsLayer.h"
 #include "platform/Timer.h"
 #include "platform/geometry/IntPoint.h"
 #include "platform/geometry/IntRect.h"
+#include "platform/graphics/GraphicsLayer.h"
 #include "public/platform/WebGestureCurveTarget.h"
 #include "public/platform/WebLayer.h"
 #include "public/platform/WebPoint.h"
@@ -78,7 +79,7 @@ class PopupMenuClient;
 class RenderLayerCompositor;
 }
 
-namespace WebKit {
+namespace blink {
 class AutocompletePopupMenuClient;
 class AutofillPopupMenuClient;
 class ContextFeaturesClientImpl;
@@ -95,7 +96,6 @@ class UserMediaClientImpl;
 class ValidationMessageClientImpl;
 class WebAXObject;
 class WebActiveGestureAnimation;
-class WebCompositorImpl;
 class WebDevToolsAgentClient;
 class WebDevToolsAgentPrivate;
 class WebDocument;
@@ -108,9 +108,11 @@ class WebLayerTreeView;
 class WebMouseEvent;
 class WebMouseWheelEvent;
 class WebPagePopupImpl;
+class WebPlugin;
 class WebPrerendererClient;
 class WebSettingsImpl;
 class WebTouchEvent;
+class WorkerGlobalScopeProxyProviderImpl;
 class FullscreenController;
 
 class RubberbandContext;
@@ -152,7 +154,6 @@ public:
     virtual void paint(WebCanvas*, const WebRect&, PaintOptions = ReadbackFromCompositorIfAvailable);
     virtual bool isTrackingRepaints() const OVERRIDE;
     virtual void themeChanged();
-    virtual void setNeedsRedraw();
     virtual bool handleInputEvent(const WebInputEvent&);
     virtual void setCursorVisibilityState(bool isVisible);
     virtual bool hasTouchEventHandlersAt(const WebPoint&);
@@ -300,7 +301,7 @@ public:
     virtual void setInspectorSetting(const WebString& key,
                                      const WebString& value);
     virtual void setCompositorDeviceScaleFactorOverride(float);
-    virtual void setRootLayerScaleTransform(float);
+    virtual void setRootLayerTransform(const WebSize& offset, float scale);
     virtual WebDevToolsAgent* devToolsAgent();
     virtual WebAXObject accessibilityObject();
     virtual void applyAutofillSuggestions(
@@ -318,9 +319,11 @@ public:
                                     unsigned inactiveForegroundColor);
     virtual void performCustomContextMenuAction(unsigned action);
     virtual void showContextMenu();
+    virtual WebString getSmartClipData(WebRect);
     virtual void addPageOverlay(WebPageOverlay*, int /* zOrder */);
     virtual void removePageOverlay(WebPageOverlay*);
     virtual void transferActiveWheelFlingAnimation(const WebActiveWheelFlingParameters&);
+    virtual bool endActiveFlingAnimation();
     virtual void setShowPaintRects(bool);
     virtual void setShowDebugBorders(bool);
     virtual void setShowFPSCounter(bool);
@@ -334,6 +337,7 @@ public:
 
     void setIgnoreInputEvents(bool newValue);
     void setBackgroundColorOverride(WebColor);
+    void setZoomFactorOverride(float);
     WebDevToolsAgentPrivate* devToolsAgentPrivate() { return m_devToolsAgent.get(); }
 
     WebCore::Color baseBackgroundColor() const { return m_baseBackgroundColor; }
@@ -673,6 +677,7 @@ private:
     void closePendingHelperPlugins(WebCore::Timer<WebViewImpl>*);
 
     WebCore::InputMethodContext* inputMethodContext();
+    WebPlugin* focusedPluginIfInputMethodSupported(WebCore::Frame*);
 
     WebViewClient* m_client; // Can be 0 (e.g. unittests, shared workers, etc.)
     WebAutofillClient* m_autofillClient;
@@ -686,6 +691,7 @@ private:
     EditorClientImpl m_editorClientImpl;
     InspectorClientImpl m_inspectorClientImpl;
     BackForwardClientImpl m_backForwardClientImpl;
+    SpellCheckerClientImpl m_spellCheckerClientImpl;
 
     WebSize m_size;
     bool m_fixedLayoutSizeLock;
@@ -747,6 +753,7 @@ private:
     bool m_ignoreInputEvents;
 
     float m_compositorDeviceScaleFactorOverride;
+    WebSize m_rootLayerOffset;
     float m_rootLayerScale;
 
     // Webkit expects keyPress events to be suppressed if the associated keyDown
@@ -851,6 +858,7 @@ private:
     bool m_showScrollBottleneckRects;
     WebColor m_baseBackgroundColor;
     WebColor m_backgroundColorOverride;
+    float m_zoomFactorOverride;
 
     WebCore::Timer<WebViewImpl> m_helperPluginCloseTimer;
     Vector<RefPtr<WebHelperPluginImpl> > m_helperPluginsPendingClose;
@@ -863,6 +871,6 @@ inline WebViewImpl* toWebViewImpl(WebView* webView)
     return static_cast<WebViewImpl*>(webView);
 }
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

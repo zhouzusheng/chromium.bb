@@ -11,8 +11,8 @@
 #include "third_party/WebKit/public/web/WebMIDIPermissionRequest.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 
-using WebKit::WebMIDIPermissionRequest;
-using WebKit::WebSecurityOrigin;
+using blink::WebMIDIPermissionRequest;
+using blink::WebSecurityOrigin;
 
 namespace content {
 
@@ -48,7 +48,7 @@ void MIDIDispatcher::cancelSysExPermissionRequest(
        it.Advance()) {
     WebMIDIPermissionRequest* value = it.GetCurrentValue();
     if (value->equals(request)) {
-      string16 origin = request.securityOrigin().toString();
+      base::string16 origin = request.securityOrigin().toString();
       Send(new MIDIHostMsg_CancelSysExPermissionRequest(
           routing_id(), it.GetCurrentKey(), GURL(origin)));
       requests_.Remove(it.GetCurrentKey());

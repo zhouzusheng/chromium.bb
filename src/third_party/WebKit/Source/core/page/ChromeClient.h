@@ -28,17 +28,16 @@
 #include "core/loader/NavigationPolicy.h"
 #include "core/frame/ConsoleTypes.h"
 #include "core/page/FocusDirection.h"
-#include "core/platform/Cursor.h"
-#include "core/platform/PopupMenu.h"
-#include "core/platform/PopupMenuClient.h"
-#include "core/platform/graphics/GraphicsContext.h"
 #include "core/rendering/RenderEmbeddedObject.h"
-#include "modules/webdatabase/DatabaseDetails.h"
+#include "core/rendering/style/RenderStyleConstants.h"
+#include "platform/Cursor.h"
 #include "platform/HostWindow.h"
+#include "platform/PopupMenu.h"
+#include "platform/PopupMenuClient.h"
+#include "platform/graphics/GraphicsContext.h"
 #include "platform/scroll/ScrollTypes.h"
 #include "wtf/Forward.h"
 #include "wtf/PassOwnPtr.h"
-#include "wtf/UnusedParam.h"
 #include "wtf/Vector.h"
 
 
@@ -104,7 +103,7 @@ public:
     // created Page has its show method called.
     // The FrameLoadRequest parameter is only for ChromeClient to check if the
     // request could be fulfilled. The ChromeClient should not load the request.
-    virtual Page* createWindow(Frame*, const FrameLoadRequest&, const WindowFeatures&, NavigationPolicy = NavigationPolicyIgnore) = 0;
+    virtual Page* createWindow(Frame*, const FrameLoadRequest&, const WindowFeatures&, NavigationPolicy, ShouldSendReferrer) = 0;
     virtual void show(NavigationPolicy) = 0;
 
     virtual bool canRunModal() = 0;
@@ -148,10 +147,12 @@ public:
     virtual void scroll(const IntSize&, const IntRect&, const IntRect&) = 0;
     virtual IntPoint screenToRootView(const IntPoint&) const = 0;
     virtual IntRect rootViewToScreen(const IntRect&) const = 0;
-    virtual WebKit::WebScreenInfo screenInfo() const = 0;
+    virtual blink::WebScreenInfo screenInfo() const = 0;
     virtual void setCursor(const Cursor&) = 0;
     virtual void scheduleAnimation() = 0;
     // End methods used by HostWindow.
+
+    virtual bool isCompositorFramePending() const = 0;
 
     virtual void dispatchViewportPropertiesDidChange(const ViewportDescription&) const { }
 
@@ -179,6 +180,8 @@ public:
     //  - <datalist> UI for date/time input types regardless of
     //    ENABLE(INPUT_MULTIPLE_FIELDS_UI)
     virtual PassRefPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) = 0;
+
+    virtual void openTextDataListChooser(HTMLInputElement&) = 0;
 
     virtual void runOpenPanel(Frame*, PassRefPtr<FileChooser>) = 0;
 
@@ -221,6 +224,8 @@ public:
 
     virtual void needTouchEvents(bool) = 0;
 
+    virtual void setTouchAction(TouchAction) = 0;
+
     // Checks if there is an opened popup, called by RenderMenuList::showPopup().
     virtual bool hasOpenedPopup() const = 0;
     virtual PassRefPtr<PopupMenu> createPopupMenu(Frame&, PopupMenuClient*) const = 0;
@@ -245,7 +250,7 @@ public:
         PromptDialog = 2,
         HTMLDialog = 3
     };
-    virtual bool shouldRunModalDialogDuringPageDismissal(const DialogType&, const String& dialogMessage, Document::PageDismissalType) const { UNUSED_PARAM(dialogMessage); return true; }
+    virtual bool shouldRunModalDialogDuringPageDismissal(const DialogType&, const String&, Document::PageDismissalType) const { return true; }
 
     virtual void numWheelEventHandlersChanged(unsigned) = 0;
 
@@ -261,6 +266,13 @@ public:
     virtual bool isChromeClientImpl() const { return false; }
 
     virtual void didAssociateFormControls(const Vector<RefPtr<Element> >&) { };
+    virtual void didChangeValueInTextField(HTMLInputElement&) { }
+    virtual void didEndEditingOnTextField(HTMLInputElement&) { }
+    virtual void handleKeyboardEventOnTextField(HTMLInputElement&, KeyboardEvent&) { }
+
+    // Input mehtod editor related functions.
+    virtual void didCancelCompositionOnSelectionChange() { }
+    virtual void willSetInputMethodState() { }
 
     // Notifies the client of a new popup widget.  The client should place
     // and size the widget with the given bounds, relative to the screen.

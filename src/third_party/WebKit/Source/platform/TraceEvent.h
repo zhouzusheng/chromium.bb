@@ -166,7 +166,6 @@
 #include "platform/EventTracer.h"
 
 #include "wtf/DynamicAnnotations.h"
-#include "wtf/UnusedParam.h"
 #include "wtf/text/CString.h"
 
 // By default, const char* argument values are assumed to have long-lived scope
@@ -360,12 +359,18 @@
 //   match. |id| must either be a pointer or an integer value up to 64 bits. If
 //   it's a pointer, the bits will be xored with a hash of the process ID so
 //   that the same pointer on two different processes will not collide.
+//
 // An asynchronous operation can consist of multiple phases. The first phase is
 // defined by the ASYNC_BEGIN calls. Additional phases can be defined using the
-// ASYNC_STEP_BEGIN macros. When the operation completes, call ASYNC_END.
-// An async operation can span threads and processes, but all events in that
-// operation must use the same |name| and |id|. Each event can have its own
-// args.
+// ASYNC_STEP_INTO or ASYNC_STEP_PAST macros. The ASYNC_STEP_INTO macro will
+// annotate the block following the call. The ASYNC_STEP_PAST macro will
+// annotate the block prior to the call. Note that any particular event must use
+// only STEP_INTO or STEP_PAST macros; they can not mix and match. When the
+// operation completes, call ASYNC_END.
+//
+// An ASYNC trace typically occurs on a single thread (if not, they will only be
+// drawn on the thread defined in the ASYNC_BEGIN event), but all events in that
+// operation must use the same |name| and |id|. Each step can have its own
 #define TRACE_EVENT_ASYNC_BEGIN0(category, name, id) \
     INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_ASYNC_BEGIN, \
         category, name, id, TRACE_EVENT_FLAG_NONE)
@@ -390,26 +395,33 @@
         category, name, id, TRACE_EVENT_FLAG_COPY, \
         arg1_name, arg1_val, arg2_name, arg2_val)
 
-// Records a single ASYNC_STEP event for |step| immediately. If the category
-// is not enabled, then this does nothing. The |name| and |id| must match the
-// ASYNC_BEGIN event above. The |step| param identifies this step within the
-// async event. This should be called at the beginning of the next phase of an
-// asynchronous operation.
-#define TRACE_EVENT_ASYNC_STEP0(category, name, id, step) \
-    INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_ASYNC_STEP, \
+// Records a single ASYNC_STEP_INTO event for |step| immediately. If the
+// category is not enabled, then this does nothing. The |name| and |id| must
+// match the ASYNC_BEGIN event above. The |step| param identifies this step
+// within the async event. This should be called at the beginning of the next
+// phase of an asynchronous operation. The ASYNC_BEGIN event must not have any
+// ASYNC_STEP_PAST events.
+#define TRACE_EVENT_ASYNC_STEP_INTO0(category, name, id, step) \
+    INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_ASYNC_STEP_INTO, \
         category, name, id, TRACE_EVENT_FLAG_NONE, "step", step)
-#define TRACE_EVENT_ASYNC_STEP1(category, name, id, step, \
-                                      arg1_name, arg1_val) \
-    INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_ASYNC_STEP, \
+#define TRACE_EVENT_ASYNC_STEP_INTO1(category, name, id, step, \
+        arg1_name, arg1_val) \
+    INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_ASYNC_STEP_INTO, \
         category, name, id, TRACE_EVENT_FLAG_NONE, "step", step, \
         arg1_name, arg1_val)
-#define TRACE_EVENT_COPY_ASYNC_STEP0(category, name, id, step) \
-    INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_ASYNC_STEP, \
-        category, name, id, TRACE_EVENT_FLAG_COPY, "step", step)
-#define TRACE_EVENT_COPY_ASYNC_STEP1(category, name, id, step, \
-        arg1_name, arg1_val) \
-    INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_ASYNC_STEP, \
-        category, name, id, TRACE_EVENT_FLAG_COPY, "step", step, \
+
+// Records a single ASYNC_STEP_PAST event for |step| immediately. If the
+// category is not enabled, then this does nothing. The |name| and |id| must
+// match the ASYNC_BEGIN event above. The |step| param identifies this step
+// within the async event. This should be called at the beginning of the next
+// phase of an asynchronous operation. The ASYNC_BEGIN event must not have any
+// ASYNC_STEP_INTO events.
+#define TRACE_EVENT_ASYNC_STEP_PAST0(category_group, name, id, step) \
+    INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_ASYNC_STEP_PAST, \
+        category_group, name, id, TRACE_EVENT_FLAG_NONE, "step", step)
+#define TRACE_EVENT_ASYNC_STEP_PAST1(category_group, name, id, step, arg1_name, arg1_val) \
+    INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_ASYNC_STEP_PAST, \
+        category_group, name, id, TRACE_EVENT_FLAG_NONE, "step", step, \
         arg1_name, arg1_val)
 
 // Records a single ASYNC_END event for "name" immediately. If the category
@@ -487,6 +499,21 @@
 #define TRACE_EVENT_OBJECT_DELETED_WITH_ID(categoryGroup, name, id) \
     INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_DELETE_OBJECT, \
         categoryGroup, name, TRACE_ID_DONT_MANGLE(id), TRACE_EVENT_FLAG_NONE)
+
+// Macro to efficiently determine if a given category group is enabled.
+#define TRACE_EVENT_CATEGORY_GROUP_ENABLED(categoryGroup, ret) \
+    do { \
+        INTERNAL_TRACE_EVENT_GET_CATEGORY_INFO(categoryGroup);  \
+        if (*INTERNALTRACEEVENTUID(categoryGroupEnabled)) {     \
+            *ret = true;                                        \
+        } else {                                                \
+            *ret = false;                                       \
+        }                                                       \
+    } while (0)
+
+// This will mark the trace event as disabled by default. The user will need
+// to explicitly enable the event.
+#define TRACE_DISABLED_BY_DEFAULT(name) "disabled-by-default-" name
 
 ////////////////////////////////////////////////////////////////////////////////
 // Implementation specific tracing API definitions.
@@ -574,7 +601,7 @@
                 name, WebCore::TraceEvent::noEventId, \
                 TRACE_EVENT_FLAG_NONE, ##__VA_ARGS__); \
         INTERNALTRACEEVENTUID(scopedTracer).initialize( \
-            INTERNALTRACEEVENTUID(categoryGroupEnabled), h); \
+            INTERNALTRACEEVENTUID(categoryGroupEnabled), name, h); \
     }
 
 // Implementation detail: internal macro to create static category and add
@@ -603,9 +630,12 @@
 #define TRACE_EVENT_PHASE_BEGIN    ('B')
 #define TRACE_EVENT_PHASE_END      ('E')
 #define TRACE_EVENT_PHASE_COMPLETE ('X')
+// FIXME: unify instant events handling between blink and platform.
 #define TRACE_EVENT_PHASE_INSTANT  ('I')
+#define TRACE_EVENT_PHASE_INSTANT_WITH_SCOPE  ('i')
 #define TRACE_EVENT_PHASE_ASYNC_BEGIN ('S')
-#define TRACE_EVENT_PHASE_ASYNC_STEP  ('T')
+#define TRACE_EVENT_PHASE_ASYNC_STEP_INTO  ('T')
+#define TRACE_EVENT_PHASE_ASYNC_STEP_PAST  ('p')
 #define TRACE_EVENT_PHASE_ASYNC_END   ('F')
 #define TRACE_EVENT_PHASE_METADATA ('M')
 #define TRACE_EVENT_PHASE_COUNTER  ('C')
@@ -662,22 +692,22 @@ public:
     {
         *flags |= TRACE_EVENT_FLAG_MANGLE_ID;
     }
-    TraceID(DontMangle id, unsigned char* flags) : m_data(id.data()) { UNUSED_PARAM(flags); }
-    TraceID(unsigned long long id, unsigned char* flags) : m_data(id) { UNUSED_PARAM(flags); }
-    TraceID(unsigned long id, unsigned char* flags) : m_data(id) { UNUSED_PARAM(flags); }
-    TraceID(unsigned id, unsigned char* flags) : m_data(id) { UNUSED_PARAM(flags); }
-    TraceID(unsigned short id, unsigned char* flags) : m_data(id) { UNUSED_PARAM(flags); }
-    TraceID(unsigned char id, unsigned char* flags) : m_data(id) { UNUSED_PARAM(flags); }
-    TraceID(long long id, unsigned char* flags) :
-        m_data(static_cast<unsigned long long>(id)) { UNUSED_PARAM(flags); }
-    TraceID(long id, unsigned char* flags) :
-        m_data(static_cast<unsigned long long>(id)) { UNUSED_PARAM(flags); }
-    TraceID(int id, unsigned char* flags) :
-        m_data(static_cast<unsigned long long>(id)) { UNUSED_PARAM(flags); }
-    TraceID(short id, unsigned char* flags) :
-        m_data(static_cast<unsigned long long>(id)) { UNUSED_PARAM(flags); }
-    TraceID(signed char id, unsigned char* flags) :
-        m_data(static_cast<unsigned long long>(id)) { UNUSED_PARAM(flags); }
+    TraceID(DontMangle id, unsigned char*) : m_data(id.data()) { }
+    TraceID(unsigned long long id, unsigned char*) : m_data(id) { }
+    TraceID(unsigned long id, unsigned char*) : m_data(id) { }
+    TraceID(unsigned id, unsigned char*) : m_data(id) { }
+    TraceID(unsigned short id, unsigned char*) : m_data(id) { }
+    TraceID(unsigned char id, unsigned char*) : m_data(id) { }
+    TraceID(long long id, unsigned char*) :
+        m_data(static_cast<unsigned long long>(id)) { }
+    TraceID(long id, unsigned char*) :
+        m_data(static_cast<unsigned long long>(id)) { }
+    TraceID(int id, unsigned char*) :
+        m_data(static_cast<unsigned long long>(id)) { }
+    TraceID(short id, unsigned char*) :
+        m_data(static_cast<unsigned long long>(id)) { }
+    TraceID(signed char id, unsigned char*) :
+        m_data(static_cast<unsigned long long>(id)) { }
 
     unsigned long long data() const { return m_data; }
 
@@ -827,12 +857,13 @@ public:
     ~ScopedTracer()
     {
         if (m_pdata && *m_pdata->categoryGroupEnabled)
-            TRACE_EVENT_API_UPDATE_TRACE_EVENT_DURATION(m_pdata->eventHandle);
+            TRACE_EVENT_API_UPDATE_TRACE_EVENT_DURATION(m_data.categoryGroupEnabled, m_data.name, m_data.eventHandle);
     }
 
-    void initialize(const unsigned char* categoryGroupEnabled, TraceEventHandle eventHandle)
+    void initialize(const unsigned char* categoryGroupEnabled, const char* name, TraceEventHandle eventHandle)
     {
         m_data.categoryGroupEnabled = categoryGroupEnabled;
+        m_data.name = name;
         m_data.eventHandle = eventHandle;
         m_pdata = &m_data;
     }
@@ -845,6 +876,7 @@ private:
     // uninitialized accesses.
     struct Data {
         const unsigned char* categoryGroupEnabled;
+        const char* name;
         TraceEventHandle eventHandle;
     };
     Data* m_pdata;

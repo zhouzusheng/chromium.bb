@@ -81,7 +81,7 @@ void RenderLayerRepainter::repaintAfterLayout(RenderGeometryMap* geometryMap, bo
                     if (m_repaintRect != oldRepaintRect)
                         m_renderer->repaintUsingContainer(repaintContainer, pixelSnappedIntRect(m_repaintRect));
                 } else if (shouldRepaintAfterLayout()) {
-                    m_renderer->repaintAfterLayoutIfNeeded(repaintContainer, oldRepaintRect, oldOutlineBox, &m_repaintRect, &m_outlineBox);
+                    m_renderer->repaintAfterLayoutIfNeeded(repaintContainer, m_renderer->selfNeedsLayout(), oldRepaintRect, oldOutlineBox, &m_repaintRect, &m_outlineBox);
                 }
             }
         }
@@ -135,7 +135,7 @@ void RenderLayerRepainter::repaintIncludingNonCompositingDescendants(RenderLayer
     m_renderer->repaintUsingContainer(repaintContainer, pixelSnappedIntRect(m_renderer->clippedOverflowRectForRepaint(repaintContainer)));
 
     for (RenderLayer* curr = m_renderer->layer()->firstChild(); curr; curr = curr->nextSibling()) {
-        if (!curr->compositedLayerMapping())
+        if (!curr->hasCompositedLayerMapping())
             curr->repainter().repaintIncludingNonCompositingDescendants(repaintContainer);
     }
 }
@@ -145,7 +145,7 @@ LayoutRect RenderLayerRepainter::repaintRectIncludingNonCompositingDescendants()
     LayoutRect repaintRect = m_repaintRect;
     for (RenderLayer* child = m_renderer->layer()->firstChild(); child; child = child->nextSibling()) {
         // Don't include repaint rects for composited child layers; they will paint themselves and have a different origin.
-        if (child->compositedLayerMapping())
+        if (child->hasCompositedLayerMapping())
             continue;
 
         repaintRect.unite(child->repainter().repaintRectIncludingNonCompositingDescendants());
@@ -155,16 +155,22 @@ LayoutRect RenderLayerRepainter::repaintRectIncludingNonCompositingDescendants()
 
 void RenderLayerRepainter::setBackingNeedsRepaint()
 {
-    ASSERT(m_renderer->compositedLayerMapping());
-    m_renderer->compositedLayerMapping()->setContentsNeedDisplay();
+    ASSERT(m_renderer->compositingState() != NotComposited);
+
+    if (m_renderer->compositingState() == PaintsIntoGroupedBacking) {
+        // FIXME: should probably setNeedsDisplayInRect for this layer's bounds only.
+        m_renderer->groupedMapping()->squashingLayer()->setNeedsDisplay();
+    } else {
+        m_renderer->compositedLayerMapping()->setContentsNeedDisplay();
+    }
 }
 
 void RenderLayerRepainter::setBackingNeedsRepaintInRect(const LayoutRect& r)
 {
     // https://bugs.webkit.org/show_bug.cgi?id=61159 describes an unreproducible crash here,
     // so assert but check that the layer is composited.
-    ASSERT(m_renderer->compositedLayerMapping());
-    if (!m_renderer->compositedLayerMapping()) {
+    ASSERT(m_renderer->compositingState() != NotComposited);
+    if (m_renderer->compositingState() == NotComposited) {
         // If we're trying to repaint the placeholder document layer, propagate the
         // repaint to the native view system.
         LayoutRect absRect(r);
@@ -176,7 +182,17 @@ void RenderLayerRepainter::setBackingNeedsRepaintInRect(const LayoutRect& r)
         if (view)
             view->repaintViewRectangle(absRect);
     } else {
-        m_renderer->compositedLayerMapping()->setContentsNeedDisplayInRect(pixelSnappedIntRect(r));
+        if (m_renderer->compositingState() == PaintsIntoGroupedBacking) {
+            // FIXME: LayoutRect rounding to IntRect is probably not a good idea.
+            IntRect offsetRect = pixelSnappedIntRect(r);
+            if (m_renderer->hasTransform())
+                offsetRect = m_renderer->layer()->transform()->mapRect(pixelSnappedIntRect(r));
+
+            offsetRect.move(-m_renderer->layer()->offsetFromSquashingLayerOrigin());
+            m_renderer->groupedMapping()->squashingLayer()->setNeedsDisplayInRect(offsetRect);
+        } else {
+            m_renderer->compositedLayerMapping()->setContentsNeedDisplayInRect(pixelSnappedIntRect(r));
+        }
     }
 }
 
@@ -212,7 +228,7 @@ void RenderLayerRepainter::setFilterBackendNeedsRepaintingInRect(const LayoutRec
     FloatQuad repaintQuad(rectForRepaint);
     LayoutRect parentLayerRect = m_renderer->localToContainerQuad(repaintQuad, parentLayer->renderer()).enclosingBoundingBox();
 
-    if (parentLayer->compositedLayerMapping()) {
+    if (parentLayer->hasCompositedLayerMapping()) {
         parentLayer->repainter().setBackingNeedsRepaintInRect(parentLayerRect);
         return;
     }

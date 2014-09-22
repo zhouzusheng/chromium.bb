@@ -587,11 +587,16 @@ bool BaseChannel::SendRtcp(talk_base::Buffer* packet,
 
 int BaseChannel::SetOption(SocketType type, talk_base::Socket::Option opt,
                            int value) {
+  TransportChannel* channel = NULL;
   switch (type) {
-    case ST_RTP: return transport_channel_->SetOption(opt, value);
-    case ST_RTCP: return rtcp_transport_channel_->SetOption(opt, value);
-    default: return -1;
+    case ST_RTP:
+      channel = transport_channel_;
+      break;
+    case ST_RTCP:
+      channel = rtcp_transport_channel_;
+      break;
   }
+  return channel ? channel->SetOption(opt, value) : -1;
 }
 
 void BaseChannel::OnWritableState(TransportChannel* channel) {
@@ -605,7 +610,9 @@ void BaseChannel::OnWritableState(TransportChannel* channel) {
 }
 
 void BaseChannel::OnChannelRead(TransportChannel* channel,
-                                const char* data, size_t len, int flags) {
+                                const char* data, size_t len,
+                                const talk_base::PacketTime& packet_time,
+                                int flags) {
   // OnChannelRead gets called from P2PSocket; now pass data to MediaEngine
   ASSERT(worker_thread_ == talk_base::Thread::Current());
 
@@ -613,7 +620,7 @@ void BaseChannel::OnChannelRead(TransportChannel* channel,
   // transport. We feed RTP traffic into the demuxer to determine if it is RTCP.
   bool rtcp = PacketIsRtcp(channel, data, len);
   talk_base::Buffer packet(data, len);
-  HandlePacket(rtcp, &packet);
+  HandlePacket(rtcp, &packet, packet_time);
 }
 
 void BaseChannel::OnReadyToSend(TransportChannel* channel) {
@@ -769,7 +776,8 @@ bool BaseChannel::WantsPacket(bool rtcp, talk_base::Buffer* packet) {
   return true;
 }
 
-void BaseChannel::HandlePacket(bool rtcp, talk_base::Buffer* packet) {
+void BaseChannel::HandlePacket(bool rtcp, talk_base::Buffer* packet,
+                               const talk_base::PacketTime& packet_time) {
   if (!WantsPacket(rtcp, packet)) {
     return;
   }
@@ -838,9 +846,9 @@ void BaseChannel::HandlePacket(bool rtcp, talk_base::Buffer* packet) {
 
   // Push it down to the media channel.
   if (!rtcp) {
-    media_channel_->OnPacketReceived(packet);
+    media_channel_->OnPacketReceived(packet, packet_time);
   } else {
-    media_channel_->OnRtcpReceived(packet);
+    media_channel_->OnRtcpReceived(packet, packet_time);
   }
 }
 
@@ -1640,8 +1648,10 @@ void VoiceChannel::GetActiveStreams_w(AudioInfo::StreamList* actives) {
 }
 
 void VoiceChannel::OnChannelRead(TransportChannel* channel,
-                                 const char* data, size_t len, int flags) {
-  BaseChannel::OnChannelRead(channel, data, len, flags);
+                                 const char* data, size_t len,
+                                 const talk_base::PacketTime& packet_time,
+                                int flags) {
+  BaseChannel::OnChannelRead(channel, data, len, packet_time, flags);
 
   // Set a flag when we've received an RTP packet. If we're waiting for early
   // media, this will disable the timeout.
@@ -2152,7 +2162,9 @@ bool VideoChannel::SetRemoteContent_w(const MediaContentDescription* content,
     // Tweak our video processing settings, if needed.
     VideoOptions video_options;
     media_channel()->GetOptions(&video_options);
-    video_options.conference_mode.Set(video->conference_mode());
+    if (video->conference_mode()) {
+      video_options.conference_mode.Set(true);
+    }
     video_options.buffered_mode_latency.Set(video->buffered_mode_latency());
 
     if (!media_channel()->SetOptions(video_options)) {

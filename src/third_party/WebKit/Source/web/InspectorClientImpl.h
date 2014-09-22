@@ -36,7 +36,7 @@
 #include "core/inspector/InspectorFrontendChannel.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebDevToolsAgentClient;
 class WebDevToolsAgentImpl;
@@ -77,6 +77,9 @@ public:
 
     virtual void setTraceEventCallback(TraceEventCallback);
 
+    virtual void startGPUEventsRecording() OVERRIDE;
+    virtual void stopGPUEventsRecording() OVERRIDE;
+
 private:
     WebDevToolsAgentImpl* devToolsAgent();
 
@@ -84,6 +87,6 @@ private:
     WebViewImpl* m_inspectedWebView;
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

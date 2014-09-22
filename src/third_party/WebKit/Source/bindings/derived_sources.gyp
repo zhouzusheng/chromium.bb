@@ -90,6 +90,7 @@
          '<(SHARED_INTERMEDIATE_DIR)/blink/WorkerGlobalScopeConstructors.idl',
          '<(SHARED_INTERMEDIATE_DIR)/blink/SharedWorkerGlobalScopeConstructors.idl',
          '<(SHARED_INTERMEDIATE_DIR)/blink/DedicatedWorkerGlobalScopeConstructors.idl',
+         '<(SHARED_INTERMEDIATE_DIR)/ServiceWorkerGlobalScopeConstructors.idl',
     ],
 
     'conditions': [
@@ -180,6 +181,8 @@
          '<(SHARED_INTERMEDIATE_DIR)/blink/SharedWorkerGlobalScopeConstructors.idl',
          '--dedicatedworkerglobalscope-constructors-file',
          '<(SHARED_INTERMEDIATE_DIR)/blink/DedicatedWorkerGlobalScopeConstructors.idl',
+         '--serviceworkerglobalscope-constructors-file',
+         '<(SHARED_INTERMEDIATE_DIR)/ServiceWorkerGlobalScopeConstructors.idl',
          '--event-names-file',
          '<(SHARED_INTERMEDIATE_DIR)/blink/EventInterfaces.in',
          '<@(write_file_only_if_changed)',
@@ -195,6 +198,7 @@
       'hard_dependency': 1,
       'dependencies': [
         'interface_dependencies',
+        '../config.gyp:config',
         '../core/core_derived_sources.gyp:generate_test_support_idls',
       ],
       'sources': [
@@ -210,7 +214,7 @@
           'scripts/idl_parser.pm',
           'scripts/idl_serializer.pm',
           '../build/scripts/preprocessor.pm',
-          'scripts/IDLAttributes.txt',
+          'IDLExtendedAttributes.txt',
           # FIXME: If the dependency structure changes, we rebuild all files,
           # since we're not computing dependencies file-by-file in the build.
           '<(SHARED_INTERMEDIATE_DIR)/blink/InterfaceDependencies.txt',
@@ -254,7 +258,7 @@
           '--outputDir',
           '<(bindings_output_dir)',
           '--idlAttributesFile',
-          'scripts/IDLAttributes.txt',
+          'IDLExtendedAttributes.txt',
           '<@(generator_include_dirs)',
           '<@(extra_blink_generator_include_dirs)',
           '--interfaceDependenciesFile',

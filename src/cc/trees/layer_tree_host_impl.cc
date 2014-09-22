@@ -15,10 +15,12 @@
 #include "base/strings/stringprintf.h"
 #include "cc/animation/scrollbar_animation_controller.h"
 #include "cc/animation/timing_function.h"
+#include "cc/base/latency_info_swap_promise_monitor.h"
 #include "cc/base/math_util.h"
 #include "cc/base/util.h"
 #include "cc/debug/benchmark_instrumentation.h"
 #include "cc/debug/debug_rect_history.h"
+#include "cc/debug/devtools_instrumentation.h"
 #include "cc/debug/frame_rate_counter.h"
 #include "cc/debug/overdraw_metrics.h"
 #include "cc/debug/paint_time_counter.h"
@@ -56,6 +58,7 @@
 #include "cc/trees/quad_culler.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "cc/trees/tree_synchronizer.h"
+#include "gpu/GLES2/gl2extchromium.h"
 #include "ui/gfx/frame_time.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/vector2d_conversions.h"
@@ -76,24 +79,47 @@ void DidVisibilityChange(cc::LayerTreeHostImpl* id, bool visible) {
 }
 
 size_t GetMaxTransferBufferUsageBytes(cc::ContextProvider* context_provider) {
-  if (context_provider) {
-    // We want to make sure the default transfer buffer size is equal to the
-    // amount of data that can be uploaded by the compositor to avoid stalling
-    // the pipeline.
-    // For reference Chromebook Pixel can upload 1MB in about 0.5ms.
-    const size_t kMaxBytesUploadedPerMs = 1024 * 1024 * 2;
-    // Assuming a two frame deep pipeline between CPU and GPU and we are
-    // drawing 60 frames per second which would require us to draw one
-    // frame in 16 milliseconds.
-    const size_t kMaxTransferBufferUsageBytes = 16 * 2 * kMaxBytesUploadedPerMs;
-    return std::min(
-        context_provider->ContextCapabilities().max_transfer_buffer_usage_bytes,
-        kMaxTransferBufferUsageBytes);
-  } else {
-    // Software compositing should not use this value in production. Just use a
-    // default value when testing uploads with the software compositor.
+  // Software compositing should not use this value in production. Just use a
+  // default value when testing uploads with the software compositor.
+  if (!context_provider)
     return std::numeric_limits<size_t>::max();
-  }
+
+  // We want to make sure the default transfer buffer size is equal to the
+  // amount of data that can be uploaded by the compositor to avoid stalling
+  // the pipeline.
+  // For reference Chromebook Pixel can upload 1MB in about 0.5ms.
+  const size_t kMaxBytesUploadedPerMs = 1024 * 1024 * 2;
+  // Assuming a two frame deep pipeline between CPU and GPU and we are
+  // drawing 60 frames per second which would require us to draw one
+  // frame in 16 milliseconds.
+  const size_t kMaxTransferBufferUsageBytes = 16 * 2 * kMaxBytesUploadedPerMs;
+  return std::min(
+      context_provider->ContextCapabilities().max_transfer_buffer_usage_bytes,
+      kMaxTransferBufferUsageBytes);
+}
+
+size_t GetMaxRasterTasksUsageBytes(cc::ContextProvider* context_provider) {
+  // Transfer-buffer/raster-tasks limits are different but related. We make
+  // equal here, as this is ideal when using transfer buffers. When not using
+  // transfer buffers we should still limit raster to something similar, to
+  // preserve caching behavior (and limit memory waste when priorities change).
+  return GetMaxTransferBufferUsageBytes(context_provider);
+}
+
+GLenum GetMapImageTextureTarget(cc::ContextProvider* context_provider) {
+  if (!context_provider)
+    return GL_TEXTURE_2D;
+
+  // TODO(reveman): Determine if GL_TEXTURE_EXTERNAL_OES works well on
+  // Android before we enable this. crbug.com/322780
+#if !defined(OS_ANDROID)
+  if (context_provider->ContextCapabilities().egl_image_external)
+    return GL_TEXTURE_EXTERNAL_OES;
+  if (context_provider->ContextCapabilities().texture_rectangle)
+    return GL_TEXTURE_RECTANGLE_ARB;
+#endif
+
+  return GL_TEXTURE_2D;
 }
 
 }  // namespace
@@ -182,9 +208,10 @@ scoped_ptr<LayerTreeHostImpl> LayerTreeHostImpl::Create(
     LayerTreeHostImplClient* client,
     Proxy* proxy,
     RenderingStatsInstrumentation* rendering_stats_instrumentation,
-    SharedBitmapManager* manager) {
+    SharedBitmapManager* manager,
+    int id) {
   return make_scoped_ptr(new LayerTreeHostImpl(
-      settings, client, proxy, rendering_stats_instrumentation, manager));
+      settings, client, proxy, rendering_stats_instrumentation, manager, id));
 }
 
 LayerTreeHostImpl::LayerTreeHostImpl(
@@ -192,7 +219,8 @@ LayerTreeHostImpl::LayerTreeHostImpl(
     LayerTreeHostImplClient* client,
     Proxy* proxy,
     RenderingStatsInstrumentation* rendering_stats_instrumentation,
-    SharedBitmapManager* manager)
+    SharedBitmapManager* manager,
+    int id)
     : client_(client),
       proxy_(proxy),
       input_handler_client_(NULL),
@@ -228,8 +256,13 @@ LayerTreeHostImpl::LayerTreeHostImpl(
       external_stencil_test_enabled_(false),
       animation_registrar_(AnimationRegistrar::Create()),
       rendering_stats_instrumentation_(rendering_stats_instrumentation),
+      micro_benchmark_controller_(this),
       need_to_update_visible_tiles_before_draw_(false),
-      shared_bitmap_manager_(manager) {
+#ifndef NDEBUG
+      did_lose_called_(false),
+#endif
+      shared_bitmap_manager_(manager),
+      id_(id) {
   DCHECK(proxy_->IsImplThread());
   DidVisibilityChange(this, visible_);
 
@@ -304,6 +337,8 @@ void LayerTreeHostImpl::CommitComplete() {
   }
 
   client_->SendManagedMemoryStats();
+
+  micro_benchmark_controller_.DidCompleteCommit();
 }
 
 bool LayerTreeHostImpl::CanDraw() const {
@@ -427,13 +462,13 @@ void LayerTreeHostImpl::StartPageScaleAnimation(gfx::Vector2d target_offset,
                                   duration.InSecondsF());
   }
 
-  client_->SetNeedsRedrawOnImplThread();
+  SetNeedsRedraw();
   client_->SetNeedsCommitOnImplThread();
   client_->RenewTreePriority();
 }
 
 void LayerTreeHostImpl::ScheduleAnimation() {
-  client_->SetNeedsRedrawOnImplThread();
+  SetNeedsRedraw();
 }
 
 bool LayerTreeHostImpl::HaveTouchEventHandlersAt(gfx::Point viewport_point) {
@@ -452,9 +487,11 @@ bool LayerTreeHostImpl::HaveTouchEventHandlersAt(gfx::Point viewport_point) {
   return layer_impl != NULL;
 }
 
-void LayerTreeHostImpl::SetLatencyInfoForInputEvent(
-    const ui::LatencyInfo& latency_info) {
-  active_tree()->SetLatencyInfo(latency_info);
+scoped_ptr<SwapPromiseMonitor>
+LayerTreeHostImpl::CreateLatencyInfoSwapPromiseMonitor(
+    ui::LatencyInfo* latency) {
+  return scoped_ptr<SwapPromiseMonitor>(
+      new LatencyInfoSwapPromiseMonitor(latency, NULL, this));
 }
 
 void LayerTreeHostImpl::TrackDamageForAllSurfaces(
@@ -609,7 +646,8 @@ static void AppendQuadsToFillScreen(
                             root_target_rect,
                             root_target_rect,
                             false,
-                            opacity);
+                            opacity,
+                            SkXfermode::kSrcOver_Mode);
 
   AppendQuadsData append_quads_data;
 
@@ -760,8 +798,7 @@ bool LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
     RenderPass* target_render_pass =
         frame->render_passes_by_id[target_render_pass_id];
 
-    bool prevent_occlusion = it.target_render_surface_layer()->HasCopyRequest();
-    occlusion_tracker.EnterLayer(it, prevent_occlusion);
+    occlusion_tracker.EnterLayer(it);
 
     AppendQuadsData append_quads_data(target_render_pass_id);
 
@@ -917,6 +954,11 @@ void LayerTreeHostImpl::UpdateBackgroundAnimateTicking(
   }
 
   time_source_client_adapter_->SetActive(enabled);
+}
+
+void LayerTreeHostImpl::DidAnimateScrollOffset() {
+  client_->SetNeedsCommitOnImplThread();
+  client_->RenewTreePriority();
 }
 
 void LayerTreeHostImpl::SetViewportDamage(gfx::Rect damage_rect) {
@@ -1215,11 +1257,18 @@ void LayerTreeHostImpl::SetExternalDrawConstraints(
 }
 
 void LayerTreeHostImpl::SetNeedsRedrawRect(gfx::Rect damage_rect) {
+  if (damage_rect.IsEmpty())
+    return;
+  NotifySwapPromiseMonitorsOfSetNeedsRedraw();
   client_->SetNeedsRedrawRectOnImplThread(damage_rect);
 }
 
 void LayerTreeHostImpl::BeginImplFrame(const BeginFrameArgs& args) {
   client_->BeginImplFrame(args);
+}
+
+void LayerTreeHostImpl::DidSwapBuffers() {
+  client_->DidSwapBuffersOnImplThread();
 }
 
 void LayerTreeHostImpl::OnSwapBuffersComplete() {
@@ -1245,7 +1294,6 @@ CompositorFrameMetadata LayerTreeHostImpl::MakeCompositorFrameMetadata() const {
   metadata.root_layer_size = active_tree_->ScrollableSize();
   metadata.min_page_scale_factor = active_tree_->min_page_scale_factor();
   metadata.max_page_scale_factor = active_tree_->max_page_scale_factor();
-  metadata.latency_info = active_tree_->GetLatencyInfo();
   if (top_controls_manager_) {
     metadata.location_bar_offset =
         gfx::Vector2dF(0.f, top_controls_manager_->controls_top_offset());
@@ -1341,9 +1389,13 @@ void LayerTreeHostImpl::DrawLayers(FrameData* frame,
 
     scoped_ptr<SoftwareRenderer> temp_software_renderer =
         SoftwareRenderer::Create(this, &settings_, output_surface_.get(), NULL);
-    temp_software_renderer->DrawFrame(
-        &frame->render_passes, NULL, device_scale_factor_, allow_partial_swap,
-        disable_picture_quad_image_filtering);
+    temp_software_renderer->DrawFrame(&frame->render_passes,
+                                      NULL,
+                                      device_scale_factor_,
+                                      DeviceViewport(),
+                                      DeviceClip(),
+                                      allow_partial_swap,
+                                      disable_picture_quad_image_filtering);
   } else {
     // We don't track damage on the HUD layer (it interacts with damage tracking
     // visualizations), so disable partial swaps to make the HUD layer display
@@ -1353,6 +1405,8 @@ void LayerTreeHostImpl::DrawLayers(FrameData* frame,
     renderer_->DrawFrame(&frame->render_passes,
                          offscreen_context_provider_.get(),
                          device_scale_factor_,
+                         DeviceViewport(),
+                         DeviceClip(),
                          allow_partial_swap,
                          false);
   }
@@ -1399,10 +1453,13 @@ const RendererCapabilities& LayerTreeHostImpl::GetRendererCapabilities() const {
 }
 
 bool LayerTreeHostImpl::SwapBuffers(const LayerTreeHostImpl::FrameData& frame) {
-  if (frame.has_no_damage)
+  if (frame.has_no_damage) {
+    active_tree()->BreakSwapPromises(SwapPromise::SWAP_FAILS);
     return false;
-  renderer_->SwapBuffers();
-  active_tree_->ClearLatencyInfo();
+  }
+  CompositorFrameMetadata metadata = MakeCompositorFrameMetadata();
+  active_tree()->FinishSwapPromises(&metadata);
+  renderer_->SwapBuffers(metadata);
   return true;
 }
 
@@ -1431,11 +1488,16 @@ gfx::SizeF LayerTreeHostImpl::UnscaledScrollableViewportSize() const {
 }
 
 void LayerTreeHostImpl::DidLoseOutputSurface() {
+  if (resource_provider_)
+    resource_provider_->DidLoseOutputSurface();
   // TODO(jamesr): The renderer_ check is needed to make some of the
   // LayerTreeHostContextTest tests pass, but shouldn't be necessary (or
   // important) in production. We should adjust the test to not need this.
   if (renderer_)
     client_->DidLoseOutputSurfaceOnImplThread();
+#ifndef NDEBUG
+  did_lose_called_ = true;
+#endif
 }
 
 void LayerTreeHostImpl::Readback(void* pixels,
@@ -1534,7 +1596,7 @@ void LayerTreeHostImpl::ActivatePendingTree() {
       root_layer_scroll_offset_delegate_);
 
   client_->OnCanDrawStateChanged(CanDraw());
-  client_->SetNeedsRedrawOnImplThread();
+  SetNeedsRedraw();
   client_->RenewTreePriority();
 
   if (debug_state_.continuous_painting) {
@@ -1551,6 +1613,8 @@ void LayerTreeHostImpl::ActivatePendingTree() {
 
   if (time_source_client_adapter_ && time_source_client_adapter_->Active())
     DCHECK(active_tree_->root_layer());
+  devtools_instrumentation::didActivateLayerTree(id_,
+      active_tree_->source_frame_number());
 }
 
 void LayerTreeHostImpl::SetVisible(bool visible) {
@@ -1574,6 +1638,11 @@ void LayerTreeHostImpl::SetVisible(bool visible) {
     return;
 
   renderer_->SetVisible(visible);
+}
+
+void LayerTreeHostImpl::SetNeedsRedraw() {
+  NotifySwapPromiseMonitorsOfSetNeedsRedraw();
+  client_->SetNeedsRedrawOnImplThread();
 }
 
 ManagedMemoryPolicy LayerTreeHostImpl::ActualManagedMemoryPolicy() const {
@@ -1624,8 +1693,7 @@ void LayerTreeHostImpl::CreateAndSetRenderer(
                                    output_surface,
                                    resource_provider,
                                    texture_mailbox_deleter_.get(),
-                                   settings_.highp_threshold_min,
-                                   settings_.force_direct_layer_drawing);
+                                   settings_.highp_threshold_min);
   } else if (output_surface->software_device()) {
     renderer_ = SoftwareRenderer::Create(
         this, &settings_, output_surface, resource_provider);
@@ -1656,7 +1724,9 @@ void LayerTreeHostImpl::CreateAndSetTileManager(
                           settings_.num_raster_threads,
                           rendering_stats_instrumentation_,
                           using_map_image,
-                          GetMaxTransferBufferUsageBytes(context_provider));
+                          GetMaxTransferBufferUsageBytes(context_provider),
+                          GetMaxRasterTasksUsageBytes(context_provider),
+                          GetMapImageTextureTarget(context_provider));
 
   UpdateTileManagerMemoryPolicy(ActualManagedMemoryPolicy());
   need_to_update_visible_tiles_before_draw_ = false;
@@ -1668,12 +1738,14 @@ void LayerTreeHostImpl::EnforceZeroBudget(bool zero_budget) {
 
 bool LayerTreeHostImpl::InitializeRenderer(
     scoped_ptr<OutputSurface> output_surface) {
+#ifndef NDEBUG
+  DCHECK(!renderer_ || did_lose_called_);
+#endif
+
   // Since we will create a new resource provider, we cannot continue to use
   // the old resources (i.e. render_surfaces and texture IDs). Clear them
   // before we destroy the old resource provider.
   ReleaseTreeResources();
-  if (resource_provider_)
-    resource_provider_->DidLoseOutputSurface();
 
   // Note: order is important here.
   renderer_.reset();
@@ -1830,9 +1902,6 @@ void LayerTreeHostImpl::SetViewportSize(gfx::Size device_viewport_size) {
 
   UpdateMaxScrollOffset();
 
-  if (renderer_)
-    renderer_->ViewportChanged();
-
   client_->OnCanDrawStateChanged(CanDraw());
   SetFullRootLayerDamage();
 }
@@ -1857,9 +1926,6 @@ void LayerTreeHostImpl::SetDeviceScaleFactor(float device_scale_factor) {
   if (device_scale_factor == device_scale_factor_)
     return;
   device_scale_factor_ = device_scale_factor;
-
-  if (renderer_)
-    renderer_->ViewportChanged();
 
   UpdateMaxScrollOffset();
   SetFullRootLayerDamage();
@@ -1892,7 +1958,7 @@ void LayerTreeHostImpl::UpdateMaxScrollOffset() {
 }
 
 void LayerTreeHostImpl::DidChangeTopControlsPosition() {
-  client_->SetNeedsRedrawOnImplThread();
+  SetNeedsRedraw();
   active_tree_->set_needs_update_draw_properties();
   SetFullRootLayerDamage();
 }
@@ -2179,7 +2245,7 @@ bool LayerTreeHostImpl::ScrollBy(gfx::Point viewport_point,
   bool did_scroll = did_scroll_x || did_scroll_y;
   if (did_scroll) {
     client_->SetNeedsCommitOnImplThread();
-    client_->SetNeedsRedrawOnImplThread();
+    SetNeedsRedraw();
     client_->RenewTreePriority();
   }
 
@@ -2232,7 +2298,7 @@ bool LayerTreeHostImpl::ScrollVerticallyByPage(gfx::Point viewport_point,
 
     if (!applied_delta.IsZero()) {
       client_->SetNeedsCommitOnImplThread();
-      client_->SetNeedsRedrawOnImplThread();
+      SetNeedsRedraw();
       client_->RenewTreePriority();
       return true;
     }
@@ -2415,7 +2481,7 @@ void LayerTreeHostImpl::PinchGestureUpdate(float magnify_delta,
   RootScrollLayer()->ScrollBy(move);
 
   client_->SetNeedsCommitOnImplThread();
-  client_->SetNeedsRedrawOnImplThread();
+  SetNeedsRedraw();
   client_->RenewTreePriority();
 }
 
@@ -2481,7 +2547,7 @@ void LayerTreeHostImpl::AnimatePageScale(base::TimeTicks time) {
       page_scale_animation_->ScrollOffsetAtTime(monotonic_time);
 
   RootScrollLayer()->ScrollBy(next_scroll - scroll_total);
-  client_->SetNeedsRedrawOnImplThread();
+  SetNeedsRedraw();
 
   if (page_scale_animation_->IsAnimationCompleteAtTime(monotonic_time)) {
     page_scale_animation_.reset();
@@ -2520,7 +2586,7 @@ void LayerTreeHostImpl::AnimateLayers(base::TimeTicks monotonic_time,
        ++iter)
     (*iter).second->Animate(monotonic_seconds);
 
-  client_->SetNeedsRedrawOnImplThread();
+  SetNeedsRedraw();
 }
 
 void LayerTreeHostImpl::UpdateAnimationState(bool start_ready_animations) {
@@ -2634,7 +2700,7 @@ void LayerTreeHostImpl::AnimateScrollbarsRecursive(LayerImpl* layer,
     TRACE_EVENT_INSTANT0(
         "cc", "LayerTreeHostImpl::SetNeedsRedraw due to AnimateScrollbars",
         TRACE_EVENT_SCOPE_THREAD);
-    client_->SetNeedsRedrawOnImplThread();
+    SetNeedsRedraw();
   }
 
   for (size_t i = 0; i < layer->children().size(); ++i)
@@ -2658,7 +2724,7 @@ void LayerTreeHostImpl::StartScrollbarAnimationRecursive(LayerImpl* layer,
     if (delay > base::TimeDelta())
       client_->RequestScrollbarAnimationOnImplThread(delay);
     else if (scrollbar_controller->Animate(time))
-      client_->SetNeedsRedrawOnImplThread();
+      SetNeedsRedraw();
   }
 
   for (size_t i = 0; i < layer->children().size(); ++i)
@@ -2743,7 +2809,6 @@ void LayerTreeHostImpl::SetDebugState(
 void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
                                          const UIResourceBitmap& bitmap) {
   DCHECK_GT(uid, 0);
-  DCHECK_EQ(bitmap.GetFormat(), UIResourceBitmap::RGBA8);
 
   GLint wrap_mode = 0;
   switch (bitmap.GetWrapMode()) {
@@ -2760,11 +2825,15 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
   ResourceProvider::ResourceId id = ResourceIdForUIResource(uid);
   if (id)
     DeleteUIResource(uid);
+
+  ResourceFormat format = resource_provider_->best_texture_format();
+  if (bitmap.GetFormat() == UIResourceBitmap::ETC1)
+    format = ETC1;
   id = resource_provider_->CreateResource(
       bitmap.GetSize(),
       wrap_mode,
       ResourceProvider::TextureUsageAny,
-      resource_provider_->best_texture_format());
+      format);
 
   UIResourceData data;
   data.resource_id = id;
@@ -2834,6 +2903,25 @@ void LayerTreeHostImpl::MarkUIResourceNotEvicted(UIResourceId uid) {
   evicted_ui_resources_.erase(found_in_evicted);
   if (evicted_ui_resources_.empty())
     client_->OnCanDrawStateChanged(CanDraw());
+}
+
+void LayerTreeHostImpl::ScheduleMicroBenchmark(
+    scoped_ptr<MicroBenchmarkImpl> benchmark) {
+  micro_benchmark_controller_.ScheduleRun(benchmark.Pass());
+}
+
+void LayerTreeHostImpl::InsertSwapPromiseMonitor(SwapPromiseMonitor* monitor) {
+  swap_promise_monitor_.insert(monitor);
+}
+
+void LayerTreeHostImpl::RemoveSwapPromiseMonitor(SwapPromiseMonitor* monitor) {
+  swap_promise_monitor_.erase(monitor);
+}
+
+void LayerTreeHostImpl::NotifySwapPromiseMonitorsOfSetNeedsRedraw() {
+  std::set<SwapPromiseMonitor*>::iterator it = swap_promise_monitor_.begin();
+  for (; it != swap_promise_monitor_.end(); it++)
+    (*it)->OnSetNeedsRedrawOnImpl();
 }
 
 }  // namespace cc

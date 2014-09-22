@@ -19,13 +19,10 @@ class SlideAnimation;
 
 namespace views {
 
-class BubbleBorderDelegate;
 class BubbleFrameView;
 
 // BubbleDelegateView creates frame and client views for bubble Widgets.
 // BubbleDelegateView itself is the client's contents view.
-//
-///////////////////////////////////////////////////////////////////////////////
 class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
                                         public gfx::AnimationDelegate,
                                         public WidgetObserver {
@@ -37,12 +34,13 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
   // Create and initialize the bubble Widget(s) with proper bounds.
   static Widget* CreateBubble(BubbleDelegateView* bubble_delegate);
 
-  // WidgetDelegate overrides:
+  // WidgetDelegateView overrides:
   virtual BubbleDelegateView* AsBubbleDelegate() OVERRIDE;
   virtual bool CanActivate() const OVERRIDE;
   virtual bool ShouldShowCloseButton() const OVERRIDE;
   virtual View* GetContentsView() OVERRIDE;
   virtual NonClientFrameView* CreateNonClientFrameView(Widget* widget) OVERRIDE;
+  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
 
   // WidgetObserver overrides:
   virtual void OnWidgetDestroying(Widget* widget) OVERRIDE;
@@ -123,10 +121,10 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
   // Sets the bubble arrow paint type.
   void SetArrowPaintType(BubbleBorder::ArrowPaintType paint_type);
 
-  // Call this method when the anchor view bounds have changed to reposition
-  // the bubble. The bubble is automatically repositioned when the anchor view
+  // Call this method when the anchor bounds have changed to reposition the
+  // bubble. The bubble is automatically repositioned when the anchor view
   // bounds change as a result of the widget's bounds changing.
-  void OnAnchorViewBoundsChanged();
+  void OnAnchorBoundsChanged();
 
  protected:
   // Get bubble bounds from the anchor rect and client view's preferred size.
@@ -146,15 +144,12 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
   // Perform view initialization on the contents for bubble sizing.
   virtual void Init();
 
-  // Whether |arrow()| should automatically flip while in RTL.
-  virtual bool ShouldFlipArrowForRtl() const;
-
-  // Set the anchor view or rect; set these before CreateBubble or Show. Note
-  // that if a valid view gets passed, the anchor rect will get ignored. If the
-  // view gets deleted, but no new view gets set, the last known anchor postion
-  // will get returned.
+  // Sets the anchor view or rect and repositions the bubble. Note that if a
+  // valid view gets passed, the anchor rect will get ignored. If the view gets
+  // deleted, but no new view gets set, the last known anchor postion will get
+  // returned.
   void SetAnchorView(View* anchor_view);
-  void set_anchor_rect(const gfx::Rect& rect) { anchor_rect_ = rect; }
+  void SetAnchorRect(const gfx::Rect& rect);
 
   // Resize and potentially move the bubble to fit the content's preferred size.
   void SizeToContents();
@@ -169,11 +164,6 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
 
   // Update the bubble color from |theme|, unless it was explicitly set.
   void UpdateColorsFromTheme(const ui::NativeTheme* theme);
-
-#if defined(OS_WIN) && !defined(USE_AURA)
-  // Get bounds for the Windows-only widget that hosts the bubble's contents.
-  gfx::Rect GetBubbleClientBounds() const;
-#endif
 
   // Handles widget visibility changes.
   void HandleVisibilityChanged(Widget* widget, bool visible);

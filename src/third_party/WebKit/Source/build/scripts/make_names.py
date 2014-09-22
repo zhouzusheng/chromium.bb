@@ -38,7 +38,7 @@ def _symbol(entry):
     # FIXME: Remove this special case for the ugly x-webkit-foo attributes.
     if entry['name'].startswith('-webkit-'):
         return entry['name'].replace('-', '_')[1:]
-    return name_utilities.cpp_name(entry)
+    return name_utilities.cpp_name(entry).replace('-', '_')
 
 
 class MakeNamesWriter(in_generator.Writer):
@@ -59,8 +59,8 @@ class MakeNamesWriter(in_generator.Writer):
         'to_macro_style': name_utilities.to_macro_style,
     }
 
-    def __init__(self, in_file_path, enabled_conditions):
-        super(MakeNamesWriter, self).__init__(in_file_path, enabled_conditions)
+    def __init__(self, in_file_path):
+        super(MakeNamesWriter, self).__init__(in_file_path)
 
         namespace = self.in_file.parameters['namespace'].strip('"')
         export = self.in_file.parameters['export'].strip('"')

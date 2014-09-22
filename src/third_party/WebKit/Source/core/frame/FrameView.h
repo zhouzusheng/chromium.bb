@@ -26,24 +26,24 @@
 #define FrameView_h
 
 #include "core/frame/AdjustViewSizeOrNot.h"
-#include "core/platform/ScrollView.h"
 #include "core/rendering/Pagination.h"
 #include "core/rendering/PaintPhase.h"
 #include "core/rendering/PartialLayoutState.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/graphics/Color.h"
+#include "platform/scroll/ScrollView.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
+class AXObjectCache;
 class Element;
 class FloatSize;
 class Frame;
 class KURL;
 class Node;
-class OverflowEvent;
 class Page;
 class RenderBox;
 class RenderEmbeddedObject;
@@ -75,9 +75,6 @@ public:
     Frame& frame() const { return *m_frame; }
 
     RenderView* renderView() const;
-
-    int mapFromLayoutToCSSUnits(LayoutUnit) const;
-    LayoutUnit mapFromCSSToLayoutUnits(int) const;
 
     LayoutUnit marginWidth() const { return m_margins.width(); } // -1 means default
     LayoutUnit marginHeight() const { return m_margins.height(); } // -1 means default
@@ -206,10 +203,6 @@ public:
 
     void restoreScrollbar();
 
-    void suspendOverflowEvents();
-    void resumeOverflowEvents();
-    void scheduleOverflowEvent(PassRefPtr<OverflowEvent>);
-
     void postLayoutTimerFired(Timer<FrameView>*);
 
     bool wasScrolledByUser() const;
@@ -218,8 +211,7 @@ public:
     bool safeToPropagateScrollToParent() const { return m_safeToPropagateScrollToParent; }
     void setSafeToPropagateScrollToParent(bool isSafe) { m_safeToPropagateScrollToParent = isSafe; }
 
-    void addWidgetToUpdate(RenderObject*);
-    void removeWidgetToUpdate(RenderObject*);
+    void addWidgetToUpdate(RenderEmbeddedObject&);
 
     virtual void paintContents(GraphicsContext*, const IntRect& damageRect);
     void setPaintBehavior(PaintBehavior);
@@ -343,6 +335,10 @@ public:
 
     PartialLayoutState& partialLayout() { return m_partialLayout; }
 
+    // Override scrollbar notifications to update the AXObject cache.
+    virtual void didAddScrollbar(Scrollbar*, ScrollbarOrientation) OVERRIDE;
+    virtual void willRemoveScrollbar(Scrollbar*, ScrollbarOrientation) OVERRIDE;
+
     class DeferredRepaintScope {
     public:
         DeferredRepaintScope(FrameView&);
@@ -393,6 +389,10 @@ private:
     void scheduleOrPerformPostLayoutTasks();
     void performPostLayoutTasks();
 
+    void repaintTree(RenderObject* root);
+
+    virtual void gatherDebugLayoutRects(RenderObject* layoutRoot);
+
     virtual void repaintContentRectangle(const IntRect&);
     virtual void contentsResized() OVERRIDE;
     virtual void scrollbarExistenceDidChange();
@@ -429,12 +429,14 @@ private:
     void updateDeferredRepaintDelayAfterRepaint();
     double adjustedDeferredRepaintDelay() const;
 
+    void updateWidgetsTimerFired(Timer<FrameView>*);
     bool updateWidgets();
-    void updateWidget(RenderObject*);
+
     void scrollToAnchor();
     void scrollPositionChanged();
 
     bool hasCustomScrollbars() const;
+    bool shouldUseCustomScrollbars(Element*& customScrollbarElement, Frame*& customScrollbarFrame);
 
     virtual void updateScrollCorner();
 
@@ -453,8 +455,9 @@ private:
     LayoutSize m_size;
     LayoutSize m_margins;
 
-    typedef HashSet<RenderObject*> RenderObjectSet;
-    OwnPtr<RenderObjectSet> m_widgetUpdateSet;
+    typedef HashSet<RefPtr<RenderEmbeddedObject> > EmbeddedObjectSet;
+    EmbeddedObjectSet m_widgetUpdateSet;
+
     RefPtr<Frame> m_frame;
 
     bool m_doFullRepaint;
@@ -478,6 +481,7 @@ private:
     int m_layoutCount;
     unsigned m_nestedLayoutCount;
     Timer<FrameView> m_postLayoutTasksTimer;
+    Timer<FrameView> m_updateWidgetsTimer;
     bool m_firstLayoutCallbackPending;
 
     bool m_firstLayout;
@@ -488,9 +492,6 @@ private:
 
     AtomicString m_mediaType;
     AtomicString m_mediaTypeWhenNotPrinting;
-
-    unsigned m_overflowEventSuspendCount;
-    Vector<RefPtr<OverflowEvent> > m_overflowEventQueue;
 
     bool m_overflowStatusDirty;
     bool m_horizontalOverflow;
@@ -514,9 +515,6 @@ private:
     Vector<IntRect> m_trackedRepaintRects;
 
     bool m_shouldUpdateWhileOffscreen;
-
-    unsigned m_deferSetNeedsLayouts;
-    bool m_setNeedsLayoutWasDeferred;
 
     RefPtr<Node> m_nodeToDraw;
     PaintBehavior m_paintBehavior;
@@ -585,20 +583,7 @@ inline void FrameView::incrementVisuallyNonEmptyPixelCount(const IntSize& size)
         setIsVisuallyNonEmpty();
 }
 
-inline FrameView* toFrameView(Widget* widget)
-{
-    ASSERT(!widget || widget->isFrameView());
-    return static_cast<FrameView*>(widget);
-}
-
-inline const FrameView* toFrameView(const Widget* widget)
-{
-    ASSERT(!widget || widget->isFrameView());
-    return static_cast<const FrameView*>(widget);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toFrameView(const FrameView*);
+DEFINE_TYPE_CASTS(FrameView, Widget, widget, widget->isFrameView(), widget.isFrameView());
 
 } // namespace WebCore
 

@@ -31,22 +31,22 @@
 #ifndef WebFrameClient_h
 #define WebFrameClient_h
 
-#include "../platform/WebCommon.h"
-#include "../platform/WebFileSystem.h"
-#include "../platform/WebFileSystemType.h"
-#include "../platform/WebURLError.h"
-#include "../platform/WebURLRequest.h"
 #include "WebDOMMessageEvent.h"
 #include "WebDataSource.h"
 #include "WebIconURL.h"
 #include "WebNavigationPolicy.h"
 #include "WebNavigationType.h"
 #include "WebSecurityOrigin.h"
-#include "WebStorageQuotaType.h"
 #include "WebTextDirection.h"
+#include "public/platform/WebCommon.h"
+#include "public/platform/WebFileSystem.h"
+#include "public/platform/WebFileSystemType.h"
+#include "public/platform/WebStorageQuotaType.h"
+#include "public/platform/WebURLError.h"
+#include "public/platform/WebURLRequest.h"
 #include <v8.h>
 
-namespace WebKit {
+namespace blink {
 
 class WebApplicationCacheHost;
 class WebApplicationCacheHostClient;
@@ -240,7 +240,7 @@ public:
         WebFrame*, unsigned identifier, const WebURLResponse&) { }
 
     virtual void didChangeResourcePriority(
-        WebFrame*, unsigned identifier, const WebKit::WebURLRequest::Priority&) { }
+        WebFrame*, unsigned identifier, const blink::WebURLRequest::Priority&) { }
 
     // The resource request given by identifier succeeded.
     virtual void didFinishResourceLoad(
@@ -377,6 +377,6 @@ protected:
     ~WebFrameClient() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

@@ -99,10 +99,6 @@ void CustomElement::define(Element* element, PassRefPtr<CustomElementDefinition>
         ASSERT_NOT_REACHED();
         break;
 
-    case Element::WaitingForParser:
-        definitions().add(element, definition);
-        break;
-
     case Element::WaitingForUpgrade:
         definitions().add(element, definition);
         CustomElementCallbackScheduler::scheduleCreatedCallback(definition->callbacks(), element);
@@ -117,17 +113,6 @@ CustomElementDefinition* CustomElement::definitionFor(Element* element)
     return definition;
 }
 
-void CustomElement::didFinishParsingChildren(Element* element)
-{
-    ASSERT(element->customElementState() == Element::WaitingForParser);
-    element->setCustomElementState(Element::WaitingForUpgrade);
-
-    CustomElementObserver::notifyElementDidFinishParsingChildren(element);
-
-    if (CustomElementDefinition* definition = definitions().get(element))
-        CustomElementCallbackScheduler::scheduleCreatedCallback(definition->callbacks(), element);
-}
-
 void CustomElement::attributeDidChange(Element* element, const AtomicString& name, const AtomicString& oldValue, const AtomicString& newValue)
 {
     ASSERT(element->customElementState() == Element::Upgraded);
@@ -139,7 +124,7 @@ void CustomElement::didEnterDocument(Element* element, const Document& document)
     ASSERT(element->customElementState() == Element::Upgraded);
     if (!document.domWindow())
         return;
-    CustomElementCallbackScheduler::scheduleEnteredViewCallback(definitionFor(element)->callbacks(), element);
+    CustomElementCallbackScheduler::scheduleAttachedCallback(definitionFor(element)->callbacks(), element);
 }
 
 void CustomElement::didLeaveDocument(Element* element, const Document& document)
@@ -147,7 +132,7 @@ void CustomElement::didLeaveDocument(Element* element, const Document& document)
     ASSERT(element->customElementState() == Element::Upgraded);
     if (!document.domWindow())
         return;
-    CustomElementCallbackScheduler::scheduleLeftViewCallback(definitionFor(element)->callbacks(), element);
+    CustomElementCallbackScheduler::scheduleDetachedCallback(definitionFor(element)->callbacks(), element);
 }
 
 void CustomElement::wasDestroyed(Element* element)
@@ -157,7 +142,6 @@ void CustomElement::wasDestroyed(Element* element)
         ASSERT_NOT_REACHED();
         break;
 
-    case Element::WaitingForParser:
     case Element::WaitingForUpgrade:
     case Element::Upgraded:
         definitions().remove(element);

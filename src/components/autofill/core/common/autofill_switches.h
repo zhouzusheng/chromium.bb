@@ -13,7 +13,7 @@ namespace switches {
 extern const char kAutofillServiceUrl[];
 extern const char kDisableInteractiveAutocomplete[];
 extern const char kDisablePasswordGeneration[];
-extern const char kEnableExperimentalFormFilling[];
+extern const char kEnableIgnoreAutocompleteOff[];
 extern const char kEnableInteractiveAutocomplete[];
 extern const char kEnablePasswordGeneration[];
 extern const char kNoAutofillNecessaryForPasswordGeneration[];

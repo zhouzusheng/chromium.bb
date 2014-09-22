@@ -27,6 +27,7 @@
 #include "core/html/HTMLDialogElement.h"
 
 #include "bindings/v8/ExceptionState.h"
+#include "core/accessibility/AXObjectCache.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/html/HTMLFormControlElement.h"
@@ -38,11 +39,21 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-static void runAutofocus(HTMLDialogElement* dialog)
+// This function chooses the focused element when showModal() is invoked, as described in the spec for showModal().
+static void setFocusForModalDialog(HTMLDialogElement* dialog)
 {
+    Element* focusableDescendant = 0;
     Node* next = 0;
     for (Node* node = dialog->firstChild(); node; node = next) {
-        if (node->isElementNode() && toElement(node)->isFormControlElement()) {
+        if (node->hasTagName(dialogTag))
+            next = NodeTraversal::nextSkippingChildren(*node, dialog);
+        else
+            next = NodeTraversal::next(*node, dialog);
+
+        if (!node->isElementNode())
+            continue;
+        Element* element = toElement(node);
+        if (element->isFormControlElement()) {
             HTMLFormControlElement* control = toHTMLFormControlElement(node);
             if (control->isAutofocusable()) {
                 control->focus();
@@ -50,32 +61,53 @@ static void runAutofocus(HTMLDialogElement* dialog)
                 return;
             }
         }
-        if (node->hasTagName(dialogTag))
-            next = NodeTraversal::nextSkippingChildren(node, dialog);
-        else
-            next = NodeTraversal::next(node, dialog);
+        if (!focusableDescendant && element->isFocusable())
+            focusableDescendant = element;
     }
+
+    if (focusableDescendant) {
+        focusableDescendant->focus();
+        return;
+    }
+
+    if (dialog->isFocusable()) {
+        dialog->focus();
+        return;
+    }
+
+    dialog->document().setFocusedElement(0);
 }
 
-HTMLDialogElement::HTMLDialogElement(const QualifiedName& tagName, Document& document)
-    : HTMLElement(tagName, document)
+static void inertSubtreesChanged(Document& document)
+{
+    // When a modal dialog opens or closes, nodes all over the accessibility
+    // tree can change inertness which means they must be added or removed from
+    // the tree. The most foolproof way is to clear the entire tree and rebuild
+    // it, though a more clever way is probably possible.
+    Document* topDocument = document.topDocument();
+    topDocument->clearAXObjectCache();
+    if (AXObjectCache* cache = topDocument->axObjectCache())
+        cache->childrenChanged(cache->getOrCreate(topDocument));
+}
+
+HTMLDialogElement::HTMLDialogElement(Document& document)
+    : HTMLElement(dialogTag, document)
     , m_centeringMode(Uninitialized)
     , m_centeredPosition(0)
     , m_returnValue("")
 {
-    ASSERT(hasTagName(dialogTag));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLDialogElement> HTMLDialogElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<HTMLDialogElement> HTMLDialogElement::create(Document& document)
 {
-    return adoptRef(new HTMLDialogElement(tagName, document));
+    return adoptRef(new HTMLDialogElement(document));
 }
 
-void HTMLDialogElement::close(const String& returnValue, ExceptionState& es)
+void HTMLDialogElement::close(const String& returnValue, ExceptionState& exceptionState)
 {
     if (!fastHasAttribute(openAttr)) {
-        es.throwUninformativeAndGenericDOMException(InvalidStateError);
+        exceptionState.throwDOMException(InvalidStateError, "The element does not have an 'open' attribute, and therefore cannot be closed.");
         return;
     }
     closeDialog(returnValue);
@@ -86,7 +118,11 @@ void HTMLDialogElement::closeDialog(const String& returnValue)
     if (!fastHasAttribute(openAttr))
         return;
     setBooleanAttribute(openAttr, false);
+
+    HTMLDialogElement* activeModalDialog = document().activeModalDialog();
     document().removeFromTopLayer(this);
+    if (activeModalDialog == this)
+        inertSubtreesChanged(document());
 
     if (!returnValue.isNull())
         m_returnValue = returnValue;
@@ -110,17 +146,26 @@ void HTMLDialogElement::show()
     forceLayoutForCentering();
 }
 
-void HTMLDialogElement::showModal(ExceptionState& es)
+void HTMLDialogElement::showModal(ExceptionState& exceptionState)
 {
-    if (fastHasAttribute(openAttr) || !inDocument()) {
-        es.throwUninformativeAndGenericDOMException(InvalidStateError);
+    if (fastHasAttribute(openAttr)) {
+        exceptionState.throwDOMException(InvalidStateError, "The element already has an 'open' attribute, and therefore cannot be opened modally.");
         return;
     }
+    if (!inDocument()) {
+        exceptionState.throwDOMException(InvalidStateError, "The element is not in a Document.");
+        return;
+    }
+
     document().addToTopLayer(this);
     setBooleanAttribute(openAttr, true);
 
-    runAutofocus(this);
+    // Throw away the AX cache first, so the subsequent steps don't have a chance of queuing up
+    // AX events on objects that would be invalidated when the cache is thrown away.
+    inertSubtreesChanged(document());
+
     forceLayoutForCentering();
+    setFocusForModalDialog(this);
 }
 
 void HTMLDialogElement::setCentered(LayoutUnit centeredPosition)

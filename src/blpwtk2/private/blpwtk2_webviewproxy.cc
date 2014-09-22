@@ -131,7 +131,7 @@ WebFrame* WebViewProxy::mainFrame()
         content::RenderView* rv = content::RenderView::FromRoutingID(d_rendererRoutingId);
         DCHECK(rv);
 
-        WebKit::WebFrame* webFrame = rv->GetWebView()->mainFrame();
+        blink::WebFrame* webFrame = rv->GetWebView()->mainFrame();
         d_mainFrame.reset(new WebFrameImpl(webFrame));
     }
 
@@ -183,54 +183,54 @@ void WebViewProxy::handleInputEvents(const InputEvent *events, size_t eventsCoun
         case WM_IME_CHAR:
         case WM_SYSCHAR:
         case WM_CHAR: {
-            WebKit::WebKeyboardEvent keyboardEvent = WebKit::WebInputEventFactory::keyboardEvent(
+            blink::WebKeyboardEvent keyboardEvent = blink::WebInputEventFactory::keyboardEvent(
                 event->hwnd,
                 event->message,
                 event->wparam,
                 event->lparam);
 
             keyboardEvent.modifiers &= ~(
-                    WebKit::WebInputEvent::ShiftKey |
-                    WebKit::WebInputEvent::ControlKey |
-                    WebKit::WebInputEvent::AltKey |
-                    WebKit::WebInputEvent::MetaKey |
-                    WebKit::WebInputEvent::IsAutoRepeat |
-                    WebKit::WebInputEvent::IsKeyPad |
-                    WebKit::WebInputEvent::IsLeft |
-                    WebKit::WebInputEvent::IsRight |
-                    WebKit::WebInputEvent::NumLockOn |
-                    WebKit::WebInputEvent::CapsLockOn
+                    blink::WebInputEvent::ShiftKey |
+                    blink::WebInputEvent::ControlKey |
+                    blink::WebInputEvent::AltKey |
+                    blink::WebInputEvent::MetaKey |
+                    blink::WebInputEvent::IsAutoRepeat |
+                    blink::WebInputEvent::IsKeyPad |
+                    blink::WebInputEvent::IsLeft |
+                    blink::WebInputEvent::IsRight |
+                    blink::WebInputEvent::NumLockOn |
+                    blink::WebInputEvent::CapsLockOn
                 );
 
             if (event->shiftKey)
-                keyboardEvent.modifiers |= WebKit::WebInputEvent::ShiftKey;
+                keyboardEvent.modifiers |= blink::WebInputEvent::ShiftKey;
 
             if (event->controlKey)
-                keyboardEvent.modifiers |= WebKit::WebInputEvent::ControlKey;
+                keyboardEvent.modifiers |= blink::WebInputEvent::ControlKey;
 
             if (event->altKey)
-                keyboardEvent.modifiers |= WebKit::WebInputEvent::AltKey;
+                keyboardEvent.modifiers |= blink::WebInputEvent::AltKey;
 
             if (event->metaKey)
-                keyboardEvent.modifiers |= WebKit::WebInputEvent::MetaKey;
+                keyboardEvent.modifiers |= blink::WebInputEvent::MetaKey;
 
             if (event->isAutoRepeat)
-                keyboardEvent.modifiers |= WebKit::WebInputEvent::IsAutoRepeat;
+                keyboardEvent.modifiers |= blink::WebInputEvent::IsAutoRepeat;
 
             if (event->isKeyPad)
-                keyboardEvent.modifiers |= WebKit::WebInputEvent::IsKeyPad;
+                keyboardEvent.modifiers |= blink::WebInputEvent::IsKeyPad;
 
             if (event->isLeft)
-                keyboardEvent.modifiers |= WebKit::WebInputEvent::IsLeft;
+                keyboardEvent.modifiers |= blink::WebInputEvent::IsLeft;
 
             if (event->isRight)
-                keyboardEvent.modifiers |= WebKit::WebInputEvent::IsRight;
+                keyboardEvent.modifiers |= blink::WebInputEvent::IsRight;
 
             if (event->numLockOn)
-                keyboardEvent.modifiers |= WebKit::WebInputEvent::NumLockOn;
+                keyboardEvent.modifiers |= blink::WebInputEvent::NumLockOn;
 
             if (event->capsLockOn)
-                keyboardEvent.modifiers |= WebKit::WebInputEvent::CapsLockOn;
+                keyboardEvent.modifiers |= blink::WebInputEvent::CapsLockOn;
 
             rv->GetWebView()->handleInputEvent(keyboardEvent);
         } break;
@@ -246,7 +246,7 @@ void WebViewProxy::handleInputEvents(const InputEvent *events, size_t eventsCoun
         case WM_LBUTTONUP:
         case WM_MBUTTONUP:
         case WM_RBUTTONUP:
-            rv->GetWebView()->handleInputEvent(WebKit::WebInputEventFactory::mouseEvent(
+            rv->GetWebView()->handleInputEvent(blink::WebInputEventFactory::mouseEvent(
                     event->hwnd,
                     event->message,
                     event->wparam,
@@ -340,8 +340,14 @@ void WebViewProxy::hide()
 void WebViewProxy::setParent(NativeView parent)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    Send(new BlpWebViewHostMsg_SetParent(d_routingId,
-                                         (NativeViewForTransit)parent));
+
+    if (d_nativeWebView) {
+        ::SetParent(d_nativeWebView, parent ? parent : d_nativeHiddenView);
+    }
+    else {
+        Send(new BlpWebViewHostMsg_SetParent(d_routingId,
+                                             (NativeViewForTransit)parent));
+    }
 }
 
 void WebViewProxy::move(int left, int top, int width, int height)

@@ -151,6 +151,7 @@ bool AsyncResourceHandler::OnRequestRedirected(int request_id,
     return false;
 
   *defer = did_defer_ = true;
+  OnDefer();
 
   if (rdh_->delegate()) {
     rdh_->delegate()->OnRequestRedirected(
@@ -287,6 +288,7 @@ bool AsyncResourceHandler::OnReadCompleted(int request_id, int bytes_read,
         "Net.AsyncResourceHandler_PendingDataCount_WhenFull",
         pending_data_count_, 0, 100, 100);
     *defer = did_defer_ = true;
+    OnDefer();
   }
 
   return true;
@@ -304,13 +306,14 @@ void AsyncResourceHandler::OnDataDownloaded(
   }
 }
 
-bool AsyncResourceHandler::OnResponseCompleted(
+void AsyncResourceHandler::OnResponseCompleted(
     int request_id,
     const net::URLRequestStatus& status,
-    const std::string& security_info) {
+    const std::string& security_info,
+    bool* defer) {
   const ResourceRequestInfoImpl* info = GetRequestInfo();
   if (!info->filter())
-    return false;
+    return;
 
   // If we crash here, figure out what URL the renderer was requesting.
   // http://crbug.com/107692
@@ -353,7 +356,6 @@ bool AsyncResourceHandler::OnResponseCompleted(
                                       was_ignored_by_handler,
                                       security_info,
                                       completion_time));
-  return true;
 }
 
 bool AsyncResourceHandler::EnsureResourceBufferIsInitialized() {
@@ -377,8 +379,13 @@ bool AsyncResourceHandler::EnsureResourceBufferIsInitialized() {
 void AsyncResourceHandler::ResumeIfDeferred() {
   if (did_defer_) {
     did_defer_ = false;
+    request()->LogUnblocked();
     controller()->Resume();
   }
+}
+
+void AsyncResourceHandler::OnDefer() {
+  request()->LogBlockedBy("AsyncResourceHandler");
 }
 
 }  // namespace content

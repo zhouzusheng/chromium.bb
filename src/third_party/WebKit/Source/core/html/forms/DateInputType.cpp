@@ -32,16 +32,16 @@
 #include "core/html/forms/DateInputType.h"
 
 #include "HTMLNames.h"
+#include "InputTypeNames.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/DateTimeFieldsState.h"
-#include "core/html/forms/InputTypeNames.h"
 #include "platform/DateComponents.h"
 #include "platform/text/PlatformLocale.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
-using WebKit::WebLocalizedString;
+using blink::WebLocalizedString;
 using namespace HTMLNames;
 
 static const int dateDefaultStep = 1;
@@ -65,23 +65,14 @@ void DateInputType::countUsage()
 
 const AtomicString& DateInputType::formControlType() const
 {
-    return InputTypeNames::date();
-}
-
-DateComponents::Type DateInputType::dateType() const
-{
-    return DateComponents::Date;
+    return InputTypeNames::date;
 }
 
 StepRange DateInputType::createStepRange(AnyStepHandling anyStepHandling) const
 {
     DEFINE_STATIC_LOCAL(const StepRange::StepDescription, stepDescription, (dateDefaultStep, dateDefaultStepBase, dateStepScaleFactor, StepRange::ParsedStepValueShouldBeInteger));
 
-    const Decimal stepBase = parseToNumber(element().fastGetAttribute(minAttr), 0);
-    const Decimal minimum = parseToNumber(element().fastGetAttribute(minAttr), Decimal::fromDouble(DateComponents::minimumDate()));
-    const Decimal maximum = parseToNumber(element().fastGetAttribute(maxAttr), Decimal::fromDouble(DateComponents::maximumDate()));
-    const Decimal step = StepRange::parseStep(anyStepHandling, stepDescription, element().fastGetAttribute(stepAttr));
-    return StepRange(stepBase, minimum, maximum, step, stepDescription);
+    return InputType::createStepRange(anyStepHandling, 0, Decimal::fromDouble(DateComponents::minimumDate()), Decimal::fromDouble(DateComponents::maximumDate()), stepDescription);
 }
 
 bool DateInputType::parseToDateComponentsInternal(const String& string, DateComponents* out) const

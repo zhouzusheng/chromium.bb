@@ -32,13 +32,9 @@
 #include "core/html/HTMLDocument.h"
 #include "core/html/parser/AtomicHTMLToken.h"
 #include "core/html/parser/BackgroundHTMLParser.h"
-#include "core/html/parser/CompactHTMLToken.h"
-#include "core/html/parser/HTMLIdentifier.h"
 #include "core/html/parser/HTMLParserScheduler.h"
 #include "core/html/parser/HTMLParserThread.h"
-#include "core/html/parser/HTMLPreloadScanner.h"
 #include "core/html/parser/HTMLScriptRunner.h"
-#include "core/html/parser/HTMLTokenizer.h"
 #include "core/html/parser/HTMLTreeBuilder.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/frame/Frame.h"
@@ -557,6 +553,12 @@ void HTMLDocumentParser::pumpTokenizer(SynchronousMode mode)
     if (isStopped())
         return;
 
+    // There should only be PendingText left since the tree-builder always flushes
+    // the task queue before returning. In case that ever changes, crash.
+    if (mode == ForceSynchronous)
+        m_treeBuilder->flush();
+    RELEASE_ASSERT(!isStopped());
+
     if (session.needsYield)
         m_parserScheduler->scheduleForResume();
 
@@ -654,8 +656,6 @@ void HTMLDocumentParser::startBackgroundParser()
     ASSERT(shouldUseThreading());
     ASSERT(!m_haveBackgroundParser);
     m_haveBackgroundParser = true;
-
-    HTMLIdentifier::init();
 
     RefPtr<WeakReference<BackgroundHTMLParser> > reference = WeakReference<BackgroundHTMLParser>::createUnbound();
     m_backgroundParser = WeakPtr<BackgroundHTMLParser>(reference);

@@ -35,7 +35,7 @@
 #include "platform/PlatformExport.h"
 #include "platform/network/HTTPHeaderMap.h"
 #include "platform/network/HTTPParsers.h"
-#include "weborigin/KURL.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
@@ -58,8 +58,8 @@ public:
     const Vector<unsigned char>& body() const { return m_body; }
 
     const HTTPHeaderMap& headerFields() const { return m_headerFields; }
-    void addHeaderField(const AtomicString& name, const String& value) { m_headerFields.add(name, value); }
-    void addHeaderField(const char* name, const String& value) { m_headerFields.add(name, value); }
+    void addHeaderField(const AtomicString& name, const AtomicString& value) { m_headerFields.add(name, value); }
+    void addHeaderField(const char* name, const AtomicString& value) { m_headerFields.add(name, value); }
 
 protected:
     HTTPRequest();

@@ -81,11 +81,6 @@ void PrefStore::RemoveValue(const std::string& key)
         ReportValueChanged(key);
 }
 
-void PrefStore::MarkNeedsEmptyValue(const std::string& key)
-{
-    // Do nothing
-}
-
 bool PrefStore::ReadOnly() const
 {
     return false;

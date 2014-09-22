@@ -22,6 +22,8 @@
 #include "cc/output/output_surface_client.h"
 #include "cc/scheduler/delay_based_time_source.h"
 #include "gpu/GLES2/gl2extchromium.h"
+#include "gpu/command_buffer/client/context_support.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
@@ -44,8 +46,6 @@ namespace cc {
 
 OutputSurface::OutputSurface(scoped_refptr<ContextProvider> context_provider)
     : context_provider_(context_provider),
-      has_gl_discard_backbuffer_(false),
-      has_swap_buffers_complete_callback_(false),
       device_scale_factor_(-1),
       max_frames_pending_(0),
       pending_swap_buffers_(0),
@@ -57,11 +57,8 @@ OutputSurface::OutputSurface(scoped_refptr<ContextProvider> context_provider)
       weak_ptr_factory_(this),
       gpu_latency_history_(kGpuLatencyHistorySize) {}
 
-OutputSurface::OutputSurface(
-    scoped_ptr<cc::SoftwareOutputDevice> software_device)
+OutputSurface::OutputSurface(scoped_ptr<SoftwareOutputDevice> software_device)
     : software_device_(software_device.Pass()),
-      has_gl_discard_backbuffer_(false),
-      has_swap_buffers_complete_callback_(false),
       device_scale_factor_(-1),
       max_frames_pending_(0),
       pending_swap_buffers_(0),
@@ -73,13 +70,10 @@ OutputSurface::OutputSurface(
       weak_ptr_factory_(this),
       gpu_latency_history_(kGpuLatencyHistorySize) {}
 
-OutputSurface::OutputSurface(
-    scoped_refptr<ContextProvider> context_provider,
-    scoped_ptr<cc::SoftwareOutputDevice> software_device)
+OutputSurface::OutputSurface(scoped_refptr<ContextProvider> context_provider,
+                             scoped_ptr<SoftwareOutputDevice> software_device)
     : context_provider_(context_provider),
       software_device_(software_device.Pass()),
-      has_gl_discard_backbuffer_(false),
-      has_swap_buffers_complete_callback_(false),
       device_scale_factor_(-1),
       max_frames_pending_(0),
       pending_swap_buffers_(0),
@@ -212,6 +206,7 @@ void OutputSurface::DidSwapBuffers() {
   pending_swap_buffers_++;
   TRACE_EVENT1("cc", "OutputSurface::DidSwapBuffers",
                "pending_swap_buffers_", pending_swap_buffers_);
+  client_->DidSwapBuffers();
   if (frame_rate_controller_)
     frame_rate_controller_->DidSwapBuffers();
   PostCheckForRetroactiveBeginImplFrame();
@@ -267,7 +262,7 @@ bool OutputSurface::HasExternalStencilTest() const {
 
 bool OutputSurface::ForcedDrawToSoftwareDevice() const { return false; }
 
-bool OutputSurface::BindToClient(cc::OutputSurfaceClient* client) {
+bool OutputSurface::BindToClient(OutputSurfaceClient* client) {
   DCHECK(client);
   client_ = client;
   bool success = true;
@@ -316,17 +311,12 @@ void OutputSurface::SetUpContext3d() {
   DCHECK(context_provider_);
   DCHECK(client_);
 
-  const ContextProvider::Capabilities& caps =
-      context_provider_->ContextCapabilities();
-
-  has_gl_discard_backbuffer_ = caps.discard_backbuffer;
-  has_swap_buffers_complete_callback_ = caps.swapbuffers_complete_callback;
-
   context_provider_->SetLostContextCallback(
       base::Bind(&OutputSurface::DidLoseOutputSurface,
                  base::Unretained(this)));
-  context_provider_->SetSwapBuffersCompleteCallback(base::Bind(
-      &OutputSurface::OnSwapBuffersComplete, base::Unretained(this)));
+  context_provider_->ContextSupport()->SetSwapBuffersCompleteCallback(
+      base::Bind(&OutputSurface::OnSwapBuffersComplete,
+                 base::Unretained(this)));
   context_provider_->SetMemoryPolicyChangedCallback(
       base::Bind(&OutputSurface::SetMemoryPolicy,
                  base::Unretained(this)));
@@ -334,26 +324,34 @@ void OutputSurface::SetUpContext3d() {
 
 void OutputSurface::ResetContext3d() {
   if (context_provider_.get()) {
+    while (!pending_gpu_latency_query_ids_.empty()) {
+      unsigned query_id = pending_gpu_latency_query_ids_.front();
+      pending_gpu_latency_query_ids_.pop_front();
+      context_provider_->Context3d()->deleteQueryEXT(query_id);
+    }
+    while (!available_gpu_latency_query_ids_.empty()) {
+      unsigned query_id = available_gpu_latency_query_ids_.front();
+      available_gpu_latency_query_ids_.pop_front();
+      context_provider_->Context3d()->deleteQueryEXT(query_id);
+    }
     context_provider_->SetLostContextCallback(
         ContextProvider::LostContextCallback());
-    context_provider_->SetSwapBuffersCompleteCallback(
-        ContextProvider::SwapBuffersCompleteCallback());
     context_provider_->SetMemoryPolicyChangedCallback(
         ContextProvider::MemoryPolicyChangedCallback());
+    if (gpu::ContextSupport* support = context_provider_->ContextSupport())
+      support->SetSwapBuffersCompleteCallback(base::Closure());
   }
   context_provider_ = NULL;
 }
 
 void OutputSurface::EnsureBackbuffer() {
-  if (context_provider_ && has_gl_discard_backbuffer_)
-    context_provider_->Context3d()->ensureBackbufferCHROMIUM();
   if (software_device_)
     software_device_->EnsureBackbuffer();
 }
 
 void OutputSurface::DiscardBackbuffer() {
-  if (context_provider_ && has_gl_discard_backbuffer_)
-    context_provider_->Context3d()->discardBackbufferCHROMIUM();
+  if (context_provider_)
+    context_provider_->ContextGL()->DiscardBackbufferCHROMIUM();
   if (software_device_)
     software_device_->DiscardBackbuffer();
 }
@@ -381,7 +379,7 @@ void OutputSurface::BindFramebuffer() {
   context_provider_->Context3d()->bindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void OutputSurface::SwapBuffers(cc::CompositorFrame* frame) {
+void OutputSurface::SwapBuffers(CompositorFrame* frame) {
   if (frame->software_frame_data) {
     PostSwapBuffersComplete();
     DidSwapBuffers();
@@ -394,20 +392,11 @@ void OutputSurface::SwapBuffers(cc::CompositorFrame* frame) {
   UpdateAndMeasureGpuLatency();
   if (frame->gl_frame_data->sub_buffer_rect ==
       gfx::Rect(frame->gl_frame_data->size)) {
-    // Note that currently this has the same effect as SwapBuffers; we should
-    // consider exposing a different entry point on WebGraphicsContext3D.
-    context_provider_->Context3d()->prepareTexture();
+    context_provider_->ContextSupport()->Swap();
   } else {
-    gfx::Rect sub_buffer_rect = frame->gl_frame_data->sub_buffer_rect;
-    context_provider_->Context3d()->postSubBufferCHROMIUM(
-        sub_buffer_rect.x(),
-        sub_buffer_rect.y(),
-        sub_buffer_rect.width(),
-        sub_buffer_rect.height());
+    context_provider_->ContextSupport()->PartialSwapBuffers(
+        frame->gl_frame_data->sub_buffer_rect);
   }
-
-  if (!has_swap_buffers_complete_callback_)
-    PostSwapBuffersComplete();
 
   DidSwapBuffers();
 }

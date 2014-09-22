@@ -23,8 +23,8 @@
 #include "platform/network/FormData.h"
 
 #include "platform/FileMetadata.h"
-#include "platform/blob/BlobData.h"
 #include "platform/network/FormDataBuilder.h"
+#include "wtf/text/CString.h"
 #include "wtf/text/TextEncoding.h"
 
 namespace WebCore {

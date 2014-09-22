@@ -36,16 +36,16 @@
 #include "core/history/HistoryItem.h"
 #include "core/html/forms/FormController.h"
 #include "platform/network/FormData.h"
+#include "platform/weborigin/KURL.h"
 #include "public/platform/WebHTTPBody.h"
 #include "public/platform/WebPoint.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebVector.h"
-#include "weborigin/KURL.h"
 #include "wtf/text/StringHash.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 namespace {
 
 void addReferencedFilePaths(HistoryItem* item, HashSet<String>& results)
@@ -237,6 +237,14 @@ WebVector<WebHistoryItem> WebHistoryItem::children() const
     return m_private->children();
 }
 
+void WebHistoryItem::setChildren(const WebVector<WebHistoryItem>& items)
+{
+    ensureMutable();
+    m_private->clearChildren();
+    for (size_t i = 0; i < items.size(); ++i)
+        m_private->addChildItem(items[i]);
+}
+
 void WebHistoryItem::appendToChildren(const WebHistoryItem& item)
 {
     ensureMutable();
@@ -275,4 +283,4 @@ void WebHistoryItem::ensureMutable()
         m_private = m_private->copy();
 }
 
-} // namespace WebKit
+} // namespace blink

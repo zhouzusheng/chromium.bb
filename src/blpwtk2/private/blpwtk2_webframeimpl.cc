@@ -22,21 +22,13 @@
 
 #include <blpwtk2_webframeimpl.h>
 
-#include <blpwtk2_webdocument.h>
-
-#include <third_party/WebKit/public/web/WebDocument.h>
 #include <third_party/WebKit/public/web/WebFrame.h>
 
 namespace blpwtk2 {
 
-WebFrameImpl::WebFrameImpl(WebKit::WebFrame* impl)
+WebFrameImpl::WebFrameImpl(blink::WebFrame* impl)
 : d_impl(impl)
 {
-}
-
-WebDocument WebFrameImpl::document() const
-{
-    return d_impl->document();
 }
 
 v8::Local<v8::Context> WebFrameImpl::mainWorldScriptContext() const

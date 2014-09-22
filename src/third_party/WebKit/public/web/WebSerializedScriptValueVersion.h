@@ -31,15 +31,15 @@
 #ifndef WebSerializedScriptValueVersion_h
 #define WebSerializedScriptValueVersion_h
 
-namespace WebKit {
+namespace blink {
 
 // SerializedScriptValue wire format version. Versions higher than
 // this value will not be deserializable by WebSerializedScriptValue.
 // Embedders may serialize this as out-of-band metadata along with
 // collections of serialized data so that version skew can be detected
 // before deserializing individual values.
-const unsigned kSerializedScriptValueVersion = 3;
+const unsigned kSerializedScriptValueVersion = 4;
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebSerializedScriptValueVersion_h

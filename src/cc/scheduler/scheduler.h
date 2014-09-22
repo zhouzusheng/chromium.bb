@@ -11,7 +11,6 @@
 #include "base/cancelable_callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
-#include "base/timer/timer.h"
 #include "cc/base/cc_export.h"
 #include "cc/output/begin_frame_args.h"
 #include "cc/scheduler/scheduler_settings.h"
@@ -61,8 +60,10 @@ class CC_EXPORT Scheduler {
  public:
   static scoped_ptr<Scheduler> Create(
       SchedulerClient* client,
-      const SchedulerSettings& scheduler_settings) {
-    return make_scoped_ptr(new Scheduler(client,  scheduler_settings));
+      const SchedulerSettings& scheduler_settings,
+      int layer_tree_host_id) {
+    return make_scoped_ptr(
+        new Scheduler(client, scheduler_settings, layer_tree_host_id));
   }
 
   virtual ~Scheduler();
@@ -92,6 +93,7 @@ class CC_EXPORT Scheduler {
   void FinishCommit();
   void BeginMainFrameAborted(bool did_handle);
 
+  void DidManageTiles();
   void DidLoseOutputSurface();
   void DidCreateAndInitializeOutputSurface();
   bool HasInitializedOutputSurface() const {
@@ -102,6 +104,9 @@ class CC_EXPORT Scheduler {
   bool RedrawPending() const { return state_machine_.RedrawPending(); }
   bool ManageTilesPending() const {
     return state_machine_.ManageTilesPending();
+  }
+  bool MainThreadIsInHighLatencyMode() const {
+    return state_machine_.MainThreadIsInHighLatencyMode();
   }
 
   bool WillDrawIfNeeded() const;
@@ -124,7 +129,8 @@ class CC_EXPORT Scheduler {
 
  private:
   Scheduler(SchedulerClient* client,
-            const SchedulerSettings& scheduler_settings);
+            const SchedulerSettings& scheduler_settings,
+            int layer_tree_host_id);
 
   void PostBeginImplFrameDeadline(base::TimeTicks deadline);
   void SetupNextBeginImplFrameIfNeeded();
@@ -134,10 +140,12 @@ class CC_EXPORT Scheduler {
   void DrawAndReadback();
   void ProcessScheduledActions();
 
+  bool CanCommitAndActivateBeforeDeadline() const;
   void AdvanceCommitStateIfPossible();
 
   const SchedulerSettings settings_;
   SchedulerClient* client_;
+  int layer_tree_host_id_;
 
   bool last_set_needs_begin_impl_frame_;
   BeginFrameArgs last_begin_impl_frame_args_;

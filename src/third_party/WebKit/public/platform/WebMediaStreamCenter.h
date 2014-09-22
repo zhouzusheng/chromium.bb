@@ -33,7 +33,7 @@
 
 #include "WebVector.h"
 
-namespace WebKit {
+namespace blink {
 class WebMediaStream;
 class WebMediaStreamTrack;
 class WebMediaStreamTrackSourcesRequest;
@@ -45,16 +45,25 @@ public:
     virtual ~WebMediaStreamCenter() { }
 
     virtual bool getMediaStreamTrackSources(const WebMediaStreamTrackSourcesRequest&)= 0;
-    virtual void didEnableMediaStreamTrack(const WebMediaStream&, const WebMediaStreamTrack&) = 0;
-    virtual void didDisableMediaStreamTrack(const WebMediaStream&, const WebMediaStreamTrack&) = 0;
+
+    // Stream functionality.
+    virtual void didCreateMediaStream(WebMediaStream&) = 0;
     virtual bool didAddMediaStreamTrack(const WebMediaStream&, const WebMediaStreamTrack&) = 0;
     virtual bool didRemoveMediaStreamTrack(const WebMediaStream&, const WebMediaStreamTrack&) = 0;
     virtual void didStopLocalMediaStream(const WebMediaStream&) = 0;
+
+    // Track functionality.
+    virtual void didCreateMediaStreamTrack(const WebMediaStreamTrack&) { }
+    virtual void didEnableMediaStreamTrack(const WebMediaStreamTrack&) { }
+    virtual void didDisableMediaStreamTrack(const WebMediaStreamTrack&) { }
     virtual bool didStopMediaStreamTrack(const WebMediaStreamTrack&) { return false; }
-    virtual void didCreateMediaStream(WebMediaStream&) = 0;
+
+    // DEPRECATED track functionality.
+    virtual void didEnableMediaStreamTrack(const WebMediaStream&, const WebMediaStreamTrack&) { }
+    virtual void didDisableMediaStreamTrack(const WebMediaStream&, const WebMediaStreamTrack&) { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebMediaStreamCenter_h
 

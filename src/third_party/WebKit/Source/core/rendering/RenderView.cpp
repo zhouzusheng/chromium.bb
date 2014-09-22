@@ -28,15 +28,13 @@
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/HTMLIFrameElement.h"
 #include "core/frame/Frame.h"
-#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/platform/graphics/filters/custom/CustomFilterGlobalContext.h"
-#include "core/platform/graphics/GraphicsContext.h"
 #include "core/rendering/ColumnInfo.h"
 #include "core/rendering/CompositedLayerMapping.h"
 #include "core/rendering/FlowThreadController.h"
 #include "core/rendering/GraphicsContextAnnotator.h"
 #include "core/rendering/HitTestResult.h"
+#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderFlowThread.h"
 #include "core/rendering/RenderGeometryMap.h"
 #include "core/rendering/RenderLayer.h"
@@ -46,6 +44,8 @@
 #include "core/svg/SVGDocumentExtensions.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/TransformState.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/filters/custom/CustomFilterGlobalContext.h"
 
 namespace WebCore {
 
@@ -164,9 +164,9 @@ void RenderView::positionDialogs()
 
 void RenderView::layoutContent(const LayoutState& state)
 {
-    UNUSED_PARAM(state);
     ASSERT(needsLayout());
 
+    LayoutRectRecorder recorder(*this);
     RenderBlock::layout();
 
     if (RuntimeEnabledFeatures::dialogElementEnabled())
@@ -301,7 +301,7 @@ void RenderView::layoutContentInAutoLogicalHeightRegions(const LayoutState& stat
 
 void RenderView::layout()
 {
-    if (!configuration().paginated())
+    if (!document().paginated())
         setPageLogicalHeight(0);
 
     if (shouldUsePrintingLayout())
@@ -363,7 +363,7 @@ void RenderView::layout()
 
 void RenderView::mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState& transformState, MapCoordinatesFlags mode, bool* wasFixed) const
 {
-    ASSERT_UNUSED(wasFixed, !wasFixed || *wasFixed == (mode & IsFixed));
+    ASSERT_UNUSED(wasFixed, !wasFixed || *wasFixed == static_cast<bool>(mode & IsFixed));
 
     if (!repaintContainer && mode & UseTransforms && shouldUseTransformFromContainer(0)) {
         TransformationMatrix t;
@@ -767,6 +767,11 @@ static inline RenderObject* getNextOrPrevRenderObjectBasedOnDirection(const Rend
 
 void RenderView::setSelection(RenderObject* start, int startPos, RenderObject* end, int endPos, SelectionRepaintMode blockRepaintMode)
 {
+    // This code makes no assumptions as to if the rendering tree is up to date or not
+    // and will not try to update it. Currently clearSelection calls this
+    // (intentionally) without updating the rendering tree as it doesn't care.
+    // Other callers may want to force recalc style before calling this.
+
     // Make sure both our start and end objects are defined.
     // Check www.msnbc.com and try clicking around to find the case where this happened.
     if ((start && !end) || (end && !start))
@@ -936,11 +941,6 @@ void RenderView::selectionStartEnd(int& startPos, int& endPos) const
 {
     startPos = m_selectionStartPos;
     endPos = m_selectionEndPos;
-}
-
-void RenderView::updateConfiguration()
-{
-    m_configuration.update(document());
 }
 
 bool RenderView::shouldUsePrintingLayout() const
@@ -1207,9 +1207,7 @@ IntervalArena* RenderView::intervalArena()
 bool RenderView::backgroundIsKnownToBeOpaqueInRect(const LayoutRect&) const
 {
     // FIXME: Remove this main frame check. Same concept applies to subframes too.
-    Page* page = document().page();
-    Frame* mainFrame = page ? page->mainFrame() : 0;
-    if (!m_frameView || &m_frameView->frame() != mainFrame)
+    if (!m_frameView || !m_frameView->isMainFrame())
         return false;
 
     return m_frameView->hasOpaqueBackground();

@@ -47,13 +47,22 @@ const char StatsReport::kStatsValueNameAvailableReceiveBandwidth[] =
     "googAvailableReceiveBandwidth";
 const char StatsReport::kStatsValueNameAvailableSendBandwidth[] =
     "googAvailableSendBandwidth";
+const char StatsReport::kStatsValueNameAvgEncodeMs[] = "googAvgEncodeMs";
 const char StatsReport::kStatsValueNameBucketDelay[] = "googBucketDelay";
 const char StatsReport::kStatsValueNameBytesReceived[] = "bytesReceived";
 const char StatsReport::kStatsValueNameBytesSent[] = "bytesSent";
+const char StatsReport::kStatsValueNameBandwidthLimitedResolution[] =
+    "googBandwidthLimitedResolution";
+const char StatsReport::kStatsValueNameCaptureJitterMs[] =
+    "googCaptureJitterMs";
+const char StatsReport::kStatsValueNameCaptureQueueDelayMsPerS[] =
+    "googCaptureQueueDelayMsPerS";
 const char StatsReport::kStatsValueNameChannelId[] = "googChannelId";
 const char StatsReport::kStatsValueNameCodecName[] = "googCodecName";
 const char StatsReport::kStatsValueNameComponent[] = "googComponent";
 const char StatsReport::kStatsValueNameContentName[] = "googContentName";
+const char StatsReport::kStatsValueNameCpuLimitedResolution[] =
+    "googCpuLimitedResolution";
 const char StatsReport::kStatsValueNameDer[] = "googDerBase64";
 // Echo metrics from the audio processing module.
 const char StatsReport::kStatsValueNameEchoCancellationQualityMin[] =
@@ -67,6 +76,8 @@ const char StatsReport::kStatsValueNameEchoReturnLoss[] =
 const char StatsReport::kStatsValueNameEchoReturnLossEnhancement[] =
     "googEchoCancellationReturnLossEnhancement";
 
+const char StatsReport::kStatsValueNameEncodeUsagePercent[] =
+    "googEncodeUsagePercent";
 const char StatsReport::kStatsValueNameFingerprint[] = "googFingerprint";
 const char StatsReport::kStatsValueNameFingerprintAlgorithm[] =
     "googFingerprintAlgorithm";
@@ -100,6 +111,8 @@ const char StatsReport::kStatsValueNameInitiator[] = "googInitiator";
 const char StatsReport::kStatsValueNameIssuerId[] = "googIssuerId";
 const char StatsReport::kStatsValueNameJitterReceived[] = "googJitterReceived";
 const char StatsReport::kStatsValueNameLocalAddress[] = "googLocalAddress";
+const char StatsReport::kStatsValueNameLocalCandidateType[] =
+    "googLocalCandidateType";
 const char StatsReport::kStatsValueNameLocalCertificateId[] =
     "googLocalCertificateId";
 const char StatsReport::kStatsValueNameNacksReceived[] = "googNacksReceived";
@@ -109,6 +122,8 @@ const char StatsReport::kStatsValueNamePacketsSent[] = "packetsSent";
 const char StatsReport::kStatsValueNamePacketsLost[] = "packetsLost";
 const char StatsReport::kStatsValueNameReadable[] = "googReadable";
 const char StatsReport::kStatsValueNameRemoteAddress[] = "googRemoteAddress";
+const char StatsReport::kStatsValueNameRemoteCandidateType[] =
+    "googRemoteCandidateType";
 const char StatsReport::kStatsValueNameRemoteCertificateId[] =
     "googRemoteCertificateId";
 const char StatsReport::kStatsValueNameRetransmitBitrate[] =
@@ -124,6 +139,8 @@ const char StatsReport::kStatsValueNameTransportType[] = "googTransportType";
 const char StatsReport::kStatsValueNameTrackId[] = "googTrackId";
 const char StatsReport::kStatsValueNameTypingNoiseState[] =
     "googTypingNoiseState";
+const char StatsReport::kStatsValueNameViewLimitedResolution[] =
+    "googViewLimitedResolution";
 const char StatsReport::kStatsValueNameWritable[] = "googWritable";
 
 const char StatsReport::kStatsReportTypeSession[] = "googLibjingleSession";
@@ -288,6 +305,19 @@ void ExtractStats(const cricket::VideoSenderInfo& info, StatsReport* report) {
                    info.framerate_sent);
   report->AddValue(StatsReport::kStatsValueNameRtt, info.rtt_ms);
   report->AddValue(StatsReport::kStatsValueNameCodecName, info.codec_name);
+  report->AddBoolean(StatsReport::kStatsValueNameCpuLimitedResolution,
+                     (info.adapt_reason & 0x1) > 0);
+  report->AddBoolean(StatsReport::kStatsValueNameBandwidthLimitedResolution,
+                     (info.adapt_reason & 0x2) > 0);
+  report->AddBoolean(StatsReport::kStatsValueNameViewLimitedResolution,
+                     (info.adapt_reason & 0x4) > 0);
+  report->AddValue(StatsReport::kStatsValueNameAvgEncodeMs, info.avg_encode_ms);
+  report->AddValue(StatsReport::kStatsValueNameCaptureJitterMs,
+                   info.capture_jitter_ms);
+  report->AddValue(StatsReport::kStatsValueNameCaptureQueueDelayMsPerS,
+                   info.capture_queue_delay_ms_per_s);
+  report->AddValue(StatsReport::kStatsValueNameEncodeUsagePercent,
+                   info.encode_usage_percent);
 }
 
 void ExtractStats(const cricket::BandwidthEstimationInfo& info,
@@ -330,24 +360,10 @@ void ExtractRemoteStats(const cricket::MediaReceiverInfo& info,
   // TODO(hta): Extract some stats here.
 }
 
-uint32 ExtractSsrc(const cricket::VoiceReceiverInfo& info) {
-  return info.ssrc;
-}
-
-uint32 ExtractSsrc(const cricket::VoiceSenderInfo& info) {
-  return info.ssrc;
-}
-
-uint32 ExtractSsrc(const cricket::VideoReceiverInfo& info) {
-  return info.ssrcs[0];
-}
-
-uint32 ExtractSsrc(const cricket::VideoSenderInfo& info) {
-  return info.ssrcs[0];
-}
-
 // Template to extract stats from a data vector.
-// ExtractSsrc and ExtractStats must be defined and overloaded for each type.
+// In order to use the template, the functions that are called from it,
+// ExtractStats and ExtractRemoteStats, must be defined and overloaded
+// for each type.
 template<typename T>
 void ExtractStatsFromList(const std::vector<T>& data,
                           const std::string& transport_id,
@@ -355,7 +371,7 @@ void ExtractStatsFromList(const std::vector<T>& data,
   typename std::vector<T>::const_iterator it = data.begin();
   for (; it != data.end(); ++it) {
     std::string id;
-    uint32 ssrc = ExtractSsrc(*it);
+    uint32 ssrc = it->ssrc();
     // Each object can result in 2 objects, a local and a remote object.
     // TODO(hta): Handle the case of multiple SSRCs per object.
     StatsReport* report = collector->PrepareLocalReport(ssrc, transport_id);
@@ -678,6 +694,10 @@ void StatsCollector::ExtractSessionInfo() {
           report.AddValue(StatsReport::kStatsValueNameRtt, info.rtt);
           report.AddValue(StatsReport::kStatsValueNameTransportType,
                           info.local_candidate.protocol());
+          report.AddValue(StatsReport::kStatsValueNameLocalCandidateType,
+                          info.local_candidate.type());
+          report.AddValue(StatsReport::kStatsValueNameRemoteCandidateType,
+                          info.remote_candidate.type());
           reports_[report.id] = report;
         }
       }
@@ -764,7 +784,7 @@ StatsReport* StatsCollector::GetOrCreateReport(const std::string& type,
     report->id = statsid;
     report->type = type;
   } else {
-    report = &reports_[statsid];
+    report = &(it->second);
   }
   return report;
 }

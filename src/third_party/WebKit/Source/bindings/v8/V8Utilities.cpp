@@ -56,7 +56,7 @@ void createHiddenDependency(v8::Handle<v8::Object> object, v8::Local<v8::Value> 
 {
     v8::Local<v8::Value> cache = object->GetInternalField(cacheIndex);
     if (cache->IsNull() || cache->IsUndefined()) {
-        cache = v8::Array::New();
+        cache = v8::Array::New(isolate);
         object->SetInternalField(cacheIndex, cache);
     }
 
@@ -76,9 +76,9 @@ bool extractTransferables(v8::Local<v8::Value> value, MessagePortArray& ports, A
     if (value->IsArray()) {
         v8::Local<v8::Array> array = v8::Local<v8::Array>::Cast(value);
         length = array->Length();
-    } else {
-        if (toV8Sequence(value, length, notASequence, isolate).IsEmpty())
-            return false;
+    } else if (toV8Sequence(value, length, isolate).IsEmpty()) {
+        notASequence = true;
+        return false;
     }
 
     v8::Local<v8::Object> transferrables = v8::Local<v8::Object>::Cast(value);
@@ -92,7 +92,7 @@ bool extractTransferables(v8::Local<v8::Value> value, MessagePortArray& ports, A
             return false;
         }
         // Validation of Objects implementing an interface, per WebIDL spec 4.1.15.
-        if (V8MessagePort::HasInstance(transferrable, isolate, worldType(isolate))) {
+        if (V8MessagePort::hasInstance(transferrable, isolate, worldType(isolate))) {
             RefPtr<MessagePort> port = V8MessagePort::toNative(v8::Handle<v8::Object>::Cast(transferrable));
             // Check for duplicate MessagePorts.
             if (ports.contains(port)) {
@@ -100,7 +100,7 @@ bool extractTransferables(v8::Local<v8::Value> value, MessagePortArray& ports, A
                 return false;
             }
             ports.append(port.release());
-        } else if (V8ArrayBuffer::HasInstance(transferrable, isolate, worldType(isolate)))
+        } else if (V8ArrayBuffer::hasInstance(transferrable, isolate, worldType(isolate)))
             arrayBuffers.append(V8ArrayBuffer::toNative(v8::Handle<v8::Object>::Cast(transferrable)));
         else {
             setDOMException(DataCloneError, isolate);

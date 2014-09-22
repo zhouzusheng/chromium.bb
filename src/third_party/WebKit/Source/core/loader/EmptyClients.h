@@ -29,6 +29,7 @@
 #ifndef EmptyClients_h
 #define EmptyClients_h
 
+#include "core/editing/UndoStep.h"
 #include "core/inspector/InspectorClient.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/page/BackForwardClient.h"
@@ -38,6 +39,7 @@
 #include "core/page/EditorClient.h"
 #include "core/page/FocusDirection.h"
 #include "core/page/Page.h"
+#include "core/page/SpellCheckerClient.h"
 #include "core/platform/DragImage.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/network/ResourceError.h"
@@ -83,7 +85,7 @@ public:
     virtual void takeFocus(FocusDirection) OVERRIDE { }
 
     virtual void focusedNodeChanged(Node*) OVERRIDE { }
-    virtual Page* createWindow(Frame*, const FrameLoadRequest&, const WindowFeatures&, NavigationPolicy) OVERRIDE { return 0; }
+    virtual Page* createWindow(Frame*, const FrameLoadRequest&, const WindowFeatures&, NavigationPolicy, ShouldSendReferrer) OVERRIDE { return 0; }
     virtual void show(NavigationPolicy) OVERRIDE { }
 
     virtual bool canRunModal() OVERRIDE { return false; }
@@ -133,9 +135,11 @@ public:
     virtual void scroll(const IntSize&, const IntRect&, const IntRect&) OVERRIDE { }
     virtual void scheduleAnimation() OVERRIDE { }
 
+    virtual bool isCompositorFramePending() const OVERRIDE { return false; }
+
     virtual IntPoint screenToRootView(const IntPoint& p) const OVERRIDE { return p; }
     virtual IntRect rootViewToScreen(const IntRect& r) const OVERRIDE { return r; }
-    virtual WebKit::WebScreenInfo screenInfo() const OVERRIDE { return WebKit::WebScreenInfo(); }
+    virtual blink::WebScreenInfo screenInfo() const OVERRIDE { return blink::WebScreenInfo(); }
     virtual void contentsSizeChanged(Frame*, const IntSize&) const OVERRIDE { }
 
     virtual void mouseDidMoveOverElement(const HitTestResult&, unsigned) OVERRIDE { }
@@ -147,8 +151,8 @@ public:
     virtual void enumerateChosenDirectory(FileChooser*) OVERRIDE { }
 
     virtual PassOwnPtr<ColorChooser> createColorChooser(ColorChooserClient*, const Color&) OVERRIDE;
-
     virtual PassRefPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) OVERRIDE;
+    virtual void openTextDataListChooser(HTMLInputElement&) OVERRIDE;
 
     virtual void runOpenPanel(Frame*, PassRefPtr<FileChooser>) OVERRIDE;
 
@@ -160,6 +164,7 @@ public:
     virtual void scheduleCompositingLayerFlush() OVERRIDE { }
 
     virtual void needTouchEvents(bool) OVERRIDE { }
+    virtual void setTouchAction(TouchAction touchAction) OVERRIDE { };
 
     virtual void numWheelEventHandlersChanged(unsigned) OVERRIDE { }
 
@@ -200,7 +205,7 @@ public:
     virtual void dispatchDidStartProvisionalLoad() OVERRIDE { }
     virtual void dispatchDidReceiveTitle(const String&) OVERRIDE { }
     virtual void dispatchDidChangeIcons(IconType) OVERRIDE { }
-    virtual void dispatchDidCommitLoad(NavigationHistoryPolicy) OVERRIDE { }
+    virtual void dispatchDidCommitLoad(Frame*, HistoryItem*, NavigationHistoryPolicy) OVERRIDE { }
     virtual void dispatchDidFailProvisionalLoad(const ResourceError&) OVERRIDE { }
     virtual void dispatchDidFailLoad(const ResourceError&) OVERRIDE { }
     virtual void dispatchDidFinishDocumentLoad() OVERRIDE { }
@@ -245,10 +250,10 @@ public:
     virtual void willReleaseScriptContext(v8::Handle<v8::Context>, int worldId) OVERRIDE { }
     virtual bool allowScriptExtension(const String& extensionName, int extensionGroup, int worldId) OVERRIDE { return false; }
 
-    virtual WebKit::WebCookieJar* cookieJar() const { return 0; }
+    virtual blink::WebCookieJar* cookieJar() const { return 0; }
 
     virtual void didRequestAutocomplete(PassRefPtr<FormState>) OVERRIDE;
-    virtual PassOwnPtr<WebKit::WebServiceWorkerProvider> createServiceWorkerProvider(PassOwnPtr<WebKit::WebServiceWorkerProviderClient>) OVERRIDE;
+    virtual PassOwnPtr<blink::WebServiceWorkerProvider> createServiceWorkerProvider(PassOwnPtr<blink::WebServiceWorkerProviderClient>) OVERRIDE;
 };
 
 class EmptyTextCheckerClient : public TextCheckerClient {
@@ -260,39 +265,15 @@ public:
     virtual void requestCheckingOfString(PassRefPtr<TextCheckingRequest>) OVERRIDE;
 };
 
-class EmptyEditorClient : public EditorClient {
-    WTF_MAKE_NONCOPYABLE(EmptyEditorClient); WTF_MAKE_FAST_ALLOCATED;
+class EmptySpellCheckerClient : public SpellCheckerClient {
+    WTF_MAKE_NONCOPYABLE(EmptySpellCheckerClient); WTF_MAKE_FAST_ALLOCATED;
 public:
-    EmptyEditorClient() { }
-    virtual ~EmptyEditorClient() { }
+    EmptySpellCheckerClient() { }
+    virtual ~EmptySpellCheckerClient() { }
 
-    virtual bool smartInsertDeleteEnabled() OVERRIDE { return false; }
-    virtual bool isSelectTrailingWhitespaceEnabled() OVERRIDE { return false; }
     virtual bool isContinuousSpellCheckingEnabled() OVERRIDE { return false; }
     virtual void toggleContinuousSpellChecking() OVERRIDE { }
     virtual bool isGrammarCheckingEnabled() OVERRIDE { return false; }
-
-    virtual void respondToChangedContents() OVERRIDE { }
-    virtual void respondToChangedSelection(Frame*) OVERRIDE { }
-    virtual void didCancelCompositionOnSelectionChange() OVERRIDE { }
-
-    virtual void registerUndoStep(PassRefPtr<UndoStep>) OVERRIDE;
-    virtual void registerRedoStep(PassRefPtr<UndoStep>) OVERRIDE;
-    virtual void clearUndoRedoOperations() OVERRIDE { }
-
-    virtual bool canCopyCut(Frame*, bool defaultValue) const OVERRIDE { return defaultValue; }
-    virtual bool canPaste(Frame*, bool defaultValue) const OVERRIDE { return defaultValue; }
-    virtual bool canUndo() const OVERRIDE { return false; }
-    virtual bool canRedo() const OVERRIDE { return false; }
-
-    virtual void undo() OVERRIDE { }
-    virtual void redo() OVERRIDE { }
-
-    virtual void handleKeyboardEvent(KeyboardEvent*) OVERRIDE { }
-
-    virtual void textFieldDidEndEditing(Element*) OVERRIDE { }
-    virtual void textDidChangeInTextField(Element*) OVERRIDE { }
-    virtual bool doTextFieldCommandFromEvent(Element*, KeyboardEvent*) OVERRIDE { return false; }
 
     TextCheckerClient& textChecker() { return m_textCheckerClient; }
 
@@ -300,10 +281,24 @@ public:
     virtual void showSpellingUI(bool) OVERRIDE { }
     virtual bool spellingUIIsShowing() OVERRIDE { return false; }
 
-    virtual void willSetInputMethodState() OVERRIDE { }
-
 private:
     EmptyTextCheckerClient m_textCheckerClient;
+};
+
+class EmptyEditorClient : public EditorClient {
+    WTF_MAKE_NONCOPYABLE(EmptyEditorClient); WTF_MAKE_FAST_ALLOCATED;
+public:
+    EmptyEditorClient() { }
+    virtual ~EmptyEditorClient() { }
+
+    virtual void respondToChangedContents() OVERRIDE { }
+    virtual void respondToChangedSelection(SelectionType) OVERRIDE { }
+
+    virtual bool canCopyCut(Frame*, bool defaultValue) const OVERRIDE { return defaultValue; }
+    virtual bool canPaste(Frame*, bool defaultValue) const OVERRIDE { return defaultValue; }
+
+    virtual void didExecuteCommand(String) OVERRIDE { }
+    virtual bool handleKeyboardEvent() OVERRIDE { return false; }
 };
 
 class EmptyContextMenuClient : public ContextMenuClient {

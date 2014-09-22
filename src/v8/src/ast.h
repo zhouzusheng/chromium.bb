@@ -279,9 +279,8 @@ class SmallMapList V8_FINAL {
   int length() const { return list_.length(); }
 
   void AddMapIfMissing(Handle<Map> map, Zone* zone) {
-    Map* updated = map->CurrentMapForDeprecated();
-    if (updated == NULL) return;
-    map = Handle<Map>(updated);
+    map = Map::CurrentMapForDeprecated(map);
+    if (map.is_null()) return;
     for (int i = 0; i < length(); ++i) {
       if (at(i).is_identical_to(map)) return;
     }
@@ -924,9 +923,9 @@ class ForInStatement V8_FINAL : public ForEachStatement {
   }
 
   TypeFeedbackId ForInFeedbackId() const { return reuse(PrepareId()); }
-  void RecordTypeFeedback(TypeFeedbackOracle* oracle);
   enum ForInType { FAST_FOR_IN, SLOW_FOR_IN };
   ForInType for_in_type() const { return for_in_type_; }
+  void set_for_in_type(ForInType type) { for_in_type_ = type; }
 
   BailoutId BodyId() const { return body_id_; }
   BailoutId PrepareId() const { return prepare_id_; }
@@ -1122,8 +1121,8 @@ class CaseClause V8_FINAL : public AstNode {
 
   // Type feedback information.
   TypeFeedbackId CompareId() { return compare_id_; }
-  void RecordTypeFeedback(TypeFeedbackOracle* oracle);
   Handle<Type> compare_type() { return compare_type_; }
+  void set_compare_type(Handle<Type> type) { compare_type_ = type; }
 
  private:
   CaseClause(Isolate* isolate,
@@ -1409,22 +1408,43 @@ class MaterializedLiteral : public Expression {
 
   int literal_index() { return literal_index_; }
 
-  // A materialized literal is simple if the values consist of only
-  // constants and simple object and array literals.
-  bool is_simple() const { return is_simple_; }
-
-  int depth() const { return depth_; }
+  int depth() const {
+    // only callable after initialization.
+    ASSERT(depth_ >= 1);
+    return depth_;
+  }
 
  protected:
   MaterializedLiteral(Isolate* isolate,
                       int literal_index,
-                      bool is_simple,
-                      int depth,
                       int pos)
       : Expression(isolate, pos),
         literal_index_(literal_index),
-        is_simple_(is_simple),
-        depth_(depth) {}
+        is_simple_(false),
+        depth_(0) {}
+
+  // A materialized literal is simple if the values consist of only
+  // constants and simple object and array literals.
+  bool is_simple() const { return is_simple_; }
+  void set_is_simple(bool is_simple) { is_simple_ = is_simple; }
+  friend class CompileTimeValue;
+
+  void set_depth(int depth) {
+    ASSERT(depth >= 1);
+    depth_ = depth;
+  }
+
+  // Populate the constant properties/elements fixed array.
+  void BuildConstants(Isolate* isolate);
+  friend class ArrayLiteral;
+  friend class ObjectLiteral;
+
+  // If the expression is a literal, return the literal value;
+  // if the expression is a materialized literal and is simple return a
+  // compile time value as encoded by CompileTimeValue::GetValue().
+  // Otherwise, return undefined literal as the placeholder
+  // in the object literal boilerplate.
+  Handle<Object> GetBoilerplateValue(Expression* expression, Isolate* isolate);
 
  private:
   int literal_index_;
@@ -1493,6 +1513,12 @@ class ObjectLiteral V8_FINAL : public MaterializedLiteral {
   bool may_store_doubles() const { return may_store_doubles_; }
   bool has_function() const { return has_function_; }
 
+  // Decide if a property should be in the object boilerplate.
+  static bool IsBoilerplateProperty(Property* property);
+
+  // Populate the constant properties fixed array.
+  void BuildConstantProperties(Isolate* isolate);
+
   // Mark all computed expressions that are bound to a key that
   // is shadowed by a later occurrence of the same key. For the
   // marked expressions, no store code is emitted.
@@ -1512,25 +1538,22 @@ class ObjectLiteral V8_FINAL : public MaterializedLiteral {
 
  protected:
   ObjectLiteral(Isolate* isolate,
-                Handle<FixedArray> constant_properties,
                 ZoneList<Property*>* properties,
                 int literal_index,
-                bool is_simple,
-                bool fast_elements,
-                int depth,
-                bool may_store_doubles,
+                int boilerplate_properties,
                 bool has_function,
                 int pos)
-      : MaterializedLiteral(isolate, literal_index, is_simple, depth, pos),
-        constant_properties_(constant_properties),
+      : MaterializedLiteral(isolate, literal_index, pos),
         properties_(properties),
-        fast_elements_(fast_elements),
-        may_store_doubles_(may_store_doubles),
+        boilerplate_properties_(boilerplate_properties),
+        fast_elements_(false),
+        may_store_doubles_(false),
         has_function_(has_function) {}
 
  private:
   Handle<FixedArray> constant_properties_;
   ZoneList<Property*>* properties_;
+  int boilerplate_properties_;
   bool fast_elements_;
   bool may_store_doubles_;
   bool has_function_;
@@ -1551,9 +1574,11 @@ class RegExpLiteral V8_FINAL : public MaterializedLiteral {
                 Handle<String> flags,
                 int literal_index,
                 int pos)
-      : MaterializedLiteral(isolate, literal_index, false, 1, pos),
+      : MaterializedLiteral(isolate, literal_index, pos),
         pattern_(pattern),
-        flags_(flags) {}
+        flags_(flags) {
+    set_depth(1);
+  }
 
  private:
   Handle<String> pattern_;
@@ -1575,16 +1600,21 @@ class ArrayLiteral V8_FINAL : public MaterializedLiteral {
     return BailoutId(first_element_id_.ToInt() + i);
   }
 
+  // Populate the constant elements fixed array.
+  void BuildConstantElements(Isolate* isolate);
+
+  enum Flags {
+    kNoFlags = 0,
+    kShallowElements = 1,
+    kDisableMementos = 1 << 1
+  };
+
  protected:
   ArrayLiteral(Isolate* isolate,
-               Handle<FixedArray> constant_elements,
                ZoneList<Expression*>* values,
                int literal_index,
-               bool is_simple,
-               int depth,
                int pos)
-      : MaterializedLiteral(isolate, literal_index, is_simple, depth, pos),
-        constant_elements_(constant_elements),
+      : MaterializedLiteral(isolate, literal_index, pos),
         values_(values),
         first_element_id_(ReserveIdRange(isolate, values->length())) {}
 
@@ -1660,8 +1690,9 @@ class Property V8_FINAL : public Expression {
   bool IsFunctionPrototype() const { return is_function_prototype_; }
 
   // Type feedback information.
-  void RecordTypeFeedback(TypeFeedbackOracle* oracle, Zone* zone);
-  virtual bool IsMonomorphic() V8_OVERRIDE { return is_monomorphic_; }
+  virtual bool IsMonomorphic() V8_OVERRIDE {
+    return receiver_types_.length() == 1;
+  }
   virtual SmallMapList* GetReceiverTypes() V8_OVERRIDE {
     return &receiver_types_;
   }
@@ -1673,6 +1704,11 @@ class Property V8_FINAL : public Expression {
   bool HasNoTypeInformation() {
     return is_uninitialized_ || is_pre_monomorphic_;
   }
+  void set_is_uninitialized(bool b) { is_uninitialized_ = b; }
+  void set_is_pre_monomorphic(bool b) { is_pre_monomorphic_ = b; }
+  void set_is_string_access(bool b) { is_string_access_ = b; }
+  void set_is_function_prototype(bool b) { is_function_prototype_ = b; }
+
   TypeFeedbackId PropertyFeedbackId() { return reuse(id()); }
 
  protected:
@@ -1684,7 +1720,6 @@ class Property V8_FINAL : public Expression {
         obj_(obj),
         key_(key),
         load_id_(GetNextId(isolate)),
-        is_monomorphic_(false),
         is_pre_monomorphic_(false),
         is_uninitialized_(false),
         is_string_access_(false),
@@ -1696,7 +1731,6 @@ class Property V8_FINAL : public Expression {
   const BailoutId load_id_;
 
   SmallMapList receiver_types_;
-  bool is_monomorphic_ : 1;
   bool is_pre_monomorphic_ : 1;
   bool is_uninitialized_ : 1;
   bool is_string_access_ : 1;
@@ -1718,6 +1752,7 @@ class Call V8_FINAL : public Expression {
     return &receiver_types_;
   }
   virtual bool IsMonomorphic() V8_OVERRIDE { return is_monomorphic_; }
+  bool KeyedArrayCallIsHoley() { return keyed_array_call_is_holey_; }
   CheckType check_type() const { return check_type_; }
 
   void set_string_check(Handle<JSObject> holder) {
@@ -1768,6 +1803,7 @@ class Call V8_FINAL : public Expression {
         expression_(expression),
         arguments_(arguments),
         is_monomorphic_(false),
+        keyed_array_call_is_holey_(true),
         check_type_(RECEIVER_MAP_CHECK),
         return_id_(GetNextId(isolate)) { }
 
@@ -1776,6 +1812,7 @@ class Call V8_FINAL : public Expression {
   ZoneList<Expression*>* arguments_;
 
   bool is_monomorphic_;
+  bool keyed_array_call_is_holey_;
   CheckType check_type_;
   SmallMapList receiver_types_;
   Handle<JSFunction> target_;
@@ -1962,8 +1999,9 @@ class CountOperation V8_FINAL : public Expression {
 
   Expression* expression() const { return expression_; }
 
-  void RecordTypeFeedback(TypeFeedbackOracle* oracle, Zone* zone);
-  virtual bool IsMonomorphic() V8_OVERRIDE { return is_monomorphic_; }
+  virtual bool IsMonomorphic() V8_OVERRIDE {
+    return receiver_types_.length() == 1;
+  }
   virtual SmallMapList* GetReceiverTypes() V8_OVERRIDE {
     return &receiver_types_;
   }
@@ -1971,6 +2009,8 @@ class CountOperation V8_FINAL : public Expression {
     return store_mode_;
   }
   Handle<Type> type() const { return type_; }
+  void set_store_mode(KeyedAccessStoreMode mode) { store_mode_ = mode; }
+  void set_type(Handle<Type> type) { type_ = type; }
 
   BailoutId AssignmentId() const { return assignment_id_; }
 
@@ -1986,7 +2026,6 @@ class CountOperation V8_FINAL : public Expression {
       : Expression(isolate, pos),
         op_(op),
         is_prefix_(is_prefix),
-        is_monomorphic_(false),
         store_mode_(STANDARD_STORE),
         expression_(expr),
         assignment_id_(GetNextId(isolate)),
@@ -1995,7 +2034,6 @@ class CountOperation V8_FINAL : public Expression {
  private:
   Token::Value op_;
   bool is_prefix_ : 1;
-  bool is_monomorphic_ : 1;
   KeyedAccessStoreMode store_mode_ : 5;  // Windows treats as signed,
                                          // must have extra bit.
   Handle<Type> type_;
@@ -2101,8 +2139,9 @@ class Assignment V8_FINAL : public Expression {
 
   // Type feedback information.
   TypeFeedbackId AssignmentFeedbackId() { return reuse(id()); }
-  void RecordTypeFeedback(TypeFeedbackOracle* oracle, Zone* zone);
-  virtual bool IsMonomorphic() V8_OVERRIDE { return is_monomorphic_; }
+  virtual bool IsMonomorphic() V8_OVERRIDE {
+    return receiver_types_.length() == 1;
+  }
   bool IsUninitialized() { return is_uninitialized_; }
   bool IsPreMonomorphic() { return is_pre_monomorphic_; }
   bool HasNoTypeInformation() {
@@ -2114,6 +2153,9 @@ class Assignment V8_FINAL : public Expression {
   virtual KeyedAccessStoreMode GetStoreMode() V8_OVERRIDE {
     return store_mode_;
   }
+  void set_is_uninitialized(bool b) { is_uninitialized_ = b; }
+  void set_is_pre_monomorphic(bool b) { is_pre_monomorphic_ = b; }
+  void set_store_mode(KeyedAccessStoreMode mode) { store_mode_ = mode; }
 
  protected:
   Assignment(Isolate* isolate,
@@ -2138,7 +2180,6 @@ class Assignment V8_FINAL : public Expression {
   BinaryOperation* binary_operation_;
   const BailoutId assignment_id_;
 
-  bool is_monomorphic_ : 1;
   bool is_uninitialized_ : 1;
   bool is_pre_monomorphic_ : 1;
   KeyedAccessStoreMode store_mode_ : 5;  // Windows treats as signed,
@@ -3066,18 +3107,14 @@ class AstNodeFactory V8_FINAL BASE_EMBEDDED {
   }
 
   ObjectLiteral* NewObjectLiteral(
-      Handle<FixedArray> constant_properties,
       ZoneList<ObjectLiteral::Property*>* properties,
       int literal_index,
-      bool is_simple,
-      bool fast_elements,
-      int depth,
-      bool may_store_doubles,
+      int boilerplate_properties,
       bool has_function,
       int pos) {
     ObjectLiteral* lit = new(zone_) ObjectLiteral(
-        isolate_, constant_properties, properties, literal_index,
-        is_simple, fast_elements, depth, may_store_doubles, has_function, pos);
+        isolate_, properties, literal_index, boilerplate_properties,
+        has_function, pos);
     VISIT_AND_RETURN(ObjectLiteral, lit)
   }
 
@@ -3099,15 +3136,11 @@ class AstNodeFactory V8_FINAL BASE_EMBEDDED {
     VISIT_AND_RETURN(RegExpLiteral, lit);
   }
 
-  ArrayLiteral* NewArrayLiteral(Handle<FixedArray> constant_elements,
-                                ZoneList<Expression*>* values,
+  ArrayLiteral* NewArrayLiteral(ZoneList<Expression*>* values,
                                 int literal_index,
-                                bool is_simple,
-                                int depth,
                                 int pos) {
     ArrayLiteral* lit = new(zone_) ArrayLiteral(
-        isolate_, constant_elements, values, literal_index, is_simple,
-        depth, pos);
+        isolate_, values, literal_index, pos);
     VISIT_AND_RETURN(ArrayLiteral, lit)
   }
 

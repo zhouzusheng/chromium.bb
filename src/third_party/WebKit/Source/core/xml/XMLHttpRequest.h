@@ -33,7 +33,7 @@
 #include "platform/AsyncMethodRunner.h"
 #include "platform/network/FormData.h"
 #include "platform/network/ResourceResponse.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/text/AtomicStringHash.h"
 #include "wtf/text/StringBuilder.h"
@@ -93,15 +93,15 @@ public:
     virtual ExecutionContext* executionContext() const OVERRIDE;
 
     const KURL& url() const { return m_url; }
-    String statusText(ExceptionState&) const;
-    int status(ExceptionState&) const;
+    String statusText() const;
+    int status() const;
     State readyState() const;
     bool withCredentials() const { return m_includeCredentials; }
     void setWithCredentials(bool, ExceptionState&);
-    void open(const String& method, const KURL&, ExceptionState&);
-    void open(const String& method, const KURL&, bool async, ExceptionState&);
-    void open(const String& method, const KURL&, bool async, const String& user, ExceptionState&);
-    void open(const String& method, const KURL&, bool async, const String& user, const String& password, ExceptionState&);
+    void open(const AtomicString& method, const KURL&, ExceptionState&);
+    void open(const AtomicString& method, const KURL&, bool async, ExceptionState&);
+    void open(const AtomicString& method, const KURL&, bool async, const String& user, ExceptionState&);
+    void open(const AtomicString& method, const KURL&, bool async, const String& user, const String& password, ExceptionState&);
     void send(ExceptionState&);
     void send(Document*, ExceptionState&);
     void send(const String&, ExceptionState&);
@@ -110,10 +110,10 @@ public:
     void send(ArrayBuffer*, ExceptionState&);
     void send(ArrayBufferView*, ExceptionState&);
     void abort();
-    void setRequestHeader(const AtomicString& name, const String& value, ExceptionState&);
-    void overrideMimeType(const String& override);
-    String getAllResponseHeaders(ExceptionState&) const;
-    String getResponseHeader(const AtomicString& name, ExceptionState&) const;
+    void setRequestHeader(const AtomicString& name, const AtomicString& value, ExceptionState&);
+    void overrideMimeType(const AtomicString& override);
+    String getAllResponseHeaders() const;
+    const AtomicString& getResponseHeader(const AtomicString&) const;
     ScriptString responseText(ExceptionState&);
     ScriptString responseJSONSource();
     Document* responseXML(ExceptionState&);
@@ -126,7 +126,7 @@ public:
 
     // Expose HTTP validation methods for other untrusted requests.
     static bool isAllowedHTTPMethod(const String&);
-    static String uppercaseKnownHTTPMethod(const String&);
+    static AtomicString uppercaseKnownHTTPMethod(const AtomicString&);
     static bool isAllowedHTTPHeader(const String&);
 
     void setResponseType(const String&, ExceptionState&);
@@ -152,11 +152,14 @@ private:
     virtual void didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent);
     virtual void didReceiveResponse(unsigned long identifier, const ResourceResponse&);
     virtual void didReceiveData(const char* data, int dataLength);
+    // When "blob" is specified as the responseType attribute, didDownloadData
+    // is called instead of didReceiveData.
+    virtual void didDownloadData(int dataLength);
     virtual void didFinishLoading(unsigned long identifier, double finishTime);
     virtual void didFail(const ResourceError&);
     virtual void didFailRedirectCheck();
 
-    String responseMIMEType() const;
+    AtomicString responseMIMEType() const;
     bool responseIsXML() const;
 
     bool areMethodAndURLValidForSend();
@@ -164,9 +167,10 @@ private:
     bool initSend(ExceptionState&);
     void sendBytesData(const void*, size_t, ExceptionState&);
 
-    String getRequestHeader(const AtomicString& name) const;
-    void setRequestHeaderInternal(const AtomicString& name, const String& value);
+    const AtomicString& getRequestHeader(const AtomicString& name) const;
+    void setRequestHeaderInternal(const AtomicString& name, const AtomicString& value);
 
+    void trackProgress(int dataLength);
     // Changes m_state and dispatches a readyStateChange event if new m_state
     // value is different from last one.
     void changeState(State newState);
@@ -184,9 +188,16 @@ private:
 
     void createRequest(ExceptionState&);
 
-    // Dispatches an event of the specified type to m_upload and
-    // m_progressEventThrottle.
-    void dispatchEventAndLoadEnd(const AtomicString&);
+    // Dispatches an event of the specified type to m_progressEventThrottle.
+    void dispatchEventAndLoadEnd(const AtomicString&, long long, long long);
+
+    // Dispatches a response progress event to m_progressEventThrottle.
+    void dispatchThrottledProgressEvent(const AtomicString&, long long, long long);
+
+    // Dispatches a response progress event using values sampled from
+    // m_receivedLength and m_response.
+    void dispatchThrottledProgressEventSnapshot(const AtomicString&);
+
     // Does clean up common for all kind of didFail() call.
     void handleDidFailGeneric();
     // Handles didFail() call not caused by cancellation or timeout.
@@ -196,13 +207,15 @@ private:
     // Handles didFail() call for timeout.
     void handleDidTimeout();
 
+    void handleRequestError(ExceptionCode, const AtomicString&, long long, long long);
+
     OwnPtr<XMLHttpRequestUpload> m_upload;
 
     KURL m_url;
-    String m_method;
+    AtomicString m_method;
     HTTPHeaderMap m_requestHeaders;
     RefPtr<FormData> m_requestEntityBody;
-    String m_mimeTypeOverride;
+    AtomicString m_mimeTypeOverride;
     bool m_async;
     bool m_includeCredentials;
     unsigned long m_timeoutMilliseconds;
@@ -215,7 +228,7 @@ private:
     ResourceResponse m_response;
     String m_responseEncoding;
 
-    RefPtr<TextResourceDecoder> m_decoder;
+    OwnPtr<TextResourceDecoder> m_decoder;
 
     ScriptString m_responseText;
     // Used to skip m_responseDocument creation if it's done previously. We need
@@ -224,6 +237,7 @@ private:
     RefPtr<Document> m_responseDocument;
 
     RefPtr<SharedBuffer> m_binaryResponseBuilder;
+    long long m_downloadedBlobLength;
     RefPtr<ArrayBuffer> m_responseArrayBuffer;
 
     bool m_error;

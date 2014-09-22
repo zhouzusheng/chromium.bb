@@ -44,16 +44,17 @@ class SegmentedFontData;
 
 class CSSSegmentedFontFace : public RefCounted<CSSSegmentedFontFace> {
 public:
-    static PassRefPtr<CSSSegmentedFontFace> create(CSSFontSelector* selector, FontTraitsMask traitsMask, bool isLocalFallback) { return adoptRef(new CSSSegmentedFontFace(selector, traitsMask, isLocalFallback)); }
+    static PassRefPtr<CSSSegmentedFontFace> create(CSSFontSelector* selector, FontTraitsMask traitsMask) { return adoptRef(new CSSSegmentedFontFace(selector, traitsMask)); }
     ~CSSSegmentedFontFace();
 
     CSSFontSelector* fontSelector() const { return m_fontSelector; }
     FontTraitsMask traitsMask() const { return m_traitsMask; }
-    bool isLocalFallback() const { return m_isLocalFallback; }
 
     void fontLoaded(CSSFontFace*);
 
     void appendFontFace(PassRefPtr<CSSFontFace>);
+    void removeFontFace(PassRefPtr<CSSFontFace>);
+    bool isEmpty() const { return m_fontFaces.isEmpty(); }
 
     PassRefPtr<FontData> getFontData(const FontDescription&);
 
@@ -70,7 +71,7 @@ public:
     void willUseFontData(const FontDescription&);
 
 private:
-    CSSSegmentedFontFace(CSSFontSelector*, FontTraitsMask, bool isLocalFallback);
+    CSSSegmentedFontFace(CSSFontSelector*, FontTraitsMask);
 
     void pruneTable();
     bool isValid() const;
@@ -79,7 +80,6 @@ private:
 
     CSSFontSelector* m_fontSelector;
     FontTraitsMask m_traitsMask;
-    bool m_isLocalFallback;
     HashMap<unsigned, RefPtr<SegmentedFontData> > m_fontDataTable;
     Vector<RefPtr<CSSFontFace>, 1> m_fontFaces;
     Vector<RefPtr<LoadFontCallback> > m_callbacks;

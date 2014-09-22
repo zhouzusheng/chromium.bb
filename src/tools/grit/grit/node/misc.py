@@ -49,7 +49,6 @@ def _ReadFirstIdsFromFile(filename, defines):
   def ReplaceVariable(matchobj):
     for key, value in defines.iteritems():
       if matchobj.group(1) == key:
-        value = os.path.abspath(value)[len(src_root_dir) + 1:]
         return value
     return ''
 
@@ -58,7 +57,12 @@ def _ReadFirstIdsFromFile(filename, defines):
     new_grd_filename = re.sub(r'<\(([A-Za-z_]+)\)', ReplaceVariable,
                               grd_filename)
     if new_grd_filename != grd_filename:
-      new_grd_filename = new_grd_filename.replace('\\', '/')
+      abs_grd_filename = os.path.abspath(new_grd_filename)
+      if abs_grd_filename[:len(src_root_dir)] != src_root_dir:
+        new_grd_filename = os.path.basename(abs_grd_filename)
+      else:
+        new_grd_filename = abs_grd_filename[len(src_root_dir) + 1:]
+        new_grd_filename = new_grd_filename.replace('\\', '/')
       renames.append((grd_filename, new_grd_filename))
 
   for grd_filename, new_grd_filename in renames:

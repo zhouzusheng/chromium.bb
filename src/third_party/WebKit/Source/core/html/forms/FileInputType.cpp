@@ -23,6 +23,7 @@
 #include "core/html/forms/FileInputType.h"
 
 #include "HTMLNames.h"
+#include "InputTypeNames.h"
 #include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -32,9 +33,8 @@
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/FormController.h"
-#include "core/html/forms/InputTypeNames.h"
 #include "core/page/Chrome.h"
-#include "core/platform/DragData.h"
+#include "core/page/DragData.h"
 #include "core/rendering/RenderFileUploadControl.h"
 #include "platform/FileMetadata.h"
 #include "platform/UserGestureIndicator.h"
@@ -45,7 +45,7 @@
 
 namespace WebCore {
 
-using WebKit::WebLocalizedString;
+using blink::WebLocalizedString;
 using namespace HTMLNames;
 
 inline FileInputType::FileInputType(HTMLInputElement& element)
@@ -73,7 +73,7 @@ Vector<FileChooserFileInfo> FileInputType::filesFromFormControlState(const FormC
 
 const AtomicString& FileInputType::formControlType() const
 {
-    return InputTypeNames::file();
+    return InputTypeNames::file;
 }
 
 FormControlState FileInputType::saveFormControlState() const
@@ -247,10 +247,10 @@ bool FileInputType::isFileUpload() const
 void FileInputType::createShadowSubtree()
 {
     ASSERT(element().shadow());
-    RefPtr<HTMLInputElement> button = HTMLInputElement::create(inputTag, element().document(), 0, false);
-    button->setType(InputTypeNames::button());
+    RefPtr<HTMLInputElement> button = HTMLInputElement::create(element().document(), 0, false);
+    button->setType(InputTypeNames::button);
     button->setAttribute(valueAttr, locale().queryString(element().multiple() ? WebLocalizedString::FileButtonChooseMultipleFilesLabel : WebLocalizedString::FileButtonChooseFileLabel));
-    button->setPart(AtomicString("-webkit-file-upload-button", AtomicString::ConstructFromLiteral));
+    button->setPseudo(AtomicString("-webkit-file-upload-button", AtomicString::ConstructFromLiteral));
     element().userAgentShadowRoot()->appendChild(button.release());
 }
 

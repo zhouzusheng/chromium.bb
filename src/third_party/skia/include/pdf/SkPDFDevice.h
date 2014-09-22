@@ -33,6 +33,7 @@ class SkPDFObject;
 class SkPDFResourceDict;
 class SkPDFShader;
 class SkPDFStream;
+class SkRRect;
 template <typename T> class SkTSet;
 
 // Private classes.
@@ -83,6 +84,8 @@ public:
                             size_t count, const SkPoint[],
                             const SkPaint& paint) SK_OVERRIDE;
     virtual void drawRect(const SkDraw&, const SkRect& r, const SkPaint& paint);
+    virtual void drawRRect(const SkDraw&, const SkRRect& rr,
+                           const SkPaint& paint) SK_OVERRIDE;
     virtual void drawPath(const SkDraw&, const SkPath& origpath,
                           const SkPaint& paint, const SkMatrix* prePathMatrix,
                           bool pathIsMutable) SK_OVERRIDE;
@@ -191,11 +194,6 @@ public:
         return *(fFontGlyphUsage.get());
     }
 
-protected:
-    virtual bool onReadPixels(const SkBitmap& bitmap, int x, int y,
-                              SkCanvas::Config8888) SK_OVERRIDE;
-
-    virtual bool allowImageFilter(SkImageFilter*) SK_OVERRIDE;
 
     /**
      *  rasterDpi - the DPI at which features without native PDF support
@@ -210,6 +208,12 @@ protected:
     void setRasterDpi(SkScalar rasterDpi) {
         fRasterDpi = rasterDpi;
     }
+
+protected:
+    virtual bool onReadPixels(const SkBitmap& bitmap, int x, int y,
+                              SkCanvas::Config8888) SK_OVERRIDE;
+
+    virtual bool allowImageFilter(SkImageFilter*) SK_OVERRIDE;
 
 private:
     // TODO(vandebo): push most of SkPDFDevice's state into a core object in
@@ -262,12 +266,11 @@ private:
     void cleanUp(bool clearFontUsage);
     SkPDFFormXObject* createFormXObjectFromDevice();
 
-    // Clear the passed clip from all existing content entries.
-    void clearClipFromContent(const SkClipStack* clipStack,
-                              const SkRegion& clipRegion);
-    void drawFormXObjectWithClip(SkPDFFormXObject* form,
+    void drawFormXObjectWithMask(int xObjectIndex,
+                                 SkPDFFormXObject* mask,
                                  const SkClipStack* clipStack,
                                  const SkRegion& clipRegion,
+                                 SkXfermode::Mode mode,
                                  bool invertClip);
 
     // If the paint or clip is such that we shouldn't draw anything, this
@@ -281,7 +284,8 @@ private:
                                     bool hasText,
                                     SkPDFFormXObject** dst);
     void finishContentEntry(SkXfermode::Mode xfermode,
-                            SkPDFFormXObject* dst);
+                            SkPDFFormXObject* dst,
+                            SkPath* shape);
     bool isContentEmpty();
 
     void populateGraphicStateEntryFromPaint(const SkMatrix& matrix,
@@ -291,6 +295,7 @@ private:
                                             bool hasText,
                                             GraphicStateEntry* entry);
     int addGraphicStateResource(SkPDFGraphicState* gs);
+    int addXObjectResource(SkPDFObject* xObject);
 
     void updateFont(const SkPaint& paint, uint16_t glyphID,
                     ContentEntry* contentEntry);

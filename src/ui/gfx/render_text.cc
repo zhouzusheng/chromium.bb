@@ -28,7 +28,7 @@ namespace {
 // All chars are replaced by this char when the password style is set.
 // TODO(benrg): GTK uses the first of U+25CF, U+2022, U+2731, U+273A, '*'
 // that's available in the font (find_invisible_char() in gtkentry.c).
-const char16 kPasswordReplacementChar = '*';
+const base::char16 kPasswordReplacementChar = '*';
 
 // Default color used for the text and cursor.
 const SkColor kDefaultColor = SK_ColorBLACK;
@@ -631,6 +631,7 @@ void RenderText::SetDirectionalityMode(DirectionalityMode mode) {
 
   directionality_mode_ = mode;
   text_direction_ = base::i18n::UNKNOWN_DIRECTION;
+  cached_bounds_and_offset_valid_ = false;
   ResetLayout();
 }
 
@@ -878,7 +879,7 @@ const BreakList<size_t>& RenderText::GetLineBreaks() {
   if (line_breaks_.max() != 0)
     return line_breaks_;
 
-  const string16& layout_text = GetLayoutText();
+  const base::string16& layout_text = GetLayoutText();
   const size_t text_length = layout_text.length();
   line_breaks_.SetValue(0);
   line_breaks_.SetMax(text_length);
@@ -998,7 +999,16 @@ Vector2d RenderText::GetAlignmentOffset(size_t line_number) {
     if (horizontal_alignment_ == ALIGN_CENTER)
       offset.set_x(offset.x() / 2);
   }
-  offset.set_y(GetBaseline() - GetLayoutTextBaseline());
+
+  // Vertically center the text.
+  if (multiline_) {
+    const int text_height = lines_.back().preceding_heights +
+        lines_.back().size.height();
+    offset.set_y((display_rect_.height() - text_height) / 2);
+  } else {
+    offset.set_y(GetBaseline() - GetLayoutTextBaseline());
+  }
+
   return offset;
 }
 

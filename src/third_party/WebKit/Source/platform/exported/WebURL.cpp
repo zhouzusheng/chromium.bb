@@ -31,9 +31,9 @@
 #include "config.h"
 #include "public/platform/WebURL.h"
 
-#include "weborigin/KURL.h"
+#include "platform/weborigin/KURL.h"
 
-namespace WebKit {
+namespace blink {
 
 WebURL::WebURL(const WebCore::KURL& url)
     : m_string(url.string())
@@ -55,4 +55,4 @@ WebURL::operator WebCore::KURL() const
     return WebCore::KURL(m_string, m_parsed, m_isValid);
 }
 
-} // namespace WebKit
+} // namespace blink

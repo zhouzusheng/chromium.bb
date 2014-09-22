@@ -437,4 +437,23 @@ PassRefPtr<ArrayBuffer> SharedBuffer::getAsArrayBuffer() const
     return arrayBuffer;
 }
 
+PassRefPtr<SkData> SharedBuffer::getAsSkData() const
+{
+    unsigned bufferLength = size();
+    char* buffer = static_cast<char*>(sk_malloc_throw(bufferLength));
+    const char* segment = 0;
+    unsigned position = 0;
+    while (unsigned segmentSize = getSomeData(segment, position)) {
+        memcpy(buffer + position, segment, segmentSize);
+        position += segmentSize;
+    }
+
+    if (position != bufferLength) {
+        ASSERT_NOT_REACHED();
+        // Don't return the incomplete SkData.
+        return 0;
+    }
+    return adoptRef(SkData::NewFromMalloc(buffer, bufferLength));
+}
+
 } // namespace WebCore

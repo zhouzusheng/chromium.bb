@@ -13,10 +13,12 @@
 
 namespace views {
 
+class Painter;
+
 // An image button.
 
 // Note that this type of button is not focusable by default and will not be
-// part of the focus chain.  Call set_focusable(true) to make it part of the
+// part of the focus chain.  Call SetFocusable(true) to make it part of the
 // focus chain.
 
 class VIEWS_EXPORT ImageButton : public CustomButton {
@@ -57,10 +59,7 @@ class VIEWS_EXPORT ImageButton : public CustomButton {
   void SetImageAlignment(HorizontalAlignment h_align,
                          VerticalAlignment v_align);
 
-  // Overridden from View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual const char* GetClassName() const OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  void SetFocusPainter(scoped_ptr<Painter> focus_painter);
 
   // Sets preferred size, so it could be correctly positioned in layout even if
   // it is NULL.
@@ -73,13 +72,24 @@ class VIEWS_EXPORT ImageButton : public CustomButton {
     draw_image_mirrored_ = mirrored;
   }
 
+  // Overridden from View:
+  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual const char* GetClassName() const OVERRIDE;
+  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+
  protected:
+  // Overridden from View:
+  virtual void OnFocus() OVERRIDE;
+  virtual void OnBlur() OVERRIDE;
+
   // Returns the image to paint. This is invoked from paint and returns a value
   // from images.
   virtual gfx::ImageSkia GetImageToPaint();
 
   // Updates button background for |scale_factor|.
   void UpdateButtonBackground(ui::ScaleFactor scale_factor);
+
+  Painter* focus_painter() { return focus_painter_.get(); }
 
   // The images used to render the different states of this button.
   gfx::ImageSkia images_[STATE_COUNT];
@@ -92,6 +102,8 @@ class VIEWS_EXPORT ImageButton : public CustomButton {
  private:
   FRIEND_TEST_ALL_PREFIXES(ImageButtonTest, Basics);
   FRIEND_TEST_ALL_PREFIXES(ImageButtonTest, ImagePositionWithBorder);
+  FRIEND_TEST_ALL_PREFIXES(ImageButtonTest, LeftAlignedMirrored);
+  FRIEND_TEST_ALL_PREFIXES(ImageButtonTest, RightAlignedMirrored);
 
   // Returns the correct position of the image for painting.
   gfx::Point ComputeImagePaintPosition(const gfx::ImageSkia& image);
@@ -106,6 +118,8 @@ class VIEWS_EXPORT ImageButton : public CustomButton {
   // small curved corner in the close button designed to fit into the frame
   // resources.
   bool draw_image_mirrored_;
+
+  scoped_ptr<Painter> focus_painter_;
 
   DISALLOW_COPY_AND_ASSIGN(ImageButton);
 };

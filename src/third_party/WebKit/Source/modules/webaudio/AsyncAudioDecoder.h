@@ -44,13 +44,13 @@ public:
     ~AsyncAudioDecoder();
 
     // Must be called on the main thread.
-    void decodeAsync(ArrayBuffer* audioData, float sampleRate, PassRefPtr<AudioBufferCallback> successCallback, PassRefPtr<AudioBufferCallback> errorCallback);
+    void decodeAsync(ArrayBuffer* audioData, float sampleRate, PassOwnPtr<AudioBufferCallback> successCallback, PassOwnPtr<AudioBufferCallback> errorCallback);
 
 private:
     static void decode(ArrayBuffer* audioData, float sampleRate, AudioBufferCallback* successCallback, AudioBufferCallback* errorCallback);
     static void notifyComplete(ArrayBuffer* audioData, AudioBufferCallback* successCallback, AudioBufferCallback* errorCallback, AudioBuffer*);
 
-    OwnPtr<WebKit::WebThread> m_thread;
+    OwnPtr<blink::WebThread> m_thread;
 };
 
 } // namespace WebCore

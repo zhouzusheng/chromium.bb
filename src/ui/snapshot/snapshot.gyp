@@ -13,7 +13,6 @@
       'dependencies': [
         '../../skia/skia.gyp:skia',
         '../../base/base.gyp:base',
-        '../events/events.gyp:events',
         '../gfx/gfx.gyp:gfx',
         '../ui.gyp:ui',
       ],
@@ -49,7 +48,6 @@
       'dependencies': [
         '../../skia/skia.gyp:skia',
         '../../base/base.gyp:base',
-        '../events/events.gyp:events',
         '../gfx/gfx.gyp:gfx',
         '../ui.gyp:ui',
         'snapshot'

@@ -49,7 +49,6 @@
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderView.h"
 #include "wtf/Vector.h"
-#include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
@@ -99,7 +98,7 @@ TreeScope::TreeScope()
 TreeScope::~TreeScope()
 {
     ASSERT(!m_guardRefCount);
-    m_rootNode->setTreeScope(noDocumentInstance());
+    m_rootNode->setTreeScope(0);
 
     if (m_selection) {
         m_selection->clearTreeScope();
@@ -277,7 +276,8 @@ HTMLLabelElement* TreeScope::labelElementForId(const AtomicString& forAttributeV
     if (!m_labelsByForAttribute) {
         // Populate the map on first access.
         m_labelsByForAttribute = adoptPtr(new DocumentOrderedMap);
-        for (Element* element = ElementTraversal::firstWithin(rootNode()); element; element = ElementTraversal::next(element)) {
+        ASSERT(rootNode());
+        for (Element* element = ElementTraversal::firstWithin(*rootNode()); element; element = ElementTraversal::next(*element)) {
             if (isHTMLLabelElement(element)) {
                 HTMLLabelElement* label = toHTMLLabelElement(element);
                 const AtomicString& forValue = label->fastGetAttribute(forAttr);
@@ -311,7 +311,8 @@ Element* TreeScope::findAnchor(const String& name)
         return 0;
     if (Element* element = getElementById(name))
         return element;
-    for (Element* element = ElementTraversal::firstWithin(rootNode()); element; element = ElementTraversal::next(element)) {
+    ASSERT(rootNode());
+    for (Element* element = ElementTraversal::firstWithin(*rootNode()); element; element = ElementTraversal::next(*element)) {
         if (isHTMLAnchorElement(element)) {
             HTMLAnchorElement* anchor = toHTMLAnchorElement(element);
             if (rootNode()->document().inQuirksMode()) {
@@ -352,7 +353,7 @@ static Element* focusedFrameOwnerElement(Frame* focusedFrame, Frame* currentFram
     return 0;
 }
 
-Element* TreeScope::adjustedFocusedElement()
+Element* TreeScope::adjustedFocusedElement() const
 {
     Document& document = rootNode()->document();
     Element* element = document.focusedElement();
@@ -458,7 +459,6 @@ bool TreeScope::deletionHasBegun()
 
 void TreeScope::beginDeletion()
 {
-    ASSERT(this != noDocumentInstance());
     rootNode()->m_deletionHasBegun = true;
 }
 #endif
@@ -485,7 +485,8 @@ Element* TreeScope::getElementByAccessKey(const String& key) const
         return 0;
     Element* result = 0;
     Node* root = rootNode();
-    for (Element* element = ElementTraversal::firstWithin(root); element; element = ElementTraversal::next(element, root)) {
+    ASSERT(root);
+    for (Element* element = ElementTraversal::firstWithin(*root); element; element = ElementTraversal::next(*element, root)) {
         if (equalIgnoringCase(element->fastGetAttribute(accesskeyAttr), key))
             result = element;
         for (ShadowRoot* shadowRoot = element->youngestShadowRoot(); shadowRoot; shadowRoot = shadowRoot->olderShadowRoot()) {

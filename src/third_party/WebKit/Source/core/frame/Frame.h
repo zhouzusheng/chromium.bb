@@ -37,9 +37,14 @@
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 
+namespace blink {
+class WebLayer;
+}
+
 namespace WebCore {
 
     class AnimationController;
+    class ChromeClient;
     class Color;
     class DOMWindow;
     class Document;
@@ -124,12 +129,14 @@ namespace WebCore {
 
         Page* page() const;
         HTMLFrameOwnerElement* ownerElement() const;
+        bool isMainFrame() const;
 
         void setDOMWindow(PassRefPtr<DOMWindow>);
         DOMWindow* domWindow() const;
         Document* document() const;
         FrameView* view() const;
 
+        ChromeClient& chromeClient() const;
         Editor& editor() const;
         EventHandler& eventHandler() const;
         FrameLoader& loader() const;
@@ -148,6 +155,9 @@ namespace WebCore {
         void dispatchVisibilityStateChangeEvent();
 
         int64_t frameID() const { return m_frameInit->frameID(); }
+
+        void setRemotePlatformLayer(blink::WebLayer* remotePlatformLayer) { m_remotePlatformLayer = remotePlatformLayer; }
+        blink::WebLayer* remotePlatformLayer() const { return m_remotePlatformLayer; }
 
     // ======== All public functions below this point are candidates to move out of Frame into another class. ========
 
@@ -233,6 +243,8 @@ namespace WebCore {
 #endif
 
         bool m_inViewSourceMode;
+
+        blink::WebLayer* m_remotePlatformLayer;
     };
 
     inline void Frame::init()

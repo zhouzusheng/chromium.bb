@@ -30,16 +30,13 @@
 
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/page/Chrome.h"
-#include "core/page/ChromeClient.h"
-#include "core/page/Page.h"
-#include "core/page/Settings.h"
 #include "modules/webdatabase/Database.h"
 #include "modules/webdatabase/DatabaseManager.h"
 #include "modules/webdatabase/DatabaseTask.h"
 #include "modules/webdatabase/DatabaseThread.h"
-#include "weborigin/SchemeRegistry.h"
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SchemeRegistry.h"
+#include "platform/weborigin/SecurityOrigin.h"
+#include "wtf/Assertions.h"
 
 namespace WebCore {
 
@@ -161,8 +158,7 @@ DatabaseThread* DatabaseContext::databaseThread()
         // Create the database thread on first request - but not if at least one database was already opened,
         // because in that case we already had a database thread and terminated it and should not create another.
         m_databaseThread = DatabaseThread::create();
-        if (!m_databaseThread->start())
-            m_databaseThread = 0;
+        m_databaseThread->start();
     }
 
     return m_databaseThread.get();
@@ -195,10 +191,8 @@ bool DatabaseContext::stopDatabases(DatabaseTaskSynchronizer* cleanupSync)
 
 bool DatabaseContext::allowDatabaseAccess() const
 {
-    if (executionContext()->isDocument()) {
-        Document* document = toDocument(executionContext());
-        return document->page();
-    }
+    if (executionContext()->isDocument())
+        return toDocument(executionContext())->isActive();
     ASSERT(executionContext()->isWorkerGlobalScope());
     // allowDatabaseAccess is not yet implemented for workers.
     return true;

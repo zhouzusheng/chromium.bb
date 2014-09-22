@@ -35,6 +35,7 @@
 #include "core/rendering/FlowThreadController.h"
 #include "core/rendering/HitTestRequest.h"
 #include "core/rendering/HitTestResult.h"
+#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderBoxRegionInfo.h"
 #include "core/rendering/RenderInline.h"
@@ -193,6 +194,7 @@ void RenderFlowThread::validateRegions()
 
 void RenderFlowThread::layout()
 {
+    LayoutRectRecorder recorder(*this);
     m_pageLogicalSizeChanged = m_regionsInvalidated && everHadLayout();
 
     // In case this is the second pass of the normal phase we need to update the auto-height regions to their initial value.
@@ -396,6 +398,31 @@ RenderRegion* RenderFlowThread::regionAtBlockOffset(LayoutUnit offset, bool exte
     return adapter.result();
 }
 
+RenderRegion* RenderFlowThread::regionFromAbsolutePointAndBox(IntPoint absolutePoint, const RenderBox* flowedBox)
+{
+    if (!flowedBox)
+        return 0;
+
+    RenderRegion* startRegion = 0;
+    RenderRegion* endRegion = 0;
+    getRegionRangeForBox(flowedBox, startRegion, endRegion);
+
+    if (!startRegion)
+        return 0;
+
+    for (RenderRegionList::iterator iter = m_regionList.find(startRegion); iter != m_regionList.end(); ++iter) {
+        RenderRegion* region = *iter;
+        IntRect regionAbsoluteRect(roundedIntPoint(region->localToAbsolute()), roundedIntSize(region->frameRect().size()));
+        if (regionAbsoluteRect.contains(absolutePoint))
+            return region;
+
+        if (region == endRegion)
+            break;
+    }
+
+    return 0;
+}
+
 LayoutPoint RenderFlowThread::adjustedPositionRelativeToOffsetParent(const RenderBoxModelObject& boxModelObject, const LayoutPoint& startPoint)
 {
     LayoutPoint referencePoint = startPoint;
@@ -403,8 +430,9 @@ LayoutPoint RenderFlowThread::adjustedPositionRelativeToOffsetParent(const Rende
     // FIXME: This needs to be adapted for different writing modes inside the flow thread.
     RenderRegion* startRegion = regionAtBlockOffset(referencePoint.y());
     if (startRegion) {
+        RenderBoxModelObject* startRegionBox = startRegion->isRenderNamedFlowFragment() ? toRenderBoxModelObject(startRegion->parent()) : startRegion;
         // Take into account the offset coordinates of the region.
-        RenderObject* currObject = startRegion;
+        RenderObject* currObject = startRegionBox;
         RenderObject* currOffsetParentRenderer;
         Element* currOffsetParentElement;
         while ((currOffsetParentElement = currObject->offsetParent()) && (currOffsetParentRenderer = currOffsetParentElement->renderer())) {
@@ -461,7 +489,7 @@ LayoutPoint RenderFlowThread::adjustedPositionRelativeToOffsetParent(const Rende
             // and compute the object's top, relative to the region's top.
             LayoutUnit regionLogicalTop = startRegion->pageLogicalTopForOffset(top);
             LayoutUnit topRelativeToRegion = top - regionLogicalTop;
-            referencePoint.setY(startRegion->offsetTop() + topRelativeToRegion);
+            referencePoint.setY(startRegionBox->offsetTop() + topRelativeToRegion);
 
             // Since the top has been overriden, check if the
             // relative/sticky positioning must be reconsidered.
@@ -473,7 +501,7 @@ LayoutPoint RenderFlowThread::adjustedPositionRelativeToOffsetParent(const Rende
 
         // Since we're looking for the offset relative to the body, we must also
         // take into consideration the borders of the region.
-        referencePoint.move(startRegion->borderLeft(), startRegion->borderTop());
+        referencePoint.move(startRegionBox->borderLeft(), startRegionBox->borderTop());
     }
 
     return referencePoint;
@@ -872,7 +900,7 @@ void RenderFlowThread::updateRegionsFlowThreadPortionRect(const RenderRegion* la
             region->clearComputedAutoHeight();
 
         LayoutUnit regionLogicalWidth = region->pageLogicalWidth();
-        LayoutUnit regionLogicalHeight = std::min<LayoutUnit>(LayoutUnit::max() / 2 - logicalHeight, region->logicalHeightOfAllFlowThreadContent());
+        LayoutUnit regionLogicalHeight = std::min<LayoutUnit>(RenderFlowThread::maxLogicalHeight() - logicalHeight, region->logicalHeightOfAllFlowThreadContent());
 
         LayoutRect regionRect(style()->direction() == LTR ? LayoutUnit() : logicalWidth() - regionLogicalWidth, logicalHeight, regionLogicalWidth, regionLogicalHeight);
 
@@ -909,7 +937,7 @@ bool RenderFlowThread::addForcedRegionBreak(LayoutUnit offsetBreakInFlowThread, 
     RenderObjectToRegionMap::iterator iter = mapToUse.find(breakChild);
     if (iter != mapToUse.end()) {
         RenderRegionList::iterator regionIter = m_regionList.find(iter->value);
-        ASSERT(regionIter != m_regionList.end());
+        ASSERT_WITH_SECURITY_IMPLICATION(regionIter != m_regionList.end());
         ASSERT((*regionIter)->hasAutoLogicalHeight());
         initializeRegionsComputedAutoHeight(*regionIter);
 

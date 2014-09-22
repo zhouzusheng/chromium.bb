@@ -38,9 +38,9 @@ class MEDIA_EXPORT VideoCaptureDeviceMFWin
   bool Init();
 
   // VideoCaptureDevice implementation.
-  virtual void AllocateAndStart(
-      const VideoCaptureCapability& capture_format,
-      scoped_ptr<VideoCaptureDevice::Client> client) OVERRIDE;
+  virtual void AllocateAndStart(const VideoCaptureParams& params,
+                                scoped_ptr<VideoCaptureDevice::Client> client)
+      OVERRIDE;
   virtual void StopAndDeAllocate() OVERRIDE;
 
   // Returns true iff the current platform supports the Media Foundation API
@@ -57,9 +57,7 @@ class MEDIA_EXPORT VideoCaptureDeviceMFWin
       const uint8* data,
       int length,
       const base::Time& time_stamp,
-      int rotation,
-      bool flip_vert,
-      bool flip_horiz);
+      int rotation);
 
  private:
   void OnError(HRESULT hr);
@@ -71,6 +69,7 @@ class MEDIA_EXPORT VideoCaptureDeviceMFWin
   base::Lock lock_;  // Used to guard the below variables.
   scoped_ptr<VideoCaptureDevice::Client> client_;
   base::win::ScopedComPtr<IMFSourceReader> reader_;
+  VideoCaptureFormat capture_format_;
   bool capture_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(VideoCaptureDeviceMFWin);

@@ -35,7 +35,6 @@
 #include "bindings/v8/Dictionary.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
-#include "public/platform/WebRTCSessionDescription.h"
 
 namespace WebCore {
 
@@ -49,27 +48,27 @@ static String constructIllegalTypeExceptionMessage(const String& type)
     return "Illegal value of attribute 'type' : " + type;
 }
 
-PassRefPtr<RTCSessionDescription> RTCSessionDescription::create(const Dictionary& descriptionInitDict, ExceptionState& es)
+PassRefPtr<RTCSessionDescription> RTCSessionDescription::create(const Dictionary& descriptionInitDict, ExceptionState& exceptionState)
 {
     String type;
     bool ok = descriptionInitDict.get("type", type);
     if (ok && !verifyType(type)) {
-        es.throwDOMException(TypeMismatchError, constructIllegalTypeExceptionMessage(type));
+        exceptionState.throwDOMException(TypeMismatchError, constructIllegalTypeExceptionMessage(type));
         return 0;
     }
 
     String sdp;
     descriptionInitDict.get("sdp", sdp);
 
-    return adoptRef(new RTCSessionDescription(WebKit::WebRTCSessionDescription(type, sdp)));
+    return adoptRef(new RTCSessionDescription(blink::WebRTCSessionDescription(type, sdp)));
 }
 
-PassRefPtr<RTCSessionDescription> RTCSessionDescription::create(WebKit::WebRTCSessionDescription webSessionDescription)
+PassRefPtr<RTCSessionDescription> RTCSessionDescription::create(blink::WebRTCSessionDescription webSessionDescription)
 {
     return adoptRef(new RTCSessionDescription(webSessionDescription));
 }
 
-RTCSessionDescription::RTCSessionDescription(WebKit::WebRTCSessionDescription webSessionDescription)
+RTCSessionDescription::RTCSessionDescription(blink::WebRTCSessionDescription webSessionDescription)
     : m_webSessionDescription(webSessionDescription)
 {
     ScriptWrappable::init(this);
@@ -80,12 +79,12 @@ String RTCSessionDescription::type()
     return m_webSessionDescription.type();
 }
 
-void RTCSessionDescription::setType(const String& type, ExceptionState& es)
+void RTCSessionDescription::setType(const String& type, ExceptionState& exceptionState)
 {
     if (verifyType(type))
         m_webSessionDescription.setType(type);
     else
-        es.throwDOMException(TypeMismatchError, constructIllegalTypeExceptionMessage(type));
+        exceptionState.throwDOMException(TypeMismatchError, constructIllegalTypeExceptionMessage(type));
 }
 
 String RTCSessionDescription::sdp()
@@ -98,7 +97,7 @@ void RTCSessionDescription::setSdp(const String& sdp)
     m_webSessionDescription.setSDP(sdp);
 }
 
-WebKit::WebRTCSessionDescription RTCSessionDescription::webSessionDescription()
+blink::WebRTCSessionDescription RTCSessionDescription::webSessionDescription()
 {
     return m_webSessionDescription;
 }

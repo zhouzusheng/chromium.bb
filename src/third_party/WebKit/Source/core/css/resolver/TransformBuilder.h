@@ -36,8 +36,8 @@
 
 namespace WebCore {
 
+class CSSToLengthConversionData;
 class CSSValue;
-class RenderStyle;
 
 class TransformBuilder {
     WTF_MAKE_NONCOPYABLE(TransformBuilder); WTF_MAKE_FAST_ALLOCATED;
@@ -45,7 +45,7 @@ public:
     TransformBuilder();
     ~TransformBuilder();
 
-    static bool createTransformOperations(CSSValue* inValue, const RenderStyle* inStyle, const RenderStyle* rootStyle, TransformOperations& outOperations);
+    static bool createTransformOperations(CSSValue* inValue, const CSSToLengthConversionData&, TransformOperations& outOperations);
 };
 
 } // namespace WebCore

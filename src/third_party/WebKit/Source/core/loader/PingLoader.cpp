@@ -42,12 +42,11 @@
 #include "platform/network/FormData.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/network/ResourceResponse.h"
+#include "platform/weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityPolicy.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebURLLoader.h"
-#include "weborigin/SecurityOrigin.h"
-#include "weborigin/SecurityPolicy.h"
 #include "wtf/OwnPtr.h"
-#include "wtf/UnusedParam.h"
 
 namespace WebCore {
 
@@ -59,24 +58,23 @@ void PingLoader::loadImage(Frame* frame, const KURL& url)
     }
 
     ResourceRequest request(url);
-    request.setTargetType(ResourceRequest::TargetIsImage);
+    request.setTargetType(ResourceRequest::TargetIsPing);
     request.setHTTPHeaderField("Cache-Control", "max-age=0");
-    String referrer = SecurityPolicy::generateReferrerHeader(frame->document()->referrerPolicy(), request.url(), frame->loader().outgoingReferrer());
+    String referrer = SecurityPolicy::generateReferrerHeader(frame->document()->referrerPolicy(), request.url(), frame->document()->outgoingReferrer());
     if (!referrer.isEmpty())
         request.setHTTPReferrer(referrer);
     frame->loader().addExtraFieldsToRequest(request);
     OwnPtr<PingLoader> pingLoader = adoptPtr(new PingLoader(frame, request));
 
     // Leak the ping loader, since it will kill itself as soon as it receives a response.
-    PingLoader* leakedPingLoader = pingLoader.leakPtr();
-    UNUSED_PARAM(leakedPingLoader);
+    PingLoader* ALLOW_UNUSED leakedPingLoader = pingLoader.leakPtr();
 }
 
 // http://www.whatwg.org/specs/web-apps/current-work/multipage/links.html#hyperlink-auditing
 void PingLoader::sendPing(Frame* frame, const KURL& pingURL, const KURL& destinationURL)
 {
     ResourceRequest request(pingURL);
-    request.setTargetType(ResourceRequest::TargetIsSubresource);
+    request.setTargetType(ResourceRequest::TargetIsPing);
     request.setHTTPMethod("POST");
     request.setHTTPContentType("text/ping");
     request.setHTTPBody(FormData::create("PING"));
@@ -87,10 +85,10 @@ void PingLoader::sendPing(Frame* frame, const KURL& pingURL, const KURL& destina
     RefPtr<SecurityOrigin> pingOrigin = SecurityOrigin::create(pingURL);
     FrameLoader::addHTTPOriginIfNeeded(request, sourceOrigin->toString());
     request.setHTTPHeaderField("Ping-To", destinationURL.string());
-    if (!SecurityPolicy::shouldHideReferrer(pingURL, frame->loader().outgoingReferrer())) {
+    if (!SecurityPolicy::shouldHideReferrer(pingURL, frame->document()->outgoingReferrer())) {
         request.setHTTPHeaderField("Ping-From", frame->document()->url().string());
         if (!sourceOrigin->isSameSchemeHostPort(pingOrigin.get())) {
-            String referrer = SecurityPolicy::generateReferrerHeader(frame->document()->referrerPolicy(), pingURL, frame->loader().outgoingReferrer());
+            String referrer = SecurityPolicy::generateReferrerHeader(frame->document()->referrerPolicy(), pingURL, frame->document()->outgoingReferrer());
             if (!referrer.isEmpty())
                 request.setHTTPReferrer(referrer);
         }
@@ -98,8 +96,7 @@ void PingLoader::sendPing(Frame* frame, const KURL& pingURL, const KURL& destina
     OwnPtr<PingLoader> pingLoader = adoptPtr(new PingLoader(frame, request));
 
     // Leak the ping loader, since it will kill itself as soon as it receives a response.
-    PingLoader* leakedPingLoader = pingLoader.leakPtr();
-    UNUSED_PARAM(leakedPingLoader);
+    PingLoader* ALLOW_UNUSED leakedPingLoader = pingLoader.leakPtr();
 }
 
 void PingLoader::sendViolationReport(Frame* frame, const KURL& reportURL, PassRefPtr<FormData> report, ViolationReportType type)
@@ -111,14 +108,13 @@ void PingLoader::sendViolationReport(Frame* frame, const KURL& reportURL, PassRe
     request.setHTTPBody(report);
     frame->loader().addExtraFieldsToRequest(request);
 
-    String referrer = SecurityPolicy::generateReferrerHeader(frame->document()->referrerPolicy(), reportURL, frame->loader().outgoingReferrer());
+    String referrer = SecurityPolicy::generateReferrerHeader(frame->document()->referrerPolicy(), reportURL, frame->document()->outgoingReferrer());
     if (!referrer.isEmpty())
         request.setHTTPReferrer(referrer);
     OwnPtr<PingLoader> pingLoader = adoptPtr(new PingLoader(frame, request, SecurityOrigin::create(reportURL)->isSameSchemeHostPort(frame->document()->securityOrigin()) ? AllowStoredCredentials : DoNotAllowStoredCredentials));
 
     // Leak the ping loader, since it will kill itself as soon as it receives a response.
-    PingLoader* leakedPingLoader = pingLoader.leakPtr();
-    UNUSED_PARAM(leakedPingLoader);
+    PingLoader* ALLOW_UNUSED leakedPingLoader = pingLoader.leakPtr();
 }
 
 PingLoader::PingLoader(Frame* frame, ResourceRequest& request, StoredCredentials credentialsAllowed)
@@ -127,9 +123,9 @@ PingLoader::PingLoader(Frame* frame, ResourceRequest& request, StoredCredentials
     frame->loader().client()->didDispatchPingLoader(request.url());
 
     unsigned long identifier = createUniqueIdentifier();
-    m_loader = adoptPtr(WebKit::Platform::current()->createURLLoader());
+    m_loader = adoptPtr(blink::Platform::current()->createURLLoader());
     ASSERT(m_loader);
-    WebKit::WrappedResourceRequest wrappedRequest(request);
+    blink::WrappedResourceRequest wrappedRequest(request);
     wrappedRequest.setAllowStoredCredentials(credentialsAllowed == AllowStoredCredentials);
     m_loader->loadAsynchronously(wrappedRequest, this);
 

@@ -35,17 +35,16 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-PassRefPtr<HTMLSummaryElement> HTMLSummaryElement::create(const QualifiedName& tagName, Document& document)
+PassRefPtr<HTMLSummaryElement> HTMLSummaryElement::create(Document& document)
 {
-    RefPtr<HTMLSummaryElement> summary = adoptRef(new HTMLSummaryElement(tagName, document));
+    RefPtr<HTMLSummaryElement> summary = adoptRef(new HTMLSummaryElement(document));
     summary->ensureUserAgentShadowRoot();
     return summary.release();
 }
 
-HTMLSummaryElement::HTMLSummaryElement(const QualifiedName& tagName, Document& document)
-    : HTMLElement(tagName, document)
+HTMLSummaryElement::HTMLSummaryElement(Document& document)
+    : HTMLElement(summaryTag, document)
 {
-    ASSERT(hasTagName(summaryTag));
 }
 
 RenderObject* HTMLSummaryElement::createRenderer(RenderStyle*)
@@ -53,10 +52,10 @@ RenderObject* HTMLSummaryElement::createRenderer(RenderStyle*)
     return new RenderBlockFlow(this);
 }
 
-void HTMLSummaryElement::didAddUserAgentShadowRoot(ShadowRoot* root)
+void HTMLSummaryElement::didAddUserAgentShadowRoot(ShadowRoot& root)
 {
-    root->appendChild(DetailsMarkerControl::create(document()));
-    root->appendChild(HTMLContentElement::create(document()));
+    root.appendChild(DetailsMarkerControl::create(document()));
+    root.appendChild(HTMLContentElement::create(document()));
 }
 
 HTMLDetailsElement* HTMLSummaryElement::detailsElement() const
@@ -103,7 +102,7 @@ void HTMLSummaryElement::defaultEventHandler(Event* event)
 
         if (event->isKeyboardEvent()) {
             if (event->type() == EventTypeNames::keydown && toKeyboardEvent(event)->keyIdentifier() == "U+0020") {
-                setActive(true, true);
+                setActive(true);
                 // No setDefaultHandled() - IE dispatches a keypress in this case.
                 return;
             }

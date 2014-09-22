@@ -24,8 +24,6 @@
 
 #include "core/dom/Element.h"
 #include "core/svg/SVGAnimatedString.h"
-#include "core/svg/SVGLangSpace.h"
-#include "core/svg/SVGLocatable.h"
 #include "core/svg/SVGParsingError.h"
 #include "core/svg/properties/SVGAnimatedPropertyMacros.h"
 #include "core/svg/properties/SVGPropertyInfo.h"
@@ -47,7 +45,7 @@ class SVGSVGElement;
 
 void mapAttributeToCSSProperty(HashMap<StringImpl*, CSSPropertyID>* propertyNameToIdMap, const QualifiedName& attrName);
 
-class SVGElement : public Element, public SVGLangSpace {
+class SVGElement : public Element {
 public:
     virtual ~SVGElement();
 
@@ -57,9 +55,12 @@ public:
     bool hasRelativeLengths() const { return !m_elementsWithRelativeLengths.isEmpty(); }
     virtual bool supportsMarkers() const { return false; }
     PassRefPtr<CSSValue> getPresentationAttribute(const String& name);
-    bool isKnownAttribute(const QualifiedName&);
     static bool isAnimatableCSSProperty(const QualifiedName&);
-    virtual AffineTransform localCoordinateSpaceTransform(SVGLocatable::CTMScope) const;
+    enum CTMScope {
+        NearestViewportScope, // Used by SVGGraphicsElement::getCTM()
+        ScreenScope // Used by SVGGraphicsElement::getScreenCTM()
+    };
+    virtual AffineTransform localCoordinateSpaceTransform(CTMScope) const;
     virtual bool needsPendingResourceHandling() const { return true; }
 
     bool instanceUpdatesBlocked() const;
@@ -67,6 +68,12 @@ public:
 
     String xmlbase() const;
     void setXMLbase(const String&);
+
+    String xmllang() const;
+    void setXMLlang(const String& xmlLang);
+
+    String xmlspace() const;
+    void setXMLspace(const String& xmlSpace);
 
     SVGSVGElement* ownerSVGElement() const;
     SVGElement* viewportElement() const;
@@ -200,8 +207,6 @@ private:
     virtual bool isKeyboardFocusable() const OVERRIDE;
 
     void buildPendingResourcesIfNeeded();
-
-    virtual bool isSupported(StringImpl* feature, StringImpl* version) const;
 
     void mapInstanceToElement(SVGElementInstance*);
     void removeInstanceMapping(SVGElementInstance*);

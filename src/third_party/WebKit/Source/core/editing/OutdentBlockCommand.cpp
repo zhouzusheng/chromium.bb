@@ -180,15 +180,15 @@ void OutdentBlockCommand::formatBlockSiblings(PassRefPtr<Node> prpFirstSibling, 
     // the siblings, or their children, are themselves indent blocks,
     // and if so, remove them to remove the indentation
     RefPtr<Node> current = firstSibling;
-    RefPtr<Node> end = NodeTraversal::nextSkippingChildren(lastSibling.get(), stayWithin);
+    RefPtr<Node> end = NodeTraversal::nextSkippingChildren(*lastSibling, stayWithin);
     while (current != end) {
         RefPtr<Node> next;
         if (isIndentationBlock(current.get(), stayWithin)) {
-            next = NodeTraversal::nextSkippingChildren(current.get(), stayWithin);
+            next = NodeTraversal::nextSkippingChildren(*current, stayWithin);
             removeNodePreservingChildren(current);
         }
         else
-            next = NodeTraversal::next(current.get(), stayWithin);
+            next = NodeTraversal::next(*current, stayWithin);
         current = next;
     }
 }

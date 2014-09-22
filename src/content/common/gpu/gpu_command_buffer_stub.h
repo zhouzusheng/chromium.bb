@@ -121,6 +121,8 @@ class GpuCommandBufferStub
 
   gfx::GpuPreference gpu_preference() { return gpu_preference_; }
 
+  int32 GetRequestedAttribute(int attr) const;
+
   // Sends a message to the console.
   void SendConsoleMessage(int32 id, const std::string& message);
 
@@ -141,8 +143,10 @@ class GpuCommandBufferStub
 
   void MarkContextLost();
 
+  uint64 GetMemoryUsage() const;
+
  private:
-  GpuMemoryManager* GetMemoryManager();
+  GpuMemoryManager* GetMemoryManager() const;
   bool MakeCurrent();
   void Destroy();
 
@@ -171,7 +175,6 @@ class GpuCommandBufferStub
 
   void OnSetSurfaceVisible(bool visible);
 
-  void OnDiscardBackbuffer();
   void OnEnsureBackbuffer();
 
   void OnRetireSyncPoint(uint32 sync_point);

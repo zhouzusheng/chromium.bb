@@ -39,18 +39,6 @@
 
 namespace WebCore {
 
-void V8FormData::constructorCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
-{
-    HTMLFormElement* form = 0;
-    if (info.Length() > 0 && V8HTMLFormElement::HasInstance(info[0], info.GetIsolate(), worldType(info.GetIsolate())))
-        form = V8HTMLFormElement::toNative(info[0]->ToObject());
-    RefPtr<DOMFormData> domFormData = DOMFormData::create(form);
-
-    v8::Handle<v8::Object> wrapper = info.Holder();
-    V8DOMWrapper::associateObjectWithWrapper<V8FormData>(domFormData.release(), &wrapperTypeInfo, wrapper, info.GetIsolate(), WrapperConfiguration::Dependent);
-    info.GetReturnValue().Set(wrapper);
-}
-
 void V8FormData::appendMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     if (info.Length() < 2) {
@@ -59,22 +47,25 @@ void V8FormData::appendMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& i
     }
 
     DOMFormData* domFormData = V8FormData::toNative(info.Holder());
-
-    String name = toWebCoreStringWithNullCheck(info[0]);
+    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<WithNullCheck>, name, info[0]);
 
     v8::Handle<v8::Value> arg = info[1];
-    if (V8Blob::HasInstance(arg, info.GetIsolate(), worldType(info.GetIsolate()))) {
+    if (V8Blob::hasInstance(arg, info.GetIsolate(), worldType(info.GetIsolate()))) {
         v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(arg);
         Blob* blob = V8Blob::toNative(object);
         ASSERT(blob);
 
         String filename;
-        if (info.Length() >= 3 && !info[2]->IsUndefined())
-            filename = toWebCoreStringWithNullCheck(info[2]);
+        if (info.Length() >= 3) {
+            V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<WithUndefinedOrNullCheck>, filenameResource, info[2]);
+            filename = filenameResource;
+        }
 
         domFormData->append(name, blob, filename);
-    } else
-        domFormData->append(name, toWebCoreStringWithNullCheck(arg));
+    } else {
+        V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<WithNullCheck>, argString, arg);
+        domFormData->append(name, argString);
+    }
 }
 
 } // namespace WebCore

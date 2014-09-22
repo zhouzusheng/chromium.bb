@@ -30,7 +30,6 @@
 #define InspectorFrontendHost_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/platform/ContextMenu.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
@@ -54,7 +53,6 @@ public:
     ~InspectorFrontendHost();
     void disconnectClient();
 
-    void closeWindow();
     void setZoomFactor(float);
     void inspectedURLChanged(const String&);
 
@@ -71,6 +69,7 @@ public:
     String getSelectionForegroundColor();
 
     PassRefPtr<DOMFileSystem> isolatedFileSystem(const String& fileSystemName, const String& rootURL);
+    void upgradeDraggedFileSystemPermissions(DOMFileSystem*);
 
     bool isUnderTest();
 

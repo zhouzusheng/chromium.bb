@@ -33,7 +33,6 @@
 #include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ScriptController.h"
 #include "core/dom/DocumentType.h"
-#include "core/events/Event.h"
 #include "core/dom/WheelController.h"
 #include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
@@ -41,30 +40,32 @@
 #include "core/editing/SpellChecker.h"
 #include "core/editing/htmlediting.h"
 #include "core/editing/markup.h"
+#include "core/events/Event.h"
 #include "core/fetch/ResourceFetcher.h"
+#include "core/frame/DOMWindow.h"
+#include "core/frame/FrameDestructionObserver.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/Settings.h"
+#include "core/frame/animation/AnimationController.h"
 #include "core/html/HTMLFrameElementBase.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/loader/FrameLoader.h"
+#include "core/loader/EmptyClients.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
-#include "core/frame/DOMWindow.h"
 #include "core/page/EventHandler.h"
 #include "core/page/FocusController.h"
-#include "core/frame/FrameDestructionObserver.h"
-#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/page/Settings.h"
-#include "core/frame/animation/AnimationController.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/platform/DragImage.h"
-#include "core/platform/graphics/GraphicsContext.h"
-#include "core/platform/graphics/ImageBuffer.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderLayerCompositor.h"
 #include "core/rendering/RenderPart.h"
 #include "core/rendering/RenderView.h"
 #include "core/svg/SVGDocument.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/ImageBuffer.h"
+#include "public/platform/WebLayer.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCountedLeakCounter.h"
 #include "wtf/StdLibExtras.h"
@@ -119,6 +120,7 @@ inline Frame::Frame(PassRefPtr<FrameInit> frameInit)
     , m_orientation(0)
 #endif
     , m_inViewSourceMode(false)
+    , m_remotePlatformLayer(0)
 {
     ASSERT(m_page);
 
@@ -204,7 +206,7 @@ void Frame::setView(PassRefPtr<FrameView> view)
 
     m_view = view;
 
-    if (m_view && m_page && m_page->mainFrame() == this)
+    if (m_view && isMainFrame())
         m_view->setVisibleContentScaleFactor(m_page->pageScaleFactor());
 }
 
@@ -275,6 +277,19 @@ FloatSize Frame::resizePageRectsKeepingRatio(const FloatSize& originalSize, cons
 void Frame::setDOMWindow(PassRefPtr<DOMWindow> domWindow)
 {
     m_domWindow = domWindow;
+}
+
+static ChromeClient& emptyChromeClient()
+{
+    DEFINE_STATIC_LOCAL(EmptyChromeClient, client, ());
+    return client;
+}
+
+ChromeClient& Frame::chromeClient() const
+{
+    if (Page* page = this->page())
+        return page->chrome().client();
+    return emptyChromeClient();
 }
 
 Document* Frame::document() const
@@ -358,6 +373,11 @@ void Frame::disconnectOwnerElement()
     m_frameInit->setOwnerElement(0);
 }
 
+bool Frame::isMainFrame() const
+{
+    return m_page && this == m_page->mainFrame();
+}
+
 String Frame::documentTypeString() const
 {
     if (DocumentType* doctype = document()->doctype())
@@ -435,7 +455,7 @@ void Frame::createView(const IntSize& viewportSize, const Color& backgroundColor
     ASSERT(this);
     ASSERT(m_page);
 
-    bool isMainFrame = this == m_page->mainFrame();
+    bool isMainFrame = this->isMainFrame();
 
     if (isMainFrame && view())
         view()->setParentVisible(false);
@@ -540,6 +560,7 @@ void Frame::setPageAndTextZoomFactors(float pageZoomFactor, float textZoomFactor
 
 void Frame::deviceOrPageScaleFactorChanged()
 {
+    document()->mediaQueryAffectingValueChanged();
     for (RefPtr<Frame> child = tree().firstChild(); child; child = child->tree().nextSibling())
         child->deviceOrPageScaleFactorChanged();
 }
@@ -547,7 +568,7 @@ void Frame::deviceOrPageScaleFactorChanged()
 void Frame::notifyChromeClientWheelEventHandlerCountChanged() const
 {
     // Ensure that this method is being called on the main frame of the page.
-    ASSERT(m_page && m_page->mainFrame() == this);
+    ASSERT(isMainFrame());
 
     unsigned count = 0;
     for (const Frame* frame = this; frame; frame = frame->tree().traverseNext()) {
@@ -630,16 +651,17 @@ PassOwnPtr<DragImage> Frame::nodeImage(Node* node)
     paintingRect.setWidth(paintingRect.width() * deviceScaleFactor);
     paintingRect.setHeight(paintingRect.height() * deviceScaleFactor);
 
-    OwnPtr<ImageBuffer> buffer(ImageBuffer::create(paintingRect.size(), deviceScaleFactor));
+    OwnPtr<ImageBuffer> buffer = ImageBuffer::create(paintingRect.size());
     if (!buffer)
         return nullptr;
+    buffer->context()->scale(FloatSize(deviceScaleFactor, deviceScaleFactor));
     buffer->context()->translate(-paintingRect.x(), -paintingRect.y());
     buffer->context()->clip(FloatRect(0, 0, paintingRect.maxX(), paintingRect.maxY()));
 
     m_view->paintContents(buffer->context(), paintingRect);
 
     RefPtr<Image> image = buffer->copyImage();
-    return DragImage::create(image.get(), renderer->shouldRespectImageOrientation());
+    return DragImage::create(image.get(), renderer->shouldRespectImageOrientation(), deviceScaleFactor);
 }
 
 PassOwnPtr<DragImage> Frame::dragImageForSelection()
@@ -659,16 +681,17 @@ PassOwnPtr<DragImage> Frame::dragImageForSelection()
     paintingRect.setWidth(paintingRect.width() * deviceScaleFactor);
     paintingRect.setHeight(paintingRect.height() * deviceScaleFactor);
 
-    OwnPtr<ImageBuffer> buffer(ImageBuffer::create(paintingRect.size(), deviceScaleFactor));
+    OwnPtr<ImageBuffer> buffer = ImageBuffer::create(paintingRect.size());
     if (!buffer)
         return nullptr;
+    buffer->context()->scale(FloatSize(deviceScaleFactor, deviceScaleFactor));
     buffer->context()->translate(-paintingRect.x(), -paintingRect.y());
     buffer->context()->clip(FloatRect(0, 0, paintingRect.maxX(), paintingRect.maxY()));
 
     m_view->paintContents(buffer->context(), paintingRect);
 
     RefPtr<Image> image = buffer->copyImage();
-    return DragImage::create(image.get());
+    return DragImage::create(image.get(), DoNotRespectImageOrientation, deviceScaleFactor);
 }
 
 double Frame::devicePixelRatio() const

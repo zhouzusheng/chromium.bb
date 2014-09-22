@@ -34,7 +34,7 @@
 #include "../platform/WebCommon.h"
 #include "../platform/WebVector.h"
 
-namespace WebKit {
+namespace blink {
 class WebDevToolsAgentClient;
 class WebDevToolsMessageTransport;
 class WebFrame;
@@ -74,6 +74,23 @@ public:
     virtual void willComposite() = 0;
     virtual void didComposite() = 0;
 
+    // FIXME: remove it once the client side stops firing these.
+    virtual void processGPUEvent(double timestamp, int phase, bool foreign) = 0;
+
+    class GPUEvent {
+    public:
+        GPUEvent(double timestamp, int phase, bool foreign, size_t usedGPUMemoryBytes) :
+            timestamp(timestamp),
+            phase(phase),
+            foreign(foreign),
+            usedGPUMemoryBytes(usedGPUMemoryBytes) { }
+        double timestamp;
+        int phase;
+        bool foreign;
+        size_t usedGPUMemoryBytes;
+    };
+    virtual void processGPUEvent(const GPUEvent&) = 0;
+
     // Exposed for TestRunner.
     virtual void evaluateInWebInspector(long callId, const WebString& script) = 0;
 
@@ -90,6 +107,6 @@ public:
 
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

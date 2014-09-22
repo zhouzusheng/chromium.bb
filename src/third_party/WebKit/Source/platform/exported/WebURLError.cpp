@@ -32,12 +32,12 @@
 #include "public/platform/WebURLError.h"
 
 #include "platform/network/ResourceError.h"
-#include "weborigin/KURL.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/text/CString.h"
 
 using namespace WebCore;
 
-namespace WebKit {
+namespace blink {
 
 WebURLError::WebURLError(const ResourceError& error)
 {
@@ -68,4 +68,4 @@ WebURLError::operator ResourceError() const
     return resourceError;
 }
 
-} // namespace WebKit
+} // namespace blink

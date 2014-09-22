@@ -31,6 +31,7 @@
 #include "core/inspector/InspectorFrontendHost.h"
 
 #include "bindings/v8/ScriptFunctionCall.h"
+#include "bindings/v8/ScriptState.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/TextResourceDecoder.h"
 #include "core/frame/Frame.h"
@@ -40,11 +41,11 @@
 #include "core/page/ContextMenuController.h"
 #include "core/page/ContextMenuProvider.h"
 #include "core/page/Page.h"
-#include "core/platform/ContextMenu.h"
-#include "core/platform/ContextMenuItem.h"
 #include "core/platform/Pasteboard.h"
 #include "core/rendering/RenderTheme.h"
 #include "modules/filesystem/DOMFileSystem.h"
+#include "platform/ContextMenu.h"
+#include "platform/ContextMenuItem.h"
 #include "platform/JSONValues.h"
 #include "platform/SharedBuffer.h"
 #include "platform/UserGestureIndicator.h"
@@ -135,17 +136,6 @@ void InspectorFrontendHost::disconnectClient()
     m_frontendPage = 0;
 }
 
-void InspectorFrontendHost::closeWindow()
-{
-    if (m_client) {
-        RefPtr<JSONObject> message = JSONObject::create();
-        message->setNumber("id", 0);
-        message->setString("method", "closeWindow");
-        sendMessageToEmbedder(message->toJSONString());
-        disconnectClient(); // Disconnect from client.
-    }
-}
-
 void InspectorFrontendHost::setZoomFactor(float zoom)
 {
     m_frontendPage->mainFrame()->setPageAndTextZoomFactors(zoom, 1);
@@ -212,6 +202,19 @@ PassRefPtr<DOMFileSystem> InspectorFrontendHost::isolatedFileSystem(const String
 {
     ExecutionContext* context = m_frontendPage->mainFrame()->document();
     return DOMFileSystem::create(context, fileSystemName, FileSystemTypeIsolated, KURL(ParsedURLString, rootURL));
+}
+
+void InspectorFrontendHost::upgradeDraggedFileSystemPermissions(DOMFileSystem* domFileSystem)
+{
+    if (!m_client)
+        return;
+    RefPtr<JSONObject> message = JSONObject::create();
+    message->setNumber("id", 0);
+    message->setString("method", "upgradeDraggedFileSystemPermissions");
+    RefPtr<JSONArray> params = JSONArray::create();
+    message->setArray("params", params);
+    params->pushString(domFileSystem->rootURL().string());
+    sendMessageToEmbedder(message->toJSONString());
 }
 
 bool InspectorFrontendHost::isUnderTest()

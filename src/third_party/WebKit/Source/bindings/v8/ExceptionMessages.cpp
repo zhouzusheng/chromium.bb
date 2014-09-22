@@ -31,6 +31,8 @@
 #include "config.h"
 #include "bindings/v8/ExceptionMessages.h"
 
+#include "wtf/MathExtras.h"
+
 namespace WebCore {
 
 String ExceptionMessages::failedToConstruct(const String& type, const String& detail)
@@ -58,6 +60,16 @@ String ExceptionMessages::failedToDelete(const String& property, const String& t
     return "Failed to delete the '" + property + "' property from '" + type + "': " + detail;
 }
 
+String ExceptionMessages::incorrectPropertyType(const String& property, const String& detail)
+{
+    return "The '" + property + "' property " + detail;
+}
+
+String ExceptionMessages::incorrectArgumentType(int argumentIndex, const String& detail)
+{
+    return "The " + ordinalNumber(argumentIndex) + " argument " + detail;
+}
+
 String ExceptionMessages::notAnArrayTypeArgumentOrValue(int argumentIndex)
 {
     String kind;
@@ -76,6 +88,12 @@ String ExceptionMessages::notASequenceTypeProperty(const String& propertyName)
 String ExceptionMessages::notEnoughArguments(unsigned expected, unsigned provided)
 {
     return String::number(expected) + " argument" + (expected > 1 ? "s" : "") + " required, but only " + String::number(provided) + " present.";
+}
+
+String ExceptionMessages::notAFiniteNumber(double value)
+{
+    ASSERT(!std::isfinite(value));
+    return std::isinf(value) ? "The value provided is infinite." : "The value provided is not a number.";
 }
 
 String ExceptionMessages::ordinalNumber(int number)

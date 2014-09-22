@@ -50,6 +50,7 @@ class JSONValue;
 class Node;
 class Page;
 class PlatformGestureEvent;
+class PlatformKeyboardEvent;
 class PlatformMouseEvent;
 class PlatformTouchEvent;
 
@@ -122,6 +123,7 @@ public:
     bool handleGestureEvent(const PlatformGestureEvent&);
     bool handleMouseEvent(const PlatformMouseEvent&);
     bool handleTouchEvent(const PlatformTouchEvent&);
+    bool handleKeyboardEvent(const PlatformKeyboardEvent&);
 
     void setPausedInDebuggerMessage(const String*);
     void setInspectModeEnabled(bool);
@@ -137,6 +139,9 @@ public:
     void freePage();
 
     InspectorOverlayHost* overlayHost() const { return m_overlayHost.get(); }
+
+    void startedRecordingProfile();
+    void finishedRecordingProfile() { m_activeProfilerCount--; }
 
     // Methods supporting underlying overlay page.
     void invalidate();
@@ -172,6 +177,7 @@ private:
     bool m_drawViewSize;
     bool m_drawViewSizeWithGrid;
     Timer<InspectorOverlay> m_timer;
+    int m_activeProfilerCount;
 };
 
 } // namespace WebCore

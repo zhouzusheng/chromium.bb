@@ -30,34 +30,25 @@
 #define IDBFactoryBackendProxy_h
 
 #include "modules/indexeddb/chromium/IDBFactoryBackendInterfaceChromium.h"
-#include "modules/indexeddb/IDBCallbacks.h"
 
 namespace WebCore {
 class ExecutionContext;
 }
 
-namespace WebKit {
+namespace blink {
 
-class WebIDBFactory;
-class WebSecurityOrigin;
-
+// FIXME: This is just a permission client at this point. Rename/refactor.
 class IDBFactoryBackendProxy : public WebCore::IDBFactoryBackendInterface {
 public:
     static PassRefPtr<WebCore::IDBFactoryBackendInterface> create();
-    virtual ~IDBFactoryBackendProxy();
+    virtual ~IDBFactoryBackendProxy() { }
 
-    virtual void getDatabaseNames(PassRefPtr<WebCore::IDBCallbacks>, const String& databaseIdentifier, WebCore::ExecutionContext*) OVERRIDE;
-    virtual void open(const String& name, int64_t version, int64_t transactionId, PassRefPtr<WebCore::IDBCallbacks>, PassRefPtr<WebCore::IDBDatabaseCallbacks>, const String& databaseIdentifier, WebCore::ExecutionContext*) OVERRIDE;
-    virtual void deleteDatabase(const String& name, PassRefPtr<WebCore::IDBCallbacks>, const String& databaseIdentifier, WebCore::ExecutionContext*) OVERRIDE;
+    virtual bool allowIndexedDB(WebCore::ExecutionContext*, const String& name);
 
 private:
-    IDBFactoryBackendProxy();
-    bool allowIndexedDB(WebCore::ExecutionContext*, const String& name, const WebSecurityOrigin&, PassRefPtr<WebCore::IDBCallbacks>);
-
-    // We don't own this pointer (unlike all the other proxy classes which do).
-    WebIDBFactory* m_webIDBFactory;
+    IDBFactoryBackendProxy() { }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // IDBFactoryBackendProxy_h

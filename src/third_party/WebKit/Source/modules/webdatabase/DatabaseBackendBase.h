@@ -40,7 +40,7 @@
 #include "wtf/text/WTFString.h"
 
 #if !LOG_DISABLED || !ERROR_DISABLED
-#include "weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #endif
 
 namespace WebCore {
@@ -83,7 +83,6 @@ public:
     bool hadDeletes();
     void resetAuthorizer();
 
-    virtual void markAsDeletedAndClose() = 0;
     virtual void closeImmediately() = 0;
 
     DatabaseContext* databaseContext() const { return m_databaseContext.get(); }

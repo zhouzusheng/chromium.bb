@@ -32,6 +32,7 @@
 
 #include "core/css/resolver/StyleResolver.h"
 #include "core/rendering/FlowThreadController.h"
+#include "core/rendering/HitTestLocation.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderBoxRegionInfo.h"
 #include "core/rendering/RenderNamedFlowThread.h"
@@ -74,7 +75,7 @@ LayoutUnit RenderRegion::maxPageLogicalHeight() const
 {
     ASSERT(m_flowThread);
     ASSERT(hasAutoLogicalHeight() && !m_flowThread->inConstrainedLayoutPhase());
-    return style()->logicalMaxHeight().isUndefined() ? LayoutUnit::max() / 2 : computeReplacedLogicalHeightUsing(style()->logicalMaxHeight());
+    return style()->logicalMaxHeight().isUndefined() ? RenderFlowThread::maxLogicalHeight() : computeReplacedLogicalHeightUsing(style()->logicalMaxHeight());
 }
 
 LayoutUnit RenderRegion::logicalHeightOfAllFlowThreadContent() const
@@ -96,12 +97,8 @@ LayoutRect RenderRegion::overflowRectForFlowThreadPortion(const LayoutRect& flow
 {
     ASSERT(isValid());
 
-    // FIXME: Would like to just use hasOverflowClip() but we aren't a block yet. When RenderRegion is eliminated and
-    // folded into RenderBlock, switch to hasOverflowClip().
-    bool clipX = style()->overflowX() != OVISIBLE;
-    bool clipY = style()->overflowY() != OVISIBLE;
     bool isLastRegionWithRegionFragmentBreak = (isLastPortion && (style()->regionFragment() == BreakRegionFragment));
-    if ((clipX && clipY) || isLastRegionWithRegionFragmentBreak)
+    if (hasOverflowClip() || isLastRegionWithRegionFragmentBreak)
         return flowThreadPortionRect;
 
     LayoutRect flowThreadOverflow = m_flowThread->visualOverflowRect();
@@ -112,12 +109,14 @@ LayoutRect RenderRegion::overflowRectForFlowThreadPortion(const LayoutRect& flow
     if (m_flowThread->isHorizontalWritingMode()) {
         LayoutUnit minY = isFirstPortion ? (flowThreadOverflow.y() - outlineSize) : flowThreadPortionRect.y();
         LayoutUnit maxY = isLastPortion ? max(flowThreadPortionRect.maxY(), flowThreadOverflow.maxY()) + outlineSize : flowThreadPortionRect.maxY();
+        bool clipX = style()->overflowX() != OVISIBLE;
         LayoutUnit minX = clipX ? flowThreadPortionRect.x() : min(flowThreadPortionRect.x(), flowThreadOverflow.x() - outlineSize);
         LayoutUnit maxX = clipX ? flowThreadPortionRect.maxX() : max(flowThreadPortionRect.maxX(), (flowThreadOverflow.maxX() + outlineSize));
         clipRect = LayoutRect(minX, minY, maxX - minX, maxY - minY);
     } else {
         LayoutUnit minX = isFirstPortion ? (flowThreadOverflow.x() - outlineSize) : flowThreadPortionRect.x();
         LayoutUnit maxX = isLastPortion ? max(flowThreadPortionRect.maxX(), flowThreadOverflow.maxX()) + outlineSize : flowThreadPortionRect.maxX();
+        bool clipY = style()->overflowY() != OVISIBLE;
         LayoutUnit minY = clipY ? flowThreadPortionRect.y() : min(flowThreadPortionRect.y(), (flowThreadOverflow.y() - outlineSize));
         LayoutUnit maxY = clipY ? flowThreadPortionRect.maxY() : max(flowThreadPortionRect.y(), (flowThreadOverflow.maxY() + outlineSize));
         clipRect = LayoutRect(minX, minY, maxX - minX, maxY - minY);
@@ -142,8 +141,8 @@ void RenderRegion::setRegionOversetState(RegionOversetState state)
 
 Element* RenderRegion::element() const
 {
-    ASSERT(node() && node()->isElementNode());
-    return toElement(node());
+    ASSERT(nodeForRegion() && nodeForRegion()->isElementNode());
+    return toElement(nodeForRegion());
 }
 
 LayoutUnit RenderRegion::pageLogicalTopForOffset(LayoutUnit /* offset */) const
@@ -217,10 +216,9 @@ void RenderRegion::checkRegionStyle()
     bool customRegionStyle = false;
 
     // FIXME: Region styling doesn't work for pseudo elements.
-    if (node()) {
-        Element* regionElement = toElement(node());
-        customRegionStyle = view()->document().styleResolver()->checkRegionStyle(regionElement);
-    }
+    if (isElementBasedRegion())
+        customRegionStyle = view()->document().ensureStyleResolver().checkRegionStyle(this->element());
+
     setHasCustomRegionStyle(customRegionStyle);
     m_flowThread->checkRegionsWithStyling();
 }
@@ -555,7 +553,7 @@ PassRefPtr<RenderStyle> RenderRegion::computeStyleInRegion(const RenderObject* o
 
     // FIXME: Region styling fails for pseudo-elements because the renderers don't have a node.
     Element* element = toElement(object->node());
-    RefPtr<RenderStyle> renderObjectRegionStyle = object->view()->document().styleResolver()->styleForElement(element, 0, DisallowStyleSharing, MatchAllRules, this);
+    RefPtr<RenderStyle> renderObjectRegionStyle = object->view()->document().ensureStyleResolver().styleForElement(element, 0, DisallowStyleSharing, MatchAllRules, this);
 
     return renderObjectRegionStyle.release();
 }
@@ -658,13 +656,33 @@ void RenderRegion::updateLogicalHeight()
     LayoutUnit autoHeight = hasOverrideHeight() ? overrideLogicalContentHeight() : computedAutoHeight();
 
     LayoutUnit newLogicalHeight = autoHeight + borderAndPaddingLogicalHeight();
-    ASSERT(newLogicalHeight < LayoutUnit::max() / 2);
+    ASSERT(newLogicalHeight < RenderFlowThread::maxLogicalHeight());
     if (newLogicalHeight > logicalHeight()) {
         setLogicalHeight(newLogicalHeight);
         // Recalculate position of the render block after new logical height is set.
         // (needed in absolute positioning case with bottom alignment for example)
         RenderBlock::updateLogicalHeight();
     }
+}
+
+Node* RenderRegion::nodeForRegion() const
+{
+    if (parent() && isRenderNamedFlowFragment())
+        return parent()->node();
+    return node();
+}
+
+Node* RenderRegion::generatingNodeForRegion() const
+{
+    if (parent() && isRenderNamedFlowFragment())
+        return parent()->generatingNode();
+    return generatingNode();
+}
+
+bool RenderRegion::isElementBasedRegion() const
+{
+    Node* node = nodeForRegion();
+    return node && node->isElementNode() && !node->isPseudoElement();
 }
 
 } // namespace WebCore

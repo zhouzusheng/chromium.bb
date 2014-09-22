@@ -83,7 +83,7 @@ static bool propertyNameMatchesAttributeName(const String& propertyName, const S
     unsigned p = 0;
     bool wordBoundary = false;
     while (a < attributeLength && p < propertyLength) {
-        if (attributeName[a] == '-' && a + 1 < attributeLength && attributeName[a + 1] != '-')
+        if (attributeName[a] == '-' && a + 1 < attributeLength && isASCIILower(attributeName[a + 1]))
             wordBoundary = true;
         else {
             if ((wordBoundary ? toASCIIUpper(attributeName[a]) : attributeName[a]) != propertyName[p])
@@ -178,20 +178,20 @@ bool DatasetDOMStringMap::contains(const String& name)
     return false;
 }
 
-void DatasetDOMStringMap::setItem(const String& name, const String& value, ExceptionState& es)
+void DatasetDOMStringMap::setItem(const String& name, const String& value, ExceptionState& exceptionState)
 {
     if (!isValidPropertyName(name)) {
-        es.throwDOMException(SyntaxError, ExceptionMessages::failedToSet(name, "DOMStringMap", "'" + name + "' is not a valid property name."));
+        exceptionState.throwDOMException(SyntaxError, ExceptionMessages::failedToSet(name, "DOMStringMap", "'" + name + "' is not a valid property name."));
         return;
     }
 
-    m_element->setAttribute(convertPropertyNameToAttributeName(name), value, es);
+    m_element->setAttribute(convertPropertyNameToAttributeName(name), value, exceptionState);
 }
 
-void DatasetDOMStringMap::deleteItem(const String& name, ExceptionState& es)
+void DatasetDOMStringMap::deleteItem(const String& name, ExceptionState& exceptionState)
 {
     if (!isValidPropertyName(name)) {
-        es.throwDOMException(SyntaxError, ExceptionMessages::failedToDelete(name, "DOMStringMap", "'" + name + "' is not a valid property name."));
+        exceptionState.throwDOMException(SyntaxError, ExceptionMessages::failedToDelete(name, "DOMStringMap", "'" + name + "' is not a valid property name."));
         return;
     }
 

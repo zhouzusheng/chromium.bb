@@ -36,8 +36,8 @@
 #include "core/loader/FrameLoader.h"
 #include "core/loader/PrerendererClient.h"
 #include "platform/Prerender.h"
-#include "weborigin/ReferrerPolicy.h"
-#include "weborigin/SecurityPolicy.h"
+#include "platform/weborigin/ReferrerPolicy.h"
+#include "platform/weborigin/SecurityPolicy.h"
 
 namespace WebCore {
 
@@ -51,7 +51,7 @@ PassOwnPtr<PrerenderHandle> PrerenderHandle::create(Document& document, Prerende
     if (!document.frame())
         return PassOwnPtr<PrerenderHandle>();
 
-    const String referrer = SecurityPolicy::generateReferrerHeader(referrerPolicy, url, document.frame()->loader().outgoingReferrer());
+    const String referrer = SecurityPolicy::generateReferrerHeader(referrerPolicy, url, document.outgoingReferrer());
 
     RefPtr<Prerender> prerender = Prerender::create(client, url, referrer, referrerPolicy);
 

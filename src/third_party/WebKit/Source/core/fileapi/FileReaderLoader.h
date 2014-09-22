@@ -33,7 +33,7 @@
 
 #include "core/fileapi/FileError.h"
 #include "core/loader/ThreadableLoaderClient.h"
-#include "weborigin/KURL.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/ArrayBuffer.h"
 #include "wtf/ArrayBufferBuilder.h"
 #include "wtf/Forward.h"
@@ -124,7 +124,7 @@ private:
     String m_stringResult;
 
     // The decoder used to decode the text data.
-    RefPtr<TextResourceDecoder> m_decoder;
+    OwnPtr<TextResourceDecoder> m_decoder;
 
     bool m_finishedLoading;
     long long m_bytesLoaded;

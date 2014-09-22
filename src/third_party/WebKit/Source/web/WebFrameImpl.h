@@ -56,7 +56,7 @@ struct FrameLoadRequest;
 struct WindowFeatures;
 }
 
-namespace WebKit {
+namespace blink {
 class ChromePrintContext;
 class WebDataSourceImpl;
 class WebInputElement;
@@ -82,6 +82,8 @@ public:
     virtual void setName(const WebString&);
     virtual long long embedderIdentifier() const;
     virtual WebVector<WebIconURL> iconURLs(int iconTypesMask) const;
+    virtual void setRemoteWebLayer(WebLayer*);
+    virtual void setPermissionClient(WebPermissionClient*);
     virtual WebSize scrollOffset() const;
     virtual void setScrollOffset(const WebSize&);
     virtual WebSize minimumScrollOffset() const;
@@ -163,7 +165,6 @@ public:
     virtual void dispatchWillSendRequest(WebURLRequest&);
     virtual WebURLLoader* createAssociatedURLLoader(const WebURLLoaderOptions&);
     virtual unsigned unloadListenerCount() const;
-    virtual bool willSuppressOpenerInNewFrame() const;
     virtual void replaceSelection(const WebString&);
     virtual void insertText(const WebString&);
     virtual void setMarkedText(const WebString&, unsigned location, unsigned length);
@@ -187,7 +188,6 @@ public:
     virtual bool selectWordAroundCaret();
     virtual void selectRange(const WebPoint& base, const WebPoint& extent);
     virtual void selectRange(const WebRange&);
-    virtual void moveCaretSelectionTowardsWindowPoint(const WebPoint&);
     virtual void moveRangeSelection(const WebPoint& base, const WebPoint& extent);
     virtual void moveCaretSelection(const WebPoint&);
     virtual void setCaretVisible(bool);
@@ -302,6 +302,8 @@ public:
 
     WebFrameClient* client() const { return m_client; }
     void setClient(WebFrameClient* client) { m_client = client; }
+
+    WebPermissionClient* permissionClient() { return m_permissionClient; }
 
     void setInputEventsTransformForEmulation(const WebCore::IntSize&, float);
 
@@ -435,6 +437,7 @@ private:
     RefPtr<WebFrameInit> m_frameInit;
 
     WebFrameClient* m_client;
+    WebPermissionClient* m_permissionClient;
 
     // A way for the main frame to keep track of which frame has an active
     // match. Should be 0 for all other frames.
@@ -513,10 +516,6 @@ private:
     // information. Is used by PrintPage().
     OwnPtr<ChromePrintContext> m_printContext;
 
-    // Ensure we don't overwrite valid history data during same document loads
-    // from HistoryItems
-    bool m_inSameDocumentHistoryLoad;
-
     // Stores the additional input events offset and scale when device metrics emulation is enabled.
     WebCore::IntSize m_inputEventsOffsetForEmulation;
     float m_inputEventsScaleFactorForEmulation;
@@ -535,6 +534,6 @@ inline const WebFrameImpl* toWebFrameImpl(const WebFrame* webFrame)
 // This will catch anyone doing an unnecessary cast.
 void toWebFrameImpl(const WebFrameImpl*);
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

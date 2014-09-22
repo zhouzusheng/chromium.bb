@@ -30,7 +30,7 @@
 #include "WebString.h"
 #include "WebVector.h"
 
-namespace WebKit {
+namespace blink {
 
 class WebData;
 class WebIDBCursor;
@@ -45,34 +45,21 @@ class WebIDBCallbacks {
 public:
     virtual ~WebIDBCallbacks() { }
 
-    enum DataLoss {
-        DataLossNone = 0,
-        DataLossTotal = 1
-    };
-
-    // For classes that follow the PImpl pattern, pass a const reference.
-    // For the rest, pass ownership to the callee via a pointer.
+    // Pointers transfer ownership.
     virtual void onError(const WebIDBDatabaseError&) { BLINK_ASSERT_NOT_REACHED(); }
     virtual void onSuccess(const WebVector<WebString>&) { BLINK_ASSERT_NOT_REACHED(); }
-    virtual void onSuccess(WebIDBCursor*, const WebIDBKey& key, const WebIDBKey& primaryKey, const WebData&) { BLINK_ASSERT_NOT_REACHED(); }
-    virtual void onSuccess(WebIDBDatabase*) { BLINK_ASSERT_NOT_REACHED(); }
+    virtual void onSuccess(WebIDBCursor*, const WebIDBKey&, const WebIDBKey& primaryKey, const WebData&) { BLINK_ASSERT_NOT_REACHED(); }
     virtual void onSuccess(WebIDBDatabase*, const WebIDBMetadata&) { BLINK_ASSERT_NOT_REACHED(); }
     virtual void onSuccess(const WebIDBKey&) { BLINK_ASSERT_NOT_REACHED(); }
     virtual void onSuccess(const WebData&) { BLINK_ASSERT_NOT_REACHED(); }
     virtual void onSuccess(const WebData&, const WebIDBKey&, const WebIDBKeyPath&) { BLINK_ASSERT_NOT_REACHED(); }
     virtual void onSuccess(long long) { BLINK_ASSERT_NOT_REACHED(); }
     virtual void onSuccess() { BLINK_ASSERT_NOT_REACHED(); }
-    virtual void onSuccess(const WebIDBKey& key, const WebIDBKey& primaryKey, const WebData&) { BLINK_ASSERT_NOT_REACHED(); }
+    virtual void onSuccess(const WebIDBKey&, const WebIDBKey& primaryKey, const WebData&) { BLINK_ASSERT_NOT_REACHED(); }
     virtual void onBlocked(long long oldVersion) { BLINK_ASSERT_NOT_REACHED(); }
-    // FIXME: Remove this function after the associated chrome patch
-    // (https://codereview.chromium.org/47513010/) has landed.
-    virtual void onUpgradeNeeded(long long oldVersion, WebIDBDatabase* database, const WebIDBMetadata& metadata, DataLoss dataLoss)
-    {
-        onUpgradeNeeded(oldVersion, database, metadata, dataLoss, WebString());
-    }
-    virtual void onUpgradeNeeded(long long oldVersion, WebIDBDatabase*, const WebIDBMetadata&, DataLoss dataLoss, WebString dataLossMessage) { BLINK_ASSERT_NOT_REACHED(); }
+    virtual void onUpgradeNeeded(long long oldVersion, WebIDBDatabase*, const WebIDBMetadata&, unsigned short dataLoss, WebString dataLossMessage) { BLINK_ASSERT_NOT_REACHED(); }
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif // WebIDBCallbacks_h

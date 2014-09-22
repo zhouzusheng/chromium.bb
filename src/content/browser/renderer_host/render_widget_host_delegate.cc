@@ -13,7 +13,7 @@ bool RenderWidgetHostDelegate::PreHandleKeyboardEvent(
 }
 
 bool RenderWidgetHostDelegate::PreHandleWheelEvent(
-    const WebKit::WebMouseWheelEvent& event) {
+    const blink::WebMouseWheelEvent& event) {
   return false;
 }
 
@@ -27,7 +27,7 @@ bool RenderWidgetHostDelegate::ShouldSetLogicalFocusOnMouseDown() {
 
 bool RenderWidgetHostDelegate::ShowTooltip(
     const string16& tooltip_text,
-    WebKit::WebTextDirection text_direction_hint) {
+    blink::WebTextDirection text_direction_hint) {
   return false;
 }
 

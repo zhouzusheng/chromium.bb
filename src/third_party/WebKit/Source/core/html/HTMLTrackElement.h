@@ -36,19 +36,10 @@ class HTMLMediaElement;
 
 class HTMLTrackElement FINAL : public HTMLElement, public TextTrackClient {
 public:
-    static PassRefPtr<HTMLTrackElement> create(const QualifiedName&, Document&);
+    static PassRefPtr<HTMLTrackElement> create(Document&);
 
-    String kind();
-    void setKind(const String&);
-
-    String srclang() const;
-    void setSrclang(const String&);
-
-    String label() const;
-    void setLabel(const String&);
-
-    bool isDefault() const;
-    void setIsDefault(bool);
+    const AtomicString& kind();
+    void setKind(const AtomicString&);
 
     enum ReadyState { NONE = 0, LOADING = 1, LOADED = 2, TRACK_ERROR = 3 };
     ReadyState readyState();
@@ -64,7 +55,7 @@ public:
     const AtomicString& mediaElementCrossOriginAttribute() const;
 
 private:
-    HTMLTrackElement(const QualifiedName&, Document&);
+    explicit HTMLTrackElement(Document&);
     virtual ~HTMLTrackElement();
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;

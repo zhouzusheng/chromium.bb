@@ -412,10 +412,13 @@ void HGlobalValueNumberingPhase::ComputeBlockSideEffects() {
 
       // Propagate loop side effects upwards.
       if (block->HasParentLoopHeader()) {
-        int header_id = block->parent_loop_header()->block_id();
-        loop_side_effects_[header_id].Add(block->IsLoopHeader()
-                                          ? loop_side_effects_[id]
-                                          : side_effects);
+        HBasicBlock* with_parent = block;
+        if (block->IsLoopHeader()) side_effects = loop_side_effects_[id];
+        do {
+          HBasicBlock* parent_block = with_parent->parent_loop_header();
+          loop_side_effects_[parent_block->block_id()].Add(side_effects);
+          with_parent = parent_block;
+        } while (with_parent->HasParentLoopHeader());
       }
     }
   }
@@ -433,7 +436,7 @@ SmartArrayPointer<char> GetGVNFlagsString(GVNFlagSet flags) {
   uint32_t set_depends_on = 0;
   uint32_t set_changes = 0;
   for (int bit = 0; bit < kLastFlag; ++bit) {
-    if ((flags.ToIntegral() & (1 << bit)) != 0) {
+    if (flags.Contains(static_cast<GVNFlag>(bit))) {
       if (bit % 2 == 0) {
         set_changes++;
       } else {
@@ -450,7 +453,7 @@ SmartArrayPointer<char> GetGVNFlagsString(GVNFlagSet flags) {
       offset += OS::SNPrintF(buffer + offset, "changes all except [");
     }
     for (int bit = 0; bit < kLastFlag; ++bit) {
-      if (((flags.ToIntegral() & (1 << bit)) != 0) == positive_changes) {
+      if (flags.Contains(static_cast<GVNFlag>(bit)) == positive_changes) {
         switch (static_cast<GVNFlag>(bit)) {
 #define DECLARE_FLAG(type)                                       \
           case kChanges##type:                                   \
@@ -479,7 +482,7 @@ GVN_UNTRACKED_FLAG_LIST(DECLARE_FLAG)
       offset += OS::SNPrintF(buffer + offset, "depends on all except [");
     }
     for (int bit = 0; bit < kLastFlag; ++bit) {
-      if (((flags.ToIntegral() & (1 << bit)) != 0) == positive_depends_on) {
+      if (flags.Contains(static_cast<GVNFlag>(bit)) == positive_depends_on) {
         switch (static_cast<GVNFlag>(bit)) {
 #define DECLARE_FLAG(type)                                       \
           case kDependsOn##type:                                 \
@@ -567,7 +570,8 @@ void HGlobalValueNumberingPhase::ProcessLoopBlock(
         }
 
         if (inputs_loop_invariant && ShouldMove(instr, loop_header)) {
-          TRACE_GVN_1("Hoisting loop invariant instruction %d\n", instr->id());
+          TRACE_GVN_2("Hoisting loop invariant instruction i%d to block B%d\n",
+                      instr->id(), pre_header->block_id());
           // Move the instruction out of the loop.
           instr->Unlink();
           instr->InsertBefore(pre_header->end());

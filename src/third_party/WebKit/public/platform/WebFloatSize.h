@@ -35,7 +35,7 @@
 
 #include <algorithm>
 
-#if BLINK_IMPLEMENTATION
+#if INSIDE_BLINK
 #include "platform/geometry/FloatSize.h"
 #else
 #include <cmath>
@@ -43,7 +43,7 @@
 #include <ui/gfx/vector2d_f.h>
 #endif
 
-namespace WebKit {
+namespace blink {
 
 struct WebFloatSize {
     float width;
@@ -63,7 +63,7 @@ struct WebFloatSize {
     {
     }
 
-#if BLINK_IMPLEMENTATION
+#if INSIDE_BLINK
     WebFloatSize(const WebCore::FloatSize& s)
         : width(s.width())
         , height(s.height())
@@ -130,6 +130,6 @@ inline bool operator!=(const WebFloatSize& a, const WebFloatSize& b)
     return !(a == b);
 }
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

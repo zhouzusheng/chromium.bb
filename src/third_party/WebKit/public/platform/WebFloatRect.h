@@ -33,7 +33,7 @@
 
 #include "WebCommon.h"
 
-#if BLINK_IMPLEMENTATION
+#if INSIDE_BLINK
 #include "platform/geometry/FloatRect.h"
 #else
 #include <algorithm>
@@ -41,7 +41,7 @@
 #include <ui/gfx/rect_f.h>
 #endif
 
-namespace WebKit {
+namespace blink {
 
 struct WebFloatRect {
     float x;
@@ -67,7 +67,7 @@ struct WebFloatRect {
     {
     }
 
-#if BLINK_IMPLEMENTATION
+#if INSIDE_BLINK
     WebFloatRect(const WebCore::FloatRect& r)
         : x(r.x())
         , y(r.y())
@@ -124,6 +124,6 @@ inline bool operator!=(const WebFloatRect& a, const WebFloatRect& b)
     return !(a == b);
 }
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

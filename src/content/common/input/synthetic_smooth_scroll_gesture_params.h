@@ -7,6 +7,8 @@
 
 #include "content/common/content_export.h"
 #include "content/common/input/synthetic_gesture_params.h"
+#include "ui/gfx/point.h"
+#include "ui/gfx/vector2d.h"
 
 namespace content {
 
@@ -20,9 +22,10 @@ struct CONTENT_EXPORT SyntheticSmoothScrollGestureParams
 
   virtual GestureType GetGestureType() const OVERRIDE;
 
-  int distance;
-  int anchor_x;
-  int anchor_y;
+  gfx::Vector2d distance;
+  gfx::Point anchor;
+  bool prevent_fling;  // Defaults to true.
+  int speed_in_pixels_s;
 
   static const SyntheticSmoothScrollGestureParams* Cast(
       const SyntheticGestureParams* gesture_params);

@@ -35,7 +35,7 @@
 
 #include <windows.h>
 
-namespace WebKit {
+namespace blink {
 
 class WebKeyboardEvent;
 class WebMouseEvent;
@@ -54,8 +54,9 @@ public:
     // information is known to be stale and needs to be reset; that is the
     // function of resetLastClickState().
     BLINK_EXPORT static void resetLastClickState();
+    BLINK_EXPORT static bool isSystemKeyEvent(const WebKeyboardEvent&);
 };
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

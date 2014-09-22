@@ -24,9 +24,9 @@
 #ifndef RenderMenuList_h
 #define RenderMenuList_h
 
-#include "core/platform/PopupMenu.h"
-#include "core/platform/PopupMenuClient.h"
 #include "core/rendering/RenderFlexibleBox.h"
+#include "platform/PopupMenu.h"
+#include "platform/PopupMenuClient.h"
 #include "platform/geometry/LayoutRect.h"
 
 namespace WebCore {
@@ -72,8 +72,6 @@ private:
     virtual void computePreferredLogicalWidths() OVERRIDE;
 
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
-
-    virtual bool requiresForcedStyleRecalcPropagation() const { return true; }
 
     // PopupMenuClient methods
     virtual void valueChanged(unsigned listIndex, bool fireOnChange = true) OVERRIDE;

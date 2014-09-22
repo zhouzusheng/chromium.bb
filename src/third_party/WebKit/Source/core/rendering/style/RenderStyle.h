@@ -29,7 +29,6 @@
 #include "core/css/CSSLengthFunctions.h"
 #include "core/css/CSSLineBoxContainValue.h"
 #include "core/css/CSSPrimitiveValue.h"
-#include "core/platform/ThemeTypes.h"
 #include "core/platform/animation/CSSAnimationDataList.h"
 #include "core/rendering/style/BorderValue.h"
 #include "core/rendering/style/CounterDirectives.h"
@@ -59,6 +58,7 @@
 #include "platform/Length.h"
 #include "platform/LengthBox.h"
 #include "platform/LengthSize.h"
+#include "platform/ThemeTypes.h"
 #include "platform/fonts/FontBaseline.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/geometry/LayoutBoxExtent.h"
@@ -116,10 +116,15 @@ class RenderStyle: public RefCounted<RenderStyle> {
     friend class CSSComputedStyleDeclaration; // Ignores visited styles, so needs to be able to see unvisited info.
     friend class PropertyWrapperMaybeInvalidColor; // Used by CSS animations. We can't allow them to animate based off visited colors.
     friend class StyleBuilderFunctions; // Sets color styles
-    friend class StyleBuilderConverter; // Reads unvisited color style for shadow currentColor
-    friend class StyleBuilder; // FIXME: Revove this! StyleBuilder::oldApplyProperty reads color().
-    friend class StyleResolver; // Sets members directly.
     friend class CachedUAStyle; // Saves Border/Background information for later comparison.
+
+    // FIXME: When we stop resolving currentColor at style time, these can be removed.
+    friend class CSSToStyleMap;
+    friend class FilterOperationResolver;
+    friend class StyleBuilderConverter;
+    friend class StyleBuilder;
+    friend class StyleResolverState;
+    friend class StyleResolver;
 protected:
 
     // non-inherited attributes
@@ -210,6 +215,7 @@ protected:
                 && _page_break_after == other._page_break_after
                 && _page_break_inside == other._page_break_inside
                 && _styleType == other._styleType
+                && _affectedByFocus == other._affectedByFocus
                 && _affectedByHover == other._affectedByHover
                 && _affectedByActive == other._affectedByActive
                 && _affectedByDrag == other._affectedByDrag
@@ -251,6 +257,8 @@ protected:
         unsigned firstChildState : 1;
         unsigned lastChildState : 1;
 
+        bool affectedByFocus() const { return _affectedByFocus; }
+        void setAffectedByFocus(bool value) { _affectedByFocus = value; }
         bool affectedByHover() const { return _affectedByHover; }
         void setAffectedByHover(bool value) { _affectedByHover = value; }
         bool affectedByActive() const { return _affectedByActive; }
@@ -260,12 +268,13 @@ protected:
         bool isLink() const { return _isLink; }
         void setIsLink(bool value) { _isLink = value; }
     private:
+        unsigned _affectedByFocus : 1;
         unsigned _affectedByHover : 1;
         unsigned _affectedByActive : 1;
         unsigned _affectedByDrag : 1;
         unsigned _isLink : 1;
         // If you add more style bits here, you will also need to update RenderStyle::copyNonInheritedFrom()
-        // 61 bits
+        // 60 bits
     } noninherited_flags;
 
 // !END SYNC!
@@ -312,6 +321,7 @@ protected:
         noninherited_flags.emptyState = false;
         noninherited_flags.firstChildState = false;
         noninherited_flags.lastChildState = false;
+        noninherited_flags.setAffectedByFocus(false);
         noninherited_flags.setAffectedByHover(false);
         noninherited_flags.setAffectedByActive(false);
         noninherited_flags.setAffectedByDrag(false);
@@ -355,10 +365,12 @@ public:
     void setVariable(const AtomicString& name, const String& value) { rareInheritedData.access()->m_variables.access()->setVariable(name, value); }
     const HashMap<AtomicString, String>* variables() { return &(rareInheritedData->m_variables->m_data); }
 
+    bool affectedByFocus() const { return noninherited_flags.affectedByFocus(); }
     bool affectedByHover() const { return noninherited_flags.affectedByHover(); }
     bool affectedByActive() const { return noninherited_flags.affectedByActive(); }
     bool affectedByDrag() const { return noninherited_flags.affectedByDrag(); }
 
+    void setAffectedByFocus() { noninherited_flags.setAffectedByFocus(true); }
     void setAffectedByHover() { noninherited_flags.setAffectedByHover(true); }
     void setAffectedByActive() { noninherited_flags.setAffectedByActive(true); }
     void setAffectedByDrag() { noninherited_flags.setAffectedByDrag(true); }
@@ -473,8 +485,8 @@ public:
     const NinePieceImage& borderImage() const { return surround->border.image(); }
     StyleImage* borderImageSource() const { return surround->border.image().image(); }
     LengthBox borderImageSlices() const { return surround->border.image().imageSlices(); }
-    LengthBox borderImageWidth() const { return surround->border.image().borderSlices(); }
-    LengthBox borderImageOutset() const { return surround->border.image().outset(); }
+    const BorderImageLengthBox& borderImageWidth() const { return surround->border.image().borderSlices(); }
+    const BorderImageLengthBox& borderImageOutset() const { return surround->border.image().outset(); }
 
     LengthSize borderTopLeftRadius() const { return surround->border.topLeft(); }
     LengthSize borderTopRightRadius() const { return surround->border.topRight(); }
@@ -648,8 +660,8 @@ public:
     StyleImage* maskBoxImageSource() const { return rareNonInheritedData->m_maskBoxImage.image(); }
     LengthBox maskBoxImageSlices() const { return rareNonInheritedData->m_maskBoxImage.imageSlices(); }
     bool maskBoxImageSlicesFill() const { return rareNonInheritedData->m_maskBoxImage.fill(); }
-    LengthBox maskBoxImageWidth() const { return rareNonInheritedData->m_maskBoxImage.borderSlices(); }
-    LengthBox maskBoxImageOutset() const { return rareNonInheritedData->m_maskBoxImage.outset(); }
+    const BorderImageLengthBox& maskBoxImageWidth() const { return rareNonInheritedData->m_maskBoxImage.borderSlices(); }
+    const BorderImageLengthBox& maskBoxImageOutset() const { return rareNonInheritedData->m_maskBoxImage.outset(); }
 
     EBorderCollapse borderCollapse() const { return static_cast<EBorderCollapse>(inherited_flags._border_collapse); }
     short horizontalBorderSpacing() const;
@@ -913,12 +925,13 @@ public:
     const FilterOperations& filter() const { return rareNonInheritedData->m_filter->m_operations; }
     bool hasFilter() const { return !rareNonInheritedData->m_filter->m_operations.operations().isEmpty(); }
 
-    BlendMode blendMode() const;
-    void setBlendMode(BlendMode v);
+    blink::WebBlendMode blendMode() const;
+    void setBlendMode(blink::WebBlendMode v);
     bool hasBlendMode() const;
 
     EIsolation isolation() const;
     void setIsolation(EIsolation v);
+    bool hasIsolation() const;
 
     bool shouldPlaceBlockDirectionScrollbarOnLogicalLeft() const { return !isLeftToRightDirection() && isHorizontalWritingMode(); }
 
@@ -988,8 +1001,8 @@ public:
     void setBorderImage(const NinePieceImage& b) { SET_VAR(surround, border.m_image, b); }
     void setBorderImageSource(PassRefPtr<StyleImage>);
     void setBorderImageSlices(LengthBox);
-    void setBorderImageWidth(LengthBox);
-    void setBorderImageOutset(LengthBox);
+    void setBorderImageWidth(const BorderImageLengthBox&);
+    void setBorderImageOutset(const BorderImageLengthBox&);
 
     void setBorderTopLeftRadius(LengthSize s) { SET_VAR(surround, border.m_topLeft, s); }
     void setBorderTopRightRadius(LengthSize s) { SET_VAR(surround, border.m_topRight, s); }
@@ -1120,11 +1133,11 @@ public:
     {
         rareNonInheritedData.access()->m_maskBoxImage.setFill(fill);
     }
-    void setMaskBoxImageWidth(LengthBox slices)
+    void setMaskBoxImageWidth(const BorderImageLengthBox& slices)
     {
         rareNonInheritedData.access()->m_maskBoxImage.setBorderSlices(slices);
     }
-    void setMaskBoxImageOutset(LengthBox outset)
+    void setMaskBoxImageOutset(const BorderImageLengthBox& outset)
     {
         rareNonInheritedData.access()->m_maskBoxImage.setOutset(outset);
     }
@@ -1415,7 +1428,7 @@ public:
     }
     ShapeValue* shapeOutside() const { return rareNonInheritedData->m_shapeOutside.get(); }
 
-    static ShapeValue* initialShapeInside();
+    static ShapeValue* initialShapeInside() { return 0; }
     static ShapeValue* initialShapeOutside() { return 0; }
 
     void setClipPath(PassRefPtr<ClipPathOperation> operation)
@@ -1694,7 +1707,7 @@ public:
     static ETextSecurity initialTextSecurity() { return TSNONE; }
     static Color initialTapHighlightColor();
     static const FilterOperations& initialFilter() { DEFINE_STATIC_LOCAL(FilterOperations, ops, ()); return ops; }
-    static BlendMode initialBlendMode() { return BlendModeNormal; }
+    static blink::WebBlendMode initialBlendMode() { return blink::WebBlendModeNormal; }
     static EIsolation initialIsolation() { return IsolationAuto; }
 private:
     void setVisitedLinkColor(const Color&);
@@ -1770,11 +1783,11 @@ private:
     Color lightingColor() const { return svgStyle()->lightingColor(); }
 
     void appendContent(PassOwnPtr<ContentData>);
+    StyleDifference repaintOnlyDiff(const RenderStyle* other, unsigned& changedContextSensitiveProperties) const;
 };
 
-inline int adjustForAbsoluteZoom(int value, const RenderStyle* style)
+inline int adjustForAbsoluteZoom(int value, float zoomFactor)
 {
-    double zoomFactor = style->effectiveZoom();
     if (zoomFactor == 1)
         return value;
     // Needed because computeLengthInt truncates (rather than rounds) when scaling up.
@@ -1788,14 +1801,19 @@ inline int adjustForAbsoluteZoom(int value, const RenderStyle* style)
     return roundForImpreciseConversion<int>(value / zoomFactor);
 }
 
-inline float adjustFloatForAbsoluteZoom(float value, const RenderStyle* style)
+inline int adjustForAbsoluteZoom(int value, const RenderStyle* style)
 {
-    return value / style->effectiveZoom();
+    return adjustForAbsoluteZoom(value, style->effectiveZoom());
 }
 
-inline LayoutUnit adjustLayoutUnitForAbsoluteZoom(LayoutUnit value, const RenderStyle* style)
+inline float adjustFloatForAbsoluteZoom(float value, const RenderStyle& style)
 {
-    return value / style->effectiveZoom();
+    return value / style.effectiveZoom();
+}
+
+inline LayoutUnit adjustLayoutUnitForAbsoluteZoom(LayoutUnit value, const RenderStyle& style)
+{
+    return value / style.effectiveZoom();
 }
 
 inline bool RenderStyle::setZoom(float f)
@@ -1833,6 +1851,25 @@ inline bool RenderStyle::setTextOrientation(TextOrientation textOrientation)
 
     rareInheritedData.access()->m_textOrientation = textOrientation;
     return true;
+}
+
+inline bool RenderStyle::hasAnyPublicPseudoStyles() const
+{
+    return PUBLIC_PSEUDOID_MASK & noninherited_flags._pseudoBits;
+}
+
+inline bool RenderStyle::hasPseudoStyle(PseudoId pseudo) const
+{
+    ASSERT(pseudo > NOPSEUDO);
+    ASSERT(pseudo < FIRST_INTERNAL_PSEUDOID);
+    return (1 << (pseudo - 1)) & noninherited_flags._pseudoBits;
+}
+
+inline void RenderStyle::setHasPseudoStyle(PseudoId pseudo)
+{
+    ASSERT(pseudo > NOPSEUDO);
+    ASSERT(pseudo < FIRST_INTERNAL_PSEUDOID);
+    noninherited_flags._pseudoBits |= 1 << (pseudo - 1);
 }
 
 } // namespace WebCore

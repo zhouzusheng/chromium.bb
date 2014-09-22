@@ -441,7 +441,7 @@ static void exposeString(v8::Isolate* isolate, const v8::Handle<v8::Object>& obj
     obj->Set(v8::String::NewFromUtf8(isolate, name), v8::String::NewFromUtf8(isolate, value.data(), v8::String::kNormalString, value.length()));
 }
 
-static void exposeStringVector(v8::Isolate* isolate, const v8::Handle<v8::Object>& obj, const char* name, const WebKit::WebVector<WebKit::WebString>& value)
+static void exposeStringVector(v8::Isolate* isolate, const v8::Handle<v8::Object>& obj, const char* name, const blink::WebVector<blink::WebString>& value)
 {
     v8::Handle<v8::Array> array = v8::Array::New();
     for (unsigned i = 0; i < value.size(); ++i) {
@@ -490,7 +490,7 @@ static bool fireBbContextMenuEvent(Frame* frame, WebContextMenuData& data)
     eventInit.bubbles = true;
     eventInit.cancelable = true;
     RefPtr<CustomEvent> event = CustomEvent::create("bbContextMenu", eventInit);
-    event->setSerializedDetail(SerializedScriptValue::create(detailObj, isolate));
+    event->setSerializedDetail(SerializedScriptValue::createAndSwallowExceptions(detailObj, isolate));
 
     data.node.unwrap<Node>()->dispatchEvent(event);
     return event->defaultPrevented();

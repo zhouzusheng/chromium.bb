@@ -2225,7 +2225,7 @@ void RenderWidgetHostViewAura::SetRubberbandRect(const gfx::Rect& rect) {
     rubberband_outline_.reset(new ui::RubberbandOutline());
 
   // TODO(SHEZ): Replace this windows-specific code with an Aura view
-  HWND hwnd = window_->GetDispatcher()->GetAcceleratedWidget();
+  HWND hwnd = window_->GetDispatcher()->host()->GetAcceleratedWidget();
   RECT wrect = rect.ToRECT();
   rubberband_outline_->SetRect(hwnd, wrect);
 }

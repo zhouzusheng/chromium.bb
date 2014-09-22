@@ -472,7 +472,7 @@ class CONTENT_EXPORT RenderViewImpl
       const blink::WebGestureEvent& event,
       const blink::WebVector<blink::WebRect>& target_rects);
 #endif
-  virtual void setRubberbandRect(const WebKit::WebRect&);
+  virtual void setRubberbandRect(const blink::WebRect&);
   virtual void hideRubberbandRect();
   virtual void navigateBackForwardSoon(int offset);
   virtual int historyBackListCount();

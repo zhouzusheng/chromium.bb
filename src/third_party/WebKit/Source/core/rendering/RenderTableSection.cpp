@@ -948,12 +948,12 @@ redoLayout:
             if (!cell || cs.inColSpan)
                 continue;
 
-            int rowIndex = cell->rowIndex();
+            unsigned rowIndex = cell->rowIndex();
             int rHeight = m_rowPos[rowIndex + cell->rowSpan()] - m_rowPos[rowIndex] - vspacing;
             for (unsigned ri = rowIndex+1; ri < totalRows && ri <= rowIndex+cell->rowSpan(); ++ri) {
                 rHeight -= floorToInt(m_grid[ri].paginationStrut);
             }
-            
+
             // Force percent height children to lay themselves out again.
             // This will cause these children to grow to fill the cell.
             // FIXME: There is still more work to do here to fully match WinIE (should

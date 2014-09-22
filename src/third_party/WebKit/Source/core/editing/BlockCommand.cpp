@@ -70,7 +70,7 @@ void BlockCommand::formatBlockExtent(PassRefPtr<Node> prpFirstNode, PassRefPtr<N
             lastSibling = nextSibling;
         }
 
-        RefPtr<Node> nextNode = lastSibling == endNode ? 0 : NodeTraversal::nextSkippingChildren(lastSibling.get(), stayWithin);
+        RefPtr<Node> nextNode = lastSibling == endNode ? 0 : NodeTraversal::nextSkippingChildren(*lastSibling, stayWithin);
         formatBlockSiblings(firstSibling, lastSibling, stayWithin, endNode.get());
         currentNode = nextNode;
     }

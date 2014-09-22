@@ -1903,7 +1903,7 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
         case CSSPropertyCaptionSide:
             return cssValuePool().createValue(style->captionSide());
         case CSSPropertyWebkitCaretColor:
-            return currentColorOrValidColor(style.get(), style->caretColor());
+            return currentColorOrValidColor(*style, style->caretColor());
         case CSSPropertyClear:
             return cssValuePool().createValue(style->clear());
         case CSSPropertyColor:

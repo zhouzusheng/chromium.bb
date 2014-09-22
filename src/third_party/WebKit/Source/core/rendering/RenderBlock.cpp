@@ -2639,9 +2639,9 @@ void RenderBlock::getLineSelectionLogicalLeftAndRight(RenderBlock *rootBlock, co
     else if (ltr) {
         if (containsStartOfSelection)
             // this will be adjusted further below if the first selected box has a selection rect
-            logicalLeft = inlineDirectionOffset(rootBlock, offsetFromRootBlock) + line->logicalRight();
+            logicalLeft = rootBlock->inlineDirectionOffset(offsetFromRootBlock) + line->logicalRight();
         else
-            logicalLeft = inlineDirectionOffset(rootBlock, offsetFromRootBlock) + line->logicalLeft();
+            logicalLeft = rootBlock->inlineDirectionOffset(offsetFromRootBlock) + line->logicalLeft();
     }
     else
         // this will be adjusted further below if containsEndOfSelection and the first selected box has a selection rect
@@ -2652,9 +2652,9 @@ void RenderBlock::getLineSelectionLogicalLeftAndRight(RenderBlock *rootBlock, co
     else if (!ltr) {
         if (containsStartOfSelection)
             // this will be adjusted further below if the last selected box has a selection rect
-            logicalRight = inlineDirectionOffset(rootBlock, offsetFromRootBlock) + line->logicalLeft();
+            logicalRight = rootBlock->inlineDirectionOffset(offsetFromRootBlock) + line->logicalLeft();
         else
-            logicalRight = inlineDirectionOffset(rootBlock, offsetFromRootBlock) + line->logicalRight();
+            logicalRight = rootBlock->inlineDirectionOffset(offsetFromRootBlock) + line->logicalRight();
     }
     else
         // this will be adjusted further below if containsEndOfSelection and the last selected box has a selection rect
@@ -2746,7 +2746,7 @@ LayoutRect RenderBlock::logicalRightSelectionGap(RenderBlock* rootBlock, const L
 LayoutRect RenderBlock::lineEndingSelectionGap(RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
                                                RenderObject* selObj, LayoutUnit logicalEnd, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo* paintInfo)
 {
-    LayoutUnit rootBlockLogicalTop = blockDirectionOffset(rootBlock, offsetFromRootBlock) + logicalTop;
+    LayoutUnit rootBlockLogicalTop = rootBlock->blockDirectionOffset(offsetFromRootBlock) + logicalTop;
     LayoutUnit lineEndingLogicalLeft;
     LayoutUnit lineEndingLogicalRight;
     getLineEndingGapLogicalLeftAndRight(rootBlock, offsetFromRootBlock, logicalEnd, logicalTop, logicalHeight, lineEndingLogicalLeft, lineEndingLogicalRight);
@@ -2773,11 +2773,11 @@ void RenderBlock::getLineEndingGapLogicalLeftAndRight(RenderBlock* rootBlock, co
     endPaddingToRoot += rootBlock->paddingEnd();
 
     if (style()->isLeftToRightDirection()) {
-        logicalLeft = max(inlineDirectionOffset(rootBlock, offsetFromRootBlock) + floorToInt(logicalEnd), max(logicalLeftSelectionOffset(rootBlock, logicalTop), logicalLeftSelectionOffset(rootBlock, logicalTop + logicalHeight)));
+        logicalLeft = max(rootBlock->inlineDirectionOffset(offsetFromRootBlock) + floorToInt(logicalEnd), max(logicalLeftSelectionOffset(rootBlock, logicalTop), logicalLeftSelectionOffset(rootBlock, logicalTop + logicalHeight)));
         logicalRight = min(logicalLeft + lineEndingGapWidth, endPaddingToRoot + min(logicalRightSelectionOffset(rootBlock, logicalTop), logicalRightSelectionOffset(rootBlock, logicalTop + logicalHeight)));
     }
     else {
-        logicalRight = min(inlineDirectionOffset(rootBlock, offsetFromRootBlock) + floorToInt(logicalEnd), min(logicalRightSelectionOffset(rootBlock, logicalTop), logicalRightSelectionOffset(rootBlock, logicalTop + logicalHeight)));
+        logicalRight = min(rootBlock->inlineDirectionOffset(offsetFromRootBlock) + floorToInt(logicalEnd), min(logicalRightSelectionOffset(rootBlock, logicalTop), logicalRightSelectionOffset(rootBlock, logicalTop + logicalHeight)));
         logicalLeft = max(logicalRight - lineEndingGapWidth, max(logicalLeftSelectionOffset(rootBlock, logicalTop), logicalLeftSelectionOffset(rootBlock, logicalTop + logicalHeight)) - endPaddingToRoot);
     }
 }

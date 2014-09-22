@@ -246,6 +246,7 @@ static const CSSPropertyID staticComputableProperties[] = {
     CSSPropertyWebkitBoxPack,
     CSSPropertyWebkitBoxReflect,
     CSSPropertyWebkitBoxShadow,
+    CSSPropertyWebkitCaretColor,
     CSSPropertyWebkitClipPath,
     CSSPropertyWebkitColumnBreakAfter,
     CSSPropertyWebkitColumnBreakBefore,
@@ -1901,6 +1902,8 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
             return valueForShadowList(style->boxShadow(), *style, true);
         case CSSPropertyCaptionSide:
             return cssValuePool().createValue(style->captionSide());
+        case CSSPropertyWebkitCaretColor:
+            return currentColorOrValidColor(style.get(), style->caretColor());
         case CSSPropertyClear:
             return cssValuePool().createValue(style->clear());
         case CSSPropertyColor:

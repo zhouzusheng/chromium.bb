@@ -28,6 +28,7 @@
     GlobalContext=Window&WorkerGlobalScope,
 ] interface File : Blob {
     readonly attribute DOMString name;
+    readonly attribute DOMString blpPath;
     [Custom=Getter, MeasureAs=FileGetLastModifiedDate] readonly attribute Date lastModifiedDate;
     [Custom=Getter, RuntimeEnabled=FileConstructor] readonly attribute long long lastModified;
     [RuntimeEnabled=DirectoryUpload] readonly attribute DOMString webkitRelativePath;

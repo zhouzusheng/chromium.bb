@@ -91,6 +91,7 @@ public:
 
     const String& path() const { ASSERT(m_hasBackingFile); return m_path; }
     const String& name() const { return m_name; }
+    const String& blpPath() const { return m_path; }
 
     // This returns the current date and time if the file's last modifiecation date is not known (per spec: http://www.w3.org/TR/FileAPI/#dfn-lastModifiedDate).
     double lastModifiedDate() const;

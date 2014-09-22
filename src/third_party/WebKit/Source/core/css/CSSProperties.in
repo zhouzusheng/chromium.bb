@@ -185,7 +185,7 @@ column-fill type_name=ColumnFill
 -webkit-column-rule-color custom_all
 -webkit-column-rule-style type_name=EBorderStyle, initial=initialBorderStyle
 -webkit-column-rule-width type_name=unsigned short, converter=convertLineWidth<unsigned short>
--webkit-column-span type_name=ColumnSpan
+-webkit-column-span type_name=unsigned int, name_for_methods=ColumnSpanCount, custom_all
 -webkit-column-width type_name=float, custom_all
 -webkit-flow-from type_name=AtomicString, name_for_methods=RegionThread, converter=convertString<CSSValueNone>
 -webkit-flow-into type_name=AtomicString, name_for_methods=FlowThread, converter=convertString<CSSValueNone>

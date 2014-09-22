@@ -84,6 +84,7 @@
 #include "core/editing/FrameSelection.h"
 #include "core/editing/InputMethodController.h"
 #include "core/editing/TextIterator.h"
+#include "core/events/CustomEvent.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/WheelEvent.h"
 #include "core/html/HTMLInputElement.h"
@@ -2539,6 +2540,21 @@ void WebViewImpl::didLosePointerLock()
 {
     if (page())
         page()->pointerLockController().didLosePointerLock();
+}
+
+void WebViewImpl::didChangeWindowRect()
+{
+    if (!mainFrameImpl()
+        || !mainFrameImpl()->frame()
+        || !mainFrameImpl()->frame()->document()) {
+        return;
+    }
+
+    CustomEventInit eventInit;
+    eventInit.bubbles = false;
+    eventInit.cancelable = false;
+    RefPtr<CustomEvent> event = CustomEvent::create("bbWindowRectChanged", eventInit);
+    mainFrameImpl()->frame()->domWindow()->dispatchEvent(event);
 }
 
 void WebViewImpl::didChangeWindowResizerRect()

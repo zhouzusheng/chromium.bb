@@ -187,6 +187,14 @@ public:
     virtual int scrollWidth();
     virtual int scrollHeight();
 
+    // Bloomberg-specific extensions
+    virtual int bbScrollLeftNoZoomAdjust();
+    virtual int bbScrollTopNoZoomAdjust();
+    virtual void setBbScrollLeftNoZoomAdjust(int);
+    virtual void setBbScrollTopNoZoomAdjust(int);
+    virtual int bbScrollWidthNoZoomAdjust();
+    virtual int bbScrollHeightNoZoomAdjust();
+
     IntRect boundsInRootViewSpace();
 
     PassRefPtr<ClientRectList> getClientRects();

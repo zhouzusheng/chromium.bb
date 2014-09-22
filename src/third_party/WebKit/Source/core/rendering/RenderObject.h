@@ -499,7 +499,7 @@ public:
             && !isRenderFullScreenPlaceholder();
     }
     bool isAnonymousColumnsBlock() const { return style()->specifiesColumns() && isAnonymousBlock(); }
-    bool isAnonymousColumnSpanBlock() const { return style()->columnSpan() && isAnonymousBlock(); }
+    bool isAnonymousColumnSpanBlock() const { return style()->hasSpanAllColumns() && isAnonymousBlock(); }
     bool isElementContinuation() const { return node() && node()->renderer() != this; }
     bool isInlineElementContinuation() const { return isElementContinuation() && isInline(); }
     virtual RenderBoxModelObject* virtualContinuation() const { return 0; }
